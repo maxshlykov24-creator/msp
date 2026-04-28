@@ -1,0 +1,35 @@
+# Прод / тот же VPS, что Tilda: API только на localhost, БД не торчит наружу.
+#   cd loyalty-service && ./deploy/timeweb-up.sh
+# или: docker compose -f docker-compose.timeweb.yml up -d --build
+
+name: loyalty-service
+
+services:
+  db:
+    image: dockerhub.timeweb.cloud/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: loyalty
+      POSTGRES_PASSWORD: loyalty
+      POSTGRES_DB: loyalty
+    volumes:
+      - loyalty_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://loyalty:loyalty@db:5432/loyalty
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+volumes:
+  loyalty_pg:
