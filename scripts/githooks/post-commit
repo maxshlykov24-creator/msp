@@ -1,8 +1,7 @@
 #!/bin/sh
-# После коммита пушит текущую ветку в origin (только если remote задан).
+# После коммита пушит в origin. Если ветка привязана к upstream — обычный git push.
+# Если upstream ещё нет — первый push в main и привязка к origin/main (удобно для vault на GitHub).
 # Отключить: GIT_SKIP_AUTO_PUSH=1 git commit ...
-# На втором Mac не ставь core.hooksPath или экспортируй GIT_SKIP_AUTO_PUSH=1 в ~/.zshrc,
-# если коммиты делаешь там и не хочешь немедленного push.
 
 if [ "$GIT_SKIP_AUTO_PUSH" = "1" ]; then
   exit 0
@@ -14,10 +13,17 @@ fi
 
 branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
 
-if git push -u origin "$branch"; then
-  :
+if git rev-parse '@{u}' >/dev/null 2>&1; then
+  if git push; then
+    exit 0
+  fi
 else
-  echo "post-commit: не удалось выполнить git push (сеть, права или конфликт на сервере)." >&2
-  echo "  Исправь и выполни: git push -u origin $branch" >&2
+  if git push -u origin HEAD:main; then
+    git branch --set-upstream-to=origin/main "$branch" 2>/dev/null || true
+    exit 0
+  fi
 fi
+
+echo "post-commit: не удалось выполнить git push (сеть, права или конфликт на сервере)." >&2
+echo "  Исправь и выполни вручную: git push -u origin HEAD:main" >&2
 exit 0
