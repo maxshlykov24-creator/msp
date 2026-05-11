@@ -1,0 +1,23 @@
+#!/bin/sh
+# После коммита пушит текущую ветку в origin (только если remote задан).
+# Отключить: GIT_SKIP_AUTO_PUSH=1 git commit ...
+# На втором Mac не ставь core.hooksPath или экспортируй GIT_SKIP_AUTO_PUSH=1 в ~/.zshrc,
+# если коммиты делаешь там и не хочешь немедленного push.
+
+if [ "$GIT_SKIP_AUTO_PUSH" = "1" ]; then
+  exit 0
+fi
+
+if ! git remote get-url origin >/dev/null 2>&1; then
+  exit 0
+fi
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+
+if git push -u origin "$branch"; then
+  :
+else
+  echo "post-commit: не удалось выполнить git push (сеть, права или конфликт на сервере)." >&2
+  echo "  Исправь и выполни: git push -u origin $branch" >&2
+fi
+exit 0
