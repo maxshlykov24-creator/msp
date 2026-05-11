@@ -1,0 +1,29 @@
+services:
+  pot:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: study-bot-pot
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4416:4416"
+    expose:
+      - "4416"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4416/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: .
+    container_name: study-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      YT_POT_PROVIDER_URL: "http://pot:4416"
+      DISTRIBUTION_FOLDER: "/app/Распределение"
+    volumes:
+      - ./Распределение:/app/Распределение
+    depends_on:
+      pot:
+        condition: service_started

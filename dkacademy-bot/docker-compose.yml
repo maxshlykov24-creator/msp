@@ -1,0 +1,37 @@
+# Прод: API на localhost, postgres внутри сети. Поднимать с .env.
+#   cd dkacademy-bot && docker compose up -d --build
+# Nginx+HTTPS на хосте → proxy к 127.0.0.1:19082 (см. deploy/nginx.example.conf)
+
+name: dkacademy-bot
+
+services:
+  db:
+    image: dockerhub.timeweb.cloud/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dkabot
+      POSTGRES_PASSWORD: dkabot
+      POSTGRES_DB: dkabot
+    volumes:
+      - dkacademy_bot_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dkabot -d dkabot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://dkabot:dkabot@db:5432/dkabot
+    ports:
+      - "127.0.0.1:19082:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+volumes:
+  dkacademy_bot_pg:

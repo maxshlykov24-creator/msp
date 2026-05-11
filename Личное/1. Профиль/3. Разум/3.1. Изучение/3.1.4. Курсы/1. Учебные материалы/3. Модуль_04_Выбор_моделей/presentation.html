@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="author" content="Денис Леушин (PLEADA)">
+    <meta name="creator" content="Денис Леушин (PLEADA) — https://deniis.shop">
+    <title>PRESENTATION_MODULE_4 // INTELLIGENCE</title>
+    <style>
+        :root {
+            --matrix-green: #00ff41;
+            --matrix-dim: rgba(0, 255, 65, 0.15);
+            --dark-green: #008F11;
+            --bg-black: #020202;
+            --text-color: #e0e0e0;
+            --accent-red: #ff003c;
+            --accent-yellow: #ffcc00;
+            --accent-cyan: #00ffff;
+            --font-mono: 'Courier New', monospace;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: var(--bg-black);
+            color: var(--text-color);
+            font-family: var(--font-mono);
+            overflow: hidden;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-image:
+                linear-gradient(var(--matrix-dim) 1px, transparent 1px),
+                linear-gradient(90deg, var(--matrix-dim) 1px, transparent 1px);
+            background-size: 30px 30px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::after {
+            content: "";
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background:
+                radial-gradient(circle, transparent 50%, rgba(0,0,0,0.7) 100%),
+                repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,65,0.02) 3px);
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        .slide-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .slide {
+            position: absolute;
+            width: 82%;
+            max-width: 980px;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+            transform: scale(0.96);
+            pointer-events: none;
+        }
+
+        .slide.active {
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: all;
+        }
+
+        .card {
+            background: rgba(5,5,5,0.95);
+            padding: 38px;
+            border: 1px solid var(--matrix-dim);
+            position: relative;
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.1);
+        }
+
+        .hud { position: absolute; width: 12px; height: 12px; border: 2px solid var(--matrix-green); }
+        .c-tl { top: -1px; left: -1px; border-bottom: none; border-right: none; }
+        .c-tr { top: -1px; right: -1px; border-bottom: none; border-left: none; }
+        .c-bl { bottom: -1px; left: -1px; border-top: none; border-right: none; }
+        .c-br { bottom: -1px; right: -1px; border-top: none; border-left: none; }
+
+        .card-label {
+            position: absolute; top: -10px; right: 20px; background: var(--bg-black);
+            padding: 0 10px; font-size: 0.8rem; color: var(--matrix-green);
+            border: 1px solid var(--matrix-dim); letter-spacing: 2px;
+        }
+
+        h1 {
+            font-size: 2.6rem; text-transform: uppercase; letter-spacing: 2px;
+            margin: 0 0 18px 0; line-height: 1.1; color: var(--matrix-green);
+            text-shadow: 0 0 10px var(--matrix-dim);
+            border-bottom: 2px solid var(--matrix-green);
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            font-size: 1.35rem; margin: 0 0 18px 0; color: #fff;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+
+        p { margin: 0 0 12px 0; color: #ccc; font-size: 1.05rem; line-height: 1.5; }
+
+        ul { list-style: none; padding: 0; margin: 0; }
+        li {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            padding-left: 25px;
+            position: relative;
+            color: #ccc;
+        }
+        li::before {
+            content: ">>";
+            color: var(--accent-red);
+            position: absolute;
+            left: 0;
+            font-size: 1rem;
+            top: 2px;
+        }
+
+        .highlight {
+            color: var(--bg-black);
+            background: var(--matrix-green);
+            padding: 0 5px;
+            font-weight: bold;
+        }
+
+        .scan-line { width: 100%; height: 1px; background: var(--matrix-green); opacity: 0.2; margin: 18px 0; }
+
+        .cmd {
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px dashed rgba(0,255,65,0.25);
+            background: rgba(0,0,0,0.55);
+            color: #cfcfcf;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        .cmd strong { color: var(--matrix-green); }
+
+        .detail {
+            margin: 12px 0;
+            padding: 12px;
+            background: rgba(0,255,65,0.05);
+            border-left: 3px solid var(--matrix-green);
+            font-size: 1rem;
+            color: #ddd;
+        }
+
+        .matrix-table {
+            width: 100%;
+            margin: 15px 0;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .matrix-table th {
+            background: rgba(0,255,65,0.1);
+            border: 1px solid var(--matrix-dim);
+            padding: 8px;
+            color: var(--matrix-green);
+            text-align: left;
+        }
+        .matrix-table td {
+            border: 1px solid var(--matrix-dim);
+            padding: 8px;
+            color: #ccc;
+        }
+
+        .nav-controls {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 20;
+            font-size: 0.8rem;
+            color: var(--dark-green);
+            background: var(--bg-black);
+            padding: 10px;
+            border: 1px solid var(--dark-green);
+        }
+
+        .slide-counter {
+            position: fixed;
+            top: 30px;
+            left: 30px;
+            z-index: 20;
+            font-size: 1.5rem;
+            color: var(--matrix-green);
+            font-weight: bold;
+            border: 1px solid var(--matrix-green);
+            padding: 5px 15px;
+            background: rgba(0,0,0,0.8);
+        }
+
+        .glitch { position: relative; }
+        .glitch::before, .glitch::after {
+            content: attr(data-text);
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+        }
+        .glitch::before {
+            left: 2px; text-shadow: -1px 0 var(--accent-red); clip: rect(24px, 550px, 90px, 0);
+            animation: glitch-anim-2 3s infinite linear alternate-reverse;
+        }
+        .glitch::after {
+            left: -2px; text-shadow: -1px 0 var(--accent-cyan); clip: rect(85px, 550px, 140px, 0);
+            animation: glitch-anim 2.5s infinite linear alternate-reverse;
+        }
+        @keyframes glitch-anim {
+            0% { clip: rect(11px, 9999px, 89px, 0); }
+            20% { clip: rect(84px, 9999px, 19px, 0); }
+            40% { clip: rect(32px, 9999px, 6px, 0); }
+            60% { clip: rect(56px, 9999px, 72px, 0); }
+            80% { clip: rect(93px, 9999px, 24px, 0); }
+            100% { clip: rect(4px, 9999px, 55px, 0); }
+        }
+        @keyframes glitch-anim-2 {
+            0% { clip: rect(65px, 9999px, 100px, 0); }
+            20% { clip: rect(2px, 9999px, 27px, 0); }
+            40% { clip: rect(91px, 9999px, 43px, 0); }
+            60% { clip: rect(18px, 9999px, 6px, 0); }
+            80% { clip: rect(35px, 9999px, 77px, 0); }
+            100% { clip: rect(52px, 9999px, 88px, 0); }
+        }
+
+        .marquee-container {
+            position: fixed; bottom: 0; left: 0; width: 100%; background: var(--bg-black);
+            border-top: 1px solid var(--dark-green); padding: 4px 0; overflow: hidden; z-index: 100;
+        }
+        .marquee {
+            white-space: nowrap; font-size: 0.6rem; color: var(--dark-green);
+            animation: scroll 30s linear infinite;
+        }
+        @keyframes scroll {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="slide-counter">01 / 07</div>
+    <div class="nav-controls">[SPACE] - NEXT | [←] PREV</div>
+
+    <div class="slide-container">
+
+        <!-- SLIDE 1: INTRO -->
+        <div class="slide active" id="slide-1">
+            <div class="card">
+                <div class="hud c-tl"></div><div class="hud c-tr"></div>
+                <div class="hud c-bl"></div><div class="hud c-br"></div>
+                <div class="card-label">INTELLIGENCE</div>
+
+                <h1 class="glitch" data-text="ВЫБОР ОРУЖИЯ">ВЫБОР ОРУЖИЯ</h1>
+                <h2>Не влюбляйся в бренды. Выбирай по задаче.</h2>
+                <div class="scan-line"></div>
+                <p style="font-size: 1.2rem; color: var(--matrix-green);">
+                  <strong>ГЛАВНАЯ ИДЕЯ:</strong> Сегодня король Claude, завтра GPT. <br>
+                  Мы верны только результату.
+                </p>
+                <div class="scan-line"></div>
+                <ul>
+                  <li>Агностицизм: нет "лучшей" модели</li>
+                  <li>Матрица задач: какой инструмент для чего</li>
+                  <li>Тройной прогон для важных задач</li>
+                  <li>Экономика токенов: не переплачивай</li>
+                </ul>
+              </div>
+        </div>
+
+        <!-- SLIDE 2: AGNOSTICISM -->
+        <div class="slide" id="slide-2">
+            <div class="card">
+                <div class="hud c-tl"></div><div class="hud c-tr"></div>
+                <div class="hud c-bl"></div><div class="hud c-br"></div>
+                <div class="card-label">AGNOSTICISM</div>
+
+                <h1>НЕТ ИДОЛОВ</h1>
+                <h2>OpenAI, Claude, Google — это просто молотки</h2>
+                <div class="scan-line"></div>
+                
+                <div class="detail">
+                  <strong>ПРАВИЛО:</strong> Не фанатей от брендов. Они меняются местами каждый месяц.
+                </div>
+                
+                <ul>
+                  <li>Сегодня лидер <span class="highlight">Claude 3.5 Sonnet</span></li>
+                  <li>Завтра <span class="highlight">Gemini 3 Pro</span></li>
+                  <li>Послезавтра <span class="highlight">DeepSeek V3.2</span></li>
+                </ul>
+                
+                <div class="scan-line"></div>
+                <p style="color: var(--accent-yellow);">
+                  Твой подход: Смотрю на задачу → Выбираю инструмент → Получаю результат.
+                </p>
+              </div>
+        </div>
+
+        <!-- SLIDE 3: TASK MATRIX -->
+        <div class="slide" id="slide-3">
+            <div class="card">
+                <div class="hud c-tl"></div><div class="hud c-tr"></div>
+                <div class="hud c-bl"></div><div class="hud c-br"></div>
+                <div class="card-label">MATRIX</div>
+
+                <h1>МИКРОСКОП ИЛИ КУВАЛДА?</h1>
+                <h2>Матрица выбора модели под задачу</h2>
+                <div class="scan-line"></div>
+                
+                <table class="matrix-table">
+                    <tr>
+                        <th>ЗАДАЧА</th>
+                        <th>МОДЕЛЬ</th>
+                    </tr>
+                    <tr>
+                        <td><span class="highlight">ЛОГИКА</span> (анализ, стратегия)</td>
+                        <td>DeepSeek V3.2 / Gemini 2.5 Pro</td>
+                    </tr>
+                    <tr>
+                        <td><span class="highlight">КРЕАТИВ</span> (посты, тексты)</td>
+                        <td>Claude 3.5 Sonnet</td>
+                    </tr>
+                    <tr>
+                        <td><span class="highlight">КОД</span> (скрипты, HTML)</td>
+                        <td>Claude 3.5 Sonnet / GPT-4o</td>
+                    </tr>
+                    <tr>
+                        <td><span class="highlight">МАССОВКА</span> (обработка файлов)</td>
+                        <td>Gemini 2.5 Flash / DeepSeek V3.2</td>
+                    </tr>
+                </table>
+                
+                <div class="scan-line"></div>
+                <p style="color: var(--dark-green); font-size: 0.9rem;">
+                  См. полную таблицу: <span class="highlight">ТАБЛИЦА_ВЫБОРА_МОДЕЛЕЙ.md</span>
+                </p>
+              </div>
+        </div>
+
+        <!-- SLIDE 4: TRIPLE RUN -->
+        <div class="slide" id="slide-4">
+            <div class="card">
+                <div class="hud c-tl"></div><div class="hud c-tr"></div>
+                <div class="hud c-bl"></div><div class="hud c-br"></div>
+                <div class="card-label">TRIPLE_RUN</div>
+
+                <h1>ТРОЙНОЙ ПРОГОН</h1>
+                <h2>Для важных задач — не верь одной модели</h2>
+                <div class="scan-line"></div>
+                
+                <div class="detail">
+                  <strong>МЕТОДИКА:</strong> Один промпт → три модели → лучший результат
+                </div>
+                
+                <ul>
+                  <li><span class="highlight">ШАГ 1:</span> Запусти в Claude 3.5 Sonnet (креатив)</li>
+                  <li><span class="highlight">ШАГ 2:</span> Запусти в Gemini 2.5 Pro (логика)</li>
+                  <li><span class="highlight">ШАГ 3:</span> Сравни ответы</li>
+                  <li><span class="highlight">ШАГ 4:</span> Собери лучшее из обоих</li>
+                </ul>
+                
+                <div class="scan-line"></div>
+                <p style="color: var(--accent-cyan);">
+                  Пример: Стратегия продаж. Claude Sonnet дал идеи, Gemini 2.5 Pro дал структуру → объединили.
+                </p>
+              </div>
+        </div>
+
+        <!-- SLIDE 5: OPENROUTER -->
+        <div class="slide" id="slide-5">
+            <div class="card">
+                <div class="hud c-tl"></div><div class="hud c-tr"></div>
+                <div class="hud c-bl"></div><div class="hud c-br"></div>
+                <div class="card-label">OPENROUTER</div>
+
+                <h1>АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ</h1>
+                <h2>Модели всегда актуальны по популярности</h2>
+                <div class="scan-line"></div>
+                
+                <div class="detail">
+                  <strong>ИСТОЧНИК ИСТИНЫ:</strong> [OpenRouter Rankings](https://openrouter.ai/rankings)<br>
+                  Там видно актуальные модели и их использование в реальном времени.
+                </div>
+                
+                <ul>
+                  <li>Топ моделей по использованию → самые популярные</li>
+                  <li>Новые модели появляются первыми</li>
+                  <li>Цены обновляются автоматически</li>
+                  <li>Рейтинги основаны на реальных запросах</li>
+                </ul>
+                
+                <div class="scan-line"></div>
+                
+                <div class="cmd">
+<strong>КАК ИСПОЛЬЗОВАТЬ:</strong><br><br>
+1. Открой [OpenRouter Rankings](https://openrouter.ai/rankings)<br>
+2. Посмотри топ-3 модели по использованию<br>
+3. Выбери модель под свою задачу<br>
+4. Проверяй раз в неделю — модели меняются быстро
+                </div>
+                
+                <div class="scan-line"></div>
+                <p style="color: var(--accent-cyan);">
+                  Результат: Ты всегда используешь актуальные модели, а не устаревшие рекомендации.
+                </p>
+              </div>
+        </div>
+
+        <!-- SLIDE 6: TOKEN ECONOMY -->
+        <div class="slide" id="slide-6">
+            <div class="card">
+                <div class="hud c-tl"></div><div class="hud c-tr"></div>
+                <div class="hud c-bl"></div><div class="hud c-br"></div>
+                <div class="card-label">ECONOMY</div>
+
+                <h1>ЭКОНОМИКА ТОКЕНОВ</h1>
+                <h2>Не переплачивай за простые задачи</h2>
+                <div class="scan-line"></div>
+                
+                <ul>
+                  <li><span class="highlight">Gemini 2.5 Flash:</span> $0.30 / 1M токенов (копейки)</li>
+                  <li><span class="highlight">DeepSeek V3.2:</span> $0.24 / 1M токенов (очень дешево)</li>
+                  <li><span class="highlight">Claude 3.5 Sonnet:</span> $6 / 1M токенов (дорого)</li>
+                  <li><span class="highlight">GPT-4o:</span> $2.50 / 1M токенов (средне)</li>
+                </ul>
+                
+                <div class="scan-line"></div>
+                
+                <div class="detail">
+                  <strong>ПРАВИЛА:</strong><br>
+                  • Для простых задач → Gemini 2.5 Flash / DeepSeek V3.2<br>
+                  • Для финала → Claude 3.5 Sonnet / Gemini 2.5 Pro<br>
+                  • Используй /summarize чтобы сжать контекст
+                </div>
+                
+                <div class="scan-line"></div>
+                <p style="color: var(--accent-red);">
+                  Не используй Claude 3.5 Sonnet для "привет, как дела". Это как стрелять из пушки по воробьям.
+                </p>
+              </div>
+        </div>
+
+        <!-- SLIDE 7: ACTION -->
+        <div class="slide" id="slide-7">
+            <div class="card">
+                <div class="hud c-tl"></div><div class="hud c-tr"></div>
+                <div class="hud c-bl"></div><div class="hud c-br"></div>
+                <div class="card-label">ACTION</div>
+
+                <h1>ПРАКТИКА: ЧТО ДЕЛАТЬ СЕЙЧАС</h1>
+                <h2>Выбери модель под задачу</h2>
+                <div class="scan-line"></div>
+                
+                <ul>
+                  <li><span class="highlight">ШАГ 1:</span> Открой <span class="highlight">START_MODULE_4_ИНТЕЛЛЕКТ.md</span></li>
+                  <li><span class="highlight">ШАГ 2:</span> Проверь актуальность на [OpenRouter Rankings](https://openrouter.ai/rankings)</li>
+                  <li><span class="highlight">ШАГ 3:</span> Выбери задачу из своей работы</li>
+                  <li><span class="highlight">ШАГ 4:</span> Определи тип задачи (логика/креатив/код/массовка)</li>
+                  <li><span class="highlight">ШАГ 5:</span> Выбери модель по популярности и протестируй</li>
+                </ul>
+                
+                <div class="scan-line"></div>
+                
+                <div class="detail">
+                  <strong>РЕЗУЛЬТАТ:</strong><br>
+                  ✅ Понимаешь какую модель когда использовать<br>
+                  ✅ Не переплачиваешь за простые задачи<br>
+                  ✅ Получаешь лучший результат для важных задач<br>
+                  ✅ Используешь тройной прогон для критичных задач
+                </div>
+                
+                <div class="scan-line"></div>
+                <p style="color: var(--matrix-green); font-size: 1.3rem;">
+                  <strong>ПОГНАЛИ!</strong>
+                </p>
+              </div>
+        </div>
+
+    </div>
+
+    <div class="marquee-container">
+        <div class="marquee">
+            ◈ MODULE 4: INTELLIGENCE // ВЫБОР МОДЕЛЕЙ // Денис Леушин (PLEADA) // deniis.shop // АГНОСТИЦИЗМ: РЕЗУЛЬТАТ > БРЕНД ◈
+        </div>
+    </div>
+
+    <script>
+        let currentSlide = 1;
+        const totalSlides = 7;
+        const counter = document.querySelector('.slide-counter');
+
+        function updateSlide(n) {
+            document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
+            const el = document.getElementById(`slide-${n}`);
+            if (el) el.classList.add('active');
+            counter.textContent = `${String(n).padStart(2, '0')} / ${String(totalSlides).padStart(2, '0')}`;
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides) {
+                currentSlide++;
+                updateSlide(currentSlide);
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 1) {
+                currentSlide--;
+                updateSlide(currentSlide);
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowRight') nextSlide();
+            if (e.code === 'ArrowLeft') prevSlide();
+        });
+
+        document.addEventListener('click', nextSlide);
+    </script>
+</body>
+</html>
+
