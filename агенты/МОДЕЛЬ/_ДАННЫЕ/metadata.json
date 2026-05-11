@@ -1,0 +1,67 @@
+{
+  "version": "1.2",
+  "last_updated": "2026-04-25T20:30:00",
+  "statistics": {
+    "total_recommendations": 0,
+    "fast_track_coverage": 0,
+    "typical_tasks_coverage": 0,
+    "heuristics_coverage": 0,
+    "stats_coverage": 0,
+    "cache_coverage": 0,
+    "blitz_coverage": 0,
+    "standard_coverage": 0,
+    "full_coverage": 0,
+    "average_response_time": 0,
+    "average_confidence": 0
+  },
+  "usage_statistics": {
+    "написать пост": {
+      "Gemini 2.5 Flash": 0,
+      "Claude 3.5 Sonnet": 0
+    },
+    "отладить код": {
+      "Claude 3.5 Sonnet": 0,
+      "DeepSeek V3.2": 0
+    }
+  },
+  "feedback_statistics": {
+    "отлично": 0,
+    "хорошо": 0,
+    "правки": 0,
+    "плохо": 0
+  },
+  "update_dates": {
+    "lmsys": "2026-04-08",
+    "openrouter": "2026-04-25",
+    "digital_applied": "2026-04-08",
+    "anthropic_api_docs": "2026-04-08",
+    "google_ai_pricing": "2026-04-08",
+    "openai_pricing": "2026-04-08",
+    "llm_stats": null,
+    "vellum": null,
+    "nebuly": null
+  },
+  "model_popularity": {
+    "Claude 3.7 Sonnet": 0,
+    "Claude Sonnet 4.6": 0,
+    "Claude 3.5 Sonnet": 0,
+    "Gemini 2.5 Flash": 0,
+    "DeepSeek V3.2": 0,
+    "Gemini 2.5 Pro": 0,
+    "Claude Opus 4.5": 0,
+    "Claude Opus 4.6": 0,
+    "GPT-4o": 0
+  },
+  "recommendations_by_level": {
+    "fast_track": 0,
+    "typical": 0,
+    "heuristics": 0,
+    "stats": 0,
+    "cache_type": 0,
+    "cache_combination": 0,
+    "blitz": 0,
+    "standard": 0,
+    "full": 0
+  }
+}
+

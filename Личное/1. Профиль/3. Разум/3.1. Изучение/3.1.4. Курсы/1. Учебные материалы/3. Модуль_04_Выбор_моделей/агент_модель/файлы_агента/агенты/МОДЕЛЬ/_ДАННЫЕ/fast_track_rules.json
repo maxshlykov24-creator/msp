@@ -1,0 +1,112 @@
+{
+  "version": "1.1",
+  "last_updated": "2026-04-08T12:00:00",
+  "rules": [
+    {
+      "id": "n8n_automation",
+      "keywords": ["n8n", "ноды", "workflow", "воркфлоу", "сценарий автоматизации"],
+      "model": "Claude 3.7 Sonnet",
+      "confidence": 92,
+      "reason": "Связки, отладка нод и JSON — стабильный код и рассуждение"
+    },
+    {
+      "id": "amocrm_moysklad",
+      "keywords": ["amocrm", "амо", "amo", "мойсклад", "moysklad", "мой склад"],
+      "model": "Claude 3.7 Sonnet",
+      "confidence": 92,
+      "reason": "Интеграции API, маппинг полей, обработка ошибок вебхуков"
+    },
+    {
+      "id": "webhook_json",
+      "keywords": ["webhook", "вебхук", "входящий webhook", "исходящий запрос"],
+      "model": "DeepSeek V3.2",
+      "confidence": 90,
+      "reason": "Дёшево для типовых схем и больших логов; при сложной бизнес-логике — Claude 3.7"
+    },
+    {
+      "id": "stack_js_ts",
+      "keywords": ["typescript", "javascript", "node", "nestjs", "express"],
+      "model": "Claude 3.7 Sonnet",
+      "confidence": 91,
+      "reason": "Стек MS Product: качество кода и типы"
+    },
+    {
+      "id": "b2b_automation",
+      "keywords": ["автоматизация b2b", "интеграция crm", "коннектор", "синхронизация заказов"],
+      "model": "Claude 3.7 Sonnet",
+      "confidence": 88,
+      "reason": "Комплексные сценарии внедрений и регламенты"
+    },
+    {
+      "id": "code_python",
+      "keywords": ["код", "python", "скрипт", "функция"],
+      "model": "Claude 3.5 Sonnet",
+      "confidence": 95,
+      "reason": "Лучшая для кода (SWE-bench 80.9%)"
+    },
+    {
+      "id": "creative_post",
+      "keywords": ["пост", "текст", "написать", "статья", "контент"],
+      "model": "Gemini 2.5 Flash",
+      "confidence": 95,
+      "reason": "Дешево и быстро для текстов"
+    },
+    {
+      "id": "analysis_logic",
+      "keywords": ["анализ", "отчёт", "стратегия", "проблема"],
+      "model": "DeepSeek V3.2",
+      "confidence": 95,
+      "reason": "Мощная логика за копейки"
+    },
+    {
+      "id": "bulk_processing",
+      "keywords": ["обработать", "много", "массово", "summary"],
+      "model": "Gemini 2.5 Flash Lite",
+      "confidence": 95,
+      "reason": "Почти бесплатно для массовки"
+    },
+    {
+      "id": "webdev",
+      "keywords": ["веб", "сайт", "лендинг", "html", "css"],
+      "model": "Claude Opus 4.5 Thinking",
+      "confidence": 95,
+      "reason": "WebDev ELO 1520, лучшая для веб-разработки"
+    },
+    {
+      "id": "vision",
+      "keywords": ["изображение", "картинка", "визуал", "фото", "дизайн"],
+      "model": "Gemini 3 Pro",
+      "confidence": 95,
+      "reason": "Vision ELO 1309, лучшая для мультимодальности"
+    },
+    {
+      "id": "documentation",
+      "keywords": ["документация", "readme", "инструкция", "описание"],
+      "model": "Gemini 2.5 Flash",
+      "confidence": 90,
+      "reason": "Дешево, хорошая структура"
+    },
+    {
+      "id": "debug",
+      "keywords": ["баг", "ошибка", "исправить", "отладка", "debug"],
+      "model": "Claude 3.5 Sonnet",
+      "confidence": 90,
+      "reason": "Лучшая для отладки кода"
+    },
+    {
+      "id": "refactor",
+      "keywords": ["рефакторинг", "refactor", "улучшить код", "оптимизировать"],
+      "model": "Claude 3.5 Sonnet",
+      "confidence": 90,
+      "reason": "Понимание архитектуры кода"
+    },
+    {
+      "id": "integration",
+      "keywords": ["интеграция", "api", "подключить", "связать"],
+      "model": "Claude 3.5 Sonnet",
+      "confidence": 85,
+      "reason": "Хорошо для интеграций"
+    }
+  ]
+}
+

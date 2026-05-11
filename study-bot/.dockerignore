@@ -1,0 +1,10 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+Распределение/
+.git/
+.cursor/
+.DS_Store
+config.py

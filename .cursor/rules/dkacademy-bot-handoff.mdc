@@ -1,0 +1,7 @@
+---
+description: Handoff LiveInform/amoCRM/Telegram в dkacademy-bot — прочитать перед деплоем и интеграциями
+globs: dkacademy-bot/**
+alwaysApply: false
+---
+
+Перед изменениями в деплое, LiveInform, amoCRM, Telegram: открой **`dkacademy-bot/AGENT_LEARNINGS.md`** (переносимые инциденты и решения).
