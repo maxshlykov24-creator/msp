@@ -7,7 +7,7 @@
   2. Текущий статус всех пропущенных групп для нового плана работ
 """
 
-from ms_client import get_all_products
+from ms_client import get_all_products, is_excluded_folder
 
 
 def attr(p, name):
@@ -24,7 +24,11 @@ def main():
     products = get_all_products()
     active = [p for p in products if not p.get("archived")]
     archived = [p for p in products if p.get("archived")]
+    excluded = [p for p in active if is_excluded_folder(p)]
+    in_scope = [p for p in active if not is_excluded_folder(p)]
     print(f"Всего товаров: {len(products)} | активных: {len(active)} | в архиве: {len(archived)}")
+    print(f"Исключено (Сырье/ТИМ): {len(excluded)} — не проверяем")
+    print(f"В области проверки: {len(in_scope)}")
     print()
 
     # ── 1. Статус 24 старых карточек ───────────────────────────────────────────
@@ -50,7 +54,7 @@ def main():
 
     # ── 2. Группы товаров для нового плана ─────────────────────────────────────
     print("=" * 70)
-    print("2. ТЕКУЩИЕ ГРУППЫ БЕЗ КАТЕГОРИИ (только активные)")
+    print("2. ТЕКУЩИЕ ГРУППЫ БЕЗ КАТЕГОРИИ (только активные, вне Сырье/ТИМ)")
     print("=" * 70)
 
     groups = {
@@ -74,7 +78,7 @@ def main():
         "G18 Не классифицировано": [],
     }
 
-    for p in active:
+    for p in in_scope:
         if attr(p, "Категория для аналитики"):
             continue
 
@@ -165,7 +169,8 @@ def main():
         total_no_cat += len(v)
 
     print()
-    print(f"ИТОГО без категории: {total_no_cat}")
+    print(f"ИТОГО без категории (вне Сырье/ТИМ): {total_no_cat}")
+    print(f"Исключено из проверки (Сырье/ТИМ):   {len(excluded)}")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,17 @@ _session.headers.update({
 
 _DELAY = 0.25  # секунды между запросами (4 req/s)
 
+# Корневые папки, исключённые из любой обработки по решению владельца.
+# Товары из этих папок не трогаем, не категоризируем, не архивируем.
+EXCLUDED_ROOTS = {"Сырье", "Товары интернет-магазинов"}
+
+
+def is_excluded_folder(product: dict) -> bool:
+    """True, если товар лежит в корневой папке Сырье или Товары интернет-магазинов."""
+    path = product.get("pathName") or ""
+    root = path.split("/")[0] if path else ""
+    return root in EXCLUDED_ROOTS
+
 
 def _request(method: str, url: str, **kwargs) -> dict:
     """Выполнить запрос с одним retry при 429/5xx."""

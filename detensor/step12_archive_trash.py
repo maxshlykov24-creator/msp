@@ -17,7 +17,7 @@ Adidas, Yamaha колонки, кассовые аппараты, ноутбук
 """
 
 import sys
-from ms_client import get_all_products, update_product
+from ms_client import get_all_products, update_product, is_excluded_folder
 
 DRY_RUN = "--dry-run" in sys.argv
 
@@ -104,8 +104,26 @@ def main():
     products = get_all_products()
     print(f"Загружено товаров: {len(products)}")
 
-    targets = [p for p in products if not p.get("archived") and is_trash(p["name"])]
+    # Товары из Сырье/ТИМ не трогаем по решению владельца — даже если они мусор.
+    targets = [
+        p for p in products
+        if not p.get("archived")
+        and is_trash(p["name"])
+        and not is_excluded_folder(p)
+    ]
+    excluded_trash = sum(
+        1 for p in products
+        if not p.get("archived") and is_trash(p["name"]) and is_excluded_folder(p)
+    )
     print(f"К архивации: {len(targets)}")
+    if excluded_trash:
+        print(
+            f"Пропущено (Сырье/ТИМ): {excluded_trash} — мусор в исключённых папках, "
+            "не трогаем по решению владельца"
+        )
+    if len(targets) == 0:
+        print("Скрипт no-op: все мусорные товары находятся в исключённых папках "
+              "(Сырье / Товары интернет-магазинов) и не трогаются.")
     print()
 
     ok = err = 0

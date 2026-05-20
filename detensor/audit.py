@@ -11,7 +11,7 @@
 """
 
 import json
-from ms_client import get_all_products
+from ms_client import get_all_products, is_excluded_folder
 
 
 def main():
@@ -19,7 +19,11 @@ def main():
     print(f"Всего товаров: {len(products)}")
     active = [p for p in products if not p.get("archived")]
     archived = [p for p in products if p.get("archived")]
+    excluded = [p for p in active if is_excluded_folder(p)]
+    in_scope = [p for p in active if not is_excluded_folder(p)]
     print(f"Активных: {len(active)}, в архиве: {len(archived)}")
+    print(f"Исключено (Сырье/ТИМ): {len(excluded)} — не проверяем и не трогаем")
+    print(f"В области проверки: {len(in_scope)}")
     print()
 
     # ── Соберём индекс ─────────────────────────────────────────────────────────
@@ -34,21 +38,21 @@ def main():
                 return v or ""
         return None
 
-    # ─── 1. Покрытие Категории ────────────────────────────────────────────────
+    # ─── 1. Покрытие Категории (только товары вне Сырье/ТИМ) ─────────────────
     print("=" * 70)
-    print("1. ПОКРЫТИЕ ШАГА 6: Категория для аналитики")
+    print("1. ПОКРЫТИЕ ШАГА 6: Категория для аналитики (вне Сырье/ТИМ)")
     print("=" * 70)
     no_cat = []
     has_cat = []
-    for p in active:
+    for p in in_scope:
         cat = attr(p, "Категория для аналитики")
         if cat:
             has_cat.append((p["name"], p.get("article", ""), cat))
         else:
             no_cat.append(p)
 
-    print(f"Активных с Категорией: {len(has_cat)}")
-    print(f"Активных без Категории: {len(no_cat)}")
+    print(f"В области проверки с Категорией: {len(has_cat)}")
+    print(f"В области проверки без Категории: {len(no_cat)}")
     print()
     if no_cat:
         print("Товары БЕЗ категории (первые 40):")
@@ -224,11 +228,12 @@ def main():
     print("=" * 70)
     print("ИТОГ АУДИТА")
     print("=" * 70)
-    print(f"  Активных без Категории:    {len(no_cat)}")
-    print(f"  Модулей матов:             {len(modules)}")
-    print(f"  -NV вариантов:             {len(nv)}")
-    print(f"  Аренды в каталоге:         {len(rent)}")
-    print(f"  Старых «Устройство мед.»:  {len(old_um)}")
+    print(f"  Исключено (Сырье/ТИМ):         {len(excluded)} — не проверяем")
+    print(f"  В области проверки без Категории: {len(no_cat)}")
+    print(f"  Модулей матов:                 {len(modules)}")
+    print(f"  -NV вариантов:                 {len(nv)}")
+    print(f"  Аренды в каталоге:             {len(rent)}")
+    print(f"  Старых «Устройство мед.»:      {len(old_um)}")
 
 
 if __name__ == "__main__":

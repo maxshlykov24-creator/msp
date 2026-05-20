@@ -24,6 +24,7 @@
   G16 — мусор (Apple/Nike/DVD/...) — отдельный скрипт step12_archive_trash.py
   G17 — упаковочное прочее (мешки, коробки, инструкции, стропы)
         — нужно решение владельца
+  Сырье / Товары интернет-магазинов — полностью исключены по решению владельца
 
 Запуск:
   python3 step11_complete_categories.py --dry-run   # проверить что будет
@@ -32,7 +33,7 @@
 
 import sys
 import re
-from ms_client import get_all_products, update_product, make_attr
+from ms_client import get_all_products, update_product, make_attr, is_excluded_folder
 from config import ZHESTKOST, KATEGORIYA, LINEYKA
 
 DRY_RUN = "--dry-run" in sys.argv
@@ -250,7 +251,13 @@ def main():
     active = [p for p in products if not p.get("archived")]
 
     targets = []
+    skipped_folders = 0
     for p in active:
+        # Пропускаем товары из исключённых папок
+        if is_excluded_folder(p):
+            skipped_folders += 1
+            continue
+
         # Пропускаем уже категоризированные
         cat_now = None
         for a in p.get("attributes", []):
@@ -277,6 +284,7 @@ def main():
     for p, cls, attrs in targets:
         by_group.setdefault(cls["group"], []).append((p, cls, attrs))
 
+    print(f"Пропущено (Сырье/ТИМ): {skipped_folders}")
     print(f"\nК обновлению: {len(targets)} товаров в {len(by_group)} группах\n")
 
     ok = err = 0
