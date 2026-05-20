@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from ms_client import get_all_products, update_product, make_attr, is_excluded_folder
+from name_normalize import normalize_dimensions_in_name
 from step3_rename import RENAME_MAP
 from verify import TARGET_ARTICLES
 
@@ -41,7 +42,7 @@ def load_long_names(path: Path) -> dict[str, str]:
             art = (row.get("article") or "").strip()
             name = (row.get("name_long") or "").strip()
             if art and name:
-                out[art] = name
+                out[art] = normalize_dimensions_in_name(name)
     return out
 
 
@@ -115,8 +116,9 @@ def main() -> None:
             print(f"  MISS каталог {article}")
             stats["err"] += 1
             continue
+        short_norm = normalize_dimensions_in_name(short_name)
         for p in matches:
-            r = apply(p, long_name, short_name)
+            r = apply(p, long_name, short_norm)
             if r == "skip":
                 stats["A_skip"] += 1
             elif r == "ok":
@@ -127,7 +129,8 @@ def main() -> None:
     for article in sorted(group_b):
         for p in by_article.get(article, []):
             cur_an = attr_value(p, "Название для аналитики")
-            r = apply(p, None, p["name"]) if not cur_an else "skip"
+            cur_name = normalize_dimensions_in_name(p["name"])
+            r = apply(p, None, cur_name) if not cur_an else "skip"
             if r == "skip":
                 stats["B_skip"] += 1
             elif r == "ok":
