@@ -27,6 +27,8 @@
 | `step11_complete_categories.py` | 11 | Дозаполнение модулей/тренажёров/массажёров |
 | `step12_archive_trash.py` | 12 | Архивация мусора (no-op для ТИМ) |
 | `step13_finish_gray_zone.py` | 13 | Закрытие серой зоны (6 шт) |
+| `amo_create_refusal_fields.py` | — | Создание 3 полей «Причина отказа» в amoCRM |
+| `amo_audit_readonly.py` | — | Аудит полей amoCRM (read-only) |
 | `verify.py` | — | Проверяет результат: что заполнено, что пропущено |
 | `audit.py` | — | Глубокий аудит всего каталога |
 
