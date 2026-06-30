@@ -3,15 +3,35 @@
 .AppleDouble
 .LSOverride
 
+# Cursor local cache (keep .cursor/rules/ in git for Cloud Agents)
+.cursor/plans/
+.cursor/projects/
+.cursor/*.log
+
+# Vault sync controls
+.vault-sync-off
+.vault-sync-conflict
+
 # Secrets and local overrides
 .env
 .env.*
 !.env.example
 !**/.env.example
+**/ДОСТУПЫ*.md
+**/*_ДОСТУПЫ*.md
 *.pem
 *.pkey
 id_rsa
 id_ed25519
+
+# Large media (transcripts .md stay in git)
+*.m4a
+*.webm
+*.mp4
+*.mov
+
+# Typo duplicate folder (use Бизнес/ only)
+Бizнес/
 
 # Python
 __pycache__/
