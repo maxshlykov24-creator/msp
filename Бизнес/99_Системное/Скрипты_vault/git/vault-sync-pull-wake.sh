@@ -28,7 +28,7 @@ branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
 
 git fetch origin 2>/dev/null || exit 0
 
-if git pull --rebase origin main >>"$log_file" 2>&1; then
+if git pull --rebase --autostash origin main >>"$log_file" 2>&1; then
   log "wake-pull: ok"
   rm -f "$root/.vault-sync-conflict"
 else

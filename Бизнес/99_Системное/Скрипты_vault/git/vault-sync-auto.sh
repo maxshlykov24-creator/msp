@@ -44,7 +44,7 @@ git fetch origin 2>>"$log_file" || {
   exit 1
 }
 
-if ! git pull --rebase origin main >>"$log_file" 2>&1; then
+if ! git pull --rebase --autostash origin main >>"$log_file" 2>&1; then
   log "CONFLICT: git pull --rebase failed — resolve manually, then rm .vault-sync-conflict"
   touch "$conflict_file"
   exit 1
