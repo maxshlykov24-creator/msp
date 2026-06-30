@@ -1,0 +1,38 @@
+#!/bin/sh
+# Pull при включении Mac / появлении сети (правки из Cursor Cloud → локальный vault).
+# Из корня vault: Бизнес/99_Системное/Скрипты_vault/git/vault-sync-pull-wake.sh
+
+set -e
+
+root=$(cd "$(dirname "$0")/../../../.." && pwd)
+cd "$root"
+
+log_dir="$root/Бизнес/99_Системное/Скрипты_vault/git/logs"
+log_file="$log_dir/vault-sync.log"
+mkdir -p "$log_dir"
+
+log() {
+  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$log_file"
+}
+
+if [ -f "$root/.vault-sync-off" ]; then
+  exit 0
+fi
+
+if ! git remote get-url origin >/dev/null 2>&1; then
+  exit 0
+fi
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+[ "$branch" = "main" ] || exit 0
+
+git fetch origin 2>/dev/null || exit 0
+
+if git pull --rebase origin main >>"$log_file" 2>&1; then
+  log "wake-pull: ok"
+  rm -f "$root/.vault-sync-conflict"
+else
+  log "wake-pull: CONFLICT"
+  touch "$root/.vault-sync-conflict"
+  exit 1
+fi

@@ -1,0 +1,4 @@
+{
+  "snapshot": "POPULATED_FROM_SETTINGS",
+  "install": "pip install -r Бизнес/99_Системное/_код/dkacademy-bot/requirements.txt 2>/dev/null || true"
+}

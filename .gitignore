@@ -36,6 +36,10 @@ id_ed25519
 # Embedded git clone (infra vendor, not part of vault)
 Бизнес/99_Системное/Инфра/TrustTunnel/
 
+# Vault sync logs (local only)
+Бизнес/99_Системное/Скрипты_vault/git/logs/*
+!Бизнес/99_Системное/Скрипты_vault/git/logs/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]
