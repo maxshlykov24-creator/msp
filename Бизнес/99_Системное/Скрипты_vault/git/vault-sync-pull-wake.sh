@@ -41,6 +41,18 @@ branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
 
 git fetch origin 2>/dev/null || exit 0
 
+# Если рабочее дерево "грязное" — не трогаем, авто-синк (commit→pull→push) разрулит сам.
+# Иначе wake поднимал бы ложный конфликт на каждой правке.
+if [ -n "$(git status --porcelain)" ]; then
+  log "wake-pull: skip (dirty tree, auto-sync handles it)"
+  exit 0
+fi
+
+# Нечего подтягивать — выходим тихо.
+if [ -z "$(git rev-list HEAD..origin/main 2>/dev/null)" ]; then
+  exit 0
+fi
+
 if git pull --rebase origin main >>"$log_file" 2>&1; then
   log "wake-pull: ok"
   rm -f "$conflict_file"
