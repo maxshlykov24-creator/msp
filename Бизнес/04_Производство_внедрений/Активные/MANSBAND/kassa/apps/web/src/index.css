@@ -12,10 +12,14 @@ html,
 body,
 #root {
   height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   @apply bg-ink-950 text-mute-soft font-sans antialiased;
+  position: relative;
+  width: 100%;
   background-image: radial-gradient(
       1200px 600px at 80% -10%,
       rgba(255, 255, 255, 0.05),

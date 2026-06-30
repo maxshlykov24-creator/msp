@@ -72,7 +72,7 @@ export function Layout({
   const pendingQueue = queue.filter((q) => q.status === "pending").length;
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex w-full overflow-x-hidden">
       {/* Sidebar */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-ink-800 bg-ink-900/60 backdrop-blur sticky top-0 h-screen">
         <div className="px-5 py-6 border-b border-ink-800">
@@ -133,10 +133,36 @@ export function Layout({
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-30 border-b border-ink-800 bg-ink-950/70 backdrop-blur">
-          <div className="px-4 md:px-8 py-3.5 flex items-center gap-3">
-            <img src={logoFull} alt="MANSBAND" className="md:hidden h-7 w-auto select-none" />
+      <div className="flex-1 flex flex-col min-w-0 w-full overflow-x-hidden">
+        <header className="sticky top-0 z-30 border-b border-ink-800 bg-ink-950/95 backdrop-blur pt-[env(safe-area-inset-top)]">
+          {/* Мобильная шапка: лого по центру, магазин + пользователь — отдельной строкой */}
+          <div className="md:hidden px-4 pb-3">
+            <div className="flex justify-center py-2.5">
+              <img src={logoFull} alt="MANSBAND" className="h-7 w-auto max-w-[min(100%,200px)] select-none" />
+            </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <Selector
+                compact
+                icon={<StoreIcon size={14} />}
+                value={activeStore}
+                options={STORES.filter((s) => s !== "Онлайн-магазин")}
+                onChange={(v) => setActiveStore(v as typeof activeStore)}
+              />
+              <UserMenu
+                compact
+                active={activeConsultant}
+                consultants={CONSULTANTS.filter(
+                  (c) => c.role === "consultant" || c.role === "callmanager"
+                ).map((c) => c.name)}
+                onPick={setActiveConsultant}
+                onNavigate={setRoute}
+                pendingQueue={pendingQueue}
+                activeRoute={route}
+              />
+            </div>
+          </div>
+          {/* Десктопная шапка */}
+          <div className="hidden md:flex px-8 py-3.5 items-center gap-3">
             <div className="flex-1" />
             <Selector
               icon={<StoreIcon size={15} />}
@@ -156,7 +182,7 @@ export function Layout({
             />
           </div>
         </header>
-        <main className="flex-1 px-4 md:px-8 py-6">{children}</main>
+        <main className="flex-1 px-4 md:px-8 py-6 pb-24 md:pb-6 overflow-x-hidden max-w-full">{children}</main>
         {/* Mobile bottom nav — 4 крупные кнопки для удобного тапа */}
         <nav className="md:hidden sticky bottom-0 z-20 border-t border-ink-800 bg-ink-900/95 backdrop-blur grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
           {MOBILE_NAV.map((n) => (
@@ -266,17 +292,25 @@ function Selector({
   value,
   options,
   onChange,
+  compact = false,
 }: {
   icon: ReactNode;
   value: string;
   options: string[];
   onChange: (v: string) => void;
+  compact?: boolean;
 }) {
   return (
-    <div className="relative inline-flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-900 pl-3 pr-2 py-2 hover:border-gold/40 transition">
-      <span className="text-mute">{icon}</span>
+    <div
+      className={`relative flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 hover:border-gold/40 transition min-w-0 ${
+        compact ? "flex-1 pl-2.5 pr-7 py-2" : "inline-flex gap-2 pl-3 pr-2 py-2"
+      }`}
+    >
+      <span className="text-mute shrink-0">{icon}</span>
       <select
-        className="bg-transparent text-[13px] text-white font-medium focus:outline-none appearance-none pr-4 cursor-pointer"
+        className={`bg-transparent text-white font-medium focus:outline-none appearance-none cursor-pointer min-w-0 ${
+          compact ? "flex-1 text-[12px] truncate pr-1" : "text-[13px] pr-4"
+        }`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -286,7 +320,10 @@ function Selector({
           </option>
         ))}
       </select>
-      <ChevronDown size={14} className="text-mute absolute right-2 pointer-events-none" />
+      <ChevronDown
+        size={compact ? 13 : 14}
+        className="text-mute absolute right-2 pointer-events-none shrink-0"
+      />
     </div>
   );
 }
@@ -298,6 +335,7 @@ function UserMenu({
   onNavigate,
   pendingQueue,
   activeRoute,
+  compact = false,
 }: {
   active: string;
   consultants: string[];
@@ -305,6 +343,7 @@ function UserMenu({
   onNavigate: (r: Route) => void;
   pendingQueue: number;
   activeRoute: Route;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
@@ -318,22 +357,38 @@ function UserMenu({
     "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[14px] text-mute-soft hover:bg-ink-800 hover:text-white transition text-left";
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-900 pl-2 pr-2.5 py-2 hover:border-gold/40 transition"
+        className={`inline-flex items-center rounded-lg border border-ink-700 bg-ink-900 hover:border-gold/40 transition ${
+          compact ? "gap-1.5 pl-2 pr-2 py-2" : "gap-2 pl-2 pr-2.5 py-2"
+        }`}
+        aria-label={compact ? `Пользователь: ${active}` : undefined}
       >
-        <span className="w-6 h-6 rounded-full bg-gold/20 text-gold-soft grid place-items-center text-[11px] font-bold">
+        <span
+          className={`rounded-full bg-gold/20 text-gold-soft grid place-items-center font-bold shrink-0 ${
+            compact ? "w-7 h-7 text-[12px]" : "w-6 h-6 text-[11px]"
+          }`}
+        >
           {active[0]}
         </span>
-        <span className="text-[13px] text-white font-medium max-w-[120px] truncate">{active}</span>
-        <ChevronDown size={14} className="text-mute" />
+        {!compact && (
+          <>
+            <span className="text-[13px] text-white font-medium max-w-[120px] truncate">{active}</span>
+            <ChevronDown size={14} className="text-mute shrink-0" />
+          </>
+        )}
+        {compact && <ChevronDown size={13} className="text-mute shrink-0" />}
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={close} />
-          <div className="absolute right-0 top-full mt-2 z-50 w-64 card p-1.5">
+          <div
+            className={`absolute right-0 top-full mt-2 z-50 card p-1.5 ${
+              compact ? "w-[min(calc(100vw-2rem),16rem)]" : "w-64"
+            }`}
+          >
             {!showUsers ? (
               <>
                 <div className="flex items-center gap-2.5 px-3 py-2.5">
