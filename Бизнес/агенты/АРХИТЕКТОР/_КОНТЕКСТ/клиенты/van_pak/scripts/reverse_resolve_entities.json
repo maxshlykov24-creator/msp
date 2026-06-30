@@ -1,0 +1,37 @@
+{
+  "dry": false,
+  "agents_resolved": [
+    {
+      "new": "531de75f-6344-11f1-0a80-17b80037f481",
+      "old": "5ef951b7-65a6-11f1-0a80-1ccd0013d878",
+      "name": "Маковеев Никита Сергеевич",
+      "inn": "",
+      "how": "name-only (1 совп.)"
+    }
+  ],
+  "agents_unresolved": [
+    {
+      "new": "3c4ef4a2-6349-11f1-0a80-17b80038b7e7",
+      "name": "ООО \"ТРАПЕЗА\"",
+      "inn": "7842022946"
+    },
+    {
+      "new": "a36f3b33-63df-11f1-0a80-1ba3000945f3",
+      "name": "ООО \"СПУТНИК\"",
+      "inn": "7722418791"
+    }
+  ],
+  "channels_resolved": [
+    {
+      "new": "f841acd4-57fb-11f1-0a80-04f50028ae71",
+      "old": "36ab2b1f-e2c3-11ef-0a80-06b800055057",
+      "name": "Действующий клиент"
+    },
+    {
+      "new": "ee0f179d-57fb-11f1-0a80-1074002872d4",
+      "old": "c9915c15-381e-11ee-0a80-032000082f4d",
+      "name": "WANG PACK SHOP"
+    }
+  ],
+  "channels_unresolved": []
+}

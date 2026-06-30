@@ -1,0 +1,12 @@
+{
+  "verified_at": "2026-06-05",
+  "methods": {
+    "bystore_all_stores": [],
+    "stock_all": []
+  },
+  "orphan_mapped_with_stock": [],
+  "count_bystore": 0,
+  "count_stock_all": 0,
+  "count_orphan_mapped": 0,
+  "summary_unique_positions": 0
+}

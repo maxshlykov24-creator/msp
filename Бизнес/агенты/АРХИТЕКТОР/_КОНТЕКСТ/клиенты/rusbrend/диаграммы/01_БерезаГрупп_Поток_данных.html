@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Поток данных — БЕРЕЗА ГРУПП</title>
+<style>
+:root {
+  --green:       #3d6b4f;
+  --green-light: #f0f6f1;
+  --green-mid:   #c4d9ca;
+  --amber:       #7a5c1e;
+  --amber-light: #fdf5e6;
+  --amber-mid:   #e0c988;
+  --blue:        #2a5880;
+  --blue-light:  #edf4fa;
+  --blue-mid:    #a8cce0;
+  --violet:      #5a4080;
+  --violet-light:#f4f0fa;
+  --violet-mid:  #c8b8e0;
+  --red:         #8b3030;
+  --red-light:   #fdf0f0;
+  --red-mid:     #e0b0b0;
+  --text:        #1c1c1e;
+  --text-2:      #6b6b70;
+  --border:      #e8e6e2;
+  --bg:          #f5f4f0;
+  --surface:     #ffffff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--text);
+  padding: 48px 40px 72px;
+  min-height: 100vh;
+}
+.page { max-width: 1060px; margin: 0 auto; }
+
+/* ── Header ── */
+.header { margin-bottom: 40px; }
+.header-eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: #aaa; margin-bottom: 8px;
+}
+.header h1 {
+  font-size: 30px; font-weight: 700; letter-spacing: -.03em;
+  color: var(--text); line-height: 1.1; margin-bottom: 6px;
+}
+.header-desc { font-size: 14px; color: var(--text-2); }
+
+/* ── Zone ── */
+.zone {
+  border-radius: 14px;
+  border: 1px solid transparent;
+  padding: 18px 20px 20px;
+}
+.zone-title {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; margin-bottom: 14px;
+}
+
+/* ── Card ── */
+.card {
+  background: var(--surface);
+  border-radius: 9px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07), 0 0 0 1px rgba(0,0,0,.05);
+}
+.card-name { font-size: 13px; font-weight: 600; line-height: 1.35; }
+.card-desc { font-size: 11.5px; color: var(--text-2); margin-top: 3px; line-height: 1.45; }
+
+/* ── Users row ── */
+.users-zone {
+  background: var(--violet-light);
+  border-color: var(--violet-mid);
+  display: flex; align-items: flex-start; gap: 16px;
+  margin-bottom: 24px;
+}
+.users-zone .zone-title { color: var(--violet); white-space: nowrap; padding-top: 2px; }
+.users-cards { display: flex; gap: 12px; flex: 1; }
+.users-cards .card {
+  flex: 1;
+  border-top: 3px solid var(--violet-mid);
+}
+
+/* ── Systems grid ── */
+.systems {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.stack { display: flex; flex-direction: column; gap: 8px; }
+
+.sheets-zone { background: var(--green-light); border-color: var(--green-mid); }
+.sheets-zone .zone-title { color: var(--green); }
+.sheets-zone .card { border-left: 3px solid var(--green-mid); }
+
+.gas-zone { background: var(--amber-light); border-color: var(--amber-mid); }
+.gas-zone .zone-title { color: var(--amber); }
+.gas-zone .card { border-left: 3px solid var(--amber-mid); }
+
+.ms-zone { background: var(--blue-light); border-color: var(--blue-mid); }
+.ms-zone .zone-title { color: var(--blue); }
+.ms-zone .card { border-left: 3px solid var(--blue-mid); }
+
+.card-err { background: var(--red-light); border-left-color: var(--red-mid) !important; }
+.card-err .card-name { color: var(--red); }
+
+/* ── Flow summary ── */
+.flow-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 20px;
+}
+.flow-step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.flow-step-num {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; margin-bottom: 6px;
+}
+.flow-step p { font-size: 12px; color: var(--text-2); line-height: 1.6; }
+
+/* ── Arrow chips ── */
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; color: var(--text-2);
+  background: rgba(0,0,0,.04); border-radius: 20px;
+  padding: 2px 8px; margin: 2px 2px 0 0;
+}
+.chip::before { content: '→'; opacity: .5; }
+
+/* ── Footer ── */
+footer {
+  margin-top: 44px;
+  font-size: 11px; color: #c0bdb8; letter-spacing: .04em;
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="header-eyebrow">БЕРЕЗА ГРУПП · Интеграционная карта · Вариант 1</div>
+    <h1>Поток данных</h1>
+    <div class="header-desc">Google Sheets &harr; Apps Script &harr; МойСклад</div>
+  </div>
+
+  <!-- Роли -->
+  <div class="zone users-zone">
+    <div class="zone-title">Пользователи</div>
+    <div class="users-cards">
+      <div class="card">
+        <div class="card-name">Руководитель</div>
+        <div class="card-desc">Создаёт заказ поставщику<br>Просматривает остатки</div>
+        <div style="margin-top:8px">
+          <span class="chip">Заказ поставщику</span>
+          <span class="chip">Остатки</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-name">Управляющий</div>
+        <div class="card-desc">Ставит флажок отгрузки<br>Статусы · приёмка · ШК</div>
+        <div style="margin-top:8px">
+          <span class="chip">Флажок</span>
+          <span class="chip">Приёмка</span>
+          <span class="chip">Статусы</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-name">Сборщики</div>
+        <div class="card-desc">Видят задачи по сборке<br>Отмечают выполнение</div>
+        <div style="margin-top:8px">
+          <span class="chip">Статус «В сборке»</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Системы -->
+  <div class="systems">
+
+    <div class="zone sheets-zone">
+      <div class="zone-title">Google Sheets — Склад Белград</div>
+      <div class="stack">
+        <div class="card">
+          <div class="card-name">Лист «План работы»</div>
+          <div class="card-desc">Артикул · Итого коробов (H) · Магазин</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Флажок «Отгрузить» (I)</div>
+          <div class="card-desc">Управляющий ставит вручную → запускает скрипт</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Столбец «ID в МойСклад» (J)</div>
+          <div class="card-desc">Заполняется скриптом автоматически после создания отгрузки</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="zone gas-zone">
+      <div class="zone-title">Google Apps Script</div>
+      <div class="stack">
+        <div class="card">
+          <div class="card-name">onChange-триггер</div>
+          <div class="card-desc">Срабатывает на изменение флажка (I)</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Читает строку</div>
+          <div class="card-desc">Артикул · кол-во коробов · магазин</div>
+        </div>
+        <div class="card">
+          <div class="card-name">POST /entity/demand</div>
+          <div class="card-desc">Создаёт N отгрузок в МойСклад (N = кол-во коробов)</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Записывает ID обратно</div>
+          <div class="card-desc">ID созданных отгрузок → столбец J</div>
+        </div>
+        <div class="card card-err">
+          <div class="card-name">Ошибка API</div>
+          <div class="card-desc">→ лист Errors + Telegram-алерт</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="zone ms-zone">
+      <div class="zone-title">МойСклад</div>
+      <div class="stack">
+        <div class="card">
+          <div class="card-name">Номенклатура</div>
+          <div class="card-desc">~96 SKU · атрибут Магазин · Кол-во_в_коробе</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Отгрузка</div>
+          <div class="card-desc">1 отгрузка = 1 короб = 1 SKU · статусы воронки</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Приёмка</div>
+          <div class="card-desc">По заказу поставщику · управляющий закрывает</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Заказ поставщику</div>
+          <div class="card-desc">Плановая закупка · основание для приёмки</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Остатки · склад Белград</div>
+          <div class="card-desc">Обновляются при отгрузке и приёмке</div>
+        </div>
+        <div class="card">
+          <div class="card-name">Склад Фулфилмент</div>
+          <div class="card-desc">Клиентский товар — отдельный склад</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Сводка потока -->
+  <div class="flow-summary">
+    <div class="flow-step">
+      <div class="flow-step-num" style="color:var(--green)">① Инициация отгрузки</div>
+      <p>Управляющий ставит флажок в Sheets → onChange → скрипт читает строку → создаёт N отгрузок в МойСклад → ID записывается обратно в столбец J</p>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num" style="color:var(--blue)">② Закупка и приёмка</div>
+      <p>Руководитель создаёт заказ поставщику в МойСклад → поставщик привозит товар → управляющий принимает и закрывает приёмку → остатки обновляются автоматически</p>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num" style="color:var(--violet)">③ Сборка и отправка</div>
+      <p>Сборщики видят отгрузки по статусу «В сборке» → управляющий проверяет и меняет статусы → печатает ШК из МойСклад → подтверждает отправку</p>
+    </div>
+  </div>
+
+  <footer>MS Product &nbsp;·&nbsp; БЕРЕЗА ГРУПП &nbsp;·&nbsp; 2026</footer>
+</div>
+</body>
+</html>

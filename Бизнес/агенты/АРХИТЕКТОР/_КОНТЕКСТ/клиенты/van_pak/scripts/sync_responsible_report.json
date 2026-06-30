@@ -1,0 +1,17 @@
+{
+  "filter": "moment>=2026-06-01 00:00:00;moment<=2026-06-30 23:59:59",
+  "dry": false,
+  "types": {
+    "paymentin": {
+      "total_old": 52,
+      "ok": 44,
+      "fixed": 1,
+      "no_new": 7,
+      "no_emp_map": 0,
+      "errors": 0,
+      "mismatches": [
+        "paymentin\t00005\t01685\towner:Александрова Г.→Шкарпета В. В."
+      ]
+    }
+  }
+}

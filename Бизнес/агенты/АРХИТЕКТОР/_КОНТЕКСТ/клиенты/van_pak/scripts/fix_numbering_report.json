@@ -1,0 +1,11 @@
+{
+  "account": "old",
+  "from_date": "2026-05-01 00:00:00",
+  "dry": false,
+  "factureout": {
+    "changed": 81,
+    "errors": 0,
+    "already_ok": 242,
+    "no_demand": 0
+  }
+}

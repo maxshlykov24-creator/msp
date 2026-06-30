@@ -1,0 +1,14 @@
+# Зависимости для Telegram бота-помощника
+# Курс: CURSOR — Сотрудники под твой бизнес за вечер
+# Модуль 6: API Интеграции
+#
+# Установка: pip install -r requirements.txt
+
+# Telegram Bot API
+python-telegram-bot==21.7
+
+# Асинхронные HTTP запросы (для AssemblyAI)
+aiohttp>=3.9.0
+
+# Работа с переменными окружения (опционально)
+python-dotenv>=1.0.0

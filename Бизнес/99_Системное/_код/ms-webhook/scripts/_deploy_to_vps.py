@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Деплой ms-factureout-webhook на VPS.
+
+ВРЕМЕННО на личном сервере 85.192.38.49.
+TODO: после создания VPS Ван Пак — поменять HOST и задеплоить туда.
+
+Аутентификация (в порядке приоритета):
+- DEPLOY_SSH_PASSWORD — пароль root;
+- DEPLOY_SSH_KEY — путь к приватному ключу;
+- иначе ssh-agent / ~/.ssh/*.
+"""
+from __future__ import annotations
+
+import os
+import pathlib
+import sys
+import tarfile
+import tempfile
+
+import paramiko
+
+HOST = "194.87.226.234"
+USER = "root"
+REMOTE = "/opt/ms-webhook"
+# SSH-ключ: ~/.ssh/vanpak_webhook_ed25519 (или dkacademy_marta_ed25519 как резервный)
+# TODO: перенести на выделенный VPS Ван Пак — поменять HOST и пересоздать .env
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _connect(client: paramiko.SSHClient) -> None:
+    password = os.environ.get("DEPLOY_SSH_PASSWORD", "").strip()
+    key_path_raw = os.environ.get("DEPLOY_SSH_KEY", "").strip()
+
+    if password:
+        client.connect(
+            HOST,
+            username=USER,
+            password=password,
+            timeout=45,
+            allow_agent=False,
+            look_for_keys=False,
+        )
+        return
+
+    if key_path_raw:
+        path = pathlib.Path(key_path_raw).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"missing key file: {path}")
+        passphrase = os.environ.get("DEPLOY_SSH_KEY_PASSPHRASE") or None
+        key_pass = passphrase.encode("utf-8") if passphrase else None
+        pkey = None
+        for Loader in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey):
+            try:
+                pkey = Loader.from_private_key_file(str(path), password=key_pass)
+                break
+            except Exception:
+                continue
+        if pkey is None:
+            raise ValueError("could not load private key")
+        client.connect(HOST, username=USER, pkey=pkey, timeout=45)
+        return
+
+    client.connect(HOST, username=USER, timeout=45, allow_agent=True, look_for_keys=True)
+
+
+def tar_filter(ti: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    p = ti.name
+    if "/__pycache__/" in p or p.endswith(".pyc") or p.startswith(".venv/"):
+        return None
+    if ".DS_Store" in p:
+        return None
+    return ti
+
+
+def main() -> int:
+    items = ["app", "Dockerfile", "docker-compose.yml", "requirements.txt", ".env"]
+    missing = [n for n in items if not (ROOT / n).exists()]
+    if missing:
+        print(f"missing files: {missing}", file=sys.stderr)
+        print("Hint: copy .env.example → .env and fill in MS_TOKEN", file=sys.stderr)
+        return 1
+
+    with tempfile.NamedTemporaryFile(suffix=".tgz", delete=False) as tmp:
+        tgz = pathlib.Path(tmp.name)
+
+    try:
+        with tarfile.open(tgz, "w:gz") as tar:
+            for name in items:
+                tar.add(ROOT / name, arcname=name, filter=tar_filter)
+
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            _connect(client)
+        except paramiko.ssh_exception.AuthenticationException:
+            print(
+                "SSH auth failed. Set DEPLOY_SSH_PASSWORD or DEPLOY_SSH_KEY.",
+                file=sys.stderr,
+            )
+            return 3
+        except Exception as e:
+            print(f"SSH connect failed: {e}", file=sys.stderr)
+            return 4
+
+        sftp = client.open_sftp()
+        remote_tgz = "/tmp/ms-factureout-webhook.tgz"
+        sftp.put(str(tgz), remote_tgz)
+        sftp.close()
+
+        script = f"""set -e
+mkdir -p {REMOTE}
+rm -rf {REMOTE}/app 2>/dev/null || true
+tar xzf {remote_tgz} -C {REMOTE}
+chmod 600 {REMOTE}/.env
+cd {REMOTE}
+docker compose down
+docker compose build --no-cache
+docker compose up -d
+docker compose ps
+docker compose logs --tail=20
+"""
+        _, stdout, stderr = client.exec_command(script, get_pty=True)
+        print(stdout.read().decode())
+        es = stderr.read().decode().strip()
+        if es:
+            print(es, file=sys.stderr)
+        code = stdout.channel.recv_exit_status()
+        client.close()
+        return code
+    finally:
+        tgz.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

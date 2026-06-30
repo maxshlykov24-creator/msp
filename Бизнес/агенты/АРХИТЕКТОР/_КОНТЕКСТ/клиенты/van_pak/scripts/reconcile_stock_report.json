@@ -1,0 +1,94 @@
+{
+  "dry": false,
+  "moment": "2026-06-05 11:47:20",
+  "created": {
+    "enter_docs": 4,
+    "loss_docs": 5,
+    "enter_lines": 163,
+    "loss_lines": 191
+  },
+  "errors": 0,
+  "actions": [
+    {
+      "type": "enter",
+      "store": "74a6ef6e-53b2-11f1-0a80-04f40001aaf6",
+      "store_name": "Склад ТИПОГРАФИЯ",
+      "positions": 10,
+      "action": "post_ok",
+      "id": "4e707f3c-60bb-11f1-0a80-08090014ce1b",
+      "name": "00015-00003"
+    },
+    {
+      "type": "enter",
+      "store": "74d7ddbb-53b2-11f1-0a80-10710001b991",
+      "store_name": "Магазин при складе-Москва",
+      "positions": 6,
+      "action": "post_ok",
+      "id": "4eb55b2e-60bb-11f1-0a80-0fc70014cd41",
+      "name": "00015-00004"
+    },
+    {
+      "type": "enter",
+      "store": "7555c3c0-53b2-11f1-0a80-0efe0001d257",
+      "store_name": "Склад Москва (Основной)",
+      "positions": 146,
+      "action": "post_ok",
+      "id": "4f9524eb-60bb-11f1-0a80-06700014ce1d",
+      "name": "00015-00005"
+    },
+    {
+      "type": "enter",
+      "store": "75aa2a09-53b2-11f1-0a80-1adb0001bb65",
+      "store_name": "Склад Новосибирск",
+      "positions": 1,
+      "action": "post_ok",
+      "id": "5081495c-60bb-11f1-0a80-08090014ce84",
+      "name": "00015-00006"
+    },
+    {
+      "type": "loss",
+      "store": "74a6ef6e-53b2-11f1-0a80-04f40001aaf6",
+      "store_name": "Склад ТИПОГРАФИЯ",
+      "positions": 14,
+      "action": "post_ok",
+      "id": "50b07fba-60bb-11f1-0a80-0d630015380b",
+      "name": "00015-00003"
+    },
+    {
+      "type": "loss",
+      "store": "74d7ddbb-53b2-11f1-0a80-10710001b991",
+      "store_name": "Магазин при складе-Москва",
+      "positions": 66,
+      "action": "post_ok",
+      "id": "51371061-60bb-11f1-0a80-02640014d820",
+      "name": "00015-00004"
+    },
+    {
+      "type": "loss",
+      "store": "7509d4ec-53b2-11f1-0a80-1d4b0001c371",
+      "store_name": "Производство Москва (собственное)",
+      "positions": 3,
+      "action": "post_ok",
+      "id": "51cb02ed-60bb-11f1-0a80-01a50015778b",
+      "name": "00015-00005"
+    },
+    {
+      "type": "loss",
+      "store": "7531094f-53b2-11f1-0a80-03950001bc90",
+      "store_name": "Производство МО  (стороннее)",
+      "positions": 1,
+      "action": "post_ok",
+      "id": "51eff403-60bb-11f1-0a80-0d6300153861",
+      "name": "00015-00006"
+    },
+    {
+      "type": "loss",
+      "store": "7555c3c0-53b2-11f1-0a80-0efe0001d257",
+      "store_name": "Склад Москва (Основной)",
+      "positions": 107,
+      "action": "post_ok",
+      "id": "5275c745-60bb-11f1-0a80-06700014d0e5",
+      "name": "00015-00007"
+    }
+  ]
+}

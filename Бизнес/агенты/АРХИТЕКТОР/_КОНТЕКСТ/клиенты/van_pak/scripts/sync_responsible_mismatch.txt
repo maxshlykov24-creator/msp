@@ -1,0 +1,2 @@
+# type	old_name	new_name	reason
+paymentin	00005	01685	owner:Александрова Г.→Шкарпета В. В.

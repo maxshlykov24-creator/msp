@@ -1,0 +1,88 @@
+{
+  "month": "2026-02",
+  "dry": false,
+  "old_orders": 246,
+  "new_orders": 246,
+  "paired": 246,
+  "fixed_orders": 15,
+  "missing_in_new": [],
+  "new_only": [],
+  "fields_fixed": {
+    "store": 4,
+    "shipmentAddress": 10,
+    "deliveryPlannedMoment": 1,
+    "project": 1,
+    "attributes": 1
+  },
+  "payments_linked": 0,
+  "payments_created": 2,
+  "payments_skipped": 0,
+  "payments_extra_in_new": [],
+  "payed_sum_gaps": [
+    {
+      "order": "ТУ-00829",
+      "new_order_id": "dbea6db3-53b7-11f1-0a80-0d64000286f0",
+      "old_payed": 30000.0,
+      "new_payed": 60000.0,
+      "delta": 30000.0
+    },
+    {
+      "order": "ТА-01403",
+      "new_order_id": "0cc0553b-5415-11f1-0a80-0fe7000f0ca8",
+      "old_payed": 1598000.0,
+      "new_payed": 3196000.0,
+      "delta": 1598000.0
+    },
+    {
+      "order": "ВА-01973",
+      "new_order_id": "29609acd-53b8-11f1-0a80-1071000282f4",
+      "old_payed": 2675000.0,
+      "new_payed": 0,
+      "delta": -2675000.0
+    },
+    {
+      "order": "ВА-01996",
+      "new_order_id": "57964beb-53b8-11f1-0a80-11f100026c19",
+      "old_payed": 49809400,
+      "new_payed": 14249400,
+      "delta": -35560000
+    },
+    {
+      "order": "ТА-01418",
+      "new_order_id": "71e55de8-53b8-11f1-0a80-0b2a00026995",
+      "old_payed": 4385000.0,
+      "new_payed": 8770000.0,
+      "delta": 4385000.0
+    },
+    {
+      "order": "ВА-01998",
+      "new_order_id": "919322b9-53b8-11f1-0a80-064e0002817f",
+      "old_payed": 20560000,
+      "new_payed": 14392000,
+      "delta": -6168000
+    },
+    {
+      "order": "ЗБ-00328",
+      "new_order_id": "2e05a1b2-53bb-11f1-0a80-064e0002cacc",
+      "old_payed": 15500000,
+      "new_payed": 24800000,
+      "delta": 9300000
+    },
+    {
+      "order": "ТУ-00845",
+      "new_order_id": "ab903986-53bb-11f1-0a80-08cc00030a62",
+      "old_payed": 700000.0,
+      "new_payed": 1400000.0,
+      "delta": 700000.0
+    },
+    {
+      "order": "ФР-00082",
+      "new_order_id": "e3db4c4e-53bb-11f1-0a80-10710002fb4e",
+      "old_payed": 7100000.0,
+      "new_payed": 0,
+      "delta": -7100000.0
+    }
+  ],
+  "demands_linked": 0,
+  "errors": 0
+}

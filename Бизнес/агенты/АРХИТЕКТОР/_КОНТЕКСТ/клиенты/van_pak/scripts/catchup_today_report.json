@@ -1,0 +1,101 @@
+{
+  "date": "2026-06-08",
+  "dry": false,
+  "types": {
+    "supply": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "customerorder": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "demand": {
+      "created": 5,
+      "patched": 1,
+      "skipped": 0,
+      "errors": 0,
+      "items": [
+        {
+          "name": "ВА-18554",
+          "action": "created"
+        },
+        {
+          "name": "ВА-18556",
+          "action": "created"
+        },
+        {
+          "name": "ВА-18557",
+          "action": "created"
+        },
+        {
+          "name": "ВА-18555",
+          "action": "created"
+        },
+        {
+          "name": "00278",
+          "action": "created"
+        },
+        {
+          "name": "ВА-18553",
+          "action": "patched"
+        }
+      ]
+    },
+    "invoiceout": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "paymentin": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "paymentout": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "cashin": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "cashout": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "move": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "loss": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    }
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "dry": false,
+  "filter": "moment>=2026-01-01 00:00:00",
+  "new_payments": 1736,
+  "old_payments": 1741,
+  "no_old_pair": 25,
+  "already_ok": 1676,
+  "fixed": 35,
+  "links_added": 1,
+  "links_removed": 35,
+  "removed_detail": [
+    {
+      "payment": "00184",
+      "sum": 8145000.0,
+      "order_uid": "4d49a605-5415-11f1-0a80-0b2a000ee661"
+    },
+    {
+      "payment": "00230",
+      "sum": 7320000.0,
+      "order_uid": "641e5459-53c8-11f1-0a80-1d4b00047b87"
+    },
+    {
+      "payment": "00047",
+      "sum": 4785000.0,
+      "order_uid": "dbea6db3-53b7-11f1-0a80-0d64000286f0"
+    },
+    {
+      "payment": "00056",
+      "sum": 1500000.0,
+      "order_uid": "ab903986-53bb-11f1-0a80-08cc00030a62"
+    },
+    {
+      "payment": "00119",
+      "sum": 34350000,
+      "order_uid": "23636270-5415-11f1-0a80-0fe7000f0f2b"
+    },
+    {
+      "payment": "00048",
+      "sum": 4735000.0,
+      "order_uid": "0cc0553b-5415-11f1-0a80-0fe7000f0ca8"
+    },
+    {
+      "payment": "00312",
+      "sum": 24300000,
+      "order_uid": "05b22365-5415-11f1-0a80-1462000e7b25"
+    },
+    {
+      "payment": "00231",
+      "sum": 7320000.0,
+      "order_uid": "849fdea9-5415-11f1-0a80-0fe7000f208f"
+    },
+    {
+      "payment": "00090",
+      "sum": 3125000.0,
+      "order_uid": "8910d887-5415-11f1-0a80-0efe000f1a62"
+    },
+    {
+      "payment": "00126",
+      "sum": 12600000,
+      "order_uid": "c7354f66-5415-11f1-0a80-1adb000f1dce"
+    },
+    {
+      "payment": "00049",
+      "sum": 2800000.0,
+      "order_uid": "53216428-53b8-11f1-0a80-04f40002befd"
+    },
+    {
+      "payment": "00223",
+      "sum": 8250000.0,
+      "order_uid": "f80e9e15-5414-11f1-0a80-0b2a000edae0"
+    },
+    {
+      "payment": "00169",
+      "sum": 4680000.0,
+      "order_uid": "55c9e9ed-541c-11f1-0a80-0d64001035d4"
+    },
+    {
+      "payment": "00139",
+      "sum": 13400000,
+      "order_uid": "36040bf8-541c-11f1-0a80-146200104e71"
+    },
+    {
+      "payment": "00170",
+      "sum": 15600000,
+      "order_uid": "46ed027e-5415-11f1-0a80-064e000f3d31"
+    },
+    {
+      "payment": "00232",
+      "sum": 8145000.0,
+      "order_uid": "68605e19-53bb-11f1-0a80-0fe700030865"
+    },
+    {
+      "payment": "00255",
+      "sum": 5680000.0,
+      "order_uid": "c5224544-5415-11f1-0a80-08cc000ed499"
+    },
+    {
+      "payment": "00313",
+      "sum": 24300000,
+      "order_uid": "2e05a1b2-53bb-11f1-0a80-064e0002cacc"
+    },
+    {
+      "payment": "00233",
+      "sum": 8145000.0,
+      "order_uid": "5fd3669c-541c-11f1-0a80-0efe0010a9e3"
+    },
+    {
+      "payment": "00073",
+      "sum": 17850000,
+      "order_uid": "20229201-53bc-11f1-0a80-10710002fff1"
+    },
+    {
+      "payment": "00286",
+      "sum": 5000000.0,
+      "order_uid": "375d1ef5-5415-11f1-0a80-0395000eefe6"
+    },
+    {
+      "payment": "00057",
+      "sum": 5000000.0,
+      "order_uid": "71e55de8-53b8-11f1-0a80-0b2a00026995"
+    },
+    {
+      "payment": "00129",
+      "sum": 7810000.0,
+      "order_uid": "c532467b-53c8-11f1-0a80-1462000431aa"
+    },
+    {
+      "payment": "00077",
+      "sum": 5822700.0,
+      "order_uid": "2e812e02-53b8-11f1-0a80-146200025b2f"
+    },
+    {
+      "payment": "00068",
+      "sum": 7053200.0,
+      "order_uid": "23ca56ba-541c-11f1-0a80-0fe700108932"
+    },
+    {
+      "payment": "00216",
+      "sum": 23222400,
+      "order_uid": "69faabaa-5415-11f1-0a80-04f4000f2bf7"
+    },
+    {
+      "payment": "00289",
+      "sum": 5164000.0,
+      "order_uid": "472cb9e8-541c-11f1-0a80-0b2a0010c157"
+    },
+    {
+      "payment": "00177",
+      "sum": 9840000.0,
+      "order_uid": "14d1b817-53bc-11f1-0a80-0fe700031941"
+    },
+    {
+      "payment": "00217",
+      "sum": 20253800,
+      "order_uid": "e0dd4b36-53b7-11f1-0a80-08cc00029666"
+    },
+    {
+      "payment": "00176",
+      "sum": 4410000.0,
+      "order_uid": "6b3b3683-5415-11f1-0a80-04f4000f2c3d"
+    },
+    {
+      "payment": "00246",
+      "sum": 24000000,
+      "order_uid": "02c84525-53bb-11f1-0a80-1adb0002d02c"
+    },
+    {
+      "payment": "00200",
+      "sum": 39000000,
+      "order_uid": "d4acde6a-53c8-11f1-0a80-064e000445ad"
+    },
+    {
+      "payment": "00247",
+      "sum": 28944000,
+      "order_uid": "f7598513-53ba-11f1-0a80-03950002e7fd"
+    },
+    {
+      "payment": "00984",
+      "sum": 9900000.0,
+      "order_uid": "2e9e64ff-541c-11f1-0a80-146200104c71"
+    },
+    {
+      "payment": "00037",
+      "sum": 10378200,
+      "order_uid": "9aad8869-53c8-11f1-0a80-064e00043fe0"
+    }
+  ],
+  "added_detail": [
+    {
+      "payment": "00984",
+      "sum": 9900000.0,
+      "order_uid": "534f363d-5415-11f1-0a80-0395000ef29f"
+    }
+  ],
+  "errors": 0
+}

@@ -1,0 +1,60 @@
+{
+  "verified_at": "2026-06-08 12:18:11",
+  "status": "OK",
+  "old_api_ok": true,
+  "totals": {
+    "old_bystore_mapped_stores": 2282017.0,
+    "new_bystore_mapped_stores": 2282017.0,
+    "bystore_gap_new_minus_old": 0.0,
+    "old_stock_all": 569218.0,
+    "new_stock_all": 2215693.0,
+    "stock_all_gap_new_minus_old": 1646475.0
+  },
+  "reconcile_preview": {
+    "reconcilable_lines": 0,
+    "enter_lines": 0,
+    "loss_lines": 0,
+    "sum_enter_qty": 0,
+    "sum_loss_qty": 0,
+    "old_only_blocked_lines": 0,
+    "old_only_blocked_qty": 0
+  },
+  "buckets_summary": {
+    "mapped_both": {
+      "count": 0,
+      "sum_abs_delta": 0,
+      "sum_delta": 0
+    },
+    "old_only": {
+      "count": 0,
+      "sum_qty_old": 0,
+      "reconcilable": false
+    },
+    "new_only": {
+      "count": 0,
+      "sum_qty_new": 0,
+      "sum_abs_delta": 0
+    },
+    "bad_mapping": {
+      "count": 0
+    },
+    "unmapped_store": {
+      "count": 0,
+      "note": "Все склады из отчёта берутся только из uuid_map.store"
+    }
+  },
+  "stores_mapped": 7,
+  "top50_abs_delta": [],
+  "buckets": {
+    "mapped_both": [],
+    "old_only": [],
+    "new_only": [],
+    "bad_mapping": [],
+    "unmapped_store": []
+  },
+  "stop_conditions": {
+    "bad_mapping_with_stock": false,
+    "old_only_with_stock": false,
+    "unmapped_store": false
+  }
+}

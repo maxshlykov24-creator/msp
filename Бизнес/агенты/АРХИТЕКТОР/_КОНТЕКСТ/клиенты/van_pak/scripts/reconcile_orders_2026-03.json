@@ -1,0 +1,157 @@
+{
+  "month": "2026-03",
+  "dry": false,
+  "old_orders": 515,
+  "new_orders": 515,
+  "paired": 515,
+  "fixed_orders": 43,
+  "missing_in_new": [],
+  "new_only": [],
+  "fields_fixed": {
+    "shipmentAddress": 22,
+    "deliveryPlannedMoment": 8,
+    "store": 7,
+    "owner": 6
+  },
+  "payments_linked": 0,
+  "payments_created": 6,
+  "payments_skipped": 0,
+  "payments_extra_in_new": [],
+  "payed_sum_gaps": [
+    {
+      "order": "ТА-01486",
+      "new_order_id": "1afc66cb-53c8-11f1-0a80-1d4b00047554",
+      "old_payed": 12850000,
+      "new_payed": 0,
+      "delta": -12850000
+    },
+    {
+      "order": "ЗБ-00339",
+      "new_order_id": "f80e9e15-5414-11f1-0a80-0b2a000edae0",
+      "old_payed": 11440000,
+      "new_payed": 15730000,
+      "delta": 4290000
+    },
+    {
+      "order": "ТА-01436",
+      "new_order_id": "2e812e02-53b8-11f1-0a80-146200025b2f",
+      "old_payed": 2250000.0,
+      "new_payed": 4500000.0,
+      "delta": 2250000.0
+    },
+    {
+      "order": "ФР-00094",
+      "new_order_id": "48a56a51-53b8-11f1-0a80-146200025ca7",
+      "old_payed": 4000000.0,
+      "new_payed": 3700000.0,
+      "delta": -300000.0
+    },
+    {
+      "order": "ЗБ-00340",
+      "new_order_id": "23636270-5415-11f1-0a80-0fe7000f0f2b",
+      "old_payed": 1785000.0,
+      "new_payed": 3570000.0,
+      "delta": 1785000.0
+    },
+    {
+      "order": "ТУ-00856",
+      "new_order_id": "23ca56ba-541c-11f1-0a80-0fe700108932",
+      "old_payed": 1700000.0,
+      "new_payed": 3400000.0,
+      "delta": 1700000.0
+    },
+    {
+      "order": "ТА-01468",
+      "new_order_id": "2e180254-541c-11f1-0a80-1adb001074a5",
+      "old_payed": 1710000.0,
+      "new_payed": 0,
+      "delta": -1710000.0
+    },
+    {
+      "order": "ЗБ-00390",
+      "new_order_id": "46ed027e-5415-11f1-0a80-064e000f3d31",
+      "old_payed": 1490000.0,
+      "new_payed": 2980000.0,
+      "delta": 1490000.0
+    },
+    {
+      "order": "ЗБ-00372",
+      "new_order_id": "221f5de4-53bb-11f1-0a80-0d640002d71d",
+      "old_payed": 3635000.0,
+      "new_payed": 0,
+      "delta": -3635000.0
+    },
+    {
+      "order": "ЗБ-00357",
+      "new_order_id": "36040bf8-541c-11f1-0a80-146200104e71",
+      "old_payed": 1190000.0,
+      "new_payed": 2380000.0,
+      "delta": 1190000.0
+    },
+    {
+      "order": "ВА-02097",
+      "new_order_id": "6d74d9ad-5415-11f1-0a80-0b2a000eed80",
+      "old_payed": 9250000.0,
+      "new_payed": 0,
+      "delta": -9250000.0
+    },
+    {
+      "order": "ЗБ-00393",
+      "new_order_id": "7fdd9c0a-5415-11f1-0a80-0efe000f1922",
+      "old_payed": 3100000.0,
+      "new_payed": 0,
+      "delta": -3100000.0
+    },
+    {
+      "order": "ВА-02227",
+      "new_order_id": "bded04a7-53bb-11f1-0a80-0fe700030daf",
+      "old_payed": 0,
+      "new_payed": 2102400.0,
+      "delta": 2102400.0
+    },
+    {
+      "order": "ЗБ-00371",
+      "new_order_id": "55c9e9ed-541c-11f1-0a80-0d64001035d4",
+      "old_payed": 1700000.0,
+      "new_payed": 3400000.0,
+      "delta": 1700000.0
+    },
+    {
+      "order": "ВА-02094",
+      "new_order_id": "c0103dd1-5415-11f1-0a80-08cc000ed425",
+      "old_payed": 2890000.0,
+      "new_payed": 0,
+      "delta": -2890000.0
+    },
+    {
+      "order": "ТА-01434",
+      "new_order_id": "20229201-53bc-11f1-0a80-10710002fff1",
+      "old_payed": 2750000.0,
+      "new_payed": 5500000.0,
+      "delta": 2750000.0
+    },
+    {
+      "order": "ЗБ-00344",
+      "new_order_id": "c532467b-53c8-11f1-0a80-1462000431aa",
+      "old_payed": 1700000.0,
+      "new_payed": 3400000.0,
+      "delta": 1700000.0
+    },
+    {
+      "order": "ЗБ-00347",
+      "new_order_id": "c7354f66-5415-11f1-0a80-1adb000f1dce",
+      "old_payed": 1490000.0,
+      "new_payed": 2980000.0,
+      "delta": 1490000.0
+    },
+    {
+      "order": "ВА-02083",
+      "new_order_id": "3d8b4100-53bc-11f1-0a80-0fe70003249c",
+      "old_payed": 3500000.0,
+      "new_payed": 1750000.0,
+      "delta": -1750000.0
+    }
+  ],
+  "demands_linked": 0,
+  "errors": 0
+}

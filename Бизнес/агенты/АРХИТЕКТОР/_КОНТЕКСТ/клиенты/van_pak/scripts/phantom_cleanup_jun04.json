@@ -1,0 +1,59 @@
+[
+  {
+    "name": "ТУ-00890",
+    "action": "delete_invoiceout",
+    "id": "aac25f16-602d-11f1-0a80-16c6008b736c",
+    "status": 200
+  },
+  {
+    "name": "ТУ-00890",
+    "action": "delete_customerorder",
+    "id": "aa312b2a-602d-11f1-0a80-02610024f9b7",
+    "status": 200,
+    "text": "ok"
+  },
+  {
+    "name": "ВА-02640",
+    "action": "clear_paymentin_6c0edb4c",
+    "ok": true
+  },
+  {
+    "name": "ВА-02640",
+    "action": "delete_invoiceout",
+    "id": "37abc31c-6019-11f1-0a80-16c6007b6fdd",
+    "status": 200
+  },
+  {
+    "name": "ВА-02640",
+    "action": "delete_customerorder",
+    "id": "36e76489-6019-11f1-0a80-1ef00011a77e",
+    "status": 200,
+    "text": "ok"
+  },
+  {
+    "name": "ВА-02639",
+    "action": "delete_invoiceout",
+    "id": "6658039c-5fe7-11f1-0a80-16c60050a9f7",
+    "status": 200
+  },
+  {
+    "name": "ВА-02639",
+    "action": "delete_customerorder",
+    "id": "65ed2921-5fe7-11f1-0a80-1ef00006a77a",
+    "status": 200,
+    "text": "ok"
+  },
+  {
+    "name": "ЗБ-04414",
+    "action": "delete_invoiceout",
+    "id": "8e9d1be8-5fe8-11f1-0a80-16c600518975",
+    "status": 200
+  },
+  {
+    "name": "ЗБ-04414",
+    "action": "delete_customerorder",
+    "id": "8e560634-5fe8-11f1-0a80-15f4000761d5",
+    "status": 200,
+    "text": "ok"
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "mode": "new_catalog_only",
+  "catalog_size": 1114,
+  "mismatch_count": 0,
+  "enter_lines": 0,
+  "loss_lines": 0,
+  "stores": 7,
+  "mismatches": [],
+  "status": "OK",
+  "old_api_ok": true
+}

@@ -1,0 +1,10 @@
+{
+  "dry": false,
+  "filter": "moment>=2026-01-01 00:00:00;moment<=2026-04-30 23:59:59",
+  "fixed": 3,
+  "cleared": 0,
+  "already": 958,
+  "no_map": 0,
+  "skipped": 255,
+  "errors": 0
+}

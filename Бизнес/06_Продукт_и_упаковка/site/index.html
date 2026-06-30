@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ru" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- EDIT: page-title -->
+  <title>Максим — системная автоматизация бизнеса</title>
+  <!-- /EDIT -->
+
+  <!-- EDIT: meta-description -->
+  <meta name="description" content="Автоматизация бизнеса под ключ: amoCRM, МойСклад, Telegram-боты, API-интеграции. Фиксированный чек, системный результат." />
+  <!-- /EDIT -->
+
+  <!-- EDIT: og-meta -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Максим — системная автоматизация бизнеса" />
+  <meta property="og:description" content="amoCRM, МойСклад, боты. Внедрения под ключ. Фиксированный чек." />
+  <meta property="og:image" content="https://YOURDOMAIN.ru/assets/og.jpg" />
+  <meta property="og:url" content="https://YOURDOMAIN.ru" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <!-- /EDIT -->
+
+  <!-- Favicon (emoji SVG — заменить на assets/favicon.svg при желании) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+
+  <!-- Google Fonts: Golos Text -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;900&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'media',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Golos Text', 'sans-serif'] },
+          colors: {
+            accent: { DEFAULT: '#6366f1', hover: '#4f46e5' }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    html { font-family: 'Golos Text', sans-serif; }
+    .gradient-text {
+      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .card-hover:hover { transform: translateY(-4px); box-shadow: 0 24px 48px rgba(99,102,241,0.12); }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: #6366f1; color: #fff; font-weight: 600;
+      padding: 14px 28px; border-radius: 12px;
+      transition: background 0.2s ease, transform 0.15s ease;
+      text-decoration: none;
+    }
+    .btn-primary:hover { background: #4f46e5; transform: translateY(-2px); }
+    .btn-outline {
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 2px solid #6366f1; color: #6366f1; font-weight: 600;
+      padding: 12px 26px; border-radius: 12px;
+      transition: background 0.2s ease, color 0.2s ease;
+      text-decoration: none;
+    }
+    .btn-outline:hover { background: #6366f1; color: #fff; }
+    @media (prefers-color-scheme: dark) {
+      .btn-outline { color: #818cf8; border-color: #818cf8; }
+      .btn-outline:hover { background: #6366f1; color: #fff; border-color: #6366f1; }
+    }
+  </style>
+
+  <!-- EDIT: json-ld -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": "Максим",
+    "jobTitle": "Архитектор систем, автоматизация бизнеса",
+    "description": "Системная автоматизация бизнеса: amoCRM, МойСклад, Telegram-боты, API-интеграции",
+    "url": "https://YOURDOMAIN.ru",
+    "sameAs": ["https://t.me/USERNAME"]
+  }
+  </script>
+  <!-- /EDIT -->
+</head>
+
+<body class="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 antialiased">
+
+<!-- ===================== NAV ===================== -->
+<nav class="sticky top-0 z-50 bg-white/80 dark:bg-zinc-950/80 backdrop-blur border-b border-zinc-100 dark:border-zinc-800">
+  <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+    <!-- EDIT: nav-name -->
+    <span class="font-bold text-lg tracking-tight">Максим</span>
+    <!-- /EDIT -->
+    <div class="hidden sm:flex items-center gap-6 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+      <a href="#services" class="hover:text-zinc-900 dark:hover:text-white transition-colors">Услуги</a>
+      <a href="#cases" class="hover:text-zinc-900 dark:hover:text-white transition-colors">Кейсы</a>
+      <a href="#about" class="hover:text-zinc-900 dark:hover:text-white transition-colors">О себе</a>
+      <a href="#contact" class="hover:text-zinc-900 dark:hover:text-white transition-colors">Контакты</a>
+    </div>
+    <!-- EDIT: nav-cta -->
+    <a href="https://t.me/USERNAME?text=Привет!%20Хочу%20обсудить%20задачу%20по%20автоматизации." class="btn-primary text-sm py-2.5 px-5">
+      Написать
+    </a>
+    <!-- /EDIT -->
+  </div>
+</nav>
+
+<!-- ===================== HERO ===================== -->
+<!-- SECTION: hero -->
+<section id="hero" class="max-w-5xl mx-auto px-6 pt-20 pb-24 md:pt-28 md:pb-32">
+  <div class="max-w-3xl">
+
+    <!-- EDIT: hero-badge -->
+    <span class="inline-block text-sm font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 rounded-full px-4 py-1.5 mb-6">
+      Архитектор систем · MS Product
+    </span>
+    <!-- /EDIT -->
+
+    <!-- EDIT: hero-title -->
+    <h1 class="text-4xl md:text-6xl font-black leading-tight tracking-tight mb-6">
+      Строю системы,<br />
+      <span class="gradient-text">которые работают без вас</span>
+    </h1>
+    <!-- /EDIT -->
+
+    <!-- EDIT: hero-subtitle -->
+    <p class="text-xl md:text-2xl text-zinc-500 dark:text-zinc-400 leading-relaxed mb-10 max-w-2xl">
+      Автоматизация бизнеса под ключ: amoCRM, МойСклад, Telegram-боты и API-интеграции.
+      Фиксированный чек. Результат — система, а не «настроено».
+    </p>
+    <!-- /EDIT -->
+
+    <div class="flex flex-wrap gap-4">
+      <!-- EDIT: hero-cta-primary -->
+      <a href="https://t.me/USERNAME?text=Привет!%20Хочу%20обсудить%20задачу%20по%20автоматизации." class="btn-primary">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.83.941z"/></svg>
+        Написать в Telegram
+      </a>
+      <!-- /EDIT -->
+      <!-- EDIT: hero-cta-secondary -->
+      <a href="#cases" class="btn-outline">
+        Смотреть кейсы
+      </a>
+      <!-- /EDIT -->
+    </div>
+  </div>
+</section>
+<!-- /SECTION: hero -->
+
+<!-- ===================== CLIENTS ===================== -->
+<!-- SECTION: clients -->
+<section id="clients" class="border-y border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <!-- EDIT: clients-label -->
+    <p class="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-6 text-center">
+      Работали вместе
+    </p>
+    <!-- /EDIT -->
+    <!-- EDIT: clients-list -->
+    <div class="flex flex-wrap justify-center items-center gap-8 md:gap-14">
+      <span class="text-lg font-bold text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors cursor-default">MANSBAND</span>
+      <span class="text-lg font-bold text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors cursor-default">MartaChe</span>
+      <span class="text-lg font-bold text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors cursor-default">DK Academy</span>
+      <span class="text-lg font-bold text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors cursor-default">Detensor</span>
+    </div>
+    <!-- /EDIT -->
+  </div>
+</section>
+<!-- /SECTION: clients -->
+
+<!-- ===================== SERVICES ===================== -->
+<!-- SECTION: services -->
+<section id="services" class="max-w-5xl mx-auto px-6 py-20 md:py-28">
+
+  <!-- EDIT: services-heading -->
+  <div class="mb-12">
+    <h2 class="text-3xl md:text-4xl font-black tracking-tight mb-3">Что делаю</h2>
+    <p class="text-zinc-500 dark:text-zinc-400 text-lg">Три направления, которые снижают операционку и увеличивают выручку.</p>
+  </div>
+  <!-- /EDIT -->
+
+  <div class="grid md:grid-cols-3 gap-6">
+
+    <!-- EDIT: service-card-1 -->
+    <div class="card-hover rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-7">
+      <div class="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center mb-5 text-2xl">🔗</div>
+      <h3 class="font-bold text-xl mb-3">amoCRM</h3>
+      <p class="text-zinc-500 dark:text-zinc-400 leading-relaxed text-sm">
+        Настройка воронок, автоматизация сделок, интеграция с мессенджерами, webhook-связки с любыми сервисами. Без доработок «руками» навсегда.
+      </p>
+    </div>
+    <!-- /EDIT -->
+
+    <!-- EDIT: service-card-2 -->
+    <div class="card-hover rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-7">
+      <div class="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950 flex items-center justify-center mb-5 text-2xl">📦</div>
+      <h3 class="font-bold text-xl mb-3">МойСклад</h3>
+      <p class="text-zinc-500 dark:text-zinc-400 leading-relaxed text-sm">
+        Миграция данных, настройка номенклатуры, синхронизация заказов и остатков с CRM, маркетплейсами и кассой. Система учёта, которая не ломается.
+      </p>
+    </div>
+    <!-- /EDIT -->
+
+    <!-- EDIT: service-card-3 -->
+    <div class="card-hover rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-7">
+      <div class="w-12 h-12 rounded-xl bg-sky-50 dark:bg-sky-950 flex items-center justify-center mb-5 text-2xl">🤖</div>
+      <h3 class="font-bold text-xl mb-3">Боты и интеграции</h3>
+      <p class="text-zinc-500 dark:text-zinc-400 leading-relaxed text-sm">
+        Telegram-боты, Webhook-сервисы, API-связки между системами. Автоматизация там, где раньше сидел человек и копировал данные руками.
+      </p>
+    </div>
+    <!-- /EDIT -->
+
+  </div>
+</section>
+<!-- /SECTION: services -->
+
+<!-- ===================== CASES ===================== -->
+<!-- SECTION: cases -->
+<section id="cases" class="bg-zinc-50 dark:bg-zinc-900">
+  <div class="max-w-5xl mx-auto px-6 py-20 md:py-28">
+
+    <!-- EDIT: cases-heading -->
+    <div class="mb-12">
+      <h2 class="text-3xl md:text-4xl font-black tracking-tight mb-3">Кейсы</h2>
+      <p class="text-zinc-500 dark:text-zinc-400 text-lg">Реальные проекты с конкретными результатами.</p>
+    </div>
+    <!-- /EDIT -->
+
+    <div class="grid md:grid-cols-2 gap-6">
+
+      <!-- EDIT: case-1 -->
+      <div class="card-hover rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 p-8">
+        <div class="flex items-start justify-between mb-5">
+          <span class="text-xs font-bold uppercase tracking-widest text-indigo-500">MANSBAND</span>
+          <span class="text-xs text-zinc-400">amoCRM + Talk.me</span>
+        </div>
+        <h3 class="font-bold text-xl mb-3 leading-snug">Мессенджеры подключены к CRM — менеджеры отвечают из одного окна</h3>
+        <p class="text-zinc-500 dark:text-zinc-400 text-sm leading-relaxed mb-6">
+          Интегрировал Talk.me с amoCRM через кастомный webhook-мост. Все обращения из мессенджеров попадают в сделки автоматически. Ни одно сообщение не теряется.
+        </p>
+        <div class="flex gap-6">
+          <div>
+            <!-- EDIT: case-1-stat-1 -->
+            <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400">0</div>
+            <div class="text-xs text-zinc-400 mt-0.5">потерянных обращений</div>
+            <!-- /EDIT -->
+          </div>
+          <div>
+            <!-- EDIT: case-1-stat-2 -->
+            <div class="text-2xl font-black text-indigo-600 dark:text-indigo-400">−3 ч/день</div>
+            <div class="text-xs text-zinc-400 mt-0.5">ручная работа менеджера</div>
+            <!-- /EDIT -->
+          </div>
+        </div>
+      </div>
+      <!-- /EDIT -->
+
+      <!-- EDIT: case-2 -->
+      <div class="card-hover rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 p-8">
+        <div class="flex items-start justify-between mb-5">
+          <span class="text-xs font-bold uppercase tracking-widest text-purple-500">MartaChe</span>
+          <span class="text-xs text-zinc-400">RetailCRM → МойСклад</span>
+        </div>
+        <h3 class="font-bold text-xl mb-3 leading-snug">Программа лояльности запущена на новой базе без потери данных</h3>
+        <p class="text-zinc-500 dark:text-zinc-400 text-sm leading-relaxed mb-6">
+          Мигрировал базу клиентов с историей покупок из RetailCRM в МойСклад. Написал движок кэшбека, настроил автоначисление бонусов и рассылки по сегментам.
+        </p>
+        <div class="flex gap-6">
+          <div>
+            <!-- EDIT: case-2-stat-1 -->
+            <div class="text-2xl font-black text-purple-600 dark:text-purple-400">100%</div>
+            <div class="text-xs text-zinc-400 mt-0.5">данных перенесено без потерь</div>
+            <!-- /EDIT -->
+          </div>
+          <div>
+            <!-- EDIT: case-2-stat-2 -->
+            <div class="text-2xl font-black text-purple-600 dark:text-purple-400">Авто</div>
+            <div class="text-xs text-zinc-400 mt-0.5">начисление бонусов</div>
+            <!-- /EDIT -->
+          </div>
+        </div>
+      </div>
+      <!-- /EDIT -->
+
+      <!-- EDIT: case-3 -->
+      <div class="card-hover rounded-2xl bg-white dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 p-8 md:col-span-2">
+        <div class="flex items-start justify-between mb-5">
+          <span class="text-xs font-bold uppercase tracking-widest text-sky-500">DK Academy</span>
+          <span class="text-xs text-zinc-400">Telegram Bot + LiveInform + amoCRM</span>
+        </div>
+        <h3 class="font-bold text-xl mb-3 leading-snug">Бот заменил операциониста: приём заявок, уведомления, синхронизация с CRM</h3>
+        <p class="text-zinc-500 dark:text-zinc-400 text-sm leading-relaxed mb-6 max-w-2xl">
+          Разработал Telegram-бота, который принимает заявки учеников, отправляет уведомления через LiveInform, создаёт сделки в amoCRM и ведёт клиента по воронке без участия менеджера.
+        </p>
+        <div class="flex flex-wrap gap-8">
+          <div>
+            <!-- EDIT: case-3-stat-1 -->
+            <div class="text-2xl font-black text-sky-600 dark:text-sky-400">24/7</div>
+            <div class="text-xs text-zinc-400 mt-0.5">приём заявок без менеджера</div>
+            <!-- /EDIT -->
+          </div>
+          <div>
+            <!-- EDIT: case-3-stat-2 -->
+            <div class="text-2xl font-black text-sky-600 dark:text-sky-400">−5 ч/день</div>
+            <div class="text-xs text-zinc-400 mt-0.5">операционной работы</div>
+            <!-- /EDIT -->
+          </div>
+          <div>
+            <!-- EDIT: case-3-stat-3 -->
+            <div class="text-2xl font-black text-sky-600 dark:text-sky-400">3 системы</div>
+            <div class="text-xs text-zinc-400 mt-0.5">связаны в единую цепочку</div>
+            <!-- /EDIT -->
+          </div>
+        </div>
+      </div>
+      <!-- /EDIT -->
+
+    </div>
+  </div>
+</section>
+<!-- /SECTION: cases -->
+
+<!-- ===================== ABOUT ===================== -->
+<!-- SECTION: about -->
+<section id="about" class="max-w-5xl mx-auto px-6 py-20 md:py-28">
+  <div class="grid md:grid-cols-2 gap-12 items-center">
+
+    <div>
+      <!-- EDIT: about-heading -->
+      <h2 class="text-3xl md:text-4xl font-black tracking-tight mb-6">О себе</h2>
+      <!-- /EDIT -->
+
+      <!-- EDIT: about-text -->
+      <div class="space-y-4 text-zinc-600 dark:text-zinc-300 leading-relaxed">
+        <p>
+          Занимаюсь системной автоматизацией B2B и B2C бизнеса. Моя суперсила —
+          видеть, где процесс ломается, и строить систему, которая работает без ежедневного участия владельца.
+        </p>
+        <p>
+          Работаю со стеком: amoCRM, МойСклад, Telegram-боты, n8n, REST API.
+          Не «настраиваю кнопки» — проектирую архитектуру, пишу код и сдаю результат.
+        </p>
+        <p>
+          Принцип: фиксированный чек за понятный результат, а не почасовая оплата за процесс.
+        </p>
+      </div>
+      <!-- /EDIT -->
+
+      <!-- EDIT: about-principles -->
+      <div class="mt-8 flex flex-col gap-3">
+        <div class="flex items-center gap-3 text-sm font-medium">
+          <span class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs">✓</span>
+          Твёрдое слово — сказал, сделал
+        </div>
+        <div class="flex items-center gap-3 text-sm font-medium">
+          <span class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs">✓</span>
+          Системность вместо операционки
+        </div>
+        <div class="flex items-center gap-3 text-sm font-medium">
+          <span class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs">✓</span>
+          Код, который заменяет человека
+        </div>
+      </div>
+      <!-- /EDIT -->
+    </div>
+
+    <!-- EDIT: about-stats -->
+    <div class="grid grid-cols-2 gap-5">
+      <div class="rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 p-6">
+        <div class="text-4xl font-black text-indigo-600 dark:text-indigo-400 mb-1">10+</div>
+        <div class="text-sm text-zinc-500 dark:text-zinc-400 font-medium">внедрений под ключ</div>
+      </div>
+      <div class="rounded-2xl bg-purple-50 dark:bg-purple-950/50 p-6">
+        <div class="text-4xl font-black text-purple-600 dark:text-purple-400 mb-1">3+</div>
+        <div class="text-sm text-zinc-500 dark:text-zinc-400 font-medium">года в автоматизации</div>
+      </div>
+      <div class="rounded-2xl bg-sky-50 dark:bg-sky-950/50 p-6">
+        <div class="text-4xl font-black text-sky-600 dark:text-sky-400 mb-1">Фикс</div>
+        <div class="text-sm text-zinc-500 dark:text-zinc-400 font-medium">чек за результат</div>
+      </div>
+      <div class="rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 p-6">
+        <div class="text-4xl font-black text-emerald-600 dark:text-emerald-400 mb-1">B2B</div>
+        <div class="text-sm text-zinc-500 dark:text-zinc-400 font-medium">фокус на бизнесах</div>
+      </div>
+    </div>
+    <!-- /EDIT -->
+
+  </div>
+</section>
+<!-- /SECTION: about -->
+
+<!-- ===================== CONTACT ===================== -->
+<!-- SECTION: contact -->
+<section id="contact" class="bg-zinc-50 dark:bg-zinc-900">
+  <div class="max-w-5xl mx-auto px-6 py-20 md:py-28 text-center">
+
+    <!-- EDIT: contact-heading -->
+    <h2 class="text-3xl md:text-5xl font-black tracking-tight mb-4">
+      Есть задача?<br class="hidden md:block" />
+      <span class="gradient-text">Давайте разберём её.</span>
+    </h2>
+    <!-- /EDIT -->
+
+    <!-- EDIT: contact-subtitle -->
+    <p class="text-zinc-500 dark:text-zinc-400 text-lg md:text-xl mb-10 max-w-xl mx-auto">
+      Расскажите, что хотите автоматизировать — разберём задачу и предложим решение без воды.
+    </p>
+    <!-- /EDIT -->
+
+    <!-- EDIT: contact-cta -->
+    <a href="https://t.me/USERNAME?text=Привет!%20Хочу%20обсудить%20задачу%20по%20автоматизации." class="btn-primary text-lg py-4 px-8 mx-auto inline-flex">
+      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.869 4.326-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.83.941z"/></svg>
+      Написать в Telegram
+    </a>
+    <!-- /EDIT -->
+
+    <!-- EDIT: contact-links -->
+    <div class="mt-8 flex flex-wrap justify-center gap-6 text-sm text-zinc-400 dark:text-zinc-500">
+      <a href="mailto:YOUR@EMAIL.RU" class="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+        YOUR@EMAIL.RU
+      </a>
+      <span>·</span>
+      <a href="https://t.me/USERNAME" class="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+        @USERNAME
+      </a>
+    </div>
+    <!-- /EDIT -->
+
+  </div>
+</section>
+<!-- /SECTION: contact -->
+
+<!-- ===================== FOOTER ===================== -->
+<!-- SECTION: footer -->
+<footer class="border-t border-zinc-100 dark:border-zinc-800">
+  <div class="max-w-5xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-zinc-400 dark:text-zinc-500">
+    <!-- EDIT: footer-copy -->
+    <span>© 2026 Максим — системная автоматизация</span>
+    <!-- /EDIT -->
+    <!-- EDIT: footer-links -->
+    <div class="flex gap-6">
+      <a href="https://t.me/USERNAME" class="hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">Telegram</a>
+    </div>
+    <!-- /EDIT -->
+  </div>
+</footer>
+<!-- /SECTION: footer -->
+
+</body>
+</html>

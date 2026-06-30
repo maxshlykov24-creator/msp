@@ -1,0 +1,20 @@
+{
+  "pairs_audited": 0,
+  "agent_mismatch_count": null,
+  "attr_mismatch_count": null,
+  "errors": 0,
+  "old_api_ok": false,
+  "spot_check": {
+    "name": "ТУ-00887",
+    "new_agent": "ee13a24c-5e91-11f1-0a80-18360024467f",
+    "new_attrs": {
+      "Способ поставки товара": null,
+      "Оплачен менеджеру": null,
+      "Документ отгрузки подписан": null,
+      "Уведомление отправлено": null
+    },
+    "old_api_ok": false,
+    "note": "OLD недоступен — ожидаемый agent/attrs не сверены"
+  },
+  "status": "BLOCKED_OLD_API"
+}

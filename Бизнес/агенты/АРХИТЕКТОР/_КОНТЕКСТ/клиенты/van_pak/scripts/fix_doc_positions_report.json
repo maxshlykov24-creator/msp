@@ -1,0 +1,90 @@
+{
+  "fixes": {
+    "supply": {
+      "fixed": 0,
+      "already_ok": 157,
+      "no_map": 0,
+      "skipped_no_positions": 0,
+      "unmapped_pos": 0,
+      "errors": 0
+    },
+    "move": {
+      "fixed": 0,
+      "already_ok": 19,
+      "no_map": 0,
+      "skipped_no_positions": 0,
+      "unmapped_pos": 0,
+      "errors": 0
+    },
+    "invoiceout": {
+      "fixed": 6,
+      "already_ok": 1724,
+      "no_map": 7,
+      "skipped_no_positions": 0,
+      "unmapped_pos": 2,
+      "errors": 0
+    },
+    "customerorder": {
+      "fixed": 6,
+      "already_ok": 1727,
+      "no_map": 7,
+      "skipped_no_positions": 1,
+      "unmapped_pos": 2,
+      "errors": 0
+    },
+    "demand": {
+      "fixed": 8,
+      "already_ok": 1546,
+      "no_map": 0,
+      "skipped_no_positions": 0,
+      "unmapped_pos": 0,
+      "errors": 0
+    },
+    "loss": {
+      "fixed": 0,
+      "already_ok": 22,
+      "no_map": 0,
+      "skipped_no_positions": 0,
+      "unmapped_pos": 0,
+      "errors": 0
+    }
+  },
+  "verify": {
+    "supply": {
+      "type": "supply",
+      "old": 157,
+      "new": 157,
+      "mismatch": 0
+    },
+    "move": {
+      "type": "move",
+      "old": 19,
+      "new": 19,
+      "mismatch": 0
+    },
+    "invoiceout": {
+      "type": "invoiceout",
+      "old": 1737,
+      "new": 1731,
+      "mismatch": 2
+    },
+    "customerorder": {
+      "type": "customerorder",
+      "old": 1741,
+      "new": 1735,
+      "mismatch": 2
+    },
+    "demand": {
+      "type": "demand",
+      "old": 1554,
+      "new": 1553,
+      "mismatch": 3
+    },
+    "loss": {
+      "type": "loss",
+      "old": 22,
+      "new": 22,
+      "mismatch": 0
+    }
+  }
+}

@@ -1,0 +1,11 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - dg_data:/data
+    # no ports — long polling, no inbound connections needed
+
+volumes:
+  dg_data:

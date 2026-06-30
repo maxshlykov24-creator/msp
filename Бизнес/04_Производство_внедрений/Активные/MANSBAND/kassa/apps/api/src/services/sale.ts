@@ -1,0 +1,232 @@
+import { db } from "../db/index.js";
+import { ledger } from "../db/schema.js";
+import * as amo from "../clients/amo.js";
+import * as ms from "../clients/ms.js";
+import * as deals from "./deals.js";
+import { attachPhotos } from "./files.js";
+import { resolveAssortment } from "./catalog.js";
+import {
+  getMsRef,
+  getWarehouseForStore,
+  getStatusId,
+  getWritebackFieldIds,
+} from "./bootstrap.js";
+import { withIdempotency } from "../lib/idempotency.js";
+import { toKopecks } from "../lib/money.js";
+import { AMO_PIPELINE_SALES } from "@kassa/shared";
+import type { Deal, Payment } from "@kassa/shared";
+import { broadcast } from "../ws/hub.js";
+
+export interface PhotoInput {
+  filename: string;
+  contentBase64: string;
+  target: "shipment" | "order" | "return";
+}
+
+// Классификация способа оплаты по methodId (наличные / безнал / счёт / сертификат).
+function paymentKind(methodId: string): "cash" | "card" | "account" | "certificate" {
+  const m = methodId.toLowerCase();
+  if (m.startsWith("cash") || m.includes("налич")) return "cash";
+  if (m.startsWith("rs") || m.includes("account") || m.includes("счет") || m.includes("счёт")) return "account";
+  if (m.startsWith("cert")) return "certificate";
+  return "card";
+}
+
+function dealItemsToPositions(deal: Deal) {
+  return deal.items
+    .filter((i) => i.qty > 0)
+    .map((i) => ({ productId: i.productId, qty: i.qty, price: toKopecks(i.price) }));
+}
+
+// Полное проведение продажи: amo (контакт+сделка+Успех) + МойСклад (заказ+отгрузка+платежи)
+// + фотофиксации + writeback в amo. Идемпотентно по deal.id.
+export async function processSale(
+  deal: Deal,
+  opts: { fulfill: boolean; photos?: PhotoInput[]; who: string }
+): Promise<Deal> {
+  const { result } = await withIdempotency(`sale:${deal.id}`, "sale", async () => {
+    const enriched = { ...deal };
+
+    // 1. amoCRM: контакт + сделка
+    const amoLeadId = await ensureAmoLead(enriched);
+    enriched.amoLeadId = amoLeadId ?? undefined;
+
+    // 2. МойСклад (только при полной оплате / fulfill)
+    if (opts.fulfill) {
+      await fulfillMoysklad(enriched, opts.photos ?? [], opts.who);
+    }
+
+    // 3. writeback статуса оплаты + ссылок в amo
+    if (amoLeadId) await writeback(amoLeadId, enriched);
+
+    // 4. локальное зеркало
+    await deals.persist(enriched);
+    broadcast("deal.created", { number: enriched.number });
+    return enriched;
+  });
+  return result;
+}
+
+async function ensureAmoLead(deal: Deal): Promise<number | null> {
+  try {
+    let contactId: number | undefined;
+    if (deal.clientPhone) {
+      const existing = await amo.findContactByPhone(deal.clientPhone);
+      const contact = existing ?? (await amo.createContact(deal.clientName, deal.clientPhone, deal.email));
+      contactId = contact.id;
+    } else if (deal.clientName && deal.clientName !== "—") {
+      const contact = await amo.createContact(deal.clientName);
+      contactId = contact.id;
+    }
+
+    const statusId = (await getStatusId(AMO_PIPELINE_SALES, deal.stage)) ?? undefined;
+    const lead = await amo.createLead({
+      name: `${deal.clientName} · #${deal.number}`,
+      price: deal.total,
+      pipelineId: AMO_PIPELINE_SALES,
+      statusId,
+      contactId,
+    });
+    return lead.id;
+  } catch {
+    return null; // amo недоступен — не блокируем продажу (локально сохраним, синхронизируем позже)
+  }
+}
+
+async function fulfillMoysklad(deal: Deal, photos: PhotoInput[], who: string): Promise<void> {
+  const org = await getMsRef("organization", "default");
+  if (!org) throw new Error("МойСклад: не резолвлена организация (запусти bootstrap)");
+
+  // Контрагент: розница (если нет телефона) или по имени.
+  const agentRef = await getMsRef("counterparty", "retail");
+  let agent = agentRef;
+  if (deal.clientPhone) {
+    const found = await ms.findCounterpartyByName(deal.clientName).catch(() => null);
+    agent = found ?? (await ms.createCounterparty(deal.clientName, deal.clientPhone).catch(() => agentRef));
+  }
+  if (!agent) throw new Error("МойСклад: не резолвлен контрагент");
+
+  const warehouse = await getWarehouseForStore(deal.store);
+  if (!warehouse) throw new Error(`МойСклад: не найден склад для шоурума «${deal.store}»`);
+
+  // Позиции из каталога (только то, что есть в МойСклад).
+  const positions: ms.SalePosition[] = [];
+  for (const item of dealItemsToPositions(deal)) {
+    const a = await resolveAssortment(item.productId);
+    if (!a) continue; // услуга/неизвестный товар — пропускаем в складских позициях
+    positions.push({ assortmentHref: a.href, assortmentType: a.type, quantity: item.qty, price: item.price });
+  }
+
+  // Заказ → отгрузка
+  const order = await ms.createCustomerOrder({
+    organization: org.meta,
+    agent: agent.meta,
+    store: warehouse.meta,
+    name: `Касса #${deal.number}`,
+    description: `Продажа из кассы MANSBAND, шоурум ${deal.store}`,
+    positions,
+  });
+  deal.msOrderId = order.id;
+
+  const demand = await ms.createDemand({
+    organization: org.meta,
+    agent: agent.meta,
+    store: warehouse.meta,
+    orderMeta: order.meta,
+    positions,
+    description: `Отгрузка по заказу #${deal.number}`,
+  });
+  deal.msDemandId = demand.id;
+
+  // Платежи по способам
+  await processPayments(deal, org.meta, agent.meta, order.meta, who);
+
+  // Фотофиксации → к нужному документу
+  for (const target of ["shipment", "order", "return"] as const) {
+    const group = photos.filter((p) => p.target === target);
+    if (group.length === 0) continue;
+    const entityType = target === "order" ? "customerorder" : "demand";
+    const entityId = target === "order" ? order.id : demand.id;
+    await attachPhotos(entityType, entityId, group);
+  }
+}
+
+async function processPayments(
+  deal: Deal,
+  org: ms.MsMeta,
+  agent: ms.MsMeta,
+  orderMeta: ms.MsMeta,
+  who: string
+): Promise<void> {
+  const account = await getMsRef("account", "default");
+  for (const p of deal.payments) {
+    const kind = paymentKind(p.methodId);
+    const sum = toKopecks(p.amount);
+    if (sum <= 0) continue;
+
+    let msPaymentId: string | undefined;
+    try {
+      if (kind === "cash") {
+        const doc = await ms.createCashIn({ organization: org, agent, sum, orderMeta, description: `Касса #${deal.number} (${p.methodId})` });
+        msPaymentId = doc.id;
+      } else if (kind === "certificate") {
+        // оплата сертификатом гасится в ledger/сертификатах, не как денежный платёж МС
+      } else {
+        const doc = await ms.createPaymentIn({
+          organization: org,
+          agent,
+          sum,
+          organizationAccount: account?.meta,
+          orderMeta,
+          description: `Касса #${deal.number} (${p.methodId})`,
+        });
+        msPaymentId = doc.id;
+      }
+    } catch {
+      // платёж в МС не прошёл — фиксируем в ledger, разберём при сверке
+    }
+
+    await recordLedger(deal.number, p, kind, msPaymentId, who);
+  }
+}
+
+async function recordLedger(
+  dealNumber: number,
+  payment: Payment,
+  kind: string,
+  msPaymentId: string | undefined,
+  who: string
+): Promise<void> {
+  await db
+    .insert(ledger)
+    .values({
+      dealNumber,
+      methodId: payment.methodId,
+      kind,
+      amount: toKopecks(payment.amount),
+      msPaymentId: msPaymentId ?? null,
+      idempotencyKey: `${dealNumber}:${payment.id}`,
+      createdBy: who,
+    })
+    .onConflictDoNothing();
+}
+
+async function writeback(amoLeadId: number, deal: Deal): Promise<void> {
+  try {
+    const fields = await getWritebackFieldIds();
+    const customFields: Array<{ field_id: number; values: Array<{ value: unknown }> }> = [];
+    if (fields.msOrder && deal.msOrderId) {
+      customFields.push({ field_id: fields.msOrder, values: [{ value: deal.msOrderId }] });
+    }
+    if (fields.msDemand && deal.msDemandId) {
+      customFields.push({ field_id: fields.msDemand, values: [{ value: deal.msDemandId }] });
+    }
+    if (fields.paymentStatus) {
+      const status = deal.paid >= deal.total && deal.total > 0 ? "Оплачено" : "Частично";
+      customFields.push({ field_id: fields.paymentStatus, values: [{ value: status }] });
+    }
+    if (customFields.length) await amo.updateLead(amoLeadId, { customFields });
+  } catch {
+    // writeback не критичен для проведения; повторим при следующей синхронизации
+  }
+}

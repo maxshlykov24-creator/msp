@@ -1,0 +1,29 @@
+{
+  "dry_run": false,
+  "old_only_count": 2,
+  "migrated": 2,
+  "actions": [
+    {
+      "code": "06198",
+      "old_uuid": "fcab92bc-5629-11ef-0a80-0743000a3815",
+      "delta": 6750.0,
+      "old_store": "b24e8090-3816-11ee-0a80-0e3700054c97",
+      "new_store": "7555c3c0-53b2-11f1-0a80-0efe0001d257",
+      "action": "enter_ok",
+      "new_uuid": "9171a649-60c5-11f1-0a80-191f0017f0c4",
+      "doc_id": "919a80ac-60c5-11f1-0a80-007b0017cdb2",
+      "doc_name": "00015-00007"
+    },
+    {
+      "code": "06128",
+      "old_uuid": "a388207f-f80c-11ee-0a80-011100173aed",
+      "delta": -1.0,
+      "old_store": "2bbaa136-3632-11ef-0a80-0dc60023c385",
+      "new_store": "74d7ddbb-53b2-11f1-0a80-10710001b991",
+      "action": "loss_ok",
+      "new_uuid": "8b1625ab-60c5-11f1-0a80-0fc700179c06",
+      "doc_id": "91cb25c4-60c5-11f1-0a80-16c900177237",
+      "doc_name": "00015-00009"
+    }
+  ]
+}

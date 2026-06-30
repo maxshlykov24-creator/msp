@@ -1,0 +1,50 @@
+{
+  "date": "2026-06-04",
+  "old_token": "e95af8f2…613d61",
+  "new_token": "619a40e8…cc0e",
+  "found_old": {
+    "processingorder": {
+      "name": "00140",
+      "old_id": "c39c754f-601b-11f1-0a80-191900124d90",
+      "moment": "2026-06-04 16:45:00.000",
+      "quantity": 150,
+      "state": "Выполнен",
+      "processingPlan": "4-5 кг белые 30*50"
+    },
+    "processing": {
+      "name": "00140",
+      "old_id": "ce9aa510-601b-11f1-0a80-10ed00123eb8",
+      "moment": "2026-06-04 16:46:00.000",
+      "quantity": 150,
+      "materials": 2,
+      "products": 1
+    }
+  },
+  "created_new": {
+    "processingorder": {
+      "new_id": "f686ad7b-60ac-11f1-0a80-08090011a1e5",
+      "action": "recreated_with_state"
+    },
+    "processing": {
+      "new_id": "f70eceaf-60ac-11f1-0a80-01a500122ef0",
+      "action": "created"
+    }
+  },
+  "gaps": [
+    "processingorder.positions: API 26001 — материалы заказа не совпадают с техкартой (в OLD операции клапан «коричневая вставка», в техкарте «белая вставка»). Позиции заказа пустые; фактические материалы/продукты — в техоперации."
+  ],
+  "status": "done",
+  "dedupe_check_2026-06-05": {
+    "processingorder_count_name_00140_moment_2026-06-04": 1,
+    "processing_count_name_00140_moment_2026-06-04": 1,
+    "canonical_kept": {
+      "processingorder": "f686ad7b-60ac-11f1-0a80-08090011a1e5",
+      "processing": "f70eceaf-60ac-11f1-0a80-01a500122ef0"
+    },
+    "early_run_ids": {
+      "processingorder_a3aa747d": "not_found_404",
+      "processing_c43a7ec7": "not_found_404"
+    },
+    "actions": "none — duplicates absent, deletion skipped"
+  }
+}

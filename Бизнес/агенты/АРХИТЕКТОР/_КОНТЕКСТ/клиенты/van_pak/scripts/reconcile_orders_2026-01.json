@@ -1,0 +1,163 @@
+{
+  "month": "2026-01",
+  "dry": false,
+  "old_orders": 290,
+  "new_orders": 290,
+  "paired": 290,
+  "fixed_orders": 24,
+  "missing_in_new": [],
+  "new_only": [],
+  "fields_fixed": {
+    "deliveryPlannedMoment": 7,
+    "shipmentAddress": 14,
+    "store": 1,
+    "attributes": 2
+  },
+  "payments_linked": 0,
+  "payments_created": 4,
+  "payments_skipped": 0,
+  "payments_extra_in_new": [
+    {
+      "order": "ТУ-00801",
+      "new_order_id": "9f411f3d-53b7-11f1-0a80-039500028c34",
+      "extra_payment_id": "625bb770-53c0-11f1-0a80-10710003876f",
+      "payment_name": "00013",
+      "sum": 3150000.0,
+      "mapped_old": "2391433d-efc4-11f0-0a80-1a2200c549b6"
+    },
+    {
+      "order": "ТУ-00788",
+      "new_order_id": "f2fb6bd4-5414-11f1-0a80-1d4b000eb023",
+      "extra_payment_id": "3c77dd5c-53c0-11f1-0a80-1d4b00036b6a",
+      "payment_name": "00002",
+      "sum": 2350000.0,
+      "mapped_old": "0103e718-f07e-11f0-0a80-1bbb000fbdcc"
+    },
+    {
+      "order": "ТУ-00802",
+      "new_order_id": "409fc6e7-53c8-11f1-0a80-1d4b000478ca",
+      "extra_payment_id": "57cb0aee-53c0-11f1-0a80-000800039da3",
+      "payment_name": "00016",
+      "sum": 7980000.0,
+      "mapped_old": "197bbe1f-f1eb-11f0-0a80-007800073db3"
+    },
+    {
+      "order": "ТУ-00803",
+      "new_order_id": "878e67cc-53bb-11f1-0a80-0b2a0002c522",
+      "extra_payment_id": "9872f190-53c0-11f1-0a80-1d4b00037e31",
+      "payment_name": "00081",
+      "sum": 13000000,
+      "mapped_old": "565480d9-f6d2-11f0-0a80-054200117d2b"
+    },
+    {
+      "order": "ТА-01392",
+      "new_order_id": "30efe477-53bc-11f1-0a80-08cc00031238",
+      "extra_payment_id": "3e6c0ef7-53c0-11f1-0a80-11f100032e7f",
+      "payment_name": "00034",
+      "sum": 3765000.0,
+      "mapped_old": "0175bc82-f85e-11f0-0a80-1811000f77e6"
+    }
+  ],
+  "payed_sum_gaps": [
+    {
+      "order": "ТУ-00801",
+      "new_order_id": "9f411f3d-53b7-11f1-0a80-039500028c34",
+      "old_payed": 1700000.0,
+      "new_payed": 3400000.0,
+      "delta": 1700000.0
+    },
+    {
+      "order": "ТУ-00788",
+      "new_order_id": "f2fb6bd4-5414-11f1-0a80-1d4b000eb023",
+      "old_payed": 1125000.0,
+      "new_payed": 2250000.0,
+      "delta": 1125000.0
+    },
+    {
+      "order": "ЗБ-00279",
+      "new_order_id": "186ceea6-541c-11f1-0a80-1adb00106fbe",
+      "old_payed": 1850000.0,
+      "new_payed": 0,
+      "delta": -1850000.0
+    },
+    {
+      "order": "ЗБ-00229",
+      "new_order_id": "32e03e53-53c8-11f1-0a80-107100046622",
+      "old_payed": 340000.0,
+      "new_payed": 0,
+      "delta": -340000.0
+    },
+    {
+      "order": "ТУ-00802",
+      "new_order_id": "409fc6e7-53c8-11f1-0a80-1d4b000478ca",
+      "old_payed": 350000.0,
+      "new_payed": 700000.0,
+      "delta": 350000.0
+    },
+    {
+      "order": "ВА-01961",
+      "new_order_id": "8a434f70-53b8-11f1-0a80-04f40002c64f",
+      "old_payed": 3352800.0,
+      "new_payed": 126800.0,
+      "delta": -3226000.0
+    },
+    {
+      "order": "ФР-00079",
+      "new_order_id": "dda31bc3-53ba-11f1-0a80-0efe0002ec1e",
+      "old_payed": 1200000.0,
+      "new_payed": 0,
+      "delta": -1200000.0
+    },
+    {
+      "order": "ТА-01385",
+      "new_order_id": "544bba1e-5415-11f1-0a80-1462000e8465",
+      "old_payed": 2940000.0,
+      "new_payed": 0,
+      "delta": -2940000.0
+    },
+    {
+      "order": "ТУ-00797",
+      "new_order_id": "21473b16-53bb-11f1-0a80-0efe0002f443",
+      "old_payed": 5600000.0,
+      "new_payed": 0,
+      "delta": -5600000.0
+    },
+    {
+      "order": "ВА-01925",
+      "new_order_id": "35a046ea-53bb-11f1-0a80-1adb0002d452",
+      "old_payed": 28600000,
+      "new_payed": 14300000,
+      "delta": -14300000
+    },
+    {
+      "order": "ТУ-00803",
+      "new_order_id": "878e67cc-53bb-11f1-0a80-0b2a0002c522",
+      "old_payed": 5250000.0,
+      "new_payed": 6750000.0,
+      "delta": 1500000.0
+    },
+    {
+      "order": "ВА-01837",
+      "new_order_id": "9aad8869-53c8-11f1-0a80-064e00043fe0",
+      "old_payed": 1764000.0,
+      "new_payed": 3528000.0,
+      "delta": 1764000.0
+    },
+    {
+      "order": "ВА-01927",
+      "new_order_id": "dcde0cbe-53bb-11f1-0a80-039500030a8d",
+      "old_payed": 400000.0,
+      "new_payed": 0,
+      "delta": -400000.0
+    },
+    {
+      "order": "ТА-01392",
+      "new_order_id": "30efe477-53bc-11f1-0a80-08cc00031238",
+      "old_payed": 1750000.0,
+      "new_payed": 3500000.0,
+      "delta": 1750000.0
+    }
+  ],
+  "demands_linked": 3,
+  "errors": 0
+}

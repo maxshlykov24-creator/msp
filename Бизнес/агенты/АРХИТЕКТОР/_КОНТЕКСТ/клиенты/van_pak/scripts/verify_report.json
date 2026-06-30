@@ -1,0 +1,4757 @@
+[
+  {
+    "entity_type": "customerorder",
+    "old_total": 1730,
+    "new_total": 1690,
+    "missing_docs": [
+      {
+        "name": "ЗБ-04585",
+        "moment": "2026-06-01 13:16:00.000",
+        "old_uuid": "071883d1-5da3-11f1-0a80-1d5a0030de09",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04564",
+        "moment": "2026-05-29 12:22:00.000",
+        "old_uuid": "14ca06c9-5b40-11f1-0a80-159600094098",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04526",
+        "moment": "2026-05-27 10:58:00.000",
+        "old_uuid": "183f6902-59a2-11f1-0a80-1ae30006c551",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04587",
+        "moment": "2026-06-01 13:38:00.000",
+        "old_uuid": "2231b3be-5da6-11f1-0a80-17a90031643f",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04525",
+        "moment": "2026-05-27 10:34:00.000",
+        "old_uuid": "23bd253e-599f-11f1-0a80-076d000658e0",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04583",
+        "moment": "2026-06-01 12:48:00.000",
+        "old_uuid": "2dea7424-5d9f-11f1-0a80-030300309bcc",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04513",
+        "moment": "2026-05-26 12:48:00.000",
+        "old_uuid": "3097f66c-58e8-11f1-0a80-1ca500477168",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04519",
+        "moment": "2026-05-26 15:50:00.000",
+        "old_uuid": "3334e98e-5904-11f1-0a80-1b7c004f1e65",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04565",
+        "moment": "2026-05-29 12:24:00.000",
+        "old_uuid": "3bd6299b-5b40-11f1-0a80-16ae0008d8df",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04579",
+        "moment": "2026-06-01 10:54:00.000",
+        "old_uuid": "3d3cef1d-5d8f-11f1-0a80-018800746c59",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04517",
+        "moment": "2026-05-26 14:49:00.000",
+        "old_uuid": "3defbae1-58f9-11f1-0a80-1304004a61ab",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04502",
+        "moment": "2026-05-25 16:02:00.000",
+        "old_uuid": "3e98383c-583a-11f1-0a80-0fed003738ff",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04552",
+        "moment": "2026-05-28 15:58:00.000",
+        "old_uuid": "46e3f6d9-5a95-11f1-0a80-07f9001099d8",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04588",
+        "moment": "2026-06-01 13:39:00.000",
+        "old_uuid": "47df6c19-5da6-11f1-0a80-16ae0032d529",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04578",
+        "moment": "2026-06-01 10:48:00.000",
+        "old_uuid": "49ed4244-5d8e-11f1-0a80-17a9002b1a4d",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04581",
+        "moment": "2026-06-01 11:01:00.000",
+        "old_uuid": "4ae6641a-5d99-11f1-0a80-10910030fd59",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04562",
+        "moment": "2026-05-29 12:09:00.000",
+        "old_uuid": "5616a63a-5b3e-11f1-0a80-1d5a0008a3ab",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04586",
+        "moment": "2026-06-01 13:23:00.000",
+        "old_uuid": "5d8c8f21-5da4-11f1-0a80-03030031d33a",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04503",
+        "moment": "2026-05-25 16:04:00.000",
+        "old_uuid": "76035d0e-583a-11f1-0a80-1b7c0038fc2d",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04468",
+        "moment": "2026-05-21 15:11:00.000",
+        "old_uuid": "7cbe316a-550e-11f1-0a80-02e6002390a6",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04529",
+        "moment": "2026-05-27 11:42:00.000",
+        "old_uuid": "90216ec4-59a8-11f1-0a80-194c00084a07",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04582",
+        "moment": "2026-06-01 12:22:00.000",
+        "old_uuid": "98390c89-5d9b-11f1-0a80-1b8b002f558a",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04554",
+        "moment": "2026-05-28 18:21:00.000",
+        "old_uuid": "9fd731c0-5aa9-11f1-0a80-158500138c74",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04504",
+        "moment": "2026-05-25 16:06:00.000",
+        "old_uuid": "9fee7c8d-583a-11f1-0a80-1b7c003904d1",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04488",
+        "moment": "2026-05-25 11:35:00.000",
+        "old_uuid": "aa8e8a60-5815-11f1-0a80-1b7c002ff7bc",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04530",
+        "moment": "2026-05-27 12:30:00.000",
+        "old_uuid": "ad8cb0d0-59af-11f1-0a80-0fa40016fd49",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04584",
+        "moment": "2026-06-01 12:52:00.000",
+        "old_uuid": "b512ae0d-5d9f-11f1-0a80-03030030c88e",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04580",
+        "moment": "2026-06-01 11:25:00.000",
+        "old_uuid": "b6a95f54-5d93-11f1-0a80-1cae002ed763",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04566",
+        "moment": "2026-05-29 12:22:00.000",
+        "old_uuid": "bea10e92-5b42-11f1-0a80-17a90008feb6",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04461",
+        "moment": "2026-05-20 14:02:00.000",
+        "old_uuid": "c7fb8b94-543b-11f1-0a80-1663000d37c9",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04507",
+        "moment": "2026-05-25 16:39:00.000",
+        "old_uuid": "d14dd011-583f-11f1-0a80-0c95003861c9",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04527",
+        "moment": "2026-05-27 11:23:00.000",
+        "old_uuid": "d534e3de-59a5-11f1-0a80-0fa300080b57",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04522",
+        "moment": "2026-05-26 17:38:00.000",
+        "old_uuid": "d776029c-5910-11f1-0a80-09d20050130d",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04467",
+        "moment": "2026-05-21 13:05:00.000",
+        "old_uuid": "dbf7e852-550b-11f1-0a80-138e00242885",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04515",
+        "moment": "2026-05-26 14:20:00.000",
+        "old_uuid": "e174be28-58f5-11f1-0a80-1074004b20e0",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04547",
+        "moment": "2026-05-28 13:07:00.000",
+        "old_uuid": "e4c750e4-5a7f-11f1-0a80-0e15000bdf09",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04561",
+        "moment": "2026-05-29 11:57:00.000",
+        "old_uuid": "ea0acf9d-5b3d-11f1-0a80-1306000865e1",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04523",
+        "moment": "2026-05-26 17:39:00.000",
+        "old_uuid": "ef4953de-5910-11f1-0a80-001b00aa7997",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04563",
+        "moment": "2026-05-29 12:20:00.000",
+        "old_uuid": "f4415e23-5b3f-11f1-0a80-15960009377e",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04549",
+        "moment": "2026-05-28 14:39:00.000",
+        "old_uuid": "f465a97e-5a89-11f1-0a80-108c000e34e8",
+        "new_uuid": null
+      },
+      {
+        "name": "ЗБ-04480",
+        "moment": "2026-05-22 16:40:00.000",
+        "old_uuid": "fd17184a-55e4-11f1-0a80-1d4c0010e99d",
+        "new_uuid": null
+      }
+    ],
+    "paired": 1689,
+    "ok": 1662,
+    "mismatches": [
+      {
+        "name": "ВА-02489",
+        "old_uuid": "0157f4d0-4e0a-11f1-0a80-1ac70058692b",
+        "new_uuid": "86b182cb-53b7-11f1-0a80-000800028c98",
+        "old_count": 1,
+        "new_count": 2,
+        "missing_count": 0,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-02426",
+        "old_uuid": "02d74818-4460-11f1-0a80-07f0000eba8e",
+        "new_uuid": "08f706e7-541c-11f1-0a80-0efe00109563",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "ЗБ-04577",
+        "old_uuid": "03fe499f-5d8a-11f1-0a80-0b680073e497",
+        "new_uuid": "5dc74af0-5d8c-11f1-0a80-16af0074a33e",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "ФР-00111",
+        "old_uuid": "12928c33-2461-11f1-0a80-1ac2000f2180",
+        "new_uuid": "af5602ac-53b7-11f1-0a80-08cc00028cf1",
+        "old_count": 2,
+        "new_count": 4,
+        "missing_count": 2,
+        "extra_count": 4
+      },
+      {
+        "name": "ВА-02478",
+        "old_uuid": "170029d2-4ab4-11f1-0a80-1d25001b9773",
+        "new_uuid": "ba870624-53b7-11f1-0a80-000800029349",
+        "old_count": 3,
+        "new_count": 4,
+        "missing_count": 0,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-02390",
+        "old_uuid": "1c9733df-3e2d-11f1-0a80-0944000ae54f",
+        "new_uuid": "d08ea578-53b7-11f1-0a80-0b2a00025c66",
+        "old_count": 1,
+        "new_count": 2,
+        "missing_count": 0,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-02427",
+        "old_uuid": "2751a6f7-4460-11f1-0a80-103a000e7d3a",
+        "new_uuid": "15886964-541c-11f1-0a80-064e0010d2a8",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "ЗБ-04398",
+        "old_uuid": "2e5fd491-502b-11f1-0a80-165a00058c77",
+        "new_uuid": "fc3d8d58-53b7-11f1-0a80-08cc00029c81",
+        "old_count": 7,
+        "new_count": 8,
+        "missing_count": 0,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-02379",
+        "old_uuid": "45914740-3d5b-11f1-0a80-0efc00080a2a",
+        "new_uuid": "3f69b56a-53c8-11f1-0a80-03950004ae3e",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "ЗБ-04471",
+        "old_uuid": "535d294d-5517-11f1-0a80-02e600256429",
+        "new_uuid": "9a0de0b6-57be-11f1-0a80-02ec00638b8f",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-04543",
+        "old_uuid": "69115877-5a76-11f1-0a80-05860009c285",
+        "new_uuid": "6f1f3317-5d8c-11f1-0a80-17aa00755af3",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01861",
+        "old_uuid": "707fe39e-f088-11f0-0a80-0c490011bc9d",
+        "new_uuid": "e48f8b88-53ba-11f1-0a80-04f4000303fa",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00146",
+        "old_uuid": "70b452c9-3730-11f1-0a80-0c04003074c8",
+        "new_uuid": "e508e5b2-53ba-11f1-0a80-10710002dcb3",
+        "old_count": 2,
+        "new_count": 3,
+        "missing_count": 0,
+        "extra_count": 1
+      },
+      {
+        "name": "ТУ-00843",
+        "old_uuid": "74683a78-0ccb-11f1-0a80-02a50011523c",
+        "new_uuid": "ee96356d-53ba-11f1-0a80-04f4000304bf",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-04555",
+        "old_uuid": "80b346e1-5ab0-11f1-0a80-06590024b23f",
+        "new_uuid": "73fad4b0-5d8c-11f1-0a80-1d5c007516d3",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-04508",
+        "old_uuid": "8b459c45-58d4-11f1-0a80-0651009c1e87",
+        "new_uuid": "776b48bf-5d8c-11f1-0a80-00400074a581",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-04372",
+        "old_uuid": "b85e4dca-4ecc-11f1-0a80-04540011851a",
+        "new_uuid": "90a8e26f-5415-11f1-0a80-0d64000ebee2",
+        "old_count": 2,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 2
+      },
+      {
+        "name": "ЗБ-04341",
+        "old_uuid": "bca4c623-449c-11f1-0a80-03c5001c82a3",
+        "new_uuid": "acf9264e-53bb-11f1-0a80-03950003024a",
+        "old_count": 2,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "ЗБ-04509",
+        "old_uuid": "c54203be-58d4-11f1-0a80-1adf009ab209",
+        "new_uuid": "82eec572-5d8c-11f1-0a80-07fe0073c0cc",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-04431",
+        "old_uuid": "c5b66eb9-52cb-11f1-0a80-0fd3003ab203",
+        "new_uuid": "c2b5f86a-53bb-11f1-0a80-0fe700030dd9",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "ТА-01515",
+        "old_uuid": "d270bbf9-3d54-11f1-0a80-00e1000698b8",
+        "new_uuid": "aaab337b-5415-11f1-0a80-1adb000f1a73",
+        "old_count": 2,
+        "new_count": 3,
+        "missing_count": 0,
+        "extra_count": 1
+      },
+      {
+        "name": "ФР-00082",
+        "old_uuid": "d4ab3eca-002c-11f1-0a80-0edc0074a5c6",
+        "new_uuid": "e3db4c4e-53bb-11f1-0a80-10710002fb4e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01960",
+        "old_uuid": "de8607ab-fd06-11f0-0a80-096f000cff7b",
+        "new_uuid": "02bada78-53bc-11f1-0a80-0b2a0002d92f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-02443",
+        "old_uuid": "e9afd49a-47bc-11f1-0a80-1a3a001923a5",
+        "new_uuid": "1e4a01b9-53bc-11f1-0a80-000800030b9b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-02314",
+        "old_uuid": "ed174460-3720-11f1-0a80-18d6002e267e",
+        "new_uuid": "24f01312-53bc-11f1-0a80-04f400032688",
+        "old_count": 1,
+        "new_count": 2,
+        "missing_count": 0,
+        "extra_count": 1
+      },
+      {
+        "name": "ФР-00080",
+        "old_uuid": "f3a2c638-fddd-11f0-0a80-0fd2001b53ec",
+        "new_uuid": "3304d89b-53bc-11f1-0a80-000800030ce6",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00078",
+        "old_uuid": "fd2cb946-f85d-11f0-0a80-0b3c000fd548",
+        "new_uuid": "407dedea-53bc-11f1-0a80-1adb0002f87a",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      }
+    ],
+    "fixed": 6
+  },
+  {
+    "entity_type": "demand",
+    "old_total": 1545,
+    "new_total": 1534,
+    "missing_docs": [
+      {
+        "name": "ВА-18510",
+        "moment": "2026-05-28 17:12:00.000",
+        "old_uuid": "1585106e-59d6-11f1-0a80-05400011fb00",
+        "new_uuid": null
+      },
+      {
+        "name": "ТУ-06044",
+        "moment": "2026-05-28 13:23:00.000",
+        "old_uuid": "20ec1a4f-59b6-11f1-0a80-1b82000b583f",
+        "new_uuid": null
+      },
+      {
+        "name": "ФР-00132",
+        "moment": "2026-05-25 17:22:00.000",
+        "old_uuid": "246b3878-5845-11f1-0a80-076a00391630",
+        "new_uuid": null
+      },
+      {
+        "name": "ВА-18521",
+        "moment": "2026-05-29 16:35:00.000",
+        "old_uuid": "29e332f4-5a9a-11f1-0a80-0586001131bc",
+        "new_uuid": null
+      },
+      {
+        "name": "ВА-18524",
+        "moment": "2026-05-29 16:50:00.000",
+        "old_uuid": "3d915a07-5a9c-11f1-0a80-1755001243a1",
+        "new_uuid": null
+      },
+      {
+        "name": "ВА-18511",
+        "moment": "2026-05-28 17:15:00.000",
+        "old_uuid": "77ad7287-59d6-11f1-0a80-1579001185b9",
+        "new_uuid": null
+      },
+      {
+        "name": "ВА-18528",
+        "moment": "2026-05-29 09:42:00.000",
+        "old_uuid": "95232250-5b29-11f1-0a80-17a9000419a6",
+        "new_uuid": null
+      },
+      {
+        "name": "ВА-18507",
+        "moment": "2026-05-28 13:19:00.000",
+        "old_uuid": "9e1e25e9-59b5-11f1-0a80-194c000b1959",
+        "new_uuid": null
+      },
+      {
+        "name": "ПЕ-26992",
+        "moment": "2026-05-28 13:56:00.000",
+        "old_uuid": "b3d4c608-59ba-11f1-0a80-194c000c0ef4",
+        "new_uuid": null
+      },
+      {
+        "name": "ВА-18525",
+        "moment": "2026-05-29 16:54:00.000",
+        "old_uuid": "bb5101d7-5a9c-11f1-0a80-0202001221a0",
+        "new_uuid": null
+      },
+      {
+        "name": "ПЕ-26993",
+        "moment": "2026-05-28 14:18:00.000",
+        "old_uuid": "c6213d96-59bd-11f1-0a80-13f0000c634e",
+        "new_uuid": null
+      }
+    ],
+    "paired": 1534,
+    "ok": 1070,
+    "mismatches": [
+      {
+        "name": "ТУ-00552",
+        "old_uuid": "006eedf0-ef94-11f0-0a80-17c700bf583f",
+        "new_uuid": "e0bd3ebf-5415-11f1-0a80-1adb000f218b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26848",
+        "old_uuid": "00a09920-16f4-11f1-0a80-1697000df0dc",
+        "new_uuid": "51e8dcb5-53bc-11f1-0a80-1d4b00030485",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00572",
+        "old_uuid": "00a88f38-00f7-11f1-0a80-00c500103ba9",
+        "new_uuid": "e12bc6fa-5415-11f1-0a80-0d64000ecfe9",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11228",
+        "old_uuid": "010a4e15-487d-11f1-0a80-02b5000fc777",
+        "new_uuid": "52703c38-53bc-11f1-0a80-0d640002fe95",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00004",
+        "old_uuid": "02c9331c-f04e-11f0-0a80-16110004f45b",
+        "new_uuid": "e3ea8e9f-5415-11f1-0a80-04f4000f3f8c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00206",
+        "old_uuid": "0303c915-3e42-11f1-0a80-1ba0000f3d42",
+        "new_uuid": "55602034-53bc-11f1-0a80-0efe00032446",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01736",
+        "old_uuid": "04728668-fcff-11f0-0a80-0536000b9fba",
+        "new_uuid": "e5f48eca-5415-11f1-0a80-1945000f5f5e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00143",
+        "old_uuid": "05e913fa-22c8-11f1-0a80-0d6a00101575",
+        "new_uuid": "5b883891-53bc-11f1-0a80-0d640002fed1",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18293",
+        "old_uuid": "07bed062-3a5a-11f1-0a80-1078000eda5e",
+        "new_uuid": "e79b1dbe-5415-11f1-0a80-0d64000ed069",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00147",
+        "old_uuid": "08876b72-238f-11f1-0a80-0d6d000f1a1b",
+        "new_uuid": "e8e804b9-5415-11f1-0a80-08cc000ed89d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11191",
+        "old_uuid": "08961dfd-2113-11f1-0a80-16b6002cb4a5",
+        "new_uuid": "5d9e8b09-53bc-11f1-0a80-11f10002d37e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26980",
+        "old_uuid": "08e6c340-47b8-11f1-0a80-00c6001745f9",
+        "new_uuid": "5e9d81d5-53bc-11f1-0a80-0d640002fef5",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11134",
+        "old_uuid": "0bbd9487-00f2-11f1-0a80-0976000de6a1",
+        "new_uuid": "61f886c5-53bc-11f1-0a80-08cc00031ebe",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11229",
+        "old_uuid": "0bd1e676-4888-11f1-0a80-1a3e00120eef",
+        "new_uuid": "627ab0f0-53bc-11f1-0a80-1d4b00030540",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01755",
+        "old_uuid": "0bfa7ef6-0035-11f1-0a80-0bf2003521b7",
+        "new_uuid": "ebcb686e-5415-11f1-0a80-0395000f1456",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00069",
+        "old_uuid": "0c2da9c8-213d-11f1-0a80-07f50037c058",
+        "new_uuid": "637195fa-53bc-11f1-0a80-0efe0003254c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00028",
+        "old_uuid": "0d5c83f3-f6be-11f0-0a80-19a2000de58b",
+        "new_uuid": "ecd0e946-5415-11f1-0a80-0efe000f30dd",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00117",
+        "old_uuid": "0d943012-503c-11f1-0a80-1ad200092a13",
+        "new_uuid": "648fcc02-53bc-11f1-0a80-11f10002d3df",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18391",
+        "old_uuid": "0e308be9-4fab-11f1-0a80-15600015ee21",
+        "new_uuid": "65668b7f-53bc-11f1-0a80-14620002db52",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26865",
+        "old_uuid": "0e554e95-17d2-11f1-0a80-196c00126006",
+        "new_uuid": "65d03c81-53bc-11f1-0a80-04f400032ba9",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18184",
+        "old_uuid": "0ecb4e6e-26b1-11f1-0a80-0365003187fc",
+        "new_uuid": "66e2cecc-53bc-11f1-0a80-1d4b0003058b",
+        "old_count": 10,
+        "new_count": 7,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00577",
+        "old_uuid": "0f9c8346-0755-11f1-0a80-0bcd0011dac7",
+        "new_uuid": "67a69e3f-53bc-11f1-0a80-1d4b000305ba",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11203",
+        "old_uuid": "0ff66d7c-2392-11f1-0a80-0693000fb247",
+        "new_uuid": "68d65277-53bc-11f1-0a80-11f10002d41c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26842",
+        "old_uuid": "108cf9fa-16de-11f1-0a80-0178000a1603",
+        "new_uuid": "69336fa9-53bc-11f1-0a80-064e0002e404",
+        "old_count": 7,
+        "new_count": 3,
+        "missing_count": 4,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26836",
+        "old_uuid": "12b1fa5d-16d8-11f1-0a80-03710007ec89",
+        "new_uuid": "6d310391-53bc-11f1-0a80-1d4b000305f0",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00096",
+        "old_uuid": "13369fb4-3815-11f1-0a80-13ba004e19be",
+        "new_uuid": "6e2eac7b-53bc-11f1-0a80-08cc00031f8c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00087",
+        "old_uuid": "134a96a8-07e2-11f1-0a80-1b100005bdc1",
+        "new_uuid": "6e90e641-53bc-11f1-0a80-107100030f77",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26905",
+        "old_uuid": "139edee1-1de3-11f1-0a80-04c000056ecb",
+        "new_uuid": "6f176dd5-53bc-11f1-0a80-1adb0002fb84",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11210",
+        "old_uuid": "143a720b-31b4-11f1-0a80-07820036c35f",
+        "new_uuid": "f136d06d-5415-11f1-0a80-1071000f534c",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18090",
+        "old_uuid": "146a2620-17c7-11f1-0a80-169c000fd62d",
+        "new_uuid": "f1908eae-5415-11f1-0a80-1adb000f235e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18286",
+        "old_uuid": "15a67d00-3986-11f1-0a80-17ca000dd160",
+        "new_uuid": "7134c2a3-53bc-11f1-0a80-0d640003000f",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26871",
+        "old_uuid": "16fe0055-1871-11f1-0a80-07dd00092c3e",
+        "new_uuid": "72df5e7a-53bc-11f1-0a80-039500032421",
+        "old_count": 5,
+        "new_count": 1,
+        "missing_count": 4,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26910",
+        "old_uuid": "170e62a3-1eeb-11f1-0a80-052e0012c2c7",
+        "new_uuid": "7372130d-53bc-11f1-0a80-1adb0002fbdf",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26921",
+        "old_uuid": "189a9ab2-21f2-11f1-0a80-19f6000dc27d",
+        "new_uuid": "75d591fc-53bc-11f1-0a80-14620002dc13",
+        "old_count": 6,
+        "new_count": 5,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26965",
+        "old_uuid": "1a7a6c74-34ab-11f1-0a80-0f750005d1de",
+        "new_uuid": "f485df88-5415-11f1-0a80-11f1000ec5e9",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11222",
+        "old_uuid": "1a8cd2e6-3e20-11f1-0a80-0f8c00077ec7",
+        "new_uuid": "f4e70e2d-5415-11f1-0a80-0efe000f3209",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18183",
+        "old_uuid": "1b362b43-26b0-11f1-0a80-106c002fd5b7",
+        "new_uuid": "f5d24840-5415-11f1-0a80-1adb000f23e2",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11145",
+        "old_uuid": "1b99ab3e-07e0-11f1-0a80-08e00005b936",
+        "new_uuid": "79bb9017-53bc-11f1-0a80-1d4b00030676",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00060",
+        "old_uuid": "1c69c393-05bc-11f1-0a80-04fe003628fc",
+        "new_uuid": "7b1e63fa-53bc-11f1-0a80-1adb0002fc6e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00031",
+        "old_uuid": "1e0b05d5-f762-11f0-0a80-046b0005a59a",
+        "new_uuid": "f836cb5b-5415-11f1-0a80-1071000f540e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00139",
+        "old_uuid": "1e4cbc84-213a-11f1-0a80-19f1003812fa",
+        "new_uuid": "818aa93b-53bc-11f1-0a80-11f10002d53a",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18457",
+        "old_uuid": "1e5a84bf-52b6-11f1-0a80-032c003a8339",
+        "new_uuid": "8218c1fa-53bc-11f1-0a80-04f400032d09",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00158",
+        "old_uuid": "1e841477-277f-11f1-0a80-01a1000ffc7a",
+        "new_uuid": "82dc7595-53bc-11f1-0a80-0d6400030168",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01615",
+        "old_uuid": "1f0d29fc-efbf-11f0-0a80-1a2200c47d97",
+        "new_uuid": "f93bd2ff-5415-11f1-0a80-0008000f86ed",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00226",
+        "old_uuid": "1f673676-4785-11f1-0a80-1b39000b9a58",
+        "new_uuid": "86038546-53bc-11f1-0a80-19450003491e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-06024",
+        "old_uuid": "1f94ebe7-4785-11f1-0a80-1b39000b9a6d",
+        "new_uuid": "86792f5a-53bc-11f1-0a80-00080003127b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26979",
+        "old_uuid": "1fd4af1d-4785-11f1-0a80-1b39000b9a88",
+        "new_uuid": "f3b47821-53c8-11f1-0a80-08cc0004528b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00227",
+        "old_uuid": "20373eaa-4785-11f1-0a80-1b39000b9adb",
+        "new_uuid": "fade98eb-5415-11f1-0a80-11f1000ec715",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00065",
+        "old_uuid": "206a1b94-1987-11f1-0a80-06e00014da13",
+        "new_uuid": "87cc9983-53bc-11f1-0a80-08cc000320d8",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18341",
+        "old_uuid": "20a1b80f-485a-11f1-0a80-0ee000082489",
+        "new_uuid": "fb633751-5415-11f1-0a80-064e000f5f68",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01635",
+        "old_uuid": "21040041-f076-11f0-0a80-1bbb000dfbd7",
+        "new_uuid": "8a93e687-53bc-11f1-0a80-04f400032d64",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11138",
+        "old_uuid": "2118c50f-0353-11f1-0a80-08d2000e61a9",
+        "new_uuid": "8af78559-53bc-11f1-0a80-08cc0003210f",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26795",
+        "old_uuid": "2207c77a-f214-11f0-0a80-0451001009d6",
+        "new_uuid": "8c89800b-53bc-11f1-0a80-0efe00032a98",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18047",
+        "old_uuid": "2283d419-0cd3-11f1-0a80-102c00120033",
+        "new_uuid": "8dbcb0e8-53bc-11f1-0a80-0fe700032ebb",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00151",
+        "old_uuid": "2364cad7-26c4-11f1-0a80-18fc0033f944",
+        "new_uuid": "fd21185a-5415-11f1-0a80-064e000f5f8b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26866",
+        "old_uuid": "2489cf72-17d4-11f1-0a80-196c0012b4d0",
+        "new_uuid": "9110cbc0-53bc-11f1-0a80-0b2a0002e5db",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00022",
+        "old_uuid": "258693b0-f525-11f0-0a80-1c3f00301e20",
+        "new_uuid": "9178d589-53bc-11f1-0a80-04f400032dc5",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18366",
+        "old_uuid": "26312ffb-4dfb-11f1-0a80-144f00540c86",
+        "new_uuid": "939a5cce-53bc-11f1-0a80-14620002dd92",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26877",
+        "old_uuid": "28799fd6-189a-11f1-0a80-16a000122c29",
+        "new_uuid": "95b3eed4-53bc-11f1-0a80-0fe700032f28",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18311",
+        "old_uuid": "288a09d5-3fae-11f1-0a80-0d5a000609ec",
+        "new_uuid": "9618f34b-53bc-11f1-0a80-11f10002d648",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26801",
+        "old_uuid": "2ae0c409-0037-11f1-0a80-0dda00365f9c",
+        "new_uuid": "99df2938-53bc-11f1-0a80-0d640003027f",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26960",
+        "old_uuid": "2d1c20ef-327e-11f1-0a80-17580010c14e",
+        "new_uuid": "9e302b57-53bc-11f1-0a80-1adb000306a6",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00607",
+        "old_uuid": "2d91c1bb-2e8c-11f1-0a80-09df000f22dd",
+        "new_uuid": "9f4b74c3-53bc-11f1-0a80-064e0002ed4c",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00185",
+        "old_uuid": "2db76181-3197-11f1-0a80-174e002eefd0",
+        "new_uuid": "00e4dd2e-5416-11f1-0a80-04f4000f43ff",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01614",
+        "old_uuid": "2f67f32b-efb3-11f0-0a80-071400c6657a",
+        "new_uuid": "01ec2ee6-5416-11f1-0a80-0efe000f33b3",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00068",
+        "old_uuid": "2f88dae6-01d0-11f1-0a80-074700106f4b",
+        "new_uuid": "a6e3f252-53bc-11f1-0a80-000800031392",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01667",
+        "old_uuid": "3087d583-f53d-11f0-0a80-0750003498ed",
+        "new_uuid": "a74e32bd-53bc-11f1-0a80-0b2a0002e723",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26817",
+        "old_uuid": "308de51f-0ccf-11f1-0a80-04c8001164e5",
+        "new_uuid": "a7b69579-53bc-11f1-0a80-11f10002d7ae",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11211",
+        "old_uuid": "30db9eb2-3340-11f1-0a80-1d73000e7922",
+        "new_uuid": "024158fd-5416-11f1-0a80-0d64000ed489",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26852",
+        "old_uuid": "311fd5f2-16fe-11f1-0a80-1b57001164a1",
+        "new_uuid": "a988c3fa-53bc-11f1-0a80-0d6400030741",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00129",
+        "old_uuid": "313429d2-1d34-11f1-0a80-17f0005448b2",
+        "new_uuid": "02ba551b-5416-11f1-0a80-0008000f87d9",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00593",
+        "old_uuid": "3159bdb2-1300-11f1-0a80-1a3b000cd2b3",
+        "new_uuid": "031e55f2-5416-11f1-0a80-11f1000ec7d5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11149",
+        "old_uuid": "31be0e86-08ab-11f1-0a80-08e40005a670",
+        "new_uuid": "aac11c75-53bc-11f1-0a80-0efe00032c5a",
+        "old_count": 5,
+        "new_count": 1,
+        "missing_count": 4,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11116",
+        "old_uuid": "31c4fbd0-f212-11f0-0a80-0451000fb77b",
+        "new_uuid": "ab30f4e8-53bc-11f1-0a80-194500034ff9",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11139",
+        "old_uuid": "320de26e-05bb-11f1-0a80-08d200385fe9",
+        "new_uuid": "03771089-5416-11f1-0a80-0d64000ed4b1",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00571",
+        "old_uuid": "333922a6-0038-11f1-0a80-05d80036c3f0",
+        "new_uuid": "ad4747b4-53bc-11f1-0a80-0d6400030792",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26875",
+        "old_uuid": "344bbf35-1898-11f1-0a80-1a820011ce2d",
+        "new_uuid": "af920adf-53bc-11f1-0a80-1d4b0003093d",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11182",
+        "old_uuid": "34858a17-1d17-11f1-0a80-019b004e41e2",
+        "new_uuid": "0406fa56-5416-11f1-0a80-0efe000f33da",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26829",
+        "old_uuid": "37997a86-16d5-11f1-0a80-1b57000744b2",
+        "new_uuid": "b4b875f5-53bc-11f1-0a80-1adb00030a00",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18339",
+        "old_uuid": "37acbad4-47bc-11f1-0a80-1d030019ca84",
+        "new_uuid": "06a608e2-5416-11f1-0a80-1071000f54f8",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-06035",
+        "old_uuid": "37aecb8a-529f-11f1-0a80-0ef500302e7f",
+        "new_uuid": "b5c42775-53bc-11f1-0a80-1d4b000309bc",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00561",
+        "old_uuid": "3829e643-f524-11f0-0a80-1be7002f8a80",
+        "new_uuid": "0769039d-5416-11f1-0a80-0395000f17a6",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00161",
+        "old_uuid": "389f5cce-2837-11f1-0a80-131f00211682",
+        "new_uuid": "b7d31980-53bc-11f1-0a80-14620002dfe8",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26902",
+        "old_uuid": "38d69ae7-1d38-11f1-0a80-140500552d5e",
+        "new_uuid": "b8371393-53bc-11f1-0a80-064e0002f122",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00097",
+        "old_uuid": "38eead0b-38ba-11f1-0a80-1603000cc7f6",
+        "new_uuid": "b8a17005-53bc-11f1-0a80-000800031482",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26807",
+        "old_uuid": "396bf1bd-05be-11f1-0a80-04fe0036925b",
+        "new_uuid": "08ace633-5416-11f1-0a80-0d64000ed62f",
+        "old_count": 6,
+        "new_count": 4,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00088",
+        "old_uuid": "3c8d191e-3801-11f1-0a80-1c84004cc74c",
+        "new_uuid": "bbc46a3b-53bc-11f1-0a80-064e0002f26b",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18171",
+        "old_uuid": "3d04d5bb-21ed-11f1-0a80-1d8d000ca789",
+        "new_uuid": "bd5e5942-53bc-11f1-0a80-1adb00030b5f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00159",
+        "old_uuid": "3e09be49-2792-11f1-0a80-01a10013633b",
+        "new_uuid": "be77b79e-53bc-11f1-0a80-14620002e034",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00014",
+        "old_uuid": "3e45df2a-f146-11f0-0a80-17d1000ea14a",
+        "new_uuid": "0c1061c3-5416-11f1-0a80-0b2a000f09b0",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01785",
+        "old_uuid": "3f5ee5f4-0681-11f1-0a80-079300113d90",
+        "new_uuid": "0e633c98-5416-11f1-0a80-0d64000ed7a9",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01702",
+        "old_uuid": "3f6b5d3f-fa9c-11f0-0a80-057a001b3dcc",
+        "new_uuid": "c21833d7-53bc-11f1-0a80-08cc000326b0",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11150",
+        "old_uuid": "3fabac58-08ab-11f1-0a80-19c00005c6cf",
+        "new_uuid": "c30ff785-53bc-11f1-0a80-11f10002d970",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00094",
+        "old_uuid": "4039d1c1-3814-11f1-0a80-0f75004ee2be",
+        "new_uuid": "c5864d0d-53bc-11f1-0a80-107100031503",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01743",
+        "old_uuid": "40657baa-fde7-11f0-0a80-029d0011ebcf",
+        "new_uuid": "c6a4f987-53bc-11f1-0a80-039500032c7f",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26987",
+        "old_uuid": "407bd00a-4dfd-11f1-0a80-164900551e93",
+        "new_uuid": "0f1e7908-5416-11f1-0a80-08cc000edc3d",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26869",
+        "old_uuid": "40a71ae8-186a-11f1-0a80-0379000762c9",
+        "new_uuid": "c7cdf15c-53bc-11f1-0a80-14620002e0ba",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26831",
+        "old_uuid": "414944cf-16d6-11f1-0a80-037100076f53",
+        "new_uuid": "c9b4305b-53bc-11f1-0a80-10710003155a",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01773",
+        "old_uuid": "42fb6d7a-034c-11f1-0a80-0285000c3d1c",
+        "new_uuid": "cc76d3e3-53bc-11f1-0a80-0d6400030975",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00592",
+        "old_uuid": "42ff7f34-12ea-11f1-0a80-16900007a07f",
+        "new_uuid": "ccef4a21-53bc-11f1-0a80-14620002e1f7",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26937",
+        "old_uuid": "4492bc0c-2396-11f1-0a80-0421001138a3",
+        "new_uuid": "1039a02d-5416-11f1-0a80-1adb000f26c0",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00564",
+        "old_uuid": "45eb49aa-f78d-11f0-0a80-1638000f1ce6",
+        "new_uuid": "cfa97544-53bc-11f1-0a80-064e0002f44d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01705",
+        "old_uuid": "460d5003-faa3-11f0-0a80-0d63001c8a8f",
+        "new_uuid": "118f0b6f-5416-11f1-0a80-0efe000f3588",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18243",
+        "old_uuid": "460fb626-3194-11f1-0a80-0782002e92d7",
+        "new_uuid": "d0883f55-53bc-11f1-0a80-11f10002daf2",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11244",
+        "old_uuid": "46ec6d42-4ec8-11f1-0a80-164f00105a12",
+        "new_uuid": "d1b74c43-53bc-11f1-0a80-0efe00032f4c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01765",
+        "old_uuid": "46f164d7-0281-11f1-0a80-0640000c79cb",
+        "new_uuid": "1282a73a-5416-11f1-0a80-1462000eb643",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18039",
+        "old_uuid": "47ad0a39-0b02-11f1-0a80-0d42002b1059",
+        "new_uuid": "1360349c-5416-11f1-0a80-04f4000f470a",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18265",
+        "old_uuid": "47b92051-371d-11f1-0a80-0f75002e3e93",
+        "new_uuid": "d2f4f196-53bc-11f1-0a80-1945000352b5",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26970",
+        "old_uuid": "47efe594-399d-11f1-0a80-17ca001271e5",
+        "new_uuid": "13ebe5e4-5416-11f1-0a80-1d4b000ee5f0",
+        "old_count": 6,
+        "new_count": 4,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00059",
+        "old_uuid": "4924c09b-0345-11f1-0a80-00d5000b07f4",
+        "new_uuid": "d50cba6d-53bc-11f1-0a80-0b2a0002e94d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18122",
+        "old_uuid": "49536d44-1e01-11f1-0a80-019f000c32d6",
+        "new_uuid": "152433c1-5416-11f1-0a80-1d4b000ee632",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18100",
+        "old_uuid": "49be2c7f-1967-11f1-0a80-04ee00114232",
+        "new_uuid": "15ff3d06-5416-11f1-0a80-0008000f8aeb",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11118",
+        "old_uuid": "4a4bc40f-f2ae-11f0-0a80-14720005e15a",
+        "new_uuid": "173ac738-5416-11f1-0a80-1d4b000ee66e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26978",
+        "old_uuid": "4b9428b5-43be-11f1-0a80-1620000daaa5",
+        "new_uuid": "d832098d-53bc-11f1-0a80-1d4b00030b31",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11232",
+        "old_uuid": "4c0717fa-4ab5-11f1-0a80-1d25001bd557",
+        "new_uuid": "da1273be-53bc-11f1-0a80-08cc000327d6",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00101",
+        "old_uuid": "4c4d964e-3a73-11f1-0a80-00cf00125bf9",
+        "new_uuid": "db32c17d-53bc-11f1-0a80-0d6400030a4a",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11147",
+        "old_uuid": "4d1b06a4-0803-11f1-0a80-1b10000cc6b5",
+        "new_uuid": "18da352a-5416-11f1-0a80-0b2a000f0c4c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26935",
+        "old_uuid": "4d9ac55f-2395-11f1-0a80-13170010107d",
+        "new_uuid": "dd7e5f68-53bc-11f1-0a80-04f400033b33",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26901",
+        "old_uuid": "4dbfdd75-1d35-11f1-0a80-019b0054d547",
+        "new_uuid": "dddaa867-53bc-11f1-0a80-0d6400030a71",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26874",
+        "old_uuid": "4df18bda-1897-11f1-0a80-095f0011ba4a",
+        "new_uuid": "de8a04cd-53bc-11f1-0a80-1d4b00030b80",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01641",
+        "old_uuid": "4e6cdda3-f14d-11f0-0a80-01c600102447",
+        "new_uuid": "dee9ccbd-53bc-11f1-0a80-0d6400030a82",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18290",
+        "old_uuid": "4e7a0e6c-3c8d-11f1-0a80-039b002b18b4",
+        "new_uuid": "1a1d18e4-5416-11f1-0a80-0fe7000f451f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18097",
+        "old_uuid": "4fcd7737-1c55-11f1-0a80-04ee00388f57",
+        "new_uuid": "1ad7339e-5416-11f1-0a80-0008000f8b6f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26818",
+        "old_uuid": "502aaa95-0d8d-11f1-0a80-08ec0024da78",
+        "new_uuid": "e04d38ea-53bc-11f1-0a80-039500032e08",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18373",
+        "old_uuid": "5062a393-4ecd-11f1-0a80-1b5c0011be71",
+        "new_uuid": "1b3e11ea-5416-11f1-0a80-0b2a000f0cc2",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26813",
+        "old_uuid": "5078775e-08aa-11f1-0a80-07df0005170b",
+        "new_uuid": "1b99f3b7-5416-11f1-0a80-1071000f5eeb",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26841",
+        "old_uuid": "50c0ed8e-16dd-11f1-0a80-196400095016",
+        "new_uuid": "e13d6e9c-53bc-11f1-0a80-039500032e14",
+        "old_count": 6,
+        "new_count": 3,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11197",
+        "old_uuid": "510a3594-2295-11f1-0a80-1c8c0004ddd8",
+        "new_uuid": "1bf79769-5416-11f1-0a80-064e000f6330",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18111",
+        "old_uuid": "516ab3ce-1c6e-11f1-0a80-16a5004081fe",
+        "new_uuid": "1d4509a0-5416-11f1-0a80-0395000f19ff",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00586",
+        "old_uuid": "52dd9938-0ca6-11f1-0a80-08ec00090189",
+        "new_uuid": "e4ca8c78-53bc-11f1-0a80-1adb0003102b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00583",
+        "old_uuid": "52e97262-0b47-11f1-0a80-1b15003b2517",
+        "new_uuid": "e5b1f753-53bc-11f1-0a80-064e0002f4e1",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-06013",
+        "old_uuid": "53050389-3a74-11f1-0a80-0edf00128863",
+        "new_uuid": "e64f4920-53bc-11f1-0a80-1945000353da",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01745",
+        "old_uuid": "5335532c-fdeb-11f0-0a80-0fd10011a653",
+        "new_uuid": "1e91e20e-5416-11f1-0a80-0efe000f3724",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11224",
+        "old_uuid": "533edadf-3fac-11f1-0a80-0e0b0005ac42",
+        "new_uuid": "1efb2e6f-5416-11f1-0a80-1462000eb814",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-01677",
+        "old_uuid": "53933cc0-f765-11f0-0a80-0b3700062154",
+        "new_uuid": "e7df9d56-53bc-11f1-0a80-0b2a0002ea1f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-00253",
+        "old_uuid": "53f7cf93-4f9e-11f1-0a80-134700134e32",
+        "new_uuid": "200c716d-5416-11f1-0a80-0b2a000f0e10",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-18356",
+        "old_uuid": "55087634-4a15-11f1-0a80-063400103d52",
+        "new_uuid": "2065ab2d-5416-11f1-0a80-11f1000ecd86",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18349",
+        "old_uuid": "562b0d6b-4887-11f1-0a80-08b000120e14",
+        "new_uuid": "21877581-5416-11f1-0a80-1d4b000ee7a0",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18240",
+        "old_uuid": "5642dc27-3191-11f1-0a80-0782002ddf46",
+        "new_uuid": "ed325972-53bc-11f1-0a80-04f400033c2b",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00120",
+        "old_uuid": "57940eaa-16cb-11f1-0a80-063b00051f75",
+        "new_uuid": "ef5335e7-53bc-11f1-0a80-039500032f6f",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26907",
+        "old_uuid": "582846eb-1de4-11f1-0a80-019f0005bfa4",
+        "new_uuid": "f0c99566-53bc-11f1-0a80-0efe000330de",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26892",
+        "old_uuid": "58bb9a3c-1c73-11f1-0a80-19e9003fc54a",
+        "new_uuid": "f23c12e1-53bc-11f1-0a80-11f10002dcab",
+        "old_count": 5,
+        "new_count": 1,
+        "missing_count": 4,
+        "extra_count": 0
+      },
+      {
+        "name": "00024",
+        "old_uuid": "593b848b-f53e-11f0-0a80-107700357053",
+        "new_uuid": "23cb5a5d-5416-11f1-0a80-1462000ebd15",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18079",
+        "old_uuid": "59974199-16f9-11f1-0a80-104a000fd8aa",
+        "new_uuid": "f3c48b3a-53bc-11f1-0a80-08cc00032ab3",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18141",
+        "old_uuid": "599d053a-2136-11f1-0a80-105d0037b925",
+        "new_uuid": "f4230ed8-53bc-11f1-0a80-14620002e3ee",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18253",
+        "old_uuid": "5a0a8c4d-3323-11f1-0a80-17b40007e453",
+        "new_uuid": "f4d80a80-53bc-11f1-0a80-1d4b00030cd7",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11152",
+        "old_uuid": "5b713060-08e4-11f1-0a80-0c9300112e59",
+        "new_uuid": "f5610103-53bc-11f1-0a80-04f400033ca9",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00164",
+        "old_uuid": "5badb530-2917-11f1-0a80-1a29001152a8",
+        "new_uuid": "f5bed2a4-53bc-11f1-0a80-1d4b00030ce0",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18199",
+        "old_uuid": "5c3b5f74-2838-11f1-0a80-131f00214f54",
+        "new_uuid": "254e09c2-5416-11f1-0a80-0d64000eda4d",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18392",
+        "old_uuid": "5ca09dc1-4fab-11f1-0a80-1c970015e25d",
+        "new_uuid": "f75f3cf7-53bc-11f1-0a80-14620002e43f",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "00088",
+        "old_uuid": "5ec12538-07e9-11f1-0a80-184300078153",
+        "new_uuid": "268cb815-5416-11f1-0a80-0efe000f3818",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00132",
+        "old_uuid": "60a54b86-1e00-11f1-0a80-067e000c3f3f",
+        "new_uuid": "277fbcd3-5416-11f1-0a80-1adb000f2932",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26956",
+        "old_uuid": "615f8da9-2dc2-11f1-0a80-1bdf000fbcd9",
+        "new_uuid": "283a4f04-5416-11f1-0a80-0008000f8dd2",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26926",
+        "old_uuid": "62b2e433-22ce-11f1-0a80-068f0011b240",
+        "new_uuid": "fff77843-53bc-11f1-0a80-0d6400031026",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18077",
+        "old_uuid": "62cc43c8-16f5-11f1-0a80-1697000e4978",
+        "new_uuid": "00bd811d-53bd-11f1-0a80-194500035678",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18118",
+        "old_uuid": "630ed07d-1e0b-11f1-0a80-13b2000e8293",
+        "new_uuid": "017d1149-53bd-11f1-0a80-0fe7000340b2",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01770",
+        "old_uuid": "63a44113-0346-11f1-0a80-08d2000bb031",
+        "new_uuid": "29e7312e-5416-11f1-0a80-0008000f8e03",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18313",
+        "old_uuid": "6545efd0-3fd6-11f1-0a80-03b3000dce49",
+        "new_uuid": "041e71ee-53bd-11f1-0a80-1d4b00030fee",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26873",
+        "old_uuid": "6614d1c0-1896-11f1-0a80-19e500111c34",
+        "new_uuid": "0535bf34-53bd-11f1-0a80-1d4b00030ff6",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01673",
+        "old_uuid": "66dce127-f699-11f0-0a80-0df8000586c4",
+        "new_uuid": "2b1f68aa-5416-11f1-0a80-0efe000f38c9",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00104",
+        "old_uuid": "671cdeb6-0ca5-11f1-0a80-15b40008b862",
+        "new_uuid": "07ced706-53bd-11f1-0a80-0efe00033304",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01780",
+        "old_uuid": "67943ec3-067b-11f1-0a80-13b0000eee38",
+        "new_uuid": "2c3aba2b-5416-11f1-0a80-1adb000f2997",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26957",
+        "old_uuid": "679d6aad-2dc5-11f1-0a80-03d0000fb64e",
+        "new_uuid": "2ce8dc37-5416-11f1-0a80-1adb000f29a7",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00156",
+        "old_uuid": "67ad95b1-26c7-11f1-0a80-1bc7003518a4",
+        "new_uuid": "2dd03cbf-5416-11f1-0a80-0fe7000f4883",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26913",
+        "old_uuid": "68557256-2135-11f1-0a80-082b0036c3b8",
+        "new_uuid": "0a1bd9f1-53bd-11f1-0a80-04f400033e87",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26843",
+        "old_uuid": "68ccc0f2-16de-11f1-0a80-17dc000986c1",
+        "new_uuid": "0cb10cc0-53bd-11f1-0a80-1adb00031418",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00003",
+        "old_uuid": "68f4b474-efbd-11f0-0a80-1b8400c7e913",
+        "new_uuid": "304cf778-5416-11f1-0a80-0d64000edbc0",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18050",
+        "old_uuid": "6b11c6f3-0da5-11f1-0a80-13080027bd7e",
+        "new_uuid": "100a1fc0-53bd-11f1-0a80-0d640003115b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00121",
+        "old_uuid": "6b1e6a3f-505a-11f1-0a80-1d35001000d2",
+        "new_uuid": "109bd7cf-53bd-11f1-0a80-1d4b000310c5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18031",
+        "old_uuid": "6cc5fc23-0802-11f1-0a80-08e0000d6b3f",
+        "new_uuid": "131d69d7-53bd-11f1-0a80-14620002e77f",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00201",
+        "old_uuid": "6cea50ed-3e13-11f1-0a80-0f8c0004bf9e",
+        "new_uuid": "31d0614e-5416-11f1-0a80-0d64000edc21",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00090",
+        "old_uuid": "6d165ba4-0804-11f1-0a80-010c000d8d66",
+        "new_uuid": "13cec1ce-53bd-11f1-0a80-04f400033f42",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01649",
+        "old_uuid": "6dfdc0ce-f21b-11f0-0a80-0b2700115658",
+        "new_uuid": "32549447-5416-11f1-0a80-1d4b000ee9f8",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26916",
+        "old_uuid": "6e6ce329-213e-11f1-0a80-130c003790cf",
+        "new_uuid": "14f721cc-53bd-11f1-0a80-194500035738",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18283",
+        "old_uuid": "6ea39854-3805-11f1-0a80-0c04004e2744",
+        "new_uuid": "1689260b-53bd-11f1-0a80-08cc00032c44",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26805",
+        "old_uuid": "6ed16805-0264-11f1-0a80-0fdc00055e11",
+        "new_uuid": "176b4732-53bd-11f1-0a80-14620002e7a8",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26908",
+        "old_uuid": "6ef6ce56-1de5-11f1-0a80-0fee00064d18",
+        "new_uuid": "181b3ceb-53bd-11f1-0a80-064e0002f8de",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01679",
+        "old_uuid": "7022c8e0-f78c-11f0-0a80-1482000efba2",
+        "new_uuid": "33aa5031-5416-11f1-0a80-11f1000ed16f",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18075",
+        "old_uuid": "7053d18e-16e1-11f1-0a80-1b57000a6445",
+        "new_uuid": "3409f7d5-5416-11f1-0a80-04f4000f4bd4",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00223",
+        "old_uuid": "7433a31b-43b9-11f1-0a80-0d60000c2634",
+        "new_uuid": "1e03c26c-53bd-11f1-0a80-064e0002f924",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18043",
+        "old_uuid": "744c472d-0bf3-11f1-0a80-00b3000e0b4c",
+        "new_uuid": "1e627a1e-53bd-11f1-0a80-000800031a2c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-00239",
+        "old_uuid": "74a78e52-4ab5-11f1-0a80-00d3001b5f4e",
+        "new_uuid": "36a4a063-5416-11f1-0a80-0b2a000f2154",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18254",
+        "old_uuid": "74c3363a-3324-11f1-0a80-055e0007f10e",
+        "new_uuid": "1f203c49-53bd-11f1-0a80-1d4b00031167",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26806",
+        "old_uuid": "74c5eb1a-034d-11f1-0a80-05e8000c312c",
+        "new_uuid": "36ff407b-5416-11f1-0a80-0b2a000f2172",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26906",
+        "old_uuid": "75bcffbd-1de3-11f1-0a80-1d7700065d93",
+        "new_uuid": "217cd82b-53bd-11f1-0a80-04f400033fa2",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18244",
+        "old_uuid": "76b1dfe5-3195-11f1-0a80-135e002e5ea0",
+        "new_uuid": "38089888-5416-11f1-0a80-1945000f6a13",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26793",
+        "old_uuid": "77150794-efbe-11f0-0a80-0c3700c95a8a",
+        "new_uuid": "2371e141-53bd-11f1-0a80-1adb00031539",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26796",
+        "old_uuid": "77add3f5-f5f4-11f0-0a80-045f000e00fc",
+        "new_uuid": "24020cc1-53bd-11f1-0a80-04f400033fc8",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11169",
+        "old_uuid": "77d52ae3-1700-11f1-0a80-1a7900113a43",
+        "new_uuid": "394976f2-5416-11f1-0a80-1adb000f2b73",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26827",
+        "old_uuid": "783b0150-16d4-11f1-0a80-09550006f05d",
+        "new_uuid": "25a96472-53bd-11f1-0a80-1adb00031550",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00166",
+        "old_uuid": "785c022c-2c40-11f1-0a80-0704004e0091",
+        "new_uuid": "261708fa-53bd-11f1-0a80-064e0002f9ae",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18515",
+        "old_uuid": "786fe397-5a95-11f1-0a80-09d8000fa2e0",
+        "new_uuid": "cf2700c1-5d8c-11f1-0a80-16af0074d488",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26928",
+        "old_uuid": "789ac544-22d4-11f1-0a80-10640012a57c",
+        "new_uuid": "2768fd54-53bd-11f1-0a80-1945000357c4",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00091",
+        "old_uuid": "79d464b1-0806-11f1-0a80-13bb000df5f9",
+        "new_uuid": "3b175c28-5416-11f1-0a80-0395000f1e7e",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00173",
+        "old_uuid": "79dd6a7a-2db1-11f1-0a80-0853000beeb6",
+        "new_uuid": "3b80071d-5416-11f1-0a80-0b2a000f225c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00067",
+        "old_uuid": "7afce9b2-1d4e-11f1-0a80-0823005a674a",
+        "new_uuid": "2cb798a0-53bd-11f1-0a80-107100031c1f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00148",
+        "old_uuid": "7b378d1c-238f-11f1-0a80-1bc3000f27ec",
+        "new_uuid": "3d246d04-5416-11f1-0a80-0fe7000f4ac9",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26933",
+        "old_uuid": "7ba87b71-2394-11f1-0a80-1ca0000f7b33",
+        "new_uuid": "2ec61b40-53bd-11f1-0a80-064e0002fa31",
+        "old_count": 14,
+        "new_count": 8,
+        "missing_count": 6,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26903",
+        "old_uuid": "7d0e0392-1d39-11f1-0a80-16a5005660b1",
+        "new_uuid": "30bd69ec-53bd-11f1-0a80-1945000357fe",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26881",
+        "old_uuid": "7d2fa947-1940-11f1-0a80-04ee0009f8ed",
+        "new_uuid": "3224ed3f-53bd-11f1-0a80-194500035812",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26918",
+        "old_uuid": "7d6e080b-21f0-11f1-0a80-1c88000dc4df",
+        "new_uuid": "335a2859-53bd-11f1-0a80-064e0002fa4d",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00049",
+        "old_uuid": "7e4b288f-faa2-11f0-0a80-0ecb001d5bf7",
+        "new_uuid": "34d72ba4-53bd-11f1-0a80-0395000333e8",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00588",
+        "old_uuid": "7e4e678f-0da3-11f1-0a80-04c80027a8f9",
+        "new_uuid": "3535c316-53bd-11f1-0a80-107100031c7d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26941",
+        "old_uuid": "7f54d411-26b9-11f1-0a80-119a0031f29b",
+        "new_uuid": "372d7ce4-53bd-11f1-0a80-04f40003409b",
+        "old_count": 6,
+        "new_count": 3,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00046",
+        "old_uuid": "7f610d3d-f2e0-11f0-0a80-1af50010417e",
+        "new_uuid": "37a15111-53bd-11f1-0a80-0d64000312cb",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-00238",
+        "old_uuid": "7f9eb8f1-4ab4-11f1-0a80-00d3001b3030",
+        "new_uuid": "3fa0eca9-5416-11f1-0a80-0395000f1f68",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18262",
+        "old_uuid": "815c97b9-370b-11f1-0a80-1d7d00285afd",
+        "new_uuid": "4103aca4-5416-11f1-0a80-0d64000edeb0",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00052",
+        "old_uuid": "8166d269-f85d-11f0-0a80-0ec6000f7261",
+        "new_uuid": "3a7182e1-53bd-11f1-0a80-1945000358e5",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00193",
+        "old_uuid": "81ec0e8e-3803-11f1-0a80-01c60047f580",
+        "new_uuid": "41ac0939-5416-11f1-0a80-0d64000edec0",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26911",
+        "old_uuid": "8251cb81-1eeb-11f1-0a80-16b60011c8d2",
+        "new_uuid": "3bfc2fb8-53bd-11f1-0a80-000800032491",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26962",
+        "old_uuid": "82fa5dff-3282-11f1-0a80-06da00117822",
+        "new_uuid": "3cbd8cae-53bd-11f1-0a80-039500033462",
+        "old_count": 6,
+        "new_count": 3,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11131",
+        "old_uuid": "839e012d-fde3-11f0-0a80-16530011352e",
+        "new_uuid": "3d207bf6-53bd-11f1-0a80-11f10002e080",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00098",
+        "old_uuid": "8449f99b-3a4d-11f1-0a80-160b000c16a1",
+        "new_uuid": "3e42e409-53bd-11f1-0a80-08cc00032e70",
+        "old_count": 2,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-18378",
+        "old_uuid": "8547a18f-4f9f-11f1-0a80-134700137899",
+        "new_uuid": "3ed6c4d0-53bd-11f1-0a80-0b2a0002efcf",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26894",
+        "old_uuid": "856cba40-1c7d-11f1-0a80-096400438df2",
+        "new_uuid": "3f34ff5a-53bd-11f1-0a80-0008000324cf",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01764",
+        "old_uuid": "85779dbb-01cd-11f1-0a80-084e000f2531",
+        "new_uuid": "3f99649e-53bd-11f1-0a80-194500035910",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26900",
+        "old_uuid": "857f5d87-1d17-11f1-0a80-1a86004cfed1",
+        "new_uuid": "400fcdea-53bd-11f1-0a80-11f10002e0a1",
+        "old_count": 6,
+        "new_count": 4,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26925",
+        "old_uuid": "85f9f881-22cd-11f1-0a80-1c8c001147e1",
+        "new_uuid": "40dfffc1-53bd-11f1-0a80-19450003591e",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11168",
+        "old_uuid": "86ef5fb5-16ff-11f1-0a80-1b570011c580",
+        "new_uuid": "434d6906-5416-11f1-0a80-1adb000f2dc6",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18110",
+        "old_uuid": "8702bbba-1d33-11f1-0a80-00f20053d1b2",
+        "new_uuid": "43c205da-5416-11f1-0a80-0395000f2030",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18137",
+        "old_uuid": "88554b40-1eea-11f1-0a80-17cd00121e84",
+        "new_uuid": "434a9053-53bd-11f1-0a80-064e0002fb93",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26867",
+        "old_uuid": "88e63c96-17d5-11f1-0a80-04e800138c03",
+        "new_uuid": "44bcefab-53bd-11f1-0a80-04f40003418b",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26938",
+        "old_uuid": "89033884-242e-11f1-0a80-16c900056ea5",
+        "new_uuid": "457f31cf-53bd-11f1-0a80-0b2a0002f01f",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-06038",
+        "old_uuid": "8915cd1a-52b6-11f1-0a80-15650036cd33",
+        "new_uuid": "45267d3f-5416-11f1-0a80-0395000f206e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18235",
+        "old_uuid": "89408fef-2f2a-11f1-0a80-09e200054e28",
+        "new_uuid": "4580170a-5416-11f1-0a80-1071000f6386",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00064",
+        "old_uuid": "8941e022-1613-11f1-0a80-06bb0033935a",
+        "new_uuid": "463c493a-53bd-11f1-0a80-064e0002fba1",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18305",
+        "old_uuid": "89a84493-3e21-11f1-0a80-131d00079a84",
+        "new_uuid": "45d7668d-5416-11f1-0a80-11f1000ed3d1",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26909",
+        "old_uuid": "89d45a8b-1e13-11f1-0a80-00f800114292",
+        "new_uuid": "47633f8d-53bd-11f1-0a80-11f10002e0d9",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26976",
+        "old_uuid": "8bd58de4-42fc-11f1-0a80-17ea004cdbdd",
+        "new_uuid": "49408f91-53bd-11f1-0a80-14620002e958",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26942",
+        "old_uuid": "8d3b9d46-26b9-11f1-0a80-069700329405",
+        "new_uuid": "4bd36acf-53bd-11f1-0a80-000800032cde",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26792",
+        "old_uuid": "8dc61120-efbc-11f0-0a80-1a2200c401ea",
+        "new_uuid": "4c7321f9-53bd-11f1-0a80-000800032ce9",
+        "old_count": 11,
+        "new_count": 4,
+        "missing_count": 7,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00095",
+        "old_uuid": "8e6f7f18-3814-11f1-0a80-0306004bf26d",
+        "new_uuid": "4de697b1-53bd-11f1-0a80-000800032cf8",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18065",
+        "old_uuid": "8f6d3a07-12fb-11f1-0a80-00cf000bebbe",
+        "new_uuid": "49124bce-5416-11f1-0a80-0b2a000f24c3",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-06023",
+        "old_uuid": "8fb92bc4-3ef9-11f1-0a80-0f92000a9f6b",
+        "new_uuid": "4ff254e3-53bd-11f1-0a80-0b2a0002f0e0",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18134",
+        "old_uuid": "913a98a2-1ee1-11f1-0a80-130c0010a683",
+        "new_uuid": "5135bb9d-53bd-11f1-0a80-03950003351d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00006",
+        "old_uuid": "915800c8-f06f-11f0-0a80-0449000c7ad9",
+        "new_uuid": "519b1a73-53bd-11f1-0a80-064e0002fbfe",
+        "old_count": 7,
+        "new_count": 1,
+        "missing_count": 6,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26876",
+        "old_uuid": "91782c41-1898-11f1-0a80-0d790011d06d",
+        "new_uuid": "52c48872-53bd-11f1-0a80-064e0002fc1f",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18252",
+        "old_uuid": "91bca62a-3322-11f1-0a80-03f70007aec9",
+        "new_uuid": "55187522-53bd-11f1-0a80-000800032d24",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26932",
+        "old_uuid": "91daf247-22d7-11f1-0a80-0f380013a438",
+        "new_uuid": "58f93c6b-53bd-11f1-0a80-11f10002e20f",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01647",
+        "old_uuid": "92e0704f-f216-11f0-0a80-1c3a00113eda",
+        "new_uuid": "4ae5a065-5416-11f1-0a80-0b2a000f2542",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18173",
+        "old_uuid": "93282fae-21fb-11f1-0a80-001000106e34",
+        "new_uuid": "5f9cd13f-53bd-11f1-0a80-1d4b00031521",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00080",
+        "old_uuid": "936724f2-372b-11f1-0a80-0c04002f755b",
+        "new_uuid": "60cb6f9c-53bd-11f1-0a80-107100031f8f",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26847",
+        "old_uuid": "93739f46-16e0-11f1-0a80-169700096bd2",
+        "new_uuid": "61a263af-53bd-11f1-0a80-1d4b000315af",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00124",
+        "old_uuid": "93787ed2-52b3-11f1-0a80-0c830036061b",
+        "new_uuid": "6332415e-53bd-11f1-0a80-0008000336a0",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00116",
+        "old_uuid": "95382cc0-13d3-11f1-0a80-103d000ed0fd",
+        "new_uuid": "4dafbb90-5416-11f1-0a80-0395000f21dd",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01659",
+        "old_uuid": "955e061c-f51d-11f0-0a80-0c52002dc324",
+        "new_uuid": "4e924f18-5416-11f1-0a80-0395000f21f7",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00230",
+        "old_uuid": "956dee0f-485a-11f1-0a80-0145000839ea",
+        "new_uuid": "4eff5f79-5416-11f1-0a80-1d4b000eed9b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26988",
+        "old_uuid": "9618cb52-4e90-11f1-0a80-04540003faaf",
+        "new_uuid": "6c2e581e-53bd-11f1-0a80-107100032129",
+        "old_count": 10,
+        "new_count": 2,
+        "missing_count": 8,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26825",
+        "old_uuid": "96af4171-16d3-11f1-0a80-19640006e8ec",
+        "new_uuid": "6e38bead-53bd-11f1-0a80-14620002ec38",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00078",
+        "old_uuid": "9733abdf-0746-11f1-0a80-0e39000e1a2e",
+        "new_uuid": "5005e3c2-5416-11f1-0a80-0d64000ee096",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26849",
+        "old_uuid": "97d03c0e-16f6-11f1-0a80-0371000f4063",
+        "new_uuid": "72a2f902-53bd-11f1-0a80-0efe00034242",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00136",
+        "old_uuid": "97d3d87b-1edf-11f1-0a80-1cb20010dba9",
+        "new_uuid": "7312f995-53bd-11f1-0a80-039500033f4d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01636",
+        "old_uuid": "9892477d-f07f-11f0-0a80-08e2000f805b",
+        "new_uuid": "516ee2af-5416-11f1-0a80-0008000f9546",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18455",
+        "old_uuid": "98a97d9b-52b5-11f1-0a80-0c8300368453",
+        "new_uuid": "745bd681-53bd-11f1-0a80-0efe00034257",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-06029",
+        "old_uuid": "98f0511b-4f9d-11f1-0a80-105d00130174",
+        "new_uuid": "74c96b7d-53bd-11f1-0a80-064e00030229",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26851",
+        "old_uuid": "998a0812-16f7-11f1-0a80-0371000f73cb",
+        "new_uuid": "76d5df43-53bd-11f1-0a80-08cc00033297",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26830",
+        "old_uuid": "99a7c31a-16d5-11f1-0a80-104a00077dc9",
+        "new_uuid": "777af907-53bd-11f1-0a80-000800033826",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11231",
+        "old_uuid": "99e41c46-4a18-11f1-0a80-014b0010db2b",
+        "new_uuid": "7813e1a5-53bd-11f1-0a80-00080003383f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26946",
+        "old_uuid": "9a0df668-2784-11f1-0a80-190a001271d0",
+        "new_uuid": "799fa051-53bd-11f1-0a80-11f10002e4b2",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11212",
+        "old_uuid": "9b4263eb-3405-11f1-0a80-13b4000da14b",
+        "new_uuid": "7cacffb2-53bd-11f1-0a80-039500034048",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26952",
+        "old_uuid": "9b7bd620-2c43-11f1-0a80-1a29004d294d",
+        "new_uuid": "7d293839-53bd-11f1-0a80-0fe70003500f",
+        "old_count": 7,
+        "new_count": 3,
+        "missing_count": 4,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-00241",
+        "old_uuid": "9c38678c-4dfb-11f1-0a80-0634005393c5",
+        "new_uuid": "7e779aa4-53bd-11f1-0a80-0b2a0002f560",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00100",
+        "old_uuid": "9d1fd4d4-3a4f-11f1-0a80-160b000c774c",
+        "new_uuid": "7f528282-53bd-11f1-0a80-0fe7000350cb",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18340",
+        "old_uuid": "9d6bf2e3-4859-11f1-0a80-0ee000080a4e",
+        "new_uuid": "54ad6308-5416-11f1-0a80-0fe7000f4e6d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00234",
+        "old_uuid": "9e97bd37-4955-11f1-0a80-08b0002802eb",
+        "new_uuid": "815b9dc5-53bd-11f1-0a80-14620002efb5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18250",
+        "old_uuid": "9ea7d5df-325b-11f1-0a80-1c7a0008d685",
+        "new_uuid": "820894f0-53bd-11f1-0a80-064e000305a0",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00600",
+        "old_uuid": "9ec1db71-192b-11f1-0a80-04ee00059284",
+        "new_uuid": "82ae3ea9-53bd-11f1-0a80-1071000323f3",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18057",
+        "old_uuid": "9f4b6027-121b-11f1-0a80-06660005be67",
+        "new_uuid": "835b8324-53bd-11f1-0a80-0b2a0002f6f6",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00594",
+        "old_uuid": "9f50d37c-1316-11f1-0a80-07b400123840",
+        "new_uuid": "83bceaad-53bd-11f1-0a80-08cc0003353b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00212",
+        "old_uuid": "9fe9fc12-3fc1-11f1-0a80-18f4000a15bd",
+        "new_uuid": "56f4dc47-5416-11f1-0a80-1462000ed014",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00144",
+        "old_uuid": "a0981115-22cc-11f1-0a80-19fb0011563a",
+        "new_uuid": "851e06df-53bd-11f1-0a80-064e00030eab",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26868",
+        "old_uuid": "a16314df-1862-11f1-0a80-04eb00058be1",
+        "new_uuid": "8587f354-53bd-11f1-0a80-000800033ce2",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18080",
+        "old_uuid": "a186fa89-16fd-11f1-0a80-196400108f78",
+        "new_uuid": "57cd7213-5416-11f1-0a80-1462000ed01f",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11140",
+        "old_uuid": "a253da6a-05c2-11f1-0a80-03320038b107",
+        "new_uuid": "58aa6ef5-5416-11f1-0a80-11f1000ed6df",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01771",
+        "old_uuid": "a2850e0b-0349-11f1-0a80-019e000b8d45",
+        "new_uuid": "88a5e038-53bd-11f1-0a80-04f400034bcf",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26949",
+        "old_uuid": "a308fca5-2840-11f1-0a80-0f4200257b5f",
+        "new_uuid": "8a498e45-53bd-11f1-0a80-1d4b0003212e",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00016",
+        "old_uuid": "a375aebe-f210-11f0-0a80-0e3b000fb1f2",
+        "new_uuid": "8b9e229f-53bd-11f1-0a80-1d4b0003224a",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18237",
+        "old_uuid": "a3c6d1cd-2e8c-11f1-0a80-0f55000f4197",
+        "new_uuid": "5a026057-5416-11f1-0a80-1462000ed0ac",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26832",
+        "old_uuid": "a511d051-16d6-11f1-0a80-04e100080800",
+        "new_uuid": "8d8e8cb0-53bd-11f1-0a80-11f10002ebd5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26914",
+        "old_uuid": "a5b82bb5-213d-11f1-0a80-16b60036416b",
+        "new_uuid": "8e5c9adb-53bd-11f1-0a80-0fe7000356a0",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00011",
+        "old_uuid": "a6243b04-f12a-11f0-0a80-01c6000918e9",
+        "new_uuid": "5abe83d3-5416-11f1-0a80-064e000f6e44",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18123",
+        "old_uuid": "a659af7f-1e01-11f1-0a80-07ee000d0680",
+        "new_uuid": "5b49c13b-5416-11f1-0a80-0d64000ee3d5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18046",
+        "old_uuid": "a674b2c1-0cb3-11f1-0a80-1b33000b88c8",
+        "new_uuid": "5ba096bb-5416-11f1-0a80-1945000f703c",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26864",
+        "old_uuid": "a78325c8-17d1-11f1-0a80-07d80012c958",
+        "new_uuid": "905c713f-53bd-11f1-0a80-0b2a0002fda3",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18028",
+        "old_uuid": "a81a0e64-07e0-11f1-0a80-010c00058c8a",
+        "new_uuid": "5d31b4eb-5416-11f1-0a80-0fe7000f5161",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00044",
+        "old_uuid": "a82513ee-efbf-11f0-0a80-0b1a00c67e88",
+        "new_uuid": "919f0a49-53bd-11f1-0a80-1adb00032381",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18113",
+        "old_uuid": "a942d265-1de2-11f1-0a80-1caf0005b80e",
+        "new_uuid": "93d2a0a3-53bd-11f1-0a80-1adb000324a0",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26899",
+        "old_uuid": "a9474faf-1c86-11f1-0a80-00f200457eef",
+        "new_uuid": "942ef22b-53bd-11f1-0a80-039500034d00",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00228",
+        "old_uuid": "a9fa6512-47b7-11f1-0a80-1a3a0017f027",
+        "new_uuid": "95b69ca0-53bd-11f1-0a80-107100032873",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00089",
+        "old_uuid": "aa391da8-0803-11f1-0a80-1b10000cdc42",
+        "new_uuid": "5eb1af36-5416-11f1-0a80-0395000f24d0",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01757",
+        "old_uuid": "aa7864d6-00de-11f1-0a80-0634000b3982",
+        "new_uuid": "5f33cb7b-5416-11f1-0a80-11f1000ed916",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26945",
+        "old_uuid": "ab125224-2783-11f1-0a80-1bcb00114b05",
+        "new_uuid": "979953d2-53bd-11f1-0a80-11f10002f022",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26802",
+        "old_uuid": "ab5c0d86-0037-11f1-0a80-0fd100357325",
+        "new_uuid": "97f84fef-53bd-11f1-0a80-1adb000325d0",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26923",
+        "old_uuid": "abcfb469-21f3-11f1-0a80-1ba1000f4512",
+        "new_uuid": "991cd9ff-53bd-11f1-0a80-107100032b29",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18261",
+        "old_uuid": "acda3155-33f2-11f1-0a80-13b400094d01",
+        "new_uuid": "9a13b04e-53bd-11f1-0a80-107100032b8f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00092",
+        "old_uuid": "ad45ca08-3813-11f1-0a80-1c840050c945",
+        "new_uuid": "9ad0abc4-53bd-11f1-0a80-11f10002f175",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00601",
+        "old_uuid": "adfbd9b3-1c4f-11f1-0a80-08230038a77b",
+        "new_uuid": "9c931fbf-53bd-11f1-0a80-0d6400031f45",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00125",
+        "old_uuid": "ae7bce1f-17c7-11f1-0a80-095900102036",
+        "new_uuid": "60e3b9ee-5416-11f1-0a80-064e000f6fd3",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01726",
+        "old_uuid": "aea12ae3-fc4b-11f0-0a80-0ecf00264946",
+        "new_uuid": "9dcd1b85-53bd-11f1-0a80-0efe000350e2",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18170",
+        "old_uuid": "af8acbe4-21ec-11f1-0a80-09b8000c9ecb",
+        "new_uuid": "9f1ca506-53bd-11f1-0a80-0d6400031fb5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26939",
+        "old_uuid": "b02e4628-242f-11f1-0a80-1d340005cb4a",
+        "new_uuid": "a074c0f8-53bd-11f1-0a80-064e000316a1",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26968",
+        "old_uuid": "b0cd0702-38b9-11f1-0a80-0e8e000d02a7",
+        "new_uuid": "a1d99012-53bd-11f1-0a80-1adb000328cb",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01645",
+        "old_uuid": "b0e2a309-f212-11f0-0a80-1be400100d74",
+        "new_uuid": "a265af11-53bd-11f1-0a80-08cc00033fa3",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00019",
+        "old_uuid": "b10a051c-f2df-11f0-0a80-0ded000fb8e5",
+        "new_uuid": "a2c22273-53bd-11f1-0a80-0d640003212f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18328",
+        "old_uuid": "b166f88a-4471-11f1-0a80-15d20008f7f4",
+        "new_uuid": "9eb89976-541c-11f1-0a80-1d4b00107b3c",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "00092",
+        "old_uuid": "b3ce0ccc-08aa-11f1-0a80-184800059504",
+        "new_uuid": "65436dcc-5416-11f1-0a80-1d4b000ef273",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26963",
+        "old_uuid": "b3cf80b3-332d-11f1-0a80-17b4000a76d8",
+        "new_uuid": "65a4b555-5416-11f1-0a80-1adb000f359b",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00008",
+        "old_uuid": "b4830b09-f088-11f0-0a80-0d9400119412",
+        "new_uuid": "661554f3-5416-11f1-0a80-0efe000f4189",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26811",
+        "old_uuid": "b4b51d8c-067e-11f1-0a80-00e7000ff450",
+        "new_uuid": "a78c47e5-53bd-11f1-0a80-146200030419",
+        "old_count": 7,
+        "new_count": 4,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11155",
+        "old_uuid": "b72ada2d-0bff-11f1-0a80-1b1a0010fd4f",
+        "new_uuid": "a8e354d4-53bd-11f1-0a80-1071000330ad",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00121",
+        "old_uuid": "b9711af7-16e1-11f1-0a80-104a000a6630",
+        "new_uuid": "68253c06-5416-11f1-0a80-1945000f726e",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00083",
+        "old_uuid": "b9a1bd5c-374b-11f1-0a80-10670038be30",
+        "new_uuid": "ab93cd81-53bd-11f1-0a80-064e00031d66",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26981",
+        "old_uuid": "b9d326b1-47c4-11f1-0a80-08ab001bccf4",
+        "new_uuid": "abf6698a-53bd-11f1-0a80-00080003498a",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00124",
+        "old_uuid": "b9f16bb6-17c0-11f1-0a80-07d8000f08b8",
+        "new_uuid": "acbff1fb-53bd-11f1-0a80-1d4b00032a57",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00187",
+        "old_uuid": "b9f27a7d-326c-11f1-0a80-18c8000ca0e8",
+        "new_uuid": "ad2a7ca3-53bd-11f1-0a80-1d4b00032a66",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18306",
+        "old_uuid": "baa97fa1-3e23-11f1-0a80-0e0600087ad4",
+        "new_uuid": "ae0c7be8-53bd-11f1-0a80-0008000349ed",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18337",
+        "old_uuid": "bab1a4b7-47b6-11f1-0a80-092d0018053b",
+        "new_uuid": "ae7a3362-53bd-11f1-0a80-0008000349fc",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26961",
+        "old_uuid": "bb41ab51-327e-11f1-0a80-09e500117a8c",
+        "new_uuid": "af9ae19c-53bd-11f1-0a80-0efe0003545a",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-00243",
+        "old_uuid": "bbfa85a0-4ea1-11f1-0a80-06380007db23",
+        "new_uuid": "698d3dd2-5416-11f1-0a80-04f4000f6169",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26862",
+        "old_uuid": "bc66ce6c-17cf-11f1-0a80-09590011cb05",
+        "new_uuid": "b1ac1c3f-53bd-11f1-0a80-0b2a00030fbc",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00107",
+        "old_uuid": "bd1ceee4-3e4c-11f1-0a80-0f8c00111ff2",
+        "new_uuid": "b4669b9c-53bd-11f1-0a80-0d64000325c8",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26879",
+        "old_uuid": "bde65e89-189d-11f1-0a80-03790013678a",
+        "new_uuid": "b66c35d3-53bd-11f1-0a80-08cc0003492a",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26861",
+        "old_uuid": "be77f243-17ce-11f1-0a80-1b5f0011b2bc",
+        "new_uuid": "b7996a7f-53bd-11f1-0a80-000800034cde",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11115",
+        "old_uuid": "be846c94-f20c-11f0-0a80-15e5000e7a07",
+        "new_uuid": "6b40852f-5416-11f1-0a80-1071000f68b5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00067",
+        "old_uuid": "bed3e3c8-01cc-11f1-0a80-1ac1000e8111",
+        "new_uuid": "b8e6abee-53bd-11f1-0a80-146200030763",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00002",
+        "old_uuid": "bee38d5a-590c-11f1-0a80-04f500500783",
+        "new_uuid": "094c981f-53c9-11f1-0a80-04f40004a372",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 1
+      },
+      {
+        "name": "ФР-00111",
+        "old_uuid": "bf1ccbe3-43a0-11f1-0a80-00be00076332",
+        "new_uuid": "ba01797f-53bd-11f1-0a80-1d4b00032bcc",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26823",
+        "old_uuid": "bf1d0f25-16d1-11f1-0a80-07c40006710c",
+        "new_uuid": "ba6aa00d-53bd-11f1-0a80-1d4b00032bda",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00184",
+        "old_uuid": "bf2d285c-3193-11f1-0a80-174e002e1acb",
+        "new_uuid": "6bbe0ac9-5416-11f1-0a80-0b2a000f2f85",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18068",
+        "old_uuid": "bf2e3251-1317-11f1-0a80-04070011de56",
+        "new_uuid": "bb09045c-53bd-11f1-0a80-107100033ad1",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26859",
+        "old_uuid": "bf3e4347-17cd-11f1-0a80-04e80012192a",
+        "new_uuid": "bb789a66-53bd-11f1-0a80-064e00032a4e",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18119",
+        "old_uuid": "c09e2e2b-1eae-11f1-0a80-052e00064a0a",
+        "new_uuid": "bd66295d-53bd-11f1-0a80-0fe700036179",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18256",
+        "old_uuid": "c0d44720-3327-11f1-0a80-078f0008edae",
+        "new_uuid": "be378819-53bd-11f1-0a80-04f400035f41",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-06041",
+        "old_uuid": "c16afa4c-5354-11f1-0a80-04d300066af3",
+        "new_uuid": "c00253a8-53bd-11f1-0a80-0b2a00031306",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01650",
+        "old_uuid": "c1b206e7-f2aa-11f0-0a80-14720005407e",
+        "new_uuid": "6da4d4d8-5416-11f1-0a80-11f1000edc8f",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00114",
+        "old_uuid": "c2812fb4-4df9-11f1-0a80-144f0053b715",
+        "new_uuid": "c1eb1f69-53bd-11f1-0a80-1adb00032d32",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26856",
+        "old_uuid": "c2903bee-17a8-11f1-0a80-018e000927fb",
+        "new_uuid": "c24db51f-53bd-11f1-0a80-0b2a000313e9",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18078",
+        "old_uuid": "c39d3533-16f5-11f1-0a80-17dc000efd5b",
+        "new_uuid": "c3f46712-53bd-11f1-0a80-04f400036346",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11220",
+        "old_uuid": "c3ca527d-3a5d-11f1-0a80-00cf000f365b",
+        "new_uuid": "c465c7f5-53bd-11f1-0a80-1d4b00032c88",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00085",
+        "old_uuid": "c43aed2a-37e3-11f1-0a80-03060041a435",
+        "new_uuid": "c51e76cb-53bd-11f1-0a80-0395000356d8",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11146",
+        "old_uuid": "c47466f3-07e8-11f1-0a80-03480007192c",
+        "new_uuid": "6e5b28ad-5416-11f1-0a80-0395000f2759",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18063",
+        "old_uuid": "c4773e7b-12f3-11f1-0a80-0fd10009d54b",
+        "new_uuid": "c5cbfd2f-53bd-11f1-0a80-0d64000326e3",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-00256",
+        "old_uuid": "c4b1184c-4fa1-11f1-0a80-105d0013b3ec",
+        "new_uuid": "6eb4b674-5416-11f1-0a80-0efe000f4319",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00216",
+        "old_uuid": "c50d5058-420a-11f1-0a80-0d5a002b2255",
+        "new_uuid": "c713e795-53bd-11f1-0a80-1d4b00032d12",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11183",
+        "old_uuid": "c53fc31c-1ddf-11f1-0a80-1caf00052d07",
+        "new_uuid": "c76aff6c-53bd-11f1-0a80-000800035002",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18032",
+        "old_uuid": "c5cca9c1-0802-11f1-0a80-010c000d307a",
+        "new_uuid": "c814dab4-53bd-11f1-0a80-0d6400032701",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01626",
+        "old_uuid": "c76c40f5-efc5-11f0-0a80-1b8400c9380a",
+        "new_uuid": "ca733bd7-53bd-11f1-0a80-1adb00032de4",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00063",
+        "old_uuid": "c7f9fa3d-066c-11f1-0a80-0646000c71bc",
+        "new_uuid": "cb5fda20-53bd-11f1-0a80-000800035062",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18329",
+        "old_uuid": "c82db942-4471-11f1-0a80-0d7f0009047f",
+        "new_uuid": "a214be64-541c-11f1-0a80-064e0010f05e",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-18083",
+        "old_uuid": "c83f623e-1861-11f1-0a80-1a82000589bc",
+        "new_uuid": "71367a68-5416-11f1-0a80-064e000f73c4",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00160",
+        "old_uuid": "c8666c19-2831-11f1-0a80-1bcb001fa7cb",
+        "new_uuid": "cc10c218-53bd-11f1-0a80-0fe700036389",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26809",
+        "old_uuid": "c9434c63-05c0-11f1-0a80-078e00390fb7",
+        "new_uuid": "71ed7981-5416-11f1-0a80-08cc000ef704",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11122",
+        "old_uuid": "c9907859-fa9c-11f0-0a80-0477001b9cb8",
+        "new_uuid": "cd77a0f7-53bd-11f1-0a80-064e00032bc4",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18087",
+        "old_uuid": "ca48f8b0-17c5-11f1-0a80-137f001006ca",
+        "new_uuid": "d06c9ce4-53bd-11f1-0a80-0fe70003640a",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01762",
+        "old_uuid": "caa26dc4-01bf-11f1-0a80-00cc000c664c",
+        "new_uuid": "d26d7baf-53bd-11f1-0a80-0b2a00031898",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26870",
+        "old_uuid": "caf8fa59-186b-11f1-0a80-0d79000801f8",
+        "new_uuid": "d3063abc-53bd-11f1-0a80-0b2a000318c7",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26887",
+        "old_uuid": "cb168cde-194e-11f1-0a80-1d63000d7dd4",
+        "new_uuid": "d389f824-53bd-11f1-0a80-0b2a0003194c",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00186",
+        "old_uuid": "cb80d0c1-319f-11f1-0a80-0866003141c2",
+        "new_uuid": "72e1dfe2-5416-11f1-0a80-064e000f73f1",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00074",
+        "old_uuid": "cb9c63bb-2e94-11f1-0a80-135200107465",
+        "new_uuid": "d4da1167-53bd-11f1-0a80-064e00032c9d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26855",
+        "old_uuid": "cbfd5dc4-17a7-11f1-0a80-04e800095a9c",
+        "new_uuid": "d5f6ebd4-53bd-11f1-0a80-08cc00034c48",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26943",
+        "old_uuid": "cc09846f-26b9-11f1-0a80-1d34003225df",
+        "new_uuid": "d671e3ea-53bd-11f1-0a80-1d4b00032df5",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00104",
+        "old_uuid": "cc2d433f-3cc3-11f1-0a80-1de00038124d",
+        "new_uuid": "d72ac15e-53bd-11f1-0a80-107100033f00",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26888",
+        "old_uuid": "cca4597d-1965-11f1-0a80-06e00011cf08",
+        "new_uuid": "d84747f9-53bd-11f1-0a80-0d6400032815",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26930",
+        "old_uuid": "ccc12e82-22d5-11f1-0a80-1ab60013022a",
+        "new_uuid": "d90e6eae-53bd-11f1-0a80-00080003511b",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01758",
+        "old_uuid": "cd2266a3-00e8-11f1-0a80-0976000bcd37",
+        "new_uuid": "d9a3d7ac-53bd-11f1-0a80-107100033f4e",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00181",
+        "old_uuid": "cd5249e9-2f44-11f1-0a80-135e000a9a71",
+        "new_uuid": "da0342a8-53bd-11f1-0a80-107100033f67",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11247",
+        "old_uuid": "ce8cb60b-5380-11f1-0a80-02e300114c39",
+        "new_uuid": "74eae96a-5416-11f1-0a80-0efe000f4406",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26822",
+        "old_uuid": "cef08995-130e-11f1-0a80-141300101d41",
+        "new_uuid": "76283bc3-5416-11f1-0a80-1071000f6bda",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01760",
+        "old_uuid": "d008c7dc-0109-11f1-0a80-05db00137daa",
+        "new_uuid": "76e5d1fc-5416-11f1-0a80-1adb000f379b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18098",
+        "old_uuid": "d2029866-1c55-11f1-0a80-1cac0038bc42",
+        "new_uuid": "7816c2cd-5416-11f1-0a80-0efe000f44de",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26990",
+        "old_uuid": "d315f5ec-529d-11f1-0a80-04ca00317e9e",
+        "new_uuid": "787ba1cb-5416-11f1-0a80-0efe000f4519",
+        "old_count": 7,
+        "new_count": 3,
+        "missing_count": 4,
+        "extra_count": 0
+      },
+      {
+        "name": "ЗБ-00267",
+        "old_uuid": "d3b0cc31-52b0-11f1-0a80-19e30036458b",
+        "new_uuid": "e09697e6-53bd-11f1-0a80-039500035bfb",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00141",
+        "old_uuid": "d61f4c7e-22c3-11f1-0a80-0d6a000f3950",
+        "new_uuid": "e44e14a5-53bd-11f1-0a80-000800035195",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18276",
+        "old_uuid": "d6b2cbef-3803-11f1-0a80-1067004b3a05",
+        "new_uuid": "7b01beac-5416-11f1-0a80-0395000f291b",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00107",
+        "old_uuid": "d6e6dd65-0d91-11f1-0a80-1749002454df",
+        "new_uuid": "e5af17d4-53bd-11f1-0a80-1071000340ca",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00591",
+        "old_uuid": "d6ee6f6f-1149-11f1-0a80-1b4200351d26",
+        "new_uuid": "e643f9ec-53bd-11f1-0a80-194500038c33",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00555",
+        "old_uuid": "d783a330-efbc-11f0-0a80-18d100c6fbae",
+        "new_uuid": "7c48db29-5416-11f1-0a80-0fe7000f5576",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18052",
+        "old_uuid": "d8e8b578-0e60-11f1-0a80-174d000feebb",
+        "new_uuid": "7ca5bc76-5416-11f1-0a80-1d4b000ef61c",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00099",
+        "old_uuid": "d97bf941-3a4e-11f1-0a80-039b000c792c",
+        "new_uuid": "e9c23ef9-53bd-11f1-0a80-0b2a000322c2",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26944",
+        "old_uuid": "da2e97ee-26c7-11f1-0a80-04250035cde6",
+        "new_uuid": "ea29f594-53bd-11f1-0a80-064e00032fce",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18354",
+        "old_uuid": "daa7451b-4956-11f1-0a80-01450028b3b2",
+        "new_uuid": "7d601dc6-5416-11f1-0a80-0d64000eea88",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18362",
+        "old_uuid": "db9e7f5f-4e8f-11f1-0a80-1acb0003cb48",
+        "new_uuid": "801c6afe-5416-11f1-0a80-1462000ed537",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18338",
+        "old_uuid": "dc2da67c-47bb-11f1-0a80-1b390019428d",
+        "new_uuid": "ee13e28e-53bd-11f1-0a80-064e00033000",
+        "old_count": 15,
+        "new_count": 6,
+        "missing_count": 9,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00125",
+        "old_uuid": "dc3de2f2-52b3-11f1-0a80-188a0036bbdd",
+        "new_uuid": "ee79626b-53bd-11f1-0a80-04f400036790",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26812",
+        "old_uuid": "dcbeb339-07de-11f1-0a80-1b100005201b",
+        "new_uuid": "ef463eb4-53bd-11f1-0a80-0fe7000369eb",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26972",
+        "old_uuid": "dcd57fa7-3e4a-11f1-0a80-0f8c0010bbac",
+        "new_uuid": "efa70dd8-53bd-11f1-0a80-146200030d56",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26799",
+        "old_uuid": "dec8620f-fd06-11f0-0a80-0dd5000cb603",
+        "new_uuid": "f2100a9e-53bd-11f1-0a80-0fe700036ac8",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-00598",
+        "old_uuid": "df5d340b-170c-11f1-0a80-17dc0013a20a",
+        "new_uuid": "f26ce30c-53bd-11f1-0a80-000800035511",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11216",
+        "old_uuid": "dfef128e-3802-11f1-0a80-0c04004d8bbf",
+        "new_uuid": "f2cee813-53bd-11f1-0a80-04f4000367d2",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26936",
+        "old_uuid": "dff3af3a-2395-11f1-0a80-0e0300106855",
+        "new_uuid": "f334f446-53bd-11f1-0a80-000800035518",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26912",
+        "old_uuid": "e027de77-1eeb-11f1-0a80-17cd00124764",
+        "new_uuid": "f4844a6b-53bd-11f1-0a80-064e00033027",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01779",
+        "old_uuid": "e038f442-067a-11f1-0a80-1c52000f4814",
+        "new_uuid": "81f70039-5416-11f1-0a80-0008000fa7f5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18300",
+        "old_uuid": "e0f6af14-3e1c-11f1-0a80-1850000697ed",
+        "new_uuid": "f652a7e5-53bd-11f1-0a80-0d6400032a9d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18280",
+        "old_uuid": "e11b5b79-38b3-11f1-0a80-18dd000bc389",
+        "new_uuid": "834b3542-5416-11f1-0a80-1071000f6ea3",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18312",
+        "old_uuid": "e1c11fa8-3faf-11f1-0a80-18f400065293",
+        "new_uuid": "8434e51c-5416-11f1-0a80-064e000f76c5",
+        "old_count": 4,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26896",
+        "old_uuid": "e2864f47-1c83-11f1-0a80-17f00044c945",
+        "new_uuid": "f89a2272-53bd-11f1-0a80-146200030d71",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00109",
+        "old_uuid": "e38db665-3f18-11f1-0a80-00a200115ba0",
+        "new_uuid": "f97bab18-53bd-11f1-0a80-194500038cc0",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18120",
+        "old_uuid": "e46870a4-1eb7-11f1-0a80-19f100088508",
+        "new_uuid": "8525c6d8-5416-11f1-0a80-11f1000ee45d",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00029",
+        "old_uuid": "e472800f-f6be-11f0-0a80-09b9000d6ca8",
+        "new_uuid": "85a65092-5416-11f1-0a80-0008000fa83f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11207",
+        "old_uuid": "e4ab7a9b-2f45-11f1-0a80-1a9d000af3bb",
+        "new_uuid": "86b876c0-5416-11f1-0a80-0efe000f4764",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26889",
+        "old_uuid": "e542593a-1c70-11f1-0a80-0382003f2199",
+        "new_uuid": "fd49e479-53bd-11f1-0a80-000800035574",
+        "old_count": 6,
+        "new_count": 5,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18125",
+        "old_uuid": "e572d8ed-1e10-11f1-0a80-117600103ee1",
+        "new_uuid": "fdd4e097-53bd-11f1-0a80-1d4b00032fbd",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26919",
+        "old_uuid": "e58aaf3b-21f0-11f1-0a80-1ba1000e9954",
+        "new_uuid": "fe37b7f8-53bd-11f1-0a80-146200030df4",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26872",
+        "old_uuid": "e62c8ccb-1895-11f1-0a80-03790011d52b",
+        "new_uuid": "ff0cac13-53bd-11f1-0a80-1d4b00032fde",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26878",
+        "old_uuid": "e6696e01-189a-11f1-0a80-07dd0012301e",
+        "new_uuid": "ff711821-53bd-11f1-0a80-08cc00035199",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00110",
+        "old_uuid": "e6c0a58a-1147-11f1-0a80-04d100354893",
+        "new_uuid": "00abac3b-53be-11f1-0a80-1adb00033474",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26857",
+        "old_uuid": "e6dcc351-17aa-11f1-0a80-00e70009db2e",
+        "new_uuid": "010ea5ea-53be-11f1-0a80-0b2a00032376",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18301",
+        "old_uuid": "e79b48ad-3e1e-11f1-0a80-0e0600076373",
+        "new_uuid": "87bfd86f-5416-11f1-0a80-0008000fa8a6",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26929",
+        "old_uuid": "e8629cad-22d4-11f1-0a80-09bb0012dc93",
+        "new_uuid": "0302b0f0-53be-11f1-0a80-194500038d1b",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26973",
+        "old_uuid": "e87af1bf-3f1b-11f1-0a80-0d53001289a2",
+        "new_uuid": "0373d470-53be-11f1-0a80-1adb0003348d",
+        "old_count": 8,
+        "new_count": 2,
+        "missing_count": 6,
+        "extra_count": 0
+      },
+      {
+        "name": "ТУ-06026",
+        "old_uuid": "ea25380b-49e3-11f1-0a80-07130005fa0e",
+        "new_uuid": "067ab6fd-53be-11f1-0a80-1d4b0003309d",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26924",
+        "old_uuid": "eae1a4c3-21fe-11f1-0a80-1c880010f9f9",
+        "new_uuid": "0af7b368-53be-11f1-0a80-146200030f1c",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01648",
+        "old_uuid": "eb3e2dca-f218-11f0-0a80-15e50010bf96",
+        "new_uuid": "89e1b084-5416-11f1-0a80-04f4000f657f",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11148",
+        "old_uuid": "eb9d62b0-08a9-11f1-0a80-19c00005824a",
+        "new_uuid": "0bec118e-53be-11f1-0a80-0d6400032bcc",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00105",
+        "old_uuid": "ebb591f8-3d5a-11f1-0a80-0c1700085cf6",
+        "new_uuid": "0c6b0be2-53be-11f1-0a80-1adb00033539",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26895",
+        "old_uuid": "ec158ec8-1c81-11f1-0a80-096400449c2b",
+        "new_uuid": "0eee0be0-53be-11f1-0a80-04f400036a2d",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00112",
+        "old_uuid": "ec8704fa-121b-11f1-0a80-02cd0005aa4e",
+        "new_uuid": "0fc8dedb-53be-11f1-0a80-11f10002fda4",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18073",
+        "old_uuid": "ee3761df-16d5-11f1-0a80-095500074665",
+        "new_uuid": "8ad3c3bd-5416-11f1-0a80-1adb000f3a59",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00093",
+        "old_uuid": "ee5a2093-3813-11f1-0a80-1067004ddb5a",
+        "new_uuid": "11b26ba9-53be-11f1-0a80-0fe700036edb",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26931",
+        "old_uuid": "ee6b4e6c-22d6-11f1-0a80-07b200135b4b",
+        "new_uuid": "120a2ce5-53be-11f1-0a80-1adb000335c9",
+        "old_count": 4,
+        "new_count": 1,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00131",
+        "old_uuid": "ee7eba3f-1de0-11f1-0a80-17c4000553d4",
+        "new_uuid": "1275baa8-53be-11f1-0a80-1d4b00033298",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00113",
+        "old_uuid": "eec0aa15-4ad9-11f1-0a80-042300248fb3",
+        "new_uuid": "135fd3aa-53be-11f1-0a80-04f400036b99",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26845",
+        "old_uuid": "ef173ed3-16df-11f1-0a80-14f70009c58c",
+        "new_uuid": "14ab83a8-53be-11f1-0a80-08cc00035374",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18369",
+        "old_uuid": "ef3bf310-4eba-11f1-0a80-1341000dcbd5",
+        "new_uuid": "151bb880-53be-11f1-0a80-146200031161",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 2,
+        "extra_count": 1
+      },
+      {
+        "name": "ВА-18405",
+        "old_uuid": "ef40ca2f-5041-11f1-0a80-1ad2000a55c5",
+        "new_uuid": "157a8eab-53be-11f1-0a80-04f400036c63",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00048",
+        "old_uuid": "ef95bccd-faa1-11f0-0a80-0c65001c93bc",
+        "new_uuid": "1662be17-53be-11f1-0a80-0d6400032f5c",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18295",
+        "old_uuid": "efd1610c-3d50-11f1-0a80-07aa0005ab6b",
+        "new_uuid": "170313c4-53be-11f1-0a80-0efe000373eb",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00154",
+        "old_uuid": "f02394db-26c4-11f1-0a80-18fc0034172e",
+        "new_uuid": "178de8eb-53be-11f1-0a80-0efe000373fd",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26964",
+        "old_uuid": "f0722326-3340-11f1-0a80-1d73000e9fdb",
+        "new_uuid": "19870b21-53be-11f1-0a80-08cc0003546f",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11160",
+        "old_uuid": "f0b7b671-122e-11f1-0a80-04f5000aa86c",
+        "new_uuid": "19e63ea7-53be-11f1-0a80-0efe00037457",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00231",
+        "old_uuid": "f11eab7b-4871-11f1-0a80-1553000dae3f",
+        "new_uuid": "1ac523c0-53be-11f1-0a80-1adb00033665",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26853",
+        "old_uuid": "f17b9fea-16fe-11f1-0a80-0371001109da",
+        "new_uuid": "1be1dee7-53be-11f1-0a80-194500038ecd",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18081",
+        "old_uuid": "f1a55516-1700-11f1-0a80-09550011a1ef",
+        "new_uuid": "8d960e41-5416-11f1-0a80-0fe7000f57b8",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26858",
+        "old_uuid": "f1b8ead3-17aa-11f1-0a80-09590009c590",
+        "new_uuid": "1c9a6023-53be-11f1-0a80-0efe000374ae",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00005",
+        "old_uuid": "f2b8a76f-f066-11f0-0a80-0035000af86f",
+        "new_uuid": "1e30b27e-53be-11f1-0a80-000800035903",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26984",
+        "old_uuid": "f30393ed-4aaa-11f1-0a80-0423001b344b",
+        "new_uuid": "1fbaa498-53be-11f1-0a80-1adb000336d5",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01640",
+        "old_uuid": "f3b7c84a-f146-11f0-0a80-1bc0000f7466",
+        "new_uuid": "8fadefed-5416-11f1-0a80-1462000edba2",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26794",
+        "old_uuid": "f3b82eba-f153-11f0-0a80-17d10010fc80",
+        "new_uuid": "21e8f292-53be-11f1-0a80-146200031283",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00128",
+        "old_uuid": "f53234a0-1c6b-11f1-0a80-0964003faaa5",
+        "new_uuid": "9127f9e9-5416-11f1-0a80-1071000f7092",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26982",
+        "old_uuid": "f585d9fc-487a-11f1-0a80-070e000f6dee",
+        "new_uuid": "24d32356-53be-11f1-0a80-1d4b000335d5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26954",
+        "old_uuid": "f606966c-2cf5-11f1-0a80-16d6000f740d",
+        "new_uuid": "256d3a9a-53be-11f1-0a80-064e00033535",
+        "old_count": 6,
+        "new_count": 4,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26904",
+        "old_uuid": "f6650cd9-1d39-11f1-0a80-1a860054824a",
+        "new_uuid": "260b1a5c-53be-11f1-0a80-08cc00035725",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01737",
+        "old_uuid": "f73e9289-fd01-11f0-0a80-1cae000ca18f",
+        "new_uuid": "9230d282-5416-11f1-0a80-1adb000f3af6",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26798",
+        "old_uuid": "f7a2557e-fb83-11f0-0a80-00b000113169",
+        "new_uuid": "285a6679-53be-11f1-0a80-000800035b4e",
+        "old_count": 5,
+        "new_count": 4,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00190",
+        "old_uuid": "f7bbbe0f-33f9-11f1-0a80-0302000b5f11",
+        "new_uuid": "28c12703-53be-11f1-0a80-0b2a00032666",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01680",
+        "old_uuid": "f7e5359c-f797-11f0-0a80-0545001124c6",
+        "new_uuid": "292c0d7c-53be-11f1-0a80-0fe700037865",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26917",
+        "old_uuid": "f825916a-21ef-11f1-0a80-01aa000d4830",
+        "new_uuid": "2a339c62-53be-11f1-0a80-0efe00037780",
+        "old_count": 5,
+        "new_count": 3,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11185",
+        "old_uuid": "f8775416-1e02-11f1-0a80-13b2000cbcf7",
+        "new_uuid": "2bcefcc8-53be-11f1-0a80-0fe700037882",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26803",
+        "old_uuid": "f94c90f1-00e9-11f1-0a80-194a000bfad0",
+        "new_uuid": "2e511d23-53be-11f1-0a80-0efe000377d8",
+        "old_count": 5,
+        "new_count": 2,
+        "missing_count": 3,
+        "extra_count": 0
+      },
+      {
+        "name": "00123",
+        "old_uuid": "f95dc8e2-17ab-11f1-0a80-196c000a21f0",
+        "new_uuid": "93f3b06f-5416-11f1-0a80-0d64000eed96",
+        "old_count": 6,
+        "new_count": 4,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26897",
+        "old_uuid": "f9e3a9fb-1c84-11f1-0a80-06e00045321a",
+        "new_uuid": "2ee922b9-53be-11f1-0a80-000800035b91",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ФР-00128",
+        "old_uuid": "fa155a0b-538c-11f1-0a80-19ea0013ec98",
+        "new_uuid": "2f70a096-53be-11f1-0a80-1071000348a0",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26948",
+        "old_uuid": "faac4b5e-283c-11f1-0a80-1ac600243683",
+        "new_uuid": "948d8dcb-5416-11f1-0a80-1d4b000ef8c9",
+        "old_count": 3,
+        "new_count": 2,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18364",
+        "old_uuid": "fb12afd6-4ea1-11f1-0a80-155c000848e0",
+        "new_uuid": "305a5796-53be-11f1-0a80-0b2a000326d3",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01668",
+        "old_uuid": "fbb95e12-f53d-11f0-0a80-07500034c130",
+        "new_uuid": "962f7d99-5416-11f1-0a80-1945000f7a08",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00013",
+        "old_uuid": "fbd7229d-f143-11f0-0a80-0c4b000e7478",
+        "new_uuid": "32733c66-53be-11f1-0a80-19450003906a",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-01763",
+        "old_uuid": "fc7552b6-01cb-11f1-0a80-0bb9000e7875",
+        "new_uuid": "344ead53-53be-11f1-0a80-107100034921",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "00191",
+        "old_uuid": "fe7131d4-34a8-11f1-0a80-06ee0004b86f",
+        "new_uuid": "9948c9de-5416-11f1-0a80-0b2a000f37dd",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ТА-11117",
+        "old_uuid": "feb266a4-f21e-11f0-0a80-0b270011db8b",
+        "new_uuid": "99a1c924-5416-11f1-0a80-0395000f2ec5",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26955",
+        "old_uuid": "fedb0193-2d0a-11f1-0a80-1bda001351ee",
+        "new_uuid": "963b938e-53c9-11f1-0a80-0efe0004a7f3",
+        "old_count": 3,
+        "new_count": 1,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26882",
+        "old_uuid": "ff3de21e-1941-11f1-0a80-00f2000a9fa2",
+        "new_uuid": "38954318-53be-11f1-0a80-0b2a00032796",
+        "old_count": 4,
+        "new_count": 3,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ВА-18038",
+        "old_uuid": "ffa2ca6e-0b00-11f1-0a80-0370002ab79e",
+        "new_uuid": "392f5661-53be-11f1-0a80-0fe700037a27",
+        "old_count": 2,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 0
+      },
+      {
+        "name": "ПЕ-26837",
+        "old_uuid": "ffa6c31c-16db-11f1-0a80-04e100097cd6",
+        "new_uuid": "398faae6-53be-11f1-0a80-08cc00035980",
+        "old_count": 6,
+        "new_count": 4,
+        "missing_count": 2,
+        "extra_count": 0
+      },
+      {
+        "name": "00001",
+        "old_uuid": "ffec9c5e-505e-11f1-0a80-1ad20010fb60",
+        "new_uuid": "73c3a2bc-541c-11f1-0a80-00080010fb9e",
+        "old_count": 1,
+        "new_count": 1,
+        "missing_count": 1,
+        "extra_count": 1
+      }
+    ],
+    "fixed": 457
+  }
+]

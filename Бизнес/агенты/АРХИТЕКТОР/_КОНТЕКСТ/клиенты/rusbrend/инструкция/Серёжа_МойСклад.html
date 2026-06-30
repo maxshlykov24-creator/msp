@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Инструкция — МойСклад для Серёжи · Береза Групп</title>
+<style>
+:root {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --text: #1c1c1e;
+  --text-2: #6b6b70;
+  --border: #e8e6e2;
+  --accent: #2563a8;
+  --accent-light: #eef5fb;
+  --highlight: #d97706;
+  --highlight-bg: #fffbeb;
+  --highlight-border: #fbbf24;
+  --warn: #9a3412;
+  --warn-bg: #fff7ed;
+  --warn-border: #fdba74;
+  --tip: #2a6645;
+  --tip-bg: #f0f8f2;
+  --tip-border: #90c8a8;
+  --nav-w: 240px;
+  --c-new: #78716c; --bg-new: #f5f5f4;
+  --c-pick: #2563a8; --bg-pick: #eef5fb;
+  --c-check: #9a5c1a; --bg-check: #fdf4e8;
+  --c-verified: #8a6800; --bg-verified: #fdfae6;
+  --c-shipped: #2a6645; --bg-shipped: #f0f8f2;
+  --c-mismatch: #c2410c; --bg-mismatch: #fff7ed;
+  --c-received: #2a6645; --bg-received: #f0f8f2;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.layout { display: flex; min-height: 100vh; }
+
+/* ── Nav ── */
+nav {
+  width: var(--nav-w);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 14px 24px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+/* Logo block */
+.nav-brand {
+  margin-bottom: 22px;
+  padding: 20px 12px 18px;
+  background: linear-gradient(160deg, #fafaf9 0%, #f3f1ec 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(28,28,30,.05);
+  position: relative;
+  overflow: hidden;
+}
+.nav-brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120px 80px at 20% 0%, rgba(124,58,237,.08), transparent 70%),
+    radial-gradient(100px 70px at 90% 100%, rgba(37,99,168,.08), transparent 70%);
+  pointer-events: none;
+}
+.nav-brand-logo {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.nav-brand-logo img {
+  height: 64px;
+  width: auto;
+  border-radius: 0;
+  filter: drop-shadow(0 8px 20px rgba(109,40,217,.2)) drop-shadow(0 2px 8px rgba(37,99,168,.14));
+  user-select: none;
+}
+.nav-brand-ms {
+  position: relative;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #6d28d9 0%, #2563eb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.nav-brand-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: 12px 8px;
+}
+.nav-brand-client {
+  position: relative;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #a8a29e;
+}
+.nav-brand-title {
+  position: relative;
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 4px;
+  letter-spacing: -.02em;
+  color: var(--text);
+}
+nav ul { list-style: none; }
+nav li { margin-bottom: 2px; }
+nav a {
+  display: block;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  text-decoration: none;
+  transition: background .15s, color .15s;
+}
+nav a:hover { background: var(--bg); color: var(--text); }
+nav a.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+nav .nav-group {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #bbb;
+  margin: 16px 0 6px 10px;
+}
+
+/* ── Main ── */
+main {
+  flex: 1;
+  padding: 40px 48px 80px;
+  max-width: 820px;
+}
+
+.hero {
+  margin-bottom: 48px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 28px;
+  align-items: start;
+}
+.hero-content { min-width: 0; }
+.hero-mark {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 8px;
+}
+.hero-mark img {
+  display: block;
+  height: 88px;
+  width: auto;
+  filter: drop-shadow(0 12px 28px rgba(109,40,217,.18)) drop-shadow(0 4px 12px rgba(37,99,168,.12));
+}
+.hero-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #aaa;
+  margin-bottom: 8px;
+}
+.hero h1 {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  margin-bottom: 10px;
+}
+.hero-lead { font-size: 16px; color: var(--text-2); max-width: 560px; }
+
+section {
+  margin-bottom: 56px;
+  scroll-margin-top: 24px;
+}
+section h2 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin-bottom: 6px;
+}
+section .task-label {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+section > p { color: var(--text-2); margin-bottom: 16px; }
+
+/* ── Steps ── */
+.steps { margin: 20px 0; }
+.step {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 14px;
+  align-items: flex-start;
+}
+.step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.step-body { flex: 1; }
+.step-body strong { color: var(--text); }
+
+/* ── Callouts ── */
+.callout {
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 14px;
+  margin: 16px 0;
+  line-height: 1.5;
+}
+.callout-tip { background: var(--tip-bg); border: 1px solid var(--tip-border); border-left: 3px solid var(--tip); }
+.callout-warn { background: var(--warn-bg); border: 1px solid var(--warn-border); border-left: 3px solid var(--warn); }
+.callout strong { display: block; margin-bottom: 4px; color: var(--text); }
+
+/* ── UI mockups (premium) ── */
+.ui-panel {
+  background: linear-gradient(180deg, #fafaf9 0%, var(--surface) 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  margin: 24px 0;
+  box-shadow: 0 4px 24px rgba(28,28,30,.06), 0 1px 3px rgba(28,28,30,.04);
+}
+.ui-titlebar {
+  background: linear-gradient(180deg, #f7f6f3 0%, #f0eeea 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: .01em;
+}
+.ui-titlebar .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: linear-gradient(135deg, #c4d9ca, #90c8a8);
+  box-shadow: 0 0 0 2px rgba(144,200,168,.25);
+}
+.ui-body { padding: 20px 22px 22px; font-size: 13px; }
+.ui-caption {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+/* Toolbar */
+.ui-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid #d6d3d1;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.ui-btn-primary {
+  background: linear-gradient(180deg, #2d6cb5 0%, var(--accent) 100%);
+  color: #fff;
+  border-color: #1e4f8a;
+  box-shadow: 0 1px 3px rgba(37,99,168,.35);
+}
+.ui-btn-ghost { background: transparent; box-shadow: none; }
+.ui-btn-focus {
+  box-shadow: 0 0 0 3px rgba(37,99,168,.18), 0 1px 2px rgba(0,0,0,.04);
+  border-color: var(--accent);
+}
+
+/* Step flow inside mockups */
+.mock-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.mock-flow-step {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid #f0eeea;
+  align-items: start;
+}
+.mock-flow-step:last-child { border-bottom: none; padding-bottom: 0; }
+.mock-flow-step:first-child { padding-top: 0; }
+.mock-flow-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.mock-flow-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+  letter-spacing: -.01em;
+}
+.mock-flow-content { min-width: 0; }
+
+/* Form grid */
+.mock-form {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 600px) { .mock-form { grid-template-columns: 1fr; } }
+.mock-field label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.mock-field input, .mock-field .mock-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.03);
+}
+.mock-field-focus .mock-input,
+.mock-field-focus input {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37,99,168,.12), inset 0 1px 2px rgba(0,0,0,.03);
+}
+.mock-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+/* Horizontal action flow */
+.mock-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mock-action-arrow {
+  color: #c4c0bb;
+  font-size: 18px;
+  font-weight: 300;
+  flex-shrink: 0;
+}
+.mock-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.mock-chip-focus {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37,99,168,.1);
+}
+
+/* Google Sheets mock */
+.mock-sheet-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #dadce0;
+  box-shadow: 0 1px 3px rgba(60,64,67,.12);
+}
+.mock-sheet-bar {
+  background: #f8f9fa;
+  border-bottom: 1px solid #dadce0;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #5f6368;
+  font-weight: 500;
+}
+.mock-sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #fff;
+}
+.mock-sheet-table th {
+  background: #f3f3f3;
+  border: 1px solid #e0e0e0;
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #444;
+  white-space: nowrap;
+}
+.mock-sheet-table td {
+  border: 1px solid #e8e8e8;
+  padding: 11px 12px;
+  color: var(--text);
+}
+.mock-col-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.badge-f { background: #e8f0fe; color: #1967d2; }
+.badge-u { background: #fef7e0; color: #b06000; }
+.badge-i { background: #e6f4ea; color: #137333; }
+.mock-sheet-table .cell-key {
+  background: #fffde7;
+  font-weight: 700;
+}
+.mock-sheet-table .cell-action {
+  background: #e8f5e9;
+  text-align: center;
+}
+.mock-link-ms {
+  color: #137333;
+  font-weight: 600;
+  font-size: 12px;
+}
+.mock-sheet-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+.mock-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.mock-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Error block */
+.mock-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: #991b1b;
+  line-height: 1.5;
+}
+
+/* Checkbox mock */
+.mock-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Status row in mock */
+.mock-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.mock-status-row span:first-child { color: var(--text-2); min-width: 110px; }
+
+/* Bulk edit toolbar row */
+.mock-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: #fafaf9;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.mock-bulk-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mock-bulk-check.focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37,99,168,.1);
+}
+
+.ui-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ui-table th, .ui-table td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+}
+.ui-table th { background: #fafaf9; font-weight: 600; color: var(--text-2); }
+
+.ui-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.ui-field {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  font-size: 12px;
+  min-width: 80px;
+}
+
+/* Status pills */
+.status-pill {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.pill-new { background: var(--bg-new); color: var(--c-new); }
+.pill-pick { background: var(--bg-pick); color: var(--c-pick); }
+.pill-check { background: var(--bg-check); color: var(--c-check); }
+.pill-verified { background: var(--bg-verified); color: var(--c-verified); }
+.pill-shipped { background: var(--bg-shipped); color: var(--c-shipped); }
+.pill-mismatch { background: var(--bg-mismatch); color: var(--c-mismatch); }
+.pill-received { background: var(--bg-received); color: var(--c-received); }
+
+/* Roles table */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  margin: 16px 0;
+}
+.data-table th, .data-table td {
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  text-align: left;
+}
+.data-table th { background: #fafaf9; font-weight: 600; }
+
+/* Flow inline */
+.flow-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.flow-inline .arrow { color: #bbb; font-weight: 700; }
+
+/* Diagram link */
+.diagram-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.diagram-link:hover { background: var(--accent-light); }
+
+/* Troubleshooting cards */
+.cards { display: grid; gap: 10px; margin: 16px 0; }
+.card-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.card-item h4 { font-size: 14px; margin-bottom: 6px; }
+.card-item p { font-size: 13px; color: var(--text-2); margin: 0; }
+
+/* Status flow mini */
+.status-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 20px 0;
+  padding: 18px 20px;
+  background: linear-gradient(180deg, var(--surface) 0%, #fafaf9 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 2px 12px rgba(28,28,30,.04);
+}
+.status-flow .sf-arrow { color: #d6d3d1; font-size: 16px; font-weight: 400; }
+
+.subsection { margin-top: 28px; }
+.subsection h3 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+
+ul.compact { margin: 10px 0 10px 20px; color: var(--text-2); font-size: 14px; }
+ul.compact li { margin-bottom: 4px; }
+ul.compact.keep { color: var(--text); }
+ul.compact.remove { color: #a8a29e; text-decoration: line-through; }
+
+footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: #bbb;
+}
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.footer-brand img {
+  height: 40px;
+  width: auto;
+  border-radius: 0;
+  filter: drop-shadow(0 3px 10px rgba(109,40,217,.16));
+}
+.footer-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.footer-brand-text strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  letter-spacing: -.01em;
+}
+.footer-brand-text span {
+  font-size: 11px;
+  color: #bbb;
+}
+
+/* Print */
+@media print {
+  nav { display: none; }
+  main { max-width: 100%; padding: 20px; }
+  .layout { display: block; }
+  section { page-break-inside: avoid; }
+  .ui-panel { box-shadow: none; }
+  .hero-mark { display: block; }
+  .hero { grid-template-columns: 1fr auto; }
+}
+@media (max-width: 900px) {
+  .layout { flex-direction: column; }
+  nav {
+    width: 100%;
+    height: auto;
+    position: relative;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-brand { max-width: 280px; margin-left: auto; margin-right: auto; }
+  main { padding: 24px 20px 60px; }
+  .hero { grid-template-columns: 1fr; }
+  .hero-mark { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav>
+  <div class="nav-brand">
+    <div class="nav-brand-logo">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product" width="64" height="74">
+    </div>
+    <div class="nav-brand-ms">MS Product</div>
+    <div class="nav-brand-divider"></div>
+    <div class="nav-brand-client">Береза Групп</div>
+    <div class="nav-brand-title">МойСклад</div>
+  </div>
+  <ul>
+    <li class="nav-group">Обзор</li>
+    <li><a href="#s0">Как устроена система</a></li>
+    <li class="nav-group">Настройка</li>
+    <li><a href="#s1">Один раз: профиль и экран</a></li>
+    <li class="nav-group">Задачи</li>
+    <li><a href="#s2">Запустить отгрузки</a></li>
+    <li><a href="#s3">Раздать сборщикам</a></li>
+    <li><a href="#s4">Контроль и статусы</a></li>
+    <li><a href="#s5">Принять товар</a></li>
+    <li><a href="#s6">Остатки и списание</a></li>
+    <li class="nav-group">Справочник</li>
+    <li><a href="#s7">Если не работает</a></li>
+    <li><a href="#s8">Кому писать</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<div class="hero">
+  <div class="hero-content">
+    <div class="hero-eyebrow">Инструкция для управляющего склада</div>
+    <h1>Работа в МойСклад</h1>
+    <p class="hero-lead">Пошаговые сценарии: что открыть, куда нажать, что проверить. Таблица — план, МойСклад — учёт и задачи.</p>
+  </div>
+  <div class="hero-mark" aria-hidden="true">
+    <img src="assets/logo-ms-transparent.png" alt="">
+  </div>
+</div>
+
+<!-- ═══ 0 ═══ -->
+<section id="s0">
+  <h2>Как устроена система</h2>
+  <p class="task-label">Понять картину за 1 минуту</p>
+
+  <div class="flow-inline">
+    <span>Таблица «Береза групп склад»</span>
+    <span class="arrow">→</span>
+    <span>МойСклад: отгрузки</span>
+    <span class="arrow">→</span>
+    <span>Сборщики</span>
+    <span class="arrow">→</span>
+    <span>Отправка</span>
+  </div>
+
+  <div class="callout callout-tip">
+    <strong>Главное правило</strong>
+    Ты работаешь как раньше в таблице. МойСклад автоматически создаёт задачи-коробы и ведёт остатки. Руками дублировать отгрузки не нужно.
+  </div>
+
+  <table class="data-table">
+    <thead><tr><th>Кто</th><th>Что делает</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Дима</strong></td><td>Заказы поставщику, план закупок, распределение по коробам в таблице</td></tr>
+      <tr><td><strong>Ты (Серёжа)</strong></td><td>Флаг «Отгрузить», приёмка, распределение сборщикам, статусы, контроль</td></tr>
+      <tr><td><strong>Сборщики</strong></td><td>Собирают коробы (позже сами меняют свои статусы)</td></tr>
+      <tr><td><strong>Макс</strong></td><td>Система, интеграция, ошибки в таблице — пиши в общий чат</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>1 короб = 1 отгрузка</strong> в МойСклад. Много коробов — много строк в списке отгрузок.</p>
+
+  <a class="diagram-link" href="../диаграммы/01_БерезаГрупп_Поток_данных.html" target="_blank">↗ Схема: поток данных (таблица → МойСклад)</a>
+</section>
+
+<!-- ═══ 1 ═══ -->
+<section id="s1">
+  <h2>Настройка один раз</h2>
+  <p class="task-label">Открыл МойСклад — сразу попадаешь в нужное место</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">Нажми <strong>шестерёнку</strong> (настройки пользователя) справа сверху.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">Раздел <strong>«Начало работы»</strong> → стартовый экран: <strong>Отгрузки</strong>.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">Раздел <strong>«Склад»</strong> → выбери основной склад.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">Нажми <strong>Сохранить</strong> (слева сверху).</div>
+    </div>
+  </div>
+
+  <div class="ui-panel">
+    <div class="ui-titlebar"><span class="dot"></span> МойСклад — настройки пользователя</div>
+    <div class="ui-body">
+      <div class="mock-flow">
+        <div class="mock-flow-step">
+          <div class="mock-flow-num">1</div>
+          <div class="mock-flow-content">
+            <div class="mock-flow-title">Стартовый экран</div>
+            <div class="mock-action-row">
+              <span style="color:var(--text-2);font-size:12px">Начало работы →</span>
+              <span class="mock-chip mock-chip-focus">Отгрузки</span>
+            </div>
+          </div>
+        </div>
+        <div class="mock-flow-step">
+          <div class="mock-flow-num">2</div>
+          <div class="mock-flow-content">
+            <div class="mock-flow-title">Склад по умолчанию</div>
+            <span class="mock-chip mock-chip-focus">Основной</span>
+          </div>
+        </div>
+        <div class="mock-flow-step">
+          <div class="mock-flow-num">3</div>
+          <div class="mock-flow-content">
+            <div class="mock-flow-title">Сохранить изменения</div>
+            <span class="ui-btn ui-btn-primary">Сохранить</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout callout-warn">
+    <strong>Сохраняй сразу</strong>
+    Внёс изменение в документ — сохрани. Не держи долгие сессии без сохранения.
+  </div>
+
+  <div class="subsection">
+    <h3>Список отгрузок — только нужные колонки</h3>
+    <p>Открой <strong>Продажи → Отгрузки</strong>. Справа: <strong>шестерёнка</strong> и <strong>три полоски</strong> (настройка колонок).</p>
+    <p><strong>Оставить:</strong></p>
+    <ul class="compact keep">
+      <li>Контрагент, Со склада, Номер, Склад</li>
+      <li>Наименование, Комплектов, Тип короба, Сборщик</li>
+      <li>Комментарий, Статус</li>
+    </ul>
+    <p><strong>Убрать:</strong> сумма, оплачено, организация, грузополучатель, отправлено, напечатано и прочее лишнее.</p>
+    <p>Расширь колонку «Наименование» — чтобы читался артикул.</p>
+  </div>
+
+  <div class="subsection">
+    <h3>Фильтры и закладка «Распределить»</h3>
+    <p>Кнопка <strong>Фильтр</strong> → шестерёнка → убери все ненужные поля (как с колонками).</p>
+    <p>Выставь фильтр: статус <span class="status-pill pill-new">Новая</span> → <strong>Найти</strong> → <strong>Сохранить фильтр</strong> → назови, например, «Распределить».</p>
+    <p>Дальше переключай закладку одним кликом — фильтр не трогаешь.</p>
+
+    <div class="ui-panel">
+      <div class="ui-titlebar"><span class="dot"></span> Отгрузки — фильтр и закладка</div>
+      <div class="ui-body">
+        <div class="ui-toolbar">
+          <span class="ui-btn">+ Отгрузка</span>
+          <span class="ui-btn ui-btn-primary ui-btn-focus">Фильтр</span>
+          <span class="ui-btn">Изменить</span>
+          <span class="ui-btn">Статус</span>
+        </div>
+        <div class="mock-flow-step" style="border:none;padding:0 0 14px">
+          <div class="mock-flow-num">1</div>
+          <div class="mock-flow-content">
+            <div class="mock-flow-title">Выставь фильтр</div>
+            <div class="mock-action-row">
+              <span style="color:var(--text-2);font-size:12px">Статус</span>
+              <span class="status-pill pill-new">Новая</span>
+              <span class="ui-btn ui-btn-primary">Найти</span>
+            </div>
+          </div>
+        </div>
+        <div class="mock-flow-step" style="border:none;padding:0">
+          <div class="mock-flow-num">2</div>
+          <div class="mock-flow-content">
+            <div class="mock-flow-title">Сохрани закладку</div>
+            <span class="mock-chip mock-chip-focus">📌 Распределить</span>
+          </div>
+        </div>
+        <p class="ui-caption">Закладка всегда под рукой — переключай одним кликом, фильтр не трогаешь.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2 ═══ -->
+<section id="s2">
+  <h2>Запустить отгрузки из таблицы</h2>
+  <p class="task-label">План готов → коробы появились в МойСклад</p>
+
+  <div class="callout callout-warn">
+    <strong>Не путай столбцы</strong>
+    «Оплачено коробов» — заводские короба с накладной (сверка при приёмке). Для отгрузки нужен столбец <strong>U — «всего коробов»</strong> (итог распределения).
+  </div>
+
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div class="step-body">Открой таблицу <strong>«Береза групп склад»</strong>.</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-body">Найди нужную строку. Проверь <strong>F — оплачено комплектов</strong> и <strong>U — всего коробов</strong>.</div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-body">Поставь флажок <strong>I — «Отгрузить»</strong>.</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-body">Подожди <strong>5–10 секунд</strong>. Должна появиться ссылка / ID отгрузки в строке.</div></div>
+    <div class="step"><div class="step-num">5</div><div class="step-body">Если ничего не произошло → открой лист <strong>errors</strong>, прочитай ошибку.</div></div>
+  </div>
+
+  <div class="ui-panel">
+    <div class="ui-titlebar"><span class="dot"></span> Google Таблица — Береза групп склад</div>
+    <div class="ui-body" style="padding-top:16px">
+      <div class="mock-sheet-wrap">
+        <div class="mock-sheet-bar">План работы · строка 484</div>
+        <table class="mock-sheet-table">
+          <thead>
+            <tr>
+              <th>Артикул</th>
+              <th><span class="mock-col-badge badge-f">F</span> комплектов</th>
+              <th style="color:#bbb">…</th>
+              <th><span class="mock-col-badge badge-u">U</span> всего коробов</th>
+              <th><span class="mock-col-badge badge-i">I</span> Отгрузить</th>
+              <th>Результат</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>139</td>
+              <td>100</td>
+              <td style="color:#ccc;text-align:center">…</td>
+              <td class="cell-key">1</td>
+              <td class="cell-action"><span class="mock-check">✓</span></td>
+              <td><span class="mock-link-ms">Открыть в МойСклад →</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mock-sheet-legend">
+        <div class="mock-legend-item"><span class="mock-legend-dot" style="background:#fef7e0"></span> U — обязательно перед флагом</div>
+        <div class="mock-legend-item"><span class="mock-legend-dot" style="background:#e6f4ea"></span> I — ставишь флаг «Отгрузить»</div>
+        <div class="mock-legend-item"><span class="mock-legend-dot" style="background:#e8f5e9"></span> Появится ссылка через 5–10 сек</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ui-panel">
+    <div class="ui-titlebar"><span class="dot"></span> Лист errors — пример</div>
+    <div class="ui-body">
+      <div class="mock-error">Не заполнено «всего коробов» в столбце U</div>
+      <p class="ui-caption">Заполни U → сними флаг → поставь снова.</p>
+    </div>
+  </div>
+
+  <div class="callout callout-tip">
+    <strong>После создания</strong>
+    Перейди в МойСклад → Отгрузки. Если список был открыт — нажми <strong>кружок обновления</strong> слева от «+ Отгрузка» (быстрее, чем F5 всей страницы).
+  </div>
+</section>
+
+<!-- ═══ 3 ═══ -->
+<section id="s3">
+  <h2>Раздать коробы сборщикам</h2>
+  <p class="task-label">50 новых коробов — за пару минут, массово</p>
+
+  <p>Не открывай каждую отгрузку по одной. Используй фильтр и массовое редактирование.</p>
+
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div class="step-body"><strong>Продажи → Отгрузки</strong>.</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-body">Фильтр: статус <span class="status-pill pill-new">Новая</span> (+ при необходимости артикул) → <strong>Найти</strong>.</div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-body">Флажок <strong>«выделить все»</strong> — слева сверху, над номерами.</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-body"><strong>Изменить</strong> → поле <strong>Сборщик</strong> → выбери сотрудника → подтверди.</div></div>
+    <div class="step"><div class="step-num">5</div><div class="step-body"><strong>Статус</strong> → <span class="status-pill pill-pick">В сборке</span>.</div></div>
+    <div class="step"><div class="step-num">6</div><div class="step-body">Обнови список (кружок у «+ Отгрузка»).</div></div>
+  </div>
+
+  <div class="ui-panel">
+    <div class="ui-titlebar"><span class="dot"></span> Массовое редактирование</div>
+    <div class="ui-body">
+      <div class="mock-flow">
+        <div class="mock-flow-step">
+          <div class="mock-flow-num">1</div>
+          <div class="mock-flow-content">
+            <div class="mock-flow-title">Выдели все отгрузки</div>
+            <div class="mock-bulk-bar">
+              <div class="mock-bulk-check focus"><span class="mock-check">✓</span> Выбрать все</div>
+              <span style="font-size:11px;color:var(--text-2)">50 отгрузок · 3700 комплектов</span>
+            </div>
+          </div>
+        </div>
+        <div class="mock-flow-step">
+          <div class="mock-flow-num">2</div>
+          <div class="mock-flow-content">
+            <div class="mock-flow-title">Назначь сборщика</div>
+            <div class="mock-action-row">
+              <span class="ui-btn ui-btn-primary ui-btn-focus">Изменить</span>
+              <span class="mock-action-arrow">→</span>
+              <span style="color:var(--text-2);font-size:12px">Поле</span>
+              <span class="mock-chip mock-chip-focus">Сборщик</span>
+              <span class="mock-action-arrow">→</span>
+              <span class="mock-chip">Денис</span>
+            </div>
+          </div>
+        </div>
+        <div class="mock-flow-step">
+          <div class="mock-flow-num">3</div>
+          <div class="mock-flow-content">
+            <div class="mock-flow-title">Смени статус</div>
+            <div class="mock-action-row">
+              <span class="ui-btn ui-btn-focus">Статус</span>
+              <span class="mock-action-arrow">→</span>
+              <span class="status-pill pill-pick">В сборке</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="ui-caption">Не жди завершения — закрой окно массового редактирования, изменения применятся сразу.</p>
+    </div>
+  </div>
+
+  <div class="callout callout-tip">
+    <strong>Делить между сборщиками</strong>
+    Фильтр «Количество строк» — например, 50 из 100: выдели 50 → одному сборщику, остальные 50 → другому. Или фильтруй по артикулу.
+  </div>
+</section>
+
+<!-- ═══ 4 ═══ -->
+<section id="s4">
+  <h2>Контролировать сборку и отгрузку</h2>
+  <p class="task-label">Вижу, кто что собирает; короб уехал — остаток списался</p>
+
+  <div class="status-flow">
+    <span class="status-pill pill-new">Новая</span>
+    <span class="sf-arrow">→</span>
+    <span class="status-pill pill-pick">В сборке</span>
+    <span class="sf-arrow">→</span>
+    <span class="status-pill pill-check">На проверке</span>
+    <span class="sf-arrow">→</span>
+    <span class="status-pill pill-verified">Проверено</span>
+    <span class="sf-arrow">→</span>
+    <span class="status-pill pill-shipped">Отправлена</span>
+  </div>
+
+  <table class="data-table">
+    <thead><tr><th>Статус</th><th>Кто меняет</th><th>Что значит</th></tr></thead>
+    <tbody>
+      <tr><td><span class="status-pill pill-new">Новая</span></td><td>Система</td><td>Создана из таблицы, ждёт распределения</td></tr>
+      <tr><td><span class="status-pill pill-pick">В сборке</span></td><td>Ты</td><td>Сборщик работает над коробом</td></tr>
+      <tr><td><span class="status-pill pill-check">На проверке</span></td><td>Ты / сборщик</td><td>Короб собран, ждёт проверки</td></tr>
+      <tr><td><span class="status-pill pill-verified">Проверено</span></td><td>Ты</td><td>Содержимое проверено, можно клеить этикетку</td></tr>
+      <tr><td><span class="status-pill pill-shipped">Отправлена</span></td><td>Ты</td><td><strong>Списано с остатка</strong> — текст в списке становится ярче</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-tip">
+    <strong>Поле «Сборщик»</strong>
+    Ориентируйся на него, а не на «владельца документа» (фамилию справа сверху). Сборщик — кто собирает этот короб.
+  </div>
+
+  <p><strong>Контроль «что в работе»:</strong> закладка или фильтр <span class="status-pill pill-pick">В сборке</span> → смотри количество комплектов и имя сборщика.</p>
+
+  <p><strong>Когда паллета уехала:</strong> выдели все отгрузки партии → статус <span class="status-pill pill-shipped">Отправлена</span>. До этого статуса документ не проведён — остаток ещё не ушёл.</p>
+
+  <a class="diagram-link" href="../диаграммы/02_БерезаГрупп_Жизненный_цикл_отгрузки.html" target="_blank">↗ Схема: жизненный цикл отгрузки</a>
+
+  <div class="subsection">
+    <h3>Печать этикеток</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><strong>Этикетка на товар</strong> (перед сборкой): Товары → найди артикул → Печать → «Этикетка товар».</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><strong>Этикетка на короб</strong> (после проверки): Отгрузки → открой короб → Печать → «Этикетка короб» → наклей на короб.</div></div>
+    </div>
+  </div>
+
+  <div class="callout callout-tip">
+    <strong>Сборщики позже</strong>
+    Сейчас статусы меняешь ты. Потом сборщики смогут менять только свои (например, «В сборке»). Статусы «Проверено» и «Отправлена» — только у тебя.
+  </div>
+</section>
+
+<!-- ═══ 5 ═══ -->
+<section id="s5">
+  <h2>Принять товар от поставщика</h2>
+  <p class="task-label">Товар приехал → остаток в системе</p>
+
+  <div class="callout callout-tip">
+    <strong>Заказ ≠ остаток</strong>
+    Заказ поставщику — это <em>план</em> (цифра «ожидаем»). На остатки попадает только <strong>приёмка</strong> — фактическое количество.
+  </div>
+
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div class="step-body">Дима создаёт <strong>Заказ поставщику</strong> (пока это его зона).</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-body">Товар приехал → <strong>Закупки → Заказы поставщику</strong> → открой нужный заказ.</div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-body">Пересчитай товар на месте.</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-body">В заказе: <strong>Создать документ → Приёмка</strong> (на основании заказа).</div></div>
+    <div class="step"><div class="step-num">5</div><div class="step-body">Проверь / поправь количество по каждой позиции → <strong>Сохранить</strong>.</div></div>
+    <div class="step"><div class="step-num">6</div><div class="step-body">Статус заказа обновится автоматически (см. ниже). Быстро обновить экран: <strong>закрой документ → открой снова</strong> (не F5 всей страницы).</div></div>
+  </div>
+
+  <div class="ui-panel">
+    <div class="ui-titlebar"><span class="dot"></span> Заказ поставщику — создать приёмку</div>
+    <div class="ui-body">
+      <div class="mock-status-row">
+        <span>Статус заказа</span>
+        <span class="status-pill pill-new">Новый</span>
+      </div>
+      <div class="mock-flow-step" style="border:none;padding:0">
+        <div class="mock-flow-num">→</div>
+        <div class="mock-flow-content">
+          <div class="mock-flow-title">Создай приёмку на основании заказа</div>
+          <div class="mock-action-row">
+            <span class="ui-btn ui-btn-primary ui-btn-focus">Создать документ</span>
+            <span class="mock-action-arrow">→</span>
+            <span class="mock-chip mock-chip-focus">Приёмка</span>
+          </div>
+        </div>
+      </div>
+      <p class="ui-caption">«Связанные документы» (над таблицей позиций) — цепочка заказ ↔ все приёмки. Проверь количество → Сохранить.</p>
+    </div>
+  </div>
+
+  <p><strong>Статусы заказа поставщику</strong> (ставятся автоматически после приёмок):</p>
+  <table class="data-table">
+    <thead><tr><th>Статус</th><th>Когда</th></tr></thead>
+    <tbody>
+      <tr><td><span class="status-pill pill-received">Получен</span></td><td>Факт = план (100% совпало)</td></tr>
+      <tr><td><span class="status-pill pill-mismatch">Найдено расхождение</span></td><td>Факт ≠ план (меньше или больше) — передай Диме</td></tr>
+    </tbody>
+  </table>
+
+  <a class="diagram-link" href="../диаграммы/03_БерезаГрупп_Процесс_приёмки.html" target="_blank">↗ Схема: процесс приёмки</a>
+</section>
+
+<!-- ═══ 6 ═══ -->
+<section id="s6">
+  <h2>Остатки и корректировки</h2>
+  <p class="task-label">Посмотреть, что на складе / списать брак</p>
+
+  <div class="callout callout-warn">
+    <strong>Первая неделя</strong>
+    Остатки могут не сходиться — это нормально, пока отлаживаются процессы. Сначала запусти цикл, потом выровняем с Максом.
+  </div>
+
+  <div class="subsection">
+    <h3>Посмотреть остатки</h3>
+    <p><strong>Склад → Остатки</strong> — все позиции с ненулевым остатком. Используй фильтры (артикул, нулевой / отрицательный остаток — для поиска проблем).</p>
+  </div>
+
+  <div class="subsection">
+    <h3>Списать брак или оприходовать</h3>
+    <p>Логика одинаковая во всех документах:</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><strong>Склад → Списание</strong> (или Оприходование / Перемещение) → <strong>+</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Выбери позицию (можно сканировать штрихкод, если подключён сканер).</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Укажи количество.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">В комментарии — причину (например, «брак»).</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body"><strong>Сохранить</strong>.</div></div>
+    </div>
+
+    <div class="ui-panel">
+      <div class="ui-titlebar"><span class="dot"></span> Списание</div>
+      <div class="ui-body">
+        <div class="mock-form">
+          <div class="mock-field">
+            <label>Товар</label>
+            <div class="mock-input">Артикул 106</div>
+          </div>
+          <div class="mock-field mock-field-focus">
+            <label>Количество</label>
+            <div class="mock-input">10 шт</div>
+          </div>
+          <div class="mock-field mock-field-focus">
+            <label>Комментарий</label>
+            <div class="mock-input">Причина: брак</div>
+          </div>
+          <div class="mock-form-actions">
+            <span class="ui-btn ui-btn-primary">Сохранить</span>
+          </div>
+        </div>
+        <p class="ui-caption">Та же логика для Оприходования и Перемещения: позиция → количество → комментарий.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <h3>Удаление документов (период тестирования)</h3>
+    <p>Тебе выдано право удалять — для очистки тестовых данных. <strong>Удаление безвозвратно</strong> (история пропадает).</p>
+    <p>Если удалил по ошибке: <strong>Показатели → Корзина</strong> → восстанови.</p>
+    <p>Документ со связанной приёмкой удалить нельзя — сначала разберись со связями.</p>
+  </div>
+</section>
+
+<!-- ═══ 7 ═══ -->
+<section id="s7">
+  <h2>Если что-то не так</h2>
+  <p class="task-label">Быстрые решения</p>
+
+  <div class="cards">
+    <div class="card-item">
+      <h4>Флаг «Отгрузить» поставил — отгрузки нет</h4>
+      <p>Открой лист <strong>errors</strong>. Частая причина — пустой столбец <strong>U (всего коробов)</strong>. Заполни → сними флаг → поставь снова.</p>
+    </div>
+    <div class="card-item">
+      <h4>Ошибка «тип короба не может быть пустым»</h4>
+      <p>Смотри <strong>errors</strong>. Если непонятно — скрин в <strong>общий чат</strong> → Макс.</p>
+    </div>
+    <div class="card-item">
+      <h4>Список отгрузок не обновился</h4>
+      <p>Кружок обновления у «+ Отгрузка». Или закрой документ и открой снова.</p>
+    </div>
+    <div class="card-item">
+      <h4>Массовая операция зависла</h4>
+      <p>Подожди (100+ документов — дольше). Если не помогло — обнови страницу.</p>
+    </div>
+    <div class="card-item">
+      <h4>Случайно удалил документ</h4>
+      <p><strong>Показатели → Корзина</strong> → восстановить.</p>
+    </div>
+    <div class="card-item">
+      <h4>Не удаляется заказ / отгрузка</h4>
+      <p>Есть связанный документ (приёмка). Открой «Связанные документы» и разберись с цепочкой.</p>
+    </div>
+    <div class="card-item">
+      <h4>Флаг поставил повторно — «Флаг поставлен повторно»</h4>
+      <p>Ничего не делай — отгрузка уже создана.</p>
+    </div>
+    <div class="card-item">
+      <h4>Товар не найден в МойСклад</h4>
+      <p>Напиши <strong>Диме</strong> — нужно добавить артикул в номенклатуру.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 8 ═══ -->
+<section id="s8">
+  <h2>Кому писать</h2>
+
+  <table class="data-table">
+    <thead><tr><th>Кому</th><th>По каким вопросам</th><th>Куда</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Макс</strong></td>
+        <td>Ошибки в таблице (errors), интеграция, что-то не создаётся, баги МойСклад</td>
+        <td><strong>Общий чат</strong> — быстрее всего</td>
+      </tr>
+      <tr>
+        <td><strong>Дима</strong></td>
+        <td>Товар, план, заказы поставщику, артикулы, расхождения с поставщиком</td>
+        <td>Как договоритесь</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-tip">
+    <strong>Практика</strong>
+    Прогони полный цикл на последней поставке: заказ → приёмка → флаг в таблице → распределение → статусы. Вопросы по ходу — в общий чат.
+  </div>
+</section>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product" width="40" height="46">
+      <div class="footer-brand-text">
+        <strong>MS Product</strong>
+        <span>Береза Групп · инструкция для склада</span>
+      </div>
+    </div>
+    <span>Обновлено 30.06.2026</span>
+  </div>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

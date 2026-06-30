@@ -1,0 +1,23 @@
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+npm-debug.log*
+
+# секреты — никогда не коммитить
+.env
+.env.*
+!.env.example
+_private/
+
+# Drizzle
+apps/api/drizzle/meta/_journal.json.bak
+
+# Vite
+apps/web/dist/
+.vite/
+
+# Локальные дампы БД
+*.sql.gz
+backups/

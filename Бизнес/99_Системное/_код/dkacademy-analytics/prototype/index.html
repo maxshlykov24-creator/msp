@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DKAcademy — Аналитика продаж</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --orange: #F5822B;
+    --orange-h: #E0701B;
+    --orange-light: #FEF0E6;
+    --black: #161616;
+    --gray-2: #6B6B6B;
+    --gray-3: #ABABAB;
+    --gray-bg: #F5F5F5;
+    --white: #FFFFFF;
+    --green: #2BA84A;
+    --red: #E23B2E;
+    --border: #E8E8E8;
+    --font: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--gray-bg); color: var(--black); min-height: 100vh; }
+
+  /* ── HEADER ── */
+  .header {
+    background: var(--white); border-bottom: 2px solid var(--orange);
+    padding: 0 32px; display: flex; align-items: center; justify-content: space-between;
+    height: 60px; position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-weight: 900; font-size: 20px; letter-spacing: -0.5px; text-transform: uppercase; }
+  .logo span { color: var(--orange); }
+  .header-meta { font-size: 12px; color: var(--gray-2); display: flex; align-items: center; gap: 16px; }
+  .badge-live { display: flex; align-items: center; gap: 5px; font-weight: 600; color: var(--green); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── PERIOD BAR ── */
+  .period-bar {
+    background: var(--white); border-bottom: 1px solid var(--border);
+    padding: 10px 32px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .period-label { font-size: 13px; color: var(--gray-2); font-weight: 600; }
+  .period-btn {
+    border: 1px solid var(--border); background: var(--white); color: var(--black);
+    padding: 5px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s;
+  }
+  .period-btn:hover { border-color: var(--orange); color: var(--orange); }
+  .period-btn.active { background: var(--orange); color: #fff; border-color: var(--orange); }
+  .period-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  .date-range { display: flex; align-items: center; gap: 6px; }
+  .date-range input[type="date"] {
+    border: 1px solid var(--border); background: var(--white); color: var(--black);
+    padding: 4px 10px; border-radius: 6px; font-size: 13px; font-family: var(--font); font-weight: 600;
+    cursor: pointer; outline: none; transition: border-color .15s;
+  }
+  .date-range input[type="date"]:focus { border-color: var(--orange); }
+  .date-range input[type="date"].active { border-color: var(--orange); background: var(--orange-light); }
+  .date-range-arrow { font-size: 14px; color: var(--gray-3); }
+  .date-apply {
+    border: 1px solid var(--orange); background: var(--orange); color: #fff;
+    padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all .15s;
+  }
+  .date-apply:hover { background: var(--orange-h); border-color: var(--orange-h); }
+  .legend { margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--gray-2); }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-sw { width: 11px; height: 11px; border-radius: 3px; }
+
+  /* ── TABS ── */
+  .tabs-bar { background: var(--white); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 0; overflow-x: auto; }
+  .tab {
+    padding: 14px 16px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    border-bottom: 3px solid transparent; color: var(--gray-2); transition: all .15s; white-space: nowrap;
+    text-transform: uppercase; letter-spacing: .3px; display: flex; align-items: center; gap: 7px;
+  }
+  .tab svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .tab:hover { color: var(--black); }
+  .tab.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+  /* ── MAIN ── */
+  .main { padding: 24px 32px; max-width: 1460px; margin: 0 auto; }
+  .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--gray-3); margin: 22px 0 12px; }
+  .section-title:first-child { margin-top: 0; }
+
+  /* ── HERO ── */
+  .hero { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 8px; }
+  @media(max-width:900px){ .hero { grid-template-columns: repeat(2,1fr); } }
+  .hero-tile { background: var(--black); color: #fff; border-radius: 12px; padding: 20px 22px; position: relative; overflow: hidden; }
+  .hero-tile.accent { background: var(--orange); }
+  .hero-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; opacity: .75; }
+  .hero-val { font-size: 32px; font-weight: 900; margin: 6px 0 2px; line-height: 1; }
+  .hero-sub { font-size: 12px; opacity: .8; }
+  .hero-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.25); margin-top: 12px; overflow: hidden; }
+  .hero-bar > div { height: 100%; background: #fff; border-radius: 3px; }
+
+  /* ── KPI CARDS ── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .kpi-card { background: var(--white); border-radius: 10px; padding: 16px 18px; border: 1px solid var(--border); }
+  .kpi-card.highlight { border-color: var(--orange); }
+  .kpi-card.nodata { opacity: .65; }
+  .kpi-card-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--gray-2); margin-bottom: 6px; }
+  .kpi-card-val { font-size: 26px; font-weight: 900; color: var(--black); line-height: 1; }
+  .kpi-card-val.orange { color: var(--orange); }
+  .kpi-card-val.sm { font-size: 19px; }
+  .kpi-card-plan { font-size: 11px; color: var(--gray-3); margin-top: 4px; }
+  .kpi-pct { display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 4px; margin-top: 6px; }
+  .pct-green { background: #E8F8ED; color: var(--green); }
+  .pct-orange { background: var(--orange-light); color: var(--orange); }
+  .pct-red { background: #FDECEB; color: var(--red); }
+  .pct-gray { background: var(--gray-bg); color: var(--gray-3); }
+  .kpi-trend { font-size: 11px; color: var(--gray-3); margin-top: 3px; }
+  .kpi-trend.up { color: var(--green); }
+  .kpi-trend.dn { color: var(--red); }
+
+  /* ── GRID HELPERS ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 8px; }
+  @media(max-width:900px){ .two-col { grid-template-columns: 1fr; } }
+
+  /* ── CHART CARD ── */
+  .chart-card { background: var(--white); border-radius: 10px; border: 1px solid var(--border); padding: 18px 18px 14px; margin-bottom: 16px; }
+  .chart-card-title { font-size: 13px; font-weight: 800; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .chart-card-title span { font-size: 11px; color: var(--gray-2); font-weight: 500; }
+
+  /* ── TABLE ── */
+  .tbl-card { background: var(--white); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; }
+  .tbl-card-title { font-size: 13px; font-weight: 800; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: var(--gray-bg); color: var(--gray-2); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; font-weight: 700; padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--gray-bg); }
+  .mgr-name { font-weight: 700; }
+  .cell-num { text-align: right; font-weight: 600; }
+  .cell-money { text-align: right; font-weight: 700; }
+
+  /* ── EXCEL TABLE ── */
+  .excel-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .excel-toolbar .period-label { margin-right: 4px; }
+  .xls-wrap { background: var(--white); border: 1px solid var(--border); border-radius: 10px; overflow: auto; max-height: 72vh; }
+  table.xls { border-collapse: separate; border-spacing: 0; font-size: 12px; white-space: nowrap; }
+  table.xls th, table.xls td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 7px 10px; }
+  table.xls thead th { position: sticky; top: 0; z-index: 3; background: var(--black); color: #fff; font-size: 11px; font-weight: 800; text-transform: none; }
+  table.xls .col-metric { position: sticky; left: 0; z-index: 2; background: var(--white); text-align: left; font-weight: 700; min-width: 230px; border-right: 2px solid var(--border); }
+  table.xls thead .col-metric { z-index: 4; background: var(--black); color: #fff; }
+  table.xls thead .col-plan,
+  table.xls thead .col-fact,
+  table.xls thead .col-pct { background: var(--black); color: #fff; text-align: right; font-weight: 800; min-width: 72px; }
+  table.xls tbody .col-plan,
+  table.xls tbody .col-fact,
+  table.xls tbody .col-pct { text-align: right; font-weight: 700; background: #FBFBFB; }
+  table.xls .col-pct { border-right: 2px solid var(--border); }
+  table.xls td.day { text-align: right; color: var(--gray-2); min-width: 52px; }
+  table.xls tbody .col-metric { background: var(--white); }
+  table.xls tbody tr:hover td { background: var(--orange-light); }
+  table.xls tbody tr:hover .col-metric { background: var(--orange-light); }
+  .pctbox { padding: 1px 6px; border-radius: 4px; font-weight: 800; font-size: 11px; }
+  .daystat { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+
+  /* ── FUNNEL ── */
+  .funnel-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .funnel-label { font-size: 12px; color: var(--gray-2); width: 190px; flex-shrink: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .funnel-bar-wrap { flex: 1; background: var(--gray-bg); border-radius: 4px; height: 22px; overflow: hidden; }
+  .funnel-bar { height: 100%; border-radius: 4px; display: flex; align-items: center; padding: 0 8px; font-size: 11px; font-weight: 700; color: #fff; }
+  .funnel-pct { font-size: 11px; width: 48px; text-align: right; flex-shrink: 0; }
+  .funnel-count { font-size: 12px; font-weight: 700; width: 40px; text-align: right; flex-shrink: 0; }
+
+  /* ── RESPONSE TIME ── */
+  .rt-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(160px,1fr)); gap: 12px; padding: 4px 0 8px; }
+  .rt-card { background: var(--gray-bg); border-radius: 8px; padding: 14px 16px; }
+  .rt-name { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .rt-time { font-size: 22px; font-weight: 900; color: var(--orange); }
+  .rt-unit { font-size: 11px; color: var(--gray-2); }
+  .rt-sla { font-size: 11px; margin-top: 4px; }
+
+  /* ── PILL ── */
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .pill-green { background: #E8F8ED; color: var(--green); }
+  .pill-red { background: #FDECEB; color: var(--red); }
+  .pill-orange { background: var(--orange-light); color: var(--orange); }
+  .pill-gray { background: var(--gray-bg); color: var(--gray-2); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .chart-card canvas { max-height: 220px; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">DK<span>Academy</span> · Аналитика</div>
+  <div class="header-meta">
+    <div class="badge-live"><div class="dot"></div> Обновлено 3 мин назад</div>
+    <div>Источник: amoCRM · автообновление каждые 10 мин</div>
+  </div>
+</header>
+
+<div class="period-bar">
+  <span class="period-label">Период:</span>
+  <button class="period-btn" onclick="setPeriod(this,'today')">Сегодня</button>
+  <button class="period-btn" onclick="setPeriod(this,'week')">Неделя</button>
+  <button class="period-btn active" onclick="setPeriod(this,'month')">Месяц</button>
+  <button class="period-btn" onclick="setPeriod(this,'quarter')">Квартал</button>
+  <div class="period-sep"></div>
+  <div class="date-range">
+    <input type="date" id="date-from" value="2026-06-01" onchange="applyDateRange()">
+    <span class="date-range-arrow">→</span>
+    <input type="date" id="date-to" value="2026-06-10" onchange="applyDateRange()">
+  </div>
+  <div class="legend">
+    <span style="font-weight:700">% плана:</span>
+    <span class="legend-item"><span class="legend-sw" style="background:var(--green)"></span>≥100%</span>
+    <span class="legend-item"><span class="legend-sw" style="background:var(--orange)"></span>70–99%</span>
+    <span class="legend-item"><span class="legend-sw" style="background:var(--red)"></span>&lt;70%</span>
+  </div>
+</div>
+
+<div class="tabs-bar">
+  <div class="tab active" onclick="switchTab(this,'dept')">
+    <svg viewBox="0 0 24 24"><path d="M3 13h4v8H3zM10 3h4v18h-4zM17 9h4v12h-4z"/></svg>Отдел продаж</div>
+  <div class="tab" onclick="switchTab(this,'table')">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>Таблица</div>
+  <div class="tab" onclick="switchTab(this,'managers')">
+    <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="3"/><path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M17 11l2 2 4-4"/></svg>По менеджерам</div>
+  <div class="tab" onclick="switchTab(this,'funnels')">
+    <svg viewBox="0 0 24 24"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg>Воронки</div>
+  <div class="tab" onclick="switchTab(this,'speed')">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13V9M12 1h0M9 1h6"/></svg>Скорость ответа</div>
+  <div class="tab" onclick="switchTab(this,'sources')">
+    <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10H12z"/><path d="M12 2v10h10"/></svg>Источники</div>
+  <div class="tab" onclick="switchTab(this,'activity')">
+    <svg viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>Активность</div>
+</div>
+
+<div class="main">
+
+<!-- ════════ ОТДЕЛ ПРОДАЖ ════════ -->
+<div id="dept" class="tab-content active">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-tile accent">
+      <div class="hero-label">Приход (оплачено)</div>
+      <div class="hero-val">3,05 млн ₽</div>
+      <div class="hero-sub">план 12,9 млн · 23,6%</div>
+      <div class="hero-bar"><div style="width:24%"></div></div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">Конверсия лид → сделка</div>
+      <div class="hero-val">56,4%</div>
+      <div class="hero-sub">план 75% · 75,2% · Не обработан→Успех</div>
+      <div class="hero-bar"><div style="width:75%"></div></div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">Оплачено сделок</div>
+      <div class="hero-val">210</div>
+      <div class="hero-sub">из 502 новых обращений</div>
+      <div class="hero-bar"><div style="width:42%"></div></div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">Ср. время ответа</div>
+      <div class="hero-val">22 мин</div>
+      <div class="hero-sub" style="color:#FFD9CC">цель ≤15 мин · SLA нарушен</div>
+      <div class="hero-bar"><div style="width:64%"></div></div>
+    </div>
+  </div>
+
+  <div class="section-title">Активность отдела</div>
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-card-label">Исходящих звонков</div>
+      <div class="kpi-card-val">251</div>
+      <div class="kpi-card-plan">план 3 000</div>
+      <span class="kpi-pct pct-red">41,8%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Мин. в разговоре</div>
+      <div class="kpi-card-val">1 842</div>
+      <div class="kpi-card-plan">план 3 000</div>
+      <span class="kpi-pct pct-red">61,4%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Новые обращения</div>
+      <div class="kpi-card-val">502</div>
+      <div class="kpi-card-plan">план 1 000</div>
+      <span class="kpi-pct pct-green">251%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Сконвертировано в сделки</div>
+      <div class="kpi-card-val">283</div>
+      <div class="kpi-card-plan">план 750</div>
+      <span class="kpi-pct pct-orange">188,7%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Всего сообщений</div>
+      <div class="kpi-card-val">2 187</div>
+      <div class="kpi-card-plan">вход. 1 248 / исх. 939</div>
+      <span class="kpi-trend up">↑ +9%</span>
+    </div>
+  </div>
+
+  <div class="section-title">Деньги</div>
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-card-label">Выставлено счетов</div>
+      <div class="kpi-card-val">213</div>
+      <div class="kpi-card-plan">план 1 000</div>
+      <span class="kpi-pct pct-orange">106,5%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Сумма выст. счетов</div>
+      <div class="kpi-card-val sm">4,25 млн ₽</div>
+      <div class="kpi-card-plan">план 12 млн</div>
+      <span class="kpi-pct pct-red">35,4%</span>
+    </div>
+    <div class="kpi-card highlight">
+      <div class="kpi-card-label">Приход (оплачено)</div>
+      <div class="kpi-card-val orange sm">3,05 млн ₽</div>
+      <div class="kpi-card-plan">план 12,9 млн</div>
+      <span class="kpi-pct pct-red">23,6%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Средний чек</div>
+      <div class="kpi-card-val sm">14 519 ₽</div>
+      <div class="kpi-card-plan">план 15 000 ₽</div>
+      <span class="kpi-pct pct-orange">96,8%</span>
+    </div>
+    <div class="kpi-card nodata">
+      <div class="kpi-card-label">Сумма продаж (рентаб.)</div>
+      <div class="kpi-card-val sm">—</div>
+      <div class="kpi-card-plan">план 2,6 млн · ручной ввод</div>
+      <span class="kpi-pct pct-gray">нет данных в CRM</span>
+    </div>
+  </div>
+
+  <div class="section-title">Качество и скорость</div>
+  <div class="kpi-grid">
+    <div class="kpi-card highlight">
+      <div class="kpi-card-label">Конверсия лид → сделка</div>
+      <div class="kpi-card-val orange">56,4%</div>
+      <div class="kpi-card-plan">план 75% · этап: Не обработан → Успех</div>
+      <span class="kpi-pct pct-orange">75,2%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Конверсия повторных обращений</div>
+      <div class="kpi-card-val">35,0%</div>
+      <div class="kpi-card-plan">план 40% · Повторные: Не обработан→Успех</div>
+      <span class="kpi-pct pct-orange">87,5%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Постоянных клиентов</div>
+      <div class="kpi-card-val">128</div>
+      <div class="kpi-card-plan">оплата за последние 2 мес.</div>
+      <span class="kpi-trend up">↑ +14 vs прош. мес.</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Сделки (Повторные)</div>
+      <div class="kpi-card-val">340</div>
+      <div class="kpi-card-plan">план 50</div>
+      <span class="kpi-pct pct-green">3 400%</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Пропущ. диалоги</div>
+      <div class="kpi-card-val">38</div>
+      <div class="kpi-card-plan">цель: 0</div>
+      <span class="kpi-pct pct-red">требует внимания</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Застрявшие сделки</div>
+      <div class="kpi-card-val">74</div>
+      <div class="kpi-card-plan">Без ответа 3 дня + Лист ожидания</div>
+      <span class="kpi-pct pct-red">разобрать</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-label">Ср. время ответа</div>
+      <div class="kpi-card-val">22 мин</div>
+      <div class="kpi-card-plan">цель: ≤15 мин</div>
+      <span class="kpi-pct pct-red">SLA нарушен</span>
+    </div>
+  </div>
+
+  <div class="section-title">Динамика по дням</div>
+  <div class="two-col">
+    <div class="chart-card">
+      <div class="chart-card-title">Приход по дням <span>₽</span></div>
+      <canvas id="chart-income" height="200"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-title">Выставлено / Оплачено <span>шт.</span></div>
+      <canvas id="chart-invoices" height="200"></canvas>
+    </div>
+  </div>
+  <div class="two-col">
+    <div class="chart-card">
+      <div class="chart-card-title">Новые обращения по дням</div>
+      <canvas id="chart-leads" height="180"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-title">Исходящие звонки по дням</div>
+      <canvas id="chart-calls" height="180"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ ТАБЛИЦА (EXCEL) ════════ -->
+<div id="table" class="tab-content">
+  <div class="excel-toolbar">
+    <span class="period-label">Показать:</span>
+    <span id="xls-buttons"></span>
+  </div>
+  <div class="section-title" id="xls-caption">Отдел продаж · План / Факт / Конверсия · по дням</div>
+  <div class="xls-wrap">
+    <table class="xls" id="xls-table"></table>
+  </div>
+  <div style="margin-top:10px;font-size:11px;color:var(--gray-3)">
+    Статусы дней (Выходной / Отпуск / За свой счёт / Не работал) — ручной ввод, не из amoCRM. В прототипе показаны для примера.
+  </div>
+</div>
+
+<!-- ════════ ПО МЕНЕДЖЕРАМ ════════ -->
+<div id="managers" class="tab-content">
+  <div class="section-title">По менеджерам · Июнь 2026</div>
+  <div class="tbl-card">
+    <div class="tbl-card-title">Сводная таблица</div>
+    <table>
+      <thead><tr>
+        <th>Менеджер</th><th style="text-align:right">Звонки</th><th style="text-align:right">Лиды</th>
+        <th style="text-align:right">Конв.</th><th style="text-align:right">Счетов</th><th style="text-align:right">Оплачено</th>
+        <th style="text-align:right">Приход, ₽</th><th style="text-align:right">Ср. чек, ₽</th>
+        <th style="text-align:right">Ср. ответ</th><th style="text-align:right">В работе</th>
+        <th style="text-align:right">Без задач</th><th style="text-align:right">Просрочено</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="mgr-name">Алина С.</td><td class="cell-num">98</td><td class="cell-num">82</td><td class="cell-num"><span class="pill pill-orange">61%</span></td><td class="cell-num">125</td><td class="cell-num">119</td><td class="cell-money">1 813 137</td><td class="cell-money">15 236</td><td class="cell-num"><span class="pill pill-orange">19 мин</span></td><td class="cell-num">34</td><td class="cell-num"><span class="pill pill-orange">7</span></td><td class="cell-num"><span class="pill pill-red">5</span></td></tr>
+        <tr><td class="mgr-name">Татьяна Ф.</td><td class="cell-num">63</td><td class="cell-num">74</td><td class="cell-num"><span class="pill pill-green">68%</span></td><td class="cell-num">41</td><td class="cell-num">38</td><td class="cell-money">621 400</td><td class="cell-money">16 353</td><td class="cell-num"><span class="pill pill-green">11 мин</span></td><td class="cell-num">28</td><td class="cell-num"><span class="pill pill-green">2</span></td><td class="cell-num"><span class="pill pill-orange">3</span></td></tr>
+        <tr><td class="mgr-name">Ольга С.</td><td class="cell-num">44</td><td class="cell-num">61</td><td class="cell-num"><span class="pill pill-orange">54%</span></td><td class="cell-num">32</td><td class="cell-num">29</td><td class="cell-money">398 900</td><td class="cell-money">13 755</td><td class="cell-num"><span class="pill pill-red">34 мин</span></td><td class="cell-num">41</td><td class="cell-num"><span class="pill pill-red">12</span></td><td class="cell-num"><span class="pill pill-red">9</span></td></tr>
+        <tr><td class="mgr-name">Юлия П.</td><td class="cell-num">29</td><td class="cell-num">49</td><td class="cell-num"><span class="pill pill-orange">57%</span></td><td class="cell-num">28</td><td class="cell-num">25</td><td class="cell-money">312 200</td><td class="cell-money">12 488</td><td class="cell-num"><span class="pill pill-orange">26 мин</span></td><td class="cell-num">22</td><td class="cell-num"><span class="pill pill-orange">5</span></td><td class="cell-num"><span class="pill pill-orange">4</span></td></tr>
+        <tr><td class="mgr-name">Валентина Ф.</td><td class="cell-num">17</td><td class="cell-num">38</td><td class="cell-num"><span class="pill pill-red">44%</span></td><td class="cell-num">17</td><td class="cell-num">15</td><td class="cell-money">198 700</td><td class="cell-money">13 247</td><td class="cell-num"><span class="pill pill-red">48 мин</span></td><td class="cell-num">19</td><td class="cell-num"><span class="pill pill-red">8</span></td><td class="cell-num"><span class="pill pill-red">6</span></td></tr>
+        <tr><td class="mgr-name">Евгения В.</td><td class="cell-num">0</td><td class="cell-num">122</td><td class="cell-num"><span class="pill pill-green">71%</span></td><td class="cell-num">58</td><td class="cell-num">54</td><td class="cell-money">702 600</td><td class="cell-money">13 011</td><td class="cell-num"><span class="pill pill-green">8 мин</span></td><td class="cell-num">53</td><td class="cell-num"><span class="pill pill-green">1</span></td><td class="cell-num"><span class="pill pill-orange">2</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Приход по менеджерам, ₽</div><canvas id="chart-mgr-income" height="220"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Конверсия лид → сделка, %</div><canvas id="chart-mgr-conv" height="220"></canvas></div>
+  </div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Открытых сделок в работе сейчас</div><canvas id="chart-mgr-load" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Ср. время ответа, мин</div><canvas id="chart-mgr-rt" height="200"></canvas></div>
+  </div>
+</div>
+
+<!-- ════════ ВОРОНКИ ════════ -->
+<div id="funnels" class="tab-content">
+  <div class="excel-toolbar" style="margin-bottom:4px">
+    <span class="period-label">Менеджер:</span>
+    <div id="funnel-mgr-filter"></div>
+  </div>
+  <div class="section-title">Конверсия этапов</div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Воронка: Продажи</div><div id="funnel-sales"></div></div>
+    <div class="chart-card"><div class="chart-card-title">Воронка: Повторные продажи</div><div id="funnel-repeat"></div></div>
+  </div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Причины провала <span>сделок за период</span></div><canvas id="chart-lose" height="230"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Цикл сделки <span>медиана дней по менеджерам</span></div><canvas id="chart-cycle" height="230"></canvas></div>
+  </div>
+  <div class="section-title">Застрявшие сделки</div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">По стадиям <span>открытые, без движения</span></div><canvas id="chart-stuck-stage" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">По менеджерам <span>сколько зависло</span></div><canvas id="chart-stuck-mgr" height="200"></canvas></div>
+  </div>
+</div>
+
+<!-- ════════ СКОРОСТЬ ОТВЕТА ════════ -->
+<div id="speed" class="tab-content">
+  <div class="excel-toolbar" style="margin-bottom:4px">
+    <span class="period-label">Менеджер:</span>
+    <div id="speed-mgr-filter"></div>
+  </div>
+  <div class="section-title">Время ответа и SLA · Июнь 2026</div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+    <div class="kpi-card"><div class="kpi-card-label">Ср. время ответа</div><div class="kpi-card-val">22 мин</div><div class="kpi-card-plan">цель ≤15 мин</div><span class="kpi-pct pct-red">SLA нарушен</span></div>
+    <div class="kpi-card"><div class="kpi-card-label">Медиана ответа</div><div class="kpi-card-val">14 мин</div><div class="kpi-card-plan">цель ≤15 мин</div><span class="kpi-pct pct-green">OK</span></div>
+    <div class="kpi-card"><div class="kpi-card-label">Пропущено диалогов</div><div class="kpi-card-val">38</div><div class="kpi-card-plan">цель 0</div><span class="kpi-pct pct-red">−</span></div>
+    <div class="kpi-card"><div class="kpi-card-label">SLA ≤15 мин</div><div class="kpi-card-val">64%</div><div class="kpi-card-plan">цель 80%</div><span class="kpi-pct pct-red">−16 п.п.</span></div>
+    <div class="kpi-card"><div class="kpi-card-label">Первый ответ новому лиду</div><div class="kpi-card-val">31 мин</div><div class="kpi-card-plan">цель ≤20 мин</div><span class="kpi-pct pct-red">SLA нарушен</span></div>
+    <div class="kpi-card"><div class="kpi-card-label">Входящих сообщений</div><div class="kpi-card-val">1 248</div><span class="kpi-trend up">↑ +9%</span></div>
+  </div>
+  <div class="section-title">По менеджерам</div>
+  <div class="two-col">
+    <div class="chart-card"><div class="rt-grid" id="rt-grid"></div></div>
+    <div class="chart-card"><div class="chart-card-title">Ср. время ответа по дням <span>мин</span></div><canvas id="chart-rt-daily" height="200"></canvas></div>
+  </div>
+  <div class="section-title">Первый ответ новому лиду</div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">SLA первого ответа по источникам <span>мин · цель ≤20</span></div><canvas id="chart-fr-source" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Распределение времени первого ответа <span>доля диалогов</span></div><canvas id="chart-fr-dist" height="200"></canvas></div>
+  </div>
+</div>
+
+<!-- ════════ ИСТОЧНИКИ ════════ -->
+<div id="sources" class="tab-content">
+  <div class="section-title">Источники лидов и выручки</div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Лиды по источникам <span>шт.</span></div><canvas id="chart-src-leads" height="250"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Выручка по источникам <span>₽</span></div><canvas id="chart-src-revenue" height="250"></canvas></div>
+  </div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Конверсия в Успех по каналам <span>% лид → оплата</span></div><canvas id="chart-src-conv" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Стоимость лида по каналам <span>выручка / лид, ₽</span></div><canvas id="chart-src-value" height="200"></canvas></div>
+  </div>
+  <div class="tbl-card">
+    <div class="tbl-card-title">Источники — детально</div>
+    <table>
+      <thead><tr><th>Источник</th><th style="text-align:right">Лиды</th><th style="text-align:right">Сделки</th><th style="text-align:right">Конв.</th><th style="text-align:right">Выручка, ₽</th></tr></thead>
+      <tbody>
+        <tr><td>Instagram</td><td class="cell-num">164</td><td class="cell-num">90</td><td class="cell-num"><span class="pill pill-green">55%</span></td><td class="cell-money">1 108 000</td></tr>
+        <tr><td>ВК</td><td class="cell-num">131</td><td class="cell-num">66</td><td class="cell-num"><span class="pill pill-orange">50%</span></td><td class="cell-money">792 400</td></tr>
+        <tr><td>Telegram</td><td class="cell-num">88</td><td class="cell-num">59</td><td class="cell-num"><span class="pill pill-green">67%</span></td><td class="cell-money">701 200</td></tr>
+        <tr><td>WhatsApp</td><td class="cell-num">57</td><td class="cell-num">31</td><td class="cell-num"><span class="pill pill-orange">54%</span></td><td class="cell-money">388 600</td></tr>
+        <tr><td>Avito</td><td class="cell-num">44</td><td class="cell-num">18</td><td class="cell-num"><span class="pill pill-red">41%</span></td><td class="cell-money">214 900</td></tr>
+        <tr><td>dkacademy.ru</td><td class="cell-num">31</td><td class="cell-num">19</td><td class="cell-num"><span class="pill pill-green">61%</span></td><td class="cell-money">198 900</td></tr>
+        <tr><td>Taplink</td><td class="cell-num">22</td><td class="cell-num">12</td><td class="cell-num"><span class="pill pill-orange">55%</span></td><td class="cell-money">142 300</td></tr>
+        <tr><td>Скорозвон</td><td class="cell-num">38</td><td class="cell-num">16</td><td class="cell-num"><span class="pill pill-red">42%</span></td><td class="cell-money">256 100</td></tr>
+        <tr><td>Прочее</td><td class="cell-num">9</td><td class="cell-num">4</td><td class="cell-num"><span class="pill pill-gray">44%</span></td><td class="cell-money">46 200</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════ АКТИВНОСТЬ ════════ -->
+<div id="activity" class="tab-content">
+  <div class="section-title">Активность · звонки и сообщения</div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Контактов по часу дня <span>звонки + сообщения</span></div><canvas id="chart-hm-hour" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Сообщения и звонки по дням</div><canvas id="chart-activity-daily" height="200"></canvas></div>
+  </div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Изменение vs прошлый месяц <span>%</span></div><canvas id="chart-trends" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Сообщения по менеджерам <span>входящие / исходящие</span></div><canvas id="chart-msg-mgr" height="200"></canvas></div>
+  </div>
+  <div class="section-title">Пропущенные диалоги <span style="font-weight:500;color:var(--gray-3);text-transform:none;letter-spacing:0">где теряем обращения</span></div>
+  <div class="two-col">
+    <div class="chart-card"><div class="chart-card-title">Пропущенные по часам дня</div><canvas id="chart-miss-hour" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Пропущенные по источникам</div><canvas id="chart-miss-source" height="200"></canvas></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+const ONG='#F5822B', ONG2='rgba(245,130,43,.18)';
+const BLK='#161616', GRY='#ABABAB', GRY2='#6B6B6B';
+const GRN='#2BA84A', RED='#E23B2E';
+const DAYS=Array.from({length:30},(_,i)=>`${i+1}`);
+function rand(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function fmtNum(n){return n.toLocaleString('ru-RU');}
+
+function switchTab(el,id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(id).classList.add('active');
+}
+
+const MONTHS_RU=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+function fmtDate(d){ return `${d.getDate()} ${MONTHS_RU[d.getMonth()]} ${d.getFullYear()}`; }
+function isoDate(d){ return d.toISOString().slice(0,10); }
+
+function updatePeriodDisplay(from, to){
+  document.getElementById('date-from').value = isoDate(from);
+  document.getElementById('date-to').value = isoDate(to);
+  document.getElementById('date-from').classList.remove('active');
+  document.getElementById('date-to').classList.remove('active');
+}
+
+function setPeriod(el, preset){
+  document.querySelectorAll('.period-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  const now = new Date(2026,5,10); // 10 июня 2026 (mock "сегодня")
+  let from, to = new Date(now);
+  if(preset==='today'){ from = new Date(now); }
+  else if(preset==='week'){ from = new Date(now); from.setDate(now.getDate()-6); }
+  else if(preset==='month'){ from = new Date(now.getFullYear(), now.getMonth(), 1); }
+  else if(preset==='quarter'){ from = new Date(now.getFullYear(), Math.floor(now.getMonth()/3)*3, 1); }
+  else { from = new Date(now); }
+  updatePeriodDisplay(from, to);
+}
+
+function applyDateRange(){
+  const fromVal = document.getElementById('date-from').value;
+  const toVal   = document.getElementById('date-to').value;
+  if(!fromVal || !toVal) return;
+  const from = new Date(fromVal), to = new Date(toVal);
+  if(from > to){ document.getElementById('date-to').classList.add('active'); return; }
+  document.getElementById('date-from').classList.remove('active');
+  document.getElementById('date-to').classList.remove('active');
+  // Снять активный preset при ручном вводе дат
+  document.querySelectorAll('.period-btn').forEach(b=>b.classList.remove('active'));
+}
+
+Chart.defaults.font.family="'Inter','Helvetica Neue',Arial,sans-serif";
+Chart.defaults.font.size=11; Chart.defaults.color=GRY2;
+const GRID={color:'rgba(0,0,0,.06)'};
+function mkLine(id,labels,ds,opts={}){ return new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:ds},options:{responsive:true,animation:{duration:600},plugins:{legend:{display:ds.length>1,position:'bottom',labels:{boxWidth:10,padding:12}}},scales:{x:{grid:GRID},y:{grid:GRID}},...opts}}); }
+function mkBar(id,labels,ds,opts={}){ return new Chart(document.getElementById(id),{type:'bar',data:{labels,datasets:ds},options:{responsive:true,animation:{duration:600},plugins:{legend:{display:ds.length>1,position:'bottom',labels:{boxWidth:10,padding:12}}},scales:{x:{grid:{display:false},stacked:!!opts.stacked},y:{grid:GRID,stacked:!!opts.stacked}}}}); }
+function mkHBar(id,labels,ds,opts={}){ return new Chart(document.getElementById(id),{type:'bar',data:{labels,datasets:ds},options:{indexAxis:'y',responsive:true,animation:{duration:600},plugins:{legend:{display:false}},scales:{x:{grid:GRID,max:opts.max},y:{grid:{display:false}}}}}); }
+function mkDoughnut(id,labels,data,colors){ return new Chart(document.getElementById(id),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,plugins:{legend:{position:'right',labels:{boxWidth:10,padding:8}}},cutout:'60%'}}); }
+
+/* DEPT */
+mkLine('chart-income',DAYS,[{label:'Приход, ₽',data:[130474,179130,306354,23226,373456,0,0,180000,92000,44000,321000,0,0,156000,87000,210000,0,0,118000,65000,240000,0,0,94000,180000,132000,0,0,88000,145000],borderColor:ONG,backgroundColor:ONG2,fill:true,tension:.4,pointRadius:2,borderWidth:2}]);
+mkBar('chart-invoices',DAYS,[{label:'Выставлено',data:DAYS.map(()=>rand(2,18)),backgroundColor:'rgba(245,130,43,.5)',borderRadius:4},{label:'Оплачено',data:DAYS.map(()=>rand(1,12)),backgroundColor:ONG,borderRadius:4}]);
+mkBar('chart-leads',DAYS,[{label:'Новые лиды',data:DAYS.map(()=>rand(10,38)),backgroundColor:'rgba(43,168,74,.6)',borderRadius:4}]);
+mkBar('chart-calls',DAYS,[{label:'Звонки',data:DAYS.map(()=>rand(0,22)),backgroundColor:'rgba(161,161,161,.6)',borderRadius:4}]);
+
+/* MANAGERS */
+const mgrNames=['Алина С.','Татьяна Ф.','Ольга С.','Юлия П.','Валентина Ф.','Евгения В.'];
+const mgrColors=[ONG,'#E0701B','#4CAF8B','#6B9BD2','#C89C3E',GRY2];
+mkHBar('chart-mgr-income',mgrNames,[{data:[1813137,621400,398900,312200,198700,702600],backgroundColor:mgrColors,borderRadius:4}]);
+mkHBar('chart-mgr-conv',mgrNames,[{data:[61,68,54,57,44,71],backgroundColor:[ONG,GRN,ONG,ONG,RED,GRN],borderRadius:4}],{max:100});
+mkBar('chart-mgr-load',mgrNames,[{label:'Открытых',data:[34,28,41,22,19,53],backgroundColor:mgrColors,borderRadius:4}]);
+mkBar('chart-mgr-rt',mgrNames,[{label:'мин',data:[19,11,34,26,48,8],backgroundColor:[ONG,GRN,RED,ONG,RED,GRN],borderRadius:4}]);
+
+/* FUNNELS */
+function renderFunnel(cid,stages){
+  const max=stages[0].count, wrap=document.getElementById(cid);
+  wrap.innerHTML='';
+  const colors=[ONG,'#E0701B','#C86B0A','#A85209','#8B4207','#6D3205','#512403'];
+  stages.forEach((s,i)=>{
+    const pct=Math.round(s.count/max*100);
+    const conv=i>0?Math.round(s.count/stages[i-1].count*100):100;
+    const row=document.createElement('div'); row.className='funnel-row';
+    row.innerHTML=`<div class="funnel-label">${s.label}</div><div class="funnel-bar-wrap"><div class="funnel-bar" style="width:${pct}%;background:${colors[Math.min(i,6)]}">${s.count>20?s.count:''}</div></div><div class="funnel-count">${s.count}</div><div class="funnel-pct" style="color:${i===0?GRY:conv<40?RED:conv<70?ONG:GRN}">${conv}%</div>`;
+    wrap.appendChild(row);
+  });
+}
+const funnelDataAll={
+  sales:[{label:'Не обработан',count:502},{label:'Повторное касание',count:381},{label:'Взято в работу',count:283},{label:'Квалифицирован',count:197},{label:'Формирование заказа',count:142},{label:'Отправлен счёт',count:213},{label:'Успех',count:210}],
+  repeat:[{label:'Не обработан',count:340},{label:'Взято в работу',count:290},{label:'Квалифицирован',count:218},{label:'Формирование заказа',count:165},{label:'Отправлен счёт',count:128},{label:'Успех',count:119}]
+};
+const funnelDataByMgr={
+  'Алина С.':   {sales:[{label:'Не обработан',count:98},{label:'Повторное касание',count:74},{label:'Взято в работу',count:57},{label:'Квалифицирован',count:40},{label:'Формирование заказа',count:30},{label:'Отправлен счёт',count:44},{label:'Успех',count:40}],repeat:[{label:'Не обработан',count:65},{label:'Взято в работу',count:52},{label:'Квалифицирован',count:38},{label:'Формирование заказа',count:28},{label:'Отправлен счёт',count:22},{label:'Успех',count:18}]},
+  'Татьяна Ф.': {sales:[{label:'Не обработан',count:74},{label:'Повторное касание',count:60},{label:'Взято в работу',count:48},{label:'Квалифицирован',count:35},{label:'Формирование заказа',count:25},{label:'Отправлен счёт',count:35},{label:'Успех',count:33}],repeat:[{label:'Не обработан',count:50},{label:'Взято в работу',count:43},{label:'Квалифицирован',count:32},{label:'Формирование заказа',count:24},{label:'Отправлен счёт',count:18},{label:'Успех',count:16}]},
+  'Ольга С.':   {sales:[{label:'Не обработан',count:61},{label:'Повторное касание',count:45},{label:'Взято в работу',count:32},{label:'Квалифицирован',count:22},{label:'Формирование заказа',count:16},{label:'Отправлен счёт',count:25},{label:'Успех',count:24}],repeat:[{label:'Не обработан',count:45},{label:'Взято в работу',count:37},{label:'Квалифицирован',count:28},{label:'Формирование заказа',count:20},{label:'Отправлен счёт',count:16},{label:'Успех',count:14}]},
+  'Юлия П.':    {sales:[{label:'Не обработан',count:49},{label:'Повторное касание',count:38},{label:'Взято в работу',count:30},{label:'Квалифицирован',count:21},{label:'Формирование заказа',count:14},{label:'Отправлен счёт',count:20},{label:'Успех',count:19}],repeat:[{label:'Не обработан',count:40},{label:'Взято в работу',count:33},{label:'Квалифицирован',count:24},{label:'Формирование заказа',count:17},{label:'Отправлен счёт',count:13},{label:'Успех',count:11}]},
+  'Валентина Ф.':{sales:[{label:'Не обработан',count:38},{label:'Повторное касание',count:28},{label:'Взято в работу',count:20},{label:'Квалифицирован',count:13},{label:'Формирование заказа',count:9},{label:'Отправлен счёт',count:14},{label:'Успех',count:13}],repeat:[{label:'Не обработан',count:28},{label:'Взято в работу',count:22},{label:'Квалифицирован',count:16},{label:'Формирование заказа',count:11},{label:'Отправлен счёт',count:9},{label:'Успех',count:7}]},
+  'Евгения В.': {sales:[{label:'Не обработан',count:122},{label:'Повторное касание',count:96},{label:'Взято в работу',count:82},{label:'Квалифицирован',count:58},{label:'Формирование заказа',count:42},{label:'Отправлен счёт',count:60},{label:'Успех',count:56}],repeat:[{label:'Не обработан',count:82},{label:'Взято в работу',count:70},{label:'Квалифицирован',count:54},{label:'Формирование заказа',count:40},{label:'Отправлен счёт',count:31},{label:'Успех',count:28}]}
+};
+function renderFunnels(mgr){
+  const d=mgr==='Все'?funnelDataAll:funnelDataByMgr[mgr];
+  renderFunnel('funnel-sales',d.sales);
+  renderFunnel('funnel-repeat',d.repeat);
+}
+(function(){
+  const wrap=document.getElementById('funnel-mgr-filter');
+  ['Все','Алина С.','Татьяна Ф.','Ольга С.','Юлия П.','Валентина Ф.','Евгения В.'].forEach((m,i)=>{
+    const b=document.createElement('button'); b.className='period-btn'+(i===0?' active':'');
+    b.textContent=m; b.onclick=()=>{ wrap.querySelectorAll('.period-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderFunnels(m); };
+    wrap.appendChild(b);
+  });
+  renderFunnels('Все');
+})();
+mkDoughnut('chart-lose',['Слишком дорого','Пропала потребность','Не устроили условия','Выбрали других'],[42,31,18,9],[RED,'#E07070','#C9B8B8',GRY]);
+mkHBar('chart-cycle',mgrNames,[{data:[12,9,18,14,22,7],backgroundColor:mgrColors,borderRadius:4}]);
+mkBar('chart-stuck-stage',['Без ответа (3 дня)','Лист ожидания','Формирование заказа'],[{label:'Сделок',data:[41,33,17],backgroundColor:[RED,ONG,'#C89C3E'],borderRadius:4}]);
+mkBar('chart-stuck-mgr',mgrNames,[{label:'Зависло',data:[18,9,22,12,8,5],backgroundColor:mgrColors,borderRadius:4}]);
+
+/* SPEED */
+const rtData=[{name:'Евгения В.',min:8,sla:true},{name:'Татьяна Ф.',min:11,sla:true},{name:'Алина С.',min:19,sla:false},{name:'Юлия П.',min:26,sla:false},{name:'Ольга С.',min:34,sla:false},{name:'Валентина Ф.',min:48,sla:false}];
+let rtChart=null;
+function renderRtGrid(mgr){
+  const list=mgr==='Все'?rtData:rtData.filter(r=>r.name===mgr);
+  const grid=document.getElementById('rt-grid');
+  grid.innerHTML='';
+  list.forEach(r=>{
+    grid.innerHTML+=`<div class="rt-card"><div class="rt-name">${r.name}</div><div class="rt-time">${r.min}<span class="rt-unit"> мин</span></div><div class="rt-sla"><span class="pill ${r.sla?'pill-green':'pill-red'}">${r.sla?'SLA ок':'SLA нарушен'}</span></div></div>`;
+  });
+  const dailyData=DAYS.map(()=>mgr==='Все'?rand(8,55):list[0]?rand(Math.max(3,list[0].min-8),list[0].min+12):rand(8,55));
+  if(rtChart){ rtChart.data.datasets[0].data=dailyData; rtChart.update(); }
+  else{ rtChart=mkLine('chart-rt-daily',DAYS,[{label:'Ср. ответ, мин',data:dailyData,borderColor:ONG,backgroundColor:ONG2,fill:true,tension:.4,pointRadius:2},{label:'Цель 15 мин',data:DAYS.map(()=>15),borderColor:GRN,borderDash:[4,4],pointRadius:0,borderWidth:1.5}]); }
+}
+(function(){
+  const wrap=document.getElementById('speed-mgr-filter');
+  ['Все','Евгения В.','Татьяна Ф.','Алина С.','Юлия П.','Ольга С.','Валентина Ф.'].forEach((m,i)=>{
+    const b=document.createElement('button'); b.className='period-btn'+(i===0?' active':'');
+    b.textContent=m; b.onclick=()=>{ wrap.querySelectorAll('.period-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderRtGrid(m); };
+    wrap.appendChild(b);
+  });
+  renderRtGrid('Все');
+})();
+
+/* SPEED — first response */
+const frSrc=['Instagram','ВК','Telegram','WhatsApp','Avito','Скорозвон'];
+mkHBar('chart-fr-source',frSrc,[{data:[34,21,12,18,41,9],backgroundColor:frSrc.map((_,i)=>[RED,ONG,GRN,ONG,RED,GRN][i]),borderRadius:4}]);
+mkBar('chart-fr-dist',['≤5 мин','5–15','15–30','30–60','>60'],[{label:'Диалогов',data:[412,386,248,164,124],backgroundColor:[GRN,'#7BC47F',ONG,'#E0701B',RED],borderRadius:4}]);
+
+/* SOURCES */
+const srcL=['Instagram','ВК','Telegram','WhatsApp','Avito','dkacademy.ru','Taplink','Скорозвон','Прочее'];
+const srcColors=[ONG,'#E0701B','#C86B0A','#A85209','#8B4207','#6D3205','#4CAF8B',GRY,GRY2];
+const srcLeads=[164,131,88,57,44,31,22,38,9];
+const srcRev=[1108000,792400,701200,388600,214900,198900,142300,256100,46200];
+const srcDeals=[90,66,59,31,18,19,12,16,4];
+mkDoughnut('chart-src-leads',srcL,srcLeads,srcColors);
+mkDoughnut('chart-src-revenue',srcL,srcRev,srcColors);
+const srcConv=srcLeads.map((l,i)=>Math.round(srcDeals[i]/l*100));
+mkHBar('chart-src-conv',srcL,[{data:srcConv,backgroundColor:srcConv.map(v=>v>=60?GRN:v>=45?ONG:RED),borderRadius:4}],{max:100});
+const srcVal=srcLeads.map((l,i)=>Math.round(srcRev[i]/l));
+mkHBar('chart-src-value',srcL,[{data:srcVal,backgroundColor:srcColors,borderRadius:4}]);
+
+/* ACTIVITY */
+const hrs=Array.from({length:12},(_,i)=>`${i+8}:00`);
+mkBar('chart-hm-hour',hrs,[{label:'Контактов',data:[12,28,45,62,71,58,43,38,24,18,9,5],backgroundColor:c=>{const v=c.raw;return v>60?ONG:v>40?'#F0A060':'rgba(245,130,43,.35)';},borderRadius:4}]);
+mkBar('chart-activity-daily',DAYS,[{label:'Вход. сообщ.',data:DAYS.map(()=>rand(30,75)),backgroundColor:'rgba(43,168,74,.6)',borderRadius:4,stack:'s'},{label:'Исх. сообщ.',data:DAYS.map(()=>rand(20,60)),backgroundColor:ONG,borderRadius:4,stack:'s'},{label:'Звонки',data:DAYS.map(()=>rand(2,18)),backgroundColor:'rgba(161,161,161,.7)',borderRadius:4,stack:'s'}],{stacked:true});
+/* trends: clean ±% diverging */
+const trMetrics=['Звонки','Лиды','Счета','Приход','Ср. чек','Сообщения'];
+const trVals=[-12,18,-5,7,3,9];
+mkBar('chart-trends',trMetrics,[{label:'± % vs прошлый месяц',data:trVals,backgroundColor:trVals.map(v=>v>=0?GRN:RED),borderRadius:4}]);
+mkBar('chart-msg-mgr',mgrNames,[{label:'Входящие',data:[310,178,204,143,88,325],backgroundColor:'rgba(43,168,74,.55)',borderRadius:4,stack:'m'},{label:'Исходящие',data:[287,165,188,129,79,298],backgroundColor:ONG,borderRadius:4,stack:'m'}],{stacked:true});
+const missByHour=[1,1,0,0,0,0,1,2,3,5,4,3,2,2,4,5,4,3,2,2,1,1,0,0].slice(8,20);
+mkBar('chart-miss-hour',hrs,[{label:'Пропущено',data:missByHour,backgroundColor:c=>{const v=c.raw;return v>=4?RED:v>=2?ONG:'rgba(245,130,43,.35)';},borderRadius:4}]);
+mkBar('chart-miss-source',['Instagram','ВК','Avito','WhatsApp','Telegram'],[{label:'Пропущено',data:[14,9,7,5,3],backgroundColor:[RED,'#E0701B',ONG,'#C89C3E',GRN],borderRadius:4}]);
+
+/* ════ EXCEL TABLE ════ */
+const dayStatus={6:'вых',7:'вых',13:'вых',14:'вых',20:'вых',21:'вых',27:'вых',28:'вых',10:'отп',11:'отп',17:'ссч'};
+const statusColor={'вых':'#FDECEB','отп':'#E8F4FD','ссч':'#FEF6E6','нераб':'#F0F0F0'};
+const statusText={'вых':'Выходной','отп':'Отпуск','ссч':'За свой счёт','нераб':'Не работал'};
+const deptMetrics=[
+  {n:'Кол-во исходящих звонков',plan:3000,fact:251,t:'int'},
+  {n:'Кол-во минут в разговоре',plan:3000,fact:1842,t:'int'},
+  {n:'Кол-во новых обращений',plan:1000,fact:502,t:'int'},
+  {n:'Сконвертировано в сделки',plan:750,fact:283,t:'int'},
+  {n:'Созданные сделки (Повторные)',plan:50,fact:340,t:'int'},
+  {n:'Выставлено счетов',plan:1000,fact:213,t:'int'},
+  {n:'Сумма выставленных счетов',plan:12000000,fact:4250394,t:'money'},
+  {n:'Оплачено сделок',plan:1000,fact:210,t:'int'},
+  {n:'Сумма оплачено (Приход)',plan:12900000,fact:3049009,t:'money'},
+  {n:'Сумма продаж (рентабельность)',plan:2600000,fact:null,t:'money'},
+  {n:'Средний чек по оплатам',plan:15000,fact:14519,t:'money'},
+  {n:'Конверсия лид → сделка (Не обработан→Успех)',plan:75,fact:56.4,t:'pct'},
+  {n:'Конверсия повторных (Не обработан→Успех)',plan:40,fact:35.0,t:'pct'},
+  {n:'Кол-во диалогов за день',plan:50,fact:38,t:'int'},
+  {n:'Кол-во сообщений за день',plan:100,fact:73,t:'int'},
+];
+const xlsScopes=[['Отдел продаж',1],['Алина С.',.38],['Татьяна Ф.',.16],['Ольга С.',.12],['Юлия П.',.10],['Валентина Ф.',.07],['Евгения В.',.18]];
+function pctClass(p){ return p>=100?'pct-green':p>=70?'pct-orange':'pct-red'; }
+function fmtVal(v,t){ if(v===null) return '—'; if(t==='money') return fmtNum(Math.round(v)); if(t==='pct') return v.toFixed(1)+'%'; return fmtNum(v); }
+function renderXls(scale){
+  const days=DAYS.length;
+  let h='<thead><tr><th class="col-metric">Показатель</th><th class="col-plan">План</th><th class="col-fact">Факт</th><th class="col-pct">Конверсия</th>';
+  for(let d=1;d<=days;d++){ const st=dayStatus[d]; h+=`<th class="day" title="${st?statusText[st]:''}" style="${st?`background:${statusColor[st]};color:#161616`:''}">${d}<div class="daystat">${st?st:''}</div></th>`; }
+  h+='</tr></thead><tbody>';
+  deptMetrics.forEach(m=>{
+    const fact=m.fact===null?null:(m.t==='pct'?m.fact:Math.round(m.fact*scale));
+    const plan=m.t==='pct'?m.plan:Math.round(m.plan*scale);
+    const realPct=fact===null||plan===0?null:Math.round(fact/plan*100);
+    h+=`<tr><td class="col-metric">${m.n}</td><td class="col-plan">${m.t==='pct'?plan+'%':fmtNum(plan)}</td><td class="col-fact">${fmtVal(fact,m.t)}</td><td class="col-pct">${realPct===null?'<span class="pctbox pct-gray">—</span>':`<span class="pctbox ${pctClass(realPct)}">${realPct}%</span>`}</td>`;
+    for(let d=1;d<=days;d++){
+      const st=dayStatus[d];
+      let cell='';
+      if(fact!==null && !st){
+        if(m.t==='money') cell=fmtNum(rand(0,Math.round(fact/8)));
+        else if(m.t==='pct') cell=(40+rand(0,40))/100*100|0;
+        else cell=rand(0,Math.round(fact/6)+1);
+      }
+      h+=`<td class="day" style="${st?`background:${statusColor[st]}`:''}">${cell===''?'':cell}</td>`;
+    }
+    h+='</tr>';
+  });
+  h+='</tbody>';
+  document.getElementById('xls-table').innerHTML=h;
+}
+function setXls(el,name,scale){ document.querySelectorAll('#xls-buttons .period-btn').forEach(b=>b.classList.remove('active')); el.classList.add('active'); document.getElementById('xls-caption').textContent=name+' · План / Факт / Конверсия · по дням'; renderXls(scale); }
+(function(){
+  const wrap=document.getElementById('xls-buttons');
+  xlsScopes.forEach((s,i)=>{ const b=document.createElement('button'); b.className='period-btn'+(i===0?' active':''); b.textContent=s[0]; b.onclick=()=>setXls(b,s[0],s[1]); wrap.appendChild(b); });
+  renderXls(1);
+})();
+
+let mins=3;
+setInterval(()=>{ document.querySelector('.badge-live').innerHTML=`<div class="dot"></div> Обновлено ${mins++} мин назад`; },60000);
+</script>
+</body>
+</html>

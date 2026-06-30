@@ -1,0 +1,44 @@
+{
+  "dry": false,
+  "requested": 6,
+  "created": 3,
+  "errors": 3,
+  "actions": [
+    {
+      "old_uuid": "161ba77f-5f5c-11f1-0a80-1f2200005e1c",
+      "name": "ВА-18545",
+      "action": "error",
+      "reason": "POST entity/demand → 412: {\n  \"errors\" : [ {\n    \"error\" : \"Ошибка сохранения объекта: нарушено ограничение уникальности параметра 'name'\",\n    \"code\" : 3006,\n    \"parameter\" : \"name\",\n    \"moreInfo\" : \"https://dev.moysklad.ru/doc/api/remap/1.2/#/err"
+    },
+    {
+      "old_uuid": "ab356554-5f25-11f1-0a80-15c40007d1ce",
+      "name": "ФР-00131",
+      "action": "created",
+      "new_uuid": "eececc6b-60ad-11f1-0a80-1ba1001169af"
+    },
+    {
+      "old_uuid": "c3b08be6-5f25-11f1-0a80-111300077a41",
+      "name": "ФР-00132",
+      "action": "created",
+      "new_uuid": "ef5a314d-60ad-11f1-0a80-191f0011f4a6"
+    },
+    {
+      "old_uuid": "f727d87c-5f25-11f1-0a80-04380007ca77",
+      "name": "ВА-18540",
+      "action": "error",
+      "reason": "POST entity/demand → 412: {\n  \"errors\" : [ {\n    \"error\" : \"Ошибка сохранения объекта: нарушено ограничение уникальности параметра 'name'\",\n    \"code\" : 3006,\n    \"parameter\" : \"name\",\n    \"moreInfo\" : \"https://dev.moysklad.ru/doc/api/remap/1.2/#/err"
+    },
+    {
+      "old_uuid": "d7ec0193-5dc0-11f1-0a80-0e180038b74b",
+      "name": "ВА-18532",
+      "action": "error",
+      "reason": "POST entity/demand → 412: {\n  \"errors\" : [ {\n    \"error\" : \"Ошибка сохранения объекта: нарушено ограничение уникальности параметра 'name'\",\n    \"code\" : 3006,\n    \"parameter\" : \"name\",\n    \"moreInfo\" : \"https://dev.moysklad.ru/doc/api/remap/1.2/#/err"
+    },
+    {
+      "old_uuid": "c214f6dc-5e7f-11f1-0a80-15a0001076dd",
+      "name": "АФ-00004",
+      "action": "created",
+      "new_uuid": "f0d8da2d-60ad-11f1-0a80-026400119a22"
+    }
+  ]
+}

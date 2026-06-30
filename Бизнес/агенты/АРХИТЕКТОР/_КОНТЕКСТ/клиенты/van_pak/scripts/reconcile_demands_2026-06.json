@@ -1,0 +1,86 @@
+{
+  "month": "2026-06",
+  "dry": true,
+  "linked": 11,
+  "extra_demands": [
+    {
+      "old_order": "e90e769b-5d86-11f1-0a80-058b002b31c9",
+      "new_order": "b0407911-5d8c-11f1-0a80-1af00072d394",
+      "extra_demand_id": "9893810e-5e91-11f1-0a80-10e70025a708",
+      "demand_name": "ВА-18538",
+      "mapped_old": "e08a5acd-5e82-11f1-0a80-19110011aa26"
+    },
+    {
+      "old_order": "2dea7424-5d9f-11f1-0a80-030300309bcc",
+      "new_order": "f05872d8-5dac-11f1-0a80-07fe007ccd23",
+      "extra_demand_id": "e6e6da38-5e46-11f1-0a80-10e700127a2b",
+      "demand_name": "ВА-18532",
+      "mapped_old": "d7ec0193-5dc0-11f1-0a80-0e180038b74b"
+    },
+    {
+      "old_order": "6b00cb6f-5e6e-11f1-0a80-1af3000c8f8c",
+      "new_order": "6bdd1f83-5e91-11f1-0a80-10e700259bbb",
+      "extra_demand_id": "99553d4b-5e91-11f1-0a80-08e40025d7d7",
+      "demand_name": "ВА-18533",
+      "mapped_old": "c70859fc-5f1d-11f1-0a80-05a50005e8b7"
+    },
+    {
+      "old_order": "49ed4244-5d8e-11f1-0a80-17a9002b1a4d",
+      "new_order": "f43b5c68-5dac-11f1-0a80-0040007d3fb7",
+      "extra_demand_id": "99f419e6-5e91-11f1-0a80-08e40025d807",
+      "demand_name": "ВА-18536",
+      "mapped_old": "b9cf507f-5e7c-11f1-0a80-05a10010b8a8"
+    },
+    {
+      "old_order": "535d294d-5517-11f1-0a80-02e600256429",
+      "new_order": "9a0de0b6-57be-11f1-0a80-02ec00638b8f",
+      "extra_demand_id": "b35a7381-57be-11f1-0a80-001b0064089b",
+      "demand_name": "ВА-18481",
+      "mapped_old": "52bcd816-55ba-11f1-0a80-04f50008104f"
+    },
+    {
+      "old_order": "fecffa19-5b42-11f1-0a80-13060009777b",
+      "new_order": "b53c3e05-5d8c-11f1-0a80-07fe0073d3b8",
+      "extra_demand_id": "9b34ab49-5e91-11f1-0a80-08e40025d8c7",
+      "demand_name": "ВА-18537",
+      "mapped_old": "2840a2c7-5e7f-11f1-0a80-19110010e5fb"
+    },
+    {
+      "old_order": "b5035f6b-5dbd-11f1-0a80-1aef00379a47",
+      "new_order": "b1710698-5e4c-11f1-0a80-17ad0012f705",
+      "extra_demand_id": "980a2ed9-5fe2-11f1-0a80-1cc3000557f2",
+      "demand_name": "ВА-18545",
+      "mapped_old": "161ba77f-5f5c-11f1-0a80-1f2200005e1c"
+    },
+    {
+      "old_order": "5d8c8f21-5da4-11f1-0a80-03030031d33a",
+      "new_order": "f5bfc68c-5dac-11f1-0a80-0e1a007b79fc",
+      "extra_demand_id": "3e62df9a-5f1a-11f1-0a80-132d00119155",
+      "demand_name": "АФ-00008",
+      "mapped_old": "eb11642c-5fde-11f1-0a80-1b9c0004a0e4"
+    },
+    {
+      "old_order": "00d497a6-5e66-11f1-0a80-1d5f000abb78",
+      "new_order": "68e7ef8a-5e91-11f1-0a80-15a20024d0f5",
+      "extra_demand_id": "9d41b61e-5e91-11f1-0a80-0d580024c751",
+      "demand_name": "ВА-18535",
+      "mapped_old": "6c3457ad-5e7c-11f1-0a80-0e1b000fe5e9"
+    },
+    {
+      "old_order": "844e7f92-5a93-11f1-0a80-108c001033ac",
+      "new_order": "7587f6dd-5d8c-11f1-0a80-0cb4007398c4",
+      "extra_demand_id": "ec273242-5e46-11f1-0a80-18360011579d",
+      "demand_name": "ВА-18534",
+      "mapped_old": "c39339ca-5e79-11f1-0a80-1b94000fcaff"
+    },
+    {
+      "old_order": "dbf7e852-550b-11f1-0a80-138e00242885",
+      "new_order": "b237be69-5dad-11f1-0a80-041e007ddd1b",
+      "extra_demand_id": "9dde82ec-5e91-11f1-0a80-0259002634e5",
+      "demand_name": "ВА-18539",
+      "mapped_old": "5b8b6825-5e83-11f1-0a80-01940012c965"
+    }
+  ],
+  "skipped_unmapped": 6,
+  "errors": 0
+}

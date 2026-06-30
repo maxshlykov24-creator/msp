@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LicenseBridge USA · Этап 0 · Аудит системы</title>
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
+  :root{
+    --bg:#060608; --surf:#0E0F15; --surf2:#12141B; --line:#1C1E2A;
+    --a1:#9333EA; --a2:#4F8EF7;
+    --txt:#F0F1F5; --mute:#6E7280; --soft:#9EA3B0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt); font-family:Inter,system-ui,sans-serif;
+    overflow:hidden;
+    background-image:
+      radial-gradient(1000px 700px at 95% -8%, rgba(147,51,234,.20), transparent 60%),
+      radial-gradient(800px 600px at -8% 108%, rgba(79,142,247,.15), transparent 60%);
+  }
+  .deck{height:100vh;width:100vw;position:relative}
+  .slide{
+    position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;
+    padding:6vh 8vw 80px;animation:fade .35s ease;
+  }
+  .slide.active{display:flex}
+  @keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+  .grad{background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .kicker{
+    font-weight:700;letter-spacing:.18em;text-transform:uppercase;font-size:12.5px;margin-bottom:18px;
+    background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  }
+  h1{font-size:clamp(32px,4.8vw,64px);font-weight:900;line-height:1.05;letter-spacing:-.025em}
+  h2{font-size:clamp(24px,3.2vw,42px);font-weight:800;line-height:1.1;margin-bottom:6px}
+  .lead{font-size:clamp(15px,1.55vw,21px);color:var(--soft);max-width:62ch;line-height:1.6;margin-top:18px}
+  .grid{display:grid;gap:14px;margin-top:30px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .card{
+    background:linear-gradient(160deg,var(--surf),var(--surf2));
+    border:1px solid var(--line);border-radius:16px;padding:22px;
+    transition:border-color .25s,box-shadow .25s;
+  }
+  .card:hover{border-color:rgba(147,51,234,.3);box-shadow:0 8px 32px -8px rgba(147,51,234,.15)}
+  .card h3{font-size:17px;font-weight:800;margin-bottom:6px}
+  .card p{color:var(--soft);font-size:14px;line-height:1.5}
+  .ico{
+    width:42px;height:42px;border-radius:11px;
+    background:linear-gradient(135deg,rgba(147,51,234,.2),rgba(79,142,247,.2));
+    border:1px solid rgba(147,51,234,.18);
+    display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:13px;
+  }
+  .logo-area{display:flex;align-items:center;gap:12px;margin-bottom:36px}
+  .brand-mark{
+    height:56px;min-width:56px;border-radius:16px;
+    background:linear-gradient(130deg,var(--a1),var(--a2));
+    display:flex;align-items:center;justify-content:center;
+    font-weight:900;font-size:20px;color:#fff;letter-spacing:-.04em;
+    box-shadow:0 18px 45px -18px rgba(79,142,247,.55);
+  }
+  .logo-copy strong{display:block;font-size:18px;font-weight:900;letter-spacing:-.02em}
+  .logo-copy span{color:var(--mute);font-size:11px;letter-spacing:.22em;text-transform:uppercase}
+  ul.checks{list-style:none;margin-top:24px;display:grid;gap:13px}
+  ul.checks li{
+    display:flex;gap:13px;font-size:clamp(14px,1.55vw,19px);align-items:flex-start;line-height:1.45;
+  }
+  ul.checks li::before{
+    content:"\2713";flex:0 0 auto;width:22px;height:22px;border-radius:6px;
+    background:linear-gradient(130deg,var(--a1),var(--a2));
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:800;color:#fff;margin-top:2px;flex-shrink:0;
+  }
+  .plan-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:22px}
+  .phase{
+    background:linear-gradient(160deg,var(--surf),var(--surf2));
+    border:1px solid var(--line);border-radius:16px;padding:20px;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .phase.hl{border-color:rgba(147,51,234,.45);box-shadow:0 0 0 1px rgba(147,51,234,.1),0 16px 40px -16px rgba(147,51,234,.25)}
+  .phase-num{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .phase-title{font-size:17px;font-weight:800;line-height:1.2}
+  .phase-days{font-size:12px;color:var(--mute);margin-top:-5px}
+  .phase-dod{flex:1;padding-left:0}
+  .phase-dod li{list-style:none;font-size:13px;color:var(--soft);line-height:1.5;padding:2.5px 0 2.5px 14px;position:relative}
+  .phase-dod li::before{content:"\B7";position:absolute;left:4px;color:var(--mute);font-weight:700}
+  .flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:28px;align-items:stretch}
+  .flow .step{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:14px;padding:16px;position:relative}
+  .flow .step:not(:last-child)::after{content:"\2192";position:absolute;right:-16px;top:50%;transform:translateY(-50%);color:var(--mute);font-weight:900}
+  .step h3{font-size:15px;margin-bottom:6px}
+  .step p{font-size:12.5px;color:var(--soft);line-height:1.45}
+  .step.danger{border-color:rgba(198,101,122,.5)}
+  .dash{margin-top:22px;background:linear-gradient(160deg,rgba(14,15,21,.94),rgba(18,20,27,.94));border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 24px 60px -28px rgba(79,142,247,.45)}
+  .dash-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .dash-title{font-size:18px;font-weight:900;letter-spacing:-.02em}
+  .dash-sub{font-size:12px;color:var(--mute);margin-top:3px}
+  .pill{font-size:11px;color:var(--soft);border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:rgba(255,255,255,.035)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+  .kpi{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:14px;padding:13px}
+  .kpi .label{font-size:11px;color:var(--mute);margin-bottom:7px}
+  .kpi .value{font-size:24px;font-weight:900;line-height:1;background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .kpi .hint{font-size:11px;color:var(--soft);margin-top:7px}
+  .dash-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+  .panel{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:16px;padding:14px}
+  .panel h3{font-size:14px;margin-bottom:12px}
+  .bar{display:grid;grid-template-columns:140px 1fr 34px;gap:10px;align-items:center;margin:9px 0;font-size:12px;color:var(--soft)}
+  .barline{height:9px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}
+  .barline span{display:block;height:100%;border-radius:999px;background:linear-gradient(130deg,var(--a1),var(--a2))}
+  .table{display:grid;gap:8px}
+  .row{display:grid;grid-template-columns:1fr 56px 80px 70px;gap:8px;align-items:center;font-size:12px;color:var(--soft);padding:8px 0;border-bottom:1px solid rgba(255,255,255,.055)}
+  .row.head{color:var(--mute);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line)}
+  .row strong{color:var(--txt);font-size:12.5px}
+  .bad{color:#C6657A;font-weight:800}
+  .ok{color:#7CCFA3;font-weight:800}
+  .warn{color:#E0B15A;font-weight:800}
+  .card .tag{display:inline-block;margin-top:10px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:4px 9px;border-radius:999px}
+  .tag.bad{color:#E89AAB;background:rgba(198,101,122,.14);border:1px solid rgba(198,101,122,.35)}
+  .tag.warn{color:#E0B15A;background:rgba(224,177,90,.12);border:1px solid rgba(224,177,90,.3)}
+  .nav{position:absolute;bottom:22px;right:8vw;display:flex;gap:8px;z-index:10}
+  .nav button{background:var(--surf2);border:1px solid var(--line);color:var(--txt);width:38px;height:38px;border-radius:9px;font-size:16px;cursor:pointer;transition:border-color .2s,background .2s}
+  .nav button:hover{border-color:var(--a1);background:rgba(147,51,234,.1)}
+  .dots{position:absolute;bottom:34px;left:8vw;display:flex;gap:6px;align-items:center}
+  .dot{width:7px;height:7px;border-radius:999px;background:var(--line);transition:all .25s}
+  .dot.on{background:linear-gradient(130deg,var(--a1),var(--a2));width:20px}
+  .ms-badge{
+    position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+    display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;
+    column-gap:12px;align-items:center;opacity:1;
+  }
+  .ms-icon{grid-row:1 / span 2;width:42px;height:42px;object-fit:contain;filter:drop-shadow(0 8px 18px rgba(147,51,234,.28))}
+  .ms-word{font-size:22px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#A7ABB8;line-height:1}
+  .ms-capsule{
+    width:80px;height:14px;border-radius:999px;margin-top:7px;
+    border:2px solid #A7ABB8;background:rgba(6,6,8,.65);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+  }
+  .note{font-size:12px;color:var(--mute);margin-top:14px;font-style:italic}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <!-- 1. Титул -->
+  <section class="slide active">
+    <div class="logo-area">
+      <div class="brand-mark">LB</div>
+      <div class="logo-copy"><strong>LicenseBridge USA</strong><span>Kommo · Аудит системы</span></div>
+    </div>
+    <div class="kicker">Этап 0 · 2–3 рабочих дня</div>
+    <h1>Аудит и план настройки:<br><span class="grad">что есть сейчас</span><br>и где система теряет деньги.</h1>
+    <p class="lead">Мы получили доступ к Kommo и сняли данные напрямую из аккаунта licensebridgeusa.kommo.com: воронки, пользователи, источники, звонки и задачи. Ниже — карта системы, точки потерь на цифрах, целевая схема и план работ.</p>
+    <p class="note">Срез данных: 18.06.2026. Все цифры — фактические, из API аккаунта.</p>
+  </section>
+
+  <!-- 2. Что внутри аудита -->
+  <section class="slide">
+    <div class="kicker">Что внутри этапа 0</div>
+    <h2>Четыре результата аудита</h2>
+    <div class="grid g4">
+      <div class="card"><div class="ico">&#128506;</div><h3>Карта текущей системы</h3><p>Воронки, этапы, пользователи, источники лидов, телефония и интеграции — как реально устроено сейчас.</p></div>
+      <div class="card"><div class="ico">&#9888;</div><h3>Точки потерь и риски</h3><p>Где теряются лиды, звонки и время — с конкретными цифрами по менеджерам и этапам.</p></div>
+      <div class="card"><div class="ico">&#9211;</div><h3>Целевая схема</h3><p>Как должен двигаться лид: единый приём, автораспределение, контроль времени, дашборд.</p></div>
+      <div class="card"><div class="ico">&#128203;</div><h3>План работ</h3><p>Поэтапный план внедрения с приоритетом на главную боль: связь, лиды, распределение.</p></div>
+    </div>
+  </section>
+
+  <!-- 3. Карта системы: состав -->
+  <section class="slide">
+    <div class="kicker">Карта системы · что подключено</div>
+    <h2>Аккаунт: 6 пользователей, 4 воронки</h2>
+    <div class="grid g3">
+      <div class="card"><div class="ico">&#128202;</div><h3>4 воронки</h3><p><b>Pipeline</b> — продажи (6 рабочих этапов).<br><b>Сборка</b> — производство после оплаты.<br><b>New Bot Leads</b> — прогрев из Instagram.<br><b>RMO / QUALIFIER</b> — квалификатор.</p></div>
+      <div class="card"><div class="ico">&#128101;</div><h3>6 пользователей</h3><p>Pavel (владелец), Лилия, Лэйла, Светлана, Полина, Алина. 4 сейлза + клиентский менеджер.</p></div>
+      <div class="card"><div class="ico">&#128241;</div><h3>Источники и приём</h3><p>Teletype (WhatsApp/Telegram/чаты) + ApexDrive (сбор лидов), UTM/gclid/fbclid по Meta, Google, TikTok. Tilda — вручную.</p></div>
+      <div class="card"><div class="ico">&#9742;</div><h3>Телефония</h3><p>RingCentral (виджет, по каждому менеджеру) + SIP-оборудование на своём сервере. Звонки пишутся в карточки заметками.</p></div>
+      <div class="card"><div class="ico">&#128279;</div><h3>Интеграции (вебхуки)</h3><p>Активен Teletype (статусы сделок). Связка с Make.com подключена, но <b>отключена</b>.</p></div>
+      <div class="card"><div class="ico">&#128221;</div><h3>Кастомные поля</h3><p>Есть поля анкеты, опыта, оплат 2-й части, чек-листы документов. База под процесс уже частично размечена.</p></div>
+    </div>
+  </section>
+
+  <!-- 4. Как лид движется сейчас -->
+  <section class="slide">
+    <div class="kicker">Карта системы · поток лида сейчас</div>
+    <h2>Где заявка проходит через руки</h2>
+    <div class="flow">
+      <div class="step"><h3>Источники</h3><p>Meta, Google, TikTok, WhatsApp, Telegram, сайт на Tilda</p></div>
+      <div class="step danger"><h3>Приём</h3><p>Часть через ApexDrive/Teletype, Tilda — общий чат и ручной перенос</p></div>
+      <div class="step danger"><h3>Неразобранное</h3><p>Лиды копятся, менеджер вручную забирает заявку</p></div>
+      <div class="step"><h3>Менеджер</h3><p>Берёт в работу, звонит, ставит задачи вручную</p></div>
+      <div class="step danger"><h3>Контроль</h3><p>Только РОП глазами: нет SLA по времени этапов</p></div>
+    </div>
+    <p class="note">Красным отмечены места, где сейчас теряются лиды и время. Это и есть фокус внедрения.</p>
+  </section>
+
+  <!-- 5. Точки потерь -->
+  <section class="slide">
+    <div class="kicker">Точки потерь и риски · на фактах</div>
+    <h2>Что система теряет прямо сейчас</h2>
+    <div class="grid g3">
+      <div class="card"><div class="ico">&#9742;</div><h3>Звонки не доходят в CRM</h3><p>У Алины — <b>0 звонков</b> в CRM (только в телефонии). У Светланы в CRM лишь часть. У Лилии — норма (записи есть). Работа части отдела системе не видна.</p><span class="tag bad">данные подтверждены</span></div>
+      <div class="card"><div class="ico">&#9203;</div><h3>Просроченные задачи</h3><p>320 открытых задач, из них <b>46 просрочено</b>. У Алины — 38 просрочек. Просрочка = нарушенная договорённость или потерянный клиент.</p><span class="tag bad">риск потери клиентов</span></div>
+      <div class="card"><div class="ico">&#128164;</div><h3>Сделки застаиваются</h3><p><b>137 сделок</b> висят в «Прогреваю / Отложенный спрос» без автоматических касаний. Их никто системно не возвращает в работу.</p><span class="tag warn">упущенная выручка</span></div>
+      <div class="card"><div class="ico">&#128229;</div><h3>Лиды теряются на приёме</h3><p>Tilda переносится вручную, Facebook не авторизован (комментарии к рекламе не доходят), в «New Bot Leads» 14 заявок зависли в «Номер не получен».</p><span class="tag bad">потеря лидов</span></div>
+      <div class="card"><div class="ico">&#9282;</div><h3>Дубли и повторы</h3><p>Контакты открыты всем менеджерам — это костыль, чтобы видеть, кто уже ведёт клиента. Повторное обращение может создать новую сделку и второго менеджера.</p><span class="tag warn">хаос в работе</span></div>
+      <div class="card"><div class="ico">&#9201;</div><h3>Нет контроля времени</h3><p>Время на этапах не отслеживается. Сделки могут стоять сколько угодно — это видит только РОП и только вручную.</p><span class="tag warn">нет SLA</span></div>
+    </div>
+  </section>
+
+  <!-- 6. Дашборд аудита (реальные цифры) -->
+  <section class="slide">
+    <div class="kicker">Точки потерь · сводка по цифрам</div>
+    <h2>Текущее состояние системы</h2>
+    <div class="dash">
+      <div class="dash-top">
+        <div>
+          <div class="dash-title">LicenseBridge · срез аудита</div>
+          <div class="dash-sub">licensebridgeusa.kommo.com · данные из API · 18.06.2026</div>
+        </div>
+        <div class="pill">факт, не оценка</div>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="label">Открытых сделок</div><div class="value">329</div><div class="hint">из них 261 в продажах</div></div>
+        <div class="kpi"><div class="label">Открытых задач</div><div class="value">320</div><div class="hint">по всем менеджерам</div></div>
+        <div class="kpi"><div class="label">Просрочено задач</div><div class="value">46</div><div class="hint">38 из них у одного менеджера</div></div>
+        <div class="kpi"><div class="label">Застряло в прогреве</div><div class="value">137</div><div class="hint">без авто-касаний</div></div>
+      </div>
+      <div class="dash-grid">
+        <div class="panel">
+          <h3>Воронка продаж: где стоят сделки</h3>
+          <div class="bar"><span>Прогреваю / отлож.</span><div class="barline"><span style="width:100%"></span></div><b>137</b></div>
+          <div class="bar"><span>Квалификация</span><div class="barline"><span style="width:33%"></span></div><b>45</b></div>
+          <div class="bar"><span>Первичный контакт</span><div class="barline"><span style="width:26%"></span></div><b>36</b></div>
+          <div class="bar"><span>В работе</span><div class="barline"><span style="width:25%"></span></div><b>34</b></div>
+          <div class="bar"><span>Выставлен счёт</span><div class="barline"><span style="width:7%"></span></div><b>9</b></div>
+        </div>
+        <div class="panel">
+          <h3>Менеджеры: сделки / просрочки / звонки в CRM</h3>
+          <div class="table">
+            <div class="row head"><span>Менеджер</span><span>Сделки</span><span>Просроч.</span><span>Звонки</span></div>
+            <div class="row"><strong>Лилия</strong><span>94</span><span class="ok">0</span><span class="ok">есть</span></div>
+            <div class="row"><strong>Алина</strong><span>98</span><span class="bad">38</span><span class="bad">нет</span></div>
+            <div class="row"><strong>Светлана</strong><span>69</span><span class="ok">0</span><span class="warn">частично</span></div>
+            <div class="row"><strong>Полина</strong><span>51</span><span class="warn">1</span><span class="warn">мало</span></div>
+            <div class="row"><strong>Лэйла</strong><span>5</span><span class="bad">7</span><span class="warn">мало</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">Звонки сверены по заметкам-звонкам: у Лилии ~1900 с записями, у Алины — ни одного в CRM.</p>
+  </section>
+
+  <!-- 7. Целевая схема -->
+  <section class="slide">
+    <div class="kicker">Целевая схема</div>
+    <h2>Как лид должен двигаться после настройки</h2>
+    <div class="flow">
+      <div class="step"><h3>Источники</h3><p>Все каналы сведены в единый надёжный приём</p></div>
+      <div class="step"><h3>Приём в Kommo</h3><p>API / ApexDrive / Teletype: источник, контакт, контекст</p></div>
+      <div class="step"><h3>Автораспределение</h3><p>Заявка сразу уходит закреплённому менеджеру</p></div>
+      <div class="step"><h3>Работа по SLA</h3><p>Задача и следующий шаг, контроль времени на этапах</p></div>
+      <div class="step"><h3>Дашборд РОПа</h3><p>Продажа → Сборка, метрики и просрочки видны без отчётов</p></div>
+    </div>
+    <ul class="checks">
+      <li>Каждый лид доходит и сразу попадает к ответственному менеджеру</li>
+      <li>Звонки всех менеджеров фиксируются в CRM с записью</li>
+      <li>Повторные обращения не плодят дубли и не теряют историю</li>
+      <li>После оплаты сделка переходит в «Сборку» с сохранённым контекстом</li>
+    </ul>
+  </section>
+
+  <!-- 8. План работ -->
+  <section class="slide">
+    <div class="kicker">План работ</div>
+    <h2>3 недели: от связи и лидов до дашборда</h2>
+    <div class="plan-grid">
+      <div class="phase hl">
+        <div class="phase-num">Этап 0 · сделан</div>
+        <div class="phase-title">Аудит и план</div>
+        <div class="phase-days">2–3 дня</div>
+        <ul class="phase-dod">
+          <li>Карта системы</li>
+          <li>Точки потерь</li>
+          <li>Целевая схема</li>
+          <li>План работ</li>
+        </ul>
+      </div>
+      <div class="phase">
+        <div class="phase-num">Этап 1</div>
+        <div class="phase-title">Лиды, связь, распределение</div>
+        <div class="phase-days">6–7 дней</div>
+        <ul class="phase-dod">
+          <li>Tilda/реклама в Kommo</li>
+          <li>Автораспределение</li>
+          <li>Телефония: линии Алины и Светланы</li>
+          <li>Дубли и повторы</li>
+        </ul>
+      </div>
+      <div class="phase">
+        <div class="phase-num">Этап 2</div>
+        <div class="phase-title">Задачи и сроки</div>
+        <div class="phase-days">4–5 дней</div>
+        <ul class="phase-dod">
+          <li>Следующий шаг по сделке</li>
+          <li>Контроль времени этапов</li>
+          <li>Возврат прогрева в работу</li>
+          <li>Продажа → Сборка</li>
+        </ul>
+      </div>
+      <div class="phase">
+        <div class="phase-num">Этап 3</div>
+        <div class="phase-title">Дашборд для РОПа</div>
+        <div class="phase-days">4–5 дней</div>
+        <ul class="phase-dod">
+          <li>Метрики менеджеров</li>
+          <li>Источники и этапы</li>
+          <li>Просрочки и застой</li>
+          <li>Автообновление из Kommo</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. Что нужно для старта -->
+  <section class="slide">
+    <div class="kicker">Для старта этапа 1</div>
+    <h2>Что нужно от LicenseBridge</h2>
+    <div class="grid g3">
+      <div class="card"><h3>Связь</h3><p>Доступ к RingCentral, чтобы привязать линии каждого менеджера (особенно Алины и Светланы), и доступ к серверу/оборудованию SIP.</p></div>
+      <div class="card"><h3>Источники</h3><p>Tilda, ApexDrive/Teletype, авторизация Facebook/Instagram, Meta Ads, Google Ads, TikTok.</p></div>
+      <div class="card"><h3>Правила</h3><p>Список менеджеров, графики и часовые пояса, правило распределения заявок, нормы времени по этапам.</p></div>
+    </div>
+    <p class="note">Доступ к Kommo уже есть — на нём и построен этот аудит.</p>
+  </section>
+
+  <!-- 10. Финал -->
+  <section class="slide">
+    <div class="logo-area">
+      <div class="brand-mark">MS</div>
+      <div class="logo-copy"><strong>MS Product</strong><span>следующий шаг</span></div>
+    </div>
+    <div class="kicker">Старт</div>
+    <h1>Аудит готов.<br><span class="grad">Дальше — этап 1:</span><br>связь, лиды и распределение.</h1>
+    <p class="lead">Система видна целиком: где теряются звонки, где застаиваются сделки, где лиды доходят вручную. Закрываем это по плану — и переходим к контролю и дашборду РОПа.</p>
+  </section>
+
+</div>
+
+<div class="dots" id="dots"></div>
+<div class="nav"><button id="prev">&#8249;</button><button id="next">&#8250;</button></div>
+<div class="ms-badge">
+  <img class="ms-icon" src="logo-ms.png" alt="MS Product" />
+  <div class="ms-word">MS Product</div>
+  <div class="ms-capsule"></div>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll(".slide")];
+  let i=0;
+  const dots=document.getElementById("dots");
+  slides.forEach((_,k)=>{const d=document.createElement("div");d.className="dot"+(k===0?" on":"");dots.appendChild(d)});
+  const dotEls=[...dots.children];
+  function go(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle("active",k===i));
+    dotEls.forEach((d,k)=>d.classList.toggle("on",k===i));
+  }
+  document.getElementById("next").onclick=()=>go(i+1);
+  document.getElementById("prev").onclick=()=>go(i-1);
+  document.addEventListener("keydown",e=>{
+    if(["ArrowRight","ArrowDown"," ","PageDown"].includes(e.key))go(i+1);
+    if(["ArrowLeft","ArrowUp","PageUp"].includes(e.key))go(i-1);
+    if(e.key==="Home")go(0);
+    if(e.key==="End")go(slides.length-1);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# counterparty name fix
+# new_uuid	old_uuid	old_name	action
+ee13a24c-5e91-11f1-0a80-18360024467f	0df0faf4-5e7c-11f1-0a80-1cbd000ff320	ООО "ТЕХНО-ПОСМ"	fixed

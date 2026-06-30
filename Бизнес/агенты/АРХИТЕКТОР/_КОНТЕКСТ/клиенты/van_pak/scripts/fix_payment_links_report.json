@@ -1,0 +1,16 @@
+{
+  "paymentin": {
+    "fixed": 1517,
+    "already_ok": 0,
+    "no_map": 13,
+    "skipped": 186,
+    "errors": 4
+  },
+  "paymentout": {
+    "fixed": 0,
+    "already_ok": 0,
+    "no_map": 0,
+    "skipped": 0,
+    "errors": 0
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "month": "2026-04",
+  "dry": false,
+  "old_orders": 335,
+  "new_orders": 335,
+  "paired": 335,
+  "fixed_orders": 26,
+  "missing_in_new": [],
+  "new_only": [],
+  "fields_fixed": {
+    "shipmentAddress": 16,
+    "store": 2,
+    "attributes": 1,
+    "salesChannel": 1,
+    "deliveryPlannedMoment": 6
+  },
+  "payments_linked": 0,
+  "payments_created": 3,
+  "payments_skipped": 0,
+  "payments_extra_in_new": [],
+  "payed_sum_gaps": [
+    {
+      "order": "ЗБ-00433",
+      "new_order_id": "e0dd4b36-53b7-11f1-0a80-08cc00029666",
+      "old_payed": 8150000.0,
+      "new_payed": 12225000,
+      "delta": 4075000.0
+    },
+    {
+      "order": "ЗБ-00406",
+      "new_order_id": "1921f2ec-53b8-11f1-0a80-0fe70002add5",
+      "old_payed": 2940000.0,
+      "new_payed": 420000.0,
+      "delta": -2520000.0
+    },
+    {
+      "order": "ЗБ-04315",
+      "new_order_id": "16c67b40-5415-11f1-0a80-1945000f38eb",
+      "old_payed": 2170000.0,
+      "new_payed": 0,
+      "delta": -2170000.0
+    },
+    {
+      "order": "ФР-00126",
+      "new_order_id": "53216428-53b8-11f1-0a80-04f40002befd",
+      "old_payed": 1640000.0,
+      "new_payed": 3280000.0,
+      "delta": 1640000.0
+    },
+    {
+      "order": "ЗБ-04321",
+      "new_order_id": "641e5459-53c8-11f1-0a80-1d4b00047b87",
+      "old_payed": 1750000.0,
+      "new_payed": 3500000.0,
+      "delta": 1750000.0
+    },
+    {
+      "order": "ЗБ-00420",
+      "new_order_id": "f7598513-53ba-11f1-0a80-03950002e7fd",
+      "old_payed": 2940000.0,
+      "new_payed": 3360000.0,
+      "delta": 420000.0
+    },
+    {
+      "order": "ЗБ-00418",
+      "new_order_id": "02c84525-53bb-11f1-0a80-1adb0002d02c",
+      "old_payed": 2940000.0,
+      "new_payed": 3360000.0,
+      "delta": 420000.0
+    },
+    {
+      "order": "ЗБ-00403",
+      "new_order_id": "4d49a605-5415-11f1-0a80-0b2a000ee661",
+      "old_payed": 2980000.0,
+      "new_payed": 5960000.0,
+      "delta": 2980000.0
+    },
+    {
+      "order": "ЗБ-00437",
+      "new_order_id": "69faabaa-5415-11f1-0a80-04f4000f2bf7",
+      "old_payed": 3800000.0,
+      "new_payed": 7600000.0,
+      "delta": 3800000.0
+    },
+    {
+      "order": "ЗБ-04319",
+      "new_order_id": "68605e19-53bb-11f1-0a80-0fe700030865",
+      "old_payed": 2770000.0,
+      "new_payed": 5540000.0,
+      "delta": 2770000.0
+    },
+    {
+      "order": "ФР-00132",
+      "new_order_id": "7f426289-53bb-11f1-0a80-1d4b0002eb2c",
+      "old_payed": 180000.0,
+      "new_payed": 0,
+      "delta": -180000.0
+    },
+    {
+      "order": "ЗБ-04318",
+      "new_order_id": "849fdea9-5415-11f1-0a80-0fe7000f208f",
+      "old_payed": 850000.0,
+      "new_payed": 1700000.0,
+      "delta": 850000.0
+    },
+    {
+      "order": "ФР-00162",
+      "new_order_id": "9e09e888-53bb-11f1-0a80-04f4000313b0",
+      "old_payed": 180000.0,
+      "new_payed": 0,
+      "delta": -180000.0
+    },
+    {
+      "order": "ЗБ-004311",
+      "new_order_id": "c5224544-5415-11f1-0a80-08cc000ed499",
+      "old_payed": 2647400.0,
+      "new_payed": 5294800.0,
+      "delta": 2647400.0
+    },
+    {
+      "order": "ЗБ-04323",
+      "new_order_id": "5fd3669c-541c-11f1-0a80-0efe0010a9e3",
+      "old_payed": 1850000.0,
+      "new_payed": 3700000.0,
+      "delta": 1850000.0
+    },
+    {
+      "order": "ЗБ-00413",
+      "new_order_id": "d4acde6a-53c8-11f1-0a80-064e000445ad",
+      "old_payed": 6570000.0,
+      "new_payed": 8760000.0,
+      "delta": 2190000.0
+    }
+  ],
+  "demands_linked": 0,
+  "errors": 0
+}

@@ -1,0 +1,31 @@
+{
+  "cp_map_size": 3326,
+  "ok": 3324,
+  "mismatch_count": 2,
+  "fixable": 1,
+  "unresolved": 1,
+  "missing_old": 0,
+  "missing_new": 0,
+  "mismatches": [
+    {
+      "old_id": "9729b77b-5e53-11f1-0a80-08e400153172",
+      "old_name": "ООО \"НПО \"ГЕОНАУКА\"",
+      "old_inn": "7728190511",
+      "mapped_new_id": "ee13a24c-5e91-11f1-0a80-18360024467f",
+      "mapped_new_name": "ООО \"ТЕХНО-ПОСМ\"",
+      "mapped_new_inn": "9725155216",
+      "proposed_new_id": null,
+      "proposed_reason": null
+    },
+    {
+      "old_id": "6049a3aa-5e86-11f1-0a80-019400137133",
+      "old_name": "ООО \"АВИГРИД\"",
+      "old_inn": "5009146846",
+      "mapped_new_id": "ee13a24c-5e91-11f1-0a80-18360024467f",
+      "mapped_new_name": "ООО \"ТЕХНО-ПОСМ\"",
+      "mapped_new_inn": "9725155216",
+      "proposed_new_id": "34a0859c-6308-11f1-0a80-0cc3002a14d7",
+      "proposed_reason": "by_inn"
+    }
+  ]
+}

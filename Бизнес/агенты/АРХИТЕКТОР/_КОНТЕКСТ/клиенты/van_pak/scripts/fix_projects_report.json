@@ -1,0 +1,107 @@
+{
+  "customerorder": {
+    "updated": 1551,
+    "already_ok": 0,
+    "no_project": 180,
+    "no_map": 3,
+    "errors": 0
+  },
+  "demand": {
+    "updated": 1313,
+    "already_ok": 0,
+    "no_project": 232,
+    "no_map": 9,
+    "errors": 0
+  },
+  "invoiceout": {
+    "updated": 1356,
+    "already_ok": 0,
+    "no_project": 371,
+    "no_map": 3,
+    "errors": 0
+  },
+  "supply": {
+    "updated": 117,
+    "already_ok": 0,
+    "no_project": 40,
+    "no_map": 0,
+    "errors": 0
+  },
+  "purchaseorder": {
+    "updated": 105,
+    "already_ok": 0,
+    "no_project": 40,
+    "no_map": 0,
+    "errors": 0
+  },
+  "purchasereturn": {
+    "updated": 0,
+    "already_ok": 0,
+    "no_project": 1,
+    "no_map": 0,
+    "errors": 0
+  },
+  "paymentin": {
+    "updated": 1371,
+    "already_ok": 0,
+    "no_project": 307,
+    "no_map": 0,
+    "errors": 0
+  },
+  "paymentout": {
+    "updated": 0,
+    "already_ok": 0,
+    "no_project": 0,
+    "no_map": 0,
+    "errors": 0
+  },
+  "cashin": {
+    "updated": 0,
+    "already_ok": 0,
+    "no_project": 0,
+    "no_map": 0,
+    "errors": 0
+  },
+  "cashout": {
+    "updated": 0,
+    "already_ok": 0,
+    "no_project": 0,
+    "no_map": 0,
+    "errors": 0
+  },
+  "move": {
+    "updated": 0,
+    "already_ok": 0,
+    "no_project": 19,
+    "no_map": 0,
+    "errors": 0
+  },
+  "loss": {
+    "updated": 0,
+    "already_ok": 0,
+    "no_project": 22,
+    "no_map": 0,
+    "errors": 0
+  },
+  "enter": {
+    "updated": 3,
+    "already_ok": 0,
+    "no_project": 13,
+    "no_map": 0,
+    "errors": 0
+  },
+  "factureout": {
+    "updated": 0,
+    "already_ok": 0,
+    "no_project": 284,
+    "no_map": 9,
+    "errors": 0
+  },
+  "processingorder": {
+    "updated": 0,
+    "already_ok": 0,
+    "no_project": 137,
+    "no_map": 0,
+    "errors": 1
+  }
+}

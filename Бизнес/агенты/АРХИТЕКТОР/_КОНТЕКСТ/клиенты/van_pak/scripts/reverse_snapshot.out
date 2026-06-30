@@ -1,0 +1,6 @@
+OLD customerorder: count=1826 Σsum=14556741230.0
+OLD demand: count=1600 Σsum=12838002331.0
+OLD invoiceout: count=1821 Σsum=14537190600.0
+OLD paymentin: count=1773 Σsum=12744409510.0
+OLD factureout: count=333 Σsum=3362847700.0
+Снэпшот: /Users/max/Desktop/CURSOR/Бизнес/агенты/АРХИТЕКТОР/_КОНТЕКСТ/клиенты/van_pak/scripts/reverse_snapshot.json

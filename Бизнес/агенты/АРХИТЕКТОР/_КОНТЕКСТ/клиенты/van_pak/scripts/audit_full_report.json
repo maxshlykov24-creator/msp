@@ -1,0 +1,135 @@
+[
+  {
+    "type": "supply",
+    "old_count": 158,
+    "new_count": 159,
+    "old_sum_rub": 82475917.83,
+    "new_sum_rub": 82475917.83,
+    "sum_diff_rub": 0.0,
+    "count_diff": 1,
+    "pair_mismatches": 0,
+    "mismatch_list": [],
+    "status": "DIFF"
+  },
+  {
+    "type": "move",
+    "old_count": 19,
+    "new_count": 19,
+    "old_sum_rub": 4507757.0,
+    "new_sum_rub": 4507757.0,
+    "sum_diff_rub": 0.0,
+    "count_diff": 0,
+    "pair_mismatches": 0,
+    "mismatch_list": [],
+    "status": "OK"
+  },
+  {
+    "type": "invoiceout",
+    "old_count": 1744,
+    "new_count": 1744,
+    "old_sum_rub": 136755290.5,
+    "new_sum_rub": 136565356.5,
+    "sum_diff_rub": -189934.0,
+    "count_diff": 0,
+    "pair_mismatches": 0,
+    "mismatch_list": [],
+    "status": "OK"
+  },
+  {
+    "type": "customerorder",
+    "old_count": 1748,
+    "new_count": 1748,
+    "old_sum_rub": 136792784.8,
+    "new_sum_rub": 136602930.8,
+    "sum_diff_rub": -189854.0,
+    "count_diff": 0,
+    "pair_mismatches": 0,
+    "mismatch_list": [],
+    "status": "OK"
+  },
+  {
+    "type": "demand",
+    "old_count": 1563,
+    "new_count": 1562,
+    "old_sum_rub": 126750960.31,
+    "new_sum_rub": 126845710.31,
+    "sum_diff_rub": 94750.0,
+    "count_diff": -1,
+    "pair_mismatches": 3,
+    "mismatch_list": [
+      {
+        "old_name": "00003",
+        "old_uid": "adb11ccb-5dbe-11f1-0a80-1b8b00378855",
+        "new_uid": "304cf778-5416-11f1-0a80-0d64000edbc0",
+        "old_sum": 3400.0,
+        "new_sum": 74000.0,
+        "diff": 70600.0
+      },
+      {
+        "old_name": "00002",
+        "old_uid": "bee38d5a-590c-11f1-0a80-04f500500783",
+        "new_uid": "094c981f-53c9-11f1-0a80-04f40004a372",
+        "old_sum": 16600.0,
+        "new_sum": 3400.0,
+        "diff": -13200.0
+      },
+      {
+        "old_name": "00001",
+        "old_uid": "ffec9c5e-505e-11f1-0a80-1ad20010fb60",
+        "new_uid": "73c3a2bc-541c-11f1-0a80-00080010fb9e",
+        "old_sum": 18000.0,
+        "new_sum": 10850.0,
+        "diff": -7150.0
+      }
+    ],
+    "status": "DIFF"
+  },
+  {
+    "type": "loss",
+    "old_count": 22,
+    "new_count": 22,
+    "old_sum_rub": 328273.5,
+    "new_sum_rub": 328273.5,
+    "sum_diff_rub": 0.0,
+    "count_diff": 0,
+    "pair_mismatches": 0,
+    "mismatch_list": [],
+    "status": "OK"
+  },
+  {
+    "type": "enter",
+    "old_count": 16,
+    "new_count": 16,
+    "old_sum_rub": 285989.2,
+    "new_sum_rub": 285989.2,
+    "sum_diff_rub": 0.0,
+    "count_diff": 0,
+    "pair_mismatches": 0,
+    "mismatch_list": [],
+    "status": "OK"
+  },
+  {
+    "type": "paymentin",
+    "old_count": 1696,
+    "new_count": 1699,
+    "old_sum_rub": 121326051.1,
+    "new_sum_rub": 121380450.1,
+    "sum_diff_rub": 54399.0,
+    "count_diff": 3,
+    "pair_mismatches": 0,
+    "mismatch_list": [],
+    "status": "DIFF"
+  },
+  {
+    "type": "paymentout",
+    "old_count": 0,
+    "new_count": 0,
+    "old_sum_rub": 0.0,
+    "new_sum_rub": 0.0,
+    "sum_diff_rub": 0.0,
+    "count_diff": 0,
+    "pair_mismatches": 0,
+    "mismatch_list": [],
+    "status": "OK"
+  }
+]

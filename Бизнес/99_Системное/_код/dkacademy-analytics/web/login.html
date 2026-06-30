@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DKAcademy — Вход в аналитику</title>
+<style>
+  :root{ --orange:#F5822B; --orange-h:#E0701B; --black:#161616; --gray-2:#6B6B6B; --border:#E8E8E8; --red:#E23B2E; --font:'Inter','Helvetica Neue',Arial,sans-serif; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);background:#F5F5F5;min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--black)}
+  .card{background:#fff;border-radius:16px;border:1px solid var(--border);padding:40px 36px;width:100%;max-width:380px;box-shadow:0 10px 40px rgba(0,0,0,.06)}
+  .logo{font-weight:900;font-size:24px;letter-spacing:-.5px;text-transform:uppercase;text-align:center;margin-bottom:6px}
+  .logo span{color:var(--orange)}
+  .sub{text-align:center;color:var(--gray-2);font-size:13px;margin-bottom:28px}
+  label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-2);margin:0 0 6px 2px}
+  input{width:100%;border:1px solid var(--border);border-radius:8px;padding:11px 14px;font-size:15px;font-family:var(--font);outline:none;transition:border-color .15s;margin-bottom:18px}
+  input:focus{border-color:var(--orange)}
+  button{width:100%;background:var(--orange);color:#fff;border:none;border-radius:8px;padding:12px;font-size:15px;font-weight:800;cursor:pointer;transition:background .15s}
+  button:hover{background:var(--orange-h)}
+  .err{background:#FDECEB;color:var(--red);font-size:13px;font-weight:600;padding:9px 12px;border-radius:8px;margin-bottom:18px;text-align:center;display:none}
+  .err.show{display:block}
+</style>
+</head>
+<body>
+  <form class="card" method="post" action="/login">
+    <div class="logo">DK<span>Academy</span></div>
+    <div class="sub">Аналитика продаж · вход</div>
+    <div class="err" id="err">Неверный логин или пароль</div>
+    <label for="login">Логин</label>
+    <input id="login" name="login" type="text" autocomplete="username" autofocus required>
+    <label for="password">Пароль</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Войти</button>
+  </form>
+  <script>
+    if(new URLSearchParams(location.search).get('e')) document.getElementById('err').classList.add('show');
+  </script>
+</body>
+</html>

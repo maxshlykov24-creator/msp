@@ -1,0 +1,22 @@
+{
+  "name": "mansband-kassa",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MANSBAND Касса — монорепо: фронтенд (web), бэкенд (api), общие типы (shared). Единый мост между amoCRM и МойСклад.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "build": "pnpm -r --filter ./packages/* build && pnpm -r --filter ./apps/* build",
+    "build:web": "pnpm --filter @kassa/web build",
+    "build:api": "pnpm --filter @kassa/api build",
+    "dev:web": "pnpm --filter @kassa/web dev",
+    "dev:api": "pnpm --filter @kassa/api dev",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @kassa/api db:generate",
+    "db:migrate": "pnpm --filter @kassa/api db:migrate",
+    "seed": "pnpm --filter @kassa/api seed"
+  }
+}

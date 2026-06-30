@@ -1,0 +1,63 @@
+{
+  "captured_at": "2026-06-07T22:15:12.764082",
+  "old_token_suffix": "81613d61",
+  "new_token_suffix": "9caccc0e",
+  "old_api_ok": true,
+  "new_api_ok": true,
+  "old": {
+    "customerorder": {
+      "count": 1781,
+      "sum": 14042351080.0,
+      "payedSum": 10071152730.0,
+      "shippedSum": 7271443680.0
+    },
+    "demand": {
+      "count": 1592,
+      "sum": 12813210831.0
+    },
+    "invoiceout": {
+      "count": 1777,
+      "sum": 14038551650.0
+    },
+    "paymentin": {
+      "count": 1733,
+      "sum": 12423053810.0
+    },
+    "paymentout": {
+      "count": 0,
+      "sum": 0
+    },
+    "factureout": {
+      "count": 326,
+      "sum": 3345471200.0
+    }
+  },
+  "new": {
+    "customerorder": {
+      "count": 1769,
+      "sum": 13902704580.0,
+      "payedSum": 9986774830.0,
+      "shippedSum": 7244935280.0
+    },
+    "demand": {
+      "count": 1588,
+      "sum": 12807592431.0
+    },
+    "invoiceout": {
+      "count": 1775,
+      "sum": 13851367850.0
+    },
+    "paymentin": {
+      "count": 1706,
+      "sum": 12251938410.0
+    },
+    "paymentout": {
+      "count": 0,
+      "sum": 0
+    },
+    "factureout": {
+      "count": 317,
+      "sum": 3308660700.0
+    }
+  }
+}

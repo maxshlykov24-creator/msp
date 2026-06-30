@@ -1,0 +1,20 @@
+{
+  "counts": {
+    "old_2026": 1678,
+    "new_2026": 1681,
+    "match": "DIFF"
+  },
+  "phase3": {
+    "created": 725,
+    "skipped_no_ref": 0,
+    "errors": 0
+  },
+  "phase4": {
+    "relinked": 78,
+    "already_ok": 1415,
+    "no_ops_in_old": 185,
+    "skipped_no_map": 0,
+    "op_unmapped_count": 185
+  },
+  "skipped_docs": []
+}

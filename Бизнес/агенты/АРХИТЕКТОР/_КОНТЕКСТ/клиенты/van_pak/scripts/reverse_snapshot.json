@@ -1,0 +1,25 @@
+{
+  "year_start": "2026-01-01 00:00:00",
+  "by_type": {
+    "customerorder": {
+      "count": 1826,
+      "sum": 14556741230.0
+    },
+    "demand": {
+      "count": 1600,
+      "sum": 12838002331.0
+    },
+    "invoiceout": {
+      "count": 1821,
+      "sum": 14537190600.0
+    },
+    "paymentin": {
+      "count": 1773,
+      "sum": 12744409510.0
+    },
+    "factureout": {
+      "count": 333,
+      "sum": 3362847700.0
+    }
+  }
+}

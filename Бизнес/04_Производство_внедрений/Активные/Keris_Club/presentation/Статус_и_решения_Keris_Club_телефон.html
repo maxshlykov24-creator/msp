@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Keris Club · Что сделано и что дальше (моб.)</title>
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
+  :root{
+    --bg:#FAF3F1; --surf:#FFFFFF; --surf2:#FBF1F0; --line:#EAD9DE;
+    --a1:#CE7C9A; --a2:#C0904F;
+    --txt:#3E2E27; --mute:#A2938B; --soft:#6F5B52;
+    --brand-brown:#5B4439; --brand-blush:#E6B9C6;
+    --ok:#5F9E7A;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  html,body{height:auto;min-height:100%}
+  body{
+    background:var(--bg); color:var(--txt); font-family:Inter,system-ui,sans-serif;
+    overflow:visible;
+    background-image:
+      radial-gradient(1100px 780px at 97% -12%, rgba(230,150,175,.50), transparent 58%),
+      radial-gradient(640px 520px at 86% 4%, rgba(201,160,106,.26), transparent 60%),
+      radial-gradient(900px 640px at -8% 112%, rgba(230,185,198,.40), transparent 60%);
+  }
+  .deck{width:100%;max-width:860px;margin:0 auto;position:relative}
+  .slide{
+    display:flex;flex-direction:column;justify-content:center;
+    padding:52px 22px;position:relative;
+    border-bottom:1px solid rgba(91,68,57,.08);
+  }
+  .slide:last-of-type{border-bottom:none}
+
+  .grad{background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .kicker{
+    font-weight:700;letter-spacing:.18em;text-transform:uppercase;font-size:12.5px;margin-bottom:18px;
+    background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  }
+  h1{font-size:clamp(28px,8.4vw,44px);font-weight:900;line-height:1.07;letter-spacing:-.025em}
+  h2{font-size:clamp(22px,6.4vw,32px);font-weight:800;line-height:1.13;margin-bottom:6px}
+  .lead{font-size:16px;color:var(--soft);line-height:1.6;margin-top:18px}
+
+  .grid{display:grid;gap:14px;margin-top:22px;grid-template-columns:1fr}
+
+  .card{
+    background:linear-gradient(160deg,var(--surf),var(--surf2));
+    border:1px solid var(--line);border-radius:16px;padding:20px;
+    box-shadow:0 14px 36px -24px rgba(91,68,57,.55);
+  }
+  .card h3{font-size:17px;font-weight:800;margin-bottom:6px}
+  .card p{color:var(--soft);font-size:14.5px;line-height:1.5}
+  .ico{
+    width:42px;height:42px;border-radius:11px;
+    background:linear-gradient(135deg,rgba(224,139,166,.22),rgba(217,168,106,.20));
+    border:1px solid rgba(224,139,166,.2);
+    display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:13px;
+  }
+
+  .logo-area{display:flex;justify-content:center;flex-direction:column;text-align:center;gap:12px;margin-bottom:26px;align-items:center}
+  .logo-area img{height:96px;width:auto;border-radius:16px;user-select:none;box-shadow:0 12px 34px -10px rgba(91,68,57,.32)}
+  .logo-area span{color:var(--mute);font-size:11px;letter-spacing:.3em;text-transform:uppercase}
+
+  ul.checks{list-style:none;margin-top:22px;display:grid;gap:13px}
+  ul.checks li{display:flex;gap:13px;font-size:15px;align-items:flex-start;line-height:1.45}
+  ul.checks li::before{
+    content:"✓";flex:0 0 auto;width:22px;height:22px;border-radius:6px;
+    background:linear-gradient(130deg,var(--a1),var(--a2));
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:800;color:#fff;margin-top:2px;
+  }
+  ul.checks li b{color:var(--txt)}
+
+  /* status "готово" list */
+  ul.done{list-style:none;margin-top:22px;display:grid;gap:11px}
+  ul.done li{display:flex;gap:12px;font-size:15px;align-items:flex-start;line-height:1.45}
+  ul.done li .b{
+    flex:0 0 auto;font-size:11px;font-weight:800;color:#fff;border-radius:999px;padding:3px 9px;margin-top:1px;
+    background:linear-gradient(130deg,var(--ok),#7CB89A);white-space:nowrap;
+  }
+  ul.done li b{color:var(--txt)}
+
+  /* flow */
+  .flow{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-top:24px}
+  .flow .step{
+    background:linear-gradient(160deg,var(--surf),var(--surf2));
+    border:1px solid var(--line);border-radius:13px;padding:13px 16px;
+    box-shadow:0 12px 30px -24px rgba(91,68,57,.5);
+    font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:10px;line-height:1.35;
+  }
+  .flow .step .e{font-size:20px;flex:0 0 auto}
+  .flow .arr{color:var(--a1);font-size:20px;font-weight:800;transform:rotate(90deg);align-self:center;margin:-2px 0}
+
+  /* channels chips */
+  .chips{display:flex;gap:9px;flex-wrap:wrap;margin-top:6px}
+  .chip{font-size:13.5px;padding:9px 13px;border-radius:11px;border:1px solid var(--line);background:#fff;color:var(--soft);font-weight:600;display:flex;gap:7px;align-items:center}
+
+  /* funnel cards */
+  .funnels{display:grid;grid-template-columns:1fr;gap:12px;margin-top:22px}
+  .fcard{background:linear-gradient(160deg,var(--surf),var(--surf2));border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .fcard .ft{font-size:16px;font-weight:800;display:flex;align-items:center;gap:9px}
+  .fcard .fd{font-size:13.5px;color:var(--soft);line-height:1.5;margin-top:5px}
+  .fcard .ftag{font-size:11px;font-weight:700;color:var(--a2);border:1px solid rgba(192,144,79,.35);border-radius:999px;padding:2px 9px;margin-left:auto}
+
+  /* variant cards */
+  .vars{display:grid;grid-template-columns:1fr;gap:14px;margin-top:22px}
+  .vcard{background:linear-gradient(160deg,var(--surf),var(--surf2));border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 16px 40px -26px rgba(91,68,57,.55)}
+  .vcard.hl{border-color:rgba(206,124,154,.5);box-shadow:0 0 0 1px rgba(206,124,154,.14),0 20px 46px -18px rgba(206,124,154,.34)}
+  .vhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .vname{font-size:19px;font-weight:900}
+  .vrec{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:linear-gradient(130deg,var(--a1),var(--a2));border-radius:999px;padding:4px 10px;white-space:nowrap}
+  .vprice{font-size:28px;font-weight:900;background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.1;margin:2px 0 10px}
+  .vprice small{font-size:13px;font-weight:600;color:var(--mute);-webkit-text-fill-color:var(--mute)}
+  .vcard ul{list-style:none;display:grid;gap:7px}
+  .vcard ul li{font-size:13.5px;color:var(--soft);line-height:1.45;padding-left:15px;position:relative}
+  .vcard ul li::before{content:"·";position:absolute;left:4px;color:var(--a1);font-weight:800}
+
+  .note{font-size:12.5px;color:var(--mute);margin-top:16px;font-style:italic;line-height:1.5}
+  .callout{margin-top:18px;background:linear-gradient(135deg,rgba(224,139,166,.14),rgba(217,168,106,.10));border:1px solid rgba(224,139,166,.3);border-radius:13px;padding:15px 17px;font-size:14.5px;color:var(--soft);line-height:1.55}
+  .callout b{color:var(--txt)}
+
+  .progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(130deg,var(--a1),var(--a2));width:0;z-index:30;transition:width .35s ease}
+
+  .ms-badge{display:flex;align-items:center;gap:11px;margin:30px auto 12px;justify-content:center}
+  .ms-badge img{height:42px;width:auto}
+  .ms-badge span{font-size:14px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+
+  /* reveal on scroll */
+  .reveal .stag{opacity:0;transform:translateY(18px);transition:opacity .55s ease,transform .55s ease}
+  .reveal .stag.in{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck" id="deck">
+
+  <!-- 1 COVER -->
+  <section class="slide">
+    <div class="logo-area">
+      <img src="logo-keris.png" alt="Keris Club">
+      <span>CRM-система</span>
+    </div>
+    <div class="kicker">Статус проекта · Июнь 2026</div>
+    <h1>Что уже <span class="grad">сделано</span><br>и что делаем <span class="grad">дальше</span></h1>
+    <p class="lead">Коротко и по делу: система уже собрана и живая. Показываем, как заявки перестают теряться, как копится база — и какие решения нужно принять, чтобы запустить сбор заявок прямо сейчас.</p>
+  </section>
+
+  <!-- 2 PROBLEM -->
+  <section class="slide">
+    <div class="kicker">С чего начинали</div>
+    <h2>Главная боль — заявки терялись</h2>
+    <div class="grid">
+      <div class="card stag"><div class="ico">📩</div><h3>Поток заявок уходил в никуда</h3><p>Огромное количество обращений в Instagram и Директе зависало и терялось. Блокировка аккаунта — и вся база обнулялась.</p></div>
+      <div class="card stag"><div class="ico">🔁</div><h3>Каждый раз — заново</h3><p>Новый аккаунт → снова собираем заявки → доходят только самые горячие, остальные отваливаются. И так по кругу.</p></div>
+      <div class="card stag"><div class="ico">🗂️</div><h3>База — в телефоне и в голове</h3><p>Даже те, кто уже купил щенка, по сути потеряны: нет единого места, где клиент закреплён навсегда.</p></div>
+    </div>
+    <p class="callout"><b>Вывод:</b> ценность не в том, чтобы пересаживать вас в новую программу, а в том, чтобы <b>ни одна заявка и ни один клиент не терялись</b> — система копит базу за вас.</p>
+  </section>
+
+  <!-- 3 WHAT'S DONE -->
+  <section class="slide">
+    <div class="kicker">Что уже готово</div>
+    <h2>Система собрана и работает</h2>
+    <ul class="done">
+      <li class="stag"><span class="b">готово</span><span><b>Аккаунт amoCRM создан с нуля</b> — основа единой базы Keris Club.</span></li>
+      <li class="stag"><span class="b">готово</span><span><b>4 воронки</b> под разные цели: Продажи · Щенки · Рассрочка · Клиенты питомника.</span></li>
+      <li class="stag"><span class="b">готово</span><span><b>Поля по щенкам и владельцам</b> — кличка, помёт, прививки, оплаты, контакты.</span></li>
+      <li class="stag"><span class="b">готово</span><span><b>Тестовые сделки</b> заведены — видно наглядно, как всё заполняется и движется по этапам.</span></li>
+    </ul>
+    <p class="lead">Это не макет — это рабочая система. Дальше мы наполняем её реальными заявками и клиентами.</p>
+  </section>
+
+  <!-- 4 FUNNELS MAP -->
+  <section class="slide">
+    <div class="kicker">Карта системы</div>
+    <h2>Четыре воронки — каждая под свою цель</h2>
+    <div class="funnels">
+      <div class="fcard stag"><div class="ft">🌐 Продажи<span class="ftag">лиды</span></div><div class="fd">Вся цепочка от первого касания до покупки: заявка не теряется, видно, на каком этапе клиент.</div></div>
+      <div class="fcard stag"><div class="ft">🐶 Щенки<span class="ftag">наличие</span></div><div class="fd">Кто свободен, кто забронирован, кто оформлен. Прививки и переезд — под контролем.</div></div>
+      <div class="fcard stag"><div class="ft">💳 Рассрочка<span class="ftag">оплаты</span></div><div class="fd">Контроль платежей по срокам: видно ближайшие и просроченные — без заметок в телефоне.</div></div>
+      <div class="fcard stag"><div class="ft">💜 Клиенты питомника<span class="ftag">лояльность</span></div><div class="fd">Купившие щенка остаются в базе навсегда: поздравления, забота, повторные продажи.</div></div>
+    </div>
+  </section>
+
+  <!-- 5 HOW LEADS COME -->
+  <section class="slide">
+    <div class="kicker">Как теперь собираются заявки</div>
+    <h2>Все каналы — в одну базу</h2>
+    <div class="chips">
+      <span class="chip stag">🌐 Сайт</span>
+      <span class="chip stag">📸 Instagram</span>
+      <span class="chip stag">✈️ Telegram</span>
+      <span class="chip stag">🆕 MAX</span>
+      <span class="chip stag">🗺️ Яндекс.Карты</span>
+      <span class="chip stag">📍 2ГИС</span>
+    </div>
+    <div class="flow">
+      <div class="step stag"><span class="e">📥</span> Заявка из любого канала попадает в amoCRM</div>
+      <span class="arr">→</span>
+      <div class="step stag"><span class="e">🗃️</span> Закрепляется за клиентом — навсегда</div>
+      <span class="arr">→</span>
+      <div class="step stag"><span class="e">💜</span> Работает на повторные продажи: груминг · передержка · клуб</div>
+    </div>
+    <p class="note">Даже если соцсеть заблокируют — база остаётся у вас. Это и есть страховка от «обнуления».</p>
+  </section>
+
+  <!-- 6 PRIORITY NOW -->
+  <section class="slide">
+    <div class="kicker">Приоритет прямо сейчас</div>
+    <h2>Запускаем сбор заявок</h2>
+    <ul class="checks">
+      <li class="stag"><span><b>Форма заявки на сайте</b> вместо перехода в личный Telegram — заявка сразу падает в базу.</span></li>
+      <li class="stag"><span><b>Заявки с Яндекс.Карт</b> — настраиваем приём оттуда же.</span></li>
+      <li class="stag"><span><b>Витрина щенков в боте</b> — клиент смотрит доступных малышей и переходит к вам.</span></li>
+      <li class="stag"><span><b>Согласие на данные</b> в форме — по закону, чтобы всё было чисто (сейчас этого нет).</span></li>
+    </ul>
+    <p class="callout">Это «верхушка айсберга» — то, что заработает в ближайшие дни и что сразу видно: <b>заявки собираются и не теряются</b>.</p>
+  </section>
+
+  <!-- 7 KARINA UNCHANGED -->
+  <section class="slide">
+    <div class="kicker">Важно для вас</div>
+    <h2>Вы ничего не меняете в привычках</h2>
+    <div class="grid">
+      <div class="card stag"><div class="ico">📱</div><h3>Общаетесь как раньше</h3><p>Продолжаете переписку в своём Telegram. Никакой новой непривычной программы осваивать не нужно.</p></div>
+      <div class="card stag"><div class="ico">💾</div><h3>Переписка сохраняется сама</h3><p>Мы подключаем ваш рабочий номер к системе — вся история и контекст копятся автоматически.</p></div>
+    </div>
+    <p class="lead">Система работает в фоне: вы — с клиентами, она — с базой и порядком.</p>
+  </section>
+
+  <!-- 8 AI INSTEAD OF MANAGER -->
+  <section class="slide">
+    <div class="kicker">Умный помощник вместо менеджера</div>
+    <h2>Заявки разбирает нейросеть</h2>
+    <ul class="checks">
+      <li class="stag"><span><b>Сама раскладывает заявки</b> по воронкам и этапам — холодный, тёплый, горячий.</span></li>
+      <li class="stag"><span><b>Напоминает о прививках</b> — клиент получает заботливое сообщение в нужный момент.</span></li>
+      <li class="stag"><span><b>Поздравляет и греет базу</b> — ДР собаки и хозяина, забота после переезда малыша.</span></li>
+      <li class="stag"><span><b>Снимает рутину с вас</b> — без найма менеджера, поток тянет система.</span></li>
+    </ul>
+    <p class="note">Сообщения идут от имени Keris Club и согласуются с вами заранее. Позже — помощник в вашем тоне общения.</p>
+  </section>
+
+  <!-- 9 BOT SHOWCASE -->
+  <section class="slide">
+    <div class="kicker">Витрина малышей</div>
+    <h2>Бот показывает доступных щенков</h2>
+    <div class="flow">
+      <div class="step stag"><span class="e">🌐</span> С сайта питомника клиент заходит в бота</div>
+      <span class="arr">→</span>
+      <div class="step stag"><span class="e">🐶</span> Видит свободных малышей: фото, описание, условия</div>
+      <span class="arr">→</span>
+      <div class="step stag"><span class="e">💬</span> Горячий клиент сразу переходит к вам — с контекстом «хочу этого малыша»</div>
+    </div>
+    <p class="lead">Холодные остаются в базе и на канале — мы прогреваем их позже. Бот не барьер, а фильтр: вам приходят уже «тёплые».</p>
+  </section>
+
+  <!-- 10 VARIANTS -->
+  <section class="slide">
+    <div class="kicker">Решение за вами</div>
+    <h2>Два варианта подключения номеров</h2>
+    <div class="vars">
+      <div class="vcard hl stag">
+        <div class="vhead"><span class="vname">Эконом</span><span class="vrec">Рекомендуем сейчас</span></div>
+        <div class="vprice">~2 600–4 000 ₽<small> /мес</small></div>
+        <ul>
+          <li>1 рабочий номер (питомник) + бот-витрина</li>
+          <li>Вся переписка и заявки сохраняются в базе</li>
+          <li>Бот разводит запросы: щенки / груминг</li>
+          <li>Минимальные расходы на старте</li>
+        </ul>
+      </div>
+      <div class="vcard stag">
+        <div class="vhead"><span class="vname">Премиум</span></div>
+        <div class="vprice">~5 200–8 000 ₽<small> /мес</small></div>
+        <ul>
+          <li>2 отдельных номера: питомник + груминг</li>
+          <li>Более точечная, «бутиковая» коммуникация</li>
+          <li>Логично при запуске груминга с администратором</li>
+          <li>Дороже, но «как должно быть» в премиум-сегменте</li>
+        </ul>
+      </div>
+    </div>
+    <p class="callout"><b>Наша честная рекомендация:</b> начать с эконома, а второй номер для груминга подключить, когда груминг запустится (~через 2 месяца). Платить за 2 номера сразу — преждевременно. Цена за канал ниже при оплате за год.</p>
+  </section>
+
+  <!-- 11 CLUB HORIZON -->
+  <section class="slide">
+    <div class="kicker">Горизонт</div>
+    <h2>Keris Club — экосистема, а не просто питомник</h2>
+    <div class="flow">
+      <div class="step stag"><span class="e">🐶</span> Щенок — покупка и сопровождение</div>
+      <span class="arr">→</span>
+      <div class="step stag"><span class="e">✂️</span> Груминг — запись и уход</div>
+      <span class="arr">→</span>
+      <div class="step stag"><span class="e">🏡</span> Передержка — гостиница для собак</div>
+      <span class="arr">→</span>
+      <div class="step stag"><span class="e">💜</span> Клуб — карта лояльности, встречи, мероприятия</div>
+    </div>
+    <p class="lead">Купившие щенка получают карту Keris Club — скидки на груминг и передержку. Одна база связывает все направления: без неё клуб не масштабировать.</p>
+  </section>
+
+  <!-- 12 NEXT STEPS -->
+  <section class="slide">
+    <div class="kicker">Что нужно для старта</div>
+    <h1>Дальше — <span class="grad">живой сбор заявок</span></h1>
+    <ul class="checks" style="margin-top:20px">
+      <li class="stag"><span><b>От вас:</b> решение по варианту номеров и контент для витрины (фото и описания малышей).</span></li>
+      <li class="stag"><span><b>С нашей стороны:</b> форма заявки на сайт, подключение номера к системе, бот-витрина.</span></li>
+      <li class="stag"><span><b>Ближайшие дни:</b> заявки начинают собираться и складываться в единую базу.</span></li>
+    </ul>
+    <p class="lead">Сначала запускаем верхний уровень — сбор заявок. Затем наслаиваем заботу, рассылки и груминг. Всё без переделок, на готовом фундаменте.</p>
+    <div class="ms-badge">
+      <img src="logo-ms.png" alt="MS Product">
+      <span>MS Product</span>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  const progress=document.getElementById("progress");
+  function upd(){const h=document.documentElement;const m=h.scrollHeight-h.clientHeight;progress.style.width=(m>0?(h.scrollTop/m*100):0)+"%";}
+  addEventListener("scroll",upd,{passive:true});addEventListener("resize",upd);upd();
+  document.body.classList.add("reveal");
+  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)e.target.classList.add("in")}),{threshold:.12,rootMargin:"0px 0px -8% 0px"});
+  document.querySelectorAll(".stag").forEach(el=>io.observe(el));
+</script>
+</body>
+</html>

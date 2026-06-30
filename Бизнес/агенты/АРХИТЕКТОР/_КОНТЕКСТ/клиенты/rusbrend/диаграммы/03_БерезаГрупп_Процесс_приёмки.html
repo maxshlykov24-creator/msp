@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Процесс приёмки — БЕРЕЗА ГРУПП</title>
+<style>
+:root {
+  --bg:          #f5f4f0;
+  --surface:     #ffffff;
+  --text:        #1c1c1e;
+  --text-2:      #6b6b70;
+  --border:      #e8e6e2;
+  --violet:      #5a4080;
+  --violet-light:#f4f0fa;
+  --violet-mid:  #c8b8e0;
+  --blue:        #2a5880;
+  --blue-light:  #edf4fa;
+  --blue-mid:    #a8cce0;
+  --green:       #2a6645;
+  --green-light: #f0f8f2;
+  --green-mid:   #90c8a8;
+  --amber:       #7a5c1e;
+  --amber-light: #fdf5e6;
+  --amber-mid:   #e0c890;
+  --red:         #8b3030;
+  --red-light:   #fdf0f0;
+  --red-mid:     #e0b0b0;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--text);
+  padding: 48px 40px 72px;
+}
+.page { max-width: 960px; margin: 0 auto; }
+
+.header { margin-bottom: 44px; }
+.header-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #aaa; margin-bottom: 8px; }
+.header h1 { font-size: 30px; font-weight: 700; letter-spacing: -.03em; margin-bottom: 6px; }
+.header-desc { font-size: 14px; color: var(--text-2); }
+
+/* ── Phase columns ── */
+.phases {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr 40px 1fr;
+  align-items: start;
+  gap: 0;
+  margin-bottom: 32px;
+}
+
+.phase {
+  border-radius: 14px;
+  border: 1.5px solid transparent;
+  padding: 20px;
+}
+.phase-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px;
+}
+.phase-num {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  flex-shrink: 0;
+}
+.phase-title { font-size: 14px; font-weight: 700; }
+
+.step {
+  background: var(--surface);
+  border-radius: 9px;
+  padding: 11px 13px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04);
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.step:last-child { margin-bottom: 0; }
+.step-icon {
+  width: 24px; height: 24px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; flex-shrink: 0; margin-top: 1px;
+}
+.step-text .step-who  { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 2px; }
+.step-text .step-desc { font-size: 12px; color: var(--text-2); line-height: 1.45; }
+
+/* Phase 1 - Amber */
+.phase-1 { background: var(--amber-light); border-color: var(--amber-mid); }
+.phase-1 .phase-num { background: var(--amber-mid); color: var(--amber); }
+.phase-1 .phase-title { color: var(--amber); }
+.phase-1 .step { border-left: 3px solid var(--amber-mid); }
+.phase-1 .step-icon { background: var(--amber-light); color: var(--amber); border: 1px solid var(--amber-mid); }
+.phase-1 .step-who { color: var(--amber); }
+
+/* Phase 2 - Green */
+.phase-2 { background: var(--green-light); border-color: var(--green-mid); }
+.phase-2 .phase-num { background: var(--green-mid); color: var(--green); }
+.phase-2 .phase-title { color: var(--green); }
+.phase-2 .step { border-left: 3px solid var(--green-mid); }
+.phase-2 .step-icon { background: var(--green-light); color: var(--green); border: 1px solid var(--green-mid); }
+.phase-2 .step-who { color: var(--green); }
+
+/* Phase 3 - Red */
+.phase-3 { background: var(--red-light); border-color: var(--red-mid); border-style: dashed; }
+.phase-3 .phase-num { background: var(--red-mid); color: var(--red); }
+.phase-3 .phase-title { color: var(--red); }
+.phase-3 .step { border-left: 3px solid var(--red-mid); }
+.phase-3 .step-icon { background: var(--red-light); color: var(--red); border: 1px solid var(--red-mid); }
+.phase-3 .step-who { color: var(--red); }
+
+/* Arrow between phases */
+.phase-arrow {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start;
+  padding-top: 52px;
+  color: #c0bdb8;
+}
+.phase-arrow svg { display: block; }
+.phase-arrow span {
+  font-size: 9.5px; color: var(--text-2);
+  margin-top: 4px; text-align: center; max-width: 38px; line-height: 1.3;
+}
+
+/* ── Participants ── */
+.participants {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 28px;
+}
+.participant {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.participant-role {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; margin-bottom: 4px;
+}
+.participant-name { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.participant-desc { font-size: 11px; color: var(--text-2); line-height: 1.4; }
+
+footer { margin-top: 32px; font-size: 11px; color: #c0bdb8; letter-spacing: .04em; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="header-eyebrow">БЕРЕЗА ГРУПП · Интеграционная карта · Вариант 1</div>
+    <h1>Процесс приёмки</h1>
+    <div class="header-desc">Заказ поставщику &rarr; приёмка товара &rarr; разбор расхождений</div>
+  </div>
+
+  <!-- Участники -->
+  <div class="participants">
+    <div class="participant">
+      <div class="participant-role" style="color:var(--violet)">Руководитель</div>
+      <div class="participant-name">Создаёт заказ</div>
+      <div class="participant-desc">Формирует план закупки в МойСклад</div>
+    </div>
+    <div class="participant">
+      <div class="participant-role" style="color:var(--amber)">Поставщик</div>
+      <div class="participant-name">Привозит товар</div>
+      <div class="participant-desc">Доставляет на склад по плану</div>
+    </div>
+    <div class="participant">
+      <div class="participant-role" style="color:var(--blue)">МойСклад</div>
+      <div class="participant-name">Учёт и остатки</div>
+      <div class="participant-desc">Фиксирует приёмку, обновляет остатки</div>
+    </div>
+    <div class="participant">
+      <div class="participant-role" style="color:var(--green)">Управляющий</div>
+      <div class="participant-name">Ведёт приёмку</div>
+      <div class="participant-desc">Пересчитывает и вносит данные</div>
+    </div>
+  </div>
+
+  <!-- Фазы -->
+  <div class="phases">
+
+    <!-- Фаза 1 -->
+    <div class="phase phase-1">
+      <div class="phase-header">
+        <div class="phase-num">1</div>
+        <div class="phase-title">Заказ</div>
+      </div>
+      <div class="step">
+        <div class="step-icon">R</div>
+        <div class="step-text">
+          <div class="step-who">Руководитель</div>
+          <div class="step-desc">Создаёт заказ поставщику в МойСклад — артикул, кол-во (план)</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-icon">P</div>
+        <div class="step-text">
+          <div class="step-who">Поставщик</div>
+          <div class="step-desc">Привозит товар на склад Белград по плану</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Стрелка 1→2 -->
+    <div class="phase-arrow">
+      <svg width="28" height="20" viewBox="0 0 28 20">
+        <line x1="0" y1="10" x2="22" y2="10" stroke="#c0bdb8" stroke-width="1.5"/>
+        <polyline points="16,4 24,10 16,16" fill="none" stroke="#c0bdb8" stroke-width="1.5"/>
+      </svg>
+      <span>товар получен</span>
+    </div>
+
+    <!-- Фаза 2 -->
+    <div class="phase phase-2">
+      <div class="phase-header">
+        <div class="phase-num">2</div>
+        <div class="phase-title">Приёмка</div>
+      </div>
+      <div class="step">
+        <div class="step-icon">У</div>
+        <div class="step-text">
+          <div class="step-who">Управляющий</div>
+          <div class="step-desc">Пересчитывает товар на месте</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-icon">У</div>
+        <div class="step-text">
+          <div class="step-who">Управляющий</div>
+          <div class="step-desc">Открывает приёмку в МойСклад — основание: заказ поставщику</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-icon">У</div>
+        <div class="step-text">
+          <div class="step-who">Управляющий</div>
+          <div class="step-desc">Вносит фактическое кол-во по каждой позиции</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-icon">М</div>
+        <div class="step-text">
+          <div class="step-who">МойСклад</div>
+          <div class="step-desc">Обновляет остатки; статус заказа: «Получен» (100%) или «Найдено расхождение»</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Стрелка 2→3 -->
+    <div class="phase-arrow">
+      <svg width="28" height="20" viewBox="0 0 28 20">
+        <line x1="0" y1="10" x2="22" y2="10" stroke="#c0bdb8" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <polyline points="16,4 24,10 16,16" fill="none" stroke="#c0bdb8" stroke-width="1.5"/>
+      </svg>
+      <span>если расхождение</span>
+    </div>
+
+    <!-- Фаза 3 -->
+    <div class="phase phase-3">
+      <div class="phase-header">
+        <div class="phase-num">3</div>
+        <div class="phase-title">Расхождение</div>
+      </div>
+      <div class="step">
+        <div class="step-icon">М</div>
+        <div class="step-text">
+          <div class="step-who">МойСклад</div>
+          <div class="step-desc">Автоматически ставит заказу статус «Найдено расхождение» (факт ≠ план)</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-icon">У</div>
+        <div class="step-text">
+          <div class="step-who">Управляющий</div>
+          <div class="step-desc">Видит статус в списке заказов → сообщает руководителю</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-icon">R</div>
+        <div class="step-text">
+          <div class="step-who">Руководитель</div>
+          <div class="step-desc">Разбирает с поставщиком по звонку и камерам</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Статусы заказа -->
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:28px;padding:16px 18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2);width:100%;margin-bottom:4px;">Статусы заказа поставщику (авто)</div>
+    <div style="background:#f5f5f4;border:1px solid #d0ccc8;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;color:#78716c;">Новый</div>
+    <div style="background:var(--green-light);border:1px solid var(--green-mid);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;color:var(--green);">Получен · факт = план</div>
+    <div style="background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;color:var(--amber);">Найдено расхождение · факт ≠ план</div>
+  </div>
+
+  <footer>MS Product &nbsp;·&nbsp; БЕРЕЗА ГРУПП &nbsp;·&nbsp; 2026</footer>
+</div>
+</body>
+</html>

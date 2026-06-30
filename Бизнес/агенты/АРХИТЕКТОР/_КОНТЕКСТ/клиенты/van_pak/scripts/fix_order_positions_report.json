@@ -1,0 +1,27 @@
+{
+  "checked": 2,
+  "sum_mismatch": 2,
+  "fixed": 2,
+  "skipped_unmapped": 0,
+  "errors": 0,
+  "actions": [
+    {
+      "order": "ТУ-00889",
+      "old_sum": 19000000,
+      "new_sum_before": 0.0,
+      "old_pos": 1,
+      "new_pos_before": 0,
+      "action": "replaced",
+      "new_sum_after": 19000000
+    },
+    {
+      "order": "ФР-00187",
+      "old_sum": 51612000,
+      "new_sum_before": 54600000,
+      "old_pos": 3,
+      "new_pos_before": 4,
+      "action": "replaced",
+      "new_sum_after": 51612000
+    }
+  ]
+}

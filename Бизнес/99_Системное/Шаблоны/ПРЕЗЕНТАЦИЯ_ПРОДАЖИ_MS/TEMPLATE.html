@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- EDIT: title — «Клиент · Продукт — презентация» -->
+<title>КЛИЕНТ · Продукт — презентация</title>
+<style>
+  @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
+  :root{
+    --bg:#060608; --surf:#0E0F15; --surf2:#12141B; --line:#1C1E2A;
+    --a1:#9333EA; --a2:#4F8EF7;
+    --txt:#F0F1F5; --mute:#6E7280; --soft:#9EA3B0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt); font-family:Inter,system-ui,sans-serif;
+    overflow:hidden;
+    background-image:
+      radial-gradient(1000px 700px at 95% -8%, rgba(147,51,234,.20), transparent 60%),
+      radial-gradient(800px 600px at -8% 108%, rgba(79,142,247,.15), transparent 60%);
+  }
+  .deck{height:100vh;width:100vw;position:relative}
+  .slide{
+    position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;
+    padding:6vh 8vw 80px;animation:fade .35s ease;
+  }
+  .slide.active{display:flex}
+  @keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .grad{background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .kicker{
+    font-weight:700;letter-spacing:.18em;text-transform:uppercase;font-size:12.5px;margin-bottom:18px;
+    background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  }
+  h1{font-size:clamp(32px,4.8vw,64px);font-weight:900;line-height:1.05;letter-spacing:-.025em}
+  h2{font-size:clamp(24px,3.2vw,42px);font-weight:800;line-height:1.1;margin-bottom:6px}
+  .lead{font-size:clamp(15px,1.55vw,21px);color:var(--soft);max-width:62ch;line-height:1.6;margin-top:18px}
+  .grid{display:grid;gap:14px;margin-top:30px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .card{
+    background:linear-gradient(160deg,var(--surf),var(--surf2));
+    border:1px solid var(--line);border-radius:16px;padding:22px;
+    transition:border-color .25s,box-shadow .25s;
+  }
+  .card:hover{border-color:rgba(147,51,234,.3);box-shadow:0 8px 32px -8px rgba(147,51,234,.15)}
+  .card h3{font-size:17px;font-weight:800;margin-bottom:6px}
+  .card p{color:var(--soft);font-size:14px;line-height:1.5}
+  .ico{
+    width:42px;height:42px;border-radius:11px;
+    background:linear-gradient(135deg,rgba(147,51,234,.2),rgba(79,142,247,.2));
+    border:1px solid rgba(147,51,234,.18);
+    display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:13px;
+  }
+  .logo-area{display:flex;align-items:center;gap:12px;margin-bottom:36px}
+  .logo-area img{height:64px;width:auto;user-select:none}
+  .logo-area span{color:var(--mute);font-size:11px;letter-spacing:.3em;text-transform:uppercase}
+  ul.checks{list-style:none;margin-top:24px;display:grid;gap:13px}
+  ul.checks li{
+    display:flex;gap:13px;font-size:clamp(14px,1.55vw,19px);align-items:flex-start;line-height:1.45;
+  }
+  ul.checks li::before{
+    content:"✓"; flex:0 0 auto;width:22px;height:22px;border-radius:6px;
+    background:linear-gradient(130deg,var(--a1),var(--a2));
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:800;color:#fff; margin-top:2px;flex-shrink:0;
+  }
+  .plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:22px}
+  .phase{
+    background:linear-gradient(160deg,var(--surf),var(--surf2));
+    border:1px solid var(--line);border-radius:16px;padding:20px;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .phase.hl{border-color:rgba(147,51,234,.45);box-shadow:0 0 0 1px rgba(147,51,234,.1),0 16px 40px -16px rgba(147,51,234,.25)}
+  .phase-num{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+    background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .phase-title{font-size:17px;font-weight:800;line-height:1.2}
+  .phase-days{font-size:12px;color:var(--mute);margin-top:-5px}
+  .phase-dod{flex:1;padding-left:0}
+  .phase-dod li{list-style:none;font-size:13px;color:var(--soft);line-height:1.5;padding:2.5px 0 2.5px 14px;position:relative}
+  .phase-dod li::before{content:"·";position:absolute;left:4px;color:var(--mute);font-weight:700}
+  .phase-pay{padding-top:12px;border-top:1px solid var(--line)}
+  .phase-pay .lbl{font-size:11.5px;color:var(--mute);margin-bottom:2px}
+  .phase-pay .lbl+.lbl{margin-top:8px}
+  .phase-pay .amt{font-size:24px;font-weight:900;
+    background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.15}
+  .phase-pay .amt.dim{font-size:16px;background:none;-webkit-text-fill-color:var(--mute);color:var(--mute)}
+  .penalty-row{display:flex;gap:12px;margin-top:14px;align-items:stretch}
+  .pen{flex:1;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:13px;padding:14px}
+  .pen .ph{font-weight:700;font-size:13.5px;margin-bottom:3px}
+  .pen .pv{font-size:22px;font-weight:900;color:#C6657A;line-height:1.1;margin-bottom:2px}
+  .pen .ps{font-size:12px;color:var(--mute)}
+  .total-box{
+    flex:2;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,rgba(147,51,234,.1),rgba(79,142,247,.08));
+    border:1px solid rgba(147,51,234,.25);border-radius:13px;padding:14px;text-align:center;
+  }
+  .total-box .tl{font-size:12px;color:var(--mute);margin-bottom:4px}
+  .total-box .tv{font-size:30px;font-weight:900;
+    background:linear-gradient(130deg,var(--a1),var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.1}
+  .total-box .ts{font-size:12px;color:var(--mute);margin-top:4px}
+  .nav{position:absolute;bottom:22px;right:8vw;display:flex;gap:8px;z-index:10}
+  .nav button{background:var(--surf2);border:1px solid var(--line);color:var(--txt);width:38px;height:38px;border-radius:9px;font-size:16px;cursor:pointer}
+  .nav button:hover{border-color:var(--a1);background:rgba(147,51,234,.1)}
+  .dots{position:absolute;bottom:34px;left:8vw;display:flex;gap:6px;align-items:center}
+  .dot{width:7px;height:7px;border-radius:999px;background:var(--line);transition:all .25s}
+  .dot.on{background:linear-gradient(130deg,var(--a1),var(--a2));width:20px}
+  .ms-badge{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:7px;opacity:1}
+  .ms-badge img{height:22px;width:auto}
+  .ms-badge span{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--soft)}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <!-- SLIDE 1 — COVER -->
+  <section class="slide active">
+    <div class="logo-area">
+      <!-- EDIT: положи logo-client.png в папку, укажи имя файла -->
+      <img src="logo-client.png" alt="КЛИЕНТ">
+      <span>ПРОДУКТ</span>
+    </div>
+    <!-- EDIT: kicker — одна строка, что это за система -->
+    <div class="kicker">Кастомная система под ваш бизнес</div>
+    <!-- EDIT: h1 — главная ценность; .grad — акцентная фраза -->
+    <h1>Заголовок ценности.<br><span class="grad">Акцентная фраза</span><br>— коротко.</h1>
+    <!-- EDIT: lead — «под вас», не коробка -->
+    <p class="lead">Не общий продукт, а система под КЛИЕНТ: ваши процессы, ваши правила. Без лишнего между людьми и деньгами.</p>
+  </section>
+
+  <!-- SLIDE 2 — PROBLEM (4 cards) -->
+  <section class="slide">
+    <div class="kicker">Что болит сейчас</div>
+    <!-- EDIT: h2 — формулировка боли одной фразой -->
+    <h2>Сейчас процесс не держит ваши сценарии</h2>
+    <div class="grid g4">
+      <div class="card"><div class="ico">⏱️</div><h3>Боль 1</h3><p>Описание боли — конкретно, из разговора с клиентом.</p></div>
+      <div class="card"><div class="ico">💸</div><h3>Боль 2</h3><p>Описание боли.</p></div>
+      <div class="card"><div class="ico">🔀</div><h3>Боль 3</h3><p>Описание боли.</p></div>
+      <div class="card"><div class="ico">🧩</div><h3>Боль 4</h3><p>Описание боли.</p></div>
+    </div>
+  </section>
+
+  <!-- SLIDE 3 — SOLUTION -->
+  <section class="slide">
+    <div class="kicker">Решение</div>
+    <h2>Одно приложение. Каждое действие — на учёте.</h2>
+    <p class="lead">Коротко: что делает продавец / менеджер и что система делает сама.</p>
+    <ul class="checks">
+      <li>Пункт выгоды 1</li>
+      <li>Пункт выгоды 2</li>
+      <li>Пункт выгоды 3</li>
+      <li>Пункт выгоды 4 (опционально)</li>
+    </ul>
+  </section>
+
+  <!-- SLIDE 4 — DEMO (6 cards, grid g3) -->
+  <section class="slide">
+    <div class="kicker">Что уже можно потрогать</div>
+    <h2>Рабочий прототип — прямо сейчас</h2>
+    <div class="grid g3">
+      <div class="card"><h3>🛍️ Фича 1</h3><p>Что покажете на демо.</p></div>
+      <div class="card"><h3>🎫 Фича 2</h3><p>Что покажете на демо.</p></div>
+      <div class="card"><h3>👔 Фича 3</h3><p>Что покажете на демо.</p></div>
+      <div class="card"><h3>✈️ Фича 4</h3><p>Что покажете на демо.</p></div>
+      <div class="card"><h3>📊 Фича 5</h3><p>Что покажете на демо.</p></div>
+      <div class="card"><h3>🧾 Фича 6</h3><p>Что покажете на демо.</p></div>
+    </div>
+  </section>
+
+  <!-- SLIDE 5 — WHY -->
+  <section class="slide">
+    <div class="kicker">Почему это правильный выбор</div>
+    <h2>Это не «костыль» — это фундамент</h2>
+    <ul class="checks">
+      <li><b>Не ломаем то, что работает</b> — CRM / склад остаются мозгом.</li>
+      <li><b>Легко расширять</b> — новый сценарий = настройка, не переписывание с нуля.</li>
+      <li><b>Честные цифры</b> — один источник правды по деньгам и сделкам.</li>
+      <li><b>Растёт с бизнесом</b> — что заложим в архитектуру (без деталей «фазы 3»).</li>
+    </ul>
+  </section>
+
+  <!-- SLIDE 6 — PLAN & PAY (DoD + penalties) -->
+  <section class="slide">
+    <div class="kicker">План и оплата</div>
+    <h2>Прозрачно: что делаю, за сколько, что считается готовым</h2>
+    <div class="plan-grid">
+
+      <div class="phase hl">
+        <div class="phase-num">Этап 1</div>
+        <div class="phase-title">Делаю</div>
+        <div class="phase-days">N рабочих дней</div>
+        <ul class="phase-dod">
+          <li>DoD — результат 1</li>
+          <li>DoD — результат 2</li>
+          <li>DoD — результат 3</li>
+        </ul>
+        <div class="phase-pay">
+          <div class="lbl">При старте</div>
+          <div class="amt">XX XXX ₽</div>
+          <div class="lbl">По результату</div>
+          <div class="amt">XX XXX ₽</div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-num">Этап 2</div>
+        <div class="phase-title">Правки</div>
+        <div class="phase-days">N дней</div>
+        <ul class="phase-dod">
+          <li>Клиент тестирует, даёт список</li>
+          <li>Вношу всё из списка</li>
+          <li>Финальное принятие</li>
+        </ul>
+        <div class="phase-pay">
+          <div class="lbl">Включено в стоимость</div>
+          <div class="amt dim">без доплат</div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-num">Этап 3</div>
+        <div class="phase-title">Внедрение</div>
+        <div class="phase-days">N дней</div>
+        <ul class="phase-dod">
+          <li>Обучение команды</li>
+          <li>Боевой запуск</li>
+          <li>Критерий «живёт в работе» (конкретно!)</li>
+        </ul>
+        <div class="phase-pay">
+          <div class="lbl">После приёмки</div>
+          <div class="amt">XX XXX ₽</div>
+        </div>
+      </div>
+
+    </div>
+    <div class="penalty-row">
+      <div class="pen">
+        <div class="ph">Задержка на неделю</div>
+        <div class="pv">−XX XXX ₽</div>
+        <div class="ps">от итоговой стоимости</div>
+      </div>
+      <div class="pen">
+        <div class="ph">Задержка на две недели</div>
+        <div class="pv">−XX XXX ₽</div>
+        <div class="ps">от итоговой стоимости</div>
+      </div>
+      <div class="total-box">
+        <div class="tl">Итого</div>
+        <div class="tv">XXX XXX ₽</div>
+        <div class="ts">схема платежей: A → B → C</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 7 — FINAL -->
+  <section class="slide">
+    <div class="logo-area">
+      <img src="logo-client.png" alt="КЛИЕНТ">
+      <span>ПРОДУКТ</span>
+    </div>
+    <div class="kicker">Следующий шаг</div>
+    <h1>Прототип готов.<br><span class="grad">Стартуем?</span></h1>
+    <p class="lead">Один конкретный шаг: первая оплата → через N дней система в работе.</p>
+  </section>
+
+</div>
+
+<div class="dots" id="dots"></div>
+<div class="nav"><button id="prev">‹</button><button id="next">›</button></div>
+<div class="ms-badge">
+  <img src="logo-ms.png" alt="MS Product" />
+  <span>MS Product</span>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll(".slide")];
+  let i=0;
+  const dots=document.getElementById("dots");
+  slides.forEach((_,k)=>{const d=document.createElement("div");d.className="dot"+(k===0?" on":"");dots.appendChild(d)});
+  const dotEls=[...dots.children];
+  function go(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle("active",k===i));
+    dotEls.forEach((d,k)=>d.classList.toggle("on",k===i));
+  }
+  document.getElementById("next").onclick=()=>go(i+1);
+  document.getElementById("prev").onclick=()=>go(i-1);
+  document.addEventListener("keydown",e=>{
+    if(["ArrowRight","ArrowDown"," ","PageDown"].includes(e.key))go(i+1);
+    if(["ArrowLeft","ArrowUp","PageUp"].includes(e.key))go(i-1);
+    if(e.key==="Home")go(0);
+    if(e.key==="End")go(slides.length-1);
+  });
+</script>
+</body>
+</html>

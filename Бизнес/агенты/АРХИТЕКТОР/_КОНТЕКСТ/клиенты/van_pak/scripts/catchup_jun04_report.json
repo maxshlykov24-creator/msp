@@ -1,0 +1,210 @@
+{
+  "date": "2026-06-04",
+  "dry": false,
+  "types": {
+    "supply": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "customerorder": {
+      "created": 8,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": [
+        {
+          "name": "АФ-00019",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00023",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00022",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00024",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00021",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00018",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00020",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00025",
+          "action": "created"
+        }
+      ]
+    },
+    "demand": {
+      "created": 7,
+      "patched": 1,
+      "skipped": 0,
+      "errors": 0,
+      "items": [
+        {
+          "name": "00276",
+          "action": "created"
+        },
+        {
+          "name": "ВА-18541",
+          "action": "created"
+        },
+        {
+          "name": "ТУ-06047",
+          "action": "created"
+        },
+        {
+          "name": "ВА-18542",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00007",
+          "action": "created"
+        },
+        {
+          "name": "ВА-18543",
+          "action": "created"
+        },
+        {
+          "name": "ТУ-06046",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00008",
+          "action": "patched"
+        }
+      ]
+    },
+    "invoiceout": {
+      "created": 8,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": [
+        {
+          "name": "АФ-00019",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00023",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00022",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00024",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00021",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00018",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00020",
+          "action": "created"
+        },
+        {
+          "name": "АФ-00025",
+          "action": "created"
+        }
+      ]
+    },
+    "paymentin": {
+      "created": 0,
+      "patched": 6,
+      "skipped": 0,
+      "errors": 0,
+      "items": [
+        {
+          "name": "00115",
+          "action": "patched"
+        },
+        {
+          "name": "00985",
+          "action": "patched"
+        },
+        {
+          "name": "00980",
+          "action": "patched"
+        },
+        {
+          "name": "00979",
+          "action": "patched"
+        },
+        {
+          "name": "00982",
+          "action": "patched"
+        },
+        {
+          "name": "00983",
+          "action": "patched"
+        }
+      ]
+    },
+    "paymentout": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "cashin": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "cashout": {
+      "created": 0,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": []
+    },
+    "move": {
+      "created": 1,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": [
+        {
+          "name": "00021",
+          "action": "created"
+        }
+      ]
+    },
+    "loss": {
+      "created": 1,
+      "patched": 0,
+      "skipped": 0,
+      "errors": 0,
+      "items": [
+        {
+          "name": "00015-00002",
+          "action": "created"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "dry_run": true,
+  "apply": false,
+  "moment": "2026-06-08 12:21:41",
+  "audit_file": "/Users/max/Desktop/CURSOR/Бизнес/агенты/АРХИТЕКТОР/_КОНТЕКСТ/клиенты/van_pak/scripts/audit_stock_total_report.json",
+  "audit_totals": {
+    "old_bystore_mapped_stores": 2282017.0,
+    "new_bystore_mapped_stores": 2280417.0,
+    "bystore_gap_new_minus_old": -1600.0,
+    "old_stock_all": 569218.0,
+    "new_stock_all": 2214393.0,
+    "stock_all_gap_new_minus_old": 1645175.0
+  },
+  "reconcile_preview": {
+    "reconcilable_lines": 6,
+    "enter_lines": 3,
+    "loss_lines": 3,
+    "sum_enter_qty": 8620.0,
+    "sum_loss_qty": 7020.0,
+    "old_only_blocked_lines": 0,
+    "old_only_blocked_qty": 0
+  },
+  "created": {
+    "enter_docs": 2,
+    "loss_docs": 2,
+    "enter_lines": 3,
+    "loss_lines": 3
+  },
+  "errors": 0,
+  "actions": [
+    {
+      "type": "enter",
+      "store": "74a6ef6e-53b2-11f1-0a80-04f40001aaf6",
+      "store_name": "Склад ТИПОГРАФИЯ",
+      "positions": 1,
+      "total_qty": 20.0,
+      "action": "dry_post"
+    },
+    {
+      "type": "enter",
+      "store": "7555c3c0-53b2-11f1-0a80-0efe0001d257",
+      "store_name": "Склад Москва (Основной)",
+      "positions": 2,
+      "total_qty": 8600.0,
+      "action": "dry_post"
+    },
+    {
+      "type": "loss",
+      "store": "74d7ddbb-53b2-11f1-0a80-10710001b991",
+      "store_name": "Магазин при складе-Москва",
+      "positions": 1,
+      "total_qty": 20.0,
+      "action": "dry_post"
+    },
+    {
+      "type": "loss",
+      "store": "7555c3c0-53b2-11f1-0a80-0efe0001d257",
+      "store_name": "Склад Москва (Основной)",
+      "positions": 2,
+      "total_qty": 7000.0,
+      "action": "dry_post"
+    }
+  ],
+  "old_only_skipped": 0
+}

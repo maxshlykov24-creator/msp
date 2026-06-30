@@ -1,0 +1,7813 @@
+{
+  "old_total": 1641,
+  "new_total": 1620,
+  "missing_from_new": [
+    {
+      "name": "ЗБ-04499",
+      "moment": "2026-05-25 12:34:00.000",
+      "old_uuid": "0abc6bbc-581d-11f1-0a80-19480031ad91",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04495",
+      "moment": "2026-05-25 12:27:00.000",
+      "old_uuid": "0e43387f-581c-11f1-0a80-09d200308d23",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04490",
+      "moment": "2026-05-25 12:21:00.000",
+      "old_uuid": "4384c747-581b-11f1-0a80-0c9500302f47",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04496",
+      "moment": "2026-05-25 12:29:00.000",
+      "old_uuid": "4d4988f2-581c-11f1-0a80-1b7c0031c299",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04491",
+      "moment": "2026-05-25 12:22:00.000",
+      "old_uuid": "6de7aac9-581b-11f1-0a80-0c95003037b1",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04482",
+      "moment": "2026-05-25 06:29:00.000",
+      "old_uuid": "76836767-57ea-11f1-0a80-16980026d43a",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04468",
+      "moment": "2026-05-21 15:11:00.000",
+      "old_uuid": "7cbe316a-550e-11f1-0a80-02e6002390a6",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04486",
+      "moment": "2026-05-25 11:32:00.000",
+      "old_uuid": "853e98b4-5814-11f1-0a80-1074002e3b89",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04497",
+      "moment": "2026-05-25 12:31:00.000",
+      "old_uuid": "9307d4d1-581c-11f1-0a80-076a002fc400",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04487",
+      "moment": "2026-05-25 11:39:00.000",
+      "old_uuid": "a5785971-5815-11f1-0a80-09d2002ed0bd",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04488",
+      "moment": "2026-05-25 11:35:00.000",
+      "old_uuid": "aa8e8a60-5815-11f1-0a80-1b7c002ff7bc",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04492",
+      "moment": "2026-05-25 12:24:00.000",
+      "old_uuid": "ada3eac6-581b-11f1-0a80-1304002fd413",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04493",
+      "moment": "2026-05-25 12:24:00.000",
+      "old_uuid": "af651295-581b-11f1-0a80-04f50030e40b",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04489",
+      "moment": "2026-05-25 12:16:00.000",
+      "old_uuid": "c1a918a4-581a-11f1-0a80-0c950030127c",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04461",
+      "moment": "2026-05-20 14:02:00.000",
+      "old_uuid": "c7fb8b94-543b-11f1-0a80-1663000d37c9",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04498",
+      "moment": "2026-05-25 12:32:00.000",
+      "old_uuid": "cd7e2d38-581c-11f1-0a80-169800311096",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04467",
+      "moment": "2026-05-21 13:05:00.000",
+      "old_uuid": "dbf7e852-550b-11f1-0a80-138e00242885",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04485",
+      "moment": "2026-05-25 11:15:00.000",
+      "old_uuid": "dc3000f0-5812-11f1-0a80-1b7c002f37f6",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04484",
+      "moment": "2026-05-25 10:59:00.000",
+      "old_uuid": "e892d7e4-580f-11f1-0a80-1ca5002d3387",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04494",
+      "moment": "2026-05-25 12:25:00.000",
+      "old_uuid": "f119b0ee-581b-11f1-0a80-107400301515",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04483",
+      "moment": "2026-05-25 09:48:00.000",
+      "old_uuid": "f21ff7dd-5805-11f1-0a80-08cf002a0977",
+      "new_uuid": null
+    },
+    {
+      "name": "ЗБ-04480",
+      "moment": "2026-05-22 16:40:00.000",
+      "old_uuid": "fd17184a-55e4-11f1-0a80-1d4c0010e99d",
+      "new_uuid": null
+    }
+  ],
+  "paired": 1619,
+  "ok": 1106,
+  "mismatches": [
+    {
+      "name": "ВА-02417",
+      "old_count": 15,
+      "new_count": 6,
+      "missing_pos": [
+        [
+          "ccd00ad8-5412-11f1-0a80-1945000eaf57",
+          700
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1500
+        ],
+        [
+          "c4f06102-5412-11f1-0a80-0d64000e3319",
+          700
+        ],
+        [
+          "c7a51fc0-5412-11f1-0a80-1d4b000e496f",
+          700
+        ],
+        [
+          "c9bf2878-5412-11f1-0a80-1071000eb032",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00421",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "03e9050a-541c-11f1-0a80-00080010e23b",
+          1
+        ],
+        [
+          "ef54da1b-541b-11f1-0a80-08cc0010308a",
+          1
+        ],
+        [
+          "f650d1a2-541b-11f1-0a80-19450010a841",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01885",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02489",
+      "old_count": 1,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "dc76542b-53b6-11f1-0a80-0fe700027756",
+          2
+        ]
+      ],
+      "extra_pos": [
+        [
+          "72771ebd-53b6-11f1-0a80-0fe700026255",
+          2
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00284",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00302",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02426",
+      "old_count": 1,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fddf8532-541b-11f1-0a80-00080010e145",
+          1500
+        ]
+      ],
+      "extra_pos": [
+        [
+          "fddf8532-541b-11f1-0a80-00080010e145",
+          1400
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01467",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1500
+        ],
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00373",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00123",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "90e56aab-53c7-11f1-0a80-11f100042a74",
+          2
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00410",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00329",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04442",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          5000
+        ],
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1800
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02458",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          3000
+        ],
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02384",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01969",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "feb92b92-541b-11f1-0a80-0d64001021a9",
+          450
+        ],
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00835",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00434",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "b3df910b-53c7-11f1-0a80-0d640004598f",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04407",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b4f1fc9e-53c7-11f1-0a80-08cc00043785",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02188",
+      "old_count": 10,
+      "new_count": 7,
+      "missing_pos": [
+        [
+          "b53edda1-53c7-11f1-0a80-0b2a0004789e",
+          100
+        ],
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          200
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01910",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          14500
+        ],
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02291",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00801",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c5428b1f-5412-11f1-0a80-0fe7000e8468",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00283",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          100
+        ],
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          100
+        ],
+        [
+          "b6835ef2-53c7-11f1-0a80-03950004a185",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02279",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          3500
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          6000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00324",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00108",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00092",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b76851f8-53c7-11f1-0a80-04f400048435",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00149",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9dd5ea51-53c7-11f1-0a80-194500048bb3",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00319",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f7dec5f9-541b-11f1-0a80-10710010e12b",
+          100
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          2000
+        ],
+        [
+          "f1aac6ed-541b-11f1-0a80-0fe700107e13",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02079",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "01109c22-541c-11f1-0a80-04f40010acba",
+          3
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02142",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          4000
+        ],
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01946",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "03641ac9-541c-11f1-0a80-0d640010238d",
+          1400
+        ],
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          500
+        ],
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02059",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cd8818b3-5412-11f1-0a80-064e000e960f",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00172",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02104",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00331",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00321",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          600
+        ],
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00788",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00122",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b76851f8-53c7-11f1-0a80-04f400048435",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00390",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          10
+        ],
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          10
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00111",
+      "old_count": 2,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f36d7417-53b5-11f1-0a80-08cc00024538",
+          1000
+        ],
+        [
+          "75cd5b9c-53b6-11f1-0a80-0fe7000264fb",
+          1000
+        ]
+      ],
+      "extra_pos": [
+        [
+          "73bf5195-53b6-11f1-0a80-0fe700026348",
+          1000
+        ],
+        [
+          "f3aec848-53b5-11f1-0a80-08cc0002455d",
+          1000
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00808",
+      "old_count": 6,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "bb5ab2fe-53c7-11f1-0a80-1d4b00045fe0",
+          2
+        ],
+        [
+          "bba6655b-53c7-11f1-0a80-107100045c96",
+          2
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00360",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00247",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "03e9050a-541c-11f1-0a80-00080010e23b",
+          1
+        ],
+        [
+          "f61b8718-541b-11f1-0a80-1adb00106710",
+          1
+        ],
+        [
+          "f8cc0c47-541b-11f1-0a80-08cc001033e6",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00303",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "eca913b3-541b-11f1-0a80-039500103ee9",
+          2500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02082",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00342",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01426",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          250
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00240",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00365",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00344",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00265",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02014",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          800
+        ],
+        [
+          "b53edda1-53c7-11f1-0a80-0b2a0004789e",
+          850
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02478",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "dc76542b-53b6-11f1-0a80-0fe700027756",
+          1
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          5000
+        ]
+      ],
+      "extra_pos": [
+        [
+          "72771ebd-53b6-11f1-0a80-0fe700026255",
+          1
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00234",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00372",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00154",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "90e56aab-53c7-11f1-0a80-11f100042a74",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00313",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00286",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00340",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02429",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          100
+        ],
+        [
+          "c67d734b-5412-11f1-0a80-0fe7000e848c",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00306",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00381",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00328",
+      "old_count": 6,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04421",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          300
+        ],
+        [
+          "b6835ef2-53c7-11f1-0a80-03950004a185",
+          300
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04366",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02376",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          10000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02148",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          100
+        ],
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00226",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c82cb15b-5412-11f1-0a80-04f4000e902d",
+          10
+        ],
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          5
+        ],
+        [
+          "c43f287b-5412-11f1-0a80-04f4000e8ecf",
+          5
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02068",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00408",
+      "old_count": 8,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "03e9050a-541c-11f1-0a80-00080010e23b",
+          1
+        ],
+        [
+          "c76ec4aa-5412-11f1-0a80-0395000e610d",
+          1
+        ],
+        [
+          "ef54da1b-541b-11f1-0a80-08cc0010308a",
+          1
+        ],
+        [
+          "ff3506eb-541b-11f1-0a80-0fe700108414",
+          1
+        ],
+        [
+          "c49b7b60-5412-11f1-0a80-064e000e940e",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00362",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          350
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04348",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          900
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00351",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00280",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00391",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "03e9050a-541c-11f1-0a80-00080010e23b",
+          1
+        ],
+        [
+          "ef54da1b-541b-11f1-0a80-08cc0010308a",
+          1
+        ],
+        [
+          "ff3506eb-541b-11f1-0a80-0fe700108414",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01893",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02164",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00115",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "96e9c827-53c7-11f1-0a80-11f100042ab2",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02427",
+      "old_count": 1,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fddf8532-541b-11f1-0a80-00080010e145",
+          1900
+        ]
+      ],
+      "extra_pos": [
+        [
+          "fddf8532-541b-11f1-0a80-00080010e145",
+          2000
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00370",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00381",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "033ab873-541c-11f1-0a80-11f100102388",
+          1
+        ],
+        [
+          "02830b74-541c-11f1-0a80-039500104739",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04400",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "02830b74-541c-11f1-0a80-039500104739",
+          5000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02435",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01949",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00314",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c5428b1f-5412-11f1-0a80-0fe7000e8468",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00413",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01936",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01413",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          50
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00376",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01478",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00271",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02025",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01853",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04398",
+      "old_count": 8,
+      "new_count": 5,
+      "missing_pos": [
+        [
+          "c25d2c07-53c7-11f1-0a80-1adb00046e7d",
+          300
+        ],
+        [
+          "c1641a77-53c7-11f1-0a80-064e00042f94",
+          300
+        ],
+        [
+          "c1e45a3e-53c7-11f1-0a80-04f4000484c3",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01375",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02134",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00128",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "a44a6dd0-53c7-11f1-0a80-08cc000436a7",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00218",
+      "old_count": 11,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "c3c7dab6-53c7-11f1-0a80-0d6400045ad7",
+          1
+        ],
+        [
+          "fc3a736b-541b-11f1-0a80-00080010e0f0",
+          1
+        ],
+        [
+          "f9d79efb-541b-11f1-0a80-0b2a0010aebc",
+          1
+        ],
+        [
+          "c41bd173-53c7-11f1-0a80-1adb00046ee2",
+          1
+        ],
+        [
+          "c5428b1f-5412-11f1-0a80-0fe7000e8468",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00379",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "01109c22-541c-11f1-0a80-04f40010acba",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02156",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00325",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01832",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00235",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00837",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01995",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02451",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          10000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00237",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00292",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00346",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01437",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01403",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f650d1a2-541b-11f1-0a80-19450010a841",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00438",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00261",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b53edda1-53c7-11f1-0a80-0b2a0004789e",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04351",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          10000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00097",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "93a0ab5b-53c7-11f1-0a80-11f100042a98",
+          500
+        ],
+        [
+          "941a1a46-53c7-11f1-0a80-0d64000457ac",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00089",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9aadeddb-53c7-11f1-0a80-146200041582",
+          7000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02035",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00868",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02107",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c67d734b-5412-11f1-0a80-0fe7000e848c",
+          1500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00313",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          800
+        ],
+        [
+          "b6835ef2-53c7-11f1-0a80-03950004a185",
+          800
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          800
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04408",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b53edda1-53c7-11f1-0a80-0b2a0004789e",
+          50
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01410",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00304",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00332",
+      "old_count": 6,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1500
+        ],
+        [
+          "f61b8718-541b-11f1-0a80-1adb00106710",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00278",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00263",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00283",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00395",
+      "old_count": 6,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02087",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00085",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "c6b1dc00-53c7-11f1-0a80-1adb00046f2d",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00418",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00415",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01973",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          1000
+        ],
+        [
+          "eca913b3-541b-11f1-0a80-039500103ee9",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01373",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00341",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01987",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          400
+        ],
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00354",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00230",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02399",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          300
+        ],
+        [
+          "ff5d5e0f-541b-11f1-0a80-1adb00106b28",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01975",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00145",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          50
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00424",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1000
+        ],
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00336",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00869",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c6a76bcc-5412-11f1-0a80-1462000e1df7",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00352",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02379",
+      "old_count": 1,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c83d4b3b-53c7-11f1-0a80-00080004a03e",
+          29120
+        ]
+      ],
+      "extra_pos": [
+        [
+          "c83d4b3b-53c7-11f1-0a80-00080004a03e",
+          30000
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00414",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00428",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01979",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c91a266b-53c7-11f1-0a80-194500048dd4",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01424",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          500
+        ],
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00232",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f90e9c52-541b-11f1-0a80-04f40010aa00",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02127",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01520",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          2500
+        ],
+        [
+          "c6a76bcc-5412-11f1-0a80-1462000e1df7",
+          1500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01871",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00404",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "c474f1c9-53c7-11f1-0a80-1d4b000460ea",
+          1
+        ],
+        [
+          "ef54da1b-541b-11f1-0a80-08cc0010308a",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01396",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          500
+        ],
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          500
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00274",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02322",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          14000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02288",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          5000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01502",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fa0f1243-541b-11f1-0a80-1d4b00105452",
+          1036
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00401",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fa0f1243-541b-11f1-0a80-1d4b00105452",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00836",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00340",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00126",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01404",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04428",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04354",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          900
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00356",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00295",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00351",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00332",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00359",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04342",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b3df910b-53c7-11f1-0a80-0d640004598f",
+          67
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00296",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00297",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00371",
+      "old_count": 6,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00225",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "eca913b3-541b-11f1-0a80-039500103ee9",
+          1
+        ],
+        [
+          "cca56980-5412-11f1-0a80-0d64000e340e",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01514",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00142",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "90e56aab-53c7-11f1-0a80-11f100042a74",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00397",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00222",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02015",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02069",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          2100
+        ],
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1050
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02075",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          700
+        ],
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01856",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          10000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00355",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00321",
+      "old_count": 5,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          1
+        ],
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01418",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9050760-5412-11f1-0a80-0b2a000e5468",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00227",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00235",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f61b8718-541b-11f1-0a80-1adb00106710",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01445",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00358",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00422",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02377",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01863",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ],
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02027",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "01109c22-541c-11f1-0a80-04f40010acba",
+          2
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02433",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02395",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00430",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00330",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02294",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04374",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          900
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02447",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00287",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00400",
+      "old_count": 7,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "c43f287b-5412-11f1-0a80-04f4000e8ecf",
+          1
+        ],
+        [
+          "033ab873-541c-11f1-0a80-11f100102388",
+          1
+        ],
+        [
+          "ccfcfbbc-53c7-11f1-0a80-064e00043061",
+          1
+        ],
+        [
+          "ce8a5672-53c7-11f1-0a80-14620004188f",
+          1
+        ],
+        [
+          "c82cb15b-5412-11f1-0a80-04f4000e902d",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02310",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          100
+        ],
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00378",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00238",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00220",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00282",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00069",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "d1f927ce-53c7-11f1-0a80-00080004a0f4",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00318",
+      "old_count": 6,
+      "new_count": 5,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00285",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01872",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02484",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01914",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00792",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cd3163b2-5412-11f1-0a80-0395000e621c",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01930",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cd3163b2-5412-11f1-0a80-0395000e621c",
+          700
+        ],
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01917",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cd8818b3-5412-11f1-0a80-064e000e960f",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00266",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02333",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00249",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ],
+        [
+          "cd8818b3-5412-11f1-0a80-064e000e960f",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00228",
+      "old_count": 7,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2000
+        ],
+        [
+          "ff3506eb-541b-11f1-0a80-0fe700108414",
+          700
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          500
+        ],
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          700
+        ],
+        [
+          "cca56980-5412-11f1-0a80-0d64000e340e",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01982",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01861",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9b4cbbfb-60ac-11f0-0a80-08500083590a",
+          5000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": [
+        "9b4cbbfb-60ac-11f0-0a80-08500083590a"
+      ]
+    },
+    {
+      "name": "ФР-00146",
+      "old_count": 2,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "dc76542b-53b6-11f1-0a80-0fe700027756",
+          1
+        ]
+      ],
+      "extra_pos": [
+        [
+          "72771ebd-53b6-11f1-0a80-0fe700026255",
+          1
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02136",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00243",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f61b8718-541b-11f1-0a80-1adb00106710",
+          1
+        ],
+        [
+          "c474f1c9-53c7-11f1-0a80-1d4b000460ea",
+          1
+        ],
+        [
+          "c5428b1f-5412-11f1-0a80-0fe7000e8468",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00327",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01415",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          100
+        ],
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          150
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          150
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02037",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00336",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00843",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "f81e65aa-0d64-11f1-0a80-08ec001b8657",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": [
+        "f81e65aa-0d64-11f1-0a80-08ec001b8657"
+      ]
+    },
+    {
+      "name": "ЗБ-00337",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02042",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00402",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00367",
+      "old_count": 14,
+      "new_count": 8,
+      "missing_pos": [
+        [
+          "b3df910b-53c7-11f1-0a80-0d640004598f",
+          30
+        ],
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          10
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          20
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          10
+        ],
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          10
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00421",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00221",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00872",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00388",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f9d79efb-541b-11f1-0a80-0b2a0010aebc",
+          1
+        ],
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00394",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02398",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00254",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04339",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00863",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          50
+        ],
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          100
+        ],
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          250
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02266",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "a44a6dd0-53c7-11f1-0a80-08cc000436a7",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00277",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ],
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02365",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01848",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          5000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00219",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04328",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00255",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01955",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "a02f853c-53c7-11f1-0a80-107100045a67",
+          2190
+        ],
+        [
+          "9fdf9dff-53c7-11f1-0a80-1d4b00045d91",
+          1375
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01912",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          10000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00393",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02315",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00790",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cd8818b3-5412-11f1-0a80-064e000e960f",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00867",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9a5073c6-53c7-11f1-0a80-0d64000457e9",
+          150
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02063",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1050
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01430",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00317",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00358",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00341",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          4000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04353",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00160",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9aadeddb-53c7-11f1-0a80-146200041582",
+          7000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00144",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "90e56aab-53c7-11f1-0a80-11f100042a74",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01510",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04333",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f1aac6ed-541b-11f1-0a80-0fe700107e13",
+          50
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01456",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04410",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c6a76bcc-5412-11f1-0a80-1462000e1df7",
+          1000
+        ],
+        [
+          "c49b7b60-5412-11f1-0a80-064e000e940e",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00369",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f8cc0c47-541b-11f1-0a80-08cc001033e6",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02002",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          7000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00143",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "90e56aab-53c7-11f1-0a80-11f100042a74",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00064",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ab634fcd-53c7-11f1-0a80-0fe7000499b1",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02371",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          6000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00372",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1500
+        ],
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00398",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f61b8718-541b-11f1-0a80-1adb00106710",
+          1
+        ],
+        [
+          "ef54da1b-541b-11f1-0a80-08cc0010308a",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00841",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00383",
+      "old_count": 7,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00397",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02283",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c6a76bcc-5412-11f1-0a80-1462000e1df7",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00853",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01874",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00832",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          100
+        ],
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00412",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "b3df910b-53c7-11f1-0a80-0d640004598f",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00361",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          710
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02316",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00356",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01475",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "a4ae2819-53c7-11f1-0a80-1adb00046be2",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02263",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          59
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00819",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cd3163b2-5412-11f1-0a80-0395000e621c",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00353",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          1150
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00402",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04361",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00112",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01380",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01402",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00365",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00422",
+      "old_count": 10,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "c3c7dab6-53c7-11f1-0a80-0d6400045ad7",
+          1
+        ],
+        [
+          "c9f61629-5412-11f1-0a80-1071000eb047",
+          1
+        ],
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          1
+        ],
+        [
+          "c4c5ba14-5412-11f1-0a80-1adb000e9060",
+          1
+        ],
+        [
+          "cd3163b2-5412-11f1-0a80-0395000e621c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01427",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00307",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00224",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00298",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00279",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04443",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00333",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02292",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00389",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00323",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00308",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01499",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00300",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00374",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02060",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "033ab873-541c-11f1-0a80-11f100102388",
+          400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00361",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02146",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          10000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02487",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          2000
+        ],
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ],
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          1800
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00168",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02321",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00249",
+      "old_count": 6,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00250",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01526",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          3000
+        ],
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          1000
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02065",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "fdb286f1-541b-11f1-0a80-146200104069",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02141",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cc7d4fda-5412-11f1-0a80-08cc000e2f4c",
+          250
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00349",
+      "old_count": 6,
+      "new_count": 5,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04319",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          200
+        ],
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ],
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00230",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00229",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00141",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "90e56aab-53c7-11f1-0a80-11f100042a74",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02441",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          5000
+        ],
+        [
+          "ed76bca9-541b-11f1-0a80-0d64001018be",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00303",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00299",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00335",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01407",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "02830b74-541c-11f1-0a80-039500104739",
+          2400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00248",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00293",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04393",
+      "old_count": 8,
+      "new_count": 5,
+      "missing_pos": [
+        [
+          "c25d2c07-53c7-11f1-0a80-1adb00046e7d",
+          300
+        ],
+        [
+          "c1641a77-53c7-11f1-0a80-064e00042f94",
+          300
+        ],
+        [
+          "c1e45a3e-53c7-11f1-0a80-04f4000484c3",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02302",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00849",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01397",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          750
+        ],
+        [
+          "c43f287b-5412-11f1-0a80-04f4000e8ecf",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00839",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01980",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04406",
+      "old_count": 7,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "ff3506eb-541b-11f1-0a80-0fe700108414",
+          1
+        ],
+        [
+          "033ab873-541c-11f1-0a80-11f100102388",
+          1
+        ],
+        [
+          "ef54da1b-541b-11f1-0a80-08cc0010308a",
+          1
+        ],
+        [
+          "02830b74-541c-11f1-0a80-039500104739",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00393",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01868",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04371",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00334",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02092",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f7252476-541b-11f1-0a80-0fe700108117",
+          325
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00364",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b3df910b-53c7-11f1-0a80-0d640004598f",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02452",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "dc76542b-53b6-11f1-0a80-0fe700027756",
+          2
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00148",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          150
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00331",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02004",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          15000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04409",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00403",
+      "old_count": 6,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "f7dec5f9-541b-11f1-0a80-10710010e12b",
+          1
+        ],
+        [
+          "ef21e2db-541b-11f1-0a80-0b2a0010aa37",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04343",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00360",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ],
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00267",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02086",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00239",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ],
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02225",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          2500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04413",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00273",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b53edda1-53c7-11f1-0a80-0b2a0004789e",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00264",
+      "old_count": 6,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02115",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          5000
+        ],
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          2100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00300",
+      "old_count": 5,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          1
+        ],
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00232",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00290",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02032",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9050760-5412-11f1-0a80-0b2a000e5468",
+          10000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00864",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c6a76bcc-5412-11f1-0a80-1462000e1df7",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01529",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00366",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02311",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01878",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00155",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "a548e96b-53c7-11f1-0a80-04f4000482bf",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02287",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02400",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00294",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00162",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "a548e96b-53c7-11f1-0a80-04f4000482bf",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00353",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04402",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          100
+        ],
+        [
+          "b53edda1-53c7-11f1-0a80-0b2a0004789e",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04372",
+      "old_count": 1,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          225
+        ]
+      ],
+      "extra_pos": [
+        [
+          "c43f287b-5412-11f1-0a80-04f4000e8ecf",
+          5550
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04429",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cd3163b2-5412-11f1-0a80-0395000e621c",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01372",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02485",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01860",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04341",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f36d7417-53b5-11f1-0a80-08cc00024538",
+          400
+        ],
+        [
+          "b3df910b-53c7-11f1-0a80-0d640004598f",
+          600
+        ]
+      ],
+      "extra_pos": [
+        [
+          "f36d7417-53b5-11f1-0a80-08cc00024538",
+          300
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01412",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00338",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00301",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00275",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00311",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01948",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          500
+        ],
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02073",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          350
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01994",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          2000
+        ],
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00347",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02372",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01903",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          5000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00315",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00848",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          500
+        ],
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02031",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c67d734b-5412-11f1-0a80-0fe7000e848c",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00312",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00231",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "b6cef296-53c7-11f1-0a80-11f100042cf9",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01523",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c43f287b-5412-11f1-0a80-04f4000e8ecf",
+          750
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02160",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c56aff5c-5412-11f1-0a80-08cc000e2e7d",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00236",
+      "old_count": 7,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02208",
+      "old_count": 5,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ],
+        [
+          "c9f61629-5412-11f1-0a80-1071000eb047",
+          350
+        ],
+        [
+          "ca28c539-5412-11f1-0a80-1adb000e91b6",
+          350
+        ],
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00237",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04431",
+      "old_count": 1,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "751f4d8f-53b6-11f1-0a80-0fe700026456",
+          60000
+        ]
+      ],
+      "extra_pos": [
+        [
+          "751f4d8f-53b6-11f1-0a80-0fe700026456",
+          30000
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00846",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          250
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00275",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00396",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "033ab873-541c-11f1-0a80-11f100102388",
+          1
+        ],
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01911",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          500
+        ],
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00317",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "f90e9c52-541b-11f1-0a80-04f40010aa00",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00262",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02415",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "abb06711-53c7-11f1-0a80-194500048c62",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02289",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "e657d5a4-57be-11f1-0a80-19490064c84d",
+          4915
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01977",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          8400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00333",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00102",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          150
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02468",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c6a76bcc-5412-11f1-0a80-1462000e1df7",
+          500
+        ],
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ],
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          900
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00339",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00375",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00234",
+      "old_count": 6,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "03e9050a-541c-11f1-0a80-00080010e23b",
+          1
+        ],
+        [
+          "fc3a736b-541b-11f1-0a80-00080010e0f0",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04360",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          900
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02154",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00370",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          150
+        ],
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          550
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01515",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ],
+        [
+          "f386d5a9-53b5-11f1-0a80-08cc00024545",
+          1550
+        ]
+      ],
+      "extra_pos": [
+        [
+          "c3c55221-5412-11f1-0a80-1945000ead86",
+          1400
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00114",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "aae157e9-53c7-11f1-0a80-0efe00046aed",
+          9350
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04326",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01481",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00082",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "994fdf5b-5686-11f0-0a80-147900256839",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": [
+        "994fdf5b-5686-11f0-0a80-147900256839"
+      ]
+    },
+    {
+      "name": "ЗБ-00256",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00374",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00337",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00876",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ],
+        [
+          "f1aac6ed-541b-11f1-0a80-0fe700107e13",
+          347
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02337",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          900
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00348",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01895",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          5000
+        ],
+        [
+          "cd8818b3-5412-11f1-0a80-064e000e960f",
+          2000
+        ],
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02062",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01414",
+      "old_count": 5,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b53edda1-53c7-11f1-0a80-0b2a0004789e",
+          100
+        ],
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          100
+        ],
+        [
+          "b8b3f065-53c7-11f1-0a80-08cc0004380b",
+          100
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          150
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00153",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "90e56aab-53c7-11f1-0a80-11f100042a74",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01501",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "fa0f1243-541b-11f1-0a80-1d4b00105452",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01970",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ef54da1b-541b-11f1-0a80-08cc0010308a",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00139",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9a5073c6-53c7-11f1-0a80-0d64000457e9",
+          150
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01855",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00840",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00416",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c67d734b-5412-11f1-0a80-0fe7000e848c",
+          5
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00854",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01960",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7d5b024-fd06-11f0-0a80-030a000d084f",
+          4990
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": [
+        "c7d5b024-fd06-11f0-0a80-030a000d084f"
+      ]
+    },
+    {
+      "name": "ПЕ-00305",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "9152315e-53c7-11f1-0a80-0d6400045795",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01379",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01884",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00368",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "0415235b-541c-11f1-0a80-03950010479d",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00244",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00238",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f8cc0c47-541b-11f1-0a80-08cc001033e6",
+          1
+        ],
+        [
+          "eca913b3-541b-11f1-0a80-039500103ee9",
+          1
+        ],
+        [
+          "ef54da1b-541b-11f1-0a80-08cc0010308a",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02076",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          82
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02224",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "03641ac9-541c-11f1-0a80-0d640010238d",
+          150
+        ],
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00260",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00293",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01399",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00330",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "c474f1c9-53c7-11f1-0a80-1d4b000460ea",
+          1
+        ],
+        [
+          "c5428b1f-5412-11f1-0a80-0fe7000e8468",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00301",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01378",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fa0f1243-541b-11f1-0a80-1d4b00105452",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00302",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c9633671-5412-11f1-0a80-04f4000e905a",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00345",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02047",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00248",
+      "old_count": 7,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          1
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "9e5cd4c2-53c7-11f1-0a80-000800049d01",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00242",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00322",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02443",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "8dfe6aed-47bc-11f1-0a80-143b0018438b",
+          5000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": [
+        "8dfe6aed-47bc-11f1-0a80-143b0018438b"
+      ]
+    },
+    {
+      "name": "ВА-02094",
+      "old_count": 3,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "033ab873-541c-11f1-0a80-11f100102388",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТУ-00818",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "033ab873-541c-11f1-0a80-11f100102388",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-04403",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00368",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02436",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fd868b68-541b-11f1-0a80-0fe7001083c5",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00296",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ],
+        [
+          "aef00ca2-53c7-11f1-0a80-11f100042c49",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02030",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "be9f05cd-53c7-11f1-0a80-11f100042dbe",
+          3000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02192",
+      "old_count": 4,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          20000
+        ],
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1800
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02314",
+      "old_count": 1,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "e6aaa369-57be-11f1-0a80-18150063a48c",
+          4900
+        ]
+      ],
+      "extra_pos": [
+        [
+          "6a3be8ce-53b6-11f1-0a80-0fe700025bd4",
+          5000
+        ]
+      ],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02488",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          2000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01370",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c6129267-53c7-11f1-0a80-0b2a00047a64",
+          7500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00289",
+      "old_count": 5,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00387",
+      "old_count": 6,
+      "new_count": 4,
+      "missing_pos": [
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          1
+        ],
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00135",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "9d88e8df-53c7-11f1-0a80-0d640004580e",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00233",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          150
+        ],
+        [
+          "eca913b3-541b-11f1-0a80-039500103ee9",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01913",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ca28c539-5412-11f1-0a80-1adb000e91b6",
+          500
+        ],
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00364",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01902",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c8003e63-5412-11f1-0a80-1adb000e90f4",
+          1236
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00325",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b086b38b-53c7-11f1-0a80-11f100042c78",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02045",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00261",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          150
+        ],
+        [
+          "af65c9ef-53c7-11f1-0a80-194500048c9c",
+          200
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00080",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cb58a1f4-fddd-11f0-0a80-0150001be84e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": [
+        "cb58a1f4-fddd-11f0-0a80-0150001be84e"
+      ]
+    },
+    {
+      "name": "ТУ-00794",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "fe8ed359-541b-11f1-0a80-10710010e422",
+          300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ТА-01438",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00170",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          500
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02243",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "b2501952-53c7-11f1-0a80-0efe00046b31",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00373",
+      "old_count": 3,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "01109c22-541c-11f1-0a80-04f40010acba",
+          3
+        ],
+        [
+          "c7390654-5412-11f1-0a80-0b2a000e542c",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00288",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02041",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "c51a84f5-5412-11f1-0a80-11f1000e12b8",
+          700
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01965",
+      "old_count": 4,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ff5d5e0f-541b-11f1-0a80-1adb00106b28",
+          100
+        ],
+        [
+          "0415235b-541c-11f1-0a80-03950010479d",
+          100
+        ],
+        [
+          "f7dec5f9-541b-11f1-0a80-10710010e12b",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02090",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ЗБ-00432",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f0bec901-541b-11f1-0a80-0b2a0010aae7",
+          1400
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01867",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "f08176dc-541b-11f1-0a80-11f1001019f2",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00078",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "cd8f78fc-f85d-11f0-0a80-1cfc000ff0bc",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": [
+        "cd8f78fc-f85d-11f0-0a80-1cfc000ff0bc"
+      ]
+    },
+    {
+      "name": "ВА-02246",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "013b577b-541c-11f1-0a80-0d64001022a9",
+          1000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-01947",
+      "old_count": 2,
+      "new_count": 1,
+      "missing_pos": [
+        [
+          "ec770406-541b-11f1-0a80-10710010db9e",
+          10000
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ПЕ-00257",
+      "old_count": 4,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "b6cef296-53c7-11f1-0a80-11f100042cf9",
+          1
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ВА-02036",
+      "old_count": 5,
+      "new_count": 3,
+      "missing_pos": [
+        [
+          "afed4820-53c7-11f1-0a80-03950004a096",
+          100
+        ],
+        [
+          "92e67aea-53c7-11f1-0a80-1adb000466c8",
+          100
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    },
+    {
+      "name": "ФР-00165",
+      "old_count": 5,
+      "new_count": 2,
+      "missing_pos": [
+        [
+          "8ed450e6-53c7-11f1-0a80-11f100042a56",
+          1300
+        ],
+        [
+          "8f2389a3-53c7-11f1-0a80-11f100042a62",
+          1300
+        ],
+        [
+          "8fa4abbd-53c7-11f1-0a80-0d640004577a",
+          1300
+        ]
+      ],
+      "extra_pos": [],
+      "unmapped": []
+    }
+  ]
+}
