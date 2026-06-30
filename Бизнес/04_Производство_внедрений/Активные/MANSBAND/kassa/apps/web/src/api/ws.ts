@@ -10,9 +10,11 @@ export function connectWs(onEvent: Handler): () => void {
   let closed = false;
   let retry = 0;
 
+  const rawWs = import.meta.env.VITE_WS_BASE as string | undefined;
   const wsBase =
-    (import.meta.env.VITE_WS_BASE as string | undefined) ??
-    `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+    rawWs && rawWs.trim()
+      ? rawWs.trim()
+      : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
   function open() {
     if (closed) return;

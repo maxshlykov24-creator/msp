@@ -1,7 +1,8 @@
 // Тонкий типизированный HTTP-клиент к бэкенду кассы.
 // База берётся из VITE_API_BASE (по умолчанию относительный /api — проксируется nginx).
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
+const rawApi = import.meta.env.VITE_API_BASE as string | undefined;
+const API_BASE = rawApi && rawApi.trim() ? rawApi.trim() : "/api";
 
 const TOKEN_KEY = "kassa_token";
 

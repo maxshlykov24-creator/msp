@@ -13,8 +13,8 @@ COPY packages/shared packages/shared
 COPY apps/web apps/web
 
 ARG VITE_API_BASE=/api
-ARG VITE_WS_BASE=
 ENV VITE_API_BASE=${VITE_API_BASE}
+# VITE_WS_BASE не задаём — в коде дефолт wss://host/ws (пустая строка ломала WS)
 RUN pnpm --filter @kassa/shared build \
   && pnpm --filter @kassa/web build
 
