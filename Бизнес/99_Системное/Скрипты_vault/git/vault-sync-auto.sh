@@ -1,5 +1,5 @@
 #!/bin/sh
-# Авто-синхронизация vault → GitHub (pull → commit → push).
+# Авто-синхронизация vault → GitHub (commit → pull --rebase → push).
 # Запуск: launchd каждые 2 мин или вручную из корня vault.
 # Пауза: touch .vault-sync-off в корне vault
 
@@ -10,14 +10,38 @@ cd "$root"
 
 log_dir="$root/Бизнес/99_Системное/Скрипты_vault/git/logs"
 log_file="$log_dir/vault-sync.log"
+lock_dir="$log_dir/.sync.lock"
 conflict_file="$root/.vault-sync-conflict"
 off_file="$root/.vault-sync-off"
+had_conflict=0
 
 mkdir -p "$log_dir"
 
 log() {
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$log_file"
 }
+
+notify() {
+  title=$1
+  message=$2
+  osascript -e "display notification \"$message\" with title \"$title\"" 2>/dev/null || true
+}
+
+mark_conflict() {
+  log "CONFLICT: git pull --rebase failed — resolve manually, then rm .vault-sync-conflict"
+  touch "$conflict_file"
+  notify "Vault sync" "Конфликт — нужен ручной разбор. См. vault-sync.log"
+}
+
+release_lock() {
+  rmdir "$lock_dir" 2>/dev/null || true
+}
+
+if ! mkdir "$lock_dir" 2>/dev/null; then
+  log "skip: locked"
+  exit 0
+fi
+trap release_lock EXIT
 
 if [ -f "$off_file" ]; then
   log "skip: .vault-sync-off"
@@ -39,18 +63,9 @@ if [ "$branch" != "main" ]; then
   exit 0
 fi
 
-git fetch origin 2>>"$log_file" || {
-  log "error: git fetch failed"
-  exit 1
-}
-
-if ! git pull --rebase --autostash origin main >>"$log_file" 2>&1; then
-  log "CONFLICT: git pull --rebase failed — resolve manually, then rm .vault-sync-conflict"
-  touch "$conflict_file"
-  exit 1
+if [ -f "$conflict_file" ]; then
+  had_conflict=1
 fi
-
-rm -f "$conflict_file"
 
 # Debounce перед commit: не трогать файлы, изменённые < 90 сек назад
 if find . -type f \
@@ -62,26 +77,34 @@ if find . -type f \
   exit 0
 fi
 
-if git diff --quiet && git diff --cached --quiet; then
-  # nothing to commit after pull
-  if [ -n "$(git status --porcelain)" ]; then
-    git add -A
-  fi
-fi
+git fetch origin 2>>"$log_file" || {
+  log "error: git fetch failed"
+  exit 1
+}
 
 if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git status --porcelain)" ]; then
   git add -A
   if git diff --cached --quiet; then
     log "ok: nothing to commit"
-    exit 0
+  else
+    msg="vault sync $(date '+%Y-%m-%d %H:%M')"
+    git commit -m "$msg" >>"$log_file" 2>&1
+    log "commit: $msg"
   fi
-  msg="vault sync $(date '+%Y-%m-%d %H:%M')"
-  git commit -m "$msg" >>"$log_file" 2>&1
-  log "commit: $msg"
 fi
+
+if ! git pull --rebase origin main >>"$log_file" 2>&1; then
+  mark_conflict
+  exit 1
+fi
+
+rm -f "$conflict_file"
 
 if git push origin main >>"$log_file" 2>&1; then
   log "push: ok"
+  if [ "$had_conflict" -eq 1 ]; then
+    notify "Vault sync" "Синхронизация восстановлена"
+  fi
 else
   log "error: git push failed"
   exit 1

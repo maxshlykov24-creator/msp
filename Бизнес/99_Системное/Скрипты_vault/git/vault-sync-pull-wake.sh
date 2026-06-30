@@ -9,10 +9,23 @@ cd "$root"
 
 log_dir="$root/Бизнес/99_Системное/Скрипты_vault/git/logs"
 log_file="$log_dir/vault-sync.log"
+conflict_file="$root/.vault-sync-conflict"
 mkdir -p "$log_dir"
 
 log() {
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$log_file"
+}
+
+notify() {
+  title=$1
+  message=$2
+  osascript -e "display notification \"$message\" with title \"$title\"" 2>/dev/null || true
+}
+
+mark_conflict() {
+  log "wake-pull: CONFLICT"
+  touch "$conflict_file"
+  notify "Vault sync" "Конфликт при wake-pull — нужен ручной разбор. См. vault-sync.log"
 }
 
 if [ -f "$root/.vault-sync-off" ]; then
@@ -28,11 +41,10 @@ branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
 
 git fetch origin 2>/dev/null || exit 0
 
-if git pull --rebase --autostash origin main >>"$log_file" 2>&1; then
+if git pull --rebase origin main >>"$log_file" 2>&1; then
   log "wake-pull: ok"
-  rm -f "$root/.vault-sync-conflict"
+  rm -f "$conflict_file"
 else
-  log "wake-pull: CONFLICT"
-  touch "$root/.vault-sync-conflict"
+  mark_conflict
   exit 1
 fi

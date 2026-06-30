@@ -20,7 +20,7 @@ bash Бизнес/99_Системное/Скрипты_vault/git/install-launcha
 
 | Файл | Назначение |
 |------|------------|
-| `vault-sync-auto.sh` | pull → commit → push (каждые 2 мин) |
+| `vault-sync-auto.sh` | commit → pull --rebase → push (каждые 2 мин) |
 | `vault-sync-pull-wake.sh` | pull при включении Mac |
 | `vault-sync-pull.sh` | ручной pull (второй Mac) |
 | `install-git-hooks.sh` | post-commit → push в main |
@@ -35,7 +35,7 @@ touch /Users/max/Desktop/CURSOR/.vault-sync-off
 # Снять паузу
 rm /Users/max/Desktop/CURSOR/.vault-sync-off
 
-# Конфликт rebase — файл появится автоматически
+# Конфликт rebase — файл + macOS-уведомление появятся автоматически
 # Решить вручную, затем:
 rm /Users/max/Desktop/CURSOR/.vault-sync-conflict
 git add -A && git rebase --continue  # если нужно
@@ -70,10 +70,13 @@ git push origin main
 
 1. [cursor.com/dashboard](https://cursor.com/dashboard) → **Integrations → GitHub** → доступ к `msp`
 2. [cursor.com/agents](https://cursor.com/agents) → **Cloud** → repo `msp`, branch **`main`**
-3. **Важно:** push в **`main`**, не в `cursor/...`:
-   - при создании агента: base branch = `main`
+3. **Обязательно:** push в **`main`**, не в `cursor/...`:
+   - Cursor Dashboard → Cloud Agents → **push directly to branch** / base branch = `main`
    - в API: `workOnCurrentBranch: true`
    - не полагаться на PR без merge
+   - stale-ветки `cursor/*` периодически вливать в `main` и удалять (иначе Mac не подтянет правки)
+
+**Признак успеха:** свежий коммит на GitHub в ветке **`main`**, без новых `cursor/...` на origin.
 
 **Готовность push (перед закрытием вкладки):**
 
@@ -116,8 +119,10 @@ git reset --hard origin/main
 | 6 | Wake pull | правка на GitHub → включить Mac → файл на диске |
 | 7 | Cloud → main | Finished + ветка main, не cursor/... |
 | 8 | `.cursor/rules/` на GitHub | файл `.cursor/rules/сео.mdc` виден на github.com |
-| 9 | Конфликт | `.vault-sync-conflict` при failed rebase, без silent overwrite |
+| 9 | Конфликт | `.vault-sync-conflict` + macOS-уведомление при failed rebase |
 | 10 | Пауза | `.vault-sync-off` останавливает auto-sync |
+| 11 | Lock | параллельные прогоны не дают `index.lock` (skip: locked в логе) |
+| 12 | Порядок sync | commit → pull --rebase → push (без ложных CONFLICT на dirty tree) |
 
 ---
 
