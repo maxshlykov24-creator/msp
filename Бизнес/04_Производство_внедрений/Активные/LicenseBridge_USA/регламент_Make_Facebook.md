@@ -9,7 +9,7 @@
 3. Facebook: Connection **FB Feeder A**, Page **License Bridge USA**, Form = нужная форма, **Limit = 1**
 4. Contact: Full name + Phone из Facebook; Created/Updated/Responsible = **Pavel**
 5. Lead: Name **FB NY** / **FB CA**; Pipeline + **Новая заявка**; Contacts = Contact ID; utm_source **fb**, utm_campaign **ny** / **ca**
-6. Имя сценария: `FBFeederA (LBUSA) [название формы]`
+6. Имя сценария: `FB Feeder A (L B USA название формы)`
 7. **Run once** → проверка в Kommo → ON + **Every 15 minutes**
 
 ## Критично

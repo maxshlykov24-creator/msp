@@ -253,7 +253,7 @@ code {
 
   <figure class="figure">
     <img src="assets/01_scenario_overview.png" alt="Схема сценария Make: три модуля">
-    <figcaption>Готовый сценарий: Facebook Watch Leads → Create a Contact → Create a Lead. Пример названия — <code>FB Feeder A (30.06.26 NY leads form with …)</code>.</figcaption>
+    <figcaption>Готовый сценарий: Facebook Watch Leads → Create a Contact → Create a Lead. Пример названия — <code>FB Feeder A (L B USA 30-06-2026 NY leads form with …)</code>.</figcaption>
   </figure>
 
   <div class="callout callout-tip">
@@ -315,11 +315,6 @@ code {
   <div class="callout callout-warn">
     <strong>Limit = 1 — обязательно</strong>
     Kommo лучше принимает заявки по одной. Если Limit больше 1, возможны ошибки при обработке нескольких лидов одним запросом.
-  </div>
-
-  <div class="callout callout-tip">
-    <strong>Лимит API</strong>
-    Модуль может получить до 3200 последних лидов по форме. Для более старых — используй модуль List Leads.
   </div>
 </section>
 
@@ -415,13 +410,18 @@ code {
 
   <div class="callout callout-tip">
     <strong>Шаблон</strong>
-    <code>FBFeederA (LBUSA) [название формы]</code><br><br>
-    <strong>FBFeederA</strong> — аккаунт Павла (Feeder A)<br>
-    <strong>(LBUSA)</strong> — страница License Bridge USA<br>
-    <strong>[название формы]</strong> — точное имя формы из Facebook
+    <code>FB Feeder A (L B USA название формы)</code>
   </div>
 
-  <p>Пример из видео: <code>FB Feeder A (30.06.26 NY leads form with …)</code></p>
+  <table class="fields">
+    <thead><tr><th>Часть</th><th>Значение</th></tr></thead>
+    <tbody>
+      <tr><td><strong>FB Feeder A</strong></td><td>Аккаунт Павла (Feeder A), через который подключена форма</td></tr>
+      <tr><td><strong>(L B USA …)</strong></td><td>В скобках: код страницы <code>L B USA</code> (License Bridge USA) и далее — точное название формы из Facebook</td></tr>
+    </tbody>
+  </table>
+
+  <p>Пример: <code>FB Feeder A (L B USA 30-06-2026 NY leads form with …)</code></p>
 </section>
 
 <section id="s7">
