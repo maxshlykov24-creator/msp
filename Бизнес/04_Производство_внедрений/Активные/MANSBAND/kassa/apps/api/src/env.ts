@@ -42,8 +42,13 @@ const schema = z.object({
   // Публичный адрес (для регистрации вебхуков)
   PUBLIC_BASE_URL: z.string().url().default("https://mansband-kassa.ru"),
 
-  // Период фонового рефреша каталога/справочников, мин
+  // Период фонового рефреша каталога/справочников, мин (устар. — оставлен для совместимости).
   SYNC_INTERVAL_MIN: z.coerce.number().default(30),
+
+  // Период синка остатков, мин (частый лёгкий синк).
+  STOCK_SYNC_INTERVAL_MIN: z.coerce.number().default(10),
+  // Час суточного синка номенклатуры (0–23) по локальному времени контейнера (TZ).
+  CATALOG_SYNC_HOUR: z.coerce.number().int().min(0).max(23).default(7),
 });
 
 export type Env = z.infer<typeof schema>;

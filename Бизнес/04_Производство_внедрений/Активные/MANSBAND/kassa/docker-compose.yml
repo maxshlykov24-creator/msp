@@ -26,6 +26,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-kassa}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-kassa}
       HOST: 0.0.0.0
       PORT: 3001
+      TZ: ${TZ:-Europe/Moscow} # локальное время для суточного синка номенклатуры (07:00)
     depends_on:
       db:
         condition: service_healthy

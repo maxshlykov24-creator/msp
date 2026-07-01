@@ -209,7 +209,9 @@ export async function getWarehouseForStore(store: string): Promise<ms.MsRow | nu
 
 // ── Синк каталога + остатков ────────────────────────────────────────
 
-export async function syncCatalog(): Promise<{ products: number; stock: number }> {
+// Синк номенклатуры (без остатков). Тяжёлый (десятки тысяч позиций) — запускается
+// раз в день по расписанию, т.к. состав каталога меняется редко.
+export async function syncProducts(): Promise<{ products: number }> {
   let productCount = 0;
   for await (const batch of ms.iterateAssortment()) {
     for (const row of batch) {
@@ -247,7 +249,12 @@ export async function syncCatalog(): Promise<{ products: number; stock: number }
       productCount++;
     }
   }
+  return { products: productCount };
+}
 
+// Синк остатков (без номенклатуры). Лёгкий (только два физических склада шоурумов) —
+// запускается часто (каждые ~10 мин), чтобы остатки в поиске были свежими.
+export async function syncStock(): Promise<{ stock: number }> {
   let stockCount = 0;
   // Остатки считаем только по реальным физическим складам шоурумов (см. STORE_TO_WAREHOUSE) —
   // не по всем 7+ складам МойСклад (Ателье, В пути, Полупарки и т.п.), которые кассе не нужны.
@@ -279,7 +286,13 @@ export async function syncCatalog(): Promise<{ products: number; stock: number }
       stockCount++;
     }
   }
+  return { stock: stockCount };
+}
 
+// Обёртка: номенклатура + остатки. Для первичного bootstrap и ручного /admin/sync.
+export async function syncCatalog(): Promise<{ products: number; stock: number }> {
+  const { products: productCount } = await syncProducts();
+  const { stock: stockCount } = await syncStock();
   return { products: productCount, stock: stockCount };
 }
 
