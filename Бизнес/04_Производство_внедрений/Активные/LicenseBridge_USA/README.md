@@ -19,6 +19,9 @@ LicenseBridge USA продаёт консалтинговые услуги по 
 | [`КОНТЕКСТ.md`](КОНТЕКСТ.md) | Выжимка по клиенту, стеку, болям и целевому образу |
 | [`ПРЕДЛОЖЕНИЕ.md`](ПРЕДЛОЖЕНИЕ.md) | Клиентское предложение по этапам |
 | [`presentation/index.html`](presentation/index.html) | HTML-презентация в стиле MS Product |
+| [`инструкция/Make_Facebook_Kommo.html`](инструкция/Make_Facebook_Kommo.html) | HTML-инструкция: новая форма Facebook → Kommo (Make) |
+| [`регламент_Make_Facebook.md`](регламент_Make_Facebook.md) | Краткий чеклист по Make / Facebook |
+| [`MAKE_СБОРКА_FACEBOOK.md`](MAKE_СБОРКА_FACEBOOK.md) | Техническая сборка (webhook + фидеры) |
 | [`../../../../00_Inbox/2026-06-05_License_Bridge_транскрипт.md`](../../../../00_Inbox/2026-06-05_License_Bridge_транскрипт.md) | Исходный транскрипт созвона |
 
 ---

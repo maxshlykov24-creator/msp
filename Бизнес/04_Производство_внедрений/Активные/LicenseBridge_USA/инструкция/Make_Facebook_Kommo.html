@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Инструкция — Make: Facebook → Kommo · License Bridge USA</title>
+<style>
+:root {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --text: #1c1c1e;
+  --text-2: #6b6b70;
+  --border: #e8e6e2;
+  --accent: #1877f2;
+  --accent-light: #eef5fe;
+  --kommo: #1a2b4a;
+  --highlight: #d97706;
+  --highlight-bg: #fffbeb;
+  --highlight-border: #fbbf24;
+  --warn: #9a3412;
+  --warn-bg: #fff7ed;
+  --warn-border: #fdba74;
+  --tip: #2a6645;
+  --tip-bg: #f0f8f2;
+  --tip-border: #90c8a8;
+  --nav-w: 250px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+  font-size: 15px;
+}
+.layout { display: flex; min-height: 100vh; }
+
+nav {
+  width: var(--nav-w);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 14px 24px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.nav-brand {
+  margin-bottom: 22px;
+  padding: 20px 12px 18px;
+  background: linear-gradient(160deg, #fafaf9 0%, #f3f1ec 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  text-align: center;
+}
+.nav-brand-logo img { height: 56px; width: auto; margin-bottom: 10px; }
+.nav-brand-ms {
+  font-size: 10px; font-weight: 800; letter-spacing: .16em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #6d28d9 0%, #2563eb 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.nav-brand-divider { height: 1px; background: var(--border); margin: 12px 8px; }
+.nav-brand-client {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: #a8a29e;
+}
+.nav-brand-title { font-size: 14px; font-weight: 700; margin-top: 4px; }
+nav ul { list-style: none; }
+nav li { margin-bottom: 2px; }
+nav a {
+  display: block; padding: 7px 10px; border-radius: 8px;
+  font-size: 13px; color: var(--text-2); text-decoration: none;
+}
+nav a:hover { background: var(--bg); color: var(--text); }
+nav .nav-group {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: #bbb;
+  margin: 16px 0 6px 10px;
+}
+
+main { flex: 1; padding: 40px 48px 80px; max-width: 860px; }
+.hero {
+  margin-bottom: 48px; padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+  display: grid; grid-template-columns: 1fr auto; gap: 28px;
+}
+.hero h1 { font-size: 30px; font-weight: 700; letter-spacing: -.03em; margin-bottom: 10px; }
+.hero-lead { font-size: 16px; color: var(--text-2); max-width: 580px; }
+.hero-mark img { height: 72px; width: auto; }
+
+section { margin-bottom: 56px; scroll-margin-top: 24px; }
+section h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+section .task-label { font-size: 13px; color: var(--accent); font-weight: 600; margin-bottom: 12px; }
+section > p { color: var(--text-2); margin-bottom: 16px; }
+
+.steps { margin: 20px 0; }
+.step { display: flex; gap: 14px; margin-bottom: 14px; align-items: flex-start; }
+.step-num {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.step-body { flex: 1; }
+.step-body strong { color: var(--text); }
+
+.callout {
+  border-radius: 10px; padding: 14px 16px; font-size: 14px;
+  margin: 16px 0; line-height: 1.5;
+}
+.callout-tip { background: var(--tip-bg); border: 1px solid var(--tip-border); border-left: 3px solid var(--tip); }
+.callout-warn { background: var(--warn-bg); border: 1px solid var(--warn-border); border-left: 3px solid var(--warn); }
+.callout strong { display: block; margin-bottom: 4px; }
+
+.figure {
+  margin: 24px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(28,28,30,.06);
+}
+.figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.figure figcaption {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text-2);
+  border-top: 1px solid var(--border);
+  background: #fafaf9;
+}
+
+.flow-diagram {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.flow-node {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  min-width: 120px;
+}
+.flow-fb { background: #eef5fe; color: #1877f2; border: 1px solid #b6d4fe; }
+.flow-kommo { background: #eef1f6; color: var(--kommo); border: 1px solid #c5cdd9; }
+.flow-arrow { color: #aaa; font-size: 18px; }
+
+table.fields {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 16px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+table.fields th, table.fields td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+table.fields th { background: #fafaf9; font-weight: 600; }
+table.fields tr:last-child td { border-bottom: none; }
+code {
+  background: #f0eeea;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .layout { flex-direction: column; }
+  nav { width: 100%; height: auto; position: relative; }
+  main { padding: 24px 20px 60px; }
+  .hero { grid-template-columns: 1fr; }
+}
+@media print {
+  nav { display: none; }
+  main { max-width: 100%; padding: 0; }
+  section { page-break-inside: avoid; }
+  .figure { box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav>
+  <div class="nav-brand">
+    <div class="nav-brand-logo">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+    </div>
+    <div class="nav-brand-ms">MS Product</div>
+    <div class="nav-brand-divider"></div>
+    <div class="nav-brand-client">License Bridge USA</div>
+    <div class="nav-brand-title">Make · Facebook → Kommo</div>
+  </div>
+  <ul>
+    <li class="nav-group">Обзор</li>
+    <li><a href="#s0">Как устроено</a></li>
+    <li><a href="#s1">Новый сценарий</a></li>
+    <li class="nav-group">Модули</li>
+    <li><a href="#s2">Facebook Watch Leads</a></li>
+    <li><a href="#s3">Create a Contact</a></li>
+    <li><a href="#s4">Create a Lead</a></li>
+    <li class="nav-group">Запуск</li>
+    <li><a href="#s5">Тест и расписание</a></li>
+    <li><a href="#s6">Именование</a></li>
+    <li><a href="#s7">Типовые проблемы</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<div class="hero">
+  <div>
+    <h1>Новая форма Facebook в Kommo</h1>
+    <p class="hero-lead">Пошаговая инструкция: как добавить сценарий в Make, чтобы заявки с формы Facebook Lead Ads автоматически создавали контакт и сделку в Kommo.</p>
+  </div>
+  <div class="hero-mark">
+    <img src="assets/logo-ms-transparent.png" alt="">
+  </div>
+</div>
+
+<section id="s0">
+  <h2>Как устроена система</h2>
+  <p class="task-label">Один сценарий = одна форма Facebook</p>
+  <p>Каждый сценарий в Make состоит из <strong>трёх модулей</strong>. Заявка проходит по цепочке слева направо: Facebook отдаёт лид → Kommo создаёт контакт → Kommo создаёт сделку и привязывает её к контакту.</p>
+
+  <div class="flow-diagram">
+    <div class="flow-node flow-fb">Facebook Lead Ads<br><small>Watch Leads</small></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node flow-kommo">Kommo<br><small>Create a Contact</small></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node flow-kommo">Kommo<br><small>Create a Lead</small></div>
+  </div>
+
+  <figure class="figure">
+    <img src="assets/01_scenario_overview.png" alt="Схема сценария Make: три модуля">
+    <figcaption>Готовый сценарий: Facebook Watch Leads → Create a Contact → Create a Lead. Пример названия — <code>FB Feeder A (30.06.26 NY leads form with …)</code>.</figcaption>
+  </figure>
+
+  <div class="callout callout-tip">
+    <strong>Аккаунты Facebook</strong>
+    Сейчас используется один подключённый аккаунт — <strong>FB Feeder A (Paul Khopin)</strong>. Аккаунт B (Александр) не используется: оба были привязаны к одной странице <em>License Bridge USA</em>.
+  </div>
+</section>
+
+<section id="s1">
+  <h2>Шаг 1. Создать сценарий</h2>
+  <p class="task-label">Make → Scenarios</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">Открой <strong>Make</strong> → раздел <strong>Scenarios</strong>.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">Нажми <strong>Create a new scenario</strong>.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">Добавь три модуля по порядку (подробнее в следующих разделах):
+        <ol style="margin-top:8px;padding-left:20px;color:var(--text-2)">
+          <li>Facebook Lead Ads → <strong>Watch Leads</strong></li>
+          <li>Kommo → <strong>Create a Contact</strong></li>
+          <li>Kommo → <strong>Create a Lead</strong></li>
+        </ol>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">Сразу задай понятное имя сценарию — см. раздел <a href="#s6">«Именование»</a>.</div>
+    </div>
+  </div>
+</section>
+
+<section id="s2">
+  <h2>Шаг 2. Facebook Lead Ads — Watch Leads</h2>
+  <p class="task-label">Первый модуль — триггер</p>
+  <p>Этот модуль следит за новыми заявками с выбранной формы Facebook и передаёт их дальше по цепочке.</p>
+
+  <table class="fields">
+    <thead><tr><th>Поле</th><th>Значение</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Connection</strong></td><td><code>FB Feeder A (Paul Khopin)</code></td></tr>
+      <tr><td><strong>Page</strong></td><td><code>License Bridge USA</code></td></tr>
+      <tr><td><strong>Form</strong></td><td>Конкретная форма, которую подключаешь (например <code>30-06-2026 NY leads form with &amp; From …</code>)</td></tr>
+      <tr><td><strong>Limit</strong></td><td><code>1</code> — обязательно</td></tr>
+    </tbody>
+  </table>
+
+  <figure class="figure">
+    <img src="assets/02_facebook_watch_leads.png" alt="Настройки модуля Facebook Lead Ads Watch Leads">
+    <figcaption>Connection, Page, Form и Limit = 1. Map-переключатели выключены — значения выбираются из списка.</figcaption>
+  </figure>
+
+  <div class="callout callout-warn">
+    <strong>Limit = 1 — обязательно</strong>
+    Kommo лучше принимает заявки по одной. Если Limit больше 1, возможны ошибки при обработке нескольких лидов одним запросом.
+  </div>
+
+  <div class="callout callout-tip">
+    <strong>Лимит API</strong>
+    Модуль может получить до 3200 последних лидов по форме. Для более старых — используй модуль List Leads.
+  </div>
+</section>
+
+<section id="s3">
+  <h2>Шаг 3. Kommo — Create a Contact</h2>
+  <p class="task-label">Второй модуль — создание контакта</p>
+  <p>По каждой заявке создаётся контакт в Kommo. Данные берутся из блока Facebook Lead Ads.</p>
+
+  <table class="fields">
+    <thead><tr><th>Поле</th><th>Значение</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Connection</strong></td><td><code>My Kommo connection (licensebridgeusa…)</code></td></tr>
+      <tr><td><strong>Full Name</strong></td><td>Из Facebook: <code>1. Field data: Full name</code></td></tr>
+      <tr><td><strong>Responsible User ID</strong></td><td><code>Pavel</code></td></tr>
+      <tr><td><strong>Created by</strong></td><td><code>Pavel</code></td></tr>
+      <tr><td><strong>Updated by</strong></td><td><code>Pavel</code></td></tr>
+      <tr><td><strong>Custom Fields → Phone</strong></td><td>Key: <code>WORK</code> · Value: <code>1. Field data: Phone number</code></td></tr>
+    </tbody>
+  </table>
+
+  <figure class="figure">
+    <img src="assets/03_create_contact.png" alt="Настройки Kommo Create a Contact">
+    <figcaption>Full Name и Phone — из Facebook Lead Ads. Created by / Updated by / Responsible — Pavel.</figcaption>
+  </figure>
+
+  <div class="callout callout-tip">
+    <strong>Зачем везде Pavel</strong>
+    Kommo потом будет менять ответственного по сделкам, привязанным к этому пользователю. Поэтому Created by, Updated by и Responsible User ID должны совпадать.
+  </div>
+</section>
+
+<section id="s4">
+  <h2>Шаг 4. Kommo — Create a Lead</h2>
+  <p class="task-label">Третий модуль — создание сделки</p>
+  <p>Сделка создаётся на этапе «Новая заявка» и связывается с контактом из предыдущего шага.</p>
+
+  <table class="fields">
+    <thead><tr><th>Поле</th><th>Значение</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Lead Name</strong></td><td><code>FB NY</code> или <code>FB CA</code> — в зависимости от региона формы</td></tr>
+      <tr><td><strong>Pipeline ID</strong></td><td><code>Pipeline</code></td></tr>
+      <tr><td><strong>Status</strong></td><td><code>Новая заявка</code></td></tr>
+      <tr><td><strong>Created by</strong></td><td><code>Pavel</code></td></tr>
+      <tr><td><strong>Updated by</strong></td><td><code>Pavel</code></td></tr>
+      <tr><td><strong>Responsible User ID</strong></td><td><code>Pavel</code></td></tr>
+      <tr><td><strong>Contacts</strong></td><td>Map ON → <code>3. Contact ID</code> (из Create a Contact)</td></tr>
+      <tr><td><strong>Custom Fields</strong></td><td><code>Custom Fields as a Collection</code></td></tr>
+      <tr><td><strong>utm_source</strong></td><td><code>fb</code></td></tr>
+      <tr><td><strong>utm_campaign</strong></td><td><code>ny</code> или <code>ca</code> — по региону формы</td></tr>
+    </tbody>
+  </table>
+
+  <figure class="figure">
+    <img src="assets/04_create_lead.png" alt="Настройки Kommo Create a Lead">
+    <figcaption>Lead Name, Pipeline, Status, ответственный Pavel. Contacts — Contact ID из шага Create a Contact (Map включён).</figcaption>
+  </figure>
+
+  <figure class="figure">
+    <img src="assets/05_utm_fields.png" alt="UTM поля в Custom Fields">
+    <figcaption>Дополнительные поля: utm_source = fb, utm_campaign = ny (или ca для Калифорнии). Остальные UTM можно добавить по необходимости.</figcaption>
+  </figure>
+</section>
+
+<section id="s5">
+  <h2>Шаг 5. Тест и включение расписания</h2>
+  <p class="task-label">Run once → Every 15 minutes</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">Нажми <strong>Run once</strong> — сценарий выполнится один раз вручную.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">Проверь в <strong>History</strong>, что все три модуля зелёные, и в Kommo появились контакт + сделка.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">Если всё успешно — включи переключатель сценария и задай расписание <strong>Every 15 minutes</strong>.</div>
+    </div>
+  </div>
+
+  <figure class="figure">
+    <img src="assets/06_run_once_schedule.png" alt="Кнопка Run once и расписание Every 15 minutes">
+    <figcaption>Сначала Run once для теста. После успешного прогона — включи сценарий и интервал Every 15 minutes.</figcaption>
+  </figure>
+</section>
+
+<section id="s6">
+  <h2>Именование сценария</h2>
+  <p class="task-label">Чтобы не путать формы</p>
+  <p>Название должно сразу показывать: через какой аккаунт подключено, какая страница и какая форма.</p>
+
+  <div class="callout callout-tip">
+    <strong>Шаблон</strong>
+    <code>FBFeederA (LBUSA) [название формы]</code><br><br>
+    <strong>FBFeederA</strong> — аккаунт Павла (Feeder A)<br>
+    <strong>(LBUSA)</strong> — страница License Bridge USA<br>
+    <strong>[название формы]</strong> — точное имя формы из Facebook
+  </div>
+
+  <p>Пример из видео: <code>FB Feeder A (30.06.26 NY leads form with …)</code></p>
+</section>
+
+<section id="s7">
+  <h2>Типовые проблемы</h2>
+
+  <table class="fields">
+    <thead><tr><th>Симптом</th><th>Что проверить</th></tr></thead>
+    <tbody>
+      <tr><td>Красный модуль Facebook</td><td>Страница не выбрана в Business Integrations → Make. Connection = FB Feeder A.</td></tr>
+      <tr><td>Ошибка при нескольких лидах</td><td>Limit в Watch Leads должен быть <code>1</code>.</td></tr>
+      <tr><td>Сделка без контакта</td><td>В Create a Lead поле Contacts → Map ON → Contact ID из шага 3.</td></tr>
+      <tr><td>Неверный регион в UTM</td><td>utm_campaign: <code>ny</code> для Нью-Йорка, <code>ca</code> для Калифорнии.</td></tr>
+      <tr><td>Сценарий не запускается</td><td>После теста включи переключатель ON и расписание Every 15 minutes.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+</div>
+</body>
+</html>
