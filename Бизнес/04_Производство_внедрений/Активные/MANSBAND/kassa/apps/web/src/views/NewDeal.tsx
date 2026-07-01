@@ -18,30 +18,30 @@ import { DefectForm } from "./forms/DefectForm";
 import { RefundForm } from "./forms/RefundForm";
 import { ExchangeForm } from "./forms/ExchangeForm";
 
-const KINDS: Record<FunnelType, { kind: DealKind; icon: typeof ShoppingBag; live?: boolean }[]> = {
+const KINDS: Record<FunnelType, { kind: DealKind; icon: typeof ShoppingBag }[]> = {
   offline: [
-    { kind: "sale", icon: ShoppingBag, live: true },
-    { kind: "company", icon: Building2, live: true },
-    { kind: "cert_plastic", icon: Ticket, live: true },
-    { kind: "rental", icon: Shirt, live: true },
-    { kind: "deferred", icon: Clock, live: true },
-    { kind: "promise", icon: HandHeart, live: true },
-    { kind: "no_sliv", icon: XCircle, live: true },
-    { kind: "sliv", icon: Send, live: true },
+    { kind: "sale", icon: ShoppingBag },
+    { kind: "company", icon: Building2 },
+    { kind: "cert_plastic", icon: Ticket },
+    { kind: "rental", icon: Shirt },
+    { kind: "deferred", icon: Clock },
+    { kind: "promise", icon: HandHeart },
+    { kind: "no_sliv", icon: XCircle },
+    { kind: "sliv", icon: Send },
   ],
   online: [
-    { kind: "cert_digital", icon: Mail, live: true },
-    { kind: "delivery", icon: Truck, live: true },
+    { kind: "cert_digital", icon: Mail },
+    { kind: "delivery", icon: Truck },
   ],
   defects: [
-    { kind: "defect", icon: AlertTriangle, live: true },
-    { kind: "drycleaning", icon: Droplets, live: true },
-    { kind: "resew", icon: Scissors, live: true },
-    { kind: "wrong_size", icon: Replace, live: true },
+    { kind: "defect", icon: AlertTriangle },
+    { kind: "drycleaning", icon: Droplets },
+    { kind: "resew", icon: Scissors },
+    { kind: "wrong_size", icon: Replace },
   ],
   return: [
-    { kind: "refund", icon: Undo2, live: true },
-    { kind: "exchange", icon: RefreshCw, live: true },
+    { kind: "refund", icon: Undo2 },
+    { kind: "exchange", icon: RefreshCw },
   ],
 };
 
@@ -84,15 +84,12 @@ export function NewDeal({ onClose, initialKind }: { onClose: () => void; initial
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {KINDS[funnel].map(({ kind: k, icon: Icon, live }) => (
+        {KINDS[funnel].map(({ kind: k, icon: Icon }) => (
           <button
             key={k}
             onClick={() => setKind(k)}
             className="card p-5 text-left hover:border-gold/50 hover:shadow-glow transition group relative"
           >
-            {live && (
-              <span className="absolute top-3 right-3 chip bg-white/12 text-white">demo</span>
-            )}
             <div className="w-11 h-11 rounded-xl bg-ink-800 group-hover:bg-gold/15 grid place-items-center mb-3 transition">
               <Icon size={22} className="text-gold" />
             </div>
