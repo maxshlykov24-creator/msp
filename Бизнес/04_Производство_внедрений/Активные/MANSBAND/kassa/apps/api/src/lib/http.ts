@@ -50,6 +50,7 @@ export interface HttpClientOptions {
   headers: Record<string, string>;
   rps?: number;
   maxRetries?: number;
+  timeoutMs?: number;
 }
 
 export class HttpError extends Error {
@@ -67,10 +68,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class HttpClient {
   private readonly limiter: RateLimiter;
   private readonly maxRetries: number;
+  private readonly timeoutMs: number;
 
   constructor(private readonly opts: HttpClientOptions) {
     this.limiter = new RateLimiter({ rps: opts.rps ?? 5 });
     this.maxRetries = opts.maxRetries ?? 4;
+    // Без явного таймаута зависший запрос (например, слишком «тяжёлый» отчёт
+    // на стороне внешнего API) блокирует bootstrap/операцию навсегда — фейлимся
+    // быстро и явно вместо бесконечного ожидания.
+    this.timeoutMs = opts.timeoutMs ?? 30_000;
   }
 
   async request<T>(
@@ -84,11 +90,30 @@ export class HttpClient {
 
     while (true) {
       await this.limiter.acquire();
-      const res = await fetch(url, {
-        method,
-        headers: { ...this.opts.headers, ...extraHeaders },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method,
+          headers: { ...this.opts.headers, ...extraHeaders },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // Ретраим таймаут/сетевую ошибку только для GET — это безопасно повторить.
+        // Для POST/PUT/PATCH не знаем, дошёл ли запрос до сервера (мог создать
+        // документ/лид и просто не успеть отдать ответ) — повтор рискует задвоить
+        // данные, поэтому сразу пробрасываем ошибку вызывающему коду.
+        if (method === "GET" && attempt < this.maxRetries) {
+          attempt++;
+          await sleep(Math.min(2 ** attempt * 500, 8000));
+          continue;
+        }
+        throw new HttpError(0, `${method} ${url} → таймаут/сеть: ${(err as Error).message}`, null);
+      } finally {
+        clearTimeout(timer);
+      }
 
       if (res.status === 429 || res.status >= 500) {
         if (attempt < this.maxRetries) {

@@ -194,8 +194,9 @@ export async function getMsRef(kind: string, key: string): Promise<ms.MsRow | nu
   return (rows[0]?.payload as ms.MsRow | undefined) ?? null;
 }
 
-// Склад по шоуруму: маппинг из shared → имя склада → meta из ms_refs.
-// Если точное имя не найдено (например, Пятницкая = «На Новокузнецкой») — пробуем по подстроке.
+// Склад по шоуруму: маппинг из shared (STORE_TO_WAREHOUSE) → имя склада → meta из ms_refs.
+// Если по какой-то причине точное имя не найдено — пробуем по подстроке (защита от
+// переименования склада в МойСклад без обновления константы).
 export async function getWarehouseForStore(store: string): Promise<ms.MsRow | null> {
   const whName = STORE_TO_WAREHOUSE[store as keyof typeof STORE_TO_WAREHOUSE];
   if (!whName) return null;
@@ -248,7 +249,14 @@ export async function syncCatalog(): Promise<{ products: number; stock: number }
   }
 
   let stockCount = 0;
-  const stockRows = await ms.getStockByStore();
+  // Остатки считаем только по реальным физическим складам шоурумов (см. STORE_TO_WAREHOUSE) —
+  // не по всем 7+ складам МойСклад (Ателье, В пути, Полупарки и т.п.), которые кассе не нужны.
+  const warehouseHrefs: string[] = [];
+  for (const wh of new Set(Object.values(STORE_TO_WAREHOUSE).filter((v): v is string => !!v))) {
+    const store = await getMsRef("store", wh);
+    if (store) warehouseHrefs.push(store.meta.href);
+  }
+  const stockRows = warehouseHrefs.length ? await ms.getStockByStore(warehouseHrefs) : [];
   for (const sr of stockRows) {
     const assortmentId = extractIdFromHref(sr.meta?.href);
     if (!assortmentId) continue;
