@@ -1,11 +1,12 @@
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { ledger } from "../db/schema.js";
+import { ledger, stock } from "../db/schema.js";
 import * as amo from "../clients/amo.js";
 import * as ms from "../clients/ms.js";
 import * as deals from "./deals.js";
 import { attachPhotos } from "./files.js";
 import { resolveAssortment } from "./catalog.js";
-import { getMsRef, getWarehouseForStore, getStatusId } from "./bootstrap.js";
+import { getMsRef, getWarehouseForStore, getStatusId, extractIdFromHref } from "./bootstrap.js";
 import { buildLeadCustomFields, ensureLeadCompany, paymentStatusLabel } from "./amoMapping.js";
 import { withIdempotency } from "../lib/idempotency.js";
 import { toKopecks } from "../lib/money.js";
@@ -127,10 +128,13 @@ async function fulfillMoysklad(deal: Deal, photos: PhotoInput[], who: string): P
 
   // Позиции из каталога (только то, что есть в МойСклад).
   const positions: ms.SalePosition[] = [];
+  const stockDecrements: { productMsId: string; qty: number }[] = [];
   for (const item of dealItemsToPositions(deal)) {
     const a = await resolveAssortment(item.productId);
     if (!a) continue; // услуга/неизвестный товар — пропускаем в складских позициях
     positions.push({ assortmentHref: a.href, assortmentType: a.type, quantity: item.qty, price: item.price });
+    const productMsId = extractIdFromHref(a.href);
+    if (productMsId) stockDecrements.push({ productMsId, qty: item.qty });
   }
 
   // Заказ → отгрузка
@@ -154,6 +158,11 @@ async function fulfillMoysklad(deal: Deal, photos: PhotoInput[], who: string): P
   });
   deal.msDemandId = demand.id;
 
+  // Оптимистичное списание локального зеркала остатков (МС — источник истины,
+  // сверка МС → сервер раз в STOCK_SYNC_INTERVAL_MIN подменит любой дрейф).
+  // Не роняем продажу при ошибке — остаток самолечится при ближайшей сверке.
+  await decrementLocalStock(warehouse.meta.href, stockDecrements).catch(() => {});
+
   // Платежи по способам
   await processPayments(deal, org.meta, agent.meta, order.meta, who);
 
@@ -164,6 +173,24 @@ async function fulfillMoysklad(deal: Deal, photos: PhotoInput[], who: string): P
     const entityType = target === "order" ? "customerorder" : "demand";
     const entityId = target === "order" ? order.id : demand.id;
     await attachPhotos(entityType, entityId, group);
+  }
+}
+
+// Локальный декремент остатков по складу продажи. GREATEST(...,0) — не уходим в минус
+// в зеркале; если строки ещё нет (товар не синкнулся) — UPDATE ничего не тронет,
+// ближайшая сверка с МойСклад подтянет корректное значение.
+async function decrementLocalStock(
+  warehouseHref: string,
+  items: { productMsId: string; qty: number }[]
+): Promise<void> {
+  const warehouseMsId = extractIdFromHref(warehouseHref);
+  if (!warehouseMsId || items.length === 0) return;
+  for (const it of items) {
+    if (it.qty <= 0) continue;
+    await db
+      .update(stock)
+      .set({ quantity: sql`GREATEST(${stock.quantity} - ${it.qty}, 0)`, updatedAt: new Date() })
+      .where(and(eq(stock.productMsId, it.productMsId), eq(stock.warehouseMsId, warehouseMsId)));
   }
 }
 
