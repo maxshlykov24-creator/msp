@@ -17,7 +17,7 @@ from typing import Any
 
 # Локальный ключ models_cache → актуальный id в OpenRouter (если переименовали)
 CURSOR_ID_ALIASES: dict[str, str] = {
-    # В выдаче OpenRouter (2026-05): google/gemini-3-pro отсутствует, превью — 3.1
+    # Legacy slug в старых заметках → актуальный id OpenRouter
     "google/gemini-3-pro": "google/gemini-3.1-pro-preview",
 }
 

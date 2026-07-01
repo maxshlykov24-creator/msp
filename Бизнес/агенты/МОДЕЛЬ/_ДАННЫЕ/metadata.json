@@ -1,6 +1,6 @@
 {
-  "version": "1.2",
-  "last_updated": "2026-04-08T23:28:00",
+  "version": "1.3",
+  "last_updated": "2026-07-01T08:45:00",
   "statistics": {
     "total_recommendations": 0,
     "fast_track_coverage": 0,
@@ -17,10 +17,10 @@
   "usage_statistics": {
     "написать пост": {
       "Gemini 2.5 Flash": 0,
-      "Claude 3.5 Sonnet": 0
+      "Claude Sonnet 5": 0
     },
     "отладить код": {
-      "Claude 3.5 Sonnet": 0,
+      "Claude Sonnet 5": 0,
       "DeepSeek V3.2": 0
     }
   },
@@ -31,24 +31,26 @@
     "плохо": 0
   },
   "update_dates": {
-    "lmsys": "2026-04-08",
-    "openrouter": "2026-04-08",
-    "digital_applied": "2026-04-08",
-    "anthropic_api_docs": "2026-04-08",
-    "google_ai_pricing": "2026-04-08",
-    "openai_pricing": "2026-04-08",
+    "lmsys": "2026-07-01",
+    "openrouter": "2026-07-01",
+    "digital_applied": "2026-06-30",
+    "anthropic_api_docs": "2026-06-30",
+    "google_ai_pricing": "2026-07-01",
+    "openai_pricing": "2026-07-01",
+    "cursor_picker": "2026-07-01",
     "llm_stats": null,
     "vellum": null,
     "nebuly": null
   },
   "model_popularity": {
-    "Claude 3.7 Sonnet": 0,
+    "Claude Sonnet 5": 0,
     "Claude Sonnet 4.6": 0,
-    "Claude 3.5 Sonnet": 0,
+    "Claude Opus 4.8": 0,
+    "Composer 2": 0,
     "Gemini 2.5 Flash": 0,
     "DeepSeek V3.2": 0,
     "Gemini 2.5 Pro": 0,
-    "Claude Opus 4.5": 0,
+    "GPT-5.5": 0,
     "Claude Opus 4.6": 0,
     "GPT-4o": 0
   },
@@ -62,6 +64,11 @@
     "blitz": 0,
     "standard": 0,
     "full": 0
-  }
+  },
+  "changelog": [
+    {
+      "date": "2026-07-01",
+      "note": "Полное обновление: Sonnet 5 (system card 30.06), Opus 4.8, GPT-5.x, Gemini 3.1, OpenRouter fetch, fast_track → Sonnet 5"
+    }
+  ]
 }
-

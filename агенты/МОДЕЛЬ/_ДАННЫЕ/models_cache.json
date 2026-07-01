@@ -1,85 +1,153 @@
 {
-  "version": "1.2",
-  "last_updated": "2026-04-25T12:00:00",
-  "refresh_note": "Снимок 25.04.2026. Актуальные цены под маршрут OpenRouter: см. openrouter_cache.json (fetch: scripts/fetch_openrouter.py). ELO/SWE здесь. Opus 4.5/4.6: $5/$25 за 1M; Sonnet 4.6: $3/$15, 1M ctx. Курсор может наценивать.",
+  "version": "1.3",
+  "last_updated": "2026-07-01T08:45:00",
+  "refresh_note": "Снимок 01.07.2026. Бенчмарки Sonnet 5 / Opus 4.8 — Anthropic System Card (30.06.2026). Цены API: openrouter_cache.json (fetch 01.07.2026); Sonnet 5 promo $2/$10 до 31.08.2026, далее $3/$15. ELO — оценка по LMSYS-тренду + system card; сверь lmarena.ai при критичном выборе. Cursor может наценивать; в UI Sonnet 5 — high effort, контекст ~300k.",
   "sources": {
-    "lmsys": {"date": "2026-04-25", "status": "sync_with_rule_mdc"},
-    "openrouter": {"date": "2026-04-25", "status": "sync_with_rule_mdc"},
-    "digital_applied": {"date": "2026-04-25", "status": "sync_with_rule_mdc"},
-    "anthropic_api_docs": {"date": "2026-04-25", "status": "sync_with_rule_mdc"},
-    "google_ai_pricing": {"date": "2026-04-25", "status": "sync_with_rule_mdc"},
-    "openai_pricing": {"date": "2026-04-25", "status": "sync_with_rule_mdc"}
+    "lmsys": {
+      "date": "2026-07-01",
+      "status": "estimated_from_trends"
+    },
+    "openrouter": {
+      "date": "2026-07-01",
+      "status": "fetch_openrouter.py"
+    },
+    "digital_applied": {
+      "date": "2026-06-30",
+      "status": "sonnet5_launch_review"
+    },
+    "anthropic_api_docs": {
+      "date": "2026-06-30",
+      "status": "sonnet5_system_card"
+    },
+    "google_ai_pricing": {
+      "date": "2026-07-01",
+      "status": "openrouter_sync"
+    },
+    "openai_pricing": {
+      "date": "2026-07-01",
+      "status": "openrouter_sync"
+    },
+    "cursor_picker": {
+      "date": "2026-07-01",
+      "status": "cursor_picker_cursor_ui.md"
+    }
   },
   "models": {
-    "claude-3-7-sonnet": {
-      "name": "Claude 3.7 Sonnet",
+    "claude-sonnet-5": {
+      "name": "Claude Sonnet 5",
       "provider": "Anthropic",
-      "price_input": 3.00,
-      "price_output": 15.00,
-      "elo_rating": 1480,
-      "webdev_elo": 1510,
+      "price_input": 2.0,
+      "price_output": 10.0,
+      "promo_until": "2026-08-31",
+      "promo_price_input": 2.0,
+      "promo_price_output": 10.0,
+      "elo_rating": 1510,
+      "webdev_elo": 1545,
       "vision_elo": null,
-      "swe_bench": 82.0,
-      "context_window": 200000,
+      "swe_bench": 85.2,
+      "cursor_bench": 61.2,
+      "context_window": 1000000,
+      "cursor_context_ui": 300000,
       "available_in_cursor": true,
-      "cursor_id": "anthropic/claude-3.7-sonnet",
-      "features": ["code", "analysis", "reasoning", "extended_thinking"],
-      "strengths": ["Код и агентные сценарии", "API: $3/$15 за 1M", "В доках помечен как deprecated — для новых проектов смотри Sonnet 4.6"],
-      "use_cases": ["Сложный код", "Рефакторинг", "Задачи с пошаговым рассуждением"]
+      "cursor_id": "anthropic/claude-sonnet-5",
+      "cursor_brain_tier": "high",
+      "effort_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "features": [
+        "code",
+        "agents",
+        "tools",
+        "reasoning",
+        "long_context",
+        "adaptive_thinking"
+      ],
+      "strengths": [
+        "Дефолт Anthropic/Cursor для кода и агентов (релиз 30.06.2026)",
+        "SWE-bench Verified 85.2%, CursorBench 61.2% (vs 49% у 4.6)",
+        "Near-Opus agentic при цене Sonnet; effort-регулятор стоимости",
+        "Promo до 31.08.2026: $2/$10 за 1M (≈−33%)"
+      ],
+      "use_cases": [
+        "Daily driver в Cursor Agent",
+        "Мультишаговый код и рефакторинг",
+        "n8n / amoCRM / МойСклад интеграции",
+        "Browser/terminal agentic workflows"
+      ]
     },
     "claude-sonnet-4.6": {
       "name": "Claude Sonnet 4.6",
       "provider": "Anthropic",
-      "price_input": 3.00,
-      "price_output": 15.00,
+      "price_input": 3.0,
+      "price_output": 15.0,
       "elo_rating": 1495,
       "webdev_elo": 1530,
       "vision_elo": null,
       "swe_bench": 84.0,
+      "cursor_bench": 49.0,
       "context_window": 1000000,
       "available_in_cursor": true,
       "cursor_id": "anthropic/claude-sonnet-4.6",
-      "features": ["code", "analysis", "reasoning", "long_context"],
-      "strengths": ["Флагман баланса Anthropic", "1M контекст по API", "Те же $3/$15 что Sonnet 3.x"],
-      "use_cases": ["Продакшен-код", "Длинные репозитории", "Агентные сценарии"]
+      "cursor_brain_tier": "medium",
+      "features": [
+        "code",
+        "analysis",
+        "reasoning",
+        "long_context"
+      ],
+      "strengths": [
+        "Сильный баланс до Sonnet 5",
+        "1M контекст по API",
+        "Fallback если Sonnet 5 over-refuse"
+      ],
+      "use_cases": [
+        "Продакшен-код",
+        "Длинные репозитории",
+        "Стабильные регламенты"
+      ]
     },
-    "claude-3.5-sonnet": {
-      "name": "Claude 3.5 Sonnet",
+    "claude-opus-4.8": {
+      "name": "Claude Opus 4.8",
       "provider": "Anthropic",
-      "price_input": 3.00,
-      "price_output": 15.00,
-      "elo_rating": 1467,
-      "webdev_elo": 1500,
-      "vision_elo": null,
-      "swe_bench": 80.9,
-      "context_window": 200000,
+      "price_input": 5.0,
+      "price_output": 25.0,
+      "elo_rating": 1520,
+      "webdev_elo": 1540,
+      "vision_elo": 1315,
+      "swe_bench": 87.0,
+      "cursor_bench": 63.8,
+      "context_window": 1000000,
       "available_in_cursor": true,
-      "cursor_id": "anthropic/claude-3.5-sonnet",
-      "features": ["code", "analysis", "creative", "reasoning"],
-      "strengths": ["Лучший код", "WebDev", "Стабильность"],
-      "use_cases": ["Сложный код", "Веб-приложения", "Критичные задачи"]
-    },
-    "claude-opus-4.5": {
-      "name": "Claude Opus 4.5",
-      "provider": "Anthropic",
-      "price_input": 5.00,
-      "price_output": 25.00,
-      "elo_rating": 1467,
-      "webdev_elo": 1520,
-      "vision_elo": 1300,
-      "swe_bench": 80.9,
-      "context_window": 200000,
-      "available_in_cursor": true,
-      "cursor_id": "anthropic/claude-opus-4.5",
-      "features": ["code", "webdev", "vision", "reasoning"],
-      "strengths": ["WebDev лидер", "Выход $25/1M по API Anthropic (не $15)"],
-      "use_cases": ["Комплексные веб-приложения", "Критичный код"]
+      "cursor_id": "anthropic/claude-opus-4.8",
+      "cursor_brain_tier": "extra_high",
+      "features": [
+        "code",
+        "webdev",
+        "vision",
+        "reasoning",
+        "long_context",
+        "agents"
+      ],
+      "strengths": [
+        "Топ Anthropic для hardest tasks",
+        "CursorBench 63.8% — потолок качества в Cursor",
+        "$5/$25 за 1M, 1M контекст"
+      ],
+      "use_cases": [
+        "Архитектура и стратегия",
+        "Сложнейший код",
+        "Cyber/security с reduced guardrails"
+      ]
     },
     "claude-opus-4.6": {
       "name": "Claude Opus 4.6",
       "provider": "Anthropic",
-      "price_input": 5.00,
-      "price_output": 25.00,
+      "price_input": 5.0,
+      "price_output": 25.0,
       "elo_rating": 1500,
       "webdev_elo": 1535,
       "vision_elo": 1310,
@@ -87,95 +155,389 @@
       "context_window": 1000000,
       "available_in_cursor": true,
       "cursor_id": "anthropic/claude-opus-4.6",
-      "features": ["code", "webdev", "vision", "reasoning", "long_context"],
-      "strengths": ["Текущий топ Anthropic", "1M контекст", "$5/$25 за 1M"],
-      "use_cases": ["Сложнейший код", "Исследования", "Мультимодальность"]
+      "cursor_brain_tier": "extra_high",
+      "features": [
+        "code",
+        "webdev",
+        "vision",
+        "reasoning",
+        "long_context"
+      ],
+      "strengths": [
+        "Предыдущий топ Opus",
+        "1M контекст"
+      ],
+      "use_cases": [
+        "Сложный код",
+        "Мультимодальность",
+        "Когда 4.8 недоступен"
+      ]
+    },
+    "composer-2": {
+      "name": "Composer 2",
+      "provider": "Cursor",
+      "price_input": 0.0,
+      "price_output": 0.0,
+      "elo_rating": null,
+      "webdev_elo": null,
+      "vision_elo": null,
+      "swe_bench": null,
+      "context_window": 200000,
+      "available_in_cursor": true,
+      "cursor_id": "composer-2",
+      "cursor_brain_tier": "fast",
+      "features": [
+        "code",
+        "agents",
+        "fast"
+      ],
+      "strengths": [
+        "Нативный агент Cursor, tier Fast",
+        "Биллинг по подписке Cursor, не OpenRouter"
+      ],
+      "use_cases": [
+        "Быстрые правки",
+        "Итерации в IDE",
+        "Рутина без deep reasoning"
+      ]
+    },
+    "gpt-5.5": {
+      "name": "GPT-5.5",
+      "provider": "OpenAI",
+      "price_input": 5.0,
+      "price_output": 30.0,
+      "elo_rating": 1505,
+      "webdev_elo": 1525,
+      "vision_elo": null,
+      "swe_bench": 58.6,
+      "context_window": 1050000,
+      "available_in_cursor": true,
+      "cursor_id": "openai/gpt-5.5",
+      "cursor_brain_tier": "medium",
+      "features": [
+        "code",
+        "reasoning",
+        "long_context"
+      ],
+      "strengths": [
+        "Сильный конкурент Sonnet в agentic",
+        "1M+ контекст"
+      ],
+      "use_cases": [
+        "Альтернатива Claude для кода",
+        "Triple-run сравнение"
+      ]
+    },
+    "gpt-5.3-codex": {
+      "name": "Codex 5.3",
+      "provider": "OpenAI",
+      "price_input": 1.75,
+      "price_output": 14.0,
+      "elo_rating": 1485,
+      "webdev_elo": 1510,
+      "vision_elo": null,
+      "swe_bench": null,
+      "context_window": 400000,
+      "available_in_cursor": true,
+      "cursor_id": "openai/gpt-5.3-codex",
+      "cursor_brain_tier": "medium",
+      "features": [
+        "code",
+        "agents"
+      ],
+      "strengths": [
+        "Специализация на коде",
+        "Дешевле GPT-5.5"
+      ],
+      "use_cases": [
+        "Кодинг",
+        "Terminal/agent CLI задачи"
+      ]
+    },
+    "gpt-5.4-mini": {
+      "name": "GPT-5.4 Mini",
+      "provider": "OpenAI",
+      "price_input": 0.75,
+      "price_output": 4.5,
+      "elo_rating": 1430,
+      "context_window": 400000,
+      "available_in_cursor": true,
+      "cursor_id": "openai/gpt-5.4-mini",
+      "cursor_brain_tier": "medium",
+      "features": [
+        "cheap",
+        "fast",
+        "code"
+      ],
+      "strengths": [
+        "Баланс цена/скорость OpenAI",
+        "400k контекст"
+      ],
+      "use_cases": [
+        "Черновики кода",
+        "Средние задачи"
+      ]
+    },
+    "gemini-3.1-pro": {
+      "name": "Gemini 3.1 Pro (Preview)",
+      "provider": "Google",
+      "price_input": 2.0,
+      "price_output": 12.0,
+      "elo_rating": 1495,
+      "webdev_elo": 1495,
+      "vision_elo": 1310,
+      "context_window": 1048576,
+      "available_in_cursor": true,
+      "cursor_id": "google/gemini-3.1-pro-preview",
+      "cursor_brain_tier": "medium",
+      "features": [
+        "vision",
+        "multimodal",
+        "large_context"
+      ],
+      "strengths": [
+        "1M контекст",
+        "Vision/multimodal",
+        "Tiered price при prompt >200k"
+      ],
+      "use_cases": [
+        "Мультимодальность",
+        "Большие документы",
+        "Triple-run анализ"
+      ]
+    },
+    "gemini-3-flash": {
+      "name": "Gemini 3 Flash (Preview)",
+      "provider": "Google",
+      "price_input": 0.5,
+      "price_output": 3.0,
+      "elo_rating": 1478,
+      "webdev_elo": null,
+      "vision_elo": 1270,
+      "context_window": 1048576,
+      "available_in_cursor": true,
+      "cursor_id": "google/gemini-3-flash-preview",
+      "cursor_brain_tier": "medium",
+      "features": [
+        "creative",
+        "fast",
+        "cheap",
+        "multimodal"
+      ],
+      "strengths": [
+        "Дешевле 3.1 Pro",
+        "Быстрые тексты и черновики"
+      ],
+      "use_cases": [
+        "Посты",
+        "Summary",
+        "Массовая обработка с vision"
+      ]
     },
     "gemini-2.5-flash": {
       "name": "Gemini 2.5 Flash",
       "provider": "Google",
-      "price_input": 0.30,
-      "price_output": 2.50,
+      "price_input": 0.3,
+      "price_output": 2.5,
       "elo_rating": 1450,
       "webdev_elo": null,
       "vision_elo": 1250,
-      "context_window": 1000000,
+      "context_window": 1048576,
       "available_in_cursor": true,
       "cursor_id": "google/gemini-2.5-flash",
-      "features": ["creative", "fast", "cheap"],
-      "strengths": ["Дешевизна", "Скорость", "Русский язык"],
-      "use_cases": ["Простой креатив", "Массовая обработка", "Черновики"]
+      "features": [
+        "creative",
+        "fast",
+        "cheap"
+      ],
+      "strengths": [
+        "Дешевизна",
+        "Скорость",
+        "Русский язык"
+      ],
+      "use_cases": [
+        "Простой креатив",
+        "Массовая обработка",
+        "Черновики"
+      ]
     },
     "gemini-2.5-pro": {
       "name": "Gemini 2.5 Pro",
       "provider": "Google",
       "price_input": 1.25,
-      "price_output": 10.00,
+      "price_output": 10.0,
       "elo_rating": 1470,
       "webdev_elo": null,
       "vision_elo": 1280,
-      "context_window": 1000000,
+      "context_window": 1048576,
       "available_in_cursor": true,
       "cursor_id": "google/gemini-2.5-pro",
-      "features": ["logic", "large_context", "analysis"],
-      "strengths": ["Огромный контекст (1M)", "Структура", "Логика"],
-      "use_cases": ["Большие объёмы данных", "Комплексный анализ"]
-    },
-    "gemini-3-pro": {
-      "name": "Gemini 3.1 Pro (Preview)",
-      "provider": "Google",
-      "price_input": 2.00,
-      "price_output": 12.00,
-      "elo_rating": 1490,
-      "webdev_elo": 1490,
-      "vision_elo": 1309,
-      "context_window": 1000000,
-      "available_in_cursor": true,
-      "cursor_id": "google/gemini-3-pro",
-      "features": ["vision", "multimodal", "large_context"],
-      "strengths": ["Дороже 2.5 Pro", "У Google tiered price при prompt >200k — см. ai.google.dev/pricing"],
-      "use_cases": ["Работа с изображениями", "Комплексные задачи", "Видео/мультимодальность"]
-    },
-    "gemini-2.5-flash-lite": {
-      "name": "Gemini 2.5 Flash Lite",
-      "provider": "Google",
-      "price_input": 0.10,
-      "price_output": 0.40,
-      "elo_rating": 1380,
-      "context_window": 1000000,
-      "available_in_cursor": false,
-      "cursor_id": null,
-      "features": ["cheap", "fast", "bulk"],
-      "strengths": ["Почти бесплатно", "Молниеносно"],
-      "use_cases": ["Массовая обработка", "Черновики", "Summary"]
+      "features": [
+        "logic",
+        "large_context",
+        "analysis"
+      ],
+      "strengths": [
+        "1M контекст",
+        "Структура",
+        "Логика"
+      ],
+      "use_cases": [
+        "Большие объёмы данных",
+        "Комплексный анализ"
+      ]
     },
     "deepseek-v3.2": {
       "name": "DeepSeek V3.2",
       "provider": "DeepSeek",
-      "price_input": 0.24,
-      "price_output": 0.38,
+      "price_input": 0.2288,
+      "price_output": 0.3432,
       "elo_rating": 1450,
       "swe_bench": 75,
-      "context_window": 64000,
+      "context_window": 131072,
       "available_in_cursor": true,
       "cursor_id": "deepseek/deepseek-v3.2",
-      "features": ["logic", "cheap", "reasoning"],
-      "strengths": ["Экономия 94%", "Мощная логика", "Цена/качество"],
-      "use_cases": ["Логика", "Анализ", "Стратегия", "Reasoning"]
+      "features": [
+        "logic",
+        "cheap",
+        "reasoning"
+      ],
+      "strengths": [
+        "Экономия на логике",
+        "Цена/качество",
+        "131k контекст (OpenRouter)"
+      ],
+      "use_cases": [
+        "Логика",
+        "Анализ",
+        "Стратегия",
+        "Большие логи webhook"
+      ]
     },
     "gpt-4o": {
       "name": "GPT-4o",
       "provider": "OpenAI",
-      "price_input": 2.50,
-      "price_output": 10.00,
+      "price_input": 2.5,
+      "price_output": 10.0,
       "elo_rating": 1420,
       "swe_bench": 78,
       "context_window": 128000,
       "available_in_cursor": true,
       "cursor_id": "openai/gpt-4o",
-      "features": ["stable", "reliable"],
-      "strengths": ["Стабильность", "Классика"],
-      "use_cases": ["Универсальные задачи", "Когда нужна стабильность"]
+      "features": [
+        "stable",
+        "reliable"
+      ],
+      "strengths": [
+        "Стабильность",
+        "Классика"
+      ],
+      "use_cases": [
+        "Универсальные задачи",
+        "Fallback"
+      ]
+    },
+    "claude-3-7-sonnet": {
+      "name": "Claude 3.7 Sonnet",
+      "provider": "Anthropic",
+      "price_input": 3.0,
+      "price_output": 15.0,
+      "elo_rating": 1480,
+      "webdev_elo": 1510,
+      "vision_elo": null,
+      "swe_bench": 82.0,
+      "context_window": 200000,
+      "available_in_cursor": true,
+      "cursor_id": "anthropic/claude-3.7-sonnet",
+      "features": [
+        "code",
+        "analysis",
+        "reasoning",
+        "extended_thinking"
+      ],
+      "strengths": [
+        "Legacy",
+        "Deprecated — используй Sonnet 5"
+      ],
+      "use_cases": [
+        "Старые проекты"
+      ]
+    },
+    "claude-3.5-sonnet": {
+      "name": "Claude 3.5 Sonnet",
+      "provider": "Anthropic",
+      "price_input": 3.0,
+      "price_output": 15.0,
+      "elo_rating": 1467,
+      "webdev_elo": 1500,
+      "vision_elo": null,
+      "swe_bench": 80.9,
+      "context_window": 200000,
+      "available_in_cursor": true,
+      "cursor_id": "anthropic/claude-3.5-sonnet",
+      "features": [
+        "code",
+        "analysis",
+        "creative",
+        "reasoning"
+      ],
+      "strengths": [
+        "Legacy",
+        "Deprecated — Sonnet 5 для кода и креатива"
+      ],
+      "use_cases": [
+        "Старые чаты"
+      ]
+    },
+    "claude-opus-4.5": {
+      "name": "Claude Opus 4.5",
+      "provider": "Anthropic",
+      "price_input": 5.0,
+      "price_output": 25.0,
+      "elo_rating": 1467,
+      "webdev_elo": 1520,
+      "vision_elo": 1300,
+      "swe_bench": 80.9,
+      "context_window": 200000,
+      "available_in_cursor": true,
+      "cursor_id": "anthropic/claude-opus-4.5",
+      "features": [
+        "code",
+        "webdev",
+        "vision",
+        "reasoning"
+      ],
+      "strengths": [
+        "Legacy Opus",
+        "Opus 4.8 предпочтительнее"
+      ],
+      "use_cases": [
+        "Старые проекты"
+      ]
+    },
+    "gemini-2.5-flash-lite": {
+      "name": "Gemini 2.5 Flash Lite",
+      "provider": "Google",
+      "price_input": 0.1,
+      "price_output": 0.4,
+      "elo_rating": 1380,
+      "context_window": 1048576,
+      "available_in_cursor": false,
+      "cursor_id": null,
+      "features": [
+        "cheap",
+        "fast",
+        "bulk"
+      ],
+      "strengths": [
+        "Почти бесплатно",
+        "Молниеносно"
+      ],
+      "use_cases": [
+        "Массовая обработка",
+        "Черновики",
+        "Summary"
+      ]
     },
     "qwen-2.5-coder": {
       "name": "Qwen 2.5 Coder",
@@ -187,10 +549,18 @@
       "context_window": 32000,
       "available_in_cursor": false,
       "cursor_id": null,
-      "features": ["code", "cheap"],
-      "strengths": ["Самая дешёвая", "Хорошо для кода"],
-      "use_cases": ["Бюджетный кодинг", "Черновики кода"]
+      "features": [
+        "code",
+        "cheap"
+      ],
+      "strengths": [
+        "Самая дешёвая",
+        "Черновики кода"
+      ],
+      "use_cases": [
+        "Бюджетный кодинг",
+        "Массовка"
+      ]
     }
   }
 }
-

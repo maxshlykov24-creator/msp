@@ -7,7 +7,7 @@ alwaysApply: false
 # РЕСЕРЧЕР МОДЕЛЕЙ AI
 
 > **Создано по Методу Denis Pleada**  
-> **Снимок данных vault:** 25.04.2026 — **ELO, SWE, бенчмарки** — из `агенты/МОДЕЛЬ/_ДАННЫЕ/models_cache.json` (`last_updated`).  
+> **Снимок данных vault:** 01.07.2026 — **ELO, SWE, бенчмарки** — из `агенты/МОДЕЛЬ/_ДАННЫЕ/models_cache.json` (`last_updated`).  
 > **Цены USD/1M (вход/выход):** если есть свежий **`_ДАННЫЕ/openrouter_cache.json`** (возраст `fetched_at` не больше ~7 дней) — **для модели с тем же id, что `cursor_id` в кэше** брать `price_input_per_1m` / `price_output_per_1m` оттуда и явно писать «по OpenRouter [дата]»; иначе — цены из `models_cache`.  
 > **LMSYS** — при расхождении с кэшем: приоритет **локального кэша** + «сверь lmarena.ai при критичном выборе».
 
@@ -36,7 +36,7 @@ alwaysApply: false
 ### Источники данных:
 - **Кэш метрик и запасных цен:** `_ДАННЫЕ/models_cache.json` — ELO, SWE-bench, `cursor_id`, `price_input` / `price_output` (ручной/регламентный снимок). Смотри `last_updated` и `refresh_note`.
 - **Цены с OpenRouter (приоритет по свежести):** `_ДАННЫЕ/openrouter_cache.json` — после `python3 scripts/fetch_openrouter.py`; обновляй `fetched_at` при каждом запуске. В ответе: если файл есть и дата **не старше ~7 дней**, **цитировать цену** по ключу, совпадающему с `cursor_id` в `models_cache` (OpenRouter `id` = тот же slug). ELO/SWE **не** из OpenRouter.
-- **Fast Track:** `_ДАННЫЕ/fast_track_rules.json` — приоритет по ключевым словам (сейчас ветка кода → **Claude Sonnet 4.6**).
+- **Fast Track:** `_ДАННЫЕ/fast_track_rules.json` — приоритет по ключевым словам (сейчас ветка кода → **Claude Sonnet 5**).
 - **Рекомендации:** `_ДАННЫЕ/recommendations_cache.json` — если **нет** файла, шаг пропустить, не выдумывать.
 - **Эвристики / алиасы / шаблоны:** `эвристики.json`, `aliases.json`, `шаблоны_ответов.json` — **опциональны**; нет в папке → эвристики из этого правила + `models_cache`.
 - **Базовая таблица:** `_КОНТЕКСТ/таблица_выбора_моделей.md` — fallback; при конфликте цен: **openrouter_cache** (если свежий) → **models_cache** → таблица.
@@ -56,7 +56,7 @@ alwaysApply: false
 1. **Fast Track Rules** (< 0.1 сек)
    - Проверка ключевых слов в `fast_track_rules.json`
    - Если совпадение > 90% → мгновенный ответ
-   - Пример: "код python" → **Claude Sonnet 4.6** (см. кэш)
+   - Пример: "код python" → **Claude Sonnet 5** (см. кэш)
 
 2. **Типовые задачи** (< 0.2 сек)
    - Fuzzy matching с `recommendations_cache.json` — **только если файл существует**
@@ -67,7 +67,7 @@ alwaysApply: false
    - Проверка правил из `эвристики.json` **или** правил ниже, если JSON нет
    - Примеры:
      - Задача < 50 слов → Flash-модель
-     - Содержит "код", "скрипт" → **Claude Sonnet 4.6** (баланс кода) или **Claude Opus 4.6** (максимум)
+     - Содержит "код", "скрипт" → **Claude Sonnet 5** (daily driver) или **Claude Opus 4.8** (максимум)
      - Содержит "пост", "текст" → Gemini 2.5 Flash
 
 4. **Статистика использования** (< 0.4 сек)
@@ -253,17 +253,17 @@ alwaysApply: false
 ### Блиц-ответ (по умолчанию):
 
 ```
-🚀 **Рекомендация:** `Claude Sonnet 4.6`
+🚀 **Рекомендация:** `Claude Sonnet 5`
 
-💰 **Цена:** $3.00/1M (вход) | $15.00/1M (выход) — по API-ориентиру из кэша
+💰 **Цена:** $3.00/1M (вход) | $15.00/1M (выход) — promo до 31.08: $2/$10; по OpenRouter [01.07.2026]
 
-🎯 **Почему:** Сильный код и агентные сценарии (в кэше: WebDev ELO 1530, SWE-bench 84.0%, контекст 1M)
+🎯 **Почему:** Daily driver Anthropic: SWE Verified 85.2%, CursorBench 61.2%, agentic + effort-регулятор
 
-⚡ **Скорость:** Средняя
+⚡ **Скорость:** Средняя (выше на high/xhigh effort)
 
 **Альтернативы:**
-- Бюджетный: DeepSeek V3.2 ($0.24/0.38 in/out за 1M) — логика и черновики
-- Премиум: Claude Opus 4.6 ($5/$25 за 1M) — максимум качества и 1M контекст
+- Бюджетный: DeepSeek V3.2 ($0.23/0.34 in/out за 1M) — логика и черновики
+- Премиум: Claude Opus 4.8 ($5/$25 за 1M) — CursorBench 63.8%, потолок качества
 
 <details>
 <summary>Детальный анализ (развернуть)</summary>
@@ -274,12 +274,12 @@ alwaysApply: false
 - Тип: Код
 - Многоуровневость: Двухуровневая
 
-## Сравнение моделей (из models_cache, снимок 25.04.2026)
-| Модель | Цена in/out | ELO | WebDev | SWE-bench | ROI |
-|--------|------------|-----|--------|-----------|-----|
-| Claude Sonnet 4.6 | $3 / $15 | 1495 | 1530 | 84.0% | ⭐⭐⭐⭐⭐ |
-| DeepSeek V3.2 | $0.24 / $0.38 | 1450 | — | 75% | ⭐⭐⭐⭐ |
-| Claude Opus 4.5 | $5 / $25 | 1467 | 1520 | 80.9% | ⭐⭐⭐⭐ |
+## Сравнение моделей (из models_cache, снимок 01.07.2026)
+| Модель | Цена in/out | ELO | SWE-bench | CursorBench | ROI |
+|--------|------------|-----|-----------|-------------|-----|
+| Claude Sonnet 5 | $3 / $15 (promo $2/$10) | 1510 | 85.2% | 61.2% | ⭐⭐⭐⭐⭐ |
+| Claude Opus 4.8 | $5 / $25 | 1520 | 87.0% | 63.8% | ⭐⭐⭐⭐ |
+| DeepSeek V3.2 | $0.23 / $0.34 | 1450 | 75% | — | ⭐⭐⭐⭐ |
 
 ## Источники данных
 - Кэш vault: `last_updated` в models_cache.json
@@ -288,7 +288,7 @@ alwaysApply: false
 </details>
 
 **Активация в Cursor:**
-Settings → Models → выбрать `Claude Sonnet 4.6` (id в кэше: `anthropic/claude-sonnet-4.6`)
+Settings → Models → выбрать `Claude Sonnet 5` (id в кэше: `anthropic/claude-sonnet-5`, effort: high)
 ```
 
 ### Детальный анализ (только по флагу --detail):
@@ -535,7 +535,7 @@ Settings → Models → выбрать `Claude Sonnet 4.6` (id в кэше: `ant
 
 @модель обнови информацию о моделях
 
-@модель активируй Claude Sonnet 4.6
+@модель активируй Claude Sonnet 5
 ```
 
 ### С флагами:
@@ -591,11 +591,11 @@ Settings → Models → выбрать `Claude Sonnet 4.6` (id в кэше: `ant
 
 **Ответ:**
 ```
-🚀 **Рекомендация:** Claude Sonnet 4.6
+🚀 **Рекомендация:** Claude Sonnet 5
 
-💰 **Цена:** $3.00/$15.00 за 1M (in/out)
+💰 **Цена:** $3.00/$15.00 за 1M (in/out); promo $2/$10 до 31.08.2026
 
-🎯 **Почему:** Код, интеграции, длинный контекст (1M) и сильные метрики в кэше (WebDev ELO 1530, SWE 84%)
+🎯 **Почему:** Код, интеграции, agentic (SWE 85.2%, CursorBench 61.2%)
 
 ⚡ **Скорость:** Средняя
 
@@ -607,7 +607,7 @@ Settings → Models → выбрать `Claude Sonnet 4.6` (id в кэше: `ant
 
 **Альтернативы:**
 - Для черновика: DeepSeek V3.2 ($0.24/0.38) — структура и логика дёшево
-- Для пика качества: Claude Opus 4.6 ($5/$25) — 1M контекст, SWE 85.5% в кэше
+- Для пика качества: Claude Opus 4.8 ($5/$25) — CursorBench 63.8%
 
 Путь ответа: Стандартный анализ
 ```

@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "fetched_at": "2026-04-25T20:27:01Z",
+  "fetched_at": "2026-07-01T05:43:28Z",
   "source_url": "https://openrouter.ai/api/v1/models",
   "note": "Цены: USD за 1M токенов (из полей prompt/completion OpenRouter, ×1e6). Сопоставляй с models_cache по cursor_id. ELO/SWE — только из models_cache.json.",
-  "model_count": 352,
-  "skipped_no_pricing": 3,
+  "model_count": 334,
+  "skipped_no_pricing": 4,
   "models": {
     "ai21/jamba-large-1.7": {
       "name": "AI21: Jamba Large 1.7",
@@ -36,35 +36,11 @@
       "price_input_per_1m": 0.8,
       "price_output_per_1m": 1.6
     },
-    "alfredpros/codellama-7b-instruct-solidity": {
-      "name": "AlfredPros: CodeLLaMa 7B Instruct Solidity",
-      "context_length": 4096,
-      "price_input_per_1m": 0.8,
-      "price_output_per_1m": 1.2
-    },
-    "alibaba/tongyi-deepresearch-30b-a3b": {
-      "name": "Tongyi DeepResearch 30B A3B",
-      "context_length": 131072,
-      "price_input_per_1m": 0.09,
-      "price_output_per_1m": 0.45
-    },
     "allenai/olmo-3-32b-think": {
       "name": "AllenAI: Olmo 3 32B Think",
       "context_length": 65536,
       "price_input_per_1m": 0.15,
       "price_output_per_1m": 0.5
-    },
-    "allenai/olmo-3.1-32b-instruct": {
-      "name": "AllenAI: Olmo 3.1 32B Instruct",
-      "context_length": 65536,
-      "price_input_per_1m": 0.2,
-      "price_output_per_1m": 0.6
-    },
-    "alpindale/goliath-120b": {
-      "name": "Goliath 120B",
-      "context_length": 6144,
-      "price_input_per_1m": 3.75,
-      "price_output_per_1m": 7.5
     },
     "amazon/nova-2-lite-v1": {
       "name": "Amazon: Nova 2 Lite",
@@ -98,7 +74,7 @@
     },
     "anthracite-org/magnum-v4-72b": {
       "name": "Magnum v4 72B",
-      "context_length": 16384,
+      "context_length": 32768,
       "price_input_per_1m": 3.0,
       "price_output_per_1m": 5.0
     },
@@ -108,23 +84,11 @@
       "price_input_per_1m": 0.25,
       "price_output_per_1m": 1.25
     },
-    "anthropic/claude-3.5-haiku": {
-      "name": "Anthropic: Claude 3.5 Haiku",
-      "context_length": 200000,
-      "price_input_per_1m": 0.8,
-      "price_output_per_1m": 4.0
-    },
-    "anthropic/claude-3.7-sonnet": {
-      "name": "Anthropic: Claude 3.7 Sonnet",
-      "context_length": 200000,
-      "price_input_per_1m": 3.0,
-      "price_output_per_1m": 15.0
-    },
-    "anthropic/claude-3.7-sonnet:thinking": {
-      "name": "Anthropic: Claude 3.7 Sonnet (thinking)",
-      "context_length": 200000,
-      "price_input_per_1m": 3.0,
-      "price_output_per_1m": 15.0
+    "anthropic/claude-fable-5": {
+      "name": "Anthropic: Claude Fable 5",
+      "context_length": 1000000,
+      "price_input_per_1m": 10.0,
+      "price_output_per_1m": 50.0
     },
     "anthropic/claude-haiku-4.5": {
       "name": "Anthropic: Claude Haiku 4.5",
@@ -156,17 +120,29 @@
       "price_input_per_1m": 5.0,
       "price_output_per_1m": 25.0
     },
-    "anthropic/claude-opus-4.6-fast": {
-      "name": "Anthropic: Claude Opus 4.6 (Fast)",
-      "context_length": 1000000,
-      "price_input_per_1m": 30.0,
-      "price_output_per_1m": 150.0
-    },
     "anthropic/claude-opus-4.7": {
       "name": "Anthropic: Claude Opus 4.7",
       "context_length": 1000000,
       "price_input_per_1m": 5.0,
       "price_output_per_1m": 25.0
+    },
+    "anthropic/claude-opus-4.7-fast": {
+      "name": "Anthropic: Claude Opus 4.7 (Fast)",
+      "context_length": 1000000,
+      "price_input_per_1m": 30.0,
+      "price_output_per_1m": 150.0
+    },
+    "anthropic/claude-opus-4.8": {
+      "name": "Anthropic: Claude Opus 4.8",
+      "context_length": 1000000,
+      "price_input_per_1m": 5.0,
+      "price_output_per_1m": 25.0
+    },
+    "anthropic/claude-opus-4.8-fast": {
+      "name": "Anthropic: Claude Opus 4.8 (Fast)",
+      "context_length": 1000000,
+      "price_input_per_1m": 10.0,
+      "price_output_per_1m": 50.0
     },
     "anthropic/claude-sonnet-4": {
       "name": "Anthropic: Claude Sonnet 4",
@@ -186,35 +162,23 @@
       "price_input_per_1m": 3.0,
       "price_output_per_1m": 15.0
     },
+    "anthropic/claude-sonnet-5": {
+      "name": "Anthropic: Claude Sonnet 5",
+      "context_length": 1000000,
+      "price_input_per_1m": 2.0,
+      "price_output_per_1m": 10.0
+    },
     "arcee-ai/coder-large": {
       "name": "Arcee AI: Coder Large",
       "context_length": 32768,
       "price_input_per_1m": 0.5,
       "price_output_per_1m": 0.8
     },
-    "arcee-ai/maestro-reasoning": {
-      "name": "Arcee AI: Maestro Reasoning",
-      "context_length": 131072,
-      "price_input_per_1m": 0.9,
-      "price_output_per_1m": 3.3
-    },
-    "arcee-ai/spotlight": {
-      "name": "Arcee AI: Spotlight",
-      "context_length": 131072,
-      "price_input_per_1m": 0.18,
-      "price_output_per_1m": 0.18
-    },
-    "arcee-ai/trinity-large-preview": {
-      "name": "Arcee AI: Trinity Large Preview",
-      "context_length": 131000,
-      "price_input_per_1m": 0.15,
-      "price_output_per_1m": 0.45
-    },
     "arcee-ai/trinity-large-thinking": {
       "name": "Arcee AI: Trinity Large Thinking",
       "context_length": 262144,
-      "price_input_per_1m": 0.22,
-      "price_output_per_1m": 0.85
+      "price_input_per_1m": 0.25,
+      "price_output_per_1m": 0.8
     },
     "arcee-ai/trinity-mini": {
       "name": "Arcee AI: Trinity Mini",
@@ -228,41 +192,11 @@
       "price_input_per_1m": 0.75,
       "price_output_per_1m": 1.2
     },
-    "baidu/ernie-4.5-21b-a3b": {
-      "name": "Baidu: ERNIE 4.5 21B A3B",
-      "context_length": 120000,
-      "price_input_per_1m": 0.07,
-      "price_output_per_1m": 0.28
-    },
-    "baidu/ernie-4.5-21b-a3b-thinking": {
-      "name": "Baidu: ERNIE 4.5 21B A3B Thinking",
-      "context_length": 131072,
-      "price_input_per_1m": 0.07,
-      "price_output_per_1m": 0.28
-    },
-    "baidu/ernie-4.5-300b-a47b": {
-      "name": "Baidu: ERNIE 4.5 300B A47B ",
-      "context_length": 123000,
-      "price_input_per_1m": 0.28,
-      "price_output_per_1m": 1.1
-    },
-    "baidu/ernie-4.5-vl-28b-a3b": {
-      "name": "Baidu: ERNIE 4.5 VL 28B A3B",
-      "context_length": 30000,
-      "price_input_per_1m": 0.14,
-      "price_output_per_1m": 0.56
-    },
     "baidu/ernie-4.5-vl-424b-a47b": {
       "name": "Baidu: ERNIE 4.5 VL 424B A47B ",
-      "context_length": 123000,
+      "context_length": 131072,
       "price_input_per_1m": 0.42,
       "price_output_per_1m": 1.25
-    },
-    "baidu/qianfan-ocr-fast:free": {
-      "name": "Baidu: Qianfan-OCR-Fast (free)",
-      "context_length": 65536,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
     },
     "bytedance-seed/seed-1.6": {
       "name": "ByteDance Seed: Seed 1.6",
@@ -324,6 +258,12 @@
       "price_input_per_1m": 0.0375,
       "price_output_per_1m": 0.15
     },
+    "cohere/north-mini-code:free": {
+      "name": "Cohere: North Mini Code (free)",
+      "context_length": 256000,
+      "price_input_per_1m": 0.0,
+      "price_output_per_1m": 0.0
+    },
     "deepcogito/cogito-v2.1-671b": {
       "name": "Deep Cogito: Cogito v2.1 671B",
       "context_length": 128000,
@@ -332,9 +272,9 @@
     },
     "deepseek/deepseek-chat": {
       "name": "DeepSeek: DeepSeek V3",
-      "context_length": 163840,
-      "price_input_per_1m": 0.32,
-      "price_output_per_1m": 0.89
+      "context_length": 131072,
+      "price_input_per_1m": 0.2002,
+      "price_output_per_1m": 0.8001
     },
     "deepseek/deepseek-chat-v3-0324": {
       "name": "DeepSeek: DeepSeek V3 0324",
@@ -344,13 +284,13 @@
     },
     "deepseek/deepseek-chat-v3.1": {
       "name": "DeepSeek: DeepSeek V3.1",
-      "context_length": 32768,
-      "price_input_per_1m": 0.15,
-      "price_output_per_1m": 0.75
+      "context_length": 163840,
+      "price_input_per_1m": 0.21,
+      "price_output_per_1m": 0.79
     },
     "deepseek/deepseek-r1": {
       "name": "DeepSeek: R1",
-      "context_length": 64000,
+      "context_length": 163840,
       "price_input_per_1m": 0.7,
       "price_output_per_1m": 2.5
     },
@@ -362,27 +302,21 @@
     },
     "deepseek/deepseek-r1-distill-llama-70b": {
       "name": "DeepSeek: R1 Distill Llama 70B",
-      "context_length": 131072,
-      "price_input_per_1m": 0.7,
+      "context_length": 128000,
+      "price_input_per_1m": 0.8,
       "price_output_per_1m": 0.8
-    },
-    "deepseek/deepseek-r1-distill-qwen-32b": {
-      "name": "DeepSeek: R1 Distill Qwen 32B",
-      "context_length": 32768,
-      "price_input_per_1m": 0.29,
-      "price_output_per_1m": 0.29
     },
     "deepseek/deepseek-v3.1-terminus": {
       "name": "DeepSeek: DeepSeek V3.1 Terminus",
       "context_length": 163840,
-      "price_input_per_1m": 0.21,
-      "price_output_per_1m": 0.79
+      "price_input_per_1m": 0.27,
+      "price_output_per_1m": 0.95
     },
     "deepseek/deepseek-v3.2": {
       "name": "DeepSeek: DeepSeek V3.2",
       "context_length": 131072,
-      "price_input_per_1m": 0.252,
-      "price_output_per_1m": 0.378
+      "price_input_per_1m": 0.2288,
+      "price_output_per_1m": 0.3432
     },
     "deepseek/deepseek-v3.2-exp": {
       "name": "DeepSeek: DeepSeek V3.2 Exp",
@@ -390,41 +324,17 @@
       "price_input_per_1m": 0.27,
       "price_output_per_1m": 0.41
     },
-    "deepseek/deepseek-v3.2-speciale": {
-      "name": "DeepSeek: DeepSeek V3.2 Speciale",
-      "context_length": 163840,
-      "price_input_per_1m": 0.4,
-      "price_output_per_1m": 1.2
-    },
     "deepseek/deepseek-v4-flash": {
       "name": "DeepSeek: DeepSeek V4 Flash",
       "context_length": 1048576,
-      "price_input_per_1m": 0.14,
-      "price_output_per_1m": 0.28
+      "price_input_per_1m": 0.098,
+      "price_output_per_1m": 0.196
     },
     "deepseek/deepseek-v4-pro": {
       "name": "DeepSeek: DeepSeek V4 Pro",
       "context_length": 1048576,
       "price_input_per_1m": 0.435,
       "price_output_per_1m": 0.87
-    },
-    "essentialai/rnj-1-instruct": {
-      "name": "EssentialAI: Rnj 1 Instruct",
-      "context_length": 32768,
-      "price_input_per_1m": 0.15,
-      "price_output_per_1m": 0.15
-    },
-    "google/gemini-2.0-flash-001": {
-      "name": "Google: Gemini 2.0 Flash",
-      "context_length": 1048576,
-      "price_input_per_1m": 0.1,
-      "price_output_per_1m": 0.4
-    },
-    "google/gemini-2.0-flash-lite-001": {
-      "name": "Google: Gemini 2.0 Flash Lite",
-      "context_length": 1048576,
-      "price_input_per_1m": 0.075,
-      "price_output_per_1m": 0.3
     },
     "google/gemini-2.5-flash": {
       "name": "Google: Gemini 2.5 Flash",
@@ -474,17 +384,41 @@
       "price_input_per_1m": 0.5,
       "price_output_per_1m": 3.0
     },
+    "google/gemini-3-pro-image": {
+      "name": "Google: Nano Banana Pro (Gemini 3 Pro Image)",
+      "context_length": 65536,
+      "price_input_per_1m": 2.0,
+      "price_output_per_1m": 12.0
+    },
     "google/gemini-3-pro-image-preview": {
       "name": "Google: Nano Banana Pro (Gemini 3 Pro Image Preview)",
       "context_length": 65536,
       "price_input_per_1m": 2.0,
       "price_output_per_1m": 12.0
     },
-    "google/gemini-3.1-flash-image-preview": {
-      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image Preview)",
-      "context_length": 65536,
+    "google/gemini-3.1-flash-image": {
+      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image)",
+      "context_length": 131072,
       "price_input_per_1m": 0.5,
       "price_output_per_1m": 3.0
+    },
+    "google/gemini-3.1-flash-image-preview": {
+      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image Preview)",
+      "context_length": 131072,
+      "price_input_per_1m": 0.5,
+      "price_output_per_1m": 3.0
+    },
+    "google/gemini-3.1-flash-lite": {
+      "name": "Google: Gemini 3.1 Flash Lite",
+      "context_length": 1048576,
+      "price_input_per_1m": 0.25,
+      "price_output_per_1m": 1.5
+    },
+    "google/gemini-3.1-flash-lite-image": {
+      "name": "Google: Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
+      "context_length": 65536,
+      "price_input_per_1m": 0.25,
+      "price_output_per_1m": 1.5
     },
     "google/gemini-3.1-flash-lite-preview": {
       "name": "Google: Gemini 3.1 Flash Lite Preview",
@@ -500,9 +434,15 @@
     },
     "google/gemini-3.1-pro-preview-customtools": {
       "name": "Google: Gemini 3.1 Pro Preview Custom Tools",
-      "context_length": 1048576,
+      "context_length": 1048756,
       "price_input_per_1m": 2.0,
       "price_output_per_1m": 12.0
+    },
+    "google/gemini-3.5-flash": {
+      "name": "Google: Gemini 3.5 Flash",
+      "context_length": 1048576,
+      "price_input_per_1m": 1.5,
+      "price_output_per_1m": 9.0
     },
     "google/gemma-2-27b-it": {
       "name": "Google: Gemma 2 27B",
@@ -513,14 +453,8 @@
     "google/gemma-3-12b-it": {
       "name": "Google: Gemma 3 12B",
       "context_length": 131072,
-      "price_input_per_1m": 0.04,
-      "price_output_per_1m": 0.13
-    },
-    "google/gemma-3-12b-it:free": {
-      "name": "Google: Gemma 3 12B (free)",
-      "context_length": 32768,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
+      "price_input_per_1m": 0.05,
+      "price_output_per_1m": 0.15
     },
     "google/gemma-3-27b-it": {
       "name": "Google: Gemma 3 27B",
@@ -528,41 +462,17 @@
       "price_input_per_1m": 0.08,
       "price_output_per_1m": 0.16
     },
-    "google/gemma-3-27b-it:free": {
-      "name": "Google: Gemma 3 27B (free)",
-      "context_length": 131072,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
-    },
     "google/gemma-3-4b-it": {
       "name": "Google: Gemma 3 4B",
       "context_length": 131072,
-      "price_input_per_1m": 0.04,
-      "price_output_per_1m": 0.08
-    },
-    "google/gemma-3-4b-it:free": {
-      "name": "Google: Gemma 3 4B (free)",
-      "context_length": 32768,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
-    },
-    "google/gemma-3n-e2b-it:free": {
-      "name": "Google: Gemma 3n 2B (free)",
-      "context_length": 8192,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
+      "price_input_per_1m": 0.05,
+      "price_output_per_1m": 0.1
     },
     "google/gemma-3n-e4b-it": {
       "name": "Google: Gemma 3n 4B",
       "context_length": 32768,
       "price_input_per_1m": 0.06,
       "price_output_per_1m": 0.12
-    },
-    "google/gemma-3n-e4b-it:free": {
-      "name": "Google: Gemma 3n 4B (free)",
-      "context_length": 8192,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
     },
     "google/gemma-4-26b-a4b-it": {
       "name": "Google: Gemma 4 26B A4B ",
@@ -579,8 +489,8 @@
     "google/gemma-4-31b-it": {
       "name": "Google: Gemma 4 31B",
       "context_length": 262144,
-      "price_input_per_1m": 0.13,
-      "price_output_per_1m": 0.38
+      "price_input_per_1m": 0.12,
+      "price_output_per_1m": 0.35
     },
     "google/gemma-4-31b-it:free": {
       "name": "Google: Gemma 4 31B (free)",
@@ -610,7 +520,13 @@
       "name": "IBM: Granite 4.0 Micro",
       "context_length": 131000,
       "price_input_per_1m": 0.017,
-      "price_output_per_1m": 0.11
+      "price_output_per_1m": 0.112
+    },
+    "ibm-granite/granite-4.1-8b": {
+      "name": "IBM: Granite 4.1 8B",
+      "context_length": 131072,
+      "price_input_per_1m": 0.05,
+      "price_output_per_1m": 0.1
     },
     "inception/mercury-2": {
       "name": "Inception: Mercury 2",
@@ -618,17 +534,23 @@
       "price_input_per_1m": 0.25,
       "price_output_per_1m": 0.75
     },
-    "inclusionai/ling-2.6-1t:free": {
-      "name": "inclusionAI: Ling-2.6-1T (free)",
+    "inclusionai/ling-2.6-1t": {
+      "name": "inclusionAI: Ling-2.6-1T",
       "context_length": 262144,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
+      "price_input_per_1m": 0.075,
+      "price_output_per_1m": 0.625
     },
-    "inclusionai/ling-2.6-flash:free": {
-      "name": "inclusionAI: Ling-2.6-flash (free)",
+    "inclusionai/ling-2.6-flash": {
+      "name": "inclusionAI: Ling-2.6-flash",
       "context_length": 262144,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
+      "price_input_per_1m": 0.01,
+      "price_output_per_1m": 0.03
+    },
+    "inclusionai/ring-2.6-1t": {
+      "name": "inclusionAI: Ring-2.6-1T",
+      "context_length": 262144,
+      "price_input_per_1m": 0.075,
+      "price_output_per_1m": 0.625
     },
     "inflection/inflection-3-pi": {
       "name": "Inflection: Inflection 3 Pi",
@@ -650,7 +572,7 @@
     },
     "liquid/lfm-2-24b-a2b": {
       "name": "LiquidAI: LFM2-24B-A2B",
-      "context_length": 32768,
+      "context_length": 128000,
       "price_input_per_1m": 0.03,
       "price_output_per_1m": 0.12
     },
@@ -672,17 +594,11 @@
       "price_input_per_1m": 0.75,
       "price_output_per_1m": 1.0
     },
-    "meta-llama/llama-3-70b-instruct": {
-      "name": "Meta: Llama 3 70B Instruct",
-      "context_length": 8192,
-      "price_input_per_1m": 0.51,
-      "price_output_per_1m": 0.74
-    },
     "meta-llama/llama-3-8b-instruct": {
       "name": "Meta: Llama 3 8B Instruct",
       "context_length": 8192,
-      "price_input_per_1m": 0.03,
-      "price_output_per_1m": 0.04
+      "price_input_per_1m": 0.14,
+      "price_output_per_1m": 0.14
     },
     "meta-llama/llama-3.1-70b-instruct": {
       "name": "Meta: Llama 3.1 70B Instruct",
@@ -692,27 +608,27 @@
     },
     "meta-llama/llama-3.1-8b-instruct": {
       "name": "Meta: Llama 3.1 8B Instruct",
-      "context_length": 16384,
+      "context_length": 131072,
       "price_input_per_1m": 0.02,
-      "price_output_per_1m": 0.05
+      "price_output_per_1m": 0.03
     },
     "meta-llama/llama-3.2-11b-vision-instruct": {
       "name": "Meta: Llama 3.2 11B Vision Instruct",
       "context_length": 131072,
-      "price_input_per_1m": 0.245,
-      "price_output_per_1m": 0.245
+      "price_input_per_1m": 0.345,
+      "price_output_per_1m": 0.345
     },
     "meta-llama/llama-3.2-1b-instruct": {
       "name": "Meta: Llama 3.2 1B Instruct",
-      "context_length": 60000,
+      "context_length": 131072,
       "price_input_per_1m": 0.027,
-      "price_output_per_1m": 0.2
+      "price_output_per_1m": 0.201
     },
     "meta-llama/llama-3.2-3b-instruct": {
       "name": "Meta: Llama 3.2 3B Instruct",
-      "context_length": 80000,
-      "price_input_per_1m": 0.051,
-      "price_output_per_1m": 0.34
+      "context_length": 131072,
+      "price_input_per_1m": 0.0509,
+      "price_output_per_1m": 0.335
     },
     "meta-llama/llama-3.2-3b-instruct:free": {
       "name": "Meta: Llama 3.2 3B Instruct (free)",
@@ -728,7 +644,7 @@
     },
     "meta-llama/llama-3.3-70b-instruct:free": {
       "name": "Meta: Llama 3.3 70B Instruct (free)",
-      "context_length": 65536,
+      "context_length": 131072,
       "price_input_per_1m": 0.0,
       "price_output_per_1m": 0.0
     },
@@ -740,15 +656,9 @@
     },
     "meta-llama/llama-4-scout": {
       "name": "Meta: Llama 4 Scout",
-      "context_length": 327680,
-      "price_input_per_1m": 0.08,
+      "context_length": 10000000,
+      "price_input_per_1m": 0.1,
       "price_output_per_1m": 0.3
-    },
-    "meta-llama/llama-guard-3-8b": {
-      "name": "Llama Guard 3 8B",
-      "context_length": 131072,
-      "price_input_per_1m": 0.48,
-      "price_output_per_1m": 0.03
     },
     "meta-llama/llama-guard-4-12b": {
       "name": "Meta: Llama Guard 4 12B",
@@ -759,12 +669,12 @@
     "microsoft/phi-4": {
       "name": "Microsoft: Phi 4",
       "context_length": 16384,
-      "price_input_per_1m": 0.065,
+      "price_input_per_1m": 0.07,
       "price_output_per_1m": 0.14
     },
     "microsoft/wizardlm-2-8x22b": {
       "name": "WizardLM-2 8x22B",
-      "context_length": 65535,
+      "context_length": 65536,
       "price_input_per_1m": 0.62,
       "price_output_per_1m": 0.62
     },
@@ -782,7 +692,7 @@
     },
     "minimax/minimax-m2": {
       "name": "MiniMax: MiniMax M2",
-      "context_length": 196608,
+      "context_length": 204800,
       "price_input_per_1m": 0.255,
       "price_output_per_1m": 1.0
     },
@@ -794,25 +704,25 @@
     },
     "minimax/minimax-m2.1": {
       "name": "MiniMax: MiniMax M2.1",
-      "context_length": 196608,
+      "context_length": 204800,
       "price_input_per_1m": 0.29,
       "price_output_per_1m": 0.95
     },
     "minimax/minimax-m2.5": {
       "name": "MiniMax: MiniMax M2.5",
-      "context_length": 196608,
-      "price_input_per_1m": 0.15,
-      "price_output_per_1m": 1.15
-    },
-    "minimax/minimax-m2.5:free": {
-      "name": "MiniMax: MiniMax M2.5 (free)",
-      "context_length": 196608,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
+      "context_length": 204800,
+      "price_input_per_1m": 0.12,
+      "price_output_per_1m": 0.48
     },
     "minimax/minimax-m2.7": {
       "name": "MiniMax: MiniMax M2.7",
-      "context_length": 196608,
+      "context_length": 204800,
+      "price_input_per_1m": 0.18,
+      "price_output_per_1m": 0.72
+    },
+    "minimax/minimax-m3": {
+      "name": "MiniMax: MiniMax M3",
+      "context_length": 1048576,
       "price_input_per_1m": 0.3,
       "price_output_per_1m": 1.2
     },
@@ -827,18 +737,6 @@
       "context_length": 262144,
       "price_input_per_1m": 0.4,
       "price_output_per_1m": 2.0
-    },
-    "mistralai/devstral-medium": {
-      "name": "Mistral: Devstral Medium",
-      "context_length": 131072,
-      "price_input_per_1m": 0.4,
-      "price_output_per_1m": 2.0
-    },
-    "mistralai/devstral-small": {
-      "name": "Mistral: Devstral Small 1.1",
-      "context_length": 131072,
-      "price_input_per_1m": 0.1,
-      "price_output_per_1m": 0.3
     },
     "mistralai/ministral-14b-2512": {
       "name": "Mistral: Ministral 3 14B 2512",
@@ -858,12 +756,6 @@
       "price_input_per_1m": 0.15,
       "price_output_per_1m": 0.15
     },
-    "mistralai/mistral-7b-instruct-v0.1": {
-      "name": "Mistral: Mistral 7B Instruct v0.1",
-      "context_length": 2824,
-      "price_input_per_1m": 0.11,
-      "price_output_per_1m": 0.19
-    },
     "mistralai/mistral-large": {
       "name": "Mistral Large",
       "context_length": 128000,
@@ -872,12 +764,6 @@
     },
     "mistralai/mistral-large-2407": {
       "name": "Mistral Large 2407",
-      "context_length": 131072,
-      "price_input_per_1m": 2.0,
-      "price_output_per_1m": 6.0
-    },
-    "mistralai/mistral-large-2411": {
-      "name": "Mistral Large 2411",
       "context_length": 131072,
       "price_input_per_1m": 2.0,
       "price_output_per_1m": 6.0
@@ -894,6 +780,12 @@
       "price_input_per_1m": 0.4,
       "price_output_per_1m": 2.0
     },
+    "mistralai/mistral-medium-3-5": {
+      "name": "Mistral: Mistral Medium 3.5",
+      "context_length": 262144,
+      "price_input_per_1m": 1.5,
+      "price_output_per_1m": 7.5
+    },
     "mistralai/mistral-medium-3.1": {
       "name": "Mistral: Mistral Medium 3.1",
       "context_length": 131072,
@@ -903,7 +795,7 @@
     "mistralai/mistral-nemo": {
       "name": "Mistral: Mistral Nemo",
       "context_length": 131072,
-      "price_input_per_1m": 0.01,
+      "price_input_per_1m": 0.02,
       "price_output_per_1m": 0.03
     },
     "mistralai/mistral-saba": {
@@ -927,8 +819,8 @@
     "mistralai/mistral-small-3.1-24b-instruct": {
       "name": "Mistral: Mistral Small 3.1 24B",
       "context_length": 128000,
-      "price_input_per_1m": 0.35,
-      "price_output_per_1m": 0.56
+      "price_input_per_1m": 0.351,
+      "price_output_per_1m": 0.555
     },
     "mistralai/mistral-small-3.2-24b-instruct": {
       "name": "Mistral: Mistral Small 3.2 24B",
@@ -936,27 +828,9 @@
       "price_input_per_1m": 0.075,
       "price_output_per_1m": 0.2
     },
-    "mistralai/mistral-small-creative": {
-      "name": "Mistral: Mistral Small Creative",
-      "context_length": 32768,
-      "price_input_per_1m": 0.1,
-      "price_output_per_1m": 0.3
-    },
     "mistralai/mixtral-8x22b-instruct": {
       "name": "Mistral: Mixtral 8x22B Instruct",
       "context_length": 65536,
-      "price_input_per_1m": 2.0,
-      "price_output_per_1m": 6.0
-    },
-    "mistralai/mixtral-8x7b-instruct": {
-      "name": "Mistral: Mixtral 8x7B Instruct",
-      "context_length": 32768,
-      "price_input_per_1m": 0.54,
-      "price_output_per_1m": 0.54
-    },
-    "mistralai/pixtral-large-2411": {
-      "name": "Mistral: Pixtral Large 2411",
-      "context_length": 131072,
       "price_input_per_1m": 2.0,
       "price_output_per_1m": 6.0
     },
@@ -975,8 +849,8 @@
     "moonshotai/kimi-k2-0905": {
       "name": "MoonshotAI: Kimi K2 0905",
       "context_length": 262144,
-      "price_input_per_1m": 0.4,
-      "price_output_per_1m": 2.0
+      "price_input_per_1m": 0.6,
+      "price_output_per_1m": 2.5
     },
     "moonshotai/kimi-k2-thinking": {
       "name": "MoonshotAI: Kimi K2 Thinking",
@@ -987,14 +861,20 @@
     "moonshotai/kimi-k2.5": {
       "name": "MoonshotAI: Kimi K2.5",
       "context_length": 262144,
-      "price_input_per_1m": 0.44,
-      "price_output_per_1m": 2.0
+      "price_input_per_1m": 0.375,
+      "price_output_per_1m": 2.025
     },
     "moonshotai/kimi-k2.6": {
       "name": "MoonshotAI: Kimi K2.6",
-      "context_length": 256000,
-      "price_input_per_1m": 0.7448,
-      "price_output_per_1m": 4.655
+      "context_length": 262144,
+      "price_input_per_1m": 0.55,
+      "price_output_per_1m": 3.2
+    },
+    "moonshotai/kimi-k2.7-code": {
+      "name": "MoonshotAI: Kimi K2.7 Code",
+      "context_length": 262144,
+      "price_input_per_1m": 0.74,
+      "price_output_per_1m": 3.5
     },
     "morph/morph-v3-fast": {
       "name": "Morph: Morph V3 Fast",
@@ -1008,17 +888,11 @@
       "price_input_per_1m": 0.9,
       "price_output_per_1m": 1.9
     },
-    "nex-agi/deepseek-v3.1-nex-n1": {
-      "name": "Nex AGI: DeepSeek V3.1 Nex N1",
-      "context_length": 131072,
-      "price_input_per_1m": 0.135,
-      "price_output_per_1m": 0.5
-    },
-    "nousresearch/hermes-2-pro-llama-3-8b": {
-      "name": "NousResearch: Hermes 2 Pro - Llama-3 8B",
-      "context_length": 8192,
-      "price_input_per_1m": 0.14,
-      "price_output_per_1m": 0.14
+    "nex-agi/nex-n2-pro": {
+      "name": "Nex AGI: Nex-N2-Pro",
+      "context_length": 262144,
+      "price_input_per_1m": 0.25,
+      "price_output_per_1m": 1.0
     },
     "nousresearch/hermes-3-llama-3.1-405b": {
       "name": "Nous: Hermes 3 405B Instruct",
@@ -1035,8 +909,8 @@
     "nousresearch/hermes-3-llama-3.1-70b": {
       "name": "Nous: Hermes 3 70B Instruct",
       "context_length": 131072,
-      "price_input_per_1m": 0.3,
-      "price_output_per_1m": 0.3
+      "price_input_per_1m": 0.7,
+      "price_output_per_1m": 0.7
     },
     "nousresearch/hermes-4-405b": {
       "name": "Nous: Hermes 4 405B",
@@ -1050,16 +924,10 @@
       "price_input_per_1m": 0.13,
       "price_output_per_1m": 0.4
     },
-    "nvidia/llama-3.1-nemotron-70b-instruct": {
-      "name": "NVIDIA: Llama 3.1 Nemotron 70B Instruct",
-      "context_length": 131072,
-      "price_input_per_1m": 1.2,
-      "price_output_per_1m": 1.2
-    },
     "nvidia/llama-3.3-nemotron-super-49b-v1.5": {
       "name": "NVIDIA: Llama 3.3 Nemotron Super 49B V1.5",
       "context_length": 131072,
-      "price_input_per_1m": 0.1,
+      "price_input_per_1m": 0.4,
       "price_output_per_1m": 0.4
     },
     "nvidia/nemotron-3-nano-30b-a3b": {
@@ -1074,35 +942,47 @@
       "price_input_per_1m": 0.0,
       "price_output_per_1m": 0.0
     },
-    "nvidia/nemotron-3-super-120b-a12b": {
-      "name": "NVIDIA: Nemotron 3 Super",
-      "context_length": 262144,
-      "price_input_per_1m": 0.09,
-      "price_output_per_1m": 0.45
-    },
-    "nvidia/nemotron-3-super-120b-a12b:free": {
-      "name": "NVIDIA: Nemotron 3 Super (free)",
-      "context_length": 262144,
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
+      "name": "NVIDIA: Nemotron 3 Nano Omni (free)",
+      "context_length": 256000,
       "price_input_per_1m": 0.0,
       "price_output_per_1m": 0.0
     },
-    "nvidia/nemotron-nano-12b-v2-vl": {
-      "name": "NVIDIA: Nemotron Nano 12B 2 VL",
-      "context_length": 131072,
-      "price_input_per_1m": 0.2,
-      "price_output_per_1m": 0.6
+    "nvidia/nemotron-3-super-120b-a12b": {
+      "name": "NVIDIA: Nemotron 3 Super",
+      "context_length": 1000000,
+      "price_input_per_1m": 0.085,
+      "price_output_per_1m": 0.4
+    },
+    "nvidia/nemotron-3-super-120b-a12b:free": {
+      "name": "NVIDIA: Nemotron 3 Super (free)",
+      "context_length": 1000000,
+      "price_input_per_1m": 0.0,
+      "price_output_per_1m": 0.0
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b": {
+      "name": "NVIDIA: Nemotron 3 Ultra",
+      "context_length": 1000000,
+      "price_input_per_1m": 0.5,
+      "price_output_per_1m": 2.2
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b:free": {
+      "name": "NVIDIA: Nemotron 3 Ultra (free)",
+      "context_length": 1000000,
+      "price_input_per_1m": 0.0,
+      "price_output_per_1m": 0.0
+    },
+    "nvidia/nemotron-3.5-content-safety:free": {
+      "name": "NVIDIA: Nemotron 3.5 Content Safety (free)",
+      "context_length": 128000,
+      "price_input_per_1m": 0.0,
+      "price_output_per_1m": 0.0
     },
     "nvidia/nemotron-nano-12b-v2-vl:free": {
       "name": "NVIDIA: Nemotron Nano 12B 2 VL (free)",
       "context_length": 128000,
       "price_input_per_1m": 0.0,
       "price_output_per_1m": 0.0
-    },
-    "nvidia/nemotron-nano-9b-v2": {
-      "name": "NVIDIA: Nemotron Nano 9B V2",
-      "context_length": 131072,
-      "price_input_per_1m": 0.04,
-      "price_output_per_1m": 0.16
     },
     "nvidia/nemotron-nano-9b-v2:free": {
       "name": "NVIDIA: Nemotron Nano 9B V2 (free)",
@@ -1139,18 +1019,6 @@
       "context_length": 8191,
       "price_input_per_1m": 30.0,
       "price_output_per_1m": 60.0
-    },
-    "openai/gpt-4-0314": {
-      "name": "OpenAI: GPT-4 (older v0314)",
-      "context_length": 8191,
-      "price_input_per_1m": 30.0,
-      "price_output_per_1m": 60.0
-    },
-    "openai/gpt-4-1106-preview": {
-      "name": "OpenAI: GPT-4 Turbo (older v1106)",
-      "context_length": 128000,
-      "price_input_per_1m": 10.0,
-      "price_output_per_1m": 30.0
     },
     "openai/gpt-4-turbo": {
       "name": "OpenAI: GPT-4 Turbo",
@@ -1202,12 +1070,6 @@
     },
     "openai/gpt-4o-2024-11-20": {
       "name": "OpenAI: GPT-4o (2024-11-20)",
-      "context_length": 128000,
-      "price_input_per_1m": 2.5,
-      "price_output_per_1m": 10.0
-    },
-    "openai/gpt-4o-audio-preview": {
-      "name": "OpenAI: GPT-4o Audio",
       "context_length": 128000,
       "price_input_per_1m": 2.5,
       "price_output_per_1m": 10.0
@@ -1404,11 +1266,17 @@
       "price_input_per_1m": 0.6,
       "price_output_per_1m": 2.4
     },
+    "openai/gpt-chat-latest": {
+      "name": "OpenAI: GPT Chat Latest",
+      "context_length": 400000,
+      "price_input_per_1m": 5.0,
+      "price_output_per_1m": 30.0
+    },
     "openai/gpt-oss-120b": {
       "name": "OpenAI: gpt-oss-120b",
       "context_length": 131072,
-      "price_input_per_1m": 0.039,
-      "price_output_per_1m": 0.19
+      "price_input_per_1m": 0.03,
+      "price_output_per_1m": 0.15
     },
     "openai/gpt-oss-120b:free": {
       "name": "OpenAI: gpt-oss-120b (free)",
@@ -1419,7 +1287,7 @@
     "openai/gpt-oss-20b": {
       "name": "OpenAI: gpt-oss-20b",
       "context_length": 131072,
-      "price_input_per_1m": 0.03,
+      "price_input_per_1m": 0.029,
       "price_output_per_1m": 0.14
     },
     "openai/gpt-oss-20b:free": {
@@ -1500,6 +1368,12 @@
       "price_input_per_1m": 0.0,
       "price_output_per_1m": 0.0
     },
+    "perceptron/perceptron-mk1": {
+      "name": "Perceptron: Perceptron Mk1",
+      "context_length": 32768,
+      "price_input_per_1m": 0.15,
+      "price_output_per_1m": 1.5
+    },
     "perplexity/sonar": {
       "name": "Perplexity: Sonar",
       "context_length": 127072,
@@ -1530,35 +1404,47 @@
       "price_input_per_1m": 2.0,
       "price_output_per_1m": 8.0
     },
-    "prime-intellect/intellect-3": {
-      "name": "Prime Intellect: INTELLECT-3",
-      "context_length": 131072,
+    "poolside/laguna-m.1": {
+      "name": "Poolside: Laguna M.1",
+      "context_length": 262144,
       "price_input_per_1m": 0.2,
-      "price_output_per_1m": 1.1
+      "price_output_per_1m": 0.4
+    },
+    "poolside/laguna-m.1:free": {
+      "name": "Poolside: Laguna M.1 (free)",
+      "context_length": 262144,
+      "price_input_per_1m": 0.0,
+      "price_output_per_1m": 0.0
+    },
+    "poolside/laguna-xs.2": {
+      "name": "Poolside: Laguna XS.2",
+      "context_length": 262144,
+      "price_input_per_1m": 0.1,
+      "price_output_per_1m": 0.2
+    },
+    "poolside/laguna-xs.2:free": {
+      "name": "Poolside: Laguna XS.2 (free)",
+      "context_length": 262144,
+      "price_input_per_1m": 0.0,
+      "price_output_per_1m": 0.0
     },
     "qwen/qwen-2.5-72b-instruct": {
       "name": "Qwen2.5 72B Instruct",
-      "context_length": 32768,
-      "price_input_per_1m": 0.12,
-      "price_output_per_1m": 0.39
+      "context_length": 131072,
+      "price_input_per_1m": 0.36,
+      "price_output_per_1m": 0.4
     },
     "qwen/qwen-2.5-7b-instruct": {
       "name": "Qwen: Qwen2.5 7B Instruct",
-      "context_length": 32768,
+      "context_length": 131072,
       "price_input_per_1m": 0.04,
       "price_output_per_1m": 0.1
     },
     "qwen/qwen-2.5-coder-32b-instruct": {
       "name": "Qwen2.5 Coder 32B Instruct",
-      "context_length": 32768,
+      "context_length": 128000,
       "price_input_per_1m": 0.66,
       "price_output_per_1m": 1.0
-    },
-    "qwen/qwen-max": {
-      "name": "Qwen: Qwen-Max ",
-      "context_length": 32768,
-      "price_input_per_1m": 1.04,
-      "price_output_per_1m": 4.16
     },
     "qwen/qwen-plus": {
       "name": "Qwen: Qwen-Plus",
@@ -1578,34 +1464,16 @@
       "price_input_per_1m": 0.26,
       "price_output_per_1m": 0.78
     },
-    "qwen/qwen-turbo": {
-      "name": "Qwen: Qwen-Turbo",
-      "context_length": 131072,
-      "price_input_per_1m": 0.0325,
-      "price_output_per_1m": 0.13
-    },
-    "qwen/qwen-vl-max": {
-      "name": "Qwen: Qwen VL Max",
-      "context_length": 131072,
-      "price_input_per_1m": 0.52,
-      "price_output_per_1m": 2.08
-    },
-    "qwen/qwen-vl-plus": {
-      "name": "Qwen: Qwen VL Plus",
-      "context_length": 131072,
-      "price_input_per_1m": 0.1365,
-      "price_output_per_1m": 0.4095
-    },
     "qwen/qwen2.5-vl-72b-instruct": {
       "name": "Qwen: Qwen2.5 VL 72B Instruct",
-      "context_length": 32000,
-      "price_input_per_1m": 0.25,
-      "price_output_per_1m": 0.75
+      "context_length": 131072,
+      "price_input_per_1m": 0.8,
+      "price_output_per_1m": 1.0
     },
     "qwen/qwen3-14b": {
       "name": "Qwen: Qwen3 14B",
-      "context_length": 40960,
-      "price_input_per_1m": 0.06,
+      "context_length": 131702,
+      "price_input_per_1m": 0.1,
       "price_output_per_1m": 0.24
     },
     "qwen/qwen3-235b-a22b": {
@@ -1617,26 +1485,26 @@
     "qwen/qwen3-235b-a22b-2507": {
       "name": "Qwen: Qwen3 235B A22B Instruct 2507",
       "context_length": 262144,
-      "price_input_per_1m": 0.071,
+      "price_input_per_1m": 0.09,
       "price_output_per_1m": 0.1
     },
     "qwen/qwen3-235b-a22b-thinking-2507": {
       "name": "Qwen: Qwen3 235B A22B Thinking 2507",
-      "context_length": 131072,
+      "context_length": 262144,
       "price_input_per_1m": 0.1495,
       "price_output_per_1m": 1.495
     },
     "qwen/qwen3-30b-a3b": {
       "name": "Qwen: Qwen3 30B A3B",
-      "context_length": 40960,
-      "price_input_per_1m": 0.08,
-      "price_output_per_1m": 0.28
+      "context_length": 131072,
+      "price_input_per_1m": 0.12,
+      "price_output_per_1m": 0.5
     },
     "qwen/qwen3-30b-a3b-instruct-2507": {
       "name": "Qwen: Qwen3 30B A3B Instruct 2507",
-      "context_length": 262144,
-      "price_input_per_1m": 0.09,
-      "price_output_per_1m": 0.3
+      "context_length": 131072,
+      "price_input_per_1m": 0.04815,
+      "price_output_per_1m": 0.19305
     },
     "qwen/qwen3-30b-a3b-thinking-2507": {
       "name": "Qwen: Qwen3 30B A3B Thinking 2507",
@@ -1646,21 +1514,21 @@
     },
     "qwen/qwen3-32b": {
       "name": "Qwen: Qwen3 32B",
-      "context_length": 40960,
+      "context_length": 131072,
       "price_input_per_1m": 0.08,
-      "price_output_per_1m": 0.24
+      "price_output_per_1m": 0.28
     },
     "qwen/qwen3-8b": {
       "name": "Qwen: Qwen3 8B",
-      "context_length": 40960,
+      "context_length": 131072,
       "price_input_per_1m": 0.05,
       "price_output_per_1m": 0.4
     },
     "qwen/qwen3-coder": {
       "name": "Qwen: Qwen3 Coder 480B A35B",
-      "context_length": 262144,
+      "context_length": 1048576,
       "price_input_per_1m": 0.22,
-      "price_output_per_1m": 1.0
+      "price_output_per_1m": 1.8
     },
     "qwen/qwen3-coder-30b-a3b-instruct": {
       "name": "Qwen: Qwen3 Coder 30B A3B Instruct",
@@ -1677,7 +1545,7 @@
     "qwen/qwen3-coder-next": {
       "name": "Qwen: Qwen3 Coder Next",
       "context_length": 262144,
-      "price_input_per_1m": 0.14,
+      "price_input_per_1m": 0.11,
       "price_output_per_1m": 0.8
     },
     "qwen/qwen3-coder-plus": {
@@ -1688,7 +1556,7 @@
     },
     "qwen/qwen3-coder:free": {
       "name": "Qwen: Qwen3 Coder 480B A35B (free)",
-      "context_length": 262000,
+      "context_length": 1048576,
       "price_input_per_1m": 0.0,
       "price_output_per_1m": 0.0
     },
@@ -1718,7 +1586,7 @@
     },
     "qwen/qwen3-next-80b-a3b-thinking": {
       "name": "Qwen: Qwen3 Next 80B A3B Thinking",
-      "context_length": 131072,
+      "context_length": 262144,
       "price_input_per_1m": 0.0975,
       "price_output_per_1m": 0.78
     },
@@ -1736,7 +1604,7 @@
     },
     "qwen/qwen3-vl-30b-a3b-instruct": {
       "name": "Qwen: Qwen3 VL 30B A3B Instruct",
-      "context_length": 131072,
+      "context_length": 262144,
       "price_input_per_1m": 0.13,
       "price_output_per_1m": 0.52
     },
@@ -1748,19 +1616,19 @@
     },
     "qwen/qwen3-vl-32b-instruct": {
       "name": "Qwen: Qwen3 VL 32B Instruct",
-      "context_length": 131072,
+      "context_length": 262144,
       "price_input_per_1m": 0.104,
       "price_output_per_1m": 0.416
     },
     "qwen/qwen3-vl-8b-instruct": {
       "name": "Qwen: Qwen3 VL 8B Instruct",
-      "context_length": 131072,
+      "context_length": 256000,
       "price_input_per_1m": 0.08,
       "price_output_per_1m": 0.5
     },
     "qwen/qwen3-vl-8b-thinking": {
       "name": "Qwen: Qwen3 VL 8B Thinking",
-      "context_length": 131072,
+      "context_length": 256000,
       "price_input_per_1m": 0.117,
       "price_output_per_1m": 1.365
     },
@@ -1779,14 +1647,14 @@
     "qwen/qwen3.5-35b-a3b": {
       "name": "Qwen: Qwen3.5-35B-A3B",
       "context_length": 262144,
-      "price_input_per_1m": 0.1625,
-      "price_output_per_1m": 1.3
+      "price_input_per_1m": 0.14,
+      "price_output_per_1m": 1.0
     },
     "qwen/qwen3.5-397b-a17b": {
       "name": "Qwen: Qwen3.5 397B A17B",
-      "context_length": 262144,
-      "price_input_per_1m": 0.39,
-      "price_output_per_1m": 2.34
+      "context_length": 256000,
+      "price_input_per_1m": 0.385,
+      "price_output_per_1m": 2.45
     },
     "qwen/qwen3.5-9b": {
       "name": "Qwen: Qwen3.5-9B",
@@ -1806,17 +1674,53 @@
       "price_input_per_1m": 0.26,
       "price_output_per_1m": 1.56
     },
+    "qwen/qwen3.5-plus-20260420": {
+      "name": "Qwen: Qwen3.5 Plus 2026-04-20",
+      "context_length": 1000000,
+      "price_input_per_1m": 0.3,
+      "price_output_per_1m": 1.8
+    },
+    "qwen/qwen3.6-27b": {
+      "name": "Qwen: Qwen3.6 27B",
+      "context_length": 262144,
+      "price_input_per_1m": 0.285,
+      "price_output_per_1m": 2.4
+    },
+    "qwen/qwen3.6-35b-a3b": {
+      "name": "Qwen: Qwen3.6 35B A3B",
+      "context_length": 262144,
+      "price_input_per_1m": 0.14,
+      "price_output_per_1m": 1.0
+    },
+    "qwen/qwen3.6-flash": {
+      "name": "Qwen: Qwen3.6 Flash",
+      "context_length": 1000000,
+      "price_input_per_1m": 0.1875,
+      "price_output_per_1m": 1.125
+    },
+    "qwen/qwen3.6-max-preview": {
+      "name": "Qwen: Qwen3.6 Max Preview",
+      "context_length": 262144,
+      "price_input_per_1m": 1.04,
+      "price_output_per_1m": 6.24
+    },
     "qwen/qwen3.6-plus": {
       "name": "Qwen: Qwen3.6 Plus",
       "context_length": 1000000,
       "price_input_per_1m": 0.325,
       "price_output_per_1m": 1.95
     },
-    "qwen/qwq-32b": {
-      "name": "Qwen: QwQ 32B",
-      "context_length": 131072,
-      "price_input_per_1m": 0.15,
-      "price_output_per_1m": 0.58
+    "qwen/qwen3.7-max": {
+      "name": "Qwen: Qwen3.7 Max",
+      "context_length": 1000000,
+      "price_input_per_1m": 1.25,
+      "price_output_per_1m": 3.75
+    },
+    "qwen/qwen3.7-plus": {
+      "name": "Qwen: Qwen3.7 Plus",
+      "context_length": 1000000,
+      "price_input_per_1m": 0.32,
+      "price_output_per_1m": 1.28
     },
     "rekaai/reka-edge": {
       "name": "Reka Edge",
@@ -1842,11 +1746,11 @@
       "price_input_per_1m": 1.0,
       "price_output_per_1m": 3.0
     },
-    "sao10k/l3-euryale-70b": {
-      "name": "Sao10k: Llama 3 Euryale 70B v2.1",
-      "context_length": 8192,
-      "price_input_per_1m": 1.48,
-      "price_output_per_1m": 1.48
+    "sakana/fugu-ultra": {
+      "name": "Sakana: Fugu Ultra",
+      "context_length": 1000000,
+      "price_input_per_1m": 5.0,
+      "price_output_per_1m": 30.0
     },
     "sao10k/l3-lunaris-8b": {
       "name": "Sao10K: Llama 3 8B Lunaris",
@@ -1878,6 +1782,12 @@
       "price_input_per_1m": 0.1,
       "price_output_per_1m": 0.3
     },
+    "stepfun/step-3.7-flash": {
+      "name": "StepFun: Step 3.7 Flash",
+      "context_length": 256000,
+      "price_input_per_1m": 0.2,
+      "price_output_per_1m": 1.15
+    },
     "switchpoint/router": {
       "name": "Switchpoint Router",
       "context_length": 131072,
@@ -1890,11 +1800,11 @@
       "price_input_per_1m": 0.14,
       "price_output_per_1m": 0.57
     },
-    "tencent/hy3-preview:free": {
-      "name": "Tencent: Hy3 preview (free)",
+    "tencent/hy3-preview": {
+      "name": "Tencent: Hy3 preview",
       "context_length": 262144,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
+      "price_input_per_1m": 0.063,
+      "price_output_per_1m": 0.21
     },
     "thedrummer/cydonia-24b-v4.1": {
       "name": "TheDrummer: Cydonia 24B V4.1",
@@ -1905,8 +1815,8 @@
     "thedrummer/rocinante-12b": {
       "name": "TheDrummer: Rocinante 12B",
       "context_length": 32768,
-      "price_input_per_1m": 0.17,
-      "price_output_per_1m": 0.43
+      "price_input_per_1m": 0.25,
+      "price_output_per_1m": 0.5
     },
     "thedrummer/skyfall-36b-v2": {
       "name": "TheDrummer: Skyfall 36B V2",
@@ -1919,12 +1829,6 @@
       "context_length": 32768,
       "price_input_per_1m": 0.4,
       "price_output_per_1m": 0.4
-    },
-    "tngtech/deepseek-r1t2-chimera": {
-      "name": "TNG: DeepSeek R1T2 Chimera",
-      "context_length": 163840,
-      "price_input_per_1m": 0.3,
-      "price_output_per_1m": 1.1
     },
     "undi95/remm-slerp-l2-13b": {
       "name": "ReMM SLERP 13B",
@@ -1944,101 +1848,41 @@
       "price_input_per_1m": 0.6,
       "price_output_per_1m": 6.0
     },
-    "x-ai/grok-3": {
-      "name": "xAI: Grok 3",
-      "context_length": 131072,
-      "price_input_per_1m": 3.0,
-      "price_output_per_1m": 15.0
-    },
-    "x-ai/grok-3-beta": {
-      "name": "xAI: Grok 3 Beta",
-      "context_length": 131072,
-      "price_input_per_1m": 3.0,
-      "price_output_per_1m": 15.0
-    },
-    "x-ai/grok-3-mini": {
-      "name": "xAI: Grok 3 Mini",
-      "context_length": 131072,
-      "price_input_per_1m": 0.3,
-      "price_output_per_1m": 0.5
-    },
-    "x-ai/grok-3-mini-beta": {
-      "name": "xAI: Grok 3 Mini Beta",
-      "context_length": 131072,
-      "price_input_per_1m": 0.3,
-      "price_output_per_1m": 0.5
-    },
-    "x-ai/grok-4": {
-      "name": "xAI: Grok 4",
-      "context_length": 256000,
-      "price_input_per_1m": 3.0,
-      "price_output_per_1m": 15.0
-    },
-    "x-ai/grok-4-fast": {
-      "name": "xAI: Grok 4 Fast",
-      "context_length": 2000000,
-      "price_input_per_1m": 0.2,
-      "price_output_per_1m": 0.5
-    },
-    "x-ai/grok-4.1-fast": {
-      "name": "xAI: Grok 4.1 Fast",
-      "context_length": 2000000,
-      "price_input_per_1m": 0.2,
-      "price_output_per_1m": 0.5
-    },
     "x-ai/grok-4.20": {
       "name": "xAI: Grok 4.20",
       "context_length": 2000000,
-      "price_input_per_1m": 2.0,
-      "price_output_per_1m": 6.0
+      "price_input_per_1m": 1.25,
+      "price_output_per_1m": 2.5
     },
     "x-ai/grok-4.20-multi-agent": {
       "name": "xAI: Grok 4.20 Multi-Agent",
       "context_length": 2000000,
-      "price_input_per_1m": 2.0,
-      "price_output_per_1m": 6.0
+      "price_input_per_1m": 1.25,
+      "price_output_per_1m": 2.5
     },
-    "x-ai/grok-code-fast-1": {
-      "name": "xAI: Grok Code Fast 1",
+    "x-ai/grok-4.3": {
+      "name": "xAI: Grok 4.3",
+      "context_length": 1000000,
+      "price_input_per_1m": 1.25,
+      "price_output_per_1m": 2.5
+    },
+    "x-ai/grok-build-0.1": {
+      "name": "xAI: Grok Build 0.1",
       "context_length": 256000,
-      "price_input_per_1m": 0.2,
-      "price_output_per_1m": 1.5
-    },
-    "xiaomi/mimo-v2-flash": {
-      "name": "Xiaomi: MiMo-V2-Flash",
-      "context_length": 262144,
-      "price_input_per_1m": 0.09,
-      "price_output_per_1m": 0.29
-    },
-    "xiaomi/mimo-v2-omni": {
-      "name": "Xiaomi: MiMo-V2-Omni",
-      "context_length": 262144,
-      "price_input_per_1m": 0.4,
-      "price_output_per_1m": 2.0
-    },
-    "xiaomi/mimo-v2-pro": {
-      "name": "Xiaomi: MiMo-V2-Pro",
-      "context_length": 1048576,
       "price_input_per_1m": 1.0,
-      "price_output_per_1m": 3.0
+      "price_output_per_1m": 2.0
     },
     "xiaomi/mimo-v2.5": {
       "name": "Xiaomi: MiMo-V2.5",
       "context_length": 1048576,
-      "price_input_per_1m": 0.4,
-      "price_output_per_1m": 2.0
+      "price_input_per_1m": 0.105,
+      "price_output_per_1m": 0.28
     },
     "xiaomi/mimo-v2.5-pro": {
       "name": "Xiaomi: MiMo-V2.5-Pro",
       "context_length": 1048576,
-      "price_input_per_1m": 1.0,
-      "price_output_per_1m": 3.0
-    },
-    "z-ai/glm-4-32b": {
-      "name": "Z.ai: GLM 4 32B ",
-      "context_length": 128000,
-      "price_input_per_1m": 0.1,
-      "price_output_per_1m": 0.1
+      "price_input_per_1m": 0.435,
+      "price_output_per_1m": 0.87
     },
     "z-ai/glm-4.5": {
       "name": "Z.ai: GLM 4.5",
@@ -2052,12 +1896,6 @@
       "price_input_per_1m": 0.13,
       "price_output_per_1m": 0.85
     },
-    "z-ai/glm-4.5-air:free": {
-      "name": "Z.ai: GLM 4.5 Air (free)",
-      "context_length": 131072,
-      "price_input_per_1m": 0.0,
-      "price_output_per_1m": 0.0
-    },
     "z-ai/glm-4.5v": {
       "name": "Z.ai: GLM 4.5V",
       "context_length": 65536,
@@ -2066,9 +1904,9 @@
     },
     "z-ai/glm-4.6": {
       "name": "Z.ai: GLM 4.6",
-      "context_length": 204800,
-      "price_input_per_1m": 0.39,
-      "price_output_per_1m": 1.9
+      "context_length": 202752,
+      "price_input_per_1m": 0.43,
+      "price_output_per_1m": 1.74
     },
     "z-ai/glm-4.6v": {
       "name": "Z.ai: GLM 4.6V",
@@ -2079,8 +1917,8 @@
     "z-ai/glm-4.7": {
       "name": "Z.ai: GLM 4.7",
       "context_length": 202752,
-      "price_input_per_1m": 0.38,
-      "price_output_per_1m": 1.74
+      "price_input_per_1m": 0.4,
+      "price_output_per_1m": 1.75
     },
     "z-ai/glm-4.7-flash": {
       "name": "Z.ai: GLM 4.7 Flash",
@@ -2092,19 +1930,25 @@
       "name": "Z.ai: GLM 5",
       "context_length": 202752,
       "price_input_per_1m": 0.6,
-      "price_output_per_1m": 2.08
+      "price_output_per_1m": 1.92
     },
     "z-ai/glm-5-turbo": {
       "name": "Z.ai: GLM 5 Turbo",
-      "context_length": 202752,
+      "context_length": 262144,
       "price_input_per_1m": 1.2,
       "price_output_per_1m": 4.0
     },
     "z-ai/glm-5.1": {
       "name": "Z.ai: GLM 5.1",
       "context_length": 202752,
-      "price_input_per_1m": 1.05,
-      "price_output_per_1m": 3.5
+      "price_input_per_1m": 0.975,
+      "price_output_per_1m": 4.3
+    },
+    "z-ai/glm-5.2": {
+      "name": "Z.ai: GLM 5.2",
+      "context_length": 1048576,
+      "price_input_per_1m": 0.93,
+      "price_output_per_1m": 3.0
     },
     "z-ai/glm-5v-turbo": {
       "name": "Z.ai: GLM 5V Turbo",
@@ -2112,11 +1956,59 @@
       "price_input_per_1m": 1.2,
       "price_output_per_1m": 4.0
     },
+    "~anthropic/claude-fable-latest": {
+      "name": "Anthropic: Claude Fable Latest",
+      "context_length": 1000000,
+      "price_input_per_1m": 10.0,
+      "price_output_per_1m": 50.0
+    },
+    "~anthropic/claude-haiku-latest": {
+      "name": "Anthropic Claude Haiku Latest",
+      "context_length": 200000,
+      "price_input_per_1m": 1.0,
+      "price_output_per_1m": 5.0
+    },
     "~anthropic/claude-opus-latest": {
       "name": "Anthropic: Claude Opus Latest",
       "context_length": 1000000,
       "price_input_per_1m": 5.0,
       "price_output_per_1m": 25.0
+    },
+    "~anthropic/claude-sonnet-latest": {
+      "name": "Anthropic Claude Sonnet Latest",
+      "context_length": 1000000,
+      "price_input_per_1m": 2.0,
+      "price_output_per_1m": 10.0
+    },
+    "~google/gemini-flash-latest": {
+      "name": "Google Gemini Flash Latest",
+      "context_length": 1048576,
+      "price_input_per_1m": 1.5,
+      "price_output_per_1m": 9.0
+    },
+    "~google/gemini-pro-latest": {
+      "name": "Google Gemini Pro Latest",
+      "context_length": 1048576,
+      "price_input_per_1m": 2.0,
+      "price_output_per_1m": 12.0
+    },
+    "~moonshotai/kimi-latest": {
+      "name": "MoonshotAI Kimi Latest",
+      "context_length": 262144,
+      "price_input_per_1m": 0.55,
+      "price_output_per_1m": 3.2
+    },
+    "~openai/gpt-latest": {
+      "name": "OpenAI GPT Latest",
+      "context_length": 1050000,
+      "price_input_per_1m": 5.0,
+      "price_output_per_1m": 30.0
+    },
+    "~openai/gpt-mini-latest": {
+      "name": "OpenAI GPT Mini Latest",
+      "context_length": 400000,
+      "price_input_per_1m": 0.75,
+      "price_output_per_1m": 4.5
     }
   }
 }
