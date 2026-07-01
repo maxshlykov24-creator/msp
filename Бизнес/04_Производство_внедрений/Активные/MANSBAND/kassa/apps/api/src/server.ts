@@ -15,6 +15,7 @@ import queueRoutes from "./routes/queue.routes.js";
 import statsRoutes from "./routes/stats.routes.js";
 import webhooksRoutes from "./routes/webhooks.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
+import contactsRoutes from "./routes/contacts.routes.js";
 
 export async function buildServer() {
   const env = getEnv();
@@ -23,7 +24,7 @@ export async function buildServer() {
       env.NODE_ENV === "production"
         ? { level: "info" }
         : { level: "debug", transport: { target: "pino-pretty" } },
-    bodyLimit: 15 * 1024 * 1024, // до 15 МБ — фотофиксации base64
+    bodyLimit: 40 * 1024 * 1024, // до 40 МБ — несколько фотофиксаций base64 в одной заявке
   });
 
   await app.register(cors, { origin: true, credentials: true });
@@ -43,6 +44,7 @@ export async function buildServer() {
       await api.register(statsRoutes);
       await api.register(webhooksRoutes);
       await api.register(adminRoutes);
+      await api.register(contactsRoutes);
     },
     { prefix: "/api" }
   );

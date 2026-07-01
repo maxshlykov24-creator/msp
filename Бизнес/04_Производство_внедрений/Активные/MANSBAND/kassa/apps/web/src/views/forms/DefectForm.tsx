@@ -14,6 +14,7 @@ import {
 } from "./common";
 import { STORE_ADDRESS } from "../../data/mock";
 import { KIND_LABEL } from "../../lib/labels";
+import { attachmentsToUpload, type PhotoAttachment } from "../../lib/photo";
 import type { CartItem, DealKind } from "../../data/types";
 
 type DefectKind = "defect" | "drycleaning" | "resew" | "wrong_size";
@@ -51,9 +52,9 @@ export function DefectForm({ kind, onDone }: { kind: DealKind; onDone: () => voi
   const [consultants, setConsultants] = useState<ConsultantData>({ consultant: activeConsultant, referredBy: "" });
   const [items, setItems] = useState<CartItem[]>([]);
   const [comment, setComment] = useState("");
-  const [photo, setPhoto] = useState(false);
+  const [photos, setPhotos] = useState<PhotoAttachment[]>([]);
 
-  const baseFilled = !!(items.length > 0 && comment.trim() && (cfg.needPhoto ? photo : true));
+  const baseFilled = !!(items.length > 0 && comment.trim() && (cfg.needPhoto ? photos.length > 0 : true));
 
   function save(s: string) {
     addDeal({
@@ -71,10 +72,10 @@ export function DefectForm({ kind, onDone }: { kind: DealKind; onDone: () => voi
       payments: [],
       stage: s,
       comment,
-      photoAttached: cfg.needPhoto ? photo : undefined,
+      photoAttached: cfg.needPhoto ? photos.length > 0 : undefined,
       total: 0,
       paid: 0,
-    });
+    }, attachmentsToUpload(photos));
     setSaved(true);
     setTimeout(onDone, 1100);
   }
@@ -95,7 +96,7 @@ export function DefectForm({ kind, onDone }: { kind: DealKind; onDone: () => voi
           saved={saved}
           disabled={!baseFilled}
           onBack={onDone}
-          successHint={!baseFilled ? (cfg.needPhoto && !photo ? "Нужны позиции, комментарий и фото" : "Нужны позиции и комментарий") : undefined}
+          successHint={!baseFilled ? (cfg.needPhoto && photos.length === 0 ? "Нужны позиции, комментарий и фото" : "Нужны позиции и комментарий") : undefined}
         />
       }
     >
@@ -117,7 +118,7 @@ export function DefectForm({ kind, onDone }: { kind: DealKind; onDone: () => voi
       {cfg.needPhoto && (
         <Card>
           <SectionTitle>Фото дефекта</SectionTitle>
-          <PhotoField attached={photo} onChange={setPhoto} label="Фото дефекта" />
+          <PhotoField photos={photos} onChange={setPhotos} label="Фото дефекта" />
         </Card>
       )}
 

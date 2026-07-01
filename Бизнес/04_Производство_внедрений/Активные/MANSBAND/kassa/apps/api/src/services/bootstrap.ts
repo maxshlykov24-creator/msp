@@ -4,6 +4,10 @@ import { amoMeta, msRefs, products, stock } from "../db/schema.js";
 import * as amo from "../clients/amo.js";
 import * as ms from "../clients/ms.js";
 import {
+  AMO_LEAD_FIELDS,
+  AMO_NEW_LEAD_FIELDS,
+  AMO_COMPANY_FIELDS,
+  AMO_NEW_COMPANY_FIELDS,
   AMO_WRITEBACK_FIELDS,
   MS_ORGANIZATION_NAME,
   MS_RETAIL_COUNTERPARTY_NAME,
@@ -26,6 +30,40 @@ export async function syncAmoMeta(): Promise<void> {
     await upsertAmoMeta("field", f.id, null, f.name, f);
     for (const e of f.enums ?? []) {
       await upsertAmoMeta("enum", e.id, f.id, e.value, e);
+    }
+  }
+
+  const companyFields = await amo.getCompanyCustomFields();
+  for (const f of companyFields) {
+    await upsertAmoMeta("company_field", f.id, null, f.name, f);
+  }
+}
+
+// Создаёт в amoCRM недостающие кастом-поля лида/компании (идемпотентно —
+// пропускает поля, найденные по имени). Нужно, чтобы деплой не требовал
+// ручных действий в интерфейсе amoCRM.
+export async function ensureCustomFieldsExist(): Promise<void> {
+  for (const { key, type } of AMO_NEW_LEAD_FIELDS) {
+    const name = AMO_LEAD_FIELDS[key];
+    const existing = await getFieldIdByName(name);
+    if (existing) continue;
+    try {
+      const created = await amo.createLeadCustomField(name, type);
+      await upsertAmoMeta("field", created.id, null, created.name, created);
+    } catch {
+      // не критично — writeback пропустит поле, пока оно не создано
+    }
+  }
+
+  for (const { key, type } of AMO_NEW_COMPANY_FIELDS) {
+    const name = AMO_COMPANY_FIELDS[key];
+    const existing = await getCompanyFieldIdByName(name);
+    if (existing) continue;
+    try {
+      const created = await amo.createCompanyCustomField(name, type);
+      await upsertAmoMeta("company_field", created.id, null, created.name, created);
+    } catch {
+      // аналогично
     }
   }
 }
@@ -57,17 +95,40 @@ export async function getStatusId(pipelineId: number, stageName: string): Promis
   return exact?.amoId ?? rows.find((r) => r.name.toLowerCase().includes(stageName.toLowerCase()))?.amoId ?? null;
 }
 
+// Нечёткое совпадение — только для мелких отличий в написании (регистр/пробелы/
+// дефис и т.п.), НЕ для коротких имён-подстрок вроде «Консультант» внутри
+// «Отв-ный консультант» — иначе разные поля схлопнутся в одно и данные перепишут
+// друг друга. Порог длины отсекает такие ложные совпадения.
+function fuzzyFieldMatch<T extends { name: string }>(rows: T[], name: string): T | undefined {
+  const target = name.toLowerCase().trim();
+  return rows.find((r) => {
+    const candidate = r.name.toLowerCase().trim();
+    if (Math.abs(candidate.length - target.length) > 3) return false;
+    return candidate.includes(target) || target.includes(candidate);
+  });
+}
+
 export async function getFieldIdByName(name: string): Promise<number | null> {
   const rows = await db
     .select()
     .from(amoMeta)
     .where(and(eq(amoMeta.kind, "field"), eq(amoMeta.name, name)));
   if (rows[0]) return rows[0].amoId;
-  // мягкий поиск по вхождению
   const all = await db.select().from(amoMeta).where(eq(amoMeta.kind, "field"));
-  return all.find((r) => r.name.toLowerCase().includes(name.toLowerCase()))?.amoId ?? null;
+  return fuzzyFieldMatch(all, name)?.amoId ?? null;
 }
 
+export async function getCompanyFieldIdByName(name: string): Promise<number | null> {
+  const rows = await db
+    .select()
+    .from(amoMeta)
+    .where(and(eq(amoMeta.kind, "company_field"), eq(amoMeta.name, name)));
+  if (rows[0]) return rows[0].amoId;
+  const all = await db.select().from(amoMeta).where(eq(amoMeta.kind, "company_field"));
+  return fuzzyFieldMatch(all, name)?.amoId ?? null;
+}
+
+/** @deprecated используйте buildLeadCustomFields из services/amoMapping.ts. */
 export async function getWritebackFieldIds(): Promise<{
   msOrder: number | null;
   msDemand: number | null;
@@ -225,6 +286,9 @@ export async function runBootstrap(log: (msg: string) => void): Promise<void> {
   try {
     log("bootstrap: синк справочников amoCRM…");
     await syncAmoMeta();
+    log("bootstrap: проверка кастом-полей amoCRM (лид/компания)…");
+    await ensureCustomFieldsExist();
+    await syncAmoMeta(); // повторный синк, чтобы подтянуть id только что созданных полей
     log("bootstrap: резолв meta МойСклад…");
     await syncMsRefs();
     log("bootstrap: синк каталога МойСклад…");

@@ -3,6 +3,7 @@ import { dealsQuerySchema, dealsSearchSchema, updateStageSchema, addCommentSchem
 import type { Deal } from "@kassa/shared";
 import * as deals from "../services/deals.js";
 import * as sale from "../services/sale.js";
+import type { PhotoInput } from "../services/sale.js";
 import { notifySale } from "../services/notify.js";
 
 // Виды заявок, по которым касса проводит складскую отгрузку при Успехе.
@@ -44,14 +45,14 @@ export default async function dealsRoutes(app: FastifyInstance) {
     return deals.resolve(ref);
   });
 
-  // Создание/проведение заявки (фронт отправляет полный Deal).
+  // Создание/проведение заявки (фронт отправляет полный Deal + опционально photos).
   app.post("/deals", { preHandler: [app.authenticate] }, async (req) => {
-    const deal = req.body as Deal;
+    const { photos, ...deal } = req.body as Deal & { photos?: PhotoInput[] };
     const who = req.user.name;
     const fullyPaid = deal.total > 0 && deal.paid >= deal.total;
     const fulfill = deal.stage === "Успех" && fullyPaid && FULFILLABLE.has(deal.kind);
 
-    const saved = await sale.processSale(deal, { fulfill, who });
+    const saved = await sale.processSale(deal, { fulfill, photos, who });
     if (fulfill) await notifySale(saved);
     return saved;
   });

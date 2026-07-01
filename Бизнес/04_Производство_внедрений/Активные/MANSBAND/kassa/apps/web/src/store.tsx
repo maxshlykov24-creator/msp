@@ -3,6 +3,7 @@ import type { Certificate, Deal, QueueItem, SaryPayout, Store } from "./data/typ
 import { CERTIFICATES, DEALS, QUEUE, SARY } from "./data/mock";
 import { api, USE_MOCK } from "./api/client";
 import { connectWs } from "./api/ws";
+import type { PhotoUploadItem } from "./lib/photo";
 
 interface StoreState {
   deals: Deal[];
@@ -13,7 +14,7 @@ interface StoreState {
   activeConsultant: string;
   setActiveStore: (s: Store) => void;
   setActiveConsultant: (c: string) => void;
-  addDeal: (d: Deal) => void;
+  addDeal: (d: Deal, photos?: PhotoUploadItem[]) => void;
   updateDealStage: (id: string, stage: string) => void;
   addDealComment: (id: string, text: string, who: string) => void;
   addQueueItem: (q: QueueItem) => void;
@@ -85,11 +86,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeConsultant,
       setActiveStore,
       setActiveConsultant,
-      addDeal: (d) => {
+      addDeal: (d, photos) => {
         setDeals((prev) => [d, ...prev]); // оптимистично
         if (!USE_MOCK) {
           api
-            .post<Deal>("/deals", d)
+            .post<Deal>("/deals", photos?.length ? { ...d, photos } : d)
             .then((saved) => setDeals((prev) => prev.map((x) => (x.id === d.id ? saved : x))))
             .catch(() => {});
         }

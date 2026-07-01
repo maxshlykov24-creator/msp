@@ -31,9 +31,62 @@ export const AMO_PIPELINE_COMPLAINTS = 9601246; // Жалобы / возврат
 
 export const RENTAL_SERVICE_PRICE = 6500;
 
-// Имена кастом-полей amoCRM для writeback (точные field_id резолвятся по имени при bootstrap-синке).
-export const AMO_WRITEBACK_FIELDS = {
+// Имена кастом-полей сделки (лида) amoCRM для writeback.
+// Точные field_id резолвятся по имени при bootstrap-синке (getLeadFieldIds/getFieldIdByName) —
+// id НЕ хардкодим, чтобы не ломаться при пересоздании полей в amoCRM.
+// Поля, отмеченные (новое) — создаются автоматически при bootstrap, если ещё не существуют
+// (см. ensureLeadFieldsExist в apps/api/src/services/bootstrap.ts).
+export const AMO_LEAD_FIELDS = {
+  consultant: "Отв-ный консультант",
+  purpose: "Цель покупки",
+  channel: "Канал продаж",
+  comment: "Комментарий к заказу",
+  storeAddress: "Адрес магазина",
+  guestName: "Имя гостя",
+  certificateNumber: "№ Сертификата",
+  validUntil: "Сертификат действителен до",
+  invoiceNo: "№ Счета",
+  orderContains: "Состав заказа",
   msOrder: "Заказ МойСклад",
-  msDemand: "№ Заказа/Отгрузки/Счёта",
+  msDemand: "№ Отгрузки",
   paymentStatus: "Статус оплаты",
+  reservedUntil: "Отложка до",
+  otlozhkaKind: "Отложка", // select: "Платная" / "Бесплатная"
+  deferredUntil: "Резерв до",
+  meetingDate: "Дата встречи",
+  actualUntil: "Актуально до (обещание)", // новое
+  rentalFrom: "Аренда от", // новое
+  rentalTo: "Аренда до",
+  referredBy: "Направивший консультант", // новое
+  callManager: "Консультант", // новое
+  deliveryAddress: "Адрес доставки",
+  sara: "Сара",
+} as const;
+
+export type AmoLeadFieldKey = keyof typeof AMO_LEAD_FIELDS;
+
+// Поля лида, которые нужно создать в amoCRM при bootstrap, если их ещё нет.
+export const AMO_NEW_LEAD_FIELDS: Array<{ key: AmoLeadFieldKey; type: "date" | "text" }> = [
+  { key: "actualUntil", type: "date" },
+  { key: "rentalFrom", type: "date" },
+  { key: "referredBy", type: "text" },
+  { key: "callManager", type: "text" },
+];
+
+// Кастом-поля сущности «Компания» amoCRM.
+export const AMO_COMPANY_FIELDS = {
+  manager: "Руководитель",
+} as const;
+
+export type AmoCompanyFieldKey = keyof typeof AMO_COMPANY_FIELDS;
+
+export const AMO_NEW_COMPANY_FIELDS: Array<{ key: AmoCompanyFieldKey; type: "date" | "text" }> = [
+  { key: "manager", type: "text" },
+];
+
+/** @deprecated используйте AMO_LEAD_FIELDS — оставлено для обратной совместимости. */
+export const AMO_WRITEBACK_FIELDS = {
+  msOrder: AMO_LEAD_FIELDS.msOrder,
+  msDemand: AMO_LEAD_FIELDS.msDemand,
+  paymentStatus: AMO_LEAD_FIELDS.paymentStatus,
 } as const;

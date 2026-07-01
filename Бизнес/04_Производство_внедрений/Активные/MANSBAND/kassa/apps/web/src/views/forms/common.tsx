@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Camera,
@@ -6,6 +6,7 @@ import {
   Coins,
   PlusCircle,
   Store as StoreIcon,
+  Trash2,
   Undo2,
   Upload,
   UserCheck,
@@ -16,6 +17,8 @@ import { dateCompact, dateRu, formatPhone, money, moneyPlain } from "../../lib/f
 import { useStore } from "../../store";
 import type { Deal, Payment } from "../../data/types";
 import { PaymentBlock } from "../../components/PaymentBlock";
+import { filesToAttachments, type PhotoAttachment } from "../../lib/photo";
+import { api, USE_MOCK } from "../../api/client";
 
 // ── Хелперы ──────────────────────────────────────────────────────────
 
@@ -65,10 +68,14 @@ export function ClientFields({
 }) {
   const { findByPhone } = useStore();
   const [found, setFound] = useState<Deal | null>(null);
+  const [amoName, setAmoName] = useState<string | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const lookupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handlePhone(raw: string) {
     const phone = formatPhone(raw);
     const match = findByPhone(phone);
+    setAmoName(null);
     if (match) {
       setFound(match);
       onChange({ ...data, phone, name: data.name || match.clientName });
@@ -77,6 +84,29 @@ export function ClientFields({
       setFound(null);
       onChange({ ...data, phone });
     }
+
+    // Подстановка имени из amoCRM по телефону, если локально клиент не найден
+    // и имя ещё не введено (не перезатираем ручной ввод).
+    if (lookupRef.current) clearTimeout(lookupRef.current);
+    const digits = phone.replace(/\D/g, "");
+    if (USE_MOCK || match || digits.length !== 11) {
+      setLookingUp(false);
+      return;
+    }
+    lookupRef.current = setTimeout(async () => {
+      setLookingUp(true);
+      try {
+        const res = await api.get<{ id: number; name: string }>(
+          `/contacts/by-phone?phone=${encodeURIComponent(phone)}`
+        );
+        setAmoName(res.name);
+        onChange({ ...data, phone, name: data.name || res.name });
+      } catch {
+        // контакт не найден в amoCRM — это ок, клиент новый
+      } finally {
+        setLookingUp(false);
+      }
+    }, 400);
   }
 
   return (
@@ -92,6 +122,14 @@ export function ClientFields({
         {found && (
           <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-emerald-300/90 bg-emerald-400/10 border border-emerald-400/20 rounded px-2 py-0.5">
             <UserCheck size={12} /> Клиент найден: {found.clientName} (заявка #{found.number})
+          </div>
+        )}
+        {!found && lookingUp && (
+          <div className="mt-1 text-[12px] text-mute">Поиск клиента в amoCRM…</div>
+        )}
+        {!found && amoName && (
+          <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-emerald-300/90 bg-emerald-400/10 border border-emerald-400/20 rounded px-2 py-0.5">
+            <UserCheck size={12} /> Найден в amoCRM: {amoName}
           </div>
         )}
       </Field>
@@ -645,35 +683,109 @@ export function StoreAddressChip({ address }: { address: string }) {
 
 // ── Фото ───────────────────────────────────────────────────────────────
 
+/**
+ * Реальная фотофиксация: съёмка через камеру устройства (capture=environment)
+ * или загрузка из галереи, мультивыбор, превью с удалением по одной.
+ * `photos` — источник истины (массив), совместимость с прежним boolean-флагом
+ * форм обеспечивается через `photos.length > 0`.
+ */
 export function PhotoField({
-  attached,
+  photos,
   onChange,
   label = "Фото",
+  required = true,
 }: {
-  attached: boolean;
-  onChange: (v: boolean) => void;
+  photos: PhotoAttachment[];
+  onChange: (v: PhotoAttachment[]) => void;
   label?: string;
+  required?: boolean;
 }) {
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const galleryInput = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setBusy(true);
+    try {
+      const added = await filesToAttachments(files);
+      onChange([...photos, ...added]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function remove(id: string) {
+    onChange(photos.filter((p) => p.id !== id));
+  }
+
   return (
     <div>
       <div className="field-label flex items-center gap-1">
-        {label} <span className="text-gold">*</span>
+        {label} {required && <span className="text-gold">*</span>}
       </div>
-      <button
-        type="button"
-        onClick={() => onChange(!attached)}
-        className={`w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed py-5 transition ${
-          attached
-            ? "border-white/40 bg-white/10 text-white"
-            : "border-ink-600 text-mute hover:border-gold/50"
-        }`}
-      >
-        {attached ? (
-          <><CheckCircle2 size={18} /> Фото прикреплено</>
-        ) : (
-          <><Camera size={18} /> <Upload size={16} /> Сделать фото / загрузить</>
-        )}
-      </button>
+
+      {photos.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {photos.map((p) => (
+            <div key={p.id} className="relative w-20 h-20 rounded-lg overflow-hidden border border-ink-600 group">
+              <img src={p.dataUrl} alt={p.filename} className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => remove(p.id)}
+                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <input
+        ref={cameraInput}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => { void handleFiles(e.target.files); e.target.value = ""; }}
+      />
+      <input
+        ref={galleryInput}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => { void handleFiles(e.target.files); e.target.value = ""; }}
+      />
+
+      <div className="flex gap-2 flex-wrap">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => cameraInput.current?.click()}
+          className={`flex-1 min-w-[140px] flex items-center justify-center gap-2 rounded-lg border-2 border-dashed py-4 transition ${
+            photos.length > 0
+              ? "border-white/40 bg-white/10 text-white"
+              : "border-ink-600 text-mute hover:border-gold/50"
+          }`}
+        >
+          <Camera size={18} /> Сделать фото
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => galleryInput.current?.click()}
+          className="flex-1 min-w-[140px] flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ink-600 text-mute hover:border-gold/50 py-4 transition"
+        >
+          <Upload size={16} /> Загрузить из галереи
+        </button>
+      </div>
+      {photos.length > 0 && (
+        <div className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-emerald-300/90">
+          <CheckCircle2 size={13} /> {photos.length === 1 ? "1 фото прикреплено" : `${photos.length} фото прикреплено`}
+        </div>
+      )}
     </div>
   );
 }

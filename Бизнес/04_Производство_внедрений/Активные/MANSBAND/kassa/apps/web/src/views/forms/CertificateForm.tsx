@@ -28,6 +28,7 @@ import {
 } from "./common";
 import { STORE_ADDRESS } from "../../data/mock";
 import { money } from "../../lib/format";
+import { attachmentsToUpload, type PhotoAttachment } from "../../lib/photo";
 import type { CartItem, Payment } from "../../data/types";
 
 const NOMINALS = [5000, 10000, 15000, 20000, 25000, 30000];
@@ -116,7 +117,7 @@ export function CertificateForm({ onDone, digital = false }: { onDone: () => voi
   const [comment, setComment] = useState("");
 
   // 22. Фото
-  const [photoAttached, setPhotoAttached] = useState(false);
+  const [photos, setPhotos] = useState<PhotoAttachment[]>([]);
 
   // 23. Этап
   const [stage, setStage] = useState("Сертификат продан");
@@ -126,7 +127,7 @@ export function CertificateForm({ onDone, digital = false }: { onDone: () => voi
     client.phone &&
     guest &&
     certNumber &&
-    (digital ? consultants.callManager && email : photoAttached)
+    (digital ? consultants.callManager && email : photos.length > 0)
   );
 
   function save(s: string) {
@@ -160,10 +161,10 @@ export function CertificateForm({ onDone, digital = false }: { onDone: () => voi
       tips: tips.amount || undefined,
       changeStatus: change > 0 ? changeInfo.status : undefined,
       changeDestination: change > 0 && changeInfo.status === "pending" ? changeInfo.destination : undefined,
-      photoAttached: digital ? undefined : photoAttached,
+      photoAttached: digital ? undefined : photos.length > 0,
       total,
       paid,
-    });
+    }, digital ? undefined : attachmentsToUpload(photos));
     setSaved(true);
     setTimeout(onDone, 1100);
   }
@@ -357,8 +358,8 @@ export function CertificateForm({ onDone, digital = false }: { onDone: () => voi
         <Card>
           <SectionTitle>Фото сертификата</SectionTitle>
           <PhotoField
-            attached={photoAttached}
-            onChange={setPhotoAttached}
+            photos={photos}
+            onChange={setPhotos}
             label="Фото сертификата"
           />
         </Card>

@@ -103,6 +103,7 @@ export interface Deal {
   comment?: string;
   meetingDate?: string;
   tips?: number;
+  tipsDestination?: string;
   checkDiscount?: number;
   companyName?: string;
   invoiceNo?: string;

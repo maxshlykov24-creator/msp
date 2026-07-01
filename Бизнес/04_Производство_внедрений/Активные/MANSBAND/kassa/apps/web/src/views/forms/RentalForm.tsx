@@ -33,6 +33,7 @@ import {
 } from "./common";
 import { RENTAL_SERVICE_PRICE, STORE_ADDRESS } from "../../data/mock";
 import { money } from "../../lib/format";
+import { attachmentsToUpload, type PhotoAttachment } from "../../lib/photo";
 import type { CartItem, Deal, Payment } from "../../data/types";
 
 const SAVE_STAGES = ["Аренда оплачена", "В аренде"];
@@ -108,14 +109,14 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
   const [topUp, setTopUp] = useState<TopUpInfo>(emptyTopUp);
 
   // Фото паспорта (обяз.)
-  const [photo, setPhoto] = useState(false);
+  const [photos, setPhotos] = useState<PhotoAttachment[]>([]);
 
   const [comment, setComment] = useState("");
   const [stage, setStage] = useState("Аренда оплачена");
 
   const topUpPaid = topUp.payments.reduce((s, p) => s + p.amount, 0);
   const totalPaid = paid + topUpPaid;
-  const baseFilled = !!(client.name && client.phone && from && to && items.length > 0 && photo);
+  const baseFilled = !!(client.name && client.phone && from && to && items.length > 0 && photos.length > 0);
   const canSuccess = baseFilled && total - totalPaid <= 0;
 
   function save(s: string) {
@@ -146,14 +147,14 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       returnDate: returnDate || undefined,
       comment,
       paymentDate,
-      photoAttached: photo,
+      photoAttached: photos.length > 0,
       checkDiscount: discount || undefined,
       tips: tips.amount || undefined,
       changeStatus: change > 0 ? changeInfo.status : undefined,
       changeDestination: change > 0 && changeInfo.status === "pending" ? changeInfo.destination : undefined,
       total,
       paid: totalPaid,
-    });
+    }, attachmentsToUpload(photos));
     setSaved(true);
     setTimeout(onDone, 1100);
   }
@@ -177,7 +178,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
           onBack={onDone}
           successStage="Успех"
           successDisabled={!canSuccess}
-          successHint={!photo ? "Нужно фото паспорта" : !baseFilled ? "Заполните клиента, даты и комплект" : undefined}
+          successHint={photos.length === 0 ? "Нужно фото паспорта" : !baseFilled ? "Заполните клиента, даты и комплект" : undefined}
           onSuccess={() => save("Успех")}
         />
       }
@@ -268,7 +269,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       {/* Фото паспорта / прав (залог) */}
       <Card>
         <SectionTitle>Фото паспорта / прав</SectionTitle>
-        <PhotoField attached={photo} onChange={setPhoto} label="Фото паспорта / прав" />
+        <PhotoField photos={photos} onChange={setPhotos} label="Фото паспорта / прав" />
       </Card>
 
       {toast}

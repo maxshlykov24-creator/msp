@@ -5,12 +5,8 @@ import * as ms from "../clients/ms.js";
 import * as deals from "./deals.js";
 import { attachPhotos } from "./files.js";
 import { resolveAssortment } from "./catalog.js";
-import {
-  getMsRef,
-  getWarehouseForStore,
-  getStatusId,
-  getWritebackFieldIds,
-} from "./bootstrap.js";
+import { getMsRef, getWarehouseForStore, getStatusId } from "./bootstrap.js";
+import { buildLeadCustomFields, ensureLeadCompany, paymentStatusLabel } from "./amoMapping.js";
 import { withIdempotency } from "../lib/idempotency.js";
 import { toKopecks } from "../lib/money.js";
 import { AMO_PIPELINE_SALES } from "@kassa/shared";
@@ -20,7 +16,9 @@ import { broadcast } from "../ws/hub.js";
 export interface PhotoInput {
   filename: string;
   contentBase64: string;
-  target: "shipment" | "order" | "return";
+  // Не задан → фото уходит в сделку amoCRM (нет складского документа МойСклад,
+  // напр. аренда/брак/сертификат). Задан → к конкретному документу МС при fulfill.
+  target?: "shipment" | "order" | "return";
 }
 
 // Классификация способа оплаты по methodId (наличные / безнал / счёт / сертификат).
@@ -46,6 +44,7 @@ export async function processSale(
 ): Promise<Deal> {
   const { result } = await withIdempotency(`sale:${deal.id}`, "sale", async () => {
     const enriched = { ...deal };
+    enriched.paymentStatus = paymentStatusLabel(enriched);
 
     // 1. amoCRM: контакт + сделка
     const amoLeadId = await ensureAmoLead(enriched);
@@ -54,6 +53,9 @@ export async function processSale(
     // 2. МойСклад (только при полной оплате / fulfill)
     if (opts.fulfill) {
       await fulfillMoysklad(enriched, opts.photos ?? [], opts.who);
+    } else if (amoLeadId && opts.photos?.length) {
+      // Нет складского документа (аренда/брак и т.п.) — фотофиксация уходит в сделку amoCRM.
+      await attachPhotosToLead(amoLeadId, opts.photos);
     }
 
     // 3. writeback статуса оплаты + ссылок в amo
@@ -79,17 +81,31 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
       contactId = contact.id;
     }
 
+    // Компания (kind=company): найти/создать сущность и привязать к сделке.
+    const companyId = (await ensureLeadCompany(deal).catch(() => null)) ?? undefined;
+
     const statusId = (await getStatusId(AMO_PIPELINE_SALES, deal.stage)) ?? undefined;
+    const customFields = await buildLeadCustomFields(deal).catch(() => []);
     const lead = await amo.createLead({
       name: `${deal.clientName} · #${deal.number}`,
       price: deal.total,
       pipelineId: AMO_PIPELINE_SALES,
       statusId,
       contactId,
+      companyId,
+      customFields,
     });
     return lead.id;
   } catch {
     return null; // amo недоступен — не блокируем продажу (локально сохраним, синхронизируем позже)
+  }
+}
+
+async function attachPhotosToLead(amoLeadId: number, photos: PhotoInput[]): Promise<void> {
+  for (const p of photos) {
+    await amo.attachPhotoToLead(amoLeadId, p.filename, p.contentBase64).catch(() => {
+      // сеть/лимиты amo — фото не критично для проведения заявки
+    });
   }
 }
 
@@ -211,20 +227,11 @@ async function recordLedger(
     .onConflictDoNothing();
 }
 
+// Полный writeback: пишет ВСЕ значимые поля заявки в сделку amoCRM (не только
+// статус оплаты/ссылки МойСклад) — см. Фазу B плана «MANSBAND касса фиксы».
 async function writeback(amoLeadId: number, deal: Deal): Promise<void> {
   try {
-    const fields = await getWritebackFieldIds();
-    const customFields: Array<{ field_id: number; values: Array<{ value: unknown }> }> = [];
-    if (fields.msOrder && deal.msOrderId) {
-      customFields.push({ field_id: fields.msOrder, values: [{ value: deal.msOrderId }] });
-    }
-    if (fields.msDemand && deal.msDemandId) {
-      customFields.push({ field_id: fields.msDemand, values: [{ value: deal.msDemandId }] });
-    }
-    if (fields.paymentStatus) {
-      const status = deal.paid >= deal.total && deal.total > 0 ? "Оплачено" : "Частично";
-      customFields.push({ field_id: fields.paymentStatus, values: [{ value: status }] });
-    }
+    const customFields = await buildLeadCustomFields(deal);
     if (customFields.length) await amo.updateLead(amoLeadId, { customFields });
   } catch {
     // writeback не критичен для проведения; повторим при следующей синхронизации
