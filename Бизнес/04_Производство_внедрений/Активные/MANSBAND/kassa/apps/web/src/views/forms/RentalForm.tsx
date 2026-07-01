@@ -150,6 +150,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       photoAttached: photos.length > 0,
       checkDiscount: discount || undefined,
       tips: tips.amount || undefined,
+      tipsDestination: tips.amount > 0 && tips.status === "pending" ? tips.destination || undefined : undefined,
       changeStatus: change > 0 ? changeInfo.status : undefined,
       changeDestination: change > 0 && changeInfo.status === "pending" ? changeInfo.destination : undefined,
       total,

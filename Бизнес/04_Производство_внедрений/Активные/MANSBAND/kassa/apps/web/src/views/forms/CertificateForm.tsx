@@ -159,6 +159,7 @@ export function CertificateForm({ onDone, digital = false }: { onDone: () => voi
       comment,
       checkDiscount: discount || undefined,
       tips: tips.amount || undefined,
+      tipsDestination: tips.amount > 0 && tips.status === "pending" ? tips.destination || undefined : undefined,
       changeStatus: change > 0 ? changeInfo.status : undefined,
       changeDestination: change > 0 && changeInfo.status === "pending" ? changeInfo.destination : undefined,
       photoAttached: digital ? undefined : photos.length > 0,
