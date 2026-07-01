@@ -100,17 +100,24 @@ export interface MsStockRow {
   assortmentId?: string;
 }
 
-export async function getStockByStore(): Promise<MsStockRow[]> {
+// ВАЖНО: без фильтра по складу отчёт агрегирует остатки по ВСЕМ складам сразу —
+// для каталога в десятки тысяч позиций МойСклад не успевает посчитать это за
+// время таймаута шлюза (проверено на проде 2026-07-01: ~70с и обрыв соединения
+// независимо от limit/offset). Фильтр по конкретному складу сокращает расчёт
+// до секунд, поэтому запрашиваем остатки склад-за-складом.
+export async function getStockByStore(storeHrefs: string[]): Promise<MsStockRow[]> {
   const limit = 1000;
-  let offset = 0;
   const out: MsStockRow[] = [];
-  while (true) {
-    const res = await http.get<MsList<MsStockRow>>(
-      `/report/stock/bystore?limit=${limit}&offset=${offset}`
-    );
-    out.push(...res.rows);
-    if (res.rows.length < limit) break;
-    offset += res.rows.length;
+  for (const storeHref of storeHrefs) {
+    let offset = 0;
+    while (true) {
+      const res = await http.get<MsList<MsStockRow>>(
+        `/report/stock/bystore?limit=${limit}&offset=${offset}&filter=${encodeURIComponent(`store=${storeHref}`)}`
+      );
+      out.push(...res.rows);
+      if (res.rows.length < limit) break;
+      offset += res.rows.length;
+    }
   }
   return out;
 }
