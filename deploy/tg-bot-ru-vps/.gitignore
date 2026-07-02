@@ -1,0 +1,4 @@
+# Секреты и локальные конфиги — не коммитим
+.env
+wg/wg0.conf
+caddy/Caddyfile

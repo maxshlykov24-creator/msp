@@ -1,0 +1,20 @@
+# Пример Dockerfile для Python-бота (long polling).
+# Скопируй в ./bot/Dockerfile и адаптируй под свой проект.
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+
+COPY . /app
+
+CMD ["python", "bot.py"]

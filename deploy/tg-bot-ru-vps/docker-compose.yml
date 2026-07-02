@@ -1,0 +1,85 @@
+# Стек для РУССКОГО VPS (152-ФЗ: бот и БД остаются в РФ).
+# Telegram-доступ — через split-VPN: контейнер wg держит тоннель к заграничному
+# exit-узлу, а бот запускается в его сетевом namespace (network_mode: service:wg).
+# Через тоннель уходит ТОЛЬКО трафик к подсетям Telegram (см. wg/wg0.conf -> AllowedIPs).
+#
+# Запуск:  cp .env.example .env  &&  (заполнить)  &&  docker compose up -d --build
+# Webhook: docker compose --profile webhook up -d --build   (нужен домен + caddy/Caddyfile)
+
+services:
+  wg:
+    image: linuxserver/wireguard
+    container_name: tgbot-wg
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      # Готовый клиентский конфиг (из exit-узла). НЕ 0.0.0.0/0, только Telegram.
+      - ./wg/wg0.conf:/config/wg_confs/wg0.conf:ro
+    healthcheck:
+      # Тоннель считаем живым, если через него резолвится/доступен api.telegram.org
+      test: ["CMD-SHELL", "wg show | grep -q interface || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: ./bot
+    container_name: tgbot-app
+    restart: unless-stopped
+    # Весь сетевой трафик бота идёт через namespace контейнера wg.
+    # К api.telegram.org -> через VPN (AllowedIPs), к db и прочему -> напрямую.
+    network_mode: "service:wg"
+    env_file:
+      - .env
+    depends_on:
+      wg:
+        condition: service_started
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    container_name: tgbot-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-botuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-botdb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Порт наружу НЕ пробрасываем: доступ только внутри docker-сети.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-botuser} -d ${POSTGRES_DB:-botdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Только для режима webhook (Web App): HTTPS-терминация + автосертификат Let's Encrypt.
+  # Включается профилем: docker compose --profile webhook up -d
+  caddy:
+    image: caddy:2
+    container_name: tgbot-caddy
+    restart: unless-stopped
+    profiles: ["webhook"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - wg
+
+volumes:
+  pgdata: {}
+  caddy_data: {}
+  caddy_config: {}

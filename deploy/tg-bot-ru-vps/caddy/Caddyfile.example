@@ -1,0 +1,12 @@
+# Только для режима webhook / Web App. Скопируй в caddy/Caddyfile, подставь домен.
+# Домен должен A-записью указывать на публичный IP RU VPS (176.124.222.46).
+# Caddy сам получит TLS-сертификат Let's Encrypt.
+#
+# Бот слушает HTTP-порт внутри сетевого namespace контейнера wg,
+# поэтому reverse_proxy идёт на хост "wg" (имя сервиса в compose-сети).
+
+bot.example.ru {
+    encode gzip
+    # Порт замени на тот, что слушает твой бот (например 8080).
+    reverse_proxy wg:8080
+}

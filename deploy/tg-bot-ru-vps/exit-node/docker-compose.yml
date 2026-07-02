@@ -1,0 +1,37 @@
+# Запускается на ЗАГРАНИЧНОМ VPS (exit-узел VPN). НЕ на русском сервере и НЕ хранит ПДн.
+# wg-easy = WireGuard + веб-UI для выпуска клиентских .conf.
+#
+# 1) Купи дешёвый VPS в EU (Aeza / PQ.Hosting / Zomro, Amsterdam/Frankfurt, ~3-5 EUR/мес).
+# 2) Установи docker, скопируй эту папку, заполни .env (WG_HOST = публичный IP, PASSWORD_HASH).
+# 3) docker compose up -d
+# 4) Открой https://<IP>:51821 -> создай клиента "ru-vps" -> скачай .conf
+# 5) Из этого .conf возьми ключи/Endpoint в RU VPS: deploy/tg-bot-ru-vps/wg/wg0.conf
+#    и ОБЯЗАТЕЛЬНО поменяй AllowedIPs на подсети Telegram (split-routing).
+
+services:
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wg-easy
+    restart: unless-stopped
+    environment:
+      # Публичный IP этого заграничного VPS
+      WG_HOST: ${WG_HOST:?set WG_HOST}
+      # Хэш пароля для веб-UI. Сгенерировать:
+      #   docker run --rm ghcr.io/wg-easy/wg-easy:14 wgpw 'ТВОЙ_ПАРОЛЬ'
+      PASSWORD_HASH: ${PASSWORD_HASH:?set PASSWORD_HASH}
+      WG_PORT: "51820"
+      WG_DEFAULT_ADDRESS: "10.8.0.x"
+      # На клиенте мы всё равно перезапишем AllowedIPs, но зададим корректный дефолт:
+      WG_ALLOWED_IPS: "0.0.0.0/0"
+      WG_PERSISTENT_KEEPALIVE: "25"
+    volumes:
+      - ./wg-easy-data:/etc/wireguard
+    ports:
+      - "51820:51820/udp"     # WireGuard
+      - "51821:51821/tcp"     # веб-UI (закрой фаерволом на свой IP!)
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
