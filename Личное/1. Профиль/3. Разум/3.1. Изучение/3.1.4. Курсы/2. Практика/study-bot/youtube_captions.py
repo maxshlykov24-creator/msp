@@ -68,6 +68,8 @@ def fetch_transcript_text(video_id: str) -> Optional[str]:
     """
     Вернуть текст субтитров (ручных или автогенерируемых) или None,
     если для видео их нет / отключены / видео недоступно.
+
+    youtube-transcript-api ≥1.2: YouTubeTranscriptApi().fetch().
     """
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
@@ -81,75 +83,21 @@ def fetch_transcript_text(video_id: str) -> Optional[str]:
         logger.warning("youtube-transcript-api недоступен: %s", e)
         return None
 
+    api = YouTubeTranscriptApi()
     try:
-        listing = YouTubeTranscriptApi.list_transcripts(video_id)
+        transcript = api.fetch(video_id, languages=list(PREFERRED_LANGS))
     except (TranscriptsDisabled, VideoUnavailable, NoTranscriptFound):
         logger.info("YouTube: нет субтитров (videoId=%s)", video_id)
         return None
     except CouldNotRetrieveTranscript as e:
-        logger.warning("YouTube: list_transcripts ошибка: %s", e)
+        logger.warning("YouTube: fetch ошибка: %s", e)
         return None
     except Exception as e:
-        logger.warning("YouTube: list_transcripts неожиданная ошибка: %s", e)
+        logger.warning("YouTube: fetch неожиданная ошибка: %s", e)
         return None
 
-    for code in PREFERRED_LANGS:
-        try:
-            tr = listing.find_manually_created_transcript([code])
-            text = _join(tr.fetch())
-            if text:
-                logger.info(
-                    "YouTube: ручные субтитры lang=%s, len=%s",
-                    code,
-                    len(text),
-                )
-                return text
-        except NoTranscriptFound:
-            continue
-        except Exception as e:
-            logger.warning("YouTube: ручные subs %s: %s", code, e)
-
-    try:
-        tr = listing.find_generated_transcript(list(PREFERRED_LANGS))
-        text = _join(tr.fetch())
-        if text:
-            logger.info(
-                "YouTube: авто-субтитры lang=%s, len=%s",
-                tr.language_code,
-                len(text),
-            )
-            return text
-    except NoTranscriptFound:
-        pass
-    except Exception as e:
-        logger.warning("YouTube: авто-subs ошибка: %s", e)
-
-    try:
-        first = next(iter(listing))
-        if first.is_translatable:
-            try:
-                tr = first.translate("ru")
-                text = _join(tr.fetch())
-                if text:
-                    logger.info(
-                        "YouTube: перевод субтитров %s -> ru, len=%s",
-                        first.language_code,
-                        len(text),
-                    )
-                    return text
-            except Exception as e:
-                logger.warning("YouTube: перевод subs ошибка: %s", e)
-        text = _join(first.fetch())
-        if text:
-            logger.info(
-                "YouTube: субтитры lang=%s, len=%s",
-                first.language_code,
-                len(text),
-            )
-            return text
-    except StopIteration:
-        return None
-    except Exception as e:
-        logger.warning("YouTube: fallback subs ошибка: %s", e)
-
+    text = _join(transcript)
+    if text:
+        logger.info("YouTube: субтитры OK, len=%s", len(text))
+        return text
     return None

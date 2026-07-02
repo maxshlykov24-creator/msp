@@ -17,6 +17,21 @@ alwaysApply: false
 
 ---
 
+## Транскрибация YouTube (не SEO → CEO)
+
+Запрос вида `@сео транскрибация https://youtube.com/...` — **не SEO**, сразу CEO.
+
+**Быстрый путь (агент выполняет сам):**
+```bash
+python3 study-bot/scripts/youtube_transcribe_to_md.py "URL"
+```
+
+**Полная цепочка, fallback Nexara, куда класть файл, клик в чате:** `.cursor/rules/ceo.mdc` → **§ Транскрибация YouTube**.
+
+**Выход по умолчанию:** `Бизнес/05_Маркетинг_и_контент/_ai/YYYY-MM-DD_YouTube_*_транскрипт.md`
+
+---
+
 # SEO-АССИСТЕНТ / ОРКЕСТРАТОР (только SEO сайта)
 
 > **Создано по Методу Denis Pleada**

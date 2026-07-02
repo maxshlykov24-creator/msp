@@ -12,7 +12,7 @@ alwaysApply: false
 | Тип запроса | Действие |
 |-------------|----------|
 | SEO сайта (органика, семантика, meta, landing) | Продолжай **ниже** |
-| **Инструкции, ТЗ, клиенты, интеграции** | Читай `../.cursor/rules/ceo.mdc` → CEO → `@архитектор инструкция` |
+| **Инструкции, ТЗ, клиенты, интеграции, транскрибация YouTube/файлов** | Читай `../.cursor/rules/ceo.mdc` → CEO; YouTube: `study-bot/scripts/youtube_transcribe_to_md.py` |
 
 ---
 
