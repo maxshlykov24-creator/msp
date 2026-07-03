@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""keris-bot — демо-прототип клиентского бота питомника Keris (мальтипу).
+"""keris-bot — демо-прототип клиентского бота питомника Keris Club (мальтипу).
 
 Фаза 1a (демо): витрина щенков, цена/рассрочка, «О питомнике», FAQ,
 кнопка «Связаться с менеджером» → создание контакта + сделки в amoCRM.
@@ -48,7 +48,7 @@ LEAD_WAY_VALUE = "TG-бот"
 
 # ── Контент бота ──────────────────────────────────────────────────────────
 ABOUT_TEXT = (
-    "🐾 <b>Питомник Keris</b>\n\n"
+    "🐾 <b>Питомник Keris Club</b>\n\n"
     "Мы растим мальтипу F1 от элитных линий из Кореи и Китая. "
     "Наши фирменные окрасы — <b>ice gold, gold, gold brown</b> — редкие и узнаваемые.\n\n"
     "Мы создаём семьи, а не просто продаём щенков: каждый малыш уезжает "
@@ -288,7 +288,7 @@ def push_to_amo(chat_id: int, name: str, phone: str) -> None:
 
 # ── Обработчики ─────────────────────────────────────────────────────────────
 GREETING = (
-    "🐾 Добро пожаловать в питомник <b>Keris</b>!\n\n"
+    "🐾 Добро пожаловать в питомник <b>Keris Club</b>!\n\n"
     "Здесь вы можете посмотреть наших щенков мальтипу, узнать про цену и "
     "рассрочку и связаться с менеджером.\n\n"
     "Перед началом подтвердите согласие на обработку персональных данных "
@@ -393,6 +393,11 @@ def handle_update(upd: dict) -> None:
         log.warning("handle_update failed: %s", str(upd)[:300], exc_info=True)
 
 
+# Явно запрашиваем типы апдейтов, иначе застрявший на стороне Telegram фильтр
+# allowed_updates может не отдавать callback_query (кнопки «не реагируют»).
+ALLOWED_UPDATES = urllib.parse.quote('["message","callback_query"]')
+
+
 def main() -> None:
     load_state()
     log.info("keris-bot запущен (long polling). amo=%s", "on" if AMO_TOKEN else "off")
@@ -403,7 +408,8 @@ def main() -> None:
         try:
             status, data = _http(
                 "GET",
-                f"{TG_API}/getUpdates?offset={offset}&timeout=30",
+                f"{TG_API}/getUpdates?offset={offset}&timeout=30"
+                f"&allowed_updates={ALLOWED_UPDATES}",
                 None, None, timeout=40.0,
             )
             if status != 200 or not isinstance(data, dict) or not data.get("ok"):
