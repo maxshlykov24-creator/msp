@@ -406,18 +406,25 @@ def main() -> None:
     offset = 0
     while True:
         try:
+            t_poll = time.time()
             status, data = _http(
                 "GET",
-                f"{TG_API}/getUpdates?offset={offset}&timeout=30"
+                f"{TG_API}/getUpdates?offset={offset}&timeout=25"
                 f"&allowed_updates={ALLOWED_UPDATES}",
-                None, None, timeout=40.0,
+                None, None, timeout=35.0,
             )
             if status != 200 or not isinstance(data, dict) or not data.get("ok"):
+                log.warning("getUpdates -> %s (%.2fs)", status, time.time() - t_poll)
                 time.sleep(3)
                 continue
-            for upd in data.get("result", []):
+            results = data.get("result", [])
+            if results:
+                log.info("получено %d апдейт(ов) за %.2fs опроса", len(results), time.time() - t_poll)
+            for upd in results:
                 offset = max(offset, upd["update_id"] + 1)
+                t_h = time.time()
                 handle_update(upd)
+                log.info("обработан update %s за %.2fs", upd.get("update_id"), time.time() - t_h)
         except Exception:
             log.warning("poll loop error", exc_info=True)
             time.sleep(3)
