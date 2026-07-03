@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """keris-bot — демо-прототип клиентского бота питомника Keris Club (мальтипу).
 
-Фаза 1a (демо): витрина щенков, цена/рассрочка, «О питомнике», FAQ,
-кнопка «Связаться с менеджером» → создание контакта + сделки в amoCRM.
+Фаза 1a (демо): витрина щенков (по одному, с навигацией), цена/рассрочка,
+«О питомнике», FAQ. Номер телефона бот не собирает — кнопка «Связаться с
+менеджером» и контекстные ссылки в тексте ведут прямиком в Telegram-диалог
+с менеджером с готовым черновиком сообщения. Переписка и лиды видны в
+amoCRM через подключённый к аккаунту канал (без API-вызовов из бота).
 
 Реализация — только stdlib (urllib), long polling. Без внешних зависимостей,
 чтобы разворачиваться на чистой Ubuntu без pip. Состояние клиентов — в JSON.
@@ -40,44 +43,27 @@ socket.getaddrinfo = _getaddrinfo_ipv4
 
 # ── Конфиг (через окружение, дефолты — из ДОСТУПЫ.md) ─────────────────────
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8544449405:AAGvRzRu0Cy6Vw8Q0IfcCrYMuhneF837Jzw")
-AMO_SUBDOMAIN = os.environ.get("AMO_SUBDOMAIN", "kerisclub")
-AMO_TOKEN = os.environ.get("AMO_TOKEN", "")  # долгосрочный токен, задаётся в env
 MANAGER_USERNAME = os.environ.get("MANAGER_USERNAME", "keris_chat")
 STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-bot/state.json")
 
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
-AMO_BASE = f"https://{AMO_SUBDOMAIN}.amocrm.ru"
+
+
+def manager_url(prefill: str) -> str:
+    """Ссылка на диалог с менеджером в Telegram с готовым черновиком текста."""
+    return f"https://t.me/{MANAGER_USERNAME}?text={urllib.parse.quote(prefill)}"
 
 
 def manager_link(anchor: str, prefill: str) -> str:
-    """HTML-ссылка на менеджера с черновиком сообщения (t.me/user?text=…).
-
-    Открывает диалог с менеджером напрямую, минуя бота — «запасной выход»
-    для тех, кто хочет написать сразу. Основной путь лида (кнопка
-    «Связаться с менеджером») остаётся через бота, чтобы контакт и сделка
-    уходили в amoCRM автоматически.
-    """
-    url = f"https://t.me/{MANAGER_USERNAME}?text={urllib.parse.quote(prefill)}"
-    return f'<a href="{url}">{anchor}</a>'
-
-# amoCRM IDs (факт из ДОСТУПЫ.md)
-AMO_PIPELINE_SALES = 11036674
-AMO_STAGE_NEW = 86717266  # Новая заявка
-F_CONTACT_SOURCE = 1820795  # Изначальный источник (select)
-F_CONTACT_CONSENT = 1820799  # Согласие ПДн (checkbox)
-F_CONTACT_TG_BOT = 1820899  # Подписан на TG-бот (checkbox)
-F_LEAD_SOURCE = 1820835  # Источник (select)
-F_LEAD_CONTACT_WAY = 1820923  # Способ связи (select)
-SOURCE_VALUE = "Телеграм-канал"
-LEAD_WAY_VALUE = "TG-бот"
+    """HTML-ссылка на менеджера — открывает диалог напрямую в Telegram,
+    с черновиком сообщения под контекст экрана, с которого перешли."""
+    return f'<a href="{manager_url(prefill)}">{anchor}</a>'
 
 # ── Контент бота ──────────────────────────────────────────────────────────
 # Тон — как у Карины в канале: тёплый, семейный, без канцелярита. Эмодзи —
 # не декор, а структурные маркеры (📍 локация, 🚚 доставка, 💉 прививки,
 # 💌 контакт, 🏷 статус) — так же, как в постах канала. Премиальность даёт
 # темп (пауза «печатает…») и лаконичность абзацев, а не сухость текста.
-DIVIDER = "\n\n· · ·\n\n"
-
 ABOUT_TEXT = (
     "🐾 <b>Keris Club</b>\n\n"
     "Мы растим мальтипу F1 от элитных линий Кореи и Китая — и создаём "
@@ -91,7 +77,7 @@ ABOUT_TEXT = (
     "🎁 Чек-лист нового хозяина на 24 страницы — в подарок каждой семье\n\n"
     "💌 Будем рады ответить на вопросы — " + manager_link(
         "напишите менеджеру",
-        "Здравствуйте! Пишу из бота Keris Club — хочу узнать подробнее о питомнике.",
+        "Здравствуйте! Пишу из бота Keris Club — у меня есть вопрос.",
     )
 )
 
@@ -109,9 +95,14 @@ PRICE_TEXT = (
     ) + " — подберём щенка под ваш бюджет, без спешки."
 )
 
+# Каждая карточка — «photo»/«video» (file_id или URL) добавим, когда придут
+# материалы от Карины: show_puppy() сама переключится на sendPhoto/sendVideo
+# с той же подписью, без изменений в тексте и навигации.
 PUPPIES = [
     {
         "name": "Флокс 🩵",
+        "photo": None,
+        "video": None,
         "text": (
             "<b>Флокс</b> 🩵 — в поисках семьи.\n\n"
             "Ласковый компаньон с типичной baby-face мордочкой: спокойный, "
@@ -123,6 +114,8 @@ PUPPIES = [
     },
     {
         "name": "Айс 🤍",
+        "photo": None,
+        "video": None,
         "text": (
             "<b>Айс</b> 🤍 — фирменный окрас питомника.\n\n"
             "Игривый и любознательный, быстро освоился с пелёнкой — из тех, "
@@ -134,6 +127,8 @@ PUPPIES = [
     },
     {
         "name": "Мокко 🤎",
+        "photo": None,
+        "video": None,
         "text": (
             "<b>Мокко</b> 🤎 — редкий тёплый окрас.\n\n"
             "Дружелюбный, легко обучаемый, тянется к человеку — из тех "
@@ -238,6 +233,26 @@ def send(chat_id: int, text: str, keyboard: Optional[dict] = None, typing: bool 
     tg("sendMessage", payload)
 
 
+def send_photo(chat_id: int, photo: str, caption: str, keyboard: Optional[dict] = None) -> None:
+    tg("sendChatAction", {"chat_id": chat_id, "action": "upload_photo"})
+    time.sleep(0.4)
+    payload: dict[str, Any] = {"chat_id": chat_id, "photo": photo,
+                               "caption": caption[:1024], "parse_mode": "HTML"}
+    if keyboard is not None:
+        payload["reply_markup"] = keyboard
+    tg("sendPhoto", payload)
+
+
+def send_video(chat_id: int, video: str, caption: str, keyboard: Optional[dict] = None) -> None:
+    tg("sendChatAction", {"chat_id": chat_id, "action": "upload_video"})
+    time.sleep(0.4)
+    payload: dict[str, Any] = {"chat_id": chat_id, "video": video,
+                               "caption": caption[:1024], "parse_mode": "HTML"}
+    if keyboard is not None:
+        payload["reply_markup"] = keyboard
+    tg("sendVideo", payload)
+
+
 def answer_callback(cb_id: str) -> None:
     tg("answerCallbackQuery", {"callback_query_id": cb_id})
 
@@ -246,15 +261,16 @@ def answer_callback(cb_id: str) -> None:
 def main_menu() -> dict:
     return {"inline_keyboard": [
         [{"text": "🐾 Смотреть щенков", "callback_data": "puppies"}],
-        [{"text": "💰 Цена и рассрочка", "callback_data": "price"}],
+        [{"text": "💎 Цена и рассрочка", "callback_data": "price"}],
         [{"text": "🏡 О питомнике", "callback_data": "about"}],
         [{"text": "❓ Вопрос / ответ", "callback_data": "faq"}],
-        [{"text": "📞 Связаться с менеджером", "callback_data": "contact"}],
+        [{"text": "📞 Связаться с менеджером", "url": manager_url(
+            "Здравствуйте! Пишу из бота Keris Club.")}],
     ]}
 
 
 def back_menu() -> dict:
-    return {"inline_keyboard": [[{"text": "◀️ В меню", "callback_data": "menu"}]]}
+    return {"inline_keyboard": [[{"text": "‹ В меню", "callback_data": "menu"}]]}
 
 
 def consent_kb() -> dict:
@@ -263,88 +279,47 @@ def consent_kb() -> dict:
     ]}
 
 
-def phone_kb() -> dict:
-    return {
-        "keyboard": [[{"text": "📱 Отправить телефон", "request_contact": True}]],
-        "resize_keyboard": True, "one_time_keyboard": True,
-    }
-
-
-# ── amoCRM ──────────────────────────────────────────────────────────────────
-def amo_headers() -> dict:
-    return {"Authorization": f"Bearer {AMO_TOKEN}",
-            "Content-Type": "application/json",
-            "Accept": "application/hal+json"}
-
-
-def amo_create_contact(name: str, phone: str) -> Optional[int]:
-    if not AMO_TOKEN:
-        log.warning("AMO_TOKEN пуст — пропуск создания контакта")
-        return None
-    body = [{
-        "name": name or "Клиент из TG-бота",
-        "custom_fields_values": [
-            {"field_code": "PHONE", "values": [{"value": phone, "enum_code": "WORK"}]},
-            {"field_id": F_CONTACT_SOURCE, "values": [{"value": SOURCE_VALUE}]},
-            {"field_id": F_CONTACT_CONSENT, "values": [{"value": True}]},
-            {"field_id": F_CONTACT_TG_BOT, "values": [{"value": True}]},
-        ],
-    }]
-    status, data = _http("POST", f"{AMO_BASE}/api/v4/contacts", body, amo_headers())
-    if status >= 400:
-        log.warning("amo create_contact -> %s %s", status, str(data)[:400])
-        return None
-    try:
-        return int(data["_embedded"]["contacts"][0]["id"])
-    except Exception:
-        log.warning("amo create_contact unexpected: %s", str(data)[:300])
-        return None
-
-
-def amo_create_lead(contact_id: int, name: str) -> Optional[int]:
-    if not AMO_TOKEN or not contact_id:
-        return None
-    body = [{
-        "name": f"Заявка из TG-бота — {name}"[:200],
-        "pipeline_id": AMO_PIPELINE_SALES,
-        "status_id": AMO_STAGE_NEW,
-        "custom_fields_values": [
-            {"field_id": F_LEAD_SOURCE, "values": [{"value": SOURCE_VALUE}]},
-            {"field_id": F_LEAD_CONTACT_WAY, "values": [{"value": LEAD_WAY_VALUE}]},
-        ],
-        "_embedded": {"contacts": [{"id": contact_id, "is_main": True}]},
-    }]
-    status, data = _http("POST", f"{AMO_BASE}/api/v4/leads", body, amo_headers())
-    if status >= 400:
-        log.warning("amo create_lead -> %s %s", status, str(data)[:400])
-        return None
-    try:
-        return int(data["_embedded"]["leads"][0]["id"])
-    except Exception:
-        return None
-
-
-def push_to_amo(chat_id: int, name: str, phone: str) -> None:
-    try:
-        cid = amo_create_contact(name, phone)
-        lid = amo_create_lead(cid, name) if cid else None
-        log.info("amo: contact=%s lead=%s (chat=%s)", cid, lid, chat_id)
-    except Exception:
-        log.warning("push_to_amo failed", exc_info=True)
+def puppy_kb(idx: int) -> dict:
+    total = len(PUPPIES)
+    nav = []
+    if idx > 0:
+        nav.append({"text": "◀️", "callback_data": f"puppy:{idx - 1}"})
+    nav.append({"text": f"{idx + 1} / {total}", "callback_data": "noop"})
+    if idx < total - 1:
+        nav.append({"text": "▶️", "callback_data": f"puppy:{idx + 1}"})
+    name = PUPPIES[idx]["name"]
+    ask_url = manager_url(f"Здравствуйте! Пишу из бота Keris Club — интересует {name}.")
+    return {"inline_keyboard": [
+        nav,
+        [{"text": f"💌 Спросить про {name}", "url": ask_url}],
+        [{"text": "‹ В меню", "callback_data": "menu"}],
+    ]}
 
 
 # ── Обработчики ─────────────────────────────────────────────────────────────
 GREETING = (
     "🐾 Добро пожаловать в питомник <b>Keris Club</b>!\n\n"
     "Здесь можно познакомиться с нашими щенками мальтипу, узнать про цену "
-    "и рассрочку и написать менеджеру, когда будет удобно.\n\n"
+    "и рассрочку и в любой момент написать менеджеру напрямую.\n\n"
     "Для начала подтвердите согласие на обработку персональных данных — "
-    "это нужно, чтобы менеджер мог с вами связаться."
+    "и переходим к делу."
 )
 
 
 def show_menu(chat_id: int) -> None:
     send(chat_id, "Чем можем помочь? Выберите раздел 👇", main_menu())
+
+
+def show_puppy(chat_id: int, idx: int) -> None:
+    idx = idx % len(PUPPIES)
+    p = PUPPIES[idx]
+    kb = puppy_kb(idx)
+    if p.get("video"):
+        send_video(chat_id, p["video"], p["text"], kb)
+    elif p.get("photo"):
+        send_photo(chat_id, p["photo"], p["text"], kb)
+    else:
+        send(chat_id, p["text"], kb)
 
 
 def handle_start(chat_id: int) -> None:
