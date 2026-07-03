@@ -48,6 +48,18 @@ STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-bot/state.json")
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 AMO_BASE = f"https://{AMO_SUBDOMAIN}.amocrm.ru"
 
+
+def manager_link(anchor: str, prefill: str) -> str:
+    """HTML-ссылка на менеджера с черновиком сообщения (t.me/user?text=…).
+
+    Открывает диалог с менеджером напрямую, минуя бота — «запасной выход»
+    для тех, кто хочет написать сразу. Основной путь лида (кнопка
+    «Связаться с менеджером») остаётся через бота, чтобы контакт и сделка
+    уходили в amoCRM автоматически.
+    """
+    url = f"https://t.me/{MANAGER_USERNAME}?text={urllib.parse.quote(prefill)}"
+    return f'<a href="{url}">{anchor}</a>'
+
 # amoCRM IDs (факт из ДОСТУПЫ.md)
 AMO_PIPELINE_SALES = 11036674
 AMO_STAGE_NEW = 86717266  # Новая заявка
@@ -77,7 +89,10 @@ ABOUT_TEXT = (
     "🚚 Доставка по России и за границу\n"
     "💳 Рассрочка без процентов\n"
     "🎁 Чек-лист нового хозяина на 24 страницы — в подарок каждой семье\n\n"
-    f"💌 Будем рады ответить на вопросы — @{MANAGER_USERNAME}"
+    "💌 Будем рады ответить на вопросы — " + manager_link(
+        "напишите менеджеру",
+        "Здравствуйте! Пишу из бота Keris Club — хочу узнать подробнее о питомнике.",
+    )
 )
 
 PRICE_TEXT = (
@@ -88,7 +103,10 @@ PRICE_TEXT = (
     "усреднённого прайса.\n\n"
     "💳 Рассрочка без процентов, 3–10 месяцев\n"
     "🐾 Щенок закрепляется за вами с момента брони\n\n"
-    "Напишите менеджеру — подберём щенка под ваш бюджет, без спешки."
+    + manager_link(
+        "Напишите менеджеру",
+        "Здравствуйте! Пишу из бота Keris Club — хочу узнать цену и рассрочку на щенка.",
+    ) + " — подберём щенка под ваш бюджет, без спешки."
 )
 
 PUPPIES = [
@@ -363,8 +381,10 @@ def handle_callback(chat_id: int, cb_id: str, data: str) -> None:
             p["text"] for p in PUPPIES)
         send(chat_id, body, None)
         send(chat_id,
-             "Понравился кто-то? Пишите менеджеру — расскажет подробнее "
-             "и поможет с выбором 👇",
+             "Понравился кто-то? " + manager_link(
+                 "Пишите менеджеру",
+                 "Здравствуйте! Пишу из бота Keris Club — хочу узнать больше про щенков.",
+             ) + " — расскажет подробнее и поможет с выбором 👇",
              main_menu())
     elif data == "faq":
         parts = [f"<b>{q}</b>\n{a}" for q, a in FAQ]
@@ -391,7 +411,10 @@ def handle_contact(chat_id: int, contact: dict, from_user: dict) -> None:
     send(chat_id,
          "Спасибо! 🎉 Заявка принята — менеджер свяжется с вами в "
          "ближайшее время.\n\n"
-         f"А пока можете написать напрямую: @{MANAGER_USERNAME}",
+         "А пока можете " + manager_link(
+             "написать напрямую",
+             "Здравствуйте! Я из бота Keris Club, уже оставил(а) заявку на щенка.",
+         ),
          {"remove_keyboard": True})
     push_to_amo(chat_id, name, phone)
     show_menu(chat_id)
