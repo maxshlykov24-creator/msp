@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -24,6 +25,18 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
 )
 log = logging.getLogger("keris-bot")
+
+# Форсируем IPv4: на этом VPS IPv6 нестабилен, а getaddrinfo отдаёт IPv6
+# первым — Python залипает на нём до таймаута (задержки 5–15 с и «залипания»
+# на 35+ с). Telegram и amoCRM доступны по IPv4, поэтому режем AAAA.
+_orig_getaddrinfo = socket.getaddrinfo
+
+
+def _getaddrinfo_ipv4(host, port, family=0, type=0, proto=0, flags=0):  # noqa: A002
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+
+socket.getaddrinfo = _getaddrinfo_ipv4
 
 # ── Конфиг (через окружение, дефолты — из ДОСТУПЫ.md) ─────────────────────
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8544449405:AAGvRzRu0Cy6Vw8Q0IfcCrYMuhneF837Jzw")
@@ -151,7 +164,7 @@ def user_state(chat_id: int) -> dict[str, Any]:
 
 # ── HTTP helpers ────────────────────────────────────────────────────────────
 def _http(method: str, url: str, payload: Optional[dict] = None,
-          headers: Optional[dict] = None, timeout: float = 35.0) -> tuple[int, Any]:
+          headers: Optional[dict] = None, timeout: float = 15.0) -> tuple[int, Any]:
     data = None
     hdrs = {"Content-Type": "application/json"}
     if headers:
