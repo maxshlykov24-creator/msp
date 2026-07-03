@@ -283,10 +283,10 @@ def puppy_kb(idx: int) -> dict:
     total = len(PUPPIES)
     nav = []
     if idx > 0:
-        nav.append({"text": "◀️", "callback_data": f"puppy:{idx - 1}"})
+        nav.append({"text": "‹", "callback_data": f"puppy:{idx - 1}"})
     nav.append({"text": f"{idx + 1} / {total}", "callback_data": "noop"})
     if idx < total - 1:
-        nav.append({"text": "▶️", "callback_data": f"puppy:{idx + 1}"})
+        nav.append({"text": "›", "callback_data": f"puppy:{idx + 1}"})
     name = PUPPIES[idx]["name"]
     ask_url = manager_url(f"Здравствуйте! Пишу из бота Keris Club — интересует {name}.")
     return {"inline_keyboard": [
