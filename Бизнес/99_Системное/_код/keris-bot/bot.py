@@ -45,6 +45,9 @@ socket.getaddrinfo = _getaddrinfo_ipv4
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8544449405:AAGvRzRu0Cy6Vw8Q0IfcCrYMuhneF837Jzw")
 MANAGER_USERNAME = os.environ.get("MANAGER_USERNAME", "keris_chat")
 STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-bot/state.json")
+# Канал с витриной щенков: https://t.me/kerisclub · пост — /115
+CHANNEL_URL = "https://t.me/kerisclub"
+PUPPIES_POST_URL = "https://t.me/kerisclub/115"
 
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
@@ -280,10 +283,10 @@ def answer_callback(cb_id: str) -> None:
 # ── Клавиатуры ──────────────────────────────────────────────────────────────
 def main_menu() -> dict:
     return {"inline_keyboard": [
-        [{"text": "🐾 Смотреть щенков", "callback_data": "puppies"}],
-        [{"text": "💰 Стоимость и бронирование", "callback_data": "price"}],
         [{"text": "🏡 О питомнике", "callback_data": "about"}],
+        [{"text": "💰 Стоимость и бронирование", "callback_data": "price"}],
         [{"text": "❓ Вопрос / ответ", "callback_data": "faq"}],
+        [{"text": "🐾 Смотреть щенков", "url": PUPPIES_POST_URL}],
         [{"text": "💌 Задать свой вопрос", "url": manager_url(
             "Здравствуйте! Пишу из бота Keris Club — у меня есть вопрос.")}],
     ]}
