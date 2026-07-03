@@ -352,55 +352,20 @@ def handle_callback(chat_id: int, cb_id: str, data: str) -> None:
     elif data == "price":
         send(chat_id, PRICE_TEXT, back_menu())
     elif data == "puppies":
-        body = "🐾 <b>Наши малыши</b> (примеры для демо)\n\n" + DIVIDER.join(
-            p["text"] for p in PUPPIES)
-        send(chat_id, body, None)
-        send(chat_id,
-             "Понравился кто-то? " + manager_link(
-                 "Пишите менеджеру",
-                 "Здравствуйте! Пишу из бота Keris Club — хочу узнать больше про щенков.",
-             ) + " — расскажет подробнее и поможет с выбором 👇",
-             main_menu())
+        show_puppy(chat_id, 0)
+    elif data.startswith("puppy:"):
+        show_puppy(chat_id, int(data.split(":", 1)[1]))
+    elif data == "noop":
+        pass
     elif data == "faq":
         parts = [f"<b>{q}</b>\n{a}" for q, a in FAQ]
         send(chat_id, "❓ <b>Частые вопросы</b>\n\n" + "\n\n".join(parts), back_menu())
-    elif data == "contact":
-        send(chat_id,
-             "Оставьте телефон — менеджер свяжется с вами и подберёт "
-             "щенка под ваш запрос 👇",
-             phone_kb())
     else:
         show_menu(chat_id)
 
 
-def handle_contact(chat_id: int, contact: dict, from_user: dict) -> None:
-    phone = str(contact.get("phone_number") or "").strip()
-    if phone and not phone.startswith("+"):
-        phone = "+" + phone
-    name = " ".join(x for x in [from_user.get("first_name"),
-                                from_user.get("last_name")] if x) or "Клиент из TG-бота"
-    st = user_state(chat_id)
-    st["phone"] = phone
-    st["name"] = name
-    save_state()
-    send(chat_id,
-         "Спасибо! 🎉 Заявка принята — менеджер свяжется с вами в "
-         "ближайшее время.\n\n"
-         "А пока можете " + manager_link(
-             "написать напрямую",
-             "Здравствуйте! Я из бота Keris Club, уже оставил(а) заявку на щенка.",
-         ),
-         {"remove_keyboard": True})
-    push_to_amo(chat_id, name, phone)
-    show_menu(chat_id)
-
-
 def handle_message(msg: dict) -> None:
     chat_id = msg["chat"]["id"]
-    from_user = msg.get("from", {})
-    if "contact" in msg:
-        handle_contact(chat_id, msg["contact"], from_user)
-        return
     text = (msg.get("text") or "").strip()
     if text.startswith("/start"):
         handle_start(chat_id)
@@ -431,7 +396,7 @@ ALLOWED_UPDATES = urllib.parse.quote('["message","callback_query"]')
 
 def main() -> None:
     load_state()
-    log.info("keris-bot запущен (long polling). amo=%s", "on" if AMO_TOKEN else "off")
+    log.info("keris-bot запущен (long polling)")
     # снять возможный webhook, чтобы long polling работал
     _http("POST", f"{TG_API}/deleteWebhook", {"drop_pending_updates": False})
     offset = 0
