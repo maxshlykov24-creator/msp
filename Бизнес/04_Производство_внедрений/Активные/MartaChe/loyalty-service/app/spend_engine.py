@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -183,7 +183,7 @@ def apply_spend_discount_to_positions(
 def compute_active_balance(db: Session, agent_id: str, *, now: Optional[datetime] = None) -> int:
     """Сумма remaining по активным (activates_at IS NULL OR activates_at <= now) батчам, не сгоревшим."""
     if now is None:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
     today = now.date()
     total = 0
     for b in db.scalars(
@@ -200,7 +200,7 @@ def compute_active_balance(db: Session, agent_id: str, *, now: Optional[datetime
 def compute_pending_balance(db: Session, agent_id: str, *, now: Optional[datetime] = None) -> int:
     """Сумма remaining по батчам, которые ещё не активны (activates_at > now)."""
     if now is None:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
     today = now.date()
     total = 0
     for b in db.scalars(
@@ -238,7 +238,7 @@ def _spend_fifo(db: Session, agent_id: str, amount: int, *, now: Optional[dateti
     if amount <= 0:
         return
     if now is None:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
     today = now.date()
     remaining = amount
     batches = list(

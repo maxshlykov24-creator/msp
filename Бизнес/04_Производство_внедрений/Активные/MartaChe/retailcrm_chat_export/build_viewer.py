@@ -42,22 +42,22 @@ def build_managers_index():
     return {}
 
 
-def sender_label(message: dict, customer_id) -> str:
+def sender_role(message: dict, customer_id, customer_name: str = ""):
+    """Возвращает (подпись, роль): роль c=клиент, m=менеджер, s=бот/система."""
     frm = message.get("from") or {}
-    from_id = frm.get("id")
-    if from_id is not None and customer_id is not None and from_id == customer_id:
-        return "Клиент"
-    name = " ".join(filter(None, [frm.get("first_name"), frm.get("last_name")])).strip()
     ftype = (frm.get("type") or "").lower()
-    if ftype == "customer":
-        return "Клиент"
-    if name:
-        return name
-    if ftype in ("user", "manager"):
-        return "Менеджер"
+    from_id = frm.get("id")
+    name = " ".join(filter(None, [frm.get("first_name"), frm.get("last_name")])).strip()
+
+    if ftype == "customer" or (from_id is not None and from_id == customer_id):
+        return (customer_name or name or "Клиент"), "c"
     if ftype == "bot":
-        return "Бот"
-    return "Система"
+        return "Бот", "s"
+    if ftype in ("user", "manager"):
+        return (name or "Менеджер"), "m"
+    if from_id is None and not name:
+        return "Система", "s"
+    return (name or "Менеджер"), "m"
 
 
 def main() -> None:
@@ -93,9 +93,6 @@ def main() -> None:
         msgs = []
         times = []
         for m in sorted(messages, key=lambda x: x.get("time") or x.get("created_at") or ""):
-            t = m.get("time") or m.get("created_at") or ""
-            times.append(t)
-            who = sender_label(m, cid)
             text = m.get("content") or ""
             atts = []
             for it in (m.get("items") or []):
@@ -103,8 +100,18 @@ def main() -> None:
                 atts.append(str(cap))
             if atts:
                 text = (text + " " if text else "") + "[" + ", ".join(atts) + "]"
-            role = "c" if who == "Клиент" else ("m" if who in ("Менеджер",) or (who not in ("Бот", "Система")) else "s")
+            if not text.strip():
+                continue
+            t = m.get("time") or m.get("created_at") or ""
+            times.append(t)
+            who, role = sender_role(m, cid, name)
             msgs.append([t, who, text, role])
+        if not msgs:
+            continue
+
+        last_msg = msgs[-1]
+        last_prefix = "Вы: " if last_msg[3] == "m" else ("" if last_msg[3] == "c" else last_msg[1] + ": ")
+        last_text = (last_prefix + last_msg[2]).strip()
 
         chats_out.append({
             "id": chat.get("id"),
@@ -115,22 +122,33 @@ def main() -> None:
             "channel_name": (chat.get("channel") or {}).get("name") or "",
             "first": (times[0] if times else "") or "",
             "last": chat.get("last_activity") or (times[-1] if times else "") or "",
+            "last_text": last_text[:180],
             "count": len(msgs),
             "msgs": msgs,
         })
 
     chats_out.sort(key=lambda c: c.get("last") or "", reverse=True)
 
-    data_js = "window.CHATS=" + json.dumps(chats_out, ensure_ascii=False, separators=(",", ":")) + ";"
+    payload = json.dumps(chats_out, ensure_ascii=False, separators=(",", ":"))
+    data_js = "window.CHATS=" + payload + ";"
     (VIEWER_DIR / "data.js").write_text(data_js, encoding="utf-8")
     (VIEWER_DIR / "index.html").write_text(INDEX_HTML, encoding="utf-8")
     (VIEWER_DIR / "README.txt").write_text(README_TXT, encoding="utf-8")
 
+    # Единый самодостаточный файл: данные внутри HTML (для телефона/пересылки)
+    single = INDEX_HTML.replace(
+        '<script src="data.js"></script>',
+        "<script>window.CHATS=" + payload + ";</script>",
+    )
+    single_path = VIEWER_DIR / "История_переписок.html"
+    single_path.write_text(single, encoding="utf-8")
+
     total_msgs = sum(c["count"] for c in chats_out)
     size_mb = (VIEWER_DIR / "data.js").stat().st_size / 1024 / 1024
+    single_mb = single_path.stat().st_size / 1024 / 1024
     print(f"Готово. Диалогов: {len(chats_out)}, сообщений: {total_msgs}")
-    print(f"data.js: {size_mb:.1f} MB")
-    print(f"Открыть: {VIEWER_DIR / 'index.html'}")
+    print(f"Папка-вьюер: {VIEWER_DIR / 'index.html'} (+ data.js, {size_mb:.1f} MB)")
+    print(f"Единый файл: {single_path} ({single_mb:.1f} MB)")
     if skipped:
         print(f"Пропущено битых файлов: {skipped}")
 
@@ -155,27 +173,35 @@ INDEX_HTML = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Переписки MartaChe">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#f5f6f8">
 <title>История переписок — MartaChe</title>
 <style>
 :root{
   --bg:#f5f6f8; --panel:#fff; --line:#e6e8eb; --muted:#8a9099; --accent:#7c3aed;
   --c-client:#ecfdf5; --c-client-b:#10b981; --c-mgr:#eef2ff; --c-mgr-b:#6366f1; --c-sys:#f3f4f6;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+  --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
 }
-*{box-sizing:border-box}
-html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:#1f2328}
-.app{display:flex;height:100dvh;overflow:hidden}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:#1f2328;-webkit-text-size-adjust:100%;overscroll-behavior-y:none}
+.app{display:flex;height:100dvh;overflow:hidden;padding-left:var(--sal);padding-right:var(--sar)}
 .list{width:380px;min-width:300px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
-.head{padding:12px;border-bottom:1px solid var(--line)}
+.head{padding:calc(12px + var(--sat)) 12px 12px;border-bottom:1px solid var(--line)}
 .head h1{font-size:15px;margin:0 0 8px}
-.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;outline:none}
+.search{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:16px;outline:none;-webkit-appearance:none}
 .search:focus{border-color:var(--accent)}
 .filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .chip{padding:5px 10px;border:1px solid var(--line);border-radius:20px;font-size:12px;background:#fff;cursor:pointer;user-select:none}
 .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .stat{font-size:12px;color:var(--muted);margin-top:8px}
-.rows{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.row{padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.rows{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:var(--sab)}
+.row{padding:13px 12px;border-bottom:1px solid var(--line);cursor:pointer}
 .row:hover{background:#faf9ff}
 .row.active{background:#f3efff}
 .row .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
@@ -188,12 +214,19 @@ html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Seg
 .b-whatsapp{background:#e6f8ec;color:#1a9e4b}
 .b-other{background:#eee;color:#666}
 .detail{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
-.dhead{padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
-.back{display:none;border:none;background:#f0f0f3;border-radius:8px;padding:8px 12px;font-size:16px;cursor:pointer}
-.dhead .info h2{font-size:15px;margin:0}
-.dhead .info div{font-size:12px;color:var(--muted)}
-.msgs{flex:1;overflow-y:auto;padding:16px;-webkit-overflow-scrolling:touch}
-.m{max-width:78%;margin:8px 0;padding:8px 12px;border-radius:12px;font-size:14px;line-height:1.4;white-space:pre-wrap;word-break:break-word}
+.dhead{padding:calc(12px + var(--sat)) 16px 12px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap;row-gap:8px}
+.back{display:none;border:none;background:#f0f0f3;border-radius:8px;padding:10px 14px;font-size:17px;cursor:pointer;flex-shrink:0}
+.dhead .info{flex:1;min-width:160px;overflow:hidden}
+.dhead .info h2{font-size:15px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dhead .info div{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dsearch{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;font-size:16px;outline:none;-webkit-appearance:none}
+.dsearch:focus{border-color:var(--accent)}
+.dsearch-wrap{flex-basis:100%;display:none}
+.dsearch-wrap.on{display:block}
+.dsearch-stat{font-size:11px;color:var(--muted);margin-top:4px}
+.dsearch-toggle{border:none;background:#f0f0f3;border-radius:8px;padding:9px 12px;font-size:15px;cursor:pointer;flex-shrink:0}
+.msgs{flex:1;overflow-y:auto;padding:16px;padding-bottom:calc(16px + var(--sab));-webkit-overflow-scrolling:touch}
+.m{max-width:82%;margin:8px 0;padding:9px 12px;border-radius:14px;font-size:15px;line-height:1.42;white-space:pre-wrap;word-break:break-word}
 .m .meta{font-size:11px;color:var(--muted);margin-bottom:3px}
 .m.c{background:var(--c-client);border:1px solid var(--c-client-b)33;margin-right:auto}
 .m.m{background:var(--c-mgr);border:1px solid var(--c-mgr-b)33;margin-left:auto}
@@ -205,6 +238,9 @@ mark{background:#fde68a;padding:0 1px;border-radius:2px}
   .detail{position:fixed;inset:0;z-index:10;transform:translateX(100%);transition:transform .2s}
   .app.open .detail{transform:translateX(0)}
   .back{display:block}
+  .row{padding:14px 12px}
+  .row .nm{font-size:15px}
+  .row .sub{font-size:13px}
 }
 </style>
 </head>
@@ -223,6 +259,11 @@ mark{background:#fde68a;padding:0 1px;border-radius:2px}
     <div class="dhead">
       <button class="back" id="back">←</button>
       <div class="info" id="dinfo"><h2>Выберите диалог</h2><div></div></div>
+      <button class="dsearch-toggle" id="dsearchToggle" title="Поиск по диалогу">🔎</button>
+      <div class="dsearch-wrap" id="dsearchWrap">
+        <input class="dsearch" id="dq" placeholder="Поиск по этому диалогу…" autocomplete="off">
+        <div class="dsearch-stat" id="dqStat"></div>
+      </div>
     </div>
     <div class="msgs" id="msgs"><div class="empty">Слева выберите переписку или воспользуйтесь поиском.</div></div>
   </div>
@@ -232,7 +273,7 @@ mark{background:#fde68a;padding:0 1px;border-radius:2px}
 const CH = (window.CHATS||[]);
 CH.forEach(c=>{ c._s = ((c.name||"")+" "+(c.phone||"")+" "+(c.username||"")+" "+c.msgs.map(m=>m[2]).join(" ")).toLowerCase(); });
 const chans = [...new Set(CH.map(c=>c.channel).filter(Boolean))].sort();
-let curChan="", curQ="", active=null;
+let curChan="", curQ="", active=null, curDq="";
 
 const el=id=>document.getElementById(id);
 const RU={telegram:"Telegram",instagram:"Instagram",whatsapp:"WhatsApp"};
@@ -259,27 +300,48 @@ function render(){
   rows.innerHTML=list.slice(0,600).map(c=>`
     <div class="row${active===c.id?' active':''}" data-id="${c.id}">
       <div class="top"><div class="nm">${badge(c.channel)}${esc(c.name)}</div><div class="dt">${fdate(c.last)}</div></div>
-      <div class="sub">${esc(c.phone||c.username||"")} · ${c.count} сообщ.</div>
+      <div class="sub">${esc(c.last_text||"")||esc(c.phone||c.username||"")}</div>
     </div>`).join("") || `<div class="empty">Ничего не найдено</div>`;
   if(list.length>600) rows.innerHTML+=`<div class="stat" style="padding:12px">…и ещё ${list.length-600}. Уточните поиск.</div>`;
   rows.querySelectorAll(".row").forEach(r=>r.onclick=()=>open(+r.dataset.id));
 }
 
+function renderDialogMsgs(){
+  const c=CH.find(x=>x.id===active); if(!c)return;
+  const dq=curDq.trim().toLowerCase();
+  const listQ=curQ.trim();
+  let msgs=c.msgs;
+  if(dq) msgs=msgs.filter(m=>(m[2]||"").toLowerCase().includes(dq)||(m[1]||"").toLowerCase().includes(dq));
+  const hlQ=dq||listQ;
+  el("msgs").innerHTML=msgs.map(m=>{
+    const role=m[3]||"s";
+    return `<div class="m ${role}"><div class="meta">${esc(m[1])} · ${ftime(m[0])}</div>${hl(m[2],hlQ)}</div>`;
+  }).join("") || `<div class="empty">${dq?"Ничего не найдено":"Нет сообщений"}</div>`;
+  if(dq){
+    el("dqStat").textContent=`Найдено: ${msgs.length} из ${c.msgs.length}`;
+    el("msgs").scrollTop=0;
+  } else {
+    el("dqStat").textContent="";
+    el("msgs").scrollTop=el("msgs").scrollHeight;
+  }
+}
+
 function open(id){
   const c=CH.find(x=>x.id===id); if(!c)return;
-  active=id; render();
+  active=id; curDq=""; el("dq").value=""; render();
   el("dinfo").innerHTML=`<h2>${esc(c.name)}</h2><div>${badge(c.channel)}${esc(c.phone||"")} ${c.username?("@"+esc(c.username)):""} · ${c.count} сообщений</div>`;
-  const q=curQ.trim();
-  el("msgs").innerHTML=c.msgs.map(m=>{
-    const role=m[3]||"s";
-    return `<div class="m ${role}"><div class="meta">${esc(m[1])} · ${ftime(m[0])}</div>${hl(m[2],q)}</div>`;
-  }).join("") || `<div class="empty">Нет сообщений</div>`;
-  el("msgs").scrollTop=0;
+  el("dsearchWrap").classList.remove("on");
+  renderDialogMsgs();
   document.getElementById("app").classList.add("open");
 }
 
-let t;
+let t, t2;
 el("q").addEventListener("input",e=>{curQ=e.target.value;clearTimeout(t);t=setTimeout(render,120);});
+el("dq").addEventListener("input",e=>{curDq=e.target.value;clearTimeout(t2);t2=setTimeout(renderDialogMsgs,120);});
+el("dsearchToggle").onclick=()=>{
+  el("dsearchWrap").classList.toggle("on");
+  if(el("dsearchWrap").classList.contains("on")) el("dq").focus();
+};
 el("back").onclick=()=>document.getElementById("app").classList.remove("open");
 buildFilters();
 render();

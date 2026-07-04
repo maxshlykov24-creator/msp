@@ -185,10 +185,20 @@ def parse_dt(s: str | None) -> datetime | None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", action="store_true", help="перевыгрузить уже сохранённые чаты")
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="перевыгрузить чаты с новой активностью (last_activity в API новее, чем в raw)",
+    )
     parser.add_argument("--months", type=int, default=6,
                         help="брать чаты с активностью за последние N месяцев (0 = все)")
     parser.add_argument("--refresh-list", action="store_true",
                         help="перезапросить список чатов из API (иначе берём data/chats_list.json)")
+    parser.add_argument(
+        "--since",
+        metavar="YYYY-MM-DD",
+        help="обработать только чаты с last_activity в этот день и позже (для точечного обновления)",
+    )
     args = parser.parse_args()
 
     endpoint = _require("RETAILCRM_MG_BOT_ENDPOINT")
@@ -222,6 +232,16 @@ def main() -> None:
         chats.sort(key=lambda c: c.get("last_activity") or "", reverse=True)
         print(f"Фильтр по активности за {args.months} мес (с {cutoff.date()}): {len(chats)} из {before}")
 
+    if args.since:
+        since_dt = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        before = len(chats)
+        chats = [
+            c for c in chats
+            if (la := parse_dt(c.get("last_activity"))) is not None and la >= since_dt
+        ]
+        chats.sort(key=lambda c: c.get("last_activity") or "", reverse=True)
+        print(f"Фильтр --since {args.since}: {len(chats)} из {before}")
+
     if not chats:
         print(
             "\nЧатов не найдено. Похоже, у bot-модуля нет доступа к истории — "
@@ -232,21 +252,36 @@ def main() -> None:
         sys.exit(2)
 
     index_rows = []
+    refreshed = 0
+    skipped = 0
     for i, chat in enumerate(chats, start=1):
         chat_id = chat["id"]
         raw_path = RAW_DIR / f"chat_{chat_id}.json"
-        if raw_path.exists() and not args.force:
-            print(f"[{i}/{len(chats)}] чат {chat_id} уже выгружен, пропуск")
+        need_fetch = args.force or not raw_path.exists() or bool(args.since)
+        dump: dict | None = None
+        if raw_path.exists() and not need_fetch:
             with raw_path.open(encoding="utf-8") as f:
                 dump = json.load(f)
-            messages = dump.get("messages", [])
-        else:
-            print(f"[{i}/{len(chats)}] чат {chat_id}: тяну сообщения...")
+            if args.update:
+                stored_la = parse_dt((dump.get("chat") or {}).get("last_activity"))
+                api_la = parse_dt(chat.get("last_activity"))
+                if api_la and (not stored_la or api_la > stored_la):
+                    need_fetch = True
+        if need_fetch:
+            if raw_path.exists() and not args.force:
+                refreshed += 1
+                print(f"[{i}/{len(chats)}] чат {chat_id}: обновление (новая активность)...")
+            else:
+                print(f"[{i}/{len(chats)}] чат {chat_id}: тяну сообщения...")
             messages = client.paginate_by_time("/messages", {"chat_id": chat_id})
             raw_path.write_text(
                 json.dumps({"chat": chat, "messages": messages}, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+        else:
+            skipped += 1
+            print(f"[{i}/{len(chats)}] чат {chat_id} без изменений, пропуск")
+            messages = (dump or {}).get("messages", [])
 
         customer = chat.get("customer") or {}
         phone = customer.get("phone") or customer.get("username") or f"id{customer.get('id', chat_id)}"
@@ -284,6 +319,8 @@ def main() -> None:
 
     total_messages = sum(r["messages_count"] for r in index_rows)
     print(f"\nГотово. Чатов: {len(index_rows)}, сообщений: {total_messages}")
+    if args.update and not args.force:
+        print(f"Обновлено чатов: {refreshed}, без изменений: {skipped}")
     print(f"Индекс: {index_path}")
     print(f"Переписка: {DIALOGS_DIR}")
     print(f"Сырые данные: {RAW_DIR}")
