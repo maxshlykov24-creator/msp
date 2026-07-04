@@ -26,6 +26,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -37,6 +38,7 @@ ENV_PATH = ROOT / ".env"
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
 DIALOGS_DIR = DATA_DIR / "dialogs"
+CHATS_LIST_PATH = DATA_DIR / "chats_list.json"
 
 load_dotenv(ENV_PATH)
 
@@ -171,9 +173,22 @@ def safe_filename(s: str) -> str:
     return "".join(c if c.isalnum() or c in "-_." else "_" for c in s)[:80]
 
 
+def parse_dt(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", action="store_true", help="перевыгрузить уже сохранённые чаты")
+    parser.add_argument("--months", type=int, default=6,
+                        help="брать чаты с активностью за последние N месяцев (0 = все)")
+    parser.add_argument("--refresh-list", action="store_true",
+                        help="перезапросить список чатов из API (иначе берём data/chats_list.json)")
     args = parser.parse_args()
 
     endpoint = _require("RETAILCRM_MG_BOT_ENDPOINT")
@@ -188,9 +203,24 @@ def main() -> None:
     managers_by_id = {m["id"]: m for m in managers if "id" in m}
     print(f"  менеджеров/ботов: {len(managers_by_id)}")
 
-    print("Тяну список чатов...")
-    chats = client.paginate_by_time("/chats")
-    print(f"  чатов найдено: {len(chats)}")
+    if CHATS_LIST_PATH.exists() and not args.refresh_list:
+        chats = json.loads(CHATS_LIST_PATH.read_text(encoding="utf-8"))
+        print(f"Список чатов из кэша {CHATS_LIST_PATH.name}: {len(chats)}")
+    else:
+        print("Тяну список чатов из API...")
+        chats = client.paginate_by_time("/chats")
+        CHATS_LIST_PATH.write_text(json.dumps(chats, ensure_ascii=False), encoding="utf-8")
+        print(f"  чатов найдено: {len(chats)}")
+
+    if args.months:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=int(args.months * 30.5))
+        before = len(chats)
+        chats = [
+            c for c in chats
+            if (parse_dt(c.get("last_activity")) or datetime(1970, 1, 1, tzinfo=timezone.utc)) >= cutoff
+        ]
+        chats.sort(key=lambda c: c.get("last_activity") or "", reverse=True)
+        print(f"Фильтр по активности за {args.months} мес (с {cutoff.date()}): {len(chats)} из {before}")
 
     if not chats:
         print(

@@ -1,5 +1,7 @@
 .env
 data/
+viewer/
+*.log
 .venv/
 __pycache__/
 *.pyc
