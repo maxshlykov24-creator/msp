@@ -51,16 +51,28 @@ def _require(name: str) -> str:
     return val
 
 
+API_PREFIX = "/api/bot/v1"
+
+
 class MgBotClient:
     def __init__(self, endpoint: str, token: str) -> None:
-        self.endpoint = endpoint.rstrip("/")
+        base = endpoint.rstrip("/")
+        if not base.endswith(API_PREFIX):
+            base += API_PREFIX
+        self.endpoint = base
         self.session = requests.Session()
         self.session.headers.update({"x-bot-token": token})
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> list[dict]:
         url = f"{self.endpoint}{path}"
         for attempt in range(1, MAX_RETRIES + 1):
-            resp = self.session.get(url, params=params, timeout=30)
+            try:
+                resp = self.session.get(url, params=params, timeout=(15, 120))
+            except requests.exceptions.RequestException as exc:
+                wait = min(2 ** attempt, 30)
+                print(f"  сеть ({type(exc).__name__}) retry #{attempt} через {wait}s ({path})", file=sys.stderr)
+                time.sleep(wait)
+                continue
             if resp.status_code == 200:
                 time.sleep(RATE_LIMIT_DELAY)
                 data = resp.json()
@@ -75,61 +87,33 @@ class MgBotClient:
         raise RuntimeError(f"Не удалось получить {path} после {MAX_RETRIES} попыток")
 
     def paginate_by_time(self, path: str, base_params: dict[str, Any] | None = None, limit: int = 1000) -> list[dict]:
-        """Обходит список назад по времени (until), дедуплицируя по id.
-        Затем на всякий случай добавляет обход вперёд (since) от начала эпохи —
-        подстраховка на случай другого порядка сортировки на стороне API.
+        """Пагинация MG Bot API: since_id (>=1) возвращает записи с id > since_id
+        по возрастанию, до limit штук. Идём вперёд, пока приходят новые id.
         """
         base_params = dict(base_params or {})
         seen: dict[Any, dict] = {}
-
-        # обход назад от "сейчас"
-        until: str | None = None
+        since_id = 1
         while True:
-            params = dict(base_params, limit=limit)
-            if until:
-                params["until"] = until
+            params = dict(base_params, limit=limit, since_id=since_id)
             batch = self.get(path, params)
             if not batch:
                 break
+            max_id = since_id
             new_count = 0
-            oldest_time = None
             for item in batch:
                 item_id = item.get("id")
+                if item_id is None:
+                    continue
                 if item_id not in seen:
                     seen[item_id] = item
                     new_count += 1
-                t = item.get("time") or item.get("created_at")
-                if t and (oldest_time is None or t < oldest_time):
-                    oldest_time = t
-            if new_count == 0 or oldest_time is None or oldest_time == until:
+                if item_id > max_id:
+                    max_id = item_id
+            if max_id <= since_id or new_count == 0:
                 break
-            until = oldest_time
+            since_id = max_id
             if len(batch) < limit:
                 break
-
-        # обход вперёд с самого начала — подстраховка от иной семантики сортировки
-        since: str | None = "2000-01-01T00:00:00.000000"
-        while True:
-            params = dict(base_params, limit=limit, since=since)
-            batch = self.get(path, params)
-            if not batch:
-                break
-            new_count = 0
-            newest_time = None
-            for item in batch:
-                item_id = item.get("id")
-                if item_id not in seen:
-                    seen[item_id] = item
-                    new_count += 1
-                t = item.get("time") or item.get("created_at")
-                if t and (newest_time is None or t > newest_time):
-                    newest_time = t
-            if newest_time is None or newest_time == since:
-                break
-            since = newest_time
-            if len(batch) < limit and new_count == 0:
-                break
-
         return list(seen.values())
 
 

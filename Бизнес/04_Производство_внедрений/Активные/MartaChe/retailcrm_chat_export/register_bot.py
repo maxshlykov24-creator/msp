@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -23,6 +24,20 @@ from dotenv import load_dotenv, set_key
 
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(ENV_PATH)
+
+
+def post_with_retries(url: str, data: dict, retries: int = 6):
+    """RetailCRM периодически рвёт SSL-хендшейк — повторяем с backoff."""
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            return requests.post(url, data=data, timeout=(15, 120))
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            wait = min(2 ** attempt, 20)
+            print(f"  сеть недоступна ({type(exc).__name__}), повтор #{attempt} через {wait}s", file=sys.stderr)
+            time.sleep(wait)
+    raise SystemExit(f"Не удалось подключиться к RetailCRM после {retries} попыток: {last_exc}")
 
 
 def _require(name: str) -> str:
@@ -51,16 +66,15 @@ def main() -> None:
     }
 
     url = f"{api_url}/api/v5/integration-modules/{code}/edit"
-    resp = requests.post(
+    resp = post_with_retries(
         url,
         data={
             "apiKey": api_key,
             "integrationModule": json.dumps(integration_module, ensure_ascii=False),
         },
-        timeout=30,
     )
 
-    if resp.status_code != 200:
+    if resp.status_code not in (200, 201):
         print(f"Ошибка регистрации: HTTP {resp.status_code}", file=sys.stderr)
         print(resp.text, file=sys.stderr)
         raise SystemExit(1)

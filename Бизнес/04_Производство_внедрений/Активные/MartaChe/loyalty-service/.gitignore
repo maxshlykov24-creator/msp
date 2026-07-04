@@ -1,4 +1,12 @@
 .env
+# Выгрузки/отчёты с ПДн клиентов (уход с RetailCRM) — не коммитить
+data/
+loyalty_all.csv
+loyalty_migration_report.csv
+loyalty_duplicates_report.csv
+loyalty_duplicates_report.html
+loyalty_attention.csv
+active_loyalty_import*.csv
 .venv/
 __pycache__/
 *.pyc
