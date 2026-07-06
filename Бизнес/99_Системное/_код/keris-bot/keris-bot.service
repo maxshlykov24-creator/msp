@@ -1,0 +1,15 @@
+[Unit]
+Description=Keris Club Telegram bot (long polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/keris-bot
+EnvironmentFile=/root/keris-bot/.env
+ExecStart=/usr/bin/python3 /root/keris-bot/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

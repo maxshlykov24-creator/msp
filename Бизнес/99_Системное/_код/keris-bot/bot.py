@@ -41,8 +41,10 @@ def _getaddrinfo_ipv4(host, port, family=0, type=0, proto=0, flags=0):  # noqa: 
 
 socket.getaddrinfo = _getaddrinfo_ipv4
 
-# ── Конфиг (через окружение, дефолты — из ДОСТУПЫ.md) ─────────────────────
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8544449405:AAGvRzRu0Cy6Vw8Q0IfcCrYMuhneF837Jzw")
+# ── Конфиг (только окружение / .env на сервере) ────────────────────────────
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+if not BOT_TOKEN:
+    raise SystemExit("BOT_TOKEN не задан — см. /root/keris-bot/.env")
 MANAGER_USERNAME = os.environ.get("MANAGER_USERNAME", "keris_chat")
 STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-bot/state.json")
 # Канал с витриной щенков: https://t.me/kerisclub · пост — /115
