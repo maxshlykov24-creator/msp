@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Бизнес/00_Inbox/2026-06-05_License_Bridge_транскрипт.md",
+                "file": "0. Входящее/Видео для Карины.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "2026-06-05_License_Bridge_транскрипт"
+              "title": "Видео для Карины"
             }
           }
         ]
@@ -183,8 +183,10 @@
       "bases:Создать новую базу": false
     }
   },
-  "active": "cbf5918d51cf4060",
+  "active": "8216ddcbf0278292",
   "lastOpenFiles": [
+    "Бизнес/00_Inbox/2026-06-05_License_Bridge_транскрипт.md",
+    "0. Входящее/Видео для Карины.md",
     "Бизнес/04_Производство_внедрений/Активные/Keris_Club/2026-07-06_СЦЕНАРИЙ_ВИДЕО_КАРИНА.md",
     "0. Входящее"
   ]
