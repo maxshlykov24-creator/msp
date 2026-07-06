@@ -1,0 +1,190 @@
+{
+  "main": {
+    "id": "31245cb7a23c929d",
+    "type": "split",
+    "children": [
+      {
+        "id": "35c027d85be51965",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8216ddcbf0278292",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Бизнес/00_Inbox/2026-06-05_License_Bridge_транскрипт.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "2026-06-05_License_Bridge_транскрипт"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "2bd7528e8912a35e",
+    "type": "split",
+    "children": [
+      {
+        "id": "002e3c8e9e9124b5",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "cbf5918d51cf4060",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Файловый менеджер"
+            }
+          },
+          {
+            "id": "136668ca357652fa",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Поиск"
+            }
+          },
+          {
+            "id": "6d0e526360a4e670",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Закладки"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "ccd946490bf30f11",
+    "type": "split",
+    "children": [
+      {
+        "id": "e64dce4e99f2fc05",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "4ad4db0b5dbbd099",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Бизнес/00_Inbox/2026-06-05_License_Bridge_транскрипт.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Обратные ссылки для 2026-06-05_License_Bridge_транскрипт"
+            }
+          },
+          {
+            "id": "fa6ca3eb3ad16598",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Бизнес/00_Inbox/2026-06-05_License_Bridge_транскрипт.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Исходящие ссылки из 2026-06-05_License_Bridge_транскрипт"
+            }
+          },
+          {
+            "id": "aa3062a0d169e7e2",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Теги"
+            }
+          },
+          {
+            "id": "0e2a60ff7705ef3a",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Все свойства"
+            }
+          },
+          {
+            "id": "2bf1a8409d5e5458",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Бизнес/00_Inbox/2026-06-05_License_Bridge_транскрипт.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Структура 2026-06-05_License_Bridge_транскрипт"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Меню быстрого перехода": false,
+      "graph:Граф": false,
+      "canvas:Создать новый холст": false,
+      "daily-notes:Сегодняшняя заметка": false,
+      "templates:Вставить шаблон": false,
+      "command-palette:Открыть палитру команд": false,
+      "bases:Создать новую базу": false
+    }
+  },
+  "active": "cbf5918d51cf4060",
+  "lastOpenFiles": [
+    "0. Входящее"
+  ]
+}
