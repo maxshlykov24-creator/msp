@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="author" content="Денис Леушин (PLEADA)">
+  <meta name="creator" content="Денис Леушин (PLEADA) — https://deniis.shop">
+  <title>PRESENTATION_MODULE_2 // ПОЛНЫЙ КОНТЕКСТ</title>
+  <style>
+    :root{
+      --matrix-green:#00ff41;
+      --matrix-dim:rgba(0,255,65,0.15);
+      --dark-green:#008F11;
+      --bg-black:#020202;
+      --text-color:#e0e0e0;
+      --accent-red:#ff003c;
+      --accent-yellow:#ffcc00;
+      --accent-cyan:#00ffff;
+      --font-mono:'Courier New', monospace;
+    }
+
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+
+    html,body{
+      height:100%;
+      margin:0;
+      padding:0;
+      background:var(--bg-black);
+      color:var(--text-color);
+      font-family:var(--font-mono);
+      overflow:hidden;
+    }
+
+    /* Grid + scanlines */
+    body::before{
+      content:"";
+      position:fixed;
+      top:0;left:0;
+      width:100%;height:100%;
+      background-image:
+        linear-gradient(var(--matrix-dim) 1px, transparent 1px),
+        linear-gradient(90deg, var(--matrix-dim) 1px, transparent 1px);
+      background-size:30px 30px;
+      pointer-events:none;
+      z-index:0;
+    }
+    body::after{
+      content:"";
+      position:fixed;
+      top:0;left:0;
+      width:100%;height:100%;
+      background:
+        radial-gradient(circle, transparent 50%, rgba(0,0,0,0.7) 100%),
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,65,0.02) 3px);
+      pointer-events:none;
+      z-index:999;
+    }
+
+    .slide-container{
+      position:relative;
+      width:100%;
+      height:100%;
+      z-index:10;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+    }
+
+    .slide{
+      position:absolute;
+      width:86%;
+      max-width:980px;
+      opacity:0;
+      transform:scale(0.96);
+      transition:opacity 0.45s ease-in-out, transform 0.45s ease-in-out;
+      pointer-events:none;
+    }
+    .slide.active{
+      opacity:1;
+      transform:scale(1);
+      pointer-events:all;
+    }
+
+    .card{
+      background:rgba(5,5,5,0.95);
+      padding:40px;
+      border:1px solid var(--matrix-dim);
+      position:relative;
+      box-shadow:0 0 30px rgba(0,255,65,0.1);
+    }
+
+    .hud{position:absolute;width:12px;height:12px;border:2px solid var(--matrix-green);}
+    .c-tl{top:-1px;left:-1px;border-bottom:none;border-right:none;}
+    .c-tr{top:-1px;right:-1px;border-bottom:none;border-left:none;}
+    .c-bl{bottom:-1px;left:-1px;border-top:none;border-right:none;}
+    .c-br{bottom:-1px;right:-1px;border-top:none;border-left:none;}
+
+    .card-label{
+      position:absolute;
+      top:-10px;
+      right:20px;
+      background:var(--bg-black);
+      padding:0 10px;
+      font-size:0.8rem;
+      color:var(--matrix-green);
+      border:1px solid var(--matrix-dim);
+      letter-spacing:2px;
+    }
+
+    h1{
+      font-size:2.7rem;
+      text-transform:uppercase;
+      letter-spacing:2px;
+      margin:0 0 18px 0;
+      line-height:1.12;
+      color:var(--matrix-green);
+      text-shadow:0 0 10px var(--matrix-dim);
+      border-bottom:2px solid var(--matrix-green);
+      padding-bottom:10px;
+    }
+    h2{
+      font-size:1.25rem;
+      margin:0 0 18px 0;
+      color:#fff;
+      text-transform:uppercase;
+      letter-spacing:1px;
+    }
+    p{margin:0;color:#ccc;font-size:1.05rem;line-height:1.5;}
+
+    .scan-line{width:100%;height:1px;background:var(--matrix-green);opacity:0.2;margin:18px 0;}
+
+    ul{list-style:none;padding:0;margin:0;}
+    li{
+      font-size:1.1rem;
+      margin-bottom:12px;
+      padding-left:24px;
+      position:relative;
+      color:#ccc;
+    }
+    li::before{
+      content:">>";
+      color:var(--accent-red);
+      position:absolute;
+      left:0;
+      top:1px;
+      font-size:1rem;
+    }
+
+    .highlight{
+      color:var(--bg-black);
+      background:var(--matrix-green);
+      padding:0 6px;
+      font-weight:bold;
+    }
+
+    .tag{
+      display:inline-block;
+      border:1px solid rgba(0,255,65,0.3);
+      padding:4px 10px;
+      font-size:0.85rem;
+      color:#fff;
+      margin:6px 8px 0 0;
+      background:rgba(0,255,65,0.07);
+    }
+    .tag.yellow{border-color:rgba(255,204,0,0.5);background:rgba(255,204,0,0.08);color:#fff;}
+    .tag.cyan{border-color:rgba(0,255,255,0.35);background:rgba(0,255,255,0.07);color:#fff;}
+    .tag.red{border-color:rgba(255,0,60,0.45);background:rgba(255,0,60,0.08);color:#fff;}
+
+    .two-col{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:26px;
+    }
+
+    .mono-box{
+      border:1px dashed rgba(0,255,65,0.35);
+      padding:14px 16px;
+      background:rgba(0,0,0,0.45);
+      color:#ddd;
+      font-size:0.95rem;
+      line-height:1.5;
+      white-space:pre-wrap;
+    }
+
+    a{color:var(--accent-cyan);text-decoration:none;border-bottom:1px dotted rgba(0,255,255,0.3);}
+    a:hover{border-bottom-color:rgba(0,255,255,0.8);}
+
+    /* Controls */
+    .nav-controls{
+      position:fixed;
+      bottom:30px;
+      right:30px;
+      z-index:20;
+      font-size:0.8rem;
+      color:var(--dark-green);
+      background:var(--bg-black);
+      padding:10px;
+      border:1px solid var(--dark-green);
+    }
+    .slide-counter{
+      position:fixed;
+      top:30px;
+      left:30px;
+      z-index:20;
+      font-size:1.35rem;
+      color:var(--matrix-green);
+      font-weight:bold;
+      border:1px solid var(--matrix-green);
+      padding:6px 14px;
+      background:rgba(0,0,0,0.8);
+    }
+
+    /* Glitch */
+    .glitch{position:relative;}
+    .glitch::before,.glitch::after{
+      content:attr(data-text);
+      position:absolute;
+      top:0;left:0;
+      width:100%;height:100%;
+    }
+    .glitch::before{
+      left:2px;
+      text-shadow:-1px 0 var(--accent-red);
+      clip:rect(24px,550px,90px,0);
+      animation:glitch-anim-2 3s infinite linear alternate-reverse;
+    }
+    .glitch::after{
+      left:-2px;
+      text-shadow:-1px 0 var(--accent-cyan);
+      clip:rect(85px,550px,140px,0);
+      animation:glitch-anim 2.5s infinite linear alternate-reverse;
+    }
+    @keyframes glitch-anim{
+      0%{clip:rect(11px, 9999px, 89px, 0);}
+      20%{clip:rect(84px, 9999px, 19px, 0);}
+      40%{clip:rect(32px, 9999px, 6px, 0);}
+      60%{clip:rect(56px, 9999px, 72px, 0);}
+      80%{clip:rect(93px, 9999px, 24px, 0);}
+      100%{clip:rect(4px, 9999px, 55px, 0);}
+    }
+    @keyframes glitch-anim-2{
+      0%{clip:rect(65px, 9999px, 100px, 0);}
+      20%{clip:rect(2px, 9999px, 27px, 0);}
+      40%{clip:rect(91px, 9999px, 43px, 0);}
+      60%{clip:rect(18px, 9999px, 6px, 0);}
+      80%{clip:rect(35px, 9999px, 77px, 0);}
+      100%{clip:rect(52px, 9999px, 88px, 0);}
+    }
+
+    /* Marquee */
+    .marquee-container{
+      position:fixed;
+      bottom:0;
+      left:0;
+      width:100%;
+      background:var(--bg-black);
+      border-top:1px solid var(--dark-green);
+      padding:4px 0;
+      overflow:hidden;
+      z-index:100;
+    }
+    .marquee{
+      white-space:nowrap;
+      font-size:0.6rem;
+      color:var(--dark-green);
+      animation:scroll 28s linear infinite;
+    }
+    @keyframes scroll{
+      0%{transform:translateX(100%);}
+      100%{transform:translateX(-100%);}
+    }
+
+    @media (max-width: 980px){
+      .slide{width:92%;}
+      .card{padding:26px;}
+      h1{font-size:2.1rem;}
+      h2{font-size:1.05rem;}
+      li,p{font-size:1rem;}
+      .two-col{grid-template-columns:1fr;gap:18px;}
+    }
+  </style>
+</head>
+<body>
+
+  <div class="slide-counter">01 / 17</div>
+  <div class="nav-controls">[SPACE/→] NEXT | [←] PREV | CLICK = NEXT</div>
+
+  <div class="slide-container">
+
+    <!-- 1: INTRO -->
+    <div class="slide active" id="slide-1">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">MODULE_02</div>
+
+        <h1 class="glitch" data-text="ЛИЧНОЕ: ПОЛНЫЙ КОНТЕКСТ">ЛИЧНОЕ: ПОЛНЫЙ КОНТЕКСТ</h1>
+        <h2>Быстрые победы + Глубокий профиль</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Цель: <span class="highlight">ВАУ</span> за 15 минут.</li>
+          <li>Мы научим ИИ понимать тебя через Троицу: Тело / Разум / Дух.</li>
+          <li>Погнали "за ручку": я делаю — ты повторяешь.</li>
+        </ul>
+        <div style="margin-top:14px;">
+          <span class="tag">кино и еда</span>
+          <span class="tag cyan">психология</span>
+          <span class="tag yellow">здоровье</span>
+          <span class="tag red">решения</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2: TRINITY -->
+    <div class="slide" id="slide-2">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">PHILOSOPHY</div>
+
+        <h1>ТРОИЦА: ТЕЛО / РАЗУМ / ДУХ</h1>
+        <h2>3 слоя, чтобы ИИ понял "кто ты"</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li><span class="highlight">ТЕЛО</span> — анализы, чекапы, врачи, рост/вес, сон, энергия, спорт.</li>
+          <li><span class="highlight">РАЗУМ</span> — тесты, паттерны решений, заметки, что нравится/бесит.</li>
+          <li><span class="highlight">ДУХ</span> — цель, стратегия, счастье, куда идёшь. Эзотерика — по желанию.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--dark-green);">
+          Качество ответа ИИ на 90% зависит от Контекста, который ты ему дал.
+        </p>
+      </div>
+    </div>
+
+    <!-- 3: FOLDER -->
+    <div class="slide" id="slide-3">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">BASE_SETUP</div>
+
+        <h1>ШАГ 1: ПАПКА "ЛИЧНОЕ"</h1>
+        <h2>Создаём место для твоего профиля</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Создай в корне проекта папку: <span class="highlight">Личное</span>.</li>
+          <li>Внутри создай подпапки: <span class="highlight">0. Входящее</span> (инбокс), <span class="highlight">1. Профиль</span>, <span class="highlight">2. Тесты</span>. Материалы курса (шаблоны, старт) — внутри профиля: <span class="highlight">3. Разум/3.1. Изучение/3.1.4. Курсы/1. Учебные материалы</span> (отдельную <span class="highlight">00_Учебные_материалы</span> в корне <span class="highlight">Личное</span> в этом проекте не создавай).</li>
+          <li>Это твой «сейф» для контекста.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-yellow);">
+          Сначала Личное, потом Бизнес. Тебе нужно увидеть магию на себе.
+        </p>
+      </div>
+    </div>
+
+    <!-- 4: DISTRIBUTION -->
+    <div class="slide" id="slide-4">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">INBOX</div>
+
+        <h1>ВХОДЯЩЕЕ (INBOX)</h1>
+        <h2>Не думай "куда положить" — кинь в кучу</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Папка <span class="highlight">0. Входящее</span> — это твой Inbox.</li>
+          <li>Кидай туда ВСЁ: заметки, анализы, скрины тестов.</li>
+          <li>Попроси ИИ: "Разбери Входящее — разложи по папкам личного профиля."</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--matrix-green);">
+          ИИ — твой ассистент. Пусть он сам наводит порядок.
+        </p>
+      </div>
+    </div>
+
+    <!-- 5: MOVIE -->
+    <div class="slide" id="slide-5">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">QUICK_WIN_1</div>
+
+        <h1>МАГИЯ #1: КИНО</h1>
+        <h2>Хватит тратить час на выбор</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Открываешь <span class="highlight">CHAT (Cmd+L)</span>.</li>
+          <li>Даёшь вкусы: жанры, темп, что любишь, что НЕ надо.</li>
+          <li>Просишь 5 вариантов + “почему это под меня”.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-cyan);">
+          Результат: <span class="highlight">Кино_на_вечер.md</span> — сохрани это в папку.
+        </p>
+      </div>
+    </div>
+
+    <!-- 6: TRIP -->
+    <div class="slide" id="slide-6">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">QUICK_WIN_2</div>
+
+        <h1>МАГИЯ #2: ПУТЕШЕСТВИЕ</h1>
+        <h2>План «Выходной за 2 минуты»</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Включаешь <span class="highlight">WEB SEARCH</span> в Чате.</li>
+          <li>Говоришь: «Я в Питере. Найди 3 необычных места без туристов».</li>
+          <li>Просишь маршрут по часам + где выпить лучший кофе.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-cyan);">
+          Результат: <span class="highlight">План_выходных.md</span>.
+        </p>
+      </div>
+    </div>
+
+    <!-- 7: MENU -->
+    <div class="slide" id="slide-7">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">QUICK_WIN_3</div>
+
+        <h1>МАГИЯ #3: ЕДА</h1>
+        <h2>Личный нутрициолог бесплатно</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Открываешь <span class="highlight">COMPOSER (Cmd+I)</span>.</li>
+          <li>Просишь меню на 3 дня (белковое) + список покупок.</li>
+          <li>Нажимаешь <span class="highlight">ACCEPT</span>. Файл готов сам.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-cyan);">
+          Результат: <span class="highlight">Меню_недели.md</span>.
+        </p>
+      </div>
+    </div>
+
+    <!-- 8: TECH STANDARDS -->
+    <div class="slide" id="slide-8">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">TECH_INFO</div>
+
+        <h1>ЗОЛОТЫЕ ФОРМАТЫ</h1>
+        <h2>С чем лучше всего работает Cursor</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li><span class="highlight">.md</span> (Markdown) — Золотой стандарт для мыслей и структуры.</li>
+          <li><span class="highlight">.csv</span> — Лучший для таблиц. В 10 раз легче Excel.</li>
+          <li><span class="highlight">.txt</span> — Простейший текст. Надёжно как кирпич.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-red);">
+          СОВЕТ: Тяжёлые Excel конвертируй в CSV. AI скажет спасибо.
+        </p>
+      </div>
+    </div>
+
+    <!-- 9: FAST TASTES -->
+    <div class="slide" id="slide-9">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">PERSONAL_DATA</div>
+
+        <h1>ШАГ 2: ВКУСЫ</h1>
+        <h2>По 3 штуки — этого хватит</h2>
+        <div class="scan-line"></div>
+        <div class="two-col">
+          <div>
+            <ul>
+              <li>3 сериала</li>
+              <li>3 фильма</li>
+              <li>3 книги</li>
+              <li>3 артиста/группы</li>
+            </ul>
+          </div>
+          <div>
+            <ul>
+              <li>3 страны / 3 города</li>
+              <li>3 любимых бренда</li>
+              <li>3 “что бесит” (триггеры)</li>
+            </ul>
+          </div>
+        </div>
+        <div class="scan-line"></div>
+        <p style="color: var(--dark-green);">Не нужно умничать. Пиши как есть.</p>
+      </div>
+    </div>
+
+    <!-- 10: BOOKS -->
+    <div class="slide" id="slide-10">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">MIND_CORE</div>
+
+        <h1>КНИГИ (НЕ СПИСОК, А СМЫСЛ)</h1>
+        <h2>ИИ поймёт, как ты думаешь</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>3 книги + <span class="highlight">почему</span> они твои.</li>
+          <li>1 мысль из каждой — которая осталась в голове.</li>
+          <li>Не читаешь? Ок. Тогда 3 подкаста или канала.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-yellow);">Это меняет стиль ответов ИИ "под тебя".</p>
+      </div>
+    </div>
+
+    <!-- 11: SPORT -->
+    <div class="slide" id="slide-11">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">BODY_SPORT</div>
+
+        <h1>ТЕЛО: СПОРТ</h1>
+        <h2>Что любишь + что нельзя</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Спорт, который тебе реально нравится (не "надо", а "хочу").</li>
+          <li>Сколько раз в неделю <span class="highlight">реально</span> готов? Не вру себе.</li>
+          <li>Что нельзя: травмы, спина, колени — всё честно.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color:#bbb">
+          ИИ даст план, который ты не бросишь на второй день.
+        </p>
+      </div>
+    </div>
+
+    <!-- 12: HEALTH -->
+    <div class="slide" id="slide-12">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">BODY_HEALTH</div>
+
+        <h1>ТЕЛО: ЗДОРОВЬЕ</h1>
+        <h2>Анализы, чекапы (без паники)</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Заключения врачей + Анализы (скрины/PDF) → сначала во <span class="highlight">0. Входящее</span>, потом по правилам профиля (часть — в <span class="highlight">5. Документы/5.2. Медицина</span>).</li>
+          <li>Давление, пульс, сон, вес — текстом, коротко.</li>
+          <li>ИИ найдет связи (например: стресс → анализы → энергия).</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-red);">
+          ИИ не врач. Это для контекста, не для диагноза.
+        </p>
+      </div>
+    </div>
+
+    <!-- 13: PSYCHOLOGY -->
+    <div class="slide" id="slide-13">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">MIND_PSY</div>
+
+        <h1>РАЗУМ: ПСИХОЛОГИЯ</h1>
+        <h2>Тесты (нормальные, на psytests.org)</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Пройди: <span class="highlight">Big Five</span>, <span class="highlight">16 типов (MBTI)</span>, <span class="highlight">Характер</span>.</li>
+          <li>Результаты → скрин/PDF → во <span class="highlight">0. Входящее</span>, затем разнести с ИИ.</li>
+          <li>ИИ узнает твой психотип и будет общаться как лучший коуч.</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-cyan);">
+          Чем больше он знает о тебе, тем легче с ним работать.
+        </p>
+      </div>
+    </div>
+
+    <!-- 14: SCREENERS -->
+    <div class="slide" id="slide-14">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">MIND_ENERGY</div>
+
+        <h1>САМОЧУВСТВИЕ</h1>
+        <h2>Тревожность / настроение (скрининги)</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Найди "PHQ‑9" и "GAD‑7" на <a href="https://psytests.org/">psytests.org</a>.</li>
+          <li>Запиши баллы. Это твой «термометр» состояния.</li>
+          <li>Если баллы высокие — это повод сходить к профи.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 15: DECISIONS -->
+    <div class="slide" id="slide-15">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">MIND_DECISION</div>
+
+        <h1>СТИЛЬ ПРИНЯТИЯ РЕШЕНИЙ</h1>
+        <h2>Ты аналитик или интуит?</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Найди тест "стиль принятия решений" на сайте.</li>
+          <li>Опиши 3 последних решения: что было, что выбрал, почему.</li>
+          <li>ИИ вычислит паттерн: риски, скорость, самосаботаж.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 16: FEEDING -->
+    <div class="slide" id="slide-16">
+      <div class="card">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">UPLOAD</div>
+
+        <h1>КАК СКОРМИТЬ ИИ</h1>
+        <h2>Простой протокол через @</h2>
+        <div class="scan-line"></div>
+        <ul>
+          <li>Открой папку "Личное" в Cursor.</li>
+          <li>В чат: прикрепи всю папку через <span class="highlight">@</span>.</li>
+          <li>Напиши: "Собери мой профиль по разделам 2. Дух, 3. Разум, 4. Тело. Коротко и конкретно."</li>
+        </ul>
+        <div class="scan-line"></div>
+        <p style="color: var(--accent-red);">
+          НЕ грузи: паспорт, пароли, адрес. Только контекст.
+        </p>
+      </div>
+    </div>
+
+    <!-- 17: OUTPUT -->
+    <div class="slide" id="slide-17">
+      <div class="card" style="text-align:center;">
+        <div class="hud c-tl"></div><div class="hud c-tr"></div>
+        <div class="hud c-bl"></div><div class="hud c-br"></div>
+        <div class="card-label">FINAL_RESULT</div>
+
+        <h1 class="glitch" data-text="РЕЗУЛЬТАТ">РЕЗУЛЬТАТ</h1>
+        <h2>Файл PROFILE_FOR_AI.md</h2>
+        <div class="scan-line"></div>
+        <div class="mono-box">Структура твоего Второго Мозга:
+1) ТЕЛО: сон/энергия/спорт/ограничения
+2) РАЗУМ: характер/стресс/решения/паттерны
+3) ДУХ: цель/стратегия/куда идёшь
+4) КАК СО МНОЙ: что бесит + что работает
+
+ПРОМПТ ДЛЯ ЦЕЛЕЙ (опционально):
+“Ты мой стратег. Вот мой профиль @Личное. 
+Помоги поставить 3 цели на 3 месяца.
+Пиши без воды. Задай 3 уточняющих вопроса.”</div>
+        <div style="margin-top:22px;">
+          <span style="border:1px solid var(--matrix-green);padding:14px 28px;font-weight:bold;background:rgba(0,255,65,0.1);display:inline-block;animation:blink 2s infinite;">
+            >>> MODULE_COMPLETE
+          </span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="marquee-container">
+    <div class="marquee">
+      ◈ MODULE 02 // PERSONAL CONTEXT & PROFILE // CREATOR: DENIS LEUSHIN (PLEADA) // deniis.shop // БЫСТРЫЕ ПОБЕДЫ → ГЛУБОКИЙ ПРОФИЛЬ ◈
+    </div>
+  </div>
+
+  <script>
+    let currentSlide = 1;
+    const totalSlides = 17;
+    const counter = document.querySelector('.slide-counter');
+
+    function pad2(n){ return String(n).padStart(2, '0'); }
+
+    function updateSlide(n){
+      document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
+      const el = document.getElementById(`slide-${n}`);
+      if (el) el.classList.add('active');
+      counter.textContent = `${pad2(n)} / ${pad2(totalSlides)}`;
+    }
+
+    function nextSlide(){
+      if (currentSlide < totalSlides){
+        currentSlide++;
+        updateSlide(currentSlide);
+      }
+    }
+
+    function prevSlide(){
+      if (currentSlide > 1){
+        currentSlide--;
+        updateSlide(currentSlide);
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowRight') nextSlide();
+      if (e.code === 'ArrowLeft') prevSlide();
+    });
+
+    document.addEventListener('click', nextSlide);
+
+    const style = document.createElement('style');
+    style.innerHTML = `@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }`;
+    document.head.appendChild(style);
+  </script>
+</body>
+</html>

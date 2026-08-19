@@ -1,6 +1,0 @@
-aiogram>=3.13.1
-sqlalchemy>=2.0.36
-aiosqlite>=0.20.0
-pydantic-settings>=2.6.0
-apscheduler>=3.10.4
-groq>=0.13.1
