@@ -1,0 +1,39 @@
+# Сервис живёт на том же VPS, что и хаб LicenseBridge (72.56.123.137), и ходит
+# наружу через уже поднятый там Caddy: контейнер подключается к сети хаба, а в
+# его Caddyfile добавлен блок lb.mspod24.ru. Свой Postgres не нужен — срез Kommo
+# лежит одним JSON в томе (данных мало, VPS на 1 ГБ памяти).
+name: licensebridge-analytics
+
+services:
+  app:
+    build: .
+    container_name: lb-analytics
+    restart: unless-stopped
+    # Жёсткий потолок: полный сбор Kommo ~60–120 МБ; без лимита пик
+    # вместе с хабом валит VPS на 1 ГБ (инцидент 31.07.2026).
+    mem_limit: 280m
+    memswap_limit: 280m
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - lb_analytics_data:/data
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - hub
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+volumes:
+  lb_analytics_data:
+
+networks:
+  hub:
+    external: true
+    name: licensebridge-tilda-webhook_default

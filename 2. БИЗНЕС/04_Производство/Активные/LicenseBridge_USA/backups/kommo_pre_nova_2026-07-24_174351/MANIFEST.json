@@ -1,0 +1,86 @@
+{
+  "purpose": "Pre-NOVA merge safety snapshot of Kommo entities for LicenseBridge USA",
+  "created_at_utc": "2026-07-24T14:44:10.478456+00:00",
+  "finished_at_utc": "2026-07-24T14:45:23.393599+00:00",
+  "account_id": 34679511,
+  "subdomain": "licensebridgeusa",
+  "counts": {
+    "contacts": 1988,
+    "leads": 1642,
+    "companies": 64,
+    "users": 6,
+    "pipelines": 4,
+    "open_leads": 395,
+    "phones_with_multiple_contacts": 147,
+    "contacts_in_phone_dup_groups": 333
+  },
+  "files": [
+    {
+      "file": "account.json",
+      "bytes": 623,
+      "sha256": "73428c1ab56874e28c33f3e5fd4c7de211d1c519383680108b7b3892c3a013fb",
+      "count": null
+    },
+    {
+      "file": "users.json",
+      "bytes": 10210,
+      "sha256": "814e1e39f8f543abcd75af9f89d8f7757ec6335a70ab1d2ba8ac79a4e43239d7",
+      "count": 6
+    },
+    {
+      "file": "pipelines.json",
+      "bytes": 16440,
+      "sha256": "1607590558bd2bb852d35707cc66360a4b6b08d7e082ab239a79b1a052b5eb72",
+      "count": 4
+    },
+    {
+      "file": "contacts.jsonl",
+      "bytes": 1858292,
+      "sha256": "e16cb7df6a37ba3f12ec5d41ec5a4f209336dd79e2849d19f33cbfd1e82fcd4e",
+      "count": 1988
+    },
+    {
+      "file": "leads.jsonl",
+      "bytes": 1904110,
+      "sha256": "6ee47383372761239623357c68be94f0da43203462f122fbb86de4c2a003e8f4",
+      "count": 1642
+    },
+    {
+      "file": "companies.jsonl",
+      "bytes": 47581,
+      "sha256": "b73dfbb2feed9f24f821618386e0aa6323100f2b3bf50f4b0533b21f6501e40e",
+      "count": 64
+    },
+    {
+      "file": "contacts_index.json",
+      "bytes": 532182,
+      "sha256": "9fc205fa9a7e92fe481164c8fde7956dc813e416b30c0285e8c8331d6e98981e",
+      "count": 1988
+    },
+    {
+      "file": "leads_index.json",
+      "bytes": 503738,
+      "sha256": "ae27436e70627f65ccb52d16167490a301462c0d93ce651ae67d0d4937d09674",
+      "count": 1642
+    },
+    {
+      "file": "phone_to_contact_ids.json",
+      "bytes": 8034,
+      "sha256": "b7053970b50d4f9f17532715b24394f1b10d77e9bdb7dbdbbd747d44e1084e94",
+      "count": null
+    },
+    {
+      "file": "phone_to_contact_ids_all.json",
+      "bytes": 65924,
+      "sha256": "e811aca1b92dfc593978d0a65a1009285fb54a10a4ea6332e9c81a23aea8f96b",
+      "count": null
+    }
+  ],
+  "restore_notes": [
+    "This is a point-in-time dump of contacts/leads/companies via Kommo API v4.",
+    "NOVA true-merge moves chats into the surviving entity; perfect un-merge of chats is NOT guaranteed via API.",
+    "If merge goes wrong: use contacts.jsonl / leads.jsonl to recreate missing entities and re-link by contact_ids/lead_ids from indexes.",
+    "Do NOT commit this folder; it contains PII and is gitignored under backups/kommo_*.",
+    "Compare post-merge phone_to_contact_ids against phone_to_contact_ids.json (pre-merge dups)."
+  ]
+}

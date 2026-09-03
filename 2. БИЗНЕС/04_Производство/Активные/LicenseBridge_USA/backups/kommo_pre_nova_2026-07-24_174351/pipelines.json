@@ -1,0 +1,569 @@
+[
+  {
+    "id": 11274779,
+    "name": "Pipeline",
+    "sort": 1,
+    "is_main": true,
+    "is_unsorted_on": false,
+    "is_archive": false,
+    "account_id": 34679511,
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779"
+      }
+    },
+    "_embedded": {
+      "statuses": [
+        {
+          "id": 86527435,
+          "name": "Неразобранное",
+          "sort": 10,
+          "is_editable": false,
+          "pipeline_id": 11274779,
+          "color": "#c1c1c1",
+          "type": 1,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/86527435"
+            }
+          }
+        },
+        {
+          "id": 108112044,
+          "name": "Новая заявка",
+          "sort": 20,
+          "is_editable": true,
+          "pipeline_id": 11274779,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/108112044"
+            }
+          }
+        },
+        {
+          "id": 86527439,
+          "name": "Первичный контакт",
+          "sort": 30,
+          "is_editable": true,
+          "pipeline_id": 11274779,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/86527439"
+            }
+          }
+        },
+        {
+          "id": 96943275,
+          "name": "Квалификация",
+          "sort": 40,
+          "is_editable": true,
+          "pipeline_id": 11274779,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/96943275"
+            }
+          }
+        },
+        {
+          "id": 106419976,
+          "name": "В работе",
+          "sort": 50,
+          "is_editable": true,
+          "pipeline_id": 11274779,
+          "color": "#deff81",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/106419976"
+            }
+          }
+        },
+        {
+          "id": 86527447,
+          "name": "Выставлен счет/согласовываю оплату",
+          "sort": 60,
+          "is_editable": true,
+          "pipeline_id": 11274779,
+          "color": "#ffcc66",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/86527447"
+            }
+          }
+        },
+        {
+          "id": 96943279,
+          "name": "Прогреваю/Отложенный спрос",
+          "sort": 70,
+          "is_editable": true,
+          "pipeline_id": 11274779,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/96943279"
+            }
+          }
+        },
+        {
+          "id": 142,
+          "name": "Closed - won",
+          "sort": 10000,
+          "is_editable": false,
+          "pipeline_id": 11274779,
+          "color": "#CCFF66",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/142"
+            }
+          }
+        },
+        {
+          "id": 143,
+          "name": "Closed - lost",
+          "sort": 11000,
+          "is_editable": false,
+          "pipeline_id": 11274779,
+          "color": "#D5D8DB",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/11274779/statuses/143"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": 12079591,
+    "name": "Сборка",
+    "sort": 2,
+    "is_main": false,
+    "is_unsorted_on": true,
+    "is_archive": false,
+    "account_id": 34679511,
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591"
+      }
+    },
+    "_embedded": {
+      "statuses": [
+        {
+          "id": 93231783,
+          "name": "Неразобранное",
+          "sort": 10,
+          "is_editable": false,
+          "pipeline_id": 12079591,
+          "color": "#c1c1c1",
+          "type": 1,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/93231783"
+            }
+          }
+        },
+        {
+          "id": 93231787,
+          "name": "Заполняют анкету",
+          "sort": 20,
+          "is_editable": true,
+          "pipeline_id": 12079591,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/93231787"
+            }
+          }
+        },
+        {
+          "id": 101248304,
+          "name": "Ждем информацию об опыте",
+          "sort": 30,
+          "is_editable": true,
+          "pipeline_id": 12079591,
+          "color": "#ffc8c8",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/101248304"
+            }
+          }
+        },
+        {
+          "id": 101248308,
+          "name": "ждем ответное письмо от клиента",
+          "sort": 40,
+          "is_editable": true,
+          "pipeline_id": 12079591,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/101248308"
+            }
+          }
+        },
+        {
+          "id": 101248312,
+          "name": "Ждем подписи ОПЫТА",
+          "sort": 50,
+          "is_editable": true,
+          "pipeline_id": 12079591,
+          "color": "#87f2c0",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/101248312"
+            }
+          }
+        },
+        {
+          "id": 101248316,
+          "name": "Ждем оплату 2й части",
+          "sort": 60,
+          "is_editable": true,
+          "pipeline_id": 12079591,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/101248316"
+            }
+          }
+        },
+        {
+          "id": 93231791,
+          "name": "Готовим к отправке в борд",
+          "sort": 70,
+          "is_editable": true,
+          "pipeline_id": 12079591,
+          "color": "#ffff99",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/93231791"
+            }
+          }
+        },
+        {
+          "id": 93231795,
+          "name": "ЖДЕМ ОТВЕТ ОТ БОРДА (ФЛОРИДА)",
+          "sort": 80,
+          "is_editable": true,
+          "pipeline_id": 12079591,
+          "color": "#ffcc66",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/93231795"
+            }
+          }
+        },
+        {
+          "id": 93232031,
+          "name": "ОТПРАВЛЕНО В БЮРО",
+          "sort": 90,
+          "is_editable": true,
+          "pipeline_id": 12079591,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/93232031"
+            }
+          }
+        },
+        {
+          "id": 142,
+          "name": "ЭКЗАМЕН НАЗНАЧЕН",
+          "sort": 10000,
+          "is_editable": false,
+          "pipeline_id": 12079591,
+          "color": "#CCFF66",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/142"
+            }
+          }
+        },
+        {
+          "id": 143,
+          "name": "Закрыто и не реализовано",
+          "sort": 11000,
+          "is_editable": false,
+          "pipeline_id": 12079591,
+          "color": "#D5D8DB",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/12079591/statuses/143"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": 13767316,
+    "name": "New Bot Leads",
+    "sort": 3,
+    "is_main": false,
+    "is_unsorted_on": true,
+    "is_archive": false,
+    "account_id": 34679511,
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13767316"
+      }
+    },
+    "_embedded": {
+      "statuses": [
+        {
+          "id": 106220380,
+          "name": "Неразобранное",
+          "sort": 10,
+          "is_editable": false,
+          "pipeline_id": 13767316,
+          "color": "#c1c1c1",
+          "type": 1,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13767316/statuses/106220380"
+            }
+          }
+        },
+        {
+          "id": 106382852,
+          "name": "ИДЕТ РАЗГОВОР",
+          "sort": 20,
+          "is_editable": true,
+          "pipeline_id": 13767316,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13767316/statuses/106382852"
+            }
+          }
+        },
+        {
+          "id": 106220388,
+          "name": "Номер Не Получен",
+          "sort": 30,
+          "is_editable": true,
+          "pipeline_id": 13767316,
+          "color": "#ffff99",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13767316/statuses/106220388"
+            }
+          }
+        },
+        {
+          "id": 106220384,
+          "name": "Номер получен",
+          "sort": 40,
+          "is_editable": true,
+          "pipeline_id": 13767316,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13767316/statuses/106220384"
+            }
+          }
+        },
+        {
+          "id": 142,
+          "name": "Успешно реализовано",
+          "sort": 10000,
+          "is_editable": false,
+          "pipeline_id": 13767316,
+          "color": "#CCFF66",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13767316/statuses/142"
+            }
+          }
+        },
+        {
+          "id": 143,
+          "name": "Закрыто и не реализовано",
+          "sort": 11000,
+          "is_editable": false,
+          "pipeline_id": 13767316,
+          "color": "#D5D8DB",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13767316/statuses/143"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": 13889288,
+    "name": "RMO / QUALIFIER",
+    "sort": 4,
+    "is_main": false,
+    "is_unsorted_on": true,
+    "is_archive": false,
+    "account_id": 34679511,
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13889288"
+      }
+    },
+    "_embedded": {
+      "statuses": [
+        {
+          "id": 107174964,
+          "name": "Неразобранное",
+          "sort": 10,
+          "is_editable": false,
+          "pipeline_id": 13889288,
+          "color": "#c1c1c1",
+          "type": 1,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13889288/statuses/107174964"
+            }
+          }
+        },
+        {
+          "id": 107174968,
+          "name": "Первичный контакт",
+          "sort": 20,
+          "is_editable": true,
+          "pipeline_id": 13889288,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13889288/statuses/107174968"
+            }
+          }
+        },
+        {
+          "id": 107174972,
+          "name": "ОТПРАВЛЕНО КП",
+          "sort": 30,
+          "is_editable": true,
+          "pipeline_id": 13889288,
+          "color": "#ffff99",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13889288/statuses/107174972"
+            }
+          }
+        },
+        {
+          "id": 107174976,
+          "name": "ОТЛОЖЕННЫЙ СПРОС",
+          "sort": 40,
+          "is_editable": true,
+          "pipeline_id": 13889288,
+          "color": "#ffcc66",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13889288/statuses/107174976"
+            }
+          }
+        },
+        {
+          "id": 107175188,
+          "name": "СОГЛАСОВАНИЕ / ДОГОВОР",
+          "sort": 50,
+          "is_editable": true,
+          "pipeline_id": 13889288,
+          "color": "#99ccff",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13889288/statuses/107175188"
+            }
+          }
+        },
+        {
+          "id": 142,
+          "name": "Успешно реализовано",
+          "sort": 10000,
+          "is_editable": false,
+          "pipeline_id": 13889288,
+          "color": "#CCFF66",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13889288/statuses/142"
+            }
+          }
+        },
+        {
+          "id": 143,
+          "name": "Закрыто и не реализовано",
+          "sort": 11000,
+          "is_editable": false,
+          "pipeline_id": 13889288,
+          "color": "#D5D8DB",
+          "type": 0,
+          "account_id": 34679511,
+          "_links": {
+            "self": {
+              "href": "https://licensebridgeusa.kommo.com/api/v4/leads/pipelines/13889288/statuses/143"
+            }
+          }
+        }
+      ]
+    }
+  }
+]

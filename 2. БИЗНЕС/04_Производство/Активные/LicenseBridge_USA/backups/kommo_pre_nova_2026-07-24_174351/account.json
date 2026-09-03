@@ -1,0 +1,26 @@
+{
+  "id": 34679511,
+  "name": "licensebridgeusa",
+  "subdomain": "licensebridgeusa",
+  "language": "en",
+  "created_at": 1784904252,
+  "created_by": 0,
+  "updated_at": 1784904252,
+  "updated_by": 0,
+  "current_user_id": 13291175,
+  "country": "US",
+  "currency": "USD",
+  "currency_symbol": "$",
+  "customers_mode": "disabled",
+  "is_unsorted_on": true,
+  "mobile_feature_version": 0,
+  "is_loss_reason_enabled": true,
+  "is_helpbot_enabled": false,
+  "is_technical_account": false,
+  "contact_name_display_order": 1,
+  "_links": {
+    "self": {
+      "href": "https://licensebridgeusa.kommo.com/api/v4/account"
+    }
+  }
+}

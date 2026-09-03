@@ -1,88 +1,80 @@
 #!/usr/bin/env python3
-"""Деплой tilda-webhook на VPS 72.56.123.137"""
+"""Выкладка хаба LicenseBridge на VPS 72.56.123.137.
+
+    python3 scripts/deploy.py            — синхронизировать код, пересобрать, дождаться health
+    python3 scripts/deploy.py --dry-run  — показать, что уйдёт на сервер, ничего не менять
+
+`.env` живёт только на сервере и никогда не перезаписывается: там флаги, токены и
+номера линий, которые правятся на живом сервисе. Прошлая версия этого скрипта
+писала `.env` заново из пяти переменных — так терялись ENABLE_*, TELEPHONY_* и
+блокеры, восстанавливать приходилось из `.env.bak-*`.
+"""
 from __future__ import annotations
 
-import os
-import pathlib
+import argparse
+import subprocess
 import sys
-import tarfile
-import tempfile
+import time
+from pathlib import Path
 
-import paramiko
-
-HOST = "72.56.123.137"
-USER = "root"
+HOST = "licensebridge-hub"  # алиас из ~/.ssh/config, ключ licensebridge_hub_deploy
 REMOTE = "/opt/licensebridge-tilda-webhook"
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]
+ITEMS = ["app", "migrations", "scripts", "tests", "Dockerfile",
+         "docker-compose.yml", "Caddyfile", "requirements.txt", ".env.example"]
 
 
-def connect(client: paramiko.SSHClient) -> None:
-    pw = os.environ.get("DEPLOY_SSH_PASSWORD", "").strip()
-    if not pw:
-        raise SystemExit("DEPLOY_SSH_PASSWORD required")
-    client.connect(HOST, username=USER, password=pw, timeout=45, allow_agent=False, look_for_keys=False)
+def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    print("»", " ".join(cmd))
+    return subprocess.run(cmd, check=True, **kw)
 
 
 def main() -> int:
-    token = os.environ.get("KOMMO_TOKEN", "").strip()
-    if not token:
-        raise SystemExit("KOMMO_TOKEN required")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
 
-    items = ["app", "Dockerfile", "docker-compose.yml", "Caddyfile", ".env.example"]
-    for name in items:
-        if not (ROOT / name).exists() and not (ROOT / name.split("/")[0]).exists():
-            print(f"missing: {name}", file=sys.stderr)
-            return 1
+    missing = [name for name in ITEMS if not (ROOT / name).exists()]
+    if missing:
+        print(f"нет файлов для выкладки: {', '.join(missing)}", file=sys.stderr)
+        print("код хаба живёт на сервере; снимите его перед деплоем "
+              "(см. RUNBOOK.md, раздел «Снять код с сервера»)", file=sys.stderr)
+        return 1
 
-    with tempfile.NamedTemporaryFile(suffix=".tgz", delete=False) as tmp:
-        tgz = pathlib.Path(tmp.name)
-    with tarfile.open(tgz, "w:gz") as tar:
-        for name in items:
-            tar.add(ROOT / name, arcname=name)
+    rsync = ["rsync", "-az", "--delete",
+             "--exclude", ".env", "--exclude", ".env.bak*",
+             "--exclude", "__pycache__", "--exclude", "*.pyc",
+             "--exclude", ".pytest_cache"]
+    if args.dry_run:
+        rsync += ["--dry-run", "-v"]
+    rsync += [str(ROOT / name) for name in ITEMS]
+    rsync += [f"{HOST}:{REMOTE}/"]
+    run(rsync)
+    if args.dry_run:
+        print("dry-run: сервер не тронут")
+        return 0
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    try:
-        connect(client)
-    except Exception as e:
-        print(f"SSH failed: {e}", file=sys.stderr)
-        return 2
+    # без .env контейнеры поднимутся без токенов и молча начнут игнорировать Kommo
+    run(["ssh", HOST, f"test -f {REMOTE}/.env"])
+    run(["ssh", HOST, f"cd {REMOTE} && docker compose up -d --build"])
 
-    sftp = client.open_sftp()
-    remote_tgz = "/tmp/lb-tilda-webhook.tgz"
-    sftp.put(str(tgz), remote_tgz)
-    sftp.close()
-    tgz.unlink(missing_ok=True)
+    for attempt in range(30):
+        probe = subprocess.run(
+            ["ssh", HOST, "docker exec lb-hub-api curl -fsS http://127.0.0.1:8080/health"],
+            capture_output=True, text=True,
+        )
+        if probe.returncode == 0:
+            print(f"health ok: {probe.stdout.strip()}")
+            break
+        time.sleep(5)
+    else:
+        print("health не поднялся за 150 секунд", file=sys.stderr)
+        run(["ssh", HOST, f"cd {REMOTE} && docker compose logs --tail=40"])
+        return 3
 
-    env_content = f"""KOMMO_TOKEN={token}
-KOMMO_BASE=https://licensebridgeusa.kommo.com/api/v4
-KOMMO_PIPELINE_ID=11274779
-KOMMO_STATUS_ID=108112044
-KOMMO_RESPONSIBLE=13291175
-"""
-    script = f"""set -e
-mkdir -p {REMOTE}
-tar xzf {remote_tgz} -C {REMOTE}
-cat > {REMOTE}/.env << 'ENVEOF'
-{env_content}ENVEOF
-chmod 600 {REMOTE}/.env
-cd {REMOTE}
-docker compose down 2>/dev/null || true
-docker compose build --no-cache
-docker compose up -d
-sleep 3
-docker compose ps
-docker compose logs --tail=30
-curl -sS -o /dev/null -w "local_health=%{{http_code}}\\n" http://127.0.0.1:8080/health || true
-"""
-    _, stdout, stderr = client.exec_command(script, get_pty=True)
-    print(stdout.read().decode())
-    err = stderr.read().decode().strip()
-    if err:
-        print(err, file=sys.stderr)
-    code = stdout.channel.recv_exit_status()
-    client.close()
-    return code
+    run(["ssh", HOST, f"cd {REMOTE} && docker compose ps"])
+    print("готово")
+    return 0
 
 
 if __name__ == "__main__":

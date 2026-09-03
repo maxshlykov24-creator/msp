@@ -1,0 +1,475 @@
+[
+  {
+    "id": 13291175,
+    "name": "Pavel",
+    "email": "LICENSEBRIDGEUSA@gmail.com",
+    "lang": "ru",
+    "rights": {
+      "leads": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "contacts": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "companies": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "tasks": {
+        "edit": "A",
+        "delete": "A"
+      },
+      "mail_access": true,
+      "catalog_access": true,
+      "files_access": true,
+      "status_rights": [
+        {
+          "entity_type": "leads",
+          "pipeline_id": 11274779,
+          "status_id": 86527435,
+          "rights": {
+            "view": "A",
+            "edit": "A",
+            "delete": "A"
+          }
+        },
+        {
+          "entity_type": "leads",
+          "pipeline_id": 12079591,
+          "status_id": 93231783,
+          "rights": {
+            "view": "A",
+            "edit": "A",
+            "delete": "A"
+          }
+        },
+        {
+          "entity_type": "leads",
+          "pipeline_id": 13767316,
+          "status_id": 106220380,
+          "rights": {
+            "view": "A",
+            "edit": "A",
+            "delete": "A"
+          }
+        },
+        {
+          "entity_type": "leads",
+          "pipeline_id": 13889288,
+          "status_id": 107174964,
+          "rights": {
+            "view": "A",
+            "edit": "A",
+            "delete": "A"
+          }
+        }
+      ],
+      "catalog_rights": [
+        {
+          "catalog_id": 6304,
+          "rights": {
+            "add": "A",
+            "edit": "A",
+            "view": "A",
+            "delete": "A",
+            "export": "A"
+          }
+        }
+      ],
+      "custom_fields_rights": null,
+      "is_admin": true,
+      "is_free": false,
+      "is_active": true,
+      "group_id": 0,
+      "role_id": null
+    },
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/users/13291175/?limit=250&page=1"
+      }
+    }
+  },
+  {
+    "id": 15293564,
+    "name": "Полина Титова",
+    "email": "polina.t@licensebridgeusa.com",
+    "lang": "en",
+    "rights": {
+      "leads": {
+        "view": "M",
+        "edit": "M",
+        "add": "A",
+        "delete": "D",
+        "export": "D"
+      },
+      "contacts": {
+        "view": "A",
+        "edit": "M",
+        "add": "A",
+        "delete": "D",
+        "export": "D"
+      },
+      "companies": {
+        "view": "D",
+        "edit": "D",
+        "add": "D",
+        "delete": "D",
+        "export": "D"
+      },
+      "tasks": {
+        "edit": "M",
+        "delete": "D"
+      },
+      "mail_access": false,
+      "catalog_access": false,
+      "files_access": false,
+      "status_rights": [
+        {
+          "entity_type": "leads",
+          "pipeline_id": 11274779,
+          "status_id": 86527435,
+          "rights": {
+            "view": "D",
+            "edit": "D",
+            "delete": "D"
+          }
+        },
+        {
+          "entity_type": "leads",
+          "pipeline_id": 12079591,
+          "status_id": 93231783,
+          "rights": {
+            "view": "A",
+            "edit": "A",
+            "delete": "A"
+          }
+        },
+        {
+          "entity_type": "leads",
+          "pipeline_id": 13767316,
+          "status_id": 106220380,
+          "rights": {
+            "view": "D",
+            "edit": "D",
+            "delete": "D"
+          }
+        },
+        {
+          "entity_type": "leads",
+          "pipeline_id": 13889288,
+          "status_id": 107174964,
+          "rights": {
+            "view": "D",
+            "edit": "D",
+            "delete": "D"
+          }
+        }
+      ],
+      "catalog_rights": [
+        {
+          "catalog_id": 6304,
+          "rights": {
+            "add": "D",
+            "edit": "D",
+            "view": "D",
+            "delete": "D",
+            "export": "D"
+          }
+        }
+      ],
+      "custom_fields_rights": null,
+      "is_admin": false,
+      "is_free": false,
+      "is_active": true,
+      "group_id": 0,
+      "role_id": null
+    },
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/users/15293564/?limit=250&page=1"
+      }
+    }
+  },
+  {
+    "id": 15381975,
+    "name": "Максим",
+    "email": "max.shlykov24@gmail.com",
+    "lang": "en",
+    "rights": {
+      "leads": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "contacts": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "companies": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "tasks": {
+        "edit": "A",
+        "delete": "A"
+      },
+      "mail_access": true,
+      "catalog_access": true,
+      "files_access": true,
+      "status_rights": null,
+      "catalog_rights": [
+        {
+          "catalog_id": 6304,
+          "rights": {
+            "add": "A",
+            "edit": "A",
+            "view": "A",
+            "delete": "A",
+            "export": "A"
+          }
+        }
+      ],
+      "custom_fields_rights": null,
+      "is_admin": true,
+      "is_free": false,
+      "is_active": true,
+      "group_id": 0,
+      "role_id": null
+    },
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/users/15381975/?limit=250&page=1"
+      }
+    }
+  },
+  {
+    "id": 15537380,
+    "name": "Илона",
+    "email": "ilona@licensebridgeusa.com",
+    "lang": "ru",
+    "rights": {
+      "leads": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "D",
+        "export": "D"
+      },
+      "contacts": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "D",
+        "export": "D"
+      },
+      "companies": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "D",
+        "export": "D"
+      },
+      "tasks": {
+        "edit": "A",
+        "delete": "M"
+      },
+      "mail_access": false,
+      "catalog_access": false,
+      "files_access": false,
+      "status_rights": [
+        {
+          "entity_type": "leads",
+          "pipeline_id": 12079591,
+          "status_id": 93231783,
+          "rights": {
+            "view": "A",
+            "edit": "A",
+            "delete": "A"
+          }
+        },
+        {
+          "entity_type": "leads",
+          "pipeline_id": 13767316,
+          "status_id": 106220380,
+          "rights": {
+            "view": "A",
+            "edit": "A",
+            "delete": "A"
+          }
+        },
+        {
+          "entity_type": "leads",
+          "pipeline_id": 13889288,
+          "status_id": 107174964,
+          "rights": {
+            "view": "A",
+            "edit": "A",
+            "delete": "A"
+          }
+        }
+      ],
+      "catalog_rights": [
+        {
+          "catalog_id": 6304,
+          "rights": {
+            "add": "D",
+            "edit": "D",
+            "view": "D",
+            "delete": "D",
+            "export": "D"
+          }
+        }
+      ],
+      "custom_fields_rights": null,
+      "is_admin": false,
+      "is_free": false,
+      "is_active": true,
+      "group_id": 0,
+      "role_id": null
+    },
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/users/15537380/?limit=250&page=1"
+      }
+    }
+  },
+  {
+    "id": 15554448,
+    "name": "Дмитрий",
+    "email": "Dmitri@licensebridgeusa.com",
+    "lang": "ru",
+    "rights": {
+      "leads": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "contacts": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "companies": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "tasks": {
+        "edit": "A",
+        "delete": "A"
+      },
+      "mail_access": true,
+      "catalog_access": true,
+      "files_access": true,
+      "status_rights": null,
+      "catalog_rights": [
+        {
+          "catalog_id": 6304,
+          "rights": {
+            "add": "A",
+            "edit": "A",
+            "view": "A",
+            "delete": "A",
+            "export": "A"
+          }
+        }
+      ],
+      "custom_fields_rights": null,
+      "is_admin": true,
+      "is_free": false,
+      "is_active": false,
+      "group_id": 0,
+      "role_id": null
+    },
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/users/15554448/?limit=250&page=1"
+      }
+    }
+  },
+  {
+    "id": 15618144,
+    "name": "Елена Гулая",
+    "email": "elena@licensebridgeusa.com",
+    "lang": "en",
+    "rights": {
+      "leads": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "contacts": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "companies": {
+        "view": "A",
+        "edit": "A",
+        "add": "A",
+        "delete": "A",
+        "export": "A"
+      },
+      "tasks": {
+        "edit": "A",
+        "delete": "A"
+      },
+      "mail_access": true,
+      "catalog_access": true,
+      "files_access": true,
+      "status_rights": null,
+      "catalog_rights": [
+        {
+          "catalog_id": 6304,
+          "rights": {
+            "add": "A",
+            "edit": "A",
+            "view": "A",
+            "delete": "A",
+            "export": "A"
+          }
+        }
+      ],
+      "custom_fields_rights": null,
+      "is_admin": true,
+      "is_free": false,
+      "is_active": true,
+      "group_id": 0,
+      "role_id": null
+    },
+    "_links": {
+      "self": {
+        "href": "https://licensebridgeusa.kommo.com/api/v4/users/15618144/?limit=250&page=1"
+      }
+    }
+  }
+]

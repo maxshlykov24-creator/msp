@@ -1,18 +1,67 @@
+# Имя проекта то же, что у прежнего tilda-webhook: сохраняются тома Caddy
+# (сертификат sslip.io не перевыпускается) и старые контейнеры корректно заменяются.
 name: licensebridge-tilda-webhook
 
 services:
-  webhook:
-    build: .
-    container_name: lb-tilda-webhook
+  db:
+    image: public.ecr.aws/docker/library/postgres:16-alpine
+    container_name: lb-hub-db
     restart: unless-stopped
+    environment:
+      POSTGRES_USER: lbhub
+      POSTGRES_PASSWORD: lbhub
+      POSTGRES_DB: lbhub
+    # VPS 1 ГБ: держим Postgres в скромных рамках
+    command: postgres -c shared_buffers=48MB -c max_connections=30 -c work_mem=2MB
+    mem_limit: 320m
+    volumes:
+      - lb_hub_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lbhub -d lbhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: lb-hub-api
+    restart: unless-stopped
+    mem_limit: 256m
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://lbhub:lbhub@db:5432/lbhub
+      RUN_MODE: api
     expose:
       - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+  worker:
+    build: .
+    container_name: lb-hub-worker
+    restart: unless-stopped
+    mem_limit: 256m
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://lbhub:lbhub@db:5432/lbhub
+      RUN_MODE: worker
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m app.worker
 
   caddy:
     image: caddy:2-alpine
-    container_name: lb-tilda-caddy
+    container_name: lb-hub-caddy
     restart: unless-stopped
+    mem_limit: 128m
     ports:
       - "80:80"
       - "443:443"
@@ -21,8 +70,9 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - webhook
+      - api
 
 volumes:
+  lb_hub_pg:
   caddy_data:
   caddy_config:
