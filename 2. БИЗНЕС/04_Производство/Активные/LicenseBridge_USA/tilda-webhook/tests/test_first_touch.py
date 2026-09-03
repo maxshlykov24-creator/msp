@@ -6,13 +6,15 @@
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy import select
 
 from app import leadflow
 from app.actions import Ctx
 from app.config import settings
-from app.models import FirstTouch
+from app.models import AiCall, FirstTouch
 
 PHONE = "+12139310879"
 ROP = 15648532
@@ -125,6 +127,56 @@ def test_failed_send_is_remembered_and_retriable(fake, session, sent, monkeypatc
 
     monkeypatch.setattr("app.wazzup.send_text", lambda phone, text, channel_id="": "wz-2")
     assert leadflow.send_first_touch(ctx, lead, PHONE)["action"] == "first_touch.sent"
+
+
+def _touched(session, lead_id: int, minutes_ago: int) -> None:
+    session.add(FirstTouch(
+        lead_id=lead_id, phone=PHONE, variant="1", status="sent",
+        created_at=datetime.now(timezone.utc) - timedelta(minutes=minutes_ago),
+    ))
+    session.commit()
+
+
+class _Chat:
+    def __init__(self, incoming: int) -> None:
+        self.incoming = incoming
+
+
+def test_silence_after_first_message_reaches_the_voice_agent(fake, session, monkeypatch):
+    """Клиент не ответил за 30 минут — дальше говорит голосовой агент.
+
+    Молчание отслеживал Salesbot и сам звал хаб. Первое сообщение отправляет
+    хаб, значит и молчание считает он, иначе цепочка обрывается на сообщении."""
+    monkeypatch.setattr("app.chat_events.fetch", lambda client, since, until=None: {})
+    _touched(session, 30500001, minutes_ago=45)
+    _touched(session, 30500002, minutes_ago=5)      # ещё рано
+
+    assert leadflow.silent_after_first_touch(_ctx(fake, session)) == [30500001]
+
+
+def test_client_who_answered_is_left_to_the_manager(fake, session, monkeypatch):
+    monkeypatch.setattr("app.chat_events.fetch",
+                        lambda client, since, until=None: {30500003: _Chat(incoming=2)})
+    _touched(session, 30500003, minutes_ago=45)
+
+    assert leadflow.silent_after_first_touch(_ctx(fake, session)) == []
+
+
+def test_old_lead_is_not_called_days_later(fake, session, monkeypatch):
+    """Звонок через три дня — это уже обзвон, а не ответ на заявку."""
+    monkeypatch.setattr("app.chat_events.fetch", lambda client, since, until=None: {})
+    _touched(session, 30500004, minutes_ago=60 * 72)
+
+    assert leadflow.silent_after_first_touch(_ctx(fake, session)) == []
+
+
+def test_lead_already_called_is_not_called_again(fake, session, monkeypatch):
+    monkeypatch.setattr("app.chat_events.fetch", lambda client, since, until=None: {})
+    _touched(session, 30500005, minutes_ago=45)
+    session.add(AiCall(lead_id=30500005, phone=PHONE, status="dialing"))
+    session.commit()
+
+    assert leadflow.silent_after_first_touch(_ctx(fake, session)) == []
 
 
 def test_lead_of_another_pipeline_is_left_alone(fake, session, sent):

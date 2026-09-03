@@ -195,6 +195,11 @@ class Settings(BaseSettings):
     wa_templates: str = ""
     # Прогон без живых лидов: пока номер задан, сообщения уходят только на него.
     wazzup_test_phone: str = ""
+    # Сколько ждём ответа на первое сообщение, прежде чем звонить голосовым
+    # агентом. Раньше молчание отслеживал Salesbot и сам звал хаб; теперь пишет
+    # хаб, поэтому и молчание считает он — иначе цепочка обрывается на сообщении.
+    leadflow_silence_min: int = 30
+    leadflow_followup_max_hours: int = 48  # старше — уже не «ответ на заявку»
     # голосовой агент Pleep (SIP-транкинг ElevenLabs): не публичный номер для
     # звонка извне, а идентификатор в SIP URI на sip.rtc.elevenlabs.io — см.
     # asterisk/pjsip_pleep.conf [pleep_out]. Сейчас это DID линии 103.

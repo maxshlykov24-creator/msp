@@ -300,11 +300,15 @@ def run_loop() -> None:
             if settings.enable_leadflow and time.monotonic() >= next_ai_sweep:
                 next_ai_sweep = time.monotonic() + settings.ai_call_sweep_interval_sec
                 try:
-                    from app.leadflow import run_due_calls
+                    from app.leadflow import run_due_calls, run_silence_followups
                     with session_scope() as s:
                         flags = current_flags(s)
-                        due = run_due_calls(Ctx(client=client, session=s, inbox_id=None,
-                                                phone=None, shadow=flags.shadow, flags=flags))
+                        ctx = Ctx(client=client, session=s, inbox_id=None,
+                                  phone=None, shadow=flags.shadow, flags=flags)
+                        due = run_due_calls(ctx)
+                        # клиент не ответил на наше первое сообщение: раньше
+                        # молчание отслеживал Salesbot, теперь считает хаб
+                        due += run_silence_followups(ctx)
                     if due:
                         log.info("ai calls fired: %s", due)
                 except Exception as exc:  # звонки не должны ронять очередь событий

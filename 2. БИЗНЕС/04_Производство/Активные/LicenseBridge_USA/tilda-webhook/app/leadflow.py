@@ -321,6 +321,55 @@ def handle_ai_call(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
     return _originate(ctx, row)
 
 
+def silent_after_first_touch(ctx: Ctx, now: datetime | None = None) -> list[int]:
+    """Сделки, где мы написали первыми, а клиент молчит дольше положенного.
+
+    Раньше молчание отслеживал Salesbot и сам звал `/internal/leadflow/ai-call`.
+    Первое сообщение отправляет хаб, значит и молчание считает он, иначе цепочка
+    обрывается на сообщении и до голосового агента дело не доходит.
+
+    Ответ клиента ищем в переписке: одного факта отправки мало, клиент мог
+    ответить в другом канале того же чата."""
+    from app.chat_events import fetch as fetch_chats
+    from app.models import AiCall, FirstTouch
+
+    moment = now or datetime.now(timezone.utc)
+    oldest = moment - timedelta(hours=settings.leadflow_followup_max_hours)
+    ready = moment - timedelta(minutes=settings.leadflow_silence_min)
+    rows = list(ctx.s.scalars(
+        select(FirstTouch)
+        .where(FirstTouch.status == "sent",
+               FirstTouch.created_at <= ready,
+               FirstTouch.created_at >= oldest)
+        .order_by(FirstTouch.created_at.asc())
+        .limit(50)
+    ))
+    if not rows:
+        return []
+    already = set(ctx.s.scalars(
+        select(AiCall.lead_id).where(AiCall.lead_id.in_([r.lead_id for r in rows]))
+    ).all())
+    pending = [r for r in rows if r.lead_id not in already]
+    if not pending:
+        return []
+    chats = fetch_chats(ctx.client, int(oldest.timestamp()))
+    out = []
+    for row in pending:
+        stats = chats.get(row.lead_id)
+        if stats and stats.incoming:
+            continue  # клиент ответил, дальше работает человек
+        out.append(row.lead_id)
+    return out
+
+
+def run_silence_followups(ctx: Ctx, now: datetime | None = None) -> list[dict[str, Any]]:
+    """Клиент не ответил на первое сообщение — соединяем его с голосовым агентом."""
+    out: list[dict[str, Any]] = []
+    for lead_id in silent_after_first_touch(ctx, now):
+        out.append(handle_ai_call(ctx, {"lead_id": lead_id}))
+    return out
+
+
 def due_calls(s, now: datetime | None = None) -> list[int]:
     moment = now or datetime.now(timezone.utc)
     return list(s.scalars(
