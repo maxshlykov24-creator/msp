@@ -44,7 +44,11 @@ def ring_order(client: Any, phone: str, did: str = "") -> tuple[list[str], dict[
 
     Сначала ответственный клиента (если у него есть добавочный и он не из
     клиентского отдела), затем владелец набранной линии, затем остальной круг
-    продаж. Неизвестный номер → просто круг продаж."""
+    продаж. Неизвестный номер → просто круг продаж.
+
+    Исключение — клиент в воронке «Сборка»: он уже оплатил, его ведёт клиентский
+    отдел, и звонок начинается с него. Круг продаж остаётся позади как запас,
+    чтобы звонок не пропал, если в клиентском отделе никого нет."""
     resolved: dict[str, Any] = {"found": False}
     if phone:
         try:
@@ -55,10 +59,15 @@ def ring_order(client: Any, phone: str, did: str = "") -> tuple[list[str], dict[
 
     order: list[str] = []
     uid = resolved.get("responsible_user_id")
-    if uid and int(uid) not in settings.client_dept_owner_id_set:
+    in_assembly = resolved.get("pipeline_id") == settings.assembly_pipeline_id
+    if uid and (in_assembly or int(uid) not in settings.client_dept_owner_id_set):
         ext = settings.user_to_ext.get(int(uid))
         if ext:
             order.append(ext)
+    if in_assembly:
+        service_ext = settings.user_to_ext.get(settings.telephony_service_owner_id)
+        if service_ext:
+            order.append(service_ext)
     did_ext = settings.did_to_ext.get(str(did or "").strip())
     if did_ext and did_ext in settings.sales_order:
         order.append(did_ext)
@@ -78,15 +87,35 @@ def _call_age_sec(row: CallEvent, now: float | None = None) -> float:
     return now - ts.timestamp()
 
 
-def _is_answered(row: CallEvent) -> bool:
-    """Состоявшийся разговор. Лестницу недозвона не поднимает."""
-    disp = (row.disposition or "").upper().replace(" ", "")
-    if disp.startswith("ANSWER"):
+def is_voicemail(direction: str, answered: bool, duration: int, disposition: str) -> bool:
+    """Похоже ли соединение на голосовую почту, а не на разговор.
+
+    Признак — соединение состоялось, но длилось меньше `call_short_talk_sec`:
+    автоответчик снимает трубку сам, менеджер слышит машину и сразу кладёт.
+    Живой разговор короче 15 секунд бывает, но в исходящем обзвоне это редкость,
+    а цена ошибки обратная: voicemail, посчитанный разговором, закрывает лид."""
+    if (disposition or "").upper().replace(" ", "") == "VOICEMAIL":
         return True
+    if direction != "out" or not answered:
+        return False
+    return 0 < duration < settings.call_short_talk_sec
+
+
+def _is_answered(row: CallEvent) -> bool:
+    """Состоявшийся разговор. Лестницу недозвона не поднимает.
+
+    Голосовая почта разговором не считается: иначе после автоответчика лестница
+    обнулялась и менеджер мог набирать тот же номер весь день."""
+    disp = (row.disposition or "").upper().replace(" ", "")
     if disp in {"NOANSWER", "BUSY", "FAILED", "CONGESTION", "CHANUNAVAIL",
                 "CANCEL", "VOICEMAIL"}:
         return False
-    return (row.duration or 0) > 0
+    duration = row.duration or 0
+    if row.direction == "out" and 0 < duration < settings.call_short_talk_sec:
+        return False
+    if disp.startswith("ANSWER"):
+        return True
+    return duration > 0
 
 
 def _blocked(mode: str, reason: str) -> tuple[str, str]:
@@ -309,8 +338,8 @@ def _task_owner(ctx: Ctx, owner: int | None) -> int:
 
 
 def _ensure_card(ctx: Ctx, phone: str, direction: str,
-                 create: bool) -> tuple[int | None, int | None, int | None]:
-    """Возвращает (contact_id, lead_id, responsible_user_id).
+                 create: bool) -> tuple[int | None, int | None, int | None, int | None]:
+    """Возвращает (contact_id, lead_id, responsible_user_id, pipeline_id).
 
     Если карточки нет и создавать можно — заводим через общий intake, чтобы
     сработали те же правила антидубля и распределения, что для заявок с сайта."""
@@ -321,11 +350,12 @@ def _ensure_card(ctx: Ctx, phone: str, direction: str,
         contact_id = int(contact["id"])
         lead = _open_lead(ctx.client, contact_id)
         if lead:
-            return contact_id, int(lead["id"]), lead.get("responsible_user_id")
+            return (contact_id, int(lead["id"]), lead.get("responsible_user_id"),
+                    lead.get("pipeline_id"))
         if not create:
-            return contact_id, None, contact.get("responsible_user_id")
+            return contact_id, None, contact.get("responsible_user_id"), None
     elif not create:
-        return None, None, None
+        return None, None, None, None
 
     label = "Входящий звонок" if direction == "in" else "Исходящий звонок"
     res = process_intake(ctx, {
@@ -336,10 +366,11 @@ def _ensure_card(ctx: Ctx, phone: str, direction: str,
     contact_id = res.get("contact_id")
     lead_id = res.get("lead_id")
     owner = res.get("owner")
+    # свежая сделка по звонку всегда в воронке продаж, поэтому воронку не ищем
     if lead_id and not owner:
         lead = ctx.client.get_lead(int(lead_id))
         owner = (lead or {}).get("responsible_user_id")
-    return contact_id, lead_id, owner
+    return contact_id, lead_id, owner, settings.pipeline_id if lead_id else None
 
 
 def handle_call(ctx: Ctx, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -350,7 +381,12 @@ def handle_call(ctx: Ctx, event_type: str, payload: dict[str, Any]) -> dict[str,
     duration = max(_int(payload.get("duration")), _int(payload.get("billsec")),
                    _int(payload.get("answeredtime")))
     disposition = str(payload.get("disposition") or "").upper()
-    answered = duration > 0 or disposition.startswith("ANSWER")
+    connected = duration > 0 or disposition.startswith("ANSWER")
+    # Разговор и соединение — разные вещи: автоответчик тоже «отвечает». Всё, что
+    # ниже, считает разговором только `answered`, поэтому voicemail не закрывает
+    # лид в отчётах и не сбрасывает лестницу недозвона (просьба Павла 24.08.2026).
+    voicemail = is_voicemail(direction, connected, duration, disposition)
+    answered = connected and not voicemail
     recording = str(payload.get("recording") or "").strip()
     missed_event = event_type == "call_missed"
     # добавочный менеджера: кто набрал номер (исходящий) или кто снял трубку
@@ -399,7 +435,7 @@ def handle_call(ctx: Ctx, event_type: str, payload: dict[str, Any]) -> dict[str,
     # карточку заводим только по входящему, который дошёл до людей либо состоялся:
     # сброс на меню и исходящие в неизвестный номер мусора в CRM не создают
     create = direction == "in" and (answered or missed_event)
-    contact_id, lead_id, owner = _ensure_card(ctx, phone, direction, create)
+    contact_id, lead_id, owner, pipeline_id = _ensure_card(ctx, phone, direction, create)
     if not contact_id:
         log_decision(ctx, "call.no_card", uniq=uniqueid, phone=phone,
                      answered=answered, type=event_type)
@@ -412,6 +448,15 @@ def handle_call(ctx: Ctx, event_type: str, payload: dict[str, Any]) -> dict[str,
     if not owner:
         owner = settings.telephony_missed_owner_id
 
+    # Обслуживание ведёт Полина: и когда клиент сам выбрал «2» в меню, и когда он
+    # уже в «Сборке» — там продажа закончена, звонит он по своему заказу. Иначе
+    # задача уходила в продажи и клиента дёргал не тот человек (03.09.2026).
+    service_call = service or pipeline_id == settings.assembly_pipeline_id
+    task_owner = None
+    if need_task:
+        task_owner = (settings.telephony_service_owner_id if service_call
+                      else _task_owner(ctx, owner))
+
     if need_note:
         result = ""
         if missed_event:
@@ -421,14 +466,20 @@ def handle_call(ctx: Ctx, event_type: str, payload: dict[str, Any]) -> dict[str,
             result = "AI-звонок Pleep: клиент не взял трубку"
         elif ai_bridge:
             result = "AI-звонок Pleep"
+        elif voicemail:
+            result = f"Автоответчик, разговора не было ({duration} с)"
         elif not answered:
             result = "Клиент положил трубку до соединения"
         # Звонок в карточке принадлежит тому, кто его вёл: добавочный из диалплана
         # важнее ответственного по сделке (Александра звонила по клиенту Илоны).
+        # Трубку не сняли — автор тот, кому перезванивать: без `created_by` Kommo
+        # подписывает примечание пользователем интеграции, и в карточке весь
+        # журнал выглядел как звонки одного человека (жалоба 02.09.2026).
+        author = caller or task_owner
         _write_call_note(ctx, entity_type, entity_id, uniqueid=uniqueid, phone=phone,
                          direction=direction, duration=duration, answered=answered,
                          recording=recording, result=result,
-                         owner=caller or owner, author=caller)
+                         owner=caller or owner, author=author)
         row.note_done = True
 
     moved = False
@@ -436,10 +487,8 @@ def handle_call(ctx: Ctx, event_type: str, payload: dict[str, Any]) -> dict[str,
         moved = maybe_move_to_reactivation(ctx, phone, int(lead_id))
 
     task_id = None
-    if need_task:
-        # звонок в обслуживание ведёт Полина, даже если карточка на продажнике
-        task_owner = settings.telephony_service_owner_id if service else _task_owner(ctx, owner)
-        text = (f"Перезвонить: обслуживание, пропущенный звонок с {phone}" if service
+    if need_task and task_owner:
+        text = (f"Перезвонить: обслуживание, пропущенный звонок с {phone}" if service_call
                 else f"Перезвонить: пропущенный звонок с {phone}")
         task_id = create_task(ctx, entity_type, entity_id, text, task_owner)
         row.task_done = True

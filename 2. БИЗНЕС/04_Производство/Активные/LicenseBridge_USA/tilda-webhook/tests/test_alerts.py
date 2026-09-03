@@ -63,6 +63,14 @@ def test_new_lead_silent_when_disabled(sent, monkeypatch):
     assert sent == []
 
 
+def test_new_lead_silent_for_client_dept(sent):
+    """Сделка на Полине — обслуживание действующего клиента, а не новая заявка."""
+    lead = dict(LEAD, responsible_user_id=15293564)
+
+    assert alerts.new_lead(FakeClient(), lead) is False
+    assert sent == []
+
+
 def test_new_lead_survives_users_failure(sent):
     """Kommo не отдал справочник — алерт всё равно уходит, с id вместо имени."""
     assert alerts.new_lead(FakeClient(fail=True), LEAD) is True

@@ -37,7 +37,7 @@ def test_route_answer_is_dash_separated_for_dialplan(fake, session, monkeypatch)
 
 def test_unknown_number_gets_sales_circle(fake, session):
     order, resolved = ring_order(fake, "+15550001111", did="1")
-    assert order == ["103"]
+    assert order == ["103", "101"]
     assert resolved["found"] is False
 
 
@@ -47,7 +47,7 @@ def test_existing_client_starts_from_own_manager(fake, session):
 
     order, resolved = ring_order(fake, PHONE, did="1")
 
-    assert order == ["103"]
+    assert order == ["103", "101"]
     assert resolved["responsible_user_id"] == ROP
 
 
@@ -59,14 +59,14 @@ def test_client_of_fired_manager_still_reaches_sales(fake, session):
 
     order, resolved = ring_order(fake, PHONE, did="1")
 
-    assert order == ["103"]
+    assert order == ["103", "101"]
     assert resolved["responsible_user_id"] == FIRED
 
 
 def test_former_line_of_fired_manager_rings_sales(fake, session):
     """Клиенты до сих пор звонят на бывший номер Илоны (линия 1) — ведём на РОП."""
     order, _ = ring_order(fake, "+15550001111", did="1")
-    assert order == ["103"]
+    assert order == ["103", "101"]
 
 
 def test_client_of_service_department_still_goes_to_sales(fake, session):
@@ -76,13 +76,43 @@ def test_client_of_service_department_still_goes_to_sales(fake, session):
 
     order, _ = ring_order(fake, PHONE, did="2")
 
-    assert order == ["103"]
+    assert order == ["103", "101"]
+
+
+def test_client_in_assembly_rings_client_department_first(fake, session):
+    """Клиент дошёл до «Сборки» — звонит по своему заказу, а не покупает заново.
+
+    03.09 такой клиент (Хакоб) позвонил на общую линию и попал к Александре:
+    маршрут смотрел только на ответственного, а Полину из круга вычёркивал."""
+    contact = fake.add_contact(name="Хакоб", phone=PHONE)
+    fake.add_lead(contact, settings.assembly_pipeline_id, settings.assembly_status_start,
+                  responsible=POLINA)
+
+    order, resolved = ring_order(fake, PHONE, did="1")
+
+    assert order[0] == "102"
+    assert resolved["pipeline_id"] == settings.assembly_pipeline_id
+    # круг продаж остаётся запасом: без Полины на линии звонок не должен пропасть
+    assert order[1:] == ["103", "101"]
+
+
+def test_assembly_deal_wins_over_open_sales_lead(fake, session):
+    """Рядом со «Сборкой» висит свежая заявка из рекламы — ведёт производство."""
+    contact = fake.add_contact(name="Хакоб", phone=PHONE)
+    fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=ROP)
+    fake.add_lead(contact, settings.assembly_pipeline_id, settings.assembly_status_start,
+                  responsible=POLINA)
+
+    order, resolved = ring_order(fake, PHONE, did="1")
+
+    assert order[0] == "102"
+    assert resolved["pipeline_id"] == settings.assembly_pipeline_id
 
 
 def test_direct_line_owner_answers_first(fake, session):
     """Позвонили на прямой номер РОПа — начинаем с неё, даже если клиент новый."""
     order, _ = ring_order(fake, "+15550001111", did="3")
-    assert order == ["103"]
+    assert order == ["103", "101"]
 
 
 def test_owner_without_extension_falls_back_to_circle(fake, session):
@@ -92,7 +122,7 @@ def test_owner_without_extension_falls_back_to_circle(fake, session):
 
     order, _ = ring_order(fake, PHONE, did="1")
 
-    assert order == ["103"]
+    assert order == ["103", "101"]
 
 
 def test_pavel_stays_in_extension_map(fake, session, monkeypatch):
@@ -160,14 +190,14 @@ def test_task_of_departed_manager_goes_to_rop(fake, session, enable_all, enable_
 
 
 def test_task_of_owner_without_ext_goes_to_sales(fake, session, enable_all, enable_telephony):
-    """Карточка на Павле: звонок звонил у Александры, значит и задача её.
+    """Карточка на человеке без софтфона: звонок звонил у Александры, задача её.
 
     Раньше задача уходила владельцу карточки, а он звонки не принимает — ровно
-    то, что Александра описала словами «если лид был не на мне, я не вижу звонок»."""
-    pavel = 13291175
-    fake.users_list.append({"id": pavel, "rights": {"is_active": True}})
+    то, что Александра описала словами «если лид был не на мне, я не вижу звонок».
+    Павел на эту роль больше не годится: с 24.08 он сам сидит на 101."""
+    fake.users_list.append({"id": NO_EXT, "rights": {"is_active": True}})
     contact = fake.add_contact(name="Клиент", phone=PHONE)
-    fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=pavel)
+    fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=NO_EXT)
 
     handle_call(_ctx(fake, session), "call_missed",
                 {"uniqueid": "1780000000.13", "phone": PHONE, "did": "1"})
@@ -199,6 +229,21 @@ def test_service_branch_task_goes_to_polina(fake, session, enable_all, enable_te
     assert [t["responsible_user_id"] for t in fake.tasks] == [POLINA]
     assert "обслуживание" in fake.tasks[0]["text"]
     assert "обслуживание" in _notes(fake, "leads", lead)[0]["params"]["call_result"]
+
+
+def test_missed_call_from_assembly_client_tasks_polina(fake, session, enable_all,
+                                                       enable_telephony):
+    """Пропущенный от клиента «Сборки» — задача Полине, не отделу продаж."""
+    contact = fake.add_contact(name="Хакоб", phone=PHONE)
+    lead = fake.add_lead(contact, settings.assembly_pipeline_id,
+                         settings.assembly_status_start, responsible=POLINA)
+
+    handle_call(_ctx(fake, session), "call_missed",
+                {"uniqueid": "1780000000.14", "phone": PHONE, "did": "1"})
+
+    assert [t["responsible_user_id"] for t in fake.tasks] == [POLINA]
+    assert "обслуживание" in fake.tasks[0]["text"]
+    assert fake.tasks[0]["entity_id"] == lead
 
 
 def test_answered_call_note_carries_recording_link(fake, session, enable_all, enable_telephony):
@@ -235,6 +280,36 @@ def test_outgoing_call_note_belongs_to_the_manager_who_dialed(fake, session, ena
     assert note["created_by"] == ROP and note["responsible_user_id"] == ROP
 
 
+def test_missed_call_note_is_signed_by_whoever_calls_back(fake, session, enable_all,
+                                                          enable_telephony):
+    """Трубку не сняли — автор примечания тот, кому перезванивать.
+
+    Без `created_by` Kommo подписывает примечание пользователем интеграции, и весь
+    журнал карточки выглядел как звонки одного человека (жалоба 02.09.2026)."""
+    contact = fake.add_contact(name="Клиент", phone=PHONE)
+    lead = fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=ROP)
+
+    handle_call(_ctx(fake, session), "call_missed",
+                {"uniqueid": "1780000000.15", "phone": PHONE, "did": "1"})
+
+    note = _notes(fake, "leads", lead)[0]
+    assert note["created_by"] == ROP
+    assert note["params"]["call_status"] == 6
+
+
+def test_missed_service_call_note_is_signed_by_polina(fake, session, enable_all,
+                                                      enable_telephony):
+    """Клиент «Сборки» звонил и не дождался — журнал подписан Полиной, не продажами."""
+    contact = fake.add_contact(name="Хакоб", phone=PHONE)
+    lead = fake.add_lead(contact, settings.assembly_pipeline_id,
+                         settings.assembly_status_start, responsible=POLINA)
+
+    handle_call(_ctx(fake, session), "call_missed",
+                {"uniqueid": "1780000000.16", "phone": PHONE, "did": "1"})
+
+    assert _notes(fake, "leads", lead)[0]["created_by"] == POLINA
+
+
 def test_call_without_extension_keeps_deal_owner(fake, session, enable_all, enable_telephony):
     """Старый диалплан (без ext) не должен ломать журнал: автора не выдумываем."""
     contact = fake.add_contact(name="Клиент", phone=PHONE)
@@ -247,6 +322,55 @@ def test_call_without_extension_keeps_deal_owner(fake, session, enable_all, enab
 
     note = _notes(fake, "leads", lead)[0]
     assert "created_by" not in note and note["responsible_user_id"] == FIRED
+
+
+def test_voicemail_is_not_counted_as_a_conversation(fake, session, enable_all,
+                                                    enable_telephony):
+    """Дозвон 35 секунд, «разговор» 4 секунды — это голосовая почта.
+
+    Раньше признаком разговора была любая длительность больше нуля: в карточке
+    звонок есть, разговора не было, а по воронке лид выглядел обработанным
+    (Павел, 24.08.2026)."""
+    contact = fake.add_contact(name="Клиент", phone=PHONE)
+    lead = fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=ROP)
+
+    handle_call(_ctx(fake, session), "call_finished", {
+        "uniqueid": "1780000000.17", "phone": PHONE, "direction": "out", "ext": "103",
+        "duration": "4", "disposition": "ANSWER",
+    })
+
+    params = _notes(fake, "leads", lead)[0]["params"]
+    assert params["call_status"] == 6
+    assert "Автоответчик" in params["call_result"]
+    assert params["duration"] == 4  # факт длительности не подменяем
+
+
+def test_real_short_conversation_stays_a_conversation(fake, session, enable_all,
+                                                      enable_telephony):
+    """Разговор длиннее порога — разговор, даже если он короткий."""
+    contact = fake.add_contact(name="Клиент", phone=PHONE)
+    lead = fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=ROP)
+
+    handle_call(_ctx(fake, session), "call_finished", {
+        "uniqueid": "1780000000.18", "phone": PHONE, "direction": "out", "ext": "103",
+        "duration": "20", "disposition": "ANSWER",
+    })
+
+    assert _notes(fake, "leads", lead)[0]["params"]["call_status"] == 4
+
+
+def test_voicemail_keeps_the_no_answer_ladder_running(session, enable_telephony, monkeypatch):
+    """После автоответчика лестница недозвона не обнуляется.
+
+    Иначе voicemail считался дозвоном, счётчик сбрасывался, и один и тот же номер
+    можно было набирать весь день — ровно то, от чего защищают блокеры."""
+    monkeypatch.setattr(settings, "dial_guard_mode", "block")
+    _out_call(session, PHONE, 40, "gvm-1", disposition="ANSWER", duration=3)
+    _out_call(session, PHONE, 20, "gvm-2", disposition="ANSWER", duration=4)
+
+    verdict, reason = dial_guard(session, PHONE)
+
+    assert verdict == "deny" and reason == "attempt2_3h"
 
 
 def test_hangup_on_menu_from_unknown_number_leaves_crm_clean(fake, session,

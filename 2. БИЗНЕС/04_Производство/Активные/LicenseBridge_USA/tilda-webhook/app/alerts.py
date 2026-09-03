@@ -95,6 +95,12 @@ def new_lead(client: Any, lead: dict[str, Any], phone: str = "") -> bool:
     lead_id = int(lead.get("id") or 0)
     if not lead_id:
         return False
+    # Лид клиентского отдела — это действующий клиент, пришедший на обслуживание,
+    # а не новая заявка: алертов по нему не ждут (просьба 03.09.2026).
+    owner_id = lead.get("responsible_user_id")
+    if owner_id and int(owner_id) in settings.client_dept_owner_id_set:
+        log.info("alert new_lead skipped: lead %s belongs to client dept", lead_id)
+        return False
     name = _esc(lead.get("name") or f"Сделка #{lead_id}")
     owner = _user_name(client, lead.get("responsible_user_id"))
     tags = ", ".join(

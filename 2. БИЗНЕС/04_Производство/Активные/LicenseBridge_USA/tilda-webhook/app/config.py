@@ -158,6 +158,10 @@ class Settings(BaseSettings):
     dial_guard_reactivation_hours: int = 24
     dial_guard_max_per_day: int = 3       # исходящих наборов на номер в сутки
     status_reactivation: int = 110600324  # этап Reactivation в Pipeline
+    # Голосовая почта снимает трубку сама, и Asterisk считает это ответом: дозвон
+    # 30-40 секунд, потом «разговор» 2-5 секунд. Такой звонок не разговор — он
+    # закрывал лид в отчётах и не поднимал лестницу недозвона (жалоба 24.08.2026).
+    call_short_talk_sec: int = 15
     telephony_source: str = "asterisk_lb"  # params.source в примечании-звонке
     telephony_channel: str = "Входящий звонок"  # канал сделки, созданной по звонку
     # записи разговоров: файлы лежат на Asterisk, наружу отдаёт хаб по подписи

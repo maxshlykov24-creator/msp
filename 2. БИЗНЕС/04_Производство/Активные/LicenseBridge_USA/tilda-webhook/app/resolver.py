@@ -10,6 +10,18 @@ from app.identity import find_contacts_by_phone, normalize_phone
 from app.kommo.client import KommoClient
 
 
+def _assembly_first(opens: list[dict[str, Any]]) -> dict[str, Any]:
+    """Из открытых сделок берём сделку производства, если она есть.
+
+    У клиента, дошедшего до «Сборки», сделка продажи закрыта, но рядом может
+    висеть открытая заявка из рекламы. Ведёт такого клиента производство, поэтому
+    старшинство по дате уступает воронке."""
+    for lead in opens:
+        if lead.get("pipeline_id") == settings.assembly_pipeline_id:
+            return lead
+    return opens[0]
+
+
 def resolve_responsible(client: KommoClient, raw_phone: str) -> dict[str, Any]:
     phone = normalize_phone(raw_phone)
     if not phone:
@@ -26,16 +38,18 @@ def resolve_responsible(client: KommoClient, raw_phone: str) -> dict[str, Any]:
         key=lambda l: l.get("created_at") or 0,
     )
     if opens:
-        lead = opens[0]
+        # воронка нужна маршрутизации: клиента в «Сборке» ведёт клиентский отдел,
+        # звонок такого клиента в продажи не отдаём (просьба 03.09.2026)
+        lead = _assembly_first(opens)
         return {"phone": phone, "found": True, "contact_id": contact["id"],
                 "lead_id": lead["id"], "responsible_user_id": lead.get("responsible_user_id"),
-                "status": "open"}
+                "pipeline_id": lead.get("pipeline_id"), "status": "open"}
     closed = sorted([l for l in leads if l.get("closed_at")],
                     key=lambda l: l.get("closed_at") or 0, reverse=True)
     if closed:
         lead = closed[0]
         return {"phone": phone, "found": True, "contact_id": contact["id"],
                 "lead_id": lead["id"], "responsible_user_id": lead.get("responsible_user_id"),
-                "status": "closed"}
+                "pipeline_id": lead.get("pipeline_id"), "status": "closed"}
     return {"phone": phone, "found": True, "contact_id": contact["id"],
             "responsible_user_id": settings.default_sales_owner_id, "status": "no_lead"}
