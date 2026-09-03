@@ -35,11 +35,12 @@ from app.kommo import KommoClient
 log = logging.getLogger("collector")
 
 WON_DEFINITION = (
-    "Первый переход в Closed-won (status 142) внутри Pipeline. "
-    "Не переход в воронку Сборка."
+    "Первое из двух: переход в Closed-won (status 142) внутри Pipeline или "
+    "перенос сделки в воронку Сборка. Продажу оформляют и тем, и другим способом: "
+    "из 70 продаж 49 прошли только через Сборку, и до 03.09.2026 дашборд их не видел."
 )
 WON_ATTRIBUTION = (
-    "ответственный в Pipeline на момент перехода в status 142 "
+    "ответственный на момент продажи: перехода в status 142 или переноса в Сборку "
     "(entity_responsible_changed ≤ won_at)"
 )
 
@@ -351,11 +352,19 @@ def collect(client: KommoClient) -> dict[str, Any]:
             row["won_at"] = _day(to_sborka.get(lead_id))
         out_leads.append(row)
 
-    # ── wins[] = первый переход в 142 внутри Pipeline ──
-    # to_sborka не трогаем: leads[].won_at кормит метрику «В производстве».
+    # ── wins[] = продажа: 142 внутри Pipeline либо перенос в «Сборку» ──
+    # Считаем по тому событию, которое случилось раньше: у восьми сделок есть оба,
+    # и по одному признаку продажа задвоилась бы.
     price_by_lead = {lead["id"]: lead.get("price") or 0 for lead in leads}
+    won_at: dict[int, tuple[int, str]] = {}
+    for lead_id, ts in to_won_status.items():
+        won_at[lead_id] = (ts, "pipeline_status_142")
+    for lead_id, ts in to_sborka.items():
+        known = won_at.get(lead_id)
+        if known is None or ts < known[0]:
+            won_at[lead_id] = (ts, "moved_to_sborka")
     wins = []
-    for lead_id, ts in sorted(to_won_status.items(), key=lambda kv: kv[1]):
+    for lead_id, (ts, method) in sorted(won_at.items(), key=lambda kv: kv[1][0]):
         if lead_id not in price_by_lead:
             continue
         owner_id = responsible.at(lead_id, ts, None)
@@ -366,7 +375,7 @@ def collect(client: KommoClient) -> dict[str, Any]:
                 "price": price_by_lead.get(lead_id, 0),
                 "responsible_name": user_name(owner_id),
                 "responsible_id": owner_id,
-                "method": "pipeline_status_142",
+                "method": method,
             }
         )
     won_dates = [w["date"] for w in wins if w.get("date")]
