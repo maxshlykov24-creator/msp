@@ -184,6 +184,28 @@ class AiCall(Base):
     )
 
 
+class FirstTouch(Base):
+    """Первое сообщение клиенту в WhatsApp: одно на сделку, навсегда.
+
+    unique по lead_id, потому что Kommo повторяет `add_lead`, а второе «здравствуйте»
+    по той же заявке клиент читает как рассылку. Строка живёт и при неудаче: видно,
+    какому лиду не написали и почему."""
+
+    __tablename__ = "first_touch"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    lead_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    contact_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    phone: Mapped[str] = mapped_column(String(32), index=True)
+    variant: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    channel: Mapped[str] = mapped_column(String(16), default="whatsapp")
+    # sent | failed | skipped (выключено, нет текста, тестовый режим)
+    status: Mapped[str] = mapped_column(String(12), default="sent", index=True)
+    message_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class DupManual(Base):
     """Спорная пара, отправленная на ручную native-merge (маркер + тег пары)."""
 

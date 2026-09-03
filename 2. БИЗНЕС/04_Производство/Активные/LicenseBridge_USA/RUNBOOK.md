@@ -106,6 +106,32 @@ ssh licensebridge-hub 'curl -s "http://127.0.0.1:8080/status?key=<INTERNAL_API_K
 POST /internal/rollout {"action": "pause" | "resume" | "set_stage", "stage": N}
 ```
 
+### Первое сообщение в WhatsApp
+
+Отправляет хаб через Wazzup (`app/wazzup.py`), а не Salesbot в Kommo: бота
+выключили в UI, и заявки с 26.08 по 03.09.2026 остались без ответа — снаружи это
+выглядело как «Pleep не пишет первым». Ключ и канал уже в `.env`, отправка выключена.
+
+Порядок включения:
+
+1. Перенести четыре текста из Salesbot в `WA_TEMPLATES`, формат
+   `1|текст||2|текст||3|текст||4|текст`, `{name}` подставит имя клиента.
+2. Задать `WAZZUP_TEST_PHONE` — свой номер с WhatsApp. Пока он задан, сообщения
+   уходят только на него, живым лидам хаб не пишет.
+3. `ENABLE_WAZZUP_FIRST_TOUCH=true`, `docker compose up -d`, завести тестовую
+   заявку и убедиться, что сообщение пришло.
+4. Убрать `WAZZUP_TEST_PHONE` — заявки клиентов начинают получать ответ.
+
+Одно сообщение на сделку навсегда: таблица `first_touch` с unique по `lead_id`,
+повтор вебхука Kommo второго «здравствуйте» не отправит. Тихие часы сообщения не
+задерживают, это ответ на заявку клиента; тихие часы действуют только на звонки.
+
+```bash
+# кому написали, кому нет и почему
+ssh licensebridge-hub "cd /opt/licensebridge-tilda-webhook && docker compose exec -T db \
+  psql -U lbhub -d lbhub -c 'select lead_id, phone, variant, status, last_error from first_touch order by id desc limit 20;'"
+```
+
 ### Блокеры набора
 
 Лестница: 15 минут → 3 часа → следующий день → этап Reactivation, не больше 3 попыток

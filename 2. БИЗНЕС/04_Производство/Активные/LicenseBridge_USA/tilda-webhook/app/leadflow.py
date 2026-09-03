@@ -131,6 +131,87 @@ def enrich_lead(ctx: Ctx, lead: dict[str, Any], phone: str) -> dict[str, Any]:
             "tz": tz, "written": written}
 
 
+def first_touch_text(lead: dict[str, Any], variant: str) -> str:
+    """Текст первого сообщения. Пусто — значит вариант не заполнен в `.env`."""
+    template = settings.wa_template_map.get(variant, "")
+    if not template:
+        return ""
+    name = ""
+    for contact in ((lead.get("_embedded") or {}).get("contacts")) or []:
+        name = str(contact.get("name") or "").strip()
+        if name:
+            break
+    if not name:
+        name = str(lead.get("name") or "").strip()
+    # только имя, без фамилии: «Hi John» вместо «Hi John Smith»
+    return template.replace("{name}", name.split()[0] if name else "")
+
+
+def send_first_touch(ctx: Ctx, lead: dict[str, Any], phone: str) -> dict[str, Any]:
+    """Написать клиенту первым в WhatsApp (зовётся на add_lead).
+
+    Раньше это делал Salesbot внутри Kommo: бота выключили в UI, и заявки молча
+    остались без ответа (26.08–03.09.2026). Теперь пишет хаб, и каждая попытка
+    видна в журнале решений.
+
+    Тихие часы сообщение не задерживают — это ответ на заявку клиента, а не
+    рассылка. Тихие часы действуют только на звонки."""
+    from app.models import FirstTouch
+    from app.wazzup import send_text
+
+    lead_id = int(lead["id"])
+    if lead.get("pipeline_id") != settings.pipeline_id:
+        return {"action": "first_touch.skip_pipeline", "lead": lead_id}
+    phone = normalize_phone(phone)
+    if not phone:
+        log_decision(ctx, "first_touch.no_phone", lead=lead_id)
+        return {"action": "first_touch.no_phone", "lead": lead_id}
+
+    row = ctx.s.scalar(select(FirstTouch).where(FirstTouch.lead_id == lead_id))
+    if row is not None and row.status == "sent":
+        log_decision(ctx, "first_touch.already", lead=lead_id, phone=phone)
+        return {"action": "first_touch.already", "lead": lead_id}
+
+    variant = wa_variant(lead_id)
+    text = first_touch_text(lead, variant)
+
+    reason = ""
+    if not settings.enable_wazzup_first_touch:
+        reason = "disabled"
+    elif not text:
+        reason = "no_template"
+    elif settings.wazzup_test_phone and phone != normalize_phone(settings.wazzup_test_phone):
+        # прогон идёт на боевом хабе: живым лидам в это время не пишем
+        reason = "test_mode"
+    if reason:
+        log_decision(ctx, f"first_touch.{reason}", lead=lead_id, phone=phone,
+                     variant=variant)
+        return {"action": f"first_touch.{reason}", "lead": lead_id, "variant": variant}
+
+    if row is None:
+        row = FirstTouch(lead_id=lead_id, contact_id=_contact_id(lead), phone=phone)
+        ctx.s.add(row)
+    row.phone = phone
+    row.variant = variant
+    try:
+        message_id = send_text(phone, text)
+    except Exception as exc:  # noqa: BLE001 — заявка важнее отправки сообщения
+        row.status = "failed"
+        row.last_error = str(exc)[:500]
+        ctx.s.flush()
+        log_decision(ctx, "first_touch.failed", lead=lead_id, phone=phone,
+                     variant=variant, error=str(exc)[:200])
+        return {"action": "first_touch.failed", "lead": lead_id, "error": str(exc)[:200]}
+    row.status = "sent"
+    row.message_id = message_id or None
+    row.last_error = None
+    ctx.s.flush()
+    log_decision(ctx, "first_touch.sent", lead=lead_id, phone=phone, variant=variant,
+                 message=message_id)
+    return {"action": "first_touch.sent", "lead": lead_id, "variant": variant,
+            "message": message_id}
+
+
 def _open_lead_by_phone(ctx: Ctx, phone: str) -> dict[str, Any] | None:
     from app.dedup_deals import load_leads
 

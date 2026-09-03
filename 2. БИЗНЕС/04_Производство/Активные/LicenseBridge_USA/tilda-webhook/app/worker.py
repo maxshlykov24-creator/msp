@@ -100,11 +100,15 @@ def handle_kommo_add_lead(ctx: Ctx, lead_id: int) -> dict[str, Any]:
     this_lead = next((l for l in leads if int(l["id"]) == int(lead_id)), None)
     if this_lead:
         assign_new_lead(ctx, this_lead, leads)
+        phones = contact_phones(primary)
         # лид-машина: Salesbot берёт из сделки готовый вариант текста и окно звонка
         if settings.enable_leadflow:
             from app.leadflow import enrich_lead
-            phones = contact_phones(primary)
             enrich_lead(ctx, this_lead, phones[0] if phones else "")
+        # Первое сообщение отправляет хаб, а не Salesbot, поэтому у него свой
+        # флаг: писать клиентам можно и до включения остальной лид-машины.
+        from app.leadflow import send_first_touch
+        send_first_touch(ctx, this_lead, phones[0] if phones else "")
 
     # Алерт уходит последним и своей ошибкой обработку не роняет: заявка уже
     # разложена, уведомление — сверху.

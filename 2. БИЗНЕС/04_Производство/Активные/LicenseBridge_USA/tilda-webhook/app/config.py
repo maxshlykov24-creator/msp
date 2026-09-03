@@ -181,6 +181,20 @@ class Settings(BaseSettings):
     field_wa_variant: int = 1420023        # вариант текста первого сообщения, 1..N
     field_call_window: int = 1420025       # окно звонка по местному времени клиента
     wa_variant_count: int = 4              # сколько вариантов текста у Salesbot
+
+    # ── Первое сообщение в WhatsApp отправляет хаб, а не Salesbot ──
+    # Бота выключили в UI Kommo, и заявки остались без ответа: снаружи это
+    # выглядело как «Pleep не пишет первым» (26.08–03.09.2026). Отдельный флаг:
+    # включается после прогона на тестовом номере, независимо от лид-машины.
+    enable_wazzup_first_touch: bool = False
+    wazzup_api_key: str = ""
+    wazzup_channel_id: str = ""            # пусто → берётся активный канал WhatsApp
+    # Тексты вариантов лежат в Salesbot, их переносит владелец: сочинять письмо
+    # клиенту за него нельзя. Формат — `1|текст||2|текст`, `{name}` = имя клиента.
+    # Нет текста для варианта — сообщение не уходит, в журнале `no_template`.
+    wa_templates: str = ""
+    # Прогон без живых лидов: пока номер задан, сообщения уходят только на него.
+    wazzup_test_phone: str = ""
     # голосовой агент Pleep (SIP-транкинг ElevenLabs): не публичный номер для
     # звонка извне, а идентификатор в SIP URI на sip.rtc.elevenlabs.io — см.
     # asterisk/pjsip_pleep.conf [pleep_out]. Сейчас это DID линии 103.
@@ -275,6 +289,19 @@ class Settings(BaseSettings):
     @property
     def departed_owner_id_set(self) -> set[int]:
         return {int(x) for x in self.departed_owner_ids.split(",") if x.strip()}
+
+    @property
+    def wa_template_map(self) -> dict[str, str]:
+        """Варианты первого сообщения: `1|текст||2|текст` → {"1": "текст", ...}.
+
+        Разделитель `||`, потому что сам текст содержит и запятые, и переводы
+        строк, и двоеточия."""
+        out: dict[str, str] = {}
+        for chunk in (self.wa_templates or "").split("||"):
+            key, sep, text = chunk.partition("|")
+            if sep and key.strip() and text.strip():
+                out[key.strip()] = text.strip()
+        return out
 
     @property
     def ext_to_user(self) -> dict[str, int]:
