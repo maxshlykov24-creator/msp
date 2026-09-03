@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>БЕРЁЗА ГРУПП — фулфилмент</title>
+<link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+
+<div id="login">
+  <div class="glass login-card">
+    <div class="login-brand"><b>БЕРЁЗА ГРУПП</b><small>Фулфилмент</small></div>
+    <h1>Вход</h1>
+    <p class="hint">Приёмка товара, учёт остатка и счета контрагентам.</p>
+    <div class="err" id="loginErr"></div>
+    <div class="field"><label for="loginUser">Логин</label><input id="loginUser" type="text" autocomplete="username"></div>
+    <div class="field"><label for="loginPass">Пароль</label><input id="loginPass" type="password" autocomplete="current-password"></div>
+    <button class="btn" id="loginBtn" type="button">Войти</button>
+  </div>
+</div>
+
+<div id="app">
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand"><b>БЕРЁЗА ГРУПП</b><span>Фулфилмент</span></div>
+    <div class="viewnav" id="viewNav">
+      <button type="button" data-view="intake" class="active">Приёмка</button>
+      <button type="button" data-view="stock">Учёт</button>
+      <button type="button" data-view="bills">Счета</button>
+    </div>
+    <div class="header-right">
+      <span class="who" id="who"></span>
+      <button class="btn-ghost" id="syncBtn" type="button">Обновить клиентов</button>
+      <button class="btn-ghost" id="logoutBtn" type="button">Выйти</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="view active" id="view-intake">
+    <div class="head">
+      <div><h1>Приёмка</h1><p>Штрихкод, количество и литраж. Остальное сервер подставит из кабинетов клиента.</p></div>
+    </div>
+
+    <div class="panel glass">
+      <div class="form">
+        <div class="fld wide"><label>Контрагент</label><select id="iClient"></select></div>
+        <div class="fld"><label>Штрихкод</label><input id="iBarcode" type="text" autocomplete="off" placeholder="4650000000000"></div>
+        <div class="fld sm"><label>Количество</label><input id="iQty" type="number" min="1" step="1" value="1"></div>
+        <div class="fld sm"><label>Литраж, л</label><input id="iLiters" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="fld"><label>Тип продукции</label><select id="iKind"></select></div>
+        <div class="fld"><label>GTIN <span class="opt">если не подтянулся</span></label><input id="iGtin" type="text" autocomplete="off"></div>
+        <button class="btn" id="iAdd" type="button">Добавить</button>
+      </div>
+      <div class="msg" id="iMsg"></div>
+    </div>
+
+    <div class="sec"><h2>Очередь</h2><span id="iCount"></span></div>
+    <div class="panel glass">
+      <div class="tbl-wrap">
+        <table class="tbl" id="iTbl">
+          <thead><tr>
+            <th>Контрагент</th><th>Штрихкод</th><th>Артикул</th><th>Наименование</th>
+            <th>МП</th><th>GTIN</th><th>Тип</th><th class="num">Литраж</th><th class="num">Кол-во</th><th>Статус</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="btn" id="iRun" type="button">Создать товары и заказ поставщика</button>
+      </div>
+      <div class="msg" id="iRunMsg"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-stock">
+    <div class="head">
+      <div><h1>Учёт</h1><p>Партии по FIFO: что лежит, сколько дней и сколько начислено с прошлого счёта.</p></div>
+    </div>
+
+    <div class="panel glass filters">
+      <div class="fld wide"><label>Контрагент</label><select id="sClient"></select></div>
+      <div class="fld grow"><label>Поиск</label><input id="sQuery" type="search" placeholder="артикул, штрихкод, GTIN, наименование"></div>
+      <button class="btn-ghost" id="sExport" type="button">Выгрузить в Excel</button>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi glass"><div class="kpi-label">Позиций</div><div class="kpi-val" id="kPos">—</div></div>
+      <div class="kpi glass"><div class="kpi-label">Штук на складе</div><div class="kpi-val" id="kQty">—</div></div>
+      <div class="kpi glass"><div class="kpi-label">Объём</div><div class="kpi-val" id="kVol">— <small>л</small></div></div>
+      <div class="kpi glass feature"><div class="kpi-label">К выставлению</div><div class="kpi-val gold" id="kMoney">— <small>₽</small></div><div class="kpi-sub" id="kAged"></div></div>
+    </div>
+
+    <div class="panel glass">
+      <div class="tbl-wrap">
+        <table class="tbl" id="sTbl">
+          <thead><tr>
+            <th class="pick"><input type="checkbox" id="sAll"></th>
+            <th>Контрагент</th><th>Артикул</th><th>Штрихкод</th><th>GTIN</th><th>Наименование</th>
+            <th>Тип</th><th class="num">Литраж</th><th class="num">Остаток</th><th class="num">Объём, л</th>
+            <th>Принято</th><th class="num">Дней</th><th class="num">Хранение</th><th class="num">Приёмка</th>
+            <th class="num">Отгрузка</th><th class="num">Итого, ₽</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <span class="sel" id="sSel">Ничего не выбрано</span>
+        <button class="btn" id="sBill" type="button" disabled>Выставить счёт</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-bills">
+    <div class="head"><div><h1>Счета</h1><p>Выставленные счета покупателю в МойСклад.</p></div></div>
+    <div class="panel glass">
+      <div class="tbl-wrap">
+        <table class="tbl" id="bTbl">
+          <thead><tr>
+            <th>Номер</th><th>Контрагент</th><th>Дата</th><th class="num">Позиций</th>
+            <th class="num">Хранение</th><th class="num">Приёмка</th><th class="num">Отгрузка</th><th class="num">Итого, ₽</th><th>Кто</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div id="modal" class="modal">
+  <div class="glass modal-card">
+    <h3 id="mTitle">Счёт</h3>
+    <div class="inv-lines" id="mLines"></div>
+    <div class="inv-sum"><span>Итого</span><b id="mTotal">—</b></div>
+    <div class="msg" id="mMsg"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="mCancel" type="button">Отмена</button>
+      <button class="btn" id="mOk" type="button">Выставить</button>
+    </div>
+  </div>
+</div>
+
+<script src="/ui/app.js"></script>
+</body>
+</html>

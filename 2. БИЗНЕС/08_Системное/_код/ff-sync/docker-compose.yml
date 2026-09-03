@@ -1,0 +1,34 @@
+# Прод: VPS 72.56.8.43
+#   cd /opt/ff-sync && docker compose up -d --build
+
+name: ff-sync
+
+services:
+  worker:
+    image: ff-sync
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      FF_DB: /data/ff.db
+      TZ: Europe/Moscow
+    volumes:
+      - ff_data:/data
+    command: python main.py
+
+  web:
+    image: ff-sync
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      FF_DB: /data/ff.db
+      TZ: Europe/Moscow
+    volumes:
+      - ff_data:/data
+    ports:
+      - "8787:8787"
+    command: python -m uvicorn web:app --host 0.0.0.0 --port 8787
+
+volumes:
+  ff_data:
