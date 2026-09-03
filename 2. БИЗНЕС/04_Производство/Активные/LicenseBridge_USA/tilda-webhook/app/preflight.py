@@ -15,8 +15,16 @@ class PreflightError(RuntimeError):
     pass
 
 
+# Не поломки конфигурации, а известные пропуски: код их обрабатывает и работает
+# дальше. Раньше они роняли worker наравне с неверными id — и лид-машину нельзя
+# было включить, пока не куплен SMS-бот (worker крутился в рестарте 03.09.2026).
+DEGRADATIONS = ("SMS_BOT_ID",)
+
+
 def run_preflight(client: KommoClient | None = None) -> list[str]:
-    """Возвращает список проблем (пустой = всё ок)."""
+    """Возвращает список проблем (пустой = всё ок).
+
+    Предупреждения в список не попадают: они пишутся в лог и не мешают старту."""
     problems: list[str] = []
     if not settings.kommo_token:
         return ["KOMMO_TOKEN пуст"]
@@ -86,6 +94,10 @@ def run_preflight(client: KommoClient | None = None) -> list[str]:
         if close:
             client.close()
 
+    warnings = [p for p in problems if p.startswith(DEGRADATIONS)]
+    problems = [p for p in problems if p not in warnings]
+    for w in warnings:
+        log.warning("preflight: %s", w)
     for p in problems:
         log.error("preflight: %s", p)
     if not problems:

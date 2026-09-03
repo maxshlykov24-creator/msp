@@ -150,6 +150,21 @@ MicroSIP её не обойти. Менеджер слышит голосово�
 
 ## 5. Диагностика
 
+### Preflight при старте worker
+
+Перед первым циклом worker сверяет `.env` с живым Kommo: id аккаунта, воронок, этапов,
+владельцев, полей. Настоящая ошибка — например неверный `PIPELINE_ID` — пишется как
+`ERROR` и worker останавливается: работать с чужой воронкой хуже, чем не работать.
+
+Некупленный SMS-бот (`SMS_BOT_ID=0`) — не ошибка, а `WARNING`: код этот случай
+обрабатывает и вместо SMS ставит задачу менеджеру. Список таких пропусков —
+`DEGRADATIONS` в `app/preflight.py`. Строку `preflight OK` в логе стоит увидеть после
+каждого деплоя:
+
+```bash
+ssh licensebridge-hub 'docker logs lb-hub-worker 2>&1 | grep preflight | tail -5'
+```
+
 ```bash
 # хаб
 ssh licensebridge-hub 'docker ps --format "{{.Names}} | {{.Status}}"'
