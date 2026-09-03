@@ -1,0 +1,20 @@
+# Прод: worker рядом с divo-analytics на 104.171.136.226.
+#   cd /root/divo-cme-stock && docker compose up -d --build
+
+name: divo-cme-stock
+
+services:
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GOOGLE_SA_PATH: /app/google_sa.json
+      STATE_PATH: /data/state.json
+    volumes:
+      - ./google_sa.json:/app/google_sa.json:ro
+      - cme_state:/data
+    command: python -m app.scheduler
+
+volumes:
+  cme_state:

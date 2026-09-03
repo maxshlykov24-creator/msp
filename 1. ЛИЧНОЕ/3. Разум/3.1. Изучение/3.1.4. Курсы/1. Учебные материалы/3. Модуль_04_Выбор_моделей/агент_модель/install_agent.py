@@ -79,7 +79,7 @@ def install_agent_files(project_root, source_dir):
     shutil.copy2(source_mdc, target_mdc)
     print(f"   ✅ Установлено: .cursor/rules/модель.mdc")
     
-    # 3. Создание папки агенты/МОДЕЛЬ/
+    # 3. Создание папки 3. АГЕНТЫ/МОДЕЛЬ/
     agents_dir = project_root / "агенты" / "МОДЕЛЬ"
     
     if agents_dir.exists():
@@ -89,7 +89,7 @@ def install_agent_files(project_root, source_dir):
             return True
     else:
         agents_dir.mkdir(parents=True)
-        print(f"   ✅ Создана директория: агенты/МОДЕЛЬ/")
+        print(f"   ✅ Создана директория: 3. АГЕНТЫ/МОДЕЛЬ/")
     
     # 4. Копирование файлов агента
     source_agent = source_dir / "файлы_агента" / "агенты" / "МОДЕЛЬ"
@@ -106,7 +106,7 @@ def install_agent_files(project_root, source_dir):
         target_file = agents_dir / file
         if source_file.exists():
             shutil.copy2(source_file, target_file)
-            print(f"   ✅ Установлено: агенты/МОДЕЛЬ/{file}")
+            print(f"   ✅ Установлено: 3. АГЕНТЫ/МОДЕЛЬ/{file}")
     
     # 5. Копирование папки _КОНТЕКСТ
     source_context = source_agent / "_КОНТЕКСТ"
@@ -115,7 +115,7 @@ def install_agent_files(project_root, source_dir):
     if target_context.exists():
         shutil.rmtree(target_context)
     shutil.copytree(source_context, target_context)
-    print(f"   ✅ Установлена папка: агенты/МОДЕЛЬ/_КОНТЕКСТ/")
+    print(f"   ✅ Установлена папка: 3. АГЕНТЫ/МОДЕЛЬ/_КОНТЕКСТ/")
     
     # 6. Копирование папки _ДАННЫЕ
     source_data = source_agent / "_ДАННЫЕ"
@@ -124,7 +124,7 @@ def install_agent_files(project_root, source_dir):
     if target_data.exists():
         shutil.rmtree(target_data)
     shutil.copytree(source_data, target_data)
-    print(f"   ✅ Установлена папка: агенты/МОДЕЛЬ/_ДАННЫЕ/")
+    print(f"   ✅ Установлена папка: 3. АГЕНТЫ/МОДЕЛЬ/_ДАННЫЕ/")
     
     return True
 
@@ -143,10 +143,10 @@ def validate_installation(project_root):
     
     required_files = [
         ".cursor/rules/модель.mdc",
-        "агенты/МОДЕЛЬ/README.md",
-        "агенты/МОДЕЛЬ/БЫСТРЫЙ_СТАРТ.md",
-        "агенты/МОДЕЛЬ/_КОНТЕКСТ/таблица_выбора_моделей.md",
-        "агенты/МОДЕЛЬ/_ДАННЫЕ/models_cache.json"
+        "3. АГЕНТЫ/МОДЕЛЬ/README.md",
+        "3. АГЕНТЫ/МОДЕЛЬ/БЫСТРЫЙ_СТАРТ.md",
+        "3. АГЕНТЫ/МОДЕЛЬ/_КОНТЕКСТ/таблица_выбора_моделей.md",
+        "3. АГЕНТЫ/МОДЕЛЬ/_ДАННЫЕ/models_cache.json"
     ]
     
     all_ok = True
@@ -175,10 +175,10 @@ def print_usage_instructions():
     print("   @модель оцени задачу: создать Python скрипт")
     print("   @модель напиши план автоматизации --detail\n")
     print("📖 Документация:")
-    print("   - агенты/МОДЕЛЬ/README.md — полная документация")
-    print("   - агенты/МОДЕЛЬ/БЫСТРЫЙ_СТАРТ.md — быстрый старт")
-    print("   - агенты/МОДЕЛЬ/ПРИМЕРЫ_ИСПОЛЬЗОВАНИЯ.md — примеры\n")
-    print("🆘 Нужна помощь? Загляни в агенты/МОДЕЛЬ/ЧАСТЫЕ_ВОПРОСЫ.md")
+    print("   - 3. АГЕНТЫ/МОДЕЛЬ/README.md — полная документация")
+    print("   - 3. АГЕНТЫ/МОДЕЛЬ/БЫСТРЫЙ_СТАРТ.md — быстрый старт")
+    print("   - 3. АГЕНТЫ/МОДЕЛЬ/ПРИМЕРЫ_ИСПОЛЬЗОВАНИЯ.md — примеры\n")
+    print("🆘 Нужна помощь? Загляни в 3. АГЕНТЫ/МОДЕЛЬ/ЧАСТЫЕ_ВОПРОСЫ.md")
     print("="*60)
 
 

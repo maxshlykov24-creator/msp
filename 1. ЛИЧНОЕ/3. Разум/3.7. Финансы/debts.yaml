@@ -1,0 +1,59 @@
+# Реестр долгов. Цифры с листа «Долги» Excel — СВЕРИТЬ и поправить.
+# updated: 2026-07-09 (черновик из старой таблицы)
+
+updated: "2026-07-09"
+currency: RUB
+note: "Остатки из Excel — гипотеза до сверки с банками. После сверки обновить balance."
+
+# Правило: 30%+ со входящих платежей на долги (из твоей заметки в Excel)
+policy:
+  share_of_income_to_debts: 0.30
+  prefer_share: 0.50
+
+banks:
+  - id: tbank_maxim
+    name: Т-Банк Максим
+    balance: 57120
+    priority: 1
+  - id: sber_maxim
+    name: Сбер Максим
+    balance: 171470
+    priority: 2
+  - id: alfa_nastya
+    name: Альфа Настя
+    balance: 165830
+    priority: 3
+  - id: alfa_maxim
+    name: Альфа Максим
+    balance: 42260
+    priority: 4
+
+# Хвосты по проектам / людям (не банковские кредиты)
+# amounts — ориентиры «ближайшие / потенциальные» из Excel; уточнить
+projects:
+  - id: nic_npo
+    name: НИЦ НПО
+    balance: 30000
+    priority: 1
+  - id: martache
+    name: МАРТА
+    balance: 30000
+    priority: 2
+  - id: misha
+    name: Миша
+    balance: 55000
+    priority: 3
+  - id: roman
+    name: Роман
+    balance: 30000
+    priority: 4
+  - id: wangpack
+    name: ВанПак
+    balance: 0
+    priority: 5
+  - id: lookbook
+    name: ЛукБук
+    balance: 30000
+    priority: 6
+
+# Сумма для hero-дашборда считается скриптом: banks + projects с balance > 0

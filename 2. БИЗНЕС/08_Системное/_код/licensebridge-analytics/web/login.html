@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LicenseBridge USA — вход в аналитику</title>
+<style>
+  :root, [data-theme="light"]{
+    --bg:#f4f6fa; --ink:#0a1e38; --mute:#4a5a72; --mute-2:#7a879c;
+    --line:rgba(10,30,56,.08); --line-2:rgba(10,30,56,.14);
+    --glass:rgba(255,255,255,.72); --gold:#d4922a; --red:#c45b55;
+    --card-shadow:0 20px 50px -28px rgba(10,30,56,.45), inset 0 1px 0 rgba(255,255,255,.9);
+    --body-bg:radial-gradient(1200px 700px at 50% -20%,#ffffff 0%,transparent 60%),
+      radial-gradient(900px 500px at 90% 0%,rgba(212,146,42,.10),transparent 55%),
+      radial-gradient(800px 480px at -10% 20%,rgba(10,30,56,.06),transparent 55%),
+      linear-gradient(180deg,#f7f9fc 0%,#eef2f8 100%);
+    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+  }
+  [data-theme="dark"]{
+    --bg:#05070c; --ink:#ffffff; --mute:#a4acc2; --mute-2:#666f8a;
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.15);
+    --glass:rgba(255,255,255,.03); --gold:#e2ab4d; --red:#d98a86;
+    --card-shadow:inset 0 1px 0 rgba(255,255,255,.1), 0 8px 32px 0 rgba(0,0,0,.8);
+    --body-bg:radial-gradient(1400px 800px at 50% -20%,#0e1420 0%,transparent 62%),
+      radial-gradient(1100px 620px at 84% -10%,rgba(77,127,224,.10),transparent 60%),
+      radial-gradient(820px 560px at -10% 14%,rgba(226,171,77,.05),transparent 60%),
+      linear-gradient(180deg,#070a10 0%,#020304 100%);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:var(--font);color:var(--ink);background:var(--bg);background-image:var(--body-bg);
+    background-attachment:fixed;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    -webkit-font-smoothing:antialiased;letter-spacing:-.01em;padding:24px;
+  }
+  .wrap{width:100%;max-width:430px}
+  .brand{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:22px}
+  .brand img{height:52px;border-radius:10px;box-shadow:0 6px 18px -10px rgba(10,30,56,.45)}
+  .brand-div{width:1px;height:36px;background:var(--line-2)}
+  .brand-title{font-size:14px;font-weight:600;line-height:1.25}
+  .brand-title small{display:block;font-size:11px;color:var(--mute-2);font-weight:500;margin-top:2px}
+  .card{
+    background:linear-gradient(155deg,rgba(255,255,255,.96) 0%,rgba(255,255,255,.88) 100%);
+    border:1px solid var(--line);border-radius:20px;padding:34px 32px 28px;
+    backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);
+    box-shadow:var(--card-shadow);
+  }
+  [data-theme="dark"] .card{background:linear-gradient(155deg,rgba(255,255,255,.04) 0%,rgba(255,255,255,.015) 55%,rgba(255,255,255,.03) 100%)}
+  h1{font-size:22px;font-weight:500;letter-spacing:-.02em;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--mute-2);margin-bottom:24px}
+  label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--mute);margin:0 0 7px 2px}
+  .field{margin-bottom:16px}
+  input{
+    width:100%;background:rgba(10,30,56,.03);color:var(--ink);border:1px solid var(--line);
+    border-radius:12px;padding:13px 15px;font-size:15px;font-family:var(--font);outline:none;
+    transition:border-color .2s, box-shadow .2s, background .2s;
+  }
+  [data-theme="dark"] input{background:rgba(255,255,255,.04)}
+  input::placeholder{color:var(--mute-2)}
+  input:hover{border-color:var(--line-2)}
+  input:focus{border-color:rgba(212,146,42,.6);box-shadow:0 0 0 3px rgba(212,146,42,.12)}
+  button{
+    width:100%;margin-top:8px;background:linear-gradient(160deg,#0a1e38 20%,#3a4f6e 100%);
+    color:#fff;border:none;border-radius:12px;padding:14px;font-size:13.5px;font-weight:650;
+    letter-spacing:.06em;text-transform:uppercase;cursor:pointer;font-family:var(--font);
+    transition:transform .2s, filter .2s, box-shadow .2s;
+    box-shadow:0 14px 30px -16px rgba(10,30,56,.7);
+  }
+  [data-theme="dark"] button{background:linear-gradient(160deg,#f3e2b8 20%,#e2ab4d 100%);color:#1a1204}
+  button:hover{filter:brightness(1.07);transform:translateY(-1px)}
+  button:active{transform:translateY(0)}
+  .err{
+    background:rgba(196,91,85,.10);border:1px solid rgba(196,91,85,.35);color:#a8332c;
+    font-size:13px;padding:10px 12px;border-radius:10px;margin-bottom:18px;text-align:center;display:none;
+  }
+  .err.show{display:block}
+  .foot{margin-top:20px;display:flex;align-items:center;justify-content:center;gap:9px;font-size:11.5px;color:var(--mute-2)}
+  .foot img{height:18px;opacity:.85}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img src="/assets/logo-licensebridge.svg" alt="LicenseBridge USA">
+      <div class="brand-div"></div>
+      <div class="brand-title">Аналитика продаж<small>Данные из Kommo CRM</small></div>
+    </div>
+    <form class="card" method="post" action="/login">
+      <h1>Вход в аналитику</h1>
+      <div class="sub">Доступ только для команды LicenseBridge USA</div>
+      <div class="err" id="err">Неверный логин или пароль</div>
+      <div class="field">
+        <label for="login">Логин</label>
+        <input id="login" name="login" type="text" autocomplete="username" autofocus required placeholder="Ваш логин">
+      </div>
+      <div class="field">
+        <label for="password">Пароль</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required placeholder="••••••••">
+      </div>
+      <button type="submit">Войти</button>
+      <div class="foot">
+        <img src="/assets/logo-ms-transparent.png" alt="MS Product">
+        <span>Дашборд MS Product</span>
+      </div>
+    </form>
+  </div>
+<script>
+  document.documentElement.setAttribute('data-theme', localStorage.getItem('lb-theme') || 'light');
+  if(new URLSearchParams(location.search).get('e')) document.getElementById('err').classList.add('show');
+</script>
+</body>
+</html>

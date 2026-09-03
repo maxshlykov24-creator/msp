@@ -82,6 +82,10 @@ CREATE TABLE IF NOT EXISTS catalog_cache (
     barcode_norm TEXT,
     name TEXT,
     size TEXT,
+    gtin TEXT,
+    tracking_type TEXT,
+    subject TEXT,
+    need_kiz INTEGER,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );
@@ -171,3 +175,40 @@ CREATE TABLE IF NOT EXISTS invoice_lots (
     FOREIGN KEY (invoice_id) REFERENCES invoices(id),
     FOREIGN KEY (lot_id) REFERENCES lots(id)
 );
+
+CREATE TABLE IF NOT EXISTS shipments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL,
+    cabinet_id INTEGER NOT NULL,
+    marketplace TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    ext_id TEXT NOT NULL,
+    status TEXT,
+    shipped_at TEXT,
+    article TEXT,
+    barcode TEXT,
+    name TEXT,
+    qty REAL NOT NULL DEFAULT 1,
+    ms_order_id TEXT,
+    marks_count INTEGER NOT NULL DEFAULT 0,
+    pulled_at TEXT,
+    FOREIGN KEY (client_id) REFERENCES clients(id),
+    FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS shipments_cab_kind_ext
+    ON shipments (cabinet_id, kind, ext_id);
+CREATE INDEX IF NOT EXISTS shipments_client_day
+    ON shipments (client_id, shipped_at);
+
+CREATE TABLE IF NOT EXISTS shipment_marks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shipment_id INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    gtin TEXT,
+    article TEXT,
+    FOREIGN KEY (shipment_id) REFERENCES shipments(id)
+);
+
+CREATE INDEX IF NOT EXISTS shipment_marks_ship
+    ON shipment_marks (shipment_id);

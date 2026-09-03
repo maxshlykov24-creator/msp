@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import logging
 import math
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+log = logging.getLogger("loyalty.webhook")
 
 from app.bonus_log import log_bonus
 from app.cashback_engine import compute_cashback_for_order
@@ -77,16 +82,57 @@ def _fmt_ms_moment(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _ms_tz() -> timezone:
+    """Часовой пояс аккаунта МойСклад (даты в API приходят без смещения)."""
+    return timezone(timedelta(minutes=int(get_settings().loyalty_comment_tz_offset_minutes)))
+
+
+def _ms_now() -> datetime:
+    """Текущее время в поясе МойСклад — для `executionDate` и `moment`."""
+    return datetime.now(_ms_tz()).replace(tzinfo=None)
+
+
+def _parse_ms_moment(raw: Any) -> Optional[datetime]:
+    """Дата из API МойСклад → aware datetime в UTC."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    for fmt, width in (("%Y-%m-%d %H:%M:%S.%f", 26), ("%Y-%m-%d %H:%M:%S", 19)):
+        try:
+            naive = datetime.strptime(text[:width], fmt)
+        except ValueError:
+            continue
+        return naive.replace(tzinfo=_ms_tz()).astimezone(timezone.utc)
+    return None
+
+
+def _cashback_activation_at(
+    order: dict[str, Any], delay_days: int, now: Optional[datetime] = None
+) -> Optional[datetime]:
+    """Когда кэшбэк становится активным (aware UTC) или None, если уже активен.
+
+    Отсрочку считаем от даты заказа, а не от момента обработки: иначе исторический
+    «Доставлен» снова уходит в «Ожидают активации» ещё на 15 дней.
+    """
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    base = _parse_ms_moment(order.get("moment") or order.get("created")) or now
+    due = base + timedelta(days=max(0, int(delay_days)))
+    return None if due <= now else due
+
+
 def _agent_lock(db: Session, agent_id: str) -> None:
-    """PG advisory transaction lock на конкретного клиента."""
+    """PG advisory transaction lock на конкретного клиента.
+
+    Важно: нельзя использовать встроенный hash() — он рандомизируется между
+    процессами/воркерами, из‑за этого параллельные webhook'и не сериализуются.
+    """
     if not agent_id:
         return
-    # 32-bit signed range для pg_advisory_xact_lock(int4)
-    h = abs(hash(("loyalty:" + agent_id))) % (2**31 - 1)
-    try:
-        db.execute(text("SELECT pg_advisory_xact_lock(:h)"), {"h": int(h)})
-    except Exception:
-        pass
+    digest = hashlib.md5(f"loyalty:{agent_id}".encode("utf-8")).hexdigest()
+    h = int(digest[:8], 16) % (2**31 - 1)
+    db.execute(text("SELECT pg_advisory_xact_lock(:h)"), {"h": int(h)})
 
 
 def _get_or_create_member(db: Session, agent_id: str) -> LoyaltyMember:
@@ -115,6 +161,31 @@ def _tier_floor_annual_sum(tier_idx: int) -> int:
     return (0, 20_000, 60_000)[max(0, min(2, int(tier_idx)))]
 
 
+def _has_earn_batch(db: Session, order_id: str) -> bool:
+    """Кэшбэк по заказу уже посчитан?
+
+    Признак — батч `earn`, а не `bonustransaction_id` в событии: операция в МойСклад
+    создаётся планировщиком только в день активации, до этого поле пустое.
+    """
+    row = db.scalar(
+        select(BonusBatch.id).where(
+            BonusBatch.source_order_id == order_id,
+            BonusBatch.batch_type == "earn",
+        ).limit(1)
+    )
+    return row is not None
+
+
+def _has_registration_welcome(db: Session, agent_id: str) -> bool:
+    row = db.scalar(
+        select(BonusBatch.id).where(
+            BonusBatch.agent_id == agent_id,
+            BonusBatch.batch_type == "registration_welcome",
+        ).limit(1)
+    )
+    return row is not None
+
+
 def _create_registration_welcome(
     db: Session,
     client: MoySkladClient,
@@ -128,7 +199,11 @@ def _create_registration_welcome(
     points = int(settings.registration_welcome_bonus_points)
     if points <= 0:
         return
-    now = datetime.now()
+    # Идемпотентность: параллельные webhook'и не должны плодить welcome BT в МС.
+    if _has_registration_welcome(db, agent_id):
+        log.info("welcome skip: already exists agent=%s", agent_id)
+        return
+    now = _ms_now()
     bonus_program_meta = client.fetch_bonus_program_meta()
     order_name = str(order.get("name") or "")
     bt_body: dict[str, Any] = {
@@ -154,6 +229,7 @@ def _create_registration_welcome(
             batch_type="registration_welcome",
         )
     )
+    db.flush()
     log_bonus(
         db,
         action="WELCOME",
@@ -179,6 +255,19 @@ def _register_member_from_order(
     tier_idx: int,
 ) -> LoyaltyMember:
     today = date.today()
+    existing = db.get(LoyaltyMember, agent_id)
+    if existing:
+        _create_registration_welcome(
+            db,
+            client,
+            settings,
+            order=order,
+            agent_id=agent_id,
+            agent_name=agent_name,
+            tier_idx=int(existing.tier),
+        )
+        return existing
+
     m = LoyaltyMember(
         agent_id=agent_id,
         tier=int(tier_idx),
@@ -189,8 +278,26 @@ def _register_member_from_order(
         tier_floor=int(tier_idx),
         is_blocked=False,
     )
-    db.add(m)
-    db.flush()
+    try:
+        # Savepoint: при гонке PK не валим всю транзакцию webhook'а.
+        with db.begin_nested():
+            db.add(m)
+            db.flush()
+    except IntegrityError:
+        existing = db.get(LoyaltyMember, agent_id)
+        if not existing:
+            raise
+        _create_registration_welcome(
+            db,
+            client,
+            settings,
+            order=order,
+            agent_id=agent_id,
+            agent_name=agent_name,
+            tier_idx=int(existing.tier),
+        )
+        return existing
+
     log_bonus(
         db,
         action="MANUAL_SYNC",
@@ -264,12 +371,15 @@ def _safe_sync_counterparty_attributes(
     *,
     agent_id: str,
     attrs: dict[str, Any],
-) -> None:
+) -> bool:
+    """True — карточка в МС обновлена. Ошибку не пробрасываем, но и не прячем в тишину."""
     try:
         _sync_counterparty_attributes(client, settings, agent_id=agent_id, attrs=attrs)
-    except Exception:
+        return True
+    except Exception as exc:
         # Не блокируем основной поток, если доп. поля ещё не настроены / типы не совпали
-        return
+        log.warning("sync cp attrs failed agent=%s: %s", agent_id, exc)
+        return False
 
 
 def _sync_counterparty_attributes(
@@ -316,13 +426,35 @@ def _build_member_attrs_for_cp(
     }
 
 
-def _save_last_synced_cp_attrs(member: LoyaltyMember, settings: Settings, attrs: dict[str, Any]) -> None:
-    member.last_synced_cp_attrs = {
+def _sync_member_card(
+    client: MoySkladClient,
+    settings: Settings,
+    member: LoyaltyMember,
+    attrs: dict[str, Any],
+) -> bool:
+    """Обновляет карточку в МС и запоминает результат.
+
+    След пишем только при успехе: иначе упавший синк выглядел бы применённым
+    и карточка залипала бы пустой навсегда.
+    """
+    if not _safe_sync_counterparty_attributes(client, settings, agent_id=member.agent_id, attrs=attrs):
+        return False
+    _save_last_synced_cp_attrs(member, settings, attrs)
+    return True
+
+
+def _cp_attrs_snapshot(settings: Settings, attrs: dict[str, Any]) -> dict[str, Any]:
+    """Срез значимых полей карточки — по нему сверяем, отстала ли карточка в МС."""
+    return {
         settings.attr_loyalty_tier: attrs.get("tier_name") if settings.attr_loyalty_tier else None,
         settings.attr_loyalty_status: attrs.get("status") if settings.attr_loyalty_status else None,
         settings.attr_active_bonuses: attrs.get("active_bonuses") if settings.attr_active_bonuses else None,
         settings.attr_pending_bonuses: attrs.get("pending_bonuses") if settings.attr_pending_bonuses else None,
     }
+
+
+def _save_last_synced_cp_attrs(member: LoyaltyMember, settings: Settings, attrs: dict[str, Any]) -> None:
+    member.last_synced_cp_attrs = _cp_attrs_snapshot(settings, attrs)
 
 
 # ================= Customer order: единый upsert =================
@@ -463,6 +595,8 @@ def handle_customerorder_upsert(db: Session, client: MoySkladClient, order_id: s
             line = f"Списано: {spend_res.cap} ₽"
         if spend_res.capped_by == "limit_30":
             line += f"; обрезано до {settings.loyalty_spend_percent_limit}% от заказа"
+        elif spend_res.capped_by == "exempt":
+            line += "; исключение: лимит 30% снят"
         elif spend_res.capped_by == "balance":
             line += "; обрезано по балансу"
         elif spend_res.capped_by == "blocked":
@@ -516,13 +650,14 @@ def handle_customerorder_upsert(db: Session, client: MoySkladClient, order_id: s
             spent_amount=int(ev.spent_amount or 0),
             active_balance=int(active_balance),
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # Раньше молчали — из‑за этого в заказе не появлялись «Активно бонусов»/Уровень.
+        log.exception("write_order_loyalty_attributes failed order=%s: %s", order_id, exc)
+        comment_lines.append(f"Ошибка записи полей ПЛ в заказ: {exc!s}"[:200])
 
     # 7) Sync контрагента (включая Активные / Pending / Уровень / Статус)
     cp_attrs = _build_member_attrs_for_cp(db, settings, member)
-    _safe_sync_counterparty_attributes(client, settings, agent_id=agent_id, attrs=cp_attrs)
-    _save_last_synced_cp_attrs(member, settings, cp_attrs)
+    _sync_member_card(client, settings, member, cp_attrs)
 
 
 # ===== обратная совместимость для scheduler.py / тестов =====
@@ -604,8 +739,7 @@ def handle_customerorder_delete(db: Session, client: MoySkladClient, order_id: s
     )
 
     cp_attrs = _build_member_attrs_for_cp(db, settings, member)
-    _safe_sync_counterparty_attributes(client, settings, agent_id=agent_id, attrs=cp_attrs)
-    _save_last_synced_cp_attrs(member, settings, cp_attrs)
+    _sync_member_card(client, settings, member, cp_attrs)
 
 
 # ================= Доставка / возвраты (внутренние) =================
@@ -624,7 +758,7 @@ def _handle_delivered(
     order_name = str(order.get("name") or "")
 
     existing = db.scalar(select(ProcessedEvent).where(ProcessedEvent.entity_id == order_id))
-    if existing and existing.status == ProcessedEventStatus.active.value and existing.bonustransaction_id:
+    if existing and existing.status == ProcessedEventStatus.active.value and _has_earn_batch(db, order_id):
         return
 
     member = db.get(LoyaltyMember, agent_id)
@@ -647,6 +781,7 @@ def _handle_delivered(
                     status=ProcessedEventStatus.active.value,
                 )
             )
+            db.flush()
         log_bonus(
             db,
             action="EARN",
@@ -682,20 +817,28 @@ def _handle_delivered(
     if not member.tier_locked:
         member.tier = max(int(cb.tier_used), int(member.tier_floor or 0))
 
-    bonus_program_meta = client.fetch_bonus_program_meta()
-    exec_dt = datetime.now() + timedelta(days=int(settings.bonus_delay_days))
-
-    bt_body: dict[str, Any] = {
-        "bonusProgram": {"meta": bonus_program_meta},
-        "agent": {"meta": _agent_meta(order)},
-        "transactionType": "EARNING",
-        "bonusValue": int(cb.total_bonus_points),
-        "executionDate": _fmt_ms_moment(exec_dt),
-        "externalCode": settings.loyalty_external_code,
-        "name": unique_bt_name(f"Кэшбэк заказ {order_name}"),
-    }
-    bt = client.post("/entity/bonustransaction", bt_body, disable_webhook=True)
-    bt_id = str(bt.get("id"))
+    # Тариф МойСклад не даёт executionDate в будущем (ошибка 62000).
+    # Свежий заказ: батч сразу, операция в МС в день активации.
+    # Исторический: срок 15 дней уже вышел — начисляем сразу активными.
+    now = datetime.now(timezone.utc)
+    activates_at = _cashback_activation_at(order, int(settings.bonus_delay_days), now=now)
+    bt_id: Optional[str] = None
+    if activates_at is None and int(cb.total_bonus_points) > 0:
+        bonus_program_meta = client.fetch_bonus_program_meta()
+        bt = client.post(
+            "/entity/bonustransaction",
+            {
+                "bonusProgram": {"meta": bonus_program_meta},
+                "agent": {"meta": _agent_meta(order)},
+                "transactionType": "EARNING",
+                "bonusValue": int(cb.total_bonus_points),
+                "executionDate": _fmt_ms_moment(_ms_now()),
+                "externalCode": settings.loyalty_external_code,
+                "name": unique_bt_name(f"Кэшбэк заказ {order_name}"),
+            },
+            disable_webhook=True,
+        )
+        bt_id = str(bt.get("id") or "") or None
 
     if existing:
         existing.entity_type = "customerorder"
@@ -715,18 +858,23 @@ def _handle_delivered(
             )
         )
 
+    expire_from = (activates_at or now).date()
     db.add(
         BonusBatch(
             agent_id=agent_id,
             original_amount=int(cb.total_bonus_points),
             remaining=int(cb.total_bonus_points),
-            expires_at=(exec_dt.date() + timedelta(days=365)),
-            activates_at=exec_dt,
+            expires_at=expire_from + timedelta(days=365),
+            activates_at=activates_at,
             source_order_id=order_id,
             bonustransaction_id=bt_id,
             batch_type="earn",
         )
     )
+    # autoflush в сессии выключен: без flush следующий select не увидит эти строки и
+    # вставит второе processed_events по тому же заказу (unique violation), а поля
+    # «Ожидают активации» посчитаются без нового батча.
+    db.flush()
 
     log_bonus(
         db,
@@ -738,7 +886,11 @@ def _handle_delivered(
         tier_at_moment=int(cb.tier_used),
         bonus_amount=int(cb.total_bonus_points),
         bonustransaction_id=bt_id,
-        details=cb.details,
+        details={
+            **cb.details,
+            "activates_at": activates_at.isoformat() if activates_at else None,
+            "ms_transaction": "deferred" if activates_at else "immediate",
+        },
     )
     if not member.tier_locked and int(member.tier) > old_tier:
         log_bonus(
@@ -826,7 +978,7 @@ def _sum_salesreturn_eligible_rub(sr: dict[str, Any], settings: Settings) -> int
         assortment = pos.get("assortment") or {}
         if not assortment:
             continue
-        from app.cashback_engine import _is_in_folders
+        from app.cashback_engine import _is_in_folders, _line_amount_rub, orig_discount_percent
 
         if _is_in_folders(assortment, settings.gift_folder_ids_set):
             continue
@@ -834,12 +986,10 @@ def _sum_salesreturn_eligible_rub(sr: dict[str, Any], settings: Settings) -> int
             continue
         if _is_in_folders(assortment, settings.outlet_folder_ids_set):
             continue
-        price = pos.get("price")
-        qty = float(pos.get("quantity") or 0)
-        if price is None:
+        if pos.get("price") is None:
             continue
-        kop = int(round(float(price) * qty))
-        total += kop // 100
+        # Та же база, что при начислении: оплаченная сумма строки, а не цена до скидки.
+        total += _line_amount_rub(pos, orig_discount_percent(pos))
     return int(total)
 
 
@@ -875,8 +1025,10 @@ def _handle_return_partial(
     ratio = min(1.0, returned_rub / max(1, cashable_orig))
     claw = math.ceil(int(ev.bonus_value or 0) * ratio)
 
-    bonus_program_meta = client.fetch_bonus_program_meta()
-    if claw > 0:
+    # Если операция в МС ещё не материализована планировщиком, отзывать в МС нечего —
+    # достаточно уменьшить наши батчи, иначе уведём баланс МС в минус.
+    if claw > 0 and ev.bonustransaction_id:
+        bonus_program_meta = client.fetch_bonus_program_meta()
         client.post(
             "/entity/bonustransaction",
             {
@@ -989,8 +1141,7 @@ def handle_counterparty_update(db: Session, client: MoySkladClient, agent_id: st
 
     # 3) Полный sync (источник истины — наш расчёт)
     cp_target = _build_member_attrs_for_cp(db, settings, member)
-    _safe_sync_counterparty_attributes(client, settings, agent_id=agent_id, attrs=cp_target)
-    _save_last_synced_cp_attrs(member, settings, cp_target)
+    _sync_member_card(client, settings, member, cp_target)
 
 
 # ================= bonustransaction CREATE (как было) =================
@@ -1044,8 +1195,7 @@ def handle_bonustransaction_create(db: Session, client: MoySkladClient, bt_id: s
 
     # Синкаем attributes контрагента, чтобы новый баланс отразился сразу
     cp_target = _build_member_attrs_for_cp(db, settings, member)
-    _safe_sync_counterparty_attributes(client, settings, agent_id=agent_id, attrs=cp_target)
-    _save_last_synced_cp_attrs(member, settings, cp_target)
+    _sync_member_card(client, settings, member, cp_target)
 
 
 # ================= dispatcher =================

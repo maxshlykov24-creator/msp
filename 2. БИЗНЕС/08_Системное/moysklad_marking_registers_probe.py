@@ -8,7 +8,7 @@
 Как узнать тип в API: фрагмент URL после # до /edit — имя сущности для /entity/<имя>.
 
   export MOYSKLAD_TOKEN='...'
-  python3 Бизнес/99_Системное/moysklad_marking_registers_probe.py
+  python3 2. БИЗНЕС/08_Системное/moysklad_marking_registers_probe.py
 
 Переменные:
   MOYSKLAD_YEAR — по умолчанию 2025

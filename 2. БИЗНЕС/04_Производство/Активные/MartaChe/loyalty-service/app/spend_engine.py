@@ -3,10 +3,11 @@ Idempotent движок ручного списания бонусов в зак
 
 Контракт:
 - Менеджер пишет в поле «Списано бонусов» желаемую сумму (intent).
-- Система обрезает до cap = min(intent, active_balance, 30% * order_total).
+- Система обрезает до cap = min(intent, active_balance, 30% * суммы заказа до бонусной скидки).
 - Если cap > spent_amount (что уже списано в БД) → создаём SPENDING на дельту, FIFO.
 - Если cap < spent_amount → создаём EARNING-обратку (refund) на дельту.
 - Все наши bonustransaction → с X-Lognex-WebHook-Disable=1 (без эха).
+- Исключения без лимита 30%: `_SPEND_LIMIT_EXEMPT_ORDERS` (имя или id заказа).
 
 Правила-ловушки:
 - Заблокированный клиент (member.is_blocked): cap = 0, в комментарий.
@@ -28,6 +29,13 @@ from app.config import Settings
 from app.models import BonusBatch, LoyaltyMember, ProcessedEvent
 from app.moysklad_client import MoySkladClient
 
+# 2026-09-01: site_1871304105 — исключение, итог 5320 ₽ (списание 2280 при цене 7600).
+# Без этого следующий UPDATE считает 30% уже от суммы со скидкой и откатывает дельту.
+_SPEND_LIMIT_EXEMPT_ORDERS = frozenset({
+    "site_1871304105",
+    "38051df5-a1e3-11f1-0a80-05b0001dbad7",
+})
+
 
 def unique_bt_name(base: str) -> str:
     """МС требует уникальный `name` у `bonustransaction` (constraint на 412/3006).
@@ -41,7 +49,7 @@ def unique_bt_name(base: str) -> str:
 class SpendResult:
     intent: int                       # что менеджер вписал
     cap: int                          # эффективная сумма списания (после ограничений)
-    capped_by: Optional[str]          # None | "balance" | "limit_30" | "blocked" | "no_agent"
+    capped_by: Optional[str]          # None | "balance" | "limit_30" | "exempt" | "blocked" | "no_agent"
     delta: int                        # cap - spent_before (со знаком)
     spent_before: int
     spent_after: int
@@ -59,6 +67,37 @@ def order_total_rub(order: dict[str, Any]) -> int:
         return max(0, int(round(float(val) / 100.0)))
     except (TypeError, ValueError):
         return 0
+
+
+def order_total_for_spend_limit(
+    order: dict[str, Any],
+    prev_per_pos: Optional[dict[str, Any]] = None,
+) -> int:
+    """Сумма заказа до нашей бонусной скидки — база для лимита 30%.
+
+    Лимит нельзя считать от текущего `order.sum`: после первого списания сумма
+    падает, и следующий webhook обрезает уже применённый cap.
+    """
+    positions = _order_positions(order)
+    total_kop = 0.0
+    n = 0
+    for pos in positions:
+        pid = str(pos.get("id") or "")
+        if not pid:
+            continue
+        prev_extra = float((prev_per_pos or {}).get(pid) or 0.0)
+        orig = _restore_orig_discount(pos, prev_extra)
+        total_kop += _line_amount_kop(pos, orig)
+        n += 1
+    if n == 0:
+        return order_total_rub(order)
+    return max(0, int(round(total_kop / 100.0)))
+
+
+def is_spend_limit_exempt(order: dict[str, Any]) -> bool:
+    oid = str(order.get("id") or "")
+    name = str(order.get("name") or "")
+    return oid in _SPEND_LIMIT_EXEMPT_ORDERS or name in _SPEND_LIMIT_EXEMPT_ORDERS
 
 
 def _order_positions(order: dict[str, Any]) -> list[dict[str, Any]]:
@@ -345,12 +384,15 @@ def apply_spend_intent(
         balance = compute_active_balance(db, member.agent_id) + spent_before
         # `balance` тут = доступно сейчас + то, что мы уже списали с этого заказа
         # (потому что spent_before уже вычтено из батчей раньше — учитываем его при оценке cap)
-        order_total = order_total_rub(order)
+        order_total = order_total_for_spend_limit(order, ev.spend_extra_discounts)
         limit_pct = max(0, min(100, int(settings.loyalty_spend_percent_limit)))
         limit_amount = (order_total * limit_pct) // 100
         cap = max(0, intent)
         capped_by: Optional[str] = None
-        if cap > limit_amount:
+        if is_spend_limit_exempt(order):
+            if cap > limit_amount:
+                capped_by = "exempt"
+        elif cap > limit_amount:
             cap = limit_amount
             capped_by = "limit_30"
         if cap > balance:

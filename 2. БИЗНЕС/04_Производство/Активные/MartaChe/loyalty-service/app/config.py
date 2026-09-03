@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     attr_enrolled_at: str = ""         # legacy
     attr_last_tier_review: str = ""    # legacy
     attr_tier_locked: str = ""         # legacy
+    # Исторические поля ПЛ в карточке контрагента (новые поля МС):
+    attr_enrolled_at_pl: str = ""      # «Дата регистрации ПЛ» (time)
+    attr_annual_sum_pl: str = ""       # «Сумма покупок ПЛ» (double)
 
     # Customer order attributes (UUID из /entity/customerorder/metadata):
     attr_order_loyalty_status: str = ""    # «Статус ПЛ» (текст: Активен / Заблокирован)

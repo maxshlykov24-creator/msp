@@ -1,0 +1,4526 @@
+{
+  "file": "NEW_Продажи.xlsx",
+  "size_bytes": 1703786,
+  "sheets": [
+    {
+      "name": "ДЗ",
+      "rows": 17,
+      "cols": 14,
+      "nonempty": 196,
+      "formula_count": 168,
+      "type_counts": {
+        "text": 28,
+        "formula": 168
+      },
+      "header_row_1based": 3,
+      "headers": [
+        "COL_1",
+        "Месяц",
+        "январь",
+        "февраль",
+        "март",
+        "апрель",
+        "май",
+        "июнь",
+        "июль",
+        "август",
+        "сентябрь",
+        "октябрь",
+        "ноябрь",
+        "декабрь"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "Месяц",
+          "filled": 14,
+          "unique": 14,
+          "types": {
+            "text": 14
+          },
+          "samples": [
+            "Декабрь ",
+            "Январь 2026",
+            "Февраль 2026",
+            "Март 2026",
+            "Апрель 2026"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "январь",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "февраль",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "март",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "апрель",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "май",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "июнь",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "июль",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "август",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "сентябрь",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "октябрь",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "ноябрь",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "декабрь",
+          "filled": 14,
+          "unique": 2,
+          "types": {
+            "formula": 14
+          },
+          "samples": [
+            "#N/A",
+            "0"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "C4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,C3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "D4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,D3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "E4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,E3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "F4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,F3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "G4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,G3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "H4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,H3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "I4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,I3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "J4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,J3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "K4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,K3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "L4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,L3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "M4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,M3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "N4",
+          "formula": "=SUMIFS('Декабрь'!$I:$I,'Декабрь'!$G:$G,N3,'Декабрь'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "C5",
+          "formula": "=SUMIFS('Январь 2026'!$I:$I,'Январь 2026'!$G:$G,C3,'Январь 2026'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "D5",
+          "formula": "=SUMIFS('Январь 2026'!$I:$I,'Январь 2026'!$G:$G,D3,'Январь 2026'!$J:$J,FALSE)"
+        },
+        {
+          "cell": "E5",
+          "formula": "=SUMIFS('Январь 2026'!$I:$I,'Январь 2026'!$G:$G,E3,'Январь 2026'!$J:$J,FALSE)"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__ДЗ.csv"
+    },
+    {
+      "name": "Декабрь 2026",
+      "rows": 54,
+      "cols": 20,
+      "nonempty": 771,
+      "formula_count": 103,
+      "type_counts": {
+        "text": 518,
+        "formula": 103,
+        "number": 50,
+        "bool": 100
+      },
+      "header_row_1based": 4,
+      "headers": [
+        "COL_1",
+        "№ п/п",
+        "Компания",
+        "Бренд",
+        "№ счета",
+        "Дата счета",
+        "Период размещения",
+        "Количество конструкций",
+        "Сумма счета",
+        "Оплата",
+        "Ссылка",
+        "Вид документооборота",
+        "№ договора",
+        "№ приложения",
+        "Статус подписания приложения",
+        "Статус подписания УПД",
+        "COL_17",
+        "COL_18",
+        "COL_19",
+        "COL_20"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "№ п/п",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "number": 50
+          },
+          "samples": [
+            "1.0",
+            "2.0",
+            "3.0",
+            "4.0",
+            "5.0"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Компания",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2ac0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097a00>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097340>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8160>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8670>"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "Бренд",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a24f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097820>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0976a0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8640>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8550>"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "№ счета",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "Дата счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2730>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097a90>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097640>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8130>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a87c0>"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "Период размещения",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a21f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0972e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097f10>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8400>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a85b0>"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "Количество конструкций",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "Сумма счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2460>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0974f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0976d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a82b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8610>"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "Оплата",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a22e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097460>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097d90>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a85e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0254f0>"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "Ссылка",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097940>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0975b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a83d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a86d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0251c0>"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "Вид документооборота",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097430>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0970d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8850>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a82e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025490>"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "№ договора",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097ee0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0971f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8490>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8700>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025550>"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "№ приложения",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "Статус подписания приложения",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "Статус подписания УПД",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "COL_17",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "COL_18",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#N/A"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "COL_19",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097850>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097160>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8430>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8040>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0250d0>"
+          ]
+        },
+        {
+          "col": "T",
+          "index": 20,
+          "header": "COL_20",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#REF!"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "I3",
+          "formula": "=SUM(I5:I1002)"
+        },
+        {
+          "cell": "J3",
+          "formula": "=SUMIF(J5:J500,TRUE,I5:I500)"
+        },
+        {
+          "cell": "K3",
+          "formula": "=I3-J3"
+        },
+        {
+          "cell": "R5",
+          "formula": "=MATCH(D5,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T5",
+          "formula": "=MATCH(S5,#REF!,0)"
+        },
+        {
+          "cell": "R6",
+          "formula": "=MATCH(D6,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T6",
+          "formula": "=MATCH(S6,#REF!,0)"
+        },
+        {
+          "cell": "R7",
+          "formula": "=MATCH(D7,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T7",
+          "formula": "=MATCH(S7,#REF!,0)"
+        },
+        {
+          "cell": "R8",
+          "formula": "=MATCH(D8,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T8",
+          "formula": "=MATCH(S8,#REF!,0)"
+        },
+        {
+          "cell": "R9",
+          "formula": "=MATCH(D9,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T9",
+          "formula": "=MATCH(S9,#REF!,0)"
+        },
+        {
+          "cell": "R10",
+          "formula": "=MATCH(D10,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T10",
+          "formula": "=MATCH(S10,#REF!,0)"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__Декабрь_2026.csv"
+    },
+    {
+      "name": "Ноябрь 2026",
+      "rows": 54,
+      "cols": 20,
+      "nonempty": 771,
+      "formula_count": 103,
+      "type_counts": {
+        "text": 518,
+        "formula": 103,
+        "number": 50,
+        "bool": 100
+      },
+      "header_row_1based": 4,
+      "headers": [
+        "COL_1",
+        "№ п/п",
+        "Компания",
+        "Бренд",
+        "№ счета",
+        "Дата счета",
+        "Период размещения",
+        "Количество конструкций",
+        "Сумма счета",
+        "Оплата",
+        "Ссылка",
+        "Вид документооборота",
+        "№ договора",
+        "№ приложения",
+        "Статус подписания приложения",
+        "Статус подписания УПД",
+        "COL_17",
+        "COL_18",
+        "COL_19",
+        "COL_20"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "№ п/п",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "number": 50
+          },
+          "samples": [
+            "1.0",
+            "2.0",
+            "3.0",
+            "4.0",
+            "5.0"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Компания",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006970>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006be0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a62e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6e80>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6c10>"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "Бренд",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006850>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6790>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6fd0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a69a0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6c40>"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "№ счета",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "Дата счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006430>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a66a0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6580>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6e50>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6bb0>"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "Период размещения",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0068b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6910>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a60d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6d30>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6190>"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "Количество конструкций",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "Сумма счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006820>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6a60>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6430>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6dc0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6970>"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "Оплата",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0067f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a60a0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a63d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6be0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6ee0>"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "Ссылка",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006fd0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6f70>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6cd0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a65b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a61f0>"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "Вид документооборота",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006f70>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6400>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6d60>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6220>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6820>"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "№ договора",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006f40>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6520>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6df0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6ca0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6640>"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "№ приложения",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "Статус подписания приложения",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "Статус подписания УПД",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "COL_17",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "COL_18",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#N/A"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "COL_19",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006e80>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6310>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6d90>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6b50>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a68e0>"
+          ]
+        },
+        {
+          "col": "T",
+          "index": 20,
+          "header": "COL_20",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#REF!"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "I3",
+          "formula": "=SUM(I5:I1002)"
+        },
+        {
+          "cell": "J3",
+          "formula": "=SUMIF(J5:J500,TRUE,I5:I500)"
+        },
+        {
+          "cell": "K3",
+          "formula": "=I3-J3"
+        },
+        {
+          "cell": "R5",
+          "formula": "=MATCH(D5,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T5",
+          "formula": "=MATCH(S5,#REF!,0)"
+        },
+        {
+          "cell": "R6",
+          "formula": "=MATCH(D6,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T6",
+          "formula": "=MATCH(S6,#REF!,0)"
+        },
+        {
+          "cell": "R7",
+          "formula": "=MATCH(D7,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T7",
+          "formula": "=MATCH(S7,#REF!,0)"
+        },
+        {
+          "cell": "R8",
+          "formula": "=MATCH(D8,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T8",
+          "formula": "=MATCH(S8,#REF!,0)"
+        },
+        {
+          "cell": "R9",
+          "formula": "=MATCH(D9,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T9",
+          "formula": "=MATCH(S9,#REF!,0)"
+        },
+        {
+          "cell": "R10",
+          "formula": "=MATCH(D10,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T10",
+          "formula": "=MATCH(S10,#REF!,0)"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__Ноябрь_2026.csv"
+    },
+    {
+      "name": "Октябрь 2026",
+      "rows": 54,
+      "cols": 20,
+      "nonempty": 771,
+      "formula_count": 103,
+      "type_counts": {
+        "text": 518,
+        "formula": 103,
+        "number": 50,
+        "bool": 100
+      },
+      "header_row_1based": 4,
+      "headers": [
+        "COL_1",
+        "№ п/п",
+        "Компания",
+        "Бренд",
+        "№ счета",
+        "Дата счета",
+        "Период размещения",
+        "Количество конструкций",
+        "Сумма счета",
+        "Оплата",
+        "Ссылка",
+        "Вид документооборота",
+        "№ договора",
+        "№ приложения",
+        "Статус подписания приложения",
+        "Статус подписания УПД",
+        "COL_17",
+        "COL_18",
+        "COL_19",
+        "COL_20"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "№ п/п",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "number": 50
+          },
+          "samples": [
+            "1.0",
+            "2.0",
+            "3.0",
+            "4.0",
+            "5.0"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Компания",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6250>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0d60>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097760>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097100>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0251c0>"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "Бренд",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6670>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0df0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0973d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097520>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025490>"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "№ счета",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "Дата счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6ac0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0e50>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0979d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097ac0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025550>"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "Период размещения",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6880>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0eb0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0974c0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097cd0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0251f0>"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "Количество конструкций",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "Сумма счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a68b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0f10>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097370>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097be0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0250d0>"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "Оплата",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6b80>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0f70>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097490>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097790>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025340>"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "Ссылка",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6850>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0fa0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097610>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097580>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025130>"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "Вид документооборота",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6160>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0978b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097040>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097f70>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025040>"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "№ договора",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0bb0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097730>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097130>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0978e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025070>"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "№ приложения",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "Статус подписания приложения",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "Статус подписания УПД",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "COL_17",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "COL_18",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#N/A"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "COL_19",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0e0b20>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0977c0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097190>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0254f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b018970>"
+          ]
+        },
+        {
+          "col": "T",
+          "index": 20,
+          "header": "COL_20",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#REF!"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "I3",
+          "formula": "=SUM(I5:I1002)"
+        },
+        {
+          "cell": "J3",
+          "formula": "=SUMIF(J5:J500,TRUE,I5:I500)"
+        },
+        {
+          "cell": "K3",
+          "formula": "=I3-J3"
+        },
+        {
+          "cell": "R5",
+          "formula": "=MATCH(D5,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T5",
+          "formula": "=MATCH(S5,#REF!,0)"
+        },
+        {
+          "cell": "R6",
+          "formula": "=MATCH(D6,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T6",
+          "formula": "=MATCH(S6,#REF!,0)"
+        },
+        {
+          "cell": "R7",
+          "formula": "=MATCH(D7,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T7",
+          "formula": "=MATCH(S7,#REF!,0)"
+        },
+        {
+          "cell": "R8",
+          "formula": "=MATCH(D8,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T8",
+          "formula": "=MATCH(S8,#REF!,0)"
+        },
+        {
+          "cell": "R9",
+          "formula": "=MATCH(D9,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T9",
+          "formula": "=MATCH(S9,#REF!,0)"
+        },
+        {
+          "cell": "R10",
+          "formula": "=MATCH(D10,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T10",
+          "formula": "=MATCH(S10,#REF!,0)"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__Октябрь_2026.csv"
+    },
+    {
+      "name": "Сентябрь 2026",
+      "rows": 54,
+      "cols": 20,
+      "nonempty": 771,
+      "formula_count": 103,
+      "type_counts": {
+        "text": 518,
+        "formula": 103,
+        "number": 50,
+        "bool": 100
+      },
+      "header_row_1based": 4,
+      "headers": [
+        "COL_1",
+        "№ п/п",
+        "Компания",
+        "Бренд",
+        "№ счета",
+        "Дата счета",
+        "Период размещения",
+        "Количество конструкций",
+        "Сумма счета",
+        "Оплата",
+        "Ссылка",
+        "Вид документооборота",
+        "№ договора",
+        "№ приложения",
+        "Статус подписания приложения",
+        "Статус подписания УПД",
+        "COL_17",
+        "COL_18",
+        "COL_19",
+        "COL_20"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "№ п/п",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "number": 50
+          },
+          "samples": [
+            "1.0",
+            "2.0",
+            "3.0",
+            "4.0",
+            "5.0"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Компания",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00da60>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d970>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00dc10>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2ca0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2820>"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "Бренд",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d790>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d070>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d310>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2e50>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2550>"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "№ счета",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "Дата счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00daf0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d100>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2ac0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2fa0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2d90>"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "Период размещения",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00da30>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d0d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a24f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2520>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a21c0>"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "Количество конструкций",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "Сумма счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00da90>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00ddf0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2730>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2f10>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2280>"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "Оплата",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00dbb0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00de50>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a21f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2df0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2400>"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "Ссылка",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00da00>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d430>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2460>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2e20>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2d60>"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "Вид документооборота",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00dd90>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00dca0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a22e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2b80>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2670>"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "№ договора",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d280>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00de20>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2970>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2b50>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2a30>"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "№ приложения",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "Статус подписания приложения",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "Статус подписания УПД",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "COL_17",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "COL_18",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#N/A"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "COL_19",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d370>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b00d340>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a28b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2c40>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a2a90>"
+          ]
+        },
+        {
+          "col": "T",
+          "index": 20,
+          "header": "COL_20",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#REF!"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "I3",
+          "formula": "=SUM(I5:I1002)"
+        },
+        {
+          "cell": "J3",
+          "formula": "=SUMIF(J5:J500,TRUE,I5:I500)"
+        },
+        {
+          "cell": "K3",
+          "formula": "=I3-J3"
+        },
+        {
+          "cell": "R5",
+          "formula": "=MATCH(D5,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T5",
+          "formula": "=MATCH(S5,#REF!,0)"
+        },
+        {
+          "cell": "R6",
+          "formula": "=MATCH(D6,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T6",
+          "formula": "=MATCH(S6,#REF!,0)"
+        },
+        {
+          "cell": "R7",
+          "formula": "=MATCH(D7,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T7",
+          "formula": "=MATCH(S7,#REF!,0)"
+        },
+        {
+          "cell": "R8",
+          "formula": "=MATCH(D8,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T8",
+          "formula": "=MATCH(S8,#REF!,0)"
+        },
+        {
+          "cell": "R9",
+          "formula": "=MATCH(D9,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T9",
+          "formula": "=MATCH(S9,#REF!,0)"
+        },
+        {
+          "cell": "R10",
+          "formula": "=MATCH(D10,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T10",
+          "formula": "=MATCH(S10,#REF!,0)"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__Сентябрь_2026.csv"
+    },
+    {
+      "name": "Август 2026",
+      "rows": 54,
+      "cols": 20,
+      "nonempty": 771,
+      "formula_count": 103,
+      "type_counts": {
+        "text": 518,
+        "formula": 103,
+        "number": 50,
+        "bool": 100
+      },
+      "header_row_1based": 4,
+      "headers": [
+        "COL_1",
+        "№ п/п",
+        "Компания",
+        "Бренд",
+        "№ счета",
+        "Дата счета",
+        "Период размещения",
+        "Количество конструкций",
+        "Сумма счета",
+        "Оплата",
+        "Ссылка",
+        "Вид документооборота",
+        "№ договора",
+        "№ приложения",
+        "Статус подписания приложения",
+        "Статус подписания УПД",
+        "COL_17",
+        "COL_18",
+        "COL_19",
+        "COL_20"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "№ п/п",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "number": 50
+          },
+          "samples": [
+            "1.0",
+            "2.0",
+            "3.0",
+            "4.0",
+            "5.0"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Компания",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b024fd0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0975b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097580>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae250>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae610>"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "Бренд",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b024f70>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097130>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0978e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae2b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae670>"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "№ счета",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "Дата счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0978b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097190>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b01e190>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae310>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae6d0>"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "Период размещения",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097430>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097100>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b01e130>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae370>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae730>"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "Количество конструкций",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "Сумма счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097ee0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097520>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b01e160>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae3d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae790>"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "Оплата",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097850>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097ac0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae070>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae430>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae7f0>"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "Ссылка",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097820>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097cd0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae0d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae490>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae850>"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "Вид документооборота",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097a00>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097be0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae130>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae4f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae8b0>"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "№ договора",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097a90>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097790>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae190>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae550>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae910>"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "№ приложения",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "Статус подписания приложения",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "Статус подписания УПД",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "COL_17",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "COL_18",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#N/A"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "COL_19",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0972e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097f70>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae1f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae5b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0ae970>"
+          ]
+        },
+        {
+          "col": "T",
+          "index": 20,
+          "header": "COL_20",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#REF!"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "I3",
+          "formula": "=SUM(I5:I1002)"
+        },
+        {
+          "cell": "J3",
+          "formula": "=SUMIF(J5:J500,TRUE,I5:I500)"
+        },
+        {
+          "cell": "K3",
+          "formula": "=I3-J3"
+        },
+        {
+          "cell": "R5",
+          "formula": "=MATCH(D5,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T5",
+          "formula": "=MATCH(S5,#REF!,0)"
+        },
+        {
+          "cell": "R6",
+          "formula": "=MATCH(D6,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T6",
+          "formula": "=MATCH(S6,#REF!,0)"
+        },
+        {
+          "cell": "R7",
+          "formula": "=MATCH(D7,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T7",
+          "formula": "=MATCH(S7,#REF!,0)"
+        },
+        {
+          "cell": "R8",
+          "formula": "=MATCH(D8,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T8",
+          "formula": "=MATCH(S8,#REF!,0)"
+        },
+        {
+          "cell": "R9",
+          "formula": "=MATCH(D9,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T9",
+          "formula": "=MATCH(S9,#REF!,0)"
+        },
+        {
+          "cell": "R10",
+          "formula": "=MATCH(D10,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T10",
+          "formula": "=MATCH(S10,#REF!,0)"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__Август_2026.csv"
+    },
+    {
+      "name": "Июль 2026",
+      "rows": 54,
+      "cols": 20,
+      "nonempty": 771,
+      "formula_count": 103,
+      "type_counts": {
+        "text": 518,
+        "formula": 103,
+        "number": 50,
+        "bool": 100
+      },
+      "header_row_1based": 4,
+      "headers": [
+        "COL_1",
+        "№ п/п",
+        "Компания",
+        "Бренд",
+        "№ счета",
+        "Дата счета",
+        "Период размещения",
+        "Количество конструкций",
+        "Сумма счета",
+        "Оплата",
+        "Ссылка",
+        "Вид документооборота",
+        "№ договора",
+        "№ приложения",
+        "Статус подписания приложения",
+        "Статус подписания УПД",
+        "COL_17",
+        "COL_18",
+        "COL_19",
+        "COL_20"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "№ п/п",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "number": 50
+          },
+          "samples": [
+            "1.0",
+            "2.0",
+            "3.0",
+            "4.0",
+            "5.0"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Компания",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aea00>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aef10>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8550>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8190>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aea60>"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "Бренд",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aeac0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aeeb0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a81c0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025370>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b90d0>"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "№ счета",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "Дата счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aeb20>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a83d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8940>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0251c0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b9070>"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "Период размещения",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aeb80>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8970>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a86a0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0255e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b9130>"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "Количество конструкций",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "Сумма счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aebe0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8490>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8040>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025040>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b9190>"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "Оплата",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aec40>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8160>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8670>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025100>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b91f0>"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "Ссылка",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aef70>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8130>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8700>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025490>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b9250>"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "Вид документооборота",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aed30>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a84f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a82b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b025130>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b92b0>"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "№ договора",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aedc0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8400>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8460>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0251f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b9310>"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "№ приложения",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "Статус подписания приложения",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "Статус подписания УПД",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "COL_17",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "COL_18",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#N/A"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "COL_19",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0aeee0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8760>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a8070>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0254c0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b1b9370>"
+          ]
+        },
+        {
+          "col": "T",
+          "index": 20,
+          "header": "COL_20",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#REF!"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "I3",
+          "formula": "=SUM(I5:I1002)"
+        },
+        {
+          "cell": "J3",
+          "formula": "=SUMIF(J5:J500,TRUE,I5:I500)"
+        },
+        {
+          "cell": "K3",
+          "formula": "=I3-J3"
+        },
+        {
+          "cell": "R5",
+          "formula": "=MATCH(D5,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T5",
+          "formula": "=MATCH(S5,#REF!,0)"
+        },
+        {
+          "cell": "R6",
+          "formula": "=MATCH(D6,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T6",
+          "formula": "=MATCH(S6,#REF!,0)"
+        },
+        {
+          "cell": "R7",
+          "formula": "=MATCH(D7,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T7",
+          "formula": "=MATCH(S7,#REF!,0)"
+        },
+        {
+          "cell": "R8",
+          "formula": "=MATCH(D8,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T8",
+          "formula": "=MATCH(S8,#REF!,0)"
+        },
+        {
+          "cell": "R9",
+          "formula": "=MATCH(D9,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T9",
+          "formula": "=MATCH(S9,#REF!,0)"
+        },
+        {
+          "cell": "R10",
+          "formula": "=MATCH(D10,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "T10",
+          "formula": "=MATCH(S10,#REF!,0)"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__Июль_2026.csv"
+    },
+    {
+      "name": "Ноябрь",
+      "rows": 54,
+      "cols": 19,
+      "nonempty": 732,
+      "formula_count": 103,
+      "type_counts": {
+        "text": 468,
+        "formula": 103,
+        "number": 61,
+        "bool": 100
+      },
+      "header_row_1based": 4,
+      "headers": [
+        "COL_1",
+        "№ п/п",
+        "Компания",
+        "Бренд",
+        "№ счета",
+        "Дата счета",
+        "Количество конструкций",
+        "Сумма счета",
+        "Оплата",
+        "Ссылка",
+        "Вид документооборота",
+        "№ договора",
+        "№ приложения",
+        "Статус подписания приложения",
+        "Статус подписания УПД",
+        "COL_16",
+        "COL_17",
+        "COL_18",
+        "COL_19"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "№ п/п",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "number": 50
+          },
+          "samples": [
+            "1.0",
+            "2.0",
+            "3.0",
+            "4.0",
+            "5.0"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Компания",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a68b0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6580>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6490>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6e80>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006e50>"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "Бренд",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6880>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6b20>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a69a0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6a00>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006790>"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "№ счета",
+          "filled": 6,
+          "unique": 6,
+          "types": {
+            "number": 6
+          },
+          "samples": [
+            "909.0",
+            "920.0",
+            "924.0",
+            "925.0",
+            "969.0"
+          ]
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "Дата счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6850>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6be0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a66d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6fa0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006f10>"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "Количество конструкций",
+          "filled": 6,
+          "unique": 4,
+          "types": {
+            "number": 5,
+            "text": 1
+          },
+          "samples": [
+            "1.0",
+            "2.0",
+            "3.0",
+            "печать листовок"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "Сумма счета",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6b80>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6cd0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6460>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6ca0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0060d0>"
+          ]
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "Оплата",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6160>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6d60>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a69d0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a61c0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006fa0>"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "Ссылка",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6f10>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6760>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6220>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a66a0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006d90>"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "Вид документооборота",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6310>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6070>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6dc0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6fd0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006eb0>"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "№ договора",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a62e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6280>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6f70>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0068e0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006ee0>"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "№ приложения",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "Статус подписания приложения",
+          "filled": 50,
+          "unique": 2,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "TRUE",
+            "FALSE"
+          ]
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "Статус подписания УПД",
+          "filled": 50,
+          "unique": 2,
+          "types": {
+            "bool": 50
+          },
+          "samples": [
+            "TRUE",
+            "FALSE"
+          ]
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "COL_16",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "COL_17",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#N/A"
+          ]
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "COL_18",
+          "filled": 50,
+          "unique": 50,
+          "types": {
+            "text": 50
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6d30>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a6af0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0a64f0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006880>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b006c70>"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "COL_19",
+          "filled": 50,
+          "unique": 1,
+          "types": {
+            "formula": 50
+          },
+          "samples": [
+            "#REF!"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "H3",
+          "formula": "=SUM(H5:H1002)"
+        },
+        {
+          "cell": "I3",
+          "formula": "=SUMIF(I5:I500,TRUE,H5:H500)"
+        },
+        {
+          "cell": "J3",
+          "formula": "=H3-I3"
+        },
+        {
+          "cell": "Q5",
+          "formula": "=MATCH(D5,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "S5",
+          "formula": "=MATCH(R5,#REF!,0)"
+        },
+        {
+          "cell": "Q6",
+          "formula": "=MATCH(D6,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "S6",
+          "formula": "=MATCH(R6,#REF!,0)"
+        },
+        {
+          "cell": "Q7",
+          "formula": "=MATCH(D7,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "S7",
+          "formula": "=MATCH(R7,#REF!,0)"
+        },
+        {
+          "cell": "Q8",
+          "formula": "=MATCH(D8,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "S8",
+          "formula": "=MATCH(R8,#REF!,0)"
+        },
+        {
+          "cell": "Q9",
+          "formula": "=MATCH(D9,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "S9",
+          "formula": "=MATCH(R9,#REF!,0)"
+        },
+        {
+          "cell": "Q10",
+          "formula": "=MATCH(D10,'Моя табл'!$B$2:$B$22,0)"
+        },
+        {
+          "cell": "S10",
+          "formula": "=MATCH(R10,#REF!,0)"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__Ноябрь.csv"
+    },
+    {
+      "name": "обработка, не трогать",
+      "rows": 2006,
+      "cols": 83,
+      "nonempty": 83067,
+      "formula_count": 82999,
+      "type_counts": {
+        "formula": 82999,
+        "text": 68
+      },
+      "header_row_1based": 1,
+      "headers": [
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1420669885#gid=1420669885\"\",\"\"'обработка счетов'!A:N\"\")\"),\"№ п/п\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Дата\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Документ\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Номер\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Валюта\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Информация\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Комментарий\")",
+        "COL_9",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"формат\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"оплата\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ответственный\")",
+        "COL_15",
+        "COL_16",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'обработка выписки'!A:M\"\")\"),\"Дата\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Клиент\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Назначение платежа\")",
+        "COL_21",
+        "COL_22",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"№ счета\")",
+        "COL_24",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"отвественный\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц поступления\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Статус клиента\")",
+        "COL_29",
+        "COL_30",
+        "COL_31",
+        "COL_32",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'Справочник'!A:B\"\")\"),\"ОРГАНИЗАЦИЯ\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ОТВЕТСТВЕННЫЙ\")",
+        "COL_35",
+        "COL_36",
+        "COL_37",
+        "COL_38",
+        "COL_39",
+        "COL_40",
+        "COL_41",
+        "COL_42",
+        "COL_43",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1420669885#gid=1420669885\"\",\"\"'обработка счетов'!A:N\"\")\"),\"№ п/п\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Дата\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Документ\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Номер\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Валюта\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Информация\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Комментарий\")",
+        "COL_52",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"формат\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"оплата\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ответственный\")",
+        "COL_58",
+        "COL_59",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'обработка выписки'!A:M\"\")\"),\"Дата\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Клиент\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Назначение платежа\")",
+        "COL_64",
+        "COL_65",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"№ счета\")",
+        "COL_67",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"отвественный\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц поступления\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Статус клиента\")",
+        "COL_72",
+        "COL_73",
+        "COL_74",
+        "COL_75",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'Справочник'!A:B\"\")\"),\"ОРГАНИЗАЦИЯ\")",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ОТВЕТСТВЕННЫЙ\")",
+        "COL_78",
+        "COL_79",
+        "COL_80",
+        "COL_81",
+        "COL_82",
+        "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1EZpp8YJqhjoirHsvOSVOoshwRg1U0Gby2I_GV1XZGXQ/edit?gid=0#gid=0\"\",\"\"'Лист1'!A:B\"\")\"),\"#REF!\")"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1420669885#gid=1420669885\"\",\"\"'обработка счетов'!A:N\"\")\"),\"№ п/п\")",
+          "filled": 1833,
+          "unique": 557,
+          "types": {
+            "formula": 1833
+          },
+          "samples": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5"
+          ]
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Дата\")",
+          "filled": 1820,
+          "unique": 377,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "2024-10-01 00:00:00",
+            "2024-10-02 00:00:00",
+            "2024-10-03 00:00:00",
+            "2024-10-06 00:00:00",
+            "2024-10-07 00:00:00"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Документ\")",
+          "filled": 1820,
+          "unique": 1,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "Счет покупателю"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Номер\")",
+          "filled": 1820,
+          "unique": 1262,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "948",
+            "1008",
+            "966",
+            "967",
+            "968"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")",
+          "filled": 1820,
+          "unique": 558,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "66000",
+            "938400",
+            "34000",
+            "18000",
+            "327000"
+          ]
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Валюта\")",
+          "filled": 1820,
+          "unique": 1,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "руб."
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Информация\")",
+          "filled": 1820,
+          "unique": 223,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "СЗ МАГНУМ ООО",
+            "СЗ ДОННЕФТЕСТРОЙ-АКСАЙ ООО (Головной офис)",
+            "АЛЬТАИР СМ ООО",
+            "ОПТИКС-АЛЬЯНС ООО",
+            "ЛДЦ СОКОЛ ООО"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Комментарий\")",
+          "filled": 1524,
+          "unique": 269,
+          "types": {
+            "formula": 1524
+          },
+          "samples": [
+            "крупный 2024",
+            "крупный январь",
+            "автобус январь",
+            "мелкий январь",
+            "печать январь"
+          ]
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "COL_9",
+          "filled": 1207,
+          "unique": 71,
+          "types": {
+            "formula": 1207
+          },
+          "samples": [
+            "крупный апрель",
+            "печать март",
+            "крупный",
+            "мелкий апрель",
+            "автобусы"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"формат\")",
+          "filled": 1514,
+          "unique": 74,
+          "types": {
+            "formula": 1514
+          },
+          "samples": [
+            "крупный",
+            "автобус",
+            "мелкий",
+            "печать",
+            "автобусы"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц\")",
+          "filled": 1523,
+          "unique": 57,
+          "types": {
+            "formula": 1523
+          },
+          "samples": [
+            "2024",
+            "январь",
+            "февраль",
+            "апрель",
+            "март"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"оплата\")",
+          "filled": 2005,
+          "unique": 674,
+          "types": {
+            "formula": 2005
+          },
+          "samples": [
+            "121800",
+            "181000",
+            "32550",
+            "31500",
+            "34650"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")",
+          "filled": 200,
+          "unique": 12,
+          "types": {
+            "formula": 200
+          },
+          "samples": [
+            "1",
+            "2",
+            "4",
+            "3",
+            "6"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ответственный\")",
+          "filled": 1715,
+          "unique": 12,
+          "types": {
+            "formula": 1715
+          },
+          "samples": [
+            "Ким Андрей",
+            "Запорожец Ирина",
+            "Храмцова Юлия",
+            "#N/A",
+            "Горячев Семён"
+          ]
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "COL_15",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "COL_16",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'обработка выписки'!A:M\"\")\"),\"Дата\")",
+          "filled": 1565,
+          "unique": 374,
+          "types": {
+            "formula": 1565
+          },
+          "samples": [
+            "2025-01-29 00:00:00",
+            "2025-01-14 00:00:00",
+            "2025-01-13 00:00:00",
+            "2025-01-31 00:00:00",
+            "2025-01-22 00:00:00"
+          ]
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Клиент\")",
+          "filled": 1565,
+          "unique": 326,
+          "types": {
+            "formula": 1565
+          },
+          "samples": [
+            "ИНВИЯЕВ АНДРЕЙ МИХАЙЛОВИЧ (ИП)\n",
+            "Индивидуальный предприниматель КОЧЕТОВА АЛЁНА АНДРЕЕВНА\n",
+            "ИП ОСИПЯН ВЛАДИМИР АЛЕКСАНДРОВИЧ\n",
+            "МКРТЧЯН НОРИК ДАВИДОВИЧ (ИП)\n",
+            "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ \"АВРОРА ДЕНТ\"\n"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")",
+          "filled": 1565,
+          "unique": 500,
+          "types": {
+            "formula": 1565
+          },
+          "samples": [
+            "129000",
+            "79800",
+            "25000",
+            "26250",
+            "19950"
+          ]
+        },
+        {
+          "col": "T",
+          "index": 20,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Назначение платежа\")",
+          "filled": 1565,
+          "unique": 1518,
+          "types": {
+            "formula": 1565
+          },
+          "samples": [
+            "Счет на оплату № 24 от 12.01.25Г., РИМ, РБРНД02-25. В том числе НДС, 5% - 6142,86Р.",
+            "Оплата рекламы по счету №8 от 10 января 2025 г. НДС не облагается",
+            "Счет на оплату №1246 от 20.12.2024. азмещение наружной рекламы за декабрь 2024 Ростов, ул.Погодина д.83 Сумма 25000-00. ",
+            "Счет на оплату №94 от 28.01.2025. азмещение наружной рекламы за февраль 2025 Ростов, ул.Погодина д.83 Сумма 26250-00. . ",
+            "Счет на оплату №93 от 28.01.2025. азмещение наружной рекламы за январь 2025 Ростов, ул.Погодина д.83 Сумма 26250-00. . В"
+          ]
+        },
+        {
+          "col": "U",
+          "index": 21,
+          "header": "COL_21",
+          "filled": 1999,
+          "unique": 1308,
+          "types": {
+            "formula": 1999
+          },
+          "samples": [
+            "Счет на оплату № 24 ",
+            "Оплата рекламы по счету №8 ",
+            "Счет на оплату №1246 ",
+            "Счет на оплату №94 ",
+            "Счет на оплату №93 "
+          ]
+        },
+        {
+          "col": "V",
+          "index": 22,
+          "header": "COL_22",
+          "filled": 1996,
+          "unique": 1152,
+          "types": {
+            "formula": 1996
+          },
+          "samples": [
+            " 24 ",
+            "8",
+            "1246",
+            "94",
+            "93"
+          ]
+        },
+        {
+          "col": "W",
+          "index": 23,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"№ счета\")",
+          "filled": 1999,
+          "unique": 1064,
+          "types": {
+            "formula": 1999
+          },
+          "samples": [
+            "24",
+            "8",
+            "1246",
+            "94",
+            "93"
+          ]
+        },
+        {
+          "col": "X",
+          "index": 24,
+          "header": "COL_24",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "Y",
+          "index": 25,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"отвественный\")",
+          "filled": 1999,
+          "unique": 12,
+          "types": {
+            "formula": 1999
+          },
+          "samples": [
+            "Ким Андрей",
+            "Запорожец Ирина",
+            "Храмцова Юлия",
+            "#N/A",
+            "Горячев Семён"
+          ]
+        },
+        {
+          "col": "Z",
+          "index": 26,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц поступления\")",
+          "filled": 1999,
+          "unique": 13,
+          "types": {
+            "formula": 1999
+          },
+          "samples": [
+            "1",
+            "2",
+            "3",
+            "12",
+            "4"
+          ]
+        },
+        {
+          "col": "AA",
+          "index": 27,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")",
+          "filled": 775,
+          "unique": 14,
+          "types": {
+            "formula": 775
+          },
+          "samples": [
+            "#VALUE!",
+            "1",
+            "3",
+            "2",
+            "4"
+          ]
+        },
+        {
+          "col": "AB",
+          "index": 28,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Статус клиента\")",
+          "filled": 956,
+          "unique": 27,
+          "types": {
+            "formula": 956
+          },
+          "samples": [
+            "ДОХОД",
+            "КОНСТРУКЦИИ",
+            "72000",
+            "14000",
+            "48000"
+          ]
+        },
+        {
+          "col": "AC",
+          "index": 29,
+          "header": "COL_29",
+          "filled": 31,
+          "unique": 25,
+          "types": {
+            "formula": 31
+          },
+          "samples": [
+            "Ким Андрей",
+            "Запорожец Ирина",
+            "Храмцова Юлия",
+            "1.75",
+            "2.1"
+          ]
+        },
+        {
+          "col": "AD",
+          "index": 30,
+          "header": "COL_30",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AE",
+          "index": 31,
+          "header": "COL_31",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AF",
+          "index": 32,
+          "header": "COL_32",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AG",
+          "index": 33,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'Справочник'!A:B\"\")\"),\"ОРГАНИЗАЦИЯ\")",
+          "filled": 510,
+          "unique": 501,
+          "types": {
+            "formula": 510
+          },
+          "samples": [
+            "Вильденберг Виктория Борисовна (ИП)",
+            "ГИЛЕВА ЕЛЕНА ИВАНОВНА(ИП)",
+            "ИНВИЯЕВ АНДРЕЙ МИХАЙЛОВИЧ (ИП)",
+            "ИНВИЯЕВ АНДРЕЙ МИХАЙЛОВИЧ (ИП)\n",
+            "Индивидуальный предприниматель Вильденберг Виктория Борисовна"
+          ]
+        },
+        {
+          "col": "AH",
+          "index": 34,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ОТВЕТСТВЕННЫЙ\")",
+          "filled": 510,
+          "unique": 11,
+          "types": {
+            "formula": 510
+          },
+          "samples": [
+            "Сободырь Анна",
+            "Запорожец Ирина",
+            "Назарова Ольга",
+            "Ким Андрей",
+            "Горячев Семён"
+          ]
+        },
+        {
+          "col": "AI",
+          "index": 35,
+          "header": "COL_35",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AJ",
+          "index": 36,
+          "header": "COL_36",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AK",
+          "index": 37,
+          "header": "COL_37",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AL",
+          "index": 38,
+          "header": "COL_38",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AM",
+          "index": 39,
+          "header": "COL_39",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AN",
+          "index": 40,
+          "header": "COL_40",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AO",
+          "index": 41,
+          "header": "COL_41",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AP",
+          "index": 42,
+          "header": "COL_42",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AQ",
+          "index": 43,
+          "header": "COL_43",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "AR",
+          "index": 44,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1420669885#gid=1420669885\"\",\"\"'обработка счетов'!A:N\"\")\"),\"№ п/п\")",
+          "filled": 1833,
+          "unique": 557,
+          "types": {
+            "formula": 1833
+          },
+          "samples": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5"
+          ]
+        },
+        {
+          "col": "AS",
+          "index": 45,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Дата\")",
+          "filled": 1820,
+          "unique": 377,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "2024-10-01 00:00:00",
+            "2024-10-02 00:00:00",
+            "2024-10-03 00:00:00",
+            "2024-10-06 00:00:00",
+            "2024-10-07 00:00:00"
+          ]
+        },
+        {
+          "col": "AT",
+          "index": 46,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Документ\")",
+          "filled": 1820,
+          "unique": 1,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "Счет покупателю"
+          ]
+        },
+        {
+          "col": "AU",
+          "index": 47,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Номер\")",
+          "filled": 1820,
+          "unique": 1262,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "948",
+            "1008",
+            "966",
+            "967",
+            "968"
+          ]
+        },
+        {
+          "col": "AV",
+          "index": 48,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")",
+          "filled": 1820,
+          "unique": 558,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "66000",
+            "938400",
+            "34000",
+            "18000",
+            "327000"
+          ]
+        },
+        {
+          "col": "AW",
+          "index": 49,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Валюта\")",
+          "filled": 1820,
+          "unique": 1,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "руб."
+          ]
+        },
+        {
+          "col": "AX",
+          "index": 50,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Информация\")",
+          "filled": 1820,
+          "unique": 223,
+          "types": {
+            "formula": 1820
+          },
+          "samples": [
+            "СЗ МАГНУМ ООО",
+            "СЗ ДОННЕФТЕСТРОЙ-АКСАЙ ООО (Головной офис)",
+            "АЛЬТАИР СМ ООО",
+            "ОПТИКС-АЛЬЯНС ООО",
+            "ЛДЦ СОКОЛ ООО"
+          ]
+        },
+        {
+          "col": "AY",
+          "index": 51,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Комментарий\")",
+          "filled": 1524,
+          "unique": 269,
+          "types": {
+            "formula": 1524
+          },
+          "samples": [
+            "крупный 2024",
+            "крупный январь",
+            "автобус январь",
+            "мелкий январь",
+            "печать январь"
+          ]
+        },
+        {
+          "col": "AZ",
+          "index": 52,
+          "header": "COL_52",
+          "filled": 1207,
+          "unique": 71,
+          "types": {
+            "formula": 1207
+          },
+          "samples": [
+            "крупный апрель",
+            "печать март",
+            "крупный",
+            "мелкий апрель",
+            "автобусы"
+          ]
+        },
+        {
+          "col": "BA",
+          "index": 53,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"формат\")",
+          "filled": 1514,
+          "unique": 74,
+          "types": {
+            "formula": 1514
+          },
+          "samples": [
+            "крупный",
+            "автобус",
+            "мелкий",
+            "печать",
+            "автобусы"
+          ]
+        },
+        {
+          "col": "BB",
+          "index": 54,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц\")",
+          "filled": 1523,
+          "unique": 57,
+          "types": {
+            "formula": 1523
+          },
+          "samples": [
+            "2024",
+            "январь",
+            "февраль",
+            "апрель",
+            "март"
+          ]
+        },
+        {
+          "col": "BC",
+          "index": 55,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"оплата\")",
+          "filled": 2005,
+          "unique": 674,
+          "types": {
+            "formula": 2005
+          },
+          "samples": [
+            "121800",
+            "181000",
+            "32550",
+            "31500",
+            "34650"
+          ]
+        },
+        {
+          "col": "BD",
+          "index": 56,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")",
+          "filled": 200,
+          "unique": 12,
+          "types": {
+            "formula": 200
+          },
+          "samples": [
+            "1",
+            "2",
+            "4",
+            "3",
+            "6"
+          ]
+        },
+        {
+          "col": "BE",
+          "index": 57,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ответственный\")",
+          "filled": 1715,
+          "unique": 12,
+          "types": {
+            "formula": 1715
+          },
+          "samples": [
+            "Ким Андрей",
+            "Запорожец Ирина",
+            "Храмцова Юлия",
+            "#N/A",
+            "Горячев Семён"
+          ]
+        },
+        {
+          "col": "BF",
+          "index": 58,
+          "header": "COL_58",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "BG",
+          "index": 59,
+          "header": "COL_59",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "BH",
+          "index": 60,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'обработка выписки'!A:M\"\")\"),\"Дата\")",
+          "filled": 1565,
+          "unique": 374,
+          "types": {
+            "formula": 1565
+          },
+          "samples": [
+            "2025-01-29 00:00:00",
+            "2025-01-14 00:00:00",
+            "2025-01-13 00:00:00",
+            "2025-01-31 00:00:00",
+            "2025-01-22 00:00:00"
+          ]
+        },
+        {
+          "col": "BI",
+          "index": 61,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Клиент\")",
+          "filled": 1565,
+          "unique": 326,
+          "types": {
+            "formula": 1565
+          },
+          "samples": [
+            "ИНВИЯЕВ АНДРЕЙ МИХАЙЛОВИЧ (ИП)\n",
+            "Индивидуальный предприниматель КОЧЕТОВА АЛЁНА АНДРЕЕВНА\n",
+            "ИП ОСИПЯН ВЛАДИМИР АЛЕКСАНДРОВИЧ\n",
+            "МКРТЧЯН НОРИК ДАВИДОВИЧ (ИП)\n",
+            "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ \"АВРОРА ДЕНТ\"\n"
+          ]
+        },
+        {
+          "col": "BJ",
+          "index": 62,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")",
+          "filled": 1565,
+          "unique": 500,
+          "types": {
+            "formula": 1565
+          },
+          "samples": [
+            "129000",
+            "79800",
+            "25000",
+            "26250",
+            "19950"
+          ]
+        },
+        {
+          "col": "BK",
+          "index": 63,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Назначение платежа\")",
+          "filled": 1565,
+          "unique": 1518,
+          "types": {
+            "formula": 1565
+          },
+          "samples": [
+            "Счет на оплату № 24 от 12.01.25Г., РИМ, РБРНД02-25. В том числе НДС, 5% - 6142,86Р.",
+            "Оплата рекламы по счету №8 от 10 января 2025 г. НДС не облагается",
+            "Счет на оплату №1246 от 20.12.2024. азмещение наружной рекламы за декабрь 2024 Ростов, ул.Погодина д.83 Сумма 25000-00. ",
+            "Счет на оплату №94 от 28.01.2025. азмещение наружной рекламы за февраль 2025 Ростов, ул.Погодина д.83 Сумма 26250-00. . ",
+            "Счет на оплату №93 от 28.01.2025. азмещение наружной рекламы за январь 2025 Ростов, ул.Погодина д.83 Сумма 26250-00. . В"
+          ]
+        },
+        {
+          "col": "BL",
+          "index": 64,
+          "header": "COL_64",
+          "filled": 1999,
+          "unique": 1308,
+          "types": {
+            "formula": 1999
+          },
+          "samples": [
+            "Счет на оплату № 24 ",
+            "Оплата рекламы по счету №8 ",
+            "Счет на оплату №1246 ",
+            "Счет на оплату №94 ",
+            "Счет на оплату №93 "
+          ]
+        },
+        {
+          "col": "BM",
+          "index": 65,
+          "header": "COL_65",
+          "filled": 1996,
+          "unique": 1152,
+          "types": {
+            "formula": 1996
+          },
+          "samples": [
+            " 24 ",
+            "8",
+            "1246",
+            "94",
+            "93"
+          ]
+        },
+        {
+          "col": "BN",
+          "index": 66,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"№ счета\")",
+          "filled": 1999,
+          "unique": 1064,
+          "types": {
+            "formula": 1999
+          },
+          "samples": [
+            "24",
+            "8",
+            "1246",
+            "94",
+            "93"
+          ]
+        },
+        {
+          "col": "BO",
+          "index": 67,
+          "header": "COL_67",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "BP",
+          "index": 68,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"отвественный\")",
+          "filled": 1999,
+          "unique": 12,
+          "types": {
+            "formula": 1999
+          },
+          "samples": [
+            "Ким Андрей",
+            "Запорожец Ирина",
+            "Храмцова Юлия",
+            "#N/A",
+            "Горячев Семён"
+          ]
+        },
+        {
+          "col": "BQ",
+          "index": 69,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц поступления\")",
+          "filled": 1999,
+          "unique": 13,
+          "types": {
+            "formula": 1999
+          },
+          "samples": [
+            "1",
+            "2",
+            "3",
+            "12",
+            "4"
+          ]
+        },
+        {
+          "col": "BR",
+          "index": 70,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")",
+          "filled": 775,
+          "unique": 14,
+          "types": {
+            "formula": 775
+          },
+          "samples": [
+            "#VALUE!",
+            "1",
+            "3",
+            "2",
+            "4"
+          ]
+        },
+        {
+          "col": "BS",
+          "index": 71,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Статус клиента\")",
+          "filled": 956,
+          "unique": 27,
+          "types": {
+            "formula": 956
+          },
+          "samples": [
+            "ДОХОД",
+            "КОНСТРУКЦИИ",
+            "72000",
+            "14000",
+            "48000"
+          ]
+        },
+        {
+          "col": "BT",
+          "index": 72,
+          "header": "COL_72",
+          "filled": 31,
+          "unique": 25,
+          "types": {
+            "formula": 31
+          },
+          "samples": [
+            "Ким Андрей",
+            "Запорожец Ирина",
+            "Храмцова Юлия",
+            "1.75",
+            "2.1"
+          ]
+        },
+        {
+          "col": "BU",
+          "index": 73,
+          "header": "COL_73",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "BV",
+          "index": 74,
+          "header": "COL_74",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "BW",
+          "index": 75,
+          "header": "COL_75",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "BX",
+          "index": 76,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'Справочник'!A:B\"\")\"),\"ОРГАНИЗАЦИЯ\")",
+          "filled": 510,
+          "unique": 501,
+          "types": {
+            "formula": 510
+          },
+          "samples": [
+            "Вильденберг Виктория Борисовна (ИП)",
+            "ГИЛЕВА ЕЛЕНА ИВАНОВНА(ИП)",
+            "ИНВИЯЕВ АНДРЕЙ МИХАЙЛОВИЧ (ИП)",
+            "ИНВИЯЕВ АНДРЕЙ МИХАЙЛОВИЧ (ИП)\n",
+            "Индивидуальный предприниматель Вильденберг Виктория Борисовна"
+          ]
+        },
+        {
+          "col": "BY",
+          "index": 77,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ОТВЕТСТВЕННЫЙ\")",
+          "filled": 510,
+          "unique": 11,
+          "types": {
+            "formula": 510
+          },
+          "samples": [
+            "Сободырь Анна",
+            "Запорожец Ирина",
+            "Назарова Ольга",
+            "Ким Андрей",
+            "Горячев Семён"
+          ]
+        },
+        {
+          "col": "BZ",
+          "index": 78,
+          "header": "COL_78",
+          "filled": 68,
+          "unique": 15,
+          "types": {
+            "text": 68
+          },
+          "samples": [
+            "Доннефтестрой",
+            "Астродент",
+            "APHome",
+            "Неометрия",
+            "Печагин"
+          ]
+        },
+        {
+          "col": "CA",
+          "index": 79,
+          "header": "COL_79",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "CB",
+          "index": 80,
+          "header": "COL_80",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "CC",
+          "index": 81,
+          "header": "COL_81",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "CD",
+          "index": 82,
+          "header": "COL_82",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "CE",
+          "index": 83,
+          "header": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1EZpp8YJqhjoirHsvOSVOoshwRg1U0Gby2I_GV1XZGXQ/edit?gid=0#gid=0\"\",\"\"'Лист1'!A:B\"\")\"),\"#REF!\")",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "A1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1420669885#gid=1420669885\"\",\"\"'обработка счетов'!A:N\"\")\"),\"№ "
+        },
+        {
+          "cell": "B1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Дата\")"
+        },
+        {
+          "cell": "C1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Документ\")"
+        },
+        {
+          "cell": "D1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Номер\")"
+        },
+        {
+          "cell": "E1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Сумма\")"
+        },
+        {
+          "cell": "F1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Валюта\")"
+        },
+        {
+          "cell": "G1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Информация\")"
+        },
+        {
+          "cell": "H1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Комментарий\")"
+        },
+        {
+          "cell": "J1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"формат\")"
+        },
+        {
+          "cell": "K1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"месяц\")"
+        },
+        {
+          "cell": "L1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"оплата\")"
+        },
+        {
+          "cell": "M1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"колличество конструкций\")"
+        },
+        {
+          "cell": "N1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"ответственный\")"
+        },
+        {
+          "cell": "Q1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"IMPORTRANGE(\"\"https://docs.google.com/spreadsheets/d/1XTT4vY0F_jNvFHpExY-KLh7mts0iWzGp1M3_K9q9YEE/edit?gid=1048657155#gid=1048657155\"\",\"\"'обработка выписки'!A:M\"\")\"),\"Д"
+        },
+        {
+          "cell": "R1",
+          "formula": "=IFERROR(__xludf.DUMMYFUNCTION(\"\"\"COMPUTED_VALUE\"\"\"),\"Клиент\")"
+        }
+      ],
+      "csv": "csv/NEW_Продажи__обработка_не_трогать.csv"
+    },
+    {
+      "name": "Моя табл",
+      "rows": 52,
+      "cols": 11,
+      "nonempty": 257,
+      "formula_count": 0,
+      "type_counts": {
+        "text": 256,
+        "number": 1
+      },
+      "header_row_1based": 1,
+      "headers": [
+        "Компания",
+        "Бренд",
+        "Вид документооброта",
+        "АП",
+        "Договор",
+        "COL_6",
+        "COL_7",
+        "COL_8",
+        "контакты",
+        "Приложение",
+        "Счет"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "Компания",
+          "filled": 51,
+          "unique": 51,
+          "types": {
+            "text": 51
+          },
+          "samples": [
+            "ПЕЧАГИН ПРОДУКТ ООО",
+            "ИП Бондарь",
+            "НЕОМЕТРИЯ ООО",
+            "ООО \"Чарли\"",
+            "ФИДЕС ООО"
+          ]
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "Бренд",
+          "filled": 44,
+          "unique": 34,
+          "types": {
+            "text": 44
+          },
+          "samples": [
+            "Печагин",
+            "Золотые руки",
+            "Неометрия",
+            "Чарли",
+            "Эрлих"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Вид документооброта",
+          "filled": 43,
+          "unique": 13,
+          "types": {
+            "text": 43
+          },
+          "samples": [
+            "Оригиналы",
+            "ЭДО, Договоры от них, УПД от нас",
+            "ЭДО",
+            "ЭДО, Контур",
+            "ЭДО, контур"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "АП",
+          "filled": 29,
+          "unique": 19,
+          "types": {
+            "text": 29
+          },
+          "samples": [
+            "АП клиента Печагин",
+            "АП Клиента Неометрия",
+            "АП Клиента Эрлих",
+            "АП клиента СК10",
+            "АП клиента ДНС"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "Договор",
+          "filled": 35,
+          "unique": 35,
+          "types": {
+            "text": 34,
+            "number": 1
+          },
+          "samples": [
+            "№49/24 от 19.03.2024",
+            "124/ 24 от «08» ноября  2024 г.",
+            "166/25",
+            "137-25",
+            "Договор № 22/24 от «28 декабря 2023 г."
+          ]
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "COL_6",
+          "filled": 17,
+          "unique": 15,
+          "types": {
+            "text": 17
+          },
+          "samples": [
+            "берут  6 щитов и 4 автобуса,  с печагиным после 14 августа нужно будет подобрать места на 4 кв и решить если по состояни",
+            "размещаются до сентября",
+            "размещаются до сентября далее",
+            "счета выставлены, отправлены. размещение не прежних конструкция по умолчанию ( весь ск10)",
+            "счета выставлены, все подписано. новых размещений не выбираем. делают новый макет, нужно уточнить о готовности"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "COL_7",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "COL_8",
+          "filled": 1,
+          "unique": 1,
+          "types": {
+            "text": 1
+          },
+          "samples": [
+            "2700 за 0,8*4 - 700 миксу 700 такси"
+          ]
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "контакты",
+          "filled": 29,
+          "unique": 18,
+          "types": {
+            "text": 29
+          },
+          "samples": [
+            "Ольга +7 965 137-06-25",
+            "группа в васап",
+            "Юля +7 908 198-99-64",
+            "Александра +7 908 504-04-11",
+            "Ирина +7 918 527-04-31"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "Приложение",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "Счет",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        }
+      ],
+      "formula_samples": [],
+      "csv": "csv/NEW_Продажи__Моя_табл.csv"
+    }
+  ]
+}

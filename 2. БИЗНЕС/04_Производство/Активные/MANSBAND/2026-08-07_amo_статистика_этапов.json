@@ -1,0 +1,373 @@
+{
+  "generated_at": "2026-08-07T19:25:14.409203+00:00",
+  "pipeline_id": 9601214,
+  "pipeline_name": "Продажи",
+  "window_days": 180,
+  "events_scanned": 12908,
+  "events_pages": 130,
+  "note": "entered_180d = сколько раз сделки ВХОДИЛИ в этап (события lead_status_changed). open_now = сколько сейчас лежит на этапе. Созданные за 180д почти все уже в Успех/Провал — для чистки смотреть entered, не current.",
+  "open_now_by_status": [
+    {
+      "status_id": 76654894,
+      "name": "Встреча назначена",
+      "count": 43
+    },
+    {
+      "status_id": 76654886,
+      "name": "Взято в работу",
+      "count": 27
+    },
+    {
+      "status_id": 76675038,
+      "name": "Сертификат оплачен",
+      "count": 21
+    },
+    {
+      "status_id": 77384722,
+      "name": "Хочет прийти",
+      "count": 13
+    },
+    {
+      "status_id": 76654882,
+      "name": "Новая заявка",
+      "count": 5
+    },
+    {
+      "status_id": 77086494,
+      "name": "Товар отложен",
+      "count": 3
+    },
+    {
+      "status_id": 78616334,
+      "name": "Дано обещание",
+      "count": 2
+    },
+    {
+      "status_id": 81451926,
+      "name": "Спам",
+      "count": 1
+    },
+    {
+      "status_id": 78616338,
+      "name": "Хочет заказать",
+      "count": 1
+    },
+    {
+      "status_id": 76654890,
+      "name": "Ждет товар",
+      "count": 1
+    },
+    {
+      "status_id": 78616342,
+      "name": "Вызван курьер",
+      "count": 1
+    },
+    {
+      "status_id": 76655110,
+      "name": "Отправлен",
+      "count": 1
+    },
+    {
+      "status_id": 76654878,
+      "name": "Неразобранное",
+      "count": 0
+    },
+    {
+      "status_id": 85436294,
+      "name": "Сара",
+      "count": 0
+    },
+    {
+      "status_id": 83608510,
+      "name": "Сдвоенная заявка",
+      "count": 0
+    },
+    {
+      "status_id": 78616330,
+      "name": "Не готов прийти / заказать",
+      "count": 0
+    },
+    {
+      "status_id": 76666306,
+      "name": "Товар в магазине",
+      "count": 0
+    },
+    {
+      "status_id": 79236386,
+      "name": "Не оказалось размера",
+      "count": 0
+    },
+    {
+      "status_id": 77076806,
+      "name": "Ушел смотреть у конкурентов",
+      "count": 0
+    },
+    {
+      "status_id": 76674066,
+      "name": "Аренда оплачена",
+      "count": 0
+    },
+    {
+      "status_id": 76660194,
+      "name": "В аренде",
+      "count": 0
+    },
+    {
+      "status_id": 76655186,
+      "name": "Передан на сборку",
+      "count": 0
+    },
+    {
+      "status_id": 76655106,
+      "name": "Собран",
+      "count": 0
+    },
+    {
+      "status_id": 76655114,
+      "name": "Доставлен",
+      "count": 0
+    },
+    {
+      "status_id": 76828890,
+      "name": "Не выкуплен",
+      "count": 0
+    }
+  ],
+  "entered_180d_by_status": [
+    {
+      "status_id": 76654886,
+      "name": "Взято в работу",
+      "entered_180d": 3232
+    },
+    {
+      "status_id": 143,
+      "name": "Провал",
+      "entered_180d": 3142
+    },
+    {
+      "status_id": 76654894,
+      "name": "Встреча назначена",
+      "entered_180d": 2090
+    },
+    {
+      "status_id": 142,
+      "name": "Успех",
+      "entered_180d": 1338
+    },
+    {
+      "status_id": 81451926,
+      "name": "Спам",
+      "entered_180d": 530
+    },
+    {
+      "status_id": 77384722,
+      "name": "Хочет прийти",
+      "entered_180d": 403
+    },
+    {
+      "status_id": 85436294,
+      "name": "Сара",
+      "entered_180d": 346
+    },
+    {
+      "status_id": 76654882,
+      "name": "Новая заявка",
+      "entered_180d": 301
+    },
+    {
+      "status_id": 83608510,
+      "name": "Сдвоенная заявка",
+      "entered_180d": 142
+    },
+    {
+      "status_id": 78616334,
+      "name": "Дано обещание",
+      "entered_180d": 41
+    },
+    {
+      "status_id": 76655110,
+      "name": "Отправлен",
+      "entered_180d": 33
+    },
+    {
+      "status_id": 76655106,
+      "name": "Собран",
+      "entered_180d": 33
+    },
+    {
+      "status_id": 76655186,
+      "name": "Передан на сборку",
+      "entered_180d": 32
+    },
+    {
+      "status_id": 78616342,
+      "name": "Вызван курьер",
+      "entered_180d": 30
+    },
+    {
+      "status_id": 76655114,
+      "name": "Доставлен",
+      "entered_180d": 29
+    },
+    {
+      "status_id": 78616338,
+      "name": "Хочет заказать",
+      "entered_180d": 23
+    },
+    {
+      "status_id": 76674066,
+      "name": "Аренда оплачена",
+      "entered_180d": 18
+    },
+    {
+      "status_id": 77086494,
+      "name": "Товар отложен",
+      "entered_180d": 16
+    },
+    {
+      "status_id": 76675038,
+      "name": "Сертификат оплачен",
+      "entered_180d": 13
+    },
+    {
+      "status_id": 76828890,
+      "name": "Не выкуплен",
+      "entered_180d": 12
+    },
+    {
+      "status_id": 76654890,
+      "name": "Ждет товар",
+      "entered_180d": 8
+    },
+    {
+      "status_id": 76666306,
+      "name": "Товар в магазине",
+      "entered_180d": 7
+    },
+    {
+      "status_id": 79236386,
+      "name": "Не оказалось размера",
+      "entered_180d": 5
+    },
+    {
+      "status_id": 76660194,
+      "name": "В аренде",
+      "entered_180d": 4
+    },
+    {
+      "status_id": 77076806,
+      "name": "Ушел смотреть у конкурентов",
+      "entered_180d": 3
+    }
+  ],
+  "focus_stages": [
+    {
+      "name": "Не готов прийти / заказать",
+      "status_id": 78616330,
+      "open_now": 0,
+      "entered_180d_events": 0
+    },
+    {
+      "name": "Не оказалось размера",
+      "status_id": 79236386,
+      "open_now": 0,
+      "entered_180d_events": 5
+    },
+    {
+      "name": "Ушел смотреть у конкурентов",
+      "status_id": 77076806,
+      "open_now": 0,
+      "entered_180d_events": 3
+    },
+    {
+      "name": "Вызван курьер",
+      "status_id": 78616342,
+      "open_now": 1,
+      "entered_180d_events": 30
+    },
+    {
+      "name": "Товар в магазине",
+      "status_id": 76666306,
+      "open_now": 0,
+      "entered_180d_events": 7
+    },
+    {
+      "name": "Ждет товар",
+      "status_id": 76654890,
+      "open_now": 1,
+      "entered_180d_events": 8
+    },
+    {
+      "name": "Товар отложен",
+      "status_id": 77086494,
+      "open_now": 3,
+      "entered_180d_events": 16
+    },
+    {
+      "name": "Сара",
+      "status_id": 85436294,
+      "open_now": 0,
+      "entered_180d_events": 346
+    },
+    {
+      "name": "Спам",
+      "status_id": 81451926,
+      "open_now": 1,
+      "entered_180d_events": 530
+    },
+    {
+      "name": "Сдвоенная заявка",
+      "status_id": 83608510,
+      "open_now": 0,
+      "entered_180d_events": 142
+    },
+    {
+      "name": "Аренда оплачена",
+      "status_id": 76674066,
+      "open_now": 0,
+      "entered_180d_events": 18
+    },
+    {
+      "name": "В аренде",
+      "status_id": 76660194,
+      "open_now": 0,
+      "entered_180d_events": 4
+    },
+    {
+      "name": "Передан на сборку",
+      "status_id": 76655186,
+      "open_now": 0,
+      "entered_180d_events": 32
+    },
+    {
+      "name": "Собран",
+      "status_id": 76655106,
+      "open_now": 0,
+      "entered_180d_events": 33
+    },
+    {
+      "name": "Отправлен",
+      "status_id": 76655110,
+      "open_now": 1,
+      "entered_180d_events": 33
+    },
+    {
+      "name": "Доставлен",
+      "status_id": 76655114,
+      "open_now": 0,
+      "entered_180d_events": 29
+    },
+    {
+      "name": "Не выкуплен",
+      "status_id": 76828890,
+      "open_now": 0,
+      "entered_180d_events": 12
+    },
+    {
+      "name": "Сертификат оплачен",
+      "status_id": 76675038,
+      "open_now": 21,
+      "entered_180d_events": 13
+    }
+  ]
+}

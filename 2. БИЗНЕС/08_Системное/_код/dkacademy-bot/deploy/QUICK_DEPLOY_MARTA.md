@@ -58,7 +58,7 @@ ssh marta-vps 'echo OK; hostname; docker ps --format "{{.Names}}"; ls /root | he
 ```bash
 # rsync кода (только из dkacademy-bot/, без .env)
 rsync -avz --exclude '.env' --exclude '__pycache__' --exclude '.venv' \
-  /Users/max/Desktop/CURSOR/Бизнес/99_Системное/_код/dkacademy-bot/ marta-vps:/root/dkacademy-bot/
+  /Users/max/Desktop/CURSOR/2. БИЗНЕС/08_Системное/_код/dkacademy-bot/ marta-vps:/root/dkacademy-bot/
 
 # инициализация .env на сервере (заполнит агент по присланным значениям)
 ssh marta-vps 'cd /root/dkacademy-bot && [ -f .env ] || cp .env.example .env'

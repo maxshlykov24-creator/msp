@@ -7,11 +7,12 @@ import {
   syncAmoMeta,
   syncMsRefs,
 } from "../services/bootstrap.js";
+import * as sale from "../services/sale.js";
 
 // Ручной запуск синхронизаций (только админ).
 export default async function adminRoutes(app: FastifyInstance) {
   app.post("/admin/sync", { preHandler: [app.requireAdmin] }, async () => {
-    await runBootstrap((m) => app.log.info(m));
+    await runBootstrap((m) => app.log.info(m), { throwOnError: true });
     return { ok: true };
   });
 
@@ -38,5 +39,14 @@ export default async function adminRoutes(app: FastifyInstance) {
   app.post("/admin/sync/ms-refs", { preHandler: [app.requireAdmin] }, async () => {
     await syncMsRefs();
     return { ok: true };
+  });
+
+  // Перезалив конкретной заявки в amoCRM (заявки, застрявшие локально).
+  app.post("/admin/resync/deal/:number", { preHandler: [app.requireAdmin] }, async (req, reply) => {
+    const number = Number((req.params as { number: string }).number);
+    if (!Number.isInteger(number)) return reply.code(400).send({ message: "Некорректный номер заявки" });
+    const deal = await sale.resyncToAmo(number, req.user.name);
+    if (!deal) return reply.code(404).send({ message: "Заявка не найдена" });
+    return { ok: deal.syncStatus === "synced", amoLeadId: deal.amoLeadId, syncStatus: deal.syncStatus, syncError: deal.syncError };
   });
 }

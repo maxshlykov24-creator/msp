@@ -49,7 +49,7 @@
 
 - **SSH:** в `~/.ssh/config` хост `mansband-bridge` → ключ `~/.ssh/mansband_timeweb_ed25519` (публичный ключ добавлен в `authorized_keys` на сервере).
 - **Каталог на сервере:** `/root/talkme-amojo-bridge` (не `/opt/...` — реальный путь через `find …/docker-compose.yml`).
-- **Учётка для агента:** `Бизнес/…/MANSBAND/_private/vps_access.env` (в git не попадает): `VPS_HOST`, `VPS_BRIDGE_DIR`, пароль в кавычках из‑за `#` в значении.
+- **Учётка для агента:** `2. БИЗНЕС/…/MANSBAND/_private/vps_access.env` (в git не попадает): `VPS_HOST`, `VPS_BRIDGE_DIR`, пароль в кавычках из‑за `#` в значении.
 - **Обновление кода:** `scp …/app/talkme_parse.py …/app/main.py mansband-bridge:/root/talkme-amojo-bridge/app/` затем на сервере `docker compose up -d --build api`; проверка: `curl http://127.0.0.1:19080/health`.
 
 ---

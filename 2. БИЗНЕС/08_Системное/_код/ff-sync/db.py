@@ -39,6 +39,15 @@ def migrate(conn):
     for col in ("billed_days", "billed_in", "billed_out"):
         if col not in lots:
             conn.execute("ALTER TABLE lots ADD COLUMN %s REAL NOT NULL DEFAULT 0" % col)
+    cache = _cols(conn, "catalog_cache")
+    for col, decl in (
+        ("gtin", "TEXT"),
+        ("tracking_type", "TEXT"),
+        ("subject", "TEXT"),
+        ("need_kiz", "INTEGER"),
+    ):
+        if col not in cache:
+            conn.execute("ALTER TABLE catalog_cache ADD COLUMN %s %s" % (col, decl))
 
 
 def init_db():
@@ -322,7 +331,8 @@ def replace_cache(client_id, cabinet_id, rows):
     conn.execute("DELETE FROM catalog_cache WHERE cabinet_id = ?", (cabinet_id,))
     conn.executemany(
         "INSERT INTO catalog_cache (client_id, cabinet_id, marketplace, ext_key, ext_article, "
-        "ext_barcode, barcode_norm, name, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "ext_barcode, barcode_norm, name, size, gtin, tracking_type, subject, need_kiz) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 client_id,
@@ -334,6 +344,10 @@ def replace_cache(client_id, cabinet_id, rows):
                 barcode_norm(row.get("ext_barcode")),
                 row.get("name") or "",
                 row.get("size") or "",
+                row.get("gtin") or "",
+                row.get("tracking_type") or "",
+                row.get("subject") or "",
+                row.get("need_kiz"),
             )
             for row in rows
         ],
@@ -358,6 +372,66 @@ def find_cache(client_id, barcode=None, article=None):
         ).fetchall()
     conn.close()
     return rows
+
+
+def list_cache(client_id):
+    conn = connect()
+    rows = conn.execute(
+        "SELECT * FROM catalog_cache WHERE client_id = ? ORDER BY id",
+        (client_id,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def find_cache_group(client_id, barcode=None, article=None):
+    """Один SKU на нескольких площадках: штрихкод, GTIN или ключ размера / оффера.
+
+    Артикул в группу не входит: у WB один артикул на все размеры.
+    Разные EAN и разные размеры — разные товары.
+    """
+    seed = find_cache(client_id, barcode=barcode) if barcode else []
+    if not seed:
+        return find_cache(client_id, article=article) if article else []
+    all_rows = list_cache(client_id)
+    ids = {row["id"] for row in seed}
+    keys = {(row["marketplace"], row["ext_key"]) for row in seed if row["ext_key"]}
+    gtins = {row["gtin"] for row in seed if row["gtin"]}
+    norms = {row["barcode_norm"] for row in seed if row["barcode_norm"]}
+    changed = True
+    while changed:
+        changed = False
+        for row in all_rows:
+            if row["id"] in ids:
+                continue
+            take = False
+            if row["gtin"] and row["gtin"] in gtins:
+                take = True
+            elif row["barcode_norm"] and row["barcode_norm"] in norms:
+                take = True
+            elif row["ext_key"] and (row["marketplace"], row["ext_key"]) in keys:
+                take = True
+            if not take:
+                continue
+            ids.add(row["id"])
+            if row["ext_key"]:
+                keys.add((row["marketplace"], row["ext_key"]))
+            if row["gtin"]:
+                gtins.add(row["gtin"])
+            if row["barcode_norm"]:
+                norms.add(row["barcode_norm"])
+            changed = True
+    return [row for row in all_rows if row["id"] in ids]
+
+
+def prefer_hit(hits):
+    """WB с нормальным EAN важнее внутреннего кода и OZN."""
+    def score(row):
+        code = barcode_norm(row["ext_barcode"] or "")
+        ean = 2 if code.isdigit() and len(code) in (8, 13) and not code.startswith("2") else 0
+        wb = 1 if row["marketplace"] == "wb" else 0
+        return (ean, wb, 1 if row["name"] else 0)
+    return sorted(hits, key=score, reverse=True)
 
 
 def cache_count(client_id=None, cabinet_id=None):
@@ -550,6 +624,27 @@ def list_intake(states=("draft", "warn")):
     return rows
 
 
+def get_intake_row(row_id):
+    conn = connect()
+    row = conn.execute(
+        "SELECT intake_queue.*, clients.name AS client_name FROM intake_queue "
+        "JOIN clients ON clients.id = intake_queue.client_id WHERE intake_queue.id = ?",
+        (row_id,),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def queued_barcodes(client_id):
+    conn = connect()
+    rows = conn.execute(
+        "SELECT barcode FROM intake_queue WHERE client_id = ? AND state IN ('draft', 'warn')",
+        (client_id,),
+    ).fetchall()
+    conn.close()
+    return {barcode_norm(r["barcode"]) for r in rows if r["barcode"]}
+
+
 def insert_invoice(client_id, ms_invoice_id, ms_number, storage, intake, ship, total, lots_count, created_at, author):
     conn = connect()
     cur = conn.execute(
@@ -584,6 +679,30 @@ def list_invoices(limit=100):
     return rows
 
 
+def get_invoice(invoice_id):
+    conn = connect()
+    row = conn.execute(
+        "SELECT invoices.*, clients.name AS client_name FROM invoices "
+        "JOIN clients ON clients.id = invoices.client_id WHERE invoices.id = ?",
+        (int(invoice_id),),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def list_invoice_positions(invoice_id):
+    conn = connect()
+    rows = conn.execute(
+        "SELECT invoice_lots.storage, invoice_lots.intake, invoice_lots.ship, "
+        "lots.article, lots.barcode, lots.gtin, lots.name, lots.qty_in, lots.received_at "
+        "FROM invoice_lots JOIN lots ON lots.id = invoice_lots.lot_id "
+        "WHERE invoice_lots.invoice_id = ? ORDER BY invoice_lots.id",
+        (int(invoice_id),),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 def get_order_log(cabinet_id, ext_order_id):
     conn = connect()
     row = conn.execute(
@@ -613,3 +732,259 @@ def upsert_order_log(cabinet_id, ext_order_id, ms_order_id, result, error, creat
         )
     conn.commit()
     conn.close()
+
+
+def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, shipped_at, article, barcode, name, qty, ms_order_id, marks_count, pulled_at):
+    conn = connect()
+    existing = conn.execute(
+        "SELECT id FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
+        (cabinet_id, kind, ext_id),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE shipments SET client_id=?, marketplace=?, status=?, shipped_at=?, article=?, "
+            "barcode=?, name=?, qty=?, ms_order_id=?, marks_count=?, pulled_at=? WHERE id=?",
+            (
+                client_id, marketplace, status, shipped_at, article, barcode, name, qty,
+                ms_order_id, marks_count, pulled_at, existing["id"],
+            ),
+        )
+        sid = existing["id"]
+    else:
+        cur = conn.execute(
+            "INSERT INTO shipments (client_id, cabinet_id, marketplace, kind, ext_id, status, shipped_at, "
+            "article, barcode, name, qty, ms_order_id, marks_count, pulled_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                client_id, cabinet_id, marketplace, kind, ext_id, status, shipped_at,
+                article, barcode, name, qty, ms_order_id, marks_count, pulled_at,
+            ),
+        )
+        sid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return sid
+
+
+def replace_shipment_marks(shipment_id, rows):
+    conn = connect()
+    conn.execute("DELETE FROM shipment_marks WHERE shipment_id = ?", (shipment_id,))
+    conn.executemany(
+        "INSERT INTO shipment_marks (shipment_id, code, gtin, article) VALUES (?, ?, ?, ?)",
+        [(shipment_id, row.get("code") or "", row.get("gtin") or "", row.get("article") or "") for row in rows],
+    )
+    conn.commit()
+    conn.close()
+
+
+STATUS_RU = {
+    "awaiting_packaging": "Ожидает упаковки",
+    "awaiting_deliver": "Ожидает отгрузки",
+    "awaiting_registration": "Ожидает регистрации",
+    "acceptance_in_progress": "Приёмка",
+    "awaiting_approve": "Ожидает подтверждения",
+    "awaiting_verification": "На проверке",
+    "delivering": "В доставке",
+    "delivered": "Доставлен",
+    "cancelled": "Отменён",
+    "canceled": "Отменён",
+    "canceled_by_client": "Отменён клиентом",
+    "declined_by_client": "Отклонён клиентом",
+    "declined": "Отклонён",
+    "not_accepted": "Не принят",
+    "arbitration": "Спор",
+    "client_arbitration": "Спор клиента",
+    "sent_by_seller": "Отправлен продавцом",
+    "new": "Новый",
+    "confirm": "Подтверждён",
+    "complete": "Собран",
+    "waiting": "Ожидает",
+    "sorted": "На сортировке",
+    "sold": "Продан",
+    "ready_for_pickup": "Готов к выдаче",
+    "defect": "Брак",
+    "cancel": "Отменён",
+    "rejected": "Отклонён",
+    "fbs": "FBS",
+    "fbo": "FBO",
+}
+
+
+def status_label(raw):
+    text = str(raw or "").strip()
+    if not text:
+        return "—"
+    if " / " in text:
+        seen = []
+        for part in text.split("/"):
+            label = status_label(part.strip())
+            if label not in seen:
+                seen.append(label)
+        return " · ".join(seen)
+    low = text.lower()
+    if low in STATUS_RU:
+        return STATUS_RU[low]
+    return text.replace("_", " ")
+
+
+def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_from="", day_to="", query=""):
+    conn = connect()
+    sql = (
+        "SELECT shipments.*, clients.name AS client_name FROM shipments "
+        "JOIN clients ON clients.id = shipments.client_id WHERE 1=1"
+    )
+    args = []
+    if client_id:
+        sql += " AND shipments.client_id = ?"
+        args.append(int(client_id))
+    if marketplace:
+        sql += " AND shipments.marketplace = ?"
+        args.append(marketplace)
+    if kind:
+        sql += " AND shipments.kind = ?"
+        args.append(kind)
+    if marked is True:
+        sql += " AND shipments.marks_count > 0"
+    if marked is False:
+        sql += " AND shipments.marks_count = 0"
+    if day_from:
+        sql += " AND substr(shipments.shipped_at,1,10) >= ?"
+        args.append(day_from)
+    if day_to:
+        sql += " AND substr(shipments.shipped_at,1,10) <= ?"
+        args.append(day_to)
+    text = (query or "").strip().lower()
+    rows = conn.execute(sql + " ORDER BY shipments.shipped_at DESC, shipments.id DESC", args).fetchall()
+    conn.close()
+    if not text:
+        return rows
+    out = []
+    for row in rows:
+        hay = " ".join(
+            str(row[k] or "").lower()
+            for k in ("ext_id", "article", "barcode", "name", "status", "client_name")
+        )
+        hay += " " + status_label(row["status"]).lower()
+        if text in hay:
+            out.append(row)
+    return out
+
+
+def get_shipments_by_ids(ids):
+    if not ids:
+        return []
+    conn = connect()
+    q = ",".join("?" * len(ids))
+    rows = conn.execute(
+        "SELECT shipments.*, clients.name AS client_name FROM shipments "
+        "JOIN clients ON clients.id = shipments.client_id "
+        "WHERE shipments.id IN (%s) ORDER BY shipments.shipped_at DESC, shipments.id DESC" % q,
+        [int(x) for x in ids],
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def list_shipment_marks(ids):
+    if not ids:
+        return []
+    conn = connect()
+    q = ",".join("?" * len(ids))
+    rows = conn.execute(
+        "SELECT shipment_marks.*, shipments.ext_id, shipments.marketplace, shipments.kind, "
+        "shipments.shipped_at, shipments.status, shipments.barcode AS ship_barcode, "
+        "shipments.name AS ship_name, shipments.article AS ship_article, clients.name AS client_name "
+        "FROM shipment_marks JOIN shipments ON shipments.id = shipment_marks.shipment_id "
+        "JOIN clients ON clients.id = shipments.client_id "
+        "WHERE shipment_marks.shipment_id IN (%s) ORDER BY shipments.shipped_at, shipment_marks.id" % q,
+        [int(x) for x in ids],
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def _day_filter(alias, day_from, day_to, args):
+    sql = ""
+    if day_from:
+        sql += " AND substr(%s,1,10) >= ?" % alias
+        args.append(day_from)
+    if day_to:
+        sql += " AND substr(%s,1,10) <= ?" % alias
+        args.append(day_to)
+    return sql
+
+
+def overview_stats(client_id=None, day_from="", day_to=""):
+    conn = connect()
+    args = []
+    where = "1=1"
+    if client_id:
+        where += " AND client_id = ?"
+        args.append(int(client_id))
+    ship_where = where + _day_filter("shipped_at", day_from, day_to, args)
+    tot = conn.execute(
+        "SELECT count(*) n, coalesce(sum(qty),0) qty, coalesce(sum(marks_count),0) marks, "
+        "sum(CASE WHEN marks_count = 0 THEN 1 ELSE 0 END) without "
+        "FROM shipments WHERE " + ship_where,
+        args,
+    ).fetchone()
+    by_mp = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT marketplace, count(*) n, coalesce(sum(marks_count),0) marks "
+            "FROM shipments WHERE " + ship_where + " GROUP BY marketplace",
+            args,
+        ).fetchall()
+    ]
+    by_kind = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT kind, count(*) n, coalesce(sum(marks_count),0) marks "
+            "FROM shipments WHERE " + ship_where + " GROUP BY kind",
+            args,
+        ).fetchall()
+    ]
+    days = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT substr(shipped_at,1,10) day, count(*) n, coalesce(sum(marks_count),0) marks "
+            "FROM shipments WHERE " + ship_where + " GROUP BY 1 ORDER BY 1",
+            args,
+        ).fetchall()
+    ]
+    inv_args = []
+    inv_where = "1=1"
+    if client_id:
+        inv_where += " AND client_id = ?"
+        inv_args.append(int(client_id))
+    inv_where += _day_filter("created_at", day_from, day_to, inv_args)
+    inv = conn.execute(
+        "SELECT count(*) n, coalesce(sum(total),0) total FROM invoices WHERE " + inv_where,
+        inv_args,
+    ).fetchone()
+    intake_args = []
+    intake_sql = "SELECT count(*) FROM intake_queue WHERE state IN ('draft','warn')"
+    if client_id:
+        intake_sql += " AND client_id = ?"
+        intake_args.append(int(client_id))
+    intake_n = conn.execute(intake_sql, intake_args).fetchone()[0]
+    last = conn.execute(
+        "SELECT max(last_ok_at) FROM cabinets WHERE active = 1 AND ifnull(token,'') != ''"
+    ).fetchone()[0]
+    clients_n = conn.execute("SELECT count(*) FROM clients WHERE active = 1").fetchone()[0]
+    conn.close()
+    return {
+        "ships": {
+            "n": int(tot["n"] or 0),
+            "qty": float(tot["qty"] or 0),
+            "marks": int(tot["marks"] or 0),
+            "without": int(tot["without"] or 0),
+        },
+        "by_mp": by_mp,
+        "by_kind": by_kind,
+        "days": days,
+        "invoices": {"n": int(inv["n"] or 0), "total": float(inv["total"] or 0)},
+        "intake": int(intake_n or 0),
+        "last_ok": last or "",
+        "clients": int(clients_n or 0),
+    }

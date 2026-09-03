@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 from db import add_lot_move, get_client_by_id, list_lots, list_lots_fifo, shipped_qty
+from ms import tracking_code
 
 MSK = timezone(timedelta(hours=3))
 
@@ -93,13 +94,21 @@ def row_of(lot):
     }
 
 
-def lot_rows(client_id=None, query="", only_open=True):
+def is_marked(tracking):
+    return tracking_code(tracking) != "NOT_TRACKED"
+
+
+def lot_rows(client_id=None, query="", marked=None, only_open=True):
     text = (query or "").strip().lower()
     rows = []
     for lot in list_lots(only_open=only_open):
         if client_id and lot["client_id"] != int(client_id):
             continue
         row = row_of(lot)
+        if marked is True and not is_marked(row["tracking"]):
+            continue
+        if marked is False and is_marked(row["tracking"]):
+            continue
         if text:
             hay = " ".join(
                 str(row[k]).lower() for k in ("article", "barcode", "gtin", "name", "client")

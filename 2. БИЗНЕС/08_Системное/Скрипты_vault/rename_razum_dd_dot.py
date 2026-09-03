@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-RAZUM = Path("/Users/max/Desktop/CURSOR/Личное/3. Разум")
+RAZUM = Path("/Users/max/Desktop/CURSOR/1. ЛИЧНОЕ/3. Разум")
 
 MAP = [
     ("3.0.10 Хотелки", "3.10. Хотелки"),

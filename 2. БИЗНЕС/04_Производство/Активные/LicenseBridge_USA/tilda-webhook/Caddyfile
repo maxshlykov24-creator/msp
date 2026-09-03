@@ -1,3 +1,18 @@
 72-56-123-137.sslip.io {
-    reverse_proxy webhook:8080
+	reverse_proxy api:8080
+}
+
+# Запасной URL дашборда (sslip) — если *.mspod24.ru снаружи зависает на TLS
+lb.72-56-123-137.sslip.io {
+	reverse_proxy lb-analytics:8080
+}
+
+# Дашборд LicenseBridge — основной адрес для клиента
+lb.mspod24.ru {
+	reverse_proxy lb-analytics:8080
+}
+
+# Корень — тот же дашборд
+mspod24.ru, www.mspod24.ru {
+	reverse_proxy lb-analytics:8080
 }

@@ -1,0 +1,15 @@
+[Unit]
+Description=Keris Server — Груминг (Этап 2, FastAPI+PostgreSQL)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/keris-server
+EnvironmentFile=/root/keris-server/.env
+ExecStart=/root/keris-server/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8091
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

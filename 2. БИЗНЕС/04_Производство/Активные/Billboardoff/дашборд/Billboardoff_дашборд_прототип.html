@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Billboardoff · Панель контроля (прототип)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#000000; --card:#1C1C1E; --card-2:#2C2C2E;
+    --ink:#F5F5F7; --body:#A1A1A6; --mute:#6E6E73; --line:rgba(255,255,255,.08);
+    --a1:#5B7CDE; --a2:#8AA4F0;
+    --ease:cubic-bezier(.25,1,.5,1);
+    --font:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--font); min-height:100vh;
+    -webkit-font-smoothing:antialiased; padding:36px 40px 60px; position:relative;
+    background-image:
+      radial-gradient(900px 620px at 92% -10%, rgba(74,101,177,.30), transparent 55%),
+      radial-gradient(600px 480px at -8% 100%, rgba(91,124,222,.14), transparent 55%);
+  }
+  /* ── premium film-grain texture ── */
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
+    background-image:radial-gradient(1px 1px at 22% 28%, rgba(255,255,255,.4) 0, transparent 0),
+                      radial-gradient(1px 1px at 68% 62%, rgba(255,255,255,.28) 0, transparent 0);
+    background-size:3px 3px;mix-blend-mode:overlay;
+  }
+  .wrap{max-width:1240px;margin:0 auto;position:relative;z-index:1}
+
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:16px}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand img{height:36px;width:auto;filter:drop-shadow(0 0 16px rgba(139,164,240,.35))}
+  .brand .x{font-family:var(--font-mono);font-size:13px;color:var(--mute);letter-spacing:.2em}
+  .brand .name{font-size:14px;color:var(--body);font-weight:600;letter-spacing:.04em}
+  .top-meta{text-align:right}
+  .top-meta .h{font-size:22px;font-weight:800;letter-spacing:-.02em}
+  .top-meta .s{font-size:12.5px;color:var(--mute);margin-top:4px;font-weight:500}
+
+  .period{display:flex;gap:3px;padding:3px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--line);width:fit-content;margin-bottom:26px}
+  .period span{font-size:12px;font-weight:600;padding:7px 14px;border-radius:8px;color:var(--mute);cursor:pointer}
+  .period span.on{background:rgba(255,255,255,.95);color:#0a0a0c}
+
+  .section-label{font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--a2);margin-bottom:14px}
+
+  /* ── premium interactive tilt/glow (mouse tracking) ── */
+  .control-card,.panel,.kpi{
+    --mx:50%;--my:20%;
+    transform:perspective(900px) rotateX(0deg) rotateY(0deg) translateY(0) translateZ(0);
+    transition:transform .4s var(--ease),border-color .4s var(--ease),box-shadow .4s var(--ease);
+    will-change:transform;
+    transform-style:preserve-3d;
+  }
+  .control-card.tilt-active,.panel.tilt-active,.kpi.tilt-active{
+    transition:transform .06s linear,border-color .4s var(--ease),box-shadow .4s var(--ease);
+  }
+  .control-card::after,.panel::after,.kpi::after{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:1;
+    background:radial-gradient(220px 150px at var(--mx) var(--my),rgba(139,164,240,.22),transparent 70%);
+    transition:opacity .4s var(--ease);
+  }
+  .control-card:hover::after,.panel:hover::after,.kpi:hover::after{opacity:1}
+  .control-card:hover,.panel:hover,.kpi:hover{
+    border-color:rgba(139,164,240,.45);
+    box-shadow:0 0 40px -10px rgba(91,124,222,.35),0 24px 48px -22px rgba(0,0,0,.65);
+  }
+
+  .control-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:32px}
+  .control-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;overflow:hidden}
+  .control-card.warn{border-color:rgba(255,159,10,.35)}
+  .control-card.bad{border-color:rgba(255,69,58,.4)}
+  .control-card.ok{border-color:rgba(52,199,89,.3)}
+  .control-card .lbl{font-size:12.5px;color:var(--body);font-weight:600;margin-bottom:10px}
+  .control-card .val{font-size:34px;font-weight:800;letter-spacing:-.03em}
+  .control-card .sub{font-size:11.5px;color:var(--mute);margin-top:6px;font-weight:500}
+  .control-card .pip{position:absolute;top:18px;right:18px;width:8px;height:8px;border-radius:50%}
+  .control-card.warn .pip{background:#FF9F0A}
+  .control-card.bad .pip{background:#FF453A}
+  .control-card.ok .pip{background:#30D158}
+
+  .row2{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:32px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;position:relative;overflow:hidden}
+  .panel .ph{font-size:15px;font-weight:700;margin-bottom:16px;letter-spacing:-.01em}
+  .cycle-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .cycle-row:last-child{border-bottom:none}
+  .cycle-row span:first-child{color:var(--body);font-weight:500}
+  .pill{font-family:var(--font-mono);font-size:11px;font-weight:600;padding:4px 10px;border-radius:980px}
+  .pill.ok{background:rgba(52,199,89,.15);color:#30D158}
+  .pill.warn{background:rgba(255,159,10,.15);color:#FF9F0A}
+  .pill.info{background:rgba(91,124,222,.18);color:var(--a2)}
+  .pill.bad{background:rgba(255,69,58,.15);color:#FF453A}
+
+  .task-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .task-row:last-child{border-bottom:none}
+  .task-row .who{font-weight:600}
+  .task-row .cnt{font-family:var(--font-mono);font-weight:700;color:var(--a2)}
+  .print-btn{margin-top:6px;font-size:12px;font-weight:600;color:var(--mute);border:1px solid var(--line);background:var(--card-2);padding:8px 14px;border-radius:980px;cursor:pointer;font-family:var(--font)}
+  .print-btn:hover{color:var(--ink);border-color:var(--a1)}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;opacity:.85}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;position:relative;overflow:hidden}
+  .kpi .lbl{font-size:11px;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:.02em;margin-bottom:10px;min-height:2.4em}
+  .kpi .val{font-size:20px;font-weight:800;letter-spacing:-.02em}
+  .kpi .delta{margin-top:6px;font-size:11px;font-weight:600;color:#30D158}
+  .kpi .delta.down{color:#FF453A}
+
+  .footnote{margin-top:28px;font-size:12px;color:var(--mute);max-width:70ch;line-height:1.5}
+
+  @media (max-width:1000px){
+    .control-grid{grid-template-columns:repeat(2,1fr)}
+    .row2{grid-template-columns:1fr}
+    .kpi-grid{grid-template-columns:repeat(3,1fr)}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand">
+      <img src="assets/logo-billboardoff-white.png" alt="Billboardoff">
+      <span class="x">×</span>
+      <span class="name">MS PRODUCT · ПАНЕЛЬ КОНТРОЛЯ</span>
+    </div>
+    <div class="top-meta">
+      <div class="h">Панель контроля</div>
+      <div class="s">Прототип · цифры иллюстративные · часть объёма проекта</div>
+    </div>
+  </div>
+
+  <div class="period">
+    <span>Неделя</span>
+    <span class="on">Месяц</span>
+    <span>Квартал</span>
+  </div>
+
+  <div class="section-label">Приоритет 1 · контроль сейчас</div>
+  <div class="control-grid">
+    <div class="control-card warn"><span class="pip"></span><div class="lbl">Просрочен SLA</div><div class="val">3</div><div class="sub">ответ дольше 15 мин</div></div>
+    <div class="control-card bad"><span class="pip"></span><div class="lbl">Эскалация &gt;2ч</div><div class="val">1</div><div class="sub">без реакции менеджера</div></div>
+    <div class="control-card ok"><span class="pip"></span><div class="lbl">Без следующего шага</div><div class="val">0</div><div class="sub">сторож на сервере</div></div>
+    <div class="control-card warn"><span class="pip"></span><div class="lbl">Продления под риском</div><div class="val">2</div><div class="sub">переход без доказательства</div></div>
+  </div>
+
+  <div class="row2">
+    <div class="panel">
+      <div class="ph">Продление · цикл</div>
+      <div class="cycle-row"><span>Счёт выставлен</span><span class="pill ok">41</span></div>
+      <div class="cycle-row"><span>Ожидают оплату</span><span class="pill warn">17</span></div>
+      <div class="cycle-row"><span>Макет / печать</span><span class="pill info">9</span></div>
+      <div class="cycle-row"><span>Монтаж / фотоотчёт</span><span class="pill info">6</span></div>
+      <div class="cycle-row"><span>Успешно реализовано (мес.)</span><span class="pill ok">38</span></div>
+    </div>
+    <div class="panel">
+      <div class="ph">Задачи на планёрку</div>
+      <div class="task-row"><span class="who">Анна · продление</span><span class="cnt">8</span></div>
+      <div class="task-row"><span class="who">Игорь · новички</span><span class="cnt">5</span></div>
+      <div class="task-row"><span class="who">Мария · макеты</span><span class="cnt">4</span></div>
+      <div class="task-row"><span class="who">Всего активных задач</span><span class="cnt">17</span></div>
+      <button class="print-btn" onclick="window.print()">Печать списка на планёрку</button>
+    </div>
+  </div>
+
+  <div class="section-label">Приоритет 2 · сводка планёрки (6 KPI)</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="lbl">Доход по текущим</div><div class="val">4,2 млн</div><div class="delta">↑ 6%</div></div>
+    <div class="kpi"><div class="lbl">Доход по новым</div><div class="val">680 тыс</div><div class="delta">↑ 12%</div></div>
+    <div class="kpi"><div class="lbl">Сумма дохода</div><div class="val">4,88 млн</div><div class="delta">↑ 7%</div></div>
+    <div class="kpi"><div class="lbl">Конструкции</div><div class="val">142</div><div class="delta">↑ 9 шт.</div></div>
+    <div class="kpi"><div class="lbl">Действующие клиенты</div><div class="val">318</div><div class="delta">стабильно</div></div>
+    <div class="kpi"><div class="lbl">Новые клиенты</div><div class="val">12</div><div class="delta down">↓ 2 к плану</div></div>
+  </div>
+
+  <p class="footnote">Черновой прототип дизайна (аванс владельца) — финальный дизайн и подключение к реальным данным (amoCRM API, сервер MS Product) — часть объёма проекта, не отдельная доплата и не готовый результат. Приоритет экрана: контроль сейчас → цикл продления → задачи → сводка KPI.</p>
+
+</div>
+
+<script>
+  /* ── premium 3D-tilt + glow — transform set inline (как у DIVO) ── */
+  (function(){
+    const SEL = ".control-card,.panel,.kpi";
+    const MAX = 12;
+    let active = null;
+    function reset(el){
+      el.style.transform = "perspective(900px) rotateX(0deg) rotateY(0deg) translateY(0px) translateZ(0)";
+      el.classList.remove("tilt-active");
+    }
+    document.addEventListener("pointermove", e => {
+      const card = e.target.closest(SEL);
+      if (!card) { if (active) { reset(active); active = null; } return; }
+      if (card !== active) { if (active) reset(active); active = card; card.classList.add("tilt-active"); }
+      const r = card.getBoundingClientRect();
+      const px = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      const py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+      const ry = ((px - 0.5) * MAX).toFixed(2);
+      const rx = ((0.5 - py) * MAX).toFixed(2);
+      card.style.transform = "perspective(900px) rotateX(" + rx + "deg) rotateY(" + ry + "deg) translateY(-4px) translateZ(12px)";
+      card.style.setProperty("--mx", (px * 100).toFixed(1) + "%");
+      card.style.setProperty("--my", (py * 100).toFixed(1) + "%");
+    });
+    document.addEventListener("pointerleave", () => { if (active) { reset(active); active = null; } });
+  })();
+</script>
+</body>
+</html>

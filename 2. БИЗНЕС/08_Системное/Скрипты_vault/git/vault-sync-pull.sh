@@ -1,6 +1,6 @@
 #!/bin/sh
 # Для второго Mac: вызывай перед работой в этом репозитории (или по ярлыку).
-# Из корня vault: Бизнес/99_Системное/Скрипты_vault/git/vault-sync-pull.sh
+# Из корня vault: 2. БИЗНЕС/08_Системное/Скрипты_vault/git/vault-sync-pull.sh
 
 set -e
 root=$(cd "$(dirname "$0")/../../../.." && pwd)

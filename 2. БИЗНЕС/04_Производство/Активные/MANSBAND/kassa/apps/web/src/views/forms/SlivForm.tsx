@@ -15,8 +15,6 @@ import {
 } from "./common";
 import { STORE_ADDRESS } from "../../data/mock";
 
-const SLIV_STAGES = ["Встреча назначена", "Провал"];
-
 export function SlivForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
   const { saved, setSaved, toast } = useSaved();
@@ -26,9 +24,21 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
   const [client, setClient] = useState<ClientData>({ name: "", phone: "", channel: "", purpose: "" });
   const [meetingDate, setMeetingDate] = useState("");
   const [comment, setComment] = useState("");
-  const [stage, setStage] = useState("Встреча назначена");
+  const [stage, setStage] = useState("Провал");
+  const stages = meetingDate ? ["Встреча назначена", "Провал"] : ["Провал"];
 
-  const baseFilled = !!(client.phone && comment.trim());
+  function handleMeetingDate(value: string) {
+    setMeetingDate(value);
+    setStage(value ? "Встреча назначена" : "Провал");
+  }
+
+  // На «Провале» телефон не нужен — консультант фиксирует только факт и комментарий.
+  const phoneRequired = stage === "Встреча назначена";
+  const missingRequired = [
+    phoneRequired && !client.phone && "Телефон",
+    !comment.trim() && "Комментарий",
+  ].filter(Boolean) as string[];
+  const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
     addDeal({
@@ -57,21 +67,20 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      title="Слив (перенаправление клиента)"
-      subtitle="Передать клиента в другой шоурум — конверсия защитит обоих консультантов"
       onBack={onDone}
+      title="Слив"
+      subtitle="Передать клиента в другой шоурум — конверсия защитит обоих консультантов"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
+      missingRequired={missingRequired}
       footer={
         <StageActions
-          stages={SLIV_STAGES}
+          stages={stages}
           stage={stage}
           onStageChange={setStage}
           onSave={save}
           saved={saved}
           disabled={!baseFilled}
-          onBack={onDone}
-          successHint={!baseFilled ? "Заполните телефон и комментарий" : undefined}
         />
       }
     >
@@ -79,11 +88,16 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
         <SectionTitle>Консультант и клиент</SectionTitle>
         <ConsultantFields data={consultants} onChange={setConsultants} />
         <div className="mt-4">
-          <ClientFields data={client} onChange={setClient} />
+          <ClientFields
+            data={client}
+            onChange={setClient}
+            phoneRequired={phoneRequired}
+            nameRequired={phoneRequired}
+          />
         </div>
         <div className="mt-4 max-w-[220px]">
-          <Field label="Дата встречи">
-            <input type="date" className="input" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} />
+          <Field label="Дата встречи" hint="Без даты заявка может быть сохранена только в «Провал»">
+            <input type="date" className="input" value={meetingDate} onChange={(e) => handleMeetingDate(e.target.value)} />
           </Field>
         </div>
         <div className="mt-4">

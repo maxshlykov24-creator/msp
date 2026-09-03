@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button, Field } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
+import { warmupApi } from "../api/client";
 
 export function Login() {
   const { login } = useAuth();
@@ -14,6 +15,8 @@ export function Login() {
     setError(null);
     setBusy(true);
     try {
+      // Safari/LTE: сначала «размять» TCP к /api, потом POST login
+      await warmupApi();
       await login(loginValue.trim(), password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка входа");
@@ -37,6 +40,9 @@ export function Login() {
               onChange={(e) => setLoginValue(e.target.value)}
               autoFocus
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </Field>
           <Field label="Пароль" required>

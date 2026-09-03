@@ -1,8 +1,8 @@
 """Обработка входящих вебхуков от LiveInform.
 
 Нативная интеграция LiveInform → amoCRM сама обновляет поле «Статус LiveInform».
-Наша задача: принять вебхук → прочитать актуальный статус из amoCRM (или fallback
-из тела вебхука) → отправить Telegram-уведомление привязанным клиентам.
+Наша задача: принять вебхук → классифицировать смысловой статус → при попадании
+в whitelist отправить шаблон привязанным клиентам в Telegram/MAX.
 """
 from __future__ import annotations
 
@@ -14,13 +14,20 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import amocrm_client, ui_text
+from app import amocrm_client
 from app.config import get_settings
+from app.delivery_notify_templates import template_for
+from app.delivery_semantics import (
+    classify_delivery_event,
+    delivery_status_code,
+    is_intentional_no_notify,
+)
 from app.liveinform_parse import extract_liveinform_id, extract_tracking_hint
 from app.messenger import notify
 from app.models import ContactBinding, LiveinformTrackingMap, ProcessedEvent
+from app.ops_alert import maybe_alert_unclassified
 from app.phone_utils import normalize_phone, normalize_tracking
-from app.status_text import format_liveinform_crm_line, telegram_line_from_track
+from app.status_text import format_liveinform_crm_line
 
 log = logging.getLogger(__name__)
 
@@ -44,17 +51,22 @@ def _upsert_tracking_map(db: Session, tracking_raw: str, liveinform_id: str) -> 
         log.warning("Не удалось сохранить liveinform_tracking_map", exc_info=True)
 
 
+def _mark_processed(db: Session, dedup_key: str) -> None:
+    try:
+        db.add(ProcessedEvent(source="liveinform", dedup_key=dedup_key))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+
 def sync_liveinform_event(db: Session, payload: dict[str, Any]) -> None:
     """Обрабатывает вебхук от LiveInform.
 
     1. Извлекает liveinform_id и трек из payload.
-    2. Находит сделки amoCRM по трек-номеру, читает поле «Статус LiveInform»
-       (GET лида — актуальные custom_fields после нативной интеграции LI).
-    3. Если поле ещё пустое — fallback: текст из тела вебхука (format_liveinform_crm_line).
-    4. Шлёт Telegram-уведомление привязанным клиентам (без PATCH лида в amo).
+    2. Находит сделки amoCRM по трек-номеру, читает поле «Статус LiveInform».
+    3. Классифицирует смысловой статус (код LI + алиасы СДЭК/Почта).
+    4. Вне whitelist — тишина; внутри — шаблон один раз на (трек, semantic_id).
     """
-    s = get_settings()
-
     lf_id = extract_liveinform_id(payload)
     tracking_hint = extract_tracking_hint(payload)
 
@@ -73,7 +85,9 @@ def sync_liveinform_event(db: Session, payload: dict[str, Any]) -> None:
         log.info("LiveInform webhook: нет трек-номера, выходим")
         return
 
-    dedup_piece = str(payload.get("status", "")) + str(payload.get("status_text", ""))
+    tracking_norm = normalize_tracking(tracking) or tracking
+    code = delivery_status_code(payload)
+    dedup_piece = f"{code}|{payload.get('status', '')}|{payload.get('track_status', '')}|{payload.get('status_text', '')}"
     dedup_key = f"li:{lf_id or tracking_hint}:{dedup_piece}"[:511]
 
     ex = db.execute(
@@ -89,6 +103,7 @@ def sync_liveinform_event(db: Session, payload: dict[str, Any]) -> None:
     # Даём нативной интеграции LI→amoCRM 2 секунды записать статус в поле
     time.sleep(2)
 
+    s = get_settings()
     st_fid = int(s.amo_field_lead_liveinform_status or 0)
     leads = amocrm_client.find_leads_with_cdek(db, tracking)
 
@@ -106,8 +121,31 @@ def sync_liveinform_event(db: Session, payload: dict[str, Any]) -> None:
     if not status_line.strip():
         status_line = format_liveinform_crm_line(payload)
 
-    # Дедуп по итоговому тексту уведомления — не шлём тот же статус дважды
-    notify_dedup_key = f"li_tg:{lf_id or tracking}:{status_line}"[:511]
+    semantic_id = classify_delivery_event(payload, status_line=status_line)
+    if not semantic_id:
+        if is_intentional_no_notify(payload):
+            log.info(
+                "liveinform: явный отказ (возврат/стоп), клиенту не шлём. track=%s",
+                tracking_norm,
+            )
+        else:
+            log.info(
+                "liveinform: серый/нераспознанный статус, клиенту не шлём. track=%s status_line=%r",
+                tracking_norm,
+                status_line[:80] if status_line else "",
+            )
+            maybe_alert_unclassified(
+                db,
+                tracking_norm=tracking_norm,
+                tracking_raw=tracking,
+                liveinform_id=(lf_id or ""),
+                payload=payload,
+                status_line=status_line,
+            )
+        _mark_processed(db, dedup_key)
+        return
+
+    notify_dedup_key = f"li_tg:{tracking_norm}:{semantic_id}"[:511]
     notify_ex = db.execute(
         select(ProcessedEvent).where(
             ProcessedEvent.source == "liveinform",
@@ -116,12 +154,13 @@ def sync_liveinform_event(db: Session, payload: dict[str, Any]) -> None:
     ).scalar_one_or_none()
     if notify_ex:
         log.info("Статус уже отправлен клиенту, пропускаем: %s", notify_dedup_key[:120])
-        # Всё равно сохраняем первичный dedup чтобы не обрабатывать этот payload повторно
-        try:
-            db.add(ProcessedEvent(source="liveinform", dedup_key=dedup_key))
-            db.commit()
-        except IntegrityError:
-            db.rollback()
+        _mark_processed(db, dedup_key)
+        return
+
+    tg_body = template_for(semantic_id)
+    if not tg_body:
+        log.warning("liveinform: нет шаблона для semantic_id=%s", semantic_id)
+        _mark_processed(db, dedup_key)
         return
 
     contact_ids_set: set[int] = set(amocrm_client.collect_contact_ids_from_leads(leads))
@@ -138,14 +177,6 @@ def sync_liveinform_event(db: Session, payload: dict[str, Any]) -> None:
     ph_li = normalize_phone(str(payload.get("phone", "") or ""))
     if ph_li:
         all_phones.add(ph_li)
-
-    tmpl = (s.tg_notify_template or "{status_text}").strip()
-    tg_body = telegram_line_from_track(
-        tmpl,
-        tracking=tracking,
-        status_text=status_line,
-        delivery=str(payload.get("delivery", "") or ""),
-    )
 
     bindings: list[ContactBinding] = []
     seen_binding_ids: set[int] = set()
@@ -165,7 +196,8 @@ def sync_liveinform_event(db: Session, payload: dict[str, Any]) -> None:
                 bindings.append(b)
 
     log.info(
-        "liveinform: lead_contacts=%s phones=%s bindings=%s status=%r",
+        "liveinform: semantic=%s lead_contacts=%s phones=%s bindings=%s status=%r",
+        semantic_id,
         sorted(contact_ids_set),
         sorted(all_phones),
         [(b.telegram_chat_id, b.channel, b.amo_contact_id) for b in bindings],
@@ -173,32 +205,21 @@ def sync_liveinform_event(db: Session, payload: dict[str, Any]) -> None:
     )
 
     seen_keys: set[str] = set()
-    if tg_body:
-        for b in bindings:
-            if b.is_blocked:
-                continue
-            key = f"{b.channel}:{b.telegram_chat_id}"
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            ok, err = notify(b, tg_body)
-            if not ok and err == "blocked":
-                b.is_blocked = True
-                try:
-                    db.commit()
-                except Exception:
-                    db.rollback()
-                # Снимаем флажок «Подписан на бот» в карточке amo — аудитория реальная
-                amocrm_client.set_contact_bot_active(db, int(b.amo_contact_id), b.channel, False)
+    for b in bindings:
+        if b.is_blocked:
+            continue
+        key = f"{b.channel}:{b.telegram_chat_id}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        ok, err = notify(b, tg_body)
+        if not ok and err == "blocked":
+            b.is_blocked = True
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+            amocrm_client.set_contact_bot_active(db, int(b.amo_contact_id), b.channel, False)
 
-    try:
-        db.add(ProcessedEvent(source="liveinform", dedup_key=dedup_key))
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        log.info("Race duplicate liveinform dedup skipped")
-    try:
-        db.add(ProcessedEvent(source="liveinform", dedup_key=notify_dedup_key))
-        db.commit()
-    except IntegrityError:
-        db.rollback()
+    _mark_processed(db, dedup_key)
+    _mark_processed(db, notify_dedup_key)

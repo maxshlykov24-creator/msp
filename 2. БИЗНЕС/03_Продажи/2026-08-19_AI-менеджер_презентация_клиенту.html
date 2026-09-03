@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-менеджер первой линии — внедрение под ключ</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0b0e14;
+    --bg2: #11151f;
+    --card: #161b28;
+    --line: #232a3a;
+    --text: #e8ebf2;
+    --muted: #8b93a7;
+    --accent: #5b8cff;
+    --accent2: #38d39f;
+    --warn: #ffb454;
+    --red: #ff6b6b;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  .deck { height: 100vh; width: 100vw; position: relative; overflow: hidden; }
+  .slide { position: absolute; inset: 0; display: none; flex-direction: column;
+    justify-content: center; padding: 6vh 8vw; background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(91,140,255,.12), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(56,211,159,.08), transparent 60%),
+    var(--bg); }
+  .slide.active { display: flex; animation: fade .35s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(12px);} to { opacity: 1; transform: none;} }
+  .kicker { color: var(--accent); font-size: 14px; letter-spacing: .18em;
+    text-transform: uppercase; font-weight: 600; margin-bottom: 18px; }
+  h1 { font-size: clamp(34px, 4.6vw, 62px); line-height: 1.08; font-weight: 800; letter-spacing: -0.02em; }
+  h2 { font-size: clamp(28px, 3.4vw, 46px); line-height: 1.12; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 28px; }
+  .sub { color: var(--muted); font-size: clamp(16px, 1.5vw, 21px); margin-top: 22px; max-width: 60ch; line-height: 1.55; }
+  .grid { display: grid; gap: 18px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px; }
+  .card h3 { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+  .card p, .card li { color: var(--muted); font-size: 15px; line-height: 1.55; }
+  .card .num { font-size: 30px; font-weight: 800; color: var(--accent); }
+  ul.clean { list-style: none; }
+  ul.clean li { padding-left: 26px; position: relative; margin-bottom: 12px; color: var(--muted); font-size: 16px; line-height: 1.5; }
+  ul.clean li::before { content: ""; position: absolute; left: 0; top: 8px; width: 10px; height: 10px;
+    border-radius: 3px; background: var(--accent); }
+  ul.clean li b { color: var(--text); font-weight: 600; }
+  .flow { display: flex; align-items: stretch; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .step { flex: 1; min-width: 150px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px; position: relative; }
+  .step .n { width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+    color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center;
+    justify-content: center; margin-bottom: 12px; }
+  .step h4 { font-size: 15px; margin-bottom: 6px; }
+  .step p { color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+  .arrow { align-self: center; color: var(--accent); font-size: 22px; font-weight: 700; }
+  .quote { background: var(--card); border-left: 4px solid var(--accent2); border-radius: 0 14px 14px 0;
+    padding: 20px 26px; font-size: clamp(17px, 1.7vw, 22px); line-height: 1.55; font-style: italic; max-width: 70ch; }
+  .quote .who { display: block; margin-top: 12px; font-style: normal; color: var(--muted); font-size: 14px; }
+  table.t { width: 100%; border-collapse: collapse; }
+  table.t th, table.t td { text-align: left; padding: 13px 16px; border-bottom: 1px solid var(--line); font-size: 15px; }
+  table.t th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+  table.t td:first-child { font-weight: 600; }
+  .tag { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+  .tag.g { background: rgba(56,211,159,.15); color: var(--accent2); }
+  .tag.y { background: rgba(255,180,84,.15); color: var(--warn); }
+  .tag.r { background: rgba(255,107,107,.15); color: var(--red); }
+  .big { font-size: clamp(40px, 5vw, 72px); font-weight: 800; color: var(--accent); line-height: 1; }
+  .nav { position: fixed; bottom: 26px; right: 34px; display: flex; gap: 10px; z-index: 50; }
+  .nav button { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); font-size: 18px; cursor: pointer; transition: .2s; }
+  .nav button:hover { background: var(--accent); border-color: var(--accent); }
+  .progress { position: fixed; bottom: 0; left: 0; height: 3px; background: var(--accent); width: 0; transition: width .3s; z-index: 60; }
+  .counter { position: fixed; bottom: 34px; left: 34px; color: var(--muted); font-size: 13px; z-index: 50; letter-spacing: .1em; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  .hl { color: var(--accent2); }
+  @media (max-width: 900px) { .g2, .g3, .two-col { grid-template-columns: 1fr; } .slide { padding: 5vh 6vw 12vh; } }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <!-- 1. Титул -->
+  <section class="slide">
+    <div class="kicker">Внедрение AI в отдел продаж</div>
+    <h1>AI-менеджер первой линии.<br>Сотрудник, который не спит.</h1>
+    <p class="sub">Принимает каждого входящего лида за секунды, квалифицирует по вашей методологии
+    и передаёт менеджеру только готовых к разговору — с полным резюме диалога. 24/7, без выходных,
+    голосом вашей компании.</p>
+  </section>
+
+  <!-- 2. Проблема -->
+  <section class="slide">
+    <div class="kicker">Зачем это нужно</div>
+    <h2>Где бизнес теряет лиды сегодня</h2>
+    <div class="grid g3">
+      <div class="card"><div class="num">ночь</div><h3 style="margin-top:10px">Вне рабочего времени</h3>
+        <p>Лид пишет в 23:00 или в воскресенье. Ответ через 12 часов — и он уже у конкурента.</p></div>
+      <div class="card"><div class="num">мин</div><h3 style="margin-top:10px">Скорость ответа</h3>
+        <p>Конверсия падает с каждой минутой ожидания. Менеджер занят звонком — лид ждёт.</p></div>
+      <div class="card"><div class="num">−40%</div><h3 style="margin-top:10px">Пустая нагрузка</h3>
+        <p>До половины времени менеджеров уходит на «нецелевых»: любопытные, мимо ЦА, тролли.</p></div>
+    </div>
+    <p class="sub">AI-менеджер снимает первую линию целиком: мгновенный ответ любому, в любое время,
+    и фильтр, который пропускает к живому человеку только целевых.</p>
+  </section>
+
+  <!-- 3. Что это -->
+  <section class="slide">
+    <div class="kicker">Суть решения</div>
+    <h2>Не чат-бот. Обученный сотрудник</h2>
+    <div class="two-col">
+      <div>
+        <ul class="clean">
+          <li><b>Работает по вашей методологии.</b> Перед запуском мы погружаемся в ваш бизнес: позиционирование, воронка, портрет целевого клиента, тон общения.</li>
+          <li><b>Говорит голосом вашей компании.</b> Ваши формулировки, ваши правила, ваш стоп-лист. Клиент не отличит стиль от вашего лучшего менеджера.</li>
+          <li><b>Знает границы роли.</b> Не продаёт и не торгуется — квалифицирует и передаёт. Продажу закрывает живой человек.</li>
+          <li><b>Помнит каждый диалог.</b> Вся история переписки сохраняется и систематизируется.</li>
+        </ul>
+      </div>
+      <div class="card" style="padding:32px">
+        <h3 style="font-size:19px; margin-bottom:16px">Что получает ваш менеджер</h3>
+        <div style="font-family:ui-monospace,monospace; font-size:14.5px; line-height:2; color:var(--muted)">
+          <div><span style="color:var(--accent)">ЗАПРОС:</span> суть потребности одной фразой</div>
+          <div><span style="color:var(--accent)">КОНТАКТ:</span> имя и способ связи</div>
+          <div><span style="color:var(--accent)">ДЕТАЛИ:</span> 2–3 пункта по существу</div>
+          <div><span style="color:var(--accent)">СРОЧНОСТЬ:</span> высокая / средняя / низкая</div>
+          <div><span style="color:var(--accent)">ПРИЗНАК ГОРЯЧИЙ:</span> почему лид целевой</div>
+        </div>
+        <p style="margin-top:16px">Резюме читается за 30 секунд. Менеджер входит в разговор подготовленным — без «алло, расскажите о себе».</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Как работает -->
+  <section class="slide">
+    <div class="kicker">Сценарий работы</div>
+    <h2>Как проходит диалог</h2>
+    <div class="flow">
+      <div class="step"><div class="n">1</div><h4>Касание</h4><p>Лид пишет в Telegram — ответ за секунды, в любое время суток.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">2</div><h4>Квалификация</h4><p>5–7 вопросов по вашей методологии. Один вопрос за раз, без анкеты-допроса. Уже отвеченное не переспрашивается.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">3</div><h4>Оценка</h4><p>Сверка с портретом целевого клиента: подходит / не подходит / горячий.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">4</div><h4>Передача</h4><p>Горячий — менеджеру с резюме. Нецелевой — вежливое завершение без потери репутации.</p></div>
+    </div>
+    <p class="sub">В среднем 5–8 сообщений и 3–7 минут от первого касания до квалифицированного лида на столе менеджера.</p>
+  </section>
+
+  <!-- 5. «Ты бот?» -->
+  <section class="slide">
+    <div class="kicker">Продуманные детали · пример 1</div>
+    <h2>«А ты бот?» — сценарий доверия</h2>
+    <div class="two-col">
+      <div>
+        <p style="color:var(--muted); font-size:17px; line-height:1.65; margin-bottom:20px">
+        Рано или поздно каждый лид задаёт этот вопрос. Здесь большинство решений проваливаются:
+        либо врут и теряют доверие навсегда, либо открещиваются и обесценивают себя.</p>
+        <p style="font-size:17px; line-height:1.65">Наш сценарий — <span class="hl">честность с позиции силы</span>:
+        не притворяться человеком, но и не извиняться за то, что ты эффективен.</p>
+      </div>
+      <div class="quote">«Да, я AI-помощник первой линии. Закрываю типовые вопросы и квалификацию.
+        Когда нужен человек — сразу зову менеджера. Так быстрее для всех.»
+        <span class="who">— заготовленный ответ, одна из десятков прописанных реакций</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. Анти-галлюцинация -->
+  <section class="slide">
+    <div class="kicker">Продуманные детали · пример 2</div>
+    <h2>Защита от выдумок: жёсткий контур фактов</h2>
+    <div class="grid g2">
+      <div class="card"><h3>Что AI никогда не сделает</h3>
+        <ul class="clean" style="margin-top:6px">
+          <li>Не назовёт цену, которой нет в ваших материалах</li>
+          <li>Не пообещает срок «завтра в 14:00»</li>
+          <li>Не выдумает контакт, скидку или условие</li>
+          <li>Не подтвердит оплату или заказ без проверки</li>
+        </ul>
+      </div>
+      <div class="card"><h3>Что сделает вместо этого</h3>
+        <ul class="clean" style="margin-top:6px">
+          <li>Даст вилку цен и сошлётся на менеджера: «точнее — на коротком звонке»</li>
+          <li>Скажет «обычно в течение N дней» — только ваши формулировки</li>
+          <li>Честно ответит «уточню у менеджера» — и передаст вопрос человеку</li>
+          <li>Ответит только из согласованной базы знаний компании</li>
+        </ul>
+      </div>
+    </div>
+    <p class="sub">Это главный риск AI в продажах — и он закрыт на уровне архитектуры, а не обещаний.</p>
+  </section>
+
+  <!-- 7. Нестандартные ситуации -->
+  <section class="slide">
+    <div class="kicker">Продуманные детали · пример 3</div>
+    <h2>Протоколы на нестандартные ситуации</h2>
+    <table class="t">
+      <tr><th>Ситуация</th><th>Реакция AI-менеджера</th><th></th></tr>
+      <tr><td>«Соедините с человеком»</td><td>Мгновенная передача менеджеру. Без уговоров и «а давайте я всё-таки…»</td><td><span class="tag g">эскалация</span></td></tr>
+      <tr><td>Негатив, жалоба, агрессия</td><td>Спокойный ответ + передача живому с пометкой приоритета</td><td><span class="tag r">приоритет</span></td></tr>
+      <tr><td>Лид молчит или отвечает «угу»</td><td>Мягкий повторный вопрос, открытые формулировки. Не дожимает</td><td><span class="tag y">дожим</span></td></tr>
+      <tr><td>Троллинг</td><td>Один вежливый ответ, затем завершение. Менеджер не отвлекается</td><td><span class="tag g">фильтр</span></td></tr>
+      <tr><td>Не ваш клиент (мимо ЦА)</td><td>Честное «мы не подходим» + рекомендация, куда обратиться. Репутация сохранена</td><td><span class="tag g">фильтр</span></td></tr>
+      <tr><td>Вопрос не по теме</td><td>Не игнорирует и не отшивает — мягко возвращает к делу</td><td><span class="tag y">возврат</span></td></tr>
+      <tr><td>Диалог затянулся</td><td>Лимит ходов: передача человеку с пометкой, а не бесконечный круг</td><td><span class="tag g">контроль</span></td></tr>
+    </table>
+  </section>
+
+  <!-- 8. Надёжность -->
+  <section class="slide">
+    <div class="kicker">Инженерная часть</div>
+    <h2>Надёжность уровня production</h2>
+    <div class="grid g3">
+      <div class="card"><h3>Резервирование</h3><p>Несколько независимых AI-моделей. Если одна недоступна — система переключается автоматически, клиент ничего не замечает.</p></div>
+      <div class="card"><h3>Круглосуточный контур</h3><p>Выделенный сервер, автозапуск, мониторинг и журналирование каждого диалога и каждой передачи.</p></div>
+      <div class="card"><h3>Контроль качества</h3><p>Лимиты на длину диалога и время ответа. Всё, что выходит за рамки, уходит живому человеку — а не «зависает».</p></div>
+      <div class="card"><h3>Память</h3><p>История диалогов хранится и индексируется. Вернувшийся лид не начинает с нуля.</p></div>
+      <div class="card"><h3>Безопасность</h3><p>Доступы и данные — на вашей выделенной инфраструктуре, под вашим контролем. Не «чей-то сервис».</p></div>
+      <div class="card"><h3>Управление без кода</h3><p>Голос, вопросы, критерии — в «паспорте сотрудника». Правки применяются сразу, без программиста и без остановки работы.</p></div>
+    </div>
+  </section>
+
+  <!-- 9. Тестирование -->
+  <section class="slide">
+    <div class="kicker">Перед запуском</div>
+    <h2>Мы не запускаем «вслепую»</h2>
+    <div class="two-col">
+      <div>
+        <p style="color:var(--muted); font-size:17px; line-height:1.65; margin-bottom:18px">
+        До выхода в бой AI-менеджер проходит мастер-тест: серию отрепетированных диалогов
+        на реальных сценариях вашего бизнеса. Проверяем качество ответов, скорость и стоимость
+        на нескольких AI-движках — и выбираем оптимальный.</p>
+        <p style="font-size:17px; line-height:1.65">Запускаем только после того, как сотрудник
+        <span class="hl">сдал экзамен</span>, а не «надеемся, что сработает».</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:14px">Тестовые сценарии (пример)</h3>
+        <ul class="clean">
+          <li>Холодный лид с односложными ответами</li>
+          <li>Горячий лид с полной информацией</li>
+          <li>Вопрос из стоп-листа</li>
+          <li>Вопрос не по теме</li>
+          <li>Требование «дайте человека»</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10. KPI -->
+  <section class="slide">
+    <div class="kicker">Результат в цифрах</div>
+    <h2>На что ориентируемся</h2>
+    <div class="grid g3" style="margin-bottom:26px">
+      <div class="card" style="text-align:center; padding:34px"><div class="big">30%+</div>
+        <p style="margin-top:12px">входящих лидов доходят до статуса «квалифицирован» и передаются менеджеру</p></div>
+      <div class="card" style="text-align:center; padding:34px"><div class="big">5–8</div>
+        <p style="margin-top:12px">сообщений в среднем до квалификации — 3–7 минут вместо часов ожидания</p></div>
+      <div class="card" style="text-align:center; padding:34px"><div class="big">24/7</div>
+        <p style="margin-top:12px">ни один лид не остаётся без мгновенного ответа — ночью, в выходные, в праздники</p></div>
+    </div>
+    <p class="sub">Менеджеры перестают тратить время на фильтрацию и занимаются только тем, что умеют лучше всего: продавать тёплым.</p>
+  </section>
+
+  <!-- 11. Масштабирование -->
+  <section class="slide">
+    <div class="kicker">Стратегия</div>
+    <h2>Это первый сотрудник, а не разовый бот</h2>
+    <p class="sub" style="margin-top:0; margin-bottom:28px; max-width:75ch">AI-менеджер первой линии строится на каркасе,
+    который масштабируется на весь бизнес. Методология, паспорт сотрудника, протоколы — те же. Каждый следующий сотрудник внедряется быстрее и дешевле первого.</p>
+    <div class="flow">
+      <div class="step" style="border-color:var(--accent)"><div class="n">1</div><h4>AI-менеджер 1-й линии</h4><p>Квалификация лидов. Этот проект.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">2</div><h4>Транскрибатор</h4><p>Созвоны и голосовые — в текст и структуру.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">3</div><h4>Контроль качества</h4><p>Проверка диалогов менеджеров по чек-листам.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">4</div><h4>Аналитик</h4><p>Отчёты и выводы по данным продаж.</p></div>
+    </div>
+  </section>
+
+  <!-- 12. Этапы -->
+  <section class="slide">
+    <div class="kicker">Как мы работаем</div>
+    <h2>Этапы внедрения</h2>
+    <div class="grid g2">
+      <div class="card"><h3><span style="color:var(--accent)">01 ·</span> Погружение</h3>
+        <p>Изучаем ваш бизнес: позиционирование, воронку, портрет клиента, тон общения, стоп-темы. Это фундамент — без него AI говорит «вообще», а не вами.</p></div>
+      <div class="card"><h3><span style="color:var(--accent)">02 ·</span> Сборка сотрудника</h3>
+        <p>Формируем паспорт: сценарий квалификации, критерии готовности лида, протоколы эскалации, реакции на нестандартные ситуации.</p></div>
+      <div class="card"><h3><span style="color:var(--accent)">03 ·</span> Мастер-тест</h3>
+        <p>Прогоняем сотрудника по репетиционным диалогам, смотрим ответы глазами, настраиваем. Согласовываем с вами до запуска.</p></div>
+      <div class="card"><h3><span style="color:var(--accent)">04 ·</span> Запуск и сопровождение</h3>
+        <p>Выводим в работу 24/7. Дальше — итерации по факту диалогов: где подкрутить вопрос, где добавить реакцию. Сотрудник умнеет каждую неделю.</p></div>
+    </div>
+  </section>
+
+  <!-- 13. Финал -->
+  <section class="slide">
+    <div class="kicker">Итог</div>
+    <h2>Что вы получаете</h2>
+    <ul class="clean" style="max-width: 75ch">
+      <li><b>Сотрудника первой линии</b>, который отвечает за секунды и работает 24/7 — без найма, адаптации и текучки.</li>
+      <li><b>Методологию, а не скрипт:</b> паспорт сотрудника, протоколы на нестандартные случаи, защита от выдумок, мастер-тест перед запуском.</li>
+      <li><b>Контроль и прозрачность:</b> каждый диалог и каждая передача зафиксированы, резюме приходит менеджеру мгновенно.</li>
+      <li><b>Фундамент роста:</b> на этом же каркасе — следующие AI-сотрудники под ваши задачи.</li>
+    </ul>
+    <p class="sub" style="margin-top:30px">Следующий шаг — погружение: 60–90 минут с вами или вашим руководителем продаж. Дальше мы работаем сами.</p>
+  </section>
+
+</div>
+
+<div class="counter" id="counter">1 / 13</div>
+<div class="nav">
+  <button onclick="go(-1)" aria-label="Назад">←</button>
+  <button onclick="go(1)" aria-label="Вперёд">→</button>
+</div>
+<div class="progress" id="progress"></div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    document.getElementById('counter').textContent = (i + 1) + ' / ' + slides.length;
+    document.getElementById('progress').style.width = ((i + 1) / slides.length * 100) + '%';
+  }
+  function go(d) { show(i + d); }
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(1); }
+    if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); go(-1); }
+  });
+  document.getElementById('deck').addEventListener('click', e => {
+    if (e.target.closest('button')) return;
+    go(1);
+  });
+  show(0);
+</script>
+</body>
+</html>

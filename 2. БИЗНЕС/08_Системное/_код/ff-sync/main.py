@@ -14,12 +14,17 @@ def job_agents():
 
 
 def job_orders():
-    from orders_pull import run
+    from orders_pull import run as run_orders
+    from shipments_pull import run as run_ships
 
     try:
-        run()
+        run_orders()
     except Exception as exc:
         print("заказы ошибка:", exc)
+    try:
+        run_ships(days=14)
+    except Exception as exc:
+        print("отгрузки ошибка:", exc)
 
 
 print("ff-sync: создаю базу")
@@ -32,7 +37,7 @@ try:
 except Exception as exc:
     print("поля, проекты и услуги МойСклад: %s" % exc)
 
-print("ff-sync: клиенты каждые 10 мин, заказы каждые 15 мин")
+print("ff-sync: клиенты каждые 10 мин, заказы и отгрузки каждые 15 мин")
 job_agents()
 sched = BlockingScheduler(timezone="Europe/Moscow")
 sched.add_job(job_agents, "interval", minutes=10, id="agents")

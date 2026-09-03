@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY web ./web
+COPY scripts ./scripts
+COPY tests ./tests
 
 EXPOSE 8080
 

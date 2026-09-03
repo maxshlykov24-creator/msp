@@ -10,10 +10,10 @@
 cd /Users/max/CURSOR
 
 # 1. Git hooks (автопуш после ручного commit)
-bash Бизнес/99_Системное/Скрипты_vault/git/install-git-hooks.sh
+bash 2. БИЗНЕС/08_Системное/Скрипты_vault/git/install-git-hooks.sh
 
 # 2. Launchd (авто pull+commit+push каждые 2 мин + pull при login)
-bash Бизнес/99_Системное/Скрипты_vault/git/install-launchagents.sh
+bash 2. БИЗНЕС/08_Системное/Скрипты_vault/git/install-launchagents.sh
 ```
 
 ## Скрипты
@@ -42,7 +42,7 @@ git add -A && git rebase --continue  # если нужно
 git push origin main
 ```
 
-Лог: `Бизнес/99_Системное/Скрипты_vault/git/logs/vault-sync.log`
+Лог: `2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/vault-sync.log`
 
 ## Что НЕ попадает в GitHub
 
@@ -113,8 +113,8 @@ git reset --hard origin/main
 |---|----------|-----|
 | 1 | Правка `.md` на Mac → GitHub | Подождать 2–4 мин, смотреть Commits на GitHub |
 | 2 | My Machines | Agent на Mac меняет файл локально |
-| 3 | Cloud Agent | Agent знает `Бизнес/`, `агенты/` |
-| 4 | Секреты | `git check-ignore -v Бизнес/99_Системное/ДОСТУПЫ.md` → .gitignore |
+| 3 | Cloud Agent | Agent знает `2. БИЗНЕС/`, `3. АГЕНТЫ/` |
+| 4 | Секреты | `git check-ignore -v 2. БИЗНЕС/08_Системное/ДОСТУПЫ.md` → .gitignore |
 | 5 | post-commit | `git commit --allow-empty -m test` → push без ручного push |
 | 6 | Wake pull | правка на GitHub → включить Mac → файл на диске |
 | 7 | Cloud → main | Finished + ветка main, не cursor/... |

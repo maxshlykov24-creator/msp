@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Search, UserCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ExternalLink, Search } from "lucide-react";
 import { useStore } from "../../store";
-import { Card, Field } from "../../components/ui";
-import { lineTotal } from "../../components/ProductPicker";
+import { Button, Card, Field } from "../../components/ui";
+import { cartTotal } from "../../components/ProductPicker";
+import { ReturnItemsSelector } from "../../components/ReturnItemsSelector";
 import {
   CommentField,
   ConsultantFields,
@@ -10,6 +11,8 @@ import {
   ReturnBlock,
   SectionTitle,
   StageActions,
+  returnDealFields,
+  returnPayoutMissing,
   useSaved,
   type ConsultantData,
   type ReturnInfo,
@@ -17,37 +20,58 @@ import {
 import { STORE_ADDRESS } from "../../data/mock";
 import { formatPhone, money } from "../../lib/format";
 import type { CartItem, Deal } from "../../data/types";
+import { USE_MOCK } from "../../api/client";
 
-export function RefundForm({ onDone }: { onDone: () => void }) {
-  const { activeStore, activeConsultant, addDeal, addQueueItem, nextNumber, findByPhone } = useStore();
+export function RefundForm({
+  onDone,
+  sourceDeal,
+}: {
+  onDone: () => void;
+  sourceDeal?: Deal | null;
+}) {
+  const { activeStore, activeConsultant, addDeal, addQueueItem, nextNumber, findByPhone, deals } =
+    useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
 
-  const [consultants, setConsultants] = useState<ConsultantData>({ consultant: activeConsultant, referredBy: "" });
-  const [phone, setPhone] = useState("");
-  const [source, setSource] = useState<Deal | null>(null);
-  const [selected, setSelected] = useState<Record<number, boolean>>({});
+  const [consultants, setConsultants] = useState<ConsultantData>({
+    consultant: activeConsultant,
+    referredBy: "",
+  });
+  const [phone, setPhone] = useState(sourceDeal?.clientPhone ?? "");
+  const [source, setSource] = useState<Deal | null>(() => sourceDeal ?? null);
+  const [items, setItems] = useState<CartItem[]>([]);
 
   const [returnInfo, setReturnInfo] = useState<ReturnInfo>({ status: "issued", destination: "" });
+  const [manualCheck, setManualCheck] = useState<string[]>([]);
   const [comment, setComment] = useState("");
-  const [stage, setStage] = useState("Взято в работу");
+  const [stage, setStage] = useState("Успех");
 
-  function findSource() {
-    const found = findByPhone(phone);
-    if (found) {
-      setSource(found);
-      const all: Record<number, boolean> = {};
-      found.items.forEach((_, i) => (all[i] = true));
-      setSelected(all);
-    } else {
-      setSource(null);
-    }
+  // Исходная подтянулась асинхронно (NewDeal fetch) — подставляем.
+  useEffect(() => {
+    if (sourceDeal) setSource(sourceDeal);
+  }, [sourceDeal]);
+
+  function openSourceDeal(number: number) {
+    window.location.hash = `board/all/all/${number}`;
   }
 
-  const returnItems: CartItem[] = source ? source.items.filter((_, i) => selected[i]) : [];
-  const refundAmount = returnItems.reduce((s, it) => s + lineTotal(it), 0);
+  function findSource() {
+    const found =
+      findByPhone(phone) ??
+      deals.find((d) => d.clientPhone === phone && (d.stage === "Успех" || d.stage === "Провал"));
+    setSource(found ?? null);
+    setItems([]);
+  }
 
-  const baseFilled = !!(source && returnItems.length > 0 && (returnInfo.status === "issued" || returnInfo.destination.trim()));
+  const refundAmount = cartTotal(items);
+
+  const missingRequired = [
+    !source && "Исходная заявка",
+    items.length === 0 && "Позиции к возврату",
+    ...returnPayoutMissing(refundAmount, returnInfo),
+  ].filter(Boolean) as string[];
+  const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
     if (!source) return;
@@ -65,16 +89,19 @@ export function RefundForm({ onDone }: { onDone: () => void }) {
       channel: source.channel,
       purpose: source.purpose,
       linkedDealNumber: source.number,
-      items: returnItems.map((it) => ({ ...it, price: -Math.abs(it.price) })),
+      items: items.map((it) => ({
+        ...it,
+        price: -Math.abs(it.price),
+        isReturn: true,
+      })),
       payments: [],
       stage: s,
       comment,
-      returnStatus: returnInfo.status,
-      returnDestination: returnInfo.status === "pending" ? returnInfo.destination : undefined,
+      ...returnDealFields(refundAmount, returnInfo),
       total: -refundAmount,
       paid: 0,
     });
-    if (returnInfo.status === "pending") {
+    if (USE_MOCK && returnInfo.status === "pending") {
       addQueueItem({
         id: crypto.randomUUID(),
         kind: "refund",
@@ -83,6 +110,8 @@ export function RefundForm({ onDone }: { onDone: () => void }) {
         amount: refundAmount,
         destination: returnInfo.destination,
         status: "pending",
+        issuedAmount: 0,
+        payouts: [],
         createdAt: meta.createdAt,
       });
     }
@@ -92,23 +121,22 @@ export function RefundForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      title="Возврат"
-      subtitle="Возврат · привязан к исходной заявке"
       onBack={onDone}
+      title="Возврат"
+      subtitle={source ? "Новая заявка" : "Возврат"}
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
+      missingRequired={missingRequired}
       footer={
         <StageActions
-          stages={["Взято в работу"]}
-          stage={stage}
+          stages={["Успех", "Провал"]}
+          stage={stage === "Взято в работу" ? "Успех" : stage}
           onStageChange={setStage}
           onSave={save}
           saved={saved}
           disabled={!baseFilled}
-          onBack={onDone}
           successStage="Успех"
           successDisabled={!baseFilled}
-          successHint={!source ? "Найдите исходную заявку по телефону" : !returnItems.length ? "Выберите позиции к возврату" : undefined}
           onSuccess={() => save("Успех")}
         />
       }
@@ -120,52 +148,62 @@ export function RefundForm({ onDone }: { onDone: () => void }) {
 
       <Card>
         <SectionTitle>Исходная заявка</SectionTitle>
-        <div className="flex gap-2 items-end">
-          <div className="flex-1">
-            <Field label="Телефон клиента" required>
-              <input
-                className="input"
-                inputMode="tel"
-                value={phone}
-                placeholder="+7 (___) ___-__-__"
-                onChange={(e) => setPhone(formatPhone(e.target.value))}
-              />
-            </Field>
+        {source ? (
+          <div className="flex flex-wrap items-center gap-2 justify-between">
+            <div className="text-[13px] text-white min-w-0">
+              <span className="font-semibold">#{source.number}</span>
+              <span className="text-mute">
+                {" "}
+                · {source.clientName} · {formatPhone(source.clientPhone)} · {money(source.total)}
+              </span>
+            </div>
+            <Button variant="subtle" onClick={() => openSourceDeal(source.number)}>
+              <ExternalLink size={14} /> Открыть исходную
+            </Button>
           </div>
-          <button
-            type="button"
-            onClick={findSource}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white font-semibold px-3 py-2.5"
-          >
-            <Search size={16} /> Найти
-          </button>
-        </div>
-        {phone && !source && (
-          <div className="mt-3 text-[12px] text-amber-300/80">Заявка по телефону не найдена</div>
-        )}
-        {source && (
-          <div className="mt-3 flex items-center gap-2 text-[12px] text-emerald-300/90 bg-emerald-400/10 border border-emerald-400/20 rounded px-3 py-2">
-            <UserCheck size={13} /> Найдена заявка #{source.number} · {source.clientName} · {money(source.total)}
-          </div>
+        ) : (
+          <>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <Field label="Телефон клиента" required>
+                  <input
+                    className="input"
+                    inputMode="tel"
+                    value={phone}
+                    placeholder="+7 (___) ___-__-__"
+                    onChange={(e) => setPhone(formatPhone(e.target.value))}
+                  />
+                </Field>
+              </div>
+              <button
+                type="button"
+                onClick={findSource}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white font-semibold px-3 py-2.5"
+              >
+                <Search size={16} /> Найти
+              </button>
+            </div>
+            {phone && !source && (
+              <div className="mt-3 text-[12px] text-amber-300/80">Заявка по телефону не найдена</div>
+            )}
+          </>
         )}
       </Card>
 
       {source && (
         <Card>
           <SectionTitle>Позиции к возврату</SectionTitle>
-          <div className="rounded-lg border border-ink-700 divide-y divide-ink-700 overflow-hidden">
-            {source.items.map((it, i) => (
-              <label key={i} className="flex items-center gap-3 px-3 py-2.5 bg-ink-900/50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!!selected[i]}
-                  onChange={(e) => setSelected((prev) => ({ ...prev, [i]: e.target.checked }))}
-                />
-                <span className="flex-1 text-[14px] text-white">{it.name} × {it.qty}</span>
-                <span className="font-semibold text-white">{it.noPrice ? "—" : money(lineTotal(it))}</span>
-              </label>
-            ))}
-          </div>
+          <ReturnItemsSelector
+            original={source.items.filter((item) => !item.isReturn && item.price >= 0)}
+            selected={items}
+            onChange={setItems}
+            onManualWithoutBarcode={setManualCheck}
+          />
+          {manualCheck.length > 0 && (
+            <div className="mt-3 text-[12px] text-mute">
+              Без штрихкода: {manualCheck.length} поз. — после сохранения задача на проверку консультанту.
+            </div>
+          )}
           <div className="mt-4 flex items-center justify-between rounded-lg bg-ink-900 border border-ink-700 px-4 py-3">
             <span className="text-mute text-sm">Сумма к возврату</span>
             <span className="text-white font-bold text-lg">{money(refundAmount)}</span>

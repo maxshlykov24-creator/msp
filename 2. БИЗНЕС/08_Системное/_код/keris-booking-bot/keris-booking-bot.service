@@ -1,0 +1,16 @@
+[Unit]
+Description=Keris Club booking Mini App bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/keris-booking-bot
+EnvironmentFile=/root/keris-booking-bot/.env
+ExecStart=/usr/bin/python3 /root/keris-booking-bot/bot.py
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

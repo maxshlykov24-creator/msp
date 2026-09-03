@@ -79,11 +79,12 @@ export function Badge({
 }
 
 /** Бейдж этапа amoCRM — цвета как в воронке, приглушённые под тёмный UI */
-export function StageBadge({ stage }: { stage: string }) {
+export function StageBadge({ stage, className = "" }: { stage: string; className?: string }) {
   const s = getStageStyle(stage);
   return (
     <span
-      className="chip border font-medium tracking-[0.01em]"
+      title={stage}
+      className={`chip border font-medium tracking-[0.01em] max-w-full truncate ${className}`.trim()}
       style={{
         backgroundColor: s.bg,
         color: s.text,
@@ -101,32 +102,36 @@ export function Modal({
   children,
   title,
   wide,
+  /** Почти на весь экран — карточка заявки из задач. */
+  xl,
 }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   title?: string;
   wide?: boolean;
+  xl?: boolean;
 }) {
   if (!open) return null;
+  const width = xl ? "max-w-5xl" : wide ? "max-w-3xl" : "max-w-lg";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4">
       <div
         className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm"
         onClick={onClose}
       />
       <div
-        className={`relative card p-0 w-full ${wide ? "max-w-3xl" : "max-w-lg"} max-h-[90vh] overflow-hidden flex flex-col`}
+        className={`relative z-[81] card p-0 w-full ${width} ${xl ? "max-h-[94vh]" : "max-h-[90vh]"} overflow-hidden flex flex-col`}
       >
         {title && (
-          <div className="px-6 py-4 border-b border-ink-700 flex items-center justify-between">
+          <div className="px-6 py-4 border-b border-ink-700 flex items-center justify-between shrink-0">
             <h3 className="text-lg font-bold text-white">{title}</h3>
             <button onClick={onClose} className="text-mute hover:text-white text-xl leading-none">
               ×
             </button>
           </div>
         )}
-        <div className="overflow-y-auto p-6">{children}</div>
+        <div className={`overflow-y-auto ${xl ? "p-4 sm:p-5" : "p-6"}`}>{children}</div>
       </div>
     </div>
   );

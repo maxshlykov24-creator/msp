@@ -69,8 +69,14 @@ def search_contacts_by_query(db: Session, query: str) -> list[dict[str, Any]]:
     variants: list[str] = []
     q0 = query.strip()
     variants.append(q0)
-    if q0.isdigit() and q0.startswith("7") and len(q0) == 11:
-        variants.append("+" + q0)
+    # amoCRM полнотекстовый поиск матчит телефон ровно как он записан в карточке
+    # (индексируется строка цифр). Клиент мог сохранить номер в разных формах:
+    # 79094628283 / +79094628283 / 89094628283 / 9094628283 — перебираем все.
+    if q0.isdigit() and len(q0) == 11 and q0.startswith("7"):
+        national = q0[1:]  # 10 цифр без кода страны
+        for v in ("+" + q0, "8" + national, national):
+            if v not in variants:
+                variants.append(v)
     seen: dict[int, dict[str, Any]] = {}
     with httpx.Client(timeout=30.0) as client:
         for v in variants:
@@ -229,6 +235,7 @@ def find_leads_with_cdek(db: Session, tracking_raw: str) -> list[dict[str, Any]]
     """
     s = get_settings()
     fid = int(s.amo_field_lead_cdek or 0)
+    alt_fid = int(s.amo_field_lead_track_alt or 0)
     want_norm = normalize_tracking(tracking_raw)
     if not want_norm:
         return []
@@ -248,8 +255,11 @@ def find_leads_with_cdek(db: Session, tracking_raw: str) -> list[dict[str, Any]]
             lid = lead.get("id")
             if not isinstance(lid, int) or lid in found:
                 continue
-            if fid > 0:
-                matched = _entity_cdek_matches(lead, fid, want_norm)
+            if fid > 0 or alt_fid > 0:
+                matched = (
+                    (fid > 0 and _entity_cdek_matches(lead, fid, want_norm))
+                    or (alt_fid > 0 and _entity_cdek_matches(lead, alt_fid, want_norm))
+                )
             else:
                 matched = _any_custom_value_matches_normalized(lead, want_norm)
             if matched:
@@ -258,14 +268,21 @@ def find_leads_with_cdek(db: Session, tracking_raw: str) -> list[dict[str, Any]]
     return list(found.values())
 
 
-def fetch_lead_by_id(db: Session, lead_id: int) -> Optional[dict[str, Any]]:
-    """GET /api/v4/leads/{id} — актуальные custom_fields (после нативного обновления LI → amo)."""
+def fetch_lead_by_id(
+    db: Session, lead_id: int, *, with_contacts: bool = False
+) -> Optional[dict[str, Any]]:
+    """GET /api/v4/leads/{id} — актуальные custom_fields (после нативного обновления LI → amo).
+
+    with_contacts=True добавляет ?with=contacts (нужен contact_id сделки, например
+    для автоназначения ответственного по истории продаж контакта).
+    """
     lid = int(lead_id or 0)
     if lid <= 0:
         return None
     url = f"{_base_url()}/api/v4/leads/{lid}"
+    params: list[tuple[str, Any]] = [("with", "contacts")] if with_contacts else []
     with httpx.Client(timeout=30.0) as client:
-        r = client.get(url, headers=_headers(db))
+        r = client.get(url, headers=_headers(db), params=params)
         if r.status_code == 404:
             return None
         if r.status_code >= 400:
@@ -440,6 +457,7 @@ def get_delivery_statuses_from_amo(
 
     s = get_settings()
     cdek_fid = int(s.amo_field_lead_cdek or 0)
+    alt_fid = int(s.amo_field_lead_track_alt or 0)
     st_fid = int(s.amo_field_lead_liveinform_status or 0)
 
     all_leads = find_leads_by_contact_id(db, amo_contact_id)
@@ -456,10 +474,17 @@ def get_delivery_statuses_from_amo(
 
     items: list[tuple[str, str]] = []
     for lead in year_leads:
-        track = extract_lead_field_value(lead, cdek_fid) if cdek_fid else ""
-        if not track:
-            continue
+        # Трек может лежать в основном поле СДЭК/LiveInform или в ручном
+        # «Трек-номер» (N_CDEK) — берём первый непустой.
+        track = ""
+        if cdek_fid:
+            track = extract_lead_field_value(lead, cdek_fid)
+        if not track and alt_fid:
+            track = extract_lead_field_value(lead, alt_fid)
         status = extract_lead_field_value(lead, st_fid) if st_fid else ""
+        # Показываем доставку, если есть трек ИЛИ уже проставлен статус LiveInform.
+        if not track and not status:
+            continue
         items.append((track.strip(), status.strip()))
     return items
 
@@ -593,6 +618,45 @@ def fetch_won_leads_closed(db: Session, pipeline_id: int, status_id: int,
     return out
 
 
+def fetch_leads_on_statuses(
+    db: Session, pipeline_id: int, status_ids: set[int]
+) -> list[dict[str, Any]]:
+    """Открытые/любые сделки воронки на перечисленных этапах. С пагинацией."""
+    pid = int(pipeline_id or 0)
+    sids = [int(x) for x in status_ids if int(x or 0) > 0]
+    if pid <= 0 or not sids:
+        return []
+    url = f"{_base_url()}/api/v4/leads"
+    out: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        params: list[tuple[str, Any]] = [
+            ("with", "contacts"),
+            ("limit", "250"),
+            ("page", str(page)),
+        ]
+        for i, sid in enumerate(sids):
+            params.append((f"filter[statuses][{i}][pipeline_id]", pid))
+            params.append((f"filter[statuses][{i}][status_id]", sid))
+        with httpx.Client(timeout=30.0) as client:
+            r = client.get(url, headers=_headers(db), params=params)
+            if r.status_code == 204:
+                break
+            if r.status_code >= 400:
+                log.warning("fetch_leads_on_statuses p%s: %s %s", page, r.status_code, r.text[:300])
+                break
+            try:
+                data = r.json()
+            except Exception:
+                break
+        leads = ((data or {}).get("_embedded") or {}).get("leads") or []
+        out.extend(leads)
+        if len(leads) < 250:
+            break
+        page += 1
+    return out
+
+
 def has_open_deal_excluding(db: Session, contact_id: int, exclude_status_ids: set[int]) -> bool:
     """Есть ли у контакта открытая сделка (кроме перечисленных этапов)."""
     leads = find_leads_by_contact_id(db, contact_id)
@@ -600,6 +664,130 @@ def has_open_deal_excluding(db: Session, contact_id: int, exclude_status_ids: se
         if lead.get("status_id") not in exclude_status_ids:
             return True
     return False
+
+
+def pick_last_won_lead(
+    leads: list[dict[str, Any]],
+    *,
+    pipeline_ids: set[int],
+    status_id: int,
+    exclude_lead_id: Optional[int] = None,
+) -> Optional[dict[str, Any]]:
+    """Последняя по closed_at успешная сделка из указанных воронок.
+
+    Текущую карточку (exclude_lead_id) не берём — иначе входящая сделка
+    могла бы сослаться сама на себя.
+    """
+    pids = {int(x) for x in pipeline_ids if int(x or 0) > 0}
+    sid = int(status_id or 0)
+    if not pids or sid <= 0:
+        return None
+    skip = int(exclude_lead_id) if exclude_lead_id else None
+    candidates = []
+    for lead in leads:
+        if skip is not None and lead.get("id") == skip:
+            continue
+        if lead.get("pipeline_id") in pids and lead.get("status_id") == sid:
+            candidates.append(lead)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda l: int(l.get("closed_at") or l.get("updated_at") or 0))
+
+
+def find_last_won_sale(
+    db: Session,
+    contact_id: int,
+    *,
+    pipeline_ids: set[int],
+    status_id: int,
+    exclude_lead_id: Optional[int] = None,
+) -> Optional[dict[str, Any]]:
+    """Последняя успешная сделка контакта в любой из воронок pipeline_ids."""
+    return pick_last_won_lead(
+        find_leads_by_contact_id(db, contact_id),
+        pipeline_ids=pipeline_ids,
+        status_id=status_id,
+        exclude_lead_id=exclude_lead_id,
+    )
+
+
+def find_last_won_sale_responsible(
+    db: Session, contact_id: int, *, pipeline_id: int, status_id: int
+) -> Optional[int]:
+    """Обратная совместимость: responsible с одной воронки."""
+    best = find_last_won_sale(
+        db, contact_id, pipeline_ids={int(pipeline_id)}, status_id=status_id
+    )
+    if not best:
+        return None
+    resp = best.get("responsible_user_id")
+    return int(resp) if isinstance(resp, int) else None
+
+
+def fetch_contact_by_id(db: Session, contact_id: int) -> Optional[dict[str, Any]]:
+    cid = int(contact_id or 0)
+    if cid <= 0:
+        return None
+    url = f"{_base_url()}/api/v4/contacts/{cid}"
+    with httpx.Client(timeout=30.0) as client:
+        r = client.get(url, headers=_headers(db))
+        if r.status_code == 404:
+            return None
+        if r.status_code >= 400:
+            log.warning("amo GET /contacts/%s -> %s body[:200]=%s", cid, r.status_code, r.text[:200])
+            return None
+        try:
+            data = r.json()
+        except Exception:
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def set_lead_responsible(db: Session, lead_id: int, user_id: int) -> bool:
+    """PATCH /api/v4/leads — сменить ответственного по сделке."""
+    lid = int(lead_id or 0)
+    uid = int(user_id or 0)
+    if lid <= 0 or uid <= 0:
+        return False
+    url = f"{_base_url()}/api/v4/leads"
+    body = [{"id": lid, "responsible_user_id": uid}]
+    with httpx.Client(timeout=30.0) as client:
+        r = client.patch(url, headers=_headers(db), json=body)
+        if r.status_code >= 400:
+            log.warning("set_lead_responsible %s -> %s %s", lid, r.status_code, r.text[:500])
+            return False
+    return True
+
+
+def set_contact_responsible(db: Session, contact_id: int, user_id: int) -> bool:
+    """PATCH /api/v4/contacts — сменить ответственного по контакту."""
+    cid = int(contact_id or 0)
+    uid = int(user_id or 0)
+    if cid <= 0 or uid <= 0:
+        return False
+    url = f"{_base_url()}/api/v4/contacts"
+    body = [{"id": cid, "responsible_user_id": uid}]
+    with httpx.Client(timeout=30.0) as client:
+        r = client.patch(url, headers=_headers(db), json=body)
+        if r.status_code >= 400:
+            log.warning("set_contact_responsible %s -> %s %s", cid, r.status_code, r.text[:500])
+            return False
+    return True
+
+
+def add_lead_note(db: Session, lead_id: int, text: str) -> bool:
+    """Добавить текстовое примечание в сделку."""
+    lid = int(lead_id or 0)
+    if lid <= 0 or not text.strip():
+        return False
+    url = f"{_base_url()}/api/v4/leads/{lid}/notes"
+    body = [{"note_type": "common", "params": {"text": text[:2000]}}]
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(url, headers=_headers(db), json=body)
+        if r.status_code >= 400:
+            log.warning("add_lead_note %s: %s %s", lid, r.status_code, r.text[:300])
+            return False
+    return True
 
 
 def has_lead_on_status(db: Session, contact_id: int, status_id: int) -> bool:

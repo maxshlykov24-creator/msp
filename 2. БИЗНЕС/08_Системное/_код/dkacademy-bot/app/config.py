@@ -26,12 +26,18 @@ class Settings(BaseSettings):
     telegram_bot_token: str = Field("", description="BotFather token")
     max_bot_token: str = Field("", description="MAX platform bot token")
 
+    # Алерт в отдельный TG-бот, когда статус LiveInform не распознан
+    # (не whitelist и не явный отказ 3/4). Токен/chat_id только в .env.
+    ops_alert_bot_token: str = ""
+    ops_alert_chat_id: str = ""
+
     liveinform_api_id: str = ""
     liveinform_track_url: str = "https://www.liveinform.ru/api/v2/track/"
     liveinform_webhook_secret: str = ""
     liveinform_webhook_header: str = "X-LiveInform-Secret"
 
     amo_field_lead_cdek: int = 0
+    amo_field_lead_track_alt: int = 0  # запасное поле трека «Трек-номер» (N_CDEK)
     amo_field_lead_liveinform_status: int = 0
 
     amo_order_entity: str = "lead_only"  # lead_only | catalog
@@ -69,6 +75,30 @@ class Settings(BaseSettings):
     amo_status_won: int = 142  # «Успешно реализовано»
     amo_status_trebuet_kasaniya: int = 0  # этап «Требует касания» (дискавери)
     amo_field_contact_active: int = 0  # чекбокс контакта «Действующий» (дискавери, опц.)
+
+    # ── Автоназначение ответственного в «Повторные продажи» ──────────────────
+    # Веб-хук amoCRM (add_lead / status_lead): при создании сделки или переходе
+    # на «Требует касания» / «Не обработан» в воронке «Повторные продажи» —
+    # ответственным ставим того, кто закрыл последнюю сделку контакта в
+    # «Продажи» или «Повторные продажи» на «Успешно реализовано» (берём самую
+    # свежую по closed_at). Тот же пользователь пишется и на контакт.
+    # Если успехов нет (или ответственный там служебный) — берём ответственного
+    # с контакта.
+    amo_status_ne_obrabotan: int = 0  # этап «Не обработан» воронки «Повторные продажи» (дискавери)
+    amo_status_vzyato_v_rabotu: int = 85978146  # этап «Взято в работу» (разовый прогон + опц.)
+    amo_webhook_secret: str = ""  # секрет в пути POST /webhooks/amocrm/{token}
+    # Служебные аккаунты, на которые падают заявки с сайта/форм. Не считаем
+    # источником для назначения (ни последняя продажа, ни контакт).
+    amo_service_user_ids: str = "9490530,10088354"  # Максим, Максим Дейкало
+
+    @property
+    def service_user_ids(self) -> set[int]:
+        out: set[int] = set()
+        for x in self.amo_service_user_ids.split(","):
+            x = x.strip()
+            if x.isdigit():
+                out.add(int(x))
+        return out
 
     repeat_touch_msg_days: int = 35  # через сколько дней от Успеха — сообщение
     repeat_touch_deal_days: int = 40  # через сколько дней от Успеха — сделка

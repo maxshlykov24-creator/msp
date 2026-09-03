@@ -1,0 +1,57 @@
+# Прод: API на localhost, postgres внутри сети, отдельный worker со сбором.
+#   cd divo-analytics && docker compose up -d --build
+# Nginx+HTTPS на хосте → proxy к 127.0.0.1:19100 (см. deploy/nginx/divo-analytics.conf)
+
+name: divo-analytics
+
+services:
+  db:
+    # docker.io анонимные pull-лимиты часто ловят 429 на общих IP VPS —
+    # используем зеркало ECR Public (без авторизации, тот же образ).
+    image: public.ecr.aws/docker/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: divoanalytics
+      POSTGRES_PASSWORD: divoanalytics
+      POSTGRES_DB: divoanalytics
+    volumes:
+      - divo_analytics_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U divoanalytics -d divoanalytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://divoanalytics:divoanalytics@db:5432/divoanalytics
+      RUN_MODE: api
+    ports:
+      - "127.0.0.1:19100:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://divoanalytics:divoanalytics@db:5432/divoanalytics
+      RUN_MODE: worker
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m app.scheduler
+
+volumes:
+  divo_analytics_pg:

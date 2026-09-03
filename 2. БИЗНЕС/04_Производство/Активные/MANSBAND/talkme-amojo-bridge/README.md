@@ -7,7 +7,7 @@
 1. Скопируйте `.env.example` → `.env`, заполните (см. комментарии).
 2. `docker compose up -d --build`
 3. Проверка: `curl -s http://127.0.0.1:19080/health`
-4. На хосте: Nginx + HTTPS → проксирование на `127.0.0.1:19080` (см. `deploy/nginx.example.conf` и [Бизнес/04_Производство_внедрений/Активные/MartaChe/loyalty-service/deploy/TIMEWEB.md](../Бизнес/04_Производство_внедрений/Активные/MartaChe/loyalty-service/deploy/TIMEWEB.md)).
+4. На хосте: Nginx + HTTPS → проксирование на `127.0.0.1:19080` (см. `deploy/nginx.example.conf` и [`../MartaChe/loyalty-service/deploy/TIMEWEB.md`](../MartaChe/loyalty-service/deploy/TIMEWEB.md)).
 5. OAuth: в браузере откройте `GET /internal/oauth-link` на вашем FQDN (там ссылка на amo).
 6. После ответа ТП с **channel_id** / **channel_secret** — `POST /internal/connect` с заголовком `X-Internal-Secret` (тот же, что `INTERNAL_SECRET` в `.env`).
 
@@ -31,4 +31,4 @@
 
 ## Локальные секреты Mansband (не в репо)
 
-См. `Бизнес/.../MANSBAND/_private/amo_talkme_bridge.env` в основном воркспейсе.
+См. `2. БИЗНЕС/.../MANSBAND/_private/amo_talkme_bridge.env` в основном воркспейсе.

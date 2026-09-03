@@ -13,7 +13,18 @@ from fastapi import Body, Cookie, FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from db import delete_intake_row, init_db, list_clients, list_intake, list_invoices
+from db import (
+    delete_intake_row,
+    get_invoice,
+    init_db,
+    list_clients,
+    list_intake,
+    list_invoice_positions,
+    list_invoices,
+    list_shipments,
+    overview_stats,
+    status_label,
+)
 from net import env_opt
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -130,6 +141,22 @@ def clients(ff_session: str = Cookie(default="")):
     return {"clients": out}
 
 
+@app.get("/api/overview")
+def overview(
+    client_id: int = 0,
+    date_from: str = "",
+    date_to: str = "",
+    ff_session: str = Cookie(default=""),
+):
+    who(ff_session)
+    init_db()
+    from account import lot_rows, totals
+
+    stock = totals(lot_rows(client_id=client_id or None))
+    data = overview_stats(client_id=client_id or None, day_from=date_from, day_to=date_to)
+    return {"stock": stock, **data}
+
+
 @app.get("/api/intake")
 def intake_list(ff_session: str = Cookie(default="")):
     who(ff_session)
@@ -161,21 +188,70 @@ def intake_list(ff_session: str = Cookie(default="")):
 def intake_add(data: dict = Body(...), ff_session: str = Cookie(default="")):
     login = who(ff_session)
     init_db()
-    from intake import add
+    from intake import add_many
 
+    text = data.get("text") or data.get("barcode") or ""
+    if data.get("barcodes"):
+        text = "\n".join(str(x) for x in data.get("barcodes"))
     try:
-        rid = add(
+        res = add_many(
             data.get("client_id"),
-            data.get("barcode"),
-            data.get("qty"),
-            data.get("liters"),
-            data.get("kind"),
-            data.get("gtin") or "",
-            login,
+            text,
+            liters=data.get("liters"),
+            kind=data.get("kind") or "",
+            author=login,
+            refresh=bool(data.get("refresh", True)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return {"ok": True, "id": rid}
+    return {"ok": True, **res}
+
+
+@app.post("/api/intake/file")
+def intake_file(data: dict = Body(...), ff_session: str = Cookie(default="")):
+    login = who(ff_session)
+    init_db()
+    from intake import add_many, parse_file
+
+    raw = base64.b64decode(data.get("content") or "")
+    codes = parse_file(data.get("filename") or "", raw)
+    if not codes:
+        raise HTTPException(status_code=400, detail="в файле нет штрихкодов")
+    try:
+        res = add_many(
+            data.get("client_id"),
+            codes,
+            liters=data.get("liters"),
+            kind=data.get("kind") or "",
+            author=login,
+            refresh=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, **res}
+
+
+@app.patch("/api/intake/{row_id}")
+def intake_patch(row_id: int, data: dict = Body(...), ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    from intake import patch
+
+    try:
+        row = patch(row_id, liters=data.get("liters"), kind=data.get("kind"), gtin=data.get("gtin"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "ok": True,
+        "row": {
+            "id": row["id"],
+            "state": row["state"],
+            "note": row["note"],
+            "gtin": row["gtin"],
+            "tracking": row["tracking_type"],
+            "liters": row["liters"],
+        },
+    }
 
 
 @app.delete("/api/intake/{row_id}")
@@ -206,13 +282,22 @@ def intake_run(ff_session: str = Cookie(default="")):
         _lock.release()
 
 
+def marked_flag(raw):
+    val = (raw or "").strip().lower()
+    if val in ("yes", "1", "marked"):
+        return True
+    if val in ("no", "0", "unmarked"):
+        return False
+    return None
+
+
 @app.get("/api/lots")
-def lots(client_id: int = 0, q: str = "", ff_session: str = Cookie(default="")):
+def lots(client_id: int = 0, q: str = "", marked: str = "", ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
     from account import lot_rows, totals
 
-    rows = lot_rows(client_id=client_id or None, query=q)
+    rows = lot_rows(client_id=client_id or None, query=q, marked=marked_flag(marked))
     return {"rows": rows, "totals": totals(rows)}
 
 
@@ -265,20 +350,180 @@ def invoices(ff_session: str = Cookie(default="")):
     return {"rows": rows}
 
 
+@app.get("/api/invoices/{invoice_id}")
+def invoice_detail(invoice_id: int, ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    inv = get_invoice(invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="счёт не найден")
+    positions = []
+    for r in list_invoice_positions(invoice_id):
+        storage = float(r["storage"] or 0)
+        intake = float(r["intake"] or 0)
+        ship = float(r["ship"] or 0)
+        positions.append(
+            {
+                "article": r["article"] or "",
+                "barcode": r["barcode"] or "",
+                "gtin": r["gtin"] or "",
+                "name": r["name"] or "",
+                "qty_in": r["qty_in"],
+                "received": (r["received_at"] or "")[:10],
+                "storage": storage,
+                "intake": intake,
+                "ship": ship,
+                "total": round(storage + intake + ship, 2),
+            }
+        )
+    return {
+        "invoice": {
+            "id": inv["id"],
+            "client": inv["client_name"],
+            "number": inv["ms_number"],
+            "ms_id": inv["ms_invoice_id"],
+            "storage": inv["storage"],
+            "intake": inv["intake"],
+            "ship": inv["ship"],
+            "total": inv["total"],
+            "positions": inv["lots_count"],
+            "created": (inv["created_at"] or "")[:16].replace("T", " "),
+            "author": inv["author"],
+        },
+        "positions": positions,
+    }
+
+
 @app.get("/api/export.xlsx")
-def export(client_id: int = 0, q: str = "", ff_session: str = Cookie(default="")):
+def export(client_id: int = 0, q: str = "", marked: str = "", ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
     from export_xlsx import build
 
-    name, data = build(client_id=client_id or None, query=q)
-    quoted = quote(name)
+    name, data = build(client_id=client_id or None, query=q, marked=marked_flag(marked))
+    return xlsx_file(name, data)
 
+
+def xlsx_file(name, data):
+    quoted = quote(name)
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename*=UTF-8''%s" % quoted},
     )
+
+
+@app.get("/api/shipments")
+def shipments_list(
+    client_id: int = 0,
+    q: str = "",
+    mp: str = "",
+    kind: str = "",
+    marked: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    ff_session: str = Cookie(default=""),
+):
+    who(ff_session)
+    init_db()
+    rows = list_shipments(
+        client_id=client_id or None,
+        marketplace=mp,
+        kind=kind,
+        marked=marked_flag(marked),
+        day_from=date_from,
+        day_to=date_to,
+        query=q,
+    )
+    out = []
+    qty = 0
+    marks = 0
+    for r in rows:
+        qty += float(r["qty"] or 0)
+        marks += int(r["marks_count"] or 0)
+        out.append(
+            {
+                "id": r["id"],
+                "client": r["client_name"],
+                "marketplace": r["marketplace"],
+                "kind": r["kind"],
+                "ext_id": r["ext_id"],
+                "status": status_label(r["status"]),
+                "shipped": (r["shipped_at"] or "")[:10],
+                "article": r["article"],
+                "barcode": r["barcode"],
+                "name": r["name"],
+                "qty": r["qty"],
+                "marks": r["marks_count"],
+            }
+        )
+    return {
+        "rows": out,
+        "totals": {
+            "positions": len(out),
+            "qty": round(qty, 3),
+            "marks": marks,
+            "without": sum(1 for r in out if not r["marks"]),
+        },
+    }
+
+
+@app.post("/api/shipments/sync")
+def shipments_sync(data: dict = Body(None), ff_session: str = Cookie(default="")):
+    who(ff_session)
+    if not _lock.acquire(blocking=False):
+        return {"ok": False, "msg": "уже идёт обработка"}
+    try:
+        from shipments_pull import run
+
+        days = int((data or {}).get("days") or 14)
+        res = run(days=days, blocking=False)
+        return {"ok": True, **res}
+    except BlockingIOError:
+        return {"ok": False, "msg": "уже идёт обработка"}
+    except Exception as exc:
+        return {"ok": False, "msg": str(exc)}
+    finally:
+        _lock.release()
+
+
+@app.post("/api/shipments/marks.xlsx")
+def shipments_marks(data: dict = Body(...), ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    from export_xlsx import build_marks
+
+    ids = data.get("ids") or []
+    if not ids:
+        raise HTTPException(status_code=400, detail="не выбраны отправления")
+    name, raw = build_marks(ids)
+    return xlsx_file(name, raw)
+
+
+@app.post("/api/shipments/report.xlsx")
+def shipments_report(data: dict = Body(...), ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    from export_xlsx import build_ships
+
+    ids = data.get("ids") or []
+    if not ids:
+        raise HTTPException(status_code=400, detail="не выбраны отправления")
+    name, raw = build_ships(ids)
+    return xlsx_file(name, raw)
+
+
+@app.post("/api/lots/report.xlsx")
+def lots_report(data: dict = Body(...), ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    from export_xlsx import build_client_stock
+
+    ids = data.get("ids") or []
+    if not ids:
+        raise HTTPException(status_code=400, detail="не выбраны позиции")
+    name, raw = build_client_stock(ids)
+    return xlsx_file(name, raw)
 
 
 @app.post("/api/agents/sync")

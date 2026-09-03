@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="format-detection" content="telephone=no" />
+<title>Правки кассы 05.08 · MANSBAND · MS Product</title>
+<style>
+:root {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --text: #1c1c1e;
+  --text-2: #6b6b70;
+  --border: #e8e6e2;
+  --accent: #1a4d8c;
+  --ok: #2a6645;
+  --ok-bg: #f0f8f2;
+  --ok-border: #90c8a8;
+  --wait: #9a3412;
+  --wait-bg: #fff7ed;
+  --wait-border: #fdba74;
+  --ask: #1a4d8c;
+  --ask-bg: #eff5fc;
+  --ask-border: #9dc0e8;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.45;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  padding: var(--safe-t) 0 var(--safe-b);
+}
+.brand {
+  background: linear-gradient(160deg, #fafaf9 0%, #f3f1ec 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 16px 14px;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.brand-ms {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: #6d28d9;
+  margin-bottom: 6px;
+}
+.brand-title { font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+.brand-sub { margin-top: 3px; font-size: 12px; color: var(--text-2); font-weight: 500; }
+.toc {
+  display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding: 10px 16px 12px; background: var(--surface); border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+.toc::-webkit-scrollbar { display: none; }
+.toc a {
+  flex: 0 0 auto; padding: 8px 12px; border-radius: 999px; background: var(--bg);
+  border: 1px solid var(--border); color: var(--text-2); text-decoration: none;
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+main { padding: 20px 16px 48px; max-width: 660px; margin: 0 auto; }
+.hero h1 { font-size: 24px; font-weight: 800; letter-spacing: -.03em; line-height: 1.15; margin-bottom: 8px; }
+.hero .lead { font-size: 15px; color: var(--text-2); margin-bottom: 6px; }
+.summary { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 8px; }
+.stat {
+  flex: 1 1 150px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+}
+.stat b { display: block; font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+.stat span { font-size: 12px; color: var(--text-2); font-weight: 600; }
+h2 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .09em; color: var(--text-2);
+  margin: 28px 0 10px; font-weight: 800;
+}
+ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px; display: flex; gap: 12px;
+}
+.num {
+  flex: 0 0 30px; height: 30px; border-radius: 9px; background: var(--bg);
+  border: 1px solid var(--border); display: grid; place-items: center;
+  font-weight: 800; font-size: 13px; color: var(--text-2);
+}
+.title { font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+.detail { font-size: 14px; color: var(--text-2); margin-top: 3px; }
+.tag {
+  display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 800;
+  letter-spacing: .05em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px;
+}
+.tag-ok { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-border); }
+.tag-ask { color: var(--ask); background: var(--ask-bg); border: 1px solid var(--ask-border); }
+.tag-wait { color: var(--wait); background: var(--wait-bg); border: 1px solid var(--wait-border); }
+.note {
+  background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 10px; padding: 14px; font-size: 14px; color: var(--text-2); margin-top: 12px;
+}
+.note b { color: var(--text); }
+footer { padding: 24px 16px 40px; text-align: center; color: var(--text-2); font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="brand">
+  <div class="brand-ms">MS Product</div>
+  <div class="brand-title">Правки кассы после созвона 05.08</div>
+  <div class="brand-sub">MANSBAND · 06.08.2026 · формула задач, деньги, очереди</div>
+</header>
+
+<nav class="toc" aria-label="Разделы">
+  <a href="#formula">Формула задач</a>
+  <a href="#queues">Очереди</a>
+  <a href="#money">Деньги</a>
+  <a href="#deals">Заявки</a>
+  <a href="#wait">Нужно решение</a>
+  <a href="#check">Как проверить</a>
+</nav>
+
+<main>
+  <header class="hero">
+    <h1>Что сделано по созвону 05.08</h1>
+    <p class="lead">Главное — единая формула задач: у каждой задачи понятно, откуда она появилась, кому прилетела, что человек делает внутри и куда после этого уезжает этап заявки. Этап в amoCRM меняется сам, без ручного переключения.</p>
+  </header>
+
+  <div class="summary">
+    <div class="stat"><b>10</b><span>видов задач в формуле</span></div>
+    <div class="stat"><b>11</b><span>пунктов сделано</span></div>
+    <div class="stat"><b>2</b><span>ждут твоего решения</span></div>
+  </div>
+
+  <h2 id="formula">Формула задач</h2>
+  <ul>
+    <li class="item"><div class="num">1</div><div>
+      <div class="title">Одна формула на все задачи</div>
+      <div class="detail">Задача = откуда появилась → кому прилетела → что внутри → куда переходит заявка. Все десять видов задач (перемещение, приёмка, отложка, звонок по отложке, снятие отложки, сборка СДЭК, отнести в СДЭК, забрать со СДЭК, штрихкод, ручная проверка) описаны в одном реестре — он же источник правды для кода.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">2</div><div>
+      <div class="title">Этап меняется сам после выполнения задачи</div>
+      <div class="detail">Консультант нажал «Принял» — заявка уехала на «Товар в магазине» и сразу родилась задача «Отложить». Нажал «Отложил» — этап «Товар отложен». В истории заявки видно, какая задача сдвинула этап.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">3</div><div>
+      <div class="title">Перемещение ведёт тот, кто отдаёт товар</div>
+      <div class="detail">Заявка встала на «Ждет товар» → консультанту прилетает задача оформить перемещение: позиции, откуда, куда. После выбора источника задача уходит логисту, если источник «Центральный склад», иначе консультанту магазина-источника. Вторая задача при этом не плодится — дозаполняется та же.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">4</div><div>
+      <div class="title">Просроченная отложка сама поднимает звонок</div>
+      <div class="detail">Раз в 15 минут касса проверяет срок отложки. Срок вышел → задача колл-менеджеру «Связаться по отложке». Продлил срок — цепочка гаснет. Не продлил — задача консультанту «Убрать отложку». Этап «Провал» автоматика не ставит: решение по сделке остаётся за человеком.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+  </ul>
+
+  <h2 id="queues">Очереди</h2>
+  <ul>
+    <li class="item"><div class="num">5</div><div>
+      <div class="title">Очереди задач — горизонтальные табы</div>
+      <div class="detail">Вместо выпадающего списка «все очереди» — табы: Консультант · Логист · Call-менеджер · Перемещения. Внутри таба задачи сгруппированы по видам со счётчиками. Таб запоминается в ссылке, поэтому его можно отправить в чат.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">6</div><div>
+      <div class="title">Сары внутри таба Call-менеджера</div>
+      <div class="detail">Отдельный пункт меню «Очередь кол-менеджера» убрал: сары теперь в том же табе, что и его задачи. Старые ссылки открываются автоматически на нужном табе.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">7</div><div>
+      <div class="title">Возврат туда, откуда зашёл</div>
+      <div class="detail">Открыл заявку из очереди — закрыл и вернулся в ту же очередь, на тот же таб. С доски — вернулся на доску с теми же фильтрами: фильтры больше не сбрасываются.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+  </ul>
+
+  <h2 id="money">Деньги</h2>
+  <ul>
+    <li class="item"><div class="num">8</div><div>
+      <div class="title">Частичные выплаты везде</div>
+      <div class="detail">Сдача, чаевые и возврат раскладываются по способам строками: часть наличными, часть переводом, часть строкой «Переведёт Mansband» — она и уходит в очередь Эдвина. Последняя строка добирает остаток автоматически, поэтому неразложенных денег в заявке не остаётся.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">9</div><div>
+      <div class="title">Чаевые: «Выдал себе»</div>
+      <div class="detail">Формулировка «Забрал наличкой» заменена на «Выдал себе» — и это тоже раскладка по способам: часть налом из кассы, часть переводом, остаток переводит Эдвин. Сначала указываются чаевые из сдачи, потом раскладывается то, что фактически уходит клиенту.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">10</div><div>
+      <div class="title">Подписи в расходах</div>
+      <div class="detail">«Откуда оплатил» → «Способ оплаты». «Баланс счетов» → «Расходы по счетам» с пояснением: остаток по способу — это база с утренней сверки минус выдачи из очереди и расходы; наличные Жени и Нины — личные кассы ответственных, не сейф магазина.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+  </ul>
+
+  <h2 id="deals">Заявки</h2>
+  <ul>
+    <li class="item"><div class="num">11</div><div>
+      <div class="title">Продажа компании без счёта у консультанта</div>
+      <div class="detail">Номер и дату счёта из формы консультанта убрал — их заполняет Эдвин в своей очереди, оттуда же двигается конвейер: счёт выставлен → оплачено → документы Мише. Консультант отмечает только фактическую выдачу.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">12</div><div>
+      <div class="title">Возврат и обмен по позициям</div>
+      <div class="detail">Позиции исходной продажи выбираются чекбоксами или сканером штрихкода. Позиция без штрихкода отмечается вручную и порождает задачу «Проверить позицию вручную» в очереди консультанта. Сумма возврата — только по выбранным позициям, выдаётся частями.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">13</div><div>
+      <div class="title">Расположение товара — единый справочник</div>
+      <div class="detail">Девять значений: Новокузнецкая, Бауманская, Центральный склад, полупарки по двум точкам, Ателье, В пути, СДЭК у клиента, СДЭК у нас. Одинаково подписаны в перемещениях, в состоянии позиции заявки и в поиске товара.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">14</div><div>
+      <div class="title">Завершённые заявки правит только РОП</div>
+      <div class="detail">Смена этапа у «Успех» и «Провал» доступна РОПу и администратору, обязательно с причиной. Причина попадает в историю заявки, история видна в карточке.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+  </ul>
+
+  <h2 id="wait">Нужно решение</h2>
+  <ul>
+    <li class="item"><div class="num">1</div><div>
+      <div class="title">Этапов продажи компании в amoCRM нет</div>
+      <div class="detail">Сверил воронку «Продажи»: этапов «Счет выставлен», «Оплачено», «Документы готовы», «Документы переданы», «Товар выдан» в CRM не существует — касса ведёт их у себя, в amoCRM они не уезжают. Нужно решить: создаём эти пять этапов в воронке или продажа компании живёт в кассе, а в amoCRM едет только «Успех» / «Провал».</div>
+      <span class="tag tag-ask">Решение</span></div></li>
+    <li class="item"><div class="num">2</div><div>
+      <div class="title">«Сертификат продан» → «Сертификат оплачен»</div>
+      <div class="detail">Касса уже понимает оба названия, переименование ничего не сломает. Сам этап в amoCRM пока называется по-старому — переименовать могу по твоему слову, вместе с обновлением схемы в Miro.</div>
+      <span class="tag tag-ask">Решение</span></div></li>
+  </ul>
+
+  <h2 id="check">Как проверить</h2>
+  <div class="note">
+    <b>Цепочка задач.</b> Создай отложку на этапе «Ждет товар» → в очереди консультанта появится «Сделать перемещение». Оформи: позиции, откуда «Центральный склад», куда «На Новокузнецкой» — задача уедет логисту. «Отправлено» → товар «В пути» и задача «Принять товар» на Новокузнецкой. «Принял» → перемещение в МойСклад, этап «Товар в магазине», задача «Отложить». «Отложил» → «Товар отложен».
+  </div>
+  <div class="note">
+    <b>Частичная сдача.</b> Продажа на 10 000, оплата 12 000. Чаевые 500 — распредели: 200 налом, остаток переводом. Сдача 1 500 — 1 000 налом, 500 строкой «Переведёт Mansband»: в очереди Эдвина появится ровно 500, а не вся сдача.
+  </div>
+  <div class="note">
+    <b>Возврат по позициям.</b> Открой успешную продажу → «Возврат» → отметь одну позицию сканером, вторую чекбоксом. Если у позиции нет штрихкода — после сохранения в очереди консультанта появится задача на ручную проверку.
+  </div>
+</main>
+
+<footer>MS Product · Касса MANSBAND · правки после созвона 05.08.2026</footer>
+</body>
+</html>

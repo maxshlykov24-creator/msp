@@ -1,10 +1,10 @@
 #!/bin/sh
 # Установить launchd-агенты авто-синхронизации vault.
-# Из корня vault: bash Бизнес/99_Системное/Скрипты_vault/git/install-launchagents.sh
+# Из корня vault: bash 2. БИЗНЕС/08_Системное/Скрипты_vault/git/install-launchagents.sh
 
 set -e
 root=$(cd "$(dirname "$0")/../../../.." && pwd)
-git_dir="$root/Бизнес/99_Системное/Скрипты_vault/git"
+git_dir="$root/2. БИЗНЕС/08_Системное/Скрипты_vault/git"
 agents="$HOME/Library/LaunchAgents"
 
 chmod +x "$git_dir/vault-sync-auto.sh" "$git_dir/vault-sync-pull-wake.sh" "$git_dir/vault-sync-pull.sh" 2>/dev/null || true

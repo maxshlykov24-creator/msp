@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DIVO Motors — Вход в аналитику</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="/assets/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<style>
+  :root{
+    --gold:#c8a45c;
+    --gold-soft:#e9dcb8;
+    --ink:#f2f3f5;
+    --mute:#9a9ea8;
+    --line:rgba(255,255,255,.10);
+    --glass:rgba(14,14,16,.55);
+    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100%}
+  body{
+    font-family:var(--font);
+    color:var(--ink);
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+    background:#050506;
+  }
+
+  .stage{
+    position:fixed;inset:0;z-index:0;
+    background:#050506;
+  }
+  .stage-logo{
+    position:absolute;inset:0;
+    background:
+      url('/assets/logo-divo.png') center 42% / min(1200px, 92vw) auto no-repeat;
+    opacity:.22;
+    filter:saturate(.85) contrast(1.05);
+    animation:logoIn 1.8s cubic-bezier(.22,1,.36,1) both;
+  }
+  .stage-vignette{
+    position:absolute;inset:0;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 42%, transparent 0%, rgba(5,5,6,.35) 45%, #050506 78%),
+      linear-gradient(180deg, rgba(5,5,6,.55) 0%, transparent 28%, transparent 55%, rgba(5,5,6,.85) 100%);
+  }
+  .stage-glow{
+    position:absolute;left:50%;top:38%;
+    width:min(720px,90vw);height:320px;
+    transform:translate(-50%,-50%);
+    background:radial-gradient(ellipse at center, rgba(200,164,92,.14) 0%, transparent 68%);
+    filter:blur(8px);
+    pointer-events:none;
+    animation:glowPulse 6s ease-in-out infinite alternate;
+  }
+  .stage-grain{
+    position:absolute;inset:0;
+    opacity:.045;
+    pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size:180px 180px;
+    mix-blend-mode:overlay;
+  }
+
+  .wrap{
+    position:relative;z-index:1;
+    width:100%;max-width:420px;
+    padding:24px;
+    animation:cardIn 1.8s cubic-bezier(.22,1,.36,1) .25s both;
+  }
+  .brand-above{
+    text-align:center;
+    font-size:12px;
+    font-weight:650;
+    letter-spacing:.32em;
+    text-transform:uppercase;
+    color:var(--gold-soft);
+    margin-bottom:18px;
+    opacity:.9;
+  }
+  .card{
+    position:relative;
+    background:var(--glass);
+    border:1px solid var(--line);
+    border-radius:22px;
+    padding:40px 36px 34px;
+    backdrop-filter:blur(28px) saturate(1.2);
+    -webkit-backdrop-filter:blur(28px) saturate(1.2);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,.06) inset,
+      0 30px 80px -20px rgba(0,0,0,.75),
+      0 0 0 1px rgba(0,0,0,.4);
+    overflow:hidden;
+  }
+  .card::before{
+    content:'';
+    position:absolute;left:16%;right:16%;top:0;height:1px;
+    background:linear-gradient(90deg, transparent, rgba(233,220,184,.55), transparent);
+  }
+  .card::after{
+    content:'';
+    position:absolute;inset:0;
+    background:linear-gradient(145deg, rgba(255,255,255,.04) 0%, transparent 40%);
+    pointer-events:none;
+  }
+
+  .title{
+    font-family:var(--font);
+    font-weight:500;
+    font-size:30px;
+    letter-spacing:-.02em;
+    text-align:center;
+    line-height:1.15;
+    margin-bottom:28px;
+    color:#fff;
+  }
+
+  label{
+    display:block;
+    font-size:11px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    color:var(--mute);
+    margin:0 0 7px 2px;
+  }
+  .field{position:relative;margin-bottom:16px}
+  input{
+    width:100%;
+    background:rgba(0,0,0,.35);
+    color:#fff;
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:12px;
+    padding:13px 15px;
+    font-size:15px;
+    font-family:var(--font);
+    outline:none;
+    transition:border-color .2s, box-shadow .2s, background .2s;
+  }
+  input::placeholder{color:#5c606a}
+  input:hover{border-color:rgba(255,255,255,.18)}
+  input:focus{
+    border-color:rgba(200,164,92,.65);
+    background:rgba(0,0,0,.45);
+    box-shadow:0 0 0 3px rgba(200,164,92,.12);
+  }
+
+  button{
+    width:100%;
+    margin-top:8px;
+    background:linear-gradient(180deg, #d4b56e 0%, var(--gold) 45%, #b3903f 100%);
+    color:#0a0a0c;
+    border:none;
+    border-radius:12px;
+    padding:14px;
+    font-size:14px;
+    font-weight:700;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    cursor:pointer;
+    font-family:var(--font);
+    transition:transform .2s, filter .2s, box-shadow .2s;
+    box-shadow:0 10px 28px -12px rgba(200,164,92,.7), inset 0 1px 0 rgba(255,255,255,.35);
+  }
+  button:hover{
+    filter:brightness(1.06);
+    transform:translateY(-1px);
+    box-shadow:0 14px 34px -12px rgba(200,164,92,.85), inset 0 1px 0 rgba(255,255,255,.4);
+  }
+  button:active{transform:translateY(0);filter:brightness(.98)}
+
+  .err{
+    background:rgba(60,18,18,.65);
+    color:#ff8f84;
+    border:1px solid rgba(255,107,94,.25);
+    font-size:13px;
+    font-weight:500;
+    padding:10px 12px;
+    border-radius:10px;
+    margin-bottom:18px;
+    text-align:center;
+    display:none;
+  }
+  .err.show{display:block;animation:shake .35s ease}
+
+  .foot{
+    margin-top:22px;
+    text-align:center;
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:#5a5e68;
+  }
+
+  @keyframes logoIn{
+    from{opacity:0;transform:scale(1.06)}
+    to{opacity:.22;transform:scale(1)}
+  }
+  @keyframes cardIn{
+    from{opacity:0;transform:translateY(22px) scale(.985)}
+    to{opacity:1;transform:translateY(0) scale(1)}
+  }
+  @keyframes glowPulse{
+    from{opacity:.7}
+    to{opacity:1}
+  }
+  @keyframes shake{
+    0%,100%{transform:translateX(0)}
+    25%{transform:translateX(-4px)}
+    75%{transform:translateX(4px)}
+  }
+
+  @media (max-width:480px){
+    .wrap{padding:16px}
+    .card{padding:32px 22px 28px;border-radius:18px}
+    .title{font-size:26px}
+    .stage-logo{background-size:min(900px,140vw) auto;opacity:.18}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .stage-logo,.wrap,.stage-glow{animation:none}
+  }
+</style>
+</head>
+<body>
+  <div class="stage" aria-hidden="true">
+    <div class="stage-logo"></div>
+    <div class="stage-glow"></div>
+    <div class="stage-vignette"></div>
+    <div class="stage-grain"></div>
+  </div>
+
+  <div class="wrap">
+    <div class="brand-above">DIVO Motors</div>
+    <form class="card" method="post" action="/login">
+      <div class="title">Вход в аналитику</div>
+      <div class="err" id="err">Неверный логин или пароль</div>
+      <label for="login">Логин</label>
+      <div class="field">
+        <input id="login" name="login" type="text" autocomplete="username" autofocus required placeholder="Ваш логин">
+      </div>
+      <label for="password">Пароль</label>
+      <div class="field">
+        <input id="password" name="password" type="password" autocomplete="current-password" required placeholder="••••••••">
+      </div>
+      <button type="submit">Войти</button>
+      <div class="foot">Private dashboard</div>
+    </form>
+  </div>
+
+  <script>
+    if(new URLSearchParams(location.search).get('e')) document.getElementById('err').classList.add('show');
+  </script>
+</body>
+</html>

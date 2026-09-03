@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Одноразово: нумерация каталогов под Личное/1. Профиль и корень Личное.
+# Одноразово: нумерация каталогов под 1. ЛИЧНОЕ/1. Профиль и корень Личное.
 from __future__ import annotations
 
 import os
@@ -146,7 +146,7 @@ def main():
         print("MV", old_p)
         old_p.rename(new_p)
 
-    mapping = {"00_Входящее": "0. Входящее", "01_Профиль": "1. Профиль", "02_Тесты": "2. Тесты"}
+    mapping = {"00_Входящее": "_ВХОДЯЩЕЕ", "01_Профиль": "1. Профиль", "02_Тесты": "2. Тесты"}
     for o, n in mapping.items():
         op, np = BASE_LICHNOE / o, BASE_LICHNOE / n
         if op.exists() and not np.exists():

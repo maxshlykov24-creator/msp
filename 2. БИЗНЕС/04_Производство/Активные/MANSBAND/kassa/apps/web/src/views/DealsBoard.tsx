@@ -1,34 +1,91 @@
-import { useEffect, useState } from "react";
-import { Search, Filter, ArrowRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, Search, Filter, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useStore } from "../store";
-import { money, shortDate, timeOf, dateCompact, dateRangeCompact } from "../lib/format";
-import { Badge, Button, Modal, StageBadge } from "../components/ui";
+import { money, shortDate, timeOf } from "../lib/format";
+import { Badge, Button, StageBadge } from "../components/ui";
 import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
-import { PAYMENT_METHODS, STAGES_BY_KIND, STORE_ADDRESS } from "../data/mock";
+import {
+  CONSULTANTS,
+  HIDDEN_STAGES,
+  SALE_STAGES,
+  STORES,
+} from "../data/mock";
 import type { Deal, DealKind } from "../data/types";
+import { DealWorkspace } from "./DealWorkspace";
 
-// Подразделы заявок по виду (созвон 14.06) + разнесённые виды дефектов (правки 7)
-const KIND_GROUPS: { id: string; label: string; kinds: DealKind[] | null }[] = [
+/**
+ * Фильтры на доске.
+ * «Отложка» = kind=deferred ИЛИ продажа (sale) на товарных этапах.
+ * Компания / аренда / обещание сюда по этапу не попадают — после смены типа
+ * заявка уходит в свой раздел (правки владельца).
+ */
+const KIND_GROUPS: {
+  id: string;
+  label: string;
+  kinds: DealKind[] | null;
+  /** Только для вкладки «Отложка»: доп. этапы у kind=sale. */
+  saleStages?: string[];
+}[] = [
   { id: "all", label: "Все", kinds: null },
   { id: "sale", label: "Продажи", kinds: ["sale"] },
+  {
+    id: "deferred",
+    label: "Отложка",
+    kinds: ["deferred"],
+    saleStages: ["Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"],
+  },
+  { id: "promise", label: "Обещания", kinds: ["promise"] },
   { id: "rental", label: "Аренда", kinds: ["rental"] },
   { id: "cert", label: "Сертификаты", kinds: ["cert_plastic", "cert_digital"] },
   { id: "company", label: "Продажи компании", kinds: ["company"] },
   { id: "delivery", label: "Доставки", kinds: ["delivery"] },
-  { id: "defect_all", label: "Все дефекты", kinds: ["defect", "drycleaning", "resew", "wrong_size"] },
+  { id: "defect_all", label: "Все дефекты", kinds: ["defect", "drycleaning", "resew", "wrong_size", "wrong_label"] },
   { id: "defect", label: "Браки", kinds: ["defect"] },
   { id: "drycleaning", label: "Химчистка", kinds: ["drycleaning"] },
   { id: "resew", label: "Перешив", kinds: ["resew"] },
   { id: "wrong_size", label: "Перепутан размер", kinds: ["wrong_size"] },
+  { id: "wrong_label", label: "Некорректная бирка", kinds: ["wrong_label"] },
 ];
+
+function matchesKindGroup(
+  d: Deal,
+  group: (typeof KIND_GROUPS)[number]
+): boolean {
+  if (!group.kinds) return true;
+  if (group.kinds.includes(d.kind)) return true;
+  // Продажи на этапах отложки — во вкладке «Отложка», но не компания/аренда.
+  if (group.saleStages && d.kind === "sale" && group.saleStages.includes(d.stage)) {
+    return true;
+  }
+  return false;
+}
+
+const STATUS_FILTERS = [
+  { id: "all", label: "Все" },
+  { id: "open", label: "Открытые" },
+  { id: "success", label: "Успешные" },
+  { id: "fail", label: "Провальные" },
+  { id: "overdue", label: "Просроченные" },
+] as const;
+
+const STORE_OPTIONS = STORES.filter((s) => s !== "Онлайн-магазин");
+const CONSULTANT_OPTIONS = CONSULTANTS.filter((c) => c.role === "consultant").map((c) => c.name);
 
 /** Контрольная дата заявки (срок отложки / актуальности / аренды). */
 function dealDeadline(d: Deal): string | undefined {
   return d.reservedUntil || d.actualUntil || d.deferredUntil || d.validUntil || d.rentalTo;
 }
 
+function isSuccess(d: Deal): boolean {
+  return d.stage === "Успех";
+}
+
+function isFail(d: Deal): boolean {
+  return d.stage === "Провал";
+}
+
 function isClosed(d: Deal): boolean {
-  return ["Успех", "Провал"].includes(d.stage);
+  return isSuccess(d) || isFail(d);
 }
 
 function isOverdue(d: Deal, today: string): boolean {
@@ -37,31 +94,74 @@ function isOverdue(d: Deal, today: string): boolean {
   return !!dl && dl < today;
 }
 
+function createdDay(iso: string): string {
+  return iso.slice(0, 10);
+}
+
 export function DealsBoard({
   onNew,
+  onReturnExchange,
   initialGroup,
   initialStatus,
+  initialDealNumber,
   onBoardChange,
+  origin,
 }: {
   onNew: () => void;
+  onReturnExchange?: (kind: "refund" | "exchange", dealNumber: number) => void;
   initialGroup?: string | null;
   initialStatus?: string | null;
+  initialDealNumber?: number | null;
   onBoardChange?: (group: string, status: string) => void;
+  /** Откуда открыли карточку (очередь Эдвина, Миши, экран задач) — туда и вернёмся. */
+  origin?: string | null;
 }) {
-  const { deals } = useStore();
+  const { deals, dealsLoading } = useStore();
   const today = new Date().toISOString().slice(0, 10);
   const [q, setQ] = useState("");
   const [kindGroup, setKindGroup] = useState<string>(initialGroup ?? "all");
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus ?? "all");
+  const [storeFilter, setStoreFilter] = useState<string>("all");
+  const [consultantFilter, setConsultantFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [active, setActive] = useState<Deal | null>(null);
+  const [visibleCount, setVisibleCount] = useState(60);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Пресет из левого меню (#board/<group>/<status>) — синхронизация при навигации.
   useEffect(() => {
-    setKindGroup(initialGroup ?? "all");
+    if (!initialDealNumber) return;
+    const deal = deals.find((row) => row.number === initialDealNumber);
+    if (deal) setActive(deal);
+  }, [initialDealNumber, deals]);
+
+  // Пресет из URL (#board/<group>/<status>). Старые ссылки на дефекты → «Все».
+  useEffect(() => {
+    const next = initialGroup ?? "all";
+    setKindGroup(KIND_GROUPS.some((g) => g.id === next) ? next : "all");
   }, [initialGroup]);
   useEffect(() => {
-    setStatusFilter(initialStatus ?? "all");
+    // Старые ссылки #board/.../done → успешные
+    const s = initialStatus === "done" ? "success" : (initialStatus ?? "all");
+    setStatusFilter(s);
   }, [initialStatus]);
+
+  /**
+   * Закрытие карточки: вернуться туда, откуда зашли (очередь Эдвина, Миши,
+   * очереди задач). Если пришли с доски — убрать номер заявки из хэша, сохранив
+   * фильтры среза.
+   */
+  function closeDeal() {
+    setActive(null);
+    if (origin) {
+      // origin приходит одним сегментом: «tasks:crm:pending» → «tasks/crm/pending».
+      window.location.hash = origin.replace(/:/g, "/");
+      return;
+    }
+    const next = `board/${kindGroup}/${statusFilter}`;
+    if (window.location.hash.replace(/^#/, "") !== next) window.location.hash = next;
+  }
 
   function pickGroup(id: string) {
     setKindGroup(id);
@@ -73,31 +173,108 @@ export function DealsBoard({
     onBoardChange?.(kindGroup, id);
   }
 
+  function resetExtraFilters() {
+    setStoreFilter("all");
+    setConsultantFilter("all");
+    setStageFilter("all");
+    setDateFrom("");
+    setDateTo("");
+  }
+
   const group = KIND_GROUPS.find((g) => g.id === kindGroup) ?? KIND_GROUPS[0];
 
-  const filtered = deals.filter((d) => {
-    const matchQ =
-      d.clientName.toLowerCase().includes(q.toLowerCase()) ||
-      d.clientPhone.includes(q) ||
-      String(d.number).includes(q);
-    const matchKind = !group.kinds || group.kinds.includes(d.kind);
-    const matchStatus =
-      statusFilter === "all"
-        ? true
-        : statusFilter === "open"
-        ? !isClosed(d)
-        : statusFilter === "done"
-        ? isClosed(d)
-        : isOverdue(d, today);
-    return matchQ && matchKind && matchStatus;
-  });
+  const stageOptions = useMemo(() => {
+    const set = new Set<string>(SALE_STAGES);
+    for (const d of deals) {
+      if (!HIDDEN_STAGES.has(d.stage)) set.add(d.stage);
+    }
+    return Array.from(set).filter((s) => !HIDDEN_STAGES.has(s));
+  }, [deals]);
+
+  const extraActive =
+    storeFilter !== "all" ||
+    consultantFilter !== "all" ||
+    stageFilter !== "all" ||
+    !!dateFrom ||
+    !!dateTo;
+
+  const filtered = useMemo(() => {
+    const list = deals.filter((d) => {
+      const matchQ =
+        d.clientName.toLowerCase().includes(q.toLowerCase()) ||
+        d.clientPhone.includes(q) ||
+        String(d.number).includes(q);
+      const matchKind = matchesKindGroup(d, group);
+      const matchStatus =
+        statusFilter === "all"
+          ? true
+          : statusFilter === "open"
+            ? !isClosed(d)
+            : statusFilter === "success"
+              ? isSuccess(d)
+              : statusFilter === "fail"
+                ? isFail(d)
+                : isOverdue(d, today);
+      const matchStore = storeFilter === "all" || d.store === storeFilter;
+      const matchConsultant = consultantFilter === "all" || d.consultant === consultantFilter;
+      const matchStage = stageFilter === "all" || d.stage === stageFilter;
+      const day = createdDay(d.createdAt);
+      const matchFrom = !dateFrom || day >= dateFrom;
+      const matchTo = !dateTo || day <= dateTo;
+      return (
+        matchQ &&
+        matchKind &&
+        matchStatus &&
+        matchStore &&
+        matchConsultant &&
+        matchStage &&
+        matchFrom &&
+        matchTo
+      );
+    });
+    // Новее сверху
+    return list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  }, [
+    deals,
+    q,
+    group,
+    statusFilter,
+    storeFilter,
+    consultantFilter,
+    stageFilter,
+    dateFrom,
+    dateTo,
+    today,
+  ]);
+
+  // Сброс пагинации при смене фильтров — иначе «пусто» при узком срезе.
+  useEffect(() => {
+    setVisibleCount(60);
+  }, [q, kindGroup, statusFilter, storeFilter, consultantFilter, stageFilter, dateFrom, dateTo]);
+
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = filtered.length > visibleCount;
+
+  if (active) {
+    return (
+      <DealWorkspace
+        deal={active}
+        onClose={closeDeal}
+        onReturnExchange={onReturnExchange}
+      />
+    );
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-extrabold text-white">Заявки</h1>
-          <p className="text-mute text-sm mt-0.5">Все операции магазина в одном месте</p>
+          <p className="text-mute text-sm mt-0.5">
+            {dealsLoading
+              ? "Загрузка заявок…"
+              : `${filtered.length} из ${deals.length} · все операции магазина`}
+          </p>
         </div>
         <Button onClick={onNew}>+ Новая заявка</Button>
       </div>
@@ -117,8 +294,8 @@ export function DealsBoard({
         ))}
       </div>
 
-      <div className="flex gap-2 mb-4 flex-wrap">
-        <div className="relative flex-1 min-w-[220px]">
+      <div className="flex gap-2 mb-3 flex-wrap">
+        <div className="relative flex-1 min-w-0 w-full sm:min-w-[220px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
           <input
             className="input pl-9"
@@ -127,13 +304,8 @@ export function DealsBoard({
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <div className="inline-flex rounded-lg border border-ink-700 overflow-hidden">
-          {[
-            { id: "all", label: "Все" },
-            { id: "open", label: "Открытые" },
-            { id: "done", label: "Завершённые" },
-            { id: "overdue", label: "Просроченные" },
-          ].map((f) => (
+        <div className="inline-flex flex-wrap rounded-lg border border-ink-700 max-w-full overflow-hidden">
+          {STATUS_FILTERS.map((f) => (
             <button
               key={f.id}
               onClick={() => pickStatus(f.id)}
@@ -147,239 +319,186 @@ export function DealsBoard({
         </div>
       </div>
 
-      <div className="card p-0 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="text-[12px] uppercase tracking-wider text-mute border-b border-ink-700">
-            <tr>
-              <th className="px-4 py-3">№</th>
-              <th className="px-4 py-3">Клиент</th>
-              <th className="px-4 py-3 hidden lg:table-cell">Тип</th>
-              <th className="px-4 py-3 hidden lg:table-cell">Вид</th>
-              <th className="px-4 py-3 hidden md:table-cell">Консультант</th>
-              <th className="px-4 py-3">Сумма</th>
-              <th className="px-4 py-3">Этап</th>
-              <th className="px-4 py-3 hidden xl:table-cell">Создана</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-800">
-            {filtered.map((d) => (
-              <tr
-                key={d.id}
-                className="hover:bg-ink-800/40 cursor-pointer transition"
-                onClick={() => setActive(d)}
-              >
-                <td className="px-4 py-3 font-mono text-mute">#{d.number}</td>
-                <td className="px-4 py-3">
-                  <div className="text-white font-medium">{d.clientName}</div>
-                  <div className="text-[12px] text-mute">{d.clientPhone}</div>
-                  <div className="flex gap-1 mt-1 lg:hidden">
-                    <Badge tone="gray">{FUNNEL_LABEL[d.funnel]}</Badge>
-                    <Badge tone="blue">{KIND_LABEL[d.kind]}</Badge>
-                  </div>
-                </td>
-                <td className="px-4 py-3 hidden lg:table-cell">
-                  <Badge tone="gray">{FUNNEL_LABEL[d.funnel]}</Badge>
-                </td>
-                <td className="px-4 py-3 hidden lg:table-cell">
-                  <Badge tone="blue">{KIND_LABEL[d.kind]}</Badge>
-                </td>
-                <td className="px-4 py-3 hidden md:table-cell text-mute-soft text-sm">{d.consultant}</td>
-                <td className="px-4 py-3 font-semibold text-white">{d.total ? money(d.total) : "—"}</td>
-                <td className="px-4 py-3"><StageBadge stage={d.stage} /></td>
-                <td className="px-4 py-3 hidden xl:table-cell text-mute text-[13px]">
-                  {shortDate(d.createdAt)} {timeOf(d.createdAt)}
-                </td>
-                <td className="px-4 py-3 text-mute"><ArrowRight size={16} /></td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-mute">
-                  <Filter size={20} className="mx-auto mb-2 opacity-50" />
-                  Ничего не найдено
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <DealModal deal={active} onClose={() => setActive(null)} />
-    </div>
-  );
-}
-
-function DealModal({ deal, onClose }: { deal: Deal | null; onClose: () => void }) {
-  const { deals, updateDealStage, addDealComment, activeConsultant } = useStore();
-  const [stage, setStage] = useState(deal?.stage ?? "");
-  const [stageSaved, setStageSaved] = useState(false);
-  const [comment, setComment] = useState("");
-
-  useEffect(() => {
-    setStage(deal?.stage ?? "");
-    setStageSaved(false);
-    setComment("");
-  }, [deal]);
-
-  if (!deal) return null;
-  // Живая версия заявки из стора — чтобы история и оплата обновлялись после действий.
-  const live = deals.find((d) => d.id === deal.id) ?? deal;
-  const paid = live.payments.reduce((s, p) => s + p.amount, 0);
-  const remainder = live.total - paid;
-  const stages = STAGES_BY_KIND[deal.kind] ?? [];
-  const stageOptions = stages.includes(stage) ? stages : [stage, ...stages];
-  // Запрет перехода в «Успех» при незакрытом остатке (правки 7).
-  const successBlocked = stage === "Успех" && remainder > 0;
-  const history = live.history ?? [];
-
-  function saveStage() {
-    if (!deal || stage === live.stage || successBlocked) return;
-    updateDealStage(deal.id, stage);
-    setStageSaved(true);
-  }
-
-  function postComment() {
-    if (!deal || !comment.trim()) return;
-    addDealComment(deal.id, comment.trim(), activeConsultant);
-    setComment("");
-  }
-
-  return (
-    <Modal open={!!deal} onClose={onClose} title={`Заявка #${deal.number}`} wide>
-      <div className="grid md:grid-cols-2 gap-5">
-        <div className="space-y-2 text-sm">
-          <Row k="Клиент" v={deal.clientName} />
-          <Row k="Телефон" v={deal.clientPhone} />
-          <Row k="Тип" v={FUNNEL_LABEL[deal.funnel]} />
-          <Row k="Вид" v={KIND_LABEL[deal.kind]} />
-          <Row k="Консультант" v={deal.consultant} />
-          {deal.referredBy && <Row k="Направил (слив)" v={deal.referredBy} />}
-          {deal.callManager && <Row k="Call-менеджер" v={deal.callManager} />}
-          <Row k="Магазин" v={deal.store} />
-          <Row k="Адрес" v={deal.storeAddress ?? STORE_ADDRESS[deal.store]} />
-          {deal.recipientName && <Row k="Получатель" v={`${deal.recipientName} · ${deal.recipientPhone ?? ""}`} />}
-          {deal.deliveryCity && <Row k="Город доставки" v={deal.deliveryCity} />}
-          {deal.linkedDealNumber && <Row k="Исходная заявка" v={`#${deal.linkedDealNumber}`} />}
-          {deal.companyName && <Row k="Компания" v={deal.companyName} />}
-          {deal.invoiceNo && <Row k="№ счёта" v={deal.invoiceNo} />}
-          {deal.channel && <Row k="Канал" v={deal.channel} />}
-          {deal.purpose && <Row k="Цель" v={deal.purpose} />}
-          {deal.certificateNumber && <Row k="№ сертификата" v={deal.certificateNumber} />}
-          {deal.rentalFrom && <Row k="Аренда" v={dateRangeCompact(deal.rentalFrom, deal.rentalTo)} />}
-          {deal.reservedUntil && <Row k="Резерв до" v={dateCompact(deal.reservedUntil)} />}
-          {deal.actualUntil && <Row k="Актуально до" v={dateCompact(deal.actualUntil)} />}
-          {deal.deferredUntil && <Row k="Отложка до" v={dateCompact(deal.deferredUntil)} />}
-          {deal.validUntil && <Row k="Действует до" v={dateCompact(deal.validUntil)} />}
-          {deal.receivedAt && <Row k="Получен" v={dateCompact(deal.receivedAt)} />}
-          {deal.issueDate && <Row k="Выдача (факт)" v={dateCompact(deal.issueDate)} />}
-          {deal.returnDate && <Row k="Возврат (факт)" v={dateCompact(deal.returnDate)} />}
-          {deal.paymentDate && <Row k="Дата оплаты" v={dateCompact(deal.paymentDate)} />}
-          {!!deal.tips && <Row k="Чаевые (Эдвин)" v={money(deal.tips)} />}
-          {deal.comment && <Row k="Комментарий" v={deal.comment} />}
-          <div className="pt-2">
-            <div className="field-label">Этап заявки</div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <StageBadge stage={stage} />
-              <select
-                className="input w-auto text-sm"
-                value={stage}
-                onChange={(e) => { setStage(e.target.value); setStageSaved(false); }}
-              >
-                {stageOptions.map((s) => <option key={s}>{s}</option>)}
-              </select>
-              <Button
-                variant="subtle"
-                disabled={stage === live.stage || stageSaved || successBlocked}
-                onClick={saveStage}
-              >
-                {stageSaved ? "Сохранено" : "Сменить этап"}
-              </Button>
-            </div>
-            {successBlocked && (
-              <div className="mt-1.5 text-[12px] text-amber-300/90">
-                Остаток {money(remainder)} — «Успех» недоступен, пока заявка не оплачена полностью.
-              </div>
-            )}
-          </div>
-        </div>
-        <div>
-          <div className="field-label">Состав</div>
-          <div className="rounded-lg border border-ink-700 divide-y divide-ink-800 mb-3">
-            {deal.items.map((it, i) => (
-              <div key={i} className="flex justify-between px-3 py-2 text-sm">
-                <span className="text-mute-soft">{it.name} × {it.qty}</span>
-                <span className="text-white">{it.noPrice ? "—" : money(it.price * it.qty)}</span>
-              </div>
-            ))}
-          </div>
-          {deal.payments.length > 0 && (
-            <>
-              <div className="field-label">Оплаты</div>
-              <div className="rounded-lg border border-ink-700 divide-y divide-ink-800">
-                {deal.payments.map((p) => {
-                  const m = PAYMENT_METHODS.find((x) => x.id === p.methodId);
-                  return (
-                    <div key={p.id} className="flex justify-between px-3 py-2 text-sm">
-                      <span className="text-mute-soft">{m?.label ?? p.methodId}</span>
-                      <span className="text-white">{money(p.amount)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-          <div className="flex justify-between mt-3 text-sm">
-            <span className="text-mute">Итого / оплачено</span>
-            <span className="text-white font-semibold">
-              {money(live.total)} / {money(paid)}
+      {/* Фильтры сворачиваются — на телефоне не занимают полэкрана до таблицы */}
+      <div className="card mb-4 p-0 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((v) => !v)}
+          className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-ink-800/40"
+        >
+          <Filter size={15} className="text-mute" />
+          <span className="text-[13px] font-medium text-white flex-1">
+            Фильтры{extraActive ? " · активны" : ""}
+          </span>
+          {extraActive && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                resetExtraFilters();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.stopPropagation();
+                  resetExtraFilters();
+                }
+              }}
+              className="inline-flex items-center gap-1 text-[12px] text-mute hover:text-white px-2"
+            >
+              <X size={13} /> Сбросить
             </span>
+          )}
+          {filtersOpen ? <ChevronUp size={16} className="text-mute" /> : <ChevronDown size={16} className="text-mute" />}
+        </button>
+        {filtersOpen && (
+          <div className="px-3 pb-3 flex flex-wrap gap-2 items-end border-t border-ink-800 pt-3">
+            <div className="min-w-[140px] flex-1">
+              <div className="field-label">Магазин</div>
+              <select className="input py-2 text-sm" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)}>
+                <option value="all">Все магазины</option>
+                {STORE_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-[140px] flex-1">
+              <div className="field-label">Консультант</div>
+              <select
+                className="input py-2 text-sm"
+                value={consultantFilter}
+                onChange={(e) => setConsultantFilter(e.target.value)}
+              >
+                <option value="all">Все</option>
+                {CONSULTANT_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-[140px] flex-1">
+              <div className="field-label">Этап</div>
+              <select className="input py-2 text-sm" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+                <option value="all">Все этапы</option>
+                {stageOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-[120px]">
+              <div className="field-label">Создана с</div>
+              <input type="date" className="input py-2 text-sm" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </div>
+            <div className="min-w-[120px]">
+              <div className="field-label">по</div>
+              <input type="date" className="input py-2 text-sm" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
           </div>
-        </div>
-      </div>
-
-      {/* История действий по заявке */}
-      <div className="mt-5 pt-5 border-t border-ink-800">
-        <div className="field-label mb-2">История</div>
-        {history.length > 0 ? (
-          <ol className="space-y-2.5 mb-4">
-            {[...history].reverse().map((h, i) => (
-              <li key={i} className="flex gap-3 text-sm">
-                <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-gold shrink-0" />
-                <div className="min-w-0">
-                  <div className="text-white">{h.action}</div>
-                  <div className="text-[12px] text-mute">
-                    {shortDate(h.at)} {timeOf(h.at)} · {h.who}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <div className="text-sm text-mute mb-4">Действий пока нет.</div>
         )}
-        <div className="flex gap-2">
-          <input
-            className="input text-sm"
-            placeholder="Добавить комментарий…"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && postComment()}
-          />
-          <Button variant="subtle" disabled={!comment.trim()} onClick={postComment}>
-            Добавить
-          </Button>
-        </div>
       </div>
-    </Modal>
-  );
-}
 
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between gap-4 border-b border-ink-800/60 pb-1.5">
-      <span className="text-mute">{k}</span>
-      <span className="text-white text-right">{v}</span>
+      <div className="card p-0 overflow-hidden">
+        <div
+          className="overflow-x-auto overscroll-x-contain deals-table-scroll"
+          style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y" }}
+        >
+          <table className="w-full table-fixed text-left border-collapse text-[13px]">
+            <colgroup>
+              <col style={{ width: "7.25rem" }} />
+              <col className="w-[8%]" />
+              <col />
+              <col className="w-[8%]" />
+              <col className="w-[10%]" />
+              <col className="w-[11%]" />
+              <col className="w-[10%]" />
+              <col className="w-[9%]" />
+              <col className="w-[14%]" />
+              <col style={{ width: "1.75rem" }} />
+            </colgroup>
+            <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-700">
+              <tr>
+                <th className="px-2 py-2.5 whitespace-nowrap">№</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">Дата</th>
+                <th className="px-2 py-2.5">Клиент</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">Тип</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">Вид</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">Магазин</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">Консультант</th>
+                <th className="px-2 py-2.5 whitespace-nowrap text-right">К оплате</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">Этап</th>
+                <th className="px-1 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-800">
+              {visible.map((d) => (
+                <tr
+                  key={d.id}
+                  className="hover:bg-ink-800/40 cursor-pointer transition"
+                  onClick={() => setActive(d)}
+                >
+                  <td className="px-2 py-2.5 font-mono text-mute whitespace-nowrap align-top">
+                    #{d.number}
+                  </td>
+                  <td className="px-2 py-2.5 align-top text-mute whitespace-nowrap">
+                    <div>{shortDate(d.createdAt)}</div>
+                    <div className="text-[11px] text-mute/80">{timeOf(d.createdAt)}</div>
+                  </td>
+                  <td className="px-2 py-2.5 align-top min-w-0">
+                    <div className="text-white font-medium truncate leading-snug" title={d.clientName}>
+                      {d.clientName}
+                    </div>
+                    <div className="text-[11px] text-mute truncate mt-0.5">{d.clientPhone || "—"}</div>
+                  </td>
+                  <td className="px-2 py-2.5 align-top min-w-0">
+                    <Badge tone="gray">{FUNNEL_LABEL[d.funnel]}</Badge>
+                  </td>
+                  <td className="px-2 py-2.5 align-top min-w-0">
+                    <Badge tone="blue">{KIND_LABEL[d.kind]}</Badge>
+                  </td>
+                  <td
+                    className="px-2 py-2.5 align-top text-mute-soft truncate"
+                    title={d.store}
+                  >
+                    {d.store.replace(/^На\s+/i, "")}
+                  </td>
+                  <td className="px-2 py-2.5 align-top text-mute-soft truncate" title={d.consultant || undefined}>
+                    {d.consultant || "—"}
+                  </td>
+                  <td className="px-2 py-2.5 align-top font-semibold text-white whitespace-nowrap text-right tabular-nums">
+                    {d.total ? money(d.total) : "—"}
+                  </td>
+                  <td className="px-2 py-2.5 align-top min-w-0">
+                    <StageBadge stage={d.stage} className="inline-block align-top" />
+                  </td>
+                  <td className="px-1 py-2.5 align-top text-mute">
+                    <ArrowRight size={14} />
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-10 text-center text-mute">
+                    <Filter size={20} className="mx-auto mb-2 opacity-50" />
+                    {dealsLoading ? "Загрузка заявок…" : "Ничего не найдено"}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {hasMore && (
+          <div className="p-3 border-t border-ink-700 text-center">
+            <Button variant="subtle" onClick={() => setVisibleCount((n) => n + 60)}>
+              Показать ещё ({filtered.length - visibleCount})
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

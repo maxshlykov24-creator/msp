@@ -1,0 +1,89 @@
+{
+  "_doc": "Шаблон конфига агента для openclaw.json. Кладётся в agents.list[]. Полный openclaw.json создаётся командой `openclaw configure` при первом запуске; этот фрагмент добавляется через `openclaw agents create lead-qualifier --config ./openclaw.config.example.json`. Подробно по выбору модели — ВЫБОР_МОДЕЛИ.md.",
+
+  "id": "lead-qualifier",
+  "name": "AI-Менеджер 1-й линии",
+  "workspace": "/opt/manager-bot/workspace",
+
+  "_model_doc": "primary + fallbacks. fallbacks применяются по очереди при rate limit / 5xx у primary. Свежие IDs: см. АКТУАЛЬНЫЕ_МОДЕЛИ.md или https://openrouter.ai/models",
+  "model": {
+    "primary": "openrouter/anthropic/claude-sonnet-4.6",
+    "fallbacks": [
+      "openrouter/google/gemini-3.1-flash-lite",
+      "openrouter/x-ai/grok-4.1-fast"
+    ]
+  },
+
+  "_alternative_setups_examples": {
+    "budget": {
+      "primary": "openrouter/google/gemini-3.1-flash-lite",
+      "fallbacks": ["openrouter/deepseek/deepseek-v4-flash"]
+    },
+    "premium": {
+      "primary": "openrouter/anthropic/claude-opus-4.7",
+      "fallbacks": ["openrouter/openai/gpt-5.5", "openrouter/anthropic/claude-sonnet-4.6"]
+    },
+    "denis_production": {
+      "primary": "openrouter/x-ai/grok-4.1-fast",
+      "fallbacks": ["openrouter/google/gemini-3-flash-preview", "openrouter/openai/gpt-5.4-nano"]
+    },
+    "hybrid": {
+      "primary": "ollama/kimi-k2.5",
+      "fallbacks": ["openrouter/google/gemini-3-flash-preview"],
+      "_requires_OLLAMA_API_KEY_in_env": true
+    },
+    "long_context_for_kb_bot": {
+      "primary": "openrouter/google/gemini-3.1-pro-preview",
+      "fallbacks": ["openrouter/anthropic/claude-sonnet-4.6"],
+      "_context_window_1M_to_2M": true
+    }
+  },
+
+  "tools": {
+    "profile": "minimal",
+    "_profile_options": "minimal | standard | full — определяет что бот может делать без подтверждения. Для лид-квалификатора достаточно minimal.",
+    "exec": {
+      "ask": "always",
+      "_ask_options": "always (на каждый exec) | on-miss (только незарегистрированные) | never (всё разрешено)"
+    },
+    "registered": [
+      "/opt/manager-bot/tools/escalate.sh",
+      "/opt/manager-bot/tools/save_lead.sh",
+      "/opt/manager-bot/tools/kb_search.sh"
+    ]
+  },
+
+  "channels": [
+    {
+      "type": "telegram",
+      "_token_doc": "Токен подтягивается из openclaw config или из ENV TG_BOT_TOKEN_LEAD_QUAL. НЕ вставляй токен в этот файл — он коммитится в git."
+    }
+  ],
+
+  "memory": {
+    "enabled": true,
+    "_doc": "Persistent memory диалогов. OpenClaw индексирует workspace и историю. Если выключить — диалоги теряются при рестарте.",
+    "retention": "30d"
+  },
+
+  "heartbeat": {
+    "enabled": false,
+    "_doc": "Для лид-квалификатора heartbeat не нужен (реактивный режим). Включается для cron-driven ролей (engagement)."
+  },
+
+  "subagents": {
+    "maxConcurrent": 0,
+    "_doc": "Лид-квалификатор сам не разворачивает subagents. Это уровень advanced (роутер-агенты)."
+  },
+
+  "compaction": {
+    "mode": "auto",
+    "model": "openrouter/anthropic/claude-sonnet-4.6",
+    "_doc": "Когда контекст переполнен — модель сжимает историю. У Дениса в production: claude-sonnet-4-6. Premium-модель здесь оправдана: запускается раз в 50 ходов, качество сжатия критично для длинных диалогов."
+  },
+
+  "thinkingDefault": "low",
+  "_thinking_options": "low | medium | high — баланс качества и стоимости. Для квалификации low достаточно. Для аналитики (М6) brать medium/high.",
+
+  "timeoutSeconds": 60
+}

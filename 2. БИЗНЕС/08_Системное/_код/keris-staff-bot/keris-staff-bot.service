@@ -1,0 +1,15 @@
+[Unit]
+Description=Keris Club — бот администратора: фото до/после (long polling)
+After=network-online.target keris-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/keris-staff-bot
+EnvironmentFile=/root/keris-staff-bot/.env
+ExecStart=/usr/bin/python3 /root/keris-staff-bot/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

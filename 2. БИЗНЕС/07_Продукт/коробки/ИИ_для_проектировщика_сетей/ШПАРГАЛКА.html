@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ИИ для проектировщика — шпаргалка</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1b1f27;
+    --muted: #667085;
+    --line: #e3e6eb;
+    --accent: #1f6feb;
+    --warn: #b42318;
+    --ok: #067647;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 20px 60px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header { margin-bottom: 28px; }
+  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 15px; }
+  h2 {
+    font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin: 34px 0 14px; font-weight: 600;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;
+  }
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .rule { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px; }
+  .rule b { display: block; font-size: 15px; margin-bottom: 4px; }
+  .rule span { color: var(--muted); font-size: 14px; }
+  .prompt { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .prompt-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 16px; cursor: pointer; user-select: none;
+  }
+  .prompt-head:hover { background: #fafbfc; }
+  .prompt-title { font-weight: 600; font-size: 15px; }
+  .prompt-title em { font-style: normal; color: var(--muted); font-weight: 400; font-size: 14px; }
+  .copy {
+    border: 1px solid var(--line); background: #fff; color: var(--accent);
+    border-radius: 7px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .copy:hover { background: #f0f6ff; }
+  .note { margin: 10px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .copy.done { color: var(--ok); border-color: var(--ok); }
+  .prompt-body { display: none; padding: 0 16px 14px; }
+  .prompt.open .prompt-body { display: block; }
+  pre {
+    margin: 0; padding: 14px; background: #f8f9fb; border: 1px solid var(--line);
+    border-radius: 8px; white-space: pre-wrap; font-size: 13.5px; line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td:first-child { font-weight: 500; }
+  ul.check { list-style: none; padding: 0; margin: 0; }
+  ul.check li { padding: 7px 0 7px 28px; position: relative; border-bottom: 1px solid var(--line); font-size: 15px; }
+  ul.check li:last-child { border-bottom: 0; }
+  ul.check li::before { content: "☐"; position: absolute; left: 4px; color: var(--muted); }
+  .stop li::before { content: "✕"; color: var(--warn); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  footer { margin-top: 36px; color: var(--muted); font-size: 13px; text-align: center; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+  @media print {
+    body { background: #fff; padding: 0; font-size: 12px; }
+    .copy { display: none; }
+    .prompt-body { display: block !important; }
+    .card, .rule, .prompt { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>ИИ для проектировщика наружных сетей</h1>
+  <div class="sub">Шпаргалка на каждый день. Нажми на заголовок промпта, чтобы раскрыть, или сразу копируй.</div>
+</header>
+
+<h2>Четыре железных правила</h2>
+<div class="rules">
+  <div class="rule"><b>1. Проверка заканчивается первоисточником</b><span>Требуй пункт и цитату, но сверяй по своду правил: цитату модель тоже выдумывает.</span></div>
+  <div class="rule"><b>2. Цифры считает таблица</b><span>Чат даёт формулу и методику. Арифметика — Excel или скрипт.</span></div>
+  <div class="rule"><b>3. Она готовит, подписываешь ты</b><span>Ответственность и электронная подпись остаются на человеке. Всегда.</span></div>
+  <div class="rule"><b>4. Живой объект в облако не грузишь</b><span>Убери название, адрес, ФИО, договоры и цены. Или ставь задачу абстрактно.</span></div>
+</div>
+
+<h2>Десять промптов, которые нужны каждый день</h2>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Разбор технических условий <em>— требования, точки, чего не хватает</em></div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Ты опытный инженер-проектировщик наружных сетей водоснабжения и водоотведения.
+
+Ниже — технические условия на подключение. Разбери их и выдай:
+
+1. Таблицу требований: что требуется, пункт ТУ, кто отвечает (мы / заказчик / ресурсник), срок
+2. Точки подключения: где, какие параметры, какие ограничения
+3. Что в ТУ противоречит само себе или сформулировано двусмысленно
+4. Каких данных не хватает. Отдельно: что запросить у заказчика, что у ресурсника
+5. Три риска, из-за которых объект может встать или получить замечания экспертизы
+
+Ничего не выдумывай. Если данных нет — пиши «в ТУ не указано».
+
+ТЕКСТ ТУ:
+[вставь]</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Вопрос по нормам с обязательной цитатой <em>— главный защитный промпт</em></div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Вопрос: [твой вопрос]
+
+Ответь по действующим нормам РФ. Формат ответа:
+1. Короткий ответ по сути
+2. Обоснование: номер документа, номер пункта, дословная цитата
+3. Смежные нормы, которые тоже надо учесть
+4. Отдельно: в чём ты не уверен и что я обязан проверить сам
+
+Жёсткое правило: не придумывай номера пунктов. Если точной цитаты не помнишь — пиши
+«точной цитаты нет, проверь по первоисточнику». Уточни, какая редакция могла измениться.</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Нормативные расстояния между сетями</div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Дай таблицу минимальных расстояний в плане и по вертикали между:
+[перечисли свои сети и смежные]
+
+Условия: [город/поселение, тип прокладки, грунты, глубина промерзания]
+
+Для каждой пары: расстояние, документ, пункт, дословная цитата, примечания и исключения
+(когда допускается сокращать и при каких мерах защиты).
+
+Не придумывай номера пунктов. Где не уверен — помечай явно.</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Нормоконтроль перед сдачей</div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Ты нормоконтролёр проектной организации. Проверь текстовую часть по разделу наружных сетей
+на соответствие требованиям к оформлению (ГОСТ Р 21.101 действующей редакции, ГОСТ 21.704, состав по ПП № 87).
+
+Проверь: состав раздела, оформление и нумерацию, ссылки на нормы и их актуальность,
+внутренние противоречия (цифры в тексте против таблиц), формулировки, вызывающие вопрос эксперта.
+
+Формат: таблица «замечание | где | обоснование с пунктом | как исправить |
+критичность (блокирующее / существенное / формальное)».
+
+Каждое замечание обязано иметь пункт нормы. Замечание без обоснования не выдавай.
+
+Документ:
+[вставь]</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Самопроверка глазами эксперта</div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Ты эксперт государственной экспертизы, проверяешь раздел наружных сетей. Настроен придирчиво.
+
+Ниже материалы проекта. Напиши замечания так, как ты написал бы их в заключении:
+с формулировкой, ссылкой на нарушенное требование и указанием, что должно быть исправлено.
+
+Начни с того, что вызовет отрицательное заключение, потом существенное, потом формальное.
+По каждому замечанию: как я могу его снять до подачи.
+
+Материалы:
+[вставь]</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Ответ на замечание экспертизы</div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Замечание экспертизы: [вставь дословно]
+
+Мои фактические данные: [что на самом деле в проекте, что менял, чем обосновано]
+
+Напиши официальный ответ. Требования:
+- Деловой тон, без спора и эмоций
+- Структура: суть решения, обоснование со ссылкой на норму или ТУ, где в проекте это отражено
+- Если замечание справедливо — формулировка о внесении изменений с указанием, что изменено
+- Если считаю необоснованным — вежливая аргументация со ссылкой на пункт
+
+Не выдумывай факты и номера листов. Где нужны мои данные — квадратные скобки.</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Пояснительная записка</div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Напиши пояснительную записку к разделу наружных сетей [водоснабжение / водоотведение / тепло].
+
+Объект: [описание]
+Исходные данные: [ТУ, расходы, точки подключения, грунты]
+Принятые решения: [трассировка, материалы, диаметры, глубины, колодцы, защита]
+
+Требования:
+- Структура по составу проектной документации (ПП № 87) для этого раздела
+- Технический стиль, безлично, без рекламных оборотов
+- Каждое решение с обоснованием и ссылкой на норму или ТУ
+- Где нужны данные — оставь [квадратные скобки], не выдумывай цифры</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Письмо в ресурсоснабжающую организацию</div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Напиши официальное письмо в [организация].
+
+Суть: [что нужно]
+Контекст: [объект, номер ТУ, что уже было]
+Что хочу получить в ответ: [конкретно]
+
+Требования:
+- Деловой стиль, коротко, без воды
+- Чёткий запрос: что именно прошу и в какой срок
+- Реквизиты документов — квадратные скобки, я подставлю
+- В конце список приложений, если нужны
+
+Без длинного тире, без слэшей, без вложенных кавычек.</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Методика расчёта <em>— формулы, не числа</em></div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Задача: [например — гидравлический расчёт самотечной сети хозбытовой канализации]
+
+Исходные данные: [расходы, длины, отметки, материал труб]
+
+Нужно:
+1. Методика расчёта со ссылкой на норму (документ и пункт)
+2. Формулы с расшифровкой каждой величины и единиц измерения
+3. Порядок расчёта по шагам
+4. Ограничения и проверки: уклоны, скорости, наполнение — с пунктами норм
+5. Типичные ошибки в этом расчёте
+
+Числа не считай. Мне нужна методика, считать буду в таблице.</pre></div>
+</div>
+
+<div class="prompt">
+  <div class="prompt-head">
+    <div class="prompt-title">Сверка спецификации с моделью</div>
+    <button class="copy">Копировать</button>
+  </div>
+  <div class="prompt-body"><pre>Ниже два списка: спецификация из проекта и выгрузка из модели.
+
+Сверь их и выдай:
+1. Позиции, которые есть в модели, но отсутствуют в спецификации
+2. Позиции спецификации, которых нет в модели
+3. Позиции с расхождением по количеству, диаметру или материалу — с обоими значениями
+4. Сводка: сколько совпало, сколько расходится
+
+Не додумывай соответствия по смыслу. Если названия различаются — в отдельный список
+«требует ручной сверки».
+
+Спецификация:
+[вставь]
+
+Модель:
+[вставь]</pre></div>
+</div>
+
+<h2>Какую модель брать</h2>
+<div class="card">
+<table>
+  <tr><th>Задача</th><th>Модель</th><th>Режим рассуждения</th></tr>
+  <tr><td>Разбор ТУ, сверка документов</td><td>Сильная</td><td>Да</td></tr>
+  <tr><td>Вопросы по нормам, нормоконтроль</td><td>Сильная</td><td>Да</td></tr>
+  <tr><td>Проверка расчёта, самопроверка</td><td>Сильная</td><td>Да</td></tr>
+  <tr><td>Большое заключение экспертизы</td><td>С большим контекстом</td><td>Да</td></tr>
+  <tr><td>Записки, письма, протоколы</td><td>Средняя</td><td>Не обязательно</td></tr>
+  <tr><td>Черновики, выжимки, массовка</td><td>Быстрая и дешёвая</td><td>Нет</td></tr>
+</table>
+</div>
+
+<div class="cols">
+  <div>
+    <h2>Проверь перед использованием</h2>
+    <div class="card">
+      <ul class="check">
+        <li>Каждая ссылка на норму проверена по первоисточнику</li>
+        <li>Редакция документа действующая</li>
+        <li>Все числа пересчитаны в таблице</li>
+        <li>Понимаю каждое решение и могу защитить</li>
+        <li>Готов поставить свою подпись</li>
+      </ul>
+    </div>
+  </div>
+  <div>
+    <h2>Не отправлять в чат</h2>
+    <div class="card">
+      <ul class="check stop">
+        <li>Название объекта, адрес, координаты</li>
+        <li>ФИО, контакты, персональные данные</li>
+        <li>Номера договоров, цены, условия с подрядчиками</li>
+        <li>Режимные объекты и объекты с ограничением доступа</li>
+        <li>Пароли, ключи, доступы</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>Помощники в Cursor</h2>
+<div class="card">
+<table>
+  <tr><th>Команда</th><th>Что делает</th></tr>
+  <tr><td><code>@ту</code></td><td>Разбор технических условий и задания</td></tr>
+  <tr><td><code>@нормоконтроль</code></td><td>Проверка комплекта перед сдачей</td></tr>
+  <tr><td><code>@записка</code></td><td>Записки, письма, ответы экспертизе</td></tr>
+  <tr><td><code>/что-спросить</code></td><td>Каких данных не хватает и у кого запросить</td></tr>
+  <tr><td><code>/объясни</code></td><td>Объяснить простым языком, как новичку</td></tr>
+</table>
+<p class="note">Команды со слэшем — не функции программы, а сокращения из твоего паспорта. Работают только в рабочей папке, где он лежит.</p>
+</div>
+
+<footer>
+  Комплект «ИИ для проектировщика наружных сетей» · 18.08.2026 · названия моделей и ссылки на нормы проверяй на дату чтения
+</footer>
+
+</div>
+
+<script>
+document.querySelectorAll('.prompt').forEach(function (block) {
+  var head = block.querySelector('.prompt-head');
+  var btn = block.querySelector('.copy');
+  var text = block.querySelector('pre').textContent;
+
+  head.addEventListener('click', function (e) {
+    if (e.target === btn) return;
+    block.classList.toggle('open');
+  });
+
+  function flash(label) {
+    btn.textContent = label;
+    btn.classList.add('done');
+    setTimeout(function () {
+      btn.textContent = 'Копировать';
+      btn.classList.remove('done');
+    }, 1600);
+  }
+
+  // При открытии файла с диска доступ к буферу обмена бывает закрыт,
+  // поэтому нужен запасной путь через выделение текста.
+  function fallbackCopy() {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+    document.body.removeChild(area);
+    if (ok) {
+      flash('Скопировано');
+    } else {
+      block.classList.add('open');
+      flash('Выдели и скопируй');
+    }
+  }
+
+  btn.addEventListener('click', function () {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        flash('Скопировано');
+      }).catch(fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+  });
+});
+</script>
+</body>
+</html>

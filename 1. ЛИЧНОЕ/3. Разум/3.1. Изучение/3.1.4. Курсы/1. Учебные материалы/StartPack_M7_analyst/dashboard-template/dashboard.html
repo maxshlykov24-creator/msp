@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Отчёт · Продажи · май 2026 — AI-Помощник по данным</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--
+  dashboard.html · шаблон отчёта аналитика (Модуль 7)
+  ───────────────────────────────────────────────────
+  Самодостаточный HTML. Chart.js вшит локально (vendor/), работает офлайн и из РФ.
+  Палитра v15. Печать в PDF: Cmd+P → Сохранить как PDF (A4).
+
+  КАК ЗАПОЛНЯТЬ: весь отчёт строится из объекта DATA внизу (тег <script id="report-data">).
+  Скилл «аналитик» подставляет туда числа из _ДАННЫЕ/ (см. ../skill/SKILL.md, prompts/report.md).
+  Ниже — демо: отдел продаж, ниша «натяжные потолки», май 2026 vs апрель 2026. Без реальных ПД.
+-->
+<style>
+  :root{
+    --red:#C5443A; --red-hover:#D45448; --red-deep:#8E2A22;
+    --red-tint:#FCEBE7; --red-tint-2:#FFF6F3; --red-bd:#F2C9C2;
+    --green:#1F4434; --green-hover:#2A5A45; --green-deep:#133024;
+    --green-tint:#E8F1EC; --green-tint-2:#F4F8F5; --green-bd:#BFD6C8;
+    --paper:#FFFFFF; --paper-2:#FAFAF8;
+    --surface:#FFFFFF; --surface-sunken:#FAFAF8;
+    --ink:#1A1614; --ink-soft:#2A2622;
+    --border:#E4E4E7; --divider:#D4D4D8;
+    --muted:#767676; --secondary:#52525B; --body:#3F3F46;
+    --amber:#92400E; --amber-bg:#FEF3C7; --amber-bd:#FDE68A;
+
+    --font-display:'Bricolage Grotesque','Manrope',system-ui,sans-serif;
+    --font-body:'Onest',system-ui,sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    --r-sm:8px; --r-md:10px; --r-lg:12px; --r-xl:14px; --r-2xl:16px;
+    --shadow:0 18px 38px -26px rgba(0,0,0,.20);
+    --frame-w:1080px;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper-2);color:var(--ink);font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;line-height:1.5}
+  .frame{max-width:var(--frame-w);margin:0 auto;padding:40px 32px 72px;background:var(--paper);min-height:100vh}
+  h1,h2,h3,h4{font-family:var(--font-display);color:var(--ink);margin:0;letter-spacing:-.02em}
+  .kicker{font-family:var(--font-mono);font-weight:500;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--secondary)}
+  .kicker.red{color:var(--red)} .kicker.green{color:var(--green)}
+  .num{font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted)} .secondary{color:var(--secondary)}
+
+  /* ── HEADER ─────────────────────────────── */
+  .top{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;
+    padding-bottom:22px;border-bottom:2px solid var(--ink);flex-wrap:wrap}
+  .top .lhs .kicker{margin-bottom:10px}
+  .top h1{font-size:34px;line-height:1.05;font-weight:600}
+  .top h1 .dot{color:var(--red)}
+  .top .sub{margin-top:8px;font-size:14px;color:var(--secondary)}
+  .top .rhs{display:flex;flex-direction:column;align-items:flex-end;gap:4px;text-align:right}
+  .top .period{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;background:var(--ink);color:#fff;
+    border-radius:99px;font-family:var(--font-mono);font-size:12px;letter-spacing:.04em}
+  .top .vs{font-size:12px;color:var(--muted);font-family:var(--font-mono)}
+  .ball{width:30px;height:30px}
+
+  /* ── SECTION LABEL ──────────────────────── */
+  .sec{margin-top:38px}
+  .sec-h{display:flex;align-items:baseline;gap:12px;margin-bottom:16px}
+  .sec-h .kicker{flex-shrink:0}
+  .sec-h .line{flex:1;height:1px;background:var(--border)}
+
+  /* ── KPI TILES ──────────────────────────── */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{padding:18px 18px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);
+    display:flex;flex-direction:column;gap:7px;position:relative;overflow:hidden}
+  .kpi .lab{font-size:12.5px;color:var(--secondary);line-height:1.3}
+  .kpi .val{font-family:var(--font-display);font-weight:600;font-size:29px;line-height:1;letter-spacing:-.03em;color:var(--ink)}
+  .kpi .val .u{font-size:.5em;color:var(--muted);margin-left:3px;letter-spacing:0}
+  .kpi .foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px}
+  .delta{display:inline-flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:12px;font-weight:500;
+    padding:2px 7px;border-radius:99px}
+  .delta.up{color:var(--green-deep);background:var(--green-tint)}
+  .delta.down{color:var(--red-deep);background:var(--red-tint)}
+  .delta.flat{color:var(--secondary);background:var(--surface-sunken)}
+  .delta .ar{font-size:11px}
+  .spark{width:62px;height:22px;flex-shrink:0}
+  .kpi .prev{font-size:11px;color:var(--muted);font-family:var(--font-mono)}
+
+  /* ── CHART CARDS ────────────────────────── */
+  .grid{display:grid;gap:16px}
+  .grid.c2{grid-template-columns:1.5fr 1fr}
+  .grid.c2b{grid-template-columns:1fr 1fr}
+  @media(max-width:900px){.grid.c2,.grid.c2b{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-2xl);padding:22px 24px}
+  .card .ct{font-family:var(--font-display);font-weight:600;font-size:17px;color:var(--ink);margin-bottom:2px}
+  .card .cs{font-size:12.5px;color:var(--muted);margin-bottom:16px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--secondary);font-family:var(--font-mono)}
+  .legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
+  .legend i.dash{background:repeating-linear-gradient(90deg,var(--muted) 0 4px,transparent 4px 7px);height:2px}
+  .chart-wrap{position:relative;height:230px}
+  .chart-wrap.sm{height:210px}
+
+  /* ── FUNNEL ─────────────────────────────── */
+  .funnel{display:flex;flex-direction:column;gap:7px}
+  .fstep{position:relative}
+  .fbar{height:46px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:space-between;
+    padding:0 16px;color:#fff;font-family:var(--font-display);font-weight:600}
+  .fbar .fl{font-size:14px;opacity:.96}
+  .fbar .fv{font-size:18px;font-variant-numeric:tabular-nums}
+  .fconv{font-family:var(--font-mono);font-size:11.5px;color:var(--secondary);text-align:right;padding:3px 4px 0 0}
+  .fconv .bad{color:var(--red)}
+
+  /* ── MANAGER BARS (horizontal) ──────────── */
+  .mbars{display:flex;flex-direction:column;gap:13px;margin-top:4px}
+  .mbar .mrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+  .mbar .mn{font-size:14px;color:var(--ink);font-weight:500}
+  .mbar .mv{font-family:var(--font-mono);font-size:13px;color:var(--secondary)}
+  .mtrack{height:12px;background:var(--surface-sunken);border-radius:99px;overflow:hidden}
+  .mfill{height:100%;border-radius:99px;background:var(--green)}
+  .mfill.low{background:var(--red)}
+
+  /* ── ALERTS (светофор) ──────────────────── */
+  .alerts{display:flex;flex-direction:column;gap:10px}
+  .alert{display:flex;gap:14px;padding:14px 18px;border-radius:var(--r-lg);border:1px solid;align-items:flex-start}
+  .alert .ax{flex-shrink:0;width:22px;height:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;
+    font-size:12px;margin-top:1px}
+  .alert .atx{flex:1;font-size:14.5px;line-height:1.5;color:var(--ink)}
+  .alert .atx b{font-weight:600}
+  .alert.red{background:var(--red-tint-2);border-color:var(--red-bd)} .alert.red .ax{background:var(--red);color:#fff}
+  .alert.amber{background:var(--amber-bg);border-color:var(--amber-bd)} .alert.amber .ax{background:var(--amber);color:#fff}
+  .alert.green{background:var(--green-tint-2);border-color:var(--green-bd)} .alert.green .ax{background:var(--green);color:#fff}
+
+  /* ── CONCLUSIONS ────────────────────────── */
+  .concl{background:var(--ink);color:#fff;border-radius:var(--r-2xl);padding:26px 30px;position:relative;overflow:hidden}
+  .concl::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle,rgba(197,68,58,.5) 1px,transparent 1px);background-size:18px 18px;opacity:.08}
+  .concl>*{position:relative;z-index:1}
+  .concl .kicker{color:var(--red);margin-bottom:14px}
+  .concl ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:13px}
+  .concl li{position:relative;padding-left:26px;font-size:15.5px;line-height:1.5;color:#E7E5E4}
+  .concl li::before{content:"→";position:absolute;left:0;color:var(--red);font-weight:600}
+  .concl li b{color:#fff;font-weight:600}
+
+  /* ── FOOTER ─────────────────────────────── */
+  .foot{margin-top:30px;padding-top:18px;border-top:1px solid var(--border);
+    display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    font-family:var(--font-mono);font-size:11.5px;color:var(--muted)}
+  .foot .src b{color:var(--secondary);font-weight:500}
+
+  /* ── PRINT (PDF A4) ─────────────────────── */
+  @media print{
+    @page{size:A4;margin:12mm 11mm}
+    html,body{background:#fff}
+    .frame{padding:0;max-width:none;min-height:auto}
+    .card,.kpi,.concl,.sec{break-inside:avoid}
+    .grid{gap:10px}
+  }
+</style>
+</head>
+<body>
+<main class="frame">
+
+  <!-- ── HEADER ─────────────────────────── -->
+  <header class="top">
+    <div class="lhs">
+      <div class="kicker red" id="h-dept">ОТДЕЛ ПРОДАЖ · ОТЧЁТ К МИТАПУ</div>
+      <h1 id="h-title">Продажи<span class="dot">.</span></h1>
+      <div class="sub" id="h-sub">Натяжные потолки · сводка по выручке, воронке и менеджерам</div>
+    </div>
+    <div class="rhs">
+      <span class="period" id="h-period">МАЙ 2026</span>
+      <span class="vs" id="h-vs">сравнение с апрелем 2026</span>
+      <span class="vs" id="h-date">собрано 01.06.2026</span>
+    </div>
+  </header>
+
+  <!-- ── KPI TILES ──────────────────────── -->
+  <section class="sec">
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <!-- ── DYNAMICS + SOURCES ─────────────── -->
+  <section class="sec">
+    <div class="sec-h"><span class="kicker">01 · Динамика и источники</span><span class="line"></span></div>
+    <div class="grid c2">
+      <div class="card">
+        <div class="ct">Выручка по неделям</div>
+        <div class="cs">текущий период против прошлого — видно, держим ли темп</div>
+        <div class="chart-wrap"><canvas id="lineRev"></canvas></div>
+        <div class="legend">
+          <span><i style="background:var(--red)"></i> Май 2026</span>
+          <span><i class="dash"></i> Апрель 2026</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ct">Источники лидов</div>
+        <div class="cs">откуда пришли заявки за месяц</div>
+        <div class="chart-wrap sm"><canvas id="donutSrc"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FUNNEL + MANAGERS ──────────────── -->
+  <section class="sec">
+    <div class="sec-h"><span class="kicker">02 · Где теряем и кто тянет</span><span class="line"></span></div>
+    <div class="grid c2b">
+      <div class="card">
+        <div class="ct">Воронка продаж</div>
+        <div class="cs">8 200 визитов → 410 лидов (5,0%) → дальше по этапам сделки</div>
+        <div class="funnel" id="funnel"></div>
+      </div>
+      <div class="card">
+        <div class="ct">Рейтинг менеджеров · выручка</div>
+        <div class="cs">кто закрыл больше за месяц</div>
+        <div class="mbars" id="mbars"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ALERTS ─────────────────────────── -->
+  <section class="sec">
+    <div class="sec-h"><span class="kicker red">03 · Светофор аномалий</span><span class="line"></span></div>
+    <div class="alerts" id="alerts"></div>
+  </section>
+
+  <!-- ── CONCLUSIONS ────────────────────── -->
+  <section class="sec">
+    <div class="concl">
+      <div class="kicker">Выводы · что делать</div>
+      <ul id="concl"></ul>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ─────────────────────────── -->
+  <footer class="foot">
+    <div class="src">Источники: <b id="f-src">CRM (deals.csv) · Метрика (traffic.csv) · БДДС (expenses.csv)</b></div>
+    <div>snapshot: <span id="f-snap">_ДАННЫЕ/snapshots/2026-05_продажи.json</span> · AI-Помощник по данным · Модуль 7</div>
+  </footer>
+
+</main>
+
+<!-- ══ DATA — скилл подставляет числа сюда из _ДАННЫЕ/ ══ -->
+<script id="report-data">
+const DATA = {
+  meta:{ dept:"ОТДЕЛ ПРОДАЖ · ОТЧЁТ К МИТАПУ", title:"Продажи", sub:"Натяжные потолки · сводка по выручке, воронке и менеджерам",
+    period:"МАЙ 2026", vs:"сравнение с апрелем 2026", date:"собрано 01.06.2026",
+    sources:"CRM (deals.csv) · Метрика (traffic.csv) · БДДС (expenses.csv)",
+    snapshot:"_ДАННЫЕ/snapshots/2026-05_продажи.json" },
+
+  // KPI: число, единица, прошлый период, направление «вверх=хорошо», микро-тренд (спарклайн)
+  kpis:[
+    { lab:"Выручка",                  val:"6,71", unit:"млн ₽", cur:6707000, prev:5920000, goodUp:true,  spark:[1.38,1.50,1.42,1.62,1.51,1.72,1.63,1.85] },
+    { lab:"Оплачено сделок",          val:"79",   unit:"шт",    cur:79,      prev:74,      goodUp:true,  spark:[15,18,17,21,16,22,19,24] },
+    { lab:"Средний чек",              val:"84,9", unit:"тыс ₽", cur:84900,   prev:80000,   goodUp:true,  spark:[78,79,80,81,82,83,84,85] },
+    { lab:"Конверсия лид → оплата",   val:"19,3", unit:"%",     cur:19.3,    prev:20.6,    goodUp:true,  spark:[20.6,20.4,20.1,19.9,19.7,19.5,19.4,19.3] },
+    { lab:"Стоимость лида (CPL)",     val:"800",  unit:"₽",     cur:800,     prev:819,     goodUp:false, spark:[819,815,812,808,806,804,802,800] }
+  ],
+
+  weeks:["1 нед","2 нед","3 нед","4 нед"],
+  revCur:[1510000,1720000,1630000,1847000],   // май, ∑ = 6 707 000
+  revPrev:[1380000,1500000,1420000,1620000],  // апрель, ∑ = 5 920 000
+
+  sources:[  // источники лидов (доли)
+    { name:"Яндекс Директ", leads:178, color:"#C5443A" },
+    { name:"Авито",         leads:96,  color:"#E08A2F" },
+    { name:"SEO-органика",  leads:78,  color:"#1F4434" },
+    { name:"Реклама ВК",    leads:58,  color:"#7C8CA1" }
+  ],
+
+  // ВОРОНКА — отдельный срез из CRM по этапам сделки (накопленные за месяц замеры/договоры),
+  // НЕ сумма строк deals.csv (там по статусам только незакрытые остатки). Числа иллюстративные.
+  funnel:[  // этапы воронки сделки (визиты→лиды — в подзаголовке карточки)
+    { stage:"Лиды (заявки)",  v:410,  color:"#8E2A22" },
+    { stage:"Замеры",         v:246,  color:"#A23A30" },
+    { stage:"Договоры",       v:98,   color:"#C5443A", warn:true },
+    { stage:"Оплачено",       v:79,   color:"#1F4434" }
+  ],
+
+  managers:[  // выручка по менеджерам (из deals.csv, оплачено)
+    { name:"Ирина Котова",  rev:2180000 },
+    { name:"Сергей Власов", rev:1768000 },
+    { name:"Анна Лебедева", rev:1536000 },
+    { name:"Дмитрий Орлов", rev:1223000, low:true }
+  ],
+
+  alerts:[
+    { level:"red",   text:"<b>Дмитрий Орлов</b> — конверсия замер→договор 28% против средних 40%, и средний чек ниже всех. Слить замеры жалко. → разобрать его звонки через Слушателя (М5)." },
+    { level:"amber", text:"<b>Авито</b> — стоимость лида выросла до 1 150 ₽ против средних 800 ₽, заявки холоднее. → пересобрать объявления или переложить часть бюджета." },
+    { level:"green", text:"<b>SEO-органика</b> — +32% лидов к апрелю и самый дешёвый канал. Это отдача от Создателя контента (М6). → усиливать." }
+  ],
+
+  conclusions:[
+    "<b>Выручка +13%</b> — за счёт среднего чека (+6%) и роста лидов (+14%), не демпинга. Темп держим.",
+    "<b>Узкое место сместилось в продажи:</b> лидов больше, но конверсия лид→оплата просела на 1,3 пункта. Первый шаг — разобрать звонки Дмитрия (М5).",
+    "<b>После замера теряем 60%</b> — 98 договоров из 246 замеров. К следующему совету добить связку «замер → договор» (скрипт, быстрый контакт).",
+    "<b>Авито дорожает</b> — переложить часть бюджета в SEO-органику: она растёт и дешевле."
+  ]
+};
+</script>
+
+<!-- ══ Chart.js (вшит локально, офлайн/РФ) ══ -->
+<script src="./vendor/chart.umd.min.js"></script>
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const fmtMoney = n => (n>=1e6? (n/1e6).toFixed(2).replace('.',',')+' млн' : n>=1e3? Math.round(n/1e3)+' тыс' : ''+n);
+  const fmtInt   = n => n.toLocaleString('ru-RU');
+  const pct = (cur,prev) => prev? ((cur-prev)/prev*100) : 0;
+
+  // ── meta
+  const m = DATA.meta;
+  $('#h-dept').textContent=m.dept; $('#h-title').innerHTML=m.title+'<span class="dot">.</span>';
+  $('#h-sub').textContent=m.sub; $('#h-period').textContent=m.period; $('#h-vs').textContent=m.vs;
+  $('#h-date').textContent=m.date; $('#f-src').textContent=m.sources; $('#f-snap').textContent=m.snapshot;
+
+  // ── KPI tiles + sparklines
+  const kpiBox=$('#kpis');
+  DATA.kpis.forEach(k=>{
+    const d = pct(k.cur,k.prev);
+    const improved = k.goodUp ? d>0 : d<0;
+    const flat = Math.abs(d)<0.05;
+    const cls = flat?'flat':(improved?'up':'down');
+    const ar  = flat?'→':(d>0?'▲':'▼');
+    const el=document.createElement('div'); el.className='kpi';
+    el.innerHTML=`
+      <div class="lab">${k.lab}</div>
+      <div class="val">${k.val}<span class="u">${k.unit}</span></div>
+      <div class="foot">
+        <span class="delta ${cls}"><span class="ar">${ar}</span>${Math.abs(d).toFixed(1).replace('.',',')}%</span>
+        <svg class="spark" viewBox="0 0 62 22" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="prev"></div>`;  /* заполняется ниже единым проходом */
+    kpiBox.appendChild(el);
+    // sparkline
+    const svg=el.querySelector('svg.spark'), pts=k.spark, mn=Math.min(...pts), mx=Math.max(...pts), rng=(mx-mn)||1;
+    const path=pts.map((p,i)=>`${(i/(pts.length-1))*60+1},${20-((p-mn)/rng)*18}`).join(' ');
+    const col = improved? 'var(--green)':'var(--red)';
+    svg.innerHTML=`<polyline points="${path}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+  });
+  // fix "было" text for money tiles cleanly
+  document.querySelectorAll('.kpi').forEach((el,i)=>{
+    const k=DATA.kpis[i]; let prevTxt;
+    if(k.unit.includes('млн')) prevTxt=(k.prev/1e6).toFixed(2).replace('.',',')+' млн ₽';
+    else if(k.unit==='тыс ₽') prevTxt=Math.round(k.prev/1e3)+',0 тыс ₽';
+    else if(k.unit==='%') prevTxt=(''+k.prev).replace('.',',')+' %';
+    else prevTxt=fmtInt(k.prev)+' '+k.unit;
+    el.querySelector('.prev').textContent='было: '+prevTxt;
+  });
+
+  // ── Chart.js defaults
+  if(window.Chart){
+    Chart.defaults.font.family="'Onest',system-ui,sans-serif";
+    Chart.defaults.font.size=12; Chart.defaults.color="#52525B";
+
+    // line: revenue cur vs prev
+    new Chart($('#lineRev'),{
+      type:'line',
+      data:{ labels:DATA.weeks, datasets:[
+        { label:'Май 2026', data:DATA.revCur.map(v=>v/1e6), borderColor:'#C5443A', backgroundColor:'rgba(197,68,58,.08)',
+          borderWidth:2.4, fill:true, tension:.32, pointRadius:3, pointBackgroundColor:'#C5443A' },
+        { label:'Апрель 2026', data:DATA.revPrev.map(v=>v/1e6), borderColor:'#9CA3AF', borderWidth:2, borderDash:[5,4],
+          fill:false, tension:.32, pointRadius:0 }
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(2).replace('.',',')+' млн ₽'}}},
+        scales:{ y:{ ticks:{callback:v=>v.toFixed(1).replace('.',',')+' млн'}, grid:{color:'#F1F1F0'} },
+                 x:{ grid:{display:false} } } }
+    });
+
+    // donut: sources
+    new Chart($('#donutSrc'),{
+      type:'doughnut',
+      data:{ labels:DATA.sources.map(s=>s.name),
+        datasets:[{ data:DATA.sources.map(s=>s.leads), backgroundColor:DATA.sources.map(s=>s.color),
+          borderColor:'#fff', borderWidth:2 }] },
+      options:{ responsive:true, maintainAspectRatio:false, cutout:'60%',
+        plugins:{ legend:{position:'bottom', labels:{boxWidth:12,boxHeight:12,padding:12,font:{size:12}}},
+          tooltip:{callbacks:{label:c=>{const t=DATA.sources.reduce((a,s)=>a+s.leads,0);
+            return ` ${c.label}: ${c.parsed} лид. (${Math.round(c.parsed/t*100)}%)`;}}} } }
+    });
+  }
+
+  // ── Funnel
+  const fbox=$('#funnel'), top=DATA.funnel[0].v;
+  DATA.funnel.forEach((f,i)=>{
+    const w=Math.max(28, f.v/top*100);
+    const conv = i>0? (f.v/DATA.funnel[i-1].v*100) : null;
+    const step=document.createElement('div'); step.className='fstep';
+    step.innerHTML=`<div class="fbar" style="width:${w}%;background:${f.color}">
+        <span class="fl">${f.stage}</span><span class="fv">${fmtInt(f.v)}</span></div>
+      ${conv!==null?`<div class="fconv">конверсия с прошлого этапа: <span class="${f.warn?'bad':''}">${conv.toFixed(0)}%</span></div>`:''}`;
+    fbox.appendChild(step);
+  });
+
+  // ── Manager bars
+  const mbox=$('#mbars'), mmax=Math.max(...DATA.managers.map(x=>x.rev));
+  DATA.managers.forEach(mn=>{
+    const w=mn.rev/mmax*100;
+    const el=document.createElement('div'); el.className='mbar';
+    el.innerHTML=`<div class="mrow"><span class="mn">${mn.name}</span><span class="mv">${fmtMoney(mn.rev)} ₽</span></div>
+      <div class="mtrack"><div class="mfill ${mn.low?'low':''}" style="width:${w}%"></div></div>`;
+    mbox.appendChild(el);
+  });
+
+  // ── Alerts
+  const abox=$('#alerts'), icon={red:'●',amber:'●',green:'●'};
+  DATA.alerts.forEach(a=>{
+    const el=document.createElement('div'); el.className='alert '+a.level;
+    el.innerHTML=`<span class="ax">${icon[a.level]}</span><span class="atx">${a.text}</span>`;
+    abox.appendChild(el);
+  });
+
+  // ── Conclusions
+  const cbox=$('#concl');
+  DATA.conclusions.forEach(c=>{ const li=document.createElement('li'); li.innerHTML=c; cbox.appendChild(li); });
+})();
+</script>
+</body>
+</html>

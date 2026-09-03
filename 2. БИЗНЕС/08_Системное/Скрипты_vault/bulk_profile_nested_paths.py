@@ -91,7 +91,7 @@ def pairs() -> list[tuple[str, str]]:
     extra: list[tuple[str, str]] = []
     for o, n in out:
         extra.append((f"1. Профиль/{o}", f"1. Профиль/{n}"))
-        extra.append((f"Личное/{o}", f"Личное/{n}"))
+        extra.append((f"1. ЛИЧНОЕ/{o}", f"1. ЛИЧНОЕ/{n}"))
     out.extend(extra)
 
     # file URL (пробелы)

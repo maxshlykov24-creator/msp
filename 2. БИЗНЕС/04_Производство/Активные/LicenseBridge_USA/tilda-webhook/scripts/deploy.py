@@ -16,19 +16,32 @@ REMOTE = "/opt/licensebridge-tilda-webhook"
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
+KEY = pathlib.Path.home() / ".ssh" / "licensebridge_hub_deploy"
+
+
 def connect(client: paramiko.SSHClient) -> None:
+    """Сначала ключ деплоя, затем пароль (DEPLOY_SSH_PASSWORD)."""
+    if KEY.exists():
+        try:
+            client.connect(HOST, username=USER, key_filename=str(KEY), timeout=45,
+                           allow_agent=False, look_for_keys=False)
+            return
+        except Exception as exc:
+            print(f"key auth failed ({exc}), пробуем пароль", file=sys.stderr)
     pw = os.environ.get("DEPLOY_SSH_PASSWORD", "").strip()
     if not pw:
-        raise SystemExit("DEPLOY_SSH_PASSWORD required")
+        raise SystemExit("нет ключа ~/.ssh/licensebridge_hub_deploy и DEPLOY_SSH_PASSWORD")
     client.connect(HOST, username=USER, password=pw, timeout=45, allow_agent=False, look_for_keys=False)
 
 
 def main() -> int:
-    token = os.environ.get("KOMMO_TOKEN", "").strip()
-    if not token:
-        raise SystemExit("KOMMO_TOKEN required")
+    # Секреты берём из локального .env (создан рядом с проектом, chmod 600).
+    local_env = ROOT / ".env"
+    if not local_env.exists() and not os.environ.get("KOMMO_TOKEN", "").strip():
+        raise SystemExit("нужен tilda-webhook/.env или KOMMO_TOKEN в окружении")
 
-    items = ["app", "Dockerfile", "docker-compose.yml", "Caddyfile", ".env.example"]
+    items = ["app", "migrations", "requirements.txt", "Dockerfile",
+             "docker-compose.yml", "Caddyfile", ".env.example"]
     for name in items:
         if not (ROOT / name).exists() and not (ROOT / name.split("/")[0]).exists():
             print(f"missing: {name}", file=sys.stderr)
@@ -54,12 +67,14 @@ def main() -> int:
     sftp.close()
     tgz.unlink(missing_ok=True)
 
-    env_content = f"""KOMMO_TOKEN={token}
-KOMMO_BASE=https://licensebridgeusa.kommo.com/api/v4
-KOMMO_PIPELINE_ID=11274779
-KOMMO_STATUS_ID=108112044
-KOMMO_RESPONSIBLE=13291175
-"""
+    if local_env.exists():
+        env_content = local_env.read_text(encoding="utf-8")
+    else:
+        env_content = "\n".join(
+            f"{k}={os.environ.get(k, '')}" for k in (
+                "KOMMO_TOKEN", "PLEEP_API_KEY", "KOMMO_WEBHOOK_SECRET", "INTERNAL_API_KEY",
+            )
+        ) + "\nKOMMO_BASE=https://licensebridgeusa.kommo.com/api/v4\n"
     script = f"""set -e
 mkdir -p {REMOTE}
 tar xzf {remote_tgz} -C {REMOTE}
@@ -73,7 +88,8 @@ docker compose up -d
 sleep 3
 docker compose ps
 docker compose logs --tail=30
-curl -sS -o /dev/null -w "local_health=%{{http_code}}\\n" http://127.0.0.1:8080/health || true
+docker compose exec -T api python -c "import urllib.request as u; \
+print('local_health=' + str(u.urlopen('http://127.0.0.1:8080/health', timeout=10).status))" || true
 """
     _, stdout, stderr = client.exec_command(script, get_pty=True)
     print(stdout.read().decode())

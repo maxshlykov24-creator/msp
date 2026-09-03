@@ -23,7 +23,8 @@ export function NoSlivForm({ onDone }: { onDone: () => void }) {
   const [client, setClient] = useState<ClientData>({ name: "", phone: "", channel: "", purpose: "" });
   const [comment, setComment] = useState("");
 
-  const baseFilled = !!comment.trim();
+  const missingRequired = [!comment.trim() && "Комментарий"].filter(Boolean) as string[];
+  const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
     addDeal({
@@ -51,11 +52,12 @@ export function NoSlivForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      title="Не слив"
-      subtitle="Оффлайн · фиксация неудержания клиента"
       onBack={onDone}
+      title="Не слив"
+      subtitle="Оффлайн"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
+      missingRequired={missingRequired}
       footer={
         <StageActions
           stages={["Провал"]}
@@ -64,8 +66,6 @@ export function NoSlivForm({ onDone }: { onDone: () => void }) {
           onSave={save}
           saved={saved}
           disabled={!baseFilled}
-          onBack={onDone}
-          successHint={!baseFilled ? "Заполните комментарий" : "Этап «Провал» — авто"}
         />
       }
     >

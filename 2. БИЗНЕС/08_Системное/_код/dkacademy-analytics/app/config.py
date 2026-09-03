@@ -35,15 +35,26 @@ class Settings(BaseSettings):
 
     run_mode: str = "api"
 
-    # Уволенные / служебные пользователи, которых не показываем в разрезе менеджеров.
-    # Список id через запятую (env EXCLUDED_USER_IDS).
-    # По умолчанию — уволенная Алина (8547745). Максим Дейкало и прочие служебные —
-    # дописать их id через EXCLUDED_USER_IDS (id берётся из discover_repeat_ids.py).
+    # Канонический состав отдела. Если MANAGER_USER_IDS заполнен, в менеджерские
+    # разрезы входят только эти id. EXCLUDED_USER_IDS всегда имеет приоритет.
+    manager_user_ids: str = (
+        "13611590,13611594,13793718,13803674,13860306,13961174"
+    )
     excluded_user_ids: str = "8547745"
+
+    @property
+    def manager_ids(self) -> set[str]:
+        return {x.strip() for x in self.manager_user_ids.split(",") if x.strip()}
 
     @property
     def excluded_ids(self) -> set[str]:
         return {x.strip() for x in self.excluded_user_ids.split(",") if x.strip()}
+
+    def is_manager(self, user_id: int | str | None) -> bool:
+        uid = str(user_id or "")
+        if not uid or uid in self.excluded_ids:
+            return False
+        return not self.manager_ids or uid in self.manager_ids
 
 
 settings = Settings()

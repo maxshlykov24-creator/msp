@@ -1,0 +1,281 @@
+# Keris Club — машинный прайс груминга
+# Источник: документ собственника с ответами Карины (принят 2026-08-06) — заменяет Прайс.md от 2026-07-16.
+# Длительности базовых услуг собак обновлены по документу от 2026-08-20 (Downloads/Прайс (1).md).
+# 2026-09-02: допы «Ожидание» (1000 ₽ / 60 мин) и «Чистка желез» (1200 ₽ / 5 мин) — собаки и кошки.
+# Человекочитаемый дубль: ПРАЙС_ГРУМИНГ.md
+# Рабочая копия для сервера: 2. БИЗНЕС/08_Системное/_код/keris-server/app/seed_data.json
+
+meta:
+  source: "Документ ответов собственника (Downloads/Новый документ.md)"
+  received: "2026-08-06"
+  durations_updated: "2026-08-20"
+  currency: RUB
+  brand: "Keris Club"
+  opening_date: "2026-08-10"
+  schedule: "ежедневно 10:00–22:00, строго по предварительной записи"
+  operator:
+    name: "ИП Рыба Карина Артуровна"
+    inn: "775149185013"
+    ogrnip: "323774600225083"
+    address: "143582, Россия, Московская область, г. Истра, деревня Красный Посёлок, Английский б-р, д. 497"
+    phone: "+79936189871"
+    email: "hello@keris-club.ru"
+    website: "https://kerisclub.ru"
+    bank:
+      name: "АО «ТБанк»"
+      bik: "044525974"
+      account: "40802810200004520978"
+      corr: "30101810145250000974"
+
+size_grids:
+  dogs_services:
+    XS: { max_kg: 5, label: "до 5 кг" }
+    S: { min_kg: 5, max_kg: 10, label: "5–10 кг" }
+    M: { min_kg: 10, max_kg: 15, label: "10–15 кг" }
+    L: { min_kg: 15, max_kg: 25, label: "15–25 кг" }
+    XL: { min_kg: 25, label: "от 25 кг" }
+  dogs_durations:
+    # В документе длительности даны по своей сетке (МИНИ/МАЛЫЕ/СРЕДНИЕ/КРУПНЫЕ/ГИГАНТСКИЕ).
+    # Решение 2026-08-06: сопоставляем позиционно с сеткой цен — XS=МИНИ … XL=ГИГАНТСКИЕ.
+    XS: "МИНИ (до 5 кг)"
+    S: "МАЛЫЕ (5–10 кг)"
+    M: "СРЕДНИЕ (10–25 кг)"
+    L: "КРУПНЫЕ (25–45 кг)"
+    XL: "ГИГАНТСКИЕ (от 45 кг)"
+  dogs_subscriptions:
+    # Решение 2026-08-06: визит по абонементу считается по ЭТОЙ сетке (размер фиксируется при покупке пакета).
+    XS: { max_kg: 5, label: "до 5 кг" }
+    S: { min_kg: 5, max_kg: 10, label: "5–10 кг" }
+    M: { min_kg: 10, max_kg: 25, label: "10–25 кг" }
+    L: { min_kg: 25, max_kg: 45, label: "25–45 кг" }
+    XL: { min_kg: 45, label: "от 45 кг" }
+  cats:
+    short_small: { coat: short, max_kg: 5, label: "Короткошерстные до 5 кг" }
+    short_large: { coat: short, min_kg: 5, label: "Короткошерстные крупные" }
+    long_small: { coat: long, max_kg: 5, label: "Длинношерстные до 5 кг" }
+    long_large: { coat: long, min_kg: 5, label: "Длинношерстные крупные" }
+
+dogs:
+  base_services:
+    - id: dog_hygiene
+      name: Гигиена
+      prices: { XS: 5500, S: 7200, M: 8400, L: 10200, XL: 11900 }
+      durations: { XS: 60, S: 75, M: 90, L: 110, XL: 130 }
+    - id: dog_bath_dry
+      name: Купание + сушка
+      prices: { XS: 4600, S: 6000, M: 6600, L: 7800, XL: 9000 }
+      durations: { XS: 50, S: 65, M: 80, L: 100, XL: 120 }
+    - id: dog_express_shed
+      name: Экспресс-линька
+      prices: { XS: 6000, S: 7800, M: 9000, L: 10800, XL: 14300 }
+      durations: { XS: 70, S: 90, M: 110, L: 130, XL: 160 }
+    - id: dog_complex_cut
+      name: Комплекс со стрижкой
+      prices: { XS: 7800, S: 9500, M: 10700, L: 16100, XL: 19000 }
+      durations: { XS: 90, S: 120, M: 180, L: 210, XL: 240 }  # обновлено 2026-08-20 (было 90/110/130/150/180)
+    - id: dog_trimming
+      name: Тримминг
+      prices: { XS: 8400, S: 10200, M: 11900, L: 14300, XL: 19000 }
+      durations: { XS: 180, S: 180, M: 180, L: 240, XL: 240 }  # обновлено 2026-08-20 (было 100/120/140/170/200)
+    - id: dog_premium
+      name: Premium-комплекс
+      prices: { XS: 11400, S: 15000, M: 16100, L: 19700, XL: 23200 }
+      durations: { XS: 90, S: 120, M: 180, L: 210, XL: 240 }  # обновлено 2026-08-20 (было 110/130/150/180/210)
+    - id: dog_spa
+      name: SPA-комплекс
+      prices: { XS: 13700, S: 17300, M: 19700, L: 23800, XL: 28500 }
+      durations: { XS: 120, S: 140, M: 200, L: 210, XL: 240 }  # обновлено 2026-08-20 (было 120/140/160/190/220)
+    - id: dog_intro
+      name: Знакомство с грумингом
+      prices: { XS: 6900, S: 5000, M: 6000, L: 7500, XL: 10000 }
+      durations: { XS: 60, S: 60, M: 70, L: 70, XL: 80 }
+      note: "XS 6900 ₽ выше S 5000 ₽ — похоже на опечатку в документе, ждём подтверждения Карины. Длительности в документе не заданы — приняты рабочие."
+
+  extras:
+    - { id: dog_nails, name: Стрижка когтей, price: 1900, duration: 10 }
+    - { id: dog_nails_file, name: Подпил когтей, price: 1300, duration: 5 }
+    - { id: dog_ears, name: Чистка ушей, price: 2100, duration: 10 }
+    - { id: dog_teeth, name: Чистка зубов (паста + щетка), price: 2100, duration: 10 }
+    - { id: dog_glands, name: Чистка желез, price: 1200, duration: 5 }
+    - { id: dog_pawcure, name: Лапакюр (комплексный уход за лапами), price: 2700, duration: 15 }
+    - { id: dog_paw_wax, name: Воск для лап, price: 1300, duration: 5 }
+    - { id: dog_mats, name: Вычёс колтунов, price_from: 1900, duration: 20, duration_max: 60 }
+    - { id: dog_mask_hydra, name: Маска Hydra, price: 3200, duration: 15 }
+    - { id: dog_ozone, name: Озоновая ванна, price: 3100, duration: 15 }
+    - { id: dog_antistress, name: Антистресс SPA, price: 3400, duration: 20 }
+    - { id: dog_perfume, name: Парфюм (гипоаллергенный), price: 1000, duration: 3 }
+    - { id: dog_creative, name: Креативный груминг, price_from: 4800, duration: 30, duration_max: 90 }
+    - { id: dog_wait, name: Ожидание, price: 1000, duration: 60 }
+    - { id: dog_tartar, name: Удаление зубного камня (ультразвук), duration: 30, price: null,
+        note: "В документе есть длительность 20–30 мин, но нет цены — в каталог не заведено" }
+
+  coloring:
+    - id: dog_color_short
+      name: Окрашивание шерсти — короткошёрстные
+      prices: { XS: 4200, S: 5500, M: 8400, L: 10800, XL: 13200 }
+      durations: { XS: 60, S: 75, M: 90, L: 110, XL: 130 }
+    - id: dog_color_medium
+      name: Окрашивание шерсти — среднешёрстные
+      prices: { XS: 5500, S: 6600, M: 9500, L: 11900, XL: 14300 }
+      durations: { XS: 70, S: 85, M: 100, L: 120, XL: 140 }
+    - id: dog_color_long
+      name: Окрашивание шерсти — длинношёрстные
+      prices: { XS: 6600, S: 7800, M: 10800, L: 13200, XL: 15500 }
+      durations: { XS: 80, S: 95, M: 110, L: 130, XL: 150 }
+    - id: dog_color_ears
+      name: Окрашивание ушей
+      prices: { XS: 1000, S: 1300, M: 1900, L: 2400, XL: 3100 }
+      durations: { XS: 30, S: 35, M: 40, L: 45, XL: 50 }
+    - id: dog_color_tail
+      name: Окрашивание хвоста
+      prices: { XS: 1000, S: 1300, M: 1900, L: 2400, XL: 3100 }
+      durations: { XS: 30, S: 35, M: 40, L: 45, XL: 50 }
+
+  branded_packages:
+    - id: dog_pack_dacha
+      name: Комплекс «После дачи»
+      prices: { XS: 10500, S: 12100, M: 13300, L: 18400, XL: 21100 }
+      durations: { XS: 110, S: 130, M: 150, L: 170, XL: 200 }
+      includes: "Комплекс со стрижкой + глубокий вычес колтунов и репьев + обработка лап защитным воском + проверка кожи и шерсти на клещей, укусы насекомых и раздражения"
+    - id: dog_pack_antished
+      name: Комплекс «Антилинька PRO»
+      prices: { XS: 11700, S: 13400, M: 14600, L: 16300, XL: 19600 }
+      durations: { XS: 100, S: 120, M: 140, L: 160, XL: 190 }
+      includes: "Экспресс-линька + премиальная маска Hydra + озоновая ванна"
+    - id: dog_pack_vacation
+      name: Комплекс «Подготовка к отпуску»
+      prices: { XS: 12700, S: 14300, M: 15400, L: 20600, XL: 23300 }
+      durations: { XS: 130, S: 150, M: 170, L: 200, XL: 230 }
+      includes: "Premium-комплекс + Лапакюр + воск для лап + элемент Антистресс-SPA (феромоны)"
+    - id: dog_pack_show
+      name: Комплекс «Подготовка к выставке»
+      prices: { XS: 13700, S: 17100, M: 18200, L: 21600, XL: 24900 }
+      durations: { XS: 140, S: 160, M: 180, L: 210, XL: 240 }
+      includes: "Premium-комплекс + выставочная косметика (текстурирование) + консультация по стандарту породы + финальная укладка"
+    - id: dog_pack_photo
+      name: Комплекс «Подготовка к фотосессии»
+      prices: { XS: 13700, S: 17600, M: 19100, L: 23000, XL: 26800 }
+      durations: { XS: 135, S: 155, M: 175, L: 205, XL: 235 }
+      includes: "Premium-комплекс + отбеливающий шампунь или объёмный стайлинг + парфюм + укладка"
+
+cats:
+  base_services:
+    - id: cat_hygiene
+      name: Гигиена
+      prices: { short_small: 4600, short_large: 5700, long_small: 5500, long_large: 6600 }
+      durations: { short_small: 50, short_large: 60, long_small: 60, long_large: 70 }
+    - id: cat_bath_dry
+      name: Купание + сушка
+      prices: { short_small: 4800, short_large: 6000, long_small: 6200, long_large: 7800 }
+      durations: { short_small: 55, short_large: 65, long_small: 70, long_large: 80 }
+    - id: cat_express_shed
+      name: Экспресс-линька
+      prices: { short_small: 5500, short_large: 7000, long_small: 7500, long_large: 9500 }
+      durations: { short_small: 60, short_large: 75, long_small: 80, long_large: 95 }
+    - id: cat_complex_cut
+      name: Комплекс со стрижкой
+      prices: { short_small: 6600, short_large: 8400, long_small: 9000, long_large: 11400 }
+      durations: { short_small: 70, short_large: 85, long_small: 90, long_large: 105 }
+    - id: cat_model_cut
+      name: Модельная стрижка
+      prices: { short_small: 8400, short_large: 10800, long_small: 11400, long_large: 14300 }
+      durations: { short_small: 80, short_large: 95, long_small: 100, long_large: 115 }
+    - id: cat_premium
+      name: Premium-комплекс
+      prices: { short_small: 9500, short_large: 12600, long_small: 13200, long_large: 16700 }
+      durations: { short_small: 90, short_large: 105, long_small: 110, long_large: 125 }
+    - id: cat_spa
+      name: SPA-комплекс
+      prices: { short_small: 11400, short_large: 15000, long_small: 16100, long_large: 20300 }
+      durations: { short_small: 100, short_large: 115, long_small: 120, long_large: 135 }
+
+  extras:
+    - { id: cat_nails, name: Стрижка когтей, price: 1300, duration: 5 }
+    - { id: cat_ears, name: Чистка ушей, price: 1500, duration: 5 }
+    - { id: cat_eyes, name: Протирание глаз, price: 700, duration: 3 }
+    - { id: cat_teeth, name: Чистка зубов (паста), price: 1900, duration: 5 }
+    - { id: cat_tartar, name: Удаление зубного камня, price: 5500, duration: 20 }
+    - { id: cat_glands, name: Чистка желез, price: 1200, duration: 5 }
+    - { id: cat_wait, name: Ожидание, price: 1000, duration: 60 }
+    - { id: cat_mask, name: Маска для шерсти, price: 2400, duration: 10 }
+    - { id: cat_antistress, name: Антистресс SPA, price: 4200, duration: 15 }
+
+  breed_categories:
+    short_small: "Британцы, шотландцы, абиссинцы, бенгалы, сфинксы, русские голубые, бомбеи"
+    short_large: "Крупные британцы, мейн-куны (короткая шерсть), норвежские (короткая шерсть), саванны"
+    long_small: "Персы, экзоты, сомали, балинезы, маленькие сибирские, невские маскарадные (мини)"
+    long_large: "Мейн-куны, норвежские лесные, сибирские, невские маскарадные, турецкие ангоры, рэгдоллы"
+
+subscriptions:
+  base_unit: dog_complex_cut
+  min_balance_visits: 0.5
+  coefficients:
+    dog_bath_dry: 0.5
+    dog_hygiene: 0.6
+    dog_express_shed: 0.8
+    dog_complex_cut: 1.0
+    dog_trimming: 1.0
+    dog_premium: 1.3
+    dog_spa: 1.6
+  included_addons:
+    # безлимитно при каждом визите, не расходуют баланс
+    - dog_nails
+    - dog_nails_file
+    - dog_ears
+    - dog_teeth
+    - dog_paw_wax
+    - dog_perfume
+  packages:
+    - id: know
+      name: Узнаем
+      visits: 3
+      validity_months: 4
+      prices: { XS: 20500, S: 24700, M: 27600, L: 41800, XL: 49400 }
+      bonus: "1 процедура SPA на выбор (Маска Hydra или Озоновая ванна)"
+      bonus_spa: 1
+    - id: habit
+      name: Привыкаем
+      visits: 6
+      validity_months: 7
+      prices: { XS: 40400, S: 49400, M: 55100, L: 83600, XL: 99800 }
+      bonus: "2 процедуры SPA + 1 креативное окрашивание (уши/хвост) или мини-фотосессия"
+      bonus_spa: 2
+    - id: trust
+      name: Доверяем
+      visits: 12
+      validity_months: 13
+      prices: { XS: 80800, S: 99800, M: 109300, L: 166300, XL: 199500 }
+      bonus: "4 процедуры SPA + Подарок на день рождения питомца (любая услуга салона до 10 000 ₽)"
+      bonus_spa: 4
+  rules:
+    validity_buffer_months: 1
+    unused_visits: "не сгорают — переносятся как скидка при покупке следующего пакета"
+    refund: "деньги не возвращаются; заморозка по медпоказаниям (справка ветеринара) до 2 месяцев"
+    transfer: "пакет именной, переоформляется на другое животное того же размера в рамках семьи (по заявлению)"
+
+booking_rules:
+  min_lead_hours: 2
+  horizon_days: 60
+  free_reschedule_hours: 24
+  late_grace_min: 15
+  no_show_cancel_hours: 3
+  reminder_hours: [24, 3]
+  min_refusal_fee: 1500
+
+promos:
+  welcome_gift: "Бесплатный апгрейд до премиум-косметики или SPA-маска при первом визите"
+  znakomstvo: "Бесплатная обработка когтей и чистка ушей при записи на полный комплекс в первый месяц"
+
+loyalty:
+  cashback_percent: "5–7% от чека на внутренний бонусный счёт"
+  birthday: "подарок питомцу в месяц дня рождения + 1000 бонусов"
+  puppy_vip: "3000 несгораемых бонусов при покупке щенка, бесплатный адаптационный визит, приоритетная запись"
+
+open_conflicts:
+  - "«Знакомство с грумингом»: XS 6900 ₽ > S 5000 ₽ — вероятная опечатка"
+  - "Кошки: Гигиена (4600 ₽) дешевле Купания + сушки (4800 ₽), у собак — наоборот"
+  - "Абонемент L (25–45 кг) по коэффициентам даёт скидку ~27%, XL и остальные ~13% при заявленных «не более 15%»"
+  - "Абонемент M покрывает 10–25 кг, тогда как разовый прайс делит этот диапазон на M (10–15) и L (15–25) с разницей до 5 400 ₽ за визит"
+  - "Оферта: задаток щенка 50%; проектные документы Этапа 0: 30%"
+  - "Удаление зубного камня у собак: есть длительность, нет цены"
+  - "Вычёс колтунов: было «20–60 мин», в документе 2026-08-20 — «по 10 мин (до 60 мин)», формулировка двузначная (от 10 мин или шаг 10 мин) — durations не менял, ждёт уточнения"

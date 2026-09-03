@@ -26,15 +26,19 @@ def _is_in_folders(assortment: dict[str, Any], folder_ids: frozenset[str]) -> bo
     return fid is not None and fid in folder_ids
 
 
-def _line_amount_rub(pos: dict[str, Any]) -> int:
-    """Сумма строки в рублях (округление вниз после перевода из копеек)."""
+def _line_amount_rub(pos: dict[str, Any], discount_percent: float = 0.0) -> int:
+    """Сумма строки в рублях, которую клиент реально платит.
+
+    `price` в МойСклад — цена в копейках **до** скидки, `discount` — процент скидки
+    строки. Начисление и годовой оборот считаются от оплаченной суммы, поэтому
+    скидку нужно применить: иначе `sum` заказа и наша база расходятся.
+    """
     price = pos.get("price")
     qty = float(pos.get("quantity") or 0)
     if price is None:
         return 0
-    price_f = float(price)
-    # В МойСклад цена позиции обычно в копейках
-    kop = int(round(price_f * qty))
+    d = max(0.0, min(100.0, float(discount_percent or 0.0)))
+    kop = int(round(float(price) * qty * (1.0 - d / 100.0)))
     return kop // 100
 
 
@@ -46,6 +50,21 @@ def _line_discount_percent(pos: dict[str, Any]) -> float:
         return float(d)
     except (TypeError, ValueError):
         return 0.0
+
+
+def orig_discount_percent(pos: dict[str, Any], extra_discount_per_pos: dict[str, Any] | None = None) -> float:
+    """Скидка позиции без надбавки, которую движок списания сам добавил в `discount`.
+
+    Списание бонусов оформляется скидкой на позиции, и учитывать его дважды нельзя:
+    в базе оно уже вычтено через `scale`.
+    """
+    dp_total = _line_discount_percent(pos)
+    pid = str(pos.get("id") or "")
+    try:
+        extra_pct = float((extra_discount_per_pos or {}).get(pid) or 0.0)
+    except (TypeError, ValueError):
+        extra_pct = 0.0
+    return max(0.0, dp_total - max(0.0, extra_pct))
 
 
 def extract_bonus_paid_rub(order: dict[str, Any]) -> int:
@@ -102,7 +121,7 @@ def compute_cashback_for_order(
     delivery = settings.delivery_folder_ids_set
     extra_discount_per_pos = dict(extra_discount_per_pos or {})
 
-    eligible_lines: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+    eligible_lines: list[tuple[int, float, dict[str, Any]]] = []
     for row in positions:
         pos = row if isinstance(row, dict) else {}
         assortment = pos.get("assortment") or {}
@@ -115,10 +134,11 @@ def compute_cashback_for_order(
         if _is_in_folders(assortment, outlet):
             # аутлет: начисления нет — пропускаем строку полностью
             continue
-        rub = _line_amount_rub(pos)
+        dp_orig = orig_discount_percent(pos, extra_discount_per_pos)
+        rub = _line_amount_rub(pos, dp_orig)
         if rub <= 0:
             continue
-        eligible_lines.append((rub, pos, assortment))
+        eligible_lines.append((rub, dp_orig, pos))
 
     eligible_total_rub = sum(x[0] for x in eligible_lines)
     bonus_paid_rub = extract_bonus_paid_rub(order)
@@ -145,18 +165,10 @@ def compute_cashback_for_order(
 
     total_bonus = 0
     line_details: list[dict[str, Any]] = []
-    for rub, pos, _ass in eligible_lines:
+    for rub, dp_orig, pos in eligible_lines:
         cashable_rub = int(math.floor(rub * scale + 1e-9))
         if cashable_rub <= 0:
             continue
-        dp_total = _line_discount_percent(pos)
-        # Вычитаем нашу надбавку, чтобы сама механика списания бонусов не «штрафовала» ставку.
-        pid = str(pos.get("id") or "")
-        try:
-            extra_pct = float(extra_discount_per_pos.get(pid) or 0.0)
-        except (TypeError, ValueError):
-            extra_pct = 0.0
-        dp_orig = max(0.0, dp_total - max(0.0, extra_pct))
         pct = disc_pct if dp_orig > 0 else full_pct
         # скидка >= 51%: начисление по общим правилам (уже учтено через pct), списание на кассе — вне сервиса
         line_bonus = math.ceil(cashable_rub * pct / 100)
@@ -166,7 +178,7 @@ def compute_cashback_for_order(
                 "rub": rub,
                 "cashable_rub": cashable_rub,
                 "discount_percent": dp_orig,
-                "discount_total_percent": dp_total,
+                "discount_total_percent": _line_discount_percent(pos),
                 "percent_used": pct,
                 "line_bonus": line_bonus,
             }

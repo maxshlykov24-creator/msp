@@ -2,7 +2,7 @@
   "dry_run": false,
   "apply": true,
   "moment": "2026-06-08 12:21:56",
-  "audit_file": "/Users/max/Desktop/CURSOR/Бизнес/агенты/АРХИТЕКТОР/_КОНТЕКСТ/клиенты/van_pak/scripts/audit_stock_total_report.json",
+  "audit_file": "/Users/max/Desktop/CURSOR/2. БИЗНЕС/агенты/АРХИТЕКТОР/_КОНТЕКСТ/клиенты/van_pak/scripts/audit_stock_total_report.json",
   "audit_totals": {
     "old_bystore_mapped_stores": 2282017.0,
     "new_bystore_mapped_stores": 2280417.0,

@@ -1,7 +1,9 @@
 ---
 description: Handoff LiveInform/amoCRM/Telegram в dkacademy-bot — прочитать перед деплоем и интеграциями
-globs: 2. Бизнес/08_Системное/_код/dkacademy-bot/**
+globs: 2. БИЗНЕС/08_Системное/_код/dkacademy-bot/**
 alwaysApply: false
 ---
 
-Перед изменениями в деплое, LiveInform, amoCRM, Telegram: открой **`2. Бизнес/08_Системное/_код/dkacademy-bot/AGENT_LEARNINGS.md`** (переносимые инциденты и решения).
+Перед изменениями в деплое, LiveInform, amoCRM, Telegram: открой **`2. БИЗНЕС/08_Системное/_код/dkacademy-bot/AGENT_LEARNINGS.md`** (переносимые инциденты и решения).
+
+*Примечание: это не агент команды, а техническая памятка по проекту — в `РЕЕСТР_КОМАНДЫ.md` не регистрируется.*

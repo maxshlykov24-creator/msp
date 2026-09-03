@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="format-detection" content="telephone=no" />
+<title>Финальные правки кассы · MANSBAND · MS Product</title>
+<style>
+:root {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --text: #1c1c1e;
+  --text-2: #6b6b70;
+  --border: #e8e6e2;
+  --accent: #1a4d8c;
+  --ok: #2a6645;
+  --ok-bg: #f0f8f2;
+  --ok-border: #90c8a8;
+  --wait: #9a3412;
+  --wait-bg: #fff7ed;
+  --wait-border: #fdba74;
+  --ask: #1a4d8c;
+  --ask-bg: #eff5fc;
+  --ask-border: #9dc0e8;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.45;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  padding: var(--safe-t) 0 var(--safe-b);
+}
+.brand {
+  background: linear-gradient(160deg, #fafaf9 0%, #f3f1ec 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 16px 14px;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.brand-ms {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: #6d28d9;
+  margin-bottom: 6px;
+}
+.brand-title { font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+.brand-sub { margin-top: 3px; font-size: 12px; color: var(--text-2); font-weight: 500; }
+.toc {
+  display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding: 10px 16px 12px; background: var(--surface); border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+.toc::-webkit-scrollbar { display: none; }
+.toc a {
+  flex: 0 0 auto; padding: 8px 12px; border-radius: 999px; background: var(--bg);
+  border: 1px solid var(--border); color: var(--text-2); text-decoration: none;
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+main { padding: 20px 16px 48px; max-width: 660px; margin: 0 auto; }
+.hero h1 { font-size: 24px; font-weight: 800; letter-spacing: -.03em; line-height: 1.15; margin-bottom: 8px; }
+.hero .lead { font-size: 15px; color: var(--text-2); margin-bottom: 6px; }
+.summary { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 8px; }
+.stat {
+  flex: 1 1 150px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+}
+.stat b { display: block; font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+.stat span { font-size: 12px; color: var(--text-2); font-weight: 600; }
+h2 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .09em; color: var(--text-2);
+  margin: 28px 0 10px; font-weight: 800;
+}
+ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px; display: flex; gap: 12px;
+}
+.num {
+  flex: 0 0 30px; height: 30px; border-radius: 9px; background: var(--bg);
+  border: 1px solid var(--border); display: grid; place-items: center;
+  font-weight: 800; font-size: 13px; color: var(--text-2);
+}
+.title { font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+.detail { font-size: 14px; color: var(--text-2); margin-top: 3px; }
+.tag {
+  display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 800;
+  letter-spacing: .05em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px;
+}
+.tag-ok { color: var(--ok); background: var(--ok-bg); border: 1px solid var(--ok-border); }
+.tag-ask { color: var(--ask); background: var(--ask-bg); border: 1px solid var(--ask-border); }
+.tag-wait { color: var(--wait); background: var(--wait-bg); border: 1px solid var(--wait-border); }
+.note {
+  background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 10px; padding: 14px; font-size: 14px; color: var(--text-2); margin-top: 12px;
+}
+.note b { color: var(--text); }
+footer { padding: 24px 16px 40px; text-align: center; color: var(--text-2); font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="brand">
+  <div class="brand-ms">MS Product</div>
+  <div class="brand-title">Финальные правки кассы</div>
+  <div class="brand-sub">MANSBAND · созвон 29.07.2026 · 30 пунктов</div>
+</header>
+
+<nav class="toc" aria-label="Разделы">
+  <a href="#done">Сделано</a>
+  <a href="#extra">По разбору созвона</a>
+  <a href="#wait">Ждёт данных</a>
+  <a href="#check">Как проверить</a>
+</nav>
+
+<main>
+  <header class="hero">
+    <h1>Что сделано по созвону 29.07</h1>
+    <p class="lead">Нумерация — как в твоём списке. Отдельным блоком — то, что нашёл при повторном разборе записи созвона и доделал сверху списка. Ждут только цены и реестр сертификатов.</p>
+  </header>
+
+  <div class="summary">
+    <div class="stat"><b>28</b><span>сделано по списку</span></div>
+    <div class="stat"><b>7</b><span>по разбору созвона</span></div>
+    <div class="stat"><b>2</b><span>ждут данных</span></div>
+  </div>
+
+  <h2 id="done">Сделано</h2>
+  <ul>
+    <li class="item"><div class="num">1</div><div>
+      <div class="title">Подписи сумм</div>
+      <div class="detail">«До скидки» → «Общая стоимость», «Итого» и «Сумма» → «К оплате». Во всех формах и в карточке заявки.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">2</div><div>
+      <div class="title">Слив</div>
+      <div class="detail">Убрал «(перенаправление клиента)». На этапе «Провал» телефон и имя не обязательны, на «Встреча назначена» — как было.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">3</div><div>
+      <div class="title">Промокоды в источниках</div>
+      <div class="detail">«Чат невест», «Osoba», «Онливед». Значения добавляются в поле «Канал продаж» amoCRM автоматически при старте кассы.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">4</div><div>
+      <div class="title">Способы оплаты</div>
+      <div class="detail">Полный список: Сбер (Миша, Мзия, Женя, Матвей, Гриша), Альфа (Эдвин, Женя, Гриша), ВТБ (Гриша, Женя), Тинькофф Гриша, РС Пятницкая и Бауманская, наличные по точкам и людям. В селекте сгруппированы: наличные / безналичные / РС.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">5</div><div>
+      <div class="title">Способ выдачи сдачи у Эдвина</div>
+      <div class="detail">В окне выдачи одно поле «Способ выдачи сдачи» с тем же справочником.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">6</div><div>
+      <div class="title">Частичная выдача сдачи</div>
+      <div class="detail">Можно выдать часть наличными, часть переводом. Позиция остаётся в очереди с пометкой «выдано частями», видно каждую выплату: сумма, способ, кто выдал.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">7</div><div>
+      <div class="title">Сдача и чаевые консультантом</div>
+      <div class="detail">В форме заявки консультант указывает способ, которым выдал сдачу или забрал чаевые. Частями — так же, как у Эдвина.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">8</div><div>
+      <div class="title">Минус один в товарах</div>
+      <div class="detail">Так и работает: если товар пикнули, а в базе его нет, касса показывает фактический минус.</div>
+      <span class="tag tag-ok">Проверено</span></div></li>
+    <li class="item"><div class="num">9</div><div>
+      <div class="title">Конвейер продажи компании</div>
+      <div class="detail">Эдвин выставляет счёт (номер и дата) и отмечает оплату. Миша в своей очереди закрывает документы и оплату ателье. Консультант видит два индикатора — оплата и документы — и не может закрыть «Успех», пока документы не готовы.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">11</div><div>
+      <div class="title">Расходы Эдвина</div>
+      <div class="detail">«Внести расход»: статья, комментарий, сумма, откуда оплатил, дата с возможностью изменить, разбивка на несколько способов оплаты. Все 17 статей на месте.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">12</div><div>
+      <div class="title">Очередь консультанта</div>
+      <div class="detail">Все семь задач: перемещение, отложить, убрать отложку, собрать, отнести в СДЭК, забрать со СДЭК, проштрихкодировать. Экран переименован в «Очереди задач».</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">13</div><div>
+      <div class="title">Расположение товара</div>
+      <div class="detail">Девять расположений: Новокузнецкая, Бауманская, Центральный склад, Полупарки на Новокузнецкой, Полупарки на Бауманской, Ателье, В пути, СДЭК у клиента, СДЭК у нас. Остатки теперь синкаются по семи складам, а не по двум.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">14</div><div>
+      <div class="title">Очередь логиста</div>
+      <div class="detail">Отдельная очередь перемещений. Задача уходит в неё автоматически, если товар едет с центрального склада.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">15</div><div>
+      <div class="title">Перемещение по «Ждет товар»</div>
+      <div class="detail">В заявке на этом этапе — галочки по позициям, выбор откуда и куда. Центральный склад → логист, магазин → консультант этого магазина. Ответственность на источнике.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">16</div><div>
+      <div class="title">«Ждет товар» и «Товар в магазине» во всех типах</div>
+      <div class="detail">Добавлены в продажу, продажу компании, аренду, отложку и обещание.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">17</div><div>
+      <div class="title">Генерация номера электронного сертификата</div>
+      <div class="detail">Кнопка «Сгенерировать» рядом с полем, номер шесть цифр, уникальность проверяется на сервере.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">18</div><div>
+      <div class="title">«Сертификат оплачен»</div>
+      <div class="detail">Переименовано везде в кассе. Код понимает и старое имя «Сертификат продан» — переименование этапа в amoCRM можно сделать в любой момент, ничего не сломается.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">19</div><div>
+      <div class="title">Обмен и возврат</div>
+      <div class="detail">Пикаешь штрихкодом — галочки ставятся сами. Позиции без штрихкода отмечаются вручную, и по ним автоматически ставится задача на проверку в очередь консультанта.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">20</div><div>
+      <div class="title">Правка завершённых и история</div>
+      <div class="detail">Завершённую заявку меняет только РОП или админ, с обязательной причиной. Экран «Роли и история» — фильтр по сотруднику и действию, видно всё, что происходит в кассе.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">21</div><div>
+      <div class="title">Навигация</div>
+      <div class="detail">Логотип MANSBAND ведёт на главную. «Все заявки» открывает доску сразу. «Новая заявка» из открытой формы начинает с чистого листа.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">22</div><div>
+      <div class="title">Наименование компании</div>
+      <div class="detail">Поле под телефоном руководителя, обязательное. Уходит в карточку компании amoCRM.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">23</div><div>
+      <div class="title">Левое меню без вертикальных подпунктов</div>
+      <div class="detail">«Все заявки» — одна кнопка, фильтры остались горизонтальными чипами на доске.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">27</div><div>
+      <div class="title">Статистика по периодам</div>
+      <div class="detail">День, неделя, месяц и произвольный период. Разрезы по консультантам и магазинам.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">29</div><div>
+      <div class="title">Раздел «Дефекты» убран</div>
+      <div class="detail">Виды заявок остались, отдельной группы в меню больше нет.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+  </ul>
+
+    <li class="item"><div class="num">10</div><div>
+      <div class="title">Наполнение этапов</div>
+      <div class="detail">Матрица «вид заявки → этапы» согласована. При создании заявки можно поставить только «Ждет товар» — «Товар в магазине» проставляется дальше по ходу. «Провал» из продажи убран: это либо слив, либо не слив. Аренда — «В аренде». Файл: 2026-07-31_МАТРИЦА_ЭТАПОВ_ПО_ВИДАМ.md</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">24</div><div>
+      <div class="title">Состав левого меню</div>
+      <div class="detail">Без групп, плоский список. Очередь Миши стоит выше очереди Эдвина, обе видны только тебе, РОПу и админу.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">28</div><div>
+      <div class="title">Категории товаров</div>
+      <div class="detail">Дерево групп тянется из МойСклад: два уровня — верхняя категория и подкатегория. Синкается вместе с товарами.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">30</div><div>
+      <div class="title">Приёмка при перемещении</div>
+      <div class="detail">Перемещение теперь в два шага: отправитель отмечает «отправлено», принимающая точка — «принято». Документ в МойСклад создаётся в момент приёмки, поэтому касса показывает реальный товар в пути.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+  </ul>
+
+  <h2 id="extra">Доделал по разбору записи созвона</h2>
+  <div class="note">
+    Прослушал созвон ещё раз и сверил с кассой. Ниже — то, что обсуждали голосом, но в списке из 30 пунктов не было.
+  </div>
+  <ul>
+    <li class="item"><div class="num">1</div><div>
+      <div class="title">Денежные очереди скрыты от консультантов</div>
+      <div class="detail">Ты говорил: «очередь Эдвина и очередь Миши никто не видел». Обе очереди теперь показываются только финансам, РОПу и админу — в боковом меню, в мобильном меню и в меню пользователя. Если консультант откроет ссылку напрямую, увидит заглушку.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">2</div><div>
+      <div class="title">Выдача по компании из карточки заявки</div>
+      <div class="detail">Консультант в зале отмечает «Товар выдан» и «Документы переданы» прямо в заявке. Товар — только после оплаты счёта, документы — только после того, как ты отметил их готовыми. Отметка консультанта закрывает задачу в твоей очереди.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">3</div><div>
+      <div class="title">Порядок складов</div>
+      <div class="detail">В «Проверке товара» Новокузнецкая идёт первой, дальше Бауманская и центральный. Остальные расположения — в порядке справочника из п.13, а не по остатку.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">4</div><div>
+      <div class="title">«Ждет товар» у пластикового сертификата</div>
+      <div class="detail">Бланк может лежать на другой точке — этап и перемещение теперь доступны и здесь. У электронного сертификата этапа нет, он не нужен.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">5</div><div>
+      <div class="title">Создание сары</div>
+      <div class="detail">Раньше пачку можно было только отметить отправленной, а завести выплату — негде. Добавил форму: номер заявки подтягивает того, кто направил клиента, дальше сумма и основание. Выплата падает в очередь кол-менеджера.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">6</div><div>
+      <div class="title">Подпись «РС»</div>
+      <div class="detail">Группа в списке способов оплаты называется «РС», как вы её называете вслух, а не «Расчётный счёт».</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+    <li class="item"><div class="num">7</div><div>
+      <div class="title">Названия очередей</div>
+      <div class="detail">Экран сар называется «Очередь кол-менеджера · Сары» — в одном стиле с очередями Эдвина, Миши, консультанта и логиста.</div>
+      <span class="tag tag-ok">Сделано</span></div></li>
+  </ul>
+
+  <h2 id="wait">Ждёт данных от тебя</h2>
+  <ul>
+    <li class="item"><div class="num">25</div><div>
+      <div class="title">Внести цены</div>
+      <div class="detail">Нужна выгрузка цен. Как пришлёшь — заливаю.</div>
+      <span class="tag tag-wait">Ждёт данных</span></div></li>
+    <li class="item"><div class="num">26</div><div>
+      <div class="title">Внести сертификаты</div>
+      <div class="detail">Нужен реестр действующих сертификатов: номер, номинал, остаток, срок.</div>
+      <span class="tag tag-wait">Ждёт данных</span></div></li>
+  </ul>
+
+  <h2 id="check">Как проверить</h2>
+  <div class="note">
+    <b>Что нужно сделать в amoCRM до релиза:</b> создать этапы «Счет выставлен», «Оплачено», «Документы готовы», «Документы переданы» в воронке «Продажи». Переименовать «Сертификат продан» в «Сертификат оплачен» можно в любой момент — касса понимает оба имени.
+  </div>
+  <div class="note">
+    <b>Перед релизом на сервере:</b> накатить миграцию базы (появляется таблица групп товаров) и один раз запустить синхронизацию товаров — после этого дерево категорий подтянется из МойСклад.
+  </div>
+  <div class="note">
+    <b>Быстрый прогон:</b> заведи продажу компании — счёт появится в очереди Эдвина, документы в очереди Миши, а консультант закроет выдачу из карточки. Заведи продажу со сдачей и выдай её частями. Открой заявку на этапе «Ждет товар» и запусти перемещение с центрального склада: задача уходит логисту, принимающая точка отмечает приёмку. Зайди консультантом — очередей Эдвина и Миши в меню быть не должно.
+  </div>
+</main>
+
+<footer>MS Product · 31.07.2026</footer>
+</body>
+</html>

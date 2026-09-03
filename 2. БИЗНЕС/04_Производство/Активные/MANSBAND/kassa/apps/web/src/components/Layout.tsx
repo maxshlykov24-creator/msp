@@ -6,17 +6,23 @@ import {
   Send,
   BarChart3,
   Wallet,
-  Gift,
+  Ticket,
   Store as StoreIcon,
   ChevronDown,
-  ChevronRight,
-  Users,
-  ArrowLeft,
-  Check,
-  AlertTriangle,
+  LogOut,
+  Boxes,
+  ClipboardList,
+  History,
+  Building2,
+  UserCog,
+  Gift,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useStore } from "../store";
+import { useAuth } from "../auth/AuthContext";
+import { canSeeFinanceQueues } from "../auth/roles";
 import { CONSULTANTS, STORES } from "../data/mock";
+import { OfflineBanner } from "./OfflineBanner";
 import logoFull from "../assets/logo-full.png";
 
 export type Route =
@@ -25,60 +31,84 @@ export type Route =
   | "certificates"
   | "sary"
   | "queue"
+  | "misha"
   | "shift"
-  | "dashboard";
+  | "dashboard"
+  | "products"
+  | "tasks"
+  | "history"
+  | "roles"
+  | "settings"
+  | "audit"; // старый hash → история
 
-// Подпункты «Все заявки» — открывают доску с пресетом группы (статус: все).
-const ALL_SUB: { group: string; label: string; status: string }[] = [
-  { group: "all", label: "Все", status: "all" },
-  { group: "sale", label: "Продажи", status: "all" },
-  { group: "rental", label: "Аренда", status: "all" },
-  { group: "cert", label: "Сертификаты", status: "all" },
-  { group: "company", label: "Продажи компании", status: "all" },
-  { group: "delivery", label: "Доставки", status: "all" },
+// Нижнее меню на мобильном: товар и очереди — на виду, не в бургер-меню.
+// «Эдвин» добавляется только финансам: консультанту денежные очереди не показываем.
+const MOBILE_NAV_BASE: { id: Route; label: string; icon: ReactNode; badge?: "queue" }[] = [
+  { id: "new", label: "Новая", icon: <PlusCircle size={22} /> },
+  { id: "board", label: "Заявки", icon: <LayoutList size={22} /> },
+  { id: "products", label: "Товар", icon: <Boxes size={22} /> },
+  { id: "tasks", label: "Очереди", icon: <ClipboardList size={22} /> },
 ];
 
-// Подпункты «Дефекты» — по умолчанию фильтр «открытые».
-const DEFECT_SUB: { group: string; label: string; status: string }[] = [
-  { group: "defect_all", label: "Все", status: "open" },
-  { group: "defect", label: "Браки", status: "open" },
-  { group: "drycleaning", label: "Химчистка", status: "open" },
-  { group: "resew", label: "Перешив", status: "open" },
-  { group: "wrong_size", label: "Перепутан размер", status: "open" },
-];
-
-// Нижнее меню на мобильном: 4 основных действия (крупные кнопки).
-const MOBILE_NAV: { id: Route; label: string; icon: ReactNode }[] = [
-  { id: "new", label: "Новая", icon: <PlusCircle size={23} /> },
-  { id: "board", label: "Заявки", icon: <LayoutList size={23} /> },
-  { id: "sary", label: "Сары", icon: <Gift size={23} /> },
-  { id: "shift", label: "Смена", icon: <Wallet size={23} /> },
-];
+const MOBILE_NAV_FINANCE: { id: Route; label: string; icon: ReactNode; badge?: "queue" } = {
+  id: "queue",
+  label: "Эдвин",
+  icon: <Send size={22} />,
+  badge: "queue",
+};
 
 export function Layout({
   route,
   setRoute,
   onBoard,
-  boardGroup,
+  onHome,
   children,
 }: {
   route: Route;
   setRoute: (r: Route) => void;
   onBoard: (group: string, status: string) => void;
-  boardGroup: string | null;
+  /** Клик по логотипу — на главную (все заявки). */
+  onHome: () => void;
   children: ReactNode;
 }) {
-  const { activeStore, setActiveStore, activeConsultant, setActiveConsultant, queue } = useStore();
+  const { activeStore, setActiveStore, setActiveConsultant, queue } = useStore();
+  const { user, logout } = useAuth();
   const pendingQueue = queue.filter((q) => q.status === "pending").length;
+  // Очередь Миши — документы и ателье; консультанту она не нужна.
+  const pendingCompany = queue.filter(
+    (q) => q.status === "pending" && (q.kind === "documents" || q.kind === "atelier")
+  ).length;
+  const canSeeMoney = canSeeFinanceQueues(user?.role, user?.login, user?.name);
+  const mobileNav = canSeeMoney ? [...MOBILE_NAV_BASE, MOBILE_NAV_FINANCE] : MOBILE_NAV_BASE;
+  // На экране новой заявки нижнее меню скрываем — место под sticky-блок суммы/кнопок.
+  const showMobileNav = route !== "new";
+
+  // Дефолт консультанта в формах = имя залогиненного, если он в справочнике.
+  useEffect(() => {
+    if (!user?.name) return;
+    const names = CONSULTANTS.filter(
+      (c) => c.role === "consultant" || c.role === "callmanager"
+    ).map((c) => c.name);
+    if (names.includes(user.name)) setActiveConsultant(user.name);
+  }, [user?.name, setActiveConsultant]);
+
+  const displayName = user?.name ?? "Пользователь";
 
   return (
-    <div className="min-h-screen flex w-full overflow-x-hidden">
+    <div className="min-h-screen flex flex-col w-full overflow-x-hidden">
+      <OfflineBanner />
+      <div className="flex flex-1 min-h-0 w-full">
       {/* Sidebar */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-ink-800 bg-ink-900/60 backdrop-blur sticky top-0 h-screen">
-        <div className="px-5 py-6 border-b border-ink-800">
+        <button
+          type="button"
+          onClick={onHome}
+          aria-label="На главную"
+          className="px-5 py-6 border-b border-ink-800 text-left w-full hover:bg-ink-800/40 transition"
+        >
           <img src={logoFull} alt="MANSBAND" className="h-14 w-auto select-none" />
           <div className="text-[11px] text-mute tracking-[0.28em] uppercase mt-2.5 pl-0.5">Касса</div>
-        </div>
+        </button>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           <NavButton
             active={route === "new"}
@@ -86,34 +116,55 @@ export function Layout({
             label="Новая заявка"
             onClick={() => setRoute("new")}
           />
-          <NavGroup
+          <NavButton
+            active={route === "board"}
             icon={<LayoutList size={18} />}
             label="Все заявки"
-            items={ALL_SUB}
-            activeGroup={route === "board" ? (boardGroup ?? "all") : null}
-            defaultOpen
-            onPick={onBoard}
+            onClick={() => onBoard("all", "all")}
           />
-          <NavGroup
-            icon={<AlertTriangle size={18} />}
-            label="Дефекты"
-            items={DEFECT_SUB}
-            activeGroup={route === "board" ? (boardGroup ?? "all") : null}
-            onPick={onBoard}
+          <NavButton
+            active={route === "products"}
+            icon={<Boxes size={18} />}
+            label="Поиск товара"
+            onClick={() => setRoute("products")}
+          />
+          <NavButton
+            active={route === "tasks"}
+            icon={<ClipboardList size={18} />}
+            label="Задачи"
+            onClick={() => setRoute("tasks")}
+          />
+          <NavButton
+            active={route === "certificates"}
+            icon={<Ticket size={18} />}
+            label="Реестр сертификатов"
+            onClick={() => setRoute("certificates")}
           />
           <NavButton
             active={route === "sary"}
             icon={<Gift size={18} />}
-            label="Сары"
+            label="Ведомость САР"
             onClick={() => setRoute("sary")}
           />
-          <NavButton
-            active={route === "queue"}
-            icon={<Send size={18} />}
-            label="Очередь Эдвина"
-            onClick={() => setRoute("queue")}
-            badge={pendingQueue}
-          />
+          {canSeeMoney && (
+            <>
+              <NavButton
+                active={route === "misha"}
+                icon={<Building2 size={18} />}
+                label="Очередь Миши"
+                onClick={() => setRoute("misha")}
+                badge={pendingCompany}
+              />
+              <NavButton
+                active={route === "queue"}
+                icon={<Send size={18} />}
+                label="Очередь Эдвина"
+                onClick={() => setRoute("queue")}
+                badge={pendingQueue}
+              />
+            </>
+          )}
+
           <NavButton
             active={route === "shift"}
             icon={<Wallet size={18} />}
@@ -121,24 +172,26 @@ export function Layout({
             onClick={() => setRoute("shift")}
           />
           <NavButton
-            active={route === "dashboard"}
-            icon={<BarChart3 size={18} />}
-            label="Статистика"
-            onClick={() => setRoute("dashboard")}
+            active={route === "history" || route === "audit"}
+            icon={<History size={18} />}
+            label="История изменений"
+            onClick={() => setRoute("history")}
           />
         </nav>
-        <div className="p-4 border-t border-ink-800 text-[11px] text-mute/60">
-          Прототип · демо-данные<br />amoCRM + МойСклад
+        <div className="p-4 border-t border-ink-800 text-[11px] text-mute/60 tracking-[0.18em] uppercase">
+          MANSBAND
         </div>
       </aside>
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 w-full overflow-x-hidden">
-        <header className="sticky top-0 z-30 border-b border-ink-800 bg-ink-950/95 backdrop-blur pt-[env(safe-area-inset-top)]">
+        <header className="sticky top-0 z-30 border-b border-ink-800 bg-ink-950 md:bg-ink-950/95 md:backdrop-blur pt-[env(safe-area-inset-top)]">
           {/* Мобильная шапка: лого по центру, магазин + пользователь — отдельной строкой */}
           <div className="md:hidden px-4 pb-3">
             <div className="flex justify-center py-2.5">
-              <img src={logoFull} alt="MANSBAND" className="h-7 w-auto max-w-[min(100%,200px)] select-none" />
+              <button type="button" onClick={onHome} aria-label="На главную">
+                <img src={logoFull} alt="MANSBAND" className="h-7 w-auto max-w-[min(100%,200px)] select-none" />
+              </button>
             </div>
             <div className="flex items-center gap-2 min-w-0">
               <Selector
@@ -150,13 +203,9 @@ export function Layout({
               />
               <UserMenu
                 compact
-                active={activeConsultant}
-                consultants={CONSULTANTS.filter(
-                  (c) => c.role === "consultant" || c.role === "callmanager"
-                ).map((c) => c.name)}
-                onPick={setActiveConsultant}
+                displayName={displayName}
+                onLogout={logout}
                 onNavigate={setRoute}
-                pendingQueue={pendingQueue}
                 activeRoute={route}
               />
             </div>
@@ -171,33 +220,50 @@ export function Layout({
               onChange={(v) => setActiveStore(v as typeof activeStore)}
             />
             <UserMenu
-              active={activeConsultant}
-              consultants={CONSULTANTS.filter(
-                (c) => c.role === "consultant" || c.role === "callmanager"
-              ).map((c) => c.name)}
-              onPick={setActiveConsultant}
+              displayName={displayName}
+              onLogout={logout}
               onNavigate={setRoute}
-              pendingQueue={pendingQueue}
               activeRoute={route}
             />
           </div>
         </header>
-        <main className="flex-1 px-4 md:px-8 py-6 pb-24 md:pb-6 overflow-x-hidden max-w-full">{children}</main>
-        {/* Mobile bottom nav — 4 крупные кнопки для удобного тапа */}
-        <nav className="md:hidden sticky bottom-0 z-20 border-t border-ink-800 bg-ink-900/95 backdrop-blur grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
-          {MOBILE_NAV.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => setRoute(n.id)}
-              className={`flex flex-col items-center justify-center gap-1.5 py-3 min-h-[64px] text-[11px] font-medium transition active:bg-ink-800 ${
-                route === n.id ? "text-gold" : "text-mute"
-              }`}
-            >
-              {n.icon}
-              <span className="leading-none">{n.label}</span>
-            </button>
-          ))}
-        </nav>
+        <main
+          className={`flex-1 px-4 md:px-8 py-6 overflow-x-hidden max-w-full ${
+            showMobileNav ? "pb-24 md:pb-6" : "pb-6"
+          }`}
+        >
+          {children}
+        </main>
+        {/* Mobile bottom nav — скрыт на «Новой заявке», чтобы не перекрывать sticky-бар */}
+        {showMobileNav && (
+          <nav
+            className={`md:hidden sticky bottom-0 z-20 border-t border-ink-800 bg-ink-900 grid pb-[env(safe-area-inset-bottom)] ${
+              mobileNav.length === 5 ? "grid-cols-5" : "grid-cols-4"
+            }`}
+          >
+            {mobileNav.map((n) => {
+              const badge = n.badge === "queue" ? pendingQueue : 0;
+              return (
+                <button
+                  key={n.id}
+                  onClick={() => (n.id === "board" ? onBoard("all", "all") : setRoute(n.id))}
+                  className={`relative flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] text-[10px] font-medium transition active:bg-ink-800 ${
+                    route === n.id ? "text-gold" : "text-mute"
+                  }`}
+                >
+                  {n.icon}
+                  <span className="leading-none">{n.label}</span>
+                  {badge > 0 && (
+                    <span className="absolute top-1.5 right-[18%] min-w-[16px] h-4 px-1 rounded-full bg-white text-ink-950 text-[10px] font-bold grid place-items-center">
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        )}
+      </div>
       </div>
     </div>
   );
@@ -229,61 +295,6 @@ function NavButton({
         <span className="chip bg-white text-ink-950 font-semibold px-2 py-0.5">{badge}</span>
       )}
     </button>
-  );
-}
-
-function NavGroup({
-  icon,
-  label,
-  items,
-  activeGroup,
-  onPick,
-  defaultOpen = false,
-}: {
-  icon: ReactNode;
-  label: string;
-  items: { group: string; label: string; status: string }[];
-  activeGroup: string | null;
-  onPick: (group: string, status: string) => void;
-  defaultOpen?: boolean;
-}) {
-  const childActive = items.some((i) => i.group === activeGroup);
-  const [open, setOpen] = useState(defaultOpen || childActive);
-
-  useEffect(() => {
-    if (childActive) setOpen(true);
-  }, [childActive]);
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[14px] font-medium transition ${
-          childActive ? "text-gold-soft" : "text-mute hover:bg-ink-800 hover:text-white"
-        }`}
-      >
-        <span className={childActive ? "text-gold" : ""}>{icon}</span>
-        <span className="flex-1 text-left">{label}</span>
-        {open ? <ChevronDown size={15} className="text-mute" /> : <ChevronRight size={15} className="text-mute" />}
-      </button>
-      {open && (
-        <div className="mt-0.5 ml-4 pl-3 border-l border-ink-700 space-y-0.5">
-          {items.map((i) => (
-            <button
-              key={i.group}
-              onClick={() => onPick(i.group, i.status)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-[13px] font-medium transition ${
-                i.group === activeGroup
-                  ? "bg-gold/15 text-gold-soft"
-                  : "text-mute hover:bg-ink-800 hover:text-white"
-              }`}
-            >
-              {i.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -329,28 +340,24 @@ function Selector({
 }
 
 function UserMenu({
-  active,
-  consultants,
-  onPick,
+  displayName,
+  onLogout,
   onNavigate,
-  pendingQueue,
   activeRoute,
   compact = false,
 }: {
-  active: string;
-  consultants: string[];
-  onPick: (name: string) => void;
+  displayName: string;
+  onLogout: () => void;
   onNavigate: (r: Route) => void;
-  pendingQueue: number;
   activeRoute: Route;
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [showUsers, setShowUsers] = useState(false);
+  const { user } = useAuth();
+  const canSettings = user?.role === "rop" || user?.role === "admin";
 
   function close() {
     setOpen(false);
-    setShowUsers(false);
   }
 
   const itemCls =
@@ -363,18 +370,18 @@ function UserMenu({
         className={`inline-flex items-center rounded-lg border border-ink-700 bg-ink-900 hover:border-gold/40 transition ${
           compact ? "gap-1.5 pl-2 pr-2 py-2" : "gap-2 pl-2 pr-2.5 py-2"
         }`}
-        aria-label={compact ? `Пользователь: ${active}` : undefined}
+        aria-label={compact ? `Пользователь: ${displayName}` : undefined}
       >
         <span
           className={`rounded-full bg-gold/20 text-gold-soft grid place-items-center font-bold shrink-0 ${
             compact ? "w-7 h-7 text-[12px]" : "w-6 h-6 text-[11px]"
           }`}
         >
-          {active[0]}
+          {displayName[0]}
         </span>
         {!compact && (
           <>
-            <span className="text-[13px] text-white font-medium max-w-[120px] truncate">{active}</span>
+            <span className="text-[13px] text-white font-medium max-w-[120px] truncate">{displayName}</span>
             <ChevronDown size={14} className="text-mute shrink-0" />
           </>
         )}
@@ -386,80 +393,72 @@ function UserMenu({
           <div className="fixed inset-0 z-40" onClick={close} />
           <div
             className={`absolute right-0 top-full mt-2 z-50 card p-1.5 ${
-              compact ? "w-[min(calc(100vw-2rem),16rem)]" : "w-64"
+              compact ? "w-[min(calc(100%-2rem),16rem)]" : "w-64"
             }`}
           >
-            {!showUsers ? (
-              <>
-                <div className="flex items-center gap-2.5 px-3 py-2.5">
-                  <span className="w-9 h-9 rounded-full bg-gold/20 text-gold-soft grid place-items-center text-sm font-bold">
-                    {active[0]}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-white font-semibold truncate">{active}</div>
-                    <div className="text-[11px] text-mute">Текущий пользователь</div>
-                  </div>
-                </div>
-                <div className="h-px bg-ink-700 my-1.5" />
-                <button
-                  className={`${itemCls} ${activeRoute === "queue" ? "bg-ink-800 text-white" : ""}`}
-                  onClick={() => {
-                    onNavigate("queue");
-                    close();
-                  }}
-                >
-                  <Send size={17} />
-                  <span className="flex-1">Очередь Эдвина</span>
-                  {pendingQueue > 0 && (
-                    <span className="chip bg-white text-ink-950 font-semibold px-2 py-0.5">{pendingQueue}</span>
-                  )}
-                </button>
-                <button
-                  className={`${itemCls} ${activeRoute === "dashboard" ? "bg-ink-800 text-white" : ""}`}
-                  onClick={() => {
-                    onNavigate("dashboard");
-                    close();
-                  }}
-                >
-                  <BarChart3 size={17} />
-                  <span className="flex-1">Статистика</span>
-                </button>
-                <div className="h-px bg-ink-700 my-1.5" />
-                <button className={itemCls} onClick={() => setShowUsers(true)}>
-                  <Users size={17} />
-                  <span className="flex-1">Сменить пользователя</span>
-                  <ChevronDown size={14} className="-rotate-90 text-mute" />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-mute hover:text-white hover:bg-ink-800 transition"
-                  onClick={() => setShowUsers(false)}
-                >
-                  <ArrowLeft size={15} /> Назад
-                </button>
-                <div className="field-label px-3 pt-2 pb-1">Консультанты</div>
-                <div className="max-h-64 overflow-y-auto">
-                  {consultants.map((name) => (
-                    <button
-                      key={name}
-                      className={`${itemCls} ${name === active ? "text-white" : ""}`}
-                      onClick={() => {
-                        onPick(name);
-                        close();
-                      }}
-                    >
-                      <span className="w-7 h-7 rounded-full bg-ink-700 text-mute-soft grid place-items-center text-[11px] font-bold">
-                        {name[0]}
-                      </span>
-                      <span className="flex-1">{name}</span>
-                      {name === active && <Check size={16} className="text-white" />}
-                    </button>
-                  ))}
-                </div>
-              </>
+            <div className="flex items-center gap-2.5 px-3 py-2.5">
+              <span className="w-9 h-9 rounded-full bg-gold/20 text-gold-soft grid place-items-center text-sm font-bold">
+                {displayName[0]}
+              </span>
+              <div className="min-w-0">
+                <div className="text-white font-semibold truncate">{displayName}</div>
+                <div className="text-[11px] text-mute">Вход по логину</div>
+              </div>
+            </div>
+            <div className="h-px bg-ink-700 my-1.5" />
+            <button
+              className={`${itemCls} ${activeRoute === "dashboard" ? "bg-ink-800 text-white" : ""}`}
+              onClick={() => {
+                onNavigate("dashboard");
+                close();
+              }}
+            >
+              <BarChart3 size={17} />
+              <span className="flex-1">Статистика</span>
+            </button>
+            <button
+              className={`${itemCls} ${activeRoute === "history" || activeRoute === "audit" ? "bg-ink-800 text-white" : ""}`}
+              onClick={() => {
+                onNavigate("history");
+                close();
+              }}
+            >
+              <History size={17} />
+              <span className="flex-1">История</span>
+            </button>
+            <button
+              className={`${itemCls} ${activeRoute === "roles" ? "bg-ink-800 text-white" : ""}`}
+              onClick={() => {
+                onNavigate("roles");
+                close();
+              }}
+            >
+              <UserCog size={17} />
+              <span className="flex-1">Роли</span>
+            </button>
+            {canSettings && (
+              <button
+                className={`${itemCls} ${activeRoute === "settings" ? "bg-ink-800 text-white" : ""}`}
+                onClick={() => {
+                  onNavigate("settings");
+                  close();
+                }}
+              >
+                <SlidersHorizontal size={17} />
+                <span className="flex-1">Настройки мотивации</span>
+              </button>
             )}
+            <div className="h-px bg-ink-700 my-1.5" />
+            <button
+              className={itemCls}
+              onClick={() => {
+                close();
+                onLogout();
+              }}
+            >
+              <LogOut size={17} />
+              <span className="flex-1">Выйти</span>
+            </button>
           </div>
         </>
       )}

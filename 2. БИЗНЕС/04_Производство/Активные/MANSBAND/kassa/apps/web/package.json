@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@kassa/shared": "0.1.0",
+    "@kassa/shared": "workspace:*",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.22.0",
     "lucide-react": "^0.460.0",

@@ -1,0 +1,25 @@
+# Статический сайт MS Product (ms-p.ru).
+# Изоляция: отдельный compose-проект, порт только на localhost.
+# Перенос на другой VPS: rsync этой папки → docker compose up -d → nginx vhost + certbot.
+#
+#   cd /opt/ms-p-site && docker compose up -d
+# Хост-Nginx → proxy 127.0.0.1:19091 (см. deploy/)
+
+name: ms-p-site
+
+services:
+  web:
+    image: public.ecr.aws/docker/library/nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:19091:80"
+    # монтируем каталоги, а не отдельные файлы: rsync подменяет inode,
+    # и bind-mount файла продолжал бы отдавать старую версию
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
+      - ./deploy/container-conf:/etc/nginx/conf.d:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

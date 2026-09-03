@@ -1,0 +1,4 @@
+interface:
+  display_name: "Аудит системы бизнеса"
+  short_description: "Безопасность, ошибки и актуальность технологий"
+  default_prompt: "Use $business-system-checkup to audit my business system in read-only mode and produce a prioritized, redacted report."

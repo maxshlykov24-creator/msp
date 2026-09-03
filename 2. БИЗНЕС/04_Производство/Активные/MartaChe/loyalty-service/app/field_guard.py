@@ -32,7 +32,14 @@ def parse_tier(value: Any) -> Optional[int]:
     s = str(value).strip().lower()
     if not s:
         return None
-    return _TIER_NAME_TO_IDX.get(s)
+    direct = _TIER_NAME_TO_IDX.get(s)
+    if direct is not None:
+        return direct
+    # «Бонусная программа (Дружба)» и подобные длинные имена из старых выгрузок
+    for name, idx in _TIER_NAME_TO_IDX.items():
+        if name in s:
+            return idx
+    return None
 
 
 _STATUS_VARIANTS_BLOCKED = {"заблокирован", "деактивирован", "blocked", "disabled", "не активен", "неактивен"}

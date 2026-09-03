@@ -10,6 +10,11 @@ amoCRM через подключённый к аккаунту канал (бе�
 Реализация — только stdlib (urllib), long polling. Без внешних зависимостей,
 чтобы разворачиваться на чистой Ubuntu без pip. Состояние клиентов — в JSON.
 Тексты и тон взяты из анализа канала (КОНТЕНТ_ИЗ_КАНАЛА_ДЛЯ_БОТА.md).
+
+Этот же токен = клиентский бот груминга (Этап 2): напоминания 24ч/3ч шлёт сам
+keris-server (RU, app/reminders.py) напрямую через Telegram API. На /start клиент
+делится номером (request_contact) → POST /api/telegram/bind. Кнопку
+«Подтверждаю» в напоминаниях ловит этот процесс (callback_query "rsvp:<id>").
 """
 from __future__ import annotations
 
@@ -29,17 +34,23 @@ logging.basicConfig(
 )
 log = logging.getLogger("keris-bot")
 
-# Форсируем IPv4: на этом VPS IPv6 нестабилен, а getaddrinfo отдаёт IPv6
-# первым — Python залипает на нём до таймаута (задержки 5–15 с и «залипания»
-# на 35+ с). Telegram и amoCRM доступны по IPv4, поэтому режем AAAA.
+# IPv6 сначала: api.telegram.org с RU по IPv4 таймаутится, зарубежный VPS ботов —
+# IPv6-only. Для api.telegram.org это единственный вариант; для API keris-server
+# (RU, sslip.io) есть /etc/hosts с IPv6-записью, но на случай, если её не будет,
+# даём fallback на IPv4 — так же, как в keris-admin-bot.
 _orig_getaddrinfo = socket.getaddrinfo
 
 
-def _getaddrinfo_ipv4(host, port, family=0, type=0, proto=0, flags=0):  # noqa: A002
-    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+def _getaddrinfo_ipv6_first(host, port, family=0, type=0, proto=0, flags=0):  # noqa: A002
+    if family == 0:
+        try:
+            return _orig_getaddrinfo(host, port, socket.AF_INET6, type, proto, flags)
+        except socket.gaierror:
+            return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+    return _orig_getaddrinfo(host, port, family, type, proto, flags)
 
 
-socket.getaddrinfo = _getaddrinfo_ipv4
+socket.getaddrinfo = _getaddrinfo_ipv6_first
 
 # ── Конфиг (только окружение / .env на сервере) ────────────────────────────
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
@@ -47,6 +58,10 @@ if not BOT_TOKEN:
     raise SystemExit("BOT_TOKEN не задан — см. /root/keris-bot/.env")
 MANAGER_USERNAME = os.environ.get("MANAGER_USERNAME", "keris_chat")
 STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-bot/state.json")
+# Онлайн-запись на груминг (тот же URL — Mini App в Telegram и страница в браузере).
+BOOKING_URL = os.environ.get("BOOKING_URL", "https://194.87.118.214.sslip.io/").strip().rstrip("/") + "/"
+# API keris-server (RU) — сюда уходит подтверждение записи по кнопке в напоминании.
+API_BASE = os.environ.get("KERIS_SERVER_URL", "https://194.87.118.214.sslip.io").strip().rstrip("/")
 # Канал с витриной щенков: https://t.me/kerisclub · пост — /115
 CHANNEL_URL = "https://t.me/kerisclub"
 PUPPIES_POST_URL = "https://t.me/kerisclub/115"
@@ -237,25 +252,35 @@ def _http(method: str, url: str, payload: Optional[dict] = None,
 
 
 # ── Telegram API ────────────────────────────────────────────────────────────
-def tg(method: str, payload: dict) -> Any:
-    status, data = _http("POST", f"{TG_API}/{method}", payload)
+def tg(method: str, payload: dict, timeout: float = 15.0, retries: int = 1) -> Any:
+    data: Any = {}
+    status = 0
+    for attempt in range(max(1, retries)):
+        status, data = _http("POST", f"{TG_API}/{method}", payload, timeout=timeout)
+        if status == 200:
+            return data
+        if attempt + 1 < retries:
+            time.sleep(1.2 * (attempt + 1))
     if status != 200:
         log.warning("tg %s -> %s %s", method, status, str(data)[:300])
     return data
 
 
-def send(chat_id: int, text: str, keyboard: Optional[dict] = None, typing: bool = True) -> None:
-    # Короткая пауза «печатает…» — не задержка ответа, а темп: реальный
-    # менеджер не выстреливает текстом мгновенно. Держим её маленькой
-    # (≤0.9с), чтобы не превратиться в тот самый лаг, который уже чинили.
+def send(chat_id: int, text: str, keyboard: Optional[dict] = None, typing: bool = False) -> None:
+    # typing по умолчанию выкл: sendChatAction с EU часто таймаутится на 15с
+    # и /start «молчит», хотя апдейт уже обработан.
     if typing:
-        tg("sendChatAction", {"chat_id": chat_id, "action": "typing"})
-        time.sleep(min(0.9, 0.25 + len(text) / 700))
+        tg("sendChatAction", {"chat_id": chat_id, "action": "typing"}, timeout=3)
+        time.sleep(min(0.4, 0.15 + len(text) / 900))
     payload: dict[str, Any] = {"chat_id": chat_id, "text": text[:4000],
                                "parse_mode": "HTML", "disable_web_page_preview": True}
     if keyboard is not None:
         payload["reply_markup"] = keyboard
-    tg("sendMessage", payload)
+    tg("sendMessage", payload, timeout=20.0, retries=3)
+
+
+def api(method: str, path: str, payload: Optional[dict] = None) -> tuple[int, Any]:
+    return _http(method, f"{API_BASE}{path}", payload, timeout=10.0)
 
 
 def send_photo(chat_id: int, photo: str, caption: str, keyboard: Optional[dict] = None) -> None:
@@ -278,13 +303,18 @@ def send_video(chat_id: int, video: str, caption: str, keyboard: Optional[dict] 
     tg("sendVideo", payload)
 
 
-def answer_callback(cb_id: str) -> None:
-    tg("answerCallbackQuery", {"callback_query_id": cb_id})
+def answer_callback(cb_id: str, text: str = "") -> None:
+    payload: dict[str, Any] = {"callback_query_id": cb_id}
+    if text:
+        payload["text"] = text[:200]
+        payload["show_alert"] = True
+    tg("answerCallbackQuery", payload)
 
 
 # ── Клавиатуры ──────────────────────────────────────────────────────────────
 def main_menu() -> dict:
     return {"inline_keyboard": [
+        [{"text": "✂️ Записаться на груминг", "callback_data": "booking"}],
         [{"text": "🏡 О питомнике", "callback_data": "about"}],
         [{"text": "💰 Стоимость и бронирование", "callback_data": "price"}],
         [{"text": "❓ Вопрос / ответ", "callback_data": "faq"}],
@@ -294,14 +324,46 @@ def main_menu() -> dict:
     ]}
 
 
+def booking_kb() -> dict:
+    """Два входа: Mini App (если Telegram открывает) и обычная ссылка в браузер."""
+    return {"inline_keyboard": [
+        [{"text": "✂️ Открыть запись в Telegram", "web_app": {"url": BOOKING_URL}}],
+        [{"text": "🌐 Открыть в браузере", "url": BOOKING_URL}],
+        [{"text": "‹ В меню", "callback_data": "menu"}],
+    ]}
+
+
 def back_menu() -> dict:
     return {"inline_keyboard": [[{"text": "‹ В меню", "callback_data": "menu"}]]}
 
 
+def set_menu_button() -> None:
+    tg("setChatMenuButton", {
+        "menu_button": {
+            "type": "web_app",
+            "text": "Запись",
+            "web_app": {"url": BOOKING_URL},
+        }
+    })
+
+
+BOOKING_TEXT = (
+    "✂️ <b>Онлайн-запись на груминг</b>\n\n"
+    "Выберите удобный способ:\n"
+    "• <b>В Telegram</b> — мини-приложение прямо в чате\n"
+    "• <b>В браузере</b> — если приложение не открывается "
+    f"(та же страница: {BOOKING_URL.rstrip('/')})\n\n"
+    "Выберите питомца, услугу, мастера и время — подтверждение сразу."
+)
+
+
 def consent_kb() -> dict:
-    return {"inline_keyboard": [
-        [{"text": "✅ Согласен, продолжить", "callback_data": "consent"}],
-    ]}
+    """request_contact работает только на reply-клавиатуре, не на inline."""
+    return {
+        "keyboard": [[{"text": "Согласен и поделиться номером", "request_contact": True}]],
+        "resize_keyboard": True,
+        "one_time_keyboard": True,
+    }
 
 
 def puppy_kb(idx: int) -> dict:
@@ -324,12 +386,27 @@ def puppy_kb(idx: int) -> dict:
 # ── Обработчики ─────────────────────────────────────────────────────────────
 GREETING = (
     "🐾 <b>Рады приветствовать вас в Keris Club!</b>\n\n"
-    "Здесь вы можете познакомиться с нашими щенками <b>Teddy Maltipoo F1</b>, "
-    "узнать стоимость, условия рассрочки и оставить заявку — менеджер "
-    "свяжется с вами в удобное время.\n\n"
-    "Для начала, пожалуйста, подтвердите согласие на обработку "
-    "персональных данных. Это необходимо, чтобы мы могли связаться с вами "
-    "и ответить на все вопросы."
+    "Здесь вы можете познакомиться с нашими щенками Teddy Maltipoo F1, "
+    "узнать стоимость, условия рассрочки и оставить заявку. "
+    "Менеджер свяжется с вами в удобное время. "
+    "А также можете записать вашего питомца на груминг и получать напоминания.\n\n"
+    "Для начала, пожалуйста, подтвердите согласие на обработку персональных данных "
+    "и предоставьте ваш номер телефона. Это необходимо, чтобы мы могли связаться "
+    "с вами и ответить на все вопросы."
+)
+
+PHONE_NEEDED = (
+    "Чтобы присылать подтверждение и напоминания о записи, "
+    "поделитесь номером телефона кнопкой ниже."
+)
+
+PHONE_CATCH_UP = (
+    "🐾 <b>Мы уже знакомы: вы открывали бота Keris Club.</b>\n\n"
+    "Чтобы найти вашу запись и присылать подтверждение и напоминания о визите, "
+    "нам нужен номер телефона. Ник в Telegram для этого не подходит.\n\n"
+    "Пожалуйста, подтвердите согласие на обработку персональных данных "
+    "и поделитесь номером кнопкой ниже. Это нужно, чтобы мы могли связаться "
+    "с вами и ничего не пропустить."
 )
 
 
@@ -352,29 +429,52 @@ def show_puppy(chat_id: int, idx: int) -> None:
 
 def handle_start(chat_id: int) -> None:
     st = user_state(chat_id)
-    if st.get("consent"):
+    if st.get("phone"):
         show_menu(chat_id)
+        return
+    if st.get("consent"):
+        send(chat_id, PHONE_NEEDED, consent_kb())
+        return
+    send(chat_id, GREETING, consent_kb())
+
+
+def handle_rsvp(chat_id: int, message_id: int, cb_id: str, booking_id: str) -> None:
+    """Кнопка «Подтверждаю приход» в напоминании о визите (24ч/3ч) — шлём в keris-server,
+    он проставит attendance=2 в YCLIENTS. Кнопка нужна только тут, до основного меню/
+    согласия ПДн эта запись не относится, поэтому обрабатываем раньше остальной логики."""
+    status, res = api("POST", f"/api/bookings/{urllib.parse.quote(booking_id)}/confirm")
+    if status and 200 <= status < 300:
+        answer_callback(cb_id, "Спасибо! Ждём вас 🐾")
+        tg("editMessageReplyMarkup", {
+            "chat_id": chat_id, "message_id": message_id,
+            "reply_markup": {"inline_keyboard": [[{"text": "✅ Приход подтверждён", "callback_data": "noop"}]]},
+        })
     else:
-        send(chat_id, GREETING, consent_kb())
+        msg = res.get("detail") if isinstance(res, dict) else ""
+        answer_callback(cb_id, f"Не получилось подтвердить: {msg or 'сервер недоступен'}. Попробуйте позже.")
 
 
-def handle_callback(chat_id: int, cb_id: str, data: str) -> None:
+def handle_callback(chat_id: int, message_id: int, cb_id: str, data: str) -> None:
+    if data.startswith("rsvp:"):
+        handle_rsvp(chat_id, message_id, cb_id, data.split(":", 1)[1])
+        return
     answer_callback(cb_id)
     st = user_state(chat_id)
 
     if data == "consent":
         st["consent"] = True
         save_state()
-        send(chat_id, "Спасибо! Согласие принято ✅", typing=False)
-        show_menu(chat_id)
+        send(chat_id, PHONE_NEEDED, consent_kb())
         return
 
-    if not st.get("consent"):
-        send(chat_id, GREETING, consent_kb())
+    if not st.get("phone"):
+        handle_start(chat_id)
         return
 
     if data == "menu":
         show_menu(chat_id)
+    elif data == "booking":
+        send(chat_id, BOOKING_TEXT, booking_kb())
     elif data == "about":
         send(chat_id, ABOUT_TEXT, back_menu())
     elif data == "price":
@@ -395,16 +495,58 @@ def handle_callback(chat_id: int, cb_id: str, data: str) -> None:
         show_menu(chat_id)
 
 
+def handle_contact(msg: dict) -> None:
+    chat_id = msg["chat"]["id"]
+    from_id = (msg.get("from") or {}).get("id")
+    contact = msg.get("contact") or {}
+    if not contact.get("user_id") or contact.get("user_id") != from_id:
+        send(chat_id, "Нужен ваш номер, привязанный к Telegram. Нажмите кнопку ниже.", consent_kb())
+        return
+    phone = contact.get("phone_number") or ""
+    status, res = api("POST", "/api/telegram/bind", {"phone": phone, "chat_id": chat_id})
+    if not status or status >= 300:
+        msg_err = res.get("detail") if isinstance(res, dict) else ""
+        send(chat_id, f"Не получилось сохранить номер: {msg_err or 'сервер недоступен'}. Попробуйте ещё раз.", consent_kb())
+        return
+    st = user_state(chat_id)
+    st["consent"] = True
+    st["phone"] = (res or {}).get("phone") or phone
+    save_state()
+    if st.pop("open_booking", None):
+        save_state()
+        send(chat_id, BOOKING_TEXT, booking_kb())
+        return
+    show_menu(chat_id)
+
+
 def handle_message(msg: dict) -> None:
     chat_id = msg["chat"]["id"]
+    if msg.get("contact"):
+        handle_contact(msg)
+        return
     text = (msg.get("text") or "").strip()
     if text.startswith("/start"):
+        payload = text.split(maxsplit=1)[1].strip().lower() if " " in text else ""
+        if payload in {"booking", "grooming", "zapis"}:
+            st = user_state(chat_id)
+            if st.get("phone"):
+                send(chat_id, BOOKING_TEXT, booking_kb())
+                return
+            st["open_booking"] = True
+            save_state()
+            handle_start(chat_id)
+            return
+        handle_start(chat_id)
+    elif text.startswith("/booking") or text.startswith("/zapis"):
+        st = user_state(chat_id)
+        if st.get("phone"):
+            send(chat_id, BOOKING_TEXT, booking_kb())
+            return
+        st["open_booking"] = True
+        save_state()
         handle_start(chat_id)
     elif text.startswith("/menu"):
-        if user_state(chat_id).get("consent"):
-            show_menu(chat_id)
-        else:
-            send(chat_id, GREETING, consent_kb())
+        handle_start(chat_id)
     else:
         handle_start(chat_id)
 
@@ -415,7 +557,7 @@ def handle_update(upd: dict) -> None:
             handle_message(upd["message"])
         elif "callback_query" in upd:
             cb = upd["callback_query"]
-            handle_callback(cb["message"]["chat"]["id"], cb["id"], cb.get("data", ""))
+            handle_callback(cb["message"]["chat"]["id"], cb["message"]["message_id"], cb["id"], cb.get("data", ""))
     except Exception:
         log.warning("handle_update failed: %s", str(upd)[:300], exc_info=True)
 
@@ -427,9 +569,10 @@ ALLOWED_UPDATES = urllib.parse.quote('["message","callback_query"]')
 
 def main() -> None:
     load_state()
-    log.info("keris-bot запущен (long polling)")
+    log.info("keris-bot запущен (long polling), booking=%s, api=%s", BOOKING_URL, API_BASE)
     # снять возможный webhook, чтобы long polling работал
     _http("POST", f"{TG_API}/deleteWebhook", {"drop_pending_updates": False})
+    set_menu_button()
     offset = 0
     while True:
         try:
@@ -457,5 +600,42 @@ def main() -> None:
             time.sleep(3)
 
 
+def ask_phone_missing(*, force: bool = False) -> None:
+    """Разовая рассылка тем, кто уже писал боту, но номер так и не отдал."""
+    load_state()
+    sent = skipped = failed = 0
+    for cid, st in list(_state.items()):
+        if not str(cid).isdigit():
+            skipped += 1
+            continue
+        if (st or {}).get("phone"):
+            skipped += 1
+            continue
+        if not force and (st or {}).get("phone_nudge_sent"):
+            skipped += 1
+            continue
+        chat_id = int(cid)
+        result = tg("sendMessage", {
+            "chat_id": chat_id,
+            "text": PHONE_CATCH_UP,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "reply_markup": consent_kb(),
+        }, timeout=20.0, retries=2)
+        if isinstance(result, dict) and result.get("ok"):
+            user_state(chat_id)["phone_nudge_sent"] = True
+            sent += 1
+        else:
+            failed += 1
+            log.warning("ask-phone не доставлено chat_id=%s: %s", chat_id, str(result)[:200])
+        time.sleep(0.08)
+    save_state()
+    log.info("ask-phone готово: sent=%s skipped=%s failed=%s", sent, skipped, failed)
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--ask-phone" in sys.argv:
+        ask_phone_missing(force="--force" in sys.argv)
+    else:
+        main()

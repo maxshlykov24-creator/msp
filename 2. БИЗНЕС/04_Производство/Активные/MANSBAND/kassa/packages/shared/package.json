@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs",
     "lint": "echo 'no lint for shared'"
   },
   "dependencies": {

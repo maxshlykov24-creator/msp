@@ -1,0 +1,20 @@
+{
+  "self": {
+    "id": 435207481,
+    "username": "maxim_shlykov",
+    "name": "Максим Шлыков",
+    "label": "личный"
+  },
+  "learn": {
+    "id": 5287226328,
+    "username": "timur_tumsoev",
+    "name": "Тимур Тумсоев",
+    "label": "обучение"
+  },
+  "work": {
+    "id": 7251008149,
+    "username": "MSP_msproduct",
+    "name": "Максим | MS Product",
+    "label": "рабочий"
+  }
+}

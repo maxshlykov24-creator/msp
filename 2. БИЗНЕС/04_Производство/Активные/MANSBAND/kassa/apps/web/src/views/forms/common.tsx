@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Camera,
@@ -12,13 +12,16 @@ import {
   UserCheck,
 } from "lucide-react";
 import { Button, Field } from "../../components/ui";
-import { CHANNELS, CONSULTANTS, PURPOSES, SALE_STAGES } from "../../data/mock";
+import { CHANNELS, CONSULTANTS, HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
 import { dateCompact, dateRu, formatPhone, money, moneyPlain } from "../../lib/format";
 import { useStore } from "../../store";
-import type { Deal, Payment } from "../../data/types";
+import type { Deal, Payment, Payout } from "../../data/types";
+import { SARY_BONUS, mansbandPayoutAmount, normalizePayouts, selfPayouts } from "@kassa/shared";
 import { PaymentBlock } from "../../components/PaymentBlock";
+import { PayoutRows } from "../../components/PayoutRows";
 import { filesToAttachments, type PhotoAttachment } from "../../lib/photo";
 import { api, USE_MOCK } from "../../api/client";
+import { useAppSettings } from "../../lib/appSettings";
 
 // ── Хелперы ──────────────────────────────────────────────────────────
 
@@ -40,6 +43,12 @@ export interface ClientData {
   phone: string;
   channel: string;
   purpose: string;
+  /** Сарафан: телефон друга, который направил клиента. */
+  saryPhone?: string;
+  /** Имя друга, найденное по телефону (пусто — в базе нет). */
+  saryClient?: string;
+  /** Бонус сарафана, применённый к чеку. */
+  saryBonus?: number;
 }
 
 export interface ConsultantData {
@@ -60,58 +69,80 @@ export function ClientFields({
   onChange,
   onFound,
   nameLabel = "Имя клиента",
+  phoneRequired = true,
+  nameRequired = true,
 }: {
   data: ClientData;
   onChange: (d: ClientData) => void;
   onFound?: (deal: Deal) => void;
   nameLabel?: string;
+  phoneRequired?: boolean;
+  nameRequired?: boolean;
 }) {
   const { findByPhone } = useStore();
   const [found, setFound] = useState<Deal | null>(null);
   const [amoName, setAmoName] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
   const lookupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLookupDigitsRef = useRef<string>("");
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   function handlePhone(raw: string) {
     const phone = formatPhone(raw);
     const match = findByPhone(phone);
-    setAmoName(null);
+    const digits = phone.replace(/\D/g, "");
+
     if (match) {
       setFound(match);
-      onChange({ ...data, phone, name: data.name || match.clientName });
+      setAmoName(null);
+      lastLookupDigitsRef.current = "";
+      onChange({ ...dataRef.current, phone, name: dataRef.current.name || match.clientName });
       onFound?.(match);
     } else {
       setFound(null);
-      onChange({ ...data, phone });
+      onChange({ ...dataRef.current, phone });
     }
 
-    // Подстановка имени из amoCRM по телефону, если локально клиент не найден
-    // и имя ещё не введено (не перезатираем ручной ввод).
     if (lookupRef.current) clearTimeout(lookupRef.current);
-    const digits = phone.replace(/\D/g, "");
-    if (USE_MOCK || match || digits.length !== 11) {
+    // 10+ цифр; полный РФ — 11
+    if (USE_MOCK || match || digits.length < 10) {
       setLookingUp(false);
       return;
     }
+    const lookupDigits = digits.length >= 11 ? digits.slice(0, 11) : digits;
+    // Не сбрасываем «Найден в amoCRM» при повторном onChange с тем же номером (iOS)
+    if (lookupDigits !== lastLookupDigitsRef.current) {
+      setAmoName(null);
+    }
+
     lookupRef.current = setTimeout(async () => {
       setLookingUp(true);
       try {
         const res = await api.get<{ id: number; name: string }>(
-          `/contacts/by-phone?phone=${encodeURIComponent(phone)}`
+          `/contacts/by-phone?phone=${encodeURIComponent(lookupDigits)}`
         );
-        setAmoName(res.name);
-        onChange({ ...data, phone, name: data.name || res.name });
+        if (res?.name) {
+          lastLookupDigitsRef.current = lookupDigits;
+          setAmoName(res.name);
+          const cur = dataRef.current;
+          onChange({
+            ...cur,
+            phone,
+            name: cur.name?.trim() ? cur.name : res.name,
+          });
+        }
       } catch {
-        // контакт не найден в amoCRM — это ок, клиент новый
+        if (lookupDigits !== lastLookupDigitsRef.current) setAmoName(null);
       } finally {
         setLookingUp(false);
       }
-    }, 400);
+    }, 450);
   }
 
   return (
     <div className="grid sm:grid-cols-2 gap-4">
-      <Field label="Телефон клиента" required>
+      <Field label="Телефон клиента" required={phoneRequired}>
         <input
           className="input"
           value={data.phone}
@@ -133,7 +164,7 @@ export function ClientFields({
           </div>
         )}
       </Field>
-      <Field label={nameLabel} required>
+      <Field label={nameLabel} required={nameRequired}>
         <input
           className="input"
           value={data.name}
@@ -154,10 +185,16 @@ export function ConsultantFields({
   data,
   onChange,
   withCallManager = false,
+  allowEmptyConsultant = false,
 }: {
   data: ConsultantData;
   onChange: (d: ConsultantData) => void;
   withCallManager?: boolean;
+  /**
+   * Отложка/обещание от колл-менеджера (созвон 20.08): консультант может быть
+   * пуст — продажа никому не принадлежит, продавец проставится при конвертации.
+   */
+  allowEmptyConsultant?: boolean;
 }) {
   const { activeConsultant } = useStore();
   const consultants = CONSULTANTS.filter((c) => c.role === "consultant").map((c) => c.name);
@@ -165,14 +202,20 @@ export function ConsultantFields({
 
   return (
     <div className="grid sm:grid-cols-2 gap-4">
-      <Field label="Консультант" required>
+      <Field label="Консультант" required={!allowEmptyConsultant}>
         <select
           className="input"
-          value={data.consultant || activeConsultant}
+          value={allowEmptyConsultant ? data.consultant : data.consultant || activeConsultant}
           onChange={(e) => onChange({ ...data, consultant: e.target.value })}
         >
+          {allowEmptyConsultant && <option value="">— без консультанта —</option>}
           {consultants.map((c) => <option key={c}>{c}</option>)}
         </select>
+        {allowEmptyConsultant && !data.consultant && (
+          <p className="text-[12px] text-mute mt-1">
+            Продажа не закреплена: продавец проставится при конвертации в продажу.
+          </p>
+        )}
       </Field>
       <Field label="Направивший консультант">
         <input className="input opacity-70" readOnly value={data.referredBy || "—"} />
@@ -195,6 +238,18 @@ export function ConsultantFields({
 
 // ── Источник и цель ───────────────────────────────────────────────────
 
+/** Источник/цель обязательны только при проведении в «Успех». */
+export function sourceMissingForSuccess(
+  data: Pick<ClientData, "channel" | "purpose">,
+  opts: { withPurpose?: boolean } = {}
+): string[] {
+  const withPurpose = opts.withPurpose !== false;
+  const m: string[] = [];
+  if (!data.channel) m.push("Источник рекламы");
+  if (withPurpose && !data.purpose) m.push("На какой случай / цель");
+  return m;
+}
+
 /** Канал и цель — выносятся ВНИЗ формы (после оплаты). */
 export function SourceFields({
   data,
@@ -202,12 +257,18 @@ export function SourceFields({
   withChannel = true,
   withPurpose = true,
   channelFixed,
+  /** По умолчанию не обязательны — только при «Успех» (см. sourceMissingForSuccess). */
+  required = false,
+  /** Сумма чека до бонуса — для порога САР (созвон 20.08). Не задана — порог не проверяем. */
+  checkTotal,
 }: {
   data: ClientData;
   onChange: (d: ClientData) => void;
   withChannel?: boolean;
   withPurpose?: boolean;
   channelFixed?: string;
+  required?: boolean;
+  checkTotal?: number;
 }) {
   const set = (patch: Partial<ClientData>) => onChange({ ...data, ...patch });
   return (
@@ -218,7 +279,7 @@ export function SourceFields({
             <input className="input opacity-70" readOnly value={channelFixed} />
           </Field>
         ) : (
-          <Field label="Источник рекламы" required>
+          <Field label="Источник рекламы" required={required}>
             <select className="input" value={data.channel} onChange={(e) => set({ channel: e.target.value })}>
               <option value="">— выбрать —</option>
               {CHANNELS.map((c) => <option key={c}>{c}</option>)}
@@ -227,13 +288,149 @@ export function SourceFields({
         )
       )}
       {withPurpose && (
-        <Field label="На какой случай / цель" required>
+        <Field label="На какой случай / цель" required={required}>
           <select className="input" value={data.purpose} onChange={(e) => set({ purpose: e.target.value })}>
             <option value="">— выбрать —</option>
             {PURPOSES.map((p) => <option key={p}>{p}</option>)}
           </select>
         </Field>
       )}
+      {withChannel && (data.channel === SARAFAN_CHANNEL || channelFixed === SARAFAN_CHANNEL) && (
+        <div className="sm:col-span-2">
+          <SarafanField data={data} onChange={onChange} checkTotal={checkTotal} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SARAFAN_CHANNEL = "Сарафан";
+
+/**
+ * Сарафан (п.3 правок 10.08): телефон друга проверяется в базе кассы и amoCRM.
+ * Нашли — зелёная галочка и кнопка «Использовать бонус»: клиенту минус 1000 ₽
+ * в чеке, другу — выплата в очереди колл-менеджера при проведении в «Успех».
+ */
+function SarafanField({
+  data,
+  onChange,
+  checkTotal,
+}: {
+  data: ClientData;
+  onChange: (d: ClientData) => void;
+  /** Сумма чека до вычета бонуса — сравнивается с порогом САР. */
+  checkTotal?: number;
+}) {
+  const { findByPhone } = useStore();
+  const { saryMinCheck } = useAppSettings();
+  // Порог по сумме чека (созвон 20.08): ниже порога САР не положена вовсе.
+  const belowThreshold = checkTotal != null && checkTotal < saryMinCheck;
+  const [checking, setChecking] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const lookupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
+  const phone = data.saryPhone ?? "";
+  const digits = phone.replace(/\D/g, "");
+  const ownDigits = data.phone.replace(/\D/g, "");
+  const selfReferral = digits.length >= 10 && digits === ownDigits;
+  const found = Boolean(data.saryClient);
+  const bonusUsed = (data.saryBonus ?? 0) > 0;
+
+  // Чек ужали ниже порога после применения бонуса — снимаем бонус сами.
+  useEffect(() => {
+    if (belowThreshold && bonusUsed) {
+      onChange({ ...dataRef.current, saryBonus: undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [belowThreshold, bonusUsed]);
+
+  function handlePhone(raw: string) {
+    const next = formatPhone(raw);
+    const nextDigits = next.replace(/\D/g, "");
+    setChecked(false);
+    // Телефон изменили — найденный друг и бонус больше не относятся к нему.
+    onChange({ ...dataRef.current, saryPhone: next, saryClient: undefined, saryBonus: undefined });
+    if (lookupRef.current) clearTimeout(lookupRef.current);
+    if (nextDigits.length < 10 || nextDigits === ownDigits) {
+      setChecking(false);
+      return;
+    }
+    const local = findByPhone(next);
+    if (local) {
+      setChecked(true);
+      onChange({ ...dataRef.current, saryPhone: next, saryClient: local.clientName, saryBonus: undefined });
+      return;
+    }
+    if (USE_MOCK) return;
+    lookupRef.current = setTimeout(async () => {
+      setChecking(true);
+      try {
+        const res = await api.get<{ id: number; name: string }>(
+          `/contacts/by-phone?phone=${encodeURIComponent(nextDigits.slice(0, 11))}`
+        );
+        onChange({
+          ...dataRef.current,
+          saryPhone: next,
+          saryClient: res?.name || undefined,
+          saryBonus: undefined,
+        });
+      } catch {
+        onChange({ ...dataRef.current, saryPhone: next, saryClient: undefined, saryBonus: undefined });
+      } finally {
+        setChecked(true);
+        setChecking(false);
+      }
+    }, 450);
+  }
+
+  return (
+    <div className="rounded-lg border border-ink-700 p-4 space-y-3">
+      <div className="text-[13px] font-semibold text-white">Сарафан: кто направил</div>
+      <div className="grid sm:grid-cols-2 gap-4 items-start">
+        <Field label="Телефон друга">
+          <input
+            className="input"
+            inputMode="tel"
+            placeholder="+7 (___) ___-__-__"
+            value={phone}
+            onChange={(e) => handlePhone(e.target.value)}
+          />
+          {selfReferral && (
+            <div className="mt-1 text-[12px] text-amber-300/90">
+              Это телефон самого клиента — бонус по сарафану не начисляется
+            </div>
+          )}
+          {!selfReferral && checking && <div className="mt-1 text-[12px] text-mute">Проверяем в базе…</div>}
+          {!selfReferral && !checking && found && (
+            <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-emerald-300/90 bg-emerald-400/10 border border-emerald-400/20 rounded px-2 py-0.5">
+              <CheckCircle2 size={12} /> Найден в базе: {data.saryClient}
+            </div>
+          )}
+          {!selfReferral && !checking && checked && !found && (
+            <div className="mt-1 text-[12px] text-mute">В базе не найден — бонус недоступен</div>
+          )}
+        </Field>
+        <div className="pt-[22px]">
+          <Button
+            variant={bonusUsed ? "primary" : "subtle"}
+            disabled={!found || selfReferral || belowThreshold}
+            onClick={() =>
+              onChange({ ...data, saryBonus: bonusUsed ? undefined : SARY_BONUS })
+            }
+          >
+            {bonusUsed ? `Бонус применён −${money(SARY_BONUS)}` : `Использовать бонус −${money(SARY_BONUS)}`}
+          </Button>
+          <p className="text-[12px] text-mute mt-1">
+            {belowThreshold
+              ? `САР доступна при чеке от ${money(saryMinCheck)} — сейчас ${money(checkTotal ?? 0)}.`
+              : bonusUsed
+                ? `Бонус −${money(SARY_BONUS)} в чеке — отдельный перевод другу не нужен.`
+                : `Без бонуса в чеке: при «Успех» колл-менеджеру — задача перевести ${money(SARY_BONUS)} на этот номер.`}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -284,21 +481,32 @@ function SumTile({
 
 /**
  * Скидка на весь чек (% или ₽) + три компактные суммы в ряд:
- * Общая стоимость · Скидка (₽) · Итого со скидкой.
- * При скидке в % сумма скидки всё равно показывается в ₽ (в плитке «Скидка»).
- * Ставится ВНУТРИ карточки товаров, после позиций.
+ * Общая стоимость (до скидок) · Скидка итого (позиции + чек) · К оплате.
+ * `subtotal` — сумма после скидок по позициям (+ доставка и т.п.).
+ * `itemsDiscount` — сумма скидок по позициям (₽), прибавляется в плитку «Скидка».
  */
 export function TotalsBlock({
   subtotal,
   state,
   onChange,
+  itemsDiscount = 0,
+  delivery = 0,
+  saryBonus = 0,
 }: {
   subtotal: number;
   state: DiscountState;
   onChange: (s: DiscountState) => void;
+  /** Скидки по позициям (уже вычтены из subtotal) — показываем в общей «Скидке». */
+  itemsDiscount?: number;
+  /** Доставка прибавляется после скидки и не участвует в её расчёте. */
+  delivery?: number;
+  /** Бонус сарафана — отдельной строкой, не смешивается со скидкой. */
+  saryBonus?: number;
 }) {
-  const discount = calcDiscount(subtotal, state);
-  const total = Math.max(0, subtotal - discount);
+  const checkDiscount = calcDiscount(subtotal, state);
+  const totalDiscount = Math.max(0, itemsDiscount) + checkDiscount;
+  const gross = subtotal + Math.max(0, itemsDiscount) + delivery;
+  const total = Math.max(0, Math.max(0, subtotal - checkDiscount) + delivery - saryBonus);
   return (
     <div className="space-y-4">
       <div className="grid sm:grid-cols-2 gap-4">
@@ -322,39 +530,53 @@ export function TotalsBlock({
         </Field>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <SumTile label="Общая стоимость" value={money(subtotal)} />
+        <SumTile label="Общая стоимость" value={money(gross)} />
         <SumTile
-          label={state.discPct ? `Скидка ${state.discPct}%` : "Скидка"}
-          value={discount > 0 ? `−${money(discount)}` : money(0)}
+          label={
+            state.discPct && checkDiscount > 0 && itemsDiscount > 0
+              ? `Скидка (+${state.discPct}% на чек)`
+              : state.discPct && checkDiscount > 0
+                ? `Скидка ${state.discPct}%`
+                : "Скидка"
+          }
+          value={totalDiscount > 0 ? `−${money(totalDiscount)}` : money(0)}
           tone="discount"
         />
-        <SumTile label="Итого" value={money(total)} tone="strong" />
+        <SumTile label={delivery > 0 ? `К оплате · доставка ${money(delivery)}` : "К оплате"} value={money(total)} tone="strong" />
       </div>
+      {saryBonus > 0 && (
+        <div className="text-[12px] text-emerald-300/90">
+          Бонус за сарафан −{money(saryBonus)} учтён в сумме к оплате
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Sticky-строка снизу: Сумма · Оплачено · Остаток ──────────────────
+// ── Sticky-строка: К оплате · Оплачено · Остаток/Сдача (компактная) ──────
 
 export function SummaryBar({ total, paid }: { total: number; paid: number }) {
   const remainder = Math.max(0, total - paid);
+  const change = Math.max(0, paid - total);
+  const thirdLabel = change > 0 ? "Сдача" : "Остаток";
+  const thirdValue = change > 0 ? moneyPlain(change) : moneyPlain(remainder);
+  const thirdClass = change > 0 ? "text-amber-300" : remainder > 0 ? "text-amber-300" : "text-emerald-300";
+
   const cell = (label: string, value: string, valueClass: string) => (
     <div className="flex-1 min-w-0 text-center px-1">
-      <div className="text-[11px] sm:text-xs uppercase tracking-wide text-mute mb-1.5">{label}</div>
-      <div className={`text-xl sm:text-2xl font-extrabold tabular-nums leading-none ${valueClass}`}>
+      <div className="text-[9px] sm:text-[11px] md:text-xs uppercase tracking-wide text-mute mb-0.5 md:mb-1 leading-none">
+        {label}
+      </div>
+      <div className={`text-[15px] sm:text-lg md:text-xl font-extrabold tabular-nums leading-none ${valueClass}`}>
         {value}
       </div>
     </div>
   );
   return (
-    <div className="flex items-stretch justify-between gap-2 sm:gap-4 rounded-xl bg-ink-900 border border-ink-600 px-3 py-4 sm:px-5 sm:py-5 shadow-[0_-4px_24px_rgba(0,0,0,0.35)]">
-      {cell("Сумма, ₽", moneyPlain(total), "text-white")}
-      {cell("Оплачено, ₽", moneyPlain(paid), "text-white")}
-      {cell(
-        "Остаток, ₽",
-        moneyPlain(remainder),
-        remainder > 0 ? "text-amber-300" : "text-emerald-300",
-      )}
+    <div className="flex items-center justify-between gap-1 sm:gap-3 rounded-lg bg-ink-900 border border-ink-600 px-2.5 py-2 sm:px-4 sm:py-3 shadow-[0_-2px_16px_rgba(0,0,0,0.3)]">
+      {cell("К оплате", moneyPlain(total), "text-white")}
+      {cell("Оплачено", moneyPlain(paid), "text-white")}
+      {cell(thirdLabel, thirdValue, thirdClass)}
     </div>
   );
 }
@@ -364,12 +586,16 @@ export function SummaryBar({ total, paid }: { total: number; paid: number }) {
 export interface ChangeInfo {
   status: "issued" | "pending";
   destination: string;
+  /** Чем консультант выдал сдачу сам — заполняется только при статусе «Выдано клиенту». */
+  methodId?: string;
+  /** Раскладка выдачи по способам: часть налом, часть переводом, часть — через Эдвина. */
+  payouts?: Payout[];
 }
 
 /**
- * Показывается когда paid > total (есть сдача).
- * «Выдано» — консультант выдал сам.
- * «Не выдано» — нужно перевести через Эдвина: поле телефон/карта + банк.
+ * Показывается когда paid > total (есть сдача). Сумма раскладывается по способам:
+ * наличные из ящика, перевод с карты консультанта, строка «Переведёт Mansband»
+ * (уходит в очередь Эдвина). Любую строку можно править — остаток уходит в парную.
  */
 export function ChangeBlock({
   change,
@@ -383,43 +609,110 @@ export function ChangeBlock({
   if (change <= 0) return null;
   return (
     <div className="rounded-lg border border-ink-700 p-4 space-y-3">
-      <div className="text-[13px] font-semibold text-white">
-        Сдача {money(change)} — статус выдачи
-      </div>
-      <div className="flex gap-2 flex-wrap">
-        <button
-          type="button"
-          onClick={() => onChange({ ...info, status: "issued" })}
-          className={`chip ${info.status === "issued" ? "bg-white text-ink-950 font-semibold" : "bg-ink-700 text-mute hover:text-white"}`}
-        >
-          Выдано клиенту
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange({ ...info, status: "pending" })}
-          className={`chip ${info.status === "pending" ? "bg-amber-400/20 text-amber-200 border border-amber-400/40" : "bg-ink-700 text-mute hover:text-white"}`}
-        >
-          Получить от Mansband
-        </button>
-      </div>
-      {info.status === "pending" && (
-        <Field label="Куда переводить" required hint="Номер телефона или карты · Банк">
-          <input
-            className="input"
-            value={info.destination}
-            placeholder="+7 9XX или 2202 2004 XXXX · Сбербанк"
-            onChange={(e) => onChange({ ...info, destination: e.target.value })}
-          />
-          {!info.destination.trim() && (
-            <div className="mt-1 text-[11px] text-amber-300/80">Обязательно — иначе Эдвин не знает, куда переводить</div>
-          )}
-        </Field>
-      )}
-      {info.status === "issued" && (
-        <div className="text-[12px] text-mute">Сдача выдана, в очередь Эдвина не попадёт.</div>
-      )}
+      <div className="text-[13px] font-semibold text-white">Сдача</div>
+      <PayoutRows
+        total={change}
+        rows={info.payouts}
+        onChange={(payouts) => onChange({ ...info, payouts })}
+        label=""
+        destination={info.destination}
+        onDestination={(destination) => onChange({ ...info, destination })}
+      />
     </div>
   );
+}
+
+/**
+ * Поля заявки по сдаче. Статус «pending» означает, что часть суммы переводит
+ * Mansband — только эта часть попадает в очередь Эдвина.
+ */
+export function changeDealFields(change: number, info: ChangeInfo): Partial<Deal> {
+  if (change <= 0) return {};
+  const payouts = normalizePayouts(info.payouts, change);
+  const viaMansband = mansbandPayoutAmount(payouts);
+  const self = selfPayouts(payouts);
+  return {
+    changePayouts: payouts,
+    changeStatus: viaMansband > 0 ? "pending" : "issued",
+    changeDestination: viaMansband > 0 ? info.destination : undefined,
+    changeMethodId: self[0]?.methodId,
+  };
+}
+
+/** Поля заявки по чаевым. `cap` — сдача, больше неё чаевых быть не может. */
+export function tipsDealFields(info: TipsInfo, cap: number): Partial<Deal> {
+  const amount = Math.min(info.amount || 0, Math.max(0, cap));
+  if (amount <= 0) return { tips: undefined };
+  const payouts = normalizePayouts(info.payouts, amount);
+  const viaMansband = mansbandPayoutAmount(payouts);
+  const self = selfPayouts(payouts);
+  return {
+    tips: amount,
+    tipsPayouts: payouts,
+    tipsDestination: viaMansband > 0 ? info.destination || undefined : undefined,
+    tipsMethodId: self[0]?.methodId,
+  };
+}
+
+/** Поля заявки по возврату денег клиенту. */
+export function returnDealFields(amount: number, info: ReturnInfo): Partial<Deal> {
+  if (amount <= 0) return {};
+  const payouts = normalizePayouts(info.payouts, amount);
+  const viaMansband = mansbandPayoutAmount(payouts);
+  return {
+    returnPayouts: payouts,
+    returnStatus: viaMansband > 0 ? "pending" : "issued",
+    returnDestination: viaMansband > 0 ? info.destination : undefined,
+  };
+}
+
+/** Есть ли строки выплаты с суммой без выбранного способа. */
+export function payoutMethodsIncomplete(rows: Payout[] | undefined, total: number): boolean {
+  if (total <= 0) return false;
+  if (!rows || rows.length === 0) return true;
+  return rows.some((r) => r.amount > 0 && !String(r.methodId ?? "").trim());
+}
+
+/**
+ * Обязательные поля сдачи/чаевых: способ выдачи должен быть выбран
+ * (не «— выбрать —»), иначе в ledger уйдёт пустой methodId.
+ */
+export function changeTipsMissing(
+  paid: number,
+  total: number,
+  changeInfo: ChangeInfo,
+  tips: TipsInfo
+): string[] {
+  const change = Math.max(0, paid - total);
+  if (change <= 0) return [];
+  const tipsAmt = Math.min(Math.max(0, tips.amount || 0), change);
+  const toClient = Math.max(0, change - tipsAmt);
+  const out: string[] = [];
+  if (toClient > 0 && payoutMethodsIncomplete(changeInfo.payouts, toClient)) {
+    out.push("Способ выдачи сдачи");
+  }
+  if (tipsAmt > 0 && payoutMethodsIncomplete(tips.payouts, tipsAmt)) {
+    out.push("Способ выдачи чаевых");
+  }
+  if (toClient > 0) {
+    const payouts = normalizePayouts(changeInfo.payouts, toClient);
+    if (mansbandPayoutAmount(payouts) > 0 && !changeInfo.destination.trim()) {
+      out.push("Куда переводить сдачу");
+    }
+  }
+  return out;
+}
+
+/** Обязательный выбор способа при возврате клиенту. */
+export function returnPayoutMissing(amount: number, info: ReturnInfo): string[] {
+  if (amount <= 0) return [];
+  const out: string[] = [];
+  if (payoutMethodsIncomplete(info.payouts, amount)) out.push("Способ выдачи возврата");
+  const payouts = normalizePayouts(info.payouts, amount);
+  if (mansbandPayoutAmount(payouts) > 0 && !info.destination.trim()) {
+    out.push("Реквизиты возврата");
+  }
+  return out;
 }
 
 // ── Чаевые ─────────────────────────────────────────────────────────────
@@ -428,13 +721,15 @@ export interface TipsInfo {
   amount: number;
   status: "issued" | "pending";
   destination: string;
+  /** Чем консультант забрал чаевые сам — заполняется только при статусе «Забрал». */
+  methodId?: string;
+  /** Раскладка чаевых по способам, включая строку «Переведёт Mansband». */
+  payouts?: Payout[];
 }
 
 /**
- * Чаевые из сдачи. Ставится В КОНЦЕ блока оплаты (после сдачи).
- * «Сдача» сверху не меняется — меняется только фактически возвращаемое клиенту.
- * Консультант: «Забрал наличкой» сразу ИЛИ «Получить от Mansband» (имя ответственного
- * за заявку подставляется автоматически, read-only; реквизиты не вводим).
+ * Чаевые из сдачи. Консультант указывает сумму и способ
+ * (в т.ч. «Перевести Mansband» → очередь Эдвина).
  */
 export function TipsBlock({
   change,
@@ -448,11 +743,10 @@ export function TipsBlock({
   responsible?: string;
 }) {
   if (change <= 0) return null;
-  const toReturn = Math.max(0, change - info.amount);
   return (
     <div className="rounded-lg border border-ink-700 p-4 space-y-3">
       <div className="flex items-center gap-2 text-[13px] font-semibold text-white">
-        <Coins size={15} className="text-gold" /> Чаевые из сдачи
+        <Coins size={15} className="text-gold" /> Чаевые
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <input
@@ -469,7 +763,7 @@ export function TipsBlock({
           onClick={() => onChange({ ...info, amount: Math.round(change) })}
           className="chip bg-ink-700 text-mute hover:text-white"
         >
-          вся сдача {money(change)}
+          вся сдача ({money(change)})
         </button>
         {info.amount > 0 && (
           <button
@@ -483,39 +777,26 @@ export function TipsBlock({
       </div>
 
       {info.amount > 0 && (
-        <>
-          <div className="text-[12px] text-mute">
-            Сдача {money(change)} фиксирована · чаевые {money(info.amount)} ·{" "}
-            <span className="text-white">фактически к возврату клиенту {money(toReturn)}</span>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => onChange({ ...info, status: "issued" })}
-              className={`chip ${info.status === "issued" ? "bg-white text-ink-950 font-semibold" : "bg-ink-700 text-mute hover:text-white"}`}
-            >
-              Забрал наличкой
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onChange({ ...info, status: "pending", destination: responsible || "" })
-              }
-              className={`chip ${info.status === "pending" ? "bg-amber-400/20 text-amber-200 border border-amber-400/40" : "bg-ink-700 text-mute hover:text-white"}`}
-            >
-              Получить от Mansband
-            </button>
-          </div>
-          {info.status === "pending" && (
-            <Field label="Кому перевести чаевые" hint="Ответственный за заявку (авто)">
-              <input
-                className="input opacity-70"
-                readOnly
-                value={info.destination || responsible || ""}
-              />
-            </Field>
-          )}
-        </>
+        <PayoutRows
+          total={info.amount}
+          rows={info.payouts}
+          onChange={(payouts) =>
+            onChange({
+              ...info,
+              payouts,
+              // Реквизиты для Эдвина — ответственный за заявку, вводить нечего.
+              destination:
+                mansbandPayoutAmount(payouts) > 0
+                  ? info.destination || responsible || ""
+                  : info.destination,
+            })
+          }
+          label=""
+          destination={info.destination || responsible || ""}
+          onDestination={(destination) => onChange({ ...info, destination })}
+          destinationLabel="Кому перевести чаевые"
+          destinationReadOnly
+        />
       )}
     </div>
   );
@@ -523,16 +804,66 @@ export function TipsBlock({
 
 // ── Дата оплаты ──────────────────────────────────────────────────────
 
-/** Дата оплаты: фактическая (авто = сегодня), изменить нельзя. Ставится в карточке «Оплата». */
-export function PaymentDateField({ value }: { value: string; onChange?: (v: string) => void }) {
+/**
+ * Единый блок оплаты для всех форм: способы → список с датой → сдача → чаевые.
+ * Используй везде, где есть PaymentBlock, чтобы сдача/чаевые были одинаковыми.
+ */
+export function PaymentSection({
+  total,
+  payments,
+  onPayments,
+  consultant,
+  changeInfo,
+  onChangeInfo,
+  tips,
+  onTips,
+}: {
+  total: number;
+  payments: Payment[];
+  onPayments: (p: Payment[]) => void;
+  consultant?: string;
+  changeInfo: ChangeInfo;
+  onChangeInfo: (i: ChangeInfo) => void;
+  tips: TipsInfo;
+  onTips: (t: TipsInfo) => void;
+}) {
+  const paid = payments.reduce((s, p) => s + p.amount, 0);
+  const change = Math.max(0, paid - total);
+  // Чаевые вычитаются из сдачи; клиенту уходит остаток.
+  const toClient = Math.max(0, change - Math.min(tips.amount || 0, change));
+  const changeBlockRef = useRef<HTMLDivElement>(null);
+  const prevChange = useRef(0);
+  useEffect(() => {
+    if (change > 0 && prevChange.current <= 0) {
+      changeBlockRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    prevChange.current = change;
+  }, [change]);
   return (
-    <div className="max-w-[220px]">
-      <Field label="Дата оплаты">
-        <input type="date" className="input opacity-70" readOnly value={value} />
-        <DateFieldHint value={value} />
-      </Field>
+    <div className="space-y-4">
+      <PaymentBlock total={total} payments={payments} onChange={onPayments} />
+      {change > 0 && (
+        <div
+          ref={changeBlockRef}
+          className="rounded-xl border border-ink-700 p-3 sm:p-4 space-y-4"
+        >
+          <div className="text-[13px] font-semibold text-white tracking-wide">
+            СДАЧА И ЧАЕВЫЕ
+          </div>
+          <ChangeBlock change={toClient} info={changeInfo} onChange={onChangeInfo} />
+          <TipsBlock change={change} info={tips} onChange={onTips} responsible={consultant} />
+        </div>
+      )}
     </div>
   );
+}
+
+/** Дата последней оплаты из списка (для writeback / deal.paymentDate). */
+export function lastPaymentDate(payments: Payment[]): string | undefined {
+  for (let i = payments.length - 1; i >= 0; i--) {
+    if (payments[i]?.paidAt) return payments[i]!.paidAt;
+  }
+  return undefined;
 }
 
 // ── Доплата (вторая оплата на остаток) ───────────────────────────────
@@ -541,12 +872,14 @@ export interface TopUpInfo {
   open: boolean;
   payments: Payment[];
   changeInfo: ChangeInfo;
+  tips: TipsInfo;
 }
 
 export const emptyTopUp: TopUpInfo = {
   open: false,
   payments: [],
   changeInfo: { status: "issued", destination: "" },
+  tips: { amount: 0, status: "issued", destination: "" },
 };
 
 /**
@@ -557,14 +890,13 @@ export function TopUpBlock({
   remainder,
   info,
   onChange,
+  consultant,
 }: {
   remainder: number;
   info: TopUpInfo;
   onChange: (i: TopUpInfo) => void;
+  consultant?: string;
 }) {
-  const topUpPaid = info.payments.reduce((s, p) => s + p.amount, 0);
-  const topUpChange = Math.max(0, topUpPaid - remainder);
-
   if (!info.open) {
     if (remainder <= 0) return null;
     return (
@@ -592,18 +924,16 @@ export function TopUpBlock({
           свернуть
         </button>
       </div>
-      <PaymentBlock
+      <PaymentSection
         total={Math.max(0, remainder)}
         payments={info.payments}
-        onChange={(p) => onChange({ ...info, payments: p })}
+        onPayments={(p) => onChange({ ...info, payments: p })}
+        consultant={consultant}
+        changeInfo={info.changeInfo}
+        onChangeInfo={(ci) => onChange({ ...info, changeInfo: ci })}
+        tips={info.tips}
+        onTips={(t) => onChange({ ...info, tips: t })}
       />
-      {topUpChange > 0 && (
-        <ChangeBlock
-          change={topUpChange}
-          info={info.changeInfo}
-          onChange={(ci) => onChange({ ...info, changeInfo: ci })}
-        />
-      )}
     </div>
   );
 }
@@ -613,11 +943,13 @@ export function TopUpBlock({
 export interface ReturnInfo {
   status: "issued" | "pending";
   destination: string;
+  /** Раскладка возврата по способам, включая строку «Переведёт Mansband». */
+  payouts?: Payout[];
 }
 
 /**
- * Возврат денег клиенту. Аналог ChangeBlock, но для возврата.
- * «Не возвращено» → задача в очередь Эдвина (kind refund).
+ * Возврат денег клиенту. Как и сдача, раскладывается по способам частями;
+ * строка «Перевести Mansband» уходит в очередь Эдвина (задача «Сделать возврат»).
  */
 export function ReturnBlock({
   amount,
@@ -634,38 +966,20 @@ export function ReturnBlock({
       <div className="flex items-center gap-2 text-[13px] font-semibold text-white">
         <Undo2 size={15} className="text-gold" /> Возврат клиенту {money(amount)}
       </div>
-      <div className="flex gap-2 flex-wrap">
-        <button
-          type="button"
-          onClick={() => onChange({ ...info, status: "issued" })}
-          className={`chip ${info.status === "issued" ? "bg-white text-ink-950 font-semibold" : "bg-ink-700 text-mute hover:text-white"}`}
-        >
-          Возвращено наличными
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange({ ...info, status: "pending" })}
-          className={`chip ${info.status === "pending" ? "bg-amber-400/20 text-amber-200 border border-amber-400/40" : "bg-ink-700 text-mute hover:text-white"}`}
-        >
-          Возврат через Эдвина
-        </button>
-      </div>
-      {info.status === "pending" && (
-        <Field label="Куда вернуть" required hint="Номер телефона или карты · Банк">
-          <input
-            className="input"
-            value={info.destination}
-            placeholder="+7 9XX или 2202 2004 XXXX · Сбербанк"
-            onChange={(e) => onChange({ ...info, destination: e.target.value })}
-          />
-          {!info.destination.trim() && (
-            <div className="mt-1 text-[11px] text-amber-300/80">Обязательно — иначе Эдвин не знает, куда переводить</div>
-          )}
-        </Field>
-      )}
-      {info.status === "issued" && (
-        <div className="text-[12px] text-mute">Деньги возвращены на месте, в очередь Эдвина не попадёт.</div>
-      )}
+      <p className="text-[12px] text-mute">
+        Выберите способ: наличные / карта консультанта — сразу; «Перевести Mansband» — задача Эдвину
+        «Сделать возврат».
+      </p>
+      <PayoutRows
+        total={amount}
+        rows={info.payouts}
+        onChange={(payouts) => onChange({ ...info, payouts })}
+        label="Способ возврата"
+        destination={info.destination}
+        onDestination={(destination) => onChange({ ...info, destination })}
+        destinationLabel="Куда вернуть"
+        destinationHint="Обязательно — иначе Эдвин не знает, куда переводить"
+      />
     </div>
   );
 }
@@ -803,7 +1117,6 @@ export function StageActions({
   onSave,
   saved,
   disabled = false,
-  onBack,
   successStage,
   successDisabled,
   successHint,
@@ -815,30 +1128,48 @@ export function StageActions({
   onSave: (stage: string) => void;
   saved: boolean;
   disabled?: boolean;
-  onBack: () => void;
   successStage?: string;
   successDisabled?: boolean;
   successHint?: string;
   onSuccess?: () => void;
 }) {
+  // «Новая заявка» / «Взято в работу» в селекте не показываем, если есть другие этапы.
+  // Если все этапы скрыты — оставляем как есть (форма сама должна дать видимый список).
+  const visibleStages = stages.filter((s) => !HIDDEN_STAGES.has(s));
+  const selectStages =
+    visibleStages.length === 0
+      ? stages
+      : visibleStages.includes(stage) || HIDDEN_STAGES.has(stage)
+        ? visibleStages
+        : [stage, ...visibleStages];
+  const effectiveStage =
+    HIDDEN_STAGES.has(stage) && visibleStages.length > 0
+      ? (selectStages[0] ?? stage)
+      : stage;
+
   return (
-    <div className="flex items-center gap-3 justify-end flex-wrap min-h-[72px] py-1">
-      {successHint && <span className="text-[12px] text-amber-300/90 mr-auto">{successHint}</span>}
+    <div className="flex items-center gap-2 sm:gap-3 justify-end flex-wrap py-0.5">
+      {successHint && (
+        <span className="text-[11px] sm:text-[12px] text-amber-300/90 mr-auto w-full sm:w-auto">
+          {successHint}
+        </span>
+      )}
       <select
-        className="input w-auto text-sm"
-        value={stage}
+        className="input w-auto text-sm py-2"
+        value={effectiveStage}
         onChange={(e) => onStageChange(e.target.value)}
         disabled={saved}
       >
-        {stages.map((s) => <option key={s}>{s}</option>)}
+        {selectStages.map((s) => (
+          <option key={s}>{s}</option>
+        ))}
       </select>
-      <Button variant="outline" className="py-3" onClick={onBack} disabled={saved}>Отмена</Button>
-      <Button variant="subtle" className="py-3" disabled={disabled || saved} onClick={() => onSave(stage)}>
-        Сохранить заявку
+      <Button variant="subtle" className="py-2" disabled={disabled || saved} onClick={() => onSave(effectiveStage)}>
+        Сохранить
       </Button>
       {successStage && onSuccess && (
-        <Button className="py-3" disabled={successDisabled || saved} onClick={onSuccess}>
-          Провести в «{successStage}»
+        <Button className="py-2" disabled={successDisabled || saved} onClick={onSuccess}>
+          Успех
         </Button>
       )}
     </div>
@@ -878,6 +1209,9 @@ export function FormShell({
   meta,
   storeAddress,
   summary,
+  missingRequired,
+  stageBadge,
+  headerActions,
 }: {
   title: string;
   subtitle?: string;
@@ -887,32 +1221,70 @@ export function FormShell({
   meta?: { number: number; createdAt: string };
   storeAddress?: string;
   summary?: ReactNode;
+  /** Незаполненные обязательные поля — внизу формы, не в sticky-баре. */
+  missingRequired?: string[];
+  /** Цветной статус справа в шапке. */
+  stageBadge?: ReactNode;
+  /** Кнопки над контентом (задача / история / перемещение). */
+  headerActions?: ReactNode;
 }) {
+  const hasDock = !!(summary || footer);
+  const missing = (missingRequired ?? []).filter(Boolean);
   return (
-    <div className="max-w-3xl mx-auto">
+    <div
+      className={`max-w-3xl mx-auto ${
+        hasDock ? "pb-[calc(9.5rem+env(safe-area-inset-bottom))] sm:pb-36" : ""
+      }`}
+    >
       <button
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-mute hover:text-white text-sm mb-4"
       >
         <ArrowLeft size={16} /> Назад к выбору
       </button>
-      <div className="mb-5">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-2xl font-extrabold text-white">{title}</h1>
-          {meta && (
-            <span className="chip bg-white/10 text-white/90 font-mono">
-              Заявка №{meta.number} · {dateRu(meta.createdAt)}
-            </span>
-          )}
-          {storeAddress && <StoreAddressChip address={storeAddress} />}
+      <div className="mb-5 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-extrabold text-white">{title}</h1>
+            {meta && (
+              <>
+                <span className="chip bg-white/10 text-white font-mono text-[15px] font-semibold tracking-wide">
+                  Заявка №{meta.number}
+                </span>
+                <span className="chip bg-white/10 text-white/90 font-mono">
+                  {dateRu(meta.createdAt)}
+                </span>
+              </>
+            )}
+            {storeAddress && <StoreAddressChip address={storeAddress} />}
+          </div>
+          {subtitle && <p className="text-mute text-sm mt-0.5">{subtitle}</p>}
         </div>
-        {subtitle && <p className="text-mute text-sm mt-0.5">{subtitle}</p>}
+        {stageBadge}
       </div>
+      {headerActions && <div className="mb-5">{headerActions}</div>}
       <div className="space-y-5">{children}</div>
-      <div className="sticky bottom-0 mt-6 -mx-1 pt-5 pb-6 sm:pb-8 bg-gradient-to-t from-ink-950 via-ink-950 to-transparent">
-        {summary && <div className="mb-5">{summary}</div>}
-        {footer}
-      </div>
+
+      {missing.length > 0 && (
+        <div className="mt-5 rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-[13px] text-amber-100/95">
+          <div className="font-semibold text-amber-200 mb-1">Не заполнены обязательные поля</div>
+          <ul className="list-disc pl-4 space-y-0.5 text-amber-100/80">
+            {missing.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Фиксированный нижний блок: сумма/оплата/остаток + этапы — всегда на экране */}
+      {hasDock && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
+          <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-2.5 pb-2.5 space-y-2">
+            {summary}
+            {footer}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

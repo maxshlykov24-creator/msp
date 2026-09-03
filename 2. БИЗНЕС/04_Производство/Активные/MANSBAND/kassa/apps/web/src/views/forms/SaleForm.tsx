@@ -1,24 +1,27 @@
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
-import { Card, Field } from "../../components/ui";
-import { ProductPicker, cartTotal } from "../../components/ProductPicker";
-import { PaymentBlock } from "../../components/PaymentBlock";
+import { Card, Field, Modal, StageBadge } from "../../components/ui";
+import { ProductPicker, cartTotal, cartItemsDiscount } from "../../components/ProductPicker";
+import { DealActionsBar } from "../../components/DealActionsBar";
+import { CreateTaskForm } from "../../components/CreateTaskForm";
 import {
-  ChangeBlock,
   ClientFields,
   CommentField,
   ConsultantFields,
   FormShell,
-  PaymentDateField,
+  PaymentSection,
   SectionTitle,
   SourceFields,
   StageActions,
   SummaryBar,
-  TipsBlock,
   TotalsBlock,
   calcDiscount,
-  todayStr,
+  changeDealFields,
+  changeTipsMissing,
+  lastPaymentDate,
+  sourceMissingForSuccess,
+  tipsDealFields,
   useSaved,
   type ChangeInfo,
   type ClientData,
@@ -26,12 +29,11 @@ import {
   type DiscountState,
   type TipsInfo,
 } from "./common";
-import { SALE_STAGES, STORE_ADDRESS } from "../../data/mock";
+import { STAGES_BY_KIND, STORE_ADDRESS } from "../../data/mock";
 import type { CartItem, Deal, Payment } from "../../data/types";
 
-
-// Этапы для ручного сохранения (без «Успех» — он отдельной кнопкой)
-const SAVE_STAGES = SALE_STAGES.filter((s) => s !== "Успех" && s !== "Провал");
+// При создании: без «Провал» (это слив/не слив) и без «Товар в магазине» (проставляют позже).
+const SAVE_STAGES = STAGES_BY_KIND.sale.filter((s) => s !== "Успех" && s !== "Товар в магазине");
 
 export function SaleForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
@@ -53,9 +55,12 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
 
   // Скидка на весь чек
   const [disc, setDisc] = useState<DiscountState>({ discPct: "", discRub: "" });
-  const subtotal = cartTotal(items) + (Number(delivery) || 0);
+  const subtotal = cartTotal(items);
+  const deliveryAmount = Number(delivery) || 0;
   const discount = calcDiscount(subtotal, disc);
-  const total = Math.max(0, subtotal - discount);
+  // Бонус сарафана вычитается из чека отдельно от скидки (правки 10.08, п.3).
+  const saryBonus = client.saryBonus ?? 0;
+  const total = Math.max(0, Math.max(0, subtotal - discount) + deliveryAmount - saryBonus);
 
   // Оплата
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -66,9 +71,6 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
 
   // Сдача → Эдвин
   const [changeInfo, setChangeInfo] = useState<ChangeInfo>({ status: "issued", destination: "" });
-
-  // Дата оплаты (авто = сегодня)
-  const [paymentDate, setPaymentDate] = useState(todayStr());
 
   // Слив: подставляется автоматически по телефону (без отдельного блока)
   const [meetingDate, setMeetingDate] = useState("");
@@ -101,9 +103,17 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
 
   // Этап для ручного сохранения
   const [stage, setStage] = useState("Товар отложен");
+  const [taskOpen, setTaskOpen] = useState(false);
 
-  const baseFilled = !!(client.name && client.phone && items.length > 0);
-  const canSuccess = baseFilled && remainder <= 0;
+  const missingRequired = [
+    !client.phone && "Телефон клиента",
+    !client.name && "Имя клиента",
+    items.length === 0 && "Товары",
+    ...changeTipsMissing(paid, total, changeInfo, tips),
+  ].filter(Boolean) as string[];
+  const missingForSuccess = sourceMissingForSuccess(client);
+  const baseFilled = missingRequired.length === 0;
+  const canSuccess = baseFilled && missingForSuccess.length === 0 && remainder <= 0;
 
   function onFound(deal: Deal) {
     if (deal.referredBy) setConsultants((prev) => (prev.referredBy ? prev : { ...prev, referredBy: deal.referredBy! }));
@@ -126,17 +136,18 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       storeAddress: STORE_ADDRESS[activeStore],
       channel: client.channel,
       purpose: client.purpose,
+      saryPhone: client.saryPhone || undefined,
+      saryClient: client.saryClient || undefined,
+      saryBonus: saryBonus || undefined,
       items,
       payments,
       stage: s,
       comment,
-      paymentDate,
+      paymentDate: lastPaymentDate(payments),
       linkedDealNumber: slivFound?.number,
       checkDiscount: discount || undefined,
-      tips: tips.amount || undefined,
-      tipsDestination: tips.amount > 0 && tips.status === "pending" ? tips.destination || undefined : undefined,
-      changeStatus: change > 0 ? changeInfo.status : undefined,
-      changeDestination: change > 0 && changeInfo.status === "pending" ? changeInfo.destination : undefined,
+      ...tipsDealFields(tips, change),
+      ...changeDealFields(Math.max(0, change - (tips.amount || 0)), changeInfo),
       total,
       paid,
     });
@@ -146,12 +157,17 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      title="Продажа"
-      subtitle="Оффлайн · магазин"
       onBack={onDone}
+      title="Продажа"
+      subtitle="Оффлайн"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
+      stageBadge={<StageBadge stage={stage} className="text-[14px] px-3 py-1.5 font-semibold shrink-0" />}
+      headerActions={
+        <DealActionsBar onTask={() => setTaskOpen(true)} />
+      }
       summary={<SummaryBar total={total} paid={paid} />}
+      missingRequired={missingRequired}
       footer={
         <StageActions
           stages={SAVE_STAGES}
@@ -160,14 +176,27 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
           onSave={save}
           saved={saved}
           disabled={!baseFilled}
-          onBack={onDone}
           successStage="Успех"
           successDisabled={!canSuccess}
-          successHint={!baseFilled ? "Заполните телефон, имя и товары" : undefined}
+          successHint={
+            baseFilled && remainder <= 0 && missingForSuccess.length > 0
+              ? `Для Успех: ${missingForSuccess.join(", ")}`
+              : undefined
+          }
           onSuccess={() => save("Успех")}
         />
       }
     >
+      <Modal open={taskOpen} onClose={() => setTaskOpen(false)} title="Создать задачу">
+        <CreateTaskForm
+          defaultStore={activeStore}
+          dealNumber={meta.number}
+          lockDealNumber
+          simple
+          compact
+          onCreated={() => setTaskOpen(false)}
+        />
+      </Modal>
       {/* Консультант + клиент (объединённый блок) */}
       <Card>
         <SectionTitle>Консультант и клиент</SectionTitle>
@@ -184,7 +213,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
         )}
         {slivFound && (
           <div className="mt-3 max-w-[220px]">
-            <Field label="Дата встречи (из слива)">
+            <Field label="Дата встречи">
               <input
                 type="date"
                 className="input"
@@ -199,9 +228,9 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       {/* Товары, стоимость и скидка */}
       <Card>
         <SectionTitle>Товары, стоимость и скидка</SectionTitle>
-        <ProductPicker items={items} onChange={setItems} />
+        <ProductPicker items={items} onChange={setItems} dealNumber={meta.number} />
         <div className="mt-3 max-w-[220px]">
-          <div className="field-label">Доставка (₽)</div>
+          <div className="field-label">Доставка</div>
           <input
             className="input"
             inputMode="numeric"
@@ -211,33 +240,37 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
           />
         </div>
         <div className="mt-4">
-          <TotalsBlock subtotal={subtotal} state={disc} onChange={setDisc} />
+          <TotalsBlock
+            subtotal={subtotal}
+            state={disc}
+            onChange={setDisc}
+            itemsDiscount={cartItemsDiscount(items)}
+            delivery={deliveryAmount}
+            saryBonus={saryBonus}
+          />
         </div>
       </Card>
 
       {/* Оплата */}
       <Card>
         <SectionTitle>Оплата</SectionTitle>
-        <PaymentBlock total={total} payments={payments} onChange={setPayments} />
-        <div className="mt-4">
-          <PaymentDateField value={paymentDate} onChange={setPaymentDate} />
-        </div>
-        {change > 0 && (
-          <div className="mt-4">
-            <ChangeBlock change={change} info={changeInfo} onChange={setChangeInfo} />
-          </div>
-        )}
-        {change > 0 && (
-          <div className="mt-3">
-            <TipsBlock change={change} info={tips} onChange={setTips} responsible={consultants.consultant} />
-          </div>
-        )}
+        <PaymentSection
+          total={total}
+          payments={payments}
+          onPayments={setPayments}
+          consultant={consultants.consultant}
+          changeInfo={changeInfo}
+          onChangeInfo={setChangeInfo}
+          tips={tips}
+          onTips={setTips}
+        />
       </Card>
 
       {/* Источник и цель + комментарий */}
       <Card>
         <SectionTitle>Источник и цель</SectionTitle>
-        <SourceFields data={client} onChange={setClient} />
+        {/* Порог САР считаем от чека до вычета бонуса: сам бонус порог не ломает. */}
+        <SourceFields data={client} onChange={setClient} checkTotal={total + saryBonus} />
         <div className="mt-4">
           <CommentField value={comment} onChange={setComment} />
         </div>

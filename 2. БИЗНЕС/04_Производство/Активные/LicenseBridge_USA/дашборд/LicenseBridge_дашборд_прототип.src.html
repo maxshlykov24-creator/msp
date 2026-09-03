@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LicenseBridge USA — Аналитика</title>
+<script src="data.js"></script>
+<style>
+  :root, [data-theme="light"]{
+    --bg:#f4f6fa; --ink:#0a1e38; --mute:#4a5a72; --mute-2:#7a879c;
+    --line:rgba(10,30,56,.08); --line-2:rgba(10,30,56,.14);
+    --glass:rgba(255,255,255,.72); --glass-2:rgba(10,30,56,.04);
+    --green:#2f9e6b; --amber:#d4922a; --red:#c45b55; --gold:#d4922a;
+    --card-shadow:0 10px 30px -18px rgba(10,30,56,.28), inset 0 1px 0 rgba(255,255,255,.9);
+    --kpi-grad:linear-gradient(160deg,#0a1e38 20%,#3a4f6e 100%);
+    --kpi-gold:linear-gradient(160deg,#b8861f 10%,#d4922a 100%);
+    --kpi-bad:linear-gradient(160deg,#a84640 10%,#c45b55 100%);
+    --bar-bg:linear-gradient(90deg,#0a1e38,#3d5a8a); --fn-text:#ffffff;
+    --topbar-bg:rgba(244,246,250,.82);
+    --period-active-bg:#0a1e38; --period-active-ink:#ffffff;
+    --tabs-active-bg:#0a1e38; --tabs-active-ink:#ffffff;
+    --chip-active-bg:rgba(212,146,42,.12); --chip-active-border:rgba(212,146,42,.45); --chip-active-ink:#8a5a10;
+    --body-bg:radial-gradient(1200px 700px at 50% -20%,#ffffff 0%,transparent 60%),radial-gradient(900px 500px at 90% 0%,rgba(212,146,42,.08),transparent 55%),radial-gradient(800px 480px at -10% 20%,rgba(10,30,56,.05),transparent 55%),linear-gradient(180deg,#f7f9fc 0%,#eef2f8 100%);
+    --radius:20px; --ease:cubic-bezier(.25,1,.5,1);
+    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+  }
+  [data-theme="dark"]{
+    --bg:#05070c; --ink:#ffffff; --mute:#a4acc2; --mute-2:#666f8a;
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.15);
+    --glass:rgba(255,255,255,.03); --glass-2:rgba(255,255,255,.05);
+    --green:#9fcf9f; --amber:#e2ab4d; --red:#d98a86; --gold:#e2ab4d;
+    --card-shadow:inset 0 1px 0 rgba(255,255,255,.1), inset 1px 0 0 rgba(255,255,255,.04), 0 8px 32px 0 rgba(0,0,0,.8);
+    --kpi-grad:linear-gradient(160deg,#ffffff 30%,#b8bcc6 100%);
+    --kpi-gold:linear-gradient(160deg,#f3e2b8 20%,#e2ab4d 100%);
+    --kpi-bad:linear-gradient(160deg,#f0cdc9 20%,#d98a86 100%);
+    --bar-bg:linear-gradient(90deg,#f4f5f7,#b9bdc6); --fn-text:#0a0e16;
+    --topbar-bg:rgba(5,7,12,.74);
+    --period-active-bg:rgba(226,171,77,.92); --period-active-ink:#1a1204;
+    --tabs-active-bg:rgba(255,255,255,.94); --tabs-active-ink:#0a0e16;
+    --chip-active-bg:rgba(226,171,77,.14); --chip-active-border:rgba(226,171,77,.4); --chip-active-ink:#f3e0b3;
+    --body-bg:radial-gradient(1400px 800px at 50% -20%,#0e1420 0%,transparent 62%),radial-gradient(1100px 620px at 84% -10%,rgba(77,127,224,.10),transparent 60%),radial-gradient(820px 560px at -10% 14%,rgba(226,171,77,.05),transparent 60%),linear-gradient(180deg,#070a10 0%,#020304 100%);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font);color:var(--ink);background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;background-image:var(--body-bg);background-attachment:fixed;position:relative;transition:background .25s ease,color .25s ease}
+  .wrap{max-width:1300px;margin:0 auto;padding:0 26px 90px;position:relative;z-index:1}
+  .glass{background:var(--glass);border:1px solid var(--line);border-radius:var(--radius);backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);box-shadow:var(--card-shadow)}
+  [data-theme="light"] .glass{background:linear-gradient(155deg,rgba(255,255,255,.96) 0%,rgba(255,255,255,.88) 100%)}
+  [data-theme="dark"] .glass{background:linear-gradient(155deg,rgba(255,255,255,.04) 0%,rgba(255,255,255,.015) 55%,rgba(255,255,255,.03) 100%)}
+
+  .topbar{position:sticky;top:0;z-index:50;backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);background:var(--topbar-bg);border-bottom:1px solid var(--line)}
+  .topbar-in{max-width:1300px;margin:0 auto;padding:14px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand img{height:48px;border-radius:10px;box-shadow:0 6px 18px -10px rgba(10,30,56,.45)}
+  .brand-div{width:1px;height:34px;background:var(--line-2)}
+  .brand-title{font-size:14px;font-weight:600;line-height:1.25}
+  .brand-title small{display:block;font-size:11px;color:var(--mute-2);font-weight:500;margin-top:2px}
+  .header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+  .theme-toggle{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 12px;border-radius:999px;background:var(--glass);border:1px solid var(--line);cursor:pointer;font-size:12px;font-weight:600;color:var(--mute);font-family:var(--font)}
+  .theme-toggle:hover{color:var(--ink)}
+  .theme-switch{width:38px;height:22px;border-radius:999px;background:var(--glass-2);border:1px solid var(--line);position:relative}
+  .theme-switch::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink);transition:.2s}
+  [data-theme="dark"] .theme-switch{background:rgba(226,171,77,.35);border-color:rgba(226,171,77,.5)}
+  [data-theme="dark"] .theme-switch::after{left:18px;background:#f3e0b3}
+
+  .tabs,.period{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--glass);border:1px solid var(--line)}
+  .tabs button,.period button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:13px;font-weight:600;padding:8px 14px;border-radius:10px;cursor:pointer;transition:.18s}
+  .tabs button:hover,.period button:hover{color:var(--ink)}
+  .tabs button.active{background:var(--tabs-active-bg);color:var(--tabs-active-ink)}
+  .period button.active{background:var(--period-active-bg);color:var(--period-active-ink)}
+  .daterange{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:14px;background:var(--glass);border:1px solid var(--line)}
+  .daterange input[type="date"]{border:0;background:transparent;color:var(--ink);font-family:var(--font);font-size:13px;font-weight:600;outline:none;cursor:pointer;color-scheme:light}
+  [data-theme="dark"] .daterange input[type="date"]{color-scheme:dark}
+  .daterange .sep{color:var(--mute-2);font-size:12px}
+
+  .hero-head{padding:36px 0 18px;display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  .hero-head h1{font-size:27px;font-weight:500;letter-spacing:-.02em}
+  .hero-head p{color:var(--mute);font-size:14px;margin-top:6px}
+  .updated{font-size:12px;color:var(--mute-2);display:flex;align-items:center;gap:6px}
+  .sec-title{display:flex;align-items:baseline;gap:12px;margin:34px 0 16px;justify-content:space-between}
+  .sec-title h2{font-size:17px;font-weight:650}
+  .sec-title span{font-size:12.5px;color:var(--mute-2)}
+
+  .tilt{--rx:0deg;--ry:0deg;--ty:0px;--mx:50%;--my:20%;transform:perspective(900px) rotateX(var(--ry)) rotateY(var(--rx)) translateY(var(--ty));transition:transform .4s var(--ease),border-color .4s var(--ease)}
+  .tilt.tilt-active{transition:transform .06s linear}
+  .tilt:hover{border-color:var(--line-2)}
+  .tilt::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;background:radial-gradient(260px 180px at var(--mx) var(--my),rgba(212,146,42,.10),transparent 70%);transition:opacity .4s var(--ease)}
+  .tilt:hover::after{opacity:1}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .kpi{padding:26px;position:relative;overflow:hidden}
+  .kpi .glow{position:absolute;inset:0;background:radial-gradient(140px 100px at 82% -10%,rgba(212,146,42,.08),transparent 70%);pointer-events:none}
+  .kpi-label{font-size:11px;font-weight:500;color:var(--mute);text-transform:uppercase;letter-spacing:.09em}
+  .kpi-val{font-size:38px;font-weight:300;margin:15px 0 6px;line-height:1;letter-spacing:-.02em;display:inline-block;font-variant-numeric:tabular-nums;background:var(--kpi-grad);-webkit-background-clip:text;background-clip:text;color:transparent;transition:transform .4s var(--ease);transform-origin:left center}
+  .kpi-val.gold{background:var(--kpi-gold);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .kpi-val.bad{background:var(--kpi-bad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .kpi:hover .kpi-val{transform:scale(1.05)}
+  .kpi-val small{font-size:15px;font-weight:400;color:var(--mute);-webkit-text-fill-color:var(--mute)}
+  .kpi-sub{font-size:12px;color:var(--mute-2);line-height:1.45}
+
+  .cols{display:grid;grid-template-columns:1fr .82fr;gap:16px}
+  @media(max-width:1000px){.cols{grid-template-columns:1fr}}
+  .panel{padding:30px}
+  .panel h3{font-size:15px;font-weight:650;margin-bottom:2px}
+  .panel .psub{font-size:12.5px;color:var(--mute-2);margin-bottom:18px}
+  .funnel{display:flex;flex-direction:column;gap:12px}
+  .fn-row{display:flex;align-items:center;gap:14px}
+  .fn-name{width:200px;font-size:13px;color:var(--mute);flex-shrink:0}
+  .fn-bar-wrap{flex:1;height:32px;border-radius:10px;background:var(--glass-2);overflow:hidden;border:1px solid var(--line)}
+  .fn-bar{height:100%;border-radius:10px;display:flex;align-items:center;padding-left:14px;font-size:13px;font-weight:600;color:var(--fn-text);background:var(--bar-bg)}
+
+  .status-strip{display:grid;gap:16px}
+  .status{padding:24px;position:relative;overflow:hidden}
+  .status-label{font-size:12.5px;color:var(--mute)}
+  .status-val{font-size:32px;font-weight:300;margin:12px 0 4px;font-variant-numeric:tabular-nums;color:var(--ink);display:inline-block}
+  .status-val.good{background:var(--kpi-gold);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .status-val.bad{color:var(--red)}
+  .status-sub{font-size:12px;color:var(--mute-2)}
+
+  .loss-note{font-size:12.5px;color:var(--mute-2);background:var(--glass-2);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:18px;line-height:1.5}
+  .loss-note b{color:var(--ink)}
+  .loss-list{display:flex;flex-direction:column;gap:10px}
+  .loss-row{display:flex;align-items:center;gap:12px}
+  .loss-name{width:230px;font-size:13px;color:var(--mute);flex-shrink:0}
+  .loss-bar-wrap{flex:1;height:9px;border-radius:6px;background:var(--glass-2);overflow:hidden}
+  .loss-bar{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--red),var(--gold))}
+  .loss-num{width:110px;text-align:right;font-size:12.5px;color:var(--mute)}
+  .loss-num b{color:var(--ink);font-weight:600}
+
+  .mgr-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;max-width:1100px}
+  @media(max-width:900px){.mgr-grid{grid-template-columns:1fr}}
+  .mgr-card{padding:28px;position:relative;overflow:hidden}
+  .mgr-top{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+  .ava-lg{width:46px;height:46px;border-radius:50%;background:linear-gradient(150deg,#1a3a63,#0a1e38);border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#e5e7eb;flex-shrink:0}
+  .mgr-name{font-size:16px;font-weight:600}
+  .mgr-role{font-size:12px;color:var(--mute-2)}
+  .mgr-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .mgr-stat b{display:block;font-size:22px;font-weight:300;font-variant-numeric:tabular-nums;margin-bottom:2px;color:var(--ink)}
+  .mgr-stat span{font-size:10.5px;color:var(--mute-2);text-transform:uppercase;letter-spacing:.04em}
+
+  .chip-row{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{padding:7px 14px;border-radius:20px;background:var(--glass);border:1px solid var(--line);font-size:12.5px;color:var(--mute);cursor:pointer;font-weight:600}
+  .chip:hover{color:var(--ink)}
+  .chip.active{background:var(--chip-active-bg);border-color:var(--chip-active-border);color:var(--chip-active-ink)}
+
+
+  .footer{margin-top:46px;padding:20px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .footer-brand{display:flex;align-items:center;gap:12px}
+  .footer-brand img{height:20px;opacity:.9}
+  .footer-div{width:1px;height:16px;background:var(--line-2)}
+  .footer-brand span{font-size:12px;color:var(--mute-2)}
+  .footer-brand b{color:var(--mute);font-weight:650}
+  .footer-meta{font-size:11.5px;color:var(--mute-2)}
+
+  .view{display:none}.view.active{display:block}
+  @media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:640px){.kpi-grid{grid-template-columns:1fr}.brand-title{display:none}}
+  @media(hover:none){.tilt,.tilt:hover{transform:none !important}.tilt::after{display:none}}
+  @media(max-width:760px){
+    .header-right{width:100%}
+    .tabs,.period,.daterange{flex:1 1 100%}
+    .tabs button,.period button{flex:1;text-align:center}
+    .sec-title span{display:none}
+    .kpi{padding:18px}.kpi-val{font-size:28px}
+    .panel,.mgr-card{padding:18px}
+    .fn-name,.loss-name{width:120px;font-size:11.5px}
+    .mgr-stats{grid-template-columns:repeat(2,1fr)}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <img src="assets/logo-licensebridge.svg" alt="LicenseBridge USA">
+      <div class="brand-div"></div>
+      <div class="brand-title">Аналитика продаж<small>Данные из Kommo CRM</small></div>
+    </div>
+    <div class="header-right">
+      <div class="tabs" id="viewSwitch">
+        <button data-view="rop" class="active">РОП</button>
+        <button data-view="mkt">Маркетинг</button>
+      </div>
+      <div class="period" id="periodSwitch">
+        <button data-period="week">Неделя</button>
+        <button data-period="month">Месяц</button>
+        <button data-period="quarter" class="active">Квартал</button>
+      </div>
+      <div class="daterange">
+        <input type="date" id="dateFrom">
+        <span class="sep">—</span>
+        <input type="date" id="dateTo">
+      </div>
+      <button class="theme-toggle" id="themeToggle" type="button">
+        <span id="themeLabel">Светлая</span>
+        <span class="theme-switch"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="view active" id="view-rop">
+    <div class="sec-title" style="margin-top:22px">
+      <h2>Сводка за период</h2>
+      <span>новые лиды и закрытия в выбранных датах</span>
+    </div>
+    <div class="kpi-grid" id="kpiGridRop"></div>
+
+    <div class="sec-title">
+      <h2>Сделки по этапам</h2>
+      <span id="funnelPeriodLabel">созданные за период · ещё открыты</span>
+    </div>
+    <div class="cols">
+      <div class="glass panel tilt">
+        <h3>Этапы · <span id="funnelTotal">0</span> открытых</h3>
+        <div class="psub">лиды, созданные в выбранных датах и ещё открытые</div>
+        <div class="funnel" id="stageFunnel"></div>
+      </div>
+      <div class="status-strip" id="statusStrip"></div>
+    </div>
+
+    <div class="sec-title">
+      <h2>Где теряются</h2>
+      <span id="lostStagePeriodLabel">отказы с закрытием за период · этап перед «Отказ»</span>
+    </div>
+    <div class="glass panel tilt">
+      <div class="loss-note" id="lostStageNote"></div>
+      <div class="loss-list" id="lostStageList"></div>
+    </div>
+
+    <div class="sec-title">
+      <h2>Очередь и просрочки</h2>
+      <span id="queuePeriodLabel">открытые из созданных за период</span>
+    </div>
+    <div class="chip-row" id="mgrFilter" style="margin-bottom:16px"></div>
+    <div class="kpi-grid" id="kpiGridQueue" style="grid-template-columns:repeat(3,1fr)"></div>
+
+    <div class="sec-title">
+      <h2>Суммы в CRM</h2>
+      <span id="moneyPeriodLabel">поле «Бюджет» (price) в Kommo</span>
+    </div>
+    <div class="kpi-grid" id="kpiMoney" style="grid-template-columns:repeat(2,1fr)"></div>
+
+    <div class="sec-title">
+      <h2>Застряли дольше SLA</h2>
+      <span id="slaNote">нормы по этапам · открытые в Pipeline</span>
+    </div>
+    <div class="glass panel tilt">
+      <div class="loss-note" id="slaSummary"></div>
+      <div class="loss-list" id="slaList"></div>
+    </div>
+
+    <div class="sec-title">
+      <h2>Эффективность команды</h2>
+      <span id="mgrPeriodLabel">закрытия за выбранный период</span>
+    </div>
+    <div class="mgr-grid" id="mgrGrid"></div>
+  </div>
+
+  <div class="view" id="view-mkt">
+    <div class="sec-title" style="margin-top:8px">
+      <h2>Причины отказов</h2>
+      <span id="lossPeriodLabel">за выбранный период</span>
+    </div>
+    <div class="glass panel tilt">
+      <div class="loss-note" id="lossNote">Причина указана у части отказов периода.</div>
+      <div class="loss-list" id="lossList"></div>
+    </div>
+
+    <div class="sec-title">
+      <h2>Источники лидов</h2>
+      <span id="srcPeriodLabel">за выбранный период · Channel + UTM + FB-теги</span>
+    </div>
+    <div class="glass panel tilt">
+      <div class="loss-note" id="sourceNote">Источник определяется комбинированно.</div>
+      <div class="loss-list" id="channelList"></div>
+    </div>
+
+  </div>
+
+  <div class="glass footer">
+    <div class="footer-brand">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+      <div class="footer-div"></div>
+      <span>Дашборд <b>MS Product</b> · LicenseBridge USA</span>
+    </div>
+    <div class="footer-meta"><span id="updatedLabel">Обновлено: 22.07.2026, 14:50</span> · licensebridgeusa.kommo.com</div>
+  </div>
+</div>
+
+<script>
+const D = window.LB_DATA;
+const MIN = D.meta.minDate;
+const MAX = D.meta.maxDate;
+const PIPE_MAIN = 11274779;
+const PIPE_SBORKA = 12079591;
+const STATUS_WON = 142;
+const STATUS_LOST = 143;
+const ID_ALEXANDRA = 15648532;
+const ID_POLINA = 15293564;
+const NAME_ALEXANDRA = 'Александра';
+const NAME_POLINA = 'Полина Титова';
+const ROLES = {
+  [NAME_ALEXANDRA]: 'РОП / продажи',
+  [NAME_POLINA]: 'Клиентский менеджер'
+};
+const TEAM = [NAME_ALEXANDRA, NAME_POLINA];
+function isAlexandra(name, id){
+  if(Number(id) === ID_ALEXANDRA) return true;
+  const n = String(name || '');
+  return n === NAME_ALEXANDRA || n.startsWith('Александра');
+}
+const STAGE_ORDER = (D.funnel_open || []).map(s => s.name).filter(Boolean);
+
+let CURRENT = null; // last aggregate
+let queueFilter = null;
+
+function fmt(n){ return Number(n).toLocaleString('ru-RU'); }
+function fmtMoney(n){ return '$' + Number(n).toLocaleString('en-US'); }
+function addDays(iso, n){
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0,10);
+}
+function daysBetween(a,b){
+  return Math.round((new Date(b+'T12:00:00') - new Date(a+'T12:00:00'))/86400000) + 1;
+}
+function fmtDate(iso){
+  const [y,m,d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+function shortStage(name){
+  return String(name || '')
+    .replace('Выставлен счет/согласовываю оплату','Счёт / согласование')
+    .replace('Прогреваю/Отложенный спрос','Прогрев');
+}
+function dictToSortedList(dict, limit){
+  return Object.entries(dict || {})
+    .map(([name, value]) => ({name, value}))
+    .filter(x => x.value > 0)
+    .sort((a,b) => b.value - a.value)
+    .slice(0, limit || 20);
+}
+function inRange(day, from, to){
+  return day && day >= from && day <= to;
+}
+/** Канон каналов для UI: без «(talk)», без Wazzup/Tilda_leads как отдельных строк. */
+function normalizeSource(raw){
+  if(!raw) return '';
+  let s = String(raw).trim().replace(/\s*\(talk\)\s*$/i, '').trim();
+  const low = s.toLowerCase();
+  if(!low) return '';
+  // Wazzup — транспорт WhatsApp/Telegram, отдельным каналом не показываем
+  if(low === 'wazzup' || low.startsWith('wazzup ')) return '';
+  if(low === 'facebook' || low === 'fb' || low === 'fb organic' || low.startsWith('facebook ')) return 'Facebook';
+  if(/^fb\d+/i.test(s)) return 'Facebook';
+  if(/^fb[\s_-]/i.test(s) && /facebook|ads?/i.test(s)) return 'Facebook';
+  if(low === 'sms/ringcentral' || low === 'ringcentral' || low.startsWith('sms/')) return 'RingCentral';
+  if(low === 'e-chat' || low === 'echat') return 'e-chat';
+  if(low === 'instagram' || low.startsWith('instagram ')) return 'Instagram';
+  if(low === 'tilda' || low === 'tilda_leads' || low.startsWith('tilda')) return 'Tilda';
+  if(low === 'whatsapp' || low.startsWith('whatsapp ')) return 'WhatsApp';
+  if(low === 'pleep' || low === 'pleep ai' || low.startsWith('pleep')) return 'Pleep';
+  if(low === 'telegram' || low.startsWith('telegram ')) return 'Telegram';
+  return s;
+}
+function emptyTeamMgr(){
+  return {
+    [NAME_ALEXANDRA]: {won:0, lost:0, open:0, overdue:0, no_task:0, funnel:'Pipeline'},
+    [NAME_POLINA]: {won:0, lost:0, open:0, overdue:0, no_task:0, funnel:'Сборка'}
+  };
+}
+
+/** Метрики: WON = D.wins (Closed-won 142 в Pipeline); lost/open — main; created — main|sborka.
+ *  Карточки: Александра = Pipeline; Полина = Сборка. */
+function aggregate(from, to){
+  const leads = D.leads || [];
+  const wins = D.wins || [];
+  const mgr = emptyTeamMgr();
+  const stages = {};
+  const slaByStage = {};
+  const lossReasons = {};
+  const sources = {};
+  const lostByStage = {};
+  let created=0, won=0, lost=0, wonRevenue=0, wonWithPrice=0, lostWithReason=0;
+  let open=0, overdue=0, noTask=0, stuck=0, sborka=0;
+  let openRevenue=0, openPriced=0;
+  let lostWithStage=0;
+
+  // WON = переход в 142 (KPI сводки). В карточку Александры — если она закрыла в Pipeline.
+  for(const W of wins){
+    if(!inRange(W.date, from, to)) continue;
+    won += 1;
+    const p = Number(W.price) || 0;
+    if(p > 0){ wonRevenue += p; wonWithPrice += 1; }
+    if(isAlexandra(W.responsible_name, W.responsible_id)) mgr[NAME_ALEXANDRA].won += 1;
+  }
+
+  for(const L of leads){
+    const isMain = L.pipeline_id === PIPE_MAIN;
+    const isSborka = L.pipeline_id === PIPE_SBORKA || L.is_sborka === true;
+    const createdIn = inRange(L.created, from, to);
+    const closedIn = inRange(L.closed, from, to);
+    const isOpen = !L.closed && L.status_id !== STATUS_LOST && L.status_id !== STATUS_WON;
+    const isLost = L.status_id === STATUS_LOST;
+    const isWonStatus = L.status_id === STATUS_WON;
+    const owner = L.responsible_name || '';
+
+    // Новые: созданы в периоде в main ИЛИ Сборка
+    if((isMain || isSborka) && createdIn){
+      created += 1;
+      const src = normalizeSource(L.source);
+      if(src) sources[src] = (sources[src] || 0) + 1;
+    }
+
+    // Отказы Pipeline (сводка + Александра только при known responsible_at_close)
+    if(isMain && closedIn && isLost){
+      lost += 1;
+      if(L.loss_reason){
+        lostWithReason += 1;
+        lossReasons[L.loss_reason] = (lossReasons[L.loss_reason] || 0) + 1;
+      }
+      if(isAlexandra(L.responsible_at_close_name, L.responsible_id)) mgr[NAME_ALEXANDRA].lost += 1;
+      if(L.lost_from_stage){
+        lostWithStage += 1;
+        lostByStage[L.lost_from_stage] = (lostByStage[L.lost_from_stage] || 0) + 1;
+      }
+    }
+
+    // Александра — очередь Pipeline (сейчас, все открытые на ней)
+    if(isMain && isOpen && isAlexandra(owner, L.responsible_id)){
+      mgr[NAME_ALEXANDRA].open += 1;
+      if(L.has_overdue_task) mgr[NAME_ALEXANDRA].overdue += 1;
+      if(!L.has_open_task) mgr[NAME_ALEXANDRA].no_task += 1;
+    }
+
+    // Полина — очередь и закрытия Сборка
+    if(isSborka && owner === NAME_POLINA){
+      if(isOpen){
+        mgr[NAME_POLINA].open += 1;
+        if(L.has_overdue_task) mgr[NAME_POLINA].overdue += 1;
+        if(!L.has_open_task) mgr[NAME_POLINA].no_task += 1;
+      }
+      if(closedIn && isWonStatus) mgr[NAME_POLINA].won += 1;
+      if(closedIn && isLost) mgr[NAME_POLINA].lost += 1;
+    }
+
+    // Открытые воронка/очередь/SLA — main, созданные в периоде
+    if(isMain && createdIn && isOpen){
+      open += 1;
+      const stage = L.stage_name || 'Без этапа';
+      stages[stage] = (stages[stage] || 0) + 1;
+      if(L.has_overdue_task) overdue += 1;
+      if(!L.has_open_task) noTask += 1;
+      if(L.stuck){
+        stuck += 1;
+        if(!slaByStage[stage]) slaByStage[stage] = {stuck:0, open:0, sla_days: L.sla_days};
+        slaByStage[stage].stuck += 1;
+      }
+      if(!slaByStage[stage]) slaByStage[stage] = {stuck:0, open:0, sla_days: L.sla_days};
+      slaByStage[stage].open += 1;
+      const p = Number(L.price) || 0;
+      if(p > 0){ openRevenue += p; openPriced += 1; }
+    }
+
+    // В производстве: открытая Сборка, won_at в периоде; иначе created в периоде
+    if(isSborka && isOpen){
+      const transferIn = inRange(L.won_at, from, to);
+      if(transferIn || (!L.won_at && createdIn)) sborka += 1;
+    }
+  }
+
+  const funnel = STAGE_ORDER
+    .filter(n => (stages[n] || 0) > 0 || ['Новая заявка','Первичный контакт','Квалификация','В работе','Выставлен счет/согласовываю оплату','Прогреваю/Отложенный спрос'].includes(n))
+    .map(n => ({name: n, value: stages[n] || 0}));
+  // leftover stages not in order
+  Object.keys(stages).forEach(n => {
+    if(!funnel.find(x => x.name === n)) funnel.push({name: n, value: stages[n]});
+  });
+
+  const slaList = Object.entries(slaByStage)
+    .filter(([,v]) => v.stuck > 0)
+    .map(([name, v]) => ({
+      name: `${shortStage(name)}${v.sla_days != null ? ' · до ' + v.sla_days + 'д' : ''}`,
+      value: v.stuck
+    }))
+    .sort((a,b) => b.value - a.value);
+
+  // Очередь «Все» = сумма очередей Илоны (Pipeline) + Полины (Сборка), та же логика что у чипов
+  const teamQueue = {
+    open: mgr[NAME_ALEXANDRA].open + mgr[NAME_POLINA].open,
+    overdue: mgr[NAME_ALEXANDRA].overdue + mgr[NAME_POLINA].overdue,
+    no_task: mgr[NAME_ALEXANDRA].no_task + mgr[NAME_POLINA].no_task
+  };
+
+  return {
+    from, to,
+    created, won, lost, closed: won+lost,
+    wonRevenue, wonWithPrice, lostWithReason,
+    open, overdue, noTask, stuck, sborka,
+    openRevenue, openPriced,
+    mgr,
+    teamQueue,
+    funnel,
+    lostByStage: dictToSortedList(lostByStage),
+    lostWithStage,
+    slaList,
+    lossReasons: dictToSortedList(lossReasons),
+    sources: dictToSortedList(sources)
+  };
+}
+
+function renderRange(from, to){
+  document.getElementById('dateFrom').value = from;
+  document.getElementById('dateTo').value = to;
+  const rangeTxt = `${fmtDate(from)} – ${fmtDate(to)}`;
+  document.getElementById('funnelPeriodLabel').textContent =
+    `созданные ${rangeTxt} · ещё открыты`;
+  document.getElementById('queuePeriodLabel').textContent =
+    `сейчас · Александра (Pipeline) + Полина (Сборка)`;
+  document.getElementById('moneyPeriodLabel').textContent =
+    `бюджет за ${rangeTxt}`;
+  document.getElementById('slaNote').textContent =
+    `застряли среди открытых из созданных ${rangeTxt}`;
+  document.getElementById('mgrPeriodLabel').textContent =
+    `Александра — Pipeline · Полина — Сборка · отказы/выиграно за ${rangeTxt}`;
+  document.getElementById('lossPeriodLabel').textContent =
+    `отказы с закрытием ${rangeTxt}`;
+  document.getElementById('srcPeriodLabel').textContent =
+    `созданные ${rangeTxt} · включая перенесённых в «Сборку»`;
+  document.getElementById('lostStagePeriodLabel').textContent =
+    `отказы с закрытием ${rangeTxt} · этап перед «Отказ»`;
+
+  CURRENT = aggregate(from, to);
+  const a = CURRENT;
+  const lostRate = a.created ? (a.lost / a.created * 100).toFixed(1) : '0';
+
+  document.getElementById('kpiGridRop').innerHTML = `
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">Новых лидов</div><div class="kpi-val">${fmt(a.created)}</div><div class="kpi-sub">по дате создания · включая перенесённых в «Сборку»</div></div>
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">Закрыто</div><div class="kpi-val">${fmt(a.closed)}</div><div class="kpi-sub">по дате закрытия</div></div>
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">Отказано</div><div class="kpi-val bad">${fmt(a.lost)}<small> / ${lostRate}%</small></div><div class="kpi-sub">доля от новых лидов периода</div></div>
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">Выиграно</div><div class="kpi-val gold">${fmt(a.won)}</div><div class="kpi-sub">${(D.meta && D.meta.wonComparableFrom) ? `Closed-won 142 в Pipeline · сопоставимо с ${fmtDate(D.meta.wonComparableFrom)}` : 'Closed-won 142 в Pipeline'}</div></div>
+  `;
+
+  renderFunnel(a);
+  renderStatusStrip(a);
+  renderLostStages(a);
+  renderQueue(queueFilter);
+  renderMoney(a);
+  renderSla(a);
+  renderManagers(a);
+  renderLoss(a);
+  renderSources(a);
+}
+
+function renderFunnel(a){
+  document.getElementById('funnelTotal').textContent = a.open;
+  const max = Math.max(...a.funnel.map(s => s.value), 1);
+  document.getElementById('stageFunnel').innerHTML = a.funnel.map(s => `
+    <div class="fn-row">
+      <div class="fn-name">${shortStage(s.name)}</div>
+      <div class="fn-bar-wrap"><div class="fn-bar" style="width:${Math.max(6, s.value/max*100)}%">${s.value}</div></div>
+    </div>
+  `).join('');
+}
+
+function renderLostStages(a){
+  const list = (a.lostByStage || []).map(x => ({...x, name: shortStage(x.name)}));
+  const top = list[0];
+  document.getElementById('lostStageNote').innerHTML = a.lost
+    ? `Отказов: <b>${fmt(a.lost)}</b>.` +
+      (top ? ` Чаще всего — «<b>${top.name}</b>» (${fmt(top.value)}, ${(top.value/a.lost*100).toFixed(0)}%).` : '') +
+      (a.lostWithStage < a.lost
+        ? ` Этап не восстановлен у ${fmt(a.lost - a.lostWithStage)}.`
+        : '')
+    : `За период отказов нет.`;
+  renderBarList('lostStageList', list);
+}
+
+function renderStatusStrip(a){
+  document.getElementById('statusStrip').innerHTML = `
+    <div class="glass status tilt"><div class="status-label">Сделок без задачи</div><div class="status-val ${a.noTask?'bad':'good'}">${a.noTask}</div><div class="status-sub">из ${a.open} открытых за период</div></div>
+    <div class="glass status tilt"><div class="status-label">С просроченной задачей</div><div class="status-val bad">${a.overdue}</div><div class="status-sub">${a.open ? Math.round(a.overdue/a.open*100) : 0}% открытых за период</div></div>
+    <div class="glass status tilt"><div class="status-label">В производстве</div><div class="status-val good">${a.sborka}</div><div class="status-sub">открытые «Сборка», перенос (won) в периоде</div></div>
+  `;
+}
+
+function renderMoney(a){
+  document.getElementById('kpiMoney').innerHTML = `
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">Сумма открытых</div><div class="kpi-val gold">${fmtMoney(a.openRevenue)}</div><div class="kpi-sub">бюджет открытых из созданных за период · ${fmt(a.openPriced)} шт. с суммой &gt; 0</div></div>
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">Сумма выигранных</div><div class="kpi-val">${fmtMoney(a.wonRevenue)}</div><div class="kpi-sub">бюджет при выигрыше (142) · заполнено у ${fmt(a.wonWithPrice)} из ${fmt(a.won)}</div></div>
+  `;
+}
+
+function renderSla(a){
+  const pct = a.open ? Math.round(a.stuck/a.open*100) : 0;
+  document.getElementById('slaSummary').innerHTML =
+    `Застряли: <b>${fmt(a.stuck)}</b> из <b>${fmt(a.open)}</b> открытых за период (${pct}%).`;
+  renderBarList('slaList', a.slaList);
+}
+
+function renderQueue(filterName){
+  queueFilter = filterName || null;
+  if(!CURRENT) return;
+  const a = CURRENT;
+  let open, overdue, noTask, label, subOpen;
+  if(queueFilter){
+    const row = a.mgr[queueFilter] || {open:0, overdue:0, no_task:0};
+    open = row.open; overdue = row.overdue; noTask = row.no_task;
+    label = `${queueFilter} · ${ROLES[queueFilter] || ''}`;
+    subOpen = queueFilter === NAME_POLINA ? 'в «Сборке» сейчас' : 'в Pipeline сейчас';
+  } else {
+    const t = a.teamQueue || {open:0, overdue:0, no_task:0};
+    open = t.open; overdue = t.overdue; noTask = t.no_task;
+    label = `Александра ${a.mgr[NAME_ALEXANDRA].open} + Полина ${a.mgr[NAME_POLINA].open}`;
+    subOpen = 'сейчас у команды';
+  }
+  document.getElementById('kpiGridQueue').innerHTML = `
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">Открытых сделок</div><div class="kpi-val">${fmt(open)}</div><div class="kpi-sub">${label}</div></div>
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">Без следующей задачи</div><div class="kpi-val ${noTask>0?'bad':'gold'}">${fmt(noTask)}</div><div class="kpi-sub">${subOpen} без задачи</div></div>
+    <div class="glass kpi tilt"><div class="glow"></div><div class="kpi-label">С просроченной задачей</div><div class="kpi-val bad">${fmt(overdue)}</div><div class="kpi-sub">${open ? Math.round(overdue/open*100) : 0}% от открытых</div></div>
+  `;
+}
+
+function renderMgrFilter(){
+  const el = document.getElementById('mgrFilter');
+  function draw(){
+    el.innerHTML = `<div class="chip${!queueFilter?' active':''}" data-m="">Все</div>` +
+      TEAM.map(n => `<div class="chip${queueFilter===n?' active':''}" data-m="${n}">${n}</div>`).join('');
+    el.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+      queueFilter = c.dataset.m || null;
+      draw();
+      renderQueue(queueFilter);
+    });
+  }
+  draw();
+}
+
+function renderManagers(a){
+  document.getElementById('mgrGrid').innerHTML = TEAM.map(name => {
+    const m = a.mgr[name] || {won:0, lost:0, open:0, overdue:0};
+    const initials = name === NAME_POLINA ? 'ПТ' : 'АЛ';
+    const wonLabel = name === NAME_POLINA ? 'Закрыто OK' : 'Выиграно';
+    const lostLabel = name === NAME_POLINA ? 'Срыв' : 'Отказы';
+    return `
+      <div class="glass mgr-card tilt">
+        <div class="mgr-top">
+          <div class="ava-lg">${initials}</div>
+          <div>
+            <div class="mgr-name">${name}</div>
+            <div class="mgr-role">${ROLES[name] || ''}</div>
+          </div>
+        </div>
+        <div class="mgr-stats">
+          <div class="mgr-stat"><b>${m.open}</b><span>В работе</span></div>
+          <div class="mgr-stat"><b>${m.overdue}</b><span>Просрочено</span></div>
+          <div class="mgr-stat"><b>${m.lost}</b><span>${lostLabel}</span></div>
+          <div class="mgr-stat"><b>${m.won}</b><span>${wonLabel}</span></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderLoss(a){
+  const fillPct = a.lost ? ((a.lostWithReason / a.lost) * 100).toFixed(1) : '0';
+  document.getElementById('lossNote').innerHTML =
+    `За период отказано <b>${fmt(a.lost)}</b>. Причина указана у <b>${fillPct}%</b> (${fmt(a.lostWithReason)}).`;
+  renderBarList('lossList', a.lossReasons);
+}
+
+function renderSources(a){
+  const withSrc = a.sources.reduce((s,x) => s + x.value, 0);
+  const pct = a.created ? ((withSrc / a.created) * 100).toFixed(1) : '0';
+  document.getElementById('sourceNote').innerHTML =
+    `Создано за период: <b>${fmt(a.created)}</b> (Pipeline + уже перенесённые в «Сборку»). Источник определён у <b>${pct}%</b> (${fmt(withSrc)}).`;
+  renderBarList('channelList', a.sources);
+}
+
+function renderBarList(elId, list){
+  const el = document.getElementById(elId);
+  if(!list.length){ el.innerHTML = '<div class="loss-note">Нет данных за период</div>'; return; }
+  const max = Math.max(...list.map(x => x.value));
+  const total = list.reduce((s,x) => s + x.value, 0);
+  el.innerHTML = list.map(x => `
+    <div class="loss-row">
+      <div class="loss-name">${x.name}</div>
+      <div class="loss-bar-wrap"><div class="loss-bar" style="width:${Math.max(4, x.value/max*100)}%"></div></div>
+      <div class="loss-num"><b>${x.value}</b> · ${(x.value/total*100).toFixed(1)}%</div>
+    </div>
+  `).join('');
+}
+
+function setPeriod(period){
+  document.querySelectorAll('#periodSwitch button').forEach(b => b.classList.toggle('active', b.dataset.period===period));
+  let from = MIN;
+  if(period==='week') from = addDays(MAX, -6);
+  else if(period==='month') from = addDays(MAX, -29);
+  else if(period==='quarter') from = addDays(MAX, -89);
+  if(from < MIN) from = MIN;
+  renderRange(from, MAX);
+}
+
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('lb-theme', theme);
+  document.getElementById('themeLabel').textContent = theme === 'dark' ? 'Тёмная' : 'Светлая';
+}
+
+/* init */
+document.getElementById('dateFrom').min = MIN;
+document.getElementById('dateFrom').max = MAX;
+document.getElementById('dateTo').min = MIN;
+document.getElementById('dateTo').max = MAX;
+if(D.meta.updatedAtLabel){
+  document.getElementById('updatedLabel').textContent = 'Обновлено: ' + D.meta.updatedAtLabel;
+}
+if(!(D.leads && D.leads.length)){
+  console.error('LB_DATA.leads пуст — периодный пересчёт недоступен');
+}
+
+renderMgrFilter();
+const defaultPeriod = (D.periodDefaults && D.periodDefaults.default) || 'quarter';
+setPeriod(defaultPeriod);
+applyTheme(localStorage.getItem('lb-theme') || 'light');
+
+document.getElementById('periodSwitch').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if(!btn) return;
+  setPeriod(btn.dataset.period);
+});
+['dateFrom','dateTo'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    document.querySelectorAll('#periodSwitch button').forEach(b => b.classList.remove('active'));
+    let from = document.getElementById('dateFrom').value || MIN;
+    let to = document.getElementById('dateTo').value || MAX;
+    if(from > to){ const t=from; from=to; to=t; }
+    renderRange(from, to);
+  });
+});
+document.getElementById('themeToggle').addEventListener('click', () => {
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+});
+document.getElementById('viewSwitch').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if(!btn) return;
+  document.querySelectorAll('#viewSwitch button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + btn.dataset.view).classList.add('active');
+});
+
+(function(){
+  let active = null;
+  function reset(elm){ elm.style.setProperty('--rx','0deg'); elm.style.setProperty('--ry','0deg'); elm.style.setProperty('--ty','0px'); elm.classList.remove('tilt-active'); }
+  document.addEventListener('pointermove', e=>{
+    const card = e.target.closest('.tilt');
+    if(!card){ if(active){ reset(active); active=null; } return; }
+    if(card !== active){ if(active) reset(active); active=card; card.classList.add('tilt-active'); }
+    const r = card.getBoundingClientRect();
+    const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
+    card.style.setProperty('--rx', ((px-0.5)*9).toFixed(2)+'deg');
+    card.style.setProperty('--ry', ((0.5-py)*9).toFixed(2)+'deg');
+    card.style.setProperty('--ty','-3px');
+    card.style.setProperty('--mx',(px*100).toFixed(1)+'%');
+    card.style.setProperty('--my',(py*100).toFixed(1)+'%');
+  });
+  document.addEventListener('pointerleave', ()=>{ if(active){ reset(active); active=null; } });
+})();
+</script>
+</body>
+</html>

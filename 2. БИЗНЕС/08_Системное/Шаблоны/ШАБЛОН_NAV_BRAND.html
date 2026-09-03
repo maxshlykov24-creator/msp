@@ -1,0 +1,107 @@
+<!--
+  Обязательная шапка nav для HTML-инструкций MS Product.
+  Копировать CSS + HTML в <nav> каждой новой инструкции.
+  Регламент: ЭТАЛОН_HTML_ИНСТРУКЦИИ.md § «Шапка nav-brand».
+  Перед передачей клиенту: embed_instruction_logos.py
+-->
+
+<!-- === CSS (в <style>) === -->
+<!--
+.nav-brand {
+  margin-bottom: 22px;
+  padding: 20px 12px 18px;
+  background: linear-gradient(160deg, #fafaf9 0%, #f3f1ec 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(28,28,30,.05);
+  position: relative;
+  overflow: hidden;
+}
+.nav-brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120px 80px at 20% 0%, rgba(124,58,237,.08), transparent 70%),
+    radial-gradient(100px 70px at 90% 100%, rgba(37,99,168,.08), transparent 70%);
+  pointer-events: none;
+}
+.nav-brand-logo {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.nav-brand-logo img.ms {
+  height: 56px;
+  width: auto;
+  filter: drop-shadow(0 6px 16px rgba(109,40,217,.18)) drop-shadow(0 2px 6px rgba(37,99,168,.12));
+}
+.nav-brand-ms {
+  position: relative;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #6d28d9 0%, #2563eb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.nav-brand-divider {
+  position: relative;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: 12px 8px;
+}
+.nav-brand-client-logo {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.nav-brand-client-logo img.client {
+  height: 48px;
+  width: auto;
+  max-width: 100%;
+}
+.nav-brand-client {
+  position: relative;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #a8a29e;
+  margin-bottom: 4px;
+}
+.nav-brand-title {
+  position: relative;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -.02em;
+  color: var(--text);
+}
+-->
+
+<!-- === HTML (в <nav>, перед <ul>) === -->
+<!--
+  Плейсхolders:
+  - {CLIENT_ALT} — название клиента
+  - {CLIENT_LOGO} — assets/logo-{client}-transparent.png (или logo-client.png)
+  - {INSTRUCTION_TITLE} — заголовок инструкции в nav
+  Если лого клиента нет — заменить блок client-logo на:
+    <div class="nav-brand-client">{CLIENT_ALT}</div>
+-->
+<div class="nav-brand">
+  <div class="nav-brand-logo">
+    <img class="ms" src="assets/logo-ms-transparent.png" alt="MS Product" width="56" height="64">
+  </div>
+  <div class="nav-brand-ms">MS Product</div>
+  <div class="nav-brand-divider"></div>
+  <div class="nav-brand-client-logo">
+    <img class="client" src="assets/logo-client-transparent.png" alt="{CLIENT_ALT}">
+  </div>
+  <div class="nav-brand-title">{INSTRUCTION_TITLE}</div>
+</div>

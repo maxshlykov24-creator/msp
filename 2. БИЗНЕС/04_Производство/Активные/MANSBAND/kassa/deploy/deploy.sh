@@ -29,18 +29,12 @@ rsync -az --delete \
   --exclude '*.log' \
   --exclude '.env' \
   --exclude 'deploy/.env.deploy' \
+  --exclude 'backups/' \
   ./ "${VPS_USER}@${VPS_HOST}:${REMOTE_DIR}/"
 
 echo "== Сборка и запуск на сервере =="
-ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" bash -lc "'
-  set -euo pipefail
-  cd ${REMOTE_DIR}
-  if [ ! -f .env ]; then echo \"ОШИБКА: на сервере нет ${REMOTE_DIR}/.env (создай из .env.example)\"; exit 1; fi
-  docker compose up -d --build
-  echo \"== Миграции БД ==\"
-  docker compose run --rm api node dist/db/migrate.js
-  echo \"== Готово. Проверь: https://mansband-kassa.ru ==\"
-'"
+ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" \
+  "chmod +x ${REMOTE_DIR}/deploy/remote-up.sh && bash ${REMOTE_DIR}/deploy/remote-up.sh"
 
 echo "Деплой завершён."
 echo "Если пользователи ещё не созданы, выполни на сервере:"
