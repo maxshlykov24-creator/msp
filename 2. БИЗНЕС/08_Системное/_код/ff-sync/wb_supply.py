@@ -5,8 +5,11 @@
 1. создать поставку — `POST /api/v3/supplies`;
 2. добавить собранные задания — `PATCH /api/marketplace/v3/supplies/{id}/orders`,
    до 100 за раз. В этот момент задание уходит в статус `confirm` («На сборке»);
-3. завести грузоместа — `POST /api/v3/supplies/{id}/trbx`, и разложить по ним
-   задания — `PATCH /api/v3/supplies/{id}/trbx`;
+3. завести грузоместа — `POST /api/v3/supplies/{id}/trbx`. **Метода привязки
+   заданий к конкретному грузоместу в API нет**: у пути `trbx` только `get`,
+   `post` и `delete`, а схема грузоместа состоит из одного поля `id` (сверено
+   по OpenAPI-спеке WB от 2026-09-04 и по версии от 2025-12-26 — раньше его
+   тоже не было). Поэтому раскладку по коробкам мы ведём у себя, для склада;
 4. напечатать QR грузомест — `POST /api/v3/supplies/{id}/trbx/stickers`;
 5. передать поставку в доставку — `PATCH /api/v3/supplies/{id}/deliver`. Шаг
    необратимый: все задания уходят в «В доставке», добавить в поставку больше
@@ -24,6 +27,9 @@ from net import WB_BASE, req, wb_headers
 
 ORDERS_CHUNK = 100   # предел батча добавления заданий в поставку
 TRBX_CHUNK = 1000    # предел создания грузомест за запрос
+# WB разрешает не больше половины числа заданий: 10 заданий — до 5 коробок.
+# Правило поменялось 2026-09-04, до этого было «товаров + 1».
+TRBX_SHARE = 0.5
 
 
 class SupplyError(Exception):
@@ -62,9 +68,9 @@ def create(cab, name):
 def add_orders(cab, supply_ext, order_ids):
     """Добавить задания в поставку. Возвращает (сколько ушло, заметки).
 
-    Батчевый метод живёт на префиксе `/api/marketplace/v3`. Если кабинет его не
-    знает, откатываемся на поштучный `/api/v3/.../orders/{orderId}` — так же,
-    как это делал ЛК до появления батча.
+    Только батчевый метод: поштучный `/api/v3/supplies/{id}/orders/{orderId}`
+    WB объявил устаревшим и снял с публикации 18.12.2025, откат делать некуда.
+    Задания передаются в статусе `new` и площадкой сами переводятся в `confirm`.
     """
     ids = _ids(order_ids)
     if not ids:
@@ -82,18 +88,6 @@ def add_orders(cab, supply_ext, order_ids):
         )
         if r.status_code in (200, 204):
             done += len(chunk)
-            continue
-        if r.status_code in (404, 405):
-            for oid in chunk:
-                one = req(
-                    "PATCH",
-                    "%s/api/v3/supplies/%s/orders/%s" % (WB_BASE, supply_ext, oid),
-                    headers=heads,
-                )
-                if one.status_code in (200, 204):
-                    done += 1
-                else:
-                    notes.append("WB: задание %s не ушло в поставку (%s) %s" % (oid, one.status_code, (one.text or "")[:160]))
             continue
         notes.append("WB: батч из %s заданий не ушёл в поставку (%s) %s" % (len(chunk), r.status_code, (r.text or "")[:200]))
     return done, notes
@@ -126,37 +120,6 @@ def add_boxes(cab, supply_ext, amount):
         out.extend(got)
         left -= step
     return out
-
-
-def put_in_box(cab, supply_ext, trbx_ext, order_ids):
-    """Уложить задания в грузоместо."""
-    ids = _ids(order_ids)
-    if not ids:
-        return 0
-    r = req(
-        "PATCH",
-        "%s/api/v3/supplies/%s/trbx" % (WB_BASE, supply_ext),
-        headers=wb_headers(cab["token"]),
-        json={"trbxId": trbx_ext, "orderIds": ids},
-    )
-    if r.status_code not in (200, 204):
-        raise _fail(r, "не уложил задания в грузоместо %s" % trbx_ext)
-    return len(ids)
-
-
-def take_from_box(cab, supply_ext, trbx_ext, order_id):
-    """Изъять задание из грузоместа."""
-    ids = _ids([order_id])
-    if not ids:
-        return False
-    r = req(
-        "DELETE",
-        "%s/api/v3/supplies/%s/trbx/%s/orders/%s" % (WB_BASE, supply_ext, trbx_ext, ids[0]),
-        headers=wb_headers(cab["token"]),
-    )
-    if r.status_code not in (200, 204):
-        raise _fail(r, "не изъял задание %s из грузоместа" % ids[0])
-    return True
 
 
 def drop_boxes(cab, supply_ext, trbx_ids):

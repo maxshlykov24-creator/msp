@@ -139,9 +139,22 @@ def add_orders(supply_id, ship_ids):
 
 
 def make_boxes(supply_id, amount):
+    """Завести грузоместа. WB разрешает не больше половины числа заданий."""
     supply = _supply(supply_id)
     if supply["state"] != "open":
         raise ValueError("поставка передана в доставку, грузоместа не меняются")
+    amount = int(amount or 0)
+    if amount < 1:
+        raise ValueError("сколько грузомест создать?")
+    orders = len(list_supply_shipments(supply["cabinet_id"], supply["ext_id"]))
+    have = len(list_wb_boxes(supply["id"]))
+    # предел считаем сами, чтобы не ловить 4XX: у WB он списывается как десять запросов
+    limit = max(1, int(orders * wb_supply.TRBX_SHARE))
+    if have + amount > limit:
+        raise ValueError(
+            "WB разрешает не больше половины числа заданий: заданий %s, значит грузомест максимум %s, уже создано %s."
+            % (orders, limit, have)
+        )
     cab = _cab_of_supply(supply)
     ext_ids = wb_supply.add_boxes(cab, supply["ext_id"], amount)
     insert_wb_boxes(supply["id"], ext_ids, now_iso())
@@ -149,14 +162,18 @@ def make_boxes(supply_id, amount):
 
 
 def fill_box(box_id, ship_ids):
-    """Уложить задания в грузоместо. Задание должно уже лежать в этой поставке."""
+    """Раскладка заданий по коробкам. Отметка наша, площадку не трогаем.
+
+    Метода привязки задания к грузоместу в API WB нет — сверено по спеке. Так
+    что это учёт для склада: кто в какой коробке лежит, чтобы после печати QR
+    коробку собрали тем же составом. Задание должно уже быть в поставке.
+    """
     box = get_wb_box(box_id)
     if not box:
         raise ValueError("грузоместо не найдено")
     supply = _supply(box["supply_id"])
     if supply["state"] != "open":
         raise ValueError("поставка передана в доставку, состав грузомест не меняется")
-    cab = _cab_of_supply(supply)
     rows = get_shipments_by_ids(ship_ids)
     ok = []
     notes = []
@@ -167,23 +184,19 @@ def fill_box(box_id, ship_ids):
         ok.append(row)
     if not ok:
         raise ValueError("; ".join(notes) or "нечего укладывать")
-    wb_supply.put_in_box(cab, supply["ext_id"], box["ext_id"], [r["ext_id"] for r in ok])
     set_shipment_supply([r["id"] for r in ok], supply["ext_id"], trbx_ext=box["ext_id"])
     return {"packed": len(ok), "box": box["ext_id"], "notes": notes}
 
 
 def empty_box(box_id, ship_ids):
-    """Изъять задания из грузоместа: они остаются в поставке, но без коробки."""
+    """Вынуть задания из коробки: остаются в поставке, но без грузоместа."""
     box = get_wb_box(box_id)
     if not box:
         raise ValueError("грузоместо не найдено")
     supply = _supply(box["supply_id"])
-    cab = _cab_of_supply(supply)
     rows = [r for r in get_shipments_by_ids(ship_ids) if (r["trbx_ext"] or "") == box["ext_id"]]
     if not rows:
         raise ValueError("в этом грузоместе выбранных заданий нет")
-    for row in rows:
-        wb_supply.take_from_box(cab, supply["ext_id"], box["ext_id"], row["ext_id"])
     set_shipment_supply([r["id"] for r in rows], supply["ext_id"], trbx_ext="")
     return {"taken": len(rows)}
 

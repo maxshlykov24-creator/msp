@@ -1377,7 +1377,7 @@ async function loadWbDetail(id) {
       ${open ? `<button class="btn-ghost" id="wbAdd" type="button">Добавить выбранные в «Сборке»${asmPicked ? " (" + asmPicked + ")" : ""}</button>` : ""}
       ${open ? `<input id="wbAmount" class="wb-amount" type="number" min="1" max="200" value="1" title="Сколько грузомест создать">` : ""}
       ${open ? `<button class="btn-ghost" id="wbNewBox" type="button">+ грузоместо</button>` : ""}
-      ${open ? `<button class="btn-ghost" id="wbPack" type="button" disabled>Уложить в выбранное место</button>` : ""}
+      ${open ? `<button class="btn-ghost" id="wbPack" type="button" disabled title="Отметить, что задания лежат в этой коробке. Учёт наш: в API WB привязки задания к грузоместу нет">Уложить в выбранное место</button>` : ""}
       <button class="btn-ghost" id="wbBoxQr" type="button">QR грузомест</button>
       ${open ? `<button class="btn" id="wbDeliver" type="button">Передать в доставку</button>` : `<button class="btn" id="wbQr" type="button">QR поставки</button>`}
     </div>
@@ -1436,7 +1436,7 @@ function bindWbDetail() {
       body: JSON.stringify({ ids: [...state.wbPicked] }),
     });
     const notes = (res.notes || []).join("\n");
-    say($("wbMsg"), "Уложено в " + res.box + ": " + res.packed + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+    say($("wbMsg"), "Отмечено в " + res.box + ": " + res.packed + " — учёт наш, площадке состав коробки не передаётся." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
     state.wbPicked = new Set();
     await loadWbSupplies();
     await loadAsm();

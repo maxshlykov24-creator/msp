@@ -77,7 +77,7 @@ wb_cab = db.insert_cabinet(client_id, "wb", "wb", "token-wb", "", 1, "", "")
 oz_cab = db.insert_cabinet(client_id, "ozon", "ozon", "token-oz", "9999", 1, "", "")
 
 ships = []
-for i in range(3):
+for i in range(4):  # четыре задания: WB даёт максимум половину числа заданий грузомест
     ships.append(
         db.upsert_shipment(
             client_id, wb_cab, "wb", "fbs", "10%s" % i, "Новый", "2026-09-04", "ART-1", "2000000000019",
@@ -98,11 +98,11 @@ assert db.get_wb_supply(sup["id"])["state"] == "open"
 
 # 2. задания в поставку: уходят батчем и получают отметку «на сборке»
 res = supply_flow.add_orders(sup["id"], ships)
-assert res["added"] == 3, res
+assert res["added"] == 4, res
 rows = db.list_supply_shipments(wb_cab, "WB-GI-777")
-assert len(rows) == 3 and all(r["work_state"] == "assembling" for r in rows), [dict(r) for r in rows]
+assert len(rows) == 4 and all(r["work_state"] == "assembling" for r in rows), [dict(r) for r in rows]
 batch = [c for c in CALLS if c[1].endswith("/supplies/WB-GI-777/orders")]
-assert batch and sorted(batch[0][2]["orders"]) == [100, 101, 102], batch
+assert batch and sorted(batch[0][2]["orders"]) == [100, 101, 102, 103], batch
 
 # отправление Ozon в поставку WB не пускаем
 try:
@@ -117,13 +117,24 @@ assert boxes == ["WB-TRBX-1", "WB-TRBX-2"], boxes
 box_rows = db.list_wb_boxes(sup["id"])
 assert [b["ext_id"] for b in box_rows] == boxes
 
-# 4. укладка: два задания в первое место
+# лимит грузомест: не больше половины числа заданий
+try:
+    supply_flow.make_boxes(sup["id"], 1)
+    raise AssertionError("создали грузоместо сверх лимита WB")
+except ValueError as exc:
+    assert "не больше половины" in str(exc), exc
+
+# 4. укладка: два задания в первое место. Площадку не трогаем — метода нет в API
 packed = supply_flow.fill_box(box_rows[0]["id"], ships[:2])
 assert packed["packed"] == 2 and packed["box"] == "WB-TRBX-1", packed
-put = [c for c in CALLS if c[0] == "PATCH" and c[1].endswith("/trbx")][0][2]
-assert put["trbxId"] == "WB-TRBX-1" and sorted(put["orderIds"]) == [100, 101], put
+assert not [c for c in CALLS if c[0] == "PATCH" and c[1].endswith("/trbx")], "лезем в несуществующий метод WB"
 counts = {b["ext_id"]: b["orders"] for b in db.list_wb_boxes(sup["id"])}
 assert counts == {"WB-TRBX-1": 2, "WB-TRBX-2": 0}, counts
+
+# вынули обратно — задание остаётся в поставке, но без коробки
+assert supply_flow.empty_box(box_rows[0]["id"], ships[:1]) == {"taken": 1}
+assert {b["ext_id"]: b["orders"] for b in db.list_wb_boxes(sup["id"])} == {"WB-TRBX-1": 1, "WB-TRBX-2": 0}
+supply_flow.fill_box(box_rows[0]["id"], ships[:1])
 
 # укладка задания, которого нет в поставке
 try:
@@ -135,8 +146,8 @@ except ValueError as exc:
 # 5. предупреждение перед доставкой
 pre = supply_flow.preflight(sup["id"])
 assert pre == {
-    "ext_id": "WB-GI-777", "client": "Тест ООО", "orders": 3, "boxes": 2,
-    "loose": 1, "empty_boxes": ["WB-TRBX-2"], "state": "open",
+    "ext_id": "WB-GI-777", "client": "Тест ООО", "orders": 4, "boxes": 2,
+    "loose": 2, "empty_boxes": ["WB-TRBX-2"], "state": "open",
 }, pre
 
 # без confirm не передаём
@@ -151,7 +162,7 @@ try:
     supply_flow.deliver(sup["id"], confirm=True)
     raise AssertionError("передали с заданием вне коробки без force")
 except ValueError as exc:
-    assert "без грузоместа: 1 из 3" in str(exc), exc
+    assert "без грузоместа: 2 из 4" in str(exc), exc
 
 # 6. QR грузомест до передачи
 pdf, notes, pages = supply_flow.boxes_pdf(sup["id"])
@@ -159,7 +170,7 @@ assert pdf[:4] == b"%PDF" and pages == 2, (pages, notes)
 
 # 7. передача в доставку
 out = supply_flow.deliver(sup["id"], confirm=True, force=True)
-assert out == {"ok": True, "orders": 3, "loose": 1}, out
+assert out == {"ok": True, "orders": 4, "loose": 2}, out
 assert db.get_wb_supply(sup["id"])["state"] == "delivered"
 try:
     supply_flow.make_boxes(sup["id"], 1)
