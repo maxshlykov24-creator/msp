@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from account import consume_fifo
 from db import (
-    find_cache,
+    find_cache_group,
     get_client_by_id,
     get_order_log,
     get_sku,
@@ -33,12 +33,12 @@ def resolve_product(client_id, cabinet_id, ext_key=None, barcode=None, article=N
         sku = get_sku_by_barcode(client_id, barcode)
         if sku and sku["ms_product_id"]:
             return sku["ms_product_id"]
-        for hit in find_cache(client_id, barcode=barcode):
+        for hit in find_cache_group(client_id, barcode=barcode):
             sku = get_sku(hit["cabinet_id"], hit["ext_key"])
             if sku and sku["ms_product_id"]:
                 return sku["ms_product_id"]
     if article:
-        for hit in find_cache(client_id, article=article):
+        for hit in find_cache_group(client_id, article=article):
             sku = get_sku(hit["cabinet_id"], hit["ext_key"])
             if sku and sku["ms_product_id"]:
                 return sku["ms_product_id"]
@@ -97,7 +97,8 @@ def create_order(client, cab, kind, ext_id, positions, posting, ship_date, statu
         return None, "%s %s" % (r.status_code, (r.text or "")[:180])
     oid = r.json().get("id")
     for item in positions:
-        left = consume_fifo(client["id"], item["product_id"], item["qty"], oid)
+        # списываем датой заказа с площадки: воркер мог забрать его на сутки позже
+        left = consume_fifo(client["id"], item["product_id"], item["qty"], oid, when=moment or ship_date)
         if left > 0:
             print("заказ %s: не хватило остатка %s шт товара %s" % (ext_id, left, item["product_id"]))
     upsert_order_log(cab["id"], ext_id, oid, "ok", "", now_iso())
@@ -178,7 +179,12 @@ def ozon_list(url, headers, date_from):
             break
         data = r.json()
         block = data.get("result") or data
-        batch = block.get("postings") or []
+        if isinstance(block, list):
+            batch = block
+        elif isinstance(block, dict):
+            batch = block.get("postings") or []
+        else:
+            batch = []
         out.extend(batch)
         if len(batch) < 100:
             break

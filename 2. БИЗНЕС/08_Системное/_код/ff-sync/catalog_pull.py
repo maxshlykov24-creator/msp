@@ -5,7 +5,9 @@ import csv
 import os
 
 from db import get_cabinet, init_db, replace_cache
+from ms import kind_from_subject
 from net import OZON_BASE, req, ozon_headers, wb_headers
+from products_push import gtin14
 
 WB_CARDS = "https://content-api.wildberries.ru/content/v2/get/cards/list"
 FIELDS = [
@@ -21,7 +23,35 @@ FIELDS = [
     "size",
     "Привезено",
     "Литраж_л",
+    "gtin",
+    "tracking_type",
+    "subject",
+    "need_kiz",
+    "image",
 ]
+
+
+def wb_photo(card):
+    """Мелкая превьюшка карточки WB для списка сборки."""
+    for photo in card.get("photos") or []:
+        if not isinstance(photo, dict):
+            continue
+        for key in ("tm", "c246x328", "square", "big"):
+            if photo.get(key):
+                return photo[key]
+    return ""
+
+
+def ozon_photo(det):
+    if det.get("primary_image"):
+        raw = det["primary_image"]
+        return raw[0] if isinstance(raw, list) and raw else (raw if isinstance(raw, str) else "")
+    for raw in det.get("images") or []:
+        if isinstance(raw, str) and raw:
+            return raw
+        if isinstance(raw, dict) and raw.get("file_name"):
+            return raw["file_name"]
+    return ""
 
 
 def out_dir():
@@ -52,34 +82,53 @@ def pull_wb(token):
     return cards
 
 
+def real_gtin(barcode):
+    digits = "".join(ch for ch in str(barcode or "") if ch.isdigit())
+    if len(digits) == 13 and not digits.startswith("2"):
+        return gtin14(digits)
+    if len(digits) == 14 and not digits.startswith("2"):
+        return digits
+    return ""
+
+
 def rows_wb(cabinet_id, cards):
     rows = []
     for card in cards:
         title = card.get("title") or ""
         article = card.get("vendorCode") or ""
         nmid = card.get("nmID")
+        subject = card.get("subjectName") or ""
+        need_kiz = 1 if card.get("needKiz") else 0
+        kind = kind_from_subject(subject + " " + title, need_kiz=bool(card.get("needKiz")))
+        photo = wb_photo(card)
         sizes = card.get("sizes") or [{}]
         if not sizes:
             sizes = [{}]
         for size in sizes:
-            skus = size.get("skus") or []
+            skus = size.get("skus") or [""]
             chrt = size.get("chrtID")
-            rows.append(
-                {
-                    "cabinet_id": cabinet_id,
-                    "marketplace": "wb",
-                    "ext_key": str(chrt or nmid or ""),
-                    "ext_article": article,
-                    "ext_barcode": skus[0] if skus else "",
-                    "name": title,
-                    "nmId": nmid or "",
-                    "chrtId": chrt or "",
-                    "offer_id": "",
-                    "size": size.get("techSize") or "",
-                    "Привезено": "",
-                    "Литраж_л": "",
-                }
-            )
+            for sku in skus:
+                rows.append(
+                    {
+                        "cabinet_id": cabinet_id,
+                        "marketplace": "wb",
+                        "ext_key": str(chrt or nmid or ""),
+                        "ext_article": article,
+                        "ext_barcode": sku,
+                        "name": title,
+                        "nmId": nmid or "",
+                        "chrtId": chrt or "",
+                        "offer_id": "",
+                        "size": size.get("techSize") or "",
+                        "Привезено": "",
+                        "Литраж_л": "",
+                        "gtin": real_gtin(sku),
+                        "tracking_type": kind,
+                        "subject": subject,
+                        "need_kiz": need_kiz,
+                        "image": photo,
+                    }
+                )
     return rows
 
 
@@ -128,25 +177,44 @@ def rows_ozon(cabinet_id, items, info):
     for it in items:
         offer = it.get("offer_id") or ""
         det = info.get(offer) or {}
-        barcodes = [b for b in (det.get("barcodes") or []) if b and not str(b).startswith("OZN")]
+        name = det.get("name") or ""
+        kind = kind_from_subject(name)
+        photo = ozon_photo(det)
+        seen_bc = set()
+        barcodes = []
+        for raw in det.get("barcodes") or []:
+            code = str(raw or "").strip()
+            if not code:
+                continue
+            key = code.upper() if code.upper().startswith("OZN") else "".join(ch for ch in code if ch.isdigit()) or code
+            if key in seen_bc:
+                continue
+            seen_bc.add(key)
+            barcodes.append(code)
         if not barcodes:
-            barcodes = det.get("barcodes") or []
-        rows.append(
-            {
-                "cabinet_id": cabinet_id,
-                "marketplace": "ozon",
-                "ext_key": offer,
-                "ext_article": offer,
-                "ext_barcode": barcodes[0] if barcodes else "",
-                "name": det.get("name") or "",
-                "nmId": "",
-                "chrtId": "",
-                "offer_id": offer,
-                "size": "",
-                "Привезено": "",
-                "Литраж_л": "",
-            }
-        )
+            barcodes = [""]
+        for code in barcodes:
+            rows.append(
+                {
+                    "cabinet_id": cabinet_id,
+                    "marketplace": "ozon",
+                    "ext_key": offer,
+                    "ext_article": offer,
+                    "ext_barcode": code,
+                    "name": name,
+                    "nmId": "",
+                    "chrtId": "",
+                    "offer_id": offer,
+                    "size": "",
+                    "Привезено": "",
+                    "Литраж_л": "",
+                    "gtin": real_gtin(code),
+                    "tracking_type": kind,
+                    "subject": name,
+                    "need_kiz": 1 if kind and kind != "Не маркируется" else 0,
+                    "image": photo,
+                }
+            )
     return rows
 
 

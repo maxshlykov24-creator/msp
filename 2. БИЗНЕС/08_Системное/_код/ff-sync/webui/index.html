@@ -1,139 +1,630 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>БЕРЁЗА ГРУПП — фулфилмент</title>
-<link rel="stylesheet" href="/ui/app.css">
+<title>БЕРЕЗА ГРУПП — кабинет склада</title>
+<link rel="stylesheet" href="/ui/app.css?v=32">
 </head>
 <body>
 
 <div id="login">
   <div class="glass login-card">
-    <div class="login-brand"><b>БЕРЁЗА ГРУПП</b><small>Фулфилмент</small></div>
+    <div class="login-brand">
+      <img src="/ui/logo-ms-transparent.png" alt="MS Product">
+      <div><b>БЕРЕЗА ГРУПП</b><small>Кабинет склада</small></div>
+    </div>
     <h1>Вход</h1>
-    <p class="hint">Приёмка товара, учёт остатка и счета контрагентам.</p>
-    <div class="err" id="loginErr"></div>
-    <div class="field"><label for="loginUser">Логин</label><input id="loginUser" type="text" autocomplete="username"></div>
-    <div class="field"><label for="loginPass">Пароль</label><input id="loginPass" type="password" autocomplete="current-password"></div>
-    <button class="btn" id="loginBtn" type="button">Войти</button>
+    <p>Заведение товаров, учёт остатка и счета контрагентам.</p>
+    <div class="login-err" id="loginErr"></div>
+    <div class="field">
+      <label for="loginUser">Логин</label>
+      <input id="loginUser" type="text" autocomplete="username" placeholder="Логин">
+    </div>
+    <div class="field">
+      <label for="loginPass">Пароль</label>
+      <input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="btn-primary" id="loginBtn" type="button">Войти</button>
   </div>
 </div>
 
 <div id="app">
 <div class="topbar">
   <div class="topbar-in">
-    <div class="brand"><b>БЕРЁЗА ГРУПП</b><span>Фулфилмент</span></div>
-    <div class="viewnav" id="viewNav">
-      <button type="button" data-view="intake" class="active">Приёмка</button>
-      <button type="button" data-view="stock">Учёт</button>
-      <button type="button" data-view="bills">Счета</button>
+    <div class="brand">
+      <div class="brand-title">БЕРЕЗА ГРУПП<small>Кабинет склада</small></div>
     </div>
     <div class="header-right">
+      <div class="viewnav" id="viewNav">
+        <button type="button" data-view="home" class="active">Обзор</button>
+        <button type="button" data-view="asm">Сборка</button>
+        <button type="button" data-view="intake">Заведение</button>
+        <button type="button" data-view="stock">Учёт</button>
+        <button type="button" data-view="ships">Отгрузки</button>
+      </div>
       <span class="who" id="who"></span>
+      <button class="theme-toggle" id="themeToggle" type="button">
+        <span id="themeLabel">Светлая</span>
+        <span class="theme-switch"></span>
+      </button>
       <button class="btn-ghost" id="syncBtn" type="button">Обновить клиентов</button>
       <button class="btn-ghost" id="logoutBtn" type="button">Выйти</button>
     </div>
   </div>
 </div>
+<div class="msg sync-banner" id="syncNote"></div>
 
 <div class="wrap">
 
-  <div class="view active" id="view-intake">
-    <div class="head">
-      <div><h1>Приёмка</h1><p>Штрихкод, количество и литраж. Остальное сервер подставит из кабинетов клиента.</p></div>
-    </div>
-
-    <div class="panel glass">
-      <div class="form">
-        <div class="fld wide"><label>Контрагент</label><select id="iClient"></select></div>
-        <div class="fld"><label>Штрихкод</label><input id="iBarcode" type="text" autocomplete="off" placeholder="4650000000000"></div>
-        <div class="fld sm"><label>Количество</label><input id="iQty" type="number" min="1" step="1" value="1"></div>
-        <div class="fld sm"><label>Литраж, л</label><input id="iLiters" type="number" min="0" step="0.01" placeholder="0.00"></div>
-        <div class="fld"><label>Тип продукции</label><select id="iKind"></select></div>
-        <div class="fld"><label>GTIN <span class="opt">если не подтянулся</span></label><input id="iGtin" type="text" autocomplete="off"></div>
-        <button class="btn" id="iAdd" type="button">Добавить</button>
+  <div class="view active" id="view-home">
+    <div class="hero-head dash-head">
+      <div>
+        <h1>Обзор склада</h1>
+        <p>Ключевые цифры фулфилмента на одном экране. Остаток сейчас, отгрузки FBS и FBO, коды маркировки.</p>
       </div>
-      <div class="msg" id="iMsg"></div>
+      <div class="dash-updated" id="dUpdated"></div>
     </div>
 
-    <div class="sec"><h2>Очередь</h2><span id="iCount"></span></div>
+    <div class="panel glass filters dash-filters">
+      <div class="fld wide combo" id="dClientBox">
+        <label>Контрагент</label>
+        <input id="dClientQ" type="search" placeholder="Все контрагенты" autocomplete="off">
+        <input type="hidden" id="dClient" value="">
+        <div class="combo-list" id="dClientList" hidden></div>
+      </div>
+      <div class="fld">
+        <label>Период отгрузок</label>
+        <div class="viewnav marknav" id="dPeriod">
+          <button type="button" data-days="0">Сегодня</button>
+          <button type="button" data-days="7" class="active">7 дней</button>
+          <button type="button" data-days="30">30 дней</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Даты</label>
+        <div class="daterange">
+          <input type="date" id="dFrom">
+          <span class="sep">—</span>
+          <input type="date" id="dTo">
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-grid k5">
+      <div class="kpi glass tilt feature" data-go="stock"><div class="glow"></div>
+        <div class="kpi-label">На складе</div>
+        <div class="kpi-val" id="dQty">—</div>
+        <div class="kpi-sub" id="dQtySub">штук · сейчас</div>
+      </div>
+      <div class="kpi glass tilt" data-go="stock"><div class="glow"></div>
+        <div class="kpi-label">Объём</div>
+        <div class="kpi-val" id="dVol">— <small>л</small></div>
+        <div class="kpi-sub" id="dVolSub">занято на складе</div>
+      </div>
+      <div class="kpi glass tilt feature" data-go="stock"><div class="glow"></div>
+        <div class="kpi-label">К выставлению</div>
+        <div class="kpi-val gold" id="dMoney">— <small>₽</small></div>
+        <div class="kpi-sub" id="dMoneySub">хранение с прошлого счёта</div>
+      </div>
+      <div class="kpi glass tilt" data-go="ships"><div class="glow"></div>
+        <div class="kpi-label">Отправлений</div>
+        <div class="kpi-val" id="dShip">—</div>
+        <div class="kpi-sub" id="dShipSub">FBS и FBO за период</div>
+      </div>
+      <div class="kpi glass tilt feature" data-go="ships"><div class="glow"></div>
+        <div class="kpi-label">Коды маркировки</div>
+        <div class="kpi-val gold" id="dMarks">—</div>
+        <div class="kpi-sub" id="dMarksSub">КИЗ в выбранных отгрузках</div>
+      </div>
+    </div>
+
+    <div class="dash-cols">
+      <div class="panel glass tilt">
+        <h3>Площадки и схемы</h3>
+        <div class="psub">Доля отправлений за период</div>
+        <div class="share" id="dShareMp"></div>
+        <div class="share" id="dShareKind"></div>
+      </div>
+      <div class="panel glass tilt dash-chart-panel">
+        <h3>Отгрузки по дням</h3>
+        <div class="psub">Столбец — отправления, линия — коды маркировки</div>
+        <div class="chart-box" id="dChartBox">
+          <svg class="chart-svg" id="dChart" viewBox="0 0 1000 220" preserveAspectRatio="none"></svg>
+          <div class="chart-tip" id="dChartTip"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-strip">
+      <button class="status glass tilt" type="button" data-go="intake"><div class="glow"></div>
+        <div class="kpi-label">Очередь заведения</div>
+        <div class="status-val" id="dIntake">—</div>
+        <div class="kpi-sub">штрихкоды ждут создания</div>
+      </button>
+      <button class="status glass tilt" type="button" data-go="ships"><div class="glow"></div>
+        <div class="kpi-label">Без кодов</div>
+        <div class="status-val warn" id="dEmpty">—</div>
+        <div class="kpi-sub">отправления без КИЗ</div>
+      </button>
+      <button class="status glass tilt" type="button" data-go="bills"><div class="glow"></div>
+        <div class="kpi-label">Счета за период</div>
+        <div class="status-val" id="dBills">—</div>
+        <div class="kpi-sub" id="dBillsSub">выставлено в МойСклад</div>
+      </button>
+      <div class="status glass tilt"><div class="glow"></div>
+        <div class="kpi-label">Клиенты</div>
+        <div class="status-val" id="dClients">—</div>
+        <div class="kpi-sub">активные контрагенты</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-asm">
+    <div class="hero-head">
+      <div>
+        <h1>Сборка</h1>
+        <p>Отправления FBS и FBO по всем кабинетам клиентов в одном списке. Порядок как в личном кабинете Ozon, только сразу по обеим площадкам. Период режем по времени поступления — чтобы утренняя и вечерняя смены не мешали друг другу.</p>
+      </div>
+    </div>
+
+    <div class="panel glass filters">
+      <div class="fld wide combo" id="aClientBox">
+        <label>Контрагент</label>
+        <input id="aClientQ" type="search" placeholder="Все контрагенты" autocomplete="off">
+        <input type="hidden" id="aClient" value="">
+        <div class="combo-list" id="aClientList" hidden></div>
+      </div>
+      <div class="fld">
+        <label>Площадка</label>
+        <div class="viewnav marknav" id="aMp">
+          <button type="button" data-mp="" class="active">Все</button>
+          <button type="button" data-mp="wb">WB</button>
+          <button type="button" data-mp="ozon">Ozon</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Принят с</label>
+        <div class="daterange"><input type="datetime-local" id="aSince"></div>
+      </div>
+      <div class="fld">
+        <label>Принят до</label>
+        <div class="daterange">
+          <input type="datetime-local" id="aUntil">
+          <button class="btn-ghost slimbtn" id="aNow" type="button" title="Поставить текущее время">Сейчас</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Смена</label>
+        <div class="viewnav marknav" id="aShift">
+          <button type="button" data-shift="today">Сегодня</button>
+          <button type="button" data-shift="morning">Утро</button>
+          <button type="button" data-shift="evening">Вечер</button>
+          <button type="button" data-shift="all" class="active">Без ограничения</button>
+        </div>
+      </div>
+      <div class="fld"><label>Артикул</label><input id="aArticle" type="search" placeholder="точное совпадение"></div>
+      <div class="fld grow"><label>Поиск</label><input id="aQuery" type="search" placeholder="номер отправления, наименование, трек"></div>
+      <button class="btn-ghost" id="aSupplies" type="button">Поставки WB</button>
+      <button class="btn-ghost" id="aSync" type="button">Обновить отправления</button>
+    </div>
+
+    <div class="viewnav asmtabs" id="aTabs"></div>
+
     <div class="panel glass">
-      <div class="tbl-wrap">
-        <table class="tbl" id="iTbl">
+      <div class="tbl-wrap asm-wrap">
+        <table class="tbl asm-tbl" id="aTbl">
           <thead><tr>
-            <th>Контрагент</th><th>Штрихкод</th><th>Артикул</th><th>Наименование</th>
-            <th>МП</th><th>GTIN</th><th>Тип</th><th class="num">Литраж</th><th class="num">Кол-во</th><th>Статус</th><th></th>
+            <th class="pick"><input type="checkbox" id="aAll"></th>
+            <th>Контрагент</th>
+            <th>Отправление</th>
+            <th>Статус</th>
+            <th>Принят</th>
+            <th>Отгрузить до</th>
+            <th class="ph">Фото</th>
+            <th>Кол-во, артикул</th>
+            <th>Наименование</th>
+            <th>Трек</th>
+            <th>Склад</th>
+            <th>Поставка</th>
+            <th class="num" title="Коды маркировки">КиЗ</th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <div class="actions">
-        <button class="btn" id="iRun" type="button">Создать товары и заказ поставщика</button>
+        <span class="sel" id="aSel">Ничего не выбрано</span>
+        <button class="btn-ghost" id="aWork" type="button" disabled>Взять в сборку</button>
+        <button class="btn-ghost" id="aUnwork" type="button" disabled>Вернуть в новые</button>
+        <button class="btn-ghost" id="aShip" type="button" disabled title="Ozon: перевести в «Ожидают отгрузки». WB собирается вместе с поставкой">Собрать на площадке</button>
+        <div class="viewnav marknav" id="aSplit" title="Как собирать многотоварные заказы Ozon">
+          <button type="button" data-split="1" class="active">Дробить на единицы</button>
+          <button type="button" data-split="0">Одним местом</button>
+        </div>
+        <button class="btn" id="aPrint" type="button" disabled>Этикетки одним файлом</button>
+        <div class="viewnav marknav" id="aMode" title="Что печатать на этикетке">
+          <button type="button" data-mode="posting" class="active">Отправление</button>
+          <button type="button" data-mode="both">Отправление + товар</button>
+          <button type="button" data-mode="product">Только товар</button>
+        </div>
+        <button class="btn-ghost" id="aMs" type="button" disabled>Открыть заказы в МойСклад</button>
+      </div>
+      <div class="msg" id="aMsg"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-intake">
+    <div class="hero-head">
+      <div>
+        <h1>Заведение</h1>
+        <p>Загрузи реестр поставки от клиента или вставь штрихкоды вручную. Количество, литраж и тариф руководитель ставит уже в очереди, по каждой позиции. Литраж можно вписать габаритами: 8x8x120 см превращаются в 7,68 л.</p>
+      </div>
+    </div>
+
+    <div class="panel glass">
+      <div class="form">
+        <div class="fld grow combo" id="iClientBox">
+          <label>Контрагент</label>
+          <input id="iClientQ" type="search" placeholder="Начни вводить название" autocomplete="off">
+          <input type="hidden" id="iClient" value="">
+          <div class="combo-list" id="iClientList" hidden></div>
+        </div>
+      </div>
+      <div class="actions">
+        <label class="btn filebtn">Загрузить реестр поставки<input id="iRegistry" type="file" accept=".xlsx,.xlsm,.xls"></label>
+        <button class="btn-ghost" id="iSupplies" type="button">Поставки</button>
+        <span class="sel">Excel от клиента: артикул, штрихкод, наименование, количество. Позиции считываем по артикулу и сверяем с кабинетами.</span>
+      </div>
+      <div class="msg" id="iRegMsg"></div>
+      <div class="fld grow" style="margin-top:18px">
+        <label>Штрихкоды вручную</label>
+        <textarea id="iBarcodes" rows="4" placeholder="По одному в строке или через запятую. Можно вставить столбец из Excel."></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn" id="iAdd" type="button">Сверить с кабинетами</button>
+        <label class="btn-ghost filebtn">Загрузить файл<input id="iFile" type="file" accept=".txt,.csv,.xlsx,.xls"></label>
+        <span class="sel">txt, csv, Excel. Берём все числа от 8 знаков.</span>
+      </div>
+      <div class="msg" id="iMsg"></div>
+    </div>
+
+    <div class="sec-title"><h2>Очередь</h2><span id="iCount"></span></div>
+    <div class="panel glass">
+      <div class="tbl-wrap intake-wrap">
+        <table class="tbl intake-tbl" id="iTbl">
+          <thead><tr>
+            <th>Контрагент</th><th>Товар</th><th>Наименование</th>
+            <th>Тип</th><th class="num">Кол-во</th><th class="num" title="Литраж или габариты 8x8x120">Литраж</th>
+            <th class="num" title="Тариф, ₽/л/сутки">Тариф</th><th>Статус</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="btn" id="iRun" type="button">Создать товары в МойСклад</button>
       </div>
       <div class="msg" id="iRunMsg"></div>
     </div>
   </div>
 
   <div class="view" id="view-stock">
-    <div class="head">
-      <div><h1>Учёт</h1><p>Партии по FIFO: что лежит, сколько дней и сколько начислено с прошлого счёта.</p></div>
+    <div class="hero-head">
+      <div>
+        <h1>Учёт</h1>
+        <p>Партии по FIFO. Хранение считаем по остатку каждых суток: штука платит за все дни, что лежала, даже если уже уехала.</p>
+      </div>
     </div>
 
     <div class="panel glass filters">
-      <div class="fld wide"><label>Контрагент</label><select id="sClient"></select></div>
+      <div class="fld wide combo" id="sClientBox">
+        <label>Контрагент</label>
+        <input id="sClientQ" type="search" placeholder="Все контрагенты" autocomplete="off">
+        <input type="hidden" id="sClient" value="">
+        <div class="combo-list" id="sClientList" hidden></div>
+      </div>
+      <div class="fld">
+        <label>Маркировка</label>
+        <div class="viewnav marknav" id="sMark">
+          <button type="button" data-mark="" class="active">Все</button>
+          <button type="button" data-mark="yes">Маркированная</button>
+          <button type="button" data-mark="no">Без маркировки</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Считать по дату</label>
+        <div class="daterange">
+          <input type="date" id="sTo">
+          <button class="btn-ghost slimbtn" id="sWeek" type="button" title="Закрыть неделю по пятницу">Неделя</button>
+        </div>
+      </div>
       <div class="fld grow"><label>Поиск</label><input id="sQuery" type="search" placeholder="артикул, штрихкод, GTIN, наименование"></div>
+      <button class="btn-ghost" id="sCal" type="button">Календарь хранения</button>
+      <button class="btn-ghost" id="sBills" type="button">Счета</button>
       <button class="btn-ghost" id="sExport" type="button">Выгрузить в Excel</button>
     </div>
 
-    <div class="kpi-grid">
-      <div class="kpi glass"><div class="kpi-label">Позиций</div><div class="kpi-val" id="kPos">—</div></div>
-      <div class="kpi glass"><div class="kpi-label">Штук на складе</div><div class="kpi-val" id="kQty">—</div></div>
-      <div class="kpi glass"><div class="kpi-label">Объём</div><div class="kpi-val" id="kVol">— <small>л</small></div></div>
-      <div class="kpi glass feature"><div class="kpi-label">К выставлению</div><div class="kpi-val gold" id="kMoney">— <small>₽</small></div><div class="kpi-sub" id="kAged"></div></div>
+    <div class="kpi-grid k5">
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Позиций</div><div class="kpi-val" id="kPos">—</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Штук на складе</div><div class="kpi-val" id="kQty">—</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Объём</div><div class="kpi-val" id="kVol">— <small>л</small></div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Литро-суток</div><div class="kpi-val" id="kLiterDays">—</div><div class="kpi-sub">с прошлого счёта</div></div>
+      <div class="kpi glass tilt feature"><div class="glow"></div><div class="kpi-label">К выставлению</div><div class="kpi-val gold" id="kMoney">— <small>₽</small></div><div class="kpi-sub" id="kAged"></div></div>
     </div>
 
     <div class="panel glass">
-      <div class="tbl-wrap">
-        <table class="tbl" id="sTbl">
+      <div class="tbl-wrap stock-wrap">
+        <table class="tbl stock-tbl" id="sTbl">
           <thead><tr>
             <th class="pick"><input type="checkbox" id="sAll"></th>
-            <th>Контрагент</th><th>Артикул</th><th>Штрихкод</th><th>GTIN</th><th>Наименование</th>
-            <th>Тип</th><th class="num">Литраж</th><th class="num">Остаток</th><th class="num">Объём, л</th>
-            <th>Принято</th><th class="num">Дней</th><th class="num">Хранение</th><th class="num">Приёмка</th>
-            <th class="num">Отгрузка</th><th class="num">Итого, ₽</th>
+            <th>Контрагент</th><th>Коды</th><th>Наименование</th>
+            <th class="num" title="Литраж, л">Л</th><th class="num" title="Тариф, ₽/л/сутки">Тариф</th>
+            <th class="num" title="Принято, шт">Прин.</th><th class="num" title="Отгружено, шт">Отгр.</th>
+            <th class="num" title="Остаток, шт">Ост.</th>
+            <th>Принято</th><th class="num" title="Дней на складе">Дн.</th>
+            <th class="num" title="Дней в этом счёте">К опл.</th><th class="num" title="Литро-суток за период">Л·сут</th>
+            <th class="num" title="Хранение, ₽">Итого</th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <div class="actions">
         <span class="sel" id="sSel">Ничего не выбрано</span>
+        <button class="btn-ghost" id="sReport" type="button" disabled>Отчёт для клиента</button>
         <button class="btn" id="sBill" type="button" disabled>Выставить счёт</button>
       </div>
+      <div class="msg" id="sMsg"></div>
     </div>
   </div>
 
-  <div class="view" id="view-bills">
-    <div class="head"><div><h1>Счета</h1><p>Выставленные счета покупателю в МойСклад.</p></div></div>
+  <div class="view" id="view-ships">
+    <div class="hero-head">
+      <div>
+        <h1>Отгрузки</h1>
+        <p>Все отправления FBS и FBO из кабинетов. Отметь поставки и выгрузи коды маркировки одним файлом — клиенту за сегодня или за период.</p>
+      </div>
+    </div>
+
+    <div class="panel glass filters">
+      <div class="fld wide combo" id="shClientBox">
+        <label>Контрагент</label>
+        <input id="shClientQ" type="search" placeholder="Все контрагенты" autocomplete="off">
+        <input type="hidden" id="shClient" value="">
+        <div class="combo-list" id="shClientList" hidden></div>
+      </div>
+      <div class="fld">
+        <label>Площадка</label>
+        <div class="viewnav marknav" id="shMp">
+          <button type="button" data-mp="" class="active">Все</button>
+          <button type="button" data-mp="wb">WB</button>
+          <button type="button" data-mp="ozon">Ozon</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Схема</label>
+        <div class="viewnav marknav" id="shKind">
+          <button type="button" data-kind="" class="active">Все</button>
+          <button type="button" data-kind="fbs">FBS</button>
+          <button type="button" data-kind="fbo">FBO</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Маркировка</label>
+        <div class="viewnav marknav" id="shMark">
+          <button type="button" data-mark="" class="active">Все</button>
+          <button type="button" data-mark="yes">С кодами</button>
+          <button type="button" data-mark="no">Без кодов</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Период</label>
+        <div class="viewnav marknav" id="shPeriod">
+          <button type="button" data-days="0" class="active">Сегодня</button>
+          <button type="button" data-days="7">7 дней</button>
+          <button type="button" data-days="30">30 дней</button>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Даты</label>
+        <div class="daterange">
+          <input type="date" id="shFrom">
+          <span class="sep">—</span>
+          <input type="date" id="shTo">
+        </div>
+      </div>
+      <div class="fld grow"><label>Поиск</label><input id="shQuery" type="search" placeholder="номер, артикул, штрихкод, статус"></div>
+      <button class="btn-ghost" id="shSync" type="button">Обновить отгрузки</button>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Отправлений</div><div class="kpi-val" id="kShip">—</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Штук</div><div class="kpi-val" id="kShipQty">—</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Кодов маркировки</div><div class="kpi-val gold" id="kShipMarks">—</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Без кодов</div><div class="kpi-val" id="kShipEmpty">—</div></div>
+    </div>
+
     <div class="panel glass">
-      <div class="tbl-wrap">
-        <table class="tbl" id="bTbl">
+      <div class="tbl-wrap stock-wrap">
+        <table class="tbl stock-tbl" id="shTbl">
           <thead><tr>
-            <th>Номер</th><th>Контрагент</th><th>Дата</th><th class="num">Позиций</th>
-            <th class="num">Хранение</th><th class="num">Приёмка</th><th class="num">Отгрузка</th><th class="num">Итого, ₽</th><th>Кто</th>
+            <th class="pick"><input type="checkbox" id="shAll"></th>
+            <th>Контрагент</th><th>МП</th><th>Схема</th><th>Отправление</th><th>Заказ МС</th><th>Дата</th>
+            <th>Статус</th><th>Артикул</th><th>Наименование</th>
+            <th class="num">Шт</th><th class="num">Коды</th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
+      <div class="actions">
+        <span class="sel" id="shSel">Ничего не выбрано</span>
+        <button class="btn-ghost" id="shMs" type="button" disabled>Открыть заказы на печать</button>
+        <button class="btn-ghost" id="shReport" type="button" disabled>Отчёт по отгрузкам</button>
+        <button class="btn" id="shExport" type="button" disabled>Выгрузить коды маркировки</button>
+      </div>
+      <div class="msg" id="shMsg"></div>
     </div>
   </div>
 
+  <div class="footer glass">
+    <div class="footer-brand">
+      <img src="/ui/logo-ms-transparent.png" alt="MS Product">
+      <div class="footer-div"></div>
+      <span><b>MS Product</b> · системная автоматизация</span>
+    </div>
+    <div class="footer-meta">БЕРЕЗА ГРУПП · кабинет склада</div>
+  </div>
+
 </div>
+</div>
+
+<div id="billsModal" class="modal">
+  <div class="glass modal-card wide">
+    <div class="modal-head">
+      <div>
+        <h3>Счета</h3>
+        <p>Выставленные счета покупателю в МойСклад</p>
+      </div>
+      <button class="btn-ghost" id="billsClose" type="button">Закрыть</button>
+    </div>
+    <div class="tbl-wrap bills-wrap">
+      <table class="tbl" id="bTbl">
+        <thead><tr>
+          <th>Номер</th><th>Контрагент</th><th>Период</th><th>Дата</th><th class="num">Позиций</th>
+          <th class="num">Хранение</th><th class="num">Итого, ₽</th><th>Кто</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="billDetail" class="modal bill-detail">
+  <div class="glass modal-card wide">
+    <div class="modal-head">
+      <div>
+        <h3 id="bdTitle">Счёт</h3>
+        <p id="bdSub"></p>
+      </div>
+      <button class="btn-ghost" id="bdClose" type="button">Закрыть</button>
+    </div>
+    <div class="kpi-grid k3 bill-kpi">
+      <div class="kpi glass"><div class="kpi-label">Литро-суток</div><div class="kpi-val" id="bdLiterDays">—</div></div>
+      <div class="kpi glass"><div class="kpi-label">Хранение</div><div class="kpi-val" id="bdStorage">—</div></div>
+      <div class="kpi glass feature"><div class="kpi-label">Итого</div><div class="kpi-val gold" id="bdTotal">—</div></div>
+    </div>
+    <div class="tbl-wrap bills-wrap">
+      <table class="tbl" id="bdTbl">
+        <thead><tr>
+          <th>Артикул</th><th>Наименование</th><th>Период</th>
+          <th class="num">Дней</th><th class="num">Л·сут</th><th class="num">Тариф</th><th class="num">Итого, ₽</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="calModal" class="modal">
+  <div class="glass modal-card wide">
+    <div class="modal-head">
+      <div>
+        <h3>Календарь хранения</h3>
+        <p id="calSub">Остаток на утро каждых суток и деньги за этот день</p>
+      </div>
+      <div class="modal-head-tools">
+        <div class="daterange">
+          <input type="date" id="calFrom">
+          <span class="sep">—</span>
+          <input type="date" id="calTo">
+        </div>
+        <button class="btn-ghost" id="calExport" type="button">В Excel</button>
+        <button class="btn-ghost" id="calClose" type="button">Закрыть</button>
+      </div>
+    </div>
+    <div class="tbl-wrap cal-wrap">
+      <table class="tbl cal-tbl" id="calTbl">
+        <thead><tr></tr></thead>
+        <tbody></tbody>
+        <tfoot><tr></tr></tfoot>
+      </table>
+    </div>
+    <div class="msg" id="calMsg"></div>
+  </div>
+</div>
+
+<div id="pickModal" class="modal bill-detail">
+  <div class="glass modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Какой это товар?</h3>
+        <p id="pickSub"></p>
+      </div>
+      <button class="btn-ghost" id="pickClose" type="button">Закрыть</button>
+    </div>
+    <div class="pick-list" id="pickList"></div>
+    <div class="msg" id="pickMsg"></div>
+  </div>
+</div>
+
+<div id="supModal" class="modal">
+  <div class="glass modal-card wide">
+    <div class="modal-head">
+      <div>
+        <h3>Поставки по реестрам</h3>
+        <p>Что клиент заявил в реестре. Фактическое количество подтверждает склад после пересчёта.</p>
+      </div>
+      <button class="btn-ghost" id="supClose" type="button">Закрыть</button>
+    </div>
+    <div class="tbl-wrap bills-wrap">
+      <table class="tbl" id="supTbl">
+        <thead><tr>
+          <th>№</th><th>Контрагент</th><th>Договор</th><th>Плановая дата</th>
+          <th>Перевозчик</th><th>Машина</th><th>Мест</th>
+          <th class="num">Позиций</th><th class="num">Штук</th><th class="num">В работе</th><th>Загрузил</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="wbModal" class="modal">
+  <div class="glass modal-card wide">
+    <div class="modal-head">
+      <div>
+        <h3>Поставки WB</h3>
+        <p>Собранные задания WB уходят в поставку, а внутри поставки раскладываются по грузоместам. QR коробов печатается отсюда. Передача в доставку необратима: WB закрывает поставку и переводит все задания в «В доставке».</p>
+      </div>
+      <button class="btn-ghost" id="wbClose" type="button">Закрыть</button>
+    </div>
+    <div class="wb-cols">
+      <div class="wb-list">
+        <div class="wb-new">
+          <input id="wbName" type="text" placeholder="Название поставки">
+          <button class="btn" id="wbCreate" type="button">Создать</button>
+        </div>
+        <div id="wbSupplies" class="wb-supplies"></div>
+      </div>
+      <div class="wb-detail" id="wbDetail"></div>
+    </div>
+    <div class="msg" id="wbMsg"></div>
+  </div>
+</div>
+
+<div id="askModal" class="modal">
+  <div class="glass modal-card">
+    <h3 id="askTitle">Точно?</h3>
+    <p class="psub" id="askText"></p>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="askNo" type="button">Отмена</button>
+      <button class="btn" id="askYes" type="button">Подтверждаю</button>
+    </div>
+  </div>
 </div>
 
 <div id="modal" class="modal">
   <div class="glass modal-card">
     <h3 id="mTitle">Счёт</h3>
+    <p class="psub" id="mPeriod"></p>
     <div class="inv-lines" id="mLines"></div>
     <div class="inv-sum"><span>Итого</span><b id="mTotal">—</b></div>
     <div class="msg" id="mMsg"></div>
@@ -144,6 +635,6 @@
   </div>
 </div>
 
-<script src="/ui/app.js"></script>
+<script src="/ui/app.js?v=32"></script>
 </body>
 </html>

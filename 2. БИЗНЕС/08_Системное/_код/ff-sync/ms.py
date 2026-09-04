@@ -15,8 +15,6 @@ AGENT_ATTRS = [
     ("Ozon Client-Id", "string", "ATTR_AGENT_OZON_CID"),
     ("Ozon Api-Key", "text", "ATTR_AGENT_OZON_KEY"),
     ("Тариф хранения, руб/л/сутки", "double", "ATTR_AGENT_TARIFF_STORE"),
-    ("Тариф приёмки, руб/шт", "double", "ATTR_AGENT_TARIFF_IN"),
-    ("Тариф отгрузки, руб/шт", "double", "ATTR_AGENT_TARIFF_OUT"),
     ("Синхронизация", "text", "ATTR_AGENT_SYNC"),
 ]
 
@@ -34,6 +32,15 @@ PROJECTS = {
     ("ozon", "fbo"): "Ozon ФБО",
 }
 
+MS_APP = "https://online.moysklad.ru/app"
+
+
+def order_app_url(ms_id):
+    if not ms_id:
+        return ""
+    return "%s/#customerorder/edit?id=%s" % (MS_APP, ms_id)
+
+
 TRACKING = {
     "Не маркируется": "NOT_TRACKED",
     "Одежда": "LP_CLOTHES",
@@ -46,6 +53,76 @@ TRACKING = {
 }
 
 TRACKING_LABELS = list(TRACKING.keys())
+
+# Предмет WB / название Ozon → тип продукции МойСклад.
+_KIND_HINTS = (
+    (
+        (
+            "босонож",
+            "балетк",
+            "кроссов",
+            "сапог",
+            "туфл",
+            "кеды",
+            "кед ",
+            "ботин",
+            "обув",
+            "сандал",
+            "тапоч",
+            "лофер",
+            "мокасин",
+            "слипон",
+            "угги",
+            "вален",
+            "лодочк",
+            "полусапож",
+        ),
+        "Обувь",
+    ),
+    (
+        (
+            "куртк",
+            "пуховик",
+            "плать",
+            "футболк",
+            "брюк",
+            "джин",
+            "пальто",
+            "свитер",
+            "худи",
+            "рубаш",
+            "юбк",
+            "костюм",
+            "жилет",
+            "толстов",
+            "комбинезон",
+            "одежд",
+            "бель",
+            "пиджак",
+            "блуз",
+            "кардиган",
+            "ветров",
+        ),
+        "Одежда",
+    ),
+    (("парфюм", "духи", "туалетная вода"), "Парфюм"),
+    (("бад", "витамин", "биологически"), "БАД"),
+    (("шин",), "Шины"),
+    (("молок", "кефир", "творог", "йогурт"), "Молочка"),
+    (("вода пить", "питьевая вода"), "Вода"),
+)
+
+
+def kind_from_subject(subject, need_kiz=None):
+    text = (subject or "").lower()
+    for keys, kind in _KIND_HINTS:
+        if any(key in text for key in keys):
+            return kind
+    if need_kiz is False:
+        return "Не маркируется"
+    if need_kiz is True:
+        return ""
+    return "Не маркируется"
 
 
 def ms_meta(typ, oid):

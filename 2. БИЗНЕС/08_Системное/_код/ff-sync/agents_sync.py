@@ -121,7 +121,7 @@ def iter_agents():
             "GET",
             MS_BASE + "/entity/counterparty",
             headers=ms_headers(),
-            params={"limit": 100, "offset": offset},
+            params={"limit": 100, "offset": offset, "expand": "group"},
         )
         if r.status_code != 200:
             print("контрагенты: %s %s" % (r.status_code, (r.text or "")[:200]))
@@ -136,9 +136,26 @@ def iter_agents():
         offset += 100
 
 
+def group_name(row):
+    return ((row.get("group") or {}).get("name") or "").strip()
+
+
+def has_ff_mark(row):
+    """Тег и группа без учёта регистра: в МойСклад пишут и «фулфилмент»."""
+    needle = TAG.lower()
+    for tag in row.get("tags") or []:
+        if str(tag).lower() == needle:
+            return True
+    return needle in group_name(row).lower()
+
+
 def is_ff(row, known_ids):
-    tags = row.get("tags") or []
-    if TAG in tags:
+    """Берём контрагента, если тег или группа называется Фулфилмент.
+
+    В МойСклад это разные поля: тег — tags, папка — group. Раньше смотрели
+    только тег и только с заглавной буквы.
+    """
+    if has_ff_mark(row):
         return True
     if row.get("id") in known_ids:
         return True
@@ -147,7 +164,7 @@ def is_ff(row, known_ids):
 
 def ensure_tag(row):
     tags = list(row.get("tags") or [])
-    if TAG in tags:
+    if any(str(t).lower() == TAG.lower() for t in tags):
         return
     tags.append(TAG)
     r = req(
@@ -359,8 +376,6 @@ def sync_one(row):
     update_client(
         client["id"],
         tariff_storage=parse_num(fields.get("Тариф хранения, руб/л/сутки")),
-        tariff_intake=parse_num(fields.get("Тариф приёмки, руб/шт")),
-        tariff_ship=parse_num(fields.get("Тариф отгрузки, руб/шт")),
     )
     client = get_client(client["code"])
     from db import get_cabinet_by_client_mp
@@ -389,7 +404,9 @@ def _run():
     known = {c["ms_counterparty_id"] for c in list_clients() if c["ms_counterparty_id"]}
     seen = set()
     notes = []
+    scanned = 0
     for row in iter_agents():
+        scanned += 1
         if not is_ff(row, known):
             continue
         seen.add(row.get("id"))
@@ -401,6 +418,9 @@ def _run():
         except Exception as exc:
             print("контрагент %s сбой: %s" % (row.get("name"), exc))
             notes.append((row.get("name"), str(exc)))
+    print("контрагентов в МойСклад: %s, с группой или тегом %s: %s" % (scanned, TAG, len(seen)))
+    if not seen:
+        notes.append(("", "нет контрагентов с тегом или группой «%s»" % TAG))
     for client in list_clients():
         ms_id = client["ms_counterparty_id"]
         if not ms_id or ms_id in seen:

@@ -1,0 +1,6 @@
+FROM ff-sync:base
+WORKDIR /app
+COPY schema.sql ./
+COPY *.py ./
+COPY webui ./webui
+CMD ["python", "main.py"]
