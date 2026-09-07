@@ -43,9 +43,9 @@ done
 # Дерево чистое — делать нечего
 [ -z "$(git status --porcelain 2>/dev/null)" ] && ok
 
-# Залипший лок старше 30 минут — мёртвый: снимаем, иначе снапшоты молча перестанут идти
-if [ -d "$lock_dir" ] && [ -z "$(find "$lock_dir" -maxdepth 0 -newermt '30 minutes ago' 2>/dev/null)" ]; then
-  log "warn: снят залипший лок (старше 30 мин)"
+# Залипший лок старше 10 минут — мёртвый: снимаем, иначе снапшоты молча перестанут идти
+if [ -d "$lock_dir" ] && [ -z "$(find "$lock_dir" -maxdepth 0 -newermt '10 minutes ago' 2>/dev/null)" ]; then
+  log "warn: снят залипший лок (старше 10 мин)"
   rmdir "$lock_dir" 2>/dev/null || true
 fi
 

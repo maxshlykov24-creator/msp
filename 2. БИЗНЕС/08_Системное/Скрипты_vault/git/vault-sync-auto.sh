@@ -1,7 +1,7 @@
 #!/bin/sh
 # Авто-синхронизация vault → GitHub (commit → rebase origin/main → push).
 # Запуск: хук `stop` по завершении работы агента (основной путь), launchd раз в
-# 30 мин как страховка для правок без агента, или вручную из корня vault.
+# 15 мин как страховка для правок без агента, или вручную из корня vault.
 # Пауза: touch .vault-sync-off в корне vault
 
 set -e
@@ -70,9 +70,11 @@ release_lock() {
 
 # Залипший лок. 2026-07-07 такой лок остался после падения прогона и молча
 # заглушил синхронизацию на месяц: 9304 записи «skip: locked», последний push 06.07.
-# Теперь лок старше 30 минут считается мёртвым и снимается.
-if [ -d "$lock_dir" ] && [ -z "$(find "$lock_dir" -maxdepth 0 -newermt '30 minutes ago' 2>/dev/null)" ]; then
-  log "warn: снят залипший лок (старше 30 мин)"
+# Лок старше 10 минут считается мёртвым: дольше любого честного прогона, а окно
+# молчания короче. Хук `stop` Cursor убивает по таймауту 120 с, и тогда trap не
+# срабатывает — лок остаётся, и ждать полчаса незачем.
+if [ -d "$lock_dir" ] && [ -z "$(find "$lock_dir" -maxdepth 0 -newermt '10 minutes ago' 2>/dev/null)" ]; then
+  log "warn: снят залипший лок (старше 10 мин)"
   rmdir "$lock_dir" 2>/dev/null || true
 fi
 
@@ -109,7 +111,7 @@ fi
 # Debounce перед commit: не трогать файлы, изменённые < 90 сек назад.
 # Шумные пути исключены: watcher в node_modules или .venv держал бы debounce вечно.
 # Ждать имеет смысл только если есть что коммитить. На чистом дереве ожидание
-# откладывало бы ещё и pull с push — правки со второго Mac не приходили бы до 30 мин.
+# откладывало бы ещё и приём правок со второго Mac.
 #
 # VAULT_SYNC_NOW=1 отключает ожидание: так зовёт хук `stop` по завершении работы
 # агента. Там ждать тишины бессмысленно — правки только что закончились, и это
@@ -165,6 +167,19 @@ fi
 if ! git fetch origin main >>"$log_file" 2>&1; then
   log "error: git fetch origin main failed"
   exit 1
+fi
+
+# Холостой прогон: делать нечего. Выходим до push, но heartbeat обновляем —
+# fetch выше уже подтвердил, что GitHub на связи, а состояние совпадает.
+# Без этого сутки без правок дали бы ложный алерт «синхронизация мертва».
+# В лог не пишем: холостых прогонов много, лог и так вырос до 18 тысяч строк.
+if [ ! -f "$conflict_file" ] \
+   && [ -z "$(git status --porcelain)" ] \
+   && [ -z "$(git rev-list origin/main..HEAD 2>/dev/null)" ] \
+   && [ -z "$(git rev-list HEAD..origin/main 2>/dev/null)" ]; then
+  date '+%Y-%m-%d %H:%M:%S' >"$heartbeat_file"
+  rm -f "$pending_file" 2>/dev/null || true
+  exit 0
 fi
 
 if ! git rebase origin/main >>"$log_file" 2>&1; then
