@@ -82,6 +82,12 @@ export interface MsAssortmentRow extends MsRow {
   salePrices?: Array<{ value: number }>;
   productFolder?: { name?: string };
   pathName?: string;
+  /**
+   * Характеристики модификации: Вариация, Рзамер (опечатка в МС), Ростовка,
+   * Цвет, Узорность, Крой. Приходят прямо в assortment, отдельный запрос
+   * к /entity/variant не нужен.
+   */
+  characteristics?: Array<{ name?: string; value?: string }>;
 }
 
 export async function* iterateAssortment(): AsyncGenerator<MsAssortmentRow[]> {

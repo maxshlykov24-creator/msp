@@ -1,4 +1,12 @@
-import type { PaymentKind, PaymentMethod, Payout, QueueKind, Store } from "./types.js";
+import type {
+  PaymentKind,
+  PaymentMethod,
+  Payout,
+  QueueKind,
+  Store,
+  SuitLine,
+  SuitPart,
+} from "./types.js";
 
 // Справочники, общие для фронта и бэка. Реальные значения из amoCRM / МойСклад / ТЗ.
 
@@ -68,6 +76,14 @@ export function itemStatusLabel(id?: string | null): string {
 export const STOCK_WAREHOUSES: string[] = ITEM_LOCATIONS.filter(
   (name) => !name.startsWith("СДЭК")
 );
+
+/**
+ * Физический склад полупарков. Такой остаток уже признан некомплектом руками,
+ * его не смешиваем с вычисленным: иначе одно и то же изделие попадёт дважды.
+ */
+export function isHalfSetWarehouse(name: string | undefined | null): boolean {
+  return /полупарк/i.test((name ?? "").trim());
+}
 
 /** Куда можно переместить товар под заявку. */
 export const MOVEMENT_TARGETS: string[] = ["На Новокузнецкой", "На Бауманской"];
@@ -415,6 +431,111 @@ export function isSuitCategory(category: string | undefined | null, groups: stri
     if (!needle) return false;
     return path === needle || path.startsWith(`${needle}/`);
   });
+}
+
+// ── Костюм как единица учёта ────────────────────────────────────────
+// В МойСкладе костюма нет: заведены виды (пиджак, брюки, жилет) с модификациями.
+// Части одного костюма связывает характеристика «Вариация» — она одинакова у
+// пиджака, брюк и жилета одной модели. Комплекты МС (bundle) не используем:
+// коды маркировки живут на изделиях, а полупарк комплектом не описать.
+
+/** Состав костюма по типам комплектов из пайплайна поставок (KIT_MAP). */
+export const SUIT_PART_KEYWORDS_DEFAULT: Record<SuitPart, string[]> = {
+  jacket: ["пиджак", "блейзер"],
+  trousers: ["брюки", "слаксы"],
+  vest: ["жилет"],
+};
+
+/** Костюм без жилета — двойка, с жилетом — тройка. */
+export const SUIT_PART_LABEL: Record<SuitPart, string> = {
+  jacket: "пиджак",
+  trousers: "брюки",
+  vest: "жилет",
+};
+
+/**
+ * Допустимое расхождение размеров верха и низа, при котором костюм всё ещё
+ * считается продаваемым («правильный полупарк»). На цифры влияет слабо: при
+ * допуске 2 цельных костюмов становится 15 112 против 14 971 при строгом
+ * совпадении. Рабочее значение — в app_settings (ключ suitSizeTolerance).
+ */
+export const SUIT_SIZE_TOLERANCE_DEFAULT = 2;
+
+/**
+ * Возраст партии для светофора склада. Нормативы называет владелец, здесь
+ * дефолт до его цифр: полгода жёлтый, год красный.
+ */
+export const STOCK_AGE_YELLOW_DAYS_DEFAULT = 180;
+export const STOCK_AGE_RED_DAYS_DEFAULT = 365;
+
+/** Часть костюма по названию вида МойСклад. Не костюмный вид — null. */
+export function suitPartOf(
+  productName: string | undefined | null,
+  keywords: Record<SuitPart, string[]> = SUIT_PART_KEYWORDS_DEFAULT
+): SuitPart | null {
+  // У модификации имя вида идёт до скобки с характеристиками.
+  const name = (productName ?? "").split(" (")[0]!.trim().toLowerCase();
+  if (!name) return null;
+  for (const part of ["jacket", "trousers", "vest"] as SuitPart[]) {
+    if ((keywords[part] ?? []).some((word) => name.includes(word.trim().toLowerCase()))) return part;
+  }
+  return null;
+}
+
+/** Линия костюма по названию вида: смокинговые виды не смешиваются с обычными. */
+export function suitLineOf(productName: string | undefined | null): SuitLine {
+  return (productName ?? "").toLowerCase().includes("смокинг") ? "smoking" : "regular";
+}
+
+/** Ключ модели костюма: вариация плюс всё, что делает её одной моделью. */
+export interface SuitModelKey {
+  variation: string;
+  color: string;
+  pattern: string;
+  fit: string;
+  height: string;
+  line: SuitLine;
+}
+
+export function suitModelId(key: SuitModelKey): string {
+  return [key.variation, key.color, key.pattern, key.fit, key.height, key.line]
+    .map((part) => (part ?? "").trim().toLowerCase())
+    .join("|");
+}
+
+/**
+ * Человеческое название костюма для экрана остатков: «Костюм тройка чёрный
+ * однотонный slim fit». Цвет и узор берём по пиджаку — внутри вариации они
+ * совпадают не всегда (цвет только у 70% моделей), крой совпадает у 98%.
+ */
+export function suitTitle(input: {
+  hasVest: boolean;
+  line: SuitLine;
+  color?: string | null;
+  pattern?: string | null;
+  fit?: string | null;
+}): string {
+  const kind = input.line === "smoking" ? "смокинг" : "костюм";
+  const parts = [
+    kind,
+    input.hasVest ? "тройка" : "двойка",
+    (input.color ?? "").trim(),
+    (input.pattern ?? "").trim(),
+    (input.fit ?? "").trim(),
+  ].filter(Boolean);
+  const title = parts.join(" ");
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+/**
+ * Размер как число: в МС он строкой, а сравнивать нужно по величине, чтобы
+ * считать допуск. Нечисловой размер даёт null — такую позицию не парим.
+ */
+export function suitSizeNumber(size: string | undefined | null): number | null {
+  const raw = (size ?? "").trim().replace(",", ".");
+  if (!raw) return null;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**

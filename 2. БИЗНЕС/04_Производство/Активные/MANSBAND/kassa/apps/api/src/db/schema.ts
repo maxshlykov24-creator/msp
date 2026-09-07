@@ -57,12 +57,25 @@ export const products = pgTable(
     barcode: text("barcode"),
     category: text("category"),
     price: integer("price").notNull().default(0), // в копейках
+    // Характеристики модификации МойСклад. Вариация одинакова у всех частей
+    // одного костюма, поэтому по ней и собирается комплектность.
+    variation: text("variation"),
+    size: text("size"),
+    height: text("height"), // ростовка: 6 стандарт, 8 для высоких
+    color: text("color"),
+    pattern: text("pattern"), // узорность
+    fit: text("fit"), // крой
+    // Часть костюма и линия: пиджак | брюки | жилет, обычная | смокинг.
+    suitPart: text("suit_part"),
+    suitLine: text("suit_line"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     byName: index("products_name_idx").on(t.name),
     byArticle: index("products_article_idx").on(t.article),
     byBarcode: index("products_barcode_idx").on(t.barcode),
+    byVariation: index("products_variation_idx").on(t.variation),
+    bySuitPart: index("products_suit_part_idx").on(t.suitPart),
   })
 );
 
@@ -352,6 +365,33 @@ export const payrollSettings = pgTable("payroll_settings", {
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ── Журнал разбитых костюмов ────────────────────────────────────────
+// Полупарк рождается в момент продажи одной части костюма, и в кассе уже
+// известно, кто продал. Поэтому запись пишется из чека, а ночной снимок
+// комплектности ловит разбиение, прошедшее не через кассу.
+export const suitBreaks = pgTable(
+  "suit_breaks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    store: text("store").notNull(),
+    consultant: text("consultant").notNull(),
+    refDealNumber: text("ref_deal_number"),
+    variation: text("variation").notNull(),
+    title: text("title").notNull(),
+    soldPart: text("sold_part").notNull(),
+    size: text("size"),
+    leftParts: jsonb("left_parts").notNull().default([]),
+    source: text("source").notNull().default("sale"),
+    dedupKey: text("dedup_key"),
+  },
+  (t) => ({
+    uniqDedup: uniqueIndex("suit_breaks_dedup_idx").on(t.dedupKey),
+    byAt: index("suit_breaks_at_idx").on(t.at),
+    byConsultant: index("suit_breaks_consultant_idx").on(t.consultant),
+  })
+);
 
 // ── Идемпотентность операций (продажа/отгрузка/фото) ────────────────
 export const idempotencyKeys = pgTable("idempotency_keys", {

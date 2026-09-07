@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { SARY_MIN_CHECK_DEFAULT, SARY_SUIT_GROUPS_DEFAULT } from "@kassa/shared";
+import {
+  SARY_MIN_CHECK_DEFAULT,
+  SARY_SUIT_GROUPS_DEFAULT,
+  STOCK_AGE_RED_DAYS_DEFAULT,
+  STOCK_AGE_YELLOW_DAYS_DEFAULT,
+  SUIT_PART_KEYWORDS_DEFAULT,
+  SUIT_SIZE_TOLERANCE_DEFAULT,
+} from "@kassa/shared";
 import type { AppSettings } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 
@@ -11,6 +18,10 @@ import { api, USE_MOCK } from "../api/client";
 const DEFAULTS: AppSettings = {
   saryMinCheck: SARY_MIN_CHECK_DEFAULT,
   sarySuitGroups: [...SARY_SUIT_GROUPS_DEFAULT],
+  suitSizeTolerance: SUIT_SIZE_TOLERANCE_DEFAULT,
+  suitPartKeywords: SUIT_PART_KEYWORDS_DEFAULT,
+  stockAgeYellowDays: STOCK_AGE_YELLOW_DAYS_DEFAULT,
+  stockAgeRedDays: STOCK_AGE_RED_DAYS_DEFAULT,
 };
 
 let cache: AppSettings | null = null;

@@ -36,6 +36,13 @@
       "when": 1789084800000,
       "tag": "0004_launch_edits_call_2026_09_04",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789344000000,
+      "tag": "0005_suit_completeness",
+      "breakpoints": true
     }
   ]
 }

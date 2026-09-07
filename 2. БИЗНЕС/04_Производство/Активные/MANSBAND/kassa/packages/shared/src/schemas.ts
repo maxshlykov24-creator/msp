@@ -532,9 +532,23 @@ export const certificateImportSchema = z.object({
 
 // ── Настройки кассы и мотивации (созвон 20.08) ───────────────────────
 
+const suitKeywordListSchema = z.array(z.string().trim().min(2).max(60)).max(30);
+
 export const appSettingsSchema = z.object({
   saryMinCheck: z.number().int().min(0).max(10_000_000),
   sarySuitGroups: z.array(z.string().trim().min(1).max(200)).max(50),
+  // Ниже — комплектность костюмов; поля необязательные, чтобы старый PUT
+  // настроек САР продолжал работать без них.
+  suitSizeTolerance: z.number().int().min(0).max(20).optional(),
+  suitPartKeywords: z
+    .object({
+      jacket: suitKeywordListSchema,
+      trousers: suitKeywordListSchema,
+      vest: suitKeywordListSchema,
+    })
+    .optional(),
+  stockAgeYellowDays: z.number().int().min(1).max(3650).optional(),
+  stockAgeRedDays: z.number().int().min(1).max(3650).optional(),
 });
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 

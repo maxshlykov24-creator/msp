@@ -17,6 +17,8 @@ import {
   STAGE_ALIASES,
   STOCK_WAREHOUSES,
   STORE_TO_WAREHOUSE,
+  suitLineOf,
+  suitPartOf,
 } from "@kassa/shared";
 
 // ── Синк справочников amoCRM (воронки/этапы/поля) ────────────────────
@@ -388,6 +390,30 @@ export async function backfillVariantCategories(): Promise<{ updated: number }> 
   return { updated: meta.rowCount ?? 0 };
 }
 
+/**
+ * Характеристики модификации МойСклад. Размер приходит под именем «Рзамер» —
+ * это опечатка в справочнике клиента, читаем оба варианта.
+ */
+function suitFields(row: ms.MsAssortmentRow) {
+  const chars = new Map<string, string>();
+  for (const c of row.characteristics ?? []) {
+    const name = (c.name ?? "").trim().toLowerCase();
+    const value = (c.value ?? "").trim();
+    if (name && value) chars.set(name, value);
+  }
+  const part = suitPartOf(row.name);
+  return {
+    variation: chars.get("вариация") ?? row.code ?? null,
+    size: chars.get("размер") ?? chars.get("рзамер") ?? null,
+    height: chars.get("ростовка") ?? null,
+    color: chars.get("цвет") ?? null,
+    pattern: chars.get("узорность") ?? null,
+    fit: chars.get("крой") ?? null,
+    suitPart: part,
+    suitLine: part ? suitLineOf(row.name) : null,
+  };
+}
+
 export async function syncProducts(): Promise<{ products: number }> {
   await syncProductFolders().catch(() => ({ folders: 0 }));
   let productCount = 0;
@@ -399,6 +425,7 @@ export async function syncProducts(): Promise<{ products: number }> {
       const price = row.salePrices?.[0]?.value ?? 0; // уже в копейках в МойСклад
       // pathName — полный путь папок; для variant часто пуст (дозаполним backfill).
       const category = row.pathName?.trim() || row.productFolder?.name || null;
+      const suit = suitFields(row);
       await db
         .insert(products)
         .values({
@@ -411,6 +438,7 @@ export async function syncProducts(): Promise<{ products: number }> {
           barcode: barcode ?? null,
           category,
           price,
+          ...suit,
           updatedAt: new Date(),
         })
         .onConflictDoUpdate({
@@ -423,6 +451,7 @@ export async function syncProducts(): Promise<{ products: number }> {
             // Не затираем уже проставленный backfill пустым pathName у variant.
             ...(category ? { category } : {}),
             price,
+            ...suit,
             msMetaHref: row.meta.href,
             msType: row.meta.type,
             updatedAt: new Date(),

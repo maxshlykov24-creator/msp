@@ -1,8 +1,15 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { appSettings } from "../db/schema.js";
-import { SARY_MIN_CHECK_DEFAULT, SARY_SUIT_GROUPS_DEFAULT } from "@kassa/shared";
-import type { AppSettings } from "@kassa/shared";
+import {
+  SARY_MIN_CHECK_DEFAULT,
+  SARY_SUIT_GROUPS_DEFAULT,
+  STOCK_AGE_RED_DAYS_DEFAULT,
+  STOCK_AGE_YELLOW_DAYS_DEFAULT,
+  SUIT_PART_KEYWORDS_DEFAULT,
+  SUIT_SIZE_TOLERANCE_DEFAULT,
+} from "@kassa/shared";
+import type { AppSettings, SuitPart } from "@kassa/shared";
 import { appendAudit, type AuditActor } from "./audit.js";
 
 /**
@@ -31,9 +38,40 @@ export async function getAppSettings(): Promise<AppSettings> {
   const value: AppSettings = {
     saryMinCheck,
     sarySuitGroups: groups.length > 0 ? groups : [...SARY_SUIT_GROUPS_DEFAULT],
+    suitSizeTolerance: await readNumber("suitSizeTolerance", SUIT_SIZE_TOLERANCE_DEFAULT),
+    suitPartKeywords: await readSuitPartKeywords(),
+    stockAgeYellowDays: await readNumber("stockAgeYellowDays", STOCK_AGE_YELLOW_DAYS_DEFAULT),
+    stockAgeRedDays: await readNumber("stockAgeRedDays", STOCK_AGE_RED_DAYS_DEFAULT),
   };
   cache = { value, at: Date.now() };
   return value;
+}
+
+async function readNumber(key: string, fallback: number): Promise<number> {
+  const raw = await readValue(key);
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : fallback;
+}
+
+/**
+ * Слова, по которым вид МойСклад относится к пиджаку, брюкам или жилету.
+ * Новый вид («Слаксы») закрывается настройкой, без релиза.
+ */
+async function readSuitPartKeywords(): Promise<Record<SuitPart, string[]>> {
+  const raw = await readValue("suitPartKeywords");
+  const result = {
+    jacket: [...SUIT_PART_KEYWORDS_DEFAULT.jacket],
+    trousers: [...SUIT_PART_KEYWORDS_DEFAULT.trousers],
+    vest: [...SUIT_PART_KEYWORDS_DEFAULT.vest],
+  };
+  if (raw && typeof raw === "object") {
+    for (const part of ["jacket", "trousers", "vest"] as SuitPart[]) {
+      const list = (raw as Record<string, unknown>)[part];
+      if (!Array.isArray(list)) continue;
+      const words = list.filter((w): w is string => typeof w === "string" && w.trim().length > 0);
+      if (words.length > 0) result[part] = words;
+    }
+  }
+  return result;
 }
 
 export async function getSaryMinCheck(): Promise<number> {
@@ -66,6 +104,22 @@ export async function updateAppSettings(
       .onConflictDoUpdate({
         target: appSettings.key,
         set: { value: groups, updatedBy: actor.name, updatedAt: new Date() },
+      });
+  }
+  for (const key of [
+    "suitSizeTolerance",
+    "stockAgeYellowDays",
+    "stockAgeRedDays",
+    "suitPartKeywords",
+  ] as const) {
+    const next = patch[key];
+    if (next == null) continue;
+    await db
+      .insert(appSettings)
+      .values({ key, value: next, updatedBy: actor.name })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: next, updatedBy: actor.name, updatedAt: new Date() },
       });
   }
   cache = null;

@@ -420,6 +420,104 @@ export interface AccountBalance {
   updatedAt: string;
 }
 
+// ── Костюмы и комплектность ─────────────────────────────────────────
+
+/** Часть костюма. Пиджак ведущий: один пиджак — один костюм. */
+export type SuitPart = "jacket" | "trousers" | "vest";
+
+/**
+ * Линия внутри вариации. Одна вариация может содержать и смокинговые виды, и
+ * обычные — тогда это две разные модели, склеивать их нельзя.
+ */
+export type SuitLine = "smoking" | "regular";
+
+/** Строка размера внутри модели: что цельное, чего не хватает. */
+export interface SuitSizeRow {
+  size: string;
+  /** Остаток по частям в этом размере. */
+  parts: Record<SuitPart, number>;
+  /** Костюмов, собираемых в размер к размеру. */
+  whole: number;
+  /** Костюмов, собираемых со сдвигом размера в пределах допуска. */
+  tolerant: number;
+  /** Изделия без пары вовсе или со сдвигом вне допуска. */
+  orphans: SuitOrphan[];
+}
+
+/** Изделие без пары: чего не хватает и где парную часть можно забрать. */
+export interface SuitOrphan {
+  part: SuitPart;
+  qty: number;
+  /** Каких частей состава не хватает в допуске размеров. */
+  missing: SuitPart[];
+  /** Размеры, в которых недостающая часть вообще есть. */
+  nearestSizes: string[];
+  /** Парная часть на других складах: по ней собирается перемещение. */
+  pairLocations: Array<{ part: SuitPart; size: string; warehouse: string; qty: number; msId: string }>;
+}
+
+/** Модель костюма: строка экрана «Костюмы». */
+export interface SuitModel {
+  modelId: string;
+  variation: string;
+  title: string;
+  color: string | null;
+  pattern: string | null;
+  fit: string | null;
+  height: string | null;
+  line: SuitLine;
+  /** Состав модели: есть жилет — тройка. */
+  composition: SuitPart[];
+  /** Внутри вариации цвет или узор частей расходятся: взяты по пиджаку. */
+  mixed: boolean;
+  whole: number;
+  tolerant: number;
+  orphans: number;
+  /** Остаток на физических складах полупарков — не вычисленный некомплект. */
+  onHalfSetWarehouse: number;
+  sizes: SuitSizeRow[];
+}
+
+export interface SuitCompleteness {
+  warehouse: string | null;
+  tolerance: number;
+  totals: { models: number; whole: number; tolerant: number; orphans: number; items: number };
+  models: SuitModel[];
+}
+
+/** Запись журнала разбитых костюмов. */
+export interface SuitBreak {
+  id: string;
+  at: string;
+  store: string;
+  consultant: string;
+  refDealNumber: string | null;
+  variation: string;
+  title: string;
+  soldPart: SuitPart;
+  size: string | null;
+  /** Части, оставшиеся без пары после продажи. */
+  leftParts: SuitPart[];
+  source: "sale" | "snapshot";
+}
+
+/** Возраст остатка по дате оприходования. */
+export interface StockAgeBucket {
+  bucket: "0-3м" | "3-6м" | "6-12м" | "12м+";
+  items: number;
+  models: number;
+}
+
+export interface StockStats {
+  warehouse: string | null;
+  buckets: StockAgeBucket[];
+  /** Светофор: доля остатка в красной зоне по возрасту. */
+  light: "green" | "yellow" | "red";
+  oldestEnterDate: string | null;
+  /** Перекос сеток: частей без пары своего размера. */
+  gridSkew: { jacketsWithoutTrousers: number; trousersWithoutJackets: number };
+}
+
 // ── Настройки приложения (порог САР и т.п.) ─────────────────────────
 
 /** Настраиваемые параметры кассы (таблица app_settings). Правят rop / admin. */
@@ -428,6 +526,13 @@ export interface AppSettings {
   saryMinCheck: number;
   /** Группы МойСклад, считающиеся костюмом: по ним берётся количество САР. */
   sarySuitGroups: string[];
+  /** Допуск размеров верха и низа, при котором костюм ещё продаётся как костюм. */
+  suitSizeTolerance: number;
+  /** Слова в названии вида, по которым определяется часть костюма. */
+  suitPartKeywords: Record<SuitPart, string[]>;
+  /** Возраст партии в днях, с которого остаток жёлтый и красный. */
+  stockAgeYellowDays: number;
+  stockAgeRedDays: number;
 }
 
 // ── Зарплата и бонусы консультантов (созвон 20.08) ──────────────────
