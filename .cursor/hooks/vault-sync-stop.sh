@@ -5,9 +5,12 @@
 # а таймер молотил вхолостую даже когда ничего не менялось. Событие точнее таймера:
 # закончил задачу — зафиксировал.
 #
-# Троттлинг: не чаще одного синка в 5 минут. Если попали в окно, ставим флаг
-# `.sync-pending` — таймер (раз в 30 мин) подхватит и досинхронизирует.
-# Без флага частые короткие задачи копили бы незакоммиченную работу молча.
+# Троттлинг касается только push: сеть дёргаем не чаще раза в 5 минут.
+# Коммит делается всегда. Это принципиально: незакоммиченный слой — единственное,
+# что реально теряется (03.09 `git stash --include-untracked` унёс 1235 файлов).
+# Коммит стоит ~0.1-0.3 с и локален, экономить на нём нечего.
+# Попали в окно троттлинга — работа уже в git, а флаг `.sync-pending` говорит
+# таймеру, что осталось отправить.
 #
 # Отказ хука не должен мешать работе: любая проблема — выходим с 0.
 
@@ -46,16 +49,38 @@ if [ -z "$(git status --porcelain 2>/dev/null)" ] \
   ok
 fi
 
-# Троттлинг по времени последнего события
+# Троттлинг по времени последней отправки
+throttled=0
 if [ -f "$stamp_file" ]; then
   last=$(cat "$stamp_file" 2>/dev/null || echo 0)
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
   waited=$(( $(date '+%s') - last ))
-  if [ "$waited" -lt "$MIN_INTERVAL" ]; then
-    touch "$pending_file" 2>/dev/null
-    log "stop-sync: отложен, прошло ${waited}с из ${MIN_INTERVAL}с — оставлен флаг для таймера"
-    ok
+  [ "$waited" -lt "$MIN_INTERVAL" ] && throttled=1
+fi
+
+# В окне троттлинга: коммитим локально, отправку оставляем таймеру.
+if [ "$throttled" = "1" ]; then
+  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    lock_dir="$log_dir/.sync.lock"
+    if mkdir "$lock_dir" 2>/dev/null; then
+      files=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+      git add -A >/dev/null 2>&1
+      if git diff --cached --quiet 2>/dev/null; then
+        :
+      else
+        GIT_SKIP_AUTO_PUSH=1 git commit -q -m "Работа агента: $files путей
+
+Коммит хуком .cursor/hooks/vault-sync-stop.sh по завершении задачи.
+Отправка отложена: с прошлой прошло ${waited}с из ${MIN_INTERVAL}с." >/dev/null 2>&1 \
+          && log "stop-sync: закоммичено $files путей, отправка отложена (${waited}с из ${MIN_INTERVAL}с)"
+      fi
+      rmdir "$lock_dir" 2>/dev/null
+    else
+      log "stop-sync: лок занят, коммит отложен"
+    fi
   fi
+  touch "$pending_file" 2>/dev/null
+  ok
 fi
 
 date '+%s' >"$stamp_file" 2>/dev/null
