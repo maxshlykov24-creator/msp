@@ -70,22 +70,22 @@ for (let offset = 0; ; offset += 1000) {
 }
 console.log(`костюмных модификаций в каталоге: ${products.size}`);
 
+// Имена складов: короткий отчёт отдаёт только их id.
+const storeNames = new Map();
+for (const store of (await get("/entity/store?limit=1000")).rows) {
+  storeNames.set(store.id, store.name);
+}
+
+// Короткий отчёт остатков (current) отдаёт плоские строки и не считает
+// полный bystore, который на 20 тысячах позиций идёт десятки минут.
 const lines = [];
-// Отчёт по остаткам отдаёт максимум 100 строк за запрос.
-for (let offset = 0; ; offset += 100) {
-  const page = await get(`/report/stock/bystore?limit=100&offset=${offset}`);
-  if (offset % 2000 === 0) console.log(`  остатки: ${offset} строк отчёта пройдено`);
-  for (const row of page.rows) {
-    const msId = (row.meta?.href ?? "").split("/").pop()?.split("?")[0];
-    const product = products.get(msId);
-    if (!product) continue;
-    for (const byStore of row.stockByStore ?? []) {
-      const qty = Math.max(0, Math.floor(Number(byStore.stock) || 0));
-      if (qty === 0) continue;
-      lines.push({ ...product, warehouse: byStore.name, qty });
-    }
-  }
-  if (page.rows.length < 100) break;
+const current = await get("/report/stock/bystore/current?stockType=stock");
+for (const row of current) {
+  const product = products.get(row.assortmentId);
+  if (!product) continue;
+  const qty = Math.max(0, Math.floor(Number(row.stock) || 0));
+  if (qty === 0) continue;
+  lines.push({ ...product, warehouse: storeNames.get(row.storeId) ?? row.storeId, qty });
 }
 const items = lines.reduce((s, l) => s + l.qty, 0);
 const halfSetItems = lines
