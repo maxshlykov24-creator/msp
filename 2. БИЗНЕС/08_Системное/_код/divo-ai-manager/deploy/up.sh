@@ -20,6 +20,11 @@ EXCLUDES=(
   --exclude '_ЭТАЛОН/'
   --exclude 'workspace/state/'
   --exclude 'workspace/paused/'
+  # Сток на проде генерирует сам бот каждые 15 минут. Копия с мака почти
+  # всегда старее, незачем откатывать наличие машин выкатом.
+  --exclude 'workspace/KB/сток/'
+  # .env едет отдельной строкой ниже, не под --delete.
+  --exclude '.env'
   --exclude '.git/'
 )
 
@@ -42,6 +47,18 @@ if [[ "${DIVO_SKIP_GUARD:-0}" != "1" ]]; then
 
   # Что именно затрётся на проде. Уже случалось, что прод был новее мака и
   # rsync --delete откатывал живые правки.
+  # Прод .env перезаписывается маковским. Ключ, которого нет локально, пропадёт.
+  lost="$(comm -23 \
+    <(ssh_do "grep -oE '^[A-Z_]+=' $REMOTE/.env 2>/dev/null | sort" || true) \
+    <(grep -oE '^[A-Z_]+=' "$LOCAL/.env" 2>/dev/null | sort || true) \
+    | grep -v '^GOOGLE_SA_PATH=$' || true)"
+  if [[ -n "$lost" ]]; then
+    echo "СТОП: в проде есть ключи, которых нет в локальном .env:" >&2
+    echo "$lost" | sed 's/^/    /' >&2
+    echo "Перенеси их в локальный .env, иначе выкат их потеряет." >&2
+    exit 1
+  fi
+
   echo "→ что изменится на проде:"
   plan="$(rsync -az --delete --dry-run --itemize-changes -e "ssh -i $KEY" \
     "${EXCLUDES[@]}" "$LOCAL/" "$HOST:$REMOTE/" | grep -v '^\.d' || true)"
