@@ -1,0 +1,22 @@
+[Unit]
+# OpenRouter отдаёт 403 российским IP. Туннель на personal-vpn даёт выход
+# наружу через зарубежный адрес. Ключ на той стороне ограничен форвардингом,
+# шелл им не открыть.
+Description=SOCKS5 наружу для divo-ai-bot (OpenRouter не пускает RU IP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/ssh -N -D 127.0.0.1:1080 \
+  -i /root/.ssh/id_ed25519_proxy \
+  -o ExitOnForwardFailure=yes \
+  -o StrictHostKeyChecking=accept-new \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o TCPKeepAlive=yes \
+  root@201.51.26.182
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

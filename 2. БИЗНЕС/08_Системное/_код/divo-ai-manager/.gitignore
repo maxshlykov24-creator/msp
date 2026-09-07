@@ -2,3 +2,14 @@
 _ЭТАЛОН/dialogs/
 _ЭТАЛОН/ВСТАВЬ_СЮДА.md
 _ЭТАЛОН/звонки/
+
+# Переписки клиентов и офсет Telegram: персональные данные, в git не место
+workspace/state/
+workspace/paused/
+
+# Сток генерирует stock_sync каждые 15 минут, источник правды — таблица
+workspace/KB/сток/
+
+.venv/
+__pycache__/
+*.pyc
