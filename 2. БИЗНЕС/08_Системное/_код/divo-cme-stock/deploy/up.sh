@@ -18,6 +18,8 @@ PAYLOAD=(
 EXCLUDES=(
   --exclude '.env' --exclude '__pycache__' --exclude '.venv'
   --exclude 'data' --exclude '.pytest_cache' --exclude 'google_sa.json'
+  # Метку деплоя пишем ниже, --delete её сносить не должен.
+  --exclude '.deployed'
 )
 
 echo "── на проде сейчас: $("${SSH[@]}" "cat $REMOTE/.deployed 2>/dev/null || echo 'метки нет'")"

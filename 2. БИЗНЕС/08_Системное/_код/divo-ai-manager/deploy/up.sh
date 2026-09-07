@@ -26,6 +26,8 @@ EXCLUDES=(
   # .env едет отдельной строкой ниже, не под --delete.
   --exclude '.env'
   --exclude '.git/'
+  # Метку деплоя пишем ниже, --delete её сносить не должен.
+  --exclude '.deployed'
 )
 
 ssh_do() { ssh -i "$KEY" -o StrictHostKeyChecking=accept-new "$HOST" "$@"; }
