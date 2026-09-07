@@ -100,4 +100,13 @@ if [ -n "$(git status --porcelain 2>/dev/null)" ] \
   log "stop-sync: работа не ушла целиком — оставлен флаг для таймера"
 fi
 
+# Бэкап доступов раз в сутки. Живёт здесь, а не в launchd, потому что macOS
+# не даёт процессам launchd писать в iCloud Drive: 07.09.2026 агент падал с
+# `Operation not permitted`. Процесс хука наследует разрешения Cursor, и запись
+# проходит. Раз в сутки решается по времени последнего архива.
+secrets_dir="$HOME/Library/Mobile Documents/com~apple~CloudDocs/vault-secrets"
+if [ -z "$(find "$secrets_dir" -name 'secrets-*.tar.gz.enc' -newermt '24 hours ago' 2>/dev/null | head -1)" ]; then
+  sh "$root/2. БИЗНЕС/08_Системное/Скрипты_vault/git/secrets-backup.sh" >/dev/null 2>&1 || true
+fi
+
 ok

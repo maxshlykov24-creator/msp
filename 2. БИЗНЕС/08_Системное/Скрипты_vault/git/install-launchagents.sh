@@ -7,7 +7,7 @@ root=$(cd "$(dirname "$0")/../../../.." && pwd)
 git_dir="$root/2. БИЗНЕС/08_Системное/Скрипты_vault/git"
 agents="$HOME/Library/LaunchAgents"
 
-chmod +x "$git_dir/vault-sync-auto.sh" "$git_dir/vault-sync-pull-wake.sh" "$git_dir/vault-sync-pull.sh" 2>/dev/null || true
+chmod +x "$git_dir/vault-sync-auto.sh" "$git_dir/vault-sync-pull-wake.sh" "$git_dir/vault-sync-pull.sh" "$git_dir/secrets-backup.sh" 2>/dev/null || true
 
 for label in com.msp.vault-sync com.msp.vault-sync-wake; do
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
@@ -21,3 +21,4 @@ launchctl bootstrap "gui/$(id -u)" "$agents/com.msp.vault-sync-wake.plist"
 
 echo "OK: launchd agents installed (страховочный синк раз в 15 мин, wake pull раз в час + при входе)"
 echo "    Основной путь синхронизации — хук stop: агент закончил работу, vault закоммичен и отправлен."
+echo "    Бэкап доступов идёт из хука stop, не из launchd: macOS не даёт launchd писать в iCloud."
