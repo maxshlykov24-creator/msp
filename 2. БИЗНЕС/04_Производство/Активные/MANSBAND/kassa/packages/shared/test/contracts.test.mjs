@@ -84,7 +84,10 @@ test("Edwin expense dictionary matches approved fixed order", () => {
     "Возврат", "Сдача", "Чаевые", "Банковское обслуживание", "Логистика",
     "Закупка товара", "Хоз товары, канцелярия", "Зарплата", "Оплата подрядчикам",
     "Таргет", "Съемки", "Онлайн сервисы", "Ателье и ремонт изделий",
-    "Оснащение магазина", "Аренда помещений", "Налоги", "Прочее",
+    "Оснащение магазина", "Аренда помещений", "Налоги",
+    // Отправленные САР пишутся сюда автоматически (созвон 20.08).
+    "Программа лояльности",
+    "Прочее",
   ]);
   assert.equal(expenseSchema.safeParse({
     category: "СДЭК",
@@ -111,7 +114,12 @@ test("movement requires stable idempotency key", () => {
 });
 
 test("payout rows always add up to the full payout", () => {
-  assert.deepEqual(normalizePayouts([], 1500), [{ methodId: "cash_zhenya", amount: 1500 }]);
+  // Пустой список даёт одну строку на всю сумму с пустым способом: в форме
+  // заявки консультант обязан выбрать его сам, дефолта здесь нет.
+  assert.deepEqual(normalizePayouts([], 1500), [{ methodId: "", amount: 1500 }]);
+  assert.deepEqual(normalizePayouts([], 1500, "cash_zhenya"), [
+    { methodId: "cash_zhenya", amount: 1500 },
+  ]);
   // Последняя строка добирает остаток — «повисших» денег быть не может.
   assert.deepEqual(
     normalizePayouts(

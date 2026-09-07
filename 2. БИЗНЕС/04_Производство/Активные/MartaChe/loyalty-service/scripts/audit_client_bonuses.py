@@ -24,6 +24,8 @@ from app.moysklad_client import MoySkladClient
 from app.tier_manager import TIER_RATES, tier_index_from_annual_sum, tier_name_ru
 
 NOW = datetime.now(timezone.utc)
+# Remap 1.2 отдаёт даты без смещения, в часовом поясе аккаунта (у MartaChe — Москва).
+MSK = timezone(timedelta(hours=3))
 SEARCH = sys.argv[1] if len(sys.argv) > 1 else "Хайкичева"
 
 # Из spend_engine: заказы-исключения из лимита 30%
@@ -39,14 +41,14 @@ def parse_dt(v) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)  # Remap отдаёт UTC
+        dt = dt.replace(tzinfo=MSK)
     return dt
 
 
 def fmt_dt(dt: datetime | None) -> str:
     if not dt:
         return "—"
-    return dt.astimezone(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M")
+    return dt.astimezone(MSK).strftime("%Y-%m-%d %H:%M")
 
 
 def attr_value(cp: dict, attr_id: str):
@@ -199,11 +201,12 @@ def main() -> None:
 
     annual = 0
     replay_earn = replay_spend = 0
-    reg_bonus_given = False
     delay = timedelta(days=int(settings.bonus_delay_days))
     limit_pct = max(0, min(100, int(settings.loyalty_spend_percent_limit)))
 
-    migrated = any("CSV" in r["name"] or "миграц" in r["name"].lower() for r in tx_rows)
+    # Приветственный бонус берём по факту транзакции, а не по догадке о регистрации.
+    welcome_fact = sum(r["val"] for r in tx_rows
+                       if r["type"] == "EARNING" and "приветственные баллы" in r["name"].lower())
     earn_tx_by_order: dict[str, int] = {}
     for r in tx_rows:
         if r["type"] == "EARNING" and r["order_name"] and "возврат списания" not in r["name"].lower():
@@ -292,20 +295,11 @@ def main() -> None:
         diff_mark = " ⚠" if earn_fact != earn and state == settings.status_delivered else ""
         print(f"  {name:<22} {fmt_dt(moment)[:10]:<11} {state:<18} {total_after:>8} {tier_name_ru(tier_idx):>10} {earn:>7} {earn_fact:>7} {spent_fact:>7}{diff_mark}{flag}")
 
-    # приветственный бонус: только если регистрация была через заказ, а не миграцией CSV
-    if not migrated:
-        for o in orders:
-            for a in o.get("attributes") or []:
-                if a.get("id") == settings.attr_order_loyalty_status:
-                    v = a.get("value")
-                    v = v.get("name") if isinstance(v, dict) else v
-                    if v == "Активен":
-                        reg_bonus_given = True
-    welcome = int(settings.registration_welcome_bonus_points) if reg_bonus_given else 0
+    welcome = int(welcome_fact)
     if welcome:
-        print(f"  + приветственный бонус за регистрацию: {welcome}")
-    elif migrated:
-        print("  приветственный бонус не положен: регистрация через миграцию CSV, а не из заказа")
+        print(f"  + приветственный бонус (факт по МС): {welcome}")
+    else:
+        print("  приветственный бонус не начислялся")
 
     replay_total = replay_earn + welcome
     replay_balance = replay_total - replay_spend
