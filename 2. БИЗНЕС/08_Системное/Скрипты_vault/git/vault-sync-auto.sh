@@ -1,6 +1,7 @@
 #!/bin/sh
 # Авто-синхронизация vault → GitHub (commit → rebase origin/main → push).
-# Запуск: launchd каждые 15 мин или вручную из корня vault.
+# Запуск: хук `stop` по завершении работы агента (основной путь), launchd раз в
+# 30 мин как страховка для правок без агента, или вручную из корня vault.
 # Пауза: touch .vault-sync-off в корне vault
 
 set -e
@@ -15,6 +16,9 @@ conflict_file="$root/.vault-sync-conflict"
 off_file="$root/.vault-sync-off"
 heartbeat_file="$log_dir/last-success"
 debounce_file="$log_dir/.debounce-since"
+# Флаг от хука `stop`: синк по событию попал в окно троттлинга (чаще раза в 5 мин)
+# и переложил работу на этот прогон. При флаге ожидание тишины не применяем.
+pending_file="$log_dir/.sync-pending"
 had_conflict=0
 
 mkdir -p "$log_dir"
@@ -106,7 +110,11 @@ fi
 # Шумные пути исключены: watcher в node_modules или .venv держал бы debounce вечно.
 # Ждать имеет смысл только если есть что коммитить. На чистом дереве ожидание
 # откладывало бы ещё и pull с push — правки со второго Mac не приходили бы до 30 мин.
-if [ -n "$(git status --porcelain)" ] && find . -type f \
+#
+# VAULT_SYNC_NOW=1 отключает ожидание: так зовёт хук `stop` по завершении работы
+# агента. Там ждать тишины бессмысленно — правки только что закончились, и это
+# ровно тот момент, когда работу надо зафиксировать.
+if [ "${VAULT_SYNC_NOW:-0}" != "1" ] && [ ! -f "$pending_file" ] && [ -n "$(git status --porcelain)" ] && find . -type f \
   ! -path './.git/*' \
   ! -path './2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/*' \
   ! -path '*/node_modules/*' \
@@ -170,6 +178,7 @@ rm -f "$conflict_file"
 if git push origin main >>"$log_file" 2>&1; then
   log "push: ok"
   date '+%Y-%m-%d %H:%M:%S' >"$heartbeat_file"
+  rm -f "$pending_file" 2>/dev/null || true
   if [ "$had_conflict" -eq 1 ]; then
     notify "Vault sync" "Синхронизация восстановлена"
   fi

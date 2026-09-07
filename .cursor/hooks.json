@@ -6,6 +6,12 @@
         "command": ".cursor/hooks/vault-snapshot.sh",
         "timeout": 20
       }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/vault-sync-stop.sh",
+        "timeout": 120
+      }
     ]
   }
 }
