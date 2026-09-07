@@ -242,7 +242,7 @@
   .stuck-d{font-size:12.5px;color:var(--gold);white-space:nowrap;font-variant-numeric:tabular-nums}
 
   .gantt{margin-top:4px}
-  .g-row{display:grid;grid-template-columns:190px 1fr;gap:16px;align-items:center;padding:9px 0}
+  .g-row{display:grid;grid-template-columns:224px 1fr;gap:16px;align-items:center;padding:9px 0}
   .g-name{font-size:12.5px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .g-track{position:relative;height:22px;border-radius:7px;background:rgba(249,242,236,.04)}
   .g-bar{position:absolute;top:4px;height:14px;border-radius:5px;background:linear-gradient(90deg,rgba(249,242,236,.7),rgba(249,242,236,.32))}
@@ -478,7 +478,7 @@
       <div class="pane glass tilt">
         <h3>Нагрузка по людям</h3>
         <div>
-          <div class="load-row"><div class="load-name">Даша, юрист</div><div class="load-bar"><span class="hot" style="width:88%"></span></div><div class="load-n">9</div></div>
+          <div class="load-row"><div class="load-name">Даша</div><div class="load-bar"><span class="hot" style="width:88%"></span></div><div class="load-n">9</div></div>
           <div class="load-row"><div class="load-name">Данил, аналитик</div><div class="load-bar"><span style="width:64%"></span></div><div class="load-n">7</div></div>
           <div class="load-row"><div class="load-name">Никита</div><div class="load-bar"><span style="width:41%"></span></div><div class="load-n">4</div></div>
           <div class="load-row"><div class="load-name">Костя</div><div class="load-bar"><span style="width:27%"></span></div><div class="load-n">3</div></div>
@@ -771,13 +771,13 @@ function renderTree(nodes, lvl, path){
     const has = n.kids && n.kids.length;
     const id = 'k'+num.replace(/\./g,'_');
     const open = lvl < 3;
+    let prog='', started=false;
+    if(has){ const r=countLeaves(n.kids); prog = `<span class="lvl-badge">${r.done}/${r.all}</span>`; started = r.done>0; }
     let state;
     if(n.done) state = '<span class="st done"><i></i>Готово</span>';
     else if(n.wait) state = '<span class="st wait"><i></i>'+esc(n.wait)+'</span>';
-    else if(n.now) state = '<span class="st work"><i></i>Идёт сейчас</span>';
+    else if(n.now || started) state = '<span class="st work"><i></i>Идёт сейчас</span>';
     else state = '<span class="st new"><i></i>Не начат</span>';
-    let prog='';
-    if(has){ const r=countLeaves(n.kids); prog = `<span class="lvl-badge">${r.done}/${r.all}</span>`; }
     h += `<div class="node">
       <div class="node-row">
         ${has?`<button class="tw" onclick="tw('${id}',this)">${open?'−':'+'}</button>`:'<span class="tw leaf"></span>'}
@@ -799,7 +799,7 @@ function tw(id, btn){
 }
 
 function renderQueue(role){
-  const list = QUEUE[role] || QUEUE.danil;
+  const list = QUEUE[role] || QUEUE.darina;
   const names = {darina:'Дарина', nikita:'Никита', danil:'Данил'};
   document.getElementById('qWho').textContent = '— ' + names[role];
   let h='';
@@ -858,8 +858,10 @@ function renderReport(){
 
 /* ═══════════ НАВИГАЦИЯ ═══════════ */
 function go(p){
+  const target = document.getElementById('p-'+p);
+  if(!target) return;
   document.querySelectorAll('.page').forEach(s=>s.classList.remove('on'));
-  document.getElementById('p-'+p).classList.add('on');
+  target.classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active', b.dataset.p===p));
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -916,10 +918,14 @@ renderDeals();
 document.getElementById('tree').innerHTML = renderTree(TREE, 1, '');
 const tp = countLeaves(TREE);
 document.getElementById('treeProg').textContent = Math.round(tp.done/tp.all*100)+'%';
-renderQueue('danil');
+renderQueue('darina');
 renderPriem();
 renderReport();
 bindTilt();
+
+/* прямая ссылка на экран: #queue, #panel и так далее */
+if(location.hash) go(location.hash.slice(1));
+window.addEventListener('hashchange', ()=>go(location.hash.slice(1)));
 </script>
 </body>
 </html>
