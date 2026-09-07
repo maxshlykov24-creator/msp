@@ -14,6 +14,7 @@ lock_dir="$log_dir/.sync.lock"
 conflict_file="$root/.vault-sync-conflict"
 off_file="$root/.vault-sync-off"
 heartbeat_file="$log_dir/last-success"
+debounce_file="$log_dir/.debounce-since"
 had_conflict=0
 
 mkdir -p "$log_dir"
@@ -101,15 +102,34 @@ if [ -f "$conflict_file" ]; then
   had_conflict=1
 fi
 
-# Debounce перед commit: не трогать файлы, изменённые < 90 сек назад
+# Debounce перед commit: не трогать файлы, изменённые < 90 сек назад.
+# Шумные пути исключены: watcher в node_modules или .venv держал бы debounce вечно.
 if find . -type f \
   ! -path './.git/*' \
   ! -path './2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/*' \
+  ! -path '*/node_modules/*' \
+  ! -path '*/.venv/*' \
+  ! -path '*/__pycache__/*' \
+  ! -path '*/.pytest_cache/*' \
+  ! -path '*/dist/*' \
+  ! -path '*/build/*' \
+  ! -name '.DS_Store' \
   -newermt '90 seconds ago' \
   2>/dev/null | grep -q .; then
-  log "debounce: files changed in last 90s"
-  exit 0
+  # Потолок ожидания. Без него непрерывная правка файлов заглушила бы синхронизацию
+  # так же молча, как залипший лок 07.07: каждый прогон честно ждёт, push не идёт никогда.
+  if [ ! -f "$debounce_file" ]; then
+    date '+%s' >"$debounce_file"
+  fi
+  since=$(cat "$debounce_file" 2>/dev/null || echo 0)
+  waited=$(( $(date '+%s') - since ))
+  if [ "$waited" -lt 1800 ]; then
+    log "debounce: files changed in last 90s (ждём $waited сек из 1800)"
+    exit 0
+  fi
+  log "warn: debounce держится больше 30 мин — коммитим не дожидаясь тишины"
 fi
+rm -f "$debounce_file" 2>/dev/null || true
 
 git fetch origin 2>>"$log_file" || {
   log "error: git fetch failed"
