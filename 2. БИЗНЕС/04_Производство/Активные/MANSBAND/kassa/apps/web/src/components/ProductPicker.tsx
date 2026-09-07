@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightLeft, Search, Plus, Minus, Trash2, ScanLine, X, Loader2 } from "lucide-react";
 import type { CartItem, Product } from "../data/types";
 import { PRODUCTS } from "../data/mock";
-import { STORE_TO_WAREHOUSE } from "@kassa/shared";
+import { STORE_TO_WAREHOUSE, SUIT_PART_LABEL } from "@kassa/shared";
+import type { SuitPart } from "@kassa/shared";
 import { money } from "../lib/format";
 import { api, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
@@ -59,6 +60,74 @@ interface ProductStockResponse {
 function fmtQty(n: number): string {
   if (Number.isInteger(n)) return String(n);
   return n.toFixed(2).replace(/\.?0+$/, "");
+}
+
+interface SuitCartWarning {
+  productId: string;
+  variation: string;
+  title: string;
+  soldPart: SuitPart;
+  size: string | null;
+  missing: SuitPart[];
+  pairs: Array<{ part: SuitPart; qty: number }>;
+}
+
+/**
+ * Продажа части костюма без пары оставляет полупарк. Предупреждаем до чека:
+ * показываем, какая парная часть есть на складе, чтобы консультант предложил
+ * клиенту костюм целиком, а не разбивал модель.
+ */
+function SuitBreakWarning({ items, store }: { items: CartItem[]; store: string }) {
+  const [warnings, setWarnings] = useState<SuitCartWarning[]>([]);
+
+  const payload = useMemo(
+    () =>
+      items
+        .filter((it) => !it.isReturn && it.qty > 0 && it.productId)
+        .map((it) => ({ productId: it.productId, qty: it.qty })),
+    [items]
+  );
+
+  useEffect(() => {
+    if (USE_MOCK || payload.length === 0) {
+      setWarnings([]);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      api
+        .post<{ warnings: SuitCartWarning[] }>("/suits/cart-check", { store, items: payload })
+        .then((res) => {
+          if (alive) setWarnings(res.warnings ?? []);
+        })
+        .catch(() => {
+          if (alive) setWarnings([]);
+        });
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [payload, store]);
+
+  if (warnings.length === 0) return null;
+
+  return (
+    <div className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2.5 space-y-1.5">
+      <div className="text-[13px] font-semibold text-amber-200">
+        Костюм разбивается: останется полупарк
+      </div>
+      {warnings.map((w) => (
+        <div key={w.productId} className="text-[12px] text-amber-100/90">
+          {SUIT_PART_LABEL[w.soldPart]}
+          {w.size ? ` ${w.size}` : ""} · {w.title} ({w.variation}) уходит без{" "}
+          {w.missing.map((part) => SUIT_PART_LABEL[part]).join(" и ")}. На складе есть{" "}
+          {w.pairs.map((pair) => `${SUIT_PART_LABEL[pair.part]} ${pair.qty} шт.`).join(", ")} —
+          предложи костюм целиком.
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ProductPicker({
@@ -590,6 +659,7 @@ export function ProductPicker({
               );
             })()}
           </div>
+          <SuitBreakWarning items={items} store={activeStore} />
           {showMovement && (
             <div className="flex justify-end mt-2">
               <button

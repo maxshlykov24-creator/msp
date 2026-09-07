@@ -11,6 +11,7 @@ import { SaryScreen } from "./views/SaryScreen";
 import { Dashboard } from "./views/Dashboard";
 import { ShiftClose } from "./views/ShiftClose";
 import { ProductCheck } from "./views/ProductCheck";
+import { Suits } from "./views/Suits";
 import { TasksMovements } from "./views/TasksMovements";
 import { HistoryScreen, RolesScreen } from "./views/AuditRoles";
 import { SettingsScreen } from "./views/SettingsScreen";
@@ -80,6 +81,8 @@ function Screens({
       return <Dashboard />;
     case "products":
       return <ProductCheck />;
+    case "suits":
+      return <Suits />;
     case "tasks":
       return <TasksMovements />;
     case "history":
@@ -102,6 +105,7 @@ const ROUTES: Route[] = [
   "shift",
   "dashboard",
   "products",
+  "suits",
   "tasks",
   "history",
   "roles",

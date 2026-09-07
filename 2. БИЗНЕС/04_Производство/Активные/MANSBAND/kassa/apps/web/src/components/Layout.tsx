@@ -17,6 +17,7 @@ import {
   UserCog,
   Gift,
   SlidersHorizontal,
+  Shirt,
 } from "lucide-react";
 import { useStore } from "../store";
 import { useAuth } from "../auth/AuthContext";
@@ -35,6 +36,7 @@ export type Route =
   | "shift"
   | "dashboard"
   | "products"
+  | "suits"
   | "tasks"
   | "history"
   | "roles"
@@ -127,6 +129,12 @@ export function Layout({
             icon={<Boxes size={18} />}
             label="Поиск товара"
             onClick={() => setRoute("products")}
+          />
+          <NavButton
+            active={route === "suits"}
+            icon={<Shirt size={18} />}
+            label="Костюмы"
+            onClick={() => setRoute("suits")}
           />
           <NavButton
             active={route === "tasks"}

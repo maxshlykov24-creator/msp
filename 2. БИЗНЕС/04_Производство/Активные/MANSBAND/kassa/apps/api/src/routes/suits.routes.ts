@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getUserById } from "../services/auth.js";
 import { halfSetList, suitCompleteness } from "../services/suitSets.js";
-import { listSuitBreaks, snapshotSuitBreaks } from "../services/suitBreaks.js";
+import { cartWarnings, listSuitBreaks, snapshotSuitBreaks } from "../services/suitBreaks.js";
 import { stockStats } from "../services/stockStats.js";
 
 const querySchema = z.object({
@@ -36,6 +36,20 @@ export default async function suitsRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: "Некорректный фильтр" });
     const scope = await scopeFor(req.user.sub, req.user.role, parsed.data.warehouse);
     return { rows: await halfSetList({ ...scope, q: parsed.data.q }) };
+  });
+
+  // Предупреждение в чеке до продажи: пиджак уходит без брюк своего размера.
+  app.post("/suits/cart-check", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const parsed = z
+      .object({
+        store: z.string().trim().max(120).optional(),
+        items: z
+          .array(z.object({ productId: z.string().min(1), qty: z.number().int().min(0) }))
+          .max(200),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ message: "Некорректный чек" });
+    return { warnings: await cartWarnings(parsed.data) };
   });
 
   app.get("/suits/breaks", { preHandler: [app.authenticate] }, async (req, reply) => {

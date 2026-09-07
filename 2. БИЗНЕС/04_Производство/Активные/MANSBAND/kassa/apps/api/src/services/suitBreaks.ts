@@ -152,6 +152,84 @@ export async function noteSuitBreaks(deal: Deal): Promise<void> {
   }
 }
 
+export interface CartWarning {
+  productId: string;
+  variation: string;
+  title: string;
+  soldPart: SuitPart;
+  size: string | null;
+  /** Каких частей костюма нет в чеке. */
+  missing: SuitPart[];
+  /** Парная часть на складе магазина: её можно добить в этот же чек. */
+  pairs: Array<{ part: SuitPart; qty: number }>;
+}
+
+/**
+ * Предупреждение до продажи: пиджак уходит без брюк своего размера, а брюки
+ * лежат на складе — костюм разбивается. Это то же «палить консультантов», но
+ * до факта: полупарка ещё нет, костюм можно добить в чек.
+ */
+export async function cartWarnings(input: {
+  store?: string;
+  items: Array<{ productId: string; qty: number }>;
+}): Promise<CartWarning[]> {
+  const items = input.items.filter((i) => i.qty > 0 && i.productId);
+  if (items.length === 0) return [];
+  const info = await suitLinesByMsIds(items.map((i) => i.productId));
+  if (info.size === 0) return [];
+
+  const warehouse = input.store
+    ? STORE_TO_WAREHOUSE[input.store as keyof typeof STORE_TO_WAREHOUSE] ?? undefined
+    : undefined;
+
+  const inCart = new Map<string, Map<SuitPart, number>>();
+  for (const item of items) {
+    const suit = info.get(item.productId);
+    if (!suit) continue;
+    const key = `${suit.variation}|${(suit.size ?? "").trim()}`;
+    const byPart = inCart.get(key) ?? new Map<SuitPart, number>();
+    byPart.set(suit.part, (byPart.get(suit.part) ?? 0) + item.qty);
+    inCart.set(key, byPart);
+  }
+
+  const warnings: CartWarning[] = [];
+  for (const item of items) {
+    const suit = info.get(item.productId);
+    if (!suit) continue;
+    const size = (suit.size ?? "").trim() || null;
+    const cart = inCart.get(`${suit.variation}|${size ?? ""}`) ?? new Map<SuitPart, number>();
+    const stockNow = await pairStock(suit.variation, size, warehouse);
+    // Жилет требуем только у моделей, где он вообще есть.
+    const composition: SuitPart[] = stockNow.has("vest") || cart.has("vest")
+      ? ["jacket", "trousers", "vest"]
+      : ["jacket", "trousers"];
+    const missing = composition.filter(
+      (part) => part !== suit.part && (cart.get(part) ?? 0) < item.qty
+    );
+    if (missing.length === 0) continue;
+    const pairs = missing
+      .map((part) => ({ part, qty: (stockNow.get(part) ?? 0) - (cart.get(part) ?? 0) }))
+      .filter((pair) => pair.qty > 0);
+    if (pairs.length === 0) continue;
+    warnings.push({
+      productId: item.productId,
+      variation: suit.variation,
+      title: suitTitle({
+        hasVest: composition.includes("vest"),
+        line: suit.line,
+        color: suit.color,
+        pattern: suit.pattern,
+        fit: suit.fit,
+      }),
+      soldPart: suit.part,
+      size,
+      missing,
+      pairs,
+    });
+  }
+  return warnings;
+}
+
 export interface BreaksQuery {
   from?: string;
   to?: string;
