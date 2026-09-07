@@ -3,15 +3,17 @@ Idempotent движок ручного списания бонусов в зак
 
 Контракт:
 - Менеджер пишет в поле «Списано бонусов» желаемую сумму (intent).
-- Система обрезает до cap = min(intent, active_balance, 30% * order_total).
+- Система обрезает до cap = min(intent, active_balance, 30% * суммы заказа до бонусной скидки).
 - Если cap > spent_amount (что уже списано в БД) → создаём SPENDING на дельту, FIFO.
 - Если cap < spent_amount → создаём EARNING-обратку (refund) на дельту.
 - Все наши bonustransaction → с X-Lognex-WebHook-Disable=1 (без эха).
+- Исключения без лимита 30%: `_SPEND_LIMIT_EXEMPT_ORDERS` (имя или id заказа).
 
 Правила-ловушки:
 - Заблокированный клиент (member.is_blocked): cap = 0, в комментарий.
 - Заказ без agent: ранний выход (вообще ничего не делаем).
-- Идемпотентность: при повторном webhook'е с тем же intent — no-op.
+- Идемпотентность: повторный webhook с тем же intent не создаёт новую
+  bonustransaction, но скидку в позициях сверяет и дожимает, если её сбросили.
 """
 from __future__ import annotations
 
@@ -28,6 +30,13 @@ from app.config import Settings
 from app.models import BonusBatch, LoyaltyMember, ProcessedEvent
 from app.moysklad_client import MoySkladClient
 
+# 2026-09-01: site_1871304105 — исключение, итог 5320 ₽ (списание 2280 при цене 7600).
+# Без этого следующий UPDATE считает 30% уже от суммы со скидкой и откатывает дельту.
+_SPEND_LIMIT_EXEMPT_ORDERS = frozenset({
+    "site_1871304105",
+    "38051df5-a1e3-11f1-0a80-05b0001dbad7",
+})
+
 
 def unique_bt_name(base: str) -> str:
     """МС требует уникальный `name` у `bonustransaction` (constraint на 412/3006).
@@ -41,7 +50,7 @@ def unique_bt_name(base: str) -> str:
 class SpendResult:
     intent: int                       # что менеджер вписал
     cap: int                          # эффективная сумма списания (после ограничений)
-    capped_by: Optional[str]          # None | "balance" | "limit_30" | "blocked" | "no_agent"
+    capped_by: Optional[str]          # None | "balance" | "limit_30" | "exempt" | "blocked" | "no_agent"
     delta: int                        # cap - spent_before (со знаком)
     spent_before: int
     spent_after: int
@@ -59,6 +68,37 @@ def order_total_rub(order: dict[str, Any]) -> int:
         return max(0, int(round(float(val) / 100.0)))
     except (TypeError, ValueError):
         return 0
+
+
+def order_total_for_spend_limit(
+    order: dict[str, Any],
+    prev_per_pos: Optional[dict[str, Any]] = None,
+) -> int:
+    """Сумма заказа до нашей бонусной скидки — база для лимита 30%.
+
+    Лимит нельзя считать от текущего `order.sum`: после первого списания сумма
+    падает, и следующий webhook обрезает уже применённый cap.
+    """
+    positions = _order_positions(order)
+    total_kop = 0.0
+    n = 0
+    for pos in positions:
+        pid = str(pos.get("id") or "")
+        if not pid:
+            continue
+        prev_extra = float((prev_per_pos or {}).get(pid) or 0.0)
+        orig = _restore_orig_discount(pos, prev_extra)
+        total_kop += _line_amount_kop(pos, orig)
+        n += 1
+    if n == 0:
+        return order_total_rub(order)
+    return max(0, int(round(total_kop / 100.0)))
+
+
+def is_spend_limit_exempt(order: dict[str, Any]) -> bool:
+    oid = str(order.get("id") or "")
+    name = str(order.get("name") or "")
+    return oid in _SPEND_LIMIT_EXEMPT_ORDERS or name in _SPEND_LIMIT_EXEMPT_ORDERS
 
 
 def _order_positions(order: dict[str, Any]) -> list[dict[str, Any]]:
@@ -106,7 +146,7 @@ def apply_spend_discount_to_positions(
     order_id = str(order.get("id") or "")
     if not order_id:
         return {}
-    positions = _order_positions(order)
+    positions = _fetch_order_positions(client, order)
     prev_per_pos = dict(prev_per_pos or {})
 
     # 1) Восстанавливаем «исходный» discount у каждой позиции.
@@ -159,6 +199,7 @@ def apply_spend_discount_to_positions(
             new_per_pos[pid] = extra_pct
 
     # 3) Шлём PUT по каждой позиции, у которой discount изменился (с учётом небольшого порога).
+    errors: list[str] = []
     for pos in positions:
         pid = str(pos.get("id") or "")
         if not pid:
@@ -173,11 +214,29 @@ def apply_spend_discount_to_positions(
                 {"discount": float(new_disc)},
                 disable_webhook=True,
             )
-        except Exception:
-            # одна позиция не должна валить весь процесс
-            continue
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{pid}: {exc}")
+    if errors:
+        raise RuntimeError("position discount PUT failed: " + "; ".join(errors)[:400])
 
     return new_per_pos
+
+
+def _fetch_order_positions(client: MoySkladClient, order: dict[str, Any]) -> list[dict[str, Any]]:
+    """Свежие позиции из МС; если запрос не вышел — снимок из webhook."""
+    order_id = str(order.get("id") or "")
+    if order_id:
+        try:
+            data = client.get(
+                f"/entity/customerorder/{order_id}/positions",
+                params={"limit": 1000},
+            )
+            rows = list(data.get("rows") or []) if isinstance(data, dict) else []
+            if rows:
+                return rows
+        except Exception:
+            pass
+    return _order_positions(order)
 
 
 def compute_active_balance(db: Session, agent_id: str, *, now: Optional[datetime] = None) -> int:
@@ -345,12 +404,15 @@ def apply_spend_intent(
         balance = compute_active_balance(db, member.agent_id) + spent_before
         # `balance` тут = доступно сейчас + то, что мы уже списали с этого заказа
         # (потому что spent_before уже вычтено из батчей раньше — учитываем его при оценке cap)
-        order_total = order_total_rub(order)
+        order_total = order_total_for_spend_limit(order, ev.spend_extra_discounts)
         limit_pct = max(0, min(100, int(settings.loyalty_spend_percent_limit)))
         limit_amount = (order_total * limit_pct) // 100
         cap = max(0, intent)
         capped_by: Optional[str] = None
-        if cap > limit_amount:
+        if is_spend_limit_exempt(order):
+            if cap > limit_amount:
+                capped_by = "exempt"
+        elif cap > limit_amount:
             cap = limit_amount
             capped_by = "limit_30"
         if cap > balance:
@@ -363,11 +425,11 @@ def apply_spend_intent(
     res.capped_by = capped_by
 
     if delta == 0 and intent == int(ev.last_spend_intent or 0):
-        # Ничего не изменилось. Но если на заказе уже зафиксировано списание, а скидка
-        # в позициях ещё не применена (старые заказы до этой версии или сбой PUT),
-        # доводим состояние позиций до целевого.
+        # Бонусная операция уже есть. Скидку в позициях всё равно сверяем:
+        # spend_extra_discounts в БД не значит, что discount в МС живой
+        # (сброс интеграцией, гонка при добавлении позиций, молчаливый PUT).
         res.spent_after = spent_before
-        if cap > 0 and not ev.spend_extra_discounts:
+        if cap > 0:
             try:
                 new_per_pos = apply_spend_discount_to_positions(
                     client,
