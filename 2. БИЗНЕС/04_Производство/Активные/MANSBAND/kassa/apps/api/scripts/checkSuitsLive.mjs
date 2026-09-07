@@ -18,11 +18,19 @@ if (!TOKEN) {
 const BASE = "https://api.moysklad.ru/api/remap/1.2";
 
 async function get(path) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { Authorization: `Bearer ${TOKEN}`, "Accept-Encoding": "gzip" },
-  });
-  if (!res.ok) throw new Error(`${res.status} ${path}: ${await res.text()}`);
-  return res.json();
+  // МойСклад режет частые запросы: 429 ретраим с паузой, иначе выгрузка падает
+  // на середине каталога.
+  for (let attempt = 1; ; attempt += 1) {
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { Authorization: `Bearer ${TOKEN}`, "Accept-Encoding": "gzip" },
+    });
+    if (res.ok) return res.json();
+    if (res.status === 429 && attempt <= 5) {
+      await new Promise((r) => setTimeout(r, 2000 * attempt));
+      continue;
+    }
+    throw new Error(`${res.status} ${path}: ${(await res.text()).slice(0, 300)}`);
+  }
 }
 
 function chars(row) {
@@ -38,6 +46,7 @@ function chars(row) {
 const products = new Map();
 for (let offset = 0; ; offset += 1000) {
   const page = await get(`/entity/assortment?limit=1000&offset=${offset}`);
+  console.log(`  каталог: ${offset + page.rows.length} позиций`);
   for (const row of page.rows) {
     if (row.meta.type !== "product" && row.meta.type !== "variant") continue;
     const part = suitPartOf(row.name);
@@ -62,8 +71,10 @@ for (let offset = 0; ; offset += 1000) {
 console.log(`костюмных модификаций в каталоге: ${products.size}`);
 
 const lines = [];
-for (let offset = 0; ; offset += 1000) {
-  const page = await get(`/report/stock/bystore?limit=1000&offset=${offset}`);
+// Отчёт по остаткам отдаёт максимум 100 строк за запрос.
+for (let offset = 0; ; offset += 100) {
+  const page = await get(`/report/stock/bystore?limit=100&offset=${offset}`);
+  if (offset % 2000 === 0) console.log(`  остатки: ${offset} строк отчёта пройдено`);
   for (const row of page.rows) {
     const msId = (row.meta?.href ?? "").split("/").pop()?.split("?")[0];
     const product = products.get(msId);
@@ -74,7 +85,7 @@ for (let offset = 0; ; offset += 1000) {
       lines.push({ ...product, warehouse: byStore.name, qty });
     }
   }
-  if (page.rows.length < 1000) break;
+  if (page.rows.length < 100) break;
 }
 const items = lines.reduce((s, l) => s + l.qty, 0);
 const halfSetItems = lines
