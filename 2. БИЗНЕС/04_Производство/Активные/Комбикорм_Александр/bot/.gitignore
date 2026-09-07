@@ -1,0 +1,10 @@
+.env
+data/
+*.db
+*.db-*
+__pycache__/
+*.pyc
+.venv/
+venv/
+catalog_review*.md
+catalog_review*.csv

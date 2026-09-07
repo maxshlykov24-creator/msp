@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MANSBAND · Воронки продаж</title>
+<meta name="robots" content="noindex" />
+<link rel="stylesheet" href="boards.css?v=5" />
+</head>
+<body>
+<header class="top">
+  <div class="top-left">
+    <div class="brand">MANSBAND</div>
+    <h1>Воронки продаж</h1>
+  </div>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="actions">
+    <div class="zoom" title="Масштаб: pinch двумя пальцами или Ctrl/⌘ + колёсико">
+      <button class="btn zoom-btn" id="btn-zoom-out" aria-label="Уменьшить">−</button>
+      <button class="btn zoom-pct" id="btn-zoom-pct" title="Сбросить на 100%">100%</button>
+      <button class="btn zoom-btn" id="btn-zoom-in" aria-label="Увеличить">+</button>
+      <button class="btn" id="btn-fit">Вписать</button>
+    </div>
+    <button class="btn" id="btn-copy">Копировать ссылку</button>
+    <button class="btn" id="btn-fs">Во весь экран</button>
+  </div>
+</header>
+
+<section class="meta">
+  <div class="legend">
+    <span class="lg"><i class="sw main"></i>основной ход</span>
+    <span class="lg"><i class="sw move"></i>товар / перемещение</span>
+    <span class="lg"><i class="sw back"></i>возврат назад</span>
+    <span class="lg"><i class="sw ok"></i>в Успех</span>
+    <span class="lg"><i class="sw fail"></i>в Провал</span>
+  </div>
+  <div class="hint">Pinch двумя пальцами — масштаб. Клик по этапу — только его связи.</div>
+</section>
+
+<main id="stage"></main>
+
+<aside class="inspector" id="inspector" hidden>
+  <button class="close" id="insp-close" aria-label="Закрыть">×</button>
+  <div class="insp-title" id="insp-title"></div>
+  <div class="insp-block">
+    <div class="insp-label">Откуда приходит</div>
+    <ul id="insp-in"></ul>
+  </div>
+  <div class="insp-block">
+    <div class="insp-label">Куда уходит</div>
+    <ul id="insp-out"></ul>
+  </div>
+</aside>
+
+<footer class="foot">
+  Источник: регламент «Структура · Продажи» + Miro. Правки — через Cursor: сказать, что изменить.
+</footer>
+
+<script src="boards-data.js?v=5"></script>
+<script src="boards.js?v=5"></script>
+</body>
+</html>

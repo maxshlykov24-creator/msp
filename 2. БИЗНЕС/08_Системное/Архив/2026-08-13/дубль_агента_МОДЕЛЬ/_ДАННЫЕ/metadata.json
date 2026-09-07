@@ -1,0 +1,82 @@
+{
+  "version": "1.4",
+  "last_updated": "2026-07-20T09:00:00",
+  "statistics": {
+    "total_recommendations": 0,
+    "fast_track_coverage": 0,
+    "typical_tasks_coverage": 0,
+    "heuristics_coverage": 0,
+    "stats_coverage": 0,
+    "cache_coverage": 0,
+    "blitz_coverage": 0,
+    "standard_coverage": 0,
+    "full_coverage": 0,
+    "average_response_time": 0,
+    "average_confidence": 0
+  },
+  "usage_statistics": {
+    "написать пост": {
+      "Gemini 2.5 Flash": 0,
+      "Claude Sonnet 5": 0
+    },
+    "отладить код": {
+      "Claude Sonnet 5": 0,
+      "DeepSeek V3.2": 0
+    }
+  },
+  "feedback_statistics": {
+    "отлично": 0,
+    "хорошо": 0,
+    "правки": 0,
+    "плохо": 0
+  },
+  "update_dates": {
+    "lmsys": "2026-07-20",
+    "openrouter": "2026-07-01",
+    "benchlm_cursorbench": "2026-07-19",
+    "openai_gpt56": "2026-07-09",
+    "anthropic_api_docs": "2026-07-20",
+    "artificial_analysis": "2026-07-10",
+    "google_ai_pricing": "2026-07-01",
+    "openai_pricing": "2026-07-09",
+    "cursor_picker": "2026-07-20",
+    "llm_stats": "2026-07-19",
+    "vellum": "2026-07-10",
+    "nebuly": null
+  },
+  "model_popularity": {
+    "Claude Sonnet 5": 0,
+    "GPT-5.6 Terra": 0,
+    "GPT-5.6 Sol": 0,
+    "Claude Fable 5": 0,
+    "Claude Opus 4.8": 0,
+    "GPT-5.6 Luna": 0,
+    "Composer 2.5": 0,
+    "Composer 2": 0,
+    "Gemini 2.5 Flash": 0,
+    "DeepSeek V3.2": 0,
+    "Gemini 3.1 Pro (Preview)": 0,
+    "GPT-5.5": 0
+  },
+  "recommendations_by_level": {
+    "fast_track": 0,
+    "typical": 0,
+    "heuristics": 0,
+    "stats": 0,
+    "cache_type": 0,
+    "cache_combination": 0,
+    "blitz": 0,
+    "standard": 0,
+    "full": 0
+  },
+  "changelog": [
+    {
+      "date": "2026-07-20",
+      "note": "Полное обновление: GPT-5.6 Sol/Terra/Luna, Claude Fable 5, Composer 2.5, CursorBench 19.07, маршрутизация Sonnet→Terra→Sol→Fable; OpenRouter 403"
+    },
+    {
+      "date": "2026-07-01",
+      "note": "Полное обновление: Sonnet 5 (system card 30.06), Opus 4.8, GPT-5.x, Gemini 3.1, OpenRouter fetch, fast_track → Sonnet 5"
+    }
+  ]
+}

@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Система снабжения · прототип · MS Product</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#000000; --card:#1C1C1E; --card-2:#2C2C2E; --card-3:#232325;
+    --ink:#F5F5F7; --body:#A1A1A6; --mute:#6E6E73; --line:rgba(255,255,255,.08);
+    --a1:#C8A45C; --a2:#E0C48A;
+    --green:#9FC9AC; --amber:#E0A94E; --red:#C98680; --blue:#7E9FD4;
+    --ease:cubic-bezier(.25,1,.5,1);
+    --font:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--font); min-height:100vh;
+    -webkit-font-smoothing:antialiased; padding:30px 34px 64px; position:relative;
+    background-image:
+      radial-gradient(900px 620px at 92% -10%, rgba(200,164,92,.16), transparent 55%),
+      radial-gradient(620px 500px at -8% 100%, rgba(126,159,212,.10), transparent 55%);
+  }
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.45;
+    background-image:radial-gradient(1px 1px at 22% 28%, rgba(255,255,255,.4) 0, transparent 0),
+                     radial-gradient(1px 1px at 68% 62%, rgba(255,255,255,.28) 0, transparent 0);
+    background-size:3px 3px;mix-blend-mode:overlay;
+  }
+  .wrap{max-width:1180px;margin:0 auto;position:relative;z-index:1}
+
+  /* ── header ── */
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:16px}
+  .brand{display:flex;align-items:center;gap:13px}
+  .brand img{height:34px;width:auto;filter:drop-shadow(0 0 16px rgba(200,164,92,.30))}
+  .brand .x{font-family:var(--font-mono);font-size:13px;color:var(--mute);letter-spacing:.2em}
+  .brand .name{font-size:13px;color:var(--body);font-weight:600;letter-spacing:.05em}
+  .top-meta{text-align:right}
+  .top-meta .h{font-size:21px;font-weight:800;letter-spacing:-.02em}
+  .top-meta .s{font-size:12px;color:var(--mute);margin-top:4px;font-weight:500}
+
+  .demo-note{
+    display:flex;align-items:flex-start;gap:11px;padding:12px 16px;margin-bottom:22px;
+    background:rgba(224,169,78,.07);border:1px solid rgba(224,169,78,.28);border-radius:12px;
+    font-size:12.5px;color:var(--body);line-height:1.5;
+  }
+  .demo-note b{color:var(--a2);font-weight:700}
+  .demo-note .ic{font-size:14px;line-height:1.3}
+
+  /* ── steps nav ── */
+  .steps{display:flex;gap:6px;margin-bottom:26px;flex-wrap:wrap}
+  .step{
+    display:flex;align-items:center;gap:9px;padding:9px 15px;border-radius:11px;cursor:pointer;
+    background:rgba(255,255,255,.03);border:1px solid var(--line);
+    font-size:12.5px;font-weight:600;color:var(--mute);transition:all .25s var(--ease);white-space:nowrap;
+  }
+  .step .n{
+    font-family:var(--font-mono);font-size:10.5px;width:19px;height:19px;border-radius:50%;
+    display:grid;place-items:center;background:rgba(255,255,255,.07);color:var(--mute);flex:none;
+  }
+  .step:hover{color:var(--body);border-color:rgba(255,255,255,.18)}
+  .step.on{background:rgba(200,164,92,.13);border-color:rgba(200,164,92,.45);color:var(--a2)}
+  .step.on .n{background:var(--a1);color:#151109}
+  .step.done .n{background:rgba(159,201,172,.22);color:var(--green)}
+
+  /* ── screens ── */
+  .screen{display:none;animation:fade .35s var(--ease)}
+  .screen.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .sc-head{margin-bottom:18px}
+  .sc-head h2{font-size:20px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px}
+  .sc-head p{font-size:13.5px;color:var(--body);line-height:1.55;max-width:78ch}
+  .sc-head .now{
+    display:inline-block;margin-top:9px;font-size:11.5px;font-weight:600;color:var(--red);
+    background:rgba(201,134,128,.10);border:1px solid rgba(201,134,128,.28);
+    padding:5px 11px;border-radius:8px;
+  }
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;position:relative;overflow:hidden}
+  .panel + .panel{margin-top:14px}
+  .panel .ph{font-size:14.5px;font-weight:700;margin-bottom:15px;letter-spacing:-.01em;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .panel .ph .sub{font-size:11.5px;color:var(--mute);font-weight:500}
+
+  .grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:14px}
+  .grid2b{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+  /* ── email card ── */
+  .mail{background:var(--card-3);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .mail-h{padding:15px 18px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .mail-h .fr{font-size:13.5px;font-weight:700;margin-bottom:3px}
+  .mail-h .to{font-size:11.5px;color:var(--mute);font-family:var(--font-mono)}
+  .mail-h .sj{font-size:13px;color:var(--body);margin-top:8px;font-weight:600}
+  .mail-b{padding:16px 18px;font-size:13px;color:var(--body);line-height:1.6}
+  .attach{
+    display:flex;align-items:center;gap:11px;margin-top:14px;padding:11px 14px;
+    background:rgba(126,159,212,.08);border:1px solid rgba(126,159,212,.25);border-radius:10px;
+  }
+  .attach .ic{width:32px;height:32px;border-radius:7px;background:rgba(126,159,212,.18);display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--blue);font-family:var(--font-mono);flex:none}
+  .attach .nm{font-size:12.5px;font-weight:600}
+  .attach .sz{font-size:11px;color:var(--mute);margin-top:2px}
+
+  /* ── buttons ── */
+  .btn{
+    font-family:var(--font);font-size:13px;font-weight:700;padding:11px 20px;border-radius:10px;cursor:pointer;
+    background:var(--a1);color:#151109;border:1px solid var(--a1);transition:all .25s var(--ease);
+  }
+  .btn:hover{background:var(--a2);border-color:var(--a2)}
+  .btn:disabled{background:rgba(255,255,255,.06);border-color:var(--line);color:var(--mute);cursor:not-allowed}
+  .btn.ghost{background:transparent;color:var(--body);border-color:var(--line)}
+  .btn.ghost:hover{color:var(--ink);border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.04)}
+  .btn.sm{font-size:12px;padding:8px 14px}
+  .btn-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
+
+  /* ── processing ── */
+  .proc{display:none;margin-top:16px}
+  .proc.on{display:block}
+  .proc-line{display:flex;align-items:center;gap:11px;padding:9px 0;font-size:13px;color:var(--mute);opacity:.35;transition:all .3s var(--ease)}
+  .proc-line.on{opacity:1;color:var(--body)}
+  .proc-line .dot{width:7px;height:7px;border-radius:50%;background:var(--mute);flex:none;transition:background .3s}
+  .proc-line.on .dot{background:var(--green)}
+  .proc-line .t{font-family:var(--font-mono);font-size:11px;color:var(--mute);margin-left:auto}
+
+  /* ── tables ── */
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{
+    text-align:left;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--mute);padding:0 10px 10px;border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  th.r,td.r{text-align:right}
+  td{padding:11px 10px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tbody tr.hl{background:rgba(224,169,78,.06)}
+  tbody tr.dim td{color:var(--mute)}
+  .num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .nm{font-weight:600;color:var(--ink)}
+
+  .pill{font-family:var(--font-mono);font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:980px;white-space:nowrap;display:inline-block}
+  .pill.ok{background:rgba(159,201,172,.15);color:var(--green)}
+  .pill.warn{background:rgba(224,169,78,.15);color:var(--amber)}
+  .pill.bad{background:rgba(201,134,128,.15);color:var(--red)}
+  .pill.info{background:rgba(126,159,212,.15);color:var(--blue)}
+  .pill.mute{background:rgba(255,255,255,.06);color:var(--mute)}
+
+  .who{display:inline-flex;align-items:center;gap:7px}
+  .av{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:9.5px;font-weight:800;flex:none;font-family:var(--font-mono)}
+  .av.t{background:rgba(224,169,78,.20);color:var(--amber)}
+  .av.o{background:rgba(159,201,172,.20);color:var(--green)}
+  .av.i{background:rgba(126,159,212,.20);color:var(--blue)}
+  .av.s{background:rgba(201,134,128,.20);color:var(--red)}
+  .av.p{background:rgba(180,150,220,.20);color:#B496DC}
+  .av.q{background:rgba(255,255,255,.10);color:var(--mute)}
+
+  select.assign{
+    font-family:var(--font);font-size:12px;font-weight:600;padding:6px 10px;border-radius:8px;
+    background:var(--card-2);color:var(--amber);border:1px solid rgba(224,169,78,.45);cursor:pointer;
+  }
+  select.assign.resolved{color:var(--green);border-color:rgba(159,201,172,.4)}
+
+  .conf{font-family:var(--font-mono);font-size:10.5px;color:var(--mute)}
+  .conf.low{color:var(--amber)}
+
+  .learn{
+    display:none;align-items:center;gap:10px;margin-top:14px;padding:11px 15px;
+    background:rgba(159,201,172,.08);border:1px solid rgba(159,201,172,.3);border-radius:10px;
+    font-size:12.5px;color:var(--green);line-height:1.5;
+  }
+  .learn.on{display:flex;animation:fade .3s var(--ease)}
+  .learn b{font-weight:700}
+
+  /* ── task cards ── */
+  .tasks{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+  .task{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:17px;position:relative;overflow:hidden}
+  .task .th{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .task .th .nm{font-size:13.5px;font-weight:700}
+  .task .th .cat{font-size:11px;color:var(--mute);margin-top:1px}
+  .task ul{list-style:none;font-size:12px;color:var(--body);line-height:1.85}
+  .task ul li{display:flex;justify-content:space-between;gap:10px}
+  .task ul li span:last-child{font-family:var(--font-mono);color:var(--mute);flex:none}
+  .task .tf{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px;padding-top:12px;border-top:1px solid var(--line)}
+  .task .dl{font-size:11px;color:var(--mute)}
+  .xls{
+    display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;color:var(--green);
+    background:rgba(159,201,172,.10);border:1px solid rgba(159,201,172,.28);padding:6px 11px;border-radius:8px;cursor:pointer;
+  }
+  .xls:hover{background:rgba(159,201,172,.18)}
+
+  /* ── kpi ── */
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:19px;position:relative;overflow:hidden}
+  .kpi .lbl{font-size:11.5px;font-weight:600;color:var(--body);margin-bottom:11px;min-height:2.6em;line-height:1.35}
+  .kpi .val{font-size:31px;font-weight:300;letter-spacing:-.025em;font-variant-numeric:tabular-nums;
+    background:linear-gradient(160deg,#ffffff 30%,#b8bcc6 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .kpi .val.gold{background:linear-gradient(160deg,#E0C48A 20%,#C8A45C 100%);-webkit-background-clip:text;background-clip:text}
+  .kpi .sub{font-size:11px;color:var(--mute);margin-top:7px;font-weight:500;line-height:1.4}
+
+  /* ── before/after ── */
+  .ba{display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;font-size:13px}
+  .ba-row{display:contents}
+  .ba .c{padding:13px 16px;border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center}
+  .ba .c.lb{color:var(--red);background:rgba(201,134,128,.04)}
+  .ba .c.rb{color:var(--green);background:rgba(159,201,172,.04);font-weight:600}
+  .ba .c.ar{color:var(--mute);font-family:var(--font-mono);font-size:11px;padding:13px 12px;border-bottom:1px solid rgba(255,255,255,.05);display:grid;place-items:center}
+  .ba .hd{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);background:transparent;padding-bottom:9px}
+
+  /* ── compare bars ── */
+  .cmp-row{display:flex;align-items:center;gap:13px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+  .cmp-row:last-child{border-bottom:none}
+  .cmp-row .sup{width:190px;font-size:12.5px;font-weight:600;flex:none;display:flex;align-items:center;gap:7px}
+  .cmp-row .bar{flex:1;height:26px;background:rgba(255,255,255,.04);border-radius:6px;overflow:hidden;position:relative}
+  .cmp-row .bar i{display:block;height:100%;background:linear-gradient(90deg,rgba(126,159,212,.35),rgba(126,159,212,.18));border-radius:6px}
+  .cmp-row.best .bar i{background:linear-gradient(90deg,rgba(159,201,172,.5),rgba(159,201,172,.22))}
+  .cmp-row .pr{width:110px;text-align:right;font-family:var(--font-mono);font-size:13px;font-weight:600;flex:none}
+  .cmp-row.best .pr{color:var(--green)}
+  .tag-prod{font-size:9.5px;font-weight:700;color:var(--a2);background:rgba(200,164,92,.15);padding:2px 6px;border-radius:5px;letter-spacing:.03em}
+
+  .split-box{margin-top:15px;padding:15px 17px;background:rgba(159,201,172,.06);border:1px solid rgba(159,201,172,.25);border-radius:11px}
+  .split-box .t{font-size:12.5px;font-weight:700;color:var(--green);margin-bottom:9px}
+  .split-box .l{font-size:12.5px;color:var(--body);line-height:1.75;display:flex;justify-content:space-between;gap:12px}
+  .split-box .l span:last-child{font-family:var(--font-mono);color:var(--ink)}
+  .split-box .tot{margin-top:10px;padding-top:10px;border-top:1px solid rgba(159,201,172,.22);font-weight:700;color:var(--green)}
+
+  /* ── approve ── */
+  .appr{background:var(--card-3);border:1px solid rgba(224,169,78,.3);border-radius:13px;padding:19px}
+  .appr .hd{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:15px}
+  .appr .sum{font-size:30px;font-weight:300;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .appr .meta{font-size:12px;color:var(--mute);line-height:1.6;margin-top:5px}
+  .appr-res{display:none;margin-top:15px;padding:13px 16px;border-radius:10px;font-size:13px;font-weight:600;line-height:1.5}
+  .appr-res.on{display:block;animation:fade .3s var(--ease)}
+  .appr-res.ok{background:rgba(159,201,172,.10);border:1px solid rgba(159,201,172,.3);color:var(--green)}
+  .appr-res.no{background:rgba(201,134,128,.10);border:1px solid rgba(201,134,128,.3);color:var(--red)}
+
+  /* ── manager economy bars ── */
+  .mgr{display:flex;align-items:center;gap:13px;padding:9px 0}
+  .mgr .n{width:120px;font-size:12.5px;font-weight:600;flex:none;display:flex;align-items:center;gap:8px}
+  .mgr .bar{flex:1;height:8px;background:rgba(255,255,255,.05);border-radius:4px;overflow:hidden}
+  .mgr .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--a1),rgba(200,164,92,.35));border-radius:4px}
+  .mgr .v{width:92px;text-align:right;font-family:var(--font-mono);font-size:12.5px;flex:none}
+
+  .foot{margin-top:30px;padding-top:20px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .foot .l{display:flex;align-items:center;gap:11px}
+  .foot img{height:26px;opacity:.75}
+  .foot .txt{font-size:11.5px;color:var(--mute);line-height:1.5;max-width:62ch}
+
+  .navbtns{display:flex;gap:10px;margin-top:24px;justify-content:space-between}
+
+  @media (max-width:1000px){
+    body{padding:22px 18px 50px}
+    .grid2,.grid2b{grid-template-columns:1fr}
+    .tasks{grid-template-columns:1fr 1fr}
+    .kpi-grid{grid-template-columns:1fr 1fr}
+    .cmp-row .sup{width:130px;font-size:11.5px}
+    .cmp-row .pr{width:88px;font-size:12px}
+    .table-scroll{overflow-x:auto}
+    .table-scroll table{min-width:660px}
+  }
+  @media (max-width:640px){
+    .tasks{grid-template-columns:1fr}
+    .kpi-grid{grid-template-columns:1fr}
+    .ba{grid-template-columns:1fr;gap:0}
+    .ba .c.ar{display:none}
+    .ba .hd{display:none}
+    .panel{padding:17px}
+    .top-meta{text-align:left}
+    .step{font-size:11.5px;padding:8px 12px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+      <span class="x">×</span>
+      <span class="name">СИСТЕМА СНАБЖЕНИЯ · ОТДЕЛ ЗАКУПОК</span>
+    </div>
+    <div class="top-meta">
+      <div class="h">Как это будет работать</div>
+      <div class="s">Интерактивный прототип · кликайте по шагам</div>
+    </div>
+  </div>
+
+  <div class="demo-note">
+    <span class="ic">◆</span>
+    <span><b>Это прототип, а не работающая система.</b> Позиции, объекты и фамилии взяты из нашего разговора, чтобы было узнаваемо. Цены и суммы — демонстрационные, для иллюстрации логики. Задача экрана — показать, как процесс выглядит после внедрения и что именно вы получите на выходе.</span>
+  </div>
+
+  <div class="steps" id="steps">
+    <div class="step on" data-s="0"><span class="n">1</span>Заявка пришла</div>
+    <div class="step" data-s="1"><span class="n">2</span>Разбор и проверка</div>
+    <div class="step" data-s="2"><span class="n">3</span>Задачи ушли</div>
+    <div class="step" data-s="3"><span class="n">4</span>Панель контроля</div>
+    <div class="step" data-s="4"><span class="n">5</span>Поставщики</div>
+    <div class="step" data-s="5"><span class="n">6</span>Сравнение цен</div>
+    <div class="step" data-s="6"><span class="n">7</span>Подпись на счёт</div>
+    <div class="step" data-s="7"><span class="n">8</span>Экономия</div>
+  </div>
+
+  <!-- ═══ 1. ЗАЯВКА ═══ -->
+  <section class="screen on" data-sc="0">
+    <div class="sc-head">
+      <h2>Заявка приходит на почту, как и сейчас</h2>
+      <p>Ничего не меняется для объектов: начальник участка присылает подписанную заявку на тот же адрес. Меняется то, что происходит с ней дальше.</p>
+      <div class="now">Сейчас: с этого места 40–60 минут вашего времени — прочитать, разнести по людям, нарезать Excel, каждому написать</div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <div class="ph">Входящее письмо</div>
+        <div class="mail">
+          <div class="mail-h">
+            <div class="fr">Климовский южный посёлок · начальник участка</div>
+            <div class="to">→ snab@company.ru · 10 августа, 08:42</div>
+            <div class="sj">Заявка на материалы № 247 от 10.08.2026</div>
+          </div>
+          <div class="mail-b">
+            Добрый день. Направляю заявку на материалы по объекту. Заявка подписана, согласована.
+            По электродам и трубе ПВХ — просьба ускорить, горит бетонирование.
+            <div class="attach">
+              <span class="ic">PDF</span>
+              <span>
+                <div class="nm">Заявка_247_Климовский_10.08.pdf</div>
+                <div class="sz">16 позиций · скан с подписями · 1,2 МБ</div>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="btnParse">Разобрать заявку</button>
+          <span style="font-size:12px;color:var(--mute)">в системе это происходит само, без нажатия</span>
+        </div>
+
+        <div class="proc" id="proc">
+          <div class="proc-line" data-p="0"><span class="dot"></span>Письмо получено, вложение распознано<span class="t">0,4 с</span></div>
+          <div class="proc-line" data-p="1"><span class="dot"></span>Извлечено 16 позиций: наименование, количество, единица<span class="t">1,8 с</span></div>
+          <div class="proc-line" data-p="2"><span class="dot"></span>Определены категории по справочнику<span class="t">2,1 с</span></div>
+          <div class="proc-line" data-p="3"><span class="dot"></span>14 позиций отнесены уверенно, 2 требуют вашего решения<span class="t">2,3 с</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="ph">Что система берёт из заявки</div>
+        <table>
+          <tr><td class="nm">Объект</td><td class="r">Климовский южный</td></tr>
+          <tr><td class="nm">Номер и дата</td><td class="r num">247 · 10.08.2026</td></tr>
+          <tr><td class="nm">Позиций</td><td class="r num">16</td></tr>
+          <tr><td class="nm">Отмечено «горит»</td><td class="r"><span class="pill bad">2 позиции</span></td></tr>
+          <tr><td class="nm">Ответственных затронуто</td><td class="r num">5 человек</td></tr>
+          <tr><td class="nm">Срок по регламенту</td><td class="r">неделя · до 17.08</td></tr>
+        </table>
+        <p style="font-size:12.5px;color:var(--mute);line-height:1.6;margin-top:15px">
+          Пометку «горит» из текста письма система переносит на конкретные позиции — они встанут выше в списке у Санька, а не потеряются в общей заявке.
+        </p>
+      </div>
+    </div>
+
+    <div class="navbtns"><span></span><button class="btn ghost" onclick="go(1)">Дальше: что увидите вы →</button></div>
+  </section>
+
+  <!-- ═══ 2. РАЗБОР ═══ -->
+  <section class="screen" data-sc="1">
+    <div class="sc-head">
+      <h2>Экран проверки: система разнесла, вы подтверждаете</h2>
+      <p>Задачи не уходят молча. Сначала вы видите разбор целиком. Что система знает уверенно — уже проставлено. Что не уверена — подсвечено и ждёт вашего решения. Это защита от главного риска: задача ушла не тому и вскрылась на срыве поставки.</p>
+    </div>
+
+    <div class="panel">
+      <div class="ph">
+        <span>Заявка № 247 · Климовский южный · 16 позиций</span>
+        <span class="sub" id="unresolvedNote">Требуют решения: <b style="color:var(--amber)">2</b></span>
+      </div>
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Позиция</th><th class="r">Кол-во</th><th>Категория</th><th>Ответственный</th><th class="r">Уверенность</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="nm">Лопата штыковая</td><td class="r num">15 шт</td><td>Расходка</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td><td class="r conf">98%</td></tr>
+          <tr><td class="nm">Бур SDS-max 24×400</td><td class="r num">8 шт</td><td>Расходка</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td><td class="r conf">97%</td></tr>
+          <tr><td class="nm">Диск отрезной 230 мм</td><td class="r num">60 шт</td><td>Расходка</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td><td class="r conf">95%</td></tr>
+          <tr><td class="nm">Перчатки х/б с ПВХ</td><td class="r num">200 пар</td><td>Расходка</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td><td class="r conf">99%</td></tr>
+          <tr><td class="nm">Саморез кровельный 4,8×35</td><td class="r num">5 000 шт</td><td>Расходка</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td><td class="r conf">96%</td></tr>
+          <tr><td class="nm">Проволока вязальная 1,2</td><td class="r num">300 кг</td><td>Металл</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td><td class="r conf">94%</td></tr>
+          <tr><td class="nm">Вода питьевая 19 л</td><td class="r num">40 бут</td><td>Хозтовары</td><td><span class="who"><span class="av o">О</span>Олеся</span></td><td class="r conf">99%</td></tr>
+          <tr><td class="nm">Кабель ВВГнг 3×2,5</td><td class="r num">400 м</td><td>Электрика</td><td><span class="who"><span class="av i">И</span>Илья</span></td><td class="r conf">99%</td></tr>
+          <tr><td class="nm">Розетка каучуковая IP44</td><td class="r num">25 шт</td><td>Электрика</td><td><span class="who"><span class="av i">И</span>Илья</span></td><td class="r conf">98%</td></tr>
+          <tr><td class="nm">Автомат С16 1P</td><td class="r num">40 шт</td><td>Электрика</td><td><span class="who"><span class="av i">И</span>Илья</span></td><td class="r conf">97%</td></tr>
+          <tr><td class="nm">Прожектор LED 100 Вт</td><td class="r num">12 шт</td><td>Электрика</td><td><span class="who"><span class="av i">И</span>Илья</span></td><td class="r conf">96%</td></tr>
+
+          <tr class="hl" id="row-lezvie">
+            <td class="nm">Лезвие сегментное 18 мм</td><td class="r num">100 шт</td>
+            <td><span class="pill warn">не уверена</span></td>
+            <td>
+              <select class="assign" data-key="лезвия" onchange="resolve(this)">
+                <option value="">— выберите —</option>
+                <option value="Татьяна">Татьяна · расходка</option>
+                <option value="Илья">Илья · электрика</option>
+                <option value="Санёк">Санёк · монолит</option>
+              </select>
+            </td>
+            <td class="r conf low">54%</td>
+          </tr>
+
+          <tr><td class="nm">Труба ПВХ Д110 <span class="pill bad">горит</span></td><td class="r num">120 м</td><td>Монолит</td><td><span class="who"><span class="av s">С</span>Санёк</span></td><td class="r conf">93%</td></tr>
+          <tr><td class="nm">Электроды МР-3 4 мм <span class="pill bad">горит</span></td><td class="r num">500 кг</td><td>Монолит</td><td><span class="who"><span class="av s">С</span>Санёк</span></td><td class="r conf">97%</td></tr>
+          <tr><td class="nm">Качели двойные</td><td class="r num">2 шт</td><td>Уличное оборудование</td><td><span class="who"><span class="av p">П</span>Павлик</span></td><td class="r conf">95%</td></tr>
+
+          <tr class="hl" id="row-pergola">
+            <td class="nm">Пергола 3×4 с настилом</td><td class="r num">1 шт</td>
+            <td><span class="pill warn">не уверена</span></td>
+            <td>
+              <select class="assign" data-key="перголы" onchange="resolve(this)">
+                <option value="">— выберите —</option>
+                <option value="Павлик">Павлик · уличное оборудование</option>
+                <option value="Санёк">Санёк · монолит</option>
+                <option value="Татьяна">Татьяна · расходка</option>
+              </select>
+            </td>
+            <td class="r conf low">61%</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="learn" id="learnBox">
+        <span>✓</span>
+        <span id="learnText"></span>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn" id="btnConfirm" disabled onclick="go(2)">Подтвердить и поставить задачи</button>
+        <span style="font-size:12px;color:var(--mute)" id="confirmHint">Сначала решите 2 спорные позиции</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph">Почему это не «недоработка», а осознанное решение</div>
+      <p style="font-size:13px;color:var(--body);line-height:1.7">
+        Никакая система не разнесёт 100% позиций правильно с первого дня — номенклатура в строительстве слишком разная, и часть решений держится на вашем опыте, а не на логике. Мы не делаем вид, что это не так.
+        Вместо этого система показывает, где сомневается, и <b style="color:var(--ink)">запоминает ваше решение навсегда</b>. Через месяц работы спорных позиций почти не остаётся, а те, что есть, — действительно новые для отдела.
+      </p>
+    </div>
+
+    <div class="navbtns"><button class="btn ghost" onclick="go(0)">← Назад</button><span></span></div>
+  </section>
+
+  <!-- ═══ 3. ЗАДАЧИ ═══ -->
+  <section class="screen" data-sc="2">
+    <div class="sc-head">
+      <h2>Одно нажатие — задачи у всех пятерых</h2>
+      <p>Каждый получает задачу только по своим позициям, с готовым файлом, который можно сразу отправить поставщику. Ровно то, что вы сейчас делаете руками для каждого.</p>
+    </div>
+
+    <div class="tasks">
+      <div class="task">
+        <div class="th"><span class="av t">Т</span><span><div class="nm">Татьяна</div><div class="cat">расходка, металл</div></span></div>
+        <ul>
+          <li><span>Лопата штыковая</span><span>15 шт</span></li>
+          <li><span>Бур SDS-max 24×400</span><span>8 шт</span></li>
+          <li><span>Диск отрезной 230</span><span>60 шт</span></li>
+          <li><span>Перчатки х/б с ПВХ</span><span>200 пар</span></li>
+          <li><span>Саморез кровельный</span><span>5 000 шт</span></li>
+          <li><span>Проволока вязальная</span><span>300 кг</span></li>
+        </ul>
+        <div class="tf"><span class="dl">срок до 17.08</span><span class="xls">↓ Excel · 6 позиций</span></div>
+      </div>
+
+      <div class="task">
+        <div class="th"><span class="av i">И</span><span><div class="nm">Илья</div><div class="cat">электрика</div></span></div>
+        <ul>
+          <li><span>Кабель ВВГнг 3×2,5</span><span>400 м</span></li>
+          <li><span>Розетка каучуковая IP44</span><span>25 шт</span></li>
+          <li><span>Автомат С16 1P</span><span>40 шт</span></li>
+          <li><span>Прожектор LED 100 Вт</span><span>12 шт</span></li>
+          <li><span id="lezvieTask">Лезвие сегментное 18 мм</span><span>100 шт</span></li>
+        </ul>
+        <div class="tf"><span class="dl">срок до 17.08</span><span class="xls">↓ Excel · 5 позиций</span></div>
+      </div>
+
+      <div class="task">
+        <div class="th"><span class="av s">С</span><span><div class="nm">Санёк</div><div class="cat">монолит</div></span></div>
+        <ul>
+          <li><span>Труба ПВХ Д110 🔥</span><span>120 м</span></li>
+          <li><span>Электроды МР-3 4 мм 🔥</span><span>500 кг</span></li>
+        </ul>
+        <div class="tf"><span class="dl" style="color:var(--red)">горит · до 12.08</span><span class="xls">↓ Excel · 2 позиции</span></div>
+      </div>
+
+      <div class="task">
+        <div class="th"><span class="av p">П</span><span><div class="nm">Павлик</div><div class="cat">уличное оборудование</div></span></div>
+        <ul>
+          <li><span>Качели двойные</span><span>2 шт</span></li>
+          <li><span>Пергола 3×4 с настилом</span><span>1 шт</span></li>
+        </ul>
+        <div class="tf"><span class="dl">срок до 17.08</span><span class="xls">↓ Excel · 2 позиции</span></div>
+      </div>
+
+      <div class="task">
+        <div class="th"><span class="av o">О</span><span><div class="nm">Олеся</div><div class="cat">хозтовары, медоборудование</div></span></div>
+        <ul>
+          <li><span>Вода питьевая 19 л</span><span>40 бут</span></li>
+        </ul>
+        <div class="tf"><span class="dl">срок до 17.08</span><span class="xls">↓ Excel · 1 позиция</span></div>
+      </div>
+
+      <div class="task" style="border-color:rgba(200,164,92,.35);background:rgba(200,164,92,.05)">
+        <div class="th"><span class="av q">А</span><span><div class="nm">Андрей</div><div class="cat">руководитель отдела</div></span></div>
+        <ul style="color:var(--body)">
+          <li><span>Задач создано</span><span>5</span></li>
+          <li><span>Ваших действий</span><span>1 клик</span></li>
+          <li><span>Времени потрачено</span><span>2 мин</span></li>
+        </ul>
+        <div class="tf"><span class="dl">было: 40–60 минут</span><span class="pill ok">−95% времени</span></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <div class="ph">Что внутри файла у менеджера</div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Наименование</th><th class="r">Кол-во</th><th>Ед.</th><th>Объект</th><th>Для кого</th><th>Срок</th></tr></thead>
+        <tbody>
+          <tr><td>Кабель ВВГнг 3×2,5</td><td class="r num">400</td><td>м</td><td>Климовский южный</td><td>СМУ-4</td><td class="num">17.08</td></tr>
+          <tr><td>Розетка каучуковая IP44</td><td class="r num">25</td><td>шт</td><td>Климовский южный</td><td>СМУ-4</td><td class="num">17.08</td></tr>
+          <tr><td>Автомат С16 1P</td><td class="r num">40</td><td>шт</td><td>Климовский южный</td><td>СМУ-4</td><td class="num">17.08</td></tr>
+          <tr class="dim"><td colspan="6" style="font-size:11.5px">…и далее по позициям менеджера. Формат — обычный Excel, тот же, к которому привыкли поставщики. Можно выделить часть строк и сформировать отдельный файл под конкретного поставщика.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="navbtns"><button class="btn ghost" onclick="go(1)">← Назад</button><button class="btn ghost" onclick="go(3)">Дальше: что видит руководитель →</button></div>
+  </section>
+
+  <!-- ═══ 4. ПАНЕЛЬ ═══ -->
+  <section class="screen" data-sc="3">
+    <div class="sc-head">
+      <h2>Панель контроля: все заявки на одном экране</h2>
+      <p>Когда сверху спрашивают «что там с металлом» — ответ виден сразу, без обзвона менеджеров. Главное здесь — отдельный статус для заявок, которые стоят из-за денег.</p>
+    </div>
+
+    <div class="kpi-grid" style="margin-bottom:14px">
+      <div class="kpi"><div class="lbl">Заявок в работе</div><div class="val">7</div><div class="sub">по 5 объектам</div></div>
+      <div class="kpi"><div class="lbl">Ждут финансирования</div><div class="val" style="background:linear-gradient(160deg,#E0A94E 20%,#C8A45C 100%);-webkit-background-clip:text;background-clip:text">2</div><div class="sub">не считаются просрочкой</div></div>
+      <div class="kpi"><div class="lbl">Ждут вашей подписи</div><div class="val">1</div><div class="sub">счёт свыше 100 тыс.</div></div>
+      <div class="kpi"><div class="lbl">Реально просрочено</div><div class="val">0</div><div class="sub">по вине исполнителя</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><span>Активные заявки</span><span class="sub">обновляется само</span></div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>№</th><th>Объект</th><th>Позиций</th><th>Ответственные</th><th>Статус</th><th class="r">В работе</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="num nm">247</td><td>Климовский южный</td><td class="num">16</td>
+            <td><span class="who"><span class="av t">Т</span><span class="av i">И</span><span class="av s">С</span><span class="av p">П</span><span class="av o">О</span></span></td>
+            <td><span class="pill info">задачи поставлены</span></td><td class="r num">сегодня</td>
+          </tr>
+          <tr>
+            <td class="num nm">246</td><td>Шатура</td><td class="num">9</td>
+            <td><span class="who"><span class="av t">Т</span><span class="av s">С</span></span></td>
+            <td><span class="pill info">собрано 6 КП из 9</span></td><td class="r num">3 дня</td>
+          </tr>
+          <tr>
+            <td class="num nm">245</td><td>Климовский южный</td><td class="num">4</td>
+            <td><span class="who"><span class="av t">Т</span></span></td>
+            <td><span class="pill warn">ждёт вашей подписи</span></td><td class="r num">5 дней</td>
+          </tr>
+          <tr style="background:rgba(224,169,78,.05)">
+            <td class="num nm">244</td><td>Шатура</td><td class="num">12</td>
+            <td><span class="who"><span class="av i">И</span><span class="av o">О</span></span></td>
+            <td><span class="pill warn">ждём финансирование</span></td><td class="r num" style="color:var(--amber)">14 дней</td>
+          </tr>
+          <tr style="background:rgba(224,169,78,.05)">
+            <td class="num nm">241</td><td>Школа № 3 · оснащение</td><td class="num">38</td>
+            <td><span class="who"><span class="av o">О</span><span class="av p">П</span></span></td>
+            <td><span class="pill warn">ждём финансирование</span></td><td class="r num" style="color:var(--amber)">21 день</td>
+          </tr>
+          <tr>
+            <td class="num nm">243</td><td>Климовский южный</td><td class="num">7</td>
+            <td><span class="who"><span class="av s">С</span></span></td>
+            <td><span class="pill ok">оплачено, в пути</span></td><td class="r num">8 дней</td>
+          </tr>
+          <tr class="dim">
+            <td class="num nm">242</td><td>Шатура</td><td class="num">5</td>
+            <td><span class="who"><span class="av t">Т</span></span></td>
+            <td><span class="pill mute">отгружено</span></td><td class="r num">закрыта</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph">Про статус «ждём финансирование»</div>
+      <p style="font-size:13px;color:var(--body);line-height:1.7">
+        Вы сказали прямо: «я не могу сказать, почему заявка не отработана — он не может её отработать, потому что денег нет, а машинка это не поймёт».
+        <b style="color:var(--ink)">Она поймёт, если заложить это сразу.</b> Заявка в этом статусе останавливает счётчик срока и не висит красным на менеджере.
+        Побочный эффект, который окажется полезным: у вас появляется точная цифра — сколько заявок и на какую сумму стоит именно из-за финансирования, а не из-за людей. Это разговор с руководством на фактах.
+      </p>
+    </div>
+
+    <div class="navbtns"><button class="btn ghost" onclick="go(2)">← Назад</button><button class="btn ghost" onclick="go(4)">Дальше: поставщики →</button></div>
+  </section>
+
+  <!-- ═══ 5. ПОСТАВЩИКИ ═══ -->
+  <section class="screen" data-sc="4">
+    <div class="sc-head">
+      <h2>Реестр поставщиков — один на отдел, а не в голове</h2>
+      <p>Структура ваша, из вашей же таблицы: контакт, форма оплаты, отсрочка, лимит по договору, признак производителя. Разница в том, что она общая, не теряется с уходом человека и помнит историю цен.</p>
+      <div class="now">Сейчас: у каждого своя таблица, ключевые связи — в памяти. Уходит человек — уходит база</div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><span>Реестр поставщиков</span><span class="sub">производители помечены — приоритет при запросе</span></div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Поставщик</th><th>Категория</th><th>Оплата</th><th class="r">Отсрочка</th><th class="r">Лимит</th><th>Ответственный</th></tr></thead>
+        <tbody>
+          <tr><td class="nm">Северсталь <span class="tag-prod">ПРОИЗВОДИТЕЛЬ</span></td><td>металл</td><td><span class="pill ok">отсрочка</span></td><td class="r num">30 дн</td><td class="r num">10 млн</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td></tr>
+          <tr><td class="nm">ММК <span class="tag-prod">ПРОИЗВОДИТЕЛЬ</span></td><td>металл</td><td><span class="pill ok">отсрочка</span></td><td class="r num">30 дн</td><td class="r num">8 млн</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td></tr>
+          <tr><td class="nm">Бонолит <span class="tag-prod">ПРОИЗВОДИТЕЛЬ</span></td><td>пеноблок</td><td><span class="pill ok">отсрочка</span></td><td class="r num">21 дн</td><td class="r num">5 млн</td><td><span class="who"><span class="av q">А</span>Андрей</span></td></tr>
+          <tr><td class="nm">Калужский газобетон <span class="tag-prod">ПРОИЗВОДИТЕЛЬ</span></td><td>пеноблок</td><td><span class="pill ok">отсрочка</span></td><td class="r num">30 дн</td><td class="r num">6 млн</td><td><span class="who"><span class="av q">А</span>Андрей</span></td></tr>
+          <tr><td class="nm">Импульс <span class="tag-prod">ПРОИЗВОДИТЕЛЬ</span></td><td>пеноблок</td><td><span class="pill bad">предоплата</span></td><td class="r num">—</td><td class="r num">—</td><td><span class="who"><span class="av q">А</span>Андрей</span></td></tr>
+          <tr><td class="nm">Технониколь <span class="tag-prod">ПРОИЗВОДИТЕЛЬ</span></td><td>гидроизоляция, утеплитель</td><td><span class="pill ok">отсрочка</span></td><td class="r num">14 дн</td><td class="r num">3 млн</td><td><span class="who"><span class="av q">А</span>Андрей</span></td></tr>
+          <tr><td class="nm">Терем</td><td>вентиляция</td><td><span class="pill ok">отсрочка</span></td><td class="r num">30 дн</td><td class="r num">2 млн</td><td><span class="who"><span class="av q">А</span>Андрей</span></td></tr>
+          <tr><td class="nm">Росклимат</td><td>вентиляция</td><td><span class="pill ok">отсрочка</span></td><td class="r num">21 дн</td><td class="r num">1,5 млн</td><td><span class="who"><span class="av q">А</span>Андрей</span></td></tr>
+          <tr><td class="nm">СтройКомплект</td><td>расходка, метизы</td><td><span class="pill ok">отсрочка</span></td><td class="r num">30 дн</td><td class="r num">4 млн</td><td><span class="who"><span class="av t">Т</span>Татьяна</span></td></tr>
+          <tr><td class="nm">ЭлектроСнаб</td><td>электрика</td><td><span class="pill bad">предоплата</span></td><td class="r num">—</td><td class="r num">—</td><td><span class="who"><span class="av i">И</span>Илья</span></td></tr>
+          <tr><td class="nm">КабельОпт</td><td>электрика</td><td><span class="pill ok">отсрочка</span></td><td class="r num">14 дн</td><td class="r num">1 млн</td><td><span class="who"><span class="av i">И</span>Илья</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p style="font-size:12.5px;color:var(--mute);line-height:1.6;margin-top:14px">
+        Реестр общий: не в личных таблицах и не «в голове». Производители помечены — при запросе КП их можно брать в приоритет. Новый контрагент сразу в реестре и доступен отделу.
+      </p>
+    </div>
+
+    <div class="navbtns"><button class="btn ghost" onclick="go(3)">← Назад</button><button class="btn ghost" onclick="go(5)">Дальше: сравнение цен →</button></div>
+  </section>
+
+  <!-- ═══ 6. СРАВНЕНИЕ ═══ -->
+  <section class="screen" data-sc="5">
+    <div class="sc-head">
+      <h2>Пришли КП — сравнение собирается само</h2>
+      <p>Ответы поставщиков подтягиваются с почты и раскладываются по позициям. Видно, у кого что дешевле, и можно разбить один заказ между поставщиками — как вы и делаете сейчас руками.</p>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><span>Заявка № 247 · Электроды МР-3 4 мм · 500 кг</span><span class="sub">5 ответов из 6 запросов</span></div>
+      <div class="cmp-row best"><span class="sup">СварМеталл <span class="tag-prod">ЛУЧШАЯ</span></span><span class="bar"><i style="width:62%"></i></span><span class="pr">46 500 ₽</span></div>
+      <div class="cmp-row"><span class="sup">ЭлектродТорг</span><span class="bar"><i style="width:68%"></i></span><span class="pr">51 000 ₽</span></div>
+      <div class="cmp-row"><span class="sup">СтройКомплект</span><span class="bar"><i style="width:74%"></i></span><span class="pr">55 500 ₽</span></div>
+      <div class="cmp-row"><span class="sup">МеталлСервис</span><span class="bar"><i style="width:81%"></i></span><span class="pr">60 500 ₽</span></div>
+      <div class="cmp-row"><span class="sup">ПромСнаб</span><span class="bar"><i style="width:100%"></i></span><span class="pr">74 500 ₽</span></div>
+      <p style="font-size:12px;color:var(--mute);margin-top:12px">Разброс по одной позиции — 28 000 ₽. Именно на этом отдел и зарабатывает компании деньги.</p>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><span>Заявка № 247 · вся электрика · 5 позиций</span><span class="sub">разные поставщики выигрывают по разным позициям</span></div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Позиция</th><th class="r">ЭлектроСнаб</th><th class="r">СтройКомплект</th><th class="r">КабельОпт</th><th>Лучший</th></tr></thead>
+        <tbody>
+          <tr><td class="nm">Кабель ВВГнг 3×2,5 · 400 м</td><td class="r num">38 800</td><td class="r num">41 200</td><td class="r num" style="color:var(--green)">35 600</td><td>КабельОпт</td></tr>
+          <tr><td class="nm">Розетка каучуковая · 25 шт</td><td class="r num" style="color:var(--green)">4 750</td><td class="r num">5 100</td><td class="r num">5 400</td><td>ЭлектроСнаб</td></tr>
+          <tr><td class="nm">Автомат С16 1P · 40 шт</td><td class="r num" style="color:var(--green)">7 600</td><td class="r num">8 400</td><td class="r num">8 900</td><td>ЭлектроСнаб</td></tr>
+          <tr><td class="nm">Прожектор LED 100 Вт · 12 шт</td><td class="r num">14 400</td><td class="r num" style="color:var(--green)">12 900</td><td class="r num">15 100</td><td>СтройКомплект</td></tr>
+          <tr><td class="nm">Лезвие сегментное · 100 шт</td><td class="r num">2 300</td><td class="r num" style="color:var(--green)">1 950</td><td class="r num">2 480</td><td>СтройКомплект</td></tr>
+          <tr style="border-top:1px solid var(--line)"><td class="nm">Итого одним поставщиком</td><td class="r num">67 850</td><td class="r num">69 550</td><td class="r num">67 480</td><td style="color:var(--mute)">минимум 67 480</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="split-box">
+        <div class="t">Если разбить между тремя</div>
+        <div class="l"><span>КабельОпт · кабель</span><span>35 600 ₽</span></div>
+        <div class="l"><span>ЭлектроСнаб · розетки, автоматы</span><span>12 350 ₽</span></div>
+        <div class="l"><span>СтройКомплект · прожекторы, лезвия</span><span>14 850 ₽</span></div>
+        <div class="l tot"><span>Итого со сплитом</span><span>62 800 ₽ · экономия 4 680 ₽</span></div>
+      </div>
+
+      <p style="font-size:12.5px;color:var(--mute);line-height:1.6;margin-top:14px">
+        Торг остаётся за менеджером — система не звонит поставщикам вместо него. Она только держит аргумент под рукой: видно, кто дал дешевле, и на это можно сослаться в разговоре.
+      </p>
+    </div>
+
+    <div class="navbtns"><button class="btn ghost" onclick="go(4)">← Назад</button><button class="btn ghost" onclick="go(6)">Дальше: подпись →</button></div>
+  </section>
+
+  <!-- ═══ 7. ПОДПИСЬ ═══ -->
+  <section class="screen" data-sc="6">
+    <div class="sc-head">
+      <h2>Счёт свыше 100 000 ₽ не уйдёт в оплату без вас</h2>
+      <p>Правило, которое вы проговорили на совещании, наконец работает само — без напоминаний и без вашего участия в каждом мелком счёте.</p>
+      <div class="now">Сейчас: любой менеджер сам выбирает поставщика и отгружает. Проверка — выборочная и постфактум</div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <div class="ph">Ждёт вашего решения</div>
+        <div class="appr">
+          <div class="hd">
+            <div>
+              <div class="sum">340 200 ₽</div>
+              <div class="meta">
+                Заявка № 245 · Климовский южный<br>
+                Поставщик: СтройКомплект · отсрочка 30 дней<br>
+                Инициатор: <b style="color:var(--body)">Татьяна</b> · 4 позиции
+              </div>
+            </div>
+            <span class="pill warn">свыше порога</span>
+          </div>
+
+          <table>
+            <thead><tr><th>Альтернатива</th><th class="r">Сумма</th><th class="r">Разница</th></tr></thead>
+            <tbody>
+              <tr><td class="nm">СтройКомплект <span class="pill ok">выбрано</span></td><td class="r num">340 200</td><td class="r num" style="color:var(--green)">—</td></tr>
+              <tr><td>МетизТорг</td><td class="r num">352 800</td><td class="r num" style="color:var(--mute)">+12 600</td></tr>
+              <tr><td>ПромСнаб</td><td class="r num">389 400</td><td class="r num" style="color:var(--mute)">+49 200</td></tr>
+            </tbody>
+          </table>
+
+          <div class="btn-row">
+            <button class="btn" onclick="approve(true)">Подписать</button>
+            <button class="btn ghost" onclick="approve(false)">Вернуть с комментарием</button>
+          </div>
+
+          <div class="appr-res ok" id="apprOk">✓ Подписано. Менеджер получил уведомление, счёт разблокирован для оплаты. Решение записано в журнал.</div>
+          <div class="appr-res no" id="apprNo">↩ Возвращено Татьяне с комментарием. Отгрузка заблокирована до нового решения.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="ph">Что это даёт, кроме контроля</div>
+        <p style="font-size:13px;color:var(--body);line-height:1.7">
+          Вы видите не только сумму, но и <b style="color:var(--ink)">что было альтернативой</b>. Не нужно параллельно запрашивать те же позиции у своих контактов, чтобы проверить менеджера — сравнение уже собрано.
+        </p>
+        <p style="font-size:13px;color:var(--body);line-height:1.7;margin-top:12px">
+          Каждая подпись остаётся в журнале: кто выбрал, что было дешевле, какое решение приняли и когда. Это снимает вопрос «почему купили у этих» задним числом.
+        </p>
+        <div style="margin-top:16px;padding-top:15px;border-top:1px solid var(--line)">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin-bottom:11px">Порог настраивается</div>
+          <p style="font-size:12.5px;color:var(--mute);line-height:1.6">Стартуем со 100 000 ₽, как вы говорили. Дальше можно поднять или опустить, задать разные пороги по категориям или по людям — без обращения к нам.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="navbtns"><button class="btn ghost" onclick="go(5)">← Назад</button><button class="btn ghost" onclick="go(7)">Дальше: главное →</button></div>
+  </section>
+
+  <!-- ═══ 8. ЭКОНОМИЯ ═══ -->
+  <section class="screen" data-sc="7">
+    <div class="sc-head">
+      <h2>Цифра, которую можно принести руководству</h2>
+      <p>Вы говорили: экономию никто не считает, поэтому её никто и не ценит. Система считает по каждой закупке автоматически — не разовая распечатка, а накопительный факт за период.</p>
+    </div>
+
+    <div class="kpi-grid" style="margin-bottom:14px">
+      <div class="kpi"><div class="lbl">Закуплено за август</div><div class="val">8,4 млн</div><div class="sub">23 заявки · 340 позиций</div></div>
+      <div class="kpi"><div class="lbl">Сэкономлено против альтернатив</div><div class="val gold">1,26 млн</div><div class="sub">15% от объёма закупки</div></div>
+      <div class="kpi"><div class="lbl">Счетов с вашей подписью</div><div class="val">100%</div><div class="sub">из тех, что свыше 100 тыс.</div></div>
+      <div class="kpi"><div class="lbl">Времени руководителя на разбор</div><div class="val">4 ч</div><div class="sub">было бы ≈ 18 ч вручную</div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <div class="ph"><span>Экономия по людям</span><span class="sub">август 2026</span></div>
+        <div class="mgr"><span class="n"><span class="av t">Т</span>Татьяна</span><span class="bar"><i style="width:100%"></i></span><span class="v">482 000 ₽</span></div>
+        <div class="mgr"><span class="n"><span class="av s">С</span>Санёк</span><span class="bar"><i style="width:64%"></i></span><span class="v">309 000 ₽</span></div>
+        <div class="mgr"><span class="n"><span class="av i">И</span>Илья</span><span class="bar"><i style="width:50%"></i></span><span class="v">241 000 ₽</span></div>
+        <div class="mgr"><span class="n"><span class="av o">О</span>Олеся</span><span class="bar"><i style="width:27%"></i></span><span class="v">128 000 ₽</span></div>
+        <div class="mgr"><span class="n"><span class="av p">П</span>Павлик</span><span class="bar"><i style="width:21%"></i></span><span class="v">100 000 ₽</span></div>
+        <p style="font-size:12px;color:var(--mute);line-height:1.6;margin-top:14px">
+          Это экономия против собранных предложений — против того, что реально прислали поставщики, а не против абстрактной «рыночной цены». Формулировка честная и её не разобьют на совещании.
+        </p>
+      </div>
+
+      <div class="panel">
+        <div class="ph">Было → стало</div>
+        <div class="ba">
+          <div class="c hd">Сейчас</div><div class="c ar hd"></div><div class="c hd">С системой</div>
+
+          <div class="c lb">Разбор заявки — 40–60 мин руководителя</div>
+          <div class="c ar">→</div>
+          <div class="c rb">2 минуты на проверку</div>
+
+          <div class="c lb">Кто за что отвечает — в головах</div>
+          <div class="c ar">→</div>
+          <div class="c rb">Справочник, заместители</div>
+
+          <div class="c lb">Excel режется вручную под каждого</div>
+          <div class="c ar">→</div>
+          <div class="c rb">Файлы готовы сразу</div>
+
+          <div class="c lb">Сроки — реактивно, после звонка сверху</div>
+          <div class="c ar">→</div>
+          <div class="c rb">Панель, видно сразу</div>
+
+          <div class="c lb">Заявка без денег = «менеджер не сделал»</div>
+          <div class="c ar">→</div>
+          <div class="c rb">Отдельный статус, счётчик стоит</div>
+
+          <div class="c lb">Базы поставщиков у каждого свои</div>
+          <div class="c ar">→</div>
+          <div class="c rb">Один реестр, история цен</div>
+
+          <div class="c lb">Счета свыше 100 тыс. — без подписи</div>
+          <div class="c ar">→</div>
+          <div class="c rb">Не уходят без вашего решения</div>
+
+          <div class="c lb" style="border-bottom:none">Экономия — не считается</div>
+          <div class="c ar" style="border-bottom:none">→</div>
+          <div class="c rb" style="border-bottom:none">Цифра за период, по людям</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph">И то, ради чего всё это</div>
+      <p style="font-size:13.5px;color:var(--body);line-height:1.75">
+        Вы собирались передать закупку Павлику и уйти в контроль цен и продажи через ДиКЕС. Мешает то, что на вас завязан ручной разбор и знание, кто за что отвечает.
+        <b style="color:var(--ink)">Система снимает ровно это</b> — и передача дел перестаёт быть риском просадки: справочник, реестр поставщиков и история закупок остаются в компании, а не уходят с человеком.
+      </p>
+    </div>
+
+    <div class="navbtns"><button class="btn ghost" onclick="go(6)">← Назад</button><button class="btn" onclick="go(0)">Пройти заново с начала</button></div>
+  </section>
+
+  <div class="foot">
+    <div class="l">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+      <div class="txt">
+        <b style="color:var(--body)">MS Product</b> · системная автоматизация под процесс, а не «внедрение CRM».<br>
+        Прототип от 10.08.2026 · данные демонстрационные · состав этапов и сроки — в предложении.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  /* ── навигация по шагам ── */
+  const steps = document.querySelectorAll('.step');
+  const screens = document.querySelectorAll('.screen');
+  const visited = new Set([0]);
+
+  function go(n){
+    screens.forEach(s => s.classList.toggle('on', +s.dataset.sc === n));
+    visited.add(n);
+    steps.forEach(s => {
+      const i = +s.dataset.s;
+      s.classList.toggle('on', i === n);
+      s.classList.toggle('done', i !== n && visited.has(i));
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  steps.forEach(s => s.addEventListener('click', () => go(+s.dataset.s)));
+
+  /* ── шаг 1: анимация разбора ── */
+  document.getElementById('btnParse').addEventListener('click', function(){
+    this.disabled = true;
+    this.textContent = 'Разбираю…';
+    const proc = document.getElementById('proc');
+    proc.classList.add('on');
+    const lines = proc.querySelectorAll('.proc-line');
+    lines.forEach((l, i) => setTimeout(() => l.classList.add('on'), 350 + i * 550));
+    setTimeout(() => {
+      this.textContent = 'Готово · открываю разбор';
+      setTimeout(() => go(1), 550);
+    }, 350 + lines.length * 550);
+  });
+
+  /* ── шаг 2: разрешение спорных позиций + «обучение» ── */
+  const LEARN = {
+    'лезвия':  n => 'Запомнил: <b>лезвия и расходники ножа → ' + n + '</b>. В следующих заявках эта позиция уйдёт сразу, без вашего участия.',
+    'перголы': n => 'Запомнил: <b>перголы и малые архитектурные формы → ' + n + '</b>. Правило записано в справочник категорий.'
+  };
+  let resolved = 0;
+
+  function resolve(sel){
+    if (!sel.value) return;
+    if (!sel.dataset.done){
+      sel.dataset.done = '1';
+      resolved++;
+    }
+    sel.classList.add('resolved');
+
+    const row = sel.closest('tr');
+    const warn = row.querySelector('.pill.warn');
+    if (warn) warn.outerHTML = '<span class="pill ok">решено</span>';
+    row.classList.remove('hl');
+
+    const conf = row.querySelector('.conf');
+    if (conf){ conf.textContent = 'ваше решение'; conf.classList.remove('low'); }
+
+    const key = sel.dataset.key;
+    const box = document.getElementById('learnBox');
+    document.getElementById('learnText').innerHTML = LEARN[key](sel.value);
+    box.classList.add('on');
+
+    if (key === 'лезвия'){
+      const t = document.getElementById('lezvieTask');
+      if (t) t.parentElement.style.display = (sel.value === 'Илья') ? '' : 'none';
+    }
+
+    document.getElementById('unresolvedNote').innerHTML =
+      resolved >= 2 ? 'Требуют решения: <b style="color:var(--green)">0</b>' :
+                      'Требуют решения: <b style="color:var(--amber)">' + (2 - resolved) + '</b>';
+
+    if (resolved >= 2){
+      document.getElementById('btnConfirm').disabled = false;
+      document.getElementById('confirmHint').textContent = 'Все позиции распределены — можно ставить задачи';
+    }
+  }
+
+  /* ── шаг 7: подпись ── */
+  function approve(ok){
+    document.getElementById('apprOk').classList.toggle('on', ok);
+    document.getElementById('apprNo').classList.toggle('on', !ok);
+  }
+
+  /* ── 3D-tilt + glow ── */
+  (function(){
+    const SEL = '.panel,.kpi,.task';
+    const MAX = 7;
+    let active = null;
+    function reset(el){
+      el.style.transform = '';
+      el.classList.remove('tilt-active');
+    }
+    document.addEventListener('pointermove', e => {
+      if (window.matchMedia('(hover:none)').matches) return;
+      const card = e.target.closest(SEL);
+      if (!card){ if (active){ reset(active); active = null; } return; }
+      if (card !== active){ if (active) reset(active); active = card; }
+      const r = card.getBoundingClientRect();
+      const px = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      const py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+      card.style.transform = 'perspective(1000px) rotateX(' + ((0.5 - py) * MAX).toFixed(2) +
+                             'deg) rotateY(' + ((px - 0.5) * MAX).toFixed(2) + 'deg) translateY(-2px)';
+      card.style.transition = 'transform .08s linear';
+    });
+    document.addEventListener('pointerleave', () => { if (active){ reset(active); active = null; } });
+  })();
+</script>
+</body>
+</html>

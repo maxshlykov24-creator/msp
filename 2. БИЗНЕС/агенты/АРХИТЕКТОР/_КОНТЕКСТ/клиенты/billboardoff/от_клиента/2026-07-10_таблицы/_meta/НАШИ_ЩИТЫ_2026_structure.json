@@ -1,0 +1,619 @@
+{
+  "file": "НАШИ_ЩИТЫ_2026.xlsx",
+  "size_bytes": 195779,
+  "sheets": [
+    {
+      "name": "Июль 2026",
+      "rows": 116,
+      "cols": 20,
+      "nonempty": 1396,
+      "formula_count": 224,
+      "type_counts": {
+        "text": 625,
+        "number": 248,
+        "formula": 224,
+        "bool": 299
+      },
+      "header_row_1based": 4,
+      "headers": [
+        "Город",
+        "СОБСТВЕННИК",
+        "Менеджер",
+        "АДРЕС",
+        "Сторона",
+        "COL_6",
+        "Себестоимость",
+        "Цена продажи",
+        "Наценка",
+        "ФОРМАТ",
+        "СТАТУС",
+        "Бренд",
+        "КЛИЕНТ ЮР",
+        "Категория клиента",
+        "МАКЕТ",
+        "Наличие ФО",
+        "ДОКУМЕНТЫ ОТПРАВЛЕНЫ",
+        "ДОКУМЕНТЫ ПОДПИСАНЫ",
+        "ПОДТВЕРЖДЕНИЕ ОТ СЕРГЕЯ",
+        "КОММЕНТАРИЙ"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "Город",
+          "filled": 97,
+          "unique": 10,
+          "types": {
+            "text": 97
+          },
+          "samples": [
+            "РОСТОВ",
+            "ИТОГО",
+            "Краснодар",
+            "Азов",
+            "Батайск"
+          ]
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "СОБСТВЕННИК",
+          "filled": 91,
+          "unique": 19,
+          "types": {
+            "number": 58,
+            "formula": 33
+          },
+          "samples": [
+            "11.0",
+            "11",
+            "22.0",
+            "22",
+            "33.0"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Менеджер",
+          "filled": 54,
+          "unique": 4,
+          "types": {
+            "text": 54
+          },
+          "samples": [
+            "Ольга Назарова",
+            "Менеджер",
+            "Анна Сободырь",
+            "Варвара Шелконогова"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "АДРЕС",
+          "filled": 59,
+          "unique": 58,
+          "types": {
+            "text": 59
+          },
+          "samples": [
+            "Северный подъезд к Ростову 1+230 слева по ходу километража",
+            "5. ЮП км 10+335 м справа Б",
+            "Трасса М4 Дон  1042+500(б) справа по ходу километража",
+            "93 маршрут",
+            "Большая Садовая ул. 18 РОЛЛЕР, A(2)"
+          ]
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "Сторона",
+          "filled": 59,
+          "unique": 8,
+          "types": {
+            "text": 59
+          },
+          "samples": [
+            "А",
+            "Б",
+            "Автобус",
+            "B",
+            "В"
+          ]
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "COL_6",
+          "filled": 1,
+          "unique": 1,
+          "types": {
+            "formula": 1
+          },
+          "samples": [
+            "13500"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "Себестоимость",
+          "filled": 97,
+          "unique": 22,
+          "types": {
+            "number": 65,
+            "formula": 32
+          },
+          "samples": [
+            "100000.0",
+            "300000",
+            "0",
+            "3600000",
+            "200000"
+          ]
+        },
+        {
+          "col": "H",
+          "index": 8,
+          "header": "Цена продажи",
+          "filled": 97,
+          "unique": 8,
+          "types": {
+            "number": 64,
+            "formula": 33
+          },
+          "samples": [
+            "150000.0",
+            "450000",
+            "0",
+            "5400000",
+            "300000"
+          ]
+        },
+        {
+          "col": "I",
+          "index": 9,
+          "header": "Наценка",
+          "filled": 97,
+          "unique": 3,
+          "types": {
+            "formula": 92,
+            "number": 5
+          },
+          "samples": [
+            "0.5",
+            "0.0",
+            "#DIV/0!"
+          ]
+        },
+        {
+          "col": "J",
+          "index": 10,
+          "header": "ФОРМАТ",
+          "filled": 59,
+          "unique": 8,
+          "types": {
+            "text": 59
+          },
+          "samples": [
+            "3х6",
+            "заднее стекло",
+            "1.2х1.8",
+            "2,7х3,7",
+            "Экран 3х6"
+          ]
+        },
+        {
+          "col": "K",
+          "index": 11,
+          "header": "СТАТУС",
+          "filled": 89,
+          "unique": 8,
+          "types": {
+            "number": 56,
+            "formula": 33
+          },
+          "samples": [
+            "1.0",
+            "3",
+            "0",
+            "34",
+            "2"
+          ]
+        },
+        {
+          "col": "L",
+          "index": 12,
+          "header": "Бренд",
+          "filled": 54,
+          "unique": 23,
+          "types": {
+            "text": 54
+          },
+          "samples": [
+            "Флора 3",
+            "Справедливая Россия",
+            "Супер корни",
+            "Seregin dental team",
+            "Глазная клиника Сокол"
+          ]
+        },
+        {
+          "col": "M",
+          "index": 13,
+          "header": "КЛИЕНТ ЮР",
+          "filled": 54,
+          "unique": 24,
+          "types": {
+            "text": 54
+          },
+          "samples": [
+            "СЗ Доннефтестрой-Аксай",
+            "Справедливая Россия",
+            "ООО Ветерра-Рус",
+            "ИП Серегин",
+            "ООО Оптикс-Альянс"
+          ]
+        },
+        {
+          "col": "N",
+          "index": 14,
+          "header": "Категория клиента",
+          "filled": 61,
+          "unique": 61,
+          "types": {
+            "text": 61
+          },
+          "samples": [
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097040>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b0970a0>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097100>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097160>",
+            "<openpyxl.worksheet.formula.ArrayFormula object at 0x10b097280>"
+          ]
+        },
+        {
+          "col": "O",
+          "index": 15,
+          "header": "МАКЕТ",
+          "filled": 54,
+          "unique": 3,
+          "types": {
+            "text": 54
+          },
+          "samples": [
+            "пролонгация",
+            "новый макет",
+            "Пролонгация"
+          ]
+        },
+        {
+          "col": "P",
+          "index": 16,
+          "header": "Наличие ФО",
+          "filled": 62,
+          "unique": 2,
+          "types": {
+            "bool": 62
+          },
+          "samples": [
+            "FALSE",
+            "TRUE"
+          ]
+        },
+        {
+          "col": "Q",
+          "index": 17,
+          "header": "ДОКУМЕНТЫ ОТПРАВЛЕНЫ",
+          "filled": 79,
+          "unique": 2,
+          "types": {
+            "bool": 79
+          },
+          "samples": [
+            "FALSE",
+            "TRUE"
+          ]
+        },
+        {
+          "col": "R",
+          "index": 18,
+          "header": "ДОКУМЕНТЫ ПОДПИСАНЫ",
+          "filled": 79,
+          "unique": 2,
+          "types": {
+            "bool": 79
+          },
+          "samples": [
+            "FALSE",
+            "TRUE"
+          ]
+        },
+        {
+          "col": "S",
+          "index": 19,
+          "header": "ПОДТВЕРЖДЕНИЕ ОТ СЕРГЕЯ",
+          "filled": 79,
+          "unique": 1,
+          "types": {
+            "bool": 79
+          },
+          "samples": [
+            "FALSE"
+          ]
+        },
+        {
+          "col": "T",
+          "index": 20,
+          "header": "КОММЕНТАРИЙ",
+          "filled": 53,
+          "unique": 11,
+          "types": {
+            "text": 53
+          },
+          "samples": [
+            "пролонгация  ",
+            "Пролонгация",
+            "пролонгация",
+            "до 17.07",
+            "Отказ"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "I5",
+          "formula": "=H5/G5-1"
+        },
+        {
+          "cell": "I6",
+          "formula": "=H6/G6-1"
+        },
+        {
+          "cell": "I7",
+          "formula": "=H7/G7-1"
+        },
+        {
+          "cell": "B8",
+          "formula": "=B7"
+        },
+        {
+          "cell": "G8",
+          "formula": "=SUMIF($B$1:$B7,B8,$G$1:$G7)"
+        },
+        {
+          "cell": "H8",
+          "formula": "=SUMIF($B$1:$B7,B8,$H$1:$H7)"
+        },
+        {
+          "cell": "I8",
+          "formula": "=AVERAGEIF($B$1:$B7,B8,$I$1:$I7)"
+        },
+        {
+          "cell": "K8",
+          "formula": "=SUMIF($B$1:$B7,B8,$K$1:$K7)"
+        },
+        {
+          "cell": "B10",
+          "formula": "=B9"
+        },
+        {
+          "cell": "G10",
+          "formula": "=SUMIF($B$5:$B9,B10,$G$5:$G9)"
+        },
+        {
+          "cell": "H10",
+          "formula": "=SUMIF($B$1:$B9,B10,$H$1:$H9)"
+        },
+        {
+          "cell": "I10",
+          "formula": "=AVERAGEIF($B$1:$B9,B10,$I$1:$I9)"
+        },
+        {
+          "cell": "K10",
+          "formula": "=SUMIF($B$5:$B9,B10,$K$5:$K9)"
+        },
+        {
+          "cell": "I11",
+          "formula": "=H11/G11-1"
+        },
+        {
+          "cell": "B12",
+          "formula": "=B11"
+        }
+      ],
+      "csv": "csv/НАШИ_ЩИТЫ_2026__Июль_2026.csv"
+    },
+    {
+      "name": "Справочник",
+      "rows": 86,
+      "cols": 7,
+      "nonempty": 217,
+      "formula_count": 30,
+      "type_counts": {
+        "text": 187,
+        "formula": 30
+      },
+      "header_row_1based": 3,
+      "headers": [
+        "COL_1",
+        "Юр. лицо",
+        "Категория клиента",
+        "COL_4",
+        "Категория",
+        "Количество конструкций",
+        "% от общего количества конструкций"
+      ],
+      "columns": [
+        {
+          "col": "A",
+          "index": 1,
+          "header": "COL_1",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "B",
+          "index": 2,
+          "header": "Юр. лицо",
+          "filled": 83,
+          "unique": 83,
+          "types": {
+            "text": 83
+          },
+          "samples": [
+            "ООО Автосеть Дон",
+            "Гагарина",
+            "Формула фр",
+            "ООО Автоцентр на Гагарина",
+            "Айстудио"
+          ]
+        },
+        {
+          "col": "C",
+          "index": 3,
+          "header": "Категория клиента",
+          "filled": 83,
+          "unique": 15,
+          "types": {
+            "text": 83
+          },
+          "samples": [
+            "Авто",
+            "Айфоны",
+            "Глазная клиника",
+            "Застройщик",
+            "Медицина"
+          ]
+        },
+        {
+          "col": "D",
+          "index": 4,
+          "header": "COL_4",
+          "filled": 0,
+          "unique": 0,
+          "types": {},
+          "samples": []
+        },
+        {
+          "col": "E",
+          "index": 5,
+          "header": "Категория",
+          "filled": 15,
+          "unique": 15,
+          "types": {
+            "text": 15
+          },
+          "samples": [
+            "Авто",
+            "Айфоны",
+            "Глазная клиника",
+            "Застройщик",
+            "Медицина"
+          ]
+        },
+        {
+          "col": "F",
+          "index": 6,
+          "header": "Количество конструкций",
+          "filled": 15,
+          "unique": 9,
+          "types": {
+            "formula": 15
+          },
+          "samples": [
+            "5",
+            "1",
+            "10",
+            "2",
+            "0"
+          ]
+        },
+        {
+          "col": "G",
+          "index": 7,
+          "header": "% от общего количества конструкций",
+          "filled": 15,
+          "unique": 9,
+          "types": {
+            "formula": 15
+          },
+          "samples": [
+            "0.1111111111",
+            "0.02222222222",
+            "0.2222222222",
+            "0.04444444444",
+            "0"
+          ]
+        }
+      ],
+      "formula_samples": [
+        {
+          "cell": "F4",
+          "formula": "=SUMIF('Июль 2026'!$N:$N,$E4,'Июль 2026'!$K:$K)"
+        },
+        {
+          "cell": "G4",
+          "formula": "=F4/F$18"
+        },
+        {
+          "cell": "F5",
+          "formula": "=SUMIF('Июль 2026'!$N:$N,$E5,'Июль 2026'!$K:$K)"
+        },
+        {
+          "cell": "G5",
+          "formula": "=F5/F$18"
+        },
+        {
+          "cell": "F6",
+          "formula": "=SUMIF('Июль 2026'!$N:$N,$E6,'Июль 2026'!$K:$K)"
+        },
+        {
+          "cell": "G6",
+          "formula": "=F6/F$18"
+        },
+        {
+          "cell": "F7",
+          "formula": "=SUMIF('Июль 2026'!$N:$N,$E7,'Июль 2026'!$K:$K)"
+        },
+        {
+          "cell": "G7",
+          "formula": "=F7/F$18"
+        },
+        {
+          "cell": "F8",
+          "formula": "=SUMIF('Июль 2026'!$N:$N,$E8,'Июль 2026'!$K:$K)"
+        },
+        {
+          "cell": "G8",
+          "formula": "=F8/F$18"
+        },
+        {
+          "cell": "F9",
+          "formula": "=SUMIF('Июль 2026'!$N:$N,$E9,'Июль 2026'!$K:$K)"
+        },
+        {
+          "cell": "G9",
+          "formula": "=F9/F$18"
+        },
+        {
+          "cell": "F10",
+          "formula": "=SUMIF('Июль 2026'!$N:$N,$E10,'Июль 2026'!$K:$K)"
+        },
+        {
+          "cell": "G10",
+          "formula": "=F10/F$18"
+        },
+        {
+          "cell": "F11",
+          "formula": "=SUMIF('Июль 2026'!$N:$N,$E11,'Июль 2026'!$K:$K)"
+        }
+      ],
+      "csv": "csv/НАШИ_ЩИТЫ_2026__Справочник.csv"
+    }
+  ]
+}

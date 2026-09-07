@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Триумф · отдел снабжения · Предложение MS Product</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+
+  :root{
+    --bg:#000000;
+    --card:#1C1C1E;
+    --card-2:#2C2C2E;
+    --ink:#F5F5F7;
+    --body:#A1A1A6;
+    --mute:#6E6E73;
+    --line:rgba(255,255,255,.08);
+    --a1:#5B7CDE;
+    --a2:#8AA4F0;
+    --ease:cubic-bezier(.25,1,.5,1);
+    --ease-io:cubic-bezier(.45,.05,.55,.95);
+    --font:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--font);
+    overflow:hidden; -webkit-font-smoothing:antialiased; position:relative;
+    background-image:
+      radial-gradient(1100px 780px at 97% -12%, rgba(74,101,177,.16), transparent 58%),
+      radial-gradient(900px 640px at -8% 112%, rgba(91,124,222,.09), transparent 60%);
+  }
+
+  /* Живая подсветка: два слоя градиентов с разным ритмом дрейфа */
+  .aura{position:fixed;inset:-30%;z-index:0;pointer-events:none;will-change:transform,opacity}
+  .aura.a{
+    background-image:
+      radial-gradient(880px 640px at 80% 12%, rgba(74,101,177,.62), transparent 66%),
+      radial-gradient(600px 480px at 12% 22%, rgba(91,124,222,.28), transparent 68%);
+    animation:drift-a 16s var(--ease-io) infinite alternate, breathe 7s ease-in-out infinite;
+  }
+  .aura.b{
+    background-image:
+      radial-gradient(740px 580px at 22% 86%, rgba(91,124,222,.36), transparent 66%),
+      radial-gradient(540px 440px at 90% 76%, rgba(138,164,240,.22), transparent 68%);
+    animation:drift-b 22s var(--ease-io) infinite alternate, breathe 10s ease-in-out infinite reverse;
+  }
+  @keyframes drift-a{
+    0%  {transform:translate3d(-4%,-2%,0) scale(1.04)}
+    50% {transform:translate3d(3%,4%,0) scale(1.12)}
+    100%{transform:translate3d(5%,-3%,0) scale(1.06)}
+  }
+  @keyframes drift-b{
+    0%  {transform:translate3d(4%,3%,0) scale(1.08)}
+    50% {transform:translate3d(-3%,-4%,0) scale(1.02)}
+    100%{transform:translate3d(-5%,2%,0) scale(1.10)}
+  }
+  @keyframes breathe{0%,100%{opacity:.72}50%{opacity:1}}
+  @media (prefers-reduced-motion:reduce){.aura{animation:none !important}}
+
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
+    background-image:radial-gradient(1px 1px at 22% 28%, rgba(255,255,255,.4) 0, transparent 0),
+                      radial-gradient(1px 1px at 68% 62%, rgba(255,255,255,.28) 0, transparent 0);
+    background-size:3px 3px;mix-blend-mode:overlay;
+  }
+
+  .progress{position:fixed;top:0;left:0;height:3px;z-index:40;background:linear-gradient(90deg,var(--a1),var(--a2));width:0;transition:width .3s ease;box-shadow:0 0 12px rgba(91,124,222,.6)}
+
+  .deck{height:100vh;width:100vw;position:relative;z-index:1}
+  .slide{
+    position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;
+    padding:6.5vh 8vw 96px;animation:fade .4s ease; perspective:1200px;
+  }
+  .slide.active{display:flex}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+
+  .grad{background:linear-gradient(105deg,#F5F5F7 0%, var(--a2) 55%, var(--a1) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .dot,.grad .dot{color:var(--a2) !important;-webkit-text-fill-color:var(--a2) !important;background:none !important}
+  .kicker{font-family:var(--font-mono);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px;margin-bottom:20px;color:var(--a2)}
+
+  h1{font-size:clamp(28px,3.8vw,46px);font-weight:800;line-height:1.12;letter-spacing:-.03em}
+  h2{font-size:clamp(24px,3.1vw,40px);font-weight:800;line-height:1.1;letter-spacing:-.025em;margin-bottom:8px}
+  .lead{font-size:clamp(14px,1.4vw,18.5px);color:var(--body);max-width:70ch;line-height:1.55;margin-top:18px;font-weight:500}
+  .note{font-size:13.5px;color:var(--mute);margin-top:18px;font-weight:500;line-height:1.5;max-width:88ch}
+
+  .brand-row{display:flex;align-items:center;gap:14px;margin-bottom:30px}
+  .client-badge{background:#fff;border-radius:12px;padding:9px 18px;display:inline-flex;flex-direction:column;box-shadow:0 10px 30px -10px rgba(0,0,0,.5)}
+  .client-badge b{color:#141414;font-size:19px;font-weight:800;letter-spacing:.04em;line-height:1.05}
+  .client-badge span{color:#5B5B5F;font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;margin-top:2px}
+  .brand-row .x{font-family:var(--font-mono);font-size:13px;letter-spacing:.2em;color:var(--mute);font-weight:600}
+  .brand-row .ms-logo{height:42px;width:auto;display:block;filter:drop-shadow(0 0 18px rgba(139,164,240,.45))}
+
+  .grid{display:grid;gap:14px;margin-top:24px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+
+  .card,.anchor,.phase,.bonus,.step,.mock,.shot-card{
+    background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;
+    position:relative;overflow:hidden;cursor:default;
+    --mx:50%;--my:20%;
+    transform:perspective(900px) rotateX(0deg) rotateY(0deg) translateY(0) translateZ(0);
+    transition:transform .4s var(--ease),border-color .4s var(--ease),box-shadow .4s var(--ease);
+    will-change:transform;
+    transform-style:preserve-3d;
+  }
+  .card.tilt-active,.anchor.tilt-active,.phase.tilt-active,.bonus.tilt-active,.step.tilt-active,.mock.tilt-active,.shot-card.tilt-active{
+    transition:transform .06s linear,border-color .4s var(--ease),box-shadow .4s var(--ease);
+  }
+  .card.hero,.phase.hl,.bonus.hero{
+    border-color:rgba(91,124,222,.4);background:linear-gradient(165deg,#252830 0%,#1C1C1E 100%);
+    box-shadow:0 0 46px -18px rgba(91,124,222,.5);
+  }
+  .card:hover,.anchor:hover,.phase:hover,.bonus:hover,.step:hover,.mock:hover,.shot-card:hover{
+    border-color:rgba(139,164,240,.45);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.06),
+      0 0 44px -10px rgba(91,124,222,.35),
+      0 26px 50px -22px rgba(0,0,0,.65);
+  }
+  .card::after,.anchor::after,.phase::after,.bonus::after,.step::after,.mock::after,.shot-card::after{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:1;
+    background:radial-gradient(240px 170px at var(--mx) var(--my),rgba(139,164,240,.22),transparent 70%);
+    transition:opacity .4s var(--ease);
+  }
+  .card:hover::after,.anchor:hover::after,.phase:hover::after,.bonus:hover::after,.step:hover::after,.mock:hover::after,.shot-card:hover::after{opacity:1}
+  .card .num,.phase-num,.step .n,.anchor .n{font-family:var(--font-mono);font-size:12px;font-weight:600;letter-spacing:.1em;color:var(--a2);margin-bottom:10px}
+  .card h3,.phase-title{font-weight:700;font-size:18.5px;letter-spacing:-.02em;line-height:1.2;margin-bottom:7px}
+  .card p{color:var(--body);font-size:14px;line-height:1.48;font-weight:500}
+
+  .anchor{display:flex;gap:14px;align-items:flex-start}
+  .anchor .n{margin-bottom:0;padding-top:3px;flex-shrink:0}
+  .anchor b{display:block;font-size:17px;font-weight:700;letter-spacing:-.02em;line-height:1.28}
+  .anchor span{display:block;margin-top:6px;font-size:14px;color:var(--body);line-height:1.45;font-weight:500}
+
+  ul.checks{list-style:none;margin-top:24px;display:grid;gap:14px}
+  ul.checks li{display:flex;gap:14px;font-size:clamp(14px,1.4vw,16.5px);align-items:flex-start;line-height:1.42;font-weight:600;letter-spacing:-.01em}
+  ul.checks li::before{content:attr(data-n);flex:0 0 auto;font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--a2);letter-spacing:.06em;width:2.2em;padding-top:3px}
+  ul.checks li i{font-style:normal;font-weight:500;color:var(--body)}
+
+  /* ═══ 3D-экраны прототипа ═══ */
+  .screens{display:flex;gap:30px;margin-top:22px;align-items:flex-start;perspective:2200px}
+  .screen{
+    position:relative;border-radius:15px;padding:9px 9px 0;background:linear-gradient(160deg,#2A2A2F,#121214);
+    border:1px solid rgba(255,255,255,.11);flex:0 0 auto;
+    box-shadow:0 44px 76px -34px rgba(0,0,0,.95), 0 0 64px -22px rgba(91,124,222,.38);
+    transform-style:preserve-3d;
+    transform:rotateY(-10deg) rotateX(3deg) translateZ(0);
+    transition:transform .55s var(--ease), box-shadow .55s var(--ease);
+  }
+  .screens.one .screen{width:min(1060px, 92vh)}
+  .screens.two .screen{width:min(48%, 66vh)}
+  .screen.r{transform:rotateY(10deg) rotateX(3deg) translateZ(0)}
+  .screen:hover,.screen.r:hover{
+    transform:rotateY(0deg) rotateX(0deg) translateZ(40px);
+    box-shadow:0 54px 96px -34px rgba(0,0,0,.98), 0 0 96px -18px rgba(91,124,222,.55);
+  }
+  .screen .bar{display:flex;gap:5px;padding:2px 3px 8px}
+  .screen .bar i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.16)}
+  .screen img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid rgba(255,255,255,.09)}
+  .screen::before{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2;
+    background:linear-gradient(115deg,rgba(255,255,255,.09) 0%,rgba(255,255,255,0) 40%);
+  }
+  .screen .cap{
+    padding:10px 4px 11px;font-size:12.5px;color:var(--mute);
+    font-weight:600;line-height:1.35;
+  }
+  .shot-note{margin-top:16px;font-size:13px;color:var(--mute);font-weight:500}
+
+  /* ═══ 3D-стек слоёв ═══ */
+  .stack{margin-top:22px;perspective:1200px;perspective-origin:34% 50%;display:flex;flex-direction:column;gap:16px;max-width:1010px;transform-style:preserve-3d}
+  .layer{
+    position:relative;border-radius:16px;padding:15px 22px;border:1px solid var(--line);
+    background:linear-gradient(150deg,#232327,#16161A);
+    transform:rotateY(-24deg) rotateX(9deg) translateZ(var(--z,0px)) translateX(var(--x,0px));
+    box-shadow:-9px 9px 0 rgba(255,255,255,.045), 0 30px 46px -26px rgba(0,0,0,.95);
+    transition:transform .5s var(--ease),border-color .5s var(--ease),box-shadow .5s var(--ease);
+    display:flex;gap:20px;align-items:baseline;
+  }
+  .layer.top{--z:46px;--x:0px;border-color:rgba(91,124,222,.45);box-shadow:-9px 9px 0 rgba(139,164,240,.14), 0 34px 52px -24px rgba(0,0,0,.95), 0 0 58px -20px rgba(91,124,222,.5)}
+  .layer.mid{--z:0px;--x:26px}
+  .layer.base{--z:-46px;--x:52px;background:linear-gradient(150deg,#1B1D24,#111115)}
+  .layer:hover{transform:rotateY(-6deg) rotateX(0deg) translateZ(60px) translateX(var(--x,0px));border-color:rgba(139,164,240,.5)}
+  .layer .lv{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;color:var(--a2);flex:0 0 132px;text-transform:uppercase;white-space:nowrap}
+  .layer b{font-size:16.5px;font-weight:700;letter-spacing:-.02em;flex:0 0 auto}
+  .layer span{font-size:13.5px;color:var(--body);font-weight:500;line-height:1.45}
+
+  .cost-table{margin-top:22px;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--card);max-width:880px}
+  .cost-row{display:grid;grid-template-columns:1.1fr .7fr 1.5fr;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);font-size:13.5px;align-items:center;font-weight:600}
+  .cost-row:last-child{border-bottom:none}
+  .cost-row.head{background:rgba(255,255,255,.03);font-family:var(--font-mono);font-weight:600;color:var(--mute);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:11px 18px}
+  .cost-row span:nth-child(2){color:var(--mute);font-weight:500}
+  .cost-row span:nth-child(3){color:var(--body);font-weight:500}
+
+  .pay-amt{font-size:32px;font-weight:800;letter-spacing:-.03em;color:var(--ink);margin-top:4px}
+
+  .ms-badge{position:fixed;top:26px;right:8vw;display:flex;align-items:center;gap:10px;z-index:15}
+  .ms-badge img{height:32px;width:auto;filter:drop-shadow(0 0 14px rgba(139,164,240,.3))}
+  .ms-badge .ms-name{font-family:var(--font);font-size:14px;font-weight:600;letter-spacing:-.02em;color:rgba(245,245,247,.42);white-space:nowrap}
+
+  .nav{position:absolute;bottom:26px;right:8vw;display:flex;gap:8px;z-index:10}
+  .nav button{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px;cursor:pointer;transition:border-color .2s,background .2s}
+  .nav button:hover{border-color:var(--a1);background:rgba(91,124,222,.14)}
+  .counter{position:absolute;bottom:36px;left:8vw;font-family:var(--font-mono);font-size:12px;color:var(--mute);z-index:10}
+  .counter b{color:var(--body)}
+  .print-btn{position:fixed;top:26px;right:calc(8vw + 168px);z-index:15;background:var(--card);border:1px solid var(--line);color:var(--body);font-size:12px;font-weight:600;padding:9px 16px;border-radius:980px;cursor:pointer;font-family:var(--font)}
+  .print-btn:hover{border-color:var(--a1);color:var(--ink)}
+
+  .slide.active .stag{animation:rise .5s ease both}
+  .slide.active .stag:nth-child(1){animation-delay:.05s}
+  .slide.active .stag:nth-child(2){animation-delay:.11s}
+  .slide.active .stag:nth-child(3){animation-delay:.17s}
+  .slide.active .stag:nth-child(4){animation-delay:.23s}
+  .slide.active .stag:nth-child(5){animation-delay:.29s}
+  .slide.active .stag:nth-child(6){animation-delay:.35s}
+  @keyframes rise{from{opacity:0}to{opacity:1}}
+
+  .plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:22px;max-width:1060px}
+  .phase{display:flex;flex-direction:column;gap:8px}
+  .phase-pay .lbl{font-size:11.5px;color:var(--mute);margin-bottom:2px}
+  .phase p{font-size:13.5px;color:var(--body);line-height:1.45;font-weight:500;margin-top:2px}
+
+  /* Телефон / Telegram: одна длинная страница, листаем вниз */
+  @media (max-width: 900px){
+    html,body{
+      height:auto;min-height:100%;overflow:auto;overflow-x:hidden;
+      -webkit-overflow-scrolling:touch;
+    }
+    .progress,.nav,.counter,.print-btn{display:none !important}
+    .aura{inset:-40% -30%;}
+    .ms-badge{top:12px;right:14px;gap:8px}
+    .ms-badge img{height:26px}
+    .ms-badge .ms-name{font-size:12px}
+    .deck{height:auto;width:100%;position:relative}
+    .slide{
+      display:flex !important;position:relative;inset:auto;
+      height:auto;min-height:0;width:100%;
+      padding:28px 18px 32px;animation:none;perspective:none;
+      border-bottom:1px solid var(--line);
+    }
+    .slide:first-of-type{padding-top:64px}
+    .slide:last-of-type{border-bottom:none;padding-bottom:48px}
+    .slide .stag,.slide.active .stag{animation:none !important;opacity:1 !important}
+    h1{font-size:27px;line-height:1.18}
+    h2{font-size:23px}
+    .lead{font-size:15px;margin-top:14px}
+    .brand-row{margin-bottom:20px;flex-wrap:wrap}
+    .brand-row .ms-logo{height:32px}
+    .grid,.plan-grid{grid-template-columns:1fr !important;display:grid}
+    .g2,.g3,.g4{grid-template-columns:1fr !important}
+    .pay-amt{font-size:27px}
+    .card,.anchor,.phase,.bonus,.step,.mock,.shot-card{
+      transform:none !important;will-change:auto;
+    }
+    .card:hover,.anchor:hover,.phase:hover{box-shadow:none}
+    .screens{flex-direction:column;gap:22px;perspective:none;margin-top:18px}
+    .screen,.screen.r,.screen:hover{transform:none !important;padding:6px 6px 0;box-shadow:0 18px 30px -22px rgba(0,0,0,.9)}
+    .screens.one .screen,.screens.two .screen{width:100%}
+    .screen .bar{padding:1px 2px 6px}
+    .shot-note{margin-top:14px}
+    .stack{perspective:none;max-width:none;gap:12px;transform-style:flat}
+    .layer,.layer:hover{transform:none !important;flex-direction:column;gap:6px;padding:15px 17px;align-items:flex-start;box-shadow:none}
+    .layer .lv{flex:none;white-space:normal}
+    .layer .lv{flex:none}
+    .cost-row{grid-template-columns:1fr;gap:3px;padding:13px 15px}
+  }
+
+  @media print{
+    @page{size:1280px 720px;margin:0}
+    html,body{
+      overflow:visible;height:auto;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;
+    }
+    body{
+      background-color:var(--bg) !important;
+      background-image:none !important;
+    }
+    body::before,body>.aura,body>.ms-badge{display:none !important}
+    .deck{height:auto;width:auto}
+    .slide{
+      display:flex !important;position:relative;inset:auto;
+      height:720px;width:1280px;
+      overflow:hidden;
+      page-break-after:always;break-after:page;
+      animation:none;
+      background-color:var(--bg);
+      background-image:
+        radial-gradient(1100px 780px at 97% -12%, rgba(74,101,177,.16), transparent 58%),
+        radial-gradient(900px 640px at -8% 112%, rgba(91,124,222,.09), transparent 60%);
+    }
+    .slide .stag{animation:none !important;opacity:1 !important}
+    .progress,.nav,.counter,.print-btn{display:none !important}
+    .slide .aura{
+      position:absolute;inset:-30%;z-index:0;animation:none !important;
+    }
+    .slide .ms-badge{position:absolute;top:26px;right:8vw;display:flex}
+    /* 3D в PDF выпрямляем: печать читаемее плоской */
+    .screens{perspective:none;gap:24px}
+    .screen,.screen.r{transform:none !important;box-shadow:0 20px 40px -26px rgba(0,0,0,.9)}
+    .screens.one .screen{width:640px}
+    .screens.two .screen{width:47%}
+    .layer{transform:none !important;box-shadow:none}
+    .stack{perspective:none;gap:9px;transform-style:flat}
+    .shot-note{margin-top:12px}
+    /* запасной кадр подсветки, если JS не успел снять живой */
+    .slide::before,.slide::after{
+      content:'';position:absolute;inset:-30%;z-index:0;pointer-events:none;
+    }
+    .slide::before{
+      background-image:
+        radial-gradient(880px 640px at 80% 12%, rgba(74,101,177,.62), transparent 66%),
+        radial-gradient(600px 480px at 12% 22%, rgba(91,124,222,.28), transparent 68%);
+      transform:translate3d(-2%,1%,0) scale(1.07);opacity:.88;
+    }
+    .slide::after{
+      background-image:
+        radial-gradient(740px 580px at 22% 86%, rgba(91,124,222,.36), transparent 66%),
+        radial-gradient(540px 440px at 90% 76%, rgba(138,164,240,.22), transparent 68%);
+      transform:translate3d(2%,-1%,0) scale(1.06);opacity:.9;
+    }
+    body.printing .slide::before,
+    body.printing .slide::after{content:none;display:none}
+  }
+
+</style>
+</head>
+<body>
+<div class="aura a"></div>
+<div class="aura b"></div>
+<div class="progress" id="progress"></div>
+<button class="print-btn" id="printBtn">Печать в PDF</button>
+<div class="ms-badge"><img src="assets/logo-ms-transparent.png" alt="MS Product"><span class="ms-name">MS Product</span></div>
+
+<div class="deck" id="deck">
+
+  <!-- 1 — ОБЛОЖКА -->
+  <section class="slide active" data-title="Обложка">
+    <div class="brand-row stag">
+      <div class="client-badge"><b>ТРИУМФ</b><span>отдел снабжения</span></div>
+      <span class="x">×</span>
+      <img class="ms-logo" src="assets/logo-ms-transparent.png" alt="MS Product">
+    </div>
+    <h1 class="stag">Отдел из 27 человек работает в одной системе<span class="dot">.</span><br><span class="grad">Фундамент, поверх которого дальше строите вы<span class="dot">.</span></span></h1>
+    <p class="lead stag">Разбор заявок, задачи с готовыми файлами, контроль цен, очередь платежей и накопленная цифра экономии — в одном рабочем окне. Прототип собран, дальше рабочая версия под ваш поток.</p>
+    <p class="note stag">Андрей, руководитель отдела снабжения · предложение от 21.08.2026</p>
+  </section>
+
+  <!-- 2 — БОЛИ -->
+  <section class="slide" data-title="Где уходит время">
+    <div class="kicker">С нашего разговора</div>
+    <h2 class="stag">Четыре места, где отдел теряет время и деньги<span class="dot">.</span></h2>
+    <div class="grid g4">
+      <div class="card hero stag">
+        <div class="num">01</div><h3>Заявку разбирает человек</h3>
+        <p>Каждую заявку читаете вы и вручную режете по ответственным: лопаты и буры Татьяне, кабель Илье, труба и электроды Саньку. Ваша оценка этой работы — 60–70% всего отдела.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">02</div><h3>Excel режется руками</h3>
+        <p>Менеджеру нужен файл только по его позициям и сразу пригодный к отправке поставщику. Сейчас эту нарезку делают вручную на каждую заявку с каждого объекта.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">03</div><h3>Цена уходит без сверки</h3>
+        <p>Менеджер сам выбирает поставщика и отгружает. Правило «счёт свыше 100 000 ₽ — только с вашей подписью» проговорено на совещании, но нигде не работает.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">04</div><h3>Экономия не оцифрована</h3>
+        <p>Вы приносили распечатку: 4 900 против 3 100. Одна распечатка не аргумент. Накопленной цифры за период, которую можно показать руководству, у отдела нет.</p>
+      </div>
+    </div>
+    <p class="note stag">Пятое, менее заметное: базы поставщиков. Ключевые контакты у вас в голове, у остальных в личных таблицах. Уходит человек — уходит и база вместе с историей отношений.</p>
+  </section>
+
+  <!-- 3 — ЧТО ВХОДИТ -->
+  <section class="slide" data-title="Что входит">
+    <div class="kicker">Что входит</div>
+    <h2 class="stag">Шесть результатов на одной базе<span class="dot">.</span></h2>
+    <div class="grid g3">
+      <div class="card hero stag">
+        <div class="num">01</div><h3>Заявка разбирается сама</h3>
+        <p>Письмо с объекта, позиции распознаны, каждая отнесена к ответственному, задачи поставлены всем сразу. Спорные строки система показывает вам и запоминает ваше решение на будущее.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">02</div><h3>Задача приходит туда, где человек уже сидит</h3>
+        <p>Telegram или почта, готовый Excel только по его позициям, кнопки «взял в работу» и «нет денег». Заходить в систему каждый день никого заставлять не нужно.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">03</div><h3>Панель контроля</h3>
+        <p>Все заявки и позиции, кто на каком шаге, где встало. Отдельный статус «ждём финансирование»: заявка без денег не висит просрочкой на менеджере.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">04</div><h3>Реестр поставщиков и история цен</h3>
+        <p>Структура из вашей таблицы: контакт, отсрочка, лимит по договору, признак производителя. Плюс история — когда, у кого и почём брали. Аргумент под рукой в момент торга.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">05</div><h3>Контроль цен и виза на счёт</h3>
+        <p>Ответы поставщиков разбираются в сравнительную таблицу, счёт можно разбить между несколькими. Счёт свыше 100 000 ₽ не уходит в оплату без вашей подписи.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">06</div><h3>Экономия в цифре</h3>
+        <p>Сколько закупили, сколько сэкономили против альтернатив, в разрезе людей и категорий. Одной кнопкой — служебная записка за период, накопительно, а не разовая распечатка.</p>
+      </div>
+    </div>
+    <p class="note stag">Плюс пакет КП для сметы по вашей форме с наценками и подбор аналогов — то, что вы сейчас собираете руками через ИИ, внутри системы и с проверкой человеком перед отправкой.</p>
+  </section>
+
+  <!-- 4 — ДЕМО: РАЗБОР -->
+  <section class="slide" data-title="Демо · разбор заявки">
+    <div class="kicker">Прототип, собран</div>
+    <h2 class="stag">Не макет из иконок. Собранный экран<span class="dot">.</span></h2>
+    <p class="lead stag">Заявка № 247: 16 позиций, 5 исполнителей. Две спорные строки система распределять не стала и отдала вам, а ваше решение запомнит на будущее.</p>
+    <div class="screens one stag">
+      <div class="screen"><div class="bar"><i></i><i></i><i></i></div><img src="assets/shot-parse.jpg" alt="Разбор заявки № 247"><div class="cap">Экран разбора: позиция, количество, категория, исполнитель. Справа — документ с объекта и раскладка по людям.</div></div>
+    </div>
+    <p class="shot-note stag">Данные на экранах демонстрационные: позиции и фамилии из нашего разговора для узнаваемости, цены условные.</p>
+  </section>
+
+  <!-- 5 — ДЕМО: ЛЮДИ И ЦЕНЫ -->
+  <section class="slide" data-title="Демо · люди и цены">
+    <div class="kicker">Внедрение и торг</div>
+    <h2 class="stag">Команде не нужно жить в интерфейсе<span class="dot">.</span></h2>
+    <p class="lead stag">Дополнительно задача приходит в Telegram с готовым файлом и тремя кнопками. Полный экран нужен там, где человек сравнивает цены — и там под рукой история по позиции.</p>
+    <div class="screens two stag">
+      <div class="screen"><div class="bar"><i></i><i></i><i></i></div><img src="assets/shot-telegram.jpg" alt="Задача исполнителю в Telegram"><div class="cap">Задача исполнителю: его позиции, файл, «взял в работу», «скачать Excel», «нет денег».</div></div>
+      <div class="screen r"><div class="bar"><i></i><i></i><i></i></div><img src="assets/shot-price.jpg" alt="История цены по позиции"><div class="cap">История цены: как менялась и где брали раньше. Аргумент в разговоре с поставщиком.</div></div>
+    </div>
+  </section>
+
+  <!-- 6 — ДЕМО: ДЕНЬГИ И ЗАПИСКА -->
+  <section class="slide" data-title="Демо · деньги и отчёт">
+    <div class="kicker">Деньги и защита отдела</div>
+    <h2 class="stag">Очередь платежей и цифра, с которой вы идёте к руководству<span class="dot">.</span></h2>
+    <p class="lead stag">Ввели сумму, доступную на неделю, — видно, что оплатить первым, что остаётся непокрытым и где встанет объект. Отдельно накапливается экономия за период по людям и категориям, и собирается готовой запиской.</p>
+    <div class="screens two stag">
+      <div class="screen"><div class="bar"><i></i><i></i><i></i></div><img src="assets/shot-money.jpg" alt="Очередь платежей"><div class="cap">Очередь платежей: сроки, отсрочки, лимиты по договорам, что стоит без финансирования.</div></div>
+      <div class="screen r"><div class="bar"><i></i><i></i><i></i></div><img src="assets/shot-memo.jpg" alt="Служебная записка"><div class="cap">Служебная записка за период: объём, экономия, разбивка по людям, срок отработки заявки.</div></div>
+    </div>
+  </section>
+
+  <!-- 7 — ДЕМО: ПОСТАВЩИКИ И КП -->
+  <section class="slide" data-title="Демо · поставщики и КП">
+    <div class="kicker">База отдела</div>
+    <h2 class="stag">Реестр поставщиков и пакет КП для сметы<span class="dot">.</span></h2>
+    <p class="lead stag">Общая база отдела вместо личных таблиц: отсрочка, лимит по договору, признак производителя, история закупок и сравнений. И пакет КП по вашей форме с наценками, который сейчас собирается вручную.</p>
+    <div class="screens two stag">
+      <div class="screen"><div class="bar"><i></i><i></i><i></i></div><img src="assets/shot-suppliers.jpg" alt="Реестр поставщиков"><div class="cap">Поставщики: условия, лимиты, кто производитель, по каким категориям работает.</div></div>
+      <div class="screen r"><div class="bar"><i></i><i></i><i></i></div><img src="assets/shot-konj.jpg" alt="КП для сметы"><div class="cap">Пакет КП для сметы: число документов и ступени наценки задаёте вы.</div></div>
+    </div>
+  </section>
+
+  <!-- 8 — БЕЗОПАСНОСТЬ -->
+  <section class="slide" data-title="Безопасность и доступы">
+    <div class="kicker">Безопасность и доступы</div>
+    <h2 class="stag">Цены, поставщики и история остаются в компании<span class="dot">.</span></h2>
+    <div class="grid g3">
+      <div class="anchor stag"><span class="n">01</span><div><b>Свой контур</b><span>Система ставится на ваш сервер или на выделенный контур под вас. Это не общий сервис, где ваши закупочные цены лежат рядом с чужими.</span></div></div>
+      <div class="anchor stag"><span class="n">02</span><div><b>Роли и права</b><span>Менеджер видит свои позиции и своих поставщиков. Полная картина по ценам, экономии и платежам — только у руководителя. Кто что видит, решаете вы.</span></div></div>
+      <div class="anchor stag"><span class="n">03</span><div><b>Журнал действий</b><span>Видно, кто менял цену, кто выбрал поставщика, кто подписал счёт и когда. Спорный вопрос закрывается записью, а не памятью и словами.</span></div></div>
+      <div class="anchor stag"><span class="n">04</span><div><b>Уход сотрудника не забирает базу</b><span>Доступ отключается одной кнопкой. Поставщики, история цен и переписка по заявкам остаются в системе компании, а не в чьём-то личном файле.</span></div></div>
+      <div class="anchor stag"><span class="n">05</span><div><b>Резервные копии</b><span>Ежедневный бэкап базы и файлов. Заявки, счёта и КП хранятся вместе с позициями, к которым относятся, а не в чьей-то папке на рабочем столе.</span></div></div>
+      <div class="anchor stag"><span class="n">06</span><div><b>Наружу ничего лишнего</b><span>Где для распознавания нужна ИИ-модель, состав передаваемых данных согласуем с вами письменно. Реквизиты и суммы можно обезличивать до отправки.</span></div></div>
+    </div>
+  </section>
+
+  <!-- 9 — ФУНДАМЕНТ 3D -->
+  <section class="slide" data-title="Фундамент">
+    <div class="kicker">Ближайшее будущее</div>
+    <h2 class="stag">Фундамент, поверх которого вы строите сами<span class="dot">.</span></h2>
+    <p class="lead stag">Дальше вы садитесь и говорите системе, что нужно: свой срез, свой отчёт, разбор переписки менеджера, оценка работы людей, ещё один сценарий. Это работает быстро только тогда, когда снизу лежит размеченная и связанная структура. Мы делаем именно её.</p>
+    <div class="stack stag">
+      <div class="layer top"><span class="lv">Слой 3 · ваш</span><b>Надстройки</b><span>Свои отчёты и срезы, анализ работы менеджеров и переписки, новые сценарии — дни, а не месяцы, потому что данные уже размечены.</span></div>
+      <div class="layer mid"><span class="lv">Слой 2 · процесс</span><b>Поток работы</b><span>Заявка, задачи, запросы поставщикам, сравнение цен, виза на счёт, оплата, отчёт. Со статусами, сроками и ответственными.</span></div>
+      <div class="layer base"><span class="lv">Слой 1 · основа</span><b>База данных</b><span>Объекты, позиции, категории, ответственные, поставщики, цены, счета, документы. Связанные между собой, а не рассыпанные по чатам и таблицам.</span></div>
+    </div>
+    <p class="note stag">И параллельно вы снимаете с себя разбор заявок — ту рутину, из-за которой сейчас не получается передать закупку и заняться контролем цен и развитием отдела.</p>
+  </section>
+
+  <!-- 10 — ГРАНИЦЫ -->
+  <section class="slide" data-title="Честные границы">
+    <div class="kicker">Честные границы</div>
+    <h2 class="stag">Что мы не обещаем<span class="dot">.</span></h2>
+    <div class="grid g2">
+      <div class="anchor stag"><span class="n">01</span><div><b>100% автоматического разбора не будет</b><span>Часть позиций система не отнесёт однозначно и покажет вам с пометкой. Это осознанное решение: лучше вы поправите строку, чем задача молча уйдёт не тому и вскроется на срыве поставки. Точность растёт по мере работы.</span></div></div>
+      <div class="anchor stag"><span class="n">02</span><div><b>1С не трогаем</b><span>Пока неизвестно, что у вас за конфигурация и что в ней делает отдел. Обещать интеграцию вслепую не будем — смотрим отдельно, когда система уже работает.</span></div></div>
+      <div class="anchor stag"><span class="n">03</span><div><b>Торг остаётся людям</b><span>Обзвон и давление ценой конкурента — то, на чём отдел зарабатывает. Система даёт аргумент под рукой и не пытается заменить менеджера в разговоре.</span></div></div>
+      <div class="anchor stag"><span class="n">04</span><div><b>Срок зависит от формата заявок</b><span>Если часть заявок приходит фотографией бумаги, распознавание сложнее. Поэтому просим 10–15 реальных примеров до старта, включая самые кривые.</span></div></div>
+    </div>
+    <p class="note stag">Вне работ первой версии: ЭДО, банк, порталы поставщиков, телефония, мобильное приложение. Не потому что сложно, а потому что в первую версию это не нужно — и мы не хотим раздувать вам счёт.</p>
+  </section>
+
+  <!-- 11 — СРОКИ И ОПЛАТА -->
+  <section class="slide" data-title="Сроки и оплата">
+    <div class="kicker">Сроки и оплата</div>
+    <h2 class="stag">270 000 ₽<span class="dot">.</span> Последний платёж — когда отдел уже работает в системе<span class="dot">.</span></h2>
+    <p class="lead stag">Срок: 4 недели до готовой системы, отсчёт со следующего дня после стартового платежа. Плюс неделя на внедрение в команду и правки по замечаниям.</p>
+    <div class="plan-grid">
+      <div class="phase hl stag">
+        <div class="phase-num">Платёж 1 · старт</div>
+        <div class="pay-amt">150 000 ₽</div>
+        <p>Разбор ваших реальных заявок, справочник категорий и ответственных, сборка системы.</p>
+      </div>
+      <div class="phase stag">
+        <div class="phase-num">Платёж 2 · готовая система</div>
+        <div class="pay-amt">70 000 ₽</div>
+        <p>После передачи работающей системы: заявки разбираются, задачи уходят, панель, поставщики, цены, деньги, отчёты на месте.</p>
+      </div>
+      <div class="phase stag">
+        <div class="phase-num">Платёж 3 · через неделю работы</div>
+        <div class="pay-amt">50 000 ₽</div>
+        <p>После недели на живом потоке, когда отдел реально работает в системе. Правки по замечаниям этой недели входят в цену.</p>
+      </div>
+    </div>
+    <div class="cost-table stag">
+      <div class="cost-row head"><span>Ежемесячно</span><span>Сумма</span><span>Комментарий</span></div>
+      <div class="cost-row"><span>Лицензии и подписки за пользователей</span><span>0 ₽</span><span>Своя система. Взяли в отдел ещё двух менеджеров — цена не меняется</span></div>
+      <div class="cost-row"><span>Хостинг</span><span>от 1 000 ₽</span><span>На вашей стороне, зависит от нагрузки. Можно на ваш сервер</span></div>
+      <div class="cost-row"><span>Распознавание заявок и КП</span><span>по факту</span><span>Только там, где включаем ИИ-разбор. Месячный лимит согласуем заранее</span></div>
+    </div>
+  </section>
+
+  <!-- 12 — СТАРТ -->
+  <section class="slide" data-title="Старт">
+    <div class="kicker">Чтобы начать</div>
+    <h2 class="stag">Четыре вещи с вашей стороны<span class="dot">.</span></h2>
+    <ul class="checks">
+      <li class="stag" data-n="01">10–15 реальных заявок с разных объектов, включая самые кривые. <i>От формата зависит объём работы по распознаванию, поэтому смотрим до старта, а не после.</i></li>
+      <li class="stag" data-n="02">Кто за какие категории отвечает. <i>Можно надиктовать голосом, как вы сами и предлагали. Дальше это станет справочником, который система дополняет по вашим правкам.</i></li>
+      <li class="stag" data-n="03">Пересылка заявок на служебный адрес или доступ к ящику отдела. <i>Приём писем — точка входа всего процесса.</i></li>
+      <li class="stag" data-n="04">Один объект и одна категория на пилот. <i>Обкатать на живом потоке до раскатки на весь отдел: так внедрение проходит без сопротивления.</i></li>
+    </ul>
+    <p class="lead stag">Прототип вы уже держали в руках. Дальше нужны заявки и ваше решение по срокам старта.</p>
+  </section>
+
+</div>
+
+<div class="counter" id="counter"><b>1</b> / 12 · Обложка</div>
+<div class="nav">
+  <button id="prevBtn" aria-label="Назад">←</button>
+  <button id="nextBtn" aria-label="Вперёд">→</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll(".slide"));
+  const counter = document.getElementById("counter");
+  const progress = document.getElementById("progress");
+  let i = 0;
+
+  const phone = window.matchMedia("(max-width: 900px)");
+  function isPhone(){ return phone.matches; }
+  function render(){
+    if (isPhone()){
+      slides.forEach(s => s.classList.add("active"));
+      return;
+    }
+    slides.forEach((s,idx) => s.classList.toggle("active", idx === i));
+    counter.innerHTML = "<b>" + (i+1) + "</b> / " + slides.length + " · " + slides[i].dataset.title;
+    progress.style.width = ((i+1) / slides.length * 100) + "%";
+  }
+  function go(step){
+    i = Math.max(0, Math.min(slides.length - 1, i + step));
+    render();
+  }
+  document.getElementById("prevBtn").onclick = () => go(-1);
+  document.getElementById("nextBtn").onclick = () => go(1);
+
+  function cleanupPrint(){
+    document.body.classList.remove("printing");
+    document.querySelectorAll(".print-clone").forEach(el => el.remove());
+  }
+  function preparePrint(){
+    cleanupPrint();
+    const snapshot = Array.from(document.querySelectorAll("body > .aura")).map(el => {
+      const cs = getComputedStyle(el);
+      return { className: el.className, transform: cs.transform, opacity: cs.opacity };
+    });
+    const badge = document.querySelector("body > .ms-badge");
+    slides.forEach(slide => {
+      snapshot.forEach(s => {
+        const n = document.createElement("div");
+        n.className = s.className + " print-clone";
+        n.style.animation = "none";
+        n.style.transform = s.transform;
+        n.style.opacity = s.opacity;
+        n.style.position = "absolute";
+        slide.insertBefore(n, slide.firstChild);
+      });
+      if (badge) {
+        const b = badge.cloneNode(true);
+        b.classList.add("print-clone");
+        slide.appendChild(b);
+      }
+    });
+    document.body.classList.add("printing");
+  }
+  window.addEventListener("beforeprint", preparePrint);
+  window.addEventListener("afterprint", cleanupPrint);
+  document.getElementById("printBtn").onclick = () => {
+    preparePrint();
+    requestAnimationFrame(() => window.print());
+  };
+  phone.addEventListener("change", render);
+  document.addEventListener("keydown", e => {
+    if (isPhone()) return;
+    if (["ArrowRight","ArrowDown","PageDown"," "].includes(e.key)) { go(1); e.preventDefault(); }
+    if (["ArrowLeft","ArrowUp","PageUp"].includes(e.key)) { go(-1); e.preventDefault(); }
+    if (e.key==="Home") { i=0; render(); e.preventDefault(); }
+    if (e.key==="End") { i=slides.length-1; render(); e.preventDefault(); }
+  });
+
+  render();
+
+  (function(){
+    const SEL = ".card,.anchor,.phase,.bonus,.step,.mock,.shot-card";
+    const MAX = 12;
+    let active = null;
+    function reset(el){
+      el.style.transform = "perspective(900px) rotateX(0deg) rotateY(0deg) translateY(0px) translateZ(0)";
+      el.classList.remove("tilt-active");
+    }
+    document.addEventListener("pointermove", e => {
+      if (isPhone()) return;
+      const card = e.target.closest(SEL);
+      if (!card) { if (active) { reset(active); active = null; } return; }
+      if (card !== active) { if (active) reset(active); active = card; card.classList.add("tilt-active"); }
+      const r = card.getBoundingClientRect();
+      const px = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      const py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+      const ry = ((px - 0.5) * MAX).toFixed(2);
+      const rx = ((0.5 - py) * MAX).toFixed(2);
+      card.style.transform = "perspective(900px) rotateX(" + rx + "deg) rotateY(" + ry + "deg) translateY(-4px) translateZ(12px)";
+      card.style.setProperty("--mx", (px * 100).toFixed(1) + "%");
+      card.style.setProperty("--my", (py * 100).toFixed(1) + "%");
+    });
+    document.addEventListener("pointerleave", () => { if (active) { reset(active); active = null; } });
+  })();
+</script>
+</body>
+</html>

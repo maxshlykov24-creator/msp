@@ -1,0 +1,26 @@
+[Unit]
+Description=Kombikorm Telegram bot (Alexander feed store) - long polling
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kombikorm
+Group=kombikorm
+WorkingDirectory=/opt/kombikorm-bot
+EnvironmentFile=/opt/kombikorm-bot/.env
+Environment=DATA_DIR=/var/lib/kombikorm-bot
+Environment=LOG_DIR=/var/log/kombikorm-bot
+ExecStart=/opt/kombikorm-bot/.venv/bin/python -m app.main
+Restart=always
+RestartSec=5
+
+# Изоляция сервиса (не влияет на соседние боты)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/kombikorm-bot /var/log/kombikorm-bot
+
+[Install]
+WantedBy=multi-user.target

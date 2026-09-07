@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.msp.vault-sync</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>/Users/max/CURSOR/2. Бизнес/08_Системное/Скрипты_vault/git/vault-sync-auto.sh</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>120</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/max/CURSOR/2. Бизнес/08_Системное/Скрипты_vault/git/logs/launchd-vault-sync.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/max/CURSOR/2. Бизнес/08_Системное/Скрипты_vault/git/logs/launchd-vault-sync.err</string>
+</dict>
+</plist>

@@ -1,0 +1,78 @@
+{
+  "_doc": "Конфиг агента data-analyst для openclaw.json. Второй агент под тем же gateway, что lead-qualifier из М3. По расписанию тянет источники → строит дашборд → PNG-скрин (headless Chrome) → send_photo + выводы в Telegram. Регистрация: openclaw agents create data-analyst --workspace ./workspace --config ./openclaw.config.example.json. Подробно — ПРОМПТ_ДЕПЛОЯ.md.",
+
+  "id": "data-analyst",
+  "name": "AI-Аналитик",
+  "workspace": "/opt/analyst-bot/workspace",
+
+  "_skill_doc": "Скилл и шаблон дашборда переезжают с базы (Cursor) как есть — пресет их переиспользует.",
+  "skillPath": "/opt/analyst-bot/skill/SKILL.md",
+  "dashboardTemplate": "/opt/analyst-bot/dashboard-template/dashboard.html",
+
+  "_model_doc": "Аналитику нужна аккуратность с цифрами и выводами — берём Sonnet. Дёшево и для простых срезов — gemini-flash-lite. Свежие ID: ../../ВЫБОР_МОДЕЛИ.md или https://openrouter.ai/models",
+  "model": {
+    "primary": "openrouter/anthropic/claude-sonnet-4.6",
+    "fallbacks": [
+      "openrouter/google/gemini-2.5-flash-lite"
+    ]
+  },
+
+  "_alternative_setups_examples": {
+    "cheap_daily": { "primary": "openrouter/google/gemini-2.5-flash-lite" },
+    "quality": { "primary": "openrouter/anthropic/claude-sonnet-4.6", "fallbacks": ["openrouter/anthropic/claude-opus-4.7"] }
+  },
+
+  "tools": {
+    "profile": "standard",
+    "_profile_doc": "standard — агент читает источники, пишет дашборд из шаблона и вызывает зарегистрированные tools (рендер PNG + отправка).",
+    "exec": {
+      "ask": "on-miss",
+      "_ask_doc": "Read-only по данным. Отправка отчёта — через approval, пока не натренируешь на себе. Полный автопоток — never, но сначала проверь на тест-чате."
+    },
+    "registered": [
+      "/opt/analyst-bot/tools/fetch_sources.sh",
+      "/opt/analyst-bot/tools/render_dashboard.sh",
+      "/opt/analyst-bot/tools/send_report.sh"
+    ],
+    "_tools_doc": "render_dashboard.sh — headless Chrome/Playwright рендерит dashboard.html в PNG. send_report.sh — Telegram sendPhoto (картинка) + текст выводов. fetch_sources.sh — тянет CRM/Метрику/расходы.",
+    "web": {
+      "fetch": { "enabled": true, "_doc": "для подтяжки источников по API (Метрика и т.п.)" }
+    }
+  },
+
+  "channels": [
+    { "type": "telegram", "_token_doc": "Токен из ENV TELEGRAM_BOT_TOKEN, чат — TELEGRAM_CHAT_ID. НЕ вставляй сюда — этот файл коммитится." }
+  ],
+
+  "memory": { "enabled": true, "retention": "90d", "_doc": "длиннее обычного — нужно для исторического среза и сравнения с прошлыми snapshot'ами" },
+
+  "heartbeat": {
+    "enabled": true,
+    "_doc": "Расписание под 3 пресета (cron-подобно, TZ Europe/Moscow). Сценарий каждого — в workspace. На сервере проверь, как именно твоя версия OpenClaw принимает cron (heartbeat.schedule или внешний cron на tools/*.sh) — см. ПРОМПТ_ДЕПЛОЯ.md.",
+    "timezone": "Europe/Moscow",
+    "schedule": [
+      {
+        "id": "morning-slice",
+        "_doc": "Утренний срез — KPI + аномалии за вчера",
+        "cron": "0 9 * * 1-5",
+        "preset": "Утренний срез"
+      },
+      {
+        "id": "sales-week",
+        "_doc": "Продажи · неделя — воронка + выручка vs прошлая неделя, понедельник",
+        "cron": "30 9 * * 1",
+        "preset": "Продажи · неделя"
+      },
+      {
+        "id": "board-quarter",
+        "_doc": "Совет · квартал — сводка по всем отделам + тренды, первый день квартала",
+        "cron": "0 10 1 1,4,7,10 *",
+        "preset": "Совет · квартал"
+      }
+    ]
+  },
+
+  "compaction": { "mode": "auto", "model": "openrouter/anthropic/claude-sonnet-4.6" },
+  "thinkingDefault": "low",
+  "timeoutSeconds": 900
+}

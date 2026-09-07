@@ -1,0 +1,421 @@
+{
+  "generated_at": "2026-08-07T19:47:24.740375+00:00",
+  "window_days": 180,
+  "sample_size": 2000,
+  "pipeline_id": 9601214,
+  "standard": {
+    "name": {
+      "count": 2000,
+      "pct": 100.0
+    },
+    "price>0": {
+      "count": 5,
+      "pct": 0.2
+    },
+    "responsible_user_id": {
+      "count": 2000,
+      "pct": 100.0
+    },
+    "has_contact": {
+      "count": 1996,
+      "pct": 99.8
+    },
+    "closed": {
+      "count": 1998,
+      "pct": 99.9
+    },
+    "has_tags": {
+      "count": 0,
+      "pct": 0.0
+    },
+    "has_any_custom": {
+      "count": 2000,
+      "pct": 100.0
+    }
+  },
+  "custom_fields_per_deal": {
+    "avg": 13.22,
+    "median": 14,
+    "p75": 18,
+    "p90": 22,
+    "max": 31,
+    "zero_custom_fields_pct": 0.0
+  },
+  "buckets": {
+    ">=50%": 10,
+    "15-50%": 13,
+    "3-15%": 14,
+    "0-3%": 49,
+    "0%": 72,
+    "total_custom_fields": 158
+  },
+  "top_filled": [
+    {
+      "field_id": 3134041,
+      "name": "Способ связи",
+      "type": "select",
+      "filled": 1827,
+      "pct": 91.3,
+      "avg_text_len": 7.0,
+      "top_values": [
+        "Telegram (1375)",
+        "ВК (159)",
+        "Авито (102)",
+        "WhatsApp (95)",
+        "Instagram (83)"
+      ]
+    },
+    {
+      "field_id": 3434463,
+      "name": "Дата Взято в работу",
+      "type": "date_time",
+      "filled": 1746,
+      "pct": 87.3,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3134039,
+      "name": "Тип клиента",
+      "type": "select",
+      "filled": 1651,
+      "pct": 82.5,
+      "avg_text_len": 11.0,
+      "top_values": [
+        "Не определен (1165)",
+        "Оффлайн (463)",
+        "Онлайн (23)"
+      ]
+    },
+    {
+      "field_id": 3279145,
+      "name": "Переход на след. этап до",
+      "type": "date",
+      "filled": 1458,
+      "pct": 72.9,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3134037,
+      "name": "Провал комментарий",
+      "type": "textarea",
+      "filled": 1442,
+      "pct": 72.1,
+      "avg_text_len": 19.0,
+      "top_values": [
+        "- (606)",
+        "клиент не отвечает (243)",
+        "Передал (81)",
+        "Отправил (36)",
+        "Клиент не отвечает (31)"
+      ]
+    },
+    {
+      "field_id": 3630859,
+      "name": "Взято в работу",
+      "type": "checkbox",
+      "filled": 1414,
+      "pct": 70.7,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3134051,
+      "name": "Причина провала",
+      "type": "select",
+      "filled": 1398,
+      "pct": 69.9,
+      "avg_text_len": 11.0,
+      "top_values": [
+        "Не вышел на связь (399)",
+        "Спам (253)",
+        "Сара (212)",
+        "Предложение (102)",
+        "Сдвоенная заявка (74)"
+      ]
+    },
+    {
+      "field_id": 3134043,
+      "name": "Источник (техническое)",
+      "type": "select",
+      "filled": 1370,
+      "pct": 68.5,
+      "avg_text_len": 10.0,
+      "top_values": [
+        "Яндекс Карты (334)",
+        "Сайт (органика) (288)",
+        "Яндекс Директ (185)",
+        "ВК (178)",
+        "Instagram (128)"
+      ]
+    },
+    {
+      "field_id": 3781223,
+      "name": "Источник",
+      "type": "select",
+      "filled": 1236,
+      "pct": 61.8,
+      "avg_text_len": 8.0,
+      "top_values": [
+        "Другое (407)",
+        "Яндекс Директ (181)",
+        "ВК (171)",
+        "Яндекс Карты (134)",
+        "Instagram (114)"
+      ]
+    },
+    {
+      "field_id": 3185681,
+      "name": "Примерная дата встречи / отправки",
+      "type": "date",
+      "filled": 1010,
+      "pct": 50.5,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3158921,
+      "name": "Адрес магазина",
+      "type": "select",
+      "filled": 984,
+      "pct": 49.2,
+      "avg_text_len": 12.0,
+      "top_values": [
+        "на Пятницкой (748)",
+        "на Бауманской (179)",
+        "Не определен (36)",
+        "Онлайн-магазин (21)"
+      ]
+    },
+    {
+      "field_id": 3750777,
+      "name": "Название сделки (1 изменение)",
+      "type": "checkbox",
+      "filled": 964,
+      "pct": 48.2,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3382311,
+      "name": "Дата встречи",
+      "type": "date",
+      "filled": 956,
+      "pct": 47.8,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3434465,
+      "name": "Дата Квалификация",
+      "type": "date_time",
+      "filled": 916,
+      "pct": 45.8,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3134115,
+      "name": "Способ получения",
+      "type": "select",
+      "filled": 889,
+      "pct": 44.5,
+      "avg_text_len": 7.0,
+      "top_values": [
+        "Магазин (874)",
+        "СДЭК (14)",
+        "Яндекс (1)"
+      ]
+    },
+    {
+      "field_id": 3134053,
+      "name": "Цель покупки",
+      "type": "select",
+      "filled": 825,
+      "pct": 41.2,
+      "avg_text_len": 13.0,
+      "top_values": [
+        "Не определена (807)",
+        "Повседнев (8)",
+        "Свадьба (5)",
+        "Работа (3)",
+        "Мероприятия (2)"
+      ]
+    },
+    {
+      "field_id": 3133963,
+      "name": "Адрес доставки",
+      "type": "streetaddress",
+      "filled": 802,
+      "pct": 40.1,
+      "avg_text_len": 7.0,
+      "top_values": [
+        "Магазин (802)"
+      ]
+    },
+    {
+      "field_id": 3630875,
+      "name": "Встреча назначена",
+      "type": "checkbox",
+      "filled": 803,
+      "pct": 40.1,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3322719,
+      "name": "Состав заказа",
+      "type": "textarea",
+      "filled": 666,
+      "pct": 33.3,
+      "avg_text_len": 1.0,
+      "top_values": [
+        "- (646)",
+        "= (2)",
+        "Двубортный костюм (2)",
+        "костюм (1)",
+        "3 сорочки (1)"
+      ]
+    },
+    {
+      "field_id": 3554021,
+      "name": "Техническое поле",
+      "type": "text",
+      "filled": 508,
+      "pct": 25.4,
+      "avg_text_len": 21.0,
+      "top_values": [
+        "Проставление даты квалификации (342)",
+        "1 (150)",
+        "123 (11)",
+        "Проставление (4)",
+        "12 (1)"
+      ]
+    },
+    {
+      "field_id": 3133899,
+      "name": "_ym_uid",
+      "type": "tracking_data",
+      "filled": 448,
+      "pct": 22.4,
+      "avg_text_len": 19.0,
+      "top_values": [
+        "1771654069982946033 (3)",
+        "1769706846485147371 (3)",
+        "1773127634281270450 (2)",
+        "1757853199685395471 (2)",
+        "1770648896176767353 (2)"
+      ]
+    },
+    {
+      "field_id": 3796755,
+      "name": "Целевой",
+      "type": "checkbox",
+      "filled": 360,
+      "pct": 18.0,
+      "avg_text_len": null,
+      "top_values": []
+    },
+    {
+      "field_id": 3133897,
+      "name": "gclientid",
+      "type": "tracking_data",
+      "filled": 303,
+      "pct": 15.2,
+      "avg_text_len": 20.0,
+      "top_values": [
+        "111111111.1111111111 (303)"
+      ]
+    },
+    {
+      "field_id": 3133877,
+      "name": "utm_source",
+      "type": "tracking_data",
+      "filled": 245,
+      "pct": 12.2,
+      "avg_text_len": 5.0,
+      "top_values": [
+        "yandex (137)",
+        "maps (66)",
+        "insta (12)",
+        "tg (6)",
+        "vk (5)"
+      ]
+    },
+    {
+      "field_id": 3133873,
+      "name": "utm_medium",
+      "type": "tracking_data",
+      "filled": 242,
+      "pct": 12.1,
+      "avg_text_len": 6.0,
+      "top_values": [
+        "suits (139)",
+        "listing (68)",
+        "social (23)",
+        "vk_ads (9)",
+        "cpc (1)"
+      ]
+    }
+  ],
+  "never_filled_in_sample": [
+    "openstat_service",
+    "openstat_campaign",
+    "openstat_ad",
+    "openstat_source",
+    "_ym_counter",
+    "gclid",
+    "fbclid",
+    "Трек-номер доставки",
+    "Ссылка на Отгрузку",
+    "Дата отправки",
+    "Статус заказа",
+    "Канал продаж",
+    "Хранилище данных интеграции МойСклад",
+    "Категория товара",
+    "Дата доставки",
+    "Адрес доставки",
+    "№ отправления",
+    "Более 5 минут без ответа",
+    "Не оказалось товара в шоуруме",
+    "Стоимость доставки",
+    "Списано баллов",
+    "Начислено баллов",
+    "Ссылка на Счет",
+    "ID Счета",
+    "№ Счета",
+    "План. дата оплаты",
+    "№ Сертификата",
+    "Не пришел на встречу",
+    "Подписка на рассылки",
+    "Подписка на новости",
+    "Рассылка промокода",
+    "Рассылка техническая",
+    "Промокод",
+    "Промокод действителен до",
+    "Сертификат действителен до",
+    "Обратная связь",
+    "Отв-ный консультант",
+    "Имя гостя",
+    "Статус (Техническое)",
+    "Рассылка До"
+  ],
+  "sample_status_mix": [
+    {
+      "name": "Провал",
+      "count": 1388,
+      "pct": 69.4
+    },
+    {
+      "name": "Успех",
+      "count": 610,
+      "pct": 30.5
+    },
+    {
+      "name": "Сертификат оплачен",
+      "count": 2,
+      "pct": 0.1
+    }
+  ]
+}

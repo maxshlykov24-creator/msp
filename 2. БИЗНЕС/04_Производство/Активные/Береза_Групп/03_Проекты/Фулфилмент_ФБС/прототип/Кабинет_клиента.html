@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Кабинет клиента — склад Береза Групп</title>
+<link rel="stylesheet" href="assets/dashboard.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <div class="logo-orb"><img src="assets/logo-ms-transparent.png" alt="MS Product"></div>
+      <div class="brand-div"></div>
+      <div class="brand-title">Кабинет клиента · склад Береза Групп
+        <small>Мой товар, движения и начисления в реальном времени</small>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="viewnav">
+        <a href="Руководитель_Фулфилмент.html">Руководитель</a>
+        <a href="Кабинет_клиента.html" class="active">Кабинет клиента</a>
+      </div>
+      <div class="selectbox">
+        <label for="whoSel">Вход как</label>
+        <select id="whoSel"></select>
+      </div>
+      <div class="live"><span class="dot"></span>данные склада · 4 мин назад</div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="hero-head">
+    <div>
+      <h1 id="h-title">Мой товар на складе</h1>
+      <p>Сколько моего товара лежит на складе прямо сейчас, как объём менялся по дням,
+         сколько за это начислено и что уже уехало покупателям. Расчёт открыт: видно каждый день и каждую операцию.</p>
+    </div>
+    <div class="updated">Июль 2026 · договор <span id="h-contract">—</span></div>
+  </div>
+
+  <!-- ── KPI клиента ── -->
+  <div class="kpi-grid">
+    <div class="kpi glass tilt feature">
+      <div class="glow"></div>
+      <div class="kpi-label">Мой объём на складе</div>
+      <div class="kpi-val" id="c-vol">— <small>л</small></div>
+      <div class="kpi-sub"><span id="c-units">—</span> шт · <span id="c-sku">—</span> SKU</div>
+    </div>
+    <div class="kpi glass tilt">
+      <div class="glow"></div>
+      <div class="kpi-label">Литро-дни за июль</div>
+      <div class="kpi-val" id="c-ld">—</div>
+      <div class="kpi-sub">сумма моих дневных остатков</div>
+    </div>
+    <div class="kpi glass tilt">
+      <div class="glow"></div>
+      <div class="kpi-label">Начислено за хранение</div>
+      <div class="kpi-val" id="c-store">— <small>₽</small></div>
+      <div class="kpi-sub">ставка <span id="c-rate">—</span> ₽ / л · день</div>
+    </div>
+    <div class="kpi glass tilt">
+      <div class="glow"></div>
+      <div class="kpi-label">Отправлено заказов</div>
+      <div class="kpi-val" id="c-orders">—</div>
+      <div class="kpi-sub">собрано и передано перевозчику</div>
+    </div>
+    <div class="kpi glass tilt feature">
+      <div class="glow"></div>
+      <div class="kpi-label">К оплате за июль</div>
+      <div class="kpi-val gold" id="c-total">— <small>₽</small></div>
+      <div class="kpi-sub">прогноз на конец месяца: <span id="c-forecast">—</span> ₽</div>
+    </div>
+  </div>
+
+  <!-- ── динамика моего объёма ── -->
+  <div class="sec-title">
+    <h2>Мой объём на складе по дням</h2>
+    <span>наведите на день — увидите приход, отгрузку и начисление</span>
+  </div>
+  <div class="cols">
+    <div class="panel glass tilt">
+      <h3>Остаток и движения, литры</h3>
+      <div class="psub">Линия — мой остаток на конец дня. Столбцы — приход и отгрузка за день.</div>
+      <div class="chart-box" id="chartBox">
+        <svg class="chart-svg" id="chart" viewBox="0 0 1000 240" preserveAspectRatio="none"></svg>
+        <div class="chart-tip" id="chartTip"></div>
+      </div>
+      <div class="chart-legend">
+        <span><i style="background:#e8e9ee"></i>Мой остаток, л</span>
+        <span><i style="background:rgba(255,255,255,.35)"></i>Движения за день, л</span>
+      </div>
+      <div class="formula">
+        Как считается: <code>остаток на 23:59 (л) × ставка</code> за каждый день месяца.
+        Товар уехал — со следующего дня за него не начисляется. Привезли — начисление идёт с дня приёмки.
+      </div>
+    </div>
+    <div class="panel glass tilt invoice">
+      <div class="inv-head">
+        <div>
+          <h3>Счёт за июль</h3>
+          <div class="psub" id="inv-period">01.07 — 31.07.2026 · <span id="inv-state"></span></div>
+        </div>
+        <div class="inv-total">
+          <b id="inv-total-val">—</b>
+          <span>к оплате, ₽</span>
+        </div>
+      </div>
+      <div class="inv-lines" id="invLines"></div>
+      <div class="inv-sum">
+        <span>Итого за июль</span>
+        <b id="inv-sum-val">—</b>
+      </div>
+      <div class="note">Приложение к счёту — расшифровка по дням и список операций.
+        Выгрузка в Excel и PDF, подписанный акт возвращается в кабинет.</div>
+    </div>
+  </div>
+
+  <!-- ── мой товар ── -->
+  <div class="sec-title">
+    <h2>Мой товар на складе</h2>
+    <span>что лежит, сколько занимает и где продаётся</span>
+  </div>
+  <div class="panel glass">
+    <h3>Остатки по артикулам</h3>
+    <div class="psub">«Доступно» — то, что можно продавать: остаток минус резерв под собранные заказы.
+      Продажа на любой площадке уменьшает доступное количество на всех остальных.</div>
+    <div class="tbl-wrap">
+      <table class="tbl" id="skuTbl">
+        <thead>
+          <tr>
+            <th>Артикул / товар</th>
+            <th class="num">На складе, шт</th>
+            <th class="num">Резерв</th>
+            <th class="num">Доступно</th>
+            <th class="num">Объём, л</th>
+            <th class="num">Дней на складе</th>
+            <th>Площадки</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot></tfoot>
+      </table>
+    </div>
+    <div class="note">Товар без движения свыше 90 дней тарифицируется с повышающим коэффициентом по договору —
+      такие позиции помечены. Это сигнал вывезти или распродать.</div>
+  </div>
+
+  <!-- ── заказы и приёмки ── -->
+  <div class="sec-title">
+    <h2>Заказы и приёмки</h2>
+    <span>что уехало покупателям и что приняли от меня</span>
+  </div>
+  <div class="cols-2">
+    <div class="panel glass tilt">
+      <h3>Мои FBS-заказы за июль</h3>
+      <div class="psub">Сборка на нашем складе, отправка со склада напрямую покупателю</div>
+      <div class="status-strip" style="grid-template-columns:repeat(2,1fr)">
+        <div class="status glass">
+          <div class="status-label">Отправлено</div>
+          <div class="status-val" id="o-sent">—</div>
+          <div class="status-sub">за июль</div>
+        </div>
+        <div class="status glass">
+          <div class="status-label">В сборке сейчас</div>
+          <div class="status-val warn" id="o-pick">—</div>
+          <div class="status-sub">срок сборки до 3 часов</div>
+        </div>
+        <div class="status glass">
+          <div class="status-label">Собрано в срок</div>
+          <div class="status-val good" id="o-sla">—</div>
+          <div class="status-sub">SLA по договору — 98%</div>
+        </div>
+        <div class="status glass">
+          <div class="status-label">Возвраты</div>
+          <div class="status-val" id="o-ret">—</div>
+          <div class="status-sub">принято и возвращено на полку</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel glass tilt">
+      <h3>Приёмки моих поставок</h3>
+      <div class="psub">Заявлено против фактически принятого. Расхождения фиксируются актом сразу при приёмке.</div>
+      <div class="tbl-wrap">
+        <table class="tbl" id="recTbl">
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th class="num">Заявлено</th>
+              <th class="num">Принято</th>
+              <th class="num">Объём, л</th>
+              <th>Результат</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── детализация по дням ── -->
+  <div class="sec-title">
+    <h2>Расшифровка начисления по дням</h2>
+    <span>приложение к счёту — считать можно самому</span>
+  </div>
+  <div class="panel glass">
+    <div class="tbl-wrap tbl-scroll">
+      <table class="tbl" id="dailyTbl">
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th class="num">Приход, л</th>
+            <th class="num">Отгрузка, л</th>
+            <th class="num">Остаток на конец дня, л</th>
+            <th class="num">Ставка, ₽/л·дн</th>
+            <th class="num">Начислено за день, ₽</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── важное для клиента ── -->
+  <div class="sec-title">
+    <h2>Важное по моему товару</h2>
+    <span>то, что влияет на деньги и продажи</span>
+  </div>
+  <div class="panel glass tilt">
+    <div class="alerts" id="alerts"></div>
+  </div>
+
+  <div class="footer glass">
+    <div class="footer-brand">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+      <div class="footer-div"></div>
+      <span><b>MS Product</b> · системная автоматизация</span>
+    </div>
+    <div class="footer-meta">
+      Прототип. Данные демонстрационные.<br>
+      Клиент видит только свой товар и свои документы.
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   ДАННЫЕ ПРОТОТИПА (согласованы с панелью руководителя)
+   ============================================================================ */
+const CLIENTS = [
+  { id:'sev', name:'ТД «Северный»', contract:'№ 14-Ф от 12.02.2026', sku:142, units:18400, volNow:42300,
+    rate:.038, invState:'Выставлен 31.07', invCls:'warn',
+    ops:[ {n:'Приёмка поставок', d:'4 поставки · 1 240 шт', v:9800},
+          {n:'Сборка FBS-заказов', d:'612 заказов × 28,4 ₽', v:17381},
+          {n:'Упаковка и маркировка', d:'по факту, 612 отправлений', v:1219} ],
+    orders:{ sent:612, pick:23, sla:'99,3%', ret:14 } },
+  { id:'avr', name:'«Аврора»', contract:'№ 09-Ф от 20.01.2026', sku:96, units:12250, volNow:31800,
+    rate:.040, invState:'Оплачен 29.07', invCls:'ok',
+    ops:[ {n:'Приёмка поставок', d:'3 поставки · 980 шт', v:7400},
+          {n:'Сборка FBS-заказов', d:'438 заказов × 28,4 ₽', v:12439},
+          {n:'Упаковка и маркировка', d:'по факту, 438 отправлений', v:2061} ],
+    orders:{ sent:438, pick:11, sla:'99,1%', ret:9 } },
+  { id:'kuz', name:'ИП Кузнецов', contract:'№ 21-Ф от 03.04.2026', sku:38, units:4180, volNow:18600,
+    rate:.045, invState:'Выставлен 31.07', invCls:'warn',
+    ops:[ {n:'Приёмка поставок', d:'1 поставка · 320 шт', v:2600},
+          {n:'Сборка FBS-заказов', d:'392 заказа × 28,4 ₽', v:11133},
+          {n:'Хранение свыше 90 дней', d:'5 600 л · коэффициент 1,6', v:467} ],
+    orders:{ sent:392, pick:0, sla:'98,4%', ret:21 } },
+];
+
+const SHAPE = [.937,.945,.952,.961,.958,.949,.955,.968,.976,.985,.979,.971,.983,.996,1.004,
+               1.012,1.006,.998,1.011,1.023,1.031,1.028,1.019,1.033,1.045,1.052,1.047,1.038,1.051,1.063,1.0704];
+const MONTH = '07', YEAR = '2026', DAYS = SHAPE.length;
+
+const SKU_BY_CLIENT = {
+  sev:[
+    { art:'10143', name:'Пистолет для полива, 7 режимов', wh:1840, res:260, vol:5520, days:34,  ch:['Ozon','WB'],        st:'ok'   },
+    { art:'10107', name:'Штуцерный адаптер 1/2 латунь',   wh:3200, res:410, vol:4800, days:21,  ch:['Ozon','WB','ЯМ'],   st:'ok'   },
+    { art:'10118', name:'Шланг armored 1/2, 25 м',        wh:640,  res:70,  vol:9600, days:12,  ch:['Ozon'],             st:'ok'   },
+    { art:'10151', name:'Опрыскиватель садовый 5 л',      wh:410,  res:35,  vol:6150, days:47,  ch:['Ozon','WB'],        st:'ok'   },
+    { art:'10166', name:'Набор садовых перчаток, 12 пар', wh:980,  res:120, vol:2940, days:96,  ch:['WB'],               st:'long' },
+    { art:'10172', name:'Мойка ручная, аксессуары',       wh:220,  res:0,   vol:3300, days:8,   ch:[],                   st:'new'  },
+  ],
+  avr:[
+    { art:'10180', name:'Щётка УШМ 65 мм латунная',       wh:640,  res:90,  vol:1920, days:29,  ch:['Ozon','WB','ЯМ'],   st:'ok'   },
+    { art:'10181', name:'Щётка УШМ 65 мм стальная',       wh:820,  res:110, vol:2460, days:26,  ch:['Ozon','WB'],        st:'ok'   },
+    { art:'10195', name:'Диск отрезной 125 мм, 10 шт',    wh:1450, res:180, vol:4350, days:15,  ch:['Ozon'],             st:'ok'   },
+    { art:'10203', name:'Перчатки нитрил, 100 шт',        wh:2100, res:240, vol:8400, days:104, ch:['WB'],               st:'long' },
+  ],
+  kuz:[
+    { art:'10248', name:'Мойка высокого давления, шланг', wh:210,  res:35,  vol:4200, days:62,  ch:['Ozon'],             st:'risk' },
+    { art:'10251', name:'Насадка-турбо для мойки',        wh:340,  res:40,  vol:2040, days:58,  ch:['Ozon','WB'],        st:'ok'   },
+    { art:'10260', name:'Комплект фильтров, 4 шт',        wh:180,  res:0,   vol:1080, days:112, ch:[],                   st:'long' },
+  ],
+};
+
+const RECEIPTS_BY_CLIENT = {
+  sev:[
+    { d:'04.07.2026', dec:420, acc:420, vol:6300, res:'ok'   },
+    { d:'11.07.2026', dec:280, acc:274, vol:4110, res:'diff' },
+    { d:'19.07.2026', dec:340, acc:340, vol:5100, res:'ok'   },
+    { d:'26.07.2026', dec:200, acc:200, vol:3000, res:'ok'   },
+  ],
+  avr:[
+    { d:'06.07.2026', dec:360, acc:360, vol:5400, res:'ok'   },
+    { d:'17.07.2026', dec:300, acc:288, vol:4320, res:'diff' },
+    { d:'28.07.2026', dec:320, acc:320, vol:4800, res:'ok'   },
+  ],
+  kuz:[
+    { d:'09.07.2026', dec:320, acc:320, vol:4800, res:'ok'   },
+  ],
+};
+
+const ALERTS_BY_CLIENT = {
+  sev:[
+    { ic:'⏱', t:'Товар без движения 96 дней', d:'Артикул 10166 «Набор садовых перчаток» — 980 шт, 2 940 л. С 90-го дня действует коэффициент долгого хранения.', m:'2 940 л' },
+    { ic:'▲', t:'Объём близок к лимиту договора', d:'Лимит 45 000 л, сейчас 42 300 л. При превышении применяется ставка сверх лимита.', m:'94% лимита' },
+    { ic:'≡', t:'Товар принят, но не выставлен на площадки', d:'Артикул 10172 — 220 шт лежит на складе и не продаётся ни на одной площадке.', m:'220 шт' },
+    { ic:'✓', t:'Расхождение по приёмке 11.07 закрыто', d:'Заявлено 280, принято 274. Акт расхождения подписан, 6 шт списаны на поставщика.', m:'−6 шт' },
+  ],
+  avr:[
+    { ic:'⏱', t:'Товар без движения 104 дня', d:'Артикул 10203 «Перчатки нитрил» — 2 100 шт, 8 400 л. Действует коэффициент долгого хранения.', m:'8 400 л' },
+    { ic:'▲', t:'Превышен лимит объёма', d:'Лимит по договору 30 000 л, фактически 31 800 л. Согласовать новый лимит или вывезти часть товара.', m:'+1 800 л' },
+    { ic:'✓', t:'Счёт за июль оплачен', d:'Оплата поступила 29.07, акт подписан.', m:'29.07' },
+  ],
+  kuz:[
+    { ic:'≠', t:'Риск продать то, чего нет', d:'Артикул 10248: на площадках выставлено больше, чем доступно на складе. Сток будет выровнен при следующей выгрузке.', m:'−40 шт' },
+    { ic:'—', t:'Нет движения по складу 12 дней', d:'Ни приёмок, ни отгрузок с 19.07. Хранение начисляется, товар занимает зону А.', m:'12 дн' },
+    { ic:'⏱', t:'Долгое хранение', d:'5 600 л лежит свыше 90 дней — в счёте отдельной строкой с коэффициентом 1,6.', m:'5 600 л' },
+  ],
+};
+
+/* ============================================================================
+   ХЕЛПЕРЫ
+   ============================================================================ */
+const fmt  = n => Math.round(n).toLocaleString('ru-RU');
+const fmt2 = n => n.toLocaleString('ru-RU',{minimumFractionDigits:3,maximumFractionDigits:3});
+const dateOf = i => String(i+1).padStart(2,'0') + '.' + MONTH + '.' + YEAR;
+
+let dayVol = [], dayFlow = [], CUR = null;
+
+function computeDays(c){
+  const last = SHAPE[DAYS-1];
+  dayVol = SHAPE.map(v => Math.round(v / last * c.volNow));
+  dayFlow = dayVol.map((v,i)=>{
+    const prev = i === 0 ? Math.round(v * .985) : dayVol[i-1];
+    const out  = Math.round((860 + ((i*307) % 790)) * (c.volNow/42300));
+    const inc  = out + (v - prev);
+    return { in: Math.max(inc,0), out, };
+  });
+}
+
+/* ============================================================================
+   РЕНДЕР
+   ============================================================================ */
+function render(id){
+  const c = CUR = CLIENTS.find(x=>x.id===id);
+  computeDays(c);
+
+  const literDays = dayVol.reduce((s,v)=>s+v,0);
+  const storage   = Math.round(literDays * c.rate);
+  const opsSum    = c.ops.reduce((s,o)=>s+o.v,0);
+  const total     = storage + opsSum;
+
+  /* шапка + KPI */
+  document.getElementById('h-title').textContent    = 'Мой товар на складе — ' + c.name;
+  document.getElementById('h-contract').textContent = c.contract;
+  document.getElementById('c-vol').innerHTML   = fmt(c.volNow) + ' <small>л</small>';
+  document.getElementById('c-units').textContent = fmt(c.units);
+  document.getElementById('c-sku').textContent   = c.sku;
+  document.getElementById('c-ld').textContent    = fmt(literDays);
+  document.getElementById('c-store').innerHTML   = fmt(storage) + ' <small>₽</small>';
+  document.getElementById('c-rate').textContent  = fmt2(c.rate);
+  document.getElementById('c-orders').textContent = fmt(c.orders.sent);
+  document.getElementById('c-total').innerHTML   = fmt(total) + ' <small>₽</small>';
+  document.getElementById('c-forecast').textContent = fmt(total);
+
+  /* счёт */
+  document.getElementById('inv-state').innerHTML =
+    `<span class="badge ${c.invCls}"><i></i>${c.invState}</span>`;
+  document.getElementById('inv-total-val').textContent = fmt(total);
+  document.getElementById('inv-sum-val').textContent   = fmt(total) + ' ₽';
+  document.getElementById('invLines').innerHTML = [
+    { n:'Хранение', d:`${fmt(literDays)} литро-дней × ${fmt2(c.rate)} ₽`, v:storage },
+    ...c.ops
+  ].map(l=>`
+    <div class="inv-line">
+      <div class="l-name">${l.n}<span>${l.d}</span></div>
+      <div class="l-val">${fmt(l.v)} ₽</div>
+    </div>`).join('');
+
+  /* заказы */
+  document.getElementById('o-sent').textContent = fmt(c.orders.sent);
+  document.getElementById('o-pick').textContent = c.orders.pick || '0';
+  document.getElementById('o-sla').textContent  = c.orders.sla;
+  document.getElementById('o-ret').textContent  = c.orders.ret;
+
+  drawChart(c);
+  skuTable(c);
+  recTable(c);
+  dailyTable(c);
+  alerts(c);
+}
+
+/* ── график ── */
+function drawChart(c){
+  const svg = document.getElementById('chart');
+  const W = 1000, H = 240, padT = 18, padB = 26, padL = 6, padR = 6;
+  const plotH = H - padT - padB, plotW = W - padL - padR;
+  const maxVol = Math.max(...dayVol) * 1.06, minVol = Math.min(...dayVol) * .90;
+  const maxFlow = Math.max(...dayFlow.map(f=>f.in+f.out)) || 1;
+  const x = i => padL + (i + .5) * (plotW / DAYS);
+  const yVol = v => padT + plotH - (v - minVol) / (maxVol - minVol) * plotH;
+
+  let g = `<defs><linearGradient id="volGrad" x1="0" y1="0" x2="0" y2="1">
+             <stop offset="0%" stop-color="rgba(255,255,255,.16)"/>
+             <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+           </linearGradient></defs>`;
+  for (let k=0;k<=3;k++){
+    const y = padT + plotH * k/3;
+    g += `<line class="grid-line" x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}"/>`;
+  }
+  const bw = plotW / DAYS * .52;
+  dayFlow.forEach((f,i)=>{
+    const h = (f.in + f.out) / maxFlow * plotH * .42;
+    g += `<rect class="bar" data-i="${i}" x="${(x(i)-bw/2).toFixed(1)}" y="${(padT+plotH-h).toFixed(1)}"
+           width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2"/>`;
+  });
+  const pts = dayVol.map((v,i)=>`${x(i).toFixed(1)},${yVol(v).toFixed(1)}`);
+  g += `<path class="area" d="M${padL},${padT+plotH} L${pts.join(' L')} L${W-padR},${padT+plotH} Z"/>`;
+  g += `<polyline class="line" points="${pts.join(' ')}"/>`;
+  [0,4,9,14,19,24,DAYS-1].forEach(i=>{
+    g += `<text class="axis-lbl" x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle">${i+1}</text>`;
+  });
+  svg.innerHTML = g;
+
+  const box = document.getElementById('chartBox'), tip = document.getElementById('chartTip');
+  svg.onpointermove = e => {
+    const r = box.getBoundingClientRect();
+    const i = Math.min(DAYS-1, Math.max(0, Math.floor((e.clientX - r.left) / r.width * DAYS)));
+    svg.querySelectorAll('.bar').forEach(b=>b.classList.toggle('is-hot', +b.dataset.i === i));
+    const f = dayFlow[i];
+    tip.innerHTML = `<b>${dateOf(i)}</b> — остаток <b>${fmt(dayVol[i])} л</b>
+      <i>приход ${fmt(f.in)} л · отгрузка ${fmt(f.out)} л</i>
+      <i>начислено за день ${fmt(dayVol[i]*c.rate)} ₽</i>`;
+    tip.style.left = ((i + .5) / DAYS * 100) + '%';
+    tip.style.top  = '38px';
+    tip.classList.add('is-on');
+  };
+  svg.onpointerleave = () => {
+    tip.classList.remove('is-on');
+    svg.querySelectorAll('.bar').forEach(b=>b.classList.remove('is-hot'));
+  };
+}
+
+/* ── мои артикулы ── */
+function skuTable(c){
+  const ST = {
+    ok:   ['ok','В продаже'],
+    long: ['warn','Долгое хранение'],
+    risk: ['bad','Расхождение стока'],
+    new:  ['neutral','Не выставлен'],
+  };
+  const rows = SKU_BY_CLIENT[c.id];
+  document.querySelector('#skuTbl tbody').innerHTML = rows.map(s=>{
+    const [cls,txt] = ST[s.st];
+    return `<tr>
+      <td class="name">${s.art}<span class="sub">${s.name}</span></td>
+      <td class="num">${fmt(s.wh)}</td>
+      <td class="num">${s.res ? fmt(s.res) : '—'}</td>
+      <td class="num">${fmt(s.wh - s.res)}</td>
+      <td class="num">${fmt(s.vol)}</td>
+      <td class="num" ${s.days>90?'style="color:var(--amber)"':''}>${s.days}</td>
+      <td>${s.ch.length ? s.ch.join(' · ') : '<span style="color:var(--mute-2)">нет</span>'}</td>
+      <td><span class="badge ${cls}"><i></i>${txt}</span></td>
+    </tr>`;
+  }).join('');
+  const sum = f => rows.reduce((s,r)=>s+r[f],0);
+  document.querySelector('#skuTbl tfoot').innerHTML = `
+    <tr>
+      <td>Итого · ${rows.length} из ${c.sku} SKU</td>
+      <td class="num">${fmt(sum('wh'))}</td>
+      <td class="num">${fmt(sum('res'))}</td>
+      <td class="num">${fmt(sum('wh')-sum('res'))}</td>
+      <td class="num">${fmt(sum('vol'))}</td>
+      <td class="num"></td><td></td><td></td>
+    </tr>`;
+}
+
+/* ── приёмки ── */
+function recTable(c){
+  document.querySelector('#recTbl tbody').innerHTML = RECEIPTS_BY_CLIENT[c.id].map(r=>{
+    const diff = r.acc - r.dec;
+    return `<tr>
+      <td>${r.d}</td>
+      <td class="num">${fmt(r.dec)}</td>
+      <td class="num">${fmt(r.acc)}</td>
+      <td class="num">${fmt(r.vol)}</td>
+      <td>${diff === 0
+            ? '<span class="badge ok"><i></i>Без расхождений</span>'
+            : `<span class="badge bad"><i></i>Расхождение ${diff} шт · акт</span>`}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── детализация по дням ── */
+function dailyTable(c){
+  let sIn=0,sOut=0,sVol=0,sRub=0;
+  document.querySelector('#dailyTbl tbody').innerHTML = dayVol.map((v,i)=>{
+    const f = dayFlow[i], rub = v * c.rate;
+    sIn+=f.in; sOut+=f.out; sVol+=v; sRub+=rub;
+    return `<tr>
+      <td>${dateOf(i)}</td>
+      <td class="num">${f.in ? fmt(f.in) : '—'}</td>
+      <td class="num">${f.out ? fmt(f.out) : '—'}</td>
+      <td class="num">${fmt(v)}</td>
+      <td class="num">${fmt2(c.rate)}</td>
+      <td class="num money">${fmt(rub)}</td>
+    </tr>`;
+  }).join('');
+  document.querySelector('#dailyTbl tfoot').innerHTML = `
+    <tr>
+      <td>Итого за июль</td>
+      <td class="num">${fmt(sIn)}</td>
+      <td class="num">${fmt(sOut)}</td>
+      <td class="num">${fmt(sVol)} <span class="sub">литро-дни</span></td>
+      <td class="num">${fmt2(c.rate)}</td>
+      <td class="num money gold">${fmt(sRub)}</td>
+    </tr>`;
+}
+
+/* ── важное ── */
+function alerts(c){
+  document.getElementById('alerts').innerHTML = ALERTS_BY_CLIENT[c.id].map(a=>`
+    <div class="alert-row">
+      <div class="alert-ic">${a.ic}</div>
+      <div class="alert-body"><b>${a.t}</b><span>${a.d}</span></div>
+      <div class="alert-meta">${a.m}</div>
+    </div>`).join('');
+}
+
+/* ============================================================================
+   СТАРТ
+   ============================================================================ */
+const who = document.getElementById('whoSel');
+who.innerHTML = CLIENTS.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+who.addEventListener('change', ()=>render(who.value));
+render(CLIENTS[0].id);
+
+/* ── 3D-tilt ── */
+(function(){
+  let active = null;
+  const reset = el => {
+    el.style.setProperty('--rx','0deg'); el.style.setProperty('--ry','0deg');
+    el.style.setProperty('--ty','0px'); el.classList.remove('tilt-active');
+  };
+  document.addEventListener('pointermove', e=>{
+    const card = e.target.closest('.tilt');
+    if(!card){ if(active){ reset(active); active=null; } return; }
+    if(card !== active){ if(active) reset(active); active=card; card.classList.add('tilt-active'); }
+    const r = card.getBoundingClientRect();
+    const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
+    card.style.setProperty('--rx', ((px-0.5)*6).toFixed(2)+'deg');
+    card.style.setProperty('--ry', ((0.5-py)*6).toFixed(2)+'deg');
+    card.style.setProperty('--ty','-3px');
+    card.style.setProperty('--mx',(px*100).toFixed(1)+'%');
+    card.style.setProperty('--my',(py*100).toFixed(1)+'%');
+  });
+  document.addEventListener('pointerleave', ()=>{ if(active){ reset(active); active=null; } });
+})();
+</script>
+</body>
+</html>

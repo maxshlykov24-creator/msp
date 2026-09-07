@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Billboardoff · Предложение MS Product (моб.)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#000000;
+    --card:#1C1C1E;
+    --card-2:#2C2C2E;
+    --ink:#F5F5F7;
+    --body:#A1A1A6;
+    --mute:#6E6E73;
+    --line:rgba(255,255,255,.08);
+    --a1:#5B7CDE;
+    --a2:#8AA4F0;
+    --font:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  html,body{height:auto;min-height:100%}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--font);
+    overflow:visible !important; -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(700px 480px at 90% -8%, rgba(74,101,177,.32), transparent 55%),
+      radial-gradient(520px 420px at -10% 40%, rgba(91,124,222,.10), transparent 50%);
+    background-attachment:fixed;
+  }
+
+  .progress{
+    position:fixed;top:0;left:0;height:3px;z-index:40;
+    background:linear-gradient(90deg,var(--a1),var(--a2));
+    width:0;transition:width .25s ease;
+  }
+
+  .deck{width:100%;max-width:560px;margin:0 auto;position:relative;padding-bottom:28px}
+  .slide{
+    display:flex;flex-direction:column;justify-content:flex-start;
+    padding:48px 20px 36px;
+    border-bottom:1px solid rgba(255,255,255,.06);
+    min-height:auto;
+  }
+  .slide:last-of-type{border-bottom:none;padding-bottom:20px}
+
+  .kicker{
+    font-weight:600;letter-spacing:.04em;
+    font-size:13px;margin-bottom:14px;color:var(--a2);
+  }
+  h1{
+    font-size:clamp(24px,6.4vw,36px);font-weight:800;
+    line-height:1.12;letter-spacing:-.04em;
+  }
+  h1 .grad{white-space:nowrap}
+  h2{
+    font-size:clamp(24px,6.6vw,32px);font-weight:800;
+    line-height:1.1;letter-spacing:-.035em;margin-bottom:6px;
+  }
+  .lead{
+    font-size:16px;color:var(--body);line-height:1.5;
+    margin-top:16px;font-weight:500;
+  }
+  .grad{
+    background:linear-gradient(105deg,#F5F5F7 0%, var(--a2) 55%, var(--a1) 100%);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  }
+  .dot,.grad .dot{
+    color:var(--a2) !important;
+    -webkit-text-fill-color:var(--a2) !important;
+    background:none !important;
+  }
+  .note{font-size:13px;color:var(--mute);margin-top:16px;font-weight:500;line-height:1.4}
+
+  .brand-row{
+    display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:10px;margin-bottom:28px;text-align:center;
+  }
+  .logo-wrap img{height:42px;width:auto}
+  .brand-meta{display:flex;align-items:center;gap:10px}
+  .brand-meta .x{
+    font-family:var(--font-mono);font-size:11px;letter-spacing:.2em;
+    color:var(--mute);font-weight:600;
+  }
+  .brand-meta .ms{font-size:14px;font-weight:600;color:var(--body);letter-spacing:.04em}
+
+  .grid{display:grid;gap:12px;margin-top:22px;grid-template-columns:1fr}
+  .card,.anchor,.phase,.bonus,.step,.mock{
+    background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;
+  }
+  .card.hero,.phase.hl,.bonus.hero{
+    border-color:rgba(91,124,222,.35);
+    background:linear-gradient(165deg,#252830 0%,#1C1C1E 100%);
+  }
+  .card .num,.phase-num,.step .n,.anchor .n{
+    font-family:var(--font-mono);font-size:11px;font-weight:600;
+    letter-spacing:.1em;color:var(--a2);margin-bottom:10px;
+  }
+  .card h3,.phase-title,.bonus .bh{
+    font-weight:700;font-size:20px;letter-spacing:-.03em;line-height:1.2;margin-bottom:8px;
+  }
+  .card p,.bonus .bv{color:var(--body);font-size:14.5px;line-height:1.45;font-weight:500}
+  .bonus.hero .bh{color:var(--a2)}
+
+  .anchor{display:flex;gap:14px;align-items:flex-start}
+  .anchor .n{margin-bottom:0;padding-top:3px;flex-shrink:0}
+  .anchor b{display:block;font-size:17px;font-weight:700;letter-spacing:-.02em;line-height:1.25}
+  .anchor span{display:block;margin-top:5px;font-size:14px;color:var(--body);line-height:1.4;font-weight:500}
+
+  .flow{display:flex;flex-direction:column;gap:8px;margin-top:22px}
+  .flow .step{min-height:auto;padding:16px}
+  .flow .step b{display:block;font-size:16px;font-weight:700;margin-bottom:4px;letter-spacing:-.02em}
+  .flow .step span{font-size:13px;color:var(--mute);font-weight:500}
+  .flow .arr{
+    align-self:center;color:var(--a2);font-size:18px;font-weight:700;
+    transform:rotate(90deg);margin:-2px 0;opacity:.7;
+  }
+
+  .phase-dod{list-style:none;margin:6px 0 0}
+  .phase-dod li{font-size:14px;color:var(--body);line-height:1.45;padding:4px 0;font-weight:500}
+  .phase-pay{padding-top:14px;border-top:1px solid var(--line);margin-top:12px}
+  .phase-pay .lbl{font-size:12px;color:var(--mute);margin-bottom:4px;font-weight:600}
+  .phase-pay .amt{font-size:24px;font-weight:800;color:var(--mute);letter-spacing:-.03em}
+
+  .checks-short{list-style:none;margin-top:22px;display:grid;gap:16px}
+  .checks-short li{
+    display:flex;gap:12px;font-size:17px;align-items:flex-start;
+    line-height:1.3;font-weight:700;letter-spacing:-.02em;
+  }
+  .checks-short li::before{
+    content:attr(data-n);flex:0 0 auto;
+    font-family:var(--font-mono);font-size:12px;font-weight:600;
+    color:var(--a2);letter-spacing:.06em;width:2em;padding-top:3px;
+  }
+
+  .mock .mh{
+    font-family:var(--font-mono);font-size:11px;font-weight:600;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--a2);margin-bottom:12px;
+  }
+  .mock .mrow{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:12px 0;border-bottom:1px solid var(--line);
+    font-size:15px;font-weight:600;
+  }
+  .mock .mrow:last-child{border-bottom:none}
+  .mock .tag{
+    font-family:var(--font-mono);font-size:10px;font-weight:600;
+    padding:4px 10px;border-radius:980px;background:var(--card-2);color:var(--ink);
+    letter-spacing:.04em;text-transform:uppercase;
+  }
+  .mock .tag.ok{background:rgba(52,199,89,.18);color:#30D158}
+  .mock .tag.wait{background:rgba(91,124,222,.22);color:var(--a2)}
+
+  .badge-opt{
+    display:inline-block;font-size:11px;font-weight:600;
+    letter-spacing:.04em;padding:7px 12px;border-radius:980px;
+    border:1px solid rgba(91,124,222,.35);color:var(--a2);margin:22px 0 10px;
+    background:rgba(91,124,222,.1);
+  }
+  .opt-line{
+    font-weight:700;font-size:20px;letter-spacing:-.03em;line-height:1.25;color:var(--ink);
+  }
+  .opt-sub{margin-top:8px;font-size:14px;color:var(--mute);font-weight:500;line-height:1.4}
+
+  .dash-proto{
+    margin-top:16px;width:100%;
+    background:linear-gradient(165deg,#1A1A1E 0%,#121214 100%);
+    border:1px solid var(--line);border-radius:18px;overflow:hidden;
+  }
+  .dash-bar{
+    display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    padding:12px 14px;border-bottom:1px solid var(--line);
+  }
+  .dash-bar .title{font-size:13px;font-weight:700}
+  .dash-bar .title small{display:block;font-size:10px;font-weight:500;color:var(--mute);margin-top:2px}
+  .dash-live{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#30D158}
+  .dash-live i{width:6px;height:6px;border-radius:50%;background:#30D158;display:block}
+  .dash-period{display:flex;gap:3px;padding:2px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid var(--line)}
+  .dash-period span{font-size:10px;font-weight:600;padding:4px 8px;border-radius:6px;color:var(--mute)}
+  .dash-period span.on{background:rgba(255,255,255,.92);color:#0a0a0c}
+  .dash-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+  .dash-kpi{
+    background:rgba(255,255,255,.03);border:1px solid var(--line);
+    border-radius:14px;padding:12px;
+  }
+  .dash-kpi.hl{border-color:rgba(91,124,222,.35);background:linear-gradient(160deg,rgba(91,124,222,.14),rgba(255,255,255,.02))}
+  .dash-kpi .lbl{font-size:10px;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;min-height:2.4em}
+  .dash-kpi .val{font-size:20px;font-weight:800;letter-spacing:-.03em}
+  .dash-kpi .delta{margin-top:5px;font-size:11px;font-weight:600;color:#30D158}
+  .dash-kpi .delta.down{color:#FF453A}
+  .dash-bottom{display:grid;grid-template-columns:1fr;gap:8px;padding:0 12px 12px}
+  .dash-panel{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .dash-panel .ph{font-size:11px;font-weight:600;color:var(--a2);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
+  .dash-panel .row{
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    padding:7px 0;border-bottom:1px solid var(--line);
+    font-size:13px;font-weight:500;color:var(--body);
+  }
+  .dash-panel .row:last-child{border-bottom:none}
+  .dash-panel .row b{color:var(--ink);font-weight:700;font-size:13px}
+  .dash-pill{
+    font-family:var(--font-mono);font-size:10px;font-weight:600;
+    padding:3px 8px;border-radius:980px;
+  }
+  .dash-pill.warn{background:rgba(255,159,10,.15);color:#FF9F0A}
+  .dash-pill.ok{background:rgba(52,199,89,.15);color:#30D158}
+  .dash-pill.bad{background:rgba(255,69,58,.15);color:#FF453A}
+  .dash-pill.info{background:rgba(91,124,222,.18);color:var(--a2)}
+
+  .cost-table{
+    margin-top:20px;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--card);
+  }
+  .cost-row{
+    display:grid;grid-template-columns:1.1fr .55fr 1.1fr;gap:8px;
+    padding:14px 14px;border-bottom:1px solid var(--line);
+    font-size:13px;align-items:start;font-weight:600;
+  }
+  .cost-row:last-child{border-bottom:none}
+  .cost-row.head{
+    background:rgba(255,255,255,.03);
+    font-family:var(--font-mono);font-weight:600;color:var(--mute);
+    font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:11px 14px;
+  }
+  .cost-row span:nth-child(2){color:var(--mute);font-weight:500}
+  .cost-row span:nth-child(3){color:var(--body);font-weight:500}
+
+  .ms-badge{
+    display:flex;align-items:center;justify-content:center;gap:12px;
+    margin:8px auto 36px;padding:0 20px;
+  }
+  .ms-badge img{height:36px;width:auto}
+  .ms-badge .ms-name{
+    font-size:13px;font-weight:600;letter-spacing:.2em;
+    text-transform:uppercase;color:#FFFFFF;
+  }
+
+  .reveal .stag{opacity:0;transform:translateY(16px);transition:opacity .5s ease,transform .5s ease}
+  .reveal .stag.in{opacity:1;transform:none}
+
+  @media print{
+    .progress{display:none}
+    body{background:#000}
+    .slide{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck" id="deck">
+
+  <!-- 1 COVER -->
+  <section class="slide">
+    <div class="brand-row stag">
+      <div class="logo-wrap">
+        <img src="assets/logo-billboardoff-white.png" alt="Billboardoff">
+      </div>
+      <div class="brand-meta">
+        <span class="x">×</span>
+        <span class="ms">MS Product</span>
+      </div>
+    </div>
+    <h1 class="stag">Единое окно контроля<span class="dot">.</span><br><span class="grad">Система, которая выдержит рост&nbsp;и&nbsp;время<span class="dot">.</span></span></h1>
+    <p class="lead stag">Каждый сотрудник знает следующий шаг. Вы держите руку на пульсе.<br>CRM упрощает работу. Контроль и автоматизация через свой личный сервер.</p>
+  </section>
+
+  <!-- 2 PROBLEM -->
+  <section class="slide">
+    <div class="kicker">Что мешает</div>
+    <h2 class="stag">CRM есть<span class="dot">.</span><br>Контроля нет<span class="dot">.</span></h2>
+    <div class="grid">
+      <div class="card hero stag">
+        <div class="num">01</div>
+        <h3>Нет контроля</h3>
+        <p>Переписка и звонки не в одном месте. О проблемах узнаёте от клиентов.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">02</div>
+        <h3>CRM не живёт</h3>
+        <p>Стабильно не ведут. Работают в таблицах и блокнотах.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">03</div>
+        <h3>Новички ведут вслепую</h3>
+        <p>Не понимают контекст по каждому. Постоянных клиентов ведут без истории и должного контроля.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">04</div>
+        <h3>Этапы двигают галочки</h3>
+        <p>Чек-лист проставили — сделка уехала. Оплата, макет, монтаж — без доказательства.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2b AS-IS -->
+  <section class="slide">
+    <div class="kicker">Как сейчас</div>
+    <h2 class="stag">Воронка «Сопровождение»<span class="dot">.</span><br>Где рвётся<span class="dot">.</span></h2>
+    <div class="flow" style="margin-top:20px">
+      <div class="step stag"><div class="n">01</div><b>Новое продление</b><span>сделка создаётся</span></div>
+      <div class="arr">→</div>
+      <div class="step stag"><div class="n">02</div><b>Выставлен счёт</b><span>в 1С — задача-напоминание, не факт</span></div>
+      <div class="arr">→</div>
+      <div class="step stag"><div class="n">03</div><b>Проверка сделки</b><span>чек-лист F5 — галочка, не проверка</span></div>
+      <div class="arr">→</div>
+      <div class="step stag"><div class="n">04</div><b>Макет → печать → монтаж</b><span>переписка и звонки — вне карточки</span></div>
+    </div>
+    <div class="grid" style="margin-top:22px">
+      <div class="anchor stag"><span class="n">01</span><div><b>Оплата не связана с фактом</b><span>Банк и 1С не подключены — узнаёте со скрина, не из карточки</span></div></div>
+      <div class="anchor stag"><span class="n">02</span><div><b>Чек-листы — тыкали вперёд</b><span>Переход этапа = галочка виджета, не факт (нет оплаты/фото/письма — переход всё равно возможен)</span></div></div>
+      <div class="anchor stag"><span class="n">03</span><div><b>Переписка и звонки вне карточки</b><span>Max и звонки живут отдельно от amo — о проблеме узнаёте от клиента</span></div></div>
+      <div class="anchor stag"><span class="n">04</span><div><b>Круг продления опасен без контроля</b><span>Автосоздание сделки на монтаже плодит мусор, если CRM не ведут</span></div></div>
+    </div>
+  </section>
+
+  <!-- 3 GOALS -->
+  <section class="slide">
+    <div class="kicker">Куда идём</div>
+    <h2 class="stag">Четыре результата проекта<span class="dot">.</span></h2>
+    <div class="grid">
+      <div class="anchor stag"><span class="n">01</span><div><b>Всё в одной карточке</b><span>Max, звонки, почта · заявки с сайта сразу в amo</span></div></div>
+      <div class="anchor stag"><span class="n">02</span><div><b>Продление как процесс</b><span>У сделки всегда есть следующий шаг</span></div></div>
+      <div class="anchor stag"><span class="n">03</span><div><b>Напоминания без потерь</b><span>Своевременное подключение руководителя · контроль просрочек</span></div></div>
+      <div class="anchor stag"><span class="n">04</span><div><b>Оплата видна в сделке</b><span>№ счёта из 1С + авто-статус из Точка Банк</span></div></div>
+    </div>
+  </section>
+
+  <!-- 4 FLOW -->
+  <section class="slide">
+    <div class="kicker">Как это работает</div>
+    <h2 class="stag">От сообщения — до оплаты<span class="dot">.</span></h2>
+    <div class="flow">
+      <div class="step stag"><div class="n">01</div><b>Клиент пишет</b><span>Max, звонок, почта</span></div>
+      <div class="arr">→</div>
+      <div class="step stag"><div class="n">02</div><b>Работаем в amo</b><span>Всё в одном месте</span></div>
+      <div class="arr">→</div>
+      <div class="step stag"><div class="n">03</div><b>Бот контролит</b><span>Напоминания · эскалация · учёт</span></div>
+      <div class="arr">→</div>
+      <div class="step stag"><div class="n">04</div><b>Уведомляем без задержек</b><span>Авто-отслеживание продления</span></div>
+      <div class="arr">→</div>
+      <div class="step stag"><div class="n">05</div><b>Видим оплату</b><span>Авто-статус Точка Банк</span></div>
+    </div>
+    <p class="note stag">Счета остаются в 1С — в amo только статус оплаты.</p>
+  </section>
+
+  <!-- 5 THREE MODULES -->
+  <section class="slide">
+    <div class="kicker">Три модуля · одна база</div>
+    <h2 class="stag">Состав проекта<span class="dot">.</span></h2>
+    <div class="grid">
+      <div class="card hero stag">
+        <div class="num">МОДУЛЬ 01</div>
+        <h3>Единое окно</h3>
+        <p>Коммуникации в карточке. Все заявки, задачи и контекст сразу в amo.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">02</div>
+        <h3>Система</h3>
+        <p>Доказательства вместо галочек. Выстроенные задачи. Точное напоминание.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">03</div>
+        <h3>Контроль</h3>
+        <p>Единое окно с ключевыми показателями. Независимый анализ и техническое сопровождение.</p>
+      </div>
+    </div>
+    <div class="badge-opt stag">Опция · Вне данного проекта</div>
+    <p class="opt-line stag">ИИ-контроль качества: 100% звонков и переписок по критериям, а не выборочно.</p>
+    <p class="opt-sub stag">Отдельное предложение — после базового контура.</p>
+  </section>
+
+  <!-- 6 PLAN -->
+  <section class="slide">
+    <div class="kicker">План</div>
+    <h2 class="stag">Что считается готовым<span class="dot">.</span></h2>
+    <div class="grid">
+      <div class="phase hl stag">
+        <div class="phase-num">Модуль 1 · неделя 1</div>
+        <div class="phase-title">Единое окно</div>
+        <ul class="phase-dod">
+          <li>Коммуникации в карточке</li>
+          <li>Все заявки сразу в amo</li>
+          <li>Задачи и контекст в карточке</li>
+        </ul>
+      </div>
+      <div class="phase stag">
+        <div class="phase-num">Модуль 2 · недели 2–3</div>
+        <div class="phase-title">Система</div>
+        <ul class="phase-dod">
+          <li>Доказательства вместо галочек</li>
+          <li>Выстроенные задачи</li>
+          <li>Точное напоминание</li>
+        </ul>
+      </div>
+      <div class="phase stag">
+        <div class="phase-num">Модуль 3 · неделя 4</div>
+        <div class="phase-title">Контроль</div>
+        <ul class="phase-dod">
+          <li>Окно с ключевыми показателями</li>
+          <li>Независимый анализ</li>
+          <li>Техническое сопровождение</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note stag">Цена — одна на весь проект (см. слайд «Сроки и оплата»). Делим не потому, что у модулей разная цена, а чтобы платить за то, что уже работает.</p>
+  </section>
+
+  <!-- 7 MODULE 1 -->
+  <section class="slide">
+    <div class="kicker">Модуль 1</div>
+    <h2 class="stag">Единое окно<span class="dot">.</span></h2>
+    <ul class="checks-short">
+      <li class="stag" data-n="01">Max, звонки и почта — в карточке сделки</li>
+      <li class="stag" data-n="02">Все заявки сразу в amoCRM — настройки на сайте, бесшовная интеграция</li>
+      <li class="stag" data-n="03">Задачи и контекст по клиенту — в той же карточке</li>
+      <li class="stag" data-n="04">Критичная логика — на сервере MS Product, без новой пачки виджетов</li>
+    </ul>
+  </section>
+
+  <!-- 8 MODULE 2 -->
+  <section class="slide">
+    <div class="kicker">Модуль 2 · Система</div>
+    <h2 class="stag">Доказательства<span class="dot">.</span> Задачи<span class="dot">.</span> Напоминания<span class="dot">.</span></h2>
+    <ul class="checks-short">
+      <li class="stag" data-n="01">Переход этапа — по факту, не по галочке</li>
+      <li class="stag" data-n="02">У сделки всегда есть следующий шаг</li>
+      <li class="stag" data-n="03">Точные напоминания в amo и мессенджерах</li>
+      <li class="stag" data-n="04">№ счёта из 1С + статус из Точка Банк</li>
+    </ul>
+    <div class="mock stag" style="margin-top:20px">
+      <div class="mh">Сделка · Продление</div>
+      <div class="mrow"><span>Счёт № 1284</span><span class="tag ok">готово</span></div>
+      <div class="mrow"><span>Оплата</span><span class="tag ok">получена</span></div>
+      <div class="mrow"><span>Макет</span><span class="tag wait">ожидание</span></div>
+      <div class="mrow"><span>Печать</span><span class="tag">—</span></div>
+    </div>
+    <p class="note stag">Система ведёт менеджера по следующему шагу — старый клиент не зависит от памяти нового.</p>
+    <div class="grid" style="margin-top:20px">
+      <div class="card stag">
+        <div class="num">Определение</div>
+        <h3>«Следующий шаг»</h3>
+        <p>У каждой активной сделки продления в любой момент есть ровно одна открытая задача с датой. Проверяет не человек — сторожевой процесс на сервере.</p>
+      </div>
+      <div class="card stag">
+        <div class="num">Доказательство</div>
+        <h3>Переход по факту</h3>
+        <p>Счёт → оплата (авто-статус Точка Банк) → макет утверждён → печать → монтаж → фотоотчёт → УПД → новый цикл. Каждый переход — по факту, не по проставленному флажку в чек-листе.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8b MODULE 3 CHECKLIST -->
+  <section class="slide">
+    <div class="kicker">Модуль 3</div>
+    <h2 class="stag">Контроль<span class="dot">.</span></h2>
+    <ul class="checks-short">
+      <li class="stag" data-n="01">Единое окно с ключевыми показателями — один экран вместо таблиц</li>
+      <li class="stag" data-n="02">Панель: SLA просрочен, эскалация, нет следующего шага, продления под риском</li>
+      <li class="stag" data-n="03">Сводка просрочек по людям + 6 KPI планёрки</li>
+      <li class="stag" data-n="04">Независимый анализ работы системы — без «протыкал чек-лист»</li>
+      <li class="stag" data-n="05">Техническое сопровождение — чтобы не было отката от amoCRM</li>
+      <li class="stag" data-n="06">Ответственный за CRM (не Сергей) назначен и обучен</li>
+    </ul>
+  </section>
+
+  <!-- 9 DASHBOARD -->
+  <section class="slide">
+    <div class="kicker">Модуль 3 · управленческий дашборд</div>
+    <h2 class="stag">Панель контроля — один экран<span class="dot">.</span></h2>
+    <p class="note stag" style="margin-top:8px">кто не ответил · где нет следующего шага · какие оплаты пришли · продления под риском</p>
+    <div class="dash-proto stag">
+      <div class="dash-bar">
+        <div class="title">Billboardoff · Контроль<small>Пример · цифры иллюстративные</small></div>
+        <div class="dash-live"><i></i>live</div>
+      </div>
+      <div class="dash-period" style="margin:10px 12px 0;align-self:flex-start;width:fit-content">
+        <span>Неделя</span>
+        <span class="on">Месяц</span>
+        <span>Квартал</span>
+      </div>
+      <div class="dash-bottom" style="padding:12px">
+        <div class="dash-panel">
+          <div class="ph">Контроль · сейчас (приоритет 1)</div>
+          <div class="row"><span>Просрочен SLA</span><span class="dash-pill warn">3</span></div>
+          <div class="row"><span>Эскалация (&gt;2 ч)</span><span class="dash-pill bad">1</span></div>
+          <div class="row"><b>Без следующего шага</b><span class="dash-pill ok">0</span></div>
+          <div class="row"><b>Продления под риском</b><span class="dash-pill warn">2</span></div>
+        </div>
+        <div class="dash-panel">
+          <div class="ph">Продление · цикл</div>
+          <div class="row"><span>Счёт выставлен</span><span class="dash-pill ok">41</span></div>
+          <div class="row"><span>Ожидают оплату</span><span class="dash-pill warn">17</span></div>
+          <div class="row"><span>Макет / печать</span><span class="dash-pill info">9</span></div>
+        </div>
+        <div class="dash-panel">
+          <div class="ph">Задачи на планёрку</div>
+          <div class="row"><span>Анна · продление</span><b>8</b></div>
+          <div class="row"><span>Игорь · новички</span><b>5</b></div>
+          <div class="row"><span>Мария · макеты</span><b>4</b></div>
+        </div>
+      </div>
+      <div class="dash-kpis" style="opacity:.78">
+        <div class="dash-kpi"><div class="lbl">Доход по текущим</div><div class="val">4,2 млн</div><div class="delta">↑ 6%</div></div>
+        <div class="dash-kpi"><div class="lbl">Доход по новым</div><div class="val">680 тыс</div><div class="delta">↑ 12%</div></div>
+        <div class="dash-kpi"><div class="lbl">Сумма дохода</div><div class="val">4,88 млн</div><div class="delta">↑ 7%</div></div>
+        <div class="dash-kpi"><div class="lbl">Конструкции</div><div class="val">142</div><div class="delta">↑ 9 шт.</div></div>
+        <div class="dash-kpi"><div class="lbl">Действующие</div><div class="val">318</div><div class="delta">стабильно</div></div>
+        <div class="dash-kpi"><div class="lbl">Новые клиенты</div><div class="val">12</div><div class="delta down">↓ 2 к плану</div></div>
+      </div>
+    </div>
+    <p class="note stag">Верхний блок — приоритет для ежедневного контроля. 6 KPI планёрки — сводкой, вторым рядом.</p>
+  </section>
+
+  <!-- 10 WHY CRM SURVIVES -->
+  <section class="slide">
+    <div class="kicker">Ответ на «а вдруг снова не приживётся»</div>
+    <h2 class="stag">Почему в этот раз CRM не умрёт<span class="dot">.</span></h2>
+    <div class="grid">
+      <div class="anchor stag"><span class="n">01</span><div><b>Ответственный за CRM</b><span>Не Сергей — назначен и обучен</span></div></div>
+      <div class="anchor stag"><span class="n">02</span><div><b>Доказательства</b><span>Этап двигают факты, не проставленный флажок в чек-листе</span></div></div>
+      <div class="anchor stag"><span class="n">03</span><div><b>4 недели привычки</b><span>Мягкий старт → задачи → планёрка из amo → правила</span></div></div>
+      <div class="anchor stag"><span class="n">04</span><div><b>Сервер MS Product + сопровождение</b><span>Контроль не на виджете «пропал с человеком». Готовы технически вести систему — чтобы не было отката</span></div></div>
+    </div>
+    <p class="note stag">CRM — инструмент масштабирования. Без работающей системы хаос на следующем уровне только умножается.</p>
+  </section>
+
+  <!-- 11 PAYMENT -->
+  <section class="slide">
+    <div class="kicker">Сроки и оплата</div>
+    <h2 class="stag">260 000 ₽<span class="dot">.</span><br>Одна цена проекта<span class="dot">.</span></h2>
+    <p class="lead stag">Фиксированная стоимость всего проекта — единая цена за результат (DoD), не сумма по модулям.</p>
+    <div class="grid" style="margin-top:20px">
+      <div class="phase hl stag">
+        <div class="phase-num">Платёж 1 · старт</div>
+        <div class="phase-pay" style="border-top:none;padding-top:0;margin-top:0"><div class="amt" style="color:var(--ink)">100 000 ₽</div></div>
+      </div>
+      <div class="phase stag">
+        <div class="phase-num">Платёж 2 · чекпоинт 1</div>
+        <div class="phase-pay" style="border-top:none;padding-top:0;margin-top:0"><div class="amt" style="color:var(--ink)">90 000 ₽</div></div>
+        <p style="font-size:13px;color:var(--body);margin-top:8px;font-weight:500">Единое окно + контур продления работают</p>
+      </div>
+      <div class="phase stag">
+        <div class="phase-num">Платёж 3 · финал</div>
+        <div class="phase-pay" style="border-top:none;padding-top:0;margin-top:0"><div class="amt" style="color:var(--ink)">70 000 ₽</div></div>
+        <p style="font-size:13px;color:var(--body);margin-top:8px;font-weight:500">После контроля и недели оттачивания</p>
+      </div>
+    </div>
+    <p class="note stag">Срок: 4 недели реализации + 1 неделя оттачивания. Делим оплату не потому, что у частей разная цена, а чтобы платить за то, что уже работает.</p>
+    <p class="note stag" style="margin-top:10px">Гарантия срока: 3 месяца подписки amoCRM за каждую полную неделю просрочки по нашей вине. Задержки на вашей стороне гарантию не запускают.</p>
+    <p class="note stag" style="margin-top:10px">Доработки вне согласованного объёма — почасовая оплата 4 000 ₽/час, объём заранее, помечается «вне проекта».</p>
+  </section>
+
+  <!-- 12 COSTS -->
+  <section class="slide">
+    <div class="kicker">Прозрачно</div>
+    <h2 class="stag">Ежемесячные расходы<span class="dot">.</span></h2>
+    <div class="cost-table stag">
+      <div class="cost-row head"><span>Статья</span><span>Сторона</span><span>Комментарий</span></div>
+      <div class="cost-row"><span>amoCRM (5 польз.)</span><span>Клиент</span><span>1199 ₽/польз./мес · +1 мес бонусом от нас</span></div>
+      <div class="cost-row"><span>Wazzup, канал Max</span><span>Клиент</span><span>2000 ₽/мес без инициации / 4000 ₽ с инициацией</span></div>
+      <div class="cost-row"><span>Остаток F5</span><span>Клиент</span><span>Без изменений — партнёрство MS Product ↔ F5</span></div>
+      <div class="cost-row"><span>Триггеры F5 (20 970 ₽)</span><span>—</span><span>Снимаем — заменяем сервером, без подписки</span></div>
+    </div>
+    <p class="note stag">В таблице — только ваши регулярные платежи за сервисы. Работа MS Product уже в цене проекта.</p>
+  </section>
+
+  <!-- 12b LIMITS -->
+  <section class="slide">
+    <div class="kicker">Границы</div>
+    <h2 class="stag">Что не входит и что уточним<span class="dot">.</span></h2>
+    <div class="grid">
+      <div class="anchor stag"><span class="n">01</span><div><b>Вне этого проекта</b><span>Полная 1С↔amo, воронка изготовления, выпил всего F5, глубокая перестройка воронок</span></div></div>
+      <div class="anchor stag"><span class="n">02</span><div><b>Опция вне данного проекта</b><span>ИИ-контроль качества звонков/переписки — отдельное предложение</span></div></div>
+      <div class="anchor stag"><span class="n">03</span><div><b>Уточним на звонке</b><span>Период суммы 20 970 ₽, вариант канала Wazzup, кто именно будет ответственным за CRM</span></div></div>
+      <div class="anchor stag"><span class="n">04</span><div><b>Без выделенного ответственного результат не держится</b><span>Повторится прошлый сценарий — работает первые недели, потом съезжает без присмотра</span></div></div>
+    </div>
+  </section>
+
+  <!-- 13 FINAL -->
+  <section class="slide">
+    <div class="brand-row stag">
+      <div class="logo-wrap">
+        <img src="assets/logo-billboardoff-white.png" alt="Billboardoff">
+      </div>
+      <div class="brand-meta">
+        <span class="x">×</span>
+        <span class="ms">MS Product</span>
+      </div>
+    </div>
+    <div class="kicker stag">Следующий шаг</div>
+    <h1 class="stag">CRM — инструмент масштаба<span class="dot">.</span><br><span class="grad">Без неё хаос только растёт<span class="dot">.</span></span></h1>
+    <p class="lead stag">260 000 ₽ · 4 недели реализации + 1 неделя оттачивания. Назначаем ответственного за CRM с вашей стороны — и стартуем.</p>
+    <p class="lead stag" style="margin-top:12px">Мы готовы технически сопровождать систему по всем вопросам — чтобы не повторился откат от amoCRM. На следующем уровне хаос без системы только умножается.</p>
+    <p class="note stag">amoCRM оплачено до 30 августа — логично стартовать до конца окна, чтобы не платить за простаивающую подписку.</p>
+  </section>
+
+</div>
+
+<div class="ms-badge">
+  <img src="assets/logo-ms-transparent.png" alt="MS Product" />
+  <span class="ms-name">MS Product</span>
+</div>
+
+<script>
+  const progress = document.getElementById("progress");
+  function upd(){
+    const h = document.documentElement;
+    const m = h.scrollHeight - h.clientHeight;
+    progress.style.width = (m > 0 ? (h.scrollTop / m * 100) : 0) + "%";
+  }
+  addEventListener("scroll", upd, {passive:true});
+  addEventListener("resize", upd);
+  upd();
+
+  document.body.classList.add("reveal");
+  const io = new IntersectionObserver(
+    es => es.forEach(e => { if (e.isIntersecting) e.target.classList.add("in"); }),
+    {threshold: .12, rootMargin: "0px 0px -8% 0px"}
+  );
+  document.querySelectorAll(".stag").forEach(el => io.observe(el));
+</script>
+</body>
+</html>

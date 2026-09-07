@@ -1,0 +1,150 @@
+{
+  "generated_at": "2026-08-07T19:31:00.650695+00:00",
+  "window_days": 180,
+  "events_in_pipeline": 11832,
+  "deals_with_any_status_event": 4391,
+  "meeting": {
+    "deals_that_entered": 2017,
+    "deals_with_2plus_entries": 73,
+    "pct_of_meeting_deals_that_return": 3.6,
+    "true_return_cycles_after_leaving": 74,
+    "entries_per_deal_hist": {
+      "1": 1944,
+      "2": 72,
+      "3": 1
+    },
+    "avg_entries_among_meeting_deals": 1.04,
+    "avg_entries_among_returners": 2.01,
+    "median_gap_days_on_true_return": 3.8,
+    "return_from_status": [
+      {
+        "status_id": 76654886,
+        "name": "Взято в работу",
+        "count": 40
+      },
+      {
+        "status_id": 77384722,
+        "name": "Хочет прийти",
+        "count": 23
+      },
+      {
+        "status_id": 142,
+        "name": "Успех",
+        "count": 3
+      },
+      {
+        "status_id": 78616334,
+        "name": "Дано обещание",
+        "count": 2
+      },
+      {
+        "status_id": 76674066,
+        "name": "Аренда оплачена",
+        "count": 2
+      },
+      {
+        "status_id": 76666306,
+        "name": "Товар в магазине",
+        "count": 1
+      },
+      {
+        "status_id": 143,
+        "name": "Провал",
+        "count": 1
+      },
+      {
+        "status_id": 77076806,
+        "name": "Ушел смотреть у конкурентов",
+        "count": 1
+      },
+      {
+        "status_id": 77086494,
+        "name": "Товар отложен",
+        "count": 1
+      }
+    ],
+    "first_entry_from_status": [
+      {
+        "status_id": 76654886,
+        "name": "Взято в работу",
+        "count": 1845
+      },
+      {
+        "status_id": 76654882,
+        "name": "Новая заявка",
+        "count": 73
+      },
+      {
+        "status_id": 77384722,
+        "name": "Хочет прийти",
+        "count": 72
+      },
+      {
+        "status_id": 78616334,
+        "name": "Дано обещание",
+        "count": 11
+      },
+      {
+        "status_id": 77086494,
+        "name": "Товар отложен",
+        "count": 4
+      },
+      {
+        "status_id": 76666306,
+        "name": "Товар в магазине",
+        "count": 3
+      },
+      {
+        "status_id": 79236386,
+        "name": "Не оказалось размера",
+        "count": 3
+      },
+      {
+        "status_id": 143,
+        "name": "Провал",
+        "count": 3
+      },
+      {
+        "status_id": 76675038,
+        "name": "Сертификат оплачен",
+        "count": 1
+      },
+      {
+        "status_id": 78616338,
+        "name": "Хочет заказать",
+        "count": 1
+      },
+      {
+        "status_id": 83608510,
+        "name": "Сдвоенная заявка",
+        "count": 1
+      }
+    ],
+    "sample_deals_3plus_entries": [
+      {
+        "deal_id": 55529097,
+        "entries": 3
+      }
+    ]
+  },
+  "want_come": {
+    "entries": 403,
+    "unique_deals": 391,
+    "entries_per_deal_hist": {
+      "1": 380,
+      "2": 10,
+      "3": 1
+    },
+    "pct_of_deals_with_events": 8.9
+  },
+  "want_order": {
+    "entries": 23,
+    "unique_deals": 21,
+    "entries_per_deal_hist": {
+      "1": 19,
+      "2": 2
+    },
+    "pct_of_deals_with_events": 0.5
+  },
+  "both_want_stages_same_deal": 3
+}

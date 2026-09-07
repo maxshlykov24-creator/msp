@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Финансы · долги и месяц</title>
+<style>
+  :root{
+    --bg:#060607;
+    --ink:#ffffff;
+    --mute:#a0a0a5;
+    --mute-2:#6b6e76;
+    --line:rgba(255,255,255,.08);
+    --line-2:rgba(255,255,255,.15);
+    --glass:rgba(255,255,255,.025);
+    --glass-2:rgba(255,255,255,.05);
+    --green:#9fc9ac;
+    --amber:#c8a45c;
+    --red:#c98680;
+    --bronze:#c8a45c;
+    --radius:20px;
+    --ease:cubic-bezier(.25,1,.5,1);
+    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--font);color:var(--ink);background:var(--bg);
+    min-height:100vh;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;
+    background-image:
+      radial-gradient(1400px 800px at 50% -20%,#121216 0%,transparent 62%),
+      radial-gradient(1100px 620px at 84% -10%,rgba(120,135,170,.09),transparent 60%),
+      radial-gradient(820px 560px at -10% 14%,rgba(150,158,185,.05),transparent 60%),
+      linear-gradient(180deg,#0a0a0c 0%,#030304 100%);
+    background-attachment:fixed;
+    position:relative;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
+    background-image:radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,.4) 0, transparent 0),
+                      radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,.3) 0, transparent 0);
+    background-size:3px 3px;mix-blend-mode:overlay;
+  }
+  .wrap{max-width:1300px;margin:0 auto;padding:0 26px 90px;position:relative;z-index:1}
+
+  .glass{
+    background:linear-gradient(155deg,rgba(255,255,255,.04) 0%,rgba(255,255,255,.015) 55%,rgba(255,255,255,.03) 100%);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    backdrop-filter:blur(24px) saturate(150%);
+    -webkit-backdrop-filter:blur(24px) saturate(150%);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.1),
+      inset 1px 0 0 rgba(255,255,255,.04),
+      0 8px 32px 0 rgba(0,0,0,.8);
+  }
+
+  .topbar{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(24px) saturate(150%);
+    -webkit-backdrop-filter:blur(24px) saturate(150%);
+    background:rgba(6,6,8,.72);
+    border-bottom:1px solid rgba(255,255,255,.06);
+  }
+  .topbar-in{max-width:1300px;margin:0 auto;padding:16px 26px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:18px}
+  .logo-orb{position:relative;display:flex;align-items:center}
+  .logo-orb::before{
+    content:'';position:absolute;left:50%;top:50%;width:100px;height:48px;transform:translate(-50%,-50%);
+    background:radial-gradient(circle,rgba(255,255,255,.18),transparent 70%);filter:blur(14px);z-index:0;
+  }
+  .brand img{height:36px;position:relative;z-index:1;filter:drop-shadow(0 0 18px rgba(255,255,255,.14))}
+  .brand-div{width:1px;height:34px;background:var(--line-2)}
+  .brand-title{font-size:14px;font-weight:600;color:var(--ink);line-height:1.25}
+  .brand-title small{display:block;font-size:11px;color:var(--mute-2);font-weight:500;letter-spacing:.02em;margin-top:2px}
+  .live{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--green)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .header-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .pill{
+    font-size:12px;font-weight:600;color:var(--mute);
+    padding:7px 12px;border-radius:12px;background:var(--glass);border:1px solid var(--line);
+  }
+  .pill.warn{color:var(--amber);border-color:rgba(200,164,92,.35)}
+
+  .hero-head{padding:44px 0 22px;display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  .hero-head h1{font-size:28px;font-weight:500;letter-spacing:-.02em}
+  .hero-head p{color:var(--mute);font-size:14px;margin-top:6px;max-width:640px}
+  .updated{font-size:12px;color:var(--mute-2);display:flex;align-items:center;gap:6px}
+  .sec-title{display:flex;align-items:baseline;gap:12px;margin:38px 0 16px;justify-content:space-between}
+  .sec-title h2{font-size:17px;font-weight:650;letter-spacing:-.01em}
+  .sec-title span{font-size:12.5px;color:var(--mute-2)}
+
+  .tilt{
+    --rx:0deg;--ry:0deg;--ty:0px;--mx:50%;--my:20%;
+    transform:perspective(900px) rotateX(var(--ry)) rotateY(var(--rx)) translateY(var(--ty)) translateZ(0);
+    transition:transform .4s var(--ease),border-color .4s var(--ease),box-shadow .4s var(--ease);
+  }
+  .tilt.tilt-active{transition:transform .06s linear,border-color .4s var(--ease),box-shadow .4s var(--ease)}
+  .tilt:hover{
+    border-color:rgba(255,255,255,.14);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.14),
+      inset 1px 0 0 rgba(255,255,255,.05),
+      0 0 40px -8px rgba(255,255,255,.06),
+      0 24px 60px -20px rgba(0,0,0,.9);
+  }
+  .tilt::after{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;
+    background:radial-gradient(260px 180px at var(--mx) var(--my),rgba(255,255,255,.09),transparent 70%);
+    transition:opacity .4s var(--ease);
+  }
+  .tilt:hover::after{opacity:1}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .kpi{padding:28px 28px 26px;position:relative;overflow:hidden;cursor:default}
+  .kpi .glow{position:absolute;inset:0;background:radial-gradient(140px 100px at 82% -10%,rgba(255,255,255,.07),transparent 70%);pointer-events:none}
+  .kpi.feature{background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.015))}
+  .kpi-label{font-size:11px;font-weight:500;color:var(--mute);text-transform:uppercase;letter-spacing:.09em}
+  .kpi-val{
+    font-size:36px;font-weight:300;margin:16px 0 6px;line-height:1;letter-spacing:-.02em;display:inline-block;
+    font-variant-numeric:tabular-nums;
+    background:linear-gradient(160deg,#ffffff 30%,#b8bcc6 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+    transition:transform .4s var(--ease);transform-origin:left center;
+  }
+  .kpi:hover .kpi-val{transform:scale(1.05)}
+  .kpi-val.bronze{
+    background:linear-gradient(160deg,#f2e8ca 20%,#c8a45c 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .kpi-sub{font-size:12.5px;color:var(--mute-2)}
+
+  .progress{
+    margin-top:14px;height:8px;border-radius:6px;background:rgba(255,255,255,.05);overflow:hidden;border:1px solid var(--line);
+  }
+  .progress > i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#e9d9ae,#c8a45c);width:0%}
+
+  .cols{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+  @media(max-width:1000px){.cols{grid-template-columns:1fr}}
+  .panel{padding:30px;position:relative;overflow:hidden}
+  .panel h3{font-size:15px;font-weight:650;margin-bottom:2px}
+  .panel .psub{font-size:12.5px;color:var(--mute-2);margin-bottom:18px}
+
+  .fn-row{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+  .fn-name{width:180px;font-size:13px;color:var(--mute);flex-shrink:0}
+  .fn-bar-wrap{flex:1;height:28px;border-radius:10px;background:rgba(255,255,255,.03);overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.05)}
+  .fn-bar{height:100%;border-radius:10px;display:flex;align-items:center;padding-left:12px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:#0a0a0c;background:linear-gradient(90deg,#f4f5f7,#b9bdc6);min-width:2px}
+  .fn-bar.over{background:linear-gradient(90deg,#c98680,#c8a45c)}
+  .fn-meta{width:110px;text-align:right;font-size:12px;font-weight:600;color:var(--mute);font-variant-numeric:tabular-nums}
+
+  .debt-list{display:flex;flex-direction:column;gap:10px}
+  .debt-row{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:14px 16px;border-radius:14px;background:var(--glass-2);border:1px solid var(--line);
+  }
+  .debt-name{font-size:13.5px;font-weight:500}
+  .debt-name small{display:block;font-size:11px;color:var(--mute-2);font-weight:500;margin-top:2px}
+  .debt-val{font-size:18px;font-weight:300;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+
+  .chan-flex{display:flex;align-items:center;gap:30px}
+  @media(max-width:760px){.chan-flex{flex-direction:column;align-items:stretch}}
+  .donut-wrap{position:relative;width:166px;height:166px;flex-shrink:0;margin:0 auto;cursor:default}
+  .donut{width:100%;height:100%;border-radius:50%;box-shadow:0 0 34px -6px rgba(255,255,255,.07),0 18px 40px -18px rgba(0,0,0,.85);transition:transform .6s var(--ease)}
+  .donut-wrap:hover .donut{transform:rotate(90deg) scale(1.05)}
+  .donut-center{
+    position:absolute;inset:24px;border-radius:50%;background:rgba(7,7,9,.94);
+    border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .donut-center b{font-size:22px;font-weight:300;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .donut-center span{font-size:9.5px;color:var(--mute-2);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+  .chan-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;min-width:0}
+  .chan-chip{
+    display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;position:relative;overflow:hidden;
+    background:var(--glass-2);border:1px solid var(--line);
+  }
+  .chan-sw{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .chan-name{font-size:12px;color:var(--mute)}
+  .chan-val{font-size:18px;font-weight:350;letter-spacing:-.01em;font-variant-numeric:tabular-nums;margin-top:2px}
+
+  .loss-list{display:flex;flex-direction:column;gap:10px}
+  .loss-row{display:flex;align-items:center;gap:12px}
+  .loss-name{width:220px;font-size:13px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .loss-bar-wrap{flex:1;height:9px;border-radius:6px;background:rgba(255,255,255,.05);overflow:hidden}
+  .loss-bar{height:100%;border-radius:6px;background:linear-gradient(90deg,#c98680,#c8a45c)}
+  .loss-num{width:90px;text-align:right;font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
+
+  .empty{font-size:13px;color:var(--mute-2);padding:12px 0}
+  .footer{
+    margin-top:46px;padding:20px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  }
+  .footer-brand{display:flex;align-items:center;gap:12px}
+  .footer-brand img{height:22px;opacity:.92;filter:drop-shadow(0 0 8px rgba(255,255,255,.1))}
+  .footer-div{width:1px;height:16px;background:var(--line-2)}
+  .footer-brand span{font-size:12px;color:var(--mute-2)}
+  .footer-brand b{color:var(--mute);font-weight:650}
+  .footer-meta{font-size:11.5px;color:var(--mute-2);text-align:right}
+
+  @media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(hover:none){
+    .tilt{transform:none !important}
+    .tilt::after{display:none !important}
+    .kpi:hover .kpi-val,.donut-wrap:hover .donut{transform:none}
+  }
+  @media(max-width:760px){
+    .wrap{padding:0 16px 60px}
+    .topbar-in{padding:12px 16px}
+    .hero-head{padding:26px 0 16px}
+    .hero-head h1{font-size:21px}
+    .kpi-grid{grid-template-columns:1fr 1fr;gap:10px}
+    .kpi{padding:18px 16px}
+    .kpi-val{font-size:26px;margin:10px 0 4px}
+    .fn-name,.loss-name{width:120px;font-size:12px}
+    .panel{padding:20px}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <div class="logo-orb"><img src="assets/logo-ms-transparent.png" alt="MS"></div>
+      <div class="brand-div"></div>
+      <div class="brand-title">Личные финансы<small>Тинькофф · план месяца · долги</small></div>
+    </div>
+    <div class="header-right">
+      <div class="pill" id="monthPill">—</div>
+      <div class="pill warn" id="reviewPill" style="display:none">Review</div>
+      <div class="live"><span class="dot"></span>Локальные данные</div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero-head">
+    <div>
+      <h1 id="heroTitle">Долги и месяц</h1>
+      <p id="heroSub">Цель №1 — отдать долги. Ниже факт месяца против плана.</p>
+    </div>
+    <div class="updated"><span class="dot" style="background:var(--mute-2);box-shadow:none;animation:none"></span><span id="updatedAt">—</span></div>
+  </div>
+
+  <div class="kpi-grid" id="kpiGrid"></div>
+
+  <div class="sec-title">
+    <h2>Долги</h2>
+    <span>банки + хвосты проектов</span>
+  </div>
+  <div class="cols">
+    <div class="glass panel tilt" id="banksPanel">
+      <h3>Кредиты</h3>
+      <div class="psub">остатки по банкам</div>
+      <div class="debt-list" id="banksList"></div>
+    </div>
+    <div class="glass panel tilt" id="projPanel">
+      <h3>Хвосты проектов</h3>
+      <div class="psub">приоритет погашения</div>
+      <div class="debt-list" id="projList"></div>
+    </div>
+  </div>
+
+  <div class="sec-title">
+    <h2>План vs факт</h2>
+    <span>лимиты групп за месяц</span>
+  </div>
+  <div class="glass panel tilt">
+    <h3>Группы расходов</h3>
+    <div class="psub" id="planGoal"></div>
+    <div id="planBars"></div>
+  </div>
+
+  <div class="sec-title">
+    <h2>Структура расходов</h2>
+    <span>без переводов между счетами</span>
+  </div>
+  <div class="glass panel">
+    <div class="chan-flex">
+      <div class="donut-wrap">
+        <div class="donut" id="donut"></div>
+        <div class="donut-center"><b id="donutTotal">0</b><span>расход</span></div>
+      </div>
+      <div class="chan-grid" id="donutLegend"></div>
+    </div>
+  </div>
+
+  <div class="sec-title">
+    <h2>Топ утечек</h2>
+    <span>статьи и мерчанты</span>
+  </div>
+  <div class="cols">
+    <div class="glass panel tilt">
+      <h3>По статьям</h3>
+      <div class="psub">куда ушли деньги</div>
+      <div class="loss-list" id="topArticles"></div>
+    </div>
+    <div class="glass panel tilt">
+      <h3>По мерчантам</h3>
+      <div class="psub">описание из банка</div>
+      <div class="loss-list" id="topMerchants"></div>
+    </div>
+  </div>
+
+  <div class="glass footer">
+    <div class="footer-brand">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+      <div class="footer-div"></div>
+      <span><b>MS Product</b> · личный контур</span>
+    </div>
+    <div class="footer-meta" id="footerMeta">operations.jsonl · aggregate.py</div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+(function(){
+  const D = window.FINANCE_DATA || null;
+  if(!D){
+    document.getElementById('heroSub').textContent = 'Нет data.js — запусти scripts/aggregate.py';
+    return;
+  }
+
+  const fmt = (n)=>{
+    const x = Math.round((Number(n)||0)*100)/100;
+    return x.toLocaleString('ru-RU',{maximumFractionDigits:0});
+  };
+  const fmtK = (n)=>{
+    const x = Number(n)||0;
+    if(Math.abs(x)>=1000) return (x/1000).toLocaleString('ru-RU',{maximumFractionDigits:1})+'k';
+    return fmt(x);
+  };
+
+  const m = D.month_summary || {};
+  const debts = D.debts || {};
+  document.getElementById('monthPill').textContent = D.month || '—';
+  document.getElementById('heroTitle').textContent = 'Долги · ' + (D.month||'');
+  document.getElementById('updatedAt').textContent = 'Обновлено ' + (D.generated_at||'—').replace('T',' ');
+  document.getElementById('footerMeta').textContent =
+    (m.ops_count||0) + ' операций · review ' + (D.review_count||0) + ' · долг ' + fmt(debts.total) + ' ₽';
+
+  if(D.review_count>0){
+    const p = document.getElementById('reviewPill');
+    p.style.display='';
+    p.textContent = 'Review: ' + D.review_count;
+  }
+
+  const debtPct = Math.min(100, m.debt_progress_pct||0);
+  const eta = D.eta_days_hypothesis;
+  const kpi = [
+    {label:'Сумма долга', val:fmt(debts.total)+' ₽', sub:(debts.banks||[]).length+' банков · '+(debts.projects||[]).length+' хвостов', feature:true, bronze:true},
+    {label:'План на долги', val:fmt(m.debt_paid)+' / '+fmt(m.debt_payment_plan), sub: debtPct.toFixed(0)+'% плана месяца', progress:debtPct},
+    {label:'Доход / расход', val:fmt(m.income)+' / '+fmt(m.expense), sub:'свободный ' + fmt(m.free)+' ₽'},
+    {label:'До цели (гипотеза)', val: eta!=null ? (eta+' дн.') : '—', sub: eta!=null ? 'по темпу погашения месяца' : 'нет платежей по долгам в месяце'},
+  ];
+
+  const grid = document.getElementById('kpiGrid');
+  grid.innerHTML = kpi.map(k=>`
+    <div class="glass kpi tilt ${k.feature?'feature':''}">
+      <div class="glow"></div>
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-val ${k.bronze?'bronze':''}">${k.val}</div>
+      <div class="kpi-sub">${k.sub}</div>
+      ${k.progress!=null?`<div class="progress"><i style="width:${k.progress}%"></i></div>`:''}
+    </div>
+  `).join('');
+
+  const renderDebts = (el, list, empty)=>{
+    if(!list || !list.length){ el.innerHTML = `<div class="empty">${empty}</div>`; return; }
+    el.innerHTML = list.map(d=>`
+      <div class="debt-row">
+        <div class="debt-name">${d.name}<small>приоритет ${d.priority??'—'}</small></div>
+        <div class="debt-val">${fmt(d.balance)} ₽</div>
+      </div>
+    `).join('');
+  };
+  renderDebts(document.getElementById('banksList'), debts.banks, 'Нет банков в debts.yaml');
+  renderDebts(document.getElementById('projList'), debts.projects, 'Нет хвостов с balance > 0');
+
+  document.getElementById('planGoal').textContent = m.goal || 'лимит vs факт';
+  const bars = document.getElementById('planBars');
+  const pvf = m.plan_vs_fact || [];
+  if(!pvf.length){
+    bars.innerHTML = '<div class="empty">Нет plan/YYYY-MM.yaml или операций за месяц</div>';
+  } else {
+    const maxPlan = Math.max(...pvf.map(x=>Math.max(x.plan,x.fact)), 1);
+    bars.innerHTML = pvf.map(r=>{
+      const w = Math.min(100, 100*r.fact/maxPlan);
+      const over = r.fact > r.plan && r.plan>0;
+      return `<div class="fn-row">
+        <div class="fn-name">${r.group}</div>
+        <div class="fn-bar-wrap"><div class="fn-bar ${over?'over':''}" style="width:${Math.max(w,2)}%">${fmtK(r.fact)}</div></div>
+        <div class="fn-meta">${fmtK(r.fact)} / ${fmtK(r.plan)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  const colors = ['#e8e4dc','#c8a45c','#9fc9ac','#a8b0c0','#c98680','#8a90a0','#d4c4a0','#6b6e76'];
+  const groups = m.expense_groups || [];
+  const totalExp = groups.reduce((s,g)=>s+g.amount,0) || 1;
+  let acc = 0;
+  const stops = groups.map((g,i)=>{
+    const from = acc; acc += 100*g.amount/totalExp;
+    return `${colors[i%colors.length]} ${from}% ${acc}%`;
+  });
+  document.getElementById('donut').style.background = groups.length
+    ? `conic-gradient(${stops.join(',')})`
+    : 'conic-gradient(#333 0 100%)';
+  document.getElementById('donutTotal').textContent = fmtK(m.expense);
+  document.getElementById('donutLegend').innerHTML = groups.length
+    ? groups.map((g,i)=>`
+      <div class="chan-chip">
+        <span class="chan-sw" style="background:${colors[i%colors.length]}"></span>
+        <div>
+          <div class="chan-name">${g.name}</div>
+          <div class="chan-val">${fmt(g.amount)} ₽</div>
+        </div>
+      </div>`).join('')
+    : '<div class="empty">Нет расходов за месяц</div>';
+
+  const renderTop = (el, items, nameKey)=>{
+    if(!items || !items.length){ el.innerHTML = '<div class="empty">Пока пусто</div>'; return; }
+    const max = items[0].amount || 1;
+    el.innerHTML = items.map(it=>`
+      <div class="loss-row">
+        <div class="loss-name" title="${it[nameKey]}">${it[nameKey]}</div>
+        <div class="loss-bar-wrap"><div class="loss-bar" style="width:${100*it.amount/max}%"></div></div>
+        <div class="loss-num">${fmt(it.amount)}</div>
+      </div>
+    `).join('');
+  };
+  renderTop(document.getElementById('topArticles'), m.top_articles, 'article');
+  renderTop(document.getElementById('topMerchants'), m.top_merchants, 'merchant');
+
+  // tilt
+  let active=null;
+  function reset(el){ el.style.setProperty('--rx','0deg'); el.style.setProperty('--ry','0deg'); el.style.setProperty('--ty','0px'); el.classList.remove('tilt-active'); }
+  document.addEventListener('pointermove', e=>{
+    const card = e.target.closest('.tilt');
+    if(!card){ if(active){ reset(active); active=null; } return; }
+    if(card !== active){ if(active) reset(active); active=card; card.classList.add('tilt-active'); }
+    const r = card.getBoundingClientRect();
+    const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
+    card.style.setProperty('--rx', ((px-0.5)*9).toFixed(2)+'deg');
+    card.style.setProperty('--ry', ((0.5-py)*9).toFixed(2)+'deg');
+    card.style.setProperty('--ty','-3px');
+    card.style.setProperty('--mx',(px*100).toFixed(1)+'%');
+    card.style.setProperty('--my',(py*100).toFixed(1)+'%');
+  });
+  document.addEventListener('pointerleave', ()=>{ if(active){ reset(active); active=null; } });
+})();
+</script>
+</body>
+</html>

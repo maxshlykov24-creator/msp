@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Человек как агентная система — фрейм</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --terra:#C5443A; --terra-soft:#E9B7B2; --terra-bg:#FBEEEC;
+    --bottle:#1F4434; --bottle-soft:#A9C2B6; --bottle-bg:#EAF1ED;
+    --ink:#1A1714; --muted:#6B635C; --line:#E4DCD4; --paper:#FBF8F4; --card:#FFFFFF;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Onest',system-ui,sans-serif;background:var(--paper);color:var(--ink);
+    line-height:1.55;padding:48px 24px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(30px,5vw,52px);
+    line-height:1.05;letter-spacing:-.02em;margin-bottom:14px}
+  h1 .ball{color:var(--terra)}
+  .lede{font-size:clamp(16px,2.2vw,20px);color:var(--muted);max-width:760px;margin-bottom:8px}
+  .lede b{color:var(--bottle);font-weight:600}
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--terra);font-weight:600;margin-bottom:18px}
+  section{margin-top:56px}
+  h2{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:clamp(22px,3vw,30px);
+    letter-spacing:-.01em;margin-bottom:6px}
+  .sub{color:var(--muted);margin-bottom:26px;font-size:15px}
+
+  /* loop flow */
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
+  .node{flex:1;min-width:140px;background:var(--card);border:1.5px solid var(--line);
+    border-radius:16px;padding:18px 16px;position:relative}
+  .node .n{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--terra);font-weight:600}
+  .node h3{font-family:'Bricolage Grotesque',sans-serif;font-size:18px;font-weight:700;margin:6px 0 4px}
+  .node p{font-size:13px;color:var(--muted);line-height:1.4}
+  .node.core{background:var(--bottle);border-color:var(--bottle)}
+  .node.core .n{color:var(--bottle-soft)}
+  .node.core h3{color:#fff}
+  .node.core p{color:var(--bottle-soft)}
+  .arrow{align-self:center;color:var(--terra);font-size:22px;font-weight:700;flex:0 0 auto}
+  .loopback{margin-top:14px;text-align:center;font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;color:var(--bottle);background:var(--bottle-bg);border:1px dashed var(--bottle-soft);
+    border-radius:10px;padding:10px 14px}
+
+  /* pillars */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+  .pill{background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:20px}
+  .pill .tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11px;
+    font-weight:600;color:var(--terra);background:var(--terra-bg);border-radius:6px;padding:3px 8px;margin-bottom:10px}
+  .pill h3{font-family:'Bricolage Grotesque',sans-serif;font-size:17px;font-weight:700;margin-bottom:6px}
+  .pill p{font-size:13.5px;color:var(--muted)}
+
+  /* formula */
+  .formula{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;
+    background:var(--terra-bg);border-radius:16px;padding:24px;margin-top:8px}
+  .chip{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:15px;color:var(--bottle);
+    background:#fff;border:1.5px solid var(--bottle-soft);border-radius:10px;padding:10px 16px}
+  .x{font-size:20px;color:var(--terra);font-weight:700}
+
+  /* 4 questions */
+  ol.q{counter-reset:q;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+  ol.q li{counter-increment:q;background:var(--card);border:1.5px solid var(--line);border-radius:14px;
+    padding:18px 18px 18px 56px;position:relative;font-size:14px}
+  ol.q li::before{content:counter(q);position:absolute;left:16px;top:16px;width:28px;height:28px;
+    display:grid;place-items:center;background:var(--bottle);color:#fff;border-radius:8px;
+    font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px}
+  ol.q li b{display:block;font-family:'Bricolage Grotesque',sans-serif;font-size:15px;margin-bottom:3px;color:var(--ink)}
+  ol.q li span{color:var(--muted)}
+
+  /* demo table */
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1.5px solid var(--line);
+    border-radius:16px;overflow:hidden;font-size:13.5px}
+  th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--bottle);color:#fff;font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:13px}
+  tr:last-child td{border-bottom:none}
+  td b{color:var(--terra)}
+  .mono{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--muted)}
+
+  .kicker{margin-top:56px;padding:28px;background:var(--bottle);border-radius:18px;color:#fff}
+  .kicker h2{color:#fff}
+  .kicker p{color:var(--bottle-soft);font-size:16px;max-width:720px}
+  .kicker b{color:#fff}
+  footer{margin-top:40px;color:var(--muted);font-size:12.5px;font-family:'JetBrains Mono',monospace}
+
+  @media print{body{padding:0}.node,.pill,table{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">Модуль 09 · Конструктор: собери шестого · 90 мин</div>
+  <h1>Человек как <span class="ball">агентная система</span></h1>
+  <p class="lede">Человек думает как нейросеть, нейросеть — как человек. <b>Это одна архитектура.</b> Поэтому создать агента — не «написать бота», а вынести наружу кусок своего мышления и поставить модель там, где она сильнее тебя.</p>
+
+  <section>
+    <h2>Цикл</h2>
+    <p class="sub">Любая задача проходит этот круг — и в голове человека, и в агентной системе.</p>
+    <div class="flow">
+      <div class="node"><div class="n">ВХОД</div><h3>Задача</h3><p>Возникает изнутри или снаружи</p></div>
+      <div class="arrow">→</div>
+      <div class="node core"><div class="n">ЯДРО</div><h3>СОТ</h3><p>Правила, контекст, истинная цель. Без него не мыслит ни человек, ни модель</p></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="n">РАЗРЕЗ</div><h3>Декомпозиция</h3><p>Задача → шаги → агенты</p></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="n">ЦЕПОЧКА</div><h3>Агенты</h3><p>роль × модель × фронт</p></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="n">+</div><h3>Расширение</h3><p>web · скилл · инструмент дешевле человека</p></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="n">ВЫХОД</div><h3>Результат</h3><p>План выполнения задачи</p></div>
+    </div>
+    <div class="loopback">↺ результат возвращается в СОТ и уточняет ядро для следующей задачи</div>
+  </section>
+
+  <section>
+    <h2>Пять опор</h2>
+    <p class="sub">На чём держится фрейм.</p>
+    <div class="grid">
+      <div class="pill"><span class="tag">01 · ЯДРО</span><h3>СОТ несменяем</h3><p>Кто ты, правила, этика, как решаешь. У человека один на жизнь. У агента = system prompt + база знаний.</p></div>
+      <div class="pill"><span class="tag">02 · ЦЕЛЬ</span><h3>Через СОТ, не напрямую</h3><p>За «прокачать маркетинг» стоит рост чистой прибыли. Сначала достань истинную цель.</p></div>
+      <div class="pill"><span class="tag">03 · РАЗРЕЗ</span><h3>Последовательность агентов</h3><p>Как решаешь руками → шаги → агенты. Пока все агенты — это ты сам.</p></div>
+      <div class="pill"><span class="tag">04 · ХАРАКТЕР</span><h3>Модель не универсальна</h3><p>Одна стесняется, одна не лезет вглубь, одна — только через людей. Бери под шаг, не «самую умную».</p></div>
+      <div class="pill"><span class="tag">05 · +</span><h3>Расширение</h3><p>Нейросеть даёт угол, которого у тебя нет. web-search · готовый скилл · инструмент дешевле человека.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Формула агента</h2>
+    <p class="sub">Каждый агент в цепочке — это четыре параметра.</p>
+    <div class="formula">
+      <span class="chip">роль</span><span class="x">×</span>
+      <span class="chip">модель</span><span class="x">×</span>
+      <span class="chip">фронт</span><span class="x">×</span>
+      <span class="chip">ограничения</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 вопроса перед сборкой</h2>
+    <p class="sub">Без этих ответов агент будет угадывать.</p>
+    <ol class="q">
+      <li><b>Что в СОТ?</b><span>Заказчик, правила, контекст и истинная цель глубже формулировки.</span></li>
+      <li><b>Какие методы уже есть?</b><span>Как решается руками. Выигрышно / устарело / не даёт результата?</span></li>
+      <li><b>Методы расширения?</b><span>web-search · скилл · инструмент, что закроет дешевле человека.</span></li>
+      <li><b>Конечная цель?</b><span>К чему движемся и по какому признаку «готово».</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Демо: «рывок в маркетинге» → цепочка</h2>
+    <p class="sub">Истинная цель — не «больше рекламы», а рост чистой прибыли. Три агента — это не три бота, а голова собственника, разложенная на роли.</p>
+    <table>
+      <thead><tr><th>Агент</th><th>Роль</th><th>Модель</th><th>Фронт</th><th>Ограничение</th></tr></thead>
+      <tbody>
+        <tr><td><b>Фактурщик</b></td><td>Собрать свежий взгляд, переписать промпт «как сделать рывок»</td><td>Сильная в синтезе</td><td class="mono">люди + web</td><td>только проверяемая фактура</td></tr>
+        <tr><td><b>Постановщик</b></td><td>Оформить рывок в задачи отделу маркетинга</td><td>Чёткая, структурная</td><td class="mono">текст → люди</td><td>не лезет в стратегию</td></tr>
+        <tr><td><b>Анализатор</b></td><td>Вести таблицы, держать движение к прибыли <span class="mono">(= Модуль 7)</span></td><td>Сильная в данных</td><td class="mono">данные</td><td>сигналит, не меняет цель</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="kicker">
+    <h2>Главное</h2>
+    <p>Создать агента = <b>создать план выполнения задачи</b> в виде цепочки роль × модель × фронт. Ты не строишь ботов — ты расширяешь себя: выполняешь больше задач, под новыми углами, не нанимая человека под каждый шаг.</p>
+  </div>
+
+  <footer>🎱 Внедрение ИИ в бизнес · Модуль 09 «Конструктор: собери шестого» · фрейм «Человек как агентная система» · 21.06.2026</footer>
+
+</div>
+</body>
+</html>

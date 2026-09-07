@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MS Focus — Сейчас</title>
+<style>
+  :root{
+    --bg:#050508;
+    --ink:#f4f2ff;
+    --mute:#9a96b0;
+    --mute-2:#6a6680;
+    --line:rgba(184,48,248,.12);
+    --line-2:rgba(104,104,248,.22);
+    --glass:rgba(255,255,255,.03);
+    --glass-2:rgba(184,48,248,.06);
+    --mag:#b830f8;
+    --mag-2:#c84cff;
+    --vio:#6868f8;
+    --vio-2:#8080ff;
+    --grad:linear-gradient(135deg,#b830f8 0%,#9048f8 45%,#6868f8 100%);
+    --grad-soft:linear-gradient(160deg,rgba(184,48,248,.18),rgba(104,104,248,.08));
+    --green:#7dcea0;
+    --amber:#d4b06a;
+    --red:#d48a84;
+    --radius:22px;
+    --ease:cubic-bezier(.25,1,.5,1);
+    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--font);color:var(--ink);background:var(--bg);
+    min-height:100vh;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;
+    background-image:
+      radial-gradient(1200px 700px at 50% -18%,rgba(184,48,248,.16) 0%,transparent 58%),
+      radial-gradient(900px 560px at 92% 8%,rgba(104,104,248,.12),transparent 55%),
+      radial-gradient(700px 480px at -8% 40%,rgba(184,48,248,.07),transparent 55%),
+      linear-gradient(180deg,#0a0812 0%,#030306 100%);
+    background-attachment:fixed;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+    background-image:radial-gradient(1px 1px at 18% 28%, rgba(255,255,255,.45) 0, transparent 0),
+                      radial-gradient(1px 1px at 72% 62%, rgba(184,48,248,.5) 0, transparent 0);
+    background-size:3px 3px;mix-blend-mode:overlay;
+  }
+  .wrap{max-width:720px;margin:0 auto;padding:0 22px 80px;position:relative;z-index:1}
+
+  .glass{
+    background:linear-gradient(155deg,rgba(255,255,255,.05) 0%,rgba(184,48,248,.03) 50%,rgba(104,104,248,.04) 100%);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    backdrop-filter:blur(28px) saturate(160%);
+    -webkit-backdrop-filter:blur(28px) saturate(160%);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.1),
+      inset 1px 0 0 rgba(184,48,248,.06),
+      0 12px 40px -12px rgba(0,0,0,.85),
+      0 0 60px -30px rgba(184,48,248,.25);
+  }
+
+  /* topbar */
+  .topbar{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(28px) saturate(160%);
+    -webkit-backdrop-filter:blur(28px) saturate(160%);
+    background:rgba(5,5,8,.78);
+    border-bottom:1px solid rgba(184,48,248,.1);
+  }
+  .topbar-in{max-width:720px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .brand{display:flex;align-items:center;gap:14px}
+  .logo-orb{position:relative;display:flex;align-items:center}
+  .logo-orb::before{
+    content:'';position:absolute;left:50%;top:50%;width:72px;height:72px;transform:translate(-50%,-50%);
+    background:radial-gradient(circle,rgba(184,48,248,.35),transparent 70%);filter:blur(16px);z-index:0;
+  }
+  .brand img{height:42px;position:relative;z-index:1;filter:drop-shadow(0 0 18px rgba(184,48,248,.45))}
+  .brand-meta{line-height:1.2}
+  .brand-meta strong{display:block;font-size:14px;font-weight:650;letter-spacing:-.01em}
+  .brand-meta span{font-size:11px;color:var(--mute-2);font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+  .live{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--mag-2)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--mag);box-shadow:0 0 12px var(--mag);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  .hero{padding:36px 0 8px}
+  .hero-kicker{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mute-2);margin-bottom:10px}
+  .hero h1{
+    font-size:28px;font-weight:400;letter-spacing:-.03em;line-height:1.15;
+    background:linear-gradient(160deg,#ffffff 20%,#c8b8ff 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .hero p{margin-top:8px;font-size:14px;color:var(--mute);max-width:42ch}
+
+  /* NOW card */
+  .now{
+    margin-top:22px;padding:32px 30px 28px;position:relative;overflow:hidden;
+    background:linear-gradient(165deg,rgba(184,48,248,.14) 0%,rgba(104,104,248,.06) 45%,rgba(255,255,255,.02) 100%);
+    border-color:rgba(184,48,248,.28);
+  }
+  .now::before{
+    content:'';position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(420px 220px at 85% -10%,rgba(184,48,248,.22),transparent 65%);
+  }
+  .now-label{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--mag-2);margin-bottom:18px;position:relative;
+  }
+  .now-label .pip{width:8px;height:8px;border-radius:50%;background:var(--grad);box-shadow:0 0 14px rgba(184,48,248,.7)}
+  .now-project{font-size:13px;color:var(--mute);font-weight:500;margin-bottom:6px;position:relative}
+  .now-title{font-size:26px;font-weight:450;letter-spacing:-.025em;line-height:1.2;position:relative}
+  .now-dod{
+    margin-top:18px;padding:14px 16px;border-radius:14px;
+    background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.06);
+    font-size:13.5px;color:var(--mute);line-height:1.45;position:relative;
+  }
+  .now-dod b{color:var(--ink);font-weight:600}
+  .now-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;position:relative}
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;
+    padding:8px 12px;border-radius:999px;font-size:12.5px;font-weight:600;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:var(--mute);
+  }
+  .chip.accent{border-color:rgba(184,48,248,.35);color:#e8d4ff;background:rgba(184,48,248,.12)}
+  .chip .t{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink);min-width:3.2ch}
+
+  .actions{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap;position:relative}
+  .btn{
+    border:0;cursor:pointer;font-family:var(--font);font-size:14px;font-weight:650;
+    padding:13px 20px;border-radius:14px;transition:transform .2s var(--ease),opacity .2s,box-shadow .2s;
+  }
+  .btn:active{transform:scale(.97)}
+  .btn-primary{
+    background:var(--grad);color:#fff;
+    box-shadow:0 10px 28px -10px rgba(184,48,248,.7), inset 0 1px 0 rgba(255,255,255,.25);
+  }
+  .btn-primary:hover{box-shadow:0 14px 36px -10px rgba(184,48,248,.85), inset 0 1px 0 rgba(255,255,255,.3)}
+  .btn-ghost{
+    background:rgba(255,255,255,.04);color:var(--ink);border:1px solid rgba(255,255,255,.1);
+  }
+  .btn-ghost:hover{border-color:rgba(184,48,248,.35);background:rgba(184,48,248,.08)}
+
+  /* timer ring */
+  .timer-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:8px;position:relative}
+  .ring-wrap{position:relative;width:72px;height:72px;flex-shrink:0}
+  .ring-wrap svg{transform:rotate(-90deg)}
+  .ring-bg{stroke:rgba(255,255,255,.08)}
+  .ring-fg{stroke:url(#msGrad);stroke-linecap:round;transition:stroke-dashoffset .4s linear}
+  .ring-num{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+  }
+
+  /* score */
+  .score{
+    margin-top:16px;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px;
+  }
+  .score-left{display:flex;flex-direction:column;gap:2px}
+  .score-left span{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2)}
+  .score-left strong{font-size:28px;font-weight:300;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .score-left strong em{font-style:normal;font-size:15px;color:var(--mute);font-weight:500}
+  .bar{flex:1;height:8px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden;max-width:180px}
+  .bar > i{display:block;height:100%;width:0%;border-radius:99px;background:var(--grad);transition:width .5s var(--ease);box-shadow:0 0 16px rgba(184,48,248,.5)}
+
+  /* today slots — WIP 3 */
+  .sec{margin-top:34px}
+  .sec-h{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
+  .sec-h h2{font-size:15px;font-weight:650;letter-spacing:-.01em}
+  .sec-h span{font-size:12px;color:var(--mute-2)}
+  .slots{display:flex;flex-direction:column;gap:10px}
+  .slot{
+    display:grid;grid-template-columns:72px 1fr auto;gap:14px;align-items:center;
+    padding:16px 18px;border-radius:16px;position:relative;overflow:hidden;
+    transition:border-color .3s var(--ease),transform .3s var(--ease);
+  }
+  .slot:hover{border-color:rgba(184,48,248,.28);transform:translateY(-1px)}
+  .slot.active{border-color:rgba(184,48,248,.4);background:var(--grad-soft)}
+  .slot.done{opacity:.45}
+  .slot.done .slot-task{text-decoration:line-through}
+  .slot-time{font-size:12.5px;font-weight:650;color:var(--vio-2);font-variant-numeric:tabular-nums}
+  .slot-task{font-size:14px;font-weight:550;letter-spacing:-.01em}
+  .slot-sub{font-size:12px;color:var(--mute-2);margin-top:2px}
+  .slot-check{
+    width:28px;height:28px;border-radius:9px;border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.03);cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:.2s var(--ease);color:transparent;font-size:14px;font-weight:700;
+  }
+  .slot-check:hover{border-color:rgba(184,48,248,.5)}
+  .slot.done .slot-check{background:var(--grad);border-color:transparent;color:#fff;box-shadow:0 0 16px rgba(184,48,248,.45)}
+
+  /* if-then */
+  .ifthen{
+    margin-top:16px;padding:16px 18px;font-size:13px;color:var(--mute);line-height:1.5;
+  }
+  .ifthen b{color:#e0d0ff;font-weight:600}
+
+  /* backlog collapsed */
+  details.tail{margin-top:16px}
+  details.tail summary{
+    list-style:none;cursor:pointer;padding:14px 18px;border-radius:16px;
+    font-size:13px;font-weight:600;color:var(--mute);display:flex;justify-content:space-between;align-items:center;
+    user-select:none;
+  }
+  details.tail summary::-webkit-details-marker{display:none}
+  details.tail summary:hover{color:var(--ink);border-color:rgba(184,48,248,.25)}
+  details.tail[open] summary{border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:transparent}
+  .tail-body{padding:0 18px 16px;border:1px solid var(--line);border-top:0;border-radius:0 0 16px 16px;background:rgba(255,255,255,.02)}
+  .tail-item{padding:12px 0;border-top:1px solid rgba(255,255,255,.05);font-size:13.5px}
+  .tail-item:first-child{border-top:0}
+  .tail-item span{display:block;font-size:11.5px;color:var(--mute-2);margin-top:3px}
+
+  /* method strip */
+  .methods{margin-top:36px;padding:22px 22px 18px}
+  .methods h3{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2);margin-bottom:14px}
+  .m-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:560px){.m-grid{grid-template-columns:1fr}}
+  .m-card{
+    padding:14px;border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);
+  }
+  .m-card strong{display:block;font-size:13px;font-weight:650;margin-bottom:4px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .m-card p{font-size:12px;color:var(--mute-2);line-height:1.4}
+
+  .foot{margin-top:28px;text-align:center;font-size:11.5px;color:var(--mute-2)}
+  .foot a{color:var(--vio-2);text-decoration:none}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-in">
+      <div class="brand">
+        <div class="logo-orb">
+          <img src="assets/logo-ms-transparent.png" alt="MS Product">
+        </div>
+        <div class="brand-meta">
+          <strong>MS Focus</strong>
+          <span>1 · 3 · ∞</span>
+        </div>
+      </div>
+      <div class="live"><span class="dot"></span> Сейчас</div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <header class="hero">
+      <div class="hero-kicker">Четверг · 9 июля</div>
+      <h1>Одна задача.<br>Один спринт. Победа.</h1>
+      <p>Внешняя структура вместо силы воли. WIP ≤ 3. Хвост свёрнут.</p>
+    </header>
+
+    <!-- СЕЙЧАС -->
+    <section class="glass now" id="now">
+      <div class="now-label"><span class="pip"></span> Сейчас</div>
+      <div class="timer-row">
+        <div>
+          <div class="now-project" id="nowProject">LicenseBridge USA</div>
+          <div class="now-title" id="nowTitle">Телефония US — SSH + SIP</div>
+        </div>
+        <div class="ring-wrap" title="Видимое время (Barkley)">
+          <svg width="72" height="72" viewBox="0 0 72 72">
+            <defs>
+              <linearGradient id="msGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#b830f8"/>
+                <stop offset="100%" stop-color="#6868f8"/>
+              </linearGradient>
+            </defs>
+            <circle class="ring-bg" cx="36" cy="36" r="30" fill="none" stroke-width="5"/>
+            <circle class="ring-fg" id="ringFg" cx="36" cy="36" r="30" fill="none" stroke-width="5"
+              stroke-dasharray="188.4" stroke-dashoffset="0"/>
+          </svg>
+          <div class="ring-num" id="ringNum">40</div>
+        </div>
+      </div>
+      <div class="now-dod" id="nowDod">
+        <b>DoD:</b> SSH Mark Brown проверен · слот с US-контактом подтверждён · чеклист телефонии открыт рядом
+      </div>
+      <div class="now-meta">
+        <span class="chip accent">спринт <span class="t" id="sprintMin">40</span> мин</span>
+        <span class="chip">микростарт: открыть чеклист</span>
+        <span class="chip">critical</span>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="btnStart" type="button">Старт спринта</button>
+        <button class="btn btn-ghost" id="btnDone" type="button">Сделано</button>
+        <button class="btn btn-ghost" id="btnNext" type="button">Следующая</button>
+      </div>
+    </section>
+
+    <div class="glass score">
+      <div class="score-left">
+        <span>Закрыто сегодня</span>
+        <strong><span id="scoreN">0</span> <em>/ 3</em></strong>
+      </div>
+      <div class="bar"><i id="scoreBar"></i></div>
+    </div>
+
+    <!-- TODAY WIP 3 -->
+    <section class="sec">
+      <div class="sec-h">
+        <h2>Сегодня · максимум 3</h2>
+        <span>Kanban WIP limit</span>
+      </div>
+      <div class="slots" id="slots">
+        <div class="slot glass active" data-id="lb-tel">
+          <div class="slot-time">день</div>
+          <div>
+            <div class="slot-task">LicenseBridge · телефония US</div>
+            <div class="slot-sub">SSH + SIP · слот с контактом</div>
+          </div>
+          <button class="slot-check" type="button" aria-label="Закрыть">✓</button>
+        </div>
+        <div class="slot glass" data-id="martache">
+          <div class="slot-time">~1 ч</div>
+          <div>
+            <div class="slot-task">MartaChe · лояльность</div>
+            <div class="slot-sub">Перепроверка по ходу</div>
+          </div>
+          <button class="slot-check" type="button" aria-label="Закрыть">✓</button>
+        </div>
+        <div class="slot glass" data-id="evening">
+          <div class="slot-time">17:30</div>
+          <div>
+            <div class="slot-task">Выезд · домашка 18:30</div>
+            <div class="slot-sub">Личный якорь — не двигать</div>
+          </div>
+          <button class="slot-check" type="button" aria-label="Закрыть">✓</button>
+        </div>
+      </div>
+
+      <div class="glass ifthen">
+        <b>If–Then:</b> Если открыл этот экран → тогда 2 мин: только микростарт текущей задачи (не весь день).
+      </div>
+    </section>
+
+    <!-- TAIL collapsed -->
+    <details class="tail">
+      <summary class="glass">Хвост и очередь <span id="tailCount">5</span></summary>
+      <div class="tail-body">
+        <div class="tail-item">Mansband · каналы + Max→WhatsApp<span>после LB · нужен пример от Миши</span></div>
+        <div class="tail-item">ДК Академия · аналитика баги<span>когда видео/вопросы от Максима</span></div>
+        <div class="tail-item">Mansband · касса тесты<span>бэклог</span></div>
+        <div class="tail-item">Позвоночник · ответ на ТЗ<span>close · ≥30 мин</span></div>
+        <div class="tail-item">Библии со склада → церковь<span>до вс 12.07</span></div>
+      </div>
+    </details>
+
+    <section class="glass methods">
+      <h3>Почему так устроено</h3>
+      <div class="m-grid">
+        <div class="m-card">
+          <strong>1 · 3 · ∞</strong>
+          <p>Одна «сейчас», WIP≤3 на день, остальное свёрнуто. Barkley: внешняя память.</p>
+        </div>
+        <div class="m-card">
+          <strong>Видимое время</strong>
+          <p>Кольцо спринта = time blindness fix. 25–40 мин, не «до вечера».</p>
+        </div>
+        <div class="m-card">
+          <strong>Микростарт</strong>
+          <p>2 мин / первый физический шаг. Initiation > план. FOCO / 2-minute rule.</p>
+        </div>
+        <div class="m-card">
+          <strong>Счёт побед</strong>
+          <p>Закрытие = дофамин. Neeleman: чеклисты + делегирование деталей системе.</p>
+        </div>
+      </div>
+    </section>
+
+    <p class="foot">
+      Источник правды: <a href="../_КОНТЕКСТ/ПОВЕСТКА.md">ПОВЕСТКА.md</a> · палитра лого MS · DNA DIVO glass
+    </p>
+  </div>
+
+<script>
+(function () {
+  const CIRC = 188.4;
+  const DEFAULT_MIN = 40;
+  let totalSec = DEFAULT_MIN * 60;
+  let leftSec = totalSec;
+  let timer = null;
+  let running = false;
+
+  const ringFg = document.getElementById("ringFg");
+  const ringNum = document.getElementById("ringNum");
+  const sprintMin = document.getElementById("sprintMin");
+  const scoreN = document.getElementById("scoreN");
+  const scoreBar = document.getElementById("scoreBar");
+  const btnStart = document.getElementById("btnStart");
+  const btnDone = document.getElementById("btnDone");
+  const btnNext = document.getElementById("btnNext");
+
+  const QUEUE = [
+    {
+      id: "lb-tel",
+      project: "LicenseBridge USA",
+      title: "Телефония US — SSH + SIP",
+      dod: "SSH Mark Brown проверен · слот с US-контактом подтверждён · чеклист телефонии открыт рядом",
+      min: 40,
+    },
+    {
+      id: "martache",
+      project: "MartaChe",
+      title: "Перепроверка лояльности",
+      dod: "Прогон сценария лояльности · баги записаны или ок",
+      min: 45,
+    },
+    {
+      id: "evening",
+      project: "Личное",
+      title: "Выезд 17:30 · домашка 18:30",
+      dod: "Выехать вовремя · телефон/ноут не тащить в работу после якоря",
+      min: 15,
+    },
+  ];
+  let qi = 0;
+  let closed = 0;
+
+  function fmt(sec) {
+    const m = Math.ceil(sec / 60);
+    return String(Math.max(0, m));
+  }
+
+  function paintRing() {
+    const p = leftSec / totalSec;
+    ringFg.style.strokeDashoffset = String(CIRC * (1 - p));
+    ringNum.textContent = fmt(leftSec);
+    sprintMin.textContent = fmt(leftSec);
+  }
+
+  function setNow(item) {
+    document.getElementById("nowProject").textContent = item.project;
+    document.getElementById("nowTitle").textContent = item.title;
+    document.getElementById("nowDod").innerHTML = "<b>DoD:</b> " + item.dod;
+    totalSec = item.min * 60;
+    leftSec = totalSec;
+    running = false;
+    clearInterval(timer);
+    btnStart.textContent = "Старт спринта";
+    paintRing();
+    document.querySelectorAll(".slot").forEach((el) => {
+      el.classList.toggle("active", el.dataset.id === item.id && !el.classList.contains("done"));
+    });
+  }
+
+  function updateScore() {
+    scoreN.textContent = String(closed);
+    scoreBar.style.width = Math.min(100, (closed / 3) * 100) + "%";
+  }
+
+  function stopTimer() {
+    running = false;
+    clearInterval(timer);
+    btnStart.textContent = "Старт спринта";
+  }
+
+  btnStart.addEventListener("click", () => {
+    if (running) {
+      stopTimer();
+      return;
+    }
+    running = true;
+    btnStart.textContent = "Пауза";
+    timer = setInterval(() => {
+      leftSec -= 1;
+      if (leftSec <= 0) {
+        leftSec = 0;
+        paintRing();
+        stopTimer();
+        if (navigator.vibrate) navigator.vibrate(200);
+        return;
+      }
+      paintRing();
+    }, 1000);
+  });
+
+  function markDone(id) {
+    const slot = document.querySelector('.slot[data-id="' + id + '"]');
+    if (slot && !slot.classList.contains("done")) {
+      slot.classList.add("done");
+      slot.classList.remove("active");
+      closed += 1;
+      updateScore();
+    }
+  }
+
+  btnDone.addEventListener("click", () => {
+    const cur = QUEUE[qi];
+    markDone(cur.id);
+    stopTimer();
+  });
+
+  btnNext.addEventListener("click", () => {
+    const nextOpen = QUEUE.findIndex((q, i) => {
+      if (i <= qi) return false;
+      const el = document.querySelector('.slot[data-id="' + q.id + '"]');
+      return el && !el.classList.contains("done");
+    });
+    if (nextOpen === -1) {
+      const firstOpen = QUEUE.findIndex((q) => {
+        const el = document.querySelector('.slot[data-id="' + q.id + '"]');
+        return el && !el.classList.contains("done");
+      });
+      if (firstOpen === -1) return;
+      qi = firstOpen;
+    } else {
+      qi = nextOpen;
+    }
+    setNow(QUEUE[qi]);
+  });
+
+  document.getElementById("slots").addEventListener("click", (e) => {
+    const btn = e.target.closest(".slot-check");
+    const slot = e.target.closest(".slot");
+    if (!slot) return;
+    const id = slot.dataset.id;
+    const idx = QUEUE.findIndex((q) => q.id === id);
+    if (btn) {
+      if (slot.classList.contains("done")) {
+        slot.classList.remove("done");
+        closed = Math.max(0, closed - 1);
+        updateScore();
+      } else {
+        markDone(id);
+      }
+      return;
+    }
+    if (idx >= 0) {
+      qi = idx;
+      setNow(QUEUE[qi]);
+    }
+  });
+
+  setNow(QUEUE[0]);
+  updateScore();
+  paintRing();
+})();
+</script>
+</body>
+</html>

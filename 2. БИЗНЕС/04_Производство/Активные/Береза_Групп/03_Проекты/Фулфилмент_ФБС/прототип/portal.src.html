@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>БЕРЕЗА ГРУПП — кабинет склада</title>
+<link rel="stylesheet" href="assets/portal.css">
+</head>
+<body>
+
+<div id="login">
+  <div class="glass login-card">
+    <div class="login-brand">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+      <div><b>БЕРЕЗА ГРУПП</b><small>Кабинет склада</small></div>
+    </div>
+    <h1>Вход</h1>
+    <p>Кабинет руководителя · 2 раздела после входа.</p>
+    <div class="login-err" id="loginErr">Неверный логин или пароль</div>
+    <div class="field">
+      <label for="loginUser">Логин</label>
+      <input id="loginUser" type="text" autocomplete="username" placeholder="Логин">
+    </div>
+    <div class="field">
+      <label for="loginPass">Пароль</label>
+      <input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="btn-primary" id="loginBtn" type="button">Войти</button>
+    <div class="login-hint">Демо: <code>manager</code> / <code>demo2026</code></div>
+  </div>
+</div>
+
+<div id="app">
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+      <div class="brand-div"></div>
+      <div class="brand-title">БЕРЕЗА ГРУПП<small id="brandSub">Панель руководителя</small></div>
+    </div>
+    <div class="header-right">
+      <div class="viewnav" id="viewNav">
+        <button type="button" data-view="manager" class="active" id="navMgr">Руководитель</button>
+        <button type="button" data-view="client" id="navCli">Кабинет клиента</button>
+      </div>
+      <div class="period" id="periodSwitch">
+        <button type="button" data-period="7">7 дней</button>
+        <button type="button" data-period="30" class="active">Месяц</button>
+        <button type="button" data-period="90">Квартал</button>
+      </div>
+      <div class="daterange">
+        <input type="date" id="dateFrom">
+        <span class="sep">—</span>
+        <input type="date" id="dateTo">
+      </div>
+      <div class="selectbox" id="clientWhoWrap" style="display:none">
+        <label for="whoSel">Клиент</label>
+        <select id="whoSel"></select>
+      </div>
+      <button class="theme-toggle" id="themeToggle" type="button">
+        <span id="themeLabel">Светлая</span>
+        <span class="theme-switch"></span>
+      </button>
+      <button class="btn-ghost" id="logoutBtn" type="button">Выйти</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="view active" id="view-manager">
+    <div class="hero-head">
+      <div>
+        <h1 id="m-title">Хранение и услуги склада</h1>
+        <p>Ежедневный остаток клиентского товара в литрах, начисление по литро-дням, операции и итог к счёту.</p>
+      </div>
+      <div class="updated" id="m-updated">—</div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi glass tilt feature"><div class="glow"></div><div class="kpi-label">Объём на конец периода</div><div class="kpi-val" id="k-vol">— <small>л</small></div><div class="kpi-sub" id="k-vol-sub">по 5 клиентам</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Литро-дни за период</div><div class="kpi-val" id="k-ld">—</div><div class="kpi-sub">Σ дневных остатков</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Начислено за хранение</div><div class="kpi-val" id="k-store">— <small>₽</small></div><div class="kpi-sub">ставка <span id="k-rate">—</span> ₽ / л · день</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Операции сверх хранения</div><div class="kpi-val" id="k-ops">— <small>₽</small></div><div class="kpi-sub">приёмка, сборка, упаковка</div></div>
+      <div class="kpi glass tilt feature"><div class="glow"></div><div class="kpi-label">К выставлению</div><div class="kpi-val gold" id="k-total">— <small>₽</small></div><div class="kpi-sub" id="k-total-sub">хранение + операции</div></div>
+    </div>
+
+    <div class="sec-title"><h2>Динамика остатка на складе</h2><span>линия = остаток на конец дня · наведите на точку</span></div>
+    <div class="cols">
+      <div class="panel glass tilt">
+        <h3>Остаток клиентского товара, литры</h3>
+        <div class="psub">Каждая точка — остаток на 23:59. Начисление дня = эта точка × ставка.</div>
+        <div class="chart-box" id="mChartBox">
+          <svg class="chart-svg" id="mChart" viewBox="0 0 1000 240" preserveAspectRatio="none"></svg>
+          <div class="chart-tip" id="mChartTip"></div>
+        </div>
+        <div class="chart-legend"><span><i></i>Остаток на конец дня, л</span></div>
+        <div class="formula">День: <code>остаток × ставка</code>. Период: <code>Σ остатков = литро-дни → × ставка</code>.</div>
+      </div>
+      <div class="panel glass tilt">
+        <h3>Доля клиентов в объёме</h3>
+        <div class="psub">Кто занимает склад на конец выбранного периода</div>
+        <div class="donut-flex">
+          <div class="donut-wrap" id="donutWrap">
+            <svg class="donut-svg" id="donut" viewBox="0 0 36 36"></svg>
+            <div class="donut-center"><b id="donut-c-val">—</b><span id="donut-c-lbl">литров</span></div>
+            <div class="donut-tip" id="donutTip"></div>
+          </div>
+          <div class="donut-list" id="donutList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Биллинг по клиентам за период</h2><span>литро-дни × ставка + операции</span></div>
+    <div class="panel glass">
+      <div class="tbl-wrap">
+        <table class="tbl" id="clientTbl">
+          <thead><tr>
+            <th>Клиент</th><th class="num">SKU</th><th class="num">Штук</th>
+            <th class="num">Объём, л</th><th class="num">Литро-дни</th><th class="num">Ставка</th>
+            <th class="num">Хранение, ₽</th><th class="num">Операции, ₽</th><th class="num">Итого, ₽</th><th>Счёт</th>
+          </tr></thead>
+          <tbody></tbody><tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Ежедневная сводка по клиенту</h2><span>приложение к счёту</span></div>
+    <div class="panel glass">
+      <div class="inv-head">
+        <div><h3>Расшифровка по дням</h3><div class="psub">Приход, отгрузка, остаток и начисление</div></div>
+        <div class="selectbox"><label for="clientSel">Клиент</label><select id="clientSel"></select></div>
+      </div>
+      <div class="tbl-wrap tbl-scroll">
+        <table class="tbl" id="dailyTbl">
+          <thead><tr>
+            <th>Дата</th><th class="num">Приход, л</th><th class="num">Отгрузка, л</th>
+            <th class="num">Остаток, л</th><th class="num">Ставка</th><th class="num">Начислено, ₽</th>
+          </tr></thead>
+          <tbody></tbody><tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Загрузка склада</h2><span>занятость зон</span></div>
+    <div class="cols-2">
+      <div class="panel glass tilt">
+        <h3>Занятость по зонам, литры</h3>
+        <div class="psub">Полезный объём и текущее заполнение</div>
+        <div class="capacity" id="capacity"></div>
+        <div class="note">Свободно <b id="cap-free">—</b> л (<span id="cap-free-pct">—</span>%).</div>
+      </div>
+      <div class="panel glass tilt">
+        <h3>Операции склада за период</h3>
+        <div class="psub">Сверх хранения</div>
+        <div class="status-strip">
+          <div class="status glass"><div class="status-label">Собрано FBS</div><div class="status-val" id="ops-fbs">—</div><div class="status-sub">заказов</div></div>
+          <div class="status glass"><div class="status-label">SLA сборки</div><div class="status-val good">99,2%</div><div class="status-sub">до отсечки перевозчика</div></div>
+          <div class="status glass"><div class="status-label">Среднее время</div><div class="status-val warn">2 ч 24 м</div><div class="status-sub">заказ → «Отправлена»</div></div>
+          <div class="status glass"><div class="status-label">Расхождения</div><div class="status-val bad" id="ops-diff">—</div><div class="status-sub">акты приёмки</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Единый сток и маркетплейсы</h2><span>защита от оверсейла</span></div>
+    <div class="panel glass">
+      <h3>Сверка остатка с площадками</h3>
+      <div class="psub">Продажа на любой площадке уменьшает доступное на всех остальных.</div>
+      <div class="tbl-wrap">
+        <table class="tbl" id="stockTbl">
+          <thead><tr>
+            <th>Артикул / товар</th><th>Клиент</th><th class="num">На складе</th><th class="num">Резерв</th>
+            <th class="num">Доступно</th><th class="num">Ozon</th><th class="num">WB</th><th class="num">Я.Маркет</th><th>Синк</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Деньги за период</h2><span>выставлено и оплачено</span></div>
+    <div class="panel glass tilt">
+      <div class="status-strip" style="grid-template-columns:repeat(4,1fr)">
+        <div class="status glass"><div class="status-label">Выставлено</div><div class="status-val" id="m-billed">—</div><div class="status-sub">5 счетов</div></div>
+        <div class="status glass"><div class="status-label">Оплачено</div><div class="status-val good" id="m-paid">—</div><div class="status-sub" id="m-paid-sub">—</div></div>
+        <div class="status glass"><div class="status-label">Просрочено</div><div class="status-val bad">74 100 ₽</div><div class="status-sub">ТД «Северный», июнь</div></div>
+        <div class="status glass"><div class="status-label">Долгое хранение</div><div class="status-val warn" id="m-long">—</div><div class="status-sub">&gt; 90 дней</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-client">
+    <div class="hero-head">
+      <div>
+        <h1 id="c-title">Мой товар на складе</h1>
+        <p>Остаток, движения по дням и начисление. Расчёт открыт по каждому дню.</p>
+      </div>
+      <div class="updated">Договор <span id="h-contract">—</span></div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi glass tilt feature"><div class="glow"></div><div class="kpi-label">Мой объём</div><div class="kpi-val" id="c-vol">— <small>л</small></div><div class="kpi-sub"><span id="c-units">—</span> шт · <span id="c-sku">—</span> SKU</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Литро-дни</div><div class="kpi-val" id="c-ld">—</div><div class="kpi-sub">сумма дневных остатков</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Хранение</div><div class="kpi-val" id="c-store">— <small>₽</small></div><div class="kpi-sub">ставка <span id="c-rate">—</span> ₽ / л · день</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Отправлено заказов</div><div class="kpi-val" id="c-orders">—</div><div class="kpi-sub">собрано и передано</div></div>
+      <div class="kpi glass tilt feature"><div class="glow"></div><div class="kpi-label">К оплате</div><div class="kpi-val gold" id="c-total">— <small>₽</small></div><div class="kpi-sub">хранение + операции</div></div>
+    </div>
+
+    <div class="sec-title"><h2>Мой остаток по дням</h2><span>наведите — приход, отгрузка, начисление</span></div>
+    <div class="cols">
+      <div class="panel glass tilt">
+        <h3>Остаток на складе, литры</h3>
+        <div class="psub">Линия — остаток на конец дня. Это база начисления.</div>
+        <div class="chart-box" id="cChartBox">
+          <svg class="chart-svg" id="cChart" viewBox="0 0 1000 240" preserveAspectRatio="none"></svg>
+          <div class="chart-tip" id="cChartTip"></div>
+        </div>
+        <div class="chart-legend"><span><i></i>Мой остаток, л</span></div>
+        <div class="formula">День: <code>остаток × ставка</code>. Уехал — со следующего дня не начисляется.</div>
+      </div>
+      <div class="panel glass tilt invoice">
+        <div class="inv-head">
+          <div><h3>Счёт за период</h3><div class="psub" id="inv-period">—</div></div>
+          <div class="inv-total"><b id="inv-total-val">—</b><span>к оплате, ₽</span></div>
+        </div>
+        <div class="inv-lines" id="invLines"></div>
+        <div class="inv-sum"><span>Итого</span><b id="inv-sum-val">—</b></div>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Мой товар на складе</h2><span>остатки по артикулам</span></div>
+    <div class="panel glass">
+      <h3>Остатки по артикулам</h3>
+      <div class="psub">«Доступно» = остаток − резерв под заказы.</div>
+      <div class="searchbox"><input type="search" id="skuSearch" placeholder="Поиск по артикулу или названию…"></div>
+      <div class="tbl-wrap">
+        <table class="tbl" id="skuTbl">
+          <thead><tr>
+            <th>Артикул / товар</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Доступно</th>
+            <th class="num">Объём, л</th><th class="num">Дней</th><th>Площадки</th><th>Статус</th>
+          </tr></thead>
+          <tbody></tbody><tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Заказы и приёмки</h2><span>за выбранный период</span></div>
+    <div class="cols-2">
+      <div class="panel glass tilt">
+        <h3>Мои FBS-заказы</h3>
+        <div class="status-strip">
+          <div class="status glass"><div class="status-label">Отправлено</div><div class="status-val" id="o-sent">—</div><div class="status-sub">за период</div></div>
+          <div class="status glass"><div class="status-label">В сборке</div><div class="status-val warn" id="o-pick">—</div><div class="status-sub">до 3 часов</div></div>
+          <div class="status glass"><div class="status-label">В срок</div><div class="status-val good" id="o-sla">—</div><div class="status-sub">SLA 98%</div></div>
+          <div class="status glass"><div class="status-label">Возвраты</div><div class="status-val" id="o-ret">—</div><div class="status-sub">на полку</div></div>
+        </div>
+      </div>
+      <div class="panel glass tilt">
+        <h3>Приёмки поставок</h3>
+        <div class="tbl-wrap">
+          <table class="tbl" id="recTbl">
+            <thead><tr><th>Дата</th><th class="num">Заявлено</th><th class="num">Принято</th><th class="num">Объём, л</th><th>Результат</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Расшифровка начисления</h2><span>по дням периода</span></div>
+    <div class="panel glass">
+      <div class="tbl-wrap tbl-scroll">
+        <table class="tbl" id="cDailyTbl">
+          <thead><tr>
+            <th>Дата</th><th class="num">Приход, л</th><th class="num">Отгрузка, л</th>
+            <th class="num">Остаток, л</th><th class="num">Ставка</th><th class="num">Начислено, ₽</th>
+          </tr></thead>
+          <tbody></tbody><tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer glass">
+    <div class="footer-brand">
+      <img src="assets/logo-ms-transparent.png" alt="MS Product">
+      <div class="footer-div"></div>
+      <span><b>MS Product</b> · системная автоматизация</span>
+    </div>
+    <div class="footer-meta">Прототип. Данные демонстрационные.</div>
+  </div>
+</div>
+</div>
+
+<script src="assets/portal.js"></script>
+</body>
+</html>

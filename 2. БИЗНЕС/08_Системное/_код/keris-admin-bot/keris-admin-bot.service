@@ -1,0 +1,15 @@
+[Unit]
+Description=Keris Club — личный бот Карины (админ-панель, long polling)
+After=network-online.target keris-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/keris-admin-bot
+EnvironmentFile=/root/keris-admin-bot/.env
+ExecStart=/usr/bin/python3 /root/keris-admin-bot/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

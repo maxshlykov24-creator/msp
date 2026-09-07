@@ -1,0 +1,15 @@
+[Unit]
+Description=Keris Club MAX bot (long polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/keris-max-bot
+EnvironmentFile=/root/keris-max-bot/.env
+ExecStart=/usr/bin/python3 /root/keris-max-bot/max_bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

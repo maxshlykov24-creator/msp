@@ -1,0 +1,21 @@
+name: licensebridge-ssh-relay
+
+services:
+  relay:
+    build: .
+    container_name: lb-ssh-relay
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "2222:2222"
+    volumes:
+      - relay_host_keys:/keys
+    tmpfs:
+      - /run
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  relay_host_keys:
