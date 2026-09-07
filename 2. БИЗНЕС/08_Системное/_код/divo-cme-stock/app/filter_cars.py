@@ -168,3 +168,33 @@ def filter_stock(
         return out
     out.kept = published
     return out
+
+
+def filter_warehouse(
+    cars: list[dict[str, Any]],
+    *,
+    kept: list[dict[str, Any]],
+    dealer_id: str = "",
+) -> list[dict[str, Any]]:
+    """На складе, но в продажу не выставлена.
+
+    Бот про такие машины должен знать: клиент видит их в старых объявлениях и
+    спрашивает. Врать «продана» нельзя, поэтому отдаём отдельным списком.
+    """
+    if dealer_id:
+        cars = [
+            c for c in cars
+            if isinstance(c, dict) and str(c.get("dealerId") or "") == str(dealer_id)
+        ]
+    in_sale = {
+        str(pick(c, "vin", "VIN", "Vin") or "").strip().upper() for c in kept
+    }
+    out: list[dict[str, Any]] = []
+    for car in cars:
+        if not isinstance(car, dict) or not stock_in(car):
+            continue
+        vin = str(pick(car, "vin", "VIN", "Vin") or "").strip().upper()
+        if vin and vin in in_sale:
+            continue
+        out.append(car)
+    return out

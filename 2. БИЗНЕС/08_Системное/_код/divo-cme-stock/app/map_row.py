@@ -1,9 +1,14 @@
-"""Маппинг авто CME → 15 колонок Sheet1. Колонки не сдвигать (электро ≠ дырка)."""
+"""Маппинг авто CME → лист «Данные».
+
+A–O (CORE_HEADER) — контракт amo / FILTER на Sheet1. Порядок не менять.
+P+ (EXTRA_HEADER) — расширение справа, amo их не читает.
+"""
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
-HEADER: tuple[str, ...] = (
+CORE_HEADER: tuple[str, ...] = (
     "VIN",
     "Марка",
     "Модель",
@@ -19,6 +24,89 @@ HEADER: tuple[str, ...] = (
     "Количество владельцев по ПТС",
     "Комплектация",
     "Цена продажи",
+)
+EXTRA_HEADER: tuple[str, ...] = (
+    "Поколение",
+    "ПТС",
+    "Учёт в РФ",
+    "Без пробега РФ",
+    "Автотека",
+    "Окрасы",
+    "Фото, шт",
+    "Тип кузова",
+)
+HEADER: tuple[str, ...] = CORE_HEADER + EXTRA_HEADER
+
+
+def col_letter(n: int) -> str:
+    """1-based индекс колонки → A, B, …, Z, AA."""
+    if n < 1:
+        raise ValueError(n)
+    out = ""
+    while n:
+        n, rem = divmod(n - 1, 26)
+        out = chr(65 + rem) + out
+    return out
+
+
+LAST_CORE_COL = col_letter(len(CORE_HEADER))  # O
+LAST_COL = col_letter(len(HEADER))  # W
+
+PTS_MAP = {
+    "electron": "Электронный",
+    "electronic": "Электронный",
+    "эптс": "Электронный",
+    "original": "Оригинал",
+    "оригинал": "Оригинал",
+    "duplicate": "Дубликат",
+    "дубликат": "Дубликат",
+}
+
+AUTOTEKA_URL_RE = re.compile(r"https://(?:www\.)?autoteka\.ru/\S+", re.I)
+PAINT_LINE_RE = re.compile(r"Покраска и работы:\s*([^\n]+)", re.I)
+
+BODY_MAP = {
+    "off": "кроссовер",
+    "offroad": "кроссовер",
+    "suv": "кроссовер",
+    "sed": "седан",
+    "sedan": "седан",
+    "hatch": "хэтчбек",
+    "hatchback": "хэтчбек",
+    "liftback": "хэтчбек",
+    "miniwan": "минивэн",
+    "minivan": "минивэн",
+    "mpv": "минивэн",
+    "wag": "универсал",
+    "wagon": "универсал",
+    "coupe": "купе",
+    "pickup": "пикап",
+}
+
+PAINT_PARTS = {
+    "ппк": "переднее правое крыло",
+    "ппд": "передняя правая дверь",
+    "плк": "переднее левое крыло",
+    "плд": "передняя левая дверь",
+    "зпк": "заднее правое крыло",
+    "зпд": "задняя правая дверь",
+    "злд": "задняя левая дверь",
+    "злк": "заднее левое крыло",
+    "кб": "крышка багажника",
+}
+
+PAINT_CODE_RE = re.compile(r"\b(ппк|ппд|плк|плд|зпк|зпд|злд|злк|кб)\b", re.I)
+PAINT_JUNK = (
+    re.compile(r"расч[её]ты?\s+в\s+авт[оа]теке[^.!,;]*", re.I),
+    re.compile(r"автотека\s+зелен\w*", re.I),
+    re.compile(r"так\s+же\s+вопрос\s+по\s+\w+", re.I),
+    re.compile(r"вопрос\s+по\s+\w+", re.I),
+    re.compile(r"\(\s*\d+\s*[–-]\s*\d+\s*мкр\s*\)", re.I),
+    re.compile(r"\d+\s*[–-]\s*\d+\s*мкр", re.I),
+    re.compile(r"до\s+\d+\s*мкр", re.I),
+    re.compile(r"в\s+районе\s+\d+\s*мкр", re.I),
+    re.compile(r"локально\s+\d+\s*[–-]?\s*\d*\s*мкр", re.I),
+    re.compile(r"\b\d+\s*мкр\b", re.I),
 )
 
 # Не generation («I Рестайлинг») — это не комплектация.
@@ -226,6 +314,152 @@ def vin_of(car: dict[str, Any]) -> str:
     return str(vin).strip().upper() if vin else ""
 
 
+def format_pts(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    raw = str(value).strip()
+    return PTS_MAP.get(_norm_key(raw), raw)
+
+
+def format_yes_no(value: Any) -> str:
+    if value is True:
+        return "Да"
+    if value is False:
+        return "Нет"
+    if value in (None, ""):
+        return ""
+    key = _norm_key(value)
+    if key in {"true", "1", "да", "yes"}:
+        return "Да"
+    if key in {"false", "0", "нет", "no"}:
+        return "Нет"
+    return str(value).strip()
+
+
+def autoteka_of(comment: str) -> str:
+    if not comment:
+        return ""
+    m = AUTOTEKA_URL_RE.search(comment)
+    if not m:
+        return ""
+    return m.group(0).rstrip(").,]\"'")
+
+
+def format_body(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    return BODY_MAP.get(_norm_key(value), "")
+
+
+def _join_ru(parts: list[str]) -> str:
+    uniq: list[str] = []
+    for part in parts:
+        if part and part not in uniq:
+            uniq.append(part)
+    if not uniq:
+        return ""
+    if len(uniq) == 1:
+        return uniq[0]
+    if len(uniq) == 2:
+        return "%s и %s" % (uniq[0], uniq[1])
+    return "%s и %s" % (", ".join(uniq[:-1]), uniq[-1])
+
+
+def paint_human(raw: str) -> str:
+    """Складские коды и пометки → одна фраза для клиента."""
+    if not raw:
+        return ""
+    text = raw.strip()
+    for rx in PAINT_JUNK:
+        text = rx.sub(" ", text)
+    text = re.sub(r"\s+", " ", text).strip(" .,;:()")
+    key = _norm_key(text)
+    if key in {"нет", "-", "н/д", "нет окрасов"}:
+        return "без окрасов"
+
+    extras: list[str] = []
+    no_paint = "без окрас" in key
+    if "без дтп" in key:
+        extras.append("без ДТП")
+    if "зон" in key and "плен" in key:
+        extras.append("зоны риска в плёнке")
+    elif "броне" in key:
+        extras.append("передняя часть в бронеплёнке")
+    elif "плен" in key:
+        extras.append("в плёнке")
+    if "скол" in key:
+        extras.append("скол на лобовом стекле" if "лобов" in key else "скол")
+
+    parts: list[str] = []
+    if "вся правая сторона" in key or "всю правую" in key:
+        parts.append("вся правая сторона")
+    if "вся левая сторона" in key:
+        parts.append("вся левая сторона")
+    if "крышк" in key and "багаж" in key:
+        loc = "локальный окрас крышки багажника"
+        if "лев" in key:
+            loc += " слева"
+        elif "прав" in key:
+            loc += " справа"
+        parts.append(loc)
+
+    right_side = "вся правая сторона" in parts
+    for match in PAINT_CODE_RE.finditer(key):
+        name = PAINT_PARTS.get(match.group(1))
+        if not name:
+            continue
+        if right_side and name.startswith("заднее правое"):
+            continue
+        if name not in parts:
+            parts.append(name)
+
+    if re.search(r"капот", key) and "капот" not in parts:
+        parts.append("капот")
+
+    if no_paint and not parts:
+        return ", ".join(["без окрасов"] + extras)
+
+    if parts:
+        if len(parts) == 1 and parts[0] == "капот":
+            head = "окрашен капот"
+        elif len(parts) == 1 and parts[0].startswith("локальный"):
+            head = parts[0]
+        elif len(parts) == 1 and parts[0].startswith("вся "):
+            head = "окрашена " + parts[0]
+        else:
+            head = "окрашены " + _join_ru(parts)
+        bits = [head]
+        if "ремонт" in key:
+            bits.append("с ремонтом")
+        bits.extend(extras)
+        return ", ".join(bits)
+
+    if no_paint:
+        return ", ".join(["без окрасов"] + extras)
+    return text
+
+
+def paint_of(comment: str) -> str:
+    m = PAINT_LINE_RE.search(comment or "")
+    if not m:
+        return ""
+    raw = m.group(1).strip().rstrip(".")
+    return paint_human(raw)
+
+
+def photos_count(car: dict[str, Any]) -> str:
+    n = pick(car, "photosAmount")
+    if n not in (None, ""):
+        try:
+            return str(int(float(str(n))))
+        except (TypeError, ValueError):
+            pass
+    urls = car.get("photosUrls") or car.get("photos") or []
+    if isinstance(urls, list) and urls:
+        return str(len(urls))
+    return ""
+
+
 def map_row(car: dict[str, Any]) -> list[str]:
     engine = format_engine(pick(car, "engine", "engineType", "engine.type"))
     electric = _norm_key(engine) == "электро"
@@ -256,6 +490,8 @@ def map_row(car: dict[str, Any]) -> list[str]:
         except (TypeError, ValueError):
             year_s = str(year).strip()
 
+    comment = str(pick(car, "anyCommentDescription", "comment") or "")
+
     return [
         vin_of(car),
         str(pick(car, "brand", "brandName", "mark") or "").strip(),
@@ -272,6 +508,14 @@ def map_row(car: dict[str, Any]) -> list[str]:
         owners_s,
         complectation_of(car),
         price_s,
+        str(pick(car, "generation", "generationName") or "").strip(),
+        format_pts(pick(car, "originalPts", "ptsType", "pts")),
+        format_yes_no(pick(car, "registeredInRu")),
+        format_yes_no(pick(car, "withoutMileageInRu")),
+        autoteka_of(comment),
+        paint_of(comment),
+        photos_count(car),
+        format_body(pick(car, "body", "bodyType")),
     ]
 
 

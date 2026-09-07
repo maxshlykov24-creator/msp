@@ -1,4 +1,4 @@
-"""Google Sheets: только лист «Данные». Sheet1 не трогаем."""
+"""Google Sheets: листы «Данные» и «Склад». Sheet1 и «Пометки» не трогаем."""
 from __future__ import annotations
 
 import logging
@@ -9,7 +9,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from app.config import settings
-from app.map_row import HEADER
+from app.map_row import CORE_HEADER, HEADER, LAST_COL, LAST_CORE_COL
 
 log = logging.getLogger("sheets")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -31,7 +31,7 @@ def _meta(svc) -> dict[str, Any]:
         svc.spreadsheets()
         .get(
             spreadsheetId=settings.spreadsheet_id,
-            fields="properties(title),sheets(properties(sheetId,title))",
+            fields="properties(title),sheets(properties(sheetId,title,gridProperties))",
         )
         .execute()
     )
@@ -42,10 +42,10 @@ def sheet_map(svc) -> dict[str, int]:
     return {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta.get("sheets", [])}
 
 
-def ensure_data_sheet(svc) -> int:
+def ensure_sheet(svc, title: str, columns: int = len(HEADER)) -> int:
     titles = sheet_map(svc)
-    if settings.data_sheet in titles:
-        return titles[settings.data_sheet]
+    if title in titles:
+        return titles[title]
     resp = (
         svc.spreadsheets()
         .batchUpdate(
@@ -55,8 +55,12 @@ def ensure_data_sheet(svc) -> int:
                     {
                         "addSheet": {
                             "properties": {
-                                "title": settings.data_sheet,
-                                "gridProperties": {"rowCount": 2000, "columnCount": 15, "frozenRowCount": 1},
+                                "title": title,
+                                "gridProperties": {
+                                    "rowCount": 2000,
+                                    "columnCount": columns,
+                                    "frozenRowCount": 1,
+                                },
                             }
                         }
                     }
@@ -66,8 +70,41 @@ def ensure_data_sheet(svc) -> int:
         .execute()
     )
     sid = resp["replies"][0]["addSheet"]["properties"]["sheetId"]
-    log.info("создан лист %s id=%s", settings.data_sheet, sid)
+    log.info("создан лист %s id=%s", title, sid)
     return sid
+
+
+def ensure_data_sheet(svc) -> int:
+    return ensure_sheet(svc, settings.data_sheet)
+
+
+def ensure_column_count(svc, sheet_id: int, n: int) -> None:
+    """Расширяет сетку вправо. Уже более широкую не сужает."""
+    meta = _meta(svc)
+    current = 0
+    for s in meta.get("sheets", []):
+        props = s.get("properties") or {}
+        if props.get("sheetId") == sheet_id:
+            current = int((props.get("gridProperties") or {}).get("columnCount") or 0)
+            break
+    if current >= n:
+        return
+    svc.spreadsheets().batchUpdate(
+        spreadsheetId=settings.spreadsheet_id,
+        body={
+            "requests": [
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": sheet_id,
+                            "gridProperties": {"columnCount": n},
+                        },
+                        "fields": "gridProperties.columnCount",
+                    }
+                }
+            ]
+        },
+    ).execute()
 
 
 def get_values(svc, title: str, rng: str = "A1:O") -> list[list[Any]]:
@@ -84,24 +121,34 @@ def get_values(svc, title: str, rng: str = "A1:O") -> list[list[Any]]:
     return resp.get("values", [])
 
 
-def write_dannye(svc, rows: list[list[str]]) -> None:
+def write_rows(svc, title: str, rows: list[list[str]]) -> None:
     """Сначала header+N строк, потом clear хвоста. Не clear→update."""
-    ensure_data_sheet(svc)
+    sid = ensure_sheet(svc, title)
+    ensure_column_count(svc, sid, len(HEADER))
     n = len(rows)
     values = [list(HEADER)] + rows
     svc.spreadsheets().values().update(
         spreadsheetId=settings.spreadsheet_id,
-        range=f"{qid(settings.data_sheet)}!A1",
+        range=f"{qid(title)}!A1",
         valueInputOption=settings.sheets_value_input,
         body={"values": values},
     ).execute()
     tail_from = n + 2
     svc.spreadsheets().values().clear(
         spreadsheetId=settings.spreadsheet_id,
-        range=f"{qid(settings.data_sheet)}!A{tail_from}:O",
+        range=f"{qid(title)}!A{tail_from}:{LAST_COL}",
         body={},
     ).execute()
-    log.info("Данные: записано %s строк, хвост с A%s очищен", n, tail_from)
+    log.info("%s: записано %s строк, хвост с A%s:%s очищен", title, n, tail_from, LAST_COL)
+
+
+def write_dannye(svc, rows: list[list[str]]) -> None:
+    write_rows(svc, settings.data_sheet, rows)
+
+
+def write_warehouse(svc, rows: list[list[str]]) -> None:
+    """Лист «Склад»: на складе, но не в продаже. amo его не читает."""
+    write_rows(svc, settings.warehouse_sheet, rows)
 
 
 def duplicate_sheet(svc, source_title: str, dest_title: str) -> int:
@@ -133,18 +180,18 @@ def duplicate_sheet(svc, source_title: str, dest_title: str) -> int:
 
 def set_sheet1_filter(svc, formula: str) -> None:
     """A1 — статическая шапка (сейчас там QUERY, его надо снять, иначе spill столкнётся).
-    A2 — FILTER. Имена/порядок колонок как у контракта HEADER."""
+    A2 — FILTER. Имена/порядок только CORE_HEADER (A–O), amo не видит P+."""
     title = settings.sheet1_name
     svc.spreadsheets().values().clear(
         spreadsheetId=settings.spreadsheet_id,
-        range=f"{qid(title)}!A1:O",
+        range=f"{qid(title)}!A1:{LAST_CORE_COL}",
         body={},
     ).execute()
     svc.spreadsheets().values().update(
         spreadsheetId=settings.spreadsheet_id,
         range=f"{qid(title)}!A1",
         valueInputOption="RAW",
-        body={"values": [list(HEADER)]},
+        body={"values": [list(CORE_HEADER)]},
     ).execute()
     svc.spreadsheets().values().update(
         spreadsheetId=settings.spreadsheet_id,

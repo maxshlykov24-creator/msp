@@ -1,13 +1,21 @@
-from app.filter_cars import filter_stock
-from app.map_row import HEADER, dedup_sort, map_row
+from app.filter_cars import filter_stock, filter_warehouse
+from app.map_row import CORE_HEADER, HEADER, dedup_sort, map_row
 from app.state import guard_write
 
 
-def test_header_15_cols():
-    assert len(HEADER) == 15
+def test_core_header_is_amo_contract():
+    """A–O читает amo через FILTER на Sheet1. Порядок и ширина неприкосновенны."""
+    assert len(CORE_HEADER) == 15
+    assert HEADER[:15] == CORE_HEADER
     assert HEADER[0] == "VIN"
     assert HEADER[13] == "Комплектация"
     assert HEADER[14] == "Цена продажи"
+
+
+def test_extra_columns_go_right():
+    assert len(HEADER) == 23
+    assert HEADER[15] == "Поколение"
+    assert HEADER[-1] == "Тип кузова"
 
 
 def test_map_pdf_sample():
@@ -118,6 +126,21 @@ def test_filter_published_flag():
     res = filter_stock(cars, mode="require")
     assert res.publish_field == "published"
     assert [c["vin"] for c in res.kept] == ["A"]
+
+
+def test_warehouse_is_in_stock_minus_on_sale():
+    cars = [
+        {"vin": "A", "stockState": "in", "saleStatus": "onsale", "published": True},
+        {"vin": "B", "stockState": "in", "saleStatus": "offsale", "published": False},
+        {"vin": "C", "stockState": "in", "saleStatus": "onsale", "published": False},
+        {"vin": "D", "stockState": "out", "saleStatus": "offsale", "published": False},
+    ]
+    res = filter_stock(cars, mode="require")
+    assert [c["vin"] for c in res.kept] == ["A"]
+    # B снята с продажи, C в продаже но не опубликована — обе на складе есть.
+    # D со склада уехала, её в списке быть не должно.
+    stored = filter_warehouse(cars, kept=res.kept)
+    assert [c["vin"] for c in stored] == ["B", "C"]
 
 
 def test_guard_empty():

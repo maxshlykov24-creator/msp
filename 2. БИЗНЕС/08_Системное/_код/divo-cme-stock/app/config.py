@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     google_sa_path: str = "google_sa.json"
     spreadsheet_id: str = "1icRyb3qObLM80b2S-zvwIttB808FIsDM8kB5Wu9u23Q"
     data_sheet: str = "Данные"
+    # На складе, но не в продаже. Читает только бот, amo этот лист не видит.
+    warehouse_sheet: str = "Склад"
     sheet1_name: str = "Sheet1"
     sheets_value_input: str = "RAW"
 

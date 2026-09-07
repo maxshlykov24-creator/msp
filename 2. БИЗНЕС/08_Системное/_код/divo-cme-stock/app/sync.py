@@ -1,4 +1,4 @@
-"""Один прогон: CME → фильтр → маппинг → страховка → лист Данные."""
+"""Один прогон: CME → фильтр → маппинг → страховка → листы Данные и Склад."""
 from __future__ import annotations
 
 import logging
@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.cme_client import CmeAuthError, CmeClient, CmeError
-from app.filter_cars import filter_stock
+from app.filter_cars import filter_stock, filter_warehouse
 from app.map_row import dedup_sort, map_row
 from app import notify, state
-from app.sheets import sheets_service, write_dannye
+from app.sheets import sheets_service, write_dannye, write_warehouse
 
 log = logging.getLogger("sync")
 
@@ -55,7 +55,21 @@ def run_once() -> str:
         if reason:
             raise CmeError(reason)
 
-        write_dannye(sheets_service(), rows)
+        svc = sheets_service()
+        write_dannye(svc, rows)
+        # Склад — справочный лист для бота, под страховку не попадает: пустой
+        # склад это норма, а «Данные» уже записаны выше.
+        try:
+            stored = dedup_sort(
+                map_row(c)
+                for c in filter_warehouse(
+                    raw, kept=filt.kept, dealer_id=settings.cme_dealer_id
+                )
+            )
+            write_warehouse(svc, stored)
+        except (OSError, CmeError) as exc:
+            log.warning("склад не записан, «Данные» в порядке: %s", exc)
+            stored = []
         st["last_ok_at"] = state.now_iso()
         st["last_ok_count"] = len(rows)
         st["fail_streak"] = 0
@@ -64,7 +78,8 @@ def run_once() -> str:
             st["publish_field"] = filt.publish_field
         state.save(st)
         msg = (
-            f"ok rows={len(rows)} raw={filt.stats.get('total')} "
+            f"ok rows={len(rows)} warehouse={len(stored)} "
+            f"raw={filt.stats.get('total')} "
             f"in={filt.stats.get('in_stock')} sale={filt.stats.get('onsale')} "
             f"pub_field={filt.publish_field}"
         )
