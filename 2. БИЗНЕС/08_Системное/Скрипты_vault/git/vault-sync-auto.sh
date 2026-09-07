@@ -104,7 +104,9 @@ fi
 
 # Debounce перед commit: не трогать файлы, изменённые < 90 сек назад.
 # Шумные пути исключены: watcher в node_modules или .venv держал бы debounce вечно.
-if find . -type f \
+# Ждать имеет смысл только если есть что коммитить. На чистом дереве ожидание
+# откладывало бы ещё и pull с push — правки со второго Mac не приходили бы до 30 мин.
+if [ -n "$(git status --porcelain)" ] && find . -type f \
   ! -path './.git/*' \
   ! -path './2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/*' \
   ! -path '*/node_modules/*' \
