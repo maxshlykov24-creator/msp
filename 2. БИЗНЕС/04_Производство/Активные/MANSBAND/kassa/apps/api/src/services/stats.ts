@@ -94,14 +94,39 @@ function buildRow(bucket: Bucket, rescuedPhones: Map<string, Set<string>>): Stat
   };
 }
 
+/**
+ * Кто смотрит статистику. Консультант видит только свои заявки (созвон 04.09):
+ * сравнение с коллегами — решение владельца, заложено во вторую волну.
+ */
+export interface StatsViewer {
+  name: string;
+  role: string;
+}
+
+const EMPTY_PURCHASING: PurchasingStats = {
+  revenue: 0,
+  expensesTotal: 0,
+  expensesByCategory: {},
+  positionsByGroup: [],
+  byChannel: {},
+  byPurpose: {},
+};
+
 /** Период — включительно, границы в формате YYYY-MM-DD по дате создания заявки. */
-export async function summary(period?: { from?: string; to?: string }): Promise<StatsSummary> {
+export async function summary(
+  period?: { from?: string; to?: string },
+  viewer?: StatsViewer
+): Promise<StatsSummary> {
   const rows = await db.select().from(dealsTable);
   const everything = rows.map((r) => r.data as Deal);
+  // Консультанту — только его строка: и в плитках, и в разрезах.
+  const ownOnly = viewer?.role === "consultant";
+  const viewerName = viewer?.name?.trim() ?? "";
   const all = everything.filter((d) => {
     const day = (d.createdAt ?? "").slice(0, 10);
     if (period?.from && day < period.from) return false;
     if (period?.to && day > period.to) return false;
+    if (ownOnly && (d.consultant?.trim() ?? "") !== viewerName) return false;
     return true;
   });
 
@@ -133,7 +158,8 @@ export async function summary(period?: { from?: string; to?: string }): Promise<
     .sort((a, b) => b.revenue - a.revenue);
   const totals = buildRow({ name: "Все", deals: all }, rescuedPhones);
 
-  const purchasing = await purchasingStats(all, period);
+  // Закуп и расходы Эдвина — не зона консультанта.
+  const purchasing = ownOnly ? EMPTY_PURCHASING : await purchasingStats(all, period);
 
   return { from: period?.from, to: period?.to, totals, consultants, stores, purchasing };
 }

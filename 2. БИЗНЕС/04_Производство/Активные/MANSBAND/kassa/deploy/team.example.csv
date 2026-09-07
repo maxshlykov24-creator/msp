@@ -1,0 +1,17 @@
+# Состав команды для заводки учёток пачкой:
+#   pnpm --filter @kassa/api seed:team deploy/team.csv
+#
+# Формат: логин;Имя;роль;магазин
+# Роли: consultant | crm | logist | finance | rop | admin
+# Магазин: «На Бауманской», «На Пятницкой», «Онлайн-магазин» или пусто.
+#
+# Реальные имена и логины подставляет владелец: скопируй файл в deploy/team.csv
+# (он в .gitignore) и заполни. Пароли скрипт сгенерирует сам и напечатает
+# ведомость один раз.
+
+# consultant.baumanskaya.1;Имя Фамилия;consultant;На Бауманской
+# consultant.pyatnitskaya.1;Имя Фамилия;consultant;На Пятницкой
+# logist;Имя Фамилия;logist;
+# edwin;Имя Фамилия;finance;
+# crm.1;Имя Фамилия;crm;
+# rop;Имя Фамилия;rop;

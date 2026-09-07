@@ -390,11 +390,32 @@ export function selfPayouts(rows: Payout[] | undefined): Payout[] {
 export const SARY_BONUS = 1000;
 
 /**
- * САР начисляется только при чеке от этой суммы (созвон 20.08: «чек на 20к+»).
- * Рабочее значение хранится в app_settings (ключ saryMinCheck) и правится
- * из настроек rop/admin; эта константа — дефолт при пустой настройке.
+ * САР начисляется при чеке от этой суммы, если костюмов в чеке нет
+ * (созвон 20.08: «чек на 20к+»). Рабочее значение хранится в app_settings
+ * (ключ saryMinCheck) и правится из настроек rop/admin; эта константа —
+ * дефолт при пустой настройке.
  */
 export const SARY_MIN_CHECK_DEFAULT = 20000;
+
+/**
+ * Группы МойСклад, которые считаются костюмом при начислении САР (созвон 04.09:
+ * «сар должно прилетать столько, сколько было костюмов в чеке»). Сравнение идёт
+ * по началу пути группы товара, поэтому «Костюмы» покрывает и «Костюмы/Тройки».
+ * Рабочий список — в app_settings (ключ sarySuitGroups), правится из настроек
+ * без релиза; здесь дефолт до уточнения точного состава веток у владельца.
+ */
+export const SARY_SUIT_GROUPS_DEFAULT = ["Костюмы"];
+
+/** Путь группы товара МойСклад относится к костюмам (сравнение по префиксу). */
+export function isSuitCategory(category: string | undefined | null, groups: string[]): boolean {
+  const path = (category ?? "").trim().toLowerCase();
+  if (!path) return false;
+  return groups.some((group) => {
+    const needle = group.trim().toLowerCase();
+    if (!needle) return false;
+    return path === needle || path.startsWith(`${needle}/`);
+  });
+}
 
 /**
  * Дефолт настроек мотивации (созвон 20.08): % от выручки за день против
@@ -405,12 +426,14 @@ export const DEFAULT_PAYROLL_SETTINGS = {
   revenuePct: 5,
   dailyFloor: 5000,
   conversionTiers: [
-    { from: 85, to: 87.001, bonus: 0 },
-    { from: 87.001, to: 90.001, bonus: 0 },
-    { from: 90.001, to: 93, bonus: 0 },
-    { from: 93, to: null, bonus: 0 },
+    { from: 85, to: 87.001, bonusPct: 0 },
+    { from: 87.001, to: 90.001, bonusPct: 0 },
+    { from: 90.001, to: 93, bonusPct: 0 },
+    { from: 93, to: null, bonusPct: 0 },
   ],
-  uptTiers: [] as Array<{ from: number; to: number | null; bonus: number }>,
+  uptTiers: [] as Array<{ from: number; to: number | null; bonusPct: number }>,
+  penaltyConversionTiers: [] as Array<{ from: number; to: number | null; bonusPct: number }>,
+  penaltyUptTiers: [] as Array<{ from: number; to: number | null; bonusPct: number }>,
 } as const;
 
 /** Закрытый справочник Эдвина. Меняется только отдельной миграцией/релизом. */
@@ -560,7 +583,18 @@ export const AMO_LEAD_FIELDS = {
   sara: "Сара",
   wasRefund: "Был возврат", // checkbox, только API
   wasExchange: "Был обмен", // checkbox, только API
+  // Прямая ссылка на заявку в кассе: колл-менеджер ставит задачи из сделки amoCRM,
+  // не разыскивая заявку руками (созвон 04.09). Новое поле.
+  kassaLink: "Ссылка на кассу",
 } as const;
+
+/**
+ * Прямая ссылка на карточку заявки в кассе. Роутинг фронта — по hash,
+ * `board/<группа>/<статус>/<номер>`; «all/all» открывает карточку из общего списка.
+ */
+export function dealDeepLink(baseUrl: string, dealNumber: number): string {
+  return `${baseUrl.replace(/\/+$/, "")}/#board/all/all/${dealNumber}`;
+}
 
 export type AmoLeadFieldKey = keyof typeof AMO_LEAD_FIELDS;
 
@@ -587,6 +621,7 @@ export const AMO_NEW_LEAD_FIELDS: Array<{
   { key: "rentalDeposit", type: "text" },
   { key: "wasRefund", type: "checkbox", isApiOnly: true },
   { key: "wasExchange", type: "checkbox", isApiOnly: true },
+  { key: "kassaLink", type: "text" },
 ];
 
 // Кастом-поля сущности «Компания» amoCRM.

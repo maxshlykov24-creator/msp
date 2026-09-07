@@ -1,6 +1,12 @@
-import { AMO_COMPANY_FIELDS, AMO_LEAD_FIELDS, type AmoLeadFieldKey } from "@kassa/shared";
+import {
+  AMO_COMPANY_FIELDS,
+  AMO_LEAD_FIELDS,
+  dealDeepLink,
+  type AmoLeadFieldKey,
+} from "@kassa/shared";
 import type { Deal } from "@kassa/shared";
 import * as amo from "../clients/amo.js";
+import { getEnv } from "../env.js";
 import { getCompanyFieldIdByName, getFieldIdByName, getLeadFieldMeta } from "./bootstrap.js";
 
 // Сведение полей форм кассы → кастом-поля сделки amoCRM (аудит зафиксирован
@@ -27,6 +33,21 @@ async function getLeadFieldIdMap(): Promise<Record<AmoLeadFieldKey, number | nul
 /** Сбросить кэш id полей (например, сразу после bootstrap создал новые поля). */
 export function invalidateLeadFieldCache(): void {
   cachedIds = null;
+}
+
+/**
+ * Проставить в сделке amoCRM ссылку на заявку в кассе (созвон 04.09). Нужно для
+ * сделок, которые завёл колл-менеджер: касса в них ничего не пишет, а перейти
+ * в кассу и поставить задачу колл-менеджеру надо в один клик.
+ */
+export async function writeKassaLink(leadId: number, dealNumber: number): Promise<void> {
+  const ids = await getLeadFieldIdMap();
+  const fieldId = ids.kassaLink;
+  if (!fieldId) return;
+  const link = dealDeepLink(getEnv().PUBLIC_BASE_URL, dealNumber);
+  await amo.updateLead(leadId, {
+    customFields: [{ field_id: fieldId, values: [{ value: link }] }],
+  });
 }
 
 function cartSummary(deal: Deal): string {
@@ -116,6 +137,10 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
 
   const sara = saraNote(deal);
   if (sara) put("sara", sara);
+
+  // Ссылка на заявку в кассе: из сделки колл-менеджер попадает сразу в карточку
+  // и ставит задачу на перемещение или отложку (созвон 04.09).
+  put("kassaLink", dealDeepLink(getEnv().PUBLIC_BASE_URL, deal.number));
 
   return sanitizeSelectValues(out);
 }

@@ -18,11 +18,12 @@ function dayKey(iso: string): string {
   return iso.slice(0, 10);
 }
 
-type StatusFilter = "all" | SaryPayout["status"];
+type StatusFilter = "all" | SaryPayout["status"] | "not_found";
 
 const STATUS_TABS: Array<{ id: StatusFilter; label: string }> = [
   { id: "all", label: "Все" },
   { id: "pending", label: "К отправке" },
+  { id: "not_found", label: "Не найдено" },
   { id: "in_check", label: "Учтено в чеке" },
   { id: "sent", label: "Отправлено" },
 ];
@@ -31,6 +32,19 @@ function matchesPhone(s: SaryPayout, q: string): boolean {
   const digits = q.replace(/\D/g, "");
   if (!digits) return true;
   return s.phone.replace(/\D/g, "").includes(digits);
+}
+
+/**
+ * Телефон друга не нашёлся в базе при продаже (созвон 04.09): САР не блокируем,
+ * но колл-менеджер обязан проверить номер по WhatsApp перед переводом.
+ */
+function NotFoundBadge({ s }: { s: SaryPayout }) {
+  if (s.phoneFound) return null;
+  return (
+    <span className="chip bg-amber-400/10 text-amber-300/90 border border-amber-400/20 text-[11px] shrink-0">
+      не найдено
+    </span>
+  );
 }
 
 /** Ссылка на заявку: доска умеет открывать карточку по номеру из hash. */
@@ -55,24 +69,28 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [phoneQuery, setPhoneQuery] = useState("");
-  const pending = useMemo(
-    () => sary.filter((s) => s.status === "pending" && matchesPhone(s, phoneQuery)),
-    [sary, phoneQuery]
+  // «Не найдено» — не статус, а срез по всем трём разделам.
+  const onlyNotFound = statusFilter === "not_found";
+  const visible = useMemo(
+    () => sary.filter((s) => matchesPhone(s, phoneQuery) && (!onlyNotFound || !s.phoneFound)),
+    [sary, phoneQuery, onlyNotFound]
   );
+  const pending = useMemo(() => visible.filter((s) => s.status === "pending"), [visible]);
   const inCheck = useMemo(
     () =>
-      sary
-        .filter((s) => s.status === "in_check" && matchesPhone(s, phoneQuery))
+      visible
+        .filter((s) => s.status === "in_check")
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [sary, phoneQuery]
+    [visible]
   );
   const sent = useMemo(
     () =>
-      sary
-        .filter((s) => s.status === "sent" && matchesPhone(s, phoneQuery))
+      visible
+        .filter((s) => s.status === "sent")
         .sort((a, b) => (b.sentAt ?? b.createdAt).localeCompare(a.sentAt ?? a.createdAt)),
-    [sary, phoneQuery]
+    [visible]
   );
+  const notFoundCount = useMemo(() => sary.filter((s) => !s.phoneFound).length, [sary]);
   const pendingSum = pending.reduce((s, x) => s + x.amount, 0);
   const [copied, setCopied] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -81,9 +99,9 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const showPending = statusFilter === "all" || statusFilter === "pending";
-  const showInCheck = statusFilter === "all" || statusFilter === "in_check";
-  const showSent = statusFilter === "all" || statusFilter === "sent";
+  const showPending = statusFilter === "all" || statusFilter === "pending" || onlyNotFound;
+  const showInCheck = statusFilter === "all" || statusFilter === "in_check" || onlyNotFound;
+  const showSent = statusFilter === "all" || statusFilter === "sent" || onlyNotFound;
 
   // Пачки по дню создания: кол-менеджер отправляет их одной серией переводов.
   const days = useMemo(() => {
@@ -217,8 +235,9 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
         </>
       )}
 
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4">
         <StatTile label="К отправке" value={String(pending.length)} tone="amber" sub={money(pendingSum)} />
+        <StatTile label="Не найдено" value={String(notFoundCount)} tone="amber" sub="проверить номер" />
         <StatTile label="Учтено в чеке" value={String(inCheck.length)} tone="blue" />
         <StatTile label="Отправлено" value={String(sent.length)} tone="green" />
       </div>
@@ -371,6 +390,7 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
                             <span className="text-mute text-[12px]">
                               {s.client} · {s.phone}
                             </span>
+                            <NotFoundBadge s={s} />
                             <DealLink number={s.refDealNumber} />
                           </div>
                           <div className="text-mute text-[13px] truncate">{s.reason}</div>
@@ -461,6 +481,7 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
                 <span className="text-mute-soft text-sm flex-1 min-w-0 truncate">
                   {s.client} · {money(s.amount)} · скидка в чеке
                 </span>
+                <NotFoundBadge s={s} />
                 <DealLink number={s.refDealNumber} />
                 <span className="text-mute text-[12px] shrink-0">
                   {shortDate(s.createdAt)} {timeOf(s.createdAt)}
@@ -488,6 +509,7 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
                   {s.client} · {money(s.amount)}
                   {s.screenshotAttached ? " · скрин" : ""}
                 </span>
+                <NotFoundBadge s={s} />
                 <DealLink number={s.refDealNumber} />
                 <span className="text-mute text-[12px] shrink-0" title="Дата отправки">
                   {s.sentAt

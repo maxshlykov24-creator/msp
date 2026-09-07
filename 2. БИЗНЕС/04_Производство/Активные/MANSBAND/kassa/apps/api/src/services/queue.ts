@@ -385,6 +385,8 @@ function toSary(r: typeof sary.$inferSelect): SaryPayout {
     screenshotAttached: r.screenshotAttached,
     createdAt: r.createdAt.toISOString(),
     sentAt: r.sentAt?.toISOString(),
+    seq: r.seq,
+    phoneFound: r.phoneFound,
   };
 }
 
@@ -402,7 +404,16 @@ export async function createSary(input: {
   refDealNumber?: number;
   /** «in_check» — деньги уже учтены бонусом в чеке, переводить нечего. */
   status?: SaryPayout["status"];
+  /** Номер САР внутри заявки (костюмов несколько — САР столько же). */
+  seq?: number;
+  /** false — телефон друга не найден в базе, колл-менеджер проверяет вручную. */
+  phoneFound?: boolean;
 }): Promise<SaryPayout> {
+  // Ручная выплата по заявке, где САР уже начислялась: занимаем следующий номер,
+  // иначе упрёмся в уникальность (ref_deal_number, seq).
+  const seq =
+    input.seq ??
+    (input.refDealNumber != null ? (await countSaryForDeal(input.refDealNumber)) + 1 : 1);
   const [row] = await db
     .insert(sary)
     .values({
@@ -411,6 +422,8 @@ export async function createSary(input: {
       amount: Math.round(input.amount * 100),
       reason: input.reason,
       refDealNumber: input.refDealNumber ?? null,
+      seq,
+      phoneFound: input.phoneFound ?? true,
       status: input.status ?? "pending",
       screenshotAttached: false,
       sentAt: input.status === "sent" ? new Date() : null,
@@ -421,14 +434,16 @@ export async function createSary(input: {
   return toSary(row);
 }
 
-/** Есть ли уже сара по этой заявке — защита от повторного проведения. */
-export async function saryExistsForDeal(dealNumber: number): Promise<boolean> {
+/**
+ * Сколько САР уже начислено по заявке. Костюмов в чеке может быть несколько,
+ * поэтому проверяем не факт наличия, а количество: добираем недостающие.
+ */
+export async function countSaryForDeal(dealNumber: number): Promise<number> {
   const rows = await db
     .select({ id: sary.id })
     .from(sary)
-    .where(eq(sary.refDealNumber, dealNumber))
-    .limit(1);
-  return rows.length > 0;
+    .where(eq(sary.refDealNumber, dealNumber));
+  return rows.length;
 }
 
 /**

@@ -18,6 +18,8 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 export const userRoleSchema = z.enum(["consultant", "logist", "finance", "crm", "rop", "admin", "seller"]);
 export const updateUserRoleSchema = z.object({ role: userRoleSchema });
+/** Магазин сотрудника в ведомости доступов; пустая строка — снять привязку. */
+export const updateUserStoreSchema = z.object({ store: z.string().trim().max(120) });
 
 export const cartItemStatusSchema = z.enum(["waiting", "in_store", "booked", "reserved"]);
 
@@ -532,6 +534,7 @@ export const certificateImportSchema = z.object({
 
 export const appSettingsSchema = z.object({
   saryMinCheck: z.number().int().min(0).max(10_000_000),
+  sarySuitGroups: z.array(z.string().trim().min(1).max(200)).max(50),
 });
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 
@@ -539,7 +542,8 @@ const payrollTierSchema = z
   .object({
     from: z.number().min(0),
     to: z.number().min(0).nullable(),
-    bonus: z.number().min(0),
+    // Премия и штраф считаются в процентах от выручки за период (созвон 04.09).
+    bonusPct: z.number().min(0).max(100),
   })
   .refine((t) => t.to == null || t.to > t.from, {
     message: "Верхняя граница должна быть больше нижней",
@@ -550,6 +554,8 @@ export const payrollSettingsSchema = z.object({
   dailyFloor: z.number().min(0).max(1_000_000),
   conversionTiers: z.array(payrollTierSchema).max(20),
   uptTiers: z.array(payrollTierSchema).max(20),
+  penaltyConversionTiers: z.array(payrollTierSchema).max(20).default([]),
+  penaltyUptTiers: z.array(payrollTierSchema).max(20).default([]),
 });
 export type PayrollSettingsInput = z.infer<typeof payrollSettingsSchema>;
 
@@ -558,11 +564,16 @@ export const payrollQuerySchema = z.object({
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Формат даты: YYYY-MM-DD"),
 });
 
-/** Создание пользователя из интерфейса (только admin). */
+/**
+ * Создание пользователя из интерфейса (только admin). Пароль можно не задавать:
+ * тогда касса генерирует временный и показывает его один раз в ведомости доступов
+ * (созвон 04.09).
+ */
 export const createUserSchema = z.object({
   login: z.string().trim().min(2).max(64).regex(/^[a-zA-Z0-9._-]+$/, "Логин: латиница, цифры, точка, дефис"),
   name: z.string().trim().min(2).max(120),
-  password: z.string().min(8, "Минимум 8 символов").max(256),
+  password: z.string().min(8, "Минимум 8 символов").max(256).optional(),
   role: userRoleSchema,
+  store: z.string().trim().max(120).optional(),
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;

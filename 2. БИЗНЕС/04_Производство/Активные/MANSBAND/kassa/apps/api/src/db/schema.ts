@@ -19,6 +19,8 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: text("role").notNull().default("seller"), // admin | seller
+  // Магазин сотрудника: ведомость доступов и подсказки в очередях (созвон 04.09).
+  store: text("store"),
   mustChangePassword: boolean("must_change_password").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -297,20 +299,32 @@ export const auditLog = pgTable(
 );
 
 // ── Сары (реферальные выплаты) ──────────────────────────────────────
-export const sary = pgTable("sary", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  client: text("client").notNull(),
-  phone: text("phone").notNull(),
-  amount: integer("amount").notNull(),
-  reason: text("reason").notNull(),
-  refDealNumber: integer("ref_deal_number"),
-  // pending — к отправке; sent — переведена (скрин + sent_at);
-  // in_check — учтена бонусом в чеке, переводить нечего (созвон 20.08).
-  status: text("status").notNull().default("pending"),
-  screenshotAttached: boolean("screenshot_attached").notNull().default(false),
-  sentAt: timestamp("sent_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const sary = pgTable(
+  "sary",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    client: text("client").notNull(),
+    phone: text("phone").notNull(),
+    amount: integer("amount").notNull(),
+    reason: text("reason").notNull(),
+    refDealNumber: integer("ref_deal_number"),
+    // Номер САР внутри заявки: костюмов в чеке несколько — САР столько же
+    // (созвон 04.09). Вместе с ref_deal_number даёт идемпотентность начисления.
+    seq: integer("seq").notNull().default(1),
+    // Телефон друга не нашёлся в базе: САР всё равно проходит, но с меткой,
+    // чтобы колл-менеджер проверил номер перед переводом (созвон 04.09).
+    phoneFound: boolean("phone_found").notNull().default(true),
+    // pending — к отправке; sent — переведена (скрин + sent_at);
+    // in_check — учтена бонусом в чеке, переводить нечего (созвон 20.08).
+    status: text("status").notNull().default("pending"),
+    screenshotAttached: boolean("screenshot_attached").notNull().default(false),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqDealSeq: uniqueIndex("sary_deal_seq_idx").on(t.refDealNumber, t.seq),
+  })
+);
 
 // ── Настройки кассы (порог САР и другие параметры, правят rop/admin) ─
 export const appSettings = pgTable("app_settings", {
@@ -328,9 +342,13 @@ export const payrollSettings = pgTable("payroll_settings", {
   revenuePct: numeric("revenue_pct").notNull().default("5"),
   // Обеспечительная ставка за день, копейки.
   dailyFloor: integer("daily_floor").notNull().default(500000),
-  // Пороги премий: [{ from, to, bonus }], bonus в рублях.
+  // Пороги премий: [{ from, to, bonusPct }], bonusPct — процент от выручки
+  // консультанта за период (созвон 04.09; до этого премия задавалась в рублях).
   conversionTiers: jsonb("conversion_tiers").notNull(),
   uptTiers: jsonb("upt_tiers").notNull(),
+  // Штрафы за период: та же структура, вычитаются из итога.
+  penaltyConversionTiers: jsonb("penalty_conversion_tiers").notNull().default([]),
+  penaltyUptTiers: jsonb("penalty_upt_tiers").notNull().default([]),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

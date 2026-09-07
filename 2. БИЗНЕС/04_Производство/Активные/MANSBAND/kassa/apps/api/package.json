@@ -11,6 +11,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/seed.ts",
+    "seed:team": "tsx src/seedTeam.ts",
     "lint": "echo 'no lint for api'"
   },
   "dependencies": {

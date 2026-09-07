@@ -439,6 +439,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           amount: input.amount,
           reason: input.reason,
           refDealNumber: input.refDealNumber,
+          // Ручная выплата: заявки может не быть, номер проверяет сам колл-менеджер.
+          seq: 1,
+          phoneFound: true,
           status: "pending",
           screenshotAttached: false,
           createdAt: new Date().toISOString(),

@@ -87,6 +87,8 @@ export interface CartItem {
   name: string;
   price: number;
   qty: number;
+  /** Группа МойСклад: по ней форма продажи понимает, что позиция — костюм (САР). */
+  category?: string;
   barcode?: string;
   discountPct?: number;
   discountRub?: number;
@@ -294,6 +296,13 @@ export interface SaryPayout {
   createdAt: string;
   /** Когда пачка фактически отправлена (только для status = sent). */
   sentAt?: string;
+  /**
+   * Порядковый номер САР внутри заявки: костюмов в чеке несколько — САР столько же
+   * (созвон 04.09). У ручных выплат без заявки всегда 1.
+   */
+  seq: number;
+  /** Телефон друга нашёлся в базе. false — САР проходит с меткой «не найдено». */
+  phoneFound: boolean;
 }
 
 // ── Аутентификация / пользователи ───────────────────────────────────
@@ -313,6 +322,17 @@ export interface User {
   name: string;
   role: UserRole;
   mustChangePassword: boolean;
+  /** Магазин сотрудника: нужен ведомости доступов и подсказкам в очередях. */
+  store?: string;
+}
+
+/**
+ * Ответ на создание пользователя или сброс пароля: временный пароль виден
+ * один раз, в базе лежит только хеш (созвон 04.09, ведомость доступов).
+ */
+export interface UserWithTempPassword {
+  user: User;
+  tempPassword: string;
 }
 
 export interface AuthResponse {
@@ -404,8 +424,10 @@ export interface AccountBalance {
 
 /** Настраиваемые параметры кассы (таблица app_settings). Правят rop / admin. */
 export interface AppSettings {
-  /** Минимальная сумма чека для начисления САР, ₽ (дефолт 20 000). */
+  /** Минимальная сумма чека для начисления САР без костюма, ₽ (дефолт 20 000). */
   saryMinCheck: number;
+  /** Группы МойСклад, считающиеся костюмом: по ним берётся количество САР. */
+  sarySuitGroups: string[];
 }
 
 // ── Зарплата и бонусы консультантов (созвон 20.08) ──────────────────
@@ -417,8 +439,11 @@ export interface AppSettings {
 export interface PayrollTier {
   from: number;
   to: number | null;
-  /** Премия за период, ₽. */
-  bonus: number;
+  /**
+   * Премия (или штраф) за период в процентах от выручки консультанта за период
+   * (созвон 04.09: «чтобы премия рассчитывалась не в сумме, а в проценте»).
+   */
+  bonusPct: number;
 }
 
 /** Единые условия для всех консультантов: «условия труда для всех одинаковые». */
@@ -429,6 +454,9 @@ export interface PayrollSettings {
   dailyFloor: number;
   conversionTiers: PayrollTier[];
   uptTiers: PayrollTier[];
+  /** Штрафы за период: те же пороги, но вычитаются из итога (созвон 04.09). */
+  penaltyConversionTiers: PayrollTier[];
+  penaltyUptTiers: PayrollTier[];
   updatedBy?: string;
   updatedAt?: string;
 }
@@ -450,10 +478,21 @@ export interface PayrollRow {
   consultant: string;
   days: PayrollDay[];
   basePay: number;
+  /** Выручка за период — база для премий и штрафов в процентах. */
+  periodRevenue: number;
   conversionPct: number | null;
+  /** Процент премии по конверсии, взятый из порога. */
+  conversionBonusPct: number;
   conversionBonus: number;
   upt: number | null;
+  uptBonusPct: number;
   uptBonus: number;
+  /** Штрафы за период (созвон 04.09): тоже процент от выручки. */
+  conversionPenaltyPct: number;
+  conversionPenalty: number;
+  uptPenaltyPct: number;
+  uptPenalty: number;
+  /** basePay + премии − штрафы, не ниже нуля. */
   total: number;
 }
 

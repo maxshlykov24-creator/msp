@@ -108,11 +108,13 @@ export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<v
           store: deal.store,
           dealNumber: deal.number,
           idempotencyKey: `movement-setup:${deal.id}`,
-          metadata: {
+          // Клиент и телефон нужны и в перемещении: любая отложка привязана к
+          // человеку, консультант должен видеть, кому везём (созвон 04.09).
+          metadata: deferredTaskMeta(deal, deal.reservedUntil ?? deal.deferredUntil, {
             needsSetup: true,
             to: deal.store,
-            positions: deal.items.map((item) => item.name),
-          },
+            source: who,
+          }),
         },
         who
       );
@@ -124,12 +126,18 @@ export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<v
       await insertTask(
         {
           kind: "reserve",
-          title: deal.clientName?.trim() || taskTitle("reserve", deal.number),
+          // Заголовок единый: «Сделать отложку (№N)» (созвон 04.09). Клиент и
+          // позиции — в metadata, очередь показывает их второй строкой.
+          title: taskTitle("reserve", deal.number),
           assigneeRole: "consultant",
           store: deal.store,
           dealNumber: deal.number,
           idempotencyKey: `reserve:${deal.id}`,
-          metadata: deferredTaskMeta(deal, deal.reservedUntil ?? deal.deferredUntil),
+          // source: кто дал команду отложить — колл-менеджер из amo или касса.
+          // Владелец отложки остаётся пустым до продажи (см. deals.convertDealKind).
+          metadata: deferredTaskMeta(deal, deal.reservedUntil ?? deal.deferredUntil, {
+            source: who,
+          }),
         },
         who
       );
@@ -143,11 +151,10 @@ export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<v
       rule.kind === "pickup_from_cdek"
     ) {
       if (await hasTaskForDeal(deal.number, [rule.kind])) continue;
-      const clientTitle = deal.clientName?.trim() || undefined;
       await insertTask(
         {
           kind: rule.kind,
-          title: clientTitle || taskTitle(rule.kind, deal.number),
+          title: taskTitle(rule.kind, deal.number),
           assigneeRole:
             rule.assignee === "logist" ? "logist" : rule.assignee === "crm" ? "crm" : "consultant",
           store: deal.store,
@@ -316,7 +323,7 @@ async function onReserveCallDone(task: Task, who: string): Promise<void> {
   await insertTask(
     {
       kind: "unreserve",
-      title: deal.clientName?.trim() || taskTitle("unreserve", deal.number),
+      title: taskTitle("unreserve", deal.number),
       assigneeRole: "consultant",
       store: deal.store,
       dealNumber: deal.number,
@@ -378,11 +385,10 @@ export async function scanOverdueReserves(): Promise<number> {
     const until = deal.reservedUntil ?? deal.deferredUntil;
     if (!until || until >= today) continue;
 
-    const clientTitle = deal.clientName?.trim() || undefined;
     await insertTask(
       {
         kind: "reserve_call",
-        title: clientTitle || taskTitle("reserve_call", deal.number, `срок вышел ${until}`),
+        title: taskTitle("reserve_call", deal.number, `срок вышел ${until}`),
         assigneeRole: "crm",
         store: deal.store,
         dealNumber: deal.number,
@@ -399,7 +405,7 @@ export async function scanOverdueReserves(): Promise<number> {
     await insertTask(
       {
         kind: "unreserve",
-        title: clientTitle || taskTitle("unreserve", deal.number),
+        title: taskTitle("unreserve", deal.number),
         assigneeRole: "consultant",
         store: deal.store,
         dealNumber: deal.number,

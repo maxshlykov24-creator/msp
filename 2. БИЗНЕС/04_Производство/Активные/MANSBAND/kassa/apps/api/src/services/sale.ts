@@ -5,6 +5,7 @@ import * as amo from "../clients/amo.js";
 import * as ms from "../clients/ms.js";
 import * as deals from "./deals.js";
 import { attachPhotos } from "./files.js";
+import * as catalog from "./catalog.js";
 import { resolveAssortment } from "./catalog.js";
 import { getMsRef, getWarehouseForStore, getStatusId, extractIdFromHref, getFieldIdByName } from "./bootstrap.js";
 import { buildLeadCustomFields, ensureLeadCompany, invalidateLeadFieldCache, paymentStatusLabel } from "./amoMapping.js";
@@ -14,6 +15,7 @@ import {
   AMO_LEAD_FIELDS,
   AMO_PIPELINE_COMPLAINTS,
   AMO_PIPELINE_SALES,
+  isSuitCategory,
   mansbandPayoutAmount,
   paymentKindOf as paymentKind,
   paymentMethodLabel,
@@ -24,7 +26,7 @@ import {
 import type { Deal, DealKind, Payment, Payout } from "@kassa/shared";
 import { broadcast } from "../ws/hub.js";
 import * as certs from "./certificates.js";
-import { getSaryMinCheck } from "./settings.js";
+import { getAppSettings } from "./settings.js";
 import * as financeQueue from "./queue.js";
 import * as taskService from "./tasks.js";
 import * as taskFlow from "./taskFlow.js";
@@ -277,56 +279,90 @@ function phoneDigits(value: string | undefined | null): string {
 }
 
 /**
- * Сарафан (правки владельца 10.08.2026, пп.3, 7; порог чека — созвон 20.08).
- * Источник «Сарафан» + телефон друга + этап «Успех» + чек не ниже порога
- * (настройка saryMinCheck, дефолт 20 000 ₽; сумма чека до вычета бонуса):
- * — бонус уже вычли из чека → сара «учтено в чеке» (in_check), задачи нет;
- * — бонус не списывали → колл-менеджеру задача перевести 1000 ₽ на этот телефон.
- * Одна САР на чек. Вызывать и при создании в «Успех», и при смене этапа на «Успех».
+ * Сколько костюмов в чеке — столько САР (созвон 04.09). Костюм определяется
+ * группой МойСклад из настройки sarySuitGroups; подарки и возвраты не в счёт.
+ */
+async function countSuitsInDeal(deal: Deal, suitGroups: string[]): Promise<number> {
+  const lines = deal.items.filter((item) => !item.isReturn && item.qty > 0 && item.productId);
+  if (lines.length === 0) return 0;
+  const categories = await catalog.productCategoriesByMsIds(lines.map((i) => i.productId));
+  return lines.reduce((sum, item) => {
+    const category = categories.get(item.productId);
+    return isSuitCategory(category, suitGroups) ? sum + item.qty : sum;
+  }, 0);
+}
+
+/**
+ * Сарафан (правки владельца 10.08.2026, пп.3, 7; количество — созвон 04.09).
+ * Источник «Сарафан» + телефон друга + этап «Успех», дальше по количеству:
+ * костюмы в чеке — столько же САР; костюмов нет, но чек не ниже порога
+ * (настройка saryMinCheck, сумма до вычета бонуса) — одна САР.
+ * Сколько бонусов консультант применил в чеке, столько записей «учтено в чеке»
+ * (in_check) без задачи; остальные — задача колл-менеджеру перевести 1000 ₽.
+ * Телефон друга не нашёлся в базе — САР всё равно проходит, но с меткой
+ * «не найдено», чтобы колл-менеджер проверил номер перед переводом.
+ * Вызывать и при создании в «Успех», и при смене этапа на «Успех».
  */
 export async function enqueueSary(deal: Deal, who: string): Promise<void> {
   const phone = deal.saryPhone?.trim();
   if (!phone || deal.stage !== "Успех") return;
   if (phoneDigits(phone) === phoneDigits(deal.clientPhone)) return; // самореферал
+
+  const settings = await getAppSettings();
+  const suits = await countSuitsInDeal(deal, settings.sarySuitGroups);
   // Порог по сумме чека: сравниваем с чеком до вычета бонуса САР, иначе
   // сам бонус −1000 ₽ выбивал бы чек 20 500 ₽ из программы.
   const checkAmount = (deal.total ?? 0) + (deal.saryBonus ?? 0);
-  const minCheck = await getSaryMinCheck();
-  if (checkAmount < minCheck) return;
-  if (await financeQueue.saryExistsForDeal(deal.number)) return;
+  const target = suits > 0 ? suits : checkAmount >= settings.saryMinCheck ? 1 : 0;
+  if (target === 0) return;
 
-  const bonusUsed = (deal.saryBonus ?? 0) > 0;
+  // Заявку могли провести повторно (правка чека, смена этапа) — добираем недостающие.
+  const already = await financeQueue.countSaryForDeal(deal.number);
+  if (already >= target) return;
+
+  // Бонусов в чеке столько, сколько раз консультант нажал «использовать»:
+  // сумма бонуса кратна 1000 ₽ и не может превышать число САР.
+  const bonusCount = Math.min(Math.round((deal.saryBonus ?? 0) / SARY_BONUS), target);
   const friend = deal.saryClient?.trim() || undefined;
-  await financeQueue.createSary({
-    client: friend || "Друг клиента",
-    phone,
-    amount: bonusUsed ? deal.saryBonus || SARY_BONUS : SARY_BONUS,
-    reason: bonusUsed
-      ? `Сарафан учтён в продаже #${deal.number}`
-      : `Перевести ${SARY_BONUS} ₽ · заявка #${deal.number}`,
-    refDealNumber: deal.number,
-    status: bonusUsed ? "in_check" : "pending",
-  });
-  if (bonusUsed) return;
+  const phoneFound = Boolean(friend);
 
-  await taskService.createTask(
-    {
-      kind: "sary_send",
-      dealNumber: deal.number,
-      store: deal.store,
-      assigneeRole: "crm",
-      title: friend || phone,
-      idempotencyKey: `sary-send:${deal.id}`,
-      metadata: {
-        phone,
-        client: friend,
-        amount: SARY_BONUS,
-        buyer: deal.clientName,
-        dealKindLabel: "Сарафан",
+  for (let seq = already + 1; seq <= target; seq += 1) {
+    const inCheck = seq <= bonusCount;
+    const ofTarget = target > 1 ? ` (${seq} из ${target})` : "";
+    await financeQueue.createSary({
+      client: friend || "Друг клиента",
+      phone,
+      amount: SARY_BONUS,
+      reason: inCheck
+        ? `Сарафан учтён в продаже #${deal.number}${ofTarget}`
+        : `Перевести ${SARY_BONUS} ₽ · заявка #${deal.number}${ofTarget}`,
+      refDealNumber: deal.number,
+      seq,
+      phoneFound,
+      status: inCheck ? "in_check" : "pending",
+    });
+    if (inCheck) continue;
+
+    await taskService.createTask(
+      {
+        kind: "sary_send",
+        dealNumber: deal.number,
+        store: deal.store,
+        assigneeRole: "crm",
+        title: `${friend || phone}${phoneFound ? "" : " · не найдено"}${ofTarget}`,
+        idempotencyKey: `sary-send:${deal.id}:${seq}`,
+        metadata: {
+          phone,
+          client: friend,
+          phoneFound,
+          amount: SARY_BONUS,
+          buyer: deal.clientName,
+          dealKindLabel: "Сарафан",
+        },
       },
-    },
-    who
-  );
+      who
+    );
+  }
 }
 
 async function enqueueManualChecks(deal: Deal, who: string): Promise<void> {

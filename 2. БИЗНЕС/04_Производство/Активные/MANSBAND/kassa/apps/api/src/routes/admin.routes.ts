@@ -8,6 +8,7 @@ import {
   syncMsRefs,
 } from "../services/bootstrap.js";
 import * as sale from "../services/sale.js";
+import * as catalog from "../services/catalog.js";
 
 // Ручной запуск синхронизаций (только админ).
 export default async function adminRoutes(app: FastifyInstance) {
@@ -25,6 +26,11 @@ export default async function adminRoutes(app: FastifyInstance) {
     const res = await syncProducts();
     return { ok: true, ...res };
   });
+
+  // Сверка прайса после синка: сколько позиций без цены и когда обновлялись.
+  app.get("/admin/prices/audit", { preHandler: [app.requireRoles(["rop", "admin"])] }, async () =>
+    catalog.priceAudit()
+  );
 
   app.post("/admin/sync/stock", { preHandler: [app.requireAdmin] }, async () => {
     const res = await syncStock();

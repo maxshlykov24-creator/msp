@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SARY_MIN_CHECK_DEFAULT } from "@kassa/shared";
+import { SARY_MIN_CHECK_DEFAULT, SARY_SUIT_GROUPS_DEFAULT } from "@kassa/shared";
 import type { AppSettings } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 
@@ -8,7 +8,10 @@ import { api, USE_MOCK } from "../api/client";
  * форма продажи не должна ходить в API на каждый рендер.
  */
 
-const DEFAULTS: AppSettings = { saryMinCheck: SARY_MIN_CHECK_DEFAULT };
+const DEFAULTS: AppSettings = {
+  saryMinCheck: SARY_MIN_CHECK_DEFAULT,
+  sarySuitGroups: [...SARY_SUIT_GROUPS_DEFAULT],
+};
 
 let cache: AppSettings | null = null;
 let inflight: Promise<AppSettings> | null = null;

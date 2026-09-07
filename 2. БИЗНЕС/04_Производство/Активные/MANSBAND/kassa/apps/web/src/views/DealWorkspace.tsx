@@ -307,7 +307,7 @@ export function DealWorkspace({
           onHistory={() => setHistoryOpen(true)}
           historyCount={history.length}
           onMovement={
-            !readOnly && (live.kind === "deferred" || live.kind === "promise") && items.length > 0
+            !readOnly && (live.kind === "deferred" || live.kind === "promise")
               ? () => setMoveOpen(true)
               : undefined
           }
@@ -319,6 +319,9 @@ export function DealWorkspace({
           dealNumber={live.number}
           store={live.store || "На Бауманской"}
           items={items}
+          // Заявка-зеркало из amoCRM приходит без состава: консультант выбирает
+          // позиции из каталога прямо в перемещении (созвон 04.09).
+          allowCatalogPick={items.length === 0}
           defaultTarget={defaultMovementTarget(live.store || "На Бауманской")}
           onCreated={(summary) => {
             void (async () => {

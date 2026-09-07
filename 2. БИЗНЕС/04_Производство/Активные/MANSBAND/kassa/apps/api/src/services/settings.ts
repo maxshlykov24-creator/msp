@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { appSettings } from "../db/schema.js";
-import { SARY_MIN_CHECK_DEFAULT } from "@kassa/shared";
+import { SARY_MIN_CHECK_DEFAULT, SARY_SUIT_GROUPS_DEFAULT } from "@kassa/shared";
 import type { AppSettings } from "@kassa/shared";
 import { appendAudit, type AuditActor } from "./audit.js";
 
@@ -24,13 +24,24 @@ export async function getAppSettings(): Promise<AppSettings> {
   const raw = await readValue("saryMinCheck");
   const saryMinCheck =
     typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : SARY_MIN_CHECK_DEFAULT;
-  const value: AppSettings = { saryMinCheck };
+  const rawGroups = await readValue("sarySuitGroups");
+  const groups = Array.isArray(rawGroups)
+    ? rawGroups.filter((g): g is string => typeof g === "string" && g.trim().length > 0)
+    : [];
+  const value: AppSettings = {
+    saryMinCheck,
+    sarySuitGroups: groups.length > 0 ? groups : [...SARY_SUIT_GROUPS_DEFAULT],
+  };
   cache = { value, at: Date.now() };
   return value;
 }
 
 export async function getSaryMinCheck(): Promise<number> {
   return (await getAppSettings()).saryMinCheck;
+}
+
+export async function getSarySuitGroups(): Promise<string[]> {
+  return (await getAppSettings()).sarySuitGroups;
 }
 
 export async function updateAppSettings(
@@ -45,6 +56,16 @@ export async function updateAppSettings(
       .onConflictDoUpdate({
         target: appSettings.key,
         set: { value: patch.saryMinCheck, updatedBy: actor.name, updatedAt: new Date() },
+      });
+  }
+  if (patch.sarySuitGroups != null) {
+    const groups = patch.sarySuitGroups.map((g) => g.trim()).filter(Boolean);
+    await db
+      .insert(appSettings)
+      .values({ key: "sarySuitGroups", value: groups, updatedBy: actor.name })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: groups, updatedBy: actor.name, updatedAt: new Date() },
       });
   }
   cache = null;

@@ -68,6 +68,37 @@ export function invalidateAmoOpenCache(): void {
   amoOpenCache = null;
 }
 
+/** Этапы воронки доставки: заявка в кассе становится доставкой. */
+const AMO_DELIVERY_STAGES = new Set([
+  "Передан на сборку",
+  "Собран",
+  "Вызван курьер",
+  "Отправлен",
+  "Доставлен",
+  "Не выкуплен",
+]);
+
+/**
+ * Этапы, по которым колл-менеджер просит отложить товар (созвон 04.09,
+ * примечание №1: без кнопок в amo, проброс по этапу). Цепочка перемещения и
+ * резерва живёт только у отложки и обещания, поэтому обычная продажа-зеркало
+ * на этих этапах становится отложкой.
+ */
+const AMO_DEFERRED_STAGES = new Set(["Ждет товар", "Товар в магазине"]);
+
+/** Вид заявки по этапу из amoCRM. Возвращает текущий вид, если менять нечего. */
+export function kindForAmoStage(stage: string, currentKind: DealKind): DealKind {
+  if (currentKind === "company") return currentKind;
+  if (AMO_DELIVERY_STAGES.has(stage) && currentKind !== "delivery") return "delivery";
+  if (
+    AMO_DEFERRED_STAGES.has(stage) &&
+    (currentKind === "sale" || currentKind === "defect")
+  ) {
+    return "deferred";
+  }
+  return currentKind;
+}
+
 /**
  * Зеркало сделки из amo, если в кассе ещё нет записи по amoLeadId
  * (доставку завели в CRM, а не в кассе). number = id сделки amo.
@@ -83,12 +114,7 @@ export async function ensureLocalFromAmoLead(lead: amo.AmoLead, stage: string): 
       ...byNumber,
       amoLeadId: lead.id,
       stage,
-      kind:
-        ["Передан на сборку", "Собран", "Вызван курьер", "Отправлен", "Доставлен", "Не выкуплен"].includes(
-          stage
-        )
-          ? "delivery"
-          : byNumber.kind,
+      kind: kindForAmoStage(stage, byNumber.kind),
     };
     await persist(patched);
     return patched;
@@ -98,18 +124,10 @@ export async function ensureLocalFromAmoLead(lead: amo.AmoLead, stage: string): 
   const storeFieldId = await getFieldIdByName(AMO_LEAD_FIELDS.storeAddress).catch(() => null);
   const contacts = await contactsForLeads([lead]);
   const mapped = mapLeadToDeal(lead, statuses, storeFieldId, contacts);
-  const deliveryStages = new Set([
-    "Передан на сборку",
-    "Собран",
-    "Вызван курьер",
-    "Отправлен",
-    "Доставлен",
-    "Не выкуплен",
-  ]);
   const deal: Deal = {
     ...mapped,
     stage,
-    kind: deliveryStages.has(stage) ? "delivery" : mapped.kind,
+    kind: kindForAmoStage(stage, mapped.kind),
     history: [
       {
         at: new Date().toISOString(),

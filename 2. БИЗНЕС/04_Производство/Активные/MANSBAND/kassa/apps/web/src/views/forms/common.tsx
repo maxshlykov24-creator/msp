@@ -15,8 +15,14 @@ import { Button, Field } from "../../components/ui";
 import { CHANNELS, CONSULTANTS, HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
 import { dateCompact, dateRu, formatPhone, money, moneyPlain } from "../../lib/format";
 import { useStore } from "../../store";
-import type { Deal, Payment, Payout } from "../../data/types";
-import { SARY_BONUS, mansbandPayoutAmount, normalizePayouts, selfPayouts } from "@kassa/shared";
+import type { CartItem, Deal, Payment, Payout } from "../../data/types";
+import {
+  SARY_BONUS,
+  isSuitCategory,
+  mansbandPayoutAmount,
+  normalizePayouts,
+  selfPayouts,
+} from "@kassa/shared";
 import { PaymentBlock } from "../../components/PaymentBlock";
 import { PayoutRows } from "../../components/PayoutRows";
 import { filesToAttachments, type PhotoAttachment } from "../../lib/photo";
@@ -261,6 +267,8 @@ export function SourceFields({
   required = false,
   /** Сумма чека до бонуса — для порога САР (созвон 20.08). Не задана — порог не проверяем. */
   checkTotal,
+  /** Позиции чека: по костюмам считается, сколько САР положено (созвон 04.09). */
+  items,
 }: {
   data: ClientData;
   onChange: (d: ClientData) => void;
@@ -269,6 +277,7 @@ export function SourceFields({
   channelFixed?: string;
   required?: boolean;
   checkTotal?: number;
+  items?: CartItem[];
 }) {
   const set = (patch: Partial<ClientData>) => onChange({ ...data, ...patch });
   return (
@@ -297,7 +306,7 @@ export function SourceFields({
       )}
       {withChannel && (data.channel === SARAFAN_CHANNEL || channelFixed === SARAFAN_CHANNEL) && (
         <div className="sm:col-span-2">
-          <SarafanField data={data} onChange={onChange} checkTotal={checkTotal} />
+          <SarafanField data={data} onChange={onChange} checkTotal={checkTotal} items={items} />
         </div>
       )}
     </div>
@@ -307,24 +316,38 @@ export function SourceFields({
 const SARAFAN_CHANNEL = "Сарафан";
 
 /**
- * Сарафан (п.3 правок 10.08): телефон друга проверяется в базе кассы и amoCRM.
- * Нашли — зелёная галочка и кнопка «Использовать бонус»: клиенту минус 1000 ₽
- * в чеке, другу — выплата в очереди колл-менеджера при проведении в «Успех».
+ * Сарафан (п.3 правок 10.08; количество и метка «не найдено» — созвон 04.09).
+ * Телефон друга проверяется в базе кассы и amoCRM, но не найден — не помеха:
+ * САР всё равно уходит колл-менеджеру с меткой, он проверяет номер вручную.
+ * Сколько костюмов в чеке — столько САР; костюмов нет, но чек не ниже порога —
+ * одна. Бонус можно применить прямо в чеке: клиенту минус 1000 ₽ за каждую САР.
  */
 function SarafanField({
   data,
   onChange,
   checkTotal,
+  items,
 }: {
   data: ClientData;
   onChange: (d: ClientData) => void;
   /** Сумма чека до вычета бонуса — сравнивается с порогом САР. */
   checkTotal?: number;
+  items?: CartItem[];
 }) {
   const { findByPhone } = useStore();
-  const { saryMinCheck } = useAppSettings();
-  // Порог по сумме чека (созвон 20.08): ниже порога САР не положена вовсе.
-  const belowThreshold = checkTotal != null && checkTotal < saryMinCheck;
+  const { saryMinCheck, sarySuitGroups } = useAppSettings();
+  // Костюмов в чеке — столько САР положено (созвон 04.09).
+  const suitCount = (items ?? []).reduce(
+    (sum, item) =>
+      !item.isReturn && isSuitCategory(item.category, sarySuitGroups)
+        ? sum + Math.max(0, item.qty || 0)
+        : sum,
+    0
+  );
+  // Порог по сумме чека нужен, только когда костюмов в чеке нет (созвон 04.09).
+  const belowThreshold =
+    suitCount === 0 && checkTotal != null && checkTotal < saryMinCheck;
+  const maxBonuses = belowThreshold ? 0 : Math.max(1, suitCount);
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState(false);
   const lookupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -336,15 +359,22 @@ function SarafanField({
   const ownDigits = data.phone.replace(/\D/g, "");
   const selfReferral = digits.length >= 10 && digits === ownDigits;
   const found = Boolean(data.saryClient);
-  const bonusUsed = (data.saryBonus ?? 0) > 0;
+  const bonusCount = Math.round((data.saryBonus ?? 0) / SARY_BONUS);
+  const bonusUsed = bonusCount > 0;
 
-  // Чек ужали ниже порога после применения бонуса — снимаем бонус сами.
+  // Чек ужали ниже порога или убрали костюмы — лишние бонусы снимаем сами.
   useEffect(() => {
-    if (belowThreshold && bonusUsed) {
-      onChange({ ...dataRef.current, saryBonus: undefined });
+    if (bonusCount > maxBonuses) {
+      const next = maxBonuses * SARY_BONUS;
+      onChange({ ...dataRef.current, saryBonus: next > 0 ? next : undefined });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [belowThreshold, bonusUsed]);
+  }, [maxBonuses, bonusCount]);
+
+  function setBonusCount(next: number) {
+    const clamped = Math.max(0, Math.min(next, maxBonuses));
+    onChange({ ...dataRef.current, saryBonus: clamped > 0 ? clamped * SARY_BONUS : undefined });
+  }
 
   function handlePhone(raw: string) {
     const next = formatPhone(raw);
@@ -409,25 +439,54 @@ function SarafanField({
             </div>
           )}
           {!selfReferral && !checking && checked && !found && (
-            <div className="mt-1 text-[12px] text-mute">В базе не найден — бонус недоступен</div>
+            <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-amber-300/90 bg-amber-400/10 border border-amber-400/20 rounded px-2 py-0.5">
+              В базе не найден — САР уйдёт с меткой «не найдено», номер проверит колл-менеджер
+            </div>
           )}
         </Field>
         <div className="pt-[22px]">
-          <Button
-            variant={bonusUsed ? "primary" : "subtle"}
-            disabled={!found || selfReferral || belowThreshold}
-            onClick={() =>
-              onChange({ ...data, saryBonus: bonusUsed ? undefined : SARY_BONUS })
-            }
-          >
-            {bonusUsed ? `Бонус применён −${money(SARY_BONUS)}` : `Использовать бонус −${money(SARY_BONUS)}`}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={bonusUsed ? "primary" : "subtle"}
+              disabled={selfReferral || belowThreshold}
+              onClick={() => setBonusCount(bonusUsed ? 0 : 1)}
+            >
+              {bonusUsed
+                ? `Бонус применён −${money(bonusCount * SARY_BONUS)}`
+                : `Использовать бонус −${money(SARY_BONUS)}`}
+            </Button>
+            {maxBonuses > 1 && (
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  className="chip bg-ink-700 text-mute-soft hover:text-white disabled:opacity-40"
+                  disabled={bonusCount === 0}
+                  onClick={() => setBonusCount(bonusCount - 1)}
+                >
+                  −
+                </button>
+                <span className="text-[12px] text-mute-soft w-[46px] text-center">
+                  {bonusCount} / {maxBonuses}
+                </span>
+                <button
+                  type="button"
+                  className="chip bg-ink-700 text-mute-soft hover:text-white disabled:opacity-40"
+                  disabled={bonusCount >= maxBonuses}
+                  onClick={() => setBonusCount(bonusCount + 1)}
+                >
+                  +
+                </button>
+              </div>
+            )}
+          </div>
           <p className="text-[12px] text-mute mt-1">
             {belowThreshold
-              ? `САР доступна при чеке от ${money(saryMinCheck)} — сейчас ${money(checkTotal ?? 0)}.`
-              : bonusUsed
-                ? `Бонус −${money(SARY_BONUS)} в чеке — отдельный перевод другу не нужен.`
-                : `Без бонуса в чеке: при «Успех» колл-менеджеру — задача перевести ${money(SARY_BONUS)} на этот номер.`}
+              ? `Костюмов в чеке нет, поэтому нужен чек от ${money(saryMinCheck)} — сейчас ${money(checkTotal ?? 0)}.`
+              : suitCount > 1
+                ? `Костюмов в чеке ${suitCount} — столько же САР по ${money(SARY_BONUS)}. В чеке учтено ${bonusCount}, остальные уйдут колл-менеджеру на перевод.`
+                : bonusUsed
+                  ? `Бонус −${money(SARY_BONUS)} в чеке — отдельный перевод другу не нужен.`
+                  : `Без бонуса в чеке: при «Успех» колл-менеджеру — задача перевести ${money(SARY_BONUS)} на этот номер.`}
           </p>
         </div>
       </div>

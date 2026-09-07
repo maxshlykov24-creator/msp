@@ -241,15 +241,21 @@ type MovementPosition = {
   article?: string;
 };
 
-/** Заголовок задачи: имена товаров через « · », без «N позиций». */
-function movementTitleFromPositions(
-  positions: Array<{ name?: string }>,
-  fallback: string
+/**
+ * Заголовок задачи перемещения. По заявке — единый канон «Сделать перемещение
+ * (№N)» (созвон 04.09): позиции и клиент видны второй строкой карточки.
+ * Свободное перемещение без заявки называем по товарам — номера у него нет.
+ */
+function movementTitle(
+  kind: "movement" | "movement_accept",
+  dealNumber: number | null | undefined,
+  positions: Array<{ name?: string }>
 ): string {
+  if (dealNumber) return taskTitle(kind, dealNumber);
   const names = positions
     .map((p) => (typeof p.name === "string" ? p.name.trim() : ""))
     .filter(Boolean);
-  return names.length > 0 ? names.join(" · ") : fallback;
+  return names.length > 0 ? names.join(" · ") : taskTitle(kind);
 }
 
 /** Нормализуем позиции перемещения (отсекаем битый metadata со строками-именами). */
@@ -315,10 +321,7 @@ async function openAcceptance(row: TaskRow, by: string): Promise<void> {
     acceptStore,
   };
 
-  const productTitle = movementTitleFromPositions(
-    positions,
-    taskTitle("movement_accept", row.dealNumber ?? undefined)
-  );
+  const productTitle = movementTitle("movement_accept", row.dealNumber, positions);
 
   const idempotencyKey = `${row.id}:accept`;
   await db
@@ -511,11 +514,7 @@ export async function createMovement(input: {
       if (codes?.article) row.article = codes.article;
       return row;
     });
-    // В очереди заголовок = имена товаров (вид «Сделать перемещение» уже в группе раздела).
-    const title = movementTitleFromPositions(
-      positionsWithNames,
-      input.title || taskTitle("movement", input.dealNumber)
-    );
+    const title = movementTitle("movement", input.dealNumber, positionsWithNames);
     const authorRoleFromMeta =
       typeof input.metadata?.authorRole === "string" ? input.metadata.authorRole : undefined;
     const movementMeta = {

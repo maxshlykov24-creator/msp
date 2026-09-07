@@ -309,6 +309,17 @@ export async function productNamesByMsIds(msIds: string[]): Promise<Map<string, 
   return new Map(rows.map((r) => [r.msId, r.name]));
 }
 
+/** Группа МойСклад по msId — по ней считаются костюмы в чеке для САР. */
+export async function productCategoriesByMsIds(msIds: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(msIds.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ msId: products.msId, category: products.category })
+    .from(products)
+    .where(inArray(products.msId, unique));
+  return new Map(rows.map((r) => [r.msId, r.category ?? ""]));
+}
+
 /** Штрихкод / код / артикул по msId — для скана при отправке и приёмке. */
 export async function productCodesByMsIds(
   msIds: string[]
@@ -397,6 +408,41 @@ export async function listCatalogReferences(): Promise<{
     .where(eq(msRefs.kind, "store"))
     .orderBy(asc(msRefs.name));
   return { categories, groups: [...groups.values()], folders, warehouses: warehouseRows };
+}
+
+/**
+ * Сверка прайса после синка из МойСклад (созвон 04.09, п.7): сколько позиций
+ * приехало, у скольких нет цены и когда последнее обновление. Редактирования цен
+ * в кассе нет — это только контроль, что новый прайс доехал.
+ */
+export async function priceAudit(): Promise<{
+  total: number;
+  withoutPrice: number;
+  updatedLast24h: number;
+  lastUpdatedAt: string | null;
+  samples: Array<{ name: string; article: string | null; category: string | null }>;
+}> {
+  const [totals] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      withoutPrice: sql<number>`count(*) FILTER (WHERE coalesce(price, 0) = 0)::int`,
+      updatedLast24h: sql<number>`count(*) FILTER (WHERE updated_at > now() - interval '24 hours')::int`,
+      lastUpdatedAt: sql<string | null>`max(updated_at)`,
+    })
+    .from(products);
+  const samples = await db
+    .select({ name: products.name, article: products.article, category: products.category })
+    .from(products)
+    .where(sql`coalesce(${products.price}, 0) = 0`)
+    .orderBy(asc(products.name))
+    .limit(20);
+  return {
+    total: totals?.total ?? 0,
+    withoutPrice: totals?.withoutPrice ?? 0,
+    updatedLast24h: totals?.updatedLast24h ?? 0,
+    lastUpdatedAt: totals?.lastUpdatedAt ? new Date(totals.lastUpdatedAt).toISOString() : null,
+    samples,
+  };
 }
 
 export { extractIdFromHref };

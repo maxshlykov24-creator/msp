@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
@@ -11,7 +12,16 @@ function toUser(r: typeof users.$inferSelect): User {
     name: r.name,
     role: r.role as User["role"],
     mustChangePassword: r.mustChangePassword,
+    store: r.store ?? undefined,
   };
+}
+
+/**
+ * Временный пароль для ведомости доступов: показываем один раз при создании
+ * учётки или сбросе, в базе лежит только хеш (созвон 04.09).
+ */
+export function generateTempPassword(): string {
+  return randomBytes(9).toString("base64url"); // ~12 символов
 }
 
 export async function verifyCredentials(login: string, password: string): Promise<User | null> {
@@ -44,12 +54,14 @@ export async function updateUserRole(id: string, role: User["role"]): Promise<Us
 export async function createUser(input: {
   login: string;
   name: string;
-  password: string;
+  password?: string;
   role: User["role"];
-}): Promise<{ user?: User; error?: string }> {
+  store?: string;
+}): Promise<{ user?: User; tempPassword?: string; error?: string }> {
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.login, input.login)).limit(1);
   if (existing[0]) return { error: `Логин «${input.login}» уже занят` };
-  const passwordHash = await argon2.hash(input.password);
+  const password = input.password?.length ? input.password : generateTempPassword();
+  const passwordHash = await argon2.hash(password);
   const [row] = await db
     .insert(users)
     .values({
@@ -57,11 +69,36 @@ export async function createUser(input: {
       name: input.name,
       passwordHash,
       role: input.role,
+      store: input.store ?? null,
       mustChangePassword: true,
     })
     .returning();
   if (!row) return { error: "Не удалось создать пользователя" };
-  return { user: toUser(row) };
+  return { user: toUser(row), tempPassword: password };
+}
+
+/**
+ * Сброс пароля администратором: выдаёт новый временный пароль и требует смены
+ * при входе. Нужен, когда сотрудник потерял доступ или ведомость устарела.
+ */
+export async function resetPassword(
+  id: string
+): Promise<{ user?: User; tempPassword?: string; error?: string }> {
+  const password = generateTempPassword();
+  const passwordHash = await argon2.hash(password);
+  const [row] = await db
+    .update(users)
+    .set({ passwordHash, mustChangePassword: true })
+    .where(eq(users.id, id))
+    .returning();
+  if (!row) return { error: "Пользователь не найден" };
+  return { user: toUser(row), tempPassword: password };
+}
+
+/** Магазин сотрудника в ведомости доступов. */
+export async function updateUserStore(id: string, store: string | null): Promise<User | null> {
+  const [row] = await db.update(users).set({ store }).where(eq(users.id, id)).returning();
+  return row ? toUser(row) : null;
 }
 
 export async function changePassword(

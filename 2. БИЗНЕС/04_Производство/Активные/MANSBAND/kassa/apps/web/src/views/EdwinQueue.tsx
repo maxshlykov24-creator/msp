@@ -32,12 +32,26 @@ type ExtendedQueueItem = Omit<ReturnType<typeof useStore>["queue"][number], "kin
 interface SalaryRow {
   consultant: string;
   basePay: number;
+  /** Выручка за период — база премий и штрафов в процентах (созвон 04.09). */
+  periodRevenue?: number;
   conversionPct: number | null;
+  conversionBonusPct?: number;
   conversionBonus: number;
   upt: number | null;
+  uptBonusPct?: number;
   uptBonus: number;
+  conversionPenaltyPct?: number;
+  conversionPenalty?: number;
+  uptPenaltyPct?: number;
+  uptPenalty?: number;
   total: number;
   days: Array<{ date: string; revenue: number; pctAmount: number; payout: number; floorApplied: boolean }>;
+}
+
+/** Подпись премии/штрафа: «5% от 120 000 ₽» — видно, откуда сумма. */
+function pctHint(pct: number | undefined, revenue: number | undefined): string {
+  if (!pct) return "";
+  return revenue != null ? ` · ${pct}% от ${money(revenue)}` : ` · ${pct}%`;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -570,12 +584,36 @@ export function EdwinQueue() {
                         <span>
                           Премия за конверсию
                           {r.conversionPct != null ? ` (${r.conversionPct.toFixed(1)}%)` : ""}
+                          {pctHint(r.conversionBonusPct, r.periodRevenue)}
                         </span>
                         <span className="text-white">{money(r.conversionBonus)}</span>
                       </div>
                       <div className="flex justify-between text-mute">
-                        <span>Премия за UPT{r.upt != null ? ` (${r.upt.toFixed(2)})` : ""}</span>
+                        <span>
+                          Премия за UPT{r.upt != null ? ` (${r.upt.toFixed(2)})` : ""}
+                          {pctHint(r.uptBonusPct, r.periodRevenue)}
+                        </span>
                         <span className="text-white">{money(r.uptBonus)}</span>
+                      </div>
+                      {/* Штрафы за период — вычитаются из итога (созвон 04.09). */}
+                      {!!r.conversionPenalty && (
+                        <div className="flex justify-between text-mute">
+                          <span>
+                            Штраф за конверсию
+                            {pctHint(r.conversionPenaltyPct, r.periodRevenue)}
+                          </span>
+                          <span className="text-red-300">−{money(r.conversionPenalty)}</span>
+                        </div>
+                      )}
+                      {!!r.uptPenalty && (
+                        <div className="flex justify-between text-mute">
+                          <span>Штраф за UPT{pctHint(r.uptPenaltyPct, r.periodRevenue)}</span>
+                          <span className="text-red-300">−{money(r.uptPenalty)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between pt-1 border-t border-ink-700">
+                        <span className="text-mute">К выплате</span>
+                        <span className="text-white font-semibold">{money(r.total)}</span>
                       </div>
                     </div>
                   )}

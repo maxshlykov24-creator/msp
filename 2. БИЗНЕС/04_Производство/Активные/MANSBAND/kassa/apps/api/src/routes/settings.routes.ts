@@ -53,4 +53,27 @@ export default async function settingsRoutes(app: FastifyInstance) {
       return payroll.payrollReport(parsed.data.from, parsed.data.to);
     }
   );
+
+  // Ручной расчёт за выбранный период: задача Эдвину «Выдать зарплату»
+  // (созвон 04.09 — не ждать вторничной автоматики).
+  app.post(
+    "/payroll/enqueue",
+    { preHandler: [app.requireRoles(["rop", "admin"])] },
+    async (req, reply) => {
+      const parsed = payrollQuerySchema.safeParse(req.body);
+      if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
+      if (parsed.data.from > parsed.data.to) {
+        return reply.code(400).send({ message: "Начало периода позже конца" });
+      }
+      const res = await payroll.enqueueSalaryForPeriod(
+        parsed.data.from,
+        parsed.data.to,
+        req.user.name
+      );
+      if (!res.created && res.consultants === 0) {
+        return reply.code(400).send({ message: "За этот период нет заявок консультантов" });
+      }
+      return res;
+    }
+  );
 }

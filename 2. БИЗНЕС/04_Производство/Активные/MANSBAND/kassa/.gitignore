@@ -18,6 +18,9 @@ apps/api/drizzle/meta/_journal.json.bak
 apps/web/dist/
 .vite/
 
+# Состав команды с реальными именами для seed:team
+deploy/team.csv
+
 # Локальные дампы БД
 *.sql.gz
 backups/

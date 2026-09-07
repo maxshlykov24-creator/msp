@@ -38,6 +38,8 @@ export async function getPayrollSettings(): Promise<PayrollSettings> {
       dailyFloor: DEFAULT_PAYROLL_SETTINGS.dailyFloor,
       conversionTiers: [...DEFAULT_PAYROLL_SETTINGS.conversionTiers],
       uptTiers: [...DEFAULT_PAYROLL_SETTINGS.uptTiers],
+      penaltyConversionTiers: [...DEFAULT_PAYROLL_SETTINGS.penaltyConversionTiers],
+      penaltyUptTiers: [...DEFAULT_PAYROLL_SETTINGS.penaltyUptTiers],
     };
   }
   return {
@@ -45,6 +47,8 @@ export async function getPayrollSettings(): Promise<PayrollSettings> {
     dailyFloor: row.dailyFloor / 100,
     conversionTiers: (row.conversionTiers as PayrollTier[]) ?? [],
     uptTiers: (row.uptTiers as PayrollTier[]) ?? [],
+    penaltyConversionTiers: (row.penaltyConversionTiers as PayrollTier[]) ?? [],
+    penaltyUptTiers: (row.penaltyUptTiers as PayrollTier[]) ?? [],
     updatedBy: row.createdBy,
     updatedAt: row.createdAt.toISOString(),
   };
@@ -56,6 +60,8 @@ export async function savePayrollSettings(
     dailyFloor: number;
     conversionTiers: PayrollTier[];
     uptTiers: PayrollTier[];
+    penaltyConversionTiers?: PayrollTier[];
+    penaltyUptTiers?: PayrollTier[];
   },
   actor: AuditActor
 ): Promise<PayrollSettings> {
@@ -65,6 +71,8 @@ export async function savePayrollSettings(
     dailyFloor: Math.round(input.dailyFloor * 100),
     conversionTiers: input.conversionTiers,
     uptTiers: input.uptTiers,
+    penaltyConversionTiers: input.penaltyConversionTiers ?? [],
+    penaltyUptTiers: input.penaltyUptTiers ?? [],
     createdBy: actor.name,
   });
   const after = await getPayrollSettings();
@@ -79,13 +87,22 @@ export async function savePayrollSettings(
   return after;
 }
 
-/** Порог: from включительно, to исключительно (null = без верхней границы). */
-function tierBonus(tiers: PayrollTier[], value: number | null): number {
+/**
+ * Процент премии или штрафа по порогам: from включительно, to исключительно
+ * (null = без верхней границы). Ноль — ни один порог не подошёл.
+ */
+function tierPct(tiers: PayrollTier[], value: number | null): number {
   if (value == null) return 0;
   for (const tier of tiers) {
-    if (value >= tier.from && (tier.to == null || value < tier.to)) return tier.bonus;
+    if (value >= tier.from && (tier.to == null || value < tier.to)) return tier.bonusPct;
   }
   return 0;
+}
+
+/** Премия или штраф в рублях: процент от выручки консультанта за период. */
+function pctOf(revenue: number, pct: number): number {
+  if (!pct) return 0;
+  return Math.round((revenue * pct) / 100);
 }
 
 export async function payrollReport(from: string, to: string): Promise<PayrollReport> {
@@ -133,20 +150,39 @@ export async function payrollReport(from: string, to: string): Promise<PayrollRe
         return { date, revenue, pctAmount, payout, floorApplied: payout > pctAmount };
       });
     const basePay = dayRows.reduce((s, d) => s + d.payout, 0);
+    const periodRevenue = dayRows.reduce((s, d) => s + d.revenue, 0);
     const stat = statsByName.get(consultant);
     const conversionPct = stat?.conversion != null ? stat.conversion * 100 : null;
     const upt = stat?.upt ?? null;
-    const conversionBonus = tierBonus(settings.conversionTiers, conversionPct);
-    const uptBonus = tierBonus(settings.uptTiers, upt);
+    // Премии и штрафы — проценты от выручки за период (созвон 04.09).
+    const conversionBonusPct = tierPct(settings.conversionTiers, conversionPct);
+    const uptBonusPct = tierPct(settings.uptTiers, upt);
+    const conversionPenaltyPct = tierPct(settings.penaltyConversionTiers, conversionPct);
+    const uptPenaltyPct = tierPct(settings.penaltyUptTiers, upt);
+    const conversionBonus = pctOf(periodRevenue, conversionBonusPct);
+    const uptBonus = pctOf(periodRevenue, uptBonusPct);
+    const conversionPenalty = pctOf(periodRevenue, conversionPenaltyPct);
+    const uptPenalty = pctOf(periodRevenue, uptPenaltyPct);
     reportRows.push({
       consultant,
       days: dayRows,
       basePay,
+      periodRevenue,
       conversionPct,
+      conversionBonusPct,
       conversionBonus,
       upt,
+      uptBonusPct,
       uptBonus,
-      total: basePay + conversionBonus + uptBonus,
+      conversionPenaltyPct,
+      conversionPenalty,
+      uptPenaltyPct,
+      uptPenalty,
+      // Штраф не может увести выплату в минус.
+      total: Math.max(
+        0,
+        basePay + conversionBonus + uptBonus - conversionPenalty - uptPenalty
+      ),
     });
   }
 
@@ -181,19 +217,19 @@ export function lastWeekRange(): { from: string; to: string } {
 }
 
 /**
- * По вторникам ставит Эдвину задачу «Выдать зарплату» за прошлую неделю.
- * Идемпотентно: addQueue дедуплицирует по kind + dealNumber + amount + destination,
- * dealNumber = 0, destination = период недели.
+ * Ставит Эдвину задачу «Выдать зарплату» за период. Идемпотентно: addQueue
+ * дедуплицирует по kind + dealNumber + amount + destination, dealNumber = 0,
+ * destination = период. Владелец 04.09 попросил ручной расчёт за любой период,
+ * поэтому один и тот же код обслуживает и вторничную автоматику, и кнопку РОПа.
  */
-export async function enqueueWeeklySalary(): Promise<boolean> {
-  const today = moscowToday();
-  const dow = today.getUTCDay();
-  if (dow !== 2) return false; // вторник
-
-  const { from, to } = lastWeekRange();
+export async function enqueueSalaryForPeriod(
+  from: string,
+  to: string,
+  who = "Касса (авто)"
+): Promise<{ created: boolean; total: number; consultants: number }> {
   const report = await payrollReport(from, to);
   const total = report.rows.reduce((s, r) => s + r.total, 0);
-  if (report.rows.length === 0) return false;
+  if (report.rows.length === 0) return { created: false, total: 0, consultants: 0 };
 
   const created = await financeQueue.addQueue({
     kind: "salary",
@@ -205,13 +241,21 @@ export async function enqueueWeeklySalary(): Promise<boolean> {
       source: "payroll",
       from,
       to,
+      createdBy: who,
       rows: report.rows.map((r) => ({
         consultant: r.consultant,
         basePay: r.basePay,
+        periodRevenue: r.periodRevenue,
         conversionPct: r.conversionPct,
+        conversionBonusPct: r.conversionBonusPct,
         conversionBonus: r.conversionBonus,
         upt: r.upt,
+        uptBonusPct: r.uptBonusPct,
         uptBonus: r.uptBonus,
+        conversionPenaltyPct: r.conversionPenaltyPct,
+        conversionPenalty: r.conversionPenalty,
+        uptPenaltyPct: r.uptPenaltyPct,
+        uptPenalty: r.uptPenalty,
         total: r.total,
         days: r.days,
       })),
@@ -220,11 +264,21 @@ export async function enqueueWeeklySalary(): Promise<boolean> {
   });
   if (created) {
     await appendSystemAudit({
-      action: "payroll.weekly_enqueued",
+      action: "payroll.enqueued",
       entityType: "queue",
       entityId: created.id,
-      after: { from, to, total, consultants: report.rows.length },
+      after: { from, to, total, consultants: report.rows.length, by: who },
     });
   }
-  return Boolean(created);
+  return { created: Boolean(created), total, consultants: report.rows.length };
+}
+
+/** По вторникам — задача Эдвину за прошлую календарную неделю. */
+export async function enqueueWeeklySalary(): Promise<boolean> {
+  const today = moscowToday();
+  if (today.getUTCDay() !== 2) return false; // вторник
+
+  const { from, to } = lastWeekRange();
+  const res = await enqueueSalaryForPeriod(from, to);
+  return res.created;
 }

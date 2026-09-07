@@ -270,7 +270,12 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       <Card>
         <SectionTitle>Источник и цель</SectionTitle>
         {/* Порог САР считаем от чека до вычета бонуса: сам бонус порог не ломает. */}
-        <SourceFields data={client} onChange={setClient} checkTotal={total + saryBonus} />
+        <SourceFields
+          data={client}
+          onChange={setClient}
+          checkTotal={total + saryBonus}
+          items={items}
+        />
         <div className="mt-4">
           <CommentField value={comment} onChange={setComment} />
         </div>

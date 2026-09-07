@@ -155,9 +155,9 @@ export const QUEUE: QueueItem[] = [
 // ── Сары (реферальные выплаты за совет) ──────────────────────────────
 
 export const SARY: SaryPayout[] = [
-  { id: "s1", client: "Олег Романов", phone: "+7 925 700-11-22", amount: 2000, reason: "посоветовал Сергея П. (заявка #1072)", refDealNumber: 1072, status: "pending", screenshotAttached: false, createdAt: "2026-06-02T12:00:00" },
-  { id: "s2", client: "Дмитрий К.", phone: "+7 916 330-44-55", amount: 1500, reason: "посоветовал Артёма Л.", refDealNumber: 1070, status: "pending", screenshotAttached: false, createdAt: "2026-06-02T10:50:00" },
-  { id: "s3", client: "Анна С.", phone: "+7 903 880-77-66", amount: 2000, reason: "посоветовала Павла Н.", refDealNumber: 1065, status: "sent", screenshotAttached: true, createdAt: "2026-06-01T19:00:00" },
+  { id: "s1", client: "Олег Романов", phone: "+7 925 700-11-22", amount: 2000, reason: "посоветовал Сергея П. (заявка #1072)", refDealNumber: 1072, seq: 1, phoneFound: true, status: "pending", screenshotAttached: false, createdAt: "2026-06-02T12:00:00" },
+  { id: "s2", client: "Дмитрий К.", phone: "+7 916 330-44-55", amount: 1500, reason: "посоветовал Артёма Л.", refDealNumber: 1070, seq: 1, phoneFound: false, status: "pending", screenshotAttached: false, createdAt: "2026-06-02T10:50:00" },
+  { id: "s3", client: "Анна С.", phone: "+7 903 880-77-66", amount: 2000, reason: "посоветовала Павла Н.", refDealNumber: 1065, seq: 1, phoneFound: true, status: "sent", screenshotAttached: true, createdAt: "2026-06-01T19:00:00" },
 ];
 
 // ── Заявки (примеры под список/доску) ───────────────────────────────

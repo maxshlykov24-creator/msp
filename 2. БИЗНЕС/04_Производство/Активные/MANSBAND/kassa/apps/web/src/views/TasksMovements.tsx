@@ -160,7 +160,9 @@ function saryOpsMeta(task: OperationTask): string {
   const amount = moneyRub(meta.amount) || "1 000 ₽";
   // Если в заголовке уже имя — в мета телефон; если заголовок телефон — имя не дублируем.
   const phoneBit = client && phone ? phone : null;
-  return [amount, "Сарафан", phoneBit].filter(Boolean).join(" · ");
+  // Телефон друга не нашёлся в базе: проверить номер до перевода (созвон 04.09).
+  const notFound = meta.phoneFound === false ? "не найдено" : null;
+  return [amount, "Сарафан", phoneBit, notFound].filter(Boolean).join(" · ");
 }
 
 function deliveryOpsTitle(task: OperationTask): string {
@@ -187,17 +189,19 @@ function formatUntil(raw: unknown): string | null {
   return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
-/** Отложка: белым клиент/товар; серым — магазин · срок · вид. */
+/**
+ * Отложка: белым единый заголовок «Сделать отложку (№N)» (созвон 04.09),
+ * серым — клиент, магазин, срок и вид заявки.
+ */
 function reserveOpsTitle(task: OperationTask): string {
-  const meta = task.metadata ?? {};
-  const client = typeof meta.client === "string" ? meta.client.trim() : "";
-  if (client) return client;
-  return positionSummary(task) || task.title || "Отложка";
+  return task.title || "Отложка";
 }
 
 function reserveOpsMeta(task: OperationTask): string {
   const meta = task.metadata ?? {};
   const until = formatUntil(meta.reservedUntil);
+  const client = typeof meta.client === "string" && meta.client.trim() ? meta.client.trim() : null;
+  const phone = typeof meta.phone === "string" && meta.phone.trim() ? meta.phone.trim() : null;
   const consultant =
     typeof meta.consultant === "string" && meta.consultant.trim()
       ? meta.consultant.trim()
@@ -209,6 +213,10 @@ function reserveOpsMeta(task: OperationTask): string {
         ? "Отложка"
         : null;
   const bits = [
+    // Любая отложка привязана к клиенту — имя и телефон первыми.
+    client,
+    phone,
+    positionSummary(task),
     task.store || null,
     consultant,
     until
@@ -240,6 +248,12 @@ function moveMetaLines(task: OperationTask): string[] {
   const meta = task.metadata ?? {};
   const route = routeFromTaskMeta(meta);
   const lines: string[] = [];
+  // Кому везём: перемещение всегда под конкретного клиента (созвон 04.09).
+  const client = typeof meta.client === "string" ? meta.client.trim() : "";
+  const phone = typeof meta.phone === "string" ? meta.phone.trim() : "";
+  if (client || phone) lines.push([client, phone].filter(Boolean).join(" "));
+  const positions = positionSummary(task);
+  if (positions) lines.push(positions);
   if (route) lines.push(`${route.from} → ${route.to}`);
 
   const kind = dealKindLabelOf(task);
@@ -301,9 +315,10 @@ function TaskRow({
   const queueShort = TASK_QUEUES.find((q) => q.role === task.assigneeRole)?.short;
   const who = assigneeLabel(task);
 
-  // Перемещение / отложка / СДЭК: белым суть; серым мета (вид уже в заголовке секции).
+  // Перемещение / отложка / СДЭК: белым единый заголовок «Действие (№N)»,
+  // серым — клиент, позиции и маршрут (созвон 04.09).
   const compactTitle = isMove
-    ? positionSummary(task) || task.title || "Без названия"
+    ? task.title || "Без названия"
     : isReserve
       ? reserveOpsTitle(task)
       : isDelivery

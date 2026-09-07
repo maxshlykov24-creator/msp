@@ -1,6 +1,7 @@
 import * as amo from "../clients/amo.js";
 import * as deals from "./deals.js";
 import * as taskFlow from "./taskFlow.js";
+import { writeKassaLink } from "./amoMapping.js";
 import { appendSystemAudit } from "./audit.js";
 
 /**
@@ -130,12 +131,14 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
     lead = lead ?? (await amo.getLead(event.id));
     if (!lead?.id) return { skipped: "lead_not_found", tasks: false };
     deal = await deals.ensureLocalFromAmoLead(lead, stage);
+    // Сделку завёл колл-менеджер: даём ему ссылку на заявку в кассе, чтобы
+    // поставить перемещение или отложку не разыскивая её руками (созвон 04.09).
+    await writeKassaLink(lead.id, deal.number).catch(() => {});
   }
 
-  const nextKind =
-    DELIVERY_STAGES.has(stage) && deal.kind !== "delivery" && deal.kind !== "company"
-      ? "delivery"
-      : deal.kind;
+  // Этап из amo задаёт вид заявки: доставка по воронке СДЭК, отложка по
+  // «Ждет товар» / «Товар в магазине» (созвон 04.09, примечание №1).
+  const nextKind = deals.kindForAmoStage(stage, deal.kind);
 
   if (deal.stage === stage && deal.kind === nextKind) {
     // Этап уже совпал — задачи всё равно досоздаём (если вебхук пришёл повторно
@@ -147,7 +150,10 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
   const updated = await deals.updateStage(String(deal.number), stage, ACTOR, {
     skipAmoWriteback: true,
     kind: nextKind !== deal.kind ? nextKind : undefined,
-    reason: "Синхронизация этапа из amoCRM",
+    reason:
+      nextKind !== deal.kind
+        ? `Синхронизация этапа из amoCRM · вид заявки «${nextKind}»`
+        : "Синхронизация этапа из amoCRM",
   });
   if (!updated) return { skipped: "update_failed", tasks: false };
 

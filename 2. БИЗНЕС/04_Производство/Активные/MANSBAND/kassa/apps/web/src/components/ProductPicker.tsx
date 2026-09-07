@@ -252,6 +252,7 @@ export function ProductPicker({
           name: p.name,
           price: noPrice ? 0 : p.price,
           qty: 1,
+          category: p.category,
           noPrice,
           barcode: p.barcode,
           itemStatus: "waiting",

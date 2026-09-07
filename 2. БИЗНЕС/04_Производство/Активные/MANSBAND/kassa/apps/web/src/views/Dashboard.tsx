@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { BarChart3, Store, Loader2, ShoppingCart } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { BarChart3, ChevronRight, Store, Loader2, ShoppingCart } from "lucide-react";
 import { StatTile, Card } from "../components/ui";
 import { moneyPlain } from "../lib/format";
 import { api, USE_MOCK } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 
 // Формат сводки — формулы Миши (созвон 20.08), см. apps/api/src/services/stats.ts.
 
@@ -99,11 +100,12 @@ function StatsTable({ rows, nameLabel }: { rows: StatsRow[]; nameLabel: string }
             <th className="text-right py-2 px-2 font-medium">Клиенты</th>
             <th className="text-right py-2 px-2 font-medium">Успех</th>
             <th className="text-right py-2 px-2 font-medium">Выручка, ₽</th>
-            <th className="text-right py-2 px-2 font-medium">Ср. чек, ₽</th>
             <th className="text-right py-2 px-2 font-medium" title="Успехи / (клиенты − не-сливы − добитые сливы)">
               Конверсия
             </th>
+            {/* UPT левее среднего чека — порядок по просьбе владельца (созвон 04.09). */}
             <th className="text-right py-2 px-2 font-medium" title="Позиции в чеках / чеки">UPT</th>
+            <th className="text-right py-2 px-2 font-medium">Ср. чек, ₽</th>
             <th className="text-right py-2 px-2 font-medium">Сливы</th>
             <th className="text-right py-2 pl-2 font-medium">Не-сливы</th>
           </tr>
@@ -117,9 +119,9 @@ function StatsTable({ rows, nameLabel }: { rows: StatsRow[]; nameLabel: string }
               <td className="py-2.5 px-2 text-right tabular-nums text-gold-soft font-semibold">
                 {moneyPlain(r.revenue)}
               </td>
-              <td className="py-2.5 px-2 text-right tabular-nums text-mute-soft">{moneyPlain(r.avgCheck)}</td>
               <td className="py-2.5 px-2 text-right tabular-nums text-white">{pct(r.conversion)}</td>
               <td className="py-2.5 px-2 text-right tabular-nums text-white">{upt(r.upt)}</td>
+              <td className="py-2.5 px-2 text-right tabular-nums text-mute-soft">{moneyPlain(r.avgCheck)}</td>
               <td className="py-2.5 px-2 text-right tabular-nums text-mute-soft">
                 {r.slivs}
                 {r.rescuedSlivs > 0 && (
@@ -135,6 +137,42 @@ function StatsTable({ rows, nameLabel }: { rows: StatsRow[]; nameLabel: string }
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Раздел статистики, свёрнутый по умолчанию (созвон 04.09): детализация
+ * раскрывается по клику, чтобы экран открывался плитками, а не таблицами.
+ */
+function CollapsibleSection({
+  title,
+  icon,
+  count,
+  children,
+}: {
+  title: string;
+  icon?: ReactNode;
+  count: number;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 text-left"
+      >
+        <ChevronRight
+          size={16}
+          className={`text-mute transition-transform ${open ? "rotate-90" : ""}`}
+        />
+        {icon}
+        <h3 className="text-white font-bold">{title}</h3>
+        <span className="chip bg-ink-700 text-mute text-[11px]">{count}</span>
+      </button>
+      {open && <div className="mt-4">{children}</div>}
+    </Card>
   );
 }
 
@@ -160,6 +198,10 @@ function CountList({ data }: { data: Record<string, number> }) {
 }
 
 export function Dashboard() {
+  const { user } = useAuth();
+  // Консультант видит только свои цифры: сервер и так отдаёт лишь его заявки,
+  // здесь убираем блок закупа и правим подпись (созвон 04.09).
+  const ownOnly = user?.role === "consultant";
   const [summary, setSummary] = useState<StatsSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(!USE_MOCK);
   const [preset, setPreset] = useState<PeriodPreset>("week");
@@ -194,6 +236,7 @@ export function Dashboard() {
         {loading && <Loader2 size={16} className="text-mute animate-spin" />}
       </div>
       <p className="text-mute text-sm mb-4">
+        {ownOnly ? "Только твои заявки. " : ""}
         Средний чек = выручка / клиенты. Конверсия = успехи / (клиенты − не-сливы − сливы, добитые
         в другом магазине). UPT = позиции в чеках / чеки.
       </p>
@@ -242,8 +285,9 @@ export function Dashboard() {
         <StatTile label="Выручка, ₽" value={moneyPlain(t.revenue)} tone="gold" />
         <StatTile label="Клиенты" value={String(t.clients)} tone="gray" sub={`успехов ${t.success}`} />
         <StatTile label="Конверсия" value={pct(t.conversion)} tone="green" />
-        <StatTile label="Средний чек, ₽" value={moneyPlain(t.avgCheck)} tone="blue" />
+        {/* UPT левее среднего чека — порядок по просьбе владельца (созвон 04.09). */}
         <StatTile label="UPT" value={upt(t.upt)} tone="amber" />
+        <StatTile label="Средний чек, ₽" value={moneyPlain(t.avgCheck)} tone="blue" />
         <StatTile
           label="Сливы / не-сливы"
           value={`${t.slivs} / ${t.noSlivs}`}
@@ -253,19 +297,19 @@ export function Dashboard() {
       </div>
 
       <div className="space-y-4">
-        <Card>
-          <h3 className="text-white font-bold mb-4">Консультанты</h3>
+        <CollapsibleSection title="Консультанты" count={summary.consultants.length}>
           <StatsTable rows={summary.consultants} nameLabel="Консультант" />
-        </Card>
+        </CollapsibleSection>
 
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Store size={18} className="text-gold" />
-            <h3 className="text-white font-bold">Магазины</h3>
-          </div>
+        <CollapsibleSection
+          title="Магазины"
+          count={summary.stores.length}
+          icon={<Store size={18} className="text-gold" />}
+        >
           <StatsTable rows={summary.stores} nameLabel="Магазин" />
-        </Card>
+        </CollapsibleSection>
 
+        {!ownOnly && (
         <Card>
           <div className="flex items-center gap-2 mb-4">
             <ShoppingCart size={18} className="text-gold" />
@@ -335,6 +379,7 @@ export function Dashboard() {
             </div>
           </div>
         </Card>
+        )}
       </div>
     </div>
   );

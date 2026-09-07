@@ -9,6 +9,7 @@ export default async function statsRoutes(app: FastifyInstance) {
   app.get("/stats/summary", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = periodSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ message: "Некорректный период" });
-    return summary(parsed.data);
+    // Роль решает, чьи цифры отдаём: консультанту — только его заявки.
+    return summary(parsed.data, { name: req.user.name, role: req.user.role });
   });
 }
