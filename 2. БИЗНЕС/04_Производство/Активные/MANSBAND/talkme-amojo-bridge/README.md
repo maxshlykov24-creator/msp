@@ -1,13 +1,13 @@
 # Мост Talk-me ↔ amoCRM (Mansband)
 
-**Уроки и типовые ошибки (для следующих клиентов):** [`../УРОКИ_ИНТЕГРАЦИИ_Talk-me_amoCRM.md`](../УРОКИ_ИНТЕГРАЦИИ_Talk-me_amoCRM.md).
+**Уроки и типовые ошибки (для следующих клиентов):** [`../УРОКИ_ИНТЕГРАЦИИ_Talk-me_amoCRM.md`](../02_Знание/УРОКИ_ИНТЕГРАЦИИ_Talk-me_amoCRM.md).
 
 ## Быстрый старт (Docker)
 
 1. Скопируйте `.env.example` → `.env`, заполните (см. комментарии).
 2. `docker compose up -d --build`
 3. Проверка: `curl -s http://127.0.0.1:19080/health`
-4. На хосте: Nginx + HTTPS → проксирование на `127.0.0.1:19080` (см. `deploy/nginx.example.conf` и [`../MartaChe/loyalty-service/deploy/TIMEWEB.md`](../MartaChe/loyalty-service/deploy/TIMEWEB.md)).
+4. На хосте: Nginx + HTTPS → проксирование на `127.0.0.1:19080` (см. `deploy/nginx.example.conf` и [`../MartaChe/loyalty-service/deploy/TIMEWEB.md`](../../MartaChe/loyalty-service/deploy/TIMEWEB.md)).
 5. OAuth: в браузере откройте `GET /internal/oauth-link` на вашем FQDN (там ссылка на amo).
 6. После ответа ТП с **channel_id** / **channel_secret** — `POST /internal/connect` с заголовком `X-Internal-Secret` (тот же, что `INTERNAL_SECRET` в `.env`).
 
