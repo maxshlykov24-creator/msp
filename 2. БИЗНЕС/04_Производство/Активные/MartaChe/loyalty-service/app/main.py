@@ -54,8 +54,10 @@ def webhook_moysklad(
     client = MoySkladClient()
     for ev in _webhook_event_list(body):
         action = str(ev.get("action") or body.get("action") or "UPDATE").upper()
+        # Коммит на каждое событие: иначе сбой на одном откатывает уже сделанную работу
+        # по предыдущим, а созданные в МойСклад операции откатить нельзя.
         dispatch_webhook_event(db, client, (ev.get("meta") or {}), action=action)
-    db.commit()
+        db.commit()
     return {"ok": True}
 
 

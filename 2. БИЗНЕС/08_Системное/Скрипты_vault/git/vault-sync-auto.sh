@@ -8,7 +8,7 @@ set -e
 root=$(cd "$(dirname "$0")/../../../.." && pwd)
 cd "$root"
 
-log_dir="$root/Бизнес/99_Системное/Скрипты_vault/git/logs"
+log_dir="$root/2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs"
 log_file="$log_dir/vault-sync.log"
 lock_dir="$log_dir/.sync.lock"
 conflict_file="$root/.vault-sync-conflict"
@@ -26,6 +26,18 @@ notify() {
   message=$2
   osascript -e "display notification \"$message\" with title \"$title\"" 2>/dev/null || true
 }
+
+# Удалить legacy-пути после незавершённой миграции (см. РЕГЛАМЕНТ_ЗОНЫ_БИЗНЕС.md)
+for legacy in \
+  "$root/Бизнес" \
+  "$root/2. БИЗНЕС/04_Производство_внедрений" \
+  "$root/2. БИЗНЕС/99_Системное"
+do
+  if [ -e "$legacy" ]; then
+    rm -rf "$legacy"
+    log "cleanup: removed legacy path $legacy"
+  fi
+done
 
 mark_conflict() {
   log "CONFLICT: git pull --rebase failed — resolve manually, then rm .vault-sync-conflict"
@@ -70,7 +82,7 @@ fi
 # Debounce перед commit: не трогать файлы, изменённые < 90 сек назад
 if find . -type f \
   ! -path './.git/*' \
-  ! -path './Бизнес/99_Системное/Скрипты_vault/git/logs/*' \
+  ! -path './2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/*' \
   -newermt '90 seconds ago' \
   2>/dev/null | grep -q .; then
   log "debounce: files changed in last 90s"

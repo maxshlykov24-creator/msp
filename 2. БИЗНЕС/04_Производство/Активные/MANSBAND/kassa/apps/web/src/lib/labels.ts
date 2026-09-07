@@ -18,10 +18,11 @@ export const KIND_LABEL: Record<DealKind, string> = {
   sliv: "Слив",
   cert_digital: "Сертификат (электр.)",
   delivery: "Доставка (СДЭК)",
-  defect: "Брак",
+  defect: "Дефекты",
   drycleaning: "Химчистка",
   resew: "Перешив",
   wrong_size: "Перепутан размер",
+  wrong_label: "Некорректная бирка",
   refund: "Возврат",
   exchange: "Обмен",
 };
@@ -31,7 +32,7 @@ export function stageTone(stage: string): "green" | "red" | "amber" | "blue" | "
   if (stage === "Успех") return "green";
   if (stage === "Провал") return "red";
   if (["В аренде", "Товар отложен", "Дано обещание", "Аренда оплачена"].includes(stage)) return "amber";
-  if (["Отправлен", "Доставлен", "Передан на сборку", "Собран"].includes(stage)) return "blue";
-  if (stage === "Сертификат продан") return "gold";
+  if (["Отправлен", "Доставлен", "Передан на сборку", "Собран", "Вызван курьер"].includes(stage)) return "blue";
+  if (stage === "Сертификат оплачен") return "gold";
   return "gray";
 }

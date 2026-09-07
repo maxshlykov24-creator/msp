@@ -46,7 +46,7 @@ def main() -> None:
         mv(RAZUM / name, RAZUM / new_name)
 
     # Корень Личное: освобождаем номера по цепочке
-    mv(LICHNOE / "1. Входящее", LICHNOE / "0. Входящее")
+    mv(LICHNOE / "1. Входящее", LICHNOE / "_ВХОДЯЩЕЕ")
     mv(LICHNOE / "2. Профиль", LICHNOE / "1. Профиль")
     mv(LICHNOE / "3. Тесты", LICHNOE / "2. Тесты")
 

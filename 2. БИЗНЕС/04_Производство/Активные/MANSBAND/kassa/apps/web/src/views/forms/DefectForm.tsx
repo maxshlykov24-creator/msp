@@ -17,28 +17,33 @@ import { KIND_LABEL } from "../../lib/labels";
 import { attachmentsToUpload, type PhotoAttachment } from "../../lib/photo";
 import type { CartItem, DealKind } from "../../data/types";
 
-type DefectKind = "defect" | "drycleaning" | "resew" | "wrong_size";
+type DefectKind = "defect" | "drycleaning" | "resew" | "wrong_size" | "wrong_label";
 
 const CONFIG: Record<DefectKind, { subtitle: string; needPhoto: boolean; note: string }> = {
   defect: {
-    subtitle: "Дефекты · брак товара",
+    subtitle: "Дефекты",
     needPhoto: true,
     note: "Товар авто-перемещается на склад «Брак». Фото дефекта обязательно.",
   },
   drycleaning: {
-    subtitle: "Дефекты · химчистка",
+    subtitle: "Дефекты",
     needPhoto: true,
     note: "Контроль возврата из химчистки. Фото состояния обязательно.",
   },
   resew: {
-    subtitle: "Дефекты · перешив (ателье)",
+    subtitle: "Дефекты",
     needPhoto: false,
     note: "Перешив в ателье. Укажите плановую дату возврата в комментарии.",
   },
   wrong_size: {
-    subtitle: "Дефекты · перепутан размер комплекта",
+    subtitle: "Дефекты",
     needPhoto: false,
     note: "Фиксация пересортицы размеров. Фото не требуется.",
+  },
+  wrong_label: {
+    subtitle: "Дефекты",
+    needPhoto: false,
+    note: "Некорректная или отсутствующая бирка. Новую бирку печатайте из «Поиска товара». Фото не требуется.",
   },
 };
 
@@ -53,15 +58,22 @@ export function DefectForm({ kind, onDone }: { kind: DealKind; onDone: () => voi
   const [items, setItems] = useState<CartItem[]>([]);
   const [comment, setComment] = useState("");
   const [photos, setPhotos] = useState<PhotoAttachment[]>([]);
+  const [stage, setStage] = useState("Успех");
 
-  const baseFilled = !!(items.length > 0 && comment.trim() && (cfg.needPhoto ? photos.length > 0 : true));
+  const missingRequired = [
+    items.length === 0 && "Позиции",
+    !comment.trim() && "Комментарий",
+    cfg.needPhoto && photos.length === 0 && "Фото",
+  ].filter(Boolean) as string[];
+  const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
+    const funnel = activeStore === "Онлайн-магазин" ? "online" : "offline";
     addDeal({
       id: crypto.randomUUID(),
       number: meta.number,
       createdAt: meta.createdAt,
-      funnel: "defects",
+      funnel,
       kind,
       consultant: consultants.consultant,
       clientName: "—",
@@ -82,21 +94,20 @@ export function DefectForm({ kind, onDone }: { kind: DealKind; onDone: () => voi
 
   return (
     <FormShell
+      onBack={onDone}
       title={KIND_LABEL[kind]}
       subtitle={cfg.subtitle}
-      onBack={onDone}
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
+      missingRequired={missingRequired}
       footer={
         <StageActions
-          stages={["Новая заявка", "Взято в работу"]}
-          stage="Взято в работу"
-          onStageChange={() => {}}
+          stages={["Успех", "Провал"]}
+          stage={stage}
+          onStageChange={setStage}
           onSave={save}
           saved={saved}
           disabled={!baseFilled}
-          onBack={onDone}
-          successHint={!baseFilled ? (cfg.needPhoto && photos.length === 0 ? "Нужны позиции, комментарий и фото" : "Нужны позиции и комментарий") : undefined}
         />
       }
     >

@@ -299,7 +299,7 @@
       <span class="kpi-pct pct-green" data-pct-for="new_leads">251%</span>
     </div>
     <div class="kpi-card">
-      <div class="kpi-card-label">Сконвертировано в сделки</div>
+      <div class="kpi-card-label">Сконвертировано в Успех<span class="info" data-tip="Сделки из когорты новых обращений выбранного периода, которые сейчас находятся в статусе «Успех». Показатель дозревает после окончания периода.">i</span></div>
       <div class="kpi-card-val" data-k="converted">283</div>
       <div class="kpi-card-plan" data-plan-key="converted" data-plan-fmt="int">план 750</div>
       <span class="kpi-pct pct-orange" data-pct-for="converted">188,7%</span>
@@ -308,14 +308,13 @@
       <div class="kpi-card-label">Всего сообщений</div>
       <div class="kpi-card-val" data-k="messages_total">2 187</div>
       <div class="kpi-card-plan"><span data-k="messages_sub">вход. 1 248 / исх. 939</span></div>
-      <span class="kpi-trend up">↑ +9%</span>
     </div>
   </div>
 
   <div class="section-title">Деньги</div>
   <div class="kpi-grid">
     <div class="kpi-card">
-      <div class="kpi-card-label">Выставлено счетов</div>
+      <div class="kpi-card-label">Выставлено счетов<span class="info" data-tip="Уникальные сделки, впервые перешедшие на этап «Отправлен счёт» в выбранном периоде. Дата — событие смены этапа, не дата создания сделки.">i</span></div>
       <div class="kpi-card-val" data-k="invoice_count">213</div>
       <div class="kpi-card-plan" data-plan-key="invoice_count" data-plan-fmt="int">план 1 000</div>
       <span class="kpi-pct pct-orange" data-pct-for="invoice_count">106,5%</span>
@@ -355,16 +354,15 @@
       <span class="kpi-pct pct-orange" data-pct-for="conv_lead_deal">75,2%</span>
     </div>
     <div class="kpi-card">
-      <div class="kpi-card-label">Конверсия повторных обращений<span class="info" data-tip="Из повторных обращений за период — какой % дошёл до сделки (статус Успех). = повторные сделки в Успех / все повторные обращения периода.">i</span></div>
+      <div class="kpi-card-label">Конверсия повторных обращений<span class="info" data-tip="Когорта повторных обращений, созданных в периоде: доля этих же lead_id, которые сейчас дошли до Успеха. Может дозревать после окончания периода.">i</span></div>
       <div class="kpi-card-val" data-k="conv_repeat_pct">35,0%</div>
       <div class="kpi-card-plan" data-plan-key="conv_repeat" data-plan-fmt="pct" data-plan-suffix=" · Повторные: Не обработан→Успех">план 40% · Повторные: Не обработан→Успех</div>
       <span class="kpi-pct pct-orange" data-pct-for="conv_repeat">87,5%</span>
     </div>
     <div class="kpi-card">
-      <div class="kpi-card-label">Постоянных клиентов<span class="info" data-tip="Уникальные клиенты, у которых есть успешная сделка (за всё доступное в CRM время). Считаются по контакту, без дублей.">i</span></div>
+      <div class="kpi-card-label">Постоянных клиентов<span class="info" data-tip="Не зависит от периода вверху. Уникальные контакты с хотя бы одной успешной сделкой (Успех) за всё доступное время в CRM — воронки Продажи и Повторные. Без дублей по контакту.">i</span></div>
       <div class="kpi-card-val" data-k="repeat_customers">128</div>
-      <div class="kpi-card-plan">оплата за последние 2 мес.</div>
-      <span class="kpi-trend up">↑ +14 vs прош. мес.</span>
+      <div class="kpi-card-plan">за всё время в CRM · снимок</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-card-label">Сделки (Повторные)</div>
@@ -390,6 +388,15 @@
       <div class="kpi-card-plan">цель: ≤15 мин</div>
       <span class="kpi-pct pct-red">SLA нарушен</span>
     </div>
+  </div>
+
+  <div class="section-title">Качество исходных данных CRM · на сейчас</div>
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-card-label">Проверено успешных</div><div class="kpi-card-val" data-quality="checked_won">—</div></div>
+    <div class="kpi-card"><div class="kpi-card-label">С нулевой суммой</div><div class="kpi-card-val" data-quality="zero_price">—</div></div>
+    <div class="kpi-card"><div class="kpi-card-label">Без контакта</div><div class="kpi-card-val" data-quality="no_contact">—</div></div>
+    <div class="kpi-card"><div class="kpi-card-label">Без источника</div><div class="kpi-card-val" data-quality="no_source">—</div></div>
+    <div class="kpi-card"><div class="kpi-card-label">Без ответственного</div><div class="kpi-card-val" data-quality="no_responsible">—</div></div>
   </div>
 
   <div class="section-title">Динамика по дням</div>
@@ -432,7 +439,7 @@
 
 <!-- ════════ ПО МЕНЕДЖЕРАМ ════════ -->
 <div id="managers" class="tab-content">
-  <div class="section-title">По менеджерам · Июнь 2026</div>
+  <div class="section-title">По менеджерам · периодные KPI + операционные срезы «на сейчас»</div>
   <div class="tbl-card">
     <div class="tbl-card-title">Сводная таблица</div>
     <table>
@@ -469,13 +476,13 @@
     <span class="period-label">Менеджер:</span>
     <div id="funnel-mgr-filter"></div>
   </div>
-  <div class="section-title">Конверсия этапов</div>
+  <div class="section-title">Воронки и застрявшие · снимок на сейчас</div>
   <div class="two-col">
     <div class="chart-card"><div class="chart-card-title">Воронка: Продажи</div><div id="funnel-sales"></div></div>
     <div class="chart-card"><div class="chart-card-title">Воронка: Повторные продажи</div><div id="funnel-repeat"></div></div>
   </div>
   <div class="two-col">
-    <div class="chart-card"><div class="chart-card-title">Причины провала <span>сделок за период</span></div><canvas id="chart-lose" height="230"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Причины провала <span>за последние 60 дней · не зависит от фильтра</span></div><canvas id="chart-lose" height="230"></canvas></div>
     <div class="chart-card"><div class="chart-card-title">Цикл сделки <span>медиана дней по менеджерам</span></div><canvas id="chart-cycle" height="230"></canvas></div>
   </div>
   <div class="section-title">Застрявшие сделки</div>
@@ -497,7 +504,7 @@
     <div class="kpi-card"><div class="kpi-card-label">Медиана ответа</div><div class="kpi-card-val" data-k="rt_median">14 мин</div><div class="kpi-card-plan">цель ≤15 мин · по бакетам</div><span class="kpi-pct pct-green">OK</span></div>
     <div class="kpi-card"><div class="kpi-card-label">Пропущено диалогов<span class="info" data-tip="Входящие диалоги/звонки, помеченные amoCRM как непринятые: клиент написал или позвонил, а ответа в рамках диалога не было.">i</span></div><div class="kpi-card-val" data-k="missed_dialogs">38</div><div class="kpi-card-plan">цель 0</div><span class="kpi-pct pct-red">−</span></div>
     <div class="kpi-card"><div class="kpi-card-label">SLA ≤15 мин</div><div class="kpi-card-val" data-k="sla_pct">64%</div><div class="kpi-card-plan">цель 80%</div><span class="kpi-pct pct-red">−16 п.п.</span></div>
-    <div class="kpi-card"><div class="kpi-card-label">Первый ответ новому лиду<span class="info" data-tip="Среднее время до первого ответа менеджера на новое обращение, мин. Считается по первому входящему в диалоге.">i</span></div><div class="kpi-card-val" data-k="first_rt">31 мин</div><div class="kpi-card-plan">цель ≤20 мин</div><span class="kpi-pct pct-red">SLA нарушен</span></div>
+    <div class="kpi-card"><div class="kpi-card-label">Первый ответ в диалоге<span class="info" data-tip="Операционный показатель: среднее время первой доступной пары «входящее → следующее исходящее» по сделке в окне сбора. Не входит в строгую финансовую сверку.">i</span></div><div class="kpi-card-val" data-k="first_rt">31 мин</div><div class="kpi-card-plan">цель ≤20 мин</div><span class="kpi-pct pct-red">SLA нарушен</span></div>
     <div class="kpi-card"><div class="kpi-card-label">Входящих сообщений</div><div class="kpi-card-val" data-k="messages_in">1 248</div><span class="kpi-trend up">за период</span></div>
   </div>
   <div class="section-title">По менеджерам</div>
@@ -505,7 +512,7 @@
     <div class="chart-card"><div class="rt-grid" id="rt-grid"></div></div>
     <div class="chart-card"><div class="chart-card-title">Ср. время ответа по дням <span>мин</span></div><canvas id="chart-rt-daily" height="200"></canvas></div>
   </div>
-  <div class="section-title">Первый ответ новому лиду</div>
+  <div class="section-title">Первый ответ в диалоге · операционный</div>
   <div class="two-col">
     <div class="chart-card"><div class="chart-card-title">SLA первого ответа по источникам <span>мин · цель ≤20</span></div><canvas id="chart-fr-source" height="200"></canvas></div>
     <div class="chart-card"><div class="chart-card-title">Распределение времени первого ответа <span>доля диалогов</span></div><canvas id="chart-fr-dist" height="200"></canvas></div>
@@ -520,13 +527,13 @@
     <div class="chart-card"><div class="chart-card-title">Выручка по источникам <span>₽</span></div><canvas id="chart-src-revenue" height="250"></canvas></div>
   </div>
   <div class="two-col">
-    <div class="chart-card"><div class="chart-card-title">Конверсия в Успех по каналам <span>% лид → оплата</span></div><canvas id="chart-src-conv" height="200"></canvas></div>
-    <div class="chart-card"><div class="chart-card-title">Стоимость лида по каналам <span>выручка / лид, ₽</span></div><canvas id="chart-src-value" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Когортная конверсия по каналам <span>лиды по created_at → текущий Успех</span></div><canvas id="chart-src-conv" height="200"></canvas></div>
+    <div class="chart-card"><div class="chart-card-title">Средний чек по каналам <span>приход / оплачено по closed_at, ₽</span></div><canvas id="chart-src-value" height="200"></canvas></div>
   </div>
   <div class="tbl-card">
     <div class="tbl-card-title">Источники — детально</div>
     <table>
-      <thead><tr><th>Источник</th><th style="text-align:right">Лиды</th><th style="text-align:right">Сделки</th><th style="text-align:right">Конв.</th><th style="text-align:right">Выручка, ₽</th></tr></thead>
+      <thead><tr><th>Источник</th><th style="text-align:right">Лиды (created_at)</th><th style="text-align:right">Успех когорты</th><th style="text-align:right">Конв.</th><th style="text-align:right">Оплачено (closed_at)</th><th style="text-align:right">Приход, ₽</th></tr></thead>
       <tbody id="src-tbody">
         <tr><td>Instagram</td><td class="cell-num">164</td><td class="cell-num">90</td><td class="cell-num"><span class="pill pill-green">55%</span></td><td class="cell-money">1 108 000</td></tr>
         <tr><td>ВК</td><td class="cell-num">131</td><td class="cell-num">66</td><td class="cell-num"><span class="pill pill-orange">50%</span></td><td class="cell-money">792 400</td></tr>
@@ -809,12 +816,22 @@ async function loadSpeed(){
 async function loadSources(){
   const res=await apiGet('/api/sources'+qs()); if(!res||!res.data) return; const rows=res.data.rows||[];
   const tb=document.getElementById('src-tbody');
-  if(tb) tb.innerHTML=rows.map(s=>`<tr><td>${s.source}</td><td class="cell-num">${rub(s.leads)}</td><td class="cell-num">${rub(s.deals)}</td><td class="cell-num"><span class="pill ${pillConv(s.conv)}">${s.conv}%</span></td><td class="cell-money">${rub(s.revenue)}</td></tr>`).join('');
+  if(tb) tb.innerHTML=rows.map(s=>`<tr><td>${s.source}</td><td class="cell-num">${rub(s.leads)}</td><td class="cell-num">${rub(s.cohort_won)}</td><td class="cell-num"><span class="pill ${pillConv(s.conv)}">${s.conv}%</span></td><td class="cell-num">${rub(s.closed_won)}</td><td class="cell-money">${rub(s.revenue)}</td></tr>`).join('');
   const lab=rows.map(s=>s.source), colors=lab.map((_,i)=>MGR_COLORS[i%MGR_COLORS.length]);
   mkDoughnut('chart-src-leads',lab,rows.map(s=>s.leads),colors);
   mkDoughnut('chart-src-revenue',lab,rows.map(s=>s.revenue),colors);
   mkHBar('chart-src-conv',lab,[{data:rows.map(s=>s.conv),backgroundColor:rows.map(s=>s.conv>=60?GRN:s.conv>=45?ONG:RED),borderRadius:4}],{max:100});
-  mkHBar('chart-src-value',lab,[{data:rows.map(s=>s.value),backgroundColor:colors,borderRadius:4}]);
+  mkHBar('chart-src-value',lab,[{data:rows.map(s=>s.avg_check),backgroundColor:colors,borderRadius:4}]);
+}
+
+async function loadDataQuality(){
+  const res=await apiGet('/api/data_quality'); if(!res||!res.data) return;
+  const d=res.data, counts=d.counts||{};
+  const values={checked_won:d.checked_won,zero_price:counts.zero_price,no_contact:counts.no_contact,no_source:counts.no_source,no_responsible:counts.no_responsible};
+  Object.entries(values).forEach(([key,value])=>{
+    const el=document.querySelector(`[data-quality="${key}"]`);
+    if(el) el.textContent=value==null?'—':rub(value);
+  });
 }
 
 /* ════ ACTIVITY ════ */
@@ -838,7 +855,7 @@ const XLS_ROWS=[
   {n:'Кол-во исходящих звонков',plan:3000,key:'calls_out',t:'int'},
   {n:'Кол-во минут в разговоре',plan:3000,key:'call_minutes',t:'int'},
   {n:'Кол-во новых обращений',plan:1000,key:'new_leads',t:'int'},
-  {n:'Сконвертировано в сделки',plan:750,key:'converted',t:'int'},
+  {n:'Сконвертировано в Успех (когорта created_at)',plan:750,key:'converted',t:'int'},
   {n:'Созданные сделки (Повторные)',plan:50,key:'repeat_created',t:'int'},
   {n:'Выставлено счетов',plan:1000,key:'invoice_count',t:'int'},
   {n:'Сумма выставленных счетов',plan:12000000,key:'invoice_sum',t:'money'},
@@ -944,7 +961,7 @@ async function loadAll(){
   await Promise.all([
     loadStatus(), loadOverview(), loadSeries(), loadManagers(),
     loadFunnels(), loadLoss(), loadStuck(), loadSpeed(),
-    loadSources(), loadActivity(), loadTable()
+    loadSources(), loadDataQuality(), loadActivity(), loadTable()
   ]);
 }
 (function init(){

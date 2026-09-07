@@ -71,7 +71,7 @@ const stageToGroup: Record<string, keyof typeof palette> = {
   Спам: "neutral",
   Сара: "neutral",
   "Сдвоенная заявка": "neutral",
-  "Сертификат продан": "neutral",
+  "Сертификат оплачен": "neutral",
 
   "Взято в работу": "active",
   "Дано обещание": "active",
@@ -90,6 +90,7 @@ const stageToGroup: Record<string, keyof typeof palette> = {
 
   "Ждет товар": "inventory",
   "Ждёт товар": "inventory",
+  "Товар в пути": "logistics",
   "Товар в магазине": "inventory",
   "Товар отложен": "inventory",
   "Ждёт оплату": "active",
@@ -99,6 +100,15 @@ const stageToGroup: Record<string, keyof typeof palette> = {
 
   "Аренда оплачена": "rental",
   "В аренде": "rental",
+  Возвращена: "rental",
+
+  "Счёт запрошен": "new",
+  "Счет запрошен": "new",
+  "Счет выставлен": "active",
+  "Счёт выставлен": "active",
+  Оплачено: "success",
+  "Документы готовы": "logistics",
+  "Документы переданы": "logistics",
 
   "Передан на сборку": "logistics",
   Собран: "logistics",

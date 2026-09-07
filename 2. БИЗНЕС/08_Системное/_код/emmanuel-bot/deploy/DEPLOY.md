@@ -51,24 +51,26 @@ SQLite лежит в **Docker volume** `emmanuel_report_bot_data` (см. `docker
 URL в `.env`: `sqlite+aiosqlite:////data/emmanuel.sqlite3` — четыре слэша, иначе путь трактуется как относительный и БД не откроется.
 
 
-## Сервер и соседние сервисы
+## Сервер (с 2026-07-31)
 
-- На VPS проект разворачивается в **`/opt/emmanuel-report-bot`**.
-- Compose-проект **`emmanuel-report-bot`**, контейнер **`emmanuel-report-bot`** — отдельная сеть и **именованный volume** для SQLite, **порты наружу не занимает** (long polling): с другими ботами конфликтовать не должен.
+| | |
+|--|--|
+| VPS | **DKAcademy / ai-msp** `194.87.226.234` |
+| SSH | `ssh -i ~/.ssh/dkacademy_analytics_deploy root@194.87.226.234` (алиас `dkacademy-vps`) |
+| Каталог | `/opt/emmanuel-report-bot` |
+| Контейнер | `emmanuel-report-bot`, volume `emmanuel-report-bot_emmanuel_report_bot_data` |
+| Лимит RAM | 180 МБ |
 
-Повторный деплой с локальной машины (пароль root только через переменную окружения, не сохранять в файлах):
+**Было до 31.07.2026:** LicenseBridge-хаб `72.56.123.137` — снято из‑за нехватки памяти. На том же VPS — `dkacademy-bot`, analytics, сайт; бот порты не открывает (long polling).
+
+Повторный деплой:
 
 ```bash
-cd emmanuel-bot
-# вариант 1 — пароль root (именованная переменная, не сохранять в файлах)
-DEPLOY_SSH_PASSWORD='……' ./.venv/bin/python scripts/_deploy_to_vps.py
-# вариант 2 — путь к приватному ключу (если pubkey добавлен для root на сервере)
-DEPLOY_SSH_KEY="$HOME/.ssh/id_ed25519" ./.venv/bin/python scripts/_deploy_to_vps.py
-# вариант 3 — ключ по умолчанию из ssh-agent (~/.ssh/), если авторизация на сервер уже настроена
-./.venv/bin/python scripts/_deploy_to_vps.py
+cd "2. БИЗНЕС/08_Системное/_код/emmanuel-bot"
+# ключ по умолчанию — dkacademy_analytics_deploy
+python scripts/_deploy_to_vps.py
+# или: DEPLOY_SSH_KEY="$HOME/.ssh/dkacademy_analytics_deploy" python scripts/_deploy_to_vps.py
 ```
-
-При зашифрованном ключе: `DEPLOY_SSH_KEY_PASSPHRASE`.
 
 
 ## Часовой пояс

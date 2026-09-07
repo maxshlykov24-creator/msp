@@ -106,7 +106,7 @@ def process():
     sq_trans.save(OUT_TRANS, "PNG", optimize=True)
     
     # Save directly to the repo folder as well
-    REPO_DIR = Path("/Users/max/Desktop/CURSOR/Личное/0. Входящее/2026-05-26_МойСклад_договор_ИП_Афанасьева")
+    REPO_DIR = Path("/Users/max/Desktop/CURSOR/1. ЛИЧНОЕ/_ВХОДЯЩЕЕ/2026-05-26_МойСклад_договор_ИП_Афанасьева")
     sq_white.save(REPO_DIR / "печать_ИП_Афанасьева_белый_фон.png", "PNG", optimize=True)
     sq_trans.save(REPO_DIR / "подпись_МойСклад.png", "PNG", optimize=True)
 

@@ -7,15 +7,15 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
-    <string>/Users/max/CURSOR/Бизнес/99_Системное/Скрипты_vault/git/vault-sync-auto.sh</string>
+    <string>/Users/max/CURSOR/2. БИЗНЕС/08_Системное/Скрипты_vault/git/vault-sync-auto.sh</string>
   </array>
   <key>StartInterval</key>
   <integer>120</integer>
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Users/max/CURSOR/Бизнес/99_Системное/Скрипты_vault/git/logs/launchd-vault-sync.out</string>
+  <string>/Users/max/CURSOR/2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/launchd-vault-sync.out</string>
   <key>StandardErrorPath</key>
-  <string>/Users/max/CURSOR/Бизнес/99_Системное/Скрипты_vault/git/logs/launchd-vault-sync.err</string>
+  <string>/Users/max/CURSOR/2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/launchd-vault-sync.err</string>
 </dict>
 </plist>

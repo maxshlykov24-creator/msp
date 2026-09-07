@@ -19,9 +19,11 @@ import tempfile
 
 import paramiko
 
-HOST = "72.56.123.137"
+# Прод с 2026-07-31: VPS DKAcademy (ai-msp), не LicenseBridge-хаб.
+HOST = os.environ.get("DEPLOY_SSH_HOST", "194.87.226.234")
 USER = "root"
 REMOTE = "/opt/emmanuel-report-bot"
+DEFAULT_KEY = str(pathlib.Path.home() / ".ssh" / "dkacademy_analytics_deploy")
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
@@ -39,6 +41,9 @@ def _connect(client: paramiko.SSHClient) -> None:
             look_for_keys=False,
         )
         return
+
+    if not key_path_raw and pathlib.Path(DEFAULT_KEY).is_file():
+        key_path_raw = DEFAULT_KEY
 
     if key_path_raw:
         path = pathlib.Path(key_path_raw).expanduser().resolve()

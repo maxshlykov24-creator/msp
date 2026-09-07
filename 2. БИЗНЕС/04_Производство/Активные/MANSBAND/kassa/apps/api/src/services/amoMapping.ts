@@ -1,7 +1,7 @@
 import { AMO_COMPANY_FIELDS, AMO_LEAD_FIELDS, type AmoLeadFieldKey } from "@kassa/shared";
 import type { Deal } from "@kassa/shared";
 import * as amo from "../clients/amo.js";
-import { getCompanyFieldIdByName, getFieldIdByName } from "./bootstrap.js";
+import { getCompanyFieldIdByName, getFieldIdByName, getLeadFieldMeta } from "./bootstrap.js";
 
 // Сведение полей форм кассы → кастом-поля сделки amoCRM (аудит зафиксирован
 // в плане 2026-07-01). Здесь только чтение резолва id по имени — сами поля
@@ -53,6 +53,14 @@ function saraNote(deal: Deal): string | null {
   if (deal.tips && deal.tipsDestination) {
     parts.push(`Чаевые ${deal.tips}₽ → ${deal.tipsDestination}`);
   }
+  if (deal.saryPhone) {
+    const who = deal.saryClient ? `${deal.saryClient} ${deal.saryPhone}` : deal.saryPhone;
+    parts.push(
+      deal.saryBonus
+        ? `Сарафан ${who} · бонус ${deal.saryBonus}₽ учтён в продаже`
+        : `Сарафан ${who} · выплата ожидает`
+    );
+  }
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -86,6 +94,15 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("referredBy", deal.referredBy);
   put("callManager", deal.callManager);
   if (deal.deliveryCity) put("deliveryAddress", deal.deliveryCity);
+  put("atelierAmount", deal.atelierAmount);
+  put("deliveryAmount", deal.deliveryAmount);
+  put("closingDocumentsRequired", deal.closingDocumentsRequired);
+  put("invoiceDate", deal.invoiceDate);
+  put("invoiceStatus", deal.invoiceStatus);
+  put("rentalStatus", deal.rentalStatus);
+  put("rentalIssuedAt", deal.rentalIssuedAt);
+  put("rentalReturnedAt", deal.rentalReturnedAt);
+  put("rentalDeposit", deal.rentalDeposit);
 
   // Отложка (kind=deferred): срок + признак «платная/бесплатная» по наличию аванса.
   if (deal.kind === "deferred" && deal.reservedUntil) {
@@ -100,6 +117,52 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   const sara = saraNote(deal);
   if (sara) put("sara", sara);
 
+  return sanitizeSelectValues(out);
+}
+
+// Написание значений в справочниках amoCRM своё («на Бауманской», «Оплачен»),
+// поэтому подгоняем значение под справочник, а неизвестное — выбрасываем:
+// одно чужое значение select-поля раньше отбивало создание сделки целиком.
+const ENUM_SYNONYMS: Record<string, string[]> = {
+  Оплачено: ["Оплачен", "Оплачено полностью"],
+  Частично: ["Частично оплачен", "Частичная оплата"],
+  "Не оплачено": ["Не оплачен"],
+};
+
+function normalizeEnum(value: string): string {
+  return value.toLowerCase().trim().replace(/ё/g, "е").replace(/\s+/g, " ");
+}
+
+function resolveEnumValue(enums: string[], value: string): string | null {
+  const candidates = [value, ...(ENUM_SYNONYMS[value] ?? [])].map(normalizeEnum);
+  for (const candidate of candidates) {
+    const hit = enums.find((e) => normalizeEnum(e) === candidate);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+async function sanitizeSelectValues(values: LeadCustomFieldValue[]): Promise<LeadCustomFieldValue[]> {
+  const meta = await getLeadFieldMeta().catch(() => new Map());
+  const out: LeadCustomFieldValue[] = [];
+  for (const item of values) {
+    const field = meta.get(item.field_id);
+    if (!field || !field.type.includes("select") || field.enums.length === 0) {
+      out.push(item);
+      continue;
+    }
+    const resolved = item.values
+      .map((v) => resolveEnumValue(field.enums, String(v.value)))
+      .filter((v): v is string => v !== null)
+      .map((value) => ({ value }));
+    if (resolved.length) {
+      out.push({ field_id: item.field_id, values: resolved });
+    } else {
+      console.warn(
+        `[amoMapping] поле #${item.field_id}: «${String(item.values[0]?.value)}» нет в справочнике amoCRM — пропущено`
+      );
+    }
+  }
   return out;
 }
 

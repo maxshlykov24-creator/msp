@@ -31,11 +31,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+    let cancelled = false;
+    // Жёсткий потолок Gate (не трогаем token — иначе гонка с опоздавшим /me)
+    const hardStop = window.setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 12_000);
     api
       .get<User>("/auth/me")
-      .then(setUser)
-      .catch(() => setToken(null))
-      .finally(() => setLoading(false));
+      .then((u) => {
+        if (!cancelled) setUser(u);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setToken(null);
+          setUser(null);
+        }
+      })
+      .finally(() => {
+        window.clearTimeout(hardStop);
+        if (!cancelled) setLoading(false);
+      });
+
+    const onUnauthorized = () => {
+      if (!cancelled) setUser(null);
+    };
+    window.addEventListener("kassa:unauthorized", onUnauthorized);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(hardStop);
+      window.removeEventListener("kassa:unauthorized", onUnauthorized);
+    };
   }, []);
 
   const value: AuthState = {

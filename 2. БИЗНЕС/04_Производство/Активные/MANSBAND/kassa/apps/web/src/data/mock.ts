@@ -3,12 +3,12 @@ import type {
   Consultant,
   Deal,
   DealKind,
-  PaymentMethod,
   Product,
   QueueItem,
   SaryPayout,
   Store,
 } from "./types";
+import { AD_SOURCES } from "@kassa/shared";
 
 // ── Справочники (реальные значения из amoCRM / ТЗ) ──────────────────
 
@@ -16,9 +16,9 @@ export const STORES = ["На Бауманской", "На Пятницкой", "
 
 // Адреса магазинов (авто-подстановка в форму и карточку заявки)
 export const STORE_ADDRESS: Record<Store, string> = {
-  "На Бауманской": "г. Москва, Спартаковская пл., д. 14, стр. 2",
-  "На Пятницкой": "г. Москва, ул. Пятницкая, д. 8",
-  "Онлайн-магазин": "Онлайн · отправка СДЭК",
+  "На Бауманской": "На Бауманской",
+  "На Пятницкой": "На Пятницкой",
+  "Онлайн-магазин": "Онлайн-магазин",
 };
 
 export const CONSULTANTS: Consultant[] = [
@@ -32,82 +32,86 @@ export const CONSULTANTS: Consultant[] = [
   { id: "f1", name: "Эдвин", role: "finance" },
 ];
 
-// Способы приёма денег (без привязки к магазину — магазин выбран в шапке)
-export const PAYMENT_METHODS: PaymentMethod[] = [
-  { id: "cash", label: "Наличные", kind: "cash" },
-  { id: "cash_zh", label: "Наличные Женя", kind: "cash" },
-  { id: "cash_mt", label: "Наличные Матвей", kind: "cash" },
-  { id: "sber_zh", label: "Сбер Женя", kind: "card" },
-  { id: "sber_mt", label: "Сбер Матвей", kind: "card" },
-  { id: "sber_misha", label: "Сбер Миша", kind: "card" },
-  { id: "sber_afina", label: "Сбер Афина", kind: "card" },
-  { id: "alfa_edwin", label: "Альфа Эдвин", kind: "card" },
-  { id: "ozon_zh", label: "Озон Женя", kind: "card" },
-  { id: "rs_pyat", label: "РС", kind: "account" },
-  { id: "rs_misha", label: "РС Миша", kind: "account" },
-  { id: "cert", label: "Сертификат №…", kind: "certificate" },
-];
+// Способы приёма денег — единый справочник в @kassa/shared (созвон 29.07.2026).
+export { PAYMENT_METHODS, PAYMENT_METHOD_GROUPS, findPaymentMethod, paymentMethodLabel } from "@kassa/shared";
 
 // Каналы продаж (amoCRM, поле «Канал продаж»)
-export const CHANNELS = [
-  "Совет",
-  "WhatsApp",
-  "Сарафан",
-  "Телеграм канал",
-  "Instagram",
-  "ВК",
-  "Яндекс Директ",
-  "Яндекс Карты",
-  "2ГИС",
-  "Гугл Карты",
-  "Авито",
-  "Ютуб",
-  "TikTok",
-  "Pinterest",
-];
+export const CHANNELS = AD_SOURCES;
 
 // Цель покупки (amoCRM, поле «Цель покупки»)
 export const PURPOSES = ["Свадьба", "Мероприятия", "Работа", "Повседнев"];
 
-// Этапы воронки «Продажи» (amoCRM, pipeline 9601214) — ключевые
+// Этапы воронки «Продажи» (amoCRM, pipeline 9601214) — без «Новая заявка» / «Взято в работу»
 export const SALE_STAGES = [
-  "Новая заявка",
-  "Взято в работу",
   "Дано обещание",
   "Хочет прийти",
   "Ждет товар",
+  "Товар в пути",
   "Товар в магазине",
   "Товар отложен",
   "Встреча назначена",
   "Аренда оплачена",
   "В аренде",
+  "Возвращена",
+  "Счёт запрошен",
+  "Счет выставлен",
+  "Оплачено",
+  "Документы готовы",
+  "Документы переданы",
   "Передан на сборку",
   "Собран",
+  "Вызван курьер",
   "Отправлен",
   "Доставлен",
-  "Сертификат продан",
+  "Не выкуплен",
+  "Сертификат оплачен",
   "Успех",
   "Провал",
 ];
 
-// Этапы по виду заявки — для корректной смены этапа в списке (DealModal)
+/** Этапы, скрытые в UI кассы (не показываем в селектах / не тянем в открытых). */
+export const HIDDEN_STAGES = new Set([
+  "Новая заявка",
+  "Взято в работу",
+  "Взята в работу",
+  "Неразобранное",
+]);
+
+// Этапы по виду заявки — для корректной смены этапа в списке (DealModal).
+// «Товар в магазине» есть в списке жизненного цикла (его ставит приёмка перемещения),
+// но не в SAVE_STAGES форм — при создании заявки его не выбирают.
 export const STAGES_BY_KIND: Record<DealKind, string[]> = {
-  sale: ["Новая заявка", "Взято в работу", "Хочет прийти", "Товар отложен", "Успех", "Провал"],
-  company: ["Ждёт товар", "Товар в магазине", "Ждёт оплату", "Товар отложен", "Успех", "Провал"],
-  cert_plastic: ["Сертификат продан", "Успех", "Провал"],
-  cert_digital: ["Сертификат продан", "Успех", "Провал"],
-  rental: ["Аренда оплачена", "В аренде", "Успех", "Провал"],
-  deferred: ["Ждет товар", "Товар в магазине", "Товар отложен", "Успех", "Провал"],
-  promise: ["Дано обещание", "Хочет прийти", "Успех", "Провал"],
+  // Провал у продажи при создании не ставят — это слив / не слив.
+  sale: ["Хочет прийти", "Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен", "Встреча назначена", "Успех"],
+  company: [
+    "Товар отложен",
+    "Счёт запрошен",
+    "Счет выставлен",
+    "Оплачено",
+    "Ждет товар",
+    "Товар в пути",
+    "Товар в магазине",
+    "Документы готовы",
+    "Документы переданы",
+    "Успех",
+    "Провал",
+  ],
+  // Пластик иногда нужно привезти из другой точки — «Ждет товар» нужен и здесь.
+  cert_plastic: ["Сертификат оплачен", "Ждет товар", "Товар в пути", "Товар в магазине", "Успех", "Провал"],
+  cert_digital: ["Сертификат оплачен", "Успех", "Провал"],
+  rental: ["Аренда оплачена", "Ждет товар", "Товар в пути", "Товар в магазине", "В аренде", "Успех", "Провал"],
+  deferred: ["Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен", "Успех", "Провал"],
+  promise: ["Дано обещание", "Хочет прийти", "Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен", "Успех", "Провал"],
   no_sliv: ["Провал"],
-  sliv: ["Встреча назначена", "Успех", "Провал"],
-  delivery: ["Передан на сборку", "Собран", "Отправлен", "Доставлен", "Успех", "Провал"],
-  defect: ["Новая заявка", "Взято в работу", "Успех", "Провал"],
-  drycleaning: ["Новая заявка", "Взято в работу", "Успех", "Провал"],
-  resew: ["Новая заявка", "Взято в работу", "Успех", "Провал"],
-  wrong_size: ["Новая заявка", "Взято в работу", "Успех", "Провал"],
-  refund: ["Новая заявка", "Взято в работу", "Успех", "Провал"],
-  exchange: ["Новая заявка", "Взято в работу", "Успех", "Провал"],
+  sliv: ["Встреча назначена", "Провал"],
+  delivery: ["Передан на сборку", "Собран", "Вызван курьер", "Отправлен", "Доставлен", "Не выкуплен", "Успех", "Провал"],
+  defect: ["Успех", "Провал"],
+  drycleaning: ["Успех", "Провал"],
+  resew: ["Успех", "Провал"],
+  wrong_size: ["Успех", "Провал"],
+  wrong_label: ["Успех", "Провал"],
+  refund: ["Успех", "Провал"],
+  exchange: ["Успех", "Провал"],
 };
 
 // ── Каталог товаров (категории — реальные из МойСклад) ──────────────
@@ -141,11 +145,11 @@ export const CERTIFICATES: Certificate[] = [
 // ── Очередь Эдвина (сдача/возврат «не выдано») ─────────────────────
 
 export const QUEUE: QueueItem[] = [
-  { id: "q1", kind: "change", dealNumber: 1072, client: "Сергей П.", amount: 1800, destination: "+7 925 110-22-33 · Сбербанк", status: "pending", createdAt: "2026-06-02T11:20:00" },
-  { id: "q2", kind: "refund", dealNumber: 1069, client: "Игорь В.", amount: 28900, destination: "2202 20** **** 4417 · Тинькофф", status: "pending", createdAt: "2026-06-02T10:05:00" },
-  { id: "q3", kind: "change", dealNumber: 1070, client: "Артём Л.", amount: 600, destination: "+7 916 444-55-66 · Альфа", status: "pending", createdAt: "2026-06-02T09:40:00" },
-  { id: "q4", kind: "change", dealNumber: 1065, client: "Павел Н.", amount: 1200, destination: "Наличные на стойке", status: "issued", createdAt: "2026-06-01T18:30:00" },
-  { id: "q5", kind: "refund", dealNumber: 1061, client: "Марк З.", amount: 4500, destination: "+7 903 222-11-00 · Сбербанк", status: "issued", createdAt: "2026-06-01T17:10:00" },
+  { id: "q1", kind: "change", dealNumber: 1072, client: "Сергей П.", amount: 1800, destination: "+7 925 110-22-33 · Сбербанк", status: "pending", issuedAmount: 0, payouts: [], createdAt: "2026-06-02T11:20:00" },
+  { id: "q2", kind: "refund", dealNumber: 1069, client: "Игорь В.", amount: 28900, destination: "2202 20** **** 4417 · Тинькофф", status: "pending", issuedAmount: 0, payouts: [], createdAt: "2026-06-02T10:05:00" },
+  { id: "q3", kind: "change", dealNumber: 1070, client: "Артём Л.", amount: 600, destination: "+7 916 444-55-66 · Альфа", status: "pending", issuedAmount: 0, payouts: [], createdAt: "2026-06-02T09:40:00" },
+  { id: "q4", kind: "change", dealNumber: 1065, client: "Павел Н.", amount: 1200, destination: "Наличные на стойке", status: "issued", issuedAmount: 1200, payouts: [], createdAt: "2026-06-01T18:30:00" },
+  { id: "q5", kind: "refund", dealNumber: 1061, client: "Марк З.", amount: 4500, destination: "+7 903 222-11-00 · Сбербанк", status: "issued", issuedAmount: 4500, payouts: [], createdAt: "2026-06-01T17:10:00" },
 ];
 
 // ── Сары (реферальные выплаты за совет) ──────────────────────────────
@@ -164,7 +168,7 @@ export const DEALS: Deal[] = [
     consultant: "Матвей", clientName: "Сергей П.", clientPhone: "+7 925 110-22-33", store: "На Бауманской",
     channel: "Instagram", purpose: "Свадьба",
     items: [{ productId: "p1", name: "Костюм-тройка тёмно-синий", price: 34900, qty: 1 }, { productId: "p5", name: "Сорочка белая приталенная", price: 4500, qty: 1 }],
-    payments: [{ id: "pm1", methodId: "cash", amount: 20000 }, { id: "pm2", methodId: "sber_zh", amount: 17600 }],
+    payments: [{ id: "pm1", methodId: "cash_stores", amount: 20000 }, { id: "pm2", methodId: "sber_zhenya", amount: 17600 }],
     stage: "Успех", total: 39400, paid: 39400,
     history: [
       { at: "2026-06-02T11:10:00", who: "Матвей", action: "Заявка создана" },
@@ -176,8 +180,8 @@ export const DEALS: Deal[] = [
     id: "d2", number: 1071, createdAt: "2026-06-02T10:30:00", funnel: "offline", kind: "rental",
     consultant: "Женя", clientName: "Никита Р.", clientPhone: "+7 916 700-80-90", store: "На Пятницкой",
     channel: "Сарафан", purpose: "Мероприятия",
-    items: [{ productId: "rent", name: "Аренда комплекта (услуга)", price: 6500, qty: 1 }, { productId: "p3", name: "Смокинг чёрный атлас", price: 0, qty: 1, noPrice: true }],
-    payments: [{ id: "pm3", methodId: "cash", amount: 6500 }],
+    items: [{ productId: "rent", name: "Аренда комплекта", price: 6500, qty: 1 }, { productId: "p3", name: "Смокинг чёрный атлас", price: 0, qty: 1, noPrice: true }],
+    payments: [{ id: "pm3", methodId: "cash_stores", amount: 6500 }],
     stage: "В аренде", rentalFrom: "2026-06-06", rentalTo: "2026-06-09", total: 6500, paid: 6500,
   },
   {
@@ -185,7 +189,7 @@ export const DEALS: Deal[] = [
     consultant: "Гриша", clientName: "Артём Л.", clientPhone: "+7 916 444-55-66", store: "На Бауманской",
     channel: "Авито", purpose: "Работа",
     items: [{ productId: "p2", name: "Костюм-двойка графит", price: 28900, qty: 1 }],
-    payments: [{ id: "pm4", methodId: "sber_zh", amount: 10000 }],
+    payments: [{ id: "pm4", methodId: "sber_zhenya", amount: 10000 }],
     stage: "Товар отложен", reservedUntil: "2026-06-09", total: 28900, paid: 10000,
     history: [
       { at: "2026-06-02T09:35:00", who: "Гриша", action: "Заявка создана" },
@@ -204,8 +208,8 @@ export const DEALS: Deal[] = [
     consultant: "Арсен", clientName: "Виктор С.", clientPhone: "+7 905 123-45-67", store: "На Бауманской",
     channel: "WhatsApp", guestName: "Виктор",
     items: [{ productId: "cert", name: "Сертификат (номинал)", price: 30000, qty: 1 }],
-    payments: [{ id: "pm5", methodId: "rs_pyat", amount: 30000 }],
-    stage: "Сертификат продан", certificateNumber: "45620", total: 30000, paid: 30000,
+    payments: [{ id: "pm5", methodId: "rs_pyatnitskaya", amount: 30000 }],
+    stage: "Сертификат оплачен", certificateNumber: "45620", total: 30000, paid: 30000,
   },
   {
     id: "d6", number: 1067, createdAt: "2026-06-01T19:20:00", funnel: "offline", kind: "promise",
@@ -226,7 +230,7 @@ export const DEALS: Deal[] = [
     consultant: "Женя", clientName: "Дмитрий М.", clientPhone: "+7 925 888-77-66", store: "На Бауманской",
     channel: "Сайт", purpose: "Работа", referredBy: "Гриша", meetingDate: "2026-06-01",
     items: [{ productId: "p2", name: "Костюм-двойка графит", price: 28900, qty: 1 }],
-    payments: [{ id: "pm7", methodId: "cash", amount: 28900 }],
+    payments: [{ id: "pm7", methodId: "cash_stores", amount: 28900 }],
     stage: "Успех", comment: "Пришёл по сливу из Пятницкой, забрал сразу", total: 28900, paid: 28900,
   },
   {
@@ -235,7 +239,7 @@ export const DEALS: Deal[] = [
     channel: "Сайт", purpose: "Мероприятия",
     companyName: "ООО «Вектор» · ИНН 7701234567", invoiceNo: "СЧ-2026-114", invoicePaid: true, issued: false,
     items: [{ productId: "p1", name: "Костюм-тройка тёмно-синий", price: 34900, qty: 3 }],
-    payments: [{ id: "pm8", methodId: "rs_misha", amount: 104700 }],
+    payments: [{ id: "pm8", methodId: "rs_baumanskaya", amount: 104700 }],
     stage: "Успех", comment: "Корпоративный заказ 3 костюма, счёт оплачен, ждём выдачу", total: 104700, paid: 104700,
   },
   {
@@ -243,7 +247,7 @@ export const DEALS: Deal[] = [
     consultant: "Call-менеджер", clientName: "Алексей Н.", clientPhone: "+7 903 444-55-66", store: "Онлайн-магазин",
     channel: "Сайт", purpose: "Свадьба",
     items: [{ productId: "p4", name: "Двубортный костюм синий", price: 38900, qty: 1 }],
-    payments: [{ id: "pm6", methodId: "sber_zh", amount: 38900 }],
+    payments: [{ id: "pm6", methodId: "sber_zhenya", amount: 38900 }],
     stage: "Отправлен", total: 38900, paid: 38900,
   },
   {
@@ -269,7 +273,7 @@ export const DEALS: Deal[] = [
     channel: "Instagram", purpose: "Свадьба",
     referredBy: "Женя", meetingDate: "2026-06-01",
     items: [{ productId: "p4", name: "Двубортный костюм синий", price: 38900, qty: 1 }],
-    payments: [{ id: "pm9", methodId: "sber_mt", amount: 38900 }],
+    payments: [{ id: "pm9", methodId: "sber_matvey", amount: 38900 }],
     stage: "Успех", comment: "Пришёл по обещанию Жени с Пятницкой", total: 38900, paid: 38900,
   },
   // Демо: компания с руководителем (новая заявка для CompanyForm)
@@ -292,13 +296,13 @@ export const DEALS: Deal[] = [
     email: "irina.l@example.com", store: "Онлайн-магазин",
     channel: "Instagram", guestName: "Муж Ирины",
     items: [{ productId: "cert", name: "Сертификат №45640", price: 20000, qty: 1 }],
-    payments: [{ id: "pm15", methodId: "sber_zh", amount: 20000 }],
-    stage: "Сертификат продан", certificateNumber: "45640", receivedAt: "2026-06-04", validUntil: "2027-06-04",
+    payments: [{ id: "pm15", methodId: "sber_zhenya", amount: 20000 }],
+    stage: "Сертификат оплачен", certificateNumber: "45640", receivedAt: "2026-06-04", validUntil: "2027-06-04",
     total: 20000, paid: 20000,
   },
   // Демо: дефект (брак, без клиента)
   {
-    id: "d16", number: 1056, createdAt: "2026-06-04T13:00:00", funnel: "defects", kind: "defect",
+    id: "d16", number: 1056, createdAt: "2026-06-04T13:00:00", funnel: "offline", kind: "defect",
     consultant: "Гриша", clientName: "—", clientPhone: "—", store: "На Пятницкой",
     items: [{ productId: "p3", name: "Смокинг чёрный атлас", price: 0, qty: 1, noPrice: true }],
     payments: [], stage: "Взято в работу", photoAttached: true,
@@ -306,7 +310,7 @@ export const DEALS: Deal[] = [
   },
   // Демо: химчистка
   {
-    id: "d17", number: 1055, createdAt: "2026-06-04T13:20:00", funnel: "defects", kind: "drycleaning",
+    id: "d17", number: 1055, createdAt: "2026-06-04T13:20:00", funnel: "offline", kind: "drycleaning",
     consultant: "Саша", clientName: "—", clientPhone: "—", store: "На Бауманской",
     items: [{ productId: "p1", name: "Костюм-тройка тёмно-синий", price: 0, qty: 1, noPrice: true }],
     payments: [], stage: "Взято в работу", photoAttached: true,
@@ -321,7 +325,7 @@ export const DEALS: Deal[] = [
       { productId: "p2", name: "Костюм-двойка графит", price: -28900, qty: 1 },
       { productId: "p1", name: "Костюм-тройка тёмно-синий", price: 34900, qty: 1 },
     ],
-    payments: [{ id: "pm18", methodId: "cash", amount: 6000 }],
+    payments: [{ id: "pm18", methodId: "cash_stores", amount: 6000 }],
     stage: "Успех", comment: "Обмен двойки на тройку, доплата 6000", total: 6000, paid: 6000,
   },
 ];

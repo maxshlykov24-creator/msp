@@ -51,6 +51,7 @@ export interface HttpClientOptions {
   rps?: number;
   maxRetries?: number;
   timeoutMs?: number;
+  serviceName?: string;
 }
 
 export class HttpError extends Error {
@@ -128,9 +129,19 @@ export class HttpClient {
       }
 
       const text = await res.text();
-      const data = text ? safeJson(text) : null;
+      // amoCRM отдаёт 204 с пустым телом, когда по фильтру ничего не найдено
+      // (например, поиск контакта по телефону). Раньше здесь возвращался null и
+      // вызывающий код падал на res._embedded — синк заявки в amo умирал целиком.
+      const data = text ? safeJson(text) : {};
 
       if (!res.ok) {
+        if (res.status === 401 && this.opts.serviceName) {
+          throw new HttpError(
+            401,
+            `${this.opts.serviceName}: ошибка авторизации (401). Проверьте токен; локальные данные не изменены.`,
+            data
+          );
+        }
         throw new HttpError(res.status, `${method} ${url} → ${res.status}`, data);
       }
       return data as T;

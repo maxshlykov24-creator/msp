@@ -29,6 +29,8 @@ services:
       RUN_MODE: api
     ports:
       - "127.0.0.1:19090:8080"
+    volumes:
+      - ./reports:/app/reports:ro
     depends_on:
       db:
         condition: service_healthy

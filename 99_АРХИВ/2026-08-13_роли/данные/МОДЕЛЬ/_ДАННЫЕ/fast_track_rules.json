@@ -1,125 +1,274 @@
 {
-  "version": "1.3",
-  "last_updated": "2026-07-01T08:45:00",
+  "version": "1.4",
+  "last_updated": "2026-07-20T09:00:00",
+  "routing_note": "Daily: Claude Sonnet 5. Escalate stuck/agentic: GPT-5.6 Terra → Sol. Ceiling Cursor: Claude Fable 5. Volume OpenAI: Luna. Premium Anthropic mid: Opus 4.8.",
   "rules": [
     {
       "id": "n8n_automation",
-      "keywords": ["n8n", "ноды", "workflow", "воркфлоу", "сценарий автоматизации"],
+      "keywords": [
+        "n8n",
+        "ноды",
+        "workflow",
+        "воркфлоу",
+        "сценарий автоматизации"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 93,
-      "reason": "Агентные связки, отладка нод и JSON — дефолт Sonnet 5 (релиз 30.06.2026)"
+      "reason": "Агентные связки и JSON — daily Sonnet 5; при stuck → GPT-5.6 Terra"
     },
     {
       "id": "amocrm_moysklad",
-      "keywords": ["amocrm", "амо", "amo", "мойсклад", "moysklad", "мой склад"],
+      "keywords": [
+        "amocrm",
+        "амо",
+        "amo",
+        "мойсклад",
+        "moysklad",
+        "мой склад"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 93,
-      "reason": "Интеграции API, маппинг полей, обработка ошибок вебхуков"
+      "reason": "Интеграции API MS Product — Sonnet 5"
     },
     {
       "id": "webhook_json",
-      "keywords": ["webhook", "вебхук", "входящий webhook", "исходящий запрос"],
+      "keywords": [
+        "webhook",
+        "вебхук",
+        "входящий webhook",
+        "исходящий запрос"
+      ],
       "model": "DeepSeek V3.2",
       "confidence": 90,
-      "reason": "Дёшево для типовых схем и больших логов; при сложной бизнес-логике — Claude Sonnet 5"
+      "reason": "Дёшево для типовых схем; сложная логика → Sonnet 5"
     },
     {
       "id": "stack_js_ts",
-      "keywords": ["typescript", "javascript", "node", "nestjs", "express"],
+      "keywords": [
+        "typescript",
+        "javascript",
+        "node",
+        "nestjs",
+        "express"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 92,
-      "reason": "Стек MS Product: Sonnet 5 — daily driver для кода и типов"
+      "reason": "Стек MS Product: Sonnet 5 daily driver"
     },
     {
       "id": "b2b_automation",
-      "keywords": ["автоматизация b2b", "интеграция crm", "коннектор", "синхронизация заказов"],
+      "keywords": [
+        "автоматизация b2b",
+        "интеграция crm",
+        "коннектор",
+        "синхронизация заказов"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 90,
-      "reason": "Комплексные сценарии внедрений и регламенты"
+      "reason": "Внедрения и регламенты — Sonnet 5"
     },
     {
       "id": "code_python",
-      "keywords": ["код", "python", "скрипт", "функция"],
+      "keywords": [
+        "код",
+        "python",
+        "скрипт",
+        "функция"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 95,
-      "reason": "SWE-bench Verified 85.2%, CursorBench 61.2% — актуальный Sonnet"
+      "reason": "Daily coding CursorBench 61.5%; escalate Terra/Sol если застрял"
+    },
+    {
+      "id": "gpt_escalate",
+      "keywords": [
+        "застрял",
+        "stuck",
+        "не получается",
+        "эскалация",
+        "terminal agent",
+        "shell agent",
+        "ultra"
+      ],
+      "model": "GPT-5.6 Terra",
+      "confidence": 90,
+      "reason": "Escalate-tier GPT-5.6; hardest → Sol (CursorBench 67.2%, Terminal-Bench лидер)"
+    },
+    {
+      "id": "gpt_sol_hard",
+      "keywords": [
+        "gpt-5.6 sol",
+        "gpt 5.6 sol",
+        "cyber",
+        "exploit",
+        "computer use",
+        "osworld"
+      ],
+      "model": "GPT-5.6 Sol",
+      "confidence": 92,
+      "reason": "Флагман OpenAI: agentic/terminal/cyber/computer-use"
+    },
+    {
+      "id": "ceiling_fable",
+      "keywords": [
+        "потолок",
+        "максимум качества",
+        "fable",
+        "claude fable",
+        "mission critical"
+      ],
+      "model": "Claude Fable 5",
+      "confidence": 91,
+      "reason": "CursorBench 70.5% — ceiling Anthropic; $10/$50 только когда окупается"
     },
     {
       "id": "creative_post",
-      "keywords": ["пост", "текст", "написать", "статья", "контент"],
+      "keywords": [
+        "пост",
+        "текст",
+        "написать",
+        "статья",
+        "контент"
+      ],
       "model": "Gemini 2.5 Flash",
       "confidence": 95,
       "reason": "Дешево и быстро для текстов"
     },
     {
       "id": "analysis_logic",
-      "keywords": ["анализ", "отчёт", "стратегия", "проблема"],
+      "keywords": [
+        "анализ",
+        "отчёт",
+        "стратегия",
+        "проблема"
+      ],
       "model": "DeepSeek V3.2",
-      "confidence": 95,
-      "reason": "Мощная логика за копейки"
+      "confidence": 90,
+      "reason": "Логика за копейки; финал архитектуры → Opus 4.8 / Fable"
     },
     {
       "id": "bulk_processing",
-      "keywords": ["обработать", "много", "массово", "summary"],
+      "keywords": [
+        "обработать",
+        "много",
+        "массово",
+        "summary"
+      ],
       "model": "Gemini 2.5 Flash Lite",
-      "confidence": 95,
-      "reason": "Почти бесплатно для массовки"
+      "confidence": 92,
+      "reason": "Массовка; OpenAI-объём → GPT-5.6 Luna"
+    },
+    {
+      "id": "volume_openai",
+      "keywords": [
+        "luna",
+        "gpt luna",
+        "объём openai",
+        "пайплайн токенов"
+      ],
+      "model": "GPT-5.6 Luna",
+      "confidence": 90,
+      "reason": "$1/$6, Coding Index > Opus по $/point для объёма"
     },
     {
       "id": "webdev",
-      "keywords": ["веб", "сайт", "лендинг", "html", "css"],
-      "model": "Claude Opus 4.8",
-      "confidence": 94,
-      "reason": "CursorBench 63.8% — топ для сложного UI ($5/$25 API)"
+      "keywords": [
+        "веб",
+        "сайт",
+        "лендинг",
+        "html",
+        "css"
+      ],
+      "model": "Claude Sonnet 5",
+      "confidence": 90,
+      "reason": "Daily UI/код — Sonnet 5; polish design → GPT-5.6 Sol; ceiling → Fable"
     },
     {
       "id": "vision",
-      "keywords": ["изображение", "картинка", "визуал", "фото", "дизайн"],
+      "keywords": [
+        "изображение",
+        "картинка",
+        "визуал",
+        "фото",
+        "дизайн"
+      ],
       "model": "Gemini 3.1 Pro (Preview)",
-      "confidence": 95,
-      "reason": "Vision/multimodal, 1M контекст"
+      "confidence": 92,
+      "reason": "Vision/multimodal; UI polish агентом → GPT-5.6 Sol"
     },
     {
       "id": "documentation",
-      "keywords": ["документация", "readme", "инструкция", "описание"],
+      "keywords": [
+        "документация",
+        "readme",
+        "инструкция",
+        "описание"
+      ],
       "model": "Gemini 2.5 Flash",
       "confidence": 90,
       "reason": "Дешево, хорошая структура"
     },
     {
       "id": "debug",
-      "keywords": ["баг", "ошибка", "исправить", "отладка", "debug"],
+      "keywords": [
+        "баг",
+        "ошибка",
+        "исправить",
+        "отладка",
+        "debug"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 92,
-      "reason": "Agentic отладка — Sonnet 5 high effort"
+      "reason": "Agentic отладка — Sonnet 5; повторный fail → Terra"
     },
     {
       "id": "refactor",
-      "keywords": ["рефакторинг", "refactor", "улучшить код", "оптимизировать"],
+      "keywords": [
+        "рефакторинг",
+        "refactor",
+        "улучшить код",
+        "оптимизировать"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 92,
-      "reason": "ProgramBench / long-context coding — Sonnet 5"
+      "reason": "Long-context coding — Sonnet 5"
     },
     {
       "id": "integration",
-      "keywords": ["интеграция", "api", "подключить", "связать"],
+      "keywords": [
+        "интеграция",
+        "api",
+        "подключить",
+        "связать"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 88,
       "reason": "Tool use и многошаговые интеграции"
     },
     {
       "id": "cursor_agent",
-      "keywords": ["cursor agent", "агент cursor", "composer", "agent mode"],
+      "keywords": [
+        "cursor agent",
+        "агент cursor",
+        "composer",
+        "agent mode"
+      ],
       "model": "Claude Sonnet 5",
       "confidence": 91,
-      "reason": "Рекомендация Cursor для agentic coding; Composer 2 — для fast/routine"
+      "reason": "Daily Cursor Agent; Composer 2.5 — fast/routine; escalate Terra/Sol"
     },
     {
       "id": "architecture_hard",
-      "keywords": ["архитектура", "стратегия системы", "as-is", "to-be", "тз"],
+      "keywords": [
+        "архитектура",
+        "стратегия системы",
+        "as-is",
+        "to-be",
+        "тз"
+      ],
       "model": "Claude Opus 4.8",
       "confidence": 88,
-      "reason": "Максимум качества для сложных решений"
+      "reason": "Сложные решения — Opus 4.8; абсолютный потолок → Fable 5"
     }
   ]
 }

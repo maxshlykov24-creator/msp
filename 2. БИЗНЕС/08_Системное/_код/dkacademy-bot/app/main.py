@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 from urllib.parse import parse_qs
@@ -127,6 +128,49 @@ def _liveinform_background(payload: dict[str, Any]) -> None:
         db.close()
 
 
+_AMO_LEAD_ID_RE = re.compile(r"^leads\[\w+\]\[\d+\]\[id\]$")
+
+
+def _amocrm_webhook_secret_ok(token: str) -> bool:
+    s = get_settings()
+    secret = (s.amo_webhook_secret or "").strip()
+    if not secret:
+        return False
+    return hmac.compare_digest((token or "").strip(), secret)
+
+
+def _extract_amocrm_lead_ids(raw: bytes) -> set[int]:
+    """amoCRM шлёт x-www-form-urlencoded с вложенными ключами вида
+    leads[add][0][id] / leads[status][0][id]. Не разбираем остальные поля —
+    по каждому id досылаем GET /leads/{id}, чтобы не зависеть от формата.
+    """
+    text = raw.decode("utf-8", errors="replace")
+    qs = parse_qs(text, keep_blank_values=True)
+    ids: set[int] = set()
+    for key, values in qs.items():
+        if not _AMO_LEAD_ID_RE.match(key):
+            continue
+        for v in values:
+            try:
+                ids.add(int(v))
+            except (TypeError, ValueError):
+                continue
+    return ids
+
+
+def _amocrm_webhook_background(lead_id: int) -> None:
+    SessLocal = get_session_factory()
+    db = SessLocal()
+    try:
+        from app.repeat_responsible import maybe_reassign_responsible
+
+        maybe_reassign_responsible(db, lead_id)
+    except Exception:
+        log.exception("amocrm webhook background task failed lead=%s", lead_id)
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -227,4 +271,24 @@ async def webhook_liveinform_with_token(
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
     payload = await _read_liveinform_payload(request)
     background_tasks.add_task(_liveinform_background, payload)
+    return Response(status_code=200)
+
+
+@app.post("/webhooks/amocrm/{token}")
+async def webhook_amocrm(
+    token: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> Response:
+    """Веб-хук amoCRM (события «Добавление» / «Смена статуса» сделки).
+
+    Используется для автоназначения ответственного в «Повторные продажи»
+    (см. app/repeat_responsible.py). Секрет — в пути, как у LiveInform.
+    """
+    if not _amocrm_webhook_secret_ok(token):
+        raise HTTPException(status_code=401, detail="Invalid webhook secret")
+    raw = await request.body()
+    lead_ids = _extract_amocrm_lead_ids(raw)
+    for lead_id in lead_ids:
+        background_tasks.add_task(_amocrm_webhook_background, lead_id)
     return Response(status_code=200)

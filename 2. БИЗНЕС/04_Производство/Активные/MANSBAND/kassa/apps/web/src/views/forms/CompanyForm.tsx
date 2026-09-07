@@ -1,111 +1,86 @@
 import { useState } from "react";
-import { Building2 } from "lucide-react";
 import { useStore } from "../../store";
 import { Card, Field } from "../../components/ui";
-import { ProductPicker, cartTotal } from "../../components/ProductPicker";
-import { PaymentBlock } from "../../components/PaymentBlock";
+import { ProductPicker, cartTotal, cartItemsDiscount } from "../../components/ProductPicker";
 import {
   ClientFields,
   CommentField,
   ConsultantFields,
   FormShell,
-  PaymentDateField,
+  PaymentSection,
   SectionTitle,
   SourceFields,
   StageActions,
   SummaryBar,
   TotalsBlock,
   calcDiscount,
+  changeDealFields,
+  changeTipsMissing,
+  lastPaymentDate,
+  tipsDealFields,
   useSaved,
+  type ChangeInfo,
   type ClientData,
   type ConsultantData,
   type DiscountState,
+  type TipsInfo,
 } from "./common";
 import { STORE_ADDRESS } from "../../data/mock";
 import { formatPhone } from "../../lib/format";
-import type { CartItem, Payment } from "../../data/types";
+import type { CartItem, Deal, Payment } from "../../data/types";
 
-// Этапы продажи компании (правки 7)
-const COMPANY_STAGES = ["Ждёт товар", "Товар в магазине", "Ждёт оплату", "Товар отложен", "Провал"];
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addMonth(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    d.setMonth(d.getMonth() + 1);
-    return d.toISOString().slice(0, 10);
-  } catch {
-    return "";
-  }
-}
+/** При создании компании — только «Товар отложен»; счёт Эдвину уходит автоматически. */
+const COMPANY_CREATE_STAGES = ["Товар отложен"];
 
 export function CompanyForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
 
-  // 5–6. Консультанты
   const [consultants, setConsultants] = useState<ConsultantData>({
     consultant: activeConsultant,
     referredBy: "",
   });
 
-  // 7–8. Контактное лицо (ФИО + телефон)
   const [client, setClient] = useState<ClientData>({ name: "", phone: "", channel: "", purpose: "" });
 
-  // 9. Имя руководителя (обяз.)
-  const [managerName, setManagerName] = useState("");
-
-  // 10. Телефон руководителя (обяз., маска)
-  const [managerPhone, setManagerPhone] = useState("");
-
-  // 11. Название компании (обяз.)
   const [companyName, setCompanyName] = useState("");
+  const [managerName, setManagerName] = useState("");
+  const [managerPhone, setManagerPhone] = useState("");
+  const [issued, setIssued] = useState(false);
+  const [atelier, setAtelier] = useState("");
+  const [delivery, setDelivery] = useState("");
 
-  // 11. Отложенные товары
   const [items, setItems] = useState<CartItem[]>([]);
 
-  // 12. Дата отложки (авто = сегодня)
-  const [deferredAt] = useState(todayStr());
-
-  // 13. Срок отложки (авто +1 мес, редактируемый, обяз.)
-  const [deferredUntil, setDeferredUntil] = useState(addMonth(todayStr()));
-
-  // 14. Сумма + скидка
   const [disc, setDisc] = useState<DiscountState>({ discPct: "", discRub: "" });
   const subtotal = cartTotal(items);
+  const extras = (Number(atelier) || 0) + (Number(delivery) || 0);
   const discount = calcDiscount(subtotal, disc);
-  const total = Math.max(0, subtotal - discount);
+  const total = Math.max(0, subtotal - discount) + extras;
 
-  // 15. Оплата
   const [payments, setPayments] = useState<Payment[]>([]);
   const paid = payments.reduce((s, p) => s + p.amount, 0);
+  const change = Math.max(0, paid - total);
+  const [changeInfo, setChangeInfo] = useState<ChangeInfo>({ status: "issued", destination: "" });
+  const [tips, setTips] = useState<TipsInfo>({ amount: 0, status: "issued", destination: "" });
 
-  // Дата оплаты (авто = сегодня)
-  const [paymentDate, setPaymentDate] = useState(todayStr());
-
-  // 19. Комментарий (не обязателен)
   const [comment, setComment] = useState("");
-
-  // 20. Этап
   const [stage, setStage] = useState("Товар отложен");
 
-  const baseFilled = !!(
-    client.name &&
-    client.phone &&
-    managerName &&
-    managerPhone &&
-    companyName &&
-    items.length > 0 &&
-    deferredUntil &&
-    client.purpose
-  );
+  const missingRequired = [
+    !client.phone && "Телефон клиента",
+    !client.name && "Имя клиента",
+    !managerPhone && "Телефон руководителя",
+    !managerName && "Имя руководителя",
+    !companyName.trim() && "Наименование компании",
+    items.length === 0 && "Товары",
+    ...changeTipsMissing(paid, total, changeInfo, tips),
+  ].filter(Boolean) as string[];
+  const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
-    addDeal({
+    const deal = {
       id: crypto.randomUUID(),
       number: meta.number,
       createdAt: meta.createdAt,
@@ -119,48 +94,53 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       storeAddress: STORE_ADDRESS[activeStore],
       channel: client.channel || undefined,
       purpose: client.purpose,
-      companyName,
+      companyName: companyName.trim() || undefined,
       managerName,
       managerPhone,
-      deferredUntil,
+      // draft → Эдвину сразу задача «Выставить счет» (enqueueCompanyChain).
+      invoiceStatus: "draft" as const,
+      documentsStatus:
+        s === "Документы переданы" ? "handed" : s === "Документы готовы" ? "ready" : "pending",
+      atelierStatus: Number(atelier) > 0 ? "pending" : undefined,
+      issued,
+      atelierAmount: Number(atelier) || undefined,
+      deliveryAmount: Number(delivery) || undefined,
       items,
       payments,
       stage: s,
       comment,
-      paymentDate,
+      paymentDate: lastPaymentDate(payments),
       checkDiscount: discount || undefined,
+      ...tipsDealFields(tips, change),
+      ...changeDealFields(Math.max(0, change - (tips.amount || 0)), changeInfo),
       total,
       paid,
-    });
+    } as Deal;
+    addDeal(deal);
     setSaved(true);
     setTimeout(onDone, 1100);
   }
 
   return (
     <FormShell
-      title="Продажа компании"
-      subtitle="Оффлайн · юрлицо, отложка + счёт"
       onBack={onDone}
+      title="Продажа компании"
+      subtitle="Оффлайн"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
       summary={<SummaryBar total={total} paid={paid} />}
+      missingRequired={missingRequired}
       footer={
         <StageActions
-          stages={COMPANY_STAGES}
+          stages={COMPANY_CREATE_STAGES}
           stage={stage}
           onStageChange={setStage}
           onSave={save}
           saved={saved}
           disabled={!baseFilled}
-          onBack={onDone}
-          successStage="Успех"
-          successDisabled={!baseFilled || paid < total}
-          successHint={baseFilled && paid < total ? `Остаток ${(total - paid).toLocaleString("ru-RU")} ₽ — Успех недоступен` : undefined}
-          onSuccess={() => save("Успех")}
         />
       }
     >
-      {/* Консультант + клиент + руководитель + компания */}
       <Card>
         <SectionTitle>Консультант и контакт компании</SectionTitle>
         <ConsultantFields data={consultants} onChange={setConsultants} />
@@ -185,60 +165,70 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
               placeholder="ФИО руководителя"
             />
           </Field>
-        </div>
-        <div className="mt-4">
-          <Field label="Название компании" required>
-            <div className="relative">
-              <Building2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
-              <input
-                className="input pl-9"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="ООО «…»"
-              />
-            </div>
-          </Field>
-        </div>
-      </Card>
-
-      {/* Товары, стоимость и скидка + сроки отложки */}
-      <Card>
-        <SectionTitle>Товары, стоимость и скидка</SectionTitle>
-        <ProductPicker items={items} onChange={setItems} />
-        <div className="grid sm:grid-cols-2 gap-4 mt-4">
-          <Field label="Дата отложки">
-            <input type="date" className="input opacity-70" readOnly value={deferredAt} />
-          </Field>
-          <Field label="Срок отложки до" required>
+          <Field label="Наименование компании" required>
             <input
-              type="date"
               className="input"
-              value={deferredUntil}
-              onChange={(e) => setDeferredUntil(e.target.value)}
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              placeholder="ООО «Вектор» · ИНН 7701234567"
             />
           </Field>
         </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>Товары, стоимость и скидка</SectionTitle>
+        <ProductPicker items={items} onChange={setItems} />
+        <div className="mt-4 grid sm:grid-cols-2 gap-4">
+          <Field label="Ателье, ₽">
+            <input className="input" inputMode="numeric" value={atelier} onChange={(e) => setAtelier(e.target.value.replace(/\D/g, ""))} placeholder="0" />
+          </Field>
+          <Field label="Доставка, ₽">
+            <input className="input" inputMode="numeric" value={delivery} onChange={(e) => setDelivery(e.target.value.replace(/\D/g, ""))} placeholder="0" />
+          </Field>
+        </div>
         <div className="mt-4">
-          <TotalsBlock subtotal={subtotal} state={disc} onChange={setDisc} />
+          <TotalsBlock
+            subtotal={subtotal}
+            state={disc}
+            onChange={setDisc}
+            itemsDiscount={cartItemsDiscount(items)}
+            delivery={extras}
+          />
         </div>
       </Card>
 
-      {/* Оплата */}
+      <Card>
+        <SectionTitle>Документы и выдача</SectionTitle>
+        <p className="text-[12px] text-mute mb-3">
+          При сохранении Эдвину автоматически уходит задача «Выставить счет». Номер и дату счёта
+          он заполняет в своей очереди.
+        </p>
+        <label className={`rounded-lg border p-3 flex items-center gap-3 cursor-pointer ${issued ? "border-emerald-400/40 bg-emerald-400/10" : "border-ink-700"}`}>
+          <input type="checkbox" checked={issued} onChange={(e) => setIssued(e.target.checked)} />
+          <span className="text-white text-sm">Товар фактически выдан</span>
+        </label>
+      </Card>
+
       <Card>
         <SectionTitle>Оплата</SectionTitle>
-        <PaymentBlock total={total} payments={payments} onChange={setPayments} />
-        <div className="mt-4">
-          <PaymentDateField value={paymentDate} onChange={setPaymentDate} />
-        </div>
+        <PaymentSection
+          total={total}
+          payments={payments}
+          onPayments={setPayments}
+          consultant={consultants.consultant}
+          changeInfo={changeInfo}
+          onChangeInfo={setChangeInfo}
+          tips={tips}
+          onTips={setTips}
+        />
       </Card>
 
-      {/* Источник рекламы + цель */}
       <Card>
         <SectionTitle>Источник и цель</SectionTitle>
         <SourceFields data={client} onChange={setClient} withPurpose={true} />
       </Card>
 
-      {/* 19. Комментарий */}
       <Card>
         <CommentField value={comment} onChange={setComment} />
       </Card>

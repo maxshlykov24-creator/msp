@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+import logging
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import and_, select
@@ -14,7 +15,15 @@ from app.models import BonusBatch, LoyaltyMember, ProcessedEvent, ProcessedEvent
 from app.moysklad_client import MoySkladClient
 from app.spend_engine import unique_bt_name
 from app.tier_manager import tier_index_from_annual_sum, tier_name_ru
-from app.webhook_handlers import _safe_sync_counterparty_attributes, handle_customerorder_update
+from app.webhook_handlers import (
+    _build_member_attrs_for_cp,
+    _cp_attrs_snapshot,
+    _ms_now,
+    _sync_member_card,
+    handle_customerorder_update,
+)
+
+log = logging.getLogger(__name__)
 
 _scheduler: Optional[BackgroundScheduler] = None
 
@@ -70,29 +79,32 @@ def daily_tier_resync_job() -> None:
     db = SessionLocal()
     client = MoySkladClient()
     try:
-        from app.webhook_handlers import _build_member_attrs_for_cp, _save_last_synced_cp_attrs
-
         for m in db.scalars(select(LoyaltyMember)).all():
-            if m.tier_locked:
-                continue
-            computed = tier_index_from_annual_sum(int(m.annual_sum_rub))
-            floor = int(m.tier_floor or 0)
-            want = max(computed, floor)
-            if int(m.tier) != int(want):
-                old = int(m.tier)
-                m.tier = int(want)
-                log_bonus(
-                    db,
-                    action="TIER_DOWN" if want < old else "TIER_UP",
-                    agent_id=m.agent_id,
-                    details={"from": old, "to": want, "annual": int(m.annual_sum_rub), "floor": floor},
-                )
-                try:
-                    cp_target = _build_member_attrs_for_cp(db, settings, m)
-                    _safe_sync_counterparty_attributes(client, settings, agent_id=m.agent_id, attrs=cp_target)
-                    _save_last_synced_cp_attrs(m, settings, cp_target)
-                except Exception:
-                    pass
+            if not m.tier_locked:
+                computed = tier_index_from_annual_sum(int(m.annual_sum_rub))
+                want = max(computed, int(m.tier_floor or 0))
+                if int(m.tier) != int(want):
+                    old = int(m.tier)
+                    m.tier = int(want)
+                    log_bonus(
+                        db,
+                        action="TIER_DOWN" if want < old else "TIER_UP",
+                        agent_id=m.agent_id,
+                        details={
+                            "from": old,
+                            "to": want,
+                            "annual": int(m.annual_sum_rub),
+                            "floor": int(m.tier_floor or 0),
+                        },
+                    )
+            # Выравниваем карточку, если она отстала от расчёта: упавший синк
+            # больше не оставляет след, поэтому расхождение видно и лечится само.
+            try:
+                cp_target = _build_member_attrs_for_cp(db, settings, m)
+                if _cp_attrs_snapshot(settings, cp_target) != (m.last_synced_cp_attrs or {}):
+                    _sync_member_card(client, settings, m, cp_target)
+            except Exception:
+                log.warning("card resync failed agent=%s", m.agent_id, exc_info=True)
         db.commit()
     finally:
         db.close()
@@ -119,7 +131,6 @@ def birthday_bonus_job() -> None:
     client = MoySkladClient()
     try:
         today = date.today()
-        bonus_program_meta = client.fetch_bonus_program_meta()
         for m in db.scalars(
             select(LoyaltyMember).where(
                 and_(LoyaltyMember.birth_month.isnot(None), LoyaltyMember.birth_day.isnot(None))
@@ -131,31 +142,18 @@ def birthday_bonus_job() -> None:
                 continue
             if m.last_birthday_bonus_year == today.year:
                 continue
-            exec_dt = datetime.now() + timedelta(days=int(settings.bonus_delay_days))
-            bt_body: dict = {
-                "bonusProgram": {"meta": bonus_program_meta},
-                "agent": _agent_meta_href(settings, m.agent_id),
-                "transactionType": "EARNING",
-                "bonusValue": pts,
-                "executionDate": exec_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                "externalCode": settings.loyalty_external_code,
-                "name": unique_bt_name(f"Бонус на день рождения {m.agent_id[:8]}"),
-            }
-            try:
-                bt = client.post("/entity/bonustransaction", bt_body, disable_webhook=True)
-            except Exception:
-                continue
-            bt_id = str(bt.get("id") or "")
+            # Операцию в МС создаст materialize_activated_batches_job в день активации.
+            activates_at = datetime.now(timezone.utc) + timedelta(days=int(settings.bonus_delay_days))
             m.last_birthday_bonus_year = today.year
             db.add(
                 BonusBatch(
                     agent_id=m.agent_id,
                     original_amount=pts,
                     remaining=pts,
-                    expires_at=(exec_dt.date() + timedelta(days=365)),
-                    activates_at=exec_dt,
+                    expires_at=(activates_at.date() + timedelta(days=365)),
+                    activates_at=activates_at,
                     source_order_id=None,
-                    bonustransaction_id=bt_id or None,
+                    bonustransaction_id=None,
                     batch_type="birthday",
                 )
             )
@@ -164,17 +162,90 @@ def birthday_bonus_job() -> None:
                 action="BIRTHDAY",
                 agent_id=m.agent_id,
                 bonus_amount=pts,
-                bonustransaction_id=bt_id or None,
-                details={"year": today.year},
+                bonustransaction_id=None,
+                details={"year": today.year, "activates_at": activates_at.isoformat(), "ms_transaction": "deferred"},
             )
             try:
-                from app.webhook_handlers import _build_member_attrs_for_cp, _save_last_synced_cp_attrs
-
                 cp_target = _build_member_attrs_for_cp(db, settings, m)
-                _safe_sync_counterparty_attributes(client, settings, agent_id=m.agent_id, attrs=cp_target)
-                _save_last_synced_cp_attrs(m, settings, cp_target)
+                _sync_member_card(client, settings, m, cp_target)
             except Exception:
-                pass
+                log.warning("birthday card sync failed agent=%s", m.agent_id, exc_info=True)
+        db.commit()
+    finally:
+        db.close()
+
+
+def materialize_activated_batches_job() -> None:
+    """Создаёт в МойСклад операции по батчам, у которых наступил день активации.
+
+    Тариф МС не поддерживает `executionDate` в будущем (ошибка 62000), поэтому
+    отсрочку держим у себя в `activates_at`, а операцию заводим текущей датой —
+    ровно тогда, когда бонусы становятся доступны клиенту.
+    """
+    settings = get_settings()
+    SessionLocal = get_session_factory()
+    db = SessionLocal()
+    client = MoySkladClient()
+    try:
+        now = datetime.now(timezone.utc)
+        batches = list(
+            db.scalars(
+                select(BonusBatch).where(
+                    BonusBatch.bonustransaction_id.is_(None),
+                    BonusBatch.remaining > 0,
+                    BonusBatch.activates_at.isnot(None),
+                    BonusBatch.activates_at <= now,
+                )
+            ).all()
+        )
+        if not batches:
+            return
+        bonus_program_meta = client.fetch_bonus_program_meta()
+        for b in batches:
+            amount = int(b.original_amount)
+            if amount <= 0:
+                continue
+            try:
+                bt = client.post(
+                    "/entity/bonustransaction",
+                    {
+                        "bonusProgram": {"meta": bonus_program_meta},
+                        "agent": _agent_meta_href(settings, b.agent_id),
+                        "transactionType": "EARNING",
+                        "bonusValue": amount,
+                        "executionDate": _ms_now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "externalCode": settings.loyalty_external_code,
+                        "name": unique_bt_name(f"Активация бонусов ПЛ {b.agent_id[:8]}"),
+                    },
+                    disable_webhook=True,
+                )
+            except Exception:
+                # следующий прогон повторит: bonustransaction_id так и остался пустым
+                continue
+            bt_id = str(bt.get("id") or "")
+            if not bt_id:
+                continue
+            b.bonustransaction_id = bt_id
+            if b.source_order_id:
+                ev = db.scalar(select(ProcessedEvent).where(ProcessedEvent.entity_id == b.source_order_id))
+                if ev is not None and not ev.bonustransaction_id:
+                    ev.bonustransaction_id = bt_id
+            log_bonus(
+                db,
+                action="EARN",
+                customerorder_id=b.source_order_id,
+                agent_id=b.agent_id,
+                bonus_amount=amount,
+                bonustransaction_id=bt_id,
+                details={"reason": "batch_activated", "batch_id": str(b.id), "batch_type": b.batch_type},
+            )
+            member = db.get(LoyaltyMember, b.agent_id)
+            if member is not None:
+                try:
+                    cp_target = _build_member_attrs_for_cp(db, settings, member)
+                    _sync_member_card(client, settings, member, cp_target)
+                except Exception:
+                    log.warning("card sync failed agent=%s", member.agent_id, exc_info=True)
         db.commit()
     finally:
         db.close()
@@ -191,6 +262,12 @@ def expire_bonus_batches_job() -> None:
         for b in db.scalars(select(BonusBatch).where(BonusBatch.expires_at <= today, BonusBatch.remaining > 0)).all():
             rem = int(b.remaining)
             if rem <= 0:
+                continue
+            if not b.bonustransaction_id:
+                # Батч так и не был материализован в МС — сгорать в МС нечему.
+                log_bonus(db, action="EXPIRE", agent_id=b.agent_id, bonus_amount=rem,
+                          details={"batch_id": str(b.id), "ms_transaction": "never_created"})
+                b.remaining = 0
                 continue
             client.post(
                 "/entity/bonustransaction",
@@ -226,6 +303,8 @@ def start_scheduler() -> None:
     _scheduler.add_job(daily_tier_resync_job, "cron", hour=4, minute=5, id="tier_resync")
     _scheduler.add_job(birthday_bonus_job, "cron", hour=5, minute=0, id="birthday")
     _scheduler.add_job(expire_bonus_batches_job, "cron", hour=4, minute=40, id="expire_batches")
+    # Часто: батч должен стать операцией в МС в тот же день, когда активируется.
+    _scheduler.add_job(materialize_activated_batches_job, "cron", minute=20, id="materialize_batches")
     _scheduler.start()
 
 

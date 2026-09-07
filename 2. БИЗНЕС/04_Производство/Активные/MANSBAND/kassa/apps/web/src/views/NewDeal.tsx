@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ShoppingBag, Building2, Ticket, Shirt, Clock, HandHeart, XCircle, Send,
-  Mail, Truck, AlertTriangle, Droplets, Scissors, Replace, Undo2, RefreshCw,
+  Mail, Truck, AlertTriangle, Droplets, Scissors, Replace, Undo2, RefreshCw, Tag,
 } from "lucide-react";
-import type { DealKind, FunnelType } from "../data/types";
+import type { Deal, DealKind, FunnelType } from "../data/types";
 import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
+import { useStore } from "../store";
+import { api, USE_MOCK } from "../api/client";
 import { SaleForm } from "./forms/SaleForm";
 import { CompanyForm } from "./forms/CompanyForm";
 import { CertificateForm } from "./forms/CertificateForm";
@@ -38,6 +40,7 @@ const KINDS: Record<FunnelType, { kind: DealKind; icon: typeof ShoppingBag }[]> 
     { kind: "drycleaning", icon: Droplets },
     { kind: "resew", icon: Scissors },
     { kind: "wrong_size", icon: Replace },
+    { kind: "wrong_label", icon: Tag },
   ],
   return: [
     { kind: "refund", icon: Undo2 },
@@ -45,9 +48,42 @@ const KINDS: Record<FunnelType, { kind: DealKind; icon: typeof ShoppingBag }[]> 
   ],
 };
 
-export function NewDeal({ onClose, initialKind }: { onClose: () => void; initialKind?: DealKind | null }) {
+export function NewDeal({
+  onClose,
+  initialKind,
+  sourceDealNumber,
+}: {
+  onClose: () => void;
+  initialKind?: DealKind | null;
+  sourceDealNumber?: number | null;
+}) {
+  const { deals } = useStore();
   const [funnel, setFunnel] = useState<FunnelType>("offline");
   const [kind, setKind] = useState<DealKind | null>(initialKind ?? null);
+  const [fetchedSource, setFetchedSource] = useState<Deal | null>(null);
+
+  const sourceDeal =
+    sourceDealNumber != null
+      ? deals.find((d) => d.number === sourceDealNumber) ?? fetchedSource
+      : null;
+
+  // Исходная заявка могла не быть в локальном списке — подтягиваем по номеру.
+  useEffect(() => {
+    if (sourceDealNumber == null || USE_MOCK) return;
+    if (deals.some((d) => d.number === sourceDealNumber)) return;
+    let cancelled = false;
+    void api
+      .get<Deal>(`/deals/${sourceDealNumber}`)
+      .then((row) => {
+        if (!cancelled && row) setFetchedSource(row);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedSource(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceDealNumber, deals]);
 
   if (kind === "sale") return <SaleForm onDone={onClose} />;
   if (kind === "company") return <CompanyForm onDone={onClose} />;
@@ -59,10 +95,16 @@ export function NewDeal({ onClose, initialKind }: { onClose: () => void; initial
   if (kind === "promise") return <PromiseForm onDone={onClose} />;
   if (kind === "no_sliv") return <NoSlivForm onDone={onClose} />;
   if (kind === "delivery") return <DeliveryForm onDone={onClose} />;
-  if (kind === "defect" || kind === "drycleaning" || kind === "resew" || kind === "wrong_size")
+  if (
+    kind === "defect" ||
+    kind === "drycleaning" ||
+    kind === "resew" ||
+    kind === "wrong_size" ||
+    kind === "wrong_label"
+  )
     return <DefectForm kind={kind} onDone={onClose} />;
-  if (kind === "refund") return <RefundForm onDone={onClose} />;
-  if (kind === "exchange") return <ExchangeForm onDone={onClose} />;
+  if (kind === "refund") return <RefundForm onDone={onClose} sourceDeal={sourceDeal} />;
+  if (kind === "exchange") return <ExchangeForm onDone={onClose} sourceDeal={sourceDeal} />;
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -70,7 +112,7 @@ export function NewDeal({ onClose, initialKind }: { onClose: () => void; initial
       <p className="text-mute text-sm mb-5">Выберите тип воронки и вид заявки</p>
 
       <div className="inline-flex rounded-lg border border-ink-700 overflow-hidden mb-6 flex-wrap">
-        {(Object.keys(FUNNEL_LABEL) as FunnelType[]).map((f) => (
+        {(["offline", "online", "defects", "return"] as FunnelType[]).map((f) => (
           <button
             key={f}
             onClick={() => setFunnel(f)}

@@ -4,18 +4,17 @@ WORKDIR /app
 RUN corepack enable
 
 # Манифесты (для кэша установки зависимостей)
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
-COPY packages/shared/package.json packages/shared/
-COPY apps/api/package.json apps/api/
-RUN pnpm install --no-frozen-lockfile
-
-# Исходники
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared packages/shared
+COPY apps/api/package.json apps/api/
+RUN pnpm install --frozen-lockfile
+
+# Исходники api (shared уже скопирован выше)
 COPY apps/api apps/api
 
-# Собираем shared, генерируем миграции из схемы, собираем api
+# Собираем shared и API. Миграции версионируются в репозитории:
+# генерация во время Docker build запрещена, иначе prod-схема зависит от момента сборки.
 RUN pnpm --filter @kassa/shared build \
-  && pnpm --filter @kassa/api db:generate \
   && pnpm --filter @kassa/api build
 
 # Прод-зависимости отдельным слоем

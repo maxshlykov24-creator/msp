@@ -27,7 +27,7 @@
 
 Пример:
   export MOYSKLAD_TOKEN='...'
-  python3 Бизнес/99_Системное/moysklad_marking_pieces_by_year.py
+  python3 2. БИЗНЕС/08_Системное/moysklad_marking_pieces_by_year.py
 """
 
 from __future__ import annotations

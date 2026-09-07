@@ -18,17 +18,33 @@ function Gate() {
   return <App />;
 }
 
-// PWA: регистрация service worker (только в проде).
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
-  });
+/** Старый SW кэшировал index.html → Safari получал битые JS. Снимаем до монтирования React. */
+async function clearStaleClient(): Promise<void> {
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if (typeof caches !== "undefined") {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch {
+    // private mode / нет Cache API
+  }
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <AuthProvider>
-      <Gate />
-    </AuthProvider>
-  </StrictMode>
-);
+async function boot() {
+  await clearStaleClient();
+  const root = document.getElementById("root");
+  if (!root) return;
+  createRoot(root).render(
+    <StrictMode>
+      <AuthProvider>
+        <Gate />
+      </AuthProvider>
+    </StrictMode>
+  );
+}
+
+void boot();

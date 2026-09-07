@@ -44,7 +44,7 @@ RetailCRM станет недоступна — API-выгрузка отдел�
 ## Запуск
 
 ```bash
-cd "Бизнес/04_Производство_внедрений/Активные/MartaChe/retailcrm_chat_export"
+cd "2. БИЗНЕС/04_Производство/Активные/MartaChe/retailcrm_chat_export"
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env

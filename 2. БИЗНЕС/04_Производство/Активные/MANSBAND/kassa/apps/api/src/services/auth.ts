@@ -27,6 +27,43 @@ export async function getUserById(id: string): Promise<User | null> {
   return rows[0] ? toUser(rows[0]) : null;
 }
 
+export async function listUsers(): Promise<User[]> {
+  const rows = await db.select().from(users).orderBy(users.name);
+  return rows.map(toUser);
+}
+
+export async function updateUserRole(id: string, role: User["role"]): Promise<User | null> {
+  const [row] = await db.update(users).set({ role }).where(eq(users.id, id)).returning();
+  return row ? toUser(row) : null;
+}
+
+/**
+ * Создание пользователя из интерфейса (созвон 20.08, п.7). Логин уникален;
+ * пароль временный — при первом входе система требует его сменить.
+ */
+export async function createUser(input: {
+  login: string;
+  name: string;
+  password: string;
+  role: User["role"];
+}): Promise<{ user?: User; error?: string }> {
+  const existing = await db.select({ id: users.id }).from(users).where(eq(users.login, input.login)).limit(1);
+  if (existing[0]) return { error: `Логин «${input.login}» уже занят` };
+  const passwordHash = await argon2.hash(input.password);
+  const [row] = await db
+    .insert(users)
+    .values({
+      login: input.login,
+      name: input.name,
+      passwordHash,
+      role: input.role,
+      mustChangePassword: true,
+    })
+    .returning();
+  if (!row) return { error: "Не удалось создать пользователя" };
+  return { user: toUser(row) };
+}
+
 export async function changePassword(
   userId: string,
   currentPassword: string,

@@ -60,7 +60,6 @@ export function BarcodeScannerModal({
       {error ? (
         <div className="text-amber-300 text-sm max-w-xs text-center">{error}</div>
       ) : (
-        // eslint-disable-next-line jsx-a11y/media-has-caption
         <video ref={videoRef} className="w-full max-w-md rounded-lg border border-white/20" muted />
       )}
       <button

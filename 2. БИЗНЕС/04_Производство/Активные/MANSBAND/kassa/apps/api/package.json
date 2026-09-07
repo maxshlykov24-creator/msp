@@ -17,7 +17,7 @@
     "@fastify/cors": "^10.0.1",
     "@fastify/jwt": "^9.0.1",
     "@fastify/websocket": "^11.0.1",
-    "@kassa/shared": "0.1.0",
+    "@kassa/shared": "workspace:*",
     "argon2": "^0.41.1",
     "drizzle-orm": "^0.36.4",
     "fastify": "^5.1.0",

@@ -21,3 +21,7 @@ apps/web/dist/
 # Локальные дампы БД
 *.sql.gz
 backups/
+
+# Скрины пачек сар на сервере API
+apps/api/data/
+data/sary-screenshots/

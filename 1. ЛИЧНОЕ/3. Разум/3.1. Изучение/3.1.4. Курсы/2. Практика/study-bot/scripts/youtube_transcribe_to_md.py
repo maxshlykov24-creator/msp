@@ -5,8 +5,8 @@
 Порядок: субтитры YouTube (youtube-transcript-api) → при отсутствии — см. ceo.mdc (Nexara).
 
 Пример:
-  python3 "Личное/3. Разум/3.1. Изучение/3.1.4. Курсы/2. Практика/study-bot/scripts/youtube_transcribe_to_md.py" "https://www.youtube.com/watch?v=VIDEO_ID"
-  python3 "…/study-bot/scripts/youtube_transcribe_to_md.py" URL -o "Бизнес/05_Маркетинг_и_контент/_ai/out.md"
+  python3 "1. ЛИЧНОЕ/3. Разум/3.1. Изучение/3.1.4. Курсы/2. Практика/study-bot/scripts/youtube_transcribe_to_md.py" "https://www.youtube.com/watch?v=VIDEO_ID"
+  python3 "…/study-bot/scripts/youtube_transcribe_to_md.py" URL -o "2. БИЗНЕС/06_Маркетинг/_ai/out.md"
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ elif (STUDY_BOT / "youtube_captions.py").is_file():
 sys.path.insert(0, str(STUDY_BOT))
 from youtube_captions import extract_video_id  # noqa: E402
 
-DEFAULT_OUT_DIR = VAULT_ROOT / "Бизнес" / "05_Маркетинг_и_контент" / "_ai"
-INBOX_DIR = VAULT_ROOT / "Личное" / "0. Входящее"
+DEFAULT_OUT_DIR = VAULT_ROOT / "Бизнес" / "06_Маркетинг" / "_ai"
+INBOX_DIR = VAULT_ROOT / "Личное" / "_ВХОДЯЩЕЕ"
 PREFERRED_LANGS = ("ru", "ru-RU", "en", "en-US", "en-GB")
 
 
@@ -153,7 +153,7 @@ def main() -> int:
     parser.add_argument(
         "--no-inbox-copy",
         action="store_true",
-        help="Не дублировать в Личное/0. Входящее",
+        help="Не дублировать в 1. ЛИЧНОЕ/_ВХОДЯЩЕЕ",
     )
     args = parser.parse_args()
 

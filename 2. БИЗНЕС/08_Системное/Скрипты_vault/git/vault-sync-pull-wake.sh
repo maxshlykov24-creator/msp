@@ -1,13 +1,13 @@
 #!/bin/sh
 # Pull при включении Mac / появлении сети (правки из Cursor Cloud → локальный vault).
-# Из корня vault: Бизнес/99_Системное/Скрипты_vault/git/vault-sync-pull-wake.sh
+# Из корня vault: 2. БИЗНЕС/08_Системное/Скрипты_vault/git/vault-sync-pull-wake.sh
 
 set -e
 
 root=$(cd "$(dirname "$0")/../../../.." && pwd)
 cd "$root"
 
-log_dir="$root/Бизнес/99_Системное/Скрипты_vault/git/logs"
+log_dir="$root/2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs"
 log_file="$log_dir/vault-sync.log"
 conflict_file="$root/.vault-sync-conflict"
 mkdir -p "$log_dir"

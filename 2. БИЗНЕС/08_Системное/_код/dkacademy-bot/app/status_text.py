@@ -3,12 +3,17 @@ STATUS_LABEL_RU = {
     "1": "В пункте выдачи",
     "2": "Вручен получателю",
     "3": "Возврат отправителю",
+    "4": "Отслеживание остановлено",
 }
 
 
 def format_liveinform_crm_line(result_dict: dict) -> str:
-    code = str(result_dict.get("status") or "").strip()
-    label = STATUS_LABEL_RU.get(code, f"Статус {code}")
+    # В callback: track_status = доставка; status = индексация.
+    # В track/v2: status = доставка. Предпочитаем track_status.
+    from app.delivery_semantics import delivery_status_code
+
+    code = delivery_status_code(result_dict)
+    label = STATUS_LABEL_RU.get(code, f"Статус {code}" if code else "Статус неизвестен")
 
     tl = result_dict.get("track")
     detail: str = ""

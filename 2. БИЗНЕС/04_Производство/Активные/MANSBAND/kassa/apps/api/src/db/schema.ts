@@ -64,6 +64,26 @@ export const products = pgTable(
   })
 );
 
+// Дерево групп товаров МойСклад — эталон иерархии категорий для кассы (п.28).
+export const productFolders = pgTable(
+  "product_folders",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    msId: text("ms_id").notNull().unique(),
+    name: text("name").notNull(),
+    // Полный путь группы: путь родителя + собственное имя («Костюмы/Тройки»).
+    path: text("path").notNull(),
+    parentMsId: text("parent_ms_id"),
+    level: integer("level").notNull().default(1),
+    archived: boolean("archived").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byPath: index("product_folders_path_idx").on(t.path),
+    byParent: index("product_folders_parent_idx").on(t.parentMsId),
+  })
+);
+
 // Остатки по складам (кэш; точное значение перечитывается on-demand при продаже)
 export const stock = pgTable(
   "stock",
@@ -104,12 +124,16 @@ export const deals = pgTable(
     data: jsonb("data").notNull(), // полный объект Deal (shared)
     stage: text("stage").notNull().default("Новая заявка"),
     paymentStatus: text("payment_status"),
+    idempotencyKey: text("idempotency_key"),
+    syncStatus: text("sync_status").notNull().default("pending"),
+    syncError: text("sync_error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     byNumber: uniqueIndex("deals_number_idx").on(t.number),
     byAmo: index("deals_amo_idx").on(t.amoLeadId),
+    byIdempotency: uniqueIndex("deals_idempotency_idx").on(t.idempotencyKey),
   })
 );
 
@@ -146,17 +170,131 @@ export const certificates = pgTable("certificates", {
   validUntil: text("valid_until").notNull(),
 });
 
-// ── Очередь Эдвина (сдача/возврат «не выдано») ──────────────────────
+// ── Очередь Эдвина (сдача/чаевые/возврат «не выдано») ───────────────
 export const queue = pgTable("queue", {
   id: uuid("id").defaultRandom().primaryKey(),
-  kind: text("kind").notNull(), // change | refund
+  kind: text("kind").notNull(), // change | tips | refund | invoice
   dealNumber: integer("deal_number").notNull(),
   client: text("client").notNull(),
   amount: integer("amount").notNull(),
   destination: text("destination").notNull(),
   status: text("status").notNull().default("pending"), // pending | issued
+  // Сумма, выданная частями (копейки). status = issued, когда достигла amount.
+  issuedAmount: integer("issued_amount").notNull().default(0),
+  metadata: jsonb("metadata"),
+  issuedAt: timestamp("issued_at", { withTimezone: true }),
+  issuedBy: text("issued_by"),
+  issueMethod: text("issue_method"),
+  issueAccount: text("issue_account"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Частичные выдачи по позиции очереди: часть налом, часть переводом.
+export const queuePayouts = pgTable(
+  "queue_payouts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    queueId: uuid("queue_id").notNull(),
+    amount: integer("amount").notNull(), // копейки
+    methodId: text("method_id").notNull(),
+    issuedBy: text("issued_by").notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    note: text("note"),
+  },
+  (t) => ({ byQueue: index("queue_payouts_queue_idx").on(t.queueId) })
+);
+
+// ── Очереди операций и положение позиций внутри заявки ─────────────
+export const tasks = pgTable(
+  "tasks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    kind: text("kind").notNull(),
+    dealNumber: integer("deal_number"),
+    dealItemId: text("deal_item_id"),
+    store: text("store"),
+    assigneeRole: text("assignee_role").notNull(),
+    status: text("status").notNull().default("pending"),
+    title: text("title").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    metadata: jsonb("metadata"),
+    createdBy: text("created_by").notNull(),
+    completedBy: text("completed_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    byStatusRole: index("tasks_status_role_idx").on(t.status, t.assigneeRole),
+    byDeal: index("tasks_deal_idx").on(t.dealNumber),
+    byIdempotency: uniqueIndex("tasks_idempotency_idx").on(t.idempotencyKey),
+  })
+);
+
+export const dealItemState = pgTable(
+  "deal_item_state",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    dealNumber: integer("deal_number").notNull(),
+    itemId: text("item_id").notNull(),
+    state: text("state").notNull().default("in_store"),
+    location: text("location"),
+    metadata: jsonb("metadata"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("deal_item_state_deal_item_idx").on(t.dealNumber, t.itemId),
+  })
+);
+
+// ── Финансы Эдвина ──────────────────────────────────────────────────
+export const expenses = pgTable(
+  "expenses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    category: text("category").notNull(),
+    // Основной источник оплаты. При разбивке — способ с наибольшей суммой.
+    account: text("account").notNull(),
+    amount: integer("amount").notNull(),
+    // Разбивка расхода по способам оплаты: [{ methodId, amount }] в копейках.
+    splits: jsonb("splits"),
+    description: text("description"),
+    spentAt: timestamp("spent_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ byDate: index("expenses_spent_at_idx").on(t.spentAt) })
+);
+
+export const accountBalances = pgTable("account_balances", {
+  account: text("account").primaryKey(),
+  balance: integer("balance").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by").notNull(),
+});
+
+// Append-only: в приложении отсутствуют UPDATE/DELETE для этой таблицы.
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorId: uuid("actor_id"),
+    actorName: text("actor_name").notNull(),
+    actorRole: text("actor_role").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    // manual — действие под учёткой; auto — формула задач, синк amo/МС, cron.
+    source: text("source").notNull().default("manual"),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byEntity: index("audit_entity_idx").on(t.entityType, t.entityId),
+    byCreatedAt: index("audit_created_at_idx").on(t.createdAt),
+  })
+);
 
 // ── Сары (реферальные выплаты) ──────────────────────────────────────
 export const sary = pgTable("sary", {
@@ -166,8 +304,34 @@ export const sary = pgTable("sary", {
   amount: integer("amount").notNull(),
   reason: text("reason").notNull(),
   refDealNumber: integer("ref_deal_number"),
-  status: text("status").notNull().default("pending"), // pending | sent
+  // pending — к отправке; sent — переведена (скрин + sent_at);
+  // in_check — учтена бонусом в чеке, переводить нечего (созвон 20.08).
+  status: text("status").notNull().default("pending"),
   screenshotAttached: boolean("screenshot_attached").notNull().default(false),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Настройки кассы (порог САР и другие параметры, правят rop/admin) ─
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Настройки мотивации консультантов (созвон 20.08) ────────────────
+// Append-only история: действующая запись — последняя по created_at.
+export const payrollSettings = pgTable("payroll_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // Процент от выручки за день, в сотых долях процента не нужен — храним как numeric.
+  revenuePct: numeric("revenue_pct").notNull().default("5"),
+  // Обеспечительная ставка за день, копейки.
+  dailyFloor: integer("daily_floor").notNull().default(500000),
+  // Пороги премий: [{ from, to, bonus }], bonus в рублях.
+  conversionTiers: jsonb("conversion_tiers").notNull(),
+  uptTiers: jsonb("upt_tiers").notNull(),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

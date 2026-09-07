@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -13,7 +11,37 @@ body,
 #root {
   height: 100%;
   max-width: 100%;
+  width: 100%;
   overflow-x: hidden;
+  /* На телефоне запрещаем горизонтальный свайп всей страницы */
+  overscroll-behavior-x: none;
+}
+
+html,
+body {
+  touch-action: pan-y;
+  position: relative;
+}
+
+/* iOS: убрать «резину» влево-вправо у страницы */
+@supports (-webkit-touch-callout: none) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+}
+
+/* Горизонтальный скролл только внутри списка заявок */
+.deals-table-scroll {
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.deals-table-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.deals-table-scroll::-webkit-scrollbar-thumb {
+  @apply bg-ink-600 rounded-full;
 }
 
 body {
@@ -26,7 +54,14 @@ body {
       transparent 60%
     ),
     radial-gradient(900px 500px at -10% 110%, rgba(255, 255, 255, 0.035), transparent 60%);
-  background-attachment: fixed;
+  /* fixed на iOS Safari даёт чёрный/пустой экран — только scroll */
+  background-attachment: scroll;
+}
+
+@media (min-width: 768px) {
+  body {
+    background-attachment: fixed;
+  }
 }
 
 ::-webkit-scrollbar {
@@ -42,16 +77,34 @@ body {
 
 @layer components {
   .card {
-    @apply bg-ink-850/80 border border-ink-700 rounded-xl2 shadow-card backdrop-blur-sm;
+    @apply bg-ink-850/80 border border-ink-700 rounded-xl2 shadow-card;
   }
   .field-label {
     @apply text-[12px] uppercase tracking-wider text-mute font-semibold mb-1.5;
   }
   .input {
-    @apply w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2.5 text-[15px] text-white
+    @apply w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2.5 text-base text-white
       placeholder:text-mute/50 focus:outline-none focus:border-gold/60 focus:ring-2 focus:ring-gold/15 transition;
   }
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold;
+  }
+}
+
+/* iOS Safari зумит страницу, если font-size поля < 16px — форсируем на телефоне */
+@media (max-width: 767px) {
+  input.input,
+  select.input,
+  textarea.input,
+  input[type="text"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="number"],
+  input[type="password"],
+  input[type="search"],
+  input[type="date"],
+  select,
+  textarea {
+    font-size: 16px !important;
   }
 }

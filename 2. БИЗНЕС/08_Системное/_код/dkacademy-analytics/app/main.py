@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import select, text
 
@@ -24,6 +24,7 @@ logging.basicConfig(
 log = logging.getLogger("main")
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports"
 
 app = FastAPI(title="DKAcademy Analytics", docs_url=None, redoc_url=None)
 app.include_router(api_router)
@@ -89,3 +90,14 @@ def dashboard(request: Request):
     if not is_authenticated(request):
         return RedirectResponse(url="/login", status_code=302)
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/reports/{filename}", response_class=HTMLResponse)
+def report(request: Request, filename: str):
+    """Выдать клиентский HTML-протокол только авторизованному пользователю."""
+    if not is_authenticated(request):
+        return RedirectResponse(url="/login", status_code=302)
+    path = REPORTS_DIR / filename
+    if Path(filename).name != filename or path.suffix.lower() != ".html" or not path.is_file():
+        raise HTTPException(status_code=404, detail="report not found")
+    return FileResponse(path)

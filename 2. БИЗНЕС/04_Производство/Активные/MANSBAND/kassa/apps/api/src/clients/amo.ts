@@ -34,9 +34,11 @@ export interface AmoLead {
   price: number;
   status_id: number;
   pipeline_id: number;
+  created_at?: number; // unix sec
+  updated_at?: number;
   custom_fields_values?: Array<{ field_id: number; values: Array<{ value: unknown }> }> | null;
   _embedded?: {
-    contacts?: Array<{ id: number }>;
+    contacts?: Array<{ id: number; is_main?: boolean }>;
     tags?: Array<{ id: number; name: string }>;
   };
 }
@@ -54,6 +56,24 @@ export async function getPipelines(): Promise<AmoPipeline[]> {
   return res._embedded?.pipelines ?? [];
 }
 
+/** Создать этап воронки (идемпотентность — на стороне вызывающего: сначала искать по имени). */
+export async function createPipelineStatus(
+  pipelineId: number,
+  name: string,
+  opts?: { sort?: number; color?: string }
+): Promise<{ id: number; name: string; sort: number }> {
+  const body: Record<string, unknown> = { name };
+  if (opts?.sort != null) body.sort = opts.sort;
+  if (opts?.color) body.color = opts.color;
+  const res = await http.post<AmoListResponse<{ id: number; name: string; sort: number }>>(
+    `/leads/pipelines/${pipelineId}/statuses`,
+    [body]
+  );
+  const created = res._embedded?.statuses?.[0];
+  if (!created) throw new Error(`amoCRM: не удалось создать этап «${name}» в воронке ${pipelineId}`);
+  return created;
+}
+
 export async function getLeadCustomFields(): Promise<AmoField[]> {
   return paginateEmbedded<AmoField>("/leads/custom_fields", "custom_fields");
 }
@@ -67,11 +87,52 @@ export async function getCompanyCustomFields(): Promise<AmoField[]> {
 }
 
 // Создание кастом-поля (идемпотентно вызывающей стороной — сначала искать по имени в синке).
-export async function createLeadCustomField(name: string, type: "date" | "text"): Promise<AmoField> {
-  const res = await http.post<AmoListResponse<AmoField>>("/leads/custom_fields", [{ name, type }]);
+export async function createLeadCustomField(
+  name: string,
+  type: "date" | "text" | "checkbox",
+  opts?: { isApiOnly?: boolean }
+): Promise<AmoField> {
+  const body: Record<string, unknown> = { name, type };
+  if (opts?.isApiOnly) body.is_api_only = true;
+  const res = await http.post<AmoListResponse<AmoField>>("/leads/custom_fields", [body]);
   const created = res._embedded?.custom_fields?.[0];
   if (!created) throw new Error(`amoCRM: не удалось создать поле лида «${name}»`);
   return created;
+}
+
+/** Обновить поле лида (например, включить is_api_only у уже существующего). */
+export async function updateLeadCustomField(
+  id: number,
+  patch: { is_api_only?: boolean; name?: string }
+): Promise<AmoField> {
+  const res = await http.patch<AmoListResponse<AmoField>>("/leads/custom_fields", [{ id, ...patch }]);
+  const updated = res._embedded?.custom_fields?.[0];
+  if (!updated) throw new Error(`amoCRM: не удалось обновить поле #${id}`);
+  return updated;
+}
+
+/**
+ * Дописать значения в справочник select-поля лида. amoCRM затирает enums,
+ * если прислать неполный список, поэтому передаём существующие (с их id) плюс новые.
+ */
+export async function addLeadFieldEnums(
+  field: AmoField,
+  values: readonly string[]
+): Promise<AmoField | null> {
+  const existing = field.enums ?? [];
+  const known = new Set(existing.map((e) => e.value.toLowerCase().trim()));
+  const missing = values.filter((v) => !known.has(v.toLowerCase().trim()));
+  if (missing.length === 0) return null;
+  const res = await http.patch<AmoListResponse<AmoField>>("/leads/custom_fields", [
+    {
+      id: field.id,
+      enums: [
+        ...existing.map((e) => ({ id: e.id, value: e.value })),
+        ...missing.map((value) => ({ value })),
+      ],
+    },
+  ]);
+  return res._embedded?.custom_fields?.[0] ?? null;
 }
 
 export async function createCompanyCustomField(name: string, type: "date" | "text"): Promise<AmoField> {
@@ -103,9 +164,61 @@ export async function listLeads(params: ListLeadsParams): Promise<AmoLead[]> {
   return res._embedded?.leads ?? [];
 }
 
+/**
+ * Все открытые сделки воронки (без Успех/Провал/Неразобранное).
+ * Пагинация до исчерпания. Без этого касса видит только первую сотню,
+ * где доминируют закрытые сделки.
+ */
+export async function listOpenLeadsInPipeline(
+  pipelineId: number,
+  openStatusIds: number[]
+): Promise<AmoLead[]> {
+  return listLeadsInPipelineStatuses(pipelineId, openStatusIds);
+}
+
+/**
+ * Сделки воронки в указанных статусах (с опциональным фильтром по дате создания).
+ * Пагинация до исчерпания.
+ */
+export async function listLeadsInPipelineStatuses(
+  pipelineId: number,
+  statusIds: number[],
+  opts?: { createdFrom?: number; createdTo?: number }
+): Promise<AmoLead[]> {
+  if (statusIds.length === 0) return [];
+  const all: AmoLead[] = [];
+  let page = 1;
+  const limit = 250;
+  for (;;) {
+    const sp = new URLSearchParams();
+    // contacts — id главного контакта; имя подтягиваем отдельным батчем в deals.ts
+    sp.set("with", "contacts");
+    sp.set("limit", String(limit));
+    sp.set("page", String(page));
+    statusIds.forEach((statusId, i) => {
+      sp.set(`filter[statuses][${i}][pipeline_id]`, String(pipelineId));
+      sp.set(`filter[statuses][${i}][status_id]`, String(statusId));
+    });
+    if (opts?.createdFrom != null) sp.set("filter[created_at][from]", String(opts.createdFrom));
+    if (opts?.createdTo != null) sp.set("filter[created_at][to]", String(opts.createdTo));
+    const res = await http.get<AmoListResponse<AmoLead>>(`/leads?${sp.toString()}`);
+    const batch = res._embedded?.leads ?? [];
+    all.push(...batch);
+    if (batch.length < limit) break;
+    page += 1;
+    // Закрытых с июня много — ограничиваем, иначе /deals на мобиле уходит в минуты
+    const maxPages = opts?.createdFrom != null ? 8 : 20;
+    if (page > maxPages) break;
+  }
+  return all;
+}
+
 export async function getLead(id: number): Promise<AmoLead | null> {
   try {
-    return await http.get<AmoLead>(`/leads/${id}?with=contacts`);
+    const lead = await http.get<AmoLead>(`/leads/${id}?with=contacts`);
+    // amo иногда отвечает 200 с пустым телом / без id — для вебхука это «не найдено».
+    if (!lead || !Number.isFinite(Number(lead.id)) || Number(lead.id) <= 0) return null;
+    return lead;
   } catch {
     return null;
   }
@@ -126,14 +239,114 @@ export async function findContactByPhone(phone: string): Promise<AmoContact | nu
     `/contacts?query=${encodeURIComponent(tail)}&limit=10`
   );
   const contacts = res._embedded?.contacts ?? [];
-  // Доп. фильтр по совпадению последних 10 цифр в любом телефонном поле.
+  // Только точное совпадение последних 10 цифр — иначе можно взять чужой контакт.
   for (const c of contacts) {
     const phones = (c.custom_fields_values ?? [])
       .filter((f) => f.field_code === "PHONE")
       .flatMap((f) => f.values.map((v) => String(v.value)));
     if (phones.some((p) => phoneTail(p) === tail)) return c;
   }
-  return contacts[0] ?? null;
+  return null;
+}
+
+export interface AmoLink {
+  to_entity_id: number;
+  to_entity_type: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+/** ID сделок, привязанных к контакту (через API связей). */
+export async function listLeadIdsByContact(contactId: number): Promise<number[]> {
+  const ids: number[] = [];
+  let page = 1;
+  const limit = 250;
+  for (;;) {
+    const res = await http.get<AmoListResponse<AmoLink>>(
+      `/contacts/${contactId}/links?limit=${limit}&page=${page}`
+    );
+    const links = res._embedded?.links ?? [];
+    for (const link of links) {
+      if (link.to_entity_type === "leads") ids.push(link.to_entity_id);
+    }
+    if (links.length < limit || !res._links?.next) break;
+    page += 1;
+    if (page > 20) break;
+  }
+  return [...new Set(ids)];
+}
+
+/** Пакетная загрузка контактов по ID (чанки — чтобы не раздувать URL). */
+export async function getContactsByIds(ids: number[]): Promise<AmoContact[]> {
+  if (ids.length === 0) return [];
+  const unique = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))];
+  const out: AmoContact[] = [];
+  const chunkSize = 50;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    const sp = new URLSearchParams();
+    sp.set("limit", String(chunk.length));
+    chunk.forEach((id, idx) => sp.set(`filter[id][${idx}]`, String(id)));
+    const res = await http.get<AmoListResponse<AmoContact>>(`/contacts?${sp.toString()}`);
+    out.push(...(res._embedded?.contacts ?? []));
+  }
+  return out;
+}
+
+/** Телефон контакта (поле PHONE), первый заполненный. */
+export function phoneFromContact(contact: AmoContact): string {
+  const phones = (contact.custom_fields_values ?? [])
+    .filter((f) => f.field_code === "PHONE")
+    .flatMap((f) => f.values.map((v) => String(v.value ?? "").trim()))
+    .filter(Boolean);
+  return phones[0] ?? "";
+}
+
+/** Главный контакт сделки (is_main) или первый привязанный. */
+export function mainContactId(lead: AmoLead): number | null {
+  const contacts = lead._embedded?.contacts ?? [];
+  if (contacts.length === 0) return null;
+  const main = contacts.find((c) => c.is_main) ?? contacts[0];
+  return main?.id ?? null;
+}
+
+/** Пакетная загрузка сделок по ID (чанки — чтобы не раздувать URL). */
+export async function getLeadsByIds(ids: number[]): Promise<AmoLead[]> {
+  if (ids.length === 0) return [];
+  const out: AmoLead[] = [];
+  const chunkSize = 50;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const sp = new URLSearchParams();
+    sp.set("with", "contacts");
+    sp.set("limit", String(chunk.length));
+    chunk.forEach((id, idx) => sp.set(`filter[id][${idx}]`, String(id)));
+    const res = await http.get<AmoListResponse<AmoLead>>(`/leads?${sp.toString()}`);
+    out.push(...(res._embedded?.leads ?? []));
+  }
+  return out;
+}
+
+/**
+ * Единственная (или самая свежая) открытая сделка контакта в воронке Продажи,
+ * исключая закрытые/junk и опционально указанные status_id (напр. «Сертификат продан»).
+ */
+export function pickOpenSalesLead(
+  leads: AmoLead[],
+  pipelineId: number,
+  opts?: { excludeStatusIds?: number[]; closedOrJunkIds?: Set<number> }
+): AmoLead | null {
+  const closed = opts?.closedOrJunkIds ?? new Set([142, 143]);
+  const exclude = new Set(opts?.excludeStatusIds ?? []);
+  const candidates = leads.filter(
+    (l) =>
+      l.pipeline_id === pipelineId &&
+      !closed.has(l.status_id) &&
+      !exclude.has(l.status_id)
+  );
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0]!;
+  candidates.sort((a, b) => (b.updated_at ?? b.created_at ?? 0) - (a.updated_at ?? a.created_at ?? 0));
+  return candidates[0]!;
 }
 
 // ── Компании (юрлица) ──────────────────────────────────────────────

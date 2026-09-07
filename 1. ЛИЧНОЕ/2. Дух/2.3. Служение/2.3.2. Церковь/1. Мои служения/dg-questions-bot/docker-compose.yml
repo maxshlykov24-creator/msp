@@ -2,6 +2,7 @@ services:
   bot:
     build: .
     restart: unless-stopped
+    mem_limit: 180m
     env_file: .env
     volumes:
       - dg_data:/data

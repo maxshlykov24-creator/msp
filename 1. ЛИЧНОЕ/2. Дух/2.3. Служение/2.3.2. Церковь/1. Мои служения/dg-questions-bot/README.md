@@ -34,10 +34,10 @@ python -m app.main
 
 ## Деплой на VPS
 
-См. `deploy/DEPLOY.md`.
+Прод: **VPS DKAcademy** `194.87.226.234` (`/opt/dg-questions-bot`). Подробности и миграция с LicenseBridge-хаба — `deploy/DEPLOY.md`.
 
 ```bash
-DEPLOY_SSH_PASSWORD='...' python scripts/_deploy_to_vps.py
+python scripts/_deploy_to_vps.py
 ```
 
 ---
@@ -67,7 +67,7 @@ DEPLOY_SSH_PASSWORD='...' python scripts/_deploy_to_vps.py
 
 - **Python 3.12**, **aiogram 3**, **SQLAlchemy 2 + aiosqlite**
 - **pydantic-settings** — конфиг из .env
-- **Docker** — деплой на VPS 72.56.123.137
+- **Docker** — деплой на VPS DKAcademy `194.87.226.234` (см. `deploy/DEPLOY.md`)
 - **SQLite** — хранение в Docker volume (переживает редеплой)
 
 ---

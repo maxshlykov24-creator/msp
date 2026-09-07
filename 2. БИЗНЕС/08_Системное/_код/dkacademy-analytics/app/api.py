@@ -39,9 +39,8 @@ DEFAULT_PLANS: dict[str, float] = {
 PCT_METRICS = {"conv_lead_deal", "conv_repeat", "avg_check"}
 
 
-def _excluded() -> set[str]:
-    """id уволенных/служебных пользователей, скрытых из разреза менеджеров."""
-    return settings.excluded_ids
+def _is_manager(user_id: str) -> bool:
+    return settings.is_manager(user_id)
 
 # Метрики для динамики/таблицы по дням (хранимые «как есть»).
 DAILY_METRICS = [
@@ -177,8 +176,8 @@ def overview(
             "messages_in": int(a.get("msg_in", 0)),
             "messages_out": int(a.get("msg_out", 0)),
             "messages_total": int(a.get("msg_in", 0) + a.get("msg_out", 0)),
-            "conv_lead_deal": round(_div(a.get("cohort_won", 0), new_leads) * 100, 1),
-            "conv_repeat": round(_div(a.get("repeat_deals", 0), a.get("repeat_created", 0)) * 100, 1),
+            "conv_lead_deal": round(_div(a.get("cohort_won", 0), new_leads) * 100, 2),
+            "conv_repeat": round(_div(a.get("repeat_cohort_won", 0), a.get("repeat_created", 0)) * 100, 2),
             "repeat_deals": int(a.get("repeat_deals", 0)),
             "repeat_customers": int(extra.get("repeat_customers", 0)),
             "missed_dialogs": int(a.get("missed", 0)),
@@ -226,7 +225,7 @@ def managers(
         plan_month = months[0][0] if len(months) == 1 else None
         ids = {s.split(":", 1)[1] for s in t if s.startswith("mgr:")}
         ids |= set(state.keys())
-        ids -= _excluded()
+        ids = {uid for uid in ids if _is_manager(uid)}
         rows = []
         for uid in ids:
             m = t.get(f"mgr:{uid}", {})
@@ -240,7 +239,7 @@ def managers(
                 "name": st.get("name") or users.get(uid, f"#{uid}"),
                 "calls": int(m.get("calls_out", 0)),
                 "leads": int(leads),
-                "conv": round(_div(m.get("cohort_won", 0), leads) * 100),
+                "conv": round(_div(m.get("cohort_won", 0), leads) * 100, 2),
                 "invoices": int(m.get("invoice_count", 0)),
                 "paid": int(paid),
                 "revenue": int(revenue),
@@ -311,7 +310,7 @@ def speed(
             if not scope.startswith("mgr:"):
                 continue
             uid = scope.split(":", 1)[1]
-            if uid in _excluded():
+            if not _is_manager(uid):
                 continue
             cnt = m.get("rt_cnt", 0)
             if not cnt:
@@ -365,15 +364,17 @@ def sources(
                 continue
             name = scope.split(":", 1)[1]
             leads = m.get("new_leads", 0)
-            deals = m.get("paid", 0)
+            closed_won = m.get("paid", 0)
+            revenue = m.get("revenue", 0)
             rows.append({
                 "source": name,
                 "leads": int(leads),
-                "deals": int(deals),
-                "revenue": int(m.get("revenue", 0)),
-                "conv": round(_div(m.get("cohort_won", 0), leads) * 100),
+                "cohort_won": int(m.get("cohort_won", 0)),
+                "closed_won": int(closed_won),
+                "revenue": int(revenue),
+                "conv": round(_div(m.get("cohort_won", 0), leads) * 100, 2),
                 "missed": int(m.get("missed", 0)),
-                "value": round(_div(m.get("revenue", 0), leads)),
+                "avg_check": round(_div(revenue, closed_won)),
             })
         rows.sort(key=lambda x: x["leads"], reverse=True)
         return {"data": {"rows": rows}, "range": {"from": frm, "to": to}}
@@ -423,7 +424,7 @@ def activity(
             if not scope.startswith("mgr:"):
                 continue
             uid = scope.split(":", 1)[1]
-            if uid in _excluded():
+            if not _is_manager(uid):
                 continue
             mi, mo = m.get("msg_in", 0), m.get("msg_out", 0)
             if not (mi or mo):
@@ -490,7 +491,7 @@ def table(
     scope: str = Query("all"),
 ):
     frm, to = _parse_range(frm, to)
-    if scope.startswith("mgr:") and scope.split(":", 1)[1] in _excluded():
+    if scope.startswith("mgr:") and not _is_manager(scope.split(":", 1)[1]):
         scope = "all"
     db = SessionLocal()
     try:
@@ -503,8 +504,8 @@ def table(
         totals = {m: round(t.get(m, 0)) for m in DAILY_METRICS}
         # производные тоталы
         totals["avg_check"] = round(_div(t.get("revenue", 0), t.get("paid", 0)))
-        totals["conv_lead_deal"] = round(_div(t.get("cohort_won", 0), t.get("new_leads", 0)) * 100, 1)
-        totals["conv_repeat"] = round(_div(t.get("repeat_deals", 0), t.get("repeat_created", 0)) * 100, 1)
+        totals["conv_lead_deal"] = round(_div(t.get("cohort_won", 0), t.get("new_leads", 0)) * 100, 2)
+        totals["conv_repeat"] = round(_div(t.get("repeat_cohort_won", 0), t.get("repeat_created", 0)) * 100, 2)
         return {"data": {"days": days, "series": series_out, "totals": totals},
                 "scope": scope, "range": {"from": frm, "to": to}}
     finally:
@@ -518,10 +519,9 @@ def funnels(_: None = Depends(_auth_guard)):
     db = SessionLocal()
     try:
         data = _snapshot(db, "funnels")
-        ex = _excluded()
         bm = data.get("by_mgr")
-        if isinstance(bm, dict) and ex:
-            data["by_mgr"] = {k: v for k, v in bm.items() if k not in ex}
+        if isinstance(bm, dict):
+            data["by_mgr"] = {k: v for k, v in bm.items() if _is_manager(k)}
         return {"data": data}
     finally:
         db.close()
@@ -532,14 +532,11 @@ def stuck(_: None = Depends(_auth_guard)):
     db = SessionLocal()
     try:
         data = _snapshot(db, "stuck")
-        ex = _excluded()
         bm = data.get("by_mgr")
-        if isinstance(bm, list) and ex:
-            users = _snapshot(db, "extra").get("users", {})
-            ex_names = {users.get(uid) for uid in ex if users.get(uid)}
+        if isinstance(bm, list):
             data["by_mgr"] = [
                 r for r in bm
-                if str(r.get("user_id", "")) not in ex and r.get("name") not in ex_names
+                if _is_manager(str(r.get("user_id", "")))
             ]
         return {"data": data}
     finally:
@@ -560,11 +557,19 @@ def meta(_: None = Depends(_auth_guard)):
     db = SessionLocal()
     try:
         data = dict(_snapshot(db, "extra"))
-        ex = _excluded()
         users = data.get("users")
-        if isinstance(users, dict) and ex:
-            data["users"] = {k: v for k, v in users.items() if k not in ex}
+        if isinstance(users, dict):
+            data["users"] = {k: v for k, v in users.items() if _is_manager(k)}
         return {"data": data}
+    finally:
+        db.close()
+
+
+@router.get("/data_quality")
+def data_quality(_: None = Depends(_auth_guard)):
+    db = SessionLocal()
+    try:
+        return {"data": _snapshot(db, "data_quality")}
     finally:
         db.close()
 

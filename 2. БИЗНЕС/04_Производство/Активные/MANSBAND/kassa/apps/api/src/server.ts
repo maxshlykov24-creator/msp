@@ -16,6 +16,11 @@ import statsRoutes from "./routes/stats.routes.js";
 import webhooksRoutes from "./routes/webhooks.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import contactsRoutes from "./routes/contacts.routes.js";
+import auditRoutes from "./routes/audit.routes.js";
+import tasksRoutes from "./routes/tasks.routes.js";
+import usersRoutes from "./routes/users.routes.js";
+import settingsRoutes from "./routes/settings.routes.js";
+import { appendAudit } from "./services/audit.js";
 
 export async function buildServer() {
   const env = getEnv();
@@ -30,6 +35,23 @@ export async function buildServer() {
   await app.register(cors, { origin: true, credentials: true });
   await app.register(authPlugin);
   await app.register(websocket);
+  app.addHook("onResponse", async (req, reply) => {
+    if (!["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) return;
+    try {
+      const user = req.user;
+      if (!user?.sub) return;
+      const params = (req.params ?? {}) as Record<string, string>;
+      await appendAudit({
+        actor: { id: user.sub, name: user.name, role: user.role },
+        action: `http.${req.method.toLowerCase()}`,
+        entityType: "api_mutation",
+        entityId: params.id ?? params.ref ?? req.url.split("?")[0] ?? "unknown",
+        metadata: { method: req.method, url: req.url.split("?")[0], statusCode: reply.statusCode },
+      });
+    } catch (error) {
+      req.log.error({ err: error }, "Не удалось записать общий аудит мутации");
+    }
+  });
 
   // REST под /api (nginx проксирует /api → сюда).
   await app.register(
@@ -45,6 +67,10 @@ export async function buildServer() {
       await api.register(webhooksRoutes);
       await api.register(adminRoutes);
       await api.register(contactsRoutes);
+      await api.register(auditRoutes);
+      await api.register(tasksRoutes);
+      await api.register(usersRoutes);
+      await api.register(settingsRoutes);
     },
     { prefix: "/api" }
   );

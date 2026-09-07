@@ -1,92 +1,50 @@
 # Деплой dg-questions-bot
 
-## Первый деплой
+## Сервер (с 2026-07-31)
 
-### 1. Подготовь .env локально
+| | |
+|--|--|
+| VPS | **DKAcademy / ai-msp** `194.87.226.234` |
+| SSH | `ssh -i ~/.ssh/dkacademy_analytics_deploy root@194.87.226.234` (алиас `dkacademy-vps`) |
+| Каталог | `/opt/dg-questions-bot` |
+| Контейнер | `dg-questions-bot-bot-1`, volume `dg-questions-bot_dg_data` |
+| Лимит RAM | 180 МБ |
 
-```bash
-cp .env.example .env
-# отредактируй .env — вставь BOT_TOKEN
-```
+**Было до 31.07.2026:** LicenseBridge-хаб `72.56.123.137` — оттуда снято (не хватало памяти 1 ГБ вместе с хабом/дашбордом). На хабе тома-страховка ещё лежат как `dg-questions-bot_dg_data` до ручной очистки.
 
-`.env`:
-```
-BOT_TOKEN=8894846148:AAFO8gqF_v2HaeONkdPAxTUETSNwhMzsiAY
-DATABASE_URL=sqlite+aiosqlite:////data/dg.sqlite3
-DECK_ID=main
-LOG_LEVEL=INFO
-```
-
-### 2. Сгенерируй questions.json (если колода изменилась)
-
-```bash
-python build_questions.py
-```
-
-### 3. Задеплой на VPS
-
-```bash
-DEPLOY_SSH_PASSWORD='cRFcMaUMow1PD+' python scripts/_deploy_to_vps.py
-```
-
-Скрипт:
-- Пакует проект в tgz (без `.env` в git — передаётся отдельно в архив)
-- Загружает на `72.56.123.137` в `/opt/dg-questions-bot`
-- Пересобирает Docker-образ и запускает
+На том же VPS живут `dkacademy-bot`, `dkacademy-analytics`, `ms-p-site` — бот **не открывает порты** (long polling), с ними не конфликтует.
 
 ---
 
-## Повторный деплой (обновление кода)
+## Первый деплой / обновление кода
 
 ```bash
-DEPLOY_SSH_PASSWORD='cRFcMaUMow1PD+' python scripts/_deploy_to_vps.py
+cd "1. ЛИЧНОЕ/2. Дух/2.3. Служение/2.3.2. Церковь/1. Мои служения/dg-questions-bot"
+cp .env.example .env   # один раз, вписать BOT_TOKEN
+python build_questions.py   # если колода менялась
+python scripts/_deploy_to_vps.py
+# или явно:
+# DEPLOY_SSH_KEY="$HOME/.ssh/dkacademy_analytics_deploy" python scripts/_deploy_to_vps.py
 ```
 
-БД сохраняется в Docker volume `dg_data` и не теряется при редеплое.
+БД в Docker volume и при редеплое не затирается.
 
 ---
 
-## Ручное управление на сервере
+## Ручное управление
 
 ```bash
-ssh root@72.56.123.137
-
+ssh dkacademy-vps
 cd /opt/dg-questions-bot
-
-docker compose logs -f          # смотреть логи в реальном времени
-docker compose ps                # статус контейнера
-docker compose restart           # перезапустить без пересборки
-docker compose down && docker compose up -d  # полный перезапуск
+docker compose logs -f
+docker compose ps
+docker compose restart
 ```
-
----
 
 ## Бэкап БД
 
 ```bash
-# Скопировать sqlite на локальную машину
-scp root@72.56.123.137:/var/lib/docker/volumes/dg-questions-bot_dg_data/_data/dg.sqlite3 ./backup.sqlite3
-```
-
----
-
-## Первичная установка Docker на сервере (однократно)
-
-```bash
-ssh root@72.56.123.137
-apt update && apt install -y docker.io docker-compose-plugin
-```
-
----
-
-## Структура на сервере
-
-```
-/opt/dg-questions-bot/
-├── app/
-├── questions.json
-├── Dockerfile
-├── docker-compose.yml
-├── .env          ← только на сервере, не в git
-└── data/         ← создаётся скриптом (volume point)
+ssh dkacademy-vps 'docker run --rm -v dg-questions-bot_dg_data:/from -v /tmp:/to alpine \
+  tar czf /to/dg-data.tgz -C /from .'
+scp dkacademy-vps:/tmp/dg-data.tgz ./backup-dg.tgz
 ```

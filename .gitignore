@@ -23,22 +23,44 @@
 *.pkey
 id_rsa
 id_ed25519
+*.session
+*.session-journal
+*.session.*
+**/backups/*.tar
+**/backups/kommo_*/
+**/backups/kommo_*.json
+**/backups/kommo_*.jsonl
+**/backups/kommo_*.json.gz
 
 # Large media (transcripts .md stay in git)
 *.m4a
 *.webm
 *.mp4
 *.mov
+*.mp3
+*.wav
 
-# Typo duplicate folder (use Бизнес/ only)
-Бizнес/
+# Typo duplicate folder
+Bizнес/
+
+# Legacy paths after migration to 2. Бизнес/ (do not recreate)
+Бизнес/
+2. Бизнес/04_Производство_внедрений/
+2. Бизнес/99_Системное/
 
 # Embedded git clone (infra vendor, not part of vault)
-Бизнес/99_Системное/Инфра/TrustTunnel/
+# gitignore чувствителен к регистру, поэтому оба написания
+2. Бизнес/08_Системное/Инфра/TrustTunnel/
+2. БИЗНЕС/08_Системное/Инфра/TrustTunnel/
+**/Инфра/TrustTunnel/
 
 # Vault sync logs (local only)
-Бизнес/99_Системное/Скрипты_vault/git/logs/*
-!Бизнес/99_Системное/Скрипты_vault/git/logs/.gitkeep
+2. Бизнес/08_Системное/Скрипты_vault/git/logs/*
+!2. Бизнес/08_Системное/Скрипты_vault/git/logs/.gitkeep
+2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/*
+!2. БИЗНЕС/08_Системное/Скрипты_vault/git/logs/.gitkeep
+**/Скрипты_vault/git/logs/*
+!**/Скрипты_vault/git/logs/.gitkeep
 
 # Python
 __pycache__/
@@ -51,6 +73,11 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# Секреты сервисов (.env), локальные dev-БД — .env.example коммитить можно
+**/.env
+!**/.env.example
+**/*.db
+
 # Node
 node_modules/
 
@@ -58,3 +85,25 @@ node_modules/
 *.log
 dist/
 build/
+
+# Google service account keys
+**/google_sa.json
+**/google_sheets_sa.json
+
+# Personal finance: bank exports + journal (keep rules/taxonomy/dashboard in git)
+# Оба регистра: gitignore не подчиняется core.ignorecase
+1. Личное/3. Разум/3.7. Финансы/inbox/*
+!1. Личное/3. Разум/3.7. Финансы/inbox/.gitkeep
+1. Личное/3. Разум/3.7. Финансы/data/operations.jsonl
+1. Личное/3. Разум/3.7. Финансы/data/review_queue.json
+1. Личное/3. Разум/3.7. Финансы/data/*.csv
+1. ЛИЧНОЕ/3. Разум/3.7. Финансы/inbox/*
+!1. ЛИЧНОЕ/3. Разум/3.7. Финансы/inbox/.gitkeep
+1. ЛИЧНОЕ/3. Разум/3.7. Финансы/data/operations.jsonl
+1. ЛИЧНОЕ/3. Разум/3.7. Финансы/data/review_queue.json
+1. ЛИЧНОЕ/3. Разум/3.7. Финансы/data/*.csv
+**/3.7. Финансы/inbox/*
+!**/3.7. Финансы/inbox/.gitkeep
+**/3.7. Финансы/data/operations.jsonl
+**/3.7. Финансы/data/review_queue.json
+**/3.7. Финансы/data/*.csv

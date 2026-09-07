@@ -7,10 +7,12 @@ import * as amo from "../clients/amo.js";
 export default async function contactsRoutes(app: FastifyInstance) {
   app.get("/contacts/by-phone", { preHandler: [app.authenticate] }, async (req, reply) => {
     const { phone } = req.query as { phone?: string };
-    if (!phone || phone.replace(/\D/g, "").length < 10) {
+    // Только цифры — Safari/прокси иногда плохо переваривают «+7 (926) …» в query
+    const digits = String(phone ?? "").replace(/\D/g, "");
+    if (digits.length < 10) {
       return reply.code(400).send({ message: "Нужен телефон (минимум 10 цифр)" });
     }
-    const contact = await amo.findContactByPhone(phone).catch(() => null);
+    const contact = await amo.findContactByPhone(digits).catch(() => null);
     if (!contact) return reply.code(404).send({ message: "Контакт не найден" });
     return { id: contact.id, name: contact.name };
   });
