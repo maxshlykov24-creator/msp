@@ -19,5 +19,5 @@ cp "$git_dir/com.msp.vault-sync-wake.plist" "$agents/"
 launchctl bootstrap "gui/$(id -u)" "$agents/com.msp.vault-sync.plist"
 launchctl bootstrap "gui/$(id -u)" "$agents/com.msp.vault-sync-wake.plist"
 
-echo "OK: launchd agents installed (страховочный синк раз в 30 мин, wake pull раз в 15 мин + при входе)"
+echo "OK: launchd agents installed (страховочный синк раз в 15 мин, wake pull раз в час + при входе)"
 echo "    Основной путь синхронизации — хук stop: агент закончил работу, vault закоммичен и отправлен."
