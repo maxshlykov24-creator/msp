@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HIDE — система дел. Прототип</title>
+<style>
+  :root{
+    --bg:#0d0b0c;
+    --surface:#231F20;
+    --ink:#F9F2EC;
+    --mute:#91867C;
+    --mute-2:#6d645c;
+    --gold:#C8A45C;
+    --gold-soft:#E9DCB8;
+    --green:#9FC9AC;
+    --red:#C98680;
+    --line:rgba(249,242,236,.09);
+    --line-2:rgba(249,242,236,.17);
+    --glass:rgba(249,242,236,.03);
+    --glass-2:rgba(249,242,236,.06);
+    --radius:20px;
+    --ease:cubic-bezier(.25,1,.5,1);
+    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--font);color:var(--ink);background:var(--bg);
+    min-height:100vh;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;
+    background-image:
+      radial-gradient(1500px 820px at 50% -22%,#1d1819 0%,transparent 60%),
+      radial-gradient(1000px 600px at 88% -6%,rgba(200,164,92,.06),transparent 62%),
+      radial-gradient(820px 560px at -8% 16%,rgba(145,134,124,.05),transparent 60%),
+      linear-gradient(180deg,#141112 0%,#080707 100%);
+    background-attachment:fixed;position:relative;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+    background-image:radial-gradient(1px 1px at 20% 30%, rgba(249,242,236,.35) 0, transparent 0),
+                     radial-gradient(1px 1px at 70% 60%, rgba(249,242,236,.25) 0, transparent 0);
+    background-size:3px 3px;mix-blend-mode:overlay;
+  }
+  .wrap{max-width:1240px;margin:0 auto;padding:0 30px 110px;position:relative;z-index:1}
+
+  .glass{
+    background:linear-gradient(155deg,rgba(249,242,236,.045) 0%,rgba(249,242,236,.015) 55%,rgba(249,242,236,.03) 100%);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    backdrop-filter:blur(24px) saturate(150%);
+    -webkit-backdrop-filter:blur(24px) saturate(150%);
+    box-shadow:inset 0 1px 0 rgba(249,242,236,.09),inset 1px 0 0 rgba(249,242,236,.035),0 8px 32px 0 rgba(0,0,0,.72);
+  }
+
+  /* ─── topbar ─── */
+  .topbar{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);
+    background:rgba(13,11,12,.78);border-bottom:1px solid rgba(249,242,236,.07);
+  }
+  .topbar-in{max-width:1240px;margin:0 auto;padding:18px 30px;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:20px}
+  .logo-orb{position:relative;display:flex;align-items:center}
+  .logo-orb::before{content:'';position:absolute;left:50%;top:50%;width:140px;height:60px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(249,242,236,.14),transparent 70%);filter:blur(15px);z-index:0}
+  .logo-orb svg{height:38px;width:auto;position:relative;z-index:1}
+  .brand-div{width:1px;height:32px;background:var(--line-2)}
+  .brand-title{font-size:13px;font-weight:500;letter-spacing:.09em;text-transform:uppercase}
+  .brand-title small{display:block;font-size:10.5px;color:var(--mute-2);font-weight:500;letter-spacing:.06em;margin-top:4px;text-transform:none}
+  .header-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+
+  .roles{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--glass);border:1px solid var(--line)}
+  .roles button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:12.5px;font-weight:500;padding:8px 15px;border-radius:10px;cursor:pointer;transition:.2s var(--ease);letter-spacing:.01em}
+  .roles button:hover{color:var(--ink)}
+  .roles button.active{background:var(--gold);color:#17130e;font-weight:600;box-shadow:0 6px 18px -8px rgba(200,164,92,.8)}
+
+  .demo-flag{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--mute-2);letter-spacing:.06em;text-transform:uppercase}
+  .demo-flag i{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 9px var(--gold);animation:pulse 2.6s infinite;font-style:normal}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  /* ─── nav ─── */
+  .nav{display:flex;gap:2px;padding:5px;border-radius:16px;background:var(--glass);border:1px solid var(--line);margin:30px 0 6px;flex-wrap:wrap}
+  .nav button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:13px;font-weight:500;padding:10px 17px;border-radius:11px;cursor:pointer;transition:.2s var(--ease)}
+  .nav button:hover{color:var(--ink);background:var(--glass-2)}
+  .nav button.active{background:rgba(249,242,236,.94);color:#17130e;font-weight:600}
+  .nav button .tag{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin-left:7px;font-weight:600}
+  .nav button.active .tag{color:#8a6d2c}
+
+  .page{display:none;animation:fade .45s var(--ease)}
+  .page.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .head{padding:42px 0 26px}
+  .head h1{font-size:29px;font-weight:300;letter-spacing:-.01em}
+  .head p{color:var(--mute);font-size:14px;margin-top:9px;max-width:660px;line-height:1.55}
+
+  .sec-title{display:flex;align-items:baseline;gap:14px;margin:40px 0 18px;justify-content:space-between;flex-wrap:wrap}
+  .sec-title h2{font-size:12px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--mute)}
+  .sec-title span{font-size:12.5px;color:var(--mute-2)}
+
+  /* ─── tilt ─── */
+  .tilt{--rx:0deg;--ry:0deg;--ty:0px;--mx:50%;--my:20%;
+    transform:perspective(900px) rotateX(var(--ry)) rotateY(var(--rx)) translateY(var(--ty)) translateZ(0);
+    transition:transform .45s var(--ease),border-color .45s var(--ease),box-shadow .45s var(--ease);position:relative;overflow:hidden}
+  .tilt.tilt-active{transition:transform .07s linear,border-color .4s var(--ease),box-shadow .4s var(--ease)}
+  .tilt:hover{border-color:rgba(249,242,236,.15);box-shadow:inset 0 1px 0 rgba(249,242,236,.13),0 0 40px -10px rgba(200,164,92,.14),0 24px 60px -22px rgba(0,0,0,.9)}
+  .tilt::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s var(--ease);
+    background:radial-gradient(280px 190px at var(--mx) var(--my),rgba(249,242,236,.07),transparent 70%)}
+  .tilt:hover::after{opacity:1}
+  @media (hover:none){.tilt{transform:none}}
+
+  /* ─── kpi ─── */
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .kpi{padding:26px 24px 24px}
+  .kpi-lab{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2)}
+  .kpi-val{font-size:40px;font-weight:200;margin-top:14px;line-height:1;font-variant-numeric:tabular-nums;
+    background:linear-gradient(160deg,#F9F2EC 30%,#a89c90 100%);-webkit-background-clip:text;background-clip:text;color:transparent;transition:transform .4s var(--ease)}
+  .kpi:hover .kpi-val{transform:scale(1.04)}
+  .kpi-sub{font-size:12px;color:var(--mute);margin-top:10px;line-height:1.45}
+  .kpi.feature{background:linear-gradient(160deg,rgba(200,164,92,.1),rgba(249,242,236,.015))}
+  .kpi.feature .kpi-val{background:linear-gradient(160deg,var(--gold-soft) 20%,var(--gold) 100%);-webkit-background-clip:text;background-clip:text}
+
+  /* ─── filters ─── */
+  .filters{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px}
+  .chip{padding:8px 15px;border-radius:12px;background:var(--glass);border:1px solid var(--line);color:var(--mute);font-size:12.5px;cursor:pointer;transition:.2s var(--ease);font-weight:500}
+  .chip:hover{color:var(--ink);border-color:var(--line-2)}
+  .chip.on{border-color:rgba(200,164,92,.5);background:rgba(200,164,92,.11);color:var(--gold-soft)}
+  .fsep{width:1px;background:var(--line);margin:2px 6px}
+
+  /* ─── table ─── */
+  .tbl{border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);background:linear-gradient(155deg,rgba(249,242,236,.035),rgba(249,242,236,.012))}
+  .tr{display:grid;grid-template-columns:1.9fr .58fr .82fr .8fr .74fr .58fr;gap:14px;padding:16px 22px;align-items:center;border-bottom:1px solid rgba(249,242,236,.055);transition:background .22s var(--ease)}
+  .tr:last-child{border-bottom:0}
+  .tr.h{background:rgba(0,0,0,.24);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding:13px 22px}
+  .tr.row{cursor:pointer}
+  .tr.row:hover{background:rgba(249,242,236,.035)}
+  .t-name{font-size:14px;font-weight:450;line-height:1.4}
+  .t-name small{display:block;color:var(--mute-2);font-size:11.5px;margin-top:5px;font-weight:400}
+  .t-cell{font-size:12.5px;color:var(--mute)}
+  .cli{display:inline-flex;align-items:center;justify-content:center;min-width:42px;padding:5px 9px;border-radius:8px;background:rgba(249,242,236,.07);border:1px solid var(--line);font-size:11px;font-weight:600;letter-spacing:.06em}
+
+  .st{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 11px;border-radius:9px;background:var(--glass-2);border:1px solid var(--line);white-space:nowrap}
+  .st i{width:6px;height:6px;border-radius:50%;font-style:normal;flex:none}
+  .st.work i{background:var(--gold)}
+  .st.priem i{background:var(--gold-soft)}
+  .st.wait i{background:var(--mute)}
+  .st.done i{background:var(--green)}
+  .st.new i{background:var(--mute-2)}
+  .st.done{color:var(--green)}
+  .st.priem{color:var(--gold-soft);border-color:rgba(233,220,184,.28);background:rgba(233,220,184,.08)}
+
+  .due{font-size:12.5px;font-variant-numeric:tabular-nums}
+  .due.late{color:var(--red)}
+  .due.frozen{color:var(--mute-2)}
+  .due small{display:block;font-size:10.5px;color:var(--mute-2);margin-top:3px}
+
+  .prog{display:flex;align-items:center;gap:10px}
+  .prog-bar{flex:1;height:4px;border-radius:3px;background:rgba(249,242,236,.09);overflow:hidden}
+  .prog-bar span{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--gold-soft),var(--gold));transition:width .7s var(--ease)}
+  .prog-num{font-size:11.5px;color:var(--mute);font-variant-numeric:tabular-nums;min-width:34px;text-align:right}
+
+  /* ─── дерево ─── */
+  .card-top{display:grid;grid-template-columns:1.6fr .9fr;gap:16px}
+  .pane{padding:28px 26px}
+  .pane h3{font-size:11px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--mute);margin-bottom:20px}
+  .deal-title{font-size:23px;font-weight:300;line-height:1.32;letter-spacing:-.01em}
+  .deal-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  .meta-i{font-size:12px;color:var(--mute);padding:6px 12px;border-radius:10px;background:var(--glass);border:1px solid var(--line)}
+  .meta-i b{color:var(--ink);font-weight:500}
+
+  .tree{margin-top:6px}
+  .node{border-radius:13px;transition:background .22s var(--ease)}
+  .node-row{display:grid;grid-template-columns:22px 1fr auto auto auto;gap:13px;align-items:center;padding:12px 13px;border-radius:13px;transition:background .22s var(--ease)}
+  .node-row:hover{background:rgba(249,242,236,.04)}
+  .tw{width:22px;height:22px;border-radius:7px;border:1px solid var(--line);background:var(--glass);color:var(--mute);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;transition:.2s var(--ease);font-family:var(--font);flex:none}
+  .tw:hover{color:var(--ink);border-color:var(--line-2)}
+  .tw.leaf{border-color:transparent;background:transparent;cursor:default;opacity:.35}
+  .tw.leaf::after{content:'';width:5px;height:5px;border-radius:50%;background:var(--mute)}
+  .node-name{font-size:13.5px;line-height:1.42;font-weight:450}
+  .node-name.done-txt{color:var(--mute);text-decoration:line-through;text-decoration-color:rgba(145,134,124,.5)}
+  .node-who{font-size:11.5px;color:var(--mute);white-space:nowrap}
+  .kids{margin-left:24px;padding-left:16px;border-left:1px solid rgba(249,242,236,.09)}
+  .kids.hide{display:none}
+  .lvl-badge{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute-2);padding:3px 8px;border-radius:7px;border:1px solid var(--line)}
+
+  .ctx{font-size:13px;line-height:1.72;color:var(--mute)}
+  .ctx b{color:var(--ink);font-weight:500}
+  .ctx p{margin-bottom:14px}
+  .ctx p:last-child{margin-bottom:0}
+  .files{display:flex;flex-direction:column;gap:9px;margin-top:6px}
+  .file{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;background:var(--glass);border:1px solid var(--line);font-size:12.5px;transition:.2s var(--ease);cursor:pointer}
+  .file:hover{border-color:var(--line-2);background:var(--glass-2)}
+  .file-ic{width:30px;height:30px;border-radius:9px;background:rgba(200,164,92,.13);border:1px solid rgba(200,164,92,.24);display:flex;align-items:center;justify-content:center;font-size:9.5px;color:var(--gold);font-weight:700;letter-spacing:.03em;flex:none}
+  .file small{display:block;color:var(--mute-2);font-size:11px;margin-top:3px}
+
+  .log{display:flex;flex-direction:column;gap:0}
+  .log-i{display:grid;grid-template-columns:60px 1fr;gap:14px;padding:11px 0;border-bottom:1px solid rgba(249,242,236,.05);font-size:12.5px}
+  .log-i:last-child{border-bottom:0}
+  .log-t{color:var(--mute-2);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .log-x{color:var(--mute);line-height:1.5}
+  .log-x b{color:var(--ink);font-weight:500}
+
+  /* ─── очередь ─── */
+  .q-item{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;padding:20px 24px;border-bottom:1px solid rgba(249,242,236,.055);transition:background .22s var(--ease)}
+  .q-item:last-child{border-bottom:0}
+  .q-item:hover{background:rgba(249,242,236,.028)}
+  .q-name{font-size:14.5px;font-weight:450;line-height:1.4}
+  .q-path{font-size:11.5px;color:var(--mute-2);margin-top:7px}
+  .q-path b{color:var(--mute);font-weight:400}
+  .q-act{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .btn{border:1px solid var(--line);background:var(--glass);color:var(--ink);font-family:var(--font);font-size:12.5px;font-weight:500;padding:9px 17px;border-radius:11px;cursor:pointer;transition:.2s var(--ease);white-space:nowrap}
+  .btn:hover{border-color:var(--line-2);background:var(--glass-2)}
+  .btn.gold{background:linear-gradient(180deg,#d9bb7a 0%,var(--gold) 50%,#ab8a45 100%);border-color:transparent;color:#17130e;font-weight:600;box-shadow:0 8px 22px -12px rgba(200,164,92,.85)}
+  .btn.gold:hover{filter:brightness(1.07)}
+  .btn.ghost-red{color:var(--red);border-color:rgba(201,134,128,.28)}
+  .btn.ghost-red:hover{background:rgba(201,134,128,.09)}
+  .btn.done-state{color:var(--green);border-color:rgba(159,201,172,.32);background:rgba(159,201,172,.09);cursor:default}
+
+  /* ─── приёмка ─── */
+  .pr-card{padding:26px 26px 22px;margin-bottom:16px}
+  .pr-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
+  .pr-name{font-size:17px;font-weight:400;line-height:1.4}
+  .pr-sub{font-size:12px;color:var(--mute-2);margin-top:8px}
+  .pr-body{margin-top:20px;padding-top:20px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 300px;gap:24px}
+  .pr-note{font-size:13px;line-height:1.68;color:var(--mute)}
+  .pr-acts{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
+  .wait-badge{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;color:var(--gold-soft);padding:6px 12px;border-radius:9px;background:rgba(233,220,184,.09);border:1px solid rgba(233,220,184,.24)}
+
+  /* ─── панель ─── */
+  .two{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
+  .load-row{display:grid;grid-template-columns:104px 1fr 54px;gap:14px;align-items:center;padding:13px 0}
+  .load-name{font-size:13px}
+  .load-bar{height:26px;border-radius:9px;background:rgba(249,242,236,.05);overflow:hidden;position:relative}
+  .load-bar span{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,rgba(249,242,236,.85),rgba(249,242,236,.4));transition:width .8s var(--ease)}
+  .load-bar span.hot{background:linear-gradient(90deg,var(--gold-soft),var(--gold))}
+  .load-n{font-size:13px;color:var(--mute);text-align:right;font-variant-numeric:tabular-nums}
+
+  .stuck{display:flex;flex-direction:column}
+  .stuck-i{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid rgba(249,242,236,.05)}
+  .stuck-i:last-child{border-bottom:0}
+  .stuck-n{font-size:13px;line-height:1.4}
+  .stuck-n small{display:block;color:var(--mute-2);font-size:11.5px;margin-top:5px}
+  .stuck-d{font-size:12.5px;color:var(--gold);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+  .gantt{margin-top:4px}
+  .g-row{display:grid;grid-template-columns:190px 1fr;gap:16px;align-items:center;padding:9px 0}
+  .g-name{font-size:12.5px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .g-track{position:relative;height:22px;border-radius:7px;background:rgba(249,242,236,.04)}
+  .g-bar{position:absolute;top:4px;height:14px;border-radius:5px;background:linear-gradient(90deg,rgba(249,242,236,.7),rgba(249,242,236,.32))}
+  .g-bar.gold{background:linear-gradient(90deg,var(--gold-soft),var(--gold))}
+  .g-bar.grey{background:linear-gradient(90deg,rgba(145,134,124,.55),rgba(145,134,124,.28))}
+  .g-legend{display:flex;gap:18px;margin-top:14px;font-size:11.5px;color:var(--mute-2);flex-wrap:wrap}
+  .g-legend i{display:inline-block;width:18px;height:6px;border-radius:3px;margin-right:7px;vertical-align:middle;font-style:normal}
+
+  /* ─── telegram ─── */
+  .tg-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .phone{border-radius:30px;padding:16px 14px 22px;background:linear-gradient(165deg,rgba(249,242,236,.06),rgba(249,242,236,.015));border:1px solid var(--line-2);box-shadow:0 30px 70px -30px rgba(0,0,0,.95)}
+  .phone-top{display:flex;align-items:center;gap:10px;padding:6px 10px 14px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .ava{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,var(--gold-soft),var(--gold));display:flex;align-items:center;justify-content:center;color:#17130e;font-size:12px;font-weight:700;flex:none}
+  .phone-nm{font-size:13px;font-weight:500}
+  .phone-nm small{display:block;font-size:10.5px;color:var(--mute-2);margin-top:2px}
+  .msg{padding:14px 16px;border-radius:16px 16px 16px 5px;background:rgba(249,242,236,.055);border:1px solid var(--line);font-size:12.5px;line-height:1.62;margin-bottom:11px}
+  .msg b{font-weight:600}
+  .msg .m-hd{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:9px}
+  .msg .m-li{color:var(--mute);margin-top:7px;padding-left:12px;position:relative}
+  .msg .m-li::before{content:'';position:absolute;left:0;top:8px;width:4px;height:4px;border-radius:50%;background:var(--mute-2)}
+  .msg .m-li b{color:var(--ink);font-weight:500}
+  .tg-btns{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px}
+  .tg-b{flex:1;min-width:calc(50% - 4px);text-align:center;padding:10px 8px;border-radius:11px;background:rgba(200,164,92,.13);border:1px solid rgba(200,164,92,.3);color:var(--gold-soft);font-size:11.5px;font-weight:500;cursor:pointer;transition:.2s var(--ease)}
+  .tg-b:hover{background:rgba(200,164,92,.22)}
+  .tg-b.wide{min-width:100%}
+  .tg-cap{font-size:11.5px;color:var(--mute-2);margin-top:16px;line-height:1.6;text-align:center;padding:0 6px}
+
+  /* ─── отчёт ─── */
+  .rep-line{display:grid;grid-template-columns:30px 1fr auto;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid rgba(249,242,236,.05)}
+  .rep-line:last-child{border-bottom:0}
+  .cbx{width:20px;height:20px;border-radius:6px;border:1px solid var(--line-2);background:var(--glass);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:transparent;transition:.2s var(--ease)}
+  .cbx.on{background:var(--gold);border-color:var(--gold);color:#17130e}
+  .rep-t{font-size:13.5px;line-height:1.42}
+  .rep-t small{display:block;font-size:11.5px;color:var(--mute-2);margin-top:5px}
+
+  /* ─── шаблоны ─── */
+  .tpl{padding:24px 24px 20px;margin-bottom:14px}
+  .tpl-h{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  .tpl-n{font-size:15px;font-weight:450}
+  .tpl-steps{margin-top:18px;display:flex;flex-direction:column;gap:9px}
+  .tpl-s{display:grid;grid-template-columns:24px 1fr auto;gap:13px;align-items:center;font-size:12.5px;color:var(--mute);padding:9px 12px;border-radius:11px;background:var(--glass);border:1px solid var(--line)}
+  .tpl-s b{color:var(--ink);font-weight:450}
+  .tpl-num{width:24px;height:24px;border-radius:7px;background:rgba(200,164,92,.13);border:1px solid rgba(200,164,92,.24);color:var(--gold);font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:600}
+
+  .badge-next{display:inline-flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);padding:5px 11px;border-radius:8px;background:rgba(200,164,92,.1);border:1px solid rgba(200,164,92,.26);font-weight:600}
+
+  .note{padding:20px 24px;border-radius:16px;background:rgba(200,164,92,.06);border:1px solid rgba(200,164,92,.18);font-size:13px;line-height:1.68;color:var(--mute);margin-top:26px}
+  .note b{color:var(--gold-soft);font-weight:500}
+
+  /* ─── toast ─── */
+  .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,26px);z-index:99;padding:14px 24px;border-radius:14px;background:rgba(35,31,32,.96);border:1px solid var(--line-2);color:var(--ink);font-size:13px;opacity:0;pointer-events:none;transition:.35s var(--ease);backdrop-filter:blur(20px);box-shadow:0 22px 50px -20px rgba(0,0,0,.95)}
+  .toast.on{opacity:1;transform:translate(-50%,0)}
+
+  .foot{margin-top:60px;padding-top:26px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;font-size:11.5px;color:var(--mute-2)}
+
+  @media(max-width:1080px){
+    .kpi-grid{grid-template-columns:repeat(2,1fr)}
+    .card-top,.two,.pr-body{grid-template-columns:1fr}
+    .tg-grid{grid-template-columns:1fr;max-width:420px;margin:0 auto}
+    .tr{grid-template-columns:1.6fr .7fr .9fr}
+    .tr .hide-s{display:none}
+  }
+  @media(max-width:680px){
+    .wrap{padding:0 18px 80px}
+    .topbar-in{padding:14px 18px}
+    .kpi-grid{grid-template-columns:1fr}
+    .head h1{font-size:23px}
+    .kpi-val{font-size:32px}
+    .g-row{grid-template-columns:120px 1fr}
+    .q-item{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <div class="logo-orb">
+        <svg viewBox="0 0 180 74" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="HIDE">
+          <path d="M77.9862 72.8272H75V8.35352H77.9862V46.3669H97.7129V8.35352H100.789V72.8272H97.7129V47.9508H77.9862V72.8272Z" fill="#F9F2EC"/>
+          <path d="M164.574 71.2434H178.639C179.093 71.7092 179.546 72.2682 180 72.8272H161.579V8.35352H180C179.546 8.81937 179.093 9.37839 178.639 9.93741H164.574V32.1119H176.915C176.552 32.6709 176.189 33.2299 175.826 33.6958H164.574V71.2434Z" fill="#F9F2EC"/>
+          <path d="M148.388 17.8209C161.063 30.3881 161.063 50.8211 148.388 63.3883C141.185 70.4404 131.611 73.642 122.219 72.8283C122.219 72.8283 120.213 72.8815 119.21 72.7007V8.35471C119.21 8.35471 121.216 8.44533 122.219 8.35492C131.611 7.4508 141.185 10.6784 148.388 17.8209ZM125.319 71.2541C141.641 71.2541 154.771 57.5115 154.771 40.6046C154.771 23.6073 141.641 9.86472 125.319 9.86472C124.316 9.86472 123.313 9.95513 122.219 10.0455V71.1637C123.313 71.2541 124.316 71.2541 125.319 71.2541Z" fill="#F9F2EC"/>
+          <path d="M111.106 72.8272H108.158V8.35352H111.106V72.8272Z" fill="#F9F2EC"/>
+          <path d="M114.272 1.40244L110.269 5.50211L108.851 4.84521L113.581 0.000148977L114.272 1.40244Z" fill="#F9F2EC"/>
+          <path d="M52.5277 39.44C52.5277 56.0523 41.499 69.2995 28.1399 69.2995C14.7807 69.2995 3.75195 56.0523 3.75195 39.44C3.75195 22.8278 14.7807 9.58057 28.1399 9.58057C41.499 9.58057 52.5277 22.8278 52.5277 39.44Z" stroke="#F9F2EC" stroke-width="1.25"/>
+          <path d="M55.8624 39.4436C55.8624 57.8488 43.3841 72.638 28.1395 72.638C12.8949 72.638 0.416667 57.8488 0.416667 39.4436C0.416667 21.0384 12.8949 6.24919 28.1395 6.24919C43.3841 6.24919 55.8624 21.0384 55.8624 39.4436Z" stroke="#F9F2EC" stroke-width="0.833334"/>
+          <path d="M19.7315 66.7982H17.1973V12.0825H19.7315V44.3427L28.102 42.7794L36.4726 44.3427V12.0825H39.0836V66.7982H36.4726V45.6868L28.102 44.1235L19.7315 45.6868V66.7982Z" fill="#F9F2EC"/>
+        </svg>
+      </div>
+      <div class="brand-div"></div>
+      <div class="brand-title">Система дел<small>Прототип интерфейса</small></div>
+    </div>
+    <div class="header-right">
+      <div class="demo-flag"><i></i>Демонстрационные данные</div>
+      <div class="roles">
+        <button class="active" data-role="darina">Дарина</button>
+        <button data-role="nikita">Никита</button>
+        <button data-role="danil">Данил</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="nav" id="nav">
+    <button class="active" data-p="dela">Дела</button>
+    <button data-p="card">Карточка дела</button>
+    <button data-p="queue">Моя очередь</button>
+    <button data-p="priem">Приёмка</button>
+    <button data-p="panel">Панель</button>
+    <button data-p="tg">Telegram</button>
+    <button data-p="report">Отчёт<span class="tag">этап 2</span></button>
+    <button data-p="tpl">Правила<span class="tag">этап 2</span></button>
+  </div>
+
+  <!-- ══════════ ДЕЛА ══════════ -->
+  <section class="page on" id="p-dela">
+    <div class="head">
+      <h1>Дела</h1>
+      <p>Все клиенты в одном реестре, с разграничением доступа. Каждый видит только те дела, к клиентам которых у него есть допуск.</p>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi glass tilt feature"><div class="kpi-lab">В работе</div><div class="kpi-val">23</div><div class="kpi-sub">по 5 клиентам и внутренним делам</div></div>
+      <div class="kpi glass tilt"><div class="kpi-lab">Ждут приёмки</div><div class="kpi-val">4</div><div class="kpi-sub">одно дольше нормы</div></div>
+      <div class="kpi glass tilt"><div class="kpi-lab">Ждут клиента</div><div class="kpi-val">6</div><div class="kpi-sub">счётчик просрочки остановлен</div></div>
+      <div class="kpi glass tilt"><div class="kpi-lab">Просрочено</div><div class="kpi-val">2</div><div class="kpi-sub">по вине исполнителя</div></div>
+    </div>
+
+    <div class="sec-title"><h2>Реестр</h2><span>фильтры работают так же, как вкладки в таблице, только без переключения листов</span></div>
+
+    <div class="filters">
+      <div class="chip on">Все клиенты</div>
+      <div class="chip">ИИК</div>
+      <div class="chip">ВЛГ</div>
+      <div class="chip">СТР</div>
+      <div class="chip">НРД</div>
+      <div class="chip">Внутренние</div>
+      <div class="fsep"></div>
+      <div class="chip">Юристы</div>
+      <div class="chip">Аналитика</div>
+      <div class="chip">Инвестиции</div>
+      <div class="chip">Налоги</div>
+      <div class="fsep"></div>
+      <div class="chip">Только мои</div>
+    </div>
+
+    <div class="tbl" id="dealsTbl"></div>
+
+    <div class="note"><b>Что здесь важно.</b> Цвет больше ничего не значит: согласованность с клиентом, приоритет и просрочка стали полями, по которым можно фильтровать и считать. Просрочка вычисляется системой, а не красится руками, и она не тикает, пока дело ждёт ответа клиента.</div>
+  </section>
+
+  <!-- ══════════ КАРТОЧКА ══════════ -->
+  <section class="page" id="p-card">
+    <div class="head">
+      <h1>Оценка объектов недвижимости</h1>
+      <p>То, что сейчас лежит нумерованным текстом в колонке «План», здесь стало деревом шагов. У каждого узла свой исполнитель, свой срок и свой статус, а вложенность не ограничена.</p>
+    </div>
+
+    <div class="card-top">
+      <div class="pane glass">
+        <h3>Шаги</h3>
+        <div class="deal-meta" style="margin-top:0;margin-bottom:22px">
+          <div class="meta-i">Клиент <b>ИИК</b></div>
+          <div class="meta-i">Направление <b>Юристы</b></div>
+          <div class="meta-i">Ответственный <b>Даша</b></div>
+          <div class="meta-i">Срок <b>19.09</b></div>
+          <div class="meta-i">Готово <b id="treeProg">—</b></div>
+        </div>
+        <div class="tree" id="tree"></div>
+        <div class="note" style="margin-top:24px"><b>Правило.</b> Прогресс родителя считает система по закрытым веткам. Срок родителя не может быть раньше срока последнего потомка: при попытке система предупредит. Три уровня видно сразу, глубже — по раскрытию.</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="pane glass">
+          <h3>Контекст</h3>
+          <div class="ctx">
+            <p>Клиент просит переоценку четырёх объектов перед пересмотром структуры владения. <b>Внутреннюю оценку делаем до внешнего запроса</b> — так решили на планёрке 02.09, чтобы понимать вилку заранее.</p>
+            <p>Договорённость: показываем клиенту сводную таблицу с тремя коммерческими предложениями, без рекомендации конкретной компании до его вопроса.</p>
+          </div>
+        </div>
+        <div class="pane glass">
+          <h3>Файлы</h3>
+          <div class="files">
+            <div class="file"><div class="file-ic">XLSX</div><div>Реестр объектов, версия 2<small>Даша, 04.09, из чата клиента</small></div></div>
+            <div class="file"><div class="file-ic">PDF</div><div>Выписки ЕГРН, 4 объекта<small>Даша, 03.09</small></div></div>
+            <div class="file"><div class="file-ic">PDF</div><div>КП оценочной компании 1<small>Данил, 06.09, из профильного чата</small></div></div>
+          </div>
+        </div>
+        <div class="pane glass">
+          <h3>Журнал</h3>
+          <div class="log">
+            <div class="log-i"><div class="log-t">06.09</div><div class="log-x"><b>Данил</b> закрыл шаг «Разослать запросы»</div></div>
+            <div class="log-i"><div class="log-t">04.09</div><div class="log-x"><b>Бот</b> прицепил файл из чата ИИК к шагу 1.1</div></div>
+            <div class="log-i"><div class="log-t">03.09</div><div class="log-x"><b>Даша</b> закрыла ветку «Сформировать реестр»</div></div>
+            <div class="log-i"><div class="log-t">02.09</div><div class="log-x"><b>Дарина</b> завела дело с планёрки</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ ОЧЕРЕДЬ ══════════ -->
+  <section class="page" id="p-queue">
+    <div class="head">
+      <h1>Моя очередь <span style="color:var(--mute);font-weight:200" id="qWho">— Данил</span></h1>
+      <p>Свой список без похода к координатору. Собирается из шагов, где человек исполнитель, плюс узлов, за которые он отвечает целиком. Закрывает шаг он сам, следующий по цепочке узнаёт об этом без Дарины.</p>
+    </div>
+    <div class="tbl" id="queueTbl"></div>
+    <div class="note"><b>Это снимает главный ручной цикл.</b> Сейчас статус меняет только Дарина: она читает чаты, опрашивает коллег, отмечает выполнение и напоминает следующему. Здесь исполнитель нажимает «Сделал», и цепочка идёт дальше сама.</div>
+  </section>
+
+  <!-- ══════════ ПРИЁМКА ══════════ -->
+  <section class="page" id="p-priem">
+    <div class="head">
+      <h1>Приёмка</h1>
+      <p>Работа приходит сюда, а не в личку. Три решения: принять, вернуть с замечанием, отправить клиенту. Кто принимает — настраивается, это не зашито на одного человека.</p>
+    </div>
+    <div id="priemList"></div>
+    <div class="note"><b>Закрывает оба сценария потери.</b> Первый: документ сделан, но лежит в переписке и клиенту не ушёл. Второй: документ отправлен, клиент молчит, и никто не понимает, чья это теперь очередь. После «Отправлено клиенту» дело переходит в ожидание ответа с напоминанием, а счётчик просрочки исполнителя останавливается.</div>
+  </section>
+
+  <!-- ══════════ ПАНЕЛЬ ══════════ -->
+  <section class="page" id="p-panel">
+    <div class="head">
+      <h1>Панель контроля</h1>
+      <p>Нагрузка по людям, где дело встало и по какой причине, ход этапов во времени. То, что сейчас держится в голове и в цвете ячеек.</p>
+    </div>
+
+    <div class="two">
+      <div class="pane glass tilt">
+        <h3>Нагрузка по людям</h3>
+        <div>
+          <div class="load-row"><div class="load-name">Даша, юрист</div><div class="load-bar"><span class="hot" style="width:88%"></span></div><div class="load-n">9</div></div>
+          <div class="load-row"><div class="load-name">Данил, аналитик</div><div class="load-bar"><span style="width:64%"></span></div><div class="load-n">7</div></div>
+          <div class="load-row"><div class="load-name">Никита</div><div class="load-bar"><span style="width:41%"></span></div><div class="load-n">4</div></div>
+          <div class="load-row"><div class="load-name">Костя</div><div class="load-bar"><span style="width:27%"></span></div><div class="load-n">3</div></div>
+          <div class="load-row"><div class="load-name">Дарина</div><div class="load-bar"><span style="width:18%"></span></div><div class="load-n">2</div></div>
+        </div>
+        <div class="note" style="margin-top:20px"><b>Видно сразу:</b> у Даши девять открытых шагов при четырёх у Никиты. Раньше это можно было понять, только пересчитав строки в четырёх вкладках руками.</div>
+      </div>
+
+      <div class="pane glass tilt">
+        <h3>Где встало</h3>
+        <div class="stuck">
+          <div class="stuck-i"><div class="stuck-n">Согласование реестра объектов<small>ИИК · ждём ответ клиента</small></div><div class="stuck-d">6 дней</div></div>
+          <div class="stuck-i"><div class="stuck-n">Проект договора залога доли<small>ВЛГ · на приёмке у Никиты</small></div><div class="stuck-d">3 дня</div></div>
+          <div class="stuck-i"><div class="stuck-n">Справка по ставкам аренды<small>ИИК · ждём информацию от клиента</small></div><div class="stuck-d">5 дней</div></div>
+          <div class="stuck-i"><div class="stuck-n">Созвон по стратегии<small>СТР · не подтверждён</small></div><div class="stuck-d">2 дня</div></div>
+        </div>
+        <div class="note" style="margin-top:20px"><b>Разные причины больше не сливаются в одну.</b> «Клиент молчит» и «исполнитель не сделал» — это два разных состояния, и только второе является просрочкой команды.</div>
+      </div>
+    </div>
+
+    <div class="sec-title"><h2>Ход дел по этапам</h2><span>та самая диаграмма, про которую говорила Дарина</span></div>
+    <div class="pane glass">
+      <div class="gantt">
+        <div class="g-row"><div class="g-name">Оценка объектов, ИИК</div><div class="g-track"><div class="g-bar" style="left:2%;width:38%"></div><div class="g-bar gold" style="left:42%;width:24%"></div><div class="g-bar grey" style="left:68%;width:20%"></div></div></div>
+        <div class="g-row"><div class="g-name">Залог доли в ООО, ВЛГ</div><div class="g-track"><div class="g-bar" style="left:6%;width:46%"></div><div class="g-bar gold" style="left:54%;width:18%"></div></div></div>
+        <div class="g-row"><div class="g-name">Реструктуризация портфеля, СТР</div><div class="g-track"><div class="g-bar" style="left:10%;width:28%"></div><div class="g-bar grey" style="left:40%;width:34%"></div></div></div>
+        <div class="g-row"><div class="g-name">Индексация ставок аренды, ИИК</div><div class="g-track"><div class="g-bar" style="left:14%;width:22%"></div><div class="g-bar grey" style="left:38%;width:30%"></div></div></div>
+        <div class="g-row"><div class="g-name">Взыскание по займу, НРД</div><div class="g-track"><div class="g-bar" style="left:4%;width:62%"></div><div class="g-bar gold" style="left:68%;width:14%"></div></div></div>
+        <div class="g-row"><div class="g-name">Налоговый план, ВЛГ</div><div class="g-track"><div class="g-bar" style="left:22%;width:30%"></div></div></div>
+      </div>
+      <div class="g-legend">
+        <span><i style="background:linear-gradient(90deg,rgba(249,242,236,.7),rgba(249,242,236,.32))"></i>выполнено</span>
+        <span><i style="background:linear-gradient(90deg,var(--gold-soft),var(--gold))"></i>идёт сейчас</span>
+        <span><i style="background:linear-gradient(90deg,rgba(145,134,124,.55),rgba(145,134,124,.28))"></i>ожидание</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ TELEGRAM ══════════ -->
+  <section class="page" id="p-tg">
+    <div class="head">
+      <h1>Telegram</h1>
+      <p>Команда остаётся там, где живёт. Бот ведёт себя по-разному в зависимости от чата: в личке он ассистент, в клиентском чате молчит и только собирает, руководителю приносит сводку перед встречей.</p>
+    </div>
+
+    <div class="tg-grid">
+      <div>
+        <div class="phone">
+          <div class="phone-top"><div class="ava">H</div><div class="phone-nm">HIDE · система<small>личный чат с Данилом</small></div></div>
+          <div class="msg">
+            <div class="m-hd">Ваша очередь</div>
+            Наступил ваш шаг по делу <b>Оценка объектов недвижимости</b>, клиент ИИК.<br><br>
+            Шаг: <b>Свести коммерческие предложения в таблицу</b><br>
+            Срок: <b>10.09</b>
+            <div class="tg-btns">
+              <div class="tg-b">Взял в работу</div>
+              <div class="tg-b">Сделал</div>
+              <div class="tg-b wide">Перенести с причиной</div>
+            </div>
+          </div>
+          <div class="msg">
+            <div class="m-hd">Утро, 09:00</div>
+            Сегодня на вас три шага, один горит:
+            <div class="m-li"><b>Свести КП в таблицу</b> — до 10.09</div>
+            <div class="m-li"><b>Расчёт окупаемости</b> — до 12.09</div>
+            <div class="m-li"><b>Справка по ставкам</b> — ждёт данных от клиента</div>
+          </div>
+        </div>
+        <div class="tg-cap">Исполнителю не нужно осваивать новый интерфейс: работу можно вести кнопками, не заходя в веб. Это прямая страховка от истории с TickTick.</div>
+      </div>
+
+      <div>
+        <div class="phone">
+          <div class="phone-top"><div class="ava">H</div><div class="phone-nm">HIDE · система<small>личный чат с Никитой</small></div></div>
+          <div class="msg">
+            <div class="m-hd">Через час планёрка · ИИК</div>
+            <b>Сделано с прошлой встречи</b>
+            <div class="m-li">Реестр объектов сформирован и выверен по ЕГРН</div>
+            <div class="m-li">Запросы в три оценочные компании разосланы</div>
+            <br><b>Зависло</b>
+            <div class="m-li">Согласование реестра — <b>клиент молчит 6 дней</b></div>
+            <div class="m-li">Справка по ставкам — ждём данные от клиента</div>
+            <br><b>Попросить на встрече</b>
+            <div class="m-li">Подтверждение реестра из четырёх объектов</div>
+            <div class="m-li">Ставки аренды по двум помещениям</div>
+            <div class="tg-btns"><div class="tg-b wide">Открыть дела клиента</div></div>
+          </div>
+        </div>
+        <div class="tg-cap">Подготовка к еженедельному созвону перестаёт быть отдельной работой Дарины. Никита приходит на встречу с актуальной картиной, собранной из системы.</div>
+      </div>
+
+      <div>
+        <div class="phone">
+          <div class="phone-top"><div class="ava">H</div><div class="phone-nm">HIDE · система<small>личный чат с Дариной</small></div></div>
+          <div class="msg">
+            <div class="m-hd">Файл из чата ИИК</div>
+            В чате клиента появился документ <b>Реестр объектов v2.xlsx</b>.<br>
+            Похоже на дело <b>Оценка объектов недвижимости</b>.
+            <div class="tg-btns">
+              <div class="tg-b wide">Прицепить к этому делу</div>
+              <div class="tg-b">Другое дело</div>
+              <div class="tg-b">Не нужно</div>
+            </div>
+          </div>
+          <div class="msg">
+            <div class="m-hd">Поручение от клиента</div>
+            В чате ВЛГ клиент написал: «нужно ещё посмотреть по земельному участку до конца месяца».<br><br>
+            Создан <b>черновик дела</b>, ждёт вашего разбора.
+            <div class="tg-btns"><div class="tg-b wide">Открыть черновик</div></div>
+          </div>
+        </div>
+        <div class="tg-cap">В чатах с клиентами бот не пишет ни одного сообщения. Он только собирает и обращается к команде в личку: клиент внутренней кухни не видит.</div>
+      </div>
+    </div>
+
+    <div class="note"><b>Что бот делает в первой версии.</b> Отвечает на команду: уведомляет, принимает быстрые действия, перехватывает файлы, заводит дело ответом на сообщение, следит за тишиной, готовит брифинг. Разбирать переписку самостоятельно и предлагать изменения по делам он начнёт на втором этапе — это требует отдельного согласия команды.</div>
+  </section>
+
+  <!-- ══════════ ОТЧЁТ ══════════ -->
+  <section class="page" id="p-report">
+    <div class="head">
+      <h1>Месячный отчёт <span class="badge-next" style="vertical-align:middle;margin-left:10px">этап 2</span></h1>
+      <p>Блок «Ключевые действия» собирается из дел кнопкой, а не набивается заново. Никита отмечает, что показываем клиенту, а что остаётся внутри.</p>
+    </div>
+
+    <div class="pane glass">
+      <div class="tpl-h" style="margin-bottom:6px">
+        <div><div class="tpl-n">Итоги за сентябрь · клиент ИИК</div><div class="pr-sub">собрано из 11 закрытых дел и шагов</div></div>
+        <button class="btn gold" onclick="toast('Черновик собран. Осталось снять галочки с того, что не показываем')">Собрать черновик</button>
+      </div>
+      <div style="margin-top:20px" id="repList"></div>
+      <div class="pr-acts" style="margin-top:24px">
+        <button class="btn" onclick="toast('Выгружено: 8 пунктов для клиента, 3 остались внутри')">Выгрузить для дизайнера</button>
+        <button class="btn" onclick="toast('Показано: чем занимался сотрудник за неделю')">Срез по сотруднику за неделю</button>
+      </div>
+    </div>
+
+    <div class="note"><b>Что это отменяет.</b> Ручную пересборку блоков итогов на вкладке клиента каждый месяц и отдельные недельные отчёты, которые аналитик и юрист сегодня ведут руками и присылают в Telegram. Показатели портфеля по-прежнему считает аналитик, вёрстку делает дизайнер — мы отдаём им готовые данные.</div>
+  </section>
+
+  <!-- ══════════ ШАБЛОНЫ ══════════ -->
+  <section class="page" id="p-tpl">
+    <div class="head">
+      <h1>Шаблоны дел <span class="badge-next" style="vertical-align:middle;margin-left:10px">этап 2</span></h1>
+      <p>Единые правила работы компании в рабочем виде. Одинаковые дела разворачиваются в одинаковое дерево шагов с закреплёнными ролями, а не собираются заново каждый раз.</p>
+    </div>
+
+    <div class="tpl glass">
+      <div class="tpl-h"><div class="tpl-n">Оценка объектов недвижимости</div><span class="pr-sub">направление: юристы · 5 шагов · срок 14 дней</span></div>
+      <div class="tpl-steps">
+        <div class="tpl-s"><div class="tpl-num">1</div><div><b>Сформировать реестр объектов</b></div><div>юрист</div></div>
+        <div class="tpl-s"><div class="tpl-num">2</div><div><b>Согласовать реестр с клиентом</b></div><div>founder</div></div>
+        <div class="tpl-s"><div class="tpl-num">3</div><div><b>Внутренняя оценка до внешнего запроса</b></div><div>аналитик</div></div>
+        <div class="tpl-s"><div class="tpl-num">4</div><div><b>Запросить КП у оценочных компаний</b></div><div>аналитик</div></div>
+        <div class="tpl-s"><div class="tpl-num">5</div><div><b>Приёмка и отправка клиенту</b></div><div>founder</div></div>
+      </div>
+    </div>
+
+    <div class="tpl glass">
+      <div class="tpl-h"><div class="tpl-n">Залог доли в ООО</div><span class="pr-sub">направление: юристы · 4 шага · срок 21 день</span></div>
+      <div class="tpl-steps">
+        <div class="tpl-s"><div class="tpl-num">1</div><div><b>Проверка корпоративных документов</b></div><div>юрист</div></div>
+        <div class="tpl-s"><div class="tpl-num">2</div><div><b>Структурирование сделки</b></div><div>CEO</div></div>
+        <div class="tpl-s"><div class="tpl-num">3</div><div><b>Проект договора и согласование</b></div><div>юрист</div></div>
+        <div class="tpl-s"><div class="tpl-num">4</div><div><b>Нотариальное удостоверение</b></div><div>юрист</div></div>
+      </div>
+    </div>
+
+    <div class="tpl glass">
+      <div class="tpl-h"><div class="tpl-n">Ежемесячный отчёт инвестору</div><span class="pr-sub">регулярное · заводится за 7 дней до срока</span></div>
+      <div class="tpl-steps">
+        <div class="tpl-s"><div class="tpl-num">1</div><div><b>Показатели портфеля за период</b></div><div>аналитик</div></div>
+        <div class="tpl-s"><div class="tpl-num">2</div><div><b>Черновик ключевых действий</b></div><div>система</div></div>
+        <div class="tpl-s"><div class="tpl-num">3</div><div><b>Отбор того, что показываем клиенту</b></div><div>founder</div></div>
+        <div class="tpl-s"><div class="tpl-num">4</div><div><b>Передача дизайнеру и отправка</b></div><div>координатор</div></div>
+      </div>
+    </div>
+
+    <div class="note"><b>Календарь обязательств работает отсюда же.</b> Ежемесячный отчёт, квартальный расчёт портфеля, налоговые сроки и даты по договорам заводятся сами за оговорённое число дней до срока. Сегодня это живёт как «Ежемесячно» текстом в колонке дедлайна и держится на памяти.</div>
+  </section>
+
+  <div class="foot">
+    <div>Прототип интерфейса · данные вымышленные</div>
+    <div>MS Product для HIDE · сентябрь 2026</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══════════ ДАННЫЕ ═══════════ */
+const DEALS = [
+  {n:'Оценка объектов недвижимости', c:'ИИК', d:'Юристы', who:'Даша', st:['work','В работе'], due:'19.09', p:70},
+  {n:'Залог доли в ООО', c:'ВЛГ', d:'Юристы', who:'Даша', st:['priem','На приёмке'], due:'12.09', p:85, late:true},
+  {n:'Реструктуризация инвестпортфеля', c:'СТР', d:'Инвестиции', who:'Данил', st:['wait','Ждём клиента'], due:'—', p:55, frozen:true},
+  {n:'Индексация ставок аренды', c:'ИИК', d:'Аналитика', who:'Данил', st:['wait','Ждём информацию'], due:'—', p:30, frozen:true},
+  {n:'Судебное взыскание по займу', c:'НРД', d:'Юристы', who:'Даша', st:['work','В работе'], due:'26.09', p:70},
+  {n:'Подготовка налогового плана', c:'ВЛГ', d:'Налоги', who:'Костя', st:['new','Не приступили'], due:'30.09', p:0},
+  {n:'Ежемесячный отчёт инвестору', c:'ИИК', d:'Аналитика', who:'Дарина', st:['work','В работе'], due:'28.09', p:20},
+  {n:'Регламент приёма новых клиентов', c:'Внутр.', d:'Аналитика', who:'Дарина', st:['done','Выполнено'], due:'05.09', p:100}
+];
+
+const TREE = [
+  {t:'Сформировать реестр объектов', who:'Даша', due:'03.09', done:true, kids:[
+    {t:'Выгрузить перечень из документов клиента', who:'Даша', due:'02.09', done:true},
+    {t:'Сверить с выписками ЕГРН', who:'Даша', due:'03.09', done:true, kids:[
+      {t:'Запросить свежие выписки', who:'Даша', due:'02.09', done:true},
+      {t:'Сверить площади и обременения', who:'Даша', due:'03.09', done:true}
+    ]}
+  ]},
+  {t:'Согласовать реестр с клиентом', who:'Никита', due:'—', done:false, wait:'ждём ответ клиента, 6 дней'},
+  {t:'Внутренняя оценка до внешнего запроса', who:'Данил', due:'09.09', done:true, kids:[
+    {t:'Собрать сопоставимые предложения по рынку', who:'Данил', due:'08.09', done:true},
+    {t:'Посчитать вилку по каждому объекту', who:'Данил', due:'09.09', done:true}
+  ]},
+  {t:'Запросить КП у оценочных компаний', who:'Данил', due:'10.09', done:false, kids:[
+    {t:'Собрать список компаний', who:'Данил', due:'05.09', done:true},
+    {t:'Разослать запросы', who:'Данил', due:'06.09', done:true},
+    {t:'Свести предложения в таблицу', who:'Данил', due:'10.09', done:false, now:true}
+  ]},
+  {t:'Приёмка и отправка клиенту', who:'Никита', due:'19.09', done:false}
+];
+
+const QUEUE = {
+  danil:[
+    {n:'Свести коммерческие предложения в таблицу', p:'Оценка объектов недвижимости · ИИК · шаг 4.3', due:'10.09', hot:true},
+    {n:'Расчёт окупаемости по двум объектам', p:'Реструктуризация инвестпортфеля · СТР · шаг 2', due:'12.09'},
+    {n:'Справка по рыночным ставкам аренды', p:'Индексация ставок аренды · ИИК · шаг 1', due:'—', wait:'ждём данные от клиента'},
+    {n:'Показатели портфеля за сентябрь', p:'Ежемесячный отчёт инвестору · ИИК · шаг 1', due:'25.09'}
+  ],
+  darina:[
+    {n:'Разобрать черновик дела из чата ВЛГ', p:'Поручение клиента от 07.09', due:'08.09', hot:true},
+    {n:'Передать отчёт дизайнеру', p:'Ежемесячный отчёт инвестору · ИИК · шаг 4', due:'28.09'},
+    {n:'Регламент приёма новых клиентов', p:'Внутренние дела · шаг 3', due:'12.09'}
+  ],
+  nikita:[
+    {n:'Согласовать реестр объектов с клиентом', p:'Оценка объектов недвижимости · ИИК · шаг 2', due:'—', wait:'ждём ответ клиента, 6 дней'},
+    {n:'Отбор пунктов для отчёта инвестору', p:'Ежемесячный отчёт инвестору · ИИК · шаг 3', due:'26.09'},
+    {n:'Созвон по инвестстратегии', p:'Реструктуризация инвестпортфеля · СТР', due:'09.09', hot:true}
+  ]
+};
+
+const PRIEM = [
+  {n:'Проект договора залога доли', c:'ВЛГ · юристы', who:'Даша', wait:'на приёмке 3 дня', note:'Договор готов, корпоративные документы проверены, ограничений на отчуждение не выявлено. Требуется решение: отправляем клиенту на согласование или сначала показываем Косте по структуре сделки.', files:['Договор залога доли, v3.docx','Протокол проверки документов.pdf']},
+  {n:'Справка по судебному взысканию', c:'НРД · юристы', who:'Даша', wait:'на приёмке 1 день', note:'Позиция по взысканию подготовлена, приложен расчёт процентов на дату подачи. Сумма и порядок действий согласованы внутри.', files:['Правовая позиция.pdf','Расчёт процентов.xlsx']}
+];
+
+const REPORT = [
+  {t:'Сформирован и выверен реестр объектов недвижимости', s:'4 объекта, сверено с выписками ЕГРН', on:true},
+  {t:'Получены коммерческие предложения от трёх оценочных компаний', s:'сводная таблица с вилкой по каждому объекту', on:true},
+  {t:'Подготовлен проект договора залога доли', s:'корпоративные документы проверены', on:true},
+  {t:'Проведена внутренняя оценка до внешнего запроса', s:'внутренний шаг, клиенту не показываем', on:false},
+  {t:'Подготовлена правовая позиция по взысканию займа', s:'с расчётом процентов', on:true},
+  {t:'Уточнены ставки аренды по двум помещениям', s:'ожидает данных от клиента', on:false}
+];
+
+/* ═══════════ РЕНДЕР ═══════════ */
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
+function renderDeals(){
+  let h = '<div class="tr h"><div>Дело</div><div>Клиент</div><div class="hide-s">Направление</div><div>Ответственный</div><div class="hide-s">Статус</div><div class="hide-s">Срок</div></div>';
+  DEALS.forEach(d=>{
+    const dueCls = d.frozen ? 'due frozen' : (d.late ? 'due late' : 'due');
+    const dueTxt = d.frozen ? 'остановлен' : d.due;
+    h += `<div class="tr row" onclick="go('card')">
+      <div class="t-name">${esc(d.n)}<small><span class="prog"><span class="prog-bar"><span style="width:${d.p}%"></span></span><span class="prog-num">${d.p}%</span></span></small></div>
+      <div><span class="cli">${esc(d.c)}</span></div>
+      <div class="t-cell hide-s">${esc(d.d)}</div>
+      <div class="t-cell">${esc(d.who)}</div>
+      <div class="hide-s"><span class="st ${d.st[0]}"><i></i>${esc(d.st[1])}</span></div>
+      <div class="${dueCls} hide-s">${esc(dueTxt)}${d.late?'<small>просрочка приёмки</small>':''}</div>
+    </div>`;
+  });
+  document.getElementById('dealsTbl').innerHTML = h;
+}
+
+function countLeaves(nodes){
+  let all=0, done=0;
+  nodes.forEach(n=>{
+    if(n.kids && n.kids.length){ const r=countLeaves(n.kids); all+=r.all; done+=r.done; }
+    else { all++; if(n.done) done++; }
+  });
+  return {all,done};
+}
+
+function renderTree(nodes, lvl, path){
+  let h='';
+  nodes.forEach((n,i)=>{
+    const num = path ? path+'.'+(i+1) : String(i+1);
+    const has = n.kids && n.kids.length;
+    const id = 'k'+num.replace(/\./g,'_');
+    const open = lvl < 3;
+    let state;
+    if(n.done) state = '<span class="st done"><i></i>Готово</span>';
+    else if(n.wait) state = '<span class="st wait"><i></i>'+esc(n.wait)+'</span>';
+    else if(n.now) state = '<span class="st work"><i></i>Идёт сейчас</span>';
+    else state = '<span class="st new"><i></i>Не начат</span>';
+    let prog='';
+    if(has){ const r=countLeaves(n.kids); prog = `<span class="lvl-badge">${r.done}/${r.all}</span>`; }
+    h += `<div class="node">
+      <div class="node-row">
+        ${has?`<button class="tw" onclick="tw('${id}',this)">${open?'−':'+'}</button>`:'<span class="tw leaf"></span>'}
+        <div class="node-name ${n.done?'done-txt':''}">${num}. ${esc(n.t)}</div>
+        <div class="node-who">${esc(n.who)}${n.due&&n.due!=='—'?' · '+esc(n.due):''}</div>
+        ${prog}
+        ${state}
+      </div>
+      ${has?`<div class="kids ${open?'':'hide'}" id="${id}">${renderTree(n.kids, lvl+1, num)}</div>`:''}
+    </div>`;
+  });
+  return h;
+}
+
+function tw(id, btn){
+  const el = document.getElementById(id);
+  const hidden = el.classList.toggle('hide');
+  btn.textContent = hidden ? '+' : '−';
+}
+
+function renderQueue(role){
+  const list = QUEUE[role] || QUEUE.danil;
+  const names = {darina:'Дарина', nikita:'Никита', danil:'Данил'};
+  document.getElementById('qWho').textContent = '— ' + names[role];
+  let h='';
+  list.forEach((q,i)=>{
+    let act;
+    if(q.wait) act = `<span class="wait-badge">${esc(q.wait)}</span>`;
+    else act = `<button class="btn" onclick="toast('Взято в работу')">Взял</button><button class="btn gold" onclick="doneBtn(this)">Сделал</button><button class="btn" onclick="toast('Перенос требует причины — она попадёт в журнал дела')">Перенести</button>`;
+    h += `<div class="q-item">
+      <div><div class="q-name">${esc(q.n)}</div><div class="q-path"><b>${esc(q.p)}</b>${q.due&&q.due!=='—'?' · до '+esc(q.due):''}</div></div>
+      <div class="q-act">${q.hot?'<span class="st priem"><i></i>горит</span>':''}${act}</div>
+    </div>`;
+  });
+  document.getElementById('queueTbl').innerHTML = h;
+}
+
+function doneBtn(b){
+  b.outerHTML = '<button class="btn done-state">Сделано</button>';
+  toast('Шаг закрыт. Следующий исполнитель уведомлён автоматически');
+}
+
+function renderPriem(){
+  let h='';
+  PRIEM.forEach(p=>{
+    h += `<div class="pr-card glass tilt">
+      <div class="pr-top">
+        <div><div class="pr-name">${esc(p.n)}</div><div class="pr-sub">${esc(p.c)} · сдал: ${esc(p.who)}</div></div>
+        <span class="wait-badge">${esc(p.wait)}</span>
+      </div>
+      <div class="pr-body">
+        <div>
+          <div class="pr-note">${esc(p.note)}</div>
+          <div class="pr-acts">
+            <button class="btn gold" onclick="toast('Отправлено клиенту. Дело перешло в ожидание ответа, счётчик просрочки остановлен')">Отправлено клиенту</button>
+            <button class="btn" onclick="toast('Принято. Дело закрыто')">Принять</button>
+            <button class="btn ghost-red" onclick="toast('Возвращено исполнителю с замечанием — оно попадёт в журнал дела')">Вернуть с замечанием</button>
+          </div>
+        </div>
+        <div class="files">${p.files.map(f=>`<div class="file"><div class="file-ic">${f.split('.').pop().toUpperCase().slice(0,4)}</div><div>${esc(f)}</div></div>`).join('')}</div>
+      </div>
+    </div>`;
+  });
+  document.getElementById('priemList').innerHTML = h;
+}
+
+function renderReport(){
+  let h='';
+  REPORT.forEach((r,i)=>{
+    h += `<div class="rep-line">
+      <div class="cbx ${r.on?'on':''}" onclick="this.classList.toggle('on')">✓</div>
+      <div class="rep-t">${esc(r.t)}<small>${esc(r.s)}</small></div>
+      <div class="t-cell">${r.on?'в отчёт':'внутри'}</div>
+    </div>`;
+  });
+  document.getElementById('repList').innerHTML = h;
+}
+
+/* ═══════════ НАВИГАЦИЯ ═══════════ */
+function go(p){
+  document.querySelectorAll('.page').forEach(s=>s.classList.remove('on'));
+  document.getElementById('p-'+p).classList.add('on');
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active', b.dataset.p===p));
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>go(b.dataset.p));
+
+document.querySelectorAll('.roles button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('.roles button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    renderQueue(b.dataset.role);
+    const names={darina:'Дарина',nikita:'Никита',danil:'Данил'};
+    toast('Роль: '+names[b.dataset.role]+'. Очередь и доступы пересобраны');
+  };
+});
+
+document.querySelectorAll('.filters .chip').forEach(c=>{
+  c.onclick = ()=>c.classList.toggle('on');
+});
+
+/* ═══════════ TOAST ═══════════ */
+let tTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(tTimer);
+  tTimer = setTimeout(()=>t.classList.remove('on'), 3200);
+}
+
+/* ═══════════ TILT ═══════════ */
+function bindTilt(){
+  if(window.matchMedia('(hover:none)').matches) return;
+  document.querySelectorAll('.tilt').forEach(el=>{
+    if(el.dataset.tilt) return;
+    el.dataset.tilt = '1';
+    el.addEventListener('mousemove', e=>{
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX - r.left)/r.width, y = (e.clientY - r.top)/r.height;
+      el.classList.add('tilt-active');
+      el.style.setProperty('--rx', ((x-.5)*5).toFixed(2)+'deg');
+      el.style.setProperty('--ry', ((.5-y)*4).toFixed(2)+'deg');
+      el.style.setProperty('--ty','-3px');
+      el.style.setProperty('--mx',(x*100).toFixed(1)+'%');
+      el.style.setProperty('--my',(y*100).toFixed(1)+'%');
+    });
+    el.addEventListener('mouseleave', ()=>{
+      el.classList.remove('tilt-active');
+      el.style.setProperty('--rx','0deg'); el.style.setProperty('--ry','0deg'); el.style.setProperty('--ty','0px');
+    });
+  });
+}
+
+/* ═══════════ СТАРТ ═══════════ */
+renderDeals();
+document.getElementById('tree').innerHTML = renderTree(TREE, 1, '');
+const tp = countLeaves(TREE);
+document.getElementById('treeProg').textContent = Math.round(tp.done/tp.all*100)+'%';
+renderQueue('danil');
+renderPriem();
+renderReport();
+bindTilt();
+</script>
+</body>
+</html>
