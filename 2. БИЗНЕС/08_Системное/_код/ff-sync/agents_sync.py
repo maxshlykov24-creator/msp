@@ -375,7 +375,7 @@ def sync_one(row):
     fields = attrs_by_name(row)
     update_client(
         client["id"],
-        tariff_storage=parse_num(fields.get("Тариф хранения, руб/л/сутки")),
+        tariff_pick=parse_num(fields.get("Сборка, руб/шт")),
     )
     client = get_client(client["code"])
     from db import get_cabinet_by_client_mp

@@ -801,6 +801,32 @@ def assembly_work(data: dict = Body(...), ff_session: str = Cookie(default="")):
     return {"ok": True, "changed": set_work_state(ids, state)}
 
 
+@app.get("/api/assembly/{ship_id}/kiz")
+def assembly_kiz_plan(ship_id: int, ff_session: str = Cookie(default="")):
+    """Сколько кодов маркировки ждёт площадка по этому отправлению."""
+    who(ff_session)
+    init_db()
+    import kiz
+
+    try:
+        return {"ok": True, **kiz.plan(ship_id)}
+    except kiz.KizError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/assembly/{ship_id}/kiz")
+def assembly_kiz_submit(ship_id: int, data: dict = Body(...), ff_session: str = Cookie(default="")):
+    """Передать на площадку коды, которые склад просканировал."""
+    who(ff_session)
+    init_db()
+    import kiz
+
+    try:
+        return {"ok": True, **kiz.submit(ship_id, data.get("codes") or [])}
+    except kiz.KizError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 def pdf_file(name, data, notes=(), pages=0):
     return StreamingResponse(
         io.BytesIO(data),
@@ -815,10 +841,11 @@ def pdf_file(name, data, notes=(), pages=0):
 
 @app.post("/api/assembly/ship")
 def assembly_ship(data: dict = Body(...), ff_session: str = Cookie(default="")):
-    """Собрать отправления Ozon: площадка переводит их в «Ожидают отгрузки».
+    """«Собрано»: Ozon переводим на площадке, WB отмечаем складом.
 
-    Дробление по умолчанию включено: каждое грузовое место у Ozon становится
-    отдельным отправлением, а склад клеит по одной наклейке на единицу товара.
+    Дробление у Ozon включено: каждое грузовое место становится отдельным
+    отправлением, а склад клеит по одной наклейке на единицу товара. До этого
+    шага площадка этикетку отправления не отдаёт.
     """
     who(ff_session)
     init_db()
@@ -828,7 +855,7 @@ def assembly_ship(data: dict = Body(...), ff_session: str = Cookie(default="")):
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
     try:
-        return {"ok": True, **supply_flow.ship_ozon(ids, split=bool(data.get("split", True)))}
+        return {"ok": True, **supply_flow.assemble(ids, split=bool(data.get("split", True)))}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

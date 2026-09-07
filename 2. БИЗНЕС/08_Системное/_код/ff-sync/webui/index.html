@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=52">
+<link rel="stylesheet" href="/ui/app.css?v=54">
 </head>
 <body>
 
@@ -247,6 +247,7 @@
           </div>
           <div class="asm-acts" id="aActsAssembling" hidden>
             <button class="btn btn-file" id="aDone" type="button" disabled>Собрано</button>
+            <button class="btn btn-file" id="aKiz" type="button" disabled>КиЗ</button>
             <button class="btn btn-file" id="aUnwork" type="button" disabled>Вернуть в новые</button>
             <div class="print-wrap">
               <button class="btn btn-file" id="aPrint" type="button" disabled>Печать</button>
@@ -623,6 +624,26 @@
   </div>
 </div>
 
+<div id="kizModal" class="modal">
+  <div class="glass modal-card">
+    <div class="modal-head">
+      <div>
+        <h3>Коды маркировки</h3>
+        <p id="kizSub"></p>
+      </div>
+      <button class="btn-ghost" id="kizClose" type="button">Закрыть</button>
+    </div>
+    <p class="kiz-count" id="kizCount"></p>
+    <input id="kizInput" type="text" placeholder="Сканируй код — он встанет в список сам" autocomplete="off">
+    <div class="kiz-list" id="kizList"></div>
+    <div class="msg" id="kizMsg"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="kizClear" type="button">Очистить</button>
+      <button class="btn" id="kizSend" type="button" disabled>Отправить на площадку</button>
+    </div>
+  </div>
+</div>
+
 <div id="askModal" class="modal">
   <div class="glass modal-card">
     <h3 id="askTitle">Точно?</h3>
@@ -652,6 +673,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=52"></script>
+<script src="/ui/app.js?v=54"></script>
 </body>
 </html>

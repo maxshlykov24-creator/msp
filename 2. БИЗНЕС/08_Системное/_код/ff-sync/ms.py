@@ -14,7 +14,8 @@ AGENT_ATTRS = [
     ("WB токен", "text", "ATTR_AGENT_WB"),
     ("Ozon Client-Id", "string", "ATTR_AGENT_OZON_CID"),
     ("Ozon Api-Key", "text", "ATTR_AGENT_OZON_KEY"),
-    ("Тариф хранения, руб/л/сутки", "double", "ATTR_AGENT_TARIFF_STORE"),
+    # хранение считается по общей ставке, в карточке контрагента живёт только сборка
+    ("Сборка, руб/шт", "double", "ATTR_AGENT_TARIFF_PICK"),
     ("Синхронизация", "text", "ATTR_AGENT_SYNC"),
 ]
 
@@ -264,7 +265,7 @@ def ensure_projects():
 SERVICES = {
     "storage": "Хранение на складе",
     "intake": "Приёмка товара",
-    "ship": "Отгрузка заказов",
+    "ship": "Сборка заказов",
 }
 
 

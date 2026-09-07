@@ -8,7 +8,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from account import lot_rows, totals
-from db import get_shipments_by_ids, list_shipment_marks, status_label
+from db import find_cache, get_shipments_by_ids, list_shipment_marks, prefer_hit, status_label
 from ms import order_app_url
 
 MSK = timezone(timedelta(hours=3))
@@ -22,21 +22,23 @@ COLUMNS = [
     ("Тип продукции", "tracking", 16),
     ("Габариты, см", "dims", 14),
     ("Литраж, л", "liters", 11),
-    ("Тариф, ₽/л/сутки", "tariff", 14),
+    ("Ставка хранения, ₽/л/сутки", "rate", 22),
+    ("Сборка, ₽/шт", "pick_rate", 13),
     ("Принято, шт", "qty_in", 12),
     ("Отгружено, шт", "shipped", 13),
     ("Остаток, шт", "qty", 12),
     ("Объём, л", "volume", 11),
-    ("Принято", "received", 12),
+    ("Заведено", "received", 12),
+    ("Приёмка на склад", "accepted", 16),
     ("Дней на складе", "days", 15),
     ("Дней к оплате", "bill_days", 14),
     ("Литро-суток", "liter_days", 13),
     ("К выставлению, ₽", "total", 17),
 ]
 
-QTY_COL = 12
-VOLUME_COL = 13
-MONEY_COL = 18
+QTY_COL = 13
+VOLUME_COL = 14
+MONEY_COL = 20
 
 HEAD_FILL = PatternFill("solid", fgColor="005BFF")
 SUM_FILL = PatternFill("solid", fgColor="EEF3FA")
@@ -86,7 +88,7 @@ CAL_HEAD = [
     ("Артикул", 20),
     ("Наименование", 34),
     ("Литраж, л", 10),
-    ("Тариф", 9),
+    ("Ставка", 9),
     ("Принято", 11),
     ("Итого, ₽", 12),
 ]
@@ -113,7 +115,7 @@ def build_calendar(client_id=None, query="", date_from=None, date_to=None):
                 excel_text(row["article"]),
                 excel_text(row["name"]),
                 row["liters"],
-                row["tariff"],
+                row["rate"],
                 excel_text(row["received"]),
                 row["sum"],
             ]
@@ -170,24 +172,51 @@ def _finish(wb, ws, columns, name):
     return name, buf.getvalue()
 
 
+MARK_COLUMNS = [
+    ("Код маркировки", 56),
+    ("Артикул", 22),
+    ("GTIN", 16),
+    ("Наименование", 40),
+]
+
+
+def _gtin_hint(cache, client_id, barcode, article):
+    """GTIN из кэша каталога, когда в самом коде его нет: WB отдаёт УИН без 01."""
+    key = (client_id, barcode or "", article or "")
+    if key in cache:
+        return cache[key]
+    found = ""
+    hits = find_cache(client_id, barcode=barcode or None, article=article or None) if client_id else []
+    for hit in prefer_hit(hits) if hits else []:
+        if hit["gtin"]:
+            found = hit["gtin"]
+            break
+    cache[key] = found
+    return found
+
+
 def build_marks(ids):
+    """Плоский список: строка на код, рядом артикул, GTIN и наименование."""
     marks = list_shipment_marks(ids)
-    columns = [("Код маркировки", 56)]
-    wb, ws = _new_sheet("Коды маркировки", columns)
+    wb, ws = _new_sheet("Коды маркировки", MARK_COLUMNS)
     seen = set()
+    hints = {}
     n = 0
     for row in marks:
         code = excel_text(row["code"]).strip()
         if not code or code in seen:
             continue
         seen.add(code)
-        ws.append([code])
+        article = (row["article"] or row["ship_article"] or "").strip()
+        barcode = (row["ship_barcode"] or "").strip()
+        gtin = (row["gtin"] or "").strip() or _gtin_hint(hints, row["client_id"], barcode, article)
+        ws.append([code, excel_text(article), excel_text(gtin), excel_text(row["ship_name"] or "")])
         n += 1
     if n == 0:
         ws.append(["Нет кодов маркировки в выбранных отгрузках"])
     last = ws.max_row + 1
     ws.cell(row=last, column=1, value="Кодов: %s" % n).font = Font(bold=True)
-    return _finish(wb, ws, columns, "коды_маркировки_%s.xlsx" % _stamp())
+    return _finish(wb, ws, MARK_COLUMNS, "коды_маркировки_%s.xlsx" % _stamp())
 
 
 SHIP_COLUMNS = [
@@ -251,7 +280,7 @@ CLIENT_STOCK_COLUMNS = [
     ("Литраж, л", 11),
     ("Остаток, шт", 12),
     ("Объём, л", 11),
-    ("Принято", 12),
+    ("Приёмка на склад", 16),
     ("Дней на складе", 14),
 ]
 
@@ -278,7 +307,7 @@ def build_client_stock(ids):
                 row["liters"],
                 row["qty"],
                 row["volume"],
-                excel_text(row["received"]),
+                excel_text(row["accepted"] or "ждёт приёмки"),
                 row["days"],
             ]
         )

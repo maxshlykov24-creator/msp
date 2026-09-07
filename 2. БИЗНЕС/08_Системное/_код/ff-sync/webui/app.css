@@ -397,6 +397,23 @@ table.tbl tbody tr.clickable:hover{background:rgba(0,91,255,.08)}
 .inv-sum{display:flex;align-items:center;justify-content:space-between;margin-top:18px;padding-top:18px;border-top:1px solid var(--line-2);font-size:14px;font-weight:650}
 .inv-sum b{font-size:22px;font-weight:400;color:var(--accent);font-variant-numeric:tabular-nums}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+/* коды маркировки: сканер пикает в поле, набранное видно списком */
+#kizModal .modal-card{max-width:640px}
+.kiz-count{font-size:13px;font-weight:650;color:var(--mute);margin:0 0 10px}
+.kiz-count.is-ok{color:var(--accent)}
+#kizInput{
+  width:100%;font-family:var(--font);font-size:14px;color:var(--ink);
+  background:var(--input-bg);border:1px solid var(--line);border-radius:14px;
+  padding:13px 15px;outline:none;
+}
+#kizInput:focus{border-color:var(--accent)}
+.kiz-list{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto;margin-top:12px}
+.kiz-list .empty{text-align:center;color:var(--mute-2);padding:22px;font-size:13px}
+.kiz-item{display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--glass-2)}
+.kiz-item span{min-width:20px;color:var(--mute-2);font-size:12px;font-variant-numeric:tabular-nums}
+.kiz-item code{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kiz-item button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:12px;cursor:pointer}
+.kiz-item button:hover{color:var(--accent)}
 .pick-list{display:flex;flex-direction:column;gap:8px;max-height:56vh;overflow:auto}
 .pick-item{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;text-align:left;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--glass-2);color:var(--ink);font-family:var(--font);font-size:13px;cursor:pointer}
 .pick-item:hover{border-color:var(--accent)}

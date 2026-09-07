@@ -1112,6 +1112,8 @@ function refreshAsmPick() {
   const marks = state.asm.filter((r) => state.pickedAsm.has(r.id)).reduce((a, r) => a + (r.marks || 0), 0);
   $("aSel").textContent = n ? "Выбрано " + n : "Ничего не выбрано";
   ["aWork", "aDone", "aUnwork", "aPrint", "aShipped", "aBackAsm"].forEach((id) => { $(id).disabled = !n; });
+  // коды маркировки вносим по одному отправлению: у каждого свой набор
+  $("aKiz").disabled = n !== 1;
   if (!n) hidePrintMenu();
   $("shReport").disabled = !n;
   $("shExport").disabled = marks === 0;
@@ -1260,8 +1262,145 @@ async function asmWork(stateCode, nextGroup, label) {
   }
 }
 
+async function asmDone() {
+  const ids = [...state.pickedAsm];
+  if (!ids.length) return;
+  $("aDone").disabled = true;
+  const label = $("aDone").textContent;
+  $("aDone").textContent = "Собираю…";
+  say($("aMsg"), "Собираю на площадке…");
+  try {
+    const res = await api("/api/assembly/ship", { method: "POST", body: JSON.stringify({ ids, split: true }) });
+    const bits = [];
+    if (res.shipped) bits.push("Ozon собрано на площадке: " + res.shipped);
+    if (res.marked) bits.push("отмечено складом: " + res.marked);
+    const notes = (res.notes || []).join("\n");
+    say($("aMsg"), (bits.join(" · ") || "Готово") + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+    state.asmGroup = "ready";
+    await loadAsm();
+  } catch (e) {
+    say($("aMsg"), e.message, "bad");
+  }
+  $("aDone").textContent = label;
+  refreshAsmPick();
+}
+
 $("aWork").onclick = () => asmWork("assembling", "assembling", "Взято в сборку");
-$("aDone").onclick = () => asmWork("ready", "ready", "Собрано");
+$("aDone").onclick = asmDone;
+
+// коды маркировки: склад пикает сканером, отправляем на площадку набором
+
+let kizState = { id: 0, need: 0, codes: [] };
+
+function kizRender() {
+  const have = kizState.codes.length;
+  const need = kizState.need;
+  $("kizCount").textContent = need
+    ? "Нужно кодов: " + need + " · внесено: " + have
+    : "Внесено кодов: " + have;
+  $("kizCount").classList.toggle("is-ok", need > 0 && have === need);
+  $("kizList").innerHTML = have
+    ? kizState.codes.map((code, i) => `<div class="kiz-item"><span>${i + 1}</span><code>${esc(code)}</code><button type="button" data-kiz-del="${i}">Убрать</button></div>`).join("")
+    : `<div class="empty">Пока ничего не просканировано.</div>`;
+  $("kizSend").disabled = !have;
+}
+
+function kizAdd(raw) {
+  let added = 0;
+  let dupe = 0;
+  String(raw || "").split(/[\r\n]+/).forEach((part) => {
+    const code = part.trim();
+    if (!code) return;
+    if (kizState.codes.includes(code)) { dupe += 1; return; }
+    kizState.codes.push(code);
+    added += 1;
+  });
+  if (dupe) say($("kizMsg"), "Этот код уже в списке — второй раз не беру.", "bad");
+  else if (added) say($("kizMsg"), "");
+  kizRender();
+}
+
+async function openKiz() {
+  const ids = [...state.pickedAsm];
+  if (ids.length !== 1) {
+    say($("aMsg"), "Выбери одно отправление: коды вносим по одному.", "bad");
+    return;
+  }
+  kizState = { id: ids[0], need: 0, codes: [] };
+  $("kizSub").textContent = "Спрашиваю площадку, сколько кодов нужно…";
+  $("kizInput").value = "";
+  say($("kizMsg"), "");
+  kizRender();
+  $("kizModal").classList.add("on");
+  try {
+    const res = await api("/api/assembly/" + kizState.id + "/kiz");
+    kizState.need = res.need || 0;
+    const mp = res.marketplace === "wb" ? "WB" : "Ozon";
+    $("kizSub").textContent = mp + " " + res.ext_id + " · " + (res.name || res.article || "") + " · " + res.qty + " шт";
+    if (res.marks) kizState.codes = [];
+    say($("kizMsg"), res.note || "", res.note ? "" : "");
+    kizRender();
+    $("kizInput").focus();
+  } catch (e) {
+    $("kizSub").textContent = "";
+    say($("kizMsg"), e.message, "bad");
+  }
+}
+
+$("aKiz").onclick = openKiz;
+$("kizClose").onclick = () => $("kizModal").classList.remove("on");
+$("kizModal").onclick = (e) => { if (e.target === $("kizModal")) $("kizModal").classList.remove("on"); };
+$("kizClear").onclick = () => { kizState.codes = []; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
+
+$("kizInput").onkeydown = (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  kizAdd($("kizInput").value);
+  $("kizInput").value = "";
+};
+// вставка пачкой из буфера: сканер в режиме «много кодов» отдаёт их строками
+$("kizInput").onpaste = (e) => {
+  const text = (e.clipboardData || window.clipboardData).getData("text");
+  if (!text || !/[\r\n]/.test(text)) return;
+  e.preventDefault();
+  kizAdd(text);
+  $("kizInput").value = "";
+};
+
+$("kizList").onclick = (e) => {
+  const btn = e.target.closest("button[data-kiz-del]");
+  if (!btn) return;
+  kizState.codes.splice(Number(btn.dataset.kizDel), 1);
+  kizRender();
+  $("kizInput").focus();
+};
+
+$("kizSend").onclick = async () => {
+  if (!kizState.codes.length) return;
+  if (kizState.need && kizState.codes.length !== kizState.need) {
+    const okay = await ask(
+      "Кодов не столько, сколько ждёт площадка",
+      "Площадка ждёт " + kizState.need + ", у тебя " + kizState.codes.length + ". Отправить всё равно?",
+      "Отправить"
+    );
+    if (!okay) return;
+  }
+  $("kizSend").disabled = true;
+  say($("kizMsg"), "Отправляю на площадку…");
+  try {
+    const res = await api("/api/assembly/" + kizState.id + "/kiz", {
+      method: "POST",
+      body: JSON.stringify({ codes: kizState.codes }),
+    });
+    const notes = (res.notes || []).join("\n");
+    say($("aMsg"), "Коды отправлены: " + res.sent + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+    $("kizModal").classList.remove("on");
+    await loadAsm();
+  } catch (e) {
+    say($("kizMsg"), e.message, "bad");
+  }
+  $("kizSend").disabled = false;
+};
 $("aUnwork").onclick = () => asmWork("", "new", "Возвращено в новые");
 $("aShipped").onclick = () => asmWork("shipped", "shipped", "Отгружено");
 $("aBackAsm").onclick = () => asmWork("assembling", "assembling", "Возвращено в сборку");

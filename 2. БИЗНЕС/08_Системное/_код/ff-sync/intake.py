@@ -2,14 +2,19 @@
 
 import re
 
+import registry
 from db import (
+    QUEUE_STATES,
     add_intake_row,
     barcode_norm,
+    delete_supply,
+    find_cache,
     find_cache_group,
     get_client_by_id,
     get_intake_row,
     init_db,
     insert_lot,
+    insert_supply,
     list_cabinets,
     list_intake,
     prefer_hit,
@@ -87,8 +92,9 @@ def parse_barcodes(text):
     return seen
 
 
-def lookup(client_id, barcode, article=""):
-    hits = find_cache_group(client_id, barcode=barcode or None, article=article or None)
+def lookup(client_id, barcode, article="", hits=None):
+    if hits is None:
+        hits = find_cache_group(client_id, barcode=barcode or None, article=article or None)
     if not hits:
         return None
     first = prefer_hit(hits)[0]
@@ -119,44 +125,89 @@ def lookup(client_id, barcode, article=""):
     }
 
 
+def article_groups(client_id, article):
+    """Карточки с этим артикулом, разложенные по штрихкодам.
+
+    У WB один артикул носят все размеры товара, поэтому несколько штрихкодов на
+    один артикул — это несколько разных товаров, а не одна карточка.
+    """
+    buckets = {}
+    for hit in find_cache(client_id, article=str(article or "").strip()):
+        buckets.setdefault(barcode_norm(hit["ext_barcode"]), []).append(hit)
+    return buckets
+
+
+def match_registry(client_id, barcode, article):
+    """Строка реестра → карточки кабинетов. Возвращает (hits, спорно, пояснение).
+
+    Штрихкод — надёжный ключ. Артикул берём только запасным и только когда он
+    ведёт ровно на один штрихкод: иначе гадать нельзя, отдаём строку оператору.
+    """
+    if barcode:
+        hits = find_cache_group(client_id, barcode=barcode)
+        if hits:
+            return hits, "", ""
+    article = str(article or "").strip()
+    if not article:
+        return [], "", ""
+    buckets = article_groups(client_id, article)
+    codes = [code for code in buckets if code]
+    if len(codes) > 1:
+        return (
+            [hit for code in codes for hit in buckets[code]],
+            "артикул %s ведёт на разные товары — выбери нужный" % article,
+            "",
+        )
+    if codes:
+        return find_cache_group(client_id, barcode=codes[0]), "", "сопоставлено по артикулу %s" % article
+    flat = [hit for group in buckets.values() for hit in group]
+    if flat:
+        return flat, "", "сопоставлено по артикулу %s, штрихкода в кабинете нет" % article
+    return [], "", ""
+
+
 def group_norms(client_id, barcode, article=""):
     hits = find_cache_group(client_id, barcode=barcode or None, article=article or None)
     return {barcode_norm(h["ext_barcode"]) for h in hits if h["ext_barcode"]}, (hits[0]["gtin"] if hits and hits[0]["gtin"] else "")
 
 
-def find_queued_same(client_id, barcode, gtin):
-    """Уже в очереди тот же товар: тот же штрихкод, GTIN или карточка WB+Ozon."""
+def find_queued_same(client_id, barcode, gtin, article=""):
+    """Уже в очереди тот же товар: тот же штрихкод, GTIN, артикул или карточка WB+Ozon."""
     norm = barcode_norm(barcode)
     norms, _g = group_norms(client_id, barcode)
     norms.add(norm)
-    for row in list_intake(states=("draft", "warn")):
+    art = str(article or "").strip().upper()
+    for row in list_intake(states=QUEUE_STATES):
         if row["client_id"] != client_id:
             continue
-        if barcode_norm(row["barcode"]) in norms:
+        if norm and barcode_norm(row["barcode"]) in norms:
             return row
         if gtin and row["gtin"] and row["gtin"] == gtin:
             return row
+        # без штрихкода единственная зацепка — артикул клиента
+        if not norm and art and str(row["article"] or "").strip().upper() == art:
+            return row
         qnorm, _ = group_norms(client_id, row["barcode"], row["article"] or "")
-        if norm in qnorm:
+        if norm and norm in qnorm:
             return row
     return None
 
 
-def need_of(liters, tariff, qty):
+def need_of(liters, pick_rate, qty):
     need = []
     if liters is None:
         need.append("литраж")
-    if tariff is None:
-        need.append("тариф")
+    if pick_rate is None:
+        need.append("сборку, ₽/шт")
     if not qty or float(qty) <= 0:
         need.append("количество")
     return need
 
 
-def decide(found, liters, kind, gtin, tariff=None, qty=None):
+def decide(found, liters, kind, gtin, pick_rate=None, qty=None):
     if not found:
         return "warn", "нет в кабинетах этого клиента"
-    need = need_of(liters, tariff, qty)
+    need = need_of(liters, pick_rate, qty)
     if need:
         return "warn", "нужно: " + ", ".join(need)
     if not kind:
@@ -166,23 +217,25 @@ def decide(found, liters, kind, gtin, tariff=None, qty=None):
     return "draft", ""
 
 
-def fields_of(client_id, barcode, liters=None, kind="", gtin="", tariff=None, qty=None, dims=""):
-    found = lookup(client_id, barcode)
+def fields_of(client_id, barcode, liters=None, kind="", gtin="", pick_rate=None, qty=None, dims="", hits=None, fallback=None):
+    """fallback — артикул и наименование от клиента: нужны, когда кабинеты товар не знают."""
+    fb = fallback or {}
+    found = lookup(client_id, barcode, article=fb.get("article") or "", hits=hits)
     if not found:
         found = {"article": "", "name": "", "marketplace": "", "gtin": gtin14(barcode), "tracking_type": "", "hits": []}
     kind = (kind or "").strip() or found.get("tracking_type") or ""
     gtin = str(gtin or "").strip() or found.get("gtin") or ""
-    state, note = decide(found if found.get("hits") else None, liters, kind, gtin, tariff, qty)
+    state, note = decide(found if found.get("hits") else None, liters, kind, gtin, pick_rate, qty)
     return {
         "barcode": barcode,
-        "article": found.get("article") or "",
-        "name": found.get("name") or "",
+        "article": found.get("article") or fb.get("article") or "",
+        "name": found.get("name") or fb.get("name") or "",
         "marketplace": found.get("marketplace") or "",
         "gtin": gtin,
         "tracking_type": kind,
         "liters": liters,
         "dims": dims or "",
-        "tariff": tariff,
+        "pick_rate": pick_rate,
         "qty": qty or 0,
         "state": state,
         "note": note,
@@ -204,7 +257,7 @@ def refresh_client_catalog(client_id):
     return notes
 
 
-def add_many(client_id, barcodes, liters=None, kind="", author="", refresh=True, tariff=None, qty=None):
+def add_many(client_id, barcodes, liters=None, kind="", author="", refresh=True, pick_rate=None, qty=None):
     client = get_client_by_id(int(client_id))
     if not client:
         raise ValueError("клиент не найден")
@@ -222,12 +275,12 @@ def add_many(client_id, barcodes, liters=None, kind="", author="", refresh=True,
     missing = 0
     liters_val, dims_val = parse_liters(liters)
     qty_val = parse_num(qty)
-    tariff_val = parse_num(tariff)
-    if tariff_val is None:
-        tariff_val = parse_num(client["tariff_storage"])
+    pick_val = parse_num(pick_rate)
+    if pick_val is None:
+        pick_val = parse_num(client["tariff_pick"])
     for code in codes:
         fields = fields_of(
-            client["id"], code, liters_val, kind, tariff=tariff_val, qty=qty_val, dims=dims_val
+            client["id"], code, liters_val, kind, pick_rate=pick_val, qty=qty_val, dims=dims_val
         )
         same = find_queued_same(client["id"], code, fields.get("gtin") or "")
         if same:
@@ -252,6 +305,143 @@ def add_many(client_id, barcodes, liters=None, kind="", author="", refresh=True,
     }
 
 
+def add_registry(client_id, filename, data, author="", refresh=True, pick_rate=None):
+    """Реестр клиента xlsx → строки очереди, привязанные к карточке поставки."""
+    client = get_client_by_id(int(client_id))
+    if not client:
+        raise ValueError("клиент не найден")
+    parsed = registry.parse(filename, data)
+    pulled = refresh_client_catalog(client["id"]) if refresh else []
+    pick_val = parse_num(pick_rate)
+    if pick_val is None:
+        pick_val = parse_num(client["tariff_pick"])
+    supply_id = insert_supply(
+        client["id"],
+        parsed["supply"],
+        filename or "",
+        len(parsed["rows"]),
+        parsed["qty_total"],
+        now_iso(),
+        author,
+    )
+    added = []
+    skipped = []
+    clashes = 0
+    matched = 0
+    for item in parsed["rows"]:
+        hits, clash, hint = match_registry(client["id"], item["barcode"], item["article"])
+        same = find_queued_same(client["id"], item["barcode"], "", item["article"])
+        if same:
+            skipped.append(
+                {
+                    "article": item["article"],
+                    "barcode": item["barcode"],
+                    "note": "тот же товар уже в очереди, строка %s" % same["id"],
+                }
+            )
+            continue
+        fields = fields_of(
+            client["id"],
+            item["barcode"],
+            pick_rate=pick_val,
+            qty=item["qty"],
+            hits=hits or None,
+            fallback={"article": item["article"], "name": item["name"]},
+        )
+        if clash:
+            fields["state"] = "clash"
+            fields["note"] = clash
+            clashes += 1
+        elif hits:
+            matched += 1
+            if hint and fields["note"]:
+                fields["note"] = "%s · %s" % (hint, fields["note"])
+            elif hint:
+                fields["note"] = hint
+        rid = add_intake_row(client["id"], fields, now_iso(), author, supply_id=supply_id)
+        added.append(
+            {
+                "id": rid,
+                "article": item["article"],
+                "barcode": item["barcode"],
+                "qty": item["qty"],
+                "state": fields["state"],
+                "note": fields["note"],
+            }
+        )
+    if not added:
+        # весь реестр оказался дублем: карточка поставки без строк только путает
+        delete_supply(supply_id)
+        supply_id = None
+    return {
+        "supply_id": supply_id,
+        "supply": parsed["supply"],
+        "added": added,
+        "skipped": skipped,
+        "matched": matched,
+        "clashes": clashes,
+        "missing": sum(1 for r in added if r["note"] == "нет в кабинетах этого клиента"),
+        "merged": parsed["merged"],
+        "problems": parsed["problems"],
+        "pulled": pulled,
+    }
+
+
+def candidates(row_id):
+    """Варианты товара для спорной строки: по артикулу клиента, по одному на штрихкод."""
+    row = get_intake_row(row_id)
+    if not row:
+        raise ValueError("строка не найдена")
+    out = []
+    for code, group in article_groups(row["client_id"], row["article"]).items():
+        first = prefer_hit(group)[0]
+        out.append(
+            {
+                "barcode": first["ext_barcode"] or code,
+                "name": first["name"] or "",
+                "size": (first["size"] if "size" in first.keys() else "") or "",
+                "marketplace": "+".join(sorted({h["marketplace"] for h in group if h["marketplace"]})),
+                "gtin": (first["gtin"] if "gtin" in first.keys() else "") or "",
+            }
+        )
+    return sorted(out, key=lambda x: (x["size"], x["barcode"]))
+
+
+def resolve(row_id, barcode):
+    """Оператор выбрал товар для спорной строки: фиксируем штрихкод и пересчитываем."""
+    row = get_intake_row(row_id)
+    if not row:
+        raise ValueError("строка не найдена")
+    code = str(barcode or "").strip()
+    if not code:
+        raise ValueError("не выбран товар")
+    if not find_cache_group(row["client_id"], barcode=code):
+        raise ValueError("штрихкод %s не найден в кабинетах клиента" % code)
+    fields = fields_of(
+        row["client_id"],
+        code,
+        row["liters"],
+        row["tracking_type"] or "",
+        "",
+        row["pick_rate"] if "pick_rate" in row.keys() else None,
+        row["qty"],
+        (row["dims"] if "dims" in row.keys() else "") or "",
+        fallback={"article": row["article"], "name": row["name"]},
+    )
+    update_intake_row(
+        row_id,
+        barcode=code,
+        article=fields["article"],
+        name=fields["name"],
+        marketplace=fields["marketplace"],
+        gtin=fields["gtin"],
+        tracking_type=fields["tracking_type"],
+        state=fields["state"],
+        note=fields["note"],
+    )
+    return get_intake_row(row_id)
+
+
 def add(client_id, barcode, qty, liters, kind, gtin="", author=""):
     res = add_many(client_id, [barcode], liters=liters, kind=kind, author=author, refresh=False, qty=qty)
     if res["skipped"]:
@@ -263,7 +453,7 @@ def add(client_id, barcode, qty, liters, kind, gtin="", author=""):
     return res["added"][0]["id"]
 
 
-def patch(row_id, liters=None, kind=None, gtin=None, tariff=None, qty=None):
+def patch(row_id, liters=None, kind=None, gtin=None, pick_rate=None, qty=None):
     row = get_intake_row(row_id)
     if not row:
         raise ValueError("строка не найдена")
@@ -274,11 +464,16 @@ def patch(row_id, liters=None, kind=None, gtin=None, tariff=None, qty=None):
         liters_val, dims_val = parse_liters(liters)
     kind_val = row["tracking_type"] if kind is None else (kind or "").strip()
     gtin_val = row["gtin"] if gtin is None else str(gtin or "").strip()
-    tariff_val = row["tariff"] if tariff is None else parse_num(tariff)
+    pick_val = row["pick_rate"] if pick_rate is None else parse_num(pick_rate)
     qty_val = row["qty"] if qty is None else parse_num(qty)
     fields = fields_of(
-        row["client_id"], row["barcode"], liters_val, kind_val, gtin_val, tariff_val, qty_val, dims_val
+        row["client_id"], row["barcode"], liters_val, kind_val, gtin_val, pick_val, qty_val, dims_val,
+        fallback={"article": row["article"], "name": row["name"]},
     )
+    if row["state"] == "clash":
+        # литраж и сборку править можно, но товар всё ещё не выбран
+        fields["state"] = "clash"
+        fields["note"] = row["note"]
     update_intake_row(
         row_id,
         article=fields["article"],
@@ -288,7 +483,7 @@ def patch(row_id, liters=None, kind=None, gtin=None, tariff=None, qty=None):
         tracking_type=fields["tracking_type"],
         liters=fields["liters"],
         dims=fields["dims"],
-        tariff=fields["tariff"],
+        pick_rate=fields["pick_rate"],
         qty=fields["qty"],
         state=fields["state"],
         note=fields["note"],
@@ -298,9 +493,9 @@ def patch(row_id, liters=None, kind=None, gtin=None, tariff=None, qty=None):
 
 def recheck(row):
     liters = row["liters"]
-    tariff = row["tariff"] if "tariff" in row.keys() else None
+    pick_rate = row["pick_rate"] if "pick_rate" in row.keys() else None
     kind = row["tracking_type"] or ""
-    need = need_of(liters, tariff, row["qty"])
+    need = need_of(liters, pick_rate, row["qty"])
     if need:
         return None, "нужно: " + ", ".join(need)
     found = lookup(row["client_id"], row["barcode"], row["article"] or "")
@@ -404,7 +599,7 @@ def _run():
                 float(row["qty"]),
                 now_iso(),
                 oid,
-                row["tariff"] if "tariff" in row.keys() else None,
+                row["pick_rate"] if "pick_rate" in row.keys() else None,
                 row["dims"] if "dims" in row.keys() else "",
             )
             update_intake_row(row["id"], state="done", ms_order_name=label, note="заказ поставщика %s" % label)

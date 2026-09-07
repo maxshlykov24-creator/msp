@@ -1222,6 +1222,13 @@ def replace_shipment_marks(shipment_id, rows):
         "INSERT INTO shipment_marks (shipment_id, code, gtin, article) VALUES (?, ?, ?, ?)",
         [(shipment_id, row.get("code") or "", row.get("gtin") or "", row.get("article") or "") for row in rows],
     )
+    # счётчик в таблице «Сборки» считаем здесь же: иначе он разъедется с кодами,
+    # когда их вносит склад сканером, а не выгрузка с площадки
+    conn.execute(
+        "UPDATE shipments SET marks_count = "
+        "(SELECT count(*) FROM shipment_marks WHERE shipment_id = ?) WHERE id = ?",
+        (shipment_id, shipment_id),
+    )
     conn.commit()
     conn.close()
 

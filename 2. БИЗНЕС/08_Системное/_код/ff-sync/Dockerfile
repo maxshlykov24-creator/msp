@@ -7,12 +7,19 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# DejaVu нужен для этикеток: в slim-образе шрифтов нет, а встроенные в reportlab
+# Vera и Helvetica кириллицу не умеют — артикул и наименование вышли бы квадратами.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY schema.sql net.py db.py ms.py ping.py cli.py catalog_pull.py \
-     products_push.py intake.py agents_sync.py orders_pull.py shipments_pull.py \
-     account.py billing.py export_xlsx.py web.py main.py ./
+# Маской, а не перечислением: при перечислении новый модуль легко забыть,
+# и контейнер падает на импорте уже в проде. Так было с registry.py и statuses.py.
+COPY schema.sql ./
+COPY *.py ./
 COPY webui ./webui
 
 CMD ["python", "main.py"]

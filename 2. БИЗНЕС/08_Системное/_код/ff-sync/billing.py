@@ -1,12 +1,12 @@
-"""Счёт покупателю: хранение по тарифу каждой позиции.
+"""Счёт покупателю: хранение по общей ставке плюс сборка по ставке позиции.
 
-Период считает система: от дня после прошлого счёта (или от прихода) по date_to.
+Период считает система: от дня после прошлого счёта (или от приёмки) по date_to.
 Начало руками не задаём — иначе неоплаченные сутки молча выпадут из счёта.
 """
 
 from datetime import datetime, timedelta, timezone
 
-from account import as_day, money, row_of, today
+from account import accepted_day, as_day, money, row_of, today
 from db import (
     add_invoice_lot,
     get_client_by_id,
@@ -27,6 +27,7 @@ def collect(lot_ids, date_to=""):
     end = as_day(date_to) or today()
     lots = []
     client = None
+    waiting = 0
     for raw in lot_ids:
         lot = get_lot(int(raw))
         if not lot:
@@ -35,23 +36,41 @@ def collect(lot_ids, date_to=""):
             client = get_client_by_id(lot["client_id"])
         elif lot["client_id"] != client["id"]:
             raise ValueError("в одном счёте только один контрагент")
+        if accepted_day(lot) is None:
+            # партию не приняли на склад: закрыть её счётом нельзя, иначе дни
+            # до приёмки молча выпадут из следующего периода
+            waiting += 1
+            continue
         lots.append(lot)
     if not lots:
+        if waiting:
+            raise ValueError("позиции ещё не приняты на склад: их %s" % waiting)
         raise ValueError("не выбрано ни одной позиции")
     moves = moves_by_day()
     detail = []
-    total = 0.0
+    storage = 0.0
+    pick = 0.0
     for lot in lots:
         calc = money(lot, client, None, end, moves.get(lot["id"], {}))
-        total += calc["storage"]
+        storage += calc["storage"]
+        pick += calc["pick"]
         detail.append((lot, calc))
-    parts = {"storage": round(total, 2), "intake": 0.0, "ship": 0.0}
-    parts["total"] = parts["storage"]
+    parts = {"storage": round(storage, 2), "intake": 0.0, "ship": round(pick, 2)}
+    parts["total"] = round(parts["storage"] + parts["ship"], 2)
     return client, detail, parts, end
 
 
+def lines_of(parts):
+    """В счёт идут только непустые услуги: хранение и сборка считаются раздельно."""
+    out = []
+    for key in ("storage", "ship"):
+        if parts.get(key):
+            out.append({"name": SERVICES[key], "sum": parts[key]})
+    return out
+
+
 def span_of(detail, end):
-    starts = [c["bill_from"] for _l, c in detail if c["bill_days"] > 0]
+    starts = [c["bill_from"] for _l, c in detail if c["bill_from"] and (c["bill_days"] > 0 or c["pick"] > 0)]
     return (min(starts) if starts else end.isoformat()), end.isoformat()
 
 
@@ -64,8 +83,9 @@ def preview(lot_ids, date_to=""):
         "client_id": client["id"],
         "period_from": start,
         "period_to": stop,
-        "lines": [{"name": SERVICES["storage"], "sum": parts["storage"]}],
+        "lines": lines_of(parts),
         "liter_days": round(sum(c["liter_days"] for _l, c in detail), 2),
+        "pick_qty": round(sum(c["pick_qty"] for _l, c in detail), 3),
         "total": parts["total"],
         "positions": [
             row_of(lot, client=client, ship_days=moves.get(lot["id"], {}), date_to=end)
@@ -80,11 +100,12 @@ def ru_day(iso):
 
 
 def description(detail, start, stop):
-    return "Фулфилмент, хранение %s — %s: позиций %s, литро-суток %s" % (
+    return "Фулфилмент %s — %s: позиций %s, литро-суток %s, собрано %s шт" % (
         ru_day(start),
         ru_day(stop),
         len(detail),
         round(sum(c["liter_days"] for _l, c in detail), 2),
+        round(sum(c["pick_qty"] for _l, c in detail), 3),
     )
 
 
@@ -103,10 +124,12 @@ def create(lot_ids, author="", date_to=""):
         "positions": [
             {
                 "quantity": 1,
-                "price": int(round(parts["storage"] * 100)),
+                "price": int(round(parts[key] * 100)),
                 "vat": 0,
-                "assortment": ms_meta("service", service_id("storage")),
+                "assortment": ms_meta("service", service_id(key)),
             }
+            for key in ("storage", "ship")
+            if parts[key]
         ],
     }
     r = req("POST", MS_BASE + "/entity/invoiceout", headers=ms_headers(), json=payload)
@@ -120,7 +143,7 @@ def create(lot_ids, author="", date_to=""):
         data.get("name") or "",
         parts["storage"],
         0,
-        0,
+        parts["ship"],
         parts["total"],
         len(detail),
         now,
@@ -137,6 +160,7 @@ def create(lot_ids, author="", date_to=""):
             calc["liter_days"],
             calc["bill_from"],
             calc["bill_to"],
+            calc["ship"],
         )
         mark_lot_billed(
             lot["id"],
