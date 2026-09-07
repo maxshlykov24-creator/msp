@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   computeCompleteness,
+  countSuitsInLines,
   isHalfSetWarehouse,
   suitLineOf,
   suitPartOf,
@@ -104,6 +105,51 @@ test("physical half-set stock is counted apart from computed orphans", () => {
   assert.equal(res.totals.orphans, 0);
   // Склад полупарков не смешивается с расчётом, иначе изделие попало бы дважды.
   assert.equal(res.models[0].onHalfSetWarehouse, 2);
+});
+
+test("a three-piece sale is one suit and one unit, not three", () => {
+  const sold = countSuitsInLines([
+    { qty: 1, part: "jacket", variation: "S23/33S3" },
+    { qty: 1, part: "trousers", variation: "S23/33S3" },
+    { qty: 1, part: "vest", variation: "S23/33S3" },
+  ]);
+  assert.equal(sold.suits, 1);
+  assert.equal(sold.units, 1);
+});
+
+test("suit counts even when the sizes differ, but a lone jacket does not", () => {
+  // Размеры верха и низа могут расходиться — костюм всё равно продан.
+  const mixedSizes = countSuitsInLines([
+    { qty: 1, part: "jacket", variation: "S23/33S3" },
+    { qty: 1, part: "trousers", variation: "S23/33S3" },
+  ]);
+  assert.equal(mixedSizes.suits, 1);
+
+  const jacketOnly = countSuitsInLines([{ qty: 1, part: "jacket", variation: "S23/33S3" }]);
+  assert.equal(jacketOnly.suits, 0);
+  assert.equal(jacketOnly.units, 1);
+});
+
+test("two suits in one check give two suits, leftovers stay separate units", () => {
+  const sold = countSuitsInLines([
+    { qty: 2, part: "jacket", variation: "S23/33S3" },
+    { qty: 2, part: "trousers", variation: "S23/33S3" },
+    { qty: 1, part: "vest", variation: "S23/33S3" },
+    { qty: 1, part: "trousers", variation: "M03/636S" },
+    { qty: 1, part: null, variation: null }, // рубашка
+  ]);
+  assert.equal(sold.suits, 2);
+  // Два костюма плюс одиночные брюки плюс рубашка.
+  assert.equal(sold.units, 4);
+});
+
+test("parts of different models do not glue into a suit", () => {
+  const sold = countSuitsInLines([
+    { qty: 1, part: "jacket", variation: "S23/33S3" },
+    { qty: 1, part: "trousers", variation: "M03/636S" },
+  ]);
+  assert.equal(sold.suits, 0);
+  assert.equal(sold.units, 2);
 });
 
 test("a model without a jacket is standalone trousers, not a broken suit", () => {

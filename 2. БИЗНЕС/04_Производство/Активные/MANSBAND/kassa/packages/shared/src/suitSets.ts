@@ -241,6 +241,53 @@ export function buildSuitModel(
   };
 }
 
+/** Позиция чека для счёта костюмов: часть и вариация берутся из каталога. */
+export interface SuitCartLine {
+  qty: number;
+  part: SuitPart | null;
+  variation: string | null;
+}
+
+/**
+ * Костюм в чеке — это проданный костюм: пиджак и брюки одной вариации,
+ * размеры могут расходиться (решение владельца 07.09). Жилет входит в тот же
+ * костюм и отдельной единицей не считается.
+ *
+ * Возвращает и число костюмов для САР, и свёрнутое число единиц для UPT:
+ * тройка — одна единица, а не три, иначе пороги премий по UPT берутся сами
+ * собой на любой продаже костюма.
+ */
+export function countSuitsInLines(lines: SuitCartLine[]): { suits: number; units: number } {
+  const byVariation = new Map<string, Record<SuitPart, number>>();
+  let units = 0;
+  for (const line of lines) {
+    const qty = Math.max(0, Math.floor(line.qty || 0));
+    if (qty === 0) continue;
+    const variation = (line.variation ?? "").trim();
+    if (!line.part || !variation) {
+      units += qty;
+      continue;
+    }
+    const group = byVariation.get(variation) ?? { jacket: 0, trousers: 0, vest: 0 };
+    group[line.part] += qty;
+    byVariation.set(variation, group);
+  }
+
+  let suits = 0;
+  for (const group of byVariation.values()) {
+    const pairs = Math.min(group.jacket, group.trousers);
+    suits += pairs;
+    const vestsInSuits = Math.min(group.vest, pairs);
+    // Костюм — одна единица; части, оставшиеся без пары, считаются штуками.
+    units +=
+      pairs +
+      (group.jacket - pairs) +
+      (group.trousers - pairs) +
+      (group.vest - vestsInSuits);
+  }
+  return { suits, units };
+}
+
 export interface CompletenessOptions {
   tolerance: number;
   /** Склад МойСклад; без него считаем по всем складам, кроме полупарков. */

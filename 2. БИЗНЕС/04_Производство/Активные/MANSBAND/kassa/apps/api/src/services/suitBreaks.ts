@@ -1,7 +1,12 @@
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { products, stock, suitBreaks } from "../db/schema.js";
-import { isHalfSetWarehouse, STORE_TO_WAREHOUSE, suitTitle } from "@kassa/shared";
+import {
+  countSuitsInLines,
+  isHalfSetWarehouse,
+  STORE_TO_WAREHOUSE,
+  suitTitle,
+} from "@kassa/shared";
 import type { Deal, SuitBreak, SuitPart } from "@kassa/shared";
 
 /**
@@ -172,11 +177,22 @@ export interface CartWarning {
 export async function cartWarnings(input: {
   store?: string;
   items: Array<{ productId: string; qty: number }>;
-}): Promise<CartWarning[]> {
+}): Promise<{ warnings: CartWarning[]; suits: number }> {
   const items = input.items.filter((i) => i.qty > 0 && i.productId);
-  if (items.length === 0) return [];
+  if (items.length === 0) return { warnings: [], suits: 0 };
   const info = await suitLinesByMsIds(items.map((i) => i.productId));
-  if (info.size === 0) return [];
+  if (info.size === 0) return { warnings: [], suits: 0 };
+
+  // Костюмов в чеке — столько САР. Считаем тем же кодом, что и сервер продажи,
+  // чтобы консультант видел в форме ровно то количество бонусов, которое
+  // начислится.
+  const { suits } = countSuitsInLines(
+    items.map((item) => ({
+      qty: item.qty,
+      part: info.get(item.productId)?.part ?? null,
+      variation: info.get(item.productId)?.variation ?? null,
+    }))
+  );
 
   const warehouse = input.store
     ? STORE_TO_WAREHOUSE[input.store as keyof typeof STORE_TO_WAREHOUSE] ?? undefined
@@ -227,7 +243,7 @@ export async function cartWarnings(input: {
       pairs,
     });
   }
-  return warnings;
+  return { warnings, suits };
 }
 
 export interface BreaksQuery {

@@ -15,6 +15,7 @@ import {
   AMO_LEAD_FIELDS,
   AMO_PIPELINE_COMPLAINTS,
   AMO_PIPELINE_SALES,
+  countSuitsInLines,
   isSuitCategory,
   mansbandPayoutAmount,
   paymentKindOf as paymentKind,
@@ -283,12 +284,28 @@ function phoneDigits(value: string | undefined | null): string {
 }
 
 /**
- * Сколько костюмов в чеке — столько САР (созвон 04.09). Костюм определяется
- * группой МойСклад из настройки sarySuitGroups; подарки и возвраты не в счёт.
+ * Сколько костюмов в чеке — столько САР (созвон 04.09). Костюм — это проданный
+ * костюм: пиджак и брюки одной вариации, размеры могут расходиться (решение
+ * владельца 07.09). Считать по группе МойСклад нельзя: пиджак, брюки и жилет
+ * лежат в одной ветке «1. Костюмы», и тройка давала бы три САР вместо одной.
+ * Подарки и возвраты не в счёт.
  */
 async function countSuitsInDeal(deal: Deal, suitGroups: string[]): Promise<number> {
   const lines = deal.items.filter((item) => !item.isReturn && item.qty > 0 && item.productId);
   if (lines.length === 0) return 0;
+  const parts = await catalog.suitPartsByMsIds(lines.map((i) => i.productId));
+  if (parts.size > 0) {
+    const { suits } = countSuitsInLines(
+      lines.map((item) => ({
+        qty: item.qty,
+        part: parts.get(item.productId)?.part ?? null,
+        variation: parts.get(item.productId)?.variation ?? null,
+      }))
+    );
+    return suits;
+  }
+  // Каталог ещё не синкнут с характеристиками — считаем по старой ветке, чтобы
+  // САР не пропала совсем.
   const categories = await catalog.productCategoriesByMsIds(lines.map((i) => i.productId));
   return lines.reduce((sum, item) => {
     const category = categories.get(item.productId);

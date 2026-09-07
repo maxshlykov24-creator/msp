@@ -4,7 +4,7 @@ import { products, stock, msRefs, productFolders } from "../db/schema.js";
 import { STORE_TO_WAREHOUSE, sortWarehousesByDisplayOrder } from "@kassa/shared";
 import * as ms from "../clients/ms.js";
 import { extractIdFromHref } from "./bootstrap.js";
-import type { Product } from "@kassa/shared";
+import type { Product, SuitPart } from "@kassa/shared";
 
 /** Группа для UI: pathName МС или префикс имени до « (» (у вариантов pathName часто пустой). */
 function displayCategory(category: string | null | undefined, name: string): string {
@@ -318,6 +318,27 @@ export async function productCategoriesByMsIds(msIds: string[]): Promise<Map<str
     .from(products)
     .where(inArray(products.msId, unique));
   return new Map(rows.map((r) => [r.msId, r.category ?? ""]));
+}
+
+/**
+ * Часть костюма и вариация по msId — по ним костюм в чеке считается как костюм,
+ * а не как три позиции. Позиции без части костюма в карту не попадают.
+ */
+export async function suitPartsByMsIds(
+  msIds: string[]
+): Promise<Map<string, { part: SuitPart; variation: string }>> {
+  const unique = [...new Set(msIds.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return new Map();
+  const rows = await db
+    .select({ msId: products.msId, part: products.suitPart, variation: products.variation })
+    .from(products)
+    .where(inArray(products.msId, unique));
+  const map = new Map<string, { part: SuitPart; variation: string }>();
+  for (const r of rows) {
+    if (!r.part || !r.variation) continue;
+    map.set(r.msId, { part: r.part as SuitPart, variation: r.variation });
+  }
+  return map;
 }
 
 /** Штрихкод / код / артикул по msId — для скана при отправке и приёмке. */

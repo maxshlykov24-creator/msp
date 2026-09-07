@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Camera,
@@ -336,14 +336,47 @@ function SarafanField({
 }) {
   const { findByPhone } = useStore();
   const { saryMinCheck, sarySuitGroups } = useAppSettings();
-  // Костюмов в чеке — столько САР положено (созвон 04.09).
-  const suitCount = (items ?? []).reduce(
+  // Костюмов в чеке — столько САР положено (созвон 04.09). Костюм — это пара
+  // пиджак плюс брюки одной вариации, размеры могут расходиться, поэтому счёт
+  // берём с сервера: там же он считается при начислении. Пока ответа нет,
+  // показываем прикидку по ветке каталога.
+  const cartLines = useMemo(
+    () =>
+      (items ?? [])
+        .filter((item) => !item.isReturn && item.qty > 0 && item.productId)
+        .map((item) => ({ productId: item.productId, qty: item.qty })),
+    [items]
+  );
+  const [serverSuits, setServerSuits] = useState<number | null>(null);
+  useEffect(() => {
+    if (USE_MOCK || cartLines.length === 0) {
+      setServerSuits(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      api
+        .post<{ suits: number }>("/suits/cart-check", { items: cartLines })
+        .then((res) => {
+          if (alive) setServerSuits(res.suits ?? 0);
+        })
+        .catch(() => {
+          if (alive) setServerSuits(null);
+        });
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [cartLines]);
+  const suitCountFallback = (items ?? []).reduce(
     (sum, item) =>
       !item.isReturn && isSuitCategory(item.category, sarySuitGroups)
         ? sum + Math.max(0, item.qty || 0)
         : sum,
     0
   );
+  const suitCount = serverSuits ?? suitCountFallback;
   // Порог по сумме чека нужен, только когда костюмов в чеке нет (созвон 04.09).
   const belowThreshold =
     suitCount === 0 && checkTotal != null && checkTotal < saryMinCheck;

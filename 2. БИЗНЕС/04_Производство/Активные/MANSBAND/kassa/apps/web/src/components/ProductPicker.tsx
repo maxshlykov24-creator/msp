@@ -96,7 +96,10 @@ function SuitBreakWarning({ items, store }: { items: CartItem[]; store: string }
     let alive = true;
     const t = setTimeout(() => {
       api
-        .post<{ warnings: SuitCartWarning[] }>("/suits/cart-check", { store, items: payload })
+        .post<{ warnings: SuitCartWarning[]; suits: number }>("/suits/cart-check", {
+          store,
+          items: payload,
+        })
         .then((res) => {
           if (alive) setWarnings(res.warnings ?? []);
         })

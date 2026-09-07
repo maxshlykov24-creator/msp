@@ -1,7 +1,9 @@
 import { and, gte, lte } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { deals as dealsTable, expenses as expensesTable, products } from "../db/schema.js";
-import type { Deal } from "@kassa/shared";
+import { countSuitsInLines } from "@kassa/shared";
+import type { Deal, SuitPart } from "@kassa/shared";
+import { suitPartsByMsIds } from "./catalog.js";
 
 /**
  * Статистика консультантов и магазинов по формулам Миши (созвон 20.08):
@@ -57,7 +59,14 @@ interface Bucket {
   deals: Deal[];
 }
 
-function buildRow(bucket: Bucket, rescuedPhones: Map<string, Set<string>>): StatsRow {
+/** Часть костюма и вариация по msId — костюм в UPT считается одной единицей. */
+type SuitInfo = Map<string, { part: SuitPart; variation: string }>;
+
+function buildRow(
+  bucket: Bucket,
+  rescuedPhones: Map<string, Set<string>>,
+  suitInfo: SuitInfo
+): StatsRow {
   const all = bucket.deals;
   const success = all.filter((d) => d.stage === "Успех");
   const slivDeals = all.filter((d) => d.kind === "sliv");
@@ -75,8 +84,18 @@ function buildRow(bucket: Bucket, rescuedPhones: Map<string, Set<string>>): Stat
   }
 
   const denominator = all.length - noSlivs - rescued;
+  // UPT: костюм — одна единица, а не три (решение владельца 07.09). Иначе
+  // пороги премий и штрафов по UPT берутся сами собой на любой продаже костюма.
   const itemsCount = success.reduce(
-    (acc, d) => acc + d.items.reduce((s, i) => s + Math.max(0, i.qty || 0), 0),
+    (acc, d) =>
+      acc +
+      countSuitsInLines(
+        d.items.map((i) => ({
+          qty: Math.max(0, i.qty || 0),
+          part: suitInfo.get(i.productId)?.part ?? null,
+          variation: suitInfo.get(i.productId)?.variation ?? null,
+        }))
+      ).units,
     0
   );
 
@@ -150,13 +169,17 @@ export async function summary(
     byStore.set(d.store, [...(byStore.get(d.store) ?? []), d]);
   }
 
+  const suitInfo = await suitPartsByMsIds(
+    all.flatMap((d) => d.items.map((i) => i.productId).filter(Boolean))
+  );
+
   const consultants = [...byConsultant.entries()]
-    .map(([name, deals]) => buildRow({ name, deals }, rescuedPhones))
+    .map(([name, deals]) => buildRow({ name, deals }, rescuedPhones, suitInfo))
     .sort((a, b) => b.revenue - a.revenue);
   const stores = [...byStore.entries()]
-    .map(([name, deals]) => buildRow({ name, deals }, rescuedPhones))
+    .map(([name, deals]) => buildRow({ name, deals }, rescuedPhones, suitInfo))
     .sort((a, b) => b.revenue - a.revenue);
-  const totals = buildRow({ name: "Все", deals: all }, rescuedPhones);
+  const totals = buildRow({ name: "Все", deals: all }, rescuedPhones, suitInfo);
 
   // Закуп и расходы Эдвина — не зона консультанта.
   const purchasing = ownOnly ? EMPTY_PURCHASING : await purchasingStats(all, period);

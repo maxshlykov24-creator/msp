@@ -49,7 +49,7 @@ export default async function suitsRoutes(app: FastifyInstance) {
       })
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: "Некорректный чек" });
-    return { warnings: await cartWarnings(parsed.data) };
+    return cartWarnings(parsed.data);
   });
 
   app.get("/suits/breaks", { preHandler: [app.authenticate] }, async (req, reply) => {
