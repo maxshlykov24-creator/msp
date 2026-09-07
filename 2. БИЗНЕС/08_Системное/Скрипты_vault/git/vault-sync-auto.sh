@@ -1,6 +1,6 @@
 #!/bin/sh
 # Авто-синхронизация vault → GitHub (commit → pull --rebase → push).
-# Запуск: launchd каждые 2 мин или вручную из корня vault.
+# Запуск: launchd каждые 15 мин или вручную из корня vault.
 # Пауза: touch .vault-sync-off в корне vault
 
 set -e
@@ -13,6 +13,7 @@ log_file="$log_dir/vault-sync.log"
 lock_dir="$log_dir/.sync.lock"
 conflict_file="$root/.vault-sync-conflict"
 off_file="$root/.vault-sync-off"
+heartbeat_file="$log_dir/last-success"
 had_conflict=0
 
 mkdir -p "$log_dir"
@@ -27,17 +28,30 @@ notify() {
   osascript -e "display notification \"$message\" with title \"$title\"" 2>/dev/null || true
 }
 
-# Удалить legacy-пути после незавершённой миграции (см. РЕГЛАМЕНТ_ЗОНЫ_БИЗНЕС.md)
+# Legacy-пути после незавершённой миграции: только сигнал в лог.
+# Удаление убрано 2026-09-07: скрипт делал rm -rf каждый прогон, без «да» и без
+# переноса в 99_АРХИВ. Это нарушало запреты ядра и уносило данные молча.
 for legacy in \
   "$root/Бизнес" \
   "$root/2. БИЗНЕС/04_Производство_внедрений" \
   "$root/2. БИЗНЕС/99_Системное"
 do
   if [ -e "$legacy" ]; then
-    rm -rf "$legacy"
-    log "cleanup: removed legacy path $legacy"
+    log "warn: legacy path exists, разбери вручную: $legacy"
   fi
 done
+
+# Контроль живости. Молчаливая смерть синхронизации 07.07–13.08 прошла незамеченной,
+# потому что «ничего не происходит» выглядит точно так же, как «всё хорошо».
+if [ -f "$heartbeat_file" ] && [ -z "$(find "$heartbeat_file" -maxdepth 0 -newermt '24 hours ago' 2>/dev/null)" ]; then
+  if [ ! -f "$log_dir/.stale-warned" ] || [ -z "$(find "$log_dir/.stale-warned" -maxdepth 0 -newermt '6 hours ago' 2>/dev/null)" ]; then
+    log "warn: успешного push нет больше суток (последний: $(cat "$heartbeat_file" 2>/dev/null))"
+    notify "Vault sync" "Сутки без успешной синхронизации. Смотри vault-sync.log"
+    touch "$log_dir/.stale-warned"
+  fi
+else
+  rm -f "$log_dir/.stale-warned" 2>/dev/null || true
+fi
 
 mark_conflict() {
   log "CONFLICT: git pull --rebase failed — resolve manually, then rm .vault-sync-conflict"
@@ -48,6 +62,14 @@ mark_conflict() {
 release_lock() {
   rmdir "$lock_dir" 2>/dev/null || true
 }
+
+# Залипший лок. 2026-07-07 такой лок остался после падения прогона и молча
+# заглушил синхронизацию на месяц: 9304 записи «skip: locked», последний push 06.07.
+# Теперь лок старше 30 минут считается мёртвым и снимается.
+if [ -d "$lock_dir" ] && [ -z "$(find "$lock_dir" -maxdepth 0 -newermt '30 minutes ago' 2>/dev/null)" ]; then
+  log "warn: снят залипший лок (старше 30 мин)"
+  rmdir "$lock_dir" 2>/dev/null || true
+fi
 
 if ! mkdir "$lock_dir" 2>/dev/null; then
   log "skip: locked"
@@ -114,6 +136,7 @@ rm -f "$conflict_file"
 
 if git push origin main >>"$log_file" 2>&1; then
   log "push: ok"
+  date '+%Y-%m-%d %H:%M:%S' >"$heartbeat_file"
   if [ "$had_conflict" -eq 1 ]; then
     notify "Vault sync" "Синхронизация восстановлена"
   fi

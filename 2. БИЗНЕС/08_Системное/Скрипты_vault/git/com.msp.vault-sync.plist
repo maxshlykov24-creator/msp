@@ -10,7 +10,7 @@
     <string>/Users/max/CURSOR/2. БИЗНЕС/08_Системное/Скрипты_vault/git/vault-sync-auto.sh</string>
   </array>
   <key>StartInterval</key>
-  <integer>120</integer>
+  <integer>900</integer>
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
