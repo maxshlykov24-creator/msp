@@ -398,6 +398,22 @@ def intake_run(ff_session: str = Cookie(default="")):
         _lock.release()
 
 
+@app.post("/api/lots/accept")
+def lots_accept(ff_session: str = Cookie(default="")):
+    """Ручная сверка с МойСклад: какие партии уже приняли на склад."""
+    who(ff_session)
+    init_db()
+    from accept import run
+
+    try:
+        res = run(blocking=False)
+    except BlockingIOError:
+        return {"ok": False, "msg": "уже идёт проверка"}
+    except Exception as exc:
+        return {"ok": False, "msg": str(exc)}
+    return {"ok": True, **res}
+
+
 def marked_flag(raw):
     val = (raw or "").strip().lower()
     if val in ("yes", "1", "marked"):
@@ -706,6 +722,7 @@ def assembly(
     client_id: int = 0,
     group: str = "",
     mp: str = "",
+    kind: str = "",
     article: str = "",
     q: str = "",
     since: str = "",
@@ -717,10 +734,17 @@ def assembly(
     import statuses
 
     filters = dict(
-        client_id=client_id or None, marketplace=mp, article=article, query=q, since=since, until=until
+        client_id=client_id or None, marketplace=mp, kind=kind, article=article, query=q, since=since, until=until
     )
     counts, total = assembly_counts(**filters)
-    rows = list_assembly(group=group, **filters)
+    fallback = False
+    if total == 0:
+        filters["since"] = ""
+        filters["until"] = ""
+        counts, total = assembly_counts(keep_floor=False, **filters)
+        fallback = True
+        counts = {key: min(100, n) for key, n in counts.items()}
+    rows = list_assembly(group=group, keep_floor=not fallback, limit=100, **filters)
     out = []
     qty = 0.0
     for r in rows:
@@ -757,12 +781,13 @@ def assembly(
             for code, label in statuses.GROUPS
         ],
         "totals": {"positions": len(out), "qty": round(qty, 3), "all": total},
+        "fallback": fallback,
     }
 
 
 @app.post("/api/assembly/work")
 def assembly_work(data: dict = Body(...), ff_session: str = Cookie(default="")):
-    """Отметить «взято в сборку». У Ozon такого статуса на площадке нет."""
+    """Складская отметка: на сборке, собрано, отгружено. Площадку не трогает."""
     who(ff_session)
     init_db()
     ids = data.get("ids") or []
@@ -1018,7 +1043,7 @@ def shipments_sync(data: dict = Body(None), ff_session: str = Cookie(default="")
     try:
         from shipments_pull import run
 
-        days = int((data or {}).get("days") or 14)
+        days = min(14, max(1, int((data or {}).get("days") or 14)))
         res = run(days=days, blocking=False)
         return {"ok": True, **res}
     except BlockingIOError:

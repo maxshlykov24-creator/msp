@@ -86,7 +86,6 @@ CREATE TABLE IF NOT EXISTS catalog_cache (
     tracking_type TEXT,
     subject TEXT,
     need_kiz INTEGER,
-    image TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );
@@ -132,31 +131,9 @@ CREATE TABLE IF NOT EXISTS lot_moves (
     FOREIGN KEY (lot_id) REFERENCES lots(id)
 );
 
-CREATE TABLE IF NOT EXISTS intake_supplies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id INTEGER NOT NULL,
-    number TEXT,
-    client_name TEXT,
-    contract TEXT,
-    planned_at TEXT,
-    contact TEXT,
-    carrier TEXT,
-    car_plate TEXT,
-    places TEXT,
-    marking TEXT,
-    terms TEXT,
-    source_name TEXT,
-    rows_total INTEGER NOT NULL DEFAULT 0,
-    qty_total REAL NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    author TEXT,
-    FOREIGN KEY (client_id) REFERENCES clients(id)
-);
-
 CREATE TABLE IF NOT EXISTS intake_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     client_id INTEGER NOT NULL,
-    supply_id INTEGER,
     barcode TEXT,
     article TEXT,
     name TEXT,
@@ -226,15 +203,6 @@ CREATE TABLE IF NOT EXISTS shipments (
     ms_order_id TEXT,
     marks_count INTEGER NOT NULL DEFAULT 0,
     pulled_at TEXT,
-    status_group TEXT,
-    work_state TEXT,
-    accepted_at TEXT,
-    deadline_at TEXT,
-    track TEXT,
-    warehouse TEXT,
-    image TEXT,
-    supply_ext TEXT,
-    trbx_ext TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );
@@ -243,36 +211,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS shipments_cab_kind_ext
     ON shipments (cabinet_id, kind, ext_id);
 CREATE INDEX IF NOT EXISTS shipments_client_day
     ON shipments (client_id, shipped_at);
-
--- Поставки FBS Wildberries. Заводим у площадки, храним у себя, чтобы сборщик
--- видел, что уже собрано и в какое грузоместо уложено.
-CREATE TABLE IF NOT EXISTS wb_supplies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id INTEGER NOT NULL,
-    cabinet_id INTEGER NOT NULL,
-    ext_id TEXT NOT NULL,
-    name TEXT,
-    state TEXT NOT NULL DEFAULT 'open',
-    created_at TEXT NOT NULL,
-    delivered_at TEXT,
-    author TEXT,
-    FOREIGN KEY (client_id) REFERENCES clients(id),
-    FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS wb_supplies_cab_ext
-    ON wb_supplies (cabinet_id, ext_id);
-
-CREATE TABLE IF NOT EXISTS wb_boxes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    supply_id INTEGER NOT NULL,
-    ext_id TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (supply_id) REFERENCES wb_supplies(id)
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS wb_boxes_supply_ext
-    ON wb_boxes (supply_id, ext_id);
 
 CREATE TABLE IF NOT EXISTS shipment_marks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

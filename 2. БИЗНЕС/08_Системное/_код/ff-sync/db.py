@@ -2,6 +2,29 @@ import fcntl
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timedelta
+
+SHIP_KEEP_DAYS = 14
+
+
+def ship_keep_since():
+    """Нижняя граница списка заказов: полночь 14 дней назад."""
+    return (datetime.now() - timedelta(days=SHIP_KEEP_DAYS)).strftime("%Y-%m-%d 00:00")
+
+
+def prune_old_shipments(days=SHIP_KEEP_DAYS):
+    """Убираем отправления старше окна синка — иначе «Заказы» копят историю."""
+    cut = (datetime.now() - timedelta(days=int(days or SHIP_KEEP_DAYS))).strftime("%Y-%m-%d 00:00")
+    when = "replace(coalesce(nullif(accepted_at,''), shipped_at), 'T', ' ')"
+    conn = connect()
+    ids = [r["id"] for r in conn.execute("SELECT id FROM shipments WHERE %s < ?" % when, (cut,)).fetchall()]
+    if ids:
+        idq = ",".join("?" * len(ids))
+        conn.execute("DELETE FROM shipment_marks WHERE shipment_id IN (%s)" % idq, ids)
+        conn.execute("DELETE FROM shipments WHERE id IN (%s)" % idq, ids)
+        conn.commit()
+    conn.close()
+    return len(ids)
 
 SCHEMA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
 
@@ -29,6 +52,7 @@ def migrate(conn):
         ("tariff_storage", "REAL"),
         ("tariff_intake", "REAL"),
         ("tariff_ship", "REAL"),
+        ("tariff_pick", "REAL"),
     ):
         if col not in clients:
             conn.execute("ALTER TABLE clients ADD COLUMN %s %s" % (col, decl))
@@ -43,6 +67,16 @@ def migrate(conn):
         conn.execute("ALTER TABLE lots ADD COLUMN tariff REAL")
     if "dims" not in lots:
         conn.execute("ALTER TABLE lots ADD COLUMN dims TEXT")
+    if "pick_rate" not in lots:
+        # колонка tariff была ставкой хранения; ставка теперь общая, а у позиции
+        # своя цена сборки. Старые значения не переносим: 0,15 ₽ за штуку — не сборка.
+        conn.execute("ALTER TABLE lots ADD COLUMN pick_rate REAL")
+    if "accepted_at" not in lots:
+        # счётчик стартует от фактической приёмки. Партии, заведённые до этого
+        # правила, уже лежат на складе: считаем принятыми в день заведения,
+        # иначе прошлые счёта разъедутся с новыми.
+        conn.execute("ALTER TABLE lots ADD COLUMN accepted_at TEXT")
+        conn.execute("UPDATE lots SET accepted_at = received_at WHERE accepted_at IS NULL")
     if "billed_until" not in lots:
         # billed_days считал дни от прихода: закрыты сутки [received; received + billed_days - 1]
         conn.execute("ALTER TABLE lots ADD COLUMN billed_until TEXT")
@@ -56,6 +90,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE intake_queue ADD COLUMN supply_id INTEGER")
     if "tariff" not in queue:
         conn.execute("ALTER TABLE intake_queue ADD COLUMN tariff REAL")
+    if "pick_rate" not in queue:
+        conn.execute("ALTER TABLE intake_queue ADD COLUMN pick_rate REAL")
     if "dims" not in queue:
         conn.execute("ALTER TABLE intake_queue ADD COLUMN dims TEXT")
         # раньше количество не спрашивали и в партию уходила единица: обнуляем, чтобы Глеб вписал
@@ -200,6 +236,7 @@ def update_client(cid, **fields):
         "tariff_storage",
         "tariff_intake",
         "tariff_ship",
+        "tariff_pick",
         "active",
     }
     sets = []
@@ -515,12 +552,12 @@ def list_cabinets():
     return rows
 
 
-def insert_lot(client_id, ms_product_id, article, barcode, gtin, name, tracking_type, liters, qty, received_at, ms_supply_id, tariff=None, dims=""):
+def insert_lot(client_id, ms_product_id, article, barcode, gtin, name, tracking_type, liters, qty, received_at, ms_supply_id, pick_rate=None, dims="", accepted_at=None):
     conn = connect()
     cur = conn.execute(
         "INSERT INTO lots (client_id, ms_product_id, article, barcode, gtin, name, tracking_type, "
-        "liters, dims, tariff, qty_in, qty_left, received_at, ms_supply_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "liters, dims, pick_rate, qty_in, qty_left, received_at, accepted_at, ms_supply_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             client_id,
             ms_product_id,
@@ -531,10 +568,11 @@ def insert_lot(client_id, ms_product_id, article, barcode, gtin, name, tracking_
             tracking_type,
             liters,
             dims or "",
-            tariff,
+            pick_rate,
             qty,
             qty,
             received_at,
+            accepted_at,
             ms_supply_id,
         ),
     )
@@ -561,6 +599,34 @@ def list_lots(only_open=False):
         rows = conn.execute("SELECT * FROM lots ORDER BY received_at, id").fetchall()
     conn.close()
     return rows
+
+
+def lots_awaiting_accept():
+    """Партии, которые ещё не встали на счётчик: приёмки в МойСклад не видели."""
+    conn = connect()
+    rows = conn.execute(
+        "SELECT * FROM lots WHERE (accepted_at IS NULL OR accepted_at = '') "
+        "AND ms_supply_id IS NOT NULL AND ms_supply_id <> '' ORDER BY id"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def mark_lot_accepted(lot_id, accepted_at):
+    conn = connect()
+    conn.execute(
+        "UPDATE lots SET accepted_at = ? WHERE id = ? AND (accepted_at IS NULL OR accepted_at = '')",
+        (accepted_at, int(lot_id)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_lot_pick_rate(lot_id, rate):
+    conn = connect()
+    conn.execute("UPDATE lots SET pick_rate = ? WHERE id = ?", (rate, int(lot_id)))
+    conn.commit()
+    conn.close()
 
 
 def list_lots_fifo(client_id, ms_product_id):
@@ -718,7 +784,7 @@ def add_intake_row(client_id, fields, created_at, author, supply_id=None):
     conn = connect()
     cur = conn.execute(
         "INSERT INTO intake_queue (client_id, supply_id, barcode, article, name, marketplace, gtin, "
-        "tracking_type, liters, dims, tariff, qty, state, note, created_at, author) "
+        "tracking_type, liters, dims, pick_rate, qty, state, note, created_at, author) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             client_id,
@@ -731,7 +797,7 @@ def add_intake_row(client_id, fields, created_at, author, supply_id=None):
             fields.get("tracking_type") or "",
             fields.get("liters"),
             fields.get("dims") or "",
-            fields.get("tariff"),
+            fields.get("pick_rate"),
             fields.get("qty") or 0,
             fields.get("state") or "draft",
             fields.get("note") or "",
@@ -755,7 +821,7 @@ def update_intake_row(row_id, **fields):
         "tracking_type",
         "liters",
         "dims",
-        "tariff",
+        "pick_rate",
         "qty",
         "state",
         "note",
@@ -844,12 +910,12 @@ def insert_invoice(client_id, ms_invoice_id, ms_number, storage, intake, ship, t
     return iid
 
 
-def add_invoice_lot(invoice_id, lot_id, storage, days=0, liter_days=0, period_from="", period_to=""):
+def add_invoice_lot(invoice_id, lot_id, storage, days=0, liter_days=0, period_from="", period_to="", ship=0):
     conn = connect()
     conn.execute(
         "INSERT INTO invoice_lots (invoice_id, lot_id, storage, intake, ship, days, liter_days, "
-        "period_from, period_to) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)",
-        (invoice_id, lot_id, storage, days, liter_days, period_from or "", period_to or ""),
+        "period_from, period_to) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
+        (invoice_id, lot_id, storage, ship, days, liter_days, period_from or "", period_to or ""),
     )
     conn.commit()
     conn.close()
@@ -880,10 +946,10 @@ def get_invoice(invoice_id):
 def list_invoice_positions(invoice_id):
     conn = connect()
     rows = conn.execute(
-        "SELECT invoice_lots.storage, invoice_lots.days, invoice_lots.liter_days, "
+        "SELECT invoice_lots.storage, invoice_lots.ship, invoice_lots.days, invoice_lots.liter_days, "
         "invoice_lots.period_from, invoice_lots.period_to, "
-        "lots.article, lots.barcode, lots.gtin, lots.name, lots.liters, lots.tariff, "
-        "lots.qty_in, lots.received_at "
+        "lots.article, lots.barcode, lots.gtin, lots.name, lots.liters, lots.pick_rate, "
+        "lots.qty_in, lots.received_at, lots.accepted_at "
         "FROM invoice_lots JOIN lots ON lots.id = invoice_lots.lot_id "
         "WHERE invoice_lots.invoice_id = ? ORDER BY invoice_lots.id",
         (int(invoice_id),),
@@ -966,7 +1032,7 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
 
 
 def set_work_state(ids, work_state):
-    """Локальная отметка «взято в сборку»: у Ozon такого статуса на площадке нет."""
+    """Складская отметка: на сборке, собрано, отгружено. Площадку не трогает."""
     if not ids:
         return 0
     conn = connect()
@@ -1256,18 +1322,21 @@ def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_fro
     return out
 
 
-# Группа, которую видит оператор. Отметка work_state поднимает «новое» в «на сборке»:
-# у Ozon такого статуса на площадке нет, а сборщику он нужен. Считаем на чтении, а не
-# храним, чтобы очередная выгрузка с площадки не стирала отметку. Если площадка сама
-# ушла дальше (например в «ожидает отгрузки») — её статус важнее нашей отметки.
+# Группа, которую видит оператор. work_state — наша складская отметка
+# (новые → на сборке → ожидают отгрузки → отгружены). Считаем на чтении,
+# чтобы выгрузка с площадки не стирала ход сборщика. Если площадка уже
+# уехала дальше (отгружен, доставлен, отменён) — её статус важнее.
 EFF_GROUP = (
-    "CASE WHEN COALESCE(shipments.work_state,'') = 'assembling' "
-    "AND COALESCE(shipments.status_group,'') = 'new' THEN 'assembling' "
-    "ELSE COALESCE(shipments.status_group,'') END"
+    "CASE"
+    " WHEN COALESCE(shipments.status_group,'') IN ('cancelled','delivered','shipped')"
+    " THEN shipments.status_group"
+    " WHEN COALESCE(shipments.work_state,'') IN ('assembling','ready','shipped')"
+    " THEN shipments.work_state"
+    " ELSE COALESCE(shipments.status_group,'') END"
 )
 
 
-def list_assembly(client_id=None, group="", marketplace="", article="", query="", since="", until=""):
+def list_assembly(client_id=None, group="", marketplace="", kind="", article="", query="", since="", until="", keep_floor=True, limit=0):
     """Отправления для раздела «Сборка».
 
     Период режем по «принят» с точностью до минуты: смена делит заказы по времени
@@ -1285,17 +1354,27 @@ def list_assembly(client_id=None, group="", marketplace="", article="", query=""
     if marketplace:
         sql += " AND shipments.marketplace = ?"
         args.append(marketplace)
+    if kind:
+        sql += " AND shipments.kind = ?"
+        args.append(kind.lower())
     if group:
         sql += " AND %s = ?" % EFF_GROUP
         args.append(group)
     when = "COALESCE(NULLIF(shipments.accepted_at, ''), shipments.shipped_at)"
+    if keep_floor:
+        floor = ship_keep_since()
+        if not since or since < floor:
+            since = floor
     if since:
         sql += " AND replace(%s, 'T', ' ') >= ?" % when
         args.append(since)
     if until:
         sql += " AND replace(%s, 'T', ' ') <= ?" % when
         args.append(until)
-    rows = conn.execute(sql + " ORDER BY %s DESC, shipments.id DESC" % when, args).fetchall()
+    sql += " ORDER BY %s DESC, shipments.id DESC" % when
+    if limit:
+        sql += " LIMIT %d" % int(limit)
+    rows = conn.execute(sql, args).fetchall()
     conn.close()
     # Артикул сверяем целиком, а не по вхождению: по этому фильтру оператор
     # отбирает позиции на печать этикеток, и «777» не должен тянуть «7777».
@@ -1317,11 +1396,11 @@ def list_assembly(client_id=None, group="", marketplace="", article="", query=""
     return out
 
 
-def assembly_counts(client_id=None, marketplace="", article="", query="", since="", until=""):
+def assembly_counts(client_id=None, marketplace="", kind="", article="", query="", since="", until="", keep_floor=True):
     """Счётчики на вкладках. Считаем теми же фильтрами, но без фильтра по группе."""
     rows = list_assembly(
-        client_id=client_id, marketplace=marketplace, article=article,
-        query=query, since=since, until=until,
+        client_id=client_id, marketplace=marketplace, kind=kind, article=article,
+        query=query, since=since, until=until, keep_floor=keep_floor,
     )
     counts = {}
     for row in rows:
@@ -1353,7 +1432,8 @@ def list_shipment_marks(ids):
     rows = conn.execute(
         "SELECT shipment_marks.*, shipments.ext_id, shipments.marketplace, shipments.kind, "
         "shipments.shipped_at, shipments.status, shipments.barcode AS ship_barcode, "
-        "shipments.name AS ship_name, shipments.article AS ship_article, clients.name AS client_name "
+        "shipments.name AS ship_name, shipments.article AS ship_article, "
+        "shipments.client_id AS client_id, clients.name AS client_name "
         "FROM shipment_marks JOIN shipments ON shipments.id = shipment_marks.shipment_id "
         "JOIN clients ON clients.id = shipments.client_id "
         "WHERE shipment_marks.shipment_id IN (%s) ORDER BY shipments.shipped_at, shipment_marks.id" % q,

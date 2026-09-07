@@ -66,7 +66,6 @@ $("viewNav").onclick = (e) => {
   if (!btn) return;
   document.querySelectorAll("#viewNav button").forEach((b) => b.classList.toggle("active", b === btn));
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + btn.dataset.view));
-  document.body.classList.toggle("wide", btn.dataset.view === "asm");
   if (btn.dataset.view === "home") loadOverview();
   if (btn.dataset.view === "stock") loadLots();
   if (btn.dataset.view === "ships") loadShips();
@@ -74,15 +73,11 @@ $("viewNav").onclick = (e) => {
 };
 
 function goView(name) {
-  if (name === "ships") {
-    if ($("dFrom").value) $("shFrom").value = $("dFrom").value;
-    if ($("dTo").value) $("shTo").value = $("dTo").value;
-    $("shPeriod").querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-    if ($("dClient").value) {
-      const c = state.clients.find((x) => String(x.id) === $("dClient").value);
-      $("shClient").value = $("dClient").value;
-      $("shClientQ").value = c ? c.name : $("dClientQ").value;
-    }
+  if (name === "ships") name = "asm";
+  if (name === "asm" && $("dClient").value) {
+    const c = state.clients.find((x) => String(x.id) === $("dClient").value);
+    $("aClient").value = $("dClient").value;
+    $("aClientQ").value = c ? c.name : $("dClientQ").value;
   }
   if (name === "stock" && $("dClient").value) {
     const c = state.clients.find((x) => String(x.id) === $("dClient").value);
@@ -374,7 +369,7 @@ async function loadIntake() {
     <td><select class="cell slim" data-id="${r.id}" data-field="kind">${kindOptions(r.tracking)}</select></td>
     <td class="num"><input class="cell slim num" data-id="${r.id}" data-field="qty" value="${!r.qty ? "" : r.qty}" placeholder="шт"></td>
     <td class="num"><input class="cell slim num" data-id="${r.id}" data-field="liters" value="${r.liters == null ? "" : (r.dims || r.liters)}" placeholder="л или 8x8x120" title="${r.dims ? esc(r.dims) + " см = " + r.liters + " л" : ""}"></td>
-    <td class="num"><input class="cell slim num" data-id="${r.id}" data-field="tariff" value="${r.tariff == null ? "" : r.tariff}" placeholder="₽/л/сут"></td>
+    <td class="num"><input class="cell slim num" data-id="${r.id}" data-field="pick_rate" value="${r.pick_rate == null ? "" : r.pick_rate}" placeholder="₽/шт"></td>
     <td>${intakeState(r)}</td>
     <td><button class="link" data-drop="${r.id}" title="Удалить">✕</button></td>
   </tr>`).join("");
@@ -683,10 +678,10 @@ async function loadLots() {
       <td class="client">${esc(r.client)}</td>
       <td class="codes"><b>${esc(r.article)}</b><span>ШК ${esc(r.barcode)}</span><span>GTIN ${esc(r.gtin)}</span></td>
       <td class="name">${esc(r.name)}</td>
-      <td class="num" title="${r.dims ? esc(r.dims) + " см" : ""}">${num(r.liters, 3)}</td><td class="num">${num(r.tariff)}</td>
+      <td class="num" title="${r.dims ? esc(r.dims) + " см" : ""}">${num(r.liters, 3)}</td><td class="num">${num(r.pick_rate)}</td>
       <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.shipped, 0)}</td>
       <td class="num">${num(r.qty, 0)}</td>
-      <td>${esc(r.received)}</td><td class="num ${r.days > 90 ? "aged" : ""}">${r.days}</td>
+      <td>${r.accepted ? esc(r.accepted) : `<span class="badge warn" title="Счётчик пойдёт после приёмки на склад «Фулфилмент»"><i></i>ждёт приёмки</span>`}</td><td class="num ${r.days > 90 ? "aged" : ""}">${r.days}</td>
       <td class="num" title="${esc(r.bill_from)} — ${esc(r.bill_to)}">${r.bill_days}</td>
       <td class="num">${num(r.liter_days, 1)}</td>
       <td class="num money">${num(r.total)}</td>
@@ -710,6 +705,24 @@ $("sTbl").onclick = (e) => {
   const id = Number(box.dataset.lot);
   if (box.checked) state.picked.add(id); else state.picked.delete(id);
   refreshPick();
+};
+
+$("sAccept").onclick = async () => {
+  $("sAccept").disabled = true;
+  say($("sMsg"), "Смотрю приёмки в МойСклад…");
+  try {
+    const res = await api("/api/lots/accept", { method: "POST" });
+    if (!res.ok) { say($("sMsg"), res.msg, "bad"); return; }
+    const parts = [`Проверил партий: ${res.checked}.`];
+    parts.push(res.accepted.length ? `Встали на счётчик: ${res.accepted.length}.` : "Новых приёмок нет.");
+    if (res.errors.length) parts.push(res.errors.join(" "));
+    say($("sMsg"), parts.join(" "), res.accepted.length ? "ok" : "");
+    if (res.accepted.length) loadLots();
+  } catch (e) {
+    say($("sMsg"), e.message, "bad");
+  } finally {
+    $("sAccept").disabled = false;
+  }
 };
 
 $("sAll").onclick = () => {
@@ -874,12 +887,11 @@ function refreshShipPick() {
   const marks = state.ships.filter((r) => state.pickedShip.has(r.id)).reduce((a, r) => a + (r.marks || 0), 0);
   $("shSel").textContent = n ? `Выбрано ${n} отправлений, кодов ${num(marks, 0)}` : "Ничего не выбрано";
   const withMs = state.ships.filter((r) => state.pickedShip.has(r.id) && r.ms_url).length;
-  $("shReport").disabled = n === 0;
-  $("shExport").disabled = marks === 0;
   $("shMs").disabled = withMs === 0;
 }
 
 async function loadShips() {
+  tintMp("view-ships", "shMp");
   const res = await api("/api/shipments?" + shipQuery());
   state.ships = res.rows;
   state.pickedShip.clear();
@@ -1017,10 +1029,16 @@ function setShift(kind) {
     d.setHours(h, m, 0, 0);
     return localStamp(d);
   };
-  if (kind === "all") { $("aSince").value = ""; $("aUntil").value = ""; return; }
   if (kind === "today") { $("aSince").value = day(0, 0); $("aUntil").value = day(23, 59); return; }
   if (kind === "morning") { $("aSince").value = day(0, 0); $("aUntil").value = day(14, 0); return; }
   if (kind === "evening") { $("aSince").value = day(14, 0); $("aUntil").value = day(23, 59); }
+}
+
+function tintMp(viewId, navId) {
+  const mp = ((document.querySelector("#" + navId + " button.active") || {}).dataset || {}).mp || "";
+  $(viewId).classList.toggle("theme-all", mp === "");
+  $(viewId).classList.toggle("theme-ozon", mp === "ozon");
+  $(viewId).classList.toggle("theme-wb", mp === "wb");
 }
 
 function asmQuery(group) {
@@ -1028,7 +1046,8 @@ function asmQuery(group) {
   if ($("aClient").value) params.set("client_id", $("aClient").value);
   const mp = document.querySelector("#aMp button.active");
   if (mp && mp.dataset.mp) params.set("mp", mp.dataset.mp);
-  if ($("aArticle").value.trim()) params.set("article", $("aArticle").value.trim());
+  const kind = document.querySelector("#aKind button.active");
+  if (kind && kind.dataset.kind) params.set("kind", kind.dataset.kind);
   if ($("aQuery").value.trim()) params.set("q", $("aQuery").value.trim());
   // datetime-local отдаёт 'ГГГГ-ММ-ДДTЧЧ:ММ', в базе храним через пробел
   if ($("aSince").value) params.set("since", $("aSince").value.replace("T", " "));
@@ -1043,14 +1062,12 @@ function asmTabs(groups) {
   </button>`).join("");
 }
 
-function lateClass(deadline) {
-  if (!deadline) return "";
-  const d = new Date(deadline.replace(" ", "T"));
-  if (isNaN(d.getTime())) return "";
-  return d.getTime() < Date.now() ? " late" : "";
-}
-
 async function loadAsm() {
+  if (!$("aSince").value) {
+    const shift = ((document.querySelector("#aShift button.active") || {}).dataset || {}).shift || "today";
+    setShift(shift);
+  }
+  tintMp("view-asm", "aMp");
   const res = await api("/api/assembly?" + asmQuery(state.asmGroup));
   state.asm = res.rows;
   state.pickedAsm.clear();
@@ -1061,34 +1078,48 @@ async function loadAsm() {
   refreshAsmPick();
   const body = $("aTbl").querySelector("tbody");
   if (!res.rows.length) {
-    body.innerHTML = `<tr><td colspan="13" class="empty">Здесь пусто. Проверь период и нажми «Обновить отправления».</td></tr>`;
+    body.innerHTML = `<tr><td colspan="10" class="empty">Здесь пусто. Проверь период и нажми «Обновить отправления».</td></tr>`;
     return;
   }
   body.innerHTML = res.rows.map((r) => `<tr>
     <td class="pick"><input type="checkbox" data-asm="${r.id}"></td>
     <td class="client">${esc(r.client)}</td>
     <td class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span></td>
-    <td>${esc(r.status || "—")}</td>
     <td class="when">${esc(r.accepted || "—")}</td>
-    <td class="when${lateClass(r.deadline)}">${esc(r.deadline || "—")}</td>
-    <td class="ph">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy">` : `<span class="noph"></span>`}</td>
-    <td class="artq"><b>${num(r.qty, 0)} шт</b> · ${r.article ? `<button type="button" class="artlink" data-art="${esc(r.article)}" title="Отобрать все позиции этого артикула">${esc(r.article)}</button>` : "—"}</td>
+    <td class="ph">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy" title="увеличить">` : `<span class="noph"></span>`}</td>
+    <td class="artq"><b>${num(r.qty, 0)} шт</b> · ${r.article ? `<button type="button" class="artlink" data-art="${esc(r.article)}" title="Найти этот артикул">${esc(r.article)}</button>` : "—"}</td>
     <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
     <td class="trk">${esc(r.track || "—")}</td>
-    <td class="wh" title="${esc(r.warehouse)}">${esc(r.warehouse || "—")}</td>
     <td class="sup">${r.supply ? `<span class="badge supply">${esc(r.supply)}</span>` : "—"}${r.box ? `<span class="badge box">${esc(r.box)}</span>` : ""}</td>
     <td class="num">${r.marks || "—"}</td>
   </tr>`).join("");
 }
 
+function hidePrintMenu() {
+  $("aPrintMenu").hidden = true;
+}
+
+function refreshAsmDock() {
+  const group = state.asmGroup;
+  $("aActsNew").hidden = group !== "new";
+  $("aActsAssembling").hidden = group !== "assembling";
+  $("aActsReady").hidden = group !== "ready";
+  if (group !== "assembling") hidePrintMenu();
+}
+
 function refreshAsmPick() {
   const n = state.pickedAsm.size;
+  const marks = state.asm.filter((r) => state.pickedAsm.has(r.id)).reduce((a, r) => a + (r.marks || 0), 0);
   $("aSel").textContent = n ? "Выбрано " + n : "Ничего не выбрано";
-  ["aWork", "aUnwork", "aMs", "aPrint", "aShip"].forEach((id) => { $(id).disabled = !n; });
+  ["aWork", "aDone", "aUnwork", "aPrint", "aShipped", "aBackAsm"].forEach((id) => { $(id).disabled = !n; });
+  if (!n) hidePrintMenu();
+  $("shReport").disabled = !n;
+  $("shExport").disabled = marks === 0;
   $("aTbl").querySelectorAll("tr").forEach((tr) => {
     const box = tr.querySelector("input[data-asm]");
     tr.classList.toggle("picked", !!box && box.checked);
   });
+  refreshAsmDock();
 }
 
 $("aTabs").onclick = (e) => {
@@ -1127,6 +1158,13 @@ $("aMp").onclick = (e) => {
   loadAsm();
 };
 
+$("aKind").onclick = (e) => {
+  const btn = e.target.closest("button[data-kind]");
+  if (!btn) return;
+  $("aKind").querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
+  loadAsm();
+};
+
 $("aShift").onclick = (e) => {
   const btn = e.target.closest("button[data-shift]");
   if (!btn) return;
@@ -1147,22 +1185,52 @@ $("aSince").onchange = $("aUntil").onchange = () => {
 };
 
 let asmTimer = null;
-$("aQuery").oninput = $("aArticle").oninput = () => {
+$("aQuery").oninput = () => {
   clearTimeout(asmTimer);
   asmTimer = setTimeout(loadAsm, 250);
 };
 
+function photoZoomSrc(url) {
+  return (url || "")
+    .replace("/images/tm/", "/images/c516x688/")
+    .replace("/wc50/", "/wc400/");
+}
+
+function openPhoto(url) {
+  $("photoZoomImg").src = photoZoomSrc(url);
+  $("photoZoom").hidden = false;
+  $("photoZoom").classList.add("on");
+}
+
+function closePhoto() {
+  $("photoZoom").classList.remove("on");
+  $("photoZoom").hidden = true;
+  $("photoZoomImg").src = "";
+}
+
+$("photoZoom").onclick = closePhoto;
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("photoZoom").classList.contains("on")) closePhoto();
+});
+
 $("aTbl").onclick = (e) => {
+  const pic = e.target.closest("td.ph img");
+  if (pic) {
+    openPhoto(pic.src);
+    return;
+  }
   const art = e.target.closest("button[data-art]");
   if (art) {
     // клик по артикулу отбирает ровно этот артикул: так оператор набирает
     // партию под печать этикеток одним движением
-    $("aArticle").value = $("aArticle").value === art.dataset.art ? "" : art.dataset.art;
+    $("aQuery").value = $("aQuery").value === art.dataset.art ? "" : art.dataset.art;
     loadAsm();
     return;
   }
-  const box = e.target.closest("input[data-asm]");
+  const tr = e.target.closest("tbody tr");
+  const box = tr && tr.querySelector("input[data-asm]");
   if (!box) return;
+  if (e.target !== box) box.checked = !box.checked;
   const id = Number(box.dataset.asm);
   if (box.checked) state.pickedAsm.add(id); else state.pickedAsm.delete(id);
   refreshAsmPick();
@@ -1178,37 +1246,30 @@ $("aAll").onclick = () => {
   refreshAsmPick();
 };
 
-async function asmWork(stateCode, label) {
+async function asmWork(stateCode, nextGroup, label) {
   const ids = [...state.pickedAsm];
+  if (!ids.length) return;
   say($("aMsg"), "Сохраняю…");
   try {
     await api("/api/assembly/work", { method: "POST", body: JSON.stringify({ ids, state: stateCode }) });
     say($("aMsg"), label + ": " + ids.length, "ok");
+    state.asmGroup = nextGroup;
     await loadAsm();
   } catch (e) {
     say($("aMsg"), e.message, "bad");
   }
 }
 
-$("aWork").onclick = () => asmWork("assembling", "Взято в сборку");
-$("aUnwork").onclick = () => asmWork("", "Возвращено в новые");
+$("aWork").onclick = () => asmWork("assembling", "assembling", "Взято в сборку");
+$("aDone").onclick = () => asmWork("ready", "ready", "Собрано");
+$("aUnwork").onclick = () => asmWork("", "new", "Возвращено в новые");
+$("aShipped").onclick = () => asmWork("shipped", "shipped", "Отгружено");
+$("aBackAsm").onclick = () => asmWork("assembling", "assembling", "Возвращено в сборку");
 
-$("aMs").onclick = () => {
-  const links = state.asm.filter((r) => state.pickedAsm.has(r.id) && r.ms_url);
-  if (!links.length) { say($("aMsg"), "У выбранных отправлений нет заказов в МойСклад.", "bad"); return; }
-  links.slice(0, 12).forEach((r) => window.open(r.ms_url, "_blank"));
-  if (links.length > 12) say($("aMsg"), "Открыл первые 12 из " + links.length + ": браузер блокирует больше вкладок разом.");
-};
-
-$("aMode").onclick = (e) => {
-  const btn = e.target.closest("button[data-mode]");
-  if (!btn) return;
-  $("aMode").querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
-};
-
-$("aPrint").onclick = async () => {
+async function printAsm(mode) {
   const ids = [...state.pickedAsm];
-  const mode = (document.querySelector("#aMode button.active") || {}).dataset?.mode || "posting";
+  if (!ids.length) return;
+  hidePrintMenu();
   $("aPrint").disabled = true;
   const label = $("aPrint").textContent;
   $("aPrint").textContent = "Собираю файл…";
@@ -1220,15 +1281,29 @@ $("aPrint").onclick = async () => {
     const pages = res.headers.get("X-Label-Pages") || "?";
     const raw = res.headers.get("X-Label-Notes") || "";
     const notes = raw ? decodeURIComponent(raw) : "";
-    // заметки приходят заголовком: тело ответа занято PDF, а оператору важно
-    // знать, если часть этикеток площадка не отдала
     say($("aMsg"), "Готово: этикеток в файле " + pages + "." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
   } catch (e) {
     say($("aMsg"), e.message, "bad");
   }
   $("aPrint").textContent = label;
   refreshAsmPick();
+}
+
+$("aPrint").onclick = (e) => {
+  e.stopPropagation();
+  if ($("aPrint").disabled) return;
+  $("aPrintMenu").hidden = !$("aPrintMenu").hidden;
 };
+
+$("aPrintMenu").onclick = (e) => {
+  const btn = e.target.closest("button[data-mode]");
+  if (!btn) return;
+  printAsm(btn.dataset.mode);
+};
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".print-wrap")) hidePrintMenu();
+});
 
 $("aSync").onclick = async () => {
   $("aSync").disabled = true;
@@ -1263,41 +1338,6 @@ $("askYes").onclick = () => askDone(true);
 $("askNo").onclick = () => askDone(false);
 $("askModal").onclick = (e) => { if (e.target === $("askModal")) askDone(false); };
 
-$("aSplit").onclick = (e) => {
-  const btn = e.target.closest("button[data-split]");
-  if (!btn) return;
-  $("aSplit").querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
-};
-
-$("aShip").onclick = async () => {
-  const picked = state.asm.filter((r) => state.pickedAsm.has(r.id));
-  const ozon = picked.filter((r) => r.marketplace === "ozon" && r.kind === "fbs");
-  const wb = picked.filter((r) => r.marketplace === "wb");
-  if (!ozon.length) {
-    say($("aMsg"), wb.length ? "WB собирается вместе с поставкой: нажми «Поставки WB»." : "Собрать можно только отправления Ozon FBS.", "bad");
-    return;
-  }
-  const split = (document.querySelector("#aSplit button.active") || {}).dataset?.split === "1";
-  const okay = await ask(
-    "Собрать на площадке?",
-    "Ozon переведёт " + ozon.length + " отправлен" + (ozon.length === 1 ? "ие" : "ий") + " в «Ожидают отгрузки»."
-      + (split ? " Многотоварные заказы будут разделены: каждая единица станет отдельным отправлением с новым номером." : " Заказ уйдёт одним грузовым местом.")
-      + " Отменить сборку на площадке нельзя."
-      + (wb.length ? " Задания WB (" + wb.length + ") пропустим: они собираются вместе с поставкой." : ""),
-    "Собрать"
-  );
-  if (!okay) return;
-  $("aShip").disabled = true;
-  say($("aMsg"), "Собираю на площадке…");
-  try {
-    const res = await api("/api/assembly/ship", { method: "POST", body: JSON.stringify({ ids: ozon.map((r) => r.id), split }) });
-    const notes = (res.notes || []).join("\n");
-    say($("aMsg"), "Собрано отправлений: " + res.shipped + (notes ? "\n" + notes : ""), notes ? "" : "ok");
-    await loadAsm();
-  } catch (e) {
-    say($("aMsg"), e.message, "bad");
-  }
-};
 
 // поставки WB: грузоместа, QR коробов, передача в доставку
 
@@ -1305,28 +1345,41 @@ $("aSupplies").onclick = () => openWb();
 $("wbClose").onclick = () => $("wbModal").classList.remove("on");
 $("wbModal").onclick = (e) => { if (e.target === $("wbModal")) $("wbModal").classList.remove("on"); };
 
+function wbClientHint() {
+  const has = !!$("aClient").value;
+  $("wbCreate").disabled = !has;
+  $("wbHint").textContent = has
+    ? "Поставка откроется в кабинете «" + ($("aClientQ").value || "контрагент") + "»."
+    : "Сначала выбери контрагента в фильтре Заказов.";
+}
+
 function openWb() {
   $("wbModal").classList.add("on");
   state.wbPicked = new Set();
+  wbClientHint();
   loadWbSupplies().catch((e) => say($("wbMsg"), e.message, "bad"));
 }
 
 async function loadWbSupplies() {
+  wbClientHint();
   const params = new URLSearchParams();
   if ($("aClient").value) params.set("client_id", $("aClient").value);
   const res = await api("/api/wb/supplies?" + params.toString());
   state.wbSupplies = res.rows;
-  $("wbSupplies").innerHTML = res.rows.length
-    ? res.rows.map((r) => `<button type="button" class="wb-item${r.id === state.wbSupply ? " is-on" : ""}" data-supply="${r.id}">
+  const empty = !res.rows.length;
+  $("wbModal").classList.toggle("is-empty", empty);
+  $("wbCols").classList.toggle("is-empty", empty);
+  $("wbSupplies").innerHTML = empty
+    ? `<div class="wb-empty">Поставок ещё нет. Создай первую — WB вернёт номер вроде WB-GI и сюда можно будет класть собранные задания.</div>`
+    : res.rows.map((r) => `<button type="button" class="wb-item${r.id === state.wbSupply ? " is-on" : ""}" data-supply="${r.id}">
         <b>${esc(r.ext_id)}</b>
         <span>${esc(r.client)}${r.name ? " · " + esc(r.name) : ""}</span>
         <span>${r.orders} заданий · ${r.boxes} мест${r.loose ? " · без коробки " + r.loose : ""}</span>
         <span class="wb-state ${r.state}">${r.state === "delivered" ? "передана " + esc(r.delivered) : "на сборке"}</span>
-      </button>`).join("")
-    : `<div class="empty">Поставок нет. Создай первую — WB заведёт её у себя и вернёт номер WB-GI.</div>`;
-  if (state.wbSupply && !res.rows.some((r) => r.id === state.wbSupply)) state.wbSupply = 0;
+      </button>`).join("");
+  if (empty || (state.wbSupply && !res.rows.some((r) => r.id === state.wbSupply))) state.wbSupply = 0;
   if (state.wbSupply) await loadWbDetail(state.wbSupply);
-  else $("wbDetail").innerHTML = `<div class="empty">Выбери поставку слева.</div>`;
+  else $("wbDetail").innerHTML = empty ? "" : `<div class="empty">Выбери поставку в списке слева.</div>`;
 }
 
 $("wbSupplies").onclick = (e) => {
@@ -1339,7 +1392,7 @@ $("wbSupplies").onclick = (e) => {
 
 $("wbCreate").onclick = async () => {
   if (!$("aClient").value) {
-    say($("wbMsg"), "Сначала выбери контрагента в фильтре «Сборки»: поставка создаётся в его кабинете WB.", "bad");
+    say($("wbMsg"), "Сначала выбери контрагента в фильтре «Заказов»: поставка создаётся в его кабинете WB.", "bad");
     return;
   }
   $("wbCreate").disabled = true;
@@ -1374,7 +1427,7 @@ async function loadWbDetail(id) {
       <span class="wb-state ${res.supply.state}">${open ? "на сборке" : "передана в доставку " + esc(res.supply.delivered)}</span>
     </div>
     <div class="wb-acts">
-      ${open ? `<button class="btn-ghost" id="wbAdd" type="button">Добавить выбранные в «Сборке»${asmPicked ? " (" + asmPicked + ")" : ""}</button>` : ""}
+      ${open ? `<button class="btn-ghost" id="wbAdd" type="button">Добавить выбранные в «Заказах»${asmPicked ? " (" + asmPicked + ")" : ""}</button>` : ""}
       ${open ? `<input id="wbAmount" class="wb-amount" type="number" min="1" max="200" value="1" title="Сколько грузомест создать">` : ""}
       ${open ? `<button class="btn-ghost" id="wbNewBox" type="button">+ грузоместо</button>` : ""}
       ${open ? `<button class="btn-ghost" id="wbPack" type="button" disabled title="Отметить, что задания лежат в этой коробке. Учёт наш: в API WB привязки задания к грузоместу нет">Уложить в выбранное место</button>` : ""}
@@ -1394,7 +1447,7 @@ async function loadWbDetail(id) {
               <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
               <td>${r.box ? `<span class="badge box">${esc(r.box)}</span>` : "—"}</td>
             </tr>`).join("")
-          : `<tr><td colspan="6" class="empty">В поставке пока нет заданий. Отбери их в «Сборке» и нажми «Добавить выбранные».</td></tr>`}</tbody>
+          : `<tr><td colspan="6" class="empty">В поставке пока нет заданий. Отбери их в «Заказах» и нажми «Добавить выбранные».</td></tr>`}</tbody>
       </table>
     </div>`;
   bindWbDetail();
@@ -1414,7 +1467,7 @@ function bindWbDetail() {
   const add = $("wbAdd");
   if (add) add.onclick = () => guard(async () => {
     const ids = [...state.pickedAsm];
-    if (!ids.length) { say($("wbMsg"), "В «Сборке» ничего не выбрано.", "bad"); return; }
+    if (!ids.length) { say($("wbMsg"), "В «Заказах» ничего не выбрано.", "bad"); return; }
     const res = await api("/api/wb/supplies/" + id + "/orders", { method: "POST", body: JSON.stringify({ ids }) });
     const notes = (res.notes || []).join("\n");
     say($("wbMsg"), "Добавлено заданий: " + res.added + (notes ? "\n" + notes : ""), notes ? "" : "ok");
@@ -1543,20 +1596,20 @@ async function downloadXlsx(url, ids, fallback, okText, msgEl, extra) {
 $("shExport").onclick = async () => {
   $("shExport").disabled = true;
   try {
-    await downloadXlsx("/api/shipments/marks.xlsx", [...state.pickedShip], "коды_маркировки.xlsx", "Файл с кодами скачан.", $("shMsg"));
+    await downloadXlsx("/api/shipments/marks.xlsx", [...state.pickedAsm], "коды_маркировки.xlsx", "Файл с кодами скачан.", $("aMsg"));
   } catch (e) {
-    say($("shMsg"), e.message, "bad");
+    say($("aMsg"), e.message, "bad");
   }
-  refreshShipPick();
+  refreshAsmPick();
 };
 $("shReport").onclick = async () => {
   $("shReport").disabled = true;
   try {
-    await downloadXlsx("/api/shipments/report.xlsx", [...state.pickedShip], "отгрузки.xlsx", "Отчёт по отгрузкам скачан.", $("shMsg"));
+    await downloadXlsx("/api/shipments/report.xlsx", [...state.pickedAsm], "отгрузки.xlsx", "Отчёт по отгрузкам скачан.", $("aMsg"));
   } catch (e) {
-    say($("shMsg"), e.message, "bad");
+    say($("aMsg"), e.message, "bad");
   }
-  refreshShipPick();
+  refreshAsmPick();
 };
 $("shMs").onclick = () => {
   const urls = [...new Set(state.ships.filter((r) => state.pickedShip.has(r.id) && r.ms_url).map((r) => r.ms_url))];
@@ -1603,6 +1656,7 @@ async function openBillDetail(id) {
   $("bdSub").textContent = [inv.client, "хранение " + inv.period, inv.created, inv.author ? "выставил " + inv.author : ""].filter(Boolean).join(" · ");
   $("bdLiterDays").textContent = num(inv.liter_days, 1);
   $("bdStorage").innerHTML = num(inv.storage) + " <small>₽</small>";
+  $("bdPick").innerHTML = num(inv.pick) + " <small>₽</small>";
   $("bdTotal").innerHTML = num(inv.total) + " <small>₽</small>";
   const body = $("bdTbl").querySelector("tbody");
   if (!res.positions.length) {
@@ -1614,7 +1668,7 @@ async function openBillDetail(id) {
       <td>${esc(r.period)}</td>
       <td class="num">${num(r.days, 0)}</td>
       <td class="num">${num(r.liter_days, 1)}</td>
-      <td class="num">${num(r.tariff)}</td>
+      <td class="num">${num(r.pick, 2)}</td>
       <td class="num money">${num(r.total)}</td>
     </tr>`).join("");
   }
@@ -1659,7 +1713,7 @@ async function loadCalendar() {
     const head = $("calTbl").querySelector("thead tr");
     const body = $("calTbl").querySelector("tbody");
     const foot = $("calTbl").querySelector("tfoot tr");
-    head.innerHTML = `<th class="cal-side">Позиция</th><th class="num">Тариф</th><th class="num">Итого, ₽</th>`
+    head.innerHTML = `<th class="cal-side">Позиция</th><th class="num">Ставка хранения, ₽/л/сутки</th><th class="num">Итого, ₽</th>`
       + res.days.map((d) => `<th class="num cal-day">${d.slice(8, 10)}.${d.slice(5, 7)}</th>`).join("");
     if (!res.rows.length) {
       body.innerHTML = `<tr><td colspan="${res.days.length + 3}" class="empty">За период нет позиций на складе.</td></tr>`;
@@ -1669,7 +1723,7 @@ async function loadCalendar() {
     }
     body.innerHTML = res.rows.map((r) => `<tr>
       <td class="cal-side"><b>${esc(r.article)}</b><span>${esc(r.name)}</span><span>${esc(r.client)} · ${num(r.liters, 3)} л</span></td>
-      <td class="num">${num(r.tariff)}</td>
+      <td class="num">${num(r.rate)}</td>
       <td class="num money">${num(r.sum)}</td>
       ${r.cells.map((c) => c.qty === null
         ? `<td class="num cal-cell muted">—</td>`

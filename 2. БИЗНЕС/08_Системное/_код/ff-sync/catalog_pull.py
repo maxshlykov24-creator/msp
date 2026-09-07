@@ -42,16 +42,30 @@ def wb_photo(card):
     return ""
 
 
+def ozon_thumb(url):
+    """Ozon отдаёт полный кадр (~200 КБ). /wc50/ — тот же файл ~1–2 КБ."""
+    if not url or "/wc" in url:
+        return url or ""
+    head, name = url.rsplit("/", 1)
+    if not name:
+        return url
+    return "%s/wc50/%s" % (head, name)
+
+
 def ozon_photo(det):
+    url = ""
     if det.get("primary_image"):
         raw = det["primary_image"]
-        return raw[0] if isinstance(raw, list) and raw else (raw if isinstance(raw, str) else "")
-    for raw in det.get("images") or []:
-        if isinstance(raw, str) and raw:
-            return raw
-        if isinstance(raw, dict) and raw.get("file_name"):
-            return raw["file_name"]
-    return ""
+        url = raw[0] if isinstance(raw, list) and raw else (raw if isinstance(raw, str) else "")
+    if not url:
+        for raw in det.get("images") or []:
+            if isinstance(raw, str) and raw:
+                url = raw
+                break
+            if isinstance(raw, dict) and raw.get("file_name"):
+                url = raw["file_name"]
+                break
+    return ozon_thumb(url)
 
 
 def out_dir():

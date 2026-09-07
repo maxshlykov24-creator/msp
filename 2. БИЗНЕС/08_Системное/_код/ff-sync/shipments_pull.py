@@ -4,12 +4,14 @@ from datetime import datetime, timedelta, timezone
 
 import statuses as statuses_mod
 from db import (
+    connect,
     find_cache,
     get_client_by_id,
     get_order_log,
     init_db,
     list_cabinets,
     prefer_hit,
+    prune_old_shipments,
     replace_shipment_marks,
     run_lock,
     upsert_shipment,
@@ -44,22 +46,41 @@ def stamp_of(raw):
     return (moment_of(raw) or "")[:16]
 
 
-_photo_cache = {}
+_catalog_mem = {}
+
+
+def catalog_of(client_id, barcode, article):
+    """Имя и фото из кэша каталога. У WB в задании названия нет — только артикул."""
+    key = (client_id, barcode or "", article or "")
+    if key in _catalog_mem:
+        return _catalog_mem[key]
+    hits = find_cache(client_id, barcode=barcode or None, article=article or None)
+    name = ""
+    image = ""
+    want = (article or "").strip()
+    for hit in prefer_hit(hits) if hits else []:
+        title = (hit["name"] or "").strip()
+        if title and title != want and not name:
+            name = title
+        elif title and not name:
+            name = title
+        if not image and "image" in hit.keys() and hit["image"]:
+            image = hit["image"]
+        if name and name != want and image:
+            break
+    found = {"name": name, "image": image}
+    _catalog_mem[key] = found
+    return found
 
 
 def photo_of(client_id, barcode, article):
-    """Превью товара из кэша каталога. Кэшируем в памяти: на выгрузку сотни строк."""
-    key = (client_id, barcode or "", article or "")
-    if key in _photo_cache:
-        return _photo_cache[key]
-    hits = find_cache(client_id, barcode=barcode or None, article=article or None)
-    image = ""
-    for hit in prefer_hit(hits) if hits else []:
-        if "image" in hit.keys() and hit["image"]:
-            image = hit["image"]
-            break
-    _photo_cache[key] = image
-    return image
+    return catalog_of(client_id, barcode, article)["image"]
+
+
+def name_of(client_id, barcode, article, fallback=""):
+    """Наименование карточки, если оно не просто повтор артикула."""
+    title = catalog_of(client_id, barcode, article)["name"]
+    return title or fallback or article or ""
 
 
 def looks_mark(raw):
@@ -229,6 +250,8 @@ def handle_wb_fbs(client, cab, orders):
         info = statuses.get(ext_id) or {}
         skus = order.get("skus") or []
         article = order.get("article") or ""
+        barcode = skus[0] if skus else ""
+        cat = catalog_of(client["id"], barcode, article)
         n += save_row(
             client,
             cab,
@@ -237,8 +260,8 @@ def handle_wb_fbs(client, cab, orders):
             statuses_mod.wb_text(info.get("supplier"), info.get("wb")),
             day_of(order.get("createdAt")),
             article,
-            skus[0] if skus else "",
-            article,
+            barcode,
+            cat["name"] or article,
             1,
             meta.get(ext_id) or [],
             extra={
@@ -249,7 +272,7 @@ def handle_wb_fbs(client, cab, orders):
                 "deadline_at": "",
                 "track": "",
                 "warehouse": "",
-                "image": photo_of(client["id"], skus[0] if skus else "", article),
+                "image": cat["image"],
             },
         )
     return n
@@ -262,6 +285,7 @@ def handle_wb_fbo(client, cab, orders):
         collect_marks(order, bag)
         article = order.get("supplierArticle") or ""
         barcode = order.get("barcode") or ""
+        cat = catalog_of(client["id"], barcode, article)
         n += save_row(
             client,
             cab,
@@ -271,7 +295,7 @@ def handle_wb_fbo(client, cab, orders):
             day_of(order.get("date")),
             article,
             barcode,
-            article,
+            cat["name"] or article,
             float(order.get("quantity") or 1),
             uniq_marks(bag),
             extra={
@@ -280,7 +304,7 @@ def handle_wb_fbo(client, cab, orders):
                 "status_group": statuses_mod.CANCELLED if order.get("isCancel") else statuses_mod.SHIPPED,
                 "accepted_at": stamp_of(order.get("date")),
                 "warehouse": order.get("warehouseName") or "",
-                "image": photo_of(client["id"], barcode, article),
+                "image": cat["image"],
             },
         )
     return n
@@ -351,6 +375,48 @@ def handle_ozon(client, cab, kind, postings, headers):
     return n
 
 
+def fill_wb_names():
+    """Старые WB-отправления писали артикул в имя. Подтягиваем title из каталога."""
+    conn = connect()
+    rows = conn.execute(
+        "SELECT id, client_id, article, barcode, name FROM shipments "
+        "WHERE marketplace = 'wb' AND (name IS NULL OR name = '' OR name = article)"
+    ).fetchall()
+    n = 0
+    for row in rows:
+        title = catalog_of(row["client_id"], row["barcode"] or "", row["article"] or "")["name"]
+        if not title or title == (row["name"] or ""):
+            continue
+        conn.execute("UPDATE shipments SET name = ? WHERE id = ?", (title, row["id"]))
+        n += 1
+    conn.commit()
+    conn.close()
+    if n:
+        print("наименования WB из каталога: %s" % n)
+    return n
+
+
+def fill_images():
+    """Превью из кэша каталога: в задании площадки фото нет."""
+    conn = connect()
+    rows = conn.execute(
+        "SELECT id, client_id, article, barcode FROM shipments "
+        "WHERE image IS NULL OR image = ''"
+    ).fetchall()
+    n = 0
+    for row in rows:
+        image = catalog_of(row["client_id"], row["barcode"] or "", row["article"] or "")["image"]
+        if not image:
+            continue
+        conn.execute("UPDATE shipments SET image = ? WHERE id = ?", (image, row["id"]))
+        n += 1
+    conn.commit()
+    conn.close()
+    if n:
+        print("фото из каталога: %s" % n)
+    return n
+
+
 def run(days=14, blocking=True):
     init_db()
     with run_lock(blocking=blocking):
@@ -358,6 +424,8 @@ def run(days=14, blocking=True):
 
 
 def _run(days):
+    fill_wb_names()
+    fill_images()
     start = since_days(int(days or 14))
     created = 0
     notes = []
@@ -384,6 +452,10 @@ def _run(days):
             notes.append("%s %s: %s отправлений" % (client["name"], cab["marketplace"], n))
         except Exception as exc:
             notes.append("%s %s: %s" % (client["name"], cab["marketplace"], exc))
+    gone = prune_old_shipments(int(days or 14))
+    if gone:
+        print("отправлений старше окна: снял %s" % gone)
+        notes.append("снял старше %s дней: %s" % (int(days or 14), gone))
     print("отгрузок обновлено: %s" % created)
     return {"count": created, "notes": notes}
 
