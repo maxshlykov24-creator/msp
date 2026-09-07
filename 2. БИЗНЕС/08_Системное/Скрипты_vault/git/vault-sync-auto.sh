@@ -164,8 +164,11 @@ fi
 # 2026-09-07 18:15 и 18:30 это дало `fatal: Cannot rebase onto multiple branches`:
 # параллельный git-процесс перезаписал FETCH_HEAD между fetch и pull.
 # `origin/main` — обычная ссылка, гонке не подвержена.
-if ! git fetch origin main >>"$log_file" 2>&1; then
+# Вывод fetch держим в переменной и пишем только при ошибке: холостых прогонов
+# ~96 в сутки, и каждый дописывал бы «* branch main -> FETCH_HEAD» в лог.
+if ! fetch_out=$(git fetch origin main 2>&1); then
   log "error: git fetch origin main failed"
+  printf '%s\n' "$fetch_out" >>"$log_file"
   exit 1
 fi
 
