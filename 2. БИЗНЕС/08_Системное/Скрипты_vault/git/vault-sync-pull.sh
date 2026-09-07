@@ -17,4 +17,4 @@ branch=$(git symbolic-ref --short HEAD 2>/dev/null) || {
 }
 
 git fetch origin
-git pull --rebase origin "$branch"
+git rebase "origin/$branch"

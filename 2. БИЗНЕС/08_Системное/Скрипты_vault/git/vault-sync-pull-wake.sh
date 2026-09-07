@@ -53,10 +53,12 @@ if [ -z "$(git rev-list HEAD..origin/main 2>/dev/null)" ]; then
   exit 0
 fi
 
-if git pull --rebase origin main >>"$log_file" 2>&1; then
+# Ребейз от origin/main, а не через pull: FETCH_HEAD общий на все git-процессы.
+if git rebase origin/main >>"$log_file" 2>&1; then
   log "wake-pull: ok"
   rm -f "$conflict_file"
 else
+  git rebase --abort 2>/dev/null || true
   mark_conflict
   exit 1
 fi

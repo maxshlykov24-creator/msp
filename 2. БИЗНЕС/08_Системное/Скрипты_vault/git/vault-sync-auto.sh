@@ -1,5 +1,5 @@
 #!/bin/sh
-# Авто-синхронизация vault → GitHub (commit → pull --rebase → push).
+# Авто-синхронизация vault → GitHub (commit → rebase origin/main → push).
 # Запуск: launchd каждые 15 мин или вручную из корня vault.
 # Пауза: touch .vault-sync-off в корне vault
 
@@ -55,7 +55,7 @@ else
 fi
 
 mark_conflict() {
-  log "CONFLICT: git pull --rebase failed — resolve manually, then rm .vault-sync-conflict"
+  log "CONFLICT: git rebase origin/main failed — resolve manually, then rm .vault-sync-conflict"
   touch "$conflict_file"
   notify "Vault sync" "Конфликт — нужен ручной разбор. См. vault-sync.log"
 }
@@ -147,7 +147,18 @@ if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git status --por
   fi
 fi
 
-if ! git pull --rebase origin main >>"$log_file" 2>&1; then
+# Ребейз от remote-tracking, а не через pull.
+# `git pull --rebase origin main` читает ветку для слияния из общего .git/FETCH_HEAD.
+# 2026-09-07 18:15 и 18:30 это дало `fatal: Cannot rebase onto multiple branches`:
+# параллельный git-процесс перезаписал FETCH_HEAD между fetch и pull.
+# `origin/main` — обычная ссылка, гонке не подвержена.
+if ! git fetch origin main >>"$log_file" 2>&1; then
+  log "error: git fetch origin main failed"
+  exit 1
+fi
+
+if ! git rebase origin/main >>"$log_file" 2>&1; then
+  git rebase --abort 2>/dev/null || true
   mark_conflict
   exit 1
 fi

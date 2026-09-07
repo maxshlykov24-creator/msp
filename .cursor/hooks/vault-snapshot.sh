@@ -56,15 +56,36 @@ fi
 
 files=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
 git add -A >/dev/null 2>&1
+
+body="Автоматический коммит хуком .cursor/hooks/vault-snapshot.sh.
+Смысл: не отдавать незакоммиченную работу в git stash при запуске агента."
+
+# Cursor вызывает beforeSubmitPrompt перед каждым шагом агента, а не раз на задачу.
+# Поэтому длинная задача давала бы десяток коммитов «Снапшот: 1 путей».
+# Если предыдущий снапшот ещё не ушёл на origin — дополняем его, а не плодим новые.
+amend=""
+last=$(git log -1 --format=%s 2>/dev/null)
+case "$last" in
+  "Снапшот работы агента:"*)
+    if [ -n "$(git rev-list origin/main..HEAD 2>/dev/null)" ]; then
+      amend="--amend"
+    fi
+    ;;
+esac
+
 if git diff --cached --quiet 2>/dev/null; then
   log "ok: нечего коммитить"
-else
-  GIT_SKIP_AUTO_PUSH=1 git commit -q -m "Снапшот перед задачей агента: $files путей
+elif GIT_SKIP_AUTO_PUSH=1 git commit -q $amend -m "Снапшот работы агента
 
-Автоматический коммит хуком .cursor/hooks/vault-snapshot.sh.
-Смысл: не отдавать незакоммиченную работу в git stash при запуске агента." >/dev/null 2>&1 \
-    && log "снапшот: $files путей, $(git rev-parse --short HEAD)" \
-    || log "error: коммит не удался"
+$body" >/dev/null 2>&1; then
+  # Число путей известно только по готовому коммиту (при --amend он объединён с прежним)
+  files=$(git show --name-only --format= HEAD 2>/dev/null | grep -c .)
+  GIT_SKIP_AUTO_PUSH=1 git commit -q --amend -m "Снапшот работы агента: $files путей
+
+$body" >/dev/null 2>&1
+  log "снапшот${amend:+ (дополнен)}: $files путей, $(git rev-parse --short HEAD)"
+else
+  log "error: коммит не удался"
 fi
 
 rmdir "$lock_dir" 2>/dev/null
