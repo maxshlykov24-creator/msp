@@ -30,6 +30,7 @@ import { getAppSettings } from "./settings.js";
 import * as financeQueue from "./queue.js";
 import * as taskService from "./tasks.js";
 import * as taskFlow from "./taskFlow.js";
+import { noteSuitBreaks } from "./suitBreaks.js";
 
 export interface PhotoInput {
   filename: string;
@@ -117,6 +118,9 @@ export async function processSale(
 
     // 4c. Оплата сертификатом → списание баланса
     await redeemCertificatesFromPayments(enriched);
+
+    // 4d. Полупарк от этой продажи — в журнал разбитых костюмов.
+    await noteSuitBreaks(enriched).catch(() => {});
 
     await enqueueSary(enriched, opts.who).catch(() => {});
     await noteSaryInAmo(enriched, opts.who).catch(() => {});

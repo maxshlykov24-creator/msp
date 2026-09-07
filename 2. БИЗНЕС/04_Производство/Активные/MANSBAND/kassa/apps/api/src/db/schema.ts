@@ -366,6 +366,17 @@ export const payrollSettings = pgTable("payroll_settings", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ── Возраст остатка ─────────────────────────────────────────────────
+// Дата, когда позиция впервые попала на склад по оприходованию. Отдельная
+// таблица, потому что тянуть 164 документа с позициями на каждый отчёт дорого:
+// синк обновляет её вместе с каталогом.
+export const productEnters = pgTable("product_enters", {
+  productMsId: text("product_ms_id").primaryKey(),
+  firstEnterAt: timestamp("first_enter_at", { withTimezone: true }).notNull(),
+  lastEnterAt: timestamp("last_enter_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── Журнал разбитых костюмов ────────────────────────────────────────
 // Полупарк рождается в момент продажи одной части костюма, и в кассе уже
 // известно, кто продал. Поэтому запись пишется из чека, а ночной снимок

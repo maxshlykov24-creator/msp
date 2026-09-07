@@ -9,6 +9,7 @@ import {
 } from "../services/bootstrap.js";
 import * as sale from "../services/sale.js";
 import * as catalog from "../services/catalog.js";
+import { syncEnterDates } from "../services/stockStats.js";
 
 // Ручной запуск синхронизаций (только админ).
 export default async function adminRoutes(app: FastifyInstance) {
@@ -34,6 +35,13 @@ export default async function adminRoutes(app: FastifyInstance) {
 
   app.post("/admin/sync/stock", { preHandler: [app.requireAdmin] }, async () => {
     const res = await syncStock();
+    return { ok: true, ...res };
+  });
+
+  // Даты оприходований: возраст партии для статистики склада. Отдельной
+  // кнопкой, потому что проход по документам с позициями заметно дольше каталога.
+  app.post("/admin/sync/enters", { preHandler: [app.requireAdmin] }, async () => {
+    const res = await syncEnterDates();
     return { ok: true, ...res };
   });
 

@@ -20,6 +20,7 @@ import auditRoutes from "./routes/audit.routes.js";
 import tasksRoutes from "./routes/tasks.routes.js";
 import usersRoutes from "./routes/users.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
+import suitsRoutes from "./routes/suits.routes.js";
 import { appendAudit } from "./services/audit.js";
 
 export async function buildServer() {
@@ -71,6 +72,7 @@ export async function buildServer() {
       await api.register(tasksRoutes);
       await api.register(usersRoutes);
       await api.register(settingsRoutes);
+      await api.register(suitsRoutes);
     },
     { prefix: "/api" }
   );

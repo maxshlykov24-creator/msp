@@ -104,6 +104,48 @@ export async function* iterateAssortment(): AsyncGenerator<MsAssortmentRow[]> {
   }
 }
 
+/**
+ * Оприходования: по ним считается возраст партии на складе. Дата документа —
+ * это дата, когда товар физически появился на складе.
+ */
+export interface MsEnterRow extends MsRow {
+  moment: string;
+}
+
+export async function* iterateEnters(): AsyncGenerator<MsEnterRow[]> {
+  const limit = 100;
+  let offset = 0;
+  while (true) {
+    const res = await http.get<MsList<MsEnterRow>>(
+      `/entity/enter?limit=${limit}&offset=${offset}&order=moment,asc`
+    );
+    if (res.rows.length === 0) break;
+    yield res.rows;
+    offset += res.rows.length;
+    if (res.rows.length < limit) break;
+  }
+}
+
+export interface MsEnterPosition {
+  id: string;
+  quantity: number;
+  assortment: { meta: MsMeta };
+}
+
+export async function* iterateEnterPositions(enterId: string): AsyncGenerator<MsEnterPosition[]> {
+  const limit = 1000;
+  let offset = 0;
+  while (true) {
+    const res = await http.get<MsList<MsEnterPosition>>(
+      `/entity/enter/${enterId}/positions?limit=${limit}&offset=${offset}`
+    );
+    if (res.rows.length === 0) break;
+    yield res.rows;
+    offset += res.rows.length;
+    if (res.rows.length < limit) break;
+  }
+}
+
 /** Группа товаров МойСклад. `pathName` — путь родителя, без собственного имени. */
 export interface MsProductFolderRow extends MsRow {
   pathName?: string;

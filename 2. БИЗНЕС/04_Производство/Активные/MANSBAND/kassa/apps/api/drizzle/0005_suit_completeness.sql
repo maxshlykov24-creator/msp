@@ -15,6 +15,15 @@ ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "suit_line" text;--> statement-b
 CREATE INDEX IF NOT EXISTS "products_variation_idx" ON "products" ("variation");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "products_suit_part_idx" ON "products" ("suit_part");--> statement-breakpoint
 
+-- Возраст остатка: дата первого оприходования позиции. Считается синком, чтобы
+-- отчёт не тянул документы МойСклада на каждый запрос.
+CREATE TABLE IF NOT EXISTS "product_enters" (
+  "product_ms_id" text PRIMARY KEY NOT NULL,
+  "first_enter_at" timestamp with time zone NOT NULL,
+  "last_enter_at" timestamp with time zone NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);--> statement-breakpoint
+
 -- Журнал разбитых костюмов (пункт 4 Миши): таблица заполняется сама из чека,
 -- ночной снимок ловит разбиение, прошедшее не через кассу.
 CREATE TABLE IF NOT EXISTS "suit_breaks" (
