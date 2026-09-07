@@ -146,7 +146,7 @@ def test_digest_flags_short_calls(session, sent, monkeypatch):
 
 
 def _chat_events(*, incoming_minutes_ago: int, human_reply_minutes_ago: int | None = None,
-                 lead_id: int = 777, bot_reply: bool = False):
+                 lead_id: int = 777, bot_reply: bool = False, talk_closed: bool = False):
     """Ответы Kommo для чат-проверки: события отдаёт только общий поток /events."""
     now = int(datetime.now(timezone.utc).timestamp())
     incoming = [{"type": "incoming_chat_message", "entity_type": "lead", "entity_id": lead_id,
@@ -163,8 +163,13 @@ def _chat_events(*, incoming_minutes_ago: int, human_reply_minutes_ago: int | No
                          "entity_id": lead_id, "created_by": 0, "created_at": now,
                          "value_after": [{"message": {"origin": "com.ringcentral.sms"}}]})
 
+    talks = [{"talk_id": 1, "entity_type": "lead", "entity_id": lead_id,
+              "is_in_work": not talk_closed, "status": "closed" if talk_closed else "in_work"}]
+
     class FakeClient:
         def paginate(self, path, key, params=None, max_pages=0):
+            if path == "/talks":
+                return list(talks)
             return list(incoming if params["filter[type]"] == "incoming_chat_message"
                         else outgoing)
 
@@ -180,8 +185,10 @@ def _chat_events(*, incoming_minutes_ago: int, human_reply_minutes_ago: int | No
 def _no_chat_cache():
     from app import chat_events
     chat_events._cache.clear()
+    chat_events._closed_cache = None
     yield
     chat_events._cache.clear()
+    chat_events._closed_cache = None
 
 
 def test_chat_silence_alerts_after_threshold(session, sent, monkeypatch):
@@ -200,6 +207,18 @@ def test_bot_reply_is_not_an_answer(session, sent, monkeypatch):
     client = _chat_events(incoming_minutes_ago=120, bot_reply=True)
 
     assert monitor.check_chat_silence(session, client) == "chat_silence"
+
+
+def test_manual_close_silences_the_alert(session, sent, monkeypatch):
+    """Кнопка «ответ не нужен»: решение принято, звать менеджера повторно незачем.
+
+    04.09.2026 так в список попал Begzad (27011173) — Александра диалог закрыла,
+    а алерт этого не видел и просил ответить."""
+    monkeypatch.setattr(monitor, "_local_now", lambda: datetime(2026, 8, 19, 15, 0))
+    client = _chat_events(incoming_minutes_ago=120, talk_closed=True)
+
+    assert monitor.check_chat_silence(session, client) == ""
+    assert sent == []
 
 
 def test_human_reply_closes_the_case(session, sent, monkeypatch):

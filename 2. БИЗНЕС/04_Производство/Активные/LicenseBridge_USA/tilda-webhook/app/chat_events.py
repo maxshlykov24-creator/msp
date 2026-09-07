@@ -148,5 +148,29 @@ def for_lead(client: Any, lead_id: int, days: int | None = None) -> ChatStats | 
     return recent(client, days).get(int(lead_id))
 
 
+# Менеджер, закрывший диалог кнопкой «ответ не нужен», сообщения не отправляет,
+# поэтому в потоке событий следа не остаётся: меняется только статус talk. Без
+# этого списка алерт зовёт человека туда, где он уже принял решение — так 04.09
+# в список попал Begzad (27011173), закрытый Александрой. На сделке `with=talks`
+# по-прежнему пусто, статус отдаёт только общий поток.
+_closed_cache: tuple[float, set[int]] | None = None
+
+
+def closed_leads(client: Any, ttl: float = 300.0) -> set[int]:
+    """Сделки, где диалог закрыт менеджером вручную."""
+    global _closed_cache
+    if _closed_cache and time.monotonic() - _closed_cache[0] < ttl:
+        return _closed_cache[1]
+    out: set[int] = set()
+    for talk in client.paginate("/talks", "talks", params={"limit": 250}, max_pages=20):
+        if talk.get("entity_type") != "lead" or talk.get("is_in_work"):
+            continue
+        out.add(int(talk.get("entity_id") or 0))
+    out.discard(0)
+    _closed_cache = (time.monotonic(), out)
+    log.info("закрытых диалогов: %s", len(out))
+    return out
+
+
 def utcnow_ts() -> int:
     return int(datetime.now(timezone.utc).timestamp())

@@ -204,6 +204,9 @@ def check_chat_silence(s: Session, client) -> str:
     63,6% чатов при медиане ответа 8 часов. Сообщение, пришедшее ночью, попадёт в
     алерт утром — порог считается от начала рабочего дня, а не от полуночи.
 
+    Диалог, закрытый менеджером кнопкой «ответ не нужен», пропускаем: решение
+    принято человеком, и повторный алерт по нему только обесценивает список.
+
     Отмеченные сделки пишем в `decisions`, а не в память процесса: иначе рестарт
     хаба присылал бы один и тот же список заново."""
     now = _local_now()
@@ -213,12 +216,14 @@ def check_chat_silence(s: Session, client) -> str:
             < settings.monitor_workday_end_hour):
         return ""
 
-    from app.chat_events import lead_url, recent
+    from app.chat_events import closed_leads, lead_url, recent
 
     # окно двое суток: за более старую тишину алерт уже приходил
     stats = recent(client, days=2)
+    closed = closed_leads(client)
     threshold = int(datetime.now(timezone.utc).timestamp()) - settings.chat_silence_hours * 3600
-    stale = [st for st in stats.values() if st.unanswered and st.last_in < threshold]
+    stale = [st for st in stats.values()
+             if st.unanswered and st.last_in < threshold and st.lead_id not in closed]
     if not stale:
         return ""
 
