@@ -9,6 +9,6 @@
 
 | Файл | Назначение |
 |---|---|
-| [`../03_Проекты/ТЗ.md`](../03_Проекты/ТЗ.md) | Аккаунт: licensebridgeusa.kommo.com (account_id 34679511, US, USD) |
+| [`ТЗ.md`](ТЗ.md) | Аккаунт: licensebridgeusa.kommo.com (account_id 34679511, US, USD) |
 
 Наверх: [`../README.md`](../README.md)

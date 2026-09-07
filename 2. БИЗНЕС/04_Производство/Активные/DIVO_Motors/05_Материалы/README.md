@@ -4,6 +4,6 @@
 
 | Файл | Назначение |
 |---|---|
-| [`../05_Материалы/РЕГЛАМЕНТ_CME_SHEETS.md`](../05_Материалы/РЕГЛАМЕНТ_CME_SHEETS.md) | Сервис: divo-cme-stock |
+| [`РЕГЛАМЕНТ_CME_SHEETS.md`](РЕГЛАМЕНТ_CME_SHEETS.md) | Сервис: divo-cme-stock |
 
 Наверх: [`../README.md`](../README.md)
