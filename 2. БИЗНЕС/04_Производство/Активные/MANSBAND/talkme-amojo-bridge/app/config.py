@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Внутренняя ручка connect
     internal_secret: str = ""
 
+    # Публичный адрес моста (для регистрации вебхука amoCRM add_lead)
+    bridge_public_base: str = "https://mansband-chat-bridge.twc1.net"
+
     # Talk-me REST (токен из ЛК) и опциональные пути к JSON в вебхуке
     talkme_api_base: str = "https://lcab.talk-me.ru"
     talkme_rest_token: str = ""

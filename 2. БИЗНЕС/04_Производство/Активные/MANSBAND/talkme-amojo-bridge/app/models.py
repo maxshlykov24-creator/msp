@@ -51,6 +51,15 @@ class ConversationMap(Base):
     talkme_dialog_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # JSON с последним известным payload Talk-me
     talkme_context: Mapped[dict[str, Any]] = mapped_column(JSON, default=lambda: {})
+    # Метки первого касания: utm_*, roistat, yclid, referer, landing_url. Не перезаписываются.
+    tracking: Mapped[dict[str, Any]] = mapped_column(JSON, default=lambda: {})
+    # Последние 10 цифр телефона клиента — ключ сопоставления со сделкой amoCRM.
+    client_phone: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    # Сделка amoCRM, в которую метки уже записаны.
+    amo_lead_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    tracking_applied_at: Mapped[Optional[dt.datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (UniqueConstraint("scope_id", "external_conversation_id", name="uq_conv_scope"),)
 

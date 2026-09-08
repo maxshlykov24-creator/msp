@@ -49,6 +49,13 @@ def init_db() -> None:
         "SET talkme_dialog_id = SUBSTRING(external_conversation_id FROM 4) "
         "WHERE talkme_dialog_id IS NULL AND external_conversation_id LIKE 'tm-%'",
         "CREATE INDEX IF NOT EXISTS ix_conv_client_ref ON conversation_map (talkme_client_ref)",
+        # Метки визита: рекламные параметры первого касания и связь со сделкой amoCRM.
+        "ALTER TABLE conversation_map ADD COLUMN IF NOT EXISTS tracking JSON DEFAULT '{}'::json",
+        "ALTER TABLE conversation_map ADD COLUMN IF NOT EXISTS client_phone VARCHAR(16)",
+        "ALTER TABLE conversation_map ADD COLUMN IF NOT EXISTS amo_lead_id INTEGER",
+        "ALTER TABLE conversation_map ADD COLUMN IF NOT EXISTS tracking_applied_at TIMESTAMPTZ",
+        "CREATE INDEX IF NOT EXISTS ix_conv_client_phone ON conversation_map (client_phone)",
+        "CREATE INDEX IF NOT EXISTS ix_conv_amo_lead ON conversation_map (amo_lead_id)",
     ]
     with eng.begin() as conn:
         for sql in migrations:

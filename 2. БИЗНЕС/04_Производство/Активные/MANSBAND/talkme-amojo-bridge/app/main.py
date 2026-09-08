@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -14,6 +16,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import amo_v4
 from app.amojo_client import post_connect, post_delivery_status, post_disconnect, post_new_message
 from app.amojo_sign import verify_amojo_webhook_body
 from app.config import get_settings
@@ -21,7 +24,14 @@ from app.database import get_db, init_db
 from app.models import AmojoChannelState, AmoOAuthToken, ConversationMap, KvState, ProcessedEvent
 from app.oauth_amocrm import exchange_code_for_tokens, fetch_account_amojo_id, token_expires_at
 from app.talkme_client import list_messages, send_text_to_visitor
-from app.talkme_parse import parse_talkme_incoming, parse_talkme_profile, talkme_incoming_has_attachments
+from app.talkme_parse import (
+    normalize_phone,
+    parse_talkme_incoming,
+    parse_talkme_profile,
+    parse_talkme_tracking,
+    talkme_incoming_has_attachments,
+    tracking_is_empty,
+)
 from app.tokens import get_valid_access_token
 
 logging.basicConfig(level=logging.INFO)
@@ -486,6 +496,14 @@ def _talkme_incoming_task(payload: dict[str, Any]) -> None:
         if dialog_id is not None:
             cm.talkme_dialog_id = str(dialog_id)
 
+        # Метки визита: фиксируем первое касание и больше не перезаписываем.
+        fresh_tracking = parse_talkme_tracking(payload)
+        if tracking_is_empty(cm.tracking) and not tracking_is_empty(fresh_tracking):
+            cm.tracking = fresh_tracking
+        phone_key = normalize_phone(profile.get("phone"))
+        if phone_key and not cm.client_phone:
+            cm.client_phone = phone_key
+
         msec = int(datetime.now(timezone.utc).timestamp() * 1000)
         ts = int(msec // 1000)
         guest_name = (profile.get("name") or vname or "Гость")[:200]
@@ -543,6 +561,158 @@ async def webhooks_talkme(
         data = {}
     background_tasks.add_task(_talkme_incoming_task, data)
     return Response(status_code=200)
+
+
+def apply_tracking_to_lead(
+    db: Session,
+    cm: ConversationMap,
+    lead_id: int,
+    access_token: str,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Записать метки беседы в поля сделки amoCRM. Занятые поля не трогаем."""
+    settings = get_settings()
+    id_by_key = amo_v4.field_id_by_key(access_token=access_token, settings=settings)
+    if not id_by_key:
+        return {"ok": False, "reason": "в amoCRM нет полей tracking_data"}
+    lead = amo_v4.get_lead(lead_id=lead_id, access_token=access_token, settings=settings)
+    busy = amo_v4.existing_tracking_values(lead=lead, id_by_key=id_by_key)
+    values = amo_v4.build_custom_fields_payload(
+        tracking=cm.tracking or {}, id_by_key=id_by_key, skip_keys=set(busy)
+    )
+    if not values:
+        return {"ok": True, "written": {}, "skipped": busy, "reason": "нечего писать"}
+    written = {
+        k: v for k, v in (cm.tracking or {}).items() if k in id_by_key and k not in busy and v
+    }
+    if dry_run:
+        return {"ok": True, "dry_run": True, "written": written, "skipped": busy}
+    r = amo_v4.patch_lead_fields(
+        lead_id=lead_id, custom_fields_values=values, access_token=access_token, settings=settings
+    )
+    if r.status_code >= 400:
+        log.error("patch lead %s failed: %s %s", lead_id, r.status_code, r.text[:300])
+        return {"ok": False, "reason": f"amo {r.status_code}: {r.text[:200]}"}
+    cm.amo_lead_id = lead_id
+    cm.tracking_applied_at = datetime.now(timezone.utc)
+    db.commit()
+    log.info("tracking → lead %s: %s", lead_id, ",".join(written))
+    return {"ok": True, "written": written, "skipped": busy}
+
+
+def _match_conversation_by_phones(
+    db: Session, phones: list[str]
+) -> Optional[ConversationMap]:
+    keys = [k for k in (normalize_phone(p) for p in phones) if k]
+    if not keys:
+        return None
+    return (
+        db.execute(
+            select(ConversationMap)
+            .where(
+                ConversationMap.client_phone.in_(keys),
+                ConversationMap.amo_lead_id.is_(None),
+            )
+            .order_by(ConversationMap.id.desc())
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
+    """Новая сделка в amoCRM: найти беседу Talk-me по телефону и проставить метки.
+
+    Контакт со сделкой связывается не мгновенно, поэтому две отложенные попытки.
+    """
+    from app.database import get_session_factory
+
+    settings = get_settings()
+    if attempt:
+        time.sleep(10 if attempt == 1 else 45)
+    Sess = get_session_factory()
+    db = Sess()
+    retry: list[int] = []
+    try:
+        token = get_valid_access_token(db)
+        for lead_id in lead_ids:
+            try:
+                lead = amo_v4.get_lead(lead_id=lead_id, access_token=token, settings=settings)
+                phones = amo_v4.lead_phones(lead=lead, access_token=token, settings=settings)
+                cm = _match_conversation_by_phones(db, phones)
+                if cm is None or tracking_is_empty(cm.tracking):
+                    if attempt < 2:
+                        retry.append(lead_id)
+                    else:
+                        log.info("lead %s: беседа Talk-me с метками не найдена", lead_id)
+                    continue
+                apply_tracking_to_lead(db, cm, lead_id, token)
+            except Exception:
+                log.exception("lead %s: обработка add_lead упала", lead_id)
+    finally:
+        db.close()
+    if retry and attempt < 2:
+        threading.Thread(target=_amo_lead_added_task, args=(retry, attempt + 1), daemon=True).start()
+
+
+def _lead_ids_from_form(form: dict[str, Any]) -> list[int]:
+    """amoCRM шлёт вебхук как form-urlencoded: leads[add][0][id]=123."""
+    ids: list[int] = []
+    for key, value in form.items():
+        if not key.startswith("leads[add]") or not key.endswith("[id]"):
+            continue
+        try:
+            ids.append(int(str(value)))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+@app.post("/amo/webhooks/leads/{secret}")
+async def amo_leads_webhook(
+    secret: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> Response:
+    """Хук amoCRM «сделка добавлена». Секрет в пути — вебхуки v4 не подписываются."""
+    s = get_settings()
+    if not s.internal_secret or secret != s.internal_secret:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        form = dict(await request.form())
+    except Exception:
+        form = {}
+    lead_ids = _lead_ids_from_form(form)
+    if lead_ids:
+        background_tasks.add_task(_amo_lead_added_task, lead_ids, 0)
+    else:
+        log.info("amo lead hook: нет leads[add] в теле")
+    return Response(status_code=200)
+
+
+@app.post("/internal/setup-lead-webhook")
+def internal_setup_lead_webhook(
+    x_internal_secret: Optional[str] = Header(default=None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Зарегистрировать в amoCRM хук add_lead на наш мост."""
+    _require_internal(x_internal_secret)
+    s = get_settings()
+    if not s.bridge_public_base:
+        raise HTTPException(503, detail="BRIDGE_PUBLIC_BASE не задан в .env")
+    destination = f"{s.bridge_public_base.rstrip('/')}/amo/webhooks/leads/{s.internal_secret}"
+    token = get_valid_access_token(db)
+    existing = amo_v4.list_webhooks(access_token=token, settings=s)
+    for w in existing:
+        if w.get("destination") == destination:
+            return {"ok": True, "already": True, "destination": destination}
+    r = amo_v4.subscribe_webhook(
+        destination=destination, events=["add_lead"], access_token=token, settings=s
+    )
+    if r.status_code >= 400:
+        raise HTTPException(r.status_code, detail=r.text[:300])
+    return {"ok": True, "destination": destination, "status": r.status_code}
 
 
 def _kv_get(db: Session, key: str) -> Optional[str]:
