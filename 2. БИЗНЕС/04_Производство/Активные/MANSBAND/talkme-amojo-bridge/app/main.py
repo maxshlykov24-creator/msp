@@ -601,6 +601,14 @@ def apply_tracking_to_lead(
     return {"ok": True, "written": written, "skipped": busy}
 
 
+def _visitor_name_from_context(cm: ConversationMap) -> Optional[str]:
+    payload = (cm.talkme_context or {}).get("last") or {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    client = data.get("client") if isinstance(data.get("client"), dict) else {}
+    name = (client.get("name") or "").strip()
+    return name or None
+
+
 def _match_conversation_by_phones(
     db: Session, phones: list[str]
 ) -> Optional[ConversationMap]:
@@ -621,10 +629,42 @@ def _match_conversation_by_phones(
     )
 
 
-def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
-    """Новая сделка в amoCRM: найти беседу Talk-me по телефону и проставить метки.
+def _match_conversation_by_names(
+    db: Session, names: list[str]
+) -> Optional[ConversationMap]:
+    """Чат с сайта часто без телефона: amo берёт имя посетителя Talk-me как имя контакта."""
+    wanted = {n.strip() for n in names if n and n.strip()}
+    if not wanted:
+        return None
+    rows = (
+        db.execute(
+            select(ConversationMap)
+            .where(ConversationMap.amo_lead_id.is_(None))
+            .order_by(ConversationMap.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+    for cm in rows:
+        if tracking_is_empty(cm.tracking):
+            continue
+        name = _visitor_name_from_context(cm)
+        if name and name in wanted:
+            return cm
+    return None
 
-    Контакт со сделкой связывается не мгновенно, поэтому две отложенные попытки.
+
+def _match_conversation(
+    db: Session, phones: list[str], names: list[str]
+) -> Optional[ConversationMap]:
+    return _match_conversation_by_phones(db, phones) or _match_conversation_by_names(db, names)
+
+
+def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
+    """Новая сделка в amoCRM: найти беседу Talk-me и проставить метки.
+
+    Сначала телефон контакта, если его нет — имя посетителя из чата.
+    Контакт цепляется не мгновенно, поэтому две отложенные попытки.
     """
     from app.database import get_session_factory
 
@@ -640,7 +680,8 @@ def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
             try:
                 lead = amo_v4.get_lead(lead_id=lead_id, access_token=token, settings=settings)
                 phones = amo_v4.lead_phones(lead=lead, access_token=token, settings=settings)
-                cm = _match_conversation_by_phones(db, phones)
+                names = amo_v4.lead_contact_names(lead=lead, access_token=token, settings=settings)
+                cm = _match_conversation(db, phones, names)
                 if cm is None or tracking_is_empty(cm.tracking):
                     if attempt < 2:
                         retry.append(lead_id)
@@ -713,6 +754,28 @@ def internal_setup_lead_webhook(
     if r.status_code >= 400:
         raise HTTPException(r.status_code, detail=r.text[:300])
     return {"ok": True, "destination": destination, "status": r.status_code}
+
+
+@app.post("/internal/apply-lead/{lead_id}")
+def internal_apply_lead(
+    lead_id: int,
+    x_internal_secret: Optional[str] = Header(default=None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Повторно проставить метки в уже созданную сделку (телефон или имя посетителя)."""
+    _require_internal(x_internal_secret)
+    token = get_valid_access_token(db)
+    settings = get_settings()
+    lead = amo_v4.get_lead(lead_id=lead_id, access_token=token, settings=settings)
+    phones = amo_v4.lead_phones(lead=lead, access_token=token, settings=settings)
+    names = amo_v4.lead_contact_names(lead=lead, access_token=token, settings=settings)
+    cm = _match_conversation(db, phones, names)
+    if cm is None:
+        return {"ok": False, "reason": "беседа не найдена", "phones": phones, "names": names}
+    result = apply_tracking_to_lead(db, cm, lead_id, token)
+    result["conversation"] = cm.id
+    result["names"] = names
+    return result
 
 
 def _kv_get(db: Session, key: str) -> Optional[str]:

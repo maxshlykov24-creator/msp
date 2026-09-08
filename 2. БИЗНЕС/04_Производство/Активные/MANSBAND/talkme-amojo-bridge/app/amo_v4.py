@@ -76,16 +76,22 @@ def get_lead(*, lead_id: int, access_token: str, settings: Optional[Settings] = 
         return r.json() or {}
 
 
-def get_contact_phones(
+def get_contact(
     *, contact_id: int, access_token: str, settings: Optional[Settings] = None
-) -> list[str]:
+) -> dict[str, Any]:
     settings = settings or get_settings()
     url = f"{api_base(settings)}/api/v4/contacts/{contact_id}"
     with httpx.Client(timeout=30.0) as client:
         r = client.get(url, headers=_headers(access_token))
         if r.status_code >= 400:
-            return []
-        doc = r.json() or {}
+            return {}
+        return r.json() or {}
+
+
+def get_contact_phones(
+    *, contact_id: int, access_token: str, settings: Optional[Settings] = None
+) -> list[str]:
+    doc = get_contact(contact_id=contact_id, access_token=access_token, settings=settings)
     phones: list[str] = []
     for cf in doc.get("custom_fields_values") or []:
         if (cf.get("field_code") or "").upper() != "PHONE":
@@ -105,6 +111,23 @@ def lead_phones(*, lead: dict[str, Any], access_token: str, settings: Optional[S
         if cid:
             phones.extend(get_contact_phones(contact_id=int(cid), access_token=access_token, settings=settings))
     return phones
+
+
+def lead_contact_names(
+    *, lead: dict[str, Any], access_token: str, settings: Optional[Settings] = None
+) -> list[str]:
+    """Имена контактов сделки — у чата без телефона это имя посетителя Talk-me."""
+    contacts = ((lead.get("_embedded") or {}).get("contacts")) or []
+    names: list[str] = []
+    for c in contacts:
+        cid = c.get("id")
+        if not cid:
+            continue
+        doc = get_contact(contact_id=int(cid), access_token=access_token, settings=settings)
+        name = (doc.get("name") or "").strip()
+        if name:
+            names.append(name)
+    return names
 
 
 def existing_tracking_values(*, lead: dict[str, Any], id_by_key: dict[str, int]) -> dict[str, str]:
