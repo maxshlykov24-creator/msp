@@ -624,7 +624,7 @@
     content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
     background-image:radial-gradient(1px 1px at 22% 28%, rgba(249,242,236,.35) 0, transparent 0),
                       radial-gradient(1px 1px at 68% 62%, rgba(249,242,236,.24) 0, transparent 0);
-    background-size:3px 3px;mix-blend-mode:overlay;
+    background-size:3px 3px;
   }
 
   .progress{position:fixed;top:0;left:0;height:3px;z-index:40;background:linear-gradient(90deg,var(--a1),var(--a2));width:0;transition:width .3s ease;box-shadow:0 0 12px rgba(200,164,92,.55)}
@@ -814,8 +814,9 @@
       animation:none;
       background-color:var(--bg);
       background-image:
-        radial-gradient(1100px 780px at 97% -12%, rgba(200,164,92,.13), transparent 58%),
-        radial-gradient(900px 640px at -8% 112%, rgba(145,134,124,.09), transparent 60%);
+        radial-gradient(1000px 700px at 92% -8%, rgba(200,164,92,.22), transparent 62%),
+        radial-gradient(900px 640px at -8% 112%, rgba(145,134,124,.10), transparent 60%),
+        radial-gradient(1100px 380px at 48% 118%, rgba(200,164,92,.10), transparent 64%);
     }
     .slide .stag{animation:none !important;opacity:1 !important}
     /* градиентный текст печатается заливкой — на печати отдаём плоский акцент */
@@ -829,7 +830,7 @@
       position:absolute;inset:-30%;z-index:0;animation:none !important;
     }
     .slide .rays{position:absolute;inset:-45%;z-index:0;animation:none !important;display:block !important}
-    .slide .silk{position:absolute;inset:-6%;z-index:0;animation:none !important;display:block !important}
+    .slide .silk{display:none !important}
     .slide .vign{position:absolute;inset:0;z-index:0;display:block !important}
     .slide .ms-badge{position:absolute;top:26px;right:8vw;display:flex}
     /* запасной кадр подсветки, если JS не успел снять живой */
@@ -1005,7 +1006,7 @@
   }
   function preparePrint(){
     cleanupPrint();
-    const snapshot = Array.from(document.querySelectorAll("body > .aura, body > .rays, body > .silk, body > .vign")).map(el => {
+    const snapshot = Array.from(document.querySelectorAll("body > .aura, body > .rays, body > .vign")).map(el => {
       const cs = getComputedStyle(el);
       return { className: el.className, transform: cs.transform, opacity: cs.opacity };
     });
@@ -1117,13 +1118,13 @@
       parts = Array.from({length: n}, () => spawn(true));
     }
     function spawn(anywhere){
-      const depth = Math.pow(Math.random(), 1.6);
+      const depth = Math.pow(Math.random(), 2.1);
       return {
         x: Math.random() * w,
         y: anywhere ? Math.random() * h : h + 20,
-        s: 3 + depth * 26,
+        s: 2.5 + depth * 15,
         d: depth,
-        a: 0.08 + depth * 0.42,
+        a: 0.07 + depth * 0.34,
         vy: 0.04 + depth * 0.2,
         vx: (Math.random() - 0.5) * 0.12,
         ph: Math.random() * Math.PI * 2,
@@ -1190,11 +1191,13 @@
     const base = render;
     let last = i;
     render = function(){
-      base();
-      if (isPhone() || i === last) { last = i; return; }
+      const changed = i !== last;
       const dir = i > last ? "fwd" : "back";
+      /* направление задаём до отрисовки: слайд и блик уезжают в одну сторону */
+      if (changed) document.body.classList.toggle("nav-back", dir === "back");
+      base();
+      if (isPhone() || !changed) { last = i; return; }
       last = i;
-      document.body.classList.toggle("nav-back", dir === "back");
       fl.classList.remove("fwd", "back");
       void fl.offsetWidth;
       fl.classList.add(dir);
