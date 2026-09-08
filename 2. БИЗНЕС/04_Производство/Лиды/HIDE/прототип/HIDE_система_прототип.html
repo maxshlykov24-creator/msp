@@ -7,21 +7,46 @@
 <style>
   :root{
     --bg:#0d0b0c;
-    --surface:#231F20;
     --ink:#F9F2EC;
     --mute:#91867C;
     --mute-2:#6d645c;
     --gold:#C8A45C;
     --gold-soft:#E9DCB8;
     --green:#9FC9AC;
-    --red:#C98680;
+    --red:#D08A80;
+    --blue:#8FA8BF;
     --line:rgba(249,242,236,.09);
     --line-2:rgba(249,242,236,.17);
     --glass:rgba(249,242,236,.03);
     --glass-2:rgba(249,242,236,.06);
+    --hover:rgba(249,242,236,.035);
+    --panel:rgba(249,242,236,.02);
+    --shadow:0 8px 32px 0 rgba(0,0,0,.72);
+    --shadow-lg:0 40px 90px -30px rgba(0,0,0,.95);
+    --field:rgba(0,0,0,.24);
     --radius:20px;
     --ease:cubic-bezier(.25,1,.5,1);
     --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+  }
+  body.light{
+    --bg:#F2EEE8;
+    --ink:#231F20;
+    --mute:#6f665e;
+    --mute-2:#948a80;
+    --gold:#A9803A;
+    --gold-soft:#8a672c;
+    --green:#4E8A64;
+    --red:#B4544A;
+    --blue:#4F7391;
+    --line:rgba(35,31,32,.11);
+    --line-2:rgba(35,31,32,.2);
+    --glass:rgba(255,255,255,.55);
+    --glass-2:rgba(255,255,255,.85);
+    --hover:rgba(35,31,32,.035);
+    --panel:rgba(255,255,255,.5);
+    --shadow:0 8px 30px -12px rgba(35,31,32,.18);
+    --shadow-lg:0 40px 90px -34px rgba(35,31,32,.38);
+    --field:rgba(255,255,255,.75);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
@@ -34,289 +59,363 @@
       radial-gradient(820px 560px at -8% 16%,rgba(145,134,124,.05),transparent 60%),
       linear-gradient(180deg,#141112 0%,#080707 100%);
     background-attachment:fixed;position:relative;
+    transition:background-color .35s var(--ease);
   }
-  body::before{
-    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
-    background-image:radial-gradient(1px 1px at 20% 30%, rgba(249,242,236,.35) 0, transparent 0),
-                     radial-gradient(1px 1px at 70% 60%, rgba(249,242,236,.25) 0, transparent 0);
-    background-size:3px 3px;mix-blend-mode:overlay;
+  body.light{
+    background-image:
+      radial-gradient(1400px 760px at 50% -20%,#FFFDF9 0%,transparent 62%),
+      radial-gradient(900px 520px at 90% 0%,rgba(169,128,58,.09),transparent 60%),
+      radial-gradient(760px 520px at -6% 18%,rgba(35,31,32,.04),transparent 60%),
+      linear-gradient(180deg,#F7F4EF 0%,#E9E4DC 100%);
   }
-  .wrap{max-width:1240px;margin:0 auto;padding:0 30px 110px;position:relative;z-index:1}
+  .wrap{max-width:1320px;margin:0 auto;padding:0 30px 110px;position:relative;z-index:1}
 
   .glass{
-    background:linear-gradient(155deg,rgba(249,242,236,.045) 0%,rgba(249,242,236,.015) 55%,rgba(249,242,236,.03) 100%);
+    background:var(--panel);
     border:1px solid var(--line);
     border-radius:var(--radius);
     backdrop-filter:blur(24px) saturate(150%);
     -webkit-backdrop-filter:blur(24px) saturate(150%);
-    box-shadow:inset 0 1px 0 rgba(249,242,236,.09),inset 1px 0 0 rgba(249,242,236,.035),0 8px 32px 0 rgba(0,0,0,.72);
+    box-shadow:var(--shadow);
   }
+  body:not(.light) .glass{background:linear-gradient(155deg,rgba(249,242,236,.045) 0%,rgba(249,242,236,.015) 55%,rgba(249,242,236,.03) 100%);box-shadow:inset 0 1px 0 rgba(249,242,236,.09),var(--shadow)}
 
   /* ─── topbar ─── */
   .topbar{
     position:sticky;top:0;z-index:50;
     backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);
-    background:rgba(13,11,12,.78);border-bottom:1px solid rgba(249,242,236,.07);
+    background:rgba(13,11,12,.78);border-bottom:1px solid var(--line);
   }
-  .topbar-in{max-width:1240px;margin:0 auto;padding:18px 30px;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
-  .brand{display:flex;align-items:center;gap:20px}
+  body.light .topbar{background:rgba(247,244,239,.86)}
+  .topbar-in{max-width:1320px;margin:0 auto;padding:16px 30px;display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:18px}
   .logo-orb{position:relative;display:flex;align-items:center}
-  .logo-orb::before{content:'';position:absolute;left:50%;top:50%;width:140px;height:60px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(249,242,236,.14),transparent 70%);filter:blur(15px);z-index:0}
-  .logo-orb svg{height:38px;width:auto;position:relative;z-index:1}
-  .brand-div{width:1px;height:32px;background:var(--line-2)}
-  .brand-title{font-size:13px;font-weight:500;letter-spacing:.09em;text-transform:uppercase}
+  .logo-orb svg{height:34px;width:auto;position:relative;z-index:1}
+  .logo-orb svg path[fill]{fill:var(--ink)}
+  .logo-orb svg path[stroke]{stroke:var(--ink)}
+  .brand-div{width:1px;height:30px;background:var(--line-2)}
+  .brand-title{font-size:12.5px;font-weight:500;letter-spacing:.09em;text-transform:uppercase}
   .brand-title small{display:block;font-size:10.5px;color:var(--mute-2);font-weight:500;letter-spacing:.06em;margin-top:4px;text-transform:none}
-  .header-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .header-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 
   .roles{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--glass);border:1px solid var(--line)}
-  .roles button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:12.5px;font-weight:500;padding:8px 15px;border-radius:10px;cursor:pointer;transition:.2s var(--ease);letter-spacing:.01em}
+  .roles button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:10px;cursor:pointer;transition:.2s var(--ease)}
   .roles button:hover{color:var(--ink)}
   .roles button.active{background:var(--gold);color:#17130e;font-weight:600;box-shadow:0 6px 18px -8px rgba(200,164,92,.8)}
+  body.light .roles button.active{color:#FFFBF3}
 
-  .demo-flag{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--mute-2);letter-spacing:.06em;text-transform:uppercase}
-  .demo-flag i{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 9px var(--gold);animation:pulse 2.6s infinite;font-style:normal}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .sw{display:inline-flex;align-items:center;gap:9px;padding:7px 13px;border-radius:12px;background:var(--glass);border:1px solid var(--line);cursor:pointer;font-size:12px;color:var(--mute);transition:.2s var(--ease);user-select:none}
+  .sw:hover{color:var(--ink);border-color:var(--line-2)}
+  .sw i{width:30px;height:17px;border-radius:9px;background:var(--field);border:1px solid var(--line-2);position:relative;flex:none;transition:.25s var(--ease)}
+  .sw i::after{content:'';position:absolute;top:1px;left:1px;width:13px;height:13px;border-radius:50%;background:var(--mute);transition:.25s var(--ease)}
+  .sw.on{color:var(--ink);border-color:rgba(200,164,92,.45);background:rgba(200,164,92,.1)}
+  .sw.on i{background:rgba(200,164,92,.35);border-color:rgba(200,164,92,.5)}
+  .sw.on i::after{transform:translateX(13px);background:var(--gold)}
 
   /* ─── nav ─── */
-  .nav{display:flex;gap:2px;padding:5px;border-radius:16px;background:var(--glass);border:1px solid var(--line);margin:30px 0 6px;flex-wrap:wrap}
-  .nav button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:13px;font-weight:500;padding:10px 17px;border-radius:11px;cursor:pointer;transition:.2s var(--ease)}
+  .nav{display:flex;gap:2px;padding:5px;border-radius:16px;background:var(--glass);border:1px solid var(--line);margin:28px 0 4px;flex-wrap:wrap}
+  .nav button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:13px;font-weight:500;padding:10px 18px;border-radius:11px;cursor:pointer;transition:.2s var(--ease);display:flex;align-items:center;gap:9px}
   .nav button:hover{color:var(--ink);background:var(--glass-2)}
-  .nav button.active{background:rgba(249,242,236,.94);color:#17130e;font-weight:600}
-  .nav button .tag{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin-left:7px;font-weight:600}
-  .nav button.active .tag{color:#8a6d2c}
+  .nav button.active{background:var(--ink);color:var(--bg);font-weight:600}
+  .nav button .cnt{font-size:11px;font-variant-numeric:tabular-nums;padding:2px 7px;border-radius:7px;background:var(--glass-2);color:var(--mute)}
+  .nav button.active .cnt{background:rgba(0,0,0,.14);color:inherit;opacity:.75}
 
   .page{display:none;animation:fade .45s var(--ease)}
   .page.on{display:block}
   @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
-  .head{padding:42px 0 26px}
+  .head{padding:36px 0 22px}
   .head h1{font-size:29px;font-weight:300;letter-spacing:-.01em}
-  .head p{color:var(--mute);font-size:14px;margin-top:9px;max-width:660px;line-height:1.55}
+  .head p{color:var(--mute);font-size:14px;margin-top:9px;max-width:720px;line-height:1.55}
 
-  .sec-title{display:flex;align-items:baseline;gap:14px;margin:40px 0 18px;justify-content:space-between;flex-wrap:wrap}
+  .sec-title{display:flex;align-items:baseline;gap:14px;margin:34px 0 16px;justify-content:space-between;flex-wrap:wrap}
   .sec-title h2{font-size:12px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--mute)}
   .sec-title span{font-size:12.5px;color:var(--mute-2)}
 
-  /* ─── tilt ─── */
-  .tilt{--rx:0deg;--ry:0deg;--ty:0px;--mx:50%;--my:20%;
-    transform:perspective(900px) rotateX(var(--ry)) rotateY(var(--rx)) translateY(var(--ty)) translateZ(0);
-    transition:transform .45s var(--ease),border-color .45s var(--ease),box-shadow .45s var(--ease);position:relative;overflow:hidden}
-  .tilt.tilt-active{transition:transform .07s linear,border-color .4s var(--ease),box-shadow .4s var(--ease)}
-  .tilt:hover{border-color:rgba(249,242,236,.15);box-shadow:inset 0 1px 0 rgba(249,242,236,.13),0 0 40px -10px rgba(200,164,92,.14),0 24px 60px -22px rgba(0,0,0,.9)}
-  .tilt::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s var(--ease);
-    background:radial-gradient(280px 190px at var(--mx) var(--my),rgba(249,242,236,.07),transparent 70%)}
-  .tilt:hover::after{opacity:1}
-  @media (hover:none){.tilt{transform:none}}
+  /* ─── дашборд статусов ─── */
+  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .kpi{padding:20px 20px 18px;border-radius:18px;border:1px solid var(--line);cursor:pointer;position:relative;overflow:hidden;transition:.25s var(--ease);background:var(--panel)}
+  .kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c);opacity:.85}
+  .kpi::after{content:'';position:absolute;right:-40px;top:-40px;width:130px;height:130px;border-radius:50%;background:var(--c);opacity:.07;transition:.35s var(--ease)}
+  .kpi:hover{transform:translateY(-3px);border-color:var(--line-2)}
+  .kpi:hover::after{opacity:.14}
+  .kpi.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent)}
+  .kpi.on::after{opacity:.18}
+  .kpi-lab{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2);display:flex;align-items:center;gap:8px}
+  .kpi-lab b{width:7px;height:7px;border-radius:50%;background:var(--c);flex:none}
+  .kpi-val{font-size:38px;font-weight:200;margin-top:12px;line-height:1;font-variant-numeric:tabular-nums;color:var(--c)}
+  .kpi-sub{font-size:11.5px;color:var(--mute);margin-top:8px;line-height:1.45}
+  .k-work{--c:var(--gold)}
+  .k-priem{--c:var(--blue)}
+  .k-wait{--c:var(--mute)}
+  .k-late{--c:var(--red)}
+  .k-done{--c:var(--green)}
 
-  /* ─── kpi ─── */
-  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
-  .kpi{padding:26px 24px 24px}
-  .kpi-lab{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2)}
-  .kpi-val{font-size:40px;font-weight:200;margin-top:14px;line-height:1;font-variant-numeric:tabular-nums;
-    background:linear-gradient(160deg,#F9F2EC 30%,#a89c90 100%);-webkit-background-clip:text;background-clip:text;color:transparent;transition:transform .4s var(--ease)}
-  .kpi:hover .kpi-val{transform:scale(1.04)}
-  .kpi-sub{font-size:12px;color:var(--mute);margin-top:10px;line-height:1.45}
-  .kpi.feature{background:linear-gradient(160deg,rgba(200,164,92,.1),rgba(249,242,236,.015))}
-  .kpi.feature .kpi-val{background:linear-gradient(160deg,var(--gold-soft) 20%,var(--gold) 100%);-webkit-background-clip:text;background-clip:text}
+  /* ─── фильтры ─── */
+  .fbar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:18px 20px;border-radius:18px;border:1px solid var(--line);background:var(--panel);margin-bottom:14px}
+  .fld{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .fld label{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding-left:2px}
+  .fld select,.fld input{
+    font-family:var(--font);font-size:12.5px;color:var(--ink);background:var(--field);
+    border:1px solid var(--line);border-radius:11px;padding:9px 11px;min-width:135px;cursor:pointer;
+    transition:.2s var(--ease);appearance:none;-webkit-appearance:none;
+    background-image:linear-gradient(45deg,transparent 50%,var(--mute) 50%),linear-gradient(135deg,var(--mute) 50%,transparent 50%);
+    background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+    padding-right:28px;
+  }
+  .fld input{background-image:none;padding-right:11px;cursor:text;min-width:190px}
+  .fld select:hover,.fld input:hover{border-color:var(--line-2)}
+  .fld select:focus,.fld input:focus{outline:0;border-color:rgba(200,164,92,.55)}
+  .fld select option{background:var(--bg);color:var(--ink)}
+  .fld.act select{border-color:rgba(200,164,92,.5);background-color:rgba(200,164,92,.1)}
+  .f-right{margin-left:auto;display:flex;gap:10px;align-items:center}
+  .f-found{font-size:12px;color:var(--mute);white-space:nowrap}
+  .f-found b{color:var(--ink);font-weight:500}
 
-  /* ─── filters ─── */
-  .filters{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px}
-  .chip{padding:8px 15px;border-radius:12px;background:var(--glass);border:1px solid var(--line);color:var(--mute);font-size:12.5px;cursor:pointer;transition:.2s var(--ease);font-weight:500}
-  .chip:hover{color:var(--ink);border-color:var(--line-2)}
-  .chip.on{border-color:rgba(200,164,92,.5);background:rgba(200,164,92,.11);color:var(--gold-soft)}
-  .fsep{width:1px;background:var(--line);margin:2px 6px}
-
-  /* ─── table ─── */
-  .tbl{border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);background:linear-gradient(155deg,rgba(249,242,236,.035),rgba(249,242,236,.012))}
-  .tr{display:grid;grid-template-columns:1.9fr .58fr .82fr .8fr .74fr .58fr;gap:14px;padding:16px 22px;align-items:center;border-bottom:1px solid rgba(249,242,236,.055);transition:background .22s var(--ease)}
+  /* ─── таблица ─── */
+  .tbl{border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);background:var(--panel)}
+  .tr{display:grid;grid-template-columns:2fr .78fr .82fr .78fr .92fr .68fr;gap:14px;padding:14px 20px;align-items:center;border-bottom:1px solid var(--line);transition:background .2s var(--ease)}
   .tr:last-child{border-bottom:0}
-  .tr.h{background:rgba(0,0,0,.24);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding:13px 22px}
-  .tr.row{cursor:pointer}
-  .tr.row:hover{background:rgba(249,242,236,.035)}
-  .t-name{font-size:14px;font-weight:450;line-height:1.4}
-  .t-name small{display:block;color:var(--mute-2);font-size:11.5px;margin-top:5px;font-weight:400}
+  .tr.h{background:var(--field);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding:12px 20px}
+  .tr.h span{cursor:pointer;user-select:none}
+  .tr.h span:hover{color:var(--ink)}
+  .tr.row{cursor:pointer;position:relative}
+  .tr.row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--c,transparent);opacity:.8}
+  .tr.row:hover{background:var(--hover)}
+  .t-name{font-size:14px;font-weight:450;line-height:1.4;min-width:0}
+  .t-name small{display:block;margin-top:6px;font-weight:400}
   .t-cell{font-size:12.5px;color:var(--mute)}
-  .cli{display:inline-flex;align-items:center;justify-content:center;min-width:42px;padding:5px 9px;border-radius:8px;background:rgba(249,242,236,.07);border:1px solid var(--line);font-size:11px;font-weight:600;letter-spacing:.06em}
+  .cli{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:8px;background:var(--glass-2);border:1px solid var(--line);font-size:11.5px;font-weight:600;letter-spacing:.03em;white-space:nowrap}
 
-  .st{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 11px;border-radius:9px;background:var(--glass-2);border:1px solid var(--line);white-space:nowrap}
-  .st i{width:6px;height:6px;border-radius:50%;font-style:normal;flex:none}
-  .st.work i{background:var(--gold)}
-  .st.priem i{background:var(--gold-soft)}
-  .st.wait i{background:var(--mute)}
-  .st.done i{background:var(--green)}
-  .st.new i{background:var(--mute-2)}
-  .st.done{color:var(--green)}
-  .st.priem{color:var(--gold-soft);border-color:rgba(233,220,184,.28);background:rgba(233,220,184,.08)}
+  .st{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 11px;border-radius:9px;white-space:nowrap;border:1px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent)}
+  .st i{width:6px;height:6px;border-radius:50%;font-style:normal;flex:none;background:var(--c)}
+  .st.work{--c:var(--gold)}
+  .st.priem{--c:var(--blue)}
+  .st.wait{--c:var(--mute)}
+  .st.new{--c:var(--mute-2)}
+  .st.done{--c:var(--green)}
+  .st.late{--c:var(--red)}
+  .st.sm{font-size:10.5px;padding:3px 8px}
 
   .due{font-size:12.5px;font-variant-numeric:tabular-nums}
-  .due.late{color:var(--red)}
+  .due.late{color:var(--red);font-weight:500}
   .due.frozen{color:var(--mute-2)}
   .due small{display:block;font-size:10.5px;color:var(--mute-2);margin-top:3px}
 
-  .prog{display:flex;align-items:center;gap:10px}
-  .prog-bar{flex:1;height:4px;border-radius:3px;background:rgba(249,242,236,.09);overflow:hidden}
-  .prog-bar span{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--gold-soft),var(--gold));transition:width .7s var(--ease)}
-  .prog-num{font-size:11.5px;color:var(--mute);font-variant-numeric:tabular-nums;min-width:34px;text-align:right}
+  .prog{display:flex;align-items:center;gap:10px;max-width:230px}
+  .prog-bar{flex:1;height:4px;border-radius:3px;background:var(--glass-2);overflow:hidden;border:0}
+  .prog-bar span{display:block;height:100%;border-radius:3px;background:var(--c,var(--gold));transition:width .6s var(--ease)}
+  .prog-num{font-size:11px;color:var(--mute);font-variant-numeric:tabular-nums;min-width:32px;text-align:right}
 
-  /* ─── дерево ─── */
-  .card-top{display:grid;grid-template-columns:1.6fr .9fr;gap:16px}
-  .pane{padding:28px 26px}
-  .pane h3{font-size:11px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--mute);margin-bottom:20px}
-  .deal-title{font-size:23px;font-weight:300;line-height:1.32;letter-spacing:-.01em}
-  .deal-meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  .empty{padding:44px 20px;text-align:center;color:var(--mute);font-size:13.5px}
+
+  /* ─── кнопки ─── */
+  .btn{border:1px solid var(--line);background:var(--glass);color:var(--ink);font-family:var(--font);font-size:12.5px;font-weight:500;padding:9px 16px;border-radius:11px;cursor:pointer;transition:.2s var(--ease);white-space:nowrap}
+  .btn:hover{border-color:var(--line-2);background:var(--glass-2)}
+  .btn.gold{background:linear-gradient(180deg,#d9bb7a 0%,#C8A45C 50%,#ab8a45 100%);border-color:transparent;color:#17130e;font-weight:600;box-shadow:0 8px 22px -12px rgba(200,164,92,.85)}
+  .btn.gold:hover{filter:brightness(1.07)}
+  .btn.red{color:var(--red);border-color:color-mix(in srgb,var(--red) 40%,transparent)}
+  .btn.red:hover{background:color-mix(in srgb,var(--red) 12%,transparent)}
+  .btn.green{color:var(--green);border-color:color-mix(in srgb,var(--green) 40%,transparent);background:color-mix(in srgb,var(--green) 10%,transparent);cursor:default}
+  .btn.sm{font-size:11.5px;padding:7px 12px;border-radius:9px}
+
+  /* ─── очередь ─── */
+  .q-item{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease)}
+  .q-item:last-child{border-bottom:0}
+  .q-item:hover{background:var(--hover)}
+  .q-name{font-size:14.5px;font-weight:450;line-height:1.4}
+  .q-path{font-size:11.5px;color:var(--mute-2);margin-top:7px}
+  .q-path b{color:var(--mute);font-weight:400;cursor:pointer;border-bottom:1px dashed var(--line-2)}
+  .q-path b:hover{color:var(--ink)}
+  .q-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  /* ─── приёмка ─── */
+  .pr-card{padding:24px;margin-bottom:14px;border-radius:18px;border:1px solid var(--line);background:var(--panel)}
+  .pr-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
+  .pr-name{font-size:17px;font-weight:400;line-height:1.4;cursor:pointer}
+  .pr-name:hover{color:var(--gold)}
+  .pr-sub{font-size:12px;color:var(--mute-2);margin-top:8px}
+  .pr-body{margin-top:18px;padding-top:18px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 300px;gap:24px}
+  .pr-note{font-size:13px;line-height:1.68;color:var(--mute)}
+  .pr-acts{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+
+  /* ─── панель ─── */
+  .two{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
+  .pane{padding:24px;border-radius:18px;border:1px solid var(--line);background:var(--panel)}
+  .pane h3{font-size:11px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--mute);margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .pane h3 em{font-style:normal;text-transform:none;letter-spacing:0;font-size:11.5px;color:var(--mute-2);font-weight:400}
+
+  .load-row{display:grid;grid-template-columns:118px 1fr 46px;gap:14px;align-items:center;padding:11px 0}
+  .load-name{font-size:13px}
+  .load-name small{display:block;color:var(--mute-2);font-size:11px;margin-top:3px}
+  .load-bar{height:24px;border-radius:9px;background:var(--glass-2);overflow:hidden;position:relative}
+  .load-bar span{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 70%,transparent),var(--gold));transition:width .7s var(--ease)}
+  .load-bar span.hot{background:linear-gradient(90deg,color-mix(in srgb,var(--red) 60%,transparent),var(--red))}
+  .load-bar span.cold{background:linear-gradient(90deg,color-mix(in srgb,var(--mute) 45%,transparent),color-mix(in srgb,var(--mute) 80%,transparent))}
+  .load-n{font-size:13px;color:var(--mute);text-align:right;font-variant-numeric:tabular-nums}
+
+  .stuck-i{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line);cursor:pointer}
+  .stuck-i:last-child{border-bottom:0}
+  .stuck-i:hover .stuck-n{color:var(--gold)}
+  .stuck-n{font-size:13px;line-height:1.4;transition:.2s var(--ease)}
+  .stuck-n small{display:block;color:var(--mute-2);font-size:11.5px;margin-top:5px}
+  .stuck-d{font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--c,var(--mute))}
+
+  .rules{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:4px}
+  .rule{padding:20px;border-radius:16px;border:1px solid var(--line);background:var(--panel);position:relative}
+  .rule .rn{font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;color:var(--c);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .rule .rn i{width:7px;height:7px;border-radius:50%;background:var(--c);flex:none}
+  .rule b{display:block;font-size:14px;font-weight:450;line-height:1.45;margin-bottom:10px}
+  .rule p{font-size:12.5px;line-height:1.6;color:var(--mute)}
+  .rule.r1{--c:var(--red)}
+  .rule.r2{--c:var(--blue)}
+  .rule.r3{--c:var(--green)}
+
+  .esc{margin-top:14px;border-radius:16px;border:1px solid var(--line);overflow:hidden;background:var(--panel)}
+  .esc-r{display:grid;grid-template-columns:1.1fr .5fr 1.3fr .7fr;gap:14px;padding:13px 20px;border-bottom:1px solid var(--line);font-size:12.5px;align-items:center}
+  .esc-r:last-child{border-bottom:0}
+  .esc-r.h{background:var(--field);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600}
+  .esc-r b{font-weight:450}
+  .esc-r span{color:var(--mute)}
+
+  .feed{max-height:340px;overflow:auto}
+  .feed-i{display:grid;grid-template-columns:52px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+  .feed-i:last-child{border-bottom:0}
+  .feed-t{color:var(--mute-2);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .feed-x{color:var(--mute);line-height:1.5}
+  .feed-x b{color:var(--ink);font-weight:500}
+
+  /* ─── модалка ─── */
+  .ov{position:fixed;inset:0;z-index:80;background:rgba(6,5,5,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:flex-start;justify-content:center;padding:40px 24px;overflow:auto;opacity:0;pointer-events:none;transition:opacity .28s var(--ease)}
+  body.light .ov{background:rgba(60,54,48,.42)}
+  .ov.on{opacity:1;pointer-events:auto}
+  .modal{width:100%;max-width:1080px;border-radius:24px;border:1px solid var(--line-2);background:var(--bg);box-shadow:var(--shadow-lg);transform:translateY(18px) scale(.98);transition:transform .3s var(--ease);position:relative}
+  .ov.on .modal{transform:none}
+  .modal.narrow{max-width:520px}
+  .m-head{padding:26px 28px 20px;border-bottom:1px solid var(--line);position:relative;border-radius:24px 24px 0 0;overflow:hidden}
+  .m-head::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--c,var(--gold))}
+  .m-kick{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2);font-weight:600;margin-bottom:12px}
+  .m-title{font-size:23px;font-weight:300;line-height:1.32;padding-right:44px}
+  .m-meta{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;align-items:center}
   .meta-i{font-size:12px;color:var(--mute);padding:6px 12px;border-radius:10px;background:var(--glass);border:1px solid var(--line)}
   .meta-i b{color:var(--ink);font-weight:500}
+  .m-x{position:absolute;top:22px;right:22px;width:34px;height:34px;border-radius:11px;border:1px solid var(--line);background:var(--glass);color:var(--mute);font-size:16px;cursor:pointer;transition:.2s var(--ease);line-height:1}
+  .m-x:hover{color:var(--ink);border-color:var(--line-2)}
+  .m-body{padding:24px 28px 28px;display:grid;grid-template-columns:1.6fr .9fr;gap:22px}
+  .m-body h4{font-size:11px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--mute);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .m-side{display:flex;flex-direction:column;gap:18px}
+  .m-block{padding:18px 20px;border-radius:16px;border:1px solid var(--line);background:var(--panel)}
+  .m-acts{display:flex;gap:9px;flex-wrap:wrap;padding:18px 28px;border-top:1px solid var(--line);background:var(--field);border-radius:0 0 24px 24px}
 
-  .tree{margin-top:6px}
-  .node{border-radius:13px;transition:background .22s var(--ease)}
-  .node-row{display:grid;grid-template-columns:22px 1fr auto auto auto;gap:13px;align-items:center;padding:12px 13px;border-radius:13px;transition:background .22s var(--ease)}
-  .node-row:hover{background:rgba(249,242,236,.04)}
+  .ctx{font-size:13px;line-height:1.72;color:var(--mute)}
+  .ctx b{color:var(--ink);font-weight:500}
+  .ctx p{margin-bottom:12px}
+  .ctx p:last-child{margin-bottom:0}
+  .file{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;background:var(--glass);border:1px solid var(--line);font-size:12.5px;transition:.2s var(--ease);cursor:pointer;margin-bottom:9px}
+  .file:last-child{margin-bottom:0}
+  .file:hover{border-color:var(--line-2);background:var(--glass-2)}
+  .file-ic{width:30px;height:30px;border-radius:9px;background:color-mix(in srgb,var(--gold) 16%,transparent);border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);display:flex;align-items:center;justify-content:center;font-size:9.5px;color:var(--gold);font-weight:700;flex:none}
+  .file small{display:block;color:var(--mute-2);font-size:11px;margin-top:3px}
+
+  /* ─── дерево ─── */
+  .tree-hint{font-size:11.5px;color:var(--mute-2);margin-bottom:10px}
+  .node-row{display:grid;grid-template-columns:16px 22px 1fr auto auto auto;gap:11px;align-items:center;padding:9px 10px;border-radius:12px;transition:background .2s var(--ease);border:1px solid transparent}
+  .node-row:hover{background:var(--hover)}
+  .node-row.drag{opacity:.4}
+  .node-row.over{border-color:rgba(200,164,92,.6);background:color-mix(in srgb,var(--gold) 10%,transparent)}
+  .grip{cursor:grab;color:var(--mute-2);font-size:12px;line-height:1;opacity:.5;transition:.2s var(--ease);text-align:center;letter-spacing:-2px}
+  .node-row:hover .grip{opacity:1;color:var(--mute)}
+  .grip:active{cursor:grabbing}
   .tw{width:22px;height:22px;border-radius:7px;border:1px solid var(--line);background:var(--glass);color:var(--mute);cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;transition:.2s var(--ease);font-family:var(--font);flex:none}
   .tw:hover{color:var(--ink);border-color:var(--line-2)}
   .tw.leaf{border-color:transparent;background:transparent;cursor:default;opacity:.35}
   .tw.leaf::after{content:'';width:5px;height:5px;border-radius:50%;background:var(--mute)}
-  .node-name{font-size:13.5px;line-height:1.42;font-weight:450}
-  .node-name.done-txt{color:var(--mute);text-decoration:line-through;text-decoration-color:rgba(145,134,124,.5)}
+  .node-name{font-size:13.5px;line-height:1.42;font-weight:450;min-width:0}
+  .node-name.done-txt{color:var(--mute);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--mute) 50%,transparent)}
   .node-who{font-size:11.5px;color:var(--mute);white-space:nowrap}
-  .kids{margin-left:24px;padding-left:16px;border-left:1px solid rgba(249,242,236,.09)}
+  .kids{margin-left:26px;padding-left:14px;border-left:1px solid var(--line)}
   .kids.hide{display:none}
-  .lvl-badge{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute-2);padding:3px 8px;border-radius:7px;border:1px solid var(--line)}
+  .lvl-badge{font-size:9.5px;letter-spacing:.08em;color:var(--mute-2);padding:3px 8px;border-radius:7px;border:1px solid var(--line);font-variant-numeric:tabular-nums}
 
-  .ctx{font-size:13px;line-height:1.72;color:var(--mute)}
-  .ctx b{color:var(--ink);font-weight:500}
-  .ctx p{margin-bottom:14px}
-  .ctx p:last-child{margin-bottom:0}
-  .files{display:flex;flex-direction:column;gap:9px;margin-top:6px}
-  .file{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;background:var(--glass);border:1px solid var(--line);font-size:12.5px;transition:.2s var(--ease);cursor:pointer}
-  .file:hover{border-color:var(--line-2);background:var(--glass-2)}
-  .file-ic{width:30px;height:30px;border-radius:9px;background:rgba(200,164,92,.13);border:1px solid rgba(200,164,92,.24);display:flex;align-items:center;justify-content:center;font-size:9.5px;color:var(--gold);font-weight:700;letter-spacing:.03em;flex:none}
-  .file small{display:block;color:var(--mute-2);font-size:11px;margin-top:3px}
+  /* ─── диалог формы ─── */
+  .dlg-body{padding:22px 26px}
+  .dlg-body .fld{margin-bottom:16px;width:100%}
+  .dlg-body .fld select,.dlg-body .fld input,.dlg-body .fld textarea{width:100%;min-width:0}
+  .dlg-body textarea{font-family:var(--font);font-size:13px;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:11px;padding:11px;resize:vertical;min-height:78px;line-height:1.5}
+  .dlg-body textarea:focus{outline:0;border-color:rgba(200,164,92,.55)}
+  .dlg-note{font-size:12px;line-height:1.6;color:var(--mute-2);padding:12px 14px;border-radius:12px;background:var(--glass);border:1px solid var(--line);margin-top:4px}
+  .dlg-err{font-size:12px;color:var(--red);margin-top:-8px;margin-bottom:12px;display:none}
 
-  .log{display:flex;flex-direction:column;gap:0}
-  .log-i{display:grid;grid-template-columns:60px 1fr;gap:14px;padding:11px 0;border-bottom:1px solid rgba(249,242,236,.05);font-size:12.5px}
-  .log-i:last-child{border-bottom:0}
-  .log-t{color:var(--mute-2);font-size:11.5px;font-variant-numeric:tabular-nums}
-  .log-x{color:var(--mute);line-height:1.5}
-  .log-x b{color:var(--ink);font-weight:500}
-
-  /* ─── очередь ─── */
-  .q-item{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;padding:20px 24px;border-bottom:1px solid rgba(249,242,236,.055);transition:background .22s var(--ease)}
-  .q-item:last-child{border-bottom:0}
-  .q-item:hover{background:rgba(249,242,236,.028)}
-  .q-name{font-size:14.5px;font-weight:450;line-height:1.4}
-  .q-path{font-size:11.5px;color:var(--mute-2);margin-top:7px}
-  .q-path b{color:var(--mute);font-weight:400}
-  .q-act{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
-  .btn{border:1px solid var(--line);background:var(--glass);color:var(--ink);font-family:var(--font);font-size:12.5px;font-weight:500;padding:9px 17px;border-radius:11px;cursor:pointer;transition:.2s var(--ease);white-space:nowrap}
-  .btn:hover{border-color:var(--line-2);background:var(--glass-2)}
-  .btn.gold{background:linear-gradient(180deg,#d9bb7a 0%,var(--gold) 50%,#ab8a45 100%);border-color:transparent;color:#17130e;font-weight:600;box-shadow:0 8px 22px -12px rgba(200,164,92,.85)}
-  .btn.gold:hover{filter:brightness(1.07)}
-  .btn.ghost-red{color:var(--red);border-color:rgba(201,134,128,.28)}
-  .btn.ghost-red:hover{background:rgba(201,134,128,.09)}
-  .btn.done-state{color:var(--green);border-color:rgba(159,201,172,.32);background:rgba(159,201,172,.09);cursor:default}
-
-  /* ─── приёмка ─── */
-  .pr-card{padding:26px 26px 22px;margin-bottom:16px}
-  .pr-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
-  .pr-name{font-size:17px;font-weight:400;line-height:1.4}
-  .pr-sub{font-size:12px;color:var(--mute-2);margin-top:8px}
-  .pr-body{margin-top:20px;padding-top:20px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 300px;gap:24px}
-  .pr-note{font-size:13px;line-height:1.68;color:var(--mute)}
-  .pr-acts{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
-  .wait-badge{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;color:var(--gold-soft);padding:6px 12px;border-radius:9px;background:rgba(233,220,184,.09);border:1px solid rgba(233,220,184,.24)}
-
-  /* ─── панель ─── */
-  .two{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}
-  .load-row{display:grid;grid-template-columns:104px 1fr 54px;gap:14px;align-items:center;padding:13px 0}
-  .load-name{font-size:13px}
-  .load-bar{height:26px;border-radius:9px;background:rgba(249,242,236,.05);overflow:hidden;position:relative}
-  .load-bar span{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,rgba(249,242,236,.85),rgba(249,242,236,.4));transition:width .8s var(--ease)}
-  .load-bar span.hot{background:linear-gradient(90deg,var(--gold-soft),var(--gold))}
-  .load-n{font-size:13px;color:var(--mute);text-align:right;font-variant-numeric:tabular-nums}
-
-  .stuck{display:flex;flex-direction:column}
-  .stuck-i{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid rgba(249,242,236,.05)}
-  .stuck-i:last-child{border-bottom:0}
-  .stuck-n{font-size:13px;line-height:1.4}
-  .stuck-n small{display:block;color:var(--mute-2);font-size:11.5px;margin-top:5px}
-  .stuck-d{font-size:12.5px;color:var(--gold);white-space:nowrap;font-variant-numeric:tabular-nums}
-
-  .gantt{margin-top:4px}
-  .g-row{display:grid;grid-template-columns:224px 1fr;gap:16px;align-items:center;padding:9px 0}
-  .g-name{font-size:12.5px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .g-track{position:relative;height:22px;border-radius:7px;background:rgba(249,242,236,.04)}
-  .g-bar{position:absolute;top:4px;height:14px;border-radius:5px;background:linear-gradient(90deg,rgba(249,242,236,.7),rgba(249,242,236,.32))}
-  .g-bar.gold{background:linear-gradient(90deg,var(--gold-soft),var(--gold))}
-  .g-bar.grey{background:linear-gradient(90deg,rgba(145,134,124,.55),rgba(145,134,124,.28))}
-  .g-legend{display:flex;gap:18px;margin-top:14px;font-size:11.5px;color:var(--mute-2);flex-wrap:wrap}
-  .g-legend i{display:inline-block;width:18px;height:6px;border-radius:3px;margin-right:7px;vertical-align:middle;font-style:normal}
-
-  /* ─── telegram ─── */
-  .tg-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
-  .phone{border-radius:30px;padding:16px 14px 22px;background:linear-gradient(165deg,rgba(249,242,236,.06),rgba(249,242,236,.015));border:1px solid var(--line-2);box-shadow:0 30px 70px -30px rgba(0,0,0,.95)}
-  .phone-top{display:flex;align-items:center;gap:10px;padding:6px 10px 14px;border-bottom:1px solid var(--line);margin-bottom:16px}
-  .ava{width:32px;height:32px;border-radius:50%;background:linear-gradient(150deg,var(--gold-soft),var(--gold));display:flex;align-items:center;justify-content:center;color:#17130e;font-size:12px;font-weight:700;flex:none}
-  .phone-nm{font-size:13px;font-weight:500}
-  .phone-nm small{display:block;font-size:10.5px;color:var(--mute-2);margin-top:2px}
-  .msg{padding:14px 16px;border-radius:16px 16px 16px 5px;background:rgba(249,242,236,.055);border:1px solid var(--line);font-size:12.5px;line-height:1.62;margin-bottom:11px}
-  .msg b{font-weight:600}
-  .msg .m-hd{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:9px}
-  .msg .m-li{color:var(--mute);margin-top:7px;padding-left:12px;position:relative}
-  .msg .m-li::before{content:'';position:absolute;left:0;top:8px;width:4px;height:4px;border-radius:50%;background:var(--mute-2)}
-  .msg .m-li b{color:var(--ink);font-weight:500}
-  .tg-btns{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px}
-  .tg-b{flex:1;min-width:calc(50% - 4px);text-align:center;padding:10px 8px;border-radius:11px;background:rgba(200,164,92,.13);border:1px solid rgba(200,164,92,.3);color:var(--gold-soft);font-size:11.5px;font-weight:500;cursor:pointer;transition:.2s var(--ease)}
-  .tg-b:hover{background:rgba(200,164,92,.22)}
-  .tg-b.wide{min-width:100%}
-  .tg-cap{font-size:11.5px;color:var(--mute-2);margin-top:16px;line-height:1.6;text-align:center;padding:0 6px}
-
-  /* ─── отчёт ─── */
-  .rep-line{display:grid;grid-template-columns:30px 1fr auto;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid rgba(249,242,236,.05)}
-  .rep-line:last-child{border-bottom:0}
-  .cbx{width:20px;height:20px;border-radius:6px;border:1px solid var(--line-2);background:var(--glass);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:transparent;transition:.2s var(--ease)}
-  .cbx.on{background:var(--gold);border-color:var(--gold);color:#17130e}
-  .rep-t{font-size:13.5px;line-height:1.42}
-  .rep-t small{display:block;font-size:11.5px;color:var(--mute-2);margin-top:5px}
-
-  /* ─── шаблоны ─── */
-  .tpl{padding:24px 24px 20px;margin-bottom:14px}
-  .tpl-h{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-  .tpl-n{font-size:15px;font-weight:450}
-  .tpl-steps{margin-top:18px;display:flex;flex-direction:column;gap:9px}
-  .tpl-s{display:grid;grid-template-columns:24px 1fr auto;gap:13px;align-items:center;font-size:12.5px;color:var(--mute);padding:9px 12px;border-radius:11px;background:var(--glass);border:1px solid var(--line)}
-  .tpl-s b{color:var(--ink);font-weight:450}
-  .tpl-num{width:24px;height:24px;border-radius:7px;background:rgba(200,164,92,.13);border:1px solid rgba(200,164,92,.24);color:var(--gold);font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:600}
-
-  .badge-next{display:inline-flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);padding:5px 11px;border-radius:8px;background:rgba(200,164,92,.1);border:1px solid rgba(200,164,92,.26);font-weight:600}
-
-  .note{padding:20px 24px;border-radius:16px;background:rgba(200,164,92,.06);border:1px solid rgba(200,164,92,.18);font-size:13px;line-height:1.68;color:var(--mute);margin-top:26px}
-  .note b{color:var(--gold-soft);font-weight:500}
+  /* ─── пояснения ─── */
+  .note{padding:18px 22px;border-radius:16px;background:color-mix(in srgb,var(--gold) 8%,transparent);border:1px solid color-mix(in srgb,var(--gold) 22%,transparent);font-size:13px;line-height:1.68;color:var(--mute);margin-top:22px;display:none}
+  body.hints .note{display:block;animation:fade .35s var(--ease)}
+  .note b{color:var(--gold);font-weight:500}
 
   /* ─── toast ─── */
-  .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,26px);z-index:99;padding:14px 24px;border-radius:14px;background:rgba(35,31,32,.96);border:1px solid var(--line-2);color:var(--ink);font-size:13px;opacity:0;pointer-events:none;transition:.35s var(--ease);backdrop-filter:blur(20px);box-shadow:0 22px 50px -20px rgba(0,0,0,.95)}
+  .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,26px);z-index:99;padding:13px 22px;border-radius:14px;background:var(--bg);border:1px solid var(--line-2);color:var(--ink);font-size:13px;opacity:0;pointer-events:none;transition:.35s var(--ease);box-shadow:var(--shadow-lg);max-width:min(560px,90vw);text-align:center;line-height:1.5}
   .toast.on{opacity:1;transform:translate(-50%,0)}
 
-  .foot{margin-top:60px;padding-top:26px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;font-size:11.5px;color:var(--mute-2)}
+  .foot{margin-top:56px;padding-top:24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;font-size:11.5px;color:var(--mute-2)}
 
+  @media(max-width:1180px){
+    .kpi-grid{grid-template-columns:repeat(3,1fr)}
+    .m-body{grid-template-columns:1fr}
+    .rules{grid-template-columns:1fr}
+  }
   @media(max-width:1080px){
-    .kpi-grid{grid-template-columns:repeat(2,1fr)}
-    .card-top,.two,.pr-body{grid-template-columns:1fr}
-    .tg-grid{grid-template-columns:1fr;max-width:420px;margin:0 auto}
-    .tr{grid-template-columns:1.6fr .7fr .9fr}
+    .two,.pr-body{grid-template-columns:1fr}
+    .tr{grid-template-columns:1.6fr .8fr .9fr}
     .tr .hide-s{display:none}
+    .esc-r{grid-template-columns:1fr 1fr}
   }
   @media(max-width:680px){
-    .wrap{padding:0 18px 80px}
-    .topbar-in{padding:14px 18px}
-    .kpi-grid{grid-template-columns:1fr}
-    .head h1{font-size:23px}
-    .kpi-val{font-size:32px}
-    .g-row{grid-template-columns:120px 1fr}
-    .q-item{grid-template-columns:1fr}
+    html,body{overflow-x:hidden}
+    .wrap{padding:0 14px 80px}
+    .topbar-in{padding:12px 14px;gap:12px}
+    .brand-title{font-size:11.5px}
+    .header-right{width:100%;gap:8px}
+    .sw{flex:1 1 auto;justify-content:center;padding:7px 10px;font-size:11.5px}
+    .roles{width:100%;justify-content:space-between}
+    .roles button{flex:1;padding:8px 6px;font-size:12px;text-align:center}
+    .nav{margin:18px 0 4px}
+    .nav button{flex:1 1 44%;justify-content:center;padding:10px 8px;font-size:12.5px}
+    .head{padding:26px 0 18px}
+    .head h1{font-size:22px}
+    .head p{font-size:13px}
+    .kpi-grid{grid-template-columns:1fr 1fr;gap:10px}
+    .kpi{padding:16px 14px}
+    .kpi-val{font-size:28px}
+    .kpi-sub{font-size:10.5px}
+    .fbar{padding:14px;gap:8px}
+    .fld{flex:1 1 100%;min-width:0}
+    .fld select,.fld input{min-width:0;width:100%}
+    .f-right{margin-left:0;width:100%;justify-content:space-between}
+    /* реестр превращается в карточки: та же система, читаемая с телефона */
+    .tr.h{display:none}
+    .tr{grid-template-columns:1fr;gap:10px;padding:16px}
+    .tr .hide-s{display:block}
+    .tr>div{min-width:0}
+    .t-name{font-size:14.5px}
+    .prog{max-width:none}
+    .tr.row>div:nth-child(2),.tr.row>div:nth-child(3),.tr.row>div:nth-child(4){display:inline-block;margin-right:10px}
+    .q-item{grid-template-columns:1fr;padding:16px}
+    .q-act{margin-top:12px}
+    .esc-r{grid-template-columns:1fr;gap:5px;padding:14px 16px}
+    .esc-r.h{display:none}
+    .esc-r b{font-size:13.5px}
+    .load-row{grid-template-columns:96px 1fr 40px;gap:10px}
+    .ov{padding:12px 8px}
+    .m-head{padding:20px 18px 16px}
+    .m-title{font-size:19px}
+    .m-body{padding:18px;gap:16px}
+    .m-acts{padding:14px 18px}
+    .node-row{grid-template-columns:14px 20px 1fr;gap:8px;row-gap:6px}
+    .node-who,.lvl-badge,.node-row .st{grid-column:3}
+    .kids{margin-left:14px;padding-left:10px}
   }
 </style>
 </head>
-<body>
+<body class="hints">
 
 <div class="topbar">
   <div class="topbar-in">
@@ -334,13 +433,15 @@
         </svg>
       </div>
       <div class="brand-div"></div>
-      <div class="brand-title">Система дел<small>Прототип интерфейса</small></div>
+      <div class="brand-title">Система дел<small>прототип · данные вымышленные</small></div>
     </div>
     <div class="header-right">
-      <div class="demo-flag"><i></i>Демонстрационные данные</div>
-      <div class="roles">
+      <div class="sw on" id="hintsSw"><i></i>Пояснения</div>
+      <div class="sw" id="themeSw"><i></i><span id="themeLab">Светлая тема</span></div>
+      <div class="roles" id="roles">
         <button class="active" data-role="darina">Дарина</button>
         <button data-role="nikita">Никита</button>
+        <button data-role="darya">Дарья</button>
         <button data-role="danil">Данил</button>
       </div>
     </div>
@@ -350,111 +451,50 @@
 <div class="wrap">
 
   <div class="nav" id="nav">
-    <button class="active" data-p="dela">Дела</button>
-    <button data-p="card">Карточка дела</button>
-    <button data-p="queue">Моя очередь</button>
-    <button data-p="priem">Приёмка</button>
-    <button data-p="panel">Панель</button>
-    <button data-p="tg">Telegram</button>
-    <button data-p="report">Отчёт<span class="tag">этап 2</span></button>
-    <button data-p="tpl">Правила<span class="tag">этап 2</span></button>
+    <button class="active" data-p="dela">Дела<span class="cnt" id="cDela">0</span></button>
+    <button data-p="queue">Моя очередь<span class="cnt" id="cQueue">0</span></button>
+    <button data-p="priem">Приёмка<span class="cnt" id="cPriem">0</span></button>
+    <button data-p="panel">Контроль</button>
   </div>
 
   <!-- ══════════ ДЕЛА ══════════ -->
   <section class="page on" id="p-dela">
     <div class="head">
       <h1>Дела</h1>
-      <p>Все клиенты в одном реестре, с разграничением доступа. Каждый видит только те дела, к клиентам которых у него есть допуск.</p>
+      <p>Все клиенты в одном реестре, с разграничением доступа. Плитки сверху — это фильтр: нажмите, чтобы оставить только нужное состояние.</p>
     </div>
 
-    <div class="kpi-grid">
-      <div class="kpi glass tilt feature"><div class="kpi-lab">В работе</div><div class="kpi-val">23</div><div class="kpi-sub">по 5 клиентам и внутренним делам</div></div>
-      <div class="kpi glass tilt"><div class="kpi-lab">Ждут приёмки</div><div class="kpi-val">4</div><div class="kpi-sub">одно дольше нормы</div></div>
-      <div class="kpi glass tilt"><div class="kpi-lab">Ждут клиента</div><div class="kpi-val">6</div><div class="kpi-sub">счётчик просрочки остановлен</div></div>
-      <div class="kpi glass tilt"><div class="kpi-lab">Просрочено</div><div class="kpi-val">2</div><div class="kpi-sub">по вине исполнителя</div></div>
-    </div>
+    <div class="kpi-grid" id="kpiGrid"></div>
 
-    <div class="sec-title"><h2>Реестр</h2><span>фильтры работают так же, как вкладки в таблице, только без переключения листов</span></div>
+    <div class="sec-title"><h2>Реестр</h2><span id="fSummary"></span></div>
 
-    <div class="filters">
-      <div class="chip on">Все клиенты</div>
-      <div class="chip">ИИК</div>
-      <div class="chip">ВЛГ</div>
-      <div class="chip">СТР</div>
-      <div class="chip">НРД</div>
-      <div class="chip">Внутренние</div>
-      <div class="fsep"></div>
-      <div class="chip">Юристы</div>
-      <div class="chip">Аналитика</div>
-      <div class="chip">Инвестиции</div>
-      <div class="chip">Налоги</div>
-      <div class="fsep"></div>
-      <div class="chip">Только мои</div>
+    <div class="fbar" id="fbar">
+      <div class="fld"><label>Клиент</label><select id="fCli"></select></div>
+      <div class="fld"><label>Направление</label><select id="fDir"></select></div>
+      <div class="fld"><label>Ответственный</label><select id="fWho"></select></div>
+      <div class="fld"><label>Статус</label><select id="fSt"></select></div>
+      <div class="fld"><label>Срок</label><select id="fDue"></select></div>
+      <div class="fld"><label>Приоритет</label><select id="fPrio"></select></div>
+      <div class="fld"><label>Поиск по названию</label><input id="fQ" type="text" placeholder="например: оценка"></div>
+      <div class="f-right">
+        <span class="f-found" id="fFound"></span>
+        <button class="btn sm" id="fReset">Сбросить</button>
+      </div>
     </div>
 
     <div class="tbl" id="dealsTbl"></div>
 
-    <div class="note"><b>Что здесь важно.</b> Цвет больше ничего не значит: согласованность с клиентом, приоритет и просрочка стали полями, по которым можно фильтровать и считать. Просрочка вычисляется системой, а не красится руками, и она не тикает, пока дело ждёт ответа клиента.</div>
-  </section>
-
-  <!-- ══════════ КАРТОЧКА ══════════ -->
-  <section class="page" id="p-card">
-    <div class="head">
-      <h1>Оценка объектов недвижимости</h1>
-      <p>То, что сейчас лежит нумерованным текстом в колонке «План», здесь стало деревом шагов. У каждого узла свой исполнитель, свой срок и свой статус, а вложенность не ограничена.</p>
-    </div>
-
-    <div class="card-top">
-      <div class="pane glass">
-        <h3>Шаги</h3>
-        <div class="deal-meta" style="margin-top:0;margin-bottom:22px">
-          <div class="meta-i">Клиент <b>ИИК</b></div>
-          <div class="meta-i">Направление <b>Юристы</b></div>
-          <div class="meta-i">Ответственный <b>Даша</b></div>
-          <div class="meta-i">Срок <b>19.09</b></div>
-          <div class="meta-i">Готово <b id="treeProg">—</b></div>
-        </div>
-        <div class="tree" id="tree"></div>
-        <div class="note" style="margin-top:24px"><b>Правило.</b> Прогресс родителя считает система по закрытым веткам. Срок родителя не может быть раньше срока последнего потомка: при попытке система предупредит. Три уровня видно сразу, глубже — по раскрытию.</div>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="pane glass">
-          <h3>Контекст</h3>
-          <div class="ctx">
-            <p>Клиент просит переоценку четырёх объектов перед пересмотром структуры владения. <b>Внутреннюю оценку делаем до внешнего запроса</b> — так решили на планёрке 02.09, чтобы понимать вилку заранее.</p>
-            <p>Договорённость: показываем клиенту сводную таблицу с тремя коммерческими предложениями, без рекомендации конкретной компании до его вопроса.</p>
-          </div>
-        </div>
-        <div class="pane glass">
-          <h3>Файлы</h3>
-          <div class="files">
-            <div class="file"><div class="file-ic">XLSX</div><div>Реестр объектов, версия 2<small>Даша, 04.09, из чата клиента</small></div></div>
-            <div class="file"><div class="file-ic">PDF</div><div>Выписки ЕГРН, 4 объекта<small>Даша, 03.09</small></div></div>
-            <div class="file"><div class="file-ic">PDF</div><div>КП оценочной компании 1<small>Данил, 06.09, из профильного чата</small></div></div>
-          </div>
-        </div>
-        <div class="pane glass">
-          <h3>Журнал</h3>
-          <div class="log">
-            <div class="log-i"><div class="log-t">06.09</div><div class="log-x"><b>Данил</b> закрыл шаг «Разослать запросы»</div></div>
-            <div class="log-i"><div class="log-t">04.09</div><div class="log-x"><b>Бот</b> прицепил файл из чата ИИК к шагу 1.1</div></div>
-            <div class="log-i"><div class="log-t">03.09</div><div class="log-x"><b>Даша</b> закрыла ветку «Сформировать реестр»</div></div>
-            <div class="log-i"><div class="log-t">02.09</div><div class="log-x"><b>Дарина</b> завела дело с планёрки</div></div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div class="note"><b>Что здесь важно.</b> Цвет больше ничего не значит сам по себе: клиент, направление, ответственный, статус, срок и приоритет стали полями. По ним можно фильтровать и считать. Просрочку вычисляет система, а не человек кистью, и она не тикает, пока дело ждёт ответа клиента.</div>
   </section>
 
   <!-- ══════════ ОЧЕРЕДЬ ══════════ -->
   <section class="page" id="p-queue">
     <div class="head">
-      <h1>Моя очередь <span style="color:var(--mute);font-weight:200" id="qWho">— Данил</span></h1>
-      <p>Свой список без похода к координатору. Собирается из шагов, где человек исполнитель, плюс узлов, за которые он отвечает целиком. Закрывает шаг он сам, следующий по цепочке узнаёт об этом без Дарины.</p>
+      <h1>Моя очередь <span style="color:var(--mute);font-weight:200" id="qWho"></span></h1>
+      <p>Список собирается сам из шагов, где человек исполнитель. Закрывает шаг он сам, следующий по цепочке узнаёт об этом без координатора.</p>
     </div>
     <div class="tbl" id="queueTbl"></div>
-    <div class="note"><b>Это снимает главный ручной цикл.</b> Сейчас статус меняет только Дарина: она читает чаты, опрашивает коллег, отмечает выполнение и напоминает следующему. Здесь исполнитель нажимает «Сделал», и цепочка идёт дальше сама.</div>
+    <div class="note"><b>Это снимает главный ручной цикл.</b> Сейчас статус меняет только Дарина: читает чаты, опрашивает коллег, отмечает выполнение, напоминает следующему. Здесь исполнитель нажимает «Сделал», и цепочка идёт дальше сама. Нажмите — прогресс дела в реестре пересчитается прямо сейчас.</div>
   </section>
 
   <!-- ══════════ ПРИЁМКА ══════════ -->
@@ -464,200 +504,70 @@
       <p>Работа приходит сюда, а не в личку. Три решения: принять, вернуть с замечанием, отправить клиенту. Кто принимает — настраивается, это не зашито на одного человека.</p>
     </div>
     <div id="priemList"></div>
-    <div class="note"><b>Закрывает оба сценария потери.</b> Первый: документ сделан, но лежит в переписке и клиенту не ушёл. Второй: документ отправлен, клиент молчит, и никто не понимает, чья это теперь очередь. После «Отправлено клиенту» дело переходит в ожидание ответа с напоминанием, а счётчик просрочки исполнителя останавливается.</div>
+    <div class="note"><b>Закрывает оба сценария потери.</b> Первый: документ сделан, но лежит в переписке и клиенту не ушёл. Второй: документ отправлен, клиент молчит, и никто не понимает, чья это теперь очередь. После «Отправлено клиенту» дело переходит в ожидание ответа, а счётчик просрочки исполнителя останавливается.</div>
   </section>
 
-  <!-- ══════════ ПАНЕЛЬ ══════════ -->
+  <!-- ══════════ КОНТРОЛЬ ══════════ -->
   <section class="page" id="p-panel">
     <div class="head">
-      <h1>Панель контроля</h1>
-      <p>Нагрузка по людям, где дело встало и по какой причине, ход этапов во времени. То, что сейчас держится в голове и в цвете ячеек.</p>
+      <h1>Контроль</h1>
+      <p>Три вопроса руководителя: кто перегружен, где встало и по чьей вине, что произойдёт дальше без ручного вмешательства.</p>
     </div>
 
+    <div class="sec-title"><h2>Модель контроля</h2><span>что система считает нормой, а что нарушением</span></div>
+    <div class="rules">
+      <div class="rule r1">
+        <div class="rn"><i></i>Просрочка команды</div>
+        <b>Срок прошёл, ход за нами</b>
+        <p>Шаг просрочен только тогда, когда очередь у сотрудника. Это единственное состояние, которое считается нарушением и попадает в счётчик человека.</p>
+      </div>
+      <div class="rule r2">
+        <div class="rn"><i></i>Ожидание клиента</div>
+        <b>Срок прошёл, ход за клиентом</b>
+        <p>Счётчик просрочки остановлен, вместо него идёт счётчик тишины клиента. Видно, сколько дней ждём и кто последний писал. Это работа с клиентом, а не провал команды.</p>
+      </div>
+      <div class="rule r3">
+        <div class="rn"><i></i>Норма</div>
+        <b>Срок в будущем или шаг закрыт</b>
+        <p>Ничего не делаем и никого не дёргаем. Руководитель смотрит только на первые две колонки, остальное система держит сама.</p>
+      </div>
+    </div>
+
+    <div class="esc">
+      <div class="esc-r h"><div>Событие</div><div>Когда</div><div>Что делает система</div><div>Кому</div></div>
+      <div class="esc-r"><div><b>Наступил шаг</b></div><div><span>сразу</span></div><div><span>уведомление исполнителю и запись в журнале дела</span></div><div><span>исполнителю</span></div></div>
+      <div class="esc-r"><div><b>Срок завтра</b></div><div><span>за 1 день</span></div><div><span>напоминание с кнопками «сделал» и «перенести с причиной»</span></div><div><span>исполнителю</span></div></div>
+      <div class="esc-r"><div><b>Срок прошёл</b></div><div><span>в тот же день</span></div><div><span>шаг помечается просроченным, попадает в счётчик человека</span></div><div><span>исполнителю и Дарине</span></div></div>
+      <div class="esc-r"><div><b>Просрочка 3 дня</b></div><div><span>на 3-й день</span></div><div><span>дело поднимается наверх списка контроля</span></div><div><span>Никите</span></div></div>
+      <div class="esc-r"><div><b>Клиент молчит</b></div><div><span>с 5-го дня</span></div><div><span>напоминание тому, кто ведёт клиента, счётчик команды остановлен</span></div><div><span>Никите</span></div></div>
+      <div class="esc-r"><div><b>Работа на приёмке</b></div><div><span>через 2 дня</span></div><div><span>повторное уведомление принимающему</span></div><div><span>принимающему</span></div></div>
+    </div>
+
+    <div class="note"><b>Правило одно.</b> Никто не решает вручную, просрочка это или нет. Состояние определяет ответ на вопрос «чей сейчас ход»: наш — просрочка, клиента — ожидание. Отсюда и цифры в счётчиках людей: они честные, спорить с ними не о чем.</div>
+
+    <div class="sec-title"><h2>Картина на сегодня</h2><span id="panelDate"></span></div>
     <div class="two">
-      <div class="pane glass tilt">
-        <h3>Нагрузка по людям</h3>
-        <div>
-          <div class="load-row"><div class="load-name">Даша</div><div class="load-bar"><span class="hot" style="width:88%"></span></div><div class="load-n">9</div></div>
-          <div class="load-row"><div class="load-name">Данил, аналитик</div><div class="load-bar"><span style="width:64%"></span></div><div class="load-n">7</div></div>
-          <div class="load-row"><div class="load-name">Никита</div><div class="load-bar"><span style="width:41%"></span></div><div class="load-n">4</div></div>
-          <div class="load-row"><div class="load-name">Костя</div><div class="load-bar"><span style="width:27%"></span></div><div class="load-n">3</div></div>
-          <div class="load-row"><div class="load-name">Дарина</div><div class="load-bar"><span style="width:18%"></span></div><div class="load-n">2</div></div>
-        </div>
-        <div class="note" style="margin-top:20px"><b>Видно сразу:</b> у Даши девять открытых шагов при четырёх у Никиты. Раньше это можно было понять, только пересчитав строки в четырёх вкладках руками.</div>
+      <div class="pane">
+        <h3>Нагрузка по людям<em>открытых шагов</em></h3>
+        <div id="loadList"></div>
+        <div class="note" style="margin-top:16px"><b>Считается из дерева шагов,</b> а не из числа дел. Один человек может вести два дела и иметь девять открытых шагов, а другой пять дел и три шага.</div>
       </div>
 
-      <div class="pane glass tilt">
-        <h3>Где встало</h3>
-        <div class="stuck">
-          <div class="stuck-i"><div class="stuck-n">Согласование реестра объектов<small>ИИК · ждём ответ клиента</small></div><div class="stuck-d">6 дней</div></div>
-          <div class="stuck-i"><div class="stuck-n">Проект договора залога доли<small>ВЛГ · на приёмке у Никиты</small></div><div class="stuck-d">3 дня</div></div>
-          <div class="stuck-i"><div class="stuck-n">Справка по ставкам аренды<small>ИИК · ждём информацию от клиента</small></div><div class="stuck-d">5 дней</div></div>
-          <div class="stuck-i"><div class="stuck-n">Созвон по стратегии<small>СТР · не подтверждён</small></div><div class="stuck-d">2 дня</div></div>
-        </div>
-        <div class="note" style="margin-top:20px"><b>Разные причины больше не сливаются в одну.</b> «Клиент молчит» и «исполнитель не сделал» — это два разных состояния, и только второе является просрочкой команды.</div>
+      <div class="pane">
+        <h3>Где встало<em>по причине</em></h3>
+        <div id="stuckList"></div>
+        <div class="note" style="margin-top:16px"><b>Разные причины не сливаются.</b> «Клиент молчит» и «исполнитель не сделал» — два разных состояния, и только второе является просрочкой команды.</div>
       </div>
     </div>
 
-    <div class="sec-title"><h2>Ход дел по этапам</h2><span>та самая диаграмма, про которую говорила Дарина</span></div>
-    <div class="pane glass">
-      <div class="gantt">
-        <div class="g-row"><div class="g-name">Оценка объектов, ИИК</div><div class="g-track"><div class="g-bar" style="left:2%;width:38%"></div><div class="g-bar gold" style="left:42%;width:24%"></div><div class="g-bar grey" style="left:68%;width:20%"></div></div></div>
-        <div class="g-row"><div class="g-name">Залог доли в ООО, ВЛГ</div><div class="g-track"><div class="g-bar" style="left:6%;width:46%"></div><div class="g-bar gold" style="left:54%;width:18%"></div></div></div>
-        <div class="g-row"><div class="g-name">Реструктуризация портфеля, СТР</div><div class="g-track"><div class="g-bar" style="left:10%;width:28%"></div><div class="g-bar grey" style="left:40%;width:34%"></div></div></div>
-        <div class="g-row"><div class="g-name">Индексация ставок аренды, ИИК</div><div class="g-track"><div class="g-bar" style="left:14%;width:22%"></div><div class="g-bar grey" style="left:38%;width:30%"></div></div></div>
-        <div class="g-row"><div class="g-name">Взыскание по займу, НРД</div><div class="g-track"><div class="g-bar" style="left:4%;width:62%"></div><div class="g-bar gold" style="left:68%;width:14%"></div></div></div>
-        <div class="g-row"><div class="g-name">Налоговый план, ВЛГ</div><div class="g-track"><div class="g-bar" style="left:22%;width:30%"></div></div></div>
-      </div>
-      <div class="g-legend">
-        <span><i style="background:linear-gradient(90deg,rgba(249,242,236,.7),rgba(249,242,236,.32))"></i>выполнено</span>
-        <span><i style="background:linear-gradient(90deg,var(--gold-soft),var(--gold))"></i>идёт сейчас</span>
-        <span><i style="background:linear-gradient(90deg,rgba(145,134,124,.55),rgba(145,134,124,.28))"></i>ожидание</span>
+    <div class="sec-title"><h2>Лента системы</h2><span>журнал ведётся сам, ваши действия в прототипе попадают сюда</span></div>
+    <div class="pane">
+      <div class="feed" id="feed"></div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:18px">
+        <button class="btn" id="repBtn">Собрать отчёт клиенту</button>
+        <button class="btn" id="weekBtn">Срез по сотруднику за неделю</button>
       </div>
     </div>
-  </section>
-
-  <!-- ══════════ TELEGRAM ══════════ -->
-  <section class="page" id="p-tg">
-    <div class="head">
-      <h1>Telegram</h1>
-      <p>Команда остаётся там, где живёт. Бот ведёт себя по-разному в зависимости от чата: в личке он ассистент, в клиентском чате молчит и только собирает, руководителю приносит сводку перед встречей.</p>
-    </div>
-
-    <div class="tg-grid">
-      <div>
-        <div class="phone">
-          <div class="phone-top"><div class="ava">H</div><div class="phone-nm">HIDE · система<small>личный чат с Данилом</small></div></div>
-          <div class="msg">
-            <div class="m-hd">Ваша очередь</div>
-            Наступил ваш шаг по делу <b>Оценка объектов недвижимости</b>, клиент ИИК.<br><br>
-            Шаг: <b>Свести коммерческие предложения в таблицу</b><br>
-            Срок: <b>10.09</b>
-            <div class="tg-btns">
-              <div class="tg-b">Взял в работу</div>
-              <div class="tg-b">Сделал</div>
-              <div class="tg-b wide">Перенести с причиной</div>
-            </div>
-          </div>
-          <div class="msg">
-            <div class="m-hd">Утро, 09:00</div>
-            Сегодня на вас три шага, один горит:
-            <div class="m-li"><b>Свести КП в таблицу</b> — до 10.09</div>
-            <div class="m-li"><b>Расчёт окупаемости</b> — до 12.09</div>
-            <div class="m-li"><b>Справка по ставкам</b> — ждёт данных от клиента</div>
-          </div>
-        </div>
-        <div class="tg-cap">Исполнителю не нужно осваивать новый интерфейс: работу можно вести кнопками, не заходя в веб. Это прямая страховка от истории с TickTick.</div>
-      </div>
-
-      <div>
-        <div class="phone">
-          <div class="phone-top"><div class="ava">H</div><div class="phone-nm">HIDE · система<small>личный чат с Никитой</small></div></div>
-          <div class="msg">
-            <div class="m-hd">Через час планёрка · ИИК</div>
-            <b>Сделано с прошлой встречи</b>
-            <div class="m-li">Реестр объектов сформирован и выверен по ЕГРН</div>
-            <div class="m-li">Запросы в три оценочные компании разосланы</div>
-            <br><b>Зависло</b>
-            <div class="m-li">Согласование реестра — <b>клиент молчит 6 дней</b></div>
-            <div class="m-li">Справка по ставкам — ждём данные от клиента</div>
-            <br><b>Попросить на встрече</b>
-            <div class="m-li">Подтверждение реестра из четырёх объектов</div>
-            <div class="m-li">Ставки аренды по двум помещениям</div>
-            <div class="tg-btns"><div class="tg-b wide">Открыть дела клиента</div></div>
-          </div>
-        </div>
-        <div class="tg-cap">Подготовка к еженедельному созвону перестаёт быть отдельной работой Дарины. Никита приходит на встречу с актуальной картиной, собранной из системы.</div>
-      </div>
-
-      <div>
-        <div class="phone">
-          <div class="phone-top"><div class="ava">H</div><div class="phone-nm">HIDE · система<small>личный чат с Дариной</small></div></div>
-          <div class="msg">
-            <div class="m-hd">Файл из чата ИИК</div>
-            В чате клиента появился документ <b>Реестр объектов v2.xlsx</b>.<br>
-            Похоже на дело <b>Оценка объектов недвижимости</b>.
-            <div class="tg-btns">
-              <div class="tg-b wide">Прицепить к этому делу</div>
-              <div class="tg-b">Другое дело</div>
-              <div class="tg-b">Не нужно</div>
-            </div>
-          </div>
-          <div class="msg">
-            <div class="m-hd">Поручение от клиента</div>
-            В чате ВЛГ клиент написал: «нужно ещё посмотреть по земельному участку до конца месяца».<br><br>
-            Создан <b>черновик дела</b>, ждёт вашего разбора.
-            <div class="tg-btns"><div class="tg-b wide">Открыть черновик</div></div>
-          </div>
-        </div>
-        <div class="tg-cap">В чатах с клиентами бот не пишет ни одного сообщения. Он только собирает и обращается к команде в личку: клиент внутренней кухни не видит.</div>
-      </div>
-    </div>
-
-    <div class="note"><b>Что бот делает в первой версии.</b> Отвечает на команду: уведомляет, принимает быстрые действия, перехватывает файлы, заводит дело ответом на сообщение, следит за тишиной, готовит брифинг. Разбирать переписку самостоятельно и предлагать изменения по делам он начнёт на втором этапе — это требует отдельного согласия команды.</div>
-  </section>
-
-  <!-- ══════════ ОТЧЁТ ══════════ -->
-  <section class="page" id="p-report">
-    <div class="head">
-      <h1>Месячный отчёт <span class="badge-next" style="vertical-align:middle;margin-left:10px">этап 2</span></h1>
-      <p>Блок «Ключевые действия» собирается из дел кнопкой, а не набивается заново. Никита отмечает, что показываем клиенту, а что остаётся внутри.</p>
-    </div>
-
-    <div class="pane glass">
-      <div class="tpl-h" style="margin-bottom:6px">
-        <div><div class="tpl-n">Итоги за сентябрь · клиент ИИК</div><div class="pr-sub">собрано из 11 закрытых дел и шагов</div></div>
-        <button class="btn gold" onclick="toast('Черновик собран. Осталось снять галочки с того, что не показываем')">Собрать черновик</button>
-      </div>
-      <div style="margin-top:20px" id="repList"></div>
-      <div class="pr-acts" style="margin-top:24px">
-        <button class="btn" onclick="toast('Выгружено: 8 пунктов для клиента, 3 остались внутри')">Выгрузить для дизайнера</button>
-        <button class="btn" onclick="toast('Показано: чем занимался сотрудник за неделю')">Срез по сотруднику за неделю</button>
-      </div>
-    </div>
-
-    <div class="note"><b>Что это отменяет.</b> Ручную пересборку блоков итогов на вкладке клиента каждый месяц и отдельные недельные отчёты, которые аналитик и юрист сегодня ведут руками и присылают в Telegram. Показатели портфеля по-прежнему считает аналитик, вёрстку делает дизайнер — мы отдаём им готовые данные.</div>
-  </section>
-
-  <!-- ══════════ ШАБЛОНЫ ══════════ -->
-  <section class="page" id="p-tpl">
-    <div class="head">
-      <h1>Шаблоны дел <span class="badge-next" style="vertical-align:middle;margin-left:10px">этап 2</span></h1>
-      <p>Единые правила работы компании в рабочем виде. Одинаковые дела разворачиваются в одинаковое дерево шагов с закреплёнными ролями, а не собираются заново каждый раз.</p>
-    </div>
-
-    <div class="tpl glass">
-      <div class="tpl-h"><div class="tpl-n">Оценка объектов недвижимости</div><span class="pr-sub">направление: юристы · 5 шагов · срок 14 дней</span></div>
-      <div class="tpl-steps">
-        <div class="tpl-s"><div class="tpl-num">1</div><div><b>Сформировать реестр объектов</b></div><div>юрист</div></div>
-        <div class="tpl-s"><div class="tpl-num">2</div><div><b>Согласовать реестр с клиентом</b></div><div>founder</div></div>
-        <div class="tpl-s"><div class="tpl-num">3</div><div><b>Внутренняя оценка до внешнего запроса</b></div><div>аналитик</div></div>
-        <div class="tpl-s"><div class="tpl-num">4</div><div><b>Запросить КП у оценочных компаний</b></div><div>аналитик</div></div>
-        <div class="tpl-s"><div class="tpl-num">5</div><div><b>Приёмка и отправка клиенту</b></div><div>founder</div></div>
-      </div>
-    </div>
-
-    <div class="tpl glass">
-      <div class="tpl-h"><div class="tpl-n">Залог доли в ООО</div><span class="pr-sub">направление: юристы · 4 шага · срок 21 день</span></div>
-      <div class="tpl-steps">
-        <div class="tpl-s"><div class="tpl-num">1</div><div><b>Проверка корпоративных документов</b></div><div>юрист</div></div>
-        <div class="tpl-s"><div class="tpl-num">2</div><div><b>Структурирование сделки</b></div><div>CEO</div></div>
-        <div class="tpl-s"><div class="tpl-num">3</div><div><b>Проект договора и согласование</b></div><div>юрист</div></div>
-        <div class="tpl-s"><div class="tpl-num">4</div><div><b>Нотариальное удостоверение</b></div><div>юрист</div></div>
-      </div>
-    </div>
-
-    <div class="tpl glass">
-      <div class="tpl-h"><div class="tpl-n">Ежемесячный отчёт инвестору</div><span class="pr-sub">регулярное · заводится за 7 дней до срока</span></div>
-      <div class="tpl-steps">
-        <div class="tpl-s"><div class="tpl-num">1</div><div><b>Показатели портфеля за период</b></div><div>аналитик</div></div>
-        <div class="tpl-s"><div class="tpl-num">2</div><div><b>Черновик ключевых действий</b></div><div>система</div></div>
-        <div class="tpl-s"><div class="tpl-num">3</div><div><b>Отбор того, что показываем клиенту</b></div><div>founder</div></div>
-        <div class="tpl-s"><div class="tpl-num">4</div><div><b>Передача дизайнеру и отправка</b></div><div>координатор</div></div>
-      </div>
-    </div>
-
-    <div class="note"><b>Календарь обязательств работает отсюда же.</b> Ежемесячный отчёт, квартальный расчёт портфеля, налоговые сроки и даты по договорам заводятся сами за оговорённое число дней до срока. Сегодня это живёт как «Ежемесячно» текстом в колонке дедлайна и держится на памяти.</div>
   </section>
 
   <div class="foot">
@@ -666,266 +576,909 @@
   </div>
 </div>
 
+<div class="ov" id="ov"><div class="modal" id="modal"></div></div>
+<div class="ov" id="ov2"><div class="modal narrow" id="dlg"></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
-/* ═══════════ ДАННЫЕ ═══════════ */
-const DEALS = [
-  {n:'Оценка объектов недвижимости', c:'ИИК', d:'Юристы', who:'Даша', st:['work','В работе'], due:'19.09', p:70},
-  {n:'Залог доли в ООО', c:'ВЛГ', d:'Юристы', who:'Даша', st:['priem','На приёмке'], due:'12.09', p:85, late:true},
-  {n:'Реструктуризация инвестпортфеля', c:'СТР', d:'Инвестиции', who:'Данил', st:['wait','Ждём клиента'], due:'—', p:55, frozen:true},
-  {n:'Индексация ставок аренды', c:'ИИК', d:'Аналитика', who:'Данил', st:['wait','Ждём информацию'], due:'—', p:30, frozen:true},
-  {n:'Судебное взыскание по займу', c:'НРД', d:'Юристы', who:'Даша', st:['work','В работе'], due:'26.09', p:70},
-  {n:'Подготовка налогового плана', c:'ВЛГ', d:'Налоги', who:'Костя', st:['new','Не приступили'], due:'30.09', p:0},
-  {n:'Ежемесячный отчёт инвестору', c:'ИИК', d:'Аналитика', who:'Дарина', st:['work','В работе'], due:'28.09', p:20},
-  {n:'Регламент приёма новых клиентов', c:'Внутр.', d:'Аналитика', who:'Дарина', st:['done','Выполнено'], due:'05.09', p:100}
-];
+/* ═══════════ СПРАВОЧНИКИ ═══════════ */
+const TODAY = new Date(2026,8,8);            // 8 сентября 2026, фиксированная дата демо
+const PEOPLE = {
+  darina:{n:'Дарина', r:'координатор', f:true},
+  nikita:{n:'Никита', r:'управляющий партнёр'},
+  darya:{n:'Дарья', r:'юрист', f:true},
+  danil:{n:'Данил', r:'аналитик'},
+  konstantin:{n:'Константин', r:'генеральный директор'},
+  anton:{n:'Антон', r:'налоги, на аутсорсе'}
+};
+const DIRS = ['Юристы','Аналитика','Инвестиции','Налоги','Отчётность'];
+const CLIENTS = ['ИИК 1','ИИК 2','ИИК 3','ИИК 4','ИИК 5','ИИК 6','ИИК 7','ИИК 8','ИИК 9','ИИК 10','Внутренние'];
+const ST = {
+  work:{l:'В работе', c:'work'},
+  priem:{l:'На приёмке', c:'priem'},
+  wait:{l:'Ждём клиента', c:'wait'},
+  new:{l:'Не начато', c:'new'},
+  done:{l:'Выполнено', c:'done'}
+};
+const PRIO = {high:'Высокий', mid:'Обычный', low:'Низкий'};
 
-const TREE = [
-  {t:'Сформировать реестр объектов', who:'Даша', due:'03.09', done:true, kids:[
-    {t:'Выгрузить перечень из документов клиента', who:'Даша', due:'02.09', done:true},
-    {t:'Сверить с выписками ЕГРН', who:'Даша', due:'03.09', done:true, kids:[
-      {t:'Запросить свежие выписки', who:'Даша', due:'02.09', done:true},
-      {t:'Сверить площади и обременения', who:'Даша', due:'03.09', done:true}
-    ]}
-  ]},
-  {t:'Согласовать реестр с клиентом', who:'Никита', due:'—', done:false, wait:'ждём ответ клиента, 6 дней'},
-  {t:'Внутренняя оценка до внешнего запроса', who:'Данил', due:'09.09', done:true, kids:[
-    {t:'Собрать сопоставимые предложения по рынку', who:'Данил', due:'08.09', done:true},
-    {t:'Посчитать вилку по каждому объекту', who:'Данил', due:'09.09', done:true}
-  ]},
-  {t:'Запросить КП у оценочных компаний', who:'Данил', due:'10.09', done:false, kids:[
-    {t:'Собрать список компаний', who:'Данил', due:'05.09', done:true},
-    {t:'Разослать запросы', who:'Данил', due:'06.09', done:true},
-    {t:'Свести предложения в таблицу', who:'Данил', due:'10.09', done:false, now:true}
-  ]},
-  {t:'Приёмка и отправка клиенту', who:'Никита', due:'19.09', done:false}
-];
-
-const QUEUE = {
-  danil:[
-    {n:'Свести коммерческие предложения в таблицу', p:'Оценка объектов недвижимости · ИИК · шаг 4.3', due:'10.09', hot:true},
-    {n:'Расчёт окупаемости по двум объектам', p:'Реструктуризация инвестпортфеля · СТР · шаг 2', due:'12.09'},
-    {n:'Справка по рыночным ставкам аренды', p:'Индексация ставок аренды · ИИК · шаг 1', due:'—', wait:'ждём данные от клиента'},
-    {n:'Показатели портфеля за сентябрь', p:'Ежемесячный отчёт инвестору · ИИК · шаг 1', due:'25.09'}
+/* ═══════════ ЗАГОТОВКИ ДЕРЕВЬЕВ ═══════════ */
+function T(t,who,d,kids){return {t:t,who:who,d:d,done:false,kids:kids||null}}
+const TPL = {
+  assess:(a,b,c)=>[
+    T('Сформировать реестр объектов',a,-6,[
+      T('Выгрузить перечень из документов клиента',a,-7),
+      T('Сверить с выписками ЕГРН',a,-6,[
+        T('Запросить свежие выписки',a,-8),
+        T('Сверить площади и обременения',a,-6)
+      ])
+    ]),
+    T('Согласовать реестр с клиентом',c,-2),
+    T('Внутренняя оценка до внешнего запроса',b,1,[
+      T('Собрать сопоставимые предложения по рынку',b,0),
+      T('Посчитать вилку по каждому объекту',b,1)
+    ]),
+    T('Запросить КП у оценочных компаний',b,2,[
+      T('Собрать список компаний',b,-3),
+      T('Разослать запросы',b,-2),
+      T('Свести предложения в таблицу',b,2)
+    ]),
+    T('Приёмка и отправка клиенту',c,11)
   ],
-  darina:[
-    {n:'Разобрать черновик дела из чата ВЛГ', p:'Поручение клиента от 07.09', due:'08.09', hot:true},
-    {n:'Передать отчёт дизайнеру', p:'Ежемесячный отчёт инвестору · ИИК · шаг 4', due:'28.09'},
-    {n:'Регламент приёма новых клиентов', p:'Внутренние дела · шаг 3', due:'12.09'}
+  pledge:(a,b,c)=>[
+    T('Проверка корпоративных документов',a,-9,[
+      T('Устав и решения участников',a,-10),
+      T('Ограничения на отчуждение доли',a,-9)
+    ]),
+    T('Структурирование сделки',c,-5),
+    T('Проект договора и согласование',a,-1,[
+      T('Первая редакция договора',a,-4),
+      T('Правки после обсуждения',a,-1)
+    ]),
+    T('Нотариальное удостоверение',a,9)
   ],
-  nikita:[
-    {n:'Согласовать реестр объектов с клиентом', p:'Оценка объектов недвижимости · ИИК · шаг 2', due:'—', wait:'ждём ответ клиента, 6 дней'},
-    {n:'Отбор пунктов для отчёта инвестору', p:'Ежемесячный отчёт инвестору · ИИК · шаг 3', due:'26.09'},
-    {n:'Созвон по инвестстратегии', p:'Реструктуризация инвестпортфеля · СТР', due:'09.09', hot:true}
+  invest:(a,b,c)=>[
+    T('Собрать текущую структуру портфеля',b,-8),
+    T('Расчёт доходности по инструментам',b,-3,[
+      T('Выгрузка по брокерским счетам',b,-6),
+      T('Сверка с отчётами управляющих',b,-3)
+    ]),
+    T('Сценарии перекладки',b,3),
+    T('Обсуждение сценариев с клиентом',c,7),
+    T('Исполнение решения',b,16)
+  ],
+  tax:(a,b,c)=>[
+    T('Сбор вводных по структуре владения',a,-4),
+    T('Расчёт налоговой нагрузки',b,4,[
+      T('Текущая нагрузка',b,1),
+      T('Нагрузка после реорганизации',b,4)
+    ]),
+    T('Проверка позиции с внешним консультантом',a,10),
+    T('Согласование плана с клиентом',c,17)
+  ],
+  court:(a,b,c)=>[
+    T('Правовая позиция и расчёт требований',a,-11,[
+      T('Анализ договора займа',a,-13),
+      T('Расчёт процентов на дату подачи',a,-11)
+    ]),
+    T('Подготовка искового заявления',a,-2),
+    T('Подача в суд',a,5),
+    T('Сопровождение заседаний',a,25)
+  ],
+  report:(a,b,c)=>[
+    T('Показатели портфеля за период',b,-1),
+    T('Черновик ключевых действий',a,3),
+    T('Отбор того, что показываем клиенту',c,6),
+    T('Передача дизайнеру и отправка',a,9)
+  ],
+  audit:(a,b,c)=>[
+    T('Запросить документы у клиента',a,-5),
+    T('Проверка правоустанавливающих документов',a,2,[
+      T('Объекты недвижимости',a,0),
+      T('Доли в компаниях',a,2)
+    ]),
+    T('Карта рисков',b,8),
+    T('Встреча по результатам',c,13)
+  ],
+  internal:(a,b,c)=>[
+    T('Собрать текущую практику',a,-6),
+    T('Описать порядок шагов',a,-1),
+    T('Обсудить с командой',c,4),
+    T('Зафиксировать регламент',a,8)
   ]
 };
 
-const PRIEM = [
-  {n:'Проект договора залога доли', c:'ВЛГ · юристы', who:'Даша', wait:'на приёмке 3 дня', note:'Договор готов, корпоративные документы проверены, ограничений на отчуждение не выявлено. Требуется решение: отправляем клиенту на согласование или сначала показываем Косте по структуре сделки.', files:['Договор залога доли, v3.docx','Протокол проверки документов.pdf']},
-  {n:'Справка по судебному взысканию', c:'НРД · юристы', who:'Даша', wait:'на приёмке 1 день', note:'Позиция по взысканию подготовлена, приложен расчёт процентов на дату подачи. Сумма и порядок действий согласованы внутри.', files:['Правовая позиция.pdf','Расчёт процентов.xlsx']}
+/* ═══════════ ДЕЛА ═══════════ */
+function D(o){return o}
+const RAW = [
+  D({n:'Оценка объектов недвижимости', c:'ИИК 1', dir:'Юристы', who:'darya', st:'work', prio:'high', tpl:'assess', team:['darya','danil','nikita'], closed:8,
+     ctx:['Клиент просит переоценку четырёх объектов перед пересмотром структуры владения. <b>Внутреннюю оценку делаем до внешнего запроса</b>, так решили на планёрке 2 сентября: нужно понимать вилку заранее.','Договорённость: показываем клиенту сводную таблицу с тремя предложениями, без рекомендации конкретной компании до его вопроса.'],
+     files:[['Реестр объектов, версия 2.xlsx','Дарья, 04.09, из чата клиента'],['Выписки ЕГРН, 4 объекта.pdf','Дарья, 03.09'],['КП оценочной компании 1.pdf','Данил, 06.09, из профильного чата']]}),
+  D({n:'Залог доли в ООО', c:'ИИК 2', dir:'Юристы', who:'darya', st:'priem', prio:'high', tpl:'pledge', team:['darya','danil','konstantin'], closed:5, priemDays:3,
+     ctx:['Договор готов, корпоративные документы проверены, ограничений на отчуждение не выявлено.','Требуется решение: отправляем клиенту на согласование или сначала показываем Константину по структуре сделки.'],
+     files:[['Договор залога доли, v3.docx','Дарья, 06.09'],['Протокол проверки документов.pdf','Дарья, 05.09']]}),
+  D({n:'Реструктуризация инвестпортфеля', c:'ИИК 3', dir:'Инвестиции', who:'danil', st:'wait', prio:'high', tpl:'invest', team:['darya','danil','nikita'], closed:3, waitDays:6,
+     ctx:['Сценарии перекладки готовы, ждём от клиента решения по доле валютных инструментов.','Последнее сообщение клиенту ушло 2 сентября, ответа нет.'],
+     files:[['Сценарии перекладки.xlsx','Данил, 02.09']]}),
+  D({n:'Индексация ставок аренды', c:'ИИК 1', dir:'Аналитика', who:'danil', st:'wait', prio:'mid', tpl:'audit', team:['danil','danil','nikita'], closed:1, waitDays:5,
+     ctx:['Ждём от клиента данные по двум помещениям: действующие ставки и сроки договоров.'],
+     files:[]}),
+  D({n:'Судебное взыскание по займу', c:'ИИК 4', dir:'Юристы', who:'darya', st:'priem', prio:'high', tpl:'court', team:['darya','danil','nikita'], closed:4, priemDays:1,
+     ctx:['Позиция по взысканию подготовлена, приложен расчёт процентов на дату подачи. Сумма и порядок действий согласованы внутри.'],
+     files:[['Правовая позиция.pdf','Дарья, 07.09'],['Расчёт процентов.xlsx','Дарья, 07.09']]}),
+  D({n:'Подготовка налогового плана', c:'ИИК 2', dir:'Налоги', who:'anton', st:'work', prio:'mid', tpl:'tax', team:['anton','danil','konstantin'], closed:1,
+     ctx:['План на 2027 год под новую структуру владения. Считает Антон, проверяем внутри до показа клиенту.'], files:[]}),
+  D({n:'Ежемесячный отчёт инвестору', c:'ИИК 1', dir:'Отчётность', who:'darina', st:'work', prio:'mid', tpl:'report', team:['darina','danil','nikita'], closed:1,
+     ctx:['Регулярное дело, заводится за 7 дней до срока отправки.'], files:[]}),
+  D({n:'Аудит структуры владения', c:'ИИК 5', dir:'Юристы', who:'darya', st:'work', prio:'high', tpl:'audit', team:['darya','danil','nikita'], closed:2,
+     ctx:['Первичный аудит перед входом клиента в постоянное сопровождение.'], files:[['Перечень запрошенных документов.pdf','Дарья, 03.09']]}),
+  D({n:'Продажа коммерческого помещения', c:'ИИК 6', dir:'Юристы', who:'darya', st:'work', prio:'mid', tpl:'assess', team:['darya','danil','konstantin'], closed:3,
+     ctx:['Клиент готовит объект к продаже, нужна оценка и проверка обременений.'], files:[]}),
+  D({n:'Налоговая проверка по 2025 году', c:'ИИК 4', dir:'Налоги', who:'anton', st:'work', prio:'high', tpl:'tax', team:['anton','darya','nikita'], closed:2, overdue:4,
+     ctx:['Требование из налоговой пришло 28 августа, срок ответа ограничен.'], files:[['Требование ИФНС.pdf','Антон, 29.08']]}),
+  D({n:'Ежемесячный отчёт инвестору', c:'ИИК 3', dir:'Отчётность', who:'darina', st:'work', prio:'mid', tpl:'report', team:['darina','danil','nikita'], closed:2,
+     ctx:['Регулярное дело.'], files:[]}),
+  D({n:'Реструктуризация займа между компаниями', c:'ИИК 7', dir:'Юристы', who:'darya', st:'new', prio:'low', tpl:'pledge', team:['darya','danil','konstantin'], closed:0, overdue:1,
+     ctx:['Задача поставлена на планёрке, к работе не приступали.'], files:[]}),
+  D({n:'Оценка доходности арендного портфеля', c:'ИИК 8', dir:'Аналитика', who:'danil', st:'work', prio:'mid', tpl:'invest', team:['danil','danil','nikita'], closed:2,
+     ctx:['Клиент хочет понять, держать объекты или выходить.'], files:[]}),
+  D({n:'Сопровождение сделки покупки доли', c:'ИИК 9', dir:'Юристы', who:'darya', st:'work', prio:'high', tpl:'pledge', team:['darya','danil','konstantin'], closed:2, overdue:2,
+     ctx:['Сделка на стадии проверки контрагента.'], files:[]}),
+  D({n:'Наследственное планирование', c:'ИИК 10', dir:'Юристы', who:'darya', st:'wait', prio:'mid', tpl:'audit', team:['darya','danil','nikita'], closed:2, waitDays:9,
+     ctx:['Ждём от клиента состав семьи и пожелания по распределению активов. Тема деликатная, торопить не будем, но срок фиксируем.'], files:[]}),
+  D({n:'Квартальный расчёт портфеля', c:'ИИК 5', dir:'Аналитика', who:'danil', st:'work', prio:'mid', tpl:'report', team:['danil','danil','nikita'], closed:1,
+     ctx:['Регулярное дело, квартал закрывается 30 сентября.'], files:[]}),
+  D({n:'Регламент приёма новых клиентов', c:'Внутренние', dir:'Отчётность', who:'darina', st:'done', prio:'low', tpl:'internal', team:['darina','danil','nikita'], closed:99,
+     ctx:['Внутреннее дело, закрыто 5 сентября.'], files:[['Регламент приёма клиентов.pdf','Дарина, 05.09']]}),
+  D({n:'Порядок работы с документами клиента', c:'Внутренние', dir:'Отчётность', who:'darina', st:'work', prio:'low', tpl:'internal', team:['darina','darya','nikita'], closed:1,
+     ctx:['Внутреннее дело: где живут документы и кто отвечает за папку клиента.'], files:[]}),
+  D({n:'Подготовка к годовой встрече', c:'ИИК 6', dir:'Отчётность', who:'darina', st:'new', prio:'mid', tpl:'report', team:['darina','danil','nikita'], closed:0,
+     ctx:['Встреча в конце октября, дело заведено заранее.'], files:[]}),
+  D({n:'Проверка контрагента по договору поставки', c:'ИИК 7', dir:'Юристы', who:'darya', st:'priem', prio:'mid', tpl:'audit', team:['darya','danil','nikita'], closed:4, priemDays:2,
+     ctx:['Проверка завершена, выявлены два риска средней тяжести. Нужно решение: отправляем клиенту как есть или добавляем рекомендации.'],
+     files:[['Отчёт по контрагенту.pdf','Дарья, 06.09']]})
 ];
 
-const REPORT = [
-  {t:'Сформирован и выверен реестр объектов недвижимости', s:'4 объекта, сверено с выписками ЕГРН', on:true},
-  {t:'Получены коммерческие предложения от трёх оценочных компаний', s:'сводная таблица с вилкой по каждому объекту', on:true},
-  {t:'Подготовлен проект договора залога доли', s:'корпоративные документы проверены', on:true},
-  {t:'Проведена внутренняя оценка до внешнего запроса', s:'внутренний шаг, клиенту не показываем', on:false},
-  {t:'Подготовлена правовая позиция по взысканию займа', s:'с расчётом процентов', on:true},
-  {t:'Уточнены ставки аренды по двум помещениям', s:'ожидает данных от клиента', on:false}
+/* ═══════════ СБОРКА СОСТОЯНИЯ ═══════════ */
+function addDays(base,n){const d=new Date(base);d.setDate(d.getDate()+n);return d}
+function fmt(d){return d?('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2):'—'}
+function iso(d){return d?d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2):''}
+function days(a,b){return Math.round((a-b)/86400000)}
+
+let uid=0;
+function build(node,teamIdx,limitRef){
+  node.id='n'+(++uid);
+  node.due=addDays(TODAY,node.d);
+  if(node.kids){node.kids.forEach(k=>build(k,teamIdx,limitRef))}
+  else{
+    if(limitRef.left>0){node.done=true;limitRef.left--}
+  }
+  return node;
+}
+/* сроки открытых шагов приводим к замыслу: просрочка только там, где она задумана */
+function normalize(d){
+  const open = leaves(d.tree).filter(n=>!n.done);
+  open.forEach((n,i)=>{
+    if(i===0 && d.overdue){ n.due = addDays(TODAY,-d.overdue); n.d=-d.overdue; return }
+    if(n.due <= TODAY){ n.due = addDays(TODAY, 1+i*2); n.d = 1+i*2 }
+  });
+}
+const DEALS = RAW.map((r,idx)=>{
+  const [a,b,c] = r.team;
+  const tree = TPL[r.tpl](a,b,c);
+  const ref = {left:r.closed};
+  tree.forEach(n=>build(n,0,ref));
+  const d = Object.assign({}, r, {id:'d'+(idx+1), tree:tree, log:[], order:idx});
+  normalize(d);
+  d.due = dealDue(d);
+  d.log = [
+    {t:'02.09', x:'<b>Дарина</b> завела дело с планёрки'},
+    {t:'03.09', x:'<b>Бот</b> прицепил файл из чата клиента '+r.c}
+  ];
+  return d;
+});
+
+function dealDue(d){
+  // срок дела = срок последнего незакрытого листа
+  let last=null;
+  (function walk(ns){ns.forEach(n=>{ if(n.kids) walk(n.kids); else if(!n.done && (!last || n.due>last)) last=n.due })})(d.tree);
+  return last;
+}
+function leaves(ns,acc){acc=acc||[];ns.forEach(n=>{n.kids?leaves(n.kids,acc):acc.push(n)});return acc}
+function progress(d){const l=leaves(d.tree);return l.length?Math.round(l.filter(n=>n.done).length/l.length*100):0}
+function nextStep(d){return leaves(d.tree).find(n=>!n.done)||null}
+function isLate(d){
+  if(d.st==='done'||d.st==='wait') return false;
+  const n = nextStep(d);
+  if(d.st==='priem') return (d.priemDays||0) >= 2;
+  return !!n && n.due < TODAY;
+}
+function lateDays(d){const n=nextStep(d);return n?days(TODAY,n.due):0}
+/* просрочка команды: ход за нами и срок прошёл. Затянувшаяся приёмка живёт в своей колонке */
+function teamLate(d){return (d.st==='work'||d.st==='new') && isLate(d)}
+function stColor(d){
+  if(d.st==='done') return 'var(--green)';
+  if(isLate(d)) return 'var(--red)';
+  if(d.st==='priem') return 'var(--blue)';
+  if(d.st==='wait') return 'var(--mute)';
+  if(d.st==='new') return 'var(--mute-2)';
+  return 'var(--gold)';
+}
+function stClass(d){ return d.st==='done'?'done':(isLate(d)?'late':d.st) }
+function stLabel(d){
+  if(d.st==='done') return 'Выполнено';
+  if(d.st==='priem') return isLate(d)?'Приёмка затянулась':'На приёмке';
+  if(d.st==='wait') return 'Ждём клиента, '+(d.waitDays||0)+' дн.';
+  if(isLate(d)) return 'Просрочено, '+lateDays(d)+' дн.';
+  if(d.st==='new') return 'Не начато';
+  return 'В работе';
+}
+
+/* ═══════════ СОСТОЯНИЕ UI ═══════════ */
+let role='darina';
+const F = {cli:'',dir:'',who:'',st:'',due:'',prio:'',q:'',mine:false};
+let sortKey='due', sortDir=1;
+const FEED = [
+  {t:'08:40', x:'<b>Бот</b> перехватил файл «Реестр объектов v2.xlsx» из чата ИИК 1 и прицепил к делу'},
+  {t:'08:15', x:'<b>Система</b> подняла дело «Залог доли в ООО» наверх: приёмка идёт 3 дня'},
+  {t:'вчера', x:'<b>Дарья</b> закрыла шаг «Подготовка искового заявления», ИИК 4'},
+  {t:'вчера', x:'<b>Система</b> остановила счётчик просрочки по делу «Реструктуризация инвестпортфеля»: ход за клиентом'},
+  {t:'06.09', x:'<b>Данил</b> закрыл шаг «Разослать запросы», ИИК 1'}
 ];
+function feed(x){FEED.unshift({t:'сейчас',x:x});renderFeed()}
 
-/* ═══════════ РЕНДЕР ═══════════ */
-function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+/* ═══════════ УТИЛИТЫ ═══════════ */
+function actor(v){
+  const p=PEOPLE[role];
+  const f={'закрыл':'закрыла','перенёс':'перенесла','передал':'передала','принял':'приняла','отправил':'отправила','вернул':'вернула','изменил':'изменила'};
+  return '<b>'+p.n+'</b> '+(p.f?(f[v]||v):v);
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function $(id){return document.getElementById(id)}
+let tTimer;
+function toast(msg){const t=$('toast');t.innerHTML=msg;t.classList.add('on');clearTimeout(tTimer);tTimer=setTimeout(()=>t.classList.remove('on'),3600)}
 
+/* ═══════════ ФИЛЬТРЫ ═══════════ */
+function fillSelect(el,items,all){
+  el.innerHTML = '<option value="">'+all+'</option>' + items.map(i=>`<option value="${esc(i[0])}">${esc(i[1])}</option>`).join('');
+}
+function initFilters(){
+  fillSelect($('fCli'), CLIENTS.map(c=>[c,c]), 'Все клиенты');
+  fillSelect($('fDir'), DIRS.map(d=>[d,d]), 'Все направления');
+  fillSelect($('fWho'), Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].n]), 'Все ответственные');
+  fillSelect($('fSt'), [['work','В работе'],['priem','На приёмке'],['wait','Ждём клиента'],['new','Не начато'],['done','Выполнено'],['late','Просрочено']], 'Любой статус');
+  fillSelect($('fDue'), [['late','Просрочено'],['today','Сегодня'],['w','Ближайшие 7 дней'],['m','До конца месяца'],['future','Позже месяца'],['none','Без срока']], 'Любой срок');
+  fillSelect($('fPrio'), [['high','Высокий'],['mid','Обычный'],['low','Низкий']], 'Любой приоритет');
+  ['fCli','fDir','fWho','fSt','fDue','fPrio'].forEach(id=>{
+    $(id).onchange = ()=>{ F[id.slice(1).toLowerCase()] = $(id).value; refresh() };
+  });
+  $('fQ').oninput = ()=>{F.q=$('fQ').value.trim().toLowerCase();refresh()};
+  $('fReset').onclick = ()=>{
+    Object.keys(F).forEach(k=>F[k]= k==='mine'?false:'');
+    ['fCli','fDir','fWho','fSt','fDue','fPrio'].forEach(id=>$(id).value='');
+    $('fQ').value='';
+    refresh(); toast('Фильтры сброшены');
+  };
+}
+function dueBucket(d){
+  const n = nextStep(d);
+  if(d.st==='done') return 'done';
+  if(!n) return 'none';
+  if(d.st==='wait') return 'none';
+  const diff = days(n.due,TODAY);
+  if(diff<0) return 'late';
+  if(diff===0) return 'today';
+  if(diff<=7) return 'w';
+  if(n.due.getMonth()===TODAY.getMonth()) return 'm';
+  return 'future';
+}
+function matches(d,skipStatus){
+  if(F.cli && d.c!==F.cli) return false;
+  if(F.dir && d.dir!==F.dir) return false;
+  if(F.who && d.who!==F.who) return false;
+  if(F.prio && d.prio!==F.prio) return false;
+  if(F.q && d.n.toLowerCase().indexOf(F.q)<0 && d.c.toLowerCase().indexOf(F.q)<0) return false;
+  if(F.due){ if(F.due==='late' ? !teamLate(d) : dueBucket(d)!==F.due) return false }
+  if(!skipStatus && F.st){
+    if(F.st==='late'){ if(!teamLate(d)) return false }
+    else if(F.st==='work'){ if(!((d.st==='work'||d.st==='new') && !teamLate(d))) return false }
+    else if(d.st!==F.st) return false;
+  }
+  return true;
+}
+function filtered(){
+  const arr = DEALS.filter(d=>matches(d,false));
+  const dir = sortDir;
+  arr.sort((a,b)=>{
+    let r=0;
+    if(sortKey==='due'){
+      const an=nextStep(a), bn=nextStep(b);
+      const av=an?an.due.getTime():9e15, bv=bn?bn.due.getTime():9e15;
+      r = av-bv;
+    }
+    else if(sortKey==='name') r = a.n.localeCompare(b.n,'ru');
+    else if(sortKey==='cli') r = a.c.localeCompare(b.c,'ru',{numeric:true});
+    else if(sortKey==='dir') r = a.dir.localeCompare(b.dir,'ru');
+    else if(sortKey==='who') r = PEOPLE[a.who].n.localeCompare(PEOPLE[b.who].n,'ru');
+    else if(sortKey==='st') r = stLabel(a).localeCompare(stLabel(b),'ru');
+    return r*dir;
+  });
+  return arr;
+}
+
+/* ═══════════ РЕНДЕР: ПЛИТКИ ═══════════ */
+const KPI = [
+  {k:'work', cls:'k-work', l:'В работе', sub:'ход за нами, срок не прошёл'},
+  {k:'priem', cls:'k-priem', l:'Ждут приёмки', sub:'работа сдана, нужно решение'},
+  {k:'wait', cls:'k-wait', l:'Ждут клиента', sub:'счётчик просрочки остановлен'},
+  {k:'late', cls:'k-late', l:'Просрочено', sub:'по вине исполнителя'},
+  {k:'done', cls:'k-done', l:'Выполнено', sub:'закрыто за сентябрь'}
+];
+function renderKpi(){
+  const base = DEALS.filter(d=>matches(d,true));
+  const cnt = {work:0,priem:0,wait:0,late:0,done:0};
+  base.forEach(d=>{
+    if(d.st==='done') cnt.done++;
+    else if(d.st==='priem') cnt.priem++;
+    else if(d.st==='wait') cnt.wait++;
+    else if(teamLate(d)) cnt.late++;
+    else cnt.work++;
+  });
+  $('kpiGrid').innerHTML = KPI.map(k=>`
+    <div class="kpi ${k.cls} ${F.st===k.k?'on':''}" data-k="${k.k}">
+      <div class="kpi-lab"><b></b>${k.l}</div>
+      <div class="kpi-val">${cnt[k.k]}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>`).join('');
+  document.querySelectorAll('.kpi').forEach(el=>{
+    el.onclick = ()=>{
+      const k = el.dataset.k;
+      F.st = (F.st===k) ? '' : k;
+      $('fSt').value = F.st;
+      refresh();
+      toast(F.st ? 'Фильтр по состоянию: '+KPI.find(x=>x.k===k).l.toLowerCase() : 'Фильтр по состоянию снят');
+    };
+  });
+}
+
+/* ═══════════ РЕНДЕР: РЕЕСТР ═══════════ */
+const COLS = [['name','Дело'],['cli','Клиент'],['dir','Направление'],['who','Ответственный'],['st','Статус'],['due','Срок']];
 function renderDeals(){
-  let h = '<div class="tr h"><div>Дело</div><div>Клиент</div><div class="hide-s">Направление</div><div>Ответственный</div><div class="hide-s">Статус</div><div class="hide-s">Срок</div></div>';
-  DEALS.forEach(d=>{
-    const dueCls = d.frozen ? 'due frozen' : (d.late ? 'due late' : 'due');
-    const dueTxt = d.frozen ? 'остановлен' : d.due;
-    h += `<div class="tr row" onclick="go('card')">
-      <div class="t-name">${esc(d.n)}<small><span class="prog"><span class="prog-bar"><span style="width:${d.p}%"></span></span><span class="prog-num">${d.p}%</span></span></small></div>
+  const arr = filtered();
+  const ar = k=>sortKey===k?(sortDir>0?' ↑':' ↓'):'';
+  let h = '<div class="tr h">'+COLS.map((c,i)=>`<div class="${i>1&&i<5?'hide-s':''}"><span data-s="${c[0]}">${c[1]}${ar(c[0])}</span></div>`).join('')+'</div>';
+  if(!arr.length){
+    h += '<div class="empty">По этим фильтрам дел нет. Снимите часть условий или нажмите «Сбросить».</div>';
+  }
+  arr.forEach(d=>{
+    const col = stColor(d);
+    const n = nextStep(d);
+    const p = progress(d);
+    let dueTxt, dueCls='due';
+    if(d.st==='done'){dueTxt='закрыто'; dueCls='due frozen'}
+    else if(d.st==='wait'){dueTxt='остановлен'; dueCls='due frozen'}
+    else if(!n){dueTxt='—'}
+    else {dueTxt=fmt(n.due); if(n.due<TODAY){dueCls='due late'}}
+    h += `<div class="tr row" data-id="${d.id}" style="--c:${col}">
+      <div class="t-name">${esc(d.n)}<small><span class="prog"><span class="prog-bar"><span style="width:${p}%;--c:${col}"></span></span><span class="prog-num">${p}%</span></span></small></div>
       <div><span class="cli">${esc(d.c)}</span></div>
-      <div class="t-cell hide-s">${esc(d.d)}</div>
-      <div class="t-cell">${esc(d.who)}</div>
-      <div class="hide-s"><span class="st ${d.st[0]}"><i></i>${esc(d.st[1])}</span></div>
-      <div class="${dueCls} hide-s">${esc(dueTxt)}${d.late?'<small>просрочка приёмки</small>':''}</div>
+      <div class="t-cell hide-s">${esc(d.dir)}</div>
+      <div class="t-cell hide-s">${esc(PEOPLE[d.who].n)}</div>
+      <div class="hide-s"><span class="st ${stClass(d)}"><i></i>${esc(stLabel(d))}</span></div>
+      <div class="${dueCls}">${dueTxt}${d.prio==='high'&&d.st!=='done'?'<small>высокий приоритет</small>':''}</div>
     </div>`;
   });
-  document.getElementById('dealsTbl').innerHTML = h;
-}
-
-function countLeaves(nodes){
-  let all=0, done=0;
-  nodes.forEach(n=>{
-    if(n.kids && n.kids.length){ const r=countLeaves(n.kids); all+=r.all; done+=r.done; }
-    else { all++; if(n.done) done++; }
+  $('dealsTbl').innerHTML = h;
+  document.querySelectorAll('#dealsTbl .tr.row').forEach(r=>r.onclick=()=>openDeal(r.dataset.id));
+  document.querySelectorAll('#dealsTbl .tr.h span').forEach(s=>s.onclick=()=>{
+    const k=s.dataset.s;
+    if(sortKey===k) sortDir*=-1; else {sortKey=k;sortDir=1}
+    renderDeals();
   });
-  return {all,done};
+  $('fFound').innerHTML = 'Найдено <b>'+arr.length+'</b> из '+DEALS.length;
+  const act = Object.keys(F).filter(k=>F[k]&&k!=='mine').length;
+  $('fSummary').textContent = act ? 'активных условий: '+act+', цифры на плитках пересчитаны' : 'все дела, к которым есть доступ у роли';
+  document.querySelectorAll('.fbar .fld').forEach((el,i)=>{
+    const ctrl = el.querySelector('select,input');
+    el.classList.toggle('act', !!(ctrl && ctrl.value));
+  });
+  $('cDela').textContent = arr.length;
 }
 
-function renderTree(nodes, lvl, path){
+/* ═══════════ МОДАЛКА ДЕЛА ═══════════ */
+let openId=null;
+function openDeal(id){
+  openId=id;
+  $('ov').classList.add('on');
+  document.body.style.overflow='hidden';
+  renderModal();
+}
+/* после любого действия: перерисовать открытую карточку и все счётчики */
+function sync(){
+  if(openId && $('ov').classList.contains('on')) renderModal();
+  renderKpi(); renderDeals(); renderQueue(); renderPriem(); renderPanel();
+}
+function closeModal(){
+  $('ov').classList.remove('on'); openId=null;
+  document.body.style.overflow='';
+  refresh();
+}
+function renderModal(){
+  const d = DEALS.find(x=>x.id===openId); if(!d) return;
+  const col = stColor(d), p = progress(d), n = nextStep(d);
+  const acts = d.st==='done'
+    ? '<span class="btn green">Дело закрыто</span>'
+    : (d.st==='priem'
+        ? `<button class="btn gold" data-a="send">Отправлено клиенту</button><button class="btn" data-a="accept">Принять</button><button class="btn red" data-a="return">Вернуть с замечанием</button>`
+        : `<button class="btn gold" data-a="close">Закрыть текущий шаг</button><button class="btn" data-a="move">Перенести срок</button><button class="btn" data-a="ask">Запросить у клиента</button><button class="btn" data-a="reassign">Сменить исполнителя</button>`);
+  $('modal').innerHTML = `
+    <div class="m-head" style="--c:${col}">
+      <button class="m-x" data-a="x">✕</button>
+      <div class="m-kick">${esc(d.c)} · ${esc(d.dir)}</div>
+      <div class="m-title">${esc(d.n)}</div>
+      <div class="m-meta">
+        <span class="st ${stClass(d)}"><i></i>${esc(stLabel(d))}</span>
+        <div class="meta-i">Ответственный <b>${esc(PEOPLE[d.who].n)}</b></div>
+        <div class="meta-i">Приоритет <b>${PRIO[d.prio]}</b></div>
+        <div class="meta-i">Срок <b>${n?fmt(n.due):'закрыто'}</b></div>
+        <div class="meta-i">Готово <b>${p}%</b></div>
+      </div>
+      <div class="prog" style="max-width:none;margin-top:16px"><span class="prog-bar"><span style="width:${p}%;--c:${col}"></span></span></div>
+    </div>
+    <div class="m-body">
+      <div>
+        <h4>Шаги <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--mute-2)">перетащите за ⠿, чтобы изменить порядок</span></h4>
+        <div class="tree" id="tree">${(nextOf=n, renderTree(d.tree,1,'',[]))}</div>
+        <div class="note" style="margin-top:18px"><b>Правило.</b> Прогресс родителя считает система по закрытым веткам. Вложенность не ограничена: у шага может быть подшаг, а у подшага свой. Срок родителя не может быть раньше срока последнего потомка — при попытке система предупредит.</div>
+      </div>
+      <div class="m-side">
+        <div class="m-block">
+          <h4>Контекст</h4>
+          <div class="ctx">${d.ctx.map(t=>'<p>'+t+'</p>').join('')}</div>
+        </div>
+        <div class="m-block">
+          <h4>Файлы</h4>
+          ${d.files.length? d.files.map(f=>`<div class="file"><div class="file-ic">${esc(f[0].split('.').pop().toUpperCase().slice(0,4))}</div><div>${esc(f[0])}<small>${esc(f[1])}</small></div></div>`).join('') : '<div style="font-size:12.5px;color:var(--mute-2)">Файлов пока нет. Бот прицепит их сам, как только они появятся в чате клиента.</div>'}
+        </div>
+        <div class="m-block">
+          <h4>Журнал</h4>
+          <div class="feed">${d.log.map(l=>`<div class="feed-i"><div class="feed-t">${esc(l.t)}</div><div class="feed-x">${l.x}</div></div>`).join('')}</div>
+        </div>
+      </div>
+    </div>
+    <div class="m-acts">${acts}</div>`;
+  $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>dealAction(b.dataset.a,d));
+  bindTree(d);
+}
+let nextOf=null;
+function renderTree(nodes,lvl,path,parentPath){
   let h='';
   nodes.forEach((n,i)=>{
     const num = path ? path+'.'+(i+1) : String(i+1);
+    const p = parentPath.concat(i);
     const has = n.kids && n.kids.length;
     const id = 'k'+num.replace(/\./g,'_');
     const open = lvl < 3;
-    let prog='', started=false;
-    if(has){ const r=countLeaves(n.kids); prog = `<span class="lvl-badge">${r.done}/${r.all}</span>`; started = r.done>0; }
-    let state;
-    if(n.done) state = '<span class="st done"><i></i>Готово</span>';
-    else if(n.wait) state = '<span class="st wait"><i></i>'+esc(n.wait)+'</span>';
-    else if(n.now || started) state = '<span class="st work"><i></i>Идёт сейчас</span>';
-    else state = '<span class="st new"><i></i>Не начат</span>';
+    let badge='', started=false, done=n.done, due=n.due;
+    if(has){
+      const l=leaves(n.kids), dn=l.filter(x=>x.done).length;
+      badge=`<span class="lvl-badge">${dn}/${l.length}</span>`;
+      started=dn>0; done=dn===l.length;
+      due=new Date(Math.max.apply(null,l.map(x=>x.due.getTime())));
+    }
+    let state, late = !done && due<TODAY;
+    if(done) state='<span class="st done sm"><i></i>Готово</span>';
+    else if(late) state='<span class="st late sm"><i></i>Просрочен '+days(TODAY,due)+' дн.</span>';
+    else if(started||!has&&nextOf===n) state='<span class="st work sm"><i></i>Идёт</span>';
+    else state='<span class="st new sm"><i></i>Ждёт</span>';
     h += `<div class="node">
-      <div class="node-row">
-        ${has?`<button class="tw" onclick="tw('${id}',this)">${open?'−':'+'}</button>`:'<span class="tw leaf"></span>'}
-        <div class="node-name ${n.done?'done-txt':''}">${num}. ${esc(n.t)}</div>
-        <div class="node-who">${esc(n.who)}${n.due&&n.due!=='—'?' · '+esc(n.due):''}</div>
-        ${prog}
+      <div class="node-row" draggable="true" data-p="${p.join('.')}">
+        <div class="grip">⠿</div>
+        ${has?`<button class="tw" data-tw="${id}">${open?'−':'+'}</button>`:'<span class="tw leaf"></span>'}
+        <div class="node-name ${done?'done-txt':''}">${num}. ${esc(n.t)}</div>
+        <div class="node-who">${esc(PEOPLE[n.who].n)} · ${fmt(due)}</div>
+        ${badge}
         ${state}
       </div>
-      ${has?`<div class="kids ${open?'':'hide'}" id="${id}">${renderTree(n.kids, lvl+1, num)}</div>`:''}
+      ${has?`<div class="kids ${open?'':'hide'}" id="${id}">${renderTree(n.kids,lvl+1,num,p)}</div>`:''}
     </div>`;
   });
   return h;
 }
-
-function tw(id, btn){
-  const el = document.getElementById(id);
-  const hidden = el.classList.toggle('hide');
-  btn.textContent = hidden ? '+' : '−';
+function nodeByPath(d,path){
+  let arr=d.tree, node=null;
+  path.forEach((i,k)=>{node=arr[i]; if(k<path.length-1) arr=node.kids});
+  return {arr:arr,node:node,idx:path[path.length-1]};
 }
-
-function renderQueue(role){
-  const list = QUEUE[role] || QUEUE.darina;
-  const names = {darina:'Дарина', nikita:'Никита', danil:'Данил'};
-  document.getElementById('qWho').textContent = '— ' + names[role];
-  let h='';
-  list.forEach((q,i)=>{
-    let act;
-    if(q.wait) act = `<span class="wait-badge">${esc(q.wait)}</span>`;
-    else act = `<button class="btn" onclick="toast('Взято в работу')">Взял</button><button class="btn gold" onclick="doneBtn(this)">Сделал</button><button class="btn" onclick="toast('Перенос требует причины — она попадёт в журнал дела')">Перенести</button>`;
-    h += `<div class="q-item">
-      <div><div class="q-name">${esc(q.n)}</div><div class="q-path"><b>${esc(q.p)}</b>${q.due&&q.due!=='—'?' · до '+esc(q.due):''}</div></div>
-      <div class="q-act">${q.hot?'<span class="st priem"><i></i>горит</span>':''}${act}</div>
-    </div>`;
+function bindTree(d){
+  const root = $('tree');
+  root.querySelectorAll('[data-tw]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const el=$(b.dataset.tw); const hid=el.classList.toggle('hide'); b.textContent=hid?'+':'−';
   });
-  document.getElementById('queueTbl').innerHTML = h;
+  let dragPath=null;
+  root.querySelectorAll('.node-row').forEach(row=>{
+    row.ondragstart=e=>{dragPath=row.dataset.p;row.classList.add('drag');e.dataTransfer.effectAllowed='move'};
+    row.ondragend=()=>{row.classList.remove('drag');root.querySelectorAll('.over').forEach(x=>x.classList.remove('over'))};
+    row.ondragover=e=>{
+      if(!dragPath) return;
+      const a=dragPath.split('.'), b=row.dataset.p.split('.');
+      if(a.length!==b.length || a.slice(0,-1).join('.')!==b.slice(0,-1).join('.')) return;
+      e.preventDefault(); row.classList.add('over');
+    };
+    row.ondragleave=()=>row.classList.remove('over');
+    row.ondrop=e=>{
+      e.preventDefault(); row.classList.remove('over');
+      const from=dragPath.split('.').map(Number), to=row.dataset.p.split('.').map(Number);
+      if(from.join('.')===to.join('.')) return;
+      const f=nodeByPath(d,from);
+      const moved=f.arr.splice(f.idx,1)[0];
+      const t=nodeByPath(d,to);
+      f.arr.splice(t.idx,0,moved);
+      d.log.unshift({t:'сейчас',x:actor('изменил')+' порядок шагов: «'+esc(moved.t)+'» теперь '+(t.idx+1)+'-й'});
+      feed(actor('изменил')+' порядок шагов в деле «'+esc(d.n)+'»');
+      sync();
+      toast('Порядок шагов изменён. Уведомления и сроки пересобраны по новой очерёдности');
+    };
+  });
 }
 
-function doneBtn(b){
-  b.outerHTML = '<button class="btn done-state">Сделано</button>';
-  toast('Шаг закрыт. Следующий исполнитель уведомлён автоматически');
+/* ═══════════ ДЕЙСТВИЯ ПО ДЕЛУ ═══════════ */
+function dealAction(a,d){
+  if(a==='x'){closeModal();return}
+  if(a==='close'){
+    const n=nextStep(d); if(!n){toast('Все шаги закрыты');return}
+    dialog({
+      title:'Закрыть шаг',
+      kick:d.c+' · '+d.n,
+      fields:[
+        {k:'txt',type:'ro',label:'Шаг',val:n.t},
+        {k:'res',type:'select',label:'Результат',opts:[['done','Сделано, идём дальше'],['priem','Сделано, отправляю на приёмку']]},
+        {k:'com',type:'text',label:'Комментарий, попадёт в журнал',ph:'необязательно'}
+      ],
+      ok:'Закрыть шаг',
+      run:v=>{
+        n.done=true;
+        d.log.unshift({t:'сейчас',x:actor('закрыл')+' шаг «'+esc(n.t)+'»'+(v.com?': '+esc(v.com):'')});
+        if(v.res==='priem'){d.st='priem';d.priemDays=0}
+        else if(!nextStep(d)){d.st='done'}
+        feed(actor('закрыл')+' шаг «'+esc(n.t)+'», '+esc(d.c));
+        sync();
+        toast(v.res==='priem'?'Шаг закрыт, дело ушло на приёмку. Принимающий уведомлён':'Шаг закрыт. Следующий исполнитель уведомлён автоматически');
+      }
+    });
+  }
+  if(a==='move'){
+    const n=nextStep(d); if(!n){toast('Переносить нечего, все шаги закрыты');return}
+    dialog({
+      title:'Перенести срок',
+      kick:d.c+' · '+d.n,
+      fields:[
+        {k:'txt',type:'ro',label:'Шаг',val:n.t+' · сейчас до '+fmt(n.due)},
+        {k:'date',type:'date',label:'Новый срок',val:iso(addDays(n.due,3))},
+        {k:'why',type:'select',label:'Причина',opts:[['','выберите причину'],['client','Ждём данные от клиента'],['ext','Ждём внешнюю сторону: нотариус, суд, банк'],['load','Загрузка исполнителя'],['scope','Изменился объём работы'],['other','Другое']],req:true},
+        {k:'com',type:'area',label:'Пояснение',ph:'что именно мешает и что нужно, чтобы сдвинуть',req:true}
+      ],
+      ok:'Перенести',
+      note:'Перенос без причины система не принимает. Причина и пояснение попадут в журнал дела и в сводку руководителю: так видно, что срывает сроки чаще всего.',
+      run:v=>{
+        const nd=new Date(v.date+'T00:00:00');
+        const old=fmt(n.due);
+        n.due=nd; n.d=days(nd,TODAY);
+        const why={client:'ждём данные от клиента',ext:'ждём внешнюю сторону',load:'загрузка исполнителя',scope:'изменился объём',other:'другое'}[v.why];
+        d.log.unshift({t:'сейчас',x:actor('перенёс')+' срок шага «'+esc(n.t)+'» с '+old+' на '+fmt(nd)+', причина: '+why+'. '+esc(v.com)});
+        if(v.why==='client'){d.st='wait';d.waitDays=0}
+        feed(actor('перенёс')+' срок в деле «'+esc(d.n)+'», причина: '+why);
+        sync();
+        toast('Срок перенесён на '+fmt(nd)+'. Причина записана в журнал, Дарина и Никита видят перенос в ленте');
+      }
+    });
+  }
+  if(a==='ask'){
+    dialog({
+      title:'Запросить у клиента',
+      kick:d.c+' · '+d.n,
+      fields:[
+        {k:'what',type:'area',label:'Что нужно от клиента',ph:'например: подтверждение реестра из четырёх объектов',req:true},
+        {k:'wait',type:'select',label:'Ждём ответ',opts:[['3','3 дня'],['5','5 дней'],['7','неделю']]}
+      ],
+      ok:'Отправить запрос',
+      note:'Дело перейдёт в состояние «ждём клиента»: счётчик просрочки команды останавливается, вместо него идёт счётчик тишины клиента. Напоминание придёт тому, кто ведёт клиента.',
+      run:v=>{
+        d.st='wait'; d.waitDays=0;
+        d.log.unshift({t:'сейчас',x:actor('отправил')+' запрос клиенту: '+esc(v.what)});
+        feed('Дело «'+esc(d.n)+'» перешло в ожидание клиента, счётчик просрочки остановлен');
+        sync();
+        toast('Запрос отправлен. Счётчик просрочки команды остановлен, тишину клиента считаем отдельно');
+      }
+    });
+  }
+  if(a==='reassign'){
+    const n=nextStep(d); if(!n){toast('Все шаги закрыты');return}
+    dialog({
+      title:'Сменить исполнителя',
+      kick:d.c+' · '+d.n,
+      fields:[
+        {k:'txt',type:'ro',label:'Шаг',val:n.t},
+        {k:'who',type:'select',label:'Новый исполнитель',opts:Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].n+', '+PEOPLE[k].r]),val:n.who},
+        {k:'com',type:'text',label:'Почему передаём',ph:'попадёт в журнал'}
+      ],
+      ok:'Передать',
+      run:v=>{
+        const from=PEOPLE[n.who].n; n.who=v.who;
+        d.log.unshift({t:'сейчас',x:actor('передал')+' шаг «'+esc(n.t)+'» от '+from+' к '+PEOPLE[v.who].n+(v.com?': '+esc(v.com):'')});
+        feed('Шаг в деле «'+esc(d.n)+'» передан: '+from+' → '+PEOPLE[v.who].n);
+        sync();
+        toast('Шаг передан. У '+PEOPLE[v.who].n+' он появился в очереди, у '+from+' исчез');
+      }
+    });
+  }
+  if(a==='accept'){
+    d.st='work'; delete d.priemDays;
+    const n=nextStep(d); if(n) n.done=true;
+    if(!nextStep(d)) d.st='done';
+    d.log.unshift({t:'сейчас',x:actor('принял')+' работу'});
+    feed(actor('принял')+' работу по делу «'+esc(d.n)+'»');
+    sync(); toast('Принято. Дело пошло дальше по цепочке');
+  }
+  if(a==='send'){
+    d.st='wait'; d.waitDays=0; delete d.priemDays;
+    d.log.unshift({t:'сейчас',x:actor('отправил')+' результат клиенту'});
+    feed('Результат по делу «'+esc(d.n)+'» отправлен клиенту, ждём ответ');
+    sync(); toast('Отправлено клиенту. Дело перешло в ожидание ответа, счётчик просрочки остановлен');
+  }
+  if(a==='return'){
+    dialog({
+      title:'Вернуть с замечанием',
+      kick:d.c+' · '+d.n,
+      fields:[
+        {k:'com',type:'area',label:'Замечание',ph:'что исправить и к какому сроку',req:true},
+        {k:'date',type:'date',label:'Новый срок',val:iso(addDays(TODAY,2))}
+      ],
+      ok:'Вернуть',
+      note:'Замечание попадёт в журнал дела и в очередь исполнителя. Устная правка в личке перестаёт существовать как отдельный канал.',
+      run:v=>{
+        d.st='work'; delete d.priemDays;
+        const n=nextStep(d); if(n){n.due=new Date(v.date+'T00:00:00'); n.d=days(n.due,TODAY)}
+        d.log.unshift({t:'сейчас',x:actor('вернул')+' работу с замечанием: '+esc(v.com)});
+        feed('Работа по делу «'+esc(d.n)+'» возвращена исполнителю с замечанием');
+        sync(); toast('Возвращено исполнителю. Замечание в журнале, шаг снова в его очереди');
+      }
+    });
+  }
 }
 
+/* ═══════════ УНИВЕРСАЛЬНЫЙ ДИАЛОГ ═══════════ */
+function dialog(cfg){
+  const f = cfg.fields.map(f=>{
+    if(f.type==='ro') return `<div class="fld"><label>${esc(f.label)}</label><div style="font-size:13px;line-height:1.5;padding:10px 12px;border-radius:11px;background:var(--glass);border:1px solid var(--line)">${esc(f.val)}</div></div>`;
+    if(f.type==='select') return `<div class="fld"><label>${esc(f.label)}</label><select data-k="${f.k}">${f.opts.map(o=>`<option value="${esc(o[0])}" ${f.val===o[0]?'selected':''}>${esc(o[1])}</option>`).join('')}</select></div>`;
+    if(f.type==='area') return `<div class="fld"><label>${esc(f.label)}</label><textarea data-k="${f.k}" placeholder="${esc(f.ph||'')}"></textarea></div>`;
+    if(f.type==='date') return `<div class="fld"><label>${esc(f.label)}</label><input type="date" data-k="${f.k}" value="${esc(f.val||'')}"></div>`;
+    return `<div class="fld"><label>${esc(f.label)}</label><input type="text" data-k="${f.k}" placeholder="${esc(f.ph||'')}"></div>`;
+  }).join('');
+  $('dlg').innerHTML = `
+    <div class="m-head" style="--c:var(--gold)">
+      <button class="m-x" data-x>✕</button>
+      ${cfg.kick?`<div class="m-kick">${esc(cfg.kick)}</div>`:''}
+      <div class="m-title" style="font-size:20px">${esc(cfg.title)}</div>
+    </div>
+    <div class="dlg-body">
+      ${f}
+      <div class="dlg-err" id="dlgErr">Заполните обязательные поля</div>
+      ${cfg.note?`<div class="dlg-note">${esc(cfg.note)}</div>`:''}
+    </div>
+    <div class="m-acts"><button class="btn gold" data-ok>${esc(cfg.ok)}</button><button class="btn" data-x>Отмена</button></div>`;
+  $('ov2').classList.add('on');
+  const close=()=>{$('ov2').classList.remove('on')};
+  $('dlg').querySelectorAll('[data-x]').forEach(b=>b.onclick=close);
+  $('dlg').querySelector('[data-ok]').onclick=()=>{
+    const v={}; let bad=false;
+    cfg.fields.forEach(f=>{
+      if(f.type==='ro') return;
+      const el=$('dlg').querySelector('[data-k="'+f.k+'"]');
+      v[f.k]=el.value.trim();
+      if(f.req && !v[f.k]){bad=true; el.style.borderColor='var(--red)'}
+    });
+    if(bad){$('dlgErr').style.display='block';return}
+    close(); cfg.run(v);
+  };
+}
+
+/* ═══════════ ОЧЕРЕДЬ ═══════════ */
+function myQueue(r){
+  const out=[];
+  DEALS.forEach(d=>{
+    if(d.st==='done') return;
+    leaves(d.tree).forEach((n,i)=>{
+      if(n.done || n.who!==r) return;
+      out.push({d:d,n:n});
+    });
+  });
+  out.sort((a,b)=>a.n.due-b.n.due);
+  return out.slice(0,10);
+}
+function renderQueue(){
+  const list = myQueue(role);
+  $('qWho').textContent = '— '+PEOPLE[role].n;
+  $('cQueue').textContent = list.length;
+  if(!list.length){$('queueTbl').innerHTML='<div class="empty">Свободно: закрытых шагов нет. Переключите роль сверху справа.</div>';return}
+  $('queueTbl').innerHTML = list.map((q,i)=>{
+    const late = q.n.due<TODAY, wait = q.d.st==='wait';
+    const badge = wait ? '<span class="st wait sm"><i></i>ждём клиента, '+(q.d.waitDays||0)+' дн.</span>'
+                : late ? '<span class="st late sm"><i></i>просрочен '+days(TODAY,q.n.due)+' дн.</span>'
+                : (days(q.n.due,TODAY)<=1 ? '<span class="st work sm"><i></i>срок сегодня-завтра</span>' : '');
+    const acts = wait ? '<button class="btn sm" data-q="'+i+'" data-a="open">Открыть дело</button>'
+      : `<button class="btn sm gold" data-q="${i}" data-a="done">Сделал</button><button class="btn sm" data-q="${i}" data-a="move">Перенести</button><button class="btn sm" data-q="${i}" data-a="open">Открыть дело</button>`;
+    return `<div class="q-item">
+      <div><div class="q-name">${esc(q.n.t)}</div>
+      <div class="q-path"><b data-q="${i}" data-a="open">${esc(q.d.n)}</b> · ${esc(q.d.c)} · до ${fmt(q.n.due)}</div></div>
+      <div class="q-act">${badge}${acts}</div>
+    </div>`;
+  }).join('');
+  $('queueTbl').querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{
+    const q=list[+b.dataset.q], a=b.dataset.a;
+    if(a==='open'){openDeal(q.d.id);return}
+    if(a==='done'){
+      q.n.done=true;
+      q.d.log.unshift({t:'сейчас',x:actor('закрыл')+' шаг «'+esc(q.n.t)+'» из своей очереди'});
+      if(!nextStep(q.d)) q.d.st='done';
+      feed(actor('закрыл')+' шаг «'+esc(q.n.t)+'», '+esc(q.d.c));
+      refresh();
+      toast('Шаг закрыт. Прогресс дела в реестре пересчитан, следующий исполнитель уведомлён');
+    }
+    if(a==='move'){
+      openId=q.d.id;
+      dealAction('move',q.d);
+    }
+  });
+}
+
+/* ═══════════ ПРИЁМКА ═══════════ */
 function renderPriem(){
-  let h='';
-  PRIEM.forEach(p=>{
-    h += `<div class="pr-card glass tilt">
+  const list = DEALS.filter(d=>d.st==='priem');
+  $('cPriem').textContent = list.length;
+  if(!list.length){$('priemList').innerHTML='<div class="tbl"><div class="empty">На приёмке пусто. Всё принято или отправлено клиенту.</div></div>';return}
+  $('priemList').innerHTML = list.map(d=>{
+    const late=(d.priemDays||0)>=2;
+    return `<div class="pr-card" style="border-left:3px solid ${late?'var(--red)':'var(--blue)'}">
       <div class="pr-top">
-        <div><div class="pr-name">${esc(p.n)}</div><div class="pr-sub">${esc(p.c)} · сдал: ${esc(p.who)}</div></div>
-        <span class="wait-badge">${esc(p.wait)}</span>
+        <div><div class="pr-name" data-open="${d.id}">${esc(d.n)}</div><div class="pr-sub">${esc(d.c)} · ${esc(d.dir)} · сдал: ${esc(PEOPLE[d.who].n)}</div></div>
+        <span class="st ${late?'late':'priem'}"><i></i>на приёмке ${d.priemDays||0} дн.${late?', дольше нормы':''}</span>
       </div>
       <div class="pr-body">
         <div>
-          <div class="pr-note">${esc(p.note)}</div>
+          <div class="pr-note">${d.ctx[0]}</div>
           <div class="pr-acts">
-            <button class="btn gold" onclick="toast('Отправлено клиенту. Дело перешло в ожидание ответа, счётчик просрочки остановлен')">Отправлено клиенту</button>
-            <button class="btn" onclick="toast('Принято. Дело закрыто')">Принять</button>
-            <button class="btn ghost-red" onclick="toast('Возвращено исполнителю с замечанием — оно попадёт в журнал дела')">Вернуть с замечанием</button>
+            <button class="btn gold" data-p="${d.id}" data-a="send">Отправлено клиенту</button>
+            <button class="btn" data-p="${d.id}" data-a="accept">Принять</button>
+            <button class="btn red" data-p="${d.id}" data-a="return">Вернуть с замечанием</button>
           </div>
         </div>
-        <div class="files">${p.files.map(f=>`<div class="file"><div class="file-ic">${f.split('.').pop().toUpperCase().slice(0,4)}</div><div>${esc(f)}</div></div>`).join('')}</div>
+        <div>${d.files.length?d.files.map(f=>`<div class="file"><div class="file-ic">${esc(f[0].split('.').pop().toUpperCase().slice(0,4))}</div><div>${esc(f[0])}<small>${esc(f[1])}</small></div></div>`).join(''):'<div style="font-size:12.5px;color:var(--mute-2)">Файлы не приложены</div>'}</div>
       </div>
     </div>`;
+  }).join('');
+  $('priemList').querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openDeal(b.dataset.open));
+  $('priemList').querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{
+    const d=DEALS.find(x=>x.id===b.dataset.p);
+    openId=d.id;
+    const a=b.dataset.a;
+    dealAction(a,d);
   });
-  document.getElementById('priemList').innerHTML = h;
+}
+/* ═══════════ ПАНЕЛЬ ═══════════ */
+function renderPanel(){
+  $('panelDate').textContent = 'на '+fmt(TODAY)+'.2026';
+  const load={};
+  Object.keys(PEOPLE).forEach(k=>load[k]={open:0,late:0});
+  DEALS.forEach(d=>{
+    if(d.st==='done') return;
+    leaves(d.tree).forEach(n=>{
+      if(n.done) return;
+      if(!load[n.who]) load[n.who]={open:0,late:0};
+      load[n.who].open++;
+      if(d.st!=='wait' && n.due<TODAY) load[n.who].late++;
+    });
+  });
+  const arr=Object.keys(load).map(k=>({k:k,o:load[k].open,l:load[k].late})).sort((a,b)=>b.o-a.o);
+  const max=Math.max(1,...arr.map(a=>a.o));
+  $('loadList').innerHTML = arr.map(a=>`
+    <div class="load-row">
+      <div class="load-name">${esc(PEOPLE[a.k].n)}<small>${esc(PEOPLE[a.k].r)}</small></div>
+      <div class="load-bar"><span class="${a.l>0?'hot':(a.o<=2?'cold':'')}" style="width:${Math.round(a.o/max*100)}%"></span></div>
+      <div class="load-n">${a.o}${a.l?'<div style="font-size:10.5px;color:var(--red)">'+a.l+' проср.</div>':''}</div>
+    </div>`).join('');
+
+  const stuck=[];
+  DEALS.forEach(d=>{
+    if(d.st==='wait') stuck.push({d:d,why:'ждём ответ клиента',n:d.waitDays||0,c:'var(--mute)'});
+    else if(d.st==='priem') stuck.push({d:d,why:'на приёмке у '+(d.dir==='Юристы'?'Никиты':'Константина'),n:d.priemDays||0,c:(d.priemDays||0)>=2?'var(--red)':'var(--blue)'});
+    else if(isLate(d)) stuck.push({d:d,why:'просрочка исполнителя, '+PEOPLE[d.who].n,n:lateDays(d),c:'var(--red)'});
+  });
+  stuck.sort((a,b)=>b.n-a.n);
+  $('stuckList').innerHTML = stuck.slice(0,7).map(s=>`
+    <div class="stuck-i" data-open="${s.d.id}">
+      <div class="stuck-n">${esc(s.d.n)}<small>${esc(s.d.c)} · ${esc(s.why)}</small></div>
+      <div class="stuck-d" style="--c:${s.c}">${s.n} дн.</div>
+    </div>`).join('') || '<div class="empty">Ничего не стоит.</div>';
+  $('stuckList').querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openDeal(b.dataset.open));
+  renderFeed();
+}
+function renderFeed(){
+  const el=$('feed'); if(!el) return;
+  el.innerHTML = FEED.slice(0,14).map(f=>`<div class="feed-i"><div class="feed-t">${esc(f.t)}</div><div class="feed-x">${f.x}</div></div>`).join('');
 }
 
-function renderReport(){
-  let h='';
-  REPORT.forEach((r,i)=>{
-    h += `<div class="rep-line">
-      <div class="cbx ${r.on?'on':''}" onclick="this.classList.toggle('on')">✓</div>
-      <div class="rep-t">${esc(r.t)}<small>${esc(r.s)}</small></div>
-      <div class="t-cell">${r.on?'в отчёт':'внутри'}</div>
-    </div>`;
+/* ═══════════ ОТЧЁТ ═══════════ */
+function openReport(){
+  const done=[];
+  DEALS.forEach(d=>{ if(d.c==='Внутренние') return;
+    leaves(d.tree).forEach(n=>{ if(n.done) done.push({d:d,n:n}) });
   });
-  document.getElementById('repList').innerHTML = h;
+  const items = done.slice(0,8);
+  $('modal').innerHTML = `
+    <div class="m-head" style="--c:var(--gold)">
+      <button class="m-x" data-a="x">✕</button>
+      <div class="m-kick">Черновик собран из закрытых шагов</div>
+      <div class="m-title">Итоги за сентябрь</div>
+      <div class="m-meta"><div class="meta-i">Источник <b>${done.length} закрытых шагов</b></div><div class="meta-i">Отобрано <b>${items.length}</b></div></div>
+    </div>
+    <div class="m-body" style="grid-template-columns:1fr">
+      <div>
+        <h4>Что показываем клиенту</h4>
+        ${items.map((x,i)=>`<div class="q-item" style="padding:12px 0;border-color:var(--line)"><div><div class="q-name" style="font-size:13.5px">${esc(x.n.t)}</div><div class="q-path">${esc(x.d.c)} · ${esc(x.d.n)}</div></div><div class="q-act"><span class="st ${i<6?'done':'new'} sm"><i></i>${i<6?'в отчёт':'внутри'}</span></div></div>`).join('')}
+        <div class="note" style="display:block"><b>Что это отменяет.</b> Ручную пересборку блока итогов на вкладке клиента каждый месяц и отдельные недельные отчёты, которые аналитик и юрист сегодня ведут руками. Показатели портфеля по-прежнему считает аналитик, вёрстку делает дизайнер, мы отдаём им готовые данные.</div>
+      </div>
+    </div>
+    <div class="m-acts"><button class="btn gold" data-a="x">Выгрузить для дизайнера</button><button class="btn" data-a="x">Закрыть</button></div>`;
+  $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{openId=null;$('ov').classList.remove('on');document.body.style.overflow=''});
+  $('ov').classList.add('on'); document.body.style.overflow='hidden';
 }
 
-/* ═══════════ НАВИГАЦИЯ ═══════════ */
+/* ═══════════ НАВИГАЦИЯ И ОБВЯЗКА ═══════════ */
 function go(p){
-  const target = document.getElementById('p-'+p);
-  if(!target) return;
+  const t=$('p-'+p); if(!t) return;
   document.querySelectorAll('.page').forEach(s=>s.classList.remove('on'));
-  target.classList.add('on');
-  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active', b.dataset.p===p));
+  t.classList.add('on');
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));
   window.scrollTo({top:0,behavior:'smooth'});
 }
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>go(b.dataset.p));
-
-document.querySelectorAll('.roles button').forEach(b=>{
-  b.onclick = ()=>{
-    document.querySelectorAll('.roles button').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    renderQueue(b.dataset.role);
-    const names={darina:'Дарина',nikita:'Никита',danil:'Данил'};
-    toast('Роль: '+names[b.dataset.role]+'. Очередь и доступы пересобраны');
-  };
+document.querySelectorAll('#roles button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#roles button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); role=b.dataset.role;
+  refresh();
+  toast('Роль: '+PEOPLE[role].n+', '+PEOPLE[role].r+'. Очередь и доступы пересобраны');
 });
-
-document.querySelectorAll('.filters .chip').forEach(c=>{
-  c.onclick = ()=>c.classList.toggle('on');
+$('hintsSw').onclick=()=>{
+  const on=document.body.classList.toggle('hints');
+  $('hintsSw').classList.toggle('on',on);
+  toast(on?'Пояснения включены: подписи от MS Product видны под экранами':'Пояснения скрыты: чистый рабочий вид');
+};
+$('themeSw').onclick=()=>{
+  const light=document.body.classList.toggle('light');
+  $('themeSw').classList.toggle('on',light);
+  $('themeLab').textContent = light?'Тёмная тема':'Светлая тема';
+};
+$('ov').onclick=e=>{if(e.target===$('ov')) closeModal()};
+$('ov2').onclick=e=>{if(e.target===$('ov2')) $('ov2').classList.remove('on')};
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  if($('ov2').classList.contains('on')) $('ov2').classList.remove('on');
+  else if($('ov').classList.contains('on')) closeModal();
 });
+$('repBtn').onclick=openReport;
+$('weekBtn').onclick=()=>toast('Срез за неделю: '+PEOPLE[role].n+' закрыл 6 шагов по 3 клиентам, перенёс 1 срок с причиной, ни одной просрочки');
 
-/* ═══════════ TOAST ═══════════ */
-let tTimer;
-function toast(msg){
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('on');
-  clearTimeout(tTimer);
-  tTimer = setTimeout(()=>t.classList.remove('on'), 3200);
+/* ═══════════ ОБНОВЛЕНИЕ ═══════════ */
+function refresh(){
+  renderKpi(); renderDeals(); renderQueue(); renderPriem(); renderPanel();
 }
-
-/* ═══════════ TILT ═══════════ */
-function bindTilt(){
-  if(window.matchMedia('(hover:none)').matches) return;
-  document.querySelectorAll('.tilt').forEach(el=>{
-    if(el.dataset.tilt) return;
-    el.dataset.tilt = '1';
-    el.addEventListener('mousemove', e=>{
-      const r = el.getBoundingClientRect();
-      const x = (e.clientX - r.left)/r.width, y = (e.clientY - r.top)/r.height;
-      el.classList.add('tilt-active');
-      el.style.setProperty('--rx', ((x-.5)*5).toFixed(2)+'deg');
-      el.style.setProperty('--ry', ((.5-y)*4).toFixed(2)+'deg');
-      el.style.setProperty('--ty','-3px');
-      el.style.setProperty('--mx',(x*100).toFixed(1)+'%');
-      el.style.setProperty('--my',(y*100).toFixed(1)+'%');
-    });
-    el.addEventListener('mouseleave', ()=>{
-      el.classList.remove('tilt-active');
-      el.style.setProperty('--rx','0deg'); el.style.setProperty('--ry','0deg'); el.style.setProperty('--ty','0px');
-    });
-  });
-}
-
-/* ═══════════ СТАРТ ═══════════ */
-renderDeals();
-document.getElementById('tree').innerHTML = renderTree(TREE, 1, '');
-const tp = countLeaves(TREE);
-document.getElementById('treeProg').textContent = Math.round(tp.done/tp.all*100)+'%';
-renderQueue('darina');
-renderPriem();
-renderReport();
-bindTilt();
-
-/* прямая ссылка на экран: #queue, #panel и так далее */
+initFilters();
+refresh();
 if(location.hash) go(location.hash.slice(1));
-window.addEventListener('hashchange', ()=>go(location.hash.slice(1)));
+window.addEventListener('hashchange',()=>go(location.hash.slice(1)));
 </script>
 </body>
 </html>

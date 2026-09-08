@@ -21,6 +21,23 @@
 | POST | `/internal/connect` | `connect` к аккаунту (нужен `X-Internal-Secret`) |
 | POST | `/amojo/v2/hooks/{scope_id}` | Входящие из amo (проверка `X-Signature`) |
 | POST | `/webhooks/talkme` | Входящие из Talk-me |
+| POST | `/amo/webhooks/leads/{secret}` | Хук amoCRM «сделка добавлена» → метки визита в поля сделки |
+| POST | `/internal/setup-lead-webhook` | Зарегистрировать хук `add_lead` в amoCRM (нужен `X-Internal-Secret`) |
+
+## Метки визита (UTM, Roistat, yclid)
+
+Talk-me отдаёт метки в `data.client`: `utm` объектом, `roistatVisitId`, `referer`, а `yclid` — в URL
+входа `lastVisit.page.url`. Мост запоминает первое касание в `conversation_map.tracking`, а по хуку
+`add_lead` находит сделку по телефону контакта и заполняет **пустые** поля типа `tracking_data`.
+Поля ищутся по `code` (`UTM_SOURCE`, `ROISTAT`, `YCLID`…), поэтому переносится на другого клиента
+без правок. Занятые поля не перезаписываются.
+
+Разовый бэкфилл истории (по умолчанию только отчёт, без записи):
+
+```bash
+docker compose exec -T api python -m scripts.backfill_tracking
+docker compose exec -T api python -m scripts.backfill_tracking --apply
+```
 
 **Talk-me → amo:** `conversation_id` в amo = `tm-{dialogId}`. **amo → Talk-me:** в теле к Talk-me сейчас `dialogId` + `message` (подредактируйте под [json-doc](https://lcab.talk-me.ru/cabinet/json-doc/online) в ЛК).  
 

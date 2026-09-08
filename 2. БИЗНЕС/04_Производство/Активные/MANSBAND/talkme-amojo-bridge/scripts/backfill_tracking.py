@@ -84,6 +84,7 @@ def main() -> int:
         help="максимальный разрыв между визитом и созданием сделки",
     )
     ap.add_argument("--report", default="", help="путь для JSON-отчёта")
+    ap.add_argument("--only", type=int, default=0, help="обработать одну беседу по её id")
     args = ap.parse_args()
 
     init_db()
@@ -103,7 +104,10 @@ def main() -> int:
     rows: list[dict[str, Any]] = []
     try:
         token = get_valid_access_token(db)
-        conversations = db.execute(select(ConversationMap).order_by(ConversationMap.id)).scalars().all()
+        q = select(ConversationMap).order_by(ConversationMap.id)
+        if args.only:
+            q = q.where(ConversationMap.id == args.only)
+        conversations = db.execute(q).scalars().all()
         for cm in conversations:
             if args.limit and stats["бесед"] >= args.limit:
                 break
