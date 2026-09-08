@@ -635,7 +635,9 @@
     padding:6.5vh 8vw 96px;animation:fade .4s ease; perspective:1200px;
   }
   .slide.active{display:flex}
-  @keyframes fade{from{opacity:0}to{opacity:1}}
+  body.nav-back .slide{animation:fade-back .4s ease}
+  @keyframes fade{from{opacity:0;transform:translate3d(26px,0,0)}to{opacity:1;transform:none}}
+  @keyframes fade-back{from{opacity:0;transform:translate3d(-26px,0,0)}to{opacity:1;transform:none}}
 
   .grad{background:linear-gradient(105deg,#F9F2EC 0%, var(--a2) 55%, var(--a1) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
   .dot,.grad .dot{color:var(--a1) !important;-webkit-text-fill-color:var(--a1) !important;background:none !important}
@@ -1048,26 +1050,36 @@
   (function(){
     const SEL = ".card,.anchor,.phase,.bonus,.step,.mock,.shot-card";
     const MAX = 12;
-    let active = null;
+    let active = null, rect = null, pending = null, tilted = false;
     function reset(el){
       el.style.transform = "perspective(900px) rotateX(0deg) rotateY(0deg) translateY(0px) translateZ(0)";
       el.classList.remove("tilt-active");
     }
+    function apply(){
+      pending = null;
+      if (!active || !rect) return;
+      const px = Math.min(1, Math.max(0, (tilted.x - rect.left) / rect.width));
+      const py = Math.min(1, Math.max(0, (tilted.y - rect.top) / rect.height));
+      const ry = ((px - 0.5) * MAX).toFixed(2);
+      const rx = ((0.5 - py) * MAX).toFixed(2);
+      active.style.transform = "perspective(900px) rotateX(" + rx + "deg) rotateY(" + ry + "deg) translateY(-4px) translateZ(12px)";
+      active.style.setProperty("--mx", (px * 100).toFixed(1) + "%");
+      active.style.setProperty("--my", (py * 100).toFixed(1) + "%");
+    }
     document.addEventListener("pointermove", e => {
       if (isPhone()) return;
       const card = e.target.closest(SEL);
-      if (!card) { if (active) { reset(active); active = null; } return; }
-      if (card !== active) { if (active) reset(active); active = card; card.classList.add("tilt-active"); }
-      const r = card.getBoundingClientRect();
-      const px = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-      const py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
-      const ry = ((px - 0.5) * MAX).toFixed(2);
-      const rx = ((0.5 - py) * MAX).toFixed(2);
-      card.style.transform = "perspective(900px) rotateX(" + rx + "deg) rotateY(" + ry + "deg) translateY(-4px) translateZ(12px)";
-      card.style.setProperty("--mx", (px * 100).toFixed(1) + "%");
-      card.style.setProperty("--my", (py * 100).toFixed(1) + "%");
-    });
-    document.addEventListener("pointerleave", () => { if (active) { reset(active); active = null; } });
+      if (!card) { if (active) { reset(active); active = null; rect = null; } return; }
+      /* геометрию читаем только при входе в карточку, не на каждом движении */
+      if (card !== active) {
+        if (active) reset(active);
+        active = card; rect = card.getBoundingClientRect();
+        card.classList.add("tilt-active");
+      }
+      tilted = {x: e.clientX, y: e.clientY};
+      if (!pending) pending = requestAnimationFrame(apply);
+    }, {passive:true});
+    document.addEventListener("pointerleave", () => { if (active) { reset(active); active = null; rect = null; } });
   })();
 
   /* Золотая пыль: медленный подъём частиц с параллаксом от курсора */
@@ -1182,6 +1194,7 @@
       if (isPhone() || i === last) { last = i; return; }
       const dir = i > last ? "fwd" : "back";
       last = i;
+      document.body.classList.toggle("nav-back", dir === "back");
       fl.classList.remove("fwd", "back");
       void fl.offsetWidth;
       fl.classList.add(dir);
