@@ -215,6 +215,10 @@ async def run_one(title: str, turns: list[str]) -> None:
             if kept and len(kept) < len(bubbles):
                 print("(выкинут повторный адрес)")
                 bubbles = kept
+        kept = [b for b in bubbles if not human.denies_history(b)]
+        if len(kept) < len(bubbles):
+            print("(выкинуто отрицание истории такси или каршеринга)")
+            bubbles = kept or [bot_main.HISTORY_UNKNOWN]
         for bubble in bubbles:
             print("НИКИТА: %s" % bubble)
         if handoff:

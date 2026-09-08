@@ -30,6 +30,11 @@ FALLBACK = (
     "Секунду, у меня система тормозит. Передаю коллеге, он сразу напишет.",
     "Извините, зависло на моей стороне. Коллега сейчас вам ответит.",
 )
+# Отрицать такси и каршеринг нельзя: клиент вскроет это по отчёту после покупки.
+HISTORY_UNKNOWN = (
+    "По истории этой машины наугад не скажу. Уточню у менеджера, "
+    "напишите номер для связи"
+)
 pending: dict[int, list[str]] = {}
 tasks: dict[int, asyncio.Task] = {}
 inflight: set[int] = set()
@@ -217,6 +222,10 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
         if kept and len(kept) < len(bubbles):
             log.info("чат %s: выкинул повторный адрес", chat_id)
             bubbles = kept
+    kept = [b for b in bubbles if not human.denies_history(b)]
+    if len(kept) < len(bubbles):
+        log.info("чат %s: выкинул отрицание истории такси или каршеринга", chat_id)
+        bubbles = kept or [HISTORY_UNKNOWN]
 
     if not bubbles:
         bubbles = [random.choice(FALLBACK)]
@@ -305,7 +314,15 @@ def _build_system(history: list[dict]) -> str:
             "ни отдельным сообщением, ни в виде «приезжайте к нам на Автозаводскую». "
             "Отвечай на вопрос, дальше номер или следующий шаг."
         )
-    if nudge.refuses_phone(user_text):
+    if nudge.refusals_count(history) >= 2:
+        system += (
+            "\n\n# Клиент отказал в номере второй раз\n"
+            "Уговаривать нельзя, третьей попытки нет. Ответь одной короткой "
+            "строкой «сейчас подключу коллегу, он ответит здесь» и поставь "
+            "последней строкой %s. Условия кредита, документы, сроки одобрения "
+            "и ставку не выдумывай: их назовёт человек." % prompt.HANDOFF_MARK
+        )
+    elif nudge.refuses_phone(user_text):
         system += (
             "\n\n# Клиент не даёт свой номер\n"
             "Не уговаривай. Дай номер салона: %s. Свой больше не проси."

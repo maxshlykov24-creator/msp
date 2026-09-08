@@ -200,6 +200,15 @@ def history_refuses_phone(messages: list[dict]) -> bool:
     )
 
 
+def refusals_count(messages: list[dict]) -> int:
+    """Сколько раз клиент отказался дать номер. Два - дальше зовём человека."""
+    return sum(
+        1
+        for m in messages
+        if m.get("role") == "user" and refuses_phone(m.get("content") or "")
+    )
+
+
 def history_wants_stop(messages: list[dict]) -> bool:
     return any(m.get("role") == "user" and wants_stop(m.get("content") or "") for m in messages)
 

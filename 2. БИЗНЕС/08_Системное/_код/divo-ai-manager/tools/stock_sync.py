@@ -202,6 +202,16 @@ AUTOTEKA_ORDER = (
 )
 
 
+def is_empty_phrase(text: str) -> bool:
+    """«Не найдено» и «не проверено» в карточку не пускаем.
+
+    Модель из «разрешений не найдено» делает «по базам чисто», а отсутствие
+    записи в реестре ничего не доказывает. Пусто честнее.
+    """
+    low = str(text or "").lower()
+    return any(m in low for m in ("не найден", "не обнаруж", "не проверен", "нет сведени"))
+
+
 def autoteka_lines(facts: dict[str, object] | None) -> list[str]:
     """Факты отчёта - отдельным блоком, чтобы бот не путал их со своей базой."""
     if not facts:
@@ -212,7 +222,9 @@ def autoteka_lines(facts: dict[str, object] | None) -> list[str]:
         if not value:
             continue
         if isinstance(value, list):
-            value = "; ".join(str(x) for x in value if x)
+            value = "; ".join(str(x) for x in value if x and not is_empty_phrase(str(x)))
+        if not value or is_empty_phrase(str(value)):
+            continue
         out.append("  - %s: %s" % (key, value))
     return out if len(out) > 1 else []
 
@@ -260,6 +272,13 @@ def card(
     history = (d.get("История") or "").strip()
     if history:
         lines.append("- История эксплуатации: %s" % history)
+    else:
+        # Пустая строка провоцирует «по базе чисто», поэтому запрет пишем прямо
+        # в карточку: отсутствие записи это не доказательство.
+        lines.append(
+            "- История эксплуатации: данных нет. Не писать «не была в такси»,"
+            " «не каршеринг», «чистая по базам» - только «уточню у менеджера»"
+        )
     lines.append("- Лига: %s" % league(d["Марка"]))
     lines.append("- Тип: %s" % body(d["Модель"], d.get("Тип кузова", "")))
     lines.append("- Цена в объявлении: %s (наличный расчет, без НДС)" % money(d["Цена продажи"]))

@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,12 @@ HEADERS = {
 }
 TTL_DAYS = 7
 CACHE = "autoteka.json"
+PAUSE_SEC = 2.0  # 34 отчёта подряд без паузы упираются в 403
+RETRY_SEC = 30.0
+
+# «Не найдено» и «не проверено» в кэш не кладём: модель немедленно превращает
+# это в «по базам чисто», а отсутствие записи в реестре ничего не доказывает.
+EMPTY_MARKS = ("не найден", "не обнаруж", "не проверен", "нет сведени")
 
 # id карточки в отчёте -> как это назвать в карточке машины
 RISK_CARDS = {
@@ -90,14 +97,23 @@ def fetch(uuid: str) -> dict[str, Any] | None:
     kwargs: dict[str, Any] = {"timeout": 30.0, "headers": HEADERS}
     if settings.llm_proxy:
         kwargs["proxy"] = settings.llm_proxy
-    try:
-        with httpx.Client(**kwargs) as client:
-            resp = client.get(API % uuid)
-    except httpx.HTTPError as exc:
-        print("autoteka_sync: %s не получен: %s" % (uuid, exc), file=sys.stderr)
-        return None
-    if resp.status_code != 200:
-        print("autoteka_sync: %s -> HTTP %s" % (uuid, resp.status_code), file=sys.stderr)
+    resp = None
+    for attempt in (1, 2):
+        try:
+            with httpx.Client(**kwargs) as client:
+                resp = client.get(API % uuid)
+        except httpx.HTTPError as exc:
+            print("autoteka_sync: %s не получен: %s" % (uuid, exc), file=sys.stderr)
+            return None
+        if resp.status_code != 429 and resp.status_code != 403:
+            break
+        if attempt == 1:
+            time.sleep(RETRY_SEC)  # частые запросы ловят 403, помогает выждать
+    if resp is None or resp.status_code != 200:
+        print(
+            "autoteka_sync: %s -> HTTP %s" % (uuid, resp.status_code if resp else "?"),
+            file=sys.stderr,
+        )
         return None
     try:
         data = resp.json()
@@ -168,6 +184,11 @@ def carsharing_of(cards: dict[str, Any]) -> str:
     return "по отчёту есть сведения об использовании в каршеринге"
 
 
+def is_empty_phrase(text: str) -> bool:
+    low = (text or "").lower()
+    return any(mark in low for mark in EMPTY_MARKS)
+
+
 def risks_of(cards: dict[str, Any]) -> list[str]:
     out: list[str] = []
     for card_id, label in RISK_CARDS.items():
@@ -175,6 +196,8 @@ def risks_of(cards: dict[str, Any]) -> list[str]:
         if not card or card.get("status") == "ok":
             continue
         title = str(card.get("title") or "").strip()
+        if is_empty_phrase(title):
+            continue  # «ограничения не проверены» это не риск и не гарантия
         out.append(title or label)
     return out
 
