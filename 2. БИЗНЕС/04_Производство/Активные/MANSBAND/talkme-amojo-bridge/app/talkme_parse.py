@@ -2,6 +2,16 @@ from __future__ import annotations
 
 import uuid
 from typing import Any, Optional, Tuple
+from urllib.parse import parse_qs, urlparse
+
+UTM_KEYS = (
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "utm_referrer",
+)
 
 
 def parse_talkme_incoming(d: dict[str, Any]) -> Tuple[Optional[str], str, str, str, Optional[str], Optional[str]]:
@@ -216,3 +226,82 @@ def parse_talkme_profile(d: dict[str, Any]) -> dict[str, Optional[str]]:
         "profile_link": profile_link,
         "client_id": client_id,
     }
+
+
+def normalize_phone(raw: Any) -> Optional[str]:
+    """Последние 10 цифр номера — ключ сопоставления с контактом amoCRM."""
+    if raw is None:
+        return None
+    digits = "".join(ch for ch in str(raw) if ch.isdigit())
+    if len(digits) < 10:
+        return None
+    return digits[-10:]
+
+
+def parse_talkme_tracking(d: dict[str, Any]) -> dict[str, Optional[str]]:
+    """Рекламные метки визита из вебхука Talk-me.
+
+    Ключи: utm_source, utm_medium, utm_campaign, utm_term, utm_content, utm_referrer,
+    roistat, yclid, referer, landing_url, search_keyword — строки или None.
+
+    Что где лежит (проверено на боевой базе моста 2026-09-08, 190 бесед):
+    utm — объект в client.utm; идентификатор визита Roistat — client.roistatVisitId (94% бесед);
+    yclid / ysclid — только в URL входа client.lastVisit.page.url.
+    """
+    data = d.get("data") if isinstance(d.get("data"), dict) else d
+    if isinstance(d.get("payload"), dict):
+        data = d["payload"]
+
+    client = data.get("client") if isinstance(data.get("client"), dict) else {}
+
+    def _s(v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
+    out: dict[str, Optional[str]] = {}
+
+    utm = client.get("utm") if isinstance(client.get("utm"), dict) else {}
+    for k in UTM_KEYS:
+        out[k] = _s(utm.get(k))
+
+    out["roistat"] = _s(client.get("roistatVisitId"))
+    out["referer"] = _s(client.get("referer"))
+    out["search_keyword"] = _s(client.get("searchKeyword"))
+
+    last_visit = client.get("lastVisit") if isinstance(client.get("lastVisit"), dict) else {}
+    page = last_visit.get("page") if isinstance(last_visit.get("page"), dict) else {}
+    url = _s(page.get("url"))
+    if not url:
+        page2 = data.get("page") if isinstance(data.get("page"), dict) else {}
+        url = _s(page2.get("url"))
+    out["landing_url"] = url
+
+    yclid = None
+    if url:
+        try:
+            qs = parse_qs(urlparse(url).query)
+        except Exception:
+            qs = {}
+        for key in ("yclid", "ysclid", "gclid"):
+            v = qs.get(key)
+            if v and v[0].strip():
+                yclid = v[0].strip()
+                break
+        # UTM из адреса входа — запасной источник, если client.utm пуст.
+        for k in UTM_KEYS:
+            if not out.get(k):
+                v = qs.get(k)
+                if v and v[0].strip():
+                    out[k] = v[0].strip()
+    out["yclid"] = yclid
+
+    return out
+
+
+def tracking_is_empty(tracking: Optional[dict[str, Any]]) -> bool:
+    if not tracking:
+        return True
+    meaningful = (*UTM_KEYS, "roistat", "yclid")
+    return not any(tracking.get(k) for k in meaningful)
