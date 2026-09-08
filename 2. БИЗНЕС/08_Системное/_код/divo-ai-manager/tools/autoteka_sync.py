@@ -50,8 +50,12 @@ HEADERS = {
 }
 TTL_DAYS = 7
 CACHE = "autoteka.json"
-PAUSE_SEC = 2.0  # 34 отчёта подряд без паузы упираются в 403
-RETRY_SEC = 30.0
+# За отчётами стоит антифрод Avito: 30-40 запросов подряд ловят
+# «Доступ с вашего IP-адреса временно ограничен». Поэтому ходим редко, порциями
+# и с паузой - кэш живёт неделю, разогреться за несколько проходов не проблема.
+PAUSE_SEC = 6.0
+RETRY_SEC = 120.0
+MAX_PER_RUN = 12
 
 # «Не найдено» и «не проверено» в кэш не кладём: модель немедленно превращает
 # это в «по базам чисто», а отсутствие записи в реестре ничего не доказывает.
@@ -302,13 +306,20 @@ def main() -> int:
         if not force and fresh(cache.get(vin)):
             skipped += 1
             continue
+        if got >= MAX_PER_RUN and not only:
+            break  # остальное доберём следующим проходом, антифрод не любит серии
         m = UUID_RE.search(url)
         if not m:
             failed += 1
             continue
+        if got:
+            time.sleep(PAUSE_SEC)
         report = fetch(m.group(1))
         if not report:
             failed += 1
+            if failed >= 3 and not got:
+                print("autoteka_sync: три отказа подряд, останавливаюсь", file=sys.stderr)
+                break
             continue
         facts = facts_of(report)
         if not facts:
