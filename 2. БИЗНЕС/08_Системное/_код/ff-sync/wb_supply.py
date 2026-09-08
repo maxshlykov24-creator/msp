@@ -27,9 +27,10 @@ from net import WB_BASE, req, wb_headers
 
 ORDERS_CHUNK = 100   # предел батча добавления заданий в поставку
 TRBX_CHUNK = 1000    # предел создания грузомест за запрос
-# WB разрешает не больше половины числа заданий: 10 заданий — до 5 коробок.
-# Правило поменялось 2026-09-04, до этого было «товаров + 1».
-TRBX_SHARE = 0.5
+# «You can add as many boxes as there are items in the supply, plus one more
+# box» — описание метода на 2026-09-08. То есть предел это заданий + 1, а не
+# половина: с половиной три задания в двух коробках получали отказ.
+TRBX_EXTRA = 1
 
 
 class SupplyError(Exception):
@@ -94,7 +95,12 @@ def add_orders(cab, supply_ext, order_ids):
 
 
 def add_boxes(cab, supply_ext, amount):
-    """Создать грузоместа. Возвращает список идентификаторов WB-TRBX-…"""
+    """Создать грузоместа. Возвращает список идентификаторов WB-TRBX-…
+
+    Метод работает только для поставок, которые сдают на ПВЗ: «You should add
+    boxes only to supplies shipped to the pickup points». Габаритный товар едет
+    в сортировочный центр, и коробов у него нет.
+    """
     amount = int(amount or 0)
     if amount < 1:
         raise SupplyError("сколько грузомест создать?")

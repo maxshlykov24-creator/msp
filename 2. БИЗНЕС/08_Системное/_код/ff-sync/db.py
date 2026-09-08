@@ -135,6 +135,8 @@ def migrate(conn):
     ):
         if col not in ships:
             conn.execute("ALTER TABLE shipments ADD COLUMN %s TEXT" % col)
+    if "cargo_type" not in _cols(conn, "wb_supplies"):
+        conn.execute("ALTER TABLE wb_supplies ADD COLUMN cargo_type TEXT")
     if fresh:
         # у записей до появления раздела «Сборка» группы нет, и они не попали бы
         # ни на одну вкладку. Разбираем её из сохранённого текста статуса, чтобы
@@ -1171,13 +1173,9 @@ def mark_wb_supply_delivered(supply_id, when):
 def list_wb_supplies(client_id=None, state="", limit=100):
     conn = connect()
     sql = (
-        "SELECT wb_supplies.*, clients.name AS client_name, "
-        "(SELECT COUNT(*) FROM wb_boxes b WHERE b.supply_id = wb_supplies.id) AS boxes, "
-        "(SELECT COUNT(*) FROM shipments s WHERE s.supply_ext = wb_supplies.ext_id "
-        " AND s.cabinet_id = wb_supplies.cabinet_id) AS orders, "
-        "(SELECT COUNT(*) FROM shipments s WHERE s.supply_ext = wb_supplies.ext_id "
-        " AND s.cabinet_id = wb_supplies.cabinet_id AND COALESCE(s.trbx_ext,'') = '') AS loose "
+        "SELECT wb_supplies.*, clients.name AS client_name, %s "
         "FROM wb_supplies JOIN clients ON clients.id = wb_supplies.client_id WHERE 1=1"
+        % WB_SUPPLY_COUNTS
     )
     args = []
     if client_id:
@@ -1189,6 +1187,32 @@ def list_wb_supplies(client_id=None, state="", limit=100):
     sql += " ORDER BY wb_supplies.id DESC LIMIT ?"
     args.append(int(limit))
     rows = conn.execute(sql, args).fetchall()
+    conn.close()
+    return rows
+
+
+WB_SUPPLY_COUNTS = (
+    "(SELECT COUNT(*) FROM wb_boxes b WHERE b.supply_id = wb_supplies.id) AS boxes, "
+    "(SELECT COUNT(*) FROM shipments s WHERE s.supply_ext = wb_supplies.ext_id "
+    " AND s.cabinet_id = wb_supplies.cabinet_id) AS orders, "
+    "(SELECT COUNT(*) FROM shipments s WHERE s.supply_ext = wb_supplies.ext_id "
+    " AND s.cabinet_id = wb_supplies.cabinet_id AND COALESCE(s.trbx_ext,'') = '') AS loose"
+)
+
+
+def find_wb_supplies(ext_ids):
+    """Поставки по номерам площадки: нужны таблице «Заказов» строкой-родителем."""
+    ids = [str(x) for x in ext_ids if x]
+    if not ids:
+        return []
+    conn = connect()
+    rows = conn.execute(
+        "SELECT wb_supplies.*, clients.name AS client_name, %s "
+        "FROM wb_supplies JOIN clients ON clients.id = wb_supplies.client_id "
+        "WHERE wb_supplies.ext_id IN (%s) ORDER BY wb_supplies.id DESC"
+        % (WB_SUPPLY_COUNTS, ",".join("?" * len(ids))),
+        ids,
+    ).fetchall()
     conn.close()
     return rows
 
@@ -1320,6 +1344,28 @@ def status_label(raw):
     if low in STATUS_RU:
         return STATUS_RU[low]
     return text.replace("_", " ")
+
+
+def shipped_by_day(client_id, day_from, day_to):
+    """Отгруженное по артикулам и дням: основа недельного отчёта клиенту.
+
+    Считаем по отправлениям, а не по календарю хранения: тот сводит по партиям
+    FIFO, и в отчёте клиента появились бы чужие даты. Берём только то, что уже
+    уехало: отгружено или доставлено.
+    """
+    conn = connect()
+    rows = conn.execute(
+        "SELECT substr(shipments.shipped_at,1,10) AS day, shipments.article AS article, "
+        "shipments.barcode AS barcode, shipments.name AS name, shipments.marketplace AS mp, "
+        "SUM(shipments.qty) AS qty FROM shipments "
+        "WHERE shipments.client_id = ? AND %s IN ('shipped','delivered') "
+        "AND substr(shipments.shipped_at,1,10) >= ? AND substr(shipments.shipped_at,1,10) <= ? "
+        "GROUP BY day, shipments.article, shipments.barcode "
+        "ORDER BY shipments.article, day" % EFF_GROUP,
+        (int(client_id), day_from, day_to),
+    ).fetchall()
+    conn.close()
+    return rows
 
 
 def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_from="", day_to="", query=""):

@@ -20,6 +20,7 @@ from db import (
     get_wb_supply,
     insert_wb_boxes,
     insert_wb_supply,
+    find_wb_supplies,
     list_supply_shipments,
     list_wb_boxes,
     list_wb_supplies,
@@ -104,11 +105,14 @@ def ship_ozon(ship_ids, split=True):
     return {"shipped": done, "notes": notes}
 
 
-def assemble(ship_ids, split=True):
+def assemble(ship_ids, split=True, boxes=0):
     """Кнопка «Собрано»: Ozon собираем на площадке, WB отмечаем у себя.
 
     Своего «собрать» у WB в API нет — задание уходит в сборку вместе с поставкой,
     поэтому для него это складская отметка «ожидают отгрузки», не звонок наружу.
+    Зато здесь заводятся грузоместа: сколько коробов вышло, знает только
+    сборщик, и говорит он это в момент, когда закрыл последнюю коробку. Что
+    внутри короба, площадке не передаётся — состав заводит ПВЗ при приёмке.
     """
     rows = get_shipments_by_ids(ship_ids)
     if not rows:
@@ -121,8 +125,31 @@ def assemble(ship_ids, split=True):
         res = ship_ozon(ozon, split=split)
         shipped = res["shipped"]
         notes.extend(res["notes"])
+    made = []
+    if int(boxes or 0) > 0:
+        made, more = _boxes_for(rows, int(boxes))
+        notes.extend(more)
     marked = set_work_state(rest, "ready") if rest else 0
-    return {"shipped": shipped, "marked": marked, "notes": notes}
+    return {"shipped": shipped, "marked": marked, "boxes": made, "notes": notes}
+
+
+def _boxes_for(rows, amount):
+    """Грузоместа на поставку из выборки. Поставка должна быть одна."""
+    exts = {r["supply_ext"] for r in rows if (r["supply_ext"] or "")}
+    if not exts:
+        return [], ["Коробов не завёл: у выбранных заданий нет поставки WB."]
+    if len(exts) > 1:
+        return [], [
+            "Коробов не завёл: в выборке %s поставки, а число коробов одно. Собери поставки по очереди."
+            % len(exts)
+        ]
+    found = find_wb_supplies(exts)
+    if not found:
+        return [], ["Коробов не завёл: поставка %s заведена не у нас." % exts.pop()]
+    try:
+        return make_boxes(found[0]["id"], amount)["boxes"], []
+    except ValueError as exc:
+        return [], ["Коробов не завёл: %s" % exc]
 
 
 def take(ship_ids, author=""):
@@ -244,20 +271,28 @@ def add_orders(supply_id, ship_ids):
 
 
 def make_boxes(supply_id, amount):
-    """Завести грузоместа. WB разрешает не больше половины числа заданий."""
+    """Завести грузоместа. Предел у WB — заданий плюс один короб."""
+    import statuses
+
     supply = _supply(supply_id)
     if supply["state"] != "open":
         raise ValueError("поставка передана в доставку, грузоместа не меняются")
+    cargo = str(supply["cargo_type"] or "")
+    if cargo and not statuses.to_pickup(cargo):
+        raise ValueError(
+            "грузоместа заводятся только для поставок на ПВЗ. Этот товар %s — сдаётся в сортировочный центр, там короба не нужны."
+            % statuses.CARGO.get(cargo, ("габаритный",))[0]
+        )
     amount = int(amount or 0)
     if amount < 1:
         raise ValueError("сколько грузомест создать?")
     orders = len(list_supply_shipments(supply["cabinet_id"], supply["ext_id"]))
     have = len(list_wb_boxes(supply["id"]))
     # предел считаем сами, чтобы не ловить 4XX: у WB он списывается как десять запросов
-    limit = max(1, int(orders * wb_supply.TRBX_SHARE))
+    limit = orders + wb_supply.TRBX_EXTRA
     if have + amount > limit:
         raise ValueError(
-            "WB разрешает не больше половины числа заданий: заданий %s, значит грузомест максимум %s, уже создано %s."
+            "WB разрешает коробов не больше, чем заданий плюс один: заданий %s, значит максимум %s, уже создано %s."
             % (orders, limit, have)
         )
     cab = _cab_of_supply(supply)

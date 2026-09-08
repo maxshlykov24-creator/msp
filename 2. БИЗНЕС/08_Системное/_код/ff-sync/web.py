@@ -18,6 +18,7 @@ from db import (
     assembly_counts,
     catalog_card,
     delete_intake_row,
+    find_wb_supplies,
     get_cabinet,
     get_invoice,
     get_shipments_by_ids,
@@ -789,8 +790,29 @@ def assembly(
                 "ms_url": order_app_url(r["ms_order_id"]),
             }
         )
+    # Поставки WB отдаём отдельным списком: в таблице они идут строкой-родителем,
+    # внутри которой раскрываются задания. Сергей собирает смену поставкой, а не
+    # отдельными заданиями, поэтому кнопки грузомест и отгрузки висят на ней.
+    supplies = []
+    for s in find_wb_supplies({r["supply"] for r in out if r["supply"]}):
+        supplies.append(
+            {
+                "id": s["id"],
+                "ext_id": s["ext_id"],
+                "client": s["client_name"],
+                "name": s["name"] or "",
+                "state": s["state"],
+                "orders": s["orders"],
+                "boxes": s["boxes"],
+                "loose": s["loose"],
+                "cargo": statuses.cargo_label(s["cargo_type"]),
+                "pickup": statuses.to_pickup(s["cargo_type"]),
+                "created": (s["created_at"] or "")[:16].replace("T", " "),
+            }
+        )
     return {
         "rows": out,
+        "supplies": supplies,
         "groups": [
             {"code": code, "label": label, "count": counts.get(code, 0)}
             for code, label in statuses.GROUPS
@@ -844,6 +866,26 @@ def assembly_work(data: dict = Body(...), ff_session: str = Cookie(default="")):
     if state and state not in statuses.GROUP_CODES:
         raise HTTPException(status_code=400, detail="неизвестное состояние %s" % state)
     return {"ok": True, "changed": set_work_state(ids, state)}
+
+
+@app.post("/api/assembly/take")
+def assembly_take(data: dict = Body(...), ff_session: str = Cookie(default="")):
+    """«Взять в сборку»: WB уходит в поставку, Ozon получает складскую отметку.
+
+    Поставка создаётся сама — своего «взять» у WB нет, задание попадает в сборку
+    вместе с добавлением в поставку.
+    """
+    login = who(ff_session)
+    init_db()
+    import supply_flow
+
+    ids = data.get("ids") or []
+    if not ids:
+        raise HTTPException(status_code=400, detail="не выбраны отправления")
+    try:
+        return {"ok": True, **supply_flow.take(ids, author=login)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/api/assembly/{ship_id}/kiz")
@@ -900,7 +942,12 @@ def assembly_ship(data: dict = Body(...), ff_session: str = Cookie(default="")):
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
     try:
-        return {"ok": True, **supply_flow.assemble(ids, split=bool(data.get("split", True)))}
+        return {
+            "ok": True,
+            **supply_flow.assemble(
+                ids, split=bool(data.get("split", True)), boxes=int(data.get("boxes") or 0)
+            ),
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -1149,6 +1196,36 @@ def shipments_report(data: dict = Body(...), ff_session: str = Cookie(default=""
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
     name, raw = build_ships(ids)
+    return xlsx_file(name, raw)
+
+
+@app.get("/api/shipments/weekly.xlsx")
+def shipments_weekly(
+    client_id: int = 0,
+    date_from: str = "",
+    date_to: str = "",
+    ff_session: str = Cookie(default=""),
+):
+    """Недельный отчёт клиенту: артикулы по строкам, дни по столбцам.
+
+    Контрагент обязателен: отчёт уходит клиенту, и мешать в нём чужие артикулы
+    нельзя.
+    """
+    who(ff_session)
+    init_db()
+    from db import shipped_by_day
+    from export_xlsx import build_weekly
+
+    if not client_id:
+        raise HTTPException(status_code=400, detail="выбери контрагента: отчёт собирается по одному")
+    if not date_from or not date_to:
+        raise HTTPException(status_code=400, detail="нужен период: с какого по какое число")
+    client = next((c for c in list_clients() if c["id"] == client_id), None)
+    rows = shipped_by_day(client_id, date_from[:10], date_to[:10])
+    try:
+        name, raw = build_weekly(client["name"] if client else "", date_from[:10], date_to[:10], rows)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return xlsx_file(name, raw)
 
 

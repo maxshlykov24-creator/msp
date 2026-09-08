@@ -20,6 +20,7 @@ import net
 
 CALLS = []
 WB_SENT = {}
+SUPPLY_SEQ = []
 
 
 class Fake:
@@ -47,7 +48,10 @@ PNG = base64.b64decode(
 def fake_req(method, url, headers=None, **kw):
     CALLS.append((method, url, kw.get("json"), kw.get("params")))
     if url.endswith("/api/v3/supplies") and method == "POST":
-        return Fake(201, {"id": "WB-GI-777"})
+        # у площадки номер каждой поставки свой: первая WB-GI-777, дальше по счёту
+        SUPPLY_SEQ.append(1)
+        n = len(SUPPLY_SEQ)
+        return Fake(201, {"id": "WB-GI-777" if n == 1 else "WB-GI-77%s" % (7 + n)})
     if "/trbx/stickers" in url:
         ids = (kw.get("json") or {}).get("trbxIds") or []
         return Fake(200, {"stickers": [{"trbxId": t, "barcode": "$WBMP:1:1:%s" % t, "file": base64.b64encode(PNG).decode()} for t in ids]})
@@ -148,12 +152,19 @@ assert boxes == ["WB-TRBX-1", "WB-TRBX-2"], boxes
 box_rows = db.list_wb_boxes(sup["id"])
 assert [b["ext_id"] for b in box_rows] == boxes
 
-# лимит грузомест: не больше половины числа заданий
+# лимит грузомест: заданий плюс один короб. Четыре задания — до пяти коробов,
+# два уже есть, значит ещё четыре просить нельзя, а один можно
 try:
-    supply_flow.make_boxes(sup["id"], 1)
+    supply_flow.make_boxes(sup["id"], 4)
     raise AssertionError("создали грузоместо сверх лимита WB")
 except ValueError as exc:
-    assert "не больше половины" in str(exc), exc
+    assert "не больше, чем заданий плюс один" in str(exc), exc
+# ровно в лимит проходит: с прежним правилом «половина заданий» это был отказ
+assert supply_flow.make_boxes(sup["id"], 3)["boxes"], "лимит заданий + 1 не пропустил"
+db.delete_wb_boxes(sup["id"], ["WB-TRBX-2", "WB-TRBX-3"])
+supply_flow.make_boxes(sup["id"], 2)
+box_rows = db.list_wb_boxes(sup["id"])
+assert [b["ext_id"] for b in box_rows] == ["WB-TRBX-1", "WB-TRBX-2"], [dict(b) for b in box_rows]
 
 # 4. укладка: два задания в первое место. Площадку не трогаем — метода нет в API
 packed = supply_flow.fill_box(box_rows[0]["id"], ships[:2])
@@ -358,5 +369,53 @@ try:
     raise AssertionError("передали лишний код")
 except kiz.KizError as exc:
     assert "кодов больше" in str(exc), exc
+
+
+# 19. «Взять в сборку»: поставка заводится сама, габаритные типы не смешиваются.
+# WB держит в одной поставке только один cargoType, поэтому на каждый тип своя.
+CALLS.clear()
+mgt = []
+kgt = []
+for i, (num, cargo) in enumerate((("201", "1"), ("202", "1"), ("203", "3"))):
+    sid = db.upsert_shipment(
+        client_id, wb_cab, "wb", "fbs", num, "Новый", "2026-09-05", "ART-1", "2000000000019",
+        "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
+        extra={"status_group": "new", "accepted_at": "2026-09-05 10:0%s" % i, "cargo_type": cargo,
+               "office": "ПВЗ Ленина 1"},
+    )
+    (mgt if cargo == "1" else kgt).append(sid)
+oz_take = db.upsert_shipment(
+    client_id, oz_cab, "ozon", "fbs", "0001-6", "Ожидает упаковки", "2026-09-05", "ART-1", "",
+    "Ремень", 1, None, 0, "2026-09-05T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-05 10:05"},
+)
+out = supply_flow.take(mgt + kgt + [oz_take], author="тест")
+assert len(out["supplies"]) == 2, out
+assert out["marked"] == 1, out  # Ozon поставки не получает, только отметку
+assert {s["orders"] for s in out["supplies"]} == {1, 2}, out["supplies"]
+made = db.find_wb_supplies([s["ext_id"] for s in out["supplies"]])
+assert {str(s["cargo_type"]) for s in made} == {"1", "3"}, [dict(s) for s in made]
+assert all(db.get_shipments_by_ids([x])[0]["work_state"] == "assembling" for x in mgt + kgt)
+
+# повторное нажатие в ту же поставку не льёт: задание уже в ней
+again = supply_flow.take(mgt, author="тест")
+assert not again["supplies"] and any("Уже в поставке" in n for n in again["notes"]), again
+
+# 20. короба только для ПВЗ: поставке в сортировочный центр их не заводим
+sc = [s for s in made if str(s["cargo_type"]) == "3"][0]
+try:
+    supply_flow.make_boxes(sc["id"], 1)
+    raise AssertionError("завели короба для сортировочного центра")
+except ValueError as exc:
+    assert "только для поставок на ПВЗ" in str(exc), exc
+
+# 21. «Собрано» с числом коробов: заводит грузоместа в поставке выборки
+pvz = [s for s in made if str(s["cargo_type"]) == "1"][0]
+out = supply_flow.assemble(mgt, split=False, boxes=2)
+assert len(out["boxes"]) == 2 and out["marked"] == 2, out
+assert len(db.list_wb_boxes(pvz["id"])) == 2, [dict(b) for b in db.list_wb_boxes(pvz["id"])]
+
+# две поставки в выборке — короба не заводим, число у них своё
+out = supply_flow.assemble(mgt + kgt, split=False, boxes=1)
+assert not out["boxes"] and any("поставки" in n for n in out["notes"]), out
 
 print("все проверки поставок, сборки и КиЗ прошли")

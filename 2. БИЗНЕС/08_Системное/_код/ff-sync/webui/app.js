@@ -2,6 +2,8 @@ const $ = (id) => document.getElementById(id);
 const state = {
   clients: [], lots: [], ships: [], asm: [],
   picked: new Set(), pickedShip: new Set(), pickedAsm: new Set(), asmGroup: "new", asmGroups: [],
+  // поставки WB в таблице «Заказов»: список и номера раскрытых строк
+  asmSupplies: [], asmOpen: new Set(),
   // поставки WB: выбранная поставка, выбранное грузоместо и отмеченные задания внутри
   wbSupplies: [], wbSupply: 0, wbBox: 0, wbPicked: new Set(), wbDetail: null,
 };
@@ -1080,6 +1082,7 @@ async function loadAsm() {
   tintMp("view-asm", "aMp");
   const res = await api("/api/assembly?" + asmQuery(state.asmGroup));
   state.asm = res.rows;
+  state.asmSupplies = res.supplies || [];
   state.pickedAsm.clear();
   // галка «выбрать все» живёт вне таблицы и при перерисовке не сбрасывается сама:
   // иначе она остаётся отмеченной при пустом выборе, и клик по ней снимает выбор
@@ -1091,7 +1094,11 @@ async function loadAsm() {
     body.innerHTML = `<tr><td colspan="${ASM_COLS}" class="empty">Здесь пусто. Проверь период и нажми «Обновить отправления».</td></tr>`;
     return;
   }
-  body.innerHTML = res.rows.map((r) => `<tr>
+  body.innerHTML = asmBodyHtml(res.rows);
+}
+
+function asmRowHtml(r, child) {
+  return `<tr${child ? ` class="child" data-of="${esc(r.supply)}"` : ""}${child && !state.asmOpen.has(r.supply) ? " hidden" : ""}>
     <td class="pick"><input type="checkbox" data-asm="${r.id}"></td>
     <td class="client">${esc(r.client)}</td>
     <td class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span></td>
@@ -1103,7 +1110,52 @@ async function loadAsm() {
     <td class="dest">${r.office ? esc(r.office) : "—"}${r.cargo ? `<span class="cargo">${esc(r.cargo)}</span>` : ""}</td>
     <td class="sup">${r.supply ? `<span class="badge supply">${esc(r.supply)}</span>` : "—"}${r.box ? `<span class="badge box">${esc(r.box)}</span>` : ""}</td>
     <td class="num">${r.marks || "—"}</td>
-  </tr>`).join("");
+  </tr>`;
+}
+
+// Поставка идёт строкой во главе своих заданий: так её показывали Сергею и так
+// он собирает смену. Задания под ней спрятаны, пока строку не раскроют.
+function asmSupplyHtml(sup, rows) {
+  const open = state.asmOpen.has(sup.ext_id);
+  const bits = [sup.orders + " заданий", sup.boxes + " мест"];
+  if (sup.loose) bits.push("без коробки " + sup.loose);
+  if (!sup.pickup && sup.cargo) bits.push("короба не нужны");
+  return `<tr class="sup-head${open ? " is-open" : ""}" data-supply="${esc(sup.ext_id)}">
+    <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}"></td>
+    <td class="client">${esc(sup.client)}</td>
+    <td class="ext"><button type="button" class="caret" data-open="${esc(sup.ext_id)}" title="${open ? "Свернуть" : "Раскрыть"} задания">${open ? "▾" : "▸"}</button>${esc(sup.ext_id)}<span class="badge mp">wb</span></td>
+    <td class="when">${esc(sup.created || "—")}</td>
+    <td class="ph"><span class="noph"></span></td>
+    <td class="artq"><b>${rows.reduce((a, r) => a + Number(r.qty || 0), 0)} шт</b></td>
+    <td class="nm">${esc(bits.join(" · "))}</td>
+    <td class="trk">${sup.state === "delivered" ? "передана" : "на сборке"}</td>
+    <td class="dest">${esc(rows.length && rows[0].office ? rows[0].office : "—")}${sup.cargo ? `<span class="cargo">${esc(sup.cargo)}</span>` : ""}</td>
+    <td class="sup"><span class="badge supply">${esc(sup.name || "поставка")}</span></td>
+    <td class="num">${rows.reduce((a, r) => a + Number(r.marks || 0), 0) || "—"}</td>
+  </tr>`;
+}
+
+function asmBodyHtml(rows) {
+  const bySupply = new Map();
+  const loose = [];
+  rows.forEach((r) => {
+    if (r.supply) {
+      if (!bySupply.has(r.supply)) bySupply.set(r.supply, []);
+      bySupply.get(r.supply).push(r);
+    } else {
+      loose.push(r);
+    }
+  });
+  let html = "";
+  (state.asmSupplies || []).forEach((sup) => {
+    const kids = bySupply.get(sup.ext_id);
+    if (!kids) return;
+    bySupply.delete(sup.ext_id);
+    html += asmSupplyHtml(sup, kids) + kids.map((r) => asmRowHtml(r, true)).join("");
+  });
+  // поставка есть у задания, но самой поставки в базе нет: заводили не мы
+  bySupply.forEach((kids) => { html += kids.map((r) => asmRowHtml(r, false)).join(""); });
+  return html + loose.map((r) => asmRowHtml(r, false)).join("");
 }
 
 function hidePrintMenu() {
@@ -1118,11 +1170,24 @@ function refreshAsmDock() {
   if (group !== "assembling") hidePrintMenu();
 }
 
+// после перерисовки тела таблицы галочки надо расставить заново: разметка новая,
+// а выбор оператора живёт в state
+function restoreAsmPick() {
+  $("aTbl").querySelectorAll("input[data-asm]").forEach((b) => {
+    b.checked = state.pickedAsm.has(Number(b.dataset.asm));
+  });
+  $("aTbl").querySelectorAll("input[data-supbox]").forEach((b) => {
+    const kids = state.asm.filter((r) => r.supply === b.dataset.supbox);
+    b.checked = kids.length > 0 && kids.every((r) => state.pickedAsm.has(r.id));
+  });
+  refreshAsmPick();
+}
+
 function refreshAsmPick() {
   const n = state.pickedAsm.size;
   const marks = state.asm.filter((r) => state.pickedAsm.has(r.id)).reduce((a, r) => a + (r.marks || 0), 0);
   $("aSel").textContent = n ? "Выбрано " + n : "Ничего не выбрано";
-  ["aWork", "aDone", "aUnwork", "aPrint", "aShipped", "aBackAsm"].forEach((id) => { $(id).disabled = !n; });
+  ["aWork", "aDone", "aUnwork", "aPrint", "aShipped", "aBoxQr", "aBackAsm"].forEach((id) => { $(id).disabled = !n; });
   // коды маркировки вносим по одному отправлению: у каждого свой набор
   $("aKiz").disabled = n !== 1;
   if (!n) hidePrintMenu();
@@ -1240,6 +1305,25 @@ $("aTbl").onclick = (e) => {
     loadAsm();
     return;
   }
+  const caret = e.target.closest("button[data-open]");
+  if (caret) {
+    const ext = caret.dataset.open;
+    if (state.asmOpen.has(ext)) state.asmOpen.delete(ext); else state.asmOpen.add(ext);
+    $("aTbl").querySelector("tbody").innerHTML = asmBodyHtml(state.asm);
+    restoreAsmPick();
+    return;
+  }
+  const supbox = e.target.closest("input[data-supbox]");
+  if (supbox) {
+    // отметка на поставке = отметка на всех её заданиях: кнопки работают по
+    // отправлениям, а Сергей мыслит поставкой
+    const ext = supbox.dataset.supbox;
+    const kids = state.asm.filter((r) => r.supply === ext);
+    kids.forEach((r) => { if (supbox.checked) state.pickedAsm.add(r.id); else state.pickedAsm.delete(r.id); });
+    restoreAsmPick();
+    return;
+  }
+  if (e.target.closest("tr.sup-head")) return;
   const tr = e.target.closest("tbody tr");
   const box = tr && tr.querySelector("input[data-asm]");
   if (!box) return;
@@ -1252,11 +1336,8 @@ $("aTbl").onclick = (e) => {
 $("aAll").onclick = () => {
   const on = $("aAll").checked;
   state.pickedAsm.clear();
-  $("aTbl").querySelectorAll("input[data-asm]").forEach((b) => {
-    b.checked = on;
-    if (on) state.pickedAsm.add(Number(b.dataset.asm));
-  });
-  refreshAsmPick();
+  if (on) state.asm.forEach((r) => state.pickedAsm.add(r.id));
+  restoreAsmPick();
 };
 
 async function asmWork(stateCode, nextGroup, label) {
@@ -1273,17 +1354,47 @@ async function asmWork(stateCode, nextGroup, label) {
   }
 }
 
+// поставки WB в выборке, по которым можно заводить короба: только те, что едут
+// на ПВЗ — в сортировочный центр товар сдают без коробов
+function pickedPickupSupplies() {
+  const exts = new Set(state.asm.filter((r) => state.pickedAsm.has(r.id) && r.supply).map((r) => r.supply));
+  return (state.asmSupplies || []).filter((s) => exts.has(s.ext_id) && s.pickup && s.state === "open");
+}
+
 async function asmDone() {
   const ids = [...state.pickedAsm];
   if (!ids.length) return;
+  let boxes = 0;
+  const supplies = pickedPickupSupplies();
+  if (supplies.length === 1) {
+    const sup = supplies[0];
+    const answer = await askNumber(
+      "Сколько коробов в поставке " + sup.ext_id + "?",
+      "WB печатает QR на короб, а не на поставку. Заведи столько коробов, сколько реально собрал:"
+        + " максимум " + (sup.orders + 1) + " при " + sup.orders + " заданиях, уже создано " + sup.boxes + "."
+        + " Состав короба площадке не передаётся, его заводит ПВЗ при приёмке. Ноль — пропустить.",
+      "Собрано",
+      Math.max(1, sup.boxes ? 1 : 1)
+    );
+    if (answer === false) return;
+    boxes = Number(answer) || 0;
+  } else if (supplies.length > 1) {
+    const okay = await ask(
+      "В выборке " + supplies.length + " поставки",
+      "Короба заводятся на одну поставку за раз: число у них своё. Отметить задания собранными без коробов?",
+      "Собрано без коробов"
+    );
+    if (!okay) return;
+  }
   $("aDone").disabled = true;
   const label = $("aDone").textContent;
   $("aDone").textContent = "Собираю…";
   say($("aMsg"), "Собираю на площадке…");
   try {
-    const res = await api("/api/assembly/ship", { method: "POST", body: JSON.stringify({ ids, split: true }) });
+    const res = await api("/api/assembly/ship", { method: "POST", body: JSON.stringify({ ids, split: true, boxes }) });
     const bits = [];
     if (res.shipped) bits.push("Ozon собрано на площадке: " + res.shipped);
+    if ((res.boxes || []).length) bits.push("коробов заведено: " + res.boxes.length + " (" + res.boxes.join(", ") + ")");
     if (res.marked) bits.push("отмечено складом: " + res.marked);
     const notes = (res.notes || []).join("\n");
     say($("aMsg"), (bits.join(" · ") || "Готово") + (notes ? "\n" + notes : ""), notes ? "" : "ok");
@@ -1296,7 +1407,42 @@ async function asmDone() {
   refreshAsmPick();
 }
 
-$("aWork").onclick = () => asmWork("assembling", "assembling", "Взято в сборку");
+// «Взять в сборку»: у WB это добавление в поставку, и шаг необратим — метода
+// вынуть задание из поставки в API нет. Предупреждаем до звонка наружу.
+async function asmTake() {
+  const ids = [...state.pickedAsm];
+  if (!ids.length) return;
+  const wb = state.asm.filter((r) => state.pickedAsm.has(r.id) && r.marketplace === "wb" && r.kind === "fbs");
+  if (wb.length) {
+    const okay = await ask(
+      "Открыть поставку WB на " + wb.length + " заданий?",
+      "Своего «взять в сборку» у WB нет: задание уходит в сборку вместе с поставкой, поэтому поставка откроется сама."
+        + " Шаг необратимый — вынуть задание из поставки площадка не даёт, «Вернуть в новые» снимет только нашу отметку."
+        + " Задания с разной габаритностью уйдут в разные поставки: WB держит в одной поставке только один тип.",
+      "Взять в сборку"
+    );
+    if (!okay) return;
+  }
+  $("aWork").disabled = true;
+  const label = $("aWork").textContent;
+  $("aWork").textContent = "Беру…";
+  say($("aMsg"), "Открываю поставку и беру в сборку…");
+  try {
+    const res = await api("/api/assembly/take", { method: "POST", body: JSON.stringify({ ids }) });
+    const bits = (res.supplies || []).map((s) => s.ext_id + ": " + s.orders);
+    if (res.marked) bits.push("отмечено складом: " + res.marked);
+    const notes = (res.notes || []).join("\n");
+    say($("aMsg"), (bits.join(" · ") || "Готово") + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+    state.asmGroup = "assembling";
+    await loadAsm();
+  } catch (e) {
+    say($("aMsg"), e.message, "bad");
+  }
+  $("aWork").textContent = label;
+  refreshAsmPick();
+}
+
+$("aWork").onclick = asmTake;
 $("aDone").onclick = asmDone;
 
 // коды маркировки: склад пикает сканером, отправляем на площадку набором
@@ -1413,8 +1559,65 @@ $("kizSend").onclick = async () => {
   $("kizSend").disabled = false;
 };
 $("aUnwork").onclick = () => asmWork("", "new", "Возвращено в новые");
-$("aShipped").onclick = () => asmWork("shipped", "shipped", "Отгружено");
 $("aBackAsm").onclick = () => asmWork("assembling", "assembling", "Возвращено в сборку");
+
+// поставки WB из выборки, ещё не переданные в доставку
+function pickedOpenSupplies() {
+  const exts = new Set(state.asm.filter((r) => state.pickedAsm.has(r.id) && r.supply).map((r) => r.supply));
+  return (state.asmSupplies || []).filter((s) => exts.has(s.ext_id) && s.state === "open");
+}
+
+// «Отгружено» у WB — это передача поставки в доставку, шаг необратимый. У Ozon
+// поставок нет, там остаётся складская отметка.
+async function asmShipped() {
+  const ids = [...state.pickedAsm];
+  if (!ids.length) return;
+  const supplies = pickedOpenSupplies();
+  for (const sup of supplies) {
+    const bad = sup.loose && sup.pickup ? " Заданий без короба: " + sup.loose + "." : "";
+    const okay = await ask(
+      "Передать поставку " + sup.ext_id + " в доставку?",
+      sup.client + " · " + sup.orders + " заданий, " + sup.boxes + " мест." + bad
+        + " Шаг необратимый: WB закроет поставку, задания уйдут в «В доставке», добавить в неё больше ничего нельзя."
+        + " QR поставки появится только после этого.",
+      "Передать"
+    );
+    if (!okay) {
+      say($("aMsg"), "Отменил: поставка " + sup.ext_id + " осталась на сборке.");
+      return;
+    }
+    try {
+      await api("/api/wb/supplies/" + sup.id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true, force: true }) });
+      say($("aMsg"), "Поставка " + sup.ext_id + " передана в доставку. Качаю QR…", "ok");
+      await downloadXlsx("/api/wb/supplies/" + sup.id + "/qr.pdf", [], "QR_поставки.pdf", "", null, {});
+    } catch (e) {
+      say($("aMsg"), e.message, "bad");
+      await loadAsm();
+      return;
+    }
+  }
+  await asmWork("shipped", "shipped", "Отгружено");
+}
+
+$("aShipped").onclick = asmShipped;
+
+$("aBoxQr").onclick = async () => {
+  const supplies = pickedOpenSupplies();
+  if (supplies.length !== 1) {
+    say($("aMsg"), supplies.length ? "Выбери задания одной поставки: QR коробов печатается по поставке." : "В выборке нет открытой поставки WB.", "bad");
+    return;
+  }
+  $("aBoxQr").disabled = true;
+  say($("aMsg"), "Запрашиваю QR коробов у WB…");
+  try {
+    const res = await downloadXlsx("/api/wb/supplies/" + supplies[0].id + "/boxes.pdf", [], "QR_коробов.pdf", "", null, {});
+    const notes = decodeURIComponent(res.headers.get("X-Label-Notes") || "");
+    say($("aMsg"), "QR коробов в файле: " + (res.headers.get("X-Label-Pages") || "?") + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+  } catch (e) {
+    say($("aMsg"), e.message, "bad");
+  }
+  refreshAsmPick();
+};
 
 async function printAsm(mode) {
   const ids = [...state.pickedAsm];
@@ -1462,6 +1665,22 @@ $("aPicking").onclick = () => {
   say($("aMsg"), "Лист подбора собран по текущему фильтру: вкладка «" + asmGroupLabel() + "».", "ok");
 };
 
+// недельный отчёт клиенту: артикулы по строкам, дни по столбцам. Период берём
+// из фильтра «Принят», контрагент — обязателен, отчёт уходит наружу
+$("aWeekly").onclick = () => {
+  if (!$("aClient").value) {
+    say($("aMsg"), "Выбери контрагента: недельный отчёт собирается по одному.", "bad");
+    return;
+  }
+  const params = new URLSearchParams({
+    client_id: $("aClient").value,
+    date_from: ($("aSince").value || "").slice(0, 10),
+    date_to: ($("aUntil").value || "").slice(0, 10),
+  });
+  window.location = "/api/shipments/weekly.xlsx?" + params.toString();
+  say($("aMsg"), "Отчёт собран за период из фильтра «Принят». Макет таблицы сверь с Димой до отправки клиенту.", "ok");
+};
+
 $("aSync").onclick = async () => {
   $("aSync").disabled = true;
   $("aSync").textContent = "Обновляю…";
@@ -1479,20 +1698,40 @@ $("aSync").onclick = async () => {
 // Окно подтверждения для необратимых шагов: сборка на площадке и передача
 // поставки в доставку. Обещание разрешается кнопкой, а не ответом сервера.
 let askResolve = null;
+let askIsNum = false;
 function ask(title, text, okLabel) {
+  askIsNum = false;
+  $("askNum").hidden = true;
   $("askTitle").textContent = title;
   $("askText").textContent = text;
   $("askYes").textContent = okLabel || "Подтверждаю";
   $("askModal").classList.add("on");
   return new Promise((resolve) => { askResolve = resolve; });
 }
+
+// то же окно, но с числом: «сколько коробов» спрашивается ровно здесь, на
+// «Собрано», как договорились с Сергеем
+function askNumber(title, text, okLabel, value) {
+  const promise = ask(title, text, okLabel);
+  askIsNum = true;
+  $("askNum").value = value || 1;
+  $("askNum").hidden = false;
+  $("askNum").focus();
+  $("askNum").select();
+  return promise;
+}
+
 function askDone(answer) {
   $("askModal").classList.remove("on");
-  if (askResolve) askResolve(answer);
+  $("askNum").hidden = true;
+  const value = answer && askIsNum ? Math.max(0, Number($("askNum").value) || 0) : answer;
+  if (askResolve) askResolve(value);
   askResolve = null;
+  askIsNum = false;
 }
 $("askYes").onclick = () => askDone(true);
 $("askNo").onclick = () => askDone(false);
+$("askNum").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); askDone(true); } };
 $("askModal").onclick = (e) => { if (e.target === $("askModal")) askDone(false); };
 
 

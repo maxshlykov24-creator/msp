@@ -318,6 +318,15 @@ table.asm-tbl td.sup .badge{margin-left:0;margin-right:4px}
 table.asm-tbl td.dest{max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 table.asm-tbl td.dest .cargo{display:block;font-size:10px;color:var(--mute-2)}
 
+/* поставка WB строкой во главе своих заданий */
+table.asm-tbl tr.sup-head td{background:rgba(59,116,214,.07);font-weight:600;border-top:1px solid var(--line)}
+table.asm-tbl tr.sup-head td.nm{max-width:none;color:var(--mute);font-weight:500}
+table.asm-tbl tr.sup-head .caret{
+  background:none;border:0;padding:0 6px 0 0;font:inherit;color:var(--accent);cursor:pointer;
+}
+table.asm-tbl tr.child td.ext{padding-left:26px}
+table.asm-tbl tr.child td.client{color:var(--mute-2)}
+
 /* поставки WB: слева список поставок, справа грузоместа и состав */
 #wbModal .modal-card{max-width:1240px}
 #wbModal.is-empty .modal-card{max-width:520px}

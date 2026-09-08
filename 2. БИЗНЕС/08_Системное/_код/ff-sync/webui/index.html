@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=54">
+<link rel="stylesheet" href="/ui/app.css?v=55">
 </head>
 <body>
 
@@ -215,6 +215,7 @@
         <button class="btn-ghost" id="aSupplies" type="button">Поставки WB</button>
         <button class="btn-ghost" id="aSync" type="button">Обновить отправления</button>
         <button class="btn-ghost" id="aPicking" type="button">Лист подбора</button>
+        <button class="btn-ghost" id="aWeekly" type="button">Отгружено за неделю</button>
         <button class="btn-ghost" id="shReport" type="button" disabled>Отчёт по отгрузкам</button>
         <button class="btn-ghost" id="shExport" type="button" disabled>Выгрузить КМ</button>
       </div>
@@ -262,6 +263,7 @@
           </div>
           <div class="asm-acts" id="aActsReady" hidden>
             <button class="btn btn-file" id="aShipped" type="button" disabled>Отгружено</button>
+            <button class="btn btn-file" id="aBoxQr" type="button" disabled>Печать коробов</button>
             <button class="btn btn-file" id="aBackAsm" type="button" disabled>Вернуть в сборку</button>
           </div>
         </div>
@@ -650,6 +652,7 @@
   <div class="glass modal-card">
     <h3 id="askTitle">Точно?</h3>
     <p class="psub" id="askText"></p>
+    <input id="askNum" class="wb-amount" type="number" min="1" max="200" value="1" hidden>
     <div class="modal-actions">
       <button class="btn-ghost" id="askNo" type="button">Отмена</button>
       <button class="btn" id="askYes" type="button">Подтверждаю</button>
@@ -675,6 +678,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=54"></script>
+<script src="/ui/app.js?v=55"></script>
 </body>
 </html>
