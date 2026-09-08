@@ -171,6 +171,6 @@ def subscribe_webhook(
 ) -> httpx.Response:
     settings = settings or get_settings()
     url = f"{api_base(settings)}/api/v4/webhooks"
-    body = [{"destination": destination, "settings": events}]
+    body = {"destination": destination, "settings": events}
     with httpx.Client(timeout=30.0) as client:
         return client.post(url, json=body, headers=_headers(access_token))

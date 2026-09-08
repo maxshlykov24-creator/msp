@@ -53,20 +53,36 @@ def find_leads_by_phone(phone: str, token: str, settings) -> list[dict[str, Any]
         return ((r.json() or {}).get("_embedded") or {}).get("leads") or []
 
 
-def pick_lead(leads: list[dict[str, Any]], visited: Optional[datetime]) -> Optional[dict[str, Any]]:
-    """Сделка, ближайшая по времени к визиту. Без даты визита — самая свежая."""
+def pick_lead(
+    leads: list[dict[str, Any]], visited: Optional[datetime], max_gap_days: int
+) -> tuple[Optional[dict[str, Any]], str]:
+    """Сделка, ближайшая по времени к визиту.
+
+    Разрыв больше max_gap_days означает, что сделку завели не по этому обращению
+    (звонок, старая заявка) — метки чата туда не пишем.
+    """
     if not leads:
-        return None
+        return None, "сделок нет"
     if visited is None:
-        return max(leads, key=lambda x: x.get("created_at") or 0)
+        return max(leads, key=lambda x: x.get("created_at") or 0), "без даты визита"
     target = visited.timestamp()
-    return min(leads, key=lambda x: abs((x.get("created_at") or 0) - target))
+    best = min(leads, key=lambda x: abs((x.get("created_at") or 0) - target))
+    gap_days = abs((best.get("created_at") or 0) - target) / 86400
+    if gap_days > max_gap_days:
+        return None, f"ближайшая сделка в {gap_days:.0f} дн. от визита"
+    return best, f"разрыв {gap_days:.1f} дн."
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="писать в amoCRM (иначе только отчёт)")
     ap.add_argument("--limit", type=int, default=0, help="обработать не больше N бесед")
+    ap.add_argument(
+        "--max-gap-days",
+        type=int,
+        default=3,
+        help="максимальный разрыв между визитом и созданием сделки",
+    )
     ap.add_argument("--report", default="", help="путь для JSON-отчёта")
     args = ap.parse_args()
 
@@ -79,6 +95,7 @@ def main() -> int:
         "без_меток": 0,
         "без_телефона": 0,
         "сделка_не_найдена": 0,
+        "разрыв_велик": 0,
         "уже_заполнено": 0,
         "обновлено": 0,
         "ошибок": 0,
@@ -117,9 +134,11 @@ def main() -> int:
 
             try:
                 leads = find_leads_by_phone(cm.client_phone, token, settings)
-                lead = pick_lead(leads, visit_dt(payload))
+                lead, why = pick_lead(leads, visit_dt(payload), args.max_gap_days)
                 if lead is None:
                     stats["сделка_не_найдена"] += 1
+                    if leads:
+                        stats["разрыв_велик"] += 1
                     continue
                 res = apply_tracking_to_lead(
                     db, cm, int(lead["id"]), token, dry_run=not args.apply
@@ -135,6 +154,7 @@ def main() -> int:
                             "phone": "***" + (cm.client_phone or "")[-4:],
                             "written": res["written"],
                             "skipped": res.get("skipped") or {},
+                            "match": why,
                         }
                     )
                 else:
