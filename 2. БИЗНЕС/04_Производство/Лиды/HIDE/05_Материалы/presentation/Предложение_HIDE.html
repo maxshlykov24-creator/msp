@@ -602,16 +602,16 @@
     background:linear-gradient(100deg, transparent 34%, rgba(233,220,184,.09) 48%, rgba(249,242,236,.05) 52%, transparent 66%);
     transform:translate3d(-38%,0,0);
   }
-  .flare.fwd{animation:flare-fwd .72s var(--ease) 1}
-  .flare.back{animation:flare-back .72s var(--ease) 1}
+  .flare.fwd{animation:flare-fwd 1.2s var(--ease) 1}
+  .flare.back{animation:flare-back 1.2s var(--ease) 1}
   @keyframes flare-fwd{
     0%{opacity:0;transform:translate3d(-42%,0,0)}
-    20%{opacity:1}
+    16%{opacity:1}
     100%{opacity:0;transform:translate3d(42%,0,0)}
   }
   @keyframes flare-back{
     0%{opacity:0;transform:translate3d(42%,0,0) scaleX(-1)}
-    20%{opacity:1}
+    16%{opacity:1}
     100%{opacity:0;transform:translate3d(-42%,0,0) scaleX(-1)}
   }
 
@@ -632,10 +632,10 @@
   .deck{height:100vh;width:100vw;position:relative;z-index:1}
   .slide{
     position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;
-    padding:6.5vh 8vw 96px;animation:fade .4s ease; perspective:1200px;
+    padding:6.5vh 8vw 96px;animation:fade .75s ease; perspective:1200px;
   }
   .slide.active{display:flex}
-  body.nav-back .slide{animation:fade-back .4s ease}
+  body.nav-back .slide{animation:fade-back .75s ease}
   @keyframes fade{from{opacity:0;transform:translate3d(26px,0,0)}to{opacity:1;transform:none}}
   @keyframes fade-back{from{opacity:0;transform:translate3d(-26px,0,0)}to{opacity:1;transform:none}}
 
