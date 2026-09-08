@@ -178,7 +178,14 @@ FONT_PATHS = (
     "/Library/Fonts/Arial Unicode.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
 )
+BOLD_PATHS = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/Library/Fonts/Arial Bold.ttf",
+)
 _font_name = None
+_bold_name = None
 
 
 def _font():
@@ -206,6 +213,32 @@ def _font():
     return _font_name
 
 
+def _font_bold():
+    """Жирное начертание для наименования на этикетке товара.
+
+    На образце склада наименование выделено, остальные строки обычные. Нет
+    жирного файла — возвращаем обычный шрифт: этикетка важнее выделения.
+    """
+    global _bold_name
+    if _bold_name:
+        return _bold_name
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    for path in BOLD_PATHS:
+        try:
+            face = TTFont("FFLabelBold", path)
+            if not all(face.face.charToGlyph.get(ord(ch)) for ch in "Артикул"):
+                continue
+            pdfmetrics.registerFont(face)
+            _bold_name = "FFLabelBold"
+            return _bold_name
+        except Exception:
+            continue
+    _bold_name = _font()
+    return _bold_name
+
+
 def _shorten(text, limit):
     text = re.sub(r"\s+", " ", str(text or "")).strip()
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -225,11 +258,53 @@ def ean13_valid(code):
     return (10 - total % 10) % 10 == int(code[12])
 
 
-def product_label(c, row, font):
-    """Этикетка товара: штрихкод позиции, артикул, наименование.
+def _wrap(text, font, size, width, lines):
+    """Разбить строку по словам под ширину этикетки. Лишнее обрезаем многоточием."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
 
-    Нужна тем, у кого штрихкод не проклеен заранее. Рисуем сами — у Ozon
-    параметра «добавить штрихкод товара» в API нет.
+    words = re.sub(r"\s+", " ", str(text or "")).strip().split(" ")
+    out = []
+    cur = ""
+    for word in words:
+        if not word:
+            continue
+        probe = (cur + " " + word).strip()
+        if cur and stringWidth(probe, font, size) > width:
+            out.append(cur)
+            cur = word
+            if len(out) == lines:
+                break
+        else:
+            cur = probe
+    if cur and len(out) < lines:
+        out.append(cur)
+    if len(out) == lines and cur and out[-1] != cur:
+        out[-1] = _shorten(out[-1] + " " + cur, len(out[-1]))
+    return out[:lines]
+
+
+def _centred_pair(c, cx, y, head, head_font, value, value_font, size):
+    """«Подпись: значение» по центру, подпись обычная, значение жирное."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    total = stringWidth(head, head_font, size) + stringWidth(value, value_font, size)
+    x = cx - total / 2
+    c.setFont(head_font, size)
+    c.drawString(x, y, head)
+    c.setFont(value_font, size)
+    c.drawString(x + stringWidth(head, head_font, size), y, value)
+
+
+def product_label(c, row, font):
+    """Этикетка товара по образцу склада.
+
+    Сверху штрихкод с цифрами под ним, ниже по центру контрагент, наименование,
+    бренд, цвет, размер и артикул. Порядок и состав полей — с образца, который
+    прислал Сергей: один стандарт на всех контрагентов, под каждого не
+    подстраиваемся. Пустые поля не печатаются, иначе на ленте остаются висеть
+    подписи без значений.
+
+    Рисуем сами: у Ozon параметра «добавить штрихкод товара» в API нет.
     """
     from reportlab.graphics.barcode import code128, eanbc
 
@@ -239,9 +314,9 @@ def product_label(c, row, font):
     drawn = False
     if ean13_valid(code):
         try:
-            bc = eanbc.Ean13BarcodeWidget(code, barHeight=13 * MM, humanReadable=True)
-            d = bc.asDrawing(w * 0.86, 15 * MM)
-            d.drawOn(c, w * 0.07, h * 0.30)
+            bc = eanbc.Ean13BarcodeWidget(code, barHeight=9 * MM, humanReadable=True)
+            d = bc.asDrawing(w * 0.80, 11.5 * MM)
+            d.drawOn(c, w * 0.10, h - 13 * MM)
             drawn = True
         except Exception:
             drawn = False
@@ -256,22 +331,40 @@ def product_label(c, row, font):
             if raw:
                 hint = "артикул, штрихкода нет"
         if raw:
-            bc = code128.Code128(raw, barHeight=12 * MM, barWidth=0.33 * MM, humanReadable=True)
-            bc.drawOn(c, max(2 * MM, (w - bc.width) / 2), h * 0.30)
+            bc = code128.Code128(raw, barHeight=8.5 * MM, barWidth=0.30 * MM, humanReadable=True)
+            bc.drawOn(c, max(2 * MM, (w - bc.width) / 2), h - 13 * MM)
             drawn = True
     if not drawn:
         c.setFont(font, 8)
-        c.drawCentredString(w / 2, h * 0.45, "нет штрихкода и артикула")
+        c.drawCentredString(w / 2, h - 9 * MM, "нет штрихкода и артикула")
+
+    # Текстовый блок по центру. Наименование бывает длинным, поэтому строки
+    # набираем заранее и высоту строки считаем от того, сколько их вышло.
+    # Подписи полей обычные, значения жирные — как на образце склада.
+    bold = _font_bold()
+    body = []
     if hint:
-        # ниже цифр под штрихкодом (те идут примерно с 9.5 мм) и выше имени клиента
-        c.setFont(font, 5)
-        c.drawCentredString(w / 2, 5.6 * MM, hint)
-    c.setFont(font, 8)
-    c.drawString(3 * MM, h - 6 * MM, _shorten(row.get("article"), 26))
-    c.setFont(font, 6)
-    c.drawString(3 * MM, h - 9.5 * MM, _shorten(row.get("name"), 46))
-    c.setFont(font, 5.5)
-    c.drawString(3 * MM, 2.5 * MM, _shorten(row.get("client"), 40))
+        # предупреждение идёт строкой блока, а не под штрихкодом: там цифры
+        # Code128 рисует сам метод, и подпись легла бы прямо на них
+        body.append((hint, font, ""))
+    body += [(text, font, "") for text in _wrap(row.get("client"), font, 7, w - 5 * MM, 1)]
+    body += [(text, bold, "") for text in _wrap(row.get("name"), font, 7, w - 5 * MM, 2)]
+    for title, key in (("Бренд", "brand"), ("Цвет", "color"), ("Размер", "size"), ("Артикул", "article")):
+        val = str(row.get(key) or "").strip()
+        if val:
+            body.append(("%s: " % title, font, _shorten(val, 24)))
+
+    top = h - 15.5 * MM
+    step = min(2.9 * MM, (top - 1.5 * MM) / max(1, len(body)))
+    size = min(7.0, step / MM * 2.5)
+    y = top
+    for text, face, value in body:
+        y -= step
+        if value:
+            _centred_pair(c, w / 2, y, text, font, value, bold, size)
+        else:
+            c.setFont(face, size)
+            c.drawCentredString(w / 2, y, text)
     c.showPage()
 
 

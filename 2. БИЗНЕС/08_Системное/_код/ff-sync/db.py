@@ -118,6 +118,9 @@ def migrate(conn):
         ("subject", "TEXT"),
         ("need_kiz", "INTEGER"),
         ("image", "TEXT"),
+        # бренд и цвет нужны только этикетке товара: склад клеит их по образцу
+        ("brand", "TEXT"),
+        ("color", "TEXT"),
     ):
         if col not in cache:
             conn.execute("ALTER TABLE catalog_cache ADD COLUMN %s %s" % (col, decl))
@@ -126,6 +129,9 @@ def migrate(conn):
     for col in (
         "status_group", "work_state", "accepted_at", "deadline_at", "track", "warehouse", "image",
         "supply_ext", "trbx_ext",
+        # куда WB велит везти задание и его габаритный тип: от них зависит,
+        # ПВЗ это или сортировочный центр и нужны ли грузоместа
+        "office", "cargo_type",
     ):
         if col not in ships:
             conn.execute("ALTER TABLE shipments ADD COLUMN %s TEXT" % col)
@@ -426,8 +432,8 @@ def replace_cache(client_id, cabinet_id, rows):
     conn.execute("DELETE FROM catalog_cache WHERE cabinet_id = ?", (cabinet_id,))
     conn.executemany(
         "INSERT INTO catalog_cache (client_id, cabinet_id, marketplace, ext_key, ext_article, "
-        "ext_barcode, barcode_norm, name, size, gtin, tracking_type, subject, need_kiz, image) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "ext_barcode, barcode_norm, name, size, brand, color, gtin, tracking_type, subject, need_kiz, image) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
                 client_id,
@@ -439,6 +445,8 @@ def replace_cache(client_id, cabinet_id, rows):
                 barcode_norm(row.get("ext_barcode")),
                 row.get("name") or "",
                 row.get("size") or "",
+                row.get("brand") or "",
+                row.get("color") or "",
                 row.get("gtin") or "",
                 row.get("tracking_type") or "",
                 row.get("subject") or "",
@@ -1018,7 +1026,11 @@ def upsert_order_log(cabinet_id, ext_order_id, ms_order_id, result, error, creat
 
 # Поля отправления, которые приходят с площадки. work_state сюда не входит:
 # это наша локальная отметка оператора, и выгрузка её не трогает.
-SHIP_EXTRA = ("status_group", "accepted_at", "deadline_at", "track", "warehouse", "image")
+SHIP_EXTRA = (
+    "status_group", "accepted_at", "deadline_at", "track", "warehouse", "image",
+    # куда WB велит везти задание и его габаритный тип
+    "office", "cargo_type",
+)
 
 
 def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, shipped_at, article, barcode, name, qty, ms_order_id, marks_count, pulled_at, extra=None):
@@ -1122,12 +1134,12 @@ def delete_shipments_by_ext(cabinet_id, kind, ext_ids):
     return len(ids)
 
 
-def insert_wb_supply(client_id, cabinet_id, ext_id, name, created_at, author):
+def insert_wb_supply(client_id, cabinet_id, ext_id, name, created_at, author, cargo_type=""):
     conn = connect()
     cur = conn.execute(
-        "INSERT INTO wb_supplies (client_id, cabinet_id, ext_id, name, created_at, author) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (client_id, cabinet_id, ext_id, name or "", created_at, author or ""),
+        "INSERT INTO wb_supplies (client_id, cabinet_id, ext_id, name, created_at, author, cargo_type) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (client_id, cabinet_id, ext_id, name or "", created_at, author or "", str(cargo_type or "")),
     )
     conn.commit()
     sid = cur.lastrowid

@@ -240,6 +240,17 @@ def ozon_marks(detail):
     return uniq_marks(bag)
 
 
+def wb_office(order):
+    """Точка сдачи задания так, как её назвал WB.
+
+    Выбрать её нельзя: в методах поставки FBS параметра точки нет, а
+    `destinationOfficeId` поставки только читается. Задание приносит список
+    офисов, куда его примут, — его и показываем сборщику.
+    """
+    names = [str(x).strip() for x in (order.get("offices") or []) if str(x or "").strip()]
+    return ", ".join(names[:3])
+
+
 def handle_wb_fbs(client, cab, orders):
     n = 0
     ids = [str(o.get("id") or "") for o in orders if o.get("id")]
@@ -273,6 +284,11 @@ def handle_wb_fbs(client, cab, orders):
                 "track": "",
                 "warehouse": "",
                 "image": cat["image"],
+                # куда везти задание решает WB, а не мы: в API поставки параметра
+                # точки сдачи нет вовсе. Габаритный тип отделяет ПВЗ от
+                # сортировочного центра и решает, нужны ли грузоместа
+                "office": wb_office(order),
+                "cargo_type": str(order.get("cargoType") or ""),
             },
         )
     return n

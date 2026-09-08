@@ -22,6 +22,7 @@ from db import (
     insert_wb_supply,
     list_supply_shipments,
     list_wb_boxes,
+    list_wb_supplies,
     mark_wb_supply_delivered,
     set_shipment_supply,
     set_work_state,
@@ -122,6 +123,81 @@ def assemble(ship_ids, split=True):
         notes.extend(res["notes"])
     marked = set_work_state(rest, "ready") if rest else 0
     return {"shipped": shipped, "marked": marked, "notes": notes}
+
+
+def take(ship_ids, author=""):
+    """Кнопка «Взять в сборку».
+
+    Задания WB сразу уходят в поставку: своего «взять» у WB нет, задание
+    попадает в сборку в момент добавления в поставку. Поставку заводим сами,
+    отдельной кнопки больше не нужно.
+
+    Группируем по кабинету и габаритному типу: поставка WB держит только один
+    `cargoType`, смешанную площадка не примет. Ozon-заданиям поставка не нужна,
+    для них это по-прежнему складская отметка.
+
+    Шаг у WB необратимый: задание уходит из `new` в `confirm`, а метода вынуть
+    его из поставки в API нет. Поэтому «Вернуть в новые» снимет нашу отметку,
+    но статус на площадке останется — об этом предупреждаем оператора.
+    """
+    rows = get_shipments_by_ids(ship_ids)
+    if not rows:
+        raise ValueError("отправления не найдены")
+    notes = []
+    groups = {}
+    rest = []
+    for row in rows:
+        if row["marketplace"] == "wb" and row["kind"] == "fbs":
+            cargo = str((row["cargo_type"] if "cargo_type" in row.keys() else "") or "")
+            groups.setdefault((row["client_id"], row["cabinet_id"], cargo), []).append(row)
+        else:
+            rest.append(row["id"])
+    supplies = []
+    for (client_id, cab_id, cargo), group in groups.items():
+        ready = [r for r in group if (r["supply_ext"] or "")]
+        fresh = [r for r in group if not (r["supply_ext"] or "")]
+        if ready:
+            notes.append(
+                "Уже в поставке, повторно не кладу: %s." % ", ".join(r["ext_id"] for r in ready)
+            )
+            set_work_state([r["id"] for r in ready], "assembling")
+        if not fresh:
+            continue
+        try:
+            supply = _open_supply(client_id, cab_id, cargo, author)
+        except ValueError as exc:
+            notes.append("%s заданий без поставки: %s" % (len(fresh), exc))
+            continue
+        res = add_orders(supply["id"], [r["id"] for r in fresh])
+        notes.extend(res["notes"])
+        if res["added"]:
+            supplies.append({"id": supply["id"], "ext_id": supply["ext_id"], "orders": res["added"]})
+    marked = set_work_state(rest, "assembling") if rest else 0
+    return {"supplies": supplies, "marked": marked, "notes": notes}
+
+
+def _open_supply(client_id, cab_id, cargo, author):
+    """Открытая поставка кабинета под этот габаритный тип, иначе новая.
+
+    Заводить по поставке на каждое нажатие нельзя: смена уходит одной поставкой,
+    а Сергей отбирает задания несколькими заходами.
+    """
+    import statuses
+
+    for row in list_wb_supplies(client_id=client_id, state="open"):
+        if row["cabinet_id"] != cab_id:
+            continue
+        if str(row["cargo_type"] or "") != cargo:
+            continue
+        return {"id": row["id"], "ext_id": row["ext_id"]}
+    cab = get_cabinet(cab_id)
+    if not cab or not cab["token"]:
+        raise ValueError("у кабинета WB нет токена, поставку не открыть")
+    mark = statuses.CARGO.get(cargo, ("", ""))[0]
+    name = "%s%s" % (datetime.now(MSK).strftime("Смена %d.%m %H:%M"), " · " + mark if mark else "")
+    ext = wb_supply.create(cab, name)
+    sid = insert_wb_supply(int(client_id), cab_id, ext, name, now_iso(), author, cargo_type=cargo)
+    return {"id": sid, "ext_id": ext}
 
 
 # --- WB: поставка -------------------------------------------------------

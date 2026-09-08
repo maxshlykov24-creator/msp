@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const state = {
   clients: [], lots: [], ships: [], asm: [],
-  picked: new Set(), pickedShip: new Set(), pickedAsm: new Set(), asmGroup: "new",
+  picked: new Set(), pickedShip: new Set(), pickedAsm: new Set(), asmGroup: "new", asmGroups: [],
   // поставки WB: выбранная поставка, выбранное грузоместо и отмеченные задания внутри
   wbSupplies: [], wbSupply: 0, wbBox: 0, wbPicked: new Set(), wbDetail: null,
 };
@@ -1041,6 +1041,10 @@ function tintMp(viewId, navId) {
   $(viewId).classList.toggle("theme-wb", mp === "wb");
 }
 
+// колонок в таблице «Заказов»: считаем один раз, чтобы пустая строка и строка
+// поставки не разъезжались с шапкой при добавлении колонки
+const ASM_COLS = 11;
+
 function asmQuery(group) {
   const params = new URLSearchParams();
   if ($("aClient").value) params.set("client_id", $("aClient").value);
@@ -1057,9 +1061,15 @@ function asmQuery(group) {
 }
 
 function asmTabs(groups) {
+  state.asmGroups = groups;
   $("aTabs").innerHTML = groups.map((g) => `<button type="button" data-group="${g.code}"${g.code === state.asmGroup ? ' class="active"' : ""}>
     ${esc(g.label)}<span class="cnt">${g.count}</span>
   </button>`).join("");
+}
+
+function asmGroupLabel() {
+  const hit = (state.asmGroups || []).find((g) => g.code === state.asmGroup);
+  return hit ? hit.label : state.asmGroup;
 }
 
 async function loadAsm() {
@@ -1078,7 +1088,7 @@ async function loadAsm() {
   refreshAsmPick();
   const body = $("aTbl").querySelector("tbody");
   if (!res.rows.length) {
-    body.innerHTML = `<tr><td colspan="10" class="empty">Здесь пусто. Проверь период и нажми «Обновить отправления».</td></tr>`;
+    body.innerHTML = `<tr><td colspan="${ASM_COLS}" class="empty">Здесь пусто. Проверь период и нажми «Обновить отправления».</td></tr>`;
     return;
   }
   body.innerHTML = res.rows.map((r) => `<tr>
@@ -1090,6 +1100,7 @@ async function loadAsm() {
     <td class="artq"><b>${num(r.qty, 0)} шт</b> · ${r.article ? `<button type="button" class="artlink" data-art="${esc(r.article)}" title="Найти этот артикул">${esc(r.article)}</button>` : "—"}</td>
     <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
     <td class="trk">${esc(r.track || "—")}</td>
+    <td class="dest">${r.office ? esc(r.office) : "—"}${r.cargo ? `<span class="cargo">${esc(r.cargo)}</span>` : ""}</td>
     <td class="sup">${r.supply ? `<span class="badge supply">${esc(r.supply)}</span>` : "—"}${r.box ? `<span class="badge box">${esc(r.box)}</span>` : ""}</td>
     <td class="num">${r.marks || "—"}</td>
   </tr>`).join("");
@@ -1443,6 +1454,13 @@ $("aPrintMenu").onclick = (e) => {
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".print-wrap")) hidePrintMenu();
 });
+
+// лист подбора идёт по фильтру, а не по галочкам: смена отбирается контрагентом
+// и вкладкой, а сборщику нужна сумма по артикулу, а не список номеров
+$("aPicking").onclick = () => {
+  window.location = "/api/assembly/picking.xlsx?" + asmQuery(state.asmGroup);
+  say($("aMsg"), "Лист подбора собран по текущему фильтру: вкладка «" + asmGroupLabel() + "».", "ok");
+};
 
 $("aSync").onclick = async () => {
   $("aSync").disabled = true;

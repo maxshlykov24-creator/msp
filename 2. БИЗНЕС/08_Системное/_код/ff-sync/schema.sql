@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS catalog_cache (
     barcode_norm TEXT,
     name TEXT,
     size TEXT,
+    brand TEXT,
+    color TEXT,
     gtin TEXT,
     tracking_type TEXT,
     subject TEXT,
@@ -239,6 +241,8 @@ CREATE TABLE IF NOT EXISTS shipments (
     image TEXT,
     supply_ext TEXT,
     trbx_ext TEXT,
+    office TEXT,
+    cargo_type TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );
@@ -260,6 +264,8 @@ CREATE TABLE IF NOT EXISTS wb_supplies (
     created_at TEXT NOT NULL,
     delivered_at TEXT,
     author TEXT,
+    -- габаритный тип заданий поставки: WB держит в одной поставке только один
+    cargo_type TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );

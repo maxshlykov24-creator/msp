@@ -10,6 +10,12 @@ from net import OZON_BASE, req, ozon_headers, wb_headers
 from products_push import gtin14
 
 WB_CARDS = "https://content-api.wildberries.ru/content/v2/get/cards/list"
+
+# Атрибуты Ozon приходят числами без названий, поэтому идентификаторы фиксируем
+# здесь. Это общие для всех категорий поля справочника Ozon.
+OZON_ATTR_BRAND = 85
+OZON_ATTR_COLOR = 10096
+
 FIELDS = [
     "cabinet_id",
     "marketplace",
@@ -21,6 +27,8 @@ FIELDS = [
     "chrtId",
     "offer_id",
     "size",
+    "brand",
+    "color",
     "Привезено",
     "Литраж_л",
     "gtin",
@@ -96,6 +104,21 @@ def pull_wb(token):
     return cards
 
 
+def wb_color(card):
+    """Цвет карточки WB. Отдельного поля нет — лежит характеристикой."""
+    for ch in card.get("characteristics") or []:
+        if not isinstance(ch, dict):
+            continue
+        if "цвет" not in str(ch.get("name") or "").lower():
+            continue
+        val = ch.get("value")
+        if isinstance(val, list):
+            return ", ".join(str(x) for x in val if x)
+        if val:
+            return str(val)
+    return ""
+
+
 def real_gtin(barcode):
     digits = "".join(ch for ch in str(barcode or "") if ch.isdigit())
     if len(digits) == 13 and not digits.startswith("2"):
@@ -115,6 +138,8 @@ def rows_wb(cabinet_id, cards):
         need_kiz = 1 if card.get("needKiz") else 0
         kind = kind_from_subject(subject + " " + title, need_kiz=bool(card.get("needKiz")))
         photo = wb_photo(card)
+        brand = card.get("brand") or ""
+        color = wb_color(card)
         sizes = card.get("sizes") or [{}]
         if not sizes:
             sizes = [{}]
@@ -134,6 +159,8 @@ def rows_wb(cabinet_id, cards):
                         "chrtId": chrt or "",
                         "offer_id": "",
                         "size": size.get("techSize") or "",
+                        "brand": brand,
+                        "color": color,
                         "Привезено": "",
                         "Литраж_л": "",
                         "gtin": real_gtin(sku),
@@ -186,11 +213,47 @@ def ozon_info(client_id, api_key, offer_ids):
     return out
 
 
-def rows_ozon(cabinet_id, items, info):
+def ozon_attrs(client_id, api_key, offer_ids):
+    """Бренд и цвет по офферам. В /v3/product/info/list их нет вовсе.
+
+    Метод отдаёт атрибуты числами, без названий, поэтому берём по фиксированным
+    идентификаторам справочника. Пустой ответ не ошибка: у части товаров эти
+    поля не заполнены, и этикетка просто напечатается без них.
+    """
+    out = {}
+    for i in range(0, len(offer_ids), 100):
+        chunk = offer_ids[i : i + 100]
+        r = req(
+            "POST",
+            OZON_BASE + "/v4/product/info/attributes",
+            headers=ozon_headers(client_id, api_key),
+            json={"filter": {"offer_id": chunk, "visibility": "ALL"}, "limit": 100, "sort_dir": "ASC"},
+        )
+        if r.status_code != 200:
+            print("Ozon attributes %s %s" % (r.status_code, (r.text or "")[:200]))
+            continue
+        for item in r.json().get("result") or []:
+            got = {}
+            for attr in item.get("attributes") or []:
+                if not isinstance(attr, dict):
+                    continue
+                key = {OZON_ATTR_BRAND: "brand", OZON_ATTR_COLOR: "color"}.get(attr.get("attribute_id"))
+                if not key:
+                    continue
+                vals = [str(v.get("value") or "") for v in (attr.get("values") or []) if isinstance(v, dict)]
+                got[key] = ", ".join(v for v in vals if v)
+            if got:
+                out[item.get("offer_id")] = got
+    return out
+
+
+def rows_ozon(cabinet_id, items, info, attrs=None):
     rows = []
+    attrs = attrs or {}
     for it in items:
         offer = it.get("offer_id") or ""
         det = info.get(offer) or {}
+        extra = attrs.get(offer) or {}
         name = det.get("name") or ""
         kind = kind_from_subject(name)
         photo = ozon_photo(det)
@@ -220,6 +283,8 @@ def rows_ozon(cabinet_id, items, info):
                     "chrtId": "",
                     "offer_id": offer,
                     "size": "",
+                    "brand": extra.get("brand") or "",
+                    "color": extra.get("color") or "",
                     "Привезено": "",
                     "Литраж_л": "",
                     "gtin": real_gtin(code),
@@ -272,7 +337,8 @@ def pull_one(cab):
             raw = items[0]
         offers = [it.get("offer_id") for it in items if it.get("offer_id")]
         info = ozon_info(cab["client_id_ext"], cab["token"], offers)
-        rows = rows_ozon(cab["id"], items, info)
+        attrs = ozon_attrs(cab["client_id_ext"], cab["token"], offers)
+        rows = rows_ozon(cab["id"], items, info, attrs)
     else:
         return 0, "неизвестный marketplace %s" % cab["marketplace"]
     path = os.path.join(out_dir(), "catalog_%s_%s.csv" % (cab["marketplace"], cab["id"]))

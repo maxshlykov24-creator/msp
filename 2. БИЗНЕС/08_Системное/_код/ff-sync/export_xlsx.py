@@ -8,7 +8,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from account import lot_rows, totals
-from db import find_cache, get_shipments_by_ids, list_shipment_marks, prefer_hit, status_label
+from db import catalog_card, find_cache, get_shipments_by_ids, list_shipment_marks, prefer_hit, status_label
 from ms import order_app_url
 
 MSK = timezone(timedelta(hours=3))
@@ -268,6 +268,79 @@ def build_ships(ids):
     ws.cell(row=last, column=1, value="Отправлений: %s · шт: %s · кодов: %s" % (len(ships), int(qty), marks)).font = Font(bold=True)
     who = ships[0]["client_name"] if len({s["client_name"] for s in ships}) == 1 else "клиенту"
     return _finish(wb, ws, SHIP_COLUMNS, "отгрузки_%s_%s.xlsx" % (_file_part(who), _stamp()))
+
+
+PICK_COLUMNS = [
+    ("Артикул", 24),
+    ("Размер", 10),
+    ("Штрихкод", 18),
+    ("Наименование", 44),
+    ("Взять, шт", 11),
+    ("Заданий", 10),
+    ("Площадка", 10),
+]
+
+
+def build_picking(rows, who=""):
+    """Лист подбора: что и сколько взять со склада под текущую выборку.
+
+    Строка — не отправление, а позиция: сборщик идёт по стеллажам за товаром, и
+    ему важно суммарное количество по артикулу, а не список номеров. Размер
+    добираем из каталога — в самом отправлении его нет, а у WB один артикул
+    держит все размеры и без размера позиция не находится на полке.
+    """
+    bag = {}
+    cards = {}
+    for row in rows:
+        article = (row["article"] or "").strip()
+        barcode = (row["barcode"] or "").strip()
+        key = (row["client_id"], article, barcode)
+        if key not in cards:
+            cards[key] = catalog_card(row["client_id"], barcode=barcode, article=article)
+        card = cards[key]
+        code = barcode or card.get("barcode") or ""
+        size = card.get("size") or ""
+        slot = (article.lower(), size, code)
+        item = bag.setdefault(
+            slot,
+            {
+                "article": article,
+                "size": size,
+                "barcode": code,
+                "name": (row["name"] or "").strip() or card.get("name") or "",
+                "qty": 0.0,
+                "orders": 0,
+                "mp": set(),
+            },
+        )
+        item["qty"] += float(row["qty"] or 0)
+        item["orders"] += 1
+        item["mp"].add((row["marketplace"] or "").upper())
+    items = sorted(bag.values(), key=lambda x: (x["article"].lower(), x["size"]))
+    wb, ws = _new_sheet("Лист подбора", PICK_COLUMNS)
+    qty = 0.0
+    for item in items:
+        qty += item["qty"]
+        ws.append(
+            [
+                excel_text(item["article"]),
+                excel_text(item["size"]),
+                excel_text(item["barcode"]),
+                excel_text(item["name"]),
+                int(item["qty"]) if float(item["qty"]).is_integer() else item["qty"],
+                item["orders"],
+                excel_text(" / ".join(sorted(item["mp"]))),
+            ]
+        )
+    if not items:
+        ws.append(["В выборке нет отправлений: проверь контрагента, смену и вкладку"])
+    last = ws.max_row + 1
+    ws.cell(row=last, column=1, value="Позиций: %s" % len(items)).font = Font(bold=True)
+    ws.cell(row=last, column=5, value=int(qty) if float(qty).is_integer() else round(qty, 3)).font = Font(bold=True)
+    ws.cell(row=last, column=6, value=sum(i["orders"] for i in items)).font = Font(bold=True)
+    for col in range(1, len(PICK_COLUMNS) + 1):
+        ws.cell(row=last, column=col).fill = SUM_FILL
+    return _finish(wb, ws, PICK_COLUMNS, "лист_подбора_%s_%s.xlsx" % (_file_part(who), _stamp()))
 
 
 CLIENT_STOCK_COLUMNS = [

@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from ms import order_app_url
 from db import (
     assembly_counts,
+    catalog_card,
     delete_intake_row,
     get_cabinet,
     get_invoice,
@@ -618,21 +619,33 @@ def assembly_labels(data: dict = Body(...), ff_session: str = Cookie(default="")
     if not ships:
         raise HTTPException(status_code=404, detail="отправления не найдены")
     cabs = {}
+    cards = {}
     rows = []
     for s in ships:
         cab_id = s["cabinet_id"]
         if cab_id not in cabs:
             cabs[cab_id] = get_cabinet(cab_id)
+        article = s["article"] or ""
+        barcode = s["barcode"] or ""
+        # бренд, цвет и размер живут только в каталоге кабинета, а у Ozon оттуда
+        # же приходит и штрихкод: выгрузка заказов его не отдаёт вовсе
+        key = (s["client_id"], article, barcode)
+        if key not in cards:
+            cards[key] = catalog_card(s["client_id"], barcode=barcode, article=article)
+        card = cards[key]
         rows.append(
             {
                 "cabinet_id": cab_id,
                 "cabinet": cabs[cab_id],
                 "marketplace": s["marketplace"],
                 "ext_id": s["ext_id"],
-                "article": s["article"] or "",
-                "barcode": s["barcode"] or "",
-                "name": s["name"] or "",
+                "article": article,
+                "barcode": barcode or card.get("barcode") or "",
+                "name": s["name"] or card.get("name") or "",
                 "client": s["client_name"] or "",
+                "brand": card.get("brand") or "",
+                "color": card.get("color") or "",
+                "size": card.get("size") or "",
             }
         )
     try:
@@ -770,6 +783,8 @@ def assembly(
                 "marks": r["marks_count"],
                 "supply": (r["supply_ext"] if "supply_ext" in r.keys() else "") or "",
                 "box": (r["trbx_ext"] if "trbx_ext" in r.keys() else "") or "",
+                "office": (r["office"] if "office" in r.keys() else "") or "",
+                "cargo": statuses.cargo_label(r["cargo_type"] if "cargo_type" in r.keys() else ""),
                 "ms_order_id": r["ms_order_id"] or "",
                 "ms_url": order_app_url(r["ms_order_id"]),
             }
@@ -783,6 +798,36 @@ def assembly(
         "totals": {"positions": len(out), "qty": round(qty, 3), "all": total},
         "fallback": fallback,
     }
+
+
+@app.get("/api/assembly/picking.xlsx")
+def assembly_picking(
+    client_id: int = 0,
+    group: str = "",
+    mp: str = "",
+    kind: str = "",
+    article: str = "",
+    q: str = "",
+    since: str = "",
+    until: str = "",
+    ff_session: str = Cookie(default=""),
+):
+    """Лист подбора по текущей выборке «Заказов».
+
+    Берём не отмеченные галочками строки, а весь фильтр: сборщик утром отбирает
+    смену по контрагенту и вкладке, а не тыкает тридцать чекбоксов.
+    """
+    who(ff_session)
+    init_db()
+    from export_xlsx import build_picking
+
+    rows = list_assembly(
+        client_id=client_id or None, group=group, marketplace=mp, kind=kind,
+        article=article, query=q, since=since, until=until,
+    )
+    names = {r["client_name"] for r in rows}
+    name, raw = build_picking(rows, who=names.pop() if len(names) == 1 else "")
+    return xlsx_file(name, raw)
 
 
 @app.post("/api/assembly/work")
