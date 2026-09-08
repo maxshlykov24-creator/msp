@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,7 +33,9 @@ HEADER = (
     "Комплектация", "Цена продажи",
     "Поколение", "ПТС", "Учёт в РФ", "Без пробега РФ",
     "Автотека", "Окрасы", "Фото, шт", "Тип кузова",
+    "НДС", "История",
 )
+LAST_COL = "Y"  # ширина HEADER; шире листа не читаем
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 MSK = timezone(timedelta(hours=3))
 
@@ -63,7 +66,7 @@ def read_values(svc, sheet: str, last_col: str) -> list[list[str]]:
 
 def read_cars(svc, sheet: str) -> list[list[str]]:
     """Строки листа с машинами, выровненные по ширине HEADER."""
-    values = read_values(svc, sheet, "W")
+    values = read_values(svc, sheet, LAST_COL)
     rows = [r for r in values[1:] if r and (r[0] or "").strip()]
     return [[(r[i] if i < len(r) else "").strip() for i in range(len(HEADER))] for r in rows]
 
@@ -82,6 +85,24 @@ def read_marks(svc) -> dict[str, str]:
         if vin and note:
             marks[vin] = note
     return marks
+
+
+def read_autoteka() -> dict[str, dict[str, object]]:
+    """Факты из отчётов автотеки: VIN -> факты. Кэш пишет tools/autoteka_sync.py."""
+    path = settings.state_dir / "autoteka.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print("stock_sync: автотека не прочитана: %s" % exc, file=sys.stderr)
+        return {}
+    out: dict[str, dict[str, object]] = {}
+    for vin, entry in (data or {}).items():
+        facts = (entry or {}).get("факты") if isinstance(entry, dict) else None
+        if isinstance(facts, dict) and facts:
+            out[str(vin).strip().upper()] = facts
+    return out
 
 
 def read_warehouse(svc) -> list[list[str]]:
@@ -158,7 +179,49 @@ def money(raw: str) -> str:
     return "%s руб." % format(n, ",").replace(",", " ") if n else "не указана"
 
 
-def card(row: list[str], marks: dict[str, str] | None = None) -> str:
+def vat_price(raw: str) -> str:
+    """Цена на юрлицо: плюс 15%% и вверх до ровных 50 тысяч.
+
+    Считаем здесь, а не в промпте: модель арифметику врёт, а цена - обязательство.
+    """
+    n = price_int(raw)
+    if not n:
+        return ""
+    step = 50_000
+    total = -(-int(round(n * 1.15)) // step) * step
+    return "%s руб." % format(total, ",").replace(",", " ")
+
+
+AUTOTEKA_ORDER = (
+    "такси",
+    "каршеринг",
+    "повреждения",
+    "риски",
+    "владельцы",
+    "регион регистрации",
+)
+
+
+def autoteka_lines(facts: dict[str, object] | None) -> list[str]:
+    """Факты отчёта - отдельным блоком, чтобы бот не путал их со своей базой."""
+    if not facts:
+        return []
+    out = ["- По отчёту автотеки:"]
+    for key in AUTOTEKA_ORDER:
+        value = facts.get(key)
+        if not value:
+            continue
+        if isinstance(value, list):
+            value = "; ".join(str(x) for x in value if x)
+        out.append("  - %s: %s" % (key, value))
+    return out if len(out) > 1 else []
+
+
+def card(
+    row: list[str],
+    marks: dict[str, str] | None = None,
+    autoteka: dict[str, dict[str, object]] | None = None,
+) -> str:
     d = dict(zip(HEADER, row))
     title = " ".join(x for x in (d["Марка"], d["Модель"], d["Год выпуска"]) if x)
     lines = ["## %s" % (title or d["VIN"])]
@@ -194,27 +257,64 @@ def card(row: list[str], marks: dict[str, str] | None = None) -> str:
     photos = d.get("Фото, шт", "")
     if photos:
         lines.append("- Фото в объявлении: %s" % photos)
+    history = (d.get("История") or "").strip()
+    if history:
+        lines.append("- История эксплуатации: %s" % history)
     lines.append("- Лига: %s" % league(d["Марка"]))
     lines.append("- Тип: %s" % body(d["Модель"], d.get("Тип кузова", "")))
     lines.append("- Цена в объявлении: %s (наличный расчет, без НДС)" % money(d["Цена продажи"]))
-    note = (marks or {}).get((d["VIN"] or "").strip().upper(), "")
+    vat = (d.get("НДС") or "").strip().lower() == "да"
+    vat_total = vat_price(d["Цена продажи"]) if vat else ""
+    if vat_total:
+        lines.append("- Цена на юрлицо с НДС: %s (расчетный счет)" % vat_total)
+    elif vat:
+        lines.append("- Продажа с НДС возможна, цену уточнит менеджер")
+    else:
+        lines.append("- Продажа с НДС: не подтверждена, уточняет менеджер")
+    vin_key = (d["VIN"] or "").strip().upper()
+    lines += autoteka_lines((autoteka or {}).get(vin_key))
+    note = (marks or {}).get(vin_key, "")
     if note:
         lines.append("- **Важно: %s**" % note)
     return "\n".join(lines)
 
 
+def dedup_by_vin(rows: list[list[str]]) -> list[list[str]]:
+    """Один VIN - одна карточка: лист «Склад» может пересечься с «Данные»."""
+    by_vin: dict[str, list[str]] = {}
+    for row in rows:
+        vin = (row[0] or "").strip().upper()
+        if vin:
+            by_vin.setdefault(vin, row)
+    return [by_vin[k] for k in sorted(by_vin)]
+
+
+def split_by_price(rows: list[list[str]]) -> tuple[list[list[str]], list[list[str]]]:
+    """Склад делим по цене: цена стоит - машина продаётся, нет - к менеджеру.
+
+    Статусы продажи в CME менеджеры ведут не всегда: Cullinan висел offsale с
+    ценой 37 млн и при этом реально продавался. Цена - признак честнее статуса.
+    """
+    priced: list[list[str]] = []
+    rest: list[list[str]] = []
+    for row in rows:
+        d = dict(zip(HEADER, row))
+        (priced if price_int(d["Цена продажи"]) else rest).append(row)
+    return priced, rest
+
+
 def warehouse_block(rows: list[list[str]]) -> str:
-    """Короткий список: есть на складе, но не в продаже. Цену не показываем."""
+    """Короткий список: на складе есть, но цены в CME нет."""
     if not rows:
         return ""
     out = [
         "",
-        "## На складе, но не в продаже",
+        "## На складе, но цены нет",
         "",
-        "> Эти машины физически у нас, но в продажу не выставлены: цены нет,",
-        "> сроков нет, продать их сейчас нельзя. Клиент спросил про такую -",
-        "> скажи «в продаже сейчас нет, по ней уточнит менеджер» и возьми номер.",
-        "> Причину не выдумывай, цену не называй, в подбор их не предлагай.",
+        "> Эти машины физически у нас, но цена в базе не выставлена. Клиент",
+        "> спросил про такую - машина есть, цену и условия уточнит менеджер,",
+        "> возьми номер. Не говори «в продаже нет» и «продана»: она у нас.",
+        "> Цену не выдумывай, в подбор по бюджету их не предлагай.",
         "",
     ]
     for r in sorted(rows, key=lambda x: (x[1], x[2], x[3])):
@@ -230,15 +330,26 @@ def build_stock(
     stamp: str,
     marks: dict[str, str] | None = None,
     warehouse: list[list[str]] | None = None,
+    autoteka: dict[str, dict[str, object]] | None = None,
 ) -> str:
     head = [
         "# Сток DIVO Motors — машины в наличии",
         "",
         "> Обновлено: %s. Источник: CM Expert через таблицу «Автомобили | DIVO MOTORS»," % stamp,
-        "> лист «Данные». Только машины на складе, в продаже и опубликованные на площадках.",
+        "> листы «Данные» и «Склад»: всё, что физически на складе и с ценой.",
         ">",
-        "> **Машин в продаже: %d.** Чего нет в этом списке — того в продаже нет." % len(rows),
+        "> **Машин в продаже: %d.** Ниже есть второй, короткий список: машины на" % len(rows),
+        "> складе без цены. Чего нет ни там, ни там — того у нас нет.",
         "> Не называть VIN, цену и комплектацию, которых здесь нет.",
+        "> «Цена на юрлицо с НДС» уже посчитана — бери строкой, сам не умножай.",
+        "> Нет такой строки — продажу с НДС по этой машине подтверждает менеджер.",
+        "> «История эксплуатации» — такси или каршеринг по нашей базе. Строки нет —",
+        "> данных нет: не отрицать, что машина была в такси, а звать менеджера.",
+        "> Блок «По отчёту автотеки» — то, что клиент увидит по ссылке сам.",
+        "> В нём только найденное. Пустой блок или отсутствие строки — «данных нет»,",
+        "> а не «чисто»: «в такси не работала», «каршеринга не было», «по базам",
+        "> чисто» не писать никогда. Каршеринг в отчёт почти не попадает, поэтому",
+        "> наша «История эксплуатации» сильнее отчёта.",
         "> В карточке нет поля — значит данных нет. Не додумывать и не выводить из",
         "> соседних полей: пустые «Окрасы» это «нет данных», а не «заводской окрас».",
         "> Запаса хода, расхода и разгона здесь нет вообще — наугад их не называть.",
@@ -248,7 +359,7 @@ def build_stock(
         "> Если в карточке «Автотека: нет» — не пиши, что отчёт есть.",
         "",
     ]
-    body_text = "\n\n".join(card(r, marks) for r in rows) + "\n"
+    body_text = "\n\n".join(card(r, marks, autoteka) for r in rows) + "\n"
     return "\n".join(head) + body_text + warehouse_block(warehouse or [])
 
 
@@ -313,17 +424,28 @@ def main() -> int:
         return 1
 
     marks = read_marks(svc)
-    warehouse = read_warehouse(svc)
+    autoteka = read_autoteka()
+    priced, no_price = split_by_price(read_warehouse(svc))
+    on_sale = dedup_by_vin(rows + priced)
     stamp = datetime.now(MSK).strftime("%Y-%m-%d %H:%M МСК")
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "СТОК.md").write_text(
-        build_stock(rows, stamp, marks, warehouse), encoding="utf-8"
+        build_stock(on_sale, stamp, marks, no_price, autoteka), encoding="utf-8"
     )
-    (out_dir / "_ИНДЕКС.md").write_text(build_index(rows, stamp), encoding="utf-8")
+    (out_dir / "_ИНДЕКС.md").write_text(build_index(on_sale, stamp), encoding="utf-8")
     if not quiet:
         print(
-            "stock_sync: %d в продаже, %d на складе не в продаже, %d пометок, обновлено %s"
-            % (len(rows), len(warehouse), len(marks), stamp)
+            "stock_sync: %d с ценой (%d из «Данные», %d со «Склад»), "
+            "%d на складе без цены, %d пометок, %d отчётов автотеки, обновлено %s"
+            % (
+                len(on_sale),
+                len(rows),
+                len(priced),
+                len(no_price),
+                len(marks),
+                len(autoteka),
+                stamp,
+            )
         )
     return 0
 

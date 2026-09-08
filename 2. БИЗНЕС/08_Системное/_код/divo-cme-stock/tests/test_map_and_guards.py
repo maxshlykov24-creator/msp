@@ -13,9 +13,30 @@ def test_core_header_is_amo_contract():
 
 
 def test_extra_columns_go_right():
-    assert len(HEADER) == 23
+    assert len(HEADER) == 25
     assert HEADER[15] == "Поколение"
-    assert HEADER[-1] == "Тип кузова"
+    assert HEADER[-2] == "НДС"
+    assert HEADER[-1] == "История"
+
+
+def test_vat_only_on_explicit_flag():
+    """Пусто = «не подтверждено». False и None одинаково пустые, «Нет» не пишем."""
+    assert map_row({"vin": "A", "isAbleToSellWithVat": True})[-2] == "Да"
+    assert map_row({"vin": "A", "isAbleToSellWithVat": False})[-2] == ""
+    assert map_row({"vin": "A"})[-2] == ""
+
+
+def test_history_taxi_and_carsharing():
+    taxi = map_row({"vin": "A", "anyCommentDescription": "Без ДТП. Использовался в такси"})
+    assert taxi[-1] == "такси"
+    share = map_row(
+        {"vin": "B", "anyCommentDescription": "1. Источник приема: выкуп корпоративного парка Яндекс"}
+    )
+    assert share[-1] == "каршеринг (корпоративный парк Яндекса)"
+    # отрицание не превращается в пометку «такси»
+    clean = map_row({"vin": "C", "anyCommentDescription": "В такси не использовался"})
+    assert clean[-1] == ""
+    assert map_row({"vin": "D"})[-1] == ""
 
 
 def test_map_pdf_sample():

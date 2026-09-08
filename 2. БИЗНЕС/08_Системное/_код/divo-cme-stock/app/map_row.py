@@ -34,6 +34,8 @@ EXTRA_HEADER: tuple[str, ...] = (
     "Окрасы",
     "Фото, шт",
     "Тип кузова",
+    "НДС",
+    "История",
 )
 HEADER: tuple[str, ...] = CORE_HEADER + EXTRA_HEADER
 
@@ -64,6 +66,12 @@ PTS_MAP = {
 
 AUTOTEKA_URL_RE = re.compile(r"https://(?:www\.)?autoteka\.ru/\S+", re.I)
 PAINT_LINE_RE = re.compile(r"Покраска и работы:\s*([^\n]+)", re.I)
+
+# История эксплуатации: только два маркера, которые менеджеры пишут стабильно.
+# Всё остальное остаётся пустым — угадывать по источнику приёма нельзя.
+CARSHARING_RE = re.compile(r"корпоративн\w*\s+парк\w*\s+яндекс", re.I)
+TAXI_RE = re.compile(r"использ\w*\s+в\s+такси|после\s+такси", re.I)
+TAXI_NEG_RE = re.compile(r"не\s+использ\w*\s+в\s+такси", re.I)
 
 BODY_MAP = {
     "off": "кроссовер",
@@ -345,6 +353,23 @@ def autoteka_of(comment: str) -> str:
     return m.group(0).rstrip(").,]\"'")
 
 
+def vat_of(car: dict[str, Any]) -> str:
+    """«Да» только при явном флаге CME. Пусто = не подтверждено, а не «нельзя»."""
+    return "Да" if car.get("isAbleToSellWithVat") is True else ""
+
+
+def history_of(comment: str) -> str:
+    """Такси и каршеринг из комментария менеджера. Ничего не нашли — пусто."""
+    if not comment:
+        return ""
+    parts: list[str] = []
+    if TAXI_RE.search(comment) and not TAXI_NEG_RE.search(comment):
+        parts.append("такси")
+    if CARSHARING_RE.search(comment):
+        parts.append("каршеринг (корпоративный парк Яндекса)")
+    return ", ".join(parts)
+
+
 def format_body(value: Any) -> str:
     if value in (None, ""):
         return ""
@@ -516,6 +541,8 @@ def map_row(car: dict[str, Any]) -> list[str]:
         paint_of(comment),
         photos_count(car),
         format_body(pick(car, "body", "bodyType")),
+        vat_of(car),
+        history_of(comment),
     ]
 
 

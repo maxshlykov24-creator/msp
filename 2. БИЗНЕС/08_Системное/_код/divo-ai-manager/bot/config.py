@@ -120,6 +120,8 @@ class Settings:
     warehouse_sheet = env("WAREHOUSE_SHEET", "Склад")
     # Ручные пометки менеджеров по конкретным машинам. Синк этот лист не трогает.
     marks_sheet = env("MARKS_SHEET", "Пометки")
+    # Отчёты автотеки: содержимое меняется редко, кэш живёт неделю.
+    autoteka_refresh_h = env_int("AUTOTEKA_REFRESH_H", 24)
 
 
 settings = Settings()

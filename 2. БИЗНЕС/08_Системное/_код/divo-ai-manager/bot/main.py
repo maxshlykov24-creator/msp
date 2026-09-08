@@ -419,25 +419,41 @@ def schedule(tg: Telegram, chat_id: int) -> None:
 # ─────────────────────────── сток в фоне ───────────────────────────
 
 
-async def sync_stock() -> None:
-    script = settings.root / "tools" / "stock_sync.py"
+async def run_tool(name: str) -> tuple[int, str]:
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, str(script), "--quiet",
+        sys.executable, str(settings.root / "tools" / name), "--quiet",
         cwd=str(settings.root),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     _, err = await proc.communicate()
-    if proc.returncode == 0:
+    return proc.returncode or 0, (err or b"").decode().strip()[:300]
+
+
+async def sync_stock() -> None:
+    code, err = await run_tool("stock_sync.py")
+    if code == 0:
         log.info("сток обновлен: %s", prompt.stock_status())
     else:
-        log.warning("сток не обновлен: %s", (err or b"").decode().strip()[:300])
+        log.warning("сток не обновлен: %s", err)
 
 
 async def stock_loop() -> None:
     while True:
         await sync_stock()
         await asyncio.sleep(max(settings.stock_refresh_min, 1) * 60)
+
+
+async def autoteka_loop() -> None:
+    """Отчёты меняются редко, кэш живёт неделю - хватает одного прохода в сутки."""
+    while True:
+        code, err = await run_tool("autoteka_sync.py")
+        if code == 0:
+            await sync_stock()  # факты попадают в карточки сразу, не через 15 минут
+            log.info("автотека обновлена")
+        else:
+            log.warning("автотека не обновлена: %s", err)
+        await asyncio.sleep(max(settings.autoteka_refresh_h, 1) * 3600)
 
 
 # ─────────────────────────── основной цикл ───────────────────────────
@@ -454,6 +470,7 @@ async def run() -> None:
     log.info("бот @%s на модели %s", me.get("username"), settings.model)
 
     asyncio.create_task(stock_loop())
+    asyncio.create_task(autoteka_loop())
     asyncio.create_task(nudge_loop(tg))
     offset = read_offset()
 
