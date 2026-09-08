@@ -392,12 +392,12 @@
     .f-right{margin-left:0;width:100%;justify-content:space-between}
     /* реестр превращается в карточки: та же система, читаемая с телефона */
     .tr.h{display:none}
-    .tr{grid-template-columns:1fr;gap:10px;padding:16px}
+    .tr{display:flex;flex-wrap:wrap;gap:9px 12px;padding:16px;align-items:center}
     .tr .hide-s{display:block}
     .tr>div{min-width:0}
-    .t-name{font-size:14.5px}
+    .t-name{flex:1 1 100%;font-size:14.5px}
+    .tr>div:last-child{margin-left:auto;text-align:right}
     .prog{max-width:none}
-    .tr.row>div:nth-child(2),.tr.row>div:nth-child(3),.tr.row>div:nth-child(4){display:inline-block;margin-right:10px}
     .q-item{grid-template-columns:1fr;padding:16px}
     .q-act{margin-top:12px}
     .esc-r{grid-template-columns:1fr;gap:5px;padding:14px 16px}
@@ -1206,7 +1206,7 @@ function dealAction(a,d){
       ok:'Передать',
       run:v=>{
         const from=PEOPLE[n.who].n; n.who=v.who;
-        d.log.unshift({t:'сейчас',x:actor('передал')+' шаг «'+esc(n.t)+'» от '+from+' к '+PEOPLE[v.who].n+(v.com?': '+esc(v.com):'')});
+        d.log.unshift({t:'сейчас',x:actor('передал')+' шаг «'+esc(n.t)+'»: '+from+' → '+PEOPLE[v.who].n+(v.com?', '+esc(v.com):'')});
         feed('Шаг в деле «'+esc(d.n)+'» передан: '+from+' → '+PEOPLE[v.who].n);
         sync();
         toast('Шаг передан. У '+PEOPLE[v.who].n+' он появился в очереди, у '+from+' исчез');
