@@ -452,6 +452,33 @@ def replace_cache(client_id, cabinet_id, rows):
     conn.close()
 
 
+def catalog_card(client_id, barcode=None, article=None):
+    """Карточка товара из кэша каталога: штрихкод, GTIN, размер, бренд, цвет.
+
+    Нужна там, где в самом отправлении этих полей нет. У Ozon выгрузка заказов
+    штрихкод не отдаёт вообще, а размер, бренд и цвет живут только в каталоге
+    кабинета — без них этикетка товара не сходится с образцом склада.
+    """
+    if not client_id:
+        return {}
+    hits = find_cache(client_id, barcode=barcode or None, article=article or None)
+    if not hits:
+        return {}
+    best = prefer_hit(hits)[0]
+    have = set(best.keys())
+    out = {}
+    for key, col in (
+        ("barcode", "ext_barcode"),
+        ("gtin", "gtin"),
+        ("name", "name"),
+        ("size", "size"),
+        ("brand", "brand"),
+        ("color", "color"),
+    ):
+        out[key] = (best[col] or "") if col in have else ""
+    return out
+
+
 def find_cache(client_id, barcode=None, article=None):
     conn = connect()
     rows = []
