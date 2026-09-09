@@ -328,7 +328,8 @@
   /* ─── очередь ─── */
   .q-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease);background:var(--panel)}
   .q-item:has(.grip){grid-template-columns:18px minmax(0,1fr) auto}
-  #queueTbl .q-item{grid-template-columns:18px minmax(160px,1.5fr) minmax(120px,1.2fr) 108px 118px auto;gap:14px;padding:16px 22px}
+  #queueTbl .q-item{grid-template-columns:18px minmax(0,1.5fr) minmax(0,1.2fr) 120px 110px 196px;gap:14px;padding:16px 22px}
+  #queueTbl .q-item > *{min-width:0}
   .q-item:last-child{border-bottom:0}
   #queueTbl .q-item:not(.q-head){cursor:pointer}
   .q-item:hover{background:var(--hover)}
@@ -514,7 +515,7 @@
     .tr{grid-template-columns:1.6fr .8fr .9fr}
     .tr .hide-s{display:none}
     .esc-r{grid-template-columns:1fr 1fr}
-    #queueTbl .q-item{grid-template-columns:18px minmax(0,1.3fr) minmax(0,1fr) 92px 104px auto;gap:10px;padding:14px 16px}
+    #queueTbl .q-item{grid-template-columns:18px minmax(0,1.3fr) minmax(0,1fr) 100px 100px 180px;gap:10px;padding:14px 16px}
   }
   @media(max-width:680px){
     html,body{overflow-x:hidden}
