@@ -113,9 +113,23 @@
   .page.on{display:block}
   @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
-  .head{padding:36px 0 22px}
+  .head{padding:28px 0 10px}
   .head h1{font-size:29px;font-weight:300;letter-spacing:-.01em}
   .head p{color:var(--mute);font-size:14px;margin-top:9px;max-width:720px;line-height:1.55}
+
+  .page-bar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:22px 0 18px}
+  .role-pick{position:relative}
+  .role-btn{
+    border:1px solid var(--line);background:var(--gold);color:#17130e;font-family:var(--font);
+    font-size:12.5px;font-weight:600;padding:8px 32px 8px 14px;border-radius:12px;cursor:pointer;
+    position:relative;min-width:112px;text-align:left;box-shadow:0 6px 18px -8px rgba(200,164,92,.8)
+  }
+  body.light .role-btn{color:#FFFBF3}
+  .role-btn::after{
+    content:'';position:absolute;right:12px;top:50%;width:6px;height:6px;
+    border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+    transform:translateY(-70%) rotate(45deg)
+  }
 
   .sec-title{display:flex;align-items:baseline;gap:14px;margin:34px 0 16px;justify-content:space-between;flex-wrap:wrap}
   .sec-title h2{font-size:12px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--mute)}
@@ -141,19 +155,56 @@
   .fbar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:18px 20px;border-radius:18px;border:1px solid var(--line);background:var(--panel);margin-bottom:14px}
   .fld{display:flex;flex-direction:column;gap:6px;min-width:0}
   .fld label{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding-left:2px}
-  .fld select,.fld input{
+  .fld select,.fld input,.dd-btn{
     font-family:var(--font);font-size:12.5px;color:var(--ink);background:var(--field);
-    border:1px solid var(--line);border-radius:11px;padding:9px 11px;min-width:135px;cursor:pointer;
+    border:1px solid var(--line);border-radius:11px;padding:9px 11px;min-width:148px;cursor:pointer;
     transition:.2s var(--ease);appearance:none;-webkit-appearance:none;
-    background-image:linear-gradient(45deg,transparent 50%,var(--mute) 50%),linear-gradient(135deg,var(--mute) 50%,transparent 50%);
-    background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat;
-    padding-right:28px;
   }
-  .fld input{background-image:none;padding-right:11px;cursor:text;min-width:190px}
-  .fld select:hover,.fld input:hover{border-color:var(--line-2)}
-  .fld select:focus,.fld input:focus{outline:0;border-color:rgba(200,164,92,.55)}
-  .fld select option{background:var(--bg);color:var(--ink)}
-  .fld.act select{border-color:rgba(200,164,92,.5);background-color:color-mix(in srgb,var(--gold) 12%,var(--field))}
+  .dd-btn{position:relative;padding-right:32px;text-align:left;width:100%;line-height:1.35}
+  .dd-btn::after{
+    content:'';position:absolute;right:12px;top:50%;width:6px;height:6px;
+    border-right:1.5px solid var(--mute);border-bottom:1.5px solid var(--mute);
+    transform:translateY(-70%) rotate(45deg)
+  }
+  .dd-btn.cal-btn::after{display:none}
+  .fld input{cursor:text;min-width:190px}
+  .fld select:hover,.fld input:hover,.dd-btn:hover{border-color:var(--line-2)}
+  .fld select:focus,.fld input:focus,.dd-btn:focus{outline:0;border-color:rgba(200,164,92,.55)}
+  .fld.act .dd-btn,.fld.act select{border-color:rgba(200,164,92,.5);background:color-mix(in srgb,var(--gold) 12%,var(--field))}
+  .meta-i.click{cursor:pointer;transition:.2s var(--ease)}
+  .meta-i.click:hover{border-color:var(--line-2);color:var(--ink)}
+
+  .pop{
+    position:fixed;z-index:220;display:none;min-width:200px;
+    background:var(--panel);border:1px solid var(--line-2);border-radius:16px;
+    box-shadow:var(--shadow-lg);padding:6px;max-height:min(360px,70vh);overflow:auto
+  }
+  .pop.on{display:block}
+  .pop.wide{min-width:280px}
+  .pop-i{padding:9px 12px;border-radius:10px;cursor:pointer;font-size:13px;color:var(--ink);line-height:1.35}
+  .pop-i:hover{background:var(--hover)}
+  .pop-i.on{background:color-mix(in srgb,var(--gold) 14%,var(--panel));color:var(--gold)}
+  .pop-i small{display:block;color:var(--mute-2);font-size:11px;margin-top:3px}
+  .pop-cap{padding:8px 12px 4px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600}
+
+  .cal{padding:8px 10px 12px}
+  .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
+  .cal-nav b{font-weight:500;font-size:13.5px;letter-spacing:-.01em}
+  .cal-nav button{width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:var(--glass);color:var(--ink);cursor:pointer;font-size:14px}
+  .cal-nav button:hover{border-color:var(--line-2)}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+  .cal-w,.cal-d{height:34px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-size:12px}
+  .cal-w{color:var(--mute-2);font-size:10px;letter-spacing:.04em;text-transform:uppercase}
+  .cal-d{cursor:pointer;color:var(--ink)}
+  .cal-d:hover{background:var(--hover)}
+  .cal-d.out{opacity:.28}
+  .cal-d.today{box-shadow:inset 0 0 0 1px rgba(200,164,92,.7)}
+  .cal-d.on{background:var(--gold);color:#17130e;font-weight:600}
+  .cal-d.in{background:color-mix(in srgb,var(--gold) 16%,var(--panel))}
+  .cal-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:0 2px}
+  .cal-foot button{border:0;background:none;color:var(--mute);font-size:12px;cursor:pointer;font-family:var(--font)}
+  .cal-foot button:hover{color:var(--ink)}
+  .range-lab{font-size:12px;color:var(--mute);padding:0 4px 8px}
   .f-right{margin-left:auto;display:flex;gap:10px;align-items:center}
   .f-found{font-size:12px;color:var(--mute);white-space:nowrap}
   .f-found b{color:var(--ink);font-weight:500}
@@ -173,7 +224,8 @@
   .t-cell{font-size:12.5px;color:var(--mute)}
   .cli{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:8px;background:var(--glass-2);border:1px solid var(--line);font-size:11.5px;font-weight:600;letter-spacing:.03em;white-space:nowrap}
 
-  .st{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 11px;border-radius:9px;white-space:nowrap;border:1px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 12%,var(--panel))}
+  .st,button.st{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 11px;border-radius:9px;white-space:nowrap;border:1px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 12%,var(--panel));font-family:var(--font)}
+  button.meta-i{font-family:var(--font)}
   .st i{width:6px;height:6px;border-radius:50%;font-style:normal;flex:none;background:var(--c)}
   .st.work{--c:var(--gold)}
   .st.priem{--c:var(--blue)}
@@ -206,9 +258,12 @@
   .btn.sm{font-size:11.5px;padding:7px 12px;border-radius:9px}
 
   /* ─── очередь ─── */
-  .q-item{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease);background:var(--panel)}
+  .q-item{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease);background:var(--panel)}
+  .q-item:has(.grip){grid-template-columns:18px 1fr auto}
   .q-item:last-child{border-bottom:0}
   .q-item:hover{background:var(--hover)}
+  .q-item.drag{opacity:.4}
+  .q-item.over{outline:1px solid rgba(200,164,92,.45)}
   .q-name{font-size:14.5px;font-weight:450;line-height:1.4}
   .q-path{font-size:11.5px;color:var(--mute-2);margin-top:7px}
   .q-path b{color:var(--mute);font-weight:400;cursor:pointer;border-bottom:1px dashed var(--line-2)}
@@ -272,11 +327,12 @@
   .feed-x b{color:var(--ink);font-weight:500}
 
   /* ─── модалка ─── */
-  .ov{position:fixed;inset:0;z-index:80;background:rgba(6,5,5,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:flex-start;justify-content:center;padding:40px 24px;overflow:auto;opacity:0;pointer-events:none;transition:opacity .28s var(--ease)}
-  body.light .ov{background:rgba(60,54,48,.42)}
+  .ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center;padding:28px 24px;overflow:auto;opacity:0;pointer-events:none;transition:opacity .45s var(--ease)}
+  body.light .ov{background:rgba(20,20,20,.18)}
   .ov.on{opacity:1;pointer-events:auto}
-  .modal{width:100%;max-width:1080px;border-radius:24px;border:1px solid var(--line-2);background:var(--bg);box-shadow:var(--shadow-lg);transform:translateY(18px) scale(.98);transition:transform .3s var(--ease);position:relative}
-  .ov.on .modal{transform:none}
+  .modal{width:100%;max-width:1080px;max-height:calc(100vh - 56px);overflow:auto;border-radius:24px;border:1px solid var(--line-2);background:var(--bg);box-shadow:var(--shadow-lg);transform:translateY(16px) scale(.98);opacity:.72;transition:transform .5s var(--ease),opacity .5s var(--ease);position:relative}
+  .ov.on .modal{transform:none;opacity:1}
+  #ov2{z-index:90}
   .modal.narrow{max-width:520px}
   .m-head{padding:26px 28px 20px;border-bottom:1px solid var(--line);position:relative;border-radius:24px 24px 0 0;overflow:hidden}
   .m-head::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--c,var(--gold))}
@@ -336,6 +392,12 @@
   .note{padding:18px 22px;border-radius:16px;background:color-mix(in srgb,var(--gold) 8%,var(--panel));border:1px solid color-mix(in srgb,var(--gold) 22%,var(--panel));font-size:13px;line-height:1.68;color:var(--mute);margin-top:22px;display:none}
   body.hints .note{display:block;animation:fade .35s var(--ease)}
   .note b{color:var(--gold);font-weight:500}
+  body:not(.hints) .hint-only,
+  body:not(.hints) .head,
+  body:not(.hints) .kpi-sub,
+  body:not(.hints) .brand-title small,
+  body:not(.hints) .dlg-note,
+  body:not(.hints) .foot{display:none !important}
 
   /* ─── toast ─── */
   .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,26px);z-index:99;padding:13px 22px;border-radius:14px;background:var(--bg);border:1px solid var(--line-2);color:var(--ink);font-size:13px;opacity:0;pointer-events:none;transition:.35s var(--ease);box-shadow:var(--shadow-lg);max-width:min(560px,90vw);text-align:center;line-height:1.5}
@@ -361,8 +423,8 @@
     .brand-title{font-size:11.5px}
     .header-right{width:100%;gap:8px}
     .sw{flex:1 1 auto;justify-content:center;padding:7px 10px;font-size:11.5px}
-    .roles{width:100%;justify-content:space-between}
-    .roles button{flex:1;padding:8px 6px;font-size:12px;text-align:center}
+    .role-pick{width:auto}
+    .role-btn{min-width:0}
     .nav{margin:18px 0 4px}
     .nav button{flex:1 1 44%;justify-content:center;padding:10px 8px;font-size:12.5px}
     .head{padding:26px 0 18px}
@@ -452,12 +514,9 @@
     </div>
     <div class="header-right">
       <div class="sw on" id="hintsSw"><i></i>Пояснения</div>
-      <div class="sw" id="themeSw"><i></i><span id="themeLab">Светлая тема</span></div>
-      <div class="roles" id="roles">
-        <button class="active" data-role="darina">Дарина</button>
-        <button data-role="nikita">Никита</button>
-        <button data-role="darya">Дарья</button>
-        <button data-role="danil">Данил</button>
+      <div class="sw" id="themeSw"><i></i><span id="themeLab">Тема</span></div>
+      <div class="role-pick">
+        <button type="button" class="role-btn" id="roleBtn">Дарина</button>
       </div>
     </div>
   </div>
@@ -472,24 +531,25 @@
     <button data-p="panel">Контроль</button>
   </div>
 
+  <div class="page-bar">
+    <button class="btn sm" id="guideBtn">Инструкция</button>
+    <button class="btn sm gold" id="newDealBtn">Новое дело</button>
+  </div>
+
   <!-- ══════════ ДЕЛА ══════════ -->
   <section class="page on" id="p-dela">
-    <div class="head">
-      <h1>Дела</h1>
-      <p>Все клиенты в одном реестре, с разграничением доступа. Плитки сверху — это фильтр: нажмите, чтобы оставить только нужное состояние.</p>
-    </div>
-
     <div class="kpi-grid" id="kpiGrid"></div>
 
-    <div class="sec-title"><h2>Реестр</h2><span id="fSummary"></span></div>
+    <div class="sec-title hint-only"><h2>Реестр</h2><span id="fSummary"></span></div>
 
     <div class="fbar" id="fbar">
-      <div class="fld"><label>Клиент</label><select id="fCli"></select></div>
-      <div class="fld"><label>Направление</label><select id="fDir"></select></div>
-      <div class="fld"><label>Ответственный</label><select id="fWho"></select></div>
-      <div class="fld"><label>Статус</label><select id="fSt"></select></div>
-      <div class="fld"><label>Срок</label><select id="fDue"></select></div>
-      <div class="fld"><label>Приоритет</label><select id="fPrio"></select></div>
+      <div class="fld" id="fldCli"><label>Клиент</label><button type="button" class="dd-btn" id="fCli">Все клиенты</button></div>
+      <div class="fld" id="fldDir"><label>Направление</label><button type="button" class="dd-btn" id="fDir">Все направления</button></div>
+      <div class="fld" id="fldWho"><label>Ответственный</label><button type="button" class="dd-btn" id="fWho">Все ответственные</button></div>
+      <div class="fld" id="fldSt"><label>Статус</label><button type="button" class="dd-btn" id="fSt">Любой статус</button></div>
+      <div class="fld" id="fldDue"><label>Срок</label><button type="button" class="dd-btn" id="fDue">Любой срок</button></div>
+      <div class="fld" id="fldPer"><label>Период</label><button type="button" class="dd-btn cal-btn" id="fPer">Любые даты</button></div>
+      <div class="fld" id="fldPrio"><label>Приоритет</label><button type="button" class="dd-btn" id="fPrio">Любой приоритет</button></div>
       <div class="fld"><label>Поиск по названию</label><input id="fQ" type="text" placeholder="например: оценка"></div>
       <div class="f-right">
         <span class="f-found" id="fFound"></span>
@@ -504,62 +564,18 @@
 
   <!-- ══════════ ОЧЕРЕДЬ ══════════ -->
   <section class="page" id="p-queue">
-    <div class="head">
-      <h1>Моя очередь <span style="color:var(--mute);font-weight:200" id="qWho"></span></h1>
-      <p>Список собирается сам из шагов, где человек исполнитель. Закрывает шаг он сам, следующий по цепочке узнаёт об этом без координатора.</p>
-    </div>
     <div class="tbl" id="queueTbl"></div>
     <div class="note"><b>Это снимает главный ручной цикл.</b> Сейчас статус меняет только Дарина: читает чаты, опрашивает коллег, отмечает выполнение, напоминает следующему. Здесь исполнитель нажимает «Сделал», и цепочка идёт дальше сама. Нажмите — прогресс дела в реестре пересчитается прямо сейчас.</div>
   </section>
 
   <!-- ══════════ ПРИЁМКА ══════════ -->
   <section class="page" id="p-priem">
-    <div class="head">
-      <h1>Приёмка</h1>
-      <p>Работа приходит сюда, а не в личку. Три решения: принять, вернуть с замечанием, отправить клиенту. Кто принимает — настраивается, это не зашито на одного человека.</p>
-    </div>
     <div id="priemList"></div>
     <div class="note"><b>Закрывает оба сценария потери.</b> Первый: документ сделан, но лежит в переписке и клиенту не ушёл. Второй: документ отправлен, клиент молчит, и никто не понимает, чья это теперь очередь. После «Отправлено клиенту» дело переходит в ожидание ответа, а счётчик просрочки исполнителя останавливается.</div>
   </section>
 
   <!-- ══════════ КОНТРОЛЬ ══════════ -->
   <section class="page" id="p-panel">
-    <div class="head">
-      <h1>Контроль</h1>
-      <p>Три вопроса руководителя: кто перегружен, где встало и по чьей вине, что произойдёт дальше без ручного вмешательства.</p>
-    </div>
-
-    <div class="sec-title"><h2>Модель контроля</h2><span>что система считает нормой, а что нарушением</span></div>
-    <div class="rules">
-      <div class="rule r1">
-        <div class="rn"><i></i>Просрочка команды</div>
-        <b>Срок прошёл, ход за нами</b>
-        <p>Шаг просрочен только тогда, когда очередь у сотрудника. Это единственное состояние, которое считается нарушением и попадает в счётчик человека.</p>
-      </div>
-      <div class="rule r2">
-        <div class="rn"><i></i>Ожидание клиента</div>
-        <b>Срок прошёл, ход за клиентом</b>
-        <p>Счётчик просрочки остановлен, вместо него идёт счётчик тишины клиента. Видно, сколько дней ждём и кто последний писал. Это работа с клиентом, а не провал команды.</p>
-      </div>
-      <div class="rule r3">
-        <div class="rn"><i></i>Норма</div>
-        <b>Срок в будущем или шаг закрыт</b>
-        <p>Ничего не делаем и никого не дёргаем. Руководитель смотрит только на первые две колонки, остальное система держит сама.</p>
-      </div>
-    </div>
-
-    <div class="esc">
-      <div class="esc-r h"><div>Событие</div><div>Когда</div><div>Что делает система</div><div>Кому</div></div>
-      <div class="esc-r"><div><b>Наступил шаг</b></div><div><span>сразу</span></div><div><span>уведомление исполнителю и запись в журнале дела</span></div><div><span>исполнителю</span></div></div>
-      <div class="esc-r"><div><b>Срок завтра</b></div><div><span>за 1 день</span></div><div><span>напоминание с кнопками «сделал» и «перенести с причиной»</span></div><div><span>исполнителю</span></div></div>
-      <div class="esc-r"><div><b>Срок прошёл</b></div><div><span>в тот же день</span></div><div><span>шаг помечается просроченным, попадает в счётчик человека</span></div><div><span>исполнителю и Дарине</span></div></div>
-      <div class="esc-r"><div><b>Просрочка 3 дня</b></div><div><span>на 3-й день</span></div><div><span>дело поднимается наверх списка контроля</span></div><div><span>Никите</span></div></div>
-      <div class="esc-r"><div><b>Клиент молчит</b></div><div><span>с 5-го дня</span></div><div><span>напоминание тому, кто ведёт клиента, счётчик команды остановлен</span></div><div><span>Никите</span></div></div>
-      <div class="esc-r"><div><b>Работа на приёмке</b></div><div><span>через 2 дня</span></div><div><span>повторное уведомление принимающему</span></div><div><span>принимающему</span></div></div>
-    </div>
-
-    <div class="note"><b>Правило одно.</b> Никто не решает вручную, просрочка это или нет. Состояние определяет ответ на вопрос «чей сейчас ход»: наш — просрочка, клиента — ожидание. Отсюда и цифры в счётчиках людей: они честные, спорить с ними не о чем.</div>
-
     <div class="sec-title"><h2>Картина на сегодня</h2><span id="panelDate"></span></div>
     <div class="two">
       <div class="pane">
@@ -575,7 +591,7 @@
       </div>
     </div>
 
-    <div class="sec-title"><h2>Лента системы</h2><span>журнал ведётся сам, ваши действия в прототипе попадают сюда</span></div>
+    <div class="sec-title"><h2>Лента системы</h2><span class="hint-only">журнал ведётся сам, ваши действия в прототипе попадают сюда</span></div>
     <div class="pane">
       <div class="feed" id="feed"></div>
       <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:18px">
@@ -593,6 +609,7 @@
 
 <div class="ov" id="ov"><div class="modal" id="modal"></div></div>
 <div class="ov" id="ov2"><div class="modal narrow" id="dlg"></div></div>
+<div class="pop" id="pop"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -758,7 +775,11 @@ const RAW = [
 function addDays(base,n){const d=new Date(base);d.setDate(d.getDate()+n);return d}
 function fmt(d){return d?('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2):'—'}
 function iso(d){return d?d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2):''}
+function parseISO(s){if(!s) return null; const d=new Date(s+'T00:00:00'); return isNaN(d)?null:d}
 function days(a,b){return Math.round((a-b)/86400000)}
+const MONTHS=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+const DOW=['пн','вт','ср','чт','пт','сб','вс'];
+const TPL_LABELS={assess:'Оценка объектов',pledge:'Сделка и залог',invest:'Инвестиции',tax:'Налоги',court:'Суд',report:'Отчёт',audit:'Аудит и проверка',internal:'Внутреннее'};
 
 let uid=0;
 function build(node,teamIdx,limitRef){
@@ -831,7 +852,9 @@ function stLabel(d){
 
 /* ═══════════ СОСТОЯНИЕ UI ═══════════ */
 let role='darina';
-const F = {cli:'',dir:'',who:'',st:'',due:'',prio:'',q:'',mine:false};
+let page='dela';
+const F = {cli:'',dir:'',who:'',st:'',due:'',prio:'',q:'',mine:false,from:'',to:''};
+const qManual={};
 let sortKey='due', sortDir=1;
 const FEED = [
   {t:'08:40', x:'<b>Бот</b> перехватил файл «Реестр объектов v2.xlsx» из чата ИИК 1 и прицепил к делу'},
@@ -853,24 +876,155 @@ function $(id){return document.getElementById(id)}
 let tTimer;
 function toast(msg){const t=$('toast');t.innerHTML=msg;t.classList.add('on');clearTimeout(tTimer);tTimer=setTimeout(()=>t.classList.remove('on'),3600)}
 
+/* ═══════════ ВСПЛЫВАЮЩИЕ СПИСКИ И КАЛЕНДАРЬ ═══════════ */
+function closePop(){
+  const p=$('pop'); if(!p) return;
+  p.classList.remove('on','wide'); p.innerHTML=''; p.style.width='';
+  document.removeEventListener('mousedown', popAway, true);
+}
+function popAway(e){
+  const p=$('pop');
+  if(!p || p.contains(e.target) || e.target.closest('[data-keep-pop]')) return;
+  closePop();
+}
+function placePop(anchor, width){
+  const p=$('pop');
+  const r=anchor.getBoundingClientRect();
+  const pw=width||Math.max(220, r.width);
+  p.style.width=pw+'px';
+  p.classList.add('on');
+  let top=r.bottom+6, left=r.left;
+  const h=p.offsetHeight, w=p.offsetWidth;
+  if(top+h>innerHeight-12) top=Math.max(12, r.top-h-6);
+  if(left+w>innerWidth-12) left=Math.max(12, innerWidth-w-12);
+  p.style.top=top+'px'; p.style.left=left+'px';
+  document.removeEventListener('mousedown', popAway, true);
+  document.addEventListener('mousedown', popAway, true);
+}
+function menuPop(anchor, items, current, onPick, width){
+  const p=$('pop');
+  p.innerHTML=items.map(it=>{
+    const v=it[0], lab=it[1], sub=it[2]||'';
+    return `<div class="pop-i ${v===current?'on':''}" data-v="${esc(v)}">${esc(lab)}${sub?`<small>${esc(sub)}</small>`:''}</div>`;
+  }).join('');
+  placePop(anchor, width);
+  p.querySelectorAll('.pop-i').forEach(el=>el.onclick=()=>{
+    const it=items.find(x=>String(x[0])===el.dataset.v);
+    closePop();
+    onPick(el.dataset.v, it?it[1]:el.textContent);
+  });
+}
+function monthMatrix(view){
+  const y=view.getFullYear(), m=view.getMonth();
+  const first=new Date(y,m,1);
+  let start=(first.getDay()+6)%7;
+  const daysIn=new Date(y,m+1,0).getDate();
+  const cells=[];
+  for(let i=0;i<start;i++){
+    const d=new Date(y,m,1-start+i);
+    cells.push({d,out:true});
+  }
+  for(let day=1;day<=daysIn;day++) cells.push({d:new Date(y,m,day),out:false});
+  while(cells.length%7) { const last=cells[cells.length-1].d; cells.push({d:addDays(last,1),out:true}); }
+  return cells;
+}
+function calPop(anchor, value, onPick, range){
+  const p=$('pop');
+  let view=parseISO(value)|| (range&&range.from?parseISO(range.from):null) || new Date(TODAY);
+  let from=range?range.from:'';
+  let to=range?range.to:'';
+  let pick='from';
+  function draw(){
+    const cells=monthMatrix(view);
+    const title=MONTHS[view.getMonth()]+' '+view.getFullYear();
+    const fromD=parseISO(from), toD=parseISO(to);
+    p.classList.add('wide');
+    p.innerHTML=`<div class="cal">
+      ${range?`<div class="range-lab">${from?fmt(parseISO(from)):'с…'} — ${to?fmt(parseISO(to)):'по…'}</div>`:''}
+      <div class="cal-nav">
+        <button type="button" data-nav="-1">‹</button>
+        <b>${title}</b>
+        <button type="button" data-nav="1">›</button>
+      </div>
+      <div class="cal-grid">${DOW.map(w=>`<div class="cal-w">${w}</div>`).join('')}${cells.map(c=>{
+        const key=iso(c.d);
+        const isOn=range ? (key===from||key===to) : key===value;
+        const inR=fromD&&toD&&c.d>=fromD&&c.d<=toD&&!isOn;
+        const isToday=iso(c.d)===iso(TODAY);
+        return `<div class="cal-d${c.out?' out':''}${isOn?' on':''}${inR?' in':''}${isToday?' today':''}" data-iso="${key}">${c.d.getDate()}</div>`;
+      }).join('')}</div>
+      <div class="cal-foot"><button type="button" data-clear>Сбросить</button><button type="button" data-today>Сегодня</button></div>
+    </div>`;
+    placePop(anchor, 292);
+    p.querySelectorAll('[data-nav]').forEach(b=>b.onclick=e=>{
+      e.stopPropagation();
+      view=new Date(view.getFullYear(), view.getMonth()+Number(b.dataset.nav), 1);
+      draw();
+    });
+    p.querySelectorAll('.cal-d').forEach(el=>el.onclick=e=>{
+      e.stopPropagation();
+      const key=el.dataset.iso;
+      if(!range){ closePop(); onPick(key); return; }
+      if(pick==='from' || !from){ from=key; to=''; pick='to'; draw(); return; }
+      if(key<from){ to=from; from=key; } else to=key;
+      closePop(); onPick({from,to});
+    });
+    p.querySelector('[data-clear]').onclick=e=>{ e.stopPropagation(); closePop(); onPick(range?{from:'',to:''}:''); };
+    p.querySelector('[data-today]').onclick=e=>{
+      e.stopPropagation();
+      const key=iso(TODAY);
+      if(!range){ closePop(); onPick(key); return; }
+      from=key; to=key; closePop(); onPick({from,to});
+    };
+  }
+  draw();
+}
+
 /* ═══════════ ФИЛЬТРЫ ═══════════ */
-function fillSelect(el,items,all){
-  el.innerHTML = '<option value="">'+all+'</option>' + items.map(i=>`<option value="${esc(i[0])}">${esc(i[1])}</option>`).join('');
+const FILTERS={
+  cli:{k:'cli',el:'fCli',fld:'fldCli',all:'Все клиенты',items:()=>CLIENTS.map(c=>[c,c])},
+  dir:{k:'dir',el:'fDir',fld:'fldDir',all:'Все направления',items:()=>DIRS.map(d=>[d,d])},
+  who:{k:'who',el:'fWho',fld:'fldWho',all:'Все ответственные',items:()=>Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].n])},
+  st:{k:'st',el:'fSt',fld:'fldSt',all:'Любой статус',items:()=>[['work','В работе'],['priem','На приёмке'],['wait','Ждём клиента'],['new','Не начато'],['done','Выполнено'],['late','Просрочено']]},
+  due:{k:'due',el:'fDue',fld:'fldDue',all:'Любой срок',items:()=>[['late','Просрочено'],['today','Сегодня'],['w','Ближайшие 7 дней'],['m','До конца месяца'],['future','Позже месяца'],['none','Без срока']]},
+  prio:{k:'prio',el:'fPrio',fld:'fldPrio',all:'Любой приоритет',items:()=>[['high','Высокий'],['mid','Обычный'],['low','Низкий']]}
+};
+function labelOf(spec, val){
+  if(!val) return spec.all;
+  const it=spec.items().find(x=>x[0]===val);
+  return it?it[1]:spec.all;
+}
+function paintFilter(spec){
+  const btn=$(spec.el);
+  btn.textContent=labelOf(spec, F[spec.k]);
+  $(spec.fld).classList.toggle('act', !!F[spec.k]);
+}
+function paintPeriod(){
+  const btn=$('fPer');
+  if(F.from||F.to) btn.textContent=(F.from?fmt(parseISO(F.from)):'…')+' — '+(F.to?fmt(parseISO(F.to)):'…');
+  else btn.textContent='Любые даты';
+  $('fldPer').classList.toggle('act', !!(F.from||F.to));
 }
 function initFilters(){
-  fillSelect($('fCli'), CLIENTS.map(c=>[c,c]), 'Все клиенты');
-  fillSelect($('fDir'), DIRS.map(d=>[d,d]), 'Все направления');
-  fillSelect($('fWho'), Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].n]), 'Все ответственные');
-  fillSelect($('fSt'), [['work','В работе'],['priem','На приёмке'],['wait','Ждём клиента'],['new','Не начато'],['done','Выполнено'],['late','Просрочено']], 'Любой статус');
-  fillSelect($('fDue'), [['late','Просрочено'],['today','Сегодня'],['w','Ближайшие 7 дней'],['m','До конца месяца'],['future','Позже месяца'],['none','Без срока']], 'Любой срок');
-  fillSelect($('fPrio'), [['high','Высокий'],['mid','Обычный'],['low','Низкий']], 'Любой приоритет');
-  ['fCli','fDir','fWho','fSt','fDue','fPrio'].forEach(id=>{
-    $(id).onchange = ()=>{ F[id.slice(1).toLowerCase()] = $(id).value; refresh() };
+  Object.values(FILTERS).forEach(spec=>{
+    paintFilter(spec);
+    $(spec.el).setAttribute('data-keep-pop','1');
+    $(spec.el).onclick=()=>{
+      const items=[['',spec.all]].concat(spec.items());
+      menuPop($(spec.el), items, F[spec.k], val=>{
+        F[spec.k]=val; paintFilter(spec); refresh();
+      });
+    };
   });
-  $('fQ').oninput = ()=>{F.q=$('fQ').value.trim().toLowerCase();refresh()};
-  $('fReset').onclick = ()=>{
+  $('fPer').setAttribute('data-keep-pop','1');
+  $('fPer').onclick=()=>calPop($('fPer'), F.from, r=>{
+    F.from=r.from||''; F.to=r.to||''; paintPeriod(); refresh();
+  }, {from:F.from,to:F.to});
+  $('fQ').oninput=()=>{F.q=$('fQ').value.trim().toLowerCase();refresh()};
+  $('fReset').onclick=()=>{
     Object.keys(F).forEach(k=>F[k]= k==='mine'?false:'');
-    ['fCli','fDir','fWho','fSt','fDue','fPrio'].forEach(id=>$(id).value='');
+    Object.values(FILTERS).forEach(paintFilter);
+    paintPeriod();
     $('fQ').value='';
     refresh(); toast('Фильтры сброшены');
   };
@@ -894,6 +1048,12 @@ function matches(d,skipStatus){
   if(F.prio && d.prio!==F.prio) return false;
   if(F.q && d.n.toLowerCase().indexOf(F.q)<0 && d.c.toLowerCase().indexOf(F.q)<0) return false;
   if(F.due){ if(F.due==='late' ? !teamLate(d) : dueBucket(d)!==F.due) return false }
+  if(F.from || F.to){
+    const n=nextStep(d);
+    if(!n) return false;
+    if(F.from && n.due<parseISO(F.from)) return false;
+    if(F.to && n.due>parseISO(F.to)) return false;
+  }
   if(!skipStatus && F.st){
     if(F.st==='late'){ if(!teamLate(d)) return false }
     else if(F.st==='work'){ if(!((d.st==='work'||d.st==='new') && !teamLate(d))) return false }
@@ -949,7 +1109,7 @@ function renderKpi(){
     el.onclick = ()=>{
       const k = el.dataset.k;
       F.st = (F.st===k) ? '' : k;
-      $('fSt').value = F.st;
+      paintFilter(FILTERS.st);
       refresh();
       toast(F.st ? 'Фильтр по состоянию: '+KPI.find(x=>x.k===k).l.toLowerCase() : 'Фильтр по состоянию снят');
     };
@@ -992,11 +1152,8 @@ function renderDeals(){
   });
   $('fFound').innerHTML = 'Найдено <b>'+arr.length+'</b> из '+DEALS.length;
   const act = Object.keys(F).filter(k=>F[k]&&k!=='mine').length;
-  $('fSummary').textContent = act ? 'активных условий: '+act+', цифры на плитках пересчитаны' : 'все дела, к которым есть доступ у роли';
-  document.querySelectorAll('.fbar .fld').forEach((el,i)=>{
-    const ctrl = el.querySelector('select,input');
-    el.classList.toggle('act', !!(ctrl && ctrl.value));
-  });
+  const sum=$('fSummary');
+  if(sum) sum.textContent = act ? 'активных условий: '+act+', цифры на плитках пересчитаны' : 'все дела, к которым есть доступ у роли';
   $('cDela').textContent = arr.length;
 }
 
@@ -1014,6 +1171,7 @@ function sync(){
   renderKpi(); renderDeals(); renderQueue(); renderPriem(); renderPanel();
 }
 function closeModal(){
+  closePop();
   $('ov').classList.remove('on'); openId=null;
   document.body.style.overflow='';
   refresh();
@@ -1025,24 +1183,27 @@ function renderModal(){
     ? '<span class="btn green">Дело закрыто</span>'
     : (d.st==='priem'
         ? `<button class="btn gold" data-a="send">Отправлено клиенту</button><button class="btn" data-a="accept">Принять</button><button class="btn red" data-a="return">Вернуть с замечанием</button>`
-        : `<button class="btn gold" data-a="close">Закрыть текущий шаг</button><button class="btn" data-a="move">Перенести срок</button><button class="btn" data-a="ask">Запросить у клиента</button><button class="btn" data-a="reassign">Сменить исполнителя</button>`);
+        : `<button class="btn gold" data-a="close">Закрыть текущий шаг</button><button class="btn" data-a="ask">Запросить у клиента</button>`);
+  const emptyFiles = document.body.classList.contains('hints')
+    ? 'Файлов пока нет. Бот прицепит их сам, как только они появятся в чате клиента.'
+    : 'Файлов пока нет';
   $('modal').innerHTML = `
     <div class="m-head" style="--c:${col}">
       <button class="m-x" data-a="x">✕</button>
       <div class="m-kick">${esc(d.c)} · ${esc(d.dir)}</div>
       <div class="m-title">${esc(d.n)}</div>
       <div class="m-meta">
-        <span class="st ${stClass(d)}"><i></i>${esc(stLabel(d))}</span>
-        <div class="meta-i">Ответственный <b>${esc(PEOPLE[d.who].n)}</b></div>
-        <div class="meta-i">Приоритет <b>${PRIO[d.prio]}</b></div>
-        <div class="meta-i">Срок <b>${n?fmt(n.due):'закрыто'}</b></div>
+        <button type="button" class="st ${stClass(d)}" data-a="status" data-keep-pop="1" style="cursor:pointer"><i></i>${esc(stLabel(d))}</button>
+        <button type="button" class="meta-i click" data-a="reassign" data-keep-pop="1">Ответственный <b>${esc(PEOPLE[d.who].n)}</b></button>
+        <button type="button" class="meta-i click" data-a="prio" data-keep-pop="1">Приоритет <b>${PRIO[d.prio]}</b></button>
+        <button type="button" class="meta-i click" data-a="move" data-keep-pop="1">Срок <b>${n?fmt(n.due):'закрыто'}</b></button>
         <div class="meta-i">Готово <b>${p}%</b></div>
       </div>
       <div class="prog" style="max-width:none;margin-top:16px"><span class="prog-bar"><span style="width:${p}%;--c:${col}"></span></span></div>
     </div>
     <div class="m-body">
       <div>
-        <h4>Шаги <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--mute-2)">перетащите за ⠿, чтобы изменить порядок</span></h4>
+        <h4>Шаги <span class="hint-only" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--mute-2)">перетащите за ⠿, чтобы изменить порядок</span></h4>
         <div class="tree" id="tree">${(nextOf=n, renderTree(d.tree,1,'',[]))}</div>
         <div class="note" style="margin-top:18px"><b>Правило.</b> Прогресс родителя считает система по закрытым веткам. Вложенность не ограничена: у шага может быть подшаг, а у подшага свой. Срок родителя не может быть раньше срока последнего потомка — при попытке система предупредит.</div>
       </div>
@@ -1052,16 +1213,12 @@ function renderModal(){
           <div class="ctx">${d.ctx.map(t=>'<p>'+t+'</p>').join('')}</div>
         </div>
         <div class="m-block">
-          <h4>Файлы</h4>
-          ${d.files.length? d.files.map(f=>`<div class="file"><div class="file-ic">${esc(f[0].split('.').pop().toUpperCase().slice(0,4))}</div><div>${esc(f[0])}<small>${esc(f[1])}</small></div></div>`).join('') : '<div style="font-size:12.5px;color:var(--mute-2)">Файлов пока нет. Бот прицепит их сам, как только они появятся в чате клиента.</div>'}
-        </div>
-        <div class="m-block">
-          <h4>Журнал</h4>
-          <div class="feed">${d.log.map(l=>`<div class="feed-i"><div class="feed-t">${esc(l.t)}</div><div class="feed-x">${l.x}</div></div>`).join('')}</div>
+          <h4>Файлы <button class="btn sm" data-a="file" style="text-transform:none;letter-spacing:0">Добавить файл</button></h4>
+          ${d.files.length? d.files.map(f=>`<div class="file"><div class="file-ic">${esc(f[0].split('.').pop().toUpperCase().slice(0,4))}</div><div>${esc(f[0])}<small>${esc(f[1])}</small></div></div>`).join('') : '<div style="font-size:12.5px;color:var(--mute-2)">'+emptyFiles+'</div>'}
         </div>
       </div>
     </div>
-    <div class="m-acts">${acts}</div>`;
+    <div class="m-acts"><button class="btn" data-a="log">Журнал · ${d.log.length}</button>${acts}</div>`;
   $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>dealAction(b.dataset.a,d));
   bindTree(d);
 }
@@ -1141,6 +1298,59 @@ function bindTree(d){
 /* ═══════════ ДЕЙСТВИЯ ПО ДЕЛУ ═══════════ */
 function dealAction(a,d){
   if(a==='x'){closeModal();return}
+  if(a==='log'){
+    dialog({
+      title:'Журнал дела',
+      kick:d.c+' · '+d.n,
+      fields:[],
+      ok:'Закрыть',
+      extra:`<div class="feed">${d.log.map(l=>`<div class="feed-i"><div class="feed-t">${esc(l.t)}</div><div class="feed-x">${l.x}</div></div>`).join('')||'<div class="empty">Записей пока нет</div>'}</div>`,
+      run:()=>{}
+    });
+    return;
+  }
+  if(a==='file'){
+    dialog({
+      title:'Добавить файл',
+      kick:d.c+' · '+d.n,
+      fields:[
+        {k:'name',type:'text',label:'Имя файла',ph:'например: Сводка.xlsx',req:true},
+        {k:'src',type:'text',label:'Откуда',ph:'чат клиента, почта, диск'}
+      ],
+      ok:'Прикрепить',
+      run:v=>{
+        d.files.push([v.name, PEOPLE[role].n+', сейчас'+(v.src?', '+v.src:'')]);
+        d.log.unshift({t:'сейчас',x:actor('изменил')+' состав файлов: «'+esc(v.name)+'»'});
+        feed(PEOPLE[role].n+' прикрепил файл к делу «'+esc(d.n)+'»');
+        sync(); toast('Файл прикреплён к делу');
+      }
+    });
+    return;
+  }
+  if(a==='status'){
+    const items=[['work','В работе'],['priem','На приёмке'],['wait','Ждём клиента'],['new','Не начато'],['done','Выполнено']];
+    const btn=$('modal').querySelector('[data-a="status"]');
+    menuPop(btn, items, d.st, val=>{
+      const old=stLabel(d);
+      d.st=val;
+      if(val==='wait') d.waitDays=d.waitDays||0;
+      if(val!=='priem') delete d.priemDays;
+      d.log.unshift({t:'сейчас',x:actor('изменил')+' статус: '+old+' → '+ST[val].l});
+      feed('Статус дела «'+esc(d.n)+'»: '+ST[val].l);
+      sync(); toast('Статус: '+ST[val].l);
+    });
+    return;
+  }
+  if(a==='prio'){
+    const items=Object.keys(PRIO).map(k=>[k,PRIO[k]]);
+    const btn=$('modal').querySelector('[data-a="prio"]');
+    menuPop(btn, items, d.prio, val=>{
+      d.prio=val;
+      d.log.unshift({t:'сейчас',x:actor('изменил')+' приоритет: '+PRIO[val]});
+      sync(); toast('Приоритет: '+PRIO[val]);
+    });
+    return;
+  }
   if(a==='close'){
     const n=nextStep(d); if(!n){toast('Все шаги закрыты');return}
     dialog({
@@ -1265,11 +1475,12 @@ function dealAction(a,d){
 
 /* ═══════════ УНИВЕРСАЛЬНЫЙ ДИАЛОГ ═══════════ */
 function dialog(cfg){
-  const f = cfg.fields.map(f=>{
+  const fields=cfg.fields||[];
+  const f = fields.map(f=>{
     if(f.type==='ro') return `<div class="fld"><label>${esc(f.label)}</label><div style="font-size:13px;line-height:1.5;padding:10px 12px;border-radius:11px;background:var(--glass);border:1px solid var(--line)">${esc(f.val)}</div></div>`;
-    if(f.type==='select') return `<div class="fld"><label>${esc(f.label)}</label><select data-k="${f.k}">${f.opts.map(o=>`<option value="${esc(o[0])}" ${f.val===o[0]?'selected':''}>${esc(o[1])}</option>`).join('')}</select></div>`;
+    if(f.type==='select') return `<div class="fld"><label>${esc(f.label)}</label><button type="button" class="dd-btn" data-sel="${f.k}" data-keep-pop="1"></button></div>`;
     if(f.type==='area') return `<div class="fld"><label>${esc(f.label)}</label><textarea data-k="${f.k}" placeholder="${esc(f.ph||'')}"></textarea></div>`;
-    if(f.type==='date') return `<div class="fld"><label>${esc(f.label)}</label><input type="date" data-k="${f.k}" value="${esc(f.val||'')}"></div>`;
+    if(f.type==='date') return `<div class="fld"><label>${esc(f.label)}</label><button type="button" class="dd-btn cal-btn" data-date="${f.k}" data-keep-pop="1"></button></div>`;
     return `<div class="fld"><label>${esc(f.label)}</label><input type="text" data-k="${f.k}" placeholder="${esc(f.ph||'')}"></div>`;
   }).join('');
   $('dlg').innerHTML = `
@@ -1279,18 +1490,35 @@ function dialog(cfg){
       <div class="m-title" style="font-size:20px">${esc(cfg.title)}</div>
     </div>
     <div class="dlg-body">
+      ${cfg.extra||''}
       ${f}
       <div class="dlg-err" id="dlgErr">Заполните обязательные поля</div>
-      ${cfg.note?`<div class="dlg-note">${esc(cfg.note)}</div>`:''}
+      ${cfg.note?`<div class="dlg-note">${cfg.note}</div>`:''}
     </div>
-    <div class="m-acts"><button class="btn gold" data-ok>${esc(cfg.ok)}</button><button class="btn" data-x>Отмена</button></div>`;
+    <div class="m-acts"><button class="btn gold" data-ok>${esc(cfg.ok||'Ок')}</button><button class="btn" data-x>Отмена</button></div>`;
   $('ov2').classList.add('on');
-  const close=()=>{$('ov2').classList.remove('on')};
+  const state={};
+  fields.forEach(f=>{
+    if(f.type==='select'){
+      const btn=$('dlg').querySelector('[data-sel="'+f.k+'"]');
+      state[f.k]=f.val!=null?f.val:(f.opts[0]?f.opts[0][0]:'');
+      const cur=f.opts.find(o=>o[0]===state[f.k]);
+      btn.textContent=cur?cur[1]:'выберите';
+      btn.onclick=()=>menuPop(btn, f.opts, state[f.k], (val,lab)=>{ state[f.k]=val; btn.textContent=lab; });
+    } else if(f.type==='date'){
+      const btn=$('dlg').querySelector('[data-date="'+f.k+'"]');
+      state[f.k]=f.val||iso(TODAY);
+      btn.textContent=fmt(parseISO(state[f.k]));
+      btn.onclick=()=>calPop(btn, state[f.k], key=>{ state[f.k]=key; btn.textContent=fmt(parseISO(key)); });
+    }
+  });
+  const close=()=>{closePop(); $('ov2').classList.remove('on')};
   $('dlg').querySelectorAll('[data-x]').forEach(b=>b.onclick=close);
   $('dlg').querySelector('[data-ok]').onclick=()=>{
     const v={}; let bad=false;
-    cfg.fields.forEach(f=>{
+    fields.forEach(f=>{
       if(f.type==='ro') return;
+      if(f.type==='select'||f.type==='date'){ v[f.k]=state[f.k]; if(f.req && !v[f.k]) bad=true; return; }
       const el=$('dlg').querySelector('[data-k="'+f.k+'"]');
       v[f.k]=el.value.trim();
       if(f.req && !v[f.k]){bad=true; el.style.borderColor='var(--red)'}
@@ -1313,9 +1541,16 @@ function myQueue(r){
   out.sort((a,b)=>a.n.due-b.n.due);
   return out.slice(0,10);
 }
+function qKey(q){return q.d.id+':'+q.n.id}
 function renderQueue(){
-  const list = myQueue(role);
-  $('qWho').textContent = '— '+PEOPLE[role].n;
+  let list = myQueue(role);
+  const man=qManual[role];
+  if(man&&man.length){
+    list.sort((a,b)=>{
+      const ia=man.indexOf(qKey(a)), ib=man.indexOf(qKey(b));
+      return (ia<0?999:ia)-(ib<0?999:ib);
+    });
+  }
   $('cQueue').textContent = list.length;
   if(!list.length){$('queueTbl').innerHTML='<div class="empty">Свободно: закрытых шагов нет. Переключите роль сверху справа.</div>';return}
   $('queueTbl').innerHTML = list.map((q,i)=>{
@@ -1325,7 +1560,8 @@ function renderQueue(){
                 : (days(q.n.due,TODAY)<=1 ? '<span class="st work sm"><i></i>срок сегодня-завтра</span>' : '');
     const acts = wait ? '<button class="btn sm" data-q="'+i+'" data-a="open">Открыть дело</button>'
       : `<button class="btn sm gold" data-q="${i}" data-a="done">Сделал</button><button class="btn sm" data-q="${i}" data-a="move">Перенести</button><button class="btn sm" data-q="${i}" data-a="open">Открыть дело</button>`;
-    return `<div class="q-item">
+    return `<div class="q-item" draggable="true" data-i="${i}">
+      <div class="grip">⠿</div>
       <div><div class="q-name">${esc(q.n.t)}</div>
       <div class="q-path"><b data-q="${i}" data-a="open">${esc(q.d.n)}</b> · ${esc(q.d.c)} · до ${fmt(q.n.due)}</div></div>
       <div class="q-act">${badge}${acts}</div>
@@ -1346,6 +1582,24 @@ function renderQueue(){
       openId=q.d.id;
       dealAction('move',q.d);
     }
+  });
+  let dragI=null;
+  $('queueTbl').querySelectorAll('.q-item').forEach(row=>{
+    row.ondragstart=e=>{dragI=+row.dataset.i; row.classList.add('drag'); e.dataTransfer.effectAllowed='move'};
+    row.ondragend=()=>{row.classList.remove('drag'); $('queueTbl').querySelectorAll('.over').forEach(x=>x.classList.remove('over'))};
+    row.ondragover=e=>{e.preventDefault(); row.classList.add('over')};
+    row.ondragleave=()=>row.classList.remove('over');
+    row.ondrop=e=>{
+      e.preventDefault(); row.classList.remove('over');
+      const to=+row.dataset.i;
+      if(dragI==null || dragI===to) return;
+      const next=list.slice();
+      const [moved]=next.splice(dragI,1);
+      next.splice(to,0,moved);
+      qManual[role]=next.map(qKey);
+      renderQueue();
+      toast('Порядок очереди изменён. Система уведомит по новой очерёдности');
+    };
   });
 }
 
@@ -1452,35 +1706,125 @@ function openReport(){
 }
 
 /* ═══════════ НАВИГАЦИЯ И ОБВЯЗКА ═══════════ */
+const GUIDE={
+  dela:{
+    title:'Как устроены дела',
+    html:`<div class="ctx"><p>Реестр собирает все клиентские и внутренние дела в одном месте. Плитки сверху — это фильтр по состоянию, не отдельный статус.</p><p>Просрочку считает система: срок прошёл и ход за нами. Пока ждём клиента, счётчик команды стоит.</p><p>Новое дело заводится кнопкой справа. Статус, срок и исполнитель меняются прямо в карточке дела, без отдельных кнопок внизу.</p></div>`
+  },
+  queue:{
+    title:'Очередь и порядок шагов',
+    html:`<div class="ctx"><p>Очередь собирается сама из открытых шагов, где вы исполнитель. Закрыли шаг — следующий в цепочке узнаёт без координатора.</p><p>Порядок строк можно менять: потяните за ⠿. Система пересоберёт уведомления по новой очерёдности.</p><p>Это снимает ручной цикл, когда статус меняет только координатор: читает чаты, опрашивает коллег, напоминает следующему.</p></div>`
+  },
+  priem:{
+    title:'Как работает приёмка',
+    html:`<div class="ctx"><p>Работа приходит сюда, а не в личку. Три решения: принять, вернуть с замечанием, отправить клиенту.</p><p>Кто принимает — настраивается, это не зашито на одного человека.</p><p>После «Отправлено клиенту» дело ждёт ответ, счётчик просрочки исполнителя останавливается.</p></div>`
+  },
+  panel:{
+    title:'Модель контроля',
+    html:`<div class="rules" style="margin-bottom:18px">
+      <div class="rule r1"><div class="rn"><i></i>Просрочка команды</div><b>Срок прошёл, ход за нами</b><p>Единственное нарушение. Попадает в счётчик человека.</p></div>
+      <div class="rule r2"><div class="rn"><i></i>Ожидание клиента</div><b>Срок прошёл, ход за клиентом</b><p>Счётчик команды остановлен. Идёт счётчик тишины клиента.</p></div>
+      <div class="rule r3"><div class="rn"><i></i>Норма</div><b>Срок в будущем или шаг закрыт</b><p>Никого не дёргаем. Руководитель смотрит только на первые две колонки.</p></div>
+    </div>
+    <div class="esc">
+      <div class="esc-r h"><div>Событие</div><div>Когда</div><div>Что делает система</div><div>Кому</div></div>
+      <div class="esc-r"><div><b>Наступил шаг</b></div><div><span>сразу</span></div><div><span>уведомление исполнителю и запись в журнале</span></div><div><span>исполнителю</span></div></div>
+      <div class="esc-r"><div><b>Срок завтра</b></div><div><span>за 1 день</span></div><div><span>напоминание: сделал или перенести с причиной</span></div><div><span>исполнителю</span></div></div>
+      <div class="esc-r"><div><b>Срок прошёл</b></div><div><span>в тот же день</span></div><div><span>шаг помечается просроченным</span></div><div><span>исполнителю и Дарине</span></div></div>
+      <div class="esc-r"><div><b>Просрочка 3 дня</b></div><div><span>на 3-й день</span></div><div><span>дело поднимается наверх контроля</span></div><div><span>Никите</span></div></div>
+      <div class="esc-r"><div><b>Клиент молчит</b></div><div><span>с 5-го дня</span></div><div><span>напоминание тому, кто ведёт клиента</span></div><div><span>Никите</span></div></div>
+    </div>
+    <div class="note" style="display:block;margin-top:16px"><b>Правило одно.</b> Состояние определяет ответ на вопрос «чей сейчас ход»: наш — просрочка, клиента — ожидание.</div>`
+  }
+};
+function openGuide(){
+  const g=GUIDE[page]||GUIDE.dela;
+  $('modal').innerHTML=`
+    <div class="m-head" style="--c:var(--gold)">
+      <button class="m-x" data-a="x">✕</button>
+      <div class="m-kick">Инструкция раздела</div>
+      <div class="m-title">${esc(g.title)}</div>
+    </div>
+    <div class="m-body" style="grid-template-columns:1fr"><div>${g.html}</div></div>
+    <div class="m-acts"><button class="btn" data-a="x">Закрыть</button></div>`;
+  $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{openId=null;$('ov').classList.remove('on');document.body.style.overflow=''});
+  $('ov').classList.add('on'); document.body.style.overflow='hidden';
+}
+function openNewDeal(){
+  dialog({
+    title:'Новое дело',
+    fields:[
+      {k:'n',type:'text',label:'Название',ph:'что делаем',req:true},
+      {k:'c',type:'select',label:'Клиент',opts:CLIENTS.map(c=>[c,c])},
+      {k:'dir',type:'select',label:'Направление',opts:DIRS.map(d=>[d,d])},
+      {k:'who',type:'select',label:'Ответственный',opts:Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].n+', '+PEOPLE[k].r]),val:role},
+      {k:'prio',type:'select',label:'Приоритет',opts:[['high','Высокий'],['mid','Обычный'],['low','Низкий']],val:'mid'},
+      {k:'tpl',type:'select',label:'Шаблон шагов',opts:Object.keys(TPL_LABELS).map(k=>[k,TPL_LABELS[k]]),val:'audit'},
+      {k:'date',type:'date',label:'Срок первого открытого шага',val:iso(addDays(TODAY,7))},
+      {k:'ctx',type:'area',label:'Контекст',ph:'зачем заводим и что уже известно'}
+    ],
+    ok:'Завести дело',
+    note: document.body.classList.contains('hints') ? 'Дело сразу попадает в реестр и в очередь ответственного. Шаблон задаёт цепочку шагов, её потом можно переставить.' : '',
+    run:v=>{
+      const who=v.who;
+      const team=[who, who==='danil'?'darya':'danil', 'nikita'];
+      const tree=TPL[v.tpl](team[0],team[1],team[2]);
+      const ref={left:0};
+      tree.forEach(n=>build(n,0,ref));
+      const first=leaves(tree).find(n=>!n.done);
+      if(first){ first.due=parseISO(v.date); first.d=days(first.due,TODAY); }
+      const d={
+        id:'d'+(DEALS.length+1), n:v.n, c:v.c, dir:v.dir, who:who, st:'new', prio:v.prio,
+        tpl:v.tpl, team:team, closed:0, tree:tree, files:[],
+        ctx:[v.ctx||'Дело заведено из реестра.'],
+        log:[{t:'сейчас',x:actor('изменил')+' состав дел: заведено «'+esc(v.n)+'»'}],
+        order:DEALS.length
+      };
+      d.due=dealDue(d);
+      DEALS.unshift(d);
+      feed(actor('изменил')+' состав дел: заведено «'+esc(d.n)+'»');
+      refresh();
+      openDeal(d.id);
+      toast('Дело заведено и открыто');
+    }
+  });
+}
 function go(p){
   const t=$('p-'+p); if(!t) return;
+  page=p;
   document.querySelectorAll('.page').forEach(s=>s.classList.remove('on'));
   t.classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));
+  $('newDealBtn').style.display = p==='dela' ? '' : 'none';
   window.scrollTo({top:0,behavior:'smooth'});
 }
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>go(b.dataset.p));
-document.querySelectorAll('#roles button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('#roles button').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); role=b.dataset.role;
-  refresh();
-  toast('Роль: '+PEOPLE[role].n+', '+PEOPLE[role].r+'. Очередь и доступы пересобраны');
-});
+$('roleBtn').setAttribute('data-keep-pop','1');
+$('roleBtn').onclick=()=>{
+  const items=Object.keys(PEOPLE).filter(k=>['darina','nikita','darya','danil'].includes(k)).map(k=>[k,PEOPLE[k].n,PEOPLE[k].r]);
+  menuPop($('roleBtn'), items, role, val=>{
+    role=val; $('roleBtn').textContent=PEOPLE[role].n;
+    refresh();
+    toast('Роль: '+PEOPLE[role].n+', '+PEOPLE[role].r+'. Очередь и доступы пересобраны');
+  }, 200);
+};
 $('hintsSw').onclick=()=>{
   const on=document.body.classList.toggle('hints');
   $('hintsSw').classList.toggle('on',on);
-  toast(on?'Пояснения включены: подписи от MS Product видны под экранами':'Пояснения скрыты: чистый рабочий вид');
+  toast(on?'Пояснения включены: короткий разбор под экранами':'Пояснения скрыты: только работа');
 };
 $('themeSw').onclick=()=>{
   const light=document.body.classList.toggle('light');
   $('themeSw').classList.toggle('on',light);
-  $('themeLab').textContent = light?'Тёмная тема':'Светлая тема';
 };
+$('guideBtn').onclick=openGuide;
+$('newDealBtn').onclick=openNewDeal;
 $('ov').onclick=e=>{if(e.target===$('ov')) closeModal()};
-$('ov2').onclick=e=>{if(e.target===$('ov2')) $('ov2').classList.remove('on')};
+$('ov2').onclick=e=>{if(e.target===$('ov2')){closePop();$('ov2').classList.remove('on')}};
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape') return;
-  if($('ov2').classList.contains('on')) $('ov2').classList.remove('on');
+  if($('pop').classList.contains('on')){closePop();return}
+  if($('ov2').classList.contains('on')){closePop();$('ov2').classList.remove('on')}
   else if($('ov').classList.contains('on')) closeModal();
 });
 $('repBtn').onclick=openReport;
