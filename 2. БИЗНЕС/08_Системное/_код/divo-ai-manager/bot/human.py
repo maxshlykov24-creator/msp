@@ -28,6 +28,84 @@ URL = re.compile(r"https?://\S+")
 # «По низу рынка» и родня: руководитель считает такие переговоры мусорными.
 # В KB запрет есть, но модель срывается, поэтому меняем формулировку на выходе.
 MARKET_TALK = re.compile(r"(ниже|по\s+низу)\s+рынка", re.IGNORECASE)
+# «Передам ваш контакт менеджеру» ломает роль: клиент пишет продавцу и слышит,
+# что продавец отдаст вопрос кому-то другому. Первый вопрос в ответ - «а ты кто?».
+# В KB запрет есть (правило 37), но модель срывается на шаблон, поэтому чиним
+# на выходе. Порядок важен: сначала связки, потом одиночное слово.
+MANAGER_CASES = {
+    "менеджер": "коллега",
+    "менеджера": "коллеги",
+    "менеджеру": "коллеге",
+    "менеджером": "коллегой",
+    "менеджере": "коллеге",
+    "менеджеры": "коллеги",
+}
+MANAGER_PHRASES = (
+    (
+        re.compile(
+            r"переда(м|ю|дим)\s+(ваш\w*\s+)?(контакт\w*|номер\w*|данные|вопрос)\s+"
+            r"(наш\w+\s+)?(менеджер\w+|специалист\w+|в\s+отдел\w*\s*\w*)",
+            re.IGNORECASE,
+        ),
+        "наберу вас",
+    ),
+    (
+        re.compile(
+            r"(наш\s+)?менеджер\w*\s+(с\s+вами\s+)?(свяжется|перезвонит|наберет|"
+            r"наберёт|позвонит)(\s+с\s+вами)?",
+            re.IGNORECASE,
+        ),
+        "наберу вас",
+    ),
+    (re.compile(r"(наш\s+)?менеджер\w*\s+уточнит", re.IGNORECASE), "уточню"),
+    (re.compile(r"(наш\s+)?менеджер\w*\s+подтвердит", re.IGNORECASE), "подтвержу"),
+    (re.compile(r"(наш\s+)?менеджер\w*\s+ответит", re.IGNORECASE), "отвечу"),
+    (re.compile(r"уточнит\s+(наш\s+)?менеджер\w*", re.IGNORECASE), "уточню"),
+    (re.compile(r"подтвердит\s+(наш\s+)?менеджер\w*", re.IGNORECASE), "подтвержу"),
+    (
+        re.compile(
+            r"(перезвонит|свяжется|наберет|наберёт)\s+(наш\s+)?менеджер\w*",
+            re.IGNORECASE,
+        ),
+        "наберу вас",
+    ),
+    (re.compile(r"уточн(ю|им)\s+у\s+менеджера", re.IGNORECASE), r"уточн\1"),
+)
+MANAGER_WORD = re.compile(r"\bменеджер(ы|а|у|ом|е)?\b", re.IGNORECASE)
+# То же самое без слова «менеджер»: «передам в отдел продаж», «вам перезвонят».
+FACELESS = (
+    (
+        re.compile(
+            r"переда(м|ю|дим)\s+(ваш\w*\s+)?(контакт\w*|номер\w*|данные|заявк\w+)"
+            r"(\s+в\s+отдел\w*(\s+\w+)?|\s+коллег\w+|\s+специалист\w+)",
+            re.IGNORECASE,
+        ),
+        "наберу вас",
+    ),
+    (re.compile(r"\bвам\s+(перезвонят|наберут|позвонят)\b", re.IGNORECASE), "наберу вас"),
+    (
+        re.compile(r"\bс\s+вами\s+свяж(утся|ется)\b", re.IGNORECASE),
+        "свяжусь с вами",
+    ),
+)
+# Хвосты, которые остаются от шаблона после замены связок: глагол в третьем
+# лице без подлежащего («наберу вас, после чего свяжется с вами»).
+DOUBLE_CALLBACK = re.compile(
+    r",?\s*(и\s+|а\s+|после\s+чего\s+)?свяж(ется|усь)\s+с\s+вами[^.!?]*",
+    re.IGNORECASE,
+)
+MANAGER_TAILS = (
+    (re.compile(r"\bсвяжется\s+с\s+вами", re.IGNORECASE), "свяжусь с вами"),
+    (re.compile(r"\bперезвонит\s+вам", re.IGNORECASE), "перезвоню"),
+    (re.compile(r"\bответит\s+точно", re.IGNORECASE), "отвечу точно"),
+    (re.compile(r"\bуточнит\b", re.IGNORECASE), "уточню"),
+    (re.compile(r"\bподтвердит\b", re.IGNORECASE), "подтвержу"),
+    (re.compile(r"\bрасскажут\b", re.IGNORECASE), "расскажу"),
+    (re.compile(r"\bответят\b", re.IGNORECASE), "отвечу"),
+    (re.compile(r"\bуточнят\b", re.IGNORECASE), "уточню"),
+    (re.compile(r"\bпосчитают\b", re.IGNORECASE), "посчитаем"),
+    (re.compile(r"наберу вас[,\s]+наберу вас", re.IGNORECASE), "наберу вас"),
+)
 # Отрицания истории, которые всегда ложь: в базе нет записи не значит «чисто».
 # Скрипт «в такси автомобиль не использовался» для каршеринговых машин сюда
 # не попадает - его руководитель как раз просил.
@@ -64,10 +142,42 @@ def drop_end_period(text: str) -> str:
     return text
 
 
+def _tidy(text: str, original: str) -> str:
+    """Замены строчные и оставляют двойные пробелы - вернуть реплике вид."""
+    text = re.sub(r"\s{2,}", " ", text).replace(" ,", ",").strip()
+    if original[:1].isupper() and text[:1].islower():
+        text = text[0].upper() + text[1:]
+    return text
+
+
+def drop_manager(text: str) -> str:
+    """Убрать «менеджера» как третье лицо: продавец в чате - сам Никита."""
+    original = text or ""
+    text = original
+    for pattern, repl in FACELESS:
+        text = pattern.sub(repl, text)
+    touched = text != original
+    if MANAGER_WORD.search(text):
+        touched = True
+        for pattern, repl in MANAGER_PHRASES:
+            text = pattern.sub(repl, text)
+        text = MANAGER_WORD.sub(
+            lambda m: MANAGER_CASES.get(m.group(0).lower(), "коллега"), text
+        )
+    if touched:
+        for pattern, repl in MANAGER_TAILS:
+            text = pattern.sub(repl, text)
+        # «Наберу вас, после чего свяжусь с вами» - обещание звонка дважды.
+        if "наберу вас" in text.lower():
+            text = DOUBLE_CALLBACK.sub("", text)
+    return _tidy(text, original)
+
+
 def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: дефис вместо длинного тире, без точки в конце."""
     text = (text or "").replace("—", "-").replace("–", "-")
     text = MARKET_TALK.sub("ниже аналогов", text)
+    text = drop_manager(text)
     return drop_end_period(text)
 
 
