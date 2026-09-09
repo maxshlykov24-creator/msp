@@ -1,7 +1,12 @@
 import { and, or, ilike, eq, inArray, asc, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { products, stock, msRefs, productFolders } from "../db/schema.js";
-import { STORE_TO_WAREHOUSE, sortWarehousesByDisplayOrder } from "@kassa/shared";
+import {
+  CDEK_LOCATION,
+  CDEK_WAREHOUSE_ID,
+  STORE_TO_WAREHOUSE,
+  sortWarehousesByDisplayOrder,
+} from "@kassa/shared";
 import * as ms from "../clients/ms.js";
 import { extractIdFromHref } from "./bootstrap.js";
 import type { Product, SuitPart } from "@kassa/shared";
@@ -16,6 +21,53 @@ function displayCategory(category: string | null | undefined, name: string): str
 }
 
 type ProductRow = typeof products.$inferSelect;
+
+/**
+ * Позиции, лежащие в СДЭК. Склада «СДЭК» в МойСклад нет: это расположение
+ * позиции в заявке кассы, поэтому количество собираем из `deal_item_state`
+ * и количества позиции внутри `deals.data` (созвон 09.09 — видеть СДЭК строкой
+ * в остатках товара).
+ */
+async function cdekQtyByProduct(productMsIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (productMsIds.length === 0) return result;
+  const rows = await db.execute(sql`
+    select s.item_id as item_id,
+           coalesce(sum(coalesce((i->>'qty')::numeric, 1)), 0) as qty
+      from deal_item_state s
+      join deals d on d.number = s.deal_number
+      left join lateral jsonb_array_elements(d.data->'items') i
+             on i->>'productId' = s.item_id
+     where s.location ilike 'сдэк%'
+       -- Закрытая заявка означает, что посылку уже забрали или вернули:
+       -- в СДЭК такая позиция больше не лежит.
+       and d.stage not in ('Успех', 'Провал')
+       and s.item_id in (${sql.join(
+         productMsIds.map((id) => sql`${id}`),
+         sql`, `
+       )})
+     group by s.item_id
+  `);
+  const raw = (Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] }).rows ?? [])) as Array<{
+    item_id: string;
+    qty: string | number;
+  }>;
+  for (const r of raw) {
+    const qty = Number(r.qty) || 0;
+    if (qty > 0) result.set(r.item_id, qty);
+  }
+  return result;
+}
+
+function cdekLine(qty: number): NonNullable<Product["warehouses"]>[number] {
+  return {
+    warehouseMsId: CDEK_WAREHOUSE_ID,
+    name: CDEK_LOCATION,
+    available: qty,
+    reserve: 0,
+    stock: qty,
+  };
+}
 
 async function attachStock(rows: ProductRow[], storeName?: string): Promise<Product[]> {
   if (rows.length === 0) return [];
@@ -44,8 +96,12 @@ async function attachStock(rows: ProductRow[], storeName?: string): Promise<Prod
     }
   }
 
+  const cdek = await cdekQtyByProduct(msIds);
+
   return rows.map((r) => {
     const warehouses = sortWarehousesByDisplayOrder(warehousesByProduct.get(r.msId) ?? []);
+    const cdekQty = cdek.get(r.msId) ?? 0;
+    if (cdekQty > 0) warehouses.push(cdekLine(cdekQty));
     return {
       id: r.msId,
       name: r.name,
@@ -285,6 +341,9 @@ export async function getProductStockByWarehouses(
   }
 
   const warehouses = sortWarehousesByDisplayOrder([...byId.values()]);
+  // СДЭК идёт последней строкой: это не склад, а положение позиции в заявке.
+  const cdekQty = (await cdekQtyByProduct([productMsId])).get(productMsId) ?? 0;
+  if (cdekQty > 0) warehouses.push(cdekLine(cdekQty));
   const source: "cache" | "live" | "mixed" =
     fromLive && fromCache ? "mixed" : fromLive ? "live" : "cache";
 

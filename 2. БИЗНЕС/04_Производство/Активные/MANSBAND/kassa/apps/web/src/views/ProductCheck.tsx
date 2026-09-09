@@ -11,7 +11,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { ITEM_LOCATIONS } from "@kassa/shared";
+import { ITEM_LOCATIONS, isVirtualWarehouse } from "@kassa/shared";
 import type { Product, WarehouseStockLine } from "../data/types";
 import { api, apiBlob, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
@@ -68,6 +68,9 @@ const EXPANDED_COLUMNS: { id: string; slots: LocSlot[] }[] = [
     slots: [
       { label: "Центральный", match: (n) => /^центральн/i.test(n.trim()) || /центральный склад/i.test(n) },
       { label: "В пути", match: (n) => /в пути/i.test(n) },
+      // СДЭК — не склад МойСклад, а положение позиции в заявке. Стоит последним,
+      // чтобы консультант видел, сколько штук уехало (созвон 09.09).
+      { label: "СДЭК", match: (n) => /^сдэк/i.test(n.trim()) },
     ],
   },
 ];
@@ -246,7 +249,10 @@ async function withStock(rows: Product[]): Promise<Product[]> {
 }
 
 function stockSum(product: Product): number {
-  return (product.warehouses ?? []).reduce((s, w) => s + (w.available || 0), 0);
+  // Виртуальные строки (СДЭК) в остаток не входят: товар уже уехал к клиенту.
+  return (product.warehouses ?? [])
+    .filter((w) => !isVirtualWarehouse(w.warehouseMsId))
+    .reduce((s, w) => s + (w.available || 0), 0);
 }
 
 export function ProductCheck() {

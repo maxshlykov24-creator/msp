@@ -50,6 +50,17 @@ export type ItemLocation = (typeof ITEM_LOCATIONS)[number];
 /** Единый статус СДЭК; старые значения «СДЭК у клиента» / «СДЭК у нас» сведены к нему. */
 export const CDEK_LOCATION: ItemLocation = "СДЭК";
 
+/**
+ * Идентификатор строки СДЭК в остатках товара. Склада с таким именем в МойСклад
+ * нет, количество считает касса по расположению позиций в заявках, поэтому строка
+ * помечена как виртуальная и не входит в сумму доступного остатка.
+ */
+export const CDEK_WAREHOUSE_ID = "virtual:cdek";
+
+export function isVirtualWarehouse(warehouseMsId: string | undefined | null): boolean {
+  return (warehouseMsId ?? "").startsWith("virtual:");
+}
+
 /** Нормализация исторических значений расположения к текущему справочнику. */
 export function normalizeItemLocation(location: string | undefined | null): string {
   const value = (location ?? "").trim();
