@@ -176,8 +176,14 @@ PERMIT_DETAIL = (
         re.IGNORECASE,
     ),
     re.compile(r"\s*(по|в)\s+\w+ском\s+краю", re.IGNORECASE),
-    re.compile(r"\s*(по|в)\s+санкт-?петербург\w*", re.IGNORECASE),
-    re.compile(r"\s*(по|в)\s+москв\w*", re.IGNORECASE),
+    re.compile(r"\s*(по|в|-)?\s*санкт-?петербург\w*", re.IGNORECASE),
+    re.compile(r"\s*(по|в|-)?\s*москв\w*", re.IGNORECASE),
+    re.compile(r"\s*(по|в|-)?\s*ростовск\w*", re.IGNORECASE),
+    re.compile(
+        r"\s*оформлен\w*\s+(в\s+)?(" + PERMIT_MONTH + r")\w*\s*\d{4}",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\s*,?\s*статус\s*$", re.IGNORECASE),
     re.compile(
         r"\s*\([^)]*(петербург|москв|област|кра[йя]|"
         + PERMIT_MONTH
@@ -309,7 +315,7 @@ def trim_permit(text: str) -> str:
             for pattern in PERMIT_DETAIL:
                 part = pattern.sub(" ", part)
             part = re.sub(r"\s*,?\s*(оно|которое)\s*$", "", part, flags=re.IGNORECASE)
-            part = re.sub(r"\s*,\s*$", "", part)
+            part = re.sub(r"\s*[-–—,;:]\s*$", "", part)
         out.append(part)
     text = " ".join(out)
     return _tidy(text, original) if text != original else original
