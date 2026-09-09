@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button, Field } from "./ui";
+import { AtelierAmountField } from "./AtelierAmountField";
 import { PhotoField } from "../views/forms/common";
 import { formatPhone } from "../lib/format";
 import { attachmentsToUpload, type PhotoAttachment } from "../lib/photo";
@@ -215,15 +216,7 @@ export function ConvertKindForm({
                 placeholder="ООО «Вектор» · ИНН …"
               />
             </Field>
-            <Field label="Ателье, ₽">
-              <input
-                className="input"
-                inputMode="numeric"
-                value={atelier}
-                onChange={(e) => setAtelier(e.target.value.replace(/\D/g, ""))}
-                placeholder="0"
-              />
-            </Field>
+            <AtelierAmountField value={atelier} onChange={setAtelier} />
             <Field label="Доставка, ₽">
               <input
                 className="input"

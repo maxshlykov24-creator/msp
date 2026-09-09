@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "../../store";
 import { Card, Field } from "../../components/ui";
+import { AtelierAmountField } from "../../components/AtelierAmountField";
 import { ProductPicker, cartTotal, cartItemsDiscount } from "../../components/ProductPicker";
 import {
   ClientFields,
@@ -180,9 +181,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
         <SectionTitle>Товары, стоимость и скидка</SectionTitle>
         <ProductPicker items={items} onChange={setItems} />
         <div className="mt-4 grid sm:grid-cols-2 gap-4">
-          <Field label="Ателье, ₽">
-            <input className="input" inputMode="numeric" value={atelier} onChange={(e) => setAtelier(e.target.value.replace(/\D/g, ""))} placeholder="0" />
-          </Field>
+          <AtelierAmountField value={atelier} onChange={setAtelier} />
           <Field label="Доставка, ₽">
             <input className="input" inputMode="numeric" value={delivery} onChange={(e) => setDelivery(e.target.value.replace(/\D/g, ""))} placeholder="0" />
           </Field>

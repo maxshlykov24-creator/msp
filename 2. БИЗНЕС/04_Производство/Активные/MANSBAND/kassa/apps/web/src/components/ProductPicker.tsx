@@ -1,5 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightLeft, Search, Plus, Minus, Trash2, ScanLine, X, Loader2 } from "lucide-react";
+import {
+  ArrowRightLeft,
+  Search,
+  Plus,
+  Minus,
+  Trash2,
+  ScanLine,
+  X,
+  Loader2,
+  ChevronDown,
+  ChevronRight,
+  Unlink,
+  Link2,
+} from "lucide-react";
 import type { CartItem, Product } from "../data/types";
 import { PRODUCTS } from "../data/mock";
 import { STORE_TO_WAREHOUSE, SUIT_PART_LABEL } from "@kassa/shared";
@@ -133,6 +146,99 @@ function SuitBreakWarning({ items, store }: { items: CartItem[]; store: string }
   );
 }
 
+interface SuitPriceGroupPart {
+  productId: string;
+  part: SuitPart;
+  size: string;
+  qty: number;
+  unitMsPriceRub: number;
+  distributedUnitPriceRub: number;
+}
+
+interface SuitPriceGroupApi {
+  groupId: string;
+  variation: string;
+  title: string;
+  hasVest: boolean;
+  qty: number;
+  matrixUnitPriceRub: number | null;
+  matchedRuleLabel: string | null;
+  parts: SuitPriceGroupPart[];
+}
+
+/**
+ * Склейка частей костюма в одну строку чека по цене матрицы (созвон 09.09):
+ * при скане пиджака + брюк (+ жилета) одной вариации сервер `/suits/price-group`
+ * подбирает цену из матрицы и разносит её по частям. Разделённые вручную
+ * позиции (`suitSplit`) автосклейка не трогает, пока их не собрали обратно.
+ * Возвращает снимок групп по `groupId` — используется и для применения цены,
+ * и для рендера (название, часть каждой позиции, признак «не сматчилось»).
+ */
+function useSuitGrouping(items: CartItem[], onChange: (items: CartItem[]) => void) {
+  const [meta, setMeta] = useState<Record<string, SuitPriceGroupApi>>({});
+
+  const payload = useMemo(
+    () =>
+      items
+        .filter((it) => !it.isReturn && it.qty > 0 && it.productId && !it.suitSplit)
+        .map((it) => ({ productId: it.productId, qty: it.qty })),
+    [items]
+  );
+
+  useEffect(() => {
+    if (USE_MOCK || payload.length === 0) return;
+    let alive = true;
+    const t = setTimeout(() => {
+      api
+        .post<{ groups: SuitPriceGroupApi[]; unmatchedProductIds: string[] }>("/suits/price-group", {
+          items: payload,
+        })
+        .then((res) => {
+          if (!alive) return;
+          const groups = res.groups ?? [];
+          const nextMeta: Record<string, SuitPriceGroupApi> = {};
+          for (const g of groups) nextMeta[g.groupId] = g;
+          setMeta(nextMeta);
+
+          let changed = false;
+          const next = items.map((it) => {
+            if (it.suitSplit) return it;
+            for (const g of groups) {
+              const part = g.parts.find((p) => p.productId === it.productId);
+              if (!part) continue;
+              const matched = g.matrixUnitPriceRub != null;
+              const nextPrice = matched ? part.distributedUnitPriceRub : it.suitOriginalPrice ?? it.price;
+              if (it.suitGroupId === g.groupId && it.suitPriceApplied === matched && it.price === nextPrice) {
+                return it;
+              }
+              changed = true;
+              return {
+                ...it,
+                suitGroupId: g.groupId,
+                suitPriceApplied: matched,
+                suitOriginalPrice: it.suitOriginalPrice ?? it.price,
+                price: nextPrice,
+              };
+            }
+            return it;
+          });
+          if (changed) onChange(next);
+        })
+        .catch(() => {
+          /* сеть недоступна — оставляем цены МойСклад, костюм не склеиваем */
+        });
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+    // payload сравнивается по значению через JSON в зависимости эффекта ниже
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(payload)]);
+
+  return meta;
+}
+
 export function ProductPicker({
   items,
   onChange,
@@ -154,6 +260,8 @@ export function ProductPicker({
   onMovementCreated?: (summary: string) => void;
 }) {
   const { activeStore } = useStore();
+  const suitGroupMeta = useSuitGrouping(items, onChange);
+  const [expandedSuits, setExpandedSuits] = useState<Record<string, boolean>>({});
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [found, setFound] = useState<Product[]>([]);
@@ -347,6 +455,49 @@ export function ProductPicker({
     onChange(items.map((i) => (i.productId === id ? { ...i, ...patch } : i)));
   }
 
+  /** Обновить скидку/подарок сразу по всем частям костюма в группе. */
+  function updateGroup(groupId: string, patch: Partial<CartItem>) {
+    onChange(items.map((i) => (i.suitGroupId === groupId ? { ...i, ...patch } : i)));
+  }
+
+  /** «Разделить на части»: цены частей возвращаются к прайсу МойСклад, автосклейка не трогает. */
+  function splitSuit(groupId: string) {
+    onChange(
+      items.map((i) =>
+        i.suitGroupId === groupId
+          ? { ...i, suitSplit: true, suitPriceApplied: false, price: i.suitOriginalPrice ?? i.price }
+          : i
+      )
+    );
+  }
+
+  /** «Собрать костюм»: возвращает части в автосклейку, цена матрицы подтянется следующим тиком. */
+  function mergeSuit(groupId: string) {
+    onChange(items.map((i) => (i.suitGroupId === groupId ? { ...i, suitSplit: false } : i)));
+  }
+
+  function toggleSuitExpanded(groupId: string) {
+    setExpandedSuits((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  }
+
+  // Строки чека: собранные (не разделённые) части одного костюма сворачиваются
+  // в одну карточку, всё остальное — обычные строки, как раньше.
+  const displayRows = useMemo(() => {
+    const rows: Array<{ kind: "single"; item: CartItem } | { kind: "suit"; groupId: string; items: CartItem[] }> = [];
+    const seenGroups = new Set<string>();
+    for (const it of items) {
+      if (it.suitGroupId && !it.suitSplit) {
+        if (seenGroups.has(it.suitGroupId)) continue;
+        seenGroups.add(it.suitGroupId);
+        const groupItems = items.filter((x) => x.suitGroupId === it.suitGroupId && !x.suitSplit);
+        rows.push({ kind: "suit", groupId: it.suitGroupId, items: groupItems });
+      } else {
+        rows.push({ kind: "single", item: it });
+      }
+    }
+    return rows;
+  }, [items]);
+
   async function openStockModal(it: CartItem) {
     setStockModal({ productId: it.productId, name: it.name, loading: true, data: null, error: null });
     if (USE_MOCK) {
@@ -534,7 +685,118 @@ export function ProductPicker({
       {items.length > 0 && (
         <>
           <div className="rounded-lg border border-ink-700 divide-y divide-ink-700 overflow-hidden">
-            {items.map((it) => {
+            {displayRows.map((row) => {
+              if (row.kind === "suit") {
+                const { groupId, items: groupItems } = row;
+                const meta = suitGroupMeta[groupId];
+                const expanded = !!expandedSuits[groupId];
+                const groupTotal = groupItems.reduce((s, it) => s + lineTotal(it), 0);
+                const groupQty = groupItems[0]?.qty ?? 1;
+                const partOf = (productId: string): SuitPart | undefined =>
+                  meta?.parts.find((p) => p.productId === productId)?.part;
+                const first = groupItems[0];
+                const groupDiscountPct = first?.discountPct;
+                const groupDiscountRub = first?.discountRub;
+                const groupIsGift = !!first?.isGift;
+                return (
+                  <div key={groupId} className="px-3 py-2.5 bg-ink-900/50">
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleSuitExpanded(groupId)}
+                        className="flex-1 text-left min-w-0 rounded-lg hover:bg-ink-800/60 -mx-1 px-1 py-0.5 transition flex items-start gap-1.5"
+                      >
+                        {expanded ? (
+                          <ChevronDown size={15} className="mt-0.5 text-mute shrink-0" />
+                        ) : (
+                          <ChevronRight size={15} className="mt-0.5 text-mute shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <div className="text-[14px] text-white break-words whitespace-normal leading-snug">
+                            {meta?.title ?? "Костюм"} · {groupItems.map((it) => it.name).join(" + ")}
+                          </div>
+                          <div className="text-[12px] text-mute flex flex-wrap gap-x-2 mt-0.5">
+                            <span>{money((first?.price ?? 0) as number)} / шт</span>
+                            {meta && meta.matrixUnitPriceRub == null && (
+                              <span className="text-amber-300/90">
+                                цена костюма не определена — цены частей из МойСклад
+                              </span>
+                            )}
+                            {groupIsGift && <span>подарок (−100%)</span>}
+                            {!groupIsGift && (!!groupDiscountPct || !!groupDiscountRub) && (
+                              <span className="text-amber-200">
+                                скидка −{money(groupItems.reduce((s, it) => s + lineDiscount(it), 0))}
+                                {groupDiscountPct ? ` (${groupDiscountPct}%)` : ""}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => splitSuit(groupId)}
+                        title="Разделить на части — дальше продаются по отдельным ценам МойСклад"
+                        className="inline-flex items-center gap-1 rounded-lg border border-ink-700 px-2 py-1 text-[12px] text-mute hover:text-white hover:border-gold/40 shrink-0 mt-0.5"
+                      >
+                        <Unlink size={13} /> Разделить
+                      </button>
+                      <span className="w-8 text-center text-white text-sm shrink-0 mt-1">×{groupQty}</span>
+                      <div className="w-24 text-right font-semibold text-white shrink-0 mt-0.5">
+                        {money(groupTotal)}
+                      </div>
+                    </div>
+                    {expanded && (
+                      <div className="mt-2 ml-5 space-y-1 border-l border-ink-700 pl-3">
+                        {groupItems.map((it) => {
+                          const part = partOf(it.productId);
+                          return (
+                            <div key={it.productId} className="text-[12px] text-mute flex justify-between gap-2">
+                              <span className="break-words">
+                                {part ? SUIT_PART_LABEL[part] : ""} · {it.name}
+                              </span>
+                              <span className="shrink-0 text-white">{money(it.price)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {!readOnly && (
+                      <div className="flex flex-wrap gap-2 mt-2 items-center">
+                        <input
+                          className="input py-1.5 text-[13px] w-24"
+                          placeholder="скидка %"
+                          value={groupDiscountPct ?? ""}
+                          onChange={(e) =>
+                            updateGroup(groupId, {
+                              discountPct: Number(e.target.value) || undefined,
+                              isGift: false,
+                            })
+                          }
+                        />
+                        <input
+                          className="input py-1.5 text-[13px] w-28"
+                          placeholder="скидка ₽"
+                          value={groupDiscountRub ?? ""}
+                          onChange={(e) =>
+                            updateGroup(groupId, {
+                              discountRub: Number(e.target.value) || undefined,
+                              isGift: false,
+                            })
+                          }
+                        />
+                        <button
+                          onClick={() => updateGroup(groupId, { isGift: !groupIsGift })}
+                          className={`chip ${groupIsGift ? "bg-gold/20 text-gold-soft" : "bg-ink-700 text-mute"}`}
+                        >
+                          🎁 Подарок
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              const it = row.item;
               const avail = availableById[it.productId];
               return (
                 <div key={it.productId} className="px-3 py-2.5 bg-ink-900/50">
@@ -568,8 +830,21 @@ export function ProductPicker({
                             {it.discountPct ? ` (${it.discountPct}%)` : ""}
                           </span>
                         )}
+                        {it.suitGroupId && it.suitSplit && (
+                          <span className="text-mute-soft">часть разделённого костюма</span>
+                        )}
                       </div>
                     </button>
+                    {!readOnly && it.suitGroupId && it.suitSplit && (
+                      <button
+                        type="button"
+                        onClick={() => mergeSuit(it.suitGroupId!)}
+                        title="Собрать костюм обратно — цена матрицы подтянется автоматически"
+                        className="inline-flex items-center gap-1 rounded-lg border border-ink-700 px-2 py-1 text-[12px] text-mute hover:text-white hover:border-gold/40 shrink-0 mt-0.5"
+                      >
+                        <Link2 size={13} /> Собрать костюм
+                      </button>
+                    )}
                     {!readOnly && (
                       <div className="flex items-center gap-1 bg-ink-800 rounded-lg p-1 shrink-0 mt-0.5">
                         <button

@@ -4,6 +4,7 @@ import { api, USE_MOCK } from "../api/client";
 import { Button } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { invalidateAppSettings } from "../lib/appSettings";
+import { SUIT_PRICE_RULES_DEFAULT } from "@kassa/shared";
 
 interface PriceAudit {
   total: number;
@@ -306,6 +307,97 @@ function PriceAuditCard() {
   );
 }
 
+interface SuitPriceRow {
+  id: string;
+  label: string;
+  priceRub: string;
+  active: boolean;
+}
+
+function suitPriceRowsFromOverrides(
+  overrides: Record<string, { priceRub: number; active: boolean }> | undefined
+): SuitPriceRow[] {
+  return SUIT_PRICE_RULES_DEFAULT.map((rule) => {
+    const o = overrides?.[rule.id];
+    return {
+      id: rule.id,
+      label: rule.label,
+      priceRub: String(o?.priceRub ?? rule.priceRub),
+      active: o?.active ?? rule.active,
+    };
+  });
+}
+
+function suitPriceOverridesFromRows(
+  rows: SuitPriceRow[]
+): Record<string, { priceRub: number; active: boolean }> {
+  const result: Record<string, { priceRub: number; active: boolean }> = {};
+  for (const row of rows) {
+    const price = Number(row.priceRub);
+    if (!Number.isFinite(price) || price < 0) continue;
+    result[row.id] = { priceRub: Math.round(price), active: row.active };
+  }
+  return result;
+}
+
+/**
+ * Матрица цен костюмов (созвон 09.09): логика подбора правила (группа МойСклад,
+ * вид пиджака, ростовка, число предметов) зашита в коде —
+ * `packages/shared/src/suitPrices.ts`. Здесь правится только цена и активность
+ * каждого правила, без риска сломать матчинг. Правило неактивно — цена костюма
+ * не определяется, части идут по своим ценам МойСклад.
+ */
+function SuitPriceMatrixCard({
+  rows,
+  setRows,
+}: {
+  rows: SuitPriceRow[];
+  setRows: (fn: (prev: SuitPriceRow[]) => SuitPriceRow[]) => void;
+}) {
+  return (
+    <div className="card p-4 space-y-3">
+      <div>
+        <div className="text-white font-semibold">Матрица цен костюмов</div>
+        <div className="text-[12px] text-mute mt-1">
+          Цена костюма в кассе при сборке пиджака и брюк (+ жилета) одной вариации. Правило,
+          какую строку подобрать, — в коде; тут только цена и включённость.
+        </div>
+      </div>
+      <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+        {rows.map((row) => (
+          <div key={row.id} className="flex gap-2 items-center">
+            <label className="flex items-center gap-1.5 shrink-0">
+              <input
+                type="checkbox"
+                checked={row.active}
+                onChange={(e) =>
+                  setRows((prev) =>
+                    prev.map((r) => (r.id === row.id ? { ...r, active: e.target.checked } : r))
+                  )
+                }
+              />
+            </label>
+            <div className="flex-1 text-[13px] text-white/90 break-words">{row.label}</div>
+            <input
+              className="input w-28 py-1.5 text-[13px] shrink-0"
+              inputMode="numeric"
+              value={row.priceRub}
+              onChange={(e) =>
+                setRows((prev) =>
+                  prev.map((r) =>
+                    r.id === row.id ? { ...r, priceRub: e.target.value.replace(/\D/g, "") } : r
+                  )
+                )
+              }
+            />
+            <span className="text-[12px] text-mute shrink-0">₽</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
   return (
     <div className="rounded-lg border border-ink-700 px-3 py-2">
@@ -328,6 +420,9 @@ export function SettingsScreen() {
   const [uptRows, setUptRows] = useState<TierRow[]>([]);
   const [penaltyConversionRows, setPenaltyConversionRows] = useState<TierRow[]>([]);
   const [penaltyUptRows, setPenaltyUptRows] = useState<TierRow[]>([]);
+  const [suitPriceRows, setSuitPriceRows] = useState<SuitPriceRow[]>(() =>
+    suitPriceRowsFromOverrides(undefined)
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -340,12 +435,17 @@ export function SettingsScreen() {
       return;
     }
     Promise.all([
-      api.get<{ saryMinCheck: number; sarySuitGroups: string[] }>("/settings"),
+      api.get<{
+        saryMinCheck: number;
+        sarySuitGroups: string[];
+        suitPriceOverrides?: Record<string, { priceRub: number; active: boolean }>;
+      }>("/settings"),
       api.get<PayrollSettings>("/payroll/settings"),
     ])
       .then(([app, payroll]) => {
         setSaryMinCheck(String(app.saryMinCheck));
         setSuitGroups((app.sarySuitGroups ?? []).join("\n"));
+        setSuitPriceRows(suitPriceRowsFromOverrides(app.suitPriceOverrides));
         setRevenuePct(String(payroll.revenuePct));
         setDailyFloor(String(payroll.dailyFloor));
         setConversionRows(toRows(payroll.conversionTiers));
@@ -372,10 +472,17 @@ export function SettingsScreen() {
     if (groups.length === 0) return setError("Укажите хотя бы одну группу костюмов");
     if (!pct || pct <= 0 || pct > 100) return setError("Процент от выручки: число от 0 до 100");
     if (!floor || floor < 0) return setError("Обеспечительная ставка должна быть числом больше нуля");
+    if (suitPriceRows.some((r) => r.active && (!r.priceRub || Number(r.priceRub) <= 0))) {
+      return setError("У включённого правила матрицы костюмов должна быть цена больше нуля");
+    }
     setSaving(true);
     try {
       if (!USE_MOCK) {
-        await api.put("/settings", { saryMinCheck: minCheck, sarySuitGroups: groups });
+        await api.put("/settings", {
+          saryMinCheck: minCheck,
+          sarySuitGroups: groups,
+          suitPriceOverrides: suitPriceOverridesFromRows(suitPriceRows),
+        });
         await api.put("/payroll/settings", {
           revenuePct: pct,
           dailyFloor: floor,
@@ -521,6 +628,8 @@ export function SettingsScreen() {
           <PayrollEnqueueCard />
 
           <PriceAuditCard />
+
+          <SuitPriceMatrixCard rows={suitPriceRows} setRows={setSuitPriceRows} />
 
           {meta.updatedAt && (
             <div className="text-[12px] text-mute">
