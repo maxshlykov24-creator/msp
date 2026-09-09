@@ -374,12 +374,15 @@
   .modal{width:100%;max-width:1080px;max-height:calc(100vh - 56px);overflow:auto;border-radius:24px;border:1px solid var(--line-2);background:var(--bg);box-shadow:var(--shadow-lg);transform:translate3d(0,18px,0);opacity:0;transition:transform .4s var(--ease),opacity .4s var(--ease);position:relative}
   .ov.on .modal{transform:translate3d(0,0,0);opacity:1}
   #ov2{z-index:90}
+  #ov3{z-index:100}
   .modal.narrow{max-width:520px}
+  .modal.mid{max-width:640px}
   .m-head{padding:26px 28px 20px;border-bottom:1px solid var(--line);position:relative;border-radius:24px 24px 0 0;overflow:hidden}
   .m-head::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--c,var(--gold))}
   .m-kick{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2);font-weight:600;margin-bottom:12px}
   .m-title{font-size:23px;font-weight:300;line-height:1.32;padding-right:44px}
   .m-meta{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;align-items:center}
+  .m-meta .meta-prog{margin-left:auto}
   .meta-i{font-size:12px;color:var(--mute);padding:6px 12px;border-radius:10px;background:var(--glass);border:1px solid var(--line)}
   .meta-i b{color:var(--ink);font-weight:500}
   .m-x{position:absolute;top:22px;right:22px;width:34px;height:34px;border-radius:11px;border:1px solid var(--line);background:var(--glass);color:var(--mute);font-size:16px;cursor:pointer;transition:.2s var(--ease);line-height:1}
@@ -409,7 +412,7 @@
 
   /* ─── дерево ─── */
   .tree-hint{font-size:11.5px;color:var(--mute-2);margin-bottom:10px}
-  .node-row{display:grid;grid-template-columns:16px 22px 1fr auto auto auto;gap:11px;align-items:center;padding:9px 10px;border-radius:12px;transition:background .2s var(--ease);border:1px solid transparent}
+  .node-row{display:grid;grid-template-columns:16px 22px 1fr auto auto auto;gap:11px;align-items:center;padding:9px 10px;border-radius:12px;transition:background .2s var(--ease);border:1px solid transparent;cursor:pointer}
   .node-row:hover{background:var(--hover)}
   .node-row.drag{opacity:.4}
   .node-row.over{border-color:rgba(198,184,164,.6);background:color-mix(in srgb,var(--gold) 10%,var(--panel))}
@@ -447,7 +450,7 @@
   body:not(.hints) .dlg-note{display:none !important}
 
   /* ─── toast ─── */
-  .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,26px);z-index:99;padding:13px 22px;border-radius:14px;background:var(--bg);border:1px solid var(--line-2);color:var(--ink);font-size:13px;opacity:0;pointer-events:none;transition:.35s var(--ease);box-shadow:var(--shadow-lg);max-width:min(560px,90vw);text-align:center;line-height:1.5}
+  .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,26px);z-index:130;padding:13px 22px;border-radius:14px;background:var(--bg);border:1px solid var(--line-2);color:var(--ink);font-size:13px;opacity:0;pointer-events:none;transition:.35s var(--ease);box-shadow:var(--shadow-lg);max-width:min(560px,90vw);text-align:center;line-height:1.5}
   .toast.on{opacity:1;transform:translate(-50%,0)}
 
   .foot{margin-top:56px;padding-top:24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;font-size:11.5px;color:var(--mute-2)}
@@ -661,6 +664,7 @@
 
 <div class="ov" id="ov"><div class="modal" id="modal"></div></div>
 <div class="ov" id="ov2"><div class="modal narrow" id="dlg"></div></div>
+<div class="ov" id="ov3"><div class="modal narrow" id="dlg3"></div></div>
 <div class="pop" id="pop"></div>
 <div class="toast" id="toast"></div>
 
@@ -849,6 +853,8 @@ let uid=0;
 function build(node,teamIdx,limitRef){
   node.id='n'+(++uid);
   node.due=addDays(TODAY,node.d);
+  node.ctx=node.ctx||[];
+  node.comments=node.comments||[];
   if(node.kids){node.kids.forEach(k=>build(k,teamIdx,limitRef))}
   else{
     if(limitRef.left>0){node.done=true;limitRef.left--}
@@ -877,6 +883,16 @@ const DEALS = RAW.map((r,idx)=>{
   ];
   return d;
 });
+(function seedStepNotes(){
+  const d=DEALS[0];
+  const parent=d.tree[0];
+  parent.ctx=['Ветка про реестр. Пока нет полного перечня, внутреннюю оценку не начинаем.'];
+  const leaf=leaves(d.tree).find(n=>n.t.indexOf('Выгрузить')===0);
+  if(leaf){
+    leaf.ctx=['Клиент обещал выгрузку из своей таблицы. Формат: объект, адрес, площадь, обременения.'];
+    leaf.comments=[{who:'darya',t:'03.09',x:'Напомнила в чате, приложила шаблон колонок.'}];
+  }
+})();
 
 function dealDue(d){
   // срок дела = срок последнего незакрытого листа
@@ -953,12 +969,15 @@ function closeLayer(id){
   closePop();
   $(id).classList.remove('on');
   if(id==='ov') openId=null;
+  if(id==='ov2') stepPath=null;
 }
 
 /* ═══════════ ВСПЛЫВАЮЩИЕ СПИСКИ И КАЛЕНДАРЬ ═══════════ */
+let popAnchor=null;
 function closePop(){
   const p=$('pop'); if(!p) return;
   p.classList.remove('on','wide'); p.innerHTML=''; p.style.width='';
+  popAnchor=null;
   document.removeEventListener('mousedown', popAway, true);
 }
 function popAway(e){
@@ -977,10 +996,12 @@ function placePop(anchor, width){
   if(top+h>innerHeight-12) top=Math.max(12, r.top-h-6);
   if(left+w>innerWidth-12) left=Math.max(12, innerWidth-w-12);
   p.style.top=top+'px'; p.style.left=left+'px';
+  popAnchor=anchor;
   document.removeEventListener('mousedown', popAway, true);
   document.addEventListener('mousedown', popAway, true);
 }
 function menuPop(anchor, items, current, onPick, width){
+  if($('pop').classList.contains('on') && popAnchor===anchor){ closePop(); return; }
   const p=$('pop');
   p.innerHTML=items.map(it=>{
     const v=it[0], lab=it[1], sub=it[2]||'';
@@ -1008,6 +1029,7 @@ function monthMatrix(view){
   return cells;
 }
 function calPop(anchor, value, onPick, range){
+  if($('pop').classList.contains('on') && popAnchor===anchor){ closePop(); return; }
   const p=$('pop');
   let view=parseISO(value)|| (range&&range.from?parseISO(range.from):null) || new Date(TODAY);
   let from=range?range.from:'';
@@ -1237,7 +1259,7 @@ function renderDeals(){
 }
 
 /* ═══════════ МОДАЛКА ДЕЛА ═══════════ */
-let openId=null;
+let openId=null, stepPath=null;
 function openDeal(id){
   openId=id;
   renderModal();
@@ -1246,9 +1268,12 @@ function openDeal(id){
 /* после любого действия: перерисовать открытую карточку и все счётчики */
 function sync(){
   if(openId && $('ov').classList.contains('on')) renderModal();
+  if(stepPath && $('ov2').classList.contains('on') && $('dlg').dataset.step) renderStep();
   renderKpi(); renderDeals(); renderQueue(); renderPriem(); renderPanel();
 }
 function closeModal(){
+  closeLayer('ov3');
+  closeLayer('ov2');
   closeLayer('ov');
 }
 function renderModal(){
@@ -1272,13 +1297,13 @@ function renderModal(){
         <button type="button" class="meta-i click" data-a="reassign" data-keep-pop="1">Ответственный <b>${esc(PEOPLE[d.who].n)}</b></button>
         <button type="button" class="meta-i click" data-a="prio" data-keep-pop="1">Приоритет <b>${PRIO[d.prio]}</b></button>
         <button type="button" class="meta-i click" data-a="move" data-keep-pop="1">Срок <b>${n?fmt(n.due):'закрыто'}</b></button>
-        <div class="meta-i">Готово <b>${p}%</b></div>
+        <div class="meta-i meta-prog">Готово <b>${p}%</b></div>
       </div>
       <div class="prog" style="max-width:none;margin-top:16px"><span class="prog-bar"><span style="width:${p}%;--c:${col}"></span></span></div>
     </div>
     <div class="m-body">
       <div>
-        <h4>Шаги <span class="hint-only" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--mute-2)">перетащите за ⠿, чтобы изменить порядок</span></h4>
+        <h4>Шаги <span class="hint-only" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--mute-2)">нажмите на шаг · перетащите за ⠿</span></h4>
         <div class="tree" id="tree">${(nextOf=n, renderTree(d.tree,1,'',[]))}</div>
         <div class="note" style="margin-top:18px"><b>Правило.</b> Прогресс родителя считает система по закрытым веткам. Вложенность не ограничена: у шага может быть подшаг, а у подшага свой. Срок родителя не может быть раньше срока последнего потомка — при попытке система предупредит.</div>
       </div>
@@ -1350,7 +1375,12 @@ function bindTree(d){
   });
   let dragPath=null;
   root.querySelectorAll('.node-row').forEach(row=>{
-    row.ondragstart=e=>{dragPath=row.dataset.p;row.classList.add('drag');e.dataTransfer.effectAllowed='move'};
+    row.onclick=e=>{
+      if(e.target.closest('.grip') || e.target.closest('.tw')) return;
+      if(row.dataset.dragged==='1'){ delete row.dataset.dragged; return; }
+      openStep(row.dataset.p.split('.').map(Number));
+    };
+    row.ondragstart=e=>{dragPath=row.dataset.p;row.classList.add('drag');row.dataset.dragged='1';e.dataTransfer.effectAllowed='move'};
     row.ondragend=()=>{row.classList.remove('drag');root.querySelectorAll('.over').forEach(x=>x.classList.remove('over'))};
     row.ondragover=e=>{
       if(!dragPath) return;
@@ -1373,6 +1403,193 @@ function bindTree(d){
       toast('Порядок шагов изменён. Уведомления и сроки пересобраны по новой очерёдности');
     };
   });
+}
+function nodeDue(n){
+  if(n.kids&&n.kids.length) return new Date(Math.max.apply(null, leaves(n.kids).map(x=>x.due.getTime())));
+  return n.due;
+}
+function nodeDone(n){
+  if(n.kids&&n.kids.length) return leaves(n.kids).every(x=>x.done);
+  return !!n.done;
+}
+function pathNum(path){ return path.map(i=>i+1).join('.'); }
+function notesBlock(owner, emptyCtx, emptyCmt){
+  const ctx = (owner.ctx&&owner.ctx.length) ? owner.ctx.map(t=>'<p>'+t+'</p>').join('') : '<p style="color:var(--mute-2)">'+emptyCtx+'</p>';
+  const cmt = (owner.comments&&owner.comments.length) ? owner.comments.map(c=>`<div class="cmt-i"><div class="cmt-h"><b>${esc(PEOPLE[c.who]?PEOPLE[c.who].n:c.who)}</b><span>${esc(c.t)}</span></div><div class="cmt-x">${esc(c.x)}</div></div>`).join('') : '<div style="font-size:12.5px;color:var(--mute-2)">'+emptyCmt+'</div>';
+  return {ctx,cmt};
+}
+function openStep(path){
+  stepPath=path;
+  renderStep();
+  openLayer('ov2');
+}
+function renderStep(){
+  const d=DEALS.find(x=>x.id===openId); if(!d||!stepPath) return;
+  const n=nodeByPath(d,stepPath).node; if(!n) return;
+  n.ctx=n.ctx||[]; n.comments=n.comments||[];
+  const has=!!(n.kids&&n.kids.length);
+  const due=nodeDue(n), done=nodeDone(n), late=!done && due<TODAY;
+  const started=has && leaves(n.kids).some(x=>x.done);
+  let stateLab='Ждёт', stateCls='new';
+  if(done){ stateLab='Готово'; stateCls='done'; }
+  else if(late){ stateLab='Просрочен, '+days(TODAY,due)+' дн.'; stateCls='late'; }
+  else if(started || (!has && nextStep(d)===n)){ stateLab='Идёт'; stateCls='work'; }
+  const notes=notesBlock(n,'Контекста по шагу пока нет. Сюда — фактура именно этой задачи.','Комментариев по шагу пока нет. Свежий — сверху.');
+  const dueChip = has
+    ? `<div class="meta-i">Срок <b>${fmt(due)}</b></div>`
+    : `<button type="button" class="meta-i click" data-s="due" data-keep-pop="1">Срок <b>${fmt(due)}</b></button>`;
+  const foot = (!has && !n.done)
+    ? '<button class="btn gold" data-s="close">Закрыть шаг</button>'
+    : (done ? '<span class="btn green">Шаг закрыт</span>' : '');
+  const box=$('dlg');
+  box.className='modal mid';
+  box.dataset.step='1';
+  box.innerHTML=`
+    <div class="m-head" style="--c:${late?'var(--red)':done?'var(--green)':'var(--gold)'}">
+      <button class="m-x" data-s="x">✕</button>
+      <div class="m-kick">${esc(d.c)} · ${esc(d.n)} · шаг ${pathNum(stepPath)}</div>
+      <div class="m-title" style="font-size:20px">${esc(n.t)}</div>
+      <div class="m-meta">
+        <span class="st ${stateCls}"><i></i>${stateLab}</span>
+        <button type="button" class="meta-i click" data-s="who" data-keep-pop="1">Исполнитель <b>${esc(PEOPLE[n.who].n)}</b></button>
+        ${dueChip}
+        <button type="button" class="meta-i click" data-s="rename">Название</button>
+        ${has?`<div class="meta-i">Внутри <b>${leaves(n.kids).filter(x=>x.done).length}/${leaves(n.kids).length}</b></div>`:''}
+      </div>
+    </div>
+    <div class="m-body" style="grid-template-columns:1fr">
+      <div class="m-side">
+        <div class="m-block">
+          <h4>Контекст шага <span class="h4-acts"><button class="btn sm" data-s="ctx-add" style="text-transform:none;letter-spacing:0">Добавить</button><button class="btn sm" data-s="ctx-edit" style="text-transform:none;letter-spacing:0">Изменить</button></span></h4>
+          <div class="ctx">${notes.ctx}</div>
+        </div>
+        <div class="m-block">
+          <h4>Комментарии шага <button class="btn sm" data-s="comment" style="text-transform:none;letter-spacing:0">Оставить</button></h4>
+          <div class="cmt">${notes.cmt}</div>
+        </div>
+      </div>
+    </div>
+    <div class="m-acts"><button class="btn" data-s="x">Закрыть</button>${foot}</div>`;
+  box.querySelectorAll('[data-s]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); stepAction(b.dataset.s,d,n,has); });
+}
+function stepAction(a,d,n,has){
+  if(a==='x'){ closeLayer('ov2'); return; }
+  if(a==='rename'){
+    dialog({
+      title:'Название шага',
+      kick:d.n+' · '+pathNum(stepPath),
+      fields:[{k:'t',type:'text',label:'Как называется шаг',val:n.t,req:true}],
+      ok:'Сохранить',
+      run:v=>{
+        const old=n.t; n.t=v.t;
+        d.log.unshift({t:'сейчас',x:actor('изменил')+' название шага: «'+esc(old)+'» → «'+esc(n.t)+'»'});
+        sync(); toast('Название шага обновлено');
+      }
+    });
+    return;
+  }
+  if(a==='who'){
+    const btn=$('dlg').querySelector('[data-s="who"]');
+    menuPop(btn, Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].n,PEOPLE[k].r]), n.who, val=>{
+      const from=PEOPLE[n.who].n; n.who=val;
+      d.log.unshift({t:'сейчас',x:actor('передал')+' шаг «'+esc(n.t)+'»: '+from+' → '+PEOPLE[val].n});
+      feed('Шаг в деле «'+esc(d.n)+'» передан: '+from+' → '+PEOPLE[val].n);
+      sync(); toast('Исполнитель шага: '+PEOPLE[val].n);
+    });
+    return;
+  }
+  if(a==='due'){
+    if(has){ toast('Срок родителя считается по последнему потомку'); return; }
+    dialog({
+      title:'Срок шага',
+      kick:d.n+' · '+n.t,
+      fields:[
+        {k:'date',type:'date',label:'Новый срок',val:iso(n.due)},
+        {k:'why',type:'select',label:'Причина',opts:[['','выберите причину'],['client','Ждём данные от клиента'],['ext','Ждём внешнюю сторону: нотариус, суд, банк'],['load','Загрузка исполнителя'],['scope','Изменился объём работы'],['other','Другое']],req:true},
+        {k:'com',type:'area',label:'Пояснение',ph:'что именно меняется и почему',req:true}
+      ],
+      ok:'Перенести',
+      note:'Перенос без причины система не принимает.',
+      run:v=>{
+        const nd=new Date(v.date+'T00:00:00');
+        const old=fmt(n.due);
+        n.due=nd; n.d=days(nd,TODAY);
+        const why={client:'ждём данные от клиента',ext:'ждём внешнюю сторону',load:'загрузка исполнителя',scope:'изменился объём',other:'другое'}[v.why];
+        d.log.unshift({t:'сейчас',x:actor('перенёс')+' срок шага «'+esc(n.t)+'» с '+old+' на '+fmt(nd)+', причина: '+why+'. '+esc(v.com)});
+        if(v.why==='client'){d.st='wait';d.waitDays=0}
+        feed(actor('перенёс')+' срок в деле «'+esc(d.n)+'», причина: '+why);
+        sync(); toast('Срок шага: '+fmt(nd));
+      }
+    });
+    return;
+  }
+  if(a==='ctx-add'){
+    dialog({
+      title:'Добавить в контекст шага',
+      kick:d.n+' · '+n.t,
+      fields:[{k:'txt',type:'area',label:'Новый факт',ph:'что важно именно по этому шагу',req:true}],
+      ok:'Добавить сверху',
+      run:v=>{
+        n.ctx.unshift(esc(v.txt));
+        d.log.unshift({t:'сейчас',x:actor('добавил')+' факт в контекст шага «'+esc(n.t)+'»'});
+        sync(); toast('Факт добавлен к шагу');
+      }
+    });
+    return;
+  }
+  if(a==='ctx-edit'){
+    dialog({
+      title:'Изменить контекст шага',
+      kick:d.n+' · '+n.t,
+      fields:[{k:'txt',type:'area',label:'Контекст шага',ph:'абзацы через пустую строку',req:true,val:n.ctx.map(plain).join('\n\n')}],
+      ok:'Сохранить',
+      run:v=>{
+        n.ctx=v.txt.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean).map(esc);
+        if(!n.ctx.length) n.ctx=[esc(v.txt)];
+        d.log.unshift({t:'сейчас',x:actor('изменил')+' контекст шага «'+esc(n.t)+'»'});
+        sync(); toast('Контекст шага обновлён');
+      }
+    });
+    return;
+  }
+  if(a==='comment'){
+    dialog({
+      title:'Комментарий к шагу',
+      kick:d.n+' · '+n.t,
+      fields:[{k:'txt',type:'area',label:'Комментарий',ph:'что произошло по этому шагу',req:true}],
+      ok:'Оставить',
+      run:v=>{
+        addComment(n, v.txt);
+        d.log.unshift({t:'сейчас',x:actor('добавил')+' комментарий к шагу «'+esc(n.t)+'»: '+esc(v.txt)});
+        sync(); toast('Комментарий оставлен на шаге');
+      }
+    });
+    return;
+  }
+  if(a==='close'){
+    if(has){ toast('Сначала закройте вложенные шаги'); return; }
+    if(n.done) return;
+    dialog({
+      title:'Закрыть шаг',
+      kick:d.c+' · '+d.n,
+      fields:[
+        {k:'txt',type:'ro',label:'Шаг',val:n.t},
+        {k:'res',type:'select',label:'Результат',opts:[['done','Сделано, идём дальше'],['priem','Сделано, отправляю на приёмку']]},
+        {k:'com',type:'text',label:'Комментарий',ph:'необязательно, останется на шаге'}
+      ],
+      ok:'Закрыть шаг',
+      run:v=>{
+        n.done=true;
+        if(v.com) addComment(n, v.com);
+        d.log.unshift({t:'сейчас',x:actor('закрыл')+' шаг «'+esc(n.t)+'»'+(v.com?': '+esc(v.com):'')});
+        if(v.res==='priem'){d.st='priem';d.priemDays=0}
+        else if(!nextStep(d)){d.st='done'}
+        feed(actor('закрыл')+' шаг «'+esc(n.t)+'», '+esc(d.c));
+        sync();
+        toast(v.res==='priem'?'Шаг закрыт, дело ушло на приёмку':'Шаг закрыт. Следующий исполнитель уведомлён');
+      }
+    });
+  }
 }
 
 /* ═══════════ ДЕЙСТВИЯ ПО ДЕЛУ ═══════════ */
@@ -1607,6 +1824,11 @@ function dealAction(a,d){
 /* ═══════════ УНИВЕРСАЛЬНЫЙ ДИАЛОГ ═══════════ */
 function dialog(cfg){
   const fields=cfg.fields||[];
+  const stepOn = !!(stepPath && $('ov2').classList.contains('on') && $('dlg').dataset.step);
+  const layer = cfg.layer || (stepOn ? 'ov3' : 'ov2');
+  const boxId = layer==='ov3' ? 'dlg3' : 'dlg';
+  const errId = layer==='ov3' ? 'dlgErr3' : 'dlgErr';
+  const box = $(boxId);
   const f = fields.map(f=>{
     if(f.type==='ro') return `<div class="fld"><label>${esc(f.label)}</label><div style="font-size:13px;line-height:1.5;padding:10px 12px;border-radius:11px;background:var(--glass);border:1px solid var(--line)">${esc(f.val)}</div></div>`;
     if(f.type==='select') return `<div class="fld"><label>${esc(f.label)}</label><button type="button" class="dd-btn" data-sel="${f.k}" data-keep-pop="1"></button></div>`;
@@ -1614,7 +1836,8 @@ function dialog(cfg){
     if(f.type==='date') return `<div class="fld"><label>${esc(f.label)}</label><button type="button" class="dd-btn cal-btn" data-date="${f.k}" data-keep-pop="1"></button></div>`;
     return `<div class="fld"><label>${esc(f.label)}</label><input type="text" data-k="${f.k}" placeholder="${esc(f.ph||'')}"></div>`;
   }).join('');
-  $('dlg').innerHTML = `
+  if(boxId==='dlg'){ box.className='modal narrow'; box.removeAttribute('data-step'); }
+  box.innerHTML = `
     <div class="m-head" style="--c:var(--gold)">
       <button class="m-x" data-x>✕</button>
       ${cfg.kick?`<div class="m-kick">${esc(cfg.kick)}</div>`:''}
@@ -1623,41 +1846,41 @@ function dialog(cfg){
     <div class="dlg-body">
       ${cfg.extra||''}
       ${f}
-      <div class="dlg-err" id="dlgErr">Заполните обязательные поля</div>
+      <div class="dlg-err" id="${errId}">Заполните обязательные поля</div>
       ${cfg.note?`<div class="dlg-note">${cfg.note}</div>`:''}
     </div>
     <div class="m-acts"><button class="btn gold" data-ok>${esc(cfg.ok||'Ок')}</button><button class="btn" data-x>Отмена</button></div>`;
-  openLayer('ov2');
+  openLayer(layer);
   const state={};
   fields.forEach(f=>{
     if(f.type==='select'){
-      const btn=$('dlg').querySelector('[data-sel="'+f.k+'"]');
+      const btn=box.querySelector('[data-sel="'+f.k+'"]');
       state[f.k]=f.val!=null?f.val:(f.opts[0]?f.opts[0][0]:'');
       const cur=f.opts.find(o=>o[0]===state[f.k]);
       btn.textContent=cur?cur[1]:'выберите';
       btn.onclick=()=>menuPop(btn, f.opts, state[f.k], (val,lab)=>{ state[f.k]=val; btn.textContent=lab; });
     } else if(f.type==='date'){
-      const btn=$('dlg').querySelector('[data-date="'+f.k+'"]');
+      const btn=box.querySelector('[data-date="'+f.k+'"]');
       state[f.k]=f.val||iso(TODAY);
       btn.textContent=fmt(parseISO(state[f.k]));
       btn.onclick=()=>calPop(btn, state[f.k], key=>{ state[f.k]=key; btn.textContent=fmt(parseISO(key)); });
     } else if(f.val!=null){
-      const el=$('dlg').querySelector('[data-k="'+f.k+'"]');
+      const el=box.querySelector('[data-k="'+f.k+'"]');
       if(el) el.value=f.val;
     }
   });
-  const close=()=>closeLayer('ov2');
-  $('dlg').querySelectorAll('[data-x]').forEach(b=>b.onclick=close);
-  $('dlg').querySelector('[data-ok]').onclick=()=>{
+  const close=()=>closeLayer(layer);
+  box.querySelectorAll('[data-x]').forEach(b=>b.onclick=close);
+  box.querySelector('[data-ok]').onclick=()=>{
     const v={}; let bad=false;
     fields.forEach(f=>{
       if(f.type==='ro') return;
       if(f.type==='select'||f.type==='date'){ v[f.k]=state[f.k]; if(f.req && !v[f.k]) bad=true; return; }
-      const el=$('dlg').querySelector('[data-k="'+f.k+'"]');
+      const el=box.querySelector('[data-k="'+f.k+'"]');
       v[f.k]=el.value.trim();
       if(f.req && !v[f.k]){bad=true; el.style.borderColor='var(--red)'}
     });
-    if(bad){$('dlgErr').style.display='block';return}
+    if(bad){$(errId).style.display='block';return}
     close(); cfg.run(v);
   };
 }
@@ -1850,7 +2073,7 @@ function openReport(){
 const GUIDE={
   dela:{
     title:'Как устроены дела',
-    html:`<div class="ctx"><p>Реестр собирает все клиентские и внутренние дела в одном месте. Плитки сверху — это фильтр по состоянию, не отдельный статус.</p><p>Просрочку считает система: срок прошёл и ход за нами. Пока ждём клиента, счётчик команды стоит.</p><p>В карточке три слоя вместо одной ячейки таблицы. Шаги — бывший план. Контекст — легенда дела, её можно дополнить и править, свежий факт сверху. Комментарий — ход с датами. Журнал пишет система сама.</p><p>Новое дело заводится кнопкой справа. Статус, срок и исполнитель меняются прямо в карточке дела, без отдельных кнопок внизу.</p></div>`
+    html:`<div class="ctx"><p>Реестр собирает все клиентские и внутренние дела в одном месте. Плитки сверху — это фильтр по состоянию, не отдельный статус.</p><p>Просрочку считает система: срок прошёл и ход за нами. Пока ждём клиента, счётчик команды стоит.</p><p>В карточке три слоя вместо одной ячейки таблицы. Шаги — бывший план. Контекст — легенда дела, её можно дополнить и править, свежий факт сверху. Комментарий — ход с датами. Журнал пишет система сама.</p><p>Нажмите на шаг — откроется его карточка: исполнитель, срок, свой контекст и свои комментарии. Срок родителя считается по потомкам и руками не ставится.</p><p>Новое дело заводится кнопкой справа. Статус, срок и исполнитель меняются прямо в карточке дела, без отдельных кнопок внизу.</p></div>`
   },
   queue:{
     title:'Очередь и порядок шагов',
@@ -1964,10 +2187,12 @@ $('guideBtn').onclick=openGuide;
 $('newDealBtn').onclick=openNewDeal;
 $('ov').onclick=e=>{if(e.target===$('ov')) closeModal()};
 $('ov2').onclick=e=>{if(e.target===$('ov2')) closeLayer('ov2')};
+$('ov3').onclick=e=>{if(e.target===$('ov3')) closeLayer('ov3')};
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape') return;
   if($('pop').classList.contains('on')){closePop();return}
-  if($('ov2').classList.contains('on')) closeLayer('ov2');
+  if($('ov3').classList.contains('on')) closeLayer('ov3');
+  else if($('ov2').classList.contains('on')) closeLayer('ov2');
   else if($('ov').classList.contains('on')) closeModal();
 });
 $('repBtn').onclick=openReport;
