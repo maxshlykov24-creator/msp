@@ -2095,7 +2095,7 @@ function renderPriem(){
     return `<div class="pr-card" style="border-left:3px solid ${late?'var(--red)':'var(--blue)'}">
       <div class="pr-top" data-open="${d.id}">
         <div><div class="pr-name">${esc(d.n)}</div><div class="pr-sub">${esc(d.c)} · ${esc(d.dir)} · сдал: ${esc(PEOPLE[d.who].n)}</div></div>
-        <span class="st ${late?'late':'priem'}"><i></i>на приёмке ${d.priemDays||0} дн.${late?', дольше нормы':''}</span>
+        <span class="st ${late?'late':'priem'}"><i></i>на приёмке ${d.priemDays||0} дн.</span>
       </div>
       <div class="pr-body">
         <div>
