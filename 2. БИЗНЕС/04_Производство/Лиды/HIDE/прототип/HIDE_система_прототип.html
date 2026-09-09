@@ -40,10 +40,10 @@
     --green:#4E8A64;
     --red:#B4544A;
     --blue:#4F7391;
-    --line:rgba(26,26,26,.12);
-    --line-2:rgba(26,26,26,.2);
+    --line:rgba(26,26,26,.2);
+    --line-2:rgba(26,26,26,.32);
     --glass:#F6F6F6;
-    --glass-2:#FFFFFF;
+    --glass-2:#EFEFEF;
     --hover:#F3F3F3;
     --panel:#FFFFFF;
     --shadow:0 8px 30px -12px rgba(0,0,0,.14);
@@ -341,7 +341,8 @@
   .load-row{display:grid;grid-template-columns:118px 1fr 46px;gap:14px;align-items:center;padding:11px 0}
   .load-name{font-size:13px}
   .load-name small{display:block;color:var(--mute-2);font-size:11px;margin-top:3px}
-  .load-bar{height:24px;border-radius:9px;background:var(--glass-2);overflow:hidden;position:relative}
+  .load-bar{height:24px;border-radius:9px;background:var(--glass-2);overflow:hidden;position:relative;border:1px solid var(--line)}
+  body.light .load-bar{background:#E2E2E2;border-color:rgba(26,26,26,.16)}
   .load-bar span{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 70%,transparent),var(--gold));transition:width .7s var(--ease)}
   .load-bar span.hot{background:linear-gradient(90deg,color-mix(in srgb,var(--red) 60%,transparent),var(--red))}
   .load-bar span.cold{background:linear-gradient(90deg,color-mix(in srgb,var(--mute) 45%,transparent),color-mix(in srgb,var(--mute) 80%,transparent))}
