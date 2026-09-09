@@ -1698,6 +1698,7 @@ function dealAction(a,d){
       kick:d.c+' · '+d.n,
       fields:[],
       ok:'Закрыть',
+      onlyClose:true,
       extra:`<div class="feed">${d.log.map(l=>`<div class="feed-i"><div class="feed-t">${esc(l.t)}</div><div class="feed-x">${l.x}</div></div>`).join('')||'<div class="empty">Записей пока нет</div>'}</div>`,
       run:()=>{}
     });
@@ -1949,7 +1950,9 @@ function dialog(cfg){
       <div class="dlg-err" id="${errId}">Заполните обязательные поля</div>
       ${cfg.note?`<div class="dlg-note">${cfg.note}</div>`:''}
     </div>
-    <div class="m-acts"><button class="btn gold" data-ok>${esc(cfg.ok||'Ок')}</button><button class="btn" data-x>Отмена</button></div>`;
+    <div class="m-acts">${cfg.onlyClose
+      ? `<button class="btn" data-x>${esc(cfg.ok||'Закрыть')}</button>`
+      : `<button class="btn gold" data-ok>${esc(cfg.ok||'Ок')}</button><button class="btn" data-x>Отмена</button>`}</div>`;
   openLayer(layer);
   const state={};
   const paintIf=()=>{
@@ -1979,7 +1982,8 @@ function dialog(cfg){
   paintIf();
   const close=()=>closeLayer(layer);
   box.querySelectorAll('[data-x]').forEach(b=>b.onclick=close);
-  box.querySelector('[data-ok]').onclick=()=>{
+  const okBtn=box.querySelector('[data-ok]');
+  if(okBtn) okBtn.onclick=()=>{
     const v={}; let bad=false;
     fields.forEach(f=>{
       if(f.type==='ro') return;
