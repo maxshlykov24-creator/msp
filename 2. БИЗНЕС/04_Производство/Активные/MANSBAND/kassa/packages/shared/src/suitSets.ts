@@ -39,6 +39,10 @@ export interface SuitStockLine {
   line: SuitLine;
   warehouse: string;
   qty: number;
+  /** Имя товара из МойСклада — нужно только для сопоставления с матрицей цен (поиск по каталогу). */
+  name?: string;
+  /** Группа МойСклада — часть строк прайса (сафари, лён, New, детские) распознаётся только по ней. */
+  category?: string | null;
 }
 
 const COMPOSITION_ORDER: SuitPart[] = ["jacket", "trousers", "vest"];
@@ -112,7 +116,14 @@ function candidateSizes(part: SuitPart, counts: Counts, size: string, tolerance:
 export function buildSuitModel(
   lines: SuitStockLine[],
   halfSetLines: SuitStockLine[],
-  tolerance: number
+  tolerance: number,
+  /**
+   * Поиск по каталогу (блок 3, созвон 09.09): модель с нулевым остатком
+   * (везде и по всем размерам) должна остаться в списке, а не исчезнуть.
+   * По умолчанию `false` — экран «Костюмы»/полупарки продолжают показывать
+   * только размеры с реальным остатком, логика комплектности не меняется.
+   */
+  keepZeroSizes = false
 ): SuitModel | null {
   const jackets = lines.filter((l) => l.part === "jacket");
   // Модели без пиджака вообще — самостоятельные брюки из справочника составов,
@@ -237,7 +248,9 @@ export function buildSuitModel(
     tolerant: tolerantTotal,
     orphans: orphanTotal,
     onHalfSetWarehouse: halfSetLines.reduce((sum, l) => sum + l.qty, 0),
-    sizes: rows.filter((row) => row.whole + row.tolerant + row.orphans.length > 0),
+    sizes: keepZeroSizes
+      ? rows
+      : rows.filter((row) => row.whole + row.tolerant + row.orphans.length > 0),
   };
 }
 
@@ -295,6 +308,8 @@ export interface CompletenessOptions {
   /** Поиск по вариации, цвету, названию. */
   q?: string;
   limit?: number;
+  /** Каталог: не резать размеры и модели с нулевым остатком (см. buildSuitModel). */
+  keepZeroSizes?: boolean;
 }
 
 export function computeCompleteness(
@@ -324,7 +339,12 @@ export function computeCompleteness(
   const needle = (options.q ?? "").trim().toLowerCase();
   let models: SuitModel[] = [];
   for (const [key, group] of grouped) {
-    const model = buildSuitModel(group, halfSetsByModel.get(key) ?? [], options.tolerance);
+    const model = buildSuitModel(
+      group,
+      halfSetsByModel.get(key) ?? [],
+      options.tolerance,
+      options.keepZeroSizes
+    );
     if (!model) continue;
     if (needle) {
       const haystack = [

@@ -9,7 +9,8 @@ import {
 } from "@kassa/shared";
 import * as ms from "../clients/ms.js";
 import { extractIdFromHref } from "./bootstrap.js";
-import type { Product, SuitPart } from "@kassa/shared";
+import type { CatalogBrowseQuery, Product, SuitPart } from "@kassa/shared";
+import { catalogSuitModels, type CatalogSuitModel } from "./suitSets.js";
 
 /** Группа для UI: pathName МС или префикс имени до « (» (у вариантов pathName часто пустой). */
 function displayCategory(category: string | null | undefined, name: string): string {
@@ -571,6 +572,171 @@ export async function priceAudit(): Promise<{
     lastUpdatedAt: totals?.lastUpdatedAt ? new Date(totals.lastUpdatedAt).toISOString() : null,
     samples,
   };
+}
+
+/** Ключ модели костюма, как в `suitModelKey` (@kassa/shared) — литералом для SQL, чтобы не тащить JS-функцию в запрос. */
+const SUIT_KEY_SQL = sql`
+  lower(trim(coalesce(${products.variation}, ''))) || '|||' ||
+  lower(trim(coalesce(${products.fit}, ''))) || '|' ||
+  lower(trim(coalesce(${products.height}, ''))) || '|' ||
+  coalesce(${products.suitLine}, 'regular')
+`;
+
+export interface CatalogBrowseResult {
+  items: Product[];
+  itemsTotal: number;
+  suits: CatalogSuitModel[];
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Каталог с серверной пагинацией (блок 3, созвон 09.09): один SQL с
+ * LEFT JOIN stock вместо обзора топ-120 плюс N запросов остатков (`withStock`
+ * в ProductCheck.tsx). Костюмные части, у вариации которых есть пиджак,
+ * не попадают в штучный список — они видны только внутри модели костюма
+ * (`suits`), даже с нулевым остатком. Штучные позиции без пиджака в вариации
+ * (одиночные брюки, жилеты, блейзеры) остаются в `items`.
+ */
+export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<CatalogBrowseResult> {
+  const cat = query.section?.trim();
+  const sub = query.subCategory?.trim();
+  const fullCategory = cat ? [cat, sub].filter(Boolean).join("/") : undefined;
+  const isSuitSection = cat ? /костюм/i.test(cat) : false;
+
+  const suits: CatalogSuitModel[] =
+    query.kind === "items" || (cat && !isSuitSection)
+      ? []
+      : (
+          await catalogSuitModels({
+            q: query.q,
+            warehouse: query.warehouse || query.store,
+          })
+        ).models.filter((m) => {
+          if (query.height && (m.height ?? "") !== query.height) return false;
+          if (query.color && (m.color ?? "") !== query.color) return false;
+          if (query.pattern && (m.pattern ?? "") !== query.pattern) return false;
+          if (query.fit && (m.fit ?? "") !== query.fit) return false;
+          if (query.priceMin != null && (m.priceRub ?? -Infinity) < query.priceMin) return false;
+          if (query.priceMax != null && (m.priceRub ?? Infinity) > query.priceMax) return false;
+          if (query.stockFilter === "positive") {
+            return m.sizes.some((s) => s.whole + s.tolerant > 0);
+          }
+          if (query.stockFilter === "zero") {
+            return m.sizes.every((s) => s.whole + s.tolerant === 0);
+          }
+          if (query.stockFilter === "negative") {
+            return m.sizes.some((s) =>
+              Object.values(s.parts).some((qty) => qty < 0)
+            );
+          }
+          return true;
+        });
+
+  if (query.kind === "suits") {
+    return { items: [], itemsTotal: 0, suits, page: query.page, pageSize: query.pageSize };
+  }
+
+  const tokens = (query.q ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const textConditions = tokens
+    .map((token) => tokenMatchesField(token))
+    .filter((c): c is NonNullable<typeof c> => c != null);
+
+  const conditions = [sql`${products.msType} IN ('product', 'variant')`];
+  // Костюмные части с пиджаком в вариации — только внутри модели, не штучкой.
+  conditions.push(sql`
+    NOT (
+      ${products.suitPart} IS NOT NULL
+      AND ${SUIT_KEY_SQL} IN (
+        SELECT ${SUIT_KEY_SQL} FROM ${products}
+        WHERE ${products.suitPart} = 'jacket' AND coalesce(trim(${products.variation}), '') <> ''
+      )
+    )
+  `);
+  if (fullCategory) {
+    conditions.push(sql`
+      (
+        ${products.category} ILIKE ${fullCategory + "%"}
+        OR (
+          coalesce(trim(${products.category}), '') = ''
+          AND (
+            split_part(${products.name}, ' (', 1) = ${cat}
+            OR ${products.name} ILIKE ${cat + " (%"}
+          )
+        )
+      )
+    `);
+  }
+  for (const c of textConditions) conditions.push(c);
+  if (query.color) conditions.push(sql`${products.color} = ${query.color}`);
+  if (query.pattern) conditions.push(sql`${products.pattern} = ${query.pattern}`);
+  if (query.size) conditions.push(sql`${products.size} = ${query.size}`);
+  if (query.variation) conditions.push(sql`${products.variation} = ${query.variation}`);
+  if (query.height) conditions.push(sql`${products.height} = ${query.height}`);
+  if (query.fit) conditions.push(sql`${products.fit} = ${query.fit}`);
+  if (query.priceMin != null) conditions.push(sql`${products.price} >= ${Math.round(query.priceMin * 100)}`);
+  if (query.priceMax != null) conditions.push(sql`${products.price} <= ${Math.round(query.priceMax * 100)}`);
+
+  const warehouseName = (query.warehouse || query.store || "").trim();
+  const qtyExpr = warehouseName
+    ? sql`coalesce((
+        SELECT sum(st.quantity) FROM stock st
+        WHERE st.product_ms_id = ${products.msId} AND st.warehouse_name = ${warehouseName}
+      ), 0)`
+    : sql`coalesce((SELECT sum(st.quantity) FROM stock st WHERE st.product_ms_id = ${products.msId}), 0)`;
+
+  const stockCondition =
+    query.stockFilter === "positive"
+      ? sql`total_qty > 0`
+      : query.stockFilter === "zero"
+      ? sql`total_qty = 0`
+      : query.stockFilter === "negative"
+      ? sql`total_qty < 0`
+      : sql`true`;
+
+  const offset = (query.page - 1) * query.pageSize;
+  const whereSql = sql.join(conditions, sql` AND `);
+
+  // FROM без алиаса: все условия и SUIT_KEY_SQL ссылаются на products по имени
+  // таблицы, алиас сломал бы эти ссылки (invalid reference to FROM-clause entry).
+  const result = await db.execute(sql`
+    WITH base AS (
+      SELECT *, (${qtyExpr}) AS total_qty
+      FROM ${products}
+      WHERE ${whereSql}
+    )
+    SELECT *, count(*) OVER() AS full_count
+    FROM base
+    WHERE ${stockCondition}
+    ORDER BY category NULLS LAST, name
+    LIMIT ${query.pageSize} OFFSET ${offset}
+  `);
+
+  const rawRows = (Array.isArray(result)
+    ? result
+    : ((result as { rows?: unknown[] }).rows ?? [])) as Array<Record<string, unknown>>;
+
+  const itemsTotal = rawRows.length > 0 ? Number(rawRows[0]!.full_count) || 0 : 0;
+  const rows = rawRows.map((row) => ({
+    id: String(row.id),
+    msId: String(row.ms_id),
+    name: String(row.name),
+    article: (row.article as string | null) ?? null,
+    code: (row.code as string | null) ?? null,
+    barcode: (row.barcode as string | null) ?? null,
+    category: (row.category as string | null) ?? null,
+    price: Number(row.price) || 0,
+    msMetaHref: String(row.ms_meta_href),
+    msType: String(row.ms_type),
+    updatedAt: row.updated_at ? new Date(String(row.updated_at)) : new Date(),
+  })) as ProductRow[];
+
+  const items = await attachStock(rows, query.store);
+  return { items, itemsTotal, suits, page: query.page, pageSize: query.pageSize };
 }
 
 export { extractIdFromHref };

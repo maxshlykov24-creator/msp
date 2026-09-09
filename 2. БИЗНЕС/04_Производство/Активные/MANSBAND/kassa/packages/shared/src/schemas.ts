@@ -297,6 +297,35 @@ export const catalogSearchSchema = z.object({
   message: "Укажите поисковый запрос, группу или browse=1",
 });
 
+/**
+ * Полный каталог с серверной пагинацией (блок 3, созвон 09.09): один запрос
+ * с фильтрами вместо обзора топ-120 плюс N запросов остатков на клиенте.
+ */
+export const catalogBrowseSchema = z.object({
+  q: z.string().max(128).optional(),
+  /** Раздел зала — path МС или префикс имени, как в /catalog/search. */
+  section: z.string().max(256).optional(),
+  subCategory: z.string().max(256).optional(),
+  /** Магазин консультанта — какой склад считать «своим» в остатке. */
+  store: z.string().max(120).optional(),
+  /** Конкретный склад для остатка и фильтра — если не задан, берётся сумма по всем. */
+  warehouse: z.string().max(120).optional(),
+  stockFilter: z.enum(["any", "positive", "zero", "negative"]).default("any"),
+  color: z.string().max(120).optional(),
+  pattern: z.string().max(120).optional(),
+  size: z.string().max(60).optional(),
+  variation: z.string().max(160).optional(),
+  height: z.string().max(20).optional(),
+  fit: z.string().max(60).optional(),
+  priceMin: z.coerce.number().min(0).optional(),
+  priceMax: z.coerce.number().min(0).optional(),
+  /** all — модели и штучные вместе; suits — только костюмы; items — только штучные. */
+  kind: z.enum(["all", "suits", "items"]).default("all"),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(60),
+});
+export type CatalogBrowseQuery = z.infer<typeof catalogBrowseSchema>;
+
 export const redeemCertificateSchema = z.object({
   number: z.string().min(1),
   amount: z.number().positive(),

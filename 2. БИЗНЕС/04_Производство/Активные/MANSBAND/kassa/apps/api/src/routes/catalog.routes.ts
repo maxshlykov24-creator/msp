@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { catalogSearchSchema } from "@kassa/shared";
+import { catalogBrowseSchema, catalogSearchSchema } from "@kassa/shared";
 import {
+  browseCatalogPaged,
   getProductStockByWarehouses,
   listCatalogReferences,
   resolveAssortment,
@@ -25,6 +26,14 @@ export default async function catalogRoutes(app: FastifyInstance) {
       parsed.data.category,
       parsed.data.browse
     );
+  });
+
+  // Полный каталог с серверной пагинацией (блок 3, созвон 09.09): один SQL с
+  // LEFT JOIN stock, фильтры по остатку и характеристикам, костюмы моделями.
+  app.get("/catalog/browse", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const parsed = catalogBrowseSchema.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
+    return browseCatalogPaged(parsed.data);
   });
 
   // Остатки по складам: доступно / резерв / остаток.
