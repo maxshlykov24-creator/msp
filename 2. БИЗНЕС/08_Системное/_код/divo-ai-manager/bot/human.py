@@ -369,7 +369,11 @@ def glue_lines(block: str) -> str:
         if not out:
             out = line
             continue
-        if out[-1] in ".!?,:;-" or line[0].islower():
+        # Перечень вариантов машины остаётся столбиком: «белый, 16 217 км -
+        # 1 750 000» в строку с соседним вариантом читать невозможно.
+        if is_car_facts(line) and (out[-1].isdigit() or out[-1] == ":"):
+            out += "\n" + line
+        elif out[-1] in ".!?,:;-" or line[0].islower():
             out += " " + line
         else:
             out += ". " + line
