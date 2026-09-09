@@ -396,8 +396,7 @@
   body:not(.hints) .head,
   body:not(.hints) .kpi-sub,
   body:not(.hints) .brand-title small,
-  body:not(.hints) .dlg-note,
-  body:not(.hints) .foot{display:none !important}
+  body:not(.hints) .dlg-note{display:none !important}
 
   /* ─── toast ─── */
   .toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,26px);z-index:99;padding:13px 22px;border-radius:14px;background:var(--bg);border:1px solid var(--line-2);color:var(--ink);font-size:13px;opacity:0;pointer-events:none;transition:.35s var(--ease);box-shadow:var(--shadow-lg);max-width:min(560px,90vw);text-align:center;line-height:1.5}
@@ -540,7 +539,7 @@
   <section class="page on" id="p-dela">
     <div class="kpi-grid" id="kpiGrid"></div>
 
-    <div class="sec-title hint-only"><h2>Реестр</h2><span id="fSummary"></span></div>
+    <div class="sec-title"><h2>Реестр</h2><span id="fSummary" class="hint-only"></span></div>
 
     <div class="fbar" id="fbar">
       <div class="fld" id="fldCli"><label>Клиент</label><button type="button" class="dd-btn" id="fCli">Все клиенты</button></div>
