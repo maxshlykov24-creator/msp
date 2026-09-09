@@ -40,6 +40,8 @@ MANAGER_CASES = {
     "менеджере": "коллеге",
     "менеджеры": "коллеги",
 }
+MANAGER_CALL = r"(наберет|наберёт|перезвонит|позвонит|свяжется)"
+MANAGER_OBJ = r"(\s+с\s+вами|\s+вас|\s+вам)?"
 MANAGER_PHRASES = (
     (
         re.compile(
@@ -51,8 +53,7 @@ MANAGER_PHRASES = (
     ),
     (
         re.compile(
-            r"(наш\s+)?менеджер\w*\s+(с\s+вами\s+)?(свяжется|перезвонит|наберет|"
-            r"наберёт|позвонит)(\s+с\s+вами)?",
+            r"(наш\s+)?менеджер\w*\s+(с\s+вами\s+)?" + MANAGER_CALL + MANAGER_OBJ,
             re.IGNORECASE,
         ),
         "наберу вас",
@@ -83,6 +84,15 @@ FACELESS = (
         "наберу вас",
     ),
     (re.compile(r"\bвам\s+(перезвонят|наберут|позвонят)\b", re.IGNORECASE), "наберу вас"),
+    (
+        re.compile(
+            r"(наш|наши)?\s*(кредитн\w+\s+)?специалист\w*\s+"
+            + MANAGER_CALL
+            + MANAGER_OBJ,
+            re.IGNORECASE,
+        ),
+        "наберу вас",
+    ),
     (
         re.compile(r"\bс\s+вами\s+свяж(утся|ется)\b", re.IGNORECASE),
         "свяжусь с вами",
@@ -150,23 +160,37 @@ def _tidy(text: str, original: str) -> str:
     return text
 
 
+def _sub_keep_case(pattern: re.Pattern, repl: str, text: str) -> str:
+    """Замена написана строчными: в начале предложения ставим заглавную."""
+    if "\\" in repl:
+        return pattern.sub(repl, text)
+
+    def fn(m: re.Match) -> str:
+        head = m.string[: m.start()].rstrip()
+        if not head or head[-1] in ".!?":
+            return repl[0].upper() + repl[1:]
+        return repl
+
+    return pattern.sub(fn, text)
+
+
 def drop_manager(text: str) -> str:
     """Убрать «менеджера» как третье лицо: продавец в чате - сам Никита."""
     original = text or ""
     text = original
     for pattern, repl in FACELESS:
-        text = pattern.sub(repl, text)
+        text = _sub_keep_case(pattern, repl, text)
     touched = text != original
     if MANAGER_WORD.search(text):
         touched = True
         for pattern, repl in MANAGER_PHRASES:
-            text = pattern.sub(repl, text)
+            text = _sub_keep_case(pattern, repl, text)
         text = MANAGER_WORD.sub(
             lambda m: MANAGER_CASES.get(m.group(0).lower(), "коллега"), text
         )
     if touched:
         for pattern, repl in MANAGER_TAILS:
-            text = pattern.sub(repl, text)
+            text = _sub_keep_case(pattern, repl, text)
         # «Наберу вас, после чего свяжусь с вами» - обещание звонка дважды.
         if "наберу вас" in text.lower():
             text = DOUBLE_CALLBACK.sub("", text)
