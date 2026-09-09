@@ -760,8 +760,8 @@
 
   .tag-next{display:inline-block;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--a1);border:1px solid rgba(200,164,92,.3);background:rgba(200,164,92,.09);border-radius:7px;padding:3px 9px;margin-left:10px;vertical-align:middle;font-weight:600}
 
-  /* Телефон / Telegram: одна длинная страница, листаем вниз */
-  @media (max-width: 900px){
+  /* Телефон / Telegram: одна длинная страница, листаем вниз. screen — чтобы печать не ловила этот режим */
+  @media screen and (max-width: 900px){
     html,body{
       height:auto;min-height:100%;overflow:auto;overflow-x:hidden;
       -webkit-overflow-scrolling:touch;
@@ -804,9 +804,9 @@
   }
 
   @media print{
-    @page{size:1280px 720px;margin:0}
+    @page{size:A4 landscape;margin:0}
     html,body{
-      overflow:visible;height:auto;
+      width:297mm;height:auto;margin:0;padding:0;overflow:visible;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;
     }
     body{
@@ -816,28 +816,80 @@
     body::before,body>.aura,body>.ms-badge{display:none !important}
     .dust,.spot,.flare{display:none !important}
     body>.rays,body>.silk,body>.vign{display:none !important}
-    .deck{height:auto;width:auto}
+    .deck{
+      display:block !important;
+      height:auto !important;
+      width:297mm !important;
+      position:static !important;
+    }
     .slide{
-      display:flex !important;position:relative;inset:auto;
-      height:720px;width:1280px;
-      overflow:hidden;
-      page-break-after:always;break-after:page;
-      animation:none;
+      display:flex !important;
+      flex-direction:column;
+      justify-content:center;
+      position:relative !important;
+      inset:auto !important;
+      width:297mm !important;
+      height:210mm !important;
+      max-height:210mm !important;
+      overflow:hidden !important;
+      box-sizing:border-box !important;
+      padding:10mm 13mm 11mm !important;
+      margin:0 !important;
+      page-break-after:always;
+      break-after:page;
+      page-break-inside:avoid;
+      break-inside:avoid;
+      animation:none !important;
+      perspective:none !important;
       background-color:var(--bg);
       background-image:
-        radial-gradient(1000px 700px at 92% -8%, rgba(200,164,92,.22), transparent 62%),
-        radial-gradient(900px 640px at -8% 112%, rgba(145,134,124,.10), transparent 60%),
-        radial-gradient(1100px 380px at 48% 118%, rgba(200,164,92,.10), transparent 64%);
+        radial-gradient(260mm 180mm at 92% -8%, rgba(200,164,92,.22), transparent 62%),
+        radial-gradient(230mm 165mm at -8% 112%, rgba(145,134,124,.10), transparent 60%),
+        radial-gradient(280mm 100mm at 48% 118%, rgba(200,164,92,.10), transparent 64%);
     }
+    .slide:last-of-type{page-break-after:auto;break-after:auto}
+    .slide > *{position:relative;z-index:1}
     .slide .stag{animation:none !important;opacity:1 !important}
-    /* градиентный текст печатается заливкой — на печати отдаём плоский акцент */
     .grad{
       background:none !important;-webkit-background-clip:border-box !important;background-clip:border-box !important;
       -webkit-text-fill-color:var(--a2) !important;color:var(--a2) !important;
     }
-    .shot-card img{max-height:330px}
-    .shot-solo{grid-template-columns:1.3fr .7fr}
-    .shot-solo .shot-card img{max-height:330px}
+    h1{font-size:30pt !important;line-height:1.14}
+    h1 .grad{white-space:nowrap}
+    h2{font-size:20pt !important;line-height:1.15;margin-bottom:4px}
+    .kicker{font-size:9pt;margin-bottom:8px}
+    .lead{font-size:12pt;margin-top:10px;max-width:none}
+    .note{font-size:9pt;margin-top:8px;max-width:none;line-height:1.4}
+    .grid{gap:8px;margin-top:10px}
+    .g2{grid-template-columns:repeat(2,1fr) !important}
+    .g3{grid-template-columns:repeat(3,1fr) !important}
+    .g4{grid-template-columns:repeat(4,1fr) !important}
+    .plan-grid{grid-template-columns:repeat(3,1fr) !important;gap:8px;margin-top:12px}
+    .shot-grid{grid-template-columns:1.15fr .85fr !important;gap:10px;margin-top:8px;align-items:stretch}
+    .shot-solo{grid-template-columns:1.32fr .68fr !important;gap:10px;margin-top:8px;align-items:stretch}
+    .card,.anchor,.phase,.bonus,.step,.mock,.shot-card{
+      transform:none !important;will-change:auto;padding:10px 12px;border-radius:12px;
+    }
+    .card h3{font-size:11.5pt;margin-bottom:4px}
+    .card p{font-size:9pt;line-height:1.35}
+    .card .num,.phase-num,.anchor .n{font-size:8.5pt;margin-bottom:6px}
+    .anchor{gap:10px}
+    .anchor b{font-size:10.5pt}
+    .anchor span{font-size:8.5pt;line-height:1.35;margin-top:3px}
+    .pt-col{gap:6px}
+    .shot-card{padding:8px}
+    .shot-card img{
+      max-height:78mm !important;
+      height:auto !important;
+      object-fit:cover;
+      object-position:top center;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+    .shot-solo .shot-card img{max-height:88mm !important}
+    .shot-card .cap{margin-top:6px;font-size:8.5pt;line-height:1.35}
+    .pay-amt{font-size:20pt;margin-top:4px}
+    .phase-days{font-size:8.5pt}
     .progress,.nav,.counter,.print-btn{display:none !important}
     .slide .aura{
       position:absolute;inset:-30%;z-index:0;animation:none !important;
@@ -850,21 +902,21 @@
     }
     .slide .silk{display:none !important}
     .slide .vign{position:absolute;inset:0;z-index:0;display:block !important}
-    .slide .ms-badge{position:absolute;top:26px;right:8vw;display:flex}
-    /* запасной кадр подсветки, если JS не успел снять живой */
+    .slide .ms-badge{position:absolute;top:8mm;right:12mm;display:flex;z-index:2}
+    .slide .ms-badge img{height:9mm}
     .slide::before,.slide::after{
       content:'';position:absolute;inset:-30%;z-index:0;pointer-events:none;
     }
     .slide::before{
       background-image:
-        radial-gradient(880px 640px at 80% 12%, rgba(140,112,58,.5), transparent 66%),
-        radial-gradient(600px 480px at 12% 22%, rgba(200,164,92,.2), transparent 68%);
+        radial-gradient(230mm 165mm at 80% 12%, rgba(140,112,58,.5), transparent 66%),
+        radial-gradient(155mm 125mm at 12% 22%, rgba(200,164,92,.2), transparent 68%);
       transform:translate3d(-2%,1%,0) scale(1.07);opacity:.88;
     }
     .slide::after{
       background-image:
-        radial-gradient(740px 580px at 22% 86%, rgba(145,134,124,.28), transparent 66%),
-        radial-gradient(540px 440px at 90% 76%, rgba(233,220,184,.14), transparent 68%);
+        radial-gradient(190mm 150mm at 22% 86%, rgba(145,134,124,.28), transparent 66%),
+        radial-gradient(140mm 115mm at 90% 76%, rgba(233,220,184,.14), transparent 68%);
       transform:translate3d(2%,-1%,0) scale(1.06);opacity:.9;
     }
     body.printing .slide::before,
@@ -1083,7 +1135,7 @@
   let i = 0;
 
   const phone = window.matchMedia("(max-width: 900px)");
-  function isPhone(){ return phone.matches; }
+  function isPhone(){ return phone.matches && !document.body.classList.contains("printing"); }
   function render(){
     if (isPhone()){
       slides.forEach(s => s.classList.add("active"));
@@ -1106,6 +1158,7 @@
   }
   function preparePrint(){
     cleanupPrint();
+    document.body.classList.add("printing");
     const snapshot = Array.from(document.querySelectorAll("body > .aura, body > .rays, body > .vign")).map(el => {
       const cs = getComputedStyle(el);
       return { className: el.className, transform: cs.transform, opacity: cs.opacity };
