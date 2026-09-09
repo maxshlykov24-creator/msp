@@ -284,6 +284,8 @@ def trim_permit(text: str) -> str:
         if PERMIT_SENTENCE.search(part):
             for pattern in PERMIT_DETAIL:
                 part = pattern.sub(" ", part)
+            part = re.sub(r"\s*,?\s*(оно|которое)\s*$", "", part, flags=re.IGNORECASE)
+            part = re.sub(r"\s*,\s*$", "", part)
         out.append(part)
     text = " ".join(out)
     return _tidy(text, original) if text != original else original
