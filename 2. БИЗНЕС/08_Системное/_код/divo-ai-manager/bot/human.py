@@ -357,6 +357,25 @@ def clean(text: str) -> str:
     return "\n".join(out).strip()
 
 
+def glue_lines(block: str) -> str:
+    """Перенос строки внутри пузыря - граница предложения, а не пробел.
+
+    Модель пишет «машина в наличии\\nНа какой день заехать»: без точки склейка
+    даёт «в наличии На какой день» - так человек не печатает.
+    """
+    lines = [line.strip() for line in block.splitlines() if line.strip()]
+    out = ""
+    for line in lines:
+        if not out:
+            out = line
+            continue
+        if out[-1] in ".!?,:;-" or line[0].islower():
+            out += " " + line
+        else:
+            out += ". " + line
+    return out
+
+
 def split_bubbles(text: str) -> list[str]:
     """Пустая строка = граница сообщения. Больше трёх пузырей не отправляем."""
     blocks = [b.strip() for b in re.split(r"\n\s*\n", clean(text)) if b.strip()]
@@ -364,9 +383,9 @@ def split_bubbles(text: str) -> list[str]:
         return []
     if len(blocks) > MAX_BUBBLES:
         head = blocks[: MAX_BUBBLES - 1]
-        head.append(" ".join(blocks[MAX_BUBBLES - 1:]))
+        head.append("\n".join(blocks[MAX_BUBBLES - 1:]))
         blocks = head
-    return [for_chat(b.replace("\n", " ").strip()) for b in blocks]
+    return [for_chat(glue_lines(b)) for b in blocks]
 
 
 def denies_history(text: str) -> bool:
