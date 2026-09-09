@@ -74,7 +74,7 @@ class Settings:
     admin_chat_id = env("TELEGRAM_ADMIN_CHAT_ID")
 
     openrouter_key = env("OPENROUTER_API_KEY")
-    model = env("OPENROUTER_MODEL", "google/gemini-3.5-flash")
+    model = env("OPENROUTER_MODEL", "anthropic/claude-sonnet-5")
     model_fallback = env("OPENROUTER_MODEL_FALLBACK", "google/gemini-2.5-flash")
 
     # Запасной путь: OpenRouter отдаёт 403 с российских IP, Gemini напрямую — нет.

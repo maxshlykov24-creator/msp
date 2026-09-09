@@ -21,6 +21,21 @@ class LlmError(RuntimeError):
     pass
 
 
+def _openrouter_body(model: str, messages: list[dict]) -> dict:
+    """Sonnet 5 ломается на temperature и на effort «minimal» — это параметры Gemini."""
+    body = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": settings.max_tokens,
+    }
+    if model.startswith("anthropic/"):
+        body["reasoning"] = {"effort": "low", "exclude": True}
+    else:
+        body["temperature"] = settings.temperature
+        body["reasoning"] = {"effort": "minimal", "exclude": True}
+    return body
+
+
 async def _call(client: httpx.AsyncClient, model: str, messages: list[dict]) -> str:
     resp = await client.post(
         URL,
@@ -29,15 +44,7 @@ async def _call(client: httpx.AsyncClient, model: str, messages: list[dict]) -> 
             "HTTP-Referer": "https://msproduct.ru",
             "X-Title": "DIVO Motors AI manager",
         },
-        json={
-            "model": model,
-            "messages": messages,
-            "temperature": settings.temperature,
-            # У Gemini 3.5 thinking ест тот же max_tokens, что и ответ.
-            # 700 не хватало: фраза обрывалась на «за 1».
-            "max_tokens": settings.max_tokens,
-            "reasoning": {"effort": "minimal", "exclude": True},
-        },
+        json=_openrouter_body(model, messages),
     )
     if resp.status_code != 200:
         raise LlmError("%s: HTTP %s %s" % (model, resp.status_code, resp.text[:300]))
