@@ -152,6 +152,7 @@
 
   /* ─── дашборд статусов ─── */
   .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .kpi-hint{font-size:12.5px;color:var(--mute-2);margin:12px 0 0;line-height:1.45}
   .kpi{padding:20px 20px 18px;border-radius:18px;border:1px solid var(--line);cursor:pointer;position:relative;overflow:hidden;transition:.25s var(--ease);background:var(--panel)}
   .kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c);opacity:.85}
   .kpi:hover{transform:translateY(-3px);border-color:var(--line-2)}
@@ -626,6 +627,7 @@
   <!-- ══════════ ДЕЛА ══════════ -->
   <section class="page on" id="p-dela">
     <div class="kpi-grid" id="kpiGrid"></div>
+    <p class="hint-only kpi-hint">Плитку можно нажать: реестр оставит только эти дела. Нажать ещё раз — фильтр снимется.</p>
 
     <div class="sec-title"><h2>Реестр</h2><span id="fSummary" class="hint-only"></span></div>
 
@@ -649,7 +651,7 @@
 
     <div class="tbl" id="dealsTbl"></div>
 
-    <div class="note"><b>Что здесь важно.</b> Цвет больше ничего не значит сам по себе: клиент, направление, ответственный, статус, срок и приоритет стали полями. По ним можно фильтровать и считать. Просрочку вычисляет система, а не человек кистью, и она не тикает, пока дело ждёт ответа клиента.</div>
+    <div class="note"><b>Что здесь важно.</b> Плитки сверху — не просто цифры, а фильтр: нажмите «Просрочено», в реестре останутся только эти дела, нажмите ещё раз — снова все. Цвет больше ничего не значит сам по себе: клиент, направление, ответственный, статус, срок и приоритет стали полями. По ним тоже можно фильтровать и считать. Просрочку вычисляет система, а не человек кистью, и она не тикает, пока дело ждёт ответа клиента.</div>
   </section>
 
   <!-- ══════════ ОЧЕРЕДЬ ══════════ -->
@@ -1301,7 +1303,7 @@ function renderDeals(){
   $('fFound').innerHTML = 'Найдено <b>'+arr.length+'</b> из '+DEALS.length;
   const act = Object.keys(F).filter(k=>F[k]&&k!=='mine').length;
   const sum=$('fSummary');
-  if(sum) sum.textContent = act ? 'активных условий: '+act+', цифры на плитках пересчитаны' : 'все дела, к которым есть доступ у роли';
+  if(sum) sum.textContent = act ? 'активных условий: '+act+', цифры на плитках пересчитаны' : 'нажмите плитку сверху, чтобы отфильтровать реестр';
   $('cDela').textContent = arr.length;
 }
 
