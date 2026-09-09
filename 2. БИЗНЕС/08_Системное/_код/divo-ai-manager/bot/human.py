@@ -136,6 +136,29 @@ HISTORY_DENIAL = re.compile(
     r")",
     re.IGNORECASE,
 )
+# Квалификация клиента: «для себя или в коммерческих целях», «какой бюджет».
+# Такого скрипта у нас нет ни в промпте, ни в KB - модель достает его из своей
+# выучки про автосалоны. Лишний ход, а ответ «под работу» уводит диалог
+# в лизинг и юрлицо. Запрет в правиле 38, здесь режем на выходе.
+QUAL_QUESTION = re.compile(
+    r"("
+    r"в\s+коммерческ\w+\s+цел|"
+    r"для\s+коммерческ\w+\s+(использован|цел)|"
+    r"для\s+себя\s+(или|же\s+или)|"
+    r"для\s+себя\s+(рассматрива|подбира|присматрива|бере|смотри|ище)\w*|"
+    r"(для|под)\s+семьи\s+или|"
+    r"(для|под)\s+работ\w+\s+или|"
+    r"перв\w+\s+(ваш\w*\s+)?(автомобиль|машина)\s+или|"
+    r"как\w+\s+(у\s+вас\s+)?бюджет|"
+    r"бюджет\w*\s+(вы\s+)?(рассматрива|ориентир)\w*|"
+    r"на\s+как\w+\s+бюджет"
+    r")",
+    re.IGNORECASE,
+)
+QUAL_LEAD_IN = re.compile(
+    r"(подскажите|скажите|уточните|а|и|кстати|ещё|еще)([\s,]+(подскажите|скажите))?",
+    re.IGNORECASE,
+)
 CAR_FACTS = re.compile(
     r"(\b\d{4}\s*г|пробег|\bкм\b|₽|руб|млн|тыс\.|vin|в наличии|комплектац)",
     re.IGNORECASE,
@@ -197,11 +220,41 @@ def drop_manager(text: str) -> str:
     return _tidy(text, original)
 
 
+def _drop_qual_clause(part: str) -> str:
+    """Квал-вопрос приклеен к факту через запятую: оставить факт, вопрос убрать."""
+    chunks = [c for c in re.split(r",\s*", part) if not QUAL_QUESTION.search(c)]
+    text = ", ".join(c.strip() for c in chunks if c.strip())
+    text = re.sub(r"[\s,]*[?!.]*$", "", text)
+    # «Подскажите» без самого вопроса - пустая вводная, не реплика.
+    if not text or QUAL_LEAD_IN.fullmatch(text):
+        return ""
+    return text
+
+
+def drop_qual(text: str) -> str:
+    """Выкинуть придуманную квалификацию: цель покупки, бюджет, «для себя ли»."""
+    original = text or ""
+    if not QUAL_QUESTION.search(original):
+        return original
+    kept = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if not QUAL_QUESTION.search(part):
+            kept.append(part)
+            continue
+        clause = _drop_qual_clause(part)
+        if clause:
+            kept.append(clause)
+    text = " ".join(kept).strip()
+    # Вся реплика была таким вопросом - пузырь пустой, его выкинет main.
+    return _tidy(text, original) if text else ""
+
+
 def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: дефис вместо длинного тире, без точки в конце."""
     text = (text or "").replace("—", "-").replace("–", "-")
     text = MARKET_TALK.sub("ниже аналогов", text)
     text = drop_manager(text)
+    text = drop_qual(text)
     return drop_end_period(text)
 
 

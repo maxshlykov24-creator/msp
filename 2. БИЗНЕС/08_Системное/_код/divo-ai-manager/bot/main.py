@@ -222,6 +222,12 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
         if kept and len(kept) < len(bubbles):
             log.info("чат %s: выкинул повторный адрес", chat_id)
             bubbles = kept
+    # Пузырь пустеет, когда весь он был придуманной квалификацией клиента
+    # («для себя или в коммерческих целях») - human.drop_qual вырезал текст.
+    kept = [b for b in bubbles if b.strip()]
+    if len(kept) < len(bubbles):
+        log.info("чат %s: выкинул вопрос о цели покупки или бюджете", chat_id)
+        bubbles = kept
     kept = [b for b in bubbles if not human.denies_history(b)]
     if len(kept) < len(bubbles):
         log.info("чат %s: выкинул отрицание истории такси или каршеринга", chat_id)
