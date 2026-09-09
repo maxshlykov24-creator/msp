@@ -11,6 +11,7 @@
 | `emmanuel-bot/` | Emmanuel |
 | `ms-webhook/` | Wangpack / MS Product — webhook МойСклад |
 | `site-ms/` | MS Product — прод-сайт [ms-p.ru](https://ms-p.ru) |
+| `medusa-store-studio/` | MS Product — заготовка интернет-магазина (Medusa v2). Старт: [`medusa-store-studio/КАК_НАЧАТЬ.md`](medusa-store-studio/КАК_НАЧАТЬ.md). Не живой прод |
 | `deploy/tg-bot-ru-vps/` | Шаблон RU VPS + split-VPN для Telegram-ботов |
 | `tg-self/` | Личный Telegram CLI (не бот). Мандат: читать чаты и договорённости. [МАНДАТ.md](tg-self/МАНДАТ.md) |
 | `amo-self/` | Личный CLI к amoCRM: чтение сделок, контактов и чатов |
