@@ -161,7 +161,9 @@
   .k-done{--c:var(--green)}
 
   /* ─── фильтры ─── */
-  .fbar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:18px 20px;border-radius:18px;border:1px solid var(--line);background:var(--panel);margin-bottom:14px}
+  .fbar{display:flex;flex-direction:column;gap:14px;padding:16px 20px 18px;border-radius:18px;border:1px solid var(--line);background:var(--panel);margin-bottom:14px}
+  .f-top{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .f-fields{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
   .fld{display:flex;flex-direction:column;gap:6px;min-width:0}
   .fld label{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding-left:2px}
   .fld select,.fld input,.dd-btn{
@@ -221,8 +223,7 @@
   .cal-foot button{border:0;background:none;color:var(--mute);font-size:12px;cursor:pointer;font-family:var(--font)}
   .cal-foot button:hover{color:var(--ink)}
   .range-lab{font-size:12px;color:var(--mute);padding:0 4px 8px}
-  .f-right{margin-left:auto;display:flex;gap:10px;align-items:center}
-  .f-found{font-size:12px;color:var(--mute);white-space:nowrap}
+  .f-found{font-size:12.5px;color:var(--mute);white-space:nowrap}
   .f-found b{color:var(--ink);font-weight:500}
 
   /* ─── таблица ─── */
@@ -494,10 +495,11 @@
     .kpi{padding:16px 14px}
     .kpi-val{font-size:28px}
     .kpi-sub{font-size:10.5px}
-    .fbar{padding:14px;gap:8px}
+    .fbar{padding:14px;gap:12px}
+    .f-fields{gap:8px}
     .fld{flex:1 1 100%;min-width:0}
     .fld select,.fld input{min-width:0;width:100%}
-    .f-right{margin-left:0;width:100%;justify-content:space-between}
+    .f-top{width:100%}
     /* реестр превращается в карточки: та же система, читаемая с телефона */
     .tr.h{display:none}
     .tr{display:flex;flex-wrap:wrap;gap:9px 12px;padding:16px;align-items:center}
@@ -611,6 +613,11 @@
     <div class="sec-title"><h2>Реестр</h2><span id="fSummary" class="hint-only"></span></div>
 
     <div class="fbar" id="fbar">
+      <div class="f-top">
+        <span class="f-found" id="fFound"></span>
+        <button class="btn sm" id="fReset">Сбросить</button>
+      </div>
+      <div class="f-fields">
       <div class="fld" id="fldCli"><label>Клиент</label><button type="button" class="dd-btn" id="fCli">Все клиенты</button></div>
       <div class="fld" id="fldDir"><label>Направление</label><button type="button" class="dd-btn" id="fDir">Все направления</button></div>
       <div class="fld" id="fldWho"><label>Ответственный</label><button type="button" class="dd-btn" id="fWho">Все ответственные</button></div>
@@ -619,9 +626,6 @@
       <div class="fld" id="fldPer"><label>Период</label><button type="button" class="dd-btn cal-btn" id="fPer">Любые даты</button></div>
       <div class="fld" id="fldPrio"><label>Приоритет</label><button type="button" class="dd-btn" id="fPrio">Любой приоритет</button></div>
       <div class="fld"><label>Поиск по названию</label><input id="fQ" type="text" placeholder="например: оценка"></div>
-      <div class="f-right">
-        <span class="f-found" id="fFound"></span>
-        <button class="btn sm" id="fReset">Сбросить</button>
       </div>
     </div>
 
