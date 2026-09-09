@@ -11,8 +11,8 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { ITEM_LOCATIONS, isVirtualWarehouse } from "@kassa/shared";
-import type { Product, WarehouseStockLine } from "../data/types";
+import { ITEM_LOCATIONS, isVirtualWarehouse, SUIT_PART_LABEL } from "@kassa/shared";
+import type { Product, SuitModel, SuitPart, WarehouseStockLine } from "../data/types";
 import { api, apiBlob, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
 import { money } from "../lib/format";
@@ -90,6 +90,23 @@ interface ParsedProduct {
 }
 
 const EMPTY_SUBSECTION = "Без подраздела";
+const PAGE_SIZE = 60;
+
+/** Костюм из /catalog/browse: модель обычного экрана «Костюмы» плюс цена матрицы кассы. */
+interface CatalogSuitModel extends SuitModel {
+  priceRub: number | null;
+}
+
+interface CatalogBrowseResponse {
+  items: Product[];
+  itemsTotal: number;
+  suits: CatalogSuitModel[];
+  page: number;
+  pageSize: number;
+}
+
+type StockFilter = "any" | "positive" | "zero" | "negative";
+type KindFilter = "all" | "suits" | "items";
 
 function fmtQty(n: number): string {
   if (!Number.isFinite(n)) return "0";
@@ -226,33 +243,68 @@ function parseProduct(product: Product): ParsedProduct | null {
   };
 }
 
-async function withStock(rows: Product[]): Promise<Product[]> {
-  const need = rows.filter((p) => !p.warehouses?.length);
-  if (!need.length) return rows;
-  const map = new Map<string, WarehouseStockLine[]>();
-  await Promise.all(
-    need.map(async (p) => {
-      try {
-        const data = await api.get<{ warehouses: WarehouseStockLine[] }>(
-          `/catalog/${encodeURIComponent(p.id)}/stock?cache=1`
-        );
-        map.set(p.id, data.warehouses ?? []);
-      } catch {
-        map.set(p.id, []);
-      }
-    })
-  );
-  return rows.map((p) => ({
-    ...p,
-    warehouses: p.warehouses?.length ? p.warehouses : map.get(p.id) ?? [],
-  }));
-}
-
 function stockSum(product: Product): number {
   // Виртуальные строки (СДЭК) в остаток не входят: товар уже уехал к клиенту.
   return (product.warehouses ?? [])
     .filter((w) => !isVirtualWarehouse(w.warehouseMsId))
     .reduce((s, w) => s + (w.available || 0), 0);
+}
+
+/** Список частей и штук в размере — как на экране «Костюмы». */
+function partsLine(parts: Record<SuitPart, number>): string {
+  return (["jacket", "trousers", "vest"] as SuitPart[])
+    .filter((part) => parts[part] > 0)
+    .map((part) => `${SUIT_PART_LABEL[part]} ${parts[part]}`)
+    .join(" · ");
+}
+
+function SuitModelCard({ model }: { model: CatalogSuitModel }) {
+  const [open, setOpen] = useState(false);
+  const totalQty = model.sizes.reduce((n, s) => n + s.whole + s.tolerant, 0);
+  return (
+    <div className="card p-0 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-ink-800/40"
+      >
+        {open ? <ChevronDown size={16} className="text-mute shrink-0" /> : <ChevronRight size={16} className="text-mute shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <div className="text-white font-semibold truncate">{model.title}</div>
+          <div className="text-[12px] text-mute truncate">
+            {model.variation}
+            {model.height ? ` · ростовка ${model.height}` : ""}
+            {model.onHalfSetWarehouse > 0 ? ` · на складе полупарков ${model.onHalfSetWarehouse}` : ""}
+          </div>
+        </div>
+        <span className={`text-[13px] tabular-nums shrink-0 ${qtyClass(totalQty)}`}>{fmtQty(totalQty)}</span>
+        <span className="text-gold-soft font-semibold whitespace-nowrap shrink-0">
+          {model.priceRub != null ? money(model.priceRub) : "нет в матрице"}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-ink-800 divide-y divide-ink-800">
+          {model.sizes.map((size) => (
+            <div key={size.size} className="px-4 py-2.5 flex flex-wrap items-center gap-3 text-[13px]">
+              <span className="text-white font-medium">Размер {size.size}</span>
+              <span className="text-mute">{partsLine(size.parts) || "—"}</span>
+              {size.whole > 0 && <span className="text-emerald-300">цельных {size.whole}</span>}
+              {size.tolerant > 0 && <span className="text-amber-300">в допуске {size.tolerant}</span>}
+              {size.orphans.length > 0 && (
+                <span className="text-red-300">
+                  без пары:{" "}
+                  {size.orphans.map((o) => `${SUIT_PART_LABEL[o.part]} ${o.qty}`).join(", ")}
+                </span>
+              )}
+            </div>
+          ))}
+          {model.sizes.length === 0 && (
+            <div className="px-4 py-2.5 text-[13px] text-mute">Ни одного размера в остатке.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ProductCheck() {
@@ -262,13 +314,23 @@ export function ProductCheck() {
   const [color, setColor] = useState("");
   const [size, setSize] = useState("");
   const [variation, setVariation] = useState("");
+  const [height, setHeight] = useState("");
   const [subCategory, setSubCategory] = useState("");
-  const [inStockOnly, setInStockOnly] = useState(false);
+  const [stockFilter, setStockFilter] = useState<StockFilter>("any");
+  const [warehouseFilter, setWarehouseFilter] = useState("");
+  const [priceMin, setPriceMin] = useState("");
+  const [priceMax, setPriceMax] = useState("");
+  const [kind, setKind] = useState<KindFilter>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const sectionOptions = SECTION_ORDER;
   const [products, setProducts] = useState<Product[]>([]);
+  const [itemsTotal, setItemsTotal] = useState(0);
+  const [suits, setSuits] = useState<CatalogSuitModel[]>([]);
+  const [page, setPage] = useState(1);
   const [folderSubs, setFolderSubs] = useState<Record<string, string[]>>({});
+  const [warehouseOptions, setWarehouseOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const [openBases, setOpenBases] = useState<Set<string>>(new Set());
@@ -298,9 +360,10 @@ export function ProductCheck() {
   useEffect(() => {
     if (USE_MOCK) return;
     api
-      .get<{ folders?: Array<{ name: string; path: string; parentPath: string | null; level: number }> }>(
-        "/catalog/references"
-      )
+      .get<{
+        folders?: Array<{ name: string; path: string; parentPath: string | null; level: number }>;
+        warehouses?: Array<{ id: string; name: string }>;
+      }>("/catalog/references")
       .then((refs) => {
         const map: Record<string, string[]> = {};
         for (const hall of SECTION_ORDER) {
@@ -315,34 +378,48 @@ export function ProductCheck() {
           map[hall] = [...new Set(names)].sort((a, b) => a.localeCompare(b, "ru"));
         }
         setFolderSubs(map);
+        setWarehouseOptions(refs.warehouses ?? []);
       })
-      .catch(() => setFolderSubs({}));
+      .catch(() => {
+        setFolderSubs({});
+        setWarehouseOptions([]);
+      });
   }, []);
 
-  useEffect(() => {
-    if (USE_MOCK) {
-      setError("Включён mock-режим — реальные остатки недоступны. Перезапустите без VITE_USE_MOCK.");
-      setProducts([]);
-      return;
-    }
-    const timer = window.setTimeout(async () => {
+  async function fetchPage(pageNum: number, replace: boolean) {
+    if (replace) {
       setLoading(true);
       setError(null);
       setExpandedId(null);
-      try {
-        const browsing = !q.trim() && !section;
-        const rows = await api.getQuery<Product[]>("/catalog/search", {
-          q: q.trim() || undefined,
-          category: section || undefined,
-          store: activeStore,
-          browse: browsing ? 1 : undefined,
-          limit: browsing ? 120 : 400,
-        });
-        const withWh = await withStock(rows);
-        setProducts(withWh);
+    } else {
+      setLoadingMore(true);
+    }
+    try {
+      const res = await api.getQuery<CatalogBrowseResponse>("/catalog/browse", {
+        q: q.trim() || undefined,
+        section: section || undefined,
+        subCategory: subCategory || undefined,
+        store: activeStore,
+        warehouse: warehouseFilter || undefined,
+        stockFilter,
+        color: color || undefined,
+        size: size || undefined,
+        variation: variation || undefined,
+        height: height || undefined,
+        priceMin: priceMin.trim() ? Number(priceMin) : undefined,
+        priceMax: priceMax.trim() ? Number(priceMax) : undefined,
+        kind,
+        page: pageNum,
+        pageSize: PAGE_SIZE,
+      });
+      setProducts((prev) => (replace ? res.items : [...prev, ...res.items]));
+      setItemsTotal(res.itemsTotal);
+      setSuits(res.suits);
+      setPage(pageNum);
+      if (replace) {
         // При текстовом поиске открываем группы, где есть совпадения.
-        if (q.trim() && withWh.length) {
-          const keys = withWh
+        if (q.trim() && res.items.length) {
+          const keys = res.items
             .map(parseProduct)
             .filter((row): row is ParsedProduct => row != null)
             .map((row) => (section ? row.subSection || EMPTY_SUBSECTION : row.section));
@@ -352,15 +429,47 @@ export function ProductCheck() {
           setOpenSections(new Set());
           setOpenBases(new Set());
         }
-      } catch (e) {
-        setProducts([]);
-        setError(e instanceof Error ? e.message : "Не удалось загрузить каталог");
-      } finally {
-        setLoading(false);
       }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось загрузить каталог");
+      if (replace) {
+        setProducts([]);
+        setItemsTotal(0);
+        setSuits([]);
+      }
+    } finally {
+      if (replace) setLoading(false);
+      else setLoadingMore(false);
+    }
+  }
+
+  useEffect(() => {
+    if (USE_MOCK) {
+      setError("Включён mock-режим — реальные остатки недоступны. Перезапустите без VITE_USE_MOCK.");
+      setProducts([]);
+      setSuits([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void fetchPage(1, true);
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [q, section, activeStore]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    q,
+    section,
+    subCategory,
+    color,
+    size,
+    variation,
+    height,
+    stockFilter,
+    warehouseFilter,
+    priceMin,
+    priceMax,
+    kind,
+    activeStore,
+  ]);
 
   const parsed = useMemo(
     () => products.map(parseProduct).filter((row): row is ParsedProduct => row != null),
@@ -378,49 +487,36 @@ export function ProductCheck() {
     return [...names].sort((a, b) => a.localeCompare(b, "ru"));
   }, [section, folderSubs, parsed]);
 
+  /** Опции фильтров — лучшее приближение по уже загруженной странице (сервер фильтрует сам). */
   const filterOptions = useMemo(() => {
     const colors = new Set<string>();
     const sizes = new Set<string>();
     const variations = new Set<string>();
+    const heights = new Set<string>();
     for (const row of parsed) {
       if (section && normalizeSectionKey(row.section) !== normalizeSectionKey(section)) continue;
-      if (subCategory) {
-        const key = row.subSection || EMPTY_SUBSECTION;
-        if (key !== subCategory) continue;
-      }
       if (row.color) colors.add(row.color);
       if (row.size) sizes.add(row.size);
       if (row.variation) variations.add(row.variation);
+    }
+    for (const m of suits) {
+      if (m.height) heights.add(m.height);
     }
     const sortRu = (a: string, b: string) => a.localeCompare(b, "ru", { numeric: true });
     return {
       colors: [...colors].sort(sortRu),
       sizes: [...sizes].sort(sortRu),
       variations: [...variations].sort(sortRu),
+      heights: [...heights].sort(sortRu),
     };
-  }, [parsed, section, subCategory]);
-
-  const filtered = useMemo(() => {
-    return parsed.filter((row) => {
-      if (section && normalizeSectionKey(row.section) !== normalizeSectionKey(section)) return false;
-      if (subCategory) {
-        const key = row.subSection || EMPTY_SUBSECTION;
-        if (key !== subCategory) return false;
-      }
-      if (color && row.color !== color) return false;
-      if (size && row.size !== size) return false;
-      if (variation && row.variation !== variation) return false;
-      if (inStockOnly && stockSum(row.product) <= 0) return false;
-      return true;
-    });
-  }, [parsed, section, color, size, variation, subCategory, inStockOnly]);
+  }, [parsed, section, suits]);
 
   const tree = useMemo(() => {
     type BaseGroup = { baseName: string; rows: ParsedProduct[] };
     type SectionGroup = { section: string; bases: BaseGroup[]; variantCount: number };
     // В режиме раздела — дерево по подразделам; иначе — по 5 разделам зала.
     const byGroup = new Map<string, Map<string, ParsedProduct[]>>();
-    for (const row of filtered) {
+    for (const row of parsed) {
       const groupKey = section ? row.subSection || EMPTY_SUBSECTION : row.section;
       const secMap = byGroup.get(groupKey) ?? new Map<string, ParsedProduct[]>();
       secMap.set(row.baseName, [...(secMap.get(row.baseName) ?? []), row]);
@@ -452,15 +548,22 @@ export function ProductCheck() {
         );
       });
     return sections;
-  }, [filtered, section]);
+  }, [parsed, section]);
 
-  const extraActive = Boolean(color || size || variation || inStockOnly);
+  const extraActive = Boolean(
+    color || size || variation || height || warehouseFilter || priceMin || priceMax || stockFilter !== "any" || kind !== "all"
+  );
 
   function resetExtraFilters() {
     setColor("");
     setSize("");
     setVariation("");
-    setInStockOnly(false);
+    setHeight("");
+    setWarehouseFilter("");
+    setPriceMin("");
+    setPriceMax("");
+    setStockFilter("any");
+    setKind("all");
   }
 
   function selectHallSection(next: string) {
@@ -490,6 +593,10 @@ export function ProductCheck() {
     });
   }
 
+  const showSuits = kind !== "items" && suits.length > 0;
+  const showItemsTree = kind !== "suits";
+  const hasMore = products.length < itemsTotal;
+
   return (
     <div className="max-w-6xl mx-auto">
       <div className="flex items-center gap-2 mb-1">
@@ -497,7 +604,7 @@ export function ProductCheck() {
         <h1 className="text-2xl font-extrabold text-white">Поиск товара</h1>
       </div>
       <p className="text-mute text-sm mb-5">
-        Разделы зала · модели без цвета/размера · клик по вариации — остатки по складам.
+        Весь каталог с фильтрами по остатку · костюмы моделями · клик по вариации — остатки по складам.
       </p>
 
       <div className={`flex gap-1.5 flex-wrap ${section ? "mb-2" : "mb-3"}`}>
@@ -591,6 +698,27 @@ export function ProductCheck() {
         </button>
       </div>
 
+      <div className="flex gap-1.5 mb-3 flex-wrap">
+        {([
+          { id: "all", label: "Всё" },
+          { id: "suits", label: "Только костюмы" },
+          { id: "items", label: "Только штучные" },
+        ] as const).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setKind(opt.id)}
+            className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
+              kind === opt.id
+                ? "bg-gold/15 text-gold-soft border border-gold/40"
+                : "text-mute hover:bg-ink-800 border border-transparent"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       <div className="card mb-4 p-0 overflow-hidden">
         <button
           type="button"
@@ -624,6 +752,34 @@ export function ProductCheck() {
         </button>
         {filtersOpen && (
           <div className="px-3 pb-3 flex flex-wrap gap-2 items-end border-t border-ink-800 pt-3">
+            <div className="min-w-[150px] flex-1">
+              <div className="field-label">Остаток</div>
+              <select
+                className="input py-2 text-sm"
+                value={stockFilter}
+                onChange={(e) => setStockFilter(e.target.value as StockFilter)}
+              >
+                <option value="any">Любой</option>
+                <option value="positive">Положительный</option>
+                <option value="zero">Нулевой</option>
+                <option value="negative">Отрицательный</option>
+              </select>
+            </div>
+            <div className="min-w-[150px] flex-1">
+              <div className="field-label">Склад</div>
+              <select
+                className="input py-2 text-sm"
+                value={warehouseFilter}
+                onChange={(e) => setWarehouseFilter(e.target.value)}
+              >
+                <option value="">Все склады</option>
+                {warehouseOptions.map((w) => (
+                  <option key={w.id} value={w.name}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="min-w-[140px] flex-1">
               <div className="field-label">Цвет</div>
               <select className="input py-2 text-sm" value={color} onChange={(e) => setColor(e.target.value)}>
@@ -661,15 +817,39 @@ export function ProductCheck() {
                 ))}
               </select>
             </div>
-            <label className="inline-flex items-center gap-2 pb-2 text-[13px] text-mute-soft cursor-pointer select-none">
+            <div className="min-w-[110px] flex-1">
+              <div className="field-label">Ростовка</div>
+              <select className="input py-2 text-sm" value={height} onChange={(e) => setHeight(e.target.value)}>
+                <option value="">Любая</option>
+                {filterOptions.heights.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-[100px]">
+              <div className="field-label">Цена от, ₽</div>
               <input
-                type="checkbox"
-                className="rounded border-ink-600"
-                checked={inStockOnly}
-                onChange={(e) => setInStockOnly(e.target.checked)}
+                type="number"
+                min={0}
+                className="input py-2 text-sm"
+                value={priceMin}
+                onChange={(e) => setPriceMin(e.target.value)}
+                placeholder="0"
               />
-              Только в наличии
-            </label>
+            </div>
+            <div className="min-w-[100px]">
+              <div className="field-label">Цена до, ₽</div>
+              <input
+                type="number"
+                min={0}
+                className="input py-2 text-sm"
+                value={priceMax}
+                onChange={(e) => setPriceMax(e.target.value)}
+                placeholder="без ограничения"
+              />
+            </div>
           </div>
         )}
       </div>
@@ -680,201 +860,234 @@ export function ProductCheck() {
         </div>
       )}
 
-      <div className="space-y-3">
-        {tree.map((sec) => {
-          const sectionOpen = openSections.has(sec.section);
-          return (
-            <section key={sec.section} className="card p-0 overflow-hidden">
-              <button
-                type="button"
-                className="w-full px-4 py-3 flex items-center gap-2 text-left hover:bg-ink-800/50"
-                onClick={() => toggleSection(sec.section)}
-              >
-                {sectionOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
-                <span className="text-white font-semibold flex-1">{sec.section}</span>
-                <span className="chip bg-ink-700 text-mute">
-                  {sec.bases.length} мод. · {sec.variantCount}
-                </span>
-              </button>
+      {showSuits && (
+        <div className="space-y-2 mb-4">
+          <div className="text-[13px] font-semibold text-white flex items-center gap-2">
+            Костюмы моделями
+            <span className="chip bg-ink-700 text-mute">{suits.length}</span>
+          </div>
+          {suits.map((model) => (
+            <SuitModelCard key={model.modelId} model={model} />
+          ))}
+        </div>
+      )}
 
-              {sectionOpen && (
-                <div className="border-t border-ink-700 divide-y divide-ink-800">
-                  {sec.bases.map((base) => {
-                    const baseKey = `${sec.section}::${base.baseName}`;
-                    const baseOpen = openBases.has(baseKey);
-                    const totalStock = base.rows.reduce((n, r) => n + stockSum(r.product), 0);
-                    return (
-                      <div key={baseKey}>
-                        <button
-                          type="button"
-                          className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-ink-800/40"
-                          onClick={() => toggleBase(sec.section, base.baseName)}
-                        >
-                          {baseOpen ? (
-                            <ChevronDown size={15} className="text-mute" />
-                          ) : (
-                            <ChevronRight size={15} className="text-mute" />
-                          )}
-                          <span className="text-white font-medium flex-1 leading-snug">{base.baseName}</span>
-                          <span className={`text-[12px] tabular-nums ${qtyClass(totalStock)}`}>
-                            {fmtQty(totalStock)}
-                          </span>
-                          <span className="chip bg-ink-800 text-mute">{base.rows.length}</span>
-                        </button>
+      {showItemsTree && (
+        <div className="space-y-3">
+          {tree.map((sec) => {
+            const sectionOpen = openSections.has(sec.section);
+            return (
+              <section key={sec.section} className="card p-0 overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full px-4 py-3 flex items-center gap-2 text-left hover:bg-ink-800/50"
+                  onClick={() => toggleSection(sec.section)}
+                >
+                  {sectionOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                  <span className="text-white font-semibold flex-1">{sec.section}</span>
+                  <span className="chip bg-ink-700 text-mute">
+                    {sec.bases.length} мод. · {sec.variantCount}
+                  </span>
+                </button>
 
-                        {baseOpen && (
-                          <div className="overflow-x-auto border-t border-ink-800 bg-ink-950/30">
-                            <table className="w-full text-sm min-w-[720px]">
-                              <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-800">
-                                <tr>
-                                  <th className="text-left px-4 py-2 font-medium">Вариация</th>
-                                  {MAIN_WAREHOUSES.map((w) => (
-                                    <th
-                                      key={w.id}
-                                      className="text-right px-3 py-2 font-medium whitespace-nowrap w-[110px]"
-                                    >
-                                      {w.label}
-                                    </th>
-                                  ))}
-                                  <th className="text-right px-4 py-2 font-medium whitespace-nowrap w-[90px]">
-                                    Цена
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-ink-800">
-                                {base.rows.map((row) => {
-                                  const product = row.product;
-                                  const warehouses = product.warehouses ?? [];
-                                  const expanded = expandedId === product.id;
-                                  const others = otherWarehouses(warehouses);
-                                  const leftovers = expanded ? leftoverWarehouses(warehouses) : [];
-                                  const modBits = [row.color, row.size, row.variation].filter(Boolean);
-                                  return (
-                                    <Fragment key={product.id}>
-                                      <tr
-                                        className="hover:bg-ink-800/40 cursor-pointer"
-                                        onClick={() => setExpandedId(expanded ? null : product.id)}
+                {sectionOpen && (
+                  <div className="border-t border-ink-700 divide-y divide-ink-800">
+                    {sec.bases.map((base) => {
+                      const baseKey = `${sec.section}::${base.baseName}`;
+                      const baseOpen = openBases.has(baseKey);
+                      const totalStock = base.rows.reduce((n, r) => n + stockSum(r.product), 0);
+                      return (
+                        <div key={baseKey}>
+                          <button
+                            type="button"
+                            className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-ink-800/40"
+                            onClick={() => toggleBase(sec.section, base.baseName)}
+                          >
+                            {baseOpen ? (
+                              <ChevronDown size={15} className="text-mute" />
+                            ) : (
+                              <ChevronRight size={15} className="text-mute" />
+                            )}
+                            <span className="text-white font-medium flex-1 leading-snug">{base.baseName}</span>
+                            <span className={`text-[12px] tabular-nums ${qtyClass(totalStock)}`}>
+                              {fmtQty(totalStock)}
+                            </span>
+                            <span className="chip bg-ink-800 text-mute">{base.rows.length}</span>
+                          </button>
+
+                          {baseOpen && (
+                            <div className="overflow-x-auto border-t border-ink-800 bg-ink-950/30">
+                              <table className="w-full text-sm min-w-[720px]">
+                                <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-800">
+                                  <tr>
+                                    <th className="text-left px-4 py-2 font-medium">Вариация</th>
+                                    {MAIN_WAREHOUSES.map((w) => (
+                                      <th
+                                        key={w.id}
+                                        className="text-right px-3 py-2 font-medium whitespace-nowrap w-[110px]"
                                       >
-                                        <td className="px-4 py-3 align-top">
-                                          <div className="text-white font-medium leading-snug">
-                                            {modBits.length ? modBits.join(" · ") : row.modsLabel || "—"}
-                                          </div>
-                                          <div className="text-[12px] text-mute mt-0.5">
-                                            {product.sku || "—"}
-                                            {product.barcode ? ` · ${product.barcode}` : ""}
-                                            {row.subCategory ? ` · ${row.subCategory}` : ""}
-                                            {others.length > 0 && (
-                                              <span className="text-gold-soft">
-                                                {" "}
-                                                · ещё {others.length} склад
-                                                {others.length === 1 ? "" : others.length < 5 ? "а" : "ов"}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </td>
-                                        {MAIN_WAREHOUSES.map((w) => {
-                                          const n = qtyAt(warehouses, w.match);
-                                          return (
-                                            <td
-                                              key={w.id}
-                                              className={`px-3 py-3 text-right tabular-nums align-top ${qtyClass(n)}`}
-                                            >
-                                              {fmtQty(n)}
-                                            </td>
-                                          );
-                                        })}
-                                        <td className="px-4 py-3 text-right text-gold-soft font-semibold whitespace-nowrap align-top">
-                                          {money(product.price)}
-                                        </td>
-                                      </tr>
-                                      {expanded && (
-                                        <tr className="bg-ink-900/60">
-                                          <td colSpan={5} className="px-4 py-3">
-                                            <div className="flex items-center gap-3 mb-2">
-                                              <div className="field-label mb-0 flex-1">Все склады / положения</div>
-                                              <button
-                                                type="button"
-                                                disabled={printingId === product.id}
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  void printLabel(product);
-                                                }}
-                                                className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-[13px] text-mute-soft hover:border-gold/40 hover:text-white disabled:opacity-50"
+                                        {w.label}
+                                      </th>
+                                    ))}
+                                    <th className="text-right px-4 py-2 font-medium whitespace-nowrap w-[90px]">
+                                      Цена
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-ink-800">
+                                  {base.rows.map((row) => {
+                                    const product = row.product;
+                                    const warehouses = product.warehouses ?? [];
+                                    const expanded = expandedId === product.id;
+                                    const others = otherWarehouses(warehouses);
+                                    const leftovers = expanded ? leftoverWarehouses(warehouses) : [];
+                                    const modBits = [row.color, row.size, row.variation].filter(Boolean);
+                                    return (
+                                      <Fragment key={product.id}>
+                                        <tr
+                                          className="hover:bg-ink-800/40 cursor-pointer"
+                                          onClick={() => setExpandedId(expanded ? null : product.id)}
+                                        >
+                                          <td className="px-4 py-3 align-top">
+                                            <div className="text-white font-medium leading-snug">
+                                              {modBits.length ? modBits.join(" · ") : row.modsLabel || "—"}
+                                            </div>
+                                            <div className="text-[12px] text-mute mt-0.5">
+                                              {product.sku || "—"}
+                                              {product.barcode ? ` · ${product.barcode}` : ""}
+                                              {row.subCategory ? ` · ${row.subCategory}` : ""}
+                                              {others.length > 0 && (
+                                                <span className="text-gold-soft">
+                                                  {" "}
+                                                  · ещё {others.length} склад
+                                                  {others.length === 1 ? "" : others.length < 5 ? "а" : "ов"}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+                                          {MAIN_WAREHOUSES.map((w) => {
+                                            const n = qtyAt(warehouses, w.match);
+                                            return (
+                                              <td
+                                                key={w.id}
+                                                className={`px-3 py-3 text-right tabular-nums align-top ${qtyClass(n)}`}
                                               >
-                                                {printingId === product.id ? (
-                                                  <Loader2 size={14} className="animate-spin" />
-                                                ) : (
-                                                  <Printer size={14} className="text-gold" />
-                                                )}
-                                                Печать бирки
-                                              </button>
-                                            </div>
-                                            {printError && expandedId === product.id && (
-                                              <div className="mb-2 text-[12px] text-red-300">{printError}</div>
-                                            )}
-                                            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                              {EXPANDED_COLUMNS.map((col) => (
-                                                <div key={col.id} className="space-y-1.5">
-                                                  {col.slots.map((slot) => {
-                                                    const n = qtyAt(warehouses, slot.match);
-                                                    return (
-                                                      <div
-                                                        key={slot.label}
-                                                        className="flex justify-between gap-3 rounded-md border border-ink-700 px-2.5 py-1.5 text-[13px]"
-                                                      >
-                                                        <span className="text-mute-soft truncate">
-                                                          {slot.label}
-                                                        </span>
-                                                        <span
-                                                          className={`tabular-nums shrink-0 ${qtyClass(n)}`}
+                                                {fmtQty(n)}
+                                              </td>
+                                            );
+                                          })}
+                                          <td className="px-4 py-3 text-right text-gold-soft font-semibold whitespace-nowrap align-top">
+                                            {money(product.price)}
+                                          </td>
+                                        </tr>
+                                        {expanded && (
+                                          <tr className="bg-ink-900/60">
+                                            <td colSpan={5} className="px-4 py-3">
+                                              <div className="flex items-center gap-3 mb-2">
+                                                <div className="field-label mb-0 flex-1">Все склады / положения</div>
+                                                <button
+                                                  type="button"
+                                                  disabled={printingId === product.id}
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    void printLabel(product);
+                                                  }}
+                                                  className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-[13px] text-mute-soft hover:border-gold/40 hover:text-white disabled:opacity-50"
+                                                >
+                                                  {printingId === product.id ? (
+                                                    <Loader2 size={14} className="animate-spin" />
+                                                  ) : (
+                                                    <Printer size={14} className="text-gold" />
+                                                  )}
+                                                  Печать бирки
+                                                </button>
+                                              </div>
+                                              {printError && expandedId === product.id && (
+                                                <div className="mb-2 text-[12px] text-red-300">{printError}</div>
+                                              )}
+                                              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                {EXPANDED_COLUMNS.map((col) => (
+                                                  <div key={col.id} className="space-y-1.5">
+                                                    {col.slots.map((slot) => {
+                                                      const n = qtyAt(warehouses, slot.match);
+                                                      return (
+                                                        <div
+                                                          key={slot.label}
+                                                          className="flex justify-between gap-3 rounded-md border border-ink-700 px-2.5 py-1.5 text-[13px]"
                                                         >
-                                                          {fmtQty(n)}
-                                                        </span>
-                                                      </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              ))}
-                                            </div>
-                                            {leftovers.length > 0 && (
-                                              <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-                                                {leftovers.map((w) => (
-                                                  <div
-                                                    key={w.warehouseMsId}
-                                                    className="flex justify-between gap-3 rounded-md border border-ink-700 px-2.5 py-1.5 text-[13px]"
-                                                  >
-                                                    <span className="text-mute-soft truncate">{w.name}</span>
-                                                    <span
-                                                      className={`tabular-nums shrink-0 ${qtyClass(w.available)}`}
-                                                    >
-                                                      {fmtQty(w.available)}
-                                                    </span>
+                                                          <span className="text-mute-soft truncate">
+                                                            {slot.label}
+                                                          </span>
+                                                          <span
+                                                            className={`tabular-nums shrink-0 ${qtyClass(n)}`}
+                                                          >
+                                                            {fmtQty(n)}
+                                                          </span>
+                                                        </div>
+                                                      );
+                                                    })}
                                                   </div>
                                                 ))}
                                               </div>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      )}
-                                    </Fragment>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          );
-        })}
-        {!loading && tree.length === 0 && !error && (
-          <div className="card py-10 text-center text-mute">Товары не найдены</div>
-        )}
-      </div>
+                                              {leftovers.length > 0 && (
+                                                <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                                                  {leftovers.map((w) => (
+                                                    <div
+                                                      key={w.warehouseMsId}
+                                                      className="flex justify-between gap-3 rounded-md border border-ink-700 px-2.5 py-1.5 text-[13px]"
+                                                    >
+                                                      <span className="text-mute-soft truncate">{w.name}</span>
+                                                      <span
+                                                        className={`tabular-nums shrink-0 ${qtyClass(w.available)}`}
+                                                      >
+                                                        {fmtQty(w.available)}
+                                                      </span>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </Fragment>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+          {!loading && tree.length === 0 && !showSuits && !error && (
+            <div className="card py-10 text-center text-mute">Товары не найдены</div>
+          )}
+        </div>
+      )}
+
+      {showItemsTree && itemsTotal > 0 && (
+        <div className="flex items-center justify-between gap-3 mt-4 text-[13px] text-mute">
+          <span>
+            Показано {products.length} из {itemsTotal}
+          </span>
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => void fetchPage(page + 1, false)}
+              disabled={loadingMore}
+              className="inline-flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-[13px] text-mute-soft hover:border-gold/40 hover:text-white disabled:opacity-50"
+            >
+              {loadingMore && <Loader2 size={14} className="animate-spin" />}
+              Показать ещё
+            </button>
+          )}
+        </div>
+      )}
 
       {scannerOpen && (
         <BarcodeScannerModal

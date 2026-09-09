@@ -682,12 +682,9 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   if (query.priceMax != null) conditions.push(sql`${products.price} <= ${Math.round(query.priceMax * 100)}`);
 
   const warehouseName = (query.warehouse || query.store || "").trim();
-  const qtyExpr = warehouseName
-    ? sql`coalesce((
-        SELECT sum(st.quantity) FROM stock st
-        WHERE st.product_ms_id = ${products.msId} AND st.warehouse_name = ${warehouseName}
-      ), 0)`
-    : sql`coalesce((SELECT sum(st.quantity) FROM stock st WHERE st.product_ms_id = ${products.msId}), 0)`;
+  const totalsWarehouseFilter = warehouseName
+    ? sql`WHERE ${stock.warehouseName} = ${warehouseName}`
+    : sql``;
 
   const stockCondition =
     query.stockFilter === "positive"
@@ -702,11 +699,19 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   const whereSql = sql.join(conditions, sql` AND `);
 
   // FROM без алиаса: все условия и SUIT_KEY_SQL ссылаются на products по имени
-  // таблицы, алиас сломал бы эти ссылки (invalid reference to FROM-clause entry).
+  // таблицы — алиас сломал бы эти ссылки (invalid reference to FROM-clause entry).
+  // Остаток — отдельным LEFT JOIN на агрегат по stock, а не N запросов на клиенте.
   const result = await db.execute(sql`
-    WITH base AS (
-      SELECT *, (${qtyExpr}) AS total_qty
+    WITH totals AS (
+      SELECT ${stock.productMsId} AS product_ms_id, sum(${stock.quantity}) AS total_qty
+      FROM ${stock}
+      ${totalsWarehouseFilter}
+      GROUP BY ${stock.productMsId}
+    ),
+    base AS (
+      SELECT ${products}.*, coalesce(totals.total_qty, 0) AS total_qty
       FROM ${products}
+      LEFT JOIN totals ON totals.product_ms_id = ${products.msId}
       WHERE ${whereSql}
     )
     SELECT *, count(*) OVER() AS full_count
