@@ -30,6 +30,12 @@ FALLBACK = (
     "Секунду, у меня система тормозит. Передаю коллеге, он сразу напишет.",
     "Извините, зависло на моей стороне. Коллега сейчас вам ответит.",
 )
+# Первый сбой человека не зовёт: скорее всего следующее сообщение пройдёт.
+# Обещать коллегу и молчать - хуже, чем попросить повторить.
+FALLBACK_RETRY = (
+    "Секунду, у меня тут подвисло. Напишите, пожалуйста, ещё раз",
+    "Что-то со связью на моей стороне. Повторите, пожалуйста, сообщение",
+)
 # Отрицать такси и каршеринг нельзя: клиент вскроет это по отчёту после покупки.
 HISTORY_UNKNOWN = (
     "По истории этой машины наугад не скажу. Уточню по документам, "
@@ -37,6 +43,11 @@ HISTORY_UNKNOWN = (
 )
 pending: dict[int, list[str]] = {}
 tasks: dict[int, asyncio.Task] = {}
+# Сбои LLM подряд по одному чату. Разовый сбой (лимит ключа, таймаут) лечится
+# следующим сообщением клиента, а пауза убивает лид навсегда: снимать её надо
+# руками, и о ней никто не помнит. Гасим чат только когда не отвечаем подряд.
+llm_fails: dict[int, int] = {}
+MAX_LLM_FAILS = 2
 inflight: set[int] = set()
 # Сколько раз переспрашиваем модель, если клиент дописывает во время обдумывания.
 MAX_MERGE_ROUNDS = 2
@@ -199,12 +210,21 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
             await tg.typing(chat_id)
     except llm.LlmError as exc:
         log.error("LLM: %s", exc)
-        excuse = random.choice(FALLBACK)
+        fails = llm_fails.get(chat_id, 0) + 1
+        llm_fails[chat_id] = fails
+        last_try = fails >= MAX_LLM_FAILS
+        excuse = random.choice(FALLBACK if last_try else FALLBACK_RETRY)
         await type_and_wait(tg, chat_id, human.typing_delay(excuse, first=True))
         await tg.send(chat_id, excuse)
-        store.pause(chat_id, "LLM недоступен")
-        await tg.notify_admin("LLM не ответил по чату %s: %s" % (chat_id, exc))
+        if last_try:
+            store.pause(chat_id, "LLM недоступен")
+            log.warning("чат %s на паузе: %d сбоя LLM подряд", chat_id, fails)
+        await tg.notify_admin(
+            "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, exc)
+        )
         return
+
+    llm_fails.pop(chat_id, None)
 
     user_text = history[-1]["content"]
     handoff = prompt.HANDOFF_MARK in raw
