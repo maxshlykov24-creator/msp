@@ -210,6 +210,7 @@ PERMIT_DETAIL = (
         r"\s+(сейчас\s+)?(не\s+)?(активн|неактивн|аннулированн|действующ|прекращённ|прекращенн)\w*",
         re.IGNORECASE,
     ),
+    re.compile(r"\s*,?\s*(оно\s+)?зарегистрирован\w*", re.IGNORECASE),
     re.compile(r"\s*у\s+этого\s+экземпляра", re.IGNORECASE),
 )
 QUAL_LEAD_IN = re.compile(
@@ -330,7 +331,17 @@ def trim_permit(text: str) -> str:
                 part,
                 flags=re.IGNORECASE,
             )
+            # После вырезанных реквизитов остаётся «разрешение - .» или
+            # висящий дефис перед точкой: подчищаем хвост предложения.
+            part = re.sub(r"\s*[-–—,;:]\s*(?=[.!?]|$)", "", part)
+            part = re.sub(r"\s+([.!?])", r"\1", part)
             part = re.sub(r"\s*[-–—,;:]\s*$", "", part)
+            # От «разрешение - зарегистрировано в Петербурге, действующее»
+            # остаётся огрызок «разрешение». Возвращаем факт целиком.
+            if re.fullmatch(
+                r"(да[,\s]+)?разрешени\w*[.!?]?", part.strip(), re.IGNORECASE
+            ):
+                part = "Да, разрешение на работу в такси есть."
         out.append(part)
     text = " ".join(out)
     return _tidy(text, original) if text != original else original
