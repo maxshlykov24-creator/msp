@@ -49,7 +49,8 @@
     --field:#FFFFFF;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
+  html{scroll-behavior:smooth;scrollbar-gutter:stable;overflow-y:scroll;overflow-x:hidden}
+  body.locked{overflow:hidden}
   body{
     font-family:var(--font);color:var(--ink);background:var(--bg);
     min-height:100vh;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;
@@ -258,13 +259,13 @@
   .btn.sm{font-size:11.5px;padding:7px 12px;border-radius:9px}
 
   /* ─── очередь ─── */
-  .q-item{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease);background:var(--panel)}
-  .q-item:has(.grip){grid-template-columns:18px 1fr auto}
+  .q-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease);background:var(--panel)}
+  .q-item:has(.grip){grid-template-columns:18px minmax(0,1fr) auto}
   .q-item:last-child{border-bottom:0}
   .q-item:hover{background:var(--hover)}
   .q-item.drag{opacity:.4}
   .q-item.over{outline:1px solid rgba(198,184,164,.45)}
-  .q-name{font-size:14.5px;font-weight:450;line-height:1.4}
+  .q-name{font-size:14.5px;font-weight:450;line-height:1.4;min-width:0}
   .q-path{font-size:11.5px;color:var(--mute-2);margin-top:7px}
   .q-path b{color:var(--mute);font-weight:400;cursor:pointer;border-bottom:1px dashed var(--line-2)}
   .q-path b:hover{color:var(--ink)}
@@ -327,11 +328,11 @@
   .feed-x b{color:var(--ink);font-weight:500}
 
   /* ─── модалка ─── */
-  .ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center;padding:28px 24px;overflow:auto;opacity:0;pointer-events:none;transition:opacity .45s var(--ease)}
+  .ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.32);display:flex;align-items:safe center;justify-content:center;padding:28px 24px;overflow:auto;overscroll-behavior:contain;opacity:0;pointer-events:none;transition:opacity .4s var(--ease)}
   body.light .ov{background:rgba(20,20,20,.18)}
   .ov.on{opacity:1;pointer-events:auto}
-  .modal{width:100%;max-width:1080px;max-height:calc(100vh - 56px);overflow:auto;border-radius:24px;border:1px solid var(--line-2);background:var(--bg);box-shadow:var(--shadow-lg);transform:translateY(16px) scale(.98);opacity:.72;transition:transform .5s var(--ease),opacity .5s var(--ease);position:relative}
-  .ov.on .modal{transform:none;opacity:1}
+  .modal{width:100%;max-width:1080px;max-height:calc(100vh - 56px);overflow:auto;border-radius:24px;border:1px solid var(--line-2);background:var(--bg);box-shadow:var(--shadow-lg);transform:translate3d(0,18px,0);opacity:0;transition:transform .4s var(--ease),opacity .4s var(--ease);position:relative}
+  .ov.on .modal{transform:translate3d(0,0,0);opacity:1}
   #ov2{z-index:90}
   .modal.narrow{max-width:520px}
   .m-head{padding:26px 28px 20px;border-bottom:1px solid var(--line);position:relative;border-radius:24px 24px 0 0;overflow:hidden}
@@ -874,6 +875,28 @@ function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','
 function $(id){return document.getElementById(id)}
 let tTimer;
 function toast(msg){const t=$('toast');t.innerHTML=msg;t.classList.add('on');clearTimeout(tTimer);tTimer=setTimeout(()=>t.classList.remove('on'),3600)}
+function lockPage(){
+  if(document.body.classList.contains('locked')) return;
+  const w=Math.max(0, window.innerWidth-document.documentElement.clientWidth);
+  document.body.classList.add('locked');
+  if(w) document.body.style.paddingRight=w+'px';
+}
+function unlockPage(){
+  if($('ov').classList.contains('on') || $('ov2').classList.contains('on')) return;
+  document.body.classList.remove('locked');
+  document.body.style.paddingRight='';
+}
+function openLayer(id){
+  lockPage();
+  const el=$(id);
+  requestAnimationFrame(()=>el.classList.add('on'));
+}
+function closeLayer(id){
+  closePop();
+  $(id).classList.remove('on');
+  if(id==='ov') openId=null;
+  requestAnimationFrame(()=>requestAnimationFrame(unlockPage));
+}
 
 /* ═══════════ ВСПЛЫВАЮЩИЕ СПИСКИ И КАЛЕНДАРЬ ═══════════ */
 function closePop(){
@@ -1160,9 +1183,8 @@ function renderDeals(){
 let openId=null;
 function openDeal(id){
   openId=id;
-  $('ov').classList.add('on');
-  document.body.style.overflow='hidden';
   renderModal();
+  openLayer('ov');
 }
 /* после любого действия: перерисовать открытую карточку и все счётчики */
 function sync(){
@@ -1170,10 +1192,7 @@ function sync(){
   renderKpi(); renderDeals(); renderQueue(); renderPriem(); renderPanel();
 }
 function closeModal(){
-  closePop();
-  $('ov').classList.remove('on'); openId=null;
-  document.body.style.overflow='';
-  refresh();
+  closeLayer('ov');
 }
 function renderModal(){
   const d = DEALS.find(x=>x.id===openId); if(!d) return;
@@ -1495,7 +1514,7 @@ function dialog(cfg){
       ${cfg.note?`<div class="dlg-note">${cfg.note}</div>`:''}
     </div>
     <div class="m-acts"><button class="btn gold" data-ok>${esc(cfg.ok||'Ок')}</button><button class="btn" data-x>Отмена</button></div>`;
-  $('ov2').classList.add('on');
+  openLayer('ov2');
   const state={};
   fields.forEach(f=>{
     if(f.type==='select'){
@@ -1511,7 +1530,7 @@ function dialog(cfg){
       btn.onclick=()=>calPop(btn, state[f.k], key=>{ state[f.k]=key; btn.textContent=fmt(parseISO(key)); });
     }
   });
-  const close=()=>{closePop(); $('ov2').classList.remove('on')};
+  const close=()=>closeLayer('ov2');
   $('dlg').querySelectorAll('[data-x]').forEach(b=>b.onclick=close);
   $('dlg').querySelector('[data-ok]').onclick=()=>{
     const v={}; let bad=false;
@@ -1700,8 +1719,8 @@ function openReport(){
       </div>
     </div>
     <div class="m-acts"><button class="btn gold" data-a="x">Выгрузить для дизайнера</button><button class="btn" data-a="x">Закрыть</button></div>`;
-  $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{openId=null;$('ov').classList.remove('on');document.body.style.overflow=''});
-  $('ov').classList.add('on'); document.body.style.overflow='hidden';
+  $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>closeLayer('ov'));
+  openLayer('ov');
 }
 
 /* ═══════════ НАВИГАЦИЯ И ОБВЯЗКА ═══════════ */
@@ -1746,8 +1765,8 @@ function openGuide(){
     </div>
     <div class="m-body" style="grid-template-columns:1fr"><div>${g.html}</div></div>
     <div class="m-acts"><button class="btn" data-a="x">Закрыть</button></div>`;
-  $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{openId=null;$('ov').classList.remove('on');document.body.style.overflow=''});
-  $('ov').classList.add('on'); document.body.style.overflow='hidden';
+  $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>closeLayer('ov'));
+  openLayer('ov');
 }
 function openNewDeal(){
   dialog({
@@ -1819,11 +1838,11 @@ $('themeSw').onclick=()=>{
 $('guideBtn').onclick=openGuide;
 $('newDealBtn').onclick=openNewDeal;
 $('ov').onclick=e=>{if(e.target===$('ov')) closeModal()};
-$('ov2').onclick=e=>{if(e.target===$('ov2')){closePop();$('ov2').classList.remove('on')}};
+$('ov2').onclick=e=>{if(e.target===$('ov2')) closeLayer('ov2')};
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape') return;
   if($('pop').classList.contains('on')){closePop();return}
-  if($('ov2').classList.contains('on')){closePop();$('ov2').classList.remove('on')}
+  if($('ov2').classList.contains('on')) closeLayer('ov2');
   else if($('ov').classList.contains('on')) closeModal();
 });
 $('repBtn').onclick=openReport;
