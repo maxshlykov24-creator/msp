@@ -231,7 +231,55 @@ export const MS_RETAIL_COUNTERPARTY_NAME = "Розничный покупате�
 export const AMO_PIPELINE_SALES = 9601214; // Продажи
 export const AMO_PIPELINE_COMPLAINTS = 9601246; // Жалобы / возвраты / обмены
 
-export const RENTAL_SERVICE_PRICE = 6500;
+// Прайс 09.2026 (созвон 09.09): было 6500, стало 7500.
+export const RENTAL_SERVICE_PRICE = 7500;
+
+/**
+ * Прайс ателье (созвон 09.09): справочник услуг для калькулятора в поле
+ * «Ателье, ₽» (`ConvertKindForm`, `CompanyForm`, карточка компании). Ателье
+ * есть только в первом магазине, Пятницкая 8 (Новокузнецкая). Диапазонные
+ * расценки прайса («500–1000 ₽ по объёму работ») взяты по верхней границе —
+ * консультант правит сумму руками, калькулятор только подсказывает.
+ */
+export interface AtelierServiceOption {
+  id: string;
+  garment: "trousers" | "vest" | "jacket" | "shirt" | "coat" | "steam";
+  label: string;
+  priceRub: number;
+}
+
+export const ATELIER_GARMENT_LABEL: Record<AtelierServiceOption["garment"], string> = {
+  trousers: "Брюки",
+  vest: "Жилет",
+  jacket: "Пиджак",
+  shirt: "Рубашка",
+  coat: "Пальто",
+  steam: "Отпарить",
+};
+
+export const ATELIER_SERVICES: AtelierServiceOption[] = [
+  { id: "trousers_waist", garment: "trousers", label: "Талия (по объёму работ)", priceRub: 1000 },
+  { id: "trousers_hip", garment: "trousers", label: "В области бедра", priceRub: 500 },
+  { id: "trousers_calf", garment: "trousers", label: "В области икроножной", priceRub: 500 },
+  { id: "trousers_length", garment: "trousers", label: "Длина", priceRub: 500 },
+  { id: "vest_waist", garment: "vest", label: "Талия", priceRub: 1000 },
+  { id: "vest_length_shoulder", garment: "vest", label: "Длина (укоротить с плеч)", priceRub: 1000 },
+  { id: "vest_length_bottom", garment: "vest", label: "Длина (укоротить снизу)", priceRub: 1500 },
+  { id: "jacket_waist", garment: "jacket", label: "Талия (по объёму работ, до 3 швов)", priceRub: 1500 },
+  { id: "jacket_length", garment: "jacket", label: "Длина", priceRub: 2000 },
+  { id: "jacket_sleeve", garment: "jacket", label: "Длина рукава", priceRub: 1500 },
+  { id: "jacket_shoulder", garment: "jacket", label: "Посадка плеча (по объёму работ)", priceRub: 2500 },
+  { id: "shirt_waist", garment: "shirt", label: "Талия (по выточкам)", priceRub: 700 },
+  { id: "shirt_length", garment: "shirt", label: "Длина", priceRub: 1000 },
+  { id: "shirt_sleeve", garment: "shirt", label: "Длина рукава", priceRub: 1000 },
+  { id: "shirt_shoulder", garment: "shirt", label: "Посадка плеча", priceRub: 1000 },
+  { id: "coat_waist", garment: "coat", label: "Талия", priceRub: 2000 },
+  { id: "coat_length", garment: "coat", label: "Длина", priceRub: 3000 },
+  { id: "coat_sleeve", garment: "coat", label: "Длина рукава", priceRub: 2000 },
+  { id: "coat_shoulder", garment: "coat", label: "Посадка плеча (по объёму работ)", priceRub: 2500 },
+  { id: "steam_suit", garment: "steam", label: "Костюм", priceRub: 900 },
+  { id: "steam_shirt", garment: "steam", label: "Рубашка", priceRub: 500 },
+];
 
 export const AD_SOURCES = [
   "Совет",

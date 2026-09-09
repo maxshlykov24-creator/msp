@@ -131,7 +131,8 @@ export const PRODUCTS: Product[] = [
   { id: "p12", name: "Блейзер шерсть синий", sku: "MB-BL-040", category: "Блейзеры", price: 22900, store: "На Пятницкой", stock: 5 },
 ];
 
-export const RENTAL_SERVICE_PRICE = 6500;
+// Прайс 09.2026: было 6500, стало 7500. Дублирует @kassa/shared для mock-режима.
+export const RENTAL_SERVICE_PRICE = 7500;
 
 // ── Сертификаты (реестр с балансом) ─────────────────────────────────
 

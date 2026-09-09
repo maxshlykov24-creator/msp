@@ -98,6 +98,14 @@ export interface CartItem {
   isReturn?: boolean;
   /** Статус товара в заявке (ожидание / в магазине / бронь / отложен). */
   itemStatus?: CartItemStatus;
+  /** Группа костюма: общий id у пиджака/брюк/жилета одной вариации в чеке (созвон 09.09). */
+  suitGroupId?: string;
+  /** true — `price` сейчас разнесённая цена костюма из матрицы, а не цена МойСклад. */
+  suitPriceApplied?: boolean;
+  /** Консультант явно разобрал костюм на части — автосклейка не трогает эти строки. */
+  suitSplit?: boolean;
+  /** Цена МойСклад до разнесения — чтобы «Разделить» вернул исходную цену части. */
+  suitOriginalPrice?: number;
 }
 
 export interface Consultant {
@@ -501,6 +509,39 @@ export interface SuitBreak {
   source: "sale" | "snapshot";
 }
 
+/**
+ * Правило цены костюма из прайса (созвон 09.09): вид пиджака / группа МойСклад
+ * + число предметов + ростовка + линия дают цену костюма целиком. Матрица
+ * лежит в коде (`SUIT_PRICE_RULES_DEFAULT`), а `priceRub`/`active` каждого
+ * правила можно переопределить в «Настройках» без релиза — оверрайд хранится
+ * в `app_settings.suitPriceOverrides` по `id` правила.
+ */
+export interface SuitPriceRule {
+  id: string;
+  label: string;
+  priceRub: number;
+  active: boolean;
+  match: {
+    /** Путь группы МойСклад (products.category) содержит одну из подстрок. */
+    categoryIncludes?: string[];
+    /** Название вида пиджака (до скобки характеристик) содержит одну из подстрок. */
+    jacketNameIncludes?: string[];
+    line?: SuitLine;
+    height?: "6" | "8";
+    /** 2 — без жилета, 3 — с жилетом. Не задано — любое число предметов. */
+    pieces?: 2 | 3;
+  };
+}
+
+/** Вход для подбора цены костюма — характеристики собранной в чеке группы. */
+export interface SuitPriceMatchInput {
+  jacketName: string;
+  category: string;
+  pieces: 2 | 3;
+  line: SuitLine;
+  height: string;
+}
+
 /** Возраст остатка по дате оприходования. */
 export interface StockAgeBucket {
   bucket: "0-3м" | "3-6м" | "6-12м" | "12м+";
@@ -533,6 +574,12 @@ export interface AppSettings {
   /** Возраст партии в днях, с которого остаток жёлтый и красный. */
   stockAgeYellowDays: number;
   stockAgeRedDays: number;
+  /**
+   * Переопределение цены/активности правил матрицы костюмов по `id` правила.
+   * Логика подбора (match) остаётся в коде — правит только владелец через
+   * «Настройки», без риска сломать матчинг.
+   */
+  suitPriceOverrides: Record<string, { priceRub: number; active: boolean }>;
 }
 
 // ── Зарплата и бонусы консультантов (созвон 20.08) ──────────────────

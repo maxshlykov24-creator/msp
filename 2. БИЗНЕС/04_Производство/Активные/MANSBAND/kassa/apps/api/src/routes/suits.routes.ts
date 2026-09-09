@@ -4,6 +4,7 @@ import { getUserById } from "../services/auth.js";
 import { halfSetList, suitCompleteness } from "../services/suitSets.js";
 import { cartWarnings, listSuitBreaks, snapshotSuitBreaks } from "../services/suitBreaks.js";
 import { stockStats } from "../services/stockStats.js";
+import { priceGroupSuits } from "../services/suitPricing.js";
 
 const querySchema = z.object({
   warehouse: z.string().trim().max(120).optional(),
@@ -50,6 +51,20 @@ export default async function suitsRoutes(app: FastifyInstance) {
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: "Некорректный чек" });
     return cartWarnings(parsed.data);
+  });
+
+  // Склейка отсканированных частей в костюм по матрице цен: одна строка чека
+  // «Костюм …», а МойСклад всё равно получает три изделия с разнесённой ценой.
+  app.post("/suits/price-group", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const parsed = z
+      .object({
+        items: z
+          .array(z.object({ productId: z.string().min(1), qty: z.number().int().min(0) }))
+          .max(200),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ message: "Некорректный чек" });
+    return priceGroupSuits(parsed.data.items);
   });
 
   app.get("/suits/breaks", { preHandler: [app.authenticate] }, async (req, reply) => {

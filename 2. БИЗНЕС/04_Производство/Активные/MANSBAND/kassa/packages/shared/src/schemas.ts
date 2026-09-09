@@ -549,6 +549,17 @@ export const appSettingsSchema = z.object({
     .optional(),
   stockAgeYellowDays: z.number().int().min(1).max(3650).optional(),
   stockAgeRedDays: z.number().int().min(1).max(3650).optional(),
+  // Оверрайд матрицы цен костюмов по id правила (созвон 09.09): логика подбора
+  // остаётся в коде, здесь правится только цена и активность правила.
+  suitPriceOverrides: z
+    .record(
+      z.string(),
+      z.object({
+        priceRub: z.number().int().min(0).max(1_000_000),
+        active: z.boolean(),
+      })
+    )
+    .optional(),
 });
 export type AppSettingsInput = z.infer<typeof appSettingsSchema>;
 

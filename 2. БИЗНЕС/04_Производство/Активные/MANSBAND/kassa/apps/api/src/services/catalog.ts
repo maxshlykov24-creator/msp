@@ -400,6 +400,54 @@ export async function suitPartsByMsIds(
   return map;
 }
 
+/** Данные части костюма по msId — вход для подбора цены костюма (suitPricing.ts). */
+export interface SuitPricingInfo {
+  msId: string;
+  name: string;
+  category: string | null;
+  variation: string;
+  part: SuitPart;
+  size: string;
+  height: string;
+  line: "smoking" | "regular";
+  priceRub: number;
+}
+
+export async function suitPricingInfoByMsIds(msIds: string[]): Promise<Map<string, SuitPricingInfo>> {
+  const unique = [...new Set(msIds.map((id) => id.trim()).filter(Boolean))];
+  const map = new Map<string, SuitPricingInfo>();
+  if (unique.length === 0) return map;
+  const rows = await db
+    .select({
+      msId: products.msId,
+      name: products.name,
+      category: products.category,
+      variation: products.variation,
+      part: products.suitPart,
+      size: products.size,
+      height: products.height,
+      line: products.suitLine,
+      price: products.price,
+    })
+    .from(products)
+    .where(inArray(products.msId, unique));
+  for (const r of rows) {
+    if (!r.part || !r.variation) continue;
+    map.set(r.msId, {
+      msId: r.msId,
+      name: r.name,
+      category: r.category,
+      variation: r.variation,
+      part: r.part as SuitPart,
+      size: (r.size ?? "").trim(),
+      height: (r.height ?? "").trim(),
+      line: (r.line as "smoking" | "regular") ?? "regular",
+      priceRub: r.price / 100,
+    });
+  }
+  return map;
+}
+
 /** Штрихкод / код / артикул по msId — для скана при отправке и приёмке. */
 export async function productCodesByMsIds(
   msIds: string[]

@@ -42,6 +42,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     suitPartKeywords: await readSuitPartKeywords(),
     stockAgeYellowDays: await readNumber("stockAgeYellowDays", STOCK_AGE_YELLOW_DAYS_DEFAULT),
     stockAgeRedDays: await readNumber("stockAgeRedDays", STOCK_AGE_RED_DAYS_DEFAULT),
+    suitPriceOverrides: await readSuitPriceOverrides(),
   };
   cache = { value, at: Date.now() };
   return value;
@@ -69,6 +70,25 @@ async function readSuitPartKeywords(): Promise<Record<SuitPart, string[]>> {
       if (!Array.isArray(list)) continue;
       const words = list.filter((w): w is string => typeof w === "string" && w.trim().length > 0);
       if (words.length > 0) result[part] = words;
+    }
+  }
+  return result;
+}
+
+/**
+ * Оверрайд цены/активности правил матрицы костюмов (созвон 09.09): владелец
+ * правит цифры из «Настроек», логика match у правил остаётся в коде.
+ */
+async function readSuitPriceOverrides(): Promise<Record<string, { priceRub: number; active: boolean }>> {
+  const raw = await readValue("suitPriceOverrides");
+  const result: Record<string, { priceRub: number; active: boolean }> = {};
+  if (!raw || typeof raw !== "object") return result;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const price = (value as Record<string, unknown>).priceRub;
+    const active = (value as Record<string, unknown>).active;
+    if (typeof price === "number" && Number.isFinite(price) && price >= 0 && typeof active === "boolean") {
+      result[id] = { priceRub: Math.round(price), active };
     }
   }
   return result;
@@ -111,6 +131,7 @@ export async function updateAppSettings(
     "stockAgeYellowDays",
     "stockAgeRedDays",
     "suitPartKeywords",
+    "suitPriceOverrides",
   ] as const) {
     const next = patch[key];
     if (next == null) continue;
