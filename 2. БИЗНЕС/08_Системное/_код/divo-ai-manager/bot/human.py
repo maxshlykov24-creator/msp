@@ -316,6 +316,20 @@ def trim_permit(text: str) -> str:
             for pattern in PERMIT_DETAIL:
                 part = pattern.sub(" ", part)
             part = re.sub(r"\s*,?\s*(оно|которое)\s*$", "", part, flags=re.IGNORECASE)
+            part = re.sub(
+                r"(разрешени\w*(?:\s+на\s+(?:работу\s+в\s+)?такси)?(?:\s+есть)?)"
+                r"\s*[,;].*$",
+                r"\1",
+                part,
+                flags=re.IGNORECASE,
+            )
+            part = re.sub(
+                r"(разрешени\w*(?:\s+на\s+(?:работу\s+в\s+)?такси)?)"
+                r"\s+(было|выдано|оформлен\w*)\b.*$",
+                r"\1",
+                part,
+                flags=re.IGNORECASE,
+            )
             part = re.sub(r"\s*[-–—,;:]\s*$", "", part)
         out.append(part)
     text = " ".join(out)
