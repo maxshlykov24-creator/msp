@@ -318,9 +318,9 @@
 
   /* ─── приёмка ─── */
   .pr-card{padding:24px;margin-bottom:14px;border-radius:18px;border:1px solid var(--line);background:var(--panel)}
-  .pr-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
-  .pr-name{font-size:17px;font-weight:400;line-height:1.4;cursor:pointer}
-  .pr-name:hover{color:var(--gold)}
+  .pr-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;cursor:pointer}
+  .pr-name{font-size:17px;font-weight:400;line-height:1.4}
+  .pr-top:hover .pr-name{color:var(--gold)}
   .pr-sub{font-size:12px;color:var(--mute-2);margin-top:8px}
   .pr-body{margin-top:18px;padding-top:18px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 300px;gap:24px}
   .pr-note{font-size:13px;line-height:1.68;color:var(--mute)}
@@ -2087,8 +2087,8 @@ function renderPriem(){
   $('priemList').innerHTML = list.map(d=>{
     const late=(d.priemDays||0)>=2;
     return `<div class="pr-card" style="border-left:3px solid ${late?'var(--red)':'var(--blue)'}">
-      <div class="pr-top">
-        <div><div class="pr-name" data-open="${d.id}">${esc(d.n)}</div><div class="pr-sub">${esc(d.c)} · ${esc(d.dir)} · сдал: ${esc(PEOPLE[d.who].n)}</div></div>
+      <div class="pr-top" data-open="${d.id}">
+        <div><div class="pr-name">${esc(d.n)}</div><div class="pr-sub">${esc(d.c)} · ${esc(d.dir)} · сдал: ${esc(PEOPLE[d.who].n)}</div></div>
         <span class="st ${late?'late':'priem'}"><i></i>на приёмке ${d.priemDays||0} дн.${late?', дольше нормы':''}</span>
       </div>
       <div class="pr-body">
