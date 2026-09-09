@@ -416,8 +416,10 @@
 
   /* ─── дерево ─── */
   .tree-hint{font-size:11.5px;color:var(--mute-2);margin-bottom:10px}
-  .node-row{display:grid;grid-template-columns:16px 22px 1fr auto auto auto;gap:11px;align-items:center;padding:9px 10px;border-radius:12px;transition:background .2s var(--ease);border:1px solid transparent;cursor:pointer}
-  .node-row:hover{background:var(--hover)}
+  .tree .node{margin-bottom:6px}
+  .tree .node:last-child{margin-bottom:0}
+  .node-row{display:grid;grid-template-columns:16px 22px 1fr auto auto auto;gap:11px;align-items:center;padding:11px 12px;border-radius:12px;transition:background .2s var(--ease),border-color .2s var(--ease);border:1px solid var(--line);background:var(--panel);cursor:pointer}
+  .node-row:hover{background:var(--hover);border-color:var(--line-2)}
   .node-row.drag{opacity:.4}
   .node-row.over{border-color:rgba(198,184,164,.6);background:color-mix(in srgb,var(--gold) 10%,var(--panel))}
   .grip{cursor:grab;color:var(--mute-2);font-size:12px;line-height:1;opacity:.5;transition:.2s var(--ease);text-align:center;letter-spacing:-2px}
