@@ -63,9 +63,9 @@
     background-image:linear-gradient(180deg,#F4F4F4 0%,#E6E6E6 100%);
   }
   .wrap{max-width:1320px;margin:0 auto;padding:0 30px 110px;position:relative;z-index:1}
-  body.page-queue{display:flex;flex-direction:column;min-height:100vh}
-  body.page-queue .wrap{flex:1;display:flex;flex-direction:column;align-self:center;width:100%;padding-bottom:28px}
-  body.page-queue .wrap > .foot{margin-top:auto}
+  body.page-pin-foot{display:flex;flex-direction:column;min-height:100vh}
+  body.page-pin-foot .wrap{flex:1;display:flex;flex-direction:column;align-self:center;width:100%;padding-bottom:28px}
+  body.page-pin-foot .wrap > .foot{margin-top:auto}
 
   .glass{
     background:var(--panel);
@@ -499,7 +499,7 @@
     #queueTbl .q-item.q-head{display:none}
     #queueTbl .q-deal,#queueTbl .q-cli,#queueTbl .q-due{grid-column:2}
     .q-act{margin-top:12px;justify-content:flex-start}
-    body.page-queue .wrap{padding-bottom:20px}
+    body.page-pin-foot .wrap{padding-bottom:20px}
     .esc-r{grid-template-columns:1fr;gap:5px;padding:14px 16px}
     .esc-r.h{display:none}
     .esc-r b{font-size:13.5px}
@@ -1934,7 +1934,7 @@ function openNewDeal(){
 function go(p){
   const t=$('p-'+p); if(!t) return;
   page=p;
-  document.body.classList.toggle('page-queue', p==='queue');
+  document.body.classList.toggle('page-pin-foot', p==='queue'||p==='priem');
   document.querySelectorAll('.page').forEach(s=>s.classList.remove('on'));
   t.classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));
