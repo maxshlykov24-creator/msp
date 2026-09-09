@@ -13,5 +13,6 @@ alwaysApply: false
 - Презентация / КП: `python3 2. БИЗНЕС/08_Системное/Шаблоны/embed_presentation.py путь.html`
 - Инструкция: `python3 2. БИЗНЕС/08_Системное/Шаблоны/embed_instruction_logos.py путь.html`
 - После прогона в файле нет `src="logo…"`, `src="assets/…"`, `@import` с fonts.google. Иначе не готово.
+- Тёмная презентация: свет и лучи из `ПРЕЗЕНТАЦИЯ_ПРОДАЖИ_MS/TEMPLATE.html`, печать A4 landscape. Не откатывать на 1280×720.
 
 Эталоны: `ЭТАЛОН_КП_И_ПРЕЗЕНТАЦИИ.md`, `ЭТАЛОН_HTML_ИНСТРУКЦИИ.md`.
