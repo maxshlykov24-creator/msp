@@ -393,6 +393,17 @@
   .m-head::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:var(--c,var(--gold))}
   .m-kick{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2);font-weight:600;margin-bottom:12px}
   .m-title{font-size:23px;font-weight:300;line-height:1.32;padding-right:44px}
+  button.m-title{
+    appearance:none;-webkit-appearance:none;display:block;width:100%;
+    background:none;border:0;padding:0 44px 0 0;margin:0;
+    font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:8px
+  }
+  button.m-title:hover{color:var(--gold)}
+  .prio-mark{
+    display:inline-block;margin-left:7px;font-size:10px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--mute-2);font-weight:600;vertical-align:middle
+  }
+  .prio-mark.high{color:var(--gold)}
   .m-meta{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;align-items:center}
   .m-meta .meta-prog{margin-left:auto}
   .meta-i{font-size:12px;color:var(--mute);padding:6px 12px;border-radius:10px;background:var(--glass);border:1px solid var(--line)}
@@ -715,13 +726,18 @@ const ST = {
 const PRIO = {high:'Высокий', mid:'Обычный', low:'Низкий'};
 
 /* ═══════════ ЗАГОТОВКИ ДЕРЕВЬЕВ ═══════════ */
-function T(t,who,d,kids){return {t:t,who:who,d:d,done:false,kids:kids||null}}
+function T(t,who,d,kids,prio){return {t:t,who:who,d:d,done:false,kids:kids||null,prio:prio||''}}
 function makeStep(v){
   const due=parseISO(v.date)||addDays(TODAY,7);
   return {
     id:'n'+(++uid), t:v.t, who:v.who, d:days(due,TODAY), due:due, done:false,
-    kids:null, ctx:v.ctx?[esc(v.ctx)]:[], comments:[]
+    kids:null, prio:v.prio||'', ctx:v.ctx?[esc(v.ctx)]:[], comments:[]
   };
+}
+function prioMark(n){
+  if(n.prio==='high') return '<span class="prio-mark high">выс.</span>';
+  if(n.prio==='low') return '<span class="prio-mark">низк.</span>';
+  return '';
 }
 const TPL = {
   assess:(a,b,c)=>[
@@ -770,7 +786,7 @@ const TPL = {
     T('Сбор вводных по структуре владения',a,-4),
     T('Расчёт налоговой нагрузки',b,4,[
       T('Текущая нагрузка',b,1),
-      T('Нагрузка после реорганизации',b,4)
+      T('Нагрузка после реорганизации',b,4,null,'high')
     ]),
     T('Проверка позиции с внешним консультантом',a,10),
     T('Согласование плана с клиентом',c,17)
@@ -1384,7 +1400,7 @@ function renderTree(nodes,lvl,path,parentPath,pfx){
       <div class="node-row" draggable="true" data-p="${p.join('.')}">
         <div class="grip">⠿</div>
         ${has?`<button class="tw" data-tw="${id}">${open?'−':'+'}</button>`:'<span class="tw leaf"></span>'}
-        <div class="node-name ${done?'done-txt':''}">${num}. ${esc(n.t)}</div>
+        <div class="node-name ${done?'done-txt':''}">${num}. ${esc(n.t)}${prioMark(n)}</div>
         <div class="node-who">${esc(PEOPLE[n.who].n)} · ${fmt(due)}</div>
         ${badge}
         ${state}
@@ -1452,6 +1468,7 @@ function addStepDialog(d, parent){
     fields:[
       {k:'t',type:'text',label:'Название',ph:'что нужно сделать',req:true},
       {k:'who',type:'select',label:'Исполнитель',opts:Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].n+', '+PEOPLE[k].r]),val:parent?parent.who:d.who},
+      {k:'prio',type:'select',label:'Приоритет',opts:[['','Без приоритета'],['high','Высокий'],['mid','Обычный'],['low','Низкий']],val:''},
       {k:'date',type:'date',label:'Срок',val:iso(addDays(TODAY,7)),req:true},
       {k:'ctx',type:'area',label:'Контекст',ph:'необязательно: зачем и что уже известно'}
     ],
@@ -1532,12 +1549,12 @@ function renderStep(){
     <div class="m-head" style="--c:${late?'var(--red)':done?'var(--green)':'var(--gold)'}">
       <button class="m-x" data-s="x">✕</button>
       <div class="m-kick">${esc(d.c)} · ${esc(d.n)} · шаг ${pathNum(stepPath)}</div>
-      <div class="m-title" style="font-size:20px">${esc(n.t)}</div>
+      <button type="button" class="m-title" data-s="rename" style="font-size:20px">${esc(n.t)}</button>
       <div class="m-meta">
         <span class="st ${stateCls}"><i></i>${stateLab}</span>
         <button type="button" class="meta-i click" data-s="who" data-keep-pop="1">Исполнитель <b>${esc(PEOPLE[n.who].n)}</b></button>
         ${dueChip}
-        <button type="button" class="meta-i click" data-s="rename">Название</button>
+        <button type="button" class="meta-i click" data-s="prio" data-keep-pop="1">Приоритет <b>${n.prio?PRIO[n.prio]:'не задан'}</b></button>
         ${has?`<div class="meta-i">Внутри <b>${leaves(n.kids).filter(x=>x.done).length}/${leaves(n.kids).length}</b></div>`:''}
       </div>
     </div>
@@ -1588,6 +1605,16 @@ function stepAction(a,d,n,has){
         d.log.unshift({t:'сейчас',x:actor('изменил')+' название шага: «'+esc(old)+'» → «'+esc(n.t)+'»'});
         sync(); toast('Название шага обновлено');
       }
+    });
+    return;
+  }
+  if(a==='prio'){
+    const btn=$('dlg').querySelector('[data-s="prio"]');
+    const items=[['', 'Без приоритета']].concat(Object.keys(PRIO).map(k=>[k,PRIO[k]]));
+    menuPop(btn, items, n.prio||'', val=>{
+      n.prio=val||'';
+      d.log.unshift({t:'сейчас',x:actor('изменил')+' приоритет шага «'+esc(n.t)+'»: '+(val?PRIO[val]:'снят')});
+      sync(); toast(val?'Приоритет шага: '+PRIO[val]:'Приоритет шага снят');
     });
     return;
   }
@@ -2040,7 +2067,7 @@ function renderQueue(){
       : `<button class="btn sm gold" data-q="${i}" data-a="done">Сделал</button><button class="btn sm" data-q="${i}" data-a="move">Перенести</button>`;
     return `<div class="q-item" draggable="true" data-i="${i}">
       <div class="grip">⠿</div>
-      <div class="q-name">${esc(q.n.t)}</div>
+      <div class="q-name">${esc(q.n.t)}${prioMark(q.n)}</div>
       <div class="q-deal">${esc(q.d.n)}</div>
       <div class="q-cli"><span class="cli">${esc(q.d.c)}</span></div>
       <div class="${dueCls}">${fmt(q.n.due)}${dueSub?'<small>'+dueSub+'</small>':''}</div>
