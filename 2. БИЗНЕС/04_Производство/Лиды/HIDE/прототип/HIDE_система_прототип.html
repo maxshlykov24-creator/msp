@@ -413,9 +413,51 @@
     .node-who,.lvl-badge,.node-row .st{grid-column:3}
     .kids{margin-left:14px;padding-left:10px}
   }
+
+  /* ─── фоновые слои: шёлк, тёплый свет, виньетка. статика, без анимации ─── */
+  .bg-silk,.bg-glow,.bg-vign{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .bg-silk{
+    inset:-6%;opacity:.05;
+    background-image:repeating-linear-gradient(114deg,
+      rgba(233,220,184,.95) 0px, rgba(233,220,184,.95) 1px,
+      transparent 1px, transparent 10px);
+    -webkit-mask-image:radial-gradient(72% 78% at 86% 4%, #000 0%, rgba(0,0,0,.42) 40%, transparent 68%);
+    mask-image:radial-gradient(72% 78% at 86% 4%, #000 0%, rgba(0,0,0,.42) 40%, transparent 68%);
+  }
+  .bg-glow{
+    background:
+      radial-gradient(880px 620px at 84% -6%, rgba(200,164,92,.10), transparent 66%),
+      radial-gradient(620px 480px at 8% 24%, rgba(145,134,124,.07), transparent 68%);
+  }
+  .bg-vign{
+    background:
+      radial-gradient(140% 112% at 52% 44%, transparent 56%, rgba(0,0,0,.20) 84%, rgba(0,0,0,.4) 100%),
+      linear-gradient(180deg, rgba(0,0,0,.14) 0%, transparent 13%, transparent 87%, rgba(0,0,0,.22) 100%);
+  }
+  body.light .bg-silk{
+    opacity:.055;
+    background-image:repeating-linear-gradient(114deg,
+      rgba(35,31,32,.95) 0px, rgba(35,31,32,.95) 1px,
+      transparent 1px, transparent 10px);
+  }
+  body.light .bg-glow{
+    background:
+      radial-gradient(880px 620px at 84% -6%, rgba(169,128,58,.13), transparent 66%),
+      radial-gradient(620px 480px at 8% 24%, rgba(35,31,32,.05), transparent 68%);
+  }
+  body.light .bg-vign{
+    background:
+      radial-gradient(140% 112% at 52% 44%, transparent 58%, rgba(35,31,32,.07) 86%, rgba(35,31,32,.14) 100%),
+      linear-gradient(180deg, rgba(35,31,32,.05) 0%, transparent 13%, transparent 88%, rgba(35,31,32,.08) 100%);
+  }
+  @media print{.bg-silk,.bg-glow,.bg-vign{display:none}}
 </style>
 </head>
 <body class="hints">
+
+<div class="bg-silk"></div>
+<div class="bg-glow"></div>
+<div class="bg-vign"></div>
 
 <div class="topbar">
   <div class="topbar-in">
