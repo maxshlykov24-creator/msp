@@ -183,7 +183,8 @@ PERMIT_DETAIL = (
         r"\s*оформлен\w*\s+(в\s+)?(" + PERMIT_MONTH + r")\w*\s*\d{4}",
         re.IGNORECASE,
     ),
-    re.compile(r"\s*,?\s*статус\s*$", re.IGNORECASE),
+    re.compile(r"\s*,?\s*оформленн?\w*", re.IGNORECASE),
+    re.compile(r"\s*,?\s*статус\b.*", re.IGNORECASE),
     re.compile(
         r"\s*\([^)]*(петербург|москв|област|кра[йя]|"
         + PERMIT_MONTH
