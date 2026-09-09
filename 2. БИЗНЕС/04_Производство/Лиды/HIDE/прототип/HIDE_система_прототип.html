@@ -396,6 +396,7 @@
   .m-side{display:flex;flex-direction:column;gap:18px}
   .m-block{padding:18px 20px;border-radius:16px;border:1px solid var(--line);background:var(--panel)}
   .m-acts{display:flex;gap:9px;flex-wrap:wrap;padding:18px 28px;border-top:1px solid var(--line);background:var(--field);border-radius:0 0 24px 24px}
+  .m-acts .log-btn{margin-left:auto}
 
   .ctx{font-size:13px;line-height:1.72;color:var(--mute)}
   .ctx b{color:var(--ink);font-weight:500}
@@ -704,6 +705,13 @@ const PRIO = {high:'Высокий', mid:'Обычный', low:'Низкий'};
 
 /* ═══════════ ЗАГОТОВКИ ДЕРЕВЬЕВ ═══════════ */
 function T(t,who,d,kids){return {t:t,who:who,d:d,done:false,kids:kids||null}}
+function makeStep(v){
+  const due=parseISO(v.date)||addDays(TODAY,7);
+  return {
+    id:'n'+(++uid), t:v.t, who:v.who, d:days(due,TODAY), due:due, done:false,
+    kids:null, ctx:v.ctx?[esc(v.ctx)]:[], comments:[]
+  };
+}
 const TPL = {
   assess:(a,b,c)=>[
     T('Сформировать реестр объектов',a,-6,[
@@ -1315,8 +1323,8 @@ function renderModal(){
     </div>
     <div class="m-body">
       <div>
-        <h4>Шаги <span class="hint-only" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--mute-2)">нажмите на шаг · перетащите за ⠿</span></h4>
-        <div class="tree" id="tree">${(nextOf=n, renderTree(d.tree,1,'',[]))}</div>
+        <h4>Шаги <span class="h4-acts"><span class="hint-only" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--mute-2)">нажмите на шаг · перетащите за ⠿</span><button class="btn sm" data-a="add-step" style="text-transform:none;letter-spacing:0">Добавить шаг</button></span></h4>
+        <div class="tree" id="tree">${d.tree.length?(nextOf=n, renderTree(d.tree,1,'',[])):'<div class="empty">Шагов пока нет. Поставьте первый.</div>'}</div>
         <div class="note" style="margin-top:18px"><b>Правило.</b> Прогресс родителя считает система по закрытым веткам. Вложенность не ограничена: у шага может быть подшаг, а у подшага свой. Срок родителя не может быть раньше срока последнего потомка — при попытке система предупредит.</div>
       </div>
       <div class="m-side">
@@ -1335,18 +1343,19 @@ function renderModal(){
         </div>
       </div>
     </div>
-    <div class="m-acts"><button class="btn" data-a="log">Журнал · ${d.log.length}</button>${acts}</div>`;
+    <div class="m-acts">${acts}<button class="btn log-btn" data-a="log">Журнал · ${d.log.length}</button></div>`;
   $('modal').querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>dealAction(b.dataset.a,d));
   bindTree(d);
 }
 let nextOf=null;
-function renderTree(nodes,lvl,path,parentPath){
+function renderTree(nodes,lvl,path,parentPath,pfx){
   let h='';
+  pfx=pfx||'k';
   nodes.forEach((n,i)=>{
     const num = path ? path+'.'+(i+1) : String(i+1);
     const p = parentPath.concat(i);
     const has = n.kids && n.kids.length;
-    const id = 'k'+num.replace(/\./g,'_');
+    const id = pfx+num.replace(/\./g,'_');
     const open = lvl < 3;
     let badge='', started=false, done=n.done, due=n.due;
     if(has){
@@ -1369,7 +1378,7 @@ function renderTree(nodes,lvl,path,parentPath){
         ${badge}
         ${state}
       </div>
-      ${has?`<div class="kids ${open?'':'hide'}" id="${id}">${renderTree(n.kids,lvl+1,num,p)}</div>`:''}
+      ${has?`<div class="kids ${open?'':'hide'}" id="${id}">${renderTree(n.kids,lvl+1,num,p,pfx)}</div>`:''}
     </div>`;
   });
   return h;
@@ -1425,6 +1434,39 @@ function nodeDone(n){
   return !!n.done;
 }
 function pathNum(path){ return path.map(i=>i+1).join('.'); }
+function addStepDialog(d, parent){
+  dialog({
+    title: parent ? 'Новая подзадача' : 'Новый шаг',
+    kick: parent ? d.n+' · '+parent.t : d.c+' · '+d.n,
+    fields:[
+      {k:'t',type:'text',label:'Название',ph:'что нужно сделать',req:true},
+      {k:'who',type:'select',label:'Исполнитель',opts:Object.keys(PEOPLE).map(k=>[k,PEOPLE[k].n+', '+PEOPLE[k].r]),val:parent?parent.who:d.who},
+      {k:'date',type:'date',label:'Срок',val:iso(addDays(TODAY,7)),req:true},
+      {k:'ctx',type:'area',label:'Контекст',ph:'необязательно: зачем и что уже известно'}
+    ],
+    ok: parent ? 'Поставить подзадачу' : 'Поставить шаг',
+    note: document.body.classList.contains('hints')
+      ? (parent
+        ? 'Подзадача станет листом. Срок этой задачи система возьмёт по самому позднему потомку. Прогресс тоже посчитает сама.'
+        : 'Шаг сразу попадает в дерево и в очередь исполнителя. Потом внутрь можно поставить подзадачи.')
+      : '',
+    run:v=>{
+      const node=makeStep(v);
+      if(parent){
+        if(!parent.kids) parent.kids=[];
+        parent.kids.push(node);
+        parent.done=false;
+      } else {
+        d.tree.push(node);
+        if(d.st==='new'||d.st==='done') d.st='work';
+      }
+      d.log.unshift({t:'сейчас',x:actor('добавил')+' '+(parent?'подзадачу':'шаг')+' «'+esc(node.t)+'»'+(parent?' в «'+esc(parent.t)+'»':'')});
+      feed(PEOPLE[role].n+' поставил '+(parent?'подзадачу':'шаг')+' «'+esc(node.t)+'» в деле «'+esc(d.n)+'»');
+      sync();
+      toast(parent?'Подзадача поставлена. Срок и прогресс родителя пересчитаны':'Шаг поставлен и появился в очереди исполнителя');
+    }
+  });
+}
 function notesBlock(owner, emptyCtx, emptyCmt){
   const ctx = (owner.ctx&&owner.ctx.length) ? owner.ctx.map(t=>'<p>'+t+'</p>').join('') : '<p style="color:var(--mute-2)">'+emptyCtx+'</p>';
   const cmt = (owner.comments&&owner.comments.length) ? owner.comments.map(c=>`<div class="cmt-i"><div class="cmt-h"><b>${esc(PEOPLE[c.who]?PEOPLE[c.who].n:c.who)}</b><span>${esc(c.t)}</span></div><div class="cmt-x">${esc(c.x)}</div></div>`).join('') : '<div style="font-size:12.5px;color:var(--mute-2)">'+emptyCmt+'</div>';
@@ -1453,6 +1495,10 @@ function renderStep(){
   const foot = (!has && !n.done)
     ? '<button class="btn gold" data-s="close">Закрыть шаг</button>'
     : (done ? '<span class="btn green">Шаг закрыт</span>' : '');
+  const back = stepPath.length>1 ? '<button class="btn" data-s="back">К родителю</button>' : '';
+  const kidsHtml = has
+    ? renderTree(n.kids,1,pathNum(stepPath),stepPath,'sk')
+    : '<div style="font-size:12.5px;color:var(--mute-2)">Подзадач пока нет. Первая превратит этот шаг в ветку: срок и прогресс посчитает система.</div>';
   const box=$('dlg');
   box.className='modal mid';
   box.dataset.step='1';
@@ -1472,6 +1518,10 @@ function renderStep(){
     <div class="m-body" style="grid-template-columns:1fr">
       <div class="m-side">
         <div class="m-block">
+          <h4>Подзадачи <button class="btn sm" data-s="add-kid" style="text-transform:none;letter-spacing:0">Добавить</button></h4>
+          <div class="tree" id="stepKids">${kidsHtml}</div>
+        </div>
+        <div class="m-block">
           <h4>Контекст шага <span class="h4-acts"><button class="btn sm" data-s="ctx-add" style="text-transform:none;letter-spacing:0">Добавить</button><button class="btn sm" data-s="ctx-edit" style="text-transform:none;letter-spacing:0">Изменить</button></span></h4>
           <div class="ctx">${notes.ctx}</div>
         </div>
@@ -1481,11 +1531,27 @@ function renderStep(){
         </div>
       </div>
     </div>
-    <div class="m-acts"><button class="btn" data-s="x">Закрыть</button>${foot}</div>`;
+    <div class="m-acts">${back}<button class="btn" data-s="x">Закрыть</button>${foot}</div>`;
   box.querySelectorAll('[data-s]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); stepAction(b.dataset.s,d,n,has); });
+  const kidsRoot=box.querySelector('#stepKids');
+  if(kidsRoot){
+    kidsRoot.querySelectorAll('[data-tw]').forEach(b=>b.onclick=e=>{
+      e.stopPropagation();
+      const el=$(b.dataset.tw); if(!el) return;
+      const hid=el.classList.toggle('hide'); b.textContent=hid?'+':'−';
+    });
+    kidsRoot.querySelectorAll('.node-row').forEach(row=>{
+      row.onclick=e=>{
+        if(e.target.closest('.grip') || e.target.closest('.tw')) return;
+        openStep(row.dataset.p.split('.').map(Number));
+      };
+    });
+  }
 }
 function stepAction(a,d,n,has){
   if(a==='x'){ closeLayer('ov2'); return; }
+  if(a==='back'){ openStep(stepPath.slice(0,-1)); return; }
+  if(a==='add-kid'){ addStepDialog(d, n); return; }
   if(a==='rename'){
     dialog({
       title:'Название шага',
@@ -1607,6 +1673,7 @@ function stepAction(a,d,n,has){
 /* ═══════════ ДЕЙСТВИЯ ПО ДЕЛУ ═══════════ */
 function dealAction(a,d){
   if(a==='x'){closeModal();return}
+  if(a==='add-step'){ addStepDialog(d, null); return; }
   if(a==='log'){
     dialog({
       title:'Журнал дела',
@@ -1764,14 +1831,16 @@ function dealAction(a,d){
       kick:d.c+' · '+d.n,
       fields:[
         {k:'what',type:'area',label:'Что нужно от клиента',ph:'например: подтверждение реестра из четырёх объектов',req:true},
-        {k:'wait',type:'select',label:'Ждём ответ',opts:[['3','3 дня'],['5','5 дней'],['7','неделю']]}
+        {k:'wait',type:'select',label:'Ждём ответ',opts:[['3','3 дня'],['5','5 дней'],['7','неделю'],['own','свой срок']]},
+        {k:'until',type:'date',label:'Ждём до',val:iso(addDays(TODAY,10)),if:'wait:own',reqIf:'wait:own'}
       ],
       ok:'Отправить запрос',
       note:'Дело перейдёт в состояние «ждём клиента»: счётчик просрочки команды останавливается, вместо него идёт счётчик тишины клиента. Напоминание придёт тому, кто ведёт клиента.',
       run:v=>{
         d.st='wait'; d.waitDays=0;
-        addComment(d, 'Запросили у клиента: '+v.what);
-        d.log.unshift({t:'сейчас',x:actor('отправил')+' запрос клиенту: '+esc(v.what)});
+        const till = v.wait==='own' ? 'до '+fmt(parseISO(v.until)) : ({'3':'3 дня','5':'5 дней','7':'неделю'}[v.wait]||v.wait);
+        addComment(d, 'Запросили у клиента: '+v.what+' · ждём '+till);
+        d.log.unshift({t:'сейчас',x:actor('отправил')+' запрос клиенту: '+esc(v.what)+', ждём '+till});
         feed('Дело «'+esc(d.n)+'» перешло в ожидание клиента, счётчик просрочки остановлен');
         sync();
         toast('Запрос отправлен. Счётчик просрочки команды остановлен, тишину клиента считаем отдельно');
@@ -1841,12 +1910,13 @@ function dialog(cfg){
   const boxId = layer==='ov3' ? 'dlg3' : 'dlg';
   const errId = layer==='ov3' ? 'dlgErr3' : 'dlgErr';
   const box = $(boxId);
+  const ifAttr=f=>f.if?` data-if="${esc(f.if)}" style="display:none"`:'';
   const f = fields.map(f=>{
-    if(f.type==='ro') return `<div class="fld"><label>${esc(f.label)}</label><div style="font-size:13px;line-height:1.5;padding:10px 12px;border-radius:11px;background:var(--glass);border:1px solid var(--line)">${esc(f.val)}</div></div>`;
-    if(f.type==='select') return `<div class="fld"><label>${esc(f.label)}</label><button type="button" class="dd-btn" data-sel="${f.k}" data-keep-pop="1"></button></div>`;
-    if(f.type==='area') return `<div class="fld"><label>${esc(f.label)}</label><textarea data-k="${f.k}" placeholder="${esc(f.ph||'')}"></textarea></div>`;
-    if(f.type==='date') return `<div class="fld"><label>${esc(f.label)}</label><button type="button" class="dd-btn cal-btn" data-date="${f.k}" data-keep-pop="1"></button></div>`;
-    return `<div class="fld"><label>${esc(f.label)}</label><input type="text" data-k="${f.k}" placeholder="${esc(f.ph||'')}"></div>`;
+    if(f.type==='ro') return `<div class="fld"${ifAttr(f)}><label>${esc(f.label)}</label><div style="font-size:13px;line-height:1.5;padding:10px 12px;border-radius:11px;background:var(--glass);border:1px solid var(--line)">${esc(f.val)}</div></div>`;
+    if(f.type==='select') return `<div class="fld"${ifAttr(f)}><label>${esc(f.label)}</label><button type="button" class="dd-btn" data-sel="${f.k}" data-keep-pop="1"></button></div>`;
+    if(f.type==='area') return `<div class="fld"${ifAttr(f)}><label>${esc(f.label)}</label><textarea data-k="${f.k}" placeholder="${esc(f.ph||'')}"></textarea></div>`;
+    if(f.type==='date') return `<div class="fld"${ifAttr(f)}><label>${esc(f.label)}</label><button type="button" class="dd-btn cal-btn" data-date="${f.k}" data-keep-pop="1"></button></div>`;
+    return `<div class="fld"${ifAttr(f)}><label>${esc(f.label)}</label><input type="text" data-k="${f.k}" placeholder="${esc(f.ph||'')}"></div>`;
   }).join('');
   if(boxId==='dlg'){ box.className='modal narrow'; box.removeAttribute('data-step'); }
   box.innerHTML = `
@@ -1864,13 +1934,20 @@ function dialog(cfg){
     <div class="m-acts"><button class="btn gold" data-ok>${esc(cfg.ok||'Ок')}</button><button class="btn" data-x>Отмена</button></div>`;
   openLayer(layer);
   const state={};
+  const paintIf=()=>{
+    box.querySelectorAll('[data-if]').forEach(el=>{
+      const [k,val]=el.dataset.if.split(':');
+      el.style.display = state[k]===val ? '' : 'none';
+    });
+  };
+  const need=f=>f.req || (f.reqIf && state[f.reqIf.split(':')[0]]===f.reqIf.split(':')[1]);
   fields.forEach(f=>{
     if(f.type==='select'){
       const btn=box.querySelector('[data-sel="'+f.k+'"]');
       state[f.k]=f.val!=null?f.val:(f.opts[0]?f.opts[0][0]:'');
       const cur=f.opts.find(o=>o[0]===state[f.k]);
       btn.textContent=cur?cur[1]:'выберите';
-      btn.onclick=()=>menuPop(btn, f.opts, state[f.k], (val,lab)=>{ state[f.k]=val; btn.textContent=lab; });
+      btn.onclick=()=>menuPop(btn, f.opts, state[f.k], (val,lab)=>{ state[f.k]=val; btn.textContent=lab; paintIf(); });
     } else if(f.type==='date'){
       const btn=box.querySelector('[data-date="'+f.k+'"]');
       state[f.k]=f.val||iso(TODAY);
@@ -1881,13 +1958,14 @@ function dialog(cfg){
       if(el) el.value=f.val;
     }
   });
+  paintIf();
   const close=()=>closeLayer(layer);
   box.querySelectorAll('[data-x]').forEach(b=>b.onclick=close);
   box.querySelector('[data-ok]').onclick=()=>{
     const v={}; let bad=false;
     fields.forEach(f=>{
       if(f.type==='ro') return;
-      if(f.type==='select'||f.type==='date'){ v[f.k]=state[f.k]; if(f.req && !v[f.k]) bad=true; return; }
+      if(f.type==='select'||f.type==='date'){ v[f.k]=state[f.k]; if(need(f) && !v[f.k]) bad=true; return; }
       const el=box.querySelector('[data-k="'+f.k+'"]');
       v[f.k]=el.value.trim();
       if(f.req && !v[f.k]){bad=true; el.style.borderColor='var(--red)'}
@@ -2085,7 +2163,7 @@ function openReport(){
 const GUIDE={
   dela:{
     title:'Как устроены дела',
-    html:`<div class="ctx"><p>Реестр собирает все клиентские и внутренние дела в одном месте. Плитки сверху — это фильтр по состоянию, не отдельный статус.</p><p>Просрочку считает система: срок прошёл и ход за нами. Пока ждём клиента, счётчик команды стоит.</p><p>В карточке три слоя вместо одной ячейки таблицы. Шаги — бывший план. Контекст — легенда дела, её можно дополнить и править, свежий факт сверху. Комментарий — ход с датами. Журнал пишет система сама.</p><p>Нажмите на шаг — откроется его карточка: исполнитель, срок, свой контекст и свои комментарии. Срок родителя считается по потомкам и руками не ставится.</p><p>Новое дело заводится кнопкой справа. Статус, срок и исполнитель меняются прямо в карточке дела, без отдельных кнопок внизу.</p></div>`
+    html:`<div class="ctx"><p>Реестр собирает все клиентские и внутренние дела в одном месте. Плитки сверху — это фильтр по состоянию, не отдельный статус.</p><p>Просрочку считает система: срок прошёл и ход за нами. Пока ждём клиента, счётчик команды стоит.</p><p>В карточке три слоя вместо одной ячейки таблицы. Шаги — бывший план. Контекст — легенда дела, её можно дополнить и править, свежий факт сверху. Комментарий — ход с датами. Журнал пишет система сама.</p><p>Нажмите на шаг — откроется его карточка: исполнитель, срок, свой контекст и свои комментарии. Там же ставятся подзадачи. Новый шаг в деле — кнопка над деревом. Срок родителя считается по потомкам и руками не ставится.</p><p>Новое дело заводится кнопкой справа. Статус, срок и исполнитель меняются прямо в карточке дела, без отдельных кнопок внизу.</p></div>`
   },
   queue:{
     title:'Очередь и порядок шагов',
