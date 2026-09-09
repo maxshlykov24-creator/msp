@@ -150,6 +150,13 @@ QUAL_QUESTION = re.compile(
     r"(для|под)\s+работ\w+\s+или|"
     r"перв\w+\s+(ваш\w*\s+)?(автомобиль|машина)\s+или|"
     r"как\w+\s+(у\s+вас\s+)?бюджет|"
+    # Способ оплаты клиент выбирает при покупке, а не в переписке. Вопрос
+    # «наличными или в кредит» это та же квалификация, лишний ход.
+    r"как\s+вам\s+удобнее\s*[-,]?\s*наличн|"
+    r"как\s+(вы\s+)?планируете\s+(оплачивать|оплату|рассчитыва)|"
+    r"(юрлицо|юр\.?\s*лицо)\s+или\s+наличн|"
+    r"наличн\w+\s+или\s+(в\s+)?кредит|"
+    r"(в\s+)?кредит\s+или\s+(сразу\s+)?(за\s+)?наличн|"
     r"бюджет\w*\s+(вы\s+)?(рассматрива|ориентир)\w*|"
     r"на\s+как\w+\s+бюджет"
     r")",
@@ -213,6 +220,39 @@ PERMIT_DETAIL = (
     re.compile(r"\s*,?\s*(оно\s+)?зарегистрирован\w*", re.IGNORECASE),
     re.compile(r"\s*у\s+этого\s+экземпляра", re.IGNORECASE),
 )
+# Отказ по карте в лоб. Факт верный, но руководитель просил формулировать
+# через цену: «стоимость указана за наличный расчет». Правило 29 модель
+# нарушает на прямом вопросе «а картой можно?», поэтому чиним на выходе.
+CARD_REFUSAL = (
+    re.compile(
+        r"карт(ой|у|ами)?\s+(мы\s+)?(вообще\s+)?не\s+"
+        r"(принимаем|работаем|берем|берём|получится|оплатить)\w*",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(оплата\s+)?карт(ой|ы)\s+(тоже\s+)?"
+        r"(невозможна|не\s+предусмотрена|не\s+получится|нельзя)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"с\s+карты\s+на\s+карту\s*-?\s*нет", re.IGNORECASE),
+    re.compile(r"эквайринга?\s+(у\s+нас\s+)?нет", re.IGNORECASE),
+    re.compile(r"картой\s+не\s+получится", re.IGNORECASE),
+)
+CARD_SOFT = "цена указана за наличный расчет"
+# Хвост отказа: «поэтому и комиссии нет» держится за вырезанную фразу.
+CARD_TAIL = re.compile(
+    r"\s*,?\s*поэтому\s+и?\s*(комиссии|процента)\s+нет", re.IGNORECASE
+)
+# Предложение без точки: «Пожалуйста Все три машины в наличии». Разрезаем
+# только там, где следующее слово точно начинает новую фразу, - имена
+# и марки в этот список не попадают.
+SENTENCE_START = (
+    "Все|Машина|Машины|Можно|Напишите|Наберу|Приезжайте|Скиньте|Подскажите|"
+    "Как|Что|Если|Цена|Стоимость|Есть|Обсудим|Автомобиль|Уточню|Хотите|"
+    "Готовы|Работаем|Адрес|Кредит|Оплата|Торг|Смогу|Могу|Давайте|Приятно|"
+    "Записал|Спасибо|Хорошо|Понимаю|Отчет|Отчёт|Пришлем|Пришлём"
+)
+MISSING_DOT = re.compile(r"(?<=[а-яё]{2})\s+(?=(?:%s)\b)" % SENTENCE_START)
 QUAL_LEAD_IN = re.compile(
     r"(подскажите|скажите|уточните|а|и|кстати|ещё|еще)([\s,]+(подскажите|скажите))?",
     re.IGNORECASE,
@@ -307,6 +347,40 @@ def drop_qual(text: str) -> str:
     return _tidy(text, original) if text else ""
 
 
+def soften_card(text: str) -> str:
+    """Отказ по карте заменить на формулировку через цену за наличный расчет.
+
+    Меняем предложение целиком, а не кусок: «картой не работаем, поэтому и
+    комиссии нет» после точечной замены превращается в кашу. Если мягкая
+    формулировка в реплике уже есть, предложение просто выкидываем.
+    """
+    original = text or ""
+    if not any(p.search(original) for p in CARD_REFUSAL):
+        return original
+    parts = re.split(r"(?<=[.!?])\s+", original)
+    kept: list[str] = []
+    for part in parts:
+        if not any(p.search(part) for p in CARD_REFUSAL):
+            kept.append(part)
+            continue
+        tail = "." if part.rstrip().endswith(".") else ""
+        soft = CARD_SOFT[0].upper() + CARD_SOFT[1:] + tail
+        already = any("наличный расчет" in k.lower() for k in kept)
+        if not already:
+            kept.append(soft)
+    text = " ".join(k for k in kept if k.strip())
+    if not text.strip():
+        text = CARD_SOFT[0].upper() + CARD_SOFT[1:]
+    return _tidy(text, original)
+
+
+def add_missing_dots(text: str) -> str:
+    """Модель роняет точку между фразами. Возвращаем её по началу предложения."""
+    original = text or ""
+    text = MISSING_DOT.sub(". ", original)
+    return text if text != original else original
+
+
 def trim_permit(text: str) -> str:
     """Оставить факт разрешения на такси, убрать регион, дату и статус."""
     original = text or ""
@@ -339,7 +413,9 @@ def trim_permit(text: str) -> str:
             # От «разрешение - зарегистрировано в Петербурге, действующее»
             # остаётся огрызок «разрешение». Возвращаем факт целиком.
             if re.fullmatch(
-                r"(да[,\s]+)?разрешени\w*[.!?]?", part.strip(), re.IGNORECASE
+                r"(да[,\s]+)?(есть\s*[-–—,]?\s*)?разрешени\w*(\s*[-–—,]?\s*есть)?[.!?]?",
+                part.strip(),
+                re.IGNORECASE,
             ):
                 part = "Да, разрешение на работу в такси есть."
         out.append(part)
@@ -354,6 +430,8 @@ def for_chat(text: str) -> str:
     text = drop_manager(text)
     text = drop_qual(text)
     text = trim_permit(text)
+    text = soften_card(text)
+    text = add_missing_dots(text)
     return drop_end_period(text)
 
 
