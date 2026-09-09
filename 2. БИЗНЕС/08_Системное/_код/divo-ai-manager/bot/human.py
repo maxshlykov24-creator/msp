@@ -155,6 +155,28 @@ QUAL_QUESTION = re.compile(
     r")",
     re.IGNORECASE,
 )
+# Разрешение на работу в такси: сам факт клиенту нужен, реквизиты - нет.
+# Модель пересказывает блок автотеки целиком («неактивное разрешение по
+# Ростовской области от мая 2024»), и короткий ответ превращается в приговор
+# машине. Запрет в правиле 33, здесь режем реквизиты на выходе.
+PERMIT_SENTENCE = re.compile(r"разрешени\w*\s+на\s+работу\s+в\s+такси", re.IGNORECASE)
+PERMIT_DETAIL = (
+    re.compile(
+        r"\s*(по|в)\s+\w+(ой|ей)\s+(области|обл\.?|республике)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\s*(по|в)\s+\w+ском\s+краю", re.IGNORECASE),
+    re.compile(
+        r"\s*(от|с|выдано\s+в|выданное\s+в)\s+"
+        r"(январ|феврал|март|апрел|ма[йяе]|июн|июл|август|сентябр|октябр|ноябр|декабр)"
+        r"\w*\s*\d{4}\s*(года|год|г\.?)?",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\s*(от|с)\s+\d{2}[.\-/]\d{2}[.\-/]\d{4}", re.IGNORECASE),
+    re.compile(r"\s*(неактивн|активн|аннулированн|действующ|прекращённ|прекращенн)\w*\s+(?=разрешени)", re.IGNORECASE),
+    re.compile(r"\s*,?\s*(оно\s+|которое\s+)?(сейчас\s+)?(не\s+)?действу\w+", re.IGNORECASE),
+    re.compile(r"\s*у\s+этого\s+экземпляра", re.IGNORECASE),
+)
 QUAL_LEAD_IN = re.compile(
     r"(подскажите|скажите|уточните|а|и|кстати|ещё|еще)([\s,]+(подскажите|скажите))?",
     re.IGNORECASE,
@@ -249,12 +271,27 @@ def drop_qual(text: str) -> str:
     return _tidy(text, original) if text else ""
 
 
+def trim_permit(text: str) -> str:
+    """Оставить факт разрешения на такси, убрать регион, дату и статус."""
+    original = text or ""
+    parts = re.split(r"(?<=[.!?\n])\s+", original)
+    out = []
+    for part in parts:
+        if PERMIT_SENTENCE.search(part):
+            for pattern in PERMIT_DETAIL:
+                part = pattern.sub(" ", part)
+        out.append(part)
+    text = " ".join(out)
+    return _tidy(text, original) if text != original else original
+
+
 def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: дефис вместо длинного тире, без точки в конце."""
     text = (text or "").replace("—", "-").replace("–", "-")
     text = MARKET_TALK.sub("ниже аналогов", text)
     text = drop_manager(text)
     text = drop_qual(text)
+    text = trim_permit(text)
     return drop_end_period(text)
 
 
