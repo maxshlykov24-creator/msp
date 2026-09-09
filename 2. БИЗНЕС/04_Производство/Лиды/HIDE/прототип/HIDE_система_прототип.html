@@ -993,7 +993,7 @@ function closeLayer(id){
   closePop();
   $(id).classList.remove('on');
   if(id==='ov') openId=null;
-  if(id==='ov2') stepPath=null;
+  if(id==='ov2'){ stepPath=null; stepStack=[]; }
 }
 
 /* ═══════════ ВСПЛЫВАЮЩИЕ СПИСКИ И КАЛЕНДАРЬ ═══════════ */
@@ -1283,7 +1283,7 @@ function renderDeals(){
 }
 
 /* ═══════════ МОДАЛКА ДЕЛА ═══════════ */
-let openId=null, stepPath=null;
+let openId=null, stepPath=null, stepStack=[];
 function openDeal(id){
   openId=id;
   renderModal();
@@ -1403,7 +1403,7 @@ function bindTree(d){
     row.onclick=e=>{
       if(e.target.closest('.grip') || e.target.closest('.tw')) return;
       if(row.dataset.dragged==='1'){ delete row.dataset.dragged; return; }
-      openStep(row.dataset.p.split('.').map(Number));
+      openStep(row.dataset.p.split('.').map(Number), 'deal');
     };
     row.ondragstart=e=>{dragPath=row.dataset.p;row.classList.add('drag');row.dataset.dragged='1';e.dataTransfer.effectAllowed='move'};
     row.ondragend=()=>{row.classList.remove('drag');root.querySelectorAll('.over').forEach(x=>x.classList.remove('over'))};
@@ -1476,10 +1476,26 @@ function notesBlock(owner, emptyCtx, emptyCmt){
   const cmt = (owner.comments&&owner.comments.length) ? owner.comments.map(c=>`<div class="cmt-i"><div class="cmt-h"><b>${esc(PEOPLE[c.who]?PEOPLE[c.who].n:c.who)}</b><span>${esc(c.t)}</span></div><div class="cmt-x">${esc(c.x)}</div></div>`).join('') : '<div style="font-size:12.5px;color:var(--mute-2)">'+emptyCmt+'</div>';
   return {ctx,cmt};
 }
-function openStep(path){
+function samePath(a,b){
+  return !!(a&&b&&a.length===b.length&&a.every((n,i)=>+n===+b[i]));
+}
+function openStep(path, how){
+  path=path.map(Number);
+  if(how==='child' && stepPath && !samePath(stepPath, path)){
+    stepStack.push(stepPath.slice());
+  }
+  if(how==='deal') stepStack=[];
   stepPath=path;
   renderStep();
   openLayer('ov2');
+}
+function closeStep(){
+  if(stepStack.length){
+    stepPath=stepStack.pop();
+    renderStep();
+    return;
+  }
+  closeLayer('ov2');
 }
 function renderStep(){
   const d=DEALS.find(x=>x.id===openId); if(!d||!stepPath) return;
@@ -1547,14 +1563,19 @@ function renderStep(){
     kidsRoot.querySelectorAll('.node-row').forEach(row=>{
       row.onclick=e=>{
         if(e.target.closest('.grip') || e.target.closest('.tw')) return;
-        openStep(row.dataset.p.split('.').map(Number));
+        openStep(row.dataset.p.split('.').map(Number), 'child');
       };
     });
   }
 }
 function stepAction(a,d,n,has){
-  if(a==='x'){ closeLayer('ov2'); return; }
-  if(a==='back'){ openStep(stepPath.slice(0,-1)); return; }
+  if(a==='x'){ closeStep(); return; }
+  if(a==='back'){
+    const parent=stepPath.slice(0,-1);
+    if(stepStack.length && samePath(stepStack[stepStack.length-1], parent)) stepStack.pop();
+    openStep(parent, 'back');
+    return;
+  }
   if(a==='add-kid'){ addStepDialog(d, n); return; }
   if(a==='rename'){
     dialog({
@@ -2282,13 +2303,13 @@ $('themeSw').onclick=()=>{
 $('guideBtn').onclick=openGuide;
 $('newDealBtn').onclick=openNewDeal;
 $('ov').onclick=e=>{if(e.target===$('ov')) closeModal()};
-$('ov2').onclick=e=>{if(e.target===$('ov2')) closeLayer('ov2')};
+$('ov2').onclick=e=>{if(e.target===$('ov2')) closeStep()};
 $('ov3').onclick=e=>{if(e.target===$('ov3')) closeLayer('ov3')};
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape') return;
   if($('pop').classList.contains('on')){closePop();return}
   if($('ov3').classList.contains('on')) closeLayer('ov3');
-  else if($('ov2').classList.contains('on')) closeLayer('ov2');
+  else if($('ov2').classList.contains('on')) closeStep();
   else if($('ov').classList.contains('on')) closeModal();
 });
 $('repBtn').onclick=openReport;
