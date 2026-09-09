@@ -175,6 +175,10 @@ PERMIT_DETAIL = (
     re.compile(r"\s*(от|с)\s+\d{2}[.\-/]\d{2}[.\-/]\d{4}", re.IGNORECASE),
     re.compile(r"\s*(неактивн|активн|аннулированн|действующ|прекращённ|прекращенн)\w*\s+(?=разрешени)", re.IGNORECASE),
     re.compile(r"\s*,?\s*(оно\s+|которое\s+)?(сейчас\s+)?(не\s+)?действу\w+", re.IGNORECASE),
+    re.compile(
+        r"\s+(сейчас\s+)?(не\s+)?(активн|неактивн|аннулированн|действующ|прекращённ|прекращенн)\w*",
+        re.IGNORECASE,
+    ),
     re.compile(r"\s*у\s+этого\s+экземпляра", re.IGNORECASE),
 )
 QUAL_LEAD_IN = re.compile(
