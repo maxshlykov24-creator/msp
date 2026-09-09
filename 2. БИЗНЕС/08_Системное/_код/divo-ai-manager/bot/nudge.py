@@ -390,15 +390,38 @@ def pick_phone_ask(used: list[str] | None = None) -> str:
     return PHONE_ASKS[0]
 
 
-def build_text(step: int, name: str, car: str, used: list[str] | None = None) -> str:
+def build_text(
+    step: int,
+    name: str,
+    car: str,
+    used: list[str] | None = None,
+    asked: bool = True,
+) -> str:
+    """Три касания. Второе — про приезд, а не про номер: цель не контакт, а визит.
+
+    asked=False означает, что номер в этом диалоге ещё не просили: клиент просто
+    замолчал после ответа по машине. Тогда первое касание тоже мягкое.
+    """
     who = (name + ", ") if name else ""
     if step == 1:
+        if not asked:
+            if car:
+                return "%s%s в наличии, посмотреть можно в любой день до 20:00" % (
+                    who,
+                    car,
+                )
+            return "Машина в наличии, посмотреть можно в любой день до 20:00"
         ask = pick_phone_ask(used)
         if car:
             return "%s%s на площадке. %s" % (who, car, ask)
         return ask
     if step == 2:
-        return "Если этот вариант ещё рассматриваете - напишите номер для связи"
+        if car:
+            return (
+                "%s ещё в наличии. Приезжайте посмотреть вживую, по цене "
+                "готовы обсудить на месте" % car
+            )
+        return "Машина в наличии. Приезжайте посмотреть, по цене обсудим на месте"
     if car:
         return "Добрый день. %s - без изменений. Напишите номер, если актуально" % car
     return "Добрый день. Напишите номер, если актуально"
@@ -414,13 +437,15 @@ def refresh(nudge: dict, messages: list[dict]) -> dict:
     if out.get("count", 0) >= MAX_NUDGES:
         out["waiting"] = False
         return out
-    if history_asked_phone(messages):
-        out["waiting"] = True
-        out["asked_at"] = now_msk().isoformat(timespec="seconds")
-        out["name"] = extract_name(messages) or out.get("name") or ""
-        out["car"] = extract_car(messages) or out.get("car") or ""
-        return out
-    out["waiting"] = False
+    # Раньше догон включался только после просьбы номера. Клиент, который
+    # спросил про пробег и замолчал, уходил молча — а это тот же тёплый лид.
+    # Теперь ждём после любого ответа, а тон касания зависит от того, просили
+    # номер или нет. Стоп-условия выше не изменились.
+    out["waiting"] = True
+    out["asked"] = history_asked_phone(messages)
+    out["asked_at"] = now_msk().isoformat(timespec="seconds")
+    out["name"] = extract_name(messages) or out.get("name") or ""
+    out["car"] = extract_car(messages) or out.get("car") or ""
     return out
 
 

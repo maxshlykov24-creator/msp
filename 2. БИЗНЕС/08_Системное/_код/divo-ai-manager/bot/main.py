@@ -264,7 +264,8 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
 def _build_system(history: list[dict]) -> str:
     """Общие правила плюс поправки под этот конкретный ход диалога."""
     user_text = history[-1]["content"] if history else ""
-    system = prompt.build()
+    # Всё, что дописано после границы, меняется каждый ход и в кэш не идёт.
+    system = prompt.build() + prompt.CACHE_SPLIT
     known_name = nudge.extract_name(history)
     if known_name:
         system += (
@@ -398,7 +399,13 @@ async def send_nudge(tg: Telegram, chat_id: int) -> None:
     if not step:
         return
     used = nudge.used_phone_lines(doc.get("messages") or [])
-    text = nudge.build_text(step, meta.get("name") or "", meta.get("car") or "", used)
+    text = nudge.build_text(
+        step,
+        meta.get("name") or "",
+        meta.get("car") or "",
+        used,
+        asked=bool(meta.get("asked", True)),
+    )
     await type_and_wait(tg, chat_id, human.typing_delay(text, first=True))
     if pending.get(chat_id) or store.is_paused(chat_id):
         return
