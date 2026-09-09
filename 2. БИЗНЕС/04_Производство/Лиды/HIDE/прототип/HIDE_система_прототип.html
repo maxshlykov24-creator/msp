@@ -602,7 +602,6 @@
     <div class="page-tools">
       <div class="sw on" id="hintsSw"><i></i>Пояснения</div>
       <button class="btn sm" id="guideBtn">Инструкция</button>
-      <button class="btn sm gold" id="newDealBtn">Новое дело</button>
     </div>
   </div>
 
@@ -616,6 +615,7 @@
       <div class="f-top">
         <span class="f-found" id="fFound"></span>
         <button class="btn sm" id="fReset">Сбросить</button>
+        <button class="btn sm gold" id="newDealBtn">Новое дело</button>
       </div>
       <div class="f-fields">
       <div class="fld" id="fldCli"><label>Клиент</label><button type="button" class="dd-btn" id="fCli">Все клиенты</button></div>
@@ -2275,7 +2275,6 @@ function go(p){
   t.classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));
   $('pageName').textContent=PAGE_NAMES[p]||'';
-  $('newDealBtn').style.display = p==='dela' ? '' : 'none';
   window.scrollTo({top:0,behavior:'smooth'});
 }
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>go(b.dataset.p));
