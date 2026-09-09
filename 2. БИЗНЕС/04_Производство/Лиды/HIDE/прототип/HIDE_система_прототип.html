@@ -11,6 +11,7 @@
     --mute:#8a8a86;
     --mute-2:#6a6a66;
     --gold:#C6B8A4;
+    --gold-fill:#C6B8A4;
     --gold-soft:#E6DFD2;
     --green:#9FC9AC;
     --red:#D08A80;
@@ -33,8 +34,9 @@
     --ink:#1a1a1a;
     --mute:#6a6a66;
     --mute-2:#8a8a86;
-    --gold:#7A6E5C;
-    --gold-soft:#534A3E;
+    --gold:#8F8270;
+    --gold-fill:#D4C8B6;
+    --gold-soft:#C4B6A3;
     --green:#4E8A64;
     --red:#B4544A;
     --blue:#4F7391;
@@ -50,7 +52,6 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth;scrollbar-gutter:stable;overflow-y:scroll;overflow-x:hidden}
-  body.locked{overflow:hidden}
   body{
     font-family:var(--font);color:var(--ink);background:var(--bg);
     min-height:100vh;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;
@@ -62,6 +63,9 @@
     background-image:linear-gradient(180deg,#F4F4F4 0%,#E6E6E6 100%);
   }
   .wrap{max-width:1320px;margin:0 auto;padding:0 30px 110px;position:relative;z-index:1}
+  body.page-queue{display:flex;flex-direction:column;min-height:100vh}
+  body.page-queue .wrap{flex:1;display:flex;flex-direction:column;align-self:center;width:100%;padding-bottom:28px}
+  body.page-queue .wrap > .foot{margin-top:auto}
 
   .glass{
     background:var(--panel);
@@ -91,8 +95,7 @@
   .roles{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--glass);border:1px solid var(--line)}
   .roles button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:10px;cursor:pointer;transition:.2s var(--ease)}
   .roles button:hover{color:var(--ink)}
-  .roles button.active{background:var(--gold);color:#17130e;font-weight:600;box-shadow:0 6px 18px -8px rgba(198,184,164,.8)}
-  body.light .roles button.active{color:#FFFBF3}
+  .roles button.active{background:var(--gold-fill);color:#141412;font-weight:600;box-shadow:0 6px 18px -8px rgba(198,184,164,.8)}
 
   .sw{display:inline-flex;align-items:center;gap:9px;padding:7px 13px;border-radius:12px;background:var(--glass);border:1px solid var(--line);cursor:pointer;font-size:12px;color:var(--mute);transition:.2s var(--ease);user-select:none}
   .sw:hover{color:var(--ink);border-color:var(--line-2)}
@@ -100,7 +103,9 @@
   .sw i::after{content:'';position:absolute;top:1px;left:1px;width:13px;height:13px;border-radius:50%;background:var(--mute);transition:.25s var(--ease)}
   .sw.on{color:var(--ink);border-color:rgba(198,184,164,.45);background:rgba(198,184,164,.1)}
   .sw.on i{background:rgba(198,184,164,.35);border-color:rgba(198,184,164,.5)}
-  .sw.on i::after{transform:translateX(13px);background:var(--gold)}
+  .sw.on i::after{transform:translateX(13px);background:var(--gold-fill)}
+  body.light .sw.on{border-color:rgba(198,184,164,.55);background:rgba(198,184,164,.18)}
+  body.light .sw.on i{background:rgba(198,184,164,.45);border-color:rgba(198,184,164,.55)}
 
   /* ─── nav ─── */
   .nav{display:flex;gap:2px;padding:5px;border-radius:16px;background:var(--glass);border:1px solid var(--line);margin:28px 0 4px;flex-wrap:wrap}
@@ -121,11 +126,10 @@
   .page-bar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:22px 0 18px}
   .role-pick{position:relative}
   .role-btn{
-    border:1px solid var(--line);background:var(--gold);color:#141412;font-family:var(--font);
+    border:1px solid var(--line);background:var(--gold-fill);color:#141412;font-family:var(--font);
     font-size:12.5px;font-weight:600;padding:8px 32px 8px 14px;border-radius:12px;cursor:pointer;
     position:relative;min-width:112px;text-align:left;box-shadow:0 6px 18px -8px rgba(198,184,164,.8)
   }
-  body.light .role-btn{color:#FFFBF3}
   .role-btn::after{
     content:'';position:absolute;right:12px;top:50%;width:6px;height:6px;
     border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
@@ -172,8 +176,15 @@
   .fld select:hover,.fld input:hover,.dd-btn:hover{border-color:var(--line-2)}
   .fld select:focus,.fld input:focus,.dd-btn:focus{outline:0;border-color:rgba(198,184,164,.55)}
   .fld.act .dd-btn,.fld.act select{border-color:rgba(198,184,164,.5);background:color-mix(in srgb,var(--gold) 12%,var(--field))}
-  .meta-i.click{cursor:pointer;transition:.2s var(--ease)}
-  .meta-i.click:hover{border-color:var(--line-2);color:var(--ink)}
+  .meta-i.click,.st.edit{cursor:pointer;transition:.2s var(--ease);position:relative;padding-right:26px}
+  .meta-i.click{border-color:var(--line-2);background:var(--glass-2)}
+  .meta-i.click::after,.st.edit::after{
+    content:'';position:absolute;right:10px;top:50%;width:5px;height:5px;
+    border-right:1.5px solid var(--mute);border-bottom:1.5px solid var(--mute);
+    transform:translateY(-70%) rotate(45deg)
+  }
+  .meta-i.click:hover{border-color:rgba(198,184,164,.55);color:var(--ink)}
+  .st.edit:hover{filter:brightness(1.08)}
 
   .pop{
     position:fixed;z-index:220;display:none;min-width:200px;
@@ -200,7 +211,7 @@
   .cal-d:hover{background:var(--hover)}
   .cal-d.out{opacity:.28}
   .cal-d.today{box-shadow:inset 0 0 0 1px rgba(198,184,164,.7)}
-  .cal-d.on{background:var(--gold);color:#141412;font-weight:600}
+  .cal-d.on{background:var(--gold-fill);color:#141412;font-weight:600}
   .cal-d.in{background:color-mix(in srgb,var(--gold) 16%,var(--panel))}
   .cal-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:0 2px}
   .cal-foot button{border:0;background:none;color:var(--mute);font-size:12px;cursor:pointer;font-family:var(--font)}
@@ -242,34 +253,63 @@
   .due small{display:block;font-size:10.5px;color:var(--mute-2);margin-top:3px}
 
   .prog{display:flex;align-items:center;gap:10px;max-width:230px}
-  .prog-bar{flex:1;height:4px;border-radius:3px;background:var(--glass-2);overflow:hidden;border:0}
+  .prog-bar{flex:1;height:5px;border-radius:4px;background:var(--glass-2);overflow:hidden;border:1px solid var(--line)}
+  body.light .prog-bar{background:#E2E2E2;border-color:rgba(26,26,26,.16)}
   .prog-bar span{display:block;height:100%;border-radius:3px;background:var(--c,var(--gold));transition:width .6s var(--ease)}
   .prog-num{font-size:11px;color:var(--mute);font-variant-numeric:tabular-nums;min-width:32px;text-align:right}
 
   .empty{padding:44px 20px;text-align:center;color:var(--mute);font-size:13.5px}
 
   /* ─── кнопки ─── */
-  .btn{border:1px solid var(--line);background:var(--glass);color:var(--ink);font-family:var(--font);font-size:12.5px;font-weight:500;padding:9px 16px;border-radius:11px;cursor:pointer;transition:.2s var(--ease);white-space:nowrap}
+  .btn{
+    appearance:none;-webkit-appearance:none;
+    border:1px solid var(--line);background:var(--glass);color:var(--ink);
+    font-family:var(--font);font-size:12.5px;font-weight:500;padding:9px 16px;
+    border-radius:10px;cursor:pointer;transition:background .2s var(--ease),border-color .2s var(--ease),box-shadow .2s var(--ease);
+    white-space:nowrap
+  }
   .btn:hover{border-color:var(--line-2);background:var(--glass-2)}
-  .btn.gold{background:linear-gradient(180deg,#d8d0c4 0%,#C6B8A4 48%,#9e917e 100%);border-color:transparent;color:#141412;font-weight:600;box-shadow:0 8px 22px -12px rgba(198,184,164,.5)}
-  .btn.gold:hover{filter:brightness(1.07)}
+  .btn.gold{
+    background:var(--gold-fill);
+    border:1px solid color-mix(in srgb,var(--gold-fill) 62%,#8f8270);
+    color:#141412;font-weight:600;
+    box-shadow:0 10px 22px -14px rgba(80,64,40,.55)
+  }
+  body.light .btn.gold{
+    background:#D6C9B6;
+    border-color:color-mix(in srgb,#D6C9B6 58%,#9a8b76);
+    box-shadow:0 10px 24px -14px rgba(80,64,40,.32)
+  }
+  .btn.gold:hover{
+    filter:none;
+    background:color-mix(in srgb,var(--gold-fill) 72%,#fff);
+    box-shadow:0 12px 26px -14px rgba(80,64,40,.48)
+  }
+  body.light .btn.gold:hover{background:#E2D6C4}
   .btn.red{color:var(--red);border-color:color-mix(in srgb,var(--red) 40%,transparent)}
   .btn.red:hover{background:color-mix(in srgb,var(--red) 12%,transparent)}
   .btn.green{color:var(--green);border-color:color-mix(in srgb,var(--green) 40%,transparent);background:color-mix(in srgb,var(--green) 10%,transparent);cursor:default}
-  .btn.sm{font-size:11.5px;padding:7px 12px;border-radius:9px}
+  .btn.sm{font-size:11.5px;padding:7px 13px;border-radius:9px}
 
   /* ─── очередь ─── */
   .q-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease);background:var(--panel)}
   .q-item:has(.grip){grid-template-columns:18px minmax(0,1fr) auto}
+  #queueTbl .q-item{grid-template-columns:18px minmax(160px,1.5fr) minmax(120px,1.2fr) 108px 118px auto;gap:14px;padding:16px 22px}
   .q-item:last-child{border-bottom:0}
+  #queueTbl .q-item:not(.q-head){cursor:pointer}
   .q-item:hover{background:var(--hover)}
   .q-item.drag{opacity:.4}
   .q-item.over{outline:1px solid rgba(198,184,164,.45)}
+  .q-item.q-head{background:var(--field);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding:12px 22px;cursor:default}
+  .q-item.q-head:hover{background:var(--field)}
   .q-name{font-size:14.5px;font-weight:450;line-height:1.4;min-width:0}
+  .q-deal{font-size:12.5px;color:var(--mute);line-height:1.4;min-width:0}
+  .q-deal b{color:var(--mute);font-weight:400;cursor:pointer;border-bottom:1px dashed var(--line-2)}
+  .q-deal b:hover{color:var(--ink)}
   .q-path{font-size:11.5px;color:var(--mute-2);margin-top:7px}
   .q-path b{color:var(--mute);font-weight:400;cursor:pointer;border-bottom:1px dashed var(--line-2)}
   .q-path b:hover{color:var(--ink)}
-  .q-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .q-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 
   /* ─── приёмка ─── */
   .pr-card{padding:24px;margin-bottom:14px;border-radius:18px;border:1px solid var(--line);background:var(--panel)}
@@ -328,7 +368,7 @@
   .feed-x b{color:var(--ink);font-weight:500}
 
   /* ─── модалка ─── */
-  .ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.32);display:flex;align-items:safe center;justify-content:center;padding:28px 24px;overflow:auto;overscroll-behavior:contain;opacity:0;pointer-events:none;transition:opacity .4s var(--ease)}
+  .ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center;padding:28px 24px;overflow:hidden;opacity:0;pointer-events:none;transition:opacity .4s var(--ease)}
   body.light .ov{background:rgba(20,20,20,.18)}
   .ov.on{opacity:1;pointer-events:auto}
   .modal{width:100%;max-width:1080px;max-height:calc(100vh - 56px);overflow:auto;border-radius:24px;border:1px solid var(--line-2);background:var(--bg);box-shadow:var(--shadow-lg);transform:translate3d(0,18px,0);opacity:0;transition:transform .4s var(--ease),opacity .4s var(--ease);position:relative}
@@ -353,7 +393,14 @@
   .ctx{font-size:13px;line-height:1.72;color:var(--mute)}
   .ctx b{color:var(--ink);font-weight:500}
   .ctx p{margin-bottom:12px}
+  .ctx p:first-child{color:var(--ink)}
   .ctx p:last-child{margin-bottom:0}
+  .h4-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .cmt{display:flex;flex-direction:column;gap:9px}
+  .cmt-i{padding:11px 13px;border-radius:12px;background:var(--glass);border:1px solid var(--line)}
+  .cmt-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:11px;color:var(--mute-2);margin-bottom:6px}
+  .cmt-h b{color:var(--ink);font-weight:500}
+  .cmt-x{font-size:12.5px;line-height:1.6;color:var(--mute)}
   .file{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;background:var(--glass);border:1px solid var(--line);font-size:12.5px;transition:.2s var(--ease);cursor:pointer;margin-bottom:9px}
   .file:last-child{margin-bottom:0}
   .file:hover{border-color:var(--line-2);background:var(--glass-2)}
@@ -415,6 +462,7 @@
     .tr{grid-template-columns:1.6fr .8fr .9fr}
     .tr .hide-s{display:none}
     .esc-r{grid-template-columns:1fr 1fr}
+    #queueTbl .q-item{grid-template-columns:18px minmax(0,1.3fr) minmax(0,1fr) 92px 104px auto;gap:10px;padding:14px 16px}
   }
   @media(max-width:680px){
     html,body{overflow-x:hidden}
@@ -447,7 +495,11 @@
     .tr>div:last-child{margin-left:auto;text-align:right}
     .prog{max-width:none}
     .q-item{grid-template-columns:1fr;padding:16px}
-    .q-act{margin-top:12px}
+    #queueTbl .q-item{grid-template-columns:18px 1fr;gap:8px 12px;padding:16px}
+    #queueTbl .q-item.q-head{display:none}
+    #queueTbl .q-deal,#queueTbl .q-cli,#queueTbl .q-due{grid-column:2}
+    .q-act{margin-top:12px;justify-content:flex-start}
+    body.page-queue .wrap{padding-bottom:20px}
     .esc-r{grid-template-columns:1fr;gap:5px;padding:14px 16px}
     .esc-r.h{display:none}
     .esc-r b{font-size:13.5px}
@@ -725,12 +777,24 @@ function D(o){return o}
 const RAW = [
   D({n:'Оценка объектов недвижимости', c:'ИИК 1', dir:'Юристы', who:'darya', st:'work', prio:'high', tpl:'assess', team:['darya','danil','nikita'], closed:8,
      ctx:['Клиент просит переоценку четырёх объектов перед пересмотром структуры владения. <b>Внутреннюю оценку делаем до внешнего запроса</b>, так решили на планёрке 2 сентября: нужно понимать вилку заранее.','Договорённость: показываем клиенту сводную таблицу с тремя предложениями, без рекомендации конкретной компании до его вопроса.'],
+     comments:[
+       {who:'darina', t:'06.09', x:'Пришло КП от первой компании, ждём ещё два. Сводную клиенту не собираем, пока не будет всех трёх.'},
+       {who:'darya', t:'04.09', x:'Реестр сверён с выписками. По двум объектам есть обременение, написала в чат клиента.'},
+       {who:'darina', t:'02.09', x:'На планёрке зафиксировали: сначала внутренняя оценка, потом внешний запрос. Коммуникацию по оценке ведёт Дарья.'}
+     ],
      files:[['Реестр объектов, версия 2.xlsx','Дарья, 04.09, из чата клиента'],['Выписки ЕГРН, 4 объекта.pdf','Дарья, 03.09'],['КП оценочной компании 1.pdf','Данил, 06.09, из профильного чата']]}),
   D({n:'Залог доли в ООО', c:'ИИК 2', dir:'Юристы', who:'darya', st:'priem', prio:'high', tpl:'pledge', team:['darya','danil','konstantin'], closed:5, priemDays:3,
      ctx:['Договор готов, корпоративные документы проверены, ограничений на отчуждение не выявлено.','Требуется решение: отправляем клиенту на согласование или сначала показываем Константину по структуре сделки.'],
+     comments:[
+       {who:'darya', t:'06.09', x:'Договор v3 готов, ограничений на отчуждение нет. Жду решения: сразу клиенту или сначала Константину по структуре.'},
+       {who:'darya', t:'05.09', x:'Корпоративные документы проверены, протокол лежит в файлах.'}
+     ],
      files:[['Договор залога доли, v3.docx','Дарья, 06.09'],['Протокол проверки документов.pdf','Дарья, 05.09']]}),
   D({n:'Реструктуризация инвестпортфеля', c:'ИИК 3', dir:'Инвестиции', who:'danil', st:'wait', prio:'high', tpl:'invest', team:['darya','danil','nikita'], closed:3, waitDays:6,
      ctx:['Сценарии перекладки готовы, ждём от клиента решения по доле валютных инструментов.','Последнее сообщение клиенту ушло 2 сентября, ответа нет.'],
+     comments:[
+       {who:'danil', t:'02.09', x:'Сценарии отправили. Клиент не ответил по доле валютных инструментов. Напоминание ушло.'}
+     ],
      files:[['Сценарии перекладки.xlsx','Данил, 02.09']]}),
   D({n:'Индексация ставок аренды', c:'ИИК 1', dir:'Аналитика', who:'danil', st:'wait', prio:'mid', tpl:'audit', team:['danil','danil','nikita'], closed:1, waitDays:5,
      ctx:['Ждём от клиента данные по двум помещениям: действующие ставки и сроки договоров.'],
@@ -804,7 +868,7 @@ const DEALS = RAW.map((r,idx)=>{
   const tree = TPL[r.tpl](a,b,c);
   const ref = {left:r.closed};
   tree.forEach(n=>build(n,0,ref));
-  const d = Object.assign({}, r, {id:'d'+(idx+1), tree:tree, log:[], order:idx});
+  const d = Object.assign({}, r, {id:'d'+(idx+1), tree:tree, log:[], comments:(r.comments||[]).slice(), order:idx});
   normalize(d);
   d.due = dealDue(d);
   d.log = [
@@ -868,26 +932,20 @@ function feed(x){FEED.unshift({t:'сейчас',x:x});renderFeed()}
 /* ═══════════ УТИЛИТЫ ═══════════ */
 function actor(v){
   const p=PEOPLE[role];
-  const f={'закрыл':'закрыла','перенёс':'перенесла','передал':'передала','принял':'приняла','отправил':'отправила','вернул':'вернула','изменил':'изменила'};
+  const f={'закрыл':'закрыла','перенёс':'перенесла','передал':'передала','принял':'приняла','отправил':'отправила','вернул':'вернула','изменил':'изменила','добавил':'добавила'};
   return '<b>'+p.n+'</b> '+(p.f?(f[v]||v):v);
 }
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function plain(s){return String(s).replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"')}
+function addComment(d,x){
+  if(!x) return;
+  d.comments = d.comments || [];
+  d.comments.unshift({who:role, t:'сейчас', x:x});
+}
 function $(id){return document.getElementById(id)}
 let tTimer;
 function toast(msg){const t=$('toast');t.innerHTML=msg;t.classList.add('on');clearTimeout(tTimer);tTimer=setTimeout(()=>t.classList.remove('on'),3600)}
-function lockPage(){
-  if(document.body.classList.contains('locked')) return;
-  const w=Math.max(0, window.innerWidth-document.documentElement.clientWidth);
-  document.body.classList.add('locked');
-  if(w) document.body.style.paddingRight=w+'px';
-}
-function unlockPage(){
-  if($('ov').classList.contains('on') || $('ov2').classList.contains('on')) return;
-  document.body.classList.remove('locked');
-  document.body.style.paddingRight='';
-}
 function openLayer(id){
-  lockPage();
   const el=$(id);
   requestAnimationFrame(()=>el.classList.add('on'));
 }
@@ -895,7 +953,6 @@ function closeLayer(id){
   closePop();
   $(id).classList.remove('on');
   if(id==='ov') openId=null;
-  requestAnimationFrame(()=>requestAnimationFrame(unlockPage));
 }
 
 /* ═══════════ ВСПЛЫВАЮЩИЕ СПИСКИ И КАЛЕНДАРЬ ═══════════ */
@@ -1211,7 +1268,7 @@ function renderModal(){
       <div class="m-kick">${esc(d.c)} · ${esc(d.dir)}</div>
       <div class="m-title">${esc(d.n)}</div>
       <div class="m-meta">
-        <button type="button" class="st ${stClass(d)}" data-a="status" data-keep-pop="1" style="cursor:pointer"><i></i>${esc(stLabel(d))}</button>
+        <button type="button" class="st edit ${stClass(d)}" data-a="status" data-keep-pop="1"><i></i>${esc(stLabel(d))}</button>
         <button type="button" class="meta-i click" data-a="reassign" data-keep-pop="1">Ответственный <b>${esc(PEOPLE[d.who].n)}</b></button>
         <button type="button" class="meta-i click" data-a="prio" data-keep-pop="1">Приоритет <b>${PRIO[d.prio]}</b></button>
         <button type="button" class="meta-i click" data-a="move" data-keep-pop="1">Срок <b>${n?fmt(n.due):'закрыто'}</b></button>
@@ -1227,8 +1284,13 @@ function renderModal(){
       </div>
       <div class="m-side">
         <div class="m-block">
-          <h4>Контекст</h4>
-          <div class="ctx">${d.ctx.map(t=>'<p>'+t+'</p>').join('')}</div>
+          <h4>Контекст <span class="h4-acts"><button class="btn sm" data-a="ctx-add" style="text-transform:none;letter-spacing:0">Добавить</button><button class="btn sm" data-a="ctx-edit" style="text-transform:none;letter-spacing:0">Изменить</button></span></h4>
+          <div class="ctx">${d.ctx.length? d.ctx.map(t=>'<p>'+t+'</p>').join('') : '<p style="color:var(--mute-2)">Контекста пока нет. Сюда выгружается фактура: с кем договор, какие суммы, кто с кем говорит.</p>'}</div>
+        </div>
+        <div class="m-block">
+          <h4>Комментарии <button class="btn sm" data-a="comment" style="text-transform:none;letter-spacing:0">Оставить</button></h4>
+          <div class="cmt">${(d.comments&&d.comments.length)? d.comments.map(c=>`<div class="cmt-i"><div class="cmt-h"><b>${esc(PEOPLE[c.who]?PEOPLE[c.who].n:c.who)}</b><span>${esc(c.t)}</span></div><div class="cmt-x">${esc(c.x)}</div></div>`).join('') : '<div style="font-size:12.5px;color:var(--mute-2)">Комментариев пока нет. Свежий — сверху, с датой.</div>'}</div>
+          <div class="note" style="margin-top:14px"><b>Два слоя.</b> Контекст — легенда дела, если человека нет. Комментарий — ход с датами. Журнал внизу — действия системы, не это.</div>
         </div>
         <div class="m-block">
           <h4>Файлы <button class="btn sm" data-a="file" style="text-transform:none;letter-spacing:0">Добавить файл</button></h4>
@@ -1327,6 +1389,55 @@ function dealAction(a,d){
     });
     return;
   }
+  if(a==='ctx-add'){
+    dialog({
+      title:'Добавить в контекст',
+      kick:d.c+' · '+d.n,
+      fields:[{k:'txt',type:'area',label:'Новый факт',ph:'самое актуальное: сумма, кто с кем говорит, что решили',req:true}],
+      ok:'Добавить сверху',
+      note: document.body.classList.contains('hints') ? 'Новый абзац встанет первым. Так Дарина поднимает свежее вверх, чтобы оно бросалось в глаза.' : '',
+      run:v=>{
+        d.ctx.unshift(esc(v.txt));
+        d.log.unshift({t:'сейчас',x:actor('добавил')+' факт в контекст'});
+        feed(PEOPLE[role].n+' обновил контекст дела «'+esc(d.n)+'»');
+        sync(); toast('Факт добавлен сверху в контекст');
+      }
+    });
+    return;
+  }
+  if(a==='ctx-edit'){
+    dialog({
+      title:'Изменить контекст',
+      kick:d.c+' · '+d.n,
+      fields:[{k:'txt',type:'area',label:'Контекст дела',ph:'абзацы через пустую строку',req:true,val:d.ctx.map(plain).join('\n\n')}],
+      ok:'Сохранить',
+      note: document.body.classList.contains('hints') ? 'Это легенда дела, не журнал. Пустая строка между абзацами. Первый абзац — то, что сейчас важнее всего.' : '',
+      run:v=>{
+        d.ctx = v.txt.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean).map(esc);
+        if(!d.ctx.length) d.ctx = [esc(v.txt)];
+        d.log.unshift({t:'сейчас',x:actor('изменил')+' контекст дела'});
+        feed(PEOPLE[role].n+' изменил контекст дела «'+esc(d.n)+'»');
+        sync(); toast('Контекст обновлён');
+      }
+    });
+    return;
+  }
+  if(a==='comment'){
+    dialog({
+      title:'Оставить комментарий',
+      kick:d.c+' · '+d.n,
+      fields:[{k:'txt',type:'area',label:'Комментарий',ph:'что произошло и когда: запросили документы, клиент не дал договор, созвонились',req:true}],
+      ok:'Оставить',
+      note: document.body.classList.contains('hints') ? 'Комментарий встанет первым. Провалившись сюда, можно проследить ход дела с датами. Журнал при этом пишет система сама.' : '',
+      run:v=>{
+        addComment(d, v.txt);
+        d.log.unshift({t:'сейчас',x:actor('добавил')+' комментарий: '+esc(v.txt)});
+        feed(PEOPLE[role].n+' оставил комментарий в деле «'+esc(d.n)+'»');
+        sync(); toast('Комментарий оставлен сверху');
+      }
+    });
+    return;
+  }
   if(a==='file'){
     dialog({
       title:'Добавить файл',
@@ -1377,11 +1488,12 @@ function dealAction(a,d){
       fields:[
         {k:'txt',type:'ro',label:'Шаг',val:n.t},
         {k:'res',type:'select',label:'Результат',opts:[['done','Сделано, идём дальше'],['priem','Сделано, отправляю на приёмку']]},
-        {k:'com',type:'text',label:'Комментарий, попадёт в журнал',ph:'необязательно'}
+        {k:'com',type:'text',label:'Комментарий',ph:'необязательно, останется в карточке'}
       ],
       ok:'Закрыть шаг',
       run:v=>{
         n.done=true;
+        if(v.com) addComment(d, 'Закрыт шаг «'+n.t+'»: '+v.com);
         d.log.unshift({t:'сейчас',x:actor('закрыл')+' шаг «'+esc(n.t)+'»'+(v.com?': '+esc(v.com):'')});
         if(v.res==='priem'){d.st='priem';d.priemDays=0}
         else if(!nextStep(d)){d.st='done'}
@@ -1429,6 +1541,7 @@ function dealAction(a,d){
       note:'Дело перейдёт в состояние «ждём клиента»: счётчик просрочки команды останавливается, вместо него идёт счётчик тишины клиента. Напоминание придёт тому, кто ведёт клиента.',
       run:v=>{
         d.st='wait'; d.waitDays=0;
+        addComment(d, 'Запросили у клиента: '+v.what);
         d.log.unshift({t:'сейчас',x:actor('отправил')+' запрос клиенту: '+esc(v.what)});
         feed('Дело «'+esc(d.n)+'» перешло в ожидание клиента, счётчик просрочки остановлен');
         sync();
@@ -1528,6 +1641,9 @@ function dialog(cfg){
       state[f.k]=f.val||iso(TODAY);
       btn.textContent=fmt(parseISO(state[f.k]));
       btn.onclick=()=>calPop(btn, state[f.k], key=>{ state[f.k]=key; btn.textContent=fmt(parseISO(key)); });
+    } else if(f.val!=null){
+      const el=$('dlg').querySelector('[data-k="'+f.k+'"]');
+      if(el) el.value=f.val;
     }
   });
   const close=()=>closeLayer('ov2');
@@ -1570,19 +1686,23 @@ function renderQueue(){
     });
   }
   $('cQueue').textContent = list.length;
-  if(!list.length){$('queueTbl').innerHTML='<div class="empty">Свободно: закрытых шагов нет. Переключите роль сверху справа.</div>';return}
-  $('queueTbl').innerHTML = list.map((q,i)=>{
+  const head = `<div class="q-item q-head"><div></div><div>Шаг</div><div>Дело</div><div>Клиент</div><div>Срок</div><div></div></div>`;
+  if(!list.length){$('queueTbl').innerHTML=head+'<div class="empty">Свободно: закрытых шагов нет. Переключите роль сверху справа.</div>';return}
+  $('queueTbl').innerHTML = head + list.map((q,i)=>{
     const late = q.n.due<TODAY, wait = q.d.st==='wait';
-    const badge = wait ? '<span class="st wait sm"><i></i>ждём клиента, '+(q.d.waitDays||0)+' дн.</span>'
-                : late ? '<span class="st late sm"><i></i>просрочен '+days(TODAY,q.n.due)+' дн.</span>'
-                : (days(q.n.due,TODAY)<=1 ? '<span class="st work sm"><i></i>срок сегодня-завтра</span>' : '');
+    let dueCls='due', dueSub='';
+    if(wait){ dueCls='due frozen'; dueSub='ждём клиента, '+(q.d.waitDays||0)+' дн.' }
+    else if(late){ dueCls='due late'; dueSub='просрочен '+days(TODAY,q.n.due)+' дн.' }
+    else if(days(q.n.due,TODAY)<=1){ dueSub='сегодня-завтра' }
     const acts = wait ? '<button class="btn sm" data-q="'+i+'" data-a="open">Открыть дело</button>'
       : `<button class="btn sm gold" data-q="${i}" data-a="done">Сделал</button><button class="btn sm" data-q="${i}" data-a="move">Перенести</button><button class="btn sm" data-q="${i}" data-a="open">Открыть дело</button>`;
     return `<div class="q-item" draggable="true" data-i="${i}">
       <div class="grip">⠿</div>
-      <div><div class="q-name">${esc(q.n.t)}</div>
-      <div class="q-path"><b data-q="${i}" data-a="open">${esc(q.d.n)}</b> · ${esc(q.d.c)} · до ${fmt(q.n.due)}</div></div>
-      <div class="q-act">${badge}${acts}</div>
+      <div class="q-name">${esc(q.n.t)}</div>
+      <div class="q-deal"><b data-q="${i}" data-a="open">${esc(q.d.n)}</b></div>
+      <div class="q-cli"><span class="cli">${esc(q.d.c)}</span></div>
+      <div class="${dueCls}">${fmt(q.n.due)}${dueSub?'<small>'+dueSub+'</small>':''}</div>
+      <div class="q-act">${acts}</div>
     </div>`;
   }).join('');
   $('queueTbl').querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{
@@ -1602,7 +1722,11 @@ function renderQueue(){
     }
   });
   let dragI=null;
-  $('queueTbl').querySelectorAll('.q-item').forEach(row=>{
+  $('queueTbl').querySelectorAll('.q-item:not(.q-head)').forEach(row=>{
+    row.onclick=e=>{
+      if(e.target.closest('button') || e.target.closest('.grip')) return;
+      openDeal(list[+row.dataset.i].d.id);
+    };
     row.ondragstart=e=>{dragI=+row.dataset.i; row.classList.add('drag'); e.dataTransfer.effectAllowed='move'};
     row.ondragend=()=>{row.classList.remove('drag'); $('queueTbl').querySelectorAll('.over').forEach(x=>x.classList.remove('over'))};
     row.ondragover=e=>{e.preventDefault(); row.classList.add('over')};
@@ -1727,7 +1851,7 @@ function openReport(){
 const GUIDE={
   dela:{
     title:'Как устроены дела',
-    html:`<div class="ctx"><p>Реестр собирает все клиентские и внутренние дела в одном месте. Плитки сверху — это фильтр по состоянию, не отдельный статус.</p><p>Просрочку считает система: срок прошёл и ход за нами. Пока ждём клиента, счётчик команды стоит.</p><p>Новое дело заводится кнопкой справа. Статус, срок и исполнитель меняются прямо в карточке дела, без отдельных кнопок внизу.</p></div>`
+    html:`<div class="ctx"><p>Реестр собирает все клиентские и внутренние дела в одном месте. Плитки сверху — это фильтр по состоянию, не отдельный статус.</p><p>Просрочку считает система: срок прошёл и ход за нами. Пока ждём клиента, счётчик команды стоит.</p><p>В карточке три слоя вместо одной ячейки таблицы. Шаги — бывший план. Контекст — легенда дела, её можно дополнить и править, свежий факт сверху. Комментарий — ход с датами. Журнал пишет система сама.</p><p>Новое дело заводится кнопкой справа. Статус, срок и исполнитель меняются прямо в карточке дела, без отдельных кнопок внизу.</p></div>`
   },
   queue:{
     title:'Очередь и порядок шагов',
@@ -1795,6 +1919,7 @@ function openNewDeal(){
         id:'d'+(DEALS.length+1), n:v.n, c:v.c, dir:v.dir, who:who, st:'new', prio:v.prio,
         tpl:v.tpl, team:team, closed:0, tree:tree, files:[],
         ctx:[v.ctx||'Дело заведено из реестра.'],
+        comments:[],
         log:[{t:'сейчас',x:actor('изменил')+' состав дел: заведено «'+esc(v.n)+'»'}],
         order:DEALS.length
       };
@@ -1810,6 +1935,7 @@ function openNewDeal(){
 function go(p){
   const t=$('p-'+p); if(!t) return;
   page=p;
+  document.body.classList.toggle('page-queue', p==='queue');
   document.querySelectorAll('.page').forEach(s=>s.classList.remove('on'));
   t.classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));
