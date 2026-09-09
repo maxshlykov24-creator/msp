@@ -6,67 +6,59 @@
 <title>HIDE — система дел. Прототип</title>
 <style>
   :root{
-    --bg:#0d0b0c;
-    --ink:#F9F2EC;
-    --mute:#91867C;
-    --mute-2:#6d645c;
+    --bg:#0b0b0b;
+    --ink:#F2F2F2;
+    --mute:#8a8a86;
+    --mute-2:#6a6a66;
     --gold:#C8A45C;
     --gold-soft:#E9DCB8;
     --green:#9FC9AC;
     --red:#D08A80;
     --blue:#8FA8BF;
-    --line:rgba(249,242,236,.09);
-    --line-2:rgba(249,242,236,.17);
-    --glass:rgba(249,242,236,.03);
-    --glass-2:rgba(249,242,236,.06);
-    --hover:rgba(249,242,236,.035);
-    --panel:rgba(249,242,236,.02);
+    --line:rgba(255,255,255,.08);
+    --line-2:rgba(255,255,255,.16);
+    --glass:#161616;
+    --glass-2:#1c1c1c;
+    --hover:#1a1a1a;
+    --panel:#121212;
     --shadow:0 8px 32px 0 rgba(0,0,0,.72);
     --shadow-lg:0 40px 90px -30px rgba(0,0,0,.95);
-    --field:rgba(0,0,0,.24);
+    --field:#0e0e0e;
     --radius:20px;
     --ease:cubic-bezier(.25,1,.5,1);
     --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
   }
   body.light{
-    --bg:#F2EEE8;
-    --ink:#231F20;
-    --mute:#6f665e;
-    --mute-2:#948a80;
+    --bg:#EDEDED;
+    --ink:#1a1a1a;
+    --mute:#6a6a66;
+    --mute-2:#8a8a86;
     --gold:#A9803A;
     --gold-soft:#8a672c;
     --green:#4E8A64;
     --red:#B4544A;
     --blue:#4F7391;
-    --line:rgba(35,31,32,.11);
-    --line-2:rgba(35,31,32,.2);
-    --glass:rgba(255,255,255,.55);
-    --glass-2:rgba(255,255,255,.85);
-    --hover:rgba(35,31,32,.035);
-    --panel:rgba(255,255,255,.5);
-    --shadow:0 8px 30px -12px rgba(35,31,32,.18);
-    --shadow-lg:0 40px 90px -34px rgba(35,31,32,.38);
-    --field:rgba(255,255,255,.75);
+    --line:rgba(26,26,26,.12);
+    --line-2:rgba(26,26,26,.2);
+    --glass:#F6F6F6;
+    --glass-2:#FFFFFF;
+    --hover:#F3F3F3;
+    --panel:#FFFFFF;
+    --shadow:0 8px 30px -12px rgba(0,0,0,.14);
+    --shadow-lg:0 40px 90px -34px rgba(0,0,0,.22);
+    --field:#FFFFFF;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{
     font-family:var(--font);color:var(--ink);background:var(--bg);
     min-height:100vh;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;
-    background-image:
-      radial-gradient(1500px 820px at 50% -22%,#1d1819 0%,transparent 60%),
-      radial-gradient(1000px 600px at 88% -6%,rgba(200,164,92,.06),transparent 62%),
-      radial-gradient(820px 560px at -8% 16%,rgba(145,134,124,.05),transparent 60%),
-      linear-gradient(180deg,#141112 0%,#080707 100%);
+    background-image:linear-gradient(180deg,#111111 0%,#080808 100%);
     background-attachment:fixed;position:relative;
     transition:background-color .35s var(--ease);
   }
   body.light{
-    background-image:
-      radial-gradient(1400px 760px at 50% -20%,#FFFDF9 0%,transparent 62%),
-      radial-gradient(900px 520px at 90% 0%,rgba(169,128,58,.09),transparent 60%),
-      radial-gradient(760px 520px at -6% 18%,rgba(35,31,32,.04),transparent 60%),
-      linear-gradient(180deg,#F7F4EF 0%,#E9E4DC 100%);
+    background-image:linear-gradient(180deg,#F4F4F4 0%,#E6E6E6 100%);
   }
   .wrap{max-width:1320px;margin:0 auto;padding:0 30px 110px;position:relative;z-index:1}
 
@@ -74,19 +66,16 @@
     background:var(--panel);
     border:1px solid var(--line);
     border-radius:var(--radius);
-    backdrop-filter:blur(24px) saturate(150%);
-    -webkit-backdrop-filter:blur(24px) saturate(150%);
     box-shadow:var(--shadow);
   }
-  body:not(.light) .glass{background:linear-gradient(155deg,rgba(249,242,236,.045) 0%,rgba(249,242,236,.015) 55%,rgba(249,242,236,.03) 100%);box-shadow:inset 0 1px 0 rgba(249,242,236,.09),var(--shadow)}
+  body:not(.light) .glass{box-shadow:inset 0 1px 0 rgba(255,255,255,.06),var(--shadow)}
 
   /* ─── topbar ─── */
   .topbar{
     position:sticky;top:0;z-index:50;
-    backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%);
-    background:rgba(13,11,12,.78);border-bottom:1px solid var(--line);
+    background:#0b0b0b;border-bottom:1px solid var(--line);
   }
-  body.light .topbar{background:rgba(247,244,239,.86)}
+  body.light .topbar{background:#F4F4F4}
   .topbar-in{max-width:1320px;margin:0 auto;padding:16px 30px;display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap}
   .brand{display:flex;align-items:center;gap:18px}
   .logo-orb{position:relative;display:flex;align-items:center}
@@ -136,11 +125,8 @@
   .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
   .kpi{padding:20px 20px 18px;border-radius:18px;border:1px solid var(--line);cursor:pointer;position:relative;overflow:hidden;transition:.25s var(--ease);background:var(--panel)}
   .kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c);opacity:.85}
-  .kpi::after{content:'';position:absolute;right:-40px;top:-40px;width:130px;height:130px;border-radius:50%;background:var(--c);opacity:.07;transition:.35s var(--ease)}
   .kpi:hover{transform:translateY(-3px);border-color:var(--line-2)}
-  .kpi:hover::after{opacity:.14}
-  .kpi.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent)}
-  .kpi.on::after{opacity:.18}
+  .kpi.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 10%,var(--panel))}
   .kpi-lab{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mute-2);display:flex;align-items:center;gap:8px}
   .kpi-lab b{width:7px;height:7px;border-radius:50%;background:var(--c);flex:none}
   .kpi-val{font-size:38px;font-weight:200;margin-top:12px;line-height:1;font-variant-numeric:tabular-nums;color:var(--c)}
@@ -167,7 +153,7 @@
   .fld select:hover,.fld input:hover{border-color:var(--line-2)}
   .fld select:focus,.fld input:focus{outline:0;border-color:rgba(200,164,92,.55)}
   .fld select option{background:var(--bg);color:var(--ink)}
-  .fld.act select{border-color:rgba(200,164,92,.5);background-color:rgba(200,164,92,.1)}
+  .fld.act select{border-color:rgba(200,164,92,.5);background-color:color-mix(in srgb,var(--gold) 12%,var(--field))}
   .f-right{margin-left:auto;display:flex;gap:10px;align-items:center}
   .f-found{font-size:12px;color:var(--mute);white-space:nowrap}
   .f-found b{color:var(--ink);font-weight:500}
@@ -179,7 +165,7 @@
   .tr.h{background:var(--field);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding:12px 20px}
   .tr.h span{cursor:pointer;user-select:none}
   .tr.h span:hover{color:var(--ink)}
-  .tr.row{cursor:pointer;position:relative}
+  .tr.row{cursor:pointer;position:relative;background:var(--panel)}
   .tr.row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--c,transparent);opacity:.8}
   .tr.row:hover{background:var(--hover)}
   .t-name{font-size:14px;font-weight:450;line-height:1.4;min-width:0}
@@ -187,7 +173,7 @@
   .t-cell{font-size:12.5px;color:var(--mute)}
   .cli{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:8px;background:var(--glass-2);border:1px solid var(--line);font-size:11.5px;font-weight:600;letter-spacing:.03em;white-space:nowrap}
 
-  .st{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 11px;border-radius:9px;white-space:nowrap;border:1px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent)}
+  .st{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 11px;border-radius:9px;white-space:nowrap;border:1px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 12%,var(--panel))}
   .st i{width:6px;height:6px;border-radius:50%;font-style:normal;flex:none;background:var(--c)}
   .st.work{--c:var(--gold)}
   .st.priem{--c:var(--blue)}
@@ -220,7 +206,7 @@
   .btn.sm{font-size:11.5px;padding:7px 12px;border-radius:9px}
 
   /* ─── очередь ─── */
-  .q-item{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease)}
+  .q-item{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);transition:background .2s var(--ease);background:var(--panel)}
   .q-item:last-child{border-bottom:0}
   .q-item:hover{background:var(--hover)}
   .q-name{font-size:14.5px;font-weight:450;line-height:1.4}
@@ -322,7 +308,7 @@
   .node-row{display:grid;grid-template-columns:16px 22px 1fr auto auto auto;gap:11px;align-items:center;padding:9px 10px;border-radius:12px;transition:background .2s var(--ease);border:1px solid transparent}
   .node-row:hover{background:var(--hover)}
   .node-row.drag{opacity:.4}
-  .node-row.over{border-color:rgba(200,164,92,.6);background:color-mix(in srgb,var(--gold) 10%,transparent)}
+  .node-row.over{border-color:rgba(200,164,92,.6);background:color-mix(in srgb,var(--gold) 10%,var(--panel))}
   .grip{cursor:grab;color:var(--mute-2);font-size:12px;line-height:1;opacity:.5;transition:.2s var(--ease);text-align:center;letter-spacing:-2px}
   .node-row:hover .grip{opacity:1;color:var(--mute)}
   .grip:active{cursor:grabbing}
@@ -347,7 +333,7 @@
   .dlg-err{font-size:12px;color:var(--red);margin-top:-8px;margin-bottom:12px;display:none}
 
   /* ─── пояснения ─── */
-  .note{padding:18px 22px;border-radius:16px;background:color-mix(in srgb,var(--gold) 8%,transparent);border:1px solid color-mix(in srgb,var(--gold) 22%,transparent);font-size:13px;line-height:1.68;color:var(--mute);margin-top:22px;display:none}
+  .note{padding:18px 22px;border-radius:16px;background:color-mix(in srgb,var(--gold) 8%,var(--panel));border:1px solid color-mix(in srgb,var(--gold) 22%,var(--panel));font-size:13px;line-height:1.68;color:var(--mute);margin-top:22px;display:none}
   body.hints .note{display:block;animation:fade .35s var(--ease)}
   .note b{color:var(--gold);font-weight:500}
 
@@ -414,49 +400,36 @@
     .kids{margin-left:14px;padding-left:10px}
   }
 
-  /* ─── фоновые слои: шёлк, тёплый свет, виньетка. статика, без анимации ─── */
-  .bg-silk,.bg-glow,.bg-vign{position:fixed;inset:0;z-index:0;pointer-events:none}
+  /* ─── фон: серые полосы, ровный слой, без блика ─── */
+  .bg-silk,.bg-vign{position:fixed;inset:0;z-index:0;pointer-events:none}
   .bg-silk{
-    inset:-6%;opacity:.05;
-    background-image:repeating-linear-gradient(114deg,
-      rgba(233,220,184,.95) 0px, rgba(233,220,184,.95) 1px,
-      transparent 1px, transparent 10px);
-    -webkit-mask-image:radial-gradient(72% 78% at 86% 4%, #000 0%, rgba(0,0,0,.42) 40%, transparent 68%);
-    mask-image:radial-gradient(72% 78% at 86% 4%, #000 0%, rgba(0,0,0,.42) 40%, transparent 68%);
-  }
-  .bg-glow{
-    background:
-      radial-gradient(880px 620px at 84% -6%, rgba(200,164,92,.10), transparent 66%),
-      radial-gradient(620px 480px at 8% 24%, rgba(145,134,124,.07), transparent 68%);
+    opacity:.075;
+    background-image:repeating-linear-gradient(102deg,
+      rgba(255,255,255,.7) 0px, rgba(255,255,255,.7) 1px,
+      transparent 1px, transparent 11px);
   }
   .bg-vign{
     background:
-      radial-gradient(140% 112% at 52% 44%, transparent 56%, rgba(0,0,0,.20) 84%, rgba(0,0,0,.4) 100%),
-      linear-gradient(180deg, rgba(0,0,0,.14) 0%, transparent 13%, transparent 87%, rgba(0,0,0,.22) 100%);
+      radial-gradient(130% 110% at 50% 42%, transparent 62%, rgba(0,0,0,.22) 100%),
+      linear-gradient(180deg, rgba(0,0,0,.12) 0%, transparent 12%, transparent 88%, rgba(0,0,0,.18) 100%);
   }
   body.light .bg-silk{
-    opacity:.055;
-    background-image:repeating-linear-gradient(114deg,
-      rgba(35,31,32,.95) 0px, rgba(35,31,32,.95) 1px,
-      transparent 1px, transparent 10px);
-  }
-  body.light .bg-glow{
-    background:
-      radial-gradient(880px 620px at 84% -6%, rgba(169,128,58,.13), transparent 66%),
-      radial-gradient(620px 480px at 8% 24%, rgba(35,31,32,.05), transparent 68%);
+    opacity:.07;
+    background-image:repeating-linear-gradient(102deg,
+      rgba(0,0,0,.55) 0px, rgba(0,0,0,.55) 1px,
+      transparent 1px, transparent 11px);
   }
   body.light .bg-vign{
     background:
-      radial-gradient(140% 112% at 52% 44%, transparent 58%, rgba(35,31,32,.07) 86%, rgba(35,31,32,.14) 100%),
-      linear-gradient(180deg, rgba(35,31,32,.05) 0%, transparent 13%, transparent 88%, rgba(35,31,32,.08) 100%);
+      radial-gradient(130% 110% at 50% 42%, transparent 64%, rgba(0,0,0,.06) 100%),
+      linear-gradient(180deg, rgba(0,0,0,.04) 0%, transparent 12%, transparent 88%, rgba(0,0,0,.05) 100%);
   }
-  @media print{.bg-silk,.bg-glow,.bg-vign{display:none}}
+  @media print{.bg-silk,.bg-vign{display:none}}
 </style>
 </head>
 <body class="hints">
 
 <div class="bg-silk"></div>
-<div class="bg-glow"></div>
 <div class="bg-vign"></div>
 
 <div class="topbar">
