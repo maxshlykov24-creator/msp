@@ -1694,12 +1694,12 @@ function renderQueue(){
     if(wait){ dueCls='due frozen'; dueSub='ждём клиента, '+(q.d.waitDays||0)+' дн.' }
     else if(late){ dueCls='due late'; dueSub='просрочен '+days(TODAY,q.n.due)+' дн.' }
     else if(days(q.n.due,TODAY)<=1){ dueSub='сегодня-завтра' }
-    const acts = wait ? '<button class="btn sm" data-q="'+i+'" data-a="open">Открыть дело</button>'
-      : `<button class="btn sm gold" data-q="${i}" data-a="done">Сделал</button><button class="btn sm" data-q="${i}" data-a="move">Перенести</button><button class="btn sm" data-q="${i}" data-a="open">Открыть дело</button>`;
+    const acts = wait ? ''
+      : `<button class="btn sm gold" data-q="${i}" data-a="done">Сделал</button><button class="btn sm" data-q="${i}" data-a="move">Перенести</button>`;
     return `<div class="q-item" draggable="true" data-i="${i}">
       <div class="grip">⠿</div>
       <div class="q-name">${esc(q.n.t)}</div>
-      <div class="q-deal"><b data-q="${i}" data-a="open">${esc(q.d.n)}</b></div>
+      <div class="q-deal">${esc(q.d.n)}</div>
       <div class="q-cli"><span class="cli">${esc(q.d.c)}</span></div>
       <div class="${dueCls}">${fmt(q.n.due)}${dueSub?'<small>'+dueSub+'</small>':''}</div>
       <div class="q-act">${acts}</div>
@@ -1707,7 +1707,6 @@ function renderQueue(){
   }).join('');
   $('queueTbl').querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{
     const q=list[+b.dataset.q], a=b.dataset.a;
-    if(a==='open'){openDeal(q.d.id);return}
     if(a==='done'){
       q.n.done=true;
       q.d.log.unshift({t:'сейчас',x:actor('закрыл')+' шаг «'+esc(q.n.t)+'» из своей очереди'});
