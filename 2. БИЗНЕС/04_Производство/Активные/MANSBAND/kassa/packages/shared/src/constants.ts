@@ -587,6 +587,26 @@ export function suitTitle(input: {
 }
 
 /**
+ * Вид костюма для поиска: не папки МойСклада (там пиджак / брюки / жилет),
+ * а то, как продавец называет комплект. Смокинг не смешиваем с обычными —
+ * это отдельная линия, даже если в ней есть двойка и тройка.
+ */
+export type SuitFamily = "double" | "triple" | "smoking";
+
+export const SUIT_FAMILIES: SuitFamily[] = ["double", "triple", "smoking"];
+
+export const SUIT_FAMILY_LABEL: Record<SuitFamily, string> = {
+  double: "Двойки",
+  triple: "Тройки",
+  smoking: "Смокинги",
+};
+
+export function suitFamilyOf(model: { line: SuitLine; composition: SuitPart[] }): SuitFamily {
+  if (model.line === "smoking") return "smoking";
+  return model.composition.includes("vest") ? "triple" : "double";
+}
+
+/**
  * Размер как число: в МС он строкой, а сравнивать нужно по величине, чтобы
  * считать допуск. Нечисловой размер даёт null — такую позицию не парим.
  */

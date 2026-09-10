@@ -11,12 +11,20 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { ITEM_LOCATIONS, isVirtualWarehouse, SUIT_PART_LABEL } from "@kassa/shared";
-import type { Product, SuitModel, SuitPart, WarehouseStockLine } from "../data/types";
+import {
+  ITEM_LOCATIONS,
+  isVirtualWarehouse,
+  SUIT_FAMILIES,
+  SUIT_FAMILY_LABEL,
+  suitFamilyOf,
+} from "@kassa/shared";
+import type { Product, SuitFamily, SuitModel, WarehouseStockLine } from "../data/types";
 import { api, apiBlob, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
 import { money } from "../lib/format";
 import { BarcodeScannerModal } from "../components/BarcodeScanner";
+import { SuitModelRow } from "../components/SuitModelRow";
+import { BreaksTab, StockTab } from "./Suits";
 
 type LocSlot = { label: string; match: (name: string) => boolean };
 
@@ -107,6 +115,11 @@ interface CatalogBrowseResponse {
 
 type StockFilter = "any" | "positive" | "zero" | "negative";
 type KindFilter = "all" | "suits" | "items";
+type SuitViewTab = "completeness" | "breaks" | "stock";
+
+function isSuitHallSection(name: string): boolean {
+  return /костюм/i.test(name);
+}
 
 function fmtQty(n: number): string {
   if (!Number.isFinite(n)) return "0";
@@ -250,67 +263,10 @@ function stockSum(product: Product): number {
     .reduce((s, w) => s + (w.available || 0), 0);
 }
 
-/** Список частей и штук в размере — как на экране «Костюмы». */
-function partsLine(parts: Record<SuitPart, number>): string {
-  return (["jacket", "trousers", "vest"] as SuitPart[])
-    .filter((part) => parts[part] > 0)
-    .map((part) => `${SUIT_PART_LABEL[part]} ${parts[part]}`)
-    .join(" · ");
-}
-
-function SuitModelCard({ model }: { model: CatalogSuitModel }) {
-  const [open, setOpen] = useState(false);
-  const totalQty = model.sizes.reduce((n, s) => n + s.whole + s.tolerant, 0);
-  return (
-    <div className="card p-0 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-ink-800/40"
-      >
-        {open ? <ChevronDown size={16} className="text-mute shrink-0" /> : <ChevronRight size={16} className="text-mute shrink-0" />}
-        <div className="flex-1 min-w-0">
-          <div className="text-white font-semibold truncate">{model.title}</div>
-          <div className="text-[12px] text-mute truncate">
-            {model.variation}
-            {model.height ? ` · ростовка ${model.height}` : ""}
-            {model.onHalfSetWarehouse > 0 ? ` · на складе полупарков ${model.onHalfSetWarehouse}` : ""}
-          </div>
-        </div>
-        <span className={`text-[13px] tabular-nums shrink-0 ${qtyClass(totalQty)}`}>{fmtQty(totalQty)}</span>
-        <span className="text-gold-soft font-semibold whitespace-nowrap shrink-0">
-          {model.priceRub != null ? money(model.priceRub) : "нет в матрице"}
-        </span>
-      </button>
-      {open && (
-        <div className="border-t border-ink-800 divide-y divide-ink-800">
-          {model.sizes.map((size) => (
-            <div key={size.size} className="px-4 py-2.5 flex flex-wrap items-center gap-3 text-[13px]">
-              <span className="text-white font-medium">Размер {size.size}</span>
-              <span className="text-mute">{partsLine(size.parts) || "—"}</span>
-              {size.whole > 0 && <span className="text-emerald-300">цельных {size.whole}</span>}
-              {size.tolerant > 0 && <span className="text-amber-300">в допуске {size.tolerant}</span>}
-              {size.orphans.length > 0 && (
-                <span className="text-red-300">
-                  без пары:{" "}
-                  {size.orphans.map((o) => `${SUIT_PART_LABEL[o.part]} ${o.qty}`).join(", ")}
-                </span>
-              )}
-            </div>
-          ))}
-          {model.sizes.length === 0 && (
-            <div className="px-4 py-2.5 text-[13px] text-mute">Ни одного размера в остатке.</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function ProductCheck() {
+export function ProductCheck({ initialSection = "" }: { initialSection?: string }) {
   const { activeStore } = useStore();
   const [q, setQ] = useState("");
-  const [section, setSection] = useState("");
+  const [section, setSection] = useState(initialSection);
   const [color, setColor] = useState("");
   const [size, setSize] = useState("");
   const [variation, setVariation] = useState("");
@@ -321,7 +277,11 @@ export function ProductCheck() {
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
   const [kind, setKind] = useState<KindFilter>("all");
+  const [suitFamily, setSuitFamily] = useState<"" | SuitFamily>("");
+  const [suitTab, setSuitTab] = useState<SuitViewTab>("completeness");
+  const [openSuit, setOpenSuit] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const isSuitSection = isSuitHallSection(section);
   const sectionOptions = SECTION_ORDER;
   const [products, setProducts] = useState<Product[]>([]);
   const [itemsTotal, setItemsTotal] = useState(0);
@@ -398,7 +358,7 @@ export function ProductCheck() {
       const res = await api.getQuery<CatalogBrowseResponse>("/catalog/browse", {
         q: q.trim() || undefined,
         section: section || undefined,
-        subCategory: subCategory || undefined,
+        subCategory: isSuitHallSection(section) ? undefined : subCategory || undefined,
         store: activeStore,
         warehouse: warehouseFilter || undefined,
         stockFilter,
@@ -408,7 +368,7 @@ export function ProductCheck() {
         height: height || undefined,
         priceMin: priceMin.trim() ? Number(priceMin) : undefined,
         priceMax: priceMax.trim() ? Number(priceMax) : undefined,
-        kind,
+        kind: isSuitHallSection(section) ? "suits" : kind,
         page: pageNum,
         pageSize: PAGE_SIZE,
       });
@@ -418,11 +378,12 @@ export function ProductCheck() {
       setPage(pageNum);
       if (replace) {
         // При текстовом поиске открываем группы, где есть совпадения.
-        if (q.trim() && res.items.length) {
+        if (q.trim() && (res.items.length || res.suits.length)) {
           const keys = res.items
             .map(parseProduct)
             .filter((row): row is ParsedProduct => row != null)
             .map((row) => (section ? row.subSection || EMPTY_SUBSECTION : row.section));
+          for (const model of res.suits) keys.push(suitFamilyOf(model));
           setOpenSections(new Set(keys));
           setOpenBases(new Set());
         } else {
@@ -511,6 +472,14 @@ export function ProductCheck() {
     };
   }, [parsed, section, suits]);
 
+  const suitsByFamily = useMemo(() => {
+    const map: Record<SuitFamily, CatalogSuitModel[]> = { double: [], triple: [], smoking: [] };
+    for (const model of suits) map[suitFamilyOf(model)].push(model);
+    return map;
+  }, [suits]);
+
+  const visibleSuits = suitFamily ? suitsByFamily[suitFamily] : suits;
+
   const tree = useMemo(() => {
     type BaseGroup = { baseName: string; rows: ParsedProduct[] };
     type SectionGroup = { section: string; bases: BaseGroup[]; variantCount: number };
@@ -569,6 +538,9 @@ export function ProductCheck() {
   function selectHallSection(next: string) {
     setSection(next);
     setSubCategory("");
+    setSuitFamily("");
+    setSuitTab("completeness");
+    setOpenSuit(null);
     resetExtraFilters();
     setOpenSections(new Set());
     setOpenBases(new Set());
@@ -593,8 +565,13 @@ export function ProductCheck() {
     });
   }
 
-  const showSuits = kind !== "items" && suits.length > 0;
-  const showItemsTree = kind !== "suits";
+  const showSuits =
+    !isSuitSection &&
+    kind !== "items" &&
+    visibleSuits.length > 0 &&
+    (kind === "suits" || Boolean(q.trim()));
+  const showItemsTree = !isSuitSection && kind !== "suits";
+  const showSuitFamilies = isSuitSection && suitTab === "completeness";
   const hasMore = products.length < itemsTotal;
 
   return (
@@ -604,7 +581,9 @@ export function ProductCheck() {
         <h1 className="text-2xl font-extrabold text-white">Поиск товара</h1>
       </div>
       <p className="text-mute text-sm mb-5">
-        Весь каталог с фильтрами по остатку · костюмы моделями · клик по вариации — остатки по складам.
+        {isSuitSection
+          ? "Костюм — пиджак и брюки одной вариации, жилет делает тройку. Смокинг отдельно."
+          : "Разделы зала · клик по вариации — остатки по складам. Костюмы открываются как двойки, тройки и смокинги."}
       </p>
 
       <div className={`flex gap-1.5 flex-wrap ${section ? "mb-2" : "mb-3"}`}>
@@ -635,7 +614,7 @@ export function ProductCheck() {
         ))}
       </div>
 
-      {section && (
+      {section && !isSuitSection && (
         <div className="flex gap-1.5 mb-3 flex-wrap">
           <button
             type="button"
@@ -673,6 +652,46 @@ export function ProductCheck() {
         </div>
       )}
 
+      {isSuitSection && suitTab === "completeness" && (
+        <div className="flex gap-1.5 mb-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => {
+              setSuitFamily("");
+              setOpenSections(new Set());
+              setOpenSuit(null);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
+              !suitFamily
+                ? "bg-white/10 text-white border border-white/25"
+                : "text-mute hover:bg-ink-800 border border-transparent"
+            }`}
+          >
+            Все виды
+          </button>
+          {SUIT_FAMILIES.map((fam) => (
+            <button
+              key={fam}
+              type="button"
+              onClick={() => {
+                setSuitFamily(fam);
+                setSuitTab("completeness");
+                setOpenSections(new Set([fam]));
+                setOpenSuit(null);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
+                suitFamily === fam
+                  ? "bg-white/10 text-white border border-white/25"
+                  : "text-mute hover:bg-ink-800 border border-transparent"
+              }`}
+            >
+              {SUIT_FAMILY_LABEL[fam]}
+              <span className="ml-1.5 text-[11px] text-mute">{suitsByFamily[fam].length}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="flex gap-2 mb-3 flex-wrap">
         <div className="relative flex-1 min-w-0 w-full sm:min-w-[220px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
@@ -698,26 +717,51 @@ export function ProductCheck() {
         </button>
       </div>
 
-      <div className="flex gap-1.5 mb-3 flex-wrap">
-        {([
-          { id: "all", label: "Всё" },
-          { id: "suits", label: "Только костюмы" },
-          { id: "items", label: "Только штучные" },
-        ] as const).map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            onClick={() => setKind(opt.id)}
-            className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
-              kind === opt.id
-                ? "bg-gold/15 text-gold-soft border border-gold/40"
-                : "text-mute hover:bg-ink-800 border border-transparent"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+      {!isSuitSection && (
+        <div className="flex gap-1.5 mb-3 flex-wrap">
+          {([
+            { id: "all", label: "Всё" },
+            { id: "suits", label: "Только костюмы" },
+            { id: "items", label: "Только штучные" },
+          ] as const).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setKind(opt.id)}
+              className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
+                kind === opt.id
+                  ? "bg-gold/15 text-gold-soft border border-gold/40"
+                  : "text-mute hover:bg-ink-800 border border-transparent"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isSuitSection && (
+        <div className="flex gap-2 mb-3 flex-wrap">
+          {(
+            [
+              { id: "completeness", label: "Комплектность" },
+              { id: "breaks", label: "Разбитые костюмы" },
+              { id: "stock", label: "Статистика склада" },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSuitTab(tab.id)}
+              className={`chip px-3 py-1.5 text-[13px] font-semibold transition ${
+                suitTab === tab.id ? "bg-gold text-ink-950" : "bg-ink-800 text-mute hover:text-white"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="card mb-4 p-0 overflow-hidden">
         <button
@@ -860,14 +904,103 @@ export function ProductCheck() {
         </div>
       )}
 
-      {showSuits && (
+      {isSuitSection && suitTab === "breaks" && <BreaksTab />}
+      {isSuitSection && suitTab === "stock" && <StockTab />}
+
+      {showSuitFamilies && (
+        <div className="space-y-3 mb-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="card px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-mute">Цельных</div>
+              <div className="text-xl font-bold text-emerald-300">
+                {visibleSuits.reduce((n, m) => n + m.whole, 0)}
+              </div>
+            </div>
+            <div className="card px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-mute">В допуске</div>
+              <div className="text-xl font-bold text-amber-300">
+                {visibleSuits.reduce((n, m) => n + m.tolerant, 0)}
+              </div>
+            </div>
+            <div className="card px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-mute">Без пары</div>
+              <div className="text-xl font-bold text-red-300">
+                {visibleSuits.reduce((n, m) => n + m.orphans, 0)}
+              </div>
+            </div>
+            <div className="card px-4 py-3">
+              <div className="text-[11px] uppercase tracking-wider text-mute">Моделей</div>
+              <div className="text-xl font-bold text-white">{visibleSuits.length}</div>
+            </div>
+          </div>
+
+          {SUIT_FAMILIES.filter((fam) => !suitFamily || suitFamily === fam).map((fam) => {
+            const list = suitsByFamily[fam];
+            const familyOpen = Boolean(suitFamily) || openSections.has(fam);
+            return (
+              <section key={fam} className="card p-0 overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full px-4 py-3 flex items-center gap-2 text-left hover:bg-ink-800/50"
+                  onClick={() => toggleSection(fam)}
+                >
+                  {familyOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                  <span className="text-white font-semibold flex-1">{SUIT_FAMILY_LABEL[fam]}</span>
+                  <span className="chip bg-ink-700 text-mute">{list.length}</span>
+                </button>
+                {familyOpen && (
+                  <div className="border-t border-ink-700 p-3 space-y-2 bg-ink-950/20">
+                    {list.map((model) => (
+                      <SuitModelRow
+                        key={model.modelId}
+                        model={model}
+                        open={openSuit === model.modelId}
+                        onToggle={() => setOpenSuit(openSuit === model.modelId ? null : model.modelId)}
+                        warehouse={warehouseFilter}
+                      />
+                    ))}
+                    {list.length === 0 && (
+                      <div className="text-sm text-mute px-1 py-2">В этом виде моделей нет.</div>
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {!isSuitSection && showSuits && (
         <div className="space-y-2 mb-4">
           <div className="text-[13px] font-semibold text-white flex items-center gap-2">
-            Костюмы моделями
-            <span className="chip bg-ink-700 text-mute">{suits.length}</span>
+            Костюмы
+            <span className="chip bg-ink-700 text-mute">{visibleSuits.length}</span>
           </div>
-          {suits.map((model) => (
-            <SuitModelCard key={model.modelId} model={model} />
+          {SUIT_FAMILIES.filter((fam) => suitsByFamily[fam].length > 0).map((fam) => (
+            <section key={fam} className="card p-0 overflow-hidden">
+              <button
+                type="button"
+                className="w-full px-4 py-3 flex items-center gap-2 text-left hover:bg-ink-800/50"
+                onClick={() => toggleSection(fam)}
+              >
+                {openSections.has(fam) ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                <span className="text-white font-semibold flex-1">{SUIT_FAMILY_LABEL[fam]}</span>
+                <span className="chip bg-ink-700 text-mute">{suitsByFamily[fam].length}</span>
+              </button>
+              {openSections.has(fam) && (
+                <div className="border-t border-ink-700 p-3 space-y-2 bg-ink-950/20">
+                  {suitsByFamily[fam].map((model) => (
+                    <SuitModelRow
+                      key={model.modelId}
+                      model={model}
+                      open={openSuit === model.modelId}
+                      onToggle={() => setOpenSuit(openSuit === model.modelId ? null : model.modelId)}
+                      warehouse={warehouseFilter}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
           ))}
         </div>
       )}
@@ -1064,7 +1197,7 @@ export function ProductCheck() {
               </section>
             );
           })}
-          {!loading && tree.length === 0 && !showSuits && !error && (
+          {!loading && tree.length === 0 && !showSuits && !showSuitFamilies && !error && (
             <div className="card py-10 text-center text-mute">Товары не найдены</div>
           )}
         </div>

@@ -321,6 +321,8 @@ export const catalogBrowseSchema = z.object({
   priceMax: z.coerce.number().min(0).optional(),
   /** all — модели и штучные вместе; suits — только костюмы; items — только штучные. */
   kind: z.enum(["all", "suits", "items"]).default("all"),
+  /** Двойки / тройки / смокинги. Считается из состава модели, не из папки МС. */
+  suitFamily: z.enum(["double", "triple", "smoking"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(60),
 });

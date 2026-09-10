@@ -22,6 +22,7 @@ const DEFAULTS: AppSettings = {
   suitPartKeywords: SUIT_PART_KEYWORDS_DEFAULT,
   stockAgeYellowDays: STOCK_AGE_YELLOW_DAYS_DEFAULT,
   stockAgeRedDays: STOCK_AGE_RED_DAYS_DEFAULT,
+  suitPriceOverrides: {},
 };
 
 let cache: AppSettings | null = null;

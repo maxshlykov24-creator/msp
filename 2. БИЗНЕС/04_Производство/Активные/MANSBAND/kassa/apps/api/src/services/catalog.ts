@@ -6,6 +6,7 @@ import {
   CDEK_WAREHOUSE_ID,
   STORE_TO_WAREHOUSE,
   sortWarehousesByDisplayOrder,
+  suitFamilyOf,
 } from "@kassa/shared";
 import * as ms from "../clients/ms.js";
 import { extractIdFromHref } from "./bootstrap.js";
@@ -601,18 +602,21 @@ export interface CatalogBrowseResult {
 export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<CatalogBrowseResult> {
   const cat = query.section?.trim();
   const sub = query.subCategory?.trim();
-  const fullCategory = cat ? [cat, sub].filter(Boolean).join("/") : undefined;
+  // В костюмах подраздел — вид комплекта (двойка/тройка), не папка МС.
+  const fullCategory = cat && !/костюм/i.test(cat) ? [cat, sub].filter(Boolean).join("/") : cat;
   const isSuitSection = cat ? /костюм/i.test(cat) : false;
+  const wantSuits =
+    query.kind !== "items" && (isSuitSection || query.kind === "suits" || Boolean(query.q?.trim()));
 
-  const suits: CatalogSuitModel[] =
-    query.kind === "items" || (cat && !isSuitSection)
-      ? []
-      : (
-          await catalogSuitModels({
-            q: query.q,
-            warehouse: query.warehouse || query.store,
-          })
-        ).models.filter((m) => {
+  const suits: CatalogSuitModel[] = !wantSuits
+    ? []
+    : (
+        await catalogSuitModels({
+          q: query.q,
+          warehouse: query.warehouse || query.store,
+        })
+      ).models.filter((m) => {
+        if (query.suitFamily && suitFamilyOf(m) !== query.suitFamily) return false;
           if (query.height && (m.height ?? "") !== query.height) return false;
           if (query.color && (m.color ?? "") !== query.color) return false;
           if (query.pattern && (m.pattern ?? "") !== query.pattern) return false;

@@ -11,7 +11,6 @@ import { SaryScreen } from "./views/SaryScreen";
 import { Dashboard } from "./views/Dashboard";
 import { ShiftClose } from "./views/ShiftClose";
 import { ProductCheck } from "./views/ProductCheck";
-import { Suits } from "./views/Suits";
 import { TasksMovements } from "./views/TasksMovements";
 import { HistoryScreen, RolesScreen } from "./views/AuditRoles";
 import { SettingsScreen } from "./views/SettingsScreen";
@@ -82,7 +81,7 @@ function Screens({
     case "products":
       return <ProductCheck />;
     case "suits":
-      return <Suits />;
+      return <ProductCheck initialSection="1. Костюмы" />;
     case "tasks":
       return <TasksMovements />;
     case "history":

@@ -4,6 +4,7 @@ import {
   computeCompleteness,
   countSuitsInLines,
   isHalfSetWarehouse,
+  suitFamilyOf,
   suitLineOf,
   suitPartOf,
   suitTitle,
@@ -46,6 +47,13 @@ test("suit title reads like the consultant says it", () => {
     "Костюм тройка чёрный однотонный slim fit"
   );
   assert.equal(suitTitle({ hasVest: false, line: "smoking" }), "Смокинг двойка");
+});
+
+test("suit family splits doubles, triples and smokings", () => {
+  assert.equal(suitFamilyOf({ line: "regular", composition: ["jacket", "trousers"] }), "double");
+  assert.equal(suitFamilyOf({ line: "regular", composition: ["jacket", "trousers", "vest"] }), "triple");
+  assert.equal(suitFamilyOf({ line: "smoking", composition: ["jacket", "trousers"] }), "smoking");
+  assert.equal(suitFamilyOf({ line: "smoking", composition: ["jacket", "trousers", "vest"] }), "smoking");
 });
 
 test("half-set warehouses are recognised by name", () => {
