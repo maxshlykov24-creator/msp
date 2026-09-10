@@ -12,6 +12,7 @@ import {
 import type { CartItem } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
 import { Button, Select, opts } from "./ui";
+import { groupLocations } from "../lib/selectGroups";
 
 interface WarehouseRef {
   id: string;
@@ -125,7 +126,7 @@ export function MovementRequest({
           <Select
             value={source}
             onChange={setSource}
-            options={opts(...ITEM_LOCATIONS.filter((name) => !name.startsWith("СДЭК")))}
+            groups={groupLocations(ITEM_LOCATIONS.filter((name) => !name.startsWith("СДЭК")))}
           />
         </label>
         <label>

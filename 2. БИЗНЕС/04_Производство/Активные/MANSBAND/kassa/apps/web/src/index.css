@@ -373,6 +373,129 @@ html.theme-light nav {
   border-color: rgb(var(--ink-700));
 }
 
+@keyframes kassa-select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.kassa-select-trigger-open {
+  border-color: color-mix(in srgb, rgb(var(--gold)) 55%, rgb(var(--ink-700)));
+  box-shadow: 0 0 0 3px color-mix(in srgb, rgb(var(--gold)) 16%, transparent);
+}
+
+.kassa-select-menu {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 5px;
+  border-radius: 14px;
+  background: rgb(var(--ink-850));
+  border: 1px solid rgb(var(--ink-600));
+  box-shadow: var(--shadow-glow), 0 22px 48px -18px rgba(0, 0, 0, 0.62);
+  animation: kassa-select-in 0.16s ease;
+}
+
+html.theme-light .kassa-select-menu {
+  box-shadow: var(--shadow-glow), 0 16px 36px -16px rgba(0, 0, 0, 0.18);
+}
+
+.kassa-select-search {
+  position: relative;
+  padding: 2px 2px 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgb(var(--ink-700));
+}
+
+.kassa-select-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgb(var(--mute));
+  pointer-events: none;
+}
+
+.kassa-select-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 0;
+}
+
+.kassa-select-cap {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 10px 5px;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgb(var(--mute));
+  font-weight: 600;
+  background: rgb(var(--ink-850));
+}
+
+.kassa-select-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  min-height: 40px;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 14px;
+  color: rgb(var(--fg));
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.kassa-select-item.is-empty {
+  color: rgb(var(--mute));
+}
+
+.kassa-select-item.is-hi {
+  background: color-mix(in srgb, rgb(var(--fg)) 8%, rgb(var(--ink-850)));
+}
+
+.kassa-select-item.is-on {
+  background: color-mix(in srgb, rgb(var(--gold)) 16%, rgb(var(--ink-850)));
+  color: rgb(var(--gold));
+}
+
+.kassa-select-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.kassa-select-hint {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: rgb(var(--mute));
+  flex-shrink: 0;
+}
+
+.kassa-select-item.is-on .kassa-select-hint {
+  color: color-mix(in srgb, rgb(var(--gold)) 70%, rgb(var(--mute)));
+}
+
+.kassa-select-check {
+  color: rgb(var(--gold));
+  flex-shrink: 0;
+}
+
+.kassa-select-empty {
+  padding: 20px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: rgb(var(--mute));
+}
+
 /* iOS Safari зумит страницу, если font-size поля < 16px — форсируем на телефоне */
 @media (max-width: 767px) {
   input.input,

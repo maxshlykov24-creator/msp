@@ -288,21 +288,23 @@ export function Select({
           >
             {withSearch && (
               <div className="kassa-select-search">
-                <Search size={14} className="kassa-select-search-icon" />
-                <input
-                  ref={searchRef}
-                  className="input pl-8 py-2 text-[13px]"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setHighlight(0);
-                  }}
-                  onKeyDown={onNavKey}
-                  placeholder="Найти…"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
+                <div className="relative">
+                  <Search size={14} className="kassa-select-search-icon" />
+                  <input
+                    ref={searchRef}
+                    className="input pl-8 py-2 text-[13px]"
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setHighlight(0);
+                    }}
+                    onKeyDown={onNavKey}
+                    placeholder="Найти…"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
               </div>
             )}
             <div className="kassa-select-list">

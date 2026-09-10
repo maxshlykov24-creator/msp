@@ -4,7 +4,8 @@ import { ITEM_LOCATIONS, SUIT_PART_LABEL } from "@kassa/shared";
 import type { SuitBreak, SuitCompleteness, SuitPart, StockStats } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { Button, Card, StatTile, Select, opts } from "../components/ui";
+import { Button, Card, StatTile, Select } from "../components/ui";
+import { groupLocations } from "../lib/selectGroups";
 import { SuitModelRow } from "../components/SuitModelRow";
 
 /**
@@ -175,7 +176,7 @@ function CompletenessTab() {
             <Select
               value={warehouse}
               onChange={setWarehouse}
-              options={opts(["", "Все склады, кроме полупарков"], ...WAREHOUSES)}
+              groups={groupLocations(WAREHOUSES, { value: "", label: "Все склады, кроме полупарков" })}
             />
           )}
           <Button variant="outline" onClick={() => void exportHalfSets()} disabled={USE_MOCK}>
@@ -369,7 +370,7 @@ export function StockTab() {
           <Select
             value={warehouse}
             onChange={setWarehouse}
-            options={opts(["", "Все склады, кроме полупарков"], ...WAREHOUSES)}
+            groups={groupLocations(WAREHOUSES, { value: "", label: "Все склады, кроме полупарков" })}
           />
         </Card>
       )}

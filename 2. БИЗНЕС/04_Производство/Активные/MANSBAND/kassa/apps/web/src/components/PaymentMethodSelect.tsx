@@ -1,10 +1,37 @@
 import {
   MANSBAND_PAYOUT_LABEL,
   MANSBAND_PAYOUT_METHOD,
+  type PaymentKind,
   type PaymentMethod,
 } from "@kassa/shared";
 import { PAYMENT_METHODS, PAYMENT_METHOD_GROUPS } from "../data/mock";
-import { Select, type SelectGroup } from "./Select";
+import { Select, type SelectGroup, type SelectOption } from "./Select";
+
+const CARD_BANKS = ["Тинькофф", "Сбер", "Альфа", "ВТБ"] as const;
+
+function presentMethod(groupLabel: string, label: string, kind: PaymentKind): SelectOption {
+  if (kind === "card") {
+    for (const bank of CARD_BANKS) {
+      if (label === bank || label.startsWith(`${bank} `)) {
+        const rest = label.slice(bank.length).trim();
+        return { value: "", label, shortLabel: rest || bank, hint: rest ? bank : undefined };
+      }
+    }
+  }
+  if (label.startsWith(`${groupLabel} `)) {
+    return { value: "", label, shortLabel: label.slice(groupLabel.length + 1) };
+  }
+  if (label.startsWith(groupLabel)) {
+    const rest = label.slice(groupLabel.length).replace(/^[\s.…]+\s*/, "").trim();
+    if (rest) return { value: "", label, shortLabel: rest };
+  }
+  return { value: "", label, shortLabel: label };
+}
+
+function toOption(groupLabel: string, method: PaymentMethod): SelectOption {
+  const shown = presentMethod(groupLabel, method.label, method.kind);
+  return { ...shown, value: method.id };
+}
 
 /**
  * Единый селект способов оплаты/выдачи: группы «Наличные / Безналичные /
@@ -44,14 +71,9 @@ export function PaymentMethodSelect({
   }
   for (const group of PAYMENT_METHOD_GROUPS) {
     if (!withCertificate && group.kind === "certificate") continue;
-    const extras = (extraMethods ?? [])
-      .filter((method) => method.kind === group.kind)
-      .map((method) => ({ value: method.id, label: method.label }));
-    const main = PAYMENT_METHODS.filter((method) => method.kind === group.kind).map((method) => ({
-      value: method.id,
-      label: method.label,
-    }));
-    const options = [...extras, ...main];
+    const extras = (extraMethods ?? []).filter((method) => method.kind === group.kind);
+    const main = PAYMENT_METHODS.filter((method) => method.kind === group.kind);
+    const options = [...extras, ...main].map((method) => toOption(group.label, method));
     if (options.length === 0) continue;
     groups.push({ label: group.label, options });
   }
@@ -66,6 +88,7 @@ export function PaymentMethodSelect({
       className={className}
       size={size}
       searchable
+      menuMinWidth={300}
     />
   );
 }

@@ -13,6 +13,7 @@ import {
 import type { CartItem } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
 import { Button, Modal, Select, opts } from "./ui";
+import { groupLocations } from "../lib/selectGroups";
 
 interface WarehouseRef {
   id: string;
@@ -450,7 +451,7 @@ export function MovementModal({
                         size="sm"
                         value={line.from}
                         onChange={(next) => patchLine(item.productId, { from: next })}
-                        options={opts(...sourceOptions)}
+                        groups={groupLocations(sourceOptions)}
                       />
                     </label>
                   )}

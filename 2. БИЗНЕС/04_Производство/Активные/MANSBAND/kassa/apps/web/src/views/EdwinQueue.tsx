@@ -795,7 +795,7 @@ export function EdwinQueue() {
                   <PaymentMethodSelect
                     value={row.methodId}
                     withCertificate={false}
-                    className="input flex-1"
+                    className="flex-1"
                     placeholder={EXPENSE_METHOD_PLACEHOLDER}
                     extraMethods={EXPENSE_EXTRA_METHODS}
                     onChange={(methodId) =>

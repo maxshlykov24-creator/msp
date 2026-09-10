@@ -32,6 +32,7 @@ import { BarcodeScannerModal } from "../components/BarcodeScanner";
 import { SuitModelRow } from "../components/SuitModelRow";
 import { Hint } from "../lib/hints";
 import { Select, opts } from "../components/ui";
+import { groupLocations } from "../lib/selectGroups";
 import { BreaksTab, StockTab } from "./Suits";
 
 type LocSlot = { label: string; match: (name: string) => boolean };
@@ -750,7 +751,10 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                 size="sm"
                 value={warehouseFilter}
                 onChange={setWarehouseFilter}
-                options={opts(["", "Все склады"], ...warehouseOptions.map((w) => w.name))}
+                groups={groupLocations(
+                  warehouseOptions.map((w) => w.name),
+                  { value: "", label: "Все склады" }
+                )}
               />
             </div>
             <div className="min-w-[140px] flex-1">

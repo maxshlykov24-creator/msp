@@ -12,7 +12,8 @@ import {
   UserCheck,
 } from "lucide-react";
 import { Button, Field, Select, opts } from "../../components/ui";
-import { CHANNELS, CONSULTANTS, HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
+import { CONSULTANTS, HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
+import { CHANNEL_GROUPS } from "../../lib/selectGroups";
 import { dateCompact, dateRu, formatPhone, money, moneyPlain } from "../../lib/format";
 import { useStore } from "../../store";
 import type { CartItem, Deal, Payment, Payout } from "../../data/types";
@@ -290,8 +291,9 @@ export function SourceFields({
             <Select
               value={data.channel}
               onChange={(next) => set({ channel: next })}
-              options={opts(...CHANNELS)}
+              groups={CHANNEL_GROUPS}
               placeholder="Выбрать"
+              searchable
             />
           </Field>
         )
