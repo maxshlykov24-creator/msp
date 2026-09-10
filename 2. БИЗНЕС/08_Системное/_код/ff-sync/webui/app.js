@@ -1970,7 +1970,7 @@ async function printWb(mode) {
       "этикетки_поставка.pdf",
       "",
       null,
-      { mode }
+      { mode, box_ids: boxIds }
     );
     const pages = res.headers.get("X-Label-Pages") || "?";
     const raw = res.headers.get("X-Label-Notes") || "";
@@ -2011,11 +2011,6 @@ function bindWbDetail() {
       say($("wbMsg"), "Короба: " + (res.boxes || []).join(", ") + ".", "ok");
       await loadWbDetail(id);
     }, "Добавляю короба…");
-  };
-  const bx = $("wbBoxPrint");
-  if (bx) bx.onclick = () => {
-    hidePrintMenu();
-    printWbBoxes();
   };
   const pr = $("wbPrint");
   if (pr) pr.onclick = (e) => {

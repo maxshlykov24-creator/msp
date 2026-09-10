@@ -595,5 +595,9 @@ except ValueError as exc:
     assert "таких заданий нет" in str(exc), exc
 pdf, notes, pages = supply_flow.print_labels(sup["id"], ships[:1], "posting_box")
 assert pdf[:4] == b"%PDF" and pages >= 1, (pages, notes)
+pdf, notes, pages = supply_flow.print_labels(sup["id"], ships[:1], "both")
+assert pdf[:4] == b"%PDF" and pages >= 1, (pages, notes)
+pdf, notes, pages = supply_flow.print_labels(sup["id"], ships[:1], "posting_product_box")
+assert pdf[:4] == b"%PDF" and pages >= 1, (pages, notes)
 
 print("все проверки поставок, сборки и КиЗ прошли")

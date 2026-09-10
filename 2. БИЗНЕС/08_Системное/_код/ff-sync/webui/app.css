@@ -387,7 +387,10 @@ table.asm-tbl tr.sup-head:hover .sup-bar i{opacity:1}
 .wb-box i:hover{color:var(--red)}
 .wb-sec-orders{min-height:0}
 .wb-rows{max-height:min(56vh, 620px);border:1px solid var(--line);border-radius:14px}
-.wb-foot{display:flex;align-items:center;justify-content:flex-end;padding-top:4px}
+.wb-foot{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-top:12px;margin-top:6px;border-top:1px solid var(--line)}
+.wb-foot .wb-deliver{margin-right:auto}
+.wb-foot .print-wrap{flex:0 0 auto}
+.wb-foot .print-menu{left:auto;right:0;bottom:calc(100% + 8px);top:auto;min-width:240px}
 .wb-deliver{background:linear-gradient(160deg,#c45b55,#d4922a);box-shadow:0 10px 24px -12px rgba(196,91,85,.5)}
 .badge.box{color:var(--accent);border-color:rgba(59,116,214,.35);background:rgba(59,116,214,.08);font-weight:600;font-size:10px;padding:2px 7px}
 
