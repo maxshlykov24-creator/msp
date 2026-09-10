@@ -1855,6 +1855,15 @@ async function loadWbDetail(id) {
       <span>${b.orders ? b.orders + " зак." : "пустой"}</span>
       ${open ? `<i data-boxdrop="${b.id}" title="Удалить короб">×</i>` : ""}
     </button>`).join("");
+  const printWrap = `<div class="print-wrap">
+            <button class="btn btn-file" id="wbPrint" type="button"${res.rows.length ? "" : " disabled"}>Печать</button>
+            <div class="print-menu" id="wbPrintMenu" hidden>
+              <button type="button" data-mode="product">Товар</button>
+              <button type="button" data-mode="posting">Отправление</button>
+              ${pickup ? `<button type="button" data-mode="posting_box">Отправление + грузоместо</button>
+              <button type="button" data-mode="box">Грузоместо</button>` : ""}
+            </div>
+          </div>`;
   $("wbDetail").innerHTML = `
     <div class="wb-hero">
       <div>
@@ -1877,15 +1886,7 @@ async function loadWbDetail(id) {
         <h4>Заказы</h4>
         <div class="wb-sec-acts">
           ${open && loose ? `<button class="btn" id="wbPack" type="button" disabled>В этот короб</button>` : ""}
-          <div class="print-wrap">
-            <button class="btn btn-file" id="wbPrint" type="button"${res.rows.length ? "" : " disabled"}>Печать</button>
-            <div class="print-menu" id="wbPrintMenu" hidden>
-              <button type="button" data-mode="product">Товар</button>
-              <button type="button" data-mode="posting">Отправление</button>
-              ${pickup ? `<button type="button" data-mode="posting_box">Отправление + грузоместо</button>
-              <button type="button" data-mode="box">Грузоместо</button>` : ""}
-            </div>
-          </div>
+          ${open ? printWrap : ""}
         </div>
       </div>
       <div class="tbl-wrap wb-rows">
@@ -1906,7 +1907,7 @@ async function loadWbDetail(id) {
     <div class="wb-foot">
       ${open
         ? `<span>${esc(dest)}</span><button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button>`
-        : `<span>Поставка закрыта</span><button class="btn" id="wbQr" type="button">QR поставки</button>`}
+        : `<span>${esc(dest)}</span>${printWrap}`}
     </div>`;
   bindWbDetail();
 }
@@ -1996,11 +1997,6 @@ function bindWbDetail() {
     if (!btn) return;
     printWb(btn.dataset.mode);
   };
-  const qr = $("wbQr");
-  if (qr) qr.onclick = () => guard(async () => {
-    await downloadXlsx("/api/wb/supplies/" + id + "/qr.pdf", [], "QR_поставки.pdf", "", null, {});
-    say($("wbMsg"), "QR поставки скачан.", "ok");
-  }, "Запрашиваю QR поставки…");
   const dv = $("wbDeliver");
   if (dv) dv.onclick = async () => {
     let pre;
@@ -2019,7 +2015,7 @@ function bindWbDetail() {
       (dest ? dest + ". " : "") + pre.ext_id + " · " + pre.client + ". В поставке " + pre.orders + " заданий"
         + (pre.pickup === false ? ", короба не нужны." : " и " + pre.boxes + " грузомест.")
         + (bad.length ? " Внимание: " + bad.join(", ") + "." : "")
-        + " WB закроет поставку, добавить в неё больше ничего нельзя. Поставка уйдёт во вкладку «Ожидают отгрузки». QR поставки появится после этого.",
+        + " WB закроет поставку, добавить в неё больше ничего нельзя. Поставка уйдёт во вкладку «Ожидают отгрузки».",
       "На отгрузку"
     );
     if (!okay) return;
@@ -2032,7 +2028,7 @@ function bindWbDetail() {
         if (!force) { say($("wbMsg"), "Отменил. Разложи задания по грузоместам."); return; }
         await api("/api/wb/supplies/" + id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true, force: true }) });
       }
-      say($("wbMsg"), "Поставка на отгрузке. Теперь доступен QR поставки.", "ok");
+      say($("wbMsg"), "Поставка на отгрузке.", "ok");
       await loadWbSupplies();
       await loadAsm();
     }, "Отправляю на отгрузку…");
