@@ -1166,7 +1166,9 @@ def wb_supply_labels(supply_id: int, data: dict = Body(None), ff_session: str = 
     body = data or {}
     mode = str(body.get("mode") or labels_mod.MODE_POSTING)
     try:
-        pdf, notes, pages = supply_flow.print_labels(supply_id, body.get("ids") or [], mode)
+        pdf, notes, pages = supply_flow.print_labels(
+            supply_id, body.get("ids") or [], mode, body.get("box_ids") or []
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except labels_mod.LabelError as exc:

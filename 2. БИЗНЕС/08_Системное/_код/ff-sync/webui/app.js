@@ -1819,11 +1819,16 @@ async function loadWbDetail(id) {
       <b>${esc(b.ext_id)}</b>
       ${open ? `<i data-boxdrop="${b.id}" title="Удалить короб">×</i>` : ""}
     </button>`).join("");
+  const canPrint = !!(res.rows.length || res.boxes.length);
   const printWrap = `<div class="print-wrap">
-            <button class="btn-ghost" id="wbPrint" type="button"${res.rows.length ? "" : " disabled"}>Печать</button>
+            <button class="btn-ghost" id="wbPrint" type="button"${canPrint ? "" : " disabled"}>Печать</button>
             <div class="print-menu" id="wbPrintMenu" hidden>
-              <button type="button" data-mode="product">Этикетка товара</button>
-              <button type="button" data-mode="posting">Этикетка заказа</button>
+              <button type="button" data-mode="posting">Заказ</button>
+              <button type="button" data-mode="product">Товар</button>
+              ${pickup ? `<button type="button" data-mode="box">Короб</button>` : ""}
+              <button type="button" data-mode="both">Заказ + товар</button>
+              ${pickup ? `<button type="button" data-mode="posting_box">Заказ + короба</button>
+              <button type="button" data-mode="posting_product_box">Заказ + товар + короб</button>` : ""}
             </div>
           </div>`;
   $("wbTitle").textContent = res.supply.ext_id;
@@ -1838,7 +1843,6 @@ async function loadWbDetail(id) {
         <h4>Короба</h4>
         <div class="wb-sec-acts">
           ${open && pickup ? `<button class="btn-ghost" id="wbNewBox" type="button">Добавить короб</button>` : ""}
-          ${pickup && res.boxes.length ? `<button class="btn-ghost" id="wbBoxPrint" type="button" title="QR выбранного короба, если отмечен, иначе всех">Печать QR</button>` : ""}
         </div>
       </div>
       <div class="wb-boxes">${pickup ? (boxes || `<div class="wb-empty">Коробов нет. Добавь столько, сколько собрал — на каждый печатается QR.</div>`) : `<div class="wb-empty">Эта поставка едет на СЦ. Грузоместа не заводятся.</div>`}</div>
@@ -1848,7 +1852,6 @@ async function loadWbDetail(id) {
         <h4 id="wbOrdersTitle">Заказы</h4>
         <div class="wb-sec-acts">
           <input id="wbQuery" type="search" class="wb-query" placeholder="артикул, задание, название" value="${esc(state.wbQuery || "")}">
-          ${printWrap}
         </div>
       </div>
       <div class="tbl-wrap wb-rows">
@@ -1858,7 +1861,10 @@ async function loadWbDetail(id) {
         </table>
       </div>
     </section>
-    ${open ? `<div class="wb-foot"><button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button></div>` : ""}`;
+    <div class="wb-foot">
+      ${open ? `<button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button>` : `<span></span>`}
+      ${printWrap}
+    </div>`;
   bindWbDetail();
   renderWbRows();
 }
@@ -1946,8 +1952,13 @@ async function printWbBoxes() {
 async function printWb(mode) {
   const id = state.wbSupply;
   const ids = wbPrintTarget();
+  const boxIds = state.wbBox ? [state.wbBox] : ((state.wbDetail && state.wbDetail.boxes) || []).map((b) => b.id);
   hidePrintMenu();
-  if (!ids.length && mode !== "box") {
+  if (mode === "box") {
+    await printWbBoxes();
+    return;
+  }
+  if (!ids.length) {
     say($("wbMsg"), "В поставке нет заданий.", "bad");
     return;
   }

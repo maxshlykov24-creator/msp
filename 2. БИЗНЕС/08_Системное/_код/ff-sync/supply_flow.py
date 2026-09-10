@@ -639,52 +639,42 @@ def _supply_rows(supply, ship_ids):
     return [r for r in members if r["id"] in want]
 
 
-def print_labels(supply_id, ship_ids, mode):
-    """Печать из окна поставки: товар, отправление, отправление + грузоместо, короб."""
+def print_labels(supply_id, ship_ids, mode, box_ids=None):
+    """Печать из окна поставки: заказ, товар, короб и их связки."""
     import labels
 
     supply = _supply(supply_id)
     rows = _supply_rows(supply, ship_ids)
-    if not rows:
-        raise ValueError("нечего печатать")
     mode = str(mode or labels.MODE_POSTING)
     boxes = list_wb_boxes(supply["id"])
-    by_ext = {b["ext_id"]: b for b in boxes}
-
-    def box_ids_of(group):
-        seen = []
-        for r in group:
-            ext = r["trbx_ext"] or ""
-            if ext and ext in by_ext and by_ext[ext]["id"] not in seen:
-                seen.append(by_ext[ext]["id"])
-        return seen
+    if box_ids:
+        want = {int(x) for x in box_ids}
+        pick_boxes = [b["id"] for b in boxes if b["id"] in want]
+    else:
+        pick_boxes = [b["id"] for b in boxes]
 
     if mode == labels.MODE_BOX:
-        ids = box_ids_of(rows) or [b["id"] for b in boxes]
-        if not ids:
+        if not pick_boxes:
             raise ValueError("в поставке нет коробов. Сначала добавь грузоместо.")
-        return boxes_pdf(supply_id, ids)
+        return boxes_pdf(supply_id, pick_boxes)
+    if not rows:
+        raise ValueError("нечего печатать")
     if mode == labels.MODE_PRODUCT:
         return labels.build(_label_payload(rows), mode=labels.MODE_PRODUCT)
     if mode == labels.MODE_POSTING:
         return labels.build(_label_payload(rows), mode=labels.MODE_POSTING)
-    if mode != labels.MODE_POSTING_BOX:
+    if mode == labels.MODE_BOTH:
+        return labels.build(_label_payload(rows), mode=labels.MODE_BOTH)
+    if mode not in (labels.MODE_POSTING_BOX, labels.MODE_POSTING_PRODUCT_BOX):
         raise ValueError("неизвестный режим печати")
 
-    need = [b["ext_id"] for b in boxes if b["id"] in box_ids_of(rows)]
-    box_pngs = {}
-    extra_notes = []
-    if need:
-        cab = _cab_of_supply(supply)
-        stickers, more = wb_supply.box_stickers(cab, supply["ext_id"], need)
-        extra_notes.extend(more)
-        for s in stickers:
-            box_pngs[s["ext_id"]] = {
-                "png": s["png"],
-                "caption": "%s · %s" % (supply["ext_id"], s["barcode"] or s["ext_id"]),
-            }
-    pdf, notes, pages = labels.build_posting_boxes(_label_payload(rows), box_pngs)
-    return pdf, notes + extra_notes, pages
+    inner = labels.MODE_BOTH if mode == labels.MODE_POSTING_PRODUCT_BOX else labels.MODE_POSTING
+    pdf, notes, pages = labels.build(_label_payload(rows), mode=inner)
+    if not pick_boxes:
+        return pdf, notes + ["коробов нет, напечатал только заказы"], pages
+    bpdf, bnotes, bpages = boxes_pdf(supply_id, pick_boxes)
+    merged, mpages = labels.merge_pdfs([pdf, bpdf])
+    return merged, notes + bnotes, mpages
 
 
 def supply_pdf(supply_id):
