@@ -254,12 +254,16 @@ def risks_of(cards: dict[str, Any]) -> list[str]:
 
 
 def incidents_of(card: dict[str, Any]) -> list[str]:
-    """Происшествия с датой и характером: «ДТП 27 января 2024 года (столкновение)».
+    """Сводка происшествий: сколько ДТП, когда последнее, был ли ремонт.
 
-    Автотека кладёт их не в `list` карточки, а во вложенные группы событий, и без
-    этого разбора бот видел только заголовок «1 происшествие».
+    Автотека кладёт события во вложенные группы, и там же лежат район, число
+    участников и суммы расчётов вплоть до рубля. В карточку это не идёт: клиенту
+    нужен факт, а простыня из шести ДТП с адресами звучит как приговор машине и
+    ровно поэтому уводит разговор от осмотра. Детали он увидит по ссылке, а
+    разберёт их на звонке.
     """
-    out: list[str] = []
+    dates: list[str] = []
+    repairs = payments = False
     groups = ((card.get("additional") or {}).get("incidentEventsGroups")) or []
     for group in groups:
         for event in (group or {}).get("events") or []:
@@ -268,15 +272,25 @@ def incidents_of(card: dict[str, Any]) -> list[str]:
             label = str(event.get("label") or "").strip()
             if not label or is_empty_phrase(label):
                 continue
-            head = label.split(":")[0].strip() or label
+            low = label.lower()
             date = str(event.get("date") or "").strip(" -\u00a0")
-            details = [
-                str(d).strip().lower() for d in (event.get("details") or []) if str(d).strip()
-            ]
-            piece = head + ((" " + date) if date else "")
-            if details:
-                piece += " (%s)" % ", ".join(details)
-            out.append(piece)
+            if low.startswith("дтп"):
+                if date:
+                    dates.append(date)
+            elif "ремонт" in low:
+                repairs = True
+            elif "выплата" in low:
+                payments = True
+    out: list[str] = []
+    if dates:
+        if len(dates) == 1:
+            out.append("по отчёту одно ДТП, %s" % dates[0])
+        else:
+            out.append("по отчёту %d ДТП, последнее %s" % (len(dates), dates[-1]))
+    if repairs:
+        out.append("есть записи о ремонте")
+    if payments:
+        out.append("есть страховые выплаты")
     return out
 
 
@@ -324,13 +338,12 @@ def damage_of(report: dict[str, Any]) -> str:
         value for _, value in pairs if not is_empty_phrase(value)
     ]
     if hits:
-        # Рядом с найденным ДТП сразу говорим, чего не нашли: выплата и ремонт
-        # не менее важны клиенту, чем сам факт столкновения.
-        empty = [value for _, value in pairs if is_empty_phrase(value)]
-        empty += [x for x in empty_events_of(card)]
-        if empty:
-            hits.append("; ".join(dict.fromkeys(empty)).lower())
-        return "; ".join(hits)
+        # Рядом с найденным ДТП сразу говорим, чего не нашли: для клиента
+        # «ремонта и выплат нет» весит не меньше самого факта столкновения.
+        joined = " ".join(hits)
+        if "ремонт" not in joined and "выплат" not in joined and empty_events_of(card):
+            hits.append("ремонта и страховых выплат не найдено")
+        return ", ".join(hits)
     if card.get("status") != "ok":
         # Заголовок «1 происшествие» без расшифровки: деталей в отчёте нет, но
         # сам факт клиент по ссылке увидит, и промолчать про него нельзя.
