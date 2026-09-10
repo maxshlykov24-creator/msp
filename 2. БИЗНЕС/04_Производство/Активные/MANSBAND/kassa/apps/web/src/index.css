@@ -4,6 +4,45 @@
 
 :root {
   color-scheme: dark;
+  --ink-950: 0 0 0;
+  --ink-900: 12 13 17;
+  --ink-850: 21 23 28;
+  --ink-800: 26 29 35;
+  --ink-700: 35 39 47;
+  --ink-600: 46 51 61;
+  --ink-500: 58 64 76;
+  --gold: 255 255 255;
+  --gold-soft: 255 255 255;
+  --gold-dim: 138 140 146;
+  --mute: 138 140 146;
+  --mute-soft: 194 199 208;
+  --fg: 255 255 255;
+  --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 8px 30px -12px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 10px 40px -12px rgba(255, 255, 255, 0.1);
+  --page-wash-1: rgba(255, 255, 255, 0.05);
+  --page-wash-2: rgba(255, 255, 255, 0.035);
+}
+
+html.theme-light,
+body.theme-light {
+  color-scheme: light;
+  --ink-950: 237 237 237;
+  --ink-900: 255 255 255;
+  --ink-850: 255 255 255;
+  --ink-800: 226 226 230;
+  --ink-700: 196 196 202;
+  --ink-600: 168 168 176;
+  --ink-500: 140 140 148;
+  --gold: 20 20 22;
+  --gold-soft: 40 40 44;
+  --gold-dim: 106 106 112;
+  --mute: 106 106 110;
+  --mute-soft: 58 58 62;
+  --fg: 20 20 22;
+  --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.88) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.14);
+  --shadow-glow: 0 0 0 1px rgba(20, 20, 22, 0.12), 0 10px 28px -14px rgba(0, 0, 0, 0.18);
+  --page-wash-1: rgba(0, 0, 0, 0.03);
+  --page-wash-2: rgba(0, 0, 0, 0.02);
 }
 
 html,
@@ -48,12 +87,8 @@ body {
   @apply bg-ink-950 text-mute-soft font-sans antialiased;
   position: relative;
   width: 100%;
-  background-image: radial-gradient(
-      1200px 600px at 80% -10%,
-      rgba(255, 255, 255, 0.05),
-      transparent 60%
-    ),
-    radial-gradient(900px 500px at -10% 110%, rgba(255, 255, 255, 0.035), transparent 60%);
+  background-image: radial-gradient(1200px 600px at 80% -10%, var(--page-wash-1), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, var(--page-wash-2), transparent 60%);
   /* fixed на iOS Safari даёт чёрный/пустой экран — только scroll */
   background-attachment: scroll;
 }
@@ -75,37 +110,37 @@ body {
   background: transparent;
 }
 
-/* Пояснения как в прототипе HIDE: тумблер в шапке, выкл. убирает весь шум. */
-.hints-sw {
+/* Тумблеры шапки: Пояснения и Тема */
+.sw {
   display: inline-flex;
   align-items: center;
   gap: 9px;
   padding: 7px 13px;
   border-radius: 12px;
-  background: #0c0d11;
-  border: 1px solid #23272f;
+  background: rgb(var(--ink-900));
+  border: 1px solid rgb(var(--ink-700));
   cursor: pointer;
   font-size: 12px;
-  color: #8a8c92;
+  color: rgb(var(--mute));
   transition: 0.2s ease;
   user-select: none;
   white-space: nowrap;
 }
-.hints-sw:hover {
-  color: #c2c7d0;
-  border-color: #3a404c;
+.sw:hover {
+  color: rgb(var(--mute-soft));
+  border-color: rgb(var(--ink-600));
 }
-.hints-sw i {
+.sw i {
   width: 30px;
   height: 17px;
   border-radius: 9px;
-  background: #15171c;
-  border: 1px solid #2e333d;
+  background: rgb(var(--ink-850));
+  border: 1px solid rgb(var(--ink-600));
   position: relative;
   flex: none;
   transition: 0.25s ease;
 }
-.hints-sw i::after {
+.sw i::after {
   content: "";
   position: absolute;
   top: 1px;
@@ -113,34 +148,35 @@ body {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: #8a8c92;
+  background: rgb(var(--mute));
   transition: 0.25s ease;
 }
-.hints-sw.on {
-  color: #f2f2f2;
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.08);
+.sw.on {
+  color: rgb(var(--fg));
+  border-color: rgb(var(--gold) / 0.35);
+  background: rgb(var(--gold) / 0.1);
 }
-.hints-sw.on i {
-  background: rgba(255, 255, 255, 0.28);
-  border-color: rgba(255, 255, 255, 0.4);
+.sw.on i {
+  background: rgb(var(--gold) / 0.28);
+  border-color: rgb(var(--gold) / 0.4);
 }
-.hints-sw.on i::after {
+.sw.on i::after {
   transform: translateX(13px);
-  background: #ffffff;
+  background: rgb(var(--gold));
 }
-.hints-sw.compact {
+.sw.compact {
   padding: 8px 10px;
   min-height: 40px;
 }
+
 .page-hint {
   padding: 14px 16px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgb(var(--fg) / 0.04);
+  border: 1px solid rgb(var(--fg) / 0.12);
   font-size: 13px;
   line-height: 1.65;
-  color: #8a8c92;
+  color: rgb(var(--mute));
   margin-bottom: 1.25rem;
 }
 .page-hint p + p {
@@ -148,12 +184,168 @@ body {
 }
 .page-hint b,
 .page-hint strong {
-  color: #c2c7d0;
+  color: rgb(var(--mute-soft));
   font-weight: 600;
 }
 body.hints-off .page-hint,
 body.hints-off .hint-only {
   display: none !important;
+}
+
+html.theme-light .brand-logo {
+  filter: invert(1);
+}
+
+/* Статусные цвета Tailwind заточены под тёмный фон — в светлой теме читаемые. */
+html.theme-light .text-emerald-300,
+html.theme-light .text-emerald-300\/90,
+html.theme-light .text-emerald-300\/80 {
+  color: #2d7a4a !important;
+}
+html.theme-light .text-amber-300,
+html.theme-light .text-amber-300\/90,
+html.theme-light .text-amber-300\/80 {
+  color: #9a6410 !important;
+}
+html.theme-light .text-amber-100,
+html.theme-light .text-amber-100\/95,
+html.theme-light .text-amber-200 {
+  color: #7a5208 !important;
+}
+html.theme-light .text-red-300,
+html.theme-light .text-red-400 {
+  color: #b4544a !important;
+}
+html.theme-light .text-sky-300,
+html.theme-light .text-sky-300\/80 {
+  color: #2f5f8a !important;
+}
+html.theme-light .bg-emerald-400\/10,
+html.theme-light .bg-emerald-500\/10 {
+  background-color: rgba(45, 122, 74, 0.12) !important;
+}
+html.theme-light .bg-amber-400\/10 {
+  background-color: rgba(154, 100, 16, 0.1) !important;
+}
+html.theme-light .bg-red-400\/10 {
+  background-color: rgba(180, 84, 74, 0.1) !important;
+}
+html.theme-light .border-emerald-400\/20,
+html.theme-light .border-emerald-400\/40 {
+  border-color: rgba(45, 122, 74, 0.35) !important;
+}
+html.theme-light .border-amber-400\/20,
+html.theme-light .border-amber-400\/25,
+html.theme-light .border-amber-400\/30,
+html.theme-light .border-amber-400\/40 {
+  border-color: rgba(154, 100, 16, 0.35) !important;
+}
+html.theme-light .border-red-400\/30 {
+  border-color: rgba(180, 84, 74, 0.35) !important;
+}
+
+.stage-tone {
+  border-width: 1px;
+  border-style: solid;
+}
+.stage-tone-new {
+  background: rgba(125, 172, 228, 0.17);
+  color: rgb(186, 214, 245);
+  border-color: rgba(125, 172, 228, 0.28);
+}
+.stage-tone-neutral {
+  background: rgba(148, 163, 184, 0.14);
+  color: rgb(203, 213, 225);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+.stage-tone-active {
+  background: rgba(118, 162, 220, 0.19);
+  color: rgb(190, 218, 248);
+  border-color: rgba(118, 162, 220, 0.3);
+}
+.stage-tone-negative {
+  background: rgba(232, 155, 155, 0.15);
+  color: rgb(248, 196, 196);
+  border-color: rgba(232, 155, 155, 0.28);
+}
+.stage-tone-inventory {
+  background: rgba(224, 178, 128, 0.17);
+  color: rgb(245, 211, 170);
+  border-color: rgba(224, 178, 128, 0.28);
+}
+.stage-tone-meeting {
+  background: rgba(236, 218, 140, 0.19);
+  color: rgb(245, 230, 175);
+  border-color: rgba(236, 218, 140, 0.32);
+}
+.stage-tone-rental {
+  background: rgba(190, 170, 220, 0.17);
+  color: rgb(218, 205, 242);
+  border-color: rgba(190, 170, 220, 0.28);
+}
+.stage-tone-logistics {
+  background: rgba(230, 210, 130, 0.17);
+  color: rgb(242, 228, 178);
+  border-color: rgba(230, 210, 130, 0.28);
+}
+.stage-tone-success {
+  background: rgba(152, 198, 142, 0.19);
+  color: rgb(198, 230, 190);
+  border-color: rgba(152, 198, 142, 0.32);
+}
+.stage-tone-fail,
+.stage-tone-default {
+  background: rgba(148, 163, 184, 0.14);
+  color: rgb(190, 198, 210);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+html.theme-light .stage-tone-new {
+  background: rgba(47, 86, 128, 0.1);
+  color: #2a4f78;
+  border-color: rgba(47, 86, 128, 0.28);
+}
+html.theme-light .stage-tone-neutral,
+html.theme-light .stage-tone-default {
+  background: rgba(71, 80, 94, 0.08);
+  color: #3d4450;
+  border-color: rgba(71, 80, 94, 0.22);
+}
+html.theme-light .stage-tone-active {
+  background: rgba(47, 86, 128, 0.12);
+  color: #2a4f78;
+  border-color: rgba(47, 86, 128, 0.3);
+}
+html.theme-light .stage-tone-negative {
+  background: rgba(180, 84, 74, 0.1);
+  color: #8f3d36;
+  border-color: rgba(180, 84, 74, 0.28);
+}
+html.theme-light .stage-tone-inventory,
+html.theme-light .stage-tone-logistics {
+  background: rgba(154, 100, 16, 0.1);
+  color: #7a5208;
+  border-color: rgba(154, 100, 16, 0.28);
+}
+html.theme-light .stage-tone-meeting {
+  background: rgba(154, 120, 16, 0.12);
+  color: #6e5408;
+  border-color: rgba(154, 120, 16, 0.3);
+}
+html.theme-light .stage-tone-rental {
+  background: rgba(88, 70, 122, 0.1);
+  color: #4a3a6e;
+  border-color: rgba(88, 70, 122, 0.28);
+}
+html.theme-light .stage-tone-success {
+  background: rgba(45, 122, 74, 0.12);
+  color: #24643c;
+  border-color: rgba(45, 122, 74, 0.3);
+}
+html.theme-light .stage-tone-fail {
+  background: rgba(80, 84, 92, 0.1);
+  color: #4a4e56;
+  border-color: rgba(80, 84, 92, 0.24);
 }
 
 @layer components {
@@ -170,6 +362,10 @@ body.hints-off .hint-only {
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold;
   }
+}
+
+html.theme-light .card {
+  @apply bg-ink-850 border-ink-700;
 }
 
 /* iOS Safari зумит страницу, если font-size поля < 16px — форсируем на телефоне */

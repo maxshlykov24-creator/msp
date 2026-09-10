@@ -64,7 +64,7 @@ export function HintsToggle({ compact = false }: { compact?: boolean }) {
     <button
       type="button"
       onClick={toggle}
-      className={`hints-sw ${enabled ? "on" : ""} ${compact ? "compact" : ""}`}
+      className={`sw ${enabled ? "on" : ""} ${compact ? "compact" : ""}`}
       aria-pressed={enabled}
       aria-label={enabled ? "Выключить пояснения" : "Включить пояснения"}
     >
