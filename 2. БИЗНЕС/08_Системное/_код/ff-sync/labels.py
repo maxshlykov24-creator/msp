@@ -40,6 +40,7 @@ MODE_POSTING = "posting"
 MODE_BOTH = "both"
 MODE_PRODUCT = "product"
 MODE_POSTING_BOX = "posting_box"
+MODE_POSTING_PRODUCT_BOX = "posting_product_box"
 MODE_BOX = "box"
 MODES = (MODE_POSTING, MODE_BOTH, MODE_PRODUCT)
 

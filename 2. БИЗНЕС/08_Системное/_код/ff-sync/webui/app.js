@@ -38,6 +38,7 @@ async function boot() {
     $("who").textContent = me.login;
     $("login").classList.add("off");
     $("app").classList.add("on");
+    syncDock();
     await loadClients();
     await loadAsm();
     await loadIntake();
@@ -68,11 +69,20 @@ $("viewNav").onclick = (e) => {
   if (!btn) return;
   document.querySelectorAll("#viewNav button").forEach((b) => b.classList.toggle("active", b === btn));
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + btn.dataset.view));
+  syncDock();
   if (btn.dataset.view === "home") loadOverview();
   if (btn.dataset.view === "stock") loadLots();
   if (btn.dataset.view === "ships") loadShips();
   if (btn.dataset.view === "asm") loadAsm();
 };
+
+function syncDock() {
+  const asm = !!document.querySelector("#view-asm.active");
+  const acts = $("dockAsm");
+  if (acts) acts.hidden = !asm;
+  document.body.classList.toggle("dock-asm", asm);
+  if (!asm) hidePrintMenu();
+}
 
 function goView(name) {
   if (name === "ships") name = "asm";
@@ -1154,23 +1164,19 @@ function wbSupplyPill(supply) {
 // Поставка — та же строка таблицы, что и заказ, но с бейджем и полосой WB.
 // Задания внутри не раскрываем: состав, короба и сдача живут в окне поставки.
 function asmSupplyHtml(sup, rows) {
-  const bits = [sup.orders + " заданий", sup.boxes + " коробов"];
-  if (!sup.pickup && sup.cargo) bits.push("короба не нужны");
   const qty = rows.reduce((a, r) => a + Number(r.qty || 0), 0);
-  const marks = rows.reduce((a, r) => a + Number(r.marks || 0), 0);
-  const office = sup.office || (rows.length && rows[0].office ? rows[0].office : "—");
+  const office = sup.office || (rows.length && rows[0].office ? rows[0].office : "");
+  const bits = [qty + " шт", sup.orders + " зак."];
+  if (sup.pickup) bits.push(sup.boxes + " кор.");
+  if (office) bits.push(office);
   return `<tr class="sup-head" data-supply="${esc(sup.ext_id)}" data-sid="${sup.id}" title="Открыть поставку">
     <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}" title="Выбрать все задания поставки"></td>
-    <td class="client">${esc(sup.client)}</td>
-    <td class="ext">${esc(sup.ext_id)}<span class="badge supply-kind">Поставка</span><span class="badge mp">WB</span><span class="sup-open">открыть</span></td>
-    <td class="when">${esc(sup.created || "—")}</td>
-    <td class="ph"><span class="sup-ico" aria-hidden="true"></span></td>
-    <td class="artq"><b>${qty} шт</b></td>
-    <td class="nm" title="${esc(bits.join(" · "))}">${esc(bits.join(" · "))}</td>
-    <td class="trk">${wbSupplyTrack(sup.state)}</td>
-    <td class="dest">${esc(office)}${sup.cargo ? `<span class="cargo">${esc(sup.cargo)}</span>` : ""}</td>
-    <td class="sup"><span class="badge supply">${esc(sup.name || "поставка")}</span></td>
-    <td class="num">${marks || "—"}</td>
+    <td colspan="${ASM_COLS - 1}"><div class="sup-bar">
+      <b>${esc(sup.ext_id)}</b>
+      <span>${esc(sup.client)}</span>
+      <span>${esc(bits.join(" · "))}</span>
+      <i>${esc(wbSupplyTrack(sup.state))}</i>
+    </div></td>
   </tr>`;
 }
 
@@ -1791,41 +1797,17 @@ $("wbClose").onclick = () => $("wbModal").classList.remove("on");
 $("wbModal").onclick = (e) => { if (e.target === $("wbModal")) $("wbModal").classList.remove("on"); };
 
 function openWb(id) {
-  if (id && state.wbSupply !== Number(id)) state.wbQuery = "";
-  if (id) state.wbSupply = Number(id);
+  if (!id) return;
+  if (state.wbSupply !== Number(id)) state.wbQuery = "";
+  state.wbSupply = Number(id);
+  state.wbPicked = new Set();
+  $("wbTitle").textContent = "Поставка";
+  $("wbSub").textContent = "Открываю…";
+  $("wbHeadPill").hidden = true;
+  $("wbDetail").innerHTML = "";
   $("wbModal").classList.add("on");
-  state.wbPicked = new Set();
-  loadWbSupplies().catch((e) => say($("wbMsg"), e.message, "bad"));
+  loadWbDetail(state.wbSupply).catch((e) => say($("wbMsg"), e.message, "bad"));
 }
-
-async function loadWbSupplies() {
-  const params = new URLSearchParams();
-  if ($("aClient").value) params.set("client_id", $("aClient").value);
-  const res = await api("/api/wb/supplies?" + params.toString());
-  state.wbSupplies = res.rows;
-  const empty = !res.rows.length;
-  const show = !!state.wbSupply;
-  $("wbModal").classList.toggle("is-empty", empty && !show);
-  $("wbCols").classList.toggle("is-empty", empty && !show);
-  $("wbSupplies").innerHTML = empty
-    ? `<div class="wb-empty">Поставок нет. Они появляются из «Новых» кнопкой «Взять в сборку».</div>`
-    : res.rows.map((r) => `<button type="button" class="wb-item${r.id === state.wbSupply ? " is-on" : ""}" data-supply="${r.id}">
-        <b>${esc(r.ext_id)}</b>
-        <span>${r.orders} зак. · ${r.boxes} кор.</span>
-        <i class="wb-state ${r.state}">${wbSupplyShort(r.state)}</i>
-      </button>`).join("");
-  if (state.wbSupply) await loadWbDetail(state.wbSupply);
-  else $("wbDetail").innerHTML = empty ? "" : `<div class="wb-idle">Выбери поставку слева</div>`;
-}
-
-$("wbSupplies").onclick = (e) => {
-  const btn = e.target.closest("button[data-supply]");
-  if (!btn) return;
-  if (state.wbSupply !== Number(btn.dataset.supply)) state.wbQuery = "";
-  state.wbSupply = Number(btn.dataset.supply);
-  state.wbPicked = new Set();
-  loadWbSupplies().catch((err) => say($("wbMsg"), err.message, "bad"));
-};
 
 async function loadWbDetail(id) {
   const res = await api("/api/wb/supplies/" + id);
@@ -1844,14 +1826,13 @@ async function loadWbDetail(id) {
               <button type="button" data-mode="posting">Этикетка заказа</button>
             </div>
           </div>`;
+  $("wbTitle").textContent = res.supply.ext_id;
+  $("wbSub").textContent = [res.supply.client, dest, res.rows.length + " зак.", pickup ? res.boxes.length + " кор." : "короба не нужны"].filter(Boolean).join(" · ");
+  const pill = $("wbHeadPill");
+  pill.hidden = false;
+  pill.className = "wb-pill " + res.supply.state;
+  pill.textContent = wbSupplyPill(res.supply);
   $("wbDetail").innerHTML = `
-    <div class="wb-hero">
-      <div>
-        <div class="wb-hero-id">${esc(res.supply.ext_id)}</div>
-        <div class="wb-hero-meta">${esc(res.supply.client)} · ${esc(dest)} · ${res.rows.length} зак.${pickup ? " · " + res.boxes.length + " кор." : " · короба не нужны"}</div>
-      </div>
-      <span class="wb-pill ${res.supply.state}">${wbSupplyPill(res.supply)}</span>
-    </div>
     <section class="wb-sec">
       <div class="wb-sec-h">
         <h4>Короба</h4>
@@ -1862,7 +1843,7 @@ async function loadWbDetail(id) {
       </div>
       <div class="wb-boxes">${pickup ? (boxes || `<div class="wb-empty">Коробов нет. Добавь столько, сколько собрал — на каждый печатается QR.</div>`) : `<div class="wb-empty">Эта поставка едет на СЦ. Грузоместа не заводятся.</div>`}</div>
     </section>
-    <section class="wb-sec">
+    <section class="wb-sec wb-sec-orders">
       <div class="wb-sec-h">
         <h4 id="wbOrdersTitle">Заказы</h4>
         <div class="wb-sec-acts">
@@ -1872,12 +1853,12 @@ async function loadWbDetail(id) {
       </div>
       <div class="tbl-wrap wb-rows">
         <table class="tbl" id="wbTbl">
-          <thead><tr><th class="pick"><input type="checkbox" id="wbAll" title="Выбрать все видимые"></th><th>Задание</th><th>Артикул</th><th>Наименование</th><th>Короб</th></tr></thead>
+          <thead><tr><th class="pick"><input type="checkbox" id="wbAll" title="Выбрать все видимые"></th><th class="ph"></th><th>Задание</th><th>Артикул</th><th>Наименование</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
     </section>
-    ${open ? `<div class="wb-foot"><span>${esc(dest)}</span><button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button></div>` : ""}`;
+    ${open ? `<div class="wb-foot"><button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button></div>` : ""}`;
   bindWbDetail();
   renderWbRows();
 }
@@ -1901,12 +1882,12 @@ function wbOrderRowsHtml() {
   if (!rows.length) {
     return `<tr><td colspan="5" class="empty">Нет заданий по запросу «${esc(state.wbQuery)}».</td></tr>`;
   }
-  return rows.map((r) => `<tr${r.box ? ' class="is-boxed"' : ""}>
+  return rows.map((r) => `<tr>
                 <td class="pick"><input type="checkbox" data-wbrow="${r.id}" title="Печать этого задания"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
+                <td class="ph">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy" title="увеличить">` : `<span class="noph"></span>`}</td>
                 <td class="ext">${esc(r.ext_id)}</td>
                 <td class="artq"><b>${num(r.qty, 0)}</b> · ${r.article ? `<button type="button" class="artlink" data-wbart="${esc(r.article)}" title="Отфильтровать этот артикул">${esc(r.article)}</button>` : "—"}</td>
                 <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
-                <td>${r.box ? `<span class="badge box">${esc(r.box)}</span>` : "—"}</td>
               </tr>`).join("");
 }
 
@@ -2017,7 +1998,7 @@ function bindWbDetail() {
     await guard(async () => {
       const res = await api("/api/wb/supplies/" + id + "/boxes", { method: "POST", body: JSON.stringify({ amount: Number(answer) }) });
       say($("wbMsg"), "Короба: " + (res.boxes || []).join(", ") + ".", "ok");
-      await loadWbSupplies();
+      await loadWbDetail(id);
     }, "Добавляю короба…");
   };
   const bx = $("wbBoxPrint");
@@ -2059,12 +2040,18 @@ function bindWbDetail() {
     await guard(async () => {
       await api("/api/wb/supplies/" + id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true }) });
       say($("wbMsg"), "Поставка на отгрузке.", "ok");
-      await loadWbSupplies();
+      await loadWbDetail(id);
       await loadAsm();
     }, "Отправляю на отгрузку…");
   };
   const wrap = $("wbDetail");
   wrap.onclick = async (e) => {
+    const pic = e.target.closest("td.ph img");
+    if (pic) {
+      e.stopPropagation();
+      openPhoto(pic.src);
+      return;
+    }
     const drop = e.target.closest("[data-boxdrop]");
     if (drop) {
       e.stopPropagation();
@@ -2082,7 +2069,7 @@ function bindWbDetail() {
         await api("/api/wb/boxes/" + drop.dataset.boxdrop, { method: "DELETE" });
         if (state.wbBox === Number(drop.dataset.boxdrop)) state.wbBox = 0;
         say($("wbMsg"), "Короб " + label + " удалён у WB.", "ok");
-        await loadWbSupplies();
+        await loadWbDetail(id);
       }, "Удаляю короб у WB…");
       return;
     }

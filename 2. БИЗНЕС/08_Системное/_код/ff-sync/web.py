@@ -1056,6 +1056,7 @@ def wb_supply_detail(supply_id: int, ff_session: str = Cookie(default="")):
                 "article": r["article"] or "",
                 "name": r["name"] or "",
                 "qty": r["qty"],
+                "image": r["image"] or "",
                 "box": (r["trbx_ext"] or ""),
             }
             for r in rows

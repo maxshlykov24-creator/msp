@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=80">
+<link rel="stylesheet" href="/ui/app.css?v=84">
 </head>
 <body>
 
@@ -240,39 +240,6 @@
         </table>
       </div>
     </div>
-    <div class="asm-dock">
-      <div class="asm-dock-in">
-        <div class="actions">
-          <span class="sel" id="aSel">Ничего не выбрано</span>
-          <div class="asm-acts" id="aActsNew">
-            <button class="btn btn-file" id="aWork" type="button" disabled>Взять в сборку</button>
-          </div>
-          <div class="asm-acts" id="aActsAssembling" hidden>
-            <button class="btn btn-file" id="aDone" type="button" disabled>Собрано</button>
-            <button class="btn btn-file" id="aKiz" type="button" disabled>КиЗ</button>
-            <div class="print-wrap">
-              <button class="btn btn-file" id="aPrint" type="button" disabled>Печать</button>
-              <div class="print-menu" id="aPrintMenu" hidden>
-                <button type="button" data-mode="posting">Отправление</button>
-                <button type="button" data-mode="both">Отправление + товар</button>
-                <button type="button" data-mode="product">Товар</button>
-              </div>
-            </div>
-          </div>
-          <div class="asm-acts" id="aActsReady" hidden>
-            <button class="btn btn-file" id="aShipped" type="button" disabled>Отгружено</button>
-            <div class="print-wrap">
-              <button class="btn btn-file" id="aPrintReady" type="button" disabled>Печать</button>
-              <div class="print-menu" id="aPrintReadyMenu" hidden>
-                <button type="button" data-mode="product">Этикетка товара</button>
-                <button type="button" data-mode="posting">Этикетка заказа</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="msg" id="aMsg"></div>
-      </div>
-    </div>
   </div>
 
   <div class="view" id="view-intake">
@@ -483,15 +450,46 @@
     </div>
   </div>
 
-  <div class="footer glass">
-    <div class="footer-brand">
-      <img src="/ui/logo-ms-transparent.png?v=1" alt="MS Product">
-      <div class="footer-div"></div>
-      <span><b>MS Product</b> · системная автоматизация</span>
-    </div>
-    <div class="footer-meta">БЕРЕЗА ГРУПП · кабинет склада</div>
-  </div>
+</div>
 
+<div class="app-dock" id="appDock">
+  <div class="app-dock-msg msg" id="aMsg"></div>
+  <div class="app-dock-in">
+    <div class="app-dock-acts" id="dockAsm">
+      <span class="sel" id="aSel">Ничего не выбрано</span>
+      <div class="asm-acts" id="aActsNew">
+        <button class="btn btn-file" id="aWork" type="button" disabled>Взять в сборку</button>
+      </div>
+      <div class="asm-acts" id="aActsAssembling" hidden>
+        <button class="btn btn-file" id="aDone" type="button" disabled>Собрано</button>
+        <button class="btn btn-file" id="aKiz" type="button" disabled>КиЗ</button>
+        <div class="print-wrap">
+          <button class="btn btn-file" id="aPrint" type="button" disabled>Печать</button>
+          <div class="print-menu" id="aPrintMenu" hidden>
+            <button type="button" data-mode="posting">Отправление</button>
+            <button type="button" data-mode="both">Отправление + товар</button>
+            <button type="button" data-mode="product">Товар</button>
+          </div>
+        </div>
+      </div>
+      <div class="asm-acts" id="aActsReady" hidden>
+        <button class="btn btn-file" id="aShipped" type="button" disabled>Отгружено</button>
+        <div class="print-wrap">
+          <button class="btn btn-file" id="aPrintReady" type="button" disabled>Печать</button>
+          <div class="print-menu" id="aPrintReadyMenu" hidden>
+            <button type="button" data-mode="product">Этикетка товара</button>
+            <button type="button" data-mode="posting">Этикетка заказа</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="app-dock-brand">
+      <img src="/ui/logo-ms-transparent.png?v=1" alt="MS Product">
+      <span class="app-dock-ms"><b>MS Product</b> · системная автоматизация</span>
+      <span class="app-dock-div"></span>
+      <span class="app-dock-meta">БЕРЕЗА ГРУПП</span>
+    </div>
+  </div>
 </div>
 </div>
 
@@ -611,17 +609,15 @@
   <div class="glass modal-card wide">
     <div class="modal-head">
       <div>
-        <h3>Поставки WB</h3>
-        <p>Короб, QR, сдача на ПВЗ или в СЦ</p>
+        <h3 id="wbTitle">Поставка</h3>
+        <p id="wbSub"></p>
       </div>
-      <button class="btn-ghost" id="wbClose" type="button">Закрыть</button>
-    </div>
-    <div class="wb-cols" id="wbCols">
-      <div class="wb-list">
-        <div id="wbSupplies" class="wb-supplies"></div>
+      <div class="wb-head-acts">
+        <span class="wb-pill" id="wbHeadPill" hidden></span>
+        <button class="btn-ghost" id="wbClose" type="button">Закрыть</button>
       </div>
-      <div class="wb-detail" id="wbDetail"></div>
     </div>
+    <div class="wb-detail" id="wbDetail"></div>
     <div class="msg" id="wbMsg"></div>
   </div>
 </div>
@@ -676,6 +672,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=80"></script>
+<script src="/ui/app.js?v=84"></script>
 </body>
 </html>
