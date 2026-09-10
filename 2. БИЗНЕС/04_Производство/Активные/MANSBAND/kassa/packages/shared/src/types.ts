@@ -439,6 +439,12 @@ export type SuitPart = "jacket" | "trousers" | "vest";
  */
 export type SuitLine = "smoking" | "regular";
 
+/** Цельные костюмы этого размера на одном складе, без свода между складами. */
+export interface SuitWarehouseQty {
+  name: string;
+  whole: number;
+}
+
 /** Строка размера внутри модели: что цельное, чего не хватает. */
 export interface SuitSizeRow {
   size: string;
@@ -450,6 +456,8 @@ export interface SuitSizeRow {
   tolerant: number;
   /** Изделия без пары вовсе или со сдвигом вне допуска. */
   orphans: SuitOrphan[];
+  /** Цельные на каждом складе, где в этом размере вообще что-то лежит. */
+  warehouses: SuitWarehouseQty[];
 }
 
 /** Изделие без пары: чего не хватает и где парную часть можно забрать. */

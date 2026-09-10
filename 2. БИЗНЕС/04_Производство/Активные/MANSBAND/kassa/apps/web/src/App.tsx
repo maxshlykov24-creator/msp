@@ -81,7 +81,7 @@ function Screens({
     case "products":
       return <ProductCheck />;
     case "suits":
-      return <ProductCheck initialSection="1. Костюмы" />;
+      return <ProductCheck initialSection="suits" />;
     case "tasks":
       return <TasksMovements />;
     case "history":

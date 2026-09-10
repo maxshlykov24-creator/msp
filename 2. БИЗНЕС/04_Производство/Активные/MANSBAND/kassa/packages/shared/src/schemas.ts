@@ -324,7 +324,7 @@ export const catalogBrowseSchema = z.object({
   /** Двойки / тройки / смокинги. Считается из состава модели, не из папки МС. */
   suitFamily: z.enum(["double", "triple", "smoking"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(60),
+  pageSize: z.coerce.number().int().min(1).max(2000).default(60),
 });
 export type CatalogBrowseQuery = z.infer<typeof catalogBrowseSchema>;
 

@@ -12,13 +12,19 @@ import {
   X,
 } from "lucide-react";
 import {
+  HALL_SECTIONS,
   ITEM_LOCATIONS,
+  classifyHall,
+  hallGroupsOf,
+  hallSectionLabel,
   isVirtualWarehouse,
+  normalizeHallSection,
+  productKindName,
   SUIT_FAMILIES,
   SUIT_FAMILY_LABEL,
   suitFamilyOf,
 } from "@kassa/shared";
-import type { Product, SuitFamily, SuitModel, WarehouseStockLine } from "../data/types";
+import type { HallSectionId, Product, SuitFamily, SuitModel, WarehouseStockLine } from "../data/types";
 import { api, apiBlob, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
 import { money } from "../lib/format";
@@ -27,15 +33,6 @@ import { SuitModelRow } from "../components/SuitModelRow";
 import { BreaksTab, StockTab } from "./Suits";
 
 type LocSlot = { label: string; match: (name: string) => boolean };
-
-/** Порядок разделов зала — не дерево МойСклад. */
-const SECTION_ORDER = [
-  "1. Костюмы",
-  "2. Одежда",
-  "3. Верхняя одежда",
-  "4. Обувь",
-  "5. Аксессуары",
-] as const;
 
 const MAIN_WAREHOUSES: { id: string; label: string; match: (name: string) => boolean }[] = [
   {
@@ -85,11 +82,10 @@ const EXPANDED_COLUMNS: { id: string; slots: LocSlot[] }[] = [
 
 interface ParsedProduct {
   product: Product;
-  section: string;
-  /** Первый уровень под разделом зала (для чипов и дерева). */
+  section: HallSectionId;
+  groupId: string;
+  /** Подпись вида для дерева и чипов. */
   subSection: string;
-  /** Полный хвост path после раздела (для подписи в строке). */
-  subCategory: string;
   baseName: string;
   color: string;
   size: string;
@@ -97,7 +93,6 @@ interface ParsedProduct {
   modsLabel: string;
 }
 
-const EMPTY_SUBSECTION = "Без подраздела";
 const PAGE_SIZE = 60;
 
 /** Костюм из /catalog/browse: модель обычного экрана «Костюмы» плюс цена матрицы кассы. */
@@ -109,17 +104,14 @@ interface CatalogBrowseResponse {
   items: Product[];
   itemsTotal: number;
   suits: CatalogSuitModel[];
+  groupCounts?: Record<string, number>;
+  sectionCounts?: Record<string, number>;
   page: number;
   pageSize: number;
 }
 
 type StockFilter = "any" | "positive" | "zero" | "negative";
-type KindFilter = "all" | "suits" | "items";
 type SuitViewTab = "completeness" | "breaks" | "stock";
-
-function isSuitHallSection(name: string): boolean {
-  return /костюм/i.test(name);
-}
 
 function fmtQty(n: number): string {
   if (!Number.isFinite(n)) return "0";
@@ -165,76 +157,25 @@ function isSizeToken(value: string): boolean {
   return false;
 }
 
-function topSectionOf(category: string): string {
-  const top = category.split(/[/\\]/)[0]?.trim() || "";
-  return top;
-}
-
-function categoryParts(category: string): string[] {
-  return category.split(/[/\\]/).map((p) => p.trim()).filter(Boolean);
-}
-
-function subSectionOf(category: string): string {
-  return categoryParts(category)[1] || "";
-}
-
-function subCategoryOf(category: string): string {
-  const parts = categoryParts(category);
-  if (parts.length <= 1) return "";
-  return parts.slice(1).join(" / ");
-}
-
-function normalizeSectionKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/^\d+\.\s*/, "")
-    .trim();
-}
-
-/** Только 5 разделов зала. Остальные папки МС игнорируем до разбора дерева. */
-function resolveHallSection(category: string): string | null {
-  const key = normalizeSectionKey(topSectionOf(category));
-  if (!key) return null;
-  const exact = SECTION_ORDER.find((s) => normalizeSectionKey(s) === key);
-  if (exact) return exact;
-  // Длинные ключи раньше («верхняя одежда» > «одежда»).
-  const ranked = [...SECTION_ORDER].sort(
-    (a, b) => normalizeSectionKey(b).length - normalizeSectionKey(a).length
-  );
-  return (
-    ranked.find((s) => {
-      const sk = normalizeSectionKey(s);
-      return key === sk || key.startsWith(`${sk} `) || key.startsWith(`${sk}/`);
-    }) ?? null
-  );
-}
-
-function matchSectionOrder(name: string): number {
-  const idx = SECTION_ORDER.findIndex((s) => normalizeSectionKey(s) === normalizeSectionKey(name));
-  return idx === -1 ? 100 : idx;
-}
-
 function parseProduct(product: Product): ParsedProduct | null {
-  const section = resolveHallSection(product.category || "");
-  if (!section) return null;
-  const subSection = subSectionOf(product.category || "");
-  const subCategory = subCategoryOf(product.category || "");
+  const hall = classifyHall({ name: product.name, category: product.category });
+  if (!hall || hall.section === "suits") return null;
+  const group = hallSectionOfGroup(hall.section, hall.group);
   const m = product.name.match(/^(.*?)\s*\((.*)\)\s*$/);
+  const baseName = productKindName(product.name) || product.name.trim() || "Без названия";
   if (!m) {
     return {
       product,
-      section,
-      subSection,
-      subCategory,
-      baseName: product.name.trim() || "Без названия",
+      section: hall.section,
+      groupId: hall.group,
+      subSection: group,
+      baseName,
       color: "",
       size: "",
       variation: "",
       modsLabel: "",
     };
   }
-  const baseName = m[1]!.trim() || product.name.trim();
   const mods = m[2]!
     .split(",")
     .map((part) => part.trim())
@@ -245,15 +186,19 @@ function parseProduct(product: Product): ParsedProduct | null {
   const variation = nonSize.slice(1).join(", ");
   return {
     product,
-    section,
-    subSection,
-    subCategory,
+    section: hall.section,
+    groupId: hall.group,
+    subSection: group,
     baseName,
     color,
     size,
     variation,
     modsLabel: mods.join(", "),
   };
+}
+
+function hallSectionOfGroup(section: HallSectionId, groupId: string): string {
+  return hallGroupsOf(section).find((g) => g.id === groupId)?.label ?? "Прочее";
 }
 
 function stockSum(product: Product): number {
@@ -266,7 +211,7 @@ function stockSum(product: Product): number {
 export function ProductCheck({ initialSection = "" }: { initialSection?: string }) {
   const { activeStore } = useStore();
   const [q, setQ] = useState("");
-  const [section, setSection] = useState(initialSection);
+  const [section, setSection] = useState<HallSectionId | "">(normalizeHallSection(initialSection) ?? "");
   const [color, setColor] = useState("");
   const [size, setSize] = useState("");
   const [variation, setVariation] = useState("");
@@ -276,18 +221,17 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
   const [warehouseFilter, setWarehouseFilter] = useState("");
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
-  const [kind, setKind] = useState<KindFilter>("all");
   const [suitFamily, setSuitFamily] = useState<"" | SuitFamily>("");
   const [suitTab, setSuitTab] = useState<SuitViewTab>("completeness");
   const [openSuit, setOpenSuit] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const isSuitSection = isSuitHallSection(section);
-  const sectionOptions = SECTION_ORDER;
+  const isSuitSection = section === "suits";
   const [products, setProducts] = useState<Product[]>([]);
   const [itemsTotal, setItemsTotal] = useState(0);
   const [suits, setSuits] = useState<CatalogSuitModel[]>([]);
   const [page, setPage] = useState(1);
-  const [folderSubs, setFolderSubs] = useState<Record<string, string[]>>({});
+  const [groupCounts, setGroupCounts] = useState<Record<string, number>>({});
+  const [sectionCounts, setSectionCounts] = useState<Record<string, number>>({});
   const [warehouseOptions, setWarehouseOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -320,30 +264,9 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
   useEffect(() => {
     if (USE_MOCK) return;
     api
-      .get<{
-        folders?: Array<{ name: string; path: string; parentPath: string | null; level: number }>;
-        warehouses?: Array<{ id: string; name: string }>;
-      }>("/catalog/references")
-      .then((refs) => {
-        const map: Record<string, string[]> = {};
-        for (const hall of SECTION_ORDER) {
-          const names = (refs.folders ?? [])
-            .filter((f) => {
-              if (f.level !== 2) return false;
-              const parent = f.parentPath || topSectionOf(f.path);
-              return resolveHallSection(parent) === hall;
-            })
-            .map((f) => f.name.trim())
-            .filter(Boolean);
-          map[hall] = [...new Set(names)].sort((a, b) => a.localeCompare(b, "ru"));
-        }
-        setFolderSubs(map);
-        setWarehouseOptions(refs.warehouses ?? []);
-      })
-      .catch(() => {
-        setFolderSubs({});
-        setWarehouseOptions([]);
-      });
+      .get<{ warehouses?: Array<{ id: string; name: string }> }>("/catalog/references")
+      .then((refs) => setWarehouseOptions(refs.warehouses ?? []))
+      .catch(() => setWarehouseOptions([]));
   }, []);
 
   async function fetchPage(pageNum: number, replace: boolean) {
@@ -358,7 +281,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
       const res = await api.getQuery<CatalogBrowseResponse>("/catalog/browse", {
         q: q.trim() || undefined,
         section: section || undefined,
-        subCategory: isSuitHallSection(section) ? undefined : subCategory || undefined,
+        subCategory: section === "suits" ? undefined : subCategory || undefined,
         store: activeStore,
         warehouse: warehouseFilter || undefined,
         stockFilter,
@@ -368,13 +291,15 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         height: height || undefined,
         priceMin: priceMin.trim() ? Number(priceMin) : undefined,
         priceMax: priceMax.trim() ? Number(priceMax) : undefined,
-        kind: isSuitHallSection(section) ? "suits" : kind,
+        kind: section === "suits" ? "suits" : "all",
         page: pageNum,
-        pageSize: PAGE_SIZE,
+        pageSize: section && section !== "suits" ? 2000 : PAGE_SIZE,
       });
       setProducts((prev) => (replace ? res.items : [...prev, ...res.items]));
       setItemsTotal(res.itemsTotal);
       setSuits(res.suits);
+      setGroupCounts(res.groupCounts ?? {});
+      setSectionCounts(res.sectionCounts ?? {});
       setPage(pageNum);
       if (replace) {
         // При текстовом поиске открываем группы, где есть совпадения.
@@ -382,9 +307,15 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
           const keys = res.items
             .map(parseProduct)
             .filter((row): row is ParsedProduct => row != null)
-            .map((row) => (section ? row.subSection || EMPTY_SUBSECTION : row.section));
+            .map((row) =>
+              section ? row.subSection : `${hallSectionLabel(row.section)} · ${row.subSection}`
+            );
           for (const model of res.suits) keys.push(suitFamilyOf(model));
           setOpenSections(new Set(keys));
+          setOpenBases(new Set());
+        } else if (subCategory && section && section !== "suits") {
+          const label = hallGroupsOf(section).find((g) => g.id === subCategory)?.label;
+          setOpenSections(label ? new Set([label]) : new Set());
           setOpenBases(new Set());
         } else {
           setOpenSections(new Set());
@@ -397,6 +328,8 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         setProducts([]);
         setItemsTotal(0);
         setSuits([]);
+        setGroupCounts({});
+        setSectionCounts({});
       }
     } finally {
       if (replace) setLoading(false);
@@ -428,25 +361,26 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     warehouseFilter,
     priceMin,
     priceMax,
-    kind,
     activeStore,
   ]);
 
   const parsed = useMemo(
-    () => products.map(parseProduct).filter((row): row is ParsedProduct => row != null),
-    [products]
+    () =>
+      products.map(parseProduct).filter((row): row is ParsedProduct => {
+        if (row == null) return false;
+        if (section && section !== "suits" && row.section !== section) return false;
+        if (subCategory && row.groupId !== subCategory) return false;
+        return true;
+      }),
+    [products, section, subCategory]
   );
 
-  /** Подразделы выбранного раздела зала — из МС + из загруженных товаров. */
   const subSectionOptions = useMemo(() => {
-    if (!section) return [] as string[];
-    const names = new Set<string>(folderSubs[section] ?? []);
-    for (const row of parsed) {
-      if (normalizeSectionKey(row.section) !== normalizeSectionKey(section)) continue;
-      if (row.subSection) names.add(row.subSection);
-    }
-    return [...names].sort((a, b) => a.localeCompare(b, "ru"));
-  }, [section, folderSubs, parsed]);
+    if (!section || section === "suits") return [];
+    return hallGroupsOf(section).filter(
+      (g) => g.id !== "other" || (groupCounts[g.id] ?? 0) > 0 || subCategory === "other"
+    );
+  }, [section, groupCounts, subCategory]);
 
   /** Опции фильтров — лучшее приближение по уже загруженной странице (сервер фильтрует сам). */
   const filterOptions = useMemo(() => {
@@ -455,7 +389,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     const variations = new Set<string>();
     const heights = new Set<string>();
     for (const row of parsed) {
-      if (section && normalizeSectionKey(row.section) !== normalizeSectionKey(section)) continue;
+      if (section && row.section !== section) continue;
       if (row.color) colors.add(row.color);
       if (row.size) sizes.add(row.size);
       if (row.variation) variations.add(row.variation);
@@ -483,14 +417,17 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
   const tree = useMemo(() => {
     type BaseGroup = { baseName: string; rows: ParsedProduct[] };
     type SectionGroup = { section: string; bases: BaseGroup[]; variantCount: number };
-    // В режиме раздела — дерево по подразделам; иначе — по 5 разделам зала.
     const byGroup = new Map<string, Map<string, ParsedProduct[]>>();
     for (const row of parsed) {
-      const groupKey = section ? row.subSection || EMPTY_SUBSECTION : row.section;
+      const groupKey = section
+        ? row.subSection
+        : `${hallSectionLabel(row.section)} · ${row.subSection}`;
       const secMap = byGroup.get(groupKey) ?? new Map<string, ParsedProduct[]>();
       secMap.set(row.baseName, [...(secMap.get(row.baseName) ?? []), row]);
       byGroup.set(groupKey, secMap);
     }
+    const groupOrder = section && section !== "suits" ? hallGroupsOf(section).map((g) => g.label) : [];
+    const sectionOrder = HALL_SECTIONS.map((s) => s.label);
     const sections = [...byGroup.entries()]
       .map(([sec, basesMap]): SectionGroup => {
         const bases = [...basesMap.entries()]
@@ -507,20 +444,21 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
       })
       .sort((a, b) => {
         if (section) {
-          if (a.section === EMPTY_SUBSECTION) return 1;
-          if (b.section === EMPTY_SUBSECTION) return -1;
-          return a.section.localeCompare(b.section, "ru");
+          const ai = groupOrder.indexOf(a.section);
+          const bi = groupOrder.indexOf(b.section);
+          return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.section.localeCompare(b.section, "ru");
         }
-        return (
-          matchSectionOrder(a.section) - matchSectionOrder(b.section) ||
-          a.section.localeCompare(b.section, "ru")
-        );
+        const aSec = a.section.split(" · ")[0] ?? "";
+        const bSec = b.section.split(" · ")[0] ?? "";
+        const ai = sectionOrder.indexOf(aSec);
+        const bi = sectionOrder.indexOf(bSec);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.section.localeCompare(b.section, "ru");
       });
     return sections;
   }, [parsed, section]);
 
   const extraActive = Boolean(
-    color || size || variation || height || warehouseFilter || priceMin || priceMax || stockFilter !== "any" || kind !== "all"
+    color || size || variation || height || warehouseFilter || priceMin || priceMax || stockFilter !== "any"
   );
 
   function resetExtraFilters() {
@@ -532,10 +470,9 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     setPriceMin("");
     setPriceMax("");
     setStockFilter("any");
-    setKind("all");
   }
 
-  function selectHallSection(next: string) {
+  function selectHallSection(next: HallSectionId | "") {
     setSection(next);
     setSubCategory("");
     setSuitFamily("");
@@ -565,12 +502,9 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     });
   }
 
-  const showSuits =
-    !isSuitSection &&
-    kind !== "items" &&
-    visibleSuits.length > 0 &&
-    (kind === "suits" || Boolean(q.trim()));
-  const showItemsTree = !isSuitSection && kind !== "suits";
+  const showOverview = !section && !q.trim();
+  const showSuits = !isSuitSection && !showOverview && visibleSuits.length > 0 && Boolean(q.trim());
+  const showItemsTree = !isSuitSection && !showOverview;
   const showSuitFamilies = isSuitSection && suitTab === "completeness";
   const hasMore = products.length < itemsTotal;
 
@@ -583,7 +517,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
       <p className="text-mute text-sm mb-5">
         {isSuitSection
           ? "Костюм — пиджак и брюки одной вариации, жилет делает тройку. Смокинг отдельно."
-          : "Разделы зала · клик по вариации — остатки по складам. Костюмы открываются как двойки, тройки и смокинги."}
+          : "Разделы зала по виду вещи, не по папкам МойСклад. Клик по вариации — остатки по складам."}
       </p>
 
       <div className={`flex gap-1.5 flex-wrap ${section ? "mb-2" : "mb-3"}`}>
@@ -598,18 +532,18 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         >
           Все разделы
         </button>
-        {sectionOptions.map((value) => (
+        {HALL_SECTIONS.map((s) => (
           <button
-            key={value}
+            key={s.id}
             type="button"
-            onClick={() => selectHallSection(value)}
+            onClick={() => selectHallSection(s.id)}
             className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
-              section && normalizeSectionKey(section) === normalizeSectionKey(value)
+              section === s.id
                 ? "bg-gold/15 text-gold-soft border border-gold/40"
                 : "text-mute hover:bg-ink-800 border border-transparent"
             }`}
           >
-            {value}
+            {s.label}
           </button>
         ))}
       </div>
@@ -629,24 +563,25 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                 : "text-mute hover:bg-ink-800 border border-transparent"
             }`}
           >
-            Все подразделы
+            Все виды
           </button>
-          {subSectionOptions.map((value) => (
+          {subSectionOptions.map((g) => (
             <button
-              key={value}
+              key={g.id}
               type="button"
               onClick={() => {
-                setSubCategory(value);
-                setOpenSections(new Set([value]));
+                setSubCategory(g.id);
+                setOpenSections(new Set([g.label]));
                 setOpenBases(new Set());
               }}
               className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
-                subCategory === value
+                subCategory === g.id
                   ? "bg-white/10 text-white border border-white/25"
                   : "text-mute hover:bg-ink-800 border border-transparent"
               }`}
             >
-              {value}
+              {g.label}
+              <span className="ml-1.5 text-[11px] text-mute">{groupCounts[g.id] ?? 0}</span>
             </button>
           ))}
         </div>
@@ -716,29 +651,6 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
           <span className="hidden sm:inline">Сканер</span>
         </button>
       </div>
-
-      {!isSuitSection && (
-        <div className="flex gap-1.5 mb-3 flex-wrap">
-          {([
-            { id: "all", label: "Всё" },
-            { id: "suits", label: "Только костюмы" },
-            { id: "items", label: "Только штучные" },
-          ] as const).map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => setKind(opt.id)}
-              className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
-                kind === opt.id
-                  ? "bg-gold/15 text-gold-soft border border-gold/40"
-                  : "text-mute hover:bg-ink-800 border border-transparent"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
 
       {isSuitSection && (
         <div className="flex gap-2 mb-3 flex-wrap">
@@ -901,6 +813,36 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
       {error && (
         <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
           {error}
+        </div>
+      )}
+
+      {showOverview && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mb-4">
+          {HALL_SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => selectHallSection(s.id)}
+              className="card p-4 text-left hover:bg-ink-800/50 transition"
+            >
+              <div className="text-white font-semibold">{s.label}</div>
+              <div className="text-sm text-mute mt-1">
+                {s.id === "suits"
+                  ? "Двойки, тройки, смокинги"
+                  : loading
+                    ? "…"
+                    : `${sectionCounts[s.id] ?? 0} позиций`}
+              </div>
+              {s.id !== "suits" && (
+                <div className="text-[12px] text-mute mt-2 leading-snug">
+                  {hallGroupsOf(s.id)
+                    .filter((g) => g.id !== "other")
+                    .map((g) => g.label)
+                    .join(" · ")}
+                </div>
+              )}
+            </button>
+          ))}
         </div>
       )}
 
@@ -1088,7 +1030,6 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                                             <div className="text-[12px] text-mute mt-0.5">
                                               {product.sku || "—"}
                                               {product.barcode ? ` · ${product.barcode}` : ""}
-                                              {row.subCategory ? ` · ${row.subCategory}` : ""}
                                               {others.length > 0 && (
                                                 <span className="text-gold-soft">
                                                   {" "}

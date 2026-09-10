@@ -5,9 +5,15 @@ import {
   CDEK_LOCATION,
   CDEK_WAREHOUSE_ID,
   STORE_TO_WAREHOUSE,
+  classifyHall,
+  hallNamedKeywords,
+  hallSectionKeywords,
+  hallSectionOf,
+  normalizeHallSection,
   sortWarehousesByDisplayOrder,
   suitFamilyOf,
 } from "@kassa/shared";
+import type { HallSectionId } from "@kassa/shared";
 import * as ms from "../clients/ms.js";
 import { extractIdFromHref } from "./bootstrap.js";
 import type { CatalogBrowseQuery, Product, SuitPart } from "@kassa/shared";
@@ -575,38 +581,166 @@ export async function priceAudit(): Promise<{
   };
 }
 
-/** Ключ модели костюма, как в `suitModelKey` (@kassa/shared) — литералом для SQL, чтобы не тащить JS-функцию в запрос. */
-const SUIT_KEY_SQL = sql`
-  lower(trim(coalesce(${products.variation}, ''))) || '|||' ||
-  lower(trim(coalesce(${products.fit}, ''))) || '|' ||
-  lower(trim(coalesce(${products.height}, ''))) || '|' ||
-  coalesce(${products.suitLine}, 'regular')
-`;
-
 export interface CatalogBrowseResult {
   items: Product[];
   itemsTotal: number;
   suits: CatalogSuitModel[];
+  groupCounts: Record<string, number>;
+  sectionCounts: Record<string, number>;
   page: number;
   pageSize: number;
 }
 
+function nameMatchesKeywords(keywords: string[]) {
+  const parts = keywords.filter(Boolean).map((k) => sql`${products.name} ILIKE ${`%${k}%`}`);
+  if (parts.length === 0) return sql`false`;
+  return sql`(${sql.join(parts, sql` OR `)})`;
+}
+
+/** Как isSuitPieceForHall: пиджак и жилет всегда, брюки костюма тоже. */
+function suitPieceSql() {
+  return sql`(
+    ${products.suitPart} IN ('jacket', 'vest')
+    OR (
+      ${products.suitPart} = 'trousers'
+      AND ${products.name} NOT ILIKE ${"%палаццо%"}
+      AND ${products.name} NOT ILIKE ${"%слакс%"}
+      AND ${products.name} NOT ILIKE ${"%чинос%"}
+      AND ${products.name} NOT ILIKE ${"%джинс%"}
+      AND NOT (
+        ${products.category} ILIKE ${"%одежд%"}
+        AND ${products.category} NOT ILIKE ${"%костюм%"}
+        AND ${products.category} NOT ILIKE ${"%верхн%"}
+      )
+    )
+  )`;
+}
+
+function hallFolderSql(section: HallSectionId) {
+  if (section === "clothes") {
+    return sql`(
+      ${products.category} ILIKE ${"2. Одежда%"}
+      OR (
+        ${products.category} ILIKE ${"%одежда%"}
+        AND ${products.category} NOT ILIKE ${"%верхн%"}
+        AND ${products.category} NOT ILIKE ${"%костюм%"}
+      )
+    )`;
+  }
+  if (section === "outerwear") return sql`${products.category} ILIKE ${"%верхн%"}`;
+  if (section === "shoes") return sql`${products.category} ILIKE ${"%обув%"}`;
+  if (section === "accessories") return sql`${products.category} ILIKE ${"%аксессуар%"}`;
+  return sql`false`;
+}
+
+async function hallSectionCounts(): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {
+    suits: 0,
+    clothes: 0,
+    outerwear: 0,
+    shoes: 0,
+    accessories: 0,
+  };
+  const rows = await db
+    .select({
+      name: products.name,
+      category: products.category,
+      suitPart: products.suitPart,
+    })
+    .from(products)
+    .where(inArray(products.msType, ["product", "variant"]));
+  for (const row of rows) {
+    const hall = classifyHall({
+      name: row.name,
+      category: row.category,
+      suitPart: (row.suitPart as SuitPart | null) ?? null,
+    });
+    if (!hall || hall.section === "suits") continue;
+    counts[hall.section] = (counts[hall.section] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** Штучные брюки: слаксы/палаццо или «Брюки» из одежды. Не парные брюки костюма. */
+function standaloneTrousersSql() {
+  return sql`(
+    ${nameMatchesKeywords(["палаццо", "слакс", "чинос", "джинс"])}
+    OR (
+      ${nameMatchesKeywords(["брюк"])}
+      AND ${hallFolderSql("clothes")}
+    )
+  )`;
+}
+
+function hallSectionSql(section: HallSectionId, groupId?: string) {
+  const def = hallSectionOf(section);
+  const group = groupId ? def.groups.find((g) => g.id === groupId) : undefined;
+  if (section === "clothes" && group?.id === "trousers") {
+    return standaloneTrousersSql();
+  }
+  if (group && group.nameIncludes.length > 0) {
+    return nameMatchesKeywords(group.nameIncludes);
+  }
+  const allNamed = hallNamedKeywords();
+  if (group?.id === "other") {
+    return sql`(
+      ${hallFolderSql(section)}
+      AND NOT ${nameMatchesKeywords(allNamed)}
+    )`;
+  }
+  const ownKeys = hallSectionKeywords(section).filter((k) => k !== "брюк");
+  const otherKeys = hallNamedKeywords(section);
+  const clothesTrousers =
+    section === "clothes" ? sql`OR ${standaloneTrousersSql()}` : sql``;
+  return sql`(
+    ${nameMatchesKeywords(ownKeys)}
+    ${clothesTrousers}
+    OR (
+      ${hallFolderSql(section)}
+      AND NOT ${nameMatchesKeywords(otherKeys)}
+    )
+  )`;
+}
+
+async function hallGroupCounts(section: HallSectionId): Promise<Record<string, number>> {
+  const rows = await db
+    .select({
+      name: products.name,
+      category: products.category,
+      suitPart: products.suitPart,
+    })
+    .from(products)
+    .where(sql`
+      ${products.msType} IN ('product', 'variant')
+      AND NOT ${suitPieceSql()}
+      AND ${products.name} NOT ILIKE ${"%сертификат%"}
+      AND ${hallSectionSql(section)}
+    `);
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    const hall = classifyHall({
+      name: row.name,
+      category: row.category,
+      suitPart: (row.suitPart as SuitPart | null) ?? null,
+    });
+    if (!hall || hall.section !== section) continue;
+    counts[hall.group] = (counts[hall.group] ?? 0) + 1;
+  }
+  return counts;
+}
+
 /**
- * Каталог с серверной пагинацией (блок 3, созвон 09.09): один SQL с
- * LEFT JOIN stock вместо обзора топ-120 плюс N запросов остатков (`withStock`
- * в ProductCheck.tsx). Костюмные части, у вариации которых есть пиджак,
- * не попадают в штучный список — они видны только внутри модели костюма
- * (`suits`), даже с нулевым остатком. Штучные позиции без пиджака в вариации
- * (одиночные брюки, жилеты, блейзеры) остаются в `items`.
+ * Каталог зала, не дерево МойСклад. Костюмные части (пиджак, жилет, брюки
+ * костюма) только внутри модели. Штучные брюки, сорочки из папки костюмов,
+ * верх, обувь и аксессуары — по виду вещи.
  */
 export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<CatalogBrowseResult> {
-  const cat = query.section?.trim();
-  const sub = query.subCategory?.trim();
-  // В костюмах подраздел — вид комплекта (двойка/тройка), не папка МС.
-  const fullCategory = cat && !/костюм/i.test(cat) ? [cat, sub].filter(Boolean).join("/") : cat;
-  const isSuitSection = cat ? /костюм/i.test(cat) : false;
+  const hall = normalizeHallSection(query.section);
+  const hallGroup = query.subCategory?.trim() || "";
+  const isSuitSection = hall === "suits";
   const wantSuits =
     query.kind !== "items" && (isSuitSection || query.kind === "suits" || Boolean(query.q?.trim()));
+  const emptyOverview = !hall && !query.q?.trim() && query.kind === "all";
 
   const suits: CatalogSuitModel[] = !wantSuits
     ? []
@@ -637,8 +771,28 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
           return true;
         });
 
-  if (query.kind === "suits") {
-    return { items: [], itemsTotal: 0, suits, page: query.page, pageSize: query.pageSize };
+  if (emptyOverview) {
+    return {
+      items: [],
+      itemsTotal: 0,
+      suits: [],
+      groupCounts: {},
+      sectionCounts: await hallSectionCounts(),
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
+  if (query.kind === "suits" || isSuitSection) {
+    return {
+      items: [],
+      itemsTotal: 0,
+      suits,
+      groupCounts: {},
+      sectionCounts: {},
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   const tokens = (query.q ?? "")
@@ -651,29 +805,10 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     .filter((c): c is NonNullable<typeof c> => c != null);
 
   const conditions = [sql`${products.msType} IN ('product', 'variant')`];
-  // Костюмные части с пиджаком в вариации — только внутри модели, не штучкой.
-  conditions.push(sql`
-    NOT (
-      ${products.suitPart} IS NOT NULL
-      AND ${SUIT_KEY_SQL} IN (
-        SELECT ${SUIT_KEY_SQL} FROM ${products}
-        WHERE ${products.suitPart} = 'jacket' AND coalesce(trim(${products.variation}), '') <> ''
-      )
-    )
-  `);
-  if (fullCategory) {
-    conditions.push(sql`
-      (
-        ${products.category} ILIKE ${fullCategory + "%"}
-        OR (
-          coalesce(trim(${products.category}), '') = ''
-          AND (
-            split_part(${products.name}, ' (', 1) = ${cat}
-            OR ${products.name} ILIKE ${cat + " (%"}
-          )
-        )
-      )
-    `);
+  conditions.push(sql`NOT ${suitPieceSql()}`);
+  conditions.push(sql`${products.name} NOT ILIKE ${"%сертификат%"}`);
+  if (hall) {
+    conditions.push(hallSectionSql(hall, hallGroup || undefined));
   }
   for (const c of textConditions) conditions.push(c);
   if (query.color) conditions.push(sql`${products.color} = ${query.color}`);
@@ -699,11 +834,10 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
       ? sql`total_qty < 0`
       : sql`true`;
 
-  const offset = (query.page - 1) * query.pageSize;
+  const pageSize = hall ? Math.max(query.pageSize, 1500) : query.pageSize;
+  const offset = (query.page - 1) * pageSize;
   const whereSql = sql.join(conditions, sql` AND `);
 
-  // FROM без алиаса: все условия и SUIT_KEY_SQL ссылаются на products по имени
-  // таблицы — алиас сломал бы эти ссылки (invalid reference to FROM-clause entry).
   // Остаток — отдельным LEFT JOIN на агрегат по stock, а не N запросов на клиенте.
   const result = await db.execute(sql`
     WITH totals AS (
@@ -722,7 +856,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     FROM base
     WHERE ${stockCondition}
     ORDER BY category NULLS LAST, name
-    LIMIT ${query.pageSize} OFFSET ${offset}
+    LIMIT ${pageSize} OFFSET ${offset}
   `);
 
   const rawRows = (Array.isArray(result)
@@ -745,7 +879,15 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   })) as ProductRow[];
 
   const items = await attachStock(rows, query.store);
-  return { items, itemsTotal, suits, page: query.page, pageSize: query.pageSize };
+  return {
+    items,
+    itemsTotal,
+    suits,
+    groupCounts: hall ? await hallGroupCounts(hall) : {},
+    sectionCounts: {},
+    page: query.page,
+    pageSize,
+  };
 }
 
 export { extractIdFromHref };
