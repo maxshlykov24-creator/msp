@@ -100,6 +100,27 @@ test("orphan row says what is missing and where the pair lies", () => {
   assert.deepEqual(orphan.missing, ["trousers"]);
 });
 
+test("size row keeps complete suits per warehouse, not pooled across stores", () => {
+  const res = computeCompleteness(
+    [
+      line("jacket", "48", 1),
+      line("trousers", "48", 1),
+      line("jacket", "48", 2, { warehouse: "На Бауманской" }),
+      line("trousers", "48", 2, { warehouse: "На Бауманской" }),
+    ],
+    { tolerance: 0 }
+  );
+  const size = res.models[0].sizes.find((row) => row.size === "48");
+  assert.equal(size.whole, 3);
+  assert.deepEqual(
+    size.warehouses.map((row) => [row.name, row.whole]).sort(),
+    [
+      ["На Бауманской", 2],
+      ["На Новокузнецкой", 1],
+    ]
+  );
+});
+
 test("physical half-set stock is counted apart from computed orphans", () => {
   const res = computeCompleteness(
     [

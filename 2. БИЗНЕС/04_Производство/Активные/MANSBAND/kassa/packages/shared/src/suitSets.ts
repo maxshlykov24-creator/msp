@@ -96,6 +96,26 @@ function left(counts: Counts, part: SuitPart, size: string): number {
   return counts.get(part)!.get(size) ?? 0;
 }
 
+/** Цельные на складе: минимум частей этого размера, без свода между складами. */
+function warehouseWholes(
+  lines: SuitStockLine[],
+  size: string,
+  composition: SuitPart[]
+): Array<{ name: string; whole: number }> {
+  const names = [...new Set(lines.map((line) => line.warehouse).filter(Boolean))];
+  const rows: Array<{ name: string; whole: number }> = [];
+  for (const name of names) {
+    const atWarehouse = lines.filter((line) => line.warehouse === name && line.size === size);
+    if (atWarehouse.length === 0) continue;
+    const counts = countsOf(atWarehouse);
+    rows.push({
+      name,
+      whole: Math.min(...composition.map((part) => left(counts, part, size))),
+    });
+  }
+  return rows;
+}
+
 /**
  * Размеры парной части в порядке близости к размеру пиджака: сначала точный,
  * затем сдвиг на единицу, и так до допуска. Нечисловой размер парой не считаем.
@@ -220,6 +240,7 @@ export function buildSuitModel(
       whole: whole.get(size) ?? 0,
       tolerant: tolerant.get(size) ?? 0,
       orphans,
+      warehouses: warehouseWholes([...lines, ...halfSetLines], size, composition),
     });
   }
 

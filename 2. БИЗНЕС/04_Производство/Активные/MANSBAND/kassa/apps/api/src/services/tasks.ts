@@ -1,6 +1,6 @@
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { dealItemState, msRefs, tasks } from "../db/schema.js";
+import { dealItemState, deals as dealsTable, msRefs, tasks } from "../db/schema.js";
 import type { Task } from "@kassa/shared";
 import {
   findWarehouseId,
@@ -99,39 +99,47 @@ export async function listTasks(filters: {
     .where(clauses.length ? and(...clauses) : undefined)
     .orderBy(desc(tasks.createdAt));
   const withNames = await enrichTaskPositionNames(rows.map(toTask));
-  return enrichDealKindOnTasks(withNames);
+  return enrichDealInfoOnTasks(withNames);
 }
 
-/** Подтягиваем вид заявки (Отложка / Обещание) для старых задач без dealKind в metadata. */
-async function enrichDealKindOnTasks(list: Task[]): Promise<Task[]> {
-  const need = list.filter((t) => {
-    if (t.kind !== "movement" && t.kind !== "movement_accept") return false;
-    if (!t.dealNumber) return false;
-    const meta = t.metadata ?? {};
-    return !(typeof meta.dealKindLabel === "string" && meta.dealKindLabel);
-  });
-  if (need.length === 0) return list;
-  const numbers = [...new Set(need.map((t) => t.dealNumber!).filter(Boolean))];
-  const kindByNumber = new Map<number, { kind: string; label: string }>();
-  await Promise.all(
-    numbers.map(async (n) => {
-      const deal = await deals.getByNumber(n).catch(() => null);
-      if (!deal) return;
-      const label = MOVEMENT_DEAL_KIND_LABEL[deal.kind];
-      if (label) kindByNumber.set(n, { kind: deal.kind, label });
-      else if (deal.kind) kindByNumber.set(n, { kind: deal.kind, label: deal.kind });
+/** Вид и этап заявки — чтобы в очереди был цветной статус, как на доске. */
+async function enrichDealInfoOnTasks(list: Task[]): Promise<Task[]> {
+  const numbers = [...new Set(list.map((t) => t.dealNumber).filter((n): n is number => n != null))];
+  if (numbers.length === 0) return list;
+  const rows = await db
+    .select({
+      number: dealsTable.number,
+      stage: dealsTable.stage,
+      data: dealsTable.data,
     })
-  );
-  if (kindByNumber.size === 0) return list;
+    .from(dealsTable)
+    .where(inArray(dealsTable.number, numbers));
+  const info = new Map<number, { kind: string; label: string; stage: string }>();
+  for (const row of rows) {
+    const kind =
+      row.data && typeof row.data === "object" && "kind" in row.data
+        ? String((row.data as { kind?: string }).kind ?? "")
+        : "";
+    const label = MOVEMENT_DEAL_KIND_LABEL[kind] || kind;
+    info.set(row.number, { kind, label, stage: row.stage });
+  }
+  if (info.size === 0) return list;
   return list.map((task) => {
     if (!task.dealNumber) return task;
-    const info = kindByNumber.get(task.dealNumber);
-    if (!info) return task;
+    const found = info.get(task.dealNumber);
+    if (!found) return task;
     const meta = task.metadata ?? {};
-    if (typeof meta.dealKindLabel === "string" && meta.dealKindLabel) return task;
     return {
       ...task,
-      metadata: { ...meta, dealKind: info.kind, dealKindLabel: info.label },
+      metadata: {
+        ...meta,
+        dealKind: typeof meta.dealKind === "string" && meta.dealKind ? meta.dealKind : found.kind,
+        dealKindLabel:
+          typeof meta.dealKindLabel === "string" && meta.dealKindLabel
+            ? meta.dealKindLabel
+            : found.label,
+        dealStage: found.stage,
+      },
     };
   });
 }

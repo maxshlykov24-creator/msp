@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRightLeft, Check, Gift, ListPlus, Plus } from "lucide-react";
 import {
+  ITEM_LOCATIONS,
   STORES,
   TASK_FLOW,
   TASK_QUEUES,
@@ -11,9 +12,8 @@ import {
 } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
-import { Button, Modal } from "../components/ui";
+import { Button, Modal, StageBadge } from "../components/ui";
 import {
-  assigneeLabel,
   CreateTaskForm,
   type CreatedTask,
   type TaskAssigneeRole,
@@ -95,6 +95,7 @@ const MOCK_TASKS: OperationTask[] = [
       authorRole: "consultant",
       dealKind: "deferred",
       dealKindLabel: "Отложка",
+      dealStage: "Ждет товар",
       from: "На Бауманской",
       to: "На Новокузнецкой",
       positions: [
@@ -109,298 +110,113 @@ const MOCK_TASKS: OperationTask[] = [
   },
 ];
 
-const ROLE_SHORT: Record<string, string> = Object.fromEntries(
-  TASK_QUEUES.map((q) => [q.role, q.short])
-);
-
-/** Кратко по позициям: имена товаров через « · » (не «N позиций»). */
-function positionSummary(task: OperationTask): string | null {
-  const list = positionsFromTaskMeta(task.metadata);
-  const names = list.map((p) => p.name?.trim()).filter(Boolean) as string[];
-  if (names.length === 0) return null;
-  return names.join(" · ");
-}
-
-function isReserveOps(kind: string): boolean {
-  return kind === "reserve" || kind === "reserve_call" || kind === "unreserve";
-}
-
-function isDeliveryOps(kind: string): boolean {
-  return (
-    kind === "assemble_cdek" ||
-    kind === "call_courier" ||
-    kind === "take_to_cdek" ||
-    kind === "pickup_from_cdek"
-  );
-}
-
 function isSaryOps(kind: string): boolean {
   return kind === "sary_send";
 }
 
-function moneyRub(amount: unknown): string | null {
-  const n = typeof amount === "number" ? amount : Number(amount);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return `${n.toLocaleString("ru-RU")} ₽`;
+function shortPlace(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === "—") return "—";
+  return trimmed.replace(/^На\s+/i, "").replace(/^Центральный склад$/i, "Центральный");
 }
 
-function saryOpsTitle(task: OperationTask): string {
-  const meta = task.metadata ?? {};
-  const client = typeof meta.client === "string" ? meta.client.trim() : "";
-  if (client) return client;
-  const phone = typeof meta.phone === "string" ? meta.phone.trim() : "";
-  if (phone) return phone;
-  return task.title || "Сарафан";
+function warehouseKey(name: string): string {
+  const n = name.toLowerCase().replace(/ё/g, "е");
+  if (/бауман/.test(n)) return "bauman";
+  if (/новокузнецк|пятниц/.test(n)) return "novo";
+  if (/центральн/.test(n)) return "central";
+  return n.trim();
 }
 
-function saryOpsMeta(task: OperationTask): string {
-  const meta = task.metadata ?? {};
-  const phone = typeof meta.phone === "string" ? meta.phone.trim() : "";
-  const client = typeof meta.client === "string" ? meta.client.trim() : "";
-  const amount = moneyRub(meta.amount) || "1 000 ₽";
-  // Если в заголовке уже имя — в мета телефон; если заголовок телефон — имя не дублируем.
-  const phoneBit = client && phone ? phone : null;
-  // Телефон друга не нашёлся в базе: проверить номер до перевода (созвон 04.09).
-  const notFound = meta.phoneFound === false ? "не найдено" : null;
-  return [amount, "Сарафан", phoneBit, notFound].filter(Boolean).join(" · ");
+function taskTouchesStore(task: OperationTask, store: string): boolean {
+  if (!store) return true;
+  const key = warehouseKey(store);
+  const route = routeFromTaskMeta(task.metadata);
+  return [task.store, route?.from, route?.to].some((value) => Boolean(value) && warehouseKey(value!) === key);
 }
 
-function deliveryOpsTitle(task: OperationTask): string {
-  const meta = task.metadata ?? {};
-  const client = typeof meta.client === "string" ? meta.client.trim() : "";
-  if (client) return client;
-  return positionSummary(task) || task.title || "Доставка";
+function dealStageOf(task: OperationTask): string | null {
+  const stage = task.metadata?.dealStage;
+  return typeof stage === "string" && stage.trim() ? stage.trim() : null;
 }
 
-function deliveryOpsMeta(task: OperationTask): string {
-  const meta = task.metadata ?? {};
-  const kind =
-    typeof meta.dealKindLabel === "string" && meta.dealKindLabel.trim()
-      ? meta.dealKindLabel.trim()
-      : "Доставка";
-  const pos = positionsFromTaskMeta(meta).length;
-  return [task.store || null, kind, pos > 0 ? `${pos} поз.` : null].filter(Boolean).join(" · ");
+function clientOf(task: OperationTask): string | null {
+  const client = task.metadata?.client;
+  return typeof client === "string" && client.trim() ? client.trim() : null;
 }
 
-function formatUntil(raw: unknown): string | null {
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return raw.trim();
-  return `${m[3]}.${m[2]}.${m[1]}`;
+function productCell(task: OperationTask): string {
+  const list = positionsFromTaskMeta(task.metadata);
+  const names = list.map((p) => p.name?.trim()).filter(Boolean);
+  if (names.length === 1) return names[0]!;
+  if (names.length > 1) return `${names[0]} · ещё ${names.length - 1}`;
+  return clientOf(task) || "—";
 }
 
-/**
- * Отложка: белым единый заголовок «Сделать отложку (№N)» (созвон 04.09),
- * серым — клиент, магазин, срок и вид заявки.
- */
-function reserveOpsTitle(task: OperationTask): string {
-  return task.title || "Отложка";
-}
-
-function reserveOpsMeta(task: OperationTask): string {
-  const meta = task.metadata ?? {};
-  const until = formatUntil(meta.reservedUntil);
-  const client = typeof meta.client === "string" && meta.client.trim() ? meta.client.trim() : null;
-  const phone = typeof meta.phone === "string" && meta.phone.trim() ? meta.phone.trim() : null;
-  const consultant =
-    typeof meta.consultant === "string" && meta.consultant.trim()
-      ? meta.consultant.trim()
-      : null;
-  const kind =
-    typeof meta.dealKindLabel === "string" && meta.dealKindLabel.trim()
-      ? meta.dealKindLabel.trim()
-      : task.kind === "unreserve" || task.kind === "reserve_call" || task.kind === "reserve"
-        ? "Отложка"
-        : null;
-  const bits = [
-    // Любая отложка привязана к клиенту — имя и телефон первыми.
-    client,
-    phone,
-    positionSummary(task),
-    task.store || null,
-    consultant,
-    until
-      ? task.kind === "reserve"
-        ? `до ${until}`
-        : `срок ${until}`
-      : null,
-    kind,
-  ].filter(Boolean);
-  return bits.join(" · ");
-}
-
-function dealKindLabelOf(task: OperationTask): string | null {
-  const meta = task.metadata ?? {};
-  if (typeof meta.dealKindLabel === "string" && meta.dealKindLabel.trim()) {
-    return meta.dealKindLabel.trim();
-  }
-  const kind = typeof meta.dealKind === "string" ? meta.dealKind : "";
-  if (kind === "deferred") return "Отложка";
-  if (kind === "promise") return "Обещание";
-  return null;
-}
-
-/**
- * Серые строки без шума:
- * маршрут → вид заявки → кто поставил / ответственный (если другой).
- */
-function moveMetaLines(task: OperationTask): string[] {
-  const meta = task.metadata ?? {};
-  const route = routeFromTaskMeta(meta);
-  const lines: string[] = [];
-  // Кому везём: перемещение всегда под конкретного клиента (созвон 04.09).
-  const client = typeof meta.client === "string" ? meta.client.trim() : "";
-  const phone = typeof meta.phone === "string" ? meta.phone.trim() : "";
-  if (client || phone) lines.push([client, phone].filter(Boolean).join(" "));
-  const positions = positionSummary(task);
-  if (positions) lines.push(positions);
-  if (route) lines.push(`${route.from} → ${route.to}`);
-
-  const kind = dealKindLabelOf(task);
-  if (kind) lines.push(kind);
-
-  const roleKey =
-    (typeof meta.sentByRole === "string" && meta.sentByRole) ||
-    (typeof meta.authorRole === "string" && meta.authorRole) ||
-    task.assigneeRole;
-  const role = ROLE_SHORT[roleKey] ?? roleKey;
-
-  if (task.kind === "movement_accept") {
-    const sent =
-      (typeof meta.sentBy === "string" && meta.sentBy.trim()) || task.createdBy?.trim() || "";
-    if (sent) lines.push(`от ${role} (${sent})`);
-    else if (role) lines.push(`от ${role}`);
-    return lines;
-  }
-
-  const author = task.createdBy?.trim() || "";
-  const responsible =
-    typeof meta.assigneeName === "string" ? meta.assigneeName.trim() : "";
-
-  if (author && responsible && author !== responsible) {
-    lines.push(`поставил ${author} · ответственный ${responsible}`);
-  } else if (author) {
-    lines.push(`поставил ${author}`);
-  } else if (responsible) {
-    lines.push(`ответственный ${responsible}`);
-  } else if (role) {
-    lines.push(role);
-  }
-  return lines;
-}
-
-/** Одна задача в очереди — клик по строке открывает карточку задачи. */
+/** Одна задача в очереди — клик по строке открывает карточку. */
 function TaskRow({
   task,
   onComplete,
-  onOpenDeal,
   onOpenTask,
   showQueue,
 }: {
   task: OperationTask;
   onComplete: () => void;
-  onOpenDeal: (dealNumber: number) => void;
   onOpenTask: () => void;
   showQueue?: boolean;
 }) {
   const needsSetup = task.kind === "movement" && task.metadata?.needsSetup === true;
   const isMove = task.kind === "movement" || task.kind === "movement_accept";
-  const isReserve = isReserveOps(task.kind);
-  const isDelivery = isDeliveryOps(task.kind);
-  const isSary = isSaryOps(task.kind);
   const needsCardScan = isMove || task.kind === "assemble_cdek";
-  const compact = isMove || isReserve || isDelivery || isSary;
   const route = routeFromTaskMeta(task.metadata);
-  const posCount = positionsFromTaskMeta(task.metadata).length;
+  const stage = dealStageOf(task);
   const queueShort = TASK_QUEUES.find((q) => q.role === task.assigneeRole)?.short;
-  const who = assigneeLabel(task);
-
-  // Перемещение / отложка / СДЭК: белым единый заголовок «Действие (№N)»,
-  // серым — клиент, позиции и маршрут (созвон 04.09).
-  const compactTitle = isMove
-    ? task.title || "Без названия"
-    : isReserve
-      ? reserveOpsTitle(task)
-      : isDelivery
-        ? deliveryOpsTitle(task)
-        : isSary
-          ? saryOpsTitle(task)
-          : task.title;
-  const compactMeta = isMove
-    ? moveMetaLines(task).join(" · ")
-    : isReserve
-      ? reserveOpsMeta(task)
-      : isDelivery
-        ? deliveryOpsMeta(task)
-        : isSary
-          ? saryOpsMeta(task)
-          : "";
-
-  const metaBits = [
-    showQueue && queueShort ? queueShort : null,
-    task.store || null,
-    who,
-    route ? `${route.from} → ${route.to}` : null,
-    posCount > 0 ? `${posCount} поз.` : null,
-  ].filter(Boolean);
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <tr
+      className="hover:bg-ink-800/40 cursor-pointer transition"
       onClick={onOpenTask}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpenTask();
-        }
-      }}
-      className="rounded-lg border border-ink-700/80 px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 cursor-pointer hover:border-ink-600 hover:bg-ink-900/40 transition-colors"
     >
-      <div className="flex-1 min-w-[200px]">
-        <div className="text-white font-medium text-[14px]">{compact ? compactTitle : task.title}</div>
-        {compact ? (
-          compactMeta && (
-            <div className="text-[12px] text-mute mt-0.5 truncate">{compactMeta}</div>
-          )
-        ) : (
-          metaBits.length > 0 && (
-            <div className="text-[12px] text-mute mt-0.5 truncate">{metaBits.join(" · ")}</div>
-          )
-        )}
+      <td className="px-3 py-3 align-top whitespace-nowrap">
+        <div className="text-white font-medium text-[13px]">{taskKindLabel(task.kind)}</div>
+        {showQueue && queueShort && <div className="text-[11px] text-mute mt-0.5">{queueShort}</div>}
+      </td>
+      <td className="px-3 py-3 align-top min-w-0">
+        <div className="text-white text-[13px] leading-snug line-clamp-2" title={productCell(task)}>
+          {productCell(task)}
+        </div>
         {needsSetup && (
-          <div className="text-[12px] text-amber-300/90 mt-0.5">Укажите откуда / куда / позиции в заявке</div>
+          <div className="text-[11px] text-amber-300/90 mt-0.5">Нужно указать маршрут и позиции</div>
         )}
-      </div>
-      {!compact && (
-        <span className="text-[11px] text-mute tabular-nums shrink-0">
-          {shortDate(task.createdAt)} {timeOf(task.createdAt)}
-        </span>
-      )}
-      {task.dealNumber != null && (
-        <Button
-          variant="subtle"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenDeal(task.dealNumber!);
-          }}
-        >
-          Заявка #{task.dealNumber}
-        </Button>
-      )}
-      {/* Скан-задачи — только через карточку; остальное можно закрыть из списка. */}
-      {task.status === "pending" && !needsSetup && !needsCardScan && (
-        <Button
-          variant="subtle"
-          onClick={(e) => {
-            e.stopPropagation();
-            onComplete();
-          }}
-        >
-          <Check size={15} /> {taskActionLabel(task.kind)}
-        </Button>
-      )}
-    </div>
+      </td>
+      <td className="px-3 py-3 align-top text-[13px] text-mute-soft whitespace-nowrap">
+        {route ? shortPlace(route.from) : "—"}
+      </td>
+      <td className="px-3 py-3 align-top text-[13px] text-mute-soft whitespace-nowrap">
+        {route ? shortPlace(route.to) : "—"}
+      </td>
+      <td className="px-3 py-3 align-top min-w-0">
+        {stage ? <StageBadge stage={stage} className="inline-block align-top" /> : <span className="text-mute">—</span>}
+      </td>
+      <td className="px-3 py-3 align-top text-[12px] text-mute tabular-nums whitespace-nowrap">
+        <div>{shortDate(task.createdAt)}</div>
+        <div className="text-[11px] text-mute/80">{timeOf(task.createdAt)}</div>
+      </td>
+      <td className="px-3 py-3 align-top text-right">
+        {task.status === "pending" && !needsSetup && !needsCardScan && (
+          <Button
+            variant="subtle"
+            className="py-1.5 px-2.5 text-[12px]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onComplete();
+            }}
+          >
+            <Check size={14} /> {taskActionLabel(task.kind)}
+          </Button>
+        )}
+      </td>
+    </tr>
   );
 }
 
@@ -414,6 +230,11 @@ export function TasksMovements() {
   );
   const [kindFilter, setKindFilter] = useState("");
   const [queueFilter, setQueueFilter] = useState<"" | TaskAssigneeRole>("");
+  const [storeScope, setStoreScope] = useState(() =>
+    STORE_OPTIONS.includes(activeStore as (typeof STORE_OPTIONS)[number]) ? activeStore : ""
+  );
+  const [fromFilter, setFromFilter] = useState("");
+  const [toFilter, setToFilter] = useState("");
   const [createMode, setCreateMode] = useState<CreateMode>(null);
   const [openTask, setOpenTask] = useState<OperationTask | null>(null);
   const [openDeal, setOpenDeal] = useState<Deal | null>(null);
@@ -497,24 +318,31 @@ export function TasksMovements() {
     return ordered.map((k) => ({ value: k, label: taskKindLabel(k) }));
   }, [view, tasks]);
 
-  /** Задачи выбранной очереди (или все), с фильтром по виду. Сары — только в блоке ниже. */
-  const groups = useMemo(() => {
-    const rows = tasks.filter((task) => {
+  const routeOptions = useMemo(() => {
+    const names = new Set<string>(ITEM_LOCATIONS);
+    for (const task of tasks) {
+      const route = routeFromTaskMeta(task.metadata);
+      if (route?.from && route.from !== "—") names.add(route.from);
+      if (route?.to && route.to !== "—") names.add(route.to);
+    }
+    return [...names];
+  }, [tasks]);
+
+  /** Задачи выбранной очереди, магазина и маршрута. Сары — только в блоке ниже. */
+  const visibleTasks = useMemo(() => {
+    return tasks.filter((task) => {
       if (isSaryOps(task.kind)) return false;
       if (view !== "all" && task.assigneeRole !== view) return false;
       if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) return false;
       if (status !== "all" && task.status !== status) return false;
       if (kindFilter && task.kind !== kindFilter) return false;
+      if (storeScope && !taskTouchesStore(task, storeScope)) return false;
+      const route = routeFromTaskMeta(task.metadata);
+      if (fromFilter && warehouseKey(route?.from ?? "") !== warehouseKey(fromFilter)) return false;
+      if (toFilter && warehouseKey(route?.to ?? "") !== warehouseKey(toFilter)) return false;
       return true;
     });
-    const byKind = new Map<string, OperationTask[]>();
-    for (const task of rows) byKind.set(task.kind, [...(byKind.get(task.kind) ?? []), task]);
-    return [...byKind.entries()].sort((a, b) => {
-      const ai = KIND_ORDER.indexOf(a[0]);
-      const bi = KIND_ORDER.indexOf(b[0]);
-      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
-    });
-  }, [tasks, status, view, kindFilter, queueFilter]);
+  }, [tasks, status, view, kindFilter, queueFilter, storeScope, fromFilter, toFilter]);
 
   const queueCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -535,12 +363,13 @@ export function TasksMovements() {
       if (view !== "all" && task.assigneeRole !== view) continue;
       if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) continue;
       if (status !== "all" && task.status !== status) continue;
+      if (storeScope && !taskTouchesStore(task, storeScope)) continue;
       counts.set(task.kind, (counts.get(task.kind) ?? 0) + 1);
     }
     return counts;
-  }, [tasks, view, status, queueFilter]);
+  }, [tasks, view, status, queueFilter, storeScope]);
 
-  const total = groups.reduce((sum, [, rows]) => sum + rows.length, 0);
+  const total = visibleTasks.length;
 
   async function complete(id: string) {
     setActionError(null);
@@ -627,12 +456,12 @@ export function TasksMovements() {
     view === "all" ? "Все очереди" : TASK_QUEUES.find((queue) => queue.role === view)?.label ?? "";
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-7xl mx-auto">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-extrabold text-white">Задачи</h1>
           <p className="text-mute text-sm mt-1">
-            Консультант, логист и call-менеджер · перемещения, отложка, СДЭК, штрихкоды
+            Сначала свой магазин, фильтром можно посмотреть чужие перемещения
           </p>
         </div>
         <Button
@@ -697,20 +526,43 @@ export function TasksMovements() {
           </select>
         )}
         <select
-          className="input py-2 text-sm w-auto min-w-[180px]"
-          value={kindFilter}
-          onChange={(e) => setKindFilter(e.target.value)}
+          className="input py-2 text-sm w-auto min-w-[160px]"
+          value={storeScope}
+          onChange={(e) => setStoreScope(e.target.value)}
         >
-          <option value="">Все типы</option>
-          {kindOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-              {kindCounts.has(opt.value) ? ` (${kindCounts.get(opt.value)})` : ""}
+          <option value="">Все магазины</option>
+          {STORE_OPTIONS.map((store) => (
+            <option key={store} value={store}>
+              {store === activeStore ? `${shortPlace(store)} · этот` : shortPlace(store)}
+            </option>
+          ))}
+        </select>
+        <select
+          className="input py-2 text-sm w-auto min-w-[150px]"
+          value={fromFilter}
+          onChange={(e) => setFromFilter(e.target.value)}
+        >
+          <option value="">Откуда · все</option>
+          {routeOptions.map((name) => (
+            <option key={`from-${name}`} value={name}>
+              {shortPlace(name)}
+            </option>
+          ))}
+        </select>
+        <select
+          className="input py-2 text-sm w-auto min-w-[150px]"
+          value={toFilter}
+          onChange={(e) => setToFilter(e.target.value)}
+        >
+          <option value="">Куда · все</option>
+          {routeOptions.map((name) => (
+            <option key={`to-${name}`} value={name}>
+              {shortPlace(name)}
             </option>
           ))}
         </select>
         <span className="text-[12px] text-mute">
-          {viewLabel} · задач: {total}
+          {viewLabel} · {total}
         </span>
       </div>
 
@@ -755,28 +607,34 @@ export function TasksMovements() {
         </div>
       )}
 
-      <div className="space-y-5">
-        {groups.map(([kind, rows]) => (
-            <section key={kind}>
-              <div className="flex items-baseline gap-2 mb-1.5">
-                <h2 className="text-white font-semibold text-[15px]">{taskKindLabel(kind)}</h2>
-                <span className="text-[12px] text-mute">{rows.length}</span>
-              </div>
-              <div className="space-y-1.5">
-                {rows.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    showQueue={view === "all"}
-                    onOpenTask={() => setOpenTask(task)}
-                    onOpenDeal={(n) => void openDealByNumber(n)}
-                    onComplete={() => void complete(task.id)}
-                  />
-                ))}
-              </div>
-            </section>
-        ))}
-        {total === 0 && <div className="card py-10 text-center text-mute">Задач нет</div>}
+      <div className="card p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[860px]">
+            <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-800">
+              <tr>
+                <th className="text-left px-3 py-2.5 font-medium">Задача</th>
+                <th className="text-left px-3 py-2.5 font-medium">Товар</th>
+                <th className="text-left px-3 py-2.5 font-medium">Откуда</th>
+                <th className="text-left px-3 py-2.5 font-medium">Куда</th>
+                <th className="text-left px-3 py-2.5 font-medium">Этап заявки</th>
+                <th className="text-left px-3 py-2.5 font-medium">Когда</th>
+                <th className="px-3 py-2.5 font-medium" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-800">
+              {visibleTasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  showQueue={view === "all"}
+                  onOpenTask={() => setOpenTask(task)}
+                  onComplete={() => void complete(task.id)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {total === 0 && <div className="py-10 text-center text-mute">Задач нет</div>}
       </div>
 
       {view === "crm" && (

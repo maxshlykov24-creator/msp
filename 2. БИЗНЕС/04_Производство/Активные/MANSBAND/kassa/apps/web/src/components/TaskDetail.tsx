@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, Package, ScanLine } from "lucide-react";
 import { TASK_QUEUES, taskActionLabel, taskKindLabel, type Product } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
-import { Button } from "./ui";
+import { Button, StageBadge } from "./ui";
 import { assigneeLabel, createdByLabel } from "./CreateTaskForm";
 import { BarcodeScannerModal } from "./BarcodeScanner";
 import { money, shortDate, timeOf } from "../lib/format";
@@ -236,15 +236,11 @@ export function TaskDetail({
   const isTakeToCdek = task.kind === "take_to_cdek";
   const isPickupFromCdek = task.kind === "pickup_from_cdek";
   const isSary = task.kind === "sary_send";
-  const isDeliveryCompact =
-    isAssemble || isTakeToCdek || isPickupFromCdek || task.kind === "call_courier";
   /** Позиции списком: сборка / отнести / забрать. Скан обязателен только на сборке. */
   const showDeliveryPositions = isAssemble || isTakeToCdek || isPickupFromCdek;
   const saryPhone = typeof meta?.phone === "string" ? meta.phone.trim() : "";
   const saryFriend =
     typeof meta?.client === "string" && meta.client.trim() ? meta.client.trim() : "";
-  const saryBuyer =
-    typeof meta?.buyer === "string" && meta.buyer.trim() ? meta.buyer.trim() : "";
   const saryAmount =
     typeof meta?.amount === "number" && meta.amount > 0 ? meta.amount : 1000;
   const who = assigneeLabel(task);
@@ -263,11 +259,11 @@ export function TaskDetail({
     const m = untilRaw.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
     return m ? `${m[3]}.${m[2]}.${m[1]}` : untilRaw.trim() || null;
   })();
-  const positionNames = positions.map((p) => p.name?.trim()).filter(Boolean) as string[];
-  const compactHeadline = isSary
-    ? saryFriend || saryPhone || task.title
-    : clientName ||
-      (positionNames.length > 0 ? positionNames.join(" · ") : task.title);
+  const dealStage =
+    (typeof meta?.dealStage === "string" && meta.dealStage.trim()
+      ? meta.dealStage.trim()
+      : "") ||
+    (task.dealNumber != null ? deals.find((d) => d.number === task.dealNumber)?.stage ?? "" : "");
 
   const positionKey = (p: TaskPositionLine, i: number) =>
     p.productId ? `id:${p.productId}` : `name:${p.name}:${i}`;
@@ -331,78 +327,33 @@ export function TaskDetail({
       )}
 
       <div>
-        <div className="text-[12px] text-mute uppercase tracking-wide mb-1">
-          {taskKindLabel(task.kind)}
-          {task.status === "done" ? " · выполнено" : ""}
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <h2 className="text-xl font-bold text-white leading-snug">{taskKindLabel(task.kind)}</h2>
+          {dealStage && <StageBadge stage={dealStage} />}
+          {task.status === "done" && (
+            <span className="text-[12px] text-mute">выполнено</span>
+          )}
         </div>
-        <h2 className="text-xl font-bold text-white leading-snug">
-          {isMove
-            ? positionNames.length > 0
-              ? positionNames.join(" · ")
-              : task.title
-            : isReserveOps || isDeliveryCompact || isSary
-              ? compactHeadline
-              : task.title}
-        </h2>
-        {isMove &&
-          (() => {
-            const line = [
-              route ? `${route.from} → ${route.to}` : null,
-              dealKind,
-              ...people,
-              `${shortDate(task.createdAt)} ${timeOf(task.createdAt)}`,
-            ]
-              .filter(Boolean)
-              .join(" · ");
-            return line ? (
-              <div className="mt-1.5 text-[13px] text-mute">{line}</div>
-            ) : null;
-          })()}
-        {isReserveOps && (
-          <div className="mt-1.5 text-[13px] text-mute">
-            {[
-              task.store || null,
-              typeof meta?.consultant === "string" && meta.consultant.trim()
-                ? meta.consultant.trim()
-                : null,
-              untilLabel
-                ? task.kind === "reserve"
-                  ? `до ${untilLabel}`
-                  : `срок ${untilLabel}`
-                : null,
-              dealKind || "Отложка",
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </div>
-        )}
-        {isDeliveryCompact && (
-          <div className="mt-1.5 text-[13px] text-mute">
-            {[task.store || null, dealKind || "Доставка"].filter(Boolean).join(" · ")}
-          </div>
-        )}
-        {isSary && (
-          <div className="mt-1.5 text-[13px] text-mute">
-            {[
-              money(saryAmount),
-              "Сарафан",
-              saryFriend && saryPhone ? saryPhone : null,
-              saryBuyer ? `клиент ${saryBuyer}` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </div>
-        )}
-        {!isMove && !isReserveOps && !isDeliveryCompact && !isSary && (
-          <div className="mt-1.5 text-[13px] text-mute flex flex-wrap gap-x-3 gap-y-0.5">
-            {task.store && <span>{task.store}</span>}
-            <span>{who}</span>
-            <span>
-              {shortDate(task.createdAt)} {timeOf(task.createdAt)}
-            </span>
-            {creator && <span>поставил: {creator}</span>}
-          </div>
-        )}
+        <div className="text-[13px] text-mute flex flex-wrap gap-x-3 gap-y-0.5">
+          {clientName && <span className="text-mute-soft">{clientName}</span>}
+          {isSary && (saryFriend || saryPhone) && (
+            <span>{[saryFriend, saryPhone].filter(Boolean).join(" · ")}</span>
+          )}
+          {isSary && <span>{money(saryAmount)}</span>}
+          {isReserveOps && untilLabel && (
+            <span>{task.kind === "reserve" ? `до ${untilLabel}` : `срок ${untilLabel}`}</span>
+          )}
+          {dealKind && !isMove && <span>{dealKind}</span>}
+          {task.store && !isMove && <span>{task.store}</span>}
+          {who && <span>{who}</span>}
+          <span>
+            {shortDate(task.createdAt)} {timeOf(task.createdAt)}
+          </span>
+          {people.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+          {creator && !people.length && <span>поставил {creator}</span>}
+        </div>
       </div>
 
       {isMove && route && (
@@ -545,7 +496,7 @@ export function TaskDetail({
         </Button>
         {task.dealNumber != null && onOpenDeal && (
           <Button variant="subtle" onClick={() => onOpenDeal(task.dealNumber!)}>
-            Заявка #{task.dealNumber}
+            Открыть заявку
           </Button>
         )}
         {task.status === "pending" && !needsSetup && onComplete && (
