@@ -11,6 +11,7 @@ import asyncio
 import logging
 import random
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from bot import human, llm, nudge, prompt, store
@@ -48,6 +49,13 @@ tasks: dict[int, asyncio.Task] = {}
 # руками, и о ней никто не помнит. Гасим чат только когда не отвечаем подряд.
 llm_fails: dict[int, int] = {}
 MAX_LLM_FAILS = 2
+# Пауза от сбоя модели - не решение владельца, а авария. Кредиты кончились
+# вечером, к утру ключ пополнен, а чат всё равно молчит, пока кто-то не вспомнит
+# про /bot. Такую паузу снимаем сами: лид не должен зависеть от нашей памяти.
+TECH_PAUSE_REASON = "LLM недоступен"
+TECH_PAUSE_MIN = 10
+# Порог предупреждения об остатке на ключе OpenRouter, в долларах.
+BUDGET_WARN_USD = 3.0
 inflight: set[int] = set()
 # Сколько раз переспрашиваем модель, если клиент дописывает во время обдумывания.
 MAX_MERGE_ROUNDS = 2
@@ -409,6 +417,27 @@ async def _generate(history: list[dict]) -> str:
     return raw
 
 
+def tech_pause_lifted(chat_id: int) -> bool:
+    """Снимает паузу, поставленную сбоем модели, когда пауза уже отстоялась.
+
+    Паузу от владельца (/human) и передачу человеку не трогаем: там молчание -
+    осознанное решение.
+    """
+    info = store.pause_info(chat_id)
+    if info.get("reason") != TECH_PAUSE_REASON:
+        return False
+    at = info.get("at")
+    if isinstance(at, datetime):
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - at < timedelta(minutes=TECH_PAUSE_MIN):
+            return False
+    store.resume(chat_id)
+    llm_fails.pop(chat_id, None)
+    log.info("чат %s: снял техническую паузу, пробую отвечать", chat_id)
+    return True
+
+
 def _refresh_nudge(chat_id: int, history: list[dict]) -> None:
     doc = store.load_doc(chat_id)
     doc["nudge"] = nudge.refresh(doc.get("nudge") or {}, history)
@@ -416,7 +445,7 @@ def _refresh_nudge(chat_id: int, history: list[dict]) -> None:
 
 
 async def send_nudge(tg: Telegram, chat_id: int) -> None:
-    if store.is_paused(chat_id):
+    if store.is_paused(chat_id) and not tech_pause_lifted(chat_id):
         return
     if pending.get(chat_id):
         return
@@ -506,6 +535,29 @@ async def stock_loop() -> None:
         await asyncio.sleep(max(settings.stock_refresh_min, 1) * 60)
 
 
+async def budget_loop(tg: Telegram) -> None:
+    """Раз в полчаса смотрим остаток по ключу и предупреждаем, пока он не кончился."""
+    warned = False
+    while True:
+        try:
+            info = await llm.key_budget()
+            left = info.get("remaining")
+            if isinstance(left, (int, float)):
+                if left <= BUDGET_WARN_USD and not warned:
+                    warned = True
+                    await tg.notify_admin(
+                        "Кредиты OpenRouter кончаются: осталось %.2f из %s долларов. "
+                        "Пополни лимит ключа, иначе агент замолчит во всех чатах."
+                        % (left, info.get("limit"))
+                    )
+                    log.warning("остаток по ключу %.2f доллара", left)
+                elif left > BUDGET_WARN_USD * 2:
+                    warned = False
+        except Exception as exc:
+            log.warning("остаток по ключу не проверил: %s", exc)
+        await asyncio.sleep(1800)
+
+
 async def autoteka_loop() -> None:
     """Отчёты меняются редко, кэш живёт неделю - хватает одного прохода в сутки."""
     while True:
@@ -534,6 +586,7 @@ async def run() -> None:
     asyncio.create_task(stock_loop())
     asyncio.create_task(autoteka_loop())
     asyncio.create_task(nudge_loop(tg))
+    asyncio.create_task(budget_loop(tg))
     offset = read_offset()
 
     try:
@@ -556,7 +609,7 @@ async def run() -> None:
                 store.log_line(chat_id, "клиент", text)
                 if text.startswith("/") and await handle_command(tg, chat_id, text):
                     continue
-                if store.is_paused(chat_id):
+                if store.is_paused(chat_id) and not tech_pause_lifted(chat_id):
                     log.info("чат %s на паузе, молчим", chat_id)
                     continue
 

@@ -84,6 +84,23 @@ def is_paused(chat_id: int | str) -> bool:
     return _paused_path(chat_id).exists()
 
 
+def pause_info(chat_id: int | str) -> dict:
+    """Причина паузы и когда поставлена. Пустой словарь, если чат не на паузе."""
+    path = _paused_path(chat_id)
+    if not path.exists():
+        return {}
+    out: dict = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, _, value = line.partition("=")
+        out[key.strip()] = value.strip()
+    if out.get("paused_at"):
+        try:
+            out["at"] = datetime.fromisoformat(out["paused_at"])
+        except ValueError:
+            pass
+    return out
+
+
 def pause(chat_id: int | str, reason: str = "handoff") -> None:
     _paused_path(chat_id).write_text(
         "paused_at=%s\nreason=%s\n" % (_now(), reason), encoding="utf-8"

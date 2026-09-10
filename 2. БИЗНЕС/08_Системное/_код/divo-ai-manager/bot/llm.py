@@ -139,6 +139,29 @@ def _chain() -> list[tuple[str, str]]:
     return chain
 
 
+async def key_budget() -> dict:
+    """Остаток по ключу OpenRouter: {'limit': .., 'remaining': .., 'usage': ..}.
+
+    Лимит ключа - главная причина полного молчания бота: 403 приходит на любую
+    модель сразу, запасной вариант не спасает.
+    """
+    if not settings.openrouter_key:
+        return {}
+    async with httpx.AsyncClient(timeout=30, proxy=settings.llm_proxy or None) as client:
+        resp = await client.get(
+            "https://openrouter.ai/api/v1/key",
+            headers={"Authorization": "Bearer %s" % settings.openrouter_key},
+        )
+    if resp.status_code != 200:
+        raise LlmError("статус ключа: HTTP %s %s" % (resp.status_code, resp.text[:200]))
+    data = resp.json().get("data") or {}
+    return {
+        "limit": data.get("limit"),
+        "remaining": data.get("limit_remaining"),
+        "usage": data.get("usage"),
+    }
+
+
 async def reply(system: str, history: list[dict]) -> str:
     """history — [{role: user|assistant, content: ...}] в порядке диалога."""
     chain = _chain()
