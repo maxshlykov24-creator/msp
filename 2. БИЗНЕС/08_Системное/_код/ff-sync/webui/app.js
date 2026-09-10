@@ -5,7 +5,7 @@ const state = {
   // поставки WB в таблице «Заказов»: строка поставки вместо пачки заданий
   asmSupplies: [],
   // поставки WB: выбранная поставка, выбранное грузоместо и отмеченные задания внутри
-  wbSupplies: [], wbSupply: 0, wbBox: 0, wbPicked: new Set(), wbDetail: null,
+  wbSupplies: [], wbSupply: 0, wbBox: 0, wbPicked: new Set(), wbDetail: null, wbQuery: "",
 };
 
 function openCombo(input, list, fill) {
@@ -1809,6 +1809,7 @@ $("wbClose").onclick = () => $("wbModal").classList.remove("on");
 $("wbModal").onclick = (e) => { if (e.target === $("wbModal")) $("wbModal").classList.remove("on"); };
 
 function openWb(id) {
+  if (id && state.wbSupply !== Number(id)) state.wbQuery = "";
   if (id) state.wbSupply = Number(id);
   $("wbModal").classList.add("on");
   state.wbPicked = new Set();
@@ -1838,6 +1839,7 @@ async function loadWbSupplies() {
 $("wbSupplies").onclick = (e) => {
   const btn = e.target.closest("button[data-supply]");
   if (!btn) return;
+  if (state.wbSupply !== Number(btn.dataset.supply)) state.wbQuery = "";
   state.wbSupply = Number(btn.dataset.supply);
   state.wbPicked = new Set();
   loadWbSupplies().catch((err) => say($("wbMsg"), err.message, "bad"));
@@ -1883,24 +1885,17 @@ async function loadWbDetail(id) {
     </section>
     <section class="wb-sec">
       <div class="wb-sec-h">
-        <h4>Заказы</h4>
+        <h4 id="wbOrdersTitle">Заказы</h4>
         <div class="wb-sec-acts">
+          <input id="wbQuery" type="search" class="wb-query" placeholder="артикул, задание, название, короб" value="${esc(state.wbQuery || "")}">
           ${open && loose ? `<button class="btn" id="wbPack" type="button" disabled>В этот короб</button>` : ""}
           ${open ? printWrap : ""}
         </div>
       </div>
       <div class="tbl-wrap wb-rows">
         <table class="tbl" id="wbTbl">
-          <thead><tr><th class="pick"><input type="checkbox" id="wbAll" title="Выбрать все"${res.rows.length ? "" : " disabled"}${res.rows.length && state.wbPicked.size === res.rows.length ? " checked" : ""}></th><th>Задание</th><th>Артикул</th><th>Наименование</th><th>Короб</th></tr></thead>
-          <tbody>${res.rows.length
-            ? res.rows.map((r) => `<tr${r.box ? ' class="is-boxed"' : ""}>
-                <td class="pick"><input type="checkbox" data-wbrow="${r.id}" title="${r.box ? "Печать этого задания" : "Печать или в короб"}"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
-                <td class="ext">${esc(r.ext_id)}</td>
-                <td class="artq"><b>${num(r.qty, 0)}</b> · ${esc(r.article || "—")}</td>
-                <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
-                <td>${r.box ? `<span class="badge box">${esc(r.box)}</span>` : "—"}</td>
-              </tr>`).join("")
-            : `<tr><td colspan="5" class="empty">Пусто. Задания попадают сюда кнопкой «Взять в сборку».</td></tr>`}</tbody>
+          <thead><tr><th class="pick"><input type="checkbox" id="wbAll" title="Выбрать все видимые"></th><th>Задание</th><th>Артикул</th><th>Наименование</th><th>Короб</th></tr></thead>
+          <tbody></tbody>
         </table>
       </div>
     </section>
@@ -1910,6 +1905,50 @@ async function loadWbDetail(id) {
         : `<span>${esc(dest)}</span>${printWrap}`}
     </div>`;
   bindWbDetail();
+  renderWbRows();
+}
+
+function wbRowHits(r) {
+  const q = String(state.wbQuery || "").trim().toLowerCase();
+  if (!q) return true;
+  return [r.ext_id, r.article, r.name, r.box].some((v) => String(v || "").toLowerCase().includes(q));
+}
+
+function wbVisibleRows() {
+  return ((state.wbDetail && state.wbDetail.rows) || []).filter(wbRowHits);
+}
+
+function wbOrderRowsHtml() {
+  const all = (state.wbDetail && state.wbDetail.rows) || [];
+  if (!all.length) {
+    return `<tr><td colspan="5" class="empty">Пусто. Задания попадают сюда кнопкой «Взять в сборку».</td></tr>`;
+  }
+  const rows = wbVisibleRows();
+  if (!rows.length) {
+    return `<tr><td colspan="5" class="empty">Нет заданий по запросу «${esc(state.wbQuery)}».</td></tr>`;
+  }
+  return rows.map((r) => `<tr${r.box ? ' class="is-boxed"' : ""}>
+                <td class="pick"><input type="checkbox" data-wbrow="${r.id}" title="${r.box ? "Печать этого задания" : "Печать или в короб"}"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
+                <td class="ext">${esc(r.ext_id)}</td>
+                <td class="artq"><b>${num(r.qty, 0)}</b> · ${r.article ? `<button type="button" class="artlink" data-wbart="${esc(r.article)}" title="Отфильтровать этот артикул">${esc(r.article)}</button>` : "—"}</td>
+                <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
+                <td>${r.box ? `<span class="badge box">${esc(r.box)}</span>` : "—"}</td>
+              </tr>`).join("");
+}
+
+function renderWbRows() {
+  const tbl = $("wbTbl");
+  if (!tbl) return;
+  tbl.querySelector("tbody").innerHTML = wbOrderRowsHtml();
+  const vis = wbVisibleRows();
+  const all = $("wbAll");
+  if (all) all.disabled = !vis.length;
+  const title = $("wbOrdersTitle");
+  if (title) {
+    const total = ((state.wbDetail && state.wbDetail.rows) || []).length;
+    title.textContent = !total || vis.length === total ? "Заказы" : "Заказы · " + vis.length + " из " + total;
+  }
+  syncWbAll();
 }
 
 function refreshWbPack() {
@@ -1922,9 +1961,11 @@ function refreshWbPack() {
 function syncWbAll() {
   const all = $("wbAll");
   if (!all) return;
-  const n = ((state.wbDetail && state.wbDetail.rows) || []).length;
-  all.checked = n > 0 && state.wbPicked.size === n;
-  all.indeterminate = state.wbPicked.size > 0 && state.wbPicked.size < n;
+  const vis = wbVisibleRows();
+  const n = vis.length;
+  const picked = vis.filter((r) => state.wbPicked.has(r.id)).length;
+  all.checked = n > 0 && picked === n;
+  all.indeterminate = picked > 0 && picked < n;
 }
 
 function wbPrintTarget() {
@@ -1971,6 +2012,11 @@ function bindWbDetail() {
   const guard = async (fn, busy) => {
     say($("wbMsg"), busy);
     try { await fn(); } catch (e) { say($("wbMsg"), e.message, "bad"); }
+  };
+  const q = $("wbQuery");
+  if (q) q.oninput = () => {
+    state.wbQuery = q.value;
+    renderWbRows();
   };
   const nb = $("wbNewBox");
   if (nb) nb.onclick = () => guard(async () => {
@@ -2071,11 +2117,21 @@ function bindWbDetail() {
       refreshWbPack();
       return;
     }
+    const art = e.target.closest("button[data-wbart]");
+    if (art) {
+      const val = art.dataset.wbart;
+      state.wbQuery = state.wbQuery === val ? "" : val;
+      const inp = $("wbQuery");
+      if (inp) inp.value = state.wbQuery;
+      renderWbRows();
+      return;
+    }
     const all = e.target.closest("#wbAll");
     if (all) {
-      const rows = (state.wbDetail && state.wbDetail.rows) || [];
-      state.wbPicked = all.checked ? new Set(rows.map((r) => r.id)) : new Set();
-      wrap.querySelectorAll("input[data-wbrow]").forEach((b) => { b.checked = all.checked; });
+      const vis = wbVisibleRows();
+      if (all.checked) vis.forEach((r) => state.wbPicked.add(r.id));
+      else vis.forEach((r) => state.wbPicked.delete(r.id));
+      wrap.querySelectorAll("input[data-wbrow]").forEach((b) => { b.checked = state.wbPicked.has(Number(b.dataset.wbrow)); });
       refreshWbPack();
       return;
     }

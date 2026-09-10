@@ -376,7 +376,11 @@ table.asm-tbl tr.sup-head:hover .sup-open{opacity:1}
 .wb-sec{display:flex;flex-direction:column;gap:8px}
 .wb-sec-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .wb-sec-h h4{font-size:13px;font-weight:700;margin:0}
-.wb-sec-acts{display:flex;gap:6px;align-items:center}
+.wb-sec-acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.wb-query{width:220px;padding:7px 11px;border:1px solid var(--line-2);background:var(--input-bg);color:inherit;font:inherit;font-size:13px;border-radius:10px;outline:none}
+.wb-query:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,91,255,.15)}
+#wbTbl td.artq .artlink{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;border-bottom:1px dashed currentColor}
+#wbTbl td.artq .artlink:hover{opacity:.75}
 .wb-boxes{display:flex;flex-wrap:wrap;gap:8px}
 .wb-box{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:var(--input-bg);cursor:pointer;font:inherit;font-size:13px;color:inherit}
 .wb-box:hover{border-color:var(--line-2)}
