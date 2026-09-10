@@ -148,7 +148,9 @@ def _boxes_for(rows, amount):
         return [], ["Коробов не завёл: поставка %s заведена не у нас." % exts.pop()]
     try:
         return make_boxes(found[0]["id"], amount)["boxes"], []
-    except ValueError as exc:
+    except (ValueError, wb_supply.SupplyError) as exc:
+        # отказ по коробам не должен ронять «Собрано»: смена уже собрана, и
+        # отметка нужна складу независимо от того, завелось грузоместо или нет
         return [], ["Коробов не завёл: %s" % exc]
 
 
@@ -296,7 +298,18 @@ def make_boxes(supply_id, amount):
             % (orders, limit, have)
         )
     cab = _cab_of_supply(supply)
-    ext_ids = wb_supply.add_boxes(cab, supply["ext_id"], amount)
+    try:
+        ext_ids = wb_supply.add_boxes(cab, supply["ext_id"], amount)
+    except wb_supply.SupplyError as exc:
+        # Живой WB бывает строже описания метода: на поставке из двух заданий он
+        # отдал 409 уже на второй короб. Причину площадка не называет, поэтому
+        # переводим отказ в понятный склад текст вместо голого кода ошибки.
+        if "FailedToAddSupplyTrbx" in str(exc):
+            raise ValueError(
+                "WB отказал в коробе: заданий в поставке %s, коробов уже %s. Уложи товар в имеющиеся короба или добавляй по одному после того, как в поставку уйдут ещё задания."
+                % (orders, have)
+            )
+        raise ValueError(str(exc))
     insert_wb_boxes(supply["id"], ext_ids, now_iso())
     return {"boxes": ext_ids}
 
