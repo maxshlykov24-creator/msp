@@ -39,7 +39,7 @@ async function boot() {
     $("login").classList.add("off");
     $("app").classList.add("on");
     await loadClients();
-    await loadOverview();
+    await loadAsm();
     await loadIntake();
   } catch (e) {
     $("login").classList.remove("off");
@@ -1207,7 +1207,7 @@ function refreshAsmPick() {
   const n = state.pickedAsm.size;
   const marks = state.asm.filter((r) => state.pickedAsm.has(r.id)).reduce((a, r) => a + (r.marks || 0), 0);
   $("aSel").textContent = n ? "Выбрано " + n : "Ничего не выбрано";
-  ["aWork", "aDone", "aUnwork", "aPrint", "aShipped", "aBoxQr", "aBackAsm"].forEach((id) => { $(id).disabled = !n; });
+  ["aWork", "aDone", "aPrint", "aShipped", "aBoxQr", "aBackAsm"].forEach((id) => { $(id).disabled = !n; });
   // коды маркировки вносим по одному отправлению: у каждого свой набор
   $("aKiz").disabled = n !== 1;
   if (!n) hidePrintMenu();
@@ -1434,16 +1434,18 @@ async function asmTake() {
   const ids = [...state.pickedAsm];
   if (!ids.length) return;
   const wb = state.asm.filter((r) => state.pickedAsm.has(r.id) && r.marketplace === "wb" && r.kind === "fbs");
-  if (wb.length) {
-    const okay = await ask(
-      "Открыть поставку WB на " + wb.length + " заданий?",
-      "Своего «взять в сборку» у WB нет: задание уходит в сборку вместе с поставкой, поэтому поставка откроется сама."
-        + " Шаг необратимый — вынуть задание из поставки площадка не даёт, «Вернуть в новые» снимет только нашу отметку."
-        + " Задания с разной габаритностью уйдут в разные поставки: WB держит в одной поставке только один тип.",
-      "Взять в сборку"
-    );
-    if (!okay) return;
-  }
+  const okay = await ask(
+    wb.length
+      ? "Открыть поставку WB на " + wb.length + " заданий?"
+      : "Взять " + ids.length + " заданий в сборку?",
+    wb.length
+      ? "Своего «взять в сборку» у WB нет: задание уходит в сборку вместе с поставкой, поэтому поставка откроется сама."
+        + " Шаг необратимый — вынуть задание из поставки площадка не даёт."
+        + " Задания с разной габаритностью уйдут в разные поставки: WB держит в одной поставке только один тип."
+      : "Задания перейдут на вкладку «На сборке».",
+    "Взять в сборку"
+  );
+  if (!okay) return;
   $("aWork").disabled = true;
   const label = $("aWork").textContent;
   $("aWork").textContent = "Беру…";
@@ -1578,21 +1580,6 @@ $("kizSend").onclick = async () => {
     say($("kizMsg"), e.message, "bad");
   }
   $("kizSend").disabled = false;
-};
-$("aUnwork").onclick = async () => {
-  const ids = [...state.pickedAsm];
-  if (!ids.length) return;
-  const rows = state.asm.filter((r) => state.pickedAsm.has(r.id));
-  const wb = rows.filter((r) => r.marketplace === "wb" && r.supply);
-  const okay = await ask(
-    "Вернуть " + ids.length + " заданий в новые?",
-    wb.length
-      ? "Снимется только наша отметка. У WB " + wb.length + " из " + ids.length + " заданий останутся в поставке — вынуть их площадка не даёт."
-      : "Задания вернутся во вкладку «Новые». Площадку это не трогает.",
-    "Вернуть"
-  );
-  if (!okay) return;
-  await asmWork("", "new", "Возвращено в новые");
 };
 $("aBackAsm").onclick = () => asmWork("assembling", "assembling", "Возвращено в сборку");
 
