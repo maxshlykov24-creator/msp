@@ -1891,7 +1891,7 @@ async function loadWbDetail(id) {
       </div>
       <div class="tbl-wrap wb-rows">
         <table class="tbl" id="wbTbl">
-          <thead><tr><th class="pick"></th><th>Задание</th><th>Артикул</th><th>Наименование</th><th>Короб</th></tr></thead>
+          <thead><tr><th class="pick"><input type="checkbox" id="wbAll" title="Выбрать все"${res.rows.length ? "" : " disabled"}${res.rows.length && state.wbPicked.size === res.rows.length ? " checked" : ""}></th><th>Задание</th><th>Артикул</th><th>Наименование</th><th>Короб</th></tr></thead>
           <tbody>${res.rows.length
             ? res.rows.map((r) => `<tr${r.box ? ' class="is-boxed"' : ""}>
                 <td class="pick"><input type="checkbox" data-wbrow="${r.id}" title="${r.box ? "Печать этого задания" : "Печать или в короб"}"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
@@ -1917,6 +1917,14 @@ function refreshWbPack() {
   const boxed = new Set((state.wbDetail && state.wbDetail.rows || []).filter((r) => r.box).map((r) => r.id));
   const loose = [...state.wbPicked].filter((id) => !boxed.has(id));
   if (btn) btn.disabled = !(state.wbBox && loose.length);
+}
+
+function syncWbAll() {
+  const all = $("wbAll");
+  if (!all) return;
+  const n = ((state.wbDetail && state.wbDetail.rows) || []).length;
+  all.checked = n > 0 && state.wbPicked.size === n;
+  all.indeterminate = state.wbPicked.size > 0 && state.wbPicked.size < n;
 }
 
 function wbPrintTarget() {
@@ -2063,14 +2071,24 @@ function bindWbDetail() {
       refreshWbPack();
       return;
     }
+    const all = e.target.closest("#wbAll");
+    if (all) {
+      const rows = (state.wbDetail && state.wbDetail.rows) || [];
+      state.wbPicked = all.checked ? new Set(rows.map((r) => r.id)) : new Set();
+      wrap.querySelectorAll("input[data-wbrow]").forEach((b) => { b.checked = all.checked; });
+      refreshWbPack();
+      return;
+    }
     const cb = e.target.closest("input[data-wbrow]");
     if (cb) {
       const rid = Number(cb.dataset.wbrow);
       if (cb.checked) state.wbPicked.add(rid); else state.wbPicked.delete(rid);
       refreshWbPack();
+      syncWbAll();
     }
   };
   refreshWbPack();
+  syncWbAll();
 }
 
 async function downloadXlsx(url, ids, fallback, okText, msgEl, extra) {
