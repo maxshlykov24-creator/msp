@@ -1188,6 +1188,24 @@ function hidePrintMenu() {
   $("aPrintMenu").hidden = true;
 }
 
+// Поставка живёт сразу в нескольких вкладках: часть заданий ещё на сборке,
+// часть уже «ожидают отгрузки». В таблице текущей вкладки видны не все.
+// Печать и галка на строке поставки должны брать весь состав, не только вкладку.
+function supplyMembers(ext) {
+  const sup = (state.asmSupplies || []).find((s) => s.ext_id === ext);
+  if (sup && sup.ship_ids && sup.ship_ids.length) return sup.ship_ids.map(Number);
+  return state.asm.filter((r) => r.supply === ext).map((r) => r.id);
+}
+
+function pickedAsmExpanded() {
+  const ids = new Set(state.pickedAsm);
+  (state.asmSupplies || []).forEach((s) => {
+    const members = (s.ship_ids || []).map(Number);
+    if (members.some((id) => ids.has(id))) members.forEach((id) => ids.add(id));
+  });
+  return [...ids];
+}
+
 function refreshAsmDock() {
   const group = state.asmGroup;
   $("aActsNew").hidden = group !== "new";
@@ -1203,8 +1221,8 @@ function restoreAsmPick() {
     b.checked = state.pickedAsm.has(Number(b.dataset.asm));
   });
   $("aTbl").querySelectorAll("input[data-supbox]").forEach((b) => {
-    const kids = state.asm.filter((r) => r.supply === b.dataset.supbox);
-    b.checked = kids.length > 0 && kids.every((r) => state.pickedAsm.has(r.id));
+    const kids = supplyMembers(b.dataset.supbox);
+    b.checked = kids.length > 0 && kids.every((id) => state.pickedAsm.has(id));
   });
   refreshAsmPick();
 }
@@ -1337,8 +1355,8 @@ $("aTbl").onclick = (e) => {
   if (supbox) {
     // галка на поставке отмечает все её задания: кнопки дока работают по id
     const ext = supbox.dataset.supbox;
-    const kids = state.asm.filter((r) => r.supply === ext);
-    kids.forEach((r) => { if (supbox.checked) state.pickedAsm.add(r.id); else state.pickedAsm.delete(r.id); });
+    const kids = supplyMembers(ext);
+    kids.forEach((id) => { if (supbox.checked) state.pickedAsm.add(id); else state.pickedAsm.delete(id); });
     restoreAsmPick();
     return;
   }
@@ -1644,7 +1662,7 @@ $("aBoxQr").onclick = async () => {
 };
 
 async function printAsm(mode) {
-  const ids = [...state.pickedAsm];
+  const ids = pickedAsmExpanded();
   if (!ids.length) return;
   hidePrintMenu();
   $("aPrint").disabled = true;

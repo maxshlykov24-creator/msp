@@ -794,6 +794,7 @@ def assembly(
     # показывает строку поставки, а не пачку заданий. Клик открывает окно коробов.
     supplies = []
     for s in find_wb_supplies({r["supply"] for r in out if r["supply"]}):
+        members = list_supply_shipments(s["cabinet_id"], s["ext_id"])
         supplies.append(
             {
                 "id": s["id"],
@@ -804,6 +805,7 @@ def assembly(
                 "orders": s["orders"],
                 "boxes": s["boxes"],
                 "loose": s["loose"],
+                "ship_ids": [r["id"] for r in members],
                 "cargo": statuses.cargo_label(s["cargo_type"]),
                 "pickup": statuses.to_pickup(s["cargo_type"]),
                 "created": (s["created_at"] or "")[:16].replace("T", " "),
