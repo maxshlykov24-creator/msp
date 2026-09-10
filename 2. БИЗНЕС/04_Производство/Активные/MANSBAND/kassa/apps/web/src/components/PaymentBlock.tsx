@@ -249,7 +249,7 @@ export function PaymentBlock({
             </div>
             <div className="min-w-0">
               {!certNo.trim() ? (
-                <p className="text-[13px] text-mute">Введите номер — покажем баланс и остаток после списания</p>
+                <p className="hint-only text-[13px] text-mute">Введите номер — покажем баланс и остаток после списания</p>
               ) : !cert ? (
                 <p className="text-[13px] text-red-300">Сертификат не найден в системе</p>
               ) : (

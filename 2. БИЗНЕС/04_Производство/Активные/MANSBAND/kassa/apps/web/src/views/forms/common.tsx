@@ -218,7 +218,7 @@ export function ConsultantFields({
           {consultants.map((c) => <option key={c}>{c}</option>)}
         </select>
         {allowEmptyConsultant && !data.consultant && (
-          <p className="text-[12px] text-mute mt-1">
+          <p className="hint-only text-[12px] text-mute mt-1">
             Продажа не закреплена: продавец проставится при конвертации в продажу.
           </p>
         )}
@@ -1058,9 +1058,9 @@ export function ReturnBlock({
       <div className="flex items-center gap-2 text-[13px] font-semibold text-white">
         <Undo2 size={15} className="text-gold" /> Возврат клиенту {money(amount)}
       </div>
-      <p className="text-[12px] text-mute">
-        Выберите способ: наличные / карта консультанта — сразу; «Перевести Mansband» — задача Эдвину
-        «Сделать возврат».
+      <p className="hint-only text-[12px] text-mute">
+        Выберите способ: наличные — сразу; карта консультанта — сразу; «Перевести Mansband» — задача
+        Эдвину «Сделать возврат».
       </p>
       <PayoutRows
         total={amount}

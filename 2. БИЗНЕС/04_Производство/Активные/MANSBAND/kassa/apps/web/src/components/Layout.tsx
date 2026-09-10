@@ -190,11 +190,12 @@ export function Layout({
         <header className="sticky top-0 z-30 border-b border-ink-800 bg-ink-950 md:bg-ink-950/95 md:backdrop-blur pt-[env(safe-area-inset-top)]">
           {/* Мобильная шапка: лого по центру, магазин + пользователь — отдельной строкой */}
           <div className="md:hidden px-4 pb-3">
-            <div className="relative flex items-center justify-center py-2.5">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center py-2.5 gap-2">
+              <div />
               <button type="button" onClick={onHome} aria-label="На главную">
-                <img src={logoFull} alt="MANSBAND" className="h-7 w-auto max-w-[min(100%,160px)] select-none" />
+                <img src={logoFull} alt="MANSBAND" className="h-7 w-auto max-w-[140px] select-none" />
               </button>
-              <div className="absolute right-0 top-1/2 -translate-y-1/2">
+              <div className="justify-self-end">
                 <HintsToggle compact />
               </div>
             </div>

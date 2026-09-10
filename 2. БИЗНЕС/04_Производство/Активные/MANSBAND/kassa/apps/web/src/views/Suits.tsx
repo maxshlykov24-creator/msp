@@ -400,7 +400,7 @@ export function StockTab() {
       </div>
       <Card className="space-y-2 text-[13px]">
         <div className="text-white font-semibold">Светофор: {lightLabel[data?.light ?? "green"]}</div>
-        <div className="text-mute">
+        <div className="hint-only text-mute">
           Пороги возраста задаются в настройках; нормативы называет владелец, в коде только механика.
         </div>
         <div className="text-mute">
@@ -413,7 +413,7 @@ export function StockTab() {
           Перекос сеток: пиджаков без брюк своего размера {data?.gridSkew.jacketsWithoutTrousers ?? 0},
           брюк без пиджаков {data?.gridSkew.trousersWithoutJackets ?? 0}.
         </div>
-        <div className="text-[12px] text-mute/70">
+        <div className="hint-only text-[12px] text-mute/70">
           Оборачиваемость и неликвид появятся после накопления продаж: в МойСкладе розничной
           истории пока нет, касса начнёт её писать с запуска.
         </div>

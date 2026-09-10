@@ -131,7 +131,7 @@ export function ConvertKindForm({
   if (!kind) {
     return (
       <div className="space-y-3">
-        <p className="text-[13px] text-mute">
+        <p className="hint-only text-[13px] text-mute">
           Номер заявки #{deal.number} сохранится. Выберите тип — дальше заполним обязательные поля.
         </p>
         <div className="space-y-2">
@@ -143,7 +143,7 @@ export function ConvertKindForm({
               onClick={() => setKind(t.kind)}
             >
               <div className="text-white font-semibold text-[14px]">{t.label}</div>
-              <div className="text-[12px] text-mute mt-0.5">{t.hint}</div>
+              <div className="hint-only text-[12px] text-mute mt-0.5">{t.hint}</div>
             </button>
           ))}
         </div>
@@ -231,7 +231,7 @@ export function ConvertKindForm({
             <input type="checkbox" checked={issued} onChange={(e) => setIssued(e.target.checked)} />
             Товар фактически выдан
           </label>
-          <p className="text-[12px] text-mute">
+          <p className="hint-only text-[12px] text-mute">
             После подтверждения Эдвину сразу уйдёт задача «Выставить счет» по этой заявке.
           </p>
         </div>
