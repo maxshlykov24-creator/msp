@@ -335,6 +335,19 @@ def used_name_asks(messages: list[dict]) -> list[str]:
     return found
 
 
+def drop_name_ask(text: str) -> str:
+    """Убирает вопрос про имя из реплики.
+
+    Спросили один раз, клиент не назвал — второй раз это уже давление, и никакая
+    новая формулировка («как вас зовут, кстати») дела не меняет.
+    """
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    kept = [p for p in parts if p.strip() and not asked_name(p)]
+    if len(kept) == len(parts):
+        return text
+    return " ".join(kept).strip().rstrip(" .,")
+
+
 def repeats_used_name_ask(text: str, used: list[str]) -> bool:
     blob = _norm_line(text)
     return any(_norm_line(line) and _norm_line(line) in blob for line in used)
