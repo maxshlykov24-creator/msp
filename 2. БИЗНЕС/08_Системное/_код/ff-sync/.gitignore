@@ -8,3 +8,4 @@ ff.db
 *.db
 *.csv
 google_sa.json
+edge/certs/
