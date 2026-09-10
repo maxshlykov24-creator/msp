@@ -1233,6 +1233,7 @@ function refreshAsmDock() {
   $("aActsReady").hidden = group !== "ready";
   if (group !== "assembling") hidePrintMenu();
   const shipTools = group === "shipped" || group === "delivered";
+  $("aPicking").hidden = group !== "new" && group !== "assembling";
   $("aWeekly").hidden = !shipTools;
   $("shReport").hidden = !shipTools;
   $("shExport").hidden = !shipTools;
