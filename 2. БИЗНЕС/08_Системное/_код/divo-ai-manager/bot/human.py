@@ -136,6 +136,31 @@ HISTORY_DENIAL = re.compile(
     r")",
     re.IGNORECASE,
 )
+# «По окрасам данных нет - значит их нет». Пустое поле означает «не знаю», и
+# вслух этот вывод звучит как отговорка продавца, который сам себе разрешил
+# ответить за базу. Оставляем только сам факт из карточки.
+NO_DATA_LOGIC = re.compile(
+    r"("
+    r"(данн\w+|сведени\w+|информаци\w+)\s+нет\s*[-,]?\s*значит|"
+    r"(не\s+указан\w*|пуст\w+|нет\s+записи)\s*[-,]?\s*значит|"
+    r"раз\s+(данн\w+|сведени\w+)\s+нет\s*[-,]?\s*(то\s+)?знач|"
+    r"значит\s+(их|его|ее|её)\s+нет"
+    r")",
+    re.IGNORECASE,
+)
+# Телефонные формулы в переписке звучат нелепо: в чате никто не «слушает».
+# В KB они есть законно - это скрипт входящего звонка, а не чата.
+PHONE_SCRIPT = re.compile(
+    r"\s*[-,]?\s*(слушаю\s+вас|я\s+вас\s+слушаю|говорите|на\s+связи,\s+слушаю)\b(\s*[.!])?",
+    re.IGNORECASE,
+)
+# ASR в расшифровках звонков слышит «Дива / Диво / Дивы Моторс», и модель тащит
+# это в чат. Название пишется латиницей: DIVO MOTORS.
+BRAND_MISHEARD = re.compile(
+    r"\b(див[аоы]|дио|дима|diva|divo)\s*[- ]?\s*(моторс|моторз|motors)\b",
+    re.IGNORECASE,
+)
+BRAND = "DIVO MOTORS"
 # Квалификация клиента: «для себя или в коммерческих целях», «какой бюджет».
 # Такого скрипта у нас нет ни в промпте, ни в KB - модель достает его из своей
 # выучки про автосалоны. Лишний ход, а ответ «под работу» уводит диалог
@@ -423,6 +448,48 @@ def trim_permit(text: str) -> str:
     return _tidy(text, original) if text != original else original
 
 
+def drop_no_data_logic(text: str) -> str:
+    """Выкидывает вывод «данных нет - значит нет», оставляя сам факт.
+
+    «По окрасам данных нет - значит их нет, машина без окрасов» превращается в
+    «Машина без окрасов»: вывод убираем, факт из карточки оставляем.
+    """
+    original = text or ""
+    if not NO_DATA_LOGIC.search(original):
+        return original
+    out: list[str] = []
+    for part in re.split(r"(?<=[.!?])\s+", original):
+        if not NO_DATA_LOGIC.search(part):
+            out.append(part)
+            continue
+        # Внутри предложения вывод обычно стоит перед фактом: берём то, что
+        # после него, и это ровно ответ клиенту.
+        pieces = [p.strip(" ,-") for p in re.split(r",", part) if p.strip(" ,-")]
+        tail = [p for p in pieces if not NO_DATA_LOGIC.search(p)]
+        if tail:
+            keep = ", ".join(tail)
+            out.append(keep[0].upper() + keep[1:])
+    text = " ".join(p for p in out if p.strip())
+    return _tidy(text, original) if text.strip() else original
+
+
+def fix_brand(text: str) -> str:
+    return BRAND_MISHEARD.sub(BRAND, text or "")
+
+
+def drop_phone_script(text: str) -> str:
+    """«Слушаю вас» и «говорите» - формулы телефонного звонка, не переписки."""
+    original = text or ""
+    if not PHONE_SCRIPT.search(original):
+        return original
+    # Точку, на которой кончалось предложение, оставляем: без неё следующая
+    # фраза слипается с приветствием.
+    text = PHONE_SCRIPT.sub(lambda m: (m.group(2) or "").strip(), original)
+    if not re.search(r"\w", text):
+        return ""  # вся реплика была телефонной формулой, отправлять нечего
+    return _tidy(text, original)
+
+
 def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: дефис вместо длинного тире, без точки в конце."""
     text = (text or "").replace("—", "-").replace("–", "-")
@@ -431,6 +498,9 @@ def for_chat(text: str) -> str:
     text = drop_qual(text)
     text = trim_permit(text)
     text = soften_card(text)
+    text = drop_no_data_logic(text)
+    text = drop_phone_script(text)
+    text = fix_brand(text)
     text = add_missing_dots(text)
     return drop_end_period(text)
 
