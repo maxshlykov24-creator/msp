@@ -106,18 +106,17 @@ export function SuitModelRow({
       {open && (
         <div className="border-t border-ink-800 overflow-x-auto">
           <div className="hint-only px-4 pt-3 text-[12px] text-mute">
-            Нажмите размер: сначала цельные на трёх складах, ещё раз — все положения.
+            Цельные на трёх складах. Нажмите размер — все положения.
           </div>
           <table className="w-full text-sm min-w-[520px]">
             <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-800">
               <tr>
                 <th className="text-left px-4 py-2 font-medium">Размер</th>
-                {sizeOpen &&
-                  MAIN_WAREHOUSES.map((w) => (
-                    <th key={w.id} className="text-right px-3 py-2 font-medium whitespace-nowrap w-[120px]">
-                      {w.label}
-                    </th>
-                  ))}
+                {MAIN_WAREHOUSES.map((w) => (
+                  <th key={w.id} className="text-right px-3 py-2 font-medium whitespace-nowrap w-[120px]">
+                    {w.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-800">
@@ -127,14 +126,13 @@ export function SuitModelRow({
                   model={model}
                   size={size}
                   warehouse={warehouse}
-                  showStores={Boolean(sizeOpen)}
-                  detail={sizeOpen?.size === size.size ? sizeOpen.detail : null}
+                  detail={sizeOpen === size.size}
                   onToggle={() => toggleSize(size.size)}
                 />
               ))}
               {model.sizes.length === 0 && (
                 <tr>
-                  <td colSpan={sizeOpen ? 4 : 1} className="px-4 py-2.5 text-[13px] text-mute">
+                  <td colSpan={4} className="px-4 py-2.5 text-[13px] text-mute">
                     Ни одного размера в остатке.
                   </td>
                 </tr>
@@ -151,21 +149,19 @@ function SizeStockRows({
   model,
   size,
   warehouse,
-  showStores,
   detail,
   onToggle,
 }: {
   model: PricedSuitModel;
   size: SuitSizeRow;
   warehouse: string;
-  showStores: boolean;
-  detail: SizeDetail | null;
+  detail: boolean;
   onToggle: () => void;
 }) {
   const stores = size.warehouses ?? [];
-  const leftovers = detail === "all" ? leftoverStock(stores.filter((w) => w.whole > 0)) : [];
+  const leftovers = detail ? leftoverStock(stores.filter((w) => w.whole > 0)) : [];
   const assembleOrphans = size.orphans.filter((orphan) => orphan.pairLocations.length > 0);
-  const selected = detail != null;
+  const selected = detail;
 
   return (
     <>
@@ -186,19 +182,18 @@ function SizeStockRows({
             </span>
           </div>
         </td>
-        {showStores &&
-          MAIN_WAREHOUSES.map((w) => {
-            const n = qtyAt(stores, w.match);
-            return (
-              <td key={w.id} className={`px-3 py-3 text-right tabular-nums align-middle ${qtyClass(n)}`}>
-                {fmtQty(n)}
-              </td>
-            );
-          })}
+        {MAIN_WAREHOUSES.map((w) => {
+          const n = qtyAt(stores, w.match);
+          return (
+            <td key={w.id} className={`px-3 py-3 text-right tabular-nums align-middle ${qtyClass(n)}`}>
+              {fmtQty(n)}
+            </td>
+          );
+        })}
       </tr>
-      {detail === "all" && (
+      {detail && (
         <tr className="bg-ink-900/60">
-          <td colSpan={showStores ? 4 : 1} className="px-4 py-3">
+          <td colSpan={4} className="px-4 py-3">
             <div className="field-label mb-2">Все склады и положения</div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {EXPANDED_COLUMNS.map((col) => (
