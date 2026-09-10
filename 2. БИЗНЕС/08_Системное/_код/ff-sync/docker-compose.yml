@@ -1,4 +1,4 @@
-# Прод: VPS 72.56.8.43
+# Прод: VPS 194.87.202.217 (перенос 2026-09-10 с 72.56.8.43)
 #   cd /opt/ff-sync && docker compose up -d --build
 
 name: ff-sync
