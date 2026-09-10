@@ -46,6 +46,29 @@ def _cols(conn, table):
     return {r[1] for r in conn.execute("PRAGMA table_info(%s)" % table)}
 
 
+def _rewrite_wb_dropoff(conn):
+    """Кластеры WB в колонке office заменить на наш ПВЗ или СЦ."""
+    if "shipments" not in {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }:
+        return
+    cols = _cols(conn, "shipments")
+    if "office" not in cols or "cargo_type" not in cols:
+        return
+    import statuses
+
+    extra = ", pickup_allowed" if "pickup_allowed" in cols else ""
+    rows = conn.execute(
+        "SELECT id, office, cargo_type%s FROM shipments WHERE marketplace = 'wb' AND kind = 'fbs'"
+        % extra
+    ).fetchall()
+    for r in rows:
+        flag = r["pickup_allowed"] if extra and "pickup_allowed" in r.keys() else ""
+        want = statuses.dropoff(r["cargo_type"], flag)
+        if want and (r["office"] or "") != want:
+            conn.execute("UPDATE shipments SET office = ? WHERE id = ?", (want, r["id"]))
+
+
 def migrate(conn):
     clients = _cols(conn, "clients")
     for col, decl in (
@@ -129,14 +152,18 @@ def migrate(conn):
     for col in (
         "status_group", "work_state", "accepted_at", "deadline_at", "track", "warehouse", "image",
         "supply_ext", "trbx_ext",
-        # куда WB велит везти задание и его габаритный тип: от них зависит,
+        # куда везти задание и его габаритный тип: от них зависит,
         # ПВЗ это или сортировочный центр и нужны ли грузоместа
-        "office", "cargo_type",
+        "office", "cargo_type", "pickup_allowed",
     ):
         if col not in ships:
             conn.execute("ALTER TABLE shipments ADD COLUMN %s TEXT" % col)
-    if "cargo_type" not in _cols(conn, "wb_supplies"):
+    supplies = _cols(conn, "wb_supplies")
+    if "cargo_type" not in supplies:
         conn.execute("ALTER TABLE wb_supplies ADD COLUMN cargo_type TEXT")
+    if "pickup_allowed" not in _cols(conn, "wb_supplies"):
+        conn.execute("ALTER TABLE wb_supplies ADD COLUMN pickup_allowed TEXT")
+    _rewrite_wb_dropoff(conn)
     if fresh:
         # у записей до появления раздела «Сборка» группы нет, и они не попали бы
         # ни на одну вкладку. Разбираем её из сохранённого текста статуса, чтобы
@@ -1030,8 +1057,8 @@ def upsert_order_log(cabinet_id, ext_order_id, ms_order_id, result, error, creat
 # это наша локальная отметка оператора, и выгрузка её не трогает.
 SHIP_EXTRA = (
     "status_group", "accepted_at", "deadline_at", "track", "warehouse", "image",
-    # куда WB велит везти задание и его габаритный тип
-    "office", "cargo_type",
+    # куда везти задание и его габаритный тип
+    "office", "cargo_type", "pickup_allowed",
 )
 
 
@@ -1136,17 +1163,40 @@ def delete_shipments_by_ext(cabinet_id, kind, ext_ids):
     return len(ids)
 
 
-def insert_wb_supply(client_id, cabinet_id, ext_id, name, created_at, author, cargo_type=""):
+def insert_wb_supply(client_id, cabinet_id, ext_id, name, created_at, author, cargo_type="", pickup_allowed=""):
     conn = connect()
     cur = conn.execute(
-        "INSERT INTO wb_supplies (client_id, cabinet_id, ext_id, name, created_at, author, cargo_type) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (client_id, cabinet_id, ext_id, name or "", created_at, author or "", str(cargo_type or "")),
+        "INSERT INTO wb_supplies (client_id, cabinet_id, ext_id, name, created_at, author, cargo_type, pickup_allowed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (client_id, cabinet_id, ext_id, name or "", created_at, author or "", str(cargo_type or ""), str(pickup_allowed or "")),
     )
     conn.commit()
     sid = cur.lastrowid
     conn.close()
     return sid
+
+
+def set_wb_supply_dropoff(supply_id, cargo_type, pickup_allowed):
+    """Габарит и флаг ПВЗ у поставки: от них адрес сдачи и нужны ли короба."""
+    conn = connect()
+    conn.execute(
+        "UPDATE wb_supplies SET cargo_type = ?, pickup_allowed = ? WHERE id = ?",
+        (str(cargo_type or ""), str(pickup_allowed or ""), int(supply_id)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_supply_shipments_dropoff(cabinet_id, supply_ext, office, pickup_allowed):
+    """Тот же адрес сдачи на все задания поставки, чтобы колонка не врала."""
+    conn = connect()
+    conn.execute(
+        "UPDATE shipments SET office = ?, pickup_allowed = ? "
+        "WHERE cabinet_id = ? AND supply_ext = ?",
+        (office or "", str(pickup_allowed or ""), int(cabinet_id), supply_ext),
+    )
+    conn.commit()
+    conn.close()
 
 
 def get_wb_supply(supply_id):

@@ -101,6 +101,11 @@ def fake_req(method, url, headers=None, **kw):
     if url.endswith("/meta/sgtin") and method == "PUT":
         WB_SENT[url.rsplit("/orders/", 1)[1].split("/")[0]] = (kw.get("json") or {}).get("sgtins") or []
         return Fake(204)
+    path = url.split("?")[0]
+    if method == "GET" and "/api/v3/supplies/" in path:
+        tail = path.split("/api/v3/supplies/", 1)[1].rstrip("/")
+        if "/" not in tail:
+            return Fake(200, {"id": tail})
     return Fake(404, {"code": 404, "message": "мок не знает %s" % url})
 
 
@@ -202,6 +207,7 @@ pre = supply_flow.preflight(sup["id"])
 assert pre == {
     "ext_id": "WB-GI-777", "client": "Тест ООО", "orders": 4, "boxes": 2,
     "loose": 2, "empty_boxes": ["WB-TRBX-2"], "state": "open",
+    "office": "", "pickup": True,
 }, pre
 
 # без confirm не передаём
@@ -448,5 +454,65 @@ try:
     raise AssertionError("второй короб на одном задании прошёл локальную проверку")
 except ValueError as exc:
     assert "не больше половины заданий" in str(exc), exc
+
+# 23. куда везти: ПВЗ Домодедовская 28, если нельзя — СЦ на Кавказском
+import statuses
+import shipments_pull
+
+assert statuses.dropoff("1") == statuses.PVZ
+assert statuses.dropoff("1", "0") == statuses.SC
+assert statuses.dropoff("3") == statuses.SC
+assert "Домодедовская" in statuses.PVZ and "28" in statuses.PVZ
+assert "Кавказский" in statuses.SC and "57" in statuses.SC
+assert shipments_pull.wb_office({"cargoType": 1, "isPickupPointShipmentAllowed": True, "offices": ["Москва_Север"]}) == statuses.PVZ
+assert shipments_pull.wb_office({"cargoType": 1, "isPickupPointShipmentAllowed": False}) == statuses.SC
+
+denied = db.upsert_shipment(
+    client_id, wb_cab, "wb", "fbs", "301", "Новый", "2026-09-05", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:10", "cargo_type": "1",
+           "pickup_allowed": "0", "office": statuses.SC},
+)
+out = supply_flow.take([denied], author="тест")
+assert len(out["supplies"]) == 1, out
+sc_denied = db.get_wb_supply(out["supplies"][0]["id"])
+assert str(sc_denied["pickup_allowed"]) == "0", dict(sc_denied)
+try:
+    supply_flow.make_boxes(sc_denied["id"], 1)
+    raise AssertionError("завели короба при запрете ПВЗ")
+except ValueError as exc:
+    assert "Кавказский" in str(exc), exc
+
+# отказ WB при заведении короба: поставка была на ПВЗ, площадка сказала нельзя
+pvz_then = db.insert_wb_supply(client_id, wb_cab, "WB-GI-DENY", "Смена ПВЗ", "2026-09-05T12:00:00", "тест", "1", "1")
+deny_ship = db.upsert_shipment(
+    client_id, wb_cab, "wb", "fbs", "302", "Новый", "2026-09-05", "ART-1", "2000000000019",
+    "Ремень", 1, None, 0, "2026-09-05T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:11", "cargo_type": "1",
+           "pickup_allowed": "1", "office": statuses.PVZ},
+)
+db.set_shipment_supply([deny_ship], "WB-GI-DENY")
+import wb_supply
+real_wb = wb_supply.req
+
+def deny_pvz(method, url, headers=None, **kw):
+    path = url.split("?")[0]
+    if method == "POST" and path.endswith("/trbx"):
+        return Fake(409, {"code": "FailedToAddSupplyTrbx", "message": "You should add boxes only to supplies shipped to the pickup points"})
+    if method == "GET" and "/api/v3/supplies/" in path and path.rstrip("/").split("/")[-1] == "WB-GI-DENY":
+        return Fake(200, {"id": "WB-GI-DENY", "isPickupPointShipmentAllowed": False, "cargoType": 1})
+    return real_wb(method, url, headers=headers, **kw)
+
+wb_supply.req = deny_pvz
+try:
+    supply_flow.make_boxes(pvz_then, 1)
+    raise AssertionError("короб прошёл при отказе ПВЗ")
+except ValueError as exc:
+    assert "не принимает" in str(exc) and "Кавказский" in str(exc), exc
+finally:
+    wb_supply.req = real_wb
+flipped = db.get_wb_supply(pvz_then)
+assert str(flipped["pickup_allowed"]) == "0", dict(flipped)
+assert db.get_shipments_by_ids([deny_ship])[0]["office"] == statuses.SC
 
 print("все проверки поставок, сборки и КиЗ прошли")

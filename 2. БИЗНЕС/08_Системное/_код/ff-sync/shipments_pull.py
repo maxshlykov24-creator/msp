@@ -241,14 +241,16 @@ def ozon_marks(detail):
 
 
 def wb_office(order):
-    """Точка сдачи задания так, как её назвал WB.
+    """Куда везти задание: наш ПВЗ или СЦ, не кластер покупателя из `offices`.
 
-    Выбрать её нельзя: в методах поставки FBS параметра точки нет, а
-    `destinationOfficeId` поставки только читается. Задание приносит список
-    офисов, куда его примут, — его и показываем сборщику.
+    Выбрать точку через API нельзя: в методах поставки параметра нет, а
+    `destinationOfficeId` только читается. `offices` у задания — это регион
+    покупателя (Москва_Север), складу он не нужен. Адрес пишем сами: ПВЗ
+    Домодедовская 28, если площадка запретила пункт выдачи — СЦ на Кавказском.
     """
-    names = [str(x).strip() for x in (order.get("offices") or []) if str(x or "").strip()]
-    return ", ".join(names[:3])
+    cargo = str(order.get("cargoType") or "")
+    flag = statuses_mod.pickup_flag(order.get("isPickupPointShipmentAllowed"))
+    return statuses_mod.dropoff(cargo, flag)
 
 
 def handle_wb_fbs(client, cab, orders):
@@ -284,11 +286,11 @@ def handle_wb_fbs(client, cab, orders):
                 "track": "",
                 "warehouse": "",
                 "image": cat["image"],
-                # куда везти задание решает WB, а не мы: в API поставки параметра
-                # точки сдачи нет вовсе. Габаритный тип отделяет ПВЗ от
-                # сортировочного центра и решает, нужны ли грузоместа
+                # куда везти: наш ПВЗ или СЦ. Габарит и флаг ПВЗ решают,
+                # нужны ли грузоместа. Кластер из `offices` складу не показываем
                 "office": wb_office(order),
                 "cargo_type": str(order.get("cargoType") or ""),
+                "pickup_allowed": statuses_mod.pickup_flag(order.get("isPickupPointShipmentAllowed")),
             },
         )
     return n

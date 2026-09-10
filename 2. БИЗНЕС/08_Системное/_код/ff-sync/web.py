@@ -784,8 +784,14 @@ def assembly(
                 "marks": r["marks_count"],
                 "supply": (r["supply_ext"] if "supply_ext" in r.keys() else "") or "",
                 "box": (r["trbx_ext"] if "trbx_ext" in r.keys() else "") or "",
-                "office": (r["office"] if "office" in r.keys() else "") or "",
-                "cargo": statuses.cargo_label(r["cargo_type"] if "cargo_type" in r.keys() else ""),
+                "office": statuses.dropoff(
+                    r["cargo_type"] if "cargo_type" in r.keys() else "",
+                    r["pickup_allowed"] if "pickup_allowed" in r.keys() else "",
+                ) or ((r["office"] if "office" in r.keys() else "") or ""),
+                "cargo": statuses.cargo_label(
+                    r["cargo_type"] if "cargo_type" in r.keys() else "",
+                    r["pickup_allowed"] if "pickup_allowed" in r.keys() else "",
+                ),
                 "ms_order_id": r["ms_order_id"] or "",
                 "ms_url": order_app_url(r["ms_order_id"]),
             }
@@ -806,8 +812,9 @@ def assembly(
                 "boxes": s["boxes"],
                 "loose": s["loose"],
                 "ship_ids": [r["id"] for r in members],
-                "cargo": statuses.cargo_label(s["cargo_type"]),
-                "pickup": statuses.to_pickup(s["cargo_type"]),
+                "cargo": statuses.cargo_label(s["cargo_type"], s["pickup_allowed"] if "pickup_allowed" in s.keys() else ""),
+                "pickup": statuses.to_pickup(s["cargo_type"], s["pickup_allowed"] if "pickup_allowed" in s.keys() else ""),
+                "office": statuses.dropoff(s["cargo_type"], s["pickup_allowed"] if "pickup_allowed" in s.keys() else ""),
                 "created": (s["created_at"] or "")[:16].replace("T", " "),
             }
         )
@@ -1007,6 +1014,7 @@ def wb_supply_create(data: dict = Body(...), ff_session: str = Cookie(default=""
 def wb_supply_detail(supply_id: int, ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
+    import statuses
     from db import get_wb_supply
 
     supply = get_wb_supply(supply_id)
@@ -1023,6 +1031,18 @@ def wb_supply_detail(supply_id: int, ff_session: str = Cookie(default="")):
             "state": supply["state"],
             "created": (supply["created_at"] or "")[:16].replace("T", " "),
             "delivered": (supply["delivered_at"] or "")[:16].replace("T", " "),
+            "office": statuses.dropoff(
+                supply["cargo_type"] if "cargo_type" in supply.keys() else "",
+                supply["pickup_allowed"] if "pickup_allowed" in supply.keys() else "",
+            ),
+            "pickup": statuses.to_pickup(
+                supply["cargo_type"] if "cargo_type" in supply.keys() else "",
+                supply["pickup_allowed"] if "pickup_allowed" in supply.keys() else "",
+            ),
+            "cargo": statuses.cargo_label(
+                supply["cargo_type"] if "cargo_type" in supply.keys() else "",
+                supply["pickup_allowed"] if "pickup_allowed" in supply.keys() else "",
+            ),
         },
         "boxes": [
             {"id": b["id"], "ext_id": b["ext_id"], "orders": b["orders"]}

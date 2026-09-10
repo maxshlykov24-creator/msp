@@ -1141,7 +1141,7 @@ function asmSupplyHtml(sup, rows) {
   if (!sup.pickup && sup.cargo) bits.push("короба не нужны");
   const qty = rows.reduce((a, r) => a + Number(r.qty || 0), 0);
   const marks = rows.reduce((a, r) => a + Number(r.marks || 0), 0);
-  const office = rows.length && rows[0].office ? rows[0].office : "—";
+  const office = sup.office || (rows.length && rows[0].office ? rows[0].office : "—");
   return `<tr class="sup-head" data-supply="${esc(sup.ext_id)}" data-sid="${sup.id}" title="Открыть поставку">
     <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}" title="Выбрать все задания поставки"></td>
     <td class="client">${esc(sup.client)}</td>
@@ -1616,10 +1616,11 @@ async function asmShipped() {
   if (!ids.length) return;
   const supplies = pickedOpenSupplies();
   for (const sup of supplies) {
+    const dest = sup.office || (sup.pickup ? "ПВЗ Домодедовская, 28" : "СЦ Кавказский бульвар, 57 стр. 1, Москва");
     const bad = sup.loose && sup.pickup ? " Заданий без короба: " + sup.loose + "." : "";
     const okay = await ask(
       "Передать поставку " + sup.ext_id + " в доставку?",
-      sup.client + " · " + sup.orders + " заданий, " + sup.boxes + " мест." + bad
+      dest + ". " + sup.client + " · " + sup.orders + " заданий, " + (sup.pickup ? sup.boxes + " мест." : "короба не нужны.") + bad
         + " Шаг необратимый: WB закроет поставку, задания уйдут в «В доставке», добавить в неё больше ничего нельзя."
         + " QR поставки появится только после этого.",
       "Передать"
@@ -1822,7 +1823,9 @@ async function loadWbDetail(id) {
   const res = await api("/api/wb/supplies/" + id);
   state.wbDetail = res;
   const open = res.supply.state === "open";
-  const loose = res.rows.filter((r) => !r.box).length;
+  const pickup = res.supply.pickup !== false;
+  const dest = res.supply.office || (pickup ? "ПВЗ Домодедовская, 28" : "СЦ Кавказский бульвар, 57 стр. 1, Москва");
+  const loose = pickup ? res.rows.filter((r) => !r.box).length : 0;
   const boxes = res.boxes.map((b) => `<button type="button" class="wb-box${b.id === state.wbBox ? " is-on" : ""}" data-box="${b.id}">
       <b>${esc(b.ext_id)}</b>
       <span>${b.orders ? b.orders + " зак." : "пустой"}</span>
@@ -1832,7 +1835,7 @@ async function loadWbDetail(id) {
     <div class="wb-hero">
       <div>
         <div class="wb-hero-id">${esc(res.supply.ext_id)}</div>
-        <div class="wb-hero-meta">${esc(res.supply.client)} · ${res.rows.length} зак. · ${res.boxes.length} кор.${loose ? " · без короба " + loose : ""}</div>
+        <div class="wb-hero-meta">${esc(res.supply.client)} · ${esc(dest)} · ${res.rows.length} зак.${pickup ? " · " + res.boxes.length + " кор." : " · короба не нужны"}${loose ? " · без короба " + loose : ""}</div>
       </div>
       <span class="wb-pill ${res.supply.state}">${open ? "На сборке" : "Сдана " + esc(res.supply.delivered)}</span>
     </div>
@@ -1840,11 +1843,11 @@ async function loadWbDetail(id) {
       <div class="wb-sec-h">
         <h4>Короба</h4>
         <div class="wb-sec-acts">
-          ${open ? `<button class="btn-ghost" id="wbNewBox" type="button">Добавить короб</button>` : ""}
-          <button class="btn-ghost" id="wbBoxQr" type="button">Печать QR</button>
+          ${open && pickup ? `<button class="btn-ghost" id="wbNewBox" type="button">Добавить короб</button>` : ""}
+          ${pickup ? `<button class="btn-ghost" id="wbBoxQr" type="button">Печать QR</button>` : ""}
         </div>
       </div>
-      <div class="wb-boxes">${boxes || `<div class="wb-empty">Коробов нет. Добавь один — на него печатается QR.</div>`}</div>
+      <div class="wb-boxes">${pickup ? (boxes || `<div class="wb-empty">Коробов нет. Добавь один — на него печатается QR.</div>`) : `<div class="wb-empty">Эта поставка едет на СЦ. Грузоместа не заводятся.</div>`}</div>
     </section>
     <section class="wb-sec">
       <div class="wb-sec-h">
@@ -1870,7 +1873,7 @@ async function loadWbDetail(id) {
     </section>
     <div class="wb-foot">
       ${open
-        ? `<span>Когда коробки уже везёте</span><button class="btn wb-deliver" id="wbDeliver" type="button">Сдать на ПВЗ</button>`
+        ? `<span>${esc(dest)}</span><button class="btn wb-deliver" id="wbDeliver" type="button">${pickup ? "Сдать на ПВЗ" : "Сдать в СЦ"}</button>`
         : `<span>Поставка закрыта</span><button class="btn" id="wbQr" type="button">QR поставки</button>`}
     </div>`;
   bindWbDetail();
@@ -1927,12 +1930,14 @@ function bindWbDetail() {
       say($("wbMsg"), e.message, "bad");
       return;
     }
+    const dest = pre.office || "";
     const bad = [];
-    if (pre.loose) bad.push("заданий без грузоместа: " + pre.loose);
-    if (pre.empty_boxes.length) bad.push("пустых грузомест: " + pre.empty_boxes.length);
+    if (pre.pickup !== false && pre.loose) bad.push("заданий без грузоместа: " + pre.loose);
+    if (pre.pickup !== false && pre.empty_boxes.length) bad.push("пустых грузомест: " + pre.empty_boxes.length);
     const okay = await ask(
       "Передать поставку в доставку?",
-      pre.ext_id + " · " + pre.client + ". В поставке " + pre.orders + " заданий и " + pre.boxes + " грузомест."
+      (dest ? dest + ". " : "") + pre.ext_id + " · " + pre.client + ". В поставке " + pre.orders + " заданий"
+        + (pre.pickup === false ? ", короба не нужны." : " и " + pre.boxes + " грузомест.")
         + (bad.length ? " Внимание: " + bad.join(", ") + "." : "")
         + " Шаг необратимый: WB закроет поставку, все задания уйдут в «В доставке», добавить в неё больше ничего нельзя. QR поставки появится только после этого.",
       "Передать"

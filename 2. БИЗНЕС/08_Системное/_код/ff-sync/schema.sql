@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS shipments (
     trbx_ext TEXT,
     office TEXT,
     cargo_type TEXT,
+    pickup_allowed TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );
@@ -266,6 +267,8 @@ CREATE TABLE IF NOT EXISTS wb_supplies (
     author TEXT,
     -- габаритный тип заданий поставки: WB держит в одной поставке только один
     cargo_type TEXT,
+    -- можно ли сдать на ПВЗ: '1' да, '0' нет (тогда СЦ), пусто — ещё не знаем
+    pickup_allowed TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );

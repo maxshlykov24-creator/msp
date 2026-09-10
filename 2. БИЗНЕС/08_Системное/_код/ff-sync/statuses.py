@@ -26,23 +26,61 @@ GROUP_LABELS = dict(GROUPS)
 # Габаритный тип задания WB. Он определяет точку сдачи и то, нужны ли короба:
 # малогабаритный товар везут на ПВЗ и раскладывают по грузоместам, крупный и
 # сверхгабаритный сдают в сортировочный центр, где короба не заводятся.
+#
+# Точку сдачи через API WB выбрать нельзя: destinationOfficeId только читается.
+# Склад Берёзы всегда один, поэтому адрес пишем сами. Поле offices в задании —
+# это кластер покупателя (Москва_Север), а не куда везти коробку.
 CARGO_MGT = "1"
+PVZ = "ПВЗ Домодедовская, 28"
+SC = "СЦ Кавказский бульвар, 57 стр. 1, Москва"
 CARGO = {
     CARGO_MGT: ("малогабаритный", "ПВЗ"),
-    "2": ("сверхгабаритный", "сортировочный центр"),
-    "3": ("крупногабаритный", "сортировочный центр"),
+    "2": ("сверхгабаритный", "СЦ"),
+    "3": ("крупногабаритный", "СЦ"),
 }
 
 
-def cargo_label(cargo_type):
+def pickup_flag(raw):
+    """Ответ WB `isPickupPointShipmentAllowed` → '1' / '0' / ''."""
+    if raw is None:
+        return ""
+    if raw is True:
+        return "1"
+    if raw is False:
+        return "0"
+    text = str(raw).strip().lower()
+    if text in ("1", "true", "yes", "да"):
+        return "1"
+    if text in ("0", "false", "no", "нет"):
+        return "0"
+    return ""
+
+
+def to_pickup(cargo_type, pickup_allowed=""):
+    """Сдаём на ПВЗ: малогабарит (или тип ещё неизвестен) и площадка не запретила пункт выдачи."""
+    cargo = str(cargo_type or "").strip()
+    if cargo and cargo != CARGO_MGT:
+        return False
+    return pickup_flag(pickup_allowed) != "0"
+
+
+def dropoff(cargo_type, pickup_allowed=""):
+    """Адрес сдачи для колонки «Куда везти». Нет габарита — пусто, не выдумываем."""
+    if not str(cargo_type or "").strip():
+        return ""
+    return PVZ if to_pickup(cargo_type, pickup_allowed) else SC
+
+
+def cargo_label(cargo_type, pickup_allowed=""):
     """«малогабаритный · ПВЗ». Неизвестный тип — пусто, врать не будем."""
-    got = CARGO.get(str(cargo_type or "").strip())
-    return " · ".join(got) if got else ""
-
-
-def to_pickup(cargo_type):
-    """Задание сдаётся на ПВЗ, значит нужны грузоместа."""
-    return str(cargo_type or "").strip() == CARGO_MGT
+    cargo = str(cargo_type or "").strip()
+    got = CARGO.get(cargo)
+    if not got:
+        return ""
+    kind, dest = got
+    if cargo == CARGO_MGT and not to_pickup(cargo, pickup_allowed):
+        dest = "СЦ"
+    return "%s · %s" % (kind, dest)
 
 # Ozon FBS: статус отправления → наша группа.
 # «На сборке» у Ozon нет: из awaiting_packaging заказ уходит сразу в

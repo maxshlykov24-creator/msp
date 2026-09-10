@@ -26,6 +26,8 @@ from db import (
     list_wb_supplies,
     mark_wb_supply_delivered,
     set_shipment_supply,
+    set_supply_shipments_dropoff,
+    set_wb_supply_dropoff,
     set_work_state,
 )
 
@@ -48,6 +50,40 @@ def _supply(supply_id):
     if not row:
         raise ValueError("поставка не найдена")
     return row
+
+
+def _col(row, name, default=""):
+    if row is None:
+        return default
+    return row[name] if name in row.keys() else default
+
+
+def _apply_dropoff(supply, pickup_allowed, cargo=""):
+    """Записать адрес сдачи на поставку и её задания."""
+    import statuses
+
+    cargo = str(cargo or _col(supply, "cargo_type") or "")
+    flag = str(pickup_allowed or "")
+    office = statuses.dropoff(cargo, flag)
+    set_wb_supply_dropoff(supply["id"], cargo, flag)
+    if office:
+        set_supply_shipments_dropoff(supply["cabinet_id"], supply["ext_id"], office, flag)
+    return office
+
+
+def _sync_dropoff(supply):
+    """Сверить с карточкой поставки у WB: нельзя на ПВЗ — пишем СЦ."""
+    import statuses
+
+    cab = _cab_of_supply(supply)
+    info = wb_supply.info(cab, supply["ext_id"]) or {}
+    cargo = str(info.get("cargoType") or _col(supply, "cargo_type") or "")
+    if "isPickupPointShipmentAllowed" in info:
+        flag = statuses.pickup_flag(info.get("isPickupPointShipmentAllowed"))
+    else:
+        flag = _col(supply, "pickup_allowed")
+    _apply_dropoff(supply, flag, cargo)
+    return flag, cargo
 
 
 # --- Ozon: собрать ------------------------------------------------------
@@ -161,14 +197,16 @@ def take(ship_ids, author=""):
     попадает в сборку в момент добавления в поставку. Поставку заводим сами,
     отдельной кнопки больше не нужно.
 
-    Группируем по кабинету и габаритному типу: поставка WB держит только один
-    `cargoType`, смешанную площадка не примет. Ozon-заданиям поставка не нужна,
-    для них это по-прежнему складская отметка.
+    Группируем по кабинету, габаритному типу и флагу ПВЗ: поставка WB держит
+    только один `cargoType`, а задания с запретом ПВЗ едут в СЦ отдельно.
+    Ozon-заданиям поставка не нужна, для них это по-прежнему складская отметка.
 
     Шаг у WB необратимый: задание уходит из `new` в `confirm`, а метода вынуть
     его из поставки в API нет. Поэтому «Вернуть в новые» снимет нашу отметку,
     но статус на площадке останется — об этом предупреждаем оператора.
     """
+    import statuses
+
     rows = get_shipments_by_ids(ship_ids)
     if not rows:
         raise ValueError("отправления не найдены")
@@ -177,12 +215,13 @@ def take(ship_ids, author=""):
     rest = []
     for row in rows:
         if row["marketplace"] == "wb" and row["kind"] == "fbs":
-            cargo = str((row["cargo_type"] if "cargo_type" in row.keys() else "") or "")
-            groups.setdefault((row["client_id"], row["cabinet_id"], cargo), []).append(row)
+            cargo = str(_col(row, "cargo_type") or "")
+            flag = "1" if statuses.to_pickup(cargo, _col(row, "pickup_allowed")) else "0"
+            groups.setdefault((row["client_id"], row["cabinet_id"], cargo, flag), []).append(row)
         else:
             rest.append(row["id"])
     supplies = []
-    for (client_id, cab_id, cargo), group in groups.items():
+    for (client_id, cab_id, cargo, flag), group in groups.items():
         ready = [r for r in group if (r["supply_ext"] or "")]
         fresh = [r for r in group if not (r["supply_ext"] or "")]
         if ready:
@@ -193,7 +232,7 @@ def take(ship_ids, author=""):
         if not fresh:
             continue
         try:
-            supply = _open_supply(client_id, cab_id, cargo, author)
+            supply = _open_supply(client_id, cab_id, cargo, author, pickup_allowed=flag)
         except ValueError as exc:
             notes.append("%s заданий без поставки: %s" % (len(fresh), exc))
             continue
@@ -205,27 +244,35 @@ def take(ship_ids, author=""):
     return {"supplies": supplies, "marked": marked, "notes": notes}
 
 
-def _open_supply(client_id, cab_id, cargo, author):
-    """Открытая поставка кабинета под этот габаритный тип, иначе новая.
+def _open_supply(client_id, cab_id, cargo, author, pickup_allowed=""):
+    """Открытая поставка кабинета под этот габарит и точку сдачи, иначе новая.
 
     Заводить по поставке на каждое нажатие нельзя: смена уходит одной поставкой,
-    а Сергей отбирает задания несколькими заходами.
+    а Сергей отбирает задания несколькими заходами. ПВЗ и СЦ не смешиваем:
+    площадка короба принимает только на пункт выдачи.
     """
     import statuses
 
+    want_pickup = statuses.to_pickup(cargo, pickup_allowed)
     for row in list_wb_supplies(client_id=client_id, state="open"):
         if row["cabinet_id"] != cab_id:
             continue
         if str(row["cargo_type"] or "") != cargo:
+            continue
+        have = statuses.to_pickup(row["cargo_type"] or "", _col(row, "pickup_allowed"))
+        if have != want_pickup:
             continue
         return {"id": row["id"], "ext_id": row["ext_id"]}
     cab = get_cabinet(cab_id)
     if not cab or not cab["token"]:
         raise ValueError("у кабинета WB нет токена, поставку не открыть")
     mark = statuses.CARGO.get(cargo, ("", ""))[0]
-    name = "%s%s" % (datetime.now(MSK).strftime("Смена %d.%m %H:%M"), " · " + mark if mark else "")
+    dest = "ПВЗ" if want_pickup else "СЦ" if cargo else ""
+    bits = [x for x in (mark, dest) if x]
+    name = "%s%s" % (datetime.now(MSK).strftime("Смена %d.%m %H:%M"), " · " + " · ".join(bits) if bits else "")
     ext = wb_supply.create(cab, name)
-    sid = insert_wb_supply(int(client_id), cab_id, ext, name, now_iso(), author, cargo_type=cargo)
+    flag = "1" if want_pickup else "0" if cargo else ""
+    sid = insert_wb_supply(int(client_id), cab_id, ext, name, now_iso(), author, cargo_type=cargo, pickup_allowed=flag)
     return {"id": sid, "ext_id": ext}
 
 
@@ -269,6 +316,8 @@ def add_orders(supply_id, ship_ids):
         ids = [r["id"] for r in ok]
         set_shipment_supply(ids, supply["ext_id"])
         set_work_state(ids, "assembling")
+        # после первого задания поставка получает cargoType и флаг ПВЗ
+        _sync_dropoff(_supply(supply_id))
     return {"added": done, "notes": notes}
 
 
@@ -280,10 +329,10 @@ def make_boxes(supply_id, amount):
     if supply["state"] != "open":
         raise ValueError("поставка передана в доставку, грузоместа не меняются")
     cargo = str(supply["cargo_type"] or "")
-    if cargo and not statuses.to_pickup(cargo):
+    if cargo and not statuses.to_pickup(cargo, _col(supply, "pickup_allowed")):
         raise ValueError(
-            "грузоместа заводятся только для поставок на ПВЗ. Этот товар %s — сдаётся в сортировочный центр, там короба не нужны."
-            % statuses.CARGO.get(cargo, ("габаритный",))[0]
+            "грузоместа заводятся только для поставок на ПВЗ. Этот товар едет на %s, там короба не нужны."
+            % statuses.SC
         )
     amount = int(amount or 0)
     if amount < 1:
@@ -306,8 +355,16 @@ def make_boxes(supply_id, amount):
     try:
         ext_ids = wb_supply.add_boxes(cab, supply["ext_id"], amount)
     except wb_supply.SupplyError as exc:
-        # Отказ площадки не должен ронять сборку: причину WB в теле 409 не
-        # называет, поэтому переводим её в понятный складу текст.
+        # Отказ площадки не должен ронять сборку. Сначала проверяем запрет ПВЗ:
+        # тот же код 409 бывает и на пределе коробов, и когда везти надо в СЦ.
+        info = wb_supply.info(cab, supply["ext_id"]) or {}
+        denied = info.get("isPickupPointShipmentAllowed") is False or "pickup point" in str(exc).lower()
+        if denied:
+            _apply_dropoff(supply, "0", cargo or statuses.CARGO_MGT)
+            raise ValueError(
+                "WB не принимает эту поставку на ПВЗ. Везём на %s. Короба не нужны."
+                % statuses.SC
+            )
         if "FailedToAddSupplyTrbx" in str(exc):
             raise ValueError(
                 "WB отказал в коробе: заданий в поставке %s, коробов уже %s, предел площадки %s. Уложи товар в имеющиеся короба."
@@ -381,13 +438,16 @@ def deliver(supply_id, confirm=False, force=False):
     Поэтому без `confirm` ничего не делаем, а на задания без грузоместа
     предупреждаем отдельно — их придётся сдавать врассыпную.
     """
+    import statuses
+
     supply = _supply(supply_id)
     if supply["state"] != "open":
         raise ValueError("поставка уже передана в доставку")
     rows = list_supply_shipments(supply["cabinet_id"], supply["ext_id"])
     if not rows:
         raise ValueError("в поставке нет заданий")
-    loose = [r for r in rows if not (r["trbx_ext"] or "")]
+    pickup = statuses.to_pickup(_col(supply, "cargo_type"), _col(supply, "pickup_allowed"))
+    loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []
     if not confirm:
         raise ValueError("нужно подтверждение: шаг необратимый")
     if loose and not force:
@@ -403,10 +463,15 @@ def deliver(supply_id, confirm=False, force=False):
 
 def preflight(supply_id):
     """Что покажем в окне подтверждения перед передачей в доставку."""
+    import statuses
+
     supply = _supply(supply_id)
     rows = list_supply_shipments(supply["cabinet_id"], supply["ext_id"])
     boxes = list_wb_boxes(supply["id"])
-    loose = [r for r in rows if not (r["trbx_ext"] or "")]
+    cargo = _col(supply, "cargo_type")
+    flag = _col(supply, "pickup_allowed")
+    pickup = statuses.to_pickup(cargo, flag)
+    loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []
     empty = [b for b in boxes if not b["orders"]]
     return {
         "ext_id": supply["ext_id"],
@@ -416,6 +481,8 @@ def preflight(supply_id):
         "loose": len(loose),
         "empty_boxes": [b["ext_id"] for b in empty],
         "state": supply["state"],
+        "office": statuses.dropoff(cargo, flag),
+        "pickup": pickup,
     }
 
 
