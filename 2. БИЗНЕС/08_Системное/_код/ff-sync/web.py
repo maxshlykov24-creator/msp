@@ -822,6 +822,7 @@ def assembly(
     }
 
 
+@app.get("/api/assembly/picking.pdf")
 @app.get("/api/assembly/picking.xlsx")
 def assembly_picking(
     client_id: int = 0,
@@ -834,22 +835,30 @@ def assembly_picking(
     until: str = "",
     ff_session: str = Cookie(default=""),
 ):
-    """Лист подбора по текущей выборке «Заказов».
+    """Лист подбора по текущей выборке «Заказов»: PDF A4 сразу на печать.
 
     Берём не отмеченные галочками строки, а весь фильтр: сборщик утром отбирает
-    смену по контрагенту и вкладке, а не тыкает тридцать чекбоксов.
+    смену по контрагенту и вкладке, а не тыкает тридцать чекбоксов. Старый
+    адрес .xlsx оставлен: отдаёт тот же PDF, чтобы закладки не сломались.
     """
     who(ff_session)
     init_db()
-    from export_xlsx import build_picking
+    from picking_pdf import build_picking_pdf
 
     rows = list_assembly(
         client_id=client_id or None, group=group, marketplace=mp, kind=kind,
         article=article, query=q, since=since, until=until,
     )
     names = {r["client_name"] for r in rows}
-    name, raw = build_picking(rows, who=names.pop() if len(names) == 1 else "")
-    return xlsx_file(name, raw)
+    name, raw, pages = build_picking_pdf(rows, who=names.pop() if len(names) == 1 else "")
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "inline; filename*=UTF-8''%s" % quote(name),
+            "X-Label-Pages": str(pages),
+        },
+    )
 
 
 @app.post("/api/assembly/work")

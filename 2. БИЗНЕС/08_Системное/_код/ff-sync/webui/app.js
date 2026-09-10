@@ -1659,10 +1659,10 @@ document.addEventListener("click", (e) => {
 });
 
 // лист подбора идёт по фильтру, а не по галочкам: смена отбирается контрагентом
-// и вкладкой, а сборщику нужна сумма по артикулу, а не список номеров
+// и вкладкой. PDF A4 открывается сразу — Серёжа шлёт на принтер из окна
 $("aPicking").onclick = () => {
-  window.location = "/api/assembly/picking.xlsx?" + asmQuery(state.asmGroup);
-  say($("aMsg"), "Лист подбора собран по текущему фильтру: вкладка «" + asmGroupLabel() + "».", "ok");
+  window.open("/api/assembly/picking.pdf?" + asmQuery(state.asmGroup), "_blank");
+  say($("aMsg"), "Лист подбора открыт на печать A4: вкладка «" + asmGroupLabel() + "».", "ok");
 };
 
 // недельный отчёт клиенту: артикулы по строкам, дни по столбцам. Период берём
