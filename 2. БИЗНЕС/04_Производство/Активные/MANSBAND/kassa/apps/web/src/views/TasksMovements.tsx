@@ -514,7 +514,7 @@ export function TasksMovements() {
         </div>
       </div>
 
-      <div className="card p-3 mb-3 flex flex-wrap items-center gap-2">
+      <div className="card filter-bar p-4 mb-3 flex flex-wrap items-center gap-2.5">
         <Select
           size="sm"
           className="w-[180px]"

@@ -229,7 +229,7 @@ export function MishaQueue() {
         <StatTile label="Ателье к оплате" value={money(atelierSum)} tone="green" />
       </div>
 
-      <div className="card p-3 mb-4">
+      <div className="card filter-bar p-4 mb-4">
         <Select
           size="sm"
           className="w-[200px]"

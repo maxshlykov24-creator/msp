@@ -146,7 +146,7 @@ export function HistoryScreen() {
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="card filter-bar p-4 mb-4 flex flex-wrap gap-2.5">
             <div className="relative flex-1 min-w-[220px]">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
               <input

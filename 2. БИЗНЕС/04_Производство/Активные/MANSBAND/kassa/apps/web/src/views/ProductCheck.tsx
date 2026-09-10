@@ -698,7 +698,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         </div>
       )}
 
-      <div className="card mb-4 p-0 overflow-hidden">
+      <div className="card filter-bar mb-4 p-0 overflow-hidden">
         <button
           type="button"
           onClick={() => setFiltersOpen((v) => !v)}
@@ -730,7 +730,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
           {filtersOpen ? <ChevronUp size={16} className="text-mute" /> : <ChevronDown size={16} className="text-mute" />}
         </button>
         {filtersOpen && (
-          <div className="px-3 pb-3 flex flex-wrap gap-2 items-end border-t border-ink-800 pt-3">
+          <div className="filter-fields px-4 pb-4 border-t border-ink-800 pt-3">
             <div className="min-w-[150px] flex-1">
               <div className="field-label">Остаток</div>
               <Select

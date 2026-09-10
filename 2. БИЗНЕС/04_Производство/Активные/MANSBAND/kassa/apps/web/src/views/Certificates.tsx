@@ -126,7 +126,7 @@ export function Certificates() {
         <StatTile label="Не погашено" value={money(liability)} tone="amber" sub="остатки на балансах" />
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 mb-4">
+      <div className="card filter-bar p-4 mb-4 flex flex-wrap items-end gap-2.5">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
           <input

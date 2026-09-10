@@ -516,6 +516,10 @@ html.theme-light nav {
   animation: kassa-page-in 0.45s var(--ease);
 }
 
+.kassa-pop {
+  animation: kassa-select-in 0.16s var(--ease);
+}
+
 .kassa-chrome {
   background: var(--glass-top);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);

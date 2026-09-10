@@ -324,7 +324,7 @@ export function DealsBoard({
       </div>
 
       {/* Фильтры сворачиваются — на телефоне не занимают полэкрана до таблицы */}
-      <div className="card mb-4 p-0 overflow-hidden">
+      <div className="card filter-bar mb-4 p-0 overflow-hidden">
         <button
           type="button"
           onClick={() => setFiltersOpen((v) => !v)}
@@ -356,7 +356,7 @@ export function DealsBoard({
           {filtersOpen ? <ChevronUp size={16} className="text-mute" /> : <ChevronDown size={16} className="text-mute" />}
         </button>
         {filtersOpen && (
-          <div className="px-3 pb-3 flex flex-wrap gap-2 items-end border-t border-ink-800 pt-3">
+          <div className="filter-fields px-4 pb-4 border-t border-ink-800 pt-3">
             <div className="min-w-[140px] flex-1">
               <div className="field-label">Магазин</div>
               <Select

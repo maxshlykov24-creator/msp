@@ -161,7 +161,7 @@ function CompletenessTab() {
         />
       </div>
 
-      <Card className="space-y-3">
+      <Card className="filter-bar space-y-3">
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
           <label className="relative block">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
@@ -255,7 +255,7 @@ export function BreaksTab() {
 
   return (
     <div className="space-y-4">
-      <Card className="space-y-3">
+      <Card className="filter-bar space-y-3">
         <div className="grid gap-3 sm:grid-cols-[auto_auto_1fr]">
           <label>
             <div className="field-label">С даты</div>

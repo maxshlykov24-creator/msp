@@ -103,7 +103,7 @@ export function Layout({
       <OfflineBanner />
       <div className="flex flex-1 min-h-0 w-full">
       {/* Sidebar */}
-      <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-ink-800 bg-ink-900/60 backdrop-blur sticky top-0 h-screen">
+      <aside className="kassa-chrome hidden md:flex w-64 shrink-0 flex-col border-r sticky top-0 h-screen">
         <button
           type="button"
           onClick={onHome}
@@ -182,14 +182,14 @@ export function Layout({
             onClick={() => setRoute("history")}
           />
         </nav>
-        <div className="p-4 border-t border-ink-800 text-[11px] text-mute/60 tracking-[0.18em] uppercase">
+        <div className="p-4 border-t text-[11px] text-mute/60 tracking-[0.18em] uppercase" style={{ borderColor: "var(--line)" }}>
           MANSBAND
         </div>
       </aside>
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 w-full overflow-x-hidden">
-        <header className="sticky top-0 z-30 border-b border-ink-800 bg-ink-950 md:bg-ink-950/95 md:backdrop-blur pt-[env(safe-area-inset-top)]">
+        <header className="kassa-chrome sticky top-0 z-30 border-b pt-[env(safe-area-inset-top)]">
           {/* Мобильная шапка: лого по центру, магазин + пользователь — отдельной строкой */}
           <div className="md:hidden px-4 pb-3">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center py-2.5 gap-2">
@@ -243,12 +243,14 @@ export function Layout({
             showMobileNav ? "pb-24 md:pb-6" : "pb-6"
           }`}
         >
-          {children}
+          <div key={route} className="page-in">
+            {children}
+          </div>
         </main>
         {/* Mobile bottom nav — скрыт на «Новой заявке», чтобы не перекрывать sticky-бар */}
         {showMobileNav && (
           <nav
-            className={`md:hidden sticky bottom-0 z-20 border-t border-ink-800 bg-ink-900 grid pb-[env(safe-area-inset-bottom)] ${
+            className={`kassa-chrome md:hidden sticky bottom-0 z-20 border-t grid pb-[env(safe-area-inset-bottom)] ${
               mobileNav.length === 5 ? "grid-cols-5" : "grid-cols-4"
             }`}
           >
@@ -296,7 +298,7 @@ function NavButton({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[14px] font-medium transition ${
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[14px] font-medium transition-[background-color,color] duration-200 ${
         active ? "bg-gold/15 text-gold-soft" : "text-mute hover:bg-ink-800 hover:text-white"
       }`}
     >
@@ -387,7 +389,7 @@ function UserMenu({
         <>
           <div className="fixed inset-0 z-40" onClick={close} />
           <div
-            className={`absolute right-0 top-full mt-2 z-50 card p-1.5 ${
+            className={`absolute right-0 top-full mt-2 z-50 card p-1.5 kassa-pop ${
               compact ? "w-[min(calc(100%-2rem),16rem)]" : "w-64"
             }`}
           >

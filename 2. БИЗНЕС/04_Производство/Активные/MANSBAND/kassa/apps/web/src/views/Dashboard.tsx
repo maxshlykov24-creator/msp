@@ -243,7 +243,7 @@ export function Dashboard() {
         парой пиджак плюс брюки, не тремя отдельными позициями.
       </Hint>
 
-      <div className="card p-3 mb-5 flex flex-wrap items-center gap-2">
+      <div className="card filter-bar p-4 mb-5 flex flex-wrap items-center gap-2.5">
         <div className="inline-flex border border-ink-700 rounded-lg overflow-hidden">
           {([
             ["day", "День"],

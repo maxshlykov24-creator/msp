@@ -354,7 +354,7 @@ export function EdwinQueue() {
         </div>
       )}
 
-      <div className="card p-3 mb-4 grid sm:grid-cols-4 gap-2">
+      <div className="card filter-bar p-4 mb-4 grid sm:grid-cols-4 gap-2.5">
         <Select
           size="sm"
           value={kind}

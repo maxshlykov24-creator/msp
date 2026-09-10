@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { getStageGroup } from "../lib/stageColors";
 
 export { Select, opts } from "./Select";
@@ -13,7 +13,7 @@ export function Button({
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg font-semibold text-[14px] px-4 py-2.5 transition active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center gap-2 rounded-[10px] font-semibold text-[14px] px-4 py-2.5 transition-[background-color,border-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed";
   const styles: Record<Variant, string> = {
     primary: "bg-gold text-ink-950 hover:bg-gold-soft shadow-glow",
     ghost: "text-mute-soft hover:bg-ink-800",
@@ -110,21 +110,41 @@ export function Modal({
   wide?: boolean;
   xl?: boolean;
 }) {
-  if (!open) return null;
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setShown(true));
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    setShown(false);
+    const timer = window.setTimeout(() => setMounted(false), 400);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mounted]);
+
+  if (!mounted) return null;
   const width = xl ? "max-w-5xl" : wide ? "max-w-3xl" : "max-w-lg";
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4">
-      <div
-        className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div
-        className={`relative z-[81] card p-0 w-full ${width} ${xl ? "max-h-[94vh]" : "max-h-[90vh]"} overflow-hidden flex flex-col`}
-      >
+    <div className={`kassa-ov ${shown ? "on" : ""}`}>
+      <div className="kassa-ov-hit" onClick={onClose} />
+      <div className={`kassa-modal ${width} ${xl ? "max-h-[94vh]" : "max-h-[90vh]"}`}>
         {title && (
           <div className="px-6 py-4 border-b border-ink-700 flex items-center justify-between shrink-0">
             <h3 className="text-lg font-bold text-white">{title}</h3>
-            <button onClick={onClose} className="text-mute hover:text-white text-xl leading-none">
+            <button type="button" onClick={onClose} className="kassa-modal-x" aria-label="Закрыть">
               ×
             </button>
           </div>
@@ -155,7 +175,7 @@ export function StatTile({
     amber: "text-white",
   };
   return (
-    <div className="card p-4">
+    <div className="card stat-tile p-4">
       <div className="field-label">{label}</div>
       <div className={`text-2xl font-extrabold ${accent[tone]}`}>{value}</div>
       {sub && <div className="text-[12px] text-mute mt-1">{sub}</div>}
