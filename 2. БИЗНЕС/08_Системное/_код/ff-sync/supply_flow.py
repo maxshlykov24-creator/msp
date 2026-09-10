@@ -678,11 +678,10 @@ def print_labels(supply_id, ship_ids, mode):
         cab = _cab_of_supply(supply)
         stickers, more = wb_supply.box_stickers(cab, supply["ext_id"], need)
         extra_notes.extend(more)
-        counts = {b["ext_id"]: b["orders"] for b in boxes}
         for s in stickers:
             box_pngs[s["ext_id"]] = {
                 "png": s["png"],
-                "caption": "%s · %s · %s шт" % (supply["ext_id"], s["barcode"] or s["ext_id"], counts.get(s["ext_id"], 0)),
+                "caption": "%s · %s" % (supply["ext_id"], s["barcode"] or s["ext_id"]),
             }
     pdf, notes, pages = labels.build_posting_boxes(_label_payload(rows), box_pngs)
     return pdf, notes + extra_notes, pages

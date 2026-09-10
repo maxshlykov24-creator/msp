@@ -394,7 +394,6 @@ table.asm-tbl tr.sup-head:hover .sup-open{opacity:1}
 .wb-foot{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-top:10px;margin-top:2px;border-top:1px solid var(--line)}
 .wb-foot span{font-size:12px;color:var(--mute-2);margin-right:auto}
 .wb-deliver{background:linear-gradient(160deg,#c45b55,#d4922a);box-shadow:0 10px 24px -12px rgba(196,91,85,.5)}
-#wbModal .btn-file{display:none}
 .badge.box{color:var(--accent);border-color:rgba(59,116,214,.35);background:rgba(59,116,214,.08);font-weight:600;font-size:10px;padding:2px 7px}
 
 .badge.clash{color:var(--red);border-color:rgba(199,62,62,.35);background:rgba(199,62,62,.08);font-family:var(--font);cursor:pointer}
