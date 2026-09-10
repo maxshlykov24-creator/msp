@@ -16,6 +16,7 @@ from db import (
     get_cabinet,
     get_cabinet_by_client_mp,
     get_client_by_id,
+    get_shipments_by_ext,
     get_shipments_by_ids,
     get_wb_box,
     get_wb_supply,
@@ -26,6 +27,7 @@ from db import (
     list_wb_boxes,
     list_wb_supplies,
     mark_wb_supply_delivered,
+    set_shipment_platform,
     set_shipment_supply,
     set_supply_shipments_dropoff,
     set_wb_supply_dropoff,
@@ -37,6 +39,19 @@ MSK = timezone(timedelta(hours=3))
 
 def now_iso():
     return datetime.now(MSK).isoformat(timespec="seconds")
+
+
+def _wb_stamp(raw):
+    """Метка WB (UTC) в наш ISO с Москвой. Не разобрали — сейчас."""
+    text = str(raw or "").strip()
+    if not text:
+        return now_iso()
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        return datetime.fromisoformat(text).astimezone(MSK).isoformat(timespec="seconds")
+    except ValueError:
+        return now_iso()
 
 
 def _cab_of_supply(supply):
@@ -72,17 +87,19 @@ def _apply_dropoff(supply, pickup_allowed, cargo=""):
     return office
 
 
-def _sync_dropoff(supply):
-    """Сверить с карточкой поставки у WB: нельзя на ПВЗ — пишем СЦ."""
+def _flag_for_cargo(cargo):
+    """ПВЗ для малогабарита, СЦ только для габарита 2 и 3. Флаг WB не читаем."""
     import statuses
 
+    return "1" if statuses.to_pickup(cargo) else "0"
+
+
+def _sync_dropoff(supply):
+    """Сверить габарит с карточкой WB. Флаг ПВЗ с карточки не берём: он врёт."""
     cab = _cab_of_supply(supply)
     info = wb_supply.info(cab, supply["ext_id"]) or {}
     cargo = str(info.get("cargoType") or _col(supply, "cargo_type") or "")
-    if "isPickupPointShipmentAllowed" in info:
-        flag = statuses.pickup_flag(info.get("isPickupPointShipmentAllowed"))
-    else:
-        flag = _col(supply, "pickup_allowed")
+    flag = _flag_for_cargo(cargo)
     _apply_dropoff(supply, flag, cargo)
     return flag, cargo
 
@@ -198,8 +215,8 @@ def take(ship_ids, author=""):
     попадает в сборку в момент добавления в поставку. Поставку заводим сами,
     отдельной кнопки больше не нужно.
 
-    Группируем по кабинету, габаритному типу и флагу ПВЗ: поставка WB держит
-    только один `cargoType`, а задания с запретом ПВЗ едут в СЦ отдельно.
+    Группируем по кабинету и габаритному типу: поставка WB держит только
+    один `cargoType`. Малогабарит всегда на ПВЗ, крупный — отдельно в СЦ.
     Ozon-заданиям поставка не нужна, для них это по-прежнему складская отметка.
 
     Шаг у WB необратимый: задание уходит из `new` в `confirm`, а метода вынуть
@@ -289,6 +306,80 @@ def create_supply(client_id, name, author):
     return {"id": sid, "ext_id": ext}
 
 
+def refresh_from_wb(cabinet_id, ext_id, author="площадка"):
+    """Подтянуть поставку с площадки: состав, короба, адрес сдачи, статусы.
+
+    Нужно, когда поставку пересобрали в ЛК: у нас остался старый номер, а
+    задания уже лежат в новом. Площадку не пишем, только читаем.
+    """
+    import statuses
+    from shipments_pull import wb_statuses
+
+    cab = get_cabinet(int(cabinet_id))
+    if not cab or not cab["token"]:
+        raise ValueError("у кабинета WB нет токена")
+    ext_id = str(ext_id or "").strip()
+    if not ext_id:
+        raise ValueError("нет номера поставки")
+    info = wb_supply.info(cab, ext_id)
+    if not info or not info.get("id"):
+        raise ValueError("WB не нашёл поставку %s" % ext_id)
+    cargo = str(info.get("cargoType") or "")
+    flag = _flag_for_cargo(cargo)
+    name = str(info.get("name") or ext_id)
+    created = _wb_stamp(info.get("createdAt"))
+    found = [r for r in find_wb_supplies([ext_id]) if r["cabinet_id"] == cab["id"]]
+    if found:
+        sid = found[0]["id"]
+        set_wb_supply_dropoff(sid, cargo, flag)
+    else:
+        sid = insert_wb_supply(
+            cab["client_id"], cab["id"], ext_id, name, created, author, cargo, flag
+        )
+    orders = [str(x) for x in wb_supply.order_ids(cab, ext_id)]
+    ships = get_shipments_by_ext(cab["id"], "fbs", orders)
+    have = {str(r["ext_id"]): r for r in ships}
+    missing = [x for x in orders if x not in have]
+    box_ids = wb_supply.list_boxes(cab, ext_id)
+    if box_ids:
+        insert_wb_boxes(sid, box_ids, now_iso())
+    if ships:
+        trbx = box_ids[0] if len(box_ids) == 1 else None
+        set_shipment_supply([r["id"] for r in ships], ext_id, trbx_ext=trbx)
+    supply = get_wb_supply(sid)
+    office = _apply_dropoff(supply, flag, cargo)
+    statuses_map = wb_statuses(cab["token"], orders) if orders else {}
+    done = bool(info.get("done"))
+    if done:
+        mark_wb_supply_delivered(sid, _wb_stamp(info.get("closedAt")))
+    for row in ships:
+        st = statuses_map.get(str(row["ext_id"])) or {}
+        group = statuses.wb_group(st.get("supplier"), st.get("wb"), row["work_state"] or "")
+        text = statuses.wb_text(st.get("supplier"), st.get("wb")) or row["status"]
+        if group == statuses.CANCELLED:
+            work = statuses.CANCELLED
+        elif done or group == statuses.SHIPPED:
+            work = statuses.SHIPPED
+        elif group == statuses.ASSEMBLING:
+            work = statuses.ASSEMBLING
+        else:
+            work = statuses.SHIPPED if done else statuses.ASSEMBLING
+        set_shipment_platform(row["id"], text, group, work)
+    return {
+        "id": sid,
+        "ext_id": ext_id,
+        "name": name,
+        "state": "delivered" if done else "open",
+        "cargo": cargo,
+        "pickup": statuses.to_pickup(cargo, flag),
+        "office": office,
+        "shipping_point": info.get("shippingPointId"),
+        "orders": orders,
+        "missing": missing,
+        "boxes": box_ids,
+    }
+
+
 def add_orders(supply_id, ship_ids):
     """Добавить собранные задания WB в поставку. Здесь же они уходят в «На сборке»."""
     supply = _supply(supply_id)
@@ -317,7 +408,7 @@ def add_orders(supply_id, ship_ids):
         ids = [r["id"] for r in ok]
         set_shipment_supply(ids, supply["ext_id"])
         set_work_state(ids, "assembling")
-        # после первого задания поставка получает cargoType и флаг ПВЗ
+        # после первого задания поставка получает cargoType; адрес сдачи — от него
         _sync_dropoff(_supply(supply_id))
     return {"added": done, "notes": notes}
 
@@ -356,17 +447,18 @@ def make_boxes(supply_id, amount):
     try:
         ext_ids = wb_supply.add_boxes(cab, supply["ext_id"], amount)
     except wb_supply.SupplyError as exc:
-        # Отказ площадки не должен ронять сборку. Сначала проверяем запрет ПВЗ:
-        # тот же код 409 бывает и на пределе коробов, и когда везти надо в СЦ.
+        # 409 бывает и на пределе коробов, и когда WB пишет про pickup point.
+        # На МГТ это не повод переписывать адрес на СЦ: тот же товар 10.09
+        # приняли на Домодедовской 28. СЦ только если габарит 2 или 3.
         info = wb_supply.info(cab, supply["ext_id"]) or {}
-        denied = info.get("isPickupPointShipmentAllowed") is False or "pickup point" in str(exc).lower()
-        if denied:
-            _apply_dropoff(supply, "0", cargo or statuses.CARGO_MGT)
+        cargo_now = str(info.get("cargoType") or cargo or "")
+        if cargo_now and cargo_now != statuses.CARGO_MGT:
+            _apply_dropoff(supply, "0", cargo_now)
             raise ValueError(
-                "WB не принимает эту поставку на ПВЗ. Везём на %s. Короба не нужны."
+                "грузоместа заводятся только для поставок на ПВЗ. Этот товар едет на %s, там короба не нужны."
                 % statuses.SC
             )
-        if "FailedToAddSupplyTrbx" in str(exc):
+        if "FailedToAddSupplyTrbx" in str(exc) or "pickup point" in str(exc).lower():
             raise ValueError(
                 "WB отказал в коробе: заданий в поставке %s, коробов уже %s, предел площадки %s. Уложи товар в имеющиеся короба."
                 % (orders, have, limit)

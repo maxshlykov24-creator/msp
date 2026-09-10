@@ -1069,14 +1069,8 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
         "SELECT id, pickup_allowed, office FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
         (cabinet_id, kind, ext_id),
     ).fetchone()
-    if existing:
-        old_flag = str(existing["pickup_allowed"] or "") if "pickup_allowed" in existing.keys() else ""
-        # запрет ПВЗ ставит поставка, выгрузка его не затирает
-        if old_flag == "0":
-            extra["pickup_allowed"] = "0"
-            extra["office"] = (existing["office"] if "office" in existing.keys() else "") or extra.get("office") or ""
-        elif "pickup_allowed" not in extra:
-            extra["pickup_allowed"] = old_flag
+    if existing and "pickup_allowed" not in extra:
+        extra["pickup_allowed"] = str(existing["pickup_allowed"] or "") if "pickup_allowed" in existing.keys() else ""
     more = [str(extra.get(col) or "") for col in SHIP_EXTRA]
     if existing:
         conn.execute(
@@ -1105,6 +1099,38 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
     conn.commit()
     conn.close()
     return sid
+
+
+def get_shipments_by_ext(cabinet_id, kind, ext_ids):
+    """Отправления кабинета по номерам площадки."""
+    ids = [str(x) for x in ext_ids if x]
+    if not ids:
+        return []
+    conn = connect()
+    q = ",".join("?" * len(ids))
+    rows = conn.execute(
+        "SELECT * FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id IN (%s)" % q,
+        [int(cabinet_id), kind] + ids,
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def set_shipment_platform(shipment_id, status, status_group, work_state=None):
+    """Статус с площадки. work_state трогаем, только если передали явно."""
+    conn = connect()
+    if work_state is None:
+        conn.execute(
+            "UPDATE shipments SET status = ?, status_group = ? WHERE id = ?",
+            (status or "", status_group or "", int(shipment_id)),
+        )
+    else:
+        conn.execute(
+            "UPDATE shipments SET status = ?, status_group = ?, work_state = ? WHERE id = ?",
+            (status or "", status_group or "", work_state or "", int(shipment_id)),
+        )
+    conn.commit()
+    conn.close()
 
 
 def set_work_state(ids, work_state):

@@ -11,9 +11,13 @@
    по OpenAPI-спеке WB от 2026-09-04 и по версии от 2025-12-26 — раньше его
    тоже не было). Поэтому раскладку по коробкам мы ведём у себя, для склада;
 4. напечатать QR грузомест — `POST /api/v3/supplies/{id}/trbx/stickers`;
-5. передать поставку в доставку — `PATCH /api/v3/supplies/{id}/deliver`. Шаг
-   необратимый: все задания уходят в «В доставке», добавить в поставку больше
-   ничего нельзя. Поэтому спрашиваем подтверждение;
+5. передать поставку в доставку — `PATCH /api/v3/supplies/{id}/deliver`.
+   Тела у метода в спеке нет: точку ПВЗ сюда не передать. После нашей сдачи
+   10.09 у `WB-GI-276355488` `shippingPointId` остался пустым, и WB повёл
+   поставку как на СЦ. В ЛК точку выбирают отдельно; живая поставка
+   `WB-GI-276491672` получила `shippingPointId=50095011` (Домодедовская 28).
+   Шаг необратимый: все задания уходят в «В доставке». Поэтому спрашиваем
+   подтверждение;
 6. QR самой поставки — `GET /api/v3/supplies/{id}/barcode`, доступен **только
    после** передачи в доставку.
 
@@ -238,3 +242,45 @@ def info(cab, supply_ext):
         return r.json() or {}
     except ValueError:
         return {}
+
+
+def order_ids(cab, supply_ext):
+    """Номера заданий поставки. Состав читаем только так: GET .../orders снят."""
+    r = req(
+        "GET",
+        "%s/api/marketplace/v3/supplies/%s/order-ids" % (WB_BASE, supply_ext),
+        headers=wb_headers(cab["token"]),
+    )
+    if r.status_code != 200:
+        raise _fail(r, "не отдал состав поставки")
+    try:
+        data = r.json() or {}
+    except ValueError:
+        raise SupplyError("WB: нераспознанный ответ на состав поставки")
+    return [str(x) for x in (data.get("orderIds") or []) if x]
+
+
+def list_boxes(cab, supply_ext):
+    """Номера грузомест поставки. Состав короба площадка наружу не отдаёт."""
+    r = req(
+        "GET",
+        "%s/api/v3/supplies/%s/trbx" % (WB_BASE, supply_ext),
+        headers=wb_headers(cab["token"]),
+    )
+    if r.status_code != 200:
+        raise _fail(r, "не отдал грузоместа поставки")
+    try:
+        data = r.json() or {}
+    except ValueError:
+        raise SupplyError("WB: нераспознанный ответ на грузоместа")
+    out = []
+    for item in data.get("trbxes") or []:
+        if isinstance(item, dict):
+            ext = str(item.get("id") or "")
+        else:
+            ext = str(item or "")
+        if ext:
+            out.append(ext)
+    if not out:
+        out = [str(x) for x in (data.get("trbxIds") or []) if x]
+    return out
