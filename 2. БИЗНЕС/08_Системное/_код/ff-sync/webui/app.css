@@ -367,6 +367,7 @@ table.asm-tbl tr.sup-head:hover .sup-open{opacity:1}
 .wb-item i{grid-column:2;grid-row:1 / span 2;align-self:center;font-style:normal}
 .wb-state{font-size:10px;font-weight:700;letter-spacing:.02em}
 .wb-state.open,.wb-pill.open{color:var(--amber)}
+.wb-state.ready,.wb-pill.ready{color:var(--accent)}
 .wb-state.delivered,.wb-pill.delivered{color:var(--mute-2)}
 .wb-hero{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-bottom:4px}
 .wb-hero-id{font-size:20px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums}

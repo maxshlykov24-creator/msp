@@ -1133,6 +1133,24 @@ function asmRowHtml(r) {
   </tr>`;
 }
 
+function wbSupplyShort(state) {
+  if (state === "ready") return "на отгрузке";
+  if (state === "delivered") return "сдана";
+  return "сборка";
+}
+
+function wbSupplyTrack(state) {
+  if (state === "ready") return "ожидают отгрузки";
+  if (state === "delivered") return "передана";
+  return "на сборке";
+}
+
+function wbSupplyPill(supply) {
+  if (supply.state === "open") return "На сборке";
+  if (supply.state === "ready") return "Ожидают отгрузки";
+  return "Сдана " + (supply.delivered || "");
+}
+
 // Поставка — та же строка таблицы, что и заказ, но с бейджем и полосой WB.
 // Задания внутри не раскрываем: состав, короба и сдача живут в окне поставки.
 function asmSupplyHtml(sup, rows) {
@@ -1150,7 +1168,7 @@ function asmSupplyHtml(sup, rows) {
     <td class="ph"><span class="sup-ico" aria-hidden="true"></span></td>
     <td class="artq"><b>${qty} шт</b></td>
     <td class="nm" title="${esc(bits.join(" · "))}">${esc(bits.join(" · "))}</td>
-    <td class="trk">${sup.state === "delivered" ? "передана" : "на сборке"}</td>
+    <td class="trk">${wbSupplyTrack(sup.state)}</td>
     <td class="dest">${esc(office)}${sup.cargo ? `<span class="cargo">${esc(sup.cargo)}</span>` : ""}</td>
     <td class="sup"><span class="badge supply">${esc(sup.name || "поставка")}</span></td>
     <td class="num">${marks || "—"}</td>
@@ -1215,6 +1233,10 @@ function refreshAsmDock() {
   $("aActsAssembling").hidden = group !== "assembling";
   $("aActsReady").hidden = group !== "ready";
   if (group !== "assembling") hidePrintMenu();
+  const shipTools = group === "shipped" || group === "delivered";
+  $("aWeekly").hidden = !shipTools;
+  $("shReport").hidden = !shipTools;
+  $("shExport").hidden = !shipTools;
 }
 
 // после перерисовки тела таблицы галочки надо расставить заново: разметка новая,
@@ -1783,7 +1805,6 @@ $("askModal").onclick = (e) => { if (e.target === $("askModal")) askDone(false);
 
 // поставки WB: грузоместа, QR коробов, передача в доставку
 
-$("aSupplies").onclick = () => openWb();
 $("wbClose").onclick = () => $("wbModal").classList.remove("on");
 $("wbModal").onclick = (e) => { if (e.target === $("wbModal")) $("wbModal").classList.remove("on"); };
 
@@ -1808,7 +1829,7 @@ async function loadWbSupplies() {
     : res.rows.map((r) => `<button type="button" class="wb-item${r.id === state.wbSupply ? " is-on" : ""}" data-supply="${r.id}">
         <b>${esc(r.ext_id)}</b>
         <span>${r.orders} зак. · ${r.boxes} кор.</span>
-        <i class="wb-state ${r.state}">${r.state === "delivered" ? "сдана" : "сборка"}</i>
+        <i class="wb-state ${r.state}">${wbSupplyShort(r.state)}</i>
       </button>`).join("");
   if (state.wbSupply) await loadWbDetail(state.wbSupply);
   else $("wbDetail").innerHTML = empty ? "" : `<div class="wb-idle">Выбери поставку слева</div>`;
@@ -1840,7 +1861,7 @@ async function loadWbDetail(id) {
         <div class="wb-hero-id">${esc(res.supply.ext_id)}</div>
         <div class="wb-hero-meta">${esc(res.supply.client)} · ${esc(dest)} · ${res.rows.length} зак.${pickup ? " · " + res.boxes.length + " кор." : " · короба не нужны"}${loose ? " · без короба " + loose : ""}</div>
       </div>
-      <span class="wb-pill ${res.supply.state}">${open ? "На сборке" : "Сдана " + esc(res.supply.delivered)}</span>
+      <span class="wb-pill ${res.supply.state}">${wbSupplyPill(res.supply)}</span>
     </div>
     <section class="wb-sec">
       <div class="wb-sec-h">
@@ -1884,7 +1905,7 @@ async function loadWbDetail(id) {
     </section>
     <div class="wb-foot">
       ${open
-        ? `<span>${esc(dest)}</span><button class="btn wb-deliver" id="wbDeliver" type="button">${pickup ? "Сдать на ПВЗ" : "Сдать в СЦ"}</button>`
+        ? `<span>${esc(dest)}</span><button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button>`
         : `<span>Поставка закрыта</span><button class="btn" id="wbQr" type="button">QR поставки</button>`}
     </div>`;
   bindWbDetail();
@@ -1994,12 +2015,12 @@ function bindWbDetail() {
     if (pre.pickup !== false && pre.loose) bad.push("заданий без грузоместа: " + pre.loose);
     if (pre.pickup !== false && pre.empty_boxes.length) bad.push("пустых грузомест: " + pre.empty_boxes.length);
     const okay = await ask(
-      "Передать поставку в доставку?",
+      "Отправить поставку на отгрузку?",
       (dest ? dest + ". " : "") + pre.ext_id + " · " + pre.client + ". В поставке " + pre.orders + " заданий"
         + (pre.pickup === false ? ", короба не нужны." : " и " + pre.boxes + " грузомест.")
         + (bad.length ? " Внимание: " + bad.join(", ") + "." : "")
-        + " Шаг необратимый: WB закроет поставку, все задания уйдут в «В доставке», добавить в неё больше ничего нельзя. QR поставки появится только после этого.",
-      "Передать"
+        + " WB закроет поставку, добавить в неё больше ничего нельзя. Поставка уйдёт во вкладку «Ожидают отгрузки». QR поставки появится после этого.",
+      "На отгрузку"
     );
     if (!okay) return;
     await guard(async () => {
@@ -2011,10 +2032,10 @@ function bindWbDetail() {
         if (!force) { say($("wbMsg"), "Отменил. Разложи задания по грузоместам."); return; }
         await api("/api/wb/supplies/" + id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true, force: true }) });
       }
-      say($("wbMsg"), "Поставка передана в доставку. Теперь доступен QR поставки.", "ok");
+      say($("wbMsg"), "Поставка на отгрузке. Теперь доступен QR поставки.", "ok");
       await loadWbSupplies();
       await loadAsm();
-    }, "Передаю поставку в доставку…");
+    }, "Отправляю на отгрузку…");
   };
   const wrap = $("wbDetail");
   wrap.onclick = async (e) => {

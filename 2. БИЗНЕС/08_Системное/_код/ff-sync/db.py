@@ -1244,14 +1244,25 @@ def get_wb_supply(supply_id):
     return row
 
 
-def mark_wb_supply_delivered(supply_id, when):
+def set_wb_supply_state(supply_id, state, when=None):
+    """open — сборка, ready — на отгрузке, delivered — сдана."""
     conn = connect()
-    conn.execute(
-        "UPDATE wb_supplies SET state = 'delivered', delivered_at = ? WHERE id = ?",
-        (when, int(supply_id)),
-    )
+    if when is None:
+        conn.execute(
+            "UPDATE wb_supplies SET state = ? WHERE id = ?",
+            (state, int(supply_id)),
+        )
+    else:
+        conn.execute(
+            "UPDATE wb_supplies SET state = ?, delivered_at = ? WHERE id = ?",
+            (state, when, int(supply_id)),
+        )
     conn.commit()
     conn.close()
+
+
+def mark_wb_supply_delivered(supply_id, when):
+    set_wb_supply_state(supply_id, "delivered", when)
 
 
 def list_wb_supplies(client_id=None, state="", limit=100):
@@ -1500,11 +1511,13 @@ def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_fro
 
 # Группа, которую видит оператор. work_state — наша складская отметка
 # (новые → на сборке → ожидают отгрузки → отгружены). Считаем на чтении,
-# чтобы выгрузка с площадки не стирала ход сборщика. Если площадка уже
-# уехала дальше (отгружен, доставлен, отменён) — её статус важнее.
+# чтобы выгрузка с площадки не стирала ход сборщика. Отмена и «получено
+# покупателем» важнее нашей отметки. «В доставке» у WB (shipped) — нет:
+# после «На отгрузку» задания должны остаться во вкладке «Ожидают отгрузки»,
+# пока склад сам не нажмёт «Отгружено».
 EFF_GROUP = (
     "CASE"
-    " WHEN COALESCE(shipments.status_group,'') IN ('cancelled','delivered','shipped')"
+    " WHEN COALESCE(shipments.status_group,'') IN ('cancelled','delivered')"
     " THEN shipments.status_group"
     " WHEN COALESCE(shipments.work_state,'') IN ('assembling','ready','shipped')"
     " THEN shipments.work_state"

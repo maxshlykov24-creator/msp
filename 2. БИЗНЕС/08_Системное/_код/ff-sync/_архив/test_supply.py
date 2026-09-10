@@ -239,10 +239,16 @@ except ValueError as exc:
 pdf, notes, pages = supply_flow.boxes_pdf(sup["id"])
 assert pdf[:4] == b"%PDF" and pages == 2, (pages, notes)
 
-# 7. передача в доставку
+# 7. передача в доставку: WB закрывает, у нас поставка и задания — «ожидают отгрузки»
 out = supply_flow.deliver(sup["id"], confirm=True, force=True)
 assert out == {"ok": True, "orders": 4, "loose": 2}, out
-assert db.get_wb_supply(sup["id"])["state"] == "delivered"
+assert db.get_wb_supply(sup["id"])["state"] == "ready"
+assert all(r["work_state"] == "ready" for r in db.list_supply_shipments(wb_cab, "WB-GI-777"))
+# выгрузка после deliver ставит status_group=shipped — вкладка всё равно «ожидают отгрузки»
+for r in db.list_supply_shipments(wb_cab, "WB-GI-777"):
+    db.set_shipment_platform(r["id"], r["status"], "shipped")
+eff = {r["ext_id"]: r["eff_group"] for r in db.list_assembly(client_id=client_id, marketplace="wb")}
+assert all(eff.get(str(r["ext_id"])) == "ready" for r in db.list_supply_shipments(wb_cab, "WB-GI-777")), eff
 try:
     supply_flow.make_boxes(sup["id"], 1)
     raise AssertionError("завели грузоместо в закрытой поставке")

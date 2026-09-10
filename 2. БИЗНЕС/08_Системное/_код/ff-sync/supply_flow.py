@@ -31,6 +31,7 @@ from db import (
     set_shipment_supply,
     set_supply_shipments_dropoff,
     set_wb_supply_dropoff,
+    set_wb_supply_state,
     set_work_state,
 )
 
@@ -550,7 +551,8 @@ def deliver(supply_id, confirm=False, force=False):
         )
     cab = _cab_of_supply(supply)
     wb_supply.deliver(cab, supply["ext_id"])
-    mark_wb_supply_delivered(supply["id"], now_iso())
+    set_wb_supply_state(supply["id"], "ready", now_iso())
+    set_work_state([r["id"] for r in rows], "ready")
     return {"ok": True, "orders": len(rows), "loose": len(loose)}
 
 
