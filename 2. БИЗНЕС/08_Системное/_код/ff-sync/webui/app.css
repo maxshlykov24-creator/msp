@@ -322,14 +322,29 @@ table.asm-tbl td.sup .badge{margin-left:0;margin-right:4px}
 table.asm-tbl td.dest{max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 table.asm-tbl td.dest .cargo{display:block;font-size:10px;color:var(--mute-2)}
 
-/* поставка WB строкой во главе своих заданий */
-table.asm-tbl tr.sup-head td{background:rgba(59,116,214,.07);font-weight:600;border-top:1px solid var(--line)}
+/* поставка WB: та же строка, что заказ, но пурпур площадки и бейдж */
+table.asm-tbl tr.sup-head{cursor:pointer}
+table.asm-tbl tr.sup-head td{background:rgba(203,17,171,.05);font-weight:600}
+table.asm-tbl tr.sup-head td:first-child{box-shadow:inset 3px 0 0 #CB11AB}
+table.asm-tbl tr.sup-head:hover td{background:rgba(203,17,171,.09)}
+table.asm-tbl tr.sup-head.picked td{background:rgba(203,17,171,.12)}
 table.asm-tbl tr.sup-head td.nm{max-width:none;color:var(--mute);font-weight:500}
-table.asm-tbl tr.sup-head .caret{
-  background:none;border:0;padding:0 6px 0 0;font:inherit;color:var(--accent);cursor:pointer;
+table.asm-tbl td.ph .sup-ico{
+  width:34px;height:34px;border-radius:8px;display:grid;place-items:center;
+  border:1px solid rgba(203,17,171,.28);background:rgba(203,17,171,.08);
 }
-table.asm-tbl tr.child td.ext{padding-left:26px}
-table.asm-tbl tr.child td.client{color:var(--mute-2)}
+table.asm-tbl td.ph .sup-ico::before{
+  content:"";width:15px;height:13px;border:2px solid #CB11AB;border-radius:2px;
+  box-shadow:0 -3px 0 -1px #CB11AB;
+}
+table.asm-tbl .sup-open{margin-left:8px;font-size:11px;font-weight:600;color:#CB11AB;opacity:.7}
+table.asm-tbl tr.sup-head:hover .sup-open{opacity:1}
+.badge.supply-kind{
+  color:#CB11AB;border:1px solid rgba(203,17,171,.35);background:rgba(203,17,171,.08);
+  font-weight:700;font-size:10px;padding:2px 7px;margin-left:6px;letter-spacing:.02em;
+}
+[data-theme="dark"] table.asm-tbl tr.sup-head td{background:rgba(203,17,171,.12)}
+[data-theme="dark"] table.asm-tbl tr.sup-head:hover td,[data-theme="dark"] table.asm-tbl tr.sup-head.picked td{background:rgba(203,17,171,.18)}
 
 /* поставки WB: слева список, справа три блока — короба, заказы, сдача */
 #wbModal .modal-card{max-width:1080px}

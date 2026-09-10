@@ -2,8 +2,8 @@ const $ = (id) => document.getElementById(id);
 const state = {
   clients: [], lots: [], ships: [], asm: [],
   picked: new Set(), pickedShip: new Set(), pickedAsm: new Set(), asmGroup: "new", asmGroups: [],
-  // поставки WB в таблице «Заказов»: список и номера раскрытых строк
-  asmSupplies: [], asmOpen: new Set(),
+  // поставки WB в таблице «Заказов»: строка поставки вместо пачки заданий
+  asmSupplies: [],
   // поставки WB: выбранная поставка, выбранное грузоместо и отмеченные задания внутри
   wbSupplies: [], wbSupply: 0, wbBox: 0, wbPicked: new Set(), wbDetail: null,
 };
@@ -1117,8 +1117,8 @@ async function loadAsm() {
   body.innerHTML = asmBodyHtml(res.rows);
 }
 
-function asmRowHtml(r, child) {
-  return `<tr${child ? ` class="child" data-of="${esc(r.supply)}"` : ""}${child && !state.asmOpen.has(r.supply) ? " hidden" : ""}>
+function asmRowHtml(r) {
+  return `<tr>
     <td class="pick"><input type="checkbox" data-asm="${r.id}"></td>
     <td class="client">${esc(r.client)}</td>
     <td class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span></td>
@@ -1133,29 +1133,35 @@ function asmRowHtml(r, child) {
   </tr>`;
 }
 
-// Поставка идёт строкой во главе своих заданий: так её показывали Сергею и так
-// он собирает смену. Задания под ней спрятаны, пока строку не раскроют.
+// Поставка — та же строка таблицы, что и заказ, но с бейджем и полосой WB.
+// Задания внутри не раскрываем: состав, короба и сдача живут в окне поставки.
 function asmSupplyHtml(sup, rows) {
-  const open = state.asmOpen.has(sup.ext_id);
-  const bits = [sup.orders + " заданий", sup.boxes + " мест"];
-  if (sup.loose) bits.push("без коробки " + sup.loose);
+  const bits = [sup.orders + " заданий", sup.boxes + " коробов"];
+  if (sup.loose) bits.push("без короба " + sup.loose);
   if (!sup.pickup && sup.cargo) bits.push("короба не нужны");
-  return `<tr class="sup-head${open ? " is-open" : ""}" data-supply="${esc(sup.ext_id)}">
-    <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}"></td>
+  const qty = rows.reduce((a, r) => a + Number(r.qty || 0), 0);
+  const marks = rows.reduce((a, r) => a + Number(r.marks || 0), 0);
+  const office = rows.length && rows[0].office ? rows[0].office : "—";
+  return `<tr class="sup-head" data-supply="${esc(sup.ext_id)}" data-sid="${sup.id}" title="Открыть поставку">
+    <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}" title="Выбрать все задания поставки"></td>
     <td class="client">${esc(sup.client)}</td>
-    <td class="ext"><button type="button" class="caret" data-open="${esc(sup.ext_id)}" title="${open ? "Свернуть" : "Раскрыть"} задания">${open ? "▾" : "▸"}</button>${esc(sup.ext_id)}<span class="badge mp">wb</span></td>
+    <td class="ext">${esc(sup.ext_id)}<span class="badge supply-kind">Поставка</span><span class="badge mp">WB</span><span class="sup-open">открыть</span></td>
     <td class="when">${esc(sup.created || "—")}</td>
-    <td class="ph"><span class="noph"></span></td>
-    <td class="artq"><b>${rows.reduce((a, r) => a + Number(r.qty || 0), 0)} шт</b></td>
-    <td class="nm">${esc(bits.join(" · "))}</td>
+    <td class="ph"><span class="sup-ico" aria-hidden="true"></span></td>
+    <td class="artq"><b>${qty} шт</b></td>
+    <td class="nm" title="${esc(bits.join(" · "))}">${esc(bits.join(" · "))}</td>
     <td class="trk">${sup.state === "delivered" ? "передана" : "на сборке"}</td>
-    <td class="dest">${esc(rows.length && rows[0].office ? rows[0].office : "—")}${sup.cargo ? `<span class="cargo">${esc(sup.cargo)}</span>` : ""}</td>
+    <td class="dest">${esc(office)}${sup.cargo ? `<span class="cargo">${esc(sup.cargo)}</span>` : ""}</td>
     <td class="sup"><span class="badge supply">${esc(sup.name || "поставка")}</span></td>
-    <td class="num">${rows.reduce((a, r) => a + Number(r.marks || 0), 0) || "—"}</td>
+    <td class="num">${marks || "—"}</td>
   </tr>`;
 }
 
 function asmBodyHtml(rows) {
+  // в «Новых» поставки ещё нет: каждое задание само по себе
+  if (state.asmGroup === "new") {
+    return rows.map((r) => asmRowHtml(r)).join("");
+  }
   const bySupply = new Map();
   const loose = [];
   rows.forEach((r) => {
@@ -1171,11 +1177,11 @@ function asmBodyHtml(rows) {
     const kids = bySupply.get(sup.ext_id);
     if (!kids) return;
     bySupply.delete(sup.ext_id);
-    html += asmSupplyHtml(sup, kids) + kids.map((r) => asmRowHtml(r, true)).join("");
+    html += asmSupplyHtml(sup, kids);
   });
   // поставка есть у задания, но самой поставки в базе нет: заводили не мы
-  bySupply.forEach((kids) => { html += kids.map((r) => asmRowHtml(r, false)).join(""); });
-  return html + loose.map((r) => asmRowHtml(r, false)).join("");
+  bySupply.forEach((kids) => { html += kids.map((r) => asmRowHtml(r)).join(""); });
+  return html + loose.map((r) => asmRowHtml(r)).join("");
 }
 
 function hidePrintMenu() {
@@ -1215,7 +1221,8 @@ function refreshAsmPick() {
   $("shExport").disabled = marks === 0;
   $("aTbl").querySelectorAll("tr").forEach((tr) => {
     const box = tr.querySelector("input[data-asm]");
-    tr.classList.toggle("picked", !!box && box.checked);
+    const sup = tr.querySelector("input[data-supbox]");
+    tr.classList.toggle("picked", !!(box && box.checked) || !!(sup && sup.checked));
   });
   refreshAsmDock();
 }
@@ -1326,25 +1333,20 @@ $("aTbl").onclick = (e) => {
     loadAsm();
     return;
   }
-  const caret = e.target.closest("button[data-open]");
-  if (caret) {
-    const ext = caret.dataset.open;
-    if (state.asmOpen.has(ext)) state.asmOpen.delete(ext); else state.asmOpen.add(ext);
-    $("aTbl").querySelector("tbody").innerHTML = asmBodyHtml(state.asm);
-    restoreAsmPick();
-    return;
-  }
   const supbox = e.target.closest("input[data-supbox]");
   if (supbox) {
-    // отметка на поставке = отметка на всех её заданиях: кнопки работают по
-    // отправлениям, а Сергей мыслит поставкой
+    // галка на поставке отмечает все её задания: кнопки дока работают по id
     const ext = supbox.dataset.supbox;
     const kids = state.asm.filter((r) => r.supply === ext);
     kids.forEach((r) => { if (supbox.checked) state.pickedAsm.add(r.id); else state.pickedAsm.delete(r.id); });
     restoreAsmPick();
     return;
   }
-  if (e.target.closest("tr.sup-head")) return;
+  const head = e.target.closest("tr.sup-head");
+  if (head) {
+    openWb(head.dataset.sid);
+    return;
+  }
   const tr = e.target.closest("tbody tr");
   const box = tr && tr.querySelector("input[data-asm]");
   if (!box) return;
@@ -1771,7 +1773,8 @@ function wbClientHint() {
     : "Выбери контрагента в Заказах";
 }
 
-function openWb() {
+function openWb(id) {
+  if (id) state.wbSupply = Number(id);
   $("wbModal").classList.add("on");
   state.wbPicked = new Set();
   wbClientHint();
@@ -1785,8 +1788,9 @@ async function loadWbSupplies() {
   const res = await api("/api/wb/supplies?" + params.toString());
   state.wbSupplies = res.rows;
   const empty = !res.rows.length;
-  $("wbModal").classList.toggle("is-empty", empty);
-  $("wbCols").classList.toggle("is-empty", empty);
+  const show = !!state.wbSupply;
+  $("wbModal").classList.toggle("is-empty", empty && !show);
+  $("wbCols").classList.toggle("is-empty", empty && !show);
   $("wbSupplies").innerHTML = empty
     ? `<div class="wb-empty">Поставок нет. Создай ниже.</div>`
     : res.rows.map((r) => `<button type="button" class="wb-item${r.id === state.wbSupply ? " is-on" : ""}" data-supply="${r.id}">
@@ -1794,7 +1798,6 @@ async function loadWbSupplies() {
         <span>${r.orders} зак. · ${r.boxes} кор.</span>
         <i class="wb-state ${r.state}">${r.state === "delivered" ? "сдана" : "сборка"}</i>
       </button>`).join("");
-  if (empty || (state.wbSupply && !res.rows.some((r) => r.id === state.wbSupply))) state.wbSupply = 0;
   if (state.wbSupply) await loadWbDetail(state.wbSupply);
   else $("wbDetail").innerHTML = empty ? "" : `<div class="wb-idle">Выбери поставку слева</div>`;
 }
