@@ -17,10 +17,21 @@
   --mute: 138 140 146;
   --mute-soft: 194 199 208;
   --fg: 255 255 255;
-  --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 8px 30px -12px rgba(0, 0, 0, 0.7);
+  --shadow-card: 0 8px 32px 0 rgba(0, 0, 0, 0.72);
   --shadow-glow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 10px 40px -12px rgba(255, 255, 255, 0.1);
+  --shadow-lg: 0 40px 90px -30px rgba(0, 0, 0, 0.95);
   --page-wash-1: rgba(255, 255, 255, 0.05);
   --page-wash-2: rgba(255, 255, 255, 0.035);
+  --ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --glass-bg: rgba(21, 23, 28, 0.62);
+  --glass-top: rgba(0, 0, 0, 0.7);
+  --glass-blur: 20px;
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --radius: 18px;
+  --overlay: rgba(0, 0, 0, 0.32);
+  --field: rgb(12, 13, 17);
 }
 
 html.theme-light,
@@ -39,10 +50,18 @@ body.theme-light {
   --mute: 106 106 110;
   --mute-soft: 58 58 62;
   --fg: 20 20 22;
-  --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.88) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.14);
+  --shadow-card: 0 8px 30px -12px rgba(0, 0, 0, 0.14);
   --shadow-glow: 0 0 0 1px rgba(20, 20, 22, 0.12), 0 10px 28px -14px rgba(0, 0, 0, 0.18);
+  --shadow-lg: 0 40px 90px -34px rgba(0, 0, 0, 0.22);
   --page-wash-1: rgba(0, 0, 0, 0.03);
   --page-wash-2: rgba(0, 0, 0, 0.02);
+  --line: rgba(20, 20, 22, 0.15);
+  --line-2: rgba(20, 20, 22, 0.24);
+  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-top: rgba(244, 244, 244, 0.72);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --overlay: rgba(20, 20, 20, 0.18);
+  --field: rgb(255, 255, 255);
 }
 
 html,
@@ -83,14 +102,68 @@ body {
   @apply bg-ink-600 rounded-full;
 }
 
+html,
+body {
+  transition: background-color 0.35s var(--ease), color 0.35s var(--ease);
+}
+
 body {
   @apply bg-ink-950 text-mute-soft font-sans antialiased;
   position: relative;
   width: 100%;
+  letter-spacing: -0.01em;
   background-image: radial-gradient(1200px 600px at 80% -10%, var(--page-wash-1), transparent 60%),
     radial-gradient(900px 500px at -10% 110%, var(--page-wash-2), transparent 60%);
   /* fixed на iOS Safari даёт чёрный/пустой экран — только scroll */
   background-attachment: scroll;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::before {
+  opacity: 0.06;
+  background-image: repeating-linear-gradient(
+    102deg,
+    rgba(255, 255, 255, 0.7) 0,
+    rgba(255, 255, 255, 0.7) 1px,
+    transparent 1px,
+    transparent 11px
+  );
+}
+
+body::after {
+  background:
+    radial-gradient(130% 110% at 50% 42%, transparent 62%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0%, transparent 12%, transparent 88%, rgba(0, 0, 0, 0.18) 100%);
+}
+
+html.theme-light body::before {
+  opacity: 0.055;
+  background-image: repeating-linear-gradient(
+    102deg,
+    rgba(0, 0, 0, 0.5) 0,
+    rgba(0, 0, 0, 0.5) 1px,
+    transparent 1px,
+    transparent 11px
+  );
+}
+
+html.theme-light body::after {
+  background:
+    radial-gradient(130% 110% at 50% 42%, transparent 64%, rgba(0, 0, 0, 0.06) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04) 0%, transparent 12%, transparent 88%, rgba(0, 0, 0, 0.05) 100%);
+}
+
+#root {
+  position: relative;
+  z-index: 1;
 }
 
 @media (min-width: 768px) {
@@ -99,12 +172,19 @@ body {
   }
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, rgb(var(--mute)) 50%, transparent) transparent;
+}
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-ink-600 rounded-full;
+  background: color-mix(in srgb, rgb(var(--mute)) 42%, transparent);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -122,7 +202,7 @@ body {
   cursor: pointer;
   font-size: 12px;
   color: rgb(var(--mute));
-  transition: 0.2s ease;
+  transition: 0.2s var(--ease);
   user-select: none;
   white-space: nowrap;
 }
@@ -138,7 +218,7 @@ body {
   border: 1px solid rgb(var(--ink-600));
   position: relative;
   flex: none;
-  transition: 0.25s ease;
+  transition: 0.25s var(--ease);
 }
 .sw i::after {
   content: "";
@@ -149,7 +229,7 @@ body {
   height: 13px;
   border-radius: 50%;
   background: rgb(var(--mute));
-  transition: 0.25s ease;
+  transition: 0.25s var(--ease);
 }
 .sw.on {
   color: rgb(var(--fg));
@@ -170,14 +250,15 @@ body {
 }
 
 .page-hint {
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: rgb(var(--fg) / 0.04);
-  border: 1px solid rgb(var(--fg) / 0.12);
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: color-mix(in srgb, rgb(var(--fg)) 6%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--fg)) 14%, transparent);
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.68;
   color: rgb(var(--mute));
   margin-bottom: 1.25rem;
+  animation: kassa-page-in 0.35s var(--ease);
 }
 .page-hint p + p {
   margin-top: 0.55rem;
@@ -350,22 +431,58 @@ html.theme-light .stage-tone-fail {
 
 @layer components {
   .card {
-    @apply bg-ink-850/80 border border-ink-700 rounded-xl2 shadow-card;
+    background: var(--glass-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-edge), var(--shadow-card);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(120%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(120%);
+    transition: background-color 0.35s var(--ease), border-color 0.35s var(--ease), box-shadow 0.35s var(--ease);
+  }
+  .card:has(table),
+  .card.solid {
+    background: rgb(var(--ink-850));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
   .field-label {
-    @apply text-[12px] uppercase tracking-wider text-mute font-semibold mb-1.5;
+    @apply text-[11px] uppercase text-mute font-semibold mb-1.5;
+    letter-spacing: 0.09em;
   }
   .input {
-    @apply w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2.5 text-base text-white
-      placeholder:text-mute/50 focus:outline-none focus:border-gold/60 focus:ring-2 focus:ring-gold/15 transition;
+    width: 100%;
+    background: var(--field);
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    padding: 9px 11px;
+    font-size: 1rem;
+    color: rgb(var(--fg));
+    transition: border-color 0.2s var(--ease), background-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  }
+  .input::placeholder {
+    color: rgb(var(--mute) / 0.5);
+  }
+  .input:hover {
+    border-color: var(--line-2);
+  }
+  .input:focus {
+    outline: none;
+    border-color: color-mix(in srgb, rgb(var(--gold)) 55%, var(--line));
+    box-shadow: 0 0 0 3px color-mix(in srgb, rgb(var(--gold)) 16%, transparent);
   }
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold;
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold;
+    border-radius: 9px;
   }
 }
 
 html.theme-light .card {
-  @apply bg-ink-850 border-ink-700;
+  background: var(--glass-bg);
+  border-color: var(--line);
+}
+html.theme-light .card:has(table),
+html.theme-light .card.solid {
+  background: rgb(var(--ink-850));
 }
 html.theme-light header,
 html.theme-light aside,
