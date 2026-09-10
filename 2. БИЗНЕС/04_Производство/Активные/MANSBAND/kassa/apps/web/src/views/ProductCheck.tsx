@@ -842,14 +842,6 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                     ? "…"
                     : `${sectionCounts[s.id] ?? 0} позиций`}
               </div>
-              {s.id !== "suits" && (
-                <div className="text-[12px] text-mute mt-2 leading-snug">
-                  {hallGroupsOf(s.id)
-                    .filter((g) => g.id !== "other")
-                    .map((g) => g.label)
-                    .join(" · ")}
-                </div>
-              )}
             </button>
           ))}
         </div>
