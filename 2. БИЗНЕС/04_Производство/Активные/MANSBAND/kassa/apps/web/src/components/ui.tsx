@@ -78,18 +78,13 @@ export function Badge({
   return <span className={`chip ${toneMap[tone]}`}>{children}</span>;
 }
 
-/** Бейдж этапа amoCRM — цвета как в воронке, приглушённые под тёмный UI */
+/** Бейдж этапа amoCRM — палитра в CSS, светлая тема читается отдельно. */
 export function StageBadge({ stage, className = "" }: { stage: string; className?: string }) {
-  const s = getStageStyle(stage);
+  const group = getStageGroup(stage);
   return (
     <span
       title={stage}
-      className={`chip border font-medium tracking-[0.01em] max-w-full truncate ${className}`.trim()}
-      style={{
-        backgroundColor: s.bg,
-        color: s.text,
-        borderColor: s.ring,
-      }}
+      className={`chip stage-tone stage-tone-${group} font-medium tracking-[0.01em] max-w-full truncate ${className}`.trim()}
     >
       {stage}
     </span>

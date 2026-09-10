@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Field } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { warmupApi } from "../api/client";
+import { ThemeToggle } from "../lib/theme";
 
 export function Login() {
   const { login } = useAuth();
@@ -27,6 +28,9 @@ export function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-ink-950">
+      <div className="fixed top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
       <form onSubmit={submit} className="card p-8 w-full max-w-sm">
         <div className="text-center mb-6">
           <div className="text-2xl font-extrabold text-white tracking-wide">MANSBAND</div>

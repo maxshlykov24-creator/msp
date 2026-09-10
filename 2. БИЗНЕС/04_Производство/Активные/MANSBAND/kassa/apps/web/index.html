@@ -12,6 +12,16 @@
     <title>MANSBAND · Касса</title>
   </head>
   <body>
+    <script>
+      try {
+        if (localStorage.getItem("kassa.theme") === "light") {
+          document.documentElement.classList.add("theme-light");
+          document.body.classList.add("theme-light");
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", "#ededed");
+        }
+      } catch (e) {}
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

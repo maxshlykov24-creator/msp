@@ -21,7 +21,7 @@ export function OfflineBanner() {
   if (!offline) return null;
 
   return (
-    <div className="sticky top-0 z-50 bg-amber-500 text-ink-950 text-[13px] font-semibold px-4 py-2 flex items-center justify-center gap-2">
+    <div className="sticky top-0 z-50 bg-amber-500 text-black text-[13px] font-semibold px-4 py-2 flex items-center justify-center gap-2">
       <WifiOff size={16} />
       Нет сети — данные могут не сохраниться. Проверьте Wi‑Fi / LTE.
     </div>

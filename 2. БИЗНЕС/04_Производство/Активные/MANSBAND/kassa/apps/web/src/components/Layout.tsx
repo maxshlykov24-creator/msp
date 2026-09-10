@@ -24,6 +24,7 @@ import { canSeeFinanceQueues } from "../auth/roles";
 import { CONSULTANTS, STORES } from "../data/mock";
 import { OfflineBanner } from "./OfflineBanner";
 import { HintsToggle } from "../lib/hints";
+import { ThemeToggle } from "../lib/theme";
 import logoFull from "../assets/logo-full.png";
 
 export type Route =
@@ -108,7 +109,7 @@ export function Layout({
           aria-label="На главную"
           className="px-5 py-6 border-b border-ink-800 text-left w-full hover:bg-ink-800/40 transition"
         >
-          <img src={logoFull} alt="MANSBAND" className="h-14 w-auto select-none" />
+          <img src={logoFull} alt="MANSBAND" className="brand-logo h-14 w-auto select-none" />
           <div className="text-[11px] text-mute tracking-[0.28em] uppercase mt-2.5 pl-0.5">Касса</div>
         </button>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
@@ -193,9 +194,10 @@ export function Layout({
             <div className="grid grid-cols-[1fr_auto_1fr] items-center py-2.5 gap-2">
               <div />
               <button type="button" onClick={onHome} aria-label="На главную">
-                <img src={logoFull} alt="MANSBAND" className="h-7 w-auto max-w-[140px] select-none" />
+                <img src={logoFull} alt="MANSBAND" className="brand-logo h-7 w-auto max-w-[120px] select-none" />
               </button>
-              <div className="justify-self-end">
+              <div className="justify-self-end flex flex-col items-end gap-1">
+                <ThemeToggle compact />
                 <HintsToggle compact />
               </div>
             </div>
@@ -219,6 +221,7 @@ export function Layout({
           {/* Десктопная шапка */}
           <div className="hidden md:flex px-8 py-3.5 items-center gap-3">
             <div className="flex-1" />
+            <ThemeToggle />
             <HintsToggle />
             <Selector
               icon={<StoreIcon size={15} />}

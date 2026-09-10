@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button, Field } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
+import { ThemeToggle } from "../lib/theme";
 
 export function ChangePassword() {
   const { changePassword, logout } = useAuth();
@@ -27,6 +28,9 @@ export function ChangePassword() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-ink-950">
+      <div className="fixed top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
       <form onSubmit={submit} className="card p-8 w-full max-w-sm">
         <div className="text-center mb-6">
           <div className="text-xl font-extrabold text-white">Смена пароля</div>

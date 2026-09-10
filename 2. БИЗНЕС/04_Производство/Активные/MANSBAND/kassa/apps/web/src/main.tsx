@@ -4,6 +4,7 @@ import "./index.css";
 import App from "./App.tsx";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { HintsProvider } from "./lib/hints";
+import { ThemeProvider } from "./lib/theme";
 import { Login } from "./views/Login";
 import { ChangePassword } from "./views/ChangePassword";
 
@@ -41,11 +42,13 @@ async function boot() {
   if (!root) return;
   createRoot(root).render(
     <StrictMode>
-      <HintsProvider>
-        <AuthProvider>
-          <Gate />
-        </AuthProvider>
-      </HintsProvider>
+      <ThemeProvider>
+        <HintsProvider>
+          <AuthProvider>
+            <Gate />
+          </AuthProvider>
+        </HintsProvider>
+      </ThemeProvider>
     </StrictMode>
   );
 }
