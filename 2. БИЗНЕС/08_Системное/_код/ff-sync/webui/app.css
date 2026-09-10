@@ -259,6 +259,10 @@ table.tbl .empty{text-align:center;color:var(--mute-2);padding:28px;font-size:13
 .asmtabs button b{font-weight:650;font-variant-numeric:tabular-nums}
 .asmtabs button .cnt{font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;background:var(--glass-2);color:var(--mute-2);border:1px solid var(--line)}
 .asmtabs button.active .cnt{background:rgba(255,255,255,.22);color:inherit;border-color:transparent}
+.asmtabs.is-wait{pointer-events:none;opacity:.65}
+.asm-wait{text-align:center;color:var(--mute);padding:36px 12px!important;font-weight:600}
+.spin{display:inline-block;width:14px;height:14px;margin-right:8px;border:2px solid var(--line-2);border-top-color:var(--accent);border-radius:50%;vertical-align:-2px;animation:spin .55s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 .asm-wrap{max-height:none;overflow-x:auto}
 #view-asm{padding-bottom:108px}

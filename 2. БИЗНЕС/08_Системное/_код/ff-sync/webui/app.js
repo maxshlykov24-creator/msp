@@ -1074,19 +1074,39 @@ function asmGroupLabel() {
   return hit ? hit.label : state.asmGroup;
 }
 
+let asmLoad = 0;
+
+function asmLoading() {
+  const body = $("aTbl") && $("aTbl").querySelector("tbody");
+  if (body) body.innerHTML = `<tr><td colspan="${ASM_COLS}" class="asm-wait"><span class="spin"></span>Загружаю вкладку…</td></tr>`;
+  if ($("aTabs")) $("aTabs").classList.add("is-wait");
+}
+
 async function loadAsm() {
+  const mine = ++asmLoad;
   if (!$("aSince").value) {
     const shift = ((document.querySelector("#aShift button.active") || {}).dataset || {}).shift || "today";
     setShift(shift);
   }
   tintMp("view-asm", "aMp");
-  const res = await api("/api/assembly?" + asmQuery(state.asmGroup));
+  asmLoading();
+  let res;
+  try {
+    res = await api("/api/assembly?" + asmQuery(state.asmGroup));
+  } catch (e) {
+    if (mine !== asmLoad) return;
+    $("aTabs").classList.remove("is-wait");
+    $("aTbl").querySelector("tbody").innerHTML = `<tr><td colspan="${ASM_COLS}" class="empty">${esc(e.message)}</td></tr>`;
+    return;
+  }
+  if (mine !== asmLoad) return;
   state.asm = res.rows;
   state.asmSupplies = res.supplies || [];
   state.pickedAsm.clear();
   // галка «выбрать все» живёт вне таблицы и при перерисовке не сбрасывается сама:
   // иначе она остаётся отмеченной при пустом выборе, и клик по ней снимает выбор
   $("aAll").checked = false;
+  $("aTabs").classList.remove("is-wait");
   asmTabs(res.groups);
   refreshAsmPick();
   const body = $("aTbl").querySelector("tbody");
@@ -1202,8 +1222,9 @@ function refreshAsmPick() {
 
 $("aTabs").onclick = (e) => {
   const btn = e.target.closest("button[data-group]");
-  if (!btn) return;
+  if (!btn || $("aTabs").classList.contains("is-wait")) return;
   state.asmGroup = btn.dataset.group;
+  $("aTabs").querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
   loadAsm();
 };
 
@@ -1558,7 +1579,21 @@ $("kizSend").onclick = async () => {
   }
   $("kizSend").disabled = false;
 };
-$("aUnwork").onclick = () => asmWork("", "new", "Возвращено в новые");
+$("aUnwork").onclick = async () => {
+  const ids = [...state.pickedAsm];
+  if (!ids.length) return;
+  const rows = state.asm.filter((r) => state.pickedAsm.has(r.id));
+  const wb = rows.filter((r) => r.marketplace === "wb" && r.supply);
+  const okay = await ask(
+    "Вернуть " + ids.length + " заданий в новые?",
+    wb.length
+      ? "Снимется только наша отметка. У WB " + wb.length + " из " + ids.length + " заданий останутся в поставке — вынуть их площадка не даёт."
+      : "Задания вернутся во вкладку «Новые». Площадку это не трогает.",
+    "Вернуть"
+  );
+  if (!okay) return;
+  await asmWork("", "new", "Возвращено в новые");
+};
 $("aBackAsm").onclick = () => asmWork("assembling", "assembling", "Возвращено в сборку");
 
 // поставки WB из выборки, ещё не переданные в доставку
@@ -1952,16 +1987,26 @@ function bindWbDetail() {
     }, "Передаю поставку в доставку…");
   };
   const wrap = $("wbDetail");
-  wrap.onclick = (e) => {
+  wrap.onclick = async (e) => {
     const drop = e.target.closest("[data-boxdrop]");
     if (drop) {
       e.stopPropagation();
+      const card = drop.closest(".wb-box");
+      const label = card && card.querySelector("b") ? card.querySelector("b").textContent : "этот короб";
+      const inside = card && card.querySelector("span") ? card.querySelector("span").textContent : "";
+      const okay = await ask(
+        "Удалить короб " + label + "?",
+        "WB снимет грузоместо с поставки" + (inside && inside !== "пустой" ? " (" + inside + ")" : "") + ". Заказы останутся в поставке, но без короба. Если QR уже напечатан и наклеен — он больше не действует, нужен новый короб."
+        + " Пока поставка на сборке, это обратимо: короб можно завести снова.",
+        "Удалить"
+      );
+      if (!okay) return;
       guard(async () => {
         await api("/api/wb/boxes/" + drop.dataset.boxdrop, { method: "DELETE" });
         if (state.wbBox === Number(drop.dataset.boxdrop)) state.wbBox = 0;
-        say($("wbMsg"), "Грузоместо удалено.", "ok");
+        say($("wbMsg"), "Короб " + label + " удалён у WB.", "ok");
         await loadWbSupplies();
-      }, "Удаляю грузоместо…");
+      }, "Удаляю короб у WB…");
       return;
     }
     const box = e.target.closest(".wb-box[data-box]");

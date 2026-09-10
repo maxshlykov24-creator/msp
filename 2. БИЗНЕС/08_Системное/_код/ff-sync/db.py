@@ -1489,16 +1489,50 @@ def list_assembly(client_id=None, group="", marketplace="", kind="", article="",
 
 
 def assembly_counts(client_id=None, marketplace="", kind="", article="", query="", since="", until="", keep_floor=True):
-    """Счётчики на вкладках. Считаем теми же фильтрами, но без фильтра по группе."""
-    rows = list_assembly(
-        client_id=client_id, marketplace=marketplace, kind=kind, article=article,
-        query=query, since=since, until=until, keep_floor=keep_floor,
+    """Счётчики на вкладках. Считаем в SQL: раньше тянули все строки в память."""
+    conn = connect()
+    sql = (
+        "SELECT %s AS g, COUNT(*) AS n FROM shipments "
+        "JOIN clients ON clients.id = shipments.client_id WHERE 1=1" % EFF_GROUP
     )
-    counts = {}
-    for row in rows:
-        key = row["eff_group"] or ""
-        counts[key] = counts.get(key, 0) + 1
-    return counts, len(rows)
+    args = []
+    if client_id:
+        sql += " AND shipments.client_id = ?"
+        args.append(int(client_id))
+    if marketplace:
+        sql += " AND shipments.marketplace = ?"
+        args.append(marketplace)
+    if kind:
+        sql += " AND shipments.kind = ?"
+        args.append(kind.lower())
+    when = "COALESCE(NULLIF(shipments.accepted_at, ''), shipments.shipped_at)"
+    if keep_floor:
+        floor = ship_keep_since()
+        if not since or since < floor:
+            since = floor
+    if since:
+        sql += " AND replace(%s, 'T', ' ') >= ?" % when
+        args.append(since)
+    if until:
+        sql += " AND replace(%s, 'T', ' ') <= ?" % when
+        args.append(until)
+    art = (article or "").strip().lower()
+    if art:
+        sql += " AND lower(trim(ifnull(shipments.article,''))) = ?"
+        args.append(art)
+    text = (query or "").strip().lower()
+    if text:
+        sql += (
+            " AND lower(ifnull(shipments.ext_id,'') || ' ' || ifnull(shipments.article,'') || ' ' || "
+            "ifnull(shipments.barcode,'') || ' ' || ifnull(shipments.name,'') || ' ' || "
+            "ifnull(shipments.status,'') || ' ' || ifnull(clients.name,'') || ' ' || "
+            "ifnull(shipments.track,'') || ' ' || ifnull(shipments.warehouse,'')) LIKE ?"
+        )
+        args.append("%" + text + "%")
+    rows = conn.execute(sql + " GROUP BY g", args).fetchall()
+    conn.close()
+    counts = {(r["g"] or ""): r["n"] for r in rows}
+    return counts, sum(counts.values())
 
 
 def get_shipments_by_ids(ids):
