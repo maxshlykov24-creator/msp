@@ -62,6 +62,13 @@ MAX_PER_RUN = 12
 # это в «по базам чисто», а отсутствие записи в реестре ничего не доказывает.
 EMPTY_MARKS = ("не найден", "не обнаруж", "не проверен", "нет сведени")
 
+# Пункты проверки происшествий: как называть их клиенту.
+NAMES = {
+    "accident": "ДТП",
+    "insurancePayment": "страховых выплат",
+    "service": "кузовного ремонта",
+}
+
 # id карточки в отчёте -> как это назвать в карточке машины
 RISK_CARDS = {
     "pledge": "залог",
@@ -246,6 +253,47 @@ def risks_of(cards: dict[str, Any]) -> list[str]:
     return out
 
 
+def incidents_of(card: dict[str, Any]) -> list[str]:
+    """Происшествия с датой и характером: «ДТП 27 января 2024 года (столкновение)».
+
+    Автотека кладёт их не в `list` карточки, а во вложенные группы событий, и без
+    этого разбора бот видел только заголовок «1 происшествие».
+    """
+    out: list[str] = []
+    groups = ((card.get("additional") or {}).get("incidentEventsGroups")) or []
+    for group in groups:
+        for event in (group or {}).get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            label = str(event.get("label") or "").strip()
+            if not label or is_empty_phrase(label):
+                continue
+            head = label.split(":")[0].strip() or label
+            date = str(event.get("date") or "").strip(" -\u00a0")
+            details = [
+                str(d).strip().lower() for d in (event.get("details") or []) if str(d).strip()
+            ]
+            piece = head + ((" " + date) if date else "")
+            if details:
+                piece += " (%s)" % ", ".join(details)
+            out.append(piece)
+    return out
+
+
+def empty_events_of(card: dict[str, Any]) -> list[str]:
+    """Пункты проверки, по которым в группе происшествий ничего не нашлось."""
+    out: list[str] = []
+    groups = ((card.get("additional") or {}).get("incidentEventsGroups")) or []
+    for group in groups:
+        for event in (group or {}).get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            label = str(event.get("label") or "").strip()
+            if label and is_empty_phrase(label):
+                out.append(label)
+    return out
+
+
 def damage_of(report: dict[str, Any]) -> str:
     """ДТП, страховые выплаты и кузовной ремонт.
 
@@ -272,17 +320,24 @@ def damage_of(report: dict[str, Any]) -> str:
         for pair in card.get("list") or []
         if isinstance(pair, dict) and str(pair.get("value") or "").strip()
     ]
-    hits = [value for _, value in pairs if not is_empty_phrase(value)]
+    hits = incidents_of(card) or [
+        value for _, value in pairs if not is_empty_phrase(value)
+    ]
     if hits:
+        # Рядом с найденным ДТП сразу говорим, чего не нашли: выплата и ремонт
+        # не менее важны клиенту, чем сам факт столкновения.
+        empty = [value for _, value in pairs if is_empty_phrase(value)]
+        empty += [x for x in empty_events_of(card)]
+        if empty:
+            hits.append("; ".join(dict.fromkeys(empty)).lower())
         return "; ".join(hits)
-    if card.get("status") != "ok" or not pairs:
+    if card.get("status") != "ok":
+        # Заголовок «1 происшествие» без расшифровки: деталей в отчёте нет, но
+        # сам факт клиент по ссылке увидит, и промолчать про него нельзя.
+        return str(card.get("title") or "").strip()
+    if not pairs:
         return ""
-    names = {
-        "accident": "ДТП",
-        "insurancePayment": "страховых выплат",
-        "service": "кузовного ремонта",
-    }
-    checked = [names[key] for key, _ in pairs if key in names]
+    checked = [NAMES[key] for key, _ in pairs if key in NAMES]
     if not checked:
         return ""
     return "по отчёту %s не найдено" % ", ".join(checked)
