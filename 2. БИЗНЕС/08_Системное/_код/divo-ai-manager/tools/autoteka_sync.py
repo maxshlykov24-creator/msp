@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -94,9 +95,48 @@ def save_cache(data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+def fetch_curl(uuid: str) -> dict[str, Any] | None:
+    """Тот же запрос через curl.
+
+    Антифрод Avito смотрит не только на IP: httpx получает 403 «доступ с вашего
+    IP-адреса временно ограничен» там, где curl с того же адреса и теми же
+    заголовками отдаёт 200. Разница в TLS и HTTP/2, подделывать её из httpx
+    дороже, чем позвать curl.
+    """
+    cmd = ["curl", "-sS", "--max-time", "30", "-A", HEADERS["User-Agent"]]
+    for name in ("Accept", "Referer"):
+        cmd += ["-H", "%s: %s" % (name, HEADERS[name])]
+    if settings.llm_proxy:
+        proxy = settings.llm_proxy
+        if proxy.startswith("socks5://"):
+            cmd += ["--socks5-hostname", proxy[len("socks5://"):]]
+        else:
+            cmd += ["--proxy", proxy]
+    cmd.append(API % uuid)
+    try:
+        done = subprocess.run(cmd, capture_output=True, timeout=45)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print("autoteka_sync: curl не сработал: %s" % exc, file=sys.stderr)
+        return None
+    if done.returncode != 0:
+        print("autoteka_sync: curl вернул %s" % done.returncode, file=sys.stderr)
+        return None
+    try:
+        data = json.loads(done.stdout.decode("utf-8", "replace"))
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not data.get("blocks"):
+        return None
+    return data
+
+
 def fetch(uuid: str) -> dict[str, Any] | None:
     """JSON отчёта. С VPS напрямую 403, поэтому идём тем же прокси, что LLM."""
     import httpx
+
+    data = fetch_curl(uuid)
+    if data:
+        return data
 
     kwargs: dict[str, Any] = {"timeout": 30.0, "headers": HEADERS}
     if settings.llm_proxy:
@@ -207,12 +247,45 @@ def risks_of(cards: dict[str, Any]) -> list[str]:
 
 
 def damage_of(report: dict[str, Any]) -> str:
-    block = block_of(report, "incidentEventsGroup")
-    if not block:
+    """ДТП, страховые выплаты и кузовной ремонт.
+
+    Здесь «не найдено» в кэш кладём, в отличие от такси и каршеринга: ДТП
+    сводится из ГИБДД, страховых, оценщиков и СТО, клиент видит тот же вывод по
+    ссылке, и молчать в ответ на «окрасы, ДТП есть?» хуже, чем назвать то, что
+    в отчёте написано. Формулировка всегда через «по отчёту не найдено» — это
+    цитата, а не наше обещание, что машина не битая.
+    """
+    card = None
+    for block in report.get("blocks") or []:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") != "incidentEventsGroup":
+            continue
+        for item in block.get("cards") or []:
+            if isinstance(item, dict) and item.get("id") == "incidentEventsGroups":
+                card = item
+                break
+    if not card:
         return ""
-    title = str(block.get("title") or "").strip()
-    sub = str(block.get("subTitle") or "").strip()
-    return "; ".join(x for x in (title, sub) if x)
+    pairs = [
+        (str(pair.get("key") or ""), str(pair.get("value") or "").strip())
+        for pair in card.get("list") or []
+        if isinstance(pair, dict) and str(pair.get("value") or "").strip()
+    ]
+    hits = [value for _, value in pairs if not is_empty_phrase(value)]
+    if hits:
+        return "; ".join(hits)
+    if card.get("status") != "ok" or not pairs:
+        return ""
+    names = {
+        "accident": "ДТП",
+        "insurancePayment": "страховых выплат",
+        "service": "кузовного ремонта",
+    }
+    checked = [names[key] for key, _ in pairs if key in names]
+    if not checked:
+        return ""
+    return "по отчёту %s не найдено" % ", ".join(checked)
 
 
 def owners_of(report: dict[str, Any]) -> str:

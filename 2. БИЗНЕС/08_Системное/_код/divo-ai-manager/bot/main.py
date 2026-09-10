@@ -464,6 +464,7 @@ async def send_nudge(tg: Telegram, chat_id: int) -> None:
         meta.get("car") or "",
         used,
         asked=bool(meta.get("asked", True)),
+        address=not nudge.history_has_address(doc.get("messages") or []),
     )
     await type_and_wait(tg, chat_id, human.typing_delay(text, first=True))
     if pending.get(chat_id) or store.is_paused(chat_id):

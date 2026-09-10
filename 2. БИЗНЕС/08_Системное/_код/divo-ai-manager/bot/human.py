@@ -518,6 +518,14 @@ def typing_delay(text: str, *, first: bool) -> float:
     if is_car_facts(text):
         extra += random.uniform(1.5, 3.0)
         cps = max(cps * 0.8, 8.0)
+    # Латиница и цифры набираются медленнее русского текста: раскладка, цифровой
+    # ряд, а VIN, ссылку и цену перед отправкой ещё и перечитывают. Ссылку не
+    # набирают вручную, поэтому её из счёта убираем.
+    body = URL.sub(" ", text)
+    hard = len(re.findall(r"[A-Za-z0-9]", body))
+    if len(body) > 70 and hard >= 10:
+        cps = max(cps * 0.75, 6.0)
+        extra += random.uniform(0.6, 1.6)
     base = len(text) / cps + extra
     jitter = random.uniform(0.9, 1.2)
     return max(settings.delay_min_sec, min(settings.delay_max_sec, base * jitter))
