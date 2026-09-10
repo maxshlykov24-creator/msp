@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { getStageStyle } from "../lib/stageColors";
+import { getStageGroup } from "../lib/stageColors";
 
 type Variant = "primary" | "ghost" | "outline" | "danger" | "subtle";
 

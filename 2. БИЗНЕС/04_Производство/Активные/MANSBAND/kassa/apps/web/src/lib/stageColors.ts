@@ -120,7 +120,10 @@ const stageToGroup: Record<string, keyof typeof palette> = {
   Провал: "fail",
 };
 
+export function getStageGroup(stage: string): keyof typeof palette {
+  return stageToGroup[stage] ?? "default";
+}
+
 export function getStageStyle(stage: string): StageStyle {
-  const group = stageToGroup[stage] ?? "default";
-  return palette[group];
+  return palette[getStageGroup(stage)];
 }
