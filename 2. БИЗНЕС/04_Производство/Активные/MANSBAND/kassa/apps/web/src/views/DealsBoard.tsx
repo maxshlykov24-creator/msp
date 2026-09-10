@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Search, Filter, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useStore } from "../store";
 import { money, shortDate, timeOf } from "../lib/format";
-import { Badge, Button, StageBadge } from "../components/ui";
+import { Badge, Button, StageBadge, Select, opts } from "../components/ui";
 import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
 import {
   CONSULTANTS,
@@ -359,40 +359,30 @@ export function DealsBoard({
           <div className="px-3 pb-3 flex flex-wrap gap-2 items-end border-t border-ink-800 pt-3">
             <div className="min-w-[140px] flex-1">
               <div className="field-label">Магазин</div>
-              <select className="input py-2 text-sm" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)}>
-                <option value="all">Все магазины</option>
-                {STORE_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <Select
+                size="sm"
+                value={storeFilter}
+                onChange={setStoreFilter}
+                options={opts(["all", "Все магазины"], ...STORE_OPTIONS)}
+              />
             </div>
             <div className="min-w-[140px] flex-1">
               <div className="field-label">Консультант</div>
-              <select
-                className="input py-2 text-sm"
+              <Select
+                size="sm"
                 value={consultantFilter}
-                onChange={(e) => setConsultantFilter(e.target.value)}
-              >
-                <option value="all">Все</option>
-                {CONSULTANT_OPTIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+                onChange={setConsultantFilter}
+                options={opts(["all", "Все"], ...CONSULTANT_OPTIONS)}
+              />
             </div>
             <div className="min-w-[140px] flex-1">
               <div className="field-label">Этап</div>
-              <select className="input py-2 text-sm" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
-                <option value="all">Все этапы</option>
-                {stageOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <Select
+                size="sm"
+                value={stageFilter}
+                onChange={setStageFilter}
+                options={opts(["all", "Все этапы"], ...stageOptions)}
+              />
             </div>
             <div className="min-w-[120px]">
               <div className="field-label">Создана с</div>

@@ -11,7 +11,7 @@ import {
   Upload,
   UserCheck,
 } from "lucide-react";
-import { Button, Field } from "../../components/ui";
+import { Button, Field, Select, opts } from "../../components/ui";
 import { CHANNELS, CONSULTANTS, HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
 import { dateCompact, dateRu, formatPhone, money, moneyPlain } from "../../lib/format";
 import { useStore } from "../../store";
@@ -209,14 +209,14 @@ export function ConsultantFields({
   return (
     <div className="grid sm:grid-cols-2 gap-4">
       <Field label="Консультант" required={!allowEmptyConsultant}>
-        <select
-          className="input"
+        <Select
           value={allowEmptyConsultant ? data.consultant : data.consultant || activeConsultant}
-          onChange={(e) => onChange({ ...data, consultant: e.target.value })}
-        >
-          {allowEmptyConsultant && <option value="">— без консультанта —</option>}
-          {consultants.map((c) => <option key={c}>{c}</option>)}
-        </select>
+          onChange={(next) => onChange({ ...data, consultant: next })}
+          options={[
+            ...(allowEmptyConsultant ? opts(["", "Без консультанта"]) : []),
+            ...opts(...consultants),
+          ]}
+        />
         {allowEmptyConsultant && !data.consultant && (
           <p className="hint-only text-[12px] text-mute mt-1">
             Продажа не закреплена: продавец проставится при конвертации в продажу.
@@ -228,14 +228,12 @@ export function ConsultantFields({
       </Field>
       {withCallManager && (
         <Field label="Call-менеджер" required>
-          <select
-            className="input"
+          <Select
             value={data.callManager ?? ""}
-            onChange={(e) => onChange({ ...data, callManager: e.target.value })}
-          >
-            <option value="">— выбрать —</option>
-            {callManagers.map((c) => <option key={c}>{c}</option>)}
-          </select>
+            onChange={(next) => onChange({ ...data, callManager: next })}
+            options={opts(...callManagers)}
+            placeholder="Выбрать"
+          />
         </Field>
       )}
     </div>
@@ -289,19 +287,23 @@ export function SourceFields({
           </Field>
         ) : (
           <Field label="Источник рекламы" required={required}>
-            <select className="input" value={data.channel} onChange={(e) => set({ channel: e.target.value })}>
-              <option value="">— выбрать —</option>
-              {CHANNELS.map((c) => <option key={c}>{c}</option>)}
-            </select>
+            <Select
+              value={data.channel}
+              onChange={(next) => set({ channel: next })}
+              options={opts(...CHANNELS)}
+              placeholder="Выбрать"
+            />
           </Field>
         )
       )}
       {withPurpose && (
         <Field label="На какой случай / цель" required={required}>
-          <select className="input" value={data.purpose} onChange={(e) => set({ purpose: e.target.value })}>
-            <option value="">— выбрать —</option>
-            {PURPOSES.map((p) => <option key={p}>{p}</option>)}
-          </select>
+          <Select
+            value={data.purpose}
+            onChange={(next) => set({ purpose: next })}
+            options={opts(...PURPOSES)}
+            placeholder="Выбрать"
+          />
         </Field>
       )}
       {withChannel && (data.channel === SARAFAN_CHANNEL || channelFixed === SARAFAN_CHANNEL) && (
@@ -1246,16 +1248,14 @@ export function StageActions({
           {successHint}
         </span>
       )}
-      <select
-        className="input w-auto text-sm py-2"
+      <Select
         value={effectiveStage}
-        onChange={(e) => onStageChange(e.target.value)}
+        onChange={onStageChange}
+        options={opts(...selectStages)}
         disabled={saved}
-      >
-        {selectStages.map((s) => (
-          <option key={s}>{s}</option>
-        ))}
-      </select>
+        size="sm"
+        className="w-[220px]"
+      />
       <Button variant="subtle" className="py-2" disabled={disabled || saved} onClick={() => onSave(effectiveStage)}>
         Сохранить
       </Button>

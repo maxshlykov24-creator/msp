@@ -3,7 +3,7 @@ import { ClipboardList } from "lucide-react";
 import { STORES, TASK_FLOW, TASK_QUEUES, taskTitle } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { CONSULTANTS } from "../data/mock";
-import { Button } from "./ui";
+import { Button, Select, opts } from "./ui";
 
 // Виды задач и подписи — из реестра формулы (@kassa/shared/taskFlow).
 // Приёмку перемещения руками не создают: она рождается после отправки.
@@ -179,16 +179,12 @@ export function CreateTaskForm({
       {!simple && (
         <label className="block">
           <div className="field-label">Вид задачи</div>
-          <select className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="" disabled>
-              Выберите вид
-            </option>
-            {kinds.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={kind}
+            onChange={setKind}
+            placeholder="Выберите вид"
+            options={kinds.map(([value, label]) => ({ value, label }))}
+          />
         </label>
       )}
       <label className="block">
@@ -203,13 +199,7 @@ export function CreateTaskForm({
       <div className={`grid gap-3 ${showDealField ? "sm:grid-cols-2" : ""}`}>
         <label className="block">
           <div className="field-label">Магазин</div>
-          <select className="input" value={store} onChange={(e) => setStore(e.target.value)}>
-            {STORE_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <Select value={store} onChange={setStore} options={opts(...STORE_OPTIONS)} />
         </label>
         {showDealField && (
           <label className="block">
@@ -228,28 +218,22 @@ export function CreateTaskForm({
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="block">
           <div className="field-label">Очередь</div>
-          <select
-            className="input"
+          <Select
             value={assigneeRole}
-            onChange={(e) => onRoleChange(e.target.value as TaskAssigneeRole)}
-          >
-            {(Object.keys(ROLE_LABEL) as TaskAssigneeRole[]).map((role) => (
-              <option key={role} value={role}>
-                {ROLE_LABEL[role]}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => onRoleChange(next as TaskAssigneeRole)}
+            options={(Object.keys(ROLE_LABEL) as TaskAssigneeRole[]).map((role) => ({
+              value: role,
+              label: ROLE_LABEL[role],
+            }))}
+          />
         </label>
         <label className="block">
           <div className="field-label">Ответственный (необязательно)</div>
-          <select className="input" value={assigneeName} onChange={(e) => setAssigneeName(e.target.value)}>
-            <option value="">Вся очередь</option>
-            {people.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={assigneeName}
+            onChange={setAssigneeName}
+            options={opts(["", "Вся очередь"], ...people)}
+          />
         </label>
       </div>
       {error && <div className="text-[12px] text-amber-300/90">{error}</div>}

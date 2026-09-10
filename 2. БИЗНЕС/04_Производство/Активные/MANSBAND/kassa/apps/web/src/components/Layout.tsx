@@ -323,30 +323,14 @@ function Selector({
   compact?: boolean;
 }) {
   return (
-    <div
-      className={`relative flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 hover:border-gold/40 transition min-w-0 ${
-        compact ? "flex-1 pl-2.5 pr-7 py-2" : "inline-flex gap-2 pl-3 pr-2 py-2"
-      }`}
-    >
-      <span className="text-mute shrink-0">{icon}</span>
-      <select
-        className={`bg-transparent text-white font-medium focus:outline-none appearance-none cursor-pointer min-w-0 ${
-          compact ? "flex-1 text-[12px] truncate pr-1" : "text-[13px] pr-4"
-        }`}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((o) => (
-          <option key={o} value={o} className="bg-ink-850">
-            {o}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        size={compact ? 13 : 14}
-        className="text-mute absolute right-2 pointer-events-none shrink-0"
-      />
-    </div>
+    <Select
+      value={value}
+      onChange={onChange}
+      options={opts(...options)}
+      leading={icon}
+      size={compact ? "sm" : "md"}
+      className={compact ? "flex-1" : "w-[220px]"}
+    />
   );
 }
 

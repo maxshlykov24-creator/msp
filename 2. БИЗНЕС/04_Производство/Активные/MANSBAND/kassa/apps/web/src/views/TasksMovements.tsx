@@ -12,7 +12,7 @@ import {
 } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
-import { Button, Modal, StageBadge } from "../components/ui";
+import { Button, Modal, StageBadge, Select, opts } from "../components/ui";
 import {
   CreateTaskForm,
   type CreatedTask,
@@ -515,61 +515,46 @@ export function TasksMovements() {
       </div>
 
       <div className="card p-3 mb-3 flex flex-wrap items-center gap-2">
-        <select className="input py-2 text-sm w-auto" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="pending">К выполнению</option>
-          <option value="done">Выполненные</option>
-          <option value="all">Все статусы</option>
-        </select>
+        <Select
+          size="sm"
+          className="w-[180px]"
+          value={status}
+          onChange={setStatus}
+          options={opts(["pending", "К выполнению"], ["done", "Выполненные"], ["all", "Все статусы"])}
+        />
         {view === "all" && (
-          <select
-            className="input py-2 text-sm w-auto"
+          <Select
+            size="sm"
+            className="w-[180px]"
             value={queueFilter}
-            onChange={(e) => setQueueFilter(e.target.value as "" | TaskAssigneeRole)}
-          >
-            <option value="">Все очереди</option>
-            {TASK_QUEUES.map((queue) => (
-              <option key={queue.role} value={queue.role}>
-                {queue.short}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => setQueueFilter(next as "" | TaskAssigneeRole)}
+            options={opts(["", "Все очереди"], ...TASK_QUEUES.map((queue) => [queue.role, queue.short] as [string, string]))}
+          />
         )}
-        <select
-          className="input py-2 text-sm w-auto min-w-[160px]"
+        <Select
+          size="sm"
+          className="w-[180px]"
           value={storeScope}
-          onChange={(e) => setStoreScope(e.target.value)}
-        >
-          <option value="">Все магазины</option>
-          {STORE_OPTIONS.map((store) => (
-            <option key={store} value={store}>
-              {store === activeStore ? `${shortPlace(store)} · этот` : shortPlace(store)}
-            </option>
-          ))}
-        </select>
-        <select
-          className="input py-2 text-sm w-auto min-w-[150px]"
+          onChange={setStoreScope}
+          options={opts(
+            ["", "Все магазины"],
+            ...STORE_OPTIONS.map((store) => [store, store === activeStore ? `${shortPlace(store)} · этот` : shortPlace(store)] as [string, string])
+          )}
+        />
+        <Select
+          size="sm"
+          className="w-[180px]"
           value={fromFilter}
-          onChange={(e) => setFromFilter(e.target.value)}
-        >
-          <option value="">Откуда · все</option>
-          {routeOptions.map((name) => (
-            <option key={`from-${name}`} value={name}>
-              {shortPlace(name)}
-            </option>
-          ))}
-        </select>
-        <select
-          className="input py-2 text-sm w-auto min-w-[150px]"
+          onChange={setFromFilter}
+          options={opts(["", "Откуда · все"], ...routeOptions.map((name) => [name, shortPlace(name)] as [string, string]))}
+        />
+        <Select
+          size="sm"
+          className="w-[180px]"
           value={toFilter}
-          onChange={(e) => setToFilter(e.target.value)}
-        >
-          <option value="">Куда · все</option>
-          {routeOptions.map((name) => (
-            <option key={`to-${name}`} value={name}>
-              {shortPlace(name)}
-            </option>
-          ))}
-        </select>
+          onChange={setToFilter}
+          options={opts(["", "Куда · все"], ...routeOptions.map((name) => [name, shortPlace(name)] as [string, string]))}
+        />
         <span className="text-[12px] text-mute">
           {viewLabel} · {total}
         </span>

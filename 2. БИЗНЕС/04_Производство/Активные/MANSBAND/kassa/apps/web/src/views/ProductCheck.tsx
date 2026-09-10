@@ -31,6 +31,7 @@ import { money } from "../lib/format";
 import { BarcodeScannerModal } from "../components/BarcodeScanner";
 import { SuitModelRow } from "../components/SuitModelRow";
 import { Hint } from "../lib/hints";
+import { Select, opts } from "../components/ui";
 import { BreaksTab, StockTab } from "./Suits";
 
 type LocSlot = { label: string; match: (name: string) => boolean };

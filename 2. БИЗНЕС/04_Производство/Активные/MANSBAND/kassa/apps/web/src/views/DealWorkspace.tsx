@@ -5,7 +5,7 @@ import { useStore } from "../store";
 import { useAuth } from "../auth/AuthContext";
 import { canEditClosedDeals } from "../auth/roles";
 import { KIND_LABEL } from "../lib/labels";
-import { Button, Card, Field, Modal, StageBadge } from "../components/ui";
+import { Button, Card, Field, Modal, StageBadge, Select, opts } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
 import { PaymentBlock } from "../components/PaymentBlock";
 import { DealActionsBar } from "../components/DealActionsBar";
@@ -489,16 +489,14 @@ export function DealWorkspace({
         <Card>
           <SectionTitle>Этап заявки</SectionTitle>
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="input w-auto text-sm"
+            <Select
+              size="sm"
+              className="w-[240px]"
               value={stage}
               disabled={readOnly}
-              onChange={(e) => setStage(e.target.value)}
-            >
-              {stageOptions.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
+              onChange={setStage}
+              options={opts(...stageOptions)}
+            />
             {live.kind === "deferred" && (
               <span className="text-[12px] text-mute">
                 Без перемещения — «Товар в магазине» и задача отложить; с перемещением — «Ждет товар»
