@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=79">
+<link rel="stylesheet" href="/ui/app.css?v=80">
 </head>
 <body>
 
@@ -261,8 +261,13 @@
           </div>
           <div class="asm-acts" id="aActsReady" hidden>
             <button class="btn btn-file" id="aShipped" type="button" disabled>Отгружено</button>
-            <button class="btn btn-file" id="aBoxQr" type="button" disabled>Печать коробов</button>
-            <button class="btn btn-file" id="aBackAsm" type="button" disabled>Вернуть в сборку</button>
+            <div class="print-wrap">
+              <button class="btn btn-file" id="aPrintReady" type="button" disabled>Печать</button>
+              <div class="print-menu" id="aPrintReadyMenu" hidden>
+                <button type="button" data-mode="product">Этикетка товара</button>
+                <button type="button" data-mode="posting">Этикетка заказа</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="msg" id="aMsg"></div>
@@ -671,6 +676,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=79"></script>
+<script src="/ui/app.js?v=80"></script>
 </body>
 </html>

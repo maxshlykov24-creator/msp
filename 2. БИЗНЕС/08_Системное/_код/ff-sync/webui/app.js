@@ -1202,10 +1202,10 @@ function asmBodyHtml(rows) {
 }
 
 function hidePrintMenu() {
-  const a = $("aPrintMenu");
-  if (a) a.hidden = true;
-  const w = $("wbPrintMenu");
-  if (w) w.hidden = true;
+  ["aPrintMenu", "aPrintReadyMenu", "wbPrintMenu"].forEach((id) => {
+    const el = $(id);
+    if (el) el.hidden = true;
+  });
 }
 
 // Поставка живёт сразу в нескольких вкладках: часть заданий ещё на сборке,
@@ -1231,7 +1231,7 @@ function refreshAsmDock() {
   $("aActsNew").hidden = group !== "new";
   $("aActsAssembling").hidden = group !== "assembling";
   $("aActsReady").hidden = group !== "ready";
-  if (group !== "assembling") hidePrintMenu();
+  if (group !== "assembling" && group !== "ready") hidePrintMenu();
   const shipTools = group === "shipped" || group === "delivered";
   $("aPicking").hidden = group !== "new" && group !== "assembling";
   $("aWeekly").hidden = !shipTools;
@@ -1256,7 +1256,7 @@ function refreshAsmPick() {
   const n = state.pickedAsm.size;
   const marks = state.asm.filter((r) => state.pickedAsm.has(r.id)).reduce((a, r) => a + (r.marks || 0), 0);
   $("aSel").textContent = n ? "Выбрано " + n : "Ничего не выбрано";
-  ["aWork", "aDone", "aPrint", "aShipped", "aBoxQr", "aBackAsm"].forEach((id) => { $(id).disabled = !n; });
+  ["aWork", "aDone", "aPrint", "aPrintReady", "aShipped"].forEach((id) => { $(id).disabled = !n; });
   // коды маркировки вносим по одному отправлению: у каждого свой набор
   $("aKiz").disabled = n !== 1;
   if (!n) hidePrintMenu();
@@ -1626,7 +1626,6 @@ $("kizSend").onclick = async () => {
   }
   $("kizSend").disabled = false;
 };
-$("aBackAsm").onclick = () => asmWork("assembling", "assembling", "Возвращено в сборку");
 
 // поставки WB из выборки, ещё не переданные в доставку
 function pickedOpenSupplies() {
@@ -1667,31 +1666,11 @@ async function asmShipped() {
 
 $("aShipped").onclick = asmShipped;
 
-$("aBoxQr").onclick = async () => {
-  const supplies = pickedOpenSupplies();
-  if (supplies.length !== 1) {
-    say($("aMsg"), supplies.length ? "Выбери задания одной поставки: QR коробов печатается по поставке." : "В выборке нет открытой поставки WB.", "bad");
-    return;
-  }
-  $("aBoxQr").disabled = true;
-  say($("aMsg"), "Запрашиваю QR коробов у WB…");
-  try {
-    const res = await downloadXlsx("/api/wb/supplies/" + supplies[0].id + "/boxes.pdf", [], "QR_коробов.pdf", "", null, {});
-    const notes = decodeURIComponent(res.headers.get("X-Label-Notes") || "");
-    say($("aMsg"), "QR коробов в файле: " + (res.headers.get("X-Label-Pages") || "?") + (notes ? "\n" + notes : ""), notes ? "" : "ok");
-  } catch (e) {
-    say($("aMsg"), e.message, "bad");
-  }
-  refreshAsmPick();
-};
-
 async function printAsm(mode) {
   const ids = pickedAsmExpanded();
   if (!ids.length) return;
   hidePrintMenu();
-  $("aPrint").disabled = true;
-  const label = $("aPrint").textContent;
-  $("aPrint").textContent = "Собираю файл…";
+  ["aPrint", "aPrintReady"].forEach((id) => { const b = $(id); if (b) b.disabled = true; });
   say($("aMsg"), "Запрашиваю этикетки у площадок…");
   try {
     const res = await downloadXlsx(
@@ -1704,7 +1683,6 @@ async function printAsm(mode) {
   } catch (e) {
     say($("aMsg"), e.message, "bad");
   }
-  $("aPrint").textContent = label;
   refreshAsmPick();
 }
 
@@ -1714,7 +1692,13 @@ $("aPrint").onclick = (e) => {
   $("aPrintMenu").hidden = !$("aPrintMenu").hidden;
 };
 
-$("aPrintMenu").onclick = (e) => {
+$("aPrintReady").onclick = (e) => {
+  e.stopPropagation();
+  if ($("aPrintReady").disabled) return;
+  $("aPrintReadyMenu").hidden = !$("aPrintReadyMenu").hidden;
+};
+
+$("aPrintMenu").onclick = $("aPrintReadyMenu").onclick = (e) => {
   const btn = e.target.closest("button[data-mode]");
   if (!btn) return;
   printAsm(btn.dataset.mode);
