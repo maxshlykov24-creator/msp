@@ -260,6 +260,15 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
     if len(kept) < len(bubbles):
         log.info("чат %s: выкинул отрицание истории такси или каршеринга", chat_id)
         bubbles = kept or [HISTORY_UNKNOWN]
+    # Зовём смотреть машину — говорим, куда ехать. Иначе клиент отдельным
+    # сообщением спрашивает «а где вы находитесь» вместо того, чтобы приехать.
+    if not nudge.history_has_address(history):
+        for i, bubble in enumerate(bubbles):
+            with_where = nudge.with_address(bubble)
+            if with_where != bubble:
+                bubbles[i] = with_where
+                log.info("чат %s: дописал адрес к приглашению", chat_id)
+                break
 
     if not bubbles:
         bubbles = [random.choice(FALLBACK)]

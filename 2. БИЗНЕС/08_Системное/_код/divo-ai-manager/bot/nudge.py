@@ -239,6 +239,39 @@ def history_has_address(messages: list[dict]) -> bool:
     )
 
 
+INVITE_LINE = re.compile(
+    r"(приезжайте|приходите|подъезжайте|подъехать|посмотреть можно|"
+    r"можно посмотреть|можно приехать|приехать посмотреть|посмотреть вживую|"
+    r"посмотреть у нас|ждем вас|ждём вас)",
+    re.IGNORECASE,
+)
+
+
+def invites(text: str) -> bool:
+    return bool(INVITE_LINE.search(text or ""))
+
+
+def with_address(text: str) -> str:
+    """Дописывает адрес к приглашению приехать.
+
+    Модель зовёт смотреть машину и забывает сказать, куда ехать, — клиент в
+    ответ спрашивает «а где вы находитесь», и это лишний ход вместо визита.
+    Вопрос в конце реплики не перекрываем: адрес встаёт перед ним.
+    """
+    body = (text or "").strip()
+    if not body or has_address(body) or not invites(body):
+        return text
+    parts = re.split(r"(?<=[.!?])\s+", body)
+    tail = ADDRESS_SHORT[0].upper() + ADDRESS_SHORT[1:]
+    if parts[-1].rstrip().endswith("?"):
+        question = parts.pop()
+        head = " ".join(parts).rstrip()
+        if head:
+            return "%s %s. %s" % (head, tail, question)
+        return "%s. %s" % (tail, question)
+    return "%s, %s" % (body.rstrip(" .,"), ADDRESS_SHORT)
+
+
 def is_address_only(text: str) -> bool:
     """Пузырь целиком про адрес и часы: приглашение приехать без нового факта."""
     body = (text or "").strip()
