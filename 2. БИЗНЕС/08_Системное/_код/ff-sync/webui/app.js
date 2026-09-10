@@ -1745,8 +1745,8 @@ function wbClientHint() {
   const has = !!$("aClient").value;
   $("wbCreate").disabled = !has;
   $("wbHint").textContent = has
-    ? "Поставка откроется в кабинете «" + ($("aClientQ").value || "контрагент") + "»."
-    : "Сначала выбери контрагента в фильтре Заказов.";
+    ? ($("aClientQ").value || "контрагент")
+    : "Выбери контрагента в Заказах";
 }
 
 function openWb() {
@@ -1766,16 +1766,15 @@ async function loadWbSupplies() {
   $("wbModal").classList.toggle("is-empty", empty);
   $("wbCols").classList.toggle("is-empty", empty);
   $("wbSupplies").innerHTML = empty
-    ? `<div class="wb-empty">Поставок ещё нет. Создай первую — WB вернёт номер вроде WB-GI и сюда можно будет класть собранные задания.</div>`
+    ? `<div class="wb-empty">Поставок нет. Создай ниже.</div>`
     : res.rows.map((r) => `<button type="button" class="wb-item${r.id === state.wbSupply ? " is-on" : ""}" data-supply="${r.id}">
         <b>${esc(r.ext_id)}</b>
-        <span>${esc(r.client)}${r.name ? " · " + esc(r.name) : ""}</span>
-        <span>${r.orders} заданий · ${r.boxes} мест${r.loose ? " · без коробки " + r.loose : ""}</span>
-        <span class="wb-state ${r.state}">${r.state === "delivered" ? "передана " + esc(r.delivered) : "на сборке"}</span>
+        <span>${r.orders} зак. · ${r.boxes} кор.</span>
+        <i class="wb-state ${r.state}">${r.state === "delivered" ? "сдана" : "сборка"}</i>
       </button>`).join("");
   if (empty || (state.wbSupply && !res.rows.some((r) => r.id === state.wbSupply))) state.wbSupply = 0;
   if (state.wbSupply) await loadWbDetail(state.wbSupply);
-  else $("wbDetail").innerHTML = empty ? "" : `<div class="empty">Выбери поставку в списке слева.</div>`;
+  else $("wbDetail").innerHTML = empty ? "" : `<div class="wb-idle">Выбери поставку слева</div>`;
 }
 
 $("wbSupplies").onclick = (e) => {
@@ -1813,38 +1812,57 @@ async function loadWbDetail(id) {
   state.wbDetail = res;
   const open = res.supply.state === "open";
   const asmPicked = state.pickedAsm.size;
-  const boxes = res.boxes.map((b) => `<div class="wb-box${b.id === state.wbBox ? " is-on" : ""}" data-box="${b.id}">
-      <b>${esc(b.ext_id)}</b><span>${b.orders} шт</span>
-      ${open ? `<button type="button" class="btn-ghost slimbtn" data-boxdrop="${b.id}" title="Удалить грузоместо">×</button>` : ""}
-    </div>`).join("");
+  const loose = res.rows.filter((r) => !r.box).length;
+  const boxes = res.boxes.map((b) => `<button type="button" class="wb-box${b.id === state.wbBox ? " is-on" : ""}" data-box="${b.id}">
+      <b>${esc(b.ext_id)}</b>
+      <span>${b.orders ? b.orders + " зак." : "пустой"}</span>
+      ${open ? `<i data-boxdrop="${b.id}" title="Удалить короб">×</i>` : ""}
+    </button>`).join("");
   $("wbDetail").innerHTML = `
-    <div class="wb-head">
-      <div><b>${esc(res.supply.ext_id)}</b><span>${esc(res.supply.client)} · ${res.rows.length} заданий · создана ${esc(res.supply.created)}</span></div>
-      <span class="wb-state ${res.supply.state}">${open ? "на сборке" : "передана в доставку " + esc(res.supply.delivered)}</span>
+    <div class="wb-hero">
+      <div>
+        <div class="wb-hero-id">${esc(res.supply.ext_id)}</div>
+        <div class="wb-hero-meta">${esc(res.supply.client)} · ${res.rows.length} зак. · ${res.boxes.length} кор.${loose ? " · без короба " + loose : ""}</div>
+      </div>
+      <span class="wb-pill ${res.supply.state}">${open ? "На сборке" : "Сдана " + esc(res.supply.delivered)}</span>
     </div>
-    <div class="wb-acts">
-      ${open ? `<button class="btn-ghost" id="wbAdd" type="button">Добавить выбранные в «Заказах»${asmPicked ? " (" + asmPicked + ")" : ""}</button>` : ""}
-      ${open ? `<input id="wbAmount" class="wb-amount" type="number" min="1" max="200" value="1" title="Сколько грузомест создать">` : ""}
-      ${open ? `<button class="btn-ghost" id="wbNewBox" type="button">+ грузоместо</button>` : ""}
-      ${open ? `<button class="btn-ghost" id="wbPack" type="button" disabled title="Отметить, что задания лежат в этой коробке. Учёт наш: в API WB привязки задания к грузоместу нет">Уложить в выбранное место</button>` : ""}
-      <button class="btn-ghost" id="wbBoxQr" type="button">QR грузомест</button>
-      ${open ? `<button class="btn" id="wbDeliver" type="button">Передать в доставку</button>` : `<button class="btn" id="wbQr" type="button">QR поставки</button>`}
-    </div>
-    <div class="wb-boxes">${boxes || `<div class="empty">Грузомест нет. Заведи хотя бы одно: WB печатает QR на коробку, а не на поставку.</div>`}</div>
-    <div class="tbl-wrap wb-rows">
-      <table class="tbl" id="wbTbl">
-        <thead><tr><th class="pick"></th><th>Задание</th><th>Статус</th><th>Кол-во, артикул</th><th>Наименование</th><th>Грузоместо</th></tr></thead>
-        <tbody>${res.rows.length
-          ? res.rows.map((r) => `<tr>
-              <td class="pick"><input type="checkbox" data-wbrow="${r.id}"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
-              <td class="ext">${esc(r.ext_id)}</td>
-              <td>${esc(r.status || "—")}</td>
-              <td class="artq"><b>${num(r.qty, 0)} шт</b> · ${esc(r.article || "—")}</td>
-              <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
-              <td>${r.box ? `<span class="badge box">${esc(r.box)}</span>` : "—"}</td>
-            </tr>`).join("")
-          : `<tr><td colspan="6" class="empty">В поставке пока нет заданий. Отбери их в «Заказах» и нажми «Добавить выбранные».</td></tr>`}</tbody>
-      </table>
+    <section class="wb-sec">
+      <div class="wb-sec-h">
+        <h4>Короба</h4>
+        <div class="wb-sec-acts">
+          ${open ? `<button class="btn-ghost" id="wbNewBox" type="button">Добавить короб</button>` : ""}
+          <button class="btn-ghost" id="wbBoxQr" type="button">Печать QR</button>
+        </div>
+      </div>
+      <div class="wb-boxes">${boxes || `<div class="wb-empty">Коробов нет. Добавь один — на него печатается QR.</div>`}</div>
+    </section>
+    <section class="wb-sec">
+      <div class="wb-sec-h">
+        <h4>Заказы</h4>
+        <div class="wb-sec-acts">
+          ${open ? `<button class="btn-ghost" id="wbAdd" type="button">Из заказов${asmPicked ? " · " + asmPicked : ""}</button>` : ""}
+          ${open ? `<button class="btn" id="wbPack" type="button" disabled>В этот короб</button>` : ""}
+        </div>
+      </div>
+      <div class="tbl-wrap wb-rows">
+        <table class="tbl" id="wbTbl">
+          <thead><tr><th class="pick"></th><th>Задание</th><th>Артикул</th><th>Наименование</th><th>Короб</th></tr></thead>
+          <tbody>${res.rows.length
+            ? res.rows.map((r) => `<tr>
+                <td class="pick"><input type="checkbox" data-wbrow="${r.id}"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
+                <td class="ext">${esc(r.ext_id)}</td>
+                <td class="artq"><b>${num(r.qty, 0)}</b> · ${esc(r.article || "—")}</td>
+                <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
+                <td>${r.box ? `<span class="badge box">${esc(r.box)}</span>` : "—"}</td>
+              </tr>`).join("")
+            : `<tr><td colspan="5" class="empty">Пусто. Отметь заказы в таблице сзади и нажми «Из заказов».</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>
+    <div class="wb-foot">
+      ${open
+        ? `<span>Когда коробки уже везёте</span><button class="btn wb-deliver" id="wbDeliver" type="button">Сдать на ПВЗ</button>`
+        : `<span>Поставка закрыта</span><button class="btn" id="wbQr" type="button">QR поставки</button>`}
     </div>`;
   bindWbDetail();
 }
@@ -1872,12 +1890,10 @@ function bindWbDetail() {
   }, "Добавляю задания в поставку…");
   const nb = $("wbNewBox");
   if (nb) nb.onclick = () => guard(async () => {
-    const amount = Number(($("wbAmount") || {}).value || 1);
-    if (!amount || amount < 1) { say($("wbMsg"), "Сколько грузомест создать?", "bad"); return; }
-    const res = await api("/api/wb/supplies/" + id + "/boxes", { method: "POST", body: JSON.stringify({ amount }) });
-    say($("wbMsg"), "Создано грузомест: " + res.boxes.length + " (" + res.boxes.join(", ") + ")", "ok");
+    const res = await api("/api/wb/supplies/" + id + "/boxes", { method: "POST", body: JSON.stringify({ amount: 1 }) });
+    say($("wbMsg"), "Короб " + (res.boxes || []).join(", ") + " заведён.", "ok");
     await loadWbSupplies();
-  }, "Создаю грузоместо…");
+  }, "Добавляю короб…");
   const pack = $("wbPack");
   if (pack) pack.onclick = () => guard(async () => {
     const res = await api("/api/wb/boxes/" + state.wbBox + "/orders", {
@@ -1937,8 +1953,9 @@ function bindWbDetail() {
   };
   const wrap = $("wbDetail");
   wrap.onclick = (e) => {
-    const drop = e.target.closest("button[data-boxdrop]");
+    const drop = e.target.closest("[data-boxdrop]");
     if (drop) {
+      e.stopPropagation();
       guard(async () => {
         await api("/api/wb/boxes/" + drop.dataset.boxdrop, { method: "DELETE" });
         if (state.wbBox === Number(drop.dataset.boxdrop)) state.wbBox = 0;
