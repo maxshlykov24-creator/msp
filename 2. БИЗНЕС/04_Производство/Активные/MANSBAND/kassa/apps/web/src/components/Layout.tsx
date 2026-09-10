@@ -23,6 +23,7 @@ import { useAuth } from "../auth/AuthContext";
 import { canSeeFinanceQueues } from "../auth/roles";
 import { CONSULTANTS, STORES } from "../data/mock";
 import { OfflineBanner } from "./OfflineBanner";
+import { Select, opts } from "./Select";
 import { HintsToggle } from "../lib/hints";
 import { ThemeToggle } from "../lib/theme";
 import logoFull from "../assets/logo-full.png";

@@ -4,6 +4,7 @@ import {
   type PaymentMethod,
 } from "@kassa/shared";
 import { PAYMENT_METHODS, PAYMENT_METHOD_GROUPS } from "../data/mock";
+import { Select, type SelectGroup } from "./Select";
 
 /**
  * Единый селект способов оплаты/выдачи: группы «Наличные / Безналичные /
@@ -12,12 +13,13 @@ import { PAYMENT_METHODS, PAYMENT_METHOD_GROUPS } from "../data/mock";
 export function PaymentMethodSelect({
   value,
   onChange,
-  className = "input",
+  className = "",
   withCertificate = true,
   withMansband = false,
   placeholder,
   extraMethods,
   id,
+  size = "md",
 }: {
   value: string;
   onChange: (methodId: string) => void;
@@ -31,35 +33,40 @@ export function PaymentMethodSelect({
   /** Доп. способы только в текущем контексте (например расход Эдвина). */
   extraMethods?: PaymentMethod[];
   id?: string;
+  size?: "md" | "sm";
 }) {
-  const groups = PAYMENT_METHOD_GROUPS.filter(
-    (g) => withCertificate || g.kind !== "certificate"
-  );
+  const groups: SelectGroup[] = [];
+  if (withMansband) {
+    groups.push({
+      label: "Через Эдвина",
+      options: [{ value: MANSBAND_PAYOUT_METHOD, label: MANSBAND_PAYOUT_LABEL }],
+    });
+  }
+  for (const group of PAYMENT_METHOD_GROUPS) {
+    if (!withCertificate && group.kind === "certificate") continue;
+    const extras = (extraMethods ?? [])
+      .filter((method) => method.kind === group.kind)
+      .map((method) => ({ value: method.id, label: method.label }));
+    const main = PAYMENT_METHODS.filter((method) => method.kind === group.kind).map((method) => ({
+      value: method.id,
+      label: method.label,
+    }));
+    const options = [...extras, ...main];
+    if (options.length === 0) continue;
+    groups.push({ label: group.label, options });
+  }
+
   return (
-    <select id={id} className={className} value={value} onChange={(e) => onChange(e.target.value)}>
-      {placeholder != null && <option value="">{placeholder}</option>}
-      {withMansband && (
-        <optgroup label="Через Эдвина">
-          <option value={MANSBAND_PAYOUT_METHOD}>{MANSBAND_PAYOUT_LABEL}</option>
-        </optgroup>
-      )}
-      {groups.map((group) => (
-        <optgroup key={group.kind} label={group.label}>
-          {(extraMethods ?? [])
-            .filter((m) => m.kind === group.kind)
-            .map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          {PAYMENT_METHODS.filter((m) => m.kind === group.kind).map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
+    <Select
+      id={id}
+      value={value}
+      onChange={onChange}
+      groups={groups}
+      placeholder={placeholder ?? "Выбрать способ"}
+      className={className}
+      size={size}
+      searchable
+    />
   );
 }
 

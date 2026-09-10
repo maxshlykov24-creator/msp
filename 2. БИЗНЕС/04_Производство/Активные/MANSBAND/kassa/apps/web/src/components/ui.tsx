@@ -1,6 +1,9 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { getStageGroup } from "../lib/stageColors";
 
+export { Select, opts } from "./Select";
+export type { SelectGroup, SelectOption } from "./Select";
+
 type Variant = "primary" | "ghost" | "outline" | "danger" | "subtle";
 
 export function Button({
