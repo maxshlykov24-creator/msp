@@ -28,6 +28,7 @@ services:
       - ff_data:/data
     ports:
       - "8787:8787"
+      - "80:8787"
     command: python -m uvicorn web:app --host 0.0.0.0 --port 8787
 
 volumes:
