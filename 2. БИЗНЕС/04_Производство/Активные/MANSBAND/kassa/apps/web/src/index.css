@@ -29,10 +29,10 @@ body.theme-light {
   --ink-950: 237 237 237;
   --ink-900: 255 255 255;
   --ink-850: 255 255 255;
-  --ink-800: 226 226 230;
-  --ink-700: 196 196 202;
-  --ink-600: 168 168 176;
-  --ink-500: 140 140 148;
+  --ink-800: 214 214 218;
+  --ink-700: 186 186 192;
+  --ink-600: 158 158 166;
+  --ink-500: 130 130 138;
   --gold: 20 20 22;
   --gold-soft: 40 40 44;
   --gold-dim: 106 106 112;
@@ -366,6 +366,11 @@ html.theme-light .stage-tone-fail {
 
 html.theme-light .card {
   @apply bg-ink-850 border-ink-700;
+}
+html.theme-light header,
+html.theme-light aside,
+html.theme-light nav {
+  border-color: rgb(var(--ink-700));
 }
 
 /* iOS Safari зумит страницу, если font-size поля < 16px — форсируем на телефоне */
