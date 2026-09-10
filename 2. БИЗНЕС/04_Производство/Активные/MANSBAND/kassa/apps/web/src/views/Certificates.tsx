@@ -303,7 +303,7 @@ export function Certificates() {
                 Списать {amount ? money(Number(amount)) : ""}
               </Button>
             </div>
-            <p className="text-[12px] text-mute">
+            <p className="hint-only text-[12px] text-mute">
               Если после списания остаток = 0 — статус «Использован». Обычно списание идёт из продажи
               (оплата способом «Сертификат»).
             </p>

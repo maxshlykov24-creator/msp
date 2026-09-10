@@ -268,7 +268,7 @@ export function DealsBoard({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-extrabold text-white">Заявки</h1>
           <p className="text-mute text-sm mt-0.5">

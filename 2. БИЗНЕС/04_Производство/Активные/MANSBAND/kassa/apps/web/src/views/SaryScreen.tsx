@@ -55,7 +55,7 @@ function DealButton({ number }: { number?: number }) {
     <a
       href={`#board/all/all/${number}/sary`}
       onClick={(e) => e.stopPropagation()}
-      className="inline-flex items-center justify-center min-h-12 min-w-[9rem] px-6 rounded-xl bg-white text-ink-950 font-extrabold uppercase tracking-[0.16em] text-[15px] hover:bg-white/90 active:scale-[0.98] transition shrink-0"
+      className="inline-flex items-center justify-center min-h-12 min-w-[9rem] px-6 rounded-xl bg-white text-ink-950 font-extrabold uppercase tracking-[0.16em] text-[15px] hover:bg-white/90 active:scale-[0.98] transition flex-1 sm:flex-none"
     >
       Заказ
     </a>

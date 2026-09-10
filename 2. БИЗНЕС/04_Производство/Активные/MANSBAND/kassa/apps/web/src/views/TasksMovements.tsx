@@ -458,7 +458,7 @@ export function TasksMovements() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
         <div>
           <h1 className="text-2xl font-extrabold text-white">Задачи</h1>
         </div>

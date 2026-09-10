@@ -476,7 +476,7 @@ export function MovementModal({
             </select>
           </label>
 
-          <div className="text-[12px] text-mute">
+          <div className="hint-only text-[12px] text-mute">
             Разные «откуда» → отдельные задачи (ЦС — логисту, шоурум — консультанту источника).
           </div>
           {error && <div className="text-[13px] text-red-300">{error}</div>}

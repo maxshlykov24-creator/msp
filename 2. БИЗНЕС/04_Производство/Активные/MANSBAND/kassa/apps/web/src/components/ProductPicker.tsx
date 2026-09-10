@@ -1010,7 +1010,7 @@ export function ProductPicker({
                 })}
               </tbody>
             </table>
-            <p className="mt-3 text-[12px] text-mute">
+            <p className="hint-only mt-3 text-[12px] text-mute">
               Доступно = остаток − резерв. Данные с МойСклад на момент открытия.
             </p>
           </div>

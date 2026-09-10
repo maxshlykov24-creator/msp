@@ -168,7 +168,7 @@ export function ReturnItemsSelector({
             Проверить
           </Button>
         </div>
-        <p className="text-[12px] text-mute">
+        <p className="hint-only text-[12px] text-mute">
           Позиции со штрихкодом — только сканом. Без штрихкода — вручную, уйдёт задача на проверку.
         </p>
       </div>

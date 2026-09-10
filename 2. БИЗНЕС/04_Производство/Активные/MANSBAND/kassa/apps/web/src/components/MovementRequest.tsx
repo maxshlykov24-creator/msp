@@ -137,7 +137,7 @@ export function MovementRequest({
           </select>
         </label>
       </div>
-      <div className="text-[12px] text-mute">
+      <div className="hint-only text-[12px] text-mute">
         {isCentralWarehouse(source)
           ? "Задача уйдёт в очередь логиста"
           : `Задача уйдёт в очередь консультанта: ${source}`}
