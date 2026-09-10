@@ -354,10 +354,7 @@ table.asm-tbl tr.sup-head:hover .sup-open{opacity:1}
 .wb-cols.is-empty .wb-detail{display:none}
 .wb-list{display:flex;flex-direction:column;gap:10px;min-height:0}
 .wb-detail{min-width:0;display:flex;flex-direction:column;gap:14px}
-.wb-new{display:flex;gap:6px}
-.wb-new input{flex:1;min-width:0;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--input-bg);font:inherit;font-size:12px}
-.wb-new .btn{padding:8px 12px;font-size:12px;border-radius:10px}
-.wb-hint{font-size:11px;color:var(--mute-2);margin:0;line-height:1.35}
+.wb-rows tr.is-boxed td{color:var(--mute-2)}
 .wb-empty,.wb-idle{font-size:13px;color:var(--mute);line-height:1.4;padding:8px 0}
 .wb-idle{display:flex;align-items:center;justify-content:center;min-height:220px}
 .wb-supplies{display:flex;flex-direction:column;gap:6px;max-height:52vh;overflow:auto}

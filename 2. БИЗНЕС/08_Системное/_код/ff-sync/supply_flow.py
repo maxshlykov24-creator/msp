@@ -338,6 +338,9 @@ def fill_box(box_id, ship_ids):
         if (row["supply_ext"] or "") != supply["ext_id"]:
             notes.append("%s: сначала добавь задание в поставку %s." % (row["ext_id"], supply["ext_id"]))
             continue
+        if row["trbx_ext"] or "":
+            notes.append("%s: уже в коробе %s." % (row["ext_id"], row["trbx_ext"]))
+            continue
         ok.append(row)
     if not ok:
         raise ValueError("; ".join(notes) or "нечего укладывать")
