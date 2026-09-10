@@ -273,7 +273,7 @@ def add_orders(supply_id, ship_ids):
 
 
 def make_boxes(supply_id, amount):
-    """Завести грузоместа. Предел у WB — заданий плюс один короб."""
+    """Завести грузоместа. Предел у WB — половина заданий, округление вниз."""
     import statuses
 
     supply = _supply(supply_id)
@@ -291,23 +291,22 @@ def make_boxes(supply_id, amount):
     orders = len(list_supply_shipments(supply["cabinet_id"], supply["ext_id"]))
     have = len(list_wb_boxes(supply["id"]))
     # предел считаем сами, чтобы не ловить 4XX: у WB он списывается как десять запросов
-    limit = orders + wb_supply.TRBX_EXTRA
+    limit = wb_supply.box_limit(orders)
     if have + amount > limit:
         raise ValueError(
-            "WB разрешает коробов не больше, чем заданий плюс один: заданий %s, значит максимум %s, уже создано %s."
+            "WB разрешает коробов не больше половины заданий: заданий %s, значит максимум %s, уже создано %s. Добавь в поставку ещё задания или уложи товар в имеющиеся короба."
             % (orders, limit, have)
         )
     cab = _cab_of_supply(supply)
     try:
         ext_ids = wb_supply.add_boxes(cab, supply["ext_id"], amount)
     except wb_supply.SupplyError as exc:
-        # Живой WB бывает строже описания метода: на поставке из двух заданий он
-        # отдал 409 уже на второй короб. Причину площадка не называет, поэтому
-        # переводим отказ в понятный склад текст вместо голого кода ошибки.
+        # Отказ площадки не должен ронять сборку: причину WB в теле 409 не
+        # называет, поэтому переводим её в понятный складу текст.
         if "FailedToAddSupplyTrbx" in str(exc):
             raise ValueError(
-                "WB отказал в коробе: заданий в поставке %s, коробов уже %s. Уложи товар в имеющиеся короба или добавляй по одному после того, как в поставку уйдут ещё задания."
-                % (orders, have)
+                "WB отказал в коробе: заданий в поставке %s, коробов уже %s, предел площадки %s. Уложи товар в имеющиеся короба."
+                % (orders, have, limit)
             )
         raise ValueError(str(exc))
     insert_wb_boxes(supply["id"], ext_ids, now_iso())

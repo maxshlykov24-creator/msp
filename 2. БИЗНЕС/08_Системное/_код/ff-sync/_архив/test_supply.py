@@ -152,16 +152,27 @@ assert boxes == ["WB-TRBX-1", "WB-TRBX-2"], boxes
 box_rows = db.list_wb_boxes(sup["id"])
 assert [b["ext_id"] for b in box_rows] == boxes
 
-# лимит грузомест: заданий плюс один короб. Четыре задания — до пяти коробов,
-# два уже есть, значит ещё четыре просить нельзя, а один можно
+# лимит грузомест: половина заданий, округление вниз (русская спека WB от
+# 04.09.2026). Четыре задания — два короба, они уже есть: третий просить нельзя
 try:
-    supply_flow.make_boxes(sup["id"], 4)
+    supply_flow.make_boxes(sup["id"], 1)
     raise AssertionError("создали грузоместо сверх лимита WB")
 except ValueError as exc:
-    assert "не больше, чем заданий плюс один" in str(exc), exc
-# ровно в лимит проходит: с прежним правилом «половина заданий» это был отказ
-assert supply_flow.make_boxes(sup["id"], 3)["boxes"], "лимит заданий + 1 не пропустил"
-db.delete_wb_boxes(sup["id"], ["WB-TRBX-2", "WB-TRBX-3"])
+    assert "не больше половины заданий" in str(exc), exc
+import wb_supply
+assert wb_supply.box_limit(2) == 1 and wb_supply.box_limit(3) == 1 and wb_supply.box_limit(10) == 5
+# отказ площадки 409 не роняет «Собрано», а уходит заметкой
+db.delete_wb_boxes(sup["id"], ["WB-TRBX-2"])
+_real_req = wb_supply.req
+def _deny(method, url, **kw):
+    if url.endswith("/trbx") and method == "POST":
+        return Fake(409, {"code": "FailedToAddSupplyTrbx", "message": ""})
+    return _real_req(method, url, **kw)
+wb_supply.req = _deny
+res = supply_flow.assemble(ships, boxes=1)
+assert res["boxes"] == [] and any("WB отказал в коробе" in n for n in res["notes"]), res
+wb_supply.req = _real_req
+db.delete_wb_boxes(sup["id"], ["WB-TRBX-1"])
 supply_flow.make_boxes(sup["id"], 2)
 box_rows = db.list_wb_boxes(sup["id"])
 assert [b["ext_id"] for b in box_rows] == ["WB-TRBX-1", "WB-TRBX-2"], [dict(b) for b in box_rows]
@@ -408,11 +419,14 @@ try:
 except ValueError as exc:
     assert "только для поставок на ПВЗ" in str(exc), exc
 
-# 21. «Собрано» с числом коробов: заводит грузоместа в поставке выборки
-pvz = [s for s in made if str(s["cargo_type"]) == "1"][0]
+# 21. «Собрано» с числом коробов: заводит грузоместа в поставке выборки.
+# Два задания — один короб (половина), два короба уходят заметкой, отметка стоит
 out = supply_flow.assemble(mgt, split=False, boxes=2)
-assert len(out["boxes"]) == 2 and out["marked"] == 2, out
-assert len(db.list_wb_boxes(pvz["id"])) == 2, [dict(b) for b in db.list_wb_boxes(pvz["id"])]
+assert not out["boxes"] and out["marked"] == 2 and any("половины" in n for n in out["notes"]), out
+pvz = [s for s in made if str(s["cargo_type"]) == "1"][0]
+out = supply_flow.assemble(mgt, split=False, boxes=1)
+assert len(out["boxes"]) == 1 and out["marked"] == 2, out
+assert len(db.list_wb_boxes(pvz["id"])) == 1, [dict(b) for b in db.list_wb_boxes(pvz["id"])]
 
 # две поставки в выборке — короба не заводим, число у них своё
 out = supply_flow.assemble(mgt + kgt, split=False, boxes=1)
