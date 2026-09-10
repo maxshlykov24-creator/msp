@@ -614,46 +614,15 @@ def assembly_labels(data: dict = Body(...), ff_session: str = Cookie(default="")
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
     mode = str(data.get("mode") or labels_mod.MODE_POSTING)
-    if mode not in labels_mod.MODES:
-        raise HTTPException(status_code=400, detail="неизвестный режим печати %s" % mode)
-    ships = get_shipments_by_ids(ids)
-    if not ships:
-        raise HTTPException(status_code=404, detail="отправления не найдены")
-    cabs = {}
-    cards = {}
-    rows = []
-    for s in ships:
-        cab_id = s["cabinet_id"]
-        if cab_id not in cabs:
-            cabs[cab_id] = get_cabinet(cab_id)
-        article = s["article"] or ""
-        barcode = s["barcode"] or ""
-        # бренд, цвет и размер живут только в каталоге кабинета, а у Ozon оттуда
-        # же приходит и штрихкод: выгрузка заказов его не отдаёт вовсе
-        key = (s["client_id"], article, barcode)
-        if key not in cards:
-            cards[key] = catalog_card(s["client_id"], barcode=barcode, article=article)
-        card = cards[key]
-        rows.append(
-            {
-                "cabinet_id": cab_id,
-                "cabinet": cabs[cab_id],
-                "marketplace": s["marketplace"],
-                "ext_id": s["ext_id"],
-                "article": article,
-                "barcode": barcode or card.get("barcode") or "",
-                "name": s["name"] or card.get("name") or "",
-                "client": s["client_name"] or "",
-                "brand": card.get("brand") or "",
-                "color": card.get("color") or "",
-                "size": card.get("size") or "",
-            }
-        )
+    import supply_flow
+
     try:
-        pdf, notes, pages = labels_mod.build(rows, mode=mode)
+        pdf, notes, pages = supply_flow.print_assembly(ids, mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except labels_mod.LabelError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    name = "Этикетки_%s_%s.pdf" % (len(rows), time.strftime("%Y-%m-%d_%H-%M"))
+    name = "Этикетки_%s_%s.pdf" % (len(ids), time.strftime("%Y-%m-%d_%H-%M"))
     headers = {
         "Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(name),
         # заметки отдаём заголовком: тело занято файлом, а оператору важно узнать,

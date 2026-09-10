@@ -677,6 +677,74 @@ def print_labels(supply_id, ship_ids, mode, box_ids=None):
     return merged, notes + bnotes, mpages
 
 
+def print_assembly(ship_ids, mode):
+    """Печать из списка заказов: те же режимы, что в окне поставки."""
+    import labels
+
+    ships = get_shipments_by_ids(ship_ids)
+    if not ships:
+        raise ValueError("отправления не найдены")
+    mode = str(mode or labels.MODE_POSTING)
+    if mode in labels.MODES:
+        return labels.build(_label_payload(ships), mode=mode)
+
+    by_ext = {}
+    other = []
+    for s in ships:
+        ext = (s["supply_ext"] or "") if "supply_ext" in s.keys() else ""
+        if s["marketplace"] == "wb" and ext:
+            by_ext.setdefault(ext, []).append(s)
+        else:
+            other.append(s)
+    found = {s["ext_id"]: s for s in find_wb_supplies(by_ext)}
+    blobs = []
+    notes = []
+
+    if mode == labels.MODE_BOX:
+        if not by_ext:
+            raise ValueError("короб печатается из поставки WB. В выборке её нет.")
+        for ext, group in by_ext.items():
+            sup = found.get(ext)
+            if not sup:
+                notes.append("%s: поставка не найдена" % ext)
+                continue
+            try:
+                pdf, more, _ = print_labels(sup["id"], [r["id"] for r in group], labels.MODE_BOX)
+            except ValueError as exc:
+                notes.append("%s: %s" % (ext, exc))
+                continue
+            blobs.append(pdf)
+            notes.extend(more)
+        if other:
+            notes.append("короб только у WB, без поставки: %s" % len(other))
+        if not blobs:
+            raise ValueError("; ".join(notes) or "нечего печатать")
+        pdf, pages = labels.merge_pdfs(blobs)
+        return pdf, notes, pages
+
+    if mode not in (labels.MODE_POSTING_BOX, labels.MODE_POSTING_PRODUCT_BOX):
+        raise ValueError("неизвестный режим печати")
+
+    inner = labels.MODE_BOTH if mode == labels.MODE_POSTING_PRODUCT_BOX else labels.MODE_POSTING
+    for ext, group in by_ext.items():
+        sup = found.get(ext)
+        if not sup:
+            other.extend(group)
+            continue
+        pdf, more, _ = print_labels(sup["id"], [r["id"] for r in group], mode)
+        blobs.append(pdf)
+        notes.extend(more)
+    if other:
+        pdf, more, _ = labels.build(_label_payload(other), mode=inner)
+        blobs.append(pdf)
+        notes.extend(more)
+        notes.append("короба только у поставок WB")
+    if not blobs:
+        raise ValueError("нечего печатать")
+    pdf, pages = labels.merge_pdfs(blobs)
+    return pdf, notes, pages
+
+
 def supply_pdf(supply_id):
     """QR поставки. WB отдаёт его только после передачи в доставку."""
     import labels
