@@ -118,47 +118,17 @@ body {
   background-attachment: scroll;
 }
 
-body::before,
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-}
-
-body::before {
-  opacity: 0.06;
-  background-image: repeating-linear-gradient(
-    102deg,
-    rgba(255, 255, 255, 0.7) 0,
-    rgba(255, 255, 255, 0.7) 1px,
-    transparent 1px,
-    transparent 11px
-  );
-}
-
-body::after {
-  background:
-    radial-gradient(130% 110% at 50% 42%, transparent 62%, rgba(0, 0, 0, 0.22) 100%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0%, transparent 12%, transparent 88%, rgba(0, 0, 0, 0.18) 100%);
-}
-
-html.theme-light body::before {
-  opacity: 0.055;
-  background-image: repeating-linear-gradient(
-    102deg,
-    rgba(0, 0, 0, 0.5) 0,
-    rgba(0, 0, 0, 0.5) 1px,
-    transparent 1px,
-    transparent 11px
-  );
+  background: radial-gradient(120% 90% at 50% 40%, transparent 70%, rgba(0, 0, 0, 0.18) 100%);
 }
 
 html.theme-light body::after {
-  background:
-    radial-gradient(130% 110% at 50% 42%, transparent 64%, rgba(0, 0, 0, 0.06) 100%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.04) 0%, transparent 12%, transparent 88%, rgba(0, 0, 0, 0.05) 100%);
+  background: radial-gradient(120% 90% at 50% 40%, transparent 72%, rgba(0, 0, 0, 0.03) 100%);
 }
 
 #root {
@@ -273,8 +243,18 @@ body.hints-off .hint-only {
   display: none !important;
 }
 
+/* Знак из PNG с чёрной плашкой: маска, чтобы плашка не становилась
+   белым прямоугольником в светлой теме. */
+.brand-logo {
+  display: block;
+  aspect-ratio: 470 / 330;
+  width: auto;
+  background: #fff;
+  -webkit-mask: var(--brand-src) left center / contain no-repeat;
+  mask: var(--brand-src) left center / contain no-repeat;
+}
 html.theme-light .brand-logo {
-  filter: invert(1);
+  background: #161616;
 }
 
 /* Статусные цвета Tailwind заточены под тёмный фон — в светлой теме читаемые. */

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Search, Filter, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useStore } from "../store";
 import { money, shortDate, timeOf } from "../lib/format";
-import { Badge, Button, StageBadge, Select, opts } from "../components/ui";
+import { Badge, Button, Modal, StageBadge, Select, opts } from "../components/ui";
 import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
 import {
   CONSULTANTS,
@@ -164,6 +164,12 @@ export function DealsBoard({
     if (window.location.hash.replace(/^#/, "") !== next) window.location.hash = next;
   }
 
+  function openDeal(d: Deal) {
+    setActive(d);
+    const next = `board/${kindGroup}/${statusFilter}/${d.number}`;
+    if (window.location.hash.replace(/^#/, "") !== next) window.location.hash = next;
+  }
+
   function pickGroup(id: string) {
     setKindGroup(id);
     onBoardChange?.(id, statusFilter);
@@ -255,16 +261,6 @@ export function DealsBoard({
 
   const visible = filtered.slice(0, visibleCount);
   const hasMore = filtered.length > visibleCount;
-
-  if (active) {
-    return (
-      <DealWorkspace
-        deal={active}
-        onClose={closeDeal}
-        onReturnExchange={onReturnExchange}
-      />
-    );
-  }
 
   return (
     <div>
@@ -433,7 +429,7 @@ export function DealsBoard({
                 <tr
                   key={d.id}
                   className="hover:bg-ink-800/40 cursor-pointer transition"
-                  onClick={() => setActive(d)}
+                  onClick={() => openDeal(d)}
                 >
                   <td className="px-2 py-2.5 font-mono text-mute whitespace-nowrap align-top">
                     #{d.number}
@@ -493,6 +489,22 @@ export function DealsBoard({
           </div>
         )}
       </div>
+
+      <Modal
+        open={!!active}
+        onClose={closeDeal}
+        title={active ? `Заявка №${active.number}` : "Заявка"}
+        xl
+      >
+        {active && (
+          <DealWorkspace
+            deal={active}
+            hideBack
+            onClose={closeDeal}
+            onReturnExchange={onReturnExchange}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

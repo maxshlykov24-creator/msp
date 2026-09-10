@@ -358,7 +358,7 @@ export function MovementModal({
                   className="input"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Артикул, цвет, штрихкод…"
+                  placeholder="Вариация, артикул, цвет, штрихкод…"
                   autoFocus
                 />
               </label>

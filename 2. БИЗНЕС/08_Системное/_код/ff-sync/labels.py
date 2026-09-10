@@ -351,6 +351,9 @@ def product_label(c, row, font):
     body += [(text, bold, "") for text in _wrap(row.get("name"), font, 7, w - 5 * MM, 2)]
     for title, key in (("Бренд", "brand"), ("Цвет", "color"), ("Размер", "size"), ("Артикул", "article")):
         val = str(row.get(key) or "").strip()
+        # WB отдаёт безразмерным товарам размер «0», и на ленте висело «Размер: 0»
+        if key == "size" and val == "0":
+            val = ""
         if val:
             body.append(("%s: " % title, font, _shorten(val, 24)))
 

@@ -216,21 +216,13 @@ def check_wb(token):
 
 
 def check_ozon(client_id, api_key):
-    now = datetime.now(timezone.utc)
-    payload = {
-        "dir": "ASC",
-        "filter": {
-            "cutoff_from": (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "cutoff_to": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        },
-        "limit": 1,
-        "offset": 0,
-    }
+    # Пинг идёт по каталогу, а не по unfulfilled/list: у того лимит на секунду
+    # выбирается сторонними сервисами клиента, и живой кабинет уходил в 429.
     r = req(
         "POST",
-        OZON_BASE + "/v3/posting/fbs/unfulfilled/list",
+        OZON_BASE + "/v3/product/list",
         headers=ozon_headers(client_id, api_key),
-        json=payload,
+        json={"filter": {"visibility": "ALL"}, "limit": 1},
     )
     return r.status_code == 200, r.status_code, (r.text or "")[:180]
 

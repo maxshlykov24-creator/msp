@@ -1,7 +1,5 @@
 """Проверка хостов. Без кабинетов в базе: МойСклад с токеном, WB /ping без токена (ожидаем 401), Ozon без ключей не дергаем."""
 
-from datetime import datetime, timedelta, timezone
-
 from db import init_db, list_cabinets
 from net import MS_BASE, OZON_BASE, WB_BASE, ms_headers, ozon_headers, req, wb_headers
 
@@ -22,21 +20,11 @@ def ping_wb(token=None):
 
 
 def ping_ozon(client_id, api_key):
-    now = datetime.now(timezone.utc)
-    payload = {
-        "dir": "ASC",
-        "filter": {
-            "cutoff_from": (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "cutoff_to": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        },
-        "limit": 1,
-        "offset": 0,
-    }
     r = req(
         "POST",
-        OZON_BASE + "/v3/posting/fbs/unfulfilled/list",
+        OZON_BASE + "/v3/product/list",
         headers=ozon_headers(client_id, api_key),
-        json=payload,
+        json={"filter": {"visibility": "ALL"}, "limit": 1},
     )
     body = (r.text or "")[:180].replace("\n", " ")
     print("Ozon      %s  %s" % (r.status_code, body))

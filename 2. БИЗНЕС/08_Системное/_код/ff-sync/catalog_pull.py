@@ -237,7 +237,8 @@ def ozon_attrs(client_id, api_key, offer_ids):
             for attr in item.get("attributes") or []:
                 if not isinstance(attr, dict):
                     continue
-                key = {OZON_ATTR_BRAND: "brand", OZON_ATTR_COLOR: "color"}.get(attr.get("attribute_id"))
+                attr_id = attr.get("id", attr.get("attribute_id"))
+                key = {OZON_ATTR_BRAND: "brand", OZON_ATTR_COLOR: "color"}.get(attr_id)
                 if not key:
                     continue
                 vals = [str(v.get("value") or "") for v in (attr.get("values") or []) if isinstance(v, dict)]

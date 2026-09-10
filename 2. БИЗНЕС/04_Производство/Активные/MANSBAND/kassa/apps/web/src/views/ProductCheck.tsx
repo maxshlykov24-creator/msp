@@ -657,7 +657,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
             className="input pl-9 pr-10"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Артикул, цвет, название или штрихкод…"
+            placeholder="Вариация, артикул, цвет или штрихкод…"
             autoComplete="off"
           />
           {loading && (
@@ -758,6 +758,15 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
               />
             </div>
             <div className="min-w-[140px] flex-1">
+              <div className="field-label">Вариация</div>
+              <Select
+                size="sm"
+                value={variation}
+                onChange={setVariation}
+                options={opts(["", "Все вариации"], ...filterOptions.variations)}
+              />
+            </div>
+            <div className="min-w-[140px] flex-1">
               <div className="field-label">Цвет</div>
               <Select
                 size="sm"
@@ -773,15 +782,6 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                 value={size}
                 onChange={setSize}
                 options={opts(["", "Все размеры"], ...filterOptions.sizes)}
-              />
-            </div>
-            <div className="min-w-[140px] flex-1">
-              <div className="field-label">Вариация</div>
-              <Select
-                size="sm"
-                value={variation}
-                onChange={setVariation}
-                options={opts(["", "Все вариации"], ...filterOptions.variations)}
               />
             </div>
             <div className="min-w-[110px] flex-1">
@@ -836,11 +836,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
             >
               <div className="text-white font-semibold">{s.label}</div>
               <div className="text-sm text-mute mt-1">
-                {s.id === "suits"
-                  ? "Двойки, тройки, смокинги"
-                  : loading
-                    ? "…"
-                    : `${sectionCounts[s.id] ?? 0} позиций`}
+                {loading ? "…" : `${sectionCounts[s.id] ?? 0} позиций`}
               </div>
             </button>
           ))}

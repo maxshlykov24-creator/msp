@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Send, Check, ArrowLeftRight, Banknote, Clock3, Coins, ReceiptText, Plus, Trash2, Undo2, Wallet } from "lucide-react";
+import { Send, Check, ArrowLeftRight, Banknote, Coins, ReceiptText, Plus, Trash2, Undo2, Wallet } from "lucide-react";
 import { useStore } from "../store";
 import { money, timeOf, shortDate } from "../lib/format";
-import { Button, Modal, StatTile, Select, opts } from "../components/ui";
+import { Button, Modal, Select, opts } from "../components/ui";
 import { api, USE_MOCK } from "../api/client";
 import { EDWIN_CASH_METHOD, EDWIN_EXPENSE_CATEGORIES, paymentMethodLabel } from "@kassa/shared";
 import { DEFAULT_PAYOUT_METHOD_ID, PaymentMethodSelect } from "../components/PaymentMethodSelect";
@@ -67,6 +67,42 @@ const KIND_LABEL: Record<string, string> = {
   salary: "Выдать зарплату",
 };
 
+const EDWIN_KIND_CHIPS = [
+  { id: "change", label: "Сдача" },
+  { id: "tips", label: "Чаевые" },
+  { id: "refund", label: "Возвраты" },
+  { id: "invoice", label: "Выставить счет" },
+  { id: "invoice_check", label: "Проверить оплату" },
+  { id: "salary", label: "Зарплата" },
+] as const;
+
+function FilterChip({
+  active,
+  onClick,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count?: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${
+        active
+          ? "bg-gold/15 text-gold-soft border border-gold/40"
+          : "text-mute hover:bg-ink-800 border border-transparent"
+      }`}
+    >
+      {label}
+      {count != null && count > 0 && <span className="ml-1.5 opacity-70">{count}</span>}
+    </button>
+  );
+}
+
 /** Счёт компании: номер и дата — не выдача наличных. */
 function isCompanyInvoiceTask(kind: string): boolean {
   return kind === "invoice" || kind === "invoice_check";
@@ -122,14 +158,40 @@ export function EdwinQueue() {
   const pending = edwinRows.filter((q) => q.status === "pending");
   const issued = edwinRows.filter((q) => q.status === "issued");
   const pendingSum = pending.reduce((s, q) => s + (q.amount - (q.issuedAmount ?? 0)), 0);
-  const filtered = useMemo(() => rows.filter((q) => {
-    const day = q.createdAt.slice(0, 10);
-    if (MISHA_KINDS.has(q.kind)) return false;
-    return (kind === "all" || q.kind === kind) &&
-      (status === "all" || q.status === status) &&
-      (!dateFrom || day >= dateFrom) &&
-      (!dateTo || day <= dateTo);
-  }), [rows, kind, status, dateFrom, dateTo]);
+  const filtered = useMemo(() => {
+    const kindOrder = EDWIN_KIND_CHIPS.map((k) => k.id);
+    return rows
+      .filter((q) => {
+        const day = q.createdAt.slice(0, 10);
+        if (MISHA_KINDS.has(q.kind)) return false;
+        return (
+          (kind === "all" || q.kind === kind) &&
+          (status === "all" || q.status === status) &&
+          (!dateFrom || day >= dateFrom) &&
+          (!dateTo || day <= dateTo)
+        );
+      })
+      .sort((a, b) => {
+        const ka = kindOrder.indexOf(a.kind as (typeof kindOrder)[number]);
+        const kb = kindOrder.indexOf(b.kind as (typeof kindOrder)[number]);
+        if (ka !== kb) return (ka === -1 ? 99 : ka) - (kb === -1 ? 99 : kb);
+        return b.createdAt.localeCompare(a.createdAt);
+      });
+  }, [rows, kind, status, dateFrom, dateTo]);
+
+  const kindCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const q of edwinRows) {
+      const day = q.createdAt.slice(0, 10);
+      if (status !== "all" && q.status !== status) continue;
+      if (dateFrom && day < dateFrom) continue;
+      if (dateTo && day > dateTo) continue;
+      counts[q.kind] = (counts[q.kind] ?? 0) + 1;
+    }
+    return counts;
+  }, [edwinRows, status, dateFrom, dateTo]);
+
+  const issuedToday = issued.filter((q) => (q.issuedAt ?? q.createdAt).slice(0, 10) === todayYmd()).length;
 
   function loadBalances() {
     if (USE_MOCK || !allowed) return;
@@ -322,185 +384,234 @@ export function EdwinQueue() {
     );
   }
 
+  function whoCell(q: ExtendedQueueItem): { title: string; sub: string } {
+    if (q.kind === "salary") {
+      return { title: q.destination || "Ведомость", sub: "консультанты" };
+    }
+    if (isCompanyInvoiceTask(q.kind)) {
+      const { invoiceNoMeta, company, buyer } = companyMeta(q);
+      return {
+        title: company || q.client || "—",
+        sub: [buyer && buyer !== company ? buyer : null, invoiceNoMeta ? `счёт ${invoiceNoMeta}` : null]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    }
+    return { title: q.client || "—", sub: q.destination || "" };
+  }
+
+  function KindIcon({ kind }: { kind: string }) {
+    if (kind === "salary") return <Wallet size={15} />;
+    if (kind === "refund") return <ArrowLeftRight size={15} />;
+    if (kind === "tips") return <Coins size={15} />;
+    if (isCompanyInvoiceTask(kind)) return <ReceiptText size={15} />;
+    return <Banknote size={15} />;
+  }
+
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="flex items-center gap-2 mb-1">
-        <Send className="text-gold" size={22} />
-        <h1 className="text-2xl font-extrabold text-white">Очередь Эдвина</h1>
+    <div className="max-w-7xl mx-auto">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
+        <div className="flex items-center gap-2">
+          <Send className="text-gold" size={22} />
+          <h1 className="text-2xl font-extrabold text-white">Очередь Эдвина</h1>
+        </div>
+        <Button onClick={() => setExpenseOpen(true)}>
+          <Plus size={16} /> Расход
+        </Button>
       </div>
       <Hint>
-        Сдача, чаевые, возвраты, счета и выдача зарплаты. Для утренней сверки фиксируются кто,
-        когда и каким способом выдал деньги. Расход пишется на выбранный счёт.
+        Сдача, чаевые, возвраты, счета и зарплата. В работе — что ещё не выдано. Кто, когда и каким
+        способом выдал, видно в закрытых. Расход пишется на выбранный счёт.
       </Hint>
 
-      <div className="grid sm:grid-cols-3 gap-3 mb-5">
-        <StatTile label="К выдаче сейчас" value={String(pending.length)} tone="amber" sub={money(pendingSum)} />
-        <StatTile label="Выдано сегодня" value={String(issued.length)} tone="green" />
-        <button className="card p-4 text-left hover:border-gold/40" onClick={() => setExpenseOpen(true)}>
-          <div className="field-label">Расход</div>
-          <div className="text-white font-bold flex items-center gap-2"><Plus size={16} /> Внести расход</div>
-        </button>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="inline-flex border border-ink-700 rounded-lg overflow-hidden">
+          {(
+            [
+              ["pending", "К выдаче", pending.length],
+              ["issued", "Выдано", issued.length],
+              ["all", "Все", edwinRows.length],
+            ] as const
+          ).map(([id, label, count]) => (
+            <button
+              key={id}
+              type="button"
+              className={`px-4 py-2 text-sm ${
+                status === id ? "bg-gold text-ink-950 font-semibold" : "text-mute hover:text-white"
+              }`}
+              onClick={() => setStatus(id)}
+            >
+              {label}
+              {count > 0 && <span className="ml-2 opacity-80">{count}</span>}
+            </button>
+          ))}
+        </div>
+        <span className="text-[12px] text-mute">
+          {status === "pending" && pendingSum > 0 ? `к выдаче ${money(pendingSum)}` : `${filtered.length}`}
+          {issuedToday > 0 ? ` · сегодня выдано ${issuedToday}` : ""}
+        </span>
       </div>
+
       {balances.length > 0 && (
-        <div className="card p-3 mb-4">
-          <div className="field-label mb-2">Расходы по счетам</div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-            {balances.map((row) => (
-              <span key={row.account} className="text-mute">
-                {paymentMethodLabel(row.account)}: <strong className="text-white">{money(row.balance)}</strong>
-              </span>
-            ))}
-          </div>
+        <div className="card px-4 py-3 mb-4 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+          {balances.map((row) => (
+            <span key={row.account} className="text-mute">
+              {paymentMethodLabel(row.account)}:{" "}
+              <strong className="text-white">{money(row.balance)}</strong>
+            </span>
+          ))}
         </div>
       )}
 
-      <div className="card filter-bar p-4 mb-4 grid sm:grid-cols-4 gap-2.5">
-        <Select
-          size="sm"
-          value={kind}
-          onChange={setKind}
-          options={opts(
-            ["all", "Все виды"],
-            ["change", "Сдача"],
-            ["tips", "Чаевые"],
-            ["refund", "Возвраты"],
-            ["invoice", "Выставить счет"],
-            ["invoice_check", "Проверить оплату"],
-            ["salary", "Зарплата"]
-          )}
-        />
-        <Select
-          size="sm"
-          value={status}
-          onChange={setStatus}
-          options={opts(["pending", "Нужно выдать"], ["issued", "Выдано"], ["all", "Все"])}
-        />
-        <input type="date" className="input py-2 text-sm" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} aria-label="Период с" />
-        <input type="date" className="input py-2 text-sm" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} aria-label="Период по" />
+      <div className="card filter-bar p-4 mb-3 flex flex-wrap items-center gap-2.5">
+        <label className="text-[12px] text-mute flex items-center gap-2">
+          с
+          <input
+            type="date"
+            className="input py-2 text-sm w-[150px]"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label className="text-[12px] text-mute flex items-center gap-2">
+          по
+          <input
+            type="date"
+            className="input py-2 text-sm w-[150px]"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </label>
       </div>
 
-      <div className="field-label mb-2">{status === "issued" ? "Выдано" : status === "pending" ? "К выдаче" : "Все операции"}</div>
-      <div className="space-y-2.5">
-        {filtered.length === 0 && <div className="card text-center text-mute py-8">По фильтру операций нет</div>}
-        {filtered.map((q) => {
-          const already = q.issuedAmount ?? 0;
-          const remainder = Math.max(0, q.amount - already);
-          return (
-            <div key={q.id} className="card p-0 overflow-hidden flex">
-              <div className={`w-1.5 ${q.kind === "refund" ? "bg-white/70" : "bg-white/35"}`} />
-              <div className="flex-1 p-4 flex flex-wrap items-center gap-3">
-                <div className="w-10 h-10 rounded-xl grid place-items-center bg-white/10 text-white">
-                  {q.kind === "salary" ? (
-                    <Wallet size={18} />
-                  ) : q.kind === "refund" ? (
-                    <ArrowLeftRight size={18} />
-                  ) : q.kind === "tips" ? (
-                    <Coins size={18} />
-                  ) : isCompanyInvoiceTask(q.kind) ? (
-                    <ReceiptText size={18} />
-                  ) : (
-                    <Banknote size={18} />
-                  )}
-                </div>
-                <button
-                  className="flex-1 min-w-[180px] text-left"
-                  onClick={() => {
-                    if (q.kind === "salary") {
-                      setSalaryItem(q);
-                      setSalaryExpanded(null);
-                    } else {
-                      void openDealByNumber(q.dealNumber);
-                    }
-                  }}
-                >
-                  {q.kind === "salary" ? (
-                    <>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        <FilterChip active={kind === "all"} onClick={() => setKind("all")} label="Все виды" />
+        {EDWIN_KIND_CHIPS.map((opt) => (
+          <FilterChip
+            key={opt.id}
+            active={kind === opt.id}
+            onClick={() => setKind(opt.id)}
+            label={opt.label}
+            count={kindCounts[opt.id] ?? 0}
+          />
+        ))}
+      </div>
+
+      <div className="card p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[920px]">
+            <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-800">
+              <tr>
+                <th className="text-left px-3 py-2.5 font-medium">Вид</th>
+                <th className="text-left px-3 py-2.5 font-medium">Кому</th>
+                <th className="text-left px-3 py-2.5 font-medium">Заявка</th>
+                <th className="text-left px-3 py-2.5 font-medium">Сумма</th>
+                <th className="text-left px-3 py-2.5 font-medium">Когда</th>
+                <th className="px-3 py-2.5 font-medium" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-800">
+              {filtered.map((q) => {
+                const already = q.issuedAmount ?? 0;
+                const remainder = Math.max(0, q.amount - already);
+                const who = whoCell(q);
+                const when = q.status === "issued" ? q.issuedAt ?? q.createdAt : q.createdAt;
+                return (
+                  <tr
+                    key={q.id}
+                    className="hover:bg-ink-800/40 cursor-pointer transition"
+                    onClick={() => {
+                      if (q.kind === "salary") {
+                        setSalaryItem(q);
+                        setSalaryExpanded(null);
+                      } else {
+                        void openDealByNumber(q.dealNumber);
+                      }
+                    }}
+                  >
+                    <td className="px-3 py-3 align-top">
                       <div className="flex items-center gap-2">
-                        <span className="text-white font-semibold">{money(q.amount)}</span>
-                        <span className="chip bg-ink-700 text-mute">Выдать зарплату</span>
+                        <span className="w-8 h-8 rounded-lg grid place-items-center bg-white/10 text-white shrink-0">
+                          <KindIcon kind={q.kind} />
+                        </span>
+                        <span className="text-white font-medium text-[13px] whitespace-nowrap">
+                          {KIND_LABEL[q.kind] ?? q.kind}
+                        </span>
                       </div>
-                      <div className="text-mute text-[13px] truncate">
-                        {q.destination} · ведомость по консультантам
-                      </div>
-                    </>
-                  ) : isCompanyInvoiceTask(q.kind) ? (
-                    (() => {
-                      const { invoiceNoMeta, company, buyer } = companyMeta(q);
-                      const title =
-                        q.kind === "invoice_check"
-                          ? `Проверить оплату · #${q.dealNumber}`
-                          : `Выставить счет · #${q.dealNumber}`;
-                      const metaLine = [
-                        company || null,
-                        buyer && buyer !== company ? buyer : null,
-                        invoiceNoMeta ? `счёт ${invoiceNoMeta}` : null,
-                        q.amount > 0 ? money(q.amount) : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ");
-                      return (
-                        <>
-                          <div className="text-white font-semibold text-[14px]">{title}</div>
-                          {metaLine && (
-                            <div className="text-mute text-[13px] mt-0.5 truncate">{metaLine}</div>
-                          )}
-                        </>
-                      );
-                    })()
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <span className="text-white font-semibold">{money(q.amount)}</span>
-                        <span className="chip bg-ink-700 text-mute">{KIND_LABEL[q.kind] ?? q.kind}</span>
-                        <span className="text-gold-soft text-[12px] hover:underline">#{q.dealNumber}</span>
-                      </div>
-                      <div className="text-mute text-[13px] truncate">{q.client} · {q.destination}</div>
-                    </>
-                  )}
-                  {q.status === "pending" && already > 0 && !isCompanyInvoiceTask(q.kind) && (
-                    <div className="text-[12px] text-amber-300/90 mt-1">
-                      Выдано частями {money(already)} · осталось {money(remainder)}
-                    </div>
-                  )}
-                  {(q.payouts ?? []).length > 0 && (
-                    <div className="text-[11px] text-mute mt-1 space-y-0.5">
-                      {(q.payouts ?? []).map((p) => (
-                        <div key={p.id}>
-                          {money(p.amount)} · {paymentMethodLabel(p.methodId)} · {p.issuedBy}
+                    </td>
+                    <td className="px-3 py-3 align-top min-w-0">
+                      <div className="text-white text-[13px] leading-snug line-clamp-2">{who.title}</div>
+                      {who.sub && <div className="text-[12px] text-mute mt-0.5 truncate">{who.sub}</div>}
+                      {q.status === "pending" && already > 0 && !isCompanyInvoiceTask(q.kind) && (
+                        <div className="text-[11px] text-amber-300/90 mt-0.5">
+                          выдано {money(already)} · осталось {money(remainder)}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {q.status === "issued" && <div className="text-[12px] text-mute mt-1"><Clock3 size={12} className="inline mr-1" />{shortDate(q.issuedAt ?? q.createdAt)} {timeOf(q.issuedAt ?? q.createdAt)}{q.issuedBy && ` · ${q.issuedBy}`}{q.issueMethod && ` · ${paymentMethodLabel(q.issueMethod)}`}</div>}
-                </button>
-                {q.status === "pending" && isCompanyInvoiceTask(q.kind) && (
-                  <button
-                    onClick={() => openInvoice(q)}
-                    className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-white text-ink-950 font-bold px-3 py-2 hover:bg-white/90"
-                  >
-                    <ReceiptText size={16} />{" "}
-                    {q.kind === "invoice" ? "Выставить счет" : "Проверить оплату"}
-                  </button>
-                )}
-                {q.status === "pending" && !isCompanyInvoiceTask(q.kind) && q.kind !== "atelier" && (
-                  <button onClick={() => openIssue(q)} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-white text-ink-950 font-bold px-3 py-2 hover:bg-white/90">
-                    <Check size={16} /> Выдать
-                  </button>
-                )}
-                {q.status === "issued" && (
-                  <button
-                    type="button"
-                    disabled={reopening === q.id}
-                    onClick={() => void reopenItem(q)}
-                    className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-ink-600 text-mute hover:text-white hover:border-white/40 px-3 py-2 text-sm font-semibold"
-                  >
-                    <Undo2 size={15} /> Вернуть
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+                      )}
+                      {(q.payouts ?? []).length > 0 && (
+                        <div className="text-[11px] text-mute mt-0.5">
+                          {(q.payouts ?? [])
+                            .map((p) => `${money(p.amount)} · ${paymentMethodLabel(p.methodId)}`)
+                            .join(" · ")}
+                        </div>
+                      )}
+                      {q.status === "issued" && q.issuedBy && (
+                        <div className="text-[11px] text-mute mt-0.5">
+                          {q.issuedBy}
+                          {q.issueMethod ? ` · ${paymentMethodLabel(q.issueMethod)}` : ""}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 align-top text-[13px] text-white whitespace-nowrap">
+                      {q.kind === "salary" ? "—" : `#${q.dealNumber}`}
+                    </td>
+                    <td className="px-3 py-3 align-top text-[13px] text-white font-semibold tabular-nums whitespace-nowrap">
+                      {q.amount > 0 ? money(q.status === "pending" ? remainder || q.amount : q.amount) : "—"}
+                    </td>
+                    <td className="px-3 py-3 align-top text-[12px] text-mute tabular-nums whitespace-nowrap">
+                      <div>{shortDate(when)}</div>
+                      <div className="text-[11px] text-mute/80">{timeOf(when)}</div>
+                    </td>
+                    <td className="px-3 py-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
+                      {q.status === "pending" && isCompanyInvoiceTask(q.kind) && (
+                        <Button
+                          variant="subtle"
+                          className="py-1.5 px-2.5 text-[12px]"
+                          onClick={() => openInvoice(q)}
+                        >
+                          <ReceiptText size={14} />
+                          {q.kind === "invoice" ? "Выставить счет" : "Проверить оплату"}
+                        </Button>
+                      )}
+                      {q.status === "pending" && !isCompanyInvoiceTask(q.kind) && q.kind !== "atelier" && (
+                        <Button
+                          variant="subtle"
+                          className="py-1.5 px-2.5 text-[12px]"
+                          onClick={() => openIssue(q)}
+                        >
+                          <Check size={14} /> Выдать
+                        </Button>
+                      )}
+                      {q.status === "issued" && (
+                        <Button
+                          variant="subtle"
+                          className="py-1.5 px-2.5 text-[12px]"
+                          disabled={reopening === q.id}
+                          onClick={() => void reopenItem(q)}
+                        >
+                          <Undo2 size={14} /> Вернуть
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {filtered.length === 0 && (
+          <div className="py-10 text-center text-mute">По фильтру операций нет</div>
+        )}
       </div>
 
       <Modal

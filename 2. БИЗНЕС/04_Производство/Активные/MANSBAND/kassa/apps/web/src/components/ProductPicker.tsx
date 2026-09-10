@@ -622,8 +622,8 @@ export function ProductPicker({
               className="input pl-9"
               placeholder={
                 allowedMap
-                  ? "Поиск только среди позиций исходной сделки…"
-                  : "Артикул и цвет, название или штрихкод…"
+                    ? "Поиск только среди позиций исходной сделки…"
+                    : "Вариация, артикул, цвет или штрихкод…"
               }
               value={q}
               onFocus={() => setOpen(true)}

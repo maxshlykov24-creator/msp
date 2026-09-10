@@ -365,6 +365,9 @@ def build_picking(rows, who=""):
         card = cards[key]
         code = barcode or card.get("barcode") or ""
         size = card.get("size") or ""
+        # у безразмерных товаров WB отдаёт размер «0», в колонке он только мешает
+        if size == "0":
+            size = ""
         slot = (article.lower(), size, code)
         item = bag.setdefault(
             slot,

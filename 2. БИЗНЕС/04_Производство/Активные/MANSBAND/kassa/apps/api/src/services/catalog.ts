@@ -125,22 +125,34 @@ async function attachStock(rows: ProductRow[], storeName?: string): Promise<Prod
   });
 }
 
-// Поиск по каталогу: имя / артикул / код / штрихкод.
+// Поиск по каталогу: вариация первой, затем имя / артикул / код / штрихкод.
 // Несколько слов через пробел — AND по токенам (пример: «GO109SL12 черный»).
 // «Доступно» и разбивка по складам из локального кэша stock — без N запросов в МойСклад.
 // Live-детализация одного товара — getProductStockByWarehouses.
 
+function sanitizeToken(token: string) {
+  return token.replace(/[%_\\]/g, "");
+}
+
 function tokenMatchesField(token: string) {
-  const safe = token.replace(/[%_\\]/g, "");
+  const safe = sanitizeToken(token);
   if (!safe) return undefined;
   const pattern = `%${safe}%`;
   return or(
+    ilike(products.variation, pattern),
     ilike(products.name, pattern),
     ilike(products.article, pattern),
     ilike(products.code, pattern),
     eq(products.barcode, safe),
     ilike(products.barcode, pattern)
   );
+}
+
+/** Совпадение по вариации поднимаем выше имени и артикула. */
+function variationFirstOrder(tokens: string[]) {
+  const safe = sanitizeToken(tokens[0] ?? "");
+  if (!safe) return undefined;
+  return sql`CASE WHEN ${products.variation} ILIKE ${`%${safe}%`} THEN 0 ELSE 1 END`;
 }
 
 export async function searchCatalog(
@@ -183,7 +195,7 @@ export async function searchCatalog(
       textCondition,
       categoryCondition
     ))
-    .orderBy(asc(products.name))
+    .orderBy(...[variationFirstOrder(tokens), asc(products.name)].filter((c): c is NonNullable<typeof c> => c != null))
     .limit(limit);
 
   return attachStock(rows, storeName);
@@ -592,6 +604,11 @@ export interface CatalogBrowseResult {
   pageSize: number;
 }
 
+/** Карточка без вариации в МойСклад — родитель или обрубок вроде «(42)». В зале не показываем. */
+function hasVariationSql() {
+  return sql`coalesce(trim(${products.variation}), '') <> ''`;
+}
+
 function nameMatchesKeywords(keywords: string[]) {
   const parts = keywords.filter(Boolean).map((k) =>
     hallKeywordNeedsWordBoundary(k)
@@ -653,10 +670,12 @@ async function hallSectionCounts(): Promise<Record<string, number>> {
       name: products.name,
       category: products.category,
       suitPart: products.suitPart,
+      variation: products.variation,
     })
     .from(products)
     .where(inArray(products.msType, ["product", "variant"]));
   for (const row of rows) {
+    if (!row.variation?.trim()) continue;
     const hall = classifyHall({
       name: row.name,
       category: row.category,
@@ -665,6 +684,24 @@ async function hallSectionCounts(): Promise<Record<string, number>> {
     if (!hall || hall.section === "suits") continue;
     counts[hall.section] = (counts[hall.section] ?? 0) + 1;
   }
+  // Костюмы в зале — модели (пиджак + вариация), не отдельные части.
+  const suitRows = await db.execute(sql`
+    SELECT count(*)::int AS n FROM (
+      SELECT DISTINCT
+        lower(trim(coalesce(${products.variation}, ''))),
+        lower(trim(coalesce(${products.fit}, ''))),
+        lower(trim(coalesce(${products.height}, ''))),
+        lower(trim(coalesce(${products.suitLine}, '')))
+      FROM ${products}
+      WHERE ${products.msType} IN ('product', 'variant')
+        AND ${products.suitPart} = 'jacket'
+        AND coalesce(trim(${products.variation}), '') <> ''
+    ) t
+  `);
+  const suitRaw = (Array.isArray(suitRows)
+    ? suitRows
+    : ((suitRows as { rows?: Array<{ n: number }> }).rows ?? [])) as Array<{ n: number }>;
+  counts.suits = Number(suitRaw[0]?.n) || 0;
   return counts;
 }
 
@@ -721,6 +758,7 @@ async function hallGroupCounts(section: HallSectionId): Promise<Record<string, n
       ${products.msType} IN ('product', 'variant')
       AND NOT ${suitPieceSql()}
       AND ${products.name} NOT ILIKE ${"%сертификат%"}
+      AND ${hasVariationSql()}
       AND ${hallSectionSql(section)}
     `);
   const counts: Record<string, number> = {};
@@ -814,6 +852,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   const conditions = [sql`${products.msType} IN ('product', 'variant')`];
   conditions.push(sql`NOT ${suitPieceSql()}`);
   conditions.push(sql`${products.name} NOT ILIKE ${"%сертификат%"}`);
+  conditions.push(hasVariationSql());
   if (hall) {
     conditions.push(hallSectionSql(hall, hallGroup || undefined));
   }
@@ -844,6 +883,10 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   const pageSize = hall ? Math.max(query.pageSize, 1500) : query.pageSize;
   const offset = (query.page - 1) * pageSize;
   const whereSql = sql.join(conditions, sql` AND `);
+  const variationRank = variationFirstOrder(tokens);
+  const orderSql = variationRank
+    ? sql`${variationRank}, category NULLS LAST, name`
+    : sql`category NULLS LAST, name`;
 
   // Остаток — отдельным LEFT JOIN на агрегат по stock, а не N запросов на клиенте.
   const result = await db.execute(sql`
@@ -862,7 +905,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     SELECT *, count(*) OVER() AS full_count
     FROM base
     WHERE ${stockCondition}
-    ORDER BY category NULLS LAST, name
+    ORDER BY ${orderSql}
     LIMIT ${pageSize} OFFSET ${offset}
   `);
 

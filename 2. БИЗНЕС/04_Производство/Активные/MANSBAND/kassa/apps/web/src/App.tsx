@@ -7,7 +7,6 @@ import { NewDeal } from "./views/NewDeal";
 import { Certificates } from "./views/Certificates";
 import { EdwinQueue } from "./views/EdwinQueue";
 import { MishaQueue } from "./views/MishaQueue";
-import { SaryScreen } from "./views/SaryScreen";
 import { Dashboard } from "./views/Dashboard";
 import { ShiftClose } from "./views/ShiftClose";
 import { ProductCheck } from "./views/ProductCheck";
@@ -66,8 +65,6 @@ function Screens({
       );
     case "certificates":
       return <Certificates />;
-    case "sary":
-      return <SaryScreen />;
     // Заявку открываем с пометкой, откуда пришли: по закрытию карточки
     // возвращаемся в ту же очередь, а не на «Все заявки».
     case "queue":
@@ -98,7 +95,6 @@ const ROUTES: Route[] = [
   "board",
   "new",
   "certificates",
-  "sary",
   "queue",
   "misha",
   "shift",
@@ -136,6 +132,13 @@ function parseHash(): HashState {
   const raw = window.location.hash.replace("#", "");
   const parts = raw.split("/");
   const base = parts[0];
+  // Старый пункт меню «Ведомость САР» живёт только в очереди колл-менеджера.
+  if (base === "sary") {
+    if (window.location.hash !== "#tasks/crm/pending") {
+      window.location.replace("#tasks/crm/pending");
+    }
+    return { ...EMPTY, route: "tasks" };
+  }
   const route = (ROUTES.includes(base as Route) ? base : "board") as Route;
   if (route === "board") {
     return {
