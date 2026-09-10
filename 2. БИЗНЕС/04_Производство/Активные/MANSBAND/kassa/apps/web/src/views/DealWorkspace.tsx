@@ -15,6 +15,7 @@ import { ConvertKindForm, type ConvertKindPayload } from "../components/ConvertK
 import { HIDDEN_STAGES, STAGES_BY_KIND } from "../data/mock";
 import { api, USE_MOCK } from "../api/client";
 import { formatPhone } from "../lib/format";
+import { Hint } from "../lib/hints";
 import {
   ClientFields,
   CommentField,
@@ -293,9 +294,14 @@ export function DealWorkspace({
               </span>
             )}
           </div>
-          <p className="text-mute text-sm mt-0.5">
-            {readOnly ? "Только просмотр — менять может РОП или Максим" : "Редактирование заявки"}
-          </p>
+          {readOnly ? (
+            <p className="text-mute text-sm mt-0.5">Только просмотр — менять может РОП или Максим</p>
+          ) : (
+            <Hint className="mt-2 mb-0">
+              Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
+              сверху. Перемещение из карточки доступно для отложки и обещания.
+            </Hint>
+          )}
         </div>
         <StageBadge stage={stage} className="text-[14px] px-3 py-1.5 font-semibold shrink-0" />
       </div>
