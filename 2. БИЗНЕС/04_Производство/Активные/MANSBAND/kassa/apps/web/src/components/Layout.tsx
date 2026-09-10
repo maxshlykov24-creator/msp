@@ -23,6 +23,7 @@ import { useAuth } from "../auth/AuthContext";
 import { canSeeFinanceQueues } from "../auth/roles";
 import { CONSULTANTS, STORES } from "../data/mock";
 import { OfflineBanner } from "./OfflineBanner";
+import { HintsToggle } from "../lib/hints";
 import logoFull from "../assets/logo-full.png";
 
 export type Route =
@@ -189,10 +190,13 @@ export function Layout({
         <header className="sticky top-0 z-30 border-b border-ink-800 bg-ink-950 md:bg-ink-950/95 md:backdrop-blur pt-[env(safe-area-inset-top)]">
           {/* Мобильная шапка: лого по центру, магазин + пользователь — отдельной строкой */}
           <div className="md:hidden px-4 pb-3">
-            <div className="flex justify-center py-2.5">
+            <div className="relative flex items-center justify-center py-2.5">
               <button type="button" onClick={onHome} aria-label="На главную">
-                <img src={logoFull} alt="MANSBAND" className="h-7 w-auto max-w-[min(100%,200px)] select-none" />
+                <img src={logoFull} alt="MANSBAND" className="h-7 w-auto max-w-[min(100%,160px)] select-none" />
               </button>
+              <div className="absolute right-0 top-1/2 -translate-y-1/2">
+                <HintsToggle compact />
+              </div>
             </div>
             <div className="flex items-center gap-2 min-w-0">
               <Selector
@@ -214,6 +218,7 @@ export function Layout({
           {/* Десктопная шапка */}
           <div className="hidden md:flex px-8 py-3.5 items-center gap-3">
             <div className="flex-1" />
+            <HintsToggle />
             <Selector
               icon={<StoreIcon size={15} />}
               value={activeStore}

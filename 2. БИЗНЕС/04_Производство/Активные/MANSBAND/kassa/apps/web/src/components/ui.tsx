@@ -53,7 +53,7 @@ export function Field({
         {required && <span className="text-gold">*</span>}
       </div>
       {children}
-      {hint && <div className="text-[12px] text-mute/70 mt-1">{hint}</div>}
+      {hint && <div className="hint-only text-[12px] text-mute/70 mt-1">{hint}</div>}
     </label>
   );
 }

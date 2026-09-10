@@ -75,6 +75,87 @@ body {
   background: transparent;
 }
 
+/* Пояснения как в прототипе HIDE: тумблер в шапке, выкл. убирает весь шум. */
+.hints-sw {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 13px;
+  border-radius: 12px;
+  background: #0c0d11;
+  border: 1px solid #23272f;
+  cursor: pointer;
+  font-size: 12px;
+  color: #8a8c92;
+  transition: 0.2s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+.hints-sw:hover {
+  color: #c2c7d0;
+  border-color: #3a404c;
+}
+.hints-sw i {
+  width: 30px;
+  height: 17px;
+  border-radius: 9px;
+  background: #15171c;
+  border: 1px solid #2e333d;
+  position: relative;
+  flex: none;
+  transition: 0.25s ease;
+}
+.hints-sw i::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #8a8c92;
+  transition: 0.25s ease;
+}
+.hints-sw.on {
+  color: #f2f2f2;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+}
+.hints-sw.on i {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+.hints-sw.on i::after {
+  transform: translateX(13px);
+  background: #ffffff;
+}
+.hints-sw.compact {
+  padding: 8px 10px;
+  min-height: 40px;
+}
+.page-hint {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  line-height: 1.65;
+  color: #8a8c92;
+  margin-bottom: 1.25rem;
+}
+.page-hint p + p {
+  margin-top: 0.55rem;
+}
+.page-hint b,
+.page-hint strong {
+  color: #c2c7d0;
+  font-weight: 600;
+}
+body.hints-off .page-hint,
+body.hints-off .hint-only {
+  display: none !important;
+}
+
 @layer components {
   .card {
     @apply bg-ink-850/80 border border-ink-700 rounded-xl2 shadow-card;

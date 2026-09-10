@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { HintsProvider } from "./lib/hints";
 import { Login } from "./views/Login";
 import { ChangePassword } from "./views/ChangePassword";
 
@@ -40,9 +41,11 @@ async function boot() {
   if (!root) return;
   createRoot(root).render(
     <StrictMode>
-      <AuthProvider>
-        <Gate />
-      </AuthProvider>
+      <HintsProvider>
+        <AuthProvider>
+          <Gate />
+        </AuthProvider>
+      </HintsProvider>
     </StrictMode>
   );
 }

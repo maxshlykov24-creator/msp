@@ -8,6 +8,7 @@ import { PaymentMethodSelect } from "../components/PaymentMethodSelect";
 import { attachmentsToUpload, type PhotoAttachment } from "../lib/photo";
 import type { SaryPayout } from "../data/types";
 import { ApiError } from "../api/client";
+import { Hint } from "../lib/hints";
 
 /** Авто-текст сообщения клиенту о выплате «сары». */
 function saryMessage(s: SaryPayout): string {
@@ -47,16 +48,16 @@ function NotFoundBadge({ s }: { s: SaryPayout }) {
   );
 }
 
-/** Ссылка на заявку: доска умеет открывать карточку по номеру из hash. */
-function DealLink({ number }: { number?: number }) {
+/** Крупная кнопка в карточку заявки: доска открывает её по номеру из hash. */
+function DealButton({ number }: { number?: number }) {
   if (!number) return null;
   return (
     <a
       href={`#board/all/all/${number}/sary`}
-      className="text-gold-soft hover:text-gold text-[12px] shrink-0"
       onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center justify-center min-h-12 min-w-[9rem] px-6 rounded-xl bg-white text-ink-950 font-extrabold uppercase tracking-[0.16em] text-[15px] hover:bg-white/90 active:scale-[0.98] transition shrink-0"
     >
-      #{number}
+      Заказ
     </a>
   );
 }
