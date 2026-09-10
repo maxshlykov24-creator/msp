@@ -160,6 +160,23 @@ export interface HallClass {
   group: string;
 }
 
+/** Короткие целые слова: «поло» не должно ловить «в полоску». */
+const HALL_WORD_BOUNDARY_KEYS = new Set(["поло"]);
+
+export function hallKeywordNeedsWordBoundary(needle: string): boolean {
+  return HALL_WORD_BOUNDARY_KEYS.has(needle.toLowerCase().replace(/ё/g, "е"));
+}
+
+export function hallKeywordHits(name: string, needle: string): boolean {
+  const n = name.toLowerCase().replace(/ё/g, "е");
+  const k = needle.toLowerCase().replace(/ё/g, "е");
+  if (!k) return false;
+  if (hallKeywordNeedsWordBoundary(k)) {
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${k}([^\\p{L}\\p{N}]|$)`, "iu").test(n);
+  }
+  return n.includes(k);
+}
+
 function matchNamedGroup(kind: string): HallClass | null {
   const n = kind.toLowerCase().replace(/ё/g, "е");
   let best: { hit: HallClass; weight: number } | null = null;
@@ -167,7 +184,7 @@ function matchNamedGroup(kind: string): HallClass | null {
     if (section.id === "suits") continue;
     for (const group of section.groups) {
       for (const needle of group.nameIncludes) {
-        if (!n.includes(needle)) continue;
+        if (!hallKeywordHits(n, needle)) continue;
         if (!best || needle.length > best.weight) {
           best = { hit: { section: section.id, group: group.id }, weight: needle.length };
         }

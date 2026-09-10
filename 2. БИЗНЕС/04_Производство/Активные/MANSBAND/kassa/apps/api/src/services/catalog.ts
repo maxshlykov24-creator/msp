@@ -6,6 +6,7 @@ import {
   CDEK_WAREHOUSE_ID,
   STORE_TO_WAREHOUSE,
   classifyHall,
+  hallKeywordNeedsWordBoundary,
   hallNamedKeywords,
   hallSectionKeywords,
   hallSectionOf,
@@ -592,17 +593,23 @@ export interface CatalogBrowseResult {
 }
 
 function nameMatchesKeywords(keywords: string[]) {
-  const parts = keywords.filter(Boolean).map((k) => sql`${products.name} ILIKE ${`%${k}%`}`);
+  const parts = keywords.filter(Boolean).map((k) =>
+    hallKeywordNeedsWordBoundary(k)
+      ? sql`${products.name} ~* ${`(^|[^А-Яа-яЁёA-Za-z0-9])${k}([^А-Яа-яЁёA-Za-z0-9]|$)`}`
+      : sql`${products.name} ILIKE ${`%${k}%`}`
+  );
   if (parts.length === 0) return sql`false`;
   return sql`(${sql.join(parts, sql` OR `)})`;
 }
 
-/** Как isSuitPieceForHall: пиджак и жилет всегда, брюки костюма тоже. */
+/** Как isSuitPieceForHall: пиджак и жилет всегда, брюки костюма тоже.
+ *  coalesce: у штучных позиций suit_part пустой, и `NOT (NULL IN …)` в SQL
+ *  отбрасывает строку целиком — зал остаётся пустым. */
 function suitPieceSql() {
   return sql`(
-    ${products.suitPart} IN ('jacket', 'vest')
+    coalesce(${products.suitPart}, '') IN ('jacket', 'vest')
     OR (
-      ${products.suitPart} = 'trousers'
+      coalesce(${products.suitPart}, '') = 'trousers'
       AND ${products.name} NOT ILIKE ${"%палаццо%"}
       AND ${products.name} NOT ILIKE ${"%слакс%"}
       AND ${products.name} NOT ILIKE ${"%чинос%"}
