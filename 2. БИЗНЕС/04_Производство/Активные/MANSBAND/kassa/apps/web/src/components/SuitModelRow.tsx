@@ -27,8 +27,6 @@ export interface PricedSuitModel extends SuitModel {
   priceRub?: number | null;
 }
 
-type SizeDetail = "stores" | "all";
-
 export function SuitModelRow({
   model,
   open,
@@ -41,7 +39,7 @@ export function SuitModelRow({
   warehouse: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const [sizeOpen, setSizeOpen] = useState<{ size: string; detail: SizeDetail } | null>(null);
+  const [sizeOpen, setSizeOpen] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) setSizeOpen(null);
@@ -60,11 +58,7 @@ export function SuitModelRow({
   }
 
   function toggleSize(size: string) {
-    setSizeOpen((prev) => {
-      if (!prev || prev.size !== size) return { size, detail: "stores" };
-      if (prev.detail === "stores") return { size, detail: "all" };
-      return null;
-    });
+    setSizeOpen((prev) => (prev === size ? null : size));
   }
 
   return (
