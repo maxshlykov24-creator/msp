@@ -284,7 +284,7 @@ export function DealWorkspace({
         </button>
       )}
 
-      <div className="mb-5 flex items-start justify-between gap-3 flex-wrap">
+      <div className="mb-1 flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-white">{KIND_LABEL[live.kind] ?? live.kind}</h1>
@@ -294,17 +294,18 @@ export function DealWorkspace({
               </span>
             )}
           </div>
-          {readOnly ? (
+          {readOnly && (
             <p className="text-mute text-sm mt-0.5">Только просмотр — менять может РОП или Максим</p>
-          ) : (
-            <Hint className="mt-2 mb-0">
-              Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
-              сверху. Перемещение из карточки доступно для отложки и обещания.
-            </Hint>
           )}
         </div>
         <StageBadge stage={stage} className="text-[14px] px-3 py-1.5 font-semibold shrink-0" />
       </div>
+      {!readOnly && (
+        <Hint>
+          Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
+          сверху. Перемещение из карточки доступно для отложки и обещания.
+        </Hint>
+      )}
 
       <div className="space-y-5">
         <DealActionsBar
