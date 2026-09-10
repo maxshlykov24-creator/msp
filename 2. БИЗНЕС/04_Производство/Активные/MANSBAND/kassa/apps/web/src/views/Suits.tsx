@@ -190,7 +190,7 @@ function CompletenessTab() {
           </Button>
         </div>
         {consultant && (
-          <div className="text-[12px] text-mute">Комплектность своего магазина.</div>
+          <div className="hint-only text-[12px] text-mute">Комплектность своего магазина.</div>
         )}
         {error && <div className="text-[12px] text-red-300">{error}</div>}
         {USE_MOCK && (
@@ -292,7 +292,7 @@ export function BreaksTab() {
             </div>
           )}
         </div>
-        <div className="text-[12px] text-mute">
+        <div className="hint-only text-[12px] text-mute">
           Запись появляется в момент продажи части костюма без пары. Снимок сверяет остатки и
           ловит разбиение, которое прошло не через кассу.
         </div>

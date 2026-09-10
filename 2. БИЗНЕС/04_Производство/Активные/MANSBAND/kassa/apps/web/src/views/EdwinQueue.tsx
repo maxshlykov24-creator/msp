@@ -13,6 +13,7 @@ import { useAuth } from "../auth/AuthContext";
 import { canSeeFinanceQueues } from "../auth/roles";
 import type { Deal } from "../data/types";
 import { DealWorkspace } from "./DealWorkspace";
+import { Hint } from "../lib/hints";
 
 type ExtendedQueueItem = Omit<ReturnType<typeof useStore>["queue"][number], "kind"> & {
   kind:
@@ -327,9 +328,10 @@ export function EdwinQueue() {
         <Send className="text-gold" size={22} />
         <h1 className="text-2xl font-extrabold text-white">Очередь Эдвина</h1>
       </div>
-      <p className="text-mute text-sm mb-5">
-        Сдача, чаевые, возвраты и счета. Для утренней сверки фиксируются кто, когда и каким способом выдал деньги.
-      </p>
+      <Hint>
+        Сдача, чаевые, возвраты, счета и выдача зарплаты. Для утренней сверки фиксируются кто,
+        когда и каким способом выдал деньги. Расход пишется на выбранный счёт.
+      </Hint>
 
       <div className="grid sm:grid-cols-3 gap-3 mb-5">
         <StatTile label="К выдаче сейчас" value={String(pending.length)} tone="amber" sub={money(pendingSum)} />

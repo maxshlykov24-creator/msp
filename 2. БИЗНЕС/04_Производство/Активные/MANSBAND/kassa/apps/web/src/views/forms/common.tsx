@@ -512,7 +512,7 @@ function SarafanField({
               </div>
             )}
           </div>
-          <p className="text-[12px] text-mute mt-1">
+          <p className="hint-only text-[12px] text-mute mt-1">
             {belowThreshold
               ? `Костюмов в чеке нет, поэтому нужен чек от ${money(saryMinCheck)} — сейчас ${money(checkTotal ?? 0)}.`
               : suitCount > 1

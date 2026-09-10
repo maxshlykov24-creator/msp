@@ -221,22 +221,32 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
   }
 
   return (
-    <div className={embedded ? "pb-40" : "max-w-2xl mx-auto pb-40"}>
+    <div className={embedded ? "pb-40" : "max-w-5xl mx-auto pb-40"}>
       {!embedded && (
-        <>
-          <div className="flex items-center gap-2 mb-1">
-            <Gift className="text-gold" size={22} />
-            <h1 className="text-2xl font-extrabold text-white">Ведомость САР</h1>
-          </div>
-          <p className="text-mute text-sm mb-5">
-            Реферальные выплаты за рекомендацию. Отметьте пачку, отправьте переводы, выберите счёт
-            и приложите реальный скрин — без него «отправлено» не поставить. «Учтено в чеке» —
-            бонус применён скидкой при продаже, перевод не нужен.
-          </p>
-        </>
+        <div className="flex items-center gap-2 mb-1">
+          <Gift className="text-gold" size={22} />
+          <h1 className="text-2xl font-extrabold text-white">Ведомость САР</h1>
+        </div>
       )}
+      <Hint>
+        <p>
+          Реферальная выплата за рекомендацию. Сколько костюмов в чеке — столько записей САР. Если
+          костюмов нет — одна запись, и только при чеке от порога в «Настройки мотивации» (по
+          умолчанию 20 000 ₽). Сумма по умолчанию 1 000 ₽.
+        </p>
+        <p>
+          <b>К отправке:</b> отметьте пачку, переведите, выберите счёт и приложите скрин — без
+          скрина статус «отправлено» не ставится. Отправленная пачка пишется расходом «Программа
+          лояльности».
+        </p>
+        <p>
+          <b>Учтено в чеке</b> — бонус уже скидкой при продаже, перевод не нужен. <b>Не найдено</b> —
+          телефон друга не нашёлся в базе; САР не блокируется, колл-менеджер проверяет номер в
+          WhatsApp до перевода.
+        </p>
+      </Hint>
 
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatTile label="К отправке" value={String(pending.length)} tone="amber" sub={money(pendingSum)} />
         <StatTile label="Не найдено" value={String(notFoundCount)} tone="amber" sub="проверить номер" />
         <StatTile label="Учтено в чеке" value={String(inCheck.length)} tone="blue" />
@@ -375,38 +385,39 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
                   </div>
                   <div className="divide-y divide-ink-800">
                     {rows.map((s) => (
-                      <label
+                      <div
                         key={s.id}
-                        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-ink-800/40"
+                        className="flex flex-col gap-3 px-4 py-4 hover:bg-ink-800/40 sm:flex-row sm:items-center"
                       >
-                        <input
-                          type="checkbox"
-                          className="w-4 h-4 accent-gold shrink-0"
-                          checked={selected.has(s.id)}
-                          onChange={() => toggle(s.id)}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-white font-semibold">{money(s.amount)}</span>
-                            <span className="text-mute text-[12px]">
-                              {s.client} · {s.phone}
-                            </span>
-                            <NotFoundBadge s={s} />
-                            <DealLink number={s.refDealNumber} />
+                        <label className="flex items-start sm:items-center gap-3 flex-1 min-w-0 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="w-5 h-5 mt-1 sm:mt-0 accent-gold shrink-0"
+                            checked={selected.has(s.id)}
+                            onChange={() => toggle(s.id)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-white font-semibold text-lg">{money(s.amount)}</span>
+                              <span className="text-mute-soft text-[14px]">
+                                {s.client} · {s.phone}
+                              </span>
+                              <NotFoundBadge s={s} />
+                            </div>
+                            <div className="text-mute text-[13px] mt-0.5">{s.reason}</div>
                           </div>
-                          <div className="text-mute text-[13px] truncate">{s.reason}</div>
+                        </label>
+                        <div className="flex items-stretch gap-2 pl-8 sm:pl-0">
+                          <button
+                            type="button"
+                            onClick={() => copyMsg(s)}
+                            className="inline-flex items-center justify-center gap-1.5 min-h-12 px-4 rounded-xl border border-ink-700 bg-ink-900 text-mute-soft hover:text-white hover:border-white/30 shrink-0"
+                          >
+                            <Copy size={15} /> {copied === s.id ? "Скопировано" : "Текст"}
+                          </button>
+                          <DealButton number={s.refDealNumber} />
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            copyMsg(s);
-                          }}
-                          className="chip bg-ink-700 text-mute-soft hover:text-white inline-flex items-center gap-1.5 shrink-0"
-                        >
-                          <Copy size={13} /> {copied === s.id ? "Скопировано" : "Текст"}
-                        </button>
-                      </label>
+                      </div>
                     ))}
                   </div>
                 </section>
@@ -418,7 +429,7 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
 
       {selectedList.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-ink-700 bg-ink-900/95 backdrop-blur px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
-          <div className="max-w-2xl mx-auto space-y-3">
+          <div className="max-w-5xl mx-auto space-y-3">
             <div className="flex flex-wrap items-center gap-3">
               <div className="text-white text-sm font-semibold">
                 Выбрано {selectedList.length} · {money(selectedSum)}
@@ -476,17 +487,22 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
             {inCheck.map((s) => (
               <div
                 key={s.id}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg bg-ink-900/50 border border-ink-800"
+                className="flex flex-col gap-3 px-4 py-4 rounded-xl bg-ink-900/50 border border-ink-800 sm:flex-row sm:items-center"
               >
-                <BadgePercent size={16} className="text-sky-300/80 shrink-0" />
-                <span className="text-mute-soft text-sm flex-1 min-w-0 truncate">
-                  {s.client} · {money(s.amount)} · скидка в чеке
-                </span>
-                <NotFoundBadge s={s} />
-                <DealLink number={s.refDealNumber} />
-                <span className="text-mute text-[12px] shrink-0">
-                  {shortDate(s.createdAt)} {timeOf(s.createdAt)}
-                </span>
+                <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                  <BadgePercent size={18} className="text-sky-300/80 shrink-0 mt-0.5 sm:mt-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-white font-semibold text-[15px]">{s.client}</span>
+                      <span className="text-mute-soft">{money(s.amount)} · скидка в чеке</span>
+                      <NotFoundBadge s={s} />
+                    </div>
+                    <div className="text-mute text-[13px] mt-0.5">
+                      {shortDate(s.createdAt)} {timeOf(s.createdAt)}
+                    </div>
+                  </div>
+                </div>
+                <DealButton number={s.refDealNumber} />
               </div>
             ))}
           </div>
@@ -503,20 +519,27 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
             {sent.map((s) => (
               <div
                 key={s.id}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg bg-ink-900/50 border border-ink-800 opacity-75"
+                className="flex flex-col gap-3 px-4 py-4 rounded-xl bg-ink-900/50 border border-ink-800 sm:flex-row sm:items-center"
               >
-                <Check size={16} className="text-white/70 shrink-0" />
-                <span className="text-mute-soft text-sm flex-1 min-w-0 truncate">
-                  {s.client} · {money(s.amount)}
-                  {s.screenshotAttached ? " · скрин" : ""}
-                </span>
-                <NotFoundBadge s={s} />
-                <DealLink number={s.refDealNumber} />
-                <span className="text-mute text-[12px] shrink-0" title="Дата отправки">
-                  {s.sentAt
-                    ? `${shortDate(s.sentAt)} ${timeOf(s.sentAt)}`
-                    : `${shortDate(s.createdAt)} ${timeOf(s.createdAt)}`}
-                </span>
+                <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                  <Check size={18} className="text-white/70 shrink-0 mt-0.5 sm:mt-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-white font-semibold text-[15px]">{s.client}</span>
+                      <span className="text-mute-soft">
+                        {money(s.amount)}
+                        {s.screenshotAttached ? " · скрин" : ""}
+                      </span>
+                      <NotFoundBadge s={s} />
+                    </div>
+                    <div className="text-mute text-[13px] mt-0.5" title="Дата отправки">
+                      {s.sentAt
+                        ? `${shortDate(s.sentAt)} ${timeOf(s.sentAt)}`
+                        : `${shortDate(s.createdAt)} ${timeOf(s.createdAt)}`}
+                    </div>
+                  </div>
+                </div>
+                <DealButton number={s.refDealNumber} />
               </div>
             ))}
           </div>

@@ -5,6 +5,7 @@ import { api, USE_MOCK } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { shortDate, timeOf } from "../lib/format";
 import { Button, Modal } from "../components/ui";
+import { Hint } from "../lib/hints";
 
 interface AuditEntry {
   id: string;
@@ -135,7 +136,9 @@ export function HistoryScreen() {
         <History className="text-gold" size={22} />
         <h1 className="text-2xl font-extrabold text-white">История</h1>
       </div>
-      <p className="text-mute text-sm mb-5">Общий аудит действий в кассе</p>
+      <Hint>
+        Общий журнал действий в кассе: кто, что и по какой заявке. Доступен РОП и администратору.
+      </Hint>
 
       {!canAudit ? (
         <div className="card text-mute text-sm">
@@ -390,7 +393,11 @@ export function RolesScreen() {
           </button>
         )}
       </div>
-      <p className="text-mute text-sm mb-5">Доступы сотрудников к кассе</p>
+      <Hint>
+        Доступы сотрудников к кассе. Менять роли и создавать пользователей может только
+        администратор. Кнопка «Сбросить» выдаёт новый временный пароль. Ведомость доступов видна
+        один раз: после перезагрузки экрана останется только сброс.
+      </Hint>
 
       {!canManage ? (
         <div className="card text-mute text-sm">Управление ролями доступно только администратору.</div>

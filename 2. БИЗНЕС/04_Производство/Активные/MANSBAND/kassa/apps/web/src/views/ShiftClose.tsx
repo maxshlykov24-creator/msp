@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Wallet, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Card, Button } from "../components/ui";
 import { money } from "../lib/format";
+import { Hint } from "../lib/hints";
 
 const EXPECTED = [
   { method: "Наличные", system: 41800 },
@@ -28,7 +29,10 @@ export function ShiftClose() {
         <Wallet className="text-gold" size={22} />
         <h1 className="text-2xl font-extrabold text-white">Закрытие смены</h1>
       </div>
-      <p className="text-mute text-sm mb-5">Сверка факта с системой по способам оплаты. Без сверки смена не закрывается.</p>
+      <Hint>
+        Сверка факта с системой по способам оплаты. Без сверки смена не закрывается. Расхождение —
+        разница между введённым фактом и суммой в системе.
+      </Hint>
 
       <Card className="p-0 overflow-hidden">
         <table className="w-full text-left">

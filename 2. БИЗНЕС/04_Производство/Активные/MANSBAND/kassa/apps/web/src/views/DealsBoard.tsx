@@ -12,6 +12,7 @@ import {
 } from "../data/mock";
 import type { Deal, DealKind } from "../data/types";
 import { DealWorkspace } from "./DealWorkspace";
+import { Hint } from "../lib/hints";
 
 /**
  * Фильтры на доске.
@@ -271,13 +272,16 @@ export function DealsBoard({
         <div>
           <h1 className="text-2xl font-extrabold text-white">Заявки</h1>
           <p className="text-mute text-sm mt-0.5">
-            {dealsLoading
-              ? "Загрузка заявок…"
-              : `${filtered.length} из ${deals.length} · все операции магазина`}
+            {dealsLoading ? "Загрузка заявок…" : `${filtered.length} из ${deals.length}`}
           </p>
         </div>
         <Button onClick={onNew}>+ Новая заявка</Button>
       </div>
+      <Hint>
+        Все операции магазина. Фильтры по виду и этапу. Во вкладке «Отложка» — заявки вида
+        «Отложка» и продажи на этапах «Ждет товар», «Товар в пути», «Товар в магазине», «Товар
+        отложен». Клик по строке открывает карточку.
+      </Hint>
 
       {/* Подразделы по виду заявки */}
       <div className="flex gap-1.5 mb-3 flex-wrap">

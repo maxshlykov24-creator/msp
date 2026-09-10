@@ -4,6 +4,7 @@ import { StatTile, Card } from "../components/ui";
 import { moneyPlain } from "../lib/format";
 import { api, USE_MOCK } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { Hint } from "../lib/hints";
 
 // Формат сводки — формулы Миши (созвон 20.08), см. apps/api/src/services/stats.ts.
 
@@ -235,11 +236,12 @@ export function Dashboard() {
         <h1 className="text-2xl font-extrabold text-white">Статистика</h1>
         {loading && <Loader2 size={16} className="text-mute animate-spin" />}
       </div>
-      <p className="text-mute text-sm mb-4">
+      <Hint>
         {ownOnly ? "Только твои заявки. " : ""}
-        Средний чек = выручка / клиенты. Конверсия = успехи / (клиенты − не-сливы − сливы, добитые
-        в другом магазине). UPT = позиции в чеках / чеки.
-      </p>
+        Формулы сводки: средний чек = выручка / клиенты. Конверсия = успехи / (клиенты − не-сливы −
+        сливы, добитые в другом магазине). UPT = позиции в чеках / чеки. Костюм в UPT считается
+        парой пиджак плюс брюки, не тремя отдельными позициями.
+      </Hint>
 
       <div className="card p-3 mb-5 flex flex-wrap items-center gap-2">
         <div className="inline-flex border border-ink-700 rounded-lg overflow-hidden">

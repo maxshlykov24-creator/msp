@@ -30,6 +30,7 @@ import { useStore } from "../store";
 import { money } from "../lib/format";
 import { BarcodeScannerModal } from "../components/BarcodeScanner";
 import { SuitModelRow } from "../components/SuitModelRow";
+import { Hint } from "../lib/hints";
 import { BreaksTab, StockTab } from "./Suits";
 
 type LocSlot = { label: string; match: (name: string) => boolean };
@@ -514,11 +515,31 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         <Boxes className="text-gold" size={22} />
         <h1 className="text-2xl font-extrabold text-white">Поиск товара</h1>
       </div>
-      <p className="text-mute text-sm mb-5">
-        {isSuitSection
-          ? "Костюм — пиджак и брюки одной вариации, жилет делает тройку. Смокинг отдельно."
-          : "Разделы зала по виду вещи, не по папкам МойСклад. Клик по вариации — остатки по складам."}
-      </p>
+      {isSuitSection ? (
+        <Hint>
+          <p>
+            Костюм — пиджак и брюки одной вариации, размеры могут расходиться. Жилет входит в тот
+            же костюм и делает тройку. Смокинг отдельно. Комплекты МойСклад не используются.
+          </p>
+          <p>
+            Зелёная цифра — сколько цельных. Раскройте модель, затем размер: первый клик — цельные
+            на Новокузнецкой, Бауманской и Центральном. Второй клик — все положения, включая
+            полупарки и «в пути».
+          </p>
+        </Hint>
+      ) : (
+        <Hint>
+          <p>
+            Разделы зала по виду вещи, не по папкам МойСклад. Брюки в «Одежде» — только штучные
+            (слаксы, палаццо, чинос). Парные брюки костюма сюда не попадают. Сорочки из папки
+            «1. Костюмы» идут в Рубашки. Сертификаты скрыты.
+          </p>
+          <p>
+            Клик по вариации открывает остатки по складам. СДЭК в расширении — положение в заявке,
+            не склад МойСклад.
+          </p>
+        </Hint>
+      )}
 
       <div className={`flex gap-1.5 flex-wrap ${section ? "mb-2" : "mb-3"}`}>
         <button

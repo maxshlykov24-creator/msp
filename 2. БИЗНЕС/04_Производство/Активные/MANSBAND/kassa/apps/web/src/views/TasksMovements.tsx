@@ -28,6 +28,7 @@ import { shortDate, timeOf } from "../lib/format";
 import type { Deal } from "../data/types";
 import { DealWorkspace } from "./DealWorkspace";
 import { SaryScreen } from "./SaryScreen";
+import { Hint } from "../lib/hints";
 
 type CreateMode = "chooser" | "task" | "movement" | null;
 
@@ -460,9 +461,6 @@ export function TasksMovements() {
       <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-extrabold text-white">Задачи</h1>
-          <p className="text-mute text-sm mt-1">
-            Сначала свой магазин, фильтром можно посмотреть чужие перемещения
-          </p>
         </div>
         <Button
           onClick={() => {
@@ -477,6 +475,17 @@ export function TasksMovements() {
           <Plus size={16} /> Новая задача
         </Button>
       </div>
+      <Hint>
+        <p>
+          Очередь перемещений и прочих задач. По умолчанию свой магазин, фильтром можно открыть
+          чужие. Перемещение в два шага: отправил → в пути → приёмка. Документ в МойСклад
+          создаётся при приёмке, не при отправке.
+        </p>
+        <p>
+          Задачи с Центрального склада уходят логисту. Колонка «этап» — этап заявки, не статус
+          задачи.
+        </p>
+      </Hint>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="inline-flex border border-ink-700 rounded-lg overflow-hidden flex-wrap">
@@ -643,10 +652,6 @@ export function TasksMovements() {
             <Gift className="text-gold" size={18} />
             <h2 className="text-lg font-bold text-white">Сары · реферальные выплаты</h2>
           </div>
-          <p className="text-mute text-[13px] mb-4">
-            Пачки по дню: отметьте галочками, отправьте переводы и приложите реальный скрин — без
-            файла отметить отправленными нельзя.
-          </p>
           <SaryScreen embedded />
         </section>
       )}

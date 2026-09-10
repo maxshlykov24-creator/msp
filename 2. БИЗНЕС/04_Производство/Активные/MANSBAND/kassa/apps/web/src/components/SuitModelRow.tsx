@@ -111,6 +111,9 @@ export function SuitModelRow({
 
       {open && (
         <div className="border-t border-ink-800 overflow-x-auto">
+          <div className="hint-only px-4 pt-3 text-[12px] text-mute">
+            Нажмите размер: сначала цельные на трёх складах, ещё раз — все положения.
+          </div>
           <table className="w-full text-sm min-w-[520px]">
             <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-800">
               <tr>

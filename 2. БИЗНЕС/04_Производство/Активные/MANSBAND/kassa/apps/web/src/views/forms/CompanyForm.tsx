@@ -199,7 +199,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
 
       <Card>
         <SectionTitle>Документы и выдача</SectionTitle>
-        <p className="text-[12px] text-mute mb-3">
+        <p className="hint-only text-[12px] text-mute mb-3">
           При сохранении Эдвину автоматически уходит задача «Выставить счет». Номер и дату счёта
           он заполняет в своей очереди.
         </p>

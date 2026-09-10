@@ -14,6 +14,7 @@ import {
   type ConsultantData,
 } from "./common";
 import { STORE_ADDRESS } from "../../data/mock";
+import { Hint } from "../../lib/hints";
 
 export function SlivForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
@@ -69,7 +70,7 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
     <FormShell
       onBack={onDone}
       title="Слив"
-      subtitle="Передать клиента в другой шоурум — конверсия защитит обоих консультантов"
+      subtitle="Оффлайн"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
       missingRequired={missingRequired}
@@ -84,6 +85,10 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
         />
       }
     >
+      <Hint>
+        Передать клиента в другой шоурум: конверсия защитит обоих консультантов. Слив, добитый в
+        другом магазине, не портит конверсию исходного.
+      </Hint>
       <Card>
         <SectionTitle>Консультант и клиент</SectionTitle>
         <ConsultantFields data={consultants} onChange={setConsultants} />

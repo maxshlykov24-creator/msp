@@ -8,6 +8,7 @@ import { Button, Modal, StatTile } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { canSeeFinanceQueues } from "../auth/roles";
 import { DealWorkspace } from "./DealWorkspace";
+import { Hint } from "../lib/hints";
 
 type CompanyPatch = {
   documentsStatus?: "pending" | "ready" | "handed";
@@ -214,9 +215,10 @@ export function MishaQueue() {
         <Building2 className="text-gold" size={22} />
         <h1 className="text-2xl font-extrabold text-white">Очередь Миши</h1>
       </div>
-      <p className="text-mute text-sm mb-5">
-        Документы и ателье по продажам компаний. Шаги по заявке идут по порядку.
-      </p>
+      <Hint>
+        Документы и ателье по продажам компаний. Шаги по заявке идут по порядку: сначала
+        предыдущий, потом следующий. Консультанту эта очередь не показывается.
+      </Hint>
 
       <div className="grid sm:grid-cols-3 gap-3 mb-5">
         <StatTile label="В работе" value={String(pending.length)} tone="amber" />

@@ -6,6 +6,7 @@ import { Badge, Button, Modal, Field, StatTile } from "../components/ui";
 import type { Certificate } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { Hint } from "../lib/hints";
 
 interface ImportPreview {
   valid: number;
@@ -100,7 +101,6 @@ export function Certificates() {
       <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
         <div>
           <h1 className="text-2xl font-extrabold text-white mb-1">Реестр сертификатов</h1>
-          <p className="text-mute text-sm">Актуальные балансы · поиск и фильтр по сроку</p>
         </div>
         <div className="flex gap-2">
           {user?.role === "admin" && (
@@ -114,6 +114,11 @@ export function Certificates() {
           </Button>
         </div>
       </div>
+      <Hint>
+        Актуальные балансы пластиковых и электронных сертификатов. Поиск и фильтр по сроку.
+        «Не погашено» — сумма остатков на балансах. Импорт CSV доступен администратору: сначала
+        обязателен прогон без записи.
+      </Hint>
 
       <div className="grid sm:grid-cols-3 gap-3 mb-4 mt-4">
         <StatTile label="Активных" value={String(active.length)} tone="green" />

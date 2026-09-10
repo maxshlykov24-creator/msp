@@ -19,6 +19,7 @@ import { DeliveryForm } from "./forms/DeliveryForm";
 import { DefectForm } from "./forms/DefectForm";
 import { RefundForm } from "./forms/RefundForm";
 import { ExchangeForm } from "./forms/ExchangeForm";
+import { Hint } from "../lib/hints";
 
 const KINDS: Record<FunnelType, { kind: DealKind; icon: typeof ShoppingBag }[]> = {
   offline: [
@@ -109,7 +110,11 @@ export function NewDeal({
   return (
     <div className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-extrabold text-white mb-1">Новая заявка</h1>
-      <p className="text-mute text-sm mb-5">Выберите тип воронки и вид заявки</p>
+      <Hint>
+        Выберите воронку и вид заявки. Оффлайн — продажа, компания, сертификат, аренда, отложка,
+        обещание, не слив и слив. Онлайн — электронный сертификат и доставка СДЭК. Дефекты и
+        возврат — отдельные воронки.
+      </Hint>
 
       <div className="inline-flex rounded-lg border border-ink-700 overflow-hidden mb-6 flex-wrap">
         {(["offline", "online", "defects", "return"] as FunnelType[]).map((f) => (

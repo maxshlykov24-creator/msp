@@ -4,6 +4,7 @@ import { api, USE_MOCK } from "../api/client";
 import { Button } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { invalidateAppSettings } from "../lib/appSettings";
+import { Hint } from "../lib/hints";
 import { SUIT_PRICE_RULES_DEFAULT } from "@kassa/shared";
 
 interface PriceAudit {
@@ -79,7 +80,7 @@ function TierEditor({
   return (
     <div>
       <div className="field-label">{label}</div>
-      <div className="text-[12px] text-mute mb-2">{hint}</div>
+      <div className="hint-only text-[12px] text-mute mb-2">{hint}</div>
       <div className="space-y-2">
         {rows.map((row) => (
           <div key={row.id} className="flex gap-2 items-center">
@@ -188,7 +189,7 @@ function PayrollEnqueueCard() {
     <div className="card p-4 space-y-3">
       <div>
         <div className="text-white font-semibold">Расчёт ЗП за период</div>
-        <div className="text-[12px] text-mute mt-1">
+        <div className="hint-only text-[12px] text-mute mt-1">
           Автоматика считает по вторникам за прошлую неделю. Здесь — расчёт за любой период
           и задача Эдвину «Выдать зарплату».
         </div>
@@ -264,7 +265,7 @@ function PriceAuditCard() {
     <div className="card p-4 space-y-3">
       <div>
         <div className="text-white font-semibold">Цены и синк номенклатуры</div>
-        <div className="text-[12px] text-mute mt-1">
+        <div className="hint-only text-[12px] text-mute mt-1">
           Прайс правится в МойСклад. После обновления прогони синк и проверь, что позиций без цены нет.
         </div>
       </div>
@@ -358,7 +359,7 @@ function SuitPriceMatrixCard({
     <div className="card p-4 space-y-3">
       <div>
         <div className="text-white font-semibold">Матрица цен костюмов</div>
-        <div className="text-[12px] text-mute mt-1">
+        <div className="hint-only text-[12px] text-mute mt-1">
           Цена костюма в кассе при сборке пиджака и брюк (+ жилета) одной вариации. Правило,
           какую строку подобрать, — в коде; тут только цена и включённость.
         </div>
@@ -515,9 +516,10 @@ export function SettingsScreen() {
         <SlidersHorizontal className="text-gold" size={22} />
         <h1 className="text-2xl font-extrabold text-white">Настройки мотивации</h1>
       </div>
-      <p className="text-mute text-sm mb-5">
+      <Hint>
         Порог чека для САР и правила расчёта зарплаты. Условия единые для всех консультантов.
-      </p>
+        Доступ — РОП и администратор.
+      </Hint>
 
       {loading ? (
         <div className="card py-10 text-center text-mute">Загружаем настройки…</div>
@@ -533,7 +535,7 @@ export function SettingsScreen() {
                 value={saryMinCheck}
                 onChange={(e) => setSaryMinCheck(e.target.value.replace(/\D/g, ""))}
               />
-              <div className="text-[12px] text-mute mt-1">
+              <div className="hint-only text-[12px] text-mute mt-1">
                 Порог работает, только когда костюмов в чеке нет: тогда САР одна и лишь при чеке
                 от этой суммы.
               </div>
@@ -546,7 +548,7 @@ export function SettingsScreen() {
                 onChange={(e) => setSuitGroups(e.target.value)}
                 placeholder={"Костюмы\nПолупарки"}
               />
-              <div className="text-[12px] text-mute mt-1">
+              <div className="hint-only text-[12px] text-mute mt-1">
                 Одна группа в строке, сравнение по началу пути: «Костюмы» покрывает и
                 «Костюмы/Тройки». Сколько костюмов в чеке — столько САР.
               </div>
@@ -575,7 +577,7 @@ export function SettingsScreen() {
                 />
               </label>
             </div>
-            <div className="text-[12px] text-mute">
+            <div className="hint-only text-[12px] text-mute">
               За день платится максимум из «% от выручки» и ставки. Рабочий день — день, когда у
               консультанта есть хотя бы одна заявка.
             </div>
@@ -584,7 +586,7 @@ export function SettingsScreen() {
           <div className="card p-4 space-y-5">
             <div>
               <div className="text-white font-semibold">Премии за период</div>
-              <div className="text-[12px] text-mute mt-1">
+              <div className="hint-only text-[12px] text-mute mt-1">
                 Премия считается процентом от выручки консультанта за период, а не суммой.
               </div>
             </div>
@@ -605,7 +607,7 @@ export function SettingsScreen() {
           <div className="card p-4 space-y-5">
             <div>
               <div className="text-white font-semibold">Штрафы за период</div>
-              <div className="text-[12px] text-mute mt-1">
+              <div className="hint-only text-[12px] text-mute mt-1">
                 Тот же конструктор, но процент вычитается из итога. Пусто — штрафов нет.
               </div>
             </div>

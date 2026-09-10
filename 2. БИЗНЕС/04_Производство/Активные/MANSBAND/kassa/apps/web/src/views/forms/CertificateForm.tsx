@@ -404,7 +404,7 @@ export function CertificateForm({ onDone, digital = false }: { onDone: () => voi
           <span className="text-mute">Баланс сертификата после активации</span>
           <span className="text-white font-semibold">{money(certNominal)}</span>
         </div>
-        <p className="text-[12px] text-mute mb-3">
+        <p className="hint-only text-[12px] text-mute mb-3">
           Если клиент платит больше номинала — появится сдача и чаевые. На баланс сертификата уходит только номинал.
         </p>
         <PaymentSection
