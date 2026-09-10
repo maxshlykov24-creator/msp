@@ -161,6 +161,7 @@ except ValueError as exc:
     assert "не больше половины заданий" in str(exc), exc
 import wb_supply
 assert wb_supply.box_limit(2) == 1 and wb_supply.box_limit(3) == 1 and wb_supply.box_limit(10) == 5
+assert wb_supply.box_limit(1) == 0 and wb_supply.box_limit(0) == 0
 # отказ площадки 409 не роняет «Собрано», а уходит заметкой
 db.delete_wb_boxes(sup["id"], ["WB-TRBX-2"])
 _real_req = wb_supply.req
@@ -431,5 +432,21 @@ assert len(db.list_wb_boxes(pvz["id"])) == 1, [dict(b) for b in db.list_wb_boxes
 # две поставки в выборке — короба не заводим, число у них своё
 out = supply_flow.assemble(mgt + kgt, split=False, boxes=1)
 assert not out["boxes"] and any("поставки" in n for n in out["notes"]), out
+
+# 22. поставка из одного задания: по правилу половины предел ноль, но первый
+# короб мы не блокируем, а спрашиваем площадку — решение за WB, не за нами
+solo_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-SOLO", "Одно задание", "2026-09-05T11:00:00", "тест", "1")
+one = db.upsert_shipment(
+    client_id, wb_cab, "wb", "fbs", "204", "Новый", "2026-09-05", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:09", "cargo_type": "1", "office": "ПВЗ Ленина 1"},
+)
+db.set_shipment_supply([one], "WB-GI-SOLO")
+assert len(supply_flow.make_boxes(solo_id, 1)["boxes"]) == 1, "первый короб не дошёл до площадки"
+try:
+    supply_flow.make_boxes(solo_id, 1)
+    raise AssertionError("второй короб на одном задании прошёл локальную проверку")
+except ValueError as exc:
+    assert "не больше половины заданий" in str(exc), exc
 
 print("все проверки поставок, сборки и КиЗ прошли")
