@@ -1064,12 +1064,20 @@ SHIP_EXTRA = (
 
 def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, shipped_at, article, barcode, name, qty, ms_order_id, marks_count, pulled_at, extra=None):
     extra = extra or {}
-    more = [str(extra.get(col) or "") for col in SHIP_EXTRA]
     conn = connect()
     existing = conn.execute(
-        "SELECT id FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
+        "SELECT id, pickup_allowed, office FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
         (cabinet_id, kind, ext_id),
     ).fetchone()
+    if existing:
+        old_flag = str(existing["pickup_allowed"] or "") if "pickup_allowed" in existing.keys() else ""
+        # запрет ПВЗ ставит поставка, выгрузка его не затирает
+        if old_flag == "0":
+            extra["pickup_allowed"] = "0"
+            extra["office"] = (existing["office"] if "office" in existing.keys() else "") or extra.get("office") or ""
+        elif "pickup_allowed" not in extra:
+            extra["pickup_allowed"] = old_flag
+    more = [str(extra.get(col) or "") for col in SHIP_EXTRA]
     if existing:
         conn.execute(
             "UPDATE shipments SET client_id=?, marketplace=?, status=?, shipped_at=?, article=?, "

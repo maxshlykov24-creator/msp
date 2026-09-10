@@ -39,6 +39,8 @@ WB_CHUNK = 100    # жёсткий предел метода
 MODE_POSTING = "posting"
 MODE_BOTH = "both"
 MODE_PRODUCT = "product"
+MODE_POSTING_BOX = "posting_box"
+MODE_BOX = "box"
 MODES = (MODE_POSTING, MODE_BOTH, MODE_PRODUCT)
 
 
@@ -512,3 +514,93 @@ def build(rows, mode=MODE_POSTING, fetch=True):
     out = io.BytesIO()
     writer.write(out)
     return out.getvalue(), notes, fitted + own
+
+
+def merge_pdfs(blobs):
+    """Склеить несколько PDF в один, порядок страниц как в списке."""
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    pages = 0
+    for blob in blobs:
+        if not blob:
+            continue
+        try:
+            reader = PdfReader(io.BytesIO(blob))
+        except Exception:
+            continue
+        for page in reader.pages:
+            writer.add_page(page)
+            pages += 1
+    if not pages:
+        raise LabelError("Нечего печатать: файлы этикеток пустые.")
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue(), pages
+
+
+def build_posting_boxes(rows, box_pngs):
+    """Лента WB: задания группы, затем QR её грузоместа. Одна качалка стикеров.
+
+    rows уже в нужном порядке (без короба первыми, потом по коробкам).
+    box_pngs — {trbx_ext: {png, caption}}.
+    """
+    notes = []
+    font = _font()
+    wb_png = {}
+    by_cab = {}
+    for row in rows:
+        by_cab.setdefault(row["cabinet_id"], []).append(row)
+    for cab_id, group in by_cab.items():
+        cab = group[0]["cabinet"]
+        if not cab:
+            notes.append("Нет доступа к кабинету %s, этикетки не запрошены." % cab_id)
+            continue
+        got, more = wb_stickers(cab, [r["ext_id"] for r in group])
+        wb_png.update(got)
+        notes.extend(more)
+
+    groups = []
+    seen = []
+    loose = []
+    for row in rows:
+        ext = str(row.get("box") or "")
+        if not ext:
+            loose.append(row)
+            continue
+        if ext not in seen:
+            seen.append(ext)
+            groups.append((ext, []))
+        for key, bag in groups:
+            if key == ext:
+                bag.append(row)
+                break
+    if loose:
+        groups = [("", loose)] + groups
+
+    buf, c = _canvas()
+    own = 0
+    printed_box = set()
+    for ext, group in groups:
+        for row in group:
+            key = "".join(ch for ch in str(row["ext_id"]) if ch.isdigit())
+            got = wb_png.get(key)
+            if got:
+                sign = " ".join(x for x in (got["part_a"], got["part_b"]) if x)
+                png_label(c, got["png"], "%s · %s" % (row["ext_id"], sign), font)
+                own += 1
+        if ext and ext not in printed_box:
+            item = (box_pngs or {}).get(ext)
+            if item and item.get("png"):
+                png_label(c, item["png"], item.get("caption") or ext, font)
+                own += 1
+                printed_box.add(ext)
+    c.save()
+    if not own:
+        raise LabelError(
+            "Нечего печатать. "
+            + ("; ".join(notes) if notes else "WB не отдал стикеры отправлений.")
+        )
+    if loose:
+        notes.append("без грузоместа: %s. Их этикетки напечатаны, QR короба нет." % len(loose))
+    return buf.getvalue(), notes, own

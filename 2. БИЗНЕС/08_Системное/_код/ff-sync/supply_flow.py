@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pack
 import wb_supply
 from db import (
+    catalog_card,
     delete_shipments_by_ext,
     delete_wb_boxes,
     get_cabinet,
@@ -510,6 +511,92 @@ def boxes_pdf(supply_id, box_ids=None):
     ]
     pdf, pages = labels.build_pngs(items)
     return pdf, notes, pages
+
+
+def _label_payload(rows):
+    """Поля этикетки: бренд и цвет только из каталога, в задании их нет."""
+    out = []
+    for s in rows:
+        cab = get_cabinet(s["cabinet_id"])
+        card = catalog_card(s["client_id"], barcode=s["barcode"] or "", article=s["article"] or "")
+        out.append(
+            {
+                "cabinet_id": s["cabinet_id"],
+                "cabinet": cab,
+                "marketplace": s["marketplace"],
+                "ext_id": s["ext_id"],
+                "article": s["article"] or "",
+                "barcode": (s["barcode"] or "") or card.get("barcode") or "",
+                "name": s["name"] or card.get("name") or "",
+                "client": s["client_name"] if "client_name" in s.keys() else "",
+                "brand": card.get("brand") or "",
+                "color": card.get("color") or "",
+                "size": card.get("size") or "",
+                "box": (s["trbx_ext"] or ""),
+                "id": s["id"],
+            }
+        )
+    return out
+
+
+def _supply_rows(supply, ship_ids):
+    members = list_supply_shipments(supply["cabinet_id"], supply["ext_id"])
+    if not ship_ids:
+        return members
+    want = {int(x) for x in ship_ids}
+    have = {r["id"] for r in members}
+    if want - have:
+        raise ValueError("в этой поставке таких заданий нет")
+    return [r for r in members if r["id"] in want]
+
+
+def print_labels(supply_id, ship_ids, mode):
+    """Печать из окна поставки: товар, отправление, отправление + грузоместо, короб."""
+    import labels
+
+    supply = _supply(supply_id)
+    rows = _supply_rows(supply, ship_ids)
+    if not rows:
+        raise ValueError("нечего печатать")
+    mode = str(mode or labels.MODE_POSTING)
+    boxes = list_wb_boxes(supply["id"])
+    by_ext = {b["ext_id"]: b for b in boxes}
+
+    def box_ids_of(group):
+        seen = []
+        for r in group:
+            ext = r["trbx_ext"] or ""
+            if ext and ext in by_ext and by_ext[ext]["id"] not in seen:
+                seen.append(by_ext[ext]["id"])
+        return seen
+
+    if mode == labels.MODE_BOX:
+        ids = box_ids_of(rows) or ([b["id"] for b in boxes] if not ship_ids else [])
+        if not ids:
+            raise ValueError("у выбранных заданий нет грузоместа. Сначала уложи их в короб или печатай отправление.")
+        return boxes_pdf(supply_id, ids)
+    if mode == labels.MODE_PRODUCT:
+        return labels.build(_label_payload(rows), mode=labels.MODE_PRODUCT)
+    if mode == labels.MODE_POSTING:
+        return labels.build(_label_payload(rows), mode=labels.MODE_POSTING)
+    if mode != labels.MODE_POSTING_BOX:
+        raise ValueError("неизвестный режим печати")
+
+    need = [b["ext_id"] for b in boxes if b["id"] in box_ids_of(rows)]
+    box_pngs = {}
+    extra_notes = []
+    if need:
+        cab = _cab_of_supply(supply)
+        stickers, more = wb_supply.box_stickers(cab, supply["ext_id"], need)
+        extra_notes.extend(more)
+        counts = {b["ext_id"]: b["orders"] for b in boxes}
+        for s in stickers:
+            box_pngs[s["ext_id"]] = {
+                "png": s["png"],
+                "caption": "%s · %s · %s шт" % (supply["ext_id"], s["barcode"] or s["ext_id"], counts.get(s["ext_id"], 0)),
+            }
+    pdf, notes, pages = labels.build_posting_boxes(_label_payload(rows), box_pngs)
+    return pdf, notes + extra_notes, pages
 
 
 def supply_pdf(supply_id):

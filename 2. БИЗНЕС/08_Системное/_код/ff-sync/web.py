@@ -1154,6 +1154,27 @@ def wb_supply_deliver(supply_id: int, data: dict = Body(None), ff_session: str =
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@app.post("/api/wb/supplies/{supply_id}/labels")
+def wb_supply_labels(supply_id: int, data: dict = Body(None), ff_session: str = Cookie(default="")):
+    """Печать из окна поставки: те же этикетки, плюс QR грузоместа."""
+    who(ff_session)
+    init_db()
+    import labels as labels_mod
+    import supply_flow
+
+    body = data or {}
+    mode = str(body.get("mode") or labels_mod.MODE_POSTING)
+    try:
+        pdf, notes, pages = supply_flow.print_labels(supply_id, body.get("ids") or [], mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except labels_mod.LabelError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return pdf_file("Этикетки_поставка_%s.pdf" % time.strftime("%Y-%m-%d_%H-%M"), pdf, notes, pages)
+
+
 @app.post("/api/wb/supplies/{supply_id}/boxes.pdf")
 def wb_supply_boxes_pdf(supply_id: int, data: dict = Body(None), ff_session: str = Cookie(default="")):
     who(ff_session)

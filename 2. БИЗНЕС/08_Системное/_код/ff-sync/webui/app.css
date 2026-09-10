@@ -296,6 +296,7 @@ table.tbl .empty{text-align:center;color:var(--mute-2);padding:28px;font-size:13
   padding:10px 12px;border-radius:10px;cursor:pointer;white-space:nowrap;
 }
 .print-menu button:hover{background:var(--glass-2)}
+.wb-sec-acts .print-menu{top:calc(100% + 8px);bottom:auto;right:0;left:auto}
 table.asm-tbl{font-size:12.5px;min-width:1480px;width:100%}
 table.asm-tbl th,table.asm-tbl td{padding:9px 10px;vertical-align:middle}
 table.asm-tbl th.ph,table.asm-tbl td.ph{width:44px;padding:6px}

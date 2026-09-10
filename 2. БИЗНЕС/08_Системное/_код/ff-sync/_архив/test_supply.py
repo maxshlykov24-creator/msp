@@ -98,6 +98,9 @@ def fake_req(method, url, headers=None, **kw):
         return Fake(200, {"orders": [{"id": i, "metaDetails": [
             {"key": "sgtin", "value": WB_SENT.get(str(i)), "decision": "filled" if WB_SENT.get(str(i)) else "required"}
         ]} for i in ids]})
+    if "/orders/stickers" in url:
+        ids = (kw.get("json") or {}).get("orders") or []
+        return Fake(200, {"stickers": [{"orderId": i, "file": base64.b64encode(PNG).decode(), "partA": "A", "partB": "B"} for i in ids]})
     if url.endswith("/meta/sgtin") and method == "PUT":
         WB_SENT[url.rsplit("/orders/", 1)[1].split("/")[0]] = (kw.get("json") or {}).get("sgtins") or []
         return Fake(204)
@@ -465,7 +468,7 @@ assert statuses.dropoff("3") == statuses.SC
 assert "Домодедовская" in statuses.PVZ and "28" in statuses.PVZ
 assert "Кавказский" in statuses.SC and "57" in statuses.SC
 assert shipments_pull.wb_office({"cargoType": 1, "isPickupPointShipmentAllowed": True, "offices": ["Москва_Север"]}) == statuses.PVZ
-assert shipments_pull.wb_office({"cargoType": 1, "isPickupPointShipmentAllowed": False}) == statuses.SC
+assert shipments_pull.wb_office({"cargoType": 1, "isPickupPointShipmentAllowed": False}) == statuses.PVZ
 
 denied = db.upsert_shipment(
     client_id, wb_cab, "wb", "fbs", "301", "Новый", "2026-09-05", "ART-1", "2000000000019",
@@ -514,5 +517,16 @@ finally:
 flipped = db.get_wb_supply(pvz_then)
 assert str(flipped["pickup_allowed"]) == "0", dict(flipped)
 assert db.get_shipments_by_ids([deny_ship])[0]["office"] == statuses.SC
+
+# 24. печать из окна поставки: своё задание, чужое не берём
+pdf, notes, pages = supply_flow.print_labels(sup["id"], ships[:1], "product")
+assert pages >= 1 and pdf[:4] == b"%PDF", (pages, pdf[:8])
+try:
+    supply_flow.print_labels(sup["id"], [oz_ship], "product")
+    raise AssertionError("напечатали чужое задание")
+except ValueError as exc:
+    assert "таких заданий нет" in str(exc), exc
+pdf, notes, pages = supply_flow.print_labels(sup["id"], ships[:1], "posting_box")
+assert pdf[:4] == b"%PDF" and pages >= 1, (pages, notes)
 
 print("все проверки поставок, сборки и КиЗ прошли")

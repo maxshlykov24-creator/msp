@@ -1185,7 +1185,10 @@ function asmBodyHtml(rows) {
 }
 
 function hidePrintMenu() {
-  $("aPrintMenu").hidden = true;
+  const a = $("aPrintMenu");
+  if (a) a.hidden = true;
+  const w = $("wbPrintMenu");
+  if (w) w.hidden = true;
 }
 
 // Поставка живёт сразу в нескольких вкладках: часть заданий ещё на сборке,
@@ -1844,7 +1847,6 @@ async function loadWbDetail(id) {
         <h4>Короба</h4>
         <div class="wb-sec-acts">
           ${open && pickup ? `<button class="btn-ghost" id="wbNewBox" type="button">Добавить короб</button>` : ""}
-          ${pickup ? `<button class="btn-ghost" id="wbBoxQr" type="button">Печать QR</button>` : ""}
         </div>
       </div>
       <div class="wb-boxes">${pickup ? (boxes || `<div class="wb-empty">Коробов нет. Добавь один — на него печатается QR.</div>`) : `<div class="wb-empty">Эта поставка едет на СЦ. Грузоместа не заводятся.</div>`}</div>
@@ -1854,6 +1856,15 @@ async function loadWbDetail(id) {
         <h4>Заказы</h4>
         <div class="wb-sec-acts">
           ${open && loose ? `<button class="btn" id="wbPack" type="button" disabled>В этот короб</button>` : ""}
+          <div class="print-wrap">
+            <button class="btn btn-file" id="wbPrint" type="button"${res.rows.length ? "" : " disabled"}>Печать</button>
+            <div class="print-menu" id="wbPrintMenu" hidden>
+              <button type="button" data-mode="product">Товар</button>
+              <button type="button" data-mode="posting">Отправление</button>
+              ${pickup ? `<button type="button" data-mode="posting_box">Отправление + грузоместо</button>
+              <button type="button" data-mode="box">Грузоместо</button>` : ""}
+            </div>
+          </div>
         </div>
       </div>
       <div class="tbl-wrap wb-rows">
@@ -1861,7 +1872,7 @@ async function loadWbDetail(id) {
           <thead><tr><th class="pick"></th><th>Задание</th><th>Артикул</th><th>Наименование</th><th>Короб</th></tr></thead>
           <tbody>${res.rows.length
             ? res.rows.map((r) => `<tr${r.box ? ' class="is-boxed"' : ""}>
-                <td class="pick">${open && !r.box ? `<input type="checkbox" data-wbrow="${r.id}"${state.wbPicked.has(r.id) ? " checked" : ""}>` : ""}</td>
+                <td class="pick"><input type="checkbox" data-wbrow="${r.id}" title="${r.box ? "Печать этого задания" : "Печать или в короб"}"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
                 <td class="ext">${esc(r.ext_id)}</td>
                 <td class="artq"><b>${num(r.qty, 0)}</b> · ${esc(r.article || "—")}</td>
                 <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
@@ -1882,8 +1893,47 @@ async function loadWbDetail(id) {
 function refreshWbPack() {
   const btn = $("wbPack");
   const boxed = new Set((state.wbDetail && state.wbDetail.rows || []).filter((r) => r.box).map((r) => r.id));
-  [...state.wbPicked].forEach((id) => { if (boxed.has(id)) state.wbPicked.delete(id); });
-  if (btn) btn.disabled = !(state.wbBox && state.wbPicked.size);
+  const loose = [...state.wbPicked].filter((id) => !boxed.has(id));
+  if (btn) btn.disabled = !(state.wbBox && loose.length);
+}
+
+function wbPrintTarget() {
+  const rows = (state.wbDetail && state.wbDetail.rows) || [];
+  const picked = [...state.wbPicked];
+  if (picked.length) return picked;
+  if (state.wbBox) {
+    const box = (state.wbDetail.boxes || []).find((b) => b.id === state.wbBox);
+    if (box) return rows.filter((r) => r.box === box.ext_id).map((r) => r.id);
+  }
+  return rows.map((r) => r.id);
+}
+
+async function printWb(mode) {
+  const id = state.wbSupply;
+  const ids = wbPrintTarget();
+  hidePrintMenu();
+  if (!ids.length && mode !== "box") {
+    say($("wbMsg"), "В поставке нет заданий.", "bad");
+    return;
+  }
+  say($("wbMsg"), "Запрашиваю этикетки…");
+  try {
+    const res = await downloadXlsx(
+      "/api/wb/supplies/" + id + "/labels",
+      ids,
+      "этикетки_поставка.pdf",
+      "",
+      null,
+      { mode }
+    );
+    const pages = res.headers.get("X-Label-Pages") || "?";
+    const raw = res.headers.get("X-Label-Notes") || "";
+    const notes = raw ? decodeURIComponent(raw) : "";
+    const scope = state.wbPicked.size ? "выбранные" : (state.wbBox ? "короб" : "вся поставка");
+    say($("wbMsg"), "Готово: " + scope + ", этикеток " + pages + "." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+  } catch (e) {
+    say($("wbMsg"), e.message, "bad");
+  }
 }
 
 function bindWbDetail() {
@@ -1900,9 +1950,11 @@ function bindWbDetail() {
   }, "Добавляю короб…");
   const pack = $("wbPack");
   if (pack) pack.onclick = () => guard(async () => {
+    const boxed = new Set((state.wbDetail.rows || []).filter((r) => r.box).map((r) => r.id));
+    const ids = [...state.wbPicked].filter((x) => !boxed.has(x));
     const res = await api("/api/wb/boxes/" + state.wbBox + "/orders", {
       method: "POST",
-      body: JSON.stringify({ ids: [...state.wbPicked] }),
+      body: JSON.stringify({ ids }),
     });
     const notes = (res.notes || []).join("\n");
     say($("wbMsg"), "Отмечено в " + res.box + ": " + res.packed + " — учёт наш, площадке состав коробки не передаётся." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
@@ -1910,12 +1962,19 @@ function bindWbDetail() {
     await loadWbSupplies();
     await loadAsm();
   }, "Укладываю задания в грузоместо…");
-  const qrBox = $("wbBoxQr");
-  if (qrBox) qrBox.onclick = () => guard(async () => {
-    const res = await downloadXlsx("/api/wb/supplies/" + id + "/boxes.pdf", [], "QR_грузомест.pdf", "", null, {});
-    const notes = decodeURIComponent(res.headers.get("X-Label-Notes") || "");
-    say($("wbMsg"), "QR грузомест в файле: " + (res.headers.get("X-Label-Pages") || "?") + (notes ? "\n" + notes : ""), notes ? "" : "ok");
-  }, "Запрашиваю QR грузомест у WB…");
+  const pr = $("wbPrint");
+  if (pr) pr.onclick = (e) => {
+    e.stopPropagation();
+    if (pr.disabled) return;
+    const menu = $("wbPrintMenu");
+    if (menu) menu.hidden = !menu.hidden;
+  };
+  const menu = $("wbPrintMenu");
+  if (menu) menu.onclick = (e) => {
+    const btn = e.target.closest("button[data-mode]");
+    if (!btn) return;
+    printWb(btn.dataset.mode);
+  };
   const qr = $("wbQr");
   if (qr) qr.onclick = () => guard(async () => {
     await downloadXlsx("/api/wb/supplies/" + id + "/qr.pdf", [], "QR_поставки.pdf", "", null, {});

@@ -243,14 +243,14 @@ def ozon_marks(detail):
 def wb_office(order):
     """Куда везти задание: наш ПВЗ или СЦ, не кластер покупателя из `offices`.
 
-    Выбрать точку через API нельзя: в методах поставки параметра нет, а
-    `destinationOfficeId` только читается. `offices` у задания — это регион
-    покупателя (Москва_Север), складу он не нужен. Адрес пишем сами: ПВЗ
-    Домодедовская 28, если площадка запретила пункт выдачи — СЦ на Кавказском.
+    Выбрать точку через API нельзя. `offices` у задания — регион покупателя.
+    Флаг `isPickupPointShipmentAllowed` на задании 10.09 приходил False на все
+    3929 свежих заказов, хотя карточка поставки после добавления даёт True
+    и короба принимает. На выгрузке смотрим только габарит: малогабарит —
+    ПВЗ Домодедовская 28, крупный — СЦ. Запрет ПВЗ пишем с карточки поставки
+    или из отказа на коробе.
     """
-    cargo = str(order.get("cargoType") or "")
-    flag = statuses_mod.pickup_flag(order.get("isPickupPointShipmentAllowed"))
-    return statuses_mod.dropoff(cargo, flag)
+    return statuses_mod.dropoff(str(order.get("cargoType") or ""))
 
 
 def handle_wb_fbs(client, cab, orders):
@@ -286,11 +286,11 @@ def handle_wb_fbs(client, cab, orders):
                 "track": "",
                 "warehouse": "",
                 "image": cat["image"],
-                # куда везти: наш ПВЗ или СЦ. Габарит и флаг ПВЗ решают,
-                # нужны ли грузоместа. Кластер из `offices` складу не показываем
+                # куда везти: наш ПВЗ или СЦ. Кластер из `offices` не показываем.
+                # pickup_allowed на задании не пишем: у WB он на заказе врёт,
+                # решение придёт с карточки поставки
                 "office": wb_office(order),
                 "cargo_type": str(order.get("cargoType") or ""),
-                "pickup_allowed": statuses_mod.pickup_flag(order.get("isPickupPointShipmentAllowed")),
             },
         )
     return n
