@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Send, Check, ArrowLeftRight, Banknote, Clock3, Coins, ReceiptText, Plus, Trash2, Undo2, Wallet } from "lucide-react";
 import { useStore } from "../store";
 import { money, timeOf, shortDate } from "../lib/format";
-import { Button, Modal, StatTile } from "../components/ui";
+import { Button, Modal, StatTile, Select, opts } from "../components/ui";
 import { api, USE_MOCK } from "../api/client";
 import { EDWIN_CASH_METHOD, EDWIN_EXPENSE_CATEGORIES, paymentMethodLabel } from "@kassa/shared";
 import { DEFAULT_PAYOUT_METHOD_ID, PaymentMethodSelect } from "../components/PaymentMethodSelect";
@@ -355,18 +355,26 @@ export function EdwinQueue() {
       )}
 
       <div className="card p-3 mb-4 grid sm:grid-cols-4 gap-2">
-        <select className="input py-2 text-sm" value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="all">Все виды</option>
-          <option value="change">Сдача</option>
-          <option value="tips">Чаевые</option>
-          <option value="refund">Возвраты</option>
-          <option value="invoice">Выставить счет</option>
-          <option value="invoice_check">Проверить оплату</option>
-          <option value="salary">Зарплата</option>
-        </select>
-        <select className="input py-2 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="pending">Нужно выдать</option><option value="issued">Выдано</option><option value="all">Все</option>
-        </select>
+        <Select
+          size="sm"
+          value={kind}
+          onChange={setKind}
+          options={opts(
+            ["all", "Все виды"],
+            ["change", "Сдача"],
+            ["tips", "Чаевые"],
+            ["refund", "Возвраты"],
+            ["invoice", "Выставить счет"],
+            ["invoice_check", "Проверить оплату"],
+            ["salary", "Зарплата"]
+          )}
+        />
+        <Select
+          size="sm"
+          value={status}
+          onChange={setStatus}
+          options={opts(["pending", "Нужно выдать"], ["issued", "Выдано"], ["all", "Все"])}
+        />
         <input type="date" className="input py-2 text-sm" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} aria-label="Период с" />
         <input type="date" className="input py-2 text-sm" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} aria-label="Период по" />
       </div>
@@ -751,9 +759,11 @@ export function EdwinQueue() {
         <div className="space-y-4">
           <label className="block">
             <div className="field-label">Статья расхода</div>
-            <select className="input" value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)}>
-              {EDWIN_EXPENSE_CATEGORIES.map((category) => <option key={category}>{category}</option>)}
-            </select>
+            <Select
+              value={expenseCategory}
+              onChange={setExpenseCategory}
+              options={opts(...EDWIN_EXPENSE_CATEGORIES)}
+            />
           </label>
           <div className="grid sm:grid-cols-2 gap-3">
             <label>

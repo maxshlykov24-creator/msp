@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Ticket, Wallet, Search, Filter, RefreshCw, Upload } from "lucide-react";
 import { useStore } from "../store";
 import { money, dateRu } from "../lib/format";
-import { Badge, Button, Modal, Field, StatTile } from "../components/ui";
+import { Badge, Button, Modal, Field, StatTile, Select, opts } from "../components/ui";
 import type { Certificate } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -138,20 +138,24 @@ export function Certificates() {
         </div>
         <div className="min-w-[150px]">
           <div className="text-[11px] uppercase tracking-wider text-mute mb-1">Статус</div>
-          <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="all">Все статусы</option>
-            <option value="active">Активные</option>
-            <option value="used">Использованные</option>
-            <option value="expired">Просроченные</option>
-          </select>
+          <Select
+            value={status}
+            onChange={setStatus}
+            options={opts(
+              ["all", "Все статусы"],
+              ["active", "Активные"],
+              ["used", "Использованные"],
+              ["expired", "Просроченные"]
+            )}
+          />
         </div>
         <div className="min-w-[150px]">
           <div className="text-[11px] uppercase tracking-wider text-mute mb-1">Тип</div>
-          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="all">Все типы</option>
-            <option value="plastic">Пластик</option>
-            <option value="digital">Электронный</option>
-          </select>
+          <Select
+            value={type}
+            onChange={setType}
+            options={opts(["all", "Все типы"], ["plastic", "Пластик"], ["digital", "Электронный"])}
+          />
         </div>
         <div className="min-w-[140px]">
           <div className="text-[11px] uppercase tracking-wider text-mute mb-1">Действует до · с</div>

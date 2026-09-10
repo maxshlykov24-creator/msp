@@ -4,7 +4,7 @@ import { ITEM_LOCATIONS, SUIT_PART_LABEL } from "@kassa/shared";
 import type { SuitBreak, SuitCompleteness, SuitPart, StockStats } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { Button, Card, StatTile } from "../components/ui";
+import { Button, Card, StatTile, Select, opts } from "../components/ui";
 import { SuitModelRow } from "../components/SuitModelRow";
 
 /**
@@ -172,18 +172,11 @@ function CompletenessTab() {
             />
           </label>
           {!consultant && (
-            <select
-              className="input"
+            <Select
               value={warehouse}
-              onChange={(e) => setWarehouse(e.target.value)}
-            >
-              <option value="">Все склады, кроме полупарков</option>
-              {WAREHOUSES.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+              onChange={setWarehouse}
+              options={opts(["", "Все склады, кроме полупарков"], ...WAREHOUSES)}
+            />
           )}
           <Button variant="outline" onClick={() => void exportHalfSets()} disabled={USE_MOCK}>
             <Download size={15} /> Полупарки в файл
@@ -373,14 +366,11 @@ export function StockTab() {
     <div className="space-y-4">
       {!consultant && (
         <Card>
-          <select className="input" value={warehouse} onChange={(e) => setWarehouse(e.target.value)}>
-            <option value="">Все склады, кроме полупарков</option>
-            {WAREHOUSES.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={warehouse}
+            onChange={setWarehouse}
+            options={opts(["", "Все склады, кроме полупарков"], ...WAREHOUSES)}
+          />
         </Card>
       )}
       {loading && (

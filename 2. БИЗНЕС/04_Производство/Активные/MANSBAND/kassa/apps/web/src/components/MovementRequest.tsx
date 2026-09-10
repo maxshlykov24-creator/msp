@@ -11,7 +11,7 @@ import {
 } from "@kassa/shared";
 import type { CartItem } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
-import { Button } from "./ui";
+import { Button, Select, opts } from "./ui";
 
 interface WarehouseRef {
   id: string;
@@ -122,19 +122,15 @@ export function MovementRequest({
       <div className="grid sm:grid-cols-2 gap-3">
         <label>
           <div className="field-label">Откуда</div>
-          <select className="input" value={source} onChange={(e) => setSource(e.target.value)}>
-            {ITEM_LOCATIONS.filter((name) => !name.startsWith("СДЭК")).map((name) => (
-              <option key={name}>{name}</option>
-            ))}
-          </select>
+          <Select
+            value={source}
+            onChange={setSource}
+            options={opts(...ITEM_LOCATIONS.filter((name) => !name.startsWith("СДЭК")))}
+          />
         </label>
         <label>
           <div className="field-label">Куда</div>
-          <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
-            {MOVEMENT_TARGETS.map((name) => (
-              <option key={name}>{name}</option>
-            ))}
-          </select>
+          <Select value={target} onChange={setTarget} options={opts(...MOVEMENT_TARGETS)} />
         </label>
       </div>
       <div className="hint-only text-[12px] text-mute">

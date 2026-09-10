@@ -4,7 +4,7 @@ import type { Deal, QueueItem } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
 import { money, shortDate } from "../lib/format";
-import { Button, Modal, StatTile } from "../components/ui";
+import { Button, Modal, StatTile, Select, opts } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { canSeeFinanceQueues } from "../auth/roles";
 import { DealWorkspace } from "./DealWorkspace";
@@ -230,15 +230,13 @@ export function MishaQueue() {
       </div>
 
       <div className="card p-3 mb-4">
-        <select
-          className="input py-2 text-sm w-auto"
+        <Select
+          size="sm"
+          className="w-[200px]"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
-        >
-          <option value="pending">В работе</option>
-          <option value="issued">Закрытые</option>
-          <option value="all">Все</option>
-        </select>
+          onChange={setStatus}
+          options={opts(["pending", "В работе"], ["issued", "Закрытые"], ["all", "Все"])}
+        />
       </div>
 
       <div className="space-y-2.5">

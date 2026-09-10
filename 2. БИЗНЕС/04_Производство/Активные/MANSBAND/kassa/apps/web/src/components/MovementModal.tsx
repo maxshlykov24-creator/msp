@@ -12,7 +12,7 @@ import {
 } from "@kassa/shared";
 import type { CartItem } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
-import { Button, Modal } from "./ui";
+import { Button, Modal, Select, opts } from "./ui";
 
 interface WarehouseRef {
   id: string;
@@ -446,15 +446,12 @@ export function MovementModal({
                   {line.selected && (
                     <label className={`block ${allowCatalogPick ? "" : "pl-7"}`}>
                       <div className="field-label">Откуда</div>
-                      <select
-                        className="input py-2 text-sm"
+                      <Select
+                        size="sm"
                         value={line.from}
-                        onChange={(e) => patchLine(item.productId, { from: e.target.value })}
-                      >
-                        {sourceOptions.map((name) => (
-                          <option key={name}>{name}</option>
-                        ))}
-                      </select>
+                        onChange={(next) => patchLine(item.productId, { from: next })}
+                        options={opts(...sourceOptions)}
+                      />
                     </label>
                   )}
                 </div>
@@ -469,11 +466,7 @@ export function MovementModal({
 
           <label className="block">
             <div className="field-label">Куда (магазин получатель)</div>
-            <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
-              {MOVEMENT_TARGETS.map((name) => (
-                <option key={name}>{name}</option>
-              ))}
-            </select>
+            <Select value={target} onChange={setTarget} options={opts(...MOVEMENT_TARGETS)} />
           </label>
 
           <div className="hint-only text-[12px] text-mute">

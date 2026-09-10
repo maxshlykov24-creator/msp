@@ -4,7 +4,7 @@ import { STORES } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { shortDate, timeOf } from "../lib/format";
-import { Button, Modal } from "../components/ui";
+import { Button, Modal, Select, opts } from "../components/ui";
 import { Hint } from "../lib/hints";
 
 interface AuditEntry {
@@ -156,31 +156,24 @@ export function HistoryScreen() {
                 placeholder="Сотрудник, действие, номер заявки…"
               />
             </div>
-            <select
-              className="input w-auto"
+            <Select
+              className="w-[180px]"
               value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value as "all" | "manual" | "auto")}
-            >
-              <option value="all">Авто и ручное</option>
-              <option value="manual">Только ручное</option>
-              <option value="auto">Только авто</option>
-            </select>
-            <select className="input w-auto" value={actorFilter} onChange={(e) => setActorFilter(e.target.value)}>
-              <option value="all">Все сотрудники</option>
-              {actors.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <select className="input w-auto" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
-              <option value="all">Все действия</option>
-              {actions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+              onChange={(next) => setSourceFilter(next as "all" | "manual" | "auto")}
+              options={opts(["all", "Авто и ручное"], ["manual", "Только ручное"], ["auto", "Только авто"])}
+            />
+            <Select
+              className="w-[200px]"
+              value={actorFilter}
+              onChange={setActorFilter}
+              options={opts(["all", "Все сотрудники"], ...actors)}
+            />
+            <Select
+              className="w-[200px]"
+              value={actionFilter}
+              onChange={setActionFilter}
+              options={opts(["all", "Все действия"], ...actions)}
+            />
           </div>
           <div className="card p-0 overflow-hidden divide-y divide-ink-800">
             {filtered.length === 0 && (
@@ -419,34 +412,27 @@ export function RolesScreen() {
                   <td className="px-4 py-3 text-white font-medium">{row.name}</td>
                   <td className="px-4 text-mute">{row.login}</td>
                   <td className="px-4">
-                    <select
-                      className="input py-1.5 text-sm"
+                    <Select
+                      size="sm"
+                      className="min-w-[160px]"
                       value={row.role}
-                      onChange={(e) => void setRole(row.id, e.target.value)}
-                    >
-                      {!ROLE_OPTIONS.some(([v]) => v === row.role) && (
-                        <option value={row.role}>{ROLE_LABEL[row.role] ?? row.role}</option>
-                      )}
-                      {ROLE_OPTIONS.map(([value, label]) => (
-                        <option value={value} key={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(next) => void setRole(row.id, next)}
+                      options={[
+                        ...(!ROLE_OPTIONS.some(([v]) => v === row.role)
+                          ? [{ value: row.role, label: ROLE_LABEL[row.role] ?? row.role }]
+                          : []),
+                        ...ROLE_OPTIONS.map(([value, label]) => ({ value, label })),
+                      ]}
+                    />
                   </td>
                   <td className="px-4">
-                    <select
-                      className="input py-1.5 text-sm"
+                    <Select
+                      size="sm"
+                      className="min-w-[160px]"
                       value={row.store ?? ""}
-                      onChange={(e) => void setStore(row.id, e.target.value)}
-                    >
-                      <option value="">—</option>
-                      {STORES.map((store) => (
-                        <option key={store} value={store}>
-                          {store}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(next) => void setStore(row.id, next)}
+                      options={opts(["", "Не привязан"], ...STORES)}
+                    />
                   </td>
                   <td className="px-4">
                     <button
@@ -537,24 +523,19 @@ export function RolesScreen() {
           <div className="grid sm:grid-cols-2 gap-3">
             <label>
               <div className="field-label">Роль</div>
-              <select className="input" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
-                {ROLE_OPTIONS.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={newRole}
+                onChange={setNewRole}
+                options={ROLE_OPTIONS.map(([value, label]) => ({ value, label }))}
+              />
             </label>
             <label>
               <div className="field-label">Магазин</div>
-              <select className="input" value={newStore} onChange={(e) => setNewStore(e.target.value)}>
-                <option value="">Не привязан</option>
-                {STORES.map((store) => (
-                  <option key={store} value={store}>
-                    {store}
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={newStore}
+                onChange={setNewStore}
+                options={opts(["", "Не привязан"], ...STORES)}
+              />
             </label>
           </div>
           <div className="text-[12px] text-mute">

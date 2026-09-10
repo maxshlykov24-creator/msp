@@ -732,79 +732,62 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
           <div className="px-3 pb-3 flex flex-wrap gap-2 items-end border-t border-ink-800 pt-3">
             <div className="min-w-[150px] flex-1">
               <div className="field-label">Остаток</div>
-              <select
-                className="input py-2 text-sm"
+              <Select
+                size="sm"
                 value={stockFilter}
-                onChange={(e) => setStockFilter(e.target.value as StockFilter)}
-              >
-                <option value="any">Любой</option>
-                <option value="positive">Положительный</option>
-                <option value="zero">Нулевой</option>
-                <option value="negative">Отрицательный</option>
-              </select>
+                onChange={(next) => setStockFilter(next as StockFilter)}
+                options={opts(
+                  ["any", "Любой"],
+                  ["positive", "Положительный"],
+                  ["zero", "Нулевой"],
+                  ["negative", "Отрицательный"]
+                )}
+              />
             </div>
             <div className="min-w-[150px] flex-1">
               <div className="field-label">Склад</div>
-              <select
-                className="input py-2 text-sm"
+              <Select
+                size="sm"
                 value={warehouseFilter}
-                onChange={(e) => setWarehouseFilter(e.target.value)}
-              >
-                <option value="">Все склады</option>
-                {warehouseOptions.map((w) => (
-                  <option key={w.id} value={w.name}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setWarehouseFilter}
+                options={opts(["", "Все склады"], ...warehouseOptions.map((w) => w.name))}
+              />
             </div>
             <div className="min-w-[140px] flex-1">
               <div className="field-label">Цвет</div>
-              <select className="input py-2 text-sm" value={color} onChange={(e) => setColor(e.target.value)}>
-                <option value="">Все цвета</option>
-                {filterOptions.colors.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+              <Select
+                size="sm"
+                value={color}
+                onChange={setColor}
+                options={opts(["", "Все цвета"], ...filterOptions.colors)}
+              />
             </div>
             <div className="min-w-[120px] flex-1">
               <div className="field-label">Размер</div>
-              <select className="input py-2 text-sm" value={size} onChange={(e) => setSize(e.target.value)}>
-                <option value="">Все размеры</option>
-                {filterOptions.sizes.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+              <Select
+                size="sm"
+                value={size}
+                onChange={setSize}
+                options={opts(["", "Все размеры"], ...filterOptions.sizes)}
+              />
             </div>
             <div className="min-w-[140px] flex-1">
               <div className="field-label">Вариация</div>
-              <select
-                className="input py-2 text-sm"
+              <Select
+                size="sm"
                 value={variation}
-                onChange={(e) => setVariation(e.target.value)}
-              >
-                <option value="">Все вариации</option>
-                {filterOptions.variations.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+                onChange={setVariation}
+                options={opts(["", "Все вариации"], ...filterOptions.variations)}
+              />
             </div>
             <div className="min-w-[110px] flex-1">
               <div className="field-label">Ростовка</div>
-              <select className="input py-2 text-sm" value={height} onChange={(e) => setHeight(e.target.value)}>
-                <option value="">Любая</option>
-                {filterOptions.heights.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+              <Select
+                size="sm"
+                value={height}
+                onChange={setHeight}
+                options={opts(["", "Любая"], ...filterOptions.heights)}
+              />
             </div>
             <div className="min-w-[100px]">
               <div className="field-label">Цена от, ₽</div>
