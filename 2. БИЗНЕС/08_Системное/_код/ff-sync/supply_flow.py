@@ -441,7 +441,7 @@ def make_boxes(supply_id, amount):
     ask_wb = limit == 0 and orders >= 1 and have == 0 and amount == 1
     if not ask_wb and have + amount > limit:
         raise ValueError(
-            "WB разрешает коробов не больше половины заданий: заданий %s, значит максимум %s, уже создано %s. Добавь в поставку ещё задания или уложи товар в имеющиеся короба."
+            "WB разрешает коробов не больше половины заданий: заданий %s, значит максимум %s, уже создано %s. Добавь в поставку ещё задания или удали лишний короб."
             % (orders, limit, have)
         )
     cab = _cab_of_supply(supply)
@@ -461,7 +461,7 @@ def make_boxes(supply_id, amount):
             )
         if "FailedToAddSupplyTrbx" in str(exc) or "pickup point" in str(exc).lower():
             raise ValueError(
-                "WB отказал в коробе: заданий в поставке %s, коробов уже %s, предел площадки %s. Уложи товар в имеющиеся короба."
+                "WB отказал в коробе: заданий в поставке %s, коробов уже %s, предел площадки %s."
                 % (orders, have, limit)
             )
         raise ValueError(str(exc))
@@ -529,8 +529,9 @@ def deliver(supply_id, confirm=False, force=False):
     """Передать поставку в доставку.
 
     Шаг необратимый: WB закрывает поставку и переводит все задания в «В доставке».
-    Поэтому без `confirm` ничего не делаем, а на задания без грузоместа
-    предупреждаем отдельно — их придётся сдавать врассыпную.
+    Без `confirm` ничего не делаем. Раскладка товара по коробам площадке не
+    нужна: достаточно числа грузомест и их QR. Параметр `force` оставлен
+    для старых вызовов и ничего не меняет.
     """
     import statuses
 
@@ -544,11 +545,6 @@ def deliver(supply_id, confirm=False, force=False):
     loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []
     if not confirm:
         raise ValueError("нужно подтверждение: шаг необратимый")
-    if loose and not force:
-        raise ValueError(
-            "заданий без грузоместа: %s из %s. Разложи по коробкам или подтверди отправку врассыпную."
-            % (len(loose), len(rows))
-        )
     cab = _cab_of_supply(supply)
     wb_supply.deliver(cab, supply["ext_id"])
     set_wb_supply_state(supply["id"], "ready", now_iso())
@@ -595,11 +591,10 @@ def boxes_pdf(supply_id, box_ids=None):
         want = {int(x) for x in box_ids}
         boxes = [b for b in boxes if b["id"] in want]
     stickers, notes = wb_supply.box_stickers(cab, supply["ext_id"], [b["ext_id"] for b in boxes])
-    counts = {b["ext_id"]: b["orders"] for b in boxes}
     items = [
         {
             "png": s["png"],
-            "caption": "%s · %s · %s шт" % (supply["ext_id"], s["barcode"] or s["ext_id"], counts.get(s["ext_id"], 0)),
+            "caption": "%s · %s" % (supply["ext_id"], s["barcode"] or s["ext_id"]),
         }
         for s in stickers
     ]
@@ -665,9 +660,9 @@ def print_labels(supply_id, ship_ids, mode):
         return seen
 
     if mode == labels.MODE_BOX:
-        ids = box_ids_of(rows) or ([b["id"] for b in boxes] if not ship_ids else [])
+        ids = box_ids_of(rows) or [b["id"] for b in boxes]
         if not ids:
-            raise ValueError("у выбранных заданий нет грузоместа. Сначала уложи их в короб или печатай отправление.")
+            raise ValueError("в поставке нет коробов. Сначала добавь грузоместо.")
         return boxes_pdf(supply_id, ids)
     if mode == labels.MODE_PRODUCT:
         return labels.build(_label_payload(rows), mode=labels.MODE_PRODUCT)

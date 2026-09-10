@@ -5,11 +5,11 @@
 1. создать поставку — `POST /api/v3/supplies`;
 2. добавить собранные задания — `PATCH /api/marketplace/v3/supplies/{id}/orders`,
    до 100 за раз. В этот момент задание уходит в статус `confirm` («На сборке»);
-3. завести грузоместа — `POST /api/v3/supplies/{id}/trbx`. **Метода привязки
-   заданий к конкретному грузоместу в API нет**: у пути `trbx` только `get`,
-   `post` и `delete`, а схема грузоместа состоит из одного поля `id` (сверено
-   по OpenAPI-спеке WB от 2026-09-04 и по версии от 2025-12-26 — раньше его
-   тоже не было). Поэтому раскладку по коробкам мы ведём у себя, для склада;
+3. завести грузоместа — `POST /api/v3/supplies/{id}/trbx` с телом `{amount}`.
+   **Метода привязки заданий к коробу нет**: у пути `trbx` только `get`,
+   `post` и `delete`, схема грузоместа — поле `id` (спека 2026-09-04 и
+   2025-12-26). Живой `GET .../trbx` 10.09 отдаёт `orders: []` даже когда
+   короб есть. Складу важно число коробов и QR, не раскладка товара;
 4. напечатать QR грузомест — `POST /api/v3/supplies/{id}/trbx/stickers`;
 5. передать поставку в доставку — `PATCH /api/v3/supplies/{id}/deliver`.
    Тела у метода в спеке нет: точку ПВЗ сюда не передать. После нашей сдачи
@@ -159,7 +159,7 @@ def drop_boxes(cab, supply_ext, trbx_ids):
 
 
 def box_stickers(cab, supply_ext, trbx_ids, kind="png"):
-    """QR грузомест: [{ext_id, barcode, png}]. Пустое грузоместо стикер не получит."""
+    """QR грузомест: [{ext_id, barcode, png}]. Запрос идёт по id короба, состав не нужен."""
     ids = [str(x) for x in trbx_ids if x]
     if not ids:
         return [], ["Нет грузомест: сначала создай хотя бы одно."]
@@ -197,7 +197,7 @@ def box_stickers(cab, supply_ext, trbx_ids, kind="png"):
         )
     notes = []
     if len(out) < len(ids):
-        notes.append("WB отдал QR на %s грузомест из %s: пустые коробки стикер не получают." % (len(out), len(ids)))
+        notes.append("WB отдал QR на %s грузомест из %s." % (len(out), len(ids)))
     return out, notes
 
 

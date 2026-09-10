@@ -1155,7 +1155,6 @@ function wbSupplyPill(supply) {
 // Задания внутри не раскрываем: состав, короба и сдача живут в окне поставки.
 function asmSupplyHtml(sup, rows) {
   const bits = [sup.orders + " заданий", sup.boxes + " коробов"];
-  if (sup.loose) bits.push("без короба " + sup.loose);
   if (!sup.pickup && sup.cargo) bits.push("короба не нужны");
   const qty = rows.reduce((a, r) => a + Number(r.qty || 0), 0);
   const marks = rows.reduce((a, r) => a + Number(r.marks || 0), 0);
@@ -1642,12 +1641,10 @@ async function asmShipped() {
   const supplies = pickedOpenSupplies();
   for (const sup of supplies) {
     const dest = sup.office || (sup.pickup ? "ПВЗ Домодедовская, 28" : "СЦ Кавказский бульвар, 57 стр. 1, Москва");
-    const bad = sup.loose && sup.pickup ? " Заданий без короба: " + sup.loose + "." : "";
     const okay = await ask(
       "Передать поставку " + sup.ext_id + " в доставку?",
-      dest + ". " + sup.client + " · " + sup.orders + " заданий, " + (sup.pickup ? sup.boxes + " мест." : "короба не нужны.") + bad
-        + " Шаг необратимый: WB закроет поставку, задания уйдут в «В доставке», добавить в неё больше ничего нельзя."
-        + " QR поставки появится только после этого.",
+      dest + ". " + sup.client + " · " + sup.orders + " заданий, " + (sup.pickup ? sup.boxes + " мест." : "короба не нужны.")
+        + " Шаг необратимый: WB закроет поставку, задания уйдут в «В доставке», добавить в неё больше ничего нельзя.",
       "Передать"
     );
     if (!okay) {
@@ -1655,7 +1652,7 @@ async function asmShipped() {
       return;
     }
     try {
-      await api("/api/wb/supplies/" + sup.id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true, force: true }) });
+      await api("/api/wb/supplies/" + sup.id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true }) });
       say($("aMsg"), "Поставка " + sup.ext_id + " передана в доставку. Качаю QR…", "ok");
       await downloadXlsx("/api/wb/supplies/" + sup.id + "/qr.pdf", [], "QR_поставки.pdf", "", null, {});
     } catch (e) {
@@ -1851,26 +1848,22 @@ async function loadWbDetail(id) {
   const open = res.supply.state === "open";
   const pickup = res.supply.pickup !== false;
   const dest = res.supply.office || (pickup ? "ПВЗ Домодедовская, 28" : "СЦ Кавказский бульвар, 57 стр. 1, Москва");
-  const loose = pickup ? res.rows.filter((r) => !r.box).length : 0;
   const boxes = res.boxes.map((b) => `<button type="button" class="wb-box${b.id === state.wbBox ? " is-on" : ""}" data-box="${b.id}">
       <b>${esc(b.ext_id)}</b>
-      <span>${b.orders ? b.orders + " зак." : "пустой"}</span>
       ${open ? `<i data-boxdrop="${b.id}" title="Удалить короб">×</i>` : ""}
     </button>`).join("");
   const printWrap = `<div class="print-wrap">
-            <button class="btn btn-file" id="wbPrint" type="button"${res.rows.length ? "" : " disabled"}>Печать</button>
+            <button class="btn-ghost" id="wbPrint" type="button"${res.rows.length ? "" : " disabled"}>Печать</button>
             <div class="print-menu" id="wbPrintMenu" hidden>
-              <button type="button" data-mode="product">Товар</button>
-              <button type="button" data-mode="posting">Отправление</button>
-              ${pickup ? `<button type="button" data-mode="posting_box">Отправление + грузоместо</button>
-              <button type="button" data-mode="box">Грузоместо</button>` : ""}
+              <button type="button" data-mode="product">Этикетка товара</button>
+              <button type="button" data-mode="posting">Этикетка заказа</button>
             </div>
           </div>`;
   $("wbDetail").innerHTML = `
     <div class="wb-hero">
       <div>
         <div class="wb-hero-id">${esc(res.supply.ext_id)}</div>
-        <div class="wb-hero-meta">${esc(res.supply.client)} · ${esc(dest)} · ${res.rows.length} зак.${pickup ? " · " + res.boxes.length + " кор." : " · короба не нужны"}${loose ? " · без короба " + loose : ""}</div>
+        <div class="wb-hero-meta">${esc(res.supply.client)} · ${esc(dest)} · ${res.rows.length} зак.${pickup ? " · " + res.boxes.length + " кор." : " · короба не нужны"}</div>
       </div>
       <span class="wb-pill ${res.supply.state}">${wbSupplyPill(res.supply)}</span>
     </div>
@@ -1879,17 +1872,17 @@ async function loadWbDetail(id) {
         <h4>Короба</h4>
         <div class="wb-sec-acts">
           ${open && pickup ? `<button class="btn-ghost" id="wbNewBox" type="button">Добавить короб</button>` : ""}
+          ${pickup && res.boxes.length ? `<button class="btn-ghost" id="wbBoxPrint" type="button" title="QR выбранного короба, если отмечен, иначе всех">Печать QR</button>` : ""}
         </div>
       </div>
-      <div class="wb-boxes">${pickup ? (boxes || `<div class="wb-empty">Коробов нет. Добавь один — на него печатается QR.</div>`) : `<div class="wb-empty">Эта поставка едет на СЦ. Грузоместа не заводятся.</div>`}</div>
+      <div class="wb-boxes">${pickup ? (boxes || `<div class="wb-empty">Коробов нет. Добавь столько, сколько собрал — на каждый печатается QR.</div>`) : `<div class="wb-empty">Эта поставка едет на СЦ. Грузоместа не заводятся.</div>`}</div>
     </section>
     <section class="wb-sec">
       <div class="wb-sec-h">
         <h4 id="wbOrdersTitle">Заказы</h4>
         <div class="wb-sec-acts">
-          <input id="wbQuery" type="search" class="wb-query" placeholder="артикул, задание, название, короб" value="${esc(state.wbQuery || "")}">
-          ${open && loose ? `<button class="btn" id="wbPack" type="button" disabled>В этот короб</button>` : ""}
-          ${open ? printWrap : ""}
+          <input id="wbQuery" type="search" class="wb-query" placeholder="артикул, задание, название" value="${esc(state.wbQuery || "")}">
+          ${printWrap}
         </div>
       </div>
       <div class="tbl-wrap wb-rows">
@@ -1899,11 +1892,7 @@ async function loadWbDetail(id) {
         </table>
       </div>
     </section>
-    <div class="wb-foot">
-      ${open
-        ? `<span>${esc(dest)}</span><button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button>`
-        : `<span>${esc(dest)}</span>${printWrap}`}
-    </div>`;
+    ${open ? `<div class="wb-foot"><span>${esc(dest)}</span><button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button></div>` : ""}`;
   bindWbDetail();
   renderWbRows();
 }
@@ -1928,7 +1917,7 @@ function wbOrderRowsHtml() {
     return `<tr><td colspan="5" class="empty">Нет заданий по запросу «${esc(state.wbQuery)}».</td></tr>`;
   }
   return rows.map((r) => `<tr${r.box ? ' class="is-boxed"' : ""}>
-                <td class="pick"><input type="checkbox" data-wbrow="${r.id}" title="${r.box ? "Печать этого задания" : "Печать или в короб"}"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
+                <td class="pick"><input type="checkbox" data-wbrow="${r.id}" title="Печать этого задания"${state.wbPicked.has(r.id) ? " checked" : ""}></td>
                 <td class="ext">${esc(r.ext_id)}</td>
                 <td class="artq"><b>${num(r.qty, 0)}</b> · ${r.article ? `<button type="button" class="artlink" data-wbart="${esc(r.article)}" title="Отфильтровать этот артикул">${esc(r.article)}</button>` : "—"}</td>
                 <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
@@ -1951,13 +1940,6 @@ function renderWbRows() {
   syncWbAll();
 }
 
-function refreshWbPack() {
-  const btn = $("wbPack");
-  const boxed = new Set((state.wbDetail && state.wbDetail.rows || []).filter((r) => r.box).map((r) => r.id));
-  const loose = [...state.wbPicked].filter((id) => !boxed.has(id));
-  if (btn) btn.disabled = !(state.wbBox && loose.length);
-}
-
 function syncWbAll() {
   const all = $("wbAll");
   if (!all) return;
@@ -1969,14 +1951,30 @@ function syncWbAll() {
 }
 
 function wbPrintTarget() {
-  const rows = (state.wbDetail && state.wbDetail.rows) || [];
   const picked = [...state.wbPicked];
   if (picked.length) return picked;
-  if (state.wbBox) {
-    const box = (state.wbDetail.boxes || []).find((b) => b.id === state.wbBox);
-    if (box) return rows.filter((r) => r.box === box.ext_id).map((r) => r.id);
+  return wbVisibleRows().map((r) => r.id);
+}
+
+async function printWbBoxes() {
+  const id = state.wbSupply;
+  const boxes = (state.wbDetail && state.wbDetail.boxes) || [];
+  const ids = state.wbBox ? [state.wbBox] : boxes.map((b) => b.id);
+  if (!ids.length) {
+    say($("wbMsg"), "Сначала добавь короб.", "bad");
+    return;
   }
-  return rows.map((r) => r.id);
+  say($("wbMsg"), "Запрашиваю QR коробов…");
+  try {
+    const res = await downloadXlsx("/api/wb/supplies/" + id + "/boxes.pdf", [], "QR_коробов.pdf", "", null, { box_ids: ids });
+    const pages = res.headers.get("X-Label-Pages") || String(ids.length);
+    const raw = res.headers.get("X-Label-Notes") || "";
+    const notes = raw ? decodeURIComponent(raw) : "";
+    const scope = state.wbBox ? "выбранный короб" : (ids.length + " кор.");
+    say($("wbMsg"), "QR готов: " + scope + ", листов " + pages + "." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+  } catch (e) {
+    say($("wbMsg"), e.message, "bad");
+  }
 }
 
 async function printWb(mode) {
@@ -2000,7 +1998,7 @@ async function printWb(mode) {
     const pages = res.headers.get("X-Label-Pages") || "?";
     const raw = res.headers.get("X-Label-Notes") || "";
     const notes = raw ? decodeURIComponent(raw) : "";
-    const scope = state.wbPicked.size ? "выбранные" : (state.wbBox ? "короб" : "вся поставка");
+    const scope = state.wbPicked.size ? "выбранные" : (state.wbQuery ? "по фильтру" : "вся поставка");
     say($("wbMsg"), "Готово: " + scope + ", этикеток " + pages + "." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
   } catch (e) {
     say($("wbMsg"), e.message, "bad");
@@ -2019,25 +2017,29 @@ function bindWbDetail() {
     renderWbRows();
   };
   const nb = $("wbNewBox");
-  if (nb) nb.onclick = () => guard(async () => {
-    const res = await api("/api/wb/supplies/" + id + "/boxes", { method: "POST", body: JSON.stringify({ amount: 1 }) });
-    say($("wbMsg"), "Короб " + (res.boxes || []).join(", ") + " заведён.", "ok");
-    await loadWbSupplies();
-  }, "Добавляю короб…");
-  const pack = $("wbPack");
-  if (pack) pack.onclick = () => guard(async () => {
-    const boxed = new Set((state.wbDetail.rows || []).filter((r) => r.box).map((r) => r.id));
-    const ids = [...state.wbPicked].filter((x) => !boxed.has(x));
-    const res = await api("/api/wb/boxes/" + state.wbBox + "/orders", {
-      method: "POST",
-      body: JSON.stringify({ ids }),
-    });
-    const notes = (res.notes || []).join("\n");
-    say($("wbMsg"), "Отмечено в " + res.box + ": " + res.packed + " — учёт наш, площадке состав коробки не передаётся." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
-    state.wbPicked = new Set();
-    await loadWbSupplies();
-    await loadAsm();
-  }, "Укладываю задания в грузоместо…");
+  if (nb) nb.onclick = async () => {
+    const have = ((state.wbDetail && state.wbDetail.boxes) || []).length;
+    const orders = ((state.wbDetail && state.wbDetail.rows) || []).length;
+    const limit = Math.floor(orders / 2);
+    const answer = await askNumber(
+      "Сколько коробов добавить?",
+      "WB печатает QR на короб. Состав внутрь площадке не передаётся, товар выбирать не нужно."
+        + " В поставке " + orders + " заданий, уже " + have + " кор., максимум " + limit + " (половина, округление вниз).",
+      "Добавить",
+      1
+    );
+    if (answer === false || !Number(answer)) return;
+    await guard(async () => {
+      const res = await api("/api/wb/supplies/" + id + "/boxes", { method: "POST", body: JSON.stringify({ amount: Number(answer) }) });
+      say($("wbMsg"), "Короба: " + (res.boxes || []).join(", ") + ".", "ok");
+      await loadWbSupplies();
+    }, "Добавляю короба…");
+  };
+  const bx = $("wbBoxPrint");
+  if (bx) bx.onclick = () => {
+    hidePrintMenu();
+    printWbBoxes();
+  };
   const pr = $("wbPrint");
   if (pr) pr.onclick = (e) => {
     e.stopPropagation();
@@ -2061,27 +2063,16 @@ function bindWbDetail() {
       return;
     }
     const dest = pre.office || "";
-    const bad = [];
-    if (pre.pickup !== false && pre.loose) bad.push("заданий без грузоместа: " + pre.loose);
-    if (pre.pickup !== false && pre.empty_boxes.length) bad.push("пустых грузомест: " + pre.empty_boxes.length);
     const okay = await ask(
       "Отправить поставку на отгрузку?",
       (dest ? dest + ". " : "") + pre.ext_id + " · " + pre.client + ". В поставке " + pre.orders + " заданий"
         + (pre.pickup === false ? ", короба не нужны." : " и " + pre.boxes + " грузомест.")
-        + (bad.length ? " Внимание: " + bad.join(", ") + "." : "")
         + " WB закроет поставку, добавить в неё больше ничего нельзя. Поставка уйдёт во вкладку «Ожидают отгрузки».",
       "На отгрузку"
     );
     if (!okay) return;
     await guard(async () => {
-      try {
-        await api("/api/wb/supplies/" + id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true }) });
-      } catch (e) {
-        if (!/без грузоместа/.test(e.message)) throw e;
-        const force = await ask("Сдать врассыпную?", e.message + " Передать поставку как есть?", "Передать как есть");
-        if (!force) { say($("wbMsg"), "Отменил. Разложи задания по грузоместам."); return; }
-        await api("/api/wb/supplies/" + id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true, force: true }) });
-      }
+      await api("/api/wb/supplies/" + id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true }) });
       say($("wbMsg"), "Поставка на отгрузке.", "ok");
       await loadWbSupplies();
       await loadAsm();
@@ -2097,7 +2088,7 @@ function bindWbDetail() {
       const inside = card && card.querySelector("span") ? card.querySelector("span").textContent : "";
       const okay = await ask(
         "Удалить короб " + label + "?",
-        "WB снимет грузоместо с поставки" + (inside && inside !== "пустой" ? " (" + inside + ")" : "") + ". Заказы останутся в поставке, но без короба. Если QR уже напечатан и наклеен — он больше не действует, нужен новый короб."
+        "WB снимет грузоместо с поставки" + (inside ? " (" + inside + ")" : "") + ". Если QR уже напечатан и наклеен — он больше не действует, нужен новый короб."
         + " Пока поставка на сборке, это обратимо: короб можно завести снова.",
         "Удалить"
       );
@@ -2114,7 +2105,6 @@ function bindWbDetail() {
     if (box) {
       state.wbBox = state.wbBox === Number(box.dataset.box) ? 0 : Number(box.dataset.box);
       wrap.querySelectorAll(".wb-box").forEach((el) => el.classList.toggle("is-on", el === box && !!state.wbBox));
-      refreshWbPack();
       return;
     }
     const art = e.target.closest("button[data-wbart]");
@@ -2132,18 +2122,15 @@ function bindWbDetail() {
       if (all.checked) vis.forEach((r) => state.wbPicked.add(r.id));
       else vis.forEach((r) => state.wbPicked.delete(r.id));
       wrap.querySelectorAll("input[data-wbrow]").forEach((b) => { b.checked = state.wbPicked.has(Number(b.dataset.wbrow)); });
-      refreshWbPack();
       return;
     }
     const cb = e.target.closest("input[data-wbrow]");
     if (cb) {
       const rid = Number(cb.dataset.wbrow);
       if (cb.checked) state.wbPicked.add(rid); else state.wbPicked.delete(rid);
-      refreshWbPack();
       syncWbAll();
     }
   };
-  refreshWbPack();
   syncWbAll();
 }
 

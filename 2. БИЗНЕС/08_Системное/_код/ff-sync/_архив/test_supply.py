@@ -228,19 +228,13 @@ try:
 except ValueError as exc:
     assert "подтверждение" in str(exc), exc
 
-# с confirm, но с заданием без коробки — второе предупреждение
-try:
-    supply_flow.deliver(sup["id"], confirm=True)
-    raise AssertionError("передали с заданием вне коробки без force")
-except ValueError as exc:
-    assert "без грузоместа: 2 из 4" in str(exc), exc
-
+# состав короба площадке не передаём: confirm достаточно, force не нужен
 # 6. QR грузомест до передачи
 pdf, notes, pages = supply_flow.boxes_pdf(sup["id"])
 assert pdf[:4] == b"%PDF" and pages == 2, (pages, notes)
 
 # 7. передача в доставку: WB закрывает, у нас поставка и задания — «ожидают отгрузки»
-out = supply_flow.deliver(sup["id"], confirm=True, force=True)
+out = supply_flow.deliver(sup["id"], confirm=True)
 assert out == {"ok": True, "orders": 4, "loose": 2}, out
 assert db.get_wb_supply(sup["id"])["state"] == "ready"
 assert all(r["work_state"] == "ready" for r in db.list_supply_shipments(wb_cab, "WB-GI-777"))
