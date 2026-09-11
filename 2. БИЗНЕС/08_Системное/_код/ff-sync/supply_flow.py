@@ -23,6 +23,7 @@ from db import (
     insert_wb_boxes,
     insert_wb_supply,
     find_wb_supplies,
+    list_cabinets,
     list_supply_shipments,
     list_wb_boxes,
     list_wb_supplies,
@@ -226,15 +227,14 @@ def take(ship_ids, author=""):
     отдельной кнопки больше не нужно.
 
     Группируем по кабинету и габаритному типу: поставка WB держит только
-    один `cargoType`. Малогабарит всегда на ПВЗ, крупный — отдельно в СЦ.
+    один `cargoType`. Точку сдачи в ключ не берём — её выбирают в ЛК уже после
+    создания поставки, и по ходу смены она меняется.
     Ozon-заданиям поставка не нужна, для них это по-прежнему складская отметка.
 
     Шаг у WB необратимый: задание уходит из `new` в `confirm`, а метода вынуть
     его из поставки в API нет. Поэтому «Вернуть в новые» снимет нашу отметку,
     но статус на площадке останется — об этом предупреждаем оператора.
     """
-    import statuses
-
     rows = get_shipments_by_ids(ship_ids)
     if not rows:
         raise ValueError("отправления не найдены")
@@ -244,12 +244,11 @@ def take(ship_ids, author=""):
     for row in rows:
         if row["marketplace"] == "wb" and row["kind"] == "fbs":
             cargo = str(_col(row, "cargo_type") or "")
-            flag = "1" if statuses.to_pickup(cargo, _col(row, "pickup_allowed")) else "0"
-            groups.setdefault((row["client_id"], row["cabinet_id"], cargo, flag), []).append(row)
+            groups.setdefault((row["client_id"], row["cabinet_id"], cargo), []).append(row)
         else:
             rest.append(row["id"])
     supplies = []
-    for (client_id, cab_id, cargo, flag), group in groups.items():
+    for (client_id, cab_id, cargo), group in groups.items():
         ready = [r for r in group if (r["supply_ext"] or "")]
         fresh = [r for r in group if not (r["supply_ext"] or "")]
         if ready:
@@ -260,7 +259,7 @@ def take(ship_ids, author=""):
         if not fresh:
             continue
         try:
-            supply = _open_supply(client_id, cab_id, cargo, author, pickup_allowed=flag)
+            supply = _open_supply(client_id, cab_id, cargo, author)
         except ValueError as exc:
             notes.append("%s заданий без поставки: %s" % (len(fresh), exc))
             continue
@@ -272,35 +271,41 @@ def take(ship_ids, author=""):
     return {"supplies": supplies, "marked": marked, "notes": notes}
 
 
-def _open_supply(client_id, cab_id, cargo, author, pickup_allowed=""):
-    """Открытая поставка кабинета под этот габарит и точку сдачи, иначе новая.
+def _open_supply(client_id, cab_id, cargo, author):
+    """Открытая поставка кабинета под этот габарит, иначе новая.
 
     Заводить по поставке на каждое нажатие нельзя: смена уходит одной поставкой,
-    а Сергей отбирает задания несколькими заходами. ПВЗ и СЦ не смешиваем:
-    площадка короба принимает только на пункт выдачи.
+    а Сергей отбирает задания несколькими заходами.
+
+    Перед поиском подтягиваем открытые поставки кабинета с площадки. 10.09 без
+    этого вышла петля: поставку пересобрали руками в ЛК и выбрали там ПВЗ, у
+    нас её не было, и следующее задание легло в нашу прежнюю поставку, которая
+    ехала в СЦ. Точку сдачи в отбор не берём: её выбирают уже после создания
+    поставки, и по ходу смены она меняется.
     """
     import statuses
 
-    want_pickup = statuses.to_pickup(cargo, pickup_allowed)
+    try:
+        sync_open(cabinet_id=cab_id, author=author)
+    except (ValueError, wb_supply.SupplyError):
+        # площадка недоступна — работаем по своей базе, это не повод рвать смену
+        pass
     for row in list_wb_supplies(client_id=client_id, state="open"):
         if row["cabinet_id"] != cab_id:
             continue
         if str(row["cargo_type"] or "") != cargo:
-            continue
-        have = statuses.to_pickup(row["cargo_type"] or "", _col(row, "pickup_allowed"))
-        if have != want_pickup:
             continue
         return {"id": row["id"], "ext_id": row["ext_id"]}
     cab = get_cabinet(cab_id)
     if not cab or not cab["token"]:
         raise ValueError("у кабинета WB нет токена, поставку не открыть")
     mark = statuses.CARGO.get(cargo, ("", ""))[0]
-    dest = "ПВЗ" if want_pickup else "СЦ" if cargo else ""
-    bits = [x for x in (mark, dest) if x]
-    name = "%s%s" % (datetime.now(MSK).strftime("Смена %d.%m %H:%M"), " · " + " · ".join(bits) if bits else "")
+    name = "%s%s" % (
+        datetime.now(MSK).strftime("Смена %d.%m %H:%M"),
+        " · " + mark if mark else "",
+    )
     ext = wb_supply.create(cab, name)
-    flag = "1" if want_pickup else "0" if cargo else ""
-    sid = insert_wb_supply(int(client_id), cab_id, ext, name, now_iso(), author, cargo_type=cargo, pickup_allowed=flag)
+    sid = insert_wb_supply(int(client_id), cab_id, ext, name, now_iso(), author, cargo_type=cargo)
     return {"id": sid, "ext_id": ext}
 
 
@@ -314,6 +319,64 @@ def create_supply(client_id, name, author):
     ext = wb_supply.create(cab, name or "Поставка %s" % datetime.now(MSK).strftime("%d.%m %H:%M"))
     sid = insert_wb_supply(int(client_id), cab["id"], ext, name or "", now_iso(), author)
     return {"id": sid, "ext_id": ext}
+
+
+def sync_open(cabinet_id=None, client_id=None, author="площадка"):
+    """Свести открытые поставки кабинета с площадкой.
+
+    Поставку могут создать руками в ЛК — например чтобы выбрать точку ПВЗ,
+    которую через API не задать. Такая поставка нам не видна, и задания уходят
+    не туда: 10.09 четвёртое задание легло в прежнюю поставку, ехавшую в СЦ.
+
+    Что делаем: новые открытые поставки площадки заводим у себя вместе с
+    составом, у знакомых обновляем точку сдачи, а закрытые на площадке
+    отмечаем закрытыми и у нас. Наружу ничего не пишем, только читаем.
+    """
+    cabs = []
+    if cabinet_id:
+        cab = get_cabinet(int(cabinet_id))
+        if cab:
+            cabs = [cab]
+    else:
+        cabs = [
+            c
+            for c in list_cabinets()
+            if c["marketplace"] == "wb" and c["token"] and c["active"]
+            and (not client_id or c["client_id"] == int(client_id))
+        ]
+    found = 0
+    notes = []
+    for cab in cabs:
+        if cab["marketplace"] != "wb" or not cab["token"]:
+            continue
+        try:
+            rows = wb_supply.list_supplies(cab, only_open=True)
+        except wb_supply.SupplyError as exc:
+            notes.append("%s: %s" % (cab["name"], exc))
+            continue
+        live = {str(x.get("id") or "") for x in rows if x.get("id")}
+        for item in rows:
+            ext = str(item.get("id") or "")
+            if not ext:
+                continue
+            mine = [r for r in find_wb_supplies([ext]) if r["cabinet_id"] == cab["id"]]
+            cargo, flag, point = _dropoff_from_card(item)
+            if mine:
+                _apply_dropoff(mine[0], flag, cargo or str(mine[0]["cargo_type"] or ""), point)
+                continue
+            try:
+                refresh_from_wb(cab["id"], ext, author)
+            except (ValueError, wb_supply.SupplyError) as exc:
+                notes.append("%s: %s" % (ext, exc))
+                continue
+            found += 1
+        # у себя открыта, а площадка её уже закрыла: чаще всего сдали через ЛК
+        for row in list_wb_supplies(client_id=cab["client_id"], state="open"):
+            if row["cabinet_id"] != cab["id"] or row["ext_id"] in live:
+                continue
+            set_wb_supply_state(row["id"], "delivered", now_iso())
+            notes.append("%s: на площадке уже закрыта, отметил сданной." % row["ext_id"])
+    return {"found": found, "notes": notes}
 
 
 def refresh_from_wb(cabinet_id, ext_id, author="площадка"):
@@ -334,17 +397,16 @@ def refresh_from_wb(cabinet_id, ext_id, author="площадка"):
     info = wb_supply.info(cab, ext_id)
     if not info or not info.get("id"):
         raise ValueError("WB не нашёл поставку %s" % ext_id)
-    cargo = str(info.get("cargoType") or "")
-    flag = _flag_for_cargo(cargo)
+    cargo, flag, point = _dropoff_from_card(info)
     name = str(info.get("name") or ext_id)
     created = _wb_stamp(info.get("createdAt"))
     found = [r for r in find_wb_supplies([ext_id]) if r["cabinet_id"] == cab["id"]]
     if found:
         sid = found[0]["id"]
-        set_wb_supply_dropoff(sid, cargo, flag)
+        set_wb_supply_dropoff(sid, cargo, flag, point)
     else:
         sid = insert_wb_supply(
-            cab["client_id"], cab["id"], ext_id, name, created, author, cargo, flag
+            cab["client_id"], cab["id"], ext_id, name, created, author, cargo, flag, point
         )
     orders = [str(x) for x in wb_supply.order_ids(cab, ext_id)]
     ships = get_shipments_by_ext(cab["id"], "fbs", orders)
@@ -357,7 +419,7 @@ def refresh_from_wb(cabinet_id, ext_id, author="площадка"):
         trbx = box_ids[0] if len(box_ids) == 1 else None
         set_shipment_supply([r["id"] for r in ships], ext_id, trbx_ext=trbx)
     supply = get_wb_supply(sid)
-    office = _apply_dropoff(supply, flag, cargo)
+    office = _apply_dropoff(supply, flag, cargo, point)
     statuses_map = wb_statuses(cab["token"], orders) if orders else {}
     done = bool(info.get("done"))
     if done:
@@ -381,9 +443,10 @@ def refresh_from_wb(cabinet_id, ext_id, author="площадка"):
         "name": name,
         "state": "delivered" if done else "open",
         "cargo": cargo,
-        "pickup": statuses.to_pickup(cargo, flag),
+        "pickup": statuses.to_pickup(cargo, flag, point),
         "office": office,
-        "shipping_point": info.get("shippingPointId"),
+        "shipping_point": point,
+        "warn": statuses.dropoff_warning("delivered" if done else "open", flag, point),
         "orders": orders,
         "missing": missing,
         "boxes": box_ids,
