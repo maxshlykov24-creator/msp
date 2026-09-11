@@ -438,13 +438,12 @@ assert all(db.get_shipments_by_ids([x])[0]["work_state"] == "assembling" for x i
 again = supply_flow.take(mgt, author="тест")
 assert not again["supplies"] and any("Уже в поставке" in n for n in again["notes"]), again
 
-# 20. короба только для ПВЗ: поставке в сортировочный центр их не заводим
+# 20. габарит короба больше не запрещает: в ЛК выбрали ПВЗ, значит крупный
+# товар тоже едет туда и получает грузоместо. Раньше мы отказывали сами и
+# уводили поставку в СЦ, хотя площадка её на ПВЗ принимала
 sc = [s for s in made if str(s["cargo_type"]) == "3"][0]
-try:
-    supply_flow.make_boxes(sc["id"], 1)
-    raise AssertionError("завели короба для сортировочного центра")
-except ValueError as exc:
-    assert "только для поставок на ПВЗ" in str(exc), exc
+assert supply_flow.make_boxes(sc["id"], 1)["boxes"] == ["WB-TRBX-1"], "крупногабарит не получил короб"
+assert db.get_shipments_by_ids(kgt)[0]["office"] == statuses.PVZ, dict(db.get_shipments_by_ids(kgt)[0])
 
 # 21. «Собрано» с числом коробов: заводит грузоместа в поставке выборки.
 # Два задания — один короб (половина), два короба уходят заметкой, отметка стоит
@@ -651,6 +650,10 @@ def lk_supplies(method, url, headers=None, **kw):
              "isPickupPointShipmentAllowed": True, "shippingPointId": 50095011,
              "createdAt": "2026-09-10T14:06:59Z"},
         ], "next": 0})
+    if method == "GET" and path.rstrip("/").endswith("/supplies/WB-GI-STALE"):
+        # прежнюю поставку сдали через ЛК: карточка это подтверждает
+        return Fake(200, {"id": "WB-GI-STALE", "done": True, "cargoType": 1,
+                          "closedAt": "2026-09-10T14:01:56Z", "isPickupPointShipmentAllowed": False})
     if method == "GET" and path.rstrip("/").endswith("/supplies/" + lk_ext):
         return Fake(200, {"id": lk_ext, "name": "Поставка от 10.09.2026", "done": False, "cargoType": 1,
                           "isPickupPointShipmentAllowed": True, "shippingPointId": 50095011,
