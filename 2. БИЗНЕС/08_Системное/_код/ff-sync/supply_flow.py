@@ -75,34 +75,43 @@ def _col(row, name, default=""):
     return row[name] if name in row.keys() else default
 
 
-def _apply_dropoff(supply, pickup_allowed, cargo=""):
+def _apply_dropoff(supply, pickup_allowed, cargo="", shipping_point=""):
     """Записать адрес сдачи на поставку и её задания."""
     import statuses
 
     cargo = str(cargo or _col(supply, "cargo_type") or "")
     flag = str(pickup_allowed or "")
-    office = statuses.dropoff(cargo, flag)
-    set_wb_supply_dropoff(supply["id"], cargo, flag)
-    if office:
-        set_supply_shipments_dropoff(supply["cabinet_id"], supply["ext_id"], office, flag)
+    point = str(shipping_point or "")
+    office = statuses.dropoff(cargo, flag, point)
+    set_wb_supply_dropoff(supply["id"], cargo, flag, point)
+    # адрес пишем и пустым: точку в ЛК могли снять, и старая надпись соврёт
+    set_supply_shipments_dropoff(supply["cabinet_id"], supply["ext_id"], office, flag)
     return office
 
 
-def _flag_for_cargo(cargo):
-    """ПВЗ для малогабарита, СЦ только для габарита 2 и 3. Флаг WB не читаем."""
+def _dropoff_from_card(info):
+    """Габарит, флаг ПВЗ и выбранную точку — с карточки поставки WB."""
     import statuses
 
-    return "1" if statuses.to_pickup(cargo) else "0"
+    cargo = str(info.get("cargoType") or "")
+    flag = statuses.pickup_flag(info.get("isPickupPointShipmentAllowed"))
+    point = str(info.get("shippingPointId") or "")
+    return cargo, flag, point
 
 
 def _sync_dropoff(supply):
-    """Сверить габарит с карточкой WB. Флаг ПВЗ с карточки не берём: он врёт."""
+    """Перечитать точку сдачи с карточки WB и записать к себе.
+
+    Сами точку не угадываем: через API её не задать, выбор делает человек в ЛК.
+    Пока `shippingPointId` пустой, поставка уйдёт в СЦ, и оператор должен это
+    видеть, а не надпись «ПВЗ», выведенную из габарита.
+    """
     cab = _cab_of_supply(supply)
     info = wb_supply.info(cab, supply["ext_id"]) or {}
-    cargo = str(info.get("cargoType") or _col(supply, "cargo_type") or "")
-    flag = _flag_for_cargo(cargo)
-    _apply_dropoff(supply, flag, cargo)
-    return flag, cargo
+    cargo, flag, point = _dropoff_from_card(info)
+    cargo = cargo or str(_col(supply, "cargo_type") or "")
+    _apply_dropoff(supply, flag, cargo, point)
+    return flag, cargo, point
 
 
 # --- Ozon: собрать ------------------------------------------------------

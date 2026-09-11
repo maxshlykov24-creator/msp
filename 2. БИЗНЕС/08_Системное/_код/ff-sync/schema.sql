@@ -267,8 +267,12 @@ CREATE TABLE IF NOT EXISTS wb_supplies (
     author TEXT,
     -- габаритный тип заданий поставки: WB держит в одной поставке только один
     cargo_type TEXT,
-    -- можно ли сдать на ПВЗ: '1' да, '0' нет (тогда СЦ), пусто — ещё не знаем
+    -- ответ WB isPickupPointShipmentAllowed: '1' да, '0' нет, пусто — не спрашивали.
+    -- Сам по себе точку сдачи не доказывает: бывает '1' без выбранной точки
     pickup_allowed TEXT,
+    -- shippingPointId с карточки: выбранная в ЛК точка ПВЗ. Заполнена — едем на
+    -- ПВЗ, пусто — поставка уйдёт в СЦ. Через API это поле не задать, только ЛК
+    shipping_point TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );

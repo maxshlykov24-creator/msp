@@ -23,20 +23,29 @@ GROUPS = (
 GROUP_CODES = tuple(code for code, _ in GROUPS)
 GROUP_LABELS = dict(GROUPS)
 
-# Габаритный тип задания WB. Он определяет точку сдачи и то, нужны ли короба:
-# малогабаритный товар везут на ПВЗ и раскладывают по грузоместам, крупный и
-# сверхгабаритный сдают в сортировочный центр, где короба не заводятся.
+# Габаритный тип задания WB: 1 малогабаритный, 2 сверхгабаритный, 3 крупный.
+# Значение ставит площадка полем cargoType, сами мы его не считаем. На точку
+# сдачи он не влияет: 11.09 у всех 21000 заданий в базе cargoType=1, а в СЦ
+# уехала именно малогабаритная поставка.
 #
-# Точку сдачи через API WB выбрать нельзя: destinationOfficeId только читается
-# и это склад продавца (87609, Кавказский), не пункт приёмки. Поле offices в
-# задании — кластер покупателя. Адрес сдачи пишем сами: малогабарит всегда
-# ПВЗ Домодедовская 28, крупный и сверхгабаритный — СЦ.
+# Точку сдачи через API выбрать нельзя. Проверено живыми запросами 11.09:
+# /api/v3/supplies/{id}/shipping-point, /api/v3/shipping-points и /spot дают
+# 404, у deliver тела нет, а /api/v3/offices отдаёт 182 сортировочных центра
+# и склада WB, пунктов выдачи там нет вовсе — ПВЗ Домодедовская 28 (50095011)
+# не встречается ни в одной записи. Точку выбирает человек в ЛК на конкретной
+# поставке, API это поле только читает.
 #
-# Флаг isPickupPointShipmentAllowed на задании и на закрытой поставке врёт:
-# 10.09 он был False на всех свежих заказах, а после нашей сдачи без точки
-# стал False на карточке, хотя тот же товар приняли на Домодедовской 28.
-# Живая поставка WB-GI-276491672: в ЛК выбрали этот ПВЗ, API вернул
-# shippingPointId=50095011, isPickupPointShipmentAllowed=true.
+# Поэтому адрес сдачи не угадываем, а читаем с карточки поставки:
+#   shippingPointId заполнен          → точку ПВЗ выбрали, едем на ПВЗ;
+#   точки нет, isPickupPointShipmentAllowed=false → поставка уйдёт в СЦ;
+#   точки нет, флаг true              → ПВЗ разрешён, но точка ещё не выбрана.
+# Живой пример расхождения 10.09, один кабинет и один габарит: WB-GI-276355488
+# создана нашим кодом, shippingPointId пустой, флаг false, уехала в СЦ;
+# WB-GI-276491672 создана в ЛК с выбором точки — shippingPointId=50095011,
+# флаг true, приняли на Домодедовской 28.
+#
+# На задании флаг isPickupPointShipmentAllowed по-прежнему не читаем: 10.09 он
+# приходил False на все 3929 свежих заказов, включая принятые на ПВЗ.
 CARGO_MGT = "1"
 PVZ = "ПВЗ Домодедовская, 28"
 SC = "СЦ Кавказский бульвар, 57 стр. 1, Москва"
@@ -64,35 +73,64 @@ def pickup_flag(raw):
     return ""
 
 
-def to_pickup(cargo_type, pickup_allowed=""):
-    """Сдаём на ПВЗ, если габарит малогабаритный или ещё не известен.
+PVZ_WAIT = "точка не выбрана"
 
-    `pickup_allowed` оставлен в сигнатуре, чтобы не ломать вызовы. На решение
-    не влияет: флаг площадки на МГТ врёт, СЦ только у габарита 2 и 3.
+
+def dropoff_kind(pickup_allowed="", shipping_point=""):
+    """Куда поедет поставка по факту с карточки WB.
+
+    `pvz` — точку выбрали, `sc` — поставка уйдёт в сортировочный центр,
+    пусто — ПВЗ разрешён, но точки ещё нет: её выбирают в ЛК, и пока этого не
+    сделали, писать адрес нельзя.
     """
-    cargo = str(cargo_type or "").strip()
-    if cargo and cargo != CARGO_MGT:
-        return False
-    return True
+    if str(shipping_point or "").strip():
+        return "pvz"
+    flag = str(pickup_allowed or "").strip()
+    if flag == "0":
+        return "sc"
+    return ""
 
 
-def dropoff(cargo_type, pickup_allowed=""):
-    """Адрес сдачи для колонки «Куда везти». Нет габарита — пусто, не выдумываем."""
-    if not str(cargo_type or "").strip():
-        return ""
-    return PVZ if to_pickup(cargo_type, pickup_allowed) else SC
+def to_pickup(cargo_type="", pickup_allowed="", shipping_point=""):
+    """Едем ли на ПВЗ. Габарит в сигнатуре ради старых вызовов, на решение не влияет."""
+    return dropoff_kind(pickup_allowed, shipping_point) == "pvz"
 
 
-def cargo_label(cargo_type, pickup_allowed=""):
-    """«малогабаритный · ПВЗ». Неизвестный тип — пусто, врать не будем."""
-    cargo = str(cargo_type or "").strip()
-    got = CARGO.get(cargo)
+def dropoff(cargo_type="", pickup_allowed="", shipping_point=""):
+    """Адрес сдачи для колонки «Куда везти». Точки нет — пусто, не выдумываем."""
+    kind = dropoff_kind(pickup_allowed, shipping_point)
+    if kind == "pvz":
+        return PVZ
+    if kind == "sc":
+        return SC
+    return ""
+
+
+def cargo_label(cargo_type, pickup_allowed="", shipping_point=""):
+    """«малогабаритный · ПВЗ». Габарита нет — пусто, врать не будем."""
+    got = CARGO.get(str(cargo_type or "").strip())
     if not got:
         return ""
-    kind, dest = got
-    if cargo == CARGO_MGT and not to_pickup(cargo, pickup_allowed):
-        dest = "СЦ"
+    kind = got[0]
+    dest = {"pvz": "ПВЗ", "sc": "СЦ"}.get(dropoff_kind(pickup_allowed, shipping_point), PVZ_WAIT)
     return "%s · %s" % (kind, dest)
+
+
+def dropoff_warning(state, pickup_allowed="", shipping_point=""):
+    """Что сказать оператору, если точка сдачи не выбрана. Всё в порядке — пусто.
+
+    Шаг необратимый: после передачи в доставку поставка закрыта и точку уже не
+    поменять. 10.09 ПВЗ потеряли именно здесь.
+    """
+    if dropoff_kind(pickup_allowed, shipping_point) == "pvz":
+        return ""
+    if str(state or "") != "open":
+        return "Поставка закрыта без точки ПВЗ — ушла в %s." % SC
+    return (
+        "Точка ПВЗ не выбрана: API её задать не может, только личный кабинет WB. "
+        "Открой поставку в ЛК, выбери %s и нажми «Обновить с площадки». "
+        "Передашь как есть — уйдёт в %s." % (PVZ, SC)
+    )
 
 # Ozon FBS: статус отправления → наша группа.
 # «На сборке» у Ozon нет: из awaiting_packaging заказ уходит сразу в

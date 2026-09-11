@@ -47,26 +47,25 @@ def _cols(conn, table):
 
 
 def _rewrite_wb_dropoff(conn):
-    """Кластеры WB в колонке office заменить на наш ПВЗ или СЦ."""
+    """Снять с заданий WB адрес сдачи, выдуманный по габариту.
+
+    До 11.09 колонка «Куда везти» заполнялась по cargoType: малогабарит — ПВЗ
+    Домодедовская 28. Это оказалось догадкой: точку сдачи задаёт только ЛК, и
+    поставка с тем же габаритом спокойно уезжала в СЦ. Теперь адрес приходит от
+    поставки, а у заданий вне поставки он пустой — честнее, чем врущая надпись.
+    """
     if "shipments" not in {
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }:
         return
     cols = _cols(conn, "shipments")
-    if "office" not in cols or "cargo_type" not in cols:
+    if "office" not in cols or "supply_ext" not in cols:
         return
-    import statuses
-
-    extra = ", pickup_allowed" if "pickup_allowed" in cols else ""
-    rows = conn.execute(
-        "SELECT id, office, cargo_type%s FROM shipments WHERE marketplace = 'wb' AND kind = 'fbs'"
-        % extra
-    ).fetchall()
-    for r in rows:
-        flag = r["pickup_allowed"] if extra and "pickup_allowed" in r.keys() else ""
-        want = statuses.dropoff(r["cargo_type"], flag)
-        if want and (r["office"] or "") != want:
-            conn.execute("UPDATE shipments SET office = ? WHERE id = ?", (want, r["id"]))
+    conn.execute(
+        "UPDATE shipments SET office = '' "
+        "WHERE marketplace = 'wb' AND kind = 'fbs' "
+        "AND COALESCE(office, '') <> '' AND COALESCE(supply_ext, '') = ''"
+    )
 
 
 def migrate(conn):
@@ -163,6 +162,10 @@ def migrate(conn):
         conn.execute("ALTER TABLE wb_supplies ADD COLUMN cargo_type TEXT")
     if "pickup_allowed" not in _cols(conn, "wb_supplies"):
         conn.execute("ALTER TABLE wb_supplies ADD COLUMN pickup_allowed TEXT")
+    if "shipping_point" not in _cols(conn, "wb_supplies"):
+        # выбранная в ЛК точка ПВЗ: единственный честный признак, что поставка
+        # поедет не в СЦ. Флаг pickup_allowed бывает true и без выбранной точки
+        conn.execute("ALTER TABLE wb_supplies ADD COLUMN shipping_point TEXT")
     _rewrite_wb_dropoff(conn)
     if fresh:
         # у записей до появления раздела «Сборка» группы нет, и они не попали бы
@@ -1197,12 +1200,32 @@ def delete_shipments_by_ext(cabinet_id, kind, ext_ids):
     return len(ids)
 
 
-def insert_wb_supply(client_id, cabinet_id, ext_id, name, created_at, author, cargo_type="", pickup_allowed=""):
+def insert_wb_supply(
+    client_id,
+    cabinet_id,
+    ext_id,
+    name,
+    created_at,
+    author,
+    cargo_type="",
+    pickup_allowed="",
+    shipping_point="",
+):
     conn = connect()
     cur = conn.execute(
-        "INSERT INTO wb_supplies (client_id, cabinet_id, ext_id, name, created_at, author, cargo_type, pickup_allowed) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (client_id, cabinet_id, ext_id, name or "", created_at, author or "", str(cargo_type or ""), str(pickup_allowed or "")),
+        "INSERT INTO wb_supplies (client_id, cabinet_id, ext_id, name, created_at, author, "
+        "cargo_type, pickup_allowed, shipping_point) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            client_id,
+            cabinet_id,
+            ext_id,
+            name or "",
+            created_at,
+            author or "",
+            str(cargo_type or ""),
+            str(pickup_allowed or ""),
+            str(shipping_point or ""),
+        ),
     )
     conn.commit()
     sid = cur.lastrowid
@@ -1210,12 +1233,17 @@ def insert_wb_supply(client_id, cabinet_id, ext_id, name, created_at, author, ca
     return sid
 
 
-def set_wb_supply_dropoff(supply_id, cargo_type, pickup_allowed):
-    """Габарит и флаг ПВЗ у поставки: от них адрес сдачи и нужны ли короба."""
+def set_wb_supply_dropoff(supply_id, cargo_type, pickup_allowed, shipping_point=""):
+    """Габарит, флаг ПВЗ и выбранная точка: от точки зависит адрес сдачи."""
     conn = connect()
     conn.execute(
-        "UPDATE wb_supplies SET cargo_type = ?, pickup_allowed = ? WHERE id = ?",
-        (str(cargo_type or ""), str(pickup_allowed or ""), int(supply_id)),
+        "UPDATE wb_supplies SET cargo_type = ?, pickup_allowed = ?, shipping_point = ? WHERE id = ?",
+        (
+            str(cargo_type or ""),
+            str(pickup_allowed or ""),
+            str(shipping_point or ""),
+            int(supply_id),
+        ),
     )
     conn.commit()
     conn.close()
