@@ -112,10 +112,19 @@ def fake_req(method, url, headers=None, **kw):
         return Fake(200, {"orderIds": []})
     if method == "GET" and path.endswith("/trbx"):
         return Fake(200, {"trbxes": []})
+    if method == "GET" and path.endswith("/api/v3/supplies"):
+        # список поставок кабинета: пустой, конкретные карточки отдаём ниже.
+        # Пустой список сам по себе поставку не закрывает — sync_open переспросит
+        return Fake(200, {"supplies": [], "next": 0})
     if method == "GET" and "/api/v3/supplies/" in path:
         tail = path.split("/api/v3/supplies/", 1)[1].rstrip("/")
         if "/" not in tail:
-            return Fake(200, {"id": tail})
+            # в ЛК точку выбрали: так выглядит поставка, которую примет ПВЗ.
+            # cargoType не подставляем — габарит в моке ведёт сама база
+            return Fake(200, {
+                "id": tail,
+                "isPickupPointShipmentAllowed": True, "shippingPointId": 50095011,
+            })
     return Fake(404, {"code": 404, "message": "мок не знает %s" % url})
 
 
@@ -218,7 +227,7 @@ pre = supply_flow.preflight(sup["id"])
 assert pre == {
     "ext_id": "WB-GI-777", "client": "Тест ООО", "orders": 4, "boxes": 2,
     "loose": 2, "empty_boxes": ["WB-TRBX-2"], "state": "open",
-    "office": "", "pickup": True,
+    "office": statuses.PVZ, "pickup": True, "warn": "",
 }, pre
 
 # без confirm не передаём
@@ -235,7 +244,7 @@ assert pdf[:4] == b"%PDF" and pages == 2, (pages, notes)
 
 # 7. передача в доставку: WB закрывает, у нас поставка и задания — «ожидают отгрузки»
 out = supply_flow.deliver(sup["id"], confirm=True)
-assert out == {"ok": True, "orders": 4, "loose": 2}, out
+assert out == {"ok": True, "orders": 4, "loose": 2, "office": statuses.PVZ, "warn": ""}, out
 assert db.get_wb_supply(sup["id"])["state"] == "ready"
 assert all(r["work_state"] == "ready" for r in db.list_supply_shipments(wb_cab, "WB-GI-777"))
 # выгрузка после deliver ставит status_group=shipped — вкладка всё равно «ожидают отгрузки»
@@ -466,81 +475,116 @@ try:
 except ValueError as exc:
     assert "не больше половины заданий" in str(exc), exc
 
-# 23. куда везти: малогабарит всегда ПВЗ Домодедовская 28, габарит 2/3 — СЦ.
-# Флаг площадки на МГТ больше не уводит на Кавказский: 10.09 он врал.
+# 23. куда везти: решает выбранная в ЛК точка, а не габарит. Через API точку не
+# задать (11.09: shipping-point/spot дают 404, в offices пунктов выдачи нет),
+# поэтому адрес читаем с карточки поставки и пустой не подменяем догадкой.
 import shipments_pull
+import wb_supply
 
-assert statuses.dropoff("1") == statuses.PVZ
-assert statuses.dropoff("1", "0") == statuses.PVZ
-assert statuses.to_pickup("1", "0") is True
-assert statuses.dropoff("3") == statuses.SC
-# карточка WB после сдачи врёт False на МГТ — адрес не переписываем в СЦ
-lie_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-LIE", "Ложный флаг", "2026-09-10T12:00:00", "тест", "1", "1")
-real_info = wb_supply.req
-def lie_card(method, url, headers=None, **kw):
-    path = url.split("?")[0]
-    if method == "GET" and path.rstrip("/").endswith("/supplies/WB-GI-LIE"):
-        return Fake(200, {"id": "WB-GI-LIE", "cargoType": 1, "isPickupPointShipmentAllowed": False})
-    return real_info(method, url, headers=headers, **kw)
-wb_supply.req = lie_card
-try:
-    flag, cargo = supply_flow._sync_dropoff(db.get_wb_supply(lie_id))
-finally:
-    wb_supply.req = real_info
-assert flag == "1" and cargo == "1", (flag, cargo)
-assert str(db.get_wb_supply(lie_id)["pickup_allowed"]) == "1"
+real_wb = wb_supply.req
+assert statuses.dropoff("1", "1", "50095011") == statuses.PVZ
+assert statuses.dropoff("1", "0", "") == statuses.SC
+# флаг true без выбранной точки — ещё не ПВЗ: так выглядят поставки, созданные API
+assert statuses.dropoff("1", "1", "") == ""
+assert statuses.to_pickup("1", "1", "") is False
+assert statuses.dropoff("1", "", "") == ""
+# габарит точку сдачи не решает: крупногабарит с выбранным ПВЗ едет на ПВЗ
+assert statuses.dropoff("3", "1", "50095011") == statuses.PVZ
+assert statuses.cargo_label("3", "1", "50095011") == "крупногабаритный · ПВЗ"
+assert statuses.cargo_label("1", "1", "") == "малогабаритный · " + statuses.PVZ_WAIT
+assert statuses.cargo_kind("1") == "малогабаритный"
 assert "Домодедовская" in statuses.PVZ and "28" in statuses.PVZ
 assert "Кавказский" in statuses.SC and "57" in statuses.SC
-assert shipments_pull.wb_office({"cargoType": 1, "isPickupPointShipmentAllowed": True, "offices": ["Москва_Север"]}) == statuses.PVZ
-assert shipments_pull.wb_office({"cargoType": 1, "isPickupPointShipmentAllowed": False}) == statuses.PVZ
+# о незакрытой поставке предупреждаем, о закрытой говорим фактом
+assert "личный кабинет" in statuses.dropoff_warning("open", "0", "")
+assert "ушла" in statuses.dropoff_warning("ready", "0", "")
+assert statuses.dropoff_warning("open", "1", "50095011") == ""
+# выгрузка заданий адрес больше не выдумывает: до поставки везти некуда
+assert not hasattr(shipments_pull, "wb_office")
 
-denied = db.upsert_shipment(
+# карточка WB — источник правды по точке: читаем флаг и shippingPointId как есть
+card_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-CARD", "Своя", "2026-09-10T12:00:00", "тест", "1", "1", "")
+def api_card(method, url, headers=None, **kw):
+    path = url.split("?")[0]
+    if method == "GET" and path.rstrip("/").endswith("/supplies/WB-GI-CARD"):
+        return Fake(200, {"id": "WB-GI-CARD", "cargoType": 1, "isPickupPointShipmentAllowed": False})
+    return real_wb(method, url, headers=headers, **kw)
+wb_supply.req = api_card
+try:
+    flag, cargo, point = supply_flow._sync_dropoff(db.get_wb_supply(card_id))
+finally:
+    wb_supply.req = real_wb
+assert (flag, cargo, point) == ("0", "1", ""), (flag, cargo, point)
+assert str(db.get_wb_supply(card_id)["pickup_allowed"]) == "0"
+assert statuses.dropoff("1", flag, point) == statuses.SC
+
+# крупногабарит больше не отказ на входе: короба зависят от точки, спрашиваем WB
+big = db.upsert_shipment(
     client_id, wb_cab, "wb", "fbs", "301", "Новый", "2026-09-05", "ART-1", "2000000000019",
     "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:10", "cargo_type": "3",
-           "pickup_allowed": "0", "office": statuses.SC},
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:10", "cargo_type": "3"},
 )
-out = supply_flow.take([denied], author="тест")
+out = supply_flow.take([big], author="тест")
 assert len(out["supplies"]) == 1, out
-sc_denied = db.get_wb_supply(out["supplies"][0]["id"])
-assert str(sc_denied["cargo_type"]) == "3" and str(sc_denied["pickup_allowed"]) == "0", dict(sc_denied)
-try:
-    supply_flow.make_boxes(sc_denied["id"], 1)
-    raise AssertionError("завели короба для крупногабарита")
-except ValueError as exc:
-    assert "Кавказский" in str(exc), exc
+big_sup = db.get_wb_supply(out["supplies"][0]["id"])
+assert str(big_sup["cargo_type"]) == "3", dict(big_sup)
+assert "СЦ" not in (big_sup["name"] or ""), dict(big_sup)
 
-# отказ WB при заведении короба на МГТ: остаёмся на ПВЗ, не переписываем в СЦ
-pvz_then = db.insert_wb_supply(client_id, wb_cab, "WB-GI-DENY", "Смена ПВЗ", "2026-09-05T12:00:00", "тест", "1", "1")
+# отказ «pickup point» — единственный честный признак, что точку не выбрали
+deny_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-DENY", "Смена", "2026-09-05T12:00:00", "тест", "1", "1", "50095011")
 deny_ship = db.upsert_shipment(
     client_id, wb_cab, "wb", "fbs", "302", "Новый", "2026-09-05", "ART-1", "2000000000019",
     "Ремень", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:11", "cargo_type": "1",
-           "pickup_allowed": "1", "office": statuses.PVZ},
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:11", "cargo_type": "1"},
 )
 db.set_shipment_supply([deny_ship], "WB-GI-DENY")
-import wb_supply
-real_wb = wb_supply.req
 
 def deny_pvz(method, url, headers=None, **kw):
     path = url.split("?")[0]
     if method == "POST" and path.endswith("/trbx"):
         return Fake(409, {"code": "FailedToAddSupplyTrbx", "message": "You should add boxes only to supplies shipped to the pickup points"})
-    if method == "GET" and "/api/v3/supplies/" in path and path.rstrip("/").split("/")[-1] == "WB-GI-DENY":
+    if method == "GET" and path.rstrip("/").endswith("/supplies/WB-GI-DENY"):
         return Fake(200, {"id": "WB-GI-DENY", "isPickupPointShipmentAllowed": False, "cargoType": 1})
     return real_wb(method, url, headers=headers, **kw)
 
 wb_supply.req = deny_pvz
 try:
-    supply_flow.make_boxes(pvz_then, 1)
+    supply_flow.make_boxes(deny_id, 1)
     raise AssertionError("короб прошёл при отказе площадки")
 except ValueError as exc:
-    assert "отказал в коробе" in str(exc) and "Кавказский" not in str(exc), exc
+    assert "не даёт короба" in str(exc) and "личный кабинет" in str(exc), exc
 finally:
     wb_supply.req = real_wb
-stayed = db.get_wb_supply(pvz_then)
-assert str(stayed["pickup_allowed"]) == "1", dict(stayed)
-assert db.get_shipments_by_ids([deny_ship])[0]["office"] == statuses.PVZ
+# отказ переписал точку: раньше мы оставляли ПВЗ и врали складу
+moved_to_sc = db.get_wb_supply(deny_id)
+assert str(moved_to_sc["pickup_allowed"]) == "0" and not (moved_to_sc["shipping_point"] or ""), dict(moved_to_sc)
+assert db.get_shipments_by_ids([deny_ship])[0]["office"] == statuses.SC
+
+# предел коробов и отказ по точке различаются: тексты не должны путаться
+limit_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-LIM", "Предел", "2026-09-05T12:00:00", "тест", "1", "1", "50095011")
+limit_ship = db.upsert_shipment(
+    client_id, wb_cab, "wb", "fbs", "303", "Новый", "2026-09-05", "ART-1", "2000000000019",
+    "Ремень", 1, None, 0, "2026-09-05T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:12", "cargo_type": "1"},
+)
+db.set_shipment_supply([limit_ship], "WB-GI-LIM")
+
+def deny_limit(method, url, headers=None, **kw):
+    path = url.split("?")[0]
+    if method == "POST" and path.endswith("/trbx"):
+        return Fake(409, {"code": "FailedToAddSupplyTrbx", "message": "limit reached"})
+    return real_wb(method, url, headers=headers, **kw)
+
+wb_supply.req = deny_limit
+try:
+    supply_flow.make_boxes(limit_id, 1)
+    raise AssertionError("короб прошёл при отказе по пределу")
+except ValueError as exc:
+    assert "отказал в коробе" in str(exc) and "личный кабинет" not in str(exc), exc
+finally:
+    wb_supply.req = real_wb
+# по пределу точку не трогаем: она была выбрана и остаётся
+assert str(db.get_wb_supply(limit_id)["shipping_point"]) == "50095011"
 
 # поставку пересобрали в ЛК: подтягиваем новый номер, задания и короб
 old_ext = "WB-GI-OLD"
@@ -576,14 +620,60 @@ got = supply_flow.refresh_from_wb(wb_cab, new_ext)
 wb_supply.req = real_wb
 assert got["ext_id"] == new_ext and got["state"] == "open" and got["office"] == statuses.PVZ, got
 assert got["orders"] == ["401", "402", "403"] and got["boxes"] == ["WB-MP-NEW"], got
-assert got["shipping_point"] == 50095011
+assert str(got["shipping_point"]) == "50095011" and got["warn"] == "", got
 fresh = db.get_wb_supply(got["id"])
 assert fresh["state"] == "open" and str(fresh["pickup_allowed"]) == "1", dict(fresh)
+assert str(fresh["shipping_point"]) == "50095011", dict(fresh)
 rows = db.list_supply_shipments(wb_cab, new_ext)
 assert len(rows) == 3 and {r["trbx_ext"] for r in rows} == {"WB-MP-NEW"}, [dict(r) for r in rows]
 assert all(r["work_state"] == "assembling" for r in rows), [dict(r) for r in rows]
+assert {r["office"] for r in rows} == {statuses.PVZ}, [dict(r) for r in rows]
 assert not db.list_supply_shipments(wb_cab, old_ext)
 assert db.get_wb_supply(old_sid)["ext_id"] == old_ext
+
+# 23б. вчерашняя петля целиком: поставку пересобрали в ЛК и выбрали там ПВЗ, а
+# следующее задание легло в нашу прежнюю поставку, ехавшую в СЦ. Теперь перед
+# отбором сверяемся с площадкой, и задание уходит в поставку из кабинета.
+lk_ext = "WB-GI-LK"
+lk_client = client_id
+stale_sid = db.insert_wb_supply(lk_client, wb_cab, "WB-GI-STALE", "Смена СЦ", "2026-09-10T09:08:00", "тест", "1", "0", "")
+plus_one = db.upsert_shipment(
+    lk_client, wb_cab, "wb", "fbs", "501", "Новый", "2026-09-10", "ART-1", "2000000000019",
+    "Ремень", 1, None, 0, "2026-09-10T15:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-10 15:00", "cargo_type": "1"},
+)
+
+def lk_supplies(method, url, headers=None, **kw):
+    path = url.split("?")[0]
+    if method == "GET" and path.endswith("/api/v3/supplies"):
+        return Fake(200, {"supplies": [
+            {"id": lk_ext, "name": "Поставка от 10.09.2026", "done": False, "cargoType": 1,
+             "isPickupPointShipmentAllowed": True, "shippingPointId": 50095011,
+             "createdAt": "2026-09-10T14:06:59Z"},
+        ], "next": 0})
+    if method == "GET" and path.rstrip("/").endswith("/supplies/" + lk_ext):
+        return Fake(200, {"id": lk_ext, "name": "Поставка от 10.09.2026", "done": False, "cargoType": 1,
+                          "isPickupPointShipmentAllowed": True, "shippingPointId": 50095011,
+                          "createdAt": "2026-09-10T14:06:59Z"})
+    if method == "GET" and path.endswith("/supplies/%s/order-ids" % lk_ext):
+        return Fake(200, {"orderIds": []})
+    if method == "GET" and path.endswith("/supplies/%s/trbx" % lk_ext):
+        return Fake(200, {"trbxes": []})
+    if method == "PATCH" and path.endswith("/supplies/%s/orders" % lk_ext):
+        return Fake(204, {})
+    return real_wb(method, url, headers=headers, **kw)
+
+wb_supply.req = lk_supplies
+try:
+    took = supply_flow.take([plus_one], author="тест")
+finally:
+    wb_supply.req = real_wb
+assert len(took["supplies"]) == 1, took
+assert took["supplies"][0]["ext_id"] == lk_ext, took
+# прежняя поставка на площадке закрыта — у нас она тоже перестала быть открытой
+assert db.get_wb_supply(stale_sid)["state"] == "delivered", dict(db.get_wb_supply(stale_sid))
+landed = db.get_shipments_by_ids([plus_one])[0]
+assert landed["supply_ext"] == lk_ext and landed["office"] == statuses.PVZ, dict(landed)
 
 # 24. печать из окна поставки: своё задание, чужое не берём
 pdf, notes, pages = supply_flow.print_labels(sup["id"], ships[:1], "product")

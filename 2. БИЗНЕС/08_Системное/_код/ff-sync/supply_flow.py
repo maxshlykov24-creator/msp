@@ -385,11 +385,16 @@ def sync_open(cabinet_id=None, client_id=None, author="площадка", min_ga
                 notes.append("%s: %s" % (ext, exc))
                 continue
             found += 1
-        # у себя открыта, а площадка её уже закрыла: чаще всего сдали через ЛК
+        # у себя открыта, а в списке её нет: скорее всего сдали через ЛК. Перед
+        # тем как закрыть, спрашиваем карточку — список мог оборваться на
+        # пагинации, и закрыть живую поставку хуже, чем не заметить сданную
         for row in list_wb_supplies(client_id=cab["client_id"], state="open"):
             if row["cabinet_id"] != cab["id"] or row["ext_id"] in live:
                 continue
-            set_wb_supply_state(row["id"], "delivered", now_iso())
+            card = wb_supply.info(cab, row["ext_id"]) or {}
+            if not card.get("done"):
+                continue
+            mark_wb_supply_delivered(row["id"], _wb_stamp(card.get("closedAt")))
             notes.append("%s: на площадке уже закрыта, отметил сданной." % row["ext_id"])
     return {"found": found, "notes": notes}
 
