@@ -106,12 +106,17 @@ def dropoff(cargo_type="", pickup_allowed="", shipping_point=""):
     return ""
 
 
-def cargo_label(cargo_type, pickup_allowed="", shipping_point=""):
-    """«малогабаритный · ПВЗ». Габарита нет — пусто, врать не будем."""
+def cargo_kind(cargo_type):
+    """Только габарит: «малогабаритный». Неизвестный тип — пусто."""
     got = CARGO.get(str(cargo_type or "").strip())
-    if not got:
+    return got[0] if got else ""
+
+
+def cargo_label(cargo_type, pickup_allowed="", shipping_point=""):
+    """«малогабаритный · ПВЗ» для карточки поставки. Габарита нет — пусто."""
+    kind = cargo_kind(cargo_type)
+    if not kind:
         return ""
-    kind = got[0]
     dest = {"pvz": "ПВЗ", "sc": "СЦ"}.get(dropoff_kind(pickup_allowed, shipping_point), PVZ_WAIT)
     return "%s · %s" % (kind, dest)
 

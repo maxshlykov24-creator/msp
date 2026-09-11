@@ -487,18 +487,17 @@ def add_orders(supply_id, ship_ids):
 
 
 def make_boxes(supply_id, amount):
-    """Завести грузоместа. Предел у WB — половина заданий, округление вниз."""
+    """Завести грузоместа. Предел у WB — половина заданий, округление вниз.
+
+    По габариту заранее не отказываем: короба зависят не от него, а от того,
+    выбрана ли в ЛК точка ПВЗ. Спрашиваем площадку и читаем её отказ.
+    """
     import statuses
 
     supply = _supply(supply_id)
     if supply["state"] != "open":
         raise ValueError("поставка передана в доставку, грузоместа не меняются")
     cargo = str(supply["cargo_type"] or "")
-    if cargo and not statuses.to_pickup(cargo, _col(supply, "pickup_allowed")):
-        raise ValueError(
-            "грузоместа заводятся только для поставок на ПВЗ. Этот товар едет на %s, там короба не нужны."
-            % statuses.SC
-        )
     amount = int(amount or 0)
     if amount < 1:
         raise ValueError("сколько грузомест создать?")
@@ -520,18 +519,16 @@ def make_boxes(supply_id, amount):
     try:
         ext_ids = wb_supply.add_boxes(cab, supply["ext_id"], amount)
     except wb_supply.SupplyError as exc:
-        # 409 бывает и на пределе коробов, и когда WB пишет про pickup point.
-        # На МГТ это не повод переписывать адрес на СЦ: тот же товар 10.09
-        # приняли на Домодедовской 28. СЦ только если габарит 2 или 3.
-        info = wb_supply.info(cab, supply["ext_id"]) or {}
-        cargo_now = str(info.get("cargoType") or cargo or "")
-        if cargo_now and cargo_now != statuses.CARGO_MGT:
-            _apply_dropoff(supply, "0", cargo_now)
+        # 409 приходит на двух разных поводах: превышен предел коробов либо
+        # поставка сдаётся не на ПВЗ. Второе — единственный честный признак,
+        # что точку не выбрали, поэтому перечитываем карточку и пишем правду.
+        if "pickup point" in str(exc).lower():
+            flag, cargo_now, point = _sync_dropoff(supply)
             raise ValueError(
-                "грузоместа заводятся только для поставок на ПВЗ. Этот товар едет на %s, там короба не нужны."
-                % statuses.SC
+                "WB не даёт короба: поставка сдаётся не на ПВЗ. %s"
+                % statuses.dropoff_warning("open", flag, point)
             )
-        if "FailedToAddSupplyTrbx" in str(exc) or "pickup point" in str(exc).lower():
+        if "FailedToAddSupplyTrbx" in str(exc):
             raise ValueError(
                 "WB отказал в коробе: заданий в поставке %s, коробов уже %s, предел площадки %s."
                 % (orders, have, limit)
@@ -604,6 +601,9 @@ def deliver(supply_id, confirm=False, force=False):
     Без `confirm` ничего не делаем. Раскладка товара по коробам площадке не
     нужна: достаточно числа грузомест и их QR. Параметр `force` оставлен
     для старых вызовов и ничего не меняет.
+
+    Перед отправкой перечитываем точку сдачи с площадки: после закрытия её уже
+    не поменять, а выбирают её в ЛК, мимо нас.
     """
     import statuses
 
@@ -613,27 +613,42 @@ def deliver(supply_id, confirm=False, force=False):
     rows = list_supply_shipments(supply["cabinet_id"], supply["ext_id"])
     if not rows:
         raise ValueError("в поставке нет заданий")
-    pickup = statuses.to_pickup(_col(supply, "cargo_type"), _col(supply, "pickup_allowed"))
-    loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []
     if not confirm:
         raise ValueError("нужно подтверждение: шаг необратимый")
+    flag, _cargo, point = _sync_dropoff(supply)
+    pickup = statuses.to_pickup("", flag, point)
+    loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []
     cab = _cab_of_supply(supply)
     wb_supply.deliver(cab, supply["ext_id"])
     set_wb_supply_state(supply["id"], "ready", now_iso())
     set_work_state([r["id"] for r in rows], "ready")
-    return {"ok": True, "orders": len(rows), "loose": len(loose)}
+    return {
+        "ok": True,
+        "orders": len(rows),
+        "loose": len(loose),
+        "office": statuses.dropoff("", flag, point),
+        "warn": statuses.dropoff_warning("ready", flag, point),
+    }
 
 
 def preflight(supply_id):
-    """Что покажем в окне подтверждения перед передачей в доставку."""
+    """Что покажем в окне подтверждения перед передачей в доставку.
+
+    Точку сдачи перечитываем с площадки: её могли выбрать в ЛК минуту назад, а
+    после передачи поставка закрыта и поправить уже нечего.
+    """
     import statuses
 
     supply = _supply(supply_id)
+    try:
+        flag, cargo, point = _sync_dropoff(supply)
+    except (ValueError, wb_supply.SupplyError):
+        flag = _col(supply, "pickup_allowed")
+        cargo = _col(supply, "cargo_type")
+        point = _col(supply, "shipping_point")
     rows = list_supply_shipments(supply["cabinet_id"], supply["ext_id"])
     boxes = list_wb_boxes(supply["id"])
-    cargo = _col(supply, "cargo_type")
-    flag = _col(supply, "pickup_allowed")
-    pickup = statuses.to_pickup(cargo, flag)
+    pickup = statuses.to_pickup(cargo, flag, point)
     loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []
     empty = [b for b in boxes if not b["orders"]]
     return {
@@ -644,8 +659,9 @@ def preflight(supply_id):
         "loose": len(loose),
         "empty_boxes": [b["ext_id"] for b in empty],
         "state": supply["state"],
-        "office": statuses.dropoff(cargo, flag),
+        "office": statuses.dropoff(cargo, flag, point),
         "pickup": pickup,
+        "warn": statuses.dropoff_warning(supply["state"], flag, point),
     }
 
 

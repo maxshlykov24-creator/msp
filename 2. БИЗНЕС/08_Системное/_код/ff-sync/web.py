@@ -55,6 +55,32 @@ def secret():
     return (env_opt("FF_SECRET") or env_opt("FF_WEB_TOKEN") or "ff-sync").encode()
 
 
+def col(row, name, default=""):
+    """Колонка строки, которой может не быть: запросы отдают разный набор полей."""
+    if row is None:
+        return default
+    return (row[name] if name in row.keys() else default) or default
+
+
+def dropoff_of(row):
+    """Куда везти, габарит и предупреждение по точке сдачи — одним набором.
+
+    Точку сдачи задаёт только ЛК WB, поэтому читаем её из `shipping_point` и
+    ничего не выводим из габарита.
+    """
+    import statuses
+
+    flag = col(row, "pickup_allowed")
+    point = col(row, "shipping_point")
+    cargo = col(row, "cargo_type")
+    return {
+        "office": statuses.dropoff(cargo, flag, point),
+        "pickup": statuses.to_pickup(cargo, flag, point),
+        "cargo": statuses.cargo_label(cargo, flag, point),
+        "warn": statuses.dropoff_warning(col(row, "state", "open"), flag, point),
+    }
+
+
 def users():
     """FF_USERS=глеб:пароль,максим:пароль"""
     out = {}
@@ -753,14 +779,10 @@ def assembly(
                 "marks": r["marks_count"],
                 "supply": (r["supply_ext"] if "supply_ext" in r.keys() else "") or "",
                 "box": (r["trbx_ext"] if "trbx_ext" in r.keys() else "") or "",
-                "office": statuses.dropoff(
-                    r["cargo_type"] if "cargo_type" in r.keys() else "",
-                    r["pickup_allowed"] if "pickup_allowed" in r.keys() else "",
-                ) or ((r["office"] if "office" in r.keys() else "") or ""),
-                "cargo": statuses.cargo_label(
-                    r["cargo_type"] if "cargo_type" in r.keys() else "",
-                    r["pickup_allowed"] if "pickup_allowed" in r.keys() else "",
-                ),
+                # адрес сдачи приходит от поставки: у задания вне поставки точки
+                # ещё нет, и выдумывать её по габариту нельзя
+                "office": col(r, "office"),
+                "cargo": statuses.cargo_kind(col(r, "cargo_type")),
                 "ms_order_id": r["ms_order_id"] or "",
                 "ms_url": order_app_url(r["ms_order_id"]),
             }
@@ -781,9 +803,7 @@ def assembly(
                 "boxes": s["boxes"],
                 "loose": s["loose"],
                 "ship_ids": [r["id"] for r in members],
-                "cargo": statuses.cargo_label(s["cargo_type"], s["pickup_allowed"] if "pickup_allowed" in s.keys() else ""),
-                "pickup": statuses.to_pickup(s["cargo_type"], s["pickup_allowed"] if "pickup_allowed" in s.keys() else ""),
-                "office": statuses.dropoff(s["cargo_type"], s["pickup_allowed"] if "pickup_allowed" in s.keys() else ""),
+                **dropoff_of(s),
                 "created": (s["created_at"] or "")[:16].replace("T", " "),
             }
         )
@@ -939,9 +959,19 @@ def assembly_ship(data: dict = Body(...), ff_session: str = Cookie(default="")):
 
 
 @app.get("/api/wb/supplies")
-def wb_supplies(client_id: int = 0, state: str = "", ff_session: str = Cookie(default="")):
+def wb_supplies(client_id: int = 0, state: str = "", sync: int = 1, ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
+    import supply_flow
+
+    notes = []
+    if sync:
+        # поставку могли создать руками в ЛК — например чтобы выбрать точку ПВЗ,
+        # которую через API не задать. Без этой сверки она нам не видна
+        try:
+            notes = supply_flow.sync_open(client_id=client_id or None)["notes"]
+        except Exception as exc:
+            notes = ["сверка с площадкой не прошла: %s" % exc]
     return {
         "rows": [
             {
@@ -957,9 +987,11 @@ def wb_supplies(client_id: int = 0, state: str = "", ff_session: str = Cookie(de
                 "created": (r["created_at"] or "")[:16].replace("T", " "),
                 "delivered": (r["delivered_at"] or "")[:16].replace("T", " "),
                 "author": r["author"] or "",
+                **dropoff_of(r),
             }
             for r in list_wb_supplies(client_id=client_id or None, state=state)
-        ]
+        ],
+        "notes": notes,
     }
 
 
@@ -1000,18 +1032,7 @@ def wb_supply_detail(supply_id: int, ff_session: str = Cookie(default="")):
             "state": supply["state"],
             "created": (supply["created_at"] or "")[:16].replace("T", " "),
             "delivered": (supply["delivered_at"] or "")[:16].replace("T", " "),
-            "office": statuses.dropoff(
-                supply["cargo_type"] if "cargo_type" in supply.keys() else "",
-                supply["pickup_allowed"] if "pickup_allowed" in supply.keys() else "",
-            ),
-            "pickup": statuses.to_pickup(
-                supply["cargo_type"] if "cargo_type" in supply.keys() else "",
-                supply["pickup_allowed"] if "pickup_allowed" in supply.keys() else "",
-            ),
-            "cargo": statuses.cargo_label(
-                supply["cargo_type"] if "cargo_type" in supply.keys() else "",
-                supply["pickup_allowed"] if "pickup_allowed" in supply.keys() else "",
-            ),
+            **dropoff_of(supply),
         },
         "boxes": [
             {"id": b["id"], "ext_id": b["ext_id"], "orders": b["orders"]}
