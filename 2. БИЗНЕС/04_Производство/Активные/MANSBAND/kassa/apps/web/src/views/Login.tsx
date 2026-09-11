@@ -3,6 +3,7 @@ import { Button, Field } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { warmupApi } from "../api/client";
 import { ThemeToggle } from "../lib/theme";
+import { BrandLogo } from "../components/BrandLogo";
 
 export function Login() {
   const { login } = useAuth();
@@ -32,9 +33,9 @@ export function Login() {
         <ThemeToggle />
       </div>
       <form onSubmit={submit} className="card p-8 w-full max-w-sm">
-        <div className="text-center mb-6">
-          <div className="text-2xl font-extrabold text-white tracking-wide">MANSBAND</div>
-          <div className="field-label mt-1">Касса · вход</div>
+        <div className="text-center mb-6 flex flex-col items-center">
+          <BrandLogo className="h-12" />
+          <div className="field-label mt-2">Касса · вход</div>
         </div>
         <div className="space-y-4">
           <Field label="Логин" required>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   LayoutList,
   PlusCircle,
@@ -25,7 +25,7 @@ import { OfflineBanner } from "./OfflineBanner";
 import { Select, opts } from "./Select";
 import { HintsToggle } from "../lib/hints";
 import { ThemeToggle } from "../lib/theme";
-import logoFull from "../assets/logo-full.png";
+import { BrandLogo } from "./BrandLogo";
 
 export type Route =
   | "board"
@@ -108,12 +108,7 @@ export function Layout({
           aria-label="На главную"
           className="px-5 py-6 border-b border-ink-800 text-left w-full hover:bg-ink-800/40 transition"
         >
-          <span
-            className="brand-logo h-14 select-none"
-            role="img"
-            aria-label="MANSBAND"
-            style={{ "--brand-src": `url(${logoFull})` } as CSSProperties}
-          />
+          <BrandLogo className="h-14" />
           <div className="text-[11px] text-mute tracking-[0.28em] uppercase mt-2.5 pl-0.5">Касса</div>
         </button>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
@@ -192,12 +187,7 @@ export function Layout({
             <div className="grid grid-cols-[1fr_auto_1fr] items-center py-2.5 gap-2">
               <div />
               <button type="button" onClick={onHome} aria-label="На главную">
-                <span
-                  className="brand-logo h-7 select-none"
-                  role="img"
-                  aria-label="MANSBAND"
-                  style={{ "--brand-src": `url(${logoFull})` } as CSSProperties}
-                />
+                <BrandLogo className="h-7" />
               </button>
               <div className="justify-self-end flex flex-col items-end gap-1">
                 <ThemeToggle compact />

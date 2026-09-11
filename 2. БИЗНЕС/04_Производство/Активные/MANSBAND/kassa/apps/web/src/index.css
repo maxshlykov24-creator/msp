@@ -243,18 +243,15 @@ body.hints-off .hint-only {
   display: none !important;
 }
 
-/* Знак из PNG с чёрной плашкой: маска, чтобы плашка не становилась
-   белым прямоугольником в светлой теме. */
+/* Белый знак, фон вырезан. В светлой теме — чёрный через invert. */
 .brand-logo {
   display: block;
-  aspect-ratio: 470 / 330;
   width: auto;
-  background: #fff;
-  -webkit-mask: var(--brand-src) left center / contain no-repeat;
-  mask: var(--brand-src) left center / contain no-repeat;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 html.theme-light .brand-logo {
-  background: #161616;
+  filter: invert(1);
 }
 
 /* Статусные цвета Tailwind заточены под тёмный фон — в светлой теме читаемые. */
