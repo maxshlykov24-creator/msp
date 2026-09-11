@@ -1165,10 +1165,9 @@ function wbSupplyPill(supply) {
 // Задания внутри не раскрываем: состав, короба и сдача живут в окне поставки.
 function asmSupplyHtml(sup, rows) {
   const qty = rows.reduce((a, r) => a + Number(r.qty || 0), 0);
-  const office = sup.office || (rows.length && rows[0].office ? rows[0].office : "");
-  const bits = [qty + " шт", sup.orders + " зак."];
-  if (sup.pickup) bits.push(sup.boxes + " кор.");
-  if (office) bits.push(office);
+  const bits = [qty + " шт", sup.orders + " зак.", sup.boxes + " кор."];
+  // точку ПВЗ выбирают в ЛК: не выбрали — так и говорим, а не подставляем адрес
+  bits.push(sup.office || "точка не выбрана");
   return `<tr class="sup-head" data-supply="${esc(sup.ext_id)}" data-sid="${sup.id}" title="Открыть поставку">
     <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}" title="Выбрать все задания поставки"></td>
     <td colspan="${ASM_COLS - 1}"><div class="sup-bar">
@@ -1426,11 +1425,12 @@ async function asmWork(stateCode, nextGroup, label) {
   }
 }
 
-// поставки WB в выборке, по которым можно заводить короба: только те, что едут
-// на ПВЗ — в сортировочный центр товар сдают без коробов
+// открытые поставки WB в выборке: по ним спрашиваем число коробов. Заранее по
+// габариту не отказываем — короба зависят от выбранной в ЛК точки, и ответит
+// на это только площадка
 function pickedPickupSupplies() {
   const exts = new Set(state.asm.filter((r) => state.pickedAsm.has(r.id) && r.supply).map((r) => r.supply));
-  return (state.asmSupplies || []).filter((s) => exts.has(s.ext_id) && s.pickup && s.state === "open");
+  return (state.asmSupplies || []).filter((s) => exts.has(s.ext_id) && s.state === "open");
 }
 
 async function asmDone() {
@@ -1646,11 +1646,11 @@ async function asmShipped() {
   if (!ids.length) return;
   const supplies = pickedOpenSupplies();
   for (const sup of supplies) {
-    const dest = sup.office || (sup.pickup ? "ПВЗ Домодедовская, 28" : "СЦ Кавказский бульвар, 57 стр. 1, Москва");
     const okay = await ask(
       "Передать поставку " + sup.ext_id + " в доставку?",
-      dest + ". " + sup.client + " · " + sup.orders + " заданий, " + (sup.pickup ? sup.boxes + " мест." : "короба не нужны.")
-        + " Шаг необратимый: WB закроет поставку, задания уйдут в «В доставке», добавить в неё больше ничего нельзя.",
+      (sup.office || "Точка сдачи не выбрана") + ". " + sup.client + " · " + sup.orders + " заданий, " + sup.boxes + " мест."
+        + " Шаг необратимый: WB закроет поставку, задания уйдут в «В доставке», добавить в неё больше ничего нельзя."
+        + (sup.warn ? "\n\n" + sup.warn : ""),
       "Передать"
     );
     if (!okay) {
@@ -1813,8 +1813,8 @@ async function loadWbDetail(id) {
   const res = await api("/api/wb/supplies/" + id);
   state.wbDetail = res;
   const open = res.supply.state === "open";
-  const pickup = res.supply.pickup !== false;
-  const dest = res.supply.office || (pickup ? "ПВЗ Домодедовская, 28" : "СЦ Кавказский бульвар, 57 стр. 1, Москва");
+  // адрес сдачи не угадываем: точку ПВЗ выбирают в ЛК, и пока её нет — так и пишем
+  const dest = res.supply.office || "точка сдачи не выбрана";
   const boxes = res.boxes.map((b) => `<button type="button" class="wb-box${b.id === state.wbBox ? " is-on" : ""}" data-box="${b.id}">
       <b>${esc(b.ext_id)}</b>
       ${open ? `<i data-boxdrop="${b.id}" title="Удалить короб">×</i>` : ""}
@@ -1825,27 +1825,35 @@ async function loadWbDetail(id) {
             <div class="print-menu" id="wbPrintMenu" hidden>
               <button type="button" data-mode="posting">Заказ</button>
               <button type="button" data-mode="product">Товар</button>
-              ${pickup ? `<button type="button" data-mode="box">Короб</button>` : ""}
+              <button type="button" data-mode="box">Короб</button>
               <button type="button" data-mode="both">Заказ + товар</button>
-              ${pickup ? `<button type="button" data-mode="posting_box">Заказ + короба</button>
-              <button type="button" data-mode="posting_product_box">Заказ + товар + короб</button>` : ""}
+              <button type="button" data-mode="posting_box">Заказ + короба</button>
+              <button type="button" data-mode="posting_product_box">Заказ + товар + короб</button>
             </div>
           </div>`;
+  const warn = res.supply.warn
+    ? `<div class="wb-warn">
+        <b>${esc(dest === "точка сдачи не выбрана" ? "Точка ПВЗ не выбрана" : "Проверь точку сдачи")}</b>
+        <p>${esc(res.supply.warn)}</p>
+        ${open ? `<button class="btn-ghost" id="wbRefresh" type="button">Обновить с площадки</button>` : ""}
+      </div>`
+    : "";
   $("wbTitle").textContent = res.supply.ext_id;
-  $("wbSub").textContent = [res.supply.client, dest, res.rows.length + " зак.", pickup ? res.boxes.length + " кор." : "короба не нужны"].filter(Boolean).join(" · ");
+  $("wbSub").textContent = [res.supply.client, dest, res.rows.length + " зак.", res.boxes.length + " кор."].filter(Boolean).join(" · ");
   const pill = $("wbHeadPill");
   pill.hidden = false;
   pill.className = "wb-pill " + res.supply.state;
   pill.textContent = wbSupplyPill(res.supply);
   $("wbDetail").innerHTML = `
+    ${warn}
     <section class="wb-sec">
       <div class="wb-sec-h">
         <h4>Короба</h4>
         <div class="wb-sec-acts">
-          ${open && pickup ? `<button class="btn-ghost" id="wbNewBox" type="button">Добавить короб</button>` : ""}
+          ${open ? `<button class="btn-ghost" id="wbNewBox" type="button">Добавить короб</button>` : ""}
         </div>
       </div>
-      <div class="wb-boxes">${pickup ? (boxes || `<div class="wb-empty">Коробов нет. Добавь столько, сколько собрал — на каждый печатается QR.</div>`) : `<div class="wb-empty">Эта поставка едет на СЦ. Грузоместа не заводятся.</div>`}</div>
+      <div class="wb-boxes">${boxes || `<div class="wb-empty">Коробов нет. Добавь столько, сколько собрал — на каждый печатается QR.</div>`}</div>
     </section>
     <section class="wb-sec wb-sec-orders">
       <div class="wb-sec-h">
@@ -1993,6 +2001,15 @@ function bindWbDetail() {
     state.wbQuery = q.value;
     renderWbRows();
   };
+  const rf = $("wbRefresh");
+  if (rf) rf.onclick = async () => {
+    await guard(async () => {
+      const res = await api("/api/wb/supplies/" + id + "/refresh", { method: "POST" });
+      await loadWbDetail(id);
+      await loadAsm();
+      say($("wbMsg"), res.warn || ("Точка сдачи: " + (res.office || "не выбрана") + "."), res.warn ? "warn" : "ok");
+    }, "Читаю поставку с площадки…");
+  };
   const nb = $("wbNewBox");
   if (nb) nb.onclick = async () => {
     const have = ((state.wbDetail && state.wbDetail.boxes) || []).length;
@@ -2034,20 +2051,21 @@ function bindWbDetail() {
       say($("wbMsg"), e.message, "bad");
       return;
     }
-    const dest = pre.office || "";
+    // точку сдачи preflight перечитывает с площадки: после закрытия её не поменять
     const okay = await ask(
       "Отправить поставку на отгрузку?",
-      (dest ? dest + ". " : "") + pre.ext_id + " · " + pre.client + ". В поставке " + pre.orders + " заданий"
-        + (pre.pickup === false ? ", короба не нужны." : " и " + pre.boxes + " грузомест.")
-        + " WB закроет поставку, добавить в неё больше ничего нельзя. Поставка уйдёт во вкладку «Ожидают отгрузки».",
+      (pre.office ? pre.office + ". " : "") + pre.ext_id + " · " + pre.client
+        + ". В поставке " + pre.orders + " заданий и " + pre.boxes + " грузомест."
+        + " WB закроет поставку, добавить в неё больше ничего нельзя. Поставка уйдёт во вкладку «Ожидают отгрузки»."
+        + (pre.warn ? "\n\n" + pre.warn : ""),
       "На отгрузку"
     );
     if (!okay) return;
     await guard(async () => {
-      await api("/api/wb/supplies/" + id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true }) });
-      say($("wbMsg"), "Поставка на отгрузке.", "ok");
+      const res = await api("/api/wb/supplies/" + id + "/deliver", { method: "POST", body: JSON.stringify({ confirm: true }) });
       await loadWbDetail(id);
       await loadAsm();
+      say($("wbMsg"), res.warn || ("Поставка на отгрузке: " + (res.office || "точка не выбрана") + "."), res.warn ? "warn" : "ok");
     }, "Отправляю на отгрузку…");
   };
   const wrap = $("wbDetail");

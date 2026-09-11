@@ -5,6 +5,7 @@
 WB не принял задание в поставку, у нас не должно остаться отметки, что принял.
 """
 
+import time
 from datetime import datetime, timedelta, timezone
 
 import pack
@@ -321,7 +322,10 @@ def create_supply(client_id, name, author):
     return {"id": sid, "ext_id": ext}
 
 
-def sync_open(cabinet_id=None, client_id=None, author="площадка"):
+_synced_at = {}
+
+
+def sync_open(cabinet_id=None, client_id=None, author="площадка", min_gap=0):
     """Свести открытые поставки кабинета с площадкой.
 
     Поставку могут создать руками в ЛК — например чтобы выбрать точку ПВЗ,
@@ -331,7 +335,18 @@ def sync_open(cabinet_id=None, client_id=None, author="площадка"):
     Что делаем: новые открытые поставки площадки заводим у себя вместе с
     составом, у знакомых обновляем точку сдачи, а закрытые на площадке
     отмечаем закрытыми и у нас. Наружу ничего не пишем, только читаем.
+
+    `min_gap` в секундах бережёт лимит WB: таблица сборки перерисовывается
+    часто, а у группы ручек поставок 300 запросов в минуту, и каждый 4XX
+    списывается как десять.
     """
+    if min_gap:
+        key = (int(cabinet_id or 0), int(client_id or 0))
+        was = _synced_at.get(key) or 0
+        now = time.monotonic()
+        if now - was < float(min_gap):
+            return {"found": 0, "notes": [], "skipped": True}
+        _synced_at[key] = now
     cabs = []
     if cabinet_id:
         cab = get_cabinet(int(cabinet_id))

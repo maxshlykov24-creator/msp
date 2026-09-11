@@ -170,6 +170,7 @@ body{font-family:var(--font);color:var(--ink);background:var(--bg);background-im
 .msg{font-size:12.5px;color:var(--mute);margin-top:14px;line-height:1.5;white-space:pre-line}
 .msg.bad{color:var(--red)}
 .msg.ok{color:var(--green)}
+.msg.warn{color:var(--amber)}
 .actions{display:flex;align-items:center;gap:14px;margin-top:18px;flex-wrap:wrap}
 .sel{font-size:12.5px;color:var(--mute-2)}
 
@@ -364,6 +365,15 @@ table.asm-tbl tr.sup-head:hover .sup-bar i{opacity:1}
 .wb-pill.open{color:var(--amber)}
 .wb-pill.ready{color:var(--accent)}
 .wb-pill.delivered{color:var(--mute-2)}
+/* точку ПВЗ задаёт только ЛК WB: пока её нет, поставка уедет в СЦ. Оператор
+   должен увидеть это до необратимой передачи в доставку */
+.wb-warn{
+  display:flex;flex-direction:column;align-items:flex-start;gap:8px;
+  padding:14px 16px;border-radius:14px;
+  border:1px solid rgba(212,146,42,.35);background:rgba(212,146,42,.08)
+}
+.wb-warn b{font-size:13px;font-weight:700;color:var(--amber)}
+.wb-warn p{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .wb-sec{display:flex;flex-direction:column;gap:8px}
 .wb-sec-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .wb-sec-h h4{font-size:13px;font-weight:700;margin:0}

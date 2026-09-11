@@ -240,17 +240,6 @@ def ozon_marks(detail):
     return uniq_marks(bag)
 
 
-def wb_office(order):
-    """Куда везти задание: наш ПВЗ или СЦ, не кластер покупателя из `offices`.
-
-    Выбрать точку через API нельзя. `offices` у задания — регион покупателя.
-    Флаг `isPickupPointShipmentAllowed` на задании 10.09 приходил False на все
-    3929 свежих заказов, хотя тот же товар приняли на ПВЗ. На выгрузке смотрим
-    только габарит: малогабарит — ПВЗ Домодедовская 28, крупный — СЦ.
-    """
-    return statuses_mod.dropoff(str(order.get("cargoType") or ""))
-
-
 def handle_wb_fbs(client, cab, orders):
     n = 0
     ids = [str(o.get("id") or "") for o in orders if o.get("id")]
@@ -284,9 +273,11 @@ def handle_wb_fbs(client, cab, orders):
                 "track": "",
                 "warehouse": "",
                 "image": cat["image"],
-                # куда везти: наш ПВЗ или СЦ. Кластер из `offices` не показываем.
-                # pickup_allowed на задании не пишем: у WB он на заказе врёт
-                "office": wb_office(order),
+                # адрес сдачи здесь не ставим: точку выбирают в ЛК на поставке,
+                # и до неё везти некуда. Кластер покупателя из `offices` и флаг
+                # isPickupPointShipmentAllowed не годятся — флаг 10.09 приходил
+                # False на все 3929 свежих заказов, включая принятые на ПВЗ.
+                # Адрес придёт от поставки через set_supply_shipments_dropoff
                 "cargo_type": str(order.get("cargoType") or ""),
             },
         )

@@ -1072,8 +1072,11 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
         "SELECT id, pickup_allowed, office FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
         (cabinet_id, kind, ext_id),
     ).fetchone()
-    if existing and "pickup_allowed" not in extra:
-        extra["pickup_allowed"] = str(existing["pickup_allowed"] or "") if "pickup_allowed" in existing.keys() else ""
+    # адрес сдачи и флаг ПВЗ приходят не из выгрузки, а от поставки: точку
+    # выбирают в ЛК. Выгрузка их не знает и затирать не должна
+    for col in ("pickup_allowed", "office"):
+        if existing and not extra.get(col):
+            extra[col] = str(col in existing.keys() and existing[col] or "")
     more = [str(extra.get(col) or "") for col in SHIP_EXTRA]
     if existing:
         conn.execute(

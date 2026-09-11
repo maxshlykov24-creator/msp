@@ -741,7 +741,15 @@ def assembly(
     who(ff_session)
     init_db()
     import statuses
+    import supply_flow
 
+    # поставку могли собрать руками в ЛК, чтобы выбрать точку ПВЗ: через API её
+    # не задать. Сверяемся с площадкой, но не чаще раза в минуту — у ручек
+    # поставок лимит 300 запросов в минуту
+    try:
+        supply_flow.sync_open(client_id=client_id or None, min_gap=60)
+    except Exception:
+        pass
     filters = dict(
         client_id=client_id or None, marketplace=mp, kind=kind, article=article, query=q, since=since, until=until
     )
@@ -1015,7 +1023,6 @@ def wb_supply_create(data: dict = Body(...), ff_session: str = Cookie(default=""
 def wb_supply_detail(supply_id: int, ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
-    import statuses
     from db import get_wb_supply
 
     supply = get_wb_supply(supply_id)
@@ -1052,6 +1059,25 @@ def wb_supply_detail(supply_id: int, ff_session: str = Cookie(default="")):
             for r in rows
         ],
     }
+
+
+@app.post("/api/wb/supplies/{supply_id}/refresh")
+def wb_supply_refresh(supply_id: int, ff_session: str = Cookie(default="")):
+    """Перечитать поставку с площадки: состав, короба, выбранную в ЛК точку ПВЗ."""
+    login = who(ff_session)
+    init_db()
+    import supply_flow
+    from db import get_wb_supply
+
+    supply = get_wb_supply(supply_id)
+    if not supply:
+        raise HTTPException(status_code=404, detail="поставка не найдена")
+    try:
+        return {"ok": True, **supply_flow.refresh_from_wb(supply["cabinet_id"], supply["ext_id"], login)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.post("/api/wb/supplies/{supply_id}/orders")
