@@ -1164,7 +1164,8 @@ function wbSupplyPill(supply) {
 // Поставка — та же строка таблицы, что и заказ, но с бейджем и полосой WB.
 // Задания внутри не раскрываем: состав, короба и сдача живут в окне поставки.
 function asmSupplyHtml(sup, rows) {
-  const qty = rows.reduce((a, r) => a + Number(r.qty || 0), 0);
+  const fromRows = rows.reduce((a, r) => a + Number(r.qty || 0), 0);
+  const qty = fromRows || Number(sup.qty || 0) || Number(sup.orders || 0);
   const bits = [qty + " шт", sup.orders + " зак.", sup.boxes + " кор."];
   // точку ПВЗ выбирают в ЛК: не выбрали — так и говорим, а не подставляем адрес
   bits.push(sup.office || "точка не выбрана");
@@ -1196,8 +1197,7 @@ function asmBodyHtml(rows) {
   });
   let html = "";
   (state.asmSupplies || []).forEach((sup) => {
-    const kids = bySupply.get(sup.ext_id);
-    if (!kids) return;
+    const kids = bySupply.get(sup.ext_id) || [];
     bySupply.delete(sup.ext_id);
     html += asmSupplyHtml(sup, kids);
   });

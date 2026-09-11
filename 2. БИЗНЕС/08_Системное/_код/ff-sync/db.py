@@ -1559,18 +1559,70 @@ EFF_GROUP = (
     " ELSE COALESCE(shipments.status_group,'') END"
 )
 
+# Открытая работа склада. Смена «принят» её не режет: иначе при «все
+# контрагенты» сегодняшние заказы одного клиента держат период, а вчерашняя
+# поставка другого пропадает из вкладки. Закрытые статусы период оставляют.
+OPEN_GROUPS = ("new", "assembling", "ready")
+ASM_WHEN = "replace(COALESCE(NULLIF(shipments.accepted_at, ''), shipments.shipped_at), 'T', ' ')"
 
-def list_assembly(client_id=None, group="", marketplace="", kind="", article="", query="", since="", until="", keep_floor=True, limit=0):
-    """Отправления для раздела «Сборка».
 
-    Период режем по «принят» с точностью до минуты: смена делит заказы по времени
-    поступления, а не по суткам. Формат since / until — 'ГГГГ-ММ-ДД ЧЧ:ММ'.
-    """
-    conn = connect()
-    sql = (
-        "SELECT shipments.*, clients.name AS client_name, %s AS eff_group FROM shipments "
-        "JOIN clients ON clients.id = shipments.client_id WHERE 1=1" % EFF_GROUP
-    )
+def _assembly_date_clauses(since, until, keep_floor, group=""):
+    """Дата для выборки сборки: открытая работа — пол 14 дней, закрытая — смена."""
+    clauses = []
+    args = []
+    floor = ship_keep_since() if keep_floor else ""
+    period = []
+    pargs = []
+    if since:
+        period.append("%s >= ?" % ASM_WHEN)
+        pargs.append(since)
+    if until:
+        period.append("%s <= ?" % ASM_WHEN)
+        pargs.append(until)
+    open_in = "%s IN ('new','assembling','ready')" % EFF_GROUP
+    closed = "%s NOT IN ('new','assembling','ready')" % EFF_GROUP
+
+    if group in OPEN_GROUPS:
+        if floor:
+            clauses.append("%s >= ?" % ASM_WHEN)
+            args.append(floor)
+        return clauses, args
+
+    if group:
+        if floor:
+            clauses.append("%s >= ?" % ASM_WHEN)
+            args.append(floor)
+        clauses.extend(period)
+        args.extend(pargs)
+        return clauses, args
+
+    if not period:
+        if floor:
+            clauses.append("%s >= ?" % ASM_WHEN)
+            args.append(floor)
+        return clauses, args
+
+    open_sql = open_in
+    open_args = []
+    if floor:
+        open_sql = "(%s AND %s >= ?)" % (open_in, ASM_WHEN)
+        open_args.append(floor)
+    closed_sql = closed
+    closed_args = []
+    if floor:
+        closed_sql = "(%s AND %s >= ?)" % (closed, ASM_WHEN)
+        closed_args.append(floor)
+    closed_sql = "(%s AND %s)" % (closed_sql, " AND ".join(period))
+    closed_args.extend(pargs)
+    clauses.append("(%s OR %s)" % (open_sql, closed_sql))
+    args.extend(open_args + closed_args)
+    return clauses, args
+
+
+def _assembly_filters(
+    client_id=None, group="", marketplace="", kind="", article="", query="", since="", until="", keep_floor=True,
+):
+    sql = " JOIN clients ON clients.id = shipments.client_id WHERE 1=1"
     args = []
     if client_id:
         sql += " AND shipments.client_id = ?"
@@ -1584,70 +1636,12 @@ def list_assembly(client_id=None, group="", marketplace="", kind="", article="",
     if group:
         sql += " AND %s = ?" % EFF_GROUP
         args.append(group)
-    when = "COALESCE(NULLIF(shipments.accepted_at, ''), shipments.shipped_at)"
-    if keep_floor:
-        floor = ship_keep_since()
-        if not since or since < floor:
-            since = floor
-    if since:
-        sql += " AND replace(%s, 'T', ' ') >= ?" % when
-        args.append(since)
-    if until:
-        sql += " AND replace(%s, 'T', ' ') <= ?" % when
-        args.append(until)
-    sql += " ORDER BY %s DESC, shipments.id DESC" % when
-    if limit:
-        sql += " LIMIT %d" % int(limit)
-    rows = conn.execute(sql, args).fetchall()
-    conn.close()
+    date_sql, date_args = _assembly_date_clauses(since, until, keep_floor, group)
+    for clause in date_sql:
+        sql += " AND " + clause
+    args.extend(date_args)
     # Артикул сверяем целиком, а не по вхождению: по этому фильтру оператор
     # отбирает позиции на печать этикеток, и «777» не должен тянуть «7777».
-    # Для поиска по части строки есть отдельное поле query.
-    art = (article or "").strip().lower()
-    if art:
-        rows = [r for r in rows if str(r["article"] or "").strip().lower() == art]
-    text = (query or "").strip().lower()
-    if not text:
-        return rows
-    out = []
-    for row in rows:
-        hay = " ".join(
-            str(row[k] or "").lower()
-            for k in ("ext_id", "article", "barcode", "name", "status", "client_name", "track", "warehouse")
-        )
-        if text in hay:
-            out.append(row)
-    return out
-
-
-def assembly_counts(client_id=None, marketplace="", kind="", article="", query="", since="", until="", keep_floor=True):
-    """Счётчики на вкладках. Считаем в SQL: раньше тянули все строки в память."""
-    conn = connect()
-    sql = (
-        "SELECT %s AS g, COUNT(*) AS n FROM shipments "
-        "JOIN clients ON clients.id = shipments.client_id WHERE 1=1" % EFF_GROUP
-    )
-    args = []
-    if client_id:
-        sql += " AND shipments.client_id = ?"
-        args.append(int(client_id))
-    if marketplace:
-        sql += " AND shipments.marketplace = ?"
-        args.append(marketplace)
-    if kind:
-        sql += " AND shipments.kind = ?"
-        args.append(kind.lower())
-    when = "COALESCE(NULLIF(shipments.accepted_at, ''), shipments.shipped_at)"
-    if keep_floor:
-        floor = ship_keep_since()
-        if not since or since < floor:
-            since = floor
-    if since:
-        sql += " AND replace(%s, 'T', ' ') >= ?" % when
-        args.append(since)
-    if until:
-        sql += " AND replace(%s, 'T', ' ') <= ?" % when
-        args.append(until)
     art = (article or "").strip().lower()
     if art:
         sql += " AND lower(trim(ifnull(shipments.article,''))) = ?"
@@ -1661,7 +1655,62 @@ def assembly_counts(client_id=None, marketplace="", kind="", article="", query="
             "ifnull(shipments.track,'') || ' ' || ifnull(shipments.warehouse,'')) LIKE ?"
         )
         args.append("%" + text + "%")
-    rows = conn.execute(sql + " GROUP BY g", args).fetchall()
+    return sql, args
+
+
+def list_assembly(client_id=None, group="", marketplace="", kind="", article="", query="", since="", until="", keep_floor=True, limit=0):
+    """Отправления для раздела «Сборка».
+
+    Период режем по «принят» с точностью до минуты, но только на закрытых
+    вкладках. Открытая работа (новые, сборка, ожидают отгрузки) период смены
+    не режет — иначе «все контрагенты» прячет чужую вчерашнюю поставку.
+    Формат since / until — 'ГГГГ-ММ-ДД ЧЧ:ММ'.
+    """
+    where, args = _assembly_filters(
+        client_id=client_id, group=group, marketplace=marketplace, kind=kind,
+        article=article, query=query, since=since, until=until, keep_floor=keep_floor,
+    )
+    sql = (
+        "SELECT shipments.*, clients.name AS client_name, %s AS eff_group FROM shipments"
+        "%s ORDER BY %s DESC, shipments.id DESC" % (EFF_GROUP, where, ASM_WHEN)
+    )
+    if limit:
+        sql += " LIMIT %d" % int(limit)
+    conn = connect()
+    rows = conn.execute(sql, args).fetchall()
+    conn.close()
+    return rows
+
+
+def list_assembly_supply_exts(
+    client_id=None, group="", marketplace="", kind="", article="", query="", since="", until="", keep_floor=True,
+):
+    """Номера поставок вкладки без лимита строк: иначе поставка за сотой строкой пропадает."""
+    where, args = _assembly_filters(
+        client_id=client_id, group=group, marketplace=marketplace, kind=kind,
+        article=article, query=query, since=since, until=until, keep_floor=keep_floor,
+    )
+    conn = connect()
+    rows = conn.execute(
+        "SELECT DISTINCT shipments.supply_ext AS ext FROM shipments"
+        "%s AND COALESCE(shipments.supply_ext,'') <> ''" % where,
+        args,
+    ).fetchall()
+    conn.close()
+    return [r["ext"] for r in rows]
+
+
+def assembly_counts(client_id=None, marketplace="", kind="", article="", query="", since="", until="", keep_floor=True):
+    """Счётчики на вкладках. Считаем в SQL: раньше тянули все строки в память."""
+    where, args = _assembly_filters(
+        client_id=client_id, marketplace=marketplace, kind=kind,
+        article=article, query=query, since=since, until=until, keep_floor=keep_floor,
+    )
+    conn = connect()
+    rows = conn.execute(
+        "SELECT %s AS g, COUNT(*) AS n FROM shipments%s GROUP BY g" % (EFF_GROUP, where),
+        args,
+    ).fetchall()
     conn.close()
     counts = {(r["g"] or ""): r["n"] for r in rows}
     return counts, sum(counts.values())

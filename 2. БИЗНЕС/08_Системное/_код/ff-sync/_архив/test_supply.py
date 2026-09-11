@@ -697,4 +697,30 @@ assert pdf[:4] == b"%PDF" and pages >= 1, (pages, notes)
 pdf, notes, pages = supply_flow.print_assembly(ships[:1], "posting_box")
 assert pdf[:4] == b"%PDF" and pages >= 1, (pages, notes)
 
+# 25. «Все контрагенты»: открытая работа не режется сменой «принят»
+other_id = db.insert_client("other", "Другой ИП", "", "", "")
+other_cab = db.insert_cabinet(other_id, "wb", "wb2", "token-o", "", 1, "", "")
+old_ready = db.upsert_shipment(
+    other_id, other_cab, "wb", "fbs", "555001", "На сборке", "2026-09-10", "ART-X", "",
+    "Сумка", 3, None, 0, "2026-09-10T11:00:00",
+    extra={"status_group": "assembling", "accepted_at": "2026-09-10 11:00"},
+)
+db.set_work_state([old_ready], "ready")
+db.set_shipment_supply([old_ready], "WB-GI-OLD")
+db.insert_wb_supply(other_id, other_cab, "WB-GI-OLD", "вчерашняя", "2026-09-10 11:00", "тест")
+db.upsert_shipment(
+    other_id, other_cab, "wb", "fbs", "555002", "В доставке", "2026-09-10", "ART-X", "",
+    "Сумка", 1, None, 0, "2026-09-10T12:00:00",
+    extra={"status_group": "shipped", "accepted_at": "2026-09-10 12:00"},
+)
+since, until = "2026-09-11 00:00", "2026-09-11 23:59"
+ready_all = db.list_assembly(group="ready", since=since, until=until)
+assert any(r["ext_id"] == "555001" for r in ready_all), [r["ext_id"] for r in ready_all]
+counts, _ = db.assembly_counts(since=since, until=until)
+assert counts.get("ready", 0) >= 1, counts
+assert "WB-GI-OLD" in db.list_assembly_supply_exts(group="ready", since=since, until=until)
+# вчерашний отгруженный не должен надуть сегодняшнюю вкладку «Отгружены»
+shipped_other = db.list_assembly(client_id=other_id, group="shipped", since=since, until=until)
+assert shipped_other == [], [dict(r) for r in shipped_other]
+
 print("все проверки поставок, сборки и КиЗ прошли")

@@ -24,6 +24,7 @@ from db import (
     get_shipments_by_ids,
     init_db,
     list_assembly,
+    list_assembly_supply_exts,
     list_clients,
     list_intake,
     list_invoice_positions,
@@ -795,10 +796,13 @@ def assembly(
                 "ms_url": order_app_url(r["ms_order_id"]),
             }
         )
-    # Поставки WB отдаём отдельным списком: во вкладках после «Новых» таблица
-    # показывает строку поставки, а не пачку заданий. Клик открывает окно коробов.
+    # Поставки WB отдельным списком, без лимита 100 строк таблицы: иначе
+    # поставка, чьи задания не попали на страницу, из вкладки пропадает.
     supplies = []
-    for s in find_wb_supplies({r["supply"] for r in out if r["supply"]}):
+    ext_ids = {r["supply"] for r in out if r["supply"]}
+    if group != "new":
+        ext_ids.update(list_assembly_supply_exts(group=group, keep_floor=not fallback, **filters))
+    for s in find_wb_supplies(ext_ids):
         members = list_supply_shipments(s["cabinet_id"], s["ext_id"])
         supplies.append(
             {
@@ -808,6 +812,7 @@ def assembly(
                 "name": s["name"] or "",
                 "state": s["state"],
                 "orders": s["orders"],
+                "qty": sum(float(m["qty"] or 0) for m in members),
                 "boxes": s["boxes"],
                 "loose": s["loose"],
                 "ship_ids": [r["id"] for r in members],
