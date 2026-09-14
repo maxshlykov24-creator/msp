@@ -48,7 +48,7 @@ def digits_price(raw: str) -> int:
 def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
     doc = store.load_doc(chat_id)
     listing = doc.get("avito") or doc.get("autoru") or {}
-    name = nudge.extract_name(history) or ""
+    name = nudge.extract_name(history) or listing.get("peer") or ""
     phone = nudge.extract_phone_from_history(history)
     card = None
     if listing.get("title"):
@@ -65,7 +65,9 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         km = re.sub(r"\D", "", card.get("Пробег") or "")
         price = digits_price(card.get("Цена в объявлении") or "")
     if not car:
-        car = listing.get("title") or nudge.extract_car(history) or ""
+        car = listing.get("title") or ""
+    if not car or "не привязано" in car.lower() or car == "объявление":
+        car = nudge.extract_car(history) or car
     if not price:
         price = digits_price(listing.get("price") or "")
     ask = ""
@@ -96,6 +98,7 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         "price": price,
         "url": listing.get("url") or "",
         "channel": channel,
+        "peer": listing.get("peer") or "",
         "ask": ask,
         "dialog": _dialog(history),
         "brief": brief_from_history(history, reason),
@@ -175,54 +178,130 @@ def _lead_name(snap: dict) -> str:
     return "%s · %s" % (car, snap.get("channel") or "чат")
 
 
+def _bind_lead(snap: dict, doc: dict, lead: dict, *, created: bool) -> dict:
+    crm = dict(doc.get("crm") or {})
+    lead_id = int(lead["id"])
+    contacts = (lead.get("_embedded") or {}).get("contacts") or []
+    contact_id = crm.get("contact_id")
+    if contacts:
+        contact_id = contacts[0].get("id") or contact_id
+    crm.update(
+        {
+            "lead_id": lead_id,
+            "contact_id": int(contact_id) if contact_id else None,
+            "status_id": lead.get("status_id") or amo_client.STATUS_NEW,
+            "lead_url": amo_client.lead_url(lead_id),
+            "created": bool(created),
+        }
+    )
+    snap["lead_id"] = lead_id
+    snap["lead_url"] = crm["lead_url"]
+    snap["created"] = bool(created)
+    snap["nags"] = int(lead.get("status_id") or 0) == amo_client.STATUS_NEW
+    doc["crm"] = crm
+    return snap
+
+
+def _adopt_widget(snap: dict, doc: dict, widget: dict) -> dict:
+    lead_id = int(widget["id"])
+    uid = widget.get("_unsorted_uid") or amo_client.find_unsorted_uid(lead_id)
+    if uid:
+        widget["_unsorted_uid"] = uid
+    pipe = widget.get("pipeline_id")
+    status = widget.get("status_id")
+    if pipe != amo_client.PIPELINE_SALES or status != amo_client.STATUS_NEW:
+        widget = amo_client.move_lead_to_sales(
+            lead_id,
+            price=int(snap.get("price") or 0),
+            fields=_fields(snap),
+            unsorted_uid=str(uid or ""),
+        )
+    contacts = (widget.get("_embedded") or {}).get("contacts") or []
+    if not contacts:
+        widget = amo_client.get_lead(lead_id)
+        contacts = (widget.get("_embedded") or {}).get("contacts") or []
+    contact_id = contacts[0].get("id") if contacts else None
+    if contact_id and snap.get("phone"):
+        amo_client.set_contact_phone(int(contact_id), snap["phone"])
+    amo_client.add_note(lead_id, note_text(snap))
+    log.info(
+        "чат %s: взял сделку виджета %s в Продажи / Новая заявка",
+        snap.get("chat_id"),
+        lead_id,
+    )
+    return _bind_lead(snap, doc, widget, created=False)
+
+
 def ensure_lead(snap: dict, doc: dict) -> dict:
     crm = dict(doc.get("crm") or {})
-    lead_id = crm.get("lead_id")
-    if lead_id:
+    old_id = crm.get("lead_id")
+    channel = snap.get("channel") or ""
+
+    if old_id:
         try:
-            lead = amo_client.get_lead(int(lead_id))
+            lead = amo_client.get_lead(int(old_id))
         except amo_client.AmoError as exc:
-            log.warning("сделка %s не читается: %s", lead_id, exc)
+            log.warning("сделка %s не читается: %s", old_id, exc)
             lead = None
-        if lead:
-            amo_client.add_note(int(lead_id), note_text(snap))
-            crm["status_id"] = lead.get("status_id")
-            crm["lead_url"] = amo_client.lead_url(int(lead_id))
-            snap["lead_id"] = int(lead_id)
-            snap["lead_url"] = crm["lead_url"]
-            snap["created"] = False
-            doc["crm"] = crm
-            return snap
+        if lead and lead.get("status_id") not in amo_client.CLOSED:
+            if lead.get("pipeline_id") == amo_client.PIPELINE_TECH:
+                return _adopt_widget(snap, doc, lead)
+            if lead.get("pipeline_id") == amo_client.PIPELINE_SALES:
+                amo_client.add_note(int(old_id), note_text(snap))
+                return _bind_lead(snap, doc, lead, created=False)
+
+    widget = None
+    if channel in {"Авито", "Авто.ру"}:
+        try:
+            widget = amo_client.find_widget_lead(
+                peer=snap.get("peer") or snap.get("name") or "",
+                car=snap.get("car") or "",
+                channel=channel,
+            )
+        except amo_client.AmoError as exc:
+            log.warning("виджет amo по чату %s: %s", snap.get("chat_id"), exc)
+
+    if widget:
+        adopted = _adopt_widget(snap, doc, widget)
+        new_id = adopted.get("lead_id")
+        if old_id and int(old_id) != int(new_id or 0):
+            try:
+                amo_client.close_lead_spam(
+                    int(old_id),
+                    "Дубль AI-менеджера. Рабочая сделка: %s"
+                    % amo_client.lead_url(int(new_id)),
+                )
+                log.info("чат %s: закрыл дубль %s", snap.get("chat_id"), old_id)
+            except amo_client.AmoError as exc:
+                log.warning("дубль %s не закрылся: %s", old_id, exc)
+        return adopted
 
     contact_id = crm.get("contact_id")
-    reused = False
     if snap.get("phone"):
         found = amo_client.find_contact(snap["phone"])
         if found:
             contact_id = found.get("id")
             open_leads = amo_client.open_leads_of(found)
-            if open_leads:
-                lead = open_leads[0]
-                lead_id = lead.get("id")
-                amo_client.add_note(int(lead_id), note_text(snap))
-                reused = True
-                crm.update(
-                    {
-                        "lead_id": int(lead_id),
-                        "contact_id": int(contact_id or 0) or None,
-                        "status_id": lead.get("status_id"),
-                        "lead_url": amo_client.lead_url(int(lead_id)),
-                        "created": False,
-                    }
-                )
-                snap["lead_id"] = int(lead_id)
-                snap["lead_url"] = crm["lead_url"]
-                snap["created"] = False
-                snap["nags"] = int(lead.get("status_id") or 0) == amo_client.STATUS_NEW
-                doc["crm"] = crm
-                return snap
-        if not contact_id:
+            tech = [x for x in open_leads if x.get("pipeline_id") == amo_client.PIPELINE_TECH]
+            sales = [x for x in open_leads if x.get("pipeline_id") == amo_client.PIPELINE_SALES]
+            if tech:
+                return _adopt_widget(snap, doc, tech[0])
+            if sales:
+                lead = sales[0]
+                amo_client.add_note(int(lead["id"]), note_text(snap))
+                return _bind_lead(snap, doc, lead, created=False)
+        if not contact_id and channel == "Telegram":
             contact_id = amo_client.create_contact(snap.get("name") or "", snap["phone"])
+
+    if channel in {"Авито", "Авто.ру"}:
+        log.warning(
+            "чат %s: сделки виджета в Техническом нет, новую в Продажах не создаю",
+            snap.get("chat_id"),
+        )
+        return snap
+
+    if snap.get("phone") and not contact_id:
+        contact_id = amo_client.create_contact(snap.get("name") or "", snap["phone"])
 
     lead = amo_client.create_lead(
         name=_lead_name(snap),
@@ -231,26 +310,13 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
         source_enum=_source_enum(snap),
         fields=_fields(snap),
     )
-    lead_id = int(lead["id"])
-    amo_client.add_note(lead_id, note_text(snap))
-    crm.update(
-        {
-            "lead_id": lead_id,
-            "contact_id": int(contact_id) if contact_id else None,
-            "status_id": lead.get("status_id") or amo_client.STATUS_NEW,
-            "lead_url": amo_client.lead_url(lead_id),
-            "created": True,
-        }
-    )
-    snap["lead_id"] = lead_id
-    snap["lead_url"] = crm["lead_url"]
-    snap["created"] = True
-    snap["nags"] = True
-    doc["crm"] = crm
-    return snap
+    amo_client.add_note(int(lead["id"]), note_text(snap))
+    return _bind_lead(snap, doc, lead, created=True)
 
 
 def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
+    if not snap.get("phone") and snap.get("reason") != "llm":
+        return
     crm = dict(doc.get("crm") or {})
     alert = dict(crm.get("alert") or {})
     if alert.get("active") and alert.get("reason") == snap.get("reason"):
@@ -318,8 +384,35 @@ async def _ping(alert: dict, minutes: int) -> None:
     )
 
 
+def already_alerting(chat_id: str | int, reason: str) -> bool:
+    alert = ((store.load_doc(chat_id).get("crm") or {}).get("alert") or {})
+    return bool(alert.get("active") and alert.get("reason") == reason)
+
+
+async def capture_if_urgent(chat_id: str | int, texts: list[str]) -> str:
+    """Номер, звонок, жалоба: карточка в группу сразу, не ждём LLM."""
+    blob = "\n".join(str(t).strip() for t in (texts or []) if str(t).strip())
+    if not blob:
+        return ""
+    history = store.load_history(chat_id)
+    reason = nudge.urgent_reason(blob, history)
+    if not reason:
+        return ""
+    last = history[-1] if history else {}
+    if not (last.get("role") == "user" and (last.get("content") or "") == blob):
+        history = history + [{"role": "user", "content": blob}]
+        store.save_history(chat_id, history)
+    if already_alerting(chat_id, reason):
+        return reason
+    await capture(chat_id, history, reason)
+    log.info("чат %s: срочная передача %s, не ждём модель", chat_id, reason)
+    return reason
+
+
 async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
     """Сделка + примечание + старт алертов. Не пишет клиенту."""
+    if already_alerting(chat_id, reason):
+        return snapshot(chat_id, history, reason)
     doc = store.load_doc(chat_id)
     snap = snapshot(chat_id, history, reason)
     nags = True
@@ -354,9 +447,8 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     crm = dict(doc.get("crm") or {})
     alert = dict(crm.get("alert") or {})
     if not alert.get("active"):
-        if alert.get("picked"):
-            return
-        await capture(chat_id, history, "handoff")
+        if nudge.extract_phone(text) or nudge.history_has_phone(history):
+            await capture(chat_id, history, "phone")
         return
     last = nudge.parse_iso(alert.get("echo_at") or "")
     if last and (now_msk() - last).total_seconds() < 180:

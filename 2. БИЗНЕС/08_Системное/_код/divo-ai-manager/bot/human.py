@@ -554,6 +554,162 @@ def drop_regreeting(text: str) -> str:
     return text
 
 
+LEASING_BIT = re.compile(r"лизинг", re.IGNORECASE)
+TORG_BIT = re.compile(
+    r"("
+    r"комплиментарн|комплементарн|"
+    r"торг\w*.{0,28}(обсуд|готов|можн)|"
+    r"(обсуд|готов)\w*.{0,28}торг|"
+    r"по цене\s+(готов|обсуд)|"
+    r"по цене.{0,24}(осмотр|на месте)|"
+    r"цен[уеы]\s+(готов[аы]?\s+)?обсуд"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def drop_unsolicited(
+    text: str,
+    *,
+    allow_leasing: bool = False,
+    allow_torg: bool = False,
+) -> str:
+    """Лизинг и торг выкидываем, если клиент про них не спрашивал."""
+    original = text or ""
+    if not original.strip():
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if not allow_leasing and LEASING_BIT.search(part):
+            continue
+        if not allow_torg and TORG_BIT.search(part):
+            continue
+        kept.append(part)
+    text = " ".join(kept).strip()
+    return _tidy(text, original) if text else ""
+
+
+WHERE_CHOICE = re.compile(
+    r"(где|куда)\s+(вам\s+)?удобнее|"
+    r"вам\s+удобнее\s+(приехать|подъехать|заехать|к\s+нам)",
+    re.IGNORECASE,
+)
+WHERE_LEAD = re.compile(
+    r"^\s*(где|куда)\s+(вам\s+)?удобнее\s*[,.]?\s*",
+    re.IGNORECASE,
+)
+# «Сейчас наберу» звучит как срок, который менеджер не обязан выдержать.
+CALL_VERB = (
+    r"(?:набер(?:у|ём|ем|ёт|ет|ут)|позвон(?:ю|им)|перезвон(?:ю|им)|"
+    r"свяж(?:усь|емся|ёмся)|созвон(?:юсь|имся))"
+)
+NOW_WORD = r"(?:прямо\s+|вот\s+)?сейчас(?:\s+же)?"
+NOW_BEFORE_CALL = re.compile(
+    r"\b"
+    + NOW_WORD
+    + r"(?=\s+(?:я\s+|мы\s+)?(?:вам\s+|тебе\s+|вас\s+|тебя\s+)?"
+    + CALL_VERB
+    + r"\b)",
+    re.IGNORECASE,
+)
+CALL_THEN_NOW = re.compile(
+    r"(\b" + CALL_VERB + r"(?:\s+(?:вас|вам|тебя|тебе))?)\s+" + NOW_WORD + r"\b",
+    re.IGNORECASE,
+)
+
+
+def drop_where_choice(text: str) -> str:
+    """Салон один: «где вам удобнее» не вопрос, а мусор."""
+    original = text or ""
+    if not WHERE_CHOICE.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if not WHERE_CHOICE.search(part):
+            kept.append(part)
+            continue
+        rest = WHERE_LEAD.sub("", part).strip(" ,")
+        if rest and not WHERE_CHOICE.search(rest):
+            if rest[:1].islower():
+                rest = rest[0].upper() + rest[1:]
+            kept.append(rest)
+    text = " ".join(kept).strip()
+    return _tidy(text, original) if text else ""
+
+
+def soften_now_call(text: str) -> str:
+    """«Сейчас наберу» → «в ближайшее время наберу». Наличие «сейчас нет» не трогаем."""
+    original = text or ""
+    if not NOW_BEFORE_CALL.search(original) and not CALL_THEN_NOW.search(original):
+        return original
+    text = _sub_keep_case(NOW_BEFORE_CALL, "в ближайшее время", original)
+    text = CALL_THEN_NOW.sub(r"\1 в ближайшее время", text)
+    return _tidy(text, original)
+
+
+PAPER_LEAK = re.compile(
+    r"("
+    r"строк[аиеуы]\s+(с\s+ценой|в\s+(базе|карточ)|нет)|"
+    r"нет\s+строк|"
+    r"в\s+базе\s+(пока\s+)?нет|"
+    r"в\s+базе\s+пока|"
+    r"юрлицо\s*/\s*ндс|"
+    r"цены?\s+на\s+юрлицо\s*/|"
+    r"такой\s+машины\s+строк|"
+    r"в\s+карточке\s+(нет|пока|строк)"
+    r")",
+    re.IGNORECASE,
+)
+VAT_NO_PRICE = "Цену с НДС по этой машине сразу не назову, уточню"
+GREET_BANG = {
+    "добрый день": "Добрый день!",
+    "доброе утро": "Доброе утро!",
+    "добрый вечер": "Добрый вечер!",
+    "здравствуйте": "Здравствуйте!",
+}
+GREET_HEAD = re.compile(
+    r"^(добрый\s+день|доброе\s+утро|добрый\s+вечер|здравствуйте)"
+    r"(?:\s*[.,:]|\s*!)?\s*",
+    re.IGNORECASE,
+)
+
+
+def drop_paper_talk(text: str) -> str:
+    """Клиенту не про «строку в базе»: продавец машину знает, а не сверку бумаг."""
+    original = text or ""
+    if not PAPER_LEAK.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if PAPER_LEAK.search(part):
+            continue
+        kept.append(part)
+    text = " ".join(kept).strip()
+    if text:
+        return _tidy(text, original)
+    if re.search(r"ндс|юрлиц", original, re.IGNORECASE):
+        return VAT_NO_PRICE
+    return _tidy("Уточню по этой машине", original)
+
+
+def bang_greeting(text: str) -> str:
+    """Первое «Добрый день» всегда с восклицательным знаком."""
+    original = text or ""
+    match = GREET_HEAD.match(original)
+    if not match:
+        return original
+    head = " ".join(match.group(1).lower().split())
+    canon = GREET_BANG.get(head)
+    if not canon:
+        return original
+    rest = original[match.end():].lstrip()
+    if not rest:
+        return canon
+    if rest[:1].islower():
+        rest = rest[0].upper() + rest[1:]
+    return canon + " " + rest
+
+
 def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: без тире-связок, без точки в конце."""
     text = drop_clause_dashes(text or "")
@@ -565,9 +721,12 @@ def for_chat(text: str) -> str:
     text = soften_card(text)
     text = drop_no_data_logic(text)
     text = drop_phone_script(text)
+    text = drop_where_choice(text)
+    text = soften_now_call(text)
+    text = drop_paper_talk(text)
     text = fix_brand(text)
     text = add_missing_dots(text)
-    return drop_end_period(text)
+    return bang_greeting(drop_end_period(text))
 
 
 def clean(text: str) -> str:

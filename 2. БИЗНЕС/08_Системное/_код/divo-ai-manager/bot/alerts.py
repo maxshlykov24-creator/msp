@@ -23,26 +23,33 @@ PING_MINUTES = (0, 5, 10, 15, 30, 60)
 WAIT_CALL = "call"
 WAIT_CHAT = "chat"
 
-HEAD = {
-    (WAIT_CALL, 0): "📞 <b>Ждёт звонка</b> | DIVO",
-    (WAIT_CALL, 5): "⏰ <b>5 мин</b> | всё ещё ждёт звонка",
-    (WAIT_CALL, 10): "🔥 <b>10 мин</b> | не взяли трубку",
-    (WAIT_CALL, 15): "🚨 <b>15 мин</b> | клиент остывает",
-    (WAIT_CALL, 30): "🚨 <b>30 мин</b> | до сих пор не взяли",
-    (WAIT_CALL, 60): "🚨 <b>1 час</b> | диалог висит",
-    (WAIT_CHAT, 0): "✍️ <b>Ждёт ответ в чате</b> | DIVO",
-    (WAIT_CHAT, 5): "⏰ <b>5 мин</b> | чат без ответа",
-    (WAIT_CHAT, 10): "🔥 <b>10 мин</b> | менеджер молчит",
-    (WAIT_CHAT, 15): "🚨 <b>15 мин</b> | лояльность падает",
-    (WAIT_CHAT, 30): "🚨 <b>30 мин</b> | до сих пор молчим",
-    (WAIT_CHAT, 60): "🚨 <b>1 час</b> | диалог висит",
+# Нестандарт важнее канала: менеджер в пуше должен увидеть, что делать.
+SPECIAL_TASK = {
+    "stuck": "агент в тупике",
+    "complaint": "жалоба",
+    "llm": "бот не смог ответить",
+}
+PING_WHEN = {
+    5: ("⏰", "5 мин"),
+    10: ("🔥", "10 мин"),
+    15: ("🚨", "15 мин"),
+    30: ("🚨", "30 мин"),
+    60: ("🚨", "1 час"),
+}
+PING_HEAT = {
+    (WAIT_CALL, 15): "клиент остывает",
+    (WAIT_CALL, 30): "до сих пор не взяли",
+    (WAIT_CALL, 60): "диалог висит",
+    (WAIT_CHAT, 15): "лояльность падает",
+    (WAIT_CHAT, 30): "до сих пор молчим",
+    (WAIT_CHAT, 60): "диалог висит",
 }
 
 REASON_LINE = {
     "phone": "оставил номер",
     "call": "просит позвонить",
     "stuck": "агент в тупике",
-    "complaint": "жалоба / конфликт",
+    "complaint": "жалоба, конфликт",
     "handoff": "нужен живой менеджер",
     "llm": "бот не смог ответить",
 }
@@ -81,6 +88,10 @@ SKIP_BRIEF_HAS = (
     "когда готов",
     "напишите номер",
     "о какой машин",
+    "с радостью",
+    "окончательные условия",
+    "ознакомиться с автомобилем",
+    "принимаем автомобили",
 )
 FILLER = frozenset(
     {
@@ -359,13 +370,13 @@ def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
         notes.append(_cap(topic))
     car = _own_car(blob)
     if car:
-        notes.append(car)
+        notes.append(_cap(car))
     pay = _copay(blob)
     if pay:
-        notes.append(pay)
+        notes.append(_cap(pay))
     for extra in _extra_notes(blob):
         if extra not in notes:
-            notes.append(extra)
+            notes.append(_cap(extra))
     facts: list[str] = []
     for msg in history or []:
         if msg.get("role") != "assistant":
@@ -409,9 +420,47 @@ def compact_thread(history: list[dict] | None) -> list[list[str]]:
     return picked[-THREAD_LIMIT:]
 
 
+def task_phrase(wait: str, reason: str = "") -> str:
+    """Что сделать менеджеру. Это же пишется в первой карточке."""
+    wait = wait or WAIT_CHAT
+    action = "ждёт звонка" if wait == WAIT_CALL else "ждёт ответ в чате"
+    special = SPECIAL_TASK.get(reason or "")
+    if not special:
+        return action
+    if wait == WAIT_CALL and special not in action:
+        return "%s, %s" % (special, action)
+    return special
+
+
+def alert_head(wait: str, ping: int = 0, reason: str = "") -> str:
+    """Первая строка: время и исходная задача, не только «клиент остывает»."""
+    wait = wait or WAIT_CHAT
+    task = task_phrase(wait, reason)
+    title = task[0].upper() + task[1:] if task else "Нужен человек"
+    if int(ping or 0) <= 0:
+        if reason == "complaint":
+            emoji = "⚠️"
+        elif wait == WAIT_CALL:
+            emoji = "📞"
+        else:
+            emoji = "✍️"
+        return "%s <b>%s</b> | DIVO" % (emoji, title)
+    emoji, when = PING_WHEN.get(int(ping), ("🚨", "%s мин" % ping))
+    heat = PING_HEAT.get((wait, int(ping)), "")
+    if int(ping) == 5:
+        tail = "всё ещё %s" % task
+    elif int(ping) == 10:
+        tail = task
+    elif heat and heat not in task:
+        tail = "%s, %s" % (task, heat)
+    else:
+        tail = task or heat
+    return "%s <b>%s</b> | %s" % (emoji, when, tail)
+
+
 def format_alert(snap: dict, ping: int = 0) -> str:
     wait = snap.get("wait") or (WAIT_CALL if snap.get("phone") else WAIT_CHAT)
-    head = HEAD.get((wait, ping)) or HEAD[(WAIT_CHAT, 0)]
+    head = alert_head(wait, ping, snap.get("reason") or "")
     lines = [head, ""]
     name = snap.get("name") or "без имени"
     car = snap.get("car") or "машина не названа"

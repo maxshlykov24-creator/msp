@@ -3,9 +3,19 @@ from __future__ import annotations
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import time
 
 from bot.alerts import brief_from_history, compact_thread, format_alert, format_taken, next_ping, pretty_phone, take_keyboard
-from bot.nudge import extract_phone, is_complaint, wants_call, wants_person
+from bot.nudge import (
+    extract_phone,
+    is_complaint,
+    asked_leasing,
+    asked_torg,
+    needs_reply,
+    urgent_reason,
+    wants_call,
+    wants_person,
+)
 
 MSK = ZoneInfo("Europe/Moscow")
 
@@ -14,9 +24,135 @@ def at(hour: int, minute: int = 0) -> datetime:
     return datetime(2026, 9, 14, hour, minute, tzinfo=MSK)
 
 
+def test_needs_reply():
+    assert needs_reply("👍") is False
+    assert needs_reply("👍🤝") is False
+    assert needs_reply("ок") is False
+    assert needs_reply("Хорошо") is False
+    assert needs_reply("спасибо") is False
+    assert needs_reply("ок спасибо") is False
+    assert needs_reply("ок, а цена какая?") is True
+    assert needs_reply("есть без ДТП?") is True
+    assert needs_reply("8 900 111-22-33") is True
+    assert needs_reply("Клиент прислал фото") is True
+    assert needs_reply("да") is True
+    assert needs_reply("нет") is True
+
+
 def test_phone():
     assert extract_phone("мой 8 900 111-22-33") == "79001112233"
+    assert extract_phone("+79502292544") == "79502292544"
     assert extract_phone("пишите на 8 495 089 29 29") == ""
+
+
+def test_urgent_reason():
+    assert urgent_reason("+79502292544", []) == "phone"
+    assert urgent_reason("это развод", []) == ""
+    assert urgent_reason("дайте живого человека", []) == ""
+    hist = [{"role": "user", "content": "мой 8 900 111-22-33"}]
+    assert urgent_reason("это развод", hist) == "complaint"
+    assert urgent_reason("дайте живого человека", hist) == "handoff"
+    assert urgent_reason("перезвоните", hist) == "call"
+    assert urgent_reason("ок", hist) == ""
+    assert urgent_reason("89001112233", hist) == ""
+
+
+def test_unsolicited():
+    from bot.human import drop_unsolicited
+
+    price = [
+        {"role": "user", "content": "Цена реальная?"},
+    ]
+    assert not asked_torg(price)
+    assert not asked_leasing(price)
+    cut = drop_unsolicited(
+        "Да, цена в объявлении реальная. Комплиментарный торг можем обсудить при осмотре",
+        allow_torg=False,
+        allow_leasing=False,
+    )
+    assert "торг" not in cut.lower()
+    assert "реальная" in cut.lower() or "объявлен" in cut.lower()
+    lease = drop_unsolicited(
+        "Машина в наличии. В лизинг тоже можно оформить",
+        allow_leasing=False,
+    )
+    assert "лизинг" not in lease.lower()
+    assert "наличии" in lease.lower()
+    keep = drop_unsolicited(
+        "Лизинг только с полным НДС",
+        allow_leasing=True,
+    )
+    assert "лизинг" in keep.lower()
+    torg_ask = [{"role": "user", "content": "скидку сделаете?"}]
+    assert asked_torg(torg_ask)
+    assert asked_leasing([{"role": "user", "content": "а в лизинг можно?"}])
+
+
+def test_greeting_and_paper():
+    from bot.human import bang_greeting, drop_paper_talk, for_chat
+
+    assert bang_greeting("Добрый день. Машина в наличии") == "Добрый день! Машина в наличии"
+    assert bang_greeting("Добрый день! Машина в наличии") == "Добрый день! Машина в наличии"
+    assert bang_greeting("Доброе утро, смотрите") == "Доброе утро! Смотрите"
+    raw = (
+        "Добрый день. Такой машины строки с ценой на юрлицо/НДС в базе пока нет. "
+        "Продажу с НДС по ней подтвержу отдельно"
+    )
+    cut = drop_paper_talk(raw)
+    assert "базе" not in cut.lower()
+    assert "строк" not in cut.lower()
+    assert "/" not in cut
+    chat = for_chat(raw)
+    assert chat.startswith("Добрый день!")
+    assert "базе" not in chat.lower()
+    assert "строк" not in chat.lower()
+    assert "ндс" in chat.lower()
+
+
+def test_now_call():
+    from bot.human import for_chat, soften_now_call
+
+    cut = soften_now_call("Принял, сейчас наберём")
+    assert "сейчас" not in cut.lower()
+    assert "ближайшее время" in cut.lower()
+    assert "наберём" in cut.lower() or "наберем" in cut.lower()
+    start = soften_now_call("Сейчас наберу")
+    assert start.startswith("В ближайшее время")
+    after = soften_now_call("Наберу вас сейчас")
+    assert "сейчас" not in after.lower()
+    assert "ближайшее время" in after.lower()
+    keep = soften_now_call("В продаже сейчас нет")
+    assert keep == "В продаже сейчас нет"
+    chat = for_chat("Принял, сейчас наберём")
+    assert "сейчас" not in chat.lower()
+    assert "ближайшее время" in chat.lower()
+
+
+def test_where_choice():
+    from bot.human import drop_where_choice, for_chat
+
+    raw = (
+        "Можно подъехать и посмотреть машину лично. "
+        "Где вам удобнее, у нас в наличии до 20:00 ежедневно, мы на Автозаводской 18"
+    )
+    cut = drop_where_choice(raw)
+    assert "где вам удобнее" not in cut.lower()
+    assert "автозаводской" in cut.lower()
+    assert "подъехать" in cut.lower()
+    chat = for_chat(raw)
+    assert "где вам удобнее" not in chat.lower()
+
+
+def test_merge_user_chunks():
+    from bot.main import merge_user_chunks
+
+    hist = [{"role": "assistant", "content": "напишите номер"}]
+    out = merge_user_chunks(hist, ["+79502292544"])
+    assert out[-1] == {"role": "user", "content": "+79502292544"}
+    again = merge_user_chunks(out, ["+79502292544"])
+    assert again == out
+    merged = merge_user_chunks(out, ["привет", "+79502292544"])
+    assert merged[-1]["content"] == "привет\n+79502292544"
     assert pretty_phone("79001112233") == "+7 900 111-22-33"
 
 
@@ -59,9 +195,16 @@ def test_alert_text():
     follow = format_alert({"wait": "call", "car": "X6", "reason": "phone"}, 15)
     assert "15 мин" in follow
     assert "остывает" in follow
+    assert "ждёт звонка" in follow.splitlines()[0]
     hour = format_alert({"wait": "chat", "car": "X6", "reason": "handoff"}, 60)
     assert "1 час" in hour
-    assert "висит" in hour
+    assert "ждёт ответ в чате" in hour.splitlines()[0]
+    complain = format_alert(
+        {"wait": "call", "car": "X6", "reason": "complaint", "phone": "79001112233"},
+        15,
+    )
+    assert "жалоба" in complain.splitlines()[0]
+    assert "ждёт звонка" in complain.splitlines()[0]
     ping5 = format_alert(
         {
             "wait": "call",
@@ -139,7 +282,7 @@ def test_alert_text():
             {"role": "user", "content": "Здравствуйте обмен интересует?"},
             {
                 "role": "assistant",
-                "content": "Добрый день! Мы принимаем автомобили в трейд-ин. Когда готовы подъехать на оценку?",
+                "content": "Добрый день! Мы принимаем автомобили в трейд-ин. Окончательные условия с радостью обсудим у нас в автосалоне, после осмотра автомобиля. Когда готовы подъехать на оценку?",
             },
             {"role": "user", "content": "Договорились"},
             {"role": "user", "content": "До 8 млн только моя доплата"},
@@ -159,6 +302,9 @@ def test_alert_text():
     assert "2017" in trade
     assert "187" in trade
     assert "8 млн" in trade
+    assert "принимаем" not in trade.lower()
+    assert "с радостью" not in trade.lower()
+    assert "окончательные условия" not in trade.lower()
     assert "хорошо, понял" not in trade.lower()
     assert "подскажите" not in trade.lower()
     assert "когда готовы" not in trade.lower()
@@ -200,6 +346,42 @@ def test_prior_thread():
     assert is_noise(stub) is True
     assert message_text(stub) == ""
     assert had_prior_correspondence(fresh + [stub], now) is False
+
+
+def test_widget_score():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from amo_client import score_widget_lead
+
+    g = "Mercedes-Benz G-класс AMG 4.0 AT, 2021, 42 520 км"
+    premium = score_widget_lead(
+        g, peer="Premium Auto", car="Mercedes-Benz G-Класс AMG 2021",
+        channel="Авито", from_name="Premium Auto", created_at=int(time.time()),
+    )
+    evgeniy = score_widget_lead(
+        g, peer="Premium Auto", car="Mercedes-Benz G-Класс AMG 2021",
+        channel="Авито", from_name="Евгений", created_at=int(time.time()),
+    )
+    assert premium > evgeniy
+    assert premium >= 40
+    mikhail = score_widget_lead(
+        "FAW Bestune NAT AT, 2023, 6 798 км",
+        peer="Михаил",
+        car="Bestune NAT",
+        channel="Авито",
+        from_name="Михаил",
+        created_at=int(time.time()),
+    )
+    assert mikhail >= 40
+    assert score_widget_lead(
+        "[АВТО.РУ] Tank 700",
+        peer="Premium Auto",
+        car="G-Класс",
+        channel="Авито",
+        from_name="Premium Auto",
+    ) == 0
 
 
 def test_amo_owner():
@@ -491,11 +673,19 @@ def test_avito_history_and_shot():
 
 
 if __name__ == "__main__":
+    test_needs_reply()
     test_phone()
+    test_urgent_reason()
+    test_unsolicited()
+    test_greeting_and_paper()
+    test_now_call()
+    test_where_choice()
+    test_merge_user_chunks()
     test_reasons()
     test_alert_text()
     test_pings()
     test_prior_thread()
+    test_widget_score()
     test_amo_owner()
     test_autoru_prior()
     test_focus_autoru()

@@ -242,14 +242,16 @@ def silent_reason(
     handoff: bool = False,
     llm_dead: bool = False,
 ) -> str:
-    """Повод замолчать и отдать человеку. Пусто — бот продолжает писать клиенту."""
+    """Повод замолчать и отдать человеку. Без номера менеджеру не отдаём."""
     if llm_dead:
         return "llm"
+    if not nudge.history_has_phone(history):
+        return ""
     if nudge.is_complaint(user_text):
         return "complaint"
     if nudge.wants_person(user_text):
         return "handoff"
-    if nudge.wants_call(user_text) and nudge.history_has_phone(history):
+    if nudge.wants_call(user_text):
         return "call"
     if handoff:
         if nudge.clarify_count(history) >= 3:
@@ -299,14 +301,42 @@ async def answer(channel, chat_id) -> None:
             schedule(channel, key)
 
 
+def merge_user_chunks(history: list[dict], chunks: list[str]) -> list[dict]:
+    """Не дублируем входящее, если опрос уже записал его на диск."""
+    blob = "\n".join(c for c in chunks if c)
+    if not blob:
+        return list(history)
+    history = list(history)
+    last = history[-1] if history else {}
+    if last.get("role") == "user":
+        prev = str(last.get("content") or "")
+        if prev == blob or blob in prev:
+            return history
+        if prev and prev in blob:
+            history[-1] = {"role": "user", "content": blob}
+            return history
+    history.append({"role": "user", "content": blob})
+    return history
+
+
 async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     history = store.load_history(chat_id)
     had_phone = nudge.history_has_phone(history)
-    history.append({"role": "user", "content": "\n".join(chunks)})
-    user_text = history[-1]["content"]
+    history = merge_user_chunks(history, chunks)
+    user_text = history[-1]["content"] if history else ""
     reason = silent_reason(user_text, history)
     if reason:
         await _handoff(channel, chat_id, history, reason)
+        return
+    if not had_phone and nudge.extract_phone(user_text):
+        store.save_history(chat_id, history)
+        await crm.capture(chat_id, history, "phone")
+        had_phone = True
+
+    if not nudge.needs_reply(user_text):
+        store.save_history(chat_id, history)
+        _refresh_nudge(chat_id, history)
+        log.info("чат %s: нечего отвечать, молчу", chat_id)
         return
 
     await channel.typing(chat_id)
@@ -345,6 +375,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
 
     user_text = history[-1]["content"]
     handoff = prompt.HANDOFF_MARK in raw
+    silence = prompt.SILENCE_MARK in raw
     want_photo = prompt.MEDIA_PHOTO_MARK in raw
     want_video = prompt.MEDIA_VIDEO_MARK in raw
     reason = silent_reason(user_text, history, handoff=handoff)
@@ -353,10 +384,16 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         return
     clean_text = (
         raw.replace(prompt.HANDOFF_MARK, "")
+        .replace(prompt.SILENCE_MARK, "")
         .replace(prompt.MEDIA_PHOTO_MARK, "")
         .replace(prompt.MEDIA_VIDEO_MARK, "")
         .strip()
     )
+    if silence and not clean_text:
+        store.save_history(chat_id, history)
+        _refresh_nudge(chat_id, history)
+        log.info("чат %s: модель решила молчать", chat_id)
+        return
     bubbles = human.split_bubbles(clean_text)
     prior = history[:-1]
     if any((m.get("role") == "assistant") for m in prior):
@@ -389,6 +426,18 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
                 bubbles[i] = with_where
                 log.info("чат %s: дописал адрес к приглашению", chat_id)
                 break
+    cleaned = [
+        human.drop_unsolicited(
+            b,
+            allow_leasing=nudge.asked_leasing(history),
+            allow_torg=nudge.asked_torg(history),
+        )
+        for b in bubbles
+    ]
+    cleaned = [b for b in cleaned if b.strip()]
+    if cleaned != [b for b in bubbles if b.strip()]:
+        log.info("чат %s: выкинул лизинг или торг без вопроса клиента", chat_id)
+        bubbles = cleaned
 
     if not bubbles:
         bubbles = [random.choice(FALLBACK)]
@@ -446,6 +495,13 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
                 "словами, ни другими, ни вскользь через «кстати». Работай без имени: "
                 "обращение не главное, разговор о машине важнее."
             )
+    if nudge.extract_phone(user_text) and not nudge.history_has_phone(prior):
+        system += (
+            "\n\n# Клиент оставил номер\n"
+            "Номер принял. Не пиши «сейчас наберу», «сейчас наберём», "
+            "«прямо сейчас позвоним»: это срок, который мы не держим. "
+            "«Принял, в ближайшее время наберу» или «в скором времени свяжусь»."
+        )
     if not nudge.history_has_phone(history):
         system += (
             "\n\n# Телефона в этом диалоге ещё нет\n"
@@ -455,6 +511,20 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "посмотреть». Про день спросишь, когда номер будет.\n"
             "Имя и номер в одной реплике не проси: это два вопроса. "
             "Сначала одно, второе следующим ходом."
+        )
+    if not nudge.asked_leasing(history):
+        system += (
+            "\n\n# Лизинг не поднимай\n"
+            "Клиент про лизинг не спрашивал. Слово «лизинг» не пиши и схему "
+            "сам не предлагай. Спросил сам - отвечай честно по фактам карточки."
+        )
+    if not nudge.asked_torg(history):
+        system += (
+            "\n\n# Торг не предлагай\n"
+            "Клиент не просил скидку и не спрашивал про торг. Не пиши "
+            "«комплиментарный торг», «по цене обсудим при осмотре», "
+            "«готовы обсудить по месту». «Цена реальная?» это вопрос про "
+            "цифру в объявлении: ответь да или нет по факту, без скидки."
         )
     used_phone = nudge.used_phone_lines(history)
     if used_phone:
@@ -799,10 +869,7 @@ async def run() -> None:
                 if not chat_id:
                     continue
                 if not text:
-                    await tg.send(
-                        chat_id,
-                        "Пришлите, пожалуйста, текстом - так я быстрее сориентируюсь",
-                    )
+                    log.info("чат %s: стикер или пустое, молчу", chat_id)
                     continue
 
                 store.log_line(chat_id, "клиент", text)
@@ -814,6 +881,11 @@ async def run() -> None:
                     continue
 
                 pending.setdefault(str(chat_id), []).append(text)
+                urgent = await crm.capture_if_urgent(chat_id, pending[str(chat_id)])
+                if urgent in {"phone", "call", "complaint", "handoff"}:
+                    store.pause(chat_id, "эскалация: %s" % urgent)
+                    pending.pop(str(chat_id), None)
+                    continue
                 schedule(tg, str(chat_id))
             if updates:
                 write_offset(offset)

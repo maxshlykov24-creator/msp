@@ -450,7 +450,13 @@ async def adopt_profile_chat(api: Avito) -> None:
 
 async def remember_listing(chat_key: str, chat: dict, api: Avito) -> None:
     doc = store.load_doc(chat_key)
+    peer = chat_peer(chat)
     if (doc.get("avito") or {}).get("chat_id"):
+        av = dict(doc.get("avito") or {})
+        if peer and av.get("peer") != peer:
+            av["peer"] = peer
+            doc["avito"] = av
+            store.save_doc(chat_key, doc)
         return
     listing = listing_of(chat)
     ctx_type = str((chat.get("context") or {}).get("type") or "")
@@ -473,6 +479,7 @@ async def remember_listing(chat_key: str, chat: dict, api: Avito) -> None:
         "url": listing.get("url") or "",
         "item_id": item_id,
         "cme_id": cme_id,
+        "peer": peer,
         "focus": avito_match.focus_block(
             listing.get("title") or "",
             listing.get("price") or "",
@@ -573,6 +580,13 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
             from bot import crm
 
             await crm.client_wrote_again(chat_key, texts[-1])
+            continue
+        from bot import crm
+
+        urgent = await crm.capture_if_urgent(chat_key, texts)
+        if urgent in {"phone", "call", "complaint", "handoff"}:
+            store.pause(chat_key, "эскалация: %s" % urgent)
+            log.info("авито чат %s сразу человеку (%s)", cid[:12], urgent)
             continue
         pending.setdefault(chat_key, []).extend(texts)
         schedule(channel, chat_key)

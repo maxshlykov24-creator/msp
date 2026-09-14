@@ -144,6 +144,80 @@ def wants_stop(text: str) -> bool:
     return bool(STOP.search(text or ""))
 
 
+# Смайлик, стикер, «ок» без вопроса: живой продавец кивает и молчит.
+_EMOJI = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002700-\U000027BF"
+    "\U00002600-\U000026FF"
+    "\U0000FE00-\U0000FE0F"
+    "\U0000200D"
+    "\U0000200B"
+    "\U0001F1E6-\U0001F1FF"
+    "]+"
+)
+_ACK_ONLY = {
+    "+",
+    "ок",
+    "оке",
+    "окей",
+    "ok",
+    "okay",
+    "хорошо",
+    "ладно",
+    "понял",
+    "поняла",
+    "понятно",
+    "ясно",
+    "принято",
+    "принял",
+    "приняла",
+    "спасибо",
+    "спс",
+    "благодарю",
+    "thanks",
+    "thx",
+    "угу",
+    "ага",
+    "договорились",
+    "супер",
+    "отлично",
+    "круто",
+    "норм",
+    "нормально",
+    "ок спасибо",
+    "спасибо ок",
+    "хорошо спасибо",
+    "спасибо большое",
+    "все понятно",
+    "все ясно",
+    "ок хорошо",
+    "хорошо ок",
+    "принято спасибо",
+}
+
+
+def needs_reply(text: str) -> bool:
+    """False, если входящее не требует ответа: смайлик, «ок», «спасибо»."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if extract_phone(raw):
+        return True
+    if wants_call(raw) or wants_person(raw) or is_complaint(raw):
+        return True
+    if "?" in raw:
+        return True
+    if raw.lower().startswith("клиент прислал"):
+        return True
+    body = _EMOJI.sub(" ", raw)
+    body = re.sub(r"[^\w\s+-]", " ", body, flags=re.U)
+    body = " ".join(body.lower().replace("ё", "е").split())
+    if not body or body in _ACK_ONLY:
+        return False
+    return True
+
+
 def extract_phone(text: str) -> str:
     """Нормализует российский номер. Номер салона и короткие цифры не берём."""
     salon = re.sub(r"\D", "", SALON_PHONE)
@@ -171,6 +245,56 @@ def extract_phone_from_history(messages: list[dict]) -> str:
 
 def history_has_phone(messages: list[dict]) -> bool:
     return bool(extract_phone_from_history(messages))
+
+
+def urgent_reason(user_text: str, history: list[dict] | None = None) -> str:
+    """В группу менеджеров только когда уже есть номер."""
+    text = user_text or ""
+    hist = list(history or [])
+    has_phone = bool(extract_phone(text) or history_has_phone(hist))
+    if not has_phone:
+        return ""
+    if is_complaint(text):
+        return "complaint"
+    if wants_person(text):
+        return "handoff"
+    if wants_call(text):
+        return "call"
+    if extract_phone(text) and not history_has_phone(hist):
+        return "phone"
+    return ""
+
+
+def _user_blob(messages: list[dict] | None) -> str:
+    parts = []
+    for msg in messages or []:
+        if msg.get("role") != "user":
+            continue
+        text = " ".join(str(msg.get("content") or "").split()).lower().replace("ё", "е")
+        if text:
+            parts.append(text)
+    return " ".join(parts)
+
+
+def asked_leasing(messages: list[dict] | None) -> bool:
+    return "лизинг" in _user_blob(messages)
+
+
+def asked_torg(messages: list[dict] | None) -> bool:
+    blob = _user_blob(messages)
+    keys = (
+        "торг",
+        "скидк",
+        "уступ",
+        "дешевле",
+        "ниже цен",
+        "цену ниже",
+        "последняя цена",
+        "последнюю цен",
+        "можно минус",
+        "сделаете цен",
+    )
+    return any(key in blob for key in keys)
 
 
 WANTS_CALL = re.compile(
@@ -545,17 +669,11 @@ def build_text(
     if step == 2:
         tail = (". %s" % ADDRESS_SHORT[0].upper() + ADDRESS_SHORT[1:]) if address else ""
         if car:
-            return (
-                "%s ещё в наличии. Приезжайте посмотреть вживую, по цене "
-                "готовы обсудить на месте%s" % (car, tail)
-            )
-        return (
-            "Машина в наличии. Приезжайте посмотреть, по цене обсудим на месте%s"
-            % tail
-        )
+            return "%s ещё в наличии. Приезжайте посмотреть вживую%s" % (car, tail)
+        return "Машина в наличии. Приезжайте посмотреть вживую%s" % tail
     if car:
-        return "Добрый день. %s без изменений. Напишите номер, если актуально" % car
-    return "Добрый день. Напишите номер, если актуально"
+        return "Добрый день! %s без изменений. Напишите номер, если актуально" % car
+    return "Добрый день! Напишите номер, если актуально"
 
 
 def refresh(nudge: dict, messages: list[dict]) -> dict:

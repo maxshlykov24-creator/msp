@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -33,6 +34,7 @@ ENV_CANDIDATES = _divo_env_paths()
 
 NIKITA_USER_ID = 13334858
 PIPELINE_SALES = 10372290
+PIPELINE_TECH = 10447334
 
 # Telegram → amo. Имена сверки с /api/v4/users 2026-09-14.
 AMO_USER_BY_TG = {
@@ -75,6 +77,9 @@ STATUS_IN_WORK = 82003650  # Контакт установлен
 STATUS_WON = 142
 STATUS_LOST = 143
 STATUS_SPAM = 82249454
+STATUS_TECH_UNSORTED = 82517822
+STATUS_TECH_CHAT = 82517842
+TECH_OPEN = {STATUS_TECH_UNSORTED, STATUS_TECH_CHAT}
 FIELD_SOURCE = 2026903
 FIELD_VIN = 2027421
 FIELD_BRAND = 2027423
@@ -233,7 +238,8 @@ def open_leads_of(contact: dict) -> list[dict]:
         code, lead = request(f"/api/v4/leads/{lead_id}")
         if code >= 400 or not lead:
             continue
-        if lead.get("pipeline_id") != PIPELINE_SALES:
+        pipe = lead.get("pipeline_id")
+        if pipe not in {PIPELINE_SALES, PIPELINE_TECH}:
             continue
         if lead.get("status_id") in CLOSED:
             continue
@@ -243,7 +249,7 @@ def open_leads_of(contact: dict) -> list[dict]:
 
 
 def get_lead(lead_id: int) -> dict:
-    return get(f"/api/v4/leads/{int(lead_id)}")
+    return get(f"/api/v4/leads/{int(lead_id)}", {"with": "contacts"})
 
 
 def create_contact(name: str, phone: str) -> int:
@@ -430,3 +436,271 @@ def lead_calls_since(lead_id: int, since_ts: int) -> list[dict]:
 def add_note(lead_id: int, text: str) -> None:
     body = [{"note_type": "common", "params": {"text": (text or "")[:9000]}}]
     write(f"/api/v4/leads/{int(lead_id)}/notes", body)
+
+
+GENERIC_PEERS = {"пользователь", "клиент", "user", "клиент divo", "гость"}
+TITLE_STOP = {
+    "at", "amt", "cvt", "км", "л", "л.с", "лс", "класс", "class", "the",
+    "авто", "ру", "авито", "продаж", "новый", "новые",
+}
+
+
+def _norm_txt(value: str) -> str:
+    text = (value or "").lower().replace("ё", "е")
+    text = text.replace("[авто.ру]", " ").replace("[авито]", " ")
+    text = re.sub(r"[^a-zа-я0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def _tokens(value: str) -> set[str]:
+    return {t for t in _norm_txt(value).split() if len(t) >= 2 and t not in TITLE_STOP}
+
+
+def score_widget_lead(
+    lead_name: str,
+    *,
+    peer: str = "",
+    car: str = "",
+    channel: str = "",
+    from_name: str = "",
+    created_at: int = 0,
+    now: float | None = None,
+) -> int:
+    """Насколько сделка виджета похожа на наш чат. 0 = мимо."""
+    raw = lead_name or ""
+    is_autoru = raw.lower().startswith("[авто.ру]")
+    if channel == "Авито" and is_autoru:
+        return 0
+    score = 0
+    if channel == "Авто.ру" and raw and not is_autoru:
+        score -= 25
+    peer_n = _norm_txt(peer)
+    from_n = _norm_txt(from_name)
+    if peer_n and from_n and peer_n not in GENERIC_PEERS and from_n not in GENERIC_PEERS:
+        if peer_n == from_n:
+            score += 80
+        elif peer_n in from_n or from_n in peer_n:
+            score += 50
+    car_bits = _tokens(car)
+    name_bits = _tokens(lead_name)
+    if car_bits and name_bits:
+        overlap = car_bits & name_bits
+        if overlap:
+            score += 12 * min(len(overlap), 6)
+    stamp = int(created_at or 0)
+    if stamp:
+        age_h = max(0.0, ((now or time.time()) - stamp) / 3600)
+        score += max(0, int(20 - age_h / 24))
+    return score
+
+
+def _lead_id_of_unsorted(row: dict) -> int | None:
+    for lead in items(row, "leads") or ((row.get("_embedded") or {}).get("leads") or []):
+        lid = lead.get("id")
+        if lid:
+            return int(lid)
+    return None
+
+
+def iter_unsorted(max_pages: int = 5) -> list[dict]:
+    """Неразобранное воронки «Техническое»: uid, from, source, lead_id."""
+    out: list[dict] = []
+    for page in range(1, max_pages + 1):
+        code, data = request(
+            "/api/v4/leads/unsorted",
+            {
+                "limit": "50",
+                "page": str(page),
+                "filter[pipeline_id]": str(PIPELINE_TECH),
+            },
+        )
+        if code >= 400 or not data:
+            break
+        rows = items(data, "unsorted")
+        if not rows:
+            break
+        out.extend(rows)
+        if len(rows) < 50:
+            break
+        time.sleep(0.15)
+    return out
+
+
+def unsorted_meta(row: dict) -> dict:
+    md = row.get("metadata") or {}
+    client = md.get("client") or {}
+    source_uid = str(row.get("source_uid") or "")
+    channel = ""
+    if "avito" in source_uid:
+        channel = "Авито"
+    elif "amo.ext" in source_uid:
+        channel = "Авто.ру"
+    return {
+        "uid": row.get("uid") or "",
+        "lead_id": _lead_id_of_unsorted(row),
+        "from": str(md.get("from") or client.get("name") or ""),
+        "channel": channel,
+        "created_at": int(row.get("created_at") or 0),
+        "source_uid": source_uid,
+    }
+
+
+def find_unsorted_uid(lead_id: int, rows: list[dict] | None = None) -> str:
+    needle = int(lead_id)
+    for row in rows or iter_unsorted(8):
+        if _lead_id_of_unsorted(row) == needle:
+            return str(row.get("uid") or "")
+    return ""
+
+
+def accept_unsorted(uid: str, status_id: int = STATUS_TECH_CHAT) -> None:
+    if not uid:
+        return
+    body = {"user_id": NIKITA_USER_ID, "status_id": int(status_id)}
+    code, data = request(
+        "/api/v4/leads/unsorted/%s/accept" % uid,
+        method="POST",
+        body=body,
+    )
+    if code >= 400:
+        raise AmoError(code, str(data.get("detail") or data.get("title") or data)[:300])
+
+
+def set_contact_phone(contact_id: int, phone: str) -> None:
+    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
+    if int(contact_id or 0) <= 0 or len(digits) < 10:
+        return
+    if digits[0] == "8" and len(digits) == 11:
+        digits = "7" + digits[1:]
+    elif len(digits) == 10:
+        digits = "7" + digits
+    body = [
+        {
+            "id": int(contact_id),
+            "custom_fields_values": [
+                {
+                    "field_code": "PHONE",
+                    "values": [{"value": "+" + digits, "enum_code": "WORK"}],
+                }
+            ],
+        }
+    ]
+    write("/api/v4/contacts", body, method="PATCH")
+
+
+def move_lead_to_sales(
+    lead_id: int,
+    *,
+    status_id: int = STATUS_NEW,
+    responsible_user_id: int | None = NIKITA_USER_ID,
+    price: int = 0,
+    fields: dict[int, str] | None = None,
+    unsorted_uid: str = "",
+) -> dict:
+    """Техническое / неразобранное → Продажи, «Новая заявка»."""
+    lead = get_lead(int(lead_id))
+    original_name = str(lead.get("name") or "").strip()
+    if int(lead.get("status_id") or 0) == STATUS_TECH_UNSORTED:
+        uid = unsorted_uid or find_unsorted_uid(int(lead_id))
+        if uid:
+            try:
+                accept_unsorted(uid, status_id=int(status_id))
+            except AmoError:
+                try:
+                    accept_unsorted(uid)
+                except AmoError:
+                    pass
+            lead = get_lead(int(lead_id))
+    custom = []
+    for field_id, value in (fields or {}).items():
+        if value:
+            custom.append(_text_field(field_id, value))
+    body: dict = {
+        "id": int(lead_id),
+        "pipeline_id": PIPELINE_SALES,
+        "status_id": int(status_id),
+    }
+    if responsible_user_id:
+        body["responsible_user_id"] = int(responsible_user_id)
+    if price:
+        body["price"] = int(price)
+    if custom:
+        body["custom_fields_values"] = custom
+    if original_name and original_name not in {"|", "-"}:
+        body["name"] = original_name
+    write("/api/v4/leads", [body], method="PATCH")
+    return get_lead(int(lead_id))
+
+
+def close_lead_spam(lead_id: int, note: str = "") -> None:
+    body = {
+        "id": int(lead_id),
+        "pipeline_id": PIPELINE_SALES,
+        "status_id": STATUS_SPAM,
+    }
+    write("/api/v4/leads", [body], method="PATCH")
+    if note:
+        add_note(int(lead_id), note)
+
+
+def find_widget_lead(
+    *,
+    peer: str = "",
+    car: str = "",
+    channel: str = "",
+) -> dict | None:
+    """Сделка виджета Авито / Авто.ру в воронке «Техническое»."""
+    if channel not in {"Авито", "Авто.ру"}:
+        return None
+    rows = iter_unsorted(6)
+    scored: list[tuple[int, int, dict]] = []
+    for row in rows:
+        meta = unsorted_meta(row)
+        lid = meta.get("lead_id")
+        if not lid:
+            continue
+        if meta.get("channel") and meta["channel"] != channel:
+            continue
+        scored.append(
+            (
+                score_widget_lead(
+                    "",
+                    peer=peer,
+                    car=car,
+                    channel=channel,
+                    from_name=str(meta.get("from") or ""),
+                    created_at=int(meta.get("created_at") or 0),
+                ),
+                int(lid),
+                meta,
+            )
+        )
+    scored.sort(key=lambda x: x[0], reverse=True)
+    # Имя машины в unsorted часто пустое: добираем карточку у лучших.
+    best: dict | None = None
+    best_score = 0
+    for _, lid, meta in scored[:12]:
+        try:
+            lead = get_lead(lid)
+        except AmoError:
+            continue
+        if lead.get("pipeline_id") not in {PIPELINE_TECH, PIPELINE_SALES}:
+            continue
+        if lead.get("status_id") in CLOSED:
+            continue
+        pts = score_widget_lead(
+            str(lead.get("name") or ""),
+            peer=peer,
+            car=car,
+            channel=channel,
+            from_name=str(meta.get("from") or ""),
+            created_at=int(lead.get("created_at") or meta.get("created_at") or 0),
+        )
+        if pts > best_score:
+            best_score = pts
+            best = lead
+            best["_widget_from"] = meta.get("from")
+            best["_unsorted_uid"] = meta.get("uid")
+    if best is not None and best_score >= 40:
+        return best
+    return None

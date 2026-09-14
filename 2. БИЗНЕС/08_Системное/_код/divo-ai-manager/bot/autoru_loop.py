@@ -364,6 +364,13 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
 
             await crm.client_wrote_again(chat_key, texts[-1])
             continue
+        from bot import crm
+
+        urgent = await crm.capture_if_urgent(chat_key, texts)
+        if urgent in {"phone", "call", "complaint", "handoff"}:
+            store.pause(chat_key, "эскалация: %s" % urgent)
+            log.info("авто.ру чат %s сразу человеку (%s)", cid[:12], urgent)
+            continue
         pending.setdefault(chat_key, []).extend(texts)
         schedule(channel, chat_key)
         log.info("авто.ру входящее %s (%s): %s", cid[:12], title, texts[-1][:80])
