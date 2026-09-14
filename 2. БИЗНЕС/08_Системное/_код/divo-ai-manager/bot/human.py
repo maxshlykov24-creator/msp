@@ -647,6 +647,40 @@ def soften_now_call(text: str) -> str:
     return _tidy(text, original)
 
 
+LOGISTICS_LECTURE = re.compile(
+    r"тема логистик|"
+    r"логистик\w*.{0,48}пошлин|"
+    r"пошлин\w*.{0,24}не моя|"
+    r"наугад не скажу.{0,80}(логистик|пошлин|утил)",
+    re.IGNORECASE,
+)
+DEAD_CLOSER = re.compile(
+    r"\bобращайтесь\b|"
+    r"если что.?(-| )?(то )?понадоб|"
+    r"если интересно по машинам",
+    re.IGNORECASE,
+)
+
+
+def _drop_parts(text: str, pattern: re.Pattern) -> str:
+    original = text or ""
+    if not pattern.search(original):
+        return original
+    kept = [part for part in re.split(r"(?<=[.!?\n])\s+", original) if not pattern.search(part)]
+    text = " ".join(kept).strip()
+    return _tidy(text, original) if text else ""
+
+
+def drop_logistics_lecture(text: str) -> str:
+    """Пошлины и логистику не читаем, если клиент про них не спрашивал."""
+    return _drop_parts(text, LOGISTICS_LECTURE)
+
+
+def drop_dead_closer(text: str) -> str:
+    """«Обращайтесь» и «если что, пишите» — ответ ради ответа."""
+    return _drop_parts(text, DEAD_CLOSER)
+
+
 PAPER_LEAK = re.compile(
     r"("
     r"строк[аиеуы]\s+(с\s+ценой|в\s+(базе|карточ)|нет)|"
@@ -724,6 +758,8 @@ def for_chat(text: str) -> str:
     text = drop_where_choice(text)
     text = soften_now_call(text)
     text = drop_paper_talk(text)
+    text = drop_logistics_lecture(text)
+    text = drop_dead_closer(text)
     text = fix_brand(text)
     text = add_missing_dots(text)
     return bang_greeting(drop_end_period(text))
@@ -772,7 +808,7 @@ def split_bubbles(text: str) -> list[str]:
         head = blocks[: MAX_BUBBLES - 1]
         head.append("\n".join(blocks[MAX_BUBBLES - 1:]))
         blocks = head
-    return [for_chat(glue_lines(b)) for b in blocks]
+    return [x for x in (for_chat(glue_lines(b)) for b in blocks) if x]
 
 
 def denies_history(text: str) -> bool:

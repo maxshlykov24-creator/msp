@@ -71,6 +71,18 @@ def reset_history(chat_id: int | str) -> None:
     _history_path(chat_id).unlink(missing_ok=True)
 
 
+def is_dialog_id(chat_id: int | str) -> bool:
+    """Telegram (число), Авито av:…, Авто.ру ar:… — не служебные json в state."""
+    key = str(chat_id)
+    if key.startswith(("av:", "ar:")):
+        return True
+    try:
+        int(key)
+        return True
+    except ValueError:
+        return False
+
+
 def chat_ids() -> list[int]:
     settings.state_dir.mkdir(parents=True, exist_ok=True)
     out: list[int] = []
@@ -91,7 +103,8 @@ def all_chat_ids() -> list[str]:
     for path in settings.state_dir.glob("*.json"):
         if path.name.startswith("_"):
             continue
-        out.append(path.stem)
+        if is_dialog_id(path.stem):
+            out.append(path.stem)
     return out
 
 

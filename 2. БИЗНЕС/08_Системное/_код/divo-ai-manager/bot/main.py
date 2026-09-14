@@ -61,6 +61,8 @@ TECH_PAUSE_MIN = 10
 # Порог предупреждения об остатке на ключе OpenRouter, в долларах.
 BUDGET_WARN_USD = 3.0
 inflight: set[str] = set()
+# Каналы догона: Telegram, Авито, Авто.ру. Иначе av:… уходит в Telegram API.
+CHANNELS: dict[str, object] = {}
 # Сколько раз переспрашиваем модель, если клиент дописывает во время обдумывания.
 MAX_MERGE_ROUNDS = 2
 
@@ -470,6 +472,16 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     focus = ((doc.get("avito") or doc.get("autoru") or {}).get("focus") or "")
     if focus:
         system += "\n\n" + focus
+        system += (
+            "\n\n# Этот чат уже про объявление выше\n"
+            "Предмет разговора - эта машина, клиент на её карточке. "
+            "Не перечисляй её заново («этот AMG и ещё новый за столько»). "
+            "Бензин, дизель, «гелик смотрю» - ответ про неё. "
+            "Другие машины - только если спросил что ещё есть или эта не подходит.\n"
+            "Не выдумывай тему. «Привезти не выгодно» не разворачивай в пошлины "
+            "и логистику. «Наугад не скажу» не пиши, пока не спросил факт "
+            "из карточки, которого там нет."
+        )
     prior = history[:-1] if history else []
     if any((m.get("role") == "assistant") for m in prior):
         system += (
@@ -649,13 +661,27 @@ def _refresh_nudge(chat_id: int, history: list[dict]) -> None:
     store.save_doc(chat_id, doc)
 
 
-async def send_nudge(tg: Telegram, chat_id: int) -> None:
+def _nudge_channel(chat_id: int | str):
+    key = str(chat_id)
+    if key.startswith("av:"):
+        return CHANNELS.get("avito")
+    if key.startswith("ar:"):
+        return CHANNELS.get("autoru")
+    return CHANNELS.get("tg")
+
+
+async def send_nudge(chat_id: int | str) -> None:
+    if not store.is_dialog_id(chat_id):
+        return
     if store.is_paused(chat_id) and not tech_pause_lifted(chat_id):
         return
     if pending.get(str(chat_id)):
         return
     running = tasks.get(str(chat_id))
     if running and not running.done():
+        return
+    channel = _nudge_channel(chat_id)
+    if channel is None:
         return
     doc = store.load_doc(chat_id)
     meta = doc.get("nudge") or {}
@@ -671,14 +697,14 @@ async def send_nudge(tg: Telegram, chat_id: int) -> None:
         asked=bool(meta.get("asked", True)),
         address=not nudge.history_has_address(doc.get("messages") or []),
     )
-    await type_and_wait(tg, chat_id, human.typing_delay(text, first=True))
+    await type_and_wait(channel, chat_id, human.typing_delay(text, first=True))
     if pending.get(str(chat_id)) or store.is_paused(chat_id):
         return
     doc = store.load_doc(chat_id)
     meta = doc.get("nudge") or {}
     if nudge.ready_to_send(meta) != step:
         return
-    await tg.send(chat_id, text)
+    await channel.send(chat_id, text)
     store.log_line(chat_id, "никита", text)
     history = list(doc.get("messages") or [])
     history.append({"role": "assistant", "content": text})
@@ -693,13 +719,14 @@ async def send_nudge(tg: Telegram, chat_id: int) -> None:
 
 
 async def nudge_loop(tg: Telegram) -> None:
+    CHANNELS["tg"] = tg
     while True:
         await asyncio.sleep(60)
         if not settings.nudge_enabled:
             continue
-        for chat_id in store.chat_ids():
+        for chat_id in store.all_chat_ids():
             try:
-                await send_nudge(tg, chat_id)
+                await send_nudge(chat_id)
             except Exception:
                 log.exception("догон чат %s упал", chat_id)
 
@@ -786,6 +813,7 @@ async def poll_avito(tg: Telegram) -> None:
         return
     api = Avito()
     channel = avito_loop.AvitoChannel(api, tg)
+    CHANNELS["avito"] = channel
     try:
         await avito_loop.prime_cursor(api)
         await avito_loop.adopt_shot(api)
@@ -813,6 +841,7 @@ async def poll_autoru(tg: Telegram) -> None:
         log.info("авто.ру сессия до %s", expire)
     api = Autoru()
     channel = autoru_loop.AutoruChannel(api, tg)
+    CHANNELS["autoru"] = channel
     try:
         await autoru_loop.prime_cursor(api)
         log.info("авто.ру опрос каждые %s сек", settings.autoru_poll_sec)

@@ -520,6 +520,39 @@ def test_focus_autoru():
     text = focus_block("BMW X5 2020", "5 400 000 ₽", "https://auto.ru/x", channel="Авто.ру")
     assert "объявлению Авто.ру" in text
     assert "BMW X5 2020" in text
+    g = focus_block(
+        "Mercedes-Benz G-класс AMG 4.0 AT, 2021, 42 520 км",
+        "14 100 000",
+    )
+    if "Это машина из стока" in g:
+        assert "уже на этом объявлении" in g
+
+
+def test_listing_context_cleanup():
+    from bot.human import drop_dead_closer, drop_logistics_lecture, for_chat, split_bubbles
+    from bot import prompt
+
+    raw = (
+        "Наугад не скажу, тема логистики и пошлин не моя. "
+        "Если интересно по машинам, что есть у нас в наличии. Обращайтесь"
+    )
+    assert "логистик" not in drop_logistics_lecture(raw).lower()
+    cut = for_chat(raw)
+    assert "наугад" not in cut.lower()
+    assert "пошлин" not in cut.lower()
+    assert "обращайтесь" not in cut.lower()
+    bubbles = split_bubbles(
+        "Этот бензиновый. Дизельного гелика сейчас нет.\n\n"
+        "Наугад не скажу, тема логистики и пошлин не моя. Обращайтесь"
+    )
+    assert len(bubbles) == 1
+    assert "бензиновый" in bubbles[0].lower()
+    assert "пошлин" not in bubbles[0].lower()
+    keep = drop_dead_closer("Машина в наличии, можно приехать посмотреть")
+    assert "наличии" in keep.lower()
+    built = prompt.build()
+    assert "Чат по объявлению держит эту машину" in built
+    assert "Не выдумывай соседнюю тему" in built
 
 
 def test_avito_history_and_shot():
@@ -672,6 +705,16 @@ def test_avito_history_and_shot():
     )
 
 
+def test_dialog_ids():
+    from bot.store import is_dialog_id
+
+    assert is_dialog_id(123)
+    assert is_dialog_id("-1001")
+    assert is_dialog_id("av:u2i-abc")
+    assert is_dialog_id("ar:room1")
+    assert is_dialog_id("autoteka") is False
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -689,5 +732,7 @@ if __name__ == "__main__":
     test_amo_owner()
     test_autoru_prior()
     test_focus_autoru()
+    test_listing_context_cleanup()
     test_avito_history_and_shot()
+    test_dialog_ids()
     print("ok")
