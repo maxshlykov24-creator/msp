@@ -364,7 +364,7 @@ def format_done(snap: dict, line: str) -> str:
 def format_taken(snap: dict, who: str, when: str) -> str:
     return format_done(
         snap,
-        "Взял %s в %s. Напоминать не буду." % (_esc(who), _esc(when)),
+        "Взял %s в %s." % (_esc(who), _esc(when)),
     )
 
 

@@ -564,7 +564,7 @@ def on_foreign_out(chat_id: str | int, msg: dict) -> bool:
     _queue_edit(
         alert,
         alert.get("snap") or {},
-        "Менеджер написал в чат, %s. Напоминать не буду." % when,
+        "Менеджер написал в чат, %s." % when,
     )
     log.info("чат %s: менеджер ответил в канале", chat_id)
     return True
@@ -639,7 +639,7 @@ async def _finish_message(alert: dict, snap: dict, who: str, when: str, fallback
     await _edit_alert(
         alert,
         snap,
-        "Взял %s в %s. Напоминать не буду." % (who, when),
+        "Взял %s в %s." % (who, when),
         fallback,
     )
 
@@ -663,7 +663,7 @@ async def on_take(cb: dict) -> None:
             raw = message.get("text") or ""
             lines = raw.splitlines() or ["✅ В работе | DIVO"]
             lines[0] = "✅ <b>Связались</b> | DIVO"
-            lines.insert(1, "Взял %s в %s. Напоминать не буду." % (who, when))
+            lines.insert(1, "Взял %s в %s." % (who, when))
             if chat_id and mid:
                 await bot.edit(int(chat_id), int(mid), "\n".join(lines), None)
             await bot.answer_callback(cqid, "Тест. Сделку в amo не трогал")
@@ -676,7 +676,7 @@ async def on_take(cb: dict) -> None:
     taken = await claim(cid, who, when, message, user=user)
     if bot:
         if taken:
-            await bot.answer_callback(cqid, "Взял, больше не напоминаю")
+            await bot.answer_callback(cqid, "Взял")
         else:
             await bot.answer_callback(cqid, "Этот клиент уже взят, в amo ничего не менял")
 
@@ -781,7 +781,7 @@ async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
     await _edit_alert(
         alert,
         alert.get("snap") or {},
-        "%s в amo, %s. Напоминать не буду." % (label, when),
+        "%s в amo, %s." % (label, when),
     )
     log.info("чат %s: %s, алерты снял", chat_id, kind)
     return True
