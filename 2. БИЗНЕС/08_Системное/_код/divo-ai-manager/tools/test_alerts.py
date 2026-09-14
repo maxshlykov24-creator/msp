@@ -59,6 +59,9 @@ def test_alert_text():
     follow = format_alert({"wait": "call", "car": "X6", "reason": "phone"}, 15)
     assert "15 мин" in follow
     assert "остывает" in follow
+    hour = format_alert({"wait": "chat", "car": "X6", "reason": "handoff"}, 60)
+    assert "1 час" in hour
+    assert "висит" in hour
     ping5 = format_alert(
         {
             "wait": "call",
@@ -181,6 +184,10 @@ def test_pings():
     assert next_ping(started, [0, 5], now=at(14, 10)) == 10
     assert next_ping(started, [0, 5, 10], now=at(14, 15)) == 15
     assert next_ping(started, [0, 5, 10, 15], now=at(14, 20)) is None
+    assert next_ping(started, [0, 5, 10, 15], now=at(14, 30)) == 30
+    assert next_ping(started, [0, 5, 10, 15, 30], now=at(14, 59)) is None
+    assert next_ping(started, [0, 5, 10, 15, 30], now=at(15, 0)) == 60
+    assert next_ping(started, [0, 5, 10, 15, 30, 60], now=at(16, 0)) is None
     assert next_ping(started, [], now=at(21, 0)) is None
     late = at(19, 58)
     assert next_ping(late, [0], now=at(20, 3)) is None

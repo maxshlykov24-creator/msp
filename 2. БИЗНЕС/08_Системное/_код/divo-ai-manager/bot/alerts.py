@@ -18,7 +18,7 @@ from bot.nudge import MSK, in_working_hours, now_msk
 
 log = logging.getLogger("alerts")
 
-PING_MINUTES = (0, 5, 10, 15)
+PING_MINUTES = (0, 5, 10, 15, 30, 60)
 WAIT_CALL = "call"
 WAIT_CHAT = "chat"
 
@@ -27,10 +27,14 @@ HEAD = {
     (WAIT_CALL, 5): "⏰ <b>5 мин</b> | всё ещё ждёт звонка",
     (WAIT_CALL, 10): "🔥 <b>10 мин</b> | не взяли трубку",
     (WAIT_CALL, 15): "🚨 <b>15 мин</b> | клиент остывает",
+    (WAIT_CALL, 30): "🚨 <b>30 мин</b> | до сих пор не взяли",
+    (WAIT_CALL, 60): "🚨 <b>1 час</b> | диалог висит",
     (WAIT_CHAT, 0): "✍️ <b>Ждёт ответ в чате</b> | DIVO",
     (WAIT_CHAT, 5): "⏰ <b>5 мин</b> | чат без ответа",
     (WAIT_CHAT, 10): "🔥 <b>10 мин</b> | менеджер молчит",
     (WAIT_CHAT, 15): "🚨 <b>15 мин</b> | лояльность падает",
+    (WAIT_CHAT, 30): "🚨 <b>30 мин</b> | до сих пор молчим",
+    (WAIT_CHAT, 60): "🚨 <b>1 час</b> | диалог висит",
 }
 
 REASON_LINE = {
