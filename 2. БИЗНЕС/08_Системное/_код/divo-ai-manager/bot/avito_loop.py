@@ -8,15 +8,35 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
-from bot import avito_match, human, store
+from bot import avito_match, human, nudge, store
 from bot.avito import Avito, AvitoError
 from bot.config import settings
 
 log = logging.getLogger("avito")
 
 PRIOR_GAP_SEC = 2 * 3600
+ADOPT_SHOT_KEY = "adopted_20260914"
+# Семь диалогов со скрина Авито 2026-09-14. Михаила «Цена реальная?» в API
+# нет: его ищем по тексту, остальные — по id, чтобы не задеть соседние чаты.
+SHOT_IDS = frozenset(
+    {
+        "u2i-MhZXyF5yTdAohb9FKLduFw",  # Salam, Tank 700
+        "u2i-6X3pAWDl1Sb9Y91uUzrAsg",  # Владимир, G-класс
+        "u2i-wI396zabNtnS2PHKL1WEbQ",  # Premium Auto, G-класс
+        "u2i-nLS7kZ3H2aSrnZn8ofOqtQ",  # Максим Алаев, Jetour T2
+        "u2i-jemXIwesLXR_B~XA911wYg",  # Максим, Bestune NAT
+        "u2i-eu3XqDBTHT81k6IeZE423A",  # MSProduction, BMW X6
+    }
+)
+UNSUPPORTED = (
+    "сообщение не поддерживается",
+    "пожалуйста, перейдите в авито мессенджер",
+    "аккуратно напомнили",
+)
+ME_NAMES = frozenset({"диво моторс", "divo motors", "divo моторс"})
 
 
 def _state_path() -> Path:
@@ -87,10 +107,33 @@ def remember_legacy(state: dict, chat_id: str) -> None:
     _put(state, "legacy", chat_id)
 
 
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").lower().replace("ё", "е")).strip()
+
+
+def is_noise(msg: dict) -> bool:
+    """Системные пинги Авито и заглушка «сообщение не поддерживается»."""
+    msg = msg or {}
+    if (msg.get("type") or "").lower() == "system":
+        return True
+    blob = " ".join(
+        [
+            str(msg.get("type") or ""),
+            content_text(msg),
+            str((msg.get("content") or {}).get("type") or "")
+            if isinstance(msg.get("content"), dict)
+            else "",
+        ]
+    ).lower()
+    if blob.startswith("[системное сообщение]") or "[системное сообщение]" in blob:
+        return True
+    return any(piece in blob for piece in UNSUPPORTED)
+
+
 def had_prior_correspondence(msgs: list[dict], newest_in: int) -> bool:
     """Уже был диалог: исходящее продавца или входящее сильно раньше текущего."""
     for msg in msgs or []:
-        if (msg.get("type") or "") == "system":
+        if is_noise(msg):
             continue
         at = created_of(msg)
         direction = msg.get("direction") or ""
@@ -111,21 +154,104 @@ def listing_of(chat: dict) -> dict:
     }
 
 
+def content_text(msg: dict) -> str:
+    content = (msg or {}).get("content") or {}
+    if isinstance(content, dict):
+        return (content.get("text") or "").strip()
+    return str(content).strip() if content else ""
+
+
 def message_text(msg: dict) -> str:
     if (msg.get("direction") or "") != "in":
         return ""
-    content = msg.get("content") or {}
-    if isinstance(content, dict):
-        text = (content.get("text") or "").strip()
-        if text:
-            return text
-        if content.get("type") == "image" or content.get("image"):
-            return "Клиент прислал фото"
-        if content.get("type") == "link":
-            return (content.get("text") or content.get("url") or "Клиент прислал ссылку").strip()
-    if (msg.get("type") or "") == "system":
+    if is_noise(msg):
         return ""
+    content = msg.get("content") or {}
+    text = content_text(msg)
+    if text:
+        return text
+    kind = (msg.get("type") or "").lower()
+    if isinstance(content, dict):
+        kind = kind or str(content.get("type") or "").lower()
+        if kind == "image" or content.get("image"):
+            return "Клиент прислал фото"
+        if kind == "link":
+            return (content.get("url") or "Клиент прислал ссылку").strip()
+    if kind == "image":
+        return "Клиент прислал фото"
+    if kind == "link":
+        return "Клиент прислал ссылку"
     return ""
+
+
+def outbound_text(msg: dict) -> str:
+    if (msg.get("direction") or "") != "out":
+        return ""
+    if is_noise(msg):
+        return ""
+    return content_text(msg)
+
+
+def chat_peer(chat: dict) -> str:
+    me = settings.avito_user_id
+    for user in chat.get("users") or []:
+        uid = user.get("id")
+        try:
+            if me and uid is not None and int(uid) == int(me):
+                continue
+        except (TypeError, ValueError):
+            pass
+        name = (user.get("name") or "").strip()
+        if _norm(name) in ME_NAMES:
+            continue
+        if name:
+            return name
+    return ""
+
+
+def is_shot_chat(chat: dict) -> bool:
+    cid = str(chat.get("id") or "")
+    if cid in SHOT_IDS:
+        return True
+    peer = _norm(chat_peer(chat))
+    last_txt = _norm(message_text(chat.get("last_message") or {}) or content_text(chat.get("last_message") or {}))
+    return "михаил" in peer and "цена реальная" in last_txt
+
+
+def _append_turn(turns: list[dict], role: str, content: str) -> None:
+    text = (content or "").strip()
+    if not text:
+        return
+    if turns and turns[-1].get("role") == role:
+        turns[-1]["content"] = "%s\n%s" % (turns[-1].get("content") or "", text)
+        return
+    turns.append({"role": role, "content": text})
+
+
+def history_from_messages(msgs: list[dict]) -> tuple[list[dict], list[str], int]:
+    """История до последнего исходящего плюс хвост входящих, на которые ещё не отвечали."""
+    ordered = sorted(msgs or [], key=created_of)
+    turns: list[dict] = []
+    pending: list[str] = []
+    last_out_at = 0
+    max_at = 0
+    for msg in ordered:
+        at = created_of(msg)
+        max_at = max(max_at, at)
+        incoming = message_text(msg)
+        if incoming:
+            pending.append(incoming)
+            continue
+        outgoing = outbound_text(msg)
+        if not outgoing:
+            continue
+        if pending:
+            _append_turn(turns, "user", "\n".join(pending))
+            pending = []
+        _append_turn(turns, "assistant", outgoing)
+        last_out_at = at
+    cursor = last_out_at if pending else max_at
+    return turns, pending, cursor
 
 
 def created_of(msg: dict) -> int:
@@ -170,6 +296,101 @@ async def prime_cursor(api: Avito) -> None:
     state["cursor"] = cursor
     save_state(state)
     log.info("авито: курсор на %d чатах, хвост не трогаю", len(cursor))
+
+
+async def list_chats(api: Avito, limit: int = 200) -> list[dict]:
+    out: list[dict] = []
+    seen: set[str] = set()
+    offset = 0
+    page = 50
+    while len(out) < limit:
+        batch = await api.chats(
+            unread_only=False, limit=min(page, limit - len(out)), offset=offset
+        )
+        if not batch:
+            break
+        fresh = 0
+        for chat in batch:
+            cid = str(chat.get("id") or "")
+            if not cid or cid in seen:
+                continue
+            seen.add(cid)
+            out.append(chat)
+            fresh += 1
+        if not fresh:
+            break
+        if len(batch) < page:
+            break
+        offset += len(batch)
+    return out
+
+
+async def adopt_shot(api: Avito) -> None:
+    """Разово взять диалоги со скрина: полная история, без повторного приветствия."""
+    state = load_state()
+    if state.get(ADOPT_SHOT_KEY):
+        return
+    try:
+        chats = await list_chats(api, 200)
+    except AvitoError as exc:
+        log.warning("авито adopt: не прочитал чаты: %s", exc)
+        return
+    picked = [chat for chat in chats if is_shot_chat(chat)]
+    if not picked:
+        log.warning("авито adopt: чаты со скрина не нашёл")
+        return
+    found = {str(chat.get("id") or "") for chat in picked}
+    missing = [cid for cid in SHOT_IDS if cid not in found]
+    if missing:
+        log.warning("авито adopt: нет в ленте %s", ",".join(cid[:16] for cid in missing))
+    mikhail = next(
+        (
+            chat
+            for chat in chats
+            if "михаил" in _norm(chat_peer(chat))
+            and "цена реальная" in _norm(
+                message_text(chat.get("last_message") or {})
+                or content_text(chat.get("last_message") or {})
+            )
+        ),
+        None,
+    )
+    if mikhail is None:
+        log.warning("авито adopt: Михаил «Цена реальная?» в API не найден")
+    cursor = dict(state.get("cursor") or {})
+    for chat in picked:
+        cid = str(chat.get("id") or "")
+        if not cid:
+            continue
+        try:
+            msgs = await api.messages(cid, limit=100)
+        except AvitoError as exc:
+            log.warning("авито adopt %s: %s", cid[:12], exc)
+            continue
+        turns, pending_texts, cur = history_from_messages(msgs)
+        chat_key = store_id(cid)
+        await remember_listing(chat_key, chat, api)
+        store.save_history(chat_key, turns)
+        doc = store.load_doc(chat_key)
+        meta = nudge.refresh(doc.get("nudge") or {}, turns)
+        meta["waiting"] = False
+        doc["nudge"] = meta
+        store.save_doc(chat_key, doc)
+        store.resume(chat_key)
+        remember_allow(state, cid)
+        cursor[cid] = cur
+        title = listing_of(chat).get("title") or ""
+        log.info(
+            "авито беру %s (%s, %s), история %d, хвост %s",
+            cid[:12],
+            chat_peer(chat) or "?",
+            title[:50],
+            len(turns),
+            (pending_texts[-1][:40] if pending_texts else "нет"),
+        )
+    state["cursor"] = cursor
+    state[ADOPT_SHOT_KEY] = True
+    save_state(state)
 
 
 async def remember_listing(chat_key: str, chat: dict, api: Avito) -> None:

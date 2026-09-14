@@ -66,8 +66,10 @@ class Avito:
     def user_id(self) -> int:
         return settings.avito_user_id
 
-    async def chats(self, unread_only: bool = False, limit: int = 50) -> list[dict]:
-        params = {"limit": limit, "offset": 0}
+    async def chats(
+        self, unread_only: bool = False, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
+        params = {"limit": limit, "offset": max(int(offset or 0), 0)}
         if unread_only:
             params["unread_only"] = "true"
         data = await self._call(

@@ -521,6 +521,39 @@ def drop_kstati(text: str) -> str:
     return _tidy(text, original)
 
 
+GREET_LEAD = re.compile(
+    r"^\s*(?:"
+    r"(?:добр(?:ый|ое|ой)\s+(?:день|утро|вечер|ночи)|здравствуйте|здрасте|"
+    r"привет(?:ствую)?)"
+    r"[!,.]?\s*"
+    r")+",
+    re.IGNORECASE,
+)
+INTRO_LEAD = re.compile(
+    r"^\s*(?:(?:меня\s+зовут|я)\s+)?"
+    r"(?:никита|(?:divo|диво)\s*motors)[!,.]?\s*",
+    re.IGNORECASE,
+)
+
+
+def drop_regreeting(text: str) -> str:
+    """Убрать повторное «добрый день» и представление, если диалог уже шёл."""
+    original = (text or "").strip()
+    if not original:
+        return ""
+    text = GREET_LEAD.sub("", original, count=1).strip()
+    for _ in range(4):
+        nxt = INTRO_LEAD.sub("", text, count=1).strip(" ,.-")
+        if nxt == text:
+            break
+        text = nxt
+    if not text:
+        return ""
+    if original[:1].isupper() and text[:1].islower():
+        text = text[0].upper() + text[1:]
+    return text
+
+
 def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: без тире-связок, без точки в конце."""
     text = drop_clause_dashes(text or "")

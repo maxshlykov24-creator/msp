@@ -358,6 +358,12 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         .strip()
     )
     bubbles = human.split_bubbles(clean_text)
+    prior = history[:-1]
+    if any((m.get("role") == "assistant") for m in prior):
+        stripped = [human.drop_regreeting(b) for b in bubbles]
+        stripped = [b for b in stripped if b.strip()]
+        if stripped:
+            bubbles = stripped
     if nudge.history_has_address(history) and not nudge.asked_where(user_text):
         kept = [b for b in bubbles if not nudge.is_address_only(b)]
         if kept and len(kept) < len(bubbles):
@@ -415,6 +421,15 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     focus = ((doc.get("avito") or doc.get("autoru") or {}).get("focus") or "")
     if focus:
         system += "\n\n" + focus
+    prior = history[:-1] if history else []
+    if any((m.get("role") == "assistant") for m in prior):
+        system += (
+            "\n\n# Диалог уже идёт\n"
+            "Ты уже писал в этом чате. Не здоровайся и не представляйся: без "
+            "«добрый день», «здравствуйте», «привет», без имени Никита и без "
+            "названия салона. Сразу по существу последнего сообщения, опираясь "
+            "на переписку выше."
+        )
     known_name = nudge.extract_name(history)
     if known_name:
         system += (
@@ -703,6 +718,7 @@ async def poll_avito(tg: Telegram) -> None:
     channel = avito_loop.AvitoChannel(api, tg)
     try:
         await avito_loop.prime_cursor(api)
+        await avito_loop.adopt_shot(api)
         log.info("авито опрос каждые %s сек", settings.avito_poll_sec)
         while True:
             try:

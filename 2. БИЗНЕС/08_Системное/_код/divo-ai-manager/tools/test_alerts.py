@@ -143,7 +143,7 @@ def test_alert_text():
 
 
 def test_prior_thread():
-    from bot.avito_loop import PRIOR_GAP_SEC, had_prior_correspondence
+    from bot.avito_loop import PRIOR_GAP_SEC, had_prior_correspondence, is_noise, message_text
 
     now = 1_800_000_000
     fresh = [
@@ -160,6 +160,17 @@ def test_prior_thread():
     assert had_prior_correspondence(old, now) is True
     system_only = [{"type": "system", "direction": "out", "created": now - 9}]
     assert had_prior_correspondence(fresh + system_only, now) is False
+    stub = {
+        "direction": "in",
+        "type": "text",
+        "created": now - 9,
+        "content": {
+            "text": "Сообщение не поддерживается. Пожалуйста, перейдите в Авито мессенджер"
+        },
+    }
+    assert is_noise(stub) is True
+    assert message_text(stub) == ""
+    assert had_prior_correspondence(fresh + [stub], now) is False
 
 
 def test_amo_owner():
@@ -300,6 +311,127 @@ def test_focus_autoru():
     assert "BMW X5 2020" in text
 
 
+def test_avito_history_and_shot():
+    from bot.avito_loop import (
+        SHOT_IDS,
+        history_from_messages,
+        is_noise,
+        is_shot_chat,
+        message_text,
+    )
+    from bot.human import drop_regreeting
+
+    vlad = [
+        {"created": 6, "direction": "in", "type": "text", "content": {"text": "По автотеке что там?"}},
+        {
+            "created": 5,
+            "direction": "out",
+            "type": "text",
+            "content": {"text": "Косметический окрас крыла. Напишите номер"},
+        },
+        {"created": 4, "direction": "in", "type": "text", "content": {"text": "Страховка?"}},
+        {
+            "created": 3,
+            "direction": "in",
+            "type": "text",
+            "content": {"text": "Крыла или арки? По автотеке что там с ним, ДТП?"},
+        },
+        {
+            "created": 2,
+            "direction": "out",
+            "type": "text",
+            "content": {"text": "Добрый день! Один косметический окрас крыла."},
+        },
+        {
+            "created": 1,
+            "direction": "in",
+            "type": "text",
+            "content": {"text": "Привет! Он в родном окрасе?"},
+        },
+    ]
+    turns, pending, cursor = history_from_messages(vlad)
+    assert pending == ["По автотеке что там?"]
+    assert cursor == 5
+    assert [m["role"] for m in turns] == ["user", "assistant", "user", "assistant"]
+    assert "Страховка?" in turns[2]["content"]
+    assert "Добрый день" in turns[1]["content"]
+
+    prem = [
+        {"created": 9, "direction": "in", "type": "text", "content": {"text": "До 8 млн только моя доплата"}},
+        {"created": 8, "direction": "in", "type": "text", "content": {"text": "Здравствуйте да актуально"}},
+        {
+            "created": 7,
+            "direction": "in",
+            "type": "system",
+            "content": {"text": "[Системное сообщение] Мы аккуратно напомнили собеседнику о диалоге."},
+        },
+        {
+            "created": 6,
+            "direction": "out",
+            "type": "system",
+            "content": {"text": "[Системное сообщение] Здравствуйте! Вам ещё актуально объявление?"},
+        },
+        {"created": 5, "direction": "out", "type": "text", "content": {"text": "Когда готовы подъехать на оценку?"}},
+        {"created": 4, "direction": "in", "type": "text", "content": {"text": "Договорились"}},
+        {
+            "created": 3,
+            "direction": "out",
+            "type": "text",
+            "content": {"text": "Добрый день! Мы принимаем автомобили в трейд-ин."},
+        },
+        {"created": 2, "direction": "in", "type": "link", "content": {}},
+        {"created": 1, "direction": "in", "type": "text", "content": {"text": "Здравствуйте обмен интересует?"}},
+    ]
+    assert is_noise(prem[2]) is True
+    assert message_text(prem[2]) == ""
+    turns, pending, cursor = history_from_messages(prem)
+    assert pending == ["Здравствуйте да актуально", "До 8 млн только моя доплата"]
+    assert cursor == 5
+    assert not any("актуально объявление" in (m.get("content") or "") for m in turns)
+    assert turns[0]["content"].startswith("Здравствуйте обмен")
+    assert "Клиент прислал ссылку" in turns[0]["content"]
+
+    turns, pending, cursor = history_from_messages(
+        [
+            vlad[1],
+            vlad[2],
+            vlad[3],
+            vlad[4],
+            vlad[5],
+            {
+                "created": 6,
+                "direction": "in",
+                "type": "system",
+                "content": {"text": "Сообщение не поддерживается"},
+            },
+        ]
+    )
+    assert pending == []
+    assert cursor == 6
+
+    cid = next(iter(SHOT_IDS))
+    assert is_shot_chat({"id": cid, "users": [], "last_message": {}}) is True
+    assert is_shot_chat({"id": "u2i-other", "users": [{"id": 1, "name": "Марина"}]}) is False
+    assert (
+        is_shot_chat(
+            {
+                "id": "u2i-mikhail",
+                "users": [{"id": 1, "name": "Михаил"}, {"id": 206268487, "name": "Диво Моторс"}],
+                "last_message": {
+                    "direction": "in",
+                    "type": "text",
+                    "content": {"text": "Цена реальная?"},
+                },
+            }
+        )
+        is True
+    )
+    assert drop_regreeting("Добрый день! По автотеке вот ссылка") == "По автотеке вот ссылка"
+    assert drop_regreeting("Здравствуйте. DIVO MOTORS, Никита. Крыло в окрасе") == "Крыло в окрасе"
+    assert drop_regreeting("По автотеке что там?") == "По автотеке что там?"
+    assert drop_regreeting("Добрый день!") == ""
+
+
 if __name__ == "__main__":
     test_phone()
     test_reasons()
@@ -309,4 +441,5 @@ if __name__ == "__main__":
     test_amo_owner()
     test_autoru_prior()
     test_focus_autoru()
+    test_avito_history_and_shot()
     print("ok")
