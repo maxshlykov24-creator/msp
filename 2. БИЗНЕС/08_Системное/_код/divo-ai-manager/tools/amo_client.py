@@ -33,6 +33,10 @@ def _divo_env_paths() -> tuple[Path, ...]:
 ENV_CANDIDATES = _divo_env_paths()
 
 NIKITA_USER_ID = 13334858
+# Ответственный на заявках бота до того, как менеджер нажал кнопку: владелец.
+# Живому Никите чужие заявки не падают, а Максим видит весь поток от бота.
+OWNER_USER_ID = 9490530
+BOT_RESPONSIBLE = OWNER_USER_ID
 PIPELINE_SALES = 10372290
 PIPELINE_TECH = 10447334
 
@@ -256,7 +260,7 @@ def create_contact(name: str, phone: str) -> int:
     body = [
         {
             "name": (name or "Клиент DIVO").strip() or "Клиент DIVO",
-            "responsible_user_id": NIKITA_USER_ID,
+            "responsible_user_id": BOT_RESPONSIBLE,
             "custom_fields_values": [
                 {
                     "field_code": "PHONE",
@@ -290,7 +294,7 @@ def create_lead(
         "name": name,
         "pipeline_id": PIPELINE_SALES,
         "status_id": STATUS_NEW,
-        "responsible_user_id": NIKITA_USER_ID,
+        "responsible_user_id": BOT_RESPONSIBLE,
     }
     if price:
         item["price"] = int(price)
@@ -556,7 +560,7 @@ def find_unsorted_uid(lead_id: int, rows: list[dict] | None = None) -> str:
 def accept_unsorted(uid: str, status_id: int = STATUS_TECH_CHAT) -> None:
     if not uid:
         return
-    body = {"user_id": NIKITA_USER_ID, "status_id": int(status_id)}
+    body = {"user_id": BOT_RESPONSIBLE, "status_id": int(status_id)}
     code, data = request(
         "/api/v4/leads/unsorted/%s/accept" % uid,
         method="POST",
@@ -592,7 +596,7 @@ def move_lead_to_sales(
     lead_id: int,
     *,
     status_id: int = STATUS_NEW,
-    responsible_user_id: int | None = NIKITA_USER_ID,
+    responsible_user_id: int | None = BOT_RESPONSIBLE,
     price: int = 0,
     fields: dict[int, str] | None = None,
     unsorted_uid: str = "",
