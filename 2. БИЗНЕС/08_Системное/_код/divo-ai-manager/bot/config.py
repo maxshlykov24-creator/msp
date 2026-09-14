@@ -136,6 +136,13 @@ class Settings:
 
     amo_domain = env("AMOCRM_BASE_DOMAIN", "divomotors.amocrm.ru")
     amo_token = env("AMOCRM_LONG_LIVED_TOKEN") or env("AMO_ACCESS_TOKEN")
+    amojo_http_host = env("AMOJO_HTTP_HOST", "127.0.0.1")
+    amojo_http_port = env_int("AMOJO_HTTP_PORT", 19110)
+    amo_client_uuid = env("AMO_CLIENT_UUID", "b246f045-d6b8-4b9a-9952-61ec8693d910")
+    amojo_account_id = env("AMOJO_ACCOUNT_ID", "7e985b40-cac0-4dc5-b7a6-3c23d30d1960")
+    amo_channel_id = env("AMO_CHANNEL_ID")
+    amo_channel_secret = env("AMO_CHANNEL_SECRET")
+    amo_scope_id = env("AMO_SCOPE_ID")
     alert_bot_token = env("ALERT_BOT_TOKEN")
     alert_chat_ids = {
         int(x.strip())

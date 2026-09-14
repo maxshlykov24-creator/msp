@@ -14,7 +14,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from bot import avito_loop, crm, human, llm, nudge, prompt, store
+from bot import amojo_http, avito_loop, crm, human, llm, nudge, prompt, store
 from bot.alerts import AlertBot
 from bot.avito import Avito
 from bot.config import settings
@@ -705,6 +705,7 @@ async def run() -> None:
     asyncio.create_task(budget_loop(tg))
     asyncio.create_task(poll_avito(tg))
     asyncio.create_task(alert_loop())
+    asyncio.create_task(amojo_http.serve())
     offset = read_offset()
 
     try:
