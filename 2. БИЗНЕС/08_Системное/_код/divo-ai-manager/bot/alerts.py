@@ -160,7 +160,13 @@ class AlertBot:
 
     @property
     def ready(self) -> bool:
-        return bool(self.token) and bool(self.chats)
+        return bool(self.token) and bool(self._targets())
+
+    def _targets(self) -> set[int]:
+        """Если в .env задан ALERT_CHAT_ID, пишем только туда."""
+        if settings.alert_chat_ids:
+            return set(settings.alert_chat_ids)
+        return set(self.chats)
 
     async def close(self) -> None:
         await self.client.aclose()
@@ -224,11 +230,11 @@ class AlertBot:
         if not self.token:
             log.warning("алерт без токена: %s", text.replace("\n", " ")[:200])
             return False
-        if not self.chats:
+        if not self._targets():
             log.warning("алерт без чата менеджеров: %s", text.replace("\n", " ")[:200])
             return False
         ok = True
-        for chat_id in list(self.chats):
+        for chat_id in list(self._targets()):
             try:
                 await self._call(
                     "sendMessage",

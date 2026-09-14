@@ -63,6 +63,15 @@ class Telegram:
             pass  # индикатор набора не критичен
 
     async def notify_admin(self, text: str) -> None:
+        from bot import crm
+        from bot.alerts import _esc
+
+        if crm.bot and crm.bot.ready:
+            try:
+                await crm.bot.send(_esc(text))
+                return
+            except Exception as exc:  # noqa: BLE001
+                log.warning("алерт через группу не ушёл: %s", exc)
         if not settings.admin_chat_id:
             return
         try:
