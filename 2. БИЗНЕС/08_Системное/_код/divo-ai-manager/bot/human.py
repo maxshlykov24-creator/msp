@@ -849,7 +849,19 @@ PAPER_LEAK = re.compile(
     r"юрлицо\s*/\s*ндс|"
     r"цены?\s+на\s+юрлицо\s*/|"
     r"такой\s+машины\s+строк|"
-    r"в\s+карточке\s+(нет|пока|строк)"
+    r"в\s+карточке\s+(нет|пока|строк)|"
+    r"сходу\s+не\s+подним|"
+    r"свер[яи]ю\s+по\s+сток|"
+    r"точной\s+карточки|"
+    r"карточки\s+с\s+vin|"
+    r"vin\s+у\s+меня\s+нет|"
+    r"по\s+объявлению\s+с\s+(авито|авто)|"
+    r"данных\s+отч[её]та|"
+    r"отч[её]та\s+у\s+меня|"
+    r"под\s+рукой\s+нет|"
+    r"цифрами\s+наугад|"
+    r"не\s+дезинформировать\s+вас|"
+    r"чтобы\s+вас\s+не\s+дезинформировать"
     r")",
     re.IGNORECASE,
 )
@@ -880,9 +892,46 @@ def drop_paper_talk(text: str) -> str:
     text = " ".join(kept).strip()
     if text:
         return _tidy(text, original)
-    if re.search(r"ндс|юрлиц", original, re.IGNORECASE):
-        return VAT_NO_PRICE
-    return _tidy("Уточню по этой машине", original)
+    stub = VAT_NO_PRICE if re.search(r"ндс|юрлиц", original, re.IGNORECASE) else "Уточню по этой машине"
+    greet = GREET_HEAD.match(original)
+    if greet:
+        head = " ".join(greet.group(1).lower().split())
+        canon = GREET_BANG.get(head, "Добрый день!")
+        return _tidy(canon + " " + stub, original)
+    return _tidy(stub, original)
+
+
+PHONE_FOR_CALL = re.compile(
+    r"("
+    r"наберу|"
+    r"позвон|"
+    r"для обратной связи|"
+    r"напишите.{0,40}номер|"
+    r"скиньте.{0,30}номер|"
+    r"контактный телефон|"
+    r"номер телефона|"
+    r"если звонок неудобен"
+    r")",
+    re.IGNORECASE,
+)
+MESSENGER_ASK = "Напишите, пожалуйста, Telegram или WhatsApp, туда пришлю"
+
+
+def phone_to_messenger(text: str) -> str:
+    """Звонок неудобен — не просим номер под звонок, просим мессенджер."""
+    original = text or ""
+    if not PHONE_FOR_CALL.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if PHONE_FOR_CALL.search(part):
+            continue
+        kept.append(part)
+    body = " ".join(kept).strip()
+    if body:
+        glue = "" if body[-1:] in ".!?" else "."
+        return _tidy(body + glue + " " + MESSENGER_ASK, original)
+    return MESSENGER_ASK
 
 
 def bang_greeting(text: str) -> str:
@@ -901,6 +950,20 @@ def bang_greeting(text: str) -> str:
     if rest[:1].islower():
         rest = rest[0].upper() + rest[1:]
     return canon + " " + rest
+
+
+def ensure_greeting(bubbles: list[str], *, first: bool) -> list[str]:
+    """Первый ход диалога всегда с «Добрый день!», даже если фильтр съел привет."""
+    if not first or not bubbles:
+        return bubbles
+    out = list(bubbles)
+    if GREET_LEAD.match(out[0] or ""):
+        return out
+    rest = (out[0] or "").strip()
+    if rest[:1].islower():
+        rest = rest[0].upper() + rest[1:]
+    out[0] = ("Добрый день! " + rest).strip()
+    return out
 
 
 def for_chat(text: str) -> str:

@@ -113,6 +113,17 @@ def test_greeting_and_paper():
     assert "базе" not in chat.lower()
     assert "строк" not in chat.lower()
     assert "ндс" in chat.lower()
+    leak = drop_paper_talk(
+        "Отчёт автотеки я сходу не поднимал, чтобы вас не дезинформировать"
+    )
+    assert "сходу" not in leak.lower()
+    assert "дезинформировать" not in leak.lower()
+    comma = drop_paper_talk("Добрый день, в карточке нет дизельного нагревателя")
+    assert comma.startswith("Добрый день!")
+    from bot.human import ensure_greeting
+    assert ensure_greeting(["Уточню по этой машине"], first=True)[0].startswith("Добрый день!")
+    assert ensure_greeting(["Добрый день! Машина в наличии"], first=True)[0].startswith("Добрый день!")
+    assert ensure_greeting(["Уточню"], first=False) == ["Уточню"]
 
 
 def test_now_call():
@@ -858,6 +869,74 @@ def test_in_stock_dedupe():
     assert "Максим," in nudge
 
 
+def test_tiggo_match_and_messenger():
+    from tools.stock_sync import HEADER, warehouse_block
+    from bot.avito_match import match_card, focus_block
+    from bot.human import drop_paper_talk, phone_to_messenger
+    from bot.nudge import wants_write_here
+
+    vals = {h: "" for h in HEADER}
+    vals["VIN"] = "LVVDB21B0ND229078"
+    vals["Марка"] = "Chery"
+    vals["Модель"] = "Tiggo 4"
+    vals["Год выпуска"] = "2022"
+    vals["Цвет"] = "серый"
+    vals["Пробег"] = "122 507"
+    vals["Автотека"] = "https://autoteka.ru/report/web/uuid/test"
+    vals["Окрасы"] = "капот"
+    stock = warehouse_block([[vals[h] for h in HEADER]])
+    assert "## Chery Tiggo 4 2022" in stock
+    assert "LVVDB21B0ND229078" in stock
+    hit = match_card(
+        "Chery Tiggo 4 1.5 CVT, 2022, 126 219 км",
+        "960 000 ₽",
+        stock=stock,
+    )
+    assert hit is not None
+    assert "LVVDB21B0ND229078" in (hit.get("VIN") or "")
+    focus = focus_block(
+        "Chery Tiggo 4 1.5 CVT, 2022, 126 219 км",
+        "960 000 ₽",
+        stock=stock,
+    )
+    assert "Это машина из стока" in focus
+    assert "не поднимал" not in focus.lower()
+    miss = focus_block("Машина с другой планеты 1999")
+    assert "не подцепилась" in miss
+    assert "VIN в стоке не нашёл" not in miss
+
+    leak = (
+        "По этой Chery Tiggo 4 отчёт автотеки я сходу не поднимал, "
+        "машину сверяю по стоку. Точной карточки с VIN у меня нет, "
+        "по объявлению с Авито. Напишите контактный телефон"
+    )
+    cut = drop_paper_talk(leak)
+    assert "сходу" not in cut.lower()
+    assert "сверяю" not in cut.lower()
+    assert "карточки" not in cut.lower()
+    assert wants_write_here("Здесь напишите пожалуйста. У меня звонки не проходят")
+    assert not wants_write_here("Напишите здесь цену")
+    msg = phone_to_messenger(
+        "Понимаю. Скиньте, пожалуйста, номер телефона, я уточню и напишу сюда же, если звонок неудобен"
+    )
+    assert "Telegram" in msg or "WhatsApp" in msg
+    assert "если звонок" not in msg.lower()
+
+    m8_stock = (
+        "## GAC M8 2024\n"
+        "- VIN: LMGMU1G82R1236593\n"
+        "- Марка: GAC\n"
+        "- Модель: M8\n"
+        "- Пробег: 16 584 км\n"
+        "- Цена в объявлении: 4 300 000 руб.\n"
+        "- Автотека: https://autoteka.ru/report/web/uuid/test-m8\n"
+    )
+    m8 = match_card("GAC M8 2.0 AT, 2024, 72 887 км", "3 900 000 ₽", stock=m8_stock)
+    assert m8 is not None
+    assert "LMGMU1G82R1236593" in (m8.get("VIN") or "")
+    assert "Автотека" in (m8.get("raw") or "")
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -880,4 +959,5 @@ if __name__ == "__main__":
     test_dialog_ids()
     test_tradein_vin_phone()
     test_in_stock_dedupe()
+    test_tiggo_match_and_messenger()
     print("ok")

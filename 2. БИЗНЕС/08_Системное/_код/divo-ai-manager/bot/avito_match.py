@@ -7,6 +7,19 @@ from bot.config import settings
 
 YEAR_RE = re.compile(r"\b(20\d{2})\b")
 KM_RE = re.compile(r"([\d\s\u00a0]+)\s*км", re.I)
+# В заголовке объявления часто «1.5 CVT» — это не имя машины.
+NOISE_TOKENS = {
+    "cvt", "at", "amt", "mt", "dsg", "робот", "автомат", "механика",
+    "4wd", "awd", "2wd", "fwd", "awd",
+}
+SKIP_TITLES = (
+    "на складе",
+    "по маркам",
+    "по двигателю",
+    "лиги",
+    "цены",
+    "полный список",
+)
 
 
 def digits(raw: str) -> int:
@@ -37,11 +50,16 @@ def _cards(stock: str) -> list[dict]:
         if not lines:
             continue
         title = lines[0].strip()
+        low = title.lower()
+        if any(low.startswith(skip) for skip in SKIP_TITLES):
+            continue
         fields = {"title": title, "raw": "## " + chunk.strip()}
         for line in lines[1:]:
             if line.startswith("- ") and ":" in line:
                 key, val = line[2:].split(":", 1)
                 fields[key.strip()] = val.strip()
+        if not fields.get("VIN") and not fields.get("Марка"):
+            continue
         fields["price"] = digits(fields.get("Цена в объявлении", ""))
         fields["year"] = digits(YEAR_RE.search(title).group(1) if YEAR_RE.search(title) else "")
         fields["km"] = digits(fields.get("Пробег", ""))
@@ -50,18 +68,38 @@ def _cards(stock: str) -> list[dict]:
 
 
 def _norm(text: str) -> str:
-    return re.sub(r"[^a-zа-я0-9]+", " ", (text or "").lower().replace("ё", "е")).strip()
+    t = (text or "").lower().replace("ё", "е")
+    # «2.0» иначе распадается в «2» и «0» и ломает «GAC M8 2.0 AT».
+    t = re.sub(r"(\d)[.,](\d)", r"\1dot\2", t)
+    return re.sub(r"[^a-zа-я0-9]+", " ", t).strip()
+
+
+def _keep_token(token: str) -> bool:
+    if token in NOISE_TOKENS:
+        return False
+    if re.fullmatch(r"\d+(dot\d+)?", token):
+        return False
+    # M8, X5, H9 — модели из двух символов, обычный порог «>2» их выкидывает.
+    if len(token) > 2:
+        return True
+    return bool(re.fullmatch(r"[a-zа-я]+\d+", token))
+
+
+def _core(text: str) -> str:
+    return " ".join(t for t in _norm(text).split() if _keep_token(t))
 
 
 def score(listing: dict, card: dict) -> int:
     points = 0
-    head = _norm(listing.get("head") or listing.get("title") or "")
-    title = _norm(card.get("title") or "")
+    head = _core(listing.get("head") or listing.get("title") or "")
+    title = _core(card.get("title") or "")
     if not head or not title:
         return 0
     if head and head in title:
         points += 8
-    tokens = [t for t in head.split() if len(t) > 2]
+    elif title and title in head:
+        points += 8
+    tokens = [t for t in head.split() if _keep_token(t)]
     hit = sum(1 for t in tokens if t in title)
     points += hit * 2
     if listing.get("year") and listing["year"] == card.get("year"):
@@ -70,7 +108,7 @@ def score(listing: dict, card: dict) -> int:
     if lp and cp and abs(lp - cp) <= 1000:
         points += 6
     lk, ck = listing.get("km") or 0, card.get("km") or 0
-    if lk and ck and abs(lk - ck) <= 50:
+    if lk and ck and abs(lk - ck) <= 15_000:
         points += 3
     return points
 
@@ -84,9 +122,9 @@ def match_card(title: str, price_string: str = "", stock: str = "") -> dict | No
     if not ranked:
         return None
     best = ranked[0]
-    if score(listing, best) < 8:
-        return None
-    return best
+    if score(listing, best) >= 8:
+        return best
+    return None
 
 
 def focus_block(
@@ -95,8 +133,9 @@ def focus_block(
     url: str = "",
     cme_id: str = "",
     channel: str = "Авито",
+    stock: str = "",
 ) -> str:
-    card = match_card(title, price_string)
+    card = match_card(title, price_string, stock=stock)
     lines = [
         "# Клиент пишет по объявлению %s" % (channel or "Авито"),
         "Объявление: %s" % (title or "не названо"),
@@ -117,10 +156,43 @@ def focus_block(
             "и «гелик смотрю» — про неё. Другие машины называй, только если "
             "спросил что ещё есть или эта не подходит."
         )
+        if price_string and not card.get("price"):
+            lines.append(
+                "Цена для клиента — из объявления выше. В карточке стока цены "
+                "может не быть. Клиенту про пустую базу и «цены нет» ни слова."
+            )
+        lines.append(
+            "Про ДТП, историю и отчёт: если в карточке есть строка «повреждения» "
+            "или ссылка автотеки — отвечай ими в этот чат. Номер и «наберу» "
+            "из-за этого не проси."
+        )
         lines.append(card.get("raw") or "")
     else:
         lines.append(
-            "Точного VIN в стоке не нашёл. Не выдумывай машину. "
-            "Работай по тому, что написано в объявлении, и при сомнении уточни модель."
+            "Карточка стока к объявлению не подцепилась. Клиенту про это ни слова: "
+            "не пиши про сток, VIN, сверку, «не поднимал автотеку», «карточки нет», "
+            "«под рукой нет», «наугад», «чтобы не дезинформировать». "
+            "Машина из объявления наша. На ДТП и историю цифры не выдумывай. "
+            "Попроси Telegram или WhatsApp, туда отправим отчёт. "
+            "Телефон чтобы позвонить не проси, пока клиент сам его не дал."
         )
     return "\n".join(lines)
+
+
+def focus_from_doc(doc: dict) -> str:
+    """Свежий фокус по объявлению: сток мог обновиться после первого сообщения."""
+    av = doc.get("avito") or {}
+    ar = doc.get("autoru") or {}
+    src = av if (av.get("title") or av.get("url") or av.get("cme_id")) else ar
+    if not src:
+        return ""
+    if not (src.get("title") or src.get("url")):
+        return src.get("focus") or ""
+    channel = "Авито" if src is av else "Авто.ру"
+    return focus_block(
+        src.get("title") or "",
+        src.get("price") or "",
+        src.get("url") or "",
+        src.get("cme_id") or "",
+        channel=channel,
+    )

@@ -39,6 +39,20 @@ REFUSES_PHONE = re.compile(
     r")",
     re.IGNORECASE,
 )
+WRITE_HERE = re.compile(
+    r"("
+    r"здесь напиш|"
+    r"(?<![А-Яа-яA-Za-z])пишите здесь(?!\s+цен)|"
+    r"напиш\w{0,8}\s+здесь(?!\s+цен)|"
+    r"сюда напиш|"
+    r"напиш\w{0,8}\s+сюда|"
+    r"в этом чате|"
+    r"звонк\w* не (проход|доход)|не беру трубк|"
+    r"на звонки не|не звоните|лучше напиш|"
+    r"мне нельзя звон|звонки у меня не"
+    r")",
+    re.IGNORECASE,
+)
 SALON_PHONE = "8 495 089 29 29"
 NICE_NAME = re.compile(r"очень приятно,\s*([А-ЯЁA-Z][а-яёa-zA-Z\-']+)", re.IGNORECASE)
 ASKED_NAME = re.compile(
@@ -417,6 +431,18 @@ def asked_if_bot(text: str) -> bool:
 
 def refuses_phone(text: str) -> bool:
     return bool(REFUSES_PHONE.search(text or ""))
+
+
+def wants_write_here(text: str) -> bool:
+    """Просит писать сюда или не берёт трубку — это не отказ от контакта."""
+    return bool(WRITE_HERE.search(text or ""))
+
+
+def history_wants_write_here(messages: list[dict]) -> bool:
+    return any(
+        m.get("role") == "user" and wants_write_here(m.get("content") or "")
+        for m in messages
+    )
 
 
 def history_refuses_phone(messages: list[dict]) -> bool:

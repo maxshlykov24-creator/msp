@@ -14,7 +14,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from bot import amojo_http, autoru_loop, avito_loop, crm, human, llm, nudge, prompt, store
+from bot import amojo_http, autoru_loop, avito_loop, avito_match, crm, human, llm, nudge, prompt, store
 from bot.alerts import AlertBot
 from bot.autoru import Autoru
 from bot.avito import Avito
@@ -476,6 +476,16 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if stocked != bubbles:
         log.info("чат %s: убрал повтор «в наличии»", chat_id)
         bubbles = stocked
+    first = not any((m.get("role") == "assistant") for m in prior)
+    greeted = human.ensure_greeting(bubbles, first=first)
+    if greeted != bubbles:
+        log.info("чат %s: дописал приветствие в первый ход", chat_id)
+        bubbles = greeted
+    if nudge.wants_write_here(user_text) or nudge.history_wants_write_here(history):
+        rewritten = [human.phone_to_messenger(b) for b in bubbles]
+        if rewritten != bubbles:
+            log.info("чат %s: вместо звонка прошу Telegram или WhatsApp", chat_id)
+            bubbles = rewritten
 
     if not bubbles:
         bubbles = [random.choice(FALLBACK)]
@@ -505,7 +515,7 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     # Всё, что дописано после границы, меняется каждый ход и в кэш не идёт.
     system = prompt.build() + prompt.CACHE_SPLIT
     doc = store.load_doc(chat_id) if chat_id else {}
-    focus = ((doc.get("avito") or doc.get("autoru") or {}).get("focus") or "")
+    focus = avito_match.focus_from_doc(doc) if doc else ""
     if focus:
         system += "\n\n" + focus
         system += (
@@ -526,6 +536,15 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "«добрый день», «здравствуйте», «привет», без имени Никита и без "
             "названия салона. Сразу по существу последнего сообщения, опираясь "
             "на переписку выше."
+        )
+    else:
+        system += (
+            "\n\n# Это первый ответ в диалоге\n"
+            "Первая реплика начинается с «Добрый день!» отдельным предложением, "
+            "не через запятую. Потом факт из карточки этой машины. "
+            "Опции, которых в карточке нет (нагреватель, вебасто, камера), "
+            "не выдумывай и не начинай с голого «уточню»: сначала двигатель "
+            "и комплектация, потом «уточню по этому экземпляру»."
         )
     known_name = nudge.extract_name(history)
     if known_name:
@@ -634,6 +653,15 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "ни отдельным сообщением, ни в виде «приезжайте к нам на Автозаводскую». "
             "Отвечай на вопрос, дальше номер или следующий шаг."
         )
+    if nudge.wants_write_here(user_text) or nudge.history_wants_write_here(prior):
+        system += (
+            "\n\n# Клиент просит писать, не звонить\n"
+            "Звонки не проходят или просит ответить здесь. Это не отказ. "
+            "Ответь фактом в чат, если он есть в карточке. Телефон чтобы "
+            "позвонить не проси. Нужен отчёт или файл без ссылки — "
+            "«напишите Telegram или WhatsApp, туда пришлю». "
+            "«Наберу и расскажу» и «скиньте номер, если звонок неудобен» нельзя."
+        )
     if nudge.refusals_count(history) >= 2:
         system += (
             "\n\n# Клиент отказал в номере второй раз\n"
@@ -641,7 +669,7 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "ничего не пиши. Поставь только маркер %s последней строкой."
             % prompt.HANDOFF_MARK
         )
-    elif nudge.refuses_phone(user_text):
+    elif nudge.refuses_phone(user_text) and not nudge.wants_write_here(user_text):
         system += (
             "\n\n# Клиент не даёт свой номер\n"
             "Не уговаривай. Дай номер салона: %s. Свой больше не проси."
@@ -660,6 +688,11 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     """Реплика модели с проверками на утечку правил и дословные повторы."""
     system = _build_system(history, chat_id)
     raw = await llm.reply(system, history)
+    log.info(
+        "чат %s: сырой ответ %s",
+        chat_id,
+        " | ".join((raw or "").splitlines())[:400],
+    )
     if human.looks_like_leak(raw):
         log.warning("модель слила правила, повторяю запрос")
         raw = await llm.reply(

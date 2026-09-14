@@ -297,6 +297,11 @@ def card(
         add("Автотека", auto)
     else:
         lines.append("- Автотека: нет")
+    if not price_int(d.get("Цена продажи") or ""):
+        lines.append(
+            "- Цена в CME не стоит. Машина у нас. Пишет с объявления, где цена есть, "
+            "называй цену объявления. Клиенту не говори, что в базе цены нет."
+        )
     photos = d.get("Фото, шт", "")
     if photos:
         lines.append("- Фото в объявлении: %s" % photos)
@@ -353,26 +358,35 @@ def split_by_price(rows: list[list[str]]) -> tuple[list[list[str]], list[list[st
     return priced, rest
 
 
-def warehouse_block(rows: list[list[str]]) -> str:
-    """Короткий список: на складе есть, но цены в CME нет."""
+def warehouse_block(
+    rows: list[list[str]],
+    marks: dict[str, str] | None = None,
+    autoteka: dict[str, dict[str, object]] | None = None,
+) -> str:
+    """Полные карточки: на складе есть, но цены в CME нет.
+
+    Короткий список без VIN оставлял бота без ДТП и автотеки: клиент пишет
+    с объявления, а модель отвечает «карточки нет, сверяю по стоку».
+    """
     if not rows:
         return ""
     out = [
         "",
-        "## На складе, но цены нет",
+        "# На складе, цена в CME не стоит",
         "",
-        "> Эти машины физически у нас, но цена в базе не выставлена. Клиент",
-        "> спросил про такую - машина есть, цену и условия уточнит менеджер,",
-        "> возьми номер. Не говори «в продаже нет» и «продана»: она у нас.",
-        "> Цену не выдумывай, в подбор по бюджету их не предлагай.",
+        "> Эти машины физически у нас. VIN, автотека, ДТП и окрасы в карточках",
+        "> ниже — отвечай по ним как по любой машине из стока.",
+        "> Цены продажи в CME нет: если клиент пишет с объявления, бери цену",
+        "> объявления и не говори, что «в базе цены нет». Спросил цену, а в",
+        "> объявлении её нет — машина есть, цену уточни, возьми контакт.",
+        "> Не говори «в продаже нет» и «продана». В подбор по бюджету не предлагай.",
         "",
     ]
-    for r in sorted(rows, key=lambda x: (x[1], x[2], x[3])):
-        d = dict(zip(HEADER, r))
-        bits = [x for x in (d["Марка"], d["Модель"], d["Год выпуска"]) if x]
-        tail = ", ".join(x for x in (d["Цвет"], "%s км" % d["Пробег"] if d["Пробег"] else "") if x)
-        out.append("- %s%s" % (" ".join(bits), " (%s)" % tail if tail else ""))
-    return "\n".join(out) + "\n"
+    cards = [
+        card(r, marks, autoteka)
+        for r in sorted(rows, key=lambda x: (x[1], x[2], x[3]))
+    ]
+    return "\n".join(out) + "\n\n".join(cards) + "\n"
 
 
 def build_stock(
@@ -414,7 +428,7 @@ def build_stock(
         "",
     ]
     body_text = "\n\n".join(card(r, marks, autoteka) for r in rows) + "\n"
-    return "\n".join(head) + body_text + warehouse_block(warehouse or [])
+    return "\n".join(head) + body_text + warehouse_block(warehouse or [], marks, autoteka)
 
 
 def build_index(rows: list[list[str]], stamp: str) -> str:
