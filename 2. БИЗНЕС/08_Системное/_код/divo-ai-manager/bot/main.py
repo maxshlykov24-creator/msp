@@ -46,6 +46,7 @@ HISTORY_UNKNOWN = (
     "По истории этой машины наугад не скажу. Уточню по документам, "
     "напишите номер для связи"
 )
+PHONE_TAKEN = "Номер принял, в ближайшее время наберу"
 pending: dict[str, list[str]] = {}
 tasks: dict[str, asyncio.Task] = {}
 # Сбои LLM подряд по одному чату. Разовый сбой (лимит ключа, таймаут) лечится
@@ -381,6 +382,15 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
 
     llm_fails.pop(str(chat_id), None)
 
+    # Пока модель думала, клиент мог дописать. Срочное (номер, звонок) пишет
+    # на диск опрос каналов, минуя pending, поэтому историю перечитываем: иначе
+    # мы затрём его сообщение и попросим то, что уже получили.
+    history = merge_user_chunks(store.load_history(chat_id), chunks)
+    if store.is_paused(chat_id):
+        store.save_history(chat_id, history)
+        log.info("чат %s: пока отвечал, диалог ушёл человеку, молчу", chat_id)
+        return
+
     user_text = history[-1]["content"]
     handoff = prompt.HANDOFF_MARK in raw
     silence = prompt.SILENCE_MARK in raw
@@ -477,6 +487,12 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if added:
             log.info("чат %s: к VIN дописал номер", chat_id)
             bubbles = with_phone
+    if bubbles and nudge.history_has_phone(history):
+        trimmed = [nudge.drop_phone_ask(b) for b in bubbles]
+        trimmed = [b for b in trimmed if b.strip()]
+        if trimmed != bubbles:
+            log.info("чат %s: номер уже есть, выкинул повторный запрос телефона", chat_id)
+            bubbles = trimmed or [PHONE_TAKEN]
     prior = history[:-1] if history else []
     stocked = human.dedupe_in_stock(
         bubbles,
@@ -599,6 +615,15 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "спросишь, когда номер будет.\n"
             "Имя и номер в одной реплике не проси: это два вопроса. "
             "Сначала одно, второе следующим ходом."
+        )
+    else:
+        system += (
+            "\n\n# Номер клиента уже есть\n"
+            "Телефон в переписке есть, второй раз его не проси: ни «контактный "
+            "телефон», ни «напишите номер», ни «по какому телефону». Клиент мог "
+            "прислать VIN и номер двумя сообщениями - смотри всю переписку, а не "
+            "последнюю строку. Нужно подтвердить - «номер принял, в ближайшее "
+            "время наберу», и дальше по делу."
         )
     if not nudge.asked_leasing(history):
         system += (

@@ -358,10 +358,11 @@ def test_alert_text():
     )
     assert "Клиент:" not in brief
     assert "Никита:" not in brief
-    assert "про ДТП" in brief.lower() or "ДТП не было" in brief
-    assert "осмотр" in brief.lower() or "Автозаводская" in brief
-    assert "ДТП не было" in brief
-    assert "Автозаводская" in brief
+    assert "про дтп" in brief.lower()
+    assert "осмотр" in brief.lower()
+    # Что мы уже ответили клиенту, в пуш не тащим: менеджер видит это в чате.
+    assert "ДТП не было" not in brief
+    assert "Автозаводская" not in brief
     assert "толщиномер" not in brief
     assert "микрон" not in brief.lower()
     assert "WhatsApp" not in brief
@@ -382,7 +383,7 @@ def test_alert_text():
     )
     assert "Клиент:" not in credit
     assert "хочет в кредит" in credit.lower()
-    assert "наличный расчёт" in credit
+    assert "наличный расчёт" not in credit
     assert "контактный телефон" not in credit.lower()
     trade = brief_from_history(
         [
@@ -1084,6 +1085,53 @@ def test_many_paints():
     assert "7 элементов" not in soften_many_paints("Окрашено 7 элементов, приезжайте").lower()
 
 
+def test_two_vins_and_phone():
+    """Живой чат Тимура: два VIN своих машин и номер, а бот просил номер снова."""
+    from bot.alerts import brief_from_history, format_alert
+    from bot.crm import note_text
+    from bot.nudge import drop_phone_ask, extract_vins, history_has_phone
+
+    history = [
+        {"role": "user", "content": "Интересует обмен, две машины"},
+        {"role": "assistant", "content": "Напишите VIN каждого автомобиля и контактный телефон"},
+        {"role": "user", "content": "WP1ZZZ92ZGLA72981"},
+        {"role": "assistant", "content": "Принял, а второй автомобиль и телефон для связи"},
+        {"role": "user", "content": "TRUZZZFV5G1025930\n89203337999"},
+    ]
+    vins = extract_vins(history)
+    assert vins == ["WP1ZZZ92ZGLA72981", "TRUZZZFV5G1025930"]
+    assert history_has_phone(history)
+    cut = drop_phone_ask(
+        "Хорошо, второй VIN принял. Теперь напишите, пожалуйста, контактный телефон для связи"
+    )
+    assert "телефон" not in cut.lower()
+    assert "VIN принял" in cut
+    assert drop_phone_ask("Все данные принял, наберу") == "Все данные принял, наберу"
+
+    brief = brief_from_history(history, "phone")
+    assert "интересует обмен" in brief.lower()
+    assert "собственности" not in brief.lower()
+    assert "окрас" not in brief.lower()
+    assert len(brief) < 120
+
+    snap = {
+        "wait": "call",
+        "name": "Тимур",
+        "phone": "79203337999",
+        "car": "Porsche Cayenne 2019",
+        "channel": "Авито",
+        "reason": "phone",
+        "client_vins": vins,
+        "brief": brief,
+    }
+    card = format_alert(snap, 0)
+    assert "На обмен 2 авто" in card
+    assert "WP1ZZZ92ZGLA72981" in card and "TRUZZZFV5G1025930" in card
+    assert "юрлиц" not in card.lower()
+    note = note_text(dict(snap, vin="WP1ZZZ92ZGLA72900"))
+    assert "WP1ZZZ92ZGLA72981" in note and "TRUZZZFV5G1025930" in note
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -1110,4 +1158,5 @@ if __name__ == "__main__":
     test_tiggo_match_and_messenger()
     test_owner_legal()
     test_many_paints()
+    test_two_vins_and_phone()
     print("ok")

@@ -21,6 +21,7 @@ ASKED_PHONE = re.compile(
     r"по какому (телефону|номеру)|оставьте.{0,30}(номер|телефон))",
     re.IGNORECASE,
 )
+VIN = re.compile(r"\b[A-HJ-NPR-Za-hj-npr-z0-9]{17}\b")
 HAS_PHONE = re.compile(
     r"(?:\+?7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b\d{10,11}\b"
 )
@@ -323,6 +324,21 @@ def history_has_phone(messages: list[dict]) -> bool:
     return bool(extract_phone_from_history(messages))
 
 
+def extract_vins(messages: list[dict] | None) -> list[str]:
+    """VIN-ы из реплик клиента: его машины, которые он даёт на оценку."""
+    out: list[str] = []
+    for msg in messages or []:
+        if msg.get("role") != "user":
+            continue
+        for found in VIN.finditer(msg.get("content") or ""):
+            vin = found.group(0).upper()
+            if not (re.search(r"[A-Z]", vin) and re.search(r"\d", vin)):
+                continue
+            if vin not in out:
+                out.append(vin)
+    return out
+
+
 def urgent_reason(user_text: str, history: list[dict] | None = None) -> str:
     """В группу менеджеров только когда уже есть номер."""
     text = user_text or ""
@@ -481,6 +497,19 @@ def used_phone_lines(messages: list[dict]) -> list[str]:
                 seen.add(key)
                 found.append(line)
     return found
+
+
+def drop_phone_ask(text: str) -> str:
+    """Убирает просьбу дать номер: телефон в диалоге уже есть.
+
+    Клиент присылает VIN и номер двумя сообщениями подряд, модель отвечает на
+    первое и просит телефон второй раз. Для клиента это «меня не читают».
+    """
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    kept = [p for p in parts if p.strip() and not asked_phone(p)]
+    if len(kept) == len(parts):
+        return text
+    return " ".join(kept).strip().rstrip(" .,")
 
 
 def repeats_used_phone(text: str, used: list[str]) -> bool:

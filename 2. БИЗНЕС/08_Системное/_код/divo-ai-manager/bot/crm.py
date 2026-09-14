@@ -93,6 +93,7 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         "phone": phone,
         "car": car,
         "vin": vin,
+        "client_vins": nudge.extract_vins(history),
         "brand": brand,
         "model": model,
         "year": year,
@@ -139,7 +140,13 @@ def note_text(snap: dict) -> str:
     if snap.get("car"):
         parts.append("Авто: %s." % snap["car"])
     if snap.get("vin"):
-        parts.append("VIN: %s." % snap["vin"])
+        parts.append("VIN нашей машины: %s." % snap["vin"])
+    client_vins = [str(v).strip().upper() for v in (snap.get("client_vins") or []) if str(v).strip()]
+    if client_vins:
+        # Менеджер оценивает по VIN, поэтому в примечании они все и полностью.
+        parts.append(
+            "VIN от клиента (%d): %s." % (len(client_vins), ", ".join(client_vins))
+        )
     if snap.get("url"):
         parts.append("Объявление: %s." % snap["url"])
     if snap.get("ask"):
@@ -326,7 +333,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
         doc["crm"] = crm
         return
     now = now_msk()
-    alert = {
+    new = {
         "active": True,
         "reason": snap.get("reason"),
         "wait": snap.get("wait"),
@@ -337,6 +344,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
             "name": snap.get("name"),
             "phone": snap.get("phone"),
             "car": snap.get("car"),
+            "client_vins": snap.get("client_vins") or [],
             "channel": snap.get("channel"),
             "reason": snap.get("reason"),
             "wait": snap.get("wait"),
@@ -346,6 +354,13 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
         },
         "token": secrets.token_hex(4),
     }
+    # Повод сменился (оставил номер → просит звонок) — это тот же клиент.
+    # Держим прежнее сообщение и прежний токен кнопки, иначе в группе
+    # появляется вторая карточка на одного человека.
+    if alert.get("tg"):
+        new["tg"] = alert["tg"]
+        new["token"] = alert.get("token") or new["token"]
+    alert = new
     crm["alert"] = alert
     doc["crm"] = crm
 
@@ -496,7 +511,8 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
         head = "💬 <b>Клиент пишет, ответа нет</b> | DIVO"
         body = format_alert(snap, 0)
         rest = "\n".join(body.splitlines()[1:])
-        await _publish(alert, head + rest, replace=True)
+        # Дописываем в ту же карточку: вторая на одного клиента только путает.
+        await _publish(alert, head + rest, replace=False)
         crm["alert"] = alert
         doc["crm"] = crm
         store.save_doc(chat_id, doc)

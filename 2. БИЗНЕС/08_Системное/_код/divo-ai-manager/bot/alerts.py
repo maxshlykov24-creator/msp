@@ -57,87 +57,6 @@ REASON_LINE = {
 THREAD_LIMIT = 6
 LINE_LIMIT = 160
 BRIEF_LIMIT = 220
-SKIP_BRIEF_START = (
-    "добрый день",
-    "добрый вечер",
-    "доброе утро",
-    "здравствуйте",
-    "привет",
-    "слушаю вас",
-    "очень приятно",
-    "как могу к вам",
-    "хорошо",
-    "понял",
-    "принял",
-    "да, я",
-    "вижу вашу ссылку",
-)
-SKIP_BRIEF_HAS = (
-    "микрон",
-    "толщиномер",
-    "толщин",
-    "как бьёт",
-    "как бьется",
-    "видеообзор",
-    "живой менеджер",
-    "для точных",
-    "контактный телефон",
-    "напишите телефон",
-    "по какому телефону",
-    "подскажите",
-    "марку и год",
-    "дайте ссылку",
-    "когда готов",
-    "напишите номер",
-    "о какой машин",
-    "с радостью",
-    "окончательные условия",
-    "ознакомиться с автомобилем",
-    "принимаем автомобили",
-    "наш экземпляр",
-    "всё верно",
-    "все верно",
-    "наберу",
-    "дозвон",
-    "обсудим детали",
-    "зафиксировал этот номер",
-)
-TAK_PREFIX = re.compile(r"^(так|итак)\b\s*[,.:;]?\s*", re.IGNORECASE)
-LISTING_SPEC = re.compile(
-    r"("
-    r"пробег\s*\d[\d\s]*\s*км|"
-    r"\b\d[\d\s]{2,6}\s*км\b|"
-    r"\b\d+(?:[.,]\s*\d+)?\s*млн\b|"
-    r"\b\d[\d\s]{4,}\s*(?:руб(?:лей)?|₽)\b|"
-    r"\b(?:бел(?:ый|ая|ое)|чёрн(?:ый|ая|ое)|черн(?:ый|ая|ое)|"
-    r"сер(?:ый|ая|ое)|син(?:ий|яя|ее)|красн(?:ый|ая|ое)|"
-    r"зелён(?:ый|ая|ое)|зелен(?:ый|ая|ое)|серебрист\w*|бежев\w*)\b"
-    r")",
-    re.IGNORECASE,
-)
-FILLER = frozenset(
-    {
-        "хорошо",
-        "понял",
-        "хорошо понял",
-        "ок",
-        "договорились",
-        "принято",
-        "зафиксировал",
-        "отлично",
-    }
-)
-ASK_HINT = (
-    "подскажите",
-    "напишите",
-    "скиньте",
-    "дайте ссылку",
-    "когда готов",
-    "хотели бы",
-    "о какой машин",
-    "какой автомобиль",
-    "марку и год",
-)
 CLIENT_TOPICS = (
     (("в кредит", "кредит", "рассрочк"), "хочет в кредит"),
     (("лизинг",), "хочет в лизинг"),
@@ -203,105 +122,6 @@ def next_ping(started: datetime, done: list[int], now: datetime | None = None) -
         if moment >= ping_at(started, minutes):
             return minutes
     return None
-
-
-def _first_sentence(text: str, limit: int = 110) -> str:
-    clean = " ".join(str(text or "").split())
-    if not clean:
-        return ""
-    for i, ch in enumerate(clean):
-        if ch not in ".!?":
-            continue
-        decimal = (
-            ch == "."
-            and i > 0
-            and i + 1 < len(clean)
-            and clean[i - 1].isdigit()
-            and clean[i + 1].isdigit()
-        )
-        if decimal:
-            continue
-        if 8 <= i <= limit:
-            take = i + 1 if ch == "?" else i
-            clean = clean[:take].strip()
-            break
-    if len(clean) > limit:
-        clean = clean[: limit - 1].rstrip(" ,;") + "…"
-    return clean
-
-
-def _plain(text: str) -> str:
-    return re.sub(r"[.!,?]+", "", (text or "").lower()).strip()
-
-
-def _skip_bit(text: str) -> bool:
-    low = " ".join(str(text or "").split()).lower().rstrip(".!?")
-    if len(low) < 4:
-        return True
-    if _plain(low) in FILLER:
-        return True
-    if any(low.startswith(p) for p in SKIP_BRIEF_START):
-        return True
-    return any(p in low for p in SKIP_BRIEF_HAS)
-
-
-def _is_ask(text: str) -> bool:
-    low = (text or "").lower()
-    if "?" in low:
-        return True
-    return any(p in low for p in ASK_HINT)
-
-
-def _chunks(text: str) -> list[str]:
-    raw = re.sub(r"(\d)\.\s+(\d)", r"\1.\2", " ".join(str(text or "").split()))
-    if not raw:
-        return []
-    parts: list[str] = []
-    buf = ""
-    for i, ch in enumerate(raw):
-        buf += ch
-        if ch not in ".!?":
-            continue
-        decimal = (
-            ch == "."
-            and i > 0
-            and i + 1 < len(raw)
-            and raw[i - 1].isdigit()
-            and raw[i + 1].isdigit()
-        )
-        if decimal:
-            continue
-        bit = buf.strip()
-        if bit:
-            parts.append(bit)
-        buf = ""
-    tail = buf.strip()
-    if tail:
-        parts.append(tail)
-    return parts or [raw]
-
-
-def _strip_listing_spec(text: str) -> str:
-    """Пробег, цвет и цена объявления в карточку менеджеру не нужны."""
-    clean = TAK_PREFIX.sub("", " ".join(str(text or "").split()))
-    clean = LISTING_SPEC.sub("", clean)
-    clean = re.sub(r"\s*,\s*,+", ",", clean)
-    clean = re.sub(r"\s{2,}", " ", clean)
-    clean = re.sub(r"\s+,", ",", clean)
-    clean = re.sub(r"^[\s,.;:]+|[\s,.;:]+$", "", clean)
-    return clean
-
-
-def _fact_bits(text: str) -> list[str]:
-    out: list[str] = []
-    for part in _chunks(text):
-        if _skip_bit(part) or _is_ask(part):
-            continue
-        bit = _strip_listing_spec(part)
-        bit = _strip_listing_spec(_first_sentence(bit, 90))
-        if bit and not _skip_bit(bit) and not _is_ask(bit):
-            out.append(bit.rstrip(".!?"))
-    return out
 
 
 def _client_blob(history: list[dict] | None) -> str:
@@ -391,26 +211,6 @@ def _extra_notes(blob: str) -> list[str]:
     return out
 
 
-def _redundant(bit: str, notes: list[str]) -> bool:
-    low = bit.lower()
-    joined = " ".join(notes).lower()
-    if not joined:
-        return False
-    if "доплат" in low and "доплат" in joined:
-        return True
-    if ("трейд" in low or "обмен" in low) and ("обмен" in joined or "трейд" in joined):
-        return True
-    compact = low.replace(" ", "")
-    if ("v-класс" in compact or "vкласс" in compact) and (
-        "v-класс" in joined or "v класс" in joined
-    ):
-        return True
-    for note in notes:
-        if bit.lower() in note.lower() or note.lower() in bit.lower():
-            return True
-    return False
-
-
 def _cap(text: str) -> str:
     clean = (text or "").strip()
     if not clean:
@@ -419,7 +219,11 @@ def _cap(text: str) -> str:
 
 
 def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
-    """Короткий контекст для менеджера: интерес и факты. Не копия переписки."""
+    """Короткий контекст для менеджера: чего хочет клиент и что он дал.
+
+    Факты про наш автомобиль сюда не идут: менеджер видит их в карточке, а в
+    пуше они только размывают заявку.
+    """
     blob = _all_blob(history)
     notes: list[str] = []
     topic = _topic_line(history)
@@ -437,14 +241,6 @@ def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
         if "звон" in extra.lower() and any("звон" in n.lower() for n in notes):
             continue
         notes.append(_cap(extra))
-    facts: list[str] = []
-    for msg in history or []:
-        if msg.get("role") != "assistant":
-            continue
-        for bit in _fact_bits(str(msg.get("content") or "")):
-            if bit and not _redundant(bit, notes + facts):
-                facts.append(bit)
-    notes.extend(facts[:2])
     body = ". ".join(p.rstrip(".") for p in notes if p)
     if body and not body.endswith((".", "!", "?")):
         body += "."
@@ -526,6 +322,13 @@ def format_alert(snap: dict, ping: int = 0) -> str:
     car = snap.get("car") or "машина не названа"
     lines.append("▪️ <b>Авто:</b> %s" % _esc(car))
     lines.append("▪️ <b>Клиент:</b> %s" % _esc(name))
+    vins = [str(v).strip().upper() for v in (snap.get("client_vins") or []) if str(v).strip()]
+    if vins:
+        trade = "обмен" in (snap.get("brief") or "").lower()
+        what = "На обмен" if trade else "Авто клиента"
+        if len(vins) > 1:
+            what += " %d авто" % len(vins)
+        lines.append("▪️ <b>%s:</b> VIN %s" % (what, _esc(", ".join(vins))))
     if snap.get("phone"):
         lines.append("▪️ <b>Телефон:</b> %s" % _esc(pretty_phone(snap["phone"])))
     lines.append("▪️ <b>Канал:</b> %s" % _esc(snap.get("channel") or "чат"))
