@@ -491,10 +491,6 @@ def drop_phone_script(text: str) -> str:
 
 
 CLAUSE_DASH = re.compile(r"\s+[–—-]\s+")
-KSTATI = re.compile(
-    r"(?:\s*,\s*)?\bкстати\b(?:\s*,\s*)?",
-    re.IGNORECASE,
-)
 
 
 def drop_clause_dashes(text: str) -> str:
@@ -517,7 +513,10 @@ def drop_clause_dashes(text: str) -> str:
 def drop_kstati(text: str) -> str:
     """«Кстати» в чате звучит как бот. Вырезаем, смысл оставляем."""
     original = text or ""
-    text = KSTATI.sub(" ", original)
+    text = re.sub(r",\s*кстати\s*,", ",", original, flags=re.IGNORECASE)
+    text = re.sub(r",\s*кстати\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bкстати\s*,\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bкстати\b", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+([?!.])", r"\1", text)
     return _tidy(text, original)
 
