@@ -373,7 +373,19 @@ def asked_torg(messages: list[dict] | None) -> bool:
         "можно минус",
         "сделаете цен",
     )
-    return any(key in blob for key in keys)
+    if any(key in blob for key in keys):
+        return True
+    if re.search(
+        r"(продадите|продашь|отдадите|отдашь|возьм[её]те)\w*.{0,32}за\s+\d",
+        blob,
+    ):
+        return True
+    if re.search(
+        r"за\s+\d+(?:[.,]\d+)?\s*(млн|тыс|тысяч|руб)",
+        blob,
+    ) and re.search(r"продад|отдад|готов за|забер", blob):
+        return True
+    return False
 
 
 WANTS_CALL = re.compile(

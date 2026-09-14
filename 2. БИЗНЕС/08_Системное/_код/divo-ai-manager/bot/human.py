@@ -510,6 +510,91 @@ def drop_clause_dashes(text: str) -> str:
     return out
 
 
+def drop_owner_legal(text: str) -> str:
+    """Владельцы в чате — только число. Юрлицо и «износ выше» не говорим.
+
+    Это история владения из автотеки, не продажа на организацию. Цену на
+    юрлицо / НДС не трогаем.
+    """
+    original = text or ""
+    text = re.sub(
+        r",?\s*по\s+уч[её]ту\s+(на\s+)?(юрлиц\w*|юридическ\w*(?:\s+лиц\w*)?)",
+        "",
+        original,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"[;,]?\s*автомобилем\s+владело\s+(юридическое|физическое)\s+лицо\.?",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"[;,]?\s*износ\s+у\s+таких\s+машин[^.\n]*\.?",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?<=владелец)\s+(юрлиц\w*|юридическ\w*(?:\s+лиц\w*)?)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?<=владельца)\s+(юрлиц\w*|юридическ\w*(?:\s+лиц\w*)?)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?<=владельцев)\s+(юрлиц\w*|юридическ\w*(?:\s+лиц\w*)?)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\s+,", ",", text)
+    text = re.sub(r",\s*,+", ",", text)
+    text = re.sub(r"\s+\.", ".", text)
+    return _tidy(text, original)
+
+
+BODY_PART = re.compile(
+    r"\b("
+    r"крыл\w*|двер\w*|капот\w*|бампер\w*|порог\w*|"
+    r"крышк\w*|крыш[аеиу]\w*|зеркал\w*|лонжерон\w*|стойк\w*|арк\w*"
+    r")\b",
+    re.I,
+)
+PAINT_TALK = re.compile(r"окрас|крашен|покрашен|покраск|лкп", re.I)
+PAINT_TALLY = re.compile(r"(\d{1,2})\s+(элемент\w*|детале\w*|окрас\w*)", re.I)
+SMOOTH_PAINTS = "Есть косметические окрасы, по кузову всё видно на осмотре"
+
+
+def _many_paints(text: str) -> bool:
+    blob = text or ""
+    if not PAINT_TALK.search(blob):
+        return False
+    if len(BODY_PART.findall(blob)) >= 3:
+        return True
+    found = PAINT_TALLY.search(blob)
+    return bool(found and int(found.group(1)) >= 3)
+
+
+def soften_many_paints(text: str) -> str:
+    """Три и больше элементов в окрасе в чат списком не отдаём."""
+    original = text or ""
+    if not _many_paints(original):
+        return original
+    out: list[str] = []
+    for part in re.split(r"(?<=[.!?])\s+", original):
+        if _many_paints(part):
+            out.append(SMOOTH_PAINTS)
+        else:
+            out.append(part)
+    return _tidy(" ".join(out), original)
+
+
 def drop_kstati(text: str) -> str:
     """«Кстати» в чате звучит как бот. Вырезаем, смысл оставляем."""
     original = text or ""
@@ -562,10 +647,43 @@ TORG_BIT = re.compile(
     r"(обсуд|готов)\w*.{0,28}торг|"
     r"по цене\s+(готов|обсуд)|"
     r"по цене.{0,24}(осмотр|на месте)|"
-    r"цен[уеы]\s+(готов[аы]?\s+)?обсуд"
+    r"цен[уеы]\s+(готов[аы]?\s+)?обсуд|"
+    r"разумных пределах|"
+    r"торг и условия"
     r")",
     re.IGNORECASE,
 )
+SOFT_TORG = (
+    "В разумных пределах торг и условия можем обсудить после осмотра"
+)
+HARD_TORG_NO = re.compile(r"не сможем", re.IGNORECASE)
+FIXED_PRICE = re.compile(r"зафиксирован", re.IGNORECASE)
+PRICE_IN_SENT = re.compile(r"(\d[\d\s]{2,}\d(?:\s*руб(?:лей)?)?)", re.IGNORECASE)
+
+
+def soften_hard_torg(text: str, *, allow_torg: bool = False) -> str:
+    """Борщат по цене: не рубим «не сможем», оставляем торг после осмотра."""
+    original = text or ""
+    if not allow_torg or not original.strip():
+        return original
+    if not HARD_TORG_NO.search(original) and not FIXED_PRICE.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if HARD_TORG_NO.search(part):
+            continue
+        if FIXED_PRICE.search(part):
+            found = PRICE_IN_SENT.search(part)
+            if found:
+                kept.append("Цена в объявлении %s" % " ".join(found.group(1).split()))
+            continue
+        kept.append(part)
+    body = " ".join(p.strip() for p in kept if p.strip()).strip()
+    if not body:
+        return SOFT_TORG
+    if not re.search(r"осмотр|торг|услови", body, re.I):
+        body = "%s. %s" % (body.rstrip("."), SOFT_TORG)
+    return _tidy(body, original)
 
 
 def drop_unsolicited(
@@ -984,6 +1102,8 @@ def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: без тире-связок, без точки в конце."""
     text = drop_clause_dashes(text or "")
     text = drop_kstati(text)
+    text = drop_owner_legal(text)
+    text = soften_many_paints(text)
     text = MARKET_TALK.sub("ниже аналогов", text)
     text = drop_manager(text)
     text = drop_qual(text)

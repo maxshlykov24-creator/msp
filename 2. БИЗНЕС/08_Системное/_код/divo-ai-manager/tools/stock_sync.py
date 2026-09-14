@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -202,6 +203,11 @@ AUTOTEKA_ORDER = (
 )
 
 
+def is_nat(d: dict) -> bool:
+    blob = " ".join((d.get("Марка") or "", d.get("Модель") or "")).lower()
+    return "nat" in blob
+
+
 def is_empty_phrase(text: str) -> bool:
     """«Не найдено» и «не проверено» в карточку не пускаем.
 
@@ -235,6 +241,56 @@ def speak_damage(text: str) -> str:
     return t
 
 
+OWNER_COUNT = re.compile(r"\d+\s+владел\w+", re.I)
+
+
+def speak_owners(text: str) -> str:
+    """Клиенту только число владельцев: без юрлица и лекции про износ.
+
+    Автотека кладёт в title «1 владелец», а в alerts — «владело юридическое
+    лицо» и «износ выше». Это не про продажу на организацию, в чат не несём.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    found = OWNER_COUNT.search(raw)
+    return found.group(0) if found else ""
+
+
+BODY_PART = re.compile(
+    r"\b("
+    r"крыл\w*|двер\w*|капот\w*|бампер\w*|порог\w*|"
+    r"крышк\w*|крыш[аеиу]\w*|зеркал\w*|лонжерон\w*|стойк\w*|арк\w*"
+    r")\b",
+    re.I,
+)
+MANY_PAINTS = 3
+
+
+def paint_part_count(text: str) -> int:
+    return len(BODY_PART.findall(str(text or "")))
+
+
+def speak_paints(text: str) -> str:
+    """Много окрасов в карточке не держим списком: модель его копирует в чат.
+
+    Один-два элемента оставляем как есть. Три и больше - «несколько
+    косметических», без крыльев и дверей. Мусор CME («12. Автотека») режем.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    if re.match(r"^\d+\.", raw):
+        return ""
+    low = raw.lower()
+    if paint_part_count(raw) < MANY_PAINTS:
+        return raw
+    out = "несколько косметических окрасов"
+    if "плёнк" in low or "пленк" in low:
+        out += ", в плёнке"
+    return out
+
+
 def autoteka_lines(facts: dict[str, object] | None) -> list[str]:
     """Факты отчёта - отдельным блоком, чтобы бот не путал их со своей базой."""
     if not facts:
@@ -254,6 +310,10 @@ def autoteka_lines(facts: dict[str, object] | None) -> list[str]:
             continue
         if key == "повреждения":
             value = speak_damage(str(value))
+            if not value:
+                continue
+        if key == "владельцы":
+            value = speak_owners(str(value))
             if not value:
                 continue
         out.append("  - %s: %s" % (key, value))
@@ -287,11 +347,17 @@ def card(
     add("Мощность", d["Мощность двигателя"], " л.с.")
     add("Владельцев по ПТС", d["Количество владельцев по ПТС"])
     add("Комплектация", d["Комплектация"])
+    if is_nat(d):
+        lines.append(
+            "- Дизельный отопитель: да. Модельный факт FAW Bestune NAT, есть на этих машинах. "
+            "Клиенту: да, дизельный отопитель стоит. Не писать «в описании нет» "
+            "и не просить номер из-за этого вопроса."
+        )
     add("Поколение", d.get("Поколение", ""))
     add("ПТС", d.get("ПТС", ""))
     add("Учёт в РФ", d.get("Учёт в РФ", ""))
     add("Без пробега РФ", d.get("Без пробега РФ", ""))
-    add("Окрасы", d.get("Окрасы", ""))
+    add("Окрасы", speak_paints(d.get("Окрасы", "")))
     auto = (d.get("Автотека") or "").strip()
     if auto.startswith("http"):
         add("Автотека", auto)

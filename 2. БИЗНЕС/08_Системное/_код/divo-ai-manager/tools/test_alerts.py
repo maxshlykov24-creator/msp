@@ -149,7 +149,23 @@ def test_unsolicited():
     assert "лизинг" in keep.lower()
     torg_ask = [{"role": "user", "content": "скидку сделаете?"}]
     assert asked_torg(torg_ask)
+    assert asked_torg(
+        [{"role": "user", "content": "Добрый день, за 3,5 млн продадите многодетной семье?"}]
+    )
     assert asked_leasing([{"role": "user", "content": "а в лизинг можно?"}])
+    from bot.human import soften_hard_torg
+
+    slammed = soften_hard_torg(
+        "Цена по этой машине зафиксирована в объявлении, 4 300 000 рублей. Продать за 3,5 не сможем",
+        allow_torg=True,
+    )
+    assert "не сможем" not in slammed.lower()
+    assert "зафиксирован" not in slammed.lower()
+    assert "4 300 000" in slammed
+    assert "разумных пределах" in slammed.lower()
+    assert "осмотр" in slammed.lower()
+    keep_hard = soften_hard_torg("Продать за 3,5 не сможем", allow_torg=False)
+    assert "не сможем" in keep_hard.lower()
 
 
 def test_greeting_and_paper():
@@ -998,6 +1014,75 @@ def test_tiggo_match_and_messenger():
     assert "LMGMU1G82R1236593" in (m8.get("VIN") or "")
     assert "Автотека" in (m8.get("raw") or "")
 
+    nat = {h: "" for h in HEADER}
+    nat["VIN"] = "LFP8C7PC5P1D70967"
+    nat["Марка"] = "FAW"
+    nat["Модель"] = "Bestune NAT"
+    nat["Год выпуска"] = "2023"
+    nat_card = warehouse_block([[nat[h] for h in HEADER]])
+    assert "Дизельный отопитель: да" in nat_card
+
+
+def test_owner_legal():
+    from bot.human import drop_owner_legal, for_chat
+    from tools.stock_sync import autoteka_lines, speak_owners
+
+    raw = (
+        "1 владелец; Автомобилем владело юридическое лицо. "
+        "Износ у таких машин, как правило, выше."
+    )
+    assert speak_owners(raw) == "1 владелец"
+    assert speak_owners("Автомобилем владело юридическое лицо.") == ""
+    blob = "\n".join(autoteka_lines({"владельцы": raw, "повреждения": "ДТП нет"}))
+    assert "1 владелец" in blob
+    assert "юридическ" not in blob.lower()
+    assert "износ" not in blob.lower()
+    chat = for_chat(
+        "По этому Cayenne. 2019 год, пробег 81 085 км, "
+        "один владелец по учёту юрлицом, окрасов нет"
+    )
+    assert "юрлиц" not in chat.lower()
+    assert "один владелец" in chat.lower()
+    assert "окрасов нет" in chat.lower()
+    assert "юридическ" not in drop_owner_legal(raw).lower()
+    vat = for_chat("Цена на юрлицо с НДС 10 400 000 рублей")
+    assert "юрлицо" in vat.lower()
+    assert "10 400 000" in vat
+
+
+def test_many_paints():
+    from bot.human import for_chat, soften_many_paints
+    from tools.stock_sync import speak_paints
+
+    hongqi = (
+        "окрашены переднее правое крыло, передняя правая дверь, задняя правая дверь, "
+        "задняя левая дверь, передняя левая дверь, крышка багажника и заднее левое крыло, "
+        "с ремонтом"
+    )
+    assert speak_paints(hongqi) == "несколько косметических окрасов"
+    assert "крыл" not in speak_paints(hongqi)
+    assert speak_paints("окрашен капот") == "окрашен капот"
+    assert speak_paints("окрашены переднее правое крыло и капот") == (
+        "окрашены переднее правое крыло и капот"
+    )
+    maybach = (
+        "окрашены переднее левое крыло, передняя левая дверь и задняя левая дверь, в плёнке"
+    )
+    assert speak_paints(maybach) == "несколько косметических окрасов, в плёнке"
+    assert speak_paints("12. Автотека: https://autoteka.ru/x") == ""
+    chat = for_chat(
+        "По Hongqi окрашены переднее правое крыло, передняя правая дверь, "
+        "задняя правая дверь и крышка багажника. Посмотреть можно в любой день "
+        "с 10:00 до 20:00"
+    )
+    assert "крыл" not in chat.lower()
+    assert "двер" not in chat.lower()
+    assert "косметические окрасы" in chat.lower()
+    assert "10:00" in chat
+    keep = for_chat("Окрашен капот, ДТП не было")
+    assert "капот" in keep.lower()
+    assert "7 элементов" not in soften_many_paints("Окрашено 7 элементов, приезжайте").lower()
+
 
 if __name__ == "__main__":
     test_needs_reply()
@@ -1023,4 +1108,6 @@ if __name__ == "__main__":
     test_tradein_vin_phone()
     test_in_stock_dedupe()
     test_tiggo_match_and_messenger()
+    test_owner_legal()
+    test_many_paints()
     print("ok")

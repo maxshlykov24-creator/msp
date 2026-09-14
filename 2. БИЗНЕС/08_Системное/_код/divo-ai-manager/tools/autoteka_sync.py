@@ -36,6 +36,7 @@ from tools.stock_sync import (  # noqa: E402
     read_cars,
     read_warehouse,
     sheets_api,
+    speak_owners,
 )
 
 MSK = timezone(timedelta(hours=3))
@@ -368,7 +369,8 @@ def owners_of(report: dict[str, Any]) -> str:
         for a in (block.get("alerts") or [])
         if isinstance(a, dict)
     ]
-    return "; ".join(x for x in [title] + alerts if x)
+    blob = "; ".join(x for x in [title] + alerts if x)
+    return speak_owners(blob)
 
 
 def region_of(report: dict[str, Any]) -> str:
