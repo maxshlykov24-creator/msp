@@ -436,6 +436,29 @@ def build_index(rows: list[list[str]], stamp: str) -> str:
         models = sorted({(c[2] or "?") for c in cars})
         out.append("- **%s** (%d): %s" % (brand, len(cars), ", ".join(models)))
 
+    by_engine: dict[str, list[list[str]]] = {}
+    for r in rows:
+        eng = (r[11] or "не указан").strip() or "не указан"
+        by_engine.setdefault(eng, []).append(r)
+
+    out += [
+        "",
+        "## По двигателю",
+        "",
+        "«Электричка» в чате про машины = электромобиль, не поезд до салона.",
+        "Подбор по полю «Двигатель», тип кузова не режет.",
+        "",
+    ]
+    for eng in sorted(by_engine, key=lambda x: (x == "не указан", x.lower())):
+        cars = sorted(by_engine[eng], key=lambda c: price_int(c[14]) or 10**12)
+        bits = []
+        for c in cars:
+            bits.append(
+                "%s %s %s"
+                % (c[1], c[2], money(c[14]))
+            )
+        out.append("- **%s** (%d): %s" % (eng, len(cars), "; ".join(bits)))
+
     out += [
         "",
         "## Лиги для подбора",
@@ -445,7 +468,8 @@ def build_index(rows: list[list[str]], stamp: str) -> str:
         "- китай: Geely, Haval, Exeed, GAC, FAW, Hongqi",
         "- бюджет: Lada",
         "- Подмена: та же марка → та же лига и тот же тип → цена 70-130%.",
-        "  Премиум на китай не менять.",
+        "  Премиум на китай не менять. Топливо: смотри поле «Двигатель»,",
+        "  тип кузова не режет.",
         "",
         "## Цены",
         "",

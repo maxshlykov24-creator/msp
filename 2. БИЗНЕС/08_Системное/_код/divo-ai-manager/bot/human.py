@@ -491,6 +491,10 @@ def drop_phone_script(text: str) -> str:
 
 
 CLAUSE_DASH = re.compile(r"\s+[–—-]\s+")
+KSTATI = re.compile(
+    r"(?:\s*,\s*)?\bкстати\b(?:\s*,\s*)?",
+    re.IGNORECASE,
+)
 
 
 def drop_clause_dashes(text: str) -> str:
@@ -510,9 +514,18 @@ def drop_clause_dashes(text: str) -> str:
     return out
 
 
+def drop_kstati(text: str) -> str:
+    """«Кстати» в чате звучит как бот. Вырезаем, смысл оставляем."""
+    original = text or ""
+    text = KSTATI.sub(" ", original)
+    text = re.sub(r"\s+([?!.])", r"\1", text)
+    return _tidy(text, original)
+
+
 def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: без тире-связок, без точки в конце."""
     text = drop_clause_dashes(text or "")
+    text = drop_kstati(text)
     text = MARKET_TALK.sub("ниже аналогов", text)
     text = drop_manager(text)
     text = drop_qual(text)
