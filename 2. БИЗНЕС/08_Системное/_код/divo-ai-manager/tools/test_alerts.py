@@ -1132,6 +1132,39 @@ def test_two_vins_and_phone():
     assert "WP1ZZZ92ZGLA72981" in note and "TRUZZZFV5G1025930" in note
 
 
+def test_claim_twice():
+    """Двойной тап по кнопке: примечание в amo пишем один раз."""
+    import asyncio
+
+    from bot import crm, store
+
+    doc = {
+        "crm": {
+            "lead_id": 45684819,
+            "alert": {
+                "active": False,
+                "picked": "button",
+                "picked_by": "Evgeniy",
+                "picked_at": "2026-09-14T19:00:20+03:00",
+                "snap": {"car": "Porsche Cayenne 2019", "lead_id": 45684819},
+            },
+        }
+    }
+    notes: list[str] = []
+    saved = store.save_doc
+    loaded = store.load_doc
+    try:
+        store.load_doc = lambda cid: doc
+        store.save_doc = lambda cid, d: None
+        crm.amo_client.add_note = lambda lead, text: notes.append(text)
+        again = asyncio.run(crm.claim("av:test", "Evgeniy", "19:00", {}, user={"id": 282491919}))
+    finally:
+        store.load_doc = loaded
+        store.save_doc = saved
+    assert again is False
+    assert notes == []
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -1159,4 +1192,5 @@ if __name__ == "__main__":
     test_owner_legal()
     test_many_paints()
     test_two_vins_and_phone()
+    test_claim_twice()
     print("ok")

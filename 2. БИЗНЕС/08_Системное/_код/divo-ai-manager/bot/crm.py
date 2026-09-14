@@ -673,9 +673,12 @@ async def on_take(cb: dict) -> None:
         if bot:
             await bot.answer_callback(cqid, "Этот алерт уже не активен")
         return
-    await claim(cid, who, when, message, user=user)
+    taken = await claim(cid, who, when, message, user=user)
     if bot:
-        await bot.answer_callback(cqid, "Взял, больше не напоминаю")
+        if taken:
+            await bot.answer_callback(cqid, "Взял, больше не напоминаю")
+        else:
+            await bot.answer_callback(cqid, "Этот клиент уже взят, в amo ничего не менял")
 
 
 async def claim(
@@ -684,12 +687,23 @@ async def claim(
     when: str,
     fallback: dict | None = None,
     user: dict | None = None,
-) -> None:
+) -> bool:
+    """True — взяли сейчас. False — кнопку уже нажимали, amo не трогаем.
+
+    Двойной тап и повтор апдейта после перезапуска бота приходят как два
+    callback-а: без этой проверки в сделку падало два одинаковых примечания.
+    """
     doc = store.load_doc(chat_id)
     crmd = dict(doc.get("crm") or {})
     alert = dict(crmd.get("alert") or {})
     snap = dict(alert.get("snap") or {})
     lead_id = snap.get("lead_id") or crmd.get("lead_id")
+    if alert.get("picked") and not alert.get("active"):
+        earlier = alert.get("picked_by") or who
+        at = (alert.get("picked_at") or "")[11:16] or when
+        log.info("чат %s: кнопку уже нажимал %s в %s, повтор игнорирую", chat_id, earlier, at)
+        await _finish_message(alert, snap, earlier, at, fallback or {})
+        return False
     person = user or {}
     amo_user = amo_client.resolve_responsible(
         tg_id=int(person.get("id") or 0),
@@ -706,6 +720,10 @@ async def claim(
     if amo_user:
         alert["picked_amo"] = int(amo_user)
     crmd["alert"] = alert
+    # Метку ставим на диск до походов в amo: второй тап в эти секунды
+    # должен увидеть, что клиент уже взят, и в примечания не писать.
+    doc["crm"] = crmd
+    store.save_doc(chat_id, doc)
     if amo_user is None:
         log.warning("кнопка: не нашёл amo-пользователя для %s tg=%s", who, person.get("id"))
     if lead_id:
@@ -731,6 +749,7 @@ async def claim(
     store.save_doc(chat_id, doc)
     await _finish_message(alert, snap, who, when, fallback or {})
     log.info("чат %s: взял %s amo=%s", chat_id, who, amo_user)
+    return True
 
 
 async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
