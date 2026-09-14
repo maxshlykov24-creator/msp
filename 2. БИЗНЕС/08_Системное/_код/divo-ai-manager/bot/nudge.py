@@ -234,6 +234,21 @@ def needs_reply(text: str) -> bool:
     return True
 
 
+OWN_PHONE = re.compile(
+    r"("
+    r"мой номер|"
+    r"это и есть мой|"
+    r"вот мой|"
+    r"перезвоните на|"
+    r"звоните на|"
+    r"наберите на|"
+    r"другой номер|"
+    r"новый номер"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def extract_phone(text: str) -> str:
     """Нормализует российский номер. Номер салона и короткие цифры не берём."""
     salon = re.sub(r"\D", "", SALON_PHONE)
@@ -249,14 +264,59 @@ def extract_phone(text: str) -> str:
     return best
 
 
-def extract_phone_from_history(messages: list[dict]) -> str:
-    for msg in reversed(messages or []):
+def _just_phone_text(text: str) -> bool:
+    raw = (text or "").strip()
+    if not extract_phone(raw):
+        return False
+    return not re.search(r"[а-яёa-z]{3,}", raw, flags=re.IGNORECASE)
+
+
+def _call_question_before(messages: list[dict], idx: int) -> bool:
+    lo = max(0, idx - 4)
+    for msg in messages[lo:idx]:
         if msg.get("role") != "user":
             continue
-        phone = extract_phone(msg.get("content") or "")
-        if phone:
-            return phone
-    return ""
+        if asks_about_call(msg.get("content") or ""):
+            return True
+    return False
+
+
+def is_caller_id_paste(text: str, prior: list[dict] | None = None) -> bool:
+    """Клиент скинул АОН входящего, а не свой контакт."""
+    if not extract_phone(text or ""):
+        return False
+    if OWN_PHONE.search(text or ""):
+        return False
+    if asks_about_call(text or ""):
+        return True
+    if not _just_phone_text(text):
+        return False
+    prior_list = list(prior or [])
+    fake = prior_list + [{"role": "user", "content": text}]
+    return _call_question_before(fake, len(prior_list))
+
+
+def extract_phone_from_history(messages: list[dict]) -> str:
+    """Свой номер клиента. АОН входящего после «это вы звонили» не берём."""
+    msgs = list(messages or [])
+    chosen = ""
+    for i, msg in enumerate(msgs):
+        if msg.get("role") != "user":
+            continue
+        text = msg.get("content") or ""
+        phone = extract_phone(text)
+        if not phone:
+            continue
+        if OWN_PHONE.search(text):
+            chosen = phone
+            continue
+        if asks_about_call(text):
+            continue
+        if _just_phone_text(text) and _call_question_before(msgs, i):
+            continue
+        if not chosen:
+            chosen = phone
+    return chosen
 
 
 def history_has_phone(messages: list[dict]) -> bool:
@@ -267,16 +327,19 @@ def urgent_reason(user_text: str, history: list[dict] | None = None) -> str:
     """В группу менеджеров только когда уже есть номер."""
     text = user_text or ""
     hist = list(history or [])
-    has_phone = bool(extract_phone(text) or history_has_phone(hist))
+    phone_now = extract_phone(text)
+    if phone_now and is_caller_id_paste(text, hist):
+        phone_now = ""
+    has_phone = bool(phone_now or history_has_phone(hist))
     if not has_phone:
         return ""
     if is_complaint(text):
         return "complaint"
     if wants_person(text):
         return "handoff"
-    if wants_call(text) or asks_about_call(text):
+    if wants_call(text) or asks_about_call(text) or is_caller_id_paste(text, hist):
         return "call"
-    if extract_phone(text) and not history_has_phone(hist):
+    if phone_now and not history_has_phone(hist):
         return "phone"
     return ""
 

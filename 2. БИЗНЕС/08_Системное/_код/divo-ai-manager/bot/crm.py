@@ -416,7 +416,8 @@ async def ack_callback(channel, chat_id: str | int, texts: list[str], reason: st
     if reason != "call" or channel is None:
         return
     blob = "\n".join(str(t).strip() for t in (texts or []) if str(t).strip())
-    if not nudge.asks_about_call(blob):
+    history = store.load_history(chat_id)
+    if not (nudge.asks_about_call(blob) or nudge.is_caller_id_paste(blob, history)):
         return
     from bot import human
 
@@ -471,7 +472,10 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     crm = dict(doc.get("crm") or {})
     alert = dict(crm.get("alert") or {})
     if not alert.get("active"):
-        if nudge.extract_phone(text) or nudge.history_has_phone(history):
+        prior = history[:-1]
+        if nudge.is_caller_id_paste(text, prior):
+            await capture(chat_id, history, "call")
+        elif nudge.extract_phone(text) or nudge.history_has_phone(history):
             await capture(chat_id, history, "phone")
         return
     last = nudge.parse_iso(alert.get("echo_at") or "")

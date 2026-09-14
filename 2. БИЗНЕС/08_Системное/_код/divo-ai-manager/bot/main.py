@@ -253,7 +253,11 @@ def silent_reason(
         return "complaint"
     if nudge.wants_person(user_text):
         return "handoff"
-    if nudge.wants_call(user_text) or nudge.asks_about_call(user_text):
+    if (
+        nudge.wants_call(user_text)
+        or nudge.asks_about_call(user_text)
+        or nudge.is_caller_id_paste(user_text, history)
+    ):
         return "call"
     if handoff:
         if nudge.clarify_count(history) >= 3:
@@ -562,7 +566,14 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
                 "словами, ни другими, ни вскользь через «кстати». Работай без имени: "
                 "обращение не главное, разговор о машине важнее."
             )
-    if nudge.extract_phone(user_text) and not nudge.history_has_phone(prior):
+    if nudge.is_caller_id_paste(user_text, prior):
+        system += (
+            "\n\n# Это не новый номер клиента\n"
+            "Клиент скинул номер входящего звонка и спрашивает, это мы. "
+            "Не пиши «зафиксировал этот номер» и не меняй контакт. "
+            "Ответь: «Да, это мы. Наберу ещё раз в ближайшее время»."
+        )
+    elif nudge.extract_phone(user_text) and not nudge.history_has_phone(prior):
         system += (
             "\n\n# Клиент оставил номер\n"
             "Номер принял. Не пиши «сейчас наберу», «сейчас наберём», "

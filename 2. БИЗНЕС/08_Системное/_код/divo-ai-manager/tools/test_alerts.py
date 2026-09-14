@@ -8,6 +8,8 @@ import time
 from bot.alerts import brief_from_history, compact_thread, format_alert, format_taken, next_ping, pretty_phone, take_keyboard
 from bot.nudge import (
     extract_phone,
+    extract_phone_from_history,
+    is_caller_id_paste,
     is_complaint,
     asked_leasing,
     asked_torg,
@@ -47,6 +49,25 @@ def test_phone():
     assert extract_phone("+79502292544") == "79502292544"
     assert extract_phone("пишите на 8 495 089 29 29") == ""
 
+    hist = [
+        {"role": "user", "content": "+79502292544"},
+        {"role": "assistant", "content": "Принял, в ближайшее время наберу"},
+        {"role": "user", "content": "Это и есть мой номер +79502292544"},
+        {"role": "user", "content": "Вы звонили"},
+        {"role": "assistant", "content": "Да, это мы. Наберу ещё раз в ближайшее время"},
+        {"role": "user", "content": "+79275282888"},
+        {"role": "user", "content": "Это вы мне звонили"},
+    ]
+    assert extract_phone_from_history(hist) == "79502292544"
+    assert is_caller_id_paste("+79275282888", hist[:-2])
+    assert not is_caller_id_paste("+79502292544", [])
+    swapped = [
+        {"role": "user", "content": "+79502292544"},
+        {"role": "user", "content": "другой номер +79001112233"},
+    ]
+    assert extract_phone_from_history(swapped) == "79001112233"
+    assert extract_phone_from_history([{"role": "user", "content": "8 900 111-22-33"}]) == "79001112233"
+
 
 def test_urgent_reason():
     assert urgent_reason("+79502292544", []) == "phone"
@@ -61,6 +82,43 @@ def test_urgent_reason():
     assert urgent_reason("Это вы мне звонили", []) == ""
     assert urgent_reason("ок", hist) == ""
     assert urgent_reason("89001112233", hist) == ""
+    call_hist = hist + [{"role": "user", "content": "Вы звонили"}]
+    assert urgent_reason("+79275282888", call_hist) == "call"
+    assert (
+        extract_phone_from_history(call_hist + [{"role": "user", "content": "+79275282888"}])
+        == "79001112233"
+    )
+
+
+def test_brief_skips_listing_spec():
+    brief = brief_from_history(
+        [
+            {
+                "role": "user",
+                "content": "Здравствуйте, я с другого города. Можно приехать на осмотр?",
+            },
+            {
+                "role": "assistant",
+                "content": "Так, FAW Bestune NAT 2023 года, пробег 6798 км, белый, 1. 7 млн. Это наш экземпляр, всё верно",
+            },
+            {"role": "user", "content": "Вы звонили"},
+        ],
+        "call",
+    )
+    low = brief.lower()
+    assert "так," not in low
+    assert not low.startswith("так")
+    assert "пробег" not in low
+    assert "6798" not in brief
+    assert "белый" not in low
+    assert "1. 7" not in brief and "1.7" not in brief
+    assert "наш экземпляр" not in low
+    assert "наберу" not in low
+    assert "года,, 1" not in brief
+    assert "осмотр" in low
+    assert "звон" in low
+    assert "другого города" in low
+    assert low.count("звон") == 1
 
 
 def test_unsolicited():
@@ -189,7 +247,7 @@ def test_reasons():
         ],
         "call",
     )
-    assert "звонил" in called.lower()
+    assert "звон" in called.lower()
 
 
 def test_alert_text():
@@ -941,6 +999,7 @@ if __name__ == "__main__":
     test_needs_reply()
     test_phone()
     test_urgent_reason()
+    test_brief_skips_listing_spec()
     test_unsolicited()
     test_greeting_and_paper()
     test_now_call()

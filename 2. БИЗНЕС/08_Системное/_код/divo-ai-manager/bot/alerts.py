@@ -68,6 +68,8 @@ SKIP_BRIEF_START = (
     "как могу к вам",
     "хорошо",
     "понял",
+    "принял",
+    "да, я",
     "вижу вашу ссылку",
 )
 SKIP_BRIEF_HAS = (
@@ -92,6 +94,26 @@ SKIP_BRIEF_HAS = (
     "окончательные условия",
     "ознакомиться с автомобилем",
     "принимаем автомобили",
+    "наш экземпляр",
+    "всё верно",
+    "все верно",
+    "наберу",
+    "дозвон",
+    "обсудим детали",
+    "зафиксировал этот номер",
+)
+TAK_PREFIX = re.compile(r"^(так|итак)\b\s*[,.:;]?\s*", re.IGNORECASE)
+LISTING_SPEC = re.compile(
+    r"("
+    r"пробег\s*\d[\d\s]*\s*км|"
+    r"\b\d[\d\s]{2,6}\s*км\b|"
+    r"\b\d+(?:[.,]\s*\d+)?\s*млн\b|"
+    r"\b\d[\d\s]{4,}\s*(?:руб(?:лей)?|₽)\b|"
+    r"\b(?:бел(?:ый|ая|ое)|чёрн(?:ый|ая|ое)|черн(?:ый|ая|ое)|"
+    r"сер(?:ый|ая|ое)|син(?:ий|яя|ее)|красн(?:ый|ая|ое)|"
+    r"зелён(?:ый|ая|ое)|зелен(?:ый|ая|ое)|серебрист\w*|бежев\w*)\b"
+    r")",
+    re.IGNORECASE,
 )
 FILLER = frozenset(
     {
@@ -187,10 +209,20 @@ def _first_sentence(text: str, limit: int = 110) -> str:
     clean = " ".join(str(text or "").split())
     if not clean:
         return ""
-    for sep in ".!?":
-        pos = clean.find(sep)
-        if 8 <= pos <= limit:
-            take = pos + 1 if sep == "?" else pos
+    for i, ch in enumerate(clean):
+        if ch not in ".!?":
+            continue
+        decimal = (
+            ch == "."
+            and i > 0
+            and i + 1 < len(clean)
+            and clean[i - 1].isdigit()
+            and clean[i + 1].isdigit()
+        )
+        if decimal:
+            continue
+        if 8 <= i <= limit:
+            take = i + 1 if ch == "?" else i
             clean = clean[:take].strip()
             break
     if len(clean) > limit:
@@ -221,22 +253,43 @@ def _is_ask(text: str) -> bool:
 
 
 def _chunks(text: str) -> list[str]:
-    raw = " ".join(str(text or "").split())
+    raw = re.sub(r"(\d)\.\s+(\d)", r"\1.\2", " ".join(str(text or "").split()))
     if not raw:
         return []
     parts: list[str] = []
     buf = ""
-    for ch in raw:
+    for i, ch in enumerate(raw):
         buf += ch
-        if ch in ".!?":
-            bit = buf.strip()
-            if bit:
-                parts.append(bit)
-            buf = ""
+        if ch not in ".!?":
+            continue
+        decimal = (
+            ch == "."
+            and i > 0
+            and i + 1 < len(raw)
+            and raw[i - 1].isdigit()
+            and raw[i + 1].isdigit()
+        )
+        if decimal:
+            continue
+        bit = buf.strip()
+        if bit:
+            parts.append(bit)
+        buf = ""
     tail = buf.strip()
     if tail:
         parts.append(tail)
     return parts or [raw]
+
+
+def _strip_listing_spec(text: str) -> str:
+    """Пробег, цвет и цена объявления в карточку менеджеру не нужны."""
+    clean = TAK_PREFIX.sub("", " ".join(str(text or "").split()))
+    clean = LISTING_SPEC.sub("", clean)
+    clean = re.sub(r"\s*,\s*,+", ",", clean)
+    clean = re.sub(r"\s{2,}", " ", clean)
+    clean = re.sub(r"\s+,", ",", clean)
+    clean = re.sub(r"^[\s,.;:]+|[\s,.;:]+$", "", clean)
+    return clean
 
 
 def _fact_bits(text: str) -> list[str]:
@@ -244,8 +297,9 @@ def _fact_bits(text: str) -> list[str]:
     for part in _chunks(text):
         if _skip_bit(part) or _is_ask(part):
             continue
-        bit = _first_sentence(part, 90)
-        if bit:
+        bit = _strip_listing_spec(part)
+        bit = _strip_listing_spec(_first_sentence(bit, 90))
+        if bit and not _skip_bit(bit) and not _is_ask(bit):
             out.append(bit.rstrip(".!?"))
     return out
 
@@ -378,8 +432,11 @@ def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
     if pay:
         notes.append(_cap(pay))
     for extra in _extra_notes(blob):
-        if extra not in notes:
-            notes.append(_cap(extra))
+        if extra in notes:
+            continue
+        if "звон" in extra.lower() and any("звон" in n.lower() for n in notes):
+            continue
+        notes.append(_cap(extra))
     facts: list[str] = []
     for msg in history or []:
         if msg.get("role") != "assistant":
