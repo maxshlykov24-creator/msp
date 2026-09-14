@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 
 from bot import avito_match, human, store
@@ -162,7 +161,7 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
     state = load_state()
     cursor: dict = dict(state.get("cursor") or {})
     try:
-        chats = await api.chats(unread_only=True, limit=50)
+        chats = await api.chats(unread_only=False, limit=40)
     except AvitoError as exc:
         log.warning("авито чаты: %s", exc)
         return

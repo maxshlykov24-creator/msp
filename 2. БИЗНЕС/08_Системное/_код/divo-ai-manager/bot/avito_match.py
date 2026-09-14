@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from bot.config import settings
 
 YEAR_RE = re.compile(r"\b(20\d{2})\b")
 KM_RE = re.compile(r"([\d\s\u00a0]+)\s*км", re.I)
-PRICE_RE = re.compile(r"([\d\s\u00a0]+)\s*(?:руб|₽)", re.I)
 
 
 def digits(raw: str) -> int:

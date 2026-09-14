@@ -482,7 +482,7 @@ def tech_pause_lifted(chat_id: int) -> bool:
         if datetime.now(timezone.utc) - at < timedelta(minutes=TECH_PAUSE_MIN):
             return False
     store.resume(chat_id)
-    llm_fails.pop(chat_id, None)
+    llm_fails.pop(str(chat_id), None)
     log.info("чат %s: снял техническую паузу, пробую отвечать", chat_id)
     return True
 
@@ -496,9 +496,9 @@ def _refresh_nudge(chat_id: int, history: list[dict]) -> None:
 async def send_nudge(tg: Telegram, chat_id: int) -> None:
     if store.is_paused(chat_id) and not tech_pause_lifted(chat_id):
         return
-    if pending.get(chat_id):
+    if pending.get(str(chat_id)):
         return
-    running = tasks.get(chat_id)
+    running = tasks.get(str(chat_id))
     if running and not running.done():
         return
     doc = store.load_doc(chat_id)
@@ -516,7 +516,7 @@ async def send_nudge(tg: Telegram, chat_id: int) -> None:
         address=not nudge.history_has_address(doc.get("messages") or []),
     )
     await type_and_wait(tg, chat_id, human.typing_delay(text, first=True))
-    if pending.get(chat_id) or store.is_paused(chat_id):
+    if pending.get(str(chat_id)) or store.is_paused(chat_id):
         return
     doc = store.load_doc(chat_id)
     meta = doc.get("nudge") or {}
@@ -621,7 +621,7 @@ async def autoteka_loop() -> None:
         await asyncio.sleep(max(settings.autoteka_refresh_h, 1) * 3600)
 
 
-async def avito_loop(tg: Telegram) -> None:
+async def poll_avito(tg: Telegram) -> None:
     if not settings.avito_enabled:
         log.info("авито выключен")
         return
@@ -629,17 +629,16 @@ async def avito_loop(tg: Telegram) -> None:
         log.warning("авито включён, но нет AVITO_CLIENT_ID / SECRET / USER_ID")
         return
     api = Avito()
-    channel = avito_loop_mod.AvitoChannel(api, tg)
+    channel = avito_loop.AvitoChannel(api, tg)
     try:
-        await avito_loop_mod.prime_cursor(api)
+        await avito_loop.prime_cursor(api)
         log.info("авито опрос каждые %s сек", settings.avito_poll_sec)
         while True:
-            await avito_loop_mod.poll_once(api, channel, schedule, pending)
+            try:
+                await avito_loop.poll_once(api, channel, schedule, pending)
+            except Exception:
+                log.exception("авито опрос упал")
             await asyncio.sleep(max(settings.avito_poll_sec, 3.0))
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        log.exception("авито цикл упал")
     finally:
         await api.close()
 
@@ -658,6 +657,7 @@ async def run() -> None:
     asyncio.create_task(autoteka_loop())
     asyncio.create_task(nudge_loop(tg))
     asyncio.create_task(budget_loop(tg))
+    asyncio.create_task(poll_avito(tg))
     offset = read_offset()
 
     try:
@@ -684,8 +684,8 @@ async def run() -> None:
                     log.info("чат %s на паузе, молчим", chat_id)
                     continue
 
-                pending.setdefault(chat_id, []).append(text)
-                schedule(tg, chat_id)
+                pending.setdefault(str(chat_id), []).append(text)
+                schedule(tg, str(chat_id))
             if updates:
                 write_offset(offset)
             await asyncio.sleep(0.2)
