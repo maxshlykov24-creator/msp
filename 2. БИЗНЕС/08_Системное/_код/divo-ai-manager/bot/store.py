@@ -47,7 +47,7 @@ def save_doc(chat_id: int | str, doc: dict) -> None:
         "messages": messages,
         "nudge": doc.get("nudge") or {},
     }
-    for key in ("avito", "crm"):
+    for key in ("avito", "autoru", "crm"):
         extra = doc.get(key)
         if extra:
             payload[key] = extra
@@ -85,7 +85,7 @@ def chat_ids() -> list[int]:
 
 
 def all_chat_ids() -> list[str]:
-    """Все диалоги, включая Авито (av:…)."""
+    """Все диалоги, включая Авито (av:…) и Авто.ру (ar:…)."""
     settings.state_dir.mkdir(parents=True, exist_ok=True)
     out: list[str] = []
     for path in settings.state_dir.glob("*.json"):

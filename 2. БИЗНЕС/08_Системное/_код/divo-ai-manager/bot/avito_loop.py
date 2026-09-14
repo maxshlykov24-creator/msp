@@ -1,8 +1,8 @@
 """Опрос чатов Авито и ответы тем же голосом, что в Telegram.
 
 Webhook не ставим. Стартуем с курсора «сейчас»: старые непрочитанные не
-поднимаем, иначе бот набросится на весь хвост. Ответ — только если чат
-включён (/avito on или /avito next).
+поднимаем. Новые чаты берём сами. Если с клиентом уже была переписка,
+на новое сообщение не отвечаем.
 """
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from bot.config import settings
 
 log = logging.getLogger("avito")
 
+PRIOR_GAP_SEC = 2 * 3600
+
 
 def _state_path() -> Path:
     settings.state_dir.mkdir(parents=True, exist_ok=True)
@@ -24,7 +26,7 @@ def _state_path() -> Path:
 
 def load_state() -> dict:
     path = _state_path()
-    empty = {"cursor": {}, "allow": [], "arm_next": False, "seen": []}
+    empty = {"cursor": {}, "allow": [], "legacy": [], "arm_next": False, "seen": []}
     if not path.exists():
         return empty
     try:
@@ -35,6 +37,7 @@ def load_state() -> dict:
         return empty
     data.setdefault("cursor", {})
     data.setdefault("allow", [])
+    data.setdefault("legacy", [])
     data.setdefault("arm_next", False)
     data.setdefault("seen", [])
     return data
@@ -60,6 +63,42 @@ def allowed(chat_id: str, state: dict | None = None) -> bool:
     if chat_id in settings.avito_allowlist:
         return True
     return chat_id in set(state.get("allow") or [])
+
+
+def is_legacy(chat_id: str, state: dict | None = None) -> bool:
+    state = state or load_state()
+    return chat_id in set(state.get("legacy") or [])
+
+
+def _put(state: dict, key: str, chat_id: str) -> None:
+    rows = [x for x in (state.get(key) or []) if x != chat_id]
+    rows.append(chat_id)
+    state[key] = rows
+
+
+def remember_allow(state: dict, chat_id: str) -> None:
+    _put(state, "allow", chat_id)
+    state["legacy"] = [x for x in (state.get("legacy") or []) if x != chat_id]
+
+
+def remember_legacy(state: dict, chat_id: str) -> None:
+    if chat_id in set(state.get("allow") or []) or chat_id in settings.avito_allowlist:
+        return
+    _put(state, "legacy", chat_id)
+
+
+def had_prior_correspondence(msgs: list[dict], newest_in: int) -> bool:
+    """Уже был диалог: исходящее продавца или входящее сильно раньше текущего."""
+    for msg in msgs or []:
+        if (msg.get("type") or "") == "system":
+            continue
+        at = created_of(msg)
+        direction = msg.get("direction") or ""
+        if direction == "out":
+            return True
+        if direction == "in" and newest_in and at and (newest_in - at) > PRIOR_GAP_SEC:
+            return True
+    return False
 
 
 def listing_of(chat: dict) -> dict:
@@ -189,8 +228,18 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
             cursor[cid] = max(seen, last_at)
             changed = True
             continue
+        if (
+            not allowed(cid, state)
+            and is_legacy(cid, state)
+            and not state.get("arm_next")
+        ):
+            cursor[cid] = max(seen, last_at)
+            changed = True
+            log.info("авито чат %s уже был, молчу", cid[:12])
+            continue
         try:
-            msgs = await api.messages(cid, limit=10)
+            need = 50 if not allowed(cid, state) else 10
+            msgs = await api.messages(cid, limit=need)
         except AvitoError as exc:
             log.warning("авито сообщения %s: %s", cid, exc)
             continue
@@ -214,21 +263,20 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
         title = listing.get("title") or "объявление"
         chat_key = store_id(cid)
         await remember_listing(chat_key, chat, api)
-        if not allowed(cid, state) and not state.get("arm_next"):
-            log.info("авито новый чат %s (%s) — жду /avito on", cid[:12], title)
-            await channel.notify_owner(
-                "Авито, новый чат.\n%s\n%s\nЧтобы бот ответил, напиши:\n/avito on %s\nили /avito next и пусть клиент напишет ещё раз"
-                % (title, " ⏎ ".join(texts)[:400], cid)
-            )
-            continue
         if state.get("arm_next") and not allowed(cid, state):
-            allow = list(state.get("allow") or [])
-            if cid not in allow:
-                allow.append(cid)
-            state["allow"] = allow
+            remember_allow(state, cid)
             state["arm_next"] = False
             save_state(state)
             log.info("авито: /next поймал чат %s", cid[:12])
+        elif not allowed(cid, state):
+            if is_legacy(cid, state) or had_prior_correspondence(msgs, incoming[-1][0]):
+                remember_legacy(state, cid)
+                save_state(state)
+                log.info("авито чат %s уже был, молчу (%s)", cid[:12], title)
+                continue
+            remember_allow(state, cid)
+            save_state(state)
+            log.info("авито новый чат %s, беру (%s)", cid[:12], title)
         for text in texts:
             store.log_line(chat_key, "клиент", text)
         if store.is_paused(chat_key):
@@ -250,10 +298,11 @@ def status_text() -> str:
     allow = list(state.get("allow") or [])
     extra = list(settings.avito_allowlist)
     return (
-        "Авито: %s\nlive-чаты: %s\nnext: %s\nкурсор чатов: %s"
+        "Авито: %s\nновые чаты: беру сам\nlive-чаты: %s\nстарые с перепиской: %s\nnext: %s\nкурсор чатов: %s"
         % (
             "вкл" if settings.avito_enabled else "выкл",
-            ", ".join(allow + extra) or "нет, бот молчит пока не /avito on",
+            ", ".join(allow + extra) or "пока пусто",
+            len(state.get("legacy") or []),
             "ждёт следующее входящее" if state.get("arm_next") else "нет",
             len(state.get("cursor") or {}),
         )

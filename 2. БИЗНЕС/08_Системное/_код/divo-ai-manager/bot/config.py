@@ -123,8 +123,7 @@ class Settings:
     # Отчёты автотеки: содержимое меняется редко, кэш живёт неделю.
     autoteka_refresh_h = env_int("AUTOTEKA_REFRESH_H", 24)
 
-    # Авито. По умолчанию только смотрим новые входящие и пишем админу.
-    # Ответ уходит, если чат в allowlist или сработало /avito next.
+    # Авито. Новые чаты берём сами. К старой переписке не лезем.
     avito_enabled = env_bool("AVITO_ENABLED", False)
     avito_client_id = env("AVITO_CLIENT_ID")
     avito_client_secret = env("AVITO_CLIENT_SECRET")
@@ -132,6 +131,16 @@ class Settings:
     avito_poll_sec = env_float("AVITO_POLL_SEC", 6.0)
     avito_allowlist = {
         x.strip() for x in env("AVITO_ALLOWLIST").split(",") if x.strip()
+    }
+
+    # Авто.ру. Webhook не ставим. Новые чаты по нашим объявлениям берём сами.
+    autoru_enabled = env_bool("AUTORU_ENABLED", False)
+    autoru_vertis_key = env("AUTORU_VERTIS_KEY")
+    autoru_session_id = env("AUTORU_SESSION_ID")
+    autoru_poll_sec = env_float("AUTORU_POLL_SEC", 8.0)
+    autoru_session_expire = env("AUTORU_SESSION_EXPIRE")
+    autoru_allowlist = {
+        x.strip() for x in env("AUTORU_ALLOWLIST").split(",") if x.strip()
     }
 
     amo_domain = env("AMOCRM_BASE_DOMAIN", "divomotors.amocrm.ru")

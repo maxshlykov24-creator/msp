@@ -44,7 +44,7 @@ REASON_LINE = {
 
 THREAD_LIMIT = 6
 LINE_LIMIT = 160
-BRIEF_LIMIT = 220
+BRIEF_LIMIT = 360
 SKIP_BRIEF_START = (
     "добрый день",
     "добрый вечер",
@@ -52,6 +52,32 @@ SKIP_BRIEF_START = (
     "здравствуйте",
     "привет",
     "слушаю вас",
+    "очень приятно",
+    "как могу к вам",
+)
+SKIP_BRIEF_HAS = (
+    "микрон",
+    "толщиномер",
+    "толщин",
+    "как бьёт",
+    "как бьется",
+    "видеообзор",
+    "живой менеджер",
+    "для точных",
+    "контактный телефон",
+    "напишите телефон",
+    "по какому телефону",
+)
+CLIENT_TOPICS = (
+    (("в кредит", "кредит", "рассрочк"), "хочет в кредит"),
+    (("лизинг",), "хочет в лизинг"),
+    (("обмен", "trade", "свою машин", "мой авто"), "интересует обмен"),
+    (("дтп", "битая", "битый", "битые", "окрас", "крашен"), "про ДТП и кузов"),
+    (("посмотреть", "приехать", "осмотр", "когда можно", "во сколько"), "хочет на осмотр"),
+    (("торг", "скидк", "цену", "стоимость", "почём", "почем"), "вопрос цены"),
+    (("такси", "каршеринг"), "спрашивал про такси"),
+    (("автотек", "отчет", "отчёт"), "просил автотеку"),
+    (("ндс", "юрлиц", "на компанию", "по счёту", "по счету"), "покупка на юрлицо"),
 )
 
 
@@ -108,54 +134,123 @@ def next_ping(started: datetime, done: list[int], now: datetime | None = None) -
     return None
 
 
-def _first_sentence(text: str, limit: int = 140) -> str:
+def _first_sentence(text: str, limit: int = 110) -> str:
     clean = " ".join(str(text or "").split())
     if not clean:
         return ""
     for sep in ".!?":
         pos = clean.find(sep)
-        if 12 <= pos <= limit:
-            clean = clean[:pos].strip()
+        if 8 <= pos <= limit:
+            take = pos + 1 if sep == "?" else pos
+            clean = clean[:take].strip()
             break
     if len(clean) > limit:
         clean = clean[: limit - 1].rstrip(" ,;") + "…"
     return clean
 
 
-def _useful_assistant(text: str) -> bool:
+def _skip_bit(text: str) -> bool:
+    low = " ".join(str(text or "").split()).lower().rstrip(".!?")
+    if len(low) < 4:
+        return True
+    if any(low.startswith(p) for p in SKIP_BRIEF_START):
+        return True
+    return any(p in low for p in SKIP_BRIEF_HAS)
+
+
+def _chunks(text: str) -> list[str]:
     raw = " ".join(str(text or "").split())
-    if len(raw) < 24:
-        return False
-    low = raw.lower()
-    return not any(low.startswith(p) for p in SKIP_BRIEF_START)
+    if not raw:
+        return []
+    parts: list[str] = []
+    buf = ""
+    for ch in raw:
+        buf += ch
+        if ch in ".!?":
+            bit = buf.strip()
+            if bit:
+                parts.append(bit)
+            buf = ""
+    tail = buf.strip()
+    if tail:
+        parts.append(tail)
+    return parts or [raw]
+
+
+def _useful_bit(text: str) -> str:
+    for part in _chunks(text):
+        if _skip_bit(part):
+            continue
+        bit = _first_sentence(part)
+        if bit:
+            return bit.rstrip(".!?")
+    return ""
+
+
+def _client_blob(history: list[dict] | None) -> str:
+    parts = []
+    for msg in history or []:
+        if msg.get("role") != "user":
+            continue
+        text = " ".join(str(msg.get("content") or "").split())
+        if text:
+            parts.append(text.lower().replace("ё", "е"))
+    return " ".join(parts)
+
+
+def _topic_line(history: list[dict] | None) -> str:
+    blob = _client_blob(history)
+    if not blob:
+        return ""
+    found: list[str] = []
+    for keys, label in CLIENT_TOPICS:
+        if any(key in blob for key in keys):
+            found.append(label)
+    if not found:
+        return ""
+    if len(found) == 1:
+        return found[0]
+    return "%s, %s" % (found[0], found[1])
+
+
+def _cap(text: str) -> str:
+    clean = (text or "").strip()
+    if not clean:
+        return ""
+    return clean[0].upper() + clean[1:]
 
 
 def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
-    """Смысл для менеджера: что уже закрыли в чате, без цитат клиента."""
-    said: list[str] = []
+    """Выжимка для менеджера: интерес клиента и что уже закрыли. Не переписка."""
+    facts: list[str] = []
     for msg in history or []:
         if msg.get("role") != "assistant":
             continue
-        text = " ".join(str(msg.get("content") or "").split())
-        if not _useful_assistant(text):
-            continue
-        bit = _first_sentence(text)
-        if bit and bit not in said:
-            said.append(bit)
-    body = ". ".join(said[-2:])
+        bit = _useful_bit(str(msg.get("content") or ""))
+        if bit and bit not in facts:
+            facts.append(bit)
+    parts: list[str] = []
+    topic = _topic_line(history)
+    if topic:
+        parts.append(_cap(topic))
+    if facts:
+        parts.append(". ".join(facts[-3:]))
+    body = ". ".join(p.rstrip(".") for p in parts if p)
+    if body and not body.endswith((".", "!", "?")):
+        body += "."
     if len(body) > BRIEF_LIMIT:
         body = body[: BRIEF_LIMIT - 1].rstrip(" ,;") + "…"
     return body
 
 
 def brief_from_thread(thread: list | None, reason: str = "") -> str:
-    last_asst = ""
+    fake: list[dict] = []
     for item in thread or []:
         if not isinstance(item, (list, tuple)) or len(item) < 2:
             continue
-        if str(item[0]) in {"Никита", "assistant"}:
-            last_asst = str(item[1] or "")
-    fake = [{"role": "assistant", "content": last_asst}] if last_asst else []
+        who = str(item[0])
+        role = "assistant" if who in {"Никита", "assistant"} else "user"
+        fake.append({"role": role, "content": str(item[1] or "")})
     return brief_from_history(fake, reason)
 
 
@@ -195,7 +290,7 @@ def format_alert(snap: dict, ping: int = 0) -> str:
     if not brief:
         brief = brief_from_thread(snap.get("thread"), snap.get("reason") or "")
     if brief:
-        lines.append("▪️ <b>Контекст:</b> %s" % _esc(brief))
+        lines.append("▪️ <b>Контекст:</b> %s" % _esc(" ".join(brief.split())))
     return "\n".join(lines)
 
 
@@ -419,6 +514,17 @@ class AlertBot:
             if "message is not modified" in str(exc).lower():
                 return True
             log.warning("edit %s/%s: %s", chat_id, message_id, exc)
+            return False
+
+    async def delete(self, chat_id: int, message_id: int) -> bool:
+        try:
+            await self._call(
+                "deleteMessage",
+                {"chat_id": chat_id, "message_id": int(message_id)},
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            log.warning("delete %s/%s: %s", chat_id, message_id, exc)
             return False
 
     async def send(self, text: str, markup: dict | None = None) -> tuple[int, int] | None:

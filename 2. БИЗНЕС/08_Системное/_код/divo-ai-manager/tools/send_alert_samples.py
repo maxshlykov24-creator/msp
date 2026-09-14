@@ -11,38 +11,29 @@ LEAD = "https://divomotors.amocrm.ru/leads/detail/00000000"
 PAUSE = 1.2
 
 
-def samples() -> list:
-    call = {
+def call_snap() -> dict:
+    return {
         "wait": "call",
         "name": "Иван",
         "phone": "79001112233",
         "car": "BMW X6 2024, 48 186 км",
         "channel": "Авито",
         "reason": "phone",
-        "brief": "В наличии на Крылатской, показ после 16. ДТП не было, кузов не чинили.",
+        "brief": "Про ДТП и кузов, хочет на осмотр. ДТП не было, кузов не чинили. Показ сегодня после 16, Автозаводская 18.",
         "lead_url": LEAD,
     }
-    chat = {
+
+
+def chat_snap() -> dict:
+    return {
         "wait": "chat",
         "name": "Бирбек",
         "car": "Geely Coolray 2023",
         "channel": "Telegram",
         "reason": "handoff",
-        "brief": "По микронам снимем видео толщиномером и пришлём в WhatsApp. Живой менеджер нужен для точных цифр.",
+        "brief": "Хочет в кредит. Эти автомобили продаём за наличный расчёт, детали по звонку.",
         "lead_url": LEAD,
     }
-    echo = format_alert(chat, 0)
-    rest = "\n".join(echo.splitlines()[1:])
-    return [
-        (
-            "🧪 <b>Короткий контекст</b> | DIVO\n"
-            "Тест. Цитат клиента в алерте больше нет.",
-            None,
-        ),
-        (format_alert(call, 0), take_keyboard("demo", WAIT_CALL)),
-        (format_alert(chat, 0), take_keyboard("demo", WAIT_CHAT)),
-        ("💬 <b>Клиент пишет, ответа нет</b> | DIVO" + rest, take_keyboard("demo", WAIT_CHAT)),
-    ]
 
 
 async def main() -> int:
@@ -52,18 +43,26 @@ async def main() -> int:
         print("нет ALERT_CHAT_ID или токена", file=sys.stderr)
         await bot.close()
         return 1
-    skip = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    rows = samples()[skip:]
-    print("цель:", sorted(bot._targets()), "шаблонов:", len(rows), "с", skip + 1)
-    for i, (text, markup) in enumerate(rows, skip + 1):
-        ok = await bot.send(text, markup)
-        print(i, "ok" if ok else "FAIL")
-        if not ok:
-            await bot.close()
-            return 1
-        await asyncio.sleep(PAUSE)
+    call = call_snap()
+    chat = chat_snap()
+    first = await bot.send(format_alert(call, 0), take_keyboard("demo", WAIT_CALL))
+    print("1 first", "ok" if first else "FAIL")
+    if not first:
+        await bot.close()
+        return 1
+    await asyncio.sleep(PAUSE)
+    ping = await bot.send(format_alert(call, 5), take_keyboard("demo", WAIT_CALL))
+    print("2 ping5", "ok" if ping else "FAIL")
+    if not ping:
+        await bot.close()
+        return 1
+    if first[1] != ping[1]:
+        await bot.delete(first[0], first[1])
+    await asyncio.sleep(PAUSE)
+    third = await bot.send(format_alert(chat, 0), take_keyboard("demo", WAIT_CHAT))
+    print("3 chat", "ok" if third else "FAIL")
     await bot.close()
-    return 0
+    return 0 if third else 1
 
 
 if __name__ == "__main__":

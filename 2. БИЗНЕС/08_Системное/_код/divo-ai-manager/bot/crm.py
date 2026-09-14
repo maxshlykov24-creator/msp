@@ -47,12 +47,12 @@ def digits_price(raw: str) -> int:
 
 def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
     doc = store.load_doc(chat_id)
-    avito = doc.get("avito") or {}
+    listing = doc.get("avito") or doc.get("autoru") or {}
     name = nudge.extract_name(history) or ""
     phone = nudge.extract_phone_from_history(history)
     card = None
-    if avito.get("title"):
-        card = avito_match.match_card(avito.get("title") or "", avito.get("price") or "")
+    if listing.get("title"):
+        card = avito_match.match_card(listing.get("title") or "", listing.get("price") or "")
     car = ""
     vin = brand = model = year = km = ""
     price = 0
@@ -65,15 +65,21 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         km = re.sub(r"\D", "", card.get("Пробег") or "")
         price = digits_price(card.get("Цена в объявлении") or "")
     if not car:
-        car = avito.get("title") or nudge.extract_car(history) or ""
+        car = listing.get("title") or nudge.extract_car(history) or ""
     if not price:
-        price = digits_price(avito.get("price") or "")
+        price = digits_price(listing.get("price") or "")
     ask = ""
     for msg in reversed(history):
         if msg.get("role") == "user":
             ask = (msg.get("content") or "").strip()
             break
-    channel = "Авито" if str(chat_id).startswith("av:") else "Telegram"
+    key = str(chat_id)
+    if key.startswith("av:"):
+        channel = "Авито"
+    elif key.startswith("ar:"):
+        channel = "Авто.ру"
+    else:
+        channel = "Telegram"
     wait = WAIT_CALL if phone or reason in {"phone", "call"} else WAIT_CHAT
     return {
         "chat_id": str(chat_id),
@@ -88,7 +94,7 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         "year": year,
         "km": km,
         "price": price,
-        "url": avito.get("url") or "",
+        "url": listing.get("url") or "",
         "channel": channel,
         "ask": ask,
         "dialog": _dialog(history),
@@ -156,6 +162,8 @@ def _fields(snap: dict) -> dict[int, str]:
 def _source_enum(snap: dict) -> int | None:
     if snap.get("channel") == "Авито":
         return amo_client.SOURCE_AVITO_CHAT
+    if snap.get("channel") == "Авто.ру":
+        return amo_client.SOURCE_AUTORU_CHAT
     return None
 
 
@@ -274,17 +282,28 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
     doc["crm"] = crm
 
 
-async def _publish(alert: dict, text: str) -> None:
+async def _publish(alert: dict, text: str, *, replace: bool = False) -> None:
+    """replace=True: новое сообщение (чтобы пинг ушёл в уведомления), старое снимаем."""
     if not bot:
         return
     wait = (alert.get("snap") or {}).get("wait") or alert.get("wait") or WAIT_CHAT
     token = alert.get("token") or ""
     markup = take_keyboard(token, wait) if token else None
     tg = dict(alert.get("tg") or {})
-    chat_id = tg.get("chat_id")
-    message_id = tg.get("message_id")
-    if chat_id and message_id:
-        if await bot.edit(int(chat_id), int(message_id), text, markup):
+    old_chat = tg.get("chat_id")
+    old_mid = tg.get("message_id")
+    if replace:
+        sent = await bot.send(text, markup)
+        if sent:
+            alert["tg"] = {"chat_id": sent[0], "message_id": sent[1]}
+            if old_chat and old_mid and int(old_mid) != int(sent[1]):
+                await bot.delete(int(old_chat), int(old_mid))
+            return
+        if old_chat and old_mid:
+            await bot.edit(int(old_chat), int(old_mid), text, markup)
+        return
+    if old_chat and old_mid:
+        if await bot.edit(int(old_chat), int(old_mid), text, markup):
             return
     sent = await bot.send(text, markup)
     if sent:
@@ -292,7 +311,11 @@ async def _publish(alert: dict, text: str) -> None:
 
 
 async def _ping(alert: dict, minutes: int) -> None:
-    await _publish(alert, format_alert(alert.get("snap") or {}, minutes))
+    await _publish(
+        alert,
+        format_alert(alert.get("snap") or {}, minutes),
+        replace=minutes > 0,
+    )
 
 
 async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
@@ -353,7 +376,7 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
         head = "💬 <b>Клиент пишет, ответа нет</b> | DIVO"
         body = format_alert(snap, 0)
         rest = "\n".join(body.splitlines()[1:])
-        await _publish(alert, head + rest)
+        await _publish(alert, head + rest, replace=True)
         crm["alert"] = alert
         doc["crm"] = crm
         store.save_doc(chat_id, doc)
@@ -514,37 +537,64 @@ async def on_take(cb: dict) -> None:
         if bot:
             await bot.answer_callback(cqid, "Этот алерт уже не активен")
         return
-    await claim(cid, who, when, message)
+    await claim(cid, who, when, message, user=user)
     if bot:
         await bot.answer_callback(cqid, "Взял, больше не напоминаю")
 
 
-async def claim(chat_id: str | int, who: str, when: str, fallback: dict | None = None) -> None:
+async def claim(
+    chat_id: str | int,
+    who: str,
+    when: str,
+    fallback: dict | None = None,
+    user: dict | None = None,
+) -> None:
     doc = store.load_doc(chat_id)
     crmd = dict(doc.get("crm") or {})
     alert = dict(crmd.get("alert") or {})
     snap = dict(alert.get("snap") or {})
     lead_id = snap.get("lead_id") or crmd.get("lead_id")
+    person = user or {}
+    amo_user = amo_client.resolve_responsible(
+        tg_id=int(person.get("id") or 0),
+        first=str(person.get("first_name") or ""),
+        last=str(person.get("last_name") or ""),
+        username=str(person.get("username") or ""),
+    )
+    amo_name = amo_client.user_name(amo_user) if amo_user else ""
     alert["active"] = False
     alert["nags"] = False
     alert["picked"] = "button"
     alert["picked_by"] = who
     alert["picked_at"] = now_msk().isoformat(timespec="seconds")
+    if amo_user:
+        alert["picked_amo"] = int(amo_user)
     crmd["alert"] = alert
+    if amo_user is None:
+        log.warning("кнопка: не нашёл amo-пользователя для %s tg=%s", who, person.get("id"))
     if lead_id:
         try:
-            lead = amo_client.set_lead_status(int(lead_id), amo_client.STATUS_IN_WORK)
+            lead = amo_client.set_lead_status(
+                int(lead_id),
+                amo_client.STATUS_IN_WORK,
+                responsible_user_id=amo_user,
+            )
             crmd["status_id"] = lead.get("status_id") or amo_client.STATUS_IN_WORK
+            if amo_user:
+                crmd["responsible_user_id"] = int(amo_user)
+            owner = amo_name or who
             amo_client.add_note(
                 int(lead_id),
-                "Менеджер нажал кнопку в Telegram (%s). Сделку перевёл в Контакт установлен." % who,
+                "Менеджер нажал кнопку в Telegram (%s). "
+                "Ответственный: %s. Сделку перевёл в Контакт установлен."
+                % (who, owner),
             )
         except Exception:
             log.exception("этап сделки %s не сменился", lead_id)
     doc["crm"] = crmd
     store.save_doc(chat_id, doc)
     await _finish_message(alert, snap, who, when, fallback or {})
-    log.info("чат %s: взял %s", chat_id, who)
+    log.info("чат %s: взял %s amo=%s", chat_id, who, amo_user)
 
 
 async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
@@ -605,6 +655,11 @@ async def tick() -> None:
             if await close_if_contacted(chat_id, doc):
                 continue
             alert = ((doc.get("crm") or {}).get("alert") or {})
+            snap = dict(alert.get("snap") or {})
+            history = list(doc.get("messages") or [])
+            if history:
+                snap["brief"] = brief_from_history(history, alert.get("reason") or "")
+                alert["snap"] = snap
         await _ping(alert, due)
         alert["pings"] = list(alert.get("pings") or []) + [due]
         doc["crm"]["alert"] = alert

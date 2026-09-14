@@ -33,6 +33,42 @@ ENV_CANDIDATES = _divo_env_paths()
 
 NIKITA_USER_ID = 13334858
 PIPELINE_SALES = 10372290
+
+# Telegram → amo. Имена сверки с /api/v4/users 2026-09-14.
+AMO_USER_BY_TG = {
+    435207481: 9490530,  # Максим Шлыков
+    212666249: 13334858,  # Никита Яменский
+    821842895: 12826002,  # Николас
+    282491919: 13180098,  # Евгений
+}
+AMO_USER_BY_NICK = {
+    "maxim_shlykov": 9490530,
+    "msp_msproduct": 9490530,
+    "nikita_yamenskii": 13334858,
+    "nikolas413": 12826002,
+    "vladimir0vich1": 13180098,
+}
+NAME_ALIAS = {
+    "женя": "евгений",
+    "evgeniy": "евгений",
+    "evgeny": "евгений",
+    "eugene": "евгений",
+    "elzar": "эльзар",
+    "nazar": "назар",
+    "nikita": "никита",
+    "nicolas": "николас",
+    "nicholas": "николас",
+    "maxim": "максим",
+}
+KNOWN_USERS = [
+    {"id": 9490530, "name": "Максим"},
+    {"id": 12826002, "name": "Николас"},
+    {"id": 13180098, "name": "Евгений"},
+    {"id": 13334858, "name": "Никита"},
+    {"id": 13835174, "name": "Эльзар Асадзаде"},
+    {"id": 14181846, "name": "Назар"},
+]
+_users_cache: tuple[float, list[dict]] | None = None
 STATUS_NEW = 82003646
 # В воронке DIVO нет этапа «Взято в работу». Следующий после новой заявки — этот.
 STATUS_IN_WORK = 82003650  # Контакт установлен
@@ -264,18 +300,111 @@ def create_lead(
     return get_lead(lead_id)
 
 
-def set_lead_status(lead_id: int, status_id: int) -> dict:
-    write(
-        "/api/v4/leads",
-        [
-            {
-                "id": int(lead_id),
-                "pipeline_id": PIPELINE_SALES,
-                "status_id": int(status_id),
-            }
-        ],
-        method="PATCH",
+def _norm_name(value: str) -> str:
+    text = (value or "").strip().lower().replace("ё", "е")
+    return NAME_ALIAS.get(text, text.split()[0] if text else "")
+
+
+def _tg_map_from_env() -> dict[int, int]:
+    out = dict(AMO_USER_BY_TG)
+    raw = os.environ.get("AMO_TG_MAP") or ""
+    for chunk in raw.split(","):
+        chunk = chunk.strip()
+        if ":" not in chunk:
+            continue
+        left, right = chunk.split(":", 1)
+        try:
+            out[int(left.strip())] = int(right.strip())
+        except ValueError:
+            continue
+    return out
+
+
+def list_users() -> list[dict]:
+    global _users_cache
+    now = time.time()
+    if _users_cache and now - _users_cache[0] < 300:
+        return _users_cache[1]
+    try:
+        rows = items(get("/api/v4/users", {"limit": "250"}), "users")
+    except Exception:
+        rows = []
+    users = rows or list(KNOWN_USERS)
+    _users_cache = (now, users)
+    return users
+
+
+def match_amo_user(
+    users: list[dict],
+    *,
+    tg_id: int = 0,
+    first: str = "",
+    last: str = "",
+    username: str = "",
+    tg_map: dict[int, int] | None = None,
+) -> int | None:
+    """Кто нажал кнопку в Telegram → id ответственного в amo."""
+    mapped = (tg_map or AMO_USER_BY_TG).get(int(tg_id or 0))
+    if mapped:
+        return int(mapped)
+    nick = (username or "").lstrip("@").lower()
+    if nick and nick in AMO_USER_BY_NICK:
+        return int(AMO_USER_BY_NICK[nick])
+    needle = _norm_name(first) or _norm_name(last)
+    if not needle:
+        return None
+    hits: list[int] = []
+    for user in users or []:
+        uid = user.get("id")
+        name = _norm_name(str(user.get("name") or ""))
+        if not uid or not name:
+            continue
+        if name == needle or needle in str(user.get("name") or "").lower().replace("ё", "е"):
+            hits.append(int(uid))
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
+def resolve_responsible(
+    *,
+    tg_id: int = 0,
+    first: str = "",
+    last: str = "",
+    username: str = "",
+) -> int | None:
+    return match_amo_user(
+        list_users(),
+        tg_id=tg_id,
+        first=first,
+        last=last,
+        username=username,
+        tg_map=_tg_map_from_env(),
     )
+
+
+def user_name(user_id: int | None) -> str:
+    if not user_id:
+        return ""
+    for user in list_users():
+        if int(user.get("id") or 0) == int(user_id):
+            return str(user.get("name") or "")
+    return ""
+
+
+def set_lead_status(
+    lead_id: int,
+    status_id: int,
+    responsible_user_id: int | None = None,
+) -> dict:
+    body: dict = {
+        "id": int(lead_id),
+        "pipeline_id": PIPELINE_SALES,
+        "status_id": int(status_id),
+    }
+    if responsible_user_id:
+        body["responsible_user_id"] = int(responsible_user_id)
+    write("/api/v4/leads", [body], method="PATCH")
     return get_lead(int(lead_id))
 
 

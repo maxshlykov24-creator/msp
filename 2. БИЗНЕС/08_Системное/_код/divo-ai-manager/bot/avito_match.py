@@ -89,10 +89,16 @@ def match_card(title: str, price_string: str = "", stock: str = "") -> dict | No
     return best
 
 
-def focus_block(title: str, price_string: str = "", url: str = "", cme_id: str = "") -> str:
+def focus_block(
+    title: str,
+    price_string: str = "",
+    url: str = "",
+    cme_id: str = "",
+    channel: str = "Авито",
+) -> str:
     card = match_card(title, price_string)
     lines = [
-        "# Клиент пишет по объявлению Авито",
+        "# Клиент пишет по объявлению %s" % (channel or "Авито"),
         "Объявление: %s" % (title or "не названо"),
     ]
     if price_string:

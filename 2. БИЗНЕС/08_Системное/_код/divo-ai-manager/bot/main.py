@@ -14,8 +14,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from bot import amojo_http, avito_loop, crm, human, llm, nudge, prompt, store
+from bot import amojo_http, autoru_loop, avito_loop, crm, human, llm, nudge, prompt, store
 from bot.alerts import AlertBot
+from bot.autoru import Autoru
 from bot.avito import Avito
 from bot.config import settings
 from bot.tg import Telegram
@@ -156,7 +157,8 @@ async def handle_command(tg: Telegram, chat_id: int, text: str) -> bool:
             "/start новый диалог\n/reset очистить память\n/human пауза, зову человека\n"
             "/bot вернуть агента\n/stock обновить и показать сток\n"
             "/reveal on|off признаваться, что бот\n/whoami диагностика\n"
-            "/avito status|next|on ID|off ID",
+            "/avito status|next|on ID|off ID  (новые чаты берёт сам)\n"
+            "/autoru status|next|on ID|off ID  (то же для Авто.ру)",
         )
         return True
 
@@ -182,6 +184,7 @@ async def handle_command(tg: Telegram, chat_id: int, text: str) -> bool:
             if rest not in allow:
                 allow.append(rest)
             state["allow"] = allow
+            state["legacy"] = [x for x in (state.get("legacy") or []) if x != rest]
             avito_loop.save_state(state)
             await tg.send(chat_id, "Авито: бот отвечает в чате %s" % rest)
             return True
@@ -192,6 +195,41 @@ async def handle_command(tg: Telegram, chat_id: int, text: str) -> bool:
             await tg.send(chat_id, "Авито: бот замолчал в чате %s" % rest)
             return True
         await tg.send(chat_id, "Использование: /avito status | next | on ID | off ID")
+        return True
+
+    if cmd == "/autoru":
+        if str(chat_id) != str(settings.admin_chat_id):
+            return True
+        verb, _, rest = arg.partition(" ")
+        rest = rest.strip()
+        state = autoru_loop.load_state()
+        if verb in {"", "status", "статус"}:
+            await tg.send(chat_id, autoru_loop.status_text())
+            return True
+        if verb in {"next", "дальше"}:
+            state["arm_next"] = True
+            autoru_loop.save_state(state)
+            await tg.send(
+                chat_id,
+                "Следующий новый чат на Авто.ру возьмёт бот. Напиши клиентом на объявление.",
+            )
+            return True
+        if verb in {"on", "вкл"} and rest:
+            allow = list(state.get("allow") or [])
+            if rest not in allow:
+                allow.append(rest)
+            state["allow"] = allow
+            state["legacy"] = [x for x in (state.get("legacy") or []) if x != rest]
+            autoru_loop.save_state(state)
+            await tg.send(chat_id, "Авто.ру: бот отвечает в чате %s" % rest)
+            return True
+        if verb in {"off", "выкл"} and rest:
+            state["allow"] = [x for x in (state.get("allow") or []) if x != rest]
+            autoru_loop.save_state(state)
+            store.pause(autoru_loop.store_id(rest), "авто.ру выкл")
+            await tg.send(chat_id, "Авто.ру: бот замолчал в чате %s" % rest)
+            return True
+        await tg.send(chat_id, "Использование: /autoru status | next | on ID | off ID")
         return True
 
     return False
@@ -373,10 +411,10 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     user_text = history[-1]["content"] if history else ""
     # Всё, что дописано после границы, меняется каждый ход и в кэш не идёт.
     system = prompt.build() + prompt.CACHE_SPLIT
-    if str(chat_id).startswith("av:"):
-        focus = (store.load_doc(chat_id).get("avito") or {}).get("focus") or ""
-        if focus:
-            system += "\n\n" + focus
+    doc = store.load_doc(chat_id) if chat_id else {}
+    focus = ((doc.get("avito") or doc.get("autoru") or {}).get("focus") or "")
+    if focus:
+        system += "\n\n" + focus
     known_name = nudge.extract_name(history)
     if known_name:
         system += (
@@ -676,6 +714,31 @@ async def poll_avito(tg: Telegram) -> None:
         await api.close()
 
 
+async def poll_autoru(tg: Telegram) -> None:
+    if not settings.autoru_enabled:
+        log.info("авто.ру выключен")
+        return
+    if not (settings.autoru_vertis_key and settings.autoru_session_id):
+        log.warning("авто.ру включён, но нет AUTORU_VERTIS_KEY / AUTORU_SESSION_ID")
+        return
+    expire = (settings.autoru_session_expire or "")[:10]
+    if expire:
+        log.info("авто.ру сессия до %s", expire)
+    api = Autoru()
+    channel = autoru_loop.AutoruChannel(api, tg)
+    try:
+        await autoru_loop.prime_cursor(api)
+        log.info("авто.ру опрос каждые %s сек", settings.autoru_poll_sec)
+        while True:
+            try:
+                await autoru_loop.poll_once(api, channel, schedule, pending)
+            except Exception:
+                log.exception("авто.ру опрос упал")
+            await asyncio.sleep(max(settings.autoru_poll_sec, 3.0))
+    finally:
+        await api.close()
+
+
 async def alert_loop() -> None:
     while True:
         try:
@@ -703,6 +766,7 @@ async def run() -> None:
     asyncio.create_task(nudge_loop(tg))
     asyncio.create_task(budget_loop(tg))
     asyncio.create_task(poll_avito(tg))
+    asyncio.create_task(poll_autoru(tg))
     asyncio.create_task(alert_loop())
     asyncio.create_task(amojo_http.serve())
     offset = read_offset()
