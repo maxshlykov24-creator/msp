@@ -14,12 +14,16 @@ from bot.alerts import (
     WAIT_CALL,
     WAIT_CHAT,
     AlertBot,
+    _copay,
+    _extra_notes,
+    _own_car,
     brief_from_history,
     compact_thread,
     format_alert,
     format_done,
     next_ping,
     now_msk,
+    pretty_phone,
     take_keyboard,
 )
 from bot.config import settings
@@ -60,7 +64,7 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
     price = 0
     if card:
         car = card.get("title") or ""
-        vin = (card.get("VIN") or "").split()[0]
+        vin = (card.get("VIN") or "").split()[0] if (card.get("VIN") or "").strip() else ""
         brand = card.get("Марка") or ""
         model = card.get("Модель") or ""
         year = re.sub(r"\D", "", card.get("Год") or card.get("title") or "")[:4]
@@ -85,75 +89,144 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
     else:
         channel = "Telegram"
     wait = WAIT_CALL if phone or reason in {"phone", "call"} else WAIT_CHAT
-    return {
-        "chat_id": str(chat_id),
+    client_vins = nudge.extract_vins(history)
+    core = {
         "reason": reason,
         "wait": wait,
         "name": name,
         "phone": phone,
         "car": car,
         "vin": vin,
-        "client_vins": nudge.extract_vins(history),
+        "client_vins": client_vins,
+        "url": listing.get("url") or "",
+        "channel": channel,
+    }
+    return {
+        "chat_id": str(chat_id),
+        **core,
         "brand": brand,
         "model": model,
         "year": year,
         "km": km,
         "price": price,
-        "url": listing.get("url") or "",
-        "channel": channel,
         "peer": listing.get("peer") or "",
         "ask": ask,
-        "dialog": _dialog(history),
         "brief": brief_from_history(history, reason),
+        "handover": handover_from_history(history, core),
         "thread": compact_thread(history),
     }
 
 
-def _dialog(history: list[dict]) -> str:
-    lines = []
-    for msg in history[-40:]:
-        who = "Клиент" if msg.get("role") == "user" else "Никита"
-        text = re.sub(r"\s+", " ", (msg.get("content") or "").strip())
-        if not text:
+REASON_NOTE = {
+    "phone": "клиент оставил номер",
+    "call": "клиент просит позвонить",
+    "stuck": "агент в тупике, нужен человек",
+    "complaint": "жалоба или конфликт",
+    "handoff": "эскалация к менеджеру",
+    "llm": "бот не смог ответить",
+}
+
+
+def _user_blob(history: list[dict] | None) -> str:
+    parts = []
+    for msg in history or []:
+        if msg.get("role") != "user":
             continue
-        lines.append("%s: %s" % (who, text))
-    return "\n".join(lines)
+        text = " ".join(str(msg.get("content") or "").split())
+        if text:
+            parts.append(text.replace("ё", "е"))
+    return " ".join(parts)
+
+
+def handover_from_history(history: list[dict] | None, snap: dict | None = None) -> str:
+    """Примечание в amo: передача фактов, не стенограмма. Чат в сделке уже есть."""
+    snap = dict(snap or {})
+    hist = list(history or [])
+    vins = [
+        str(v).strip().upper()
+        for v in (snap.get("client_vins") or nudge.extract_vins(hist))
+        if str(v).strip()
+    ]
+    blob = _user_blob(hist)
+    low = blob.lower()
+    why = REASON_NOTE.get(snap.get("reason") or "", snap.get("reason") or "нужен человек")
+    wait = snap.get("wait") or ""
+    task = "позвонить" if wait == WAIT_CALL or snap.get("phone") else "ответить в чате"
+    lines = ["Передача менеджеру. %s. Нужно %s." % (_cap_first(why), task), ""]
+
+    who = (snap.get("name") or "").strip()
+    phone = pretty_phone(snap.get("phone") or "")
+    contact = ", ".join(x for x in [who, phone] if x)
+    if contact:
+        lines.append("Клиент: %s" % contact)
+    if snap.get("channel"):
+        lines.append("Канал: %s" % snap["channel"])
+
+    our = (snap.get("car") or "").strip()
+    raw_vin = str(snap.get("vin") or "").strip()
+    our_vin = raw_vin.split()[0] if raw_vin else ""
+    if our or our_vin:
+        lines.append("")
+        bit = "Интерес: %s" % (our or "машина не названа")
+        if our_vin:
+            bit += ", VIN %s" % our_vin
+        lines.append(bit)
+    if snap.get("url"):
+        lines.append("Объявление: %s" % snap["url"])
+
+    job: list[str] = []
+    if any(k in low for k in ("обмен", "trade", "свою машин", "мой авто")):
+        if vins:
+            job.append("обмен, %d авто клиента" % len(vins))
+        else:
+            job.append("обмен")
+        if "доплат" in low:
+            pay = _copay(blob)
+            job.append(pay or "с доплатой")
+    if "дистанц" in low:
+        job.append("оценка дистанционно")
+    elif any(k in low for k in ("приехать", "осмотр", "когда можно", "во сколько")):
+        job.append("хочет на осмотр")
+    if "кредит" in low or "рассрочк" in low:
+        job.append("кредит")
+    if "лизинг" in low:
+        job.append("лизинг")
+    if job:
+        lines.append("")
+        lines.append("Задача: %s." % ", ".join(job))
+    if vins:
+        lines.append("VIN клиента:")
+        for vin in vins:
+            lines.append("- %s" % vin)
+
+    details: list[str] = []
+    if "комисси" in low or "выкуплен" in low:
+        details.append("Спрашивал, на комиссии или выкуплен.")
+    own = _own_car(blob)
+    if own:
+        details.append(_cap_first(own) + ".")
+    for extra in _extra_notes(blob):
+        details.append(_cap_first(extra) + ".")
+    if details:
+        lines.append("")
+        lines.append("Из диалога:")
+        for item in details:
+            lines.append("- %s" % item)
+    return "\n".join(lines).strip() + "\n"
+
+
+def _cap_first(text: str) -> str:
+    clean = (text or "").strip()
+    if not clean:
+        return ""
+    return clean[0].upper() + clean[1:]
 
 
 def note_text(snap: dict) -> str:
-    parts = [
-        "AI-менеджер DIVO. Повод: %s."
-        % {
-            "phone": "клиент оставил номер",
-            "call": "клиент просит позвонить",
-            "stuck": "агент в тупике, нужен человек",
-            "complaint": "жалоба или конфликт",
-            "handoff": "эскалация к менеджеру",
-            "llm": "бот не смог ответить",
-        }.get(snap.get("reason") or "", snap.get("reason") or "ожидает менеджера"),
-        "Канал: %s." % (snap.get("channel") or ""),
-    ]
-    if snap.get("name"):
-        parts.append("Имя: %s." % snap["name"])
-    if snap.get("phone"):
-        parts.append("Телефон: %s." % snap["phone"])
-    if snap.get("car"):
-        parts.append("Авто: %s." % snap["car"])
-    if snap.get("vin"):
-        parts.append("VIN нашей машины: %s." % snap["vin"])
-    client_vins = [str(v).strip().upper() for v in (snap.get("client_vins") or []) if str(v).strip()]
-    if client_vins:
-        # Менеджер оценивает по VIN, поэтому в примечании они все и полностью.
-        parts.append(
-            "VIN от клиента (%d): %s." % (len(client_vins), ", ".join(client_vins))
-        )
-    if snap.get("url"):
-        parts.append("Объявление: %s." % snap["url"])
-    if snap.get("ask"):
-        parts.append("Последний запрос:\n%s" % snap["ask"])
-    if snap.get("dialog"):
-        parts.append("Переписка:\n%s" % snap["dialog"])
-    return "\n".join(parts)
+    handover = (snap.get("handover") or "").strip()
+    if handover:
+        return handover
+    return handover_from_history([], snap)
 
 
 def _fields(snap: dict) -> dict[int, str]:

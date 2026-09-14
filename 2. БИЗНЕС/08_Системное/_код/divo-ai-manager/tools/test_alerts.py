@@ -1088,15 +1088,25 @@ def test_many_paints():
 def test_two_vins_and_phone():
     """Живой чат Тимура: два VIN своих машин и номер, а бот просил номер снова."""
     from bot.alerts import brief_from_history, format_alert
-    from bot.crm import note_text
     from bot.nudge import drop_phone_ask, extract_vins, history_has_phone
 
     history = [
-        {"role": "user", "content": "Интересует обмен, две машины"},
+        {"role": "user", "content": "Здравствуйте, автомобиль у вас на комиссии или выкуплен?"},
+        {
+            "role": "assistant",
+            "content": "Машина выкуплена. По этому Cayenne 2019 год, один владелец, окрасов нет",
+        },
+        {
+            "role": "user",
+            "content": "У меня есть два авто, хотел бы обменять с доплатой, рассматриваете?",
+        },
+        {"role": "assistant", "content": "Да, обмен готовы рассмотреть. Хотели бы нас посетить или дистанционно?"},
+        {"role": "user", "content": "Давайте попробуем дистанционно"},
         {"role": "assistant", "content": "Напишите VIN каждого автомобиля и контактный телефон"},
         {"role": "user", "content": "WP1ZZZ92ZGLA72981"},
         {"role": "assistant", "content": "Принял, а второй автомобиль и телефон для связи"},
-        {"role": "user", "content": "TRUZZZFV5G1025930\n89203337999"},
+        {"role": "user", "content": "TRUZZZFV5G1025930"},
+        {"role": "user", "content": "89203337999"},
     ]
     vins = extract_vins(history)
     assert vins == ["WP1ZZZ92ZGLA72981", "TRUZZZFV5G1025930"]
@@ -1128,8 +1138,19 @@ def test_two_vins_and_phone():
     assert "На обмен 2 авто" in card
     assert "WP1ZZZ92ZGLA72981" in card and "TRUZZZFV5G1025930" in card
     assert "юрлиц" not in card.lower()
-    note = note_text(dict(snap, vin="WP1ZZZ92ZGLA72900"))
+    from bot.crm import handover_from_history
+
+    note = handover_from_history(history, dict(snap, vin="WP1ZZZ9YZLDA01281"))
+    assert "Переписка" not in note
+    assert "Клиент:" in note and "Никита:" not in note
     assert "WP1ZZZ92ZGLA72981" in note and "TRUZZZFV5G1025930" in note
+    assert "WP1ZZZ9YZLDA01281" in note
+    assert "дистанц" in note.lower()
+    assert "доплат" in note.lower()
+    assert "2 авто" in note
+    assert "комисси" in note.lower()
+    assert "юрлиц" not in note.lower()
+    assert "окрас" not in note.lower()
 
 
 def test_claim_twice():
