@@ -78,3 +78,28 @@ class Telegram:
             await self.send(settings.admin_chat_id, text)
         except (httpx.HTTPError, RuntimeError) as exc:
             log.warning("админу не ушло: %s", exc)
+
+    async def notify_owner(self, text: str) -> None:
+        """Служебное тебе в личку, не в группу менеджеров."""
+        from bot import crm
+        from bot.alerts import _esc
+
+        raw = (settings.admin_chat_id or "").strip()
+        if not raw:
+            log.warning("нет TELEGRAM_ADMIN_CHAT_ID, служебный алерт некуда: %s", text[:120])
+            return
+        try:
+            chat_id = int(raw)
+        except ValueError:
+            log.warning("TELEGRAM_ADMIN_CHAT_ID не число: %s", raw)
+            return
+        if crm.bot and crm.bot.token:
+            try:
+                await crm.bot.send_to(chat_id, _esc(text))
+                return
+            except Exception as exc:  # noqa: BLE001
+                log.warning("личка через alert-бота не ушла: %s", exc)
+        try:
+            await self.send(chat_id, text)
+        except (httpx.HTTPError, RuntimeError) as exc:
+            log.warning("личка через основного бота не ушла: %s", exc)

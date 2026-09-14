@@ -629,7 +629,7 @@ async def budget_loop(tg: Telegram) -> None:
             if isinstance(left, (int, float)):
                 if left <= BUDGET_WARN_USD and not warned:
                     warned = True
-                    await tg.notify_admin(
+                    await tg.notify_owner(
                         "Кредиты OpenRouter кончаются: осталось %.2f из %s долларов. "
                         "Пополни лимит ключа, иначе агент замолчит во всех чатах."
                         % (left, info.get("limit"))

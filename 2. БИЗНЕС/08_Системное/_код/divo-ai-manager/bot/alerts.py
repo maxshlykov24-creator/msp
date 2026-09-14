@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
@@ -39,6 +40,13 @@ REASON_LINE = {
     "complaint": "жалоба / конфликт",
     "handoff": "нужен живой менеджер",
     "llm": "бот не смог ответить",
+}
+
+THREAD_LIMIT = 6
+LINE_LIMIT = 160
+CUE = {
+    WAIT_CALL: "Звони как Никита. Клиент уже общался в чате, не начинай с нуля.",
+    WAIT_CHAT: "Пиши как Никита. Клиент уже в диалоге, не представляйся.",
 }
 
 
@@ -95,6 +103,23 @@ def next_ping(started: datetime, done: list[int], now: datetime | None = None) -
     return None
 
 
+def compact_thread(history: list[dict] | None) -> list[list[str]]:
+    """Последние реплики, чтобы менеджер вошёл в тот же разговор."""
+    picked: list[list[str]] = []
+    for msg in history or []:
+        role = msg.get("role")
+        if role not in {"user", "assistant"}:
+            continue
+        text = " ".join(str(msg.get("content") or "").split())
+        if not text:
+            continue
+        if len(text) > LINE_LIMIT:
+            text = text[: LINE_LIMIT - 3] + "..."
+        who = "Клиент" if role == "user" else "Никита"
+        picked.append([who, text])
+    return picked[-THREAD_LIMIT:]
+
+
 def format_alert(snap: dict, ping: int = 0) -> str:
     wait = snap.get("wait") or (WAIT_CALL if snap.get("phone") else WAIT_CHAT)
     head = HEAD.get((wait, ping)) or HEAD[(WAIT_CHAT, 0)]
@@ -109,12 +134,33 @@ def format_alert(snap: dict, ping: int = 0) -> str:
     why = REASON_LINE.get(snap.get("reason") or "", "")
     if why:
         lines.append("▪️ <b>Повод:</b> %s" % _esc(why))
-    ask = (snap.get("ask") or "").strip()
-    if ask:
-        short = ask if len(ask) <= 160 else ask[:157] + "..."
-        lines.append("▪️ <b>Запрос:</b> %s" % _esc(short))
     if snap.get("lead_url"):
         lines.append("▪️ <b>Сделка:</b> %s" % _esc(snap["lead_url"]))
+    cue = CUE.get(wait) or CUE[WAIT_CHAT]
+    lines.append("")
+    lines.append("👉 %s" % cue)
+    thread = snap.get("thread")
+    if not thread and snap.get("dialog"):
+        thread = []
+        for raw in str(snap["dialog"]).splitlines()[-THREAD_LIMIT:]:
+            if ": " in raw:
+                who, text = raw.split(": ", 1)
+                thread.append([who, text])
+    if thread:
+        lines.append("")
+        lines.append("<b>Диалог:</b>")
+        for item in thread:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                who, text = item[0], item[1]
+            else:
+                continue
+            lines.append("%s: <i>%s</i>" % (_esc(who), _esc(text)))
+    else:
+        ask = (snap.get("ask") or "").strip()
+        if ask:
+            short = ask if len(ask) <= LINE_LIMIT else ask[: LINE_LIMIT - 3] + "..."
+            lines.append("")
+            lines.append("▪️ <b>Запрос:</b> %s" % _esc(short))
     return "\n".join(lines)
 
 
@@ -225,16 +271,11 @@ class AlertBot:
         if changed:
             self._save()
 
-    async def send(self, text: str) -> bool:
-        await self.listen()
+    async def send_to(self, chat_id: int, text: str) -> bool:
         if not self.token:
             log.warning("алерт без токена: %s", text.replace("\n", " ")[:200])
             return False
-        if not self._targets():
-            log.warning("алерт без чата менеджеров: %s", text.replace("\n", " ")[:200])
-            return False
-        ok = True
-        for chat_id in list(self._targets()):
+        for attempt in range(2):
             try:
                 await self._call(
                     "sendMessage",
@@ -245,7 +286,29 @@ class AlertBot:
                         "disable_web_page_preview": True,
                     },
                 )
+                return True
             except Exception as exc:  # noqa: BLE001
-                ok = False
+                msg = str(exc)
+                wait = 0
+                if "retry after" in msg.lower():
+                    try:
+                        wait = int(msg.rsplit(" ", 1)[-1])
+                    except ValueError:
+                        wait = 5
+                if attempt == 0 and wait:
+                    log.warning("алерт лимит, жду %s сек", wait)
+                    await asyncio.sleep(wait + 1)
+                    continue
                 log.warning("алерт не ушёл в %s: %s", chat_id, exc)
+                return False
+        return False
+
+    async def send(self, text: str) -> bool:
+        if not self._targets():
+            log.warning("алерт без чата менеджеров: %s", text.replace("\n", " ")[:200])
+            return False
+        ok = True
+        for chat_id in list(self._targets()):
+            if not await self.send_to(chat_id, text):
+                ok = False
         return ok

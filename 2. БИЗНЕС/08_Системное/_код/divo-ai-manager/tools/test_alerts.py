@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from bot.alerts import format_alert, next_ping, pretty_phone
+from bot.alerts import compact_thread, format_alert, next_ping, pretty_phone
 from bot.nudge import extract_phone, is_complaint, wants_call, wants_person
 
 MSK = ZoneInfo("Europe/Moscow")
@@ -36,6 +36,11 @@ def test_alert_text():
             "channel": "Авито",
             "reason": "phone",
             "ask": "Машина в наличии?",
+            "thread": [
+                ["Клиент", "BMW X6 ещё продаёте?"],
+                ["Никита", "Да, в наличии, могу показать сегодня."],
+                ["Клиент", "Ок, номер 8 900 111-22-33, перезвоните"],
+            ],
             "lead_url": "https://divomotors.amocrm.ru/leads/detail/1",
         },
         0,
@@ -44,9 +49,20 @@ def test_alert_text():
     assert "BMW X6 2024" in text
     assert "+7 900 111-22-33" in text
     assert "Авито" in text
+    assert "Клиент:" in text
+    assert "Никита:" in text
+    assert "не начинай с нуля" in text
     follow = format_alert({"wait": "call", "car": "X6", "reason": "phone"}, 15)
     assert "15 мин" in follow
     assert "остывает" in follow
+    thread = compact_thread(
+        [
+            {"role": "user", "content": "привет"},
+            {"role": "assistant", "content": "я Никита"},
+            {"role": "user", "content": "номер 8900"},
+        ]
+    )
+    assert thread[-1][0] == "Клиент"
 
 
 def test_pings():

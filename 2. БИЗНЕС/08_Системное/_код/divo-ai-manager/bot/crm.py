@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from bot import avito_match, nudge, store
-from bot.alerts import WAIT_CALL, WAIT_CHAT, AlertBot, format_alert, next_ping, now_msk
+from bot.alerts import WAIT_CALL, WAIT_CHAT, AlertBot, compact_thread, format_alert, next_ping, now_msk
 from bot.config import settings
 
 log = logging.getLogger("crm")
@@ -77,6 +77,7 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         "channel": channel,
         "ask": ask,
         "dialog": _dialog(history),
+        "thread": compact_thread(history),
     }
 
 
@@ -248,6 +249,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
             "reason": snap.get("reason"),
             "wait": snap.get("wait"),
             "ask": (snap.get("ask") or "")[:200],
+            "thread": snap.get("thread") or [],
             "lead_url": snap.get("lead_url"),
         },
     }
@@ -309,6 +311,11 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     store.save_doc(chat_id, doc)
     snap = dict(alert.get("snap") or {})
     snap["ask"] = text
+    snap["thread"] = compact_thread(history)
+    alert["snap"] = snap
+    crm["alert"] = alert
+    doc["crm"] = crm
+    store.save_doc(chat_id, doc)
     if bot:
         head = "💬 <b>Клиент пишет, ответа нет</b> | DIVO"
         body = format_alert(snap, 0)
