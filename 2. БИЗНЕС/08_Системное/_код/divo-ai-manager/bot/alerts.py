@@ -103,8 +103,51 @@ def next_ping(started: datetime, done: list[int], now: datetime | None = None) -
     return None
 
 
+def _first_sentence(text: str, limit: int = 90) -> str:
+    clean = " ".join(str(text or "").split())
+    if not clean:
+        return ""
+    for sep in ".!?":
+        pos = clean.find(sep)
+        if 12 <= pos <= limit:
+            clean = clean[:pos].strip()
+            break
+    if len(clean) > limit:
+        clean = clean[: limit - 1].rstrip(" ,;") + "…"
+    return clean
+
+
+def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
+    """Короткий смысл для менеджера, без цитат клиента."""
+    last_asst = ""
+    for msg in history or []:
+        if msg.get("role") != "assistant":
+            continue
+        text = " ".join(str(msg.get("content") or "").split())
+        if text:
+            last_asst = text
+    said = _first_sentence(last_asst)
+    need = REASON_LINE.get(reason or "", "")
+    parts = []
+    if said:
+        parts.append("уже сказали: %s" % said)
+    if need:
+        parts.append("сейчас: %s" % need)
+    return "; ".join(parts)
+
+
+def brief_from_thread(thread: list | None, reason: str = "") -> str:
+    last_asst = ""
+    for item in thread or []:
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        if str(item[0]) in {"Никита", "assistant"}:
+            last_asst = str(item[1] or "")
+    fake = [{"role": "assistant", "content": last_asst}] if last_asst else []
+    return brief_from_history(fake, reason)
+
+
 def compact_thread(history: list[dict] | None) -> list[list[str]]:
-    """Последние реплики, чтобы менеджер вошёл в тот же разговор."""
     picked: list[list[str]] = []
     for msg in history or []:
         role = msg.get("role")
@@ -136,40 +179,41 @@ def format_alert(snap: dict, ping: int = 0) -> str:
         lines.append("▪️ <b>Повод:</b> %s" % _esc(why))
     if snap.get("lead_url"):
         lines.append("▪️ <b>Сделка:</b> %s" % _esc(snap["lead_url"]))
+    brief = (snap.get("brief") or "").strip()
+    if not brief:
+        brief = brief_from_thread(snap.get("thread"), snap.get("reason") or "")
+    if brief:
+        lines.append("▪️ <b>Контекст:</b> %s" % _esc(brief))
     cue = CUE.get(wait) or CUE[WAIT_CHAT]
     lines.append("")
     lines.append("👉 %s" % cue)
-    thread = snap.get("thread")
-    if not thread and snap.get("dialog"):
-        thread = []
-        for raw in str(snap["dialog"]).splitlines()[-THREAD_LIMIT:]:
-            if ": " in raw:
-                who, text = raw.split(": ", 1)
-                thread.append([who, text])
-    if thread:
-        lines.append("")
-        lines.append("<b>Диалог:</b>")
-        for item in thread:
-            if isinstance(item, (list, tuple)) and len(item) >= 2:
-                who, text = item[0], item[1]
-            else:
-                continue
-            lines.append("%s: <i>%s</i>" % (_esc(who), _esc(text)))
+    return "\n".join(lines)
+
+
+def take_keyboard(token: str, wait: str = WAIT_CALL) -> dict:
+    label = "📞 Звоню" if wait == WAIT_CALL else "✍️ Беру"
+    return {"inline_keyboard": [[{"text": label, "callback_data": "take:%s" % token}]]}
+
+
+def format_taken(snap: dict, who: str, when: str) -> str:
+    lines = format_alert(snap, 0).splitlines()
+    if lines:
+        lines[0] = "✅ <b>В работе</b> | DIVO"
+    stamp = "Взял %s в %s. Напоминать не буду." % (_esc(who), _esc(when))
+    if len(lines) >= 2 and lines[1] == "":
+        lines.insert(2, stamp)
     else:
-        ask = (snap.get("ask") or "").strip()
-        if ask:
-            short = ask if len(ask) <= LINE_LIMIT else ask[: LINE_LIMIT - 3] + "..."
-            lines.append("")
-            lines.append("▪️ <b>Запрос:</b> %s" % _esc(short))
+        lines.insert(1, stamp)
     return "\n".join(lines)
 
 
 class AlertBot:
     def __init__(self) -> None:
         self.token = settings.alert_bot_token
-        self.client = httpx.AsyncClient(timeout=httpx.Timeout(40.0, connect=10.0))
+        self.client = httpx.AsyncClient(timeout=httpx.Timeout(70.0, connect=10.0))
         self.offset = 0
         self.chats = set(settings.alert_chat_ids)
+        self.on_take = None
         self._load()
 
     def _path(self) -> Path:
@@ -224,11 +268,15 @@ class AlertBot:
         resp = await self.client.post(url, json=payload or {})
         data = resp.json()
         if not data.get("ok"):
+            params = data.get("parameters") or {}
+            migrate = params.get("migrate_to_chat_id")
+            if migrate:
+                raise RuntimeError("migrated:%s:%s" % (migrate, data.get("description")))
             raise RuntimeError("%s: %s" % (method, data.get("description")))
         return data.get("result")
 
-    async def listen(self) -> None:
-        """Запоминает чаты, куда написали боту или куда его добавили."""
+    async def listen(self, timeout: int = 0) -> None:
+        """Запоминает чаты и ловит кнопку Звоню / Беру."""
         if not self.token:
             return
         try:
@@ -236,8 +284,8 @@ class AlertBot:
                 "getUpdates",
                 {
                     "offset": self.offset,
-                    "timeout": 0,
-                    "allowed_updates": ["message", "my_chat_member"],
+                    "timeout": int(timeout),
+                    "allowed_updates": ["message", "my_chat_member", "callback_query"],
                 },
             )
         except Exception as exc:  # noqa: BLE001
@@ -248,6 +296,14 @@ class AlertBot:
         for upd in rows:
             self.offset = max(self.offset, int(upd.get("update_id") or 0) + 1)
             changed = True
+            cb = upd.get("callback_query") or {}
+            if cb:
+                if self.on_take:
+                    try:
+                        await self.on_take(cb)
+                    except Exception:
+                        log.exception("кнопка алерта")
+                continue
             msg = upd.get("message") or {}
             member = upd.get("my_chat_member") or {}
             chat = msg.get("chat") or member.get("chat") or {}
@@ -271,24 +327,47 @@ class AlertBot:
         if changed:
             self._save()
 
-    async def send_to(self, chat_id: int, text: str) -> bool:
+    async def answer_callback(self, callback_id: str, text: str = "") -> None:
+        if not callback_id:
+            return
+        payload: dict = {"callback_query_id": callback_id}
+        if text:
+            payload["text"] = text[:180]
+        try:
+            await self._call("answerCallbackQuery", payload)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("answerCallbackQuery: %s", exc)
+
+    async def send_to(
+        self, chat_id: int, text: str, markup: dict | None = None
+    ) -> int | None:
         if not self.token:
             log.warning("алерт без токена: %s", text.replace("\n", " ")[:200])
-            return False
+            return None
         for attempt in range(2):
             try:
-                await self._call(
-                    "sendMessage",
-                    {
-                        "chat_id": chat_id,
-                        "text": text,
-                        "parse_mode": "HTML",
-                        "disable_web_page_preview": True,
-                    },
-                )
-                return True
+                payload: dict = {
+                    "chat_id": chat_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                }
+                if markup:
+                    payload["reply_markup"] = markup
+                result = await self._call("sendMessage", payload)
+                if isinstance(result, dict) and result.get("message_id"):
+                    return int(result["message_id"])
+                return None
             except Exception as exc:  # noqa: BLE001
                 msg = str(exc)
+                if msg.startswith("migrated:"):
+                    try:
+                        chat_id = int(msg.split(":")[1])
+                    except (IndexError, ValueError):
+                        log.warning("алерт не ушёл в %s: %s", chat_id, exc)
+                        return None
+                    log.warning("группа стала супергруппой, пишу в %s", chat_id)
+                    continue
                 wait = 0
                 if "retry after" in msg.lower():
                     try:
@@ -300,15 +379,40 @@ class AlertBot:
                     await asyncio.sleep(wait + 1)
                     continue
                 log.warning("алерт не ушёл в %s: %s", chat_id, exc)
-                return False
-        return False
+                return None
+        return None
 
-    async def send(self, text: str) -> bool:
+    async def edit(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        markup: dict | None = None,
+    ) -> bool:
+        payload: dict = {
+            "chat_id": chat_id,
+            "message_id": int(message_id),
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "reply_markup": markup or {"inline_keyboard": []},
+        }
+        try:
+            await self._call("editMessageText", payload)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            if "message is not modified" in str(exc).lower():
+                return True
+            log.warning("edit %s/%s: %s", chat_id, message_id, exc)
+            return False
+
+    async def send(self, text: str, markup: dict | None = None) -> tuple[int, int] | None:
         if not self._targets():
             log.warning("алерт без чата менеджеров: %s", text.replace("\n", " ")[:200])
-            return False
-        ok = True
+            return None
+        last = None
         for chat_id in list(self._targets()):
-            if not await self.send_to(chat_id, text):
-                ok = False
-        return ok
+            mid = await self.send_to(chat_id, text, markup)
+            if mid:
+                last = (int(chat_id), int(mid))
+        return last

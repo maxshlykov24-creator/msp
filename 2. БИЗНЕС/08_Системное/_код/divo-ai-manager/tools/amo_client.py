@@ -34,6 +34,8 @@ ENV_CANDIDATES = _divo_env_paths()
 NIKITA_USER_ID = 13334858
 PIPELINE_SALES = 10372290
 STATUS_NEW = 82003646
+# В воронке DIVO нет этапа «Взято в работу». Следующий после новой заявки — этот.
+STATUS_IN_WORK = 82003650  # Контакт установлен
 STATUS_WON = 142
 STATUS_LOST = 143
 STATUS_SPAM = 82249454
@@ -260,6 +262,21 @@ def create_lead(
         raise AmoError(0, "сделка не создалась")
     lead_id = int(rows[0]["id"])
     return get_lead(lead_id)
+
+
+def set_lead_status(lead_id: int, status_id: int) -> dict:
+    write(
+        "/api/v4/leads",
+        [
+            {
+                "id": int(lead_id),
+                "pipeline_id": PIPELINE_SALES,
+                "status_id": int(status_id),
+            }
+        ],
+        method="PATCH",
+    )
+    return get_lead(int(lead_id))
 
 
 def add_note(lead_id: int, text: str) -> None:

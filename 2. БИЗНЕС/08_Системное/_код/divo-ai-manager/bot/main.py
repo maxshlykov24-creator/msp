@@ -682,7 +682,6 @@ async def alert_loop() -> None:
             await crm.tick()
         except Exception:
             log.exception("алерты тик")
-        await asyncio.sleep(20)
 
 
 async def run() -> None:

@@ -3,12 +3,24 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 import sys
 from datetime import datetime
 from typing import Any
 
 from bot import avito_match, nudge, store
-from bot.alerts import WAIT_CALL, WAIT_CHAT, AlertBot, compact_thread, format_alert, next_ping, now_msk
+from bot.alerts import (
+    WAIT_CALL,
+    WAIT_CHAT,
+    AlertBot,
+    brief_from_history,
+    compact_thread,
+    format_alert,
+    format_taken,
+    next_ping,
+    now_msk,
+    take_keyboard,
+)
 from bot.config import settings
 
 log = logging.getLogger("crm")
@@ -23,6 +35,8 @@ bot: AlertBot | None = None
 def set_bot(instance: AlertBot | None) -> None:
     global bot
     bot = instance
+    if instance is not None:
+        instance.on_take = on_take
 
 
 def digits_price(raw: str) -> int:
@@ -77,6 +91,7 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         "channel": channel,
         "ask": ask,
         "dialog": _dialog(history),
+        "brief": brief_from_history(history, reason),
         "thread": compact_thread(history),
     }
 
@@ -248,20 +263,35 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
             "channel": snap.get("channel"),
             "reason": snap.get("reason"),
             "wait": snap.get("wait"),
-            "ask": (snap.get("ask") or "")[:200],
-            "thread": snap.get("thread") or [],
+            "brief": snap.get("brief") or "",
             "lead_url": snap.get("lead_url"),
+            "lead_id": snap.get("lead_id"),
         },
+        "token": secrets.token_hex(4),
     }
     crm["alert"] = alert
     doc["crm"] = crm
 
 
-async def _ping(alert: dict, minutes: int) -> None:
+async def _publish(alert: dict, text: str) -> None:
     if not bot:
         return
-    text = format_alert(alert.get("snap") or {}, minutes)
-    await bot.send(text)
+    wait = (alert.get("snap") or {}).get("wait") or alert.get("wait") or WAIT_CHAT
+    token = alert.get("token") or ""
+    markup = take_keyboard(token, wait) if token else None
+    tg = dict(alert.get("tg") or {})
+    chat_id = tg.get("chat_id")
+    message_id = tg.get("message_id")
+    if chat_id and message_id:
+        if await bot.edit(int(chat_id), int(message_id), text, markup):
+            return
+    sent = await bot.send(text, markup)
+    if sent:
+        alert["tg"] = {"chat_id": sent[0], "message_id": sent[1]}
+
+
+async def _ping(alert: dict, minutes: int) -> None:
+    await _publish(alert, format_alert(alert.get("snap") or {}, minutes))
 
 
 async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
@@ -300,6 +330,8 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     crm = dict(doc.get("crm") or {})
     alert = dict(crm.get("alert") or {})
     if not alert.get("active"):
+        if alert.get("picked"):
+            return
         await capture(chat_id, history, "handoff")
         return
     last = nudge.parse_iso(alert.get("echo_at") or "")
@@ -311,7 +343,7 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     store.save_doc(chat_id, doc)
     snap = dict(alert.get("snap") or {})
     snap["ask"] = text
-    snap["thread"] = compact_thread(history)
+    snap["brief"] = brief_from_history(history, alert.get("reason") or "handoff")
     alert["snap"] = snap
     crm["alert"] = alert
     doc["crm"] = crm
@@ -319,9 +351,11 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     if bot:
         head = "💬 <b>Клиент пишет, ответа нет</b> | DIVO"
         body = format_alert(snap, 0)
-        # меняем шапку, остальное то же
         rest = "\n".join(body.splitlines()[1:])
-        await bot.send(head + rest)
+        await _publish(alert, head + rest)
+        crm["alert"] = alert
+        doc["crm"] = crm
+        store.save_doc(chat_id, doc)
 
 
 def remember_out(chat_id: str | int, payload: Any) -> None:
@@ -395,9 +429,90 @@ def lead_moved(chat_id: str | int) -> bool:
     return True
 
 
+def _chat_by_token(token: str) -> str | None:
+    for cid in store.all_chat_ids():
+        alert = ((store.load_doc(cid).get("crm") or {}).get("alert") or {})
+        if alert.get("token") == token:
+            return cid
+    return None
+
+
+async def _finish_message(alert: dict, snap: dict, who: str, when: str, fallback: dict) -> None:
+    if not bot:
+        return
+    text = format_taken(snap, who, when)
+    tg = alert.get("tg") or {}
+    chat_id = tg.get("chat_id") or (fallback.get("chat") or {}).get("id")
+    message_id = tg.get("message_id") or fallback.get("message_id")
+    if chat_id and message_id:
+        await bot.edit(int(chat_id), int(message_id), text, None)
+
+
+async def on_take(cb: dict) -> None:
+    data = str(cb.get("data") or "")
+    cqid = str(cb.get("id") or "")
+    user = cb.get("from") or {}
+    who = user.get("first_name") or user.get("username") or "менеджер"
+    when = now_msk().strftime("%H:%M")
+    message = cb.get("message") or {}
+    if not data.startswith("take:"):
+        if bot:
+            await bot.answer_callback(cqid)
+        return
+    token = data.split(":", 1)[1]
+    if token == "demo":
+        if bot:
+            chat_id = (message.get("chat") or {}).get("id")
+            mid = message.get("message_id")
+            raw = message.get("text") or ""
+            lines = raw.splitlines() or ["✅ В работе | DIVO"]
+            lines[0] = "✅ <b>В работе</b> | DIVO"
+            lines.insert(1, "Взял %s в %s. Напоминать не буду." % (who, when))
+            if chat_id and mid:
+                await bot.edit(int(chat_id), int(mid), "\n".join(lines), None)
+            await bot.answer_callback(cqid, "Тест. Сделку в amo не трогал")
+        return
+    cid = _chat_by_token(token)
+    if not cid:
+        if bot:
+            await bot.answer_callback(cqid, "Этот алерт уже не активен")
+        return
+    await claim(cid, who, when, message)
+    if bot:
+        await bot.answer_callback(cqid, "Взял, больше не напоминаю")
+
+
+async def claim(chat_id: str | int, who: str, when: str, fallback: dict | None = None) -> None:
+    doc = store.load_doc(chat_id)
+    crmd = dict(doc.get("crm") or {})
+    alert = dict(crmd.get("alert") or {})
+    snap = dict(alert.get("snap") or {})
+    lead_id = snap.get("lead_id") or crmd.get("lead_id")
+    alert["active"] = False
+    alert["nags"] = False
+    alert["picked"] = "button"
+    alert["picked_by"] = who
+    alert["picked_at"] = now_msk().isoformat(timespec="seconds")
+    crmd["alert"] = alert
+    if lead_id:
+        try:
+            lead = amo_client.set_lead_status(int(lead_id), amo_client.STATUS_IN_WORK)
+            crmd["status_id"] = lead.get("status_id") or amo_client.STATUS_IN_WORK
+            amo_client.add_note(
+                int(lead_id),
+                "Менеджер нажал кнопку в Telegram (%s). Сделку перевёл в Контакт установлен." % who,
+            )
+        except Exception:
+            log.exception("этап сделки %s не сменился", lead_id)
+    doc["crm"] = crmd
+    store.save_doc(chat_id, doc)
+    await _finish_message(alert, snap, who, when, fallback or {})
+    log.info("чат %s: взял %s", chat_id, who)
+
+
 async def tick() -> None:
     if bot:
-        await bot.listen()
+        await bot.listen(timeout=25)
     for chat_id in store.all_chat_ids():
         doc = store.load_doc(chat_id)
         alert = ((doc.get("crm") or {}).get("alert") or {})
