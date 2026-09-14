@@ -41,7 +41,7 @@ FALLBACK_RETRY = (
     "Что-то со связью на моей стороне. Повторите, пожалуйста, сообщение",
 )
 # Отрицать такси и каршеринг нельзя: клиент вскроет это по отчёту после покупки.
-NAME_ASK_REPLACED = "Машина в наличии, посмотреть можно в любой день до 20:00"
+NAME_ASK_REPLACED = "Посмотреть можно в любой день до 20:00"
 HISTORY_UNKNOWN = (
     "По истории этой машины наугад не скажу. Уточню по документам, "
     "напишите номер для связи"
@@ -253,7 +253,7 @@ def silent_reason(
         return "complaint"
     if nudge.wants_person(user_text):
         return "handoff"
-    if nudge.wants_call(user_text):
+    if nudge.wants_call(user_text) or nudge.asks_about_call(user_text):
         return "call"
     if handoff:
         if nudge.clarify_count(history) >= 3:
@@ -264,6 +264,8 @@ def silent_reason(
 
 async def _handoff(channel, chat_id, history: list[dict], reason: str) -> None:
     store.save_history(chat_id, history)
+    last = history[-1]["content"] if history else ""
+    await crm.ack_callback(channel, chat_id, [last], reason)
     store.pause(chat_id, "эскалация: %s" % reason)
     log.info("чат %s молчит, причина %s", chat_id, reason)
     await crm.capture(chat_id, history, reason)
@@ -466,6 +468,14 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if added:
             log.info("чат %s: к VIN дописал номер", chat_id)
             bubbles = with_phone
+    prior = history[:-1] if history else []
+    stocked = human.dedupe_in_stock(
+        bubbles,
+        already=nudge.history_said_in_stock(prior),
+    )
+    if stocked != bubbles:
+        log.info("чат %s: убрал повтор «в наличии»", chat_id)
+        bubbles = stocked
 
     if not bubbles:
         bubbles = [random.choice(FALLBACK)]
@@ -545,8 +555,10 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "\n\n# Телефона в этом диалоге ещё нет\n"
             "Конкретный день визита не спрашивай: ни «на какой день удобнее», "
             "ни «во сколько подъедете», ни «завтра». Звать посмотреть машину "
-            "вообще - можно и нужно: «машина в наличии, можно приехать "
-            "посмотреть». Про день спросишь, когда номер будет.\n"
+            "вообще - можно и нужно: «посмотреть можно в любой день до 20:00». "
+            "Слово «в наличии» один раз: когда клиент спросил «есть?» или в "
+            "первом ходе. Дальше не повторяй, зови смотреть. Про день "
+            "спросишь, когда номер будет.\n"
             "Имя и номер в одной реплике не проси: это два вопроса. "
             "Сначала одно, второе следующим ходом."
         )
@@ -727,11 +739,15 @@ async def send_nudge(chat_id: int | str) -> None:
     if channel is None:
         return
     doc = store.load_doc(chat_id)
+    history = list(doc.get("messages") or [])
+    if nudge.history_has_phone(history):
+        return
     meta = doc.get("nudge") or {}
     step = nudge.ready_to_send(meta)
     if not step:
         return
     used = nudge.used_phone_lines(doc.get("messages") or [])
+    said_stock = nudge.history_said_in_stock(doc.get("messages") or [])
     text = nudge.build_text(
         step,
         meta.get("name") or "",
@@ -739,6 +755,7 @@ async def send_nudge(chat_id: int | str) -> None:
         used,
         asked=bool(meta.get("asked", True)),
         address=not nudge.history_has_address(doc.get("messages") or []),
+        said_stock=said_stock,
     )
     await type_and_wait(channel, chat_id, human.typing_delay(text, first=True))
     if pending.get(str(chat_id)) or store.is_paused(chat_id):
@@ -954,7 +971,8 @@ async def run() -> None:
 
                 pending.setdefault(str(chat_id), []).append(text)
                 urgent = await crm.capture_if_urgent(chat_id, pending[str(chat_id)])
-                if urgent in {"phone", "call", "complaint", "handoff"}:
+                if urgent in crm.URGENT_REASONS:
+                    await crm.ack_callback(tg, chat_id, pending[str(chat_id)], urgent)
                     store.pause(chat_id, "эскалация: %s" % urgent)
                     pending.pop(str(chat_id), None)
                     continue

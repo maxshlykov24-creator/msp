@@ -35,6 +35,7 @@ UNSUPPORTED = (
     "сообщение не поддерживается",
     "пожалуйста, перейдите в авито мессенджер",
     "аккуратно напомнили",
+    "сообщение удалено",
 )
 ADOPT_PROFILE_KEY = "adopted_u2u_20260914"
 # Чат по профилю, не по объявлению: API без chat_types=u2u его не отдаёт.
@@ -609,7 +610,8 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
         from bot import crm
 
         urgent = await crm.capture_if_urgent(chat_key, texts)
-        if urgent in {"phone", "call", "complaint", "handoff"}:
+        if urgent in crm.URGENT_REASONS:
+            await crm.ack_callback(channel, chat_key, texts, urgent)
             store.pause(chat_key, "эскалация: %s" % urgent)
             log.info("авито чат %s сразу человеку (%s)", cid[:12], urgent)
             continue

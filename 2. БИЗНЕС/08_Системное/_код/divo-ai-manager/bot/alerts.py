@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 from bot.config import settings
-from bot.nudge import MSK, in_working_hours, now_msk
+from bot.nudge import MSK, asks_about_call, in_working_hours, now_msk
 
 log = logging.getLogger("alerts")
 
@@ -126,6 +126,7 @@ CLIENT_TOPICS = (
     (("такси", "каршеринг"), "спрашивал про такси"),
     (("автотек", "отчет", "отчёт"), "просил автотеку"),
     (("ндс", "юрлиц", "на компанию", "по счёту", "по счету"), "покупка на юрлицо"),
+    (("вы звонил", "это вы мне звонил", "кто звонил"), "спрашивает про звонок"),
 )
 
 
@@ -331,6 +332,8 @@ def _extra_notes(blob: str) -> list[str]:
     out: list[str] = []
     if "другого города" in low:
         out.append("клиент из другого города")
+    if asks_about_call(blob or ""):
+        out.append("спрашивает, это мы звонили")
     return out
 
 

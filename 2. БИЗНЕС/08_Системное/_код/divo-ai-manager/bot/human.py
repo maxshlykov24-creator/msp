@@ -681,6 +681,75 @@ def drop_dead_closer(text: str) -> str:
     return _drop_parts(text, DEAD_CLOSER)
 
 
+STOCK_LEAD = re.compile(
+    r"(?:"
+    r"да,\s*в наличии[.!]?\s*|"
+    r"именно эта машина в наличии(?: и готова к продаже)?,?\s*|"
+    r"данн(?:ый|ого)\s+автомобил[ьяе]\s+в наличии,?\s*|"
+    r"машина (?:у нас )?в наличии,?\s*|"
+    r"ещё в наличии[.!]?\s*"
+    r")",
+    re.IGNORECASE,
+)
+STOCK_WORD = re.compile(r"\s*в наличии(?: и готова к продаже)?", re.IGNORECASE)
+INVITE_FALLBACK = "Посмотреть можно в любой день до 20:00"
+
+
+def has_in_stock(text: str) -> bool:
+    return "в наличии" in (text or "").lower()
+
+
+def strip_in_stock(text: str) -> str:
+    """Оставляет приглашение, убирает повтор «в наличии»."""
+    original = text or ""
+    if not has_in_stock(original):
+        return original
+    text = STOCK_LEAD.sub("", original)
+    text = STOCK_WORD.sub("", text)
+    text = re.sub(r"\s+,", ",", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"^[,\s.]+", "", text)
+    text = _tidy(text, original)
+    if text.strip():
+        return text
+    if re.search(r"посмотр|приехать|приезжа", original, re.I):
+        return INVITE_FALLBACK
+    return ""
+
+
+def dedupe_in_stock(bubbles: list[str], *, already: bool = False) -> list[str]:
+    """Наличие — один раз за диалог. Второй пузырь зовёт смотреть без этой фразы."""
+    seen = already
+    out: list[str] = []
+    for bubble in bubbles:
+        if not has_in_stock(bubble):
+            if bubble.strip():
+                out.append(bubble)
+            continue
+        if seen:
+            cut = strip_in_stock(bubble)
+            if cut.strip():
+                out.append(cut)
+            continue
+        # В одном пузыре тоже не дважды.
+        first, *rest = re.split(r"(?<=[.!?])\s+", bubble)
+        kept = [first]
+        saw = has_in_stock(first)
+        for part in rest:
+            if saw and has_in_stock(part):
+                cut = strip_in_stock(part)
+                if cut.strip():
+                    kept.append(cut)
+            else:
+                kept.append(part)
+                saw = saw or has_in_stock(part)
+        text = " ".join(kept).strip()
+        if text:
+            out.append(text)
+        seen = True
+    return out
+
+
 ASKS_VIN = re.compile(r"\bvin\b", re.I)
 TRADEIN_MENU = re.compile(
     r"(?:,|\.)?\s*(?:а\s+)?если\s+vin\s+нет[^.!?\n]*"

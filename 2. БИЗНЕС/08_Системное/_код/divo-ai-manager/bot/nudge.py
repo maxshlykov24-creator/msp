@@ -204,8 +204,10 @@ def needs_reply(text: str) -> bool:
         return False
     if extract_phone(raw):
         return True
-    if wants_call(raw) or wants_person(raw) or is_complaint(raw):
+    if wants_call(raw) or asks_about_call(raw) or wants_person(raw) or is_complaint(raw):
         return True
+    if DELETED_INCOMING.match(raw):
+        return False
     if "?" in raw:
         return True
     if raw.lower().startswith("клиент прислал"):
@@ -258,7 +260,7 @@ def urgent_reason(user_text: str, history: list[dict] | None = None) -> str:
         return "complaint"
     if wants_person(text):
         return "handoff"
-    if wants_call(text):
+    if wants_call(text) or asks_about_call(text):
         return "call"
     if extract_phone(text) and not history_has_phone(hist):
         return "phone"
@@ -305,6 +307,21 @@ WANTS_CALL = re.compile(
     r")",
     re.IGNORECASE,
 )
+ASKS_ABOUT_CALL = re.compile(
+    r"("
+    r"это вы( мне)? звонил|"
+    r"вы( мне)? звонил|"
+    r"кто звонил|"
+    r"(вам|мне) звонили|"
+    r"это вы( мне)? набирал|"
+    r"вы( мне)? набирал|"
+    r"не дозвони|"
+    r"пропущенн"
+    r")",
+    re.IGNORECASE,
+)
+CALLBACK_ACK = "Да, это мы. Наберу ещё раз в ближайшее время"
+DELETED_INCOMING = re.compile(r"^сообщение удалено\.?$", re.IGNORECASE)
 WANTS_PERSON = re.compile(
     r"("
     r"живого (человека|менеджера|продавца)|"
@@ -324,6 +341,11 @@ COMPLAINT = re.compile(
 
 def wants_call(text: str) -> bool:
     return bool(WANTS_CALL.search(text or ""))
+
+
+def asks_about_call(text: str) -> bool:
+    """Клиент спрашивает про уже состоявшийся звонок, не просит номер заново."""
+    return bool(ASKS_ABOUT_CALL.search(text or ""))
 
 
 def wants_person(text: str) -> bool:
@@ -432,6 +454,14 @@ def asked_where(text: str) -> bool:
 def history_has_address(messages: list[dict]) -> bool:
     return any(
         m.get("role") == "assistant" and has_address(m.get("content") or "") for m in messages
+    )
+
+
+def history_said_in_stock(messages: list[dict] | None) -> bool:
+    """Уже подтверждали наличие. Второй раз «в наличии» не говорим."""
+    return any(
+        m.get("role") == "assistant" and "в наличии" in (m.get("content") or "").lower()
+        for m in messages or []
     )
 
 
@@ -643,6 +673,7 @@ def build_text(
     used: list[str] | None = None,
     asked: bool = True,
     address: bool = False,
+    said_stock: bool = False,
 ) -> str:
     """Три касания. Второе — про приезд, а не про номер: цель не контакт, а визит.
 
@@ -650,11 +681,17 @@ def build_text(
     замолчал после ответа по машине. Тогда первое касание тоже мягкое.
     address=True добавляет к приглашению адрес: звать смотреть, не сказав куда, —
     значит получить в ответ «а где вы находитесь» вместо приезда.
+    said_stock=True — наличие уже подтвердили, «в наличии» второй раз не пишем.
     """
     who = (name + ", ") if name else ""
     where = (", " + ADDRESS_SHORT) if address else ""
     if step == 1:
         if not asked:
+            if said_stock:
+                invite = "посмотреть можно в любой день до 20:00"
+                if who:
+                    return "%s%s%s" % (who, invite, where)
+                return invite[0].upper() + invite[1:] + where
             if car:
                 return "%s%s в наличии, посмотреть можно в любой день до 20:00%s" % (
                     who,
@@ -668,6 +705,8 @@ def build_text(
         return ask
     if step == 2:
         tail = (". %s" % ADDRESS_SHORT[0].upper() + ADDRESS_SHORT[1:]) if address else ""
+        if said_stock:
+            return "Приезжайте посмотреть вживую%s" % tail
         if car:
             return "%s ещё в наличии. Приезжайте посмотреть вживую%s" % (car, tail)
         return "Машина в наличии. Приезжайте посмотреть вживую%s" % tail

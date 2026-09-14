@@ -11,6 +11,7 @@ from bot.nudge import (
     is_complaint,
     asked_leasing,
     asked_torg,
+    asks_about_call,
     needs_reply,
     urgent_reason,
     wants_call,
@@ -37,6 +38,8 @@ def test_needs_reply():
     assert needs_reply("Клиент прислал фото") is True
     assert needs_reply("да") is True
     assert needs_reply("нет") is True
+    assert needs_reply("Сообщение удалено") is False
+    assert needs_reply("Это вы мне звонили") is True
 
 
 def test_phone():
@@ -53,6 +56,9 @@ def test_urgent_reason():
     assert urgent_reason("это развод", hist) == "complaint"
     assert urgent_reason("дайте живого человека", hist) == "handoff"
     assert urgent_reason("перезвоните", hist) == "call"
+    assert urgent_reason("Это вы мне звонили", hist) == "call"
+    assert urgent_reason("Вы звонили", hist) == "call"
+    assert urgent_reason("Это вы мне звонили", []) == ""
     assert urgent_reason("ок", hist) == ""
     assert urgent_reason("89001112233", hist) == ""
 
@@ -158,8 +164,21 @@ def test_merge_user_chunks():
 
 def test_reasons():
     assert wants_call("перезвоните мне")
+    assert not wants_call("Это вы мне звонили")
+    assert asks_about_call("Это вы мне звонили")
+    assert asks_about_call("Вы звонили")
+    assert not asks_about_call("какая цена")
     assert wants_person("дайте живого человека")
     assert is_complaint("это развод")
+    called = brief_from_history(
+        [
+            {"role": "user", "content": "мой 8 900 111-22-33"},
+            {"role": "assistant", "content": "Принял, в ближайшее время наберу"},
+            {"role": "user", "content": "Это вы мне звонили"},
+        ],
+        "call",
+    )
+    assert "звонил" in called.lower()
 
 
 def test_alert_text():
@@ -553,6 +572,7 @@ def test_listing_context_cleanup():
     built = prompt.build()
     assert "Чат по объявлению держит эту машину" in built
     assert "Не выдумывай соседнюю тему" in built
+    assert "Это вы звонили" in built
 
 
 def test_avito_history_and_shot():
@@ -627,6 +647,15 @@ def test_avito_history_and_shot():
         {"created": 1, "direction": "in", "type": "text", "content": {"text": "Здравствуйте обмен интересует?"}},
     ]
     assert is_noise(prem[2]) is True
+    assert is_noise(
+        {"type": "text", "direction": "in", "content": {"text": "Сообщение удалено"}}
+    )
+    assert (
+        message_text(
+            {"type": "text", "direction": "in", "content": {"text": "Сообщение удалено"}}
+        )
+        == ""
+    )
     assert message_text(prem[2]) == ""
     turns, pending, cursor = history_from_messages(prem)
     assert pending == ["Здравствуйте да актуально", "До 8 млн только моя доплата"]
@@ -796,6 +825,39 @@ def test_tradein_vin_phone():
     assert "Объявление своей машины уже прислал" in built or "уже прислал" in built
 
 
+def test_in_stock_dedupe():
+    from bot.human import dedupe_in_stock, strip_in_stock
+    from bot.nudge import build_text, history_said_in_stock
+
+    invite = (
+        "Алексей, машина у нас в наличии, можно приехать посмотреть вживую. "
+        "Мы на Автозаводской 18, ТЦ Ривьера, -2 этаж"
+    )
+    cut = strip_in_stock(invite)
+    assert "наличии" not in cut.lower()
+    assert "посмотреть" in cut.lower()
+    first = "Добрый день! Да, в наличии. FAW Bestune NAT 2023 года."
+    two = dedupe_in_stock([first, invite])
+    assert two[0].count("наличии") == 1
+    assert "наличии" not in two[1].lower()
+    already = dedupe_in_stock(
+        ["Машина в наличии, посмотреть можно в любой день до 20:00"],
+        already=True,
+    )
+    assert already
+    assert "наличии" not in already[0].lower()
+    hist = [
+        {"role": "assistant", "content": "да, именно эта машина в наличии и готова к продаже"}
+    ]
+    assert history_said_in_stock(hist)
+    nudge = build_text(
+        1, "Максим", "FAW Bestune NAT", asked=False, address=True, said_stock=True
+    )
+    assert "наличии" not in nudge.lower()
+    assert "посмотреть" in nudge.lower()
+    assert "Максим," in nudge
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -817,4 +879,5 @@ if __name__ == "__main__":
     test_avito_history_and_shot()
     test_dialog_ids()
     test_tradein_vin_phone()
+    test_in_stock_dedupe()
     print("ok")

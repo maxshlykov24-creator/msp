@@ -26,6 +26,8 @@ from bot.config import settings
 
 log = logging.getLogger("crm")
 
+URGENT_REASONS = frozenset({"phone", "call", "complaint", "handoff"})
+
 if str(settings.root / "tools") not in sys.path:
     sys.path.insert(0, str(settings.root / "tools"))
 import amo_client  # noqa: E402
@@ -409,6 +411,26 @@ async def capture_if_urgent(chat_id: str | int, texts: list[str]) -> str:
     return reason
 
 
+async def ack_callback(channel, chat_id: str | int, texts: list[str], reason: str) -> None:
+    """«Это вы звонили» — коротко подтверждаем и отдаём менеджеру, без сказки про дозвон."""
+    if reason != "call" or channel is None:
+        return
+    blob = "\n".join(str(t).strip() for t in (texts or []) if str(t).strip())
+    if not nudge.asks_about_call(blob):
+        return
+    from bot import human
+
+    text = human.for_chat(nudge.CALLBACK_ACK)
+    await channel.send(chat_id, text)
+    store.log_line(chat_id, "никита", text)
+    history = store.load_history(chat_id)
+    last = history[-1] if history else {}
+    if not (last.get("role") == "assistant" and (last.get("content") or "") == text):
+        history = history + [{"role": "assistant", "content": text}]
+        store.save_history(chat_id, history)
+    log.info("чат %s: подтвердил звонок салона, дальше человек", chat_id)
+
+
 async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
     """Сделка + примечание + старт алертов. Не пишет клиенту."""
     if already_alerting(chat_id, reason):
@@ -419,6 +441,8 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
     try:
         snap = ensure_lead(snap, doc)
         nags = bool(snap.get("nags", True))
+        if reason in {"call", "complaint", "handoff"}:
+            nags = True
     except Exception:
         log.exception("amo по чату %s не записалась", chat_id)
     _start_alert(doc, snap, nags)
