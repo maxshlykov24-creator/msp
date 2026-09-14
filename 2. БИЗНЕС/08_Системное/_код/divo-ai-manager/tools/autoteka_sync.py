@@ -284,9 +284,9 @@ def incidents_of(card: dict[str, Any]) -> list[str]:
     out: list[str] = []
     if dates:
         if len(dates) == 1:
-            out.append("по отчёту одно ДТП, %s" % dates[0])
+            out.append("одно ДТП, %s" % dates[0])
         else:
-            out.append("по отчёту %d ДТП, последнее %s" % (len(dates), dates[-1]))
+            out.append("%d ДТП, последнее %s" % (len(dates), dates[-1]))
     if repairs:
         out.append("есть записи о ремонте")
     if payments:
@@ -314,8 +314,8 @@ def damage_of(report: dict[str, Any]) -> str:
     Здесь «не найдено» в кэш кладём, в отличие от такси и каршеринга: ДТП
     сводится из ГИБДД, страховых, оценщиков и СТО, клиент видит тот же вывод по
     ссылке, и молчать в ответ на «окрасы, ДТП есть?» хуже, чем назвать то, что
-    в отчёте написано. Формулировка всегда через «по отчёту не найдено» — это
-    цитата, а не наше обещание, что машина не битая.
+    в отчёте написано. В карточку кладём голос менеджера: «нет», а не
+    канцелярит «по отчёту не найдено».
     """
     card = None
     for block in report.get("blocks") or []:
@@ -342,7 +342,7 @@ def damage_of(report: dict[str, Any]) -> str:
         # «ремонта и выплат нет» весит не меньше самого факта столкновения.
         joined = " ".join(hits)
         if "ремонт" not in joined and "выплат" not in joined and empty_events_of(card):
-            hits.append("ремонта и страховых выплат не найдено")
+            hits.append("ремонта и страховых выплат нет")
         return ", ".join(hits)
     if card.get("status") != "ok":
         # Заголовок «1 происшествие» без расшифровки: деталей в отчёте нет, но
@@ -353,7 +353,9 @@ def damage_of(report: dict[str, Any]) -> str:
     checked = [NAMES[key] for key, _ in pairs if key in NAMES]
     if not checked:
         return ""
-    return "по отчёту %s не найдено" % ", ".join(checked)
+    if len(checked) == 1:
+        return "%s нет" % checked[0]
+    return "%s и %s нет" % (", ".join(checked[:-1]), checked[-1])
 
 
 def owners_of(report: dict[str, Any]) -> str:

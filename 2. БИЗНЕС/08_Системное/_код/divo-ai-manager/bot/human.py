@@ -490,9 +490,29 @@ def drop_phone_script(text: str) -> str:
     return _tidy(text, original)
 
 
+CLAUSE_DASH = re.compile(r"\s+[–—-]\s+")
+
+
+def drop_clause_dashes(text: str) -> str:
+    """Связку фраз через « - » режем на точку. Дефис внутри слова не трогаем."""
+    original = text or ""
+    parts = [p.strip() for p in CLAUSE_DASH.split(original) if p.strip()]
+    if len(parts) <= 1:
+        return original
+    out = parts[0]
+    for part in parts[1:]:
+        if part[:1].islower():
+            part = part[0].upper() + part[1:]
+        if out[-1] in ".!?":
+            out = out + " " + part
+        else:
+            out = out + ". " + part
+    return out
+
+
 def for_chat(text: str) -> str:
-    """Как пишет человек в телефоне: дефис вместо длинного тире, без точки в конце."""
-    text = (text or "").replace("—", "-").replace("–", "-")
+    """Как пишет человек в телефоне: без тире-связок, без точки в конце."""
+    text = drop_clause_dashes(text or "")
     text = MARKET_TALK.sub("ниже аналогов", text)
     text = drop_manager(text)
     text = drop_qual(text)

@@ -447,7 +447,7 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
         log.warning("повтор тоже с правилами, подставляю запасную реплику")
         return (
             "В стоке сейчас пара десятков машин, прайс в чат целиком не скину. "
-            "Напишите марку или бюджет - подберу из того, что есть"
+            "Напишите марку или бюджет, подберу из того, что есть"
         )
     used_phone = nudge.used_phone_lines(history)
     if used_phone and nudge.repeats_used_phone(raw, used_phone):
