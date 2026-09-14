@@ -216,6 +216,9 @@ def test_where_choice():
     assert "подъехать" in cut.lower()
     chat = for_chat(raw)
     assert "где вам удобнее" not in chat.lower()
+    assert "с 10:00 до 20:00" in chat
+    assert for_chat("посмотреть можно в любой день до 20:00").lower().count("10:00") == 1
+    assert "с 10:00 до 20:00" in for_chat("работаем ежедневно с 10:00 до 20:00")
 
 
 def test_merge_user_chunks():
@@ -910,7 +913,7 @@ def test_in_stock_dedupe():
     assert two[0].count("наличии") == 1
     assert "наличии" not in two[1].lower()
     already = dedupe_in_stock(
-        ["Машина в наличии, посмотреть можно в любой день до 20:00"],
+        ["Машина в наличии, посмотреть можно в любой день с 10:00 до 20:00"],
         already=True,
     )
     assert already
@@ -925,6 +928,7 @@ def test_in_stock_dedupe():
     assert "наличии" not in nudge.lower()
     assert "посмотреть" in nudge.lower()
     assert "Максим," in nudge
+    assert "с 10:00 до 20:00" in nudge
 
 
 def test_tiggo_match_and_messenger():

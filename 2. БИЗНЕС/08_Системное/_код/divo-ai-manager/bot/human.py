@@ -692,7 +692,21 @@ STOCK_LEAD = re.compile(
     re.IGNORECASE,
 )
 STOCK_WORD = re.compile(r"\s*в наличии(?: и готова к продаже)?", re.IGNORECASE)
-INVITE_FALLBACK = "Посмотреть можно в любой день до 20:00"
+INVITE_FALLBACK = "Посмотреть можно в любой день с 10:00 до 20:00"
+UNTIL_CLOSE = re.compile(r"до\s*20[:.]00", re.IGNORECASE)
+
+
+def fix_hours(text: str) -> str:
+    """Пишем и со скольких, и до скольких: с 10:00 до 20:00."""
+    original = text or ""
+
+    def repl(match: re.Match) -> str:
+        prefix = original[max(0, match.start() - 14) : match.start()].lower()
+        if re.search(r"с\s*10(?::00)?\s*$", prefix):
+            return match.group(0)
+        return "с 10:00 до 20:00"
+
+    return UNTIL_CLOSE.sub(repl, original)
 
 
 def has_in_stock(text: str) -> bool:
@@ -983,6 +997,7 @@ def for_chat(text: str) -> str:
     text = drop_logistics_lecture(text)
     text = drop_dead_closer(text)
     text = drop_tradein_menu(text)
+    text = fix_hours(text)
     text = fix_brand(text)
     text = add_missing_dots(text)
     return bang_greeting(drop_end_period(text))

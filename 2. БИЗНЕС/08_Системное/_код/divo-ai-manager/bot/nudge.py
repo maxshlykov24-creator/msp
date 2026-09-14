@@ -777,17 +777,17 @@ def build_text(
     if step == 1:
         if not asked:
             if said_stock:
-                invite = "посмотреть можно в любой день до 20:00"
+                invite = "посмотреть можно в любой день с 10:00 до 20:00"
                 if who:
                     return "%s%s%s" % (who, invite, where)
                 return invite[0].upper() + invite[1:] + where
             if car:
-                return "%s%s в наличии, посмотреть можно в любой день до 20:00%s" % (
+                return "%s%s в наличии, посмотреть можно в любой день с 10:00 до 20:00%s" % (
                     who,
                     car,
                     where,
                 )
-            return "Машина в наличии, посмотреть можно в любой день до 20:00%s" % where
+            return "Машина в наличии, посмотреть можно в любой день с 10:00 до 20:00%s" % where
         ask = pick_phone_ask(used)
         if car:
             return "%s%s на площадке. %s" % (who, car, ask)
