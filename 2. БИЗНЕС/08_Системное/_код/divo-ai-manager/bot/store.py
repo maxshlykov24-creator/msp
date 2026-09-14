@@ -47,9 +47,10 @@ def save_doc(chat_id: int | str, doc: dict) -> None:
         "messages": messages,
         "nudge": doc.get("nudge") or {},
     }
-    extra = doc.get("avito")
-    if extra:
-        payload["avito"] = extra
+    for key in ("avito", "crm"):
+        extra = doc.get(key)
+        if extra:
+            payload[key] = extra
     _history_path(chat_id).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -80,6 +81,17 @@ def chat_ids() -> list[int]:
             out.append(int(path.stem))
         except ValueError:
             continue
+    return out
+
+
+def all_chat_ids() -> list[str]:
+    """Все диалоги, включая Авито (av:…)."""
+    settings.state_dir.mkdir(parents=True, exist_ok=True)
+    out: list[str] = []
+    for path in settings.state_dir.glob("*.json"):
+        if path.name.startswith("_"):
+            continue
+        out.append(path.stem)
     return out
 
 

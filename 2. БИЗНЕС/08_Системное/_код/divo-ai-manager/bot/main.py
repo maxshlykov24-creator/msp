@@ -14,7 +14,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from bot import avito_loop, human, llm, nudge, prompt, store
+from bot import avito_loop, crm, human, llm, nudge, prompt, store
+from bot.alerts import AlertBot
 from bot.avito import Avito
 from bot.config import settings
 from bot.tg import Telegram
@@ -196,7 +197,34 @@ async def handle_command(tg: Telegram, chat_id: int, text: str) -> bool:
     return False
 
 
-# ─────────────────────────── ответ клиенту ───────────────────────────
+def silent_reason(
+    user_text: str,
+    history: list[dict],
+    *,
+    handoff: bool = False,
+    llm_dead: bool = False,
+) -> str:
+    """Повод замолчать и отдать человеку. Пусто — бот продолжает писать клиенту."""
+    if llm_dead:
+        return "llm"
+    if nudge.is_complaint(user_text):
+        return "complaint"
+    if nudge.wants_person(user_text):
+        return "handoff"
+    if nudge.wants_call(user_text) and nudge.history_has_phone(history):
+        return "call"
+    if handoff:
+        if nudge.clarify_count(history) >= 3:
+            return "stuck"
+        return "handoff"
+    return ""
+
+
+async def _handoff(channel, chat_id, history: list[dict], reason: str) -> None:
+    store.save_history(chat_id, history)
+    store.pause(chat_id, "эскалация: %s" % reason)
+    log.info("чат %s молчит, причина %s", chat_id, reason)
+    await crm.capture(chat_id, history, reason)
 
 
 async def type_and_wait(channel, chat_id, delay: float) -> None:
@@ -235,7 +263,13 @@ async def answer(channel, chat_id) -> None:
 
 async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     history = store.load_history(chat_id)
+    had_phone = nudge.history_has_phone(history)
     history.append({"role": "user", "content": "\n".join(chunks)})
+    user_text = history[-1]["content"]
+    reason = silent_reason(user_text, history)
+    if reason:
+        await _handoff(channel, chat_id, history, reason)
+        return
 
     await channel.typing(chat_id)
     try:
@@ -256,12 +290,14 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         fails = llm_fails.get(key, 0) + 1
         llm_fails[key] = fails
         last_try = fails >= MAX_LLM_FAILS
-        excuse = random.choice(FALLBACK if last_try else FALLBACK_RETRY)
+        if last_try:
+            await _handoff(channel, chat_id, history, "llm")
+            log.warning("чат %s на паузе: %d сбоя LLM подряд", chat_id, fails)
+            return
+        excuse = random.choice(FALLBACK_RETRY)
         await type_and_wait(channel, chat_id, human.typing_delay(excuse, first=True))
         await channel.send(chat_id, excuse)
-        if last_try:
-            store.pause(chat_id, "LLM недоступен")
-            log.warning("чат %s на паузе: %d сбоя LLM подряд", chat_id, fails)
+        store.log_line(chat_id, "никита", excuse)
         await channel.notify_admin(
             "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, exc)
         )
@@ -273,6 +309,10 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     handoff = prompt.HANDOFF_MARK in raw
     want_photo = prompt.MEDIA_PHOTO_MARK in raw
     want_video = prompt.MEDIA_VIDEO_MARK in raw
+    reason = silent_reason(user_text, history, handoff=handoff)
+    if reason:
+        await _handoff(channel, chat_id, history, reason)
+        return
     clean_text = (
         raw.replace(prompt.HANDOFF_MARK, "")
         .replace(prompt.MEDIA_PHOTO_MARK, "")
@@ -324,14 +364,8 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     history.append({"role": "assistant", "content": " ".join(bubbles)})
     store.save_history(chat_id, history)
     _refresh_nudge(chat_id, history)
-
-    if handoff:
-        store.pause(chat_id, "эскалация агентом")
-        log.info("чат %s передан человеку", chat_id)
-        await channel.notify_admin(
-            "Передача человеку. chat_id=%s\nПоследнее от клиента: %s"
-            % (chat_id, user_text[:300])
-        )
+    if not had_phone and nudge.extract_phone(user_text):
+        await crm.capture(chat_id, history, "phone")
 
 
 def _build_system(history: list[dict], chat_id: str = "") -> str:
@@ -413,10 +447,9 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     if nudge.refusals_count(history) >= 2:
         system += (
             "\n\n# Клиент отказал в номере второй раз\n"
-            "Уговаривать нельзя, третьей попытки нет. Ответь одной короткой "
-            "строкой «сейчас подключу коллегу, он ответит здесь» и поставь "
-            "последней строкой %s. Условия кредита, документы, сроки одобрения "
-            "и ставку не выдумывай: их назовёт человек." % prompt.HANDOFF_MARK
+            "Уговаривать нельзя, третьей попытки нет. Клиенту в этом ходе "
+            "ничего не пиши. Поставь только маркер %s последней строкой."
+            % prompt.HANDOFF_MARK
         )
     elif nudge.refuses_phone(user_text):
         system += (
@@ -643,6 +676,15 @@ async def poll_avito(tg: Telegram) -> None:
         await api.close()
 
 
+async def alert_loop() -> None:
+    while True:
+        try:
+            await crm.tick()
+        except Exception:
+            log.exception("алерты тик")
+        await asyncio.sleep(20)
+
+
 async def run() -> None:
     if not settings.telegram_token:
         raise SystemExit("нет TELEGRAM_BOT_TOKEN в .env")
@@ -650,14 +692,19 @@ async def run() -> None:
         raise SystemExit("нет OPENROUTER_API_KEY в .env")
 
     tg = Telegram(settings.telegram_token)
+    alerts = AlertBot()
+    crm.set_bot(alerts)
     me = await tg.me()
     log.info("бот @%s на модели %s", me.get("username"), settings.model)
+    if alerts.token and not alerts.chats:
+        log.warning("алерты: бот есть, чата нет. Напиши @divoalertbot в группу менеджеров")
 
     asyncio.create_task(stock_loop())
     asyncio.create_task(autoteka_loop())
     asyncio.create_task(nudge_loop(tg))
     asyncio.create_task(budget_loop(tg))
     asyncio.create_task(poll_avito(tg))
+    asyncio.create_task(alert_loop())
     offset = read_offset()
 
     try:
@@ -682,6 +729,7 @@ async def run() -> None:
                     continue
                 if store.is_paused(chat_id) and not tech_pause_lifted(chat_id):
                     log.info("чат %s на паузе, молчим", chat_id)
+                    await crm.client_wrote_again(chat_id, text)
                     continue
 
                 pending.setdefault(str(chat_id), []).append(text)
@@ -690,6 +738,7 @@ async def run() -> None:
                 write_offset(offset)
             await asyncio.sleep(0.2)
     finally:
+        await alerts.close()
         await tg.close()
 
 

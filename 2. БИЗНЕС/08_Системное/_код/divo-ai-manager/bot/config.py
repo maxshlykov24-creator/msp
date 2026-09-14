@@ -134,5 +134,14 @@ class Settings:
         x.strip() for x in env("AVITO_ALLOWLIST").split(",") if x.strip()
     }
 
+    amo_domain = env("AMOCRM_BASE_DOMAIN", "divomotors.amocrm.ru")
+    amo_token = env("AMOCRM_LONG_LIVED_TOKEN") or env("AMO_ACCESS_TOKEN")
+    alert_bot_token = env("ALERT_BOT_TOKEN")
+    alert_chat_ids = {
+        int(x.strip())
+        for x in env("ALERT_CHAT_ID").split(",")
+        if x.strip().lstrip("-").isdigit()
+    }
+
 
 settings = Settings()

@@ -144,8 +144,80 @@ def wants_stop(text: str) -> bool:
     return bool(STOP.search(text or ""))
 
 
+def extract_phone(text: str) -> str:
+    """Нормализует российский номер. Номер салона и короткие цифры не берём."""
+    salon = re.sub(r"\D", "", SALON_PHONE)
+    best = ""
+    for match in HAS_PHONE.finditer(text or ""):
+        digits = re.sub(r"\D", "", match.group(0))
+        if digits == salon or digits == salon[-10:]:
+            continue
+        if len(digits) == 11 and digits[0] in "78":
+            best = "7" + digits[1:]
+        elif len(digits) == 10:
+            best = "7" + digits
+    return best
+
+
+def extract_phone_from_history(messages: list[dict]) -> str:
+    for msg in reversed(messages or []):
+        if msg.get("role") != "user":
+            continue
+        phone = extract_phone(msg.get("content") or "")
+        if phone:
+            return phone
+    return ""
+
+
 def history_has_phone(messages: list[dict]) -> bool:
-    return any(m.get("role") == "user" and has_phone(m.get("content") or "") for m in messages)
+    return bool(extract_phone_from_history(messages))
+
+
+WANTS_CALL = re.compile(
+    r"("
+    r"позвон(ите|и)|набер(ите|и)|перезвон|"
+    r"жду звонка|свяжитесь (со мной )?по (телефону|номеру)|"
+    r"давайте (в )?трубк|созвон"
+    r")",
+    re.IGNORECASE,
+)
+WANTS_PERSON = re.compile(
+    r"("
+    r"живого (человека|менеджера|продавца)|"
+    r"оператор[аеу]?|подключи(те)? (человека|менеджера|коллегу)|"
+    r"не бот[аом]? (нужен|хочу)|с человеком"
+    r")",
+    re.IGNORECASE,
+)
+COMPLAINT = re.compile(
+    r"("
+    r"жалоб|претензи|развод|кидал|обман|"
+    r"в суд|роспотреб|прокуратур|верните деньги"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def wants_call(text: str) -> bool:
+    return bool(WANTS_CALL.search(text or ""))
+
+
+def wants_person(text: str) -> bool:
+    return bool(WANTS_PERSON.search(text or ""))
+
+
+def is_complaint(text: str) -> bool:
+    return bool(COMPLAINT.search(text or ""))
+
+
+def clarify_count(messages: list[dict]) -> int:
+    n = 0
+    for msg in messages or []:
+        if msg.get("role") != "assistant":
+            continue
+        if re.search(r"уточн(ю|им|у)", msg.get("content") or "", re.IGNORECASE):
+            n += 1
+    return n
 
 
 def history_asked_phone(messages: list[dict]) -> bool:

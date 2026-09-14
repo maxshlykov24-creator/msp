@@ -102,7 +102,10 @@ class AvitoChannel:
         self.tg = tg
 
     async def send(self, chat_id: int | str, text: str) -> None:
-        await self.api.send_text(raw_id(str(chat_id)), human.for_chat(text))
+        data = await self.api.send_text(raw_id(str(chat_id)), human.for_chat(text))
+        from bot import crm
+
+        crm.remember_out(chat_id, data)
 
     async def typing(self, chat_id: int | str) -> None:
         return
@@ -176,6 +179,10 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
         if last_at <= seen:
             continue
         if (last.get("direction") or "") != "in":
+            if store.is_paused(store_id(cid)):
+                from bot import crm
+
+                crm.on_foreign_out(store_id(cid), last)
             cursor[cid] = max(seen, last_at)
             changed = True
             continue
@@ -224,6 +231,9 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
             store.log_line(chat_key, "клиент", text)
         if store.is_paused(chat_key):
             log.info("авито чат %s на паузе", cid[:12])
+            from bot import crm
+
+            await crm.client_wrote_again(chat_key, texts[-1])
             continue
         pending.setdefault(chat_key, []).extend(texts)
         schedule(channel, chat_key)
