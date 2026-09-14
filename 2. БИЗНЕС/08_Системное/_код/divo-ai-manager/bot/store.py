@@ -47,6 +47,9 @@ def save_doc(chat_id: int | str, doc: dict) -> None:
         "messages": messages,
         "nudge": doc.get("nudge") or {},
     }
+    extra = doc.get("avito")
+    if extra:
+        payload["avito"] = extra
     _history_path(chat_id).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",

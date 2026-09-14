@@ -123,5 +123,16 @@ class Settings:
     # Отчёты автотеки: содержимое меняется редко, кэш живёт неделю.
     autoteka_refresh_h = env_int("AUTOTEKA_REFRESH_H", 24)
 
+    # Авито. По умолчанию только смотрим новые входящие и пишем админу.
+    # Ответ уходит, если чат в allowlist или сработало /avito next.
+    avito_enabled = env_bool("AVITO_ENABLED", False)
+    avito_client_id = env("AVITO_CLIENT_ID")
+    avito_client_secret = env("AVITO_CLIENT_SECRET")
+    avito_user_id = env_int("AVITO_USER_ID", 0)
+    avito_poll_sec = env_float("AVITO_POLL_SEC", 6.0)
+    avito_allowlist = {
+        x.strip() for x in env("AVITO_ALLOWLIST").split(",") if x.strip()
+    }
+
 
 settings = Settings()

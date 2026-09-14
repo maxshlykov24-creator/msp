@@ -14,7 +14,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from bot import human, llm, nudge, prompt, store
+from bot import avito_loop, human, llm, nudge, prompt, store
+from bot.avito import Avito
 from bot.config import settings
 from bot.tg import Telegram
 
@@ -43,12 +44,12 @@ HISTORY_UNKNOWN = (
     "По истории этой машины наугад не скажу. Уточню по документам, "
     "напишите номер для связи"
 )
-pending: dict[int, list[str]] = {}
-tasks: dict[int, asyncio.Task] = {}
+pending: dict[str, list[str]] = {}
+tasks: dict[str, asyncio.Task] = {}
 # Сбои LLM подряд по одному чату. Разовый сбой (лимит ключа, таймаут) лечится
 # следующим сообщением клиента, а пауза убивает лид навсегда: снимать её надо
 # руками, и о ней никто не помнит. Гасим чат только когда не отвечаем подряд.
-llm_fails: dict[int, int] = {}
+llm_fails: dict[str, int] = {}
 MAX_LLM_FAILS = 2
 # Пауза от сбоя модели - не решение владельца, а авария. Кредиты кончились
 # вечером, к утру ключ пополнен, а чат всё равно молчит, пока кто-то не вспомнит
@@ -57,7 +58,7 @@ TECH_PAUSE_REASON = "LLM недоступен"
 TECH_PAUSE_MIN = 10
 # Порог предупреждения об остатке на ключе OpenRouter, в долларах.
 BUDGET_WARN_USD = 3.0
-inflight: set[int] = set()
+inflight: set[str] = set()
 # Сколько раз переспрашиваем модель, если клиент дописывает во время обдумывания.
 MAX_MERGE_ROUNDS = 2
 
@@ -153,8 +154,43 @@ async def handle_command(tg: Telegram, chat_id: int, text: str) -> bool:
             chat_id,
             "/start новый диалог\n/reset очистить память\n/human пауза, зову человека\n"
             "/bot вернуть агента\n/stock обновить и показать сток\n"
-            "/reveal on|off признаваться, что бот\n/whoami диагностика",
+            "/reveal on|off признаваться, что бот\n/whoami диагностика\n"
+            "/avito status|next|on ID|off ID",
         )
+        return True
+
+    if cmd == "/avito":
+        if str(chat_id) != str(settings.admin_chat_id):
+            return True
+        verb, _, rest = arg.partition(" ")
+        rest = rest.strip()
+        state = avito_loop.load_state()
+        if verb in {"", "status", "статус"}:
+            await tg.send(chat_id, avito_loop.status_text())
+            return True
+        if verb in {"next", "дальше"}:
+            state["arm_next"] = True
+            avito_loop.save_state(state)
+            await tg.send(
+                chat_id,
+                "Следующий новый чат на Авито возьмёт бот. Напиши клиентом на объявление.",
+            )
+            return True
+        if verb in {"on", "вкл"} and rest:
+            allow = list(state.get("allow") or [])
+            if rest not in allow:
+                allow.append(rest)
+            state["allow"] = allow
+            avito_loop.save_state(state)
+            await tg.send(chat_id, "Авито: бот отвечает в чате %s" % rest)
+            return True
+        if verb in {"off", "выкл"} and rest:
+            state["allow"] = [x for x in (state.get("allow") or []) if x != rest]
+            avito_loop.save_state(state)
+            store.pause(avito_loop.store_id(rest), "авито выкл")
+            await tg.send(chat_id, "Авито: бот замолчал в чате %s" % rest)
+            return True
+        await tg.send(chat_id, "Использование: /avito status | next | on ID | off ID")
         return True
 
     return False
@@ -163,77 +199,75 @@ async def handle_command(tg: Telegram, chat_id: int, text: str) -> bool:
 # ─────────────────────────── ответ клиенту ───────────────────────────
 
 
-async def type_and_wait(tg: Telegram, chat_id: int, delay: float) -> None:
+async def type_and_wait(channel, chat_id, delay: float) -> None:
     """Держим «печатает…» все время паузы: Telegram гасит индикатор через ~5 сек."""
     remaining = max(delay, 0.0)
     while remaining > 0:
-        await tg.typing(chat_id)
+        await channel.typing(chat_id)
         chunk = min(4.0, remaining)
         await asyncio.sleep(chunk)
         remaining -= chunk
 
 
-async def answer(tg: Telegram, chat_id: int) -> None:
+async def answer(channel, chat_id) -> None:
     """Ждем debounce, потом отвечаем на всё, что клиент успел написать."""
+    key = str(chat_id)
     try:
         await asyncio.sleep(settings.debounce_sec)
     except asyncio.CancelledError:
         return
 
-    chunks = pending.pop(chat_id, [])
+    chunks = pending.pop(key, [])
     if not chunks:
         return
-    inflight.add(chat_id)
+    inflight.add(key)
     try:
-        await _answer_locked(tg, chat_id, chunks)
+        await _answer_locked(channel, key, chunks)
     except asyncio.CancelledError:
-        pending.setdefault(chat_id, [])
-        pending[chat_id] = chunks + pending[chat_id]
+        pending.setdefault(key, [])
+        pending[key] = chunks + pending[key]
         raise
     finally:
-        inflight.discard(chat_id)
-        # Дописал, пока мы уже отправляли пузыри — ответ ушёл, отвечаем следующим
-        # ходом. Всё, что пришло во время обдумывания, забирает доклейка внутри.
-        if pending.get(chat_id):
-            schedule(tg, chat_id)
+        inflight.discard(key)
+        if pending.get(key):
+            schedule(channel, key)
 
 
-async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
+async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     history = store.load_history(chat_id)
     history.append({"role": "user", "content": "\n".join(chunks)})
 
-    await tg.typing(chat_id)
+    await channel.typing(chat_id)
     try:
         rounds = 0
         while True:
-            raw = await _generate(history)
-            extra = pending.pop(chat_id, [])
+            raw = await _generate(history, chat_id)
+            extra = pending.pop(str(chat_id), [])
             if not extra or rounds >= MAX_MERGE_ROUNDS:
                 break
-            # Клиент дописал, пока мы думали. Отвечаем на всё одной репликой,
-            # иначе он получит два ответа подряд на два своих сообщения.
             chunks = chunks + extra
             history[-1] = {"role": "user", "content": "\n".join(chunks)}
             rounds += 1
             log.info("чат %s: доклейка %d сообщений, отвечаю заново", chat_id, len(extra))
-            await tg.typing(chat_id)
+            await channel.typing(chat_id)
     except llm.LlmError as exc:
         log.error("LLM: %s", exc)
-        fails = llm_fails.get(chat_id, 0) + 1
-        llm_fails[chat_id] = fails
+        key = str(chat_id)
+        fails = llm_fails.get(key, 0) + 1
+        llm_fails[key] = fails
         last_try = fails >= MAX_LLM_FAILS
         excuse = random.choice(FALLBACK if last_try else FALLBACK_RETRY)
-        await type_and_wait(tg, chat_id, human.typing_delay(excuse, first=True))
-        await tg.send(chat_id, excuse)
+        await type_and_wait(channel, chat_id, human.typing_delay(excuse, first=True))
+        await channel.send(chat_id, excuse)
         if last_try:
             store.pause(chat_id, "LLM недоступен")
             log.warning("чат %s на паузе: %d сбоя LLM подряд", chat_id, fails)
-        await tg.notify_admin(
+        await channel.notify_admin(
             "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, exc)
         )
         return
 
-    llm_fails.pop(chat_id, None)
+    llm_fails.pop(str(chat_id), None)
 
     user_text = history[-1]["content"]
     handoff = prompt.HANDOFF_MARK in raw
@@ -251,8 +285,6 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
         if kept and len(kept) < len(bubbles):
             log.info("чат %s: выкинул повторный адрес", chat_id)
             bubbles = kept
-    # Пузырь пустеет, когда весь он был придуманной квалификацией клиента
-    # («для себя или в коммерческих целях») - human.drop_qual вырезал текст.
     kept = [b for b in bubbles if b.strip()]
     if len(kept) < len(bubbles):
         log.info("чат %s: выкинул вопрос о цели покупки или бюджете", chat_id)
@@ -261,17 +293,11 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
     if len(kept) < len(bubbles):
         log.info("чат %s: выкинул отрицание истории такси или каршеринга", chat_id)
         bubbles = kept or [HISTORY_UNKNOWN]
-    # Имя спрашиваем один раз за диалог. Модель переспрашивает другими словами,
-    # и правило её не держит, а клиент читает это как «меня не слушают».
     if not nudge.extract_name(history) and nudge.used_name_asks(history[:-1]):
         trimmed = [nudge.drop_name_ask(b) for b in bubbles]
         if trimmed != bubbles:
             log.info("чат %s: выкинул повторный вопрос про имя", chat_id)
-            # Вся реплика была одним вопросом про имя — без шага вперёд её
-            # отправлять нельзя, зовём смотреть машину.
             bubbles = [b for b in trimmed if b.strip()] or [NAME_ASK_REPLACED]
-    # Зовём смотреть машину — говорим, куда ехать. Иначе клиент отдельным
-    # сообщением спрашивает «а где вы находитесь» вместо того, чтобы приехать.
     if not nudge.history_has_address(history):
         for i, bubble in enumerate(bubbles):
             with_where = nudge.with_address(bubble)
@@ -284,13 +310,13 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
         bubbles = [random.choice(FALLBACK)]
 
     for i, bubble in enumerate(bubbles):
-        await type_and_wait(tg, chat_id, human.typing_delay(bubble, first=i == 0))
-        await tg.send(chat_id, bubble)
+        await type_and_wait(channel, chat_id, human.typing_delay(bubble, first=i == 0))
+        await channel.send(chat_id, bubble)
         store.log_line(chat_id, "никита", bubble)
 
     if want_photo or want_video:
         kind = "видео" if want_video else "фото"
-        await tg.notify_admin(
+        await channel.notify_admin(
             "Клиент просит %s в мессенджер. chat_id=%s\nПоследнее: %s"
             % (kind, chat_id, user_text[:300])
         )
@@ -302,17 +328,21 @@ async def _answer_locked(tg: Telegram, chat_id: int, chunks: list[str]) -> None:
     if handoff:
         store.pause(chat_id, "эскалация агентом")
         log.info("чат %s передан человеку", chat_id)
-        await tg.notify_admin(
+        await channel.notify_admin(
             "Передача человеку. chat_id=%s\nПоследнее от клиента: %s"
             % (chat_id, user_text[:300])
         )
 
 
-def _build_system(history: list[dict]) -> str:
+def _build_system(history: list[dict], chat_id: str = "") -> str:
     """Общие правила плюс поправки под этот конкретный ход диалога."""
     user_text = history[-1]["content"] if history else ""
     # Всё, что дописано после границы, меняется каждый ход и в кэш не идёт.
     system = prompt.build() + prompt.CACHE_SPLIT
+    if str(chat_id).startswith("av:"):
+        focus = (store.load_doc(chat_id).get("avito") or {}).get("focus") or ""
+        if focus:
+            system += "\n\n" + focus
     known_name = nudge.extract_name(history)
     if known_name:
         system += (
@@ -403,9 +433,9 @@ def _build_system(history: list[dict]) -> str:
     return system
 
 
-async def _generate(history: list[dict]) -> str:
+async def _generate(history: list[dict], chat_id: str = "") -> str:
     """Реплика модели с проверками на утечку правил и дословные повторы."""
-    system = _build_system(history)
+    system = _build_system(history, chat_id)
     raw = await llm.reply(system, history)
     if human.looks_like_leak(raw):
         log.warning("модель слила правила, повторяю запрос")
@@ -518,13 +548,14 @@ async def nudge_loop(tg: Telegram) -> None:
                 log.exception("догон чат %s упал", chat_id)
 
 
-def schedule(tg: Telegram, chat_id: int) -> None:
-    if chat_id in inflight:
+def schedule(channel, chat_id) -> None:
+    key = str(chat_id)
+    if key in inflight:
         return
-    old = tasks.get(chat_id)
+    old = tasks.get(key)
     if old and not old.done():
         old.cancel()
-    tasks[chat_id] = asyncio.create_task(answer(tg, chat_id))
+    tasks[key] = asyncio.create_task(answer(channel, key))
 
 
 # ─────────────────────────── сток в фоне ───────────────────────────
@@ -590,7 +621,27 @@ async def autoteka_loop() -> None:
         await asyncio.sleep(max(settings.autoteka_refresh_h, 1) * 3600)
 
 
-# ─────────────────────────── основной цикл ───────────────────────────
+async def avito_loop(tg: Telegram) -> None:
+    if not settings.avito_enabled:
+        log.info("авито выключен")
+        return
+    if not (settings.avito_client_id and settings.avito_client_secret and settings.avito_user_id):
+        log.warning("авито включён, но нет AVITO_CLIENT_ID / SECRET / USER_ID")
+        return
+    api = Avito()
+    channel = avito_loop_mod.AvitoChannel(api, tg)
+    try:
+        await avito_loop_mod.prime_cursor(api)
+        log.info("авито опрос каждые %s сек", settings.avito_poll_sec)
+        while True:
+            await avito_loop_mod.poll_once(api, channel, schedule, pending)
+            await asyncio.sleep(max(settings.avito_poll_sec, 3.0))
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("авито цикл упал")
+    finally:
+        await api.close()
 
 
 async def run() -> None:
