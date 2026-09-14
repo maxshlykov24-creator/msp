@@ -113,6 +113,9 @@ class AvitoChannel:
     async def notify_admin(self, text: str) -> None:
         await self.tg.notify_admin(text)
 
+    async def notify_owner(self, text: str) -> None:
+        await self.tg.notify_owner(text)
+
 
 async def prime_cursor(api: Avito) -> None:
     """Запомнить хвост, ничего не отвечая."""
@@ -213,7 +216,7 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
         await remember_listing(chat_key, chat, api)
         if not allowed(cid, state) and not state.get("arm_next"):
             log.info("авито новый чат %s (%s) — жду /avito on", cid[:12], title)
-            await channel.notify_admin(
+            await channel.notify_owner(
                 "Авито, новый чат.\n%s\n%s\nЧтобы бот ответил, напиши:\n/avito on %s\nили /avito next и пусть клиент напишет ещё раз"
                 % (title, " ⏎ ".join(texts)[:400], cid)
             )
@@ -226,7 +229,6 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
             state["arm_next"] = False
             save_state(state)
             log.info("авито: /next поймал чат %s", cid[:12])
-            await channel.notify_admin("Авито: бот взял чат %s\n%s" % (cid, title))
         for text in texts:
             store.log_line(chat_key, "клиент", text)
         if store.is_paused(chat_key):

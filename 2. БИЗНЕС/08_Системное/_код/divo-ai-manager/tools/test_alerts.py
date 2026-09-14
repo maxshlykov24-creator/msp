@@ -35,7 +35,7 @@ def test_alert_text():
             "car": "BMW X6 2024",
             "channel": "Авито",
             "reason": "phone",
-            "brief": "уже сказали: в наличии, могу показать сегодня; сейчас: оставил номер",
+            "brief": "В наличии на Крылатской, показ после 16. ДТП не было, кузов не чинили.",
             "lead_url": "https://divomotors.amocrm.ru/leads/detail/1",
         },
         0,
@@ -47,7 +47,9 @@ def test_alert_text():
     assert "Контекст:" in text
     assert "Диалог:" not in text
     assert "перезвоните" not in text
-    assert "не начинай с нуля" in text
+    assert "Пиши как Никита" not in text
+    assert "уже сказали" not in text
+    assert "👉" not in text
     follow = format_alert({"wait": "call", "car": "X6", "reason": "phone"}, 15)
     assert "15 мин" in follow
     assert "остывает" in follow
@@ -62,17 +64,22 @@ def test_alert_text():
     brief = brief_from_history(
         [
             {"role": "user", "content": "СЕКРЕТНАЯ_ФРАЗА_КЛИЕНТА перезвоните"},
+            {"role": "assistant", "content": "Добрый день, DIVO Motors, Никита, слушаю вас."},
             {"role": "assistant", "content": "ДТП не было, кузов не чинили."},
+            {"role": "assistant", "content": "Машина в наличии на Крылатской, могу показать сегодня после 16."},
         ],
         "phone",
     )
     assert "СЕКРЕТНАЯ" not in brief
     assert "ДТП не было" in brief
-    assert "оставил номер" in brief
+    assert "Крылатской" in brief
+    assert "уже сказали" not in brief
+    assert "оставил номер" not in brief
+    assert "слушаю вас" not in brief.lower()
     keys = take_keyboard("abcd1234", "call")
     assert keys["inline_keyboard"][0][0]["callback_data"] == "take:abcd1234"
     taken = format_taken({"wait": "call", "car": "X6", "reason": "phone"}, "Максим", "14:51")
-    assert "В работе" in taken
+    assert "Связались" in taken
     assert "Максим" in taken
     assert "14:51" in taken
 

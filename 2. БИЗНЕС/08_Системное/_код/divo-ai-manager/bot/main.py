@@ -298,7 +298,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         await type_and_wait(channel, chat_id, human.typing_delay(excuse, first=True))
         await channel.send(chat_id, excuse)
         store.log_line(chat_id, "никита", excuse)
-        await channel.notify_admin(
+        await channel.notify_owner(
             "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, exc)
         )
         return

@@ -279,6 +279,25 @@ def set_lead_status(lead_id: int, status_id: int) -> dict:
     return get_lead(int(lead_id))
 
 
+def lead_calls_since(lead_id: int, since_ts: int) -> list[dict]:
+    """Входящие и исходящие звонки по сделке после since_ts (unix)."""
+    code, data = request(
+        "/api/v4/leads/%s/notes" % int(lead_id),
+        {"limit": "50"},
+    )
+    if code >= 400 or not data:
+        return []
+    out = []
+    start = int(since_ts or 0)
+    for note in items(data, "notes"):
+        if note.get("note_type") not in {"call_in", "call_out"}:
+            continue
+        created = int(note.get("created_at") or 0)
+        if created >= start:
+            out.append(note)
+    return out
+
+
 def add_note(lead_id: int, text: str) -> None:
     body = [{"note_type": "common", "params": {"text": (text or "")[:9000]}}]
     write(f"/api/v4/leads/{int(lead_id)}/notes", body)

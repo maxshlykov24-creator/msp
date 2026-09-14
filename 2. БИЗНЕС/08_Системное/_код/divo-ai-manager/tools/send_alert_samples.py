@@ -19,7 +19,7 @@ def samples() -> list:
         "car": "BMW X6 2024, 48 186 км",
         "channel": "Авито",
         "reason": "phone",
-        "brief": "уже сказали: в наличии на Крылатской, ДТП не было; сейчас: оставил номер",
+        "brief": "В наличии на Крылатской, показ после 16. ДТП не было, кузов не чинили.",
         "lead_url": LEAD,
     }
     chat = {
@@ -28,7 +28,7 @@ def samples() -> list:
         "car": "Geely Coolray 2023",
         "channel": "Telegram",
         "reason": "handoff",
-        "brief": "уже сказали: снимем видео толщиномером в WhatsApp; сейчас: нужен живой менеджер",
+        "brief": "По микронам снимем видео толщиномером и пришлём в WhatsApp. Живой менеджер нужен для точных цифр.",
         "lead_url": LEAD,
     }
     echo = format_alert(chat, 0)

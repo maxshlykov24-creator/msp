@@ -1,6 +1,7 @@
 """Сделка в amo и цепочка алертов, когда клиент ждёт человека."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import secrets
@@ -16,7 +17,7 @@ from bot.alerts import (
     brief_from_history,
     compact_thread,
     format_alert,
-    format_taken,
+    format_done,
     next_ping,
     now_msk,
     take_keyboard,
@@ -395,10 +396,17 @@ def on_foreign_out(chat_id: str | int, msg: dict) -> bool:
     if not alert.get("active"):
         return False
     alert["active"] = False
+    alert["nags"] = False
     alert["picked"] = "chat"
     crm["alert"] = alert
     doc["crm"] = crm
     store.save_doc(chat_id, doc)
+    when = now_msk().strftime("%H:%M")
+    _queue_edit(
+        alert,
+        alert.get("snap") or {},
+        "Менеджер написал в чат, %s. Напоминать не буду." % when,
+    )
     log.info("чат %s: менеджер ответил в канале", chat_id)
     return True
 
@@ -437,15 +445,44 @@ def _chat_by_token(token: str) -> str | None:
     return None
 
 
-async def _finish_message(alert: dict, snap: dict, who: str, when: str, fallback: dict) -> None:
+def _started_ts(alert: dict) -> int:
+    dt = nudge.parse_iso(alert.get("started_at") or "")
+    if not dt:
+        return 0
+    return int(dt.timestamp())
+
+
+async def _edit_alert(
+    alert: dict, snap: dict, line: str, fallback: dict | None = None
+) -> None:
     if not bot:
         return
-    text = format_taken(snap, who, when)
+    text = format_done(snap, line)
+    extra = fallback or {}
     tg = alert.get("tg") or {}
-    chat_id = tg.get("chat_id") or (fallback.get("chat") or {}).get("id")
-    message_id = tg.get("message_id") or fallback.get("message_id")
+    chat_id = tg.get("chat_id") or (extra.get("chat") or {}).get("id")
+    message_id = tg.get("message_id") or extra.get("message_id")
     if chat_id and message_id:
         await bot.edit(int(chat_id), int(message_id), text, None)
+
+
+def _queue_edit(alert: dict, snap: dict, line: str) -> None:
+    if not bot:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    loop.create_task(_edit_alert(alert, snap, line))
+
+
+async def _finish_message(alert: dict, snap: dict, who: str, when: str, fallback: dict) -> None:
+    await _edit_alert(
+        alert,
+        snap,
+        "Взял %s в %s. Напоминать не буду." % (who, when),
+        fallback,
+    )
 
 
 async def on_take(cb: dict) -> None:
@@ -466,7 +503,7 @@ async def on_take(cb: dict) -> None:
             mid = message.get("message_id")
             raw = message.get("text") or ""
             lines = raw.splitlines() or ["✅ В работе | DIVO"]
-            lines[0] = "✅ <b>В работе</b> | DIVO"
+            lines[0] = "✅ <b>Связались</b> | DIVO"
             lines.insert(1, "Взял %s в %s. Напоминать не буду." % (who, when))
             if chat_id and mid:
                 await bot.edit(int(chat_id), int(mid), "\n".join(lines), None)
@@ -510,6 +547,41 @@ async def claim(chat_id: str | int, who: str, when: str, fallback: dict | None =
     log.info("чат %s: взял %s", chat_id, who)
 
 
+async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
+    """Связались: звонок в amo. Сообщение в чате гасит on_foreign_out."""
+    crmd = dict(doc.get("crm") or {})
+    alert = dict(crmd.get("alert") or {})
+    if not alert.get("active"):
+        return False
+    lead_id = (alert.get("snap") or {}).get("lead_id") or crmd.get("lead_id")
+    since = _started_ts(alert)
+    if not lead_id or not since:
+        return False
+    try:
+        calls = amo_client.lead_calls_since(int(lead_id), since)
+    except Exception:
+        log.exception("звонки сделки %s", lead_id)
+        return False
+    if not calls:
+        return False
+    kind = str(calls[0].get("note_type") or "call_out")
+    alert["active"] = False
+    alert["nags"] = False
+    alert["picked"] = "call"
+    crmd["alert"] = alert
+    doc["crm"] = crmd
+    store.save_doc(chat_id, doc)
+    label = "Входящий звонок" if kind == "call_in" else "Исходящий звонок"
+    when = now_msk().strftime("%H:%M")
+    await _edit_alert(
+        alert,
+        alert.get("snap") or {},
+        "%s в amo, %s. Напоминать не буду." % (label, when),
+    )
+    log.info("чат %s: %s, алерты снял", chat_id, kind)
+    return True
+
+
 async def tick() -> None:
     if bot:
         await bot.listen(timeout=25)
@@ -520,12 +592,19 @@ async def tick() -> None:
             continue
         if lead_moved(chat_id):
             continue
+        if await close_if_contacted(chat_id, doc):
+            continue
         if not alert.get("nags", True):
             continue
         started = datetime.fromisoformat(alert["started_at"])
         due = next_ping(started, alert.get("pings") or [])
         if due is None:
             continue
+        if due > 0:
+            doc = store.load_doc(chat_id)
+            if await close_if_contacted(chat_id, doc):
+                continue
+            alert = ((doc.get("crm") or {}).get("alert") or {})
         await _ping(alert, due)
         alert["pings"] = list(alert.get("pings") or []) + [due]
         doc["crm"]["alert"] = alert

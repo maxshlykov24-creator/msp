@@ -44,10 +44,15 @@ REASON_LINE = {
 
 THREAD_LIMIT = 6
 LINE_LIMIT = 160
-CUE = {
-    WAIT_CALL: "Звони как Никита. Клиент уже общался в чате, не начинай с нуля.",
-    WAIT_CHAT: "Пиши как Никита. Клиент уже в диалоге, не представляйся.",
-}
+BRIEF_LIMIT = 220
+SKIP_BRIEF_START = (
+    "добрый день",
+    "добрый вечер",
+    "доброе утро",
+    "здравствуйте",
+    "привет",
+    "слушаю вас",
+)
 
 
 def _esc(value: Any) -> str:
@@ -103,7 +108,7 @@ def next_ping(started: datetime, done: list[int], now: datetime | None = None) -
     return None
 
 
-def _first_sentence(text: str, limit: int = 90) -> str:
+def _first_sentence(text: str, limit: int = 140) -> str:
     clean = " ".join(str(text or "").split())
     if not clean:
         return ""
@@ -117,23 +122,30 @@ def _first_sentence(text: str, limit: int = 90) -> str:
     return clean
 
 
+def _useful_assistant(text: str) -> bool:
+    raw = " ".join(str(text or "").split())
+    if len(raw) < 24:
+        return False
+    low = raw.lower()
+    return not any(low.startswith(p) for p in SKIP_BRIEF_START)
+
+
 def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
-    """Короткий смысл для менеджера, без цитат клиента."""
-    last_asst = ""
+    """Смысл для менеджера: что уже закрыли в чате, без цитат клиента."""
+    said: list[str] = []
     for msg in history or []:
         if msg.get("role") != "assistant":
             continue
         text = " ".join(str(msg.get("content") or "").split())
-        if text:
-            last_asst = text
-    said = _first_sentence(last_asst)
-    need = REASON_LINE.get(reason or "", "")
-    parts = []
-    if said:
-        parts.append("уже сказали: %s" % said)
-    if need:
-        parts.append("сейчас: %s" % need)
-    return "; ".join(parts)
+        if not _useful_assistant(text):
+            continue
+        bit = _first_sentence(text)
+        if bit and bit not in said:
+            said.append(bit)
+    body = ". ".join(said[-2:])
+    if len(body) > BRIEF_LIMIT:
+        body = body[: BRIEF_LIMIT - 1].rstrip(" ,;") + "…"
+    return body
 
 
 def brief_from_thread(thread: list | None, reason: str = "") -> str:
@@ -184,9 +196,6 @@ def format_alert(snap: dict, ping: int = 0) -> str:
         brief = brief_from_thread(snap.get("thread"), snap.get("reason") or "")
     if brief:
         lines.append("▪️ <b>Контекст:</b> %s" % _esc(brief))
-    cue = CUE.get(wait) or CUE[WAIT_CHAT]
-    lines.append("")
-    lines.append("👉 %s" % cue)
     return "\n".join(lines)
 
 
@@ -195,16 +204,22 @@ def take_keyboard(token: str, wait: str = WAIT_CALL) -> dict:
     return {"inline_keyboard": [[{"text": label, "callback_data": "take:%s" % token}]]}
 
 
-def format_taken(snap: dict, who: str, when: str) -> str:
+def format_done(snap: dict, line: str) -> str:
     lines = format_alert(snap, 0).splitlines()
     if lines:
-        lines[0] = "✅ <b>В работе</b> | DIVO"
-    stamp = "Взял %s в %s. Напоминать не буду." % (_esc(who), _esc(when))
+        lines[0] = "✅ <b>Связались</b> | DIVO"
     if len(lines) >= 2 and lines[1] == "":
-        lines.insert(2, stamp)
+        lines.insert(2, line)
     else:
-        lines.insert(1, stamp)
+        lines.insert(1, line)
     return "\n".join(lines)
+
+
+def format_taken(snap: dict, who: str, when: str) -> str:
+    return format_done(
+        snap,
+        "Взял %s в %s. Напоминать не буду." % (_esc(who), _esc(when)),
+    )
 
 
 class AlertBot:
