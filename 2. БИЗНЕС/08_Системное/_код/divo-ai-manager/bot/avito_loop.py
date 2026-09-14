@@ -164,6 +164,21 @@ def content_text(msg: dict) -> str:
     return str(content).strip() if content else ""
 
 
+def item_card_text(item: dict | None) -> str:
+    """Карточка чужого объявления в чате Авито: type=item, не type=link."""
+    item = item or {}
+    title = str(item.get("title") or "").strip()
+    price = str(item.get("price_string") or item.get("price") or "").strip()
+    url = str(item.get("item_url") or item.get("url") or "").strip()
+    bits = [x for x in (title, price) if x]
+    line = "Клиент прислал объявление"
+    if bits:
+        line += ": " + ", ".join(bits)
+    if url:
+        line += ". Ссылка: " + url
+    return line
+
+
 def message_text(msg: dict) -> str:
     if (msg.get("direction") or "") != "in":
         return ""
@@ -171,8 +186,14 @@ def message_text(msg: dict) -> str:
         return ""
     content = msg.get("content") or {}
     text = content_text(msg)
+    item = content.get("item") if isinstance(content, dict) else None
+    card = item_card_text(item) if isinstance(item, dict) else ""
+    if text and card:
+        return text + "\n" + card
     if text:
         return text
+    if card:
+        return card
     kind = (msg.get("type") or "").lower()
     if isinstance(content, dict):
         kind = kind or str(content.get("type") or "").lower()
@@ -180,10 +201,14 @@ def message_text(msg: dict) -> str:
             return "Клиент прислал фото"
         if kind == "link":
             return (content.get("url") or "Клиент прислал ссылку").strip()
+        if kind == "item":
+            return "Клиент прислал объявление"
     if kind == "image":
         return "Клиент прислал фото"
     if kind == "link":
         return "Клиент прислал ссылку"
+    if kind == "item":
+        return "Клиент прислал объявление"
     return ""
 
 

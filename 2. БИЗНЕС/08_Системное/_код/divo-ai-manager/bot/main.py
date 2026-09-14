@@ -440,6 +440,32 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if cleaned != [b for b in bubbles if b.strip()]:
         log.info("чат %s: выкинул лизинг или торг без вопроса клиента", chat_id)
         bubbles = cleaned
+    bubbles = [human.drop_tradein_menu(b) for b in bubbles]
+    bubbles = [b for b in bubbles if b.strip()]
+    if human.client_listing(history):
+        trimmed = [human.drop_reask_listing(b) for b in bubbles]
+        trimmed = [b for b in trimmed if b.strip()]
+        if trimmed != bubbles:
+            log.info("чат %s: выкинул повторный запрос объявления", chat_id)
+            bubbles = trimmed
+    if (
+        bubbles
+        and not nudge.history_has_phone(history)
+        and not nudge.history_refuses_phone(history)
+        and nudge.phone_ask_count(history) < nudge.MAX_LIVE_PHONE_ASKS
+        and not nudge.is_thinking(user_text)
+    ):
+        with_phone = []
+        added = False
+        for bubble in bubbles:
+            if human.asks_vin(bubble) and not nudge.asked_phone(bubble):
+                with_phone.append(human.with_vin_phone(bubble))
+                added = True
+            else:
+                with_phone.append(bubble)
+        if added:
+            log.info("чат %s: к VIN дописал номер", chat_id)
+            bubbles = with_phone
 
     if not bubbles:
         bubbles = [random.choice(FALLBACK)]
@@ -538,6 +564,23 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "«готовы обсудить по месту». «Цена реальная?» это вопрос про "
             "цифру в объявлении: ответь да или нет по факту, без скидки."
         )
+    listing = human.client_listing(history)
+    if listing:
+        system += (
+            "\n\n# Своя машина уже в чате\n"
+            "Клиент прислал объявление своей машины. %s "
+            "Не проси ссылку, марку, модель и год повторно."
+            % listing
+        )
+    if human.wants_remote_eval(user_text):
+        system += (
+            "\n\n# Дистанционная оценка\n"
+            "В этой реплике VIN для загрузки истории и номер телефона. "
+            "Не меню: не пиши «VIN, а если нет — ссылку или марку». "
+            "Ссылку и марку просишь только если клиент сам сказал, что VIN нет."
+        )
+        if listing:
+            system += " Объявление уже есть, VIN всё равно нужен."
     used_phone = nudge.used_phone_lines(history)
     if used_phone:
         system += (

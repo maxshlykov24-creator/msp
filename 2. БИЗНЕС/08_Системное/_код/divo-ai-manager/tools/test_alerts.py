@@ -635,6 +635,36 @@ def test_avito_history_and_shot():
     assert turns[0]["content"].startswith("Здравствуйте обмен")
     assert "Клиент прислал ссылку" in turns[0]["content"]
 
+    item_msg = {
+        "created": 2,
+        "direction": "in",
+        "type": "item",
+        "content": {
+            "item": {
+                "title": "Hyundai Creta 1.6 AT, 2020, 109 000 км",
+                "price_string": "1 590 000 ₽",
+                "item_url": "https://avito.ru/lesnoy_gorodok/avtomobili/hyundai_creta_1.6_at_2020_109_000_km_8172403370",
+            }
+        },
+    }
+    assert "Hyundai Creta" in message_text(item_msg)
+    assert "1 590 000" in message_text(item_msg)
+    creta = [
+        {"created": 1, "direction": "in", "type": "text", "content": {"text": "Здравствуйте! Обмен интересует вас?"}},
+        item_msg,
+        {
+            "created": 3,
+            "direction": "out",
+            "type": "text",
+            "content": {"text": "Добрый день! Да, обмен готовы рассмотреть."},
+        },
+        {"created": 4, "direction": "in", "type": "text", "content": {"text": "Дистанционно"}},
+    ]
+    turns, pending, cursor = history_from_messages(creta)
+    assert pending == ["Дистанционно"]
+    assert "Клиент прислал объявление" in turns[0]["content"]
+    assert "Hyundai Creta" in turns[0]["content"]
+
     turns, pending, cursor = history_from_messages(
         [
             vlad[1],
@@ -715,6 +745,57 @@ def test_dialog_ids():
     assert is_dialog_id("autoteka") is False
 
 
+def test_tradein_vin_phone():
+    from bot.human import (
+        client_listing,
+        drop_reask_listing,
+        drop_tradein_menu,
+        for_chat,
+        with_vin_phone,
+        wants_remote_eval,
+    )
+    from bot import prompt
+
+    dump = (
+        "Хорошо. Напишите, пожалуйста, VIN своего автомобиля для загрузки "
+        "истории, а если VIN нет под рукой. Ссылку на объявление или марку, "
+        "модель и год"
+    )
+    cut = drop_tradein_menu(dump)
+    assert "VIN" in cut
+    assert "ссылк" not in cut.lower()
+    assert "марку" not in cut.lower()
+    chat = for_chat(dump)
+    assert "ссылк" not in chat.lower()
+    assert "марку" not in chat.lower()
+    with_phone = with_vin_phone(cut)
+    assert "телефон" in with_phone.lower()
+    assert with_phone.lower().count("напишите") == 1
+    already = with_vin_phone(
+        "Напишите, пожалуйста, VIN код автомобиля для загрузки истории "
+        "и контактный телефон для обратной связи"
+    )
+    assert already.count("телефон") == 1
+    later = drop_tradein_menu("Напишите ссылку на объявление или марку, модель и год")
+    assert "ссылку" in later.lower()
+    hist = [
+        {
+            "role": "user",
+            "content": (
+                "Здравствуйте! Обмен интересует вас?\n"
+                "Клиент прислал объявление: Hyundai Creta 1.6 AT, 2020, 109 000 км"
+            ),
+        }
+    ]
+    assert "Hyundai Creta" in client_listing(hist)
+    reask = drop_reask_listing("Напишите ссылку на объявление или марку, модель и год")
+    assert reask == ""
+    assert wants_remote_eval("Дистанционно")
+    built = prompt.build()
+    assert "Дистанционная оценка обмена" in built
+    assert "Объявление своей машины уже прислал" in built or "уже прислал" in built
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -735,4 +816,5 @@ if __name__ == "__main__":
     test_listing_context_cleanup()
     test_avito_history_and_shot()
     test_dialog_ids()
+    test_tradein_vin_phone()
     print("ok")

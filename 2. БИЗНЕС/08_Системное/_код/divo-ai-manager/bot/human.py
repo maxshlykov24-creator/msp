@@ -681,6 +681,96 @@ def drop_dead_closer(text: str) -> str:
     return _drop_parts(text, DEAD_CLOSER)
 
 
+ASKS_VIN = re.compile(r"\bvin\b", re.I)
+TRADEIN_MENU = re.compile(
+    r"(?:,|\.)?\s*(?:а\s+)?если\s+vin\s+нет[^.!?\n]*"
+    r"(?:[.!?]\s*(?:ссылк|марку)[^.!?\n]*)?",
+    re.IGNORECASE,
+)
+TRADEIN_FALLBACK = re.compile(
+    r"(?:,|\.)?\s*(?:ссылк\w*\s+на\s+объявлен[^.!?\n]*?)?(?:или\s+)?"
+    r"марку,?\s*модель\s+и\s+год",
+    re.IGNORECASE,
+)
+TRADEIN_FALLBACK_ONLY = re.compile(
+    r"ссылк\w*\s+на\s+объявлен|марку,\s*модель\s+и\s+год|марку\s+модель\s+и\s+год",
+    re.IGNORECASE,
+)
+LISTING_MARK = "Клиент прислал объявление"
+REMOTE_EVAL = re.compile(r"дистанцион", re.I)
+VIN_PHONE_TAIL = "Напишите, пожалуйста, контактный телефон для обратной связи"
+
+
+def asks_vin(text: str) -> bool:
+    return bool(ASKS_VIN.search(text or ""))
+
+
+def wants_remote_eval(text: str) -> bool:
+    return bool(REMOTE_EVAL.search(text or ""))
+
+
+def client_listing(messages: list[dict] | None) -> str:
+    """Строка карточки своей машины, если клиент уже прислал объявление."""
+    for msg in messages or []:
+        if msg.get("role") != "user":
+            continue
+        text = msg.get("content") or ""
+        if LISTING_MARK not in text:
+            continue
+        for line in text.splitlines():
+            if LISTING_MARK in line:
+                return line.strip()
+        return LISTING_MARK
+    return ""
+
+
+def drop_tradein_menu(text: str) -> str:
+    """VIN-реплика без меню «или ссылка, или марка, модель и год»."""
+    original = text or ""
+    if not asks_vin(original):
+        return original
+    text = TRADEIN_MENU.sub("", original)
+    text = TRADEIN_FALLBACK.sub("", text)
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", text):
+        if not part.strip():
+            continue
+        if TRADEIN_FALLBACK_ONLY.search(part) and not asks_vin(part):
+            continue
+        kept.append(part)
+    text = " ".join(kept).strip()
+    return _tidy(text, original) if text else original
+
+
+def drop_reask_listing(text: str) -> str:
+    """Объявление уже в чате — не просим ссылку и марку повторно."""
+    original = text or ""
+    if not TRADEIN_FALLBACK_ONLY.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if TRADEIN_FALLBACK_ONLY.search(part) and not asks_vin(part):
+            continue
+        kept.append(part)
+    text = TRADEIN_MENU.sub("", " ".join(kept)).strip()
+    if not text:
+        return ""
+    return _tidy(text, original)
+
+
+def with_vin_phone(text: str) -> str:
+    """К запросу VIN дописать телефон, если его в реплике ещё нет."""
+    original = (text or "").strip()
+    if not original or not asks_vin(original):
+        return original
+    if re.search(r"телефон|номер(?:а)?(?:\s+телефона)?", original, re.I):
+        return original
+    body = original.rstrip(" .!?")
+    if re.search(r"для загрузки истории", body, re.I):
+        return body + " и контактный телефон для обратной связи"
+    return body + ". " + VIN_PHONE_TAIL
+
+
 PAPER_LEAK = re.compile(
     r"("
     r"строк[аиеуы]\s+(с\s+ценой|в\s+(базе|карточ)|нет)|"
@@ -760,6 +850,7 @@ def for_chat(text: str) -> str:
     text = drop_paper_talk(text)
     text = drop_logistics_lecture(text)
     text = drop_dead_closer(text)
+    text = drop_tradein_menu(text)
     text = fix_brand(text)
     text = add_missing_dots(text)
     return bang_greeting(drop_end_period(text))
