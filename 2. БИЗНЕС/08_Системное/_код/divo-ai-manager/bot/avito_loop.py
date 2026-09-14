@@ -36,6 +36,9 @@ UNSUPPORTED = (
     "пожалуйста, перейдите в авито мессенджер",
     "аккуратно напомнили",
 )
+ADOPT_PROFILE_KEY = "adopted_u2u_20260914"
+# Чат по профилю, не по объявлению: API без chat_types=u2u его не отдаёт.
+MIKHAIL_U2U = "u2u-GgGsxybRa8lF_hT4SUeHzw"
 ME_NAMES = frozenset({"диво моторс", "divo motors", "divo моторс"})
 
 
@@ -325,6 +328,38 @@ async def list_chats(api: Avito, limit: int = 200) -> list[dict]:
     return out
 
 
+async def _adopt_one(api: Avito, state: dict, cursor: dict, chat: dict) -> None:
+    cid = str(chat.get("id") or "")
+    if not cid:
+        return
+    try:
+        msgs = await api.messages(cid, limit=100)
+    except AvitoError as exc:
+        log.warning("авито adopt %s: %s", cid[:12], exc)
+        return
+    turns, pending_texts, cur = history_from_messages(msgs)
+    chat_key = store_id(cid)
+    await remember_listing(chat_key, chat, api)
+    store.save_history(chat_key, turns)
+    doc = store.load_doc(chat_key)
+    meta = nudge.refresh(doc.get("nudge") or {}, turns)
+    meta["waiting"] = False
+    doc["nudge"] = meta
+    store.save_doc(chat_key, doc)
+    store.resume(chat_key)
+    remember_allow(state, cid)
+    cursor[cid] = cur
+    title = listing_of(chat).get("title") or ""
+    log.info(
+        "авито беру %s (%s, %s), история %d, хвост %s",
+        cid[:12],
+        chat_peer(chat) or "?",
+        title[:50],
+        len(turns),
+        (pending_texts[-1][:40] if pending_texts else "нет"),
+    )
+
+
 async def adopt_shot(api: Avito) -> None:
     """Разово взять диалоги со скрина: полная история, без повторного приветствия."""
     state = load_state()
@@ -359,47 +394,72 @@ async def adopt_shot(api: Avito) -> None:
         log.warning("авито adopt: Михаил «Цена реальная?» в API не найден")
     cursor = dict(state.get("cursor") or {})
     for chat in picked:
-        cid = str(chat.get("id") or "")
-        if not cid:
-            continue
-        try:
-            msgs = await api.messages(cid, limit=100)
-        except AvitoError as exc:
-            log.warning("авито adopt %s: %s", cid[:12], exc)
-            continue
-        turns, pending_texts, cur = history_from_messages(msgs)
-        chat_key = store_id(cid)
-        await remember_listing(chat_key, chat, api)
-        store.save_history(chat_key, turns)
-        doc = store.load_doc(chat_key)
-        meta = nudge.refresh(doc.get("nudge") or {}, turns)
-        meta["waiting"] = False
-        doc["nudge"] = meta
-        store.save_doc(chat_key, doc)
-        store.resume(chat_key)
-        remember_allow(state, cid)
-        cursor[cid] = cur
-        title = listing_of(chat).get("title") or ""
-        log.info(
-            "авито беру %s (%s, %s), история %d, хвост %s",
-            cid[:12],
-            chat_peer(chat) or "?",
-            title[:50],
-            len(turns),
-            (pending_texts[-1][:40] if pending_texts else "нет"),
-        )
+        await _adopt_one(api, state, cursor, chat)
     state["cursor"] = cursor
     state[ADOPT_SHOT_KEY] = True
     save_state(state)
 
 
+async def prime_unseen(api: Avito, state: dict | None = None) -> None:
+    """Новые типы чатов (u2u) не отвечать задним числом, только запомнить хвост."""
+    state = state or load_state()
+    cursor = dict(state.get("cursor") or {})
+    try:
+        chats = await list_chats(api, 250)
+    except AvitoError as exc:
+        log.warning("авито курсор u2u: %s", exc)
+        return
+    added = 0
+    for chat in chats:
+        cid = str(chat.get("id") or "")
+        if not cid or cid in cursor:
+            continue
+        cursor[cid] = created_of(chat.get("last_message") or {})
+        added += 1
+    if added:
+        state["cursor"] = cursor
+        save_state(state)
+        log.info("авито: в курсор добавил %d чатов по профилю, хвост не трогаю", added)
+
+
+async def adopt_profile_chat(api: Avito) -> None:
+    """Михаил «Цена реальная?» — чат по профилю, его не было в ленте u2i."""
+    state = load_state()
+    if not state.get(ADOPT_PROFILE_KEY):
+        chat = None
+        try:
+            chat = await api.chat(MIKHAIL_U2U)
+        except AvitoError as exc:
+            log.warning("авито adopt профиль: %s", exc)
+        if not (chat or {}).get("id"):
+            try:
+                chats = await list_chats(api, 80)
+            except AvitoError:
+                chats = []
+            chat = next((c for c in chats if str(c.get("id") or "") == MIKHAIL_U2U), None)
+        if chat and chat.get("id"):
+            cursor = dict(state.get("cursor") or {})
+            await _adopt_one(api, state, cursor, chat)
+            state["cursor"] = cursor
+        else:
+            log.warning("авито adopt: профиль-чат Михаила снова не найден")
+        state[ADOPT_PROFILE_KEY] = True
+        save_state(state)
+    await prime_unseen(api, state)
+
+
 async def remember_listing(chat_key: str, chat: dict, api: Avito) -> None:
     doc = store.load_doc(chat_key)
-    if doc.get("avito", {}).get("title"):
+    if (doc.get("avito") or {}).get("chat_id"):
         return
     listing = listing_of(chat)
+    ctx_type = str((chat.get("context") or {}).get("type") or "")
+    if ctx_type == "u2u" and not listing.get("title"):
+        listing["title"] = "чат по профилю, объявление не привязано"
     cme_id = ""
     item_id = listing.get("item_id")
+    if item_id in (0, "0", None, ""):
+        item_id = None
     if item_id:
         try:
             item = await api.item(item_id)
@@ -435,6 +495,14 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
     for chat in chats:
         cid = str(chat.get("id") or "")
         if not cid:
+            continue
+        if cid.startswith("a2u-"):
+            last = chat.get("last_message") or {}
+            last_at = created_of(last)
+            seen = int(cursor.get(cid) or 0)
+            if last_at > seen:
+                cursor[cid] = last_at
+                changed = True
             continue
         last = chat.get("last_message") or {}
         last_at = created_of(last)

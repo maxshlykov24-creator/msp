@@ -650,16 +650,15 @@ async def tick() -> None:
         due = next_ping(started, alert.get("pings") or [])
         if due is None:
             continue
-        if due > 0:
-            doc = store.load_doc(chat_id)
-            if await close_if_contacted(chat_id, doc):
-                continue
-            alert = ((doc.get("crm") or {}).get("alert") or {})
-            snap = dict(alert.get("snap") or {})
-            history = list(doc.get("messages") or [])
-            if history:
-                snap["brief"] = brief_from_history(history, alert.get("reason") or "")
-                alert["snap"] = snap
+        doc = store.load_doc(chat_id)
+        if due > 0 and await close_if_contacted(chat_id, doc):
+            continue
+        alert = ((doc.get("crm") or {}).get("alert") or {})
+        snap = dict(alert.get("snap") or {})
+        history = list(doc.get("messages") or [])
+        if history:
+            snap["brief"] = brief_from_history(history, alert.get("reason") or "")
+            alert["snap"] = snap
         await _ping(alert, due)
         alert["pings"] = list(alert.get("pings") or []) + [due]
         doc["crm"]["alert"] = alert

@@ -67,9 +67,19 @@ class Avito:
         return settings.avito_user_id
 
     async def chats(
-        self, unread_only: bool = False, limit: int = 50, offset: int = 0
+        self,
+        unread_only: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+        chat_types: tuple[str, ...] | None = None,
     ) -> list[dict]:
-        params = {"limit": limit, "offset": max(int(offset or 0), 0)}
+        params: dict[str, str | int] = {
+            "limit": limit,
+            "offset": max(int(offset or 0), 0),
+        }
+        types = chat_types if chat_types is not None else ("u2i", "u2u")
+        if types:
+            params["chat_types"] = ",".join(types)
         if unread_only:
             params["unread_only"] = "true"
         data = await self._call(
@@ -78,6 +88,15 @@ class Avito:
             params=params,
         )
         return list(data.get("chats") or [])
+
+    async def chat(self, chat_id: str) -> dict:
+        data = await self._call(
+            "GET",
+            "/messenger/v2/accounts/%s/chats/%s" % (self.user_id, chat_id),
+        )
+        if isinstance(data, dict) and isinstance(data.get("chat"), dict):
+            return data["chat"]
+        return data if isinstance(data, dict) else {}
 
     async def messages(self, chat_id: str, limit: int = 20) -> list[dict]:
         data = await self._call(

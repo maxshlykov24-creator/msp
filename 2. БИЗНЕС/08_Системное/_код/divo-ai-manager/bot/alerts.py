@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,7 @@ REASON_LINE = {
 
 THREAD_LIMIT = 6
 LINE_LIMIT = 160
-BRIEF_LIMIT = 360
+BRIEF_LIMIT = 220
 SKIP_BRIEF_START = (
     "добрый день",
     "добрый вечер",
@@ -58,6 +59,9 @@ SKIP_BRIEF_START = (
     "слушаю вас",
     "очень приятно",
     "как могу к вам",
+    "хорошо",
+    "понял",
+    "вижу вашу ссылку",
 )
 SKIP_BRIEF_HAS = (
     "микрон",
@@ -71,6 +75,35 @@ SKIP_BRIEF_HAS = (
     "контактный телефон",
     "напишите телефон",
     "по какому телефону",
+    "подскажите",
+    "марку и год",
+    "дайте ссылку",
+    "когда готов",
+    "напишите номер",
+    "о какой машин",
+)
+FILLER = frozenset(
+    {
+        "хорошо",
+        "понял",
+        "хорошо понял",
+        "ок",
+        "договорились",
+        "принято",
+        "зафиксировал",
+        "отлично",
+    }
+)
+ASK_HINT = (
+    "подскажите",
+    "напишите",
+    "скиньте",
+    "дайте ссылку",
+    "когда готов",
+    "хотели бы",
+    "о какой машин",
+    "какой автомобиль",
+    "марку и год",
 )
 CLIENT_TOPICS = (
     (("в кредит", "кредит", "рассрочк"), "хочет в кредит"),
@@ -153,13 +186,26 @@ def _first_sentence(text: str, limit: int = 110) -> str:
     return clean
 
 
+def _plain(text: str) -> str:
+    return re.sub(r"[.!,?]+", "", (text or "").lower()).strip()
+
+
 def _skip_bit(text: str) -> bool:
     low = " ".join(str(text or "").split()).lower().rstrip(".!?")
     if len(low) < 4:
         return True
+    if _plain(low) in FILLER:
+        return True
     if any(low.startswith(p) for p in SKIP_BRIEF_START):
         return True
     return any(p in low for p in SKIP_BRIEF_HAS)
+
+
+def _is_ask(text: str) -> bool:
+    low = (text or "").lower()
+    if "?" in low:
+        return True
+    return any(p in low for p in ASK_HINT)
 
 
 def _chunks(text: str) -> list[str]:
@@ -181,14 +227,15 @@ def _chunks(text: str) -> list[str]:
     return parts or [raw]
 
 
-def _useful_bit(text: str) -> str:
+def _fact_bits(text: str) -> list[str]:
+    out: list[str] = []
     for part in _chunks(text):
-        if _skip_bit(part):
+        if _skip_bit(part) or _is_ask(part):
             continue
-        bit = _first_sentence(part)
+        bit = _first_sentence(part, 90)
         if bit:
-            return bit.rstrip(".!?")
-    return ""
+            out.append(bit.rstrip(".!?"))
+    return out
 
 
 def _client_blob(history: list[dict] | None) -> str:
@@ -199,6 +246,15 @@ def _client_blob(history: list[dict] | None) -> str:
         text = " ".join(str(msg.get("content") or "").split())
         if text:
             parts.append(text.lower().replace("ё", "е"))
+    return " ".join(parts)
+
+
+def _all_blob(history: list[dict] | None) -> str:
+    parts = []
+    for msg in history or []:
+        text = " ".join(str(msg.get("content") or "").split())
+        if text:
+            parts.append(text.replace("ё", "е"))
     return " ".join(parts)
 
 
@@ -217,6 +273,76 @@ def _topic_line(history: list[dict] | None) -> str:
     return "%s, %s" % (found[0], found[1])
 
 
+def _own_car(blob: str) -> str:
+    low = (blob or "").lower()
+    m = re.search(
+        r"(v[-\s]?класс\w*|гельендваген)"
+        r"(?:\s|,)*"
+        r"(20\d{2})?"
+        r"(?:[^\d]{0,48}(\d[\d\s]{1,6})\s*(?:тысяч|тыс\.?)?\s*км)?",
+        low,
+        re.I,
+    )
+    if not m:
+        return ""
+    name = re.sub(r"\s+", "-", m.group(1).strip().replace(" ", "-"))
+    name = "V-класс" if name.lower().startswith("v") else m.group(1)
+    year = m.group(2) or ""
+    km = re.sub(r"\s+", "", m.group(3) or "")
+    bits = [name]
+    if year:
+        bits.append(year)
+    if km:
+        bits.append("%s тыс. км" % km)
+    return "своя машина: " + ", ".join(bits)
+
+
+def _copay(blob: str) -> str:
+    low = (blob or "").lower()
+    m = re.search(
+        r"доплат\w*.{0,28}?(\d+(?:[.,]\d+)?)\s*(млн|миллион)",
+        low,
+        re.I,
+    )
+    if not m:
+        m = re.search(
+            r"до\s+(\d+(?:[.,]\d+)?)\s*млн.{0,32}доплат",
+            low,
+            re.I,
+        )
+    if not m:
+        return ""
+    return "доплата до %s млн" % m.group(1).replace(" ", "")
+
+
+def _extra_notes(blob: str) -> list[str]:
+    low = (blob or "").lower()
+    out: list[str] = []
+    if "другого города" in low:
+        out.append("клиент из другого города")
+    return out
+
+
+def _redundant(bit: str, notes: list[str]) -> bool:
+    low = bit.lower()
+    joined = " ".join(notes).lower()
+    if not joined:
+        return False
+    if "доплат" in low and "доплат" in joined:
+        return True
+    if ("трейд" in low or "обмен" in low) and ("обмен" in joined or "трейд" in joined):
+        return True
+    compact = low.replace(" ", "")
+    if ("v-класс" in compact or "vкласс" in compact) and (
+        "v-класс" in joined or "v класс" in joined
+    ):
+        return True
+    for note in notes:
+        if bit.lower() in note.lower() or note.lower() in bit.lower():
+            return True
+    return False
+
+
 def _cap(text: str) -> str:
     clean = (text or "").strip()
     if not clean:
@@ -225,21 +351,30 @@ def _cap(text: str) -> str:
 
 
 def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
-    """Выжимка для менеджера: интерес клиента и что уже закрыли. Не переписка."""
+    """Короткий контекст для менеджера: интерес и факты. Не копия переписки."""
+    blob = _all_blob(history)
+    notes: list[str] = []
+    topic = _topic_line(history)
+    if topic:
+        notes.append(_cap(topic))
+    car = _own_car(blob)
+    if car:
+        notes.append(car)
+    pay = _copay(blob)
+    if pay:
+        notes.append(pay)
+    for extra in _extra_notes(blob):
+        if extra not in notes:
+            notes.append(extra)
     facts: list[str] = []
     for msg in history or []:
         if msg.get("role") != "assistant":
             continue
-        bit = _useful_bit(str(msg.get("content") or ""))
-        if bit and bit not in facts:
-            facts.append(bit)
-    parts: list[str] = []
-    topic = _topic_line(history)
-    if topic:
-        parts.append(_cap(topic))
-    if facts:
-        parts.append(". ".join(facts[-3:]))
-    body = ". ".join(p.rstrip(".") for p in parts if p)
+        for bit in _fact_bits(str(msg.get("content") or "")):
+            if bit and not _redundant(bit, notes + facts):
+                facts.append(bit)
+    notes.extend(facts[:2])
+    body = ". ".join(p.rstrip(".") for p in notes if p)
     if body and not body.endswith((".", "!", "?")):
         body += "."
     if len(body) > BRIEF_LIMIT:

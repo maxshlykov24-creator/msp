@@ -134,6 +134,35 @@ def test_alert_text():
     assert "хочет в кредит" in credit.lower()
     assert "наличный расчёт" in credit
     assert "контактный телефон" not in credit.lower()
+    trade = brief_from_history(
+        [
+            {"role": "user", "content": "Здравствуйте обмен интересует?"},
+            {
+                "role": "assistant",
+                "content": "Добрый день! Мы принимаем автомобили в трейд-ин. Когда готовы подъехать на оценку?",
+            },
+            {"role": "user", "content": "Договорились"},
+            {"role": "user", "content": "До 8 млн только моя доплата"},
+            {
+                "role": "assistant",
+                "content": "Хорошо, понял. Подскажите марку и год своей машины, или дайте ссылку на объявление, если продаёте где-то.",
+            },
+            {
+                "role": "assistant",
+                "content": "Вижу вашу ссылку, это V-класс 2017, 187 тысяч км. Доплату до 8 млн по G-классу понял. Напишите номер, наберу, обсудим обмен",
+            },
+        ],
+        "handoff",
+    )
+    assert "интересует обмен" in trade.lower()
+    assert "v-класс" in trade.lower()
+    assert "2017" in trade
+    assert "187" in trade
+    assert "8 млн" in trade
+    assert "хорошо, понял" not in trade.lower()
+    assert "подскажите" not in trade.lower()
+    assert "когда готовы" not in trade.lower()
+    assert "напишите номер" not in trade.lower()
     keys = take_keyboard("abcd1234", "call")
     assert keys["inline_keyboard"][0][0]["callback_data"] == "take:abcd1234"
     taken = format_taken({"wait": "call", "car": "X6", "reason": "phone"}, "Максим", "14:51")
@@ -430,6 +459,35 @@ def test_avito_history_and_shot():
     assert drop_regreeting("Здравствуйте. DIVO MOTORS, Никита. Крыло в окрасе") == "Крыло в окрасе"
     assert drop_regreeting("По автотеке что там?") == "По автотеке что там?"
     assert drop_regreeting("Добрый день!") == ""
+    only_in = [
+        {
+            "created": 1,
+            "direction": "in",
+            "type": "text",
+            "content": {"text": "Здравствуйте, я с другого города"},
+        },
+        {
+            "created": 2,
+            "direction": "in",
+            "type": "text",
+            "content": {"text": "Цена реальная?"},
+        },
+    ]
+    turns, pending, cursor = history_from_messages(only_in)
+    assert turns == []
+    assert pending == ["Здравствуйте, я с другого города", "Цена реальная?"]
+    assert cursor == 0
+    assert is_shot_chat(
+        {
+            "id": "u2u-GgGsxybRa8lF_hT4SUeHzw",
+            "users": [{"id": 1, "name": "Михаил"}],
+            "last_message": {
+                "direction": "in",
+                "type": "text",
+                "content": {"text": "Цена реальная?"},
+            },
+        }
+    )
 
 
 if __name__ == "__main__":

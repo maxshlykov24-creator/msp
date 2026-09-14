@@ -719,6 +719,7 @@ async def poll_avito(tg: Telegram) -> None:
     try:
         await avito_loop.prime_cursor(api)
         await avito_loop.adopt_shot(api)
+        await avito_loop.adopt_profile_chat(api)
         log.info("авито опрос каждые %s сек", settings.avito_poll_sec)
         while True:
             try:
