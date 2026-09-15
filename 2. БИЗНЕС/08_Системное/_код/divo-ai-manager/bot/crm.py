@@ -31,6 +31,9 @@ from bot.config import settings
 log = logging.getLogger("crm")
 
 URGENT_REASONS = frozenset({"phone", "call", "complaint", "handoff"})
+# Номер сам по себе не глушит чат: клиент часто пишет вопрос и телефон одной
+# пачкой. Карточку менеджеру всё равно шлём. Молчим только когда нужен человек.
+PAUSE_REASONS = frozenset({"call", "complaint", "handoff", "stuck", "llm"})
 
 if str(settings.root / "tools") not in sys.path:
     sys.path.insert(0, str(settings.root / "tools"))

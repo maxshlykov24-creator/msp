@@ -1059,7 +1059,7 @@ async def run() -> None:
 
                 pending.setdefault(str(chat_id), []).append(text)
                 urgent = await crm.capture_if_urgent(chat_id, pending[str(chat_id)])
-                if urgent in crm.URGENT_REASONS:
+                if urgent in crm.PAUSE_REASONS:
                     await crm.ack_callback(tg, chat_id, pending[str(chat_id)], urgent)
                     store.pause(chat_id, "эскалация: %s" % urgent)
                     pending.pop(str(chat_id), None)

@@ -71,6 +71,11 @@ def test_phone():
 
 def test_urgent_reason():
     assert urgent_reason("+79502292544", []) == "phone"
+    from bot.crm import PAUSE_REASONS, URGENT_REASONS
+
+    assert "phone" in URGENT_REASONS
+    assert "phone" not in PAUSE_REASONS
+    assert {"call", "complaint", "handoff"} <= PAUSE_REASONS
     assert urgent_reason("это развод", []) == ""
     assert urgent_reason("дайте живого человека", []) == ""
     hist = [{"role": "user", "content": "мой 8 900 111-22-33"}]
@@ -518,7 +523,9 @@ def test_pings():
     assert next_ping(started, [0, 5, 10, 15, 30], now=at(14, 59)) is None
     assert next_ping(started, [0, 5, 10, 15, 30], now=at(15, 0)) == 60
     assert next_ping(started, [0, 5, 10, 15, 30, 60], now=at(16, 0)) is None
-    assert next_ping(started, [], now=at(21, 0)) is None
+    assert next_ping(started, [], now=at(21, 0)) == 0
+    assert next_ping(started, [0], now=at(21, 0)) is None
+    assert next_ping(at(8, 33), [], now=at(8, 33)) == 0
     late = at(19, 58)
     assert next_ping(late, [0], now=at(20, 3)) is None
     morning = datetime(2026, 9, 15, 10, 5, tzinfo=MSK)

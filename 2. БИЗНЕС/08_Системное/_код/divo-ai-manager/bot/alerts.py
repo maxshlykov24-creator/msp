@@ -113,12 +113,17 @@ def ping_at(started: datetime, minutes: int) -> datetime:
 
 def next_ping(started: datetime, done: list[int], now: datetime | None = None) -> int | None:
     moment = (now or now_msk()).astimezone(MSK)
-    if not in_working_hours(moment):
-        return None
     sent = set(int(x) for x in (done or []))
     for minutes in PING_MINUTES:
         if minutes in sent:
             continue
+        # Первая карточка — сразу, даже до 10:00: номер в 8:30 не должен ждать открытия.
+        if minutes == 0:
+            if moment >= started.astimezone(MSK):
+                return 0
+            continue
+        if not in_working_hours(moment):
+            return None
         if moment >= ping_at(started, minutes):
             return minutes
     return None
