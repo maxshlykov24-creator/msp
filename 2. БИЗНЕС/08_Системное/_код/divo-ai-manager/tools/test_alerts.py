@@ -372,6 +372,21 @@ def test_alert_text():
     assert "ДТП не было" in ping5
     assert "Автозаводская 18" in ping5
     assert ping5.splitlines()[0] != text.splitlines()[0]
+    media = format_alert(
+        {
+            "wait": "chat",
+            "name": "Алексей",
+            "car": "Tank 300",
+            "channel": "Авито",
+            "reason": "media",
+            "brief": "Нужно отправить фото в мессенджер. Я сам из Крыма.",
+        },
+        0,
+    )
+    assert "chat_id" not in media.lower()
+    assert "av:u2i" not in media
+    assert "Нужно отправить в мессенджер" in media
+    assert "📷" in media
     thread = compact_thread(
         [
             {"role": "user", "content": "привет"},
@@ -1297,27 +1312,33 @@ def test_one_card_per_phone():
                 "pings": [0],
                 "snap": {"phone": "79277432501", "wait": "call"},
                 "tg": {"chat_id": -1, "message_id": 62},
+                "posts": [
+                    {"chat_id": -1, "message_id": 62},
+                    {"chat_id": -1, "message_id": 99},
+                ],
             }
         },
     }
     sent: list[str] = []
+    deleted: list[int] = []
 
     class Fake:
         async def send(self, text, markup=None):
             sent.append("send")
-            return (-1, 99)
+            return (-1, 100)
 
         async def edit(self, *a, **k):
             return True
 
-        async def delete(self, *a, **k):
+        async def delete(self, chat, mid):
+            deleted.append(int(mid))
             return True
 
     old_bot = crm.bot
     old_load, old_save, old_ids = store.load_doc, store.save_doc, store.all_chat_ids
     crm.bot = Fake()
     store.load_doc = lambda cid: claimed
-    store.save_doc = lambda cid, d: None
+    store.save_doc = lambda cid, d: claimed.update(d)
     store.all_chat_ids = lambda: ["av:x"]
     try:
         asyncio.run(crm._tick_one("av:x"))
@@ -1327,6 +1348,8 @@ def test_one_card_per_phone():
         store.save_doc = old_save
         store.all_chat_ids = old_ids
     assert sent == []
+    assert deleted == [99]
+    assert [p["message_id"] for p in claimed["crm"]["alert"]["posts"]] == [62]
 
 
 if __name__ == "__main__":

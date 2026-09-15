@@ -118,7 +118,92 @@ def _adopt_open_card(new: dict, phone: str, skip: str) -> None:
         new["nags"] = False
         new["started_at"] = other.get("started_at") or new.get("started_at")
         new["pings"] = list(other.get("pings") or [])
+        new["posts"] = _uniq_posts((new.get("posts") or []) + (other.get("posts") or []))
         return
+
+
+def _uniq_posts(rows: list) -> list[dict]:
+    seen: set[tuple[int, int]] = set()
+    out: list[dict] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            chat_id = int(row.get("chat_id") or 0)
+            message_id = int(row.get("message_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not chat_id or not message_id:
+            continue
+        key = (chat_id, message_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"chat_id": chat_id, "message_id": message_id})
+    return out[-20:]
+
+
+def _remember_post(alert: dict, chat_id: int | str | None, message_id: int | None) -> None:
+    if not chat_id or not message_id:
+        return
+    try:
+        ref = {"chat_id": int(chat_id), "message_id": int(message_id)}
+    except (TypeError, ValueError):
+        return
+    alert["posts"] = _uniq_posts(list(alert.get("posts") or []) + [ref])
+
+
+def _persist_alert(chat_id: str | int | None, alert: dict) -> None:
+    """Пишем posts на диск сразу: иначе сбой оставит карточку, которой нет в состоянии."""
+    if not chat_id:
+        return
+    doc = store.load_doc(chat_id)
+    crmd = dict(doc.get("crm") or {})
+    fresh = dict(crmd.get("alert") or {})
+    fresh["posts"] = _uniq_posts(list(fresh.get("posts") or []) + list(alert.get("posts") or []))
+    if ping_allowed(fresh):
+        if alert.get("tg"):
+            fresh["tg"] = dict(alert["tg"])
+        if alert.get("snap"):
+            fresh["snap"] = dict(alert["snap"])
+        if "pings" in alert:
+            fresh["pings"] = list(alert.get("pings") or [])
+    crmd["alert"] = fresh
+    doc["crm"] = crmd
+    store.save_doc(chat_id, doc)
+    alert["posts"] = list(fresh.get("posts") or [])
+    if ping_allowed(fresh) and fresh.get("tg"):
+        alert["tg"] = dict(fresh["tg"])
+
+
+async def _sweep_posts(alert: dict, keep: dict | None = None) -> None:
+    """В группе остаётся одно сообщение: текущая карточка. Остальные снимаем."""
+    keep = dict(keep or alert.get("tg") or {})
+    try:
+        keep_chat = int(keep.get("chat_id") or 0)
+        keep_mid = int(keep.get("message_id") or 0)
+    except (TypeError, ValueError):
+        keep_chat = keep_mid = 0
+    if keep_chat and keep_mid:
+        _remember_post(alert, keep_chat, keep_mid)
+    left: list[dict] = []
+    for row in list(alert.get("posts") or []):
+        try:
+            chat_id = int(row.get("chat_id") or 0)
+            message_id = int(row.get("message_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not chat_id or not message_id:
+            continue
+        if chat_id == keep_chat and message_id == keep_mid:
+            left.append({"chat_id": chat_id, "message_id": message_id})
+            continue
+        gone = False
+        if bot:
+            gone = await bot.delete(chat_id, message_id)
+        if not gone:
+            left.append({"chat_id": chat_id, "message_id": message_id})
+    alert["posts"] = _uniq_posts(left)
 
 
 def digits_price(raw: str) -> int:
@@ -472,7 +557,7 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
 
 
 def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
-    if not snap.get("phone") and snap.get("reason") != "llm":
+    if not snap.get("phone") and snap.get("reason") not in {"llm", "media"}:
         return
     crm = dict(doc.get("crm") or {})
     alert = dict(crm.get("alert") or {})
@@ -508,6 +593,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
     if alert.get("tg"):
         new["tg"] = alert["tg"]
         new["token"] = alert.get("token") or new["token"]
+        new["posts"] = list(alert.get("posts") or [])
     skip = str(doc.get("chat_id") or snap.get("chat_id") or "")
     _adopt_open_card(new, str(snap.get("phone") or ""), skip)
     alert = new
@@ -515,11 +601,13 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
     doc["crm"] = crm
 
 
-async def _publish(alert: dict, text: str, *, replace: bool = False) -> None:
+async def _publish(
+    alert: dict, text: str, *, replace: bool = False, chat_id: str | int | None = None
+) -> None:
     """Пинг шлём новым сообщением, чтобы пришёл пуш. Старое сразу снимаем.
 
-    Если снять не вышло, правим старое на месте: в группе не должны висеть
-    две карточки на один номер.
+    Id всех карточек пишем в posts до удаления: если снять не вышло или
+    заявку взяли в эту секунду, следующий тик добьёт хвост.
     """
     if not bot:
         return
@@ -529,33 +617,48 @@ async def _publish(alert: dict, text: str, *, replace: bool = False) -> None:
     tg = dict(alert.get("tg") or {})
     old_chat = tg.get("chat_id")
     old_mid = tg.get("message_id")
+    if old_chat and old_mid:
+        _remember_post(alert, old_chat, old_mid)
+
+    async def _after_send(sent: tuple[int, int]) -> None:
+        _remember_post(alert, sent[0], sent[1])
+        alert["tg"] = {"chat_id": sent[0], "message_id": sent[1]}
+        _persist_alert(chat_id, alert)
+        keep = dict(alert["tg"])
+        if chat_id:
+            disk = ((store.load_doc(chat_id).get("crm") or {}).get("alert") or {})
+            if not ping_allowed(disk) and disk.get("tg"):
+                keep = dict(disk["tg"])
+                alert["tg"] = dict(keep)
+        await _sweep_posts(alert, keep=keep)
+        _persist_alert(chat_id, alert)
+
     if replace:
         sent = await bot.send(text, markup)
         if sent:
-            alert["tg"] = {"chat_id": sent[0], "message_id": sent[1]}
-            if old_chat and old_mid and int(old_mid) != int(sent[1]):
-                gone = await bot.delete(int(old_chat), int(old_mid))
-                if not gone:
-                    await bot.edit(int(old_chat), int(old_mid), text, None)
+            await _after_send(sent)
             return
         if old_chat and old_mid:
             await bot.edit(int(old_chat), int(old_mid), text, markup)
+            await _sweep_posts(alert, keep={"chat_id": int(old_chat), "message_id": int(old_mid)})
+            _persist_alert(chat_id, alert)
         return
     if old_chat and old_mid:
         if await bot.edit(int(old_chat), int(old_mid), text, markup):
+            await _sweep_posts(alert, keep={"chat_id": int(old_chat), "message_id": int(old_mid)})
+            _persist_alert(chat_id, alert)
             return
     sent = await bot.send(text, markup)
     if sent:
-        alert["tg"] = {"chat_id": sent[0], "message_id": sent[1]}
-        if old_chat and old_mid and int(old_mid) != int(sent[1]):
-            await bot.delete(int(old_chat), int(old_mid))
+        await _after_send(sent)
 
 
-async def _ping(alert: dict, minutes: int) -> None:
+async def _ping(alert: dict, minutes: int, chat_id: str | int | None = None) -> None:
     await _publish(
         alert,
         format_alert(alert.get("snap") or {}, minutes),
         replace=minutes > 0,
+        chat_id=chat_id,
     )
 
 
@@ -628,7 +731,12 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
         alert = (doc.get("crm") or {}).get("alert") or {}
         if not ping_allowed(alert):
             if alert.get("tg"):
-                await _publish(alert, format_alert(alert.get("snap") or {}, 0), replace=False)
+                await _publish(
+                    alert,
+                    format_alert(alert.get("snap") or {}, 0),
+                    replace=False,
+                    chat_id=chat_id,
+                )
                 doc["crm"]["alert"] = alert
                 store.save_doc(chat_id, doc)
             return snap
@@ -638,11 +746,69 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
                 alert.get("pings") or [],
             )
             if due == 0:
-                await _ping(alert, 0)
+                await _ping(alert, 0, chat_id)
                 alert["pings"] = [0]
                 doc["crm"]["alert"] = alert
                 store.save_doc(chat_id, doc)
         return snap
+
+
+async def notify_media(chat_id: str | int, kind: str, history: list[dict]) -> None:
+    """Фото/видео в мессенджер: обычная карточка, без chat_id и без второго поста."""
+    last = ""
+    for msg in reversed(history or []):
+        if msg.get("role") == "user":
+            last = " ".join(str(msg.get("content") or "").split())
+            break
+    if len(last) > 180:
+        last = last[:179].rstrip() + "…"
+    label = "видео" if "видео" in (kind or "") else "фото"
+    snap = snapshot(chat_id, history, "media")
+    snap["reason"] = "media"
+    snap["wait"] = WAIT_CHAT
+    snap["brief"] = "Нужно отправить %s в мессенджер%s" % (
+        label,
+        (". " + last) if last else ".",
+    )
+    phone = str(snap.get("phone") or "")
+    async with _alert_lock(chat_id, phone):
+        doc = store.load_doc(chat_id)
+        crmd = dict(doc.get("crm") or {})
+        alert = dict(crmd.get("alert") or {})
+        if alert.get("tg") and (alert.get("active") or alert.get("picked")):
+            inner = dict(alert.get("snap") or {})
+            inner["brief"] = snap["brief"]
+            if not inner.get("reason"):
+                inner["reason"] = "media"
+            alert["snap"] = inner
+            ping = 0
+            for item in reversed(list(alert.get("pings") or [])):
+                try:
+                    ping = int(item)
+                    break
+                except (TypeError, ValueError):
+                    continue
+            if ping_allowed(alert):
+                await _publish(
+                    alert,
+                    format_alert(inner, ping),
+                    replace=False,
+                    chat_id=chat_id,
+                )
+            crmd["alert"] = alert
+            doc["crm"] = crmd
+            store.save_doc(chat_id, doc)
+            return
+        _start_alert(doc, snap, nags=False)
+        store.save_doc(chat_id, doc)
+        alert = dict((doc.get("crm") or {}).get("alert") or {})
+        if not alert:
+            return
+        await _publish(alert, format_alert(alert.get("snap") or snap, 0), replace=False, chat_id=chat_id)
+        if 0 not in set(int(x) for x in (alert.get("pings") or [])):
+            alert["pings"] = list(alert.get("pings") or []) + [0]
+        doc.setdefault("crm", {})["alert"] = alert
+        store.save_doc(chat_id, doc)
 
 
 async def client_wrote_again(chat_id: str | int, text: str) -> None:
@@ -680,7 +846,7 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
         body = format_alert(snap, 0)
         rest = "\n".join(body.splitlines()[1:])
         # Дописываем в ту же карточку: вторая на одного клиента только путает.
-        await _publish(alert, head + rest, replace=False)
+        await _publish(alert, head + rest, replace=False, chat_id=chat_id)
         crm["alert"] = alert
         doc["crm"] = crm
         store.save_doc(chat_id, doc)
@@ -790,7 +956,10 @@ async def _edit_alert(
     chat_id = tg.get("chat_id") or (extra.get("chat") or {}).get("id")
     message_id = tg.get("message_id") or extra.get("message_id")
     if chat_id and message_id:
+        _remember_post(alert, chat_id, message_id)
+        alert["tg"] = {"chat_id": int(chat_id), "message_id": int(message_id)}
         await bot.edit(int(chat_id), int(message_id), text, None)
+        await _sweep_posts(alert, keep=alert["tg"])
 
 
 def _queue_edit(alert: dict, snap: dict, line: str) -> None:
@@ -950,6 +1119,8 @@ async def _claim_locked(
     doc["crm"] = crmd
     store.save_doc(chat_id, doc)
     await _finish_message(alert, snap, who, when, fallback or {})
+    await _sweep_posts(alert, keep=alert.get("tg"))
+    _persist_alert(chat_id, alert)
     phone = str(snap.get("phone") or "")
     if phone:
         for cid, _doc, _al in _alerts_for_phone(phone):
@@ -1002,6 +1173,9 @@ async def _tick_one(chat_id: str) -> None:
     async with _alert_lock(chat_id, phone):
         doc = store.load_doc(chat_id)
         alert = dict((doc.get("crm") or {}).get("alert") or {})
+        await _sweep_posts(alert, keep=alert.get("tg"))
+        doc.setdefault("crm", {})["alert"] = alert
+        store.save_doc(chat_id, doc)
         if not ping_allowed(alert):
             return
         if lead_moved(chat_id):
@@ -1011,6 +1185,9 @@ async def _tick_one(chat_id: str) -> None:
         doc = store.load_doc(chat_id)
         alert = dict((doc.get("crm") or {}).get("alert") or {})
         if not ping_allowed(alert):
+            await _sweep_posts(alert, keep=alert.get("tg"))
+            doc.setdefault("crm", {})["alert"] = alert
+            store.save_doc(chat_id, doc)
             return
         started = datetime.fromisoformat(alert["started_at"])
         due = next_ping(started, alert.get("pings") or [])
@@ -1021,24 +1198,20 @@ async def _tick_one(chat_id: str) -> None:
         if history:
             snap["brief"] = brief_from_history(history, alert.get("reason") or "")
             alert["snap"] = snap
-        before = dict(alert.get("tg") or {})
-        await _ping(alert, due)
+        await _ping(alert, due, chat_id)
         doc = store.load_doc(chat_id)
         fresh = dict((doc.get("crm") or {}).get("alert") or {})
         if not ping_allowed(fresh):
-            posted = dict(alert.get("tg") or {})
-            if (
-                bot
-                and posted.get("message_id")
-                and int(posted.get("message_id") or 0) != int(before.get("message_id") or 0)
-            ):
-                await bot.delete(int(posted["chat_id"]), int(posted["message_id"]))
+            await _sweep_posts(alert, keep=fresh.get("tg") or alert.get("tg"))
+            _persist_alert(chat_id, alert)
             return
         fresh["pings"] = list(fresh.get("pings") or []) + [due]
         if alert.get("tg"):
             fresh["tg"] = alert["tg"]
         if alert.get("snap"):
             fresh["snap"] = alert["snap"]
+        if alert.get("posts"):
+            fresh["posts"] = _uniq_posts(list(fresh.get("posts") or []) + list(alert.get("posts") or []))
         doc.setdefault("crm", {})["alert"] = fresh
         store.save_doc(chat_id, doc)
 

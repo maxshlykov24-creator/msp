@@ -523,10 +523,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
 
     if want_photo or want_video:
         kind = "видео" if want_video else "фото"
-        await channel.notify_admin(
-            "Клиент просит %s в мессенджер. chat_id=%s\nПоследнее: %s"
-            % (kind, chat_id, user_text[:300])
-        )
+        await crm.notify_media(chat_id, kind, history)
 
     history.append({"role": "assistant", "content": " ".join(bubbles)})
     store.save_history(chat_id, history)

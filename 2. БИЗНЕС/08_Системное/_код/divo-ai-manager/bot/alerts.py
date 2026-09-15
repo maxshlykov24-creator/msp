@@ -28,6 +28,7 @@ SPECIAL_TASK = {
     "stuck": "агент в тупике",
     "complaint": "жалоба",
     "llm": "бот не смог ответить",
+    "media": "нужно отправить в мессенджер",
 }
 PING_WHEN = {
     5: ("⏰", "5 мин"),
@@ -52,6 +53,7 @@ REASON_LINE = {
     "complaint": "жалоба, конфликт",
     "handoff": "нужен живой менеджер",
     "llm": "бот не смог ответить",
+    "media": "нужно отправить в мессенджер",
 }
 
 THREAD_LIMIT = 6
@@ -301,6 +303,8 @@ def alert_head(wait: str, ping: int = 0, reason: str = "") -> str:
     if int(ping or 0) <= 0:
         if reason == "complaint":
             emoji = "⚠️"
+        elif reason == "media":
+            emoji = "📷"
         elif wait == WAIT_CALL:
             emoji = "📞"
         else:
