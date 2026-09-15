@@ -463,6 +463,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             log.info("чат %s: убрал жёсткий отказ по торгу", chat_id)
             bubbles = [b for b in softened if b.strip()]
     bubbles = [human.drop_tradein_menu(b) for b in bubbles]
+    bubbles = [human.drop_max_app(b) for b in bubbles]
     bubbles = [b for b in bubbles if b.strip()]
     if human.client_listing(history):
         trimmed = [human.drop_reask_listing(b) for b in bubbles]

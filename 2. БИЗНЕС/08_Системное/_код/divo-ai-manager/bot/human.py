@@ -1069,6 +1069,31 @@ PHONE_FOR_CALL = re.compile(
     re.IGNORECASE,
 )
 MESSENGER_ASK = "Напишите, пожалуйста, Telegram или WhatsApp, туда пришлю"
+MAX_APP = re.compile(
+    r"(?i)(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b"
+    r"|(?i)(?<![А-Яа-яA-Za-z])макс(?:е|а|у)?(?![а-яёa-z])"
+    r"|(?<![A-Za-z])MAX(?![A-Za-z])"
+)
+
+
+def drop_max_app(text: str) -> str:
+    """Макс как мессенджер не предлагаем. Имя Максим не трогаем."""
+    original = text or ""
+    if not MAX_APP.search(original):
+        return original
+    out = re.sub(
+        r"(?i)(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b",
+        "в Telegram или WhatsApp",
+        original,
+    )
+    out = re.sub(r"(?i),\s*(?:макс(?:е|а|у)?|max)\b", "", out)
+    out = re.sub(r"(?i)\s+или\s+(?:макс(?:е|а|у)?|max)\b", "", out)
+    out = re.sub(
+        r"(?i)(?<![А-Яа-яA-Za-z])(?:макс(?:е|а|у)?|max)(?![а-яёA-Za-z])",
+        "Telegram или WhatsApp",
+        out,
+    )
+    return _tidy(out, original)
 
 
 def phone_to_messenger(text: str) -> str:

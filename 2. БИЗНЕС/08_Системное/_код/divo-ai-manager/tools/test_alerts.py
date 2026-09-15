@@ -1024,7 +1024,7 @@ def test_in_stock_dedupe():
 def test_tiggo_match_and_messenger():
     from tools.stock_sync import HEADER, warehouse_block
     from bot.avito_match import match_card, focus_block
-    from bot.human import drop_paper_talk, phone_to_messenger
+    from bot.human import drop_paper_talk, drop_max_app, phone_to_messenger
     from bot.nudge import wants_write_here
 
     vals = {h: "" for h in HEADER}
@@ -1073,6 +1073,11 @@ def test_tiggo_match_and_messenger():
     )
     assert "Telegram" in msg or "WhatsApp" in msg
     assert "если звонок" not in msg.lower()
+    maxed = drop_max_app("Фото на Макс отправим, номер увидел, зафиксировал")
+    assert "макс" not in maxed.lower()
+    assert "Telegram" in maxed and "WhatsApp" in maxed
+    assert drop_max_app("Максим, напишите номер") == "Максим, напишите номер"
+    assert "MAX" not in drop_max_app("Telegram, WhatsApp, MAX")
 
     m8_stock = (
         "## GAC M8 2024\n"
