@@ -109,7 +109,7 @@ class Settings:
     nudge_wait_2_min = env_int("NUDGE_WAIT_2_MIN", 120)
     nudge_hour_from = env_int("NUDGE_HOUR_FROM", 10)
     nudge_hour_to = env_int("NUDGE_HOUR_TO", 20)
-    nudge_morning_hour = env_int("NUDGE_MORNING_HOUR", 11)
+    nudge_morning_hour = env_int("NUDGE_MORNING_HOUR", 10)
 
     # Сток
     stock_refresh_min = env_int("STOCK_REFRESH_MIN", 15)

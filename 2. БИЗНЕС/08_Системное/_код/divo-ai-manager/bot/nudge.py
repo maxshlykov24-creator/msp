@@ -123,7 +123,7 @@ def in_working_hours(moment: datetime | None = None) -> bool:
 
 
 def clamp_hours(dt: datetime) -> datetime:
-    """До 10:00 и после 20:00 сдвигаем на 11:00 следующего рабочего окна."""
+    """До 10:00 и после 20:00 сдвигаем на 10:00 ближайшего рабочего утра."""
     local = dt.astimezone(MSK)
     morning = settings.nudge_morning_hour
     if local.hour >= settings.nudge_hour_to:

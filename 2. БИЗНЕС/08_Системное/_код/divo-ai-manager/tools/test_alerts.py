@@ -568,6 +568,21 @@ def test_pings():
     assert next_ping(late, [0], now=morning) == 5
 
 
+def test_nudge_after_hours():
+    from bot.nudge import due_at
+
+    last = datetime(2026, 9, 14, 21, 31, tzinfo=MSK)
+    due = due_at(last, 1)
+    assert due.year == 2026 and due.month == 9 and due.day == 15
+    assert due.hour == 10 and due.minute == 0
+    edge = datetime(2026, 9, 14, 19, 50, tzinfo=MSK)
+    due_edge = due_at(edge, 1)
+    assert due_edge.day == 15 and due_edge.hour == 10
+    day = datetime(2026, 9, 14, 16, 0, tzinfo=MSK)
+    due_day = due_at(day, 1)
+    assert due_day.day == 14 and due_day.hour == 16 and due_day.minute == 20
+
+
 def test_autoru_prior():
     from bot.autoru import is_offer_room, listing_from_offer, source_id
     from bot.autoru_loop import (
@@ -1242,6 +1257,7 @@ if __name__ == "__main__":
     test_reasons()
     test_alert_text()
     test_pings()
+    test_nudge_after_hours()
     test_prior_thread()
     test_widget_score()
     test_amo_owner()
