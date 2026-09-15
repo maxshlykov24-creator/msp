@@ -28,7 +28,7 @@ SPECIAL_TASK = {
     "stuck": "агент в тупике",
     "complaint": "жалоба",
     "llm": "бот не смог ответить",
-    "media": "нужно отправить в мессенджер",
+    "media": "нужно отправить фото",
 }
 PING_WHEN = {
     5: ("⏰", "5 мин"),
@@ -53,7 +53,7 @@ REASON_LINE = {
     "complaint": "жалоба, конфликт",
     "handoff": "нужен живой менеджер",
     "llm": "бот не смог ответить",
-    "media": "нужно отправить в мессенджер",
+    "media": "клиент просит фото",
 }
 
 THREAD_LIMIT = 6
@@ -68,6 +68,7 @@ CLIENT_TOPICS = (
     (("торг", "скидк", "цену", "стоимость", "почём", "почем"), "вопрос цены"),
     (("такси", "каршеринг"), "спрашивал про такси"),
     (("автотек", "отчет", "отчёт"), "просил автотеку"),
+    (("фото", "видеообзор"), "просит фото"),
     (("ндс", "юрлиц", "на компанию", "по счёту", "по счету"), "покупка на юрлицо"),
     (("вы звонил", "это вы мне звонил", "кто звонил"), "спрашивает про звонок"),
 )
@@ -283,11 +284,35 @@ def compact_thread(history: list[dict] | None) -> list[list[str]]:
     return picked[-THREAD_LIMIT:]
 
 
-def task_phrase(wait: str, reason: str = "") -> str:
+def media_kind_of(kind: str) -> str:
+    raw = (kind or "").strip().lower()
+    return "видео" if "видео" in raw else "фото"
+
+
+def with_media_brief(brief: str, kind: str) -> str:
+    """В контекст живой карточки дописываем задачу, не сырую реплику."""
+    need = "Нужно отправить %s." % media_kind_of(kind)
+    text = " ".join((brief or "").split())
+    if media_kind_of(kind) in text.lower() and "отправ" in text.lower():
+        return text
+    if not text:
+        return need
+    if not text.endswith((".", "!", "?")):
+        text += "."
+    out = "%s %s" % (text, need)
+    if len(out) > BRIEF_LIMIT:
+        out = out[: BRIEF_LIMIT - 1].rstrip(" ,;") + "…"
+    return out
+
+
+def task_phrase(wait: str, reason: str = "", media_kind: str = "") -> str:
     """Что сделать менеджеру. Это же пишется в первой карточке."""
     wait = wait or WAIT_CHAT
     action = "ждёт звонка" if wait == WAIT_CALL else "ждёт ответ в чате"
-    special = SPECIAL_TASK.get(reason or "")
+    if reason == "media":
+        special = "нужно отправить %s" % media_kind_of(media_kind)
+    else:
+        special = SPECIAL_TASK.get(reason or "")
     if not special:
         return action
     if wait == WAIT_CALL and special not in action:
@@ -295,10 +320,10 @@ def task_phrase(wait: str, reason: str = "") -> str:
     return special
 
 
-def alert_head(wait: str, ping: int = 0, reason: str = "") -> str:
+def alert_head(wait: str, ping: int = 0, reason: str = "", media_kind: str = "") -> str:
     """Первая строка: время и исходная задача, не только «клиент остывает»."""
     wait = wait or WAIT_CHAT
-    task = task_phrase(wait, reason)
+    task = task_phrase(wait, reason, media_kind)
     title = task[0].upper() + task[1:] if task else "Нужен человек"
     if int(ping or 0) <= 0:
         if reason == "complaint":
@@ -325,7 +350,9 @@ def alert_head(wait: str, ping: int = 0, reason: str = "") -> str:
 
 def format_alert(snap: dict, ping: int = 0) -> str:
     wait = snap.get("wait") or (WAIT_CALL if snap.get("phone") else WAIT_CHAT)
-    head = alert_head(wait, ping, snap.get("reason") or "")
+    reason = snap.get("reason") or ""
+    media_kind = snap.get("media_kind") or ""
+    head = alert_head(wait, ping, reason, media_kind)
     lines = [head, ""]
     name = snap.get("name") or "без имени"
     car = snap.get("car") or "машина не названа"
@@ -341,7 +368,10 @@ def format_alert(snap: dict, ping: int = 0) -> str:
     if snap.get("phone"):
         lines.append("▪️ <b>Телефон:</b> %s" % _esc(pretty_phone(snap["phone"])))
     lines.append("▪️ <b>Канал:</b> %s" % _esc(snap.get("channel") or "чат"))
-    why = REASON_LINE.get(snap.get("reason") or "", "")
+    if reason == "media":
+        why = "клиент просит %s" % media_kind_of(media_kind)
+    else:
+        why = REASON_LINE.get(reason, "")
     if why:
         lines.append("▪️ <b>Повод:</b> %s" % _esc(why))
     if snap.get("lead_url"):

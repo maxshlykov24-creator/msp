@@ -22,10 +22,12 @@ from bot.alerts import (
     compact_thread,
     format_alert,
     format_done,
+    media_kind_of,
     next_ping,
     now_msk,
     pretty_phone,
     take_keyboard,
+    with_media_brief,
 )
 from bot.config import settings
 
@@ -556,7 +558,7 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
     return _bind_lead(snap, doc, lead, created=True)
 
 
-def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
+def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) -> None:
     if not snap.get("phone") and snap.get("reason") not in {"llm", "media"}:
         return
     crm = dict(doc.get("crm") or {})
@@ -584,13 +586,15 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
             "brief": snap.get("brief") or "",
             "lead_url": snap.get("lead_url"),
             "lead_id": snap.get("lead_id"),
+            "media_kind": snap.get("media_kind") or "",
         },
         "token": secrets.token_hex(4),
     }
     # Повод сменился (оставил номер → просит звонок) — это тот же клиент.
     # Держим прежнее сообщение и прежний токен кнопки, иначе в группе
     # появляется вторая карточка на одного человека.
-    if alert.get("tg"):
+    # После «Связались» tg не берём: иначе затрём закрытую карточку.
+    if reuse_tg and alert.get("tg") and not alert.get("picked"):
         new["tg"] = alert["tg"]
         new["token"] = alert.get("token") or new["token"]
         new["posts"] = list(alert.get("posts") or [])
@@ -754,33 +758,33 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
 
 
 async def notify_media(chat_id: str | int, kind: str, history: list[dict]) -> None:
-    """Фото/видео в мессенджер: обычная карточка, без chat_id и без второго поста."""
-    last = ""
-    for msg in reversed(history or []):
-        if msg.get("role") == "user":
-            last = " ".join(str(msg.get("content") or "").split())
-            break
-    if len(last) > 180:
-        last = last[:179].rstrip() + "…"
-    label = "видео" if "видео" in (kind or "") else "фото"
+    """Фото/видео: та же карточка, что номер и звонок. Без chat_id и без сырой реплики."""
+    label = media_kind_of(kind)
     snap = snapshot(chat_id, history, "media")
     snap["reason"] = "media"
     snap["wait"] = WAIT_CHAT
-    snap["brief"] = "Нужно отправить %s в мессенджер%s" % (
-        label,
-        (". " + last) if last else ".",
-    )
+    snap["media_kind"] = label
+    snap["brief"] = brief_from_history(history, "media")
     phone = str(snap.get("phone") or "")
     async with _alert_lock(chat_id, phone):
         doc = store.load_doc(chat_id)
         crmd = dict(doc.get("crm") or {})
         alert = dict(crmd.get("alert") or {})
-        if alert.get("tg") and (alert.get("active") or alert.get("picked")):
-            inner = dict(alert.get("snap") or {})
-            inner["brief"] = snap["brief"]
-            if not inner.get("reason"):
-                inner["reason"] = "media"
+        inner = dict(alert.get("snap") or {})
+        if not snap.get("lead_url") and inner.get("lead_url"):
+            snap["lead_url"] = inner.get("lead_url")
+            snap["lead_id"] = inner.get("lead_id") or snap.get("lead_id")
+        if alert.get("active") and alert.get("tg"):
+            # Живая заявка (номер, звонок) — фото вписываем в неё, карточку не плодим.
+            inner["brief"] = with_media_brief(inner.get("brief") or snap["brief"], label)
+            inner["media_kind"] = label
             alert["snap"] = inner
+            alert["media"] = label
+            if alert.get("media_posted") == label:
+                crmd["alert"] = alert
+                doc["crm"] = crmd
+                store.save_doc(chat_id, doc)
+                return
             ping = 0
             for item in reversed(list(alert.get("pings") or [])):
                 try:
@@ -788,23 +792,32 @@ async def notify_media(chat_id: str | int, kind: str, history: list[dict]) -> No
                     break
                 except (TypeError, ValueError):
                     continue
-            if ping_allowed(alert):
-                await _publish(
-                    alert,
-                    format_alert(inner, ping),
-                    replace=False,
-                    chat_id=chat_id,
-                )
+            await _publish(
+                alert,
+                format_alert(inner, ping),
+                replace=False,
+                chat_id=chat_id,
+            )
+            alert["media_posted"] = label
             crmd["alert"] = alert
             doc["crm"] = crmd
             store.save_doc(chat_id, doc)
             return
-        _start_alert(doc, snap, nags=False)
+        if alert.get("media") == label and alert.get("tg"):
+            return
+        _start_alert(doc, snap, nags=False, reuse_tg=False)
         store.save_doc(chat_id, doc)
         alert = dict((doc.get("crm") or {}).get("alert") or {})
         if not alert:
             return
-        await _publish(alert, format_alert(alert.get("snap") or snap, 0), replace=False, chat_id=chat_id)
+        alert["media"] = label
+        await _publish(
+            alert,
+            format_alert(alert.get("snap") or snap, 0),
+            replace=False,
+            chat_id=chat_id,
+        )
+        alert["media_posted"] = label
         if 0 not in set(int(x) for x in (alert.get("pings") or [])):
             alert["pings"] = list(alert.get("pings") or []) + [0]
         doc.setdefault("crm", {})["alert"] = alert

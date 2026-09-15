@@ -406,14 +406,34 @@ def test_alert_text():
             "car": "Tank 300",
             "channel": "Авито",
             "reason": "media",
-            "brief": "Нужно отправить фото в мессенджер. Я сам из Крыма.",
+            "media_kind": "фото",
+            "phone": "79786991500",
+            "lead_url": "https://divomotors.amocrm.ru/leads/detail/1",
+            "brief": "Вопрос цены, просил автотеку. Хочет на осмотр.",
         },
         0,
     )
     assert "chat_id" not in media.lower()
     assert "av:u2i" not in media
-    assert "Нужно отправить в мессенджер" in media
+    assert "Последнее:" not in media
+    assert "Нужно отправить фото" in media
     assert "📷" in media
+    assert "▪️ <b>Авто:</b>" in media
+    assert "▪️ <b>Клиент:</b>" in media
+    assert "▪️ <b>Телефон:</b>" in media
+    assert "▪️ <b>Канал:</b>" in media
+    assert "▪️ <b>Повод:</b>" in media
+    assert "▪️ <b>Сделка:</b>" in media
+    assert "▪️ <b>Контекст:</b>" in media
+    assert "клиент просит фото" in media
+    assert "Вопрос цены" in media
+    assert "Крыма" not in media
+    from bot.alerts import with_media_brief
+
+    merged = with_media_brief("Вопрос цены, просил автотеку.", "фото")
+    assert merged.startswith("Вопрос цены")
+    assert "Нужно отправить фото" in merged
+    assert with_media_brief(merged, "фото") == merged
     thread = compact_thread(
         [
             {"role": "user", "content": "привет"},
