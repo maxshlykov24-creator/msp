@@ -1244,6 +1244,91 @@ def test_claim_twice():
     assert notes == []
 
 
+def test_one_card_per_phone():
+    import asyncio
+
+    from bot import crm, store
+
+    assert crm.phone_key("+7 927 743-25-01") == "79277432501"
+    assert crm.phone_key("89277432501") == "79277432501"
+    assert crm.ping_allowed({"active": True, "nags": True}) is True
+    assert crm.ping_allowed({"active": False, "picked": "button", "nags": False}) is False
+    assert crm.ping_allowed({"active": True, "nags": False}) is False
+
+    docs = {
+        "av:a": {
+            "crm": {
+                "alert": {
+                    "active": True,
+                    "token": "aa",
+                    "pings": [0],
+                    "started_at": "2026-09-15T09:59:09+03:00",
+                    "tg": {"chat_id": -100, "message_id": 62},
+                    "snap": {"phone": "79277432501"},
+                }
+            }
+        },
+        "av:b": {"crm": {"alert": {}}},
+    }
+    loaded = store.load_doc
+    ids = store.all_chat_ids
+    store.load_doc = lambda cid: docs[str(cid)]
+    store.all_chat_ids = lambda: list(docs)
+    try:
+        new = {"token": "bb", "nags": True, "pings": [], "started_at": "now"}
+        crm._adopt_open_card(new, "79277432501", "av:b")
+    finally:
+        store.load_doc = loaded
+        store.all_chat_ids = ids
+    assert new["tg"]["message_id"] == 62
+    assert new["token"] == "aa"
+    assert new["nags"] is False
+    assert new["pings"] == [0]
+
+    claimed = {
+        "chat_id": "av:x",
+        "messages": [],
+        "crm": {
+            "alert": {
+                "active": False,
+                "nags": False,
+                "picked": "button",
+                "started_at": "2026-09-15T09:59:09+03:00",
+                "pings": [0],
+                "snap": {"phone": "79277432501", "wait": "call"},
+                "tg": {"chat_id": -1, "message_id": 62},
+            }
+        },
+    }
+    sent: list[str] = []
+
+    class Fake:
+        async def send(self, text, markup=None):
+            sent.append("send")
+            return (-1, 99)
+
+        async def edit(self, *a, **k):
+            return True
+
+        async def delete(self, *a, **k):
+            return True
+
+    old_bot = crm.bot
+    old_load, old_save, old_ids = store.load_doc, store.save_doc, store.all_chat_ids
+    crm.bot = Fake()
+    store.load_doc = lambda cid: claimed
+    store.save_doc = lambda cid, d: None
+    store.all_chat_ids = lambda: ["av:x"]
+    try:
+        asyncio.run(crm._tick_one("av:x"))
+    finally:
+        crm.bot = old_bot
+        store.load_doc = old_load
+        store.save_doc = old_save
+        store.all_chat_ids = old_ids
+    assert sent == []
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -1273,4 +1358,5 @@ if __name__ == "__main__":
     test_many_paints()
     test_two_vins_and_phone()
     test_claim_twice()
+    test_one_card_per_phone()
     print("ok")

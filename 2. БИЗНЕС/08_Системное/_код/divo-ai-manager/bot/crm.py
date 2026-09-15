@@ -6,8 +6,9 @@ import logging
 import re
 import secrets
 import sys
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
-from typing import Any
+from typing import Any, AsyncIterator
 
 from bot import avito_match, nudge, store
 from bot.alerts import (
@@ -40,6 +41,7 @@ if str(settings.root / "tools") not in sys.path:
 import amo_client  # noqa: E402
 
 bot: AlertBot | None = None
+_locks: dict[str, asyncio.Lock] = {}
 
 
 def set_bot(instance: AlertBot | None) -> None:
@@ -47,6 +49,76 @@ def set_bot(instance: AlertBot | None) -> None:
     bot = instance
     if instance is not None:
         instance.on_take = on_take
+
+
+def phone_key(raw: str) -> str:
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if len(digits) == 10:
+        digits = "7" + digits
+    if len(digits) == 11 and digits[0] == "8":
+        digits = "7" + digits[1:]
+    return digits if len(digits) == 11 else ""
+
+
+def ping_allowed(alert: dict) -> bool:
+    if not alert.get("active"):
+        return False
+    if alert.get("picked"):
+        return False
+    if not alert.get("nags", True):
+        return False
+    return True
+
+
+def _lock(name: str) -> asyncio.Lock:
+    lock = _locks.get(name)
+    if lock is None:
+        lock = asyncio.Lock()
+        _locks[name] = lock
+    return lock
+
+
+@asynccontextmanager
+async def _alert_lock(chat_id: str | int, phone: str = "") -> AsyncIterator[None]:
+    keys = [f"c:{chat_id}"]
+    key = phone_key(phone)
+    if key:
+        keys.append(f"p:{key}")
+    async with AsyncExitStack() as stack:
+        for name in sorted(set(keys)):
+            await stack.enter_async_context(_lock(name))
+        yield
+
+
+def _alerts_for_phone(phone: str):
+    key = phone_key(phone)
+    if not key:
+        return
+    for cid in store.all_chat_ids():
+        doc = store.load_doc(cid)
+        alert = dict((doc.get("crm") or {}).get("alert") or {})
+        snap = alert.get("snap") or {}
+        if phone_key(str(snap.get("phone") or "")) != key:
+            continue
+        yield str(cid), doc, alert
+
+
+def _adopt_open_card(new: dict, phone: str, skip: str) -> None:
+    """Один номер — одна живая карточка в группе, даже если чатов два."""
+    for cid, _doc, other in _alerts_for_phone(phone):
+        if cid == str(skip):
+            continue
+        if not other.get("active"):
+            continue
+        tg = other.get("tg")
+        if not tg:
+            continue
+        new["tg"] = dict(tg)
+        new["token"] = other.get("token") or new.get("token")
+        new["nags"] = False
+        new["started_at"] = other.get("started_at") or new.get("started_at")
+        new["pings"] = list(other.get("pings") or [])
+        return
 
 
 def digits_price(raw: str) -> int:
@@ -436,13 +508,19 @@ def _start_alert(doc: dict, snap: dict, nags: bool) -> None:
     if alert.get("tg"):
         new["tg"] = alert["tg"]
         new["token"] = alert.get("token") or new["token"]
+    skip = str(doc.get("chat_id") or snap.get("chat_id") or "")
+    _adopt_open_card(new, str(snap.get("phone") or ""), skip)
     alert = new
     crm["alert"] = alert
     doc["crm"] = crm
 
 
 async def _publish(alert: dict, text: str, *, replace: bool = False) -> None:
-    """replace=True: новое сообщение (чтобы пинг ушёл в уведомления), старое снимаем."""
+    """Пинг шлём новым сообщением, чтобы пришёл пуш. Старое сразу снимаем.
+
+    Если снять не вышло, правим старое на месте: в группе не должны висеть
+    две карточки на один номер.
+    """
     if not bot:
         return
     wait = (alert.get("snap") or {}).get("wait") or alert.get("wait") or WAIT_CHAT
@@ -456,7 +534,9 @@ async def _publish(alert: dict, text: str, *, replace: bool = False) -> None:
         if sent:
             alert["tg"] = {"chat_id": sent[0], "message_id": sent[1]}
             if old_chat and old_mid and int(old_mid) != int(sent[1]):
-                await bot.delete(int(old_chat), int(old_mid))
+                gone = await bot.delete(int(old_chat), int(old_mid))
+                if not gone:
+                    await bot.edit(int(old_chat), int(old_mid), text, None)
             return
         if old_chat and old_mid:
             await bot.edit(int(old_chat), int(old_mid), text, markup)
@@ -467,6 +547,8 @@ async def _publish(alert: dict, text: str, *, replace: bool = False) -> None:
     sent = await bot.send(text, markup)
     if sent:
         alert["tg"] = {"chat_id": sent[0], "message_id": sent[1]}
+        if old_chat and old_mid and int(old_mid) != int(sent[1]):
+            await bot.delete(int(old_chat), int(old_mid))
 
 
 async def _ping(alert: dict, minutes: int) -> None:
@@ -527,30 +609,40 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
     """Сделка + примечание + старт алертов. Не пишет клиенту."""
     if already_alerting(chat_id, reason):
         return snapshot(chat_id, history, reason)
-    doc = store.load_doc(chat_id)
     snap = snapshot(chat_id, history, reason)
-    nags = True
-    try:
-        snap = ensure_lead(snap, doc)
-        nags = bool(snap.get("nags", True))
-        if reason in {"call", "complaint", "handoff"}:
-            nags = True
-    except Exception:
-        log.exception("amo по чату %s не записалась", chat_id)
-    _start_alert(doc, snap, nags)
-    store.save_doc(chat_id, doc)
-    alert = (doc.get("crm") or {}).get("alert") or {}
-    if 0 not in set(int(x) for x in (alert.get("pings") or [])):
-        due = next_ping(
-            datetime.fromisoformat(alert["started_at"]),
-            alert.get("pings") or [],
-        )
-        if due == 0:
-            await _ping(alert, 0)
-            alert["pings"] = [0]
-            doc["crm"]["alert"] = alert
-            store.save_doc(chat_id, doc)
-    return snap
+    phone = str(snap.get("phone") or "")
+    async with _alert_lock(chat_id, phone):
+        if already_alerting(chat_id, reason):
+            return snapshot(chat_id, history, reason)
+        doc = store.load_doc(chat_id)
+        nags = True
+        try:
+            snap = ensure_lead(snap, doc)
+            nags = bool(snap.get("nags", True))
+            if reason in {"call", "complaint", "handoff"}:
+                nags = True
+        except Exception:
+            log.exception("amo по чату %s не записалась", chat_id)
+        _start_alert(doc, snap, nags)
+        store.save_doc(chat_id, doc)
+        alert = (doc.get("crm") or {}).get("alert") or {}
+        if not ping_allowed(alert):
+            if alert.get("tg"):
+                await _publish(alert, format_alert(alert.get("snap") or {}, 0), replace=False)
+                doc["crm"]["alert"] = alert
+                store.save_doc(chat_id, doc)
+            return snap
+        if 0 not in set(int(x) for x in (alert.get("pings") or [])):
+            due = next_ping(
+                datetime.fromisoformat(alert["started_at"]),
+                alert.get("pings") or [],
+            )
+            if due == 0:
+                await _ping(alert, 0)
+                alert["pings"] = [0]
+                doc["crm"]["alert"] = alert
+                store.save_doc(chat_id, doc)
+        return snap
 
 
 async def client_wrote_again(chat_id: str | int, text: str) -> None:
@@ -757,6 +849,24 @@ async def on_take(cb: dict) -> None:
             await bot.answer_callback(cqid, "Этот клиент уже взят, в amo ничего не менял")
 
 
+def _silence_sibling(chat_id: str, who: str, when_iso: str, amo_user: int | None) -> None:
+    doc = store.load_doc(chat_id)
+    crmd = dict(doc.get("crm") or {})
+    alert = dict(crmd.get("alert") or {})
+    if not alert.get("active"):
+        return
+    alert["active"] = False
+    alert["nags"] = False
+    alert["picked"] = "button"
+    alert["picked_by"] = who
+    alert["picked_at"] = when_iso
+    if amo_user:
+        alert["picked_amo"] = int(amo_user)
+    crmd["alert"] = alert
+    doc["crm"] = crmd
+    store.save_doc(chat_id, doc)
+
+
 async def claim(
     chat_id: str | int,
     who: str,
@@ -769,6 +879,22 @@ async def claim(
     Двойной тап и повтор апдейта после перезапуска бота приходят как два
     callback-а: без этой проверки в сделку падало два одинаковых примечания.
     """
+    doc = store.load_doc(chat_id)
+    crmd = dict(doc.get("crm") or {})
+    alert = dict(crmd.get("alert") or {})
+    snap = dict(alert.get("snap") or {})
+    phone = str(snap.get("phone") or "")
+    async with _alert_lock(chat_id, phone):
+        return await _claim_locked(chat_id, who, when, fallback, user)
+
+
+async def _claim_locked(
+    chat_id: str | int,
+    who: str,
+    when: str,
+    fallback: dict | None = None,
+    user: dict | None = None,
+) -> bool:
     doc = store.load_doc(chat_id)
     crmd = dict(doc.get("crm") or {})
     alert = dict(crmd.get("alert") or {})
@@ -824,6 +950,12 @@ async def claim(
     doc["crm"] = crmd
     store.save_doc(chat_id, doc)
     await _finish_message(alert, snap, who, when, fallback or {})
+    phone = str(snap.get("phone") or "")
+    if phone:
+        for cid, _doc, _al in _alerts_for_phone(phone):
+            if cid == str(chat_id):
+                continue
+            _silence_sibling(cid, who, str(alert.get("picked_at") or ""), amo_user)
     log.info("чат %s: взял %s amo=%s", chat_id, who, amo_user)
     return True
 
@@ -863,34 +995,59 @@ async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
     return True
 
 
-async def tick() -> None:
-    if bot:
-        await bot.listen(timeout=25)
-    for chat_id in store.all_chat_ids():
+async def _tick_one(chat_id: str) -> None:
+    doc = store.load_doc(chat_id)
+    alert = dict((doc.get("crm") or {}).get("alert") or {})
+    phone = str((alert.get("snap") or {}).get("phone") or "")
+    async with _alert_lock(chat_id, phone):
         doc = store.load_doc(chat_id)
-        alert = ((doc.get("crm") or {}).get("alert") or {})
-        if not alert.get("active"):
-            continue
+        alert = dict((doc.get("crm") or {}).get("alert") or {})
+        if not ping_allowed(alert):
+            return
         if lead_moved(chat_id):
-            continue
+            return
         if await close_if_contacted(chat_id, doc):
-            continue
-        if not alert.get("nags", True):
-            continue
+            return
+        doc = store.load_doc(chat_id)
+        alert = dict((doc.get("crm") or {}).get("alert") or {})
+        if not ping_allowed(alert):
+            return
         started = datetime.fromisoformat(alert["started_at"])
         due = next_ping(started, alert.get("pings") or [])
         if due is None:
-            continue
-        doc = store.load_doc(chat_id)
-        if due > 0 and await close_if_contacted(chat_id, doc):
-            continue
-        alert = ((doc.get("crm") or {}).get("alert") or {})
+            return
         snap = dict(alert.get("snap") or {})
         history = list(doc.get("messages") or [])
         if history:
             snap["brief"] = brief_from_history(history, alert.get("reason") or "")
             alert["snap"] = snap
+        before = dict(alert.get("tg") or {})
         await _ping(alert, due)
-        alert["pings"] = list(alert.get("pings") or []) + [due]
-        doc["crm"]["alert"] = alert
+        doc = store.load_doc(chat_id)
+        fresh = dict((doc.get("crm") or {}).get("alert") or {})
+        if not ping_allowed(fresh):
+            posted = dict(alert.get("tg") or {})
+            if (
+                bot
+                and posted.get("message_id")
+                and int(posted.get("message_id") or 0) != int(before.get("message_id") or 0)
+            ):
+                await bot.delete(int(posted["chat_id"]), int(posted["message_id"]))
+            return
+        fresh["pings"] = list(fresh.get("pings") or []) + [due]
+        if alert.get("tg"):
+            fresh["tg"] = alert["tg"]
+        if alert.get("snap"):
+            fresh["snap"] = alert["snap"]
+        doc.setdefault("crm", {})["alert"] = fresh
         store.save_doc(chat_id, doc)
+
+
+async def tick() -> None:
+    if bot:
+        await bot.listen(timeout=25)
+    for chat_id in store.all_chat_ids():
+        try:
+            await _tick_one(str(chat_id))
+        except Exception:
+            log.exception("алерт чат %s", chat_id)
