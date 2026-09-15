@@ -174,11 +174,28 @@ def test_unsolicited():
 
 
 def test_greeting_and_paper():
-    from bot.human import bang_greeting, drop_paper_talk, for_chat
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
-    assert bang_greeting("Добрый день. Машина в наличии") == "Добрый день! Машина в наличии"
-    assert bang_greeting("Добрый день! Машина в наличии") == "Добрый день! Машина в наличии"
-    assert bang_greeting("Доброе утро, смотрите") == "Доброе утро! Смотрите"
+    from bot.human import bang_greeting, drop_paper_talk, ensure_greeting, for_chat, greeting_now
+
+    msk = ZoneInfo("Europe/Moscow")
+    day = datetime(2026, 9, 15, 14, 0, tzinfo=msk)
+    night = datetime(2026, 9, 15, 2, 41, tzinfo=msk)
+    morn = datetime(2026, 9, 15, 8, 0, tzinfo=msk)
+    eve = datetime(2026, 9, 15, 19, 0, tzinfo=msk)
+    late = datetime(2026, 9, 15, 23, 10, tzinfo=msk)
+    assert greeting_now(morn) == "Доброе утро!"
+    assert greeting_now(day) == "Добрый день!"
+    assert greeting_now(eve) == "Добрый вечер!"
+    assert greeting_now(late) == "Доброй ночи!"
+    assert greeting_now(night) == "Доброй ночи!"
+    assert greeting_now(datetime(2026, 9, 15, 4, 0, tzinfo=msk)) == "Доброе утро!"
+    assert greeting_now(datetime(2026, 9, 15, 18, 0, tzinfo=msk)) == "Добрый вечер!"
+    assert bang_greeting("Добрый день. Машина в наличии", day) == "Добрый день! Машина в наличии"
+    assert bang_greeting("Добрый день! Машина в наличии", day) == "Добрый день! Машина в наличии"
+    assert bang_greeting("Доброе утро, смотрите", morn) == "Доброе утро! Смотрите"
+    assert bang_greeting("Добрый день!", night) == "Доброй ночи!"
     raw = (
         "Добрый день. Такой машины строки с ценой на юрлицо/НДС в базе пока нет. "
         "Продажу с НДС по ней подтвержу отдельно"
@@ -188,7 +205,7 @@ def test_greeting_and_paper():
     assert "строк" not in cut.lower()
     assert "/" not in cut
     chat = for_chat(raw)
-    assert chat.startswith("Добрый день!")
+    assert chat.startswith(greeting_now())
     assert "базе" not in chat.lower()
     assert "строк" not in chat.lower()
     assert "ндс" in chat.lower()
@@ -198,10 +215,13 @@ def test_greeting_and_paper():
     assert "сходу" not in leak.lower()
     assert "дезинформировать" not in leak.lower()
     comma = drop_paper_talk("Добрый день, в карточке нет дизельного нагревателя")
-    assert comma.startswith("Добрый день!")
-    from bot.human import ensure_greeting
-    assert ensure_greeting(["Уточню по этой машине"], first=True)[0].startswith("Добрый день!")
-    assert ensure_greeting(["Добрый день! Машина в наличии"], first=True)[0].startswith("Добрый день!")
+    assert comma.startswith(greeting_now())
+    assert ensure_greeting(["Уточню по этой машине"], first=True, moment=day)[0].startswith(
+        "Добрый день!"
+    )
+    assert ensure_greeting(["Добрый день! Машина в наличии"], first=True, moment=night)[
+        0
+    ].startswith("Доброй ночи!")
     assert ensure_greeting(["Уточню"], first=False) == ["Уточню"]
 
 

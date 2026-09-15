@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import random
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from bot.config import settings
+
+MSK = ZoneInfo("Europe/Moscow")
 
 MAX_BUBBLES = 3
 MARKDOWN_NOISE = re.compile(r"(\*\*|__|`|#+\s*)")
@@ -1002,13 +1006,26 @@ GREET_BANG = {
     "добрый день": "Добрый день!",
     "доброе утро": "Доброе утро!",
     "добрый вечер": "Добрый вечер!",
+    "доброй ночи": "Доброй ночи!",
     "здравствуйте": "Здравствуйте!",
 }
 GREET_HEAD = re.compile(
-    r"^(добрый\s+день|доброе\s+утро|добрый\s+вечер|здравствуйте)"
+    r"^(добрый\s+день|доброе\s+утро|добрый\s+вечер|доброй\s+ночи|здравствуйте)"
     r"(?:\s*[.,:]|\s*!)?\s*",
     re.IGNORECASE,
 )
+
+
+def greeting_now(moment: datetime | None = None) -> str:
+    """Приветствие по Москве: утро с 4, день с 12, вечер с 18, ночь с 23."""
+    hour = (moment or datetime.now(MSK)).astimezone(MSK).hour
+    if 4 <= hour < 12:
+        return "Доброе утро!"
+    if 12 <= hour < 18:
+        return "Добрый день!"
+    if 18 <= hour < 23:
+        return "Добрый вечер!"
+    return "Доброй ночи!"
 
 
 def drop_paper_talk(text: str) -> str:
@@ -1027,9 +1044,7 @@ def drop_paper_talk(text: str) -> str:
     stub = VAT_NO_PRICE if re.search(r"ндс|юрлиц", original, re.IGNORECASE) else "Уточню по этой машине"
     greet = GREET_HEAD.match(original)
     if greet:
-        head = " ".join(greet.group(1).lower().split())
-        canon = GREET_BANG.get(head, "Добрый день!")
-        return _tidy(canon + " " + stub, original)
+        return _tidy(greeting_now() + " " + stub, original)
     return _tidy(stub, original)
 
 
@@ -1066,17 +1081,14 @@ def phone_to_messenger(text: str) -> str:
     return MESSENGER_ASK
 
 
-def bang_greeting(text: str) -> str:
-    """Первое «Добрый день» всегда с восклицательным знаком."""
+def bang_greeting(text: str, moment: datetime | None = None) -> str:
+    """Первое приветствие с восклицанием и по текущему времени Москвы."""
     original = text or ""
     match = GREET_HEAD.match(original)
     if not match:
         return original
-    head = " ".join(match.group(1).lower().split())
-    canon = GREET_BANG.get(head)
-    if not canon:
-        return original
     rest = original[match.end():].lstrip()
+    canon = greeting_now(moment)
     if not rest:
         return canon
     if rest[:1].islower():
@@ -1084,17 +1096,20 @@ def bang_greeting(text: str) -> str:
     return canon + " " + rest
 
 
-def ensure_greeting(bubbles: list[str], *, first: bool) -> list[str]:
-    """Первый ход диалога всегда с «Добрый день!», даже если фильтр съел привет."""
+def ensure_greeting(
+    bubbles: list[str], *, first: bool, moment: datetime | None = None
+) -> list[str]:
+    """Первый ход диалога всегда с приветствием по времени Москвы."""
     if not first or not bubbles:
         return bubbles
     out = list(bubbles)
     if GREET_LEAD.match(out[0] or ""):
+        out[0] = bang_greeting(out[0], moment)
         return out
     rest = (out[0] or "").strip()
     if rest[:1].islower():
         rest = rest[0].upper() + rest[1:]
-    out[0] = ("Добрый день! " + rest).strip()
+    out[0] = (greeting_now(moment) + " " + rest).strip()
     return out
 
 

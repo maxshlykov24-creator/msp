@@ -841,8 +841,15 @@ def build_text(
             return "%s ещё в наличии. Приезжайте посмотреть вживую%s" % (car, tail)
         return "Машина в наличии. Приезжайте посмотреть вживую%s" % tail
     if car:
-        return "Добрый день! %s без изменений. Напишите номер, если актуально" % car
-    return "Добрый день! Напишите номер, если актуально"
+        from bot.human import greeting_now
+
+        return "%s %s без изменений. Напишите номер, если актуально" % (
+            greeting_now(),
+            car,
+        )
+    from bot.human import greeting_now
+
+    return "%s Напишите номер, если актуально" % greeting_now()
 
 
 def refresh(nudge: dict, messages: list[dict]) -> dict:
