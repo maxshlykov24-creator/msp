@@ -289,6 +289,29 @@ def media_kind_of(kind: str) -> str:
     return "видео" if "видео" in raw else "фото"
 
 
+def media_where(history: list[dict] | None) -> str:
+    """Куда слать файл: только то, что написал клиент."""
+    blob = _client_blob(history)
+    if re.search(r"телеграм|telegram", blob):
+        return "в Telegram"
+    if re.search(r"ватсап|вацап|вотсап|whatsapp", blob):
+        return "в WhatsApp"
+    return ""
+
+
+def media_context(history: list[dict] | None, kind: str) -> str:
+    base = brief_from_history(history, "media")
+    where = media_where(history)
+    extra = ""
+    if where:
+        extra = "%s %s." % (media_kind_of(kind).capitalize(), where)
+    parts = [p for p in (base, extra) if p]
+    out = " ".join(p if p.endswith((".", "!", "?")) else p + "." for p in parts)
+    if len(out) > BRIEF_LIMIT:
+        out = out[: BRIEF_LIMIT - 1].rstrip(" ,;") + "…"
+    return out
+
+
 def with_media_brief(brief: str, kind: str) -> str:
     """В контекст живой карточки дописываем задачу, не сырую реплику."""
     need = "Нужно отправить %s." % media_kind_of(kind)
@@ -376,6 +399,8 @@ def format_alert(snap: dict, ping: int = 0) -> str:
         lines.append("▪️ <b>Повод:</b> %s" % _esc(why))
     if snap.get("lead_url"):
         lines.append("▪️ <b>Сделка:</b> %s" % _esc(snap["lead_url"]))
+    elif snap.get("url"):
+        lines.append("▪️ <b>Объявление:</b> %s" % _esc(snap["url"]))
     brief = (snap.get("brief") or "").strip()
     if not brief:
         brief = brief_from_thread(snap.get("thread"), snap.get("reason") or "")

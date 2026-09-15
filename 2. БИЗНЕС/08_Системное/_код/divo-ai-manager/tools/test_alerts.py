@@ -51,6 +51,7 @@ def test_phone():
     assert extract_phone("мой 8 900 111-22-33") == "79001112233"
     assert extract_phone("+79502292544") == "79502292544"
     assert extract_phone("пишите на 8 495 089 29 29") == ""
+    assert extract_phone("+79192863777 Максим (телеграмм)") == "79192863777"
 
     hist = [
         {"role": "user", "content": "+79502292544"},
@@ -434,6 +435,52 @@ def test_alert_text():
     assert merged.startswith("Вопрос цены")
     assert "Нужно отправить фото" in merged
     assert with_media_brief(merged, "фото") == merged
+    from bot.alerts import media_context, media_where
+
+    video_hist = [
+        {"role": "user", "content": "какую цену можете дать"},
+        {"role": "assistant", "content": "Цена 2 150 000, торг обсудим при осмотре"},
+        {
+            "role": "user",
+            "content": "Перед дорогой из Краснодара скиньте подробное видео",
+        },
+        {
+            "role": "assistant",
+            "content": "Напишите телефон и Telegram или WhatsApp, коллега пришлёт видео",
+        },
+        {"role": "user", "content": "+79192863777 Максим (телеграмм)"},
+    ]
+    assert media_where(video_hist) == "в Telegram"
+    video_ctx = media_context(video_hist, "видео")
+    assert "Вопрос цены" in video_ctx
+    assert "Видео в Telegram" in video_ctx
+    video_card = format_alert(
+        {
+            "wait": "chat",
+            "name": "Максим",
+            "car": "FAW Bestune NAT 2023",
+            "channel": "Авито",
+            "reason": "media",
+            "media_kind": "видео",
+            "phone": "79192863777",
+            "url": "https://avito.ru/moskva/avtomobili/faw_bestune_nat_at_2023_6_798_km_8323968508",
+            "brief": video_ctx,
+        },
+        0,
+    )
+    assert "Нужно отправить видео" in video_card
+    assert "📷" in video_card
+    assert "▪️ <b>Авто:</b> FAW Bestune NAT 2023" in video_card
+    assert "▪️ <b>Клиент:</b> Максим" in video_card
+    assert "▪️ <b>Телефон:</b> +7 919 286-37-77" in video_card
+    assert "▪️ <b>Канал:</b> Авито" in video_card
+    assert "клиент просит видео" in video_card
+    assert "▪️ <b>Объявление:</b> https://avito.ru/moskva/avtomobili/faw_bestune_nat_at_2023_6_798_km_8323968508" in video_card
+    assert "Сделка:" not in video_card
+    assert "chat_id" not in video_card.lower()
+    assert "Последнее:" not in video_card
+    keys = take_keyboard("tok", "chat")
+    assert keys["inline_keyboard"][0][0]["text"] == "✍️ Беру"
     thread = compact_thread(
         [
             {"role": "user", "content": "привет"},
@@ -1407,6 +1454,49 @@ def test_one_card_per_phone():
     assert [p["message_id"] for p in claimed["crm"]["alert"]["posts"]] == [62]
 
 
+def test_persist_media_without_nags():
+    """Медиа без пингов всё равно держит номер, ссылку и новый mid после пересылки."""
+    from bot import crm, store
+
+    doc = {
+        "crm": {
+            "alert": {
+                "active": True,
+                "nags": False,
+                "reason": "media",
+                "tg": {"chat_id": -1004386490638, "message_id": 79},
+                "snap": {"phone": "", "wait": "chat"},
+            }
+        }
+    }
+    loaded, saved = store.load_doc, store.save_doc
+    store.load_doc = lambda cid: doc
+    store.save_doc = lambda cid, d: doc.update(d)
+    try:
+        crm._persist_alert(
+            "av:x",
+            {
+                "active": True,
+                "nags": False,
+                "tg": {"chat_id": -1004386490638, "message_id": 80},
+                "snap": {
+                    "phone": "79192863777",
+                    "url": "https://avito.ru/x",
+                    "wait": "chat",
+                    "reason": "media",
+                },
+                "posts": [{"chat_id": -1004386490638, "message_id": 80}],
+            },
+        )
+    finally:
+        store.load_doc = loaded
+        store.save_doc = saved
+    alert = doc["crm"]["alert"]
+    assert alert["tg"]["message_id"] == 80
+    assert alert["snap"]["phone"] == "79192863777"
+    assert alert["snap"]["url"] == "https://avito.ru/x"
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -1437,4 +1527,5 @@ if __name__ == "__main__":
     test_two_vins_and_phone()
     test_claim_twice()
     test_one_card_per_phone()
+    test_persist_media_without_nags()
     print("ok")
