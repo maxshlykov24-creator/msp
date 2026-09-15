@@ -358,7 +358,7 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             log.info("авто.ру новый чат %s, беру (%s)", cid[:12], title)
         for text in texts:
             store.log_line(chat_key, "клиент", text)
-        if store.is_paused(chat_key):
+        if store.hard_paused(chat_key):
             log.info("авто.ру чат %s на паузе", cid[:12])
             from bot import crm
 
@@ -371,7 +371,8 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             await crm.ack_callback(channel, chat_key, texts, urgent)
             store.pause(chat_key, "эскалация: %s" % urgent)
             log.info("авто.ру чат %s сразу человеку (%s)", cid[:12], urgent)
-            continue
+            if store.hard_paused(chat_key):
+                continue
         pending.setdefault(chat_key, []).extend(texts)
         schedule(channel, chat_key)
         log.info("авто.ру входящее %s (%s): %s", cid[:12], title, texts[-1][:80])

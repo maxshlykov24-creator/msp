@@ -494,6 +494,48 @@ def drop_phone_script(text: str) -> str:
     return _tidy(text, original)
 
 
+PUSH_INVITE = re.compile(
+    r"("
+    r"приезжайте|приходите|подъезжайте|"
+    r"посмотреть можно|можно посмотреть|можно приехать|"
+    r"приехать посмотреть|посмотреть вживую|посмотреть у нас|"
+    r"на какой день|во сколько (подъедете|приедете|заедете)|"
+    r"когда удобнее|ждем вас|ждём вас"
+    r")",
+    re.IGNORECASE,
+)
+PUSH_CALL = re.compile(
+    r"("
+    r"набер(?:у|ём|ем|ёт|ет|ут)|"
+    r"позвон(?:ю|им)|"
+    r"перезвон(?:ю|им)|"
+    r"свяж(?:усь|емся|ёмся)|"
+    r"в ближайшее время"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def drop_push_after_contact(text: str, *, allow_invite: bool = False) -> str:
+    """После передачи контакта не дожимаем: факт по вопросу, без визита и звонка."""
+    original = text or ""
+    if not original.strip():
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        low = part.lower()
+        if "автотек" in low or "autoteka.ru" in low:
+            kept.append(part)
+            continue
+        if not allow_invite and PUSH_INVITE.search(part):
+            continue
+        if PUSH_CALL.search(part):
+            continue
+        kept.append(part)
+    text = " ".join(kept).strip()
+    return _tidy(text, original) if text else ""
+
+
 CLAUSE_DASH = re.compile(r"\s+[–—-]\s+")
 
 
@@ -842,6 +884,10 @@ STOCK_LEAD = re.compile(
 )
 STOCK_WORD = re.compile(r"\s*в наличии(?: и готова к продаже)?", re.IGNORECASE)
 INVITE_FALLBACK = "Посмотреть можно в любой день с 10:00 до 20:00"
+INVITE_FIRST = (
+    "Посмотреть можно в любой день с 10:00 до 20:00, "
+    "мы на Автозаводской 18, ТЦ Ривьера, -2 этаж"
+)
 UNTIL_CLOSE = re.compile(r"до\s*20[:.]00", re.IGNORECASE)
 
 
@@ -1159,6 +1205,31 @@ def bang_greeting(text: str, moment: datetime | None = None) -> str:
     if rest[:1].islower():
         rest = rest[0].upper() + rest[1:]
     return canon + " " + rest
+
+
+def greeting_only(text: str) -> bool:
+    """Пузырь целиком приветствие, без ответа по делу."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    return not drop_regreeting(raw)
+
+
+def glue_lonely_greeting(bubbles: list[str]) -> list[str]:
+    """«Доброе утро!» отдельным сообщением не отправляем: склеиваем с ответом.
+
+    Иначе клиент видит одно приветствие, а второе сообщение может не уйти:
+    рестарт сервиса, сбой канала, пауза набора.
+    """
+    if len(bubbles) < 2:
+        return bubbles
+    if not greeting_only(bubbles[0]):
+        return bubbles
+    greet = (bubbles[0] or "").strip()
+    rest = (bubbles[1] or "").lstrip()
+    if rest[:1].islower():
+        rest = rest[0].upper() + rest[1:]
+    return [("%s %s" % (greet, rest)).strip()] + list(bubbles[2:])
 
 
 def ensure_greeting(

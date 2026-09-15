@@ -86,6 +86,20 @@ ASKED_WHERE = re.compile(
     r"график|до скольки|режим работы|когда открыт)",
     re.IGNORECASE,
 )
+ASKED_VISIT = re.compile(
+    r"("
+    r"когда можно|"
+    r"когда приехать|"
+    r"можно приехать|"
+    r"приехать посмотреть|"
+    r"посмотреть автомобиль|"
+    r"посмотреть машин|"
+    r"посмотреть авто|"
+    r"на осмотр|"
+    r"во сколько (можно|приехать)"
+    r")",
+    re.IGNORECASE,
+)
 CAR_BIT = re.compile(
     r"("
     r"coolray|кулре[йи]|panamera|панамер[аы]|macan|макан|"
@@ -609,6 +623,11 @@ def has_address(text: str) -> bool:
 def asked_where(text: str) -> bool:
     """Клиент сам спросил про адрес, дорогу или часы — тогда повтор уместен."""
     return bool(ASKED_WHERE.search(text or ""))
+
+
+def asked_visit(text: str) -> bool:
+    """Клиент спрашивает, когда можно приехать смотреть машину."""
+    return bool(ASKED_VISIT.search(text or ""))
 
 
 def history_has_address(messages: list[dict]) -> bool:

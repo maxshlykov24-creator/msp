@@ -386,7 +386,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     # на диск опрос каналов, минуя pending, поэтому историю перечитываем: иначе
     # мы затрём его сообщение и попросим то, что уже получили.
     history = merge_user_chunks(store.load_history(chat_id), chunks)
-    if store.is_paused(chat_id):
+    if store.hard_paused(chat_id):
         store.save_history(chat_id, history)
         log.info("чат %s: пока отвечал, диалог ушёл человеку, молчу", chat_id)
         return
@@ -511,6 +511,33 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if greeted != bubbles:
         log.info("чат %s: дописал приветствие в первый ход", chat_id)
         bubbles = greeted
+    glued = human.glue_lonely_greeting(bubbles)
+    if glued != bubbles:
+        log.info("чат %s: склеил приветствие с ответом", chat_id)
+        bubbles = glued
+    if (
+        first
+        and not nudge.history_has_phone(prior)
+        and len(bubbles) == 1
+        and human.greeting_only(bubbles[0])
+        and (nudge.asked_visit(user_text) or nudge.asked_where(user_text))
+    ):
+        invite = human.INVITE_FIRST
+        bubbles = [("%s %s" % (bubbles[0].rstrip(), invite)).strip()]
+        log.info("чат %s: к голому приветствию дописал осмотр", chat_id)
+    if nudge.history_has_phone(prior):
+        trimmed = [
+            human.drop_push_after_contact(
+                b,
+                allow_invite=nudge.asked_visit(user_text)
+                or nudge.asked_where(user_text),
+            )
+            for b in bubbles
+        ]
+        trimmed = [b for b in trimmed if b.strip()]
+        if trimmed != [b for b in bubbles if b.strip()]:
+            log.info("чат %s: после контакта убрал дожим", chat_id)
+        bubbles = trimmed
     if nudge.wants_write_here(user_text) or nudge.history_wants_write_here(history):
         rewritten = [human.phone_to_messenger(b) for b in bubbles]
         if rewritten != bubbles:
@@ -518,6 +545,11 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             bubbles = rewritten
 
     if not bubbles:
+        if nudge.history_has_phone(prior):
+            store.save_history(chat_id, history)
+            _refresh_nudge(chat_id, history)
+            log.info("чат %s: после контакта нечего сказать без дожима, молчу", chat_id)
+            return
         bubbles = [random.choice(FALLBACK)]
 
     for i, bubble in enumerate(bubbles):
@@ -627,8 +659,14 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "Телефон в переписке есть, второй раз его не проси: ни «контактный "
             "телефон», ни «напишите номер», ни «по какому телефону». Клиент мог "
             "прислать VIN и номер двумя сообщениями - смотри всю переписку, а не "
-            "последнюю строку. Нужно подтвердить - «номер принял, в ближайшее "
-            "время наберу», и дальше по делу."
+            "последнюю строку.\n"
+            "Контакт уже у человека. Ты не знаешь, о чём они говорили по телефону "
+            "или в мессенджере. Поэтому не дожимай: не зови в салон, не спрашивай "
+            "день и время, не пиши «наберу», «свяжусь», «приезжайте», «посмотреть "
+            "можно». Не предлагай следующий шаг. Отвечай только на прямой вопрос "
+            "фактом из карточки. Просят автотеку и в карточке есть ссылка - кинь "
+            "ссылку сюда, без приглашения и без «наберу». Ссылки нет - «по этой "
+            "машине готового отчёта нет». Вопрос закрыл фактом - всё."
         )
     if not nudge.asked_leasing(history):
         system += (
@@ -1064,17 +1102,18 @@ async def run() -> None:
                 if text.startswith("/") and await handle_command(tg, chat_id, text):
                     continue
                 if store.is_paused(chat_id) and not tech_pause_lifted(chat_id):
-                    log.info("чат %s на паузе, молчим", chat_id)
-                    await crm.client_wrote_again(chat_id, text)
-                    continue
-
+                    if store.hard_paused(chat_id):
+                        log.info("чат %s на паузе, молчим", chat_id)
+                        await crm.client_wrote_again(chat_id, text)
+                        continue
                 pending.setdefault(str(chat_id), []).append(text)
                 urgent = await crm.capture_if_urgent(chat_id, pending[str(chat_id)])
                 if urgent in crm.PAUSE_REASONS:
                     await crm.ack_callback(tg, chat_id, pending[str(chat_id)], urgent)
                     store.pause(chat_id, "эскалация: %s" % urgent)
-                    pending.pop(str(chat_id), None)
-                    continue
+                    if store.hard_paused(chat_id):
+                        pending.pop(str(chat_id), None)
+                        continue
                 schedule(tg, str(chat_id))
             if updates:
                 write_offset(offset)

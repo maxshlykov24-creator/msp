@@ -108,8 +108,30 @@ def all_chat_ids() -> list[str]:
     return out
 
 
+HARD_PAUSE = (
+    "complaint",
+    "llm",
+    "stuck",
+    "команда владельца",
+    "авито выкл",
+    "авто.ру выкл",
+)
+
+
 def is_paused(chat_id: int | str) -> bool:
     return _paused_path(chat_id).exists()
+
+
+def hard_paused(chat_id: int | str) -> bool:
+    """Жалоба, сбой, команда владельца: чат глушим целиком.
+
+    После номера и передачи на звонок молчать нельзя: клиент ещё спрашивает
+    автотеку и факты по машине. Дожимать до визита в этом режиме не нужно.
+    """
+    if not is_paused(chat_id):
+        return False
+    reason = (pause_info(chat_id).get("reason") or "").lower()
+    return any(key in reason for key in HARD_PAUSE)
 
 
 def pause_info(chat_id: int | str) -> dict:

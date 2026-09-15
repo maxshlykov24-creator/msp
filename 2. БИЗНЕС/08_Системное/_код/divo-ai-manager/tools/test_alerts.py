@@ -16,6 +16,7 @@ from bot.nudge import (
     asked_heater,
     asked_media,
     asked_condition,
+    asked_visit,
     asks_about_call,
     needs_reply,
     urgent_reason,
@@ -221,7 +222,7 @@ def test_greeting_and_paper():
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
-    from bot.human import bang_greeting, drop_paper_talk, ensure_greeting, for_chat, greeting_now
+    from bot.human import bang_greeting, drop_paper_talk, ensure_greeting, for_chat, greeting_now, glue_lonely_greeting, greeting_only
 
     msk = ZoneInfo("Europe/Moscow")
     day = datetime(2026, 9, 15, 14, 0, tzinfo=msk)
@@ -267,6 +268,57 @@ def test_greeting_and_paper():
         0
     ].startswith("Доброй ночи!")
     assert ensure_greeting(["Уточню"], first=False) == ["Уточню"]
+    assert greeting_only("Доброе утро!")
+    assert greeting_only("Добрый день!")
+    assert not greeting_only("Доброе утро! Машина в наличии")
+    assert glue_lonely_greeting(
+        ["Доброе утро!", "Посмотреть можно в любой день с 10:00 до 20:00"]
+    ) == ["Доброе утро! Посмотреть можно в любой день с 10:00 до 20:00"]
+    assert glue_lonely_greeting(["Машина в наличии"]) == ["Машина в наличии"]
+    from bot.human import INVITE_FIRST
+
+    q = "Здравствуйте, когда можно приехать посмотреть автомобиль"
+    assert asked_visit(q)
+    filled = "Доброе утро! " + INVITE_FIRST
+    assert "с 10:00 до 20:00" in filled
+    assert "Автозаводской 18" in filled
+
+
+def test_after_contact_no_push():
+    from bot.human import drop_push_after_contact
+    from bot import store
+
+    link = "https://autoteka.ru/report/web/uuid/abc"
+    raw = "Отчёт вот: %s. Приезжайте посмотреть. В ближайшее время наберу" % link
+    cut = drop_push_after_contact(raw)
+    assert "autoteka.ru" in cut
+    assert "приезжайте" not in cut.lower()
+    assert "набер" not in cut.lower()
+    assert drop_push_after_contact("Посмотреть можно в любой день с 10:00 до 20:00") == ""
+    keep = drop_push_after_contact(
+        "Посмотреть можно в любой день с 10:00 до 20:00",
+        allow_invite=True,
+    )
+    assert "10:00" in keep
+    assert "complaint" in store.HARD_PAUSE
+    assert "call" not in store.HARD_PAUSE
+    assert "handoff" not in store.HARD_PAUSE
+
+
+def test_alert_always_has_button():
+    from bot.alerts import take_keyboard
+    from bot.crm import _ensure_token
+
+    chat_btn = take_keyboard("ab12", "chat")
+    assert chat_btn["inline_keyboard"][0][0]["text"] == "✍️ Беру"
+    assert chat_btn["inline_keyboard"][0][0]["callback_data"] == "take:ab12"
+    call_btn = take_keyboard("ab12", "call")
+    assert call_btn["inline_keyboard"][0][0]["text"] == "📞 Звоню"
+    alert = {}
+    token = _ensure_token(alert)
+    assert len(token) == 8
+    assert alert["token"] == token
+    assert _ensure_token(alert) == token
 
 
 def test_now_call():
@@ -1504,6 +1556,8 @@ if __name__ == "__main__":
     test_brief_skips_listing_spec()
     test_unsolicited()
     test_greeting_and_paper()
+    test_after_contact_no_push()
+    test_alert_always_has_button()
     test_now_call()
     test_where_choice()
     test_merge_user_chunks()

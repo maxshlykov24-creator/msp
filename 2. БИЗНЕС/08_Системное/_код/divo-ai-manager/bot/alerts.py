@@ -613,6 +613,8 @@ class AlertBot:
         message_id: int,
         text: str,
         markup: dict | None = None,
+        *,
+        clear_markup: bool = False,
     ) -> bool:
         payload: dict = {
             "chat_id": chat_id,
@@ -620,8 +622,11 @@ class AlertBot:
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
-            "reply_markup": markup or {"inline_keyboard": []},
         }
+        if markup is not None:
+            payload["reply_markup"] = markup
+        elif clear_markup:
+            payload["reply_markup"] = {"inline_keyboard": []}
         try:
             await self._call("editMessageText", payload)
             return True

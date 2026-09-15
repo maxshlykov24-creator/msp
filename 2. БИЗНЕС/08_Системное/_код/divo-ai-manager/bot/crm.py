@@ -174,6 +174,12 @@ def _persist_alert(chat_id: str | int | None, alert: dict) -> None:
             fresh["tg"] = dict(alert["tg"])
         if alert.get("snap"):
             fresh["snap"] = dict(alert["snap"])
+        if alert.get("token"):
+            fresh["token"] = alert["token"]
+        if "wait" in alert:
+            fresh["wait"] = alert.get("wait")
+        if "button_ok" in alert:
+            fresh["button_ok"] = bool(alert.get("button_ok"))
         if "pings" in alert:
             fresh["pings"] = list(alert.get("pings") or [])
     crmd["alert"] = fresh
@@ -637,6 +643,14 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
     doc["crm"] = crm
 
 
+def _ensure_token(alert: dict) -> str:
+    token = str(alert.get("token") or "").strip()
+    if not token:
+        token = secrets.token_hex(4)
+        alert["token"] = token
+    return token
+
+
 async def _publish(
     alert: dict, text: str, *, replace: bool = False, chat_id: str | int | None = None
 ) -> None:
@@ -644,12 +658,13 @@ async def _publish(
 
     Id всех карточек пишем в posts до удаления: если снять не вышло или
     заявку взяли в эту секунду, следующий тик добьёт хвост.
+    Живая карточка всегда с кнопкой Звоню / Беру.
     """
     if not bot:
         return
     wait = (alert.get("snap") or {}).get("wait") or alert.get("wait") or WAIT_CHAT
-    token = alert.get("token") or ""
-    markup = take_keyboard(token, wait) if token else None
+    token = _ensure_token(alert)
+    markup = None if alert.get("picked") else take_keyboard(token, wait)
     tg = dict(alert.get("tg") or {})
     old_chat = tg.get("chat_id")
     old_mid = tg.get("message_id")
@@ -659,6 +674,7 @@ async def _publish(
     async def _after_send(sent: tuple[int, int]) -> None:
         _remember_post(alert, sent[0], sent[1])
         alert["tg"] = {"chat_id": sent[0], "message_id": sent[1]}
+        alert["button_ok"] = bool(markup)
         _persist_alert(chat_id, alert)
         keep = dict(alert["tg"])
         if chat_id:
@@ -676,11 +692,13 @@ async def _publish(
             return
         if old_chat and old_mid:
             await bot.edit(int(old_chat), int(old_mid), text, markup)
+            alert["button_ok"] = bool(markup)
             await _sweep_posts(alert, keep={"chat_id": int(old_chat), "message_id": int(old_mid)})
             _persist_alert(chat_id, alert)
         return
     if old_chat and old_mid:
         if await bot.edit(int(old_chat), int(old_mid), text, markup):
+            alert["button_ok"] = bool(markup)
             await _sweep_posts(alert, keep={"chat_id": int(old_chat), "message_id": int(old_mid)})
             _persist_alert(chat_id, alert)
             return
@@ -1063,7 +1081,7 @@ async def _edit_alert(
     if chat_id and message_id:
         _remember_post(alert, chat_id, message_id)
         alert["tg"] = {"chat_id": int(chat_id), "message_id": int(message_id)}
-        await bot.edit(int(chat_id), int(message_id), text, None)
+        await bot.edit(int(chat_id), int(message_id), text, None, clear_markup=True)
         await _sweep_posts(alert, keep=alert["tg"])
 
 
@@ -1107,7 +1125,7 @@ async def on_take(cb: dict) -> None:
             lines[0] = "✅ <b>Связались</b> | DIVO"
             lines.insert(1, "Взял %s в %s." % (who, when))
             if chat_id and mid:
-                await bot.edit(int(chat_id), int(mid), "\n".join(lines), None)
+                await bot.edit(int(chat_id), int(mid), "\n".join(lines), None, clear_markup=True)
             await bot.answer_callback(cqid, "Тест. Сделку в amo не трогал")
         return
     cid = _chat_by_token(token)
@@ -1291,6 +1309,15 @@ async def _tick_one(chat_id: str) -> None:
             return
         alert = dict(crmd.get("alert") or {})
         await _sweep_posts(alert, keep=alert.get("tg"))
+        if _alert_open(alert) and alert.get("tg") and not alert.get("button_ok"):
+            snap = dict(alert.get("snap") or {})
+            await _publish(
+                alert,
+                format_alert(snap, 0),
+                replace=False,
+                chat_id=chat_id,
+            )
+            alert["button_ok"] = True
         doc.setdefault("crm", {})["alert"] = alert
         store.save_doc(chat_id, doc)
         if not ping_allowed(alert):
