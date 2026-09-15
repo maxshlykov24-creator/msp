@@ -14,6 +14,8 @@ from bot.nudge import (
     asked_leasing,
     asked_torg,
     asked_heater,
+    asked_media,
+    asked_condition,
     asks_about_call,
     needs_reply,
     urgent_reason,
@@ -174,6 +176,31 @@ def test_unsolicited():
         allow_heater=True,
     )
     assert "отопител" in keep_heat.lower()
+    photo = [
+        {
+            "role": "user",
+            "content": "Я сам из Крыма настроен на покупку если скинете фото и жене понравится на выходных могу приехать к вам",
+        }
+    ]
+    assert asked_media(photo)
+    assert not asked_condition(photo)
+    dump = drop_unsolicited(
+        "Понял, тогда фото по этому Monjaro сейчас отправим. "
+        "По состоянию: пробег 70 тысяч, состояние хорошее, машина не новая, но не била. "
+        "Автотеки по этому экземпляру нет, так что данных по ДТП и окрасам из отчёта не покажу, "
+        "но по кузову всё видно при осмотре. На выходных ждём, если жене понравится",
+        allow_condition=False,
+    )
+    assert "пробег" not in dump.lower()
+    assert "дтп" not in dump.lower()
+    assert "автотек" not in dump.lower()
+    assert "фото" in dump.lower()
+    assert "выходных" in dump.lower()
+    keep_cond = drop_unsolicited(
+        "ДТП не было, кузов не чинили",
+        allow_condition=True,
+    )
+    assert "дтп" in keep_cond.lower()
     from bot.human import soften_hard_torg
 
     slammed = soften_hard_torg(

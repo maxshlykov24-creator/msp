@@ -412,6 +412,28 @@ def asked_heater(messages: list[dict] | None) -> bool:
     )
 
 
+def _last_user(messages: list[dict] | None) -> str:
+    for msg in reversed(messages or []):
+        if msg.get("role") != "user":
+            continue
+        return str(msg.get("content") or "").lower().replace("ё", "е")
+    return ""
+
+
+def asked_media(messages: list[dict] | None) -> bool:
+    blob = _last_user(messages)
+    return bool(re.search(r"фото|видеообзор|(?<![а-я])видео(?![а-я])", blob))
+
+
+def asked_condition(messages: list[dict] | None) -> bool:
+    blob = _last_user(messages)
+    keys = (
+        "дтп", "окрас", "состояни", "пробег", "автотек",
+        "битая", "битый", "било", "кузов", "толщиномер", "микрон",
+    )
+    return any(key in blob for key in keys)
+
+
 WANTS_CALL = re.compile(
     r"("
     r"позвон(ите|и)|набер(ите|и)|перезвон|"

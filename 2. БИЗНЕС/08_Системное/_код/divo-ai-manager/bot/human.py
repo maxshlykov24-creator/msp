@@ -661,6 +661,23 @@ HEATER_BIT = re.compile(
     r"отопител|вебасто|webasto|нагреватель",
     re.IGNORECASE,
 )
+# На «скиньте фото» модель тащит карточку: пробег, ДТП, автотека. Это не спрашивали.
+CONDITION_DUMP = re.compile(
+    r"("
+    r"по состоянию|"
+    r"пробег\s+\d|"
+    r"состояни[ея]\s+хорош|"
+    r"машина не новая|"
+    r"не била|"
+    r"не битая|"
+    r"автотек\w*.{0,48}нет|"
+    r"данных по дтп|"
+    r"окрасам из отч|"
+    r"по кузову всё видно|"
+    r"видно при осмотре"
+    r")",
+    re.IGNORECASE,
+)
 SOFT_TORG = (
     "В разумных пределах торг и условия можем обсудить после осмотра"
 )
@@ -700,8 +717,9 @@ def drop_unsolicited(
     allow_leasing: bool = False,
     allow_torg: bool = False,
     allow_heater: bool = False,
+    allow_condition: bool = True,
 ) -> str:
-    """Лизинг, торг и отопитель выкидываем, если клиент про них не спрашивал."""
+    """Лизинг, торг, отопитель и карточку состояния выкидываем без вопроса."""
     original = text or ""
     if not original.strip():
         return original
@@ -712,6 +730,8 @@ def drop_unsolicited(
         if not allow_torg and TORG_BIT.search(part):
             continue
         if not allow_heater and HEATER_BIT.search(part):
+            continue
+        if not allow_condition and CONDITION_DUMP.search(part):
             continue
         kept.append(part)
     text = " ".join(kept).strip()

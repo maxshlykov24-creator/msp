@@ -450,12 +450,14 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             allow_leasing=nudge.asked_leasing(history),
             allow_torg=nudge.asked_torg(history),
             allow_heater=nudge.asked_heater(history),
+            allow_condition=nudge.asked_condition(history)
+            or not nudge.asked_media(history),
         )
         for b in bubbles
     ]
     cleaned = [b for b in cleaned if b.strip()]
     if cleaned != [b for b in bubbles if b.strip()]:
-        log.info("чат %s: выкинул лизинг, торг или отопитель без вопроса клиента", chat_id)
+        log.info("чат %s: выкинул лизинг, торг, отопитель или состояние без вопроса", chat_id)
         bubbles = cleaned
     if nudge.asked_torg(history):
         softened = [human.soften_hard_torg(b, allow_torg=True) for b in bubbles]
