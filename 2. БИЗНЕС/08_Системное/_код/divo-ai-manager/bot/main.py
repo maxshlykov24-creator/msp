@@ -464,6 +464,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             bubbles = [b for b in softened if b.strip()]
     bubbles = [human.drop_tradein_menu(b) for b in bubbles]
     bubbles = [human.drop_max_app(b) for b in bubbles]
+    bubbles = [human.speak_messengers(b) for b in bubbles]
     bubbles = [b for b in bubbles if b.strip()]
     if human.client_listing(history):
         trimmed = [human.drop_reask_listing(b) for b in bubbles]
@@ -511,7 +512,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if nudge.wants_write_here(user_text) or nudge.history_wants_write_here(history):
         rewritten = [human.phone_to_messenger(b) for b in bubbles]
         if rewritten != bubbles:
-            log.info("чат %s: вместо звонка прошу Telegram или WhatsApp", chat_id)
+            log.info("чат %s: вместо звонка прошу Телеграм или Ватсап", chat_id)
             bubbles = rewritten
 
     if not bubbles:
@@ -722,7 +723,7 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "Звонки не проходят или просит ответить здесь. Это не отказ. "
             "Ответь фактом в чат, если он есть в карточке. Телефон чтобы "
             "позвонить не проси. Нужен отчёт или файл без ссылки — "
-            "«напишите Telegram или WhatsApp, туда пришлю». "
+            "«напишите Телеграм или Ватсап, туда пришлю». "
             "«Наберу и расскажу» и «скиньте номер, если звонок неудобен» нельзя."
         )
     if nudge.refusals_count(history) >= 2:

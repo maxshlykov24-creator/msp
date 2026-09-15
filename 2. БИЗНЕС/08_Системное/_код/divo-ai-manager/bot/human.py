@@ -1068,7 +1068,7 @@ PHONE_FOR_CALL = re.compile(
     r")",
     re.IGNORECASE,
 )
-MESSENGER_ASK = "Напишите, пожалуйста, Telegram или WhatsApp, туда пришлю"
+MESSENGER_ASK = "Напишите, пожалуйста, Телеграм или Ватсап, туда пришлю"
 MAX_APP = re.compile(
     r"(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b"
     r"|(?<![А-Яа-яA-Za-z])макс(?:е|а|у)?(?![а-яёa-z])"
@@ -1084,7 +1084,7 @@ def drop_max_app(text: str) -> str:
         return original
     out = re.sub(
         r"(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b",
-        "в Telegram или WhatsApp",
+        "в Телеграм или Ватсап",
         original,
         flags=re.IGNORECASE,
     )
@@ -1092,11 +1092,21 @@ def drop_max_app(text: str) -> str:
     out = re.sub(r"\s+или\s+(?:макс(?:е|а|у)?|max)\b", "", out, flags=re.IGNORECASE)
     out = re.sub(
         r"(?<![А-Яа-яA-Za-z])(?:макс(?:е|а|у)?|max)(?![а-яёA-Za-z])",
-        "Telegram или WhatsApp",
+        "Телеграм или Ватсап",
         out,
         flags=re.IGNORECASE,
     )
     return _tidy(out, original)
+
+
+def speak_messengers(text: str) -> str:
+    """Клиенту русские имена: Телеграм, Ватсап."""
+    original = text or ""
+    out = original.replace("Telegram или WhatsApp", "Телеграм или Ватсап")
+    out = out.replace("WhatsApp или Telegram", "Ватсап или Телеграм")
+    out = re.sub(r"\bWhats[Aa]pp\b", "Ватсап", out)
+    out = re.sub(r"\bTelegram\b", "Телеграм", out)
+    return out
 
 
 def phone_to_messenger(text: str) -> str:
