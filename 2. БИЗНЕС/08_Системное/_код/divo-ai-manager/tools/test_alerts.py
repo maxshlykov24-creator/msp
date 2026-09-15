@@ -13,6 +13,7 @@ from bot.nudge import (
     is_complaint,
     asked_leasing,
     asked_torg,
+    asked_heater,
     asks_about_call,
     needs_reply,
     urgent_reason,
@@ -158,6 +159,21 @@ def test_unsolicited():
         [{"role": "user", "content": "Добрый день, за 3,5 млн продадите многодетной семье?"}]
     )
     assert asked_leasing([{"role": "user", "content": "а в лизинг можно?"}])
+    assert not asked_heater([{"role": "user", "content": "За наличку торг есть?"}])
+    assert asked_heater([{"role": "user", "content": "а вебасто стоит?"}])
+    cut_heat = drop_unsolicited(
+        "В разумных пределах торг и условия можем обсудить после осмотра. "
+        "Машина живая, дизельный отопитель на ней есть. Можно посмотреть в шоуруме",
+        allow_torg=True,
+        allow_heater=False,
+    )
+    assert "отопител" not in cut_heat.lower()
+    assert "торг" in cut_heat.lower()
+    keep_heat = drop_unsolicited(
+        "Да, дизельный отопитель стоит",
+        allow_heater=True,
+    )
+    assert "отопител" in keep_heat.lower()
     from bot.human import soften_hard_torg
 
     slammed = soften_hard_torg(

@@ -404,6 +404,14 @@ def asked_torg(messages: list[dict] | None) -> bool:
     return False
 
 
+def asked_heater(messages: list[dict] | None) -> bool:
+    blob = _user_blob(messages)
+    return any(
+        key in blob
+        for key in ("отопител", "вебасто", "webasto", "нагреватель", "печк", "греет зимой")
+    )
+
+
 WANTS_CALL = re.compile(
     r"("
     r"позвон(ите|и)|набер(ите|и)|перезвон|"
