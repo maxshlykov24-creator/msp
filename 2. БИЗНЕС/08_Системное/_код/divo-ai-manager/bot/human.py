@@ -1070,9 +1070,10 @@ PHONE_FOR_CALL = re.compile(
 )
 MESSENGER_ASK = "Напишите, пожалуйста, Telegram или WhatsApp, туда пришлю"
 MAX_APP = re.compile(
-    r"(?i)(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b"
-    r"|(?i)(?<![А-Яа-яA-Za-z])макс(?:е|а|у)?(?![а-яёa-z])"
-    r"|(?<![A-Za-z])MAX(?![A-Za-z])"
+    r"(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b"
+    r"|(?<![А-Яа-яA-Za-z])макс(?:е|а|у)?(?![а-яёa-z])"
+    r"|(?<![A-Za-z])max(?![A-Za-z])",
+    re.IGNORECASE,
 )
 
 
@@ -1082,16 +1083,18 @@ def drop_max_app(text: str) -> str:
     if not MAX_APP.search(original):
         return original
     out = re.sub(
-        r"(?i)(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b",
+        r"(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b",
         "в Telegram или WhatsApp",
         original,
+        flags=re.IGNORECASE,
     )
-    out = re.sub(r"(?i),\s*(?:макс(?:е|а|у)?|max)\b", "", out)
-    out = re.sub(r"(?i)\s+или\s+(?:макс(?:е|а|у)?|max)\b", "", out)
+    out = re.sub(r",\s*(?:макс(?:е|а|у)?|max)\b", "", out, flags=re.IGNORECASE)
+    out = re.sub(r"\s+или\s+(?:макс(?:е|а|у)?|max)\b", "", out, flags=re.IGNORECASE)
     out = re.sub(
-        r"(?i)(?<![А-Яа-яA-Za-z])(?:макс(?:е|а|у)?|max)(?![а-яёA-Za-z])",
+        r"(?<![А-Яа-яA-Za-z])(?:макс(?:е|а|у)?|max)(?![а-яёA-Za-z])",
         "Telegram или WhatsApp",
         out,
+        flags=re.IGNORECASE,
     )
     return _tidy(out, original)
 
