@@ -30,6 +30,10 @@ HAS_PHONE = re.compile(
 INTL_PHONE = re.compile(
     r"(?<!\d)(?:\+|00)\s*\d(?:[\s\-\(\)]*\d){9,14}(?!\d)"
 )
+# 910 182-22-97 без семёрки и восьмёрки: российский мобильный.
+RU_PHONE_10 = re.compile(
+    r"(?<!\d)\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}(?!\d)"
+)
 # «Подумаю» гасит только догон: живой ответ ещё можно. Закрытие интереса —
 # и догон, и живую реплику.
 SOFT_STOP = re.compile(r"подумаю", re.IGNORECASE)
@@ -339,6 +343,8 @@ def extract_phone(text: str) -> str:
     for match in re.finditer(r"(?<!\d)\d{12,15}(?!\d)", text or ""):
         take(match.group(0))
     for match in HAS_PHONE.finditer(text or ""):
+        take(re.sub(r"\D", "", match.group(0)))
+    for match in RU_PHONE_10.finditer(text or ""):
         take(re.sub(r"\D", "", match.group(0)))
     return best
 

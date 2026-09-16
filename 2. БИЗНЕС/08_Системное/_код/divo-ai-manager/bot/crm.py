@@ -441,6 +441,38 @@ def _lead_name(snap: dict) -> str:
     return "%s · %s" % (car, snap.get("channel") or "чат")
 
 
+def _apply_phone_to_doc(snap: dict, doc: dict) -> None:
+    """Пишет номер в карточку контакта amo. Сделку не создаёт."""
+    phone = str(snap.get("phone") or "").strip()
+    formatted = amo_client.amo_phone(phone)
+    if not formatted:
+        return
+    crmd = dict(doc.get("crm") or {})
+    lead_id = crmd.get("lead_id") or snap.get("lead_id")
+    contact_id = crmd.get("contact_id")
+    if not lead_id:
+        return
+    try:
+        if not contact_id:
+            lead = amo_client.get_lead(int(lead_id))
+            contacts = (lead.get("_embedded") or {}).get("contacts") or []
+            if contacts:
+                contact_id = contacts[0].get("id")
+        if not contact_id:
+            contact_id = amo_client.create_contact(snap.get("name") or "", phone)
+            amo_client.link_contact(int(lead_id), int(contact_id))
+            log.info("сделка %s: создал контакт %s под номер", lead_id, contact_id)
+        else:
+            amo_client.set_contact_phone(int(contact_id), phone)
+        crmd["contact_id"] = int(contact_id)
+        crmd["phone"] = formatted
+        doc["crm"] = crmd
+        snap["phone"] = phone
+        log.info("сделка %s: телефон %s на контакт %s", lead_id, formatted, contact_id)
+    except amo_client.AmoError as exc:
+        log.warning("сделка %s: телефон в amo не записался: %s", lead_id, exc)
+
+
 def _bind_lead(snap: dict, doc: dict, lead: dict, *, created: bool) -> dict:
     crm = dict(doc.get("crm") or {})
     lead_id = int(lead["id"])
@@ -462,6 +494,7 @@ def _bind_lead(snap: dict, doc: dict, lead: dict, *, created: bool) -> dict:
     snap["created"] = bool(created)
     snap["nags"] = int(lead.get("status_id") or 0) == amo_client.STATUS_NEW
     doc["crm"] = crm
+    _apply_phone_to_doc(snap, doc)
     return snap
 
 
@@ -484,8 +517,6 @@ def _adopt_widget(snap: dict, doc: dict, widget: dict) -> dict:
         widget = amo_client.get_lead(lead_id)
         contacts = (widget.get("_embedded") or {}).get("contacts") or []
     contact_id = contacts[0].get("id") if contacts else None
-    if contact_id and snap.get("phone"):
-        amo_client.set_contact_phone(int(contact_id), snap["phone"])
     amo_client.add_note(lead_id, note_text(snap))
     log.info(
         "чат %s: взял сделку виджета %s в Продажи / Новая заявка",
@@ -735,6 +766,10 @@ async def capture_if_urgent(chat_id: str | int, texts: list[str]) -> str:
         history = history + [{"role": "user", "content": blob}]
         store.save_history(chat_id, history)
     if already_alerting(chat_id, reason):
+        snap = snapshot(chat_id, history, reason)
+        doc = store.load_doc(chat_id)
+        _apply_phone_to_doc(snap, doc)
+        store.save_doc(chat_id, doc)
         return reason
     await capture(chat_id, history, reason)
     log.info("чат %s: срочная передача %s, не ждём модель", chat_id, reason)
@@ -765,7 +800,11 @@ async def ack_callback(channel, chat_id: str | int, texts: list[str], reason: st
 async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
     """Сделка + примечание + старт алертов. Не пишет клиенту."""
     if already_alerting(chat_id, reason):
-        return snapshot(chat_id, history, reason)
+        snap = snapshot(chat_id, history, reason)
+        doc = store.load_doc(chat_id)
+        _apply_phone_to_doc(snap, doc)
+        store.save_doc(chat_id, doc)
+        return snap
     snap = snapshot(chat_id, history, reason)
     phone = str(snap.get("phone") or "")
     async with _alert_lock(chat_id, phone):
@@ -941,8 +980,20 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     history.append({"role": "user", "content": text})
     doc["messages"] = history
     store.save_doc(chat_id, doc)
+    phone_now = nudge.extract_phone_from_history(history)
+    if phone_now:
+        _apply_phone_to_doc(snapshot(chat_id, history, "phone"), doc)
+        store.save_doc(chat_id, doc)
     crm = dict(doc.get("crm") or {})
     alert = dict(crm.get("alert") or {})
+    if phone_now:
+        inner = dict(alert.get("snap") or {})
+        if inner and not inner.get("phone"):
+            inner["phone"] = phone_now
+            alert["snap"] = inner
+            crm["alert"] = alert
+            doc["crm"] = crm
+            store.save_doc(chat_id, doc)
     if not alert.get("active"):
         prior = history[:-1]
         if nudge.is_caller_id_paste(text, prior):

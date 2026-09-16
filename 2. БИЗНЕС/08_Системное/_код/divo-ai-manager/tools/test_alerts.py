@@ -69,6 +69,24 @@ def test_phone():
     assert extract_phone("+79502292544") == "79502292544"
     assert extract_phone("пишите на 8 495 089 29 29") == ""
     assert extract_phone("+79192863777 Максим (телеграмм)") == "79192863777"
+    assert extract_phone("89101822297") == "79101822297"
+    assert extract_phone("9101822297") == "79101822297"
+    assert extract_phone("910 182-22-97") == "79101822297"
+    from bot.crm import amo_client as amo
+
+    assert amo.amo_phone("89101822297") == "+79101822297"
+    assert amo.amo_phone("9101822297") == "+79101822297"
+    assert amo.amo_phone("+7 910 182-22-97") == "+79101822297"
+    assert amo.amo_phone("79101822297") == "+79101822297"
+    assert amo.amo_phone("994993845959") == "+994993845959"
+    assert amo.contact_has_phone(
+        {
+            "custom_fields_values": [
+                {"field_code": "PHONE", "values": [{"value": "+7 910 182-22-97"}]}
+            ]
+        },
+        "89101822297",
+    )
     az = "+994993845959 если удобно напишите пожалуйста ватцап или тг данный момент нахожусь за границей"
     assert extract_phone(az) == "994993845959"
     assert extract_phone("994993845959") == "994993845959"
@@ -1621,6 +1639,44 @@ def test_claim_twice():
     assert notes == []
 
 
+def test_sales_lead_gets_phone():
+    """Виджет уже в Продажах: номер из чата всё равно пишем в карточку контакта."""
+    from bot import crm
+
+    patched: list[tuple[int, str]] = []
+    orig_get = crm.amo_client.get_lead
+    orig_set = crm.amo_client.set_contact_phone
+    orig_note = crm.amo_client.add_note
+    orig_url = crm.amo_client.lead_url
+    try:
+        crm.amo_client.get_lead = lambda i: {
+            "id": int(i),
+            "pipeline_id": crm.amo_client.PIPELINE_SALES,
+            "status_id": crm.amo_client.STATUS_NEW,
+            "_embedded": {"contacts": [{"id": 77}]},
+        }
+        crm.amo_client.set_contact_phone = lambda cid, phone: patched.append((int(cid), phone))
+        crm.amo_client.add_note = lambda *a, **k: None
+        crm.amo_client.lead_url = lambda i: "https://divomotors.amocrm.ru/leads/detail/%s" % i
+        doc = {"crm": {"lead_id": 45269007}, "messages": []}
+        snap = {
+            "phone": "89101822297",
+            "channel": "Авито",
+            "name": "Vsn",
+            "car": "Tank 700",
+        }
+        out = crm.ensure_lead(snap, doc)
+        assert out.get("lead_id") == 45269007
+        assert patched == [(77, "89101822297")]
+        assert doc["crm"].get("phone") == "+79101822297"
+        assert doc["crm"].get("contact_id") == 77
+    finally:
+        crm.amo_client.get_lead = orig_get
+        crm.amo_client.set_contact_phone = orig_set
+        crm.amo_client.add_note = orig_note
+        crm.amo_client.lead_url = orig_url
+
+
 def test_one_card_per_phone():
     import asyncio
 
@@ -1888,6 +1944,7 @@ if __name__ == "__main__":
     test_many_paints()
     test_two_vins_and_phone()
     test_claim_twice()
+    test_sales_lead_gets_phone()
     test_one_card_per_phone()
     test_persist_media_without_nags()
     test_stop_nudge_on_closed_and_voice()

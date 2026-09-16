@@ -207,6 +207,23 @@ def write(path: str, body: object, method: str = "POST") -> dict:
     return data
 
 
+def amo_phone(raw: str) -> str:
+    """Номер для карточки amo: +7XXXXXXXXXX, иначе + и цифры с кодом страны.
+
+    10 цифр без 7 и 8 считаем российскими. 8XXXXXXXXXXX → +7.
+    """
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if len(digits) == 11 and digits[0] == "8":
+        digits = "7" + digits[1:]
+    elif len(digits) == 10:
+        digits = "7" + digits
+    if len(digits) < 10:
+        return ""
+    return "+" + digits
+
+
 def lead_url(lead_id: int) -> str:
     host = DOMAIN if DOMAIN.endswith(".amocrm.ru") else f"{DOMAIN}.amocrm.ru"
     return f"https://{host}/leads/detail/{int(lead_id)}"
@@ -257,19 +274,19 @@ def get_lead(lead_id: int) -> dict:
 
 
 def create_contact(name: str, phone: str) -> int:
-    body = [
-        {
-            "name": (name or "Клиент DIVO").strip() or "Клиент DIVO",
-            "responsible_user_id": BOT_RESPONSIBLE,
-            "custom_fields_values": [
-                {
-                    "field_code": "PHONE",
-                    "values": [{"value": phone, "enum_code": "WORK"}],
-                }
-            ],
-        }
-    ]
-    data = write("/api/v4/contacts", body)
+    item: dict = {
+        "name": (name or "Клиент DIVO").strip() or "Клиент DIVO",
+        "responsible_user_id": BOT_RESPONSIBLE,
+    }
+    formatted = amo_phone(phone)
+    if formatted:
+        item["custom_fields_values"] = [
+            {
+                "field_code": "PHONE",
+                "values": [{"value": formatted, "enum_code": "WORK"}],
+            }
+        ]
+    data = write("/api/v4/contacts", [item])
     rows = items(data, "contacts")
     if not rows or not rows[0].get("id"):
         raise AmoError(0, "контакт не создался")
@@ -570,21 +587,53 @@ def accept_unsorted(uid: str, status_id: int = STATUS_TECH_CHAT) -> None:
         raise AmoError(code, str(data.get("detail") or data.get("title") or data)[:300])
 
 
+def get_contact(contact_id: int) -> dict:
+    return get("/api/v4/contacts/%s" % int(contact_id))
+
+
+def contact_has_phone(contact: dict, phone: str) -> bool:
+    want = "".join(ch for ch in amo_phone(phone) if ch.isdigit())
+    if not want:
+        return False
+    tail = want[-10:]
+    for field in contact.get("custom_fields_values") or []:
+        code = str(field.get("field_code") or "").upper()
+        name = str(field.get("field_name") or "").lower()
+        if code != "PHONE" and "телефон" not in name:
+            continue
+        for val in field.get("values") or []:
+            have = "".join(ch for ch in str(val.get("value") or "") if ch.isdigit())
+            if not have:
+                continue
+            if have == want or have[-10:] == tail:
+                return True
+    return False
+
+
+def link_contact(lead_id: int, contact_id: int) -> None:
+    write(
+        "/api/v4/leads",
+        [
+            {
+                "id": int(lead_id),
+                "_embedded": {"contacts": [{"id": int(contact_id), "is_main": True}]},
+            }
+        ],
+        method="PATCH",
+    )
+
+
 def set_contact_phone(contact_id: int, phone: str) -> None:
-    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
-    if int(contact_id or 0) <= 0 or len(digits) < 10:
+    formatted = amo_phone(phone)
+    if int(contact_id or 0) <= 0 or not formatted:
         return
-    if digits[0] == "8" and len(digits) == 11:
-        digits = "7" + digits[1:]
-    elif len(digits) == 10:
-        digits = "7" + digits
     body = [
         {
             "id": int(contact_id),
             "custom_fields_values": [
                 {
                     "field_code": "PHONE",
-                    "values": [{"value": "+" + digits, "enum_code": "WORK"}],
+                    "values": [{"value": formatted, "enum_code": "WORK"}],
                 }
             ],
         }
