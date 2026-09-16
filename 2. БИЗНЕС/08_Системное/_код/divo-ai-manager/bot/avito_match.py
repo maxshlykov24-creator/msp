@@ -7,10 +7,16 @@ from bot.config import settings
 
 YEAR_RE = re.compile(r"\b(20\d{2})\b")
 KM_RE = re.compile(r"([\d\s\u00a0]+)\s*км", re.I)
-# В заголовке объявления часто «1.5 CVT» — это не имя машины.
 NOISE_TOKENS = {
     "cvt", "at", "amt", "mt", "dsg", "робот", "автомат", "механика",
-    "4wd", "awd", "2wd", "fwd", "awd",
+    "4wd", "awd", "2wd", "fwd",
+}
+# «G-класс» и «V-класс» без склейки теряют букву: оба становятся «класс»,
+# и V-класс на Авито получает автотеку гелика. Так уже отправили Ильшату.
+CLASS_RE = re.compile(r"\b([a-zа-я])[\s\-]*класс", re.I)
+GENERIC = {
+    "mercedes", "benz", "bmw", "audi", "toyota", "geely", "haval",
+    "класс", "amg",
 }
 SKIP_TITLES = (
     "на складе",
@@ -69,6 +75,7 @@ def _cards(stock: str) -> list[dict]:
 
 def _norm(text: str) -> str:
     t = (text or "").lower().replace("ё", "е")
+    t = CLASS_RE.sub(lambda m: m.group(1).lower() + "класс", t)
     # «2.0» иначе распадается в «2» и «0» и ломает «GAC M8 2.0 AT».
     t = re.sub(r"(\d)[.,](\d)", r"\1dot\2", t)
     return re.sub(r"[^a-zа-я0-9]+", " ", t).strip()
@@ -89,11 +96,20 @@ def _core(text: str) -> str:
     return " ".join(t for t in _norm(text).split() if _keep_token(t))
 
 
+def _class_code(text: str) -> str:
+    m = re.search(r"\b([a-zа-я])класс\b", _norm(text))
+    return m.group(1) if m else ""
+
+
 def score(listing: dict, card: dict) -> int:
     points = 0
     head = _core(listing.get("head") or listing.get("title") or "")
     title = _core(card.get("title") or "")
     if not head or not title:
+        return 0
+    listing_class = _class_code(listing.get("head") or listing.get("title") or "")
+    card_class = _class_code(card.get("title") or "")
+    if listing_class and listing_class != card_class:
         return 0
     if head and head in title:
         points += 8
@@ -102,9 +118,14 @@ def score(listing: dict, card: dict) -> int:
     tokens = [t for t in head.split() if _keep_token(t)]
     hit = sum(1 for t in tokens if t in title)
     points += hit * 2
+    must = [t for t in tokens if t not in GENERIC]
+    if must and not all(t in title for t in must):
+        return 0
     if listing.get("year") and listing["year"] == card.get("year"):
         points += 4
     lp, cp = listing.get("price") or 0, card.get("price") or 0
+    if lp and cp and min(lp, cp) > 0 and max(lp, cp) >= 2 * min(lp, cp):
+        return 0
     if lp and cp and abs(lp - cp) <= 1000:
         points += 6
     lk, ck = listing.get("km") or 0, card.get("km") or 0
@@ -150,6 +171,11 @@ def focus_block(
         vin = (card.get("VIN") or "").split()[0] if card.get("VIN") else ""
         lines.append("Это машина из стока: %s%s." % (card.get("title"), (" VIN " + vin) if vin else ""))
         lines.append("Отвечай по её карточке, не спрашивай «какой автомобиль смотрите».")
+        lines.append(
+            "Модель объявления и карточки одна. V-класс это не G-класс. "
+            "Клиент сказал, что в отчёте другая модель, - признай ошибку, "
+            "чужой VIN и чужую автотеку не защищай."
+        )
         lines.append(
             "Клиент уже на этом объявлении. Не представляй её заново списком "
             "«этот экземпляр и ещё вот тот». Бензин, дизель, год, комплектация "

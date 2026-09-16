@@ -1228,6 +1228,47 @@ def test_tiggo_match_and_messenger():
     assert "Telegram" not in spoken
     assert "Телеграм или Ватсап" in spoken
 
+
+def test_mercedes_class_not_confused():
+    from bot.avito_match import match_card
+
+    stock = (
+        "## Mercedes-Benz G-Класс AMG 2021\n"
+        "- VIN: W1N4632761X412622\n"
+        "- Марка: Mercedes-Benz\n"
+        "- Модель: G-Класс AMG\n"
+        "- Пробег: 70 284 км\n"
+        "- Цена в объявлении: 15 000 000 руб. (наличный расчет, без НДС)\n"
+        "- Автотека: https://autoteka.ru/report/web/uuid/91df1c66-fake\n"
+        "\n"
+        "## Mercedes-Benz S-Класс 2019\n"
+        "- VIN: WDD2221861A505798\n"
+        "- Марка: Mercedes-Benz\n"
+        "- Модель: S-Класс\n"
+        "- Пробег: 91 817 км\n"
+        "- Цена в объявлении: 7 700 000 руб. (наличный расчет, без НДС)\n"
+    )
+    v = match_card(
+        "Mercedes-Benz V-класс 2.0 AT, 2021, 105 863 км",
+        "5 400 000 ₽",
+        stock=stock,
+    )
+    assert v is None
+    g = match_card(
+        "Mercedes-Benz G-класс AMG 4.0 AT, 2021, 70 284 км",
+        "15 000 000 ₽",
+        stock=stock,
+    )
+    assert g is not None
+    assert "W1N4632761X412622" in (g.get("VIN") or "")
+    s = match_card(
+        "Mercedes-Benz S-класс 2.9 AT, 2021, 109 343 км",
+        "7 700 000 ₽",
+        stock=stock,
+    )
+    assert s is not None
+    assert "WDD2221861A505798" in (s.get("VIN") or "")
+
     m8_stock = (
         "## GAC M8 2024\n"
         "- VIN: LMGMU1G82R1236593\n"
@@ -1629,6 +1670,7 @@ if __name__ == "__main__":
     test_tradein_vin_phone()
     test_in_stock_dedupe()
     test_tiggo_match_and_messenger()
+    test_mercedes_class_not_confused()
     test_owner_legal()
     test_autoteka_missing_used_vs_new()
     test_speak_damage_no_false_dtp()
