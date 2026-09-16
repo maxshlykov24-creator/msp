@@ -218,14 +218,35 @@ def is_empty_phrase(text: str) -> bool:
     return any(m in low for m in ("не найден", "не обнаруж", "не проверен", "нет сведени"))
 
 
-def speak_damage(text: str) -> str:
-    """Старый кэш «по отчёту … не найдено» в карточке звучит канцеляритом.
+EMPTY_DAMAGE = re.compile(
+    r"^(по отч[её]ту\s+)?"
+    r"дтп"
+    r"([,\s]+страховых выплат)?"
+    r"([,\s]+и?\s*кузовного ремонта)?"
+    r"\s*(нет|не найдено)$",
+    re.I,
+)
+REAL_DAMAGE = re.compile(
+    r"(одно\s+дтп|\d+\s*дтп|есть записи|есть страховые|"
+    r"\d{1,2}\s+[а-яё]+\s+\d{4})",
+    re.I,
+)
 
-    Менеджер знает машину: «ДТП и кузовного ремонта нет».
+
+def speak_damage(text: str) -> str:
+    """Пустой отчёт голосом менеджера, без запятой после «ДТП».
+
+    Старый кэш: «по отчёту ДТП, страховых выплат, кузовного ремонта не найдено».
+    После склейки получалось «ДТП, страховых выплат и кузовного ремонта нет».
+    Модель читает запятую как «ДТП есть». Так уже соврали по Bestune NAT.
     """
     t = str(text or "").strip()
     if not t:
         return ""
+    compact = re.sub(r"\s+", " ", t.lower()).strip(" .")
+    compact = compact.replace(" не найдены", " не найдено")
+    if EMPTY_DAMAGE.search(compact) and not REAL_DAMAGE.search(compact):
+        return "ДТП не было, кузов не чинили"
     low = t.lower()
     for prefix in ("по отчёту ", "по отчету "):
         if low.startswith(prefix):

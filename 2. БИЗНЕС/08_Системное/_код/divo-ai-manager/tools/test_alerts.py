@@ -1278,6 +1278,22 @@ def test_owner_legal():
     assert "10 400 000" in vat
 
 
+def test_speak_damage_no_false_dtp():
+    from tools.stock_sync import autoteka_lines, speak_damage
+
+    empty = "по отчёту ДТП, страховых выплат, кузовного ремонта не найдено"
+    assert speak_damage(empty) == "ДТП не было, кузов не чинили"
+    assert speak_damage("ДТП, страховых выплат и кузовного ремонта нет") == (
+        "ДТП не было, кузов не чинили"
+    )
+    assert speak_damage("ДТП нет") == "ДТП не было, кузов не чинили"
+    real = "одно ДТП, 27 января 2024 года, ремонта и страховых выплат нет"
+    assert speak_damage(real) == real
+    blob = "\n".join(autoteka_lines({"повреждения": empty}))
+    assert "ДТП не было, кузов не чинили" in blob
+    assert "ДТП, страховых" not in blob
+
+
 def test_many_paints():
     from bot.human import for_chat, soften_many_paints
     from tools.stock_sync import speak_paints
@@ -1577,6 +1593,7 @@ if __name__ == "__main__":
     test_in_stock_dedupe()
     test_tiggo_match_and_messenger()
     test_owner_legal()
+    test_speak_damage_no_false_dtp()
     test_many_paints()
     test_two_vins_and_phone()
     test_claim_twice()

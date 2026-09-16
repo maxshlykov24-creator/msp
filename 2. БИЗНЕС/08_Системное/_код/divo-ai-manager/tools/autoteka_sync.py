@@ -354,9 +354,8 @@ def damage_of(report: dict[str, Any]) -> str:
     checked = [NAMES[key] for key, _ in pairs if key in NAMES]
     if not checked:
         return ""
-    if len(checked) == 1:
-        return "%s нет" % checked[0]
-    return "%s и %s нет" % (", ".join(checked[:-1]), checked[-1])
+    # Не «ДТП, выплат и ремонта нет»: запятая после «ДТП» читается как «есть».
+    return "ДТП не было, кузов не чинили"
 
 
 def owners_of(report: dict[str, Any]) -> str:
