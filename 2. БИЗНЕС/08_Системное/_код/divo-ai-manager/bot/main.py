@@ -492,6 +492,12 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if trimmed != bubbles:
             log.info("чат %s: номер уже есть, выкинул повторный запрос телефона", chat_id)
             bubbles = trimmed or [PHONE_TAKEN]
+    if nudge.history_named_messenger(history):
+        trimmed = [nudge.drop_messenger_choice(b) for b in bubbles]
+        trimmed = [b for b in trimmed if b.strip()]
+        if trimmed != bubbles:
+            log.info("чат %s: мессенджер уже назван, не спрашиваю какой", chat_id)
+            bubbles = trimmed or ["Принял, напишу"]
     if nudge.asked_vat(history):
         vat = avito_match.vat_from_doc(store.load_doc(chat_id))
         if vat:
@@ -642,8 +648,14 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "\n\n# Клиент оставил номер\n"
             "Номер принял. Не пиши «сейчас наберу», «сейчас наберём», "
             "«прямо сейчас позвоним»: это срок, который мы не держим. "
-            "«Принял, в ближайшее время наберу» или «в скором времени свяжусь»."
+            "«Принял, в ближайшее время наберу» или «в скором времени свяжусь». "
+            "Второй раз номер не проси."
         )
+        if nudge.named_messenger(user_text) or nudge.history_named_messenger(prior):
+            system += (
+                " Мессенджер уже назвал: пиши туда, не спрашивай "
+                "«Ватсап или Телеграм»."
+            )
     if not nudge.history_has_phone(history):
         system += (
             "\n\n# Телефона в этом диалоге ещё нет\n"
@@ -893,6 +905,11 @@ async def send_nudge(chat_id: int | str) -> None:
     doc = store.load_doc(chat_id)
     history = list(doc.get("messages") or [])
     if nudge.should_stop_nudge(history):
+        meta = dict(doc.get("nudge") or {})
+        if meta.get("waiting"):
+            meta["waiting"] = False
+            doc["nudge"] = meta
+            store.save_doc(chat_id, doc)
         return
     meta = doc.get("nudge") or {}
     step = nudge.ready_to_send(meta)

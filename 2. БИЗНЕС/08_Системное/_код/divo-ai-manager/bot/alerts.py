@@ -88,6 +88,8 @@ def pretty_phone(phone: str) -> str:
     if len(digits) == 11 and digits[0] in "78":
         d = digits
         return "+7 %s %s-%s-%s" % (d[1:4], d[4:7], d[7:9], d[9:11])
+    if digits:
+        return "+" + digits
     return phone or ""
 
 

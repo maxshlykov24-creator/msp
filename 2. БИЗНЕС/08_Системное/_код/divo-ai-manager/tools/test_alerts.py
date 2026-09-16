@@ -56,10 +56,46 @@ def test_needs_reply():
 
 
 def test_phone():
+    from bot.nudge import (
+        drop_messenger_choice,
+        drop_phone_ask,
+        history_has_phone,
+        named_messenger,
+        refresh,
+        should_stop_nudge,
+    )
+
     assert extract_phone("мой 8 900 111-22-33") == "79001112233"
     assert extract_phone("+79502292544") == "79502292544"
     assert extract_phone("пишите на 8 495 089 29 29") == ""
     assert extract_phone("+79192863777 Максим (телеграмм)") == "79192863777"
+    az = "+994993845959 если удобно напишите пожалуйста ватцап или тг данный момент нахожусь за границей"
+    assert extract_phone(az) == "994993845959"
+    assert extract_phone("994993845959") == "994993845959"
+    assert history_has_phone([{"role": "user", "content": az}])
+    assert named_messenger(az)
+    assert pretty_phone("994993845959") == "+994993845959"
+    hist = [
+        {"role": "user", "content": az},
+        {"role": "assistant", "content": "Хорошо, принял. Напишите, туда напишу. Ватсап или Телеграм"},
+        {"role": "user", "content": "Хорошо спасибо"},
+    ]
+    assert should_stop_nudge(hist)
+    assert refresh({"count": 0, "waiting": True}, hist)["waiting"] is False
+    # Уже ушли два утренних догона: последнее слово за нами, номер всё равно есть.
+    after = hist + [
+        {"role": "assistant", "content": "Напишите, пожалуйста, ваш номер телефона для связи"},
+        {
+            "role": "assistant",
+            "content": "Машина в наличии. Приезжайте посмотреть вживую. Мы на Автозаводской 18",
+        },
+    ]
+    assert should_stop_nudge(after)
+    assert refresh({"count": 2, "waiting": True}, after)["waiting"] is False
+    cut = drop_messenger_choice("Хорошо, принял. Напишите, туда напишу. Ватсап или Телеграм")
+    assert "или" not in cut.lower()
+    assert "принял" in cut.lower()
+    assert drop_phone_ask("Напишите, пожалуйста, ваш номер телефона для связи") == ""
 
     hist = [
         {"role": "user", "content": "+79502292544"},
@@ -734,6 +770,33 @@ def test_pings():
     assert next_ping(late, [0], now=at(20, 3)) is None
     morning = datetime(2026, 9, 15, 10, 5, tzinfo=MSK)
     assert next_ping(late, [0], now=morning) == 5
+
+
+def test_nudge_step_cooldown():
+    """Шаг 2 не должен уйти через минуту после шага 1, даже если дедлайн шага 2 уже прошёл."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from bot import nudge as n
+
+    frozen = datetime(2026, 9, 16, 12, 0, tzinfo=ZoneInfo("Europe/Moscow"))
+    orig = n.now_msk
+    n.now_msk = lambda: frozen
+    try:
+        asked = (frozen - timedelta(hours=20)).isoformat(timespec="seconds")
+        # Счётчик есть, метки касания нет: наутро шаг 2 иначе уходит сразу.
+        assert n.ready_to_send({"waiting": True, "count": 1, "asked_at": asked}) == 0
+        meta = {
+            "waiting": True,
+            "count": 1,
+            "asked_at": asked,
+            "nudged_at": frozen.isoformat(timespec="seconds"),
+        }
+        assert n.ready_to_send(meta) == 0
+        meta["nudged_at"] = (frozen - timedelta(hours=3)).isoformat(timespec="seconds")
+        assert n.ready_to_send(meta) == 2
+    finally:
+        n.now_msk = orig
 
 
 def test_nudge_after_hours():
@@ -1805,6 +1868,7 @@ if __name__ == "__main__":
     test_alert_text()
     test_pings()
     test_nudge_after_hours()
+    test_nudge_step_cooldown()
     test_prior_thread()
     test_widget_score()
     test_amo_owner()

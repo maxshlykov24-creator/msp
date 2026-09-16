@@ -25,6 +25,11 @@ VIN = re.compile(r"\b[A-HJ-NPR-Za-hj-npr-z0-9]{17}\b")
 HAS_PHONE = re.compile(
     r"(?:\+?7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b\d{10,11}\b"
 )
+# +994, +375 и остальные: российский шаблон их не берёт, и догон снова
+# просит номер, который клиент уже прислал.
+INTL_PHONE = re.compile(
+    r"(?<!\d)(?:\+|00)\s*\d(?:[\s\-\(\)]*\d){9,14}(?!\d)"
+)
 # «Подумаю» гасит только догон: живой ответ ещё можно. Закрытие интереса —
 # и догон, и живую реплику.
 SOFT_STOP = re.compile(r"подумаю", re.IGNORECASE)
@@ -182,7 +187,7 @@ def due_at(last: datetime, step_to_send: int) -> datetime:
 
 
 def has_phone(text: str) -> bool:
-    return bool(HAS_PHONE.search(text or ""))
+    return bool(extract_phone(text))
 
 
 def asked_phone(text: str) -> bool:
@@ -301,17 +306,40 @@ OWN_PHONE = re.compile(
 
 
 def extract_phone(text: str) -> str:
-    """Нормализует российский номер. Номер салона и короткие цифры не берём."""
+    """Номер клиента: Россия как 7XXXXXXXXXX, иностранный как цифры с кодом страны.
+
+    Салонный номер и короткие хвосты не берём. +994 раньше не ловился, и бот
+    на следующий день снова просил телефон.
+    """
     salon = re.sub(r"\D", "", SALON_PHONE)
     best = ""
+
+    def take(digits: str) -> None:
+        nonlocal best
+        if not digits or digits == salon or digits[-10:] == salon[-10:]:
+            return
+        if digits.startswith("00"):
+            digits = digits[2:]
+        if len(digits) == 11 and digits[0] == "8":
+            digits = "7" + digits[1:]
+        if len(digits) == 10:
+            digits = "7" + digits
+        if not (10 <= len(digits) <= 15):
+            return
+        # Более длинный международный важнее куска из 10 цифр внутри него.
+        if len(digits) > len(best):
+            best = digits
+        elif len(digits) == len(best) and digits.startswith("7") and not best.startswith("7"):
+            best = digits
+
+    for match in INTL_PHONE.finditer(text or ""):
+        take(re.sub(r"\D", "", match.group(0)))
+    # Без плюса: 994993845959. Российский шаблон берёт только 10–11 цифр
+    # и отрезает хвост, поэтому длинный хвост смотрим отдельно.
+    for match in re.finditer(r"(?<!\d)\d{12,15}(?!\d)", text or ""):
+        take(match.group(0))
     for match in HAS_PHONE.finditer(text or ""):
-        digits = re.sub(r"\D", "", match.group(0))
-        if digits == salon or digits == salon[-10:]:
-            continue
-        if len(digits) == 11 and digits[0] in "78":
-            best = "7" + digits[1:]
-        elif len(digits) == 10:
-            best = "7" + digits
+        take(re.sub(r"\D", "", match.group(0)))
     return best
 
 
@@ -635,6 +663,40 @@ def refuses_phone(text: str) -> bool:
 def wants_write_here(text: str) -> bool:
     """Просит писать сюда или не берёт трубку — это не отказ от контакта."""
     return bool(WRITE_HERE.search(text or ""))
+
+
+NAMED_MESSENGER = re.compile(
+    r"(ват[сц]ап|вацап|whats?app|телеграм|telegram|(?<![а-яёa-z])тг(?![а-яёa-z]))",
+    re.IGNORECASE,
+)
+ASKS_MESSENGER_CHOICE = re.compile(
+    r"("
+    r"(напишите|укажите|какой).{0,40}(ват[сц]ап|телеграм|whats?app|telegram)|"
+    r"(ват[сц]ап|вацап|whats?app).{0,16}или.{0,16}(телеграм|telegram|тг)|"
+    r"(телеграм|telegram).{0,16}или.{0,16}(ват[сц]ап|вацап|whats?app)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def named_messenger(text: str) -> bool:
+    return bool(NAMED_MESSENGER.search(text or ""))
+
+
+def history_named_messenger(messages: list[dict]) -> bool:
+    return any(
+        m.get("role") == "user" and named_messenger(m.get("content") or "")
+        for m in messages or []
+    )
+
+
+def drop_messenger_choice(text: str) -> str:
+    """Уже сказали Ватсап или Телеграм — второй раз не спрашиваем какой."""
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    kept = [p for p in parts if p.strip() and not ASKS_MESSENGER_CHOICE.search(p)]
+    if len(kept) == len(parts):
+        return text
+    return " ".join(kept).strip().rstrip(" .,")
 
 
 def history_wants_write_here(messages: list[dict]) -> bool:
@@ -1000,6 +1062,13 @@ def ready_to_send(nudge: dict) -> int:
         return 0
     last = parse_iso(nudge.get("nudged_at") or "") or parse_iso(nudge.get("asked_at") or "")
     if not last:
+        return 0
+    prev = parse_iso(nudge.get("nudged_at") or "")
+    # Шаг уже был, а метки нет: дедлайн шага 2 считается от asked_at и
+    # наутро оба касания уходят подряд. Без метки второй шаг не шлём.
+    if count > 0 and not prev:
+        return 0
+    if prev and now_msk() - prev < timedelta(minutes=10):
         return 0
     step = count + 1
     return step if now_msk() >= due_at(last, step) else 0
