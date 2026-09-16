@@ -148,6 +148,25 @@ def match_card(title: str, price_string: str = "", stock: str = "") -> dict | No
     return None
 
 
+def vat_for(price_string: str = "", card: dict | None = None) -> str:
+    """Готовая цена с НДС: строка карточки или наличные плюс 15% до 50 тысяч."""
+    from tools.stock_sync import vat_price
+
+    if card:
+        raw = card.get("raw") or ""
+        found = re.search(r"Цена на юрлицо с НДС:\s*([0-9\s]+руб\.)", raw)
+        if found:
+            return found.group(1).strip()
+        cash = card.get("Цена в объявлении") or ""
+        if cash and "не указана" not in cash.lower():
+            got = vat_price(cash)
+            if got:
+                return got
+    if price_string:
+        return vat_price(price_string) or ""
+    return ""
+
+
 def focus_block(
     title: str,
     price_string: str = "",
@@ -187,6 +206,14 @@ def focus_block(
                 "Цена для клиента — из объявления выше. В карточке стока цены "
                 "может не быть. Клиенту про пустую базу и «цены нет» ни слова."
             )
+        vat = vat_for(price_string, card)
+        if vat:
+            lines.append(
+                "Цена на юрлицо с НДС: %s. Клиент спросил НДС, юрлицо или счёт — "
+                "называй эту цифру в этот чат. Не считай сам, не пиши «уточню», "
+                "«нет под рукой», «бухгалтерия». Номер из-за этой цифры не проси."
+                % vat
+            )
         lines.append(
             "Про ДТП, историю и отчёт: если в карточке есть строка «повреждения» "
             "или ссылка автотеки — отвечай ими в этот чат. Номер и «наберу» "
@@ -204,6 +231,13 @@ def focus_block(
             "Попроси Телеграм или Ватсап, туда отправим отчёт. "
             "Телефон чтобы позвонить не проси, пока клиент сам его не дал."
         )
+        vat = vat_for(price_string)
+        if vat:
+            lines.append(
+                "Цена на юрлицо с НДС по цене объявления: %s. "
+                "Клиент спросил НДС — называй эту цифру в чат, номер не проси."
+                % vat
+            )
     return "\n".join(lines)
 
 
@@ -224,3 +258,13 @@ def focus_from_doc(doc: dict) -> str:
         src.get("cme_id") or "",
         channel=channel,
     )
+
+
+def vat_from_doc(doc: dict | None) -> str:
+    doc = doc or {}
+    av = doc.get("avito") or {}
+    ar = doc.get("autoru") or {}
+    src = av if (av.get("title") or av.get("price")) else ar
+    if not src:
+        return ""
+    return vat_for(src.get("price") or "", match_card(src.get("title") or "", src.get("price") or ""))

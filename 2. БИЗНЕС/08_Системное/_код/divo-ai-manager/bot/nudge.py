@@ -425,6 +425,21 @@ def asked_leasing(messages: list[dict] | None) -> bool:
     return "лизинг" in _user_blob(messages)
 
 
+def asked_vat(messages: list[dict] | None) -> bool:
+    blob = _user_blob(messages)
+    keys = (
+        "ндс",
+        "юрлиц",
+        "на организац",
+        "на компанию",
+        "по счет",
+        "по счёт",
+        "расчетн",
+        "расчётн",
+    )
+    return any(key in blob for key in keys)
+
+
 def asked_torg(messages: list[dict] | None) -> bool:
     blob = _user_blob(messages)
     keys = (

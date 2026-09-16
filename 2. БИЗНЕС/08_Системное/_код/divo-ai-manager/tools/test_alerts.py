@@ -1740,6 +1740,55 @@ def test_stop_nudge_on_closed_and_voice():
     assert refresh({"count": 0, "waiting": True}, after_think)["waiting"] is False
 
 
+def test_vat_from_listing_without_cme_flag():
+    from bot.avito_match import focus_block, vat_for
+    from bot.human import ensure_vat_said, vat_digits
+    from bot.nudge import asked_vat, drop_phone_ask
+    from tools.stock_sync import HEADER, card, vat_price
+
+    assert vat_price("6 400 000") == "7 400 000 руб."
+    assert vat_for("6 400 000 ₽") == "7 400 000 руб."
+    vals = {h: "" for h in HEADER}
+    vals["VIN"] = "LGWFG9A71RH963260"
+    vals["Марка"] = "Tank"
+    vals["Модель"] = "700"
+    vals["Год выпуска"] = "2024"
+    vals["Пробег"] = "24441"
+    vals["Цена продажи"] = "6400000"
+    vals["НДС"] = ""
+    text = card([vals[h] for h in HEADER])
+    assert "Цена на юрлицо с НДС: 7 400 000 руб." in text
+    assert "не подтверждена" not in text
+    focus = focus_block(
+        "Tank 700 3.0 AT, 2024, 14 498 км",
+        "6 400 000 ₽",
+        stock=text,
+    )
+    assert "7 400 000" in focus
+    no_price = dict(vals)
+    no_price["Цена продажи"] = ""
+    warehouse = card([no_price[h] for h in HEADER])
+    focus_listing = focus_block(
+        "Tank 700 3.0 AT, 2024, 14 498 км",
+        "6 400 000 ₽",
+        stock=warehouse,
+    )
+    assert "7 400 000" in focus_listing
+    hedge = (
+        "По этой машине готовой цены с НДС у меня нет под рукой, уточню. "
+        "Скиньте, пожалуйста, номер телефона, наберу и посчитаем"
+    )
+    said = drop_phone_ask(ensure_vat_said(hedge, "7 400 000 руб."))
+    assert "7400000" in vat_digits(said)
+    assert "под рукой" not in said.lower()
+    assert "номер" not in said.lower()
+    hist = [
+        {"role": "user", "content": "С НДС продажа?"},
+        {"role": "user", "content": "Посчитайте и здесь напишите"},
+    ]
+    assert asked_vat(hist) is True
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -1778,4 +1827,5 @@ if __name__ == "__main__":
     test_one_card_per_phone()
     test_persist_media_without_nags()
     test_stop_nudge_on_closed_and_voice()
+    test_vat_from_listing_without_cme_flag()
     print("ok")

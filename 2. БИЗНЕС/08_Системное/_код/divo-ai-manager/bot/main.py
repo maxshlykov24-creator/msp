@@ -492,6 +492,17 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if trimmed != bubbles:
             log.info("чат %s: номер уже есть, выкинул повторный запрос телефона", chat_id)
             bubbles = trimmed or [PHONE_TAKEN]
+    if nudge.asked_vat(history):
+        vat = avito_match.vat_from_doc(store.load_doc(chat_id))
+        if vat:
+            filled = [human.ensure_vat_said(b, vat) for b in bubbles]
+            if not any(human.vat_digits(vat) in human.vat_digits(b) for b in filled):
+                filled = [human.vat_say(vat)] + filled
+            trimmed = [nudge.drop_phone_ask(b) for b in filled]
+            trimmed = [b for b in trimmed if b.strip()]
+            if trimmed != bubbles:
+                log.info("чат %s: назвал НДС %s, без номера", chat_id, vat)
+            bubbles = trimmed or filled
     prior = history[:-1] if history else []
     stocked = human.dedupe_in_stock(
         bubbles,

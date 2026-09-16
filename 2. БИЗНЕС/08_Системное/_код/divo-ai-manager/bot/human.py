@@ -1150,6 +1150,9 @@ PAPER_LEAK = re.compile(
     r"данных\s+отч[её]та|"
     r"отч[её]та\s+у\s+меня|"
     r"под\s+рукой\s+нет|"
+    r"нет\s+под\s+рукой|"
+    r"у\s+бухгалтер|"
+    r"цифру\s+наугад|"
     r"цифрами\s+наугад|"
     r"не\s+дезинформировать\s+вас|"
     r"чтобы\s+вас\s+не\s+дезинформировать"
@@ -1201,6 +1204,61 @@ def drop_paper_talk(text: str) -> str:
     if greet:
         return _tidy(greeting_now() + " " + stub, original)
     return _tidy(stub, original)
+
+
+def vat_digits(vat: str) -> str:
+    return re.sub(r"\D", "", vat or "")
+
+
+VAT_HEDGE = re.compile(
+    r"("
+    r"уточн\w*|"
+    r"нет под рукой|"
+    r"под рукой нет|"
+    r"бухгалтер|"
+    r"наугад|"
+    r"готовой цены.{0,80}нет|"
+    r"цены с ндс.{0,40}нет|"
+    r"цифры нет"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def vat_say(vat: str) -> str:
+    body = (vat or "").strip().rstrip(".")
+    if not body:
+        return ""
+    if "ндс" in body.lower():
+        return body[0].upper() + body[1:] if body[0].islower() else body
+    return "С НДС по расчётному счёту: %s" % body
+
+
+def ensure_vat_said(text: str, vat: str) -> str:
+    """Если цифру с НДС знаем, «уточню у бухгалтерии» в чат не пускаем."""
+    amount = vat_digits(vat)
+    if not amount:
+        return text
+    original = text or ""
+    if amount in vat_digits(original):
+        return original
+    line = vat_say(vat)
+    if not original.strip():
+        return line
+    kept = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if not part.strip():
+            continue
+        if VAT_HEDGE.search(part) or PAPER_LEAK.search(part):
+            continue
+        kept.append(part)
+    rest = " ".join(kept).strip()
+    if rest:
+        return _tidy("%s. %s" % (line, rest), original)
+    greet = GREET_HEAD.match(original)
+    if greet:
+        return _tidy(greeting_now() + " " + line, original)
+    return _tidy(line, original)
 
 
 PHONE_FOR_CALL = re.compile(
