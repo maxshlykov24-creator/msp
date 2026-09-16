@@ -40,12 +40,13 @@ BOT_RESPONSIBLE = OWNER_USER_ID
 PIPELINE_SALES = 10372290
 PIPELINE_TECH = 10447334
 
-# Telegram → amo. Имена сверки с /api/v4/users 2026-09-14.
+# Telegram → amo. Имена сверки с /api/v4/users 2026-09-16.
 AMO_USER_BY_TG = {
     435207481: 9490530,  # Максим Шлыков
     212666249: 13334858,  # Никита Яменский
     821842895: 12826002,  # Николас
     282491919: 13180098,  # Евгений
+    434232049: 13835174,  # Эльзар / El’zar
 }
 AMO_USER_BY_NICK = {
     "maxim_shlykov": 9490530,
@@ -53,6 +54,7 @@ AMO_USER_BY_NICK = {
     "nikita_yamenskii": 13334858,
     "nikolas413": 12826002,
     "vladimir0vich1": 13180098,
+    "elzar_asadzade": 13835174,
 }
 NAME_ALIAS = {
     "женя": "евгений",
@@ -60,6 +62,8 @@ NAME_ALIAS = {
     "evgeny": "евгений",
     "eugene": "евгений",
     "elzar": "эльзар",
+    "asadzade": "эльзар",
+    "асадзаде": "эльзар",
     "nazar": "назар",
     "nikita": "никита",
     "nicolas": "николас",
@@ -327,9 +331,22 @@ def create_lead(
     return get_lead(lead_id)
 
 
-def _norm_name(value: str) -> str:
+def _fold_name(value: str) -> str:
+    """El’zar и Эльзар должны стать одним ключом: без апострофа, ё=е."""
     text = (value or "").strip().lower().replace("ё", "е")
-    return NAME_ALIAS.get(text, text.split()[0] if text else "")
+    text = re.sub(r"['’‘`ʼʻ]", "", text)
+    text = re.sub(r"[^a-zа-я0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def _norm_name(value: str) -> str:
+    folded = _fold_name(value)
+    if not folded:
+        return ""
+    if folded in NAME_ALIAS:
+        return NAME_ALIAS[folded]
+    first = folded.split()[0]
+    return NAME_ALIAS.get(first, first)
 
 
 def _tg_map_from_env() -> dict[int, int]:
@@ -378,7 +395,7 @@ def match_amo_user(
     if nick and nick in AMO_USER_BY_NICK:
         return int(AMO_USER_BY_NICK[nick])
     needle = _norm_name(first) or _norm_name(last)
-    if not needle:
+    if len(needle) < 2:
         return None
     hits: list[int] = []
     for user in users or []:

@@ -766,6 +766,14 @@ def test_amo_owner():
     assert match_amo_user(KNOWN_USERS, first="Никита", username="Nikita_Yamenskii") == 13334858
     assert match_amo_user(KNOWN_USERS, first="Evgeniy") == 13180098
     assert match_amo_user(KNOWN_USERS, first="Эльзар") == 13835174
+    assert match_amo_user(KNOWN_USERS, first="El’zar") == 13835174
+    assert match_amo_user(KNOWN_USERS, first="El'zar") == 13835174
+    assert match_amo_user(KNOWN_USERS, tg_id=434232049, first="El’zar") == 13835174
+    assert match_amo_user(KNOWN_USERS, first="El’zar", username="Elzar_Asadzade") == 13835174
+    assert match_amo_user(KNOWN_USERS, username="Elzar_Asadzade") == 13835174
+    assert match_amo_user(KNOWN_USERS, last="Asadzade") == 13835174
+    assert match_amo_user(KNOWN_USERS, first="Nazar") == 14181846
+    assert match_amo_user(KNOWN_USERS, first="U") is None
     assert match_amo_user(KNOWN_USERS, first="Кто-то") is None
 
 
