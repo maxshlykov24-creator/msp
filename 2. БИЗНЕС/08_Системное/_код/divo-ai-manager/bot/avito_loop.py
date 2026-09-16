@@ -198,12 +198,20 @@ def message_text(msg: dict) -> str:
     kind = (msg.get("type") or "").lower()
     if isinstance(content, dict):
         kind = kind or str(content.get("type") or "").lower()
+        if kind in ("voice", "audio") or content.get("voice"):
+            return "Клиент прислал голосовое"
+        if kind == "video" or content.get("video"):
+            return "Клиент прислал видео"
         if kind == "image" or content.get("image"):
             return "Клиент прислал фото"
         if kind == "link":
             return (content.get("url") or "Клиент прислал ссылку").strip()
         if kind == "item":
             return "Клиент прислал объявление"
+    if kind in ("voice", "audio"):
+        return "Клиент прислал голосовое"
+    if kind == "video":
+        return "Клиент прислал видео"
     if kind == "image":
         return "Клиент прислал фото"
     if kind == "link":

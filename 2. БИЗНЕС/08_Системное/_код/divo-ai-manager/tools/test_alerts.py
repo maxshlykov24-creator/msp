@@ -42,6 +42,13 @@ def test_needs_reply():
     assert needs_reply("есть без ДТП?") is True
     assert needs_reply("8 900 111-22-33") is True
     assert needs_reply("Клиент прислал фото") is True
+    assert needs_reply("Клиент прислал голосовое") is False
+    assert needs_reply("Клиент прислал видео") is False
+    assert needs_reply("не актуально") is False
+    assert needs_reply("Неактуально, спасибо") is False
+    assert needs_reply("Удачи парни") is False
+    assert needs_reply("подумаю") is True
+    assert needs_reply("да актуально") is True
     assert needs_reply("да") is True
     assert needs_reply("нет") is True
     assert needs_reply("Сообщение удалено") is False
@@ -1020,6 +1027,34 @@ def test_avito_history_and_shot():
     assert pending == []
     assert cursor == 6
 
+    voice = {
+        "created": 10,
+        "direction": "in",
+        "type": "voice",
+        "content": {"voice": {"voice_id": "59f592da-11d5-4fec-bd55-44fe76116685"}},
+    }
+    assert message_text(voice) == "Клиент прислал голосовое"
+    turns, pending, cursor = history_from_messages(
+        [
+            {
+                "created": 8,
+                "direction": "in",
+                "type": "text",
+                "content": {"text": "Подскажите какие были ремонты серьезные?"},
+            },
+            {
+                "created": 9,
+                "direction": "out",
+                "type": "text",
+                "content": {"text": "ДТП не было, кузов не чинили"},
+            },
+            voice,
+        ]
+    )
+    assert pending == ["Клиент прислал голосовое"]
+    assert cursor == 9
+    assert turns[-1]["role"] == "assistant"
+
     cid = next(iter(SHOT_IDS))
     assert is_shot_chat({"id": cid, "users": [], "last_message": {}}) is True
     assert is_shot_chat({"id": "u2i-other", "users": [{"id": 1, "name": "Марина"}]}) is False
@@ -1659,6 +1694,52 @@ def test_persist_media_without_nags():
     assert alert["snap"]["url"] == "https://avito.ru/x"
 
 
+def test_stop_nudge_on_closed_and_voice():
+    from bot.nudge import (
+        is_closed,
+        is_unheard_media,
+        refresh,
+        should_stop_nudge,
+        wants_stop,
+    )
+
+    assert is_closed("не актуально")
+    assert is_closed("неактуально")
+    assert is_closed("не актуален")
+    assert is_closed("Удачи парни")
+    assert is_closed("уже купил")
+    assert not is_closed("да актуально")
+    assert not is_closed("неудачи по кредиту")
+    assert not is_closed("не надоело ещё")
+    assert wants_stop("подумаю")
+    assert not is_closed("подумаю")
+    assert is_unheard_media("Клиент прислал голосовое")
+    assert not is_unheard_media("Клиент прислал фото")
+
+    after_us = [
+        {"role": "user", "content": "какие ремонты серьезные?"},
+        {"role": "assistant", "content": "ДТП не было, кузов не чинили"},
+    ]
+    assert should_stop_nudge(after_us) is False
+    waiting = refresh({"count": 0}, after_us)
+    assert waiting["waiting"] is True
+
+    voice = after_us + [{"role": "user", "content": "Клиент прислал голосовое"}]
+    assert should_stop_nudge(voice) is True
+    assert refresh({"count": 1, "waiting": True}, voice)["waiting"] is False
+
+    closed = after_us + [{"role": "user", "content": "не актуально"}]
+    assert should_stop_nudge(closed) is True
+    assert refresh({"count": 0, "waiting": True}, closed)["waiting"] is False
+
+    after_think = after_us + [
+        {"role": "user", "content": "подумаю"},
+        {"role": "assistant", "content": "Хорошо, подумайте. Посмотреть можно в любой день с 10:00 до 20:00"},
+    ]
+    assert should_stop_nudge(after_think) is True
+    assert refresh({"count": 0, "waiting": True}, after_think)["waiting"] is False
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -1696,4 +1777,5 @@ if __name__ == "__main__":
     test_claim_twice()
     test_one_card_per_phone()
     test_persist_media_without_nags()
+    test_stop_nudge_on_closed_and_voice()
     print("ok")

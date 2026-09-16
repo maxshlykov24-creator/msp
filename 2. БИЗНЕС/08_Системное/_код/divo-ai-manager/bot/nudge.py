@@ -25,8 +25,28 @@ VIN = re.compile(r"\b[A-HJ-NPR-Za-hj-npr-z0-9]{17}\b")
 HAS_PHONE = re.compile(
     r"(?:\+?7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b\d{10,11}\b"
 )
-STOP = re.compile(
-    r"(подумаю|не актуально|сам разберусь|не надо|не интересно|уже купил|отстань)",
+# «Подумаю» гасит только догон: живой ответ ещё можно. Закрытие интереса —
+# и догон, и живую реплику.
+SOFT_STOP = re.compile(r"подумаю", re.IGNORECASE)
+CLOSED = re.compile(
+    r"("
+    r"не\s*актуал|"
+    r"не интересно|"
+    r"уже купил|"
+    r"уже приобр[её]л|"
+    r"\bотстань\b|"
+    r"сам разберусь|"
+    r"не надо(?![а-яё])|"
+    r"не нужно(?![а-яё])|"
+    r"\bудачи\b|"
+    r"\bпередумал\b|"
+    r"\bоткажусь\b|"
+    r"не буду (брать|покупать|смотреть)"
+    r")",
+    re.IGNORECASE,
+)
+UNHEARD_MEDIA = re.compile(
+    r"^клиент прислал (голосовое|видео)\.?$",
     re.IGNORECASE,
 )
 REFUSES_PHONE = re.compile(
@@ -169,8 +189,18 @@ def asked_phone(text: str) -> bool:
     return bool(ASKED_PHONE.search(text or ""))
 
 
+def is_closed(text: str) -> bool:
+    """Клиент снял интерес: не актуально, уже купил, удачи."""
+    return bool(CLOSED.search(text or ""))
+
+
+def is_unheard_media(text: str) -> bool:
+    """Голос или видео без расшифровки: это ответ, не тишина."""
+    return bool(UNHEARD_MEDIA.match((text or "").strip()))
+
+
 def wants_stop(text: str) -> bool:
-    return bool(STOP.search(text or ""))
+    return is_closed(text) or bool(SOFT_STOP.search(text or ""))
 
 
 # Смайлик, стикер, «ок» без вопроса: живой продавец кивает и молчит.
@@ -235,7 +265,13 @@ def needs_reply(text: str) -> bool:
         return True
     if wants_call(raw) or asks_about_call(raw) or wants_person(raw) or is_complaint(raw):
         return True
+    if wants_write_here(raw):
+        return True
     if DELETED_INCOMING.match(raw):
+        return False
+    if is_unheard_media(raw):
+        return False
+    if is_closed(raw) and "?" not in raw:
         return False
     if "?" in raw:
         return True
@@ -832,7 +868,7 @@ ASKED_BOT = re.compile(
 )
 THINKING = re.compile(
     r"(рассматрива|подумаю|думаю|посмотрю ещ[её]|пока смотрю|сравнива|"
-    r"не актуально|не сейчас)",
+    r"не сейчас)",
     re.IGNORECASE,
 )
 
@@ -901,11 +937,24 @@ def build_text(
     return "%s Напишите номер, если актуально" % greeting_now()
 
 
+def should_stop_nudge(messages: list[dict]) -> bool:
+    """Догон только если клиент замолчал после нашего ответа.
+
+    Голос без текста, «не актуально», номер, отказ от телефона, последнее
+    слово за клиентом — это не тишина, пинг «если актуально» туда не идёт.
+    """
+    if history_wants_stop(messages) or history_has_phone(messages) or history_refuses_phone(messages):
+        return True
+    if messages and (messages[-1].get("role") == "user"):
+        return True
+    return False
+
+
 def refresh(nudge: dict, messages: list[dict]) -> dict:
     """Пересчитать флаг ожидания после хода диалога. Счётчик касаний не сбрасываем."""
     out = dict(nudge or {})
     out.setdefault("count", 0)
-    if history_wants_stop(messages) or history_has_phone(messages) or history_refuses_phone(messages):
+    if should_stop_nudge(messages):
         out["waiting"] = False
         return out
     if out.get("count", 0) >= MAX_NUDGES:

@@ -334,6 +334,11 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if not nudge.needs_reply(user_text):
         store.save_history(chat_id, history)
         _refresh_nudge(chat_id, history)
+        if nudge.is_unheard_media(user_text):
+            await channel.notify_owner(
+                "Голосовое или видео в чате %s. Расшифровки нет, клиенту не писал, догон выключил."
+                % chat_id
+            )
         log.info("чат %s: нечего отвечать, молчу", chat_id)
         return
 
@@ -876,7 +881,7 @@ async def send_nudge(chat_id: int | str) -> None:
         return
     doc = store.load_doc(chat_id)
     history = list(doc.get("messages") or [])
-    if nudge.history_has_phone(history):
+    if nudge.should_stop_nudge(history):
         return
     meta = doc.get("nudge") or {}
     step = nudge.ready_to_send(meta)

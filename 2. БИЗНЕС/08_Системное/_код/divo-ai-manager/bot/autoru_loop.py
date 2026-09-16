@@ -158,6 +158,10 @@ def message_text(msg: dict, me: str = "") -> str:
     ctype = str(payload.get("content_type") or "").upper()
     if "IMAGE" in ctype or "PHOTO" in ctype:
         return "Клиент прислал фото"
+    if "VOICE" in ctype or "AUDIO" in ctype:
+        return "Клиент прислал голосовое"
+    if "VIDEO" in ctype:
+        return "Клиент прислал видео"
     if ctype and ctype not in {"TEXT_PLAIN", "TEXT"}:
         return ""
     return str(payload.get("value") or "").strip()
