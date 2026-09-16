@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -27,19 +26,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("bot")
 
-# Модель не ответила. Обещать «вернусь» можно только если реально передаём
-# диалог человеку — иначе клиент ждёт ответа, которого не будет.
-FALLBACK = (
-    "Тут связь подвисла, сейчас коллега подхватит и ответит вам.",
-    "Секунду, у меня система тормозит. Передаю коллеге, он сразу напишет.",
-    "Извините, зависло на моей стороне. Коллега сейчас вам ответит.",
-)
-# Первый сбой человека не зовёт: скорее всего следующее сообщение пройдёт.
-# Обещать коллегу и молчать - хуже, чем попросить повторить.
-FALLBACK_RETRY = (
-    "Секунду, у меня тут подвисло. Напишите, пожалуйста, ещё раз",
-    "Что-то со связью на моей стороне. Повторите, пожалуйста, сообщение",
-)
+# Сбой модели клиенту не объясняем. «Связь подвисла, повторите» уже уходило
+# в чат без задержки: ключ OpenRouter моргнул, модель вернула пусто.
+# Клиент видит отговорку, которой у живого продавца нет. Молчим, пишем себе.
 # Отрицать такси и каршеринг нельзя: клиент вскроет это по отчёту после покупки.
 NAME_ASK_REPLACED = "Посмотреть можно в любой день с 10:00 до 20:00"
 HISTORY_UNKNOWN = (
@@ -367,16 +356,16 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         fails = llm_fails.get(key, 0) + 1
         llm_fails[key] = fails
         last_try = fails >= MAX_LLM_FAILS
+        store.save_history(chat_id, history)
+        await channel.notify_owner(
+            "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, exc)
+        )
         if last_try:
             await _handoff(channel, chat_id, history, "llm")
             log.warning("чат %s на паузе: %d сбоя LLM подряд", chat_id, fails)
             return
-        excuse = random.choice(FALLBACK_RETRY)
-        await type_and_wait(channel, chat_id, human.typing_delay(excuse, first=True))
-        await channel.send(chat_id, excuse)
-        store.log_line(chat_id, "никита", excuse)
-        await channel.notify_owner(
-            "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, exc)
+        log.warning(
+            "чат %s: LLM сбой %d, клиенту не пишу про связь", chat_id, fails
         )
         return
 
@@ -545,12 +534,10 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             bubbles = rewritten
 
     if not bubbles:
-        if nudge.history_has_phone(prior):
-            store.save_history(chat_id, history)
-            _refresh_nudge(chat_id, history)
-            log.info("чат %s: после контакта нечего сказать без дожима, молчу", chat_id)
-            return
-        bubbles = [random.choice(FALLBACK)]
+        store.save_history(chat_id, history)
+        _refresh_nudge(chat_id, history)
+        log.info("чат %s: после фильтров пусто, клиенту не пишу", chat_id)
+        return
 
     for i, bubble in enumerate(bubbles):
         await type_and_wait(channel, chat_id, human.typing_delay(bubble, first=i == 0))

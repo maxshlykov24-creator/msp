@@ -1228,6 +1228,28 @@ def test_tiggo_match_and_messenger():
     assert "Telegram" not in spoken
     assert "Телеграм или Ватсап" in spoken
 
+    m8_stock = (
+        "## GAC M8 2024\n"
+        "- VIN: LMGMU1G82R1236593\n"
+        "- Марка: GAC\n"
+        "- Модель: M8\n"
+        "- Пробег: 16 584 км\n"
+        "- Цена в объявлении: 4 300 000 руб.\n"
+        "- Автотека: https://autoteka.ru/report/web/uuid/test-m8\n"
+    )
+    m8 = match_card("GAC M8 2.0 AT, 2024, 72 887 км", "3 900 000 ₽", stock=m8_stock)
+    assert m8 is not None
+    assert "LMGMU1G82R1236593" in (m8.get("VIN") or "")
+    assert "Автотека" in (m8.get("raw") or "")
+
+    nat = {h: "" for h in HEADER}
+    nat["VIN"] = "LFP8C7PC5P1D70967"
+    nat["Марка"] = "FAW"
+    nat["Модель"] = "Bestune NAT"
+    nat["Год выпуска"] = "2023"
+    nat_card = warehouse_block([[nat[h] for h in HEADER]])
+    assert "Дизельный отопитель: да" in nat_card
+
 
 def test_mercedes_class_not_confused():
     from bot.avito_match import match_card
@@ -1269,28 +1291,6 @@ def test_mercedes_class_not_confused():
     assert s is not None
     assert "WDD2221861A505798" in (s.get("VIN") or "")
 
-    m8_stock = (
-        "## GAC M8 2024\n"
-        "- VIN: LMGMU1G82R1236593\n"
-        "- Марка: GAC\n"
-        "- Модель: M8\n"
-        "- Пробег: 16 584 км\n"
-        "- Цена в объявлении: 4 300 000 руб.\n"
-        "- Автотека: https://autoteka.ru/report/web/uuid/test-m8\n"
-    )
-    m8 = match_card("GAC M8 2.0 AT, 2024, 72 887 км", "3 900 000 ₽", stock=m8_stock)
-    assert m8 is not None
-    assert "LMGMU1G82R1236593" in (m8.get("VIN") or "")
-    assert "Автотека" in (m8.get("raw") or "")
-
-    nat = {h: "" for h in HEADER}
-    nat["VIN"] = "LFP8C7PC5P1D70967"
-    nat["Марка"] = "FAW"
-    nat["Модель"] = "Bestune NAT"
-    nat["Год выпуска"] = "2023"
-    nat_card = warehouse_block([[nat[h] for h in HEADER]])
-    assert "Дизельный отопитель: да" in nat_card
-
 
 def test_owner_legal():
     from bot.human import drop_owner_legal, for_chat
@@ -1317,6 +1317,22 @@ def test_owner_legal():
     vat = for_chat("Цена на юрлицо с НДС 10 400 000 рублей")
     assert "юрлицо" in vat.lower()
     assert "10 400 000" in vat
+
+
+def test_no_connection_excuse():
+    from bot.human import drop_connection_talk, for_chat
+
+    raw = "Что-то со связью на моей стороне. Повторите, пожалуйста, сообщение"
+    assert drop_connection_talk(raw) == ""
+    assert "связ" not in for_chat(raw).lower()
+    mixed = (
+        "Добрый день! Что-то со связью на моей стороне. "
+        "Цена 15 000 000 рублей"
+    )
+    kept = for_chat(mixed)
+    assert "связ" not in kept.lower()
+    assert "15 000 000" in kept
+    assert drop_connection_talk("Тут связь подвисла, сейчас коллега подхватит и ответит вам.") == ""
 
 
 def test_autoteka_missing_used_vs_new():
@@ -1672,6 +1688,7 @@ if __name__ == "__main__":
     test_tiggo_match_and_messenger()
     test_mercedes_class_not_confused()
     test_owner_legal()
+    test_no_connection_excuse()
     test_autoteka_missing_used_vs_new()
     test_speak_damage_no_false_dtp()
     test_many_paints()

@@ -452,6 +452,40 @@ def trim_permit(text: str) -> str:
     return _tidy(text, original) if text != original else original
 
 
+CONNECTION_TALK = re.compile(
+    r"("
+    r"что-то со связью|"
+    r"на моей стороне|"
+    r"связь подвисла|"
+    r"связь прервал|"
+    r"система тормозит|"
+    r"у меня тут подвисло|"
+    r"зависло на моей|"
+    r"повторите,? пожалуйста,? сообщение|"
+    r"сейчас коллега подхватит|"
+    r"передаю коллеге|"
+    r"коллега сейчас вам ответит|"
+    r"снова в сети|"
+    r"я снова (онлайн|на связи)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def drop_connection_talk(text: str) -> str:
+    """Сбой модели клиенту не объясняем. Живой продавец так не пишет."""
+    original = text or ""
+    if not CONNECTION_TALK.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if CONNECTION_TALK.search(part):
+            continue
+        kept.append(part)
+    text = " ".join(p.strip() for p in kept if p.strip())
+    return _tidy(text, original) if text else ""
+
+
 NO_LEASE_DATA = re.compile(
     r"данных о лизинге нет|лизинга по (этой|данной) машине нет",
     re.IGNORECASE,
@@ -1309,6 +1343,7 @@ def for_chat(text: str) -> str:
     text = trim_permit(text)
     text = soften_card(text)
     text = drop_no_data_logic(text)
+    text = drop_connection_talk(text)
     text = fix_buyout_and_report(text)
     text = drop_phone_script(text)
     text = drop_where_choice(text)
