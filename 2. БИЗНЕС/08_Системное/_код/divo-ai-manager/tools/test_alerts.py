@@ -1278,6 +1278,43 @@ def test_owner_legal():
     assert "10 400 000" in vat
 
 
+def test_autoteka_missing_used_vs_new():
+    from bot.human import fix_buyout_and_report, for_chat
+    from tools.stock_sync import HEADER, autoteka_field, is_new_import
+
+    used = {h: "" for h in HEADER}
+    used["VIN"] = "LB37852DXPS090220"
+    used["Марка"] = "Geely"
+    used["Модель"] = "Monjaro"
+    used["Пробег"] = "70007"
+    used["Учёт в РФ"] = "Да"
+    used["Без пробега РФ"] = "Нет"
+    assert is_new_import(used) is False
+    line = autoteka_field(used)
+    assert "не стоит" in line
+    assert line != "нет"
+
+    new = dict(used)
+    new["Пробег"] = "25"
+    new["Учёт в РФ"] = "Нет"
+    new["Без пробега РФ"] = "Да"
+    assert is_new_import(new) is True
+    assert "новая" in autoteka_field(new)
+
+    lied = (
+        "По этой машине данных о лизинге нет, автотеки на неё нет вообще. "
+        "Уточню точно, наберу вас в ближайшее время"
+    )
+    fixed = for_chat(lied)
+    assert "выкуплен" in fixed.lower()
+    assert "данных о лизинге нет" not in fixed.lower()
+    assert "нет вообще" not in fixed.lower()
+    assert "автотек" not in fixed.lower()
+    assert fix_buyout_and_report("ДТП не было, кузов не чинили") == (
+        "ДТП не было, кузов не чинили"
+    )
+
+
 def test_speak_damage_no_false_dtp():
     from tools.stock_sync import autoteka_lines, speak_damage
 
@@ -1593,6 +1630,7 @@ if __name__ == "__main__":
     test_in_stock_dedupe()
     test_tiggo_match_and_messenger()
     test_owner_legal()
+    test_autoteka_missing_used_vs_new()
     test_speak_damage_no_false_dtp()
     test_many_paints()
     test_two_vins_and_phone()

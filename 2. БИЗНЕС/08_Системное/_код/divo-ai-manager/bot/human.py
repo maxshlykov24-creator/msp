@@ -452,6 +452,54 @@ def trim_permit(text: str) -> str:
     return _tidy(text, original) if text != original else original
 
 
+NO_LEASE_DATA = re.compile(
+    r"данных о лизинге нет|лизинга по (этой|данной) машине нет",
+    re.IGNORECASE,
+)
+NO_REPORT_EXISTS = re.compile(
+    r"("
+    r"автотек\w*.{0,48}нет(\s+вообще)?"
+    r"|готового отч[её]та нет"
+    r")",
+    re.IGNORECASE,
+)
+BUYOUT = "Машина выкуплена, документы у нас"
+
+
+def fix_buyout_and_report(text: str) -> str:
+    """«Автотеки нет, данных о лизинге нет» на выкупленной машине - ложь.
+
+    Вадим по Monjaro сам открыл отчёт. Наши машины выкуплены.
+    """
+    original = text or ""
+    if not original.strip():
+        return original
+    if not NO_LEASE_DATA.search(original) and not NO_REPORT_EXISTS.search(original):
+        return original
+    kept: list[str] = []
+    said_buyout = False
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        lease = bool(NO_LEASE_DATA.search(part))
+        report = bool(NO_REPORT_EXISTS.search(part))
+        if lease:
+            if not said_buyout:
+                kept.append(BUYOUT)
+                said_buyout = True
+            rest = NO_LEASE_DATA.sub("", part)
+            rest = NO_REPORT_EXISTS.sub("", rest).strip(" ,.")
+            if rest and len(rest) > 15 and "уточн" in rest.lower():
+                kept.append(rest[0].upper() + rest[1:])
+            continue
+        if report:
+            rest = NO_REPORT_EXISTS.sub("", part).strip(" ,.")
+            if rest and len(rest) > 15:
+                kept.append(rest[0].upper() + rest[1:] if rest[0].islower() else rest)
+            continue
+        kept.append(part)
+    text = " ".join(p.strip() for p in kept if p.strip())
+    return _tidy(text, original) if text else BUYOUT
+
+
 def drop_no_data_logic(text: str) -> str:
     """Выкидывает вывод «данных нет - значит нет», оставляя сам факт.
 
@@ -1261,6 +1309,7 @@ def for_chat(text: str) -> str:
     text = trim_permit(text)
     text = soften_card(text)
     text = drop_no_data_logic(text)
+    text = fix_buyout_and_report(text)
     text = drop_phone_script(text)
     text = drop_where_choice(text)
     text = soften_now_call(text)
