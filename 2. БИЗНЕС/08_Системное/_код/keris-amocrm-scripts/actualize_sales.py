@@ -987,7 +987,13 @@ def cmd_apply(mode: str, ids: list[int], dry: bool) -> None:
     if mode == "pack":
         chosen = load_json("first_pack.json")
     elif mode == "high":
-        chosen = [r for r in rows if r["confidence"] == "high" and not r["skip"] and r["proposed"]]
+        chosen = [
+            r
+            for r in rows
+            if not r["skip"]
+            and r["proposed"]
+            and r["confidence"] in ("high", "medium")
+        ]
     elif mode == "ids":
         want = set(ids)
         chosen = [r for r in rows if r["id"] in want]
