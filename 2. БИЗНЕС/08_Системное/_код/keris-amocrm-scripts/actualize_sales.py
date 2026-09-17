@@ -155,11 +155,20 @@ RE_DIALOG = re.compile(
 RE_INSTALL = re.compile(r"рассрочк", re.I)
 RE_SOURCE = {
     "Рекомендации": re.compile(r"по рекомендац|знакомая|подруга посоветовал", re.I),
-    "Инстаграм": re.compile(r"инстаграм|instagram", re.I),
+    "Instagram": re.compile(r"инстаграм|instagram", re.I),
     "Телеграм-канал": re.compile(r"из канала|в канале видел|телеграм.?канал", re.I),
     "Яндекс.Реклама": re.compile(r"яндекс.?директ|из рекламы", re.I),
     "Тильда": re.compile(r"с сайта|на сайте заявка", re.I),
 }
+
+# живые enum amo 2026-09-17 GET /leads/custom_fields
+ENUM_SRC = {"Тильда", "Яндекс.Реклама", "Телеграм-канал", "Рекомендации", "Яндекс.Карты", "2ГИС", "Instagram"}
+ENUM_PAY = {"Полная оплата", "Рассрочка"}
+ENUM_PREPAY = {"Частично", "Оплачена"}
+ENUM_RASS = {"3", "6", "10"}
+ENUM_LOST = {"Не вышел на связь", "Не устроила цена"}
+ENUM_WAY = {"TG-бот", "Max-бот", "Instagram"}
+MSK = timezone(timedelta(hours=3))
 
 
 def load_env() -> None:
@@ -610,6 +619,225 @@ def extract_fields(texts: str, puppy_names: list[str]) -> dict:
     return fields
 
 
+def live_blob(rows: list[dict]) -> str:
+    bits = []
+    for row in rows:
+        text = msg_text(row)
+        if not text:
+            continue
+        if str(row.get("author") or "").lower() == "robot":
+            continue
+        bits.append(text)
+    return "\n".join(bits)
+
+
+def unix_day(y: int, m: int, d: int) -> int:
+    return int(datetime(y, m, d, 12, 0, tzinfo=MSK).timestamp())
+
+
+def parse_wait_until(hint: str) -> int | None:
+    mapping = [
+        ("январ", 1), ("феврал", 2), ("март", 3), ("апрел", 4),
+        ("май", 5), ("мая", 5), ("июн", 6), ("июл", 7), ("август", 8),
+        ("сентябр", 9), ("октябр", 10), ("ноябр", 11), ("декабр", 12),
+    ]
+    m = re.search(
+        r"(январ|феврал|март|апрел|май|мая|июн|июл|август|сентябр|октябр|ноябр|декабр)\w*(?:\s*(20\d{2}))?",
+        hint or "",
+        re.I,
+    )
+    if not m:
+        return None
+    stem, year = m.group(1).lower(), int(m.group(2) or 2026)
+    month = next((n for k, n in mapping if stem.startswith(k)), None)
+    if not month:
+        return None
+    return unix_day(year, month, 1)
+
+
+def contact_way_of(lead: dict, talks: list[dict]) -> str | None:
+    name = lead.get("name") or ""
+    if re.search(r"tg-бот|телеграм.?бот", name, re.I):
+        return "TG-бот"
+    if re.search(r"max-бот", name, re.I):
+        return "Max-бот"
+    origins = " ".join(str(t.get("origin") or "") for t in talks)
+    if "max" in origins.lower() and "wazzup24.max" in origins.lower():
+        return "Max-бот"
+    if "tgapi" in origins.lower() or "telegram" in origins.lower():
+        return "TG-бот"
+    if "instagram" in origins.lower():
+        return "Instagram"
+    return None
+
+
+def cf_items(fields: dict) -> list[dict]:
+    """Только значения, которые amo принимает. Неизвестные enum отбрасываем."""
+    out = []
+
+    def add(fid, value, kind="text"):
+        if value is None or value == "":
+            return
+        if kind == "enum":
+            out.append({"field_id": fid, "values": [{"value": value}]})
+        elif kind == "num":
+            try:
+                out.append({"field_id": fid, "values": [{"value": int(value)}]})
+            except (TypeError, ValueError):
+                return
+        elif kind == "date":
+            out.append({"field_id": fid, "values": [{"value": int(value)}]})
+        else:
+            out.append({"field_id": fid, "values": [{"value": str(value)[:500]}]})
+
+    src = fields.get("source")
+    if src in ENUM_SRC:
+        add(F["src"], src, "enum")
+    if fields.get("comment"):
+        add(F["comment"], fields["comment"])
+    pay = fields.get("paytype")
+    if pay in ENUM_PAY:
+        add(F["paytype"], pay, "enum")
+    if fields.get("wait_until"):
+        add(F["wait_until"], fields["wait_until"], "date")
+    term = str(fields.get("rass_term") or "")
+    if term in ENUM_RASS:
+        add(F["rass_term"], term, "enum")
+    if fields.get("rass_sum"):
+        add(F["rass_sum"], fields["rass_sum"], "num")
+    if fields.get("debt"):
+        add(F["debt"], fields["debt"], "num")
+    if fields.get("next_pay"):
+        add(F["next_pay"], fields["next_pay"], "date")
+    lost = fields.get("lost_reason")
+    if lost in ENUM_LOST:
+        add(F["lost_reason"], lost, "enum")
+    if fields.get("lost_comment"):
+        add(F["lost_comment"], fields["lost_comment"])
+    way = fields.get("contact_way")
+    if way in ENUM_WAY:
+        add(F["contact_way"], way, "enum")
+    pre = fields.get("prepay_status")
+    if pre in ENUM_PREPAY:
+        add(F["prepay_status"], pre, "enum")
+    if fields.get("prepay"):
+        add(F["prepay"], fields["prepay"], "num")
+    if fields.get("bron_date"):
+        add(F["bron_date"], fields["bron_date"], "date")
+    if fields.get("bron_till"):
+        add(F["bron_till"], fields["bron_till"], "date")
+    # ID щенка — только живые карточки, тестовые Флокс/Джем не пишем
+    if fields.get("puppy_id") and not fields.get("puppy_test"):
+        add(F["puppy_id"], fields["puppy_id"], "num")
+    return out
+
+
+def delta_cf(live: dict, wanted: list[dict]) -> list[dict]:
+    """Пишем только пустые поля. Уже заполненное не затираем."""
+    delta = []
+    for item in wanted:
+        fid = item["field_id"]
+        if live.get(fid) in (None, "", []):
+            delta.append(item)
+    return delta
+
+
+SOLD_EXTRAS = {
+    46299677: {  # Marina, бронь 150 000 в чате 6 июля, щенок дома 4 июля
+        "prepay": 150000,
+        "prepay_status": "Оплачена",
+        "bron_date": unix_day(2026, 7, 6),
+        "paytype": "Полная оплата",
+    },
+    49284845: {  # Miss Ya, бронь 11.09, чек остатка 14.09
+        "comment": "ред",
+        "bron_date": unix_day(2026, 9, 11),
+        "prepay_status": "Оплачена",
+        "paytype": "Полная оплата",
+    },
+}
+
+
+def cmd_fill_fields() -> None:
+    leads = {int(l["id"]): l for l in amo_pages("/api/v4/leads", {"filter[pipeline_id]": str(PIPE_PRODAZHI)})}
+    talks_by: dict[int, list] = defaultdict(list)
+    for t in load_json("amo_talks.json"):
+        eid = t.get("entity_id")
+        if eid:
+            talks_by[int(eid)].append(t)
+    chats = {}
+    raw = json.loads((DATA / "amobridge_chats.json").read_text(encoding="utf-8"))
+    for k, v in raw.items():
+        if k.endswith("_meta") or not isinstance(v, list):
+            continue
+        chats[int(k)] = v
+    classified = {r["id"]: r for r in load_json("classified.json")}
+    log_path = DATA / "fill_fields.jsonl"
+    wrote = 0
+    skip = 0
+    fail = 0
+    batch: list[dict] = []
+
+    def flush():
+        nonlocal wrote, fail, batch
+        if not batch:
+            return
+        code, data = amo("PATCH", "/api/v4/leads", batch)
+        if 200 <= code < 300:
+            wrote += len(batch)
+            with log_path.open("a", encoding="utf-8") as fh:
+                for row in batch:
+                    fh.write(json.dumps({"id": row["id"], "ok": True, "n": len(row.get("custom_fields_values") or [])}, ensure_ascii=False) + "\n")
+        else:
+            # по одному, чтобы одна плохая не валила пачку
+            for row in batch:
+                c2, d2 = amo("PATCH", "/api/v4/leads", [row])
+                if 200 <= c2 < 300:
+                    wrote += 1
+                    with log_path.open("a", encoding="utf-8") as fh:
+                        fh.write(json.dumps({"id": row["id"], "ok": True}, ensure_ascii=False) + "\n")
+                else:
+                    fail += 1
+                    print("fail", row["id"], c2, str(d2)[:220])
+                    with log_path.open("a", encoding="utf-8") as fh:
+                        fh.write(json.dumps({"id": row["id"], "ok": False, "error": str(d2)[:300]}, ensure_ascii=False) + "\n")
+                time.sleep(0.2)
+        batch = []
+        time.sleep(0.35)
+
+    for lid, lead in leads.items():
+        rec = classified.get(lid) or {}
+        if rec.get("pattern") in ("skip_name", "grooming"):
+            skip += 1
+            continue
+        rows = chats.get(lid) or []
+        blob = live_blob(rows)
+        fields = extract_fields(blob, [])  # тестовые клички витрины не линкуем
+        if rec.get("pattern") in ("lost_ghost", "lost_price", "lost_refuse"):
+            fields["lost_reason"] = rec.get("fields", {}).get("lost_reason") or fields.get("lost_reason")
+            fields["lost_comment"] = rec.get("fields", {}).get("lost_comment") or fields.get("lost_comment")
+        if rec.get("pattern") == "wait":
+            wu = parse_wait_until(fields.get("wait_hint") or blob)
+            if wu:
+                fields["wait_until"] = wu
+        way = contact_way_of(lead, talks_by.get(lid, []))
+        if way:
+            fields["contact_way"] = way
+        if lid in SOLD_EXTRAS:
+            fields.update(SOLD_EXTRAS[lid])
+        wanted = cf_items(fields)
+        live = cf_map(lead)
+        delta = delta_cf(live, wanted)
+        if not delta:
+            skip += 1
+            continue
+        batch.append({"id": lid, "custom_fields_values": delta})
+        if len(batch) >= 8:
+            flush()
+    flush()
+    print(f"записал поля {wrote}, без дельты/skip {skip}, ошибок {fail}")
+
+
 def classify_one(lead: dict, rows: list[dict], puppy_names: list[str]) -> dict:
     name = lead.get("name") or ""
     current = int(lead.get("status_id") or 0)
@@ -1048,7 +1276,7 @@ def main() -> None:
     sub.add_parser("classify")
     r = sub.add_parser("report")
     r.add_argument("--pack", type=int, default=30)
-    sub.add_parser("probe-write")
+    sub.add_parser("fill-fields")
     a = sub.add_parser("apply")
     a.add_argument("--dry-run", action="store_true")
     a.add_argument("--high", action="store_true")
@@ -1071,6 +1299,8 @@ def main() -> None:
         cmd_report(args.pack)
     elif args.cmd == "probe-write":
         cmd_probe_write()
+    elif args.cmd == "fill-fields":
+        cmd_fill_fields()
     elif args.cmd == "apply":
         ids = [int(x) for x in args.ids.split(",") if x.strip()]
         mode = "ids" if ids else ("high" if args.high else "pack")
