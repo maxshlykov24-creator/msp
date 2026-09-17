@@ -8,6 +8,20 @@
 | `setup_grooming_pipeline.py` | воронка «Груминг», её этапы, поля визита, поля питомца на Компании, метрики на Контакте |
 | `inspect_amocrm.py` | осмотр воронок и полей |
 | `create_test_deals.py` | тестовые сделки |
+| `actualize_sales.py` | разовый проход: переписки → этапы и поля «Продажи» |
+
+`actualize_sales.py` (ключ в `.env`, дампы в `_data/`, оба вне git):
+
+```bash
+python3 actualize_sales.py dump          # сделки, беседы, попытка Wazzup CSV
+python3 actualize_sales.py ingest-csv файл.csv   # если кабинет Wazzup отдал выгрузку
+python3 actualize_sales.py classify
+python3 actualize_sales.py report
+python3 actualize_sales.py apply --dry-run
+python3 actualize_sales.py apply --pack   # только после «да» на первый пакет
+```
+
+Текст сообщений amoCRM не отдаёт (403 Invalid scope). Выгрузка Wazzup `POST /v2/messages/messages_dump` на этом ключе отвечает 404. Пока нет CSV из кабинета — классификатор помечает сделки как `no_text_has_talk` и **в воронку не пишет**.
 
 `setup_grooming_pipeline.py` идемпотентен (повторный прогон ничего не дублирует)
 и берёт токен из окружения, а не из файла:

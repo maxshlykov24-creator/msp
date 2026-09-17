@@ -270,7 +270,59 @@ def load_json(name: str):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def cmd_channels() -> None:
+def cmd_events() -> None:
+    """Все incoming/outgoing chat events — без текста, но с talk_id и временем."""
+    rows = []
+    for kind in ("incoming_chat_message", "outgoing_chat_message"):
+        page = 1
+        while page <= 80:
+            code, data = amo(
+                "GET",
+                "/api/v4/events",
+                params={
+                    "filter[type]": kind,
+                    "limit": "100",
+                    "page": str(page),
+                },
+            )
+            if code == 204:
+                break
+            if not (200 <= code < 300):
+                print("events", kind, code, data)
+                break
+            evs = (data.get("_embedded") or {}).get("events") or []
+            if not evs:
+                break
+            rows.extend(evs)
+            print(f"  {kind} page {page}: +{len(evs)} total {len(rows)}")
+            if len(evs) < 100:
+                break
+            page += 1
+            time.sleep(0.16)
+    save_json("amo_chat_events.json", rows)
+    print(f"событий чата {len(rows)}")
+
+
+def cmd_ingest_csv(path: str) -> None:
+    raw = Path(path).read_text(encoding="utf-8-sig")
+    rows = parse_csv(raw)
+    existing = []
+    old = DATA / "wazzup_messages.json"
+    if old.exists():
+        existing = json.loads(old.read_text(encoding="utf-8"))
+    seen = {(msg_when(r), msg_text(r), str(r.get("chatId") or r.get("chat_id") or "")) for r in existing}
+    added = 0
+    for row in rows:
+        marker = (msg_when(row), msg_text(row), str(row.get("chatId") or row.get("chat_id") or ""))
+        if marker in seen:
+            continue
+        existing.append(row)
+        seen.add(marker)
+        added += 1
+    save_json("wazzup_messages.json", existing)
+    print(f"из CSV {len(rows)} строк, новых {added}, всего {len(existing)}")
+    if rows:
+        print("колонки:", ", ".join(rows[0].keys()))
     code, data = wz("GET", "/channels")
     print("channels", code)
     rows = data if isinstance(data, list) else (data.get("data") or data.get("channels") or [])
@@ -478,6 +530,15 @@ def join_messages() -> dict[int, list[dict]]:
                         continue
                     seen.add(marker)
                     acc.append(row)
+        if not acc:
+            for t in talk_by_lead.get(lid, []):
+                acc.append({
+                    "chatId": t.get("chat_id"),
+                    "text": "",
+                    "dateTime": str(t.get("updated_at") or t.get("created_at") or ""),
+                    "_talk_only": True,
+                    "_origin": t.get("origin"),
+                })
         acc.sort(key=lambda r: msg_when(r))
         joined[lid] = acc
     return joined
@@ -579,6 +640,14 @@ def classify_one(lead: dict, rows: list[dict], puppy_names: list[str]) -> dict:
 
     if SKIP_NAME.search(name):
         rec.update(skip=True, reason="служебная/тест", pattern="skip_name", confidence="high")
+        return rec
+    if not blob_in and not blob_all and rows:
+        rec.update(
+            skip=True,
+            reason="беседа есть, текста в API нет",
+            pattern="no_text_has_talk",
+            confidence="high",
+        )
         return rec
     if not rows:
         rec.update(skip=True, reason="нет текста переписки", pattern="no_text", confidence="high")
@@ -920,6 +989,9 @@ def main() -> None:
     sub.add_parser("channels")
     d = sub.add_parser("dump")
     d.add_argument("--days", type=int, default=120)
+    sub.add_parser("events")
+    ing = sub.add_parser("ingest-csv")
+    ing.add_argument("path")
     sub.add_parser("phones")
     sub.add_parser("classify")
     r = sub.add_parser("report")
@@ -935,6 +1007,10 @@ def main() -> None:
         cmd_channels()
     elif args.cmd == "dump":
         cmd_dump(args.days)
+    elif args.cmd == "events":
+        cmd_events()
+    elif args.cmd == "ingest-csv":
+        cmd_ingest_csv(args.path)
     elif args.cmd == "phones":
         cmd_phones()
     elif args.cmd == "classify":
