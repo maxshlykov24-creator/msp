@@ -328,22 +328,25 @@ def cmd_dump(days: int) -> None:
     channels = ch_raw if isinstance(ch_raw, list) else (ch_raw.get("data") or [])
     print(f"каналов Wazzup: {len(channels)}")
     all_rows: list[dict] = []
-    if channels:
-        for ch in channels:
-            cid = ch.get("channelId")
-            print(f"  dump {ch.get('transport')} {cid} …")
-            raw = fetch_dump_csv(days, cid)
-            rows = parse_csv(raw)
-            for row in rows:
-                row["_channelId"] = cid
-                row["_transport"] = ch.get("transport")
-            print(f"    строк {len(rows)}")
-            all_rows.extend(rows)
-            (DATA / f"wazzup_{cid}.csv").write_text(raw, encoding="utf-8")
-    else:
-        raw = fetch_dump_csv(days, None)
-        all_rows = parse_csv(raw)
-        (DATA / "wazzup_all.csv").write_text(raw, encoding="utf-8")
+    try:
+        if channels:
+            for ch in channels:
+                cid = ch.get("channelId")
+                print(f"  dump {ch.get('transport')} {cid} …")
+                raw = fetch_dump_csv(days, cid)
+                rows = parse_csv(raw)
+                for row in rows:
+                    row["_channelId"] = cid
+                    row["_transport"] = ch.get("transport")
+                print(f"    строк {len(rows)}")
+                all_rows.extend(rows)
+                (DATA / f"wazzup_{cid}.csv").write_text(raw, encoding="utf-8")
+        else:
+            raw = fetch_dump_csv(days, None)
+            all_rows = parse_csv(raw)
+            (DATA / "wazzup_all.csv").write_text(raw, encoding="utf-8")
+    except SystemExit as exc:
+        print(f"Wazzup dump недоступен: {exc}")
     save_json("wazzup_messages.json", all_rows)
     print(f"всего сообщений {len(all_rows)}")
     if all_rows:
