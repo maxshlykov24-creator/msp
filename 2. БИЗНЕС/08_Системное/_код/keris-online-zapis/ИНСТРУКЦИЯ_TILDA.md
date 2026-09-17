@@ -5,7 +5,7 @@
 На сайт **не ставим свою кнопку** — только код окна. Кнопки «Записаться» остаются ваши (шапка, обложка и т.д.).
 
 Сниппет: [`tilda-embed.html`](tilda-embed.html)  
-Копия на сервере: [https://194.87.118.214.sslip.io/tilda-embed.html](https://194.87.118.214.sslip.io/tilda-embed.html)
+С VPN копия на туннеле: [tilda-embed.html](https://pole-cottage-batch-depend.trycloudflare.com/tilda-embed.html)
 
 ---
 
