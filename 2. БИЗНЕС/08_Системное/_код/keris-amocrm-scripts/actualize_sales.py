@@ -854,21 +854,12 @@ def cmd_report(limit: int) -> None:
 
 
 def cf_payload(fields: dict) -> list[dict]:
+    # в проходе пишем только свободный текст: списки amo бьют NotSupportedChoice
     out = []
     if fields.get("comment"):
         out.append({"field_id": F["comment"], "values": [{"value": fields["comment"][:500]}]})
-    if fields.get("paytype"):
-        out.append({"field_id": F["paytype"], "values": [{"value": fields["paytype"]}]})
-    if fields.get("source"):
-        out.append({"field_id": F["src"], "values": [{"value": fields["source"]}]})
-    if fields.get("rass_term"):
-        out.append({"field_id": F["rass_term"], "values": [{"value": str(fields["rass_term"])}]})
-    if fields.get("lost_reason"):
-        out.append({"field_id": F["lost_reason"], "values": [{"value": fields["lost_reason"]}]})
     if fields.get("lost_comment"):
         out.append({"field_id": F["lost_comment"], "values": [{"value": fields["lost_comment"][:500]}]})
-    if fields.get("prepay_status"):
-        out.append({"field_id": F["prepay_status"], "values": [{"value": fields["prepay_status"]}]})
     return out
 
 
@@ -924,7 +915,12 @@ def apply_one(rec: dict, leads_by_id: dict, existing_cl: set, existing_r: set, d
     if not (200 <= code < 300):
         result["error"] = f"{code} {data}"
         return result
-    amo("POST", f"/api/v4/leads/{rec['id']}/notes", [{"note_type": "common", "params": {"text": note_text(rec)}}])
+    amo_timeout_ok = True
+    try:
+        amo("POST", f"/api/v4/leads/{rec['id']}/notes", [{"note_type": "common", "params": {"text": note_text(rec)}}])
+    except Exception as exc:
+        result["note_error"] = str(exc)[:200]
+        amo_timeout_ok = False
     cid = contact_id_of(lead)
     if rec.get("fields", {}).get("pitomnik") and cid:
         amo("PATCH", "/api/v4/contacts", [{"id": cid, "custom_fields_values": [
@@ -953,7 +949,7 @@ def apply_one(rec: dict, leads_by_id: dict, existing_cl: set, existing_r: set, d
         if 200 <= code3 < 300:
             existing_r.add(cid)
     result["ok"] = True
-    time.sleep(0.2)
+    time.sleep(0.35)
     return result
 
 
@@ -1003,6 +999,16 @@ def cmd_apply(mode: str, ids: list[int], dry: bool) -> None:
     print(f"к записи {len(chosen)} dry={dry}")
     log = []
     ok = 0
+    log_path = DATA / "apply_log.jsonl"
+    if log_path.exists():
+        done = set()
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                row = json.loads(line)
+                if row.get("ok") and not row.get("dry"):
+                    done.add(row["id"])
+        chosen = [r for r in chosen if r["id"] not in done]
+        print(f"уже записано {len(done)}, осталось {len(chosen)}")
     for rec in chosen:
         if rec["id"] not in leads:
             continue
@@ -1013,7 +1019,11 @@ def cmd_apply(mode: str, ids: list[int], dry: bool) -> None:
         if rec.get("current") == ST["lost"] and rec.get("proposed") == ST["work"]:
             continue
         res = apply_one(rec, leads, existing_cl, existing_r, dry)
-        log.append({**res, "proposed": rec.get("proposed_name"), "pattern": rec.get("pattern")})
+        row = {**res, "proposed": rec.get("proposed_name"), "pattern": rec.get("pattern")}
+        log.append(row)
+        if not dry:
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         if res.get("ok"):
             ok += 1
         else:
