@@ -446,10 +446,32 @@ document.addEventListener("DOMContentLoaded", function(){
   if(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData){
     document.documentElement.classList.add("tg-webapp");
   }
-  /* PULSE_BOOT */
-  var D = window.KERIS_PULSE_MOCK;
-  bind(D);
-  startDashboard(D);
+fetch('api/data', {credentials:'same-origin'})
+    .then(function(r){
+      if(r.status === 401){ location.href = 'login'; return null; }
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(payload){
+      if(!payload) return;
+      var D = payload.data || {};
+      if(payload.age_minutes != null) D.age_minutes = payload.age_minutes;
+      document.getElementById('logoutWrap').style.display = 'block';
+      if(payload.stale){
+        var el = document.getElementById('staleBanner');
+        el.innerHTML = '<b>Цифры не обновлялись ' + payload.age_hours + ' ч.</b> Последний сбор: ' +
+          (payload.last_success_label || '—') + '.' +
+          (payload.last_error ? ' Причина: ' + payload.last_error : '');
+        el.classList.add('show');
+      }
+      bind(D);
+      startDashboard(D);
+    })
+    .catch(function(e){
+      document.getElementById('root').innerHTML =
+        '<div class="empty"><div class="big">!</div><h3>Не удалось загрузить</h3><p>' +
+        e.message + '</p></div>';
+    });
 });
 </script>
 </body>

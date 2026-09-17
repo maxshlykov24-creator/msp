@@ -67,6 +67,14 @@ NGINX_COMMON = """
         proxy_pass http://127.0.0.1:8091/health;
     }}
 
+    # Пульс собственника (keris-analytics). Корень домена уже занят онлайн-записью.
+    location /pulse/ {{
+        proxy_pass http://127.0.0.1:8092/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 60s;
+    }}
+
     # Фото до/после: файлы лежат у нас, отдаёт их nginx напрямую (см. app/photos.py).
     location /media/ {{
         alias {photos_dir}/;

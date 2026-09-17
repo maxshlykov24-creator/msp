@@ -52,6 +52,9 @@ if not ALLOWED_IDS:
 API_BASE = os.environ.get("KERIS_SERVER_URL", "http://127.0.0.1:8091").rstrip("/")
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "").strip()
 STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-admin-bot/state.json")
+PULSE_URL = os.environ.get(
+    "KERIS_PULSE_URL", "https://kerisclub-analytics.ru/pulse/?period=month&dir=all"
+).strip()
 
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
@@ -150,6 +153,7 @@ def main_menu() -> dict:
         [{"text": "💲 Изменить цену услуги", "callback_data": "flow:price"}],
         [{"text": "🔒 Закрыть день для записи", "callback_data": "flow:closeday"}],
         [{"text": "🐶 Добавить щенка", "callback_data": "flow:puppy"}],
+        [{"text": "📊 Пульс салона", "web_app": {"url": PULSE_URL}}],
     ]}
 
 

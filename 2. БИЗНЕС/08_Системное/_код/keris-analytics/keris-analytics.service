@@ -1,0 +1,16 @@
+[Unit]
+Description=Keris Club — пульс собственника (аналитика)
+After=network-online.target postgresql.service keris-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/keris-analytics
+EnvironmentFile=/root/keris-analytics/.env
+MemoryMax=280M
+ExecStart=/root/keris-analytics/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8092
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

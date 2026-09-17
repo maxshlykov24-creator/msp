@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#fafaf2">
+<title>Keris Club — вход в пульс</title>
+<style>
+  :root{
+    --bg:#fafaf2;--surface:#fff;--soft:#f4efe8;--line:#ebe4da;
+    --text:#4a3c36;--muted:#a99a93;--rose:#e0a8bb;--rose-dark:#c98da5;
+    --gold:#d4b88a;--shadow:0 18px 50px rgba(120,90,85,.10);
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;font-family:var(--font);color:var(--text);
+    background:
+      radial-gradient(700px 420px at 100% 0,rgba(224,168,187,.08),transparent 62%),
+      radial-gradient(540px 400px at 0 100%,rgba(212,184,138,.07),transparent 65%),var(--bg);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  .wrap{width:100%;max-width:400px}
+  .brand{display:flex;justify-content:center;margin-bottom:18px}
+  .brand img{height:40px}
+  .card{
+    background:#fff;border:1px solid var(--line);border-radius:22px;padding:28px 24px 22px;
+    box-shadow:var(--shadow);
+  }
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em}
+  .sub{font-size:13px;color:var(--muted);margin:0 0 22px}
+  label{display:block;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--rose-dark);margin:0 0 7px}
+  .field{margin-bottom:14px}
+  input{
+    width:100%;min-height:52px;border:1px solid var(--line);border-radius:14px;background:#fff;
+    padding:13px 14px;font-size:15px;font-family:var(--font);color:var(--text);outline:none;
+  }
+  input:focus{border-color:rgba(201,141,165,.55);box-shadow:0 0 0 3px rgba(224,168,187,.16)}
+  button{
+    width:100%;margin-top:6px;min-height:52px;border:0;border-radius:14px;cursor:pointer;
+    background:linear-gradient(135deg,var(--rose),var(--gold));color:#fff;font-weight:700;font-size:15px;
+    font-family:var(--font);
+  }
+  .err{
+    display:none;background:rgba(196,107,107,.10);border:1px solid rgba(196,107,107,.35);
+    color:#a8332c;font-size:13px;padding:10px 12px;border-radius:12px;margin-bottom:16px;text-align:center;
+  }
+  .err.show{display:block}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand"><img src="assets/logo-keris.png" alt="Keris Club"></div>
+    <form class="card" method="post" action="login">
+      <h1>Пульс салона</h1>
+      <p class="sub">Только для Карины. Пароль — в чате с ботом.</p>
+      <div class="err" id="err">Неверный логин или пароль</div>
+      <div class="field">
+        <label for="login">Логин</label>
+        <input id="login" name="login" type="text" autocomplete="username" autofocus required>
+      </div>
+      <div class="field">
+        <label for="password">Пароль</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit">Войти</button>
+    </form>
+  </div>
+<script>
+  if(new URLSearchParams(location.search).get('e')) document.getElementById('err').classList.add('show');
+</script>
+</body>
+</html>
