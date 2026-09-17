@@ -1,8 +1,8 @@
 """Код входа в кабинет «Мой Keris» (кнопка «Я уже клиент Keris Club»).
 
-Каналы доставки: Telegram → MAX. SMS-канал (TargetSMS) с 2026-08-24 включён
-только для записи и напоминаний: код входа стоит дороже сообщения о визите и
-нужен реже, а бот бесплатен и заодно даёт клиенту кабинет с историей питомца.
+Каналы доставки: Telegram и MAX, если телефон привязан в обоих. SMS-канал
+(TargetSMS) с 2026-08-24 включён только для записи и напоминаний: код входа
+стоит дороже сообщения о визите и нужен реже, а бот бесплатен.
 
 Бот не привязан ни в одном мессенджере — это не ошибка: клиент получает ссылки
 на боты (`need_bind`), делится там номером, и `deliver_pending(...)` из
@@ -86,18 +86,22 @@ def _active(db: Session, phone: str) -> SmsOtp | None:
 
 
 def _deliver(db: Session, phone: str, code: str) -> str:
-    """Куда реально ушёл код: telegram / max / "" (некуда, нужен bind)."""
+    """Куда ушёл код: telegram, max, telegram,max или "" (некуда, нужен bind).
+
+    Оба канала, если телефон привязан в обоих. Раньше Telegram обрывал цепочку,
+    и MAX не получал ничего.
+    """
+    text = bot_otp_text(code)
+    sent: list[str] = []
     chat_id = telegram_bind.chat_id_for_phone(db, phone)
     if chat_id and settings.client_bot_token:
-        if tg_send_message(settings.client_bot_token, chat_id, bot_otp_text(code)):
-            return "telegram"
-
+        if tg_send_message(settings.client_bot_token, chat_id, text):
+            sent.append("telegram")
     user_id = max_bind.user_id_for_phone(db, phone)
     if user_id and settings.max_bot_token:
-        if max_http.send_message(int(user_id), bot_otp_text(code)):
-            return "max"
-
-    return ""
+        if max_http.send_message(int(user_id), text):
+            sent.append("max")
+    return ",".join(sent)
 
 
 def _response(channel: str, *, ttl_sec: int, retry_after: int = RESEND_SEC) -> dict:

@@ -161,9 +161,9 @@ _BIRTH_DATE`). Пока код пуст, поле просто не читает
 С 2026-08-20 центр тяжести уведомлений перенесён в Telegram и MAX: сообщение в
 боте бесплатно, а SMS с кодом стоит как SMS о визите и нужна реже.
 
-- `sms_otp.request_code` от SMS-канала не зависит вообще. Порядок доставки:
-  Telegram (`telegram_bind.chat_id_for_phone`) → MAX (`max_bind.user_id_for_phone`).
-  Текст `sms_otp.sms_otp_text` оставлен под согласованный шаблон — если решим
+- `sms_otp.request_code` от SMS-канала не зависит вообще. Доставка: Telegram и
+  MAX, если телефон привязан в обоих (`telegram_bind` / `max_bind`). Текст
+  `sms_otp.sms_otp_text` оставлен под согласованный шаблон — если решим
   включить SMS для входа, менять нужно только `_deliver`.
 - Привязки нет — не ошибка, а ответ `need_bind` со ссылками на боты
   (`settings.telegram_bot_url`, `settings.max_bot_url`). Запись `SmsOtp` остаётся

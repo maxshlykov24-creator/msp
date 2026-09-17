@@ -1,4 +1,4 @@
-"""Код входа в кабинет: Telegram → MAX. SMS-канал для входа не включён."""
+"""Код входа в кабинет: Telegram и MAX. SMS-канал для входа не включён."""
 from __future__ import annotations
 
 import dataclasses
@@ -46,6 +46,33 @@ def test_request_code_prefers_telegram(monkeypatch, db_session):
     assert sent[0][0] == 555000111222
     assert "4821" in sent[0][1]
     assert db_session.query(SmsOtp).one().phone == "+79991112233"
+
+
+def test_request_code_sends_telegram_and_max_together(monkeypatch, db_session):
+    """Один телефон в обоих ботах: код входа уходит сразу в Telegram и в MAX."""
+    _channels(monkeypatch, client_bot_token="tg-token", max_bot_token="max-token")
+    telegram_bind.upsert_client(db_session, "+79991112233", 555000111222)
+    max_bind.upsert_client(db_session, "+79991112233", 775149185013)
+    db_session.commit()
+    tg, mx = [], []
+    monkeypatch.setattr(
+        sms_otp, "tg_send_message",
+        lambda token, chat_id, text: tg.append((chat_id, text)) or True,
+    )
+    monkeypatch.setattr(
+        sms_otp.max_http, "send_message",
+        lambda user_id, text, buttons=None: mx.append((user_id, text)) or True,
+    )
+    monkeypatch.setattr(sms_otp.secrets, "randbelow", lambda n: 4821)
+
+    result = request_code(db_session, "+79991112233")
+
+    assert result["ok"] is True
+    assert result["channel"] == "telegram,max"
+    assert result["need_bind"] is False
+    assert tg[0][0] == 555000111222 and "4821" in tg[0][1]
+    assert mx[0][0] == 775149185013 and "4821" in mx[0][1]
+    assert db_session.query(SmsOtp).one().channel == "telegram,max"
 
 
 def test_request_code_falls_back_to_max(monkeypatch, db_session):

@@ -47,7 +47,7 @@ COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("thanks_pending", "BOOLEAN DEFAULT FALSE"),
     ],
     "sms_otps": [
-        ("channel", "VARCHAR(16) DEFAULT ''"),
+        ("channel", "VARCHAR(32) DEFAULT ''"),
     ],
     "masters": [
         ("shift_on", "INTEGER DEFAULT 0"),

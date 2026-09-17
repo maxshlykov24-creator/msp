@@ -316,9 +316,10 @@ class SmsOtp(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     phone: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    # Куда ушёл код: telegram / max / sms. Пусто — доставить было некуда, клиент
-    # ушёл привязывать бота; по этому признаку deliver_pending выдаёт новый код.
-    channel: Mapped[str] = mapped_column(String(16), default="")
+    # Куда ушёл код: telegram / max / telegram,max / sms. Пусто — доставить было
+    # некуда, клиент ушёл привязывать бота; по этому признаку deliver_pending
+    # выдаёт новый код.
+    channel: Mapped[str] = mapped_column(String(32), default="")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

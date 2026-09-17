@@ -1998,6 +1998,12 @@
     $("#authBtn").textContent="Войти";
   }
   const AUTH_CHANNEL_NAMES={telegram:"Telegram",max:"MAX",sms:"SMS"};
+  function authChannelLabel(ch){
+    const names=String(ch||"").split(",").map(x=>AUTH_CHANNEL_NAMES[x.trim()]).filter(Boolean);
+    if(!names.length)return "мессенджер";
+    if(names.length===1)return names[0];
+    return names.join(" и ");
+  }
   async function authRequestCode(){
     const digits=nationalFromRaw($("#authPhoneInput").value);
     if(digits.length!==10){toast("Введите полный номер телефона.");return}
@@ -2023,7 +2029,7 @@
     }else{
       authShowBots(null);
       $("#authCode").focus();
-      toast("Код отправили в "+(AUTH_CHANNEL_NAMES[data.channel]||"мессенджер")+".");
+      toast("Код отправили в "+authChannelLabel(data.channel)+".");
     }
     track("auth_code_requested",{channel:data.channel||"need_bind"});
   }
