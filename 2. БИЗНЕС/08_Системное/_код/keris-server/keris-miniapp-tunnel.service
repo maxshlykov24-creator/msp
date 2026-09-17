@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare tunnel for Keris Telegram Mini App only
+After=network-online.target nginx.service keris-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /root/keris-server/miniapp_tunnel.py
+Restart=on-failure
+RestartSec=8
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

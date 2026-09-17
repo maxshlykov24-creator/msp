@@ -58,8 +58,18 @@ if not BOT_TOKEN:
     raise SystemExit("BOT_TOKEN не задан — см. /root/keris-bot/.env")
 MANAGER_USERNAME = os.environ.get("MANAGER_USERNAME", "keris_chat")
 STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-bot/state.json")
-# Онлайн-запись на груминг (тот же URL — Mini App в Telegram и страница в браузере).
-BOOKING_URL = os.environ.get("BOOKING_URL", "https://194.87.118.214.sslip.io/").strip().rstrip("/") + "/"
+def _http_url(raw: str, fallback: str) -> str:
+    value = (raw or "").strip() or fallback
+    return value.rstrip("/") + "/"
+
+
+# Страница в браузере / Safari / MAX — прямой RU-хост.
+BOOKING_URL = _http_url(
+    os.environ.get("BOOKING_URL", ""),
+    "https://194.87.118.214.sslip.io/",
+)
+# Mini App в Telegram. Пусто — как браузер. Через VPN сюда Cloudflare.
+WEBAPP_URL = _http_url(os.environ.get("WEBAPP_URL", ""), BOOKING_URL)
 # API keris-server (RU) — сюда уходит подтверждение записи по кнопке в напоминании.
 API_BASE = os.environ.get("KERIS_SERVER_URL", "https://194.87.118.214.sslip.io").strip().rstrip("/")
 # Канал с витриной щенков: https://t.me/kerisclub · пост — /115
@@ -325,9 +335,9 @@ def main_menu() -> dict:
 
 
 def booking_kb() -> dict:
-    """Два входа: Mini App (если Telegram открывает) и обычная ссылка в браузер."""
+    """Mini App — WEBAPP_URL (Cloudflare). Браузер — BOOKING_URL (sslip.io)."""
     return {"inline_keyboard": [
-        [{"text": "✂️ Открыть запись в Telegram", "web_app": {"url": BOOKING_URL}}],
+        [{"text": "✂️ Открыть запись в Telegram", "web_app": {"url": WEBAPP_URL}}],
         [{"text": "🌐 Открыть в браузере", "url": BOOKING_URL}],
         [{"text": "‹ В меню", "callback_data": "menu"}],
     ]}
@@ -342,7 +352,7 @@ def set_menu_button() -> None:
         "menu_button": {
             "type": "web_app",
             "text": "Запись",
-            "web_app": {"url": BOOKING_URL},
+            "web_app": {"url": WEBAPP_URL},
         }
     })
 
@@ -569,7 +579,10 @@ ALLOWED_UPDATES = urllib.parse.quote('["message","callback_query"]')
 
 def main() -> None:
     load_state()
-    log.info("keris-bot запущен (long polling), booking=%s, api=%s", BOOKING_URL, API_BASE)
+    log.info(
+        "keris-bot запущен (long polling), booking=%s webapp=%s api=%s",
+        BOOKING_URL, WEBAPP_URL, API_BASE,
+    )
     # снять возможный webhook, чтобы long polling работал
     _http("POST", f"{TG_API}/deleteWebhook", {"drop_pending_updates": False})
     set_menu_button()
