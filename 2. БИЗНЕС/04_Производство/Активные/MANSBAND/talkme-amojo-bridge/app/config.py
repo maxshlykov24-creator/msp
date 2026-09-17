@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # Внутренняя ручка connect
     internal_secret: str = ""
 
+    # Вебхук квиза zamer.mansband.ru → сделка amo. Секрет только в пути URL, не INTERNAL_SECRET.
+    quiz_webhook_secret: str = ""
+    quiz_pipeline_id: int = 9601214
+    quiz_status_id: int = 76654882
+    quiz_tag: str = "Квиз"
+
     # Публичный адрес моста (для регистрации вебхука amoCRM add_lead)
     bridge_public_base: str = "https://mansband-chat-bridge.twc1.net"
 

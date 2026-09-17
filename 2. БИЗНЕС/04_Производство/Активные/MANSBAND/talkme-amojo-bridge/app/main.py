@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -10,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+import httpx
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app import amo_v4
 from app.amojo_client import post_connect, post_delivery_status, post_disconnect, post_new_message
+from app.quiz_lead import build_note, lead_title, parse_quiz_payload, require_phone
 from app.amojo_sign import verify_amojo_webhook_body
 from app.config import get_settings
 from app.database import get_db, init_db
@@ -561,6 +564,104 @@ async def webhooks_talkme(
         data = {}
     background_tasks.add_task(_talkme_incoming_task, data)
     return Response(status_code=200)
+
+
+def _quiz_cors_headers() -> dict[str, str]:
+    return {
+        "Access-Control-Allow-Origin": "https://zamer.mansband.ru",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+    }
+
+
+def _quiz_secret_ok(secret: str) -> bool:
+    expected = (get_settings().quiz_webhook_secret or "").strip()
+    if not expected or not secret:
+        return False
+    return secrets.compare_digest(secret, expected)
+
+
+@app.options("/webhooks/quiz/{secret}")
+def quiz_webhook_options(secret: str) -> Response:
+    if not _quiz_secret_ok(secret):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return Response(status_code=204, headers=_quiz_cors_headers())
+
+
+@app.post("/webhooks/quiz/{secret}")
+def quiz_webhook(
+    secret: str,
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Заявка с квиза zamer.mansband.ru → контакт + сделка в воронке Продажи."""
+    if not _quiz_secret_ok(secret):
+        raise HTTPException(status_code=401, detail="Unauthorized", headers=_quiz_cors_headers())
+    parsed = parse_quiz_payload(payload if isinstance(payload, dict) else {})
+    phone = require_phone(parsed)
+    if not phone:
+        raise HTTPException(
+            status_code=400, detail="Нужен телефон в поле phone", headers=_quiz_cors_headers()
+        )
+
+    settings = get_settings()
+    try:
+        token = get_valid_access_token(db)
+        contact = amo_v4.find_contact_by_phone(phone=phone, access_token=token, settings=settings)
+        if contact is None:
+            contact = amo_v4.create_contact(
+                name=parsed["name"] or amo_v4.format_phone_e164(phone),
+                phone=phone,
+                email=parsed["email"] or None,
+                access_token=token,
+                settings=settings,
+            )
+        contact_id = int(contact["id"])
+
+        id_by_key = amo_v4.field_id_by_key(access_token=token, settings=settings)
+        fields = amo_v4.build_custom_fields_payload(
+            tracking=parsed.get("tracking") or {}, id_by_key=id_by_key, skip_keys=set()
+        )
+        tags = [settings.quiz_tag] if settings.quiz_tag else []
+        lead = amo_v4.create_lead(
+            name=lead_title(parsed),
+            pipeline_id=settings.quiz_pipeline_id,
+            status_id=settings.quiz_status_id,
+            contact_id=contact_id,
+            custom_fields_values=fields or None,
+            tags=tags,
+            access_token=token,
+            settings=settings,
+        )
+        lead_id = int(lead["id"])
+        amo_v4.add_lead_note(
+            lead_id=lead_id, text=build_note(parsed=parsed), access_token=token, settings=settings
+        )
+    except httpx.HTTPStatusError as e:
+        log.exception("quiz amo failed: %s %s", e.response.status_code, e.response.text[:300])
+        raise HTTPException(
+            status_code=502,
+            detail=f"amo {e.response.status_code}",
+            headers=_quiz_cors_headers(),
+        ) from e
+    except Exception as e:
+        log.exception("quiz lead failed")
+        raise HTTPException(
+            status_code=502, detail="не удалось создать сделку", headers=_quiz_cors_headers()
+        ) from e
+
+    log.info("quiz lead %s contact %s phone_tail=%s", lead_id, contact_id, normalize_phone(phone))
+    base = f"https://{settings.amo_subdomain}.{settings.amo_base_domain}"
+    return JSONResponse(
+        {
+            "ok": True,
+            "lead_id": lead_id,
+            "contact_id": contact_id,
+            "url": f"{base}/leads/detail/{lead_id}",
+        },
+        headers=_quiz_cors_headers(),
+    )
 
 
 def apply_tracking_to_lead(

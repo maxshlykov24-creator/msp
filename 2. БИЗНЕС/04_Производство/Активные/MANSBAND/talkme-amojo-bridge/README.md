@@ -21,6 +21,7 @@
 | POST | `/internal/connect` | `connect` к аккаунту (нужен `X-Internal-Secret`) |
 | POST | `/amojo/v2/hooks/{scope_id}` | Входящие из amo (проверка `X-Signature`) |
 | POST | `/webhooks/talkme` | Входящие из Talk-me |
+| POST | `/webhooks/quiz/{secret}` | Заявка квиза `zamer.mansband.ru` → сделка в «Продажи» |
 | POST | `/amo/webhooks/leads/{secret}` | Хук amoCRM «сделка добавлена» → метки визита в поля сделки |
 | POST | `/internal/setup-lead-webhook` | Зарегистрировать хук `add_lead` в amoCRM (нужен `X-Internal-Secret`) |
 

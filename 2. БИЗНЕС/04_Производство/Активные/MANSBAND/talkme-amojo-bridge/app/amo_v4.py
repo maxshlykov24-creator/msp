@@ -185,6 +185,126 @@ def list_webhooks(*, access_token: str, settings: Optional[Settings] = None) -> 
         return ((r.json() or {}).get("_embedded") or {}).get("webhooks") or []
 
 
+def format_phone_e164(raw: str) -> str:
+    digits = "".join(ch for ch in str(raw) if ch.isdigit())
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
+    if len(digits) == 10:
+        digits = "7" + digits
+    return f"+{digits}" if digits else ""
+
+
+def find_contact_by_phone(
+    *, phone: str, access_token: str, settings: Optional[Settings] = None
+) -> Optional[dict[str, Any]]:
+    """Первый контакт, у которого совпадают последние 10 цифр телефона."""
+    from app.talkme_parse import normalize_phone
+
+    settings = settings or get_settings()
+    key = normalize_phone(phone)
+    if not key:
+        return None
+    url = f"{api_base(settings)}/api/v4/contacts"
+    with httpx.Client(timeout=30.0) as client:
+        r = client.get(
+            url,
+            params={"query": key, "limit": 10},
+            headers=_headers(access_token),
+        )
+        if r.status_code == 204:
+            return None
+        r.raise_for_status()
+        contacts = ((r.json() or {}).get("_embedded") or {}).get("contacts") or []
+    for c in contacts:
+        cid = c.get("id")
+        if not cid:
+            continue
+        phones = get_contact_phones(contact_id=int(cid), access_token=access_token, settings=settings)
+        if any(normalize_phone(p) == key for p in phones):
+            return c
+    return contacts[0] if contacts else None
+
+
+def create_contact(
+    *,
+    name: str,
+    phone: str,
+    email: Optional[str] = None,
+    access_token: str,
+    settings: Optional[Settings] = None,
+) -> dict[str, Any]:
+    settings = settings or get_settings()
+    fields: list[dict[str, Any]] = [
+        {
+            "field_code": "PHONE",
+            "values": [{"value": format_phone_e164(phone), "enum_code": "WORK"}],
+        }
+    ]
+    if email:
+        fields.append(
+            {"field_code": "EMAIL", "values": [{"value": email, "enum_code": "WORK"}]}
+        )
+    body = [{"name": name or format_phone_e164(phone), "custom_fields_values": fields}]
+    url = f"{api_base(settings)}/api/v4/contacts"
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(url, json=body, headers=_headers(access_token))
+        r.raise_for_status()
+        created = ((r.json() or {}).get("_embedded") or {}).get("contacts") or []
+    if not created:
+        raise RuntimeError("amoCRM: контакт не создался")
+    return created[0]
+
+
+def create_lead(
+    *,
+    name: str,
+    pipeline_id: int,
+    status_id: int,
+    contact_id: int,
+    custom_fields_values: Optional[list[dict[str, Any]]] = None,
+    tags: Optional[list[str]] = None,
+    access_token: str,
+    settings: Optional[Settings] = None,
+) -> dict[str, Any]:
+    settings = settings or get_settings()
+    body: dict[str, Any] = {
+        "name": name,
+        "pipeline_id": pipeline_id,
+        "status_id": status_id,
+        "_embedded": {"contacts": [{"id": contact_id}]},
+    }
+    if custom_fields_values:
+        body["custom_fields_values"] = custom_fields_values
+    if tags:
+        body["_embedded"]["tags"] = [{"name": t} for t in tags if t]
+    url = f"{api_base(settings)}/api/v4/leads"
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(url, json=[body], headers=_headers(access_token))
+        r.raise_for_status()
+        created = ((r.json() or {}).get("_embedded") or {}).get("leads") or []
+    if not created:
+        raise RuntimeError("amoCRM: сделка не создалась")
+    return created[0]
+
+
+def add_lead_note(
+    *,
+    lead_id: int,
+    text: str,
+    access_token: str,
+    settings: Optional[Settings] = None,
+) -> None:
+    if not (text or "").strip():
+        return
+    settings = settings or get_settings()
+    url = f"{api_base(settings)}/api/v4/leads/{lead_id}/notes"
+    body = [{"note_type": "common", "params": {"text": text.strip()}}]
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(url, json=body, headers=_headers(access_token))
+        if r.status_code >= 400:
+            log.error("note lead %s failed: %s %s", lead_id, r.status_code, r.text[:300])
+
+
 def subscribe_webhook(
     *,
     destination: str,
