@@ -110,17 +110,25 @@ AUTO_HINT = re.compile(
 RE_SOLD = re.compile(
     r"уехал(а|и)? в семью|уже дома|переезд состоял|"
     r"щенок у вас|малыш у вас|отдал[аи] (щенк|малыш)|в новой семье|"
-    r"(?<![Нн]е )(?<![Нн]е  )забрал[аи]",
+    r"(?<![Нн]е )(?<![Нн]е  )забрал[аи] (щенк|малыш)",
     re.I,
 )
 RE_DOCS = re.compile(
-    r"договор подписан|документы оформ|документы готов|ветпаспорт|"
+    r"договор подписан|документы оформ|документы готов|"
     r"финальн(ый|ого) расч[её]т",
     re.I,
 )
 RE_BOOKED = re.compile(
-    r"предоплат|30\s*%|бронь оплач|оплатил[аи] бронь|забронировал|"
-    r"внесл[аи] (бронь|задаток)|задаток (приш[её]л|получил)|бронь прошла",
+    r"бронь оплач|оплатил[аи] (бронь|задаток|предоплат)|"
+    r"внесл[аи] (бронь|задаток|предоплат)|"
+    r"задаток (приш[её]л|получил|есть)|бронь прошла|"
+    r"предоплат[аыуе] (прошла|пришла|есть|внесен)|"
+    r"я (забронировал|внесла? предоплат)|забронировала? (этого|эту|щенк)",
+    re.I,
+)
+GROOMING_HINT = re.compile(
+    r"чек-лист грумер|зоосалон|чек-лист администратор|инвентаризация кассы|"
+    r"стандарты смены|yandex\.ru/business|договор сегодня сможете",
     re.I,
 )
 RE_WAIT = re.compile(
@@ -519,7 +527,7 @@ def join_messages() -> dict[int, list[dict]]:
     for lead in leads:
         lid = int(lead["id"])
         acc: list[dict] = []
-        if str(lid) in bridge and any(msg_text(r) for r in bridge[str(lid)]):
+        if str(lid) in bridge and isinstance(bridge[str(lid)], list) and any(msg_text(r) for r in bridge[str(lid)]):
             joined[lid] = list(bridge[str(lid)])
             continue
         seen = set()
@@ -659,6 +667,9 @@ def classify_one(lead: dict, rows: list[dict], puppy_names: list[str]) -> dict:
 
     if SKIP_NAME.search(name):
         rec.update(skip=True, reason="служебная/тест", pattern="skip_name", confidence="high")
+        return rec
+    if GROOMING_HINT.search(blob_all):
+        rec.update(skip=True, reason="переписка по салону/грумингу, не продажа щенка", pattern="grooming", confidence="high")
         return rec
     if not blob_in and not blob_all and rows:
         rec.update(
@@ -988,6 +999,12 @@ def cmd_apply(mode: str, ids: list[int], dry: bool) -> None:
     ok = 0
     for rec in chosen:
         if rec["id"] not in leads:
+            continue
+        if rec.get("proposed") == rec.get("current"):
+            continue
+        if rec.get("current") == ST["sold"]:
+            continue
+        if rec.get("current") == ST["lost"] and rec.get("proposed") == ST["work"]:
             continue
         res = apply_one(rec, leads, existing_cl, existing_r, dry)
         log.append({**res, "proposed": rec.get("proposed_name"), "pattern": rec.get("pattern")})

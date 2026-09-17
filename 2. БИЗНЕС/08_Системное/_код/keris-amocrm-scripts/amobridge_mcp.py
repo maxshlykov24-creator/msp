@@ -316,24 +316,31 @@ def cmd_chat(lead_id: int) -> None:
     print(text[:1500])
 
 
-def cmd_dump_chats(limit: int) -> None:
-    classified = json.loads((DATA / "classified.json").read_text(encoding="utf-8"))
-    talks = json.loads((DATA / "amo_talks.json").read_text(encoding="utf-8"))
-    counts: dict[int, int] = {}
-    for t in talks:
-        eid = t.get("entity_id")
-        if eid:
-            counts[int(eid)] = counts.get(int(eid), 0) + 1
-    ids = [r["id"] for r in classified if r.get("pattern") == "no_text_has_talk"]
-    ids.sort(key=lambda i: (-counts.get(i, 0), -i))
-    ids = ids[:limit]
+def cmd_dump_chats(limit: int, refresh_capped: bool = True) -> None:
+    leads = json.loads((DATA / "amo_sales_leads.json").read_text(encoding="utf-8"))
+    ids = [int(l["id"]) for l in leads]
+    if limit < len(ids):
+        ids = ids[:limit]
     path = DATA / "amobridge_chats.json"
     store = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     sid = session_start()
     ok = 0
     empty = 0
+    skipped = 0
     for i, lid in enumerate(ids, 1):
-        if str(lid) in store and store[str(lid)]:
+        prev = store.get(str(lid))
+        nprev = len(prev) if isinstance(prev, list) else 0
+        # короткие диалоги уже полные; ровно 20 — старый потолок, переснимаем с limit=50
+        if prev is not None and 0 < nprev < 20 and not refresh_capped:
+            skipped += 1
+            ok += 1
+            continue
+        if prev is not None and 0 < nprev < 20:
+            skipped += 1
+            ok += 1
+            continue
+        if prev is not None and nprev > 20:
+            skipped += 1
             ok += 1
             continue
         try:
@@ -342,19 +349,23 @@ def cmd_dump_chats(limit: int) -> None:
             print(f"  {lid} fail {exc}")
             sid = session_start()
             continue
-        rows = parse_chat(extract_text(body))
+        text = extract_text(body)
+        rows = parse_chat(text)
+        footer = text.splitlines()[-1] if text.splitlines() else ""
         store[str(lid)] = rows
+        store[str(lid) + "_meta"] = {"footer": footer[:120], "limit": 50, "n": len(rows)}
         if rows:
             ok += 1
         else:
             empty += 1
         n_in = sum(1 for r in rows if not r["isEcho"])
-        print(f"  [{i}/{len(ids)}] {lid} msgs={len(rows)} in={n_in}")
-        if i % 20 == 0:
+        print(f"  [{i}/{len(ids)}] {lid} msgs={len(rows)} in={n_in} {footer[:40]}")
+        if i % 15 == 0:
             path.write_text(json.dumps(store, ensure_ascii=False), encoding="utf-8")
-        time.sleep(0.15)
+        time.sleep(0.12)
+    # не класть _meta в join: join uses str(lid) list only
     path.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"готово: {ok} с текстом, {empty} пустых, файл {path}")
+    print(f"готово: {ok} с текстом, skip_short={skipped}, empty={empty}, файл {path}")
 
 
 def main() -> None:
@@ -368,7 +379,7 @@ def main() -> None:
     elif cmd == "chat":
         cmd_chat(int(sys.argv[2]))
     elif cmd == "dump-chats":
-        cmd_dump_chats(int(sys.argv[2]) if len(sys.argv) > 2 else 40)
+        cmd_dump_chats(int(sys.argv[2]) if len(sys.argv) > 2 else 10000)
     else:
         sys.exit("unknown command")
 
