@@ -307,7 +307,7 @@ def parse_chat(text: str) -> list[dict]:
 
 
 def cmd_chat(lead_id: int) -> None:
-    body = cmd_call("get_chat", {"lead": lead_id})
+    body = cmd_call("get_chat", {"lead": lead_id, "limit": 50})
     out = DATA / f"chat_{lead_id}.json"
     DATA.mkdir(exist_ok=True)
     out.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -337,7 +337,7 @@ def cmd_dump_chats(limit: int) -> None:
             ok += 1
             continue
         try:
-            body = cmd_call("get_chat", {"lead": lid}, session=sid)
+            body = cmd_call("get_chat", {"lead": lid, "limit": 50}, session=sid)
         except SystemExit as exc:
             print(f"  {lid} fail {exc}")
             sid = session_start()
