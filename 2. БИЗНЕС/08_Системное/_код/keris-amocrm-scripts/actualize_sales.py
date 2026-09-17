@@ -99,7 +99,7 @@ STAGE_NAME = {
 }
 
 SKIP_NAME = re.compile(
-    r"\[ТЕСТ\]|кассов|отчет|отчёт|keris club\)|сотрудник|админ",
+    r"\[ТЕСТ\]|тест бота|кассов|отчет|отчёт|keris club\)|сотрудник|админ",
     re.I,
 )
 AUTO_HINT = re.compile(
@@ -108,8 +108,9 @@ AUTO_HINT = re.compile(
 )
 
 RE_SOLD = re.compile(
-    r"уехал(а|и)? в семью|уже дома|забрал[аи]|переезд состоял|"
-    r"щенок у вас|малыш у вас|отдал[аи] (щенк|малыш)|в новой семье",
+    r"уехал(а|и)? в семью|уже дома|переезд состоял|"
+    r"щенок у вас|малыш у вас|отдал[аи] (щенк|малыш)|в новой семье|"
+    r"(?<![Нн]е )(?<![Нн]е  )забрал[аи]",
     re.I,
 )
 RE_DOCS = re.compile(
@@ -509,10 +510,18 @@ def join_messages() -> dict[int, list[dict]]:
         if eid and int(eid) in lead_ids:
             talk_by_lead[int(eid)].append(t)
 
+    bridge_path = DATA / "amobridge_chats.json"
+    bridge: dict[str, list] = {}
+    if bridge_path.exists():
+        bridge = json.loads(bridge_path.read_text(encoding="utf-8"))
+
     joined: dict[int, list[dict]] = {}
     for lead in leads:
         lid = int(lead["id"])
         acc: list[dict] = []
+        if str(lid) in bridge and any(msg_text(r) for r in bridge[str(lid)]):
+            joined[lid] = list(bridge[str(lid)])
+            continue
         seen = set()
         for t in talk_by_lead.get(lid, []):
             cid = str(t.get("chat_id") or "")
@@ -613,6 +622,16 @@ def classify_one(lead: dict, rows: list[dict], puppy_names: list[str]) -> dict:
             quotes.append(f"{who}: {text[:160]}")
     blob_in = "\n".join(texts_in)
     blob_all = "\n".join(texts_in + texts_out)
+    # шаблон бота содержит «бронирование 30%» — не считать это бронью
+    live_bits = []
+    for row in rows:
+        text = msg_text(row)
+        if not text:
+            continue
+        if str(row.get("author") or "").lower() == "robot":
+            continue
+        live_bits.append(text)
+    blob_live = "\n".join(live_bits) or blob_in
     last_when = msg_when(rows[-1]) if rows else ""
     last_out = msg_out(rows[-1]) if rows else False
 
@@ -656,7 +675,7 @@ def classify_one(lead: dict, rows: list[dict], puppy_names: list[str]) -> dict:
         rec.update(skip=True, reason="только автоответ", pattern="auto_only", confidence="high")
         return rec
 
-    fields = extract_fields(blob_all, puppy_names)
+    fields = extract_fields(blob_live, puppy_names)
     rec["fields"] = fields
 
     def set_stage(key: str, conf: str, reason: str, pattern: str):
@@ -666,34 +685,34 @@ def classify_one(lead: dict, rows: list[dict], puppy_names: list[str]) -> dict:
         rec["reason"] = reason
         rec["pattern"] = pattern
 
-    if RE_SOLD.search(blob_all):
+    if RE_SOLD.search(blob_live):
         set_stage("sold", "high", "в переписке факт переезда/дома", "sold")
         rec["spawn_clients"] = True
         rec["purchase_date"] = last_when[:10] if last_when else None
         rec["fields"]["pitomnik"] = True
         return rec
-    if RE_DOCS.search(blob_all) and RE_BOOKED.search(blob_all):
+    if RE_DOCS.search(blob_live) and RE_BOOKED.search(blob_live):
         set_stage("docs", "high", "документы + бронь", "docs")
         return rec
-    if RE_BOOKED.search(blob_all):
+    if RE_BOOKED.search(blob_live):
         set_stage("booked", "high", "явная предоплата/бронь", "booked")
         rec["fields"]["prepay_status"] = "Оплачена"
         if fields.get("paytype") == "Рассрочка":
             rec["spawn_rass"] = True
         return rec
-    if RE_REFUSE.search(blob_all):
+    if RE_REFUSE.search(blob_live):
         set_stage("lost", "high", "явный отказ", "lost_refuse")
-        rec["fields"]["lost_reason"] = LOST_REASON_PRICE if RE_PRICE.search(blob_all) else LOST_REASON_GHOST
+        rec["fields"]["lost_reason"] = LOST_REASON_PRICE if RE_PRICE.search(blob_live) else LOST_REASON_GHOST
         rec["fields"]["lost_comment"] = "отказ в переписке"
         return rec
-    if RE_PRICE.search(blob_in) and not RE_BOOKED.search(blob_all) and len(texts_in) <= 4:
+    if RE_PRICE.search(blob_in) and not RE_BOOKED.search(blob_live) and len(texts_in) <= 4:
         set_stage("lost", "medium", "уперлись в цену, брони нет", "lost_price")
         rec["fields"]["lost_reason"] = LOST_REASON_PRICE
         return rec
-    if RE_WAIT.search(blob_all):
+    if RE_WAIT.search(blob_live):
         set_stage("wait", "high", "ждут помёт", "wait")
         return rec
-    if RE_PICKED.search(blob_all) or fields.get("puppy_names"):
+    if RE_PICKED.search(blob_live) or fields.get("puppy_names"):
         set_stage("picked", "medium", "назван конкретный щенок, оплаты нет", "picked")
         return rec
 
