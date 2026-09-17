@@ -8,6 +8,7 @@ nginx отдаёт его с /pulse/.
 """
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import sys
@@ -15,6 +16,8 @@ import time
 from pathlib import Path
 
 import paramiko
+
+logging.getLogger("paramiko").setLevel(logging.CRITICAL)
 
 HOST = os.environ.get("KERIS_DEPLOY_HOST", "194.87.118.214")
 USER = os.environ.get("KERIS_DEPLOY_USER", "root")
@@ -56,7 +59,7 @@ NGINX_SNIPPET = """
 """
 
 
-def connect(attempts: int = 8) -> paramiko.SSHClient:
+def connect(attempts: int = 20) -> paramiko.SSHClient:
     last = None
     for i in range(attempts):
         client = paramiko.SSHClient()
@@ -70,7 +73,7 @@ def connect(attempts: int = 8) -> paramiko.SSHClient:
         except Exception as e:  # noqa: BLE001
             last = e
             print(f"  попытка {i + 1}: {type(e).__name__}: {e}", file=sys.stderr)
-            time.sleep(4)
+            time.sleep(6)
     raise SystemExit(f"не удалось подключиться: {last}")
 
 

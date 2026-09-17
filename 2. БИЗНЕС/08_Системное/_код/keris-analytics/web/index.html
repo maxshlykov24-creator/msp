@@ -144,7 +144,7 @@ window.KERIS_PULSE_MOCK = {
         kind: "stale_leads",
         badge: "сейчас",
         title: "664 заявки без ответа больше суток",
-        sub: "Почти все висят в новых. Последняя заявка — 14 сентября."
+        sub: "Почти все висят в новых. Последняя заявка 14 сентября."
       },
       {
         kind: "unconfirmed",
@@ -235,6 +235,14 @@ const STORAGE = "keris-pulse";
 
 function n(v){return Number(v||0).toLocaleString("ru-RU")}
 function rub(v){return n(v)+" ₽"}
+function plural(num, one, few, many){
+  var n10 = num % 10, n100 = num % 100;
+  if(n10 === 1 && n100 !== 11) return one;
+  if(n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return few;
+  return many;
+}
+function zayavok(num){ return n(num) + " " + plural(num, "заявка", "заявки", "заявок"); }
+function vizitov(num){ return n(num) + " " + plural(num, "визит", "визита", "визитов"); }
 function pct(part, of){
   if(!of || of < 20) return "";
   return Math.round(part * 100 / of) + "%";
@@ -324,8 +332,8 @@ function kennelChapter(block, periodLabel){
   }
   var compare = block.prev_leads != null
     ? periodLabel.indexOf("7") >= 0
-      ? "На прошлой неделе было " + n(block.prev_leads) + " заявок."
-      : "За предыдущие 30 дней было " + n(block.prev_leads) + " заявок."
+      ? "На прошлой неделе было " + zayavok(block.prev_leads) + "."
+      : "За предыдущие 30 дней было " + zayavok(block.prev_leads) + "."
     : "";
   var details = funnelHtml(block.funnel || [], block.show_source ? block.top_source : null);
   return '<section class="chapter" data-ch="pet">' +
@@ -351,10 +359,10 @@ function groomingChapter(block, periodLabel, ui){
     tiles.push(trustTile(n(block.repeat), "снова пришли"));
   }
   var compare = block.prev_visits != null
-    ? "На прошлой неделе было " + n(block.prev_visits) + " визитов."
+    ? "На прошлой неделе было " + vizitov(block.prev_visits) + "."
     : "";
   if(periodLabel.indexOf("30") >= 0 && block.prev_visits != null){
-    compare = "За предыдущие 30 дней было " + n(block.prev_visits) + " визитов.";
+    compare = "За предыдущие 30 дней было " + vizitov(block.prev_visits) + ".";
   }
   var masters = block.masters || [];
   var chips = "";

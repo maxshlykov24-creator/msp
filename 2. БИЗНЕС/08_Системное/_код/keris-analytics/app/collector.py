@@ -159,7 +159,7 @@ def _stale_task(leads: list[dict[str, Any]], now: datetime) -> dict[str, Any] | 
         "kind": "stale_leads",
         "badge": "сейчас",
         "title": f"{len(stale)} заявок без ответа больше суток",
-        "sub": f"Почти все висят в новых. Последняя заявка — {last}.",
+        "sub": f"Почти все висят в новых. Последняя заявка {last}.",
     }
 
 
