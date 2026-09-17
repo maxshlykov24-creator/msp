@@ -132,12 +132,46 @@
 
 <script>
 (function(){
-  var KERIS_BOOKING_URL = "https://194.87.118.214.sslip.io/";
+  var KERIS_BOOKING_URL = "https://pole-cottage-batch-depend.trycloudflare.com/";
+  var KERIS_DIRECT_URL = "https://194.87.118.214.sslip.io/";
+  var ORIGIN_FEED = "https://ntfy.sh/kerisclub-web-origin-v1/json?poll=1";
   var CLOSE_MS = 320;
 
-  var modal, frame, loader, loaded = false, scrollY = 0, closing = false, closeTimer = null;
+  var modal, frame, loader, loaded = false, scrollY = 0, closing = false, closeTimer = null, opening = false;
 
   function el(id){ return document.getElementById(id); }
+
+  function slash(url){
+    return String(url || "").replace(/\/?$/, "/");
+  }
+
+  function parseOrigin(text){
+    var m = String(text || "").match(/https:\/\/[a-z0-9.-]+\.[a-z]{2,}\/?/i);
+    return m ? slash(m[0]) : "";
+  }
+
+  function fetchFeedOrigin(){
+    return fetch(ORIGIN_FEED, {cache:"no-store"}).then(function(r){
+      if(!r.ok) return "";
+      return r.text();
+    }).then(function(t){
+      var lines = String(t || "").trim().split("\n");
+      for(var i = lines.length - 1; i >= 0; i--){
+        try{
+          var msg = JSON.parse(lines[i]);
+          var origin = parseOrigin(msg.message || "");
+          if(origin) return origin;
+        }catch(e){}
+      }
+      return "";
+    }).catch(function(){ return ""; });
+  }
+
+  function resolveOrigin(){
+    return fetchFeedOrigin().then(function(feed){
+      return slash(feed || KERIS_BOOKING_URL || KERIS_DIRECT_URL);
+    });
+  }
 
   function nextFrame(cb){
     // Двойной rAF — надёжнее синхронного reflow: гарантирует, что браузер
@@ -154,10 +188,15 @@
     if(closeTimer){ clearTimeout(closeTimer); closeTimer = null; }
     closing = false;
     modal.classList.remove("is-closing");
-    if(!loaded){
+    if(!loaded && !opening){
+      opening = true;
       frame.addEventListener("load", function(){ if(loader) loader.style.display = "none"; });
-      frame.src = KERIS_BOOKING_URL + (KERIS_BOOKING_URL.indexOf("?") > -1 ? "&" : "?") + "from=site";
-      loaded = true;
+      resolveOrigin().then(function(url){
+        KERIS_BOOKING_URL = url;
+        frame.src = url + (url.indexOf("?") > -1 ? "&" : "?") + "from=site";
+        loaded = true;
+        opening = false;
+      });
     }
     scrollY = window.scrollY || window.pageYOffset || 0;
     modal.setAttribute("aria-hidden", "false");
@@ -188,5 +227,15 @@
     var a = e.target.closest && e.target.closest('a[href="#keris-book"], a[href*="#keris-book"]');
     if(a){ e.preventDefault(); window.kerisBookOpen(); }
   });
+
+  function openFromHash(){
+    if(/keris-book/.test(location.hash || "")) window.kerisBookOpen();
+  }
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", openFromHash);
+  }else{
+    openFromHash();
+  }
+  window.addEventListener("hashchange", openFromHash);
 })();
 </script>

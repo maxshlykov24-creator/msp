@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Cloudflare-туннель только для Telegram Mini App.
+"""Cloudflare-туннель для Mini App и iframe сайта (Tilda).
 
 Публичный sslip.io не меняет. Как только cloudflared выдаёт HTTPS-URL,
-пишет его в /var/www/keris/miniapp-origin.txt и ставит кнопку «Запись»
-у @kerisclubbot (токен из keris-server .env, в лог не печатает).
+пишет его в /var/www/keris/miniapp-origin.txt, публикует в origin-feed
+для сниппета Tilda и ставит кнопку «Запись» у @kerisclubbot
+(токен из keris-server .env, в лог не печатает).
 """
 from __future__ import annotations
 
@@ -12,6 +13,8 @@ import re
 import socket
 import subprocess
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -32,6 +35,11 @@ ORIGIN_FILE = "/var/www/keris/miniapp-origin.txt"
 ENV_FILE = "/root/keris-server/.env"
 CLOUDFLARED = os.environ.get("CLOUDFLARED_BIN", "/usr/local/bin/cloudflared")
 TUNNEL_TARGET = os.environ.get("MINIAPP_TUNNEL_TARGET", "http://127.0.0.1:8088")
+ORIGIN_FEED = os.environ.get(
+    "MINIAPP_ORIGIN_FEED",
+    "https://ntfy.sh/kerisclub-web-origin-v1",
+)
+NTFY_REFRESH_SEC = 6 * 3600
 
 
 def _env(name: str) -> str:
@@ -49,6 +57,28 @@ def _slash(url: str) -> str:
     return url.rstrip("/") + "/"
 
 
+def _ntfy(public: str) -> None:
+    req = urllib.request.Request(
+        ORIGIN_FEED,
+        data=public.encode(),
+        headers={"Title": "keris-origin", "TTL": "86400"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            resp.read()
+        print("miniapp-tunnel: origin-feed ok", flush=True)
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        print(f"miniapp-tunnel: origin-feed error {type(exc).__name__}", flush=True)
+
+
+def _refresh_loop(holder: list[str]) -> None:
+    while True:
+        time.sleep(NTFY_REFRESH_SEC)
+        if holder and holder[0]:
+            _ntfy(holder[0])
+
+
 def publish(url: str) -> None:
     public = _slash(url)
     tmp = ORIGIN_FILE + ".tmp"
@@ -56,6 +86,7 @@ def publish(url: str) -> None:
         fh.write(public + "\n")
     os.replace(tmp, ORIGIN_FILE)
     os.chmod(ORIGIN_FILE, 0o644)
+    _ntfy(public)
     token = _env("CLIENT_BOT_TOKEN")
     if not token:
         print("miniapp-tunnel: URL записан, CLIENT_BOT_TOKEN нет — кнопку бота не ставлю",
@@ -93,6 +124,8 @@ def main() -> int:
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
     )
     current = ""
+    holder: list[str] = [""]
+    threading.Thread(target=_refresh_loop, args=(holder,), daemon=True).start()
     assert proc.stdout is not None
     try:
         for line in proc.stdout:
@@ -104,6 +137,7 @@ def main() -> int:
                 url = found[-1]
                 if url != current:
                     current = url
+                    holder[0] = _slash(url)
                     publish(url)
         return proc.wait()
     except KeyboardInterrupt:
