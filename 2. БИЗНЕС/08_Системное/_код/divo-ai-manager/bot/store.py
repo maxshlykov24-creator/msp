@@ -112,6 +112,7 @@ HARD_PAUSE = (
     "complaint",
     "llm",
     "stuck",
+    "aftersale",
     "команда владельца",
     "авито выкл",
     "авто.ру выкл",

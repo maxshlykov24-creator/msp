@@ -423,10 +423,26 @@ def extract_vins(messages: list[dict] | None) -> list[str]:
     return out
 
 
+def is_existing_buyer(text: str) -> bool:
+    """Уже наш клиент: покупал, залог не снят, сервис после сделки."""
+    raw = (text or "").lower().replace("ё", "е")
+    if re.search(r"покупал|купил[аи]?\s+(у вас|у нас|автомобил|машин)", raw):
+        return True
+    if re.search(r"брал[аи]?\s+у\s+(вас|нас)", raw):
+        return True
+    if re.search(r"залог.{0,48}(не снят|не сняли|висит|числится|сбер|втб)", raw):
+        return True
+    if re.search(r"(снят|снимите|выплачен|гасил)\w*.{0,24}залог", raw):
+        return True
+    return False
+
+
 def urgent_reason(user_text: str, history: list[dict] | None = None) -> str:
-    """В группу менеджеров только когда уже есть номер."""
+    """В группу менеджеров: номер, звонок, жалоба или уже наш покупатель."""
     text = user_text or ""
     hist = list(history or [])
+    if is_existing_buyer(text):
+        return "aftersale"
     phone_now = extract_phone(text)
     if phone_now and is_caller_id_paste(text, hist):
         phone_now = ""
@@ -557,6 +573,7 @@ ASKS_ABOUT_CALL = re.compile(
     re.IGNORECASE,
 )
 CALLBACK_ACK = "Да, это мы. Наберу ещё раз в ближайшее время"
+AFTERSALE_ACK = "Принял. Уточню у коллег и напишу сюда."
 DELETED_INCOMING = re.compile(r"^сообщение удалено\.?$", re.IGNORECASE)
 WANTS_PERSON = re.compile(
     r"("

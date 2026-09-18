@@ -29,6 +29,7 @@ SPECIAL_TASK = {
     "complaint": "жалоба",
     "llm": "бот не смог ответить",
     "media": "нужно отправить фото",
+    "aftersale": "наш клиент, уже покупал",
 }
 PING_WHEN = {
     5: ("⏰", "5 мин"),
@@ -54,6 +55,7 @@ REASON_LINE = {
     "handoff": "нужен живой менеджер",
     "llm": "бот не смог ответить",
     "media": "клиент просит фото",
+    "aftersale": "уже покупал у нас, сервисный вопрос",
 }
 
 THREAD_LIMIT = 6
@@ -71,6 +73,8 @@ CLIENT_TOPICS = (
     (("фото", "видеообзор"), "просит фото"),
     (("ндс", "юрлиц", "на компанию", "по счёту", "по счету"), "покупка на юрлицо"),
     (("вы звонил", "это вы мне звонил", "кто звонил"), "спрашивает про звонок"),
+    (("покупал", "купил у вас", "купил у нас", "брал у вас", "брал у нас"), "уже покупал у нас"),
+    (("залог",), "вопрос по залогу"),
 )
 
 
@@ -355,6 +359,8 @@ def alert_head(wait: str, ping: int = 0, reason: str = "", media_kind: str = "")
             emoji = "⚠️"
         elif reason == "media":
             emoji = "📷"
+        elif reason == "aftersale":
+            emoji = "⭐"
         elif wait == WAIT_CALL:
             emoji = "📞"
         else:
@@ -382,7 +388,10 @@ def format_alert(snap: dict, ping: int = 0) -> str:
     name = snap.get("name") or "без имени"
     car = snap.get("car") or "машина не названа"
     lines.append("▪️ <b>Авто:</b> %s" % _esc(car))
-    lines.append("▪️ <b>Клиент:</b> %s" % _esc(name))
+    if snap.get("existing_buyer") or reason == "aftersale":
+        lines.append("▪️ <b>Клиент:</b> %s · уже покупал у нас" % _esc(name))
+    else:
+        lines.append("▪️ <b>Клиент:</b> %s" % _esc(name))
     vins = [str(v).strip().upper() for v in (snap.get("client_vins") or []) if str(v).strip()]
     if vins:
         trade = "обмен" in (snap.get("brief") or "").lower()

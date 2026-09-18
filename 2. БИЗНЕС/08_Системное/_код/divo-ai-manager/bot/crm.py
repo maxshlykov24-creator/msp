@@ -34,10 +34,10 @@ from bot.config import settings
 
 log = logging.getLogger("crm")
 
-URGENT_REASONS = frozenset({"phone", "call", "complaint", "handoff"})
+URGENT_REASONS = frozenset({"phone", "call", "complaint", "handoff", "aftersale"})
 # Номер сам по себе не глушит чат: клиент часто пишет вопрос и телефон одной
 # пачкой. Карточку менеджеру всё равно шлём. Молчим только когда нужен человек.
-PAUSE_REASONS = frozenset({"call", "complaint", "handoff", "stuck", "llm"})
+PAUSE_REASONS = frozenset({"call", "complaint", "handoff", "stuck", "llm", "aftersale"})
 
 if str(settings.root / "tools") not in sys.path:
     sys.path.insert(0, str(settings.root / "tools"))
@@ -264,10 +264,13 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         channel = "Telegram"
     if reason == "media":
         wait = WAIT_CHAT
+    elif reason == "aftersale":
+        wait = WAIT_CHAT
     else:
         wait = WAIT_CALL if phone or reason in {"phone", "call"} else WAIT_CHAT
     client_vins = nudge.extract_vins(history)
     crm = dict(doc.get("crm") or {})
+    existing_buyer = reason == "aftersale" or nudge.is_existing_buyer(ask)
     core = {
         "reason": reason,
         "wait": wait,
@@ -280,6 +283,7 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         "lead_url": crm.get("lead_url") or "",
         "lead_id": crm.get("lead_id") or "",
         "channel": channel,
+        "existing_buyer": existing_buyer,
     }
     return {
         "chat_id": str(chat_id),
@@ -305,6 +309,7 @@ REASON_NOTE = {
     "handoff": "эскалация к менеджеру",
     "llm": "бот не смог ответить",
     "media": "клиент просит фото или видео",
+    "aftersale": "уже покупал у нас, сервис после сделки",
 }
 
 
@@ -609,7 +614,13 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
 
 
 def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) -> None:
-    if not snap.get("phone") and snap.get("reason") not in {"llm", "media"}:
+    if not snap.get("phone") and snap.get("reason") not in {
+        "llm",
+        "media",
+        "aftersale",
+        "handoff",
+        "complaint",
+    }:
         return
     crm = dict(doc.get("crm") or {})
     alert = dict(crm.get("alert") or {})
@@ -627,6 +638,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
             "media_kind",
             "wait",
             "client_vins",
+            "existing_buyer",
         ):
             val = snap.get(key)
             if val:
@@ -656,6 +668,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
             "lead_id": snap.get("lead_id"),
             "media_kind": snap.get("media_kind") or "",
             "url": snap.get("url") or "",
+            "existing_buyer": bool(snap.get("existing_buyer") or snap.get("reason") == "aftersale"),
         },
         "token": secrets.token_hex(4),
     }
@@ -777,8 +790,23 @@ async def capture_if_urgent(chat_id: str | int, texts: list[str]) -> str:
 
 
 async def ack_callback(channel, chat_id: str | int, texts: list[str], reason: str) -> None:
-    """«Это вы звонили» — коротко подтверждаем и отдаём менеджеру, без сказки про дозвон."""
-    if reason != "call" or channel is None:
+    """Коротко подтверждаем клиенту и отдаём менеджеру."""
+    if channel is None:
+        return
+    from bot import human
+
+    if reason == "aftersale":
+        text = human.for_chat(nudge.AFTERSALE_ACK)
+        await channel.send(chat_id, text)
+        store.log_line(chat_id, "никита", text)
+        history = store.load_history(chat_id)
+        last = history[-1] if history else {}
+        if not (last.get("role") == "assistant" and (last.get("content") or "") == text):
+            history = history + [{"role": "assistant", "content": text}]
+            store.save_history(chat_id, history)
+        log.info("чат %s: сервис после покупки, дальше человек", chat_id)
+        return
+    if reason != "call":
         return
     blob = "\n".join(str(t).strip() for t in (texts or []) if str(t).strip())
     history = store.load_history(chat_id)
@@ -824,7 +852,7 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
         try:
             snap = ensure_lead(snap, doc)
             nags = bool(snap.get("nags", True))
-            if reason in {"call", "complaint", "handoff"}:
+            if reason in {"call", "complaint", "handoff", "aftersale"}:
                 nags = True
         except Exception:
             log.exception("amo по чату %s не записалась", chat_id)

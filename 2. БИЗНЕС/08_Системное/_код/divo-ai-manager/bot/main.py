@@ -234,9 +234,11 @@ def silent_reason(
     handoff: bool = False,
     llm_dead: bool = False,
 ) -> str:
-    """Повод замолчать и отдать человеку. Без номера менеджеру не отдаём."""
+    """Повод замолчать и отдать человеку."""
     if llm_dead:
         return "llm"
+    if nudge.is_existing_buyer(user_text):
+        return "aftersale"
     if not nudge.history_has_phone(history):
         return ""
     if nudge.is_complaint(user_text):

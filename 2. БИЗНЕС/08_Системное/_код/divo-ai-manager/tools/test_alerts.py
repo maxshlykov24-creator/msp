@@ -11,6 +11,7 @@ from bot.nudge import (
     extract_phone_from_history,
     is_caller_id_paste,
     is_complaint,
+    is_existing_buyer,
     asked_leasing,
     asked_torg,
     asked_heater,
@@ -141,7 +142,17 @@ def test_urgent_reason():
 
     assert "phone" in URGENT_REASONS
     assert "phone" not in PAUSE_REASONS
-    assert {"call", "complaint", "handoff"} <= PAUSE_REASONS
+    assert {"call", "complaint", "handoff", "aftersale"} <= PAUSE_REASONS
+    assert "aftersale" in URGENT_REASONS
+    assert is_existing_buyer(
+        "Здравствуйте! 3 сентября покупал автомобиль с номером 100. Залог пока не снят."
+    )
+    assert is_existing_buyer("Гасил залог в ВТБ, а тут уже 2 недели")
+    assert not is_existing_buyer("Хочу купить X-Trail, цена какая?")
+    assert urgent_reason(
+        "3 сентября покупал автомобиль с номером 100. Залог пока не снят.",
+        [],
+    ) == "aftersale"
     assert urgent_reason("это развод", []) == ""
     assert urgent_reason("дайте живого человека", []) == ""
     hist = [{"role": "user", "content": "мой 8 900 111-22-33"}]
@@ -544,6 +555,23 @@ def test_alert_text():
     assert "▪️ <b>Контекст:</b>" in media
     assert "клиент просит фото" in media
     assert "Вопрос цены" in media
+    buyer = format_alert(
+        {
+            "wait": "chat",
+            "name": "Роман",
+            "car": "FAW Bestune NAT",
+            "channel": "Авито",
+            "reason": "aftersale",
+            "existing_buyer": True,
+            "phone": "79001112233",
+            "brief": "Уже покупал у нас. Вопрос по залогу.",
+        },
+        0,
+    )
+    assert "Наш клиент, уже покупал" in buyer
+    assert "уже покупал у нас" in buyer
+    assert "сервисный вопрос" in buyer
+    assert "Роман" in buyer
     assert "Крыма" not in media
     from bot.alerts import with_media_brief
 
