@@ -104,11 +104,184 @@ def validate_schema(client: AmoClient) -> dict[int, dict[str, Any]]:
     return pipelines
 
 
+def _plural(num: int, one: str, few: str, many: str) -> str:
+    n10, n100 = num % 10, num % 100
+    if n10 == 1 and n100 != 11:
+        return one
+    if 2 <= n10 <= 4 and not 12 <= n100 <= 14:
+        return few
+    return many
+
+
+def _pretty_h(mins: int) -> int | float:
+    if mins <= 0:
+        return 0
+    rounded = round(mins / 60, 1)
+    if abs(rounded - round(rounded)) < 1e-9:
+        return int(round(rounded))
+    return rounded
+
+
+def _parse_hhmm(raw: str) -> int | None:
+    parts = str(raw or "").strip().split(":")
+    if len(parts) < 2:
+        return None
+    try:
+        hours, minutes = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if hours < 0 or minutes < 0 or minutes >= 60:
+        return None
+    return hours * 60 + minutes
+
+
+def _overlap_min(a0: datetime, a1: datetime, b0: datetime, b1: datetime) -> int:
+    lo = max(a0, b0)
+    hi = min(a1, b1)
+    if hi <= lo:
+        return 0
+    return int((hi - lo).total_seconds() // 60)
+
+
+def _shift_window(shift: dict[str, Any]) -> tuple[datetime, datetime] | None:
+    try:
+        day = datetime.fromisoformat(str(shift.get("date_iso") or "")[:10])
+    except ValueError:
+        return None
+    start_m = _parse_hhmm(str(shift.get("starts_at") or ""))
+    end_m = _parse_hhmm(str(shift.get("ends_at") or ""))
+    if start_m is None or end_m is None or end_m <= start_m:
+        return None
+    start = day + timedelta(minutes=start_m)
+    end = day + timedelta(minutes=end_m)
+    return start, end
+
+
+def _load_block(
+    bookings: list[dict[str, Any]],
+    shifts: list[dict[str, Any]],
+    start: datetime,
+    end: datetime,
+    masters_map: dict[str, str],
+) -> dict[str, Any]:
+    by_master: dict[str, dict[str, int]] = defaultdict(lambda: {"occupied_min": 0, "available_min": 0})
+    available = 0
+    for shift in shifts:
+        window = _shift_window(shift)
+        if window is None:
+            continue
+        mins = _overlap_min(window[0], window[1], start, end)
+        if not mins:
+            continue
+        available += mins
+        mid = str(shift.get("master_id") or "")
+        by_master[mid]["available_min"] += mins
+    occupied = 0
+    for row in bookings:
+        if str(row.get("status") or "") == "cancelled":
+            continue
+        starts = row.get("starts_at")
+        ends = row.get("ends_at")
+        if starts is None or ends is None:
+            continue
+        mins = _overlap_min(_naive(starts), _naive(ends), start, end)
+        if not mins:
+            continue
+        occupied += mins
+        mid = str(row.get("master_id") or "")
+        by_master[mid]["occupied_min"] += mins
+    masters = []
+    for mid, data in sorted(by_master.items(), key=lambda x: -x[1]["occupied_min"]):
+        if not data["available_min"] and not data["occupied_min"]:
+            continue
+        masters.append(
+            {
+                "id": mid,
+                "name": masters_map.get(mid, mid or "без мастера"),
+                "occupied_min": data["occupied_min"],
+                "available_min": data["available_min"],
+                "occupied_h": _pretty_h(data["occupied_min"]),
+                "available_h": _pretty_h(data["available_min"]),
+            }
+        )
+    return {
+        "occupied_min": occupied,
+        "available_min": available,
+        "occupied_h": _pretty_h(occupied),
+        "available_h": _pretty_h(available),
+        "show": available > 0,
+        "masters": masters,
+    }
+
+
+def _sleeping_count(bookings: list[dict[str, Any]], now: datetime) -> int:
+    by_phone: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in bookings:
+        phone = str(row.get("owner_phone") or "").strip()
+        if phone:
+            by_phone[phone].append(row)
+    count = 0
+    closed = {"cancelled", "no_show"}
+    for rows in by_phone.values():
+        usable = [b for b in rows if b.get("starts_at") is not None]
+        future = [
+            b for b in usable
+            if str(b.get("status") or "") not in closed and _naive(b["starts_at"]) > now
+        ]
+        if future:
+            continue
+        visits = [
+            b for b in usable
+            if is_visit(str(b.get("status") or ""), _naive(b["starts_at"]), now)
+        ]
+        if not visits:
+            continue
+        last = max(_naive(b["starts_at"]) for b in visits)
+        if (now - last).days >= settings.sleeping_days:
+            count += 1
+    return count
+
+
+def _sleeping_task(count: int) -> dict[str, Any] | None:
+    if count <= 0:
+        return None
+    noun = _plural(count, "клиент", "клиента", "клиентов")
+    verb = "не был" if noun == "клиент" else "не были"
+    return {
+        "kind": "sleeping",
+        "badge": "салон",
+        "title": f"{count} {noun} {verb} {settings.sleeping_days}+ дней",
+        "sub": "Можно написать и пригласить на стрижку.",
+    }
+
+
+def _merge_master_load(masters: list[dict[str, Any]], load: dict[str, Any]) -> list[dict[str, Any]]:
+    by_id = {str(m["id"]): dict(m) for m in masters}
+    for row in load.get("masters") or []:
+        mid = str(row.get("id") or "")
+        extra = {"occupied_h": row.get("occupied_h"), "available_h": row.get("available_h")}
+        if mid in by_id:
+            by_id[mid].update(extra)
+        elif row.get("available_min") or row.get("occupied_min"):
+            by_id[mid] = {
+                "id": mid,
+                "name": row.get("name") or mid,
+                "visits": 0,
+                "revenue": 0,
+                **extra,
+            }
+    return sorted(by_id.values(), key=lambda m: (-int(m.get("visits") or 0), str(m.get("name") or "")))
+
+
 def _kennel_period(leads: list[dict[str, Any]], start: datetime, end: datetime, now: datetime) -> dict[str, Any]:
     cohort = [l for l in leads if _in_range(l.get("created_at"), start, end)]
     booked_statuses = {settings.status_booked, settings.status_docs, settings.status_sold}
     booked = [l for l in cohort if l.get("status_id") in booked_statuses]
-    sold = [l for l in cohort if l.get("status_id") == settings.status_sold]
+    cohort_sold = [l for l in cohort if l.get("status_id") == settings.status_sold]
+    closed = [
+        l for l in leads
+        if l.get("status_id") == settings.status_sold and _in_range(l.get("closed_at"), start, end)
+    ]
     waiting = sum(1 for l in leads if l.get("status_id") == settings.status_wait_litter)
     sources = []
     for lead in cohort:
@@ -119,19 +292,22 @@ def _kennel_period(leads: list[dict[str, Any]], start: datetime, end: datetime, 
     if sources:
         name, count = Counter(sources).most_common(1)[0]
         top = {"name": name, "count": count, "of": len(cohort)}
-    sold_sum = sum(int(l.get("price") or 0) for l in sold)
+    sold_sum = sum(int(l.get("price") or 0) for l in closed)
+    sold_n = len(closed)
     return {
         "leads": len(cohort),
         "booked": len(booked),
-        "sold": len(sold),
+        "sold": sold_n,
         "sold_sum": sold_sum,
+        "avg_check": round(sold_sum / sold_n) if sold_n else 0,
+        "show_avg_check": sold_n > 0,
         "waiting_litter": waiting,
         "show_waiting": waiting > 0,
         "show_source": bool(top),
         "funnel": [
             {"name": "Заявка", "count": len(cohort)},
             {"name": "Бронь", "count": len(booked)},
-            {"name": "Продано", "count": len(sold)},
+            {"name": "Продано", "count": len(cohort_sold)},
         ],
         "top_source": top,
         "prev_leads": None,
@@ -194,17 +370,20 @@ def _grooming_period(
     show_repeat: bool,
 ) -> dict[str, Any]:
     rows = [b for b in visits if start <= _naive(b["starts_at"]) < end]
+    empty = {
+        "revenue": 0,
+        "visits": 0,
+        "avg_check": 0,
+        "show_avg_check": False,
+        "no_show": 0,
+        "repeat": 0,
+        "show_no_show": False,
+        "show_repeat": False,
+        "masters": [],
+        "prev_visits": None,
+    }
     if not rows:
-        return {
-            "revenue": 0,
-            "visits": 0,
-            "no_show": 0,
-            "repeat": 0,
-            "show_no_show": False,
-            "show_repeat": False,
-            "masters": [],
-            "prev_visits": None,
-        }
+        return empty
     by_master: dict[str, dict[str, Any]] = defaultdict(lambda: {"visits": 0, "revenue": 0})
     phones: dict[str, int] = defaultdict(int)
     for row in rows:
@@ -223,9 +402,13 @@ def _grooming_period(
         }
         for mid, data in sorted(by_master.items(), key=lambda x: -x[1]["visits"])
     ]
+    revenue = sum(int(r.get("price") or 0) for r in rows)
+    visits_n = len(rows)
     return {
-        "revenue": sum(int(r.get("price") or 0) for r in rows),
-        "visits": len(rows),
+        "revenue": revenue,
+        "visits": visits_n,
+        "avg_check": round(revenue / visits_n) if visits_n else 0,
+        "show_avg_check": visits_n > 0,
         "no_show": 0,
         "repeat": sum(1 for c in phones.values() if c >= 2),
         "show_no_show": False,
@@ -253,7 +436,7 @@ def collect(client: AmoClient) -> dict[str, Any]:
     week_k["prev_leads"] = _kennel_period(sales, prev_week0, week0, now)["leads"]
     month_k["prev_leads"] = _kennel_period(sales, prev_month0, month0, now)["leads"]
 
-    bookings, masters_rows = fetch_bookings()
+    bookings, masters_rows, shifts = fetch_bookings()
     now_naive = _naive(now)
     usable = [b for b in bookings if b.get("starts_at") is not None]
     has_no_show = any(str(b.get("status")) == "no_show" for b in usable)
@@ -263,6 +446,10 @@ def collect(client: AmoClient) -> dict[str, Any]:
     ]
     no_shows = [b for b in usable if str(b.get("status")) == "no_show"]
     masters_map = {str(m["id"]): str(m.get("name") or m["id"]) for m in masters_rows}
+    ahead = _load_block(
+        usable, shifts, now_naive, _naive(now + timedelta(days=7)), masters_map
+    )
+    sleeping = _sleeping_count(usable, now_naive)
 
     def groom(start: datetime, end: datetime, repeat: bool) -> dict[str, Any]:
         block = _grooming_period(visits, _naive(start), _naive(end), masters_map, has_no_show, repeat)
@@ -270,6 +457,12 @@ def collect(client: AmoClient) -> dict[str, Any]:
             ns = [b for b in no_shows if _naive(start) <= _naive(b["starts_at"]) < _naive(end)]
             block["no_show"] = len(ns)
             block["show_no_show"] = True
+        load = _load_block(usable, shifts, _naive(start), _naive(end), masters_map)
+        block["load"] = load
+        block["ahead"] = ahead
+        block["sleeping"] = sleeping
+        block["show_sleeping"] = sleeping > 0
+        block["masters"] = _merge_master_load(block["masters"], load)
         return block
 
     week_g = groom(week0, end, False)
@@ -308,6 +501,9 @@ def collect(client: AmoClient) -> dict[str, Any]:
             "title": f"{len(pending_tomorrow)} записей без подтверждения",
             "sub": "Администратор ещё не подтвердил визит.",
         })
+    sleeping_card = _sleeping_task(sleeping)
+    if sleeping_card:
+        tasks.append(sleeping_card)
 
     today_leads = sum(1 for l in sales if _in_range(l.get("created_at"), today0, tomorrow0))
 

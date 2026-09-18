@@ -13,6 +13,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
+
 from bot import amojo_http, autoru_loop, avito_loop, avito_match, crm, human, llm, nudge, prompt, store
 from bot.alerts import AlertBot
 from bot.autoru import Autoru
@@ -55,6 +57,21 @@ inflight: set[str] = set()
 CHANNELS: dict[str, object] = {}
 # Сколько раз переспрашиваем модель, если клиент дописывает во время обдумывания.
 MAX_MERGE_ROUNDS = 2
+# Клиент заблокировал бота или удалил аккаунт: в такой чат не пройдёт ни одно
+# сообщение. Догон обязан замолчать навсегда, иначе он ломится туда каждую
+# минуту, а счётчик касаний не растёт — отправка падает до его записи.
+CHAT_GONE = (
+    "bot was blocked by the user",
+    "user is deactivated",
+    "chat not found",
+    "bot was kicked",
+    "peer_id_invalid",
+)
+
+
+def chat_gone(error: str) -> bool:
+    low = (error or "").lower()
+    return any(mark in low for mark in CHAT_GONE)
 
 
 def offset_path() -> Path:
@@ -1002,7 +1019,16 @@ async def send_nudge(chat_id: int | str) -> None:
     meta = doc.get("nudge") or {}
     if nudge.ready_to_send(meta) != step:
         return
-    await channel.send(chat_id, text)
+    try:
+        await channel.send(chat_id, text)
+    except Exception as exc:  # noqa: BLE001
+        if not chat_gone(str(exc)):
+            raise
+        meta["waiting"] = False
+        doc["nudge"] = meta
+        store.save_doc(chat_id, doc)
+        log.info("догон чат %s: чат недоступен (%s), больше не пишу", chat_id, exc)
+        return
     store.log_line(chat_id, "никита", text)
     history = list(doc.get("messages") or [])
     history.append({"role": "assistant", "content": text})
@@ -1120,6 +1146,10 @@ async def poll_avito(tg: Telegram) -> None:
         while True:
             try:
                 await avito_loop.poll_once(api, channel, schedule, pending)
+            except httpx.HTTPError as exc:
+                # Таймаут до Авито лечится следующим опросом. Трейсбек на него
+                # только прячет настоящие поломки в логе.
+                log.warning("авито опрос: сеть, %s", exc)
             except Exception:
                 log.exception("авито опрос упал")
             await asyncio.sleep(max(settings.avito_poll_sec, 3.0))
@@ -1146,6 +1176,8 @@ async def poll_autoru(tg: Telegram) -> None:
         while True:
             try:
                 await autoru_loop.poll_once(api, channel, schedule, pending)
+            except httpx.HTTPError as exc:
+                log.warning("авто.ру опрос: сеть, %s", exc)
             except Exception:
                 log.exception("авто.ру опрос упал")
             await asyncio.sleep(max(settings.autoru_poll_sec, 3.0))

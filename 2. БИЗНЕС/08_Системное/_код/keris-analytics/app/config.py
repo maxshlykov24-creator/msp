@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     data_dir: str = "./data"
     run_scheduler: bool = True
+    sleeping_days: int = 60
 
 
 settings = Settings()

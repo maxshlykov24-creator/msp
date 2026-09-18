@@ -151,6 +151,12 @@ window.KERIS_PULSE_MOCK = {
         badge: "завтра",
         title: "2 записи без подтверждения",
         sub: "Администратор ещё не подтвердил визит."
+      },
+      {
+        kind: "sleeping",
+        badge: "салон",
+        title: "8 клиентов не были 60+ дней",
+        sub: "Можно написать и пригласить на стрижку."
       }
     ],
     kennel_new_leads: 0,
@@ -164,16 +170,18 @@ window.KERIS_PULSE_MOCK = {
       kennel: {
         leads: 112,
         prev_leads: 150,
-        booked: 0,
-        sold: 0,
-        sold_sum: 0,
+        booked: 4,
+        sold: 1,
+        sold_sum: 180000,
+        avg_check: 180000,
+        show_avg_check: true,
         waiting_litter: 0,
         show_waiting: false,
         show_source: false,
         funnel: [
           {name: "Заявка", count: 112},
-          {name: "Бронь", count: 0},
-          {name: "Продано", count: 0}
+          {name: "Бронь", count: 4},
+          {name: "Продано", count: 1}
         ],
         top_source: null
       },
@@ -181,15 +189,21 @@ window.KERIS_PULSE_MOCK = {
         revenue: 96000,
         prev_visits: 11,
         visits: 14,
+        avg_check: 6857,
+        show_avg_check: true,
         no_show: 0,
         repeat: 0,
         show_no_show: false,
         show_repeat: false,
+        sleeping: 8,
+        show_sleeping: true,
+        load: {occupied_h: 18, available_h: 32, show: true},
+        ahead: {occupied_h: 11, available_h: 24, show: true},
         masters: [
-          {id: "svetlana", name: "Светлана", visits: 5, revenue: 36000},
-          {id: "alla", name: "Алла", visits: 4, revenue: 27000},
-          {id: "anastasiya", name: "Анастасия", visits: 3, revenue: 21000},
-          {id: "olga", name: "Ольга", visits: 2, revenue: 12000}
+          {id: "svetlana", name: "Светлана", visits: 5, revenue: 36000, occupied_h: 7, available_h: 10},
+          {id: "alla", name: "Алла", visits: 4, revenue: 27000, occupied_h: 5, available_h: 8},
+          {id: "anastasiya", name: "Анастасия", visits: 3, revenue: 21000, occupied_h: 4, available_h: 8},
+          {id: "olga", name: "Ольга", visits: 2, revenue: 12000, occupied_h: 2, available_h: 6}
         ]
       }
     },
@@ -199,16 +213,18 @@ window.KERIS_PULSE_MOCK = {
       kennel: {
         leads: 411,
         prev_leads: 62,
-        booked: 0,
-        sold: 0,
-        sold_sum: 0,
+        booked: 9,
+        sold: 3,
+        sold_sum: 540000,
+        avg_check: 180000,
+        show_avg_check: true,
         waiting_litter: 0,
         show_waiting: false,
         show_source: false,
         funnel: [
           {name: "Заявка", count: 411},
-          {name: "Бронь", count: 0},
-          {name: "Продано", count: 0}
+          {name: "Бронь", count: 9},
+          {name: "Продано", count: 3}
         ],
         top_source: null
       },
@@ -216,15 +232,21 @@ window.KERIS_PULSE_MOCK = {
         revenue: 478000,
         prev_visits: 51,
         visits: 67,
+        avg_check: 7134,
+        show_avg_check: true,
         no_show: 0,
         repeat: 9,
         show_no_show: false,
         show_repeat: true,
+        sleeping: 8,
+        show_sleeping: true,
+        load: {occupied_h: 86, available_h: 140, show: true},
+        ahead: {occupied_h: 11, available_h: 24, show: true},
         masters: [
-          {id: "svetlana", name: "Светлана", visits: 22, revenue: 162000},
-          {id: "alla", name: "Алла", visits: 18, revenue: 128000},
-          {id: "anastasiya", name: "Анастасия", visits: 15, revenue: 108000},
-          {id: "olga", name: "Ольга", visits: 12, revenue: 80000}
+          {id: "svetlana", name: "Светлана", visits: 22, revenue: 162000, occupied_h: 28, available_h: 40},
+          {id: "alla", name: "Алла", visits: 18, revenue: 128000, occupied_h: 22, available_h: 36},
+          {id: "anastasiya", name: "Анастасия", visits: 15, revenue: 108000, occupied_h: 20, available_h: 36},
+          {id: "olga", name: "Ольга", visits: 12, revenue: 80000, occupied_h: 16, available_h: 28}
         ]
       }
     }
@@ -287,8 +309,20 @@ function card(task){
     '</small></div></div>';
 }
 
-function trustTile(value, label){
-  return '<div><b>' + value + '</b><span>' + label + '</span></div>';
+function hoursPair(load){
+  if(!load || !load.show) return "";
+  return n(load.occupied_h) + " из " + n(load.available_h) + " ч";
+}
+
+function combinedHero(k, g, label){
+  var money = ((k && k.sold_sum) || 0) + ((g && g.revenue) || 0);
+  if(!money) return "";
+  var bits = [];
+  if(k && k.sold) bits.push("продали " + n(k.sold));
+  if(g && g.visits) bits.push("салон " + vizitov(g.visits));
+  return '<div class="pulse-hero" style="margin-bottom:8px"><div class="tag">деньги · ' + label + '</div>' +
+    '<div class="num">' + rub(money) + '</div>' +
+    '<p class="sub">' + (bits.length ? bits.join(", ") + "." : "") + '</p></div>';
 }
 
 function funnelHtml(funnel, source){
@@ -315,7 +349,9 @@ function masterBars(masters, filterId){
   return '<div class="funnel">' + rows.map(function(m){
     var w = Math.max(4, Math.round(m.visits * 100 / max));
     return '<div class="funnel-row"><div class="lab"><span>' + m.name + '</span><small>' +
-      n(m.visits) + ' · ' + rub(m.revenue) + '</small></div><div class="bar"><i style="width:' + w + '%"></i></div></div>';
+      n(m.visits) + ' · ' + rub(m.revenue) +
+      (m.available_h ? ' · ' + n(m.occupied_h || 0) + ' из ' + n(m.available_h) + ' ч' : '') +
+      '</small></div><div class="bar"><i style="width:' + w + '%"></i></div></div>';
   }).join("") + '</div>';
 }
 
@@ -323,7 +359,12 @@ function kennelChapter(block, periodLabel){
   if(!block || block.leads == null){
     return '<div class="empty"><div class="big">🐾</div><h3>По питомнику пусто</h3><p>За этот срок новых заявок нет.</p></div>';
   }
-  var soldSub = block.sold && block.sold_sum ? rub(block.sold_sum) : "за период";
+  var soldSub = "за период";
+  if(block.show_avg_check && block.avg_check){
+    soldSub = "чек " + rub(block.avg_check);
+  } else if(block.sold && block.sold_sum){
+    soldSub = rub(block.sold_sum);
+  }
   var tiles = [];
   tiles.push(trustTile(n(block.booked), "бронь · " + periodLabel));
   tiles.push(trustTile(n(block.sold), "продали · " + soldSub));
@@ -347,16 +388,28 @@ function kennelChapter(block, periodLabel){
 }
 
 function groomingChapter(block, periodLabel, ui){
-  if(!block || !block.visits){
+  var hasVisits = block && block.visits;
+  var hasLoad = block && block.load && block.load.show;
+  var hasAhead = block && block.ahead && block.ahead.show;
+  if(!block || (!hasVisits && !hasLoad && !hasAhead)){
     return '<div class="empty"><div class="big">✂️</div><h3>По салону пусто</h3><p>За этот срок визитов нет.</p></div>';
   }
   var tiles = [];
-  tiles.push(trustTile(n(block.visits), "визитов · " + periodLabel));
+  tiles.push(trustTile(n(block.visits || 0), "визитов · " + periodLabel));
+  if(hasLoad){
+    tiles.push(trustTile(hoursPair(block.load), "занято · " + periodLabel));
+  }
+  if(hasAhead){
+    tiles.push(trustTile(hoursPair(block.ahead), "на неделю вперёд"));
+  }
   if(block.show_no_show){
     tiles.push(trustTile(n(block.no_show), "не пришли"));
   }
   if(block.show_repeat){
     tiles.push(trustTile(n(block.repeat), "снова пришли"));
+  }
+  if(block.show_sleeping){
+    tiles.push(trustTile(n(block.sleeping), "не были 60+ дней"));
   }
   var compare = block.prev_visits != null
     ? "На прошлой неделе было " + vizitov(block.prev_visits) + "."
@@ -364,6 +417,12 @@ function groomingChapter(block, periodLabel, ui){
   if(periodLabel.indexOf("30") >= 0 && block.prev_visits != null){
     compare = "За предыдущие 30 дней было " + vizitov(block.prev_visits) + ".";
   }
+  var checkLine = block.show_avg_check && block.avg_check
+    ? "Средний чек " + rub(block.avg_check) + "."
+    : "";
+  var sub = [checkLine, compare].filter(Boolean).join(" ");
+  var heroTag = hasVisits ? "выручка визитов · " + periodLabel : "запись вперёд";
+  var heroNum = hasVisits ? rub(block.revenue) : hoursPair(block.ahead);
   var masters = block.masters || [];
   var chips = "";
   if(masters.length >= 2){
@@ -375,10 +434,10 @@ function groomingChapter(block, periodLabel, ui){
   }
   return '<section class="chapter" data-ch="groom">' +
     '<div class="eyebrow">Груминг</div>' +
-    '<div class="pulse-hero"><div class="tag">выручка визитов · ' + periodLabel + '</div>' +
-    '<div class="num">' + rub(block.revenue) + '</div>' +
-    '<p class="sub">' + compare + '</p></div>' +
-    '<div class="trust cols-' + tiles.length + '">' + tiles.join("") + '</div>' +
+    '<div class="pulse-hero"><div class="tag">' + heroTag + '</div>' +
+    '<div class="num">' + heroNum + '</div>' +
+    '<p class="sub">' + sub + '</p></div>' +
+    '<div class="trust cols-' + Math.min(tiles.length, 3) + '">' + tiles.join("") + '</div>' +
     chips +
     '<button type="button" class="details-toggle" data-open="groom">Кто стрижёт</button>' +
     '<div class="details" id="det-groom">' + masterBars(masters, masters.length >= 2 ? ui.master : "all") + '</div></section>';
@@ -421,6 +480,7 @@ function startDashboard(D){
   }
   var pack = (D.periods || {})[ui.period] || {};
   var html = "";
+  if(ui.dir === "all") html += combinedHero(pack.kennel, pack.grooming, pack.label || "");
   if(ui.dir !== "groom") html += kennelChapter(pack.kennel, pack.label || "");
   if(ui.dir !== "pet") html += groomingChapter(pack.grooming, pack.label || "", ui);
   root.innerHTML = html;

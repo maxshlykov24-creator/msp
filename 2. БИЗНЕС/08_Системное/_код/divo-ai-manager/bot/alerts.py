@@ -59,6 +59,21 @@ REASON_LINE = {
 }
 
 THREAD_LIMIT = 6
+# Так Telegram отвечает, когда сообщения уже нет или снять его нельзя в
+# принципе. Повтор ничего не изменит, а id обязан уйти из posts: пока он там
+# лежал, каждый тик отправлял его в API заново.
+DELETE_FINAL = (
+    "message to delete not found",
+    "message can't be deleted",
+    "message identifier is not specified",
+    "message_id_invalid",
+    "chat not found",
+    "bot was blocked by the user",
+    "bot is not a member",
+    "bot was kicked",
+    "not enough rights",
+    "user is deactivated",
+)
 LINE_LIMIT = 160
 BRIEF_LIMIT = 220
 CLIENT_TOPICS = (
@@ -422,6 +437,12 @@ def format_alert(snap: dict, ping: int = 0) -> str:
     return "\n".join(lines)
 
 
+def delete_final(error: str) -> bool:
+    """Снимать сообщение больше не нужно: его нет либо права не вернутся."""
+    low = (error or "").lower()
+    return any(mark in low for mark in DELETE_FINAL)
+
+
 def take_keyboard(token: str, wait: str = WAIT_CALL) -> dict:
     label = "📞 Звоню" if wait == WAIT_CALL else "✍️ Беру"
     return {"inline_keyboard": [[{"text": label, "callback_data": "take:%s" % token}]]}
@@ -657,6 +678,9 @@ class AlertBot:
             )
             return True
         except Exception as exc:  # noqa: BLE001
+            if delete_final(str(exc)):
+                log.debug("delete %s/%s: %s", chat_id, message_id, exc)
+                return True
             log.warning("delete %s/%s: %s", chat_id, message_id, exc)
             return False
 
