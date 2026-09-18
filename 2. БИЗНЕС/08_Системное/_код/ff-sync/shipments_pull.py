@@ -337,7 +337,12 @@ def handle_wb_fbs(client, cab, orders):
 
 def handle_wb_fbo(client, cab, orders):
     n = 0
+    known = map_shipments(cab["id"], "fbo")
     for order in orders:
+        status = "отменён" if order.get("isCancel") else "со склада WB"
+        row = known.get(str(order.get("srid") or ""))
+        if row is not None and (row["status"] or "") == status:
+            continue
         bag = []
         collect_marks(order, bag)
         article = order.get("supplierArticle") or ""
@@ -348,7 +353,7 @@ def handle_wb_fbo(client, cab, orders):
             cab,
             "fbo",
             str(order.get("srid") or ""),
-            "отменён" if order.get("isCancel") else "со склада WB",
+            status,
             day_of(order.get("date")),
             article,
             barcode,
@@ -391,9 +396,21 @@ def need_detail(row, post):
     return statuses_mod.ozon_group(raw) in (statuses_mod.NEW, statuses_mod.ASSEMBLING, statuses_mod.READY)
 
 
+def same_ozon(row, post):
+    """Строка у нас уже такая же, какой её отдаёт площадка."""
+    if statuses_mod.ru(post.get("status") or "") != (row["status"] or ""):
+        return False
+    track = post.get("tracking_number")
+    if track and str(track) != (row["track"] or ""):
+        return False
+    return True
+
+
 def handle_ozon(client, cab, kind, postings, headers):
+    """Отправления Ozon. Пишем дельту: у кабинета 17 тысяч заказов FBO, и
+    перезапись всей истории каждый круг занимала пять минут на одного клиента."""
     n = 0
-    known = map_shipments(cab["id"], kind) if kind == "fbs" else {}
+    known = map_shipments(cab["id"], kind)
     for post in postings or []:
         post = as_dict(post)
         ext_id = str(post.get("posting_number") or "")
@@ -408,8 +425,8 @@ def handle_ozon(client, cab, kind, postings, headers):
             if got:
                 detail = as_dict(got)
                 fetched = True
-        elif kind == "fbs" and row is not None:
-            # ни статус, ни детали не менялись — строку не перезаписываем
+        elif row is not None and same_ozon(row, post):
+            # ни статус, ни трек не менялись — строку не перезаписываем
             continue
         products = detail.get("products") or post.get("products") or []
         if not isinstance(products, list):
