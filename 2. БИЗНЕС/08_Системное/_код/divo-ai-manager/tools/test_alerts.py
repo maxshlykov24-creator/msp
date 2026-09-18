@@ -2225,10 +2225,33 @@ def test_phrasing_leaks():
     assert "не проходит" not in low
     assert low.count("наличный расчет") == 1
     assert "указана за наличный расчет" in low
+    priced = for_chat(
+        "Картой не получится, только наличные. "
+        "Стоимость в объявлении 1 700 000 указана за наличный расчёт. Напишите номер."
+    )
+    plow = priced.lower().replace("ё", "е")
+    assert "не получится" not in plow
+    assert plow.count("наличный расчет") == 1
+    assert "1 700 000" in priced
+    from bot.human import split_bubbles
+
+    two = split_bubbles(
+        "Картой не получится.\n\n"
+        "Стоимость в объявлении 1 700 000 указана за наличный расчёт. Напишите номер."
+    )
+    blob = " ".join(two).lower().replace("ё", "е")
+    assert blob.count("наличный расчет") == 1
+    assert "1 700 000" in " ".join(two)
 
     broken = for_chat("Пробовал ошибиться маркой. Близкого по бюджету сейчас нет")
     assert "ошибиться" not in broken.lower()
     assert "близкого" in broken.lower()
+    narrate = for_chat(
+        "Все верно, это она же, просто пробовал уточнить, какая именно вас интересует. "
+        "Она у нас в наличии, можно приехать посмотреть с 10:00 до 20:00"
+    )
+    assert "пробовал" not in narrate.lower()
+    assert "в наличии" in narrate.lower()
 
     used = {h: "" for h in HEADER}
     used["VIN"] = "TESTVIN0000000001"

@@ -295,7 +295,7 @@ SELF_VOCATIVE = re.compile(
 # Ломаный рассказ про поиск в стоке. Клиенту нужен итог, не процесс.
 SEARCH_TALK = re.compile(
     r"("
-    r"пробовал\w*\s+ошибиться(\s+маркой)?|"
+    r"пробовал\w*\s+(ошибиться|подобрать|уточнить)|"
     r"ошибиться\s+маркой|"
     r"если\s+ошибся\s+маркой"
     r")",
@@ -405,27 +405,36 @@ def drop_qual(text: str) -> str:
     return _tidy(text, original) if text else ""
 
 
+def _has_cash_price(text: str) -> bool:
+    low = (text or "").lower().replace("ё", "е")
+    return "наличн" in low and "расчет" in low
+
+
+def is_cash_stub(text: str) -> bool:
+    """Пузырь целиком шаблон «цена указана за наличный расчет»."""
+    body = re.sub(
+        r"^(добр(?:ый|ое|ой)\s+\w+!)\s*",
+        "",
+        (text or "").strip(),
+        flags=re.IGNORECASE,
+    )
+    body = drop_end_period(body).strip().lower().replace("ё", "е")
+    return body == CARD_SOFT
+
+
 def soften_card(text: str) -> str:
     """Отказ по карте заменить на формулировку через цену за наличный расчет.
 
-    Меняем предложение целиком, а не кусок: «картой не работаем, поэтому и
-    комиссии нет» после точечной замены превращается в кашу. Если мягкая
-    формулировка в реплике уже есть, предложение просто выкидываем.
+    Сначала выкидываем отказ в лоб. Если в оставшемся уже есть мысль про
+    наличный расчет, шаблон не клеим: иначе клиент читает одно и то же дважды.
     """
     original = text or ""
     if not any(p.search(original) for p in CARD_REFUSAL):
         return original
     parts = re.split(r"(?<=[.!?])\s+", original)
-    kept: list[str] = []
-    for part in parts:
-        if not any(p.search(part) for p in CARD_REFUSAL):
-            kept.append(part)
-            continue
-        tail = "." if part.rstrip().endswith(".") else ""
-        soft = CARD_SOFT[0].upper() + CARD_SOFT[1:] + tail
-        already = any("наличный расчет" in k.lower() for k in kept)
-        if not already:
-            kept.append(soft)
+    kept = [p for p in parts if p.strip() and not any(r.search(p) for r in CARD_REFUSAL)]
+    if not any(_has_cash_price(p) for p in kept):
+        kept.insert(0, CARD_SOFT[0].upper() + CARD_SOFT[1:])
     text = " ".join(k for k in kept if k.strip())
     if not text.strip():
         text = CARD_SOFT[0].upper() + CARD_SOFT[1:]
@@ -1563,7 +1572,19 @@ def split_bubbles(text: str) -> list[str]:
         head = blocks[: MAX_BUBBLES - 1]
         head.append("\n".join(blocks[MAX_BUBBLES - 1:]))
         blocks = head
-    return [x for x in (for_chat(glue_lines(b)) for b in blocks) if x]
+    bubbles = [x for x in (for_chat(glue_lines(b)) for b in blocks) if x]
+    return collapse_cash_bubbles(bubbles)
+
+
+def collapse_cash_bubbles(bubbles: list[str]) -> list[str]:
+    """Шаблон «цена указана за наличный расчет» рядом с уже сказанной ценой не дублируем."""
+    if len(bubbles) < 2:
+        return bubbles
+    stubs = {i for i, b in enumerate(bubbles) if is_cash_stub(b)}
+    priced = {i for i, b in enumerate(bubbles) if i not in stubs and _has_cash_price(b)}
+    if stubs and priced:
+        return [b for i, b in enumerate(bubbles) if i not in stubs]
+    return bubbles
 
 
 def denies_history(text: str) -> bool:

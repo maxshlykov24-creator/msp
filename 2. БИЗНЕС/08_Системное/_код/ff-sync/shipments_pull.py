@@ -265,14 +265,38 @@ def ozon_marks(detail):
     return uniq_marks(bag)
 
 
+ACTIVE = (statuses_mod.NEW, statuses_mod.ASSEMBLING, statuses_mod.READY)
+
+
 def handle_wb_fbs(client, cab, orders):
+    """Задания WB: статусы у всех, коды и запись — только по изменившимся.
+
+    В кабинете ЛЕГКО ИДЁТ 21 157 заданий за окно. Перезаписывать их все каждый
+    круг — это ~85 тысяч обращений к базе и запрос кодов маркировки на каждую
+    сотню заданий. Статус спрашиваем у всех, это 22 запроса, а пишем дельту.
+    """
     n = 0
+    known = map_shipments(cab["id"], "fbs")
     ids = [str(o.get("id") or "") for o in orders if o.get("id")]
     statuses = wb_statuses(cab["token"], ids)
-    meta = wb_meta(cab["token"], ids)
+    # коды маркировки нужны тому, что ещё в работе: у отгруженного они уже
+    # переданы площадке и лежат у нас
+    asked = [
+        i
+        for i in ids
+        if statuses_mod.wb_group((statuses.get(i) or {}).get("supplier"), (statuses.get(i) or {}).get("wb")) in ACTIVE
+    ]
+    meta = wb_meta(cab["token"], asked) if asked else {}
+    fresh = set(asked)
     for order in orders:
         ext_id = str(order.get("id") or "")
         info = statuses.get(ext_id) or {}
+        status = statuses_mod.wb_text(info.get("supplier"), info.get("wb"))
+        group = statuses_mod.wb_group(info.get("supplier"), info.get("wb"))
+        row = known.get(ext_id)
+        if row is not None and ext_id not in fresh:
+            if (row["status"] or "") == status and (row["status_group"] or "") == group:
+                continue
         skus = order.get("skus") or []
         article = order.get("article") or ""
         barcode = skus[0] if skus else ""
@@ -282,15 +306,17 @@ def handle_wb_fbs(client, cab, orders):
             cab,
             "fbs",
             ext_id,
-            statuses_mod.wb_text(info.get("supplier"), info.get("wb")),
+            status,
             day_of(order.get("createdAt")),
             article,
             barcode,
             cat["name"] or article,
             1,
-            meta.get(ext_id) or [],
+            # коды не спрашивали — те, что есть, не трогаем
+            (meta.get(ext_id) or []) if ext_id in fresh else None,
+            known=row,
             extra={
-                "status_group": statuses_mod.wb_group(info.get("supplier"), info.get("wb")),
+                "status_group": group,
                 "accepted_at": stamp_of(order.get("createdAt")),
                 # у WB в задании нет крайнего срока отгрузки и трек-номера:
                 # идентификатор отправления — сам стикер
@@ -382,6 +408,9 @@ def handle_ozon(client, cab, kind, postings, headers):
             if got:
                 detail = as_dict(got)
                 fetched = True
+        elif kind == "fbs" and row is not None:
+            # ни статус, ни детали не менялись — строку не перезаписываем
+            continue
         products = detail.get("products") or post.get("products") or []
         if not isinstance(products, list):
             products = []
