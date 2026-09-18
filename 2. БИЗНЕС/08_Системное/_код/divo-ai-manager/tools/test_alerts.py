@@ -2177,6 +2177,11 @@ def test_dash_keeps_clause_whole():
         drop_clause_dashes("Машина в наличии — Приезжайте смотреть")
         == "Машина в наличии. Приезжайте смотреть"
     )
+    # Марка латиницей — продолжение мысли, а не новое предложение.
+    assert (
+        drop_clause_dashes("Из седанов в наличии сейчас — Cadillac CTS 2011")
+        == "Из седанов в наличии сейчас, Cadillac CTS 2011"
+    )
     assert drop_clause_dashes("Coolray 1.5 AMT") == "Coolray 1.5 AMT"
 
 

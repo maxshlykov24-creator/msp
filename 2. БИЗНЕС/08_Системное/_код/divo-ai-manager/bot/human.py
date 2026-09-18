@@ -621,13 +621,18 @@ def drop_push_after_contact(text: str, *, allow_invite: bool = False) -> str:
 CLAUSE_DASH = re.compile(r"\s+[–—-]\s+")
 
 
+def _latin_head(part: str) -> bool:
+    """Латиница с заглавной после тире — марка, а не новое предложение."""
+    return bool(re.match(r"[A-Z]", part or ""))
+
+
 def drop_clause_dashes(text: str) -> str:
     """Связку фраз через « - » убираем: тире в чате не пишем.
 
-    После тире модель чаще ставит пояснение к сказанному, со строчной буквы или
-    с цифры: «на 13,5 — торг в разумных пределах», «цена — 10 300 000». Точка
+    После тире модель чаще ставит пояснение к сказанному: «на 13,5 — торг в
+    разумных пределах», «цена — 10 300 000», «из седанов — Cadillac CTS». Точка
     тут рвала фразу на обрубок «На 13,5.», поэтому такое склеиваем запятой.
-    Самостоятельную мысль с заглавной по-прежнему закрываем точкой.
+    Новая мысль начинается с русской заглавной, её по-прежнему закрываем точкой.
     """
     original = text or ""
     parts = [p.strip() for p in CLAUSE_DASH.split(original) if p.strip()]
@@ -639,7 +644,7 @@ def drop_clause_dashes(text: str) -> str:
             if part[:1].islower():
                 part = part[0].upper() + part[1:]
             out = out + " " + part
-        elif part[:1].islower() or part[:1].isdigit():
+        elif part[:1].islower() or part[:1].isdigit() or _latin_head(part):
             out = out + ", " + part
         else:
             out = out + ". " + part
