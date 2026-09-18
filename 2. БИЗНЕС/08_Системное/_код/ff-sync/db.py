@@ -170,6 +170,9 @@ def migrate(conn):
         # малогабаритных поставок стояло '1', включая уехавшие в СЦ. Значение
         # было догадкой, поэтому обнуляем — факт придёт от площадки при сверке
         conn.execute("UPDATE wb_supplies SET pickup_allowed = ''")
+    if "shipping_dt" not in _cols(conn, "wb_supplies"):
+        # дату отгрузки WB требует в том же запросе, что и точку сдачи
+        conn.execute("ALTER TABLE wb_supplies ADD COLUMN shipping_dt TEXT")
     _rewrite_wb_dropoff(conn)
     if fresh:
         # у записей до появления раздела «Сборка» группы нет, и они не попали бы
@@ -1322,6 +1325,103 @@ def set_wb_supply_dropoff(supply_id, cargo_type, pickup_allowed, shipping_point=
     )
     conn.commit()
     conn.close()
+
+
+def set_wb_supply_point(supply_id, shipping_point, shipping_dt=""):
+    """Выбранная точка сдачи и дата отгрузки. Пишем только после ответа площадки."""
+    conn = connect()
+    conn.execute(
+        "UPDATE wb_supplies SET shipping_point = ?, shipping_dt = ? WHERE id = ?",
+        (str(shipping_point or ""), str(shipping_dt or ""), int(supply_id)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_wb_points(rows, when=""):
+    """Сложить справочник пунктов отгрузки WB. Возвращает, сколько записей легло."""
+    items = []
+    for row in rows or []:
+        try:
+            pid = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not pid:
+            continue
+        items.append(
+            (
+                pid,
+                str(row.get("name") or ""),
+                str(row.get("address") or ""),
+                str(row.get("city") or ""),
+                str(row.get("officeType") or ""),
+                ",".join(str(x) for x in (row.get("cargoTypes") or [])),
+                1 if row.get("fulfillment") else 0,
+                when or "",
+            )
+        )
+    if not items:
+        return 0
+    conn = connect()
+    conn.executemany(
+        "INSERT INTO wb_points (id, name, address, city, office_type, cargo_types, fulfillment, pulled_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET name = excluded.name, address = excluded.address, "
+        "city = excluded.city, office_type = excluded.office_type, "
+        "cargo_types = excluded.cargo_types, fulfillment = excluded.fulfillment, "
+        "pulled_at = excluded.pulled_at",
+        items,
+    )
+    conn.commit()
+    conn.close()
+    return len(items)
+
+
+def get_wb_point(point_id):
+    try:
+        pid = int(point_id or 0)
+    except (TypeError, ValueError):
+        return None
+    if not pid:
+        return None
+    conn = connect()
+    row = conn.execute("SELECT * FROM wb_points WHERE id = ?", (pid,)).fetchone()
+    conn.close()
+    return row
+
+
+def list_wb_points(city="", office_type="", cargo_type="", query="", limit=300):
+    """Точки из справочника: город, тип точки, габарит, поиск по адресу."""
+    where = []
+    args = []
+    if city:
+        where.append("city LIKE ?")
+        args.append("%" + str(city) + "%")
+    if office_type:
+        where.append("office_type = ?")
+        args.append(str(office_type))
+    if cargo_type:
+        where.append("(',' || cargo_types || ',') LIKE ?")
+        args.append("%," + str(cargo_type) + ",%")
+    if query:
+        where.append("(address LIKE ? OR name LIKE ? OR CAST(id AS TEXT) LIKE ?)")
+        args.extend(["%" + str(query) + "%"] * 3)
+    sql = "SELECT * FROM wb_points"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY address LIMIT ?"
+    args.append(int(limit or 300))
+    conn = connect()
+    rows = conn.execute(sql, args).fetchall()
+    conn.close()
+    return rows
+
+
+def wb_points_count():
+    conn = connect()
+    row = conn.execute("SELECT COUNT(*) AS n FROM wb_points").fetchone()
+    conn.close()
+    return int(row["n"] if row else 0)
 
 
 def set_supply_shipments_dropoff(cabinet_id, supply_ext, office, pickup_allowed):

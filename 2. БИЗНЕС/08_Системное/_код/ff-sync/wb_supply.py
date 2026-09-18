@@ -11,20 +11,22 @@
    2025-12-26). Живой `GET .../trbx` 10.09 отдаёт `orders: []` даже когда
    короб есть. Складу важно число коробов и QR, не раскладка товара;
 4. напечатать QR грузомест — `POST /api/v3/supplies/{id}/trbx/stickers`;
-5. передать поставку в доставку — `PATCH /api/v3/supplies/{id}/deliver`.
-   Тела у метода в спеке нет: точку ПВЗ сюда не передать. Её вообще нельзя
-   задать через API — 11.09 проверено живыми запросами: `.../shipping-point`,
-   `/api/v3/shipping-points` и `.../spot` отвечают 404, а `/api/v3/offices`
-   отдаёт 182 сортировочных центра и склада WB без единого пункта выдачи
-   (Домодедовская 28, она же 50095011, в списке не встречается). Точку
-   выбирает человек в ЛК на конкретной поставке. После нашей сдачи 10.09 у
-   `WB-GI-276355488` `shippingPointId` остался пустым, и WB повёл поставку в
-   СЦ; у пересобранной в ЛК `WB-GI-276491672` появился
-   `shippingPointId=50095011`, и её приняли на ПВЗ.
+5. выбрать точку сдачи —
+   `PATCH /api/marketplace/v3/fbs/supplies/shipping-method`, до 100 поставок за
+   запрос. Список точек — `GET /api/marketplace/v3/fbs/shipping-points`,
+   обязательные параметры `city` и `cargoType`. До 18.09 мы считали, что точку
+   задаёт только ЛК: ручки искали на префиксе `/api/v3/`, где их нет вовсе, и
+   `/api/v3/offices` отдаёт лишь 182 СЦ и склада без пунктов выдачи. Оба метода
+   лежат на `/api/marketplace/v3/fbs/`. Проверено живыми запросами 18.09: по
+   Москве и `cargoType=1` приходит 5565 ПВЗ, среди них Домодедовская 28
+   (`50095011`), а PATCH на поставке `WB-GI-279676408` вернул `success: true` и
+   в карточке появился `shippingPointId=50095011`. Менять точку можно до
+   сканирования поставки в пункте отгрузки, после — метод отвечает 409;
+6. передать поставку в доставку — `PATCH /api/v3/supplies/{id}/deliver`.
    Шаг необратимый: все задания уходят в «В доставке», а точку сдачи после
    закрытия уже не поменять. Поэтому спрашиваем подтверждение и показываем,
    выбрана ли точка;
-6. QR самой поставки — `GET /api/v3/supplies/{id}/barcode`, доступен **только
+7. QR самой поставки — `GET /api/v3/supplies/{id}/barcode`, доступен **только
    после** передачи в доставку.
 
 Лимит на всю группу ручек: 300 запросов в минуту, и любой ответ 4XX списывается
@@ -304,6 +306,89 @@ def order_ids(cab, supply_ext):
     except ValueError:
         raise SupplyError("WB: нераспознанный ответ на состав поставки")
     return [str(x) for x in (data.get("orderIds") or []) if x]
+
+
+POINTS_CHUNK = 100  # предел поставок в одном PATCH способа отгрузки
+
+SELF_SHIPPING = "selfShipping"
+
+
+def shipping_points(cab, city, cargo_type=1):
+    """Пункты отгрузки населённого пункта: [{id, name, address, officeType, …}].
+
+    `city` и `cargoType` у метода обязательные, без них 400 IncorrectParameter.
+    `officeType`: `pp` пункт выдачи, `sc` сортировочный центр, `sw` склад.
+    Малогабарит по Москве 18.09 отдаёт 5565 точек, из них 5565 ПВЗ и 2 СЦ.
+    """
+    city = str(city or "").strip()
+    if not city:
+        raise SupplyError("не указан населённый пункт для поиска точек")
+    r = req(
+        "GET",
+        WB_BASE + "/api/marketplace/v3/fbs/shipping-points",
+        headers=wb_headers(cab["token"]),
+        params={"city": city, "cargoType": int(cargo_type or 1)},
+    )
+    if r.status_code != 200:
+        raise _fail(r, "не отдал пункты отгрузки")
+    try:
+        data = r.json() or {}
+    except ValueError:
+        raise SupplyError("WB: нераспознанный ответ на пункты отгрузки")
+    return [x for x in (data.get("shippingPoints") or []) if isinstance(x, dict)]
+
+
+def set_shipping_method(cab, items):
+    """Точка сдачи, дата и способ доставки поставок. Возвращает {supplyId: ошибка|''}.
+
+    Батч до 100 поставок, результат приходит по каждой отдельно. WB отвечает 409,
+    когда поставку уже отсканировали в пункте отгрузки: после этого точку не
+    поменять, и это не наша ошибка, а состояние поставки.
+    """
+    rows = []
+    for item in items or []:
+        supply = str(item.get("supply_ext") or "").strip()
+        point = int(item.get("point_id") or 0)
+        if not supply or not point:
+            continue
+        rows.append(
+            {
+                "supplyId": supply,
+                "shippingPointId": point,
+                "shippingDt": str(item.get("date") or ""),
+                "shippingType": str(item.get("ship_type") or SELF_SHIPPING),
+            }
+        )
+    if not rows:
+        raise SupplyError("нечего отправлять: нет поставки или точки")
+    out = {}
+    heads = wb_headers(cab["token"])
+    for i in range(0, len(rows), POINTS_CHUNK):
+        chunk = rows[i : i + POINTS_CHUNK]
+        r = req(
+            "PATCH",
+            WB_BASE + "/api/marketplace/v3/fbs/supplies/shipping-method",
+            headers=heads,
+            json={"data": chunk},
+        )
+        if r.status_code != 200:
+            raise _fail(r, "не принял точку сдачи")
+        try:
+            data = r.json() or {}
+        except ValueError:
+            raise SupplyError("WB: нераспознанный ответ на точку сдачи")
+        got = {}
+        for res in data.get("results") or []:
+            if not isinstance(res, dict):
+                continue
+            err = res.get("error") or {}
+            got[str(res.get("supplyId") or "")] = "" if res.get("success") else str(
+                (err.get("detail") if isinstance(err, dict) else "") or "WB отказал без причины"
+            )
+        for row in chunk:
+            # поставки, по которой ответа нет, в результатах не будет вовсе
+            out[row["supplyId"]] = got.get(row["supplyId"], "WB не ответил по этой поставке")
+    return out
 
 
 def list_boxes(cab, supply_ext):

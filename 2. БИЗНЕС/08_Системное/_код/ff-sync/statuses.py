@@ -28,21 +28,25 @@ GROUP_LABELS = dict(GROUPS)
 # сдачи он не влияет: 11.09 у всех 21000 заданий в базе cargoType=1, а в СЦ
 # уехала именно малогабаритная поставка.
 #
-# Точку сдачи через API выбрать нельзя. Проверено живыми запросами 11.09:
-# /api/v3/supplies/{id}/shipping-point, /api/v3/shipping-points и /spot дают
-# 404, у deliver тела нет, а /api/v3/offices отдаёт 182 сортировочных центра
-# и склада WB, пунктов выдачи там нет вовсе — ПВЗ Домодедовская 28 (50095011)
-# не встречается ни в одной записи. Точку выбирает человек в ЛК на конкретной
-# поставке, API это поле только читает.
+# Точку сдачи ставит наша кнопка: PATCH /api/marketplace/v3/fbs/supplies/
+# shipping-method, список точек — GET /api/marketplace/v3/fbs/shipping-points.
+# До 18.09 здесь было записано обратное: ручки искали на префиксе /api/v3/,
+# где их нет, и /api/v3/offices отдаёт только 182 СЦ и склада без пунктов
+# выдачи. Оба метода лежат на /api/marketplace/v3/fbs/, проверено живыми
+# запросами 18.09 на поставке WB-GI-279676408.
 #
-# Поэтому адрес сдачи не угадываем, а читаем с карточки поставки:
-#   shippingPointId заполнен          → точку ПВЗ выбрали, едем на ПВЗ;
+# Адрес сдачи всё равно не угадываем, а читаем с карточки поставки:
+#   shippingPointId заполнен          → точку выбрали, едем на неё;
 #   точки нет, isPickupPointShipmentAllowed=false → поставка уйдёт в СЦ;
 #   точки нет, флаг true              → ПВЗ разрешён, но точка ещё не выбрана.
 # Живой пример расхождения 10.09, один кабинет и один габарит: WB-GI-276355488
 # создана нашим кодом, shippingPointId пустой, флаг false, уехала в СЦ;
 # WB-GI-276491672 создана в ЛК с выбором точки — shippingPointId=50095011,
 # флаг true, приняли на Домодедовской 28.
+#
+# Адрес самой точки WB в карточке поставки не отдаёт, только id. Поэтому он
+# приходит сюда параметром `address` из справочника `wb_points`, а если точки
+# в справочнике ещё нет — пишем номер, а не выдуманный адрес.
 #
 # На задании флаг isPickupPointShipmentAllowed по-прежнему не читаем: 10.09 он
 # приходил False на все 3929 свежих заказов, включая принятые на ПВЗ.
@@ -96,11 +100,19 @@ def to_pickup(cargo_type="", pickup_allowed="", shipping_point=""):
     return dropoff_kind(pickup_allowed, shipping_point) == "pvz"
 
 
-def dropoff(cargo_type="", pickup_allowed="", shipping_point=""):
-    """Адрес сдачи для колонки «Куда везти». Точки нет — пусто, не выдумываем."""
+def dropoff(cargo_type="", pickup_allowed="", shipping_point="", address=""):
+    """Адрес сдачи для колонки «Куда везти». Точки нет — пусто, не выдумываем.
+
+    `address` — адрес выбранной точки из справочника `wb_points`. Пустой он у
+    поставок, выбранных до появления справочника: тогда показываем номер точки.
+    """
     kind = dropoff_kind(pickup_allowed, shipping_point)
     if kind == "pvz":
-        return PVZ
+        if address:
+            return address
+        if str(shipping_point or "") == str(PVZ_SHIPPING_POINT):
+            return PVZ
+        return "точка %s" % shipping_point
     if kind == "sc":
         return SC
     return ""
@@ -130,11 +142,10 @@ def dropoff_warning(state, pickup_allowed="", shipping_point=""):
     if dropoff_kind(pickup_allowed, shipping_point) == "pvz":
         return ""
     if str(state or "") != "open":
-        return "Поставка закрыта без точки ПВЗ — ушла в %s." % SC
+        return "Поставка закрыта без точки сдачи — ушла в %s." % SC
     return (
-        "Точка ПВЗ не выбрана: API её задать не может, только личный кабинет WB. "
-        "Открой поставку в ЛК, выбери %s и нажми «Обновить с площадки». "
-        "Передашь как есть — уйдёт в %s." % (PVZ, SC)
+        "Точка сдачи не выбрана. Нажми «Куда везти» и выбери пункт — %s стоит "
+        "по умолчанию. Передашь как есть — уйдёт в %s." % (PVZ, SC)
     )
 
 # Ozon FBS: статус отправления → наша группа.

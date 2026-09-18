@@ -66,19 +66,22 @@ def col(row, name, default=""):
 def dropoff_of(row):
     """Куда везти, габарит и предупреждение по точке сдачи — одним набором.
 
-    Точку сдачи задаёт только ЛК WB, поэтому читаем её из `shipping_point` и
-    ничего не выводим из габарита.
+    Адрес берём от выбранной точки, а не из габарита: в карточке поставки WB
+    отдаёт только её id, адрес лежит в справочнике `wb_points`.
     """
     import statuses
+    from supply_flow import point_address
 
     flag = col(row, "pickup_allowed")
     point = col(row, "shipping_point")
     cargo = col(row, "cargo_type")
     return {
-        "office": statuses.dropoff(cargo, flag, point),
+        "office": statuses.dropoff(cargo, flag, point, point_address(point)),
         "pickup": statuses.to_pickup(cargo, flag, point),
         "cargo": statuses.cargo_label(cargo, flag, point),
         "warn": statuses.dropoff_warning(col(row, "state", "open"), flag, point),
+        "point_id": str(point or ""),
+        "shipping_dt": col(row, "shipping_dt"),
     }
 
 

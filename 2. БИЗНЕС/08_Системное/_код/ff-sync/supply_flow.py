@@ -17,6 +17,13 @@ from db import (
     get_cabinet,
     get_cabinet_by_client_mp,
     get_client_by_id,
+    get_setting,
+    get_wb_point,
+    list_wb_points,
+    save_wb_points,
+    set_setting,
+    set_wb_supply_point,
+    wb_points_count,
     get_shipments_by_ext,
     get_shipments_by_ids,
     get_wb_box,
@@ -77,6 +84,14 @@ def _col(row, name, default=""):
     return row[name] if name in row.keys() else default
 
 
+def point_address(point_id):
+    """Адрес точки сдачи из справочника. Незнакомая точка — пусто, не выдумываем."""
+    row = get_wb_point(point_id)
+    if not row:
+        return ""
+    return str(row["address"] or row["name"] or "")
+
+
 def _apply_dropoff(supply, pickup_allowed, cargo="", shipping_point=""):
     """Записать адрес сдачи на поставку и её задания."""
     import statuses
@@ -84,7 +99,7 @@ def _apply_dropoff(supply, pickup_allowed, cargo="", shipping_point=""):
     cargo = str(cargo or _col(supply, "cargo_type") or "")
     flag = str(pickup_allowed or "")
     point = str(shipping_point or "")
-    office = statuses.dropoff(cargo, flag, point)
+    office = statuses.dropoff(cargo, flag, point, point_address(point))
     set_wb_supply_dropoff(supply["id"], cargo, flag, point)
     # адрес пишем и пустым: точку в ЛК могли снять, и старая надпись соврёт
     set_supply_shipments_dropoff(supply["cabinet_id"], supply["ext_id"], office, flag)
@@ -101,12 +116,200 @@ def _dropoff_from_card(info):
     return cargo, flag, point
 
 
+# --- точка сдачи --------------------------------------------------------
+#
+# Точку ставит наша кнопка, а не ЛК: PATCH шлёт
+# /api/marketplace/v3/fbs/supplies/shipping-method, список точек приходит из
+# /api/marketplace/v3/fbs/shipping-points. Менять можно до сканирования
+# поставки в пункте отгрузки, после WB отвечает 409.
+CITY_KEY = "wb:dropoff:city"
+POINT_KEY = "wb:dropoff:point"
+
+
+def _client_point_key(client_id):
+    return "%s:client:%s" % (POINT_KEY, int(client_id))
+
+
+def dropoff_default(client_id=None):
+    """Точка сдачи по умолчанию: своя у контрагента, иначе общая, иначе наш ПВЗ.
+
+    Склад фулфилмента везёт в одно место, поэтому выбор не должен повторяться на
+    каждой поставке: точка ставится сама при создании, а окно поставки нужно
+    только чтобы её сменить.
+    """
+    import statuses
+
+    point = ""
+    if client_id:
+        point = str(get_setting(_client_point_key(client_id)) or "")
+    point = point or str(get_setting(POINT_KEY) or "") or str(statuses.PVZ_SHIPPING_POINT)
+    city = str(get_setting(CITY_KEY) or "") or "Москва"
+    try:
+        point = int(point)
+    except (TypeError, ValueError):
+        point = int(statuses.PVZ_SHIPPING_POINT)
+    return {"point_id": point, "city": city, "address": point_address(point)}
+
+
+def set_dropoff_default(point_id, client_id=None, city=""):
+    """Запомнить точку по умолчанию: общую или для одного контрагента."""
+    point = int(point_id or 0)
+    if not point:
+        raise ValueError("не выбрана точка сдачи")
+    if client_id:
+        set_setting(_client_point_key(client_id), str(point))
+    else:
+        set_setting(POINT_KEY, str(point))
+    if city:
+        set_setting(CITY_KEY, str(city))
+    return dropoff_default(client_id)
+
+
+def points(client_id=None, city="", cargo_type="1", query="", refresh=False):
+    """Пункты отгрузки для выбора в интерфейсе: из справочника, при нужде с площадки.
+
+    Справочник кэшируем: по Москве и малогабариту WB отдаёт 5565 точек, а лимит
+    у группы ручек поставок 300 запросов в минуту, где каждый 4XX списывается как
+    десять. Поэтому за площадкой идём только когда справочник пуст или просят
+    обновить.
+    """
+    city = str(city or "").strip() or dropoff_default(client_id)["city"]
+    cargo = str(cargo_type or "1")
+    notes = []
+    have = list_wb_points(city=city, cargo_type=cargo, query=query)
+    if refresh or (not have and not query):
+        cab = get_cabinet_by_client_mp(int(client_id), "wb") if client_id else None
+        if not cab:
+            cab = next(
+                (c for c in list_cabinets() if c["marketplace"] == "wb" and c["token"] and c["active"]),
+                None,
+            )
+        if not cab:
+            notes.append("Справочник точек не обновить: нет активного кабинета WB с токеном.")
+        else:
+            try:
+                fresh = wb_supply.shipping_points(cab, city, cargo)
+            except wb_supply.SupplyError as exc:
+                notes.append("WB не отдал точки: %s" % exc)
+            else:
+                save_wb_points(fresh, now_iso())
+                have = list_wb_points(city=city, cargo_type=cargo, query=query)
+    return {
+        "city": city,
+        "cargo_type": cargo,
+        "default": dropoff_default(client_id),
+        "total": wb_points_count(),
+        "points": [
+            {
+                "id": r["id"],
+                "address": r["address"] or r["name"] or "",
+                "city": r["city"] or "",
+                "kind": r["office_type"] or "",
+                "fulfillment": bool(r["fulfillment"]),
+            }
+            for r in have
+        ],
+        "notes": notes,
+    }
+
+
+def set_dropoff(supply_id, point_id, date="", ship_type=wb_supply.SELF_SHIPPING, remember=False):
+    """Выбрать точку сдачи поставки. Сначала площадка, потом наша база.
+
+    Дату WB требует вместе с точкой: без `shippingDt` метод не принимает запрос.
+    Пустую подставляем сегодняшнюю — смена сдаётся в день сборки.
+    """
+    import statuses
+
+    supply = _supply(supply_id)
+    if supply["state"] != "open":
+        raise ValueError("поставка уже передана в доставку, точку сдачи не поменять")
+    point = int(point_id or 0)
+    if not point:
+        raise ValueError("не выбрана точка сдачи")
+    day = str(date or "") or datetime.now(MSK).strftime("%Y-%m-%d")
+    cab = _cab_of_supply(supply)
+    res = wb_supply.set_shipping_method(
+        cab,
+        [{"supply_ext": supply["ext_id"], "point_id": point, "date": day, "ship_type": ship_type}],
+    )
+    err = res.get(supply["ext_id"], "")
+    if err:
+        raise ValueError("WB не принял точку сдачи: %s" % err)
+    set_wb_supply_point(supply["id"], point, day)
+    if remember:
+        set_dropoff_default(point, supply["client_id"])
+    # карточка отдаёт и флаг ПВЗ, и подтверждение точки: пишем её ответ, а не своё
+    flag, cargo, got = _sync_dropoff(_supply(supply_id))
+    if str(got or "") != str(point):
+        raise ValueError(
+            "WB принял запрос, но в карточке точка %s. Обнови поставку и попробуй снова."
+            % (got or "пустая")
+        )
+    return {
+        "point_id": point,
+        "date": day,
+        "address": point_address(point),
+        "office": statuses.dropoff(cargo, flag, got, point_address(point)),
+    }
+
+
+def point_fits(point_id, cargo_type):
+    """Принимает ли точка этот габарит. Точки нет в справочнике — не спорим, пробуем.
+
+    ПВЗ берут только малогабарит: по Москве `cargoType=2` и `3` отдают лишь
+    сортировочные центры. Ставить крупногабаритной поставке наш ПВЗ значит
+    отправить склад не туда.
+    """
+    cargo = str(cargo_type or "").strip()
+    if not cargo:
+        return True
+    row = get_wb_point(point_id)
+    if not row:
+        return True
+    kinds = [x for x in str(row["cargo_types"] or "").split(",") if x]
+    return not kinds or cargo in kinds
+
+
+def ensure_dropoff(supply_id, author=""):
+    """Поставить точку по умолчанию, если её ещё нет. Тихая, ошибку только заметкой.
+
+    Зовётся при создании поставки и при первом задании в ней: оператор не должен
+    выбирать точку вручную, когда склад всю смену везёт в одно место.
+    """
+    supply = _supply(supply_id)
+    if str(_col(supply, "shipping_point") or ""):
+        return {"point_id": "", "notes": []}
+    default = dropoff_default(supply["client_id"])
+    cargo = str(_col(supply, "cargo_type") or "")
+    if not point_fits(default["point_id"], cargo):
+        return {
+            "point_id": "",
+            "notes": [
+                "Точку по умолчанию не поставил: она берёт только малогабарит, а поставка %s. "
+                "Выбери пункт кнопкой «Куда везти»." % (statuses_cargo(cargo) or "другого габарита")
+            ],
+        }
+    try:
+        res = set_dropoff(supply["id"], default["point_id"])
+    except (ValueError, wb_supply.SupplyError) as exc:
+        # поставка уже создана, и смену из-за точки рвать нельзя: скажем заметкой
+        return {"point_id": "", "notes": ["Точку сдачи не поставил: %s" % exc]}
+    return {"point_id": res["point_id"], "notes": []}
+
+
+def statuses_cargo(cargo_type):
+    import statuses
+
+    return statuses.cargo_kind(cargo_type)
+
+
 def _sync_dropoff(supply):
     """Перечитать точку сдачи с карточки WB и записать к себе.
 
-    Сами точку не угадываем: через API её не задать, выбор делает человек в ЛК.
-    Пока `shippingPointId` пустой, поставка уйдёт в СЦ, и оператор должен это
-    видеть, а не надпись «ПВЗ», выведенную из габарита.
+    Точку ставим мы, но подтверждает её только карточка: пока `shippingPointId`
+    пустой, поставка уйдёт в СЦ, и оператор должен видеть это, а не надпись
+    «ПВЗ», выведенную из габарита.
     """
     cab = _cab_of_supply(supply)
     info = wb_supply.info(cab, supply["ext_id"]) or {}
@@ -307,6 +510,9 @@ def _open_supply(client_id, cab_id, cargo, author):
     )
     ext = wb_supply.create(cab, name)
     sid = insert_wb_supply(int(client_id), cab_id, ext, name, now_iso(), author, cargo_type=cargo)
+    # точку сдачи ставим сразу: склад везёт в одно место, и выбирать её на каждой
+    # поставке руками не нужно. Не вышло — поставка всё равно живая, скажем в окне
+    ensure_dropoff(sid, author)
     return {"id": sid, "ext_id": ext}
 
 
@@ -319,7 +525,8 @@ def create_supply(client_id, name, author):
         raise ValueError("у контрагента нет активного кабинета WB")
     ext = wb_supply.create(cab, name or "Поставка %s" % datetime.now(MSK).strftime("%d.%m %H:%M"))
     sid = insert_wb_supply(int(client_id), cab["id"], ext, name or "", now_iso(), author)
-    return {"id": sid, "ext_id": ext}
+    notes = ensure_dropoff(sid, author)["notes"]
+    return {"id": sid, "ext_id": ext, "notes": notes}
 
 
 _synced_at = {}
@@ -503,6 +710,17 @@ def add_orders(supply_id, ship_ids):
         set_work_state(ids, "assembling")
         # после первого задания поставка получает cargoType; адрес сдачи — от него
         _sync_dropoff(_supply(supply_id))
+        # поставку могли создать кнопкой «Создать», где габарита ещё нет: точку
+        # ставим или проверяем здесь, когда площадка габарит уже назвала
+        fresh = _supply(supply_id)
+        point = str(_col(fresh, "shipping_point") or "")
+        if not point:
+            notes.extend(ensure_dropoff(supply_id)["notes"])
+        elif not point_fits(point, _col(fresh, "cargo_type")):
+            notes.append(
+                "Точка %s берёт не этот габарит. Смени её кнопкой «Куда везти», иначе поставку не примут."
+                % point
+            )
     return {"added": done, "notes": notes}
 
 
@@ -646,7 +864,7 @@ def deliver(supply_id, confirm=False, force=False):
         "ok": True,
         "orders": len(rows),
         "loose": len(loose),
-        "office": statuses.dropoff("", flag, point),
+        "office": statuses.dropoff("", flag, point, point_address(point)),
         "warn": statuses.dropoff_warning("ready", flag, point),
     }
 
@@ -666,6 +884,11 @@ def preflight(supply_id):
         flag = _col(supply, "pickup_allowed")
         cargo = _col(supply, "cargo_type")
         point = _col(supply, "shipping_point")
+    if not point and supply["state"] == "open":
+        # последний рубеж перед необратимым шагом: 10.09 ПВЗ потеряли именно тут,
+        # когда поставка ушла в СЦ без точки
+        if ensure_dropoff(supply_id)["point_id"]:
+            flag, cargo, point = _sync_dropoff(_supply(supply_id))
     rows = list_supply_shipments(supply["cabinet_id"], supply["ext_id"])
     boxes = list_wb_boxes(supply["id"])
     pickup = statuses.to_pickup(cargo, flag, point)
@@ -679,7 +902,7 @@ def preflight(supply_id):
         "loose": len(loose),
         "empty_boxes": [b["ext_id"] for b in empty],
         "state": supply["state"],
-        "office": statuses.dropoff(cargo, flag, point),
+        "office": statuses.dropoff(cargo, flag, point, point_address(point)),
         "pickup": pickup,
         "warn": statuses.dropoff_warning(supply["state"], flag, point),
     }

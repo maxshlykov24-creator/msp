@@ -270,12 +270,35 @@ CREATE TABLE IF NOT EXISTS wb_supplies (
     -- ответ WB isPickupPointShipmentAllowed: '1' да, '0' нет, пусто — не спрашивали.
     -- Сам по себе точку сдачи не доказывает: бывает '1' без выбранной точки
     pickup_allowed TEXT,
-    -- shippingPointId с карточки: выбранная в ЛК точка ПВЗ. Заполнена — едем на
-    -- ПВЗ, пусто — поставка уйдёт в СЦ. Через API это поле не задать, только ЛК
+    -- shippingPointId с карточки: выбранная точка сдачи. Заполнена — едем туда,
+    -- пусто — поставка уйдёт в СЦ. Ставится нашей кнопкой через
+    -- PATCH /api/marketplace/v3/fbs/supplies/shipping-method
     shipping_point TEXT,
+    -- планируемая дата отгрузки, YYYY-MM-DD: WB требует её вместе с точкой
+    shipping_dt TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id),
     FOREIGN KEY (cabinet_id) REFERENCES cabinets(id)
 );
+
+-- Справочник пунктов отгрузки WB: кэш ответа
+-- GET /api/marketplace/v3/fbs/shipping-points. Нужен, чтобы показывать адрес
+-- выбранной точки без запроса к площадке: в карточке поставки WB отдаёт только
+-- её id. По Москве и малогабариту точек 5565, спрашивать их на каждый показ
+-- поставки значит жечь лимит в 300 запросов на минуту.
+CREATE TABLE IF NOT EXISTS wb_points (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    address TEXT,
+    city TEXT,
+    -- pp пункт выдачи, sc сортировочный центр, sw склад
+    office_type TEXT,
+    -- габариты, которые точка принимает: '1', '1,3'
+    cargo_types TEXT,
+    fulfillment INTEGER,
+    pulled_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS wb_points_city ON wb_points (city);
 
 CREATE UNIQUE INDEX IF NOT EXISTS wb_supplies_cab_ext
     ON wb_supplies (cabinet_id, ext_id);
