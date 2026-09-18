@@ -622,17 +622,25 @@ CLAUSE_DASH = re.compile(r"\s+[–—-]\s+")
 
 
 def drop_clause_dashes(text: str) -> str:
-    """Связку фраз через « - » режем на точку. Дефис внутри слова не трогаем."""
+    """Связку фраз через « - » убираем: тире в чате не пишем.
+
+    После тире модель чаще ставит пояснение к сказанному, со строчной буквы или
+    с цифры: «на 13,5 — торг в разумных пределах», «цена — 10 300 000». Точка
+    тут рвала фразу на обрубок «На 13,5.», поэтому такое склеиваем запятой.
+    Самостоятельную мысль с заглавной по-прежнему закрываем точкой.
+    """
     original = text or ""
     parts = [p.strip() for p in CLAUSE_DASH.split(original) if p.strip()]
     if len(parts) <= 1:
         return original
     out = parts[0]
     for part in parts[1:]:
-        if part[:1].islower():
-            part = part[0].upper() + part[1:]
         if out[-1] in ".!?":
+            if part[:1].islower():
+                part = part[0].upper() + part[1:]
             out = out + " " + part
+        elif part[:1].islower() or part[:1].isdigit():
+            out = out + ", " + part
         else:
             out = out + ". " + part
     return out
@@ -871,6 +879,13 @@ WHERE_LEAD = re.compile(
     r"^\s*(где|куда)\s+(вам\s+)?удобнее\s*[,.]?\s*",
     re.IGNORECASE,
 )
+# «На какой день вам удобнее заехать» — это выбор дня, а не филиала. Такую
+# реплику вырезать нельзя: клиент спросил, когда смотреть, и в ответ получал
+# пустоту, хотя это приглашение на осмотр, ради которого весь диалог.
+WHEN_CHOICE = re.compile(
+    r"(на\s+)?как(ой|ие|ое)\s+(день|дни|число|время)|когда|во\s+сколько",
+    re.IGNORECASE,
+)
 # «Сейчас наберу» звучит как срок, который менеджер не обязан выдержать.
 CALL_VERB = (
     r"(?:набер(?:у|ём|ем|ёт|ет|ут)|позвон(?:ю|им)|перезвон(?:ю|им)|"
@@ -899,6 +914,9 @@ def drop_where_choice(text: str) -> str:
     kept: list[str] = []
     for part in re.split(r"(?<=[.!?\n])\s+", original):
         if not WHERE_CHOICE.search(part):
+            kept.append(part)
+            continue
+        if WHEN_CHOICE.search(part):
             kept.append(part)
             continue
         rest = WHERE_LEAD.sub("", part).strip(" ,")

@@ -2144,6 +2144,42 @@ def test_catchup_returns_to_client():
     assert again == 0
 
 
+def test_invite_survives_cleanup():
+    """Вопрос про день визита остаётся: раньше фильтр съедал его целиком."""
+    from bot.human import drop_where_choice, for_chat
+
+    invite = "На какой день вам удобнее заехать, посмотреть можно с 10:00 до 20:00"
+    assert for_chat(invite) == invite
+    assert for_chat("Когда вам удобнее заехать?") == "Когда вам удобнее заехать?"
+    # Выбор места по-прежнему мусор: салон один.
+    assert "удобнее" not in drop_where_choice("Где вам удобнее посмотреть машину?")
+    assert "удобнее" not in drop_where_choice("Где вам удобнее, напишите номер телефона")
+
+
+def test_dash_keeps_clause_whole():
+    """Пояснение после тире не превращается в обрубок «На 13,5.»."""
+    from bot.human import drop_clause_dashes
+
+    assert (
+        drop_clause_dashes("На 13,5 — торг в разумных пределах, обсудим после осмотра")
+        == "На 13,5, торг в разумных пределах, обсудим после осмотра"
+    )
+    assert (
+        drop_clause_dashes("Цена по этой машине — 10 300 000, наличный расчет")
+        == "Цена по этой машине, 10 300 000, наличный расчет"
+    )
+    assert (
+        drop_clause_dashes("Porsche Cayenne 2019, синий, 5 800 000 — можно посмотреть")
+        == "Porsche Cayenne 2019, синий, 5 800 000, можно посмотреть"
+    )
+    # Самостоятельная мысль с заглавной остаётся отдельным предложением.
+    assert (
+        drop_clause_dashes("Машина в наличии — Приезжайте смотреть")
+        == "Машина в наличии. Приезжайте смотреть"
+    )
+    assert drop_clause_dashes("Coolray 1.5 AMT") == "Coolray 1.5 AMT"
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
