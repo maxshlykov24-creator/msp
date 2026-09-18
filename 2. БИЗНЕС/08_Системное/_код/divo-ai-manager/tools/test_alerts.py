@@ -777,6 +777,19 @@ def test_amo_owner():
     assert match_amo_user(KNOWN_USERS, first="Кто-то") is None
 
 
+def test_llm_pause_reason():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from bot.main import is_llm_pause_reason
+
+    assert is_llm_pause_reason("эскалация: llm") is True
+    assert is_llm_pause_reason("LLM недоступен") is True
+    assert is_llm_pause_reason("эскалация: phone") is False
+    assert is_llm_pause_reason("команда владельца") is False
+
+
 def test_pings():
     started = at(14, 0)
     assert next_ping(started, [], now=at(14, 0)) == 0
@@ -1936,6 +1949,7 @@ if __name__ == "__main__":
     test_prior_thread()
     test_widget_score()
     test_amo_owner()
+    test_llm_pause_reason()
     test_autoru_prior()
     test_focus_autoru()
     test_listing_context_cleanup()

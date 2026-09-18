@@ -853,6 +853,73 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     return raw
 
 
+def is_llm_pause_reason(reason: str) -> bool:
+    """Пауза из-за сбоя модели, не решение менеджера.
+
+    _handoff пишет «эскалация: llm». Старый код ждал точную строку
+    «LLM недоступен» и никогда не снимал паузу после пополнения ключа.
+    """
+    text = (reason or "").strip().lower()
+    if not text:
+        return False
+    if text == TECH_PAUSE_REASON.lower():
+        return True
+    return text == "llm" or text.endswith(": llm")
+
+
+def waiting_for_bot(chat_id: str) -> bool:
+    """Клиент ждёт ответ: последнее слово за ним, человек чат не забрал."""
+    info = store.pause_info(chat_id)
+    if store.is_paused(chat_id) and not is_llm_pause_reason(info.get("reason") or ""):
+        return False
+    doc = store.load_doc(chat_id)
+    alert = ((doc.get("crm") or {}).get("alert") or {})
+    if alert.get("picked") in {"button", "chat", "call", "stage"}:
+        return False
+    hist = list(doc.get("messages") or [])
+    if not hist or hist[-1].get("role") != "user":
+        return False
+    last = str(hist[-1].get("content") or "")
+    if not nudge.needs_reply(last):
+        return False
+    if "спасибо" in last.lower() and "?" not in last:
+        return False
+    return True
+
+
+async def catchup_waiting() -> int:
+    """После простоя ключа отвечаем тем, кто уже написал и не получил ответ."""
+    for _ in range(40):
+        if CHANNELS.get("tg") and (CHANNELS.get("avito") or CHANNELS.get("autoru")):
+            break
+        await asyncio.sleep(0.5)
+    queued = [cid for cid in store.all_chat_ids() if waiting_for_bot(cid)]
+    log.info("догон очереди: %d чатов ждут ответа", len(queued))
+    sent = 0
+    for cid in queued:
+        if is_llm_pause_reason(store.pause_info(cid).get("reason") or ""):
+            store.resume(cid)
+        llm_fails.pop(str(cid), None)
+        channel = _nudge_channel(cid)
+        if channel is None:
+            log.warning("догон очереди: нет канала для %s", cid)
+            continue
+        last = str((store.load_history(cid) or [{}])[-1].get("content") or "")
+        try:
+            await _answer_locked(channel, cid, [last])
+            hist = store.load_history(cid)
+            if hist and hist[-1].get("role") == "assistant":
+                sent += 1
+                log.info("догон очереди: ответил %s", cid)
+            else:
+                log.warning("догон очереди: %s без исходящего", cid)
+        except Exception:
+            log.exception("догон очереди: %s упал", cid)
+        await asyncio.sleep(1.2)
+    log.info("догон очереди: готово, ответил %d", sent)
+    return sent
+
+
 def tech_pause_lifted(chat_id: int) -> bool:
     """Снимает паузу, поставленную сбоем модели, когда пауза уже отстоялась.
 
@@ -860,7 +927,7 @@ def tech_pause_lifted(chat_id: int) -> bool:
     осознанное решение.
     """
     info = store.pause_info(chat_id)
-    if info.get("reason") != TECH_PAUSE_REASON:
+    if not is_llm_pause_reason(info.get("reason") or ""):
         return False
     at = info.get("at")
     if isinstance(at, datetime):
@@ -1112,6 +1179,7 @@ async def run() -> None:
     asyncio.create_task(budget_loop(tg))
     asyncio.create_task(poll_avito(tg))
     asyncio.create_task(poll_autoru(tg))
+    asyncio.create_task(catchup_waiting())
     asyncio.create_task(alert_loop())
     asyncio.create_task(amojo_http.serve())
     offset = read_offset()
