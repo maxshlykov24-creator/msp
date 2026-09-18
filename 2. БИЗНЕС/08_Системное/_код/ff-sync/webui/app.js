@@ -6,6 +6,8 @@ const state = {
   asmSupplies: [],
   // поставки WB: выбранная поставка, выбранное грузоместо и отмеченные задания внутри
   wbSupplies: [], wbSupply: 0, wbBox: 0, wbPicked: new Set(), wbDetail: null, wbQuery: "",
+  // выбор точки сдачи: город и поиск живут между открытиями окна поставки
+  wbPointCity: "", wbPointQuery: "", wbPointTimer: 0,
 };
 
 function openCombo(input, list, fill) {
@@ -1836,11 +1838,24 @@ async function loadWbDetail(id) {
           </div>`;
   const warn = res.supply.warn
     ? `<div class="wb-warn">
-        <b>${esc(dest === "точка сдачи не выбрана" ? "Точка ПВЗ не выбрана" : "Проверь точку сдачи")}</b>
+        <b>${esc(dest === "точка сдачи не выбрана" ? "Точка сдачи не выбрана" : "Проверь точку сдачи")}</b>
         <p>${esc(res.supply.warn)}</p>
         ${open ? `<button class="btn-ghost" id="wbRefresh" type="button">Обновить с площадки</button>` : ""}
       </div>`
     : "";
+  const dropoff = `<section class="wb-sec wb-sec-dest">
+      <div class="wb-sec-h">
+        <h4>Куда везти</h4>
+        <div class="wb-sec-acts">
+          ${open ? `<button class="btn-ghost" id="wbPointBtn" type="button">${res.supply.point_id ? "Сменить точку" : "Выбрать точку"}</button>` : ""}
+        </div>
+      </div>
+      <div class="wb-dest">
+        <b>${esc(dest)}</b>
+        ${res.supply.shipping_dt ? `<span>отгрузка ${esc(res.supply.shipping_dt)}</span>` : ""}
+      </div>
+      <div class="wb-points" id="wbPoints" hidden></div>
+    </section>`;
   $("wbTitle").textContent = res.supply.ext_id;
   $("wbSub").textContent = [res.supply.client, dest, res.rows.length + " зак.", res.boxes.length + " кор."].filter(Boolean).join(" · ");
   const pill = $("wbHeadPill");
@@ -1849,6 +1864,7 @@ async function loadWbDetail(id) {
   pill.textContent = wbSupplyPill(res.supply);
   $("wbDetail").innerHTML = `
     ${warn}
+    ${dropoff}
     <section class="wb-sec">
       <div class="wb-sec-h">
         <h4>Короба</h4>
@@ -1993,6 +2009,80 @@ async function printWb(mode) {
   }
 }
 
+// выбор точки сдачи: справочник WB кэширован у нас, поэтому список открывается
+// сразу, а за площадкой идём только кнопкой «Обновить справочник»
+async function loadWbPoints(opts) {
+  const box = $("wbPoints");
+  if (!box) return;
+  const supply = (state.wbDetail || {}).supply || {};
+  const params = new URLSearchParams({
+    client_id: supply.client_id || 0,
+    city: (opts && opts.city) || state.wbPointCity || "",
+    q: (opts && opts.query !== undefined) ? opts.query : (state.wbPointQuery || ""),
+  });
+  if (opts && opts.refresh) params.set("refresh", "1");
+  box.innerHTML = `<div class="wb-empty">Читаю точки…</div>`;
+  let res;
+  try {
+    res = await api("/api/wb/shipping-points?" + params.toString());
+  } catch (e) {
+    box.innerHTML = `<div class="wb-empty">${esc(e.message)}</div>`;
+    return;
+  }
+  box.dataset.loaded = "1";
+  state.wbPointCity = res.city;
+  renderWbPoints(res);
+}
+
+function renderWbPoints(res) {
+  const box = $("wbPoints");
+  if (!box) return;
+  const supply = (state.wbDetail || {}).supply || {};
+  const list = res.points.length
+    ? res.points.map((p) => `<button type="button" class="wb-point${String(p.id) === String(supply.point_id) ? " is-on" : ""}" data-point="${p.id}">
+          <b>${esc(p.address)}</b>
+          <i>${p.kind === "pp" ? "ПВЗ" : p.kind === "sc" ? "СЦ" : "склад"} · ${p.id}</i>
+        </button>`).join("")
+    : `<div class="wb-empty">Точек не нашёл. Проверь город или обнови справочник.</div>`;
+  box.innerHTML = `<div class="wb-points-h">
+      <input id="wbPointCity" class="wb-query" value="${esc(res.city)}" placeholder="город">
+      <input id="wbPointQ" type="search" class="wb-query" value="${esc(state.wbPointQuery || "")}" placeholder="улица, дом, номер точки">
+      <button class="btn-ghost" id="wbPointRefresh" type="button">Обновить справочник</button>
+    </div>
+    <label class="wb-point-keep"><input type="checkbox" id="wbPointKeep" checked> запомнить точку для этого контрагента</label>
+    <div class="wb-points-list">${list}</div>`;
+  const city = $("wbPointCity");
+  if (city) city.onchange = () => loadWbPoints({ city: city.value, refresh: true });
+  const q = $("wbPointQ");
+  if (q) q.oninput = () => {
+    state.wbPointQuery = q.value;
+    clearTimeout(state.wbPointTimer);
+    state.wbPointTimer = setTimeout(() => loadWbPoints({ query: q.value }), 250);
+  };
+  const rf = $("wbPointRefresh");
+  if (rf) rf.onclick = () => loadWbPoints({ refresh: true });
+  box.querySelectorAll("button[data-point]").forEach((btn) => {
+    btn.onclick = () => pickWbPoint(btn.dataset.point);
+  });
+}
+
+async function pickWbPoint(pointId) {
+  const id = state.wbSupply;
+  const keep = $("wbPointKeep");
+  say($("wbMsg"), "Ставлю точку сдачи…");
+  try {
+    const res = await api("/api/wb/supplies/" + id + "/dropoff", {
+      method: "POST",
+      body: JSON.stringify({ point_id: Number(pointId), remember: !!(keep && keep.checked) }),
+    });
+    await loadWbDetail(id);
+    await loadAsm();
+    say($("wbMsg"), "Везём: " + (res.office || res.address || pointId) + ".", "ok");
+  } catch (e) {
+    say($("wbMsg"), e.message, "bad");
+  }
+}
+
 function bindWbDetail() {
   const id = state.wbSupply;
   const guard = async (fn, busy) => {
@@ -2012,6 +2102,13 @@ function bindWbDetail() {
       await loadAsm();
       say($("wbMsg"), res.warn || ("Точка сдачи: " + (res.office || "не выбрана") + "."), res.warn ? "warn" : "ok");
     }, "Читаю поставку с площадки…");
+  };
+  const pb = $("wbPointBtn");
+  if (pb) pb.onclick = async () => {
+    const box = $("wbPoints");
+    if (!box) return;
+    box.hidden = !box.hidden;
+    if (!box.hidden && !box.dataset.loaded) await loadWbPoints();
   };
   const nb = $("wbNewBox");
   if (nb) nb.onclick = async () => {

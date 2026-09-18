@@ -1066,9 +1066,54 @@ def wb_supply_detail(supply_id: int, ff_session: str = Cookie(default="")):
     }
 
 
+@app.get("/api/wb/shipping-points")
+def wb_shipping_points(
+    client_id: int = 0,
+    city: str = "",
+    cargo: str = "1",
+    q: str = "",
+    refresh: int = 0,
+    ff_session: str = Cookie(default=""),
+):
+    """Пункты отгрузки для выбора точки сдачи. Справочник кэширован в базе."""
+    who(ff_session)
+    init_db()
+    import supply_flow
+
+    try:
+        return {"ok": True, **supply_flow.points(client_id or None, city, cargo, q, bool(refresh))}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.post("/api/wb/supplies/{supply_id}/dropoff")
+def wb_supply_dropoff(supply_id: int, data: dict = Body(...), ff_session: str = Cookie(default="")):
+    """Выбрать точку сдачи поставки. `remember` делает её точкой по умолчанию контрагента."""
+    who(ff_session)
+    init_db()
+    import supply_flow
+
+    try:
+        return {
+            "ok": True,
+            **supply_flow.set_dropoff(
+                supply_id,
+                data.get("point_id"),
+                date=data.get("date") or "",
+                remember=bool(data.get("remember")),
+            ),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @app.post("/api/wb/supplies/{supply_id}/refresh")
 def wb_supply_refresh(supply_id: int, ff_session: str = Cookie(default="")):
-    """Перечитать поставку с площадки: состав, короба, выбранную в ЛК точку ПВЗ."""
+    """Перечитать поставку с площадки: состав, короба, выбранную точку сдачи."""
     login = who(ff_session)
     init_db()
     import supply_flow
