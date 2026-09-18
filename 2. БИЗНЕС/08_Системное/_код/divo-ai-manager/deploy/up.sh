@@ -17,6 +17,7 @@ LOCAL="$(cd "$(dirname "$0")/.." && pwd)"
 EXCLUDES=(
   --exclude '.venv/'
   --exclude '__pycache__/'
+  --exclude '.pytest_cache/'
   --exclude '_ЭТАЛОН/'
   --exclude 'workspace/state/'
   --exclude 'workspace/paused/'
