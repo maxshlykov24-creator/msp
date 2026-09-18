@@ -153,32 +153,39 @@ class MS:
         self._last = 0.0
 
     def req(self, path: str, params: dict | None = None):
-        wait = 0.22 - (time.time() - self._last)
-        if wait > 0:
-            time.sleep(wait)
-        url = path if path.startswith("http") else MS_BASE + path
-        if params:
-            url += "?" + urllib.parse.urlencode(params)
-        r = urllib.request.Request(url, headers={
-            "Authorization": f"Bearer {self.token}",
-            "Accept": "application/json;charset=utf-8",
-            "Accept-Encoding": "gzip",
-            "User-Agent": "MSProduct-2MY/1.0 (max.shlykov24@gmail.com)",
-        })
-        try:
-            with urllib.request.urlopen(r, timeout=60) as resp:
-                raw = resp.read()
-                if resp.headers.get("Content-Encoding") == "gzip":
-                    raw = gzip.decompress(raw)
-                self._last = time.time()
-                return resp.status, json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as e:
-            raw = e.read()
-            self._last = time.time()
+        last_err = None
+        for attempt in range(5):
+            wait = 0.22 - (time.time() - self._last)
+            if wait > 0:
+                time.sleep(wait)
+            url = path if path.startswith("http") else MS_BASE + path
+            if params:
+                url += "?" + urllib.parse.urlencode(params)
+            r = urllib.request.Request(url, headers={
+                "Authorization": f"Bearer {self.token}",
+                "Accept": "application/json;charset=utf-8",
+                "Accept-Encoding": "gzip",
+                "User-Agent": "MSProduct-2MY/1.0 (max.shlykov24@gmail.com)",
+            })
             try:
-                return e.code, json.loads(raw)
-            except Exception:
-                return e.code, {"error": raw.decode(errors="replace")[:400]}
+                with urllib.request.urlopen(r, timeout=60) as resp:
+                    raw = resp.read()
+                    if resp.headers.get("Content-Encoding") == "gzip":
+                        raw = gzip.decompress(raw)
+                    self._last = time.time()
+                    return resp.status, json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:
+                raw = e.read()
+                self._last = time.time()
+                try:
+                    return e.code, json.loads(raw)
+                except Exception:
+                    return e.code, {"error": raw.decode(errors="replace")[:400]}
+            except Exception as e:
+                last_err = e
+                self._last = time.time()
+                time.sleep(1.2 * (attempt + 1))
+        return 0, {"error": type(last_err).__name__ if last_err else "unknown"}
 
     def rows(self, path: str, params: dict | None = None, pages: int = 200) -> list[dict]:
         params = dict(params or {})
