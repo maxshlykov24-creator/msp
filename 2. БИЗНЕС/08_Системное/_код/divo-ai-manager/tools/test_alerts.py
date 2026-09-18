@@ -2185,6 +2185,62 @@ def test_dash_keeps_clause_whole():
     assert drop_clause_dashes("Coolray 1.5 AMT") == "Coolray 1.5 AMT"
 
 
+def test_phrasing_leaks():
+    """Четыре срыва формулировок: своё имя, CME, карта, ломаный подбор."""
+    from bot.human import for_chat, drop_paper_talk, drop_self_name
+    from bot.nudge import extract_name
+    from tools.stock_sync import HEADER, autoteka_field, card
+
+    named = drop_self_name("Никита, данные автомобили продаем за наличный расчет")
+    assert "никита" not in named.lower()
+    assert named.lower().startswith("данные")
+    chat_name = for_chat("Никита, данные автомобили продаем за наличный расчет")
+    assert "никита" not in chat_name.lower()
+
+    hist = [
+        {"role": "assistant", "content": "Как могу к вам обращаться?"},
+        {"role": "assistant", "content": "Очень приятно, Никита. Машина в наличии"},
+        {"role": "user", "content": "Сколько стоит?"},
+    ]
+    assert extract_name(hist) == ""
+    real = [
+        {"role": "assistant", "content": "Как могу к вам обращаться?"},
+        {"role": "user", "content": "Николай"},
+        {"role": "assistant", "content": "Очень приятно, Николай"},
+    ]
+    assert extract_name(real) == "Николай"
+
+    leak = drop_paper_talk("Цены в CME нет. Машина у нас, можно посмотреть")
+    assert "cme" not in leak.lower()
+    assert "машина у нас" in leak.lower()
+    chat_cme = for_chat("Цены в CME нет. Range Rover у нас, цена по объявлению")
+    assert "cme" not in chat_cme.lower()
+    assert "cm expert" not in chat_cme.lower()
+
+    hard = for_chat(
+        "Стоимость автомобиля в объявлении указана за наличный расчет. "
+        "Картой оплата не проходит, стоимость указана за наличный расчет."
+    )
+    low = hard.lower().replace("ё", "е")
+    assert "не проходит" not in low
+    assert low.count("наличный расчет") == 1
+    assert "указана за наличный расчет" in low
+
+    broken = for_chat("Пробовал ошибиться маркой. Близкого по бюджету сейчас нет")
+    assert "ошибиться" not in broken.lower()
+    assert "близкого" in broken.lower()
+
+    used = {h: "" for h in HEADER}
+    used["VIN"] = "TESTVIN0000000001"
+    used["Марка"] = "Land Rover"
+    used["Модель"] = "Range Rover"
+    used["Пробег"] = "80000"
+    used["Учёт в РФ"] = "Да"
+    used["Без пробега РФ"] = "Нет"
+    assert "cme" not in autoteka_field(used).lower()
+    assert "cme" not in card([used[h] for h in HEADER]).lower()
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -2232,4 +2288,5 @@ if __name__ == "__main__":
     test_catchup_returns_to_client()
     test_invite_survives_cleanup()
     test_dash_keeps_clause_whole()
+    test_phrasing_leaks()
     print("ok")
