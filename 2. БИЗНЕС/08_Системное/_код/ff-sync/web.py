@@ -761,8 +761,9 @@ def assembly(
         filters["until"] = ""
         counts, total = assembly_counts(keep_floor=False, **filters)
         fallback = True
-        counts = {key: min(100, n) for key, n in counts.items()}
-    rows = list_assembly(group=group, keep_floor=not fallback, limit=100, **filters)
+    # без потолка строк: галка в шапке берёт всю вкладку с текущим фильтром,
+    # а не первую сотню. Счётчик вкладки и таблица должны совпадать.
+    rows = list_assembly(group=group, keep_floor=not fallback, **filters)
     out = []
     qty = 0.0
     for r in rows:
@@ -796,8 +797,8 @@ def assembly(
                 "ms_url": order_app_url(r["ms_order_id"]),
             }
         )
-    # Поставки WB отдельным списком, без лимита 100 строк таблицы: иначе
-    # поставка, чьи задания не попали на страницу, из вкладки пропадает.
+    # Поставки WB отдельным списком: строка поставки нужна даже если её
+    # задания на другой вкладке (часть ещё собирают, часть уже ждут отгрузку).
     supplies = []
     ext_ids = {r["supply"] for r in out if r["supply"]}
     if group != "new":

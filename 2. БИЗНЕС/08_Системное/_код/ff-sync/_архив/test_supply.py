@@ -723,4 +723,22 @@ assert "WB-GI-OLD" in db.list_assembly_supply_exts(group="ready", since=since, u
 shipped_other = db.list_assembly(client_id=other_id, group="shipped", since=since, until=until)
 assert shipped_other == [], [dict(r) for r in shipped_other]
 
+# 26. Вкладка без потолка 100: галка «все» должна брать весь статус с фильтром
+big_id = db.insert_client("big100", "Много новых", "", "", "")
+big_cab = db.insert_cabinet(big_id, "wb", "wb", "t", "", 1, "", "")
+for i in range(120):
+    db.upsert_shipment(
+        big_id, big_cab, "wb", "fbs", "N%05d" % i, "Новое", "2026-09-18", "A", "",
+        "Товар", 1, None, 0, "2026-09-18T10:00:00",
+        extra={"status_group": "new", "accepted_at": "2026-09-18 10:00"},
+    )
+capped = db.list_assembly(client_id=big_id, group="new", limit=100)
+full = db.list_assembly(client_id=big_id, group="new")
+art_only = db.list_assembly(client_id=big_id, group="new", article="NOPE")
+counts_big, _ = db.assembly_counts(client_id=big_id)
+assert len(capped) == 100, len(capped)
+assert len(full) == 120, len(full)
+assert counts_big.get("new") == 120, counts_big
+assert art_only == [], art_only
+
 print("все проверки поставок, сборки и КиЗ прошли")

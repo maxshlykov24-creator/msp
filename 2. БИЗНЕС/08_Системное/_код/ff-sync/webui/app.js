@@ -1405,6 +1405,7 @@ $("aTbl").onclick = (e) => {
 };
 
 $("aAll").onclick = () => {
+  // таблица — вся текущая вкладка с фильтром, не страница из 100
   const on = $("aAll").checked;
   state.pickedAsm.clear();
   if (on) state.asm.forEach((r) => state.pickedAsm.add(r.id));
