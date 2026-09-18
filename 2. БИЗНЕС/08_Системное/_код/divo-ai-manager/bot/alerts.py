@@ -240,6 +240,8 @@ def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
     """
     blob = _all_blob(history)
     notes: list[str] = []
+    if reason == "aftersale":
+        notes.append("Уже покупал у нас")
     topic = _topic_line(history)
     if topic:
         notes.append(_cap(topic))
