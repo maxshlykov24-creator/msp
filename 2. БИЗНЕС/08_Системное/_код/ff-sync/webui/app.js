@@ -1000,7 +1000,7 @@ $("shSync").onclick = async () => {
   try {
     const from = $("shFrom").value ? new Date($("shFrom").value) : new Date();
     const days = Math.max(1, Math.round((Date.now() - from.getTime()) / 86400000) + 1);
-    const res = await api("/api/shipments/sync", { method: "POST", body: JSON.stringify({ days }) });
+    const res = await api("/api/shipments/sync", { method: "POST", body: JSON.stringify({ days, client_id: $("shClient").value || "" }) });
     say($("shMsg"), res.ok ? (res.notes || []).join("\n") || ("Обновлено отправлений: " + res.count) : res.msg, res.ok ? "ok" : "bad");
     await loadShips();
   } catch (e) {
@@ -1742,7 +1742,9 @@ $("aSync").onclick = async () => {
   $("aSync").disabled = true;
   $("aSync").textContent = "Обновляю…";
   try {
-    const res = await api("/api/shipments/sync", { method: "POST", body: JSON.stringify({ days: 14 }) });
+    // контрагент из фильтра: обновляем выбранного целиком, а не круг по всем
+    const client = $("aClient").value || "";
+    const res = await api("/api/shipments/sync", { method: "POST", body: JSON.stringify({ days: 14, client_id: client }) });
     say($("aMsg"), res.ok ? (res.notes || []).join("\n") || ("Обновлено: " + res.count) : res.msg, res.ok ? "ok" : "bad");
     await loadAsm();
   } catch (e) {

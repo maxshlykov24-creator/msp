@@ -742,15 +742,11 @@ def assembly(
     who(ff_session)
     init_db()
     import statuses
-    import supply_flow
 
-    # поставку могли собрать руками в ЛК, чтобы выбрать точку ПВЗ: через API её
-    # не задать. Сверяемся с площадкой, но не чаще раза в минуту — у ручек
-    # поставок лимит 300 запросов в минуту
-    try:
-        supply_flow.sync_open(client_id=client_id or None, min_gap=60)
-    except Exception:
-        pass
+    # Поставки с площадкой сверяет воркер (job_supplies каждые 5 минут). Здесь
+    # только чтение своей базы: сверка стояла прямо в запросе, и каждая смена
+    # статуса ждала ответа WB — с этой ноды рукопожатие часто не проходит вовсе,
+    # и вкладка висела на «Загружаю вкладку…» до таймаута в 30 секунд.
     filters = dict(
         client_id=client_id or None, marketplace=mp, kind=kind, article=article, query=q, since=since, until=until
     )
@@ -1232,21 +1228,24 @@ def wb_supply_qr_pdf(supply_id: int, ff_session: str = Cookie(default="")):
 
 @app.post("/api/shipments/sync")
 def shipments_sync(data: dict = Body(None), ff_session: str = Cookie(default="")):
+    """Кнопка «Обновить отправления»: контрагент из фильтра целиком.
+
+    Общего замка здесь нет: он держал кнопку, пока воркер шёл по чужому клиенту.
+    Замок на контрагента берёт сам проход, поэтому два склада не топчутся, а
+    разные клиенты обновляются независимо.
+    """
     who(ff_session)
-    if not _lock.acquire(blocking=False):
-        return {"ok": False, "msg": "уже идёт обработка"}
     try:
         from shipments_pull import run
 
         days = min(14, max(1, int((data or {}).get("days") or 14)))
-        res = run(days=days, blocking=False)
+        client_id = int((data or {}).get("client_id") or 0) or None
+        res = run(days=days, blocking=False, client_id=client_id)
         return {"ok": True, **res}
     except BlockingIOError:
-        return {"ok": False, "msg": "уже идёт обработка"}
+        return {"ok": False, "msg": "этот контрагент уже обновляется, подожди"}
     except Exception as exc:
         return {"ok": False, "msg": str(exc)}
-    finally:
-        _lock.release()
 
 
 @app.post("/api/shipments/marks.xlsx")

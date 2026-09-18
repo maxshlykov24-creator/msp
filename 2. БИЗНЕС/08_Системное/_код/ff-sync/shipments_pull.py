@@ -10,6 +10,7 @@ from db import (
     get_order_log,
     init_db,
     list_cabinets,
+    lock_name,
     prefer_hit,
     prune_old_shipments,
     replace_shipment_marks,
@@ -177,7 +178,18 @@ def wb_statuses(token, order_ids):
         except (TypeError, ValueError):
             continue
     for i in range(0, len(ids), 1000):
-        r = req("POST", WB_BASE + "/api/v3/orders/status", headers=wb_headers(token), json={"orders": ids[i : i + 1000]})
+        try:
+            r = req(
+                "POST",
+                WB_BASE + "/api/v3/orders/status",
+                headers=wb_headers(token),
+                json={"orders": ids[i : i + 1000]},
+            )
+        except Exception as exc:
+            # без статуса задание всё равно сохраним: wb_group отдаст «Новые», и
+            # сборщик увидит заказ, а не потеряет его вместе со всей пачкой
+            print("WB статусы не ответили: %s" % exc)
+            continue
         if r.status_code != 200:
             continue
         for row in (r.json() or {}).get("orders") or []:
@@ -198,7 +210,16 @@ def wb_meta(token, order_ids):
             continue
     for i in range(0, len(ids), 100):
         chunk = ids[i : i + 100]
-        r = req("POST", WB_BASE + "/api/marketplace/v3/orders/meta", headers=wb_headers(token), json={"orders": chunk})
+        try:
+            r = req(
+                "POST",
+                WB_BASE + "/api/marketplace/v3/orders/meta",
+                headers=wb_headers(token),
+                json={"orders": chunk},
+            )
+        except Exception as exc:
+            print("WB коды маркировки не ответили: %s" % exc)
+            continue
         if r.status_code != 200:
             continue
         rows = (r.json() or {}).get("orders") or []
@@ -381,13 +402,18 @@ def handle_ozon(client, cab, kind, postings, headers):
     return n
 
 
-def fill_wb_names():
+def fill_wb_names(client_id=None):
     """Старые WB-отправления писали артикул в имя. Подтягиваем title из каталога."""
     conn = connect()
-    rows = conn.execute(
+    sql = (
         "SELECT id, client_id, article, barcode, name FROM shipments "
         "WHERE marketplace = 'wb' AND (name IS NULL OR name = '' OR name = article)"
-    ).fetchall()
+    )
+    args = []
+    if client_id:
+        sql += " AND client_id = ?"
+        args.append(int(client_id))
+    rows = conn.execute(sql, args).fetchall()
     n = 0
     for row in rows:
         title = catalog_of(row["client_id"], row["barcode"] or "", row["article"] or "")["name"]
@@ -402,13 +428,15 @@ def fill_wb_names():
     return n
 
 
-def fill_images():
+def fill_images(client_id=None):
     """Превью из кэша каталога: в задании площадки фото нет."""
     conn = connect()
-    rows = conn.execute(
-        "SELECT id, client_id, article, barcode FROM shipments "
-        "WHERE image IS NULL OR image = ''"
-    ).fetchall()
+    sql = "SELECT id, client_id, article, barcode FROM shipments WHERE (image IS NULL OR image = '')"
+    args = []
+    if client_id:
+        sql += " AND client_id = ?"
+        args.append(int(client_id))
+    rows = conn.execute(sql, args).fetchall()
     n = 0
     for row in rows:
         image = catalog_of(row["client_id"], row["barcode"] or "", row["article"] or "")["image"]
@@ -423,20 +451,34 @@ def fill_images():
     return n
 
 
-def run(days=14, blocking=True):
+def run(days=14, blocking=True, client_id=None):
+    """Проход по кабинетам. Замок свой у каждого контрагента.
+
+    Один общий замок означал бы, что кнопка склада ждёт, пока воркер догрузит
+    чужого клиента: проход по всем кабинетам идёт минутами. Разные контрагенты
+    друг друга не трогают, записи в базу разводит WAL.
+    """
     init_db()
-    with run_lock(blocking=blocking):
-        return _run(days)
+    with run_lock(name=lock_name(client_id), blocking=blocking):
+        return _run(days, client_id)
 
 
-def _run(days):
-    fill_wb_names()
-    fill_images()
+def _run(days, client_id=None):
+    """Проход по кабинетам. `client_id` сужает до одного контрагента.
+
+    Кнопка «Обновить отправления» присылает контрагента из фильтра: полный круг
+    по всем кабинетам — это 17 тысяч отправлений и четверть часа, столько склад
+    у экрана не стоит.
+    """
+    fill_wb_names(client_id)
+    fill_images(client_id)
     start = since_days(int(days or 14))
     created = 0
     notes = []
     for cab in list_cabinets():
         if not cab["active"] or not cab["token"]:
+            continue
+        if client_id and cab["client_id"] != int(client_id):
             continue
         client = get_client_by_id(cab["client_id"])
         if not client:

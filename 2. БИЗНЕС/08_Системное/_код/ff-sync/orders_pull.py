@@ -11,6 +11,7 @@ from db import (
     get_sku_by_barcode,
     init_db,
     list_cabinets,
+    lock_name,
     run_lock,
     upsert_order_log,
 )
@@ -110,23 +111,57 @@ def since_days(days=3):
     return start
 
 
+def pull_wb_new(token):
+    """Актуальные новые сборочные задания одним ответом.
+
+    Отдельная ручка WB, без страниц и без окна дат. Спрашиваем её всегда: пока
+    новые заказы брали только постраничной выборкой, обрыв на середине прятал
+    свежие задания от сборщика.
+    """
+    try:
+        r = req("GET", WB_BASE + "/api/v3/orders/new", headers=wb_headers(token))
+    except Exception as exc:
+        print("WB новые не ответили: %s" % exc)
+        return []
+    if r.status_code != 200:
+        print("WB новые %s %s" % (r.status_code, (r.text or "")[:180]))
+        return []
+    return (r.json() or {}).get("orders") or []
+
+
 def pull_wb_fbs(token, date_from):
-    out = []
+    """Задания за окно плюс все новые.
+
+    Страницы идут от старых к новым, поэтому обрыв выборки терял свежие заказы.
+    Начинаем с `orders/new`, дальше добираем историю по страницам, дубли по id
+    отбрасываем.
+    """
+    out = list(pull_wb_new(token))
+    seen = {str(o.get("id") or "") for o in out}
     nxt = 0
     ts = int(date_from.timestamp())
     while True:
-        r = req(
-            "GET",
-            WB_BASE + "/api/v3/orders",
-            headers=wb_headers(token),
-            params={"limit": 1000, "next": nxt, "dateFrom": ts},
-        )
+        try:
+            r = req(
+                "GET",
+                WB_BASE + "/api/v3/orders",
+                headers=wb_headers(token),
+                params={"limit": 1000, "next": nxt, "dateFrom": ts},
+            )
+        except Exception as exc:
+            print("WB FBS страница оборвалась, беру что успел: %s" % exc)
+            break
         if r.status_code != 200:
             print("WB FBS %s %s" % (r.status_code, (r.text or "")[:180]))
             break
         data = r.json()
         batch = data.get("orders") or []
-        out.extend(batch)
+        for order in batch:
+            ext = str(order.get("id") or "")
+            if ext and ext in seen:
+                continue
+            seen.add(ext)
+            out.append(order)
         nxt = data.get("next")
         if not batch or not nxt:
             break
@@ -307,18 +342,21 @@ def handle_ozon(client, cab, kind, postings):
     return n
 
 
-def run():
+def run(client_id=None, blocking=True):
+    """Заказы в МойСклад. Замок свой у каждого контрагента, как у отправлений."""
     init_db()
-    with run_lock():
-        return _run()
+    with run_lock(name=lock_name(client_id), blocking=blocking):
+        return _run(client_id)
 
 
-def _run():
+def _run(client_id=None):
     ensure_projects()
     start = since_days(3)
     created = 0
     for cab in list_cabinets():
         if not cab["active"] or not cab["token"]:
+            continue
+        if client_id and cab["client_id"] != int(client_id):
             continue
         client = get_client_by_id(cab["client_id"])
         if not client or not client["ms_counterparty_id"]:

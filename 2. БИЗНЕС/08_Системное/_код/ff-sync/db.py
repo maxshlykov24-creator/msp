@@ -196,6 +196,15 @@ def init_db():
     return db_path()
 
 
+def lock_name(client_id=None):
+    """Имя замка прохода: у каждого контрагента свой.
+
+    Один общий замок означал, что кнопка склада ждёт, пока воркер догрузит чужого
+    клиента, а круг по всем кабинетам идёт минутами.
+    """
+    return "ff-client-%s" % int(client_id) if client_id else "ff"
+
+
 @contextmanager
 def run_lock(name="ff", blocking=True):
     path = os.path.join(os.path.dirname(db_path()), "%s.lock" % name)
@@ -1153,6 +1162,49 @@ def set_work_state(ids, work_state):
         "UPDATE shipments SET work_state = ? WHERE id IN (%s)" % q,
         [work_state or ""] + [int(x) for x in ids],
     )
+    conn.commit()
+    n = cur.rowcount
+    conn.close()
+    return n
+
+
+def list_open_shipments(cabinet_id, kind="", groups=("ready", "shipped")):
+    """Отправления кабинета, которые ждут отгрузки или уже уехали.
+
+    Нужны ночной сверке: у этих статус на площадке живёт дальше, а у нас может
+    остаться складская отметка «ожидает отгрузки» навсегда.
+    """
+    if not groups:
+        return []
+    conn = connect()
+    args = [int(cabinet_id)]
+    sql = "SELECT * FROM shipments WHERE cabinet_id = ?"
+    if kind:
+        sql += " AND kind = ?"
+        args.append(kind)
+    sql += " AND %s IN (%s)" % (EFF_GROUP, ",".join("?" * len(groups)))
+    args.extend(groups)
+    rows = conn.execute(sql + " ORDER BY id", args).fetchall()
+    conn.close()
+    return rows
+
+
+def set_shipment_status(ship_id, status, status_group, clear_work=False, track=None):
+    """Обновить статус площадки. `clear_work` снимает складскую отметку.
+
+    Отметку снимаем, когда площадка ушла вперёд: иначе work_state держит заказ на
+    вкладке «Ожидают отгрузки», хотя он уже доставлен.
+    """
+    sets = ["status = ?", "status_group = ?"]
+    vals = [status or "", status_group or ""]
+    if clear_work:
+        sets.append("work_state = ''")
+    if track is not None:
+        sets.append("track = ?")
+        vals.append(track)
+    vals.append(int(ship_id))
+    conn = connect()
+    cur = conn.execute("UPDATE shipments SET %s WHERE id = ?" % ", ".join(sets), vals)
     conn.commit()
     n = cur.rowcount
     conn.close()
