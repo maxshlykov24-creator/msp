@@ -2225,4 +2225,6 @@ if __name__ == "__main__":
     test_dead_post_leaves_queue()
     test_nudge_stops_when_blocked()
     test_catchup_returns_to_client()
+    test_invite_survives_cleanup()
+    test_dash_keeps_clause_whole()
     print("ok")
