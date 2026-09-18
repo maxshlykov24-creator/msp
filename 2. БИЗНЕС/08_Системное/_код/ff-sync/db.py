@@ -1168,6 +1168,22 @@ def set_work_state(ids, work_state):
     return n
 
 
+def map_shipments(cabinet_id, kind=""):
+    """Что по кабинету уже лежит у нас: номер отправления → строка.
+
+    Нужна выгрузке Ozon, чтобы решить, за кем идти отдельным запросом.
+    """
+    conn = connect()
+    args = [int(cabinet_id)]
+    sql = "SELECT * FROM shipments WHERE cabinet_id = ?"
+    if kind:
+        sql += " AND kind = ?"
+        args.append(kind)
+    rows = conn.execute(sql, args).fetchall()
+    conn.close()
+    return {str(r["ext_id"]): r for r in rows}
+
+
 def list_open_shipments(cabinet_id, kind="", groups=("ready", "shipped")):
     """Отправления кабинета, которые ждут отгрузки или уже уехали.
 

@@ -11,6 +11,7 @@ from db import (
     init_db,
     list_cabinets,
     lock_name,
+    map_shipments,
     prefer_hit,
     prune_old_shipments,
     replace_shipment_marks,
@@ -141,10 +142,12 @@ def gtin_of(code):
     return ""
 
 
-def save_row(client, cab, kind, ext_id, status, shipped_at, article, barcode, name, qty, marks, extra=None):
+def save_row(client, cab, kind, ext_id, status, shipped_at, article, barcode, name, qty, marks, extra=None, known=None):
+    """Сохранить отправление. `marks=None` — коды не спрашивали, старые не трогаем."""
     if not ext_id:
         return 0
     log = get_order_log(cab["id"], ext_id)
+    count = len(marks) if marks is not None else int((known["marks_count"] if known is not None else 0) or 0)
     sid = upsert_shipment(
         client["id"],
         cab["id"],
@@ -158,14 +161,15 @@ def save_row(client, cab, kind, ext_id, status, shipped_at, article, barcode, na
         name or "",
         float(qty or 1),
         (log["ms_order_id"] if log else None),
-        len(marks),
+        count,
         now_iso(),
         extra=extra,
     )
-    replace_shipment_marks(
-        sid,
-        [{"code": code, "gtin": gtin_of(code), "article": article or ""} for code in marks],
-    )
+    if marks is not None:
+        replace_shipment_marks(
+            sid,
+            [{"code": code, "gtin": gtin_of(code), "article": article or ""} for code in marks],
+        )
     return 1
 
 
@@ -345,15 +349,39 @@ def as_dict(raw):
     return {}
 
 
+def need_detail(row, post):
+    """Нужен ли отдельный запрос по отправлению Ozon.
+
+    `list` отдаёт сотню за раз, `get` — одно, и на кабинете это 874 запроса
+    каждый круг. Поштучно спрашиваем только то, что могло измениться: новое
+    отправление, сменившийся статус и всё, что ещё в работе. У уехавшего и
+    доставленного детали больше не меняются.
+    """
+    if row is None:
+        return True
+    raw = str(post.get("status") or "")
+    if statuses_mod.ru(raw) != (row["status"] or ""):
+        return True
+    return statuses_mod.ozon_group(raw) in (statuses_mod.NEW, statuses_mod.ASSEMBLING, statuses_mod.READY)
+
+
 def handle_ozon(client, cab, kind, postings, headers):
     n = 0
+    known = map_shipments(cab["id"], kind) if kind == "fbs" else {}
     for post in postings or []:
         post = as_dict(post)
         ext_id = str(post.get("posting_number") or "")
         if not ext_id:
             continue
+        row = known.get(ext_id)
         # FBO list уже содержит состав. GET по каждому отправлению на больших кабинетах занимает минуты.
-        detail = as_dict(pull_ozon_get(headers, kind, ext_id) or post) if kind == "fbs" else post
+        detail = post
+        fetched = False
+        if kind == "fbs" and need_detail(row, post):
+            got = pull_ozon_get(headers, kind, ext_id)
+            if got:
+                detail = as_dict(got)
+                fetched = True
         products = detail.get("products") or post.get("products") or []
         if not isinstance(products, list):
             products = []
@@ -388,7 +416,9 @@ def handle_ozon(client, cab, kind, postings, headers):
             "",
             name,
             qty,
-            ozon_marks(detail),
+            # детали не запрашивали — коды маркировки оставляем как есть
+            ozon_marks(detail) if fetched or kind == "fbo" else None,
+            known=row,
             extra={
                 "status_group": statuses_mod.ozon_group(raw_status),
                 "accepted_at": stamp_of(detail.get("in_process_at") or post.get("in_process_at")),

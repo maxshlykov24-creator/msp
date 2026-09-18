@@ -853,7 +853,9 @@ def extract_name(messages: list[dict]) -> str:
                 asked = True
             found = NICE_NAME.search(text)
             if found:
-                return found.group(1)
+                name = found.group(1)
+                if name.lower().replace("ё", "е") != "никита":
+                    return name
         elif role == "user":
             guess = name_from_text(text)
             if guess and asked:

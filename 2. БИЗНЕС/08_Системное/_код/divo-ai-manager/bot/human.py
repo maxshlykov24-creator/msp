@@ -266,11 +266,40 @@ CARD_REFUSAL = (
     re.compile(r"с\s+карты\s+на\s+карту\s*-?\s*нет", re.IGNORECASE),
     re.compile(r"эквайринга?\s+(у\s+нас\s+)?нет", re.IGNORECASE),
     re.compile(r"картой\s+не\s+получится", re.IGNORECASE),
+    re.compile(
+        r"карт(ой|у|ами)?\s+оплат\w*\s+не\s+"
+        r"(проходит|получится|работа\w*|принимаем|примем)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"оплат\w*\s+карт(ой|ы)\s+не\s+(проходит|получится|работа\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"картой\s+не\s+(проходит|работа\w*|примем)", re.IGNORECASE),
 )
 CARD_SOFT = "цена указана за наличный расчет"
 # Хвост отказа: «поэтому и комиссии нет» держится за вырезанную фразу.
 CARD_TAIL = re.compile(
     r"\s*,?\s*поэтому\s+и?\s*(комиссии|процента)\s+нет", re.IGNORECASE
+)
+CASH_STATED = re.compile(
+    r"указан[аоы]\s+за\s+наличн\w+\s+расч[её]т",
+    re.IGNORECASE,
+)
+# «Никита,» в обращении — имя продавца. Клиент так не назывался.
+SELF_NICE = re.compile(r"очень приятно,\s*никита\.?\s*", re.IGNORECASE)
+SELF_VOCATIVE = re.compile(
+    r"(?:^|(?<=[.!?]\s)|(?<=\n))Никита,\s*",
+    re.IGNORECASE,
+)
+# Ломаный рассказ про поиск в стоке. Клиенту нужен итог, не процесс.
+SEARCH_TALK = re.compile(
+    r"("
+    r"пробовал\w*\s+ошибиться(\s+маркой)?|"
+    r"ошибиться\s+маркой|"
+    r"если\s+ошибся\s+маркой"
+    r")",
+    re.IGNORECASE,
 )
 # Предложение без точки: «Пожалуйста Все три машины в наличии». Разрезаем
 # только там, где следующее слово точно начинает новую фразу, - имена
@@ -401,6 +430,49 @@ def soften_card(text: str) -> str:
     if not text.strip():
         text = CARD_SOFT[0].upper() + CARD_SOFT[1:]
     return _tidy(text, original)
+
+
+def drop_repeat_cash(text: str) -> str:
+    """Мысль «указана за наличный расчет» в реплике один раз."""
+    original = text or ""
+    if len(CASH_STATED.findall(original)) < 2:
+        return original
+    parts = re.split(r"(?<=[.!?])\s+", original)
+    kept: list[str] = []
+    seen = False
+    for part in parts:
+        if CASH_STATED.search(part):
+            if seen:
+                continue
+            seen = True
+        kept.append(part)
+    return _tidy(" ".join(k for k in kept if k.strip()), original)
+
+
+def drop_self_name(text: str) -> str:
+    """«Никита,» в обращении — имя продавца, не клиента."""
+    original = text or ""
+    text = SELF_NICE.sub("", original)
+    text = SELF_VOCATIVE.sub("", text)
+    if text == original:
+        return original
+    return _tidy(text, original)
+
+
+def drop_search_talk(text: str) -> str:
+    """Клиенту итог подбора, не «пробовал ошибиться маркой»."""
+    original = text or ""
+    if not SEARCH_TALK.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if SEARCH_TALK.search(part):
+            continue
+        kept.append(part)
+    text = " ".join(kept).strip()
+    if text:
+        return _tidy(text, original)
+    return "Уточню по наличию"
 
 
 def add_missing_dots(text: str) -> str:
@@ -1179,7 +1251,12 @@ PAPER_LEAK = re.compile(
     r"цифру\s+наугад|"
     r"цифрами\s+наугад|"
     r"не\s+дезинформировать\s+вас|"
-    r"чтобы\s+вас\s+не\s+дезинформировать"
+    r"чтобы\s+вас\s+не\s+дезинформировать|"
+    r"цены?\s+в\s+cme|"
+    r"ссылк\w*\s+в\s+cme|"
+    r"без\s+цены\s+в\s+cme|"
+    r"\bcm\s*expert|"
+    r"\bcme\b"
     r")",
     re.IGNORECASE,
 )
@@ -1418,18 +1495,21 @@ def for_chat(text: str) -> str:
     text = drop_clause_dashes(text or "")
     text = drop_kstati(text)
     text = drop_owner_legal(text)
+    text = drop_self_name(text)
     text = soften_many_paints(text)
     text = MARKET_TALK.sub("ниже аналогов", text)
     text = drop_manager(text)
     text = drop_qual(text)
     text = trim_permit(text)
     text = soften_card(text)
+    text = drop_repeat_cash(text)
     text = drop_no_data_logic(text)
     text = drop_connection_talk(text)
     text = fix_buyout_and_report(text)
     text = drop_phone_script(text)
     text = drop_where_choice(text)
     text = soften_now_call(text)
+    text = drop_search_talk(text)
     text = drop_paper_talk(text)
     text = drop_logistics_lecture(text)
     text = drop_dead_closer(text)

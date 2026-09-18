@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from db import get_setting, init_db, list_cabinets, list_clients, set_setting
 
 CIRCLE_MINUTES = 30
+RETRY_MINUTES = 5
 KEY = "rota:client:%s"
 
 
@@ -56,11 +57,17 @@ def due(client, gap_minutes=CIRCLE_MINUTES):
 
 
 def sync_client(client_id, days=14):
-    """Заказы и отправления одного контрагента."""
+    """Заказы и отправления одного контрагента.
+
+    Метку времени ставим только если отправления реально забрали: иначе
+    контрагент, чей проход столкнулся с замком, считался бы обновлённым и ждал
+    следующего круга полчаса.
+    """
     from orders_pull import run as run_orders
     from shipments_pull import run as run_ships
 
     notes = []
+    done = False
     try:
         run_orders(client_id=client_id, blocking=False)
     except Exception as exc:
@@ -68,9 +75,16 @@ def sync_client(client_id, days=14):
     try:
         res = run_ships(days=days, blocking=False, client_id=client_id)
         notes.extend(res.get("notes") or [])
+        done = True
     except Exception as exc:
         notes.append("отправления: %s" % exc)
-    set_setting(KEY % int(client_id), stamp(now()))
+    if done:
+        set_setting(KEY % int(client_id), stamp(now()))
+    else:
+        # проход не удался: метку сдвигаем так, чтобы вернуться к клиенту через
+        # RETRY_MINUTES, но очередь тем же шагом ушла к следующему. Совсем без
+        # метки первый в очереди зациклился бы на себе и заморозил остальных
+        set_setting(KEY % int(client_id), stamp(now() - timedelta(minutes=CIRCLE_MINUTES - RETRY_MINUTES)))
     return notes
 
 
