@@ -223,6 +223,9 @@ def test_unsolicited():
     assert asked_torg(
         [{"role": "user", "content": "Добрый день, за 3,5 млн продадите многодетной семье?"}]
     )
+    assert asked_torg(
+        [{"role": "user", "content": "Добрый вечер ! 6,5 готов приехать х."}]
+    )
     assert asked_leasing([{"role": "user", "content": "а в лизинг можно?"}])
     assert not asked_heater([{"role": "user", "content": "За наличку торг есть?"}])
     assert asked_heater([{"role": "user", "content": "а вебасто стоит?"}])

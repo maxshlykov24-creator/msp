@@ -500,6 +500,8 @@ def asked_torg(messages: list[dict] | None) -> bool:
         blob,
     ) and re.search(r"продад|отдад|готов за|забер", blob):
         return True
+    if re.search(r"\d+(?:[.,]\d+)?\s*готов\s+приехать", blob):
+        return True
     return False
 
 
