@@ -309,6 +309,9 @@ function card(task){
     '</small></div></div>';
 }
 
+function trustTile(value, label){
+  return '<div><b>' + value + '</b><span>' + label + '</span></div>';
+}
 function hoursPair(load){
   if(!load || !load.show) return "";
   return n(load.occupied_h) + " из " + n(load.available_h) + " ч";
@@ -457,7 +460,7 @@ function renderToday(D){
     (kn ? n(kn) + " новых заявок сегодня" : "Сегодня новых заявок нет") + '.</span></div>';
   var gv = t.grooming_visits;
   var next = t.grooming_next;
-  var gLine = gv ? ("В салоне сегодня " + n(gv) + " визитов" + (next ? ", ближайший в " + next : "")) : "В салоне сегодня визитов нет";
+  var gLine = gv ? ("В салоне сегодня " + vizitov(gv) + (next ? ", ближайший в " + next : "")) : "В салоне сегодня визитов нет";
   html += '<div class="now-line"><b>Салон сейчас</b><span>' + gLine + '.</span></div>';
   return html;
 }

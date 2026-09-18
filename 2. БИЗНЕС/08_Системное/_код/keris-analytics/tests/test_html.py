@@ -19,5 +19,6 @@ def test_booking_tokens_and_no_overload():
     assert "min(100%,520px)" in HTML or "min(100%, 520px)" in HTML
     assert "combinedHero" in HTML
     assert "hoursPair" in HTML
+    assert "function trustTile" in HTML
     assert "show_avg_check" in HTML
     assert "60+" in HTML

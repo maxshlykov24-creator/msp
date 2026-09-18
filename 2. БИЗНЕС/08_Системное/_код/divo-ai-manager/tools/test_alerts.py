@@ -2012,7 +2012,10 @@ def test_nudge_stops_when_blocked():
 
     doc = {
         "chat_id": "5001",
-        "messages": [{"role": "user", "content": "Кулрей 2023 актуален?"}],
+        "messages": [
+            {"role": "user", "content": "Кулрей 2023 актуален?"},
+            {"role": "assistant", "content": "Да, в наличии. Хотите посмотреть?"},
+        ],
         "nudge": {"waiting": True, "count": 0, "name": "Николай", "car": "Geely Coolray"},
     }
     saved: dict = {}
