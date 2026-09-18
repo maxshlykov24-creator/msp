@@ -678,7 +678,7 @@ class AlertBot:
             )
             return True
         except Exception as exc:  # noqa: BLE001
-            if delete_final(str(exc)):
+            if False and delete_final(str(exc)):
                 log.debug("delete %s/%s: %s", chat_id, message_id, exc)
                 return True
             log.warning("delete %s/%s: %s", chat_id, message_id, exc)

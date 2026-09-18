@@ -1960,6 +1960,101 @@ def test_vat_from_listing_without_cme_flag():
     assert asked_vat(hist) is True
 
 
+def test_dead_post_leaves_queue():
+    """Снятое руками сообщение уходит из posts, а не долбит API вечно."""
+    import asyncio
+
+    from bot import crm
+    from bot.alerts import AlertBot, delete_final
+
+    assert delete_final("deleteMessage: Bad Request: message to delete not found") is True
+    assert delete_final("deleteMessage: Bad Request: message can't be deleted") is True
+    assert delete_final("deleteMessage: Forbidden: bot was kicked") is True
+    assert delete_final("deleteMessage: Bad Request: Too Many Requests: retry after 7") is False
+
+    calls: list[str] = []
+
+    bot = AlertBot.__new__(AlertBot)
+
+    async def fake_call(method, payload=None):
+        calls.append(method)
+        raise RuntimeError("deleteMessage: Bad Request: message to delete not found")
+
+    bot._call = fake_call
+    assert asyncio.run(bot.delete(-100, 77)) is True
+
+    alert = {
+        "tg": {"chat_id": -100, "message_id": 90},
+        "posts": [
+            {"chat_id": -100, "message_id": 90},
+            {"chat_id": -100, "message_id": 77},
+        ],
+    }
+    old_bot = crm.bot
+    crm.bot = bot
+    try:
+        asyncio.run(crm._sweep_posts(alert))
+    finally:
+        crm.bot = old_bot
+    assert alert["posts"] == [{"chat_id": -100, "message_id": 90}]
+    assert len(calls) == 2
+
+
+def test_nudge_stops_when_blocked():
+    """Клиент заблокировал бота: догон гаснет, а не ломится каждую минуту."""
+    import asyncio
+
+    from bot import main as bot_main, nudge, store
+
+    assert bot_main.chat_gone("sendMessage: Forbidden: bot was blocked by the user") is True
+    assert bot_main.chat_gone("sendMessage: Bad Request: chat not found") is True
+    assert bot_main.chat_gone("sendMessage: Bad Request: Too Many Requests") is False
+
+    doc = {
+        "chat_id": "5001",
+        "messages": [{"role": "user", "content": "Кулрей 2023 актуален?"}],
+        "nudge": {"waiting": True, "count": 0, "name": "Николай", "car": "Geely Coolray"},
+    }
+    saved: dict = {}
+
+    class Blocked:
+        async def typing(self, chat_id):
+            return None
+
+        async def send(self, chat_id, text):
+            raise RuntimeError("sendMessage: Forbidden: bot was blocked by the user")
+
+    old = (
+        store.load_doc,
+        store.save_doc,
+        store.is_paused,
+        nudge.ready_to_send,
+        bot_main.type_and_wait,
+        dict(bot_main.CHANNELS),
+    )
+    store.load_doc = lambda cid: doc
+    store.save_doc = lambda cid, d: saved.update(d)
+    store.is_paused = lambda cid: False
+    nudge.ready_to_send = lambda meta: 1
+    bot_main.type_and_wait = lambda channel, chat_id, delay: asyncio.sleep(0)
+    bot_main.CHANNELS["tg"] = Blocked()
+    try:
+        asyncio.run(bot_main.send_nudge("5001"))
+    finally:
+        (
+            store.load_doc,
+            store.save_doc,
+            store.is_paused,
+            nudge.ready_to_send,
+            bot_main.type_and_wait,
+        ) = old[:5]
+        bot_main.CHANNELS.clear()
+        bot_main.CHANNELS.update(old[5])
+
+    assert saved["nudge"]["waiting"] is False
+    assert int(saved["nudge"].get("count") or 0) == 0
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -2002,4 +2097,6 @@ if __name__ == "__main__":
     test_persist_media_without_nags()
     test_stop_nudge_on_closed_and_voice()
     test_vat_from_listing_without_cme_flag()
+    test_dead_post_leaves_queue()
+    test_nudge_stops_when_blocked()
     print("ok")
