@@ -57,6 +57,8 @@ inflight: set[str] = set()
 CHANNELS: dict[str, object] = {}
 # Сколько раз переспрашиваем модель, если клиент дописывает во время обдумывания.
 MAX_MERGE_ROUNDS = 2
+# Как часто проверяем очередь тех, кому бот так и не ответил.
+CATCHUP_EVERY_SEC = 300
 # Клиент заблокировал бота или удалил аккаунт: в такой чат не пройдёт ни одно
 # сообщение. Догон обязан замолчать навсегда, иначе он ломится туда каждую
 # минуту, а счётчик касаний не растёт — отправка падает до его записи.
@@ -916,6 +918,11 @@ async def catchup_waiting() -> int:
     log.info("догон очереди: %d чатов ждут ответа", len(queued))
     sent = 0
     for cid in queued:
+        # Догон идёт по кругу, а не только на старте: чат, которому бот уже
+        # отвечает в эту секунду, трогать нельзя, иначе клиент получит дубль.
+        running = tasks.get(str(cid))
+        if str(cid) in inflight or (running and not running.done()):
+            continue
         if is_llm_pause_reason(store.pause_info(cid).get("reason") or ""):
             store.resume(cid)
         llm_fails.pop(str(cid), None)
@@ -937,6 +944,23 @@ async def catchup_waiting() -> int:
         await asyncio.sleep(1.2)
     log.info("догон очереди: готово, ответил %d", sent)
     return sent
+
+
+async def catchup_loop() -> None:
+    """Ключ ожил — возвращаемся к клиенту сами, без рестарта и ручного запуска.
+
+    Догон очереди раньше был только на старте процесса. Лимит ключа выбивало
+    днём, чат с одним сбоем модели оставался без ответа, и лид ждал, пока
+    кто-то вспомнит про tools/catchup_waiting.py.
+    """
+    while True:
+        await asyncio.sleep(CATCHUP_EVERY_SEC)
+        try:
+            if not any(waiting_for_bot(cid) for cid in store.all_chat_ids()):
+                continue
+            await catchup_waiting()
+        except Exception:
+            log.exception("догон очереди упал")
 
 
 def tech_pause_lifted(chat_id: int) -> bool:
@@ -1094,14 +1118,31 @@ async def stock_loop() -> None:
 
 
 async def budget_loop(tg: Telegram) -> None:
-    """Раз в полчаса смотрим остаток по ключу и предупреждаем, пока он не кончился."""
+    """Раз в полчаса смотрим остаток по ключу: предупреждаем на подходе к нулю
+    и напоминаем каждый час, пока ключ на нуле и агент молчит."""
     warned = False
+    dead_at: datetime | None = None
     while True:
         try:
             info = await llm.key_budget()
             left = info.get("remaining")
             if isinstance(left, (int, float)):
-                if left <= BUDGET_WARN_USD and not warned:
+                # Ключ на нуле - агент молчит во всех чатах, и одного утреннего
+                # предупреждения тут мало: напоминаем, пока лимит не поднят.
+                now = datetime.now(timezone.utc)
+                if left <= 0:
+                    if dead_at is None or now - dead_at >= timedelta(hours=1):
+                        dead_at = now
+                        await tg.notify_owner(
+                            "Ключ OpenRouter кончился: лимит %s долларов выбран весь. "
+                            "Агент не отвечает ни в одном чате, клиенты ждут. "
+                            "Подними лимит ключа." % info.get("limit")
+                        )
+                        log.error("ключ кончился, агент молчит: лимит %s", info.get("limit"))
+                elif dead_at is not None:
+                    dead_at = None
+                    log.info("ключ снова с остатком %.2f, отвечаем", left)
+                if 0 < left <= BUDGET_WARN_USD and not warned:
                     warned = True
                     await tg.notify_owner(
                         "Кредиты OpenRouter кончаются: осталось %.2f из %s долларов. "
@@ -1214,6 +1255,7 @@ async def run() -> None:
     asyncio.create_task(poll_avito(tg))
     asyncio.create_task(poll_autoru(tg))
     asyncio.create_task(catchup_waiting())
+    asyncio.create_task(catchup_loop())
     asyncio.create_task(alert_loop())
     asyncio.create_task(amojo_http.serve())
     offset = read_offset()

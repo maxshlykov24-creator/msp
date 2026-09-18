@@ -2058,6 +2058,92 @@ def test_nudge_stops_when_blocked():
     assert int(saved["nudge"].get("count") or 0) == 0
 
 
+def test_catchup_returns_to_client():
+    """Сбой модели не хоронит лид: очередь разбирается сама, без дублей."""
+    import asyncio
+
+    from bot import main as bot_main, store
+
+    docs = {
+        # Клиент написал последним, бот молчит после сбоя модели.
+        "av:wait": {
+            "chat_id": "av:wait",
+            "messages": [
+                {"role": "assistant", "content": "Машина в наличии"},
+                {"role": "user", "content": "А обмен рассмотрите?"},
+            ],
+            "nudge": {},
+        },
+        # Тут бот уже ответил: в очередь чат попадать не должен.
+        "av:done": {
+            "chat_id": "av:done",
+            "messages": [
+                {"role": "user", "content": "Пробег какой?"},
+                {"role": "assistant", "content": "70 078 км"},
+            ],
+            "nudge": {},
+        },
+    }
+    answered: list[str] = []
+
+    class Channel:
+        async def typing(self, chat_id):
+            return None
+
+        async def send(self, chat_id, text):
+            return None
+
+    async def fake_answer(channel, chat_id, chunks):
+        answered.append(str(chat_id))
+        docs[str(chat_id)]["messages"].append(
+            {"role": "assistant", "content": "Обмен рассмотрим, приезжайте"}
+        )
+
+    old = (
+        store.load_doc,
+        store.all_chat_ids,
+        store.pause_info,
+        store.is_paused,
+        bot_main._answer_locked,
+        dict(bot_main.CHANNELS),
+    )
+    store.load_doc = lambda cid: docs[str(cid)]
+    store.all_chat_ids = lambda: list(docs)
+    store.pause_info = lambda cid: {"reason": "llm"}
+    store.is_paused = lambda cid: False
+    bot_main._answer_locked = fake_answer
+    bot_main.CHANNELS["avito"] = Channel()
+    bot_main.CHANNELS["tg"] = Channel()
+    try:
+        assert bot_main.waiting_for_bot("av:wait") is True
+        assert bot_main.waiting_for_bot("av:done") is False
+        sent = asyncio.run(bot_main.catchup_waiting())
+
+        # Второй заход, пока по чату уже идёт ответ: дубля быть не должно.
+        busy = asyncio.new_event_loop()
+        try:
+            docs["av:wait"]["messages"].append({"role": "user", "content": "Ну что?"})
+            bot_main.inflight.add("av:wait")
+            again = busy.run_until_complete(bot_main.catchup_waiting())
+        finally:
+            bot_main.inflight.discard("av:wait")
+            busy.close()
+    finally:
+        (
+            store.load_doc,
+            store.all_chat_ids,
+            store.pause_info,
+            store.is_paused,
+            bot_main._answer_locked,
+        ) = old[:5]
+        bot_main.CHANNELS.clear()
+        bot_main.CHANNELS.update(old[5])
+
+    assert answered == ["av:wait"]
+    assert sent == 1
+    assert again == 0
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -2102,4 +2188,5 @@ if __name__ == "__main__":
     test_vat_from_listing_without_cme_flag()
     test_dead_post_leaves_queue()
     test_nudge_stops_when_blocked()
+    test_catchup_returns_to_client()
     print("ok")
