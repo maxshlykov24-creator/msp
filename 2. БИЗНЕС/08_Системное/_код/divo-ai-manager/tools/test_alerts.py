@@ -2264,6 +2264,38 @@ def test_phrasing_leaks():
     assert "cme" not in card([used[h] for h in HEADER]).lower()
 
 
+def test_max_refusal_keeps_sense():
+    """Отказ от Макса не выворачивается в «Телеграм не используем»."""
+    from bot.human import drop_max_app, for_chat
+
+    canon = "Макс не используем, только Телеграм или Ватсап"
+    assert drop_max_app(canon) == canon
+    live = drop_max_app(
+        "Макс не используем, только Телеграм или Ватсап. "
+        "Скиньте, пожалуйста, номер телефона, отправлю отчёт туда"
+    )
+    assert live.startswith(canon)
+    assert "скиньте" in live.lower()
+    assert "ватсап. скиньте" in live.lower()
+    assert not live.lower().startswith("телеграм или ватсап не")
+    broken = drop_max_app(
+        "Телеграм или Ватсап не используем, только Телеграм или Ватсап. "
+        "Скиньте, пожалуйста, номер телефона, отправлю отчёт туда"
+    )
+    assert broken.startswith(canon)
+    assert "телеграм или ватсап не используем" not in broken.lower()
+    chat = for_chat(
+        "Телеграм или Ватсап не используем, только Телеграм или Ватсап. "
+        "Скиньте, пожалуйста, номер телефона, отправлю отчёт туда"
+    )
+    assert "макс не используем" in chat.lower()
+    assert "телеграм или ватсап не используем" not in chat.lower()
+    offer = drop_max_app("Фото на Макс отправим")
+    assert "макс" not in offer.lower()
+    assert "телеграм" in offer.lower()
+    assert drop_max_app("Максим, напишите номер") == "Максим, напишите номер"
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -2312,4 +2344,5 @@ if __name__ == "__main__":
     test_invite_survives_cleanup()
     test_dash_keeps_clause_whole()
     test_phrasing_leaks()
+    test_max_refusal_keeps_sense()
     print("ok")

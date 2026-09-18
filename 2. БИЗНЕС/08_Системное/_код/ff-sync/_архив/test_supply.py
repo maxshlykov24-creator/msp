@@ -21,6 +21,20 @@ import net
 CALLS = []
 WB_SENT = {}
 SUPPLY_SEQ = []
+# точки сдачи, которые «приняла» площадка: {supplyId: тело запроса}
+POINT_SET = {}
+# поставки, отсканированные в пункте отгрузки: точку у них менять поздно
+SCANNED = set()
+PVZ_POINT = {
+    "id": 50095011, "name": "Москва", "address": "Москва, Домодедовская Улица 28",
+    "city": "Москва", "officeType": "pp", "cargoTypes": [1],
+    "latitude": 55.60476, "longitude": 37.712345, "fulfillment": False,
+}
+SC_POINT = {
+    "id": 87609, "name": "Москва (Кавказский)", "address": "Москва, Кавказский бульвар, 57 стр. 1",
+    "city": "Москва", "officeType": "sc", "cargoTypes": [1, 2, 3],
+    "latitude": 55.63, "longitude": 37.72, "fulfillment": True,
+}
 
 
 class Fake:
@@ -105,6 +119,26 @@ def fake_req(method, url, headers=None, **kw):
         WB_SENT[url.rsplit("/orders/", 1)[1].split("/")[0]] = (kw.get("json") or {}).get("sgtins") or []
         return Fake(204)
     path = url.split("?")[0]
+    if path.endswith("/api/marketplace/v3/fbs/shipping-points") and method == "GET":
+        # город и габарит у метода обязательные: без них живой WB отвечает 400
+        params = kw.get("params") or {}
+        if not params.get("city") or not params.get("cargoType"):
+            return Fake(400, {"code": "IncorrectParameter", "message": "Incorrect parameter"})
+        if str(params.get("cargoType")) != "1":
+            # ПВЗ берут только малогабарит, на остальные габариты приходят СЦ
+            return Fake(200, {"shippingPoints": [SC_POINT]})
+        return Fake(200, {"shippingPoints": [PVZ_POINT, SC_POINT]})
+    if path.endswith("/api/marketplace/v3/fbs/supplies/shipping-method") and method == "PATCH":
+        rows = (kw.get("json") or {}).get("data") or []
+        out = []
+        for row in rows:
+            if str(row.get("supplyId")) in SCANNED:
+                # поставку отсканировали в пункте: точку уже не поменять
+                out.append({"supplyId": row.get("supplyId"), "error": {"detail": "supply already scanned"}})
+                continue
+            POINT_SET[str(row.get("supplyId"))] = row
+            out.append({"supplyId": row.get("supplyId"), "success": True})
+        return Fake(200, {"results": out})
     if url.endswith("/api/v3/orders/status") and method == "POST":
         ids = (kw.get("json") or {}).get("orders") or []
         return Fake(200, {"orders": [{"id": i, "supplierStatus": "confirm", "wbStatus": "waiting"} for i in ids]})
@@ -494,8 +528,11 @@ assert statuses.cargo_label("1", "1", "") == "малогабаритный · " 
 assert statuses.cargo_kind("1") == "малогабаритный"
 assert "Домодедовская" in statuses.PVZ and "28" in statuses.PVZ
 assert "Кавказский" in statuses.SC and "57" in statuses.SC
+# адрес приходит от выбранной точки, а не из константы: id знаем, адрес — нет
+assert statuses.dropoff("1", "1", "50272214") == "точка 50272214"
+assert statuses.dropoff("1", "1", "50272214", "Москва, Колодезный пер., 2А") == "Москва, Колодезный пер., 2А"
 # о незакрытой поставке предупреждаем, о закрытой говорим фактом
-assert "личный кабинет" in statuses.dropoff_warning("open", "0", "")
+assert "Куда везти" in statuses.dropoff_warning("open", "0", "")
 assert "ушла" in statuses.dropoff_warning("ready", "0", "")
 assert statuses.dropoff_warning("open", "1", "50095011") == ""
 # выгрузка заданий адрес больше не выдумывает: до поставки везти некуда
@@ -551,7 +588,7 @@ try:
     supply_flow.make_boxes(deny_id, 1)
     raise AssertionError("короб прошёл при отказе площадки")
 except ValueError as exc:
-    assert "не даёт короба" in str(exc) and "личный кабинет" in str(exc), exc
+    assert "не даёт короба" in str(exc) and "Куда везти" in str(exc), exc
 finally:
     wb_supply.req = real_wb
 # отказ переписал точку: раньше мы оставляли ПВЗ и врали складу
@@ -740,5 +777,78 @@ assert len(capped) == 100, len(capped)
 assert len(full) == 120, len(full)
 assert counts_big.get("new") == 120, counts_big
 assert art_only == [], art_only
+
+# 27. точка сдачи ставится из софта: PATCH shipping-method, а не поход в ЛК.
+# Проверено живым запросом 18.09 — метод лежит на /api/marketplace/v3/fbs/,
+# а не на /api/v3/, где мы его 11.09 искали и не нашли.
+wb_supply.req = fake_req
+try:
+    got = supply_flow.points(client_id, city="Москва", cargo_type="1", refresh=True)
+finally:
+    wb_supply.req = real_wb
+assert got["city"] == "Москва" and not got["notes"], got
+# список идёт по адресу: оператор ищет глазами улицу, а не номер точки
+assert [p["id"] for p in got["points"]] == [50095011, 87609], got["points"]
+assert {p["kind"] for p in got["points"]} == {"sc", "pp"}, got["points"]
+# справочник лёг в базу: адрес выбранной точки теперь показываем без запроса к WB
+assert supply_flow.point_address(50095011) == "Москва, Домодедовская Улица 28"
+assert db.wb_points_count() >= 2, db.wb_points_count()
+# поиск идёт по кэшу, площадку больше не трогаем
+found = supply_flow.points(client_id, city="Москва", query="Домодедовская")
+assert [p["id"] for p in found["points"]] == [50095011], found["points"]
+
+# ПВЗ берёт только малогабарит: крупногабаритной поставке его не ставим
+assert supply_flow.point_fits(50095011, "1") is True
+assert supply_flow.point_fits(50095011, "3") is False
+assert supply_flow.point_fits(87609, "3") is True
+assert supply_flow.point_fits(50095011, "") is True
+
+# точка по умолчанию: общая, своя у контрагента, и обе переживают перезапуск
+assert supply_flow.dropoff_default()["point_id"] == statuses.PVZ_SHIPPING_POINT
+supply_flow.set_dropoff_default(87609, client_id)
+assert supply_flow.dropoff_default(client_id)["point_id"] == 87609
+assert supply_flow.dropoff_default()["point_id"] == statuses.PVZ_SHIPPING_POINT
+supply_flow.set_dropoff_default(50095011, client_id)
+
+point_sid = db.insert_wb_supply(client_id, wb_cab, "WB-GI-POINT", "Смена", "2026-09-18T09:00:00", "тест", "1", "", "")
+wb_supply.req = fake_req
+try:
+    res = supply_flow.set_dropoff(point_sid, 50095011)
+finally:
+    wb_supply.req = real_wb
+assert res["point_id"] == 50095011 and res["address"] == "Москва, Домодедовская Улица 28", res
+# дату WB требует вместе с точкой: пустую подставляем сами
+sent = POINT_SET["WB-GI-POINT"]
+assert sent["shippingType"] == "selfShipping" and len(sent["shippingDt"]) == 10, sent
+saved = db.get_wb_supply(point_sid)
+assert str(saved["shipping_point"]) == "50095011" and saved["shipping_dt"] == sent["shippingDt"], dict(saved)
+
+# отсканированную поставку площадка уже не отдаёт: причина уходит оператору как есть
+scan_sid = db.insert_wb_supply(client_id, wb_cab, "WB-GI-SCAN", "Смена", "2026-09-18T09:00:00", "тест", "1", "", "")
+SCANNED.add("WB-GI-SCAN")
+wb_supply.req = fake_req
+try:
+    supply_flow.set_dropoff(scan_sid, 50095011)
+    raise AssertionError("точку поменяли на отсканированной поставке")
+except ValueError as exc:
+    assert "already scanned" in str(exc), exc
+finally:
+    wb_supply.req = real_wb
+    SCANNED.discard("WB-GI-SCAN")
+assert not (db.get_wb_supply(scan_sid)["shipping_point"] or ""), dict(db.get_wb_supply(scan_sid))
+
+# закрытую поставку не трогаем: точку после передачи в доставку не поменять
+db.set_wb_supply_state(scan_sid, "ready", "2026-09-18T10:00:00")
+try:
+    supply_flow.set_dropoff(scan_sid, 50095011)
+    raise AssertionError("точку поменяли у закрытой поставки")
+except ValueError as exc:
+    assert "передана в доставку" in str(exc), exc
+
+# крупногабаритной поставке ПВЗ по умолчанию не ставим, а говорим почему
+kgt_sid = db.insert_wb_supply(client_id, wb_cab, "WB-GI-KGT", "Смена", "2026-09-18T09:00:00", "тест", "3", "", "")
+out = supply_flow.ensure_dropoff(kgt_sid)
+assert not out["point_id"] and any("малогабарит" in n for n in out["notes"]), out
+assert not (db.get_wb_supply(kgt_sid)["shipping_point"] or ""), dict(db.get_wb_supply(kgt_sid))
 
 print("все проверки поставок, сборки и КиЗ прошли")

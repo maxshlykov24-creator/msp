@@ -1385,34 +1385,69 @@ PHONE_FOR_CALL = re.compile(
     re.IGNORECASE,
 )
 MESSENGER_ASK = "Напишите, пожалуйста, Телеграм или Ватсап, туда пришлю"
+MAX_WORD = r"(?:макс(?:е|а|у)?|max)"
 MAX_APP = re.compile(
-    r"(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b"
-    r"|(?<![А-Яа-яA-Za-z])макс(?:е|а|у)?(?![а-яёa-z])"
+    r"(?:на|в)\s+" + MAX_WORD + r"\b"
+    r"|(?<![А-Яа-яA-Za-z])" + MAX_WORD + r"(?![а-яёa-z])"
     r"|(?<![A-Za-z])max(?![A-Za-z])",
     re.IGNORECASE,
 )
+MAX_REFUSE = re.compile(
+    r"не\s+(используем|работаем|принимаем|отправляем|предлагаем|шлём|шлем)",
+    re.IGNORECASE,
+)
+# Фильтр уже съел «Макс» внутри отказа и вывернул смысл.
+MAX_BROKEN = re.compile(
+    r"телеграм или ватсап не (используем|работаем|принимаем|отправляем|предлагаем)",
+    re.IGNORECASE,
+)
+MAX_CANON = "Макс не используем, только Телеграм или Ватсап"
 
 
-def drop_max_app(text: str) -> str:
-    """Макс как мессенджер не предлагаем. Имя Максим не трогаем."""
-    original = text or ""
-    if not MAX_APP.search(original):
-        return original
+def _rewrite_max_offer(text: str) -> str:
     out = re.sub(
-        r"(?:на|в)\s+(?:макс(?:е|а|у)?|max)\b",
+        r"(?:на|в)\s+" + MAX_WORD + r"\b",
         "в Телеграм или Ватсап",
-        original,
+        text,
         flags=re.IGNORECASE,
     )
-    out = re.sub(r",\s*(?:макс(?:е|а|у)?|max)\b", "", out, flags=re.IGNORECASE)
-    out = re.sub(r"\s+или\s+(?:макс(?:е|а|у)?|max)\b", "", out, flags=re.IGNORECASE)
+    out = re.sub(r",\s*" + MAX_WORD + r"\b", "", out, flags=re.IGNORECASE)
+    out = re.sub(r"\s+или\s+" + MAX_WORD + r"\b", "", out, flags=re.IGNORECASE)
     out = re.sub(
-        r"(?<![А-Яа-яA-Za-z])(?:макс(?:е|а|у)?|max)(?![а-яёA-Za-z])",
+        r"(?<![А-Яа-яA-Za-z])" + MAX_WORD + r"(?![а-яёA-Za-z])",
         "Телеграм или Ватсап",
         out,
         flags=re.IGNORECASE,
     )
-    return _tidy(out, original)
+    return out
+
+
+def drop_max_app(text: str) -> str:
+    """Макс как канал не предлагаем. В отказе слово оставляем, имя Максим не трогаем.
+
+    Иначе «Макс не используем, только Телеграм» превращается в
+    «Телеграм или Ватсап не используем, только Телеграм или Ватсап».
+    """
+    original = text or ""
+    if not MAX_APP.search(original) and not MAX_BROKEN.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if not part.strip():
+            continue
+        if MAX_BROKEN.search(part) or (MAX_APP.search(part) and MAX_REFUSE.search(part)):
+            kept.append(MAX_CANON)
+            continue
+        kept.append(_rewrite_max_offer(part) if MAX_APP.search(part) else part)
+    glued = ""
+    for part in kept:
+        if not glued:
+            glued = part
+            continue
+        if glued[-1] not in ".!?":
+            glued += "."
+        glued += " " + part
+    return _tidy(glued, original)
 
 
 def speak_messengers(text: str) -> str:
@@ -1523,6 +1558,7 @@ def for_chat(text: str) -> str:
     text = drop_logistics_lecture(text)
     text = drop_dead_closer(text)
     text = drop_tradein_menu(text)
+    text = drop_max_app(text)
     text = fix_hours(text)
     text = fix_brand(text)
     text = add_missing_dots(text)
