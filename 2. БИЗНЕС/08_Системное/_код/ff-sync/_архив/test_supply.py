@@ -831,7 +831,7 @@ try:
     supply_flow.set_dropoff(scan_sid, 50095011)
     raise AssertionError("точку поменяли на отсканированной поставке")
 except ValueError as exc:
-    assert "already scanned" in str(exc), exc
+    assert "отсканировали в пункте" in str(exc), exc
 finally:
     wb_supply.req = real_wb
     SCANNED.discard("WB-GI-SCAN")
@@ -844,6 +844,23 @@ try:
     raise AssertionError("точку поменяли у закрытой поставки")
 except ValueError as exc:
     assert "передана в доставку" in str(exc), exc
+
+# связь до WB с этой VPS рвётся регулярно: обрыв не должен ронять создание
+# поставки, он приходит заметкой. Раньше ConnectTimeout летел мимо перехвата
+import requests
+
+drop_sid = db.insert_wb_supply(client_id, wb_cab, "WB-GI-DROP", "Смена", "2026-09-18T09:00:00", "тест", "1", "", "")
+
+def broken(method, url, headers=None, **kw):
+    raise requests.exceptions.ConnectTimeout("мок обрыва связи")
+
+wb_supply.req = broken
+try:
+    out = supply_flow.ensure_dropoff(drop_sid)
+finally:
+    wb_supply.req = real_wb
+assert not out["point_id"] and any("не ответил" in n for n in out["notes"]), out
+assert not (db.get_wb_supply(drop_sid)["shipping_point"] or ""), dict(db.get_wb_supply(drop_sid))
 
 # крупногабаритной поставке ПВЗ по умолчанию не ставим, а говорим почему
 kgt_sid = db.insert_wb_supply(client_id, wb_cab, "WB-GI-KGT", "Смена", "2026-09-18T09:00:00", "тест", "3", "", "")

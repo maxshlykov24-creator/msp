@@ -213,6 +213,24 @@ def points(client_id=None, city="", cargo_type="1", query="", refresh=False):
     }
 
 
+def _point_reason(err, supply):
+    """Отказ площадки по точке — словами склада. Незнакомый отдаём как есть.
+
+    Живые отказы 18.09 на старых поставках: `NotFound` у поставки, которой на
+    площадке уже нет, и `IncorrectRequestBody` у пустой поставки от 14.11.2025.
+    """
+    text = str(err or "")
+    if "NotFound" in text:
+        return "такой поставки на площадке нет. Нажми «Обновить с площадки»."
+    if "IncorrectRequestBody" in text and not list_supply_shipments(
+        supply["cabinet_id"], supply["ext_id"]
+    ):
+        return "в поставке нет заданий. Точка встанет сама, когда первое задание уйдёт в неё."
+    if "scanned" in text.lower():
+        return "поставку уже отсканировали в пункте отгрузки, точку не поменять."
+    return text
+
+
 def set_dropoff(supply_id, point_id, date="", ship_type=wb_supply.SELF_SHIPPING, remember=False):
     """Выбрать точку сдачи поставки. Сначала площадка, потом наша база.
 
@@ -235,12 +253,18 @@ def set_dropoff(supply_id, point_id, date="", ship_type=wb_supply.SELF_SHIPPING,
     )
     err = res.get(supply["ext_id"], "")
     if err:
-        raise ValueError("WB не принял точку сдачи: %s" % err)
+        raise ValueError("WB не принял точку сдачи: %s" % _point_reason(err, supply))
     set_wb_supply_point(supply["id"], point, day)
     if remember:
         set_dropoff_default(point, supply["client_id"])
-    # карточка отдаёт и флаг ПВЗ, и подтверждение точки: пишем её ответ, а не своё
-    flag, cargo, got = _sync_dropoff(_supply(supply_id))
+    notes = []
+    # карточка отдаёт и флаг ПВЗ, и подтверждение точки: пишем её ответ, а не своё.
+    # Не дочитали — точка всё равно наша: площадка ответила success на этот запрос
+    try:
+        flag, cargo, got = _sync_dropoff(_supply(supply_id))
+    except (ValueError, wb_supply.SupplyError) as exc:
+        flag, cargo, got = _col(supply, "pickup_allowed"), _col(supply, "cargo_type"), str(point)
+        notes.append("Точку поставил, но карточку не перечитал: %s" % exc)
     if str(got or "") != str(point):
         raise ValueError(
             "WB принял запрос, но в карточке точка %s. Обнови поставку и попробуй снова."
@@ -251,6 +275,7 @@ def set_dropoff(supply_id, point_id, date="", ship_type=wb_supply.SELF_SHIPPING,
         "date": day,
         "address": point_address(point),
         "office": statuses.dropoff(cargo, flag, got, point_address(point)),
+        "notes": notes,
     }
 
 
@@ -295,7 +320,7 @@ def ensure_dropoff(supply_id, author=""):
     except (ValueError, wb_supply.SupplyError) as exc:
         # поставка уже создана, и смену из-за точки рвать нельзя: скажем заметкой
         return {"point_id": "", "notes": ["Точку сдачи не поставил: %s" % exc]}
-    return {"point_id": res["point_id"], "notes": []}
+    return {"point_id": res["point_id"], "notes": res.get("notes") or []}
 
 
 def statuses_cargo(cargo_type):

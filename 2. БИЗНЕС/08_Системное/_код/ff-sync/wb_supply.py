@@ -35,6 +35,8 @@
 
 import base64
 
+import requests
+
 from net import WB_BASE, req, wb_headers
 
 ORDERS_CHUNK = 100   # предел батча добавления заданий в поставку
@@ -57,6 +59,19 @@ def box_limit(orders):
 
 class SupplyError(Exception):
     pass
+
+
+def _ask(method, url, **kw):
+    """Запрос к WB, где обрыв связи — тоже ответ площадки, а не падение вызова.
+
+    `net.req` повторяет попытки и на последней пробрасывает `RequestException`.
+    Для точки сдачи это не исключительная ситуация: с этой VPS связь до WB рвётся
+    регулярно, а поставка при этом уже создана, и смену ронять нельзя.
+    """
+    try:
+        return req(method, url, **kw)
+    except requests.RequestException as exc:
+        raise SupplyError("WB не ответил: %s" % type(exc).__name__)
 
 
 def _ids(values):
@@ -323,7 +338,7 @@ def shipping_points(cab, city, cargo_type=1):
     city = str(city or "").strip()
     if not city:
         raise SupplyError("не указан населённый пункт для поиска точек")
-    r = req(
+    r = _ask(
         "GET",
         WB_BASE + "/api/marketplace/v3/fbs/shipping-points",
         headers=wb_headers(cab["token"]),
@@ -365,7 +380,7 @@ def set_shipping_method(cab, items):
     heads = wb_headers(cab["token"])
     for i in range(0, len(rows), POINTS_CHUNK):
         chunk = rows[i : i + POINTS_CHUNK]
-        r = req(
+        r = _ask(
             "PATCH",
             WB_BASE + "/api/marketplace/v3/fbs/supplies/shipping-method",
             headers=heads,
