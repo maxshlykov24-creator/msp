@@ -21,9 +21,9 @@ BTN_REVELATIONS = "📖 Откровения"
 MAIN_MENU_BUTTONS: tuple[str, ...] = (
     BTN_REPORT,
     BTN_REVELATIONS,
+    # legacy (fallback если Telegram закешировал старую клавиатуру)
     BTN_STATS,
     BTN_PRAYER,
-    # legacy (fallback если Telegram закешировал старую клавиатуру)
     BTN_WRITE,
     BTN_EDIT_WEEK,
     BTN_ADD_REV,
@@ -36,7 +36,6 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BTN_REPORT), KeyboardButton(text=BTN_REVELATIONS)],
-            [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_PRAYER)],
         ],
         resize_keyboard=True,
         is_persistent=True,

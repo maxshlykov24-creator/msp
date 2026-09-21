@@ -9,19 +9,30 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assigned import assigned_hashtag, is_out_of_scope
-from app.hashtag import HASHTAG_RE, extract_hashtag, override_from_tag
+from app.hashtag import (
+    DIGEST_HASHTAG,
+    HASHTAG_RE,
+    extract_hashtag,
+    looks_like_report,
+    override_from_tag,
+    tag_from_telegram,
+)
 from app.models import GroupMember, User, WeekSubmission
 from app.time_utils import last_sunday_on_or_before, now_msk, to_msk, week_start_from_date
 
 __all__ = [
+    "DIGEST_HASHTAG",
     "HASHTAG_RE",
     "extract_hashtag",
+    "looks_like_report",
     "override_from_tag",
+    "tag_from_telegram",
     "last_sunday_on_or_before",
     "member_label",
     "upsert_member",
     "upsert_submission",
     "latest_hashtag_for_user",
+    "identity_hashtag",
     "adopt_hashtag_from_group",
     "load_scope_members",
     "submitted_ids_for_week",
@@ -118,6 +129,37 @@ async def upsert_submission(
     return row
 
 
+async def identity_hashtag(
+    session: AsyncSession,
+    *,
+    tg_user_id: int,
+    username: str | None,
+    first_name: str | None,
+    last_name: str | None,
+) -> str:
+    """Подпись отчёта без # в тексте: назначенный, прошлый из группы, иначе ник Telegram."""
+    preset = assigned_hashtag(tg_user_id)
+    if preset:
+        return preset if preset.startswith("#") else f"#{preset}"
+    last = await latest_hashtag_for_user(session, tg_user_id)
+    if last:
+        return last
+    member = await session.scalar(select(GroupMember).where(GroupMember.tg_user_id == tg_user_id))
+    if member is not None:
+        if (member.assigned_hashtag or "").strip():
+            tag = member.assigned_hashtag.strip()
+            return tag if tag.startswith("#") else f"#{tag}"
+        username = username or member.tg_username
+        first_name = first_name or member.tg_first_name
+        last_name = last_name or member.tg_last_name
+    return tag_from_telegram(
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        tg_user_id=tg_user_id,
+    )
+
+
 async def latest_hashtag_for_user(session: AsyncSession, tg_user_id: int) -> str | None:
     """Последний хэштег, которым человек подписывал отчёт в группе."""
     row = await session.scalar(
@@ -202,9 +244,6 @@ def format_coverage_text(
     else:
         lines.append("· никого")
     return "\n".join(lines)
-
-
-DIGEST_HASHTAG = "#рвыотчёт"
 
 
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:

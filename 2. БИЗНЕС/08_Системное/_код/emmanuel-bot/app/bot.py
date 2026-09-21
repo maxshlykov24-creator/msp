@@ -23,8 +23,10 @@ from app.coverage import (
     extract_hashtag,
     format_coverage_text,
     format_public_digest,
+    identity_hashtag,
     last_sunday_on_or_before,
     load_scope_members,
+    looks_like_report,
     override_from_tag,
     submitted_ids_for_week,
     upsert_member,
@@ -1462,34 +1464,7 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
 async def btn_prayer_list(message: Message, bot: Bot):
     if message.chat.type != "private":
         return
-    if not await is_allowed_member(bot, message.from_user.id):
-        await message.answer("Нет доступа.")
-        return
-    ws = week_start_from_date(now_msk().date())
-    async with get_session_factory()() as session:
-        reports = (
-            await session.scalars(
-                select(Report).where(Report.week_start == ws).options(selectinload(Report.user))
-            )
-        ).all()
-        await session.commit()
-    if not reports:
-        await message.answer(
-            "Пока ни у кого нет отправленного отчёта за этот недельный круг или данные временно недоступны.",
-        )
-        return
-    lines: list[str] = [
-        f"<b>Молитвенный лист</b>\nОтчётная неделя с понедельника <code>{ws.isoformat()}</code>.\n<i>Открытые строки нужд из отчётов.</i>",
-    ]
-    for r in sorted(reports, key=lambda x: x.user.report_hashtag().lower()):
-        name_plain = html.escape(r.user.report_hashtag().strip("# ").strip())
-        need = html.escape(r.q4_help.strip())
-        lines.append("")
-        lines.append("<b>" + name_plain + "</b>")
-        lines.append("")
-        lines.append(need + "\n")
-    body = "\n".join(lines)[:3960]
-    await message.answer(body, parse_mode=ParseMode.HTML)
+    await message.answer("Молитвенный лист пока скрыт.", reply_markup=kb.main_menu_kb())
 
 
 @router.message(F.text == kb.BTN_ADD_REV)
@@ -1600,51 +1575,7 @@ async def btn_archive(message: Message, bot: Bot):
 async def btn_stats(message: Message, bot: Bot):
     if message.chat.type != "private":
         return
-    if not await is_allowed_member(bot, message.from_user.id):
-        await message.answer("Нет доступа.")
-        return
-    async with get_session_factory()() as session:
-        u_db = await get_or_create_user(session, message.from_user)
-        four_weeks_ago = now_msk().date() - timedelta(weeks=4)
-        reports = (
-            await session.scalars(
-                select(Report)
-                .where(Report.user_id == u_db.id, Report.week_start >= four_weeks_ago)
-                .order_by(Report.week_start.desc())
-            )
-        ).all()
-        await session.commit()
-
-    if not reports:
-        await message.answer("Подожди хотя бы пару сохранённых отчётов — тогда смогу свести простую сводку.")
-        return
-
-    n = len(reports)
-    hours = [_parse_hours_for_sum(r.q1_prayer_hours) for r in reports]
-    sermons = [_parse_hours_for_sum(r.q2_sermons) for r in reports]
-    meetings = [_parse_hours_for_sum(r.q6_meetings) for r in reports]
-    bible_ok = [_x for x in (_parse_bible_days_stat(r.q1b_bible_days) for r in reports) if x is not None]
-
-    def avg(xs: list[float]) -> float:
-        return sum(xs) / len(xs) if xs else 0.0
-
-    on_time_n = sum(1 for r in reports if r.on_time)
-
-    plain_block = (
-        f"Отчётов учтено: {n}\n"
-        f"Молитва в среднем: {avg(hours):.1f} ч за нед.\n"
-        + (f"Библия в среднем: {avg(bible_ok):.1f} дн за нед.\n" if bible_ok else "")
-        + f"Проповедей в среднем: {avg(sermons):.1f}\n"
-        + f"Личные встречи в среднем: {avg(meetings):.1f}\n"
-        + f'Вовремя сдано раз: {on_time_n} из {n}\nСерия «вовремя» сейчас: {u_db.streak}'
-    )
-
-    hdr = '<b>Статистика последних недель</b>\n\n'
-    out = hdr + html.escape(plain_block)
-    commentary = await groq_client.get_analytics_comment(plain_block, user_id=u_db.tg_user_id)
-    if commentary:
-        out += "\n\n" + html.escape(commentary.strip())
-    await message.answer(out, parse_mode=ParseMode.HTML)
+    await message.answer("Статистика пока скрыта.", reply_markup=kb.main_menu_kb())
 
 
 @router.message(F.text == kb.BTN_PROFILE)
@@ -1776,8 +1707,9 @@ async def _count_group_hashtag(message: Message) -> None:
         return
     if not message.from_user or message.from_user.is_bot:
         return
-    tag = extract_hashtag(_group_plain(message))
-    if not tag:
+    plain = _group_plain(message)
+    tag_in_text = extract_hashtag(plain)
+    if not tag_in_text and not looks_like_report(plain):
         return
     local = _message_when(message)
     ws = week_start_from_date(local.date())
@@ -1792,6 +1724,16 @@ async def _count_group_hashtag(message: Message) -> None:
             status="member",
             is_bot=False,
         )
+        if tag_in_text:
+            tag = tag_in_text
+        else:
+            tag = await identity_hashtag(
+                session,
+                tg_user_id=fu.id,
+                username=fu.username,
+                first_name=fu.first_name,
+                last_name=fu.last_name,
+            )
         await upsert_submission(
             session,
             tg_user_id=fu.id,
@@ -1803,9 +1745,19 @@ async def _count_group_hashtag(message: Message) -> None:
         )
         u = await session.scalar(select(User).where(User.tg_user_id == fu.id))
         if u is not None:
-            u.report_hashtag_override = override_from_tag(tag)
+            if tag_in_text:
+                u.report_hashtag_override = override_from_tag(tag_in_text)
+            elif not (u.report_hashtag_override or "").strip():
+                u.report_hashtag_override = override_from_tag(tag)
         await session.commit()
-    log.info("hashtag counted uid=%s tag=%s week=%s msg=%s", fu.id, tag, ws, message.message_id)
+    log.info(
+        "report counted uid=%s tag=%s week=%s msg=%s from_text=%s",
+        fu.id,
+        tag,
+        ws,
+        message.message_id,
+        bool(tag_in_text),
+    )
 
 
 @router.message(F.chat.type.in_({"group", "supergroup"}))

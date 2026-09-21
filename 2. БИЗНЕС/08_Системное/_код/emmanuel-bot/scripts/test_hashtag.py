@@ -8,13 +8,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.hashtag import extract_hashtag, override_from_tag
+from app.hashtag import DIGEST_HASHTAG, extract_hashtag, looks_like_report, override_from_tag, tag_from_telegram
 from app.assigned import assigned_hashtag, is_out_of_scope
 from app.time_utils import last_sunday_on_or_before
 from datetime import date
-
-
-DIGEST_HASHTAG = "#рвыотчёт"
 
 
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
@@ -42,6 +39,20 @@ def main() -> int:
     check(extract_hashtag("привет аминь") is None, "no tag")
     check(extract_hashtag("🔥 круто") is None, "emoji comment")
     check(extract_hashtag("1. Сколько времени\n2") is None, "report without tag")
+    check(extract_hashtag("#рвыотчёт <b>14 из 34</b>") is None, "digest tag skipped")
+    check(extract_hashtag("#рвыотчёт #ШлыковМаксим") == "#ШлыковМаксим", "digest then name")
+    denis = (
+        "1. Сколько времени потратил на личный духовный рост (часы молитвы)?  2\n"
+        "2. В чем мы, как команда, можем тебе помочь?"
+    )
+    andrey = "1.Сколько времени потратили на личный духовный рост (часы молитвы)? 4  2.В чем мы как команда можем тебе помочь?"
+    check(looks_like_report(denis), "denis template")
+    check(looks_like_report(andrey), "andrey template")
+    check(not looks_like_report("Мужчины, давайте дальше отчеты писать, понимаю, что много дел"), "nudge not report")
+    check(not looks_like_report("🟢Уже завтра ночная мужская молитва! 20:00 - 22:00"), "event not report")
+    check(not looks_like_report("1. Купил хлеб 2. Забрал детей"), "numbered chores not report")
+    check(tag_from_telegram(username="Andreynkl", first_name="Андрей", last_name=None, tg_user_id=1) == "#Andreynkl", "nick username")
+    check(tag_from_telegram(username=None, first_name="Денис", last_name="Петрий", tg_user_id=2) == "#ПетрийДенис", "nick name")
     check(extract_hashtag("#Кирилл Спиридонов") == "#Кирилл", "tag then space")
     check(extract_hashtag("текст #ПоляковМаксим ещё") == "#ПоляковМаксим", "tag mid text")
     check(override_from_tag("#ШлыковМаксим") == "ШлыковМаксим", "override strip")

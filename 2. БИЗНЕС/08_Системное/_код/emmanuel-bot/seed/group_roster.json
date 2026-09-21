@@ -3,6 +3,30 @@
   "title": "Копают рвы🌊",
   "members": [
     {
+      "tg_user_id": 1370857121,
+      "first_name": "Семён",
+      "last_name": null,
+      "username": "sem1kks",
+      "status": "member",
+      "is_bot": false
+    },
+    {
+      "tg_user_id": 440133133,
+      "first_name": "Кирилл Спиридонов",
+      "last_name": null,
+      "username": "kirik63",
+      "status": "member",
+      "is_bot": false
+    },
+    {
+      "tg_user_id": 1941153583,
+      "first_name": "Аарон",
+      "last_name": null,
+      "username": "son_of_Manvel",
+      "status": "member",
+      "is_bot": false
+    },
+    {
       "tg_user_id": 6709899533,
       "first_name": "Максим",
       "last_name": "Поляков",
@@ -123,22 +147,6 @@
       "is_bot": false
     },
     {
-      "tg_user_id": 1941153583,
-      "first_name": "Аарон",
-      "last_name": null,
-      "username": "son_of_Manvel",
-      "status": "member",
-      "is_bot": false
-    },
-    {
-      "tg_user_id": 1370857121,
-      "first_name": "Семён",
-      "last_name": null,
-      "username": "sem1kks",
-      "status": "member",
-      "is_bot": false
-    },
-    {
       "tg_user_id": 1212032821,
       "first_name": "Даня Струнин",
       "last_name": null,
@@ -159,14 +167,6 @@
       "first_name": "Леня Эммануил",
       "last_name": null,
       "username": "leo_neat",
-      "status": "member",
-      "is_bot": false
-    },
-    {
-      "tg_user_id": 440133133,
-      "first_name": "Кирилл Спиридонов",
-      "last_name": null,
-      "username": "kirik63",
       "status": "member",
       "is_bot": false
     },

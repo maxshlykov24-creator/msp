@@ -16,7 +16,8 @@ CHAT_ID = -1002125032114
 sys.path.insert(0, str(TG_SELF))
 sys.path.insert(0, str(ROOT))
 
-from app.hashtag import extract_hashtag
+from app.assigned import assigned_hashtag
+from app.hashtag import extract_hashtag, looks_like_report, tag_from_telegram
 from app.time_utils import MSK, week_start_from_date  # noqa: E402
 
 
@@ -52,6 +53,8 @@ async def main() -> int:
             }
         )
 
+    by_id = {int(m["tg_user_id"]): m for m in members}
+
     since = datetime.now(timezone.utc) - timedelta(days=21)
     messages = []
     seen = set()
@@ -60,16 +63,25 @@ async def main() -> int:
             break
         text = msg.message or ""
         tag = extract_hashtag(text)
-        if not tag:
-            continue
         sender_id = msg.sender_id
         if sender_id is None:
             continue
+        uid = int(sender_id)
+        if not tag:
+            if not looks_like_report(text):
+                continue
+            m = by_id.get(uid) or {}
+            tag = assigned_hashtag(uid) or tag_from_telegram(
+                username=m.get("username"),
+                first_name=m.get("first_name"),
+                last_name=m.get("last_name"),
+                tg_user_id=uid,
+            )
         local = msg.date.astimezone(MSK)
         week_start = week_start_from_date(local.date()).isoformat()
-        key = (sender_id, week_start)
+        key = (uid, week_start)
         row = {
-            "tg_user_id": int(sender_id),
+            "tg_user_id": uid,
             "msg_id": msg.id,
             "date": msg.date.astimezone(timezone.utc).isoformat(),
             "hashtag": tag,
