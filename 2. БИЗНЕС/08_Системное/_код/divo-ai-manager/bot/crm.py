@@ -614,8 +614,9 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
 
 
 def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) -> None:
+    if snap.get("reason") == "llm":
+        return
     if not snap.get("phone") and snap.get("reason") not in {
-        "llm",
         "media",
         "aftersale",
         "handoff",
@@ -685,6 +686,24 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
     alert = new
     crm["alert"] = alert
     doc["crm"] = crm
+
+
+def dismiss_llm_alert(chat_id: str | int) -> None:
+    """Бот сам ответил после сбоя модели — карточку «не смог» из группы снимаем."""
+    doc = store.load_doc(chat_id)
+    crmd = dict(doc.get("crm") or {})
+    alert = dict(crmd.get("alert") or {})
+    if alert.get("reason") != "llm":
+        return
+    if not alert.get("active"):
+        return
+    alert["active"] = False
+    alert["nags"] = False
+    crmd["alert"] = alert
+    doc["crm"] = crmd
+    store.save_doc(chat_id, doc)
+    _queue_edit(alert, alert.get("snap") or {}, "Бот ответил сам.")
+    log.info("чат %s: снял карточку «бот не смог ответить»", chat_id)
 
 
 def _ensure_token(alert: dict) -> str:
@@ -827,6 +846,12 @@ async def ack_callback(channel, chat_id: str | int, texts: list[str], reason: st
 
 async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
     """Сделка + примечание + старт алертов. Не пишет клиенту."""
+    if reason == "llm":
+        # Сбой модели — техпроблема владельца, не карточка в группу менеджеров.
+        # Ключ ожил — catchup сам ответит. Иначе «обмен без номера» висит как
+        # «бот не смог ответить», хотя человеку там нечего брать.
+        log.info("чат %s: сбой модели, группу не зовём", chat_id)
+        return snapshot(chat_id, history, reason)
     if already_alerting(chat_id, reason):
         snap = snapshot(chat_id, history, reason)
         doc = store.load_doc(chat_id)

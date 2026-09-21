@@ -283,6 +283,8 @@ async def _handoff(channel, chat_id, history: list[dict], reason: str) -> None:
     await crm.ack_callback(channel, chat_id, [last], reason)
     store.pause(chat_id, "эскалация: %s" % reason)
     log.info("чат %s молчит, причина %s", chat_id, reason)
+    if reason == "llm":
+        return
     await crm.capture(chat_id, history, reason)
 
 
@@ -594,6 +596,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     history.append({"role": "assistant", "content": " ".join(bubbles)})
     store.save_history(chat_id, history)
     _refresh_nudge(chat_id, history)
+    crm.dismiss_llm_alert(chat_id)
     if not had_phone and nudge.extract_phone(user_text):
         await crm.capture(chat_id, history, "phone")
 
@@ -725,6 +728,21 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "Купить в лизинг: только с полным НДС, документы третьим лицам "
             "до визита не отдаём. Не говори «данных о лизинге нет» и "
             "«автотеки нет вообще»."
+        )
+    if not nudge.asked_credit(history):
+        system += (
+            "\n\n# Кредит не поднимай\n"
+            "Клиент про кредит не спрашивал. Не пиши «кредит рассматриваем», "
+            "банки, Альфа, ВТБ, Сбер, ОТП и кредитного специалиста."
+        )
+    else:
+        system += (
+            "\n\n# Клиент спросил про кредит\n"
+            "Салон кредит не оформляет. Способа оплаты два: наличные и "
+            "расчётный счёт. Ответ: стоимость в объявлении указана за "
+            "наличный расчёт, дальше номер. FAW Bestune NAT: данные автомобили "
+            "продаём за наличный расчёт. Не «да», не банки, не кредитный "
+            "специалист, не ставка. Настаивает — номер, не спорь."
         )
     if not nudge.asked_torg(history):
         system += (
@@ -1067,6 +1085,7 @@ async def send_nudge(chat_id: int | str) -> None:
     doc["messages"] = history
     doc["nudge"] = meta
     store.save_doc(chat_id, doc)
+    crm.dismiss_llm_alert(chat_id)
     log.info("догон чат %s шаг %s", chat_id, step)
 
 

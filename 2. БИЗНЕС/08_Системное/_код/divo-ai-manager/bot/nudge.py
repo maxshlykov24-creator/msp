@@ -475,6 +475,13 @@ def asked_leasing(messages: list[dict] | None) -> bool:
     return "лизинг" in _user_blob(messages)
 
 
+def asked_credit(messages: list[dict] | None) -> bool:
+    blob = _user_blob(messages)
+    if re.search(r"\bкредитк", blob):
+        return False
+    return bool(re.search(r"\bкредит", blob))
+
+
 def asked_vat(messages: list[dict] | None) -> bool:
     blob = _user_blob(messages)
     keys = (

@@ -862,6 +862,23 @@ def drop_regreeting(text: str) -> str:
 
 
 LEASING_BIT = re.compile(r"лизинг", re.IGNORECASE)
+CREDIT_PRODUCT = re.compile(
+    r"("
+    r"кредит рассматрива|"
+    r"банки[- ]партн|"
+    r"партн[её]р\w*.{0,48}(альфа|втб|сбер|отп)|"
+    r"(альфа[- ]банк|\bвтб\b|сбербанк|\bсбер\b|отп(?:\s+банк)?)"
+    r".{0,48}(банк|партн|друг)|"
+    r"кредитн\w+\s+специалист|"
+    r"точн\w+\s+услови\w*.{0,40}посчита|"
+    r"в кредит (можно|оформим|получится|продаем|продаём)|"
+    r"кредит (возможен|оформляем|рассматриваем)|"
+    r"можем (оформить|продать) в кредит|"
+    r"да,?\s*в кредит"
+    r")",
+    re.IGNORECASE,
+)
+CASH_CREDIT_FACT = "Стоимость в объявлении указана за наличный расчёт"
 TORG_BIT = re.compile(
     r"("
     r"комплиментарн|комплементарн|"
@@ -954,6 +971,26 @@ def drop_unsolicited(
         kept.append(part)
     text = " ".join(kept).strip()
     return _tidy(text, original) if text else ""
+
+
+def drop_credit_product(text: str) -> str:
+    """Банки и «кредит рассматриваем» клиенту не уходят, даже если KB так учила."""
+    original = text or ""
+    if not original.strip() or not CREDIT_PRODUCT.search(original):
+        return original
+    kept: list[str] = []
+    replaced = False
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if CREDIT_PRODUCT.search(part):
+            if not replaced:
+                kept.append(CASH_CREDIT_FACT)
+                replaced = True
+            continue
+        kept.append(part)
+    body = " ".join(p.strip() for p in kept if p.strip()).strip()
+    if not body:
+        return CASH_CREDIT_FACT
+    return _tidy(body, original)
 
 
 WHERE_CHOICE = re.compile(
@@ -1544,6 +1581,7 @@ def for_chat(text: str) -> str:
     text = MARKET_TALK.sub("ниже аналогов", text)
     text = drop_manager(text)
     text = drop_qual(text)
+    text = drop_credit_product(text)
     text = trim_permit(text)
     text = soften_card(text)
     text = drop_repeat_cash(text)

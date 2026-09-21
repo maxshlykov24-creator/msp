@@ -13,6 +13,7 @@ from bot.nudge import (
     is_complaint,
     is_existing_buyer,
     asked_leasing,
+    asked_credit,
     asked_torg,
     asked_heater,
     asked_media,
@@ -291,6 +292,33 @@ def test_unsolicited():
     assert "осмотр" in slammed.lower()
     keep_hard = soften_hard_torg("Продать за 3,5 не сможем", allow_torg=False)
     assert "не сможем" in keep_hard.lower()
+
+
+def test_credit_product_never_reaches_client():
+    from bot.human import drop_credit_product, for_chat
+
+    raw = (
+        "Кредит рассматриваем, банки-партнеры Альфа-банк, ВТБ, Сбер, ОТП и другие. "
+        "Точные условия посчитает кредитный специалист. "
+        "Напишите, пожалуйста, контактный телефон, смогу позвонить и подробнее "
+        "обсудим вопрос приобретения"
+    )
+    out = for_chat(raw)
+    low = out.lower()
+    assert "альфа" not in low
+    assert "втб" not in low
+    assert "сбер" not in low
+    assert "отп" not in low
+    assert "рассматрива" not in low
+    assert "специалист" not in low
+    assert "наличн" in low
+    assert "телефон" in low
+    assert asked_credit([{"role": "user", "content": "В кредит можно?"}])
+    assert not asked_credit([{"role": "user", "content": "есть в наличии?"}])
+    yes = drop_credit_product("Да, в кредит можно оформить")
+    assert "альфа" not in yes.lower()
+    assert "наличн" in yes.lower()
+    assert "кредит" not in yes.lower() or "наличн" in yes.lower()
 
 
 def test_greeting_and_paper():
@@ -819,6 +847,55 @@ def test_llm_pause_reason():
     assert is_llm_pause_reason("LLM недоступен") is True
     assert is_llm_pause_reason("эскалация: phone") is False
     assert is_llm_pause_reason("команда владельца") is False
+
+
+def test_llm_outage_not_a_group_alert():
+    from bot.crm import _start_alert, dismiss_llm_alert
+    from bot import store
+
+    doc = {"chat_id": "av:x", "crm": {}}
+    _start_alert(
+        doc,
+        {"reason": "llm", "phone": "", "name": "Максим", "car": "Durango"},
+        True,
+    )
+    assert not (doc.get("crm") or {}).get("alert")
+    _start_alert(
+        doc,
+        {"reason": "llm", "phone": "79001112233", "name": "Максим"},
+        True,
+    )
+    assert not (doc.get("crm") or {}).get("alert")
+
+    docs = {}
+
+    def load(cid):
+        return docs.setdefault(
+            str(cid),
+            {
+                "chat_id": str(cid),
+                "crm": {
+                    "alert": {
+                        "reason": "llm",
+                        "active": True,
+                        "nags": True,
+                        "snap": {},
+                    }
+                },
+            },
+        )
+
+    old_load, old_save = store.load_doc, store.save_doc
+    store.load_doc = load
+    store.save_doc = lambda cid, data: docs.__setitem__(str(cid), data)
+    try:
+        dismiss_llm_alert("av:x")
+        alert = docs["av:x"]["crm"]["alert"]
+        assert alert["active"] is False
+        assert alert["nags"] is False
+    finally:
+        store.load_doc = old_load
+        store.save_doc = old_save
 
 
 def test_pings():
@@ -1423,6 +1500,7 @@ def test_tiggo_match_and_messenger():
     nat["Год выпуска"] = "2023"
     nat_card = warehouse_block([[nat[h] for h in HEADER]])
     assert "Дизельный отопитель: да" in nat_card
+    assert "наличный расчёт" in nat_card.lower() or "наличный расчет" in nat_card.lower()
 
 
 def test_mercedes_class_not_confused():
@@ -2323,6 +2401,7 @@ if __name__ == "__main__":
     test_widget_score()
     test_amo_owner()
     test_llm_pause_reason()
+    test_llm_outage_not_a_group_alert()
     test_autoru_prior()
     test_focus_autoru()
     test_listing_context_cleanup()

@@ -455,6 +455,11 @@ def card(
     note = (marks or {}).get(vin_key, "")
     if note:
         lines.append("- **Важно: %s**" % note)
+    if is_nat(d) and "наличн" not in (note or "").lower():
+        lines.append(
+            "- **Важно: данные автомобили продаём за наличный расчёт. "
+            "Кредит и банки в чат не предлагай, настаивает — номер**"
+        )
     return "\n".join(lines)
 
 
