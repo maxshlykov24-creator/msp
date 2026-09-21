@@ -211,5 +211,5 @@ def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     return (
         f"За неделю отчёт написали {wrote} из {total}. Не написали {missing}\n"
         f"\n"
-        f"Кто ещё не написал, зайди пожалуйста к @emmrov_bot, он поможет собрать текст )"
+        f"Кто ещё не написал, переходите в @emmrov_bot, он поможет собрать текст )"
     )
