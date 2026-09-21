@@ -8,8 +8,8 @@ HASHTAG_RE = re.compile(r"#[^\s#]{1,64}")
 DIGEST_HASHTAG = "#рвыотчёт"
 _SKIP_TAGS = frozenset({"#рвыотчёт", "#рвыотчет"})
 
-# Узкий шаблон живого отчёта. Не «любое 1.», чтобы не зачесть объявление или обычный чат.
-_ITEM_ONE = re.compile(r"(?:^|[\n\r])\s*1\s*[.)]")
+# Узкий бланк. Одного «1.» мало: в чате так же нумеруют мысли.
+_ITEM_N = re.compile(r"(?<!\d)(\d{1,2})\s*[.)]")
 _TEMPLATE = re.compile(
     r"(духовн\w*\s+рост|час(?:ы|ов)?\s+молитв|сколько\s+времени\s+потратил|"
     r"можем\s+тебе\s+помочь|обхватил|постил(?:ся|ись)?\s+ли|"
@@ -30,13 +30,14 @@ def extract_hashtag(text: str | None) -> str | None:
 
 
 def looks_like_report(text: str | None) -> bool:
-    """Отчёт без хэштега: есть пункт 1. и фраза из бланка. Иначе не считаем."""
+    """Отчёт без хэштега: пункты 1. и 2. плюс минимум две фразы бланка. Иначе не считаем."""
     t = (text or "").strip()
-    if len(t) < 20:
+    if len(t) < 40:
         return False
-    if not _ITEM_ONE.search(t) and not re.match(r"\s*1\s*[.)]", t):
+    items = {int(n) for n in _ITEM_N.findall(t) if n.isdigit()}
+    if 1 not in items or 2 not in items:
         return False
-    return bool(_TEMPLATE.search(t))
+    return len(_TEMPLATE.findall(t)) >= 2
 
 
 def tag_from_telegram(

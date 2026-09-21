@@ -48,9 +48,10 @@ def main() -> int:
     andrey = "1.Сколько времени потратили на личный духовный рост (часы молитвы)? 4  2.В чем мы как команда можем тебе помочь?"
     check(looks_like_report(denis), "denis template")
     check(looks_like_report(andrey), "andrey template")
+    check(not looks_like_report("1. Сколько времени потратил на личный духовный рост (часы молитвы)? 4"), "one item not enough")
+    check(not looks_like_report("1. Купил хлеб 2. Забрал детей"), "numbered chores not report")
     check(not looks_like_report("Мужчины, давайте дальше отчеты писать, понимаю, что много дел"), "nudge not report")
     check(not looks_like_report("🟢Уже завтра ночная мужская молитва! 20:00 - 22:00"), "event not report")
-    check(not looks_like_report("1. Купил хлеб 2. Забрал детей"), "numbered chores not report")
     check(tag_from_telegram(username="Andreynkl", first_name="Андрей", last_name=None, tg_user_id=1) == "#Andreynkl", "nick username")
     check(tag_from_telegram(username=None, first_name="Денис", last_name="Петрий", tg_user_id=2) == "#ПетрийДенис", "nick name")
     check(extract_hashtag("#Кирилл Спиридонов") == "#Кирилл", "tag then space")

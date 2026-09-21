@@ -13,7 +13,7 @@ async def run() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
-    from app.bot import build_dispatcher
+    from app.bot import build_dispatcher, warn_if_cannot_see_group
     from app.config import get_settings
     from app.database import init_db
     from app.mute import MuteBot
@@ -41,6 +41,7 @@ async def run() -> None:
     )
     if settings.outbound_mute:
         log.info("OUTBOUND_MUTE: sends only to admin_tg_user_id, never to group or others")
+    await warn_if_cannot_see_group(bot)
     dp = build_dispatcher()
     start_scheduler(bot)
     log.info("Bot polling…")

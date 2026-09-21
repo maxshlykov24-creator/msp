@@ -5,7 +5,7 @@ services:
     build: .
     container_name: emmanuel-report-bot
     restart: unless-stopped
-    mem_limit: 180m
+    mem_limit: 300m
     env_file: .env
     volumes:
       - emmanuel_report_bot_data:/data

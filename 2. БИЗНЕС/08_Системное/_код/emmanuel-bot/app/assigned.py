@@ -19,6 +19,16 @@ def _config() -> tuple[dict[int, str], frozenset[int]]:
     return tags, oos
 
 
+def all_assigned_hashtags() -> dict[int, str]:
+    tags, _ = _config()
+    return dict(tags)
+
+
+def out_of_scope_ids() -> frozenset[int]:
+    _, oos = _config()
+    return oos
+
+
 def assigned_hashtag(tg_user_id: int) -> str | None:
     tags, _ = _config()
     return tags.get(int(tg_user_id))

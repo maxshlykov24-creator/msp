@@ -1383,16 +1383,6 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
             u.streak = new_streak
             u.last_report_week_start = week_start
 
-        await upsert_submission(
-            session,
-            tg_user_id=query.from_user.id,
-            week_start=week_start,
-            source="bot",
-            msg_id=None,
-            hashtag=u.report_hashtag(),
-            submitted_at=submitted_at,
-        )
-
         await session.commit()
 
     out_data = {**data, "q5": q5_final}
@@ -1406,28 +1396,41 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
     if settings.group_chat_id == 0:
         await bot.send_message(tg_user_id_sent, txt_html, parse_mode=ParseMode.HTML)
         sent_note = (
-            "Отчёт недели обновлён (режим без общего чата — копия только тебе)."
+            "Отчёт недели обновлён (режим без общего чата — копия только тебе). В покрытие группы не входит."
             if is_update
-            else "Отчёт сохранён. В общий чат не отправлен (режим без GROUP_CHAT_ID)."
+            else "Отчёт сохранён у бота. В общий чат не отправлен, в покрытие недели не засчитал."
         )
     elif settings.outbound_mute:
         sent_note = (
-            "Отчёт сохранён. Сейчас тишина: в общий чат не отправлял."
+            "Отчёт сохранён у бота. В группу не отправлял — в покрытие недели попадёт, только когда текст появится в «Копают рвы»."
             if not is_update
-            else "Отчёт обновлён. Сейчас тишина: в общий чат не отправлял."
+            else "Отчёт обновлён у бота. В группу не отправлял, покрытие считаю только по чату."
         )
     else:
-        await bot.send_message(settings.group_chat_id, txt_html, parse_mode=ParseMode.HTML)
-        sent_note = (
-            "Обновлённый отчёт снова отправлен в общий чат." if is_update else "Отчёт отправлен в общий чат."
-        )
-        # Стрик-юбилей: поздравление в группу при кратных 5 (только первая отправка)
-        if not is_update and new_streak > 0 and new_streak % 5 == 0:
-            milestone_txt = f"{html.escape(u.report_hashtag())} — {new_streak} недель отчётности подряд."
-            try:
-                await bot.send_message(settings.group_chat_id, milestone_txt, parse_mode=ParseMode.HTML)
-            except Exception:
-                log.warning("milestone send failed")
+        sent = await bot.send_message(settings.group_chat_id, txt_html, parse_mode=ParseMode.HTML)
+        if sent is None:
+            sent_note = "Не отправил в общий чат, в покрытие недели не засчитал."
+        else:
+            async with get_session_factory()() as session:
+                await upsert_submission(
+                    session,
+                    tg_user_id=tg_user_id_sent,
+                    week_start=week_start,
+                    source="bot",
+                    msg_id=sent.message_id,
+                    hashtag=u.report_hashtag(),
+                    submitted_at=submitted_at,
+                )
+                await session.commit()
+            sent_note = (
+                "Обновлённый отчёт снова отправлен в общий чат." if is_update else "Отчёт отправлен в общий чат."
+            )
+            if not is_update and new_streak > 0 and new_streak % 5 == 0:
+                milestone_txt = f"{html.escape(u.report_hashtag())} — {new_streak} недель отчётности подряд."
+                try:
+                    await bot.send_message(settings.group_chat_id, milestone_txt, parse_mode=ParseMode.HTML)
+                except Exception:
+                    log.warning("milestone send failed")
 
     if is_update:
         streak_line = (
@@ -1706,6 +1709,7 @@ async def _count_group_hashtag(message: Message) -> None:
     if message.chat.type not in ("group", "supergroup"):
         return
     if not message.from_user or message.from_user.is_bot:
+        # Свои посты бота не считаем здесь: зачёт мастера — только после реальной отправки в группу.
         return
     plain = _group_plain(message)
     tag_in_text = extract_hashtag(plain)
@@ -1793,6 +1797,51 @@ async def on_chat_member(event: ChatMemberUpdated):
     log.info("chat_member uid=%s status=%s bot=%s", user.id, status_s, user.is_bot)
 
 
+@router.my_chat_member()
+async def on_my_chat_member(event: ChatMemberUpdated, bot: Bot):
+    settings = get_settings()
+    if settings.group_chat_id and event.chat.id != settings.group_chat_id:
+        return
+    status = event.new_chat_member.status
+    ok = status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR)
+    status_s = status.value if hasattr(status, "value") else str(status)
+    log.info("my_chat_member status=%s admin=%s", status_s, ok)
+    if ok:
+        return
+    try:
+        await bot.send_message(
+            settings.admin_tg_user_id,
+            "Права в «Копают рвы» сняли. Сообщения группы могу не видеть, покрытие будет неполным.",
+        )
+    except Exception:
+        log.exception("admin watchdog dm failed")
+
+
+async def warn_if_cannot_see_group(bot: Bot) -> None:
+    settings = get_settings()
+    if not settings.group_chat_id:
+        return
+    try:
+        me = await bot.get_me()
+        member = await bot.get_chat_member(settings.group_chat_id, me.id)
+        status = member.status
+        ok = status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR)
+    except Exception:
+        log.exception("bot membership check failed")
+        ok = False
+    if ok:
+        log.info("bot is group admin")
+        return
+    log.error("bot is not group admin, reports from chat may be missing")
+    try:
+        await bot.send_message(
+            settings.admin_tg_user_id,
+            "Я не админ в «Копают рвы». Сообщения группы могу не видеть, покрытие будет неполным.",
+        )
+    except Exception:
+        log.exception("admin watchdog dm failed")
+
+
 def build_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=MemoryStorage())
     dp.message.middleware(AdminOnlyPrivateMiddleware())
@@ -1874,26 +1923,36 @@ async def _digest_payload() -> tuple[str, str]:
     return public, private
 
 
+async def _send_coverage_digest(bot: Bot, *, public: str, private: str, to_group: bool) -> None:
+    settings = get_settings()
+    await bot.send_message(settings.admin_tg_user_id, private, parse_mode=ParseMode.HTML)
+    if to_group and not settings.outbound_mute and settings.group_chat_id:
+        await bot.send_message(settings.group_chat_id, public, parse_mode=ParseMode.HTML)
+
+
 async def job_midnight_digest(bot: Bot) -> None:
-    """00:00: в MUTE — только админу; в чат — только после JOBS_ENABLED и снятия MUTE."""
+    """00:00: имена админу; в чат без имён только после снятия MUTE."""
     settings = get_settings()
     if not settings.jobs_enabled:
         log.info("skip midnight digest: jobs off")
         return
     try:
         public, private = await _digest_payload()
-        if settings.outbound_mute:
-            await bot.send_message(settings.admin_tg_user_id, private, parse_mode=ParseMode.HTML)
-            log.info("midnight digest sent to admin (mute)")
+        ws = week_start_from_date(now_msk().date())
+        async with get_session_factory()() as session:
+            submitted = await submitted_ids_for_week(session, ws)
+            await session.commit()
+        if not submitted:
+            log.info("skip midnight digest: nobody wrote this week yet")
             return
-        if settings.group_chat_id:
-            await bot.send_message(settings.group_chat_id, public, parse_mode=ParseMode.HTML)
+        await _send_coverage_digest(bot, public=public, private=private, to_group=True)
+        log.info("midnight digest sent mute=%s", settings.outbound_mute)
     except Exception:
         log.exception("job_midnight_digest failed")
 
 
 async def job_twenty_reminder(bot: Bot) -> None:
-    """20:00: код готов, в группу и братьям при MUTE не уходит."""
+    """20:00: та же сводка, если кто-то ещё не написал в группу."""
     settings = get_settings()
     if not settings.jobs_enabled:
         log.info("skip 20:00 reminder: jobs off")
@@ -1909,11 +1968,7 @@ async def job_twenty_reminder(bot: Bot) -> None:
         if missing <= 0:
             log.info("20:00 skip, coverage complete")
             return
-        if settings.outbound_mute:
-            await bot.send_message(settings.admin_tg_user_id, private, parse_mode=ParseMode.HTML)
-            log.info("20:00 reminder sent to admin (mute)")
-            return
-        if settings.group_chat_id:
-            await bot.send_message(settings.group_chat_id, public, parse_mode=ParseMode.HTML)
+        await _send_coverage_digest(bot, public=public, private=private, to_group=True)
+        log.info("20:00 reminder sent mute=%s missing=%s", settings.outbound_mute, missing)
     except Exception:
         log.exception("job_twenty_reminder failed")
