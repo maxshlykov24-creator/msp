@@ -27,7 +27,7 @@
     -webkit-font-smoothing:antialiased;letter-spacing:-.011em;
   }
   section{display:none}
-  body[data-s="1"] #s1,body[data-s="2"] #s2,body[data-s="3"] #s3{display:block}
+  body[data-s="1"] #s1,body[data-s="2"] #s2,body[data-s="3"] #s3,body[data-s="4"] #s4{display:block}
 
   .screen{
     width:1400px;height:100vh;padding:26px 30px;position:relative;overflow:hidden;
@@ -139,6 +139,55 @@
   .m span{font-family:var(--mono);font-size:11px;color:var(--mute);text-align:right}
   .m .bar{margin:0}
   .m.full .bar i{background:linear-gradient(90deg,var(--red),#e0a9a3)}
+
+  /* ── планировщик загрузки ── */
+  .pkpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}
+  .pkpi{background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .pkpi em{font-style:normal;font-size:10.5px;color:var(--mute);letter-spacing:.03em;text-transform:uppercase;display:block}
+  .pkpi b{display:block;font-size:22px;font-weight:750;margin-top:4px;letter-spacing:-.02em}
+  .pkpi b.w{color:var(--a2)}
+  .pkpi b.r{color:var(--red)}
+  .pkpi i{font-style:normal;font-size:10.5px;color:var(--mute-2);font-family:var(--mono);margin-top:2px;display:block}
+  .pwrap{display:grid;grid-template-columns:1.55fr .45fr;gap:14px;margin-top:14px;flex:1;min-height:0;padding-bottom:14px;align-items:stretch}
+  .plist{display:flex;flex-direction:column;gap:8px}
+  .prow{
+    background:rgba(255,255,255,.022);border:1px solid var(--line);border-radius:13px;padding:10px 12px 11px
+  }
+  .prow.hot{border-color:rgba(201,134,128,.45);background:rgba(201,134,128,.06)}
+  .prow.sick{border-color:rgba(200,164,92,.4);background:rgba(200,164,92,.07)}
+  .prow.free{border-color:rgba(159,201,172,.28)}
+  .phd{display:grid;grid-template-columns:minmax(150px,.85fr) minmax(140px,1.1fr) auto;gap:12px;align-items:center;margin-bottom:8px}
+  .phd .nm{font-size:13px;font-weight:700}
+  .phd .nm span{display:block;font-size:10.5px;color:var(--mute);font-weight:500;margin-top:1px}
+  .pstat{font-family:var(--mono);font-size:11px;color:var(--mute);text-align:right;line-height:1.35}
+  .pstat b{display:block;color:var(--a2);font-weight:650;font-size:12px}
+  .pstat.bad b{color:var(--red)}
+  .pstat.ok b{color:var(--green)}
+  .pbar{width:auto;min-width:120px}
+  .pbar .bar{margin:0}
+  .cars{display:flex;flex-wrap:wrap;gap:6px}
+  .car{
+    font-size:10.5px;line-height:1.35;padding:6px 8px;border-radius:8px;
+    background:var(--card);border:1px solid var(--line);color:var(--mute)
+  }
+  .car b{display:block;font-size:11px;font-weight:650;color:var(--ink);margin-bottom:1px}
+  .car em{font-style:normal;font-family:var(--mono);color:var(--a2);font-size:10px}
+  .car.move{border-color:rgba(200,164,92,.45);background:rgba(200,164,92,.1)}
+  .qbox{display:flex;flex-direction:column}
+  .qbox .box{flex:1;display:flex;flex-direction:column}
+  .qitem{
+    background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 11px;margin-top:8px
+  }
+  .qitem b{display:block;font-size:12px;font-weight:650;margin-bottom:3px}
+  .qitem i{display:block;font-style:normal;font-size:11px;color:var(--mute);line-height:1.4}
+  .qitem .hint{
+    margin-top:7px;font-size:10.5px;color:var(--a2);font-weight:600;
+    padding:5px 8px;border-radius:7px;background:rgba(200,164,92,.12);border:1px solid rgba(200,164,92,.28)
+  }
+  .qitem .warn{
+    margin-top:7px;font-size:10.5px;color:var(--red);font-weight:600;
+    padding:5px 8px;border-radius:7px;background:rgba(201,134,128,.1);border:1px solid rgba(201,134,128,.28)
+  }
 </style>
 </head>
 <body data-s="1">
@@ -161,47 +210,47 @@
 
   <div class="cols">
     <div class="col">
-      <div class="col-h"><b>Новое обращение</b><span>6 · 412 000 ₽</span></div>
-      <div class="k"><b>Сергей</b><i>Оклейка передней части<br>BMW X5</i><span class="sum">85 000 ₽</span><span class="tag src">2GIS</span></div>
-      <div class="k"><b>Марина</b><i>Химчистка салона<br>Kia Sportage</i><span class="sum">12 000 ₽</span><span class="tag src">Яндекс</span></div>
-      <div class="k"><b>Николай</b><i>Полировка стекла<br>Porsche Cayenne</i><span class="sum">от 9 000 ₽</span><span class="tag">Клиент DIVO</span></div>
-      <div class="k"><b>Артём</b><i>Керамика кузова<br>Toyota Camry</i><span class="sum">от 45 000 ₽</span><span class="tag src">Сарафан</span></div>
+      <div class="col-h"><b>Новое обращение</b><span>6 · 318 000 ₽</span></div>
+      <div class="k"><b>Сергей</b><i>Оклейка кузова плёнкой<br>BMW X5</i><span class="sum">200 000 ₽</span><span class="tag src">2GIS</span></div>
+      <div class="k"><b>Марина</b><i>Полная химчистка салона<br>Kia Sportage</i><span class="sum">25 000 ₽</span><span class="tag src">Яндекс</span></div>
+      <div class="k"><b>Николай</b><i>Предпродажная подготовка<br>Porsche Cayenne</i><span class="sum">23 750 ₽</span><span class="tag">Клиент DIVO</span></div>
+      <div class="k"><b>Артём</b><i>Керамика на ЛКП<br>Toyota Camry</i><span class="sum">20 000 ₽</span><span class="tag src">Сарафан</span></div>
     </div>
     <div class="col">
-      <div class="col-h"><b>Контакт установлен</b><span>4 · 286 000 ₽</span></div>
-      <div class="k"><b>Дмитрий</b><i>Ремонт двери и покрас<br>Audi Q7</i><span class="sum">от 60 000 ₽</span><span class="tag src">2GIS</span></div>
-      <div class="k"><b>Ольга</b><i>Химчистка, белая кожа<br>Volvo XC60</i><span class="sum">от 20 000 ₽</span><span class="tag src">Яндекс</span></div>
-      <div class="k"><b>Руслан</b><i>Оклейка кузова полностью<br>Mercedes GLE</i><span class="sum">от 190 000 ₽</span><span class="tag">Клиент DIVO</span></div>
+      <div class="col-h"><b>Контакт установлен</b><span>4 · 280 000 ₽</span></div>
+      <div class="k"><b>Дмитрий</b><i>Бронирование лобового<br>Audi Q7</i><span class="sum">35 000 ₽</span><span class="tag src">2GIS</span></div>
+      <div class="k"><b>Ольга</b><i>Полная химчистка салона<br>Volvo XC60</i><span class="sum">25 000 ₽</span><span class="tag src">Яндекс</span></div>
+      <div class="k"><b>Руслан</b><i>Оклейка кузова плёнкой<br>Mercedes GLE</i><span class="sum">200 000 ₽</span><span class="tag">Клиент DIVO</span></div>
     </div>
     <div class="col">
-      <div class="col-h"><b>Визит согласован</b><span>3 · 174 000 ₽</span></div>
-      <div class="k"><b>Игорь</b><i>Локальная оклейка<br>Land Rover Discovery</i><span class="sum">96 000 ₽</span><span class="tag src">Сарафан</span></div>
-      <div class="k"><b>Алина</b><i>Химчистка и озонация<br>Skoda Kodiaq</i><span class="sum">23 000 ₽</span><span class="tag src">2GIS</span></div>
-      <div class="k"><b>Павел</b><i>Полировка кузова<br>Lexus RX</i><span class="sum">55 000 ₽</span><span class="tag src">Яндекс</span></div>
+      <div class="col-h"><b>Визит согласован</b><span>3 · 119 000 ₽</span></div>
+      <div class="k"><b>Игорь</b><i>Оклейка зон риска<br>Land Rover Discovery</i><span class="sum">60 000 ₽</span><span class="tag src">Сарафан</span></div>
+      <div class="k"><b>Алина</b><i>Химчистка и озонация<br>Skoda Kodiaq</i><span class="sum">27 000 ₽</span><span class="tag src">2GIS</span></div>
+      <div class="k"><b>Павел</b><i>Восстановительная полировка<br>Lexus RX</i><span class="sum">32 000 ₽</span><span class="tag src">Яндекс</span></div>
     </div>
     <div class="col">
-      <div class="col-h"><b>Авто на площадке</b><span>2 · 108 000 ₽</span></div>
+      <div class="col-h"><b>Авто на площадке</b><span>2 · 35 000 ₽</span></div>
       <div class="k"><b>Владимир</b><i>Осмотр с мастером<br>Nissan X-Trail</i><span class="sum">оценка</span><span class="tag src">2GIS</span></div>
-      <div class="k"><b>Тимур</b><i>Вмятины без покраса<br>Hyundai Tucson</i><span class="sum">38 000 ₽</span><span class="tag src">Сарафан</span></div>
+      <div class="k"><b>Тимур</b><i>Бронирование лобового<br>Hyundai Tucson</i><span class="sum">35 000 ₽</span><span class="tag src">Сарафан</span></div>
     </div>
     <div class="col">
-      <div class="col-h"><b>В работе</b><span>7 · 531 000 ₽</span></div>
-      <div class="k"><b>Николай</b><i>Оклейка, Сергей М.<br>до 22 сентября</i><span class="sum">96 000 ₽</span><span class="tag">Клиент DIVO</span></div>
-      <div class="k"><b>Елена</b><i>Химчистка, Артур К.<br>до 19 сентября</i><span class="sum">18 000 ₽</span><span class="tag src">Яндекс</span></div>
-      <div class="k"><b>Максим</b><i>Покрас двери, Роман Д.<br>до 26 сентября</i><span class="sum">71 000 ₽</span><span class="tag src">2GIS</span></div>
-      <div class="k"><b>Андрей</b><i>Керамика, Илья В.<br>до 20 сентября</i><span class="sum">52 000 ₽</span><span class="tag src">Сарафан</span></div>
+      <div class="col-h"><b>В работе</b><span>7 · 412 000 ₽</span></div>
+      <div class="k"><b>Николай</b><i>Оклейка зон риска, Сергей М.<br>до 22 сентября</i><span class="sum">60 000 ₽</span><span class="tag">Клиент DIVO</span></div>
+      <div class="k"><b>Елена</b><i>Полная химчистка, Артур К.<br>до 19 сентября</i><span class="sum">25 000 ₽</span><span class="tag src">Яндекс</span></div>
+      <div class="k"><b>Максим</b><i>Оклейка кузова, Роман Д.<br>до 26 сентября</i><span class="sum">200 000 ₽</span><span class="tag src">2GIS</span></div>
+      <div class="k"><b>Андрей</b><i>Керамика на ЛКП, Илья В.<br>до 20 сентября</i><span class="sum">20 000 ₽</span><span class="tag src">Сарафан</span></div>
     </div>
     <div class="col won">
-      <div class="col-h"><b>Готово к выдаче</b><span>2 · 134 000 ₽</span></div>
-      <div class="k"><b>Светлана</b><i>Полировка готова<br>клиент уведомлён</i><span class="sum">47 000 ₽</span><span class="tag src">Яндекс</span></div>
-      <div class="k"><b>Виктор</b><i>Оклейка готова<br>остаток 43 500 ₽</i><span class="sum">87 000 ₽</span><span class="tag">Клиент DIVO</span></div>
+      <div class="col-h"><b>Готово к выдаче</b><span>2 · 92 000 ₽</span></div>
+      <div class="k"><b>Светлана</b><i>Полировка готова<br>клиент уведомлён</i><span class="sum">32 000 ₽</span><span class="tag src">Яндекс</span></div>
+      <div class="k"><b>Виктор</b><i>Оклейка зон риска готова<br>остаток 30 000 ₽</i><span class="sum">60 000 ₽</span><span class="tag">Клиент DIVO</span></div>
     </div>
     <div class="col won">
-      <div class="col-h"><b>Выдано</b><span>18 · 1 246 000 ₽</span></div>
-      <div class="k"><b>Георгий</b><i>Химчистка и озонация<br>оплата полная</i><span class="sum">24 000 ₽</span><span class="tag src">2GIS</span></div>
-      <div class="k"><b>Инна</b><i>Оклейка передней части<br>50 на 50</i><span class="sum">85 000 ₽</span><span class="tag">Клиент DIVO</span></div>
-      <div class="k"><b>Кирилл</b><i>Полировка кузова<br>оплата полная</i><span class="sum">49 000 ₽</span><span class="tag src">Сарафан</span></div>
-      <div class="k"><b>Denis</b><i>Ремонт вмятин<br>повторный визит</i><span class="sum">41 000 ₽</span><span class="tag src">Яндекс</span></div>
+      <div class="col-h"><b>Выдано</b><span>18 · 1 124 000 ₽</span></div>
+      <div class="k"><b>Георгий</b><i>Химчистка и озонация<br>оплата полная</i><span class="sum">27 000 ₽</span><span class="tag src">2GIS</span></div>
+      <div class="k"><b>Инна</b><i>Оклейка зон риска<br>50 на 50</i><span class="sum">60 000 ₽</span><span class="tag">Клиент DIVO</span></div>
+      <div class="k"><b>Кирилл</b><i>Анти-голограммная полировка<br>оплата полная</i><span class="sum">13 000 ₽</span><span class="tag src">Сарафан</span></div>
+      <div class="k"><b>Denis</b><i>Предпродажная подготовка<br>повторный визит</i><span class="sum">23 750 ₽</span><span class="tag src">Яндекс</span></div>
     </div>
   </div>
   <div class="note">Пример на выдуманных данных. Состав этапов и полей настраивается под вас.</div>
@@ -212,7 +261,7 @@
   <div class="tb">
     <div class="tb-l">
       <img class="brand-logo" src="../логотип/mcqueen-logo.png" alt="MCQUEEN DETAILING">
-      <h1>Николай Ковалёв <em>· Porsche Cayenne · оклейка передней части</em></h1>
+      <h1>Николай Ковалёв <em>· Porsche Cayenne · оклейка зон риска</em></h1>
     </div>
     <div class="tb-r">
       <div class="chip on">В работе</div>
@@ -238,7 +287,7 @@
           <div class="r"><em>Источник обращения</em><b>2GIS, карточка детейлинга</b></div>
           <div class="r"><em>Первое касание</em><b>звонок, 16 сентября</b></div>
           <div class="r"><em>Повторных визитов</em><b>2</b></div>
-          <div class="r"><em>Последняя услуга</em><b>полировка, 12.05.2026</b></div>
+          <div class="r"><em>Последняя услуга</em><b>восстановительная полировка, 12.05.2026</b></div>
         </div>
       </div>
 
@@ -248,12 +297,12 @@
           <div class="r"><em>Марка и модель</em><b>Porsche Cayenne, 2021</b></div>
           <div class="r"><em>VIN</em><b class="m">WP1ZZZ9YZML0ХХХХХ</b></div>
           <div class="r"><em>Пробег на приёмке</em><b class="m">64 180 км</b></div>
-          <div class="r"><em>Услуга</em><b>оклейка передней части</b></div>
+          <div class="r"><em>Услуга</em><b>оклейка зон риска</b></div>
           <div class="r"><em>Категория сложности</em><b>средняя</b></div>
-          <div class="r"><em>Предварительно назвали</em><b class="m" style="white-space:nowrap">от 85 до 110 тыс ₽</b></div>
-          <div class="r"><em>Итого по заказ-наряду</em><b class="m">96 000 ₽</b></div>
-          <div class="r"><em>Предоплата</em><b class="g">48 000 ₽ получена</b></div>
-          <div class="r"><em>Остаток к выдаче</em><b class="m">48 000 ₽</b></div>
+          <div class="r"><em>Предварительно назвали</em><b class="m" style="white-space:nowrap">60 000 ₽ по прайсу</b></div>
+          <div class="r"><em>Итого по заказ-наряду</em><b class="m">60 000 ₽</b></div>
+          <div class="r"><em>Предоплата</em><b class="g">30 000 ₽ получена</b></div>
+          <div class="r"><em>Остаток к выдаче</em><b class="m">30 000 ₽</b></div>
           <div class="r"><em>Фото состояния</em><b>8 снимков при приёмке</b></div>
         </div>
       </div>
@@ -299,7 +348,7 @@
           <div class="ic">✓</div>
           <div class="tx">
             <b>Заказ-наряд подписан, ключи приняты</b>
-            <i>Осмотр с мастером, итог 96 000 ₽, срок 22 сентября. Машина закреплена за Сергеем М.</i>
+            <i>Осмотр с мастером, итог 60 000 ₽, срок 22 сентября. Машина закреплена за Сергеем М.</i>
             <span class="when">18 сентября, 11:05 · Администратор</span>
           </div>
         </div>
@@ -388,6 +437,133 @@
     </div>
   </div>
   <div class="note">Пример на выдуманных данных. Состав показателей согласуем до сборки.</div>
+</div></section>
+
+<!-- ═══ 4. Загрузка мастеров ═══ -->
+<section id="s4"><div class="screen">
+  <div class="tb">
+    <div class="tb-l">
+      <img class="brand-logo" src="../логотип/mcqueen-logo.png" alt="MCQUEEN DETAILING">
+      <h1><em>загрузка площадки</em></h1>
+    </div>
+    <div class="tb-r">
+      <div class="chip on">Сегодня, 21 сентября</div>
+      <div class="chip">3 дня</div>
+      <div class="chip">Неделя</div>
+      <div class="ava">А</div>
+    </div>
+  </div>
+
+  <div class="pkpis">
+    <div class="pkpi"><em>Машин в работе</em><b>13</b><i>на 6 мастерах</i></div>
+    <div class="pkpi"><em>Ждут назначения</em><b class="w">3</b><i>осмотр уже пройден</i></div>
+    <div class="pkpi"><em>Свободных слотов</em><b>2</b><i>Илья и Тимур сегодня</i></div>
+    <div class="pkpi"><em>Нужна подмена</em><b class="r">1</b><i>Дмитрий, больничный</i></div>
+  </div>
+
+  <div class="pwrap">
+    <div class="plist">
+      <div class="prow">
+        <div class="phd">
+          <div class="nm">Сергей М.<span>оклейка</span></div>
+          <div class="pbar"><div class="bar"><i style="width:74%"></i></div></div>
+          <div class="pstat"><b>3 машины</b>295 000 ₽ · до 26.09</div>
+        </div>
+        <div class="cars">
+          <div class="car"><b>BMW X5 · зоны риска</b>2 дня · до 22.09 · <em>60 000 ₽</em></div>
+          <div class="car"><b>Mercedes GLE · кузов плёнкой</b>4 дня · до 26.09 · <em>200 000 ₽</em></div>
+          <div class="car"><b>Audi Q7 · лобовое</b>1 день · до 23.09 · <em>35 000 ₽</em></div>
+        </div>
+      </div>
+
+      <div class="prow hot">
+        <div class="phd">
+          <div class="nm">Артур К.<span>химчистка</span></div>
+          <div class="pbar"><div class="bar"><i style="width:96%"></i></div></div>
+          <div class="pstat bad"><b>перегруз, 4 машины</b>слота нет до 24.09</div>
+        </div>
+        <div class="cars">
+          <div class="car"><b>Kia Sportage · полная химчистка</b>1 день · сегодня · <em>25 000 ₽</em></div>
+          <div class="car"><b>Volvo XC60 · полная химчистка</b>1 день · 22.09 · <em>25 000 ₽</em></div>
+          <div class="car"><b>Skoda Kodiaq · химчистка и озонация</b>1 день · 23.09 · <em>27 000 ₽</em></div>
+          <div class="car"><b>Passat · потолок и панели</b>1 день · 24.09 · <em>14 000 ₽</em></div>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="phd">
+          <div class="nm">Роман Д.<span>оклейка</span></div>
+          <div class="pbar"><div class="bar"><i style="width:58%"></i></div></div>
+          <div class="pstat"><b>2 машины</b>260 000 ₽ · слот 24.09</div>
+        </div>
+        <div class="cars">
+          <div class="car"><b>Porsche Cayenne · зоны риска</b>2 дня · до 23.09 · <em>60 000 ₽</em></div>
+          <div class="car"><b>BMW X6 · кузов плёнкой</b>4 дня · до 26.09 · <em>200 000 ₽</em></div>
+        </div>
+      </div>
+
+      <div class="prow free">
+        <div class="phd">
+          <div class="nm">Илья В.<span>керамика и полировка</span></div>
+          <div class="pbar"><div class="bar"><i style="width:28%"></i></div></div>
+          <div class="pstat ok"><b>1 машина</b>слот сегодня</div>
+        </div>
+        <div class="cars">
+          <div class="car"><b>Lexus RX · восстановительная полировка</b>1 день · сегодня · <em>32 000 ₽</em></div>
+        </div>
+      </div>
+
+      <div class="prow sick">
+        <div class="phd">
+          <div class="nm">Дмитрий С.<span>оклейка · больничный до 23.09</span></div>
+          <div class="pbar"><div class="bar"><i style="width:40%"></i></div></div>
+          <div class="pstat"><b>2 машины без мастера</b>передать сегодня</div>
+        </div>
+        <div class="cars">
+          <div class="car move"><b>Land Rover · зоны риска</b>передать Сергею или Роману · <em>60 000 ₽</em></div>
+          <div class="car move"><b>Toyota Camry · керамика на ЛКП</b>передать Илье · <em>20 000 ₽</em></div>
+        </div>
+      </div>
+
+      <div class="prow free">
+        <div class="phd">
+          <div class="nm">Тимур А. и ещё 5<span>полировка, аутсорс по вызову</span></div>
+          <div class="pbar"><div class="bar"><i style="width:18%"></i></div></div>
+          <div class="pstat ok"><b>свободны</b>можно поставить в очередь</div>
+        </div>
+        <div class="cars">
+          <div class="car"><b>Тимур · анти-голограммная, 1 машина</b>слот с 22.09</div>
+          <div class="car"><b>Пять мастеров без очереди</b>в том числе аутсорс на оклейку</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="qbox">
+      <div class="box">
+        <h3>Назначить сегодня</h3>
+        <div class="qitem">
+          <b>Nissan X-Trail</b>
+          <i>Керамика на ЛКП · 20 000 ₽ · 1 день. Осмотр пройден.</i>
+          <div class="hint">Слот у Ильи, направление совпадает</div>
+        </div>
+        <div class="qitem">
+          <b>Hyundai Tucson</b>
+          <i>Бронирование лобового · 35 000 ₽ · 1 день. Осмотр пройден.</i>
+          <div class="hint">Сергей занят до 23.09, слот у Романа 24.09</div>
+        </div>
+        <div class="qitem">
+          <b>Mazda CX-5</b>
+          <i>Потолок 8 000 ₽ · 1 день. Клиент ждёт на площадке.</i>
+          <div class="warn">Артур в перегрузе. Отдать другому, не ставить в его очередь</div>
+        </div>
+        <div class="qitem" style="margin-top:auto;border-style:dashed;background:transparent">
+          <b>Подмена в один клик</b>
+          <i>Машину с больного мастера переносите вы. Система только показывает, у кого есть слот.</i>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note">Пример на выдуманных данных. Распределение остаётся решением администратора, не системы.</div>
 </div></section>
 
 <script>
