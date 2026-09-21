@@ -14,12 +14,18 @@ from app.time_utils import last_sunday_on_or_before
 from datetime import date
 
 
+DIGEST_HASHTAG = "#рвыотчёт"
+
+
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     missing = max(total - wrote, 0)
+    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b>"
     if total > 0 and wrote >= total:
-        return f"За неделю отчёт написали все {total} )"
+        return f"{head}\n\nЗа неделю отчёт написали все )"
     return (
-        f"За неделю отчёт написали {wrote} из {total}. Не написали {missing}\n"
+        f"{head}\n"
+        f"\n"
+        f"Не написали {missing}\n"
         f"\n"
         f"Кто ещё не написал, переходите в @emmrov_bot, он поможет собрать текст )"
     )
@@ -47,10 +53,11 @@ def main() -> int:
     check(last_sunday_on_or_before(date(2026, 9, 21)) == date(2026, 9, 20), "last sunday mon")
     check(last_sunday_on_or_before(date(2026, 9, 20)) == date(2026, 9, 20), "last sunday sun")
     t = format_public_digest(week_start=date(2026, 9, 14), total=35, wrote=18)
-    check("18 из 35" in t and "Не написали 17" in t, "public digest")
-    check("@emmrov_bot" in t and "?" not in t, "public no question")
+    check(t.startswith("#рвыотчёт <b>18 из 35</b>"), "public head")
+    check("Не написали 17" in t and "@emmrov_bot" in t, "public digest")
+    check("?" not in t, "public no question")
     t_all = format_public_digest(week_start=date(2026, 9, 14), total=34, wrote=34)
-    check(t_all == "За неделю отчёт написали все 34 )", "public all")
+    check(t_all.startswith("#рвыотчёт <b>34 из 34</b>"), "public all")
     print("all passed")
     return 0
 

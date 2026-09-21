@@ -204,12 +204,18 @@ def format_coverage_text(
     return "\n".join(lines)
 
 
+DIGEST_HASHTAG = "#рвыотчёт"
+
+
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     missing = max(total - wrote, 0)
+    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b>"
     if total > 0 and wrote >= total:
-        return f"За неделю отчёт написали все {total} )"
+        return f"{head}\n\nЗа неделю отчёт написали все )"
     return (
-        f"За неделю отчёт написали {wrote} из {total}. Не написали {missing}\n"
+        f"{head}\n"
+        f"\n"
+        f"Не написали {missing}\n"
         f"\n"
         f"Кто ещё не написал, переходите в @emmrov_bot, он поможет собрать текст )"
     )

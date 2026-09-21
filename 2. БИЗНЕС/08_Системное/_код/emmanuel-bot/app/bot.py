@@ -1935,7 +1935,7 @@ async def job_midnight_digest(bot: Bot) -> None:
             log.info("midnight digest sent to admin (mute)")
             return
         if settings.group_chat_id:
-            await bot.send_message(settings.group_chat_id, public)
+            await bot.send_message(settings.group_chat_id, public, parse_mode=ParseMode.HTML)
     except Exception:
         log.exception("job_midnight_digest failed")
 
@@ -1962,6 +1962,6 @@ async def job_twenty_reminder(bot: Bot) -> None:
             log.info("20:00 reminder sent to admin (mute)")
             return
         if settings.group_chat_id:
-            await bot.send_message(settings.group_chat_id, public)
+            await bot.send_message(settings.group_chat_id, public, parse_mode=ParseMode.HTML)
     except Exception:
         log.exception("job_twenty_reminder failed")
