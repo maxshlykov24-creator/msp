@@ -207,8 +207,9 @@ def format_coverage_text(
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     missing = max(total - wrote, 0)
     if total > 0 and wrote >= total:
-        return f"На неделе с {week_start.isoformat()} отчёт написали все {total}."
+        return f"За неделю отчёт написали все {total}."
     return (
-        f"На этой неделе (с {week_start.isoformat()}) отчёт написали {wrote} из {total}. "
-        f"Не написали {missing}."
+        f"За неделю отчёт написали {wrote} из {total}. Не написали {missing}.\n"
+        f"\n"
+        f"Не успел? Напиши @emmrov_bot, он поможет собрать отчёт."
     )

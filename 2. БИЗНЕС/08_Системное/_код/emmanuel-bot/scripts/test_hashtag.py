@@ -17,10 +17,11 @@ from datetime import date
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     missing = max(total - wrote, 0)
     if total > 0 and wrote >= total:
-        return f"На неделе с {week_start.isoformat()} отчёт написали все {total}."
+        return f"За неделю отчёт написали все {total}."
     return (
-        f"На этой неделе (с {week_start.isoformat()}) отчёт написали {wrote} из {total}. "
-        f"Не написали {missing}."
+        f"За неделю отчёт написали {wrote} из {total}. Не написали {missing}.\n"
+        f"\n"
+        f"Не успел? Напиши @emmrov_bot, он поможет собрать отчёт."
     )
 
 
@@ -47,6 +48,9 @@ def main() -> int:
     check(last_sunday_on_or_before(date(2026, 9, 20)) == date(2026, 9, 20), "last sunday sun")
     t = format_public_digest(week_start=date(2026, 9, 14), total=35, wrote=18)
     check("18 из 35" in t and "Не написали 17" in t, "public digest")
+    check("@emmrov_bot" in t and "2026-09-14" not in t, "public no date")
+    t_all = format_public_digest(week_start=date(2026, 9, 14), total=34, wrote=34)
+    check(t_all == "За неделю отчёт написали все 34.", "public all")
     print("all passed")
     return 0
 

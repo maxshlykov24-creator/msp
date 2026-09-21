@@ -1962,9 +1962,6 @@ async def job_twenty_reminder(bot: Bot) -> None:
             log.info("20:00 reminder sent to admin (mute)")
             return
         if settings.group_chat_id:
-            await bot.send_message(
-                settings.group_chat_id,
-                "Напоминание: отчёт за неделю. " + public,
-            )
+            await bot.send_message(settings.group_chat_id, public)
     except Exception:
         log.exception("job_twenty_reminder failed")
