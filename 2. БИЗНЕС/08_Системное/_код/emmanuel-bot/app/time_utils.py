@@ -28,6 +28,36 @@ def week_start_from_date(d: date) -> date:
     return sunday - timedelta(days=6)
 
 
+_MONTHS_GEN = (
+    "",
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+)
+
+
+def week_range_label(week_start: date) -> str:
+    """Подпись недели в сводке: 14-20 сентября."""
+    end = week_start + timedelta(days=6)
+    if week_start.month == end.month and week_start.year == end.year:
+        return f"{week_start.day}-{end.day} {_MONTHS_GEN[end.month]}"
+    if week_start.year == end.year:
+        return f"{week_start.day} {_MONTHS_GEN[week_start.month]} - {end.day} {_MONTHS_GEN[end.month]}"
+    return (
+        f"{week_start.day} {_MONTHS_GEN[week_start.month]} {week_start.year} - "
+        f"{end.day} {_MONTHS_GEN[end.month]} {end.year}"
+    )
+
+
 def weekday_index_to_days_since_sunday(wd: int) -> int:
     """Сколько дней назад было воскресенье (не включая текущее воскресенье)."""
     return wd + 1

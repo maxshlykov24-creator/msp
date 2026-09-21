@@ -18,7 +18,7 @@ from app.hashtag import (
     tag_from_telegram,
 )
 from app.models import GroupMember, User, WeekSubmission
-from app.time_utils import last_sunday_on_or_before, now_msk, to_msk, week_start_from_date
+from app.time_utils import last_sunday_on_or_before, now_msk, to_msk, week_range_label, week_start_from_date
 
 __all__ = [
     "DIGEST_HASHTAG",
@@ -220,15 +220,8 @@ def format_coverage_text(
     wrote = [m for m in members if m.tg_user_id in submitted_ids]
     missing = [m for m in members if m.tg_user_id not in submitted_ids]
     n_ok = len(wrote)
-    n_no = len(missing)
-    header = f"Неделя с {week_start.isoformat()}"
-    if sunday:
-        header += f", сверка за воскресенье {sunday.isoformat()}"
     lines = [
-        f"<b>{html.escape(header)}</b>",
-        "",
-        f"Написали (есть хэштег): <b>{n_ok}</b> из {total}",
-        f"Не написали: <b>{n_no}</b>",
+        f"<b>{n_ok} из {total}</b> ({html.escape(week_range_label(week_start))})",
         "",
         "<b>Написали</b>",
     ]
@@ -248,7 +241,7 @@ def format_coverage_text(
 
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     missing = max(total - wrote, 0)
-    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b>"
+    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b> ({week_range_label(week_start)})"
     if total > 0 and wrote >= total:
         return f"{head}\n\nЗа неделю отчёт написали все )"
     return (

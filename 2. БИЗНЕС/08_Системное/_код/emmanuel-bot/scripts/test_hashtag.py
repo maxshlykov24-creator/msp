@@ -10,13 +10,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.hashtag import DIGEST_HASHTAG, extract_hashtag, looks_like_report, override_from_tag, tag_from_telegram
 from app.assigned import assigned_hashtag, is_out_of_scope
-from app.time_utils import last_sunday_on_or_before
+from app.time_utils import last_sunday_on_or_before, week_range_label
 from datetime import date
 
 
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     missing = max(total - wrote, 0)
-    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b>"
+    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b> ({week_range_label(week_start)})"
     if total > 0 and wrote >= total:
         return f"{head}\n\nЗа неделю отчёт написали все )"
     return (
@@ -64,12 +64,14 @@ def main() -> int:
     check(not is_out_of_scope(435207481), "max in scope")
     check(last_sunday_on_or_before(date(2026, 9, 21)) == date(2026, 9, 20), "last sunday mon")
     check(last_sunday_on_or_before(date(2026, 9, 20)) == date(2026, 9, 20), "last sunday sun")
+    check(week_range_label(date(2026, 9, 14)) == "14-20 сентября", "week range same month")
+    check(week_range_label(date(2026, 9, 28)) == "28 сентября - 4 октября", "week range cross month")
     t = format_public_digest(week_start=date(2026, 9, 14), total=35, wrote=18)
-    check(t.startswith("#рвыотчёт <b>18 из 35</b>"), "public head")
+    check(t.startswith("#рвыотчёт <b>18 из 35</b> (14-20 сентября)"), "public head")
     check("Не написали 17" in t and "@emmrov_bot" in t, "public digest")
     check("?" not in t, "public no question")
     t_all = format_public_digest(week_start=date(2026, 9, 14), total=34, wrote=34)
-    check(t_all.startswith("#рвыотчёт <b>34 из 34</b>"), "public all")
+    check(t_all.startswith("#рвыотчёт <b>34 из 34</b> (14-20 сентября)"), "public all")
     print("all passed")
     return 0
 
