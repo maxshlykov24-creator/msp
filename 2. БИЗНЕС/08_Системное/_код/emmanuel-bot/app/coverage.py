@@ -17,8 +17,15 @@ from app.hashtag import (
     override_from_tag,
     tag_from_telegram,
 )
-from app.models import GroupMember, User, WeekSubmission
-from app.time_utils import last_sunday_on_or_before, now_msk, to_msk, week_range_label, week_start_from_date
+from app.models import DmCoveragePointer, GroupMember, User, WeekSubmission
+from app.time_utils import (
+    last_sunday_on_or_before,
+    late_report_bucket,
+    now_msk,
+    to_msk,
+    week_range_label,
+    week_start_from_date,
+)
 
 __all__ = [
     "DIGEST_HASHTAG",
@@ -36,8 +43,11 @@ __all__ = [
     "adopt_hashtag_from_group",
     "load_scope_members",
     "submitted_ids_for_week",
+    "submitted_at_for_week",
     "format_coverage_text",
     "format_public_digest",
+    "load_dm_pointer",
+    "save_dm_pointer",
 ]
 
 
@@ -209,10 +219,62 @@ async def submitted_ids_for_week(session: AsyncSession, week_start: date) -> set
     return set(rows)
 
 
+async def submitted_at_for_week(session: AsyncSession, week_start: date) -> dict[int, datetime]:
+    rows = (
+        await session.scalars(select(WeekSubmission).where(WeekSubmission.week_start == week_start))
+    ).all()
+    return {int(r.tg_user_id): to_msk(r.submitted_at) for r in rows}
+
+
+async def load_dm_pointer(session: AsyncSession, tg_user_id: int) -> DmCoveragePointer | None:
+    return await session.scalar(select(DmCoveragePointer).where(DmCoveragePointer.tg_user_id == tg_user_id))
+
+
+async def save_dm_pointer(
+    session: AsyncSession,
+    *,
+    tg_user_id: int,
+    message_id: int,
+    week_start: date,
+) -> None:
+    row = await load_dm_pointer(session, tg_user_id)
+    now = now_msk()
+    if row is None:
+        session.add(
+            DmCoveragePointer(
+                tg_user_id=tg_user_id,
+                message_id=message_id,
+                week_start=week_start,
+                updated_at=now,
+            )
+        )
+    else:
+        row.message_id = message_id
+        row.week_start = week_start
+        row.updated_at = now
+    await session.flush()
+
+
 def coverage_pct(wrote: int, total: int) -> int:
     if total <= 0:
         return 0
     return round(100 * wrote / total)
+
+
+_BUCKET_TITLES = (
+    ("sun", "Написали до вс 23:59"),
+    ("mon_am", "Написали в пн до 12:00"),
+    ("mon_pm", "Написали в пн после 12:00"),
+    ("later", "Написали позже пн"),
+)
+
+
+def _append_member_list(lines: list[str], people: list[GroupMember]) -> None:
+    if people:
+        for m in sorted(people, key=lambda x: member_label(x).lower()):
+            lines.append(f"· {html.escape(member_label(m))}")
+    else:
+        lines.append("· никого")
 
 
 def format_coverage_text(
@@ -221,27 +283,28 @@ def format_coverage_text(
     members: list[GroupMember],
     submitted_ids: set[int],
     sunday: date | None = None,
+    submitted_at: dict[int, datetime] | None = None,
 ) -> str:
     total = len(members)
     wrote = [m for m in members if m.tg_user_id in submitted_ids]
     missing = [m for m in members if m.tg_user_id not in submitted_ids]
     n_ok = len(wrote)
+    times = submitted_at or {}
+    buckets: dict[str, list[GroupMember]] = {key: [] for key, _ in _BUCKET_TITLES}
+    for m in wrote:
+        when = times.get(m.tg_user_id)
+        bucket = late_report_bucket(when, week_start) if when is not None else "sun"
+        buckets[bucket].append(m)
     lines = [
         f"<b>{n_ok} из {total}</b>, {coverage_pct(n_ok, total)}% ({html.escape(week_range_label(week_start))})",
-        "",
-        "<b>Написали</b>",
     ]
-    if wrote:
-        for m in sorted(wrote, key=lambda x: member_label(x).lower()):
-            lines.append(f"· {html.escape(member_label(m))}")
-    else:
-        lines.append("· никого")
+    for key, title in _BUCKET_TITLES:
+        if key == "later" and not buckets[key]:
+            continue
+        lines += ["", f"<b>{title}</b>"]
+        _append_member_list(lines, buckets[key])
     lines += ["", "<b>Не написали</b>"]
-    if missing:
-        for m in sorted(missing, key=lambda x: member_label(x).lower()):
-            lines.append(f"· {html.escape(member_label(m))}")
-    else:
-        lines.append("· никого")
+    _append_member_list(lines, missing)
     return "\n".join(lines)
 
 

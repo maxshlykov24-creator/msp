@@ -18,10 +18,12 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
 
-    # MUTE: в группу и чужие лички не пишем. Только личка ADMIN_TG_USER_ID.
+    # MUTE: в группу не пишем. Личка админа и coverage_dm_user_ids (Андрей) разрешена.
     outbound_mute: bool = True
     jobs_enabled: bool = False
     admin_tg_user_id: int = 435207481
+    # Сводка с никами в личку: Андрей Николаев. Админ добавляется всегда.
+    coverage_dm_user_ids: str = "256161124"
 
 
 @lru_cache

@@ -20,11 +20,22 @@ def is_admin_user(user_id: int | None) -> bool:
     return user_id == get_settings().admin_tg_user_id
 
 
+def coverage_recipient_ids() -> set[int]:
+    settings = get_settings()
+    ids = {int(settings.admin_tg_user_id)}
+    raw = (settings.coverage_dm_user_ids or "").strip()
+    for part in raw.split(","):
+        part = part.strip()
+        if part:
+            ids.add(int(part))
+    return ids
+
+
 def is_outbound_blocked(chat_id: int) -> bool:
     settings = get_settings()
     if not settings.outbound_mute:
         return False
-    return int(chat_id) != settings.admin_tg_user_id
+    return int(chat_id) not in coverage_recipient_ids()
 
 
 class MuteBot(Bot):

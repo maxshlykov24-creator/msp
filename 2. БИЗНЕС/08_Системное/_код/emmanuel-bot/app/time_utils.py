@@ -96,6 +96,26 @@ def digest_week_monday_on_digest_day(monday_digest: date) -> date:
     return sunday_before - timedelta(days=6)
 
 
+def monday_after_week(week_start: date) -> datetime:
+    """Понедельник 00:00 МСК после закрывающего воскресенья недели."""
+    return submission_deadline_msk(week_start)
+
+
+def late_report_bucket(submitted_at: datetime, week_start: date) -> str:
+    """sun | mon_am | mon_pm | later относительно вс 23:59 и половин понедельника."""
+    dt = to_msk(submitted_at)
+    monday = monday_after_week(week_start)
+    noon = monday.replace(hour=12)
+    tuesday = monday + timedelta(days=1)
+    if dt < monday:
+        return "sun"
+    if dt < noon:
+        return "mon_am"
+    if dt < tuesday:
+        return "mon_pm"
+    return "later"
+
+
 def submitted_on_time(submitted_at: datetime, week_start: date) -> bool:
     deadline = submission_deadline_msk(week_start)
     return to_msk(submitted_at) < deadline

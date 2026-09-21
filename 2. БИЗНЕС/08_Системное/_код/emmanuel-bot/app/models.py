@@ -110,6 +110,17 @@ class GroupMember(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class DmCoveragePointer(Base):
+    """Последнее личное сообщение сводки, чтобы в 20:00 удалить и прислать снова."""
+
+    __tablename__ = "dm_coverage_pointer"
+
+    tg_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    week_start: Mapped[date] = mapped_column(Date, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class WeekSubmission(Base):
     __tablename__ = "week_submissions"
     __table_args__ = (UniqueConstraint("tg_user_id", "week_start", name="uq_week_sub_user_week"),)

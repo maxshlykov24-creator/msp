@@ -25,9 +25,12 @@ from app.coverage import (
     format_public_digest,
     identity_hashtag,
     last_sunday_on_or_before,
+    load_dm_pointer,
     load_scope_members,
     looks_like_report,
     override_from_tag,
+    save_dm_pointer,
+    submitted_at_for_week,
     submitted_ids_for_week,
     upsert_member,
     upsert_submission,
@@ -35,7 +38,7 @@ from app.coverage import (
 from app.database import get_session_factory
 from app import keyboards as kb
 from app.models import Revelation, RevelationArchive, Report, User
-from app.mute import AdminOnlyPrivateMiddleware, is_admin_user
+from app.mute import AdminOnlyPrivateMiddleware, coverage_recipient_ids, is_admin_user
 from app.states import HashtagStates, WeeklyReportStates
 from app.time_utils import (
     digest_week_monday_on_digest_day,
@@ -414,12 +417,14 @@ async def _send_coverage(message: Message, sunday: date | None = None) -> None:
     async with get_session_factory()() as session:
         members = await load_scope_members(session)
         submitted = await submitted_ids_for_week(session, ws)
+        times = await submitted_at_for_week(session, ws)
         await session.commit()
     body = format_coverage_text(
         week_start=ws,
         members=members,
         submitted_ids=submitted,
         sunday=sunday,
+        submitted_at=times,
     )
     for i in range(0, len(body), 3800):
         await message.answer(body[i : i + 3800], parse_mode=ParseMode.HTML)
@@ -1912,6 +1917,7 @@ async def _digest_payload() -> tuple[str, str]:
     async with get_session_factory()() as session:
         members = await load_scope_members(session)
         submitted = await submitted_ids_for_week(session, ws)
+        times = await submitted_at_for_week(session, ws)
         await session.commit()
     public = format_public_digest(week_start=ws, total=len(members), wrote=len(submitted))
     private = format_coverage_text(
@@ -1919,25 +1925,50 @@ async def _digest_payload() -> tuple[str, str]:
         members=members,
         submitted_ids=submitted,
         sunday=sunday,
+        submitted_at=times,
     )
     return public, private
 
 
 async def _send_coverage_digest(bot: Bot, *, public: str, private: str, to_group: bool) -> None:
     settings = get_settings()
-    await bot.send_message(settings.admin_tg_user_id, private, parse_mode=ParseMode.HTML)
     if to_group and not settings.outbound_mute and settings.group_chat_id:
         await bot.send_message(settings.group_chat_id, public, parse_mode=ParseMode.HTML)
 
 
+async def _send_private_coverage_dm(bot: Bot, *, replace: bool, only_admin: bool = False) -> None:
+    settings = get_settings()
+    _, private = await _digest_payload()
+    ws = week_start_from_date(now_msk().date())
+    recipients = {settings.admin_tg_user_id} if only_admin else coverage_recipient_ids()
+    for uid in sorted(recipients):
+        if replace:
+            async with get_session_factory()() as session:
+                pointer = await load_dm_pointer(session, uid)
+                await session.commit()
+            if pointer is not None:
+                try:
+                    await bot.delete_message(uid, pointer.message_id)
+                except Exception as e:
+                    log.warning("delete coverage dm uid=%s msg=%s: %s", uid, pointer.message_id, e)
+        sent = await bot.send_message(uid, private, parse_mode=ParseMode.HTML)
+        if sent is None:
+            log.info("coverage dm not sent uid=%s", uid)
+            continue
+        async with get_session_factory()() as session:
+            await save_dm_pointer(session, tg_user_id=uid, message_id=sent.message_id, week_start=ws)
+            await session.commit()
+        log.info("coverage dm uid=%s msg=%s replace=%s", uid, sent.message_id, replace)
+
+
 async def job_midnight_digest(bot: Bot) -> None:
-    """00:00: имена админу; в чат без имён только после снятия MUTE."""
+    """00:00: в чат без имён только после снятия MUTE. Имена в личку идут в пн 09:00."""
     settings = get_settings()
     if not settings.jobs_enabled:
         log.info("skip midnight digest: jobs off")
         return
     try:
-        public, private = await _digest_payload()
+        public, _private = await _digest_payload()
         ws = week_start_from_date(now_msk().date())
         async with get_session_factory()() as session:
             submitted = await submitted_ids_for_week(session, ws)
@@ -1945,30 +1976,38 @@ async def job_midnight_digest(bot: Bot) -> None:
         if not submitted:
             log.info("skip midnight digest: nobody wrote this week yet")
             return
-        await _send_coverage_digest(bot, public=public, private=private, to_group=True)
+        await _send_coverage_digest(bot, public=public, private="", to_group=True)
         log.info("midnight digest sent mute=%s", settings.outbound_mute)
     except Exception:
         log.exception("job_midnight_digest failed")
 
 
-async def job_twenty_reminder(bot: Bot) -> None:
-    """20:00: та же сводка, если кто-то ещё не написал в группу."""
+async def job_monday_coverage_morning(bot: Bot) -> None:
+    """Пн 09:00: сводка с никами тебе и Андрею."""
     settings = get_settings()
     if not settings.jobs_enabled:
-        log.info("skip 20:00 reminder: jobs off")
+        log.info("skip monday 09:00 coverage: jobs off")
         return
     try:
-        public, private = await _digest_payload()
-        ws = week_start_from_date(now_msk().date())
-        async with get_session_factory()() as session:
-            members = await load_scope_members(session)
-            submitted = await submitted_ids_for_week(session, ws)
-            await session.commit()
-        missing = len(members) - len(submitted)
-        if missing <= 0:
-            log.info("20:00 skip, coverage complete")
-            return
-        await _send_coverage_digest(bot, public=public, private=private, to_group=True)
-        log.info("20:00 reminder sent mute=%s missing=%s", settings.outbound_mute, missing)
+        await _send_private_coverage_dm(bot, replace=False)
+        log.info("monday 09:00 coverage sent")
     except Exception:
-        log.exception("job_twenty_reminder failed")
+        log.exception("job_monday_coverage_morning failed")
+
+
+async def job_monday_coverage_evening(bot: Bot) -> None:
+    """Пн 20:00: удалить утреннее и прислать снова, чтобы всплыло уведомление."""
+    settings = get_settings()
+    if not settings.jobs_enabled:
+        log.info("skip monday 20:00 coverage: jobs off")
+        return
+    try:
+        await _send_private_coverage_dm(bot, replace=True)
+        log.info("monday 20:00 coverage replaced")
+    except Exception:
+        log.exception("job_monday_coverage_evening failed")
+
+
+async def job_twenty_reminder(bot: Bot) -> None:
+    """Совместимость: раньше ежедневные 20:00, теперь только пн замена сводки."""
+    await job_monday_coverage_evening(bot)

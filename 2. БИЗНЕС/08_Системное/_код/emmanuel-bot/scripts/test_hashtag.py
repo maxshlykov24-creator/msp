@@ -10,8 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.hashtag import DIGEST_HASHTAG, extract_hashtag, looks_like_report, override_from_tag, tag_from_telegram
 from app.assigned import assigned_hashtag, is_out_of_scope
-from app.time_utils import last_sunday_on_or_before, week_range_label
-from datetime import date
+from app.time_utils import last_sunday_on_or_before, late_report_bucket, week_range_label, MSK
+from datetime import date, datetime
 
 
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
@@ -75,6 +75,13 @@ def main() -> int:
     check(t_all.startswith("#рвыотчёт <b>34 из 34</b>, 100% (14-20 сентября)"), "public all")
     t16 = format_public_digest(week_start=date(2026, 9, 14), total=34, wrote=16)
     check(t16.startswith("#рвыотчёт <b>16 из 34</b>, 47% (14-20 сентября)"), "public 16 of 34")
+    ws = date(2026, 9, 14)
+    check(late_report_bucket(datetime(2026, 9, 20, 23, 59, tzinfo=MSK), ws) == "sun", "bucket sun")
+    check(late_report_bucket(datetime(2026, 9, 21, 0, 0, tzinfo=MSK), ws) == "mon_am", "bucket mon 00")
+    check(late_report_bucket(datetime(2026, 9, 21, 11, 59, tzinfo=MSK), ws) == "mon_am", "bucket mon am")
+    check(late_report_bucket(datetime(2026, 9, 21, 12, 0, tzinfo=MSK), ws) == "mon_pm", "bucket mon noon")
+    check(late_report_bucket(datetime(2026, 9, 21, 23, 59, tzinfo=MSK), ws) == "mon_pm", "bucket mon pm")
+    check(late_report_bucket(datetime(2026, 9, 22, 0, 0, tzinfo=MSK), ws) == "later", "bucket later")
     print("all passed")
     return 0
 

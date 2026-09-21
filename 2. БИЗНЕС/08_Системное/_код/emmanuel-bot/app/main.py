@@ -40,7 +40,7 @@ async def run() -> None:
         settings.admin_tg_user_id,
     )
     if settings.outbound_mute:
-        log.info("OUTBOUND_MUTE: sends only to admin_tg_user_id, never to group or others")
+        log.info("OUTBOUND_MUTE: group blocked; DM allowed for coverage recipients")
     await warn_if_cannot_see_group(bot)
     dp = build_dispatcher()
     start_scheduler(bot)
