@@ -93,3 +93,30 @@ class RevelationArchive(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship(back_populates="archived")
+
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tg_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    tg_first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tg_last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tg_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
+    is_bot: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    in_scope: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WeekSubmission(Base):
+    __tablename__ = "week_submissions"
+    __table_args__ = (UniqueConstraint("tg_user_id", "week_start", name="uq_week_sub_user_week"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tg_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    week_start: Mapped[date] = mapped_column(Date, index=True)
+    source: Mapped[str] = mapped_column(String(16), default="group", nullable=False)
+    msg_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hashtag: Mapped[str] = mapped_column(String(80), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

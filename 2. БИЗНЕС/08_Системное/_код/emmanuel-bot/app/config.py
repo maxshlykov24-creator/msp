@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
 
+    # MUTE: в группу и чужие лички не пишем. Только личка ADMIN_TG_USER_ID.
+    outbound_mute: bool = True
+    jobs_enabled: bool = False
+    admin_tg_user_id: int = 435207481
+
 
 @lru_cache
 def get_settings() -> Settings:
