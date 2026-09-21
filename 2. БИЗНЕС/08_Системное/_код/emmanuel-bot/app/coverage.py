@@ -8,6 +8,7 @@ from datetime import date, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.assigned import assigned_hashtag, is_out_of_scope
 from app.hashtag import HASHTAG_RE, extract_hashtag, override_from_tag
 from app.models import GroupMember, User, WeekSubmission
 from app.time_utils import last_sunday_on_or_before, now_msk, to_msk, week_start_from_date
@@ -50,6 +51,9 @@ async def upsert_member(
     row = await session.scalar(select(GroupMember).where(GroupMember.tg_user_id == tg_user_id))
     now = now_msk()
     in_scope = (not is_bot) and status in ("member", "administrator", "creator", "restricted")
+    if is_out_of_scope(tg_user_id):
+        in_scope = False
+    preset = assigned_hashtag(tg_user_id)
     if row is None:
         row = GroupMember(
             tg_user_id=tg_user_id,
@@ -59,6 +63,7 @@ async def upsert_member(
             status=status,
             is_bot=is_bot,
             in_scope=in_scope,
+            assigned_hashtag=preset,
             updated_at=now,
         )
         session.add(row)
@@ -69,6 +74,8 @@ async def upsert_member(
         row.status = status
         row.is_bot = is_bot
         row.in_scope = in_scope
+        if preset:
+            row.assigned_hashtag = preset
         row.updated_at = now
     await session.flush()
     return row
@@ -126,12 +133,18 @@ async def latest_hashtag_for_user(session: AsyncSession, tg_user_id: int) -> str
 
 
 async def adopt_hashtag_from_group(session: AsyncSession, user: User) -> bool:
-    """Имя из группового отчёта. True — спрашивать не нужно."""
+    """Имя из группового отчёта или заданное владельцем. True — спрашивать не нужно."""
     if (user.report_hashtag_override or "").strip():
         return True
     tag = await latest_hashtag_for_user(session, user.tg_user_id)
+    member = await session.scalar(select(GroupMember).where(GroupMember.tg_user_id == user.tg_user_id))
+    if not tag and member is not None and (member.assigned_hashtag or "").strip():
+        tag = member.assigned_hashtag
     if not tag:
-        return False
+        preset = assigned_hashtag(user.tg_user_id)
+        tag = preset
+    if not tag:
+        return bool(member is not None and not member.in_scope) or is_out_of_scope(user.tg_user_id)
     user.report_hashtag_override = override_from_tag(tag)
     return True
 

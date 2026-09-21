@@ -106,6 +106,7 @@ class GroupMember(Base):
     status: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
     is_bot: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     in_scope: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    assigned_hashtag: Mapped[str | None] = mapped_column(String(80), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

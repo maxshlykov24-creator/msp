@@ -66,6 +66,17 @@ def _migrate_sqlite_users_add_ai_dossier(sync_conn) -> None:
         sync_conn.execute(text("ALTER TABLE users ADD COLUMN ai_dossier TEXT"))
 
 
+def _migrate_sqlite_members_assigned_hashtag(sync_conn) -> None:
+    from sqlalchemy import inspect, text
+
+    insp = inspect(sync_conn)
+    if not insp.has_table("group_members"):
+        return
+    cols = {c["name"] for c in insp.get_columns("group_members")}
+    if "assigned_hashtag" not in cols:
+        sync_conn.execute(text("ALTER TABLE group_members ADD COLUMN assigned_hashtag VARCHAR(80)"))
+
+
 async def init_db() -> None:
     from app import models as _models  # noqa: F401
 
@@ -75,3 +86,4 @@ async def init_db() -> None:
             await conn.run_sync(_migrate_sqlite_add_user_columns)
             await conn.run_sync(_migrate_sqlite_reports_add_bible_days)
             await conn.run_sync(_migrate_sqlite_users_add_ai_dossier)
+            await conn.run_sync(_migrate_sqlite_members_assigned_hashtag)
