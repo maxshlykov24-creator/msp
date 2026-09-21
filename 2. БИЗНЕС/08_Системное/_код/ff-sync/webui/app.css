@@ -467,6 +467,22 @@ table.tbl tbody tr.clickable:hover{background:rgba(0,91,255,.08)}
 .inv-sum{display:flex;align-items:center;justify-content:space-between;margin-top:18px;padding-top:18px;border-top:1px solid var(--line-2);font-size:14px;font-weight:650}
 .inv-sum b{font-size:22px;font-weight:400;color:var(--accent);font-variant-numeric:tabular-nums}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+/* количество коробов: крупные +/−, без нативного спиннера. На складе тыкают пальцем */
+.ask-stepper{display:flex;align-items:center;gap:12px;margin:4px 0 4px}
+.ask-stepper[hidden]{display:none}
+.ask-stepper button{
+  width:56px;height:56px;flex-shrink:0;border-radius:16px;border:1px solid var(--line-2);
+  background:var(--input-bg);color:var(--ink);font-family:var(--font);font-size:28px;font-weight:500;
+  line-height:1;cursor:pointer;transition:border-color .15s,color .15s,opacity .15s
+}
+.ask-stepper button:hover{border-color:var(--accent);color:var(--accent)}
+.ask-stepper button:disabled{opacity:.35;cursor:default;border-color:var(--line);color:var(--mute-2)}
+.ask-stepper input{
+  flex:1;min-width:0;height:56px;text-align:center;font-family:var(--font);font-size:28px;font-weight:650;
+  font-variant-numeric:tabular-nums;border-radius:16px;border:1px solid var(--line-2);background:var(--input-bg);
+  color:var(--ink);outline:none
+}
+.ask-stepper input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,91,255,.15)}
 /* коды маркировки: сканер пикает в поле, набранное видно списком */
 #kizModal .modal-card{max-width:640px}
 .kiz-count{font-size:13px;font-weight:650;color:var(--mute);margin:0 0 10px}

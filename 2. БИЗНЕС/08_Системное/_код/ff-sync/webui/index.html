@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=91">
+<link rel="stylesheet" href="/ui/app.css?v=92">
 </head>
 <body>
 
@@ -653,7 +653,11 @@
   <div class="glass modal-card">
     <h3 id="askTitle">Точно?</h3>
     <p class="psub" id="askText"></p>
-    <input id="askNum" class="wb-amount" type="number" min="1" max="200" value="1" hidden>
+    <div id="askNumWrap" class="ask-stepper" hidden>
+      <button type="button" id="askNumMinus" aria-label="Меньше">−</button>
+      <input id="askNum" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="1">
+      <button type="button" id="askNumPlus" aria-label="Больше">+</button>
+    </div>
     <div class="modal-actions">
       <button class="btn-ghost" id="askNo" type="button">Отмена</button>
       <button class="btn" id="askYes" type="button">Подтверждаю</button>
@@ -679,6 +683,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=91"></script>
+<script src="/ui/app.js?v=92"></script>
 </body>
 </html>
