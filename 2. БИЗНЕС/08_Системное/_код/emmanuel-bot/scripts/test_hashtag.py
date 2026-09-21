@@ -16,7 +16,8 @@ from datetime import date
 
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     missing = max(total - wrote, 0)
-    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b> ({week_range_label(week_start)})"
+    pct = 0 if total <= 0 else round(100 * wrote / total)
+    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b>, {pct}% ({week_range_label(week_start)})"
     if total > 0 and wrote >= total:
         return f"{head}\n\nЗа неделю отчёт написали все )"
     return (
@@ -67,11 +68,13 @@ def main() -> int:
     check(week_range_label(date(2026, 9, 14)) == "14-20 сентября", "week range same month")
     check(week_range_label(date(2026, 9, 28)) == "28 сентября - 4 октября", "week range cross month")
     t = format_public_digest(week_start=date(2026, 9, 14), total=35, wrote=18)
-    check(t.startswith("#рвыотчёт <b>18 из 35</b> (14-20 сентября)"), "public head")
+    check(t.startswith("#рвыотчёт <b>18 из 35</b>, 51% (14-20 сентября)"), "public head")
     check("Не написали 17" in t and "@emmrov_bot" in t, "public digest")
     check("?" not in t, "public no question")
     t_all = format_public_digest(week_start=date(2026, 9, 14), total=34, wrote=34)
-    check(t_all.startswith("#рвыотчёт <b>34 из 34</b> (14-20 сентября)"), "public all")
+    check(t_all.startswith("#рвыотчёт <b>34 из 34</b>, 100% (14-20 сентября)"), "public all")
+    t16 = format_public_digest(week_start=date(2026, 9, 14), total=34, wrote=16)
+    check(t16.startswith("#рвыотчёт <b>16 из 34</b>, 47% (14-20 сентября)"), "public 16 of 34")
     print("all passed")
     return 0
 

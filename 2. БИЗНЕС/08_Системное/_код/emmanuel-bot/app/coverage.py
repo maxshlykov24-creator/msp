@@ -209,6 +209,12 @@ async def submitted_ids_for_week(session: AsyncSession, week_start: date) -> set
     return set(rows)
 
 
+def coverage_pct(wrote: int, total: int) -> int:
+    if total <= 0:
+        return 0
+    return round(100 * wrote / total)
+
+
 def format_coverage_text(
     *,
     week_start: date,
@@ -221,7 +227,7 @@ def format_coverage_text(
     missing = [m for m in members if m.tg_user_id not in submitted_ids]
     n_ok = len(wrote)
     lines = [
-        f"<b>{n_ok} из {total}</b> ({html.escape(week_range_label(week_start))})",
+        f"<b>{n_ok} из {total}</b>, {coverage_pct(n_ok, total)}% ({html.escape(week_range_label(week_start))})",
         "",
         "<b>Написали</b>",
     ]
@@ -241,7 +247,7 @@ def format_coverage_text(
 
 def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
     missing = max(total - wrote, 0)
-    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b> ({week_range_label(week_start)})"
+    head = f"{DIGEST_HASHTAG} <b>{wrote} из {total}</b>, {coverage_pct(wrote, total)}% ({week_range_label(week_start)})"
     if total > 0 and wrote >= total:
         return f"{head}\n\nЗа неделю отчёт написали все )"
     return (
