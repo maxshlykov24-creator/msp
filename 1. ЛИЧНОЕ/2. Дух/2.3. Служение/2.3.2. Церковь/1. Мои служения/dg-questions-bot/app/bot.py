@@ -13,12 +13,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Message
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
 from app.config import get_settings
 from app.database import get_session_factory
 from app.keyboards import (
     EMPTY_KB,
+    confirm_reset_keyboard,
     deck_keyboard,
     moderator_active_keyboard,
     moderator_waiting_keyboard,
@@ -101,6 +102,68 @@ async def _used_count(deck_id: str) -> int:
             select(func.count()).select_from(DeckLedger).where(DeckLedger.deck_id == deck_id)
         )
         return r.scalar_one()
+
+
+async def _ledger_add(deck_id: str, question_number: int, used_at: datetime | None = None) -> None:
+    async with sf()() as db:
+        already = (await db.execute(
+            select(DeckLedger.id)
+            .where(DeckLedger.deck_id == deck_id)
+            .where(DeckLedger.question_number == question_number)
+            .limit(1)
+        )).scalar_one_or_none()
+        if already is not None:
+            return
+        db.add(DeckLedger(
+            deck_id=deck_id,
+            question_number=question_number,
+            used_at=used_at or datetime.utcnow(),
+        ))
+        await db.commit()
+
+
+async def _ledger_remove_from_session(
+    deck_id: str,
+    question_number: int,
+    session_created_at: datetime,
+) -> None:
+    async with sf()() as db:
+        await db.execute(
+            delete(DeckLedger).where(
+                DeckLedger.deck_id == deck_id,
+                DeckLedger.question_number == question_number,
+                DeckLedger.used_at >= session_created_at,
+            )
+        )
+        await db.commit()
+
+
+async def _persist_session_answers(session_id: int) -> int:
+    """Write answered (done) questions of this session into the ledger. Skips stay free."""
+    deck_id = get_settings().deck_id
+    async with sf()() as db:
+        closed = (await db.execute(
+            select(SessionQuestion)
+            .where(SessionQuestion.session_id == session_id)
+            .where(SessionQuestion.status == "done")
+        )).scalars().all()
+        existing = {row[0] for row in (await db.execute(
+            select(DeckLedger.question_number).where(DeckLedger.deck_id == deck_id)
+        )).all()}
+        added = 0
+        now = datetime.utcnow()
+        for sq in closed:
+            if sq.question_number in existing:
+                continue
+            db.add(DeckLedger(
+                deck_id=deck_id,
+                question_number=sq.question_number,
+                used_at=sq.closed_at or now,
+            ))
+            existing.add(sq.question_number)
+            added += 1
+        await db.commit()
+        return added
 
 
 async def _progress(session_id: int) -> tuple[int, int, int]:
@@ -220,17 +283,16 @@ async def _render_moderator_active(bot: Bot, session: GameSession, sq: SessionQu
     if not q:
         return
     done, pending, _ = await _progress(session.id)
-    has_undo = False  # no undo while question is active
 
     text = (
         f"📌 <b>Активный вопрос</b> · #{q.number} [{q.tag}]\n"
         f"<i>{q.category}</i>\n\n"
         f"<b>{q.text}</b>\n\n"
         f"───────────────\n"
-        f"Сыграно: {done} · Осталось: {pending} · {phase_name(sq.phase_label)}"
+        f"Ответили сегодня: {done} · Осталось: {pending} · {phase_name(sq.phase_label)}"
     )
     new_id = await _try_edit(bot, session.moderator_chat_id, session.mod_msg_id, text,
-                             moderator_active_keyboard(has_undo))
+                             moderator_active_keyboard())
     if new_id and new_id != session.mod_msg_id:
         await _save_msg_ids(session.id, mod_id=new_id, part_id=None)
 
@@ -240,8 +302,8 @@ async def _render_moderator_waiting(bot: Bot, session: GameSession) -> None:
     has_undo = await _has_closed_questions(session.id)
 
     text = (
-        f"⏳ <b>Ожидаем следующий вопрос...</b>\n\n"
-        f"Сыграно: {done} · Осталось: {pending} · {phase_name(phase)}"
+        f"⏳ <b>Ждём, когда возьмут вопрос...</b>\n\n"
+        f"Ответили сегодня: {done} · Осталось: {pending} · {phase_name(phase)}"
     )
     new_id = await _try_edit(bot, session.moderator_chat_id, session.mod_msg_id, text,
                              moderator_waiting_keyboard(has_undo))
@@ -254,10 +316,11 @@ async def _render_participant_question(bot: Bot, session: GameSession, sq: Sessi
     if not q:
         return
     emoji = tag_emoji(q.tag)
+    extra = "\n\n<i>Если вопрос не зашёл — «Другой вопрос».</i>" if not session.replace_used else ""
     text = (
-        f"{emoji} <b>Вопрос #{q.number}</b>\n\n"
-        f"<b>{q.text}</b>\n\n"
-        f"⏳ <i>Ожидаем модератора...</i>"
+        f"{emoji}\n\n"
+        f"<b>{q.text}</b>"
+        f"{extra}"
     )
     new_id = await _try_edit(bot, session.participant_chat_id, session.part_msg_id, text,
                              participant_question_keyboard(not session.replace_used))
@@ -266,7 +329,11 @@ async def _render_participant_question(bot: Bot, session: GameSession, sq: Sessi
 
 
 async def _render_participant_ready(bot: Bot, session: GameSession) -> None:
-    text = "✅ <b>Готово!</b>\n\nПередай телефон следующему и нажми кнопку."
+    text = (
+        "✅ <b>Готово.</b>\n\n"
+        "Передай телефон следующему.\n"
+        "Когда он готов — пусть нажмёт кнопку."
+    )
     new_id = await _try_edit(bot, session.participant_chat_id, session.part_msg_id, text,
                              participant_ready_keyboard())
     if new_id and new_id != session.part_msg_id:
@@ -299,18 +366,22 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         await _save_msg_ids(mod_sess.id, mod_id=msg.message_id, part_id=None)
         mod_sess = await _reload_session(mod_sess.id)
         if mod_sess.status == "active":
-            await _render_moderator_waiting(message.bot, mod_sess)
-        else:
-            await message.bot.edit_message_text(
-                chat_id=chat_id, message_id=msg.message_id,
-                text=(
-                    f"🎯 <b>Активная сессия</b>\n"
-                    f"Код: <code>{mod_sess.code}</code>\n"
-                    f"Статус: {mod_sess.status}\n\n"
-                    f"Используй /reset чтобы завершить."
-                ),
-                parse_mode="HTML",
-            )
+            shown = await _shown_question(mod_sess.id)
+            if shown and mod_sess.current_question_number is not None:
+                await _render_moderator_active(message.bot, mod_sess, shown)
+            else:
+                await _render_moderator_waiting(message.bot, mod_sess)
+            return
+        await message.bot.edit_message_text(
+            chat_id=chat_id, message_id=msg.message_id,
+            text=(
+                f"🎯 <b>Активная сессия</b>\n"
+                f"Код: <code>{mod_sess.code}</code>\n"
+                f"Статус: {mod_sess.status}\n\n"
+                f"Используй /reset чтобы завершить."
+            ),
+            parse_mode="HTML",
+        )
         return
 
     part_sess = await _session_by_part(chat_id)
@@ -333,8 +404,14 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             )
         return
 
+    used = await _used_count(get_settings().deck_id)
+    total = len(get_questions())
     msg = await message.answer(
-        "👋 <b>Вопросы ДГ</b>\n\nВыберите роль:",
+        "👋 <b>Вопросы ДГ</b>\n\n"
+        "Два телефона: ведущий и экран, который передаёте по кругу.\n\n"
+        f"Уже отвечали: <b>{used}</b> из {total}. Эти вопросы больше не попадутся.\n"
+        "История — кнопка ниже или /played\n\n"
+        "Выберите роль:",
         reply_markup=role_keyboard(),
         parse_mode="HTML",
     )
@@ -346,12 +423,14 @@ async def cmd_reset(message: Message, state: FSMContext) -> None:
     chat_id = message.chat.id
     mod_sess = await _session_by_mod(chat_id)
     if mod_sess:
+        added = await _persist_session_answers(mod_sess.id)
         async with sf()() as db:
             await db.execute(
                 update(GameSession).where(GameSession.id == mod_sess.id).values(status="finished")
             )
             await db.commit()
-        await message.answer("🔄 Сессия завершена. Нажми /start для новой.")
+        extra = f" Отвеченные вопросы записаны в колоду ({added} новых)." if added else " Отвеченные вопросы уже в колоде."
+        await message.answer("🔄 Сессия сброшена." + extra + " Нажми /start для новой.")
     else:
         await message.answer("Нет активной сессии. Нажми /start.")
     await state.clear()
@@ -379,8 +458,7 @@ async def _format_played_report() -> str:
     lines = [
         "📊 <b>Сыгранные вопросы</b>",
         "",
-        f"Колода: <b>{len(ledger_rows)}</b> из {total} записано навсегда",
-        "<i>(после «Завершить встречу»)</i>",
+        f"Колода: <b>{len(ledger_rows)}</b> из {total} уже отвечали — больше не попадутся",
     ]
 
     if ledger_rows:
@@ -394,7 +472,7 @@ async def _format_played_report() -> str:
             lines.append(f"  <i>{date}</i>")
     else:
         lines.append("")
-        lines.append("Пока ни одной завершённой встречи — колода пуста.")
+        lines.append("Пока никто не ответил — колода целая.")
 
     if in_progress:
         lines.append("")
@@ -411,20 +489,29 @@ async def _format_played_report() -> str:
 
 @router.message(Command("played"))
 async def cmd_played(message: Message) -> None:
+    await _send_played_report(message.bot, message.chat.id)
+
+
+@router.callback_query(F.data == "history:played")
+async def cb_history_played(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await _send_played_report(callback.bot, callback.from_user.id)
+
+
+async def _send_played_report(bot: Bot, chat_id: int) -> None:
     text = await _format_played_report()
-    # Telegram limit ~4096 chars — split if needed
     if len(text) <= 4000:
-        await message.answer(text, parse_mode="HTML")
+        await bot.send_message(chat_id, text, parse_mode="HTML")
         return
     chunk = ""
     for line in text.split("\n"):
         if len(chunk) + len(line) + 1 > 4000:
-            await message.answer(chunk, parse_mode="HTML")
+            await bot.send_message(chat_id, chunk, parse_mode="HTML")
             chunk = line + "\n"
         else:
             chunk += line + "\n"
     if chunk.strip():
-        await message.answer(chunk, parse_mode="HTML")
+        await bot.send_message(chat_id, chunk, parse_mode="HTML")
 
 
 # ─── Role selection ───────────────────────────────────────────────────────────
@@ -547,13 +634,28 @@ async def msg_code_entry(message: Message, state: FSMContext) -> None:
     used = await _used_count(deck_id)
     session = await _reload_session(session.id)
 
-    mod_text = (
-        f"✅ <b>Экран подключён!</b>\n\n"
-        f"В колоде уже сыграно вопросов: <b>{used}</b>\n\n"
-        f"Продолжить или начать сначала?"
-    )
-    new_mod_id = await _try_edit(bot, session.moderator_chat_id, session.mod_msg_id,
-                                  mod_text, deck_keyboard(used))
+    if used == 0:
+        async with sf()() as db:
+            await db.execute(
+                update(GameSession)
+                .where(GameSession.id == session.id)
+                .values(status="preset_choice", deck_continue=False)
+            )
+            await db.commit()
+        session = await _reload_session(session.id)
+        new_mod_id = await _try_edit(
+            bot, session.moderator_chat_id, session.mod_msg_id,
+            "🎮 <b>Формат встречи:</b>",
+            preset_keyboard(),
+        )
+    else:
+        mod_text = (
+            f"✅ <b>Экран подключён!</b>\n\n"
+            f"Уже отвечали на <b>{used}</b> вопросов — они не попадутся.\n\n"
+            f"Продолжить колоду?"
+        )
+        new_mod_id = await _try_edit(bot, session.moderator_chat_id, session.mod_msg_id,
+                                      mod_text, deck_keyboard(used))
     if new_mod_id and new_mod_id != session.mod_msg_id:
         await _save_msg_ids(session.id, mod_id=new_mod_id, part_id=None)
 
@@ -566,6 +668,19 @@ async def cb_deck_choice(callback: CallbackQuery) -> None:
     chat_id = callback.from_user.id
     session = await _session_by_mod(chat_id)
     if not session or session.status != "deck_choice":
+        return
+
+    if callback.data == "deck:reset":
+        used = await _used_count(get_settings().deck_id)
+        await callback.message.edit_text(
+            f"Прошлые ответы (<b>{used}</b>) снова попадутся в круг.\n"
+            f"Точно начать с нуля?",
+            reply_markup=confirm_reset_keyboard(),
+            parse_mode="HTML",
+        )
+        return
+
+    if callback.data not in ("deck:continue", "deck:reset_yes"):
         return
 
     deck_continue = callback.data == "deck:continue"
@@ -619,7 +734,7 @@ async def cb_preset(callback: CallbackQuery) -> None:
 
     session = await _reload_session(session.id)
     done, pending, _ = await _progress(session.id)
-    preset_name = "Встреча 1" if preset == "meeting1" else "Полная колода"
+    preset_name = "Лёгкие и тёплые" if preset == "meeting1" else "Вся колода"
 
     mod_text = (
         f"🚀 <b>Встреча начата! · {preset_name}</b>\n\n"
@@ -631,7 +746,8 @@ async def cb_preset(callback: CallbackQuery) -> None:
 
     part_text = (
         "🎯 <b>Встреча началась!</b>\n\n"
-        "Нажми кнопку ниже, когда будет твоя очередь."
+        "Передай телефон тому, кто отвечает первым.\n"
+        "Когда он готов — пусть нажмёт кнопку."
     )
     new_part_id = await _try_edit(callback.bot, session.participant_chat_id, session.part_msg_id,
                                    part_text, participant_ready_keyboard())
@@ -786,6 +902,9 @@ async def _close_question(callback: CallbackQuery, new_status: str) -> None:
         )
         await db.commit()
 
+    if new_status == "done":
+        await _ledger_add(get_settings().deck_id, sq.question_number)
+
     session = await _reload_session(session.id)
     await _render_moderator_waiting(callback.bot, session)
     await _render_participant_ready(callback.bot, session)
@@ -808,6 +927,8 @@ async def cb_answer_undo(callback: CallbackQuery) -> None:
         await callback.answer("Нет действий для отмены.", show_alert=True)
         return
 
+    was_done = sq.status == "done"
+
     async with sf()() as db:
         await db.execute(
             update(SessionQuestion)
@@ -821,8 +942,46 @@ async def cb_answer_undo(callback: CallbackQuery) -> None:
         )
         await db.commit()
 
+    if was_done:
+        await _ledger_remove_from_session(
+            get_settings().deck_id, sq.question_number, session.created_at
+        )
+
     session = await _reload_session(session.id)
     await _show_question_to_both(callback.bot, session, sq)
+
+
+@router.callback_query(F.data == "answer:wrong")
+async def cb_answer_wrong(callback: CallbackQuery) -> None:
+    await callback.answer("Вопрос остался тому, кто должен отвечать")
+    chat_id = callback.from_user.id
+    session = await _session_by_mod(chat_id)
+
+    if not session or session.status != "active":
+        return
+    if session.current_question_number is None:
+        return
+
+    sq = await _shown_question(session.id)
+    if sq is None:
+        return
+
+    async with sf()() as db:
+        await db.execute(
+            update(SessionQuestion)
+            .where(SessionQuestion.id == sq.id)
+            .values(status="pending", shown_at=None)
+        )
+        await db.execute(
+            update(GameSession)
+            .where(GameSession.id == session.id)
+            .values(current_question_number=None, replace_used=False)
+        )
+        await db.commit()
+
+    session = await _reload_session(session.id)
+    await _render_moderator_waiting(callback.bot, session)
+    await _render_participant_ready(callback.bot, session)
 
 
 @router.callback_query(F.data == "session:finish")
@@ -838,7 +997,7 @@ async def cb_session_finish(callback: CallbackQuery) -> None:
 
 
 async def _finish_session(bot: Bot, session: GameSession) -> None:
-    deck_id = get_settings().deck_id
+    await _persist_session_answers(session.id)
 
     async with sf()() as db:
         closed = (await db.execute(
@@ -849,15 +1008,6 @@ async def _finish_session(bot: Bot, session: GameSession) -> None:
 
         done_count = sum(1 for q in closed if q.status == "done")
         skip_count = sum(1 for q in closed if q.status == "skipped")
-
-        existing_in_ledger = {row[0] for row in (await db.execute(
-            select(DeckLedger.question_number).where(DeckLedger.deck_id == deck_id)
-        )).all()}
-
-        now = datetime.utcnow()
-        for sq in closed:
-            if sq.question_number not in existing_in_ledger:
-                db.add(DeckLedger(deck_id=deck_id, question_number=sq.question_number, used_at=now))
 
         await db.execute(
             update(GameSession).where(GameSession.id == session.id).values(status="finished")
@@ -881,7 +1031,8 @@ async def _finish_session(bot: Bot, session: GameSession) -> None:
         f"⏭ Пропустили: {skip_count}\n"
         f"📊 Итого: {done_count + skip_count} вопросов"
         f"{nums_block}\n\n"
-        f"Вопросы записаны в колоду — в следующий раз не повторятся.\n"
+        f"Отвеченные вопросы в колоде — в следующий раз не повторятся.\n"
+        f"Пропущенные могут вернуться.\n"
         f"Полный список: /played\n\n"
         f"Нажми /start для новой встречи."
     )

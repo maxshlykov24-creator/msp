@@ -14,7 +14,7 @@ import sys
 
 import paramiko
 
-HOST = "72.56.123.137"
+HOST = "194.87.226.234"
 USER = "root"
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 QUESTIONS = json.loads((ROOT / "questions.json").read_text(encoding="utf-8"))
