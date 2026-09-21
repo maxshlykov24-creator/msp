@@ -3,35 +3,27 @@
 from __future__ import annotations
 
 import html
-import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.hashtag import HASHTAG_RE, extract_hashtag
 from app.models import GroupMember, WeekSubmission
-from app.time_utils import MSK, now_msk, to_msk, week_start_from_date
+from app.time_utils import last_sunday_on_or_before, now_msk, to_msk, week_start_from_date
 
-HASHTAG_RE = re.compile(r"#[^\s#]{1,64}")
-
-
-def extract_hashtag(text: str | None) -> str | None:
-    if not text:
-        return None
-    m = HASHTAG_RE.search(text)
-    return m.group(0) if m else None
-
-
-def last_sunday_on_or_before(d: date | None = None) -> date:
-    d = d or now_msk().date()
-    return d - timedelta(days=(d.weekday() + 1) % 7)
-
-
-def posting_window_for_sunday(sunday: date) -> tuple[datetime, datetime]:
-    """Вс 00:00 МСК → вт 00:00 МСК (покрывает вс и пн, как живой ритуал)."""
-    start = datetime(sunday.year, sunday.month, sunday.day, 0, 0, 0, tzinfo=MSK)
-    end = start + timedelta(days=2)
-    return start, end
+__all__ = [
+    "HASHTAG_RE",
+    "extract_hashtag",
+    "last_sunday_on_or_before",
+    "member_label",
+    "upsert_member",
+    "upsert_submission",
+    "load_scope_members",
+    "submitted_ids_for_week",
+    "format_coverage_text",
+    "format_public_digest",
+]
 
 
 def member_label(m: GroupMember) -> str:

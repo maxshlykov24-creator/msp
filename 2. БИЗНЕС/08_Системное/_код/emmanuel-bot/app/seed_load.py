@@ -7,7 +7,7 @@ import logging
 from datetime import date, datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.coverage import upsert_member, upsert_submission
 from app.database import get_session_factory
@@ -58,7 +58,7 @@ async def load_seed_files() -> None:
                     submitted_at=_parse_dt(r["date"]),
                 )
             log.info("seed hashtag reports: %s rows", len(rows))
-        n_m = await session.scalar(select(GroupMember).limit(1))
-        n_s = await session.scalar(select(WeekSubmission).limit(1))
+        n_m = await session.scalar(select(func.count()).select_from(GroupMember))
+        n_s = await session.scalar(select(func.count()).select_from(WeekSubmission))
         await session.commit()
-        log.info("seed done members_present=%s submissions_present=%s", bool(n_m), bool(n_s))
+        log.info("seed done members=%s submissions=%s", n_m, n_s)

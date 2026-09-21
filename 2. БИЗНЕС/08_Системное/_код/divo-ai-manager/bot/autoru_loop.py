@@ -118,7 +118,7 @@ def created_of(msg: dict) -> int:
 
 
 def is_out(msg: dict, me: str = "") -> bool:
-    if msg.get("me") is True:
+    if msg.get("is_me") is True or msg.get("me") is True:
         return True
     author = msg.get("author") or ""
     return bool(me) and author == me
@@ -172,6 +172,9 @@ def we_sell(room: dict, own: dict[str, dict], state: dict) -> bool:
     if not oid or not is_offer_room(room):
         return False
     if oid in own:
+        return True
+    num = oid.split("-", 1)[0]
+    if num and any(key.split("-", 1)[0] == num for key in own):
         return True
     if oid in set(state.get("foreign") or []):
         return False

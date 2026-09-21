@@ -8,8 +8,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.coverage import extract_hashtag, format_public_digest, last_sunday_on_or_before
+from app.hashtag import extract_hashtag
+from app.time_utils import last_sunday_on_or_before
 from datetime import date
+
+
+def format_public_digest(*, week_start: date, total: int, wrote: int) -> str:
+    missing = max(total - wrote, 0)
+    if total > 0 and wrote >= total:
+        return f"На неделе с {week_start.isoformat()} отчёт написали все {total}."
+    return (
+        f"На этой неделе (с {week_start.isoformat()}) отчёт написали {wrote} из {total}. "
+        f"Не написали {missing}."
+    )
 
 
 def check(cond: bool, msg: str) -> None:

@@ -13,8 +13,6 @@ async def run() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
-    from aiogram.enums import UpdateType
-
     from app.bot import build_dispatcher
     from app.config import get_settings
     from app.database import init_db
@@ -49,11 +47,11 @@ async def run() -> None:
     await dp.start_polling(
         bot,
         allowed_updates=[
-            UpdateType.MESSAGE,
-            UpdateType.EDITED_MESSAGE,
-            UpdateType.CALLBACK_QUERY,
-            UpdateType.CHAT_MEMBER,
-            UpdateType.MY_CHAT_MEMBER,
+            "message",
+            "edited_message",
+            "callback_query",
+            "chat_member",
+            "my_chat_member",
         ],
     )
 

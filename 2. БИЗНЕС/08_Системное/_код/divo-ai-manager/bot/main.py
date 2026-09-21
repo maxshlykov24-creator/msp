@@ -1209,6 +1209,9 @@ async def poll_autoru(tg: Telegram) -> None:
     if not (settings.autoru_vertis_key and settings.autoru_session_id):
         log.warning("авто.ру включён, но нет AUTORU_VERTIS_KEY / AUTORU_SESSION_ID")
         return
+    if not settings.autoru_cabinet_cookie:
+        log.warning("авто.ру: нет AUTORU_CABINET_COOKIE, чаты салона в кабинете не видны")
+        return
     expire = (settings.autoru_session_expire or "")[:10]
     if expire:
         log.info("авто.ру сессия до %s", expire)

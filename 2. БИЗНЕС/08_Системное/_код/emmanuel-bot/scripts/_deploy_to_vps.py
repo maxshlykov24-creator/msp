@@ -85,6 +85,7 @@ def main() -> int:
     items = [
         "app",
         "deploy",
+        "seed",
         "Dockerfile",
         "docker-compose.yml",
         "requirements.txt",

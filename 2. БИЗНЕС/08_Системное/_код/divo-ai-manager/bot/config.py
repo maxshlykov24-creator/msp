@@ -139,6 +139,9 @@ class Settings:
     autoru_session_id = env("AUTORU_SESSION_ID")
     autoru_poll_sec = env_float("AUTORU_POLL_SEC", 8.0)
     autoru_session_expire = env("AUTORU_SESSION_EXPIRE")
+    # Cookie кабинета (autoru_sid + yandexuid…). Inbox дилера живёт
+    # в cabinet.auto.ru/-/ajax/cabinet/postDealerChats/, не в /chat/room/light.
+    autoru_cabinet_cookie = env("AUTORU_CABINET_COOKIE")
     autoru_allowlist = {
         x.strip() for x in env("AUTORU_ALLOWLIST").split(",") if x.strip()
     }

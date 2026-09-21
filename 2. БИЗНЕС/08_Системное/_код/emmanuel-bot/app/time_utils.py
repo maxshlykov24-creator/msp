@@ -48,6 +48,18 @@ def submission_deadline_msk(week_start: date) -> datetime:
     )
 
 
+def last_sunday_on_or_before(d: date | None = None) -> date:
+    d = d or now_msk().date()
+    return d - timedelta(days=(d.weekday() + 1) % 7)
+
+
+def posting_window_for_sunday(sunday: date) -> tuple[datetime, datetime]:
+    """Вс 00:00 МСК → вт 00:00 МСК (покрывает вс и пн, как живой ритуал)."""
+    start = datetime(sunday.year, sunday.month, sunday.day, 0, 0, 0, tzinfo=MSK)
+    end = start + timedelta(days=2)
+    return start, end
+
+
 def digest_week_monday_on_digest_day(monday_digest: date) -> date:
     """Неделя, по которой дайджест в понедельник утром: неделя, завершившаяся вчера."""
     sunday_before = monday_digest - timedelta(days=1)

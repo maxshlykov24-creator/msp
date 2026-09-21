@@ -900,6 +900,7 @@ def test_autoru_prior():
     iso = "2026-09-14T12:00:00.000Z"
     assert created_of({"created": iso}) > 1_700_000_000
     assert is_out({"me": True, "author": me}, me) is True
+    assert is_out({"is_me": True, "author": "other"}, me) is True
     assert is_out({"author": "client"}, me) is False
     assert is_offer_room({"room_type": "ROOM_TYPE_OFFER"}) is True
     assert is_offer_room({"room_type": "ROOM_TYPE_TECH_SUPPORT"}) is False
@@ -922,6 +923,11 @@ def test_autoru_prior():
     assert source_id(room) == "111-abc"
     own = {"111-abc": listing}
     assert we_sell(room, own, {"foreign": []}) is True
+    hashed = {
+        "room_type": "ROOM_TYPE_OFFER",
+        "subject": {"offer": {"source": {"id": "111-otherhash"}}},
+    }
+    assert we_sell(hashed, own, {"foreign": []}) is True
     buyer = {
         "room_type": "ROOM_TYPE_OFFER",
         "subject": {"offer": {"source": {"id": "999-zzz"}}},

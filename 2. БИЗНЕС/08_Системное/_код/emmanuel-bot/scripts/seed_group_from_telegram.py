@@ -16,7 +16,7 @@ CHAT_ID = -1002125032114
 sys.path.insert(0, str(TG_SELF))
 sys.path.insert(0, str(ROOT))
 
-from app.coverage import HASHTAG_RE, extract_hashtag  # noqa: E402
+from app.hashtag import extract_hashtag
 from app.time_utils import MSK, week_start_from_date  # noqa: E402
 
 
@@ -98,7 +98,7 @@ async def main() -> int:
     )
     humans = [m for m in members if not m["is_bot"]]
     print(f"members={len(members)} humans={len(humans)} bots={len(members) - len(humans)}")
-    print(f"hashtag_weeks={len(messages)} since={since.date()} pattern={HASHTAG_RE.pattern}")
+    print(f"hashtag_weeks={len(messages)} since={since.date()}")
     by_week: dict[str, int] = {}
     for r in messages:
         by_week[r["week_start"]] = by_week.get(r["week_start"], 0) + 1

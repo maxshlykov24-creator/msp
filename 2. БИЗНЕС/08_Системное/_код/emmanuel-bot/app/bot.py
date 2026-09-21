@@ -4,7 +4,7 @@ import html
 import logging
 import random
 import re
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ChatMemberStatus, ParseMode
@@ -12,21 +12,33 @@ from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import selectinload
 
 from app import groq_client
 from app.config import get_settings
+from app.coverage import (
+    extract_hashtag,
+    format_coverage_text,
+    format_public_digest,
+    last_sunday_on_or_before,
+    load_scope_members,
+    submitted_ids_for_week,
+    upsert_member,
+    upsert_submission,
+)
 from app.database import get_session_factory
 from app import keyboards as kb
 from app.models import Revelation, RevelationArchive, Report, User
+from app.mute import AdminOnlyPrivateMiddleware, is_admin_user
 from app.states import HashtagStates, WeeklyReportStates
 from app.time_utils import (
     digest_week_monday_on_digest_day,
     now_msk,
     streak_after_submit,
     submitted_on_time,
+    to_msk,
     week_start_from_date,
 )
 
@@ -382,11 +394,44 @@ async def cmd_chat_id(message: Message):
     if message.chat.type == "private":
         await message.answer(f"ID этой лички: <code>{message.chat.id}</code>", parse_mode=ParseMode.HTML)
         return
+    if get_settings().outbound_mute:
+        return
     title = html.escape(message.chat.title or "чат")
     await message.answer(f"ID чата «{title}»: <code>{message.chat.id}</code>", parse_mode=ParseMode.HTML)
 
 
-@router.message(StateFilter(HashtagStates.waiting_hashtag), F.text)
+async def _send_coverage(message: Message, sunday: date | None = None) -> None:
+    if message.chat.type != "private":
+        return
+    if not message.from_user or not is_admin_user(message.from_user.id):
+        return
+    sunday = sunday or last_sunday_on_or_before()
+    ws = week_start_from_date(sunday)
+    async with get_session_factory()() as session:
+        members = await load_scope_members(session)
+        submitted = await submitted_ids_for_week(session, ws)
+        await session.commit()
+    body = format_coverage_text(
+        week_start=ws,
+        members=members,
+        submitted_ids=submitted,
+        sunday=sunday,
+    )
+    for i in range(0, len(body), 3800):
+        await message.answer(body[i : i + 3800], parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("coverage"))
+async def cmd_coverage(message: Message):
+    await _send_coverage(message)
+
+
+@router.message(Command("sunday"))
+async def cmd_sunday(message: Message):
+    await _send_coverage(message, sunday=last_sunday_on_or_before())
+
+
+@router.message(StateFilter(HashtagStates.waiting_hashtag), F.text, ~F.text.startswith("/"))
 async def msg_hashtag_enter(message: Message, state: FSMContext, bot: Bot):
     if message.chat.type != "private":
         return
@@ -1334,6 +1379,16 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
             u.streak = new_streak
             u.last_report_week_start = week_start
 
+        await upsert_submission(
+            session,
+            tg_user_id=query.from_user.id,
+            week_start=week_start,
+            source="bot",
+            msg_id=None,
+            hashtag=u.report_hashtag(),
+            submitted_at=submitted_at,
+        )
+
         await session.commit()
 
     out_data = {**data, "q5": q5_final}
@@ -1350,6 +1405,12 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
             "Отчёт недели обновлён (режим без общего чата — копия только тебе)."
             if is_update
             else "Отчёт сохранён. В общий чат не отправлен (режим без GROUP_CHAT_ID)."
+        )
+    elif settings.outbound_mute:
+        sent_note = (
+            "Отчёт сохранён. Сейчас тишина: в общий чат не отправлял."
+            if not is_update
+            else "Отчёт обновлён. Сейчас тишина: в общий чат не отправлял."
         )
     else:
         await bot.send_message(settings.group_chat_id, txt_html, parse_mode=ParseMode.HTML)
@@ -1645,6 +1706,10 @@ async def btn_profile(message: Message, bot: Bot):
 
 async def job_dropout_alert(bot: Bot) -> None:
     """Раз в 2 недели: личное сообщение тем, кто пропустил 2+ недели подряд."""
+    settings = get_settings()
+    if settings.outbound_mute or not settings.jobs_enabled:
+        log.info("skip dropout alert: mute/jobs off")
+        return
     try:
         from datetime import date as _date
         today = now_msk().date()
@@ -1688,8 +1753,94 @@ async def job_dropout_alert(bot: Bot) -> None:
         log.exception("job_dropout_alert failed")
 
 
+def _message_when(message: Message) -> datetime:
+    dt = message.date
+    if dt.tzinfo is None:
+        from datetime import timezone as _tz
+
+        dt = dt.replace(tzinfo=_tz.utc)
+    return to_msk(dt)
+
+
+def _group_plain(message: Message) -> str:
+    return (message.text or message.caption or "").strip()
+
+
+async def _count_group_hashtag(message: Message) -> None:
+    settings = get_settings()
+    if settings.group_chat_id and message.chat.id != settings.group_chat_id:
+        return
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    if not message.from_user or message.from_user.is_bot:
+        return
+    tag = extract_hashtag(_group_plain(message))
+    if not tag:
+        return
+    local = _message_when(message)
+    ws = week_start_from_date(local.date())
+    fu = message.from_user
+    async with get_session_factory()() as session:
+        await upsert_member(
+            session,
+            tg_user_id=fu.id,
+            first_name=fu.first_name,
+            last_name=fu.last_name,
+            username=fu.username,
+            status="member",
+            is_bot=False,
+        )
+        await upsert_submission(
+            session,
+            tg_user_id=fu.id,
+            week_start=ws,
+            source="group",
+            msg_id=message.message_id,
+            hashtag=tag,
+            submitted_at=local,
+        )
+        await session.commit()
+    log.info("hashtag counted uid=%s tag=%s week=%s msg=%s", fu.id, tag, ws, message.message_id)
+
+
+@router.message(F.chat.type.in_({"group", "supergroup"}))
+async def on_group_message(message: Message):
+    await _count_group_hashtag(message)
+
+
+@router.edited_message(F.chat.type.in_({"group", "supergroup"}))
+async def on_group_edited(message: Message):
+    await _count_group_hashtag(message)
+
+
+@router.chat_member()
+async def on_chat_member(event: ChatMemberUpdated):
+    settings = get_settings()
+    if settings.group_chat_id and event.chat.id != settings.group_chat_id:
+        return
+    member = event.new_chat_member
+    user = member.user
+    status = member.status
+    status_s = status.value if hasattr(status, "value") else str(status)
+    async with get_session_factory()() as session:
+        await upsert_member(
+            session,
+            tg_user_id=user.id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            username=user.username,
+            status=status_s,
+            is_bot=bool(user.is_bot),
+        )
+        await session.commit()
+    log.info("chat_member uid=%s status=%s bot=%s", user.id, status_s, user.is_bot)
+
+
 def build_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=MemoryStorage())
+    dp.message.middleware(AdminOnlyPrivateMiddleware())
+    dp.edited_message.middleware(AdminOnlyPrivateMiddleware())
+    dp.callback_query.middleware(AdminOnlyPrivateMiddleware())
     dp.include_router(router)
     return dp
 
@@ -1697,6 +1848,9 @@ def build_dispatcher() -> Dispatcher:
 async def job_sunday_group_reminder(bot: Bot) -> None:
     try:
         settings = get_settings()
+        if settings.outbound_mute or not settings.jobs_enabled:
+            log.info("skip group reminder: mute/jobs off")
+            return
         if settings.group_chat_id == 0:
             log.info("skip group reminder: GROUP_CHAT_ID=0")
             return
@@ -1710,6 +1864,10 @@ async def job_sunday_group_reminder(bot: Bot) -> None:
 
 async def job_sunday_dm_reminder(bot: Bot) -> None:
     try:
+        settings = get_settings()
+        if settings.outbound_mute or not settings.jobs_enabled:
+            log.info("skip sunday dm reminder: mute/jobs off")
+            return
         ws = week_start_from_date(now_msk().date())
 
         async with get_session_factory()() as session:
@@ -1740,3 +1898,68 @@ async def job_sunday_dm_reminder(bot: Bot) -> None:
 async def job_monday_digest(bot: Bot) -> None:
     """Понедельничный дайджест — отправка в группу отключена по запросу."""
     log.info("job_monday_digest: group posting disabled")
+
+
+async def _digest_payload() -> tuple[str, str]:
+    sunday = last_sunday_on_or_before()
+    ws = week_start_from_date(now_msk().date())
+    async with get_session_factory()() as session:
+        members = await load_scope_members(session)
+        submitted = await submitted_ids_for_week(session, ws)
+        await session.commit()
+    public = format_public_digest(week_start=ws, total=len(members), wrote=len(submitted))
+    private = format_coverage_text(
+        week_start=ws,
+        members=members,
+        submitted_ids=submitted,
+        sunday=sunday,
+    )
+    return public, private
+
+
+async def job_midnight_digest(bot: Bot) -> None:
+    """00:00: в MUTE — только админу; в чат — только после JOBS_ENABLED и снятия MUTE."""
+    settings = get_settings()
+    if not settings.jobs_enabled:
+        log.info("skip midnight digest: jobs off")
+        return
+    try:
+        public, private = await _digest_payload()
+        if settings.outbound_mute:
+            await bot.send_message(settings.admin_tg_user_id, private, parse_mode=ParseMode.HTML)
+            log.info("midnight digest sent to admin (mute)")
+            return
+        if settings.group_chat_id:
+            await bot.send_message(settings.group_chat_id, public)
+    except Exception:
+        log.exception("job_midnight_digest failed")
+
+
+async def job_twenty_reminder(bot: Bot) -> None:
+    """20:00: код готов, в группу и братьям при MUTE не уходит."""
+    settings = get_settings()
+    if not settings.jobs_enabled:
+        log.info("skip 20:00 reminder: jobs off")
+        return
+    try:
+        public, private = await _digest_payload()
+        ws = week_start_from_date(now_msk().date())
+        async with get_session_factory()() as session:
+            members = await load_scope_members(session)
+            submitted = await submitted_ids_for_week(session, ws)
+            await session.commit()
+        missing = len(members) - len(submitted)
+        if missing <= 0:
+            log.info("20:00 skip, coverage complete")
+            return
+        if settings.outbound_mute:
+            await bot.send_message(settings.admin_tg_user_id, private, parse_mode=ParseMode.HTML)
+            log.info("20:00 reminder sent to admin (mute)")
+            return
+        if settings.group_chat_id:
+            await bot.send_message(
+                settings.group_chat_id,
+                "Напоминание: отчёт за неделю. " + public,
+            )
+    except Exception:
+        log.exception("job_twenty_reminder failed")
