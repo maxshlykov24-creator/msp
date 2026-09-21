@@ -8,17 +8,20 @@ from datetime import date, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.hashtag import HASHTAG_RE, extract_hashtag
-from app.models import GroupMember, WeekSubmission
+from app.hashtag import HASHTAG_RE, extract_hashtag, override_from_tag
+from app.models import GroupMember, User, WeekSubmission
 from app.time_utils import last_sunday_on_or_before, now_msk, to_msk, week_start_from_date
 
 __all__ = [
     "HASHTAG_RE",
     "extract_hashtag",
+    "override_from_tag",
     "last_sunday_on_or_before",
     "member_label",
     "upsert_member",
     "upsert_submission",
+    "latest_hashtag_for_user",
+    "adopt_hashtag_from_group",
     "load_scope_members",
     "submitted_ids_for_week",
     "format_coverage_text",
@@ -106,6 +109,31 @@ async def upsert_submission(
             row.submitted_at = submitted_at
     await session.flush()
     return row
+
+
+async def latest_hashtag_for_user(session: AsyncSession, tg_user_id: int) -> str | None:
+    """Последний хэштег, которым человек подписывал отчёт в группе."""
+    row = await session.scalar(
+        select(WeekSubmission)
+        .where(WeekSubmission.tg_user_id == tg_user_id)
+        .order_by(WeekSubmission.submitted_at.desc(), WeekSubmission.id.desc())
+        .limit(1)
+    )
+    if row is None:
+        return None
+    tag = (row.hashtag or "").strip()
+    return tag or None
+
+
+async def adopt_hashtag_from_group(session: AsyncSession, user: User) -> bool:
+    """Имя из группового отчёта. True — спрашивать не нужно."""
+    if (user.report_hashtag_override or "").strip():
+        return True
+    tag = await latest_hashtag_for_user(session, user.tg_user_id)
+    if not tag:
+        return False
+    user.report_hashtag_override = override_from_tag(tag)
+    return True
 
 
 async def load_scope_members(session: AsyncSession) -> list[GroupMember]:

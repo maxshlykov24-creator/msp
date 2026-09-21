@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.hashtag import extract_hashtag
+from app.hashtag import extract_hashtag, override_from_tag
 from app.time_utils import last_sunday_on_or_before
 from datetime import date
 
@@ -36,6 +36,8 @@ def main() -> int:
     check(extract_hashtag("1. Сколько времени\n2") is None, "report without tag")
     check(extract_hashtag("#Кирилл Спиридонов") == "#Кирилл", "tag then space")
     check(extract_hashtag("текст #ПоляковМаксим ещё") == "#ПоляковМаксим", "tag mid text")
+    check(override_from_tag("#ШлыковМаксим") == "ШлыковМаксим", "override strip")
+    check(override_from_tag("ШлыковМаксим") == "ШлыковМаксим", "override plain")
     check(last_sunday_on_or_before(date(2026, 9, 21)) == date(2026, 9, 20), "last sunday mon")
     check(last_sunday_on_or_before(date(2026, 9, 20)) == date(2026, 9, 20), "last sunday sun")
     t = format_public_digest(week_start=date(2026, 9, 14), total=35, wrote=18)

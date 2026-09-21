@@ -12,3 +12,8 @@ def extract_hashtag(text: str | None) -> str | None:
         return None
     m = HASHTAG_RE.search(text)
     return m.group(0) if m else None
+
+
+def override_from_tag(tag: str) -> str:
+    """Хэштег из группы → значение для users.report_hashtag_override без #."""
+    return re.sub(r"^#+", "", (tag or "").strip())[:120]

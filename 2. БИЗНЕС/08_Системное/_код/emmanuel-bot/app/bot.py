@@ -19,11 +19,13 @@ from sqlalchemy.orm import selectinload
 from app import groq_client
 from app.config import get_settings
 from app.coverage import (
+    adopt_hashtag_from_group,
     extract_hashtag,
     format_coverage_text,
     format_public_digest,
     last_sunday_on_or_before,
     load_scope_members,
+    override_from_tag,
     submitted_ids_for_week,
     upsert_member,
     upsert_submission,
@@ -73,8 +75,8 @@ def suggested_hashtag_from_user(from_user) -> str:
     return re.sub(r"^[#]+", "", base)[:120] or "Имя"
 
 
-async def ask_for_hashtag(message: Message, state: FSMContext, *, after: str = "menu") -> None:
-    suggested = suggested_hashtag_from_user(message.from_user)
+async def ask_for_hashtag(message: Message, state: FSMContext, *, after: str = "menu", from_user=None) -> None:
+    suggested = suggested_hashtag_from_user(from_user or message.from_user)
     await state.set_state(HashtagStates.waiting_hashtag)
     await state.update_data(after_hashtag=after)
     await message.answer(
@@ -359,6 +361,7 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
         if has_admin == 0:
             u.is_bot_admin = True
             appointed_admin = True
+        has_tag = await adopt_hashtag_from_group(session, u)
         await session.commit()
 
     extra_admin = ""
@@ -368,8 +371,7 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
             "Пока это зафиксировано в базе для будущих команд.\n\n"
         )
 
-    tag_needed = not (u.report_hashtag_override or "").strip()
-    if tag_needed:
+    if not has_tag:
         await ask_for_hashtag(message, state)
         return
 
@@ -607,7 +609,7 @@ async def can_start_report(bot: Bot, from_user) -> tuple[bool, str | None]:
 async def db_user_hashtag_filled(from_user) -> bool:
     async with get_session_factory()() as session:
         u = await get_or_create_user(session, from_user)
-        ok = bool((u.report_hashtag_override or "").strip())
+        ok = await adopt_hashtag_from_group(session, u)
         await session.commit()
     return ok
 
@@ -626,7 +628,7 @@ async def btn_report_menu(message: Message, bot: Bot):
 async def cb_rep_menu_write(query: CallbackQuery, state: FSMContext, bot: Bot):
     await query.message.delete()
     if not await db_user_hashtag_filled(query.from_user):
-        await query.message.answer("Сначала укажи хэштег.")
+        await ask_for_hashtag(query.message, state, after="write", from_user=query.from_user)
         await query.answer()
         return
     ok, err = await can_start_report(bot, query.from_user)
@@ -643,7 +645,7 @@ async def cb_rep_menu_write(query: CallbackQuery, state: FSMContext, bot: Bot):
 async def cb_rep_menu_edit(query: CallbackQuery, state: FSMContext, bot: Bot):
     await query.message.delete()
     if not await db_user_hashtag_filled(query.from_user):
-        await query.message.answer("Сначала укажи хэштег.")
+        await ask_for_hashtag(query.message, state, after="edit_week", from_user=query.from_user)
         await query.answer()
         return
     ws = week_start_from_date(now_msk().date())
@@ -1799,6 +1801,9 @@ async def _count_group_hashtag(message: Message) -> None:
             hashtag=tag,
             submitted_at=local,
         )
+        u = await session.scalar(select(User).where(User.tg_user_id == fu.id))
+        if u is not None:
+            u.report_hashtag_override = override_from_tag(tag)
         await session.commit()
     log.info("hashtag counted uid=%s tag=%s week=%s msg=%s", fu.id, tag, ws, message.message_id)
 
