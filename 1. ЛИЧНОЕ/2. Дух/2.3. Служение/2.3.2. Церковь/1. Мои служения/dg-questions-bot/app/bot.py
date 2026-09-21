@@ -728,13 +728,13 @@ async def cb_preset(callback: CallbackQuery) -> None:
         await db.execute(
             update(GameSession)
             .where(GameSession.id == session.id)
-            .values(preset=preset, status="active", phase=1)
+            .values(preset=preset, status="active", phase=2)
         )
         await db.commit()
 
     session = await _reload_session(session.id)
     done, pending, _ = await _progress(session.id)
-    preset_name = "Лёгкие и тёплые" if preset == "meeting1" else "Вся колода"
+    preset_name = "Тёплые → чуть теплее" if preset == "meeting1" else "Вся колода"
 
     mod_text = (
         f"🚀 <b>Встреча начата! · {preset_name}</b>\n\n"

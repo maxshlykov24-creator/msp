@@ -60,37 +60,35 @@ def build_queue(
     """Return ordered list of (question_number, phase_label) for a new session.
 
     preset:
-        "meeting1" — only лёгкий + тепло (no чуть теплее)
-        "full"     — all three tiers
+        "meeting1" — тёплые, потом чуть теплее (лёгкие не берём)
+        "full"     — то же + лёгкие в хвост, если колода кончится
 
     Phase labels:
-        1 = лёгкий, 2 = тепло, 3 = чуть теплее
-
-    Order: лёгкий first (with category interleave), then тепло, then чуть теплее.
-    Within each tier, categories are interleaved to maximise variety.
+        1 = лёгкий (не используем в текущем формате)
+        2 = тепло
+        3 = чуть теплее
     """
     all_qs = get_questions()
     available = [q for q in all_qs if q.number not in used_numbers]
 
-    # If deck is exhausted, reset silently
     if not available:
         available = list(all_qs)
 
-    light = [q for q in available if q.tag == "лёгкий"]
     warm = [q for q in available if q.tag == "тепло"]
-    warmer = [] if preset == "meeting1" else [q for q in available if q.tag == "чуть теплее"]
+    warmer = [q for q in available if q.tag == "чуть теплее"]
+    light = [q for q in available if q.tag == "лёгкий"] if preset == "full" else []
 
     ordered = (
-        [(q, 1) for q in _interleave_categories(light)]
-        + [(q, 2) for q in _interleave_categories(warm)]
+        [(q, 2) for q in _interleave_categories(warm)]
         + [(q, 3) for q in _interleave_categories(warmer)]
+        + [(q, 1) for q in _interleave_categories(light)]
     )
 
     return [(q.number, phase) for q, phase in ordered]
 
 
 def phase_name(phase: int) -> str:
-    return {1: "Фаза 1 · разогрев", 2: "Фаза 2 · тёплые", 3: "Фаза 3 · глубже"}.get(phase, "")
+    return {1: "Лёгкие", 2: "Тёплые", 3: "Чуть теплее"}.get(phase, "")
 
 
 def tag_emoji(tag: str) -> str:

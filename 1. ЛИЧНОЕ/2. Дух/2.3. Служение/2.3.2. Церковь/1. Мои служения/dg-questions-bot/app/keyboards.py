@@ -41,8 +41,8 @@ def confirm_reset_keyboard() -> InlineKeyboardMarkup:
 
 def preset_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="🌱 Лёгкие и тёплые", callback_data="preset:meeting1")
-    b.button(text="🔥 Вся колода, включая глубокие", callback_data="preset:full")
+    b.button(text="🌿 Тёплые, потом чуть теплее", callback_data="preset:meeting1")
+    b.button(text="🔥 Вся колода, лёгкие в хвосте", callback_data="preset:full")
     b.adjust(1)
     return b.as_markup()
 
