@@ -115,6 +115,53 @@ ASKED_WHERE = re.compile(
     r"график|до скольки|режим работы|когда открыт)",
     re.IGNORECASE,
 )
+WEEKDAYS_RU = (
+    "понедельник",
+    "вторник",
+    "среда",
+    "четверг",
+    "пятница",
+    "суббота",
+    "воскресенье",
+)
+# Будний день, не сб/вс: соглашаться «да, в пн» = клиент думает, что в выходные мы закрыты.
+WEEKDAY_NAME = re.compile(
+    r"(?<![а-яё])("
+    r"пн|вт|ср|чт|пт|"
+    r"понедельник\w*|вторник\w*|сред[аеуы]|четверг\w*|пятниц\w*"
+    r")(?![а-яё])",
+    re.IGNORECASE,
+)
+THEIR_SLOT = re.compile(
+    r"("
+    r"мне (удобн|можно|только|ок|свобод)|"
+    r"у меня|"
+    r"я (только |смогу|свобод)|"
+    r"смогу только|"
+    r"(приед|заед|подъед)\w*"
+    r")",
+    re.IGNORECASE,
+)
+ASKS_OUR_SLOT = re.compile(
+    r"("
+    r"когда (набер|позвон|перезвон|свяж|откро|работа)|"
+    r"вы когда|"
+    r"набер[её]те|"
+    r"позвон(ите|и)|"
+    r"перезвон|"
+    r"работаете|"
+    r"вы в\s+(пн|вт|ср|чт|пт|понедельник|вторник|сред|четверг|пятниц)"
+    r")",
+    re.IGNORECASE,
+)
+ABOUT_OUR_CALL = re.compile(
+    r"(набер|позвон|перезвон|свяж)",
+    re.IGNORECASE,
+)
+WEEKDAY_TAIL = re.compile(
+    r"\?\s*(пн|вт|ср|чт|пт|понедельник|вторник|сред[ае]|четверг|пятниц)\w*\s*\??\s*$",
+    re.IGNORECASE,
+)
 ASKED_VISIT = re.compile(
     r"("
     r"когда можно|"
@@ -146,6 +193,26 @@ COLOR = re.compile(
 
 def now_msk() -> datetime:
     return datetime.now(MSK)
+
+
+def weekday_ru(moment: datetime | None = None) -> str:
+    return WEEKDAYS_RU[(moment or now_msk()).weekday()]
+
+
+def asked_our_hours_day(text: str) -> bool:
+    """Клиент гадает про НАШ график («наберёте? Пн?»), а не называет свой слот."""
+    blob = text or ""
+    if not WEEKDAY_NAME.search(blob):
+        return False
+    if THEIR_SLOT.search(blob):
+        return False
+    if ASKS_OUR_SLOT.search(blob):
+        return True
+    return bool(WEEKDAY_TAIL.search(blob))
+
+
+def about_our_call(text: str) -> bool:
+    return bool(ABOUT_OUR_CALL.search(text or ""))
 
 
 def parse_iso(value: str) -> datetime | None:
@@ -309,14 +376,20 @@ OWN_PHONE = re.compile(
 )
 
 
+def _is_ru_mobile(digits: str) -> bool:
+    return len(digits) == 11 and digits.startswith("79")
+
+
 def extract_phone(text: str) -> str:
     """Номер клиента: Россия как 7XXXXXXXXXX, иностранный как цифры с кодом страны.
 
     Салонный номер и короткие хвосты не берём. +994 раньше не ловился, и бот
-    на следующий день снова просил телефон.
+    на следующий день снова просил телефон. VIN рядом с номером не склеиваем:
+    хвост SCA…77820 плюс 8910… давал ложный +7 820.
     """
     salon = re.sub(r"\D", "", SALON_PHONE)
     best = ""
+    blob = VIN.sub(" ", text or "")
 
     def take(digits: str) -> None:
         nonlocal best
@@ -330,21 +403,26 @@ def extract_phone(text: str) -> str:
             digits = "7" + digits
         if not (10 <= len(digits) <= 15):
             return
+        if _is_ru_mobile(digits) and not _is_ru_mobile(best):
+            best = digits
+            return
+        if _is_ru_mobile(best) and not _is_ru_mobile(digits):
+            return
         # Более длинный международный важнее куска из 10 цифр внутри него.
         if len(digits) > len(best):
             best = digits
         elif len(digits) == len(best) and digits.startswith("7") and not best.startswith("7"):
             best = digits
 
-    for match in INTL_PHONE.finditer(text or ""):
+    for match in INTL_PHONE.finditer(blob):
         take(re.sub(r"\D", "", match.group(0)))
     # Без плюса: 994993845959. Российский шаблон берёт только 10–11 цифр
     # и отрезает хвост, поэтому длинный хвост смотрим отдельно.
-    for match in re.finditer(r"(?<!\d)\d{12,15}(?!\d)", text or ""):
+    for match in re.finditer(r"(?<!\d)\d{12,15}(?!\d)", blob):
         take(match.group(0))
-    for match in HAS_PHONE.finditer(text or ""):
+    for match in HAS_PHONE.finditer(blob):
         take(re.sub(r"\D", "", match.group(0)))
-    for match in RU_PHONE_10.finditer(text or ""):
+    for match in RU_PHONE_10.finditer(blob):
         take(re.sub(r"\D", "", match.group(0)))
     return best
 
@@ -475,6 +553,17 @@ def asked_leasing(messages: list[dict] | None) -> bool:
     return "лизинг" in _user_blob(messages)
 
 
+LEASE_REPORT = re.compile(
+    r"автотек|отч[её]т|в базах|до\s*20\d\d|до\s+\d+\s*год|обремен|залог",
+    re.IGNORECASE,
+)
+
+
+def cited_lease_report(text: str) -> bool:
+    """Клиент ткнул в автотеку или срок лизинга, а не просто спросил «была?»."""
+    return bool(LEASE_REPORT.search(text or ""))
+
+
 def asked_credit(messages: list[dict] | None) -> bool:
     blob = _user_blob(messages)
     if re.search(r"\bкредитк", blob):
@@ -519,13 +608,83 @@ def asked_torg(messages: list[dict] | None) -> bool:
     ):
         return True
     if re.search(
-        r"за\s+\d+(?:[.,]\d+)?\s*(млн|тыс|тысяч|руб)",
+        r"за\s+\d+(?:[.,]\d+)?\s*(млн|миллион|тыс|тысяч|руб)",
         blob,
     ) and re.search(r"продад|отдад|готов за|забер", blob):
+        return True
+    # «ЗА 16 млн возьму», «возьму за 16» — это своя сумма, не вопрос про пробег.
+    if re.search(r"за\s+\d", blob) and re.search(
+        r"возьм|купл[юи]|\bберу\b|\bберем\b|\bберём\b",
+        blob,
+    ):
         return True
     if re.search(r"\d+(?:[.,]\d+)?\s*готов\s+приехать", blob):
         return True
     return False
+
+
+NONCAR_ITEM = re.compile(
+    r"(картин|живопис|холст|"
+    r"квартир|недвижим|участк|дач[ауие]|яхт|"
+    r"станок|чпу|оборудов|посреднич)",
+    re.IGNORECASE,
+)
+TRADE_WORD = re.compile(r"обмен|trade.?in|трейд", re.IGNORECASE)
+TRADE_PIVOT = re.compile(
+    r"(за наличн|за деньг|без обмен|просто купл|тогда купл|"
+    r"вин код|\bvin\b|моя машин|свой авто|свою машин)",
+    re.IGNORECASE,
+)
+NONCAR_INVITE = re.compile(
+    r"если интересн|напишите номер|обсудим подробн",
+    re.IGNORECASE,
+)
+NONCAR_TRADE_REPLY = (
+    "Мы работаем только с денежным расчётом или обменом на автомобиль. "
+    "Обмен на другое имущество и посредничество не рассматриваем"
+)
+
+
+def asked_noncar_trade(text: str) -> bool:
+    """Обмен на картину, станок, квартиру и прочее — не на машину."""
+    blob = (text or "").lower().replace("ё", "е")
+    if not NONCAR_ITEM.search(blob):
+        return False
+    if TRADE_WORD.search(blob):
+        return True
+    return bool(re.search(r"посреднич|найд\w* клиента", blob))
+
+
+def keep_noncar_boundary(bubbles: list[str]) -> list[str]:
+    """Одно сообщение с границей, без номера и без уговоров купить за нал."""
+    cleaned: list[str] = []
+    for bubble in bubbles or []:
+        text = drop_phone_ask(bubble)
+        parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+        kept = [p for p in parts if p.strip() and not NONCAR_INVITE.search(p)]
+        line = " ".join(kept).strip().rstrip(" .,")
+        if line:
+            cleaned.append(line)
+    return cleaned[:1] or [NONCAR_TRADE_REPLY]
+
+
+def history_noncar_trade(messages: list[dict] | None) -> bool:
+    return any(
+        m.get("role") == "user" and asked_noncar_trade(m.get("content") or "")
+        for m in messages or []
+    )
+
+
+def still_noncar_trade(messages: list[dict] | None) -> bool:
+    """Тема всё ещё бартер не на авто, клиент не перешёл к покупке за деньги."""
+    if not history_noncar_trade(messages):
+        return False
+    last = _last_user(messages)
+    if not last:
+        return True
+    if extract_phone(last) or TRADE_PIVOT.search(last):
+        return False
+    return True
 
 
 def asked_heater(messages: list[dict] | None) -> bool:
@@ -1055,6 +1214,8 @@ def should_stop_nudge(messages: list[dict]) -> bool:
     слово за клиентом — это не тишина, пинг «если актуально» туда не идёт.
     """
     if history_wants_stop(messages) or history_has_phone(messages) or history_refuses_phone(messages):
+        return True
+    if still_noncar_trade(messages):
         return True
     if messages and (messages[-1].get("role") == "user"):
         return True

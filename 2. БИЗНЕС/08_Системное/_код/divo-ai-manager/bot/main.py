@@ -476,6 +476,13 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if cleaned != [b for b in bubbles if b.strip()]:
         log.info("чат %s: выкинул лизинг, торг, отопитель или состояние без вопроса", chat_id)
         bubbles = cleaned
+    if nudge.asked_leasing(history) and not nudge.cited_lease_report(user_text):
+        shortened = [
+            human.soften_lease_status(b, cited_report=False) for b in bubbles
+        ]
+        if shortened != bubbles:
+            log.info("чат %s: убрал лекцию про лизинг в отчёте", chat_id)
+            bubbles = [b for b in shortened if b.strip()] or [human.SHORT_LEASE]
     if nudge.asked_torg(history):
         softened = [human.soften_hard_torg(b, allow_torg=True) for b in bubbles]
         if softened != bubbles:
@@ -497,6 +504,8 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         and not nudge.history_refuses_phone(history)
         and nudge.phone_ask_count(history) < nudge.MAX_LIVE_PHONE_ASKS
         and not nudge.is_thinking(user_text)
+        and not nudge.asked_noncar_trade(user_text)
+        and not nudge.still_noncar_trade(history)
     ):
         with_phone = []
         added = False
@@ -509,6 +518,11 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if added:
             log.info("чат %s: к VIN дописал номер", chat_id)
             bubbles = with_phone
+    if nudge.asked_noncar_trade(user_text) or nudge.still_noncar_trade(history):
+        trimmed = nudge.keep_noncar_boundary(bubbles)
+        if trimmed != bubbles:
+            log.info("чат %s: обмен не на авто, одно сообщение без номера", chat_id)
+        bubbles = trimmed
     if bubbles and nudge.history_has_phone(history):
         trimmed = [nudge.drop_phone_ask(b) for b in bubbles]
         trimmed = [b for b in trimmed if b.strip()]
@@ -565,6 +579,8 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
                 b,
                 allow_invite=nudge.asked_visit(user_text)
                 or nudge.asked_where(user_text),
+                allow_call=nudge.asked_our_hours_day(user_text)
+                or nudge.about_our_call(user_text),
             )
             for b in bubbles
         ]
@@ -572,11 +588,33 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if trimmed != [b for b in bubbles if b.strip()]:
             log.info("чат %s: после контакта убрал дожим", chat_id)
         bubbles = trimmed
+    if nudge.asked_our_hours_day(user_text):
+        rewritten = [
+            human.soften_weekday_wait(
+                b,
+                asked_our=True,
+                about_call=nudge.about_our_call(user_text),
+            )
+            for b in bubbles
+        ]
+        if rewritten != bubbles:
+            log.info("чат %s: не откладываю на будний день", chat_id)
+        bubbles = [b for b in rewritten if b.strip()] or [
+            human.WEEKDAY_WAIT_CALL
+            if nudge.about_our_call(user_text)
+            else human.WEEKDAY_WAIT_VISIT
+        ]
     if nudge.wants_write_here(user_text) or nudge.history_wants_write_here(history):
         rewritten = [human.phone_to_messenger(b) for b in bubbles]
         if rewritten != bubbles:
             log.info("чат %s: вместо звонка прошу Телеграм или Ватсап", chat_id)
             bubbles = rewritten
+    if nudge.asked_noncar_trade(user_text) or nudge.still_noncar_trade(history):
+        bubbles = human.glue_lonely_greeting(bubbles)
+        final = nudge.keep_noncar_boundary(bubbles)
+        if final != bubbles:
+            log.info("чат %s: обмен не на авто, одно сообщение без номера", chat_id)
+        bubbles = final
 
     if not bubbles:
         store.save_history(chat_id, history)
@@ -606,6 +644,14 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     user_text = history[-1]["content"] if history else ""
     # Всё, что дописано после границы, меняется каждый ход и в кэш не идёт.
     system = prompt.build() + prompt.CACHE_SPLIT
+    now = nudge.now_msk()
+    system += (
+        "\n\n# Сейчас по Москве\n"
+        "Сейчас %s, %s. Салон ежедневно с 10:00 до 20:00, включая субботу "
+        "и воскресенье. Не только будни: не соглашайся ждать понедельник, "
+        "если до него мы ещё работаем."
+        % (nudge.weekday_ru(now), now.strftime("%H:%M"))
+    )
     doc = store.load_doc(chat_id) if chat_id else {}
     focus = avito_match.focus_from_doc(doc) if doc else ""
     if focus:
@@ -713,6 +759,22 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "«автотеки нет». Уточни, пришли в Телеграм или Ватсап. Вопрос закрыл "
             "фактом - всё."
         )
+        if nudge.asked_our_hours_day(user_text):
+            system += (
+                " Исключение: клиент сейчас спрашивает, когда мы наберём "
+                "или работаем ли в названный будний день. Это про НАШ график, "
+                "не про его слот. Не пиши «пн подходит» и не откладывай звонок "
+                "на понедельник. Работаем каждый день. Звонок: в ближайшее "
+                "время наберу, ждать понедельника не нужно."
+            )
+    if nudge.asked_our_hours_day(user_text) and not nudge.history_has_phone(history):
+        system += (
+            "\n\n# Клиент гадает про наш график\n"
+            "Назвал будний день вопросом, не «мне удобно только тогда». "
+            "Салон каждый день 10:00–20:00. Не подтверждай понедельник как "
+            "ближайший слот. Звонок: в ближайшее время наберу, ждать "
+            "понедельника не нужно. Осмотр: в любой день, в том числе в выходные."
+        )
     if not nudge.asked_leasing(history):
         system += (
             "\n\n# Лизинг не поднимай\n"
@@ -722,9 +784,11 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     else:
         system += (
             "\n\n# Клиент спросил про лизинг\n"
-            "Наша машина: нет, выкуплена, документы у нас. Строка автотеки "
-            "«в лизинге до» это реестр. В отчёте ещё светится - в базах может "
-            "отображаться, по факту закрыт, на сделке покажем. "
+            "Простая «в лизинге была?», «она в лизинге?» — ответ одной фразой: "
+            "«нет, выкуплена». Без отчёта, без «в базах может отображаться», "
+            "без «документы у нас», без «на сделке покажем». "
+            "Сам ткнул в автотеку, «до 28 года», «в отчёте написано» — тогда "
+            "можно: в базах может отображаться, по факту закрыт, на сделке покажем. "
             "Купить в лизинг: только с полным НДС, документы третьим лицам "
             "до визита не отдаём. Не говори «данных о лизинге нет» и "
             "«автотеки нет вообще»."
@@ -758,8 +822,8 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "Свою цифру не подтверждай и не руби «не сможем» и «зафиксирована». "
             "Цена в объявлении как ориентир. В разумных пределах торг и условия "
             "возможны, обсуждаем после осмотра. Дальше схема визита: приглашение "
-            "посмотреть с 10:00 до 20:00, адрес если ещё не писал. Отопитель, "
-            "такси и комплектацию сам не поднимай. На «многодетная семья» и жалобный повод скидку "
+            "посмотреть с 10:00 до 20:00, адрес если ещё не писал. ДТП, владельцев, "
+            "отопитель, такси и комплектацию сам не поднимай. На «многодетная семья» и жалобный повод скидку "
             "не увеличивай. Финальную сумму в чате не называй. Номер в этом ходе "
             "не проси, пока нет другого повода."
         )
@@ -854,6 +918,16 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "\n\n# Клиент попросил время\n"
             "Клиент сказал, что рассматривает/думает/сравнивает — вопрос закрыт. "
             "В этом ответе номер не проси, даже если раньше не просил."
+        )
+    if nudge.asked_noncar_trade(user_text):
+        system += (
+            "\n\n# Обмен не на машину\n"
+            "Клиент предлагает станок, картину, квартиру или просит найти "
+            "покупателя на своё имущество. Одно сообщение, только граница: "
+            "работаем с денежным расчётом или обменом на автомобиль, "
+            "остальное и посредничество не рассматриваем. Второго сообщения "
+            "нет. Номер не проси. Не уговаривай купить за наличные. "
+            "Дальше молчи, догон не нужен."
         )
     return system
 

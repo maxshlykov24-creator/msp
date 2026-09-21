@@ -59,12 +59,15 @@ def test_needs_reply():
 
 def test_phone():
     from bot.nudge import (
+        asked_noncar_trade,
         drop_messenger_choice,
         drop_phone_ask,
         history_has_phone,
+        keep_noncar_boundary,
         named_messenger,
         refresh,
         should_stop_nudge,
+        still_noncar_trade,
     )
 
     assert extract_phone("мой 8 900 111-22-33") == "79001112233"
@@ -74,6 +77,64 @@ def test_phone():
     assert extract_phone("89101822297") == "79101822297"
     assert extract_phone("9101822297") == "79101822297"
     assert extract_phone("910 182-22-97") == "79101822297"
+    vin_phone = "SCA665C07EUX77820\n89107470044"
+    assert extract_phone(vin_phone) == "79107470044"
+    assert extract_phone("SCA665C07EUX77820 89107470044") == "79107470044"
+    assert extract_phone_from_history(
+        [{"role": "user", "content": vin_phone}]
+    ) == "79107470044"
+
+    paint = "Подскажите, пожалуйста, как смотрите на то, чтобы осуществить обмен на картину?"
+    assert asked_noncar_trade(paint)
+    assert not asked_noncar_trade("на обмен мою машину заберете?")
+    cnc = (
+        "Здравствуйте, нету желание открыть бизнес постоянно приносящий доход, "
+        "на вашу машину обмен, если интересно откройте пожалуйста мою стороницу "
+        "Авито, станок промышленного масштаба ЧПУ, если вам не интересует станок, "
+        "а найдёте клиента на станок, я покупаю вашу машину"
+    )
+    assert asked_noncar_trade(cnc)
+    assert asked_noncar_trade("найдите клиента на станок, я покупаю вашу машину")
+    assert not asked_noncar_trade("станок не предлагаю, интересует машина")
+    hist_cnc = [
+        {"role": "user", "content": cnc},
+        {
+            "role": "assistant",
+            "content": "Мы работаем только с денежным расчётом или обменом на автомобиль",
+        },
+    ]
+    assert still_noncar_trade(hist_cnc)
+    assert should_stop_nudge(hist_cnc)
+    kept = keep_noncar_boundary(
+        [
+            "Доброй ночи! Мы работаем только с денежным расчётом или обменом на автомобиль, обмен на станок и посредничество по его продаже не рассматриваем",
+            "Если интересна машина за наличные или расчётный счёт, напишите номер, обсудим",
+            "Напишите, пожалуйста, ваш номер телефона для связи",
+        ]
+    )
+    assert len(kept) == 1
+    assert "номер" not in kept[0].lower()
+    assert "если интерес" not in kept[0].lower()
+    assert "автомобил" in kept[0].lower()
+    hist_paint = [
+        {"role": "user", "content": paint},
+        {"role": "assistant", "content": "Обмен на картину не рассматриваем"},
+    ]
+    assert still_noncar_trade(hist_paint)
+    assert should_stop_nudge(hist_paint)
+    hist_paint.append(
+        {
+            "role": "user",
+            "content": "Машина интересует, но нет смысла что то обсуждать, если Вы обмен не рассматриваете",
+        }
+    )
+    assert still_noncar_trade(hist_paint)
+    cut_phone = drop_phone_ask(
+        "Обмен на картину не рассматриваем, только деньги: наличные или расчётный счёт. "
+        "Если интересна машина, напишите номер, обсудим подробнее"
+    )
+    assert "номер" not in cut_phone.lower()
+    assert "налич" in cut_phone.lower()
     from bot.crm import amo_client as amo
 
     assert amo.amo_phone("89101822297") == "+79101822297"
@@ -238,7 +299,25 @@ def test_unsolicited():
     assert asked_torg(
         [{"role": "user", "content": "Добрый вечер ! 6,5 готов приехать х."}]
     )
+    assert asked_torg([{"role": "user", "content": "ЗА 16 млн возьму"}])
+    assert asked_torg([{"role": "user", "content": "возьму за 16"}])
+    assert not asked_torg([{"role": "user", "content": "за 16 млн какой пробег?"}])
     assert asked_leasing([{"role": "user", "content": "а в лизинг можно?"}])
+    from bot.human import soften_lease_status
+    from bot.nudge import cited_lease_report
+
+    simple = "Посмотрел. Машина в лизинге была?"
+    assert not cited_lease_report(simple)
+    assert cited_lease_report("в автотеке до 28 года в лизинге")
+    dump = (
+        "По отчёту может отображаться лизинг, но по факту машина выкуплена, "
+        "документы у нас, на сделке покажем"
+    )
+    short = soften_lease_status(dump, cited_report=False)
+    assert short == "Нет, выкуплена"
+    assert "отч" not in short.lower()
+    keep_report = soften_lease_status(dump, cited_report=True)
+    assert "отч" in keep_report.lower()
     assert not asked_heater([{"role": "user", "content": "За наличку торг есть?"}])
     assert asked_heater([{"role": "user", "content": "а вебасто стоит?"}])
     cut_heat = drop_unsolicited(
@@ -459,6 +538,50 @@ def test_where_choice():
     assert "с 10:00 до 20:00" in chat
     assert for_chat("посмотреть можно в любой день до 20:00").lower().count("10:00") == 1
     assert "с 10:00 до 20:00" in for_chat("работаем ежедневно с 10:00 до 20:00")
+
+
+def test_weekday_hours():
+    from bot.human import drop_push_after_contact, soften_weekday_wait
+    from bot.nudge import asked_our_hours_day, about_our_call
+
+    msg = (
+        "Вы когда наберёте с оценкой, торгом и ставкой и условия по кредиту "
+        "с разницей? Пн?"
+    )
+    assert asked_our_hours_day(msg)
+    assert about_our_call(msg)
+    assert asked_our_hours_day("В понедельник работаете?")
+    assert not asked_our_hours_day("мне удобно только в понедельник, давайте тогда")
+    assert not asked_our_hours_day("в понедельник приеду")
+    assert not asked_our_hours_day("за 16 млн какой пробег?")
+    bad = soften_weekday_wait(
+        "Пн подходит, наберу в этот день",
+        asked_our=True,
+        about_call=True,
+    )
+    assert "каждый день" in bad.lower()
+    assert "пн подходит" not in bad.lower()
+    assert "ближайшее время" in bad.lower()
+    good = (
+        "Работаем каждый день с 10:00 до 20:00, ждать понедельника не нужно. "
+        "В ближайшее время наберу"
+    )
+    assert soften_weekday_wait(good, asked_our=True, about_call=True) == good
+    keep = soften_weekday_wait(
+        "Хорошо, в понедельник ждём",
+        asked_our=False,
+        about_call=False,
+    )
+    assert "понедельник" in keep.lower()
+    held = drop_push_after_contact(
+        "Работаем каждый день с 10:00 до 20:00. В ближайшее время наберу",
+        allow_call=True,
+    )
+    assert "набер" in held.lower()
+    stripped = drop_push_after_contact(
+        "Работаем каждый день с 10:00 до 20:00. В ближайшее время наберу"
+    )
+    assert "набер" not in stripped.lower()
 
 
 def test_merge_user_chunks():

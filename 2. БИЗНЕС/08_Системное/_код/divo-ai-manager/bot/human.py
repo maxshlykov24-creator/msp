@@ -679,7 +679,9 @@ PUSH_CALL = re.compile(
 )
 
 
-def drop_push_after_contact(text: str, *, allow_invite: bool = False) -> str:
+def drop_push_after_contact(
+    text: str, *, allow_invite: bool = False, allow_call: bool = False
+) -> str:
     """После передачи контакта не дожимаем: факт по вопросу, без визита и звонка."""
     original = text or ""
     if not original.strip():
@@ -692,7 +694,7 @@ def drop_push_after_contact(text: str, *, allow_invite: bool = False) -> str:
             continue
         if not allow_invite and PUSH_INVITE.search(part):
             continue
-        if PUSH_CALL.search(part):
+        if not allow_call and PUSH_CALL.search(part):
             continue
         kept.append(part)
     text = " ".join(kept).strip()
@@ -862,6 +864,39 @@ def drop_regreeting(text: str) -> str:
 
 
 LEASING_BIT = re.compile(r"лизинг", re.IGNORECASE)
+LEASE_LECTURE = re.compile(
+    r"по отч[её]ту|в базах может|на сделке покаж|документы у нас|"
+    r"документы на руках",
+    re.IGNORECASE,
+)
+BUY_LEASE = re.compile(
+    r"полн\w*\s+ндс|третьим лицам|оформить в лизинг|купить в лизинг",
+    re.IGNORECASE,
+)
+SHORT_LEASE = "Нет, выкуплена"
+
+
+def soften_lease_status(text: str, *, cited_report: bool = False) -> str:
+    """«Была в лизинге?» — нет, выкуплена. Лекцию про отчёт не тащим сами."""
+    original = text or ""
+    if cited_report or not original.strip():
+        return original
+    if not LEASE_LECTURE.search(original):
+        return original
+    kept: list[str] = []
+    dropped = False
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if BUY_LEASE.search(part) and not LEASE_LECTURE.search(part):
+            kept.append(part)
+            continue
+        if LEASE_LECTURE.search(part):
+            dropped = True
+            continue
+        kept.append(part)
+    if not dropped:
+        return original
+    text = " ".join(p.strip() for p in kept if p.strip()).strip()
+    return _tidy(text, original) if text else SHORT_LEASE
 CREDIT_PRODUCT = re.compile(
     r"("
     r"кредит рассматрива|"
@@ -1112,6 +1147,41 @@ INVITE_FIRST = (
     "мы на Автозаводской 18, ТЦ Ривьера, -2 этаж"
 )
 UNTIL_CLOSE = re.compile(r"до\s*20[:.]00", re.IGNORECASE)
+
+
+WEEKDAY_AGREE = re.compile(
+    r"("
+    r"(пн|вт|ср|чт|пт|понедельник\w*|вторник\w*|сред[аеуы]|четверг\w*|пятниц\w*)"
+    r".{0,28}(подход|удобн|хорошо|набер|позвон|свяж)|"
+    r"(подход|набер|позвон|свяж).{0,28}"
+    r"(пн|вт|ср|чт|пт|понедельник|вторник|сред|четверг|пятниц)|"
+    r"в этот день"
+    r")",
+    re.IGNORECASE,
+)
+HOURS_EVERY_DAY = re.compile(r"каждый день|ежедневн|выходн", re.IGNORECASE)
+WEEKDAY_WAIT_CALL = (
+    "Работаем каждый день с 10:00 до 20:00, ждать понедельника не нужно. "
+    "В ближайшее время наберу"
+)
+WEEKDAY_WAIT_VISIT = (
+    "Работаем каждый день с 10:00 до 20:00, в том числе в выходные. "
+    "Посмотреть можно в любой день"
+)
+
+
+def soften_weekday_wait(
+    text: str, *, asked_our: bool = False, about_call: bool = False
+) -> str:
+    """Не подтверждаем будний слот, если клиент гадает про наш график."""
+    original = text or ""
+    if not asked_our:
+        return original
+    if original.strip() and HOURS_EVERY_DAY.search(original) and not WEEKDAY_AGREE.search(
+        original
+    ):
+        return original
+    return WEEKDAY_WAIT_CALL if about_call else WEEKDAY_WAIT_VISIT
 
 
 def fix_hours(text: str) -> str:
