@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>MCQUEEN DETAILING — logo rebuild</title>
+<style>
+  html,body{margin:0;background:#000}
+  .wrap{width:1400px;height:560px;display:grid;place-items:center}
+  svg{width:1180px;height:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+<svg viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f4f4f6"/>
+      <stop offset="1" stop-color="#c9cdd4"/>
+    </linearGradient>
+    <linearGradient id="redline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e23b3b"/>
+      <stop offset=".55" stop-color="#c51f24"/>
+      <stop offset="1" stop-color="#c51f24" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.1" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- car silhouette, facing right -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M78 132
+             C 148 128, 188 74, 268 70
+             C 318 68, 368 78, 430 98
+             C 478 114, 538 122, 612 128
+             C 648 130, 678 128, 702 124
+             C 718 132, 712 138, 690 140
+             C 640 146, 560 148, 470 146
+             C 360 144, 220 142, 120 144
+             C 92 144, 74 140, 78 132 Z"
+          stroke="url(#silver)" stroke-width="7"/>
+    <path d="M92 128 C 150 124, 186 82, 248 76"
+          stroke="url(#redline)" stroke-width="8"/>
+    <path d="M318 86 C 360 96, 410 108, 470 118"
+          stroke="#e8eaee" stroke-width="2.4" opacity=".85"/>
+  </g>
+
+  <!-- MCQUEEN: M красная, остальное белое, одно слово -->
+  <text x="88" y="236"
+        font-family="Arial Narrow, Arial, Helvetica Neue, sans-serif"
+        font-size="96" font-weight="700" letter-spacing="6">
+    <tspan fill="#c51f24">M</tspan><tspan fill="#f4f5f7">CQUEEN</tspan>
+  </text>
+
+  <!-- DETAILING -->
+  <line x1="88" y1="272" x2="250" y2="272" stroke="#c51f24" stroke-width="3"/>
+  <line x1="650" y1="272" x2="812" y2="272" stroke="#c51f24" stroke-width="3"/>
+  <text x="450" y="282" text-anchor="middle"
+        font-family="Arial Narrow, Arial, Helvetica Neue, sans-serif"
+        font-size="26" font-weight="600" letter-spacing="16" fill="#d8dbe0">DETAILING</text>
+</svg>
+</div>
+</body>
+</html>
