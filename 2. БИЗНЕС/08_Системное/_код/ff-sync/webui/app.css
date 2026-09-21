@@ -473,7 +473,8 @@ table.tbl tbody tr.clickable:hover{background:rgba(0,91,255,.08)}
 .ask-stepper button{
   width:56px;height:56px;flex-shrink:0;border-radius:16px;border:1px solid var(--line-2);
   background:var(--input-bg);color:var(--ink);font-family:var(--font);font-size:28px;font-weight:500;
-  line-height:1;cursor:pointer;transition:border-color .15s,color .15s,opacity .15s
+  line-height:1;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;
+  transition:border-color .15s,color .15s,opacity .15s
 }
 .ask-stepper button:hover{border-color:var(--accent);color:var(--accent)}
 .ask-stepper button:disabled{opacity:.35;cursor:default;border-color:var(--line);color:var(--mute-2)}

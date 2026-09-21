@@ -1443,13 +1443,16 @@ async function asmDone() {
   const supplies = pickedPickupSupplies();
   if (supplies.length === 1) {
     const sup = supplies[0];
+    const limit = Math.max(0, Math.floor(Number(sup.orders || 0) / 2) - Number(sup.boxes || 0));
     const answer = await askNumber(
       "Сколько коробов в поставке " + sup.ext_id + "?",
       "WB печатает QR на короб, а не на поставку. Заведи столько коробов, сколько реально собрал:"
         + " максимум " + Math.max(1, Math.floor(sup.orders / 2)) + " при " + sup.orders + " заданиях (WB даёт половину, округление вниз), уже создано " + sup.boxes + "."
         + " Состав короба площадке не передаётся, его заводит ПВЗ при приёмке. Ноль — пропустить.",
       "Собрано",
-      Math.max(1, sup.boxes ? 1 : 1)
+      limit ? 1 : 0,
+      0,
+      limit
     );
     if (answer === false) return;
     boxes = Number(answer) || 0;
@@ -1760,9 +1763,12 @@ $("aSync").onclick = async () => {
 // поставки в доставку. Обещание разрешается кнопкой, а не ответом сервера.
 let askResolve = null;
 let askIsNum = false;
+let askMin = 0;
+let askMax = 200;
+let askHoldTimer = 0;
 function ask(title, text, okLabel) {
   askIsNum = false;
-  $("askNum").hidden = true;
+  $("askNumWrap").hidden = true;
   $("askTitle").textContent = title;
   $("askText").textContent = text;
   $("askYes").textContent = okLabel || "Подтверждаю";
@@ -1770,29 +1776,90 @@ function ask(title, text, okLabel) {
   return new Promise((resolve) => { askResolve = resolve; });
 }
 
+function askNumValue() {
+  const raw = String($("askNum").value || "").replace(/\D/g, "");
+  return raw === "" ? NaN : Number(raw);
+}
+
+function setAskNum(n, loose) {
+  if (!Number.isFinite(n)) {
+    if (loose) { $("askNum").value = ""; refreshAskStepper(); return; }
+    n = askMin;
+  }
+  n = Math.max(askMin, Math.min(askMax, Math.round(n)));
+  $("askNum").value = String(n);
+  refreshAskStepper();
+}
+
+function refreshAskStepper() {
+  const n = askNumValue();
+  $("askNumMinus").disabled = Number.isFinite(n) ? n <= askMin : false;
+  $("askNumPlus").disabled = Number.isFinite(n) ? n >= askMax : false;
+}
+
+function stepAskNum(dir) {
+  const n = askNumValue();
+  setAskNum((Number.isFinite(n) ? n : askMin) + dir);
+}
+
+function holdAskNum(dir, ev) {
+  ev.preventDefault();
+  stopAskHold();
+  stepAskNum(dir);
+  askHoldTimer = setTimeout(() => {
+    askHoldTimer = setInterval(() => stepAskNum(dir), 80);
+  }, 380);
+}
+
+function stopAskHold() {
+  clearTimeout(askHoldTimer);
+  clearInterval(askHoldTimer);
+  askHoldTimer = 0;
+}
+
 // то же окно, но с числом: «сколько коробов» спрашивается ровно здесь, на
-// «Собрано», как договорились с Сергеем
-function askNumber(title, text, okLabel, value) {
+// «Собрано», как договорились с Сергеем. Клавиатуру сами не открываем:
+// на складе тыкают +/−, число набирают только если тапнули в поле.
+function askNumber(title, text, okLabel, value, minVal, maxVal) {
   const promise = ask(title, text, okLabel);
   askIsNum = true;
-  $("askNum").value = value || 1;
-  $("askNum").hidden = false;
-  $("askNum").focus();
-  $("askNum").select();
+  askMin = minVal == null ? 0 : Number(minVal);
+  askMax = maxVal == null ? 200 : Number(maxVal);
+  if (askMax < askMin) askMax = askMin;
+  $("askNumWrap").hidden = false;
+  setAskNum(value == null ? askMin : Number(value));
   return promise;
 }
 
 function askDone(answer) {
+  stopAskHold();
   $("askModal").classList.remove("on");
-  $("askNum").hidden = true;
-  const value = answer && askIsNum ? Math.max(0, Number($("askNum").value) || 0) : answer;
+  $("askNumWrap").hidden = true;
+  if (askIsNum && answer) setAskNum(askNumValue());
+  const value = answer && askIsNum ? Math.max(askMin, Number($("askNum").value) || 0) : answer;
   if (askResolve) askResolve(value);
   askResolve = null;
   askIsNum = false;
 }
 $("askYes").onclick = () => askDone(true);
 $("askNo").onclick = () => askDone(false);
-$("askNum").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); askDone(true); } };
+$("askNum").onkeydown = (e) => {
+  if (e.key === "Enter") { e.preventDefault(); askDone(true); }
+  if (e.key === "ArrowUp") { e.preventDefault(); stepAskNum(1); }
+  if (e.key === "ArrowDown") { e.preventDefault(); stepAskNum(-1); }
+};
+$("askNum").oninput = () => {
+  const raw = String($("askNum").value || "").replace(/\D/g, "");
+  $("askNum").value = raw;
+  refreshAskStepper();
+};
+$("askNum").onblur = () => { if (askIsNum) setAskNum(askNumValue()); };
+$("askNumMinus").onpointerdown = (e) => holdAskNum(-1, e);
+$("askNumPlus").onpointerdown = (e) => holdAskNum(1, e);
+["pointerup", "pointercancel", "pointerleave"].forEach((ev) => {
+  $("askNumMinus").addEventListener(ev, stopAskHold);
+  $("askNumPlus").addEventListener(ev, stopAskHold);
+});
 $("askModal").onclick = (e) => { if (e.target === $("askModal")) askDone(false); };
 
 
@@ -2115,12 +2182,15 @@ function bindWbDetail() {
     const have = ((state.wbDetail && state.wbDetail.boxes) || []).length;
     const orders = ((state.wbDetail && state.wbDetail.rows) || []).length;
     const limit = Math.floor(orders / 2);
+    const left = Math.max(0, limit - have);
     const answer = await askNumber(
       "Сколько коробов добавить?",
       "WB печатает QR на короб. Состав внутрь площадке не передаётся, товар выбирать не нужно."
         + " В поставке " + orders + " заданий, уже " + have + " кор., максимум " + limit + " (половина, округление вниз).",
       "Добавить",
-      1
+      left ? 1 : 0,
+      left ? 1 : 0,
+      left
     );
     if (answer === false || !Number(answer)) return;
     await guard(async () => {
