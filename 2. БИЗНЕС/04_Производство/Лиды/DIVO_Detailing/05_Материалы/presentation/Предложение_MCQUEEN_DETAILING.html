@@ -875,10 +875,11 @@
     .tower-fig{height:auto;width:100%;margin:4px auto 10px;flex-direction:column;align-items:center}
     .tower-fig img{height:220px;width:auto}
     .thesis{grid-template-columns:1fr !important}
-    .hitem{grid-template-columns:28px 1fr !important;align-items:start}
-    .hitem .n{grid-column:1;grid-row:1 / span 2;padding-top:2px}
-    .hitem b{grid-column:2;grid-row:1}
-    .hitem > span:not(.n){grid-column:2;grid-row:2;margin-top:2px}
+    .hitem{display:flex !important;flex-direction:column !important;align-items:stretch !important;gap:3px;padding:12px 0}
+    .hitem .n,.hitem b,.hitem > span{display:block !important;width:100% !important;max-width:100% !important;min-width:0 !important;position:static !important;grid-column:auto !important;grid-row:auto !important}
+    .hitem .n{margin:0}
+    .hitem b{margin:0}
+    .hitem > span:not(.n){margin:0}
     .tlbl{position:static;left:auto;text-align:center}
     .tlbl span{max-width:none}
     .tlbl.up{order:-1;margin-bottom:6px}
