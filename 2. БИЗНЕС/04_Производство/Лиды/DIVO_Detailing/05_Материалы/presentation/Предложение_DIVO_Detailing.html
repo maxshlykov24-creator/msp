@@ -717,13 +717,15 @@
   .tlbl span{display:block;margin-top:3px;font-size:12px;color:var(--body);font-weight:500;letter-spacing:0;text-transform:none;max-width:11em}
   .tlbl.up{top:18%}
   .tlbl.base{bottom:5%}
-  .tower-copy .lead{margin-top:0;font-size:15.5px;max-width:none;line-height:1.42}
-  .tower-copy .lead.second{margin-top:8px}
-  .hlist{display:grid;gap:7px;margin-top:12px}
-  .hitem{display:flex;gap:10px;align-items:flex-start}
-  .hitem .n{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--a2);letter-spacing:.06em;padding-top:3px;flex:0 0 auto}
-  .hitem b{display:block;font-size:14.5px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
-  .hitem div > span{display:block;margin-top:2px;font-size:12.5px;color:var(--body);line-height:1.34;font-weight:500}
+  .thesis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .thesis p{margin:0;height:100%;box-sizing:border-box;padding:11px 13px 12px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:14px}
+  .thesis b{display:block;margin-bottom:4px;font-size:13px;font-weight:700;letter-spacing:-.02em;color:var(--a2)}
+  .thesis span{display:block;font-size:12.5px;line-height:1.35;color:var(--body);font-weight:500}
+  .hlist{display:grid;gap:0;margin-top:10px}
+  .hitem{display:grid;grid-template-columns:26px minmax(148px,168px) 1fr;gap:4px 12px;align-items:baseline;padding:7px 2px;border-top:1px solid var(--line)}
+  .hitem .n{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--a2);letter-spacing:.06em}
+  .hitem b{font-size:14px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
+  .hitem > span{font-size:12.5px;color:var(--body);line-height:1.32;font-weight:500}
 
   .card,.anchor,.phase,.bonus,.step,.mock,.shot-card{
     background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;
@@ -871,6 +873,9 @@
     .launch-grid{grid-template-columns:1fr 1fr !important}
     .tower-row{grid-template-columns:1fr !important}
     .tower-fig{height:320px;margin:6px auto 8px}
+    .thesis{grid-template-columns:1fr !important}
+    .hitem{grid-template-columns:26px 1fr !important}
+    .hitem > span{grid-column:2}
     .tlbl{left:calc(50% + 64px)}
   }
 
@@ -971,11 +976,14 @@
     .launch-grid .card .num{margin-bottom:3px}
     .tower-row{grid-template-columns:62mm 1fr !important;gap:6mm;margin-top:3mm;align-items:center}
     .tower-fig{height:132mm}
-    .tower-copy .lead{font-size:10pt !important;margin-top:0 !important}
-    .tower-copy .lead.second{margin-top:4px !important}
-    .hlist{gap:3px;margin-top:6px}
-    .hitem b{font-size:10pt}
-    .hitem div > span{font-size:8pt;line-height:1.28}
+    .thesis{gap:2.5mm}
+    .thesis p{padding:2.2mm 2.6mm}
+    .thesis b{font-size:8.5pt;margin-bottom:1mm}
+    .thesis span{font-size:7.5pt;line-height:1.25}
+    .hlist{margin-top:2.5mm}
+    .hitem{grid-template-columns:7mm 32mm 1fr !important;gap:1mm 2mm;padding:1.2mm 0}
+    .hitem b{font-size:8.5pt}
+    .hitem > span{font-size:7.5pt;line-height:1.22}
     .tlbl b{font-size:8pt}
     .tlbl span{font-size:7.5pt}
     .progress,.nav,.counter,.print-btn{display:none !important}
@@ -1600,14 +1608,16 @@
         <div class="tlbl base"><b>Фундамент</b><span>первый уровень</span></div>
       </div>
       <div class="tower-copy stag">
-        <p class="lead">Фундамент собираем первым. Сложить его криво, а потом переделывать на живых сделках, больнее и дороже. Поэтому его не собирают самостоятельно и не отдают без опыта в таких процессах.</p>
-        <p class="lead second">Высота строится уже на нём. Заявки система держит. Дальше поднимаем конверсию и пропускную способность: точность аналитики и более глубокая автоматизация.</p>
+        <div class="thesis">
+          <p><b>Фундамент первым</b><span>Сложить криво, а потом переделывать на живых сделках, больнее и дороже. Сами не собирают и без опыта не отдают.</span></p>
+          <p><b>Высота на нём</b><span>Заявки система уже держит. Дальше конверсия и пропускная способность: точная аналитика и более глубокая автоматизация.</span></p>
+        </div>
         <div class="hlist">
-          <div class="hitem"><span class="n">01</span><div><b>Сквозная аналитика</b><span>Источник, кампания и объявление, которые принесли деньги. Карты и звонки: подмена номеров и своя ссылка. В сделку падает первоисточник, а не мессенджер, откуда написали.</span></div></div>
-          <div class="hitem"><span class="n">02</span><div><b>Панель и приложение</b><span>Свой сервер и телефон руководителя. Цифры компании, не узкие отчёты amoCRM. Прибыль услуги, отдача мастера, скорость.</span></div></div>
-          <div class="hitem"><span class="n">03</span><div><b>Загрузка мастеров</b><span>Кому отдать машину, видно по срокам и деньгам. Подсказка есть, решение остаётся за вами.</span></div></div>
-          <div class="hitem"><span class="n">04</span><div><b>Клиент салона</b><span>Действующий клиент DIVO Motors отмечается сам, когда обращается. Базы остаются раздельными.</span></div></div>
-          <div class="hitem"><span class="n">05</span><div><b>ИИ на каждом звонке</b><span>Короткая выжимка разговора и что сделать по целям компании.</span></div></div>
+          <div class="hitem"><span class="n">01</span><b>Сквозная аналитика</b><span>Источник, кампания и объявление, которые принесли деньги. Карты и звонки: подмена номера и своя ссылка. В сделку падает первоисточник, а не мессенджер.</span></div>
+          <div class="hitem"><span class="n">02</span><b>Панель и приложение</b><span>Свой сервер и телефон руководителя. Прибыль услуги, отдача мастера, скорость. Не узкие отчёты amoCRM.</span></div>
+          <div class="hitem"><span class="n">03</span><b>Загрузка мастеров</b><span>Кому отдать машину, видно по срокам и деньгам. Подсказка есть, решение остаётся за вами.</span></div>
+          <div class="hitem"><span class="n">04</span><b>Клиент салона</b><span>Действующий клиент DIVO Motors отмечается сам. Базы остаются раздельными.</span></div>
+          <div class="hitem"><span class="n">05</span><b>ИИ на каждом звонке</b><span>Короткая выжимка разговора и что сделать по целям компании.</span></div>
         </div>
       </div>
     </div>
@@ -1688,9 +1698,9 @@
   </section>
 
   <!-- SLIDE 10 — ИНВЕСТИЦИЯ -->
-  <section class="slide" data-title="Инвестиция">
-    <div class="kicker">Инвестиция</div>
-    <h2 class="stag">Два уровня<span class="dot">.</span> Фундамент обязателен<span class="dot">.</span></h2>
+  <section class="slide" data-title="Предложение">
+    <div class="kicker">Предложение</div>
+    <h2 class="stag">Два варианта<span class="dot">.</span></h2>
     <div class="tworow">
       <div class="pack stag">
         <div class="tagline">Вариант 1</div>
