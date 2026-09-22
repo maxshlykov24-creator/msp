@@ -20,8 +20,11 @@ PHRASES = (
     "интеграция",
     "ugc",
 )
-SALES = (lib.PIPELINE_SALES_OLD, lib.PIPELINE_SALES_NEW)
-CLOSED = {lib.ST["won"], lib.ST["lost"]}
+# Успешно реализовано (142) не трогаем: повторное сообщение открывает новую заявку.
+ALLOW = {
+    lib.PIPELINE_SALES_NEW: {lib.ST["new"], lib.ST["in_work"], lib.ST["lost"]},
+    lib.PIPELINE_SALES_OLD: {80719358, 80719298, lib.ST["lost"]},
+}
 
 
 def _stem(phrase: str, token: str) -> bool:
@@ -73,9 +76,8 @@ def _open_sales_lead(amo: lib.Amo, tail: str) -> dict | None:
     leads = (body.get("_embedded") or {}).get("leads") or []
     leads.sort(key=lambda row: row.get("updated_at") or 0, reverse=True)
     for lead in leads:
-        if lead.get("pipeline_id") not in SALES:
-            continue
-        if lead.get("status_id") in CLOSED:
+        allowed = ALLOW.get(lead.get("pipeline_id"))
+        if not allowed or lead.get("status_id") not in allowed:
             continue
         full_st, full = amo.req("GET", f"/api/v4/leads/{lead['id']}?with=contacts")
         if not (200 <= full_st < 300) or not isinstance(full, dict):
@@ -107,7 +109,7 @@ def handle_body(body: dict) -> None:
             continue
         lead = _open_sales_lead(amo, tail)
         if not lead:
-            print(f"  wazzup word {found} no open sales lead", flush=True)
+            print(f"  wazzup word {found} no lead on new, in work, or lost", flush=True)
             continue
         st, _ = amo.req("PATCH", f"/api/v4/leads/{lead['id']}", {
             "pipeline_id": lib.PIPELINE_MKT_NEW,
