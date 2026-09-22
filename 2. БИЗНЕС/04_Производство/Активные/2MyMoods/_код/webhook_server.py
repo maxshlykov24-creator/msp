@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import lib
 import route_stock
 import stage_plan
+import wazzup_in
 
 TZ = ZoneInfo("Europe/Moscow")
 HOST = "127.0.0.1"
@@ -136,6 +137,13 @@ def spawn(events: list[dict]) -> None:
         threading.Thread(target=_safe, args=(lead_id,), daemon=True).start()
 
 
+def _wazzup(body: dict) -> None:
+    try:
+        wazzup_in.handle_body(body)
+    except Exception:
+        traceback.print_exc()
+
+
 def _safe(lead_id: int) -> None:
     try:
         handle_lead(lead_id)
@@ -148,6 +156,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/wazzup/"):
+            path = "/wazzup"
         print(f"{self.address_string()} {self.command} {path}", flush=True)
 
     def _send(self, code: int, body: bytes, content: str = "text/plain; charset=utf-8") -> None:
@@ -166,6 +176,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/wazzup/"):
+            expect = token()
+            if not expect or parsed.path != f"/wazzup/{expect}":
+                self._send(403, b"no")
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length else b""
+            self._send(200, b"ok")
+            try:
+                body = json.loads(raw.decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                return
+            if isinstance(body, dict):
+                threading.Thread(target=_wazzup, args=(body,), daemon=True).start()
+            return
         if parsed.path != "/hook":
             self._send(404, b"no")
             return
