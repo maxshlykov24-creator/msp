@@ -116,8 +116,8 @@ def handle_lead(lead_id: int) -> None:
         if pipeline == lib.PIPELINE_SALES_NEW and lead.get("status_id") == lib.ST["paid"]:
             moved = route_stock.apply_lead(amo, lib.MS(), lead, apply=True)
             if moved in ("pack", "prod"):
+                lead["status_id"] = lib.ST[moved]
                 print(f"  route {lead_id} -> {moved}", flush=True)
-                return
         ensure_tasks(amo, lead)
 
 
