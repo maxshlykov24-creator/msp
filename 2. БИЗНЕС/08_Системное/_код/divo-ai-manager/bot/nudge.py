@@ -267,7 +267,16 @@ def asked_phone(text: str) -> bool:
 
 def is_closed(text: str) -> bool:
     """Клиент снял интерес: не актуально, уже купил, удачи."""
-    return bool(CLOSED.search(text or ""))
+    raw = text or ""
+    if CLOSED.search(raw):
+        return True
+    blob = raw.lower().replace("ё", "е")
+    if not re.search(r"не интересу(ет|ют|ен|на)", blob):
+        return False
+    # «если не интересует станок» — это про бартер, не отказ от машины.
+    if re.search(r"если.{0,50}не интересу", blob):
+        return False
+    return True
 
 
 def is_unheard_media(text: str) -> bool:

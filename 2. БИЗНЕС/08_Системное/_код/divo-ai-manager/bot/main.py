@@ -1001,6 +1001,18 @@ def waiting_for_bot(chat_id: str) -> bool:
         return False
     if "спасибо" in last.lower() and "?" not in last:
         return False
+    # Уже отказался, а потом ругается на догон — модель молчит, очередь
+    # не должна крутить этот чат каждые пять минут.
+    if any(
+        m.get("role") == "user" and nudge.is_closed(m.get("content") or "")
+        for m in hist
+    ):
+        if not (
+            nudge.extract_phone(last)
+            or "?" in last
+            or nudge.wants_call(last)
+        ):
+            return False
     return True
 
 

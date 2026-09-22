@@ -48,6 +48,7 @@ def test_needs_reply():
     assert needs_reply("Клиент прислал видео") is False
     assert needs_reply("не актуально") is False
     assert needs_reply("Неактуально, спасибо") is False
+    assert needs_reply("данное предложение не интересует Спасибо") is False
     assert needs_reply("Удачи парни") is False
     assert needs_reply("подумаю") is True
     assert needs_reply("да актуально") is True
@@ -2086,6 +2087,12 @@ def test_stop_nudge_on_closed_and_voice():
     assert is_closed("не актуален")
     assert is_closed("Удачи парни")
     assert is_closed("уже купил")
+    assert is_closed(
+        "Ищу диллерский и на гарантии , поэтому данное предложение не интересует Спасибо"
+    )
+    assert not is_closed(
+        "если вам не интересует станок, а найдёте клиента на станок"
+    )
     assert not is_closed("да актуально")
     assert not is_closed("неудачи по кредиту")
     assert not is_closed("не надоело ещё")
@@ -2109,6 +2116,13 @@ def test_stop_nudge_on_closed_and_voice():
     closed = after_us + [{"role": "user", "content": "не актуально"}]
     assert should_stop_nudge(closed) is True
     assert refresh({"count": 0, "waiting": True}, closed)["waiting"] is False
+    declined = after_us + [
+        {
+            "role": "user",
+            "content": "Ищу диллерский и на гарантии , поэтому данное предложение не интересует Спасибо",
+        }
+    ]
+    assert should_stop_nudge(declined) is True
 
     after_think = after_us + [
         {"role": "user", "content": "подумаю"},
@@ -2116,6 +2130,46 @@ def test_stop_nudge_on_closed_and_voice():
     ]
     assert should_stop_nudge(after_think) is True
     assert refresh({"count": 0, "waiting": True}, after_think)["waiting"] is False
+
+
+def test_waiting_skips_complaint_after_closed():
+    from bot import main as bot_main, store
+
+    docs = {
+        "av:closed": {
+            "chat_id": "av:closed",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "данное предложение не интересует Спасибо",
+                },
+                {"role": "assistant", "content": "Понял вас"},
+                {
+                    "role": "user",
+                    "content": "Ну я же выше написал и вы даже написали понял вас, смысл пишите",
+                },
+            ],
+            "nudge": {},
+        }
+    }
+    old = (store.load_doc, store.is_paused, store.pause_info)
+    store.load_doc = lambda cid: docs[str(cid)]
+    store.is_paused = lambda cid: False
+    store.pause_info = lambda cid: {}
+    try:
+        assert bot_main.waiting_for_bot("av:closed") is False
+    finally:
+        store.load_doc, store.is_paused, store.pause_info = old
+
+
+def test_retry_seconds_honors_retry_after():
+    from bot.llm import _retry_seconds
+
+    class Resp:
+        headers = {"Retry-After": "3"}
+
+    assert _retry_seconds(Resp(), 0) == 3.0
+    assert _retry_seconds(type("R", (), {"headers": {}})(), 0) == 2.0
 
 
 def test_vat_from_listing_without_cme_flag():

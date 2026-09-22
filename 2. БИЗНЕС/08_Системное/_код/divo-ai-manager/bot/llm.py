@@ -6,7 +6,9 @@ IP, поэтому на VPS работает только прямой Gemini. �
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 
 import httpx
 
@@ -60,38 +62,70 @@ def _openrouter_body(model: str, messages: list[dict]) -> dict:
     return body
 
 
+def _retry_seconds(resp: httpx.Response, attempt: int) -> float:
+    """Пауза после 429. Сначала заголовок OpenRouter, иначе 2/4/8 сек."""
+    raw = resp.headers.get("Retry-After") or resp.headers.get("X-RateLimit-Reset")
+    if raw:
+        try:
+            val = float(raw)
+            now = time.time()
+            if val > 1e10:
+                val = val / 1000.0 - now
+            elif val > 1e9:
+                val = val - now
+            if val > 0:
+                return min(20.0, max(1.0, val))
+        except ValueError:
+            pass
+    return min(20.0, 2.0 * (2 ** attempt))
+
+
 async def _call(client: httpx.AsyncClient, model: str, messages: list[dict]) -> str:
-    resp = await client.post(
-        URL,
-        headers={
-            "Authorization": "Bearer %s" % settings.openrouter_key,
-            "HTTP-Referer": "https://msproduct.ru",
-            "X-Title": "DIVO Motors AI manager",
-        },
-        json=_openrouter_body(model, messages),
-    )
-    if resp.status_code != 200:
-        raise LlmError("%s: HTTP %s %s" % (model, resp.status_code, resp.text[:300]))
-    data = resp.json()
-    choices = data.get("choices") or []
-    if not choices:
-        raise LlmError("%s: пустой ответ %s" % (model, str(data)[:300]))
-    choice = choices[0]
-    usage = data.get("usage") or {}
-    details = usage.get("prompt_tokens_details") or {}
-    log.info(
-        "%s finish=%s tokens in=%s out=%s кэш чтение=%s запись=%s цена=%s",
-        model,
-        choice.get("finish_reason"),
-        usage.get("prompt_tokens"),
-        usage.get("completion_tokens"),
-        details.get("cached_tokens"),
-        details.get("cache_write_tokens"),
-        usage.get("cost"),
-    )
-    if choice.get("finish_reason") == "length":
-        raise LlmError("%s: ответ обрезан по лимиту токенов" % model)
-    return (choice.get("message") or {}).get("content") or ""
+    last: LlmError | None = None
+    for attempt in range(3):
+        resp = await client.post(
+            URL,
+            headers={
+                "Authorization": "Bearer %s" % settings.openrouter_key,
+                "HTTP-Referer": "https://msproduct.ru",
+                "X-Title": "DIVO Motors AI manager",
+            },
+            json=_openrouter_body(model, messages),
+        )
+        if resp.status_code == 429:
+            wait = _retry_seconds(resp, attempt)
+            last = LlmError("%s: HTTP %s %s" % (model, resp.status_code, resp.text[:300]))
+            log.warning(
+                "модель %s: 429, жду %.0f сек, попытка %d",
+                model,
+                wait,
+                attempt + 1,
+            )
+            await asyncio.sleep(wait)
+            continue
+        if resp.status_code != 200:
+            raise LlmError("%s: HTTP %s %s" % (model, resp.status_code, resp.text[:300]))
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise LlmError("%s: пустой ответ %s" % (model, str(data)[:300]))
+        choice = choices[0]
+        usage = data.get("usage") or {}
+        details = usage.get("prompt_tokens_details") or {}
+        log.info(
+            "%s finish=%s tokens in=%s out=%s кэш чтение=%s запись=%s цена=%s",
+            model,
+            choice.get("finish_reason"),
+            usage.get("prompt_tokens"),
+            usage.get("completion_tokens"),
+            details.get("cached_tokens"),
+            details.get("cache_write_tokens"),
+            usage.get("cost"),
+        )
+        if choice.get("finish_reason") == "length":
+            raise LlmError("%s: ответ обрезан по лимиту токенов" % model)
+        return (choice.get("message") or {}).get("content") or ""
+    raise last or LlmError("%s: HTTP 429" % model)
 
 
 async def _call_gemini(
