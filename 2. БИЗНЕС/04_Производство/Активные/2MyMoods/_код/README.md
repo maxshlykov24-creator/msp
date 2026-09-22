@@ -5,6 +5,8 @@
 | Файл | Что |
 |---|---|
 | `setup_pipelines.py` | Новые воронки рядом |
+| `webhook_server.py` | Один вебхук amo на все этапы новых воронок |
+| `stage_plan.py` | Сроки задач от момента перехода |
 | `sla_worker.py` | Задачи SLA на новых id. `--apply` |
 | `route_stock.py` | Оплачен → сборка/производство. `--apply` |
 | `sync_liveinform.py` | Трек → Получен. `--apply` |

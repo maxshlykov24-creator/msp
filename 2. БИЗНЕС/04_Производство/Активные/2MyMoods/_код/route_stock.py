@@ -60,11 +60,8 @@ def decide_line(ms: lib.MS, pos: dict, names: list[str], ids: set[str]) -> str:
         return "skip"
     aid = ass.get("id") or lib.href_id(ass.get("meta"))
     atype = (ass.get("meta") or {}).get("type") or "product"
-    qty = float(pos.get("quantity") or 0)
-    reserve = float(pos.get("reserve") or 0)
     row = stock_msk(ms, aid, atype) if aid else {}
-    stock = float(row.get("stock") or 0)
-    before = stock + reserve
+    before = float(row.get("stock") or 0)
     vitr = is_vitrina(name, aid, names, ids)
     if before > 1:
         return "pack"
@@ -107,11 +104,33 @@ def find_ms_order(ms: lib.MS, amo: lib.Amo, lead: dict) -> dict | None:
     return None
 
 
+def apply_lead(amo: lib.Amo, ms: lib.MS, lead: dict, apply: bool) -> str:
+    """pack, prod или hold. hold = остаётся в оплачен."""
+    names, ids = load_vitrina()
+    order = find_ms_order(ms, amo, lead)
+    if not order:
+        print(f"  {lead['id']}: нет заказа МС, оставляю оплачен", flush=True)
+        return "hold"
+    decision = decide_order(ms, order, names, ids)
+    target = {"pack": lib.ST["pack"], "prod": lib.ST["prod"]}.get(decision)
+    print(f"  {lead['id']} заказ {order.get('name')} → {decision}", flush=True)
+    if not target or not apply:
+        return decision if target or decision == "hold" else "hold"
+    st, _ = amo.req("PATCH", f"/api/v4/leads/{lead['id']}", {
+        "status_id": target,
+        "pipeline_id": lib.PIPELINE_SALES_NEW,
+    })
+    print(f"    patch [{st}]", flush=True)
+    if 200 <= st < 300:
+        return decision
+    return "hold"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
-    names, ids = load_vitrina()
+    _names, ids = load_vitrina()
     amo = lib.Amo()
     ms = lib.MS()
     leads = amo.iter_leads(
@@ -119,20 +138,7 @@ def main() -> None:
     )
     print(f"Оплачен в Продажи 2MY: {len(leads)}  витрина id={len(ids)}  apply={args.apply}")
     for lead in leads:
-        order = find_ms_order(ms, amo, lead)
-        if not order:
-            print(f"  {lead['id']}: нет заказа МС, оставляю оплачен")
-            continue
-        decision = decide_order(ms, order, names, ids)
-        target = {"pack": lib.ST["pack"], "prod": lib.ST["prod"]}.get(decision)
-        print(f"  {lead['id']} заказ {order.get('name')} → {decision}")
-        if not target or not args.apply:
-            continue
-        st, _ = amo.req("PATCH", f"/api/v4/leads/{lead['id']}", {
-            "status_id": target,
-            "pipeline_id": lib.PIPELINE_SALES_NEW,
-        })
-        print(f"    patch [{st}]")
+        apply_lead(amo, ms, lead, args.apply)
 
 
 if __name__ == "__main__":
