@@ -76,16 +76,29 @@ def open_tasks(amo: lib.Amo, lead_id: int) -> list[dict]:
 
 
 def ensure_tasks(amo: lib.Amo, lead: dict) -> None:
-    existing = {(t.get("text") or "", t.get("responsible_user_id")) for t in open_tasks(amo, lead["id"])}
     moment = datetime.now(TZ)
+    planned = []
     for text, due, who in stage_plan.jobs(lead["pipeline_id"], lead["status_id"], moment):
         rid = who or lead.get("responsible_user_id") or lib.USER_OKSANA
-        if (text, rid) in existing:
-            continue
         if lead["status_id"] == lib.ST["sent"] and text.startswith("Проставить трек"):
             track = amo.cf(lead, lib.FIELD_TRACK) or amo.cf(lead, lib.FIELD_CDEK) or amo.cf(lead, lib.FIELD_TRACK_MS)
             if track:
                 continue
+        planned.append((text, due, rid))
+    planned.sort(key=lambda row: row[1].timestamp())
+    wanted = {(text, rid) for text, _, rid in planned}
+    for task in open_tasks(amo, lead["id"]):
+        key = (task.get("text") or "", task.get("responsible_user_id"))
+        if key in wanted:
+            continue
+        amo.req("PATCH", f"/api/v4/tasks/{task['id']}", {
+            "is_completed": True,
+            "result": {"text": "этап сменился"},
+        })
+    existing = {(t.get("text") or "", t.get("responsible_user_id")) for t in open_tasks(amo, lead["id"])}
+    for text, due, rid in planned:
+        if (text, rid) in existing:
+            continue
         payload = {
             "task_type_id": 1,
             "text": text,
@@ -96,7 +109,6 @@ def ensure_tasks(amo: lib.Amo, lead: dict) -> None:
         }
         st, _ = amo.req("POST", "/api/v4/tasks", [payload])
         print(f"  task {lead['id']} [{st}] {text} -> {due:%d.%m %H:%M} user {rid}", flush=True)
-        existing.add((text, rid))
 
 
 def handle_lead(lead_id: int) -> None:
