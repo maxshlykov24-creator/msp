@@ -16,7 +16,7 @@
 обрезать его нельзя, проверку кода делает площадка.
 """
 
-from db import get_shipments_by_ids, get_cabinet, replace_shipment_marks
+from db import get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
 from shipments_pull import gtin_of
 
@@ -318,6 +318,7 @@ def plan(ship_id):
         out = _wb_plan(row, cab)
     else:
         raise KizError("неизвестная площадка %s" % row["marketplace"])
+    saved = [r["code"] for r in list_shipment_marks([row["id"]])]
     out.update(
         {
             "id": row["id"],
@@ -327,6 +328,9 @@ def plan(ship_id):
             "name": row["name"] or "",
             "qty": int(float(row["qty"] or 1)),
             "marks": int(row["marks_count"] or 0),
+            # уже просканированное показываем снова: повторная отправка затирает
+            # прежний набор целиком, и пустой список стёр бы принятые коды
+            "codes": saved,
         }
     )
     return out

@@ -891,8 +891,9 @@ def assembly_work(data: dict = Body(...), ff_session: str = Cookie(default="")):
 def assembly_take(data: dict = Body(...), ff_session: str = Cookie(default="")):
     """«Взять в сборку»: WB уходит в поставку, Ozon получает складскую отметку.
 
-    Поставка создаётся сама — своего «взять» у WB нет, задание попадает в сборку
-    вместе с добавлением в поставку.
+    Своего «взять» у WB нет. Открытой поставки нет — создаём новую. Открытая
+    есть — без выбора склада ничего не пишем, в ответе список, куда добавить.
+    `preview` только смотрит этот список.
     """
     login = who(ff_session)
     init_db()
@@ -901,8 +902,13 @@ def assembly_take(data: dict = Body(...), ff_session: str = Cookie(default="")):
     ids = data.get("ids") or []
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
+    raw_choices = data.get("choices")
+    choices = raw_choices if isinstance(raw_choices, dict) else None
     try:
-        return {"ok": True, **supply_flow.take(ids, author=login)}
+        return {
+            "ok": True,
+            **supply_flow.take(ids, author=login, choices=choices, preview=bool(data.get("preview"))),
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

@@ -401,6 +401,7 @@ assert body["products"][0]["exemplars"][0]["marks"] == [
 saved = [r["code"] for r in db.list_shipment_marks([oz_kiz])]
 assert saved == codes, saved
 assert db.get_shipments_by_ids([oz_kiz])[0]["marks_count"] == 2, dict(db.get_shipments_by_ids([oz_kiz])[0])
+assert kiz.plan(oz_kiz)["codes"] == codes, "окно КиЗ открылось пустым и стёрло бы принятые коды"
 
 # 16. Честный знак забраковал код: на площадку не отправляем и своё не затираем
 CALLS.clear()
@@ -471,6 +472,41 @@ assert all(db.get_shipments_by_ids([x])[0]["work_state"] == "assembling" for x i
 # повторное нажатие в ту же поставку не льёт: задание уже в ней
 again = supply_flow.take(mgt, author="тест")
 assert not again["supplies"] and any("Уже в поставке" in n for n in again["notes"]), again
+
+# 19б. открытая поставка есть — молча в неё не кладём. 22.09 так новые заказы
+# уехали в поставку с двумя проблемными товарами, а вынуть их WB не даёт.
+pick = db.upsert_shipment(
+    client_id, wb_cab, "wb", "fbs", "205", "Новый", "2026-09-05", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:20", "cargo_type": "1"},
+)
+held = supply_flow.take([pick], author="тест")
+assert held["need_choice"] and not held["supplies"], held
+assert not (db.get_shipments_by_ids([pick])[0]["supply_ext"] or ""), "положили без выбора"
+key = held["groups"][0]["key"]
+fresh_sup = supply_flow.take([pick], author="тест", choices={key: "new"})
+assert len(fresh_sup["supplies"]) == 1, fresh_sup
+assert fresh_sup["supplies"][0]["ext_id"] not in {s["ext_id"] for s in made}, fresh_sup
+pick2 = db.upsert_shipment(
+    client_id, wb_cab, "wb", "fbs", "206", "Новый", "2026-09-05", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:21", "cargo_type": "1"},
+)
+mgt_sup = [s for s in made if str(s["cargo_type"]) == "1"][0]
+joined = supply_flow.take([pick2], author="тест", choices={key: mgt_sup["id"]})
+assert joined["supplies"][0]["ext_id"] == mgt_sup["ext_id"], joined
+assert db.get_shipments_by_ids([pick2])[0]["supply_ext"] == mgt_sup["ext_id"]
+pick3 = db.upsert_shipment(
+    client_id, wb_cab, "wb", "fbs", "207", "Новый", "2026-09-05", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-05 10:22", "cargo_type": "1"},
+)
+try:
+    supply_flow.take([pick3], author="тест", choices={key: 99999})
+    raise AssertionError("приняли чужую поставку")
+except ValueError as exc:
+    assert "закрыта" in str(exc) or "габарита" in str(exc), exc
+assert not (db.get_shipments_by_ids([pick3])[0]["supply_ext"] or "")
 
 # 20. габарит короба больше не запрещает: в ЛК выбрали ПВЗ, значит крупный
 # товар тоже едет туда и получает грузоместо. Раньше мы отказывали сами и
@@ -560,7 +596,7 @@ big = db.upsert_shipment(
     "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
     extra={"status_group": "new", "accepted_at": "2026-09-05 10:10", "cargo_type": "3"},
 )
-out = supply_flow.take([big], author="тест")
+out = supply_flow.take([big], author="тест", choices={"%s:%s:3" % (client_id, wb_cab): "new"})
 assert len(out["supplies"]) == 1, out
 big_sup = db.get_wb_supply(out["supplies"][0]["id"])
 assert str(big_sup["cargo_type"]) == "3", dict(big_sup)
@@ -705,13 +741,22 @@ def lk_supplies(method, url, headers=None, **kw):
 
 wb_supply.req = lk_supplies
 try:
-    took = supply_flow.take([plus_one], author="тест")
+    # поставка из ЛК видна в выборе, прежняя СЦ туда не попадает: её уже сдали.
+    # Молча в поставку из кабинета больше не кладём — склад подтверждает сам.
+    looked = supply_flow.take([plus_one], author="тест")
+    assert looked["need_choice"] and not looked["supplies"], looked
+    assert not (db.get_shipments_by_ids([plus_one])[0]["supply_ext"] or "")
+    assert db.get_wb_supply(stale_sid)["state"] == "delivered", dict(db.get_wb_supply(stale_sid))
+    offers = looked["groups"][0]["supplies"]
+    assert "WB-GI-STALE" not in [s["ext_id"] for s in offers], offers
+    lk = next(s for s in offers if s["ext_id"] == lk_ext)
+    took = supply_flow.take(
+        [plus_one], author="тест", choices={looked["groups"][0]["key"]: lk["id"]}
+    )
 finally:
     wb_supply.req = real_wb
 assert len(took["supplies"]) == 1, took
 assert took["supplies"][0]["ext_id"] == lk_ext, took
-# прежняя поставка на площадке закрыта — у нас она тоже перестала быть открытой
-assert db.get_wb_supply(stale_sid)["state"] == "delivered", dict(db.get_wb_supply(stale_sid))
 landed = db.get_shipments_by_ids([plus_one])[0]
 assert landed["supply_ext"] == lk_ext and landed["office"] == statuses.PVZ, dict(landed)
 
