@@ -141,6 +141,11 @@ def _ozon_plan(row, cab):
             }
         )
     note = ""
+    if product_marked(row):
+        qty = max(1, int(float(row["qty"] or 1)))
+        if need < qty:
+            need = qty
+            note = "Товар с маркировкой: код обязателен у нас."
     if row["status_group"] and row["status_group"] != "new":
         note = "Ozon принимает коды только до сборки: отправление уже ушло дальше «ожидает упаковки»."
     return {"need": need, "have": have, "products": products, "note": note}
@@ -263,25 +268,82 @@ def _wb_sgtin(order):
     return None
 
 
+def product_marked(row):
+    """Карточка в нашем каталоге помечена как маркируемая.
+
+    Это сильнее ответа площадки. WB часто пишет optional по заказу, у которого
+    в карточке needKiz, и без нашей проверки такой товар уезжает без кода.
+    """
+    from db import find_cache
+
+    keys = row.keys() if hasattr(row, "keys") else ()
+    client_id = row["client_id"] if "client_id" in keys else None
+    if not client_id:
+        return False
+    barcode = (row["barcode"] or "") if "barcode" in keys else ""
+    article = (row["article"] or "") if "article" in keys else ""
+    hits = find_cache(client_id, barcode=barcode or None, article=article or None)
+    for hit in hits:
+        if "need_kiz" in hit.keys() and hit["need_kiz"]:
+            return True
+    return False
+
+
+def missing_mark_note(rows):
+    """Текст отказа, если маркированный товар идёт дальше без кодов. Пусто, если можно."""
+    missing = []
+    for row in rows:
+        keys = row.keys() if hasattr(row, "keys") else ()
+        if "kind" in keys and str(row["kind"] or "") != "fbs":
+            continue
+        if not product_marked(row):
+            continue
+        qty = max(1, int(float(row["qty"] or 1)))
+        have = int(row["marks_count"] or 0) if "marks_count" in keys else 0
+        if have >= qty:
+            continue
+        label = (row["article"] or "") if "article" in keys else ""
+        if not label and "ext_id" in keys:
+            label = str(row["ext_id"])
+        missing.append("%s: %s из %s" % (label or "заказ", have, qty))
+    if not missing:
+        return ""
+    shown = ", ".join(missing[:6])
+    if len(missing) > 6:
+        shown += " и ещё %s" % (len(missing) - 6)
+    return "Маркированный товар без КиЗ не пропускаем. " + shown
+
+
 def _wb_plan(row, cab):
     order = _wb_meta(cab, row["ext_id"])
     item = _wb_sgtin(order)
+    marked = product_marked(row)
     if not item:
-        # объект метаданных не вернулся — значит такой маркировки у задания быть не может
+        # слота sgtin нет: WB код не примет. Маркированную карточку всё равно не прячем.
+        if marked:
+            qty = max(1, int(float(row["qty"] or 1)))
+            return {
+                "need": qty,
+                "have": 0,
+                "products": [],
+                "note": "Товар с маркировкой, но WB не принимает код по этому заданию.",
+            }
         return {"need": 0, "have": 0, "products": [], "note": "WB не запрашивает коды по этому заданию."}
     decision = str(item.get("decision") or "")
     value = item.get("value")
     have = len(value) if isinstance(value, list) else (1 if value else 0)
-    qty = int(float(row["qty"] or 1))
+    qty = max(1, int(float(row["qty"] or 1)))
     need = qty if decision in WB_WANT else 0
     note = WB_DECISION_RU.get(decision, decision)
     if decision in WB_DONE:
         note = "WB уже принял коды: %s." % note
     elif decision == "pending":
         note = "WB проверяет ранее отправленные коды."
+    elif decision == "optional" and marked:
+        # площадка отгрузку без кода пропустит, склад так делать не должен
+        need = qty
+        note = "Товар с маркировкой: код обязателен у нас, даже если WB его не требует."
     elif decision == "optional":
-        # WB примет код, но без него поставку в доставку всё равно отдаст:
-        # не подсвечиваем как долг, иначе склад побежит искать несуществующий КиЗ
         note = "WB не требует код по этому заданию, но примет его."
     else:
         note = "WB: %s." % note

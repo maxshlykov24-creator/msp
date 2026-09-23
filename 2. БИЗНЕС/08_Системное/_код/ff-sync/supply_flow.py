@@ -411,6 +411,11 @@ def assemble(ship_ids, split=True, boxes=0):
     rows = get_shipments_by_ids(ship_ids)
     if not rows:
         raise ValueError("отправления не найдены")
+    import kiz
+
+    gap = kiz.missing_mark_note(rows)
+    if gap:
+        raise ValueError(gap)
     ozon = [r["id"] for r in rows if r["marketplace"] == "ozon" and r["kind"] == "fbs"]
     rest = [r["id"] for r in rows if r["id"] not in set(ozon)]
     notes = []
@@ -965,6 +970,11 @@ def deliver(supply_id, confirm=False, force=False):
         raise ValueError("в поставке нет заданий")
     if not confirm:
         raise ValueError("нужно подтверждение: шаг необратимый")
+    import kiz
+
+    gap = kiz.missing_mark_note(rows)
+    if gap:
+        raise ValueError(gap)
     flag, _cargo, point = _sync_dropoff(supply)
     pickup = statuses.to_pickup("", flag, point)
     loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []

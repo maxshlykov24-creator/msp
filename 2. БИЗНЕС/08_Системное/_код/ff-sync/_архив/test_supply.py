@@ -81,7 +81,7 @@ def fake_req(method, url, headers=None, **kw):
     if url.endswith("/barcode"):
         return Fake(200, {"barcode": "WB-GI-777", "file": base64.b64encode(PNG).decode()})
     if url.endswith("/v3/posting/fbs/get"):
-        return Fake(200, {"result": {"posting_number": "0001-1", "products": [{"product_id": 55, "quantity": 2, "offer_id": "ART-1", "name": "Ремень"}], "status": "awaiting_deliver", "in_process_at": "2026-09-04T10:00:00Z"}})
+        return Fake(200, {"result": {"posting_number": "0001-1", "products": [{"product_id": 55, "quantity": 2, "offer_id": "ART-1", "name": "Ремень"}], "status": "awaiting_deliver", "in_process_at": "2026-09-20T10:00:00Z"}})
     if url.endswith("/v4/posting/fbs/ship"):
         body = kw.get("json") or {}
         packs = body.get("packages") or []
@@ -173,13 +173,13 @@ ships = []
 for i in range(4):  # четыре задания: WB даёт максимум половину числа заданий грузомест
     ships.append(
         db.upsert_shipment(
-            client_id, wb_cab, "wb", "fbs", "10%s" % i, "Новый", "2026-09-04", "ART-1", "2000000000019",
-            "Ремень кожаный", 1, None, 0, "2026-09-04T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-04 10:0%s" % i},
+            client_id, wb_cab, "wb", "fbs", "10%s" % i, "Новый", "2026-09-20", "ART-1", "2000000000019",
+            "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-20 10:0%s" % i},
         )
     )
 oz_ship = db.upsert_shipment(
-    client_id, oz_cab, "ozon", "fbs", "0001-1", "Ожидает упаковки", "2026-09-04", "ART-1", "",
-    "Ремень кожаный", 2, None, 0, "2026-09-04T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-04 10:05"},
+    client_id, oz_cab, "ozon", "fbs", "0001-1", "Ожидает упаковки", "2026-09-20", "ART-1", "",
+    "Ремень кожаный", 2, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-20 10:05"},
 )
 
 import statuses
@@ -310,8 +310,8 @@ assert left == {"0001-1-1", "0001-1-2"}, left
 
 # 10. один пакет без дробления
 oz2 = db.upsert_shipment(
-    client_id, oz_cab, "ozon", "fbs", "0001-1", "Ожидает упаковки", "2026-09-04", "ART-1", "",
-    "Ремень", 2, None, 0, "2026-09-04T10:00:00", extra={"status_group": "new"},
+    client_id, oz_cab, "ozon", "fbs", "0001-1", "Ожидает упаковки", "2026-09-20", "ART-1", "",
+    "Ремень", 2, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new"},
 )
 CALLS.clear()
 supply_flow.ship_ozon([oz2], split=False)
@@ -330,8 +330,8 @@ cat = shipments_pull.catalog_of(client_id, "2000000000019", "PU-1")
 assert cat["name"] == "Ремень кожаный PU", cat
 assert cat["image"] == "http://img/1", cat
 nameless = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "999", "Новый", "2026-09-04", "PU-1", "2000000000019",
-    "PU-1", 1, None, 0, "2026-09-04T10:00:00", extra={"status_group": "new"},
+    client_id, wb_cab, "wb", "fbs", "999", "Новый", "2026-09-20", "PU-1", "2000000000019",
+    "PU-1", 1, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new"},
 )
 assert shipments_pull.fill_wb_names() == 1
 row = db.get_shipments_by_ids([nameless])[0]
@@ -341,8 +341,8 @@ assert row["name"] == "Ремень кожаный PU" and row["article"] == "PU
 # Номер после сборки прежний, поэтому складская отметка снимается — иначе она
 # перебила бы статус площадки «ожидают отгрузки».
 oz3 = db.upsert_shipment(
-    client_id, oz_cab, "ozon", "fbs", "0001-9", "Ожидает упаковки", "2026-09-04", "ART-1", "",
-    "Ремень", 1, None, 0, "2026-09-04T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-04 10:07"},
+    client_id, oz_cab, "ozon", "fbs", "0001-9", "Ожидает упаковки", "2026-09-20", "ART-1", "",
+    "Ремень", 1, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-20 10:07"},
 )
 db.set_work_state([oz3], "assembling")
 out = supply_flow.assemble([oz3], split=False)
@@ -354,12 +354,12 @@ assert eff.get("0001-9") == "ready", eff
 
 # 13. смешанный выбор: Ozon уходит на площадку, WB получает складскую отметку
 wb_new = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "555", "Новый", "2026-09-04", "ART-1", "2000000000019",
-    "Ремень кожаный", 1, None, 0, "2026-09-04T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-04 10:08"},
+    client_id, wb_cab, "wb", "fbs", "555", "Новый", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-20 10:08"},
 )
 oz4 = db.upsert_shipment(
-    client_id, oz_cab, "ozon", "fbs", "0001-8", "Ожидает упаковки", "2026-09-04", "ART-1", "",
-    "Ремень", 1, None, 0, "2026-09-04T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-04 10:09"},
+    client_id, oz_cab, "ozon", "fbs", "0001-8", "Ожидает упаковки", "2026-09-20", "ART-1", "",
+    "Ремень", 1, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-20 10:09"},
 )
 CALLS.clear()
 out = supply_flow.assemble([wb_new, oz4], split=False)
@@ -373,16 +373,16 @@ assert not [c for c in CALLS if "wildberries" in c[1]], [c[1] for c in CALLS]
 import kiz
 
 oz_kiz = db.upsert_shipment(
-    client_id, oz_cab, "ozon", "fbs", "0001-7", "Ожидает упаковки", "2026-09-04", "ART-1", "",
-    "Ремень", 2, None, 0, "2026-09-04T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-04 10:10"},
+    client_id, oz_cab, "ozon", "fbs", "0001-7", "Ожидает упаковки", "2026-09-20", "ART-1", "",
+    "Ремень", 2, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-20 10:10"},
 )
 plan = kiz.plan(oz_kiz)
 assert plan["need"] == 2 and plan["have"] == 0, plan
 assert plan["marketplace"] == "ozon" and plan["ext_id"] == "0001-7", plan
 
 wb_kiz = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "777", "На сборке", "2026-09-04", "ART-1", "2000000000019",
-    "Ремень кожаный", 1, None, 0, "2026-09-04T10:00:00", extra={"status_group": "assembling", "accepted_at": "2026-09-04 10:11"},
+    client_id, wb_cab, "wb", "fbs", "777", "На сборке", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00", extra={"status_group": "assembling", "accepted_at": "2026-09-20 10:11"},
 )
 plan = kiz.plan(wb_kiz)
 assert plan["need"] == 1 and plan["decision"] == "required", plan
@@ -424,7 +424,8 @@ assert out["state"] == "filled", out
 # площадка приняла — теперь код больше не запрашивается
 assert kiz.plan(wb_kiz)["need"] == 0, kiz.plan(wb_kiz)
 
-# 17б. живые статусы WB: «введён в оборот» — принято, «не обязательно» — не долг
+# 17б. живые статусы WB: «введён в оборот» — принято, «не обязательно» — не долг,
+# пока карточка сама не маркируется
 WB_SENT.clear()
 for decision, need in (("sgtinIntroduced", 0), ("optional", 0), ("sgtinInvalidFormat", 1)):
     real = kiz._wb_meta
@@ -435,6 +436,42 @@ for decision, need in (("sgtinIntroduced", 0), ("optional", 0), ("sgtinInvalidFo
         assert "None" not in got["note"] and decision not in got["note"], (decision, got["note"])
     finally:
         kiz._wb_meta = real
+
+# 17в. карточка с маркировкой: optional у WB не отпускает товар без кода
+db.replace_cache(client_id, wb_cab, [{
+    "marketplace": "wb", "ext_key": "mark-1", "ext_article": "ЮБКА-1",
+    "ext_barcode": "2000000000099", "name": "Юбка",
+    "size": "", "gtin": "", "tracking_type": "Одежда", "subject": "Юбки", "need_kiz": 1, "image": "",
+}])
+mark_ship = db.upsert_shipment(
+    client_id, wb_cab, "wb", "fbs", "778", "На сборке", "2026-09-20", "ЮБКА-1", "2000000000099",
+    "Юбка", 1, None, 0, "2026-09-20T10:00:00",
+    extra={"status_group": "assembling", "accepted_at": "2026-09-20 10:12"},
+)
+db.set_shipment_supply([mark_ship], "WB-GI-MARK")
+real = kiz._wb_meta
+kiz._wb_meta = lambda cab, ext: {"id": ext, "metaDetails": [{"key": "sgtin", "value": None, "decision": "optional"}]}
+try:
+    got = kiz.plan(mark_ship)
+    assert got["need"] == 1, got
+    assert "обязателен" in got["note"], got["note"]
+finally:
+    kiz._wb_meta = real
+try:
+    supply_flow.assemble([mark_ship])
+    raise AssertionError("собрали маркированный товар без КиЗ")
+except ValueError as exc:
+    assert "без КиЗ" in str(exc), exc
+mark_sup = db.insert_wb_supply(client_id, wb_cab, "WB-GI-MARK", "Юбки", "2026-09-20T10:12:00", "тест", "1")
+try:
+    supply_flow.deliver(mark_sup, confirm=True)
+    raise AssertionError("отдали поставку с маркированным товаром без КиЗ")
+except ValueError as exc:
+    assert "без КиЗ" in str(exc), exc
+db.replace_shipment_marks(mark_ship, [{"code": "0104630568317423215EirD_orEif7X", "gtin": "", "article": "ЮБКА-1"}])
+out = supply_flow.assemble([mark_ship])
+assert out["marked"] == 1, out
+db.set_wb_supply_state(mark_sup, "ready", "2026-09-20T10:13:00")
 
 # 18. кодов больше, чем экземпляров у площадки
 try:
@@ -451,15 +488,15 @@ mgt = []
 kgt = []
 for i, (num, cargo) in enumerate((("201", "1"), ("202", "1"), ("203", "3"))):
     sid = db.upsert_shipment(
-        client_id, wb_cab, "wb", "fbs", num, "Новый", "2026-09-05", "ART-1", "2000000000019",
-        "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
-        extra={"status_group": "new", "accepted_at": "2026-09-05 10:0%s" % i, "cargo_type": cargo,
+        client_id, wb_cab, "wb", "fbs", num, "Новый", "2026-09-20", "ART-1", "2000000000019",
+        "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00",
+        extra={"status_group": "new", "accepted_at": "2026-09-20 10:0%s" % i, "cargo_type": cargo,
                "office": "ПВЗ Ленина 1"},
     )
     (mgt if cargo == "1" else kgt).append(sid)
 oz_take = db.upsert_shipment(
-    client_id, oz_cab, "ozon", "fbs", "0001-6", "Ожидает упаковки", "2026-09-05", "ART-1", "",
-    "Ремень", 1, None, 0, "2026-09-05T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-05 10:05"},
+    client_id, oz_cab, "ozon", "fbs", "0001-6", "Ожидает упаковки", "2026-09-20", "ART-1", "",
+    "Ремень", 1, None, 0, "2026-09-20T10:00:00", extra={"status_group": "new", "accepted_at": "2026-09-20 10:05"},
 )
 out = supply_flow.take(mgt + kgt + [oz_take], author="тест")
 assert len(out["supplies"]) == 2, out
@@ -476,9 +513,9 @@ assert not again["supplies"] and any("Уже в поставке" in n for n in 
 # 19б. открытая поставка есть — молча в неё не кладём. 22.09 так новые заказы
 # уехали в поставку с двумя проблемными товарами, а вынуть их WB не даёт.
 pick = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "205", "Новый", "2026-09-05", "ART-1", "2000000000019",
-    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:20", "cargo_type": "1"},
+    client_id, wb_cab, "wb", "fbs", "205", "Новый", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-20 10:20", "cargo_type": "1"},
 )
 held = supply_flow.take([pick], author="тест")
 assert held["need_choice"] and not held["supplies"], held
@@ -488,18 +525,18 @@ fresh_sup = supply_flow.take([pick], author="тест", choices={key: "new"})
 assert len(fresh_sup["supplies"]) == 1, fresh_sup
 assert fresh_sup["supplies"][0]["ext_id"] not in {s["ext_id"] for s in made}, fresh_sup
 pick2 = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "206", "Новый", "2026-09-05", "ART-1", "2000000000019",
-    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:21", "cargo_type": "1"},
+    client_id, wb_cab, "wb", "fbs", "206", "Новый", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-20 10:21", "cargo_type": "1"},
 )
 mgt_sup = [s for s in made if str(s["cargo_type"]) == "1"][0]
 joined = supply_flow.take([pick2], author="тест", choices={key: mgt_sup["id"]})
 assert joined["supplies"][0]["ext_id"] == mgt_sup["ext_id"], joined
 assert db.get_shipments_by_ids([pick2])[0]["supply_ext"] == mgt_sup["ext_id"]
 pick3 = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "207", "Новый", "2026-09-05", "ART-1", "2000000000019",
-    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:22", "cargo_type": "1"},
+    client_id, wb_cab, "wb", "fbs", "207", "Новый", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-20 10:22", "cargo_type": "1"},
 )
 try:
     supply_flow.take([pick3], author="тест", choices={key: 99999})
@@ -530,11 +567,11 @@ assert not out["boxes"] and any("поставки" in n for n in out["notes"]), 
 
 # 22. поставка из одного задания: по правилу половины предел ноль, но первый
 # короб мы не блокируем, а спрашиваем площадку — решение за WB, не за нами
-solo_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-SOLO", "Одно задание", "2026-09-05T11:00:00", "тест", "1")
+solo_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-SOLO", "Одно задание", "2026-09-20T11:00:00", "тест", "1")
 one = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "204", "Новый", "2026-09-05", "ART-1", "2000000000019",
-    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:09", "cargo_type": "1", "office": "ПВЗ Ленина 1"},
+    client_id, wb_cab, "wb", "fbs", "204", "Новый", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-20 10:09", "cargo_type": "1", "office": "ПВЗ Ленина 1"},
 )
 db.set_shipment_supply([one], "WB-GI-SOLO")
 assert len(supply_flow.make_boxes(solo_id, 1)["boxes"]) == 1, "первый короб не дошёл до площадки"
@@ -592,9 +629,9 @@ assert statuses.dropoff("1", flag, point) == statuses.SC
 
 # крупногабарит больше не отказ на входе: короба зависят от точки, спрашиваем WB
 big = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "301", "Новый", "2026-09-05", "ART-1", "2000000000019",
-    "Ремень кожаный", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:10", "cargo_type": "3"},
+    client_id, wb_cab, "wb", "fbs", "301", "Новый", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень кожаный", 1, None, 0, "2026-09-20T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-20 10:10", "cargo_type": "3"},
 )
 out = supply_flow.take([big], author="тест", choices={"%s:%s:3" % (client_id, wb_cab): "new"})
 assert len(out["supplies"]) == 1, out
@@ -603,11 +640,11 @@ assert str(big_sup["cargo_type"]) == "3", dict(big_sup)
 assert "СЦ" not in (big_sup["name"] or ""), dict(big_sup)
 
 # отказ «pickup point» — единственный честный признак, что точку не выбрали
-deny_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-DENY", "Смена", "2026-09-05T12:00:00", "тест", "1", "1", "50095011")
+deny_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-DENY", "Смена", "2026-09-20T12:00:00", "тест", "1", "1", "50095011")
 deny_ship = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "302", "Новый", "2026-09-05", "ART-1", "2000000000019",
-    "Ремень", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:11", "cargo_type": "1"},
+    client_id, wb_cab, "wb", "fbs", "302", "Новый", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень", 1, None, 0, "2026-09-20T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-20 10:11", "cargo_type": "1"},
 )
 db.set_shipment_supply([deny_ship], "WB-GI-DENY")
 
@@ -633,11 +670,11 @@ assert str(moved_to_sc["pickup_allowed"]) == "0" and not (moved_to_sc["shipping_
 assert db.get_shipments_by_ids([deny_ship])[0]["office"] == statuses.SC
 
 # предел коробов и отказ по точке различаются: тексты не должны путаться
-limit_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-LIM", "Предел", "2026-09-05T12:00:00", "тест", "1", "1", "50095011")
+limit_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-LIM", "Предел", "2026-09-20T12:00:00", "тест", "1", "1", "50095011")
 limit_ship = db.upsert_shipment(
-    client_id, wb_cab, "wb", "fbs", "303", "Новый", "2026-09-05", "ART-1", "2000000000019",
-    "Ремень", 1, None, 0, "2026-09-05T10:00:00",
-    extra={"status_group": "new", "accepted_at": "2026-09-05 10:12", "cargo_type": "1"},
+    client_id, wb_cab, "wb", "fbs", "303", "Новый", "2026-09-20", "ART-1", "2000000000019",
+    "Ремень", 1, None, 0, "2026-09-20T10:00:00",
+    extra={"status_group": "new", "accepted_at": "2026-09-20 10:12", "cargo_type": "1"},
 )
 db.set_shipment_supply([limit_ship], "WB-GI-LIM")
 
