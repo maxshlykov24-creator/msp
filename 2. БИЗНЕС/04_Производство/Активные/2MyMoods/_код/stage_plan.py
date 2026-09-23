@@ -79,7 +79,6 @@ def jobs(pipeline_id: int, status_id: int, moment: datetime) -> list[tuple[str, 
         first = shift(n, hours=3)
         second = shift(n, hours=6)
         rows = [
-            ("Связаться с клиентом", snap(n), None),
             ("Повтор, если молчит", first, None),
         ]
         if int(second.timestamp()) // 60 != int(first.timestamp()) // 60:
