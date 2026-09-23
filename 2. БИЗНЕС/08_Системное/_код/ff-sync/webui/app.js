@@ -1129,6 +1129,14 @@ async function loadAsm() {
   body.innerHTML = asmBodyHtml(res.rows);
 }
 
+function kizCell(r) {
+  const onList = state.asmGroup === "new" || state.asmGroup === "assembling";
+  const fbs = r.kind === "fbs" && (r.marketplace === "wb" || r.marketplace === "ozon");
+  if (!onList || !fbs) return r.marks ? String(r.marks) : "—";
+  if (r.marks) return `<button type="button" class="kiz-link is-on" data-kiz="${r.id}">КиЗ · ${r.marks}</button>`;
+  return `<button type="button" class="kiz-link" data-kiz="${r.id}">Указать КиЗ</button>`;
+}
+
 function asmRowHtml(r) {
   return `<tr>
     <td class="pick"><input type="checkbox" data-asm="${r.id}"></td>
@@ -1141,7 +1149,7 @@ function asmRowHtml(r) {
     <td class="trk">${esc(r.track || "—")}</td>
     <td class="dest">${r.office ? esc(r.office) : "—"}${r.cargo ? `<span class="cargo">${esc(r.cargo)}</span>` : ""}</td>
     <td class="sup">${r.supply ? `<span class="badge supply">${esc(r.supply)}</span>` : "—"}${r.box ? `<span class="badge box">${esc(r.box)}</span>` : ""}</td>
-    <td class="num">${r.marks || "—"}</td>
+    <td class="num">${kizCell(r)}</td>
   </tr>`;
 }
 
@@ -1264,8 +1272,14 @@ function refreshAsmPick() {
   const marks = state.asm.filter((r) => state.pickedAsm.has(r.id)).reduce((a, r) => a + (r.marks || 0), 0);
   $("aSel").textContent = n ? "Выбрано " + n : "Ничего не выбрано";
   ["aWork", "aDone", "aPrint", "aPrintReady", "aShipped"].forEach((id) => { $(id).disabled = !n; });
-  // коды маркировки вносим по одному отправлению: у каждого свой набор
-  $("aKiz").disabled = n !== 1;
+  const canKiz = (state.asmGroup === "new" || state.asmGroup === "assembling") && n >= 1;
+  $("aKiz").disabled = !canKiz;
+  $("aKiz").textContent = n > 1 ? "КиЗ · " + n : "КиЗ";
+  const kn = $("aKizNew");
+  if (kn) {
+    kn.disabled = state.asmGroup !== "new" || !n;
+    kn.textContent = n > 1 ? "Указать КиЗ · " + n : "Указать КиЗ";
+  }
   if (!n) hidePrintMenu();
   $("shReport").disabled = !n;
   $("shExport").disabled = marks === 0;
@@ -1373,6 +1387,11 @@ $("aTbl").onclick = (e) => {
   const pic = e.target.closest("td.ph img");
   if (pic) {
     openPhoto(pic.src);
+    return;
+  }
+  const kizBtn = e.target.closest("button[data-kiz]");
+  if (kizBtn) {
+    openKizQueue([Number(kizBtn.dataset.kiz)]);
     return;
   }
   const art = e.target.closest("button[data-art]");
