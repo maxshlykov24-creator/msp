@@ -1786,15 +1786,9 @@ let kizBusy = false;
 $("kizSend").onclick = async () => {
   if (kizBusy || !kizState.codes.length) return;
   if (kizState.need && kizState.codes.length !== kizState.need) {
-    const okay = await ask(
-      "Кодов не столько, сколько ждёт площадка",
-      "Площадка ждёт " + kizState.need + ", у тебя " + kizState.codes.length + ". Отправить всё равно?",
-      "Отправить"
-    );
-    if (!okay) {
-      $("kizInput").focus();
-      return;
-    }
+    say($("kizMsg"), "Нужно " + kizState.need + " кодов, сейчас " + kizState.codes.length + ". Досканируй.", "bad");
+    $("kizInput").focus();
+    return;
   }
   kizBusy = true;
   $("kizSend").disabled = true;
