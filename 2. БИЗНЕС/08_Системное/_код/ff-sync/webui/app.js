@@ -1504,30 +1504,118 @@ async function asmDone() {
   refreshAsmPick();
 }
 
-// «Взять в сборку»: у WB это добавление в поставку, и шаг необратим — метода
-// вынуть задание из поставки в API нет. Предупреждаем до звонка наружу.
+function zak(n) {
+  const n10 = n % 10;
+  const n100 = n % 100;
+  if (n10 === 1 && n100 !== 11) return n + " задание";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return n + " задания";
+  return n + " заданий";
+}
+
+function wbFresh(ids) {
+  const want = new Set(ids.map(Number));
+  return state.asm.filter((r) => want.has(r.id) && r.marketplace === "wb" && r.kind === "fbs" && !r.supply);
+}
+
+// Открытая поставка WB есть — склад сам решает, добавить в неё или создать новую.
+// Так в личном кабинете: нет поставки, создаётся сама; есть — спрашивают.
+function chooseSupply(groups, opts) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const chosen = {};
+    const onKey = (e) => { if (e.key === "Escape") done(null); };
+    function done(value) {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener("keydown", onKey);
+      $("supplyModal").classList.remove("on");
+      resolve(value);
+    }
+    const one = groups.length === 1;
+    $("supplyTitle").textContent = one ? "Куда добавить " + zak(groups[0].count) : "Куда добавить задания";
+    $("supplyText").textContent = (opts && opts.kiz)
+      ? "Чтобы внести КиЗ, WB сначала кладёт задание в поставку. Добавь в открытую или создай новую. Вынуть потом нельзя."
+      : "WB не даёт вынуть задание из поставки. Если в открытой лежат заказы, которые не отправляются, создай новую.";
+    $("supplyList").innerHTML = groups.map((g) => {
+      const head = one ? "" : `<p class="supply-group">${esc(g.client)} · ${esc(g.cargo)} · ${zak(g.count)}</p>`;
+      const items = (g.supplies || []).map((s) => `<button type="button" class="pick-item" data-key="${esc(g.key)}" data-supply="${s.id}">
+        <span class="pick-main"><b>Добавить в ${esc(s.ext_id)}</b><small>${s.orders} зак. · ${esc(s.office)}${s.name ? " · " + esc(s.name) : ""}</small></span>
+      </button>`).join("");
+      const create = `<button type="button" class="pick-item" data-key="${esc(g.key)}" data-supply="new">
+        <span class="pick-main"><b>Создать новую</b><small>Эти задания в открытую поставку не попадут</small></span>
+      </button>`;
+      return head + items + create;
+    }).join("");
+    $("supplyOk").hidden = one;
+    $("supplyOk").disabled = true;
+    $("supplyCancel").onclick = () => done(null);
+    $("supplyOk").onclick = () => {
+      if (Object.keys(chosen).length < groups.length) return;
+      done(chosen);
+    };
+    $("supplyList").onclick = (e) => {
+      const btn = e.target.closest("button[data-key]");
+      if (!btn) return;
+      const key = btn.dataset.key;
+      chosen[key] = btn.dataset.supply === "new" ? "new" : Number(btn.dataset.supply);
+      $("supplyList").querySelectorAll("button[data-key]").forEach((b) => {
+        if (b.dataset.key === key) b.classList.toggle("is-on", b === btn);
+      });
+      if (one) done(chosen);
+      else $("supplyOk").disabled = Object.keys(chosen).length < groups.length;
+    };
+    $("supplyModal").onclick = (e) => { if (e.target === $("supplyModal")) done(null); };
+    document.addEventListener("keydown", onKey);
+    $("supplyModal").classList.add("on");
+  });
+}
+
+async function takeAssembly(ids, opts) {
+  const fresh = wbFresh(ids);
+  say($("aMsg"), fresh.length ? "Смотрю открытые поставки…" : "Беру в сборку…");
+  const pre = await api("/api/assembly/take", { method: "POST", body: JSON.stringify({ ids, preview: true }) });
+  let choices = null;
+  if (pre.need_choice) {
+    choices = await chooseSupply(pre.groups, opts || {});
+    if (!choices) return null;
+  } else {
+    const okay = await ask(
+      fresh.length
+        ? "Открыть поставку WB на " + fresh.length + " заданий?"
+        : "Взять " + ids.length + " заданий в сборку?",
+      fresh.length
+        ? ((opts && opts.kiz)
+          ? "Открытой поставки нет, создастся новая, и сразу откроется ввод КиЗ. Вынуть задание из поставки WB не даёт."
+          : "Открытой поставки нет, поэтому создастся новая. Задание уйдёт в сборку вместе с ней. Вынуть его WB не даёт. Разная габаритность уйдёт в разные поставки.")
+        : "Задания перейдут на вкладку «На сборке».",
+      "Взять в сборку"
+    );
+    if (!okay) return null;
+  }
+  say($("aMsg"), "Открываю поставку и беру в сборку…");
+  const body = { ids };
+  if (choices) body.choices = choices;
+  const res = await api("/api/assembly/take", { method: "POST", body: JSON.stringify(body) });
+  if (res.need_choice) {
+    choices = await chooseSupply(res.groups, opts || {});
+    if (!choices) return null;
+    return await api("/api/assembly/take", { method: "POST", body: JSON.stringify({ ids, choices }) });
+  }
+  return res;
+}
+
 async function asmTake() {
   const ids = [...state.pickedAsm];
   if (!ids.length) return;
-  const wb = state.asm.filter((r) => state.pickedAsm.has(r.id) && r.marketplace === "wb" && r.kind === "fbs");
-  const okay = await ask(
-    wb.length
-      ? "Открыть поставку WB на " + wb.length + " заданий?"
-      : "Взять " + ids.length + " заданий в сборку?",
-    wb.length
-      ? "Своего «взять в сборку» у WB нет: задание уходит в сборку вместе с поставкой, поэтому поставка откроется сама."
-        + " Шаг необратимый — вынуть задание из поставки площадка не даёт."
-        + " Задания с разной габаритностью уйдут в разные поставки: WB держит в одной поставке только один тип."
-      : "Задания перейдут на вкладку «На сборке».",
-    "Взять в сборку"
-  );
-  if (!okay) return;
   $("aWork").disabled = true;
   const label = $("aWork").textContent;
   $("aWork").textContent = "Беру…";
-  say($("aMsg"), "Открываю поставку и беру в сборку…");
   try {
-    const res = await api("/api/assembly/take", { method: "POST", body: JSON.stringify({ ids }) });
+    const res = await takeAssembly(ids);
+    if (!res) {
+      say($("aMsg"), "");
+      return;
+    }
     const bits = (res.supplies || []).map((s) => s.ext_id + ": " + s.orders);
     if (res.marked) bits.push("отмечено складом: " + res.marked);
     const notes = (res.notes || []).join("\n");
@@ -1546,18 +1634,21 @@ $("aDone").onclick = asmDone;
 
 // коды маркировки: склад пикает сканером, отправляем на площадку набором
 
-let kizState = { id: 0, need: 0, codes: [] };
+let kizState = { ids: [], index: 0, id: 0, need: 0, codes: [] };
 
 function kizRender() {
   const have = kizState.codes.length;
   const need = kizState.need;
+  const matched = need > 0 && have === need;
   $("kizCount").textContent = need
-    ? "Нужно кодов: " + need + " · внесено: " + have
+    ? "Нужно кодов: " + need + " · внесено: " + have + (matched ? ". Enter ещё раз отправит" : "")
     : "Внесено кодов: " + have;
-  $("kizCount").classList.toggle("is-ok", need > 0 && have === need);
+  $("kizCount").classList.toggle("is-ok", matched);
   $("kizList").innerHTML = have
     ? kizState.codes.map((code, i) => `<div class="kiz-item"><span>${i + 1}</span><code>${esc(code)}</code><button type="button" data-kiz-del="${i}">Убрать</button></div>`).join("")
     : `<div class="empty">Пока ничего не просканировано.</div>`;
+  const more = kizState.ids.length > 1 && kizState.index < kizState.ids.length - 1;
+  $("kizSend").textContent = more ? "Отправить и дальше" : "Отправить на площадку";
   $("kizSend").disabled = !have;
 }
 
@@ -1576,25 +1667,43 @@ function kizAdd(raw) {
   kizRender();
 }
 
-async function openKiz() {
-  const ids = [...state.pickedAsm];
-  if (ids.length !== 1) {
-    say($("aMsg"), "Выбери одно отправление: коды вносим по одному.", "bad");
+function kizTargets(ids) {
+  const want = new Set(ids.map(Number));
+  return [...want].filter((id) => {
+    const r = state.asm.find((x) => x.id === id);
+    return r && r.kind === "fbs" && (r.marketplace === "wb" || r.marketplace === "ozon");
+  });
+}
+
+async function openKizFromPick() {
+  const ids = kizTargets([...state.pickedAsm]);
+  if (!ids.length) {
+    say($("aMsg"), "КиЗ вносится по заказам FBS.", "bad");
     return;
   }
-  kizState = { id: ids[0], need: 0, codes: [] };
+  await openKizQueue(ids);
+}
+
+async function loadKizStep() {
+  const id = kizState.ids[kizState.index];
+  kizState.id = id;
+  kizState.need = 0;
+  kizState.codes = [];
+  const total = kizState.ids.length;
+  $("kizStep").textContent = total > 1 ? (kizState.index + 1) + " из " + total : "";
+  $("kizSkip").hidden = total < 2;
   $("kizSub").textContent = "Спрашиваю площадку, сколько кодов нужно…";
   $("kizInput").value = "";
   say($("kizMsg"), "");
   kizRender();
-  $("kizModal").classList.add("on");
   try {
-    const res = await api("/api/assembly/" + kizState.id + "/kiz");
+    const res = await api("/api/assembly/" + id + "/kiz");
     kizState.need = res.need || 0;
+    kizState.codes = (res.codes || []).slice();
     const mp = res.marketplace === "wb" ? "WB" : "Ozon";
-    $("kizSub").textContent = mp + " " + res.ext_id + " · " + (res.name || res.article || "") + " · " + res.qty + " шт";
-    if (res.marks) kizState.codes = [];
-    say($("kizMsg"), res.note || "", res.note ? "" : "");
+    const title = res.article || res.name || "";
+    $("kizSub").textContent = mp + " " + res.ext_id + " · " + title + " · " + res.qty + " шт";
+    say($("kizMsg"), res.note || "");
     kizRender();
     $("kizInput").focus();
   } catch (e) {
@@ -1603,7 +1712,34 @@ async function openKiz() {
   }
 }
 
-$("aKiz").onclick = openKiz;
+async function openKizQueue(ids) {
+  ids = ids.map(Number).filter(Boolean);
+  const rows = ids.map((id) => state.asm.find((r) => r.id === id)).filter(Boolean);
+  const wbNew = rows.filter((r) => r.marketplace === "wb" && !r.supply).map((r) => r.id);
+  if (wbNew.length) {
+    let placed;
+    try {
+      placed = await takeAssembly(wbNew, { kiz: true });
+    } catch (e) {
+      say($("aMsg"), e.message, "bad");
+      return;
+    }
+    if (!placed) return;
+    const alreadyIn = (placed.notes || []).some((n) => String(n).indexOf("Уже в поставке") >= 0);
+    if (!(placed.supplies || []).length && !alreadyIn) {
+      const notes = (placed.notes || []).join("\n");
+      say($("aMsg"), notes || "Задание в поставку не попало, КиЗ внести некуда.", "bad");
+      return;
+    }
+    await loadAsm();
+  }
+  kizState = { ids, index: 0, id: 0, need: 0, codes: [] };
+  $("kizModal").classList.add("on");
+  await loadKizStep();
+}
+
+$("aKiz").onclick = openKizFromPick;
+$("aKizNew").onclick = openKizFromPick;
 $("kizClose").onclick = () => $("kizModal").classList.remove("on");
 $("kizModal").onclick = (e) => { if (e.target === $("kizModal")) $("kizModal").classList.remove("on"); };
 $("kizClear").onclick = () => { kizState.codes = []; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
@@ -1611,7 +1747,12 @@ $("kizClear").onclick = () => { kizState.codes = []; say($("kizMsg"), ""); kizRe
 $("kizInput").onkeydown = (e) => {
   if (e.key !== "Enter") return;
   e.preventDefault();
-  kizAdd($("kizInput").value);
+  const raw = $("kizInput").value;
+  if (!String(raw || "").trim() && kizState.need && kizState.codes.length === kizState.need) {
+    $("kizSend").click();
+    return;
+  }
+  kizAdd(raw);
   $("kizInput").value = "";
 };
 // вставка пачкой из буфера: сканер в режиме «много кодов» отдаёт их строками
@@ -1631,16 +1772,31 @@ $("kizList").onclick = (e) => {
   $("kizInput").focus();
 };
 
+$("kizSkip").onclick = async () => {
+  if (kizState.index < kizState.ids.length - 1) {
+    kizState.index += 1;
+    await loadKizStep();
+    return;
+  }
+  $("kizModal").classList.remove("on");
+  await loadAsm();
+};
+
+let kizBusy = false;
 $("kizSend").onclick = async () => {
-  if (!kizState.codes.length) return;
+  if (kizBusy || !kizState.codes.length) return;
   if (kizState.need && kizState.codes.length !== kizState.need) {
     const okay = await ask(
       "Кодов не столько, сколько ждёт площадка",
       "Площадка ждёт " + kizState.need + ", у тебя " + kizState.codes.length + ". Отправить всё равно?",
       "Отправить"
     );
-    if (!okay) return;
+    if (!okay) {
+      $("kizInput").focus();
+      return;
+    }
   }
+  kizBusy = true;
   $("kizSend").disabled = true;
   say($("kizMsg"), "Отправляю на площадку…");
   try {
@@ -1648,14 +1804,30 @@ $("kizSend").onclick = async () => {
       method: "POST",
       body: JSON.stringify({ codes: kizState.codes }),
     });
-    const notes = (res.notes || []).join("\n");
+    const row = state.asm.find((r) => r.id === kizState.id);
+    if (row) row.marks = res.sent;
+    const btn = document.querySelector('button[data-kiz="' + kizState.id + '"]');
+    if (btn) {
+      btn.textContent = "КиЗ · " + res.sent;
+      btn.classList.add("is-on");
+    }
+    const notes = (res.notes || []).join(" ");
+    const more = kizState.index < kizState.ids.length - 1;
+    if (more) {
+      say($("kizMsg"), "Коды приняты." + (notes ? " " + notes : "") + " Следующее задание.", "ok");
+      kizState.index += 1;
+      await loadKizStep();
+      return;
+    }
     say($("aMsg"), "Коды отправлены: " + res.sent + (notes ? "\n" + notes : ""), notes ? "" : "ok");
     $("kizModal").classList.remove("on");
     await loadAsm();
   } catch (e) {
     say($("kizMsg"), e.message, "bad");
+    $("kizSend").disabled = false;
+  } finally {
+    kizBusy = false;
   }
-  $("kizSend").disabled = false;
 };
 
 // поставки WB из выборки, ещё не переданные в доставку
@@ -2095,11 +2267,55 @@ async function printWb(mode) {
   }
 }
 
-// выбор точки сдачи: справочник WB кэширован у нас, поэтому список открывается
-// сразу, а за площадкой идём только кнопкой «Обновить справочник»
+// выбор точки сдачи: поле поиска живёт само по себе, на каждую букву
+// пересобирается только список. Иначе фокус сбрасывается и кажется, что
+// страница обновилась. За площадкой идём только кнопкой «Обновить справочник».
+let wbPointLoad = 0;
+
+function ensureWbPointChrome() {
+  const box = $("wbPoints");
+  if (!box || box.dataset.chrome === "1") return;
+  box.dataset.chrome = "1";
+  box.innerHTML = `<div class="wb-points-h">
+      <input id="wbPointCity" class="wb-query" value="${esc(state.wbPointCity || "")}" placeholder="город" autocomplete="off">
+      <input id="wbPointQ" type="text" class="wb-query" value="${esc(state.wbPointQuery || "")}" placeholder="улица, дом, номер точки" autocomplete="off">
+      <button class="btn-ghost" id="wbPointRefresh" type="button">Обновить справочник</button>
+    </div>
+    <label class="wb-point-keep"><input type="checkbox" id="wbPointKeep" checked> запомнить точку для этого контрагента</label>
+    <div class="wb-points-list" id="wbPointList"></div>`;
+  $("wbPointCity").onchange = () => {
+    state.wbPointCity = $("wbPointCity").value;
+    loadWbPoints({ city: $("wbPointCity").value, query: state.wbPointQuery || "" });
+  };
+  $("wbPointQ").oninput = () => {
+    state.wbPointQuery = $("wbPointQ").value;
+    clearTimeout(state.wbPointTimer);
+    state.wbPointTimer = setTimeout(() => loadWbPoints({ query: $("wbPointQ").value }), 250);
+  };
+  $("wbPointQ").onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
+  $("wbPointRefresh").onclick = () => loadWbPoints({ refresh: true });
+}
+
+function paintWbPointList(points) {
+  const list = $("wbPointList");
+  if (!list) return;
+  const supply = (state.wbDetail || {}).supply || {};
+  list.innerHTML = points.length
+    ? points.map((p) => `<button type="button" class="wb-point${String(p.id) === String(supply.point_id) ? " is-on" : ""}" data-point="${p.id}">
+          <b>${esc(p.address)}</b>
+          <i>${p.kind === "pp" ? "ПВЗ" : p.kind === "sc" ? "СЦ" : "склад"} · ${p.id}</i>
+        </button>`).join("")
+    : `<div class="wb-empty">Точек не нашёл. Проверь город или обнови справочник.</div>`;
+  list.querySelectorAll("button[data-point]").forEach((btn) => {
+    btn.onclick = () => pickWbPoint(btn.dataset.point);
+  });
+}
+
 async function loadWbPoints(opts) {
   const box = $("wbPoints");
   if (!box) return;
+  ensureWbPointChrome();
+  const mine = ++wbPointLoad;
   const supply = (state.wbDetail || {}).supply || {};
   const params = new URLSearchParams({
     client_id: supply.client_id || 0,
@@ -2107,49 +2323,22 @@ async function loadWbPoints(opts) {
     q: (opts && opts.query !== undefined) ? opts.query : (state.wbPointQuery || ""),
   });
   if (opts && opts.refresh) params.set("refresh", "1");
-  box.innerHTML = `<div class="wb-empty">Читаю точки…</div>`;
+  const list = $("wbPointList");
+  if (list && opts && opts.refresh) list.innerHTML = `<div class="wb-empty">Обновляю справочник…</div>`;
   let res;
   try {
     res = await api("/api/wb/shipping-points?" + params.toString());
   } catch (e) {
-    box.innerHTML = `<div class="wb-empty">${esc(e.message)}</div>`;
+    if (mine !== wbPointLoad) return;
+    if (list) list.innerHTML = `<div class="wb-empty">${esc(e.message)}</div>`;
     return;
   }
+  if (mine !== wbPointLoad) return;
   box.dataset.loaded = "1";
   state.wbPointCity = res.city;
-  renderWbPoints(res);
-}
-
-function renderWbPoints(res) {
-  const box = $("wbPoints");
-  if (!box) return;
-  const supply = (state.wbDetail || {}).supply || {};
-  const list = res.points.length
-    ? res.points.map((p) => `<button type="button" class="wb-point${String(p.id) === String(supply.point_id) ? " is-on" : ""}" data-point="${p.id}">
-          <b>${esc(p.address)}</b>
-          <i>${p.kind === "pp" ? "ПВЗ" : p.kind === "sc" ? "СЦ" : "склад"} · ${p.id}</i>
-        </button>`).join("")
-    : `<div class="wb-empty">Точек не нашёл. Проверь город или обнови справочник.</div>`;
-  box.innerHTML = `<div class="wb-points-h">
-      <input id="wbPointCity" class="wb-query" value="${esc(res.city)}" placeholder="город">
-      <input id="wbPointQ" type="search" class="wb-query" value="${esc(state.wbPointQuery || "")}" placeholder="улица, дом, номер точки">
-      <button class="btn-ghost" id="wbPointRefresh" type="button">Обновить справочник</button>
-    </div>
-    <label class="wb-point-keep"><input type="checkbox" id="wbPointKeep" checked> запомнить точку для этого контрагента</label>
-    <div class="wb-points-list">${list}</div>`;
   const city = $("wbPointCity");
-  if (city) city.onchange = () => loadWbPoints({ city: city.value, refresh: true });
-  const q = $("wbPointQ");
-  if (q) q.oninput = () => {
-    state.wbPointQuery = q.value;
-    clearTimeout(state.wbPointTimer);
-    state.wbPointTimer = setTimeout(() => loadWbPoints({ query: q.value }), 250);
-  };
-  const rf = $("wbPointRefresh");
-  if (rf) rf.onclick = () => loadWbPoints({ refresh: true });
-  box.querySelectorAll("button[data-point]").forEach((btn) => {
-    btn.onclick = () => pickWbPoint(btn.dataset.point);
-  });
+  if (city && document.activeElement !== city) city.value = res.city || "";
+  paintWbPointList(res.points || []);
 }
 
 async function pickWbPoint(pointId) {

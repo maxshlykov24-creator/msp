@@ -507,6 +507,18 @@ table.tbl tbody tr.clickable:hover{background:rgba(0,91,255,.08)}
 .pick-item .pick-main{min-width:0}
 .pick-item b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pick-item small{display:block;color:var(--mute-2);font-size:11px;margin-top:3px;font-variant-numeric:tabular-nums}
+.pick-item.is-on{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,91,255,.15)}
+.supply-group{font-size:12px;font-weight:650;color:var(--mute);margin:8px 0 4px}
+#supplyModal .modal-card{max-width:520px}
+.kiz-step{font-size:12px;color:var(--mute-2);margin:0 0 2px}
+#kizSkip[hidden],#supplyOk[hidden]{display:none}
+table.asm-tbl td.num .kiz-link{
+  border:1px solid var(--line-2);background:var(--input-bg);color:var(--ink);
+  font-family:var(--font);font-size:12px;font-weight:650;border-radius:10px;
+  padding:6px 10px;cursor:pointer;white-space:nowrap;
+}
+table.asm-tbl td.num .kiz-link:hover{border-color:var(--accent);color:var(--accent)}
+table.asm-tbl td.num .kiz-link.is-on{border-color:transparent;background:rgba(0,91,255,.12);color:var(--accent)}
 
 
 .dash-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:22px 0 12px}
