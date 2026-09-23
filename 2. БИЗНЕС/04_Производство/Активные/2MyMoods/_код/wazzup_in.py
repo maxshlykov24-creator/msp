@@ -6,6 +6,9 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
+import traceback
 from urllib.parse import quote
 
 import lib
@@ -21,6 +24,36 @@ PHRASES = (
     "интеграция",
     "ugc",
 )
+# Сделка в amo часто появляется на десятки секунд позже сообщения.
+PENDING: list[dict] = []
+PENDING_LOCK = threading.Lock()
+PENDING_TTL = 180
+
+
+def _remember(tail: str, tg_id: str, username: str, word: str) -> None:
+    now = time.time()
+    with PENDING_LOCK:
+        PENDING[:] = [row for row in PENDING if row["until"] > now]
+        PENDING.append({
+            "tail": tail,
+            "tg_id": tg_id,
+            "username": username,
+            "word": word,
+            "until": now + PENDING_TTL,
+        })
+
+
+def _pending_word(contact: dict) -> str | None:
+    now = time.time()
+    with PENDING_LOCK:
+        PENDING[:] = [row for row in PENDING if row["until"] > now]
+        rows = list(PENDING)
+    for row in reversed(rows):
+        if _hit(contact, row["tail"], row["tg_id"], row["username"]):
+            return row["word"]
+    return None
+
+
 # Провал двигаем только если у клиента нет ни одной открытой сделки.
 EARLY = {
     lib.PIPELINE_SALES_NEW: {lib.ST["new"], lib.ST["in_work"]},
@@ -149,8 +182,53 @@ def _open_sales_lead(amo: lib.Amo, tail: str, tg_id: str = "", username: str = "
     return lost[0] if lost else None
 
 
-def handle_body(body: dict) -> None:
+def _move(amo: lib.Amo, lead: dict, word: str) -> None:
+    st, _ = amo.req("PATCH", f"/api/v4/leads/{lead['id']}", {
+        "pipeline_id": lib.PIPELINE_MKT_NEW,
+        "status_id": lib.ST["mkt_talk"],
+    })
+    print(f"  wazzup {lead['id']} {word} -> marketing [{st}]", flush=True)
+
+
+def promote_if_pending(amo: lib.Amo, lead: dict) -> bool:
+    """Новая заявка или взята в работу, старая или новая воронка продаж."""
+    if lead.get("status_id") not in EARLY.get(lead.get("pipeline_id"), ()):
+        return False
+    st, full = amo.req("GET", f"/api/v4/leads/{lead['id']}?with=contacts")
+    if not (200 <= st < 300) or not isinstance(full, dict):
+        return False
+    word = None
+    for link in (full.get("_embedded") or {}).get("contacts") or []:
+        cst, contact = amo.req("GET", f"/api/v4/contacts/{link.get('id')}")
+        if not (200 <= cst < 300) or not isinstance(contact, dict):
+            continue
+        word = _pending_word(contact)
+        if word:
+            break
+    if not word:
+        return False
+    _move(amo, full, word)
+    return True
+
+
+def _try_move(tail: str, tg_id: str, username: str, word: str) -> bool:
     amo = lib.Amo()
+    lead = _open_sales_lead(amo, tail, tg_id, username)
+    if not lead:
+        return False
+    _move(amo, lead, word)
+    return True
+
+
+def _retry(tail: str, tg_id: str, username: str, word: str) -> None:
+    try:
+        if _try_move(tail, tg_id, username, word):
+            return
+    except Exception:
+        traceback.print_exc()
+
+
+def handle_body(body: dict) -> None:
     for msg in body.get("messages") or []:
         if not isinstance(msg, dict):
             continue
@@ -171,12 +249,13 @@ def handle_body(body: dict) -> None:
         if not tail and not tg_id and not username:
             print(f"  wazzup word {found} chat without phone", flush=True)
             continue
-        lead = _open_sales_lead(amo, tail, tg_id, username)
-        if not lead:
-            print(f"  wazzup word {found} no early lead, lost kept because another deal is open", flush=True)
+        _remember(tail, tg_id, username, found)
+        if _try_move(tail, tg_id, username, found):
             continue
-        st, _ = amo.req("PATCH", f"/api/v4/leads/{lead['id']}", {
-            "pipeline_id": lib.PIPELINE_MKT_NEW,
-            "status_id": lib.ST["mkt_talk"],
-        })
-        print(f"  wazzup {lead['id']} {found} -> marketing [{st}]", flush=True)
+        print(f"  wazzup word {found} lead not on new or in work yet", flush=True)
+        for delay in (8, 20, 45, 75, 110):
+            threading.Timer(
+                delay,
+                _retry,
+                args=(tail, tg_id, username, found),
+            ).start()

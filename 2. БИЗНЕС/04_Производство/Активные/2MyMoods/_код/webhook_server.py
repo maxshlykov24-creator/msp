@@ -119,7 +119,12 @@ def handle_lead(lead_id: int) -> None:
             print(f"  lead {lead_id} read [{st}]", flush=True)
             return
         pipeline = lead.get("pipeline_id")
+        if pipeline == lib.PIPELINE_SALES_OLD:
+            wazzup_in.promote_if_pending(amo, lead)
+            return
         if pipeline not in (lib.PIPELINE_SALES_NEW, lib.PIPELINE_MKT_NEW):
+            return
+        if pipeline == lib.PIPELINE_SALES_NEW and wazzup_in.promote_if_pending(amo, lead):
             return
         if pipeline == lib.PIPELINE_MKT_NEW and lead.get("status_id") == lib.ST["mkt_talk"]:
             if lead.get("responsible_user_id") != lib.USER_POLINA:
@@ -141,7 +146,7 @@ def spawn(events: list[dict]) -> None:
             lead_id = int(row["id"])
         except (TypeError, ValueError, KeyError):
             continue
-        if pipeline and pipeline not in (lib.PIPELINE_SALES_NEW, lib.PIPELINE_MKT_NEW):
+        if pipeline and pipeline not in (lib.PIPELINE_SALES_NEW, lib.PIPELINE_SALES_OLD, lib.PIPELINE_MKT_NEW):
             continue
         if lead_id in seen:
             continue
