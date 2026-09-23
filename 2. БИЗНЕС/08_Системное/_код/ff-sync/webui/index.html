@@ -634,7 +634,8 @@
   <div class="glass modal-card">
     <div class="modal-head">
       <div>
-        <h3>Коды маркировки</h3>
+        <h3>Указать КиЗ</h3>
+        <p id="kizStep" class="kiz-step"></p>
         <p id="kizSub"></p>
       </div>
       <button class="btn-ghost" id="kizClose" type="button">Закрыть</button>
@@ -645,6 +646,7 @@
     <div class="msg" id="kizMsg"></div>
     <div class="modal-actions">
       <button class="btn-ghost" id="kizClear" type="button">Очистить</button>
+      <button class="btn-ghost" id="kizSkip" type="button" hidden>Пропустить</button>
       <button class="btn" id="kizSend" type="button" disabled>Отправить на площадку</button>
     </div>
   </div>
@@ -680,10 +682,22 @@
   </div>
 </div>
 
+<div id="supplyModal" class="modal">
+  <div class="glass modal-card">
+    <h3 id="supplyTitle">Куда добавить задания</h3>
+    <p class="psub" id="supplyText"></p>
+    <div class="pick-list" id="supplyList"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="supplyCancel" type="button">Отмена</button>
+      <button class="btn" id="supplyOk" type="button" hidden>Добавить</button>
+    </div>
+  </div>
+</div>
+
 <div id="photoZoom" class="photo-zoom" hidden>
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=92"></script>
+<script src="/ui/app.js?v=93"></script>
 </body>
 </html>
