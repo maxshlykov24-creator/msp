@@ -20,10 +20,10 @@ PHRASES = (
     "интеграция",
     "ugc",
 )
-# Успешно реализовано (142) не трогаем: повторное сообщение открывает новую заявку.
-ALLOW = {
-    lib.PIPELINE_SALES_NEW: {lib.ST["new"], lib.ST["in_work"], lib.ST["lost"]},
-    lib.PIPELINE_SALES_OLD: {80719358, 80719298, lib.ST["lost"]},
+# Провал двигаем только если у клиента нет ни одной открытой сделки.
+EARLY = {
+    lib.PIPELINE_SALES_NEW: {lib.ST["new"], lib.ST["in_work"]},
+    lib.PIPELINE_SALES_OLD: {80719358, 80719298},
 }
 
 
@@ -69,26 +69,48 @@ def _phones(contact: dict) -> list[str]:
     return out
 
 
+def _matches(amo: lib.Amo, lead: dict, tail: str) -> dict | None:
+    full_st, full = amo.req("GET", f"/api/v4/leads/{lead['id']}?with=contacts")
+    if not (200 <= full_st < 300) or not isinstance(full, dict):
+        return None
+    for link in (full.get("_embedded") or {}).get("contacts") or []:
+        cst, contact = amo.req("GET", f"/api/v4/contacts/{link.get('id')}")
+        if not (200 <= cst < 300) or not isinstance(contact, dict):
+            continue
+        if any(tail in phone for phone in _phones(contact)):
+            return full
+    return None
+
+
 def _open_sales_lead(amo: lib.Amo, tail: str) -> dict | None:
-    st, body = amo.req("GET", f"/api/v4/leads?query={tail}&limit=20")
+    st, body = amo.req("GET", f"/api/v4/leads?query={tail}&limit=50")
     if not (200 <= st < 300) or not isinstance(body, dict):
         return None
     leads = (body.get("_embedded") or {}).get("leads") or []
     leads.sort(key=lambda row: row.get("updated_at") or 0, reverse=True)
+    matched = []
     for lead in leads:
-        allowed = ALLOW.get(lead.get("pipeline_id"))
-        if not allowed or lead.get("status_id") not in allowed:
-            continue
-        full_st, full = amo.req("GET", f"/api/v4/leads/{lead['id']}?with=contacts")
-        if not (200 <= full_st < 300) or not isinstance(full, dict):
-            continue
-        for link in (full.get("_embedded") or {}).get("contacts") or []:
-            cst, contact = amo.req("GET", f"/api/v4/contacts/{link.get('id')}")
-            if not (200 <= cst < 300) or not isinstance(contact, dict):
-                continue
-            if any(tail in phone for phone in _phones(contact)):
-                return full
-    return None
+        full = _matches(amo, lead, tail)
+        if full:
+            matched.append(full)
+    early = [
+        lead for lead in matched
+        if lead.get("status_id") in EARLY.get(lead.get("pipeline_id"), ())
+    ]
+    if early:
+        return early[0]
+    has_open = any(
+        lead.get("status_id") not in (lib.ST["won"], lib.ST["lost"])
+        for lead in matched
+    )
+    if has_open:
+        return None
+    lost = [
+        lead for lead in matched
+        if lead.get("status_id") == lib.ST["lost"]
+        and lead.get("pipeline_id") in EARLY
+    ]
+    return lost[0] if lost else None
 
 
 def handle_body(body: dict) -> None:
@@ -109,7 +131,7 @@ def handle_body(body: dict) -> None:
             continue
         lead = _open_sales_lead(amo, tail)
         if not lead:
-            print(f"  wazzup word {found} no lead on new, in work, or lost", flush=True)
+            print(f"  wazzup word {found} no early lead, lost kept because another deal is open", flush=True)
             continue
         st, _ = amo.req("PATCH", f"/api/v4/leads/{lead['id']}", {
             "pipeline_id": lib.PIPELINE_MKT_NEW,
