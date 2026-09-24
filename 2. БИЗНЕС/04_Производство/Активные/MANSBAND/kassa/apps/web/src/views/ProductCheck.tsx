@@ -94,6 +94,7 @@ interface ParsedProduct {
   size: string;
   variation: string;
   modsLabel: string;
+  pattern: string;
 }
 
 const PAGE_SIZE = 60;
@@ -151,6 +152,102 @@ function otherWarehouses(warehouses: WarehouseStockLine[]): WarehouseStockLine[]
   return warehouses.filter((w) => !MAIN_WAREHOUSES.some((m) => m.match(w.name)));
 }
 
+/** Порядок цветов зала. Незнакомый цвет уходит в конец. */
+const COLOR_ORDER = [
+  "черный",
+  "серый",
+  "синий",
+  "голубой",
+  "коричневый",
+  "бежевый",
+  "терракотовый",
+  "зеленый",
+  "оливковый",
+  "хаки",
+  "бордовый",
+  "красный",
+  "розовый",
+  "желтый",
+  "фиолетовый",
+  "бургун",
+  "белый",
+  "айвори",
+] as const;
+
+function foldColor(value: string): string {
+  return value.toLowerCase().replace(/ё/g, "е").trim();
+}
+
+function colorRank(value: string): number {
+  const text = foldColor(value);
+  if (!text) return COLOR_ORDER.length + 1;
+  const aliases: Array<[string, number]> = [
+    ["айвори", COLOR_ORDER.indexOf("айвори")],
+    ["ivory", COLOR_ORDER.indexOf("айвори")],
+    ["слоновая кость", COLOR_ORDER.indexOf("айвори")],
+    ["бургун", COLOR_ORDER.indexOf("бургун")],
+    ["розово-сиренев", COLOR_ORDER.indexOf("розовый")],
+    ["розовый-сиренев", COLOR_ORDER.indexOf("розовый")],
+    ["сиренев", COLOR_ORDER.indexOf("розовый")],
+    ["розов", COLOR_ORDER.indexOf("розовый")],
+    ["фиолет", COLOR_ORDER.indexOf("фиолетовый")],
+    ["желт", COLOR_ORDER.indexOf("желтый")],
+    ["красн", COLOR_ORDER.indexOf("красный")],
+    ["бордов", COLOR_ORDER.indexOf("бордовый")],
+    ["бордо", COLOR_ORDER.indexOf("бордовый")],
+    ["хаки", COLOR_ORDER.indexOf("хаки")],
+    ["оливков", COLOR_ORDER.indexOf("оливковый")],
+    ["зелен", COLOR_ORDER.indexOf("зеленый")],
+    ["терракот", COLOR_ORDER.indexOf("терракотовый")],
+    ["беж", COLOR_ORDER.indexOf("бежевый")],
+    ["коричнев", COLOR_ORDER.indexOf("коричневый")],
+    ["голуб", COLOR_ORDER.indexOf("голубой")],
+    ["син", COLOR_ORDER.indexOf("синий")],
+    ["сер", COLOR_ORDER.indexOf("серый")],
+    ["черн", COLOR_ORDER.indexOf("черный")],
+    ["бел", COLOR_ORDER.indexOf("белый")],
+  ];
+  const hit = aliases.find(([needle]) => text.includes(needle));
+  return hit ? hit[1] : COLOR_ORDER.length;
+}
+
+function isColorToken(value: string): boolean {
+  return colorRank(value) < COLOR_ORDER.length;
+}
+
+function isVariationCode(value: string): boolean {
+  return /\d/.test(value);
+}
+
+function compareSize(a: string, b: string): number {
+  const nums = (value: string) => (value.match(/\d+(?:[.,]\d+)?/g) ?? []).map((n) => Number(n.replace(",", ".")));
+  const letters = ["xxs", "xs", "s", "m", "l", "xl", "xxl", "xxxl", "2xl", "3xl", "4xl"];
+  const key = (value: string): number[] => {
+    const parsed = nums(value);
+    if (parsed.length) return parsed;
+    const idx = letters.indexOf(foldColor(value));
+    return idx === -1 ? [1_000_000] : [100_000 + idx];
+  };
+  const left = key(a);
+  const right = key(b);
+  const len = Math.max(left.length, right.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (left[i] ?? 0) - (right[i] ?? 0);
+    if (diff) return diff;
+  }
+  return a.localeCompare(b, "ru", { numeric: true });
+}
+
+function comparePositions(a: ParsedProduct, b: ParsedProduct): number {
+  const byVariation = a.variation.localeCompare(b.variation, "ru", { numeric: true });
+  if (byVariation) return byVariation;
+  const bySize = compareSize(a.size, b.size);
+  if (bySize) return bySize;
+  const byColor = colorRank(a.color) - colorRank(b.color);
+  if (byColor) return byColor;
+  return a.color.localeCompare(b.color, "ru");
+}
+
 function isSizeToken(value: string): boolean {
   const s = value.trim();
   if (!s) return false;
@@ -176,6 +273,7 @@ function parseProduct(product: Product): ParsedProduct | null {
       color: "",
       size: "",
       variation: "",
+      pattern: "",
       modsLabel: "",
     };
   }
@@ -184,9 +282,13 @@ function parseProduct(product: Product): ParsedProduct | null {
     .map((part) => part.trim())
     .filter(Boolean);
   const size = mods.find(isSizeToken) ?? "";
-  const nonSize = mods.filter((part) => part !== size);
-  const color = nonSize[0] ?? "";
-  const variation = nonSize.slice(1).join(", ");
+  const rest = mods.filter((part) => part !== size);
+  const colorIdx = rest.findIndex(isColorToken);
+  const color = colorIdx >= 0 ? rest[colorIdx]! : "";
+  const leftovers = rest.filter((_, i) => i !== colorIdx);
+  const codeIdx = leftovers.findIndex(isVariationCode);
+  const variation = (codeIdx >= 0 ? leftovers[codeIdx] : leftovers[0]) ?? "";
+  const pattern = leftovers.filter((part) => part !== variation).join(", ");
   return {
     product,
     section: hall.section,
@@ -196,6 +298,7 @@ function parseProduct(product: Product): ParsedProduct | null {
     color,
     size,
     variation,
+    pattern,
     modsLabel: mods.join(", "),
   };
 }
@@ -402,8 +505,8 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     }
     const sortRu = (a: string, b: string) => a.localeCompare(b, "ru", { numeric: true });
     return {
-      colors: [...colors].sort(sortRu),
-      sizes: [...sizes].sort(sortRu),
+      colors: [...colors].sort((a, b) => colorRank(a) - colorRank(b) || sortRu(a, b)),
+      sizes: [...sizes].sort(compareSize),
       variations: [...variations].sort(sortRu),
       heights: [...heights].sort(sortRu),
     };
@@ -436,7 +539,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         const bases = [...basesMap.entries()]
           .map(([baseName, rows]) => ({
             baseName,
-            rows: rows.sort((a, b) => a.product.name.localeCompare(b.product.name, "ru")),
+            rows: rows.sort(comparePositions),
           }))
           .sort((a, b) => a.baseName.localeCompare(b.baseName, "ru"));
         return {
@@ -1018,7 +1121,12 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                                     const expanded = expandedId === product.id;
                                     const others = otherWarehouses(warehouses);
                                     const leftovers = expanded ? leftoverWarehouses(warehouses) : [];
-                                    const modBits = [row.color, row.size, row.variation].filter(Boolean);
+                                    const colorBit = [row.color, row.pattern].filter(Boolean).join(", ");
+                                    const modBits = [row.variation, row.size, colorBit].filter(Boolean);
+                                    const skuShown =
+                                      product.sku && foldColor(product.sku) !== foldColor(row.variation)
+                                        ? product.sku
+                                        : "";
                                     return (
                                       <Fragment key={product.id}>
                                         <tr
@@ -1030,8 +1138,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                                               {modBits.length ? modBits.join(" · ") : row.modsLabel || "—"}
                                             </div>
                                             <div className="text-[12px] text-mute mt-0.5">
-                                              {product.sku || "—"}
-                                              {product.barcode ? ` · ${product.barcode}` : ""}
+                                              {[skuShown, product.barcode].filter(Boolean).join(" · ") || "—"}
                                               {others.length > 0 && (
                                                 <span className="text-gold-soft">
                                                   {" "}

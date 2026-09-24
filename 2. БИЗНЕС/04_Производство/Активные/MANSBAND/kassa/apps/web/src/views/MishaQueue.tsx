@@ -296,10 +296,9 @@ export function MishaQueue() {
             </button>
           ))}
         </div>
-        <span className="text-[12px] text-mute">
-          {items.length}
-          {atelierSum > 0 ? ` · ателье ${money(atelierSum)}` : ""}
-        </span>
+        {atelierSum > 0 && (
+          <span className="text-[12px] text-mute">ателье {money(atelierSum)}</span>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-1.5 mb-4">
