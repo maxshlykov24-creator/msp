@@ -419,7 +419,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
 
   const tree = useMemo(() => {
     type BaseGroup = { baseName: string; rows: ParsedProduct[] };
-    type SectionGroup = { section: string; bases: BaseGroup[]; variantCount: number };
+    type SectionGroup = { section: string; bases: BaseGroup[]; variantCount: number; stock: number };
     const byGroup = new Map<string, Map<string, ParsedProduct[]>>();
     for (const row of parsed) {
       const groupKey = section
@@ -443,6 +443,10 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
           section: sec,
           bases,
           variantCount: bases.reduce((n, b) => n + b.rows.length, 0),
+          stock: bases.reduce(
+            (n, b) => n + b.rows.reduce((s, r) => s + stockSum(r.product), 0),
+            0
+          ),
         };
       })
       .sort((a, b) => {
@@ -957,6 +961,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                 >
                   {sectionOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
                   <span className="text-white font-semibold flex-1">{sec.section}</span>
+                  <span className={`text-[13px] tabular-nums ${qtyClass(sec.stock)}`}>{fmtQty(sec.stock)}</span>
                   <span className="chip bg-ink-700 text-mute">
                     {sec.bases.length} мод. · {sec.variantCount}
                   </span>
