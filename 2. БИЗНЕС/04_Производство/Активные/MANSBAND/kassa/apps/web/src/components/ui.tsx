@@ -1,4 +1,5 @@
 import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { getStageGroup } from "../lib/stageColors";
 
 export { Select, opts } from "./Select";
@@ -137,7 +138,7 @@ export function Modal({
 
   if (!mounted) return null;
   const width = xl ? "max-w-5xl" : wide ? "max-w-3xl" : "max-w-lg";
-  return (
+  return createPortal(
     <div className={`kassa-ov ${shown ? "on" : ""}`}>
       <div className="kassa-ov-hit" onClick={onClose} />
       <div className={`kassa-modal ${width} ${xl ? "max-h-[94vh]" : "max-h-[90vh]"}`}>
@@ -149,9 +150,10 @@ export function Modal({
             </button>
           </div>
         )}
-        <div className={`overflow-y-auto ${xl ? "p-4 sm:p-5" : "p-6"}`}>{children}</div>
+        <div className={`kassa-modal-body ${xl ? "p-4 sm:p-5" : "p-6"}`}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

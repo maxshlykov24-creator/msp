@@ -637,13 +637,16 @@ export function TotalsBlock({
     <div className="space-y-4">
       <div className="grid sm:grid-cols-2 gap-4">
         <Field label="Скидка на весь чек %">
-          <input
-            className="input"
-            inputMode="numeric"
-            placeholder="0"
-            value={state.discPct}
-            onChange={(e) => onChange({ discPct: e.target.value.replace(/[^\d]/g, ""), discRub: "" })}
-          />
+          <div className="relative">
+            <input
+              className="input pr-8"
+              inputMode="numeric"
+              placeholder="0"
+              value={state.discPct}
+              onChange={(e) => onChange({ discPct: e.target.value.replace(/[^\d]/g, ""), discRub: "" })}
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-mute">%</span>
+          </div>
         </Field>
         <Field label="Скидка ₽">
           <input
