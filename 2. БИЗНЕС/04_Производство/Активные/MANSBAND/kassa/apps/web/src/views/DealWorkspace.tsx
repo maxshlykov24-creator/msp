@@ -738,7 +738,16 @@ export function DealWorkspace({
         </div>
       </div>
 
-      <Modal open={taskOpen} onClose={() => setTaskOpen(false)} title={`Задача · #${live.number}`}>
+      <Modal
+        open={taskOpen}
+        onClose={() => setTaskOpen(false)}
+        title={
+          <>
+            Создать задачу
+            <span className="ml-2 text-[13px] font-normal text-mute">№{live.number}</span>
+          </>
+        }
+      >
         <CreateTaskForm
           defaultStore={live.store || "На Бауманской"}
           dealNumber={live.number}

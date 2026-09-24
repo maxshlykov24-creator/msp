@@ -349,6 +349,9 @@ export function TaskDetail({
           <span>
             {shortDate(task.createdAt)} {timeOf(task.createdAt)}
           </span>
+          {typeof task.metadata?.dueDate === "string" && task.metadata.dueDate && (
+            <span>срок {task.metadata.dueDate.split("-").reverse().join(".")}</span>
+          )}
           {people.map((line) => (
             <span key={line}>{line}</span>
           ))}

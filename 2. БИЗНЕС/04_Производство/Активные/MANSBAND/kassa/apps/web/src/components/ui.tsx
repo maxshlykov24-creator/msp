@@ -109,7 +109,7 @@ export function Modal({
   open: boolean;
   onClose: () => void;
   children: ReactNode;
-  title?: string;
+  title?: ReactNode;
   wide?: boolean;
   xl?: boolean;
   aside?: ReactNode;

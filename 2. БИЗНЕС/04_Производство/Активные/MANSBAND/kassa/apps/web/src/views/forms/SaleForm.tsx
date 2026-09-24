@@ -187,7 +187,16 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
         />
       }
     >
-      <Modal open={taskOpen} onClose={() => setTaskOpen(false)} title="Создать задачу">
+      <Modal
+        open={taskOpen}
+        onClose={() => setTaskOpen(false)}
+        title={
+          <>
+            Создать задачу
+            <span className="ml-2 text-[13px] font-normal text-mute">№{meta.number}</span>
+          </>
+        }
+      >
         <CreateTaskForm
           defaultStore={activeStore}
           dealNumber={meta.number}

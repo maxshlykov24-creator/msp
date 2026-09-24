@@ -74,6 +74,7 @@ export function CreateTaskForm({
   const [assigneeRole, setAssigneeRole] = useState<TaskAssigneeRole>("consultant");
   const people = peopleForRole(assigneeRole);
   const [assigneeName, setAssigneeName] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,11 +121,16 @@ export function CreateTaskForm({
       setError("Выберите очередь");
       return;
     }
+    if (!dueDate) {
+      setError("Укажите срок");
+      return;
+    }
     setSaving(true);
     setError(null);
     const idempotencyKey = crypto.randomUUID();
     const meta: Record<string, unknown> = {};
     if (assigneeName) meta.assigneeName = assigneeName;
+    meta.dueDate = dueDate;
     const local: CreatedTask = {
       id: idempotencyKey,
       kind: effectiveKind,
@@ -159,6 +165,7 @@ export function CreateTaskForm({
       setSaved(true);
       setTitle("");
       setAssigneeName("");
+      setDueDate("");
       window.setTimeout(() => setSaved(false), 1600);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось создать задачу");
@@ -167,7 +174,7 @@ export function CreateTaskForm({
     }
   }
 
-  const showDealField = !simple || lockDealNumber;
+  const showDealField = !simple && !lockDealNumber;
 
   return (
     <div className={`space-y-3 ${compact ? "" : ""}`}>
@@ -215,6 +222,10 @@ export function CreateTaskForm({
           </label>
         )}
       </div>
+      <label className="block">
+        <div className="field-label">Срок</div>
+        <input className="input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+      </label>
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="block">
           <div className="field-label">Очередь</div>
@@ -228,7 +239,7 @@ export function CreateTaskForm({
           />
         </label>
         <label className="block">
-          <div className="field-label">Ответственный (необязательно)</div>
+          <div className="field-label">Ответственный</div>
           <Select
             value={assigneeName}
             onChange={setAssigneeName}

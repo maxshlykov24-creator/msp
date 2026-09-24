@@ -204,6 +204,9 @@ function TaskRow({
       <td className="px-3 py-3 align-top text-[12px] text-mute tabular-nums whitespace-nowrap">
         <div>{shortDate(task.createdAt)}</div>
         <div className="text-[11px] text-mute/80">{timeOf(task.createdAt)}</div>
+        {typeof task.metadata?.dueDate === "string" && task.metadata.dueDate && (
+          <div className="text-[11px] text-mute-soft">до {task.metadata.dueDate.split("-").reverse().join(".")}</div>
+        )}
       </td>
       <td className="px-3 py-3 align-top text-right">
         {task.status === "pending" && !needsSetup && !needsCardScan && (
