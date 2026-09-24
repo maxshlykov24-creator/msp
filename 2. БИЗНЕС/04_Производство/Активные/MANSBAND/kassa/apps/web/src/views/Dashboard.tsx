@@ -94,36 +94,47 @@ function StatsTable({ rows, nameLabel }: { rows: StatsRow[]; nameLabel: string }
   if (rows.length === 0) return <p className="text-mute text-sm">Нет заявок за период.</p>;
   return (
     <div className="overflow-x-auto -mx-5 px-5">
-      <table className="w-full text-sm min-w-[640px]">
-        <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-800">
+      <table className="w-full table-fixed text-[15px] min-w-[720px]">
+        <colgroup>
+          <col className="w-[18%]" />
+          <col />
+          <col />
+          <col />
+          <col />
+          <col />
+          <col />
+          <col />
+          <col />
+        </colgroup>
+        <thead className="text-[12px] uppercase tracking-wide text-mute border-b border-ink-800">
           <tr>
-            <th className="text-left py-2 pr-3 font-medium">{nameLabel}</th>
-            <th className="text-right py-2 px-2 font-medium">Клиенты</th>
-            <th className="text-right py-2 px-2 font-medium">Успех</th>
-            <th className="text-right py-2 px-2 font-medium">Выручка, ₽</th>
-            <th className="text-right py-2 px-2 font-medium" title="Успехи / (клиенты − не-сливы − добитые сливы)">
+            <th className="text-left py-2.5 pr-2 font-medium">{nameLabel}</th>
+            <th className="text-right py-2.5 px-1 font-medium">Клиенты</th>
+            <th className="text-right py-2.5 px-1 font-medium">Успех</th>
+            <th className="text-right py-2.5 px-1 font-medium">Выручка, ₽</th>
+            <th className="text-right py-2.5 px-1 font-medium" title="Успехи / (клиенты − не-сливы − добитые сливы)">
               Конверсия
             </th>
             {/* UPT левее среднего чека — порядок по просьбе владельца (созвон 04.09). */}
-            <th className="text-right py-2 px-2 font-medium" title="Позиции в чеках / чеки">UPT</th>
-            <th className="text-right py-2 px-2 font-medium">Ср. чек, ₽</th>
-            <th className="text-right py-2 px-2 font-medium">Сливы</th>
-            <th className="text-right py-2 pl-2 font-medium">Не-сливы</th>
+            <th className="text-right py-2.5 px-1 font-medium" title="Позиции в чеках / чеки">UPT</th>
+            <th className="text-right py-2.5 px-1 font-medium">Ср. чек, ₽</th>
+            <th className="text-right py-2.5 px-1 font-medium">Сливы</th>
+            <th className="text-right py-2.5 pl-1 font-medium">Не-сливы</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-ink-800">
           {rows.map((r) => (
             <tr key={r.name}>
-              <td className="py-2.5 pr-3 text-white font-medium">{r.name}</td>
-              <td className="py-2.5 px-2 text-right tabular-nums text-mute-soft">{r.clients}</td>
-              <td className="py-2.5 px-2 text-right tabular-nums text-white">{r.success}</td>
-              <td className="py-2.5 px-2 text-right tabular-nums text-gold-soft font-semibold">
+              <td className="py-3 pr-2 text-white font-medium truncate">{r.name}</td>
+              <td className="py-3 px-1 text-right tabular-nums text-white">{r.clients}</td>
+              <td className="py-3 px-1 text-right tabular-nums text-white">{r.success}</td>
+              <td className="py-3 px-1 text-right tabular-nums text-gold-soft font-semibold">
                 {moneyPlain(r.revenue)}
               </td>
-              <td className="py-2.5 px-2 text-right tabular-nums text-white">{pct(r.conversion)}</td>
-              <td className="py-2.5 px-2 text-right tabular-nums text-white">{upt(r.upt)}</td>
-              <td className="py-2.5 px-2 text-right tabular-nums text-mute-soft">{moneyPlain(r.avgCheck)}</td>
-              <td className="py-2.5 px-2 text-right tabular-nums text-mute-soft">
+              <td className="py-3 px-1 text-right tabular-nums text-white">{pct(r.conversion)}</td>
+              <td className="py-3 px-1 text-right tabular-nums text-white">{upt(r.upt)}</td>
+              <td className="py-3 px-1 text-right tabular-nums text-white">{moneyPlain(r.avgCheck)}</td>
+              <td className="py-3 px-1 text-right tabular-nums text-white">
                 {r.slivs}
                 {r.rescuedSlivs > 0 && (
                   <span className="text-emerald-300/80" title="Добиты в другом магазине">
@@ -132,7 +143,7 @@ function StatsTable({ rows, nameLabel }: { rows: StatsRow[]; nameLabel: string }
                   </span>
                 )}
               </td>
-              <td className="py-2.5 pl-2 text-right tabular-nums text-mute-soft">{r.noSlivs}</td>
+              <td className="py-3 pl-1 text-right tabular-nums text-white">{r.noSlivs}</td>
             </tr>
           ))}
         </tbody>
