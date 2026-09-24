@@ -430,6 +430,9 @@ export interface SuitPricingInfo {
   part: SuitPart;
   size: string;
   height: string;
+  color: string;
+  pattern: string;
+  fit: string;
   line: "smoking" | "regular";
   priceRub: number;
 }
@@ -447,6 +450,9 @@ export async function suitPricingInfoByMsIds(msIds: string[]): Promise<Map<strin
       part: products.suitPart,
       size: products.size,
       height: products.height,
+      color: products.color,
+      pattern: products.pattern,
+      fit: products.fit,
       line: products.suitLine,
       price: products.price,
     })
@@ -462,6 +468,9 @@ export async function suitPricingInfoByMsIds(msIds: string[]): Promise<Map<strin
       part: r.part as SuitPart,
       size: (r.size ?? "").trim(),
       height: (r.height ?? "").trim(),
+      color: (r.color ?? "").trim(),
+      pattern: (r.pattern ?? "").trim(),
+      fit: (r.fit ?? "").trim(),
       line: (r.line as "smoking" | "regular") ?? "regular",
       priceRub: r.price / 100,
     });

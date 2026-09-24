@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Plus, Minus, Trash2, ScanLine, X } from "lucide-react";
+import { Search, Plus, Minus, Trash2, ScanLine, X, Gift } from "lucide-react";
 import type { CartItem } from "../data/types";
 import { PRODUCTS } from "../data/mock";
 import { money, normalizeSearch } from "../lib/format";
@@ -135,7 +135,16 @@ export function ProductPicker({
                   )}
                 </div>
                 <div className="flex items-center gap-1 bg-ink-800 rounded-lg p-1">
-                  <button onClick={() => update(it.productId, { qty: Math.max(1, it.qty - 1) })} className="px-1.5 text-mute hover:text-white">
+                  <button
+                    onClick={() => {
+                      if (it.qty <= 1) {
+                        onChange(items.filter((x) => x.productId !== it.productId));
+                        return;
+                      }
+                      update(it.productId, { qty: it.qty - 1 });
+                    }}
+                    className="px-1.5 text-mute hover:text-white"
+                  >
                     <Minus size={14} />
                   </button>
                   <span className="w-6 text-center text-white text-sm">{it.qty}</span>
@@ -168,7 +177,7 @@ export function ProductPicker({
                     onClick={() => update(it.productId, { isGift: !it.isGift })}
                     className={`chip ${it.isGift ? "bg-gold/20 text-gold-soft" : "bg-ink-700 text-mute"}`}
                   >
-                    🎁 Подарок
+                    <Gift size={13} /> Подарок
                   </button>
                 </div>
               )}

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { products, stock, suitBreaks } from "../db/schema.js";
 import {
@@ -47,7 +47,7 @@ async function suitLinesByMsIds(msIds: string[]): Promise<Map<string, SuitLineIn
       height: products.height,
     })
     .from(products)
-    .where(sql`${products.msId} = ANY(${unique})`);
+    .where(inArray(products.msId, unique));
   const map = new Map<string, SuitLineInfo>();
   for (const r of rows) {
     if (!r.part || !r.variation) continue;

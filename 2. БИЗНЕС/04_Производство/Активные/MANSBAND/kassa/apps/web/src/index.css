@@ -744,11 +744,14 @@ html.theme-light .kassa-select-menu {
 }
 
 .kassa-select-hint {
-  margin-left: auto;
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  color: rgb(var(--mute));
   flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, rgb(var(--fg)) 8%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: rgb(var(--mute-soft));
 }
 
 .kassa-select-item.is-on .kassa-select-hint {
@@ -756,6 +759,7 @@ html.theme-light .kassa-select-menu {
 }
 
 .kassa-select-check {
+  margin-left: auto;
   color: rgb(var(--gold));
   flex-shrink: 0;
 }

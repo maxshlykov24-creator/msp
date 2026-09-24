@@ -10,18 +10,19 @@ import { getAppSettings } from "./settings.js";
  * цену матрицы применить и как её разнести по частям пропорционально их
  * цене в МойСклад (последняя часть добирает остаток округления).
  *
- * Группа образуется только если пиджак и брюки этой вариации в чеке — РОВНО
- * одна позиция каждый и их количество совпадает целиком. Частичное совпадение
- * (например, пиджаков 2, брюк 1) не группируем: у карточки чека одна цена на
- * всю строку, а разное количество означало бы две разные цены для одной
- * позиции — такие случаи остаются обычными строками по цене МойСклад, консультанту
- * уже показывает предупреждение `SuitBreakWarning` про образующийся полупарк.
+ * Одной вариации в чеке может быть несколько костюмов (46 и 48 — две строки).
+ * Каждая строка целиком уходит в один костюм: у карточки одна цена, поэтому
+ * количество пиджака и брюк в паре должно совпадать. Сначала пара одного
+ * размера, потом оставшиеся, даже если размеры разные. Лишнее (пиджаков 2,
+ * брюк 1) остаётся отдельной строкой, без второй цены на ту же позицию.
  */
 
 export interface SuitPriceGroupPart {
   productId: string;
   part: SuitPart;
   size: string;
+  /** Ростовка. Вместе с размером: «46/6». Пусто, если в карточке её нет. */
+  height: string;
   qty: number;
   unitMsPriceRub: number;
   distributedUnitPriceRub: number;
@@ -58,6 +59,32 @@ interface Pool {
 }
 
 /** Пропорциональное разнесение цены костюма по частям (приём `normalizePayouts`). */
+function pullPool(list: Pool[], item: Pool): void {
+  const index = list.findIndex((p) => p.productId === item.productId);
+  if (index >= 0) list.splice(index, 1);
+}
+
+/** Сначала пара того же размера и того же количества, иначе любая с тем же количеством. */
+function takePair(jackets: Pool[], trousers: Pool[]): { jacket: Pool; trousers: Pool } | null {
+  for (const jacket of jackets) {
+    const same = trousers.find((t) => t.qty === jacket.qty && t.size.trim() === jacket.size.trim());
+    if (same) return { jacket, trousers: same };
+  }
+  for (const jacket of jackets) {
+    const any = trousers.find((t) => t.qty === jacket.qty);
+    if (any) return { jacket, trousers: any };
+  }
+  return null;
+}
+
+function takeVest(vests: Pool[], jacket: Pool): Pool | null {
+  return (
+    vests.find((v) => v.qty === jacket.qty && v.size.trim() === jacket.size.trim()) ??
+    vests.find((v) => v.qty === jacket.qty) ??
+    null
+  );
+}
+
 function distribute(totalRub: number, parts: Pool[]): number[] {
   const basis = parts.reduce((s, p) => s + p.priceRub, 0);
   if (parts.length === 0) return [];
@@ -101,65 +128,67 @@ export async function priceGroupSuits(lines: Line[]): Promise<SuitPriceGroupResu
 
   const groups: SuitPriceGroup[] = [];
   for (const [variation, pools] of byVariation) {
-    const jacket = pools.jacket.length === 1 ? pools.jacket[0]! : null;
-    const trousers = pools.trousers.length === 1 ? pools.trousers[0]! : null;
-    const ambiguousParts = pools.jacket.length > 1 || pools.trousers.length > 1;
-    if (!jacket || !trousers || ambiguousParts || jacket.qty !== trousers.qty) {
-      for (const p of [...pools.jacket, ...pools.trousers, ...pools.vest]) {
-        unmatchedProductIds.push(p.productId);
-      }
-      continue;
+    const jackets = [...pools.jacket];
+    const trousers = [...pools.trousers];
+    const vests = [...pools.vest];
+
+    for (;;) {
+      const pair = takePair(jackets, trousers);
+      if (!pair) break;
+      pullPool(jackets, pair.jacket);
+      pullPool(trousers, pair.trousers);
+      const vest = takeVest(vests, pair.jacket);
+      if (vest) pullPool(vests, vest);
+
+      const jacket = pair.jacket;
+      const qty = jacket.qty;
+      const hasVest = vest != null;
+      const jacketInfo = info.get(jacket.productId)!;
+      const matched = suitPriceOf(
+        {
+          jacketName: jacketInfo.name,
+          category: jacketInfo.category ?? "",
+          pieces: hasVest ? 3 : 2,
+          line: jacketInfo.line,
+          height: jacketInfo.height,
+        },
+        rules
+      );
+
+      const basisParts: Pool[] = vest ? [jacket, pair.trousers, vest] : [jacket, pair.trousers];
+      const shares = matched
+        ? distribute(matched.priceRub, basisParts)
+        : basisParts.map((p) => p.priceRub);
+
+      const parts: SuitPriceGroupPart[] = basisParts.map((p, i) => ({
+        productId: p.productId,
+        part: p === jacket ? "jacket" : p === pair.trousers ? "trousers" : "vest",
+        size: p.size,
+        height: info.get(p.productId)?.height ?? "",
+        qty,
+        unitMsPriceRub: p.priceRub,
+        distributedUnitPriceRub: shares[i]!,
+      }));
+
+      groups.push({
+        groupId: `${variation}|${hasVest ? 3 : 2}|${jacket.productId}|${pair.trousers.productId}`,
+        variation,
+        title: suitTitle({
+          hasVest,
+          line: jacketInfo.line,
+          color: jacketInfo.color,
+          pattern: jacketInfo.pattern,
+          fit: jacketInfo.fit,
+        }),
+        hasVest,
+        qty,
+        matrixUnitPriceRub: matched ? matched.priceRub : null,
+        matchedRuleLabel: matched ? matched.rule.label : null,
+        parts,
+      });
     }
 
-    const qty = jacket.qty;
-    let vest: Pool | null = null;
-    if (pools.vest.length === 1 && pools.vest[0]!.qty === qty) {
-      vest = pools.vest[0]!;
-    } else if (pools.vest.length > 0) {
-      // Жилет есть, но количество не совпадает целиком (или больше одной позиции
-      // жилета) — не группируем совсем, чтобы не оставить его необъяснимым
-      // полупарком без разнесённой цены.
-      for (const p of [jacket, trousers, ...pools.vest]) unmatchedProductIds.push(p.productId);
-      continue;
-    }
-    const hasVest = vest != null;
-
-    const jacketInfo = info.get(jacket.productId)!;
-    const matched = suitPriceOf(
-      {
-        jacketName: jacketInfo.name,
-        category: jacketInfo.category ?? "",
-        pieces: hasVest ? 3 : 2,
-        line: jacketInfo.line,
-        height: jacketInfo.height,
-      },
-      rules
-    );
-
-    const basisParts: Pool[] = vest ? [jacket, trousers, vest] : [jacket, trousers];
-    const shares = matched
-      ? distribute(matched.priceRub, basisParts)
-      : basisParts.map((p) => p.priceRub);
-
-    const parts: SuitPriceGroupPart[] = basisParts.map((p, i) => ({
-      productId: p.productId,
-      part: p === jacket ? "jacket" : p === trousers ? "trousers" : "vest",
-      size: p.size,
-      qty,
-      unitMsPriceRub: p.priceRub,
-      distributedUnitPriceRub: shares[i]!,
-    }));
-
-    groups.push({
-      groupId: `${variation}|${hasVest ? 3 : 2}|${jacket.productId}|${trousers.productId}`,
-      variation,
-      title: suitTitle({ hasVest, line: jacketInfo.line, color: null, pattern: null, fit: null }),
-      hasVest,
-      qty,
-      matrixUnitPriceRub: matched ? matched.priceRub : null,
-      matchedRuleLabel: matched ? matched.rule.label : null,
-      parts,
-    });
+    for (const p of [...jackets, ...trousers, ...vests]) unmatchedProductIds.push(p.productId);
   }
 
   return { groups, unmatchedProductIds };

@@ -29,6 +29,7 @@ import { PayoutRows } from "../../components/PayoutRows";
 import { filesToAttachments, type PhotoAttachment } from "../../lib/photo";
 import { api, USE_MOCK } from "../../api/client";
 import { useAppSettings } from "../../lib/appSettings";
+import { useHints } from "../../lib/hints";
 
 // ── Хелперы ──────────────────────────────────────────────────────────
 
@@ -320,6 +321,25 @@ export function SourceFields({
 const SARAFAN_CHANNEL = "Сарафан";
 
 /**
+ * Сколько костюмов уже склеено в чеке. У строки «×2» количество общее на
+ * пиджак, брюки и жилет, поэтому берём минимум внутри группы и складываем группы.
+ * Пока склейка не пришла, вернётся null и счёт останется за сервером.
+ */
+function suitsInGroupedCart(items: CartItem[] | undefined): number | null {
+  const qtyByGroup = new Map<string, number>();
+  for (const item of items ?? []) {
+    if (!item.suitGroupId || item.suitSplit || item.isReturn || item.qty <= 0) continue;
+    const prev = qtyByGroup.get(item.suitGroupId);
+    const qty = Math.floor(item.qty);
+    qtyByGroup.set(item.suitGroupId, prev == null ? qty : Math.min(prev, qty));
+  }
+  if (qtyByGroup.size === 0) return null;
+  let sum = 0;
+  for (const qty of qtyByGroup.values()) sum += qty;
+  return sum;
+}
+
+/**
  * Сарафан (п.3 правок 10.08; количество и метка «не найдено» — созвон 04.09).
  * Телефон друга проверяется в базе кассы и amoCRM, но не найден — не помеха:
  * САР всё равно уходит колл-менеджеру с меткой, он проверяет номер вручную.
@@ -339,6 +359,7 @@ function SarafanField({
   items?: CartItem[];
 }) {
   const { findByPhone } = useStore();
+  const { enabled: hintsOn } = useHints();
   const { saryMinCheck, sarySuitGroups } = useAppSettings();
   // Костюмов в чеке — столько САР положено (созвон 04.09). Костюм — это пара
   // пиджак плюс брюки одной вариации, размеры могут расходиться, поэтому счёт
@@ -380,7 +401,13 @@ function SarafanField({
         : sum,
     0
   );
-  const suitCount = serverSuits ?? suitCountFallback;
+  const groupedSuits = suitsInGroupedCart(items);
+  // Склейка в чеке и ответ сервера должны совпадать. Берём большее, чтобы
+  // «×2» на строке костюма не оставляло в сарафане только одну тысячу.
+  const suitCount =
+    groupedSuits != null && serverSuits != null
+      ? Math.max(groupedSuits, serverSuits)
+      : (groupedSuits ?? serverSuits ?? suitCountFallback);
   // Порог по сумме чека нужен, только когда костюмов в чеке нет (созвон 04.09).
   const belowThreshold =
     suitCount === 0 && checkTotal != null && checkTotal < saryMinCheck;
@@ -477,7 +504,9 @@ function SarafanField({
           )}
           {!selfReferral && !checking && checked && !found && (
             <div className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-amber-300/90 bg-amber-400/10 border border-amber-400/20 rounded px-2 py-0.5">
-              В базе не найден — САР уйдёт с меткой «не найдено», номер проверит колл-менеджер
+              {hintsOn
+                ? "В базе не найден — САР уйдёт с меткой «не найдено», номер проверит колл-менеджер"
+                : "В базе не найден"}
             </div>
           )}
         </Field>
@@ -486,11 +515,11 @@ function SarafanField({
             <Button
               variant={bonusUsed ? "primary" : "subtle"}
               disabled={selfReferral || belowThreshold}
-              onClick={() => setBonusCount(bonusUsed ? 0 : 1)}
+              onClick={() => setBonusCount(bonusUsed ? 0 : maxBonuses)}
             >
               {bonusUsed
                 ? `Бонус применён −${money(bonusCount * SARY_BONUS)}`
-                : `Использовать бонус −${money(SARY_BONUS)}`}
+                : `Использовать бонус −${money(maxBonuses * SARY_BONUS)}`}
             </Button>
             {maxBonuses > 1 && (
               <div className="inline-flex items-center gap-1">
@@ -596,11 +625,12 @@ export function TotalsBlock({
   itemsDiscount?: number;
   /** Доставка прибавляется после скидки и не участвует в её расчёте. */
   delivery?: number;
-  /** Бонус сарафана — отдельной строкой, не смешивается со скидкой. */
+  /** Бонус сарафана входит в плитку «Скидка» и уже вычтен из суммы к оплате. */
   saryBonus?: number;
 }) {
   const checkDiscount = calcDiscount(subtotal, state);
-  const totalDiscount = Math.max(0, itemsDiscount) + checkDiscount;
+  const bonus = Math.max(0, saryBonus);
+  const totalDiscount = Math.max(0, itemsDiscount) + checkDiscount + bonus;
   const gross = subtotal + Math.max(0, itemsDiscount) + delivery;
   const total = Math.max(0, Math.max(0, subtotal - checkDiscount) + delivery - saryBonus);
   return (
@@ -629,7 +659,7 @@ export function TotalsBlock({
         <SumTile label="Общая стоимость" value={money(gross)} />
         <SumTile
           label={
-            state.discPct && checkDiscount > 0 && itemsDiscount > 0
+            state.discPct && checkDiscount > 0 && (itemsDiscount > 0 || bonus > 0)
               ? `Скидка (+${state.discPct}% на чек)`
               : state.discPct && checkDiscount > 0
                 ? `Скидка ${state.discPct}%`

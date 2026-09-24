@@ -331,8 +331,10 @@ export function Select({
                           item.value === "" && !active ? " is-empty" : ""
                         }`}
                       >
-                        <span className="min-w-0 truncate">{item.shortLabel ?? item.label}</span>
-                        {item.hint && <span className="kassa-select-hint">{item.hint}</span>}
+                        <span className="min-w-0 flex items-center gap-1.5">
+                          <span className="truncate">{item.shortLabel ?? item.label}</span>
+                          {item.hint && <span className="kassa-select-hint">{item.hint}</span>}
+                        </span>
                         {active && <Check size={15} className="kassa-select-check" />}
                       </button>
                     );
