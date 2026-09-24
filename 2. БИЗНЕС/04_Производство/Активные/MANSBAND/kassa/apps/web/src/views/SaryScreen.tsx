@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Gift, Check, Copy, Clock3, Plus, Search, BadgePercent } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Gift, Check, Copy, Clock3, Plus, Search, BadgePercent, ChevronRight } from "lucide-react";
 import { useStore } from "../store";
 import { money, timeOf, shortDate } from "../lib/format";
 import { Button, Modal, StatTile } from "../components/ui";
@@ -33,6 +33,38 @@ function matchesPhone(s: SaryPayout, q: string): boolean {
   const digits = q.replace(/\D/g, "");
   if (!digits) return true;
   return s.phone.replace(/\D/g, "").includes(digits);
+}
+
+function FoldSection({
+  title,
+  icon,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  icon: ReactNode;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mb-7">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="field-label mb-2 flex items-center gap-1.5 w-full text-left"
+      >
+        <ChevronRight size={13} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        {icon}
+        {title}
+        <span className="chip bg-ink-700 text-mute text-[11px] normal-case tracking-normal">{count}</span>
+      </button>
+      {open && <div className="space-y-2">{children}</div>}
+    </div>
+  );
 }
 
 /**
@@ -113,6 +145,12 @@ export function SaryScreen({
   const showPending = statusFilter === "all" || statusFilter === "pending" || onlyNotFound;
   const showInCheck = statusFilter === "all" || statusFilter === "in_check" || onlyNotFound;
   const showSent = statusFilter === "all" || statusFilter === "sent" || onlyNotFound;
+  const [inCheckOpen, setInCheckOpen] = useState(false);
+  const [sentOpen, setSentOpen] = useState(false);
+  useEffect(() => {
+    if (statusFilter === "in_check") setInCheckOpen(true);
+    if (statusFilter === "sent") setSentOpen(true);
+  }, [statusFilter]);
 
   // Пачки по дню создания: кол-менеджер отправляет их одной серией переводов.
   const days = useMemo(() => {
@@ -486,74 +524,74 @@ export function SaryScreen({
       )}
 
       {showInCheck && (
-        <>
-          <div className="field-label mb-2 flex items-center gap-1.5">
-            <BadgePercent size={13} /> Учтено в чеке
-          </div>
-          <div className="space-y-2 mb-7">
-            {inCheck.length === 0 && (
-              <div className="text-mute text-[13px] px-1 pb-2">Пока пусто</div>
-            )}
-            {inCheck.map((s) => (
-              <div
-                key={s.id}
-                className="flex flex-col gap-3 px-4 py-4 rounded-xl bg-ink-900/50 border border-ink-800 sm:flex-row sm:items-center"
-              >
-                <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
-                  <BadgePercent size={18} className="text-sky-300/80 shrink-0 mt-0.5 sm:mt-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-white font-semibold text-[15px]">{s.client}</span>
-                      <span className="text-mute-soft">{money(s.amount)} · скидка в чеке</span>
-                      <NotFoundBadge s={s} />
-                    </div>
-                    <div className="text-mute text-[13px] mt-0.5">
-                      {shortDate(s.createdAt)} {timeOf(s.createdAt)}
-                    </div>
+        <FoldSection
+          title="Учтено в чеке"
+          icon={<BadgePercent size={13} />}
+          count={inCheck.length}
+          open={inCheckOpen}
+          onToggle={() => setInCheckOpen((v) => !v)}
+        >
+          {inCheck.length === 0 && <div className="text-mute text-[13px] px-1 pb-2">Пока пусто</div>}
+          {inCheck.map((s) => (
+            <div
+              key={s.id}
+              className="flex flex-col gap-3 px-4 py-4 rounded-xl bg-ink-900/50 border border-ink-800 sm:flex-row sm:items-center"
+            >
+              <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                <BadgePercent size={18} className="text-sky-300/80 shrink-0 mt-0.5 sm:mt-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-white font-semibold text-[15px]">{s.client}</span>
+                    <span className="text-mute-soft">{money(s.amount)} · скидка в чеке</span>
+                    <NotFoundBadge s={s} />
+                  </div>
+                  <div className="text-mute text-[13px] mt-0.5">
+                    {shortDate(s.createdAt)} {timeOf(s.createdAt)}
                   </div>
                 </div>
-                <DealButton number={s.refDealNumber} onOpen={onOpenDeal} />
               </div>
-            ))}
-          </div>
-        </>
+              <DealButton number={s.refDealNumber} onOpen={onOpenDeal} />
+            </div>
+          ))}
+        </FoldSection>
       )}
 
       {showSent && (
-        <>
-          <div className="field-label mb-2 flex items-center gap-1.5">
-            <Clock3 size={13} /> Отправлено
-          </div>
-          <div className="space-y-2">
-            {sent.length === 0 && <div className="text-mute text-[13px] px-1">Пока пусто</div>}
-            {sent.map((s) => (
-              <div
-                key={s.id}
-                className="flex flex-col gap-3 px-4 py-4 rounded-xl bg-ink-900/50 border border-ink-800 sm:flex-row sm:items-center"
-              >
-                <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
-                  <Check size={18} className="text-white/70 shrink-0 mt-0.5 sm:mt-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-white font-semibold text-[15px]">{s.client}</span>
-                      <span className="text-mute-soft">
-                        {money(s.amount)}
-                        {s.screenshotAttached ? " · скрин" : ""}
-                      </span>
-                      <NotFoundBadge s={s} />
-                    </div>
-                    <div className="text-mute text-[13px] mt-0.5" title="Дата отправки">
-                      {s.sentAt
-                        ? `${shortDate(s.sentAt)} ${timeOf(s.sentAt)}`
-                        : `${shortDate(s.createdAt)} ${timeOf(s.createdAt)}`}
-                    </div>
+        <FoldSection
+          title="Отправлено"
+          icon={<Clock3 size={13} />}
+          count={sent.length}
+          open={sentOpen}
+          onToggle={() => setSentOpen((v) => !v)}
+        >
+          {sent.length === 0 && <div className="text-mute text-[13px] px-1">Пока пусто</div>}
+          {sent.map((s) => (
+            <div
+              key={s.id}
+              className="flex flex-col gap-3 px-4 py-4 rounded-xl bg-ink-900/50 border border-ink-800 sm:flex-row sm:items-center"
+            >
+              <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                <Check size={18} className="text-white/70 shrink-0 mt-0.5 sm:mt-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-white font-semibold text-[15px]">{s.client}</span>
+                    <span className="text-mute-soft">
+                      {money(s.amount)}
+                      {s.screenshotAttached ? " · скрин" : ""}
+                    </span>
+                    <NotFoundBadge s={s} />
+                  </div>
+                  <div className="text-mute text-[13px] mt-0.5" title="Дата отправки">
+                    {s.sentAt
+                      ? `${shortDate(s.sentAt)} ${timeOf(s.sentAt)}`
+                      : `${shortDate(s.createdAt)} ${timeOf(s.createdAt)}`}
                   </div>
                 </div>
-                <DealButton number={s.refDealNumber} onOpen={onOpenDeal} />
               </div>
-            ))}
-          </div>
-        </>
+              <DealButton number={s.refDealNumber} onOpen={onOpenDeal} />
+            </div>
+          ))}
+        </FoldSection>
       )}
     </div>
   );
