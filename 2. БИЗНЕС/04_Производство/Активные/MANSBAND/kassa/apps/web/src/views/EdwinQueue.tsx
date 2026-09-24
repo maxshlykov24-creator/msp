@@ -14,6 +14,7 @@ import { canSeeFinanceQueues } from "../auth/roles";
 import type { Deal } from "../data/types";
 import { DealWorkspace } from "./DealWorkspace";
 import { Hint } from "../lib/hints";
+import { inPeriod, periodStart, QueuePeriodBar, type QueuePeriod } from "../components/QueuePeriod";
 
 type ExtendedQueueItem = Omit<ReturnType<typeof useStore>["queue"][number], "kind"> & {
   kind:
@@ -128,6 +129,7 @@ export function EdwinQueue() {
   const rows = queue as unknown as ExtendedQueueItem[];
   const [kind, setKind] = useState("all");
   const [status, setStatus] = useState("pending");
+  const [period, setPeriod] = useState<QueuePeriod>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [reopening, setReopening] = useState<string | null>(null);
@@ -159,6 +161,11 @@ export function EdwinQueue() {
   const pending = edwinRows.filter((q) => q.status === "pending");
   const issued = edwinRows.filter((q) => q.status === "issued");
   const pendingSum = pending.reduce((s, q) => s + (q.amount - (q.issuedAmount ?? 0)), 0);
+  const periodFromDay = periodStart(period);
+  const issuedInPeriod = edwinRows.filter(
+    (q) => q.status === "issued" && inPeriod(q.issuedAt ?? q.createdAt, periodFromDay)
+  );
+  const issuedSum = issuedInPeriod.reduce((s, q) => s + (q.issuedAmount || q.amount), 0);
   const filtered = useMemo(() => {
     const kindOrder = EDWIN_KIND_CHIPS.map((k) => k.id);
     return rows
@@ -424,6 +431,16 @@ export function EdwinQueue() {
         Сдача, чаевые, возвраты, счета и зарплата. В работе — что ещё не выдано. Кто, когда и каким
         способом выдал, видно в закрытых. Расход пишется на выбранный счёт.
       </Hint>
+
+      <QueuePeriodBar
+        period={period}
+        onChange={setPeriod}
+        tiles={[
+          { label: "В работе", value: String(pending.length), sub: money(pendingSum), tone: "amber" },
+          { label: "Сделано", value: String(issuedInPeriod.length), tone: "green" },
+          { label: "Выдано", value: money(issuedSum), tone: "gold" },
+        ]}
+      />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="inline-flex border border-ink-700 rounded-lg overflow-hidden">

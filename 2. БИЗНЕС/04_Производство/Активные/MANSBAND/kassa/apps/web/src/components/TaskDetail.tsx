@@ -469,7 +469,7 @@ export function TaskDetail({
               {scanError && <div className="text-[12px] text-amber-300/90">{scanError}</div>}
               {scanOk && <div className="text-[12px] text-emerald-300/90">{scanOk}</div>}
               {!allScanned && (
-                <div className="text-[12px] text-mute">
+                <div className="hint-only text-[12px] text-mute">
                   Отсканируйте все позиции — только после этого станет доступна кнопка «
                   {taskActionLabel(task.kind)}».
                 </div>

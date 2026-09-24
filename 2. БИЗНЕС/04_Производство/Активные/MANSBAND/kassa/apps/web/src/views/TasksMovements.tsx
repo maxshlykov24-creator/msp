@@ -13,6 +13,7 @@ import {
 import { api, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
 import { Button, Modal, StageBadge, Select, opts } from "../components/ui";
+import { inPeriod, periodStart, QueuePeriodBar, type QueuePeriod } from "../components/QueuePeriod";
 import {
   CreateTaskForm,
   type CreatedTask,
@@ -32,7 +33,7 @@ import { Hint } from "../lib/hints";
 
 type CreateMode = "chooser" | "task" | "movement" | null;
 
-type TaskStatus = "pending" | "done";
+type TaskStatus = "pending" | "done" | "cancelled";
 interface OperationTask {
   id: string;
   kind: string;
@@ -42,6 +43,7 @@ interface OperationTask {
   dealNumber?: number;
   status: TaskStatus;
   createdAt: string;
+  completedAt?: string;
   createdBy?: string;
   metadata?: Record<string, unknown>;
 }
@@ -226,6 +228,7 @@ export function TasksMovements() {
   const initialHash = hashParts();
   const [view, setView] = useState<QueueView>(parseView(initialHash[1]));
   const [tasks, setTasks] = useState<OperationTask[]>(USE_MOCK ? MOCK_TASKS : []);
+  const [period, setPeriod] = useState<QueuePeriod>("all");
   const [status, setStatus] = useState(
     initialHash[2] === "done" || initialHash[2] === "all" ? initialHash[2] : "pending"
   );
@@ -372,11 +375,32 @@ export function TasksMovements() {
   }, [tasks, view, status, queueFilter, storeScope]);
 
   const total = visibleTasks.length;
+  const periodFromDay = periodStart(period);
+  const statsTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      if (isSaryOps(task.kind)) return false;
+      if (view !== "all" && task.assigneeRole !== view) return false;
+      if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) return false;
+      if (storeScope && !taskTouchesStore(task, storeScope)) return false;
+      return true;
+    });
+  }, [tasks, view, queueFilter, storeScope]);
+  const openTasks = statsTasks.filter((task) => task.status === "pending").length;
+  const doneTasks = statsTasks.filter(
+    (task) => task.status === "done" && inPeriod(task.completedAt ?? task.createdAt, periodFromDay)
+  ).length;
+  const cancelledTasks = statsTasks.filter(
+    (task) => task.status === "cancelled" && inPeriod(task.completedAt ?? task.createdAt, periodFromDay)
+  ).length;
 
   async function complete(id: string) {
     setActionError(null);
     const prev = tasks;
-    setTasks((list) => list.map((task) => (task.id === id ? { ...task, status: "done" } : task)));
+    setTasks((list) =>
+      list.map((task) =>
+        task.id === id ? { ...task, status: "done", completedAt: new Date().toISOString() } : task
+      )
+    );
     if (USE_MOCK) {
       const done = prev.find((t) => t.id === id);
       if (done?.kind === "movement") {
@@ -514,6 +538,16 @@ export function TasksMovements() {
           })}
         </div>
       </div>
+
+      <QueuePeriodBar
+        period={period}
+        onChange={setPeriod}
+        tiles={[
+          { label: "В работе", value: String(openTasks), tone: "amber" },
+          { label: "Сделано", value: String(doneTasks), tone: "green" },
+          { label: "Отменено", value: String(cancelledTasks), tone: "gray" },
+        ]}
+      />
 
       <div className="card filter-bar p-4 mb-3 flex flex-wrap items-center gap-2.5">
         <Select
@@ -701,7 +735,6 @@ export function TasksMovements() {
                 : undefined
             }
             onOpenDeal={(n) => {
-              setOpenTask(null);
               void openDealByNumber(n);
             }}
           />

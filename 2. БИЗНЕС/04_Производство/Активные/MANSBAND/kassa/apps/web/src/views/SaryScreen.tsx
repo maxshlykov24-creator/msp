@@ -504,7 +504,6 @@ export function SaryScreen({
                               </span>
                               <NotFoundBadge s={s} />
                             </div>
-                            <div className="text-mute text-[13px] mt-0.5">{s.reason}</div>
                           </div>
                         </label>
                         <div className="flex items-stretch gap-2 pl-8 sm:pl-0">

@@ -9,6 +9,7 @@ import { useAuth } from "../auth/AuthContext";
 import { canSeeFinanceQueues } from "../auth/roles";
 import { DealWorkspace } from "./DealWorkspace";
 import { Hint } from "../lib/hints";
+import { inPeriod, periodStart, QueuePeriodBar, type QueuePeriod } from "../components/QueuePeriod";
 
 type CompanyPatch = {
   documentsStatus?: "pending" | "ready" | "handed";
@@ -112,6 +113,7 @@ export function MishaQueue() {
   const { queue, deals, reopenQueueItem } = useStore();
   const { user } = useAuth();
   const allowed = canSeeFinanceQueues(user?.role, user?.login, user?.name);
+  const [period, setPeriod] = useState<QueuePeriod>("all");
   const [status, setStatus] = useState("pending");
   const [kindFilter, setKindFilter] = useState<"" | MishaKind>("");
   const [rows, setRows] = useState<QueueItem[]>(queue as QueueItem[]);
@@ -159,6 +161,11 @@ export function MishaQueue() {
   const atelierSum = pending
     .filter((row) => row.kind === "atelier")
     .reduce((sum, row) => sum + row.amount, 0);
+  const periodFromDay = periodStart(period);
+  const closedInPeriod = mishaRows.filter(
+    (row) => row.status === "issued" && inPeriod(row.issuedAt ?? row.createdAt, periodFromDay)
+  );
+  const closedSum = closedInPeriod.reduce((sum, row) => sum + row.amount, 0);
 
   const kindCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -273,6 +280,16 @@ export function MishaQueue() {
         Документы и ателье по продажам компаний. В работе виден только текущий шаг заявки. Следующий
         откроется, когда закроешь предыдущий. Консультанту эта очередь не показывается.
       </Hint>
+
+      <QueuePeriodBar
+        period={period}
+        onChange={setPeriod}
+        tiles={[
+          { label: "В работе", value: String(pending.length), sub: atelierSum > 0 ? `ателье ${money(atelierSum)}` : undefined, tone: "amber" },
+          { label: "Закрыто", value: String(closedInPeriod.length), tone: "green" },
+          { label: "На сумму", value: money(closedSum), tone: "gold" },
+        ]}
+      />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="inline-flex border border-ink-700 rounded-lg overflow-hidden">
