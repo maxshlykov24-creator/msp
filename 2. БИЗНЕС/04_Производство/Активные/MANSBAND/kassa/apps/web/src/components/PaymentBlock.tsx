@@ -192,7 +192,17 @@ export function PaymentBlock({
         <div className="w-[150px]">
           <div className="field-label flex items-center justify-between gap-2">
             <span>Сумма</span>
-            {fillValue > 0 && !addBlocked && (
+            {isCert && available > 0 && (
+              <button
+                type="button"
+                onClick={() => setAmount(String(Math.round(available)))}
+                className="text-[11px] text-gold-soft hover:text-white normal-case tracking-normal font-semibold whitespace-nowrap"
+                title="Подставить весь доступный остаток сертификата"
+              >
+                списать всё
+              </button>
+            )}
+            {!isCert && fillValue > 0 && !addBlocked && (
               <button
                 type="button"
                 onClick={() => setAmount(String(Math.round(fillValue)))}
@@ -239,7 +249,7 @@ export function PaymentBlock({
               <div className="field-label">№ сертификата</div>
               <input
                 className={`input ${certNo.trim() && !cert ? "border-red-400/60" : ""}`}
-                placeholder="2420"
+                placeholder=""
                 value={certNo}
                 onChange={(e) => {
                   setCertNo(e.target.value);
