@@ -135,7 +135,7 @@ export function ConvertKindForm({
           Номер заявки #{deal.number} сохранится. Выберите тип — дальше заполним обязательные поля.
         </p>
         <div className="space-y-2">
-          {TARGETS.map((t) => (
+          {TARGETS.filter((t) => t.kind !== deal.kind).map((t) => (
             <button
               key={t.kind}
               type="button"

@@ -374,7 +374,10 @@ export function DealWorkspace({
 
   // Отложку/обещание проводят как продажу, компанию или аренду: тот же номер
   // заявки и все данные (правки владельца 10.08.2026, п.1.1).
-  const canConvert = !readOnly && (live.kind === "deferred" || live.kind === "promise");
+  const canConvert =
+    !readOnly &&
+    !closed &&
+    (live.kind === "deferred" || live.kind === "promise" || live.kind === "sale");
 
   async function convertKind(payload: ConvertKindPayload) {
     setConverting(true);

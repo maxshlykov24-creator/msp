@@ -248,8 +248,8 @@ export default async function dealsRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
     const existing = await deals.resolve(ref);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
-    if (existing.kind !== "deferred" && existing.kind !== "promise") {
-      return reply.code(400).send({ message: "Менять тип можно только у отложки и обещания" });
+    if (existing.kind !== "deferred" && existing.kind !== "promise" && existing.kind !== "sale") {
+      return reply.code(400).send({ message: "Менять тип можно у отложки, обещания и продажи" });
     }
     if (COMPLETED_STAGES.has(existing.stage) && !canEditClosed(req.user)) {
       return reply.code(403).send({ message: "Завершённые сделки может менять только РОП или Максим" });
