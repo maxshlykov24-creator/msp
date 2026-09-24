@@ -106,12 +106,20 @@ export function Select({
     const rect = el.getBoundingClientRect();
     const width = Math.min(Math.max(rect.width, menuMinWidth), window.innerWidth - 16);
     const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
-    const below = window.innerHeight - rect.bottom - 10;
-    const above = rect.top - 10;
-    const up = below < 240 && above > below;
-    const maxH = Math.min(400, Math.max(180, up ? above : below));
+    const gap = 8;
+    const desired = 420;
+    const view = window.visualViewport;
+    const viewTop = view?.offsetTop ?? 0;
+    const viewH = view?.height ?? window.innerHeight;
+    const below = viewTop + viewH - rect.bottom - gap;
+    const above = rect.top - viewTop - gap;
+    // Поле у нижнего края: вниз остаётся узкая полоска. Поднимаем список,
+    // если сверху места больше, и не даём ему вылезать за экран.
+    const up = below < desired && above > below;
+    const room = Math.max(0, up ? above : below);
+    const maxH = Math.min(desired, room);
     setBox({
-      top: up ? rect.top - 6 : rect.bottom + 6,
+      top: up ? rect.top - gap : rect.bottom + gap,
       left,
       width,
       maxH,
@@ -136,9 +144,13 @@ export function Select({
     const sync = () => place();
     window.addEventListener("resize", sync);
     window.addEventListener("scroll", sync, true);
+    window.visualViewport?.addEventListener("resize", sync);
+    window.visualViewport?.addEventListener("scroll", sync);
     return () => {
       window.removeEventListener("resize", sync);
       window.removeEventListener("scroll", sync, true);
+      window.visualViewport?.removeEventListener("resize", sync);
+      window.visualViewport?.removeEventListener("scroll", sync);
     };
   }, [open, visible.length, menuMinWidth]);
 

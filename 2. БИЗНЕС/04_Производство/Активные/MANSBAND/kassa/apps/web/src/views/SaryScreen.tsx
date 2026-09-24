@@ -20,6 +20,35 @@ function dayKey(iso: string): string {
 }
 
 type StatusFilter = "all" | SaryPayout["status"] | "not_found";
+type SaryPeriod = "all" | "day" | "week" | "month";
+
+const PERIODS: Array<{ id: SaryPeriod; label: string }> = [
+  { id: "day", label: "Сегодня" },
+  { id: "week", label: "7 дней" },
+  { id: "month", label: "30 дней" },
+  { id: "all", label: "Всё" },
+];
+
+function localYmd(date: Date): string {
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${m}-${day}`;
+}
+
+function periodFrom(period: SaryPeriod): string | null {
+  if (period === "all") return null;
+  const date = new Date();
+  if (period === "week") date.setDate(date.getDate() - 6);
+  if (period === "month") date.setDate(date.getDate() - 29);
+  return localYmd(date);
+}
+
+/** Отправленные считаем по дате перевода, остальные по дате появления. */
+function saryDay(s: SaryPayout): string {
+  const iso = s.status === "sent" ? s.sentAt ?? s.createdAt : s.createdAt;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso.slice(0, 10) : localYmd(date);
+}
 
 const STATUS_TABS: Array<{ id: StatusFilter; label: string }> = [
   { id: "all", label: "Все" },
@@ -111,12 +140,20 @@ export function SaryScreen({
   const [form, setForm] = useState({ client: "", phone: "", amount: "", reason: "", deal: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [period, setPeriod] = useState<SaryPeriod>("all");
   const [phoneQuery, setPhoneQuery] = useState("");
   // «Не найдено» — не статус, а срез по всем трём разделам.
   const onlyNotFound = statusFilter === "not_found";
+  const fromDay = periodFrom(period);
   const visible = useMemo(
-    () => sary.filter((s) => matchesPhone(s, phoneQuery) && (!onlyNotFound || !s.phoneFound)),
-    [sary, phoneQuery, onlyNotFound]
+    () =>
+      sary.filter(
+        (s) =>
+          (fromDay == null || saryDay(s) >= fromDay) &&
+          matchesPhone(s, phoneQuery) &&
+          (!onlyNotFound || !s.phoneFound)
+      ),
+    [sary, phoneQuery, onlyNotFound, fromDay]
   );
   const pending = useMemo(() => visible.filter((s) => s.status === "pending"), [visible]);
   const inCheck = useMemo(
@@ -133,7 +170,7 @@ export function SaryScreen({
         .sort((a, b) => (b.sentAt ?? b.createdAt).localeCompare(a.sentAt ?? a.createdAt)),
     [visible]
   );
-  const notFoundCount = useMemo(() => sary.filter((s) => !s.phoneFound).length, [sary]);
+  const notFoundCount = useMemo(() => visible.filter((s) => !s.phoneFound).length, [visible]);
   const pendingSum = pending.reduce((s, x) => s + x.amount, 0);
   const [copied, setCopied] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -293,6 +330,21 @@ export function SaryScreen({
           WhatsApp до перевода.
         </p>
       </Hint>
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {PERIODS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setPeriod(item.id)}
+            className={`chip transition ${
+              period === item.id ? "bg-gold text-ink-950 font-semibold" : "bg-ink-700 text-mute-soft hover:text-white"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatTile label="К отправке" value={String(pending.length)} tone="amber" sub={money(pendingSum)} />
