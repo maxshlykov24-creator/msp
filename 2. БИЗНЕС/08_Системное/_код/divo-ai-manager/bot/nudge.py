@@ -25,6 +25,19 @@ VIN = re.compile(r"\b[A-HJ-NPR-Za-hj-npr-z0-9]{17}\b")
 HAS_PHONE = re.compile(
     r"(?:\+?7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}|\b\d{10,11}\b"
 )
+# Ссылка на объявление. Десять цифр id Авто.ру и Авито иначе становятся
+# телефоном: 1126101656 в пути давало +7 112 610-16-56.
+_LISTING_URL = re.compile(
+    r"(?:https?://|www\.)\S+|(?:auto\.ru|avito\.ru|drom\.ru)/\S+",
+    re.IGNORECASE,
+)
+# Хвост id Авто.ру, если ссылку разрезало: 1126101656-d22b0019.
+# Буква в хвосте обязательна, чтобы не съесть телефон с добавочным из цифр.
+_OFFER_ID = re.compile(
+    r"(?<!\d)\d{8,12}-[0-9a-f]*[a-f][0-9a-f]{3,}(?!\w)",
+    re.IGNORECASE,
+)
+_MESSENGER_URL = ("wa.me/", "whatsapp.com", "t.me/", "telegram.me", "tel:")
 # +994, +375 и остальные: российский шаблон их не берёт, и догон снова
 # просит номер, который клиент уже прислал.
 INTL_PHONE = re.compile(
@@ -389,6 +402,22 @@ def _is_ru_mobile(digits: str) -> bool:
     return len(digits) == 11 and digits.startswith("79")
 
 
+def _strip_listing_ids(text: str) -> str:
+    """Убирает ссылки на объявления до поиска телефона.
+
+    Номер в wa.me и t.me оставляем: это как раз контакт клиента.
+    """
+
+    def repl(match: re.Match) -> str:
+        url = match.group(0).lower()
+        if any(part in url for part in _MESSENGER_URL):
+            return match.group(0)
+        return " "
+
+    blob = _LISTING_URL.sub(repl, text or "")
+    return _OFFER_ID.sub(" ", blob)
+
+
 def extract_phone(text: str) -> str:
     """Номер клиента: Россия как 7XXXXXXXXXX, иностранный как цифры с кодом страны.
 
@@ -398,7 +427,7 @@ def extract_phone(text: str) -> str:
     """
     salon = re.sub(r"\D", "", SALON_PHONE)
     best = ""
-    blob = VIN.sub(" ", text or "")
+    blob = VIN.sub(" ", _strip_listing_ids(text or ""))
 
     def take(digits: str) -> None:
         nonlocal best

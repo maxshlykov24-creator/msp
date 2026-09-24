@@ -80,6 +80,16 @@ def test_phone():
     assert extract_phone("910 182-22-97") == "79101822297"
     vin_phone = "SCA665C07EUX77820\n89107470044"
     assert extract_phone(vin_phone) == "79107470044"
+    listing = (
+        "Здравствуйте, обмен интересует?\n"
+        "https://auto.ru/cars/used/sale/mercedes/cls_klasse/1126101656-d22b0019/"
+    )
+    assert extract_phone(listing) == ""
+    assert not history_has_phone([{"role": "user", "content": listing}])
+    assert extract_phone(listing + "\n89101822297") == "79101822297"
+    assert extract_phone("https://www.avito.ru/moskva/avtomobili/bmw_1126101656") == ""
+    assert extract_phone("1126101656-d22b0019") == ""
+    assert extract_phone("https://wa.me/79101822297") == "79101822297"
     assert extract_phone("SCA665C07EUX77820 89107470044") == "79107470044"
     assert extract_phone_from_history(
         [{"role": "user", "content": vin_phone}]
