@@ -32,9 +32,11 @@ import { USE_MOCK } from "../../api/client";
 export function ExchangeForm({
   onDone,
   sourceDeal,
+  embedded = false,
 }: {
   onDone: () => void;
   sourceDeal?: Deal | null;
+  embedded?: boolean;
 }) {
   const { activeStore, activeConsultant, addDeal, addQueueItem, nextNumber, findByPhone, deals } =
     useStore();
@@ -153,6 +155,7 @@ export function ExchangeForm({
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
       missingRequired={missingRequired}
+      embedded={embedded}
       footer={
         <StageActions
           stages={["Успех", "Провал"]}

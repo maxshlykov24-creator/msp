@@ -25,6 +25,10 @@ import { BarcodeScannerModal } from "./BarcodeScanner";
 import { Modal } from "./ui";
 import { MovementModal } from "./MovementModal";
 
+function itemKey(it: CartItem): string {
+  return it.lineId ?? it.productId;
+}
+
 export function lineTotal(it: CartItem): number {
   if (it.noPrice) return 0;
   let unit = it.price;
@@ -159,33 +163,38 @@ interface SuitPriceGroupPart {
 
 const SUIT_PART_ORDER: SuitPart[] = ["jacket", "trousers", "vest"];
 
-/** Размер части для строки чека: «46/6», если есть ростовка. */
-function suitSizeToken(size: string, height?: string): string {
-  const s = (size ?? "").trim();
-  const h = (height ?? "").trim();
-  if (s && h) return `${s}/${h}`;
-  return s || h;
+/**
+ * Строка костюма в чеке — тот же формат, что у модификации МойСклад:
+ * «Смокинг тройка (50, S23/33S3, черный, 6, slim fit, однотонный)».
+ * Скобки берём у пиджака. Если размер другой части разошёлся, она дописывается
+ * внутрь скобок: «…, жилет 46».
+ */
+function suitCheckTitle(jacketName: string | undefined, metaTitle: string | undefined): string {
+  const kind = (metaTitle ?? "Костюм").split(" ").slice(0, 2).join(" ");
+  const raw = jacketName ?? "";
+  const open = raw.lastIndexOf("(");
+  const close = raw.lastIndexOf(")");
+  if (open >= 0 && close > open) return `${kind} ${raw.slice(open, close + 1)}`;
+  return kind;
 }
 
-/**
- * Подпись размера у склеенного костюма.
- * Все части одного размера — одна цифра. Размеры расходятся (это допустимо) —
- * размер пиджака остаётся размером костюма, остальные части названы отдельно.
- */
-function suitSizeCaption(parts: SuitPriceGroupPart[]): { same: string | null; odd: string | null } {
-  const rows = [...parts]
-    .sort((a, b) => SUIT_PART_ORDER.indexOf(a.part) - SUIT_PART_ORDER.indexOf(b.part))
-    .map((p) => ({ part: p.part, token: suitSizeToken(p.size, p.height) }))
-    .filter((p) => p.token);
-  if (rows.length === 0) return { same: null, odd: null };
-  const unique = new Set(rows.map((r) => r.token));
-  if (unique.size === 1) return { same: rows[0]!.token, odd: null };
-  const base = rows.find((r) => r.part === "jacket")?.token ?? rows[0]!.token;
-  const odd = rows.filter((r) => r.token !== base);
-  return {
-    same: base,
-    odd: odd.map((r) => `${SUIT_PART_LABEL[r.part]} ${r.token}`).join(", "),
-  };
+function suitOddSizes(parts: SuitPriceGroupPart[]): string | null {
+  const rows = [...parts].sort((a, b) => SUIT_PART_ORDER.indexOf(a.part) - SUIT_PART_ORDER.indexOf(b.part));
+  const base = rows.find((r) => r.part === "jacket") ?? rows[0];
+  if (!base) return null;
+  const odd = rows.filter(
+    (r) => r !== base && ((r.size ?? "").trim() !== (base.size ?? "").trim() || (r.height ?? "").trim() !== (base.height ?? "").trim())
+  );
+  if (odd.length === 0) return null;
+  return odd
+    .map((r) => {
+      const size = (r.size ?? "").trim();
+      const height = (r.height ?? "").trim();
+      const heightDiffers = height !== (base.height ?? "").trim();
+      const bits = [size, heightDiffers ? height : ""].filter(Boolean).join(", ");
+      return `${SUIT_PART_LABEL[r.part]} ${bits}`.trim();
+    })
+    .join(", ");
 }
 
 interface SuitPriceGroupApi {
@@ -233,36 +242,74 @@ function useSuitGrouping(items: CartItem[], onChange: (items: CartItem[]) => voi
           for (const g of groups) nextMeta[g.groupId] = g;
           setMeta(nextMeta);
 
+          const claims = groups.flatMap((g) =>
+            g.parts.map((p) => ({
+              groupId: g.groupId,
+              productId: p.productId,
+              qtyLeft: p.qty,
+              matched: g.matrixUnitPriceRub != null,
+              price: p.distributedUnitPriceRub,
+            }))
+          );
           let changed = false;
-          const next = items.map((it) => {
-            if (it.suitSplit) return it;
-            for (const g of groups) {
-              const part = g.parts.find((p) => p.productId === it.productId);
-              if (!part) continue;
-              const matched = g.matrixUnitPriceRub != null;
-              const nextPrice = matched ? part.distributedUnitPriceRub : it.suitOriginalPrice ?? it.price;
-              if (it.suitGroupId === g.groupId && it.suitPriceApplied === matched && it.price === nextPrice) {
-                return it;
+          const next: CartItem[] = [];
+          for (const it of items) {
+            if (it.suitSplit) {
+              next.push(it);
+              continue;
+            }
+            const claim = claims.find((c) => c.productId === it.productId && c.qtyLeft > 0);
+            if (!claim) {
+              if (!it.suitGroupId && !it.suitPriceApplied) {
+                next.push(it);
+                continue;
               }
               changed = true;
-              return {
+              next.push({
                 ...it,
-                suitGroupId: g.groupId,
-                suitPriceApplied: matched,
-                suitOriginalPrice: it.suitOriginalPrice ?? it.price,
-                price: nextPrice,
-              };
+                suitGroupId: undefined,
+                suitPriceApplied: undefined,
+                price: it.suitOriginalPrice ?? it.price,
+              });
+              continue;
             }
-            // Строка выпала из костюма (сменили размер, убрали пару) — старую склейку снимаем.
-            if (!it.suitGroupId && !it.suitPriceApplied) return it;
-            changed = true;
-            return {
+            const use = Math.min(it.qty, claim.qtyLeft);
+            claim.qtyLeft -= use;
+            const nextPrice = claim.matched ? claim.price : it.suitOriginalPrice ?? it.price;
+            const suited: CartItem = {
               ...it,
-              suitGroupId: undefined,
-              suitPriceApplied: undefined,
-              price: it.suitOriginalPrice ?? it.price,
+              qty: use,
+              suitGroupId: claim.groupId,
+              suitPriceApplied: claim.matched,
+              suitOriginalPrice: it.suitOriginalPrice ?? it.price,
+              price: nextPrice,
             };
-          });
+            if (
+              it.qty !== use ||
+              it.suitGroupId !== suited.suitGroupId ||
+              it.suitPriceApplied !== suited.suitPriceApplied ||
+              it.price !== suited.price
+            ) {
+              changed = true;
+            }
+            next.push(suited);
+            if (it.qty > use) {
+              changed = true;
+              const restId = `${it.productId}#rest`;
+              const prev = next.find((row) => row.lineId === restId);
+              if (prev) prev.qty += it.qty - use;
+              else {
+                next.push({
+                  ...it,
+                  lineId: restId,
+                  qty: it.qty - use,
+                  suitGroupId: undefined,
+                  suitPriceApplied: undefined,
+                  price: it.suitOriginalPrice ?? it.price,
+                });
+              }
+            }
+          }
           if (changed) onChange(next);
         })
         .catch(() => {
@@ -366,7 +413,7 @@ export function ProductPicker({
   function remainingQty(productId: string): number | null {
     const max = maxQtyFor(productId);
     if (max == null) return null;
-    const used = items.find((i) => i.productId === productId)?.qty ?? 0;
+    const used = items.reduce((s, i) => (i.productId === productId ? s + i.qty : s), 0);
     return Math.max(0, max - used);
   }
 
@@ -436,14 +483,15 @@ export function ProductPicker({
         flash("Этой позиции не было в исходной продаже — добавить нельзя");
         return;
       }
-      const used = items.find((i) => i.productId === p.id)?.qty ?? 0;
+      const used = items.reduce((s, i) => (i.productId === p.id ? s + i.qty : s), 0);
       if (used >= entry.maxQty) {
         flash(`В исходной сделке было только ${entry.maxQty} шт.`);
         return;
       }
       setAvailableById((prev) => ({ ...prev, [p.id]: entry.maxQty }));
       if (used > 0) {
-        onChange(items.map((i) => (i.productId === p.id ? { ...i, qty: i.qty + 1 } : i)));
+        const target = items.find((i) => i.productId === p.id && i.lineId) ?? items.find((i) => i.productId === p.id);
+        onChange(items.map((i) => (target && itemKey(i) === itemKey(target) ? { ...i, qty: i.qty + 1 } : i)));
       } else {
         onChange([
           ...items,
@@ -462,9 +510,9 @@ export function ProductPicker({
     }
 
     setAvailableById((prev) => ({ ...prev, [p.id]: p.stock }));
-    const existing = items.find((i) => i.productId === p.id);
+    const existing = items.find((i) => i.productId === p.id && i.lineId) ?? items.find((i) => i.productId === p.id);
     if (existing) {
-      onChange(items.map((i) => (i.productId === p.id ? { ...i, qty: i.qty + 1 } : i)));
+      onChange(items.map((i) => (itemKey(i) === itemKey(existing) ? { ...i, qty: i.qty + 1 } : i)));
     } else {
       onChange([
         ...items,
@@ -493,7 +541,7 @@ export function ProductPicker({
         patch = { ...patch, qty: max };
       }
     }
-    onChange(items.map((i) => (i.productId === id ? { ...i, ...patch } : i)));
+    onChange(items.map((i) => (itemKey(i) === id ? { ...i, ...patch } : i)));
   }
 
   /** Обновить скидку/подарок сразу по всем частям костюма в группе. */
@@ -735,8 +783,10 @@ export function ProductPicker({
                 const groupQty = groupItems[0]?.qty ?? 1;
                 const partOf = (productId: string): SuitPart | undefined =>
                   meta?.parts.find((p) => p.productId === productId)?.part;
+                const jacketItem = groupItems.find((it) => partOf(it.productId) === "jacket") ?? groupItems[0];
+                const suitTitleText = suitCheckTitle(jacketItem?.name, meta?.title);
+                const oddSizes = meta ? suitOddSizes(meta.parts) : null;
                 const first = groupItems[0];
-                const sizeCaption = meta ? suitSizeCaption(meta.parts) : { same: null, odd: null };
                 const groupDiscountPct = first?.discountPct;
                 const groupDiscountRub = first?.discountRub;
                 const groupIsGift = !!first?.isGift;
@@ -755,9 +805,14 @@ export function ProductPicker({
                         )}
                         <div className="min-w-0">
                           <div className="text-[14px] text-white break-words whitespace-normal leading-snug">
-                            {meta?.title ?? "Костюм"}
-                            {sizeCaption.same && <span className="text-mute-soft"> · {sizeCaption.same}</span>}
-                            {sizeCaption.odd && <span className="text-amber-200"> · {sizeCaption.odd}</span>}
+                            {oddSizes && suitTitleText.endsWith(")") ? (
+                              <>
+                                {suitTitleText.slice(0, -1)}
+                                <span className="text-amber-200">, {oddSizes}</span>)
+                              </>
+                            ) : (
+                              suitTitleText
+                            )}
                           </div>
                           <div className="text-[12px] text-mute flex flex-wrap gap-x-2 mt-0.5">
                             <span>{money((first?.price ?? 0) as number)} / шт</span>
@@ -792,16 +847,18 @@ export function ProductPicker({
                     {expanded && (
                       <div className="mt-2 ml-5 space-y-1 border-l border-ink-700 pl-3">
                         {groupItems.map((it) => {
-                          const part = partOf(it.productId);
                           const partMeta = meta?.parts.find((p) => p.productId === it.productId);
-                          const token = partMeta ? suitSizeToken(partMeta.size, partMeta.height) : "";
-                          const odd = Boolean(token && sizeCaption.odd && token !== sizeCaption.same);
+                          const jacketMeta = meta?.parts.find((p) => p.part === "jacket");
+                          const odd = Boolean(
+                            partMeta &&
+                              jacketMeta &&
+                              partMeta.part !== "jacket" &&
+                              ((partMeta.size ?? "").trim() !== (jacketMeta.size ?? "").trim() ||
+                                (partMeta.height ?? "").trim() !== (jacketMeta.height ?? "").trim())
+                          );
                           return (
                             <div key={it.productId} className="text-[12px] text-mute flex justify-between gap-2">
-                              <span className={`break-words ${odd ? "text-amber-200" : ""}`}>
-                                {part ? SUIT_PART_LABEL[part] : it.name}
-                                {token ? ` · ${token}` : ""}
-                              </span>
+                              <span className={`break-words ${odd ? "text-amber-200" : ""}`}>{it.name}</span>
                               <span className="shrink-0 text-white">{money(it.price)}</span>
                             </div>
                           );
@@ -847,7 +904,7 @@ export function ProductPicker({
               const it = row.item;
               const avail = availableById[it.productId];
               return (
-                <div key={it.productId} className="px-3 py-2.5 bg-ink-900/50">
+                <div key={itemKey(it)} className="px-3 py-2.5 bg-ink-900/50">
                   <div className="flex items-start gap-3">
                     <button
                       type="button"
@@ -898,10 +955,10 @@ export function ProductPicker({
                         <button
                           onClick={() => {
                             if (it.qty <= 1) {
-                              onChange(items.filter((x) => x.productId !== it.productId));
+                              onChange(items.filter((x) => itemKey(x) !== itemKey(it)));
                               return;
                             }
-                            update(it.productId, { qty: it.qty - 1 });
+                            update(itemKey(it), { qty: it.qty - 1 });
                           }}
                           className="px-1.5 text-mute hover:text-white"
                         >
@@ -916,7 +973,7 @@ export function ProductPicker({
                               flash(`В исходной сделке было только ${max} шт.`);
                               return;
                             }
-                            update(it.productId, { qty: next });
+                            update(itemKey(it), { qty: next });
                           }}
                           className="px-1.5 text-mute hover:text-white"
                         >
@@ -932,7 +989,7 @@ export function ProductPicker({
                     </div>
                     {!readOnly && (
                       <button
-                        onClick={() => onChange(items.filter((x) => x.productId !== it.productId))}
+                        onClick={() => onChange(items.filter((x) => itemKey(x) !== itemKey(it)))}
                         className="text-mute hover:text-white shrink-0 mt-0.5"
                       >
                         <Trash2 size={15} />
@@ -946,7 +1003,7 @@ export function ProductPicker({
                         placeholder="скидка %"
                         value={it.discountPct ?? ""}
                         onChange={(e) =>
-                          update(it.productId, {
+                          update(itemKey(it), {
                             discountPct: Number(e.target.value) || undefined,
                             isGift: false,
                           })
@@ -957,14 +1014,14 @@ export function ProductPicker({
                         placeholder="скидка ₽"
                         value={it.discountRub ?? ""}
                         onChange={(e) =>
-                          update(it.productId, {
+                          update(itemKey(it), {
                             discountRub: Number(e.target.value) || undefined,
                             isGift: false,
                           })
                         }
                       />
                       <button
-                        onClick={() => update(it.productId, { isGift: !it.isGift })}
+                        onClick={() => update(itemKey(it), { isGift: !it.isGift })}
                         className={`chip ${it.isGift ? "bg-gold/20 text-gold-soft" : "bg-ink-700 text-mute"}`}
                       >
                         <Gift size={13} /> Подарок
@@ -1065,7 +1122,7 @@ export function ProductPicker({
               </tbody>
             </table>
             <p className="hint-only mt-3 text-[12px] text-mute">
-              Доступно = остаток − резерв. Данные с МойСклад на момент открытия.
+              Доступно = остаток − резерв. Склады с МойСклад. СДЭК касса считает сама: товар в доставке клиенту, это не «В пути» между своими складами.
             </p>
           </div>
         )}

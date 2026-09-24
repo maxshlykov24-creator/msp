@@ -12,9 +12,11 @@ import { DealActionsBar } from "../components/DealActionsBar";
 import { MovementModal, defaultMovementTarget } from "../components/MovementModal";
 import { CreateTaskForm } from "../components/CreateTaskForm";
 import { ConvertKindForm, type ConvertKindPayload } from "../components/ConvertKindForm";
+import { RefundForm } from "./forms/RefundForm";
+import { ExchangeForm } from "./forms/ExchangeForm";
 import { HIDDEN_STAGES, STAGES_BY_KIND } from "../data/mock";
 import { api, USE_MOCK } from "../api/client";
-import { formatPhone } from "../lib/format";
+import { formatPhone, money } from "../lib/format";
 import { Hint } from "../lib/hints";
 import {
   ClientFields,
@@ -22,6 +24,7 @@ import {
   ConsultantFields,
   ReturnBlock,
   SectionTitle,
+  SourceFields,
   SummaryBar,
   returnDealFields,
   returnPayoutMissing,
@@ -45,6 +48,47 @@ function formatHistoryAction(action: string): string {
     .replace(/^Заявка обновлена\s*/i, "Обновление");
 }
 
+/** Снимок полей карточки. Совпадает у только что открытой сделки и у формы без правок. */
+function formFromDeal(live: Deal) {
+  return {
+    consultants: { consultant: live.consultant, referredBy: live.referredBy || "" },
+    client: {
+      name: live.clientName,
+      phone: live.clientPhone,
+      channel: live.channel || "",
+      purpose: live.purpose || "",
+      saryPhone: live.saryPhone,
+      saryClient: live.saryClient,
+      saryBonus: live.saryBonus,
+    },
+    items: live.items.map((it) => ({ ...it, itemStatus: it.itemStatus ?? "waiting" })),
+    payments: live.payments,
+    comment: live.comment || "",
+    stage: live.stage,
+    stageReason: "",
+    companyName: live.companyName || "",
+    managerName: live.managerName || "",
+    managerPhone: live.managerPhone || "",
+    atelier: live.atelierAmount ? String(live.atelierAmount) : "",
+    deliveryAmount: live.deliveryAmount ? String(live.deliveryAmount) : "",
+    issued: Boolean(live.issued),
+    rentalFrom: live.rentalFrom || "",
+    rentalTo: live.rentalTo || "",
+    returnInfo: {
+      status: live.returnStatus ?? "issued",
+      destination: live.returnDestination ?? "",
+      payouts: live.returnPayouts,
+    } satisfies ReturnInfo,
+  };
+}
+
+function formSnapshot(form: ReturnType<typeof formFromDeal>): string {
+  return JSON.stringify({
+    ...form,
+    items: form.items.map(({ suitGroupId: _g, suitPriceApplied: _a, suitOriginalPrice: _o, ...rest }) => rest),
+  });
+}
+
 /**
  * Открытая заявка в том же каркасе, что и создание новой:
  * статус справа сверху, действия, консультант/клиент, товары, оплаты.
@@ -52,9 +96,11 @@ function formatHistoryAction(action: string): string {
 export function DealWorkspace({
   deal,
   onClose,
-  onReturnExchange,
+  onReturnExchange: _onReturnExchange,
   backLabel = "К заявкам",
   hideBack = false,
+  /** Шапка окна с номером заявки: туда уезжает статус, чтобы стоять на той же строке. */
+  onDisplayStage,
 }: {
   deal: Deal;
   onClose: () => void;
@@ -63,6 +109,7 @@ export function DealWorkspace({
   backLabel?: string;
   /** В модалке крестик уже есть — кнопку «назад» не дублируем. */
   hideBack?: boolean;
+  onDisplayStage?: (stage: string) => void;
 }) {
   const { deals, updateDeal, replaceDeal, addDealComment, activeConsultant } = useStore();
   const { user } = useAuth();
@@ -81,6 +128,9 @@ export function DealWorkspace({
     phone: live.clientPhone,
     channel: live.channel || "",
     purpose: live.purpose || "",
+    saryPhone: live.saryPhone,
+    saryClient: live.saryClient,
+    saryBonus: live.saryBonus,
   });
   const [items, setItems] = useState<CartItem[]>(
     live.items.map((it) => ({ ...it, itemStatus: it.itemStatus ?? "waiting" }))
@@ -88,6 +138,9 @@ export function DealWorkspace({
   const [payments, setPayments] = useState<Payment[]>(live.payments);
   const [comment, setComment] = useState(live.comment || "");
   const [stage, setStage] = useState(live.stage);
+  useEffect(() => {
+    if (hideBack) onDisplayStage?.(stage);
+  }, [hideBack, onDisplayStage, stage]);
   const [stageReason, setStageReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -95,6 +148,7 @@ export function DealWorkspace({
   const [moveOpen, setMoveOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [returnMode, setReturnMode] = useState<null | "refund" | "exchange">(null);
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState(live.companyName || "");
@@ -112,6 +166,7 @@ export function DealWorkspace({
     destination: live.returnDestination ?? "",
     payouts: live.returnPayouts,
   });
+  const [baseline, setBaseline] = useState(() => formSnapshot(formFromDeal(live)));
 
   // Расположение позиций (П3, созвон 20.08): где физически лежит каждая позиция.
   const [itemStates, setItemStates] = useState<
@@ -134,32 +189,45 @@ export function DealWorkspace({
   }, [live.number]);
 
   useEffect(() => {
-    setConsultants({ consultant: live.consultant, referredBy: live.referredBy || "" });
-    setClient({
-      name: live.clientName,
-      phone: live.clientPhone,
-      channel: live.channel || "",
-      purpose: live.purpose || "",
-    });
-    setItems(live.items.map((it) => ({ ...it, itemStatus: it.itemStatus ?? "waiting" })));
-    setPayments(live.payments);
-    setComment(live.comment || "");
-    setStage(live.stage);
-    setStageReason("");
-    setCompanyName(live.companyName || "");
-    setManagerName(live.managerName || "");
-    setManagerPhone(live.managerPhone || "");
-    setAtelier(live.atelierAmount ? String(live.atelierAmount) : "");
-    setDeliveryAmount(live.deliveryAmount ? String(live.deliveryAmount) : "");
-    setIssued(Boolean(live.issued));
-    setRentalFrom(live.rentalFrom || "");
-    setRentalTo(live.rentalTo || "");
-    setReturnInfo({
-      status: live.returnStatus ?? "issued",
-      destination: live.returnDestination ?? "",
-      payouts: live.returnPayouts,
-    });
+    const form = formFromDeal(live);
+    setConsultants(form.consultants);
+    setClient(form.client);
+    setItems(form.items);
+    setPayments(form.payments);
+    setComment(form.comment);
+    setStage(form.stage);
+    setStageReason(form.stageReason);
+    setCompanyName(form.companyName);
+    setManagerName(form.managerName);
+    setManagerPhone(form.managerPhone);
+    setAtelier(form.atelier);
+    setDeliveryAmount(form.deliveryAmount);
+    setIssued(form.issued);
+    setRentalFrom(form.rentalFrom);
+    setRentalTo(form.rentalTo);
+    setReturnInfo(form.returnInfo);
+    setBaseline(formSnapshot(form));
   }, [live.id, live.number, live.kind]);
+
+  const dirty =
+    formSnapshot({
+      consultants,
+      client,
+      items,
+      payments,
+      comment,
+      stage,
+      stageReason,
+      companyName,
+      managerName,
+      managerPhone,
+      atelier,
+      deliveryAmount,
+      issued,
+      rentalFrom,
+      rentalTo,
+      returnInfo,
+    }) !== baseline;
 
   const total = useMemo(
     () => items.reduce((s, it) => s + (it.noPrice || it.isGift ? 0 : it.price * it.qty), 0),
@@ -202,6 +270,9 @@ export function DealWorkspace({
         clientPhone: client.phone,
         channel: client.channel || undefined,
         purpose: client.purpose || undefined,
+        saryPhone: client.saryPhone,
+        saryClient: client.saryClient,
+        saryBonus: client.saryBonus,
         items,
         payments,
         comment: comment || undefined,
@@ -231,6 +302,26 @@ export function DealWorkspace({
         setError("Не удалось сохранить — проверьте права или сеть");
         return;
       }
+      setBaseline(
+        formSnapshot({
+          consultants,
+          client,
+          items,
+          payments,
+          comment,
+          stage,
+          stageReason,
+          companyName,
+          managerName,
+          managerPhone,
+          atelier,
+          deliveryAmount,
+          issued,
+          rentalFrom,
+          rentalTo,
+          returnInfo,
+        })
+      );
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 1500);
     } finally {
@@ -238,8 +329,10 @@ export function DealWorkspace({
     }
   }
 
-  const canReturnExchange =
-    closed && live.kind !== "refund" && live.kind !== "exchange" && !!onReturnExchange;
+  const canReturnExchange = closed && live.kind !== "refund" && live.kind !== "exchange";
+  const linkedReturns = deals.filter(
+    (d) => d.linkedDealNumber === live.number && (d.kind === "refund" || d.kind === "exchange")
+  );
 
   // Отложку/обещание проводят как продажу, компанию или аренду: тот же номер
   // заявки и все данные (правки владельца 10.08.2026, п.1.1).
@@ -298,7 +391,9 @@ export function DealWorkspace({
             <p className="text-mute text-sm mt-0.5">Только просмотр — менять может РОП или Максим</p>
           )}
         </div>
-        <StageBadge stage={stage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
+        {!hideBack && (
+          <StageBadge stage={stage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
+        )}
       </div>
       {!readOnly && (
         <Hint>
@@ -470,6 +565,19 @@ export function DealWorkspace({
           </fieldset>
         </Card>
 
+        <Card>
+          <SectionTitle>Источник и цель</SectionTitle>
+          <fieldset disabled={readOnly} className="disabled:opacity-80">
+            <SourceFields
+              data={client}
+              onChange={setClient}
+              items={items}
+              checkTotal={total + (client.saryBonus ?? 0)}
+              withPurpose={live.kind !== "promise" && live.kind !== "certificate" ? true : Boolean(live.purpose)}
+            />
+          </fieldset>
+        </Card>
+
         {refundAmount > 0 && (
           <Card>
             <SectionTitle>Возврат средств клиенту</SectionTitle>
@@ -521,23 +629,25 @@ export function DealWorkspace({
           )}
           {canReturnExchange && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                variant="subtle"
-                onClick={() => {
-                  // Только переход: onClose() затирал hash new/… обратно на board.
-                  onReturnExchange!("refund", live.number);
-                }}
-              >
+              <Button variant="subtle" onClick={() => setReturnMode("refund")}>
                 Возврат
               </Button>
-              <Button
-                variant="subtle"
-                onClick={() => {
-                  onReturnExchange!("exchange", live.number);
-                }}
-              >
+              <Button variant="subtle" onClick={() => setReturnMode("exchange")}>
                 Обмен
               </Button>
+            </div>
+          )}
+          {linkedReturns.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {linkedReturns.map((d) => (
+                <div key={d.id} className="flex items-center justify-between gap-3 text-[13px]">
+                  <span className="text-white">
+                    {KIND_LABEL[d.kind]} · заявка №{d.number}
+                    <span className="text-mute"> · {d.stage}</span>
+                  </span>
+                  <span className="text-white font-semibold shrink-0">{money(d.total)}</span>
+                </div>
+              ))}
             </div>
           )}
         </Card>
@@ -556,7 +666,7 @@ export function DealWorkspace({
             <Button variant="subtle" onClick={onClose}>
               Закрыть
             </Button>
-            {!readOnly && (
+            {!readOnly && (dirty || saving || savedFlash) && (
               <Button disabled={saving} onClick={() => void saveAll()}>
                 {savedFlash ? "Сохранено" : saving ? "Сохраняем…" : "Сохранить"}
               </Button>
@@ -601,6 +711,20 @@ export function DealWorkspace({
             }
           }}
         />
+      </Modal>
+
+      <Modal
+        open={returnMode != null}
+        onClose={() => setReturnMode(null)}
+        title={returnMode === "exchange" ? "Обмен" : "Возврат"}
+        xl
+      >
+        {returnMode === "refund" && (
+          <RefundForm embedded sourceDeal={live} onDone={() => setReturnMode(null)} />
+        )}
+        {returnMode === "exchange" && (
+          <ExchangeForm embedded sourceDeal={live} onDone={() => setReturnMode(null)} />
+        )}
       </Modal>
 
       <Modal open={historyOpen} onClose={() => setHistoryOpen(false)} title={`История · #${live.number}`}>

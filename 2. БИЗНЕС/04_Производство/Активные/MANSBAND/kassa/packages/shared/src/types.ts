@@ -84,6 +84,8 @@ export type CartItemStatus = "waiting" | "in_store" | "booked" | "reserved";
 
 export interface CartItem {
   productId: string;
+  /** Вторая строка того же товара: лишние штуки, не вошедшие в костюм. */
+  lineId?: string;
   name: string;
   price: number;
   qty: number;

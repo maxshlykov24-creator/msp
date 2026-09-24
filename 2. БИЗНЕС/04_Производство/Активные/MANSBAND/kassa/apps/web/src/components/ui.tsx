@@ -103,6 +103,8 @@ export function Modal({
   wide,
   /** Почти на весь экран — карточка заявки из задач. */
   xl,
+  /** Справа в шапке, перед крестиком. Статус заявки живёт здесь, рядом с номером. */
+  aside,
 }: {
   open: boolean;
   onClose: () => void;
@@ -110,6 +112,7 @@ export function Modal({
   title?: string;
   wide?: boolean;
   xl?: boolean;
+  aside?: ReactNode;
 }) {
   const [mounted, setMounted] = useState(open);
   const [shown, setShown] = useState(open);
@@ -144,10 +147,13 @@ export function Modal({
       <div className={`kassa-modal ${width} ${xl ? "max-h-[94vh]" : "max-h-[90vh]"}`}>
         {title && (
           <div className="px-6 py-4 border-b border-ink-700 flex items-center justify-between shrink-0">
-            <h3 className="text-lg font-bold text-white">{title}</h3>
-            <button type="button" onClick={onClose} className="kassa-modal-x" aria-label="Закрыть">
-              ×
-            </button>
+            <h3 className="text-lg font-bold text-white min-w-0">{title}</h3>
+            <div className="flex items-center gap-2 shrink-0">
+              {aside}
+              <button type="button" onClick={onClose} className="kassa-modal-x" aria-label="Закрыть">
+                ×
+              </button>
+            </div>
           </div>
         )}
         <div className={`kassa-modal-body ${xl ? "p-4 sm:p-5" : "p-6"}`}>{children}</div>

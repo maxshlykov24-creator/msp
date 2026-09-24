@@ -48,22 +48,32 @@ function NotFoundBadge({ s }: { s: SaryPayout }) {
   );
 }
 
-/** Крупная кнопка в карточку заявки: доска открывает её по номеру из hash. */
-function DealButton({ number }: { number?: number }) {
+/** Крупная кнопка в карточку заявки. Окно открывается поверх текущей очереди. */
+function DealButton({ number, onOpen }: { number?: number; onOpen?: (number: number) => void }) {
   if (!number) return null;
   return (
-    <a
-      href={`#board/all/all/${number}/tasks:crm:pending`}
-      onClick={(e) => e.stopPropagation()}
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onOpen) onOpen(number);
+        else window.location.hash = `board/all/all/${number}/tasks:crm:pending`;
+      }}
       className="inline-flex items-center justify-center min-h-12 min-w-[9rem] px-6 rounded-xl bg-white text-ink-950 font-extrabold uppercase tracking-[0.16em] text-[15px] hover:bg-white/90 active:scale-[0.98] transition flex-1 sm:flex-none"
     >
       Заказ
-    </a>
+    </button>
   );
 }
 
 /** `embedded` — внутри таба колл-менеджера на экране очередей: без своего заголовка. */
-export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
+export function SaryScreen({
+  embedded = false,
+  onOpenDeal,
+}: {
+  embedded?: boolean;
+  onOpenDeal?: (number: number) => void;
+}) {
   const { sary, markSaryBatchSent, addSary, deals } = useStore();
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ client: "", phone: "", amount: "", reason: "", deal: "" });
@@ -415,7 +425,7 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
                           >
                             <Copy size={15} /> {copied === s.id ? "Скопировано" : "Текст"}
                           </button>
-                          <DealButton number={s.refDealNumber} />
+                          <DealButton number={s.refDealNumber} onOpen={onOpenDeal} />
                         </div>
                       </div>
                     ))}
@@ -502,7 +512,7 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
                     </div>
                   </div>
                 </div>
-                <DealButton number={s.refDealNumber} />
+                <DealButton number={s.refDealNumber} onOpen={onOpenDeal} />
               </div>
             ))}
           </div>
@@ -539,7 +549,7 @@ export function SaryScreen({ embedded = false }: { embedded?: boolean }) {
                     </div>
                   </div>
                 </div>
-                <DealButton number={s.refDealNumber} />
+                <DealButton number={s.refDealNumber} onOpen={onOpenDeal} />
               </div>
             ))}
           </div>

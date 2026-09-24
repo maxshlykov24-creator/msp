@@ -4,7 +4,7 @@ import type { Deal, QueueItem } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { useStore } from "../store";
 import { money, shortDate, timeOf } from "../lib/format";
-import { Button, Modal } from "../components/ui";
+import { Button, Modal, StageBadge } from "../components/ui";
 import { useAuth } from "../auth/AuthContext";
 import { canSeeFinanceQueues } from "../auth/roles";
 import { DealWorkspace } from "./DealWorkspace";
@@ -117,6 +117,7 @@ export function MishaQueue() {
   const [rows, setRows] = useState<QueueItem[]>(queue as QueueItem[]);
   const [busy, setBusy] = useState<string | null>(null);
   const [openDeal, setOpenDeal] = useState<Deal | null>(null);
+  const [headerStage, setHeaderStage] = useState<string | null>(null);
   const [dealLoading, setDealLoading] = useState(false);
   const [dealError, setDealError] = useState<string | null>(null);
 
@@ -426,6 +427,14 @@ export function MishaQueue() {
           setDealError(null);
         }}
         title={openDeal ? `Заявка №${openDeal.number}` : dealLoading ? "Загрузка…" : "Заявка"}
+        aside={
+          (headerStage ?? openDeal?.stage) ? (
+            <StageBadge
+              stage={(headerStage ?? openDeal?.stage) as string}
+              className="text-[16px] px-3.5 py-2 font-semibold"
+            />
+          ) : null
+        }
         xl
       >
         {dealLoading && !openDeal && (
@@ -442,6 +451,7 @@ export function MishaQueue() {
               setOpenDeal(null);
               setDealError(null);
             }}
+            onDisplayStage={setHeaderStage}
           />
         )}
       </Modal>

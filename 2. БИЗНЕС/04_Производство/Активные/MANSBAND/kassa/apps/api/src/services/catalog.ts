@@ -12,6 +12,7 @@ import {
   hallSectionOf,
   normalizeHallSection,
   sortWarehousesByDisplayOrder,
+  warehouseDisplayIndex,
   suitFamilyOf,
 } from "@kassa/shared";
 import type { HallSectionId } from "@kassa/shared";
@@ -362,9 +363,11 @@ export async function getProductStockByWarehouses(
   }
 
   const warehouses = sortWarehousesByDisplayOrder([...byId.values()]);
-  // СДЭК идёт последней строкой: это не склад, а положение позиции в заявке.
+  // СДЭК — не склад МойСклад. Строка всегда видна, даже при нуле:
+  // «В пути» это свои перемещения, СДЭК — доставка клиенту по открытым заявкам.
   const cdekQty = (await cdekQtyByProduct([productMsId])).get(productMsId) ?? 0;
-  if (cdekQty > 0) warehouses.push(cdekLine(cdekQty));
+  warehouses.push(cdekLine(cdekQty));
+  warehouses.sort((a, b) => warehouseDisplayIndex(a.name) - warehouseDisplayIndex(b.name));
   const source: "cache" | "live" | "mixed" =
     fromLive && fromCache ? "mixed" : fromLive ? "live" : "cache";
 

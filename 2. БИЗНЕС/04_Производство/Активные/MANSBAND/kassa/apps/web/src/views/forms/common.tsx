@@ -291,7 +291,18 @@ export function SourceFields({
           <Field label="Источник рекламы" required={required}>
             <Select
               value={data.channel}
-              onChange={(next) => set({ channel: next })}
+              onChange={(next) =>
+                set(
+                  next === SARAFAN_CHANNEL
+                    ? { channel: next }
+                    : {
+                        channel: next,
+                        saryPhone: undefined,
+                        saryClient: undefined,
+                        saryBonus: undefined,
+                      }
+                )
+              }
               groups={CHANNEL_GROUPS}
               placeholder="Выбрать"
               searchable
@@ -1339,6 +1350,8 @@ export function FormShell({
   missingRequired,
   stageBadge,
   headerActions,
+  /** Поверх карточки заявки: свою кнопку «назад» не показываем, закрытие у окна. */
+  embedded = false,
 }: {
   title: string;
   subtitle?: string;
@@ -1354,6 +1367,7 @@ export function FormShell({
   stageBadge?: ReactNode;
   /** Кнопки над контентом (задача / история / перемещение). */
   headerActions?: ReactNode;
+  embedded?: boolean;
 }) {
   const hasDock = !!(summary || footer);
   const missing = (missingRequired ?? []).filter(Boolean);
@@ -1363,12 +1377,14 @@ export function FormShell({
         hasDock ? "pb-[calc(9.5rem+env(safe-area-inset-bottom))] sm:pb-36" : ""
       }`}
     >
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-1.5 text-mute hover:text-white text-sm mb-4"
-      >
-        <ArrowLeft size={16} /> Назад к выбору
-      </button>
+      {!embedded && (
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 text-mute hover:text-white text-sm mb-4"
+        >
+          <ArrowLeft size={16} /> Назад к выбору
+        </button>
+      )}
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">

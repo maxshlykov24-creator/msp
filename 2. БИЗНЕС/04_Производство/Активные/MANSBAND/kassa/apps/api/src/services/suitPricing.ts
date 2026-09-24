@@ -11,10 +11,9 @@ import { getAppSettings } from "./settings.js";
  * цене в МойСклад (последняя часть добирает остаток округления).
  *
  * Одной вариации в чеке может быть несколько костюмов (46 и 48 — две строки).
- * Каждая строка целиком уходит в один костюм: у карточки одна цена, поэтому
- * количество пиджака и брюк в паре должно совпадать. Сначала пара одного
- * размера, потом оставшиеся, даже если размеры разные. Лишнее (пиджаков 2,
- * брюк 1) остаётся отдельной строкой, без второй цены на ту же позицию.
+ * Сначала пара одного размера, потом оставшиеся, даже если размеры разные.
+ * Количество может не совпадать: в костюм уходит меньшее (пиджак 1 и брюки 2
+ * дают один костюм), остаток штук остаётся отдельной строкой.
  */
 
 export interface SuitPriceGroupPart {
@@ -64,25 +63,26 @@ function pullPool(list: Pool[], item: Pool): void {
   if (index >= 0) list.splice(index, 1);
 }
 
-/** Сначала пара того же размера и того же количества, иначе любая с тем же количеством. */
-function takePair(jackets: Pool[], trousers: Pool[]): { jacket: Pool; trousers: Pool } | null {
-  for (const jacket of jackets) {
-    const same = trousers.find((t) => t.qty === jacket.qty && t.size.trim() === jacket.size.trim());
-    if (same) return { jacket, trousers: same };
-  }
-  for (const jacket of jackets) {
-    const any = trousers.find((t) => t.qty === jacket.qty);
-    if (any) return { jacket, trousers: any };
-  }
-  return null;
+/** Сначала пара того же размера, иначе любая. В костюм уходит меньшее количество. */
+function takePair(jackets: Pool[], trousers: Pool[]): { jacket: Pool; trousers: Pool; qty: number } | null {
+  const jacket =
+    jackets.find((j) => trousers.some((t) => t.size.trim() === j.size.trim())) ?? jackets[0];
+  if (!jacket) return null;
+  const trousersLine =
+    trousers.find((t) => t.size.trim() === jacket.size.trim()) ?? trousers[0];
+  if (!trousersLine) return null;
+  return { jacket, trousers: trousersLine, qty: Math.min(jacket.qty, trousersLine.qty) };
 }
 
 function takeVest(vests: Pool[], jacket: Pool): Pool | null {
-  return (
-    vests.find((v) => v.qty === jacket.qty && v.size.trim() === jacket.size.trim()) ??
-    vests.find((v) => v.qty === jacket.qty) ??
-    null
-  );
+  return vests.find((v) => v.size.trim() === jacket.size.trim()) ?? vests[0] ?? null;
+}
+
+/** Списывает штуки пары. Нулевой остаток убирает строку из пула. */
+function consume(list: Pool[], item: Pool, qty: number): Pool {
+  item.qty -= qty;
+  if (item.qty <= 0) pullPool(list, item);
+  return { ...item, qty };
 }
 
 function distribute(totalRub: number, parts: Pool[]): number[] {
@@ -135,13 +135,11 @@ export async function priceGroupSuits(lines: Line[]): Promise<SuitPriceGroupResu
     for (;;) {
       const pair = takePair(jackets, trousers);
       if (!pair) break;
-      pullPool(jackets, pair.jacket);
-      pullPool(trousers, pair.trousers);
-      const vest = takeVest(vests, pair.jacket);
-      if (vest) pullPool(vests, vest);
-
-      const jacket = pair.jacket;
-      const qty = jacket.qty;
+      const qty = pair.qty;
+      const jacket = consume(jackets, pair.jacket, qty);
+      const trouser = consume(trousers, pair.trousers, qty);
+      const vestPool = takeVest(vests, pair.jacket);
+      const vest = vestPool && vestPool.qty >= qty ? consume(vests, vestPool, qty) : null;
       const hasVest = vest != null;
       const jacketInfo = info.get(jacket.productId)!;
       const matched = suitPriceOf(
@@ -155,17 +153,17 @@ export async function priceGroupSuits(lines: Line[]): Promise<SuitPriceGroupResu
         rules
       );
 
-      const basisParts: Pool[] = vest ? [jacket, pair.trousers, vest] : [jacket, pair.trousers];
+      const basisParts: Pool[] = vest ? [jacket, trouser, vest] : [jacket, trouser];
       const shares = matched
         ? distribute(matched.priceRub, basisParts)
         : basisParts.map((p) => p.priceRub);
 
       const parts: SuitPriceGroupPart[] = basisParts.map((p, i) => ({
         productId: p.productId,
-        part: p === jacket ? "jacket" : p === pair.trousers ? "trousers" : "vest",
+        part: p === jacket ? "jacket" : p === trouser ? "trousers" : "vest",
         size: p.size,
         height: info.get(p.productId)?.height ?? "",
-        qty,
+        qty: p.qty,
         unitMsPriceRub: p.priceRub,
         distributedUnitPriceRub: shares[i]!,
       }));

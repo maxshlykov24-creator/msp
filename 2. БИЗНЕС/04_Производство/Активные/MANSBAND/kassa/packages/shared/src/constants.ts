@@ -117,12 +117,14 @@ export function warehouseMatchKey(name: string): string | null {
   if (/центральн/.test(n)) return "central";
   if (/ателье/.test(n)) return "atelier";
   if (/в пути/.test(n)) return "transit";
+  if (/^сдэк/.test(n)) return "cdek";
   return null;
 }
 
 /**
  * Порядок складов в окне остатков (как в ITEM_LOCATIONS / запрос владельца):
- * Новокузнецкая → Бауманская → Центральный → полупарки → Ателье → В пути.
+ * Новокузнецкая → Бауманская → Центральный → полупарки → Ателье → В пути → СДЭК.
+ * «В пути» — свои перемещения между складами. «СДЭК» — доставка клиенту, касса считает сама.
  */
 const WAREHOUSE_DISPLAY_ORDER = [
   "novo",
@@ -132,6 +134,7 @@ const WAREHOUSE_DISPLAY_ORDER = [
   "half_bauman",
   "atelier",
   "transit",
+  "cdek",
 ] as const;
 
 export function warehouseDisplayIndex(name: string): number {
