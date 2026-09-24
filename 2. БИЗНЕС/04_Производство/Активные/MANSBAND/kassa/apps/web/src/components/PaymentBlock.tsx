@@ -295,7 +295,7 @@ export function PaymentBlock({
       )}
 
       {changeIfAdded > 0 && (
-        <div className="text-[13px] text-amber-100/95 bg-amber-400/10 border border-amber-400/35 rounded-lg px-3 py-2">
+        <div className="hint-only text-[13px] text-amber-100/95 bg-amber-400/10 border border-amber-400/35 rounded-lg px-3 py-2">
           Сдача {money(changeIfAdded)} — после «Добавить» ниже появятся чаевые и как выдать сдачу клиенту.
         </div>
       )}
