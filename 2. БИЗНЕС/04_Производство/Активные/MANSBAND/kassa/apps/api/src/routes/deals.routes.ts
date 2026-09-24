@@ -201,6 +201,15 @@ export default async function dealsRoutes(app: FastifyInstance) {
     if (COMPLETED_STAGES.has(existing.stage) && parsed.data.stage && parsed.data.stage !== existing.stage && !parsed.data.reason?.trim()) {
       return reply.code(400).send({ message: "Укажите причину изменения завершённой сделки" });
     }
+    if (
+      (existing.kind === "deferred" || existing.kind === "promise") &&
+      parsed.data.stage === "Успех" &&
+      existing.stage !== "Успех"
+    ) {
+      return reply.code(400).send({
+        message: "Отложку и обещание нельзя закрыть в Успех. Сначала смените тип заявки.",
+      });
+    }
     const updated = await deals.updateDealFields(ref, parsed.data, req.user.name);
     if (!updated) return reply.code(404).send({ message: "Заявка не найдена" });
     if (updated.stage !== existing.stage) {
@@ -281,6 +290,15 @@ export default async function dealsRoutes(app: FastifyInstance) {
     }
     if (COMPLETED_STAGES.has(existing.stage) && !parsed.data.reason?.trim()) {
       return reply.code(400).send({ message: "Укажите причину изменения завершённой сделки" });
+    }
+    if (
+      (existing.kind === "deferred" || existing.kind === "promise") &&
+      parsed.data.stage === "Успех" &&
+      existing.stage !== "Успех"
+    ) {
+      return reply.code(400).send({
+        message: "Отложку и обещание нельзя закрыть в Успех. Сначала смените тип заявки.",
+      });
     }
     if (existing.kind === "company" && parsed.data.stage === "Успех" && parsed.data.issued !== true && !existing.issued) {
       return reply.code(400).send({ message: "Сначала отметьте фактическую выдачу товара" });

@@ -32,7 +32,7 @@ export function DealActionsBar({
           onClick={onConvert}
           className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-[13px] font-medium text-white hover:border-gold/40"
         >
-          <Repeat2 size={15} className="text-gold" /> Провести как…
+          <Repeat2 size={15} className="text-gold" /> Сменить тип
         </button>
       )}
       {onHistory && (

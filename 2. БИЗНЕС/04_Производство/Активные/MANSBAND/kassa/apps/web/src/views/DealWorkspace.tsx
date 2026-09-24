@@ -28,6 +28,7 @@ import {
   SummaryBar,
   returnDealFields,
   returnPayoutMissing,
+  sourceMissingForSuccess,
   type ClientData,
   type ConsultantData,
   type ReturnInfo,
@@ -49,7 +50,24 @@ function formatHistoryAction(action: string): string {
 }
 
 /** Снимок полей карточки. Совпадает у только что открытой сделки и у формы без правок. */
-function formFromDeal(live: Deal) {
+function formFromDeal(live: Deal): {
+  consultants: ConsultantData;
+  client: ClientData;
+  items: CartItem[];
+  payments: Deal["payments"];
+  comment: string;
+  stage: string;
+  stageReason: string;
+  companyName: string;
+  managerName: string;
+  managerPhone: string;
+  atelier: string;
+  deliveryAmount: string;
+  issued: boolean;
+  rentalFrom: string;
+  rentalTo: string;
+  returnInfo: ReturnInfo;
+} {
   return {
     consultants: { consultant: live.consultant, referredBy: live.referredBy || "" },
     client: {
@@ -240,8 +258,10 @@ export function DealWorkspace({
     if (live.kind === "exchange" && (live.total || 0) < 0) return Math.abs(live.total);
     return 0;
   }, [live.kind, live.total, total]);
+  const holdKind = live.kind === "deferred" || live.kind === "promise";
   const stages = (STAGES_BY_KIND[live.kind] ?? [])
     .filter((s) => !HIDDEN_STAGES.has(s))
+    .filter((s) => !(holdKind && s === "Успех"))
     .filter((s) => !(live.kind === "sliv" && !live.meetingDate && s !== "Провал"));
   const stageOptions = stages.includes(stage) || HIDDEN_STAGES.has(stage) ? stages : [stage, ...stages];
   const history = [...(live.history ?? [])].reverse();
@@ -252,6 +272,24 @@ export function DealWorkspace({
     if (closedNeedsReason && !stageReason.trim()) {
       setError("Укажите причину изменения завершённой заявки");
       return;
+    }
+    if (holdKind && stage === "Успех" && live.stage !== "Успех") {
+      setError("Отложку и обещание нельзя закрыть в Успех. Сначала смените тип заявки сверху.");
+      return;
+    }
+    if (stage === "Успех" && live.stage !== "Успех" && (live.kind === "sale" || live.kind === "company" || live.kind === "rental")) {
+      const due = live.total || total;
+      const gaps = [
+        paid < due && `оплата, остаток ${(due - paid).toLocaleString("ru-RU")} ₽`,
+        ...sourceMissingForSuccess(client),
+        live.kind === "company" && !issued && "фактическая выдача",
+        live.kind === "rental" && !rentalFrom && "дата начала аренды",
+        live.kind === "rental" && !rentalTo && "дата конца аренды",
+      ].filter(Boolean) as string[];
+      if (gaps.length) {
+        setError(`Для Успех не хватает: ${gaps.join(", ")}`);
+        return;
+      }
     }
     if (refundAmount > 0) {
       const missing = returnPayoutMissing(refundAmount, returnInfo);
@@ -381,6 +419,15 @@ export function DealWorkspace({
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-white">{KIND_LABEL[live.kind] ?? live.kind}</h1>
+            {canConvert && (
+              <button
+                type="button"
+                onClick={() => setConvertOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 bg-white px-3 py-1.5 text-[13px] font-semibold text-ink-950 hover:bg-white/90"
+              >
+                Сменить тип
+              </button>
+            )}
             {!hideBack && (
               <span className="chip bg-white/10 text-white font-mono text-[15px] font-semibold tracking-wide">
                 Заявка №{live.number}
@@ -573,7 +620,11 @@ export function DealWorkspace({
               onChange={setClient}
               items={items}
               checkTotal={total + (client.saryBonus ?? 0)}
-              withPurpose={live.kind !== "promise" && live.kind !== "certificate" ? true : Boolean(live.purpose)}
+              withPurpose={
+                live.kind === "promise" || live.kind === "cert_plastic" || live.kind === "cert_digital"
+                  ? Boolean(live.purpose)
+                  : true
+              }
             />
           </fieldset>
         </Card>
@@ -605,9 +656,9 @@ export function DealWorkspace({
               onChange={setStage}
               options={opts(...stageOptions)}
             />
-            {live.kind === "deferred" && (
+            {holdKind && (
               <span className="text-[12px] text-mute">
-                Без перемещения — «Товар в магазине» и задача отложить; с перемещением — «Ждет товар»
+                В Успех отсюда не закрывается. Сначала «Сменить тип»: продажа, компания или аренда. Появятся поля этого вида, включая оплату.
               </span>
             )}
           </div>
@@ -697,7 +748,7 @@ export function DealWorkspace({
       <Modal
         open={convertOpen}
         onClose={() => !converting && setConvertOpen(false)}
-        title={`Провести заявку №${live.number} как`}
+        title={`Сменить тип заявки №${live.number}`}
       >
         <ConvertKindForm
           deal={live}

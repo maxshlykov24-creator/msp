@@ -184,7 +184,7 @@ export function ConvertKindForm({
             Товаров: <span className="text-white">{deal.items.length}</span> · оплачено{" "}
             <span className="text-white">{deal.paid.toLocaleString("ru-RU")} ₽</span>
           </div>
-          <div>После смены типа заявка ведёт себя как обычная продажа.</div>
+          <div>После смены появятся поля продажи. В Успех можно закрыть только когда оплата и источник заполнены.</div>
         </div>
       )}
 

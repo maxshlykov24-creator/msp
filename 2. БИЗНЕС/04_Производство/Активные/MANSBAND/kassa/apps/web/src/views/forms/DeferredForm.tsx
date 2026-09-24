@@ -22,7 +22,6 @@ import {
   changeTipsMissing,
   emptyTopUp,
   lastPaymentDate,
-  sourceMissingForSuccess,
   tipsDealFields,
   todayStr,
   useSaved,
@@ -131,9 +130,7 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
     ...changeTipsMissing(paid, total, changeInfo, tips),
     ...changeTipsMissing(topUpPaid, Math.max(0, remainder), topUp.changeInfo, topUp.tips),
   ].filter(Boolean) as string[];
-  const missingForSuccess = sourceMissingForSuccess(client);
   const baseFilled = missingRequired.length === 0;
-  const canSuccess = baseFilled && missingForSuccess.length === 0 && total - totalPaid <= 0;
 
   function buildDeal(s: string): Deal {
     return {
@@ -212,16 +209,6 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
           onSave={(s) => void save(s)}
           saved={saved}
           disabled={!baseFilled}
-          successStage="Успех"
-          successDisabled={!canSuccess}
-          successHint={
-            baseFilled && total - totalPaid > 0
-              ? `Остаток ${(total - totalPaid).toLocaleString("ru-RU")} ₽`
-              : baseFilled && missingForSuccess.length > 0
-                ? `Для Успех: ${missingForSuccess.join(", ")}`
-                : undefined
-          }
-          onSuccess={() => void save("Успех")}
         />
       }
     >
