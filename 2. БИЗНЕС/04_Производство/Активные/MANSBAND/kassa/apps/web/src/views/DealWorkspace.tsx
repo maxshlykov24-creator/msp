@@ -520,13 +520,15 @@ export function DealWorkspace({
                   onChange={(e) => setManagerName(e.target.value.replace(/[0-9]/g, ""))}
                 />
               </Field>
-              <Field label="Наименование компании" required>
-                <input
-                  className="input"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                />
-              </Field>
+              <div className="sm:col-span-2">
+                <Field label="Наименование компании" required>
+                  <input
+                    className="input"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                  />
+                </Field>
+              </div>
               <Field label="Ателье, ₽">
                 <input
                   className="input"
@@ -547,12 +549,19 @@ export function DealWorkspace({
                 <input type="checkbox" checked={issued} onChange={(e) => setIssued(e.target.checked)} />
                 Товар фактически выдан
               </label>
-              {live.invoiceStatus && (
-                <div className="text-[12px] text-mute sm:col-span-2">
-                  Счёт: {live.invoiceStatus}
-                  {live.invoiceNo ? ` · ${live.invoiceNo}` : " · ожидает Эдвина"}
-                </div>
-              )}
+              <Field label="Номер счёта">
+                <input className="input" value={live.invoiceNo || ""} readOnly placeholder="Эдвин ещё не выставил" />
+              </Field>
+              <Field label="Дата счёта">
+                <input className="input" value={live.invoiceDate ? live.invoiceDate.split("-").reverse().join(".") : ""} readOnly placeholder="—" />
+              </Field>
+              <div className="text-[12px] text-mute sm:col-span-2">
+                {live.invoiceStatus === "paid"
+                  ? "Счёт оплачен"
+                  : live.invoiceNo
+                    ? "Счёт выставлен, оплата проверяется"
+                    : "Счёт ещё не выставлен"}
+              </div>
             </fieldset>
           </Card>
         )}
