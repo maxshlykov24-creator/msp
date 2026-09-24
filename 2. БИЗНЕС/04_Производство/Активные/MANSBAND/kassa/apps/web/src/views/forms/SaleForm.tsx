@@ -162,7 +162,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       subtitle="Оффлайн"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
-      stageBadge={<StageBadge stage={stage} className="text-[14px] px-3 py-1.5 font-semibold shrink-0" />}
+      stageBadge={<StageBadge stage={stage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0" />}
       headerActions={
         <DealActionsBar onTask={() => setTaskOpen(true)} />
       }

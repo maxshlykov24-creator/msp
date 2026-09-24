@@ -1366,8 +1366,8 @@ export function FormShell({
       >
         <ArrowLeft size={16} /> Назад к выбору
       </button>
-      <div className="mb-5 flex items-start justify-between gap-3 flex-wrap">
-        <div>
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-white">{title}</h1>
             {meta && (
@@ -1384,7 +1384,7 @@ export function FormShell({
           </div>
           {subtitle && <p className="text-mute text-sm mt-0.5">{subtitle}</p>}
         </div>
-        {stageBadge}
+        {stageBadge && <div className="shrink-0 self-center">{stageBadge}</div>}
       </div>
       {headerActions && <div className="mb-5">{headerActions}</div>}
       <div className="space-y-5">{children}</div>

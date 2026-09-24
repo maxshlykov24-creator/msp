@@ -284,8 +284,8 @@ export function DealWorkspace({
         </button>
       )}
 
-      <div className="mb-1 flex items-start justify-between gap-3 flex-wrap">
-        <div>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-white">{KIND_LABEL[live.kind] ?? live.kind}</h1>
             {!hideBack && (
@@ -298,7 +298,7 @@ export function DealWorkspace({
             <p className="text-mute text-sm mt-0.5">Только просмотр — менять может РОП или Максим</p>
           )}
         </div>
-        <StageBadge stage={stage} className="text-[14px] px-3 py-1.5 font-semibold shrink-0" />
+        <StageBadge stage={stage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
       </div>
       {!readOnly && (
         <Hint>
