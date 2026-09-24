@@ -167,12 +167,6 @@ export function Layout({
             label="Закрытие смены"
             onClick={() => setRoute("shift")}
           />
-          <NavButton
-            active={route === "history" || route === "audit"}
-            icon={<History size={18} />}
-            label="История изменений"
-            onClick={() => setRoute("history")}
-          />
         </nav>
         <div className="p-4 border-t text-[11px] text-mute/60 tracking-[0.18em] uppercase" style={{ borderColor: "var(--line)" }}>
           MANSBAND
@@ -413,7 +407,7 @@ function UserMenu({
               }}
             >
               <History size={17} />
-              <span className="flex-1">История</span>
+              <span className="flex-1">История изменений</span>
             </button>
             <button
               className={`${itemCls} ${activeRoute === "roles" ? "bg-ink-800 text-white" : ""}`}
