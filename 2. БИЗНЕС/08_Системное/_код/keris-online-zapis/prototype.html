@@ -265,6 +265,7 @@
     .center{text-align:center}.booking-code{display:inline-block;margin-top:8px;font-size:11px;color:var(--muted);letter-spacing:.08em}
     .actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}.action{min-height:50px;border:1px solid var(--line);border-radius:14px;background:#fff;font-family:var(--font);font-weight:600;cursor:pointer}
     .danger{color:var(--danger)}.link-btn{display:block;width:100%;min-height:42px;margin-top:6px;border:0;background:transparent;color:var(--rose-dark);font-family:var(--font);font-weight:700;cursor:pointer;font-size:14px}
+    .link-btn[hidden]{display:none}
     .sticky{position:fixed;z-index:25;left:50%;bottom:0;transform:translateX(-50%);width:min(100%,520px);
       padding:10px max(18px, var(--safe-right)) calc(10px + var(--safe-bottom) + var(--browser-bar)) max(18px, var(--safe-left));
       background:linear-gradient(180deg,rgba(250,250,242,0),rgba(250,250,242,.97) 24%);pointer-events:none}
@@ -272,6 +273,10 @@
       background:linear-gradient(135deg,var(--rose),var(--gold));box-shadow:0 10px 24px rgba(201,141,165,.2);transition:.2s}
     .primary:active{transform:scale(.985)}.primary:disabled{filter:grayscale(.35);opacity:.48;box-shadow:none}
     .secondary{width:100%;min-height:46px;border:1px solid var(--line);border-radius:14px;background:#fff;font-family:var(--font);font-weight:700;cursor:pointer;margin-top:7px;font-size:14px}
+    .auth-bots{margin-top:14px;display:grid;gap:8px}
+    .auth-bots .lead{margin:0 0 2px}
+    a.msg-btn{display:flex;align-items:center;justify-content:center;min-height:48px;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--text);text-decoration:none;font-family:var(--font);font-weight:700;font-size:14px;box-sizing:border-box}
+    a.msg-btn:hover{border-color:var(--rose);color:var(--rose-dark)}
     .toast{position:fixed;z-index:50;left:50%;top:18px;transform:translate(-50%,-90px);width:min(calc(100% - 32px),460px);padding:14px 16px;border-radius:15px;
       background:var(--text);color:#fff;box-shadow:var(--shadow);font-size:13px;transition:.3s}.toast.show{transform:translate(-50%,0)}
     .modal{position:fixed;z-index:60;inset:0;display:none;align-items:flex-end;justify-content:center;background:rgba(42,31,27,.42);padding:16px}
@@ -832,10 +837,10 @@
         <input id="authCode" inputmode="numeric" maxlength="4" autocomplete="one-time-code" placeholder="4 цифры">
         <div class="hint" id="authCodeHint">Код из 4 цифр действует 10 минут. Можно спокойно уйти в мессенджер и вернуться — код останется рабочим.</div>
       </div>
-      <div id="authBots" hidden style="margin-top:14px">
-        <p class="lead" style="margin-bottom:10px">Откройте бот и нажмите «Поделиться номером» — код придёт туда же.</p>
-        <a class="secondary" id="authBotTelegram" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Получить код в Telegram</a>
-        <a class="secondary" id="authBotMax" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;margin-top:8px">Получить код в MAX</a>
+      <div id="authBots" class="auth-bots" hidden>
+        <p class="lead">Откройте бот и нажмите «Поделиться номером» — код придёт туда же.</p>
+        <a class="msg-btn" id="authBotTelegram" href="#" target="_blank" rel="noopener">Получить код в Telegram</a>
+        <a class="msg-btn" id="authBotMax" href="#" target="_blank" rel="noopener">Получить код в MAX</a>
       </div>
       <button class="primary" id="authBtn" style="margin-top:18px" onclick="authSubmit()">Получить код</button>
       <button class="link-btn" id="authResend" hidden onclick="authRequestCode()">Отправить код ещё раз</button>
