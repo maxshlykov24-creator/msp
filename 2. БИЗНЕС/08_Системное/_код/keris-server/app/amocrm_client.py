@@ -513,12 +513,18 @@ def update_grooming_lead(lead_id: int, *, price: int | None = None,
     _request("PATCH", f"/api/v4/leads/{int(lead_id)}", json=body)
 
 
-def move_lead_to_stage(lead_id: int, status: str) -> bool:
-    """Перевод сделки на этап по имени. Успех/Провал — по номеру статуса."""
+def move_lead_to_stage(lead_id: int, status: str, closed_at: int | None = None) -> bool:
+    """Перевод сделки на этап по имени. Успех/Провал — по номеру статуса.
+
+    closed_at — unix момента визита. Без него amo ставит датой закрытия «сейчас»,
+    и недельная пачка в понедельник получает не ту дату.
+    """
     sid = stage_id(status)
     if sid is None:
         return False
     body: dict[str, Any] = {"status_id": sid}
+    if closed_at:
+        body["closed_at"] = int(closed_at)
     if settings.amocrm_pipeline_grooming_id:
         body["pipeline_id"] = int(settings.amocrm_pipeline_grooming_id)
     _request("PATCH", f"/api/v4/leads/{int(lead_id)}", json=body)

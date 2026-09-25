@@ -37,6 +37,7 @@ STAGE_ARRIVED = "Клиент пришёл"
 STAGE_CANCELLED = "Отменена"
 STAGE_NO_SHOW = "Не пришёл"
 STAGE_DONE = "Визит завершён"  # системный Успех (142), см. amocrm_client.stage_id
+STAGE_LOST = "Закрыто и не реализовано"  # системный Провал (143)
 
 # Окно, в котором сделки вообще пересчитываются: прошлые визиты дальше 14 дней
 # уже закрыты, а горизонт записи — 30 дней (booking_rules), с запасом 90.
@@ -44,16 +45,34 @@ PAST_WINDOW_DAYS = 14
 FUTURE_WINDOW_DAYS = 90
 
 
+def week_start(now: datetime) -> datetime:
+    """Понедельник 00:00 текущей недели. До него визиты уже не «эта неделя»."""
+    monday = now.date() - timedelta(days=now.weekday())
+    return datetime(monday.year, monday.month, monday.day)
+
+
+def _open_this_week(booking: Booking, now: datetime, stage: str) -> str:
+    """Текущая и будущая неделя визита остаются на этапе. Прошлая уходит в провал."""
+    if booking.starts_at >= week_start(now):
+        return stage
+    return STAGE_LOST
+
+
 def target_stage(booking: Booking, now: datetime) -> str:
     """Этап, на котором сделка должна стоять прямо сейчас."""
     if booking.status == BookingStatus.cancelled:
-        return STAGE_CANCELLED
+        return _open_this_week(booking, now, STAGE_CANCELLED)
     if booking.status == BookingStatus.no_show:
-        return STAGE_NO_SHOW
-    if booking.status == BookingStatus.completed:
-        # «Пришел» в журнале ставят на входе, поэтому визит считается завершённым
-        # только когда закончилось его время.
-        return STAGE_DONE if booking.ends_at <= now else STAGE_ARRIVED
+        return _open_this_week(booking, now, STAGE_NO_SHOW)
+    came = booking.starts_at <= now and (
+        booking.status == BookingStatus.completed or booking.ends_at <= now
+    )
+    if came:
+        # Текущая неделя копится в «Клиент пришёл». В ночь на понедельник
+        # прошлая неделя уходит в Успех, дата закрытия — время визита.
+        if booking.starts_at >= week_start(now):
+            return STAGE_ARRIVED
+        return STAGE_DONE
 
     created = booking.created_at or now
     if created.date() >= now.date():
@@ -62,10 +81,10 @@ def target_stage(booking: Booking, now: datetime) -> str:
     days_left = (booking.starts_at.date() - now.date()).days
     if days_left < 0:
         # Визит был раньше, а «Пришел» в журнале никто не поставил. Днём визита
-        # это ещё ждёт отметки, а на следующий день «Сегодня запись» — вранье:
-        # сейлсбот отправил бы напоминание о визите, который уже прошёл. Считаем,
-        # что клиент был (так же считают метрики), но в Успех сами не закрываем.
-        return STAGE_ARRIVED
+        # это ещё ждёт отметки, а на следующий день «Сегодня запись» — вранье.
+        if booking.starts_at >= week_start(now):
+            return STAGE_ARRIVED
+        return STAGE_DONE
     if days_left == 0:
         return STAGE_TODAY
     if days_left == 1:
@@ -86,7 +105,10 @@ def sync_stage(db: Session, booking: Booking, now: datetime | None = None) -> st
     if target == booking.amocrm_stage:
         return None
     try:
-        if not amocrm_client.move_lead_to_stage(booking.amocrm_lead_id, target):
+        closed_at = None
+        if target in (STAGE_DONE, STAGE_LOST) and clock._TZ is not None:
+            closed_at = int(booking.starts_at.replace(tzinfo=clock._TZ).timestamp())
+        if not amocrm_client.move_lead_to_stage(booking.amocrm_lead_id, target, closed_at=closed_at):
             return None
     except (amocrm_client.AmoCrmNotConfigured, amocrm_client.AmoCrmBlocked):
         return None
@@ -100,12 +122,25 @@ def sync_stage(db: Session, booking: Booking, now: datetime | None = None) -> st
 
 
 def _bookings_in_window(db: Session, now: datetime) -> list[Booking]:
-    return list(db.execute(
+    rows = list(db.execute(
         select(Booking).where(
             Booking.starts_at >= now - timedelta(days=PAST_WINDOW_DAYS),
             Booking.starts_at <= now + timedelta(days=FUTURE_WINDOW_DAYS),
         )
     ).scalars().all())
+    seen = {b.id for b in rows}
+    # «Клиент пришёл» старше текущей недели лежит вне окна 14 дней. Их тоже
+    # закрываем, иначе август так и висит в колонке.
+    older = db.execute(
+        select(Booking).where(
+            Booking.amocrm_stage.in_((STAGE_ARRIVED, STAGE_CANCELLED, STAGE_NO_SHOW)),
+            Booking.starts_at < week_start(now),
+        )
+    ).scalars().all()
+    for booking in older:
+        if booking.id not in seen:
+            rows.append(booking)
+    return rows
 
 
 def run_once(db: Session, now: datetime | None = None) -> dict:

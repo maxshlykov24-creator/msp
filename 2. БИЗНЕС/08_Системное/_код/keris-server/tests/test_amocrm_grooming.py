@@ -63,12 +63,15 @@ def test_stage_stays_created_until_tomorrow(db_session):
 
 
 def test_stage_arrived_then_done(db_session):
-    """«Пришел» в журнале ставят на входе: пока визит идёт — «Клиент пришёл»,
-    после окончания — Успех."""
+    """Эта неделя остаётся в «Клиент пришёл», даже если визит уже кончился.
+    Прошлая неделя уходит в Успех."""
     b = make_booking(db_session, NOW - timedelta(minutes=30), status=BookingStatus.completed)
     assert target_stage(b, NOW) == STAGE_ARRIVED
     b.starts_at = NOW - timedelta(hours=3)
     b.ends_at = NOW - timedelta(hours=1)
+    assert target_stage(b, NOW) == STAGE_ARRIVED
+    b.starts_at = NOW - timedelta(days=10)
+    b.ends_at = b.starts_at + timedelta(minutes=90)
     assert target_stage(b, NOW) == STAGE_DONE
 
 
@@ -77,20 +80,24 @@ def test_stage_cancelled_and_no_show_win_over_dates(db_session):
     assert target_stage(b, NOW) == STAGE_CANCELLED
     b.status = BookingStatus.no_show
     assert target_stage(b, NOW) == STAGE_NO_SHOW
+    b.starts_at = NOW - timedelta(days=10)
+    b.ends_at = b.starts_at + timedelta(minutes=90)
+    assert target_stage(b, NOW) == "Закрыто и не реализовано"
+    b.status = BookingStatus.cancelled
+    assert target_stage(b, NOW) == "Закрыто и не реализовано"
 
 
 def test_stage_today_until_end_of_visit_day(db_session):
-    """Время визита прошло, но день ещё тот же — ждём отметки «Пришел» в журнале,
-    в Успех сами не закрываем: успех опирается на факт, а не на часы."""
+    """Визит этой недели уже кончился: колонка «Клиент пришёл», не Успех."""
     b = make_booking(db_session, NOW - timedelta(hours=4), created_at=NOW - timedelta(days=1))
-    assert target_stage(b, NOW) == STAGE_TODAY
+    assert target_stage(b, NOW) == STAGE_ARRIVED
 
 
 def test_stage_arrived_for_past_day_without_journal_mark(db_session):
     """Записи прошлых дней без отметки не должны висеть в «Сегодня запись» —
     иначе сейлсбот напомнит о визите, который был на прошлой неделе."""
     b = make_booking(db_session, NOW - timedelta(days=7), created_at=NOW - timedelta(days=10))
-    assert target_stage(b, NOW) == STAGE_ARRIVED
+    assert target_stage(b, NOW) == STAGE_DONE
 
 
 def test_amo_datetime_matches_account_format():
@@ -231,7 +238,7 @@ class FakeAmo:
         monkeypatch.setattr(sync.amocrm_client, "add_lead_note",
                             lambda lead_id, text: self.notes.append(text))
         monkeypatch.setattr(amocrm_stages.amocrm_client, "move_lead_to_stage",
-                            lambda lead_id, stage: self.stages.append(stage) is None or True)
+                            lambda lead_id, stage, closed_at=None: self.stages.append(stage) is None or True)
         monkeypatch.setattr(sync.amocrm_metrics, "push_client_metrics", lambda *a, **kw: True)
 
     def _contact(self):
