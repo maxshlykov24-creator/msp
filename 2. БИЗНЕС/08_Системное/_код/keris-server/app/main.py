@@ -861,6 +861,27 @@ def confirm_booking(booking_id: str, db: Session = Depends(get_db)) -> dict:
     return {"booking_id": booking.id, "confirmed_at": booking.client_confirmed_at.isoformat()}
 
 
+@app.post("/webhooks/amocrm")
+async def amocrm_webhook(request: Request) -> dict:
+    """amo шлёт update_lead в момент сохранения карточки. Платёж разбирается сразу."""
+    form = await request.form()
+    ids: list[int] = []
+    for key, value in form.multi_items():
+        if key.startswith("leads[update]") and key.endswith("[id]"):
+            try:
+                ids.append(int(value))
+            except (TypeError, ValueError):
+                continue
+    done = 0
+    for lead_id in dict.fromkeys(ids):
+        try:
+            if kennel_payments.apply_lead(lead_id):
+                done += 1
+        except Exception:  # noqa: BLE001
+            log.warning("вебхук оплаты: сделка %s не разобрана", lead_id, exc_info=True)
+    return {"ok": True, "applied": done}
+
+
 @app.post("/webhooks/yclients")
 async def yclients_webhook(request: Request, db: Session = Depends(get_db)) -> dict:
     """Приёмник вебхуков YCLIENTS.

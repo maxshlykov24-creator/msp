@@ -153,6 +153,32 @@ def _cell(field_id: int, value, anchor_id: int) -> dict:
     return {"field_id": field_id, "values": [{"value": value}]}
 
 
+def apply_lead(lead_id: int) -> bool:
+    """Разобрать одну сделку. Пустое внесение и чужая воронка ничего не меняют,
+    поэтому повторный вебхук от нашего же PATCH не зацикливается."""
+    if not amocrm_client.settings.amocrm_ready or amocrm_client.blocked():
+        return False
+    data = amocrm_client._request("GET", f"/api/v4/leads/{int(lead_id)}")
+    if not data or int(data.get("pipeline_id") or 0) != PIPE:
+        return False
+    patch = _plan(data, _anchor_id(), _today())
+    if not patch:
+        return False
+    anchor_id = _anchor_id()
+    amocrm_client._request(
+        "PATCH",
+        "/api/v4/leads",
+        json=[{
+            "id": int(lead_id),
+            "custom_fields_values": [
+                _cell(fid, val, anchor_id) for fid, val in patch.items()
+            ],
+        }],
+    )
+    log.info("оплата питомника: сделка %s разобрана", lead_id)
+    return True
+
+
 def run_once() -> int:
     if not amocrm_client.settings.amocrm_ready or amocrm_client.blocked():
         return 0
