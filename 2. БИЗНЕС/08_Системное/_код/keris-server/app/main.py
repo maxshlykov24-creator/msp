@@ -297,6 +297,7 @@ def client_profile(phone: str, db: Session = Depends(get_db)) -> dict:
 
     service_names = {s.id: s.name for s in db.execute(select(Service)).scalars().all()}
     addon_names = {a.id: a.name for a in db.execute(select(Addon)).scalars().all()}
+    master_names = {m.id: m.name for m in db.execute(select(Master)).scalars().all()}
 
     # Питомец в кабинете — только если в записи есть кличка. Без клички (карты YCLIENTS,
     # старые тесты) раньше получалась заглушка «Собака»/«Кошка» рядом с реальной Моней.
@@ -360,7 +361,9 @@ def client_profile(phone: str, db: Session = Depends(get_db)) -> dict:
             "time": b.starts_at.strftime("%H:%M"),
             "duration": int((b.ends_at - b.starts_at).total_seconds() // 60),
             "masterId": b.master_id,
+            "masterName": master_names.get(b.master_id, ""),
             "petId": _visit_pet_id(b),
+            "petName": (b.pet_name or "").strip(),
             "service": service_names.get(b.service_id, b.service_id),
             "addons": [addon_names.get(a, a) for a in (b.addon_ids or [])],
             "total": b.price,
@@ -590,6 +593,10 @@ class BookingIn(BaseModel):
 def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
     if not payload.personal_data_consent:
         raise HTTPException(422, "Требуется согласие на обработку персональных данных")
+    pet_name = (payload.pet_name or "").strip()
+    if not pet_name:
+        raise HTTPException(422, "Укажите кличку питомца")
+    payload.pet_name = pet_name
 
     # Телефон — ключ клиента (кабинет, абонемент, промо), храним в одном формате.
     owner_phone = normalize_phone(payload.owner_phone)

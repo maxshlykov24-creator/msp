@@ -112,6 +112,7 @@ def fresh(page, api: bool = False) -> None:
 def test_new_client(page) -> None:
     fresh(page)
     page.get_by_role("button", name="Записаться", exact=True).click()
+    page.locator("#petName").fill("Боня")
     page.locator("#breed").fill("Мальтипу")
     page.locator("#dogSizeGrid .chip").first.click()
     page.locator("#nextBtn").click()
@@ -241,12 +242,14 @@ def test_pet_card_and_new_pet(page) -> None:
     assert page.locator("#stepStripLabel").get_by_text("Keris Memory", exact=False).is_visible()
     memory = page.locator("#memoryBody").inner_text()
     assert "Тедди" in memory and "Светлана" in memory
-    page.get_by_role("button", name="Повторить прошлый уход").click()
-    assert page.locator(".choice.service.selected").count() == 1
+    assert "Последний мастер" in memory
+    assert "Паспорт заполнится" not in memory
+    page.get_by_role("button", name="Записать Тедди").click()
     fresh(page, api=True)
     login_cabinet(page)
     page.get_by_role("button", name="Записать другого питомца").click()
     assert page.locator("#petName").input_value() == ""
+    page.locator("#petName").fill("Боня")
     page.locator("#dogSizeGrid .chip").first.click()
     page.locator("#nextBtn").click()
     page.get_by_text("Гигиена", exact=True).first.click()
@@ -259,6 +262,7 @@ def test_review_unlocked_after_visit(page) -> None:
     """Отзыв открыт клиенту с завершённым визитом у мастера и закрыт анониму."""
     fresh(page)
     page.get_by_role("button", name="Записаться", exact=True).click()
+    page.locator("#petName").fill("Боня")
     page.locator("#dogSizeGrid .chip").first.click()
     page.locator("#nextBtn").click()
     page.get_by_text("Комплекс со стрижкой", exact=True).first.click()
@@ -375,6 +379,7 @@ def test_move_right_after_booking(page) -> None:
     """Аноним переносит только что оформленную запись: телефон берётся из формы."""
     fresh(page, api=True)
     page.get_by_role("button", name="Записаться", exact=True).click()
+    page.locator("#petName").fill("Боня")
     page.locator("#dogSizeGrid .chip").first.click()
     page.locator("#nextBtn").click()
     page.get_by_text("Комплекс со стрижкой", exact=True).first.click()
@@ -421,6 +426,7 @@ def test_no_show_visit_shown_as_missed(page) -> None:
 def test_spa_blocks_late_slots(page) -> None:
     fresh(page)
     page.get_by_role("button", name="Записаться", exact=True).click()
+    page.locator("#petName").fill("Боня")
     page.locator("#dogSizeGrid .chip").first.click()
     page.locator("#nextBtn").click()
     page.get_by_text("SPA-комплекс", exact=True).first.click()
@@ -435,6 +441,7 @@ def test_spa_blocks_late_slots(page) -> None:
 def test_master_profile_and_addon_duration(page) -> None:
     fresh(page)
     page.get_by_role("button", name="Записаться", exact=True).click()
+    page.locator("#petName").fill("Боня")
     page.locator("#dogSizeGrid .chip").first.click()
     page.locator("#nextBtn").click()
     page.get_by_text("Комплекс со стрижкой", exact=True).first.click()

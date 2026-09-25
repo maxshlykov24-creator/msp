@@ -743,7 +743,7 @@
         <button data-pet="cat" onclick="setPetType('cat')">Кошка</button>
       </div>
       <div id="dogFields">
-        <div class="field"><label for="petName">Кличка</label><input id="petName" autocomplete="off" placeholder="Например, Боня"><div class="hint">По желанию — так мастер обратится к питомцу</div></div>
+        <div class="field"><label for="petName">Кличка <span class="req" aria-hidden="true">*</span></label><input id="petName" autocomplete="off" placeholder="Например, Боня" required><div class="hint">Так мастер обратится к питомцу</div></div>
         <div class="field"><label for="breed">Порода</label><input id="breed" autocomplete="off" placeholder="Например, мальтипу"></div>
         <div class="field"><label>Вес питомца <span class="req" aria-hidden="true">*</span></label>
           <div class="size-grid" id="dogSizeGrid"></div>
@@ -751,7 +751,7 @@
         </div>
       </div>
       <div id="catFields" hidden>
-        <div class="field"><label for="catPetName">Кличка</label><input id="catPetName" autocomplete="off" placeholder="Например, Марсель"><div class="hint">По желанию — так мастер обратится к питомцу</div></div>
+        <div class="field"><label for="catPetName">Кличка <span class="req" aria-hidden="true">*</span></label><input id="catPetName" autocomplete="off" placeholder="Например, Марсель" required><div class="hint">Так мастер обратится к питомцу</div></div>
         <div class="field"><label>Тип шерсти <span class="req" aria-hidden="true">*</span></label><div class="chips" style="margin-left:0;margin-right:0;padding-left:0">
           <button class="chip active" data-coat="short" onclick="setCoat('short')">Короткая</button>
           <button class="chip" data-coat="long" onclick="setCoat('long')">Длинная</button>
@@ -1218,9 +1218,9 @@
       pet:{text:"Подобрать услуги",valid:petValid(),go:()=>{preparePet();renderServices();showScreen("service")}},
       service:{text:state.service?"Мастер и время · "+formatDuration(serviceDuration())+" · "+money(total()):"Выбрать услугу",valid:!!state.service,go:()=>{state.time=null;renderMasters();showScreen("master")}},
       master:state.moveId
-        ? {text:state.time?"Перенести на "+slotRange(state.time):"Выберите новое время",
+        ? {text:state.time?"Перенести на "+buttonWhen():"Выберите новое время",
            valid:!!state.master&&!!state.time&&!state.noSlots,go:submitReschedule}
-        : {text:state.time?"Контакты · "+slotRange(state.time):"Выберите время",
+        : {text:state.time?"Контакты · "+buttonWhen():"Выберите время",
            valid:!!state.master&&!!state.time&&!state.noSlots,
            go:()=>{state.mode="booking";renderSummary();showScreen("contact")}},
       contact:{text:state.mode==="subscription"?"Оставить заявку на абонемент":"Подтвердить запись",valid:contactValid(),go:confirmBooking}
@@ -1228,7 +1228,9 @@
     btn.textContent=config.text;btn.disabled=!config.valid;btn.onclick=config.go;
   }
   function petValid(){
-    return state.petType==="dog"?!!state.size:!!(state.coat&&state.catWeight);
+    const named=!!currentPetName();
+    const sized=state.petType==="dog"?!!state.size:!!(state.coat&&state.catWeight);
+    return named&&sized;
   }
   function nationalFromRaw(raw){
     let d=String(raw||"").replace(/\D/g,"");
@@ -1384,6 +1386,12 @@
   function minToTime(min){const h=Math.floor(min/60),m=min%60;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")}
   function slotEnd(time){return minToTime(timeToMin(time)+serviceDuration())}
   function slotRange(time){return time+"–"+slotEnd(time)}
+  function buttonWhen(){
+    if(!state.date||!state.time)return "";
+    const day=isToday(state.date)?"сегодня":isTomorrow(state.date)?"завтра"
+      :new Date(state.date+"T12:00:00").toLocaleDateString("ru-RU",{day:"numeric",month:"short"}).replace(".","");
+    return day+" · "+slotRange(state.time);
+  }
   function slotFits(time){return timeToMin(time)+serviceDuration()<=DATA.salonCloseMin}
   /* Сегодня в ленте дат есть. Слишком ранние слоты режет minLeadHours (сейчас 2 ч),
      а не целые сутки. Горизонт 60 дней проверяет сервер. */
@@ -1993,31 +2001,26 @@
     renderPetMemory(p);showScreen("memory");track("pet_memory_open",{id});
   }
   /* Keris Memory — паспорт питомца: считается из истории визитов, отдельных данных нет. */
+  function petDoneVisits(p){
+    const name=(p.name||"").trim().toLowerCase();
+    return CLIENT.visits.filter(v=>{
+      if(v.status!=="done")return false;
+      if(v.petId&&v.petId===p.id)return true;
+      return !!(name&&v.petName&&v.petName.trim().toLowerCase()===name);
+    }).sort((a,b)=>((b.date||"")+(b.time||"")).localeCompare((a.date||"")+(a.time||"")));
+  }
   function renderPetMemory(p){
     const body=$("#memoryBody");if(!body)return;
-    const visits=CLIENT.visits.filter(v=>v.petId===p.id&&v.status==="done")
-      .sort((a,b)=>b.date.localeCompare(a.date));
-    const last=visits[0];
-    const counts={};
-    visits.forEach(v=>{counts[v.masterId]=(counts[v.masterId]||0)+1});
-    const favourite=Object.keys(counts).sort((a,b)=>counts[b]-counts[a])[0];
-    const facts=last?`
-      <div class="memory-grid">
-        <div class="memory-card"><small>Последний визит</small><b>${ruDate(last.date)}</b></div>
-        <div class="memory-card"><small>Любимый мастер</small><b>${masterName(favourite)}</b></div>
-        <div class="memory-card"><small>Прошлый уход</small><b>${last.service}</b></div>
-        <div class="memory-card"><small>Всего визитов</small><b>${visits.length}</b></div>
-      </div>`:`
-      <div class="notice" style="margin-top:12px">Паспорт заполнится после первого визита: сюда попадут уход, мастер и рекомендации.</div>`;
+    const last=petDoneVisits(p)[0];
+    const master=last?((last.masterName||"").trim()||masterName(last.masterId)):"";
+    const showMaster=master&&master!=="Любой свободный";
     body.innerHTML=`
       <div class="cab-head" style="margin-top:4px">
-        <div><b>${p.name}${p.breed?" · "+p.breed:""}</b><small>${petTypeLabel(p)}${p.weight?" · "+p.weight:""}</small></div>
+        <div><b>${esc(p.name)}${p.breed?" · "+esc(p.breed):""}</b><small>${petTypeLabel(p)}${p.weight?" · "+esc(p.weight):""}</small></div>
       </div>
-      ${facts}
-      ${p.note?`<div class="summary" style="margin-top:12px"><div class="summary-row"><span>Важно мастеру</span><b>${p.note}</b></div></div>`:""}
-      ${last?`<button class="primary" style="margin-top:17px" onclick="repeatVisit('${last.id}')">Повторить прошлый уход</button>
-      <button class="secondary" onclick="startNew('${p.id}')">Выбрать другую услугу</button>`
-      :`<button class="primary" style="margin-top:17px" onclick="startNew('${p.id}')">Записать ${p.name}</button>`}`;
+      ${showMaster?`<div class="summary" style="margin-top:12px"><div class="summary-row"><span>Последний мастер</span><b>${esc(master)}</b></div></div>`:""}
+      ${p.note?`<div class="summary" style="margin-top:12px"><div class="summary-row"><span>Важно мастеру</span><b>${esc(p.note)}</b></div></div>`:""}
+      <button class="primary" style="margin-top:17px" onclick="startNew('${String(p.id).replace(/'/g,"")}')">Записать ${esc(p.name)}</button>`;
   }
   function masterName(id){const m=DATA.masters.find(x=>x.id===id);return m?m.name:"Мастер"}
   function visitEnd(v){return minToTime(timeToMin(v.time)+v.duration)}
@@ -2505,7 +2508,7 @@
   function resetApp(){location.reload()}
   $("#backBtn").onclick=()=>goBack();
   $("#closeBtn").onclick=()=>showScreen("welcome");
-  ["ownerName","consent","consentAds","consentMedia"].forEach(id=>{const el=$("#"+id);if(el)el.addEventListener("input",configureNext);if(el&&el.type==="checkbox")el.addEventListener("change",()=>{el.dataset.touched="1";configureNext()})});
+  ["ownerName","petName","catPetName","consent","consentAds","consentMedia"].forEach(id=>{const el=$("#"+id);if(el)el.addEventListener("input",configureNext);if(el&&el.type==="checkbox")el.addEventListener("change",()=>{el.dataset.touched="1";configureNext()})});
   $("#phone").addEventListener("input",onPhoneInput);
   $("#phone").addEventListener("change",loadPromoPreview);
   $("#phone").addEventListener("blur",loadPromoPreview);
