@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from . import (
     amocrm_client,
     amocrm_stages,
+    kennel_payments,
     clock,
     max_bind,
     notify_admins,
@@ -114,6 +115,10 @@ async def reminders_loop() -> None:
                 db.close()
         except Exception:  # noqa: BLE001
             log.warning("цикл amoCRM: ошибка итерации", exc_info=True)
+        try:
+            await asyncio.to_thread(kennel_payments.run_once)
+        except Exception:  # noqa: BLE001
+            log.warning("цикл оплаты питомника: ошибка итерации", exc_info=True)
         if settings.yclients_ready:
             try:
                 db = SessionLocal()
