@@ -382,13 +382,12 @@ def client_profile(phone: str, db: Session = Depends(get_db)) -> dict:
             "until": sub.expires_at.date().isoformat(),
         }
 
-    # Согласия — по последней записи: клиент, уже подтверждавший их у нас, не должен
-    # заново отмечать чекбоксы при следующей записи (актуально последнее решение).
-    last = bookings[-1] if bookings else None
+    # Согласие живёт с первого «да». Повторная запись его не переспрашивает,
+    # даже если более поздняя карточка создана без этих полей.
     consent = {
-        "personal_data": bool(last and last.personal_data_consent),
-        "marketing": bool(last and last.marketing_consent),
-        "media": bool(last and last.media_consent),
+        "personal_data": any(b.personal_data_consent for b in bookings),
+        "marketing": any(b.marketing_consent for b in bookings),
+        "media": any(b.media_consent for b in bookings),
     }
 
     return {

@@ -210,18 +210,27 @@ def test_client_prefill_and_pets(page) -> None:
     page.locator("#nextBtn").click()
     page.get_by_text("Комплекс со стрижкой", exact=True).first.click()
     page.locator("#nextBtn").click()
+    svetlana = page.locator(".master-card", has_text="Светлана")
+    assert svetlana.locator("small.was").inner_text() == "Прошлый визит · Тедди"
+    assert page.locator(".master-card", has_text="Алла").locator("small.was").count() == 0
     page.get_by_text("Любой свободный", exact=True).click()
     page.locator("button.slot:not([disabled])").first.click()
     page.locator("#nextBtn").click()
     assert page.locator("#ownerName").input_value() == "Ольга"
     assert "999 368" in page.locator("#phone").input_value()
-    assert page.locator("#contactAuthNote").is_visible()
+    assert page.locator("#contactAuthNote").count() == 0
     assert "Тедди" in page.locator("#summary").inner_text()
-    # уже был у нас и подтверждал все 3 согласия — повторно отмечать не нужно
-    assert page.locator("#consentAuthNote").is_visible()
+    # все 3 согласия уже были: блок скрыт, в запрос уходят отмеченные галочки
+    assert page.locator("#consentBlock").is_hidden()
     assert page.locator("#consent").is_checked()
     assert page.locator("#consentAds").is_checked()
     assert page.locator("#consentMedia").is_checked()
+    page.locator("button.summary-row").click()
+    assert page.locator(".pet-switch").get_by_text("Муся").is_visible()
+    assert page.locator(".pet-switch").get_by_text("Тедди").is_visible()
+    page.locator(".pet-switch button", has_text="Тедди").click()
+    assert page.locator("#summary").get_by_text("Тедди", exact=False).is_visible()
+    assert page.locator(".pet-switch").count() == 0
 
 
 def test_pet_card_and_new_pet(page) -> None:

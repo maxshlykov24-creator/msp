@@ -182,6 +182,7 @@
     .avail-banner b{font-family:var(--font);font-size:12px;font-weight:700}
     .avail-banner span{font-size:13px;color:var(--rose-dark);font-weight:600;font-family:var(--font)}
     .master-main small.near{display:block;color:var(--rose-dark);font-weight:600;margin-top:5px;font-size:11px}
+    .master-main small.was{display:block;color:var(--muted);font-weight:500;margin-top:2px;font-size:11px}
     .slot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;line-height:1.15;padding:8px 4px}
     .slot b{font-size:13px;font-weight:700}.slot em{font-style:normal;font-size:10px;font-weight:600;color:var(--muted)}
     .slot.active em{color:rgba(255,255,255,.78)}
@@ -195,6 +196,14 @@
     .summary{margin-top:20px;background:#fff;border:1px solid var(--line);border-radius:22px;padding:17px;box-shadow:0 16px 38px rgba(91,68,57,.08)}
     .summary-row{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid #f1e6e8;font-size:13px}
     .summary-row:last-child{border-bottom:0}.summary-row span{color:var(--muted)}.summary-row b{text-align:right;font-family:var(--font);font-weight:600}
+    button.summary-row{width:100%;margin:0;border:0;border-bottom:1px solid #f1e6e8;background:transparent;font:inherit;color:inherit;cursor:pointer;text-align:left}
+    button.summary-row b{display:inline-flex;align-items:center;justify-content:flex-end;gap:5px}
+    .pet-caret{font-style:normal;font-weight:500;font-size:9px;color:var(--muted);line-height:1}
+    .pet-switch{padding:0 0 2px;border-bottom:1px solid #f1e6e8}
+    .pet-switch button{width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;background:transparent;font:inherit;color:#8a736a;padding:8px 0;cursor:pointer;text-align:left}
+    .pet-switch button.on{color:var(--text)}
+    .pet-switch button b{font-family:var(--font);font-weight:600;font-size:13px}
+    .pet-switch button small{font-size:11px;color:var(--muted)}
     .total{font-size:19px!important}.total b{color:var(--rose-dark)}
     .consent{display:flex;gap:10px;align-items:flex-start;margin-top:16px;font-size:12px;color:#6f5b52;line-height:1.5}
     .consent input{width:20px;height:20px;accent-color:var(--rose);flex:0 0 auto;margin:0}
@@ -765,7 +774,6 @@
       <div class="stack" id="serviceList"></div>
       <div class="section-title">Можно добавить</div>
       <div class="stack" id="addonList"></div>
-      <div class="promise"><span class="spark">✦</span><div><b>Фото-сессия после груминга</b><p>Скоро появится как отдельная опция. Сейчас услуга не добавляется в заказ.</p></div></div>
     </section>
 
     <section class="screen" data-screen="master">
@@ -779,12 +787,10 @@
       <div class="eyebrow">Шаг 4 из 4</div>
       <h2>Почти готово</h2>
       <p class="lead">Оставьте контакты — запись подтвердится сразу. Поля со звёздочкой обязательны.</p>
-      <div class="notice" id="contactAuthNote" hidden style="grid-column:1 / -1;margin-bottom:4px">Имя и телефон подставлены из профиля «Мой Keris Club». Можно изменить — только для этой записи.</div>
       <div class="field"><label for="ownerName">Ваше имя <span class="req" aria-hidden="true">*</span></label><input id="ownerName" autocomplete="name" placeholder="Имя"></div>
       <div class="field"><label for="phone">Телефон <span class="req" aria-hidden="true">*</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 999 000-00-00"></div>
       <div class="field"><label for="comment">Что важно знать мастеру</label><textarea id="comment" placeholder="Особенности поведения, кожи, шерсти — необязательно"></textarea></div>
       <div class="summary" id="summary"></div>
-      <div class="notice" id="consentAuthNote" hidden style="grid-column:1 / -1;margin-bottom:4px">Согласия уже подтверждены при предыдущей записи — менять не нужно.</div>
       <div id="consentBlock" style="grid-column:1 / -1">
       <label class="consent"><input id="consent" type="checkbox"><span>Я даю согласие на <a href="https://www.kerisclub.ru/agreement" target="_blank" rel="noopener" onclick="openLegal('consent');return false;">обработку моих персональных данных</a> и данных моего питомца в соответствии с <a href="https://www.kerisclub.ru/privacy_policy" target="_blank" rel="noopener" onclick="openLegal('privacy');return false;">Политикой конфиденциальности</a> и принимаю условия <a href="https://www.kerisclub.ru/public_offer" target="_blank" rel="noopener" onclick="openLegal('offer');return false;">Публичной оферты</a>. <span class="req">*</span></span></label>
       <label class="consent"><input id="consentAds" type="checkbox"><span>Я согласен(на) получать информационные и рекламные сообщения о новостях питомника, акциях груминг-салона и специальных предложениях. <span class="req">*</span></span></label>
@@ -1133,7 +1139,7 @@
   }
 
   const flow=["pet","service","master","contact"];
-  const state={petType:"dog",coat:"short",size:null,catWeight:null,service:null,addons:[],master:null,date:null,time:null,repeat:false,noSlots:false,subSize:"S",subscription:null,mode:"booking",profileMasterId:null,reviewStars:5,serviceQuery:"",promo:null,petId:null,auth:{ok:false,name:"",visitedMasterIds:[]},
+  const state={petType:"dog",coat:"short",size:null,catWeight:null,service:null,addons:[],master:null,date:null,time:null,repeat:false,noSlots:false,subSize:"S",subscription:null,mode:"booking",profileMasterId:null,reviewStars:5,serviceQuery:"",promo:null,petId:null,petPickOpen:false,auth:{ok:false,name:"",visitedMasterIds:[]},
     /* moveId — переносим существующую запись (не создаём новую), booking — запись,
        с которой можно работать после оформления: перенос и отмена. */
     moveId:null,movePhone:"",booking:null};
@@ -1188,7 +1194,7 @@
     $("#sticky").hidden=!flow.includes(name)||name==="masterProfile";
     const i=flow.indexOf(name);$("#progressBar").style.width=i<0?"0":((i+1)/flow.length*100)+"%";
     updateStepStrip(name);
-    if(name==="contact"){prefillClientContact(false);if(state.mode!=="subscription")loadPromoPreview()}
+    if(name==="contact"){state.petPickOpen=false;prefillClientContact(false);if(state.mode!=="subscription"){renderSummary();loadPromoPreview()}}
     if(name==="pet")renderPetPicker();
     configureNext();
     scrollAppToTop();
@@ -1267,6 +1273,7 @@
     el.value=formatPhone(national);
     const pos=el.value.length;
     try{el.setSelectionRange(pos,pos)}catch(_){}
+    applyConsentVisibility();
     configureNext();
   }
   function startNew(petId){
@@ -1477,6 +1484,15 @@
     }
     return null;
   }
+  function lastMasterIdForPet(){
+    if(!clientAuth.ok||!CLIENT.visits.length)return "";
+    const named=currentPetName().toLowerCase();
+    const pet=state.petId?petById(state.petId):CLIENT.pets.find(p=>p.name.toLowerCase()===named);
+    if(!pet)return "";
+    const done=CLIENT.visits.filter(v=>v.petId===pet.id&&v.status==="done"&&v.masterId&&v.masterId!=="any");
+    done.sort((a,b)=>((b.date||"")+(b.time||"")).localeCompare((a.date||"")+(a.time||"")));
+    return done[0]?done[0].masterId:"";
+  }
   function renderMasters(){
     const dur=serviceDuration();
     /* Перенос меняет только время той же записи, поэтому мастера не переключаем:
@@ -1490,17 +1506,19 @@
       state.date=isoOf(first);
     }
     loadSlotsRange();
+    const lastMaster=lastMasterIdForPet();
     $("#masterList").innerHTML=list.map(m=>{
       const on=state.master&&state.master.id===m.id;
       const avatar=m.photo?`<img src="${m.photo}" alt="">`:m.initial;
       const near=nearestForMaster(m.id);
       const nearHtml=near?`<small class="near">Ближайшее: ${dayLabel(near.iso)} · ${near.time}</small>`:`<small class="near">Ближайших окон нет</small>`;
+      const wasHtml=m.id===lastMaster?`<small class="was">Прошлый визит · ${esc(currentPetName())}</small>`:"";
       const profileBtn=m.id==="any"?"":`<button type="button" class="master-profile-btn" onclick="event.stopPropagation();openMasterProfile('${m.id}')">Профиль<br>и отзывы</button>`;
       return `<article class="choice master-card ${on?"selected":""}">
         <div class="master-row">
           <button type="button" class="master-main" onclick="chooseMaster('${m.id}')">
             <span class="master-avatar">${avatar}</span>
-            <span class="copy"><strong>${m.name}</strong><small>${m.caption}</small>${nearHtml}</span>
+            <span class="copy"><strong>${m.name}</strong><small>${m.caption}</small>${wasHtml}${nearHtml}</span>
             <span class="price">${m.rating||""}</span>
             <span class="check">${on?"✓":""}</span>
           </button>
@@ -1735,6 +1753,22 @@
     return rows;
   }
   function rowsHtml(){return summaryRows().map(r=>`<div class="summary-row ${r[2]||""}"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("")}
+  function petSwitchable(){return state.mode!=="subscription"&&clientAuth.ok&&CLIENT.pets.length>1}
+  function petMeta(p){
+    const kind=p.type==="dog"?"собака":"кошка";
+    const size=p.type==="dog"?(p.size||""):String(p.size||"").replace(/_/g," · ");
+    return [kind,size].filter(Boolean).join(" · ");
+  }
+  function summaryHtml(){
+    return summaryRows().map(r=>{
+      if(r[0]!=="Питомец"||!petSwitchable())return `<div class="summary-row ${r[2]||""}"><span>${r[0]}</span><b>${r[1]}</b></div>`;
+      const open=!!state.petPickOpen;
+      const list=open?`<div class="pet-switch">${CLIENT.pets.map(p=>`<button type="button" class="${state.petId===p.id?"on":""}" onclick="choosePetOnContact('${String(p.id).replace(/'/g,"")}')"><b>${esc(p.name)}</b><small>${esc(petMeta(p))}</small></button>`).join("")}</div>`:"";
+      return `<button type="button" class="summary-row" onclick="togglePetSwitch()"><span>${r[0]}</span><b>${r[1]} <i class="pet-caret">${open?"▴":"▾"}</i></b></button>${list}`;
+    }).join("");
+  }
+  function togglePetSwitch(){state.petPickOpen=!state.petPickOpen;renderSummary()}
+  function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
   function showSuccess(id,eyebrow,title){
     $("#bookingCode").textContent=id;
     $("#successSummary").innerHTML=rowsHtml();
@@ -1742,7 +1776,7 @@
     $("#successTitle").textContent=title;
     showScreen("success");
   }
-  function renderSummary(){$("#summary").innerHTML=rowsHtml();configureNext()}
+  function renderSummary(){$("#summary").innerHTML=summaryHtml();configureNext()}
   /* Запись готова к отправке только с полным набором: питомец, услуга, мастер, слот.
      Без этой проверки перенос записи (state.service ещё пустой) обрывал confirmBooking
      на середине и кнопка навсегда оставалась в «Проверяем слот…». */
@@ -1828,34 +1862,48 @@
   /* Данные авторизованного клиента подставляем в форму записи; поля остаются
      редактируемыми — можно записать другого питомца или указать другой контакт. */
   function prefillClientContact(force){
-    const note=$("#contactAuthNote");
-    if(!clientAuth.ok){if(note)note.hidden=true;prefillClientConsent(false);return}
+    if(!clientAuth.ok){prefillClientConsent(false);return}
     const n=$("#ownerName");
     if(n&&CLIENT.name&&(force||!n.value.trim()))n.value=CLIENT.name;
     const p=$("#phone"),digits=nationalFromRaw(clientAuth.phone);
     if(p&&digits&&(force||!(p.dataset.national||""))){p.dataset.national=digits;p.value=formatPhone(digits)}
-    if(note)note.hidden=false;
     prefillClientConsent(force);
     configureNext();
   }
-  /* Клиент, уже подтвердивший все 3 согласия при прошлой записи, не должен
-     заново их отмечать — подставляем галочки и убираем требование на повтор. */
-  function prefillClientConsent(force){
-    const cNote=$("#consentAuthNote");
-    const known=clientAuth.ok&&CLIENT.consent&&CLIENT.consent.personal_data&&CLIENT.consent.marketing&&CLIENT.consent.media;
-    if(!known){if(cNote)cNote.hidden=true;return}
-    ["consent","consentAds","consentMedia"].forEach(id=>{
+  /* Один раз все три согласия уже есть: блок не показываем, чтобы клиент
+     не снял галочку мимоходом. В запрос уходят те же «да». Чужой телефон
+     в этой записи снова просит согласия: они принадлежат человеку, не анкете. */
+  function consentAlreadyGiven(){
+    const c=CLIENT.consent;
+    return !!(clientAuth.ok&&c&&c.personal_data&&c.marketing&&c.media);
+  }
+  function sameClientPhone(){
+    const saved=nationalFromRaw(clientAuth.phone);
+    return !!saved&&phoneDigits()===("7"+saved);
+  }
+  function applyConsentVisibility(){
+    const block=$("#consentBlock");
+    const ids=["consent","consentAds","consentMedia"];
+    const known=consentAlreadyGiven()&&sameClientPhone();
+    if(known){
+      ids.forEach(id=>{const el=$("#"+id);if(el){el.checked=true;el.dataset.locked="1"}});
+      if(block)block.hidden=true;
+      return;
+    }
+    if(block)block.hidden=false;
+    ids.forEach(id=>{
       const el=$("#"+id);
-      if(el&&(force||!el.dataset.touched))el.checked=true;
+      if(el&&el.dataset.locked){el.checked=false;delete el.dataset.locked;delete el.dataset.touched}
     });
-    if(cNote)cNote.hidden=false;
+  }
+  function prefillClientConsent(){
+    applyConsentVisibility();
   }
   function clearClientContact(){
     const n=$("#ownerName");if(n)n.value="";
     const p=$("#phone");if(p){p.dataset.national="";p.value=""}
-    const note=$("#contactAuthNote");if(note)note.hidden=true;
-    const cNote=$("#consentAuthNote");if(cNote)cNote.hidden=true;
-    ["consent","consentAds","consentMedia"].forEach(id=>{const el=$("#"+id);if(el){el.checked=false;delete el.dataset.touched}});
+    ["consent","consentAds","consentMedia"].forEach(id=>{const el=$("#"+id);if(el){el.checked=false;delete el.dataset.touched;delete el.dataset.locked}});
+    const block=$("#consentBlock");if(block)block.hidden=false;
   }
   function renderPetPicker(){
     const wrap=$("#petPicker");if(!wrap)return;
@@ -1863,6 +1911,51 @@
     wrap.hidden=false;
     $("#petPickerChips").innerHTML=CLIENT.pets.map(p=>`<button type="button" class="chip ${state.petId===p.id?"active":""}" onclick="choosePet('${p.id}')">${p.name}<small>${[petTypeLabel(p),p.weight].filter(Boolean).join(" · ")}</small></button>`).join("")
       +`<button type="button" class="chip ${state.petId?"":"active"}" onclick="choosePet('')">Другой питомец<small>новая карточка</small></button>`;
+  }
+  function fillPetQuiet(p){
+    state.petId=p.id;
+    state.petType=p.type;
+    if(p.type==="dog"){
+      state.size=p.size;state.catWeight=null;
+      const n=$("#petName");if(n)n.value=p.name;
+      const b=$("#breed");if(b)b.value=p.breed||"";
+    }else{
+      state.coat=p.coat;state.catWeight=p.catWeight;
+      state.size=(p.coat&&p.catWeight)?p.coat+"_"+p.catWeight:(p.size||null);
+      const n=$("#catPetName");if(n)n.value=p.name;
+    }
+    $$("[data-pet]").forEach(b=>b.classList.toggle("active",b.dataset.pet===p.type));
+    $("#dogFields").hidden=p.type!=="dog";$("#catFields").hidden=p.type!=="cat";
+    const c=$("#comment");
+    if(c&&p.note&&(!c.value.trim()||CLIENT.pets.some(x=>x.note===c.value.trim())))c.value=p.note;
+    renderSizeGrids();
+  }
+  function choosePetOnContact(id){
+    const p=petById(id);if(!p)return;
+    const prevDuration=state.service?serviceDuration():0;
+    const prevType=state.petType,prevSize=state.size;
+    fillPetQuiet(p);
+    state.petPickOpen=false;
+    const catalog=DATA[state.petType];
+    const svc=state.service&&catalog.services.find(s=>s.id===state.service.id&&s.prices[state.size]!=null);
+    if(!svc){
+      state.service=null;state.addons=[];state.time=null;state.promo=null;
+      toast("Для этого питомца выберите услугу.");
+      renderServices();showScreen("service");
+      return;
+    }
+    state.service=svc;
+    const known=new Set(catalog.addons.map(a=>a.id));
+    state.addons=state.addons.filter(a=>known.has(a));
+    const changed=state.petType!==prevType||state.size!==prevSize||serviceDuration()!==prevDuration;
+    if(changed&&state.time&&(serviceDuration()!==prevDuration||!slotFits(state.time))){
+      state.time=null;state.promo=null;
+      toast("Время нужно выбрать заново: у питомца другая длительность.");
+      renderMasters();showScreen("master");
+      return;
+    }
+    renderSummary();
+    if(state.mode!=="subscription")loadPromoPreview();
   }
   function choosePet(id){
     const p=id?petById(id):null;
