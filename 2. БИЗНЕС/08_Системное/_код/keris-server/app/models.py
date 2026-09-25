@@ -43,6 +43,8 @@ class BookingSource(str, enum.Enum):
     miniapp = "miniapp"
     website = "website"
     yclients_maps = "yclients_maps"
+    yclients_journal = "yclients_journal"
+    # В списке amo больше не пишем. Значение остаётся, чтобы старые строки БД читались.
     admin_bot = "admin_bot"
 
 

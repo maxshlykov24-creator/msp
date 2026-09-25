@@ -38,11 +38,12 @@ SOURCE_TO_CONTACT_FIELD = {
 }
 
 # Источник записи → значение поля «Источник записи» на сделке.
+# «Админ-бот» из списка убран: бот записи не создаёт.
 SOURCE_TO_LEAD_FIELD = {
     BookingSource.miniapp: "Mini App",
     BookingSource.website: "Сайт",
     BookingSource.yclients_maps: "Яндекс.Карты / 2ГИС",
-    BookingSource.admin_bot: "Админ-бот",
+    BookingSource.yclients_journal: "Журнал YCLIENTS",
 }
 
 CLOSED_STATUSES = (BookingStatus.cancelled, BookingStatus.no_show)

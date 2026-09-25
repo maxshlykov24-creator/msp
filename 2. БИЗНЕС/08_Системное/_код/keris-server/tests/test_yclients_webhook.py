@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from app.booking_logic import has_overlap, slots_for_master
 from app.models import Addon, Booking, BookingSource, BookingStatus, Master, Service
-from app.sync import handle_yclients_webhook
+from app.sync import handle_yclients_webhook, yclients_record_source
 
 YC_STAFF_ALLA = 5824356
 YC_SERVICE_HYGIENE_M = 30786306  # "Гигиена (собака)" — размер M (см. yclients_setup.sync_catalog)
@@ -33,6 +33,10 @@ def record_event(status: str = "create", record_id: int = 1891402563, **override
         "datetime": "2026-08-09T17:00:00+03:00",
         "seance_length": 5400,
         "comment": "запись с Яндекс.Карт",
+        "online": True,
+        "bookform_id": 2453598,
+        "from_url": "https://yandex.ru/maps",
+        "record_from": "\"Keris Club\" новый виджет",
         "deleted": False,
         "services": [{"id": YC_SERVICE_HYGIENE_M, "title": "Гигиена", "cost": 5500, "cost_to_pay": 5500}],
         "client": {"id": 430559571, "display_name": "Мария", "name": "Мария", "phone": "+79990000781"},
@@ -58,6 +62,34 @@ def test_record_from_maps_creates_booking(db_session):
     assert booking.price == 5500
     assert booking.yclients_record_id == 1891402563
     assert booking.admin_note
+
+
+def test_journal_record_is_not_maps(db_session):
+    """Ручная запись в журнале: нет online, формы и ссылки."""
+    mapped(db_session)
+    result = handle_yclients_webhook(db_session, record_event(
+        record_id=1891402999,
+        online=False,
+        bookform_id=0,
+        from_url="",
+        record_from="",
+        comment="",
+    ))
+    assert result["status"] == "created"
+    booking = db_session.get(Booking, result["booking_id"])
+    assert booking.source == BookingSource.yclients_journal
+    assert "журнала" in (booking.admin_note or "")
+
+
+def test_record_source_signals():
+    assert yclients_record_source({"online": True}) == BookingSource.yclients_maps
+    assert yclients_record_source({"bookform_id": 12}) == BookingSource.yclients_maps
+    assert yclients_record_source({"from_url": "https://2gis.ru"}) == BookingSource.yclients_maps
+    assert yclients_record_source({"record_from": "виджет"}) == BookingSource.yclients_maps
+    assert yclients_record_source({
+        "online": False, "bookform_id": 0, "from_url": "", "record_from": "",
+        "created_user_id": 14456148,
+    }) == BookingSource.yclients_journal
 
 
 def test_same_event_twice_is_idempotent(db_session):

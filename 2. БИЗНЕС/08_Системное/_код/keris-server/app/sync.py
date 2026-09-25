@@ -634,7 +634,23 @@ def webhook_event_id(payload: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
-def _maps_admin_note(pet_info: dict, in_bot: bool = False) -> str:
+def yclients_record_source(data: dict) -> BookingSource:
+    """Карты и виджет YCLIENTS помечают запись: online, форма, ссылка или record_from.
+    Ручная запись в журнале этих признаков не имеет. Эхо нашей записи сюда не
+    попадает: её находим по yclients_record_id и источник не меняем."""
+    online = data.get("online") in (True, 1, "1", "true", "True")
+    try:
+        form_id = int(data.get("bookform_id") or 0)
+    except (TypeError, ValueError):
+        form_id = 0
+    url = str(data.get("from_url") or "").strip()
+    origin = str(data.get("record_from") or "").strip()
+    if online or form_id > 0 or url or origin:
+        return BookingSource.yclients_maps
+    return BookingSource.yclients_journal
+
+
+def _maps_admin_note(pet_info: dict, in_bot: bool = False, *, journal: bool = False) -> str:
     """Чего не хватает менеджеру по записи с карт/журнала. Кличку и породу
     просим уточнить, только если их не прислали доп. полями записи YCLIENTS —
     согласия ПДн/фото доп. полями не покрываются, спрашиваем всегда.
@@ -649,7 +665,8 @@ def _maps_admin_note(pet_info: dict, in_bot: bool = False) -> str:
     if not pet_info.get("pet_breed"):
         missing.append("породу")
     missing.append("согласия ПДн/фото")
-    note = f"Запись из YCLIENTS (карты): уточнить {', '.join(missing)} у клиента"
+    channel = "журнала YCLIENTS" if journal else "YCLIENTS (карты)"
+    note = f"Запись из {channel}: уточнить {', '.join(missing)} у клиента"
     if not in_bot:
         note += (
             f". Клиента нет в боте — дать ссылку и попросить «Поделиться номером»: "
@@ -1045,14 +1062,16 @@ def _create_from_yclients(db: Session, data: dict, record_id: int, master: Maste
     phone = normalize_phone(client.get("phone") or "")
     chat_id = telegram_bind.resolve_chat_id(db, phone)
     max_user_id = max_bind.resolve_user_id(db, phone) if max_bind is not None else None
-    note = (_maps_admin_note(pet_info, in_bot=bool(chat_id or max_user_id)) + note_extra)[:500]
+    source = yclients_record_source(data)
+    journal = source == BookingSource.yclients_journal
+    note = (_maps_admin_note(pet_info, in_bot=bool(chat_id or max_user_id), journal=journal) + note_extra)[:500]
     if has_overlap(db, master.id, starts_at, ends_at):
         # Отказать нельзя — запись уже существует в YCLIENTS; помечаем для менеджера.
         note = (note + ". ⚠️ Слот пересекается с существующей записью")[:500]
 
     booking = Booking(
         id=next_booking_id(db),
-        owner_name=(client.get("display_name") or client.get("name") or "Клиент с карт"),
+        owner_name=(client.get("display_name") or client.get("name") or ("Клиент из журнала" if journal else "Клиент с карт")),
         owner_phone=phone,
         pet_name=pet_info.get("pet_name", ""),
         pet_breed=pet_info.get("pet_breed", ""),
@@ -1069,7 +1088,7 @@ def _create_from_yclients(db: Session, data: dict, record_id: int, master: Maste
         ends_at=ends_at,
         price=price,
         status=BookingStatus.confirmed,
-        source=BookingSource.yclients_maps,
+        source=source,
         comment=str(data.get("comment") or ""),
         admin_note=note,
         yclients_record_id=record_id,
@@ -1079,14 +1098,17 @@ def _create_from_yclients(db: Session, data: dict, record_id: int, master: Maste
     db.add(booking)
     db.commit()
 
-    sync_booking_to_amocrm(
-        db, booking,
-        note="Запись создана в YCLIENTS (Яндекс.Карты / 2ГИС или журнал администратора)",
-    )
+    if journal:
+        origin_note = "Запись создана в журнале YCLIENTS"
+        origin_line = "Источник: Журнал YCLIENTS"
+    else:
+        origin_note = "Запись создана в YCLIENTS (Яндекс.Карты / 2ГИС)"
+        origin_line = "Источник: Яндекс.Карты / 2ГИС"
+    sync_booking_to_amocrm(db, booking, note=origin_note)
     service_title = display_title or service.name
     created_text = (
         notify_karina.booking_created_text(booking, service_title, master_name=master.name)
-        + "\n\n📍 Источник: YCLIENTS (Яндекс/2ГИС) — данные питомца не заполнены"
+        + f"\n\n📍 {origin_line} — данные питомца не заполнены"
     )
     if not (chat_id or max_user_id):
         created_text += (

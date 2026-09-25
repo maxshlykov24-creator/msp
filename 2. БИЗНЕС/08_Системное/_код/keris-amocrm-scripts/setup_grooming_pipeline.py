@@ -72,7 +72,7 @@ FIELDS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("Питомец", "text", []),
         ("Размер", "text", []),
         ("Источник записи", "select", [
-            "Mini App", "Сайт", "Яндекс.Карты / 2ГИС", "Журнал YCLIENTS", "Админ-бот",
+            "Mini App", "Сайт", "Яндекс.Карты / 2ГИС", "Журнал YCLIENTS",
         ]),
         ("Оплата", "text", []),
         ("Журнал YCLIENTS", "url", []),

@@ -79,6 +79,7 @@ def ensure_columns(engine: Engine) -> None:
                 conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {quoted} {ddl_type}'))
                 log.info("миграция: %s.%s добавлена", table, name)
     _widen_telegram_chat_id(engine)
+    _ensure_journal_source(engine)
 
 
 def _widen_telegram_chat_id(engine: Engine) -> None:
@@ -96,3 +97,25 @@ def _widen_telegram_chat_id(engine: Engine) -> None:
         if kind == "integer":
             conn.execute(text("ALTER TABLE bookings ALTER COLUMN telegram_chat_id TYPE BIGINT"))
             log.info("миграция: bookings.telegram_chat_id INTEGER → BIGINT")
+
+
+def _ensure_journal_source(engine: Engine) -> None:
+    """Новое значение источника. ADD VALUE в Postgres нельзя использовать
+    в той же транзакции, поэтому отдельное соединение с autocommit."""
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        label = conn.execute(text(
+            "SELECT e.enumlabel FROM pg_enum e "
+            "JOIN pg_type t ON e.enumtypid = t.oid "
+            "WHERE t.typname = 'bookingsource' AND e.enumlabel = 'yclients_journal'"
+        )).scalar()
+        if label:
+            return
+        present = conn.execute(text(
+            "SELECT 1 FROM pg_type WHERE typname = 'bookingsource'"
+        )).scalar()
+        if not present:
+            return
+        conn.execute(text("ALTER TYPE bookingsource ADD VALUE 'yclients_journal'"))
+        log.info("миграция: bookingsource + yclients_journal")

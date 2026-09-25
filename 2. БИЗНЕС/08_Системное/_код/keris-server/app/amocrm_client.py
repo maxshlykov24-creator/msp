@@ -271,6 +271,28 @@ def custom_field(entity: str, name: str, value: Any) -> dict | None:
     return {"field_id": int(fid), "values": [{"value": value}]}
 
 
+def drop_select_value(entity: str, name: str, value: str) -> str:
+    """Убрать значение из списка. Если его уже нет — «absent».
+    Если amo не даёт удалить занятое значение — ошибка наверх."""
+    fid = field_id(entity, name)
+    if fid is None:
+        return "no_field"
+    field = _fields(entity).get(name.strip().lower()) or {}
+    enums = list(field.get("enums") or [])
+    kept = [row for row in enums if str(row.get("value") or "") != value]
+    if len(kept) == len(enums):
+        return "absent"
+    payload = []
+    for index, row in enumerate(kept, start=1):
+        item = {"value": row.get("value"), "sort": row.get("sort") or index}
+        if row.get("id"):
+            item["id"] = row["id"]
+        payload.append(item)
+    _request("PATCH", f"/api/v4/{entity}/custom_fields/{int(fid)}", json={"enums": payload})
+    reset_cache()
+    return "removed"
+
+
 def custom_fields(entity: str, values: dict[str, Any]) -> list[dict]:
     out = []
     for name, value in values.items():
