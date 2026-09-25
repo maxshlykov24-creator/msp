@@ -863,15 +863,22 @@ def confirm_booking(booking_id: str, db: Session = Depends(get_db)) -> dict:
 
 @app.post("/webhooks/amocrm")
 async def amocrm_webhook(request: Request) -> dict:
-    """amo шлёт update_lead в момент сохранения карточки. Платёж разбирается сразу."""
-    form = await request.form()
+    """amo шлёт update_lead в момент сохранения карточки. Платёж разбирается сразу.
+
+    Тело это application/x-www-form-urlencoded, не multipart, поэтому разбираем
+    сами: на сервере нет python-multipart.
+    """
+    from urllib.parse import parse_qs
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    form = parse_qs(raw, keep_blank_values=True)
     ids: list[int] = []
-    for key, value in form.multi_items():
+    for key, values in form.items():
         if key.startswith("leads[update]") and key.endswith("[id]"):
-            try:
-                ids.append(int(value))
-            except (TypeError, ValueError):
-                continue
+            for value in values:
+                try:
+                    ids.append(int(value))
+                except (TypeError, ValueError):
+                    continue
     done = 0
     for lead_id in dict.fromkeys(ids):
         try:

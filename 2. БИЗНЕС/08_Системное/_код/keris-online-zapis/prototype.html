@@ -2095,6 +2095,34 @@
   function upcomingVisit(){
     return CLIENT.visits.filter(v=>v.status==="upcoming").sort((a,b)=>a.date.localeCompare(b.date))[0]||null;
   }
+  let cabinetHistoryOpen=false;
+  function visitAgeGroup(dateStr){
+    const days=Math.floor((Date.now()-new Date(dateStr+"T12:00:00").getTime())/86400000);
+    if(days<31)return "month";
+    if(days<92)return "m3";
+    if(days<183)return "m6";
+    if(days<366)return "year";
+    return "older";
+  }
+  function historyHtml(past){
+    if(!past.length)return `<div class="notice">Пока нет завершённых визитов.</div>`;
+    const labels={month:"Последний месяц",m3:"3 месяца",m6:"6 месяцев",year:"Год",older:"Раньше"};
+    const shown=cabinetHistoryOpen?past:past.slice(0,4);
+    let html="";
+    let last="";
+    shown.forEach(v=>{
+      if(cabinetHistoryOpen){
+        const g=visitAgeGroup(v.date);
+        if(g!==last){html+=`<div class="hist-label">${labels[g]}</div>`;last=g}
+      }
+      html+=visitRowHtml(v);
+    });
+    if(past.length>4){
+      html+=`<button type="button" class="link-btn" onclick="toggleCabinetHistory()">${cabinetHistoryOpen?"Свернуть":"Все визиты · "+past.length}</button>`;
+    }
+    return html;
+  }
+  function toggleCabinetHistory(){cabinetHistoryOpen=!cabinetHistoryOpen;renderCabinet()}
   function renderCabinet(){
     const upcoming=upcomingVisit();
     const past=CLIENT.visits.filter(v=>v.status!=="upcoming").sort((a,b)=>b.date.localeCompare(a.date));
@@ -2133,7 +2161,7 @@
         <div class="chev">＋</div>
       </button>
       <div class="section-title">История посещений</div>
-      ${past.length?past.map(visitRowHtml).join(""):`<div class="notice">Пока нет завершённых визитов.</div>`}
+      ${historyHtml(past)}
       <button class="primary" style="margin-top:18px" onclick="startNew()">Записаться на груминг</button>`;
   }
   function openVisit(id){
