@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 from . import (
     amocrm_client,
     amocrm_stages,
+    grooming_clients,
     kennel_payments,
+    kennel_silence,
     clock,
     max_bind,
     notify_admins,
@@ -119,6 +121,18 @@ async def reminders_loop() -> None:
             await asyncio.to_thread(kennel_payments.run_once)
         except Exception:  # noqa: BLE001
             log.warning("цикл оплаты питомника: ошибка итерации", exc_info=True)
+        try:
+            db = SessionLocal()
+            try:
+                await asyncio.to_thread(grooming_clients.run_once, db)
+            finally:
+                db.close()
+        except Exception:  # noqa: BLE001
+            log.warning("цикл клиентов груминга: ошибка итерации", exc_info=True)
+        try:
+            await asyncio.to_thread(kennel_silence.run_once)
+        except Exception:  # noqa: BLE001
+            log.warning("цикл тишины питомника: ошибка итерации", exc_info=True)
         if settings.yclients_ready:
             try:
                 db = SessionLocal()
