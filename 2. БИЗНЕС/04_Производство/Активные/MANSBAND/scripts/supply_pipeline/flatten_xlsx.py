@@ -6,8 +6,70 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import openpyxl
 
-from expand import _clean, _qty, resolve_kit
+from config import KIT_MAP
+from expand import _clean, _qty, norm_kit, resolve_kit
 from sostav import normalize_sostav
+
+
+def load_spr_kit_parts(path: Path) -> Dict[str, List[str]]:
+    """Лист «Справочник»: блок = вид комплекта, ниже части (пиджак, брюки, жилет)."""
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    sheet_name = next((n for n in wb.sheetnames if "правочник" in n.lower()), None)
+    if not sheet_name:
+        return {}
+    ws = wb[sheet_name]
+    lines: List[str] = []
+    for row in ws.iter_rows(max_col=1, values_only=True):
+        lines.append(" ".join(_clean(row[0]).replace("\xa0", " ").split()))
+    out: Dict[str, List[str]] = {}
+    i = 0
+    while i < len(lines):
+        if not lines[i]:
+            i += 1
+            continue
+        header = lines[i]
+        i += 1
+        parts: List[str] = []
+        while i < len(lines) and lines[i]:
+            parts.append(lines[i])
+            i += 1
+        if parts:
+            out[header] = parts
+    return out
+
+
+def kit_spr_mismatches(path: Path, kit_raws: List[str]) -> List[str]:
+    """
+    Если в файле поставки вид есть в «Справочнике», части должны совпасть с KIT_MAP.
+    Расхождение — стоп, в МС не пишем. Так 28.08 двубортный оверсайз уехал
+    в «пиджак оверсайз с накладными карманами».
+    """
+    spr = load_spr_kit_parts(path)
+    if not spr:
+        return []
+    by_canon: Dict[str, Tuple[str, List[str]]] = {}
+    for header, parts in spr.items():
+        by_canon.setdefault(resolve_kit(header), (header, parts))
+    errors: List[str] = []
+    seen = set()
+    for raw in kit_raws:
+        canon = resolve_kit(raw)
+        hit = by_canon.get(canon)
+        if hit is None:
+            continue
+        header, parts = hit
+        expected = KIT_MAP.get(canon)
+        if sorted(expected or []) == sorted(parts):
+            continue
+        key = (norm_kit(header), tuple(sorted(parts)), tuple(sorted(expected or [])))
+        if key in seen:
+            continue
+        seen.add(key)
+        errors.append(
+            f"вид {raw!r} по справочнику файла → {parts}, "
+            f"в KIT_MAP ({canon}) → {expected}. В МС не пишем."
+        )
+    return errors
 
 
 FLAT_HEADER = [
@@ -154,6 +216,9 @@ def parse_supply_xlsx(path: Path) -> Tuple[List[List[Any]], Dict[str, Any]]:
         "sum_fact_qty": sum_fact,
         "sum_total_cells": sum_total_cells,
         "qty_mismatches": mismatches,
+        "kit_spr_mismatches": kit_spr_mismatches(
+            path, [m["kit_raw"] for m in models]
+        ),
         "model_summaries": [
             {
                 "num": m["num"],
@@ -175,7 +240,15 @@ def parse_supply_xlsx(path: Path) -> Tuple[List[List[Any]], Dict[str, Any]]:
             for m in models
         ],
     }
+    if stats["kit_spr_mismatches"]:
+        raise RuntimeError(
+            "Справочник файла не совпал с KIT_MAP:\n"
+            + "\n".join(stats["kit_spr_mismatches"])
+        )
     return flat, stats
+
+
+parse_xlsx = parse_supply_xlsx
 
 
 if __name__ == "__main__":

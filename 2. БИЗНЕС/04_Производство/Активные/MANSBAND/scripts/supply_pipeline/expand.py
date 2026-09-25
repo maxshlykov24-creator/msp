@@ -40,11 +40,16 @@ def _clean(v: Any) -> str:
     return str(v).replace("\xa0", " ").strip()
 
 
+def norm_kit(kit: str) -> str:
+    """Регистр и неразрывные пробелы не различают вид комплекта."""
+    return " ".join(_clean(kit).replace("\xa0", " ").split()).casefold()
+
+
 def resolve_kit(kit: str) -> str:
-    k = _clean(kit)
+    k = " ".join(_clean(kit).replace("\xa0", " ").split())
     if k in KIT_MAP:
         return k
-    return KIT_ALIASES.get(k.lower(), k)
+    return KIT_ALIASES.get(norm_kit(k), k)
 
 
 def uzor_for_vid(vid: str, default_uzor: str, note: str) -> str:
