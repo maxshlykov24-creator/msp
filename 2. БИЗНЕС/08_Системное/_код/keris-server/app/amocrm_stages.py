@@ -8,6 +8,10 @@
 после каждого события записи. Отправку сообщений строит владелец сейлсботом —
 наша задача только держать этап честным и своевременным.
 
+Новая запись встаёт на «Запись создана» и стоит там, пока до визита больше
+одного дня. На «Завтра запись» сделка переходит за день до визита, на
+«Сегодня запись» в день визита. Этапа «Ожидает визита» в воронке нет.
+
 Оговорка про день создания: в сутки, когда запись оформили, сделка стоит на
 «Запись создана» и по датам не двигается. Иначе запись «на завтра», созданная
 сегодня, через пять минут уезжала бы в «Завтра запись» и клиент получал бы в
@@ -27,7 +31,6 @@ from .models import Booking, BookingStatus
 log = logging.getLogger("keris.amocrm.stages")
 
 STAGE_CREATED = "Запись создана"
-STAGE_WAITING = "Ожидает визита"
 STAGE_TOMORROW = "Завтра запись"
 STAGE_TODAY = "Сегодня запись"
 STAGE_ARRIVED = "Клиент пришёл"
@@ -67,7 +70,7 @@ def target_stage(booking: Booking, now: datetime) -> str:
         return STAGE_TODAY
     if days_left == 1:
         return STAGE_TOMORROW
-    return STAGE_WAITING
+    return STAGE_CREATED
 
 
 def sync_stage(db: Session, booking: Booking, now: datetime | None = None) -> str | None:

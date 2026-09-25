@@ -12,7 +12,6 @@ from app.amocrm_stages import (
     STAGE_NO_SHOW,
     STAGE_TODAY,
     STAGE_TOMORROW,
-    STAGE_WAITING,
     target_stage,
 )
 from app.models import Booking, BookingSource, BookingStatus, PetType, Subscription
@@ -57,9 +56,10 @@ def test_stage_today(db_session):
     assert target_stage(b, NOW) == STAGE_TODAY
 
 
-def test_stage_waiting_far_visit(db_session):
+def test_stage_stays_created_until_tomorrow(db_session):
+    """Дальше чем завтра этап не меняется: «Ожидает визита» в воронке нет."""
     b = make_booking(db_session, NOW + timedelta(days=6), created_at=NOW - timedelta(days=1))
-    assert target_stage(b, NOW) == STAGE_WAITING
+    assert target_stage(b, NOW) == STAGE_CREATED
 
 
 def test_stage_arrived_then_done(db_session):
@@ -300,7 +300,7 @@ def test_sweep_creates_missing_lead_and_moves_stage(db_session, monkeypatch):
     make_booking(db_session, NOW + timedelta(days=1), bid="KERIS-9101",
                  created_at=NOW - timedelta(days=2))
     make_booking(db_session, NOW + timedelta(hours=3), bid="KERIS-9102",
-                 created_at=NOW - timedelta(days=1), lead_id=701, stage=STAGE_WAITING)
+                 created_at=NOW - timedelta(days=1), lead_id=701, stage="Ожидает визита")
 
     result = amocrm_stages.run_once(db_session, NOW)
     assert result["created"] == 1

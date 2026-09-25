@@ -205,7 +205,6 @@ def pet_fields(db: Session, booking: Booking, now: datetime | None = None) -> di
         if is_visit(b, now)
     ]
     return {
-        "Имя собаки": booking.pet_name,
         "Порода": booking.pet_breed,
         "Вес, кг": f"{booking.pet_weight_kg:g}" if booking.pet_weight_kg else "",
         "Размер по прайсу": booking.pet_size,

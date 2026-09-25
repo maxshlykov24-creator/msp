@@ -537,7 +537,7 @@ def source_title(booking: Booking) -> str:
 
 def _lead_name(db: Session, booking: Booking) -> str:
     pet = booking.pet_name or booking.pet_type.value
-    return f"Груминг {booking.id}: {pet} — {booking.starts_at.strftime('%d.%m %H:%M')}"
+    return f"{booking.id}: {pet} — {booking.starts_at.strftime('%d.%m %H:%M')}"
 
 
 def _pet_company_id(db: Session, booking: Booking, contact_id: int) -> int | None:
@@ -550,6 +550,7 @@ def _pet_company_id(db: Session, booking: Booking, contact_id: int) -> int | Non
             amocrm_client.update_pet_company(
                 booking.amocrm_company_id, amocrm_metrics.pet_fields(db, booking)
             )
+            amocrm_client.link_contact_company(contact_id, booking.amocrm_company_id)
         except Exception:  # noqa: BLE001
             log.warning("карточка питомца %s не обновлена", booking.amocrm_company_id, exc_info=True)
         return booking.amocrm_company_id

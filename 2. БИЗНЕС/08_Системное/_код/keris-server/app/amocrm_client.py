@@ -409,6 +409,25 @@ def find_pet_company(contact_id: int, pet_name: str) -> int | None:
     return None
 
 
+def link_contact_company(contact_id: int, company_id: int) -> None:
+    """Компания-питомец на карточке контакта.
+
+    Создание компании с `_embedded.contacts` связь не ставит: компания
+    оказывается только на сделке. В этом аккаунте у контакта одна компания,
+    новая связь заменяет прежнюю. Несколько питомцев живут отдельными
+    компаниями на своих сделках. На контакте остаётся питомец текущего визита.
+    """
+    try:
+        _request("POST", f"/api/v4/contacts/{int(contact_id)}/link", json=[{
+            "to_entity_id": int(company_id),
+            "to_entity_type": "companies",
+        }])
+    except AmoCrmError as exc:
+        if "already" in str(exc).lower() or "400" in str(exc):
+            return
+        raise
+
+
 def create_pet_company(contact_id: int, pet_name: str, fields: dict[str, Any]) -> int | None:
     item: dict[str, Any] = {
         "name": pet_name,
@@ -419,7 +438,10 @@ def create_pet_company(contact_id: int, pet_name: str, fields: dict[str, Any]) -
         item["custom_fields_values"] = cfs
     data = _request("POST", "/api/v4/companies", json=[item])
     companies = ((data or {}).get("_embedded") or {}).get("companies") or []
-    return companies[0]["id"] if companies else None
+    company_id = companies[0]["id"] if companies else None
+    if company_id:
+        link_contact_company(contact_id, company_id)
+    return company_id
 
 
 def update_pet_company(company_id: int, fields: dict[str, Any]) -> None:
