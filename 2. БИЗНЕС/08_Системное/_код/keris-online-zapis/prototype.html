@@ -206,7 +206,7 @@
     .memory-name{position:absolute;z-index:1;left:20px;bottom:18px;color:#fff}.memory-name h2{font-family:var(--font)}.memory-name small{display:block;opacity:.8;margin-top:4px}
     .memory-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.memory-card{background:#fff;border:1px solid var(--line);border-radius:17px;padding:14px}
     .memory-card small{display:block;color:var(--muted);font-size:10px;margin-bottom:5px}.memory-card b{font-family:var(--font);font-size:13px;font-weight:600}
-    /* Личный кабинет «Мой Keris» */
+    /* Личный кабинет «Мой Keris Club» */
     .cab-head{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px 16px;box-shadow:0 12px 30px rgba(91,68,57,.06)}
     .cab-head b{display:block;font-family:var(--font);font-size:15px}
     .cab-head small{color:var(--muted);font-size:11px}
@@ -776,7 +776,7 @@
       <div class="eyebrow">Шаг 4 из 4</div>
       <h2>Почти готово</h2>
       <p class="lead">Оставьте контакты — запись подтвердится сразу. Поля со звёздочкой обязательны.</p>
-      <div class="notice" id="contactAuthNote" hidden style="grid-column:1 / -1;margin-bottom:4px">Имя и телефон подставлены из профиля «Мой Keris». Можно изменить — только для этой записи.</div>
+      <div class="notice" id="contactAuthNote" hidden style="grid-column:1 / -1;margin-bottom:4px">Имя и телефон подставлены из профиля «Мой Keris Club». Можно изменить — только для этой записи.</div>
       <div class="field"><label for="ownerName">Ваше имя <span class="req" aria-hidden="true">*</span></label><input id="ownerName" autocomplete="name" placeholder="Имя"></div>
       <div class="field"><label for="phone">Телефон <span class="req" aria-hidden="true">*</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 999 000-00-00"></div>
       <div class="field"><label for="comment">Что важно знать мастеру</label><textarea id="comment" placeholder="Особенности поведения, кожи, шерсти — необязательно"></textarea></div>
@@ -812,7 +812,7 @@
     </section>
 
     <section class="screen" data-screen="auth">
-      <div class="eyebrow">Мой Keris</div>
+      <div class="eyebrow">Мой Keris Club</div>
       <h2>Вход по номеру телефона</h2>
       <p class="lead">Введите номер, на который оформлялись записи — покажем визиты, абонемент, фото до и после и историю питомца.</p>
       <div class="field"><label for="authPhoneInput">Телефон <span class="req" aria-hidden="true">*</span></label>
@@ -834,7 +834,7 @@
     </section>
 
     <section class="screen" data-screen="cabinet">
-      <div class="eyebrow">Мой Keris</div>
+      <div class="eyebrow">Мой Keris Club</div>
       <div id="cabinetBody"></div>
     </section>
 
@@ -1148,8 +1148,8 @@
     contact:{label:"Шаг 4 из 4 • Контакты",hint:"Поля со звёздочкой обязательны."},
     subscriptions:{label:"Абонементы",hint:"Пакеты для собак. База — «Комплекс со стрижкой»."},
     memory:{label:"Keris Memory",hint:"Паспорт питомца"},
-    auth:{label:"Мой Keris • Вход",hint:"Вход по номеру телефона и коду."},
-    cabinet:{label:"Мой Keris",hint:"Записи, абонемент и история визитов"},
+    auth:{label:"Мой Keris Club • Вход",hint:"Вход по номеру телефона и коду."},
+    cabinet:{label:"Мой Keris Club",hint:"Записи, абонемент и история визитов"},
     visit:{label:"Визит",hint:""},
     masterProfile:{label:"Специалист",hint:""}
   };
@@ -1591,7 +1591,7 @@
     state.profileMasterId=id; state.reviewStars=5;
     renderMasterProfile(); showScreen("masterProfile"); track("master_profile_open",{id});
   }
-  /* Отзыв открыт только клиенту «Мой Keris» с уже состоявшимся визитом у этого мастера —
+  /* Отзыв открыт только клиенту «Мой Keris Club» с уже состоявшимся визитом у этого мастера —
      то же правило проверяет сервер в POST /api/reviews. */
   function canReviewMaster(id){
     return !!(clientAuth.ok&&state.auth.ok&&state.auth.visitedMasterIds.includes(id));
@@ -1605,7 +1605,7 @@
       <p class="locked">Вы вошли как ${state.auth.name||"клиент"}, но завершённых визитов к ${nameAccusative(m.name)} пока нет. Отзыв откроется после визита.</p></div>`;
     return `<div class="review-form"><b>Оставить отзыв</b>
       <p class="locked">Отзыв можно оставить после визита у мастера.</p>
-      <button class="secondary" style="margin-top:10px" onclick="openMyKeris()">Войти в «Мой Keris»</button></div>`;
+      <button class="secondary" style="margin-top:10px" onclick="openMyKeris()">Войти в «Мой Keris Club»</button></div>`;
   }
   function setReviewStars(n){
     state.reviewStars=n;
@@ -1801,7 +1801,7 @@
       track("booking_error",{reason:"exception",message:String(err&&err.message||err)});
     });
   }
-  /* ===== Мой Keris: кабинет (боевой — без демо-данных; история появится после визитов) ===== */
+  /* ===== Мой Keris Club: кабинет (боевой — без демо-данных; история появится после визитов) ===== */
   const CLIENT={
     name:"",
     consent:null,
