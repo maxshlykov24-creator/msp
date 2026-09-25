@@ -178,6 +178,7 @@
     .date small{font-size:9px;color:var(--muted);text-transform:uppercase;line-height:1.1}.date b{font-size:16px;margin:1px 0;line-height:1}.date span{font-size:9px;color:var(--muted);line-height:1.1}
     .date.active{background:linear-gradient(145deg,var(--rose),#d4a0b3);color:#fff;border:0}.date.active small,.date.active span{color:rgba(255,255,255,.82)}
     .avail-banner{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 12px;margin:12px 0 4px;padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,#fff,#faf6f2);border:1px solid var(--line)}
+    button.avail-banner{width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer}
     .avail-banner b{font-family:var(--font);font-size:12px;font-weight:700}
     .avail-banner span{font-size:13px;color:var(--rose-dark);font-weight:600;font-family:var(--font)}
     .master-main small.near{display:block;color:var(--rose-dark);font-weight:600;margin-top:5px;font-size:11px}
@@ -1538,7 +1539,10 @@
       banner="";
     }else if(near){
       const dayTxt=firstDay?("На "+dayLabel(state.date).toLowerCase()+": с "+firstDay.tm):("Ближайшее: "+dayLabel(near.iso));
-      banner=`<div class="avail-banner"><b>${dayTxt}</b><span>${firstDay?slotRange(firstDay.tm):slotRange(near.time)}</span></div>`;
+      const range=firstDay?slotRange(firstDay.tm):slotRange(near.time);
+      banner=firstDay
+        ?`<div class="avail-banner"><b>${dayTxt}</b><span>${range}</span></div>`
+        :`<button type="button" class="avail-banner" onclick="chooseDate('${near.iso}')"><b>${dayTxt}</b><span>${range}</span></button>`;
     }
     let slotsHtml="";
     if(state.noSlots){
