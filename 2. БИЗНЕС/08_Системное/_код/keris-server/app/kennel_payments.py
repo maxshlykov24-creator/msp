@@ -138,6 +138,15 @@ def _plan(lead: dict, anchor_id: int, now: date) -> dict | None:
             patch[anchor_id] = anchor
         if new_inst != inst and new_inst is not None:
             patch[INST] = new_inst
+    elif pay_type == TYPE_FULL:
+        # Дата ближайшего платежа только у рассрочки. После смены типа на полную
+        # оплату старый срок и статус рассрочки не оставляем.
+        if nxt is not None:
+            patch[NEXT] = None
+        if anchor is not None:
+            patch[anchor_id] = None
+        if inst is not None:
+            patch[INST] = None
     return patch or None
 
 
