@@ -1,4 +1,4 @@
-"""Реестр входящей поставки от клиента: xlsx → шапка поставки и позиции по артикулу.
+"""Реестр входящей поставки от клиента: xlsx или docx → шапка поставки и позиции по артикулу.
 
 Формат живой: клиенты присылают таблицу с разным числом пустых колонок и своими
 формулировками в шапке. Поэтому колонки ищем по словам в строке заголовка, а не
@@ -59,13 +59,15 @@ def cells(row):
 
 
 BLANK = re.compile(r"_{2,}")
+# Подписи пустого бланка. «ФИО ____ тел. ____» — это не контакт.
+FORM = {"фио", "тел", "тел.", "дата", "должность"}
 
 
 def clean_value(raw):
     """Убирает незаполненные прочерки бланка: «Паллет: 1  Коробов: ___» → «Паллет: 1»."""
     text = BLANK.sub("", str(raw or ""))
     parts = [p.strip() for p in re.split(r"\s{2,}", text)]
-    keep = [p for p in parts if p and not p.endswith(":")]
+    keep = [p for p in parts if p and not p.endswith(":") and norm(p) not in FORM]
     return re.sub(r"\s+", " ", " ".join(keep)).strip()
 
 
@@ -112,21 +114,68 @@ def head_field(label):
     return ""
 
 
-def head_pair(row):
-    """Строка шапки: первая непустая ячейка — подпись, последняя — значение."""
-    filled = [(i, v) for i, v in enumerate(cells(row)) if v]
-    if len(filled) < 2:
-        return "", ""
-    key = head_field(filled[0][1])
-    if not key:
-        return "", ""
-    return key, clean_value(filled[-1][1])
+def head_pairs(row):
+    """Строка шапки может нести одну пару или две: подпись, значение, подпись, значение.
+
+    Следующая подпись не считается значением предыдущего поля.
+    """
+    filled = [v for v in cells(row) if v]
+    out = []
+    i = 0
+    while i < len(filled):
+        key = head_field(filled[i])
+        if not key:
+            i += 1
+            continue
+        if i + 1 < len(filled) and not head_field(filled[i + 1]):
+            val = clean_value(filled[i + 1])
+            i += 2
+        else:
+            val = ""
+            i += 1
+        if val:
+            if key == "planned_at":
+                val = tidy_date(val)
+            out.append((key, val))
+    return out
+
+
+def tidy_date(val):
+    hit = re.match(r"^(\d{1,2})\s*[./]\s*(\d{1,2})\s*[./]\s*(\d{4})$", val.strip())
+    if not hit:
+        return val
+    day, month, year = hit.groups()
+    return "%02d.%02d.%s" % (int(day), int(month), year)
+
+
+W_ML = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def read_docx(data):
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    try:
+        xml = zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml")
+    except Exception as exc:
+        raise ValueError("не смог прочитать файл Word") from exc
+    root = ET.fromstring(xml)
+    rows = []
+    for tbl in root.iter(W_ML + "tbl"):
+        for tr in tbl.findall(W_ML + "tr"):
+            line = []
+            for tc in tr.findall(W_ML + "tc"):
+                line.append("".join(t.text or "" for t in tc.iter(W_ML + "t")).strip())
+            rows.append(line)
+    return rows
 
 
 def read_rows(filename, data):
     name = (filename or "").lower()
+    if name.endswith(".docx"):
+        return read_docx(data)
     if not (name.endswith(".xlsx") or name.endswith(".xlsm") or name.endswith(".xls")):
-        raise ValueError("реестр ждём файлом Excel: xlsx или xls")
+        raise ValueError("реестр ждём файлом Excel или Word: xlsx, xls или docx")
     from openpyxl import load_workbook
 
     book = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
@@ -207,9 +256,9 @@ def parse(filename, data):
     for i, row in enumerate(rows):
         if start <= i < stop:
             continue
-        key, val = head_pair(row)
-        if key and not supply.get(key):
-            supply[key] = val
+        for key, val in head_pairs(row):
+            if key and val and not supply.get(key):
+                supply[key] = val
 
     positions, merged = merge_same(positions)
     problems = []
