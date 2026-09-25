@@ -277,6 +277,7 @@
     .auth-bots .lead{margin:0 0 2px}
     a.msg-btn{display:flex;align-items:center;justify-content:center;min-height:48px;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--text);text-decoration:none;font-family:var(--font);font-weight:700;font-size:14px;box-sizing:border-box}
     a.msg-btn:hover{border-color:var(--rose);color:var(--rose-dark)}
+    a.msg-btn.is-locked{opacity:.48}
     .toast{position:fixed;z-index:50;left:50%;top:18px;transform:translate(-50%,-90px);width:min(calc(100% - 32px),460px);padding:14px 16px;border-radius:15px;
       background:var(--text);color:#fff;box-shadow:var(--shadow);font-size:13px;transition:.3s}.toast.show{transform:translate(-50%,0)}
     .modal{position:fixed;z-index:60;inset:0;display:none;align-items:flex-end;justify-content:center;background:rgba(42,31,27,.42);padding:16px}
@@ -839,8 +840,8 @@
       </div>
       <div id="authBots" class="auth-bots" hidden>
         <p class="lead">Откройте бот и нажмите «Поделиться номером» — код придёт туда же.</p>
-        <a class="msg-btn" id="authBotTelegram" href="#" target="_blank" rel="noopener">Получить код в Telegram</a>
-        <a class="msg-btn" id="authBotMax" href="#" target="_blank" rel="noopener">Получить код в MAX</a>
+        <a class="msg-btn is-locked" id="authBotTelegram" href="#" target="_blank" rel="noopener" onclick="return authOpenBot(event)">Получить код в Telegram</a>
+        <a class="msg-btn is-locked" id="authBotMax" href="#" target="_blank" rel="noopener" onclick="return authOpenBot(event)">Получить код в MAX</a>
       </div>
       <button class="primary" id="authBtn" style="margin-top:18px" onclick="authSubmit()">Получить код</button>
       <button class="link-btn" id="authResend" hidden onclick="authRequestCode()">Отправить код ещё раз</button>
@@ -2090,6 +2091,22 @@
     tick();
     authResendTimer=setInterval(tick,1000);
   }
+  function authPhoneReady(){
+    const input=$("#authPhoneInput");
+    return !!(input&&nationalFromRaw(input.value).length===10);
+  }
+  function authSyncBotLock(){
+    const ready=authPhoneReady();
+    document.querySelectorAll("a.msg-btn").forEach(btn=>btn.classList.toggle("is-locked",!ready));
+  }
+  function authOpenBot(event){
+    if(authPhoneReady())return true;
+    event.preventDefault();
+    toast("Введите номер телефона.");
+    const input=$("#authPhoneInput");
+    if(input)input.focus();
+    return false;
+  }
   function authShowBots(links){
     const box=$("#authBots");
     if(!box)return;
@@ -2147,6 +2164,7 @@
     clientAuth.phone=pending.phone;
     const input=$("#authPhoneInput");
     if(input)input.value=formatPhone(nationalFromRaw(pending.phone));
+    authSyncBotLock();
     authOpenCodeStep();
     authShowBots(pending.channel?null:pending.links);
     authTickResend(pending.resendAt||Date.now());
@@ -2538,7 +2556,7 @@
   (function initAuthInputs(){
     const p=$("#authPhoneInput"),c=$("#authCode");
     if(!p)return;
-    p.addEventListener("input",()=>{p.value=formatPhone(nationalFromRaw(p.value))});
+    p.addEventListener("input",()=>{p.value=formatPhone(nationalFromRaw(p.value));authSyncBotLock()});
     p.addEventListener("focus",()=>{if(!p.value)p.value="+7"});
     p.addEventListener("blur",()=>{if(p.value==="+7")p.value=""});
     p.addEventListener("keydown",e=>{if(e.key==="Enter")authSubmit()});
@@ -2548,7 +2566,7 @@
     }
     try{
       const saved=localStorage.getItem("keris_client_phone");
-      if(saved){clientAuth.ok=true;clientAuth.phone=saved;p.value=saved;
+      if(saved){clientAuth.ok=true;clientAuth.phone=saved;p.value=saved;authSyncBotLock();
         loadClientProfile().then(()=>{prefillClientContact(true);renderPetPicker();
           if(current==="cabinet")renderCabinet();});}
       else authRestorePending();
