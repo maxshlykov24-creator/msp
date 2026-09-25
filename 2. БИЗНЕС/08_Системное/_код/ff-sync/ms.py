@@ -14,6 +14,7 @@ AGENT_ATTRS = [
     ("WB токен", "text", "ATTR_AGENT_WB"),
     ("Ozon Client-Id", "string", "ATTR_AGENT_OZON_CID"),
     ("Ozon Api-Key", "text", "ATTR_AGENT_OZON_KEY"),
+    ("Яндекс Api-Key", "text", "ATTR_AGENT_YANDEX"),
     # хранение считается по общей ставке, в карточке контрагента живёт только сборка
     ("Сборка, руб/шт", "double", "ATTR_AGENT_TARIFF_PICK"),
     ("Синхронизация", "text", "ATTR_AGENT_SYNC"),

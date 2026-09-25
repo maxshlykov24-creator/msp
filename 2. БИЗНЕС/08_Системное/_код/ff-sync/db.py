@@ -81,6 +81,8 @@ def migrate(conn):
     cabs = _cols(conn, "cabinets")
     if "last_pull_at" not in cabs:
         conn.execute("ALTER TABLE cabinets ADD COLUMN last_pull_at TEXT")
+    if "stock_warehouse_id" not in cabs:
+        conn.execute("ALTER TABLE cabinets ADD COLUMN stock_warehouse_id TEXT")
     lots = _cols(conn, "lots")
     for col in ("billed_days", "billed_in", "billed_out"):
         if col not in lots:
@@ -341,6 +343,7 @@ def update_cabinet(cab_id, **fields):
         "last_ok_at",
         "last_error",
         "last_pull_at",
+        "stock_warehouse_id",
     }
     sets = []
     vals = []

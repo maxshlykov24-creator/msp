@@ -9,6 +9,7 @@ MS_BASE = "https://api.moysklad.ru/api/remap/1.2"
 WB_BASE = "https://marketplace-api.wildberries.ru"
 WB_STATS = "https://statistics-api.wildberries.ru"
 OZON_BASE = "https://api-seller.ozon.ru"
+YANDEX_BASE = "https://api.partner.market.yandex.ru"
 
 # Рукопожатие с WB с этой ноды проходит примерно в одном случае из четырёх:
 # замер 18.09 — 5 попыток к statistics-api подряд не дошли, ICMP при этом без
@@ -124,3 +125,7 @@ def ozon_headers(client_id, api_key):
         "Api-Key": api_key,
         "Content-Type": "application/json",
     }
+
+
+def yandex_headers(token):
+    return {"Api-Key": token, "Content-Type": "application/json"}

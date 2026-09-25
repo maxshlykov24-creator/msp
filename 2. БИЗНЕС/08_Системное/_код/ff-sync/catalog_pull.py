@@ -6,7 +6,7 @@ import os
 
 from db import get_cabinet, init_db, replace_cache
 from ms import kind_from_subject
-from net import OZON_BASE, req, ozon_headers, wb_headers
+from net import OZON_BASE, YANDEX_BASE, req, ozon_headers, wb_headers, yandex_headers
 from products_push import gtin14
 
 WB_CARDS = "https://content-api.wildberries.ru/content/v2/get/cards/list"
@@ -298,6 +298,72 @@ def rows_ozon(cabinet_id, items, info, attrs=None):
     return rows
 
 
+def pull_yandex(token, campaign_id):
+    """Офферы кампании Яндекс Маркета. Кампания FBS лежит в client_id_ext."""
+    offers = []
+    page = ""
+    while True:
+        body = {"limit": 100}
+        if page:
+            body["pageToken"] = page
+        r = req(
+            "POST",
+            YANDEX_BASE + "/v2/campaigns/%s/offers" % campaign_id,
+            headers=yandex_headers(token),
+            json=body,
+        )
+        if r.status_code != 200:
+            raise RuntimeError("Яндекс офферы %s %s" % (r.status_code, (r.text or "")[:300]))
+        data = r.json()
+        if data.get("status") not in (None, "OK"):
+            raise RuntimeError("Яндекс офферы %s" % ((r.text or "")[:300]))
+        result = data.get("result") or data
+        batch = result.get("offers") or result.get("offerMappings") or []
+        offers.extend(batch)
+        page = ((result.get("paging") or {}).get("nextPageToken")) or ""
+        print("Яндекс страница: %s офферов" % len(batch))
+        if not page or not batch:
+            break
+    return offers
+
+
+def rows_yandex(cabinet_id, offers):
+    rows = []
+    for raw in offers:
+        offer = raw.get("offer") if isinstance(raw, dict) and "offer" in raw else raw
+        if not isinstance(offer, dict):
+            continue
+        sku = str(offer.get("offerId") or offer.get("shopSku") or "").strip()
+        barcodes = offer.get("barcodes") or [""]
+        if not barcodes:
+            barcodes = [""]
+        for code in barcodes:
+            rows.append(
+                {
+                    "cabinet_id": cabinet_id,
+                    "marketplace": "yandex",
+                    "ext_key": sku,
+                    "ext_article": offer.get("vendorCode") or "",
+                    "ext_barcode": str(code or "").strip(),
+                    "name": offer.get("name") or "",
+                    "nmId": "",
+                    "chrtId": "",
+                    "offer_id": sku,
+                    "size": "",
+                    "brand": offer.get("vendor") or "",
+                    "color": "",
+                    "Привезено": "",
+                    "Литраж_л": "",
+                    "gtin": real_gtin(code),
+                    "tracking_type": "",
+                    "subject": "",
+                    "need_kiz": 0,
+                    "image": "",
+                }
+            )
+    return rows
+
+
 def write_csv(path, rows):
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS, delimiter=";")
@@ -340,6 +406,11 @@ def pull_one(cab):
         info = ozon_info(cab["client_id_ext"], cab["token"], offers)
         attrs = ozon_attrs(cab["client_id_ext"], cab["token"], offers)
         rows = rows_ozon(cab["id"], items, info, attrs)
+    elif cab["marketplace"] == "yandex":
+        offers = pull_yandex(cab["token"], cab["client_id_ext"])
+        if offers:
+            raw = offers[0]
+        rows = rows_yandex(cab["id"], offers)
     else:
         return 0, "неизвестный marketplace %s" % cab["marketplace"]
     path = os.path.join(out_dir(), "catalog_%s_%s.csv" % (cab["marketplace"], cab["id"]))

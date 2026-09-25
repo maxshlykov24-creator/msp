@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS cabinets (
     last_ok_at TEXT,
     last_error TEXT,
     last_pull_at TEXT,
+    stock_warehouse_id TEXT,
     FOREIGN KEY (client_id) REFERENCES clients(id)
 );
 

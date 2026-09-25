@@ -17,7 +17,7 @@ from db import (
     upsert_cabinet,
 )
 from ms import AGENT_ATTRS, attrs_by_name, ensure_all_attrs, org_id, store_id
-from net import MS_BASE, OZON_BASE, WB_BASE, ms_headers, ozon_headers, req, wb_headers
+from net import MS_BASE, OZON_BASE, WB_BASE, YANDEX_BASE, ms_headers, ozon_headers, req, wb_headers, yandex_headers
 
 TAG = "Фулфилмент"
 MSK = timezone(timedelta(hours=3))
@@ -361,6 +361,55 @@ def sync_ozon(client, cid_raw, key_raw, existing):
     return cab_id, False, "Ozon ключ отклонён %s" % stamp()
 
 
+def sync_yandex(client, raw_token, existing):
+    """Кабинет Яндекса заводится только если жива ровно одна кампания FBS."""
+    token = None
+    token_changed = False
+    if looks_token(raw_token):
+        token = str(raw_token).strip()
+        token_changed = True
+    elif existing and existing["token"]:
+        token = existing["token"]
+    if not token:
+        return None, False, "нет ключа Яндекс"
+    from stock_push import Stop, yandex_fbs_campaigns
+
+    r = req("GET", YANDEX_BASE + "/v2/campaigns", headers=yandex_headers(token))
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if r.status_code != 200 or "campaigns" not in (r.json() if r.headers.get("content-type", "").startswith("application/json") else {}):
+        body = (r.text or "")[:160]
+        cab_id = upsert_cabinet(client["id"], "yandex", "yandex %s" % client["code"], token, None, 0, None, body)
+        return cab_id, False, "Яндекс ключ отклонён %s" % stamp()
+    live = yandex_fbs_campaigns(r.json().get("campaigns") or [])
+    try:
+        camp = live[0] if len(live) == 1 else None
+        if camp is None:
+            raise Stop("кампаний FBS %s" % len(live))
+    except Stop as exc:
+        cab_id = upsert_cabinet(
+            client["id"], "yandex", "yandex %s" % client["code"], token, None, 0, None, str(exc)[:180]
+        )
+        return cab_id, False, "Яндекс %s" % exc
+    camp_id = str(camp["id"])
+    cab_id = upsert_cabinet(
+        client["id"],
+        "yandex",
+        "yandex %s" % client["code"],
+        token,
+        camp_id,
+        1,
+        now,
+        "",
+    )
+    update_cabinet(cab_id, stock_warehouse_id=camp_id)
+    if token_changed:
+        put_agent_attrs(client["ms_counterparty_id"], {"ATTR_AGENT_YANDEX": mask_token("yandex", token)})
+    n, err = pull_if_needed({"id": cab_id}, token_changed)
+    if err:
+        return cab_id, True, "Яндекс ok %s · каталог: %s" % (stamp(), err)
+    return cab_id, True, "Яндекс ok %s · %s товаров" % (stamp(), n)
+
+
 def sync_one(row):
     client = ensure_client(row)
     ensure_tag(row)
@@ -374,10 +423,13 @@ def sync_one(row):
 
     wb_exist = get_cabinet_by_client_mp(client["id"], "wb")
     oz_exist = get_cabinet_by_client_mp(client["id"], "ozon")
+    ya_exist = get_cabinet_by_client_mp(client["id"], "yandex")
     parts = []
     _cab, _ok, msg = sync_wb(client, fields.get("WB токен"), wb_exist)
     parts.append(msg)
     _cab, _ok, msg = sync_ozon(client, fields.get("Ozon Client-Id"), fields.get("Ozon Api-Key"), oz_exist)
+    parts.append(msg)
+    _cab, _ok, msg = sync_yandex(client, fields.get("Яндекс Api-Key"), ya_exist)
     parts.append(msg)
     note = " / ".join(parts)
     put_agent_attrs(client["ms_counterparty_id"], {"ATTR_AGENT_SYNC": note})
