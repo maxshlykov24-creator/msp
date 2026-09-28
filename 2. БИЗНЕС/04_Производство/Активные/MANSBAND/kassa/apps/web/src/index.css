@@ -263,40 +263,47 @@ html.theme-light .text-emerald-300\/80 {
 html.theme-light .text-amber-300,
 html.theme-light .text-amber-300\/90,
 html.theme-light .text-amber-300\/80 {
-  color: #9a6410 !important;
+  color: #7a4e08 !important;
 }
 html.theme-light .text-amber-100,
+html.theme-light .text-amber-100\/80,
+html.theme-light .text-amber-100\/90,
 html.theme-light .text-amber-100\/95,
 html.theme-light .text-amber-200 {
-  color: #7a5208 !important;
+  color: #5c3d04 !important;
 }
+html.theme-light .text-red-200,
 html.theme-light .text-red-300,
 html.theme-light .text-red-400 {
-  color: #b4544a !important;
+  color: #9a3d36 !important;
 }
 html.theme-light .text-sky-300,
 html.theme-light .text-sky-300\/80 {
   color: #2f5f8a !important;
 }
 html.theme-light .bg-emerald-400\/10,
+html.theme-light .bg-emerald-400\/15,
 html.theme-light .bg-emerald-500\/10 {
   background-color: rgba(45, 122, 74, 0.12) !important;
 }
+html.theme-light .bg-amber-400\/5,
 html.theme-light .bg-amber-400\/10 {
-  background-color: rgba(154, 100, 16, 0.1) !important;
+  background-color: rgba(154, 100, 16, 0.14) !important;
 }
 html.theme-light .bg-red-400\/10 {
   background-color: rgba(180, 84, 74, 0.1) !important;
 }
 html.theme-light .border-emerald-400\/20,
+html.theme-light .border-emerald-400\/30,
 html.theme-light .border-emerald-400\/40 {
   border-color: rgba(45, 122, 74, 0.35) !important;
 }
 html.theme-light .border-amber-400\/20,
 html.theme-light .border-amber-400\/25,
 html.theme-light .border-amber-400\/30,
+html.theme-light .border-amber-400\/35,
 html.theme-light .border-amber-400\/40 {
-  border-color: rgba(154, 100, 16, 0.35) !important;
+  border-color: rgba(122, 78, 8, 0.45) !important;
 }
 html.theme-light .border-red-400\/30 {
   border-color: rgba(180, 84, 74, 0.35) !important;
