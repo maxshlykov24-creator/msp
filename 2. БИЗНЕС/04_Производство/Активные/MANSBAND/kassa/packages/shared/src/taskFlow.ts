@@ -104,7 +104,7 @@ export const TASK_FLOW: TaskFlowRule[] = [
     },
     assignee: "consultant",
     nextStage: "Товар отложен",
-    inside: "Отложить комплект на клиента; после «Отложил» этап → «Товар отложен»",
+    inside: "Скан позиций для перепроверки, затем «Отложил»; этап → «Товар отложен»",
   },
   {
     kind: "reserve_call",

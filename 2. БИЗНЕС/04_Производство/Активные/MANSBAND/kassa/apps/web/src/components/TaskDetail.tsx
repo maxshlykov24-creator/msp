@@ -147,7 +147,8 @@ function codesOf(p: TaskPositionLine): string[] {
 
 /**
  * Карточка задачи: маршрут откуда→куда и список позиций.
- * Перемещение / приёмка — обязательный скан позиций перед «Товар в пути» / «Товар отложен».
+ * Перемещение / приёмка / «Сделать отложку» — обязательный скан позиций
+ * перед «Товар в пути» / «Товар отложен» / «Отложил».
  */
 export function TaskDetail({
   task,
@@ -230,14 +231,16 @@ export function TaskDetail({
 
   const needsSetup = task.kind === "movement" && meta?.needsSetup === true;
   const isMove = task.kind === "movement" || task.kind === "movement_accept";
+  const isReserve = task.kind === "reserve";
   const isReserveOps =
-    task.kind === "reserve" || task.kind === "reserve_call" || task.kind === "unreserve";
+    isReserve || task.kind === "reserve_call" || task.kind === "unreserve";
   const isAssemble = task.kind === "assemble_cdek";
   const isTakeToCdek = task.kind === "take_to_cdek";
   const isPickupFromCdek = task.kind === "pickup_from_cdek";
   const isSary = task.kind === "sary_send";
-  /** Позиции списком: сборка / отнести / забрать. Скан обязателен только на сборке. */
+  /** Позиции списком: сборка / отнести / забрать. Скан обязателен на сборке и на «Сделать отложку». */
   const showDeliveryPositions = isAssemble || isTakeToCdek || isPickupFromCdek;
+  const showScanPositions = isMove || showDeliveryPositions || isReserve;
   const saryPhone = typeof meta?.phone === "string" ? meta.phone.trim() : "";
   const saryFriend =
     typeof meta?.client === "string" && meta.client.trim() ? meta.client.trim() : "";
@@ -248,7 +251,7 @@ export function TaskDetail({
   const dealKind = dealKindFromMeta(meta);
   const people = peopleLines(task);
   const requiresScan =
-    (isMove || isAssemble) &&
+    (isMove || isAssemble || isReserve) &&
     task.status === "pending" &&
     !needsSetup &&
     positions.length > 0;
@@ -381,7 +384,7 @@ export function TaskDetail({
         </div>
       )}
 
-      {(isMove || showDeliveryPositions) && (
+      {showScanPositions && (
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Package size={15} className="text-gold" />
@@ -482,7 +485,7 @@ export function TaskDetail({
         </div>
       )}
 
-      {!isMove && !showDeliveryPositions && positions.length > 0 && (
+      {!showScanPositions && positions.length > 0 && (
         <ul className="rounded-lg border border-ink-700 divide-y divide-ink-700 overflow-hidden">
           {positions.map((p, i) => (
             <li key={i} className="px-3 py-2.5 text-[14px] text-white bg-ink-900/40">

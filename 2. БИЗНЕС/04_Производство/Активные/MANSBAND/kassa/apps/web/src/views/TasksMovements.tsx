@@ -170,7 +170,7 @@ function TaskRow({
 }) {
   const needsSetup = task.kind === "movement" && task.metadata?.needsSetup === true;
   const isMove = task.kind === "movement" || task.kind === "movement_accept";
-  const needsCardScan = isMove || task.kind === "assemble_cdek";
+  const needsCardScan = isMove || task.kind === "assemble_cdek" || task.kind === "reserve";
   const route = routeFromTaskMeta(task.metadata);
   const stage = dealStageOf(task);
   const queueShort = TASK_QUEUES.find((q) => q.role === task.assigneeRole)?.short;
