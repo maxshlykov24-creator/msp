@@ -27,6 +27,7 @@ export const CONSULTANTS: Consultant[] = [
   { id: "c3", name: "Гриша", role: "consultant" },
   { id: "c4", name: "Саша", role: "consultant" },
   { id: "c5", name: "Арсен", role: "consultant" },
+  { id: "c7", name: "Нина", role: "consultant" },
   { id: "c6", name: "Илья", role: "supply" },
   { id: "m1", name: "Сергей (call)", role: "callmanager" },
   { id: "f1", name: "Эдвин", role: "finance" },

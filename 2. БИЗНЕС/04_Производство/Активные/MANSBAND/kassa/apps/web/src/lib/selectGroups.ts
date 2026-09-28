@@ -2,6 +2,7 @@ import { CHANNELS } from "../data/mock";
 import { opts, type SelectGroup, type SelectOption } from "../components/Select";
 
 const CHANNEL_SPEC: Array<[string, readonly string[]]> = [
+  ["Клиент", ["Клиент"]],
   ["Рекомендации", ["Совет", "Сарафан"]],
   ["Соцсети и контент", ["Телеграм канал", "Instagram наш", "Instagram не наш", "ВК", "Ютуб", "TikTok", "Pinterest"]],
   ["Реклама", ["Яндекс.Директ.Поиск", "Яндекс.Директ.РСЯ"]],

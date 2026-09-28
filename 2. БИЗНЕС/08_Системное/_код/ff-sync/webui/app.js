@@ -1905,11 +1905,19 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".print-wrap")) hidePrintMenu();
 });
 
-// лист подбора идёт по фильтру, а не по галочкам: смена отбирается контрагентом
-// и вкладкой. PDF A4 открывается сразу — Серёжа шлёт на принтер из окна
+// лист подбора: отмеченные поставки, а если ни одной нет — вся вкладка.
+// PDF A4 открывается сразу, склад шлёт на принтер из окна
 $("aPicking").onclick = () => {
-  window.open("/api/assembly/picking.pdf?" + asmQuery(state.asmGroup), "_blank");
-  say($("aMsg"), "Лист подбора открыт на печать A4: вкладка «" + asmGroupLabel() + "».", "ok");
+  const marked = [...$("aTbl").querySelectorAll("input[data-supbox]:checked")].map((b) => b.dataset.supbox);
+  const params = new URLSearchParams(asmQuery(state.asmGroup));
+  marked.forEach((ext) => params.append("supply", ext));
+  window.open("/api/assembly/picking.pdf?" + params.toString(), "_blank");
+  const scope = marked.length === 1
+    ? marked[0]
+    : marked.length
+      ? "отмеченные поставки, " + marked.length
+      : "вся вкладка «" + asmGroupLabel() + "»";
+  say($("aMsg"), "Лист подбора открыт на печать A4: " + scope + ".", "ok");
 };
 
 // недельный отчёт клиенту: артикулы по строкам, дни по столбцам. Период берём

@@ -9,7 +9,7 @@ import threading
 import time
 from urllib.parse import quote
 
-from fastapi import Body, Cookie, FastAPI, HTTPException, Response
+from fastapi import Body, Cookie, FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -832,6 +832,14 @@ def assembly(
     }
 
 
+def _picking_scope(rows, supplies):
+    """Отмеченные поставки сужают лист. Пустой список — вся текущая выборка."""
+    wanted = {str(s).strip() for s in (supplies or []) if str(s).strip()}
+    if not wanted:
+        return rows
+    return [r for r in rows if str(r["supply_ext"] or "") in wanted]
+
+
 @app.get("/api/assembly/picking.pdf")
 @app.get("/api/assembly/picking.xlsx")
 def assembly_picking(
@@ -843,22 +851,22 @@ def assembly_picking(
     q: str = "",
     since: str = "",
     until: str = "",
+    supply: list[str] = Query(default=[]),
     ff_session: str = Cookie(default=""),
 ):
     """Лист подбора по текущей выборке «Заказов»: PDF A4 сразу на печать.
 
-    Берём не отмеченные галочками строки, а весь фильтр: сборщик утром отбирает
-    смену по контрагенту и вкладке, а не тыкает тридцать чекбоксов. Старый
-    адрес .xlsx оставлен: отдаёт тот же PDF, чтобы закладки не сломались.
+    Галочка на поставке сужает лист до неё. Если ни одна поставка не отмечена,
+    берём весь фильтр вкладки. Старый адрес .xlsx отдаёт тот же PDF.
     """
     who(ff_session)
     init_db()
     from picking_pdf import build_picking_pdf
 
-    rows = list_assembly(
+    rows = _picking_scope(list_assembly(
         client_id=client_id or None, group=group, marketplace=mp, kind=kind,
         article=article, query=q, since=since, until=until,
-    )
+    ), supply)
     names = {r["client_name"] for r in rows}
     name, raw, pages = build_picking_pdf(rows, who=names.pop() if len(names) == 1 else "")
     return StreamingResponse(
