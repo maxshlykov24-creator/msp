@@ -649,6 +649,23 @@ def create_supply(client_id, name, author):
 _synced_at = {}
 
 
+def _attach_supply_orders(cab, supply_ext):
+    """Привязать задания, которые площадка уже держит в поставке, а мы нет.
+
+    Так бывает, когда заказ добавили в личном кабинете WB после того, как мы
+    поставку уже видели. Наружу ничего не пишем.
+    """
+    orders = [str(x) for x in wb_supply.order_ids(cab, supply_ext)]
+    if not orders:
+        return 0
+    ships = get_shipments_by_ext(cab["id"], "fbs", orders)
+    ids = [r["id"] for r in ships if str(r["supply_ext"] or "") != str(supply_ext)]
+    if not ids:
+        return 0
+    set_shipment_supply(ids, supply_ext)
+    return len(ids)
+
+
 def sync_open(cabinet_id=None, client_id=None, author="площадка", min_gap=0):
     """Свести открытые поставки кабинета с площадкой.
 
@@ -657,8 +674,9 @@ def sync_open(cabinet_id=None, client_id=None, author="площадка", min_ga
     не туда: 10.09 четвёртое задание легло в прежнюю поставку, ехавшую в СЦ.
 
     Что делаем: новые открытые поставки площадки заводим у себя вместе с
-    составом, у знакомых обновляем точку сдачи, а закрытые на площадке
-    отмечаем закрытыми и у нас. Наружу ничего не пишем, только читаем.
+    составом, у знакомых обновляем точку сдачи и добираем задания, которые
+    добавили в ЛК, а закрытые на площадке отмечаем закрытыми и у нас.
+    Наружу ничего не пишем, только читаем.
 
     `min_gap` в секундах бережёт лимит WB: таблица сборки перерисовывается
     часто, а у группы ручек поставок 300 запросов в минуту, и каждый 4XX
@@ -702,6 +720,15 @@ def sync_open(cabinet_id=None, client_id=None, author="площадка", min_ga
             cargo, flag, point = _dropoff_from_card(item)
             if mine:
                 _apply_dropoff(mine[0], flag, cargo or str(mine[0]["cargo_type"] or ""), point)
+                # состав тоже сверяем: задание, добавленное в ЛК после нашего
+                # прошлого прохода, иначе остаётся отдельной строкой
+                try:
+                    linked = _attach_supply_orders(cab, ext)
+                except wb_supply.SupplyError as exc:
+                    notes.append("%s: состав не сверить, %s" % (ext, exc))
+                    continue
+                if linked:
+                    notes.append("%s: с площадки подтянул %s заданий." % (ext, linked))
                 continue
             try:
                 refresh_from_wb(cab["id"], ext, author)

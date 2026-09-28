@@ -8,6 +8,7 @@ from db import (
     find_cache,
     get_client_by_id,
     get_order_log,
+    get_shipments_by_ext,
     init_db,
     list_cabinets,
     lock_name,
@@ -16,6 +17,7 @@ from db import (
     prune_old_shipments,
     replace_shipment_marks,
     run_lock,
+    set_shipment_supply,
     upsert_shipment,
 )
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
@@ -294,6 +296,12 @@ def handle_wb_fbs(client, cab, orders):
         status = statuses_mod.wb_text(info.get("supplier"), info.get("wb"))
         group = statuses_mod.wb_group(info.get("supplier"), info.get("wb"))
         row = known.get(ext_id)
+        # supplyId приходит в самом задании. Если заказ положили в поставку
+        # через ЛК, наша выгрузка раньше это поле выбрасывала, и задание
+        # висело отдельной строкой рядом со своей поставкой.
+        supply_id = str(order.get("supplyId") or "").strip()
+        if row is not None and supply_id and str(row["supply_ext"] or "") != supply_id:
+            set_shipment_supply([row["id"]], supply_id)
         if row is not None and ext_id not in fresh:
             if (row["status"] or "") == status and (row["status_group"] or "") == group:
                 continue
@@ -332,6 +340,10 @@ def handle_wb_fbs(client, cab, orders):
                 "cargo_type": str(order.get("cargoType") or ""),
             },
         )
+        if row is None and supply_id:
+            created = get_shipments_by_ext(cab["id"], "fbs", [ext_id])
+            if created:
+                set_shipment_supply([created[0]["id"]], supply_id)
     return n
 
 

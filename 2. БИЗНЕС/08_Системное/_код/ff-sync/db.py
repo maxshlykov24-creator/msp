@@ -1717,13 +1717,17 @@ def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_fro
 
 # Группа, которую видит оператор. work_state — наша складская отметка
 # (новые → на сборке → ожидают отгрузки → отгружены). Считаем на чтении,
-# чтобы выгрузка с площадки не стирала ход сборщика. Отмена и «получено
-# покупателем» важнее нашей отметки. «В доставке» у WB (shipped) — нет:
-# после «На отгрузку» задания должны остаться во вкладке «Ожидают отгрузки»,
-# пока склад сам не нажмёт «Отгружено».
+# чтобы выгрузка с площадки не стирала ход сборщика.
+# Отмена, «получено покупателем» и «передано в доставку» важнее отметки
+# «на сборке»: заказ, который уже уехал через ЛК, не должен висеть в сборке.
+# «Ожидают отгрузки» (ready) площадка не перебивает: туда задание кладёт наша
+# кнопка «Собрано», и во «Отгружены» его переводит только «Отгружено».
 EFF_GROUP = (
     "CASE"
     " WHEN COALESCE(shipments.status_group,'') IN ('cancelled','delivered')"
+    " THEN shipments.status_group"
+    " WHEN COALESCE(shipments.status_group,'') = 'shipped'"
+    "  AND COALESCE(shipments.work_state,'') = 'assembling'"
     " THEN shipments.status_group"
     " WHEN COALESCE(shipments.work_state,'') IN ('assembling','ready','shipped')"
     " THEN shipments.work_state"

@@ -286,6 +286,13 @@ for r in db.list_supply_shipments(wb_cab, "WB-GI-777"):
     db.set_shipment_platform(r["id"], r["status"], "shipped")
 eff = {r["ext_id"]: r["eff_group"] for r in db.list_assembly(client_id=client_id, marketplace="wb")}
 assert all(eff.get(str(r["ext_id"])) == "ready" for r in db.list_supply_shipments(wb_cab, "WB-GI-777")), eff
+# «на сборке» не держит заказ, который площадка уже передала в доставку:
+# иначе он висит отдельной строкой, а поставка показывает чужой состав
+stuck = db.list_supply_shipments(wb_cab, "WB-GI-777")[0]
+db.set_work_state([stuck["id"]], "assembling")
+gone = {r["ext_id"]: r["eff_group"] for r in db.list_assembly(client_id=client_id, marketplace="wb")}
+assert gone.get(str(stuck["ext_id"])) == "shipped", gone
+db.set_work_state([stuck["id"]], "ready")
 try:
     supply_flow.make_boxes(sup["id"], 1)
     raise AssertionError("завели грузоместо в закрытой поставке")
