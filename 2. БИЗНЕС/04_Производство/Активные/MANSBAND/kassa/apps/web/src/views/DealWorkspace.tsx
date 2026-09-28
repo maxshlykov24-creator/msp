@@ -422,15 +422,6 @@ export function DealWorkspace({
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-white">{KIND_LABEL[live.kind] ?? live.kind}</h1>
-            {canConvert && (
-              <button
-                type="button"
-                onClick={() => setConvertOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 bg-white px-3 py-1.5 text-[13px] font-semibold text-ink-950 hover:bg-white/90"
-              >
-                Сменить тип
-              </button>
-            )}
             {!hideBack && (
               <span className="chip bg-white/10 text-white font-mono text-[15px] font-semibold tracking-wide">
                 Заявка №{live.number}
