@@ -12,7 +12,7 @@ from app.actions import Ctx, add_note, log_decision
 from app.assignment import resolve_owner_for_new, sync_contact_owner
 from app.config import CLOSED_STATUS_IDS, settings
 from app.dedup_deals import load_leads, resolve as resolve_deals
-from app.identity import find_contacts_by_phone, normalize_phone
+from app.identity import contact_emails, find_contacts_by_phone, normalize_phone
 from app.dedup_contacts import resolve as resolve_contacts
 
 log = logging.getLogger("intake")
@@ -32,11 +32,59 @@ def _find_open_pipeline_lead(leads: list[dict[str, Any]]) -> dict[str, Any] | No
     return opens[0] if opens else None
 
 
+def _email_field(email: str, current: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Поле Email целиком: старые адреса плюс новый. Kommo заменяет values поля,
+    поэтому отправлять только новый адрес нельзя: сотрётся то, что уже было."""
+    values: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for v in current or []:
+        val = str(v.get("value") or "").strip()
+        if not val or val.lower() in seen:
+            continue
+        seen.add(val.lower())
+        item: dict[str, Any] = {"value": val}
+        if v.get("enum_id"):
+            item["enum_id"] = v["enum_id"]
+        elif v.get("enum_code"):
+            item["enum_code"] = v["enum_code"]
+        values.append(item)
+    if email.lower() not in seen:
+        values.append({"value": email, "enum_id": settings.field_email_enum_work})
+    return {"field_id": settings.field_email, "values": values}
+
+
+def _ensure_contact_email(ctx: Ctx, contact_id: int, contact: dict[str, Any] | None,
+                          email: str) -> None:
+    """Дописать почту на уже существующий контакт. Повторная заявка раньше
+    оставляла примечание и не трогала карточку: письмо уходило на старый адрес
+    или не уходило вовсе."""
+    email = email.strip()
+    if not email:
+        return
+    if contact is None or "custom_fields_values" not in contact:
+        contact = ctx.client.get_contact(contact_id) or {}
+    if email.lower() in {e.lower() for e in contact_emails(contact)}:
+        return
+    current: list[dict[str, Any]] = []
+    for cf in contact.get("custom_fields_values") or []:
+        if cf.get("field_id") == settings.field_email or cf.get("field_code") == "EMAIL":
+            current = list(cf.get("values") or [])
+    if not _can_mutate(ctx):
+        log_decision(ctx, "intake.email_skip_shadow", contact=contact_id)
+        return
+    ctx.client.update_contact(contact_id, {
+        "custom_fields_values": [_email_field(email, current)],
+    })
+    log_decision(ctx, "intake.email_set", contact=contact_id)
+
+
 def _create_contact(ctx: Ctx, name: str, phone: str, email: str) -> int | None:
     cf: list[dict[str, Any]] = []
     if phone:
         cf.append({"field_id": settings.field_phone,
                    "values": [{"value": phone, "enum_id": settings.field_phone_enum_work}]})
+    if email:
+        cf.append(_email_field(email))
     payload = [{"name": name or phone or email or "Lead", "custom_fields_values": cf}]
     if not _can_mutate(ctx):
         log_decision(ctx, "intake.create_contact.shadow", name=name, phone=phone)
@@ -95,6 +143,13 @@ def process_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
 
     if not contact_id:
         return {"action": "shadow_no_contact"}
+
+    # Почта нужна в ту же секунду, что и сделка: рассылка стреляет на создание
+    # лида и читает email контакта. На повторе карточка уже есть, но почты
+    # из этой заявки на ней может не быть.
+    if email and contacts:
+        matched = next((c for c in contacts if int(c["id"]) == int(contact_id)), None)
+        _ensure_contact_email(ctx, int(contact_id), matched, email)
 
     # 2. открытая сделка есть → не плодим новую (повтор), пишем источник.
     # Смотрим по всей группе карточек номера: иначе на несклеенном дубле открытая

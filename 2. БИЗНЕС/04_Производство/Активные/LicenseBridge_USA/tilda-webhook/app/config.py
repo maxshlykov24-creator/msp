@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # контакты
     field_phone: int = 142532
     field_phone_enum_work: int = 120012
+    # Email контакта. Без него письмо по новой заявке не уходит.
+    # id сверены с боевым аккаунтом 2026-09-28.
+    field_email: int = 142534
+    field_email_enum_work: int = 120024
     # контакты, Wazzup: устойчивые id мессенджеров — ключ склейки, когда телефона нет
     field_wz_telegram_id: int = 1418422
     field_wz_telegram_username: int = 1418420

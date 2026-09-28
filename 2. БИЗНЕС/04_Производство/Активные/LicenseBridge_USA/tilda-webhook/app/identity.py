@@ -121,6 +121,19 @@ def contact_phones(contact: dict[str, Any]) -> list[str]:
     return [normalize_phone(v) for v in _cf_values(contact, settings.field_phone) if normalize_phone(v)]
 
 
+def contact_emails(contact: dict[str, Any]) -> list[str]:
+    """Почты контакта. Поле приходит и с field_id, и с field_code=EMAIL."""
+    out: list[str] = []
+    for cf in contact.get("custom_fields_values") or []:
+        if cf.get("field_id") != settings.field_email and cf.get("field_code") != "EMAIL":
+            continue
+        for v in cf.get("values") or []:
+            val = str(v.get("value") or "").strip()
+            if val:
+                out.append(val)
+    return out
+
+
 # Поля-идентификаторы: у контактов — id мессенджеров Wazzup (телефона может не
 # быть), у сделок — Teletype/реклама. Порядок = приоритет поиска.
 SECONDARY_FIELDS: dict[str, int] = {

@@ -83,6 +83,42 @@ def _esc(value: str) -> str:
     return str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def lead_without_email(lead: dict[str, Any], emails: list[str]) -> bool:
+    """Facebook и сайт. Звонок без почты сюда не входит: у него её и не бывает."""
+    if emails:
+        return False
+    src = ""
+    channel = ""
+    for cf in lead.get("custom_fields_values") or []:
+        vals = cf.get("values") or []
+        text = str(vals[0].get("value") or "").strip().lower() if vals else ""
+        if cf.get("field_id") == settings.field_utm_source:
+            src = text
+        elif cf.get("field_id") == settings.field_channel:
+            channel = text
+    name = (lead.get("name") or "").upper()
+    return src == "fb" or name.startswith("FB ") or channel == "tilda"
+
+
+def missing_email(client: Any, lead: dict[str, Any], phone: str = "") -> bool:
+    """Заявка уже в CRM, а почты нет. Письмо по ней не уйдёт, и это надо
+    увидеть сразу, а не когда клиент сверит выгрузку Facebook."""
+    from app.chat_events import lead_url
+
+    lead_id = int(lead.get("id") or 0)
+    if not lead_id:
+        return False
+    name = _esc(lead.get("name") or f"Сделка #{lead_id}")
+    lines = [
+        "⚠️ <b>Заявка без email</b> | LicenseBridge\n",
+        f"▪️ <b>Сделка:</b> <a href='{lead_url(lead_id)}'>{name}</a>",
+    ]
+    if phone:
+        lines.append(f"▪️ <b>Телефон:</b> {_esc(phone)}")
+    lines.append("Письмо по этой заявке не уйдёт: в контакте нет email.")
+    return notify("\n".join(lines), key=f"missing_email:{lead_id}", cooldown=7 * 24 * 3600)
+
+
 def new_lead(client: Any, lead: dict[str, Any], phone: str = "") -> bool:
     """Заявка пришла — сказать об этом сразу, а не по факту просроченной задачи.
 
