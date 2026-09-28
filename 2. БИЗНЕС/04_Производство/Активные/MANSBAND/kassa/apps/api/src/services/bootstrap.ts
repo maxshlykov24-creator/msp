@@ -238,13 +238,19 @@ function fuzzyFieldMatch<T extends { name: string }>(rows: T[], name: string): T
 }
 
 export async function getFieldIdByName(name: string): Promise<number | null> {
+  const ids = await getFieldIdsByName(name);
+  if (ids[0]) return ids[0];
+  const all = await db.select().from(amoMeta).where(eq(amoMeta.kind, "field"));
+  return fuzzyFieldMatch(all, name)?.amoId ?? null;
+}
+
+/** Все поля лида с этим именем. В amo их может быть два: текстовое и «ссылка». */
+export async function getFieldIdsByName(name: string): Promise<number[]> {
   const rows = await db
     .select()
     .from(amoMeta)
     .where(and(eq(amoMeta.kind, "field"), eq(amoMeta.name, name)));
-  if (rows[0]) return rows[0].amoId;
-  const all = await db.select().from(amoMeta).where(eq(amoMeta.kind, "field"));
-  return fuzzyFieldMatch(all, name)?.amoId ?? null;
+  return [...new Set(rows.map((r) => r.amoId))];
 }
 
 export async function getCompanyFieldIdByName(name: string): Promise<number | null> {

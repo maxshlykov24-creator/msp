@@ -131,10 +131,13 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
     lead = lead ?? (await amo.getLead(event.id));
     if (!lead?.id) return { skipped: "lead_not_found", tasks: false };
     deal = await deals.ensureLocalFromAmoLead(lead, stage);
-    // Сделку завёл колл-менеджер: даём ему ссылку на заявку в кассе, чтобы
-    // поставить перемещение или отложку не разыскивая её руками (созвон 04.09).
-    await writeKassaLink(lead.id, deal.number).catch(() => {});
   }
+
+  // Ссылка в карточке amo на эту заявку кассы. Пишем и при первом зеркале,
+  // и при повторной синхронизации этапа: поле могли добавить позже.
+  await writeKassaLink(event.id, deal.number).catch((err: Error) => {
+    console.warn(`[amo] ссылка на кассу, сделка #${event.id}: ${err.message}`);
+  });
 
   // Этап из amo задаёт вид заявки: доставка по воронке СДЭК, отложка по
   // «Ждет товар» / «Товар в магазине» (созвон 04.09, примечание №1).

@@ -7,7 +7,7 @@ import {
 import type { Deal } from "@kassa/shared";
 import * as amo from "../clients/amo.js";
 import { getEnv } from "../env.js";
-import { getCompanyFieldIdByName, getFieldIdByName, getLeadFieldMeta } from "./bootstrap.js";
+import { getCompanyFieldIdByName, getFieldIdByName, getFieldIdsByName, getLeadFieldMeta, syncAmoMeta } from "./bootstrap.js";
 
 // Сведение полей форм кассы → кастом-поля сделки amoCRM (аудит зафиксирован
 // в плане 2026-07-01). Здесь только чтение резолва id по имени — сами поля
@@ -40,13 +40,36 @@ export function invalidateLeadFieldCache(): void {
  * сделок, которые завёл колл-менеджер: касса в них ничего не пишет, а перейти
  * в кассу и поставить задачу колл-менеджеру надо в один клик.
  */
+async function kassaLinkFieldIds(): Promise<number[]> {
+  let ids = await getFieldIdsByName(AMO_LEAD_FIELDS.kassaLink);
+  // Поле могли создать в amo после последнего синка справочника.
+  if (ids.length === 0) {
+    await syncAmoMeta();
+    invalidateLeadFieldCache();
+    ids = await getFieldIdsByName(AMO_LEAD_FIELDS.kassaLink);
+  }
+  return ids;
+}
+
 export async function writeKassaLink(leadId: number, dealNumber: number): Promise<void> {
-  const ids = await getLeadFieldIdMap();
-  const fieldId = ids.kassaLink;
-  if (!fieldId) return;
+  const fieldIds = await kassaLinkFieldIds();
+  if (fieldIds.length === 0) {
+    throw new Error("В amoCRM нет поля «Ссылка на кассу»");
+  }
   const link = dealDeepLink(getEnv().PUBLIC_BASE_URL, dealNumber);
+  // Повторный вебхук update после нашей же записи не должен писать снова:
+  // иначе amo шлёт leads[update] и цикл не кончается.
+  // Пишем во все одноимённые поля: в карточке есть и текст, и ссылка.
+  const current = await amo.getLead(leadId);
+  const missing = fieldIds.filter((fieldId) => {
+    const existing = current?.custom_fields_values
+      ?.find((f) => f.field_id === fieldId)
+      ?.values?.[0]?.value;
+    return !(typeof existing === "string" && existing.trim() === link);
+  });
+  if (missing.length === 0) return;
   await amo.updateLead(leadId, {
-    customFields: [{ field_id: fieldId, values: [{ value: link }] }],
+    customFields: missing.map((fieldId) => ({ field_id: fieldId, values: [{ value: link }] })),
   });
 }
 

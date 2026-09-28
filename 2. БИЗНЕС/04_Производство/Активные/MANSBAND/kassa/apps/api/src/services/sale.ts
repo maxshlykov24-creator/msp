@@ -8,7 +8,7 @@ import { attachPhotos } from "./files.js";
 import * as catalog from "./catalog.js";
 import { resolveAssortment } from "./catalog.js";
 import { getMsRef, getWarehouseForStore, getStatusId, extractIdFromHref, getFieldIdByName } from "./bootstrap.js";
-import { buildLeadCustomFields, ensureLeadCompany, invalidateLeadFieldCache, paymentStatusLabel } from "./amoMapping.js";
+import { buildLeadCustomFields, ensureLeadCompany, invalidateLeadFieldCache, paymentStatusLabel, writeKassaLink } from "./amoMapping.js";
 import { withIdempotency } from "../lib/idempotency.js";
 import { toKopecks } from "../lib/money.js";
 import {
@@ -230,6 +230,7 @@ export async function afterKindConverted(
       if (customFields.length) {
         await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
       }
+      await writeKassaLink(deal.amoLeadId, deal.number).catch(() => {});
     }
   }
   if (photos?.length && deal.amoLeadId) {
@@ -563,6 +564,9 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
         companyId,
         customFields,
       });
+      await writeKassaLink(lead.id, deal.number).catch((err: Error) => {
+        console.warn(`[amo] ссылка на кассу, сделка #${lead.id}: ${err.message}`);
+      });
       return lead.id;
     }
 
@@ -600,6 +604,9 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
         await amo
           .addLeadNote(open.id, `Касса #${deal.number} · ${deal.kind} · ${deal.stage}`)
           .catch(() => {});
+        await writeKassaLink(open.id, deal.number).catch((err: Error) => {
+          console.warn(`[amo] ссылка на кассу, сделка #${open.id}: ${err.message}`);
+        });
         return open.id;
       }
     }
@@ -612,6 +619,9 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
       contactId,
       companyId,
       customFields,
+    });
+    await writeKassaLink(lead.id, deal.number).catch((err: Error) => {
+      console.warn(`[amo] ссылка на кассу, сделка #${lead.id}: ${err.message}`);
     });
     return lead.id;
   } catch (err) {
@@ -669,6 +679,9 @@ export async function resyncToAmo(number: number, who: string): Promise<Deal | n
   const statusId = (await getStatusId(pipelineId, deal.stage)) ?? undefined;
   const customFields = await buildLeadCustomFields(deal).catch(() => []);
   await updateLeadResilient(amoLeadId, { statusId, price: Math.abs(deal.total), customFields });
+  await writeKassaLink(amoLeadId, deal.number).catch((err: Error) => {
+    console.warn(`[amo] ссылка на кассу, сделка #${amoLeadId}: ${err.message}`);
+  });
   await noteSaryInAmo(deal, who).catch(() => {});
   return deals.markSync(deal, "synced");
 }
@@ -1061,6 +1074,7 @@ async function writeback(amoLeadId: number, deal: Deal): Promise<void> {
   try {
     const customFields = await buildLeadCustomFields(deal);
     if (customFields.length) await amo.updateLead(amoLeadId, { customFields });
+    await writeKassaLink(amoLeadId, deal.number);
   } catch {
     // writeback не критичен для проведения; повторим при следующей синхронизации
   }
