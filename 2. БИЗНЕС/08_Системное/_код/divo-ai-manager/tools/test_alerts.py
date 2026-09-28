@@ -15,6 +15,7 @@ from bot.nudge import (
     asked_leasing,
     asked_credit,
     asked_torg,
+    asks_if_car_wrong,
     asked_heater,
     asked_media,
     asked_condition,
@@ -313,6 +314,12 @@ def test_unsolicited():
     assert asked_torg([{"role": "user", "content": "ЗА 16 млн возьму"}])
     assert asked_torg([{"role": "user", "content": "возьму за 16"}])
     assert not asked_torg([{"role": "user", "content": "за 16 млн какой пробег?"}])
+    assert asked_torg([{"role": "user", "content": "Добрый день, за 1,5 интересно?"}])
+    assert asked_torg(
+        [{"role": "user", "content": "Если надумаете, за 1,5 интересно"}]
+    )
+    assert asks_if_car_wrong("С ней что то не так ?")
+    assert not asks_if_car_wrong("за 1,5 интересно")
     assert asked_leasing([{"role": "user", "content": "а в лизинг можно?"}])
     from bot.human import soften_lease_status
     from bot.nudge import cited_lease_report
@@ -382,6 +389,31 @@ def test_unsolicited():
     assert "осмотр" in slammed.lower()
     keep_hard = soften_hard_torg("Продать за 3,5 не сможем", allow_torg=False)
     assert "не сможем" in keep_hard.lower()
+    bora = soften_hard_torg(
+        "Цена в объявлении 1 600 000, это финальная сумма, без торга сейчас предложить не могу",
+        allow_torg=True,
+    )
+    assert "без торга" not in bora.lower()
+    assert "финальн" not in bora.lower()
+    assert "1 600 000" in bora
+    assert "разумных пределах" in bora.lower()
+    think = soften_hard_torg("Хорошо, подумайте", allow_torg=True)
+    assert "подумайте" not in think.lower()
+    assert "разумных пределах" in think.lower()
+    locked = soften_hard_torg(
+        "Цена просто фиксированная, торга по ней нет. Можете подъехать посмотреть в любой день с 10:00 до 20:00",
+        allow_torg=True,
+    )
+    assert "торга" not in locked.lower()
+    assert "фиксирован" not in locked.lower()
+    assert "посмотреть" in locked.lower()
+    assert "разумных пределах" in locked.lower()
+    agree = soften_hard_torg(
+        "Все верно, в разумных пределах торг и условия можем обсудить после осмотра.",
+        allow_torg=True,
+    )
+    assert not agree.lower().startswith("все верно")
+    assert "разумных пределах" in agree.lower()
 
 
 def test_credit_product_never_reaches_client():

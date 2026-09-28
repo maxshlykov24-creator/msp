@@ -658,7 +658,26 @@ def asked_torg(messages: list[dict] | None) -> bool:
         return True
     if re.search(r"\d+(?:[.,]\d+)?\s*готов\s+приехать", blob):
         return True
+    # «за 1,5 интересно», «если надумаете, за 1,5». Это своя сумма, не вопрос про пробег.
+    if re.search(
+        r"за\s+(?:\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?|полтора)"
+        r"(?:\s*(?:млн|миллион\w*|тыс\w*|руб\w*))?"
+        r".{0,24}(?:интерес|надума)",
+        blob,
+    ):
+        return True
     return False
+
+
+def asks_if_car_wrong(text: str) -> bool:
+    """«С ней что-то не так» после цены: вопрос про машину, не новый запрет торга."""
+    blob = (text or "").lower().replace("ё", "е")
+    return bool(
+        re.search(
+            r"что[\s-]*то не так|что не так|с ней что|с ним что|что с (ней|ним|машин)",
+            blob,
+        )
+    )
 
 
 NONCAR_ITEM = re.compile(

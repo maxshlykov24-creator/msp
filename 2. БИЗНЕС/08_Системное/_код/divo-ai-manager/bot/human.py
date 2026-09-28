@@ -951,8 +951,20 @@ CONDITION_DUMP = re.compile(
 SOFT_TORG = (
     "В разумных пределах торг и условия можем обсудить после осмотра"
 )
-HARD_TORG_NO = re.compile(r"не сможем", re.IGNORECASE)
-FIXED_PRICE = re.compile(r"зафиксирован", re.IGNORECASE)
+# Жёсткий отказ: «без торга», «торга нет», «финальная сумма», «подумайте».
+TORG_BAN = re.compile(
+    r"("
+    r"без торга|"
+    r"торга(?:\s+по\s+\w+){0,3}\s+нет|"
+    r"финальн\w+\s+сумм|"
+    r"предложить не могу|"
+    r"подумайте|"
+    r"не сможем|"
+    r"фиксирован"
+    r")",
+    re.IGNORECASE,
+)
+AGREE_TORG = re.compile(r"^\s*все верно\s*[,.]?\s*", re.IGNORECASE)
 PRICE_IN_SENT = re.compile(r"(\d[\d\s]{2,}\d(?:\s*руб(?:лей)?)?)", re.IGNORECASE)
 
 
@@ -961,22 +973,23 @@ def soften_hard_torg(text: str, *, allow_torg: bool = False) -> str:
     original = text or ""
     if not allow_torg or not original.strip():
         return original
-    if not HARD_TORG_NO.search(original) and not FIXED_PRICE.search(original):
+    if not TORG_BAN.search(original) and not AGREE_TORG.search(original):
         return original
     kept: list[str] = []
     for part in re.split(r"(?<=[.!?\n])\s+", original):
-        if HARD_TORG_NO.search(part):
+        part = AGREE_TORG.sub("", part).strip()
+        if not part:
             continue
-        if FIXED_PRICE.search(part):
+        if TORG_BAN.search(part):
             found = PRICE_IN_SENT.search(part)
-            if found:
+            if found and re.search(r"объявлен", part, re.I):
                 kept.append("Цена в объявлении %s" % " ".join(found.group(1).split()))
             continue
         kept.append(part)
     body = " ".join(p.strip() for p in kept if p.strip()).strip()
     if not body:
         return SOFT_TORG
-    if not re.search(r"осмотр|торг|услови", body, re.I):
+    if not re.search(r"разумных пределах|торг", body, re.I):
         body = "%s. %s" % (body.rstrip("."), SOFT_TORG)
     return _tidy(body, original)
 
