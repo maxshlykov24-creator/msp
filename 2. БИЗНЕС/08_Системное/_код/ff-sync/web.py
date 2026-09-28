@@ -218,6 +218,7 @@ def intake_list(ff_session: str = Cookie(default="")):
             "tracking": r["tracking_type"],
             "liters": r["liters"],
             "dims": (r["dims"] if "dims" in r.keys() else "") or "",
+            "pick_rate": r["pick_rate"] if "pick_rate" in r.keys() else None,
             "tariff": r["tariff"] if "tariff" in r.keys() else None,
             "qty": r["qty"],
             "state": r["state"],
@@ -246,7 +247,7 @@ def intake_registry(data: dict = Body(...), ff_session: str = Cookie(default="")
             raw,
             author=login,
             refresh=bool(data.get("refresh", True)),
-            tariff=data.get("tariff"),
+            pick_rate=data.get("pick_rate", data.get("tariff")),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -336,7 +337,7 @@ def intake_add(data: dict = Body(...), ff_session: str = Cookie(default="")):
             kind=data.get("kind") or "",
             author=login,
             refresh=bool(data.get("refresh", True)),
-            tariff=data.get("tariff"),
+            pick_rate=data.get("pick_rate", data.get("tariff")),
             qty=data.get("qty"),
         )
     except ValueError as exc:
@@ -362,7 +363,7 @@ def intake_file(data: dict = Body(...), ff_session: str = Cookie(default="")):
             kind=data.get("kind") or "",
             author=login,
             refresh=True,
-            tariff=data.get("tariff"),
+            pick_rate=data.get("pick_rate", data.get("tariff")),
             qty=data.get("qty"),
         )
     except ValueError as exc:
@@ -382,7 +383,7 @@ def intake_patch(row_id: int, data: dict = Body(...), ff_session: str = Cookie(d
             liters=data.get("liters"),
             kind=data.get("kind"),
             gtin=data.get("gtin"),
-            tariff=data.get("tariff"),
+            pick_rate=data.get("pick_rate", data.get("tariff")),
             qty=data.get("qty"),
         )
     except ValueError as exc:
@@ -397,6 +398,7 @@ def intake_patch(row_id: int, data: dict = Body(...), ff_session: str = Cookie(d
             "tracking": row["tracking_type"],
             "liters": row["liters"],
             "dims": (row["dims"] if "dims" in row.keys() else "") or "",
+            "pick_rate": row["pick_rate"] if "pick_rate" in row.keys() else None,
             "tariff": row["tariff"] if "tariff" in row.keys() else None,
             "qty": row["qty"],
         },
