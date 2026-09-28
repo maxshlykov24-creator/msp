@@ -59,7 +59,7 @@ export async function writeKassaLink(leadId: number, dealNumber: number): Promis
   const link = dealDeepLink(getEnv().PUBLIC_BASE_URL, dealNumber);
   // Повторный вебхук update после нашей же записи не должен писать снова:
   // иначе amo шлёт leads[update] и цикл не кончается.
-  // Пишем во все одноимённые поля: в карточке есть и текст, и ссылка.
+  // Пишем только в живые поля с этим именем. Текстовый дубль удалён.
   const current = await amo.getLead(leadId);
   const missing = fieldIds.filter((fieldId) => {
     const existing = current?.custom_fields_values

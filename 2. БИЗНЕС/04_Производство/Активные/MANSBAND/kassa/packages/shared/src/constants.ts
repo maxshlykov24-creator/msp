@@ -825,7 +825,6 @@ export const AMO_NEW_LEAD_FIELDS: Array<{
   { key: "rentalDeposit", type: "text" },
   { key: "wasRefund", type: "checkbox", isApiOnly: true },
   { key: "wasExchange", type: "checkbox", isApiOnly: true },
-  { key: "kassaLink", type: "text" },
 ];
 
 // Кастом-поля сущности «Компания» amoCRM.

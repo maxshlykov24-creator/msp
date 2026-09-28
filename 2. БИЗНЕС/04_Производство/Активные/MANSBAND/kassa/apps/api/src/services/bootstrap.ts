@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { amoMeta, msRefs, productFolders, products, stock } from "../db/schema.js";
 import * as amo from "../clients/amo.js";
@@ -39,6 +39,8 @@ export async function syncAmoMeta(): Promise<void> {
       await upsertAmoMeta("enum", e.id, f.id, e.value, e);
     }
   }
+  // Удалённое в amo поле иначе остаётся в кэше, и запись ссылки падает целиком.
+  if (fields.length > 0) await dropStaleLeadFields(fields.map((f) => f.id));
 
   await ensureChannelEnums(fields);
 
@@ -46,6 +48,16 @@ export async function syncAmoMeta(): Promise<void> {
   for (const f of companyFields) {
     await upsertAmoMeta("company_field", f.id, null, f.name, f);
   }
+}
+
+/** Убрать из кэша поля лида, которых в amo уже нет. Пустой ответ amo не трогаем. */
+async function dropStaleLeadFields(liveIds: number[]): Promise<void> {
+  const rows = await db.select({ amoId: amoMeta.amoId }).from(amoMeta).where(eq(amoMeta.kind, "field"));
+  const live = new Set(liveIds);
+  const stale = rows.map((r) => r.amoId).filter((id) => !live.has(id));
+  if (stale.length === 0) return;
+  await db.delete(amoMeta).where(and(eq(amoMeta.kind, "enum"), inArray(amoMeta.parentId, stale)));
+  await db.delete(amoMeta).where(and(eq(amoMeta.kind, "field"), inArray(amoMeta.amoId, stale)));
 }
 
 // «Канал продаж» — select: значения из AD_SOURCES (в т.ч. промокоды) должны
