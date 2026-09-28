@@ -1206,9 +1206,12 @@ function asmBodyHtml(rows) {
     }
   });
   let html = "";
+  const openOnly = state.asmGroup === "new" || state.asmGroup === "assembling";
   (state.asmSupplies || []).forEach((sup) => {
     const kids = bySupply.get(sup.ext_id) || [];
     bySupply.delete(sup.ext_id);
+    // сданная поставка живёт в «Отгружены» и «Доставлены», не в сборке
+    if (openOnly && sup.state === "delivered") return;
     html += asmSupplyHtml(sup, kids);
   });
   // поставка есть у задания, но самой поставки в базе нет: заводили не мы

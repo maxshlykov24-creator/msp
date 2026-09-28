@@ -36,6 +36,7 @@ from db import (
     list_wb_supplies,
     overview_stats,
     set_work_state,
+    settle_delivered_orders,
     status_label,
 )
 from db import QUEUE_STATES
@@ -745,6 +746,10 @@ def assembly(
     who(ff_session)
     init_db()
     import statuses
+
+    # Сданная поставка не должна оставаться во вкладке «На сборке», даже если
+    # статус заданий ещё не догнал карточку. Это своя база, наружу не ходим.
+    settle_delivered_orders()
 
     # Поставки с площадкой сверяет воркер (job_supplies каждые 5 минут). Здесь
     # только чтение своей базы: сверка стояла прямо в запросе, и каждая смена

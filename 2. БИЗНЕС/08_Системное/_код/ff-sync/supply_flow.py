@@ -38,6 +38,7 @@ from db import (
     mark_wb_supply_delivered,
     set_shipment_platform,
     set_shipment_supply,
+    settle_delivered_orders,
     set_supply_shipments_dropoff,
     set_wb_supply_dropoff,
     set_wb_supply_state,
@@ -747,6 +748,9 @@ def sync_open(cabinet_id=None, client_id=None, author="площадка", min_ga
                 continue
             mark_wb_supply_delivered(row["id"], _wb_stamp(card.get("closedAt")))
             notes.append("%s: на площадке уже закрыта, отметил сданной." % row["ext_id"])
+    moved = settle_delivered_orders()
+    if moved:
+        notes.append("Сданные поставки убраны со сборки: заданий %s." % moved)
     return {"found": found, "notes": notes}
 
 

@@ -1471,6 +1471,41 @@ def mark_wb_supply_delivered(supply_id, when):
     set_wb_supply_state(supply_id, "delivered", when)
 
 
+def settle_delivered_orders():
+    """Сданная поставка не держит задания на сборке.
+
+    Закрытие через ЛК помечало только карточку поставки. Задания оставались
+    с отметкой «на сборке», и строка поставки висела в этой вкладке, хотя
+    шапка уже писала «Сдана». Отмену и «доставлено покупателю» не трогаем.
+    """
+    conn = connect()
+    cur = conn.execute(
+        "UPDATE shipments SET"
+        " work_state = '',"
+        " status_group = CASE"
+        "  WHEN COALESCE(status_group,'') IN ('cancelled','delivered','shipped') THEN status_group"
+        "  ELSE 'shipped' END,"
+        " status = CASE"
+        "  WHEN COALESCE(status_group,'') IN ('cancelled','delivered','shipped') THEN status"
+        "  ELSE 'передано в доставку / в работе' END"
+        " WHERE id IN ("
+        "  SELECT shipments.id FROM shipments"
+        "  JOIN wb_supplies ON wb_supplies.cabinet_id = shipments.cabinet_id"
+        "   AND wb_supplies.ext_id = shipments.supply_ext"
+        "  WHERE wb_supplies.state = 'delivered'"
+        "   AND COALESCE(shipments.status_group,'') NOT IN ('cancelled','delivered')"
+        "   AND ("
+        "    COALESCE(shipments.work_state,'') IN ('assembling','ready')"
+        "    OR COALESCE(shipments.status_group,'') NOT IN ('shipped','cancelled','delivered')"
+        "   )"
+        " )"
+    )
+    conn.commit()
+    n = cur.rowcount
+    conn.close()
+    return n
+
+
 def list_wb_supplies(client_id=None, state="", limit=100):
     conn = connect()
     sql = (
