@@ -149,6 +149,31 @@ function tokenMatchesField(token: string) {
   );
 }
 
+/**
+ * Карточка вида («Брюки от смокинга») не продаётся: складская позиция —
+ * модификация. Прячем товар, у которого модификации уже есть, и костюмный
+ * вид без характеристик. Штучный товар без модификаций (аксессуар, сертификат)
+ * остаётся.
+ */
+function notBareParentSql() {
+  return sql`NOT (
+    ${products.msType} = 'product'
+    AND (
+      EXISTS (
+        SELECT 1
+        FROM products AS variant_child
+        WHERE variant_child.ms_type = 'variant'
+          AND variant_child.name LIKE ${products.name} || ' (%'
+      )
+      OR (
+        ${products.category} ILIKE '1. Костюмы%'
+        AND coalesce(${products.suitPart}, '') <> ''
+        AND ${products.name} NOT LIKE '% (%'
+      )
+    )
+  )`;
+}
+
 /** Совпадение по вариации поднимаем выше имени и артикула. */
 function variationFirstOrder(tokens: string[]) {
   const safe = sanitizeToken(tokens[0] ?? "");
@@ -193,6 +218,7 @@ export async function searchCatalog(
     .from(products)
     .where(and(
       inArray(products.msType, ["product", "variant"]),
+      notBareParentSql(),
       textCondition,
       categoryCondition
     ))
