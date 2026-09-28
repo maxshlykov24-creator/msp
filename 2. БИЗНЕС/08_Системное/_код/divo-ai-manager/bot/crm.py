@@ -1079,6 +1079,63 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
         store.save_doc(chat_id, doc)
 
 
+def autoru_note_text(who: str, text: str) -> str:
+    """Одна реплика Авто.ру отдельным примечанием. Пузырь чата это не заменяет."""
+    body = " ".join(str(text or "").split())
+    if len(body) > 3500:
+        body = body[:3500].rstrip() + "..."
+    label = "Клиент" if who == "client" else "Бот"
+    return "%s: %s" % (label, body)
+
+
+def mirror_autoru_line(
+    chat_id: str | int, who: str, text: str, msg_id: str = ""
+) -> None:
+    """Пишет реплику в сделку, которую уже создала интеграция Авто.ру.
+
+    Новую сделку не создаёт и этап не двигает. Пока сделки нет, молчит:
+    следующее сообщение попробует снова.
+    """
+    key = str(chat_id)
+    if not key.startswith("ar:"):
+        return
+    body = " ".join(str(text or "").split())
+    if not body:
+        return
+    dedupe = str(msg_id or "") or ("%s\t%s" % (who, body[:200]))
+    doc = store.load_doc(chat_id)
+    crm = dict(doc.get("crm") or {})
+    seen = [str(x) for x in (crm.get("autoru_noted") or [])]
+    if dedupe in seen:
+        return
+    lead_id = crm.get("lead_id")
+    if not lead_id:
+        try:
+            lead_id = amo_client.autoru_unsorted_lead(
+                amo_client.iter_unsorted(4), key[3:]
+            )
+        except amo_client.AmoError as exc:
+            log.warning("чат %s: сделка Авто.ру не нашлась: %s", key, exc)
+            return
+        if not lead_id:
+            log.info("чат %s: примечание Авто.ру ждёт сделку интеграции", key)
+            return
+        crm["lead_id"] = int(lead_id)
+        crm["lead_url"] = amo_client.lead_url(int(lead_id))
+        log.info("чат %s: примечания на сделку %s, этап не меняю", key, lead_id)
+    try:
+        amo_client.add_note(int(lead_id), autoru_note_text(who, body))
+    except amo_client.AmoError as exc:
+        log.warning("чат %s: примечание в %s не записалось: %s", key, lead_id, exc)
+        doc["crm"] = crm
+        store.save_doc(chat_id, doc)
+        return
+    seen.append(dedupe)
+    crm["autoru_noted"] = seen[-80:]
+    doc["crm"] = crm
+    store.save_doc(chat_id, doc)
+
+
 def remember_out(chat_id: str | int, payload: Any) -> None:
     import time
 

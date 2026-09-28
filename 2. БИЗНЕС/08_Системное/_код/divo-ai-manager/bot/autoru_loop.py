@@ -187,7 +187,8 @@ class AutoruChannel:
         self.tg = tg
 
     async def send(self, chat_id: int | str, text: str) -> None:
-        data = await self.api.send_text(raw_id(str(chat_id)), human.for_chat(text))
+        sent = human.for_chat(text)
+        data = await self.api.send_text(raw_id(str(chat_id)), sent)
         from bot import crm
 
         msg = data.get("message") if isinstance(data, dict) else {}
@@ -196,6 +197,9 @@ class AutoruChannel:
         crm.remember_out(
             chat_id,
             {"id": msg.get("id"), "created": created_of(msg) or int(time.time())},
+        )
+        crm.mirror_autoru_line(
+            chat_id, "bot", sent, msg_id=str(msg.get("id") or "")
         )
 
     async def typing(self, chat_id: int | str) -> None:
@@ -365,6 +369,12 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             log.info("авто.ру новый чат %s, беру (%s)", cid[:12], title)
         for text in texts:
             store.log_line(chat_key, "клиент", text)
+        from bot import crm
+
+        for index, (at, text) in enumerate(incoming):
+            crm.mirror_autoru_line(
+                chat_key, "client", text, msg_id="%s:%s" % (at, index)
+            )
         if store.hard_paused(chat_key):
             log.info("авто.ру чат %s на паузе", cid[:12])
             from bot import crm

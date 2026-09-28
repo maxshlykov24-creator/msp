@@ -583,6 +583,26 @@ def unsorted_meta(row: dict) -> dict:
     }
 
 
+def autoru_unsorted_lead(rows: list[dict], room_id: str) -> int | None:
+    """Сделка интеграции Авто.ру по id чата кабинета.
+
+    В неразобранном amo кладёт id комнаты в metadata.from.
+    """
+    needle = (room_id or "").strip()
+    if not needle:
+        return None
+    for row in rows or []:
+        meta = unsorted_meta(row)
+        if meta.get("channel") != "Авто.ру":
+            continue
+        if str(meta.get("from") or "") != needle:
+            continue
+        lid = meta.get("lead_id")
+        if lid:
+            return int(lid)
+    return None
+
+
 def find_unsorted_uid(lead_id: int, rows: list[dict] | None = None) -> str:
     needle = int(lead_id)
     for row in rows or iter_unsorted(8):

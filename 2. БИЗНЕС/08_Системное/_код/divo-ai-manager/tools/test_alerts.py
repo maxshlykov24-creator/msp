@@ -1095,6 +1095,34 @@ def test_nudge_after_hours():
     assert due_day.day == 14 and due_day.hour == 16 and due_day.minute == 20
 
 
+def test_autoru_note_finds_room():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from amo_client import autoru_unsorted_lead
+    from bot.crm import autoru_note_text
+
+    room = "f6641e06ee1f8dd8b1611c586cfc7c10"
+    row = {
+        "uid": "u1",
+        "source_uid": "amojo:amo.ext.31941682:abc",
+        "created_at": 1,
+        "metadata": {"from": room, "client": {}},
+        "_embedded": {"leads": [{"id": 45985223}]},
+    }
+    avito = {
+        "uid": "u2",
+        "source_uid": "amojo:avito:zzz",
+        "metadata": {"from": room},
+        "_embedded": {"leads": [{"id": 1}]},
+    }
+    assert autoru_unsorted_lead([avito, row], room) == 45985223
+    assert autoru_unsorted_lead([row], "deadbeef") is None
+    assert autoru_note_text("client", "  битая\nили нет ") == "Клиент: битая или нет"
+    assert autoru_note_text("bot", "ссылка") == "Бот: ссылка"
+
+
 def test_autoru_prior():
     from bot.autoru import is_offer_room, listing_from_offer, source_id
     from bot.autoru_loop import (
@@ -2620,6 +2648,7 @@ if __name__ == "__main__":
     test_amo_owner()
     test_llm_pause_reason()
     test_llm_outage_not_a_group_alert()
+    test_autoru_note_finds_room()
     test_autoru_prior()
     test_focus_autoru()
     test_listing_context_cleanup()

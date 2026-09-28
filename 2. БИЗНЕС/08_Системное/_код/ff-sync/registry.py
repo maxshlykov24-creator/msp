@@ -83,11 +83,16 @@ def number(raw):
 
 
 def is_header(row):
-    joined = [norm(c) for c in row]
-    has_article = any("артикул" in c for c in joined)
-    has_code = any("штрихкод" in c or "штрих-код" in c or "штрих код" in c for c in joined)
-    has_name = any("наименование" in c or "название" in c for c in joined)
-    return has_article and (has_code or has_name)
+    """Строка заголовка позиций. Количество в ней необязательно.
+
+    Хватает двух узнаваемых колонок, либо одной ячейки «Артикул» или «Штрихкод».
+    Строка «Артикул | значение» заголовком не считается: это поле шапки.
+    """
+    keys = map_columns(row)
+    if len(keys) >= 2 and ("article" in keys or "barcode" in keys):
+        return True
+    filled = [c for c in row if norm(c)]
+    return len(filled) == 1 and ("article" in keys or "barcode" in keys)
 
 
 def map_columns(row):
@@ -207,7 +212,7 @@ def position(row, cols):
         "barcode": barcode,
         "name": str(cell("name") or "").strip(),
         "unit": str(cell("unit") or "").strip(),
-        "qty": number(cell("qty")) or 0.0,
+        "qty": number(cell("qty")) if "qty" in cols else None,
         "places": number(cell("places")),
         "note": str(cell("note") or "").strip(),
     }
@@ -222,7 +227,8 @@ def merge_same(rows):
         key = barcode_norm(item["barcode"]) or item["article"].upper()
         if key in seen:
             first = seen[key]
-            first["qty"] += item["qty"]
+            if item["qty"] is not None or first["qty"] is not None:
+                first["qty"] = (first["qty"] or 0) + (item["qty"] or 0)
             if item["places"] is not None:
                 first["places"] = (first["places"] or 0) + item["places"]
             merged += 1
@@ -236,10 +242,8 @@ def parse(filename, data):
     rows = read_rows(filename, data)
     start = next((i for i, row in enumerate(rows) if is_header(row)), -1)
     if start < 0:
-        raise ValueError("не нашёл шапку таблицы: нужны колонки «Артикул» и «Штрихкод»")
+        raise ValueError("не нашёл шапку таблицы: нужна колонка «Артикул» или «Штрихкод»")
     cols = map_columns(rows[start])
-    if "qty" not in cols:
-        raise ValueError("не нашёл колонку с количеством")
 
     positions = []
     stop = len(rows)
@@ -262,9 +266,6 @@ def parse(filename, data):
 
     positions, merged = merge_same(positions)
     problems = []
-    for item in positions:
-        if item["qty"] <= 0:
-            problems.append("%s: нет количества" % (item["article"] or item["barcode"]))
     if not positions:
         raise ValueError("в реестре нет ни одной позиции")
     return {
@@ -272,5 +273,5 @@ def parse(filename, data):
         "rows": positions,
         "merged": merged,
         "problems": problems,
-        "qty_total": sum(item["qty"] for item in positions),
+        "qty_total": sum(item["qty"] or 0 for item in positions),
     }

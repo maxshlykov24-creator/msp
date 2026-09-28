@@ -65,7 +65,23 @@ def parse_liters(raw):
 
 def parse_file(name, data):
     name = (name or "").lower()
-    if name.endswith(".xlsx") or name.endswith(".xls"):
+    if name.endswith(".xlsx") or name.endswith(".xls") or name.endswith(".xlsm"):
+        import registry
+
+        rows = registry.read_rows(name, data)
+        start = next((i for i, row in enumerate(rows) if registry.is_header(row)), -1)
+        if start >= 0:
+            cols = registry.map_columns(rows[start])
+            items = []
+            for row in rows[start + 1 :]:
+                item = registry.position(row, cols)
+                if item is None:
+                    if items:
+                        break
+                    continue
+                items.append(item)
+            if items:
+                return items
         import io
         from openpyxl import load_workbook
 
@@ -74,22 +90,84 @@ def parse_file(name, data):
         for ws in wb.worksheets:
             for row in ws.iter_rows(values_only=True):
                 bits.append(" ".join("" if v is None else str(v) for v in row))
-        return parse_barcodes("\n".join(bits))
+        text = "\n".join(bits)
+        items = parse_items(text)
+        have = {barcode_norm(i["barcode"]) for i in items if i.get("barcode")}
+        for hit in BARCODE_RE.findall(text):
+            key = barcode_norm(hit)
+            if key in have:
+                continue
+            have.add(key)
+            items.append({"barcode": hit, "article": "", "name": "", "qty": None})
+        return items
     text = data.decode("utf-8-sig", errors="replace")
-    return parse_barcodes(text)
+    return parse_items(text)
+
+
+def _is_qty(raw):
+    text = str(raw or "").strip().replace(",", ".")
+    if not text or not re.fullmatch(r"\d+(?:\.\d+)?", text):
+        return False
+    digits = text.split(".", 1)[0]
+    return len(digits) < 8
+
+
+def _as_item(body, qty):
+    body = str(body or "").strip()
+    if body.endswith(".0") and body[:-2].isdigit():
+        body = body[:-2]
+    hit = BARCODE_RE.fullmatch(body)
+    if hit:
+        return {"barcode": hit.group(0), "article": "", "name": "", "qty": qty}
+    if not body or _is_qty(body):
+        return None
+    return {"barcode": "", "article": body, "name": "", "qty": qty}
+
+
+def parse_items(text):
+    """Позиции из текста. Количество в строке необязательно.
+
+    «2043339560409» — позиция без количества.
+    «2043339560409 12» или «2043339560409;12» — сразу с количеством.
+    Строка без штрихкода считается артикулом.
+    """
+    found = []
+    seen = {}
+    for line in str(text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        chunks = [line]
+        bits = [b.strip() for b in line.split(",") if b.strip()]
+        if len(bits) > 1 and all(BARCODE_RE.fullmatch(b) for b in bits):
+            chunks = bits
+        elif len(bits) == 2 and BARCODE_RE.fullmatch(bits[0]) and _is_qty(bits[1]):
+            chunks = ["%s %s" % (bits[0], bits[1])]
+        for chunk in chunks:
+            qty = None
+            body = chunk.strip()
+            matched = re.match(r"^(.+?)[;\t ]+(\d+(?:[.,]\d+)?)$", body)
+            if matched and _is_qty(matched.group(2)):
+                body = matched.group(1).strip()
+                qty = float(matched.group(2).replace(",", "."))
+            item = _as_item(body, qty)
+            if not item:
+                continue
+            key = barcode_norm(item["barcode"]) or item["article"].upper()
+            if not key:
+                continue
+            if key in seen:
+                prev = seen[key]
+                if item["qty"] is not None:
+                    prev["qty"] = (prev["qty"] or 0) + item["qty"]
+                continue
+            seen[key] = item
+            found.append(item)
+    return found
 
 
 def parse_barcodes(text):
-    seen = []
-    have = set()
-    for hit in BARCODE_RE.findall(str(text or "")):
-        code = hit.strip()
-        key = code.upper() if code.upper().startswith("OZN") else "".join(ch for ch in code if ch.isdigit()) or code
-        if key in have:
-            continue
-        have.add(key)
-        seen.append(code)
-    return seen
+    return [item["barcode"] for item in parse_items(text) if item["barcode"]]
 
 
 def lookup(client_id, barcode, article="", hits=None):
@@ -257,51 +335,151 @@ def refresh_client_catalog(client_id):
     return notes
 
 
-def add_many(client_id, barcodes, liters=None, kind="", author="", refresh=True, pick_rate=None, qty=None):
+def add_many(client_id, barcodes, liters=None, kind="", author="", refresh=True, pick_rate=None, qty=None, count=False):
     client = get_client_by_id(int(client_id))
     if not client:
         raise ValueError("клиент не найден")
-    codes = parse_barcodes("\n".join(barcodes) if not isinstance(barcodes, str) else barcodes)
-    if isinstance(barcodes, (list, tuple)) and not codes:
-        codes = [str(x).strip() for x in barcodes if str(x).strip()]
-    if not codes:
-        raise ValueError("нет штрихкодов")
+    items = _items_of(barcodes, qty)
+    if not items:
+        raise ValueError("нет позиций")
     pulled = []
     if refresh:
         pulled = refresh_client_catalog(client["id"])
     added = []
     skipped = []
+    updated = []
     found = 0
     missing = 0
     liters_val, dims_val = parse_liters(liters)
-    qty_val = parse_num(qty)
     pick_val = parse_num(pick_rate)
     if pick_val is None:
         pick_val = parse_num(client["tariff_pick"])
-    for code in codes:
-        fields = fields_of(
-            client["id"], code, liters_val, kind, pick_rate=pick_val, qty=qty_val, dims=dims_val
+    for item in items:
+        result = _place_item(
+            client["id"],
+            item,
+            liters_val,
+            kind,
+            pick_val,
+            dims_val,
+            author,
+            count=count,
         )
-        same = find_queued_same(client["id"], code, fields.get("gtin") or "")
-        if same:
-            mps = "+".join(sorted({p for p in ((same["marketplace"] or "") + "+" + (fields.get("marketplace") or "")).split("+") if p}))
-            if mps and mps != (same["marketplace"] or ""):
-                update_intake_row(same["id"], marketplace=mps)
-            skipped.append({"barcode": code, "note": "тот же товар уже в очереди"})
-            continue
-        rid = add_intake_row(client["id"], fields, now_iso(), author)
-        row = {"id": rid, "barcode": code, "state": fields["state"], "note": fields["note"], "name": fields["name"]}
-        added.append(row)
-        if fields["note"] == "нет в кабинетах этого клиента":
-            missing += 1
+        if result["kind"] == "updated":
+            updated.append(result["row"])
+        elif result["kind"] == "skipped":
+            skipped.append(result["row"])
         else:
-            found += 1
+            added.append(result["row"])
+            if result["row"]["note"] == "нет в кабинетах этого клиента":
+                missing += 1
+            else:
+                found += 1
     return {
         "added": added,
         "skipped": skipped,
+        "updated": updated,
         "found": found,
         "missing": missing,
         "pulled": pulled,
+    }
+
+
+def _items_of(barcodes, qty):
+    """Текст, список штрихкодов или уже разобранные строки файла."""
+    fallback = parse_num(qty)
+    if isinstance(barcodes, str):
+        items = parse_items(barcodes)
+    else:
+        items = []
+        for raw in barcodes or []:
+            if isinstance(raw, dict):
+                items.append(
+                    {
+                        "barcode": str(raw.get("barcode") or "").strip(),
+                        "article": str(raw.get("article") or "").strip(),
+                        "name": str(raw.get("name") or "").strip(),
+                        "qty": raw.get("qty"),
+                    }
+                )
+            else:
+                items.extend(parse_items(str(raw)))
+    out = []
+    for item in items:
+        if not item.get("barcode") and not item.get("article"):
+            continue
+        if item.get("qty") is None:
+            item["qty"] = fallback
+        out.append(item)
+    return out
+
+
+def _place_item(client_id, item, liters, kind, pick_rate, dims, author, count=False):
+    """Новая позиция, запись количества или +1 со сканера.
+
+    Без числа позиция встаёт в очередь с пустым количеством. Повтор с числом
+    записывает его. Сканер (count) прибавляет к уже лежащей строке.
+    """
+    code = str(item.get("barcode") or "").strip()
+    article = str(item.get("article") or "").strip()
+    name = str(item.get("name") or "").strip()
+    line_qty = item.get("qty")
+    hits = None
+    clash = ""
+    hint = ""
+    if not code and article:
+        hits, clash, hint = match_registry(client_id, "", article)
+        if hits and not clash:
+            code = prefer_hit(hits)[0]["ext_barcode"] or ""
+    fields = fields_of(
+        client_id,
+        code,
+        liters,
+        kind,
+        pick_rate=pick_rate,
+        qty=line_qty if line_qty else (1 if count else None),
+        dims=dims,
+        hits=hits or None,
+        fallback={"article": article, "name": name},
+    )
+    if clash:
+        fields["state"] = "clash"
+        fields["note"] = clash
+    elif hint and fields["note"]:
+        fields["note"] = "%s · %s" % (hint, fields["note"])
+    elif hint:
+        fields["note"] = hint
+    same = find_queued_same(client_id, code or fields.get("barcode") or "", fields.get("gtin") or "", article or fields.get("article") or "")
+    if same and count:
+        step = float(line_qty) if line_qty else 1
+        patched = patch(same["id"], qty=float(same["qty"] or 0) + step)
+        return {
+            "kind": "updated",
+            "row": {"id": same["id"], "barcode": patched["barcode"] or code or article, "qty": patched["qty"], "name": patched["name"], "note": patched["note"]},
+        }
+    if same and line_qty:
+        patched = patch(same["id"], qty=line_qty)
+        return {
+            "kind": "updated",
+            "row": {"id": same["id"], "barcode": patched["barcode"] or code or article, "qty": patched["qty"], "name": patched["name"], "note": patched["note"]},
+        }
+    if same:
+        mps = "+".join(
+            sorted(
+                {
+                    p
+                    for p in ((same["marketplace"] or "") + "+" + (fields.get("marketplace") or "")).split("+")
+                    if p
+                }
+            )
+        )
+        if mps and mps != (same["marketplace"] or ""):
+            update_intake_row(same["id"], marketplace=mps)
+        return {"kind": "skipped", "row": {"barcode": code or article, "note": "тот же товар уже в очереди"}}
+    rid = add_intake_row(client_id, fields, now_iso(), author)
+    return {
+        "kind": "added",
+        "row": {"id": rid, "barcode": fields["barcode"] or article, "state": fields["state"], "note": fields["note"], "name": fields["name"], "qty": fields["qty"] or 0},
     }
 
 
@@ -326,19 +504,31 @@ def add_registry(client_id, filename, data, author="", refresh=True, pick_rate=N
     )
     added = []
     skipped = []
+    updated = []
     clashes = 0
     matched = 0
     for item in parsed["rows"]:
         hits, clash, hint = match_registry(client["id"], item["barcode"], item["article"])
         same = find_queued_same(client["id"], item["barcode"], "", item["article"])
         if same:
-            skipped.append(
-                {
-                    "article": item["article"],
-                    "barcode": item["barcode"],
-                    "note": "тот же товар уже в очереди, строка %s" % same["id"],
-                }
-            )
+            if item["qty"]:
+                patched = patch(same["id"], qty=item["qty"])
+                updated.append(
+                    {
+                        "id": same["id"],
+                        "article": item["article"],
+                        "barcode": item["barcode"] or patched["barcode"],
+                        "qty": patched["qty"],
+                    }
+                )
+            else:
+                skipped.append(
+                    {
+                        "article": item["article"],
+                        "barcode": item["barcode"],
+                        "note": "тот же товар уже в очереди, строка %s" % same["id"],
+                    }
+                )
             continue
         fields = fields_of(
             client["id"],
@@ -378,6 +568,7 @@ def add_registry(client_id, filename, data, author="", refresh=True, pick_rate=N
         "supply": parsed["supply"],
         "added": added,
         "skipped": skipped,
+        "updated": updated,
         "matched": matched,
         "clashes": clashes,
         "missing": sum(1 for r in added if r["note"] == "нет в кабинетах этого клиента"),

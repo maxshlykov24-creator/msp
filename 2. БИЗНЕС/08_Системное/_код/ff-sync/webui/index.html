@@ -261,12 +261,12 @@
       <div class="actions">
         <label class="btn filebtn">Загрузить реестр поставки<input id="iRegistry" type="file" accept=".xlsx,.xlsm,.xls,.docx"></label>
         <button class="btn-ghost" id="iSupplies" type="button">Поставки</button>
-        <span class="sel">Excel от клиента: артикул, штрихкод, наименование, количество. Позиции считываем по артикулу и сверяем с кабинетами.</span>
+        <span class="sel">Excel или Word. Артикул или штрихкод. Колонка «Количество» необязательна: есть число, проставим сразу, нет числа, позицию можно досчитать потом.</span>
       </div>
       <div class="msg" id="iRegMsg"></div>
       <div class="fld grow" style="margin-top:18px">
         <label>Штрихкоды вручную</label>
-        <textarea id="iBarcodes" rows="4" placeholder="По одному в строке или через запятую. Можно вставить столбец из Excel."></textarea>
+        <textarea id="iBarcodes" rows="4" placeholder="Штрихкод или артикул. Количество по желанию: 2043339560409 12"></textarea>
       </div>
       <div class="actions">
         <button class="btn" id="iAdd" type="button">Сверить с кабинетами</button>

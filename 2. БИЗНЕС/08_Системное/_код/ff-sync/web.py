@@ -339,6 +339,7 @@ def intake_add(data: dict = Body(...), ff_session: str = Cookie(default="")):
             refresh=bool(data.get("refresh", True)),
             pick_rate=data.get("pick_rate", data.get("tariff")),
             qty=data.get("qty"),
+            count=bool(data.get("count")),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -354,7 +355,7 @@ def intake_file(data: dict = Body(...), ff_session: str = Cookie(default="")):
     raw = base64.b64decode(data.get("content") or "")
     codes = parse_file(data.get("filename") or "", raw)
     if not codes:
-        raise HTTPException(status_code=400, detail="в файле нет штрихкодов")
+        raise HTTPException(status_code=400, detail="в файле нет позиций")
     try:
         res = add_many(
             data.get("client_id"),
