@@ -312,7 +312,7 @@ export async function updateStage(
 }
 
 export type ConvertKindPatch = {
-  kind: "sale" | "company" | "rental";
+  kind: "sale" | "company" | "rental" | "deferred" | "promise";
   companyName?: string;
   managerName?: string;
   managerPhone?: string;
@@ -340,6 +340,30 @@ export async function convertDealKind(
   if (!deal) return null;
   const nextKind = patch.kind;
   if (deal.kind === nextKind) return deal;
+
+  // Обратно в отложку или обещание: номер и уже заполненные поля продажи остаются.
+  if (nextKind === "deferred" || nextKind === "promise") {
+    const updated: Deal = {
+      ...deal,
+      kind: nextKind,
+      history: [
+        ...(deal.history ?? []),
+        {
+          at: new Date().toISOString(),
+          who,
+          action: `Тип изменён: ${DEAL_KIND_TITLE[deal.kind] ?? deal.kind} → ${DEAL_KIND_TITLE[nextKind]}`,
+        },
+      ],
+    };
+    await persist(updated);
+    if (deal.amoLeadId) {
+      await amo
+        .addLeadNote(deal.amoLeadId, `Касса: тип заявки изменён на «${DEAL_KIND_TITLE[nextKind]}»`)
+        .catch(() => {});
+    }
+    broadcast("deal.updated", { number: deal.number });
+    return updated;
+  }
 
   if (nextKind === "sale" || nextKind === "company") {
     if (!deal.items?.length) throw new Error("В заявке нет товаров — добавьте позиции перед сменой типа");

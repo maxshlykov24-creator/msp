@@ -15,11 +15,18 @@ import { productCodesByMsIds, productNamesByMsIds, resolveAssortment } from "./c
 import * as deals from "./deals.js";
 import * as taskFlow from "./taskFlow.js";
 
-/** Перемещение вручную — только из отложки / обещания. */
-const MOVEMENT_DEAL_KINDS = new Set(["deferred", "promise"]);
 const MOVEMENT_DEAL_KIND_LABEL: Record<string, string> = {
   deferred: "Отложка",
   promise: "Обещание",
+  sale: "Продажа",
+  company: "Продажа компании",
+  rental: "Аренда",
+  delivery: "Доставка",
+  cert_plastic: "Сертификат",
+  cert_digital: "Сертификат",
+  defect: "Дефект",
+  refund: "Возврат",
+  exchange: "Обмен",
 };
 
 function toTask(row: typeof tasks.$inferSelect): Task {
@@ -459,15 +466,12 @@ export async function createMovement(input: {
   title: string;
   metadata?: Record<string, unknown>;
 }, createdBy: string): Promise<Task> {
-  // С заявкой — только отложка / обещание. Без заявки — свободное перемещение из очереди задач.
+  // С заявкой — любой вид. Без заявки — свободное перемещение из очереди задач.
   let dealKind: string | undefined;
   let dealKindLabel: string | undefined;
   if (input.dealNumber) {
     const deal = await deals.getByNumber(input.dealNumber);
     if (!deal) throw new Error(`Заявка #${input.dealNumber} не найдена`);
-    if (!MOVEMENT_DEAL_KINDS.has(deal.kind)) {
-      throw new Error("Перемещение по заявке можно создать только из отложки или обещания");
-    }
     dealKind = deal.kind;
     dealKindLabel = MOVEMENT_DEAL_KIND_LABEL[deal.kind] ?? deal.kind;
   }

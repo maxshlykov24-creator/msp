@@ -237,7 +237,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       {/* Товары, стоимость и скидка */}
       <Card>
         <SectionTitle>Товары, стоимость и скидка</SectionTitle>
-        <ProductPicker items={items} onChange={setItems} dealNumber={meta.number} />
+        <ProductPicker items={items} onChange={setItems} dealNumber={meta.number} dealKind="sale" />
         <div className="mt-3 max-w-[220px]">
           <div className="field-label">Доставка</div>
           <input

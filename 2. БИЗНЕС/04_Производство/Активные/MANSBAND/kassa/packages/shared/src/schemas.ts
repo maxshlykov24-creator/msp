@@ -187,7 +187,7 @@ export const companyHandoverSchema = z
 /** Смена типа отложки/обещания без смены номера заявки (п.1.1 правок 10.08). */
 export const convertKindSchema = z
   .object({
-    kind: z.enum(["sale", "company", "rental"]),
+    kind: z.enum(["sale", "company", "rental", "deferred", "promise"]),
     companyName: z.string().optional(),
     managerName: z.string().optional(),
     managerPhone: z.string().optional(),

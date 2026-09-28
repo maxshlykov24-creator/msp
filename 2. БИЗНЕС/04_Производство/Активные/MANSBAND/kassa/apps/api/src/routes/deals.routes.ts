@@ -248,7 +248,13 @@ export default async function dealsRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
     const existing = await deals.resolve(ref);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
-    if (existing.kind !== "deferred" && existing.kind !== "promise" && existing.kind !== "sale") {
+    const toHold = parsed.data.kind === "deferred" || parsed.data.kind === "promise";
+    if (
+      !toHold &&
+      existing.kind !== "deferred" &&
+      existing.kind !== "promise" &&
+      existing.kind !== "sale"
+    ) {
       return reply.code(400).send({ message: "Менять тип можно у отложки, обещания и продажи" });
     }
     if (COMPLETED_STAGES.has(existing.stage) && !canEditClosed(req.user)) {
@@ -258,7 +264,9 @@ export default async function dealsRoutes(app: FastifyInstance) {
       const { photos, ...kindPatch } = parsed.data;
       const updated = await deals.convertDealKind(ref, kindPatch, req.user.name);
       if (!updated) return reply.code(404).send({ message: "Заявка не найдена" });
-      await sale.afterKindConverted(updated, req.user.name, photos as PhotoInput[] | undefined);
+      if (!toHold) {
+        await sale.afterKindConverted(updated, req.user.name, photos as PhotoInput[] | undefined);
+      }
       await appendAudit({
         actor: { id: req.user.sub, name: req.user.name, role: req.user.role },
         action: "deal.kind_converted",

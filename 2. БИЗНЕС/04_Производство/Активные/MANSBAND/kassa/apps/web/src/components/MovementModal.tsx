@@ -10,8 +10,10 @@ import {
   taskTitle,
   type Product,
 } from "@kassa/shared";
-import type { CartItem } from "../data/types";
+import type { CartItem, Deal, DealKind } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
+import { KIND_LABEL } from "../lib/labels";
+import { useStore } from "../store";
 import { Button, Modal, Select, opts } from "./ui";
 import { groupLocations } from "../lib/selectGroups";
 
@@ -74,6 +76,7 @@ export function MovementModal({
   /** Перед созданием задачи: сохранить заявку и вернуть серверный номер (форма создания). */
   ensureDeal,
   onCreated,
+  dealKind,
 }: {
   open: boolean;
   onClose: () => void;
@@ -86,8 +89,14 @@ export function MovementModal({
   defaultTarget?: string;
   ensureDeal?: () => Promise<{ dealNumber: number; store: string } | null>;
   onCreated?: (summary: string) => void;
+  /** Вид заявки, если уже известен. Иначе модалка сама читает заявку по номеру. */
+  dealKind?: string;
 }) {
+  const { replaceDeal } = useStore();
   const seedItems = initialItems ?? EMPTY_ITEMS;
+  const [kindGate, setKindGate] = useState<"loading" | "ask" | "ready">("ready");
+  const [liveKind, setLiveKind] = useState<string | null>(dealKind ?? null);
+  const [kindBusy, setKindBusy] = useState(false);
   const [items, setItems] = useState<CartItem[]>(seedItems);
   const [warehouses, setWarehouses] = useState<WarehouseRef[]>([]);
   const [target, setTarget] = useState(MOVEMENT_TARGETS[0]!);
@@ -115,6 +124,72 @@ export function MovementModal({
     if (success) onCreated?.(success);
     setSuccess(null);
     onClose();
+  }
+
+  useEffect(() => {
+    if (!open) {
+      setKindGate("ready");
+      setKindBusy(false);
+      return;
+    }
+    if (!dealNumber) {
+      setKindGate("ready");
+      return;
+    }
+    const known = dealKind ?? null;
+    if (known === "deferred" || known === "promise") {
+      setLiveKind(known);
+      setKindGate("ready");
+      return;
+    }
+    if (known) {
+      setLiveKind(known);
+      setKindGate("ask");
+      return;
+    }
+    if (USE_MOCK) {
+      setKindGate("ready");
+      return;
+    }
+    let cancelled = false;
+    setKindGate("loading");
+    void api
+      .get<Deal>(`/deals/${dealNumber}`)
+      .then((deal) => {
+        if (cancelled || !deal) return;
+        setLiveKind(deal.kind);
+        setKindGate(deal.kind === "deferred" || deal.kind === "promise" ? "ready" : "ask");
+      })
+      .catch(() => {
+        if (!cancelled) setKindGate("ready");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, dealNumber, dealKind]);
+
+  async function switchKind(next: "deferred" | "promise") {
+    if (!dealNumber || USE_MOCK) {
+      setLiveKind(next);
+      setKindGate("ready");
+      return;
+    }
+    setKindBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patch<Deal>(`/deals/${dealNumber}/kind`, { kind: next });
+      if (updated) {
+        replaceDeal(updated);
+        setLiveKind(updated.kind);
+      } else {
+        setLiveKind(next);
+      }
+      setKindGate("ready");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сменить тип заявки");
+    } finally {
+      setKindBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -340,6 +415,37 @@ export function MovementModal({
             <div className="flex justify-center">
               <Button onClick={finishSuccess}>Готово</Button>
             </div>
+          </div>
+        ) : kindGate !== "ready" ? (
+          <div className="space-y-4">
+            {kindGate === "loading" ? (
+              <div className="py-6 text-center text-mute text-sm flex items-center justify-center gap-2">
+                <Loader2 size={16} className="animate-spin" /> Проверяю тип заявки…
+              </div>
+            ) : (
+              <>
+                <p className="text-[14px] text-white leading-snug">
+                  Заявка сейчас «{KIND_LABEL[liveKind as DealKind] ?? liveKind ?? "другой тип"}».
+                  Сменить тип на отложку или обещание перед перемещением?
+                </p>
+                <p className="text-[13px] text-mute leading-snug">
+                  Уже заполненные поля останутся. Если тип менять не нужно, задача перемещения
+                  создастся с текущим видом заявки.
+                </p>
+                {error && <div className="text-[13px] text-red-300">{error}</div>}
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="subtle" disabled={kindBusy} onClick={() => setKindGate("ready")}>
+                    Не надо
+                  </Button>
+                  <Button variant="subtle" disabled={kindBusy} onClick={() => void switchKind("promise")}>
+                    Обещание
+                  </Button>
+                  <Button disabled={kindBusy} onClick={() => void switchKind("deferred")}>
+                    Отложка
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         ) : (
         <div className="space-y-4">

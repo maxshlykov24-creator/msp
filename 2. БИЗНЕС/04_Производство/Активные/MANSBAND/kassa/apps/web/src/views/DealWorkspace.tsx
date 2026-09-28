@@ -439,7 +439,7 @@ export function DealWorkspace({
       {!readOnly && (
         <Hint>
           Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
-          сверху. Перемещение из карточки доступно для отложки и обещания.
+          сверху. Перемещение из продажи и других видов спросит, сменить ли тип на отложку или обещание.
         </Hint>
       )}
 
@@ -449,11 +449,7 @@ export function DealWorkspace({
           onConvert={canConvert ? () => setConvertOpen(true) : undefined}
           onHistory={() => setHistoryOpen(true)}
           historyCount={history.length}
-          onMovement={
-            !readOnly && (live.kind === "deferred" || live.kind === "promise")
-              ? () => setMoveOpen(true)
-              : undefined
-          }
+          onMovement={!readOnly ? () => setMoveOpen(true) : undefined}
         />
 
         <MovementModal
@@ -466,6 +462,7 @@ export function DealWorkspace({
           // позиции из каталога прямо в перемещении (созвон 04.09).
           allowCatalogPick={items.length === 0}
           defaultTarget={defaultMovementTarget(live.store || "На Бауманской")}
+          dealKind={live.kind}
           onCreated={(summary) => {
             void (async () => {
               addDealComment(live.id, `Перемещение ${summary}`, activeConsultant);
@@ -586,7 +583,13 @@ export function DealWorkspace({
 
         <Card>
           <SectionTitle>Товары</SectionTitle>
-          <ProductPicker items={items} onChange={setItems} readOnly={readOnly} dealNumber={live.number} />
+          <ProductPicker
+            items={items}
+            onChange={setItems}
+            readOnly={readOnly}
+            dealNumber={live.number}
+            dealKind={live.kind}
+          />
           {itemStates.length > 0 && (
             <div className="mt-3 border-t border-ink-800 pt-3">
               <div className="field-label mb-1.5">Расположение позиций</div>

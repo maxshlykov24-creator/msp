@@ -335,6 +335,7 @@ export function ProductPicker({
   allowedFrom,
   readOnly = false,
   dealNumber,
+  dealKind,
   showMovement = true,
   onMovementCreated,
 }: {
@@ -344,6 +345,7 @@ export function ProductPicker({
   allowedFrom?: CartItem[];
   readOnly?: boolean;
   dealNumber?: number;
+  dealKind?: string;
   showMovement?: boolean;
   onMovementCreated?: (summary: string) => void;
 }) {
@@ -1069,6 +1071,7 @@ export function ProductPicker({
         dealNumber={dealNumber}
         store={activeStore}
         items={items}
+        dealKind={dealKind}
         onCreated={onMovementCreated}
       />
 
