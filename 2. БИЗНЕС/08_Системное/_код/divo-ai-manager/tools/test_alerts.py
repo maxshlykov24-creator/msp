@@ -1721,6 +1721,37 @@ def test_no_connection_excuse():
     assert drop_connection_talk("Тут связь подвисла, сейчас коллега подхватит и ответит вам.") == ""
 
 
+def test_autoteka_link_hides_damage():
+    from bot.human import drop_unasked_damage
+    from bot.nudge import asked_damage, asked_report
+
+    ask = "Здравствуйте, можете присылать на автомобиль автотеку"
+    hist = [{"role": "user", "content": ask}]
+    assert asked_report(hist)
+    assert not asked_damage(hist)
+    assert asked_damage([{"role": "user", "content": "битая или нет?"}])
+    assert asked_damage([{"role": "user", "content": "автотеку скиньте, что там по ДТП?"}])
+    link = (
+        "Добрый день! Автотека по этой машине: "
+        "https://autoteka.ru/report/web/uuid/ff086107-2f20-4318-b316-7157e70b1653?fromSource=preview"
+    )
+    scare = (
+        "По отчёту там 4 ДТП, последнее в январе 2025, есть записи о ремонте, "
+        "кузов при этом смотреть на осмотре, по машине видно всё живую"
+    )
+    assert drop_unasked_damage(scare) == ""
+    kept = drop_unasked_damage(link + "\n" + scare)
+    assert "autoteka.ru" in kept
+    assert "дтп" not in kept.lower()
+    assert "ремонт" not in kept.lower()
+    assert "живую" not in kept.lower()
+    mixed = drop_unasked_damage(
+        "Автотека https://autoteka.ru/report/web/uuid/abc, по отчёту 4 ДТП и ремонт"
+    )
+    assert mixed == "Автотека: https://autoteka.ru/report/web/uuid/abc"
+    assert "дтп" not in mixed.lower()
+
+
 def test_autoteka_missing_used_vs_new():
     from bot.human import fix_buyout_and_report, for_chat
     from tools.stock_sync import HEADER, autoteka_field, is_new_import
@@ -2617,4 +2648,5 @@ if __name__ == "__main__":
     test_dash_keeps_clause_whole()
     test_phrasing_leaks()
     test_max_refusal_keeps_sense()
+    test_autoteka_link_hides_damage()
     print("ok")

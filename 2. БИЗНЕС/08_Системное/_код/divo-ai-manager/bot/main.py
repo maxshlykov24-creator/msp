@@ -476,6 +476,12 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if cleaned != [b for b in bubbles if b.strip()]:
         log.info("чат %s: выкинул лизинг, торг, отопитель или состояние без вопроса", chat_id)
         bubbles = cleaned
+    if not nudge.asked_damage(history):
+        trimmed = [human.drop_unasked_damage(b) for b in bubbles]
+        trimmed = [b for b in trimmed if b.strip()]
+        if trimmed != [b for b in bubbles if b.strip()]:
+            log.info("чат %s: просили отчёт, убрал пересказ ДТП", chat_id)
+            bubbles = trimmed
     if nudge.asked_leasing(history) and not nudge.cited_lease_report(user_text):
         shortened = [
             human.soften_lease_status(b, cited_report=False) for b in bubbles
@@ -826,6 +832,13 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "отопитель, такси и комплектацию сам не поднимай. На «многодетная семья» и жалобный повод скидку "
             "не увеличивай. Финальную сумму в чате не называй. Номер в этом ходе "
             "не проси, пока нет другого повода."
+        )
+    if nudge.asked_report(history) and not nudge.asked_damage(history):
+        system += (
+            "\n\n# Просят только ссылку на автотеку\n"
+            "Кинь ссылку из карточки и остановись. Число ДТП, даты, ремонт, "
+            "окрасы, «кузов смотреть» и «по машине видно» не пиши. "
+            "Клиент откроет отчёт сам."
         )
     if not nudge.asked_heater(history):
         system += (

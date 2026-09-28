@@ -981,6 +981,45 @@ def soften_hard_torg(text: str, *, allow_torg: bool = False) -> str:
     return _tidy(body, original)
 
 
+_DAMAGE_VOLUNTEER = re.compile(
+    r"("
+    r"дтп|"
+    r"авар|"
+    r"ремонт|"
+    r"окрас|"
+    r"\bбит(?:ая|ый|ые|о)\b|"
+    r"кузовн|"
+    r"по кузову|"
+    r"кузов\s+(?:при|смотреть|чинил|цел)|"
+    r"видно всё жив|"
+    r"смотреть на осмотре|"
+    r"видно при осмотре"
+    r")",
+    re.IGNORECASE,
+)
+_LINK = re.compile(r"https?://\S+")
+
+
+def drop_unasked_damage(text: str) -> str:
+    """Просили отчёт, а не разбор: ссылка остаётся, пересказ аварий уходит.
+
+    «4 ДТП, ремонт, кузов смотреть» клиент прочитает в автотеке сам.
+    В чат это звучит как приговор машине, хотя вопроса про аварии не было.
+    """
+    original = text or ""
+    if not original.strip() or not _DAMAGE_VOLUNTEER.search(original):
+        return original
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?\n])\s+", original):
+        if not _DAMAGE_VOLUNTEER.search(part):
+            kept.append(part)
+            continue
+        for url in _LINK.findall(part):
+            kept.append("Автотека: %s" % url.rstrip(".,)"))
+    body = " ".join(p.strip() for p in kept if p.strip()).strip()
+    return _tidy(body, original) if body else ""
+
+
 def drop_unsolicited(
     text: str,
     *,

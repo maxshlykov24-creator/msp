@@ -755,6 +755,34 @@ def asked_condition(messages: list[dict] | None) -> bool:
     return any(key in blob for key in keys)
 
 
+def asked_report(messages: list[dict] | None) -> bool:
+    """Просят ссылку на автотеку, а не разбор аварий."""
+    return bool(re.search(r"автотек|отч[её]т", _last_user(messages)))
+
+
+def asked_damage(messages: list[dict] | None) -> bool:
+    """Спросили именно про ДТП, ремонт или кузов.
+
+    «Пришлите автотеку» сюда не входит: ссылку кидаем без пересказа аварий.
+    """
+    blob = _last_user(messages)
+    keys = (
+        "дтп",
+        "авар",
+        "ремонт",
+        "окрас",
+        "битая",
+        "битый",
+        "битые",
+        "било",
+        "кузов",
+        "толщиномер",
+        "микрон",
+        "крашен",
+    )
+    return any(key in blob for key in keys)
+
+
 WANTS_CALL = re.compile(
     r"("
     r"позвон(ите|и)|набер(ите|и)|перезвон|"
