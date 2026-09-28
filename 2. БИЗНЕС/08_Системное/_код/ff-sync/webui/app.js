@@ -508,10 +508,12 @@ $("iTbl").onchange = async (e) => {
 
 function intakeSummary(res) {
   const bits = [
-    `Сверил ${res.added.length} штрихкодов.`,
+    res.added.length ? `Добавил ${res.added.length}.` : "",
     res.found ? `Нашлось в кабинетах: ${res.found}.` : "",
     res.missing ? `Нет в кабинетах: ${res.missing}.` : "",
+    (res.updated || []).length ? `Количество записал у ${(res.updated || []).length}.` : "",
     res.skipped.length ? `Уже были в очереди: ${res.skipped.length}.` : "",
+    res.added.some((r) => !(r.qty > 0)) ? "Где количество пустое, его можно вписать в таблице или пикнуть сканером. В МойСклад такая строка уйдёт, когда число будет." : "",
   ];
   return bits.filter(Boolean).join(" ");
 }
@@ -538,6 +540,31 @@ $("iAdd").onclick = async () => {
   $("iAdd").disabled = false;
 };
 
+$("iScan").onkeydown = async (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const code = $("iScan").value.trim();
+  if (!code) return;
+  const clientId = resolveIntakeClient();
+  if (!clientId) { say($("iScanMsg"), "Выбери контрагента.", "bad"); return; }
+  $("iScan").disabled = true;
+  try {
+    const res = await api("/api/intake", {
+      method: "POST",
+      body: JSON.stringify({ client_id: clientId, text: code, count: true, refresh: false }),
+    });
+    const row = (res.updated || [])[0] || (res.added || [])[0];
+    const qty = row && row.qty ? row.qty : "";
+    say($("iScanMsg"), row ? `${row.barcode}: количество ${qty}` : "Не разобрал штрихкод.", row ? "ok" : "bad");
+    $("iScan").value = "";
+    loadIntake();
+  } catch (err) {
+    say($("iScanMsg"), err.message, "bad");
+  }
+  $("iScan").disabled = false;
+  $("iScan").focus();
+};
+
 function fileBase64(file) {
   return file.arrayBuffer().then((buf) => {
     const bytes = new Uint8Array(buf);
@@ -560,7 +587,9 @@ function registrySummary(res) {
     res.matched ? `Сошлось с кабинетами: ${res.matched}.` : "",
     res.clashes ? `Спорных, нужно выбрать товар: ${res.clashes}.` : "",
     res.missing ? `Нет в кабинетах: ${res.missing}.` : "",
+    (res.updated || []).length ? `Количество записал у ${(res.updated || []).length}.` : "",
     res.skipped.length ? `Уже были в очереди: ${res.skipped.length}.` : "",
+    res.added.length && res.added.every((r) => !(r.qty > 0)) ? "Количества в файле не было. Его можно вписать в таблице или пикнуть сканером." : "",
     res.merged ? `Одинаковых строк реестра слито: ${res.merged}.` : "",
     (res.problems || []).join(" "),
   ];
