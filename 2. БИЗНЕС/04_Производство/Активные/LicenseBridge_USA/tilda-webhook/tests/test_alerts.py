@@ -89,3 +89,26 @@ def test_new_lead_escapes_html_in_name(sent):
 
     alerts.new_lead(FakeClient(), lead)
     assert "&lt;b&gt;FB&lt;/b&gt; &amp; NY" in sent[0][0]
+
+
+def test_missing_email_only_for_facebook_and_tilda():
+    fb = {"id": 1, "name": "Сделка", "custom_fields_values": [
+        {"field_id": settings.field_utm_source, "values": [{"value": "fb"}]},
+    ]}
+    assert alerts.lead_without_email(fb, []) is True
+    assert alerts.lead_without_email(fb, ["a@b.co"]) is False
+    assert alerts.lead_without_email({"id": 2, "name": "FB NY"}, []) is True
+    tilda = {"id": 4, "name": "Заявка", "custom_fields_values": [
+        {"field_id": settings.field_channel, "values": [{"value": "Tilda"}]},
+    ]}
+    assert alerts.lead_without_email(tilda, []) is True
+    assert alerts.lead_without_email({"id": 3, "name": "Звонок"}, []) is False
+
+
+def test_missing_email_alert_links_the_card(sent):
+    assert alerts.missing_email(FakeClient(), LEAD, "+18184632924") is True
+    text, key = sent[0]
+    assert "Заявка без email" in text
+    assert "/leads/detail/30436589" in text
+    assert "+18184632924" in text
+    assert key == "missing_email:30436589"

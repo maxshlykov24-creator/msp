@@ -30,3 +30,39 @@ def test_repeat_attaches_note_no_new_lead(fake, session, enable_all):
     assert len(fake.leads) == before  # новую сделку не создали
     notes = " ".join(n["params"]["text"] for n in fake.notes.get(("leads", existing), []))
     assert "Повторное обращение" in notes
+
+
+def _emails(fake, contact_id: int) -> list[str]:
+    out = []
+    for cf in fake.contacts[contact_id].get("custom_fields_values") or []:
+        if cf.get("field_id") == settings.field_email:
+            out.extend(v.get("value") for v in cf.get("values") or [])
+    return out
+
+
+def test_new_lead_stores_email(fake, session, enable_all):
+    res = process_intake(_ctx(fake, session), {
+        "name": "New", "phone": "+15551234567", "email": "a@b.co", "channel": "Tilda",
+    })
+    assert _emails(fake, res["contact_id"]) == ["a@b.co"]
+
+
+def test_repeat_fills_missing_email(fake, session, enable_all):
+    cid = fake.add_contact(name="Old", phone="+15551234567")
+    fake.add_lead(cid, settings.pipeline_id, settings.status_new)
+    res = process_intake(_ctx(fake, session), {
+        "name": "Old", "phone": "+15551234567", "email": "a@b.co", "channel": "Tilda",
+    })
+    assert res["action"] == "repeat"
+    assert _emails(fake, cid) == ["a@b.co"]
+
+
+def test_repeat_keeps_existing_email(fake, session, enable_all):
+    cid = fake.add_contact(name="Old", phone="+15551234567",
+                           **{str(settings.field_email): "a@b.co"})
+    fake.add_lead(cid, settings.pipeline_id, settings.status_new)
+    before = list(fake.contacts[cid]["custom_fields_values"])
+    process_intake(_ctx(fake, session), {
+        "name": "Old", "phone": "+15551234567", "email": "A@b.co", "channel": "Tilda",
+    })
+    assert fake.contacts[cid]["custom_fields_values"] == before

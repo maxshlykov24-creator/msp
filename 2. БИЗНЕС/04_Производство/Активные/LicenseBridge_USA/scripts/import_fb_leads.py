@@ -28,6 +28,8 @@ RESPONSIBLE_USER = 13291175     # Pavel
 
 PHONE_FIELD = 142532
 PHONE_ENUM_WORK = 120012
+EMAIL_FIELD = 142534
+EMAIL_ENUM_WORK = 120024
 CHANNEL_FIELD = 143104
 UTM_SOURCE_FIELD = 142546
 UTM_CAMPAIGN_FIELD = 142544
@@ -107,19 +109,54 @@ def find_contact_by_phone(phone: str, token: str):
     return contacts[0]["id"] if contacts else None
 
 
-def create_contact(name: str, phone: str, token: str):
-    payload = [{
-        "name": name or phone,
-        "responsible_user_id": RESPONSIBLE_USER,
-        "custom_fields_values": [{
+def create_contact(name: str, phone: str, email: str, token: str):
+    cf = []
+    if phone:
+        cf.append({
             "field_id": PHONE_FIELD,
             "values": [{"value": phone, "enum_id": PHONE_ENUM_WORK}],
-        }],
+        })
+    if email:
+        cf.append({
+            "field_id": EMAIL_FIELD,
+            "values": [{"value": email, "enum_id": EMAIL_ENUM_WORK}],
+        })
+    payload = [{
+        "name": name or phone or email,
+        "responsible_user_id": RESPONSIBLE_USER,
+        "custom_fields_values": cf,
     }]
     code, data = api("POST", "/contacts", token, payload)
     if code in (200, 201):
         return data["_embedded"]["contacts"][0]["id"]
     raise RuntimeError(f"create_contact failed {code}: {json.dumps(data, ensure_ascii=False)}")
+
+
+def _attach_email(contact_id: int, email: str, token: str) -> None:
+    """На уже существующий контакт дописать почту из выгрузки, не затирая старую."""
+    code, data = api("GET", f"/contacts/{contact_id}", token)
+    if code != 200 or not data:
+        return
+    current = []
+    for cf in data.get("custom_fields_values") or []:
+        if cf.get("field_id") == EMAIL_FIELD or cf.get("field_code") == "EMAIL":
+            current = cf.get("values") or []
+    have = {str(v.get("value") or "").strip().lower() for v in current}
+    if email.lower() in have:
+        return
+    values = []
+    for v in current:
+        val = str(v.get("value") or "").strip()
+        if not val:
+            continue
+        item = {"value": val}
+        if v.get("enum_id"):
+            item["enum_id"] = v["enum_id"]
+        values.append(item)
+    values.append({"value": email, "enum_id": EMAIL_ENUM_WORK})
+    api("PATCH", f"/contacts/{contact_id}", token, {
+        "custom_fields_values": [{"field_id": EMAIL_FIELD, "values": values}],
+    })
 
 
 def create_lead(lead_name, contact_id, channel, utm_source, utm_campaign,
@@ -169,20 +206,21 @@ def main():
 
     for r in rows:
         name = norm_name(r.get("full_name", ""))
-        phone = clean_phone(r.get("phone", ""))
+        phone = clean_phone(r.get("phone") or r.get("phone_number") or "")
+        email = (r.get("email") or "").strip()
         russian = norm_yesno(r.get("вы_русскоговорящий?_/_do_you_speak_russian?", ""))
         california = norm_yesno(r.get("вы_работаете_в_калифорнии?_/_do_you_work_in_california?", ""))
         utm_source = (r.get("platform", "") or "").strip()
         camp = campaign_short(r.get("campaign_name", ""))
         lead_name = f"FB {camp} — {name}".strip(" —")
 
-        if not phone:
+        if not phone and not email:
             errors += 1
-            report.append(f"SKIP (нет телефона): {name}")
+            report.append(f"SKIP (нет телефона и email): {name}")
             continue
 
         if dry:
-            report.append(f"DRY  {lead_name} | {phone} | RU={russian} CA={california} | src={utm_source} camp={camp}")
+            report.append(f"DRY  {lead_name} | {phone} | {email} | RU={russian} CA={california} | src={utm_source} camp={camp}")
             continue
 
         try:
@@ -191,8 +229,10 @@ def main():
                 dupes += 1
                 contact_id = existing
                 tag = "ДУБЛЬ→привязка"
+                if email:
+                    _attach_email(contact_id, email, token)
             else:
-                contact_id = create_contact(name, phone, token)
+                contact_id = create_contact(name, phone, email, token)
                 created += 1
                 tag = "новый"
                 time.sleep(0.3)

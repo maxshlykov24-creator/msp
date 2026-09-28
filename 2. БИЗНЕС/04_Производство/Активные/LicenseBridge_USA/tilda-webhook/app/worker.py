@@ -118,8 +118,14 @@ def handle_kommo_add_lead(ctx: Ctx, lead_id: int) -> dict[str, Any]:
 
         fresh = ctx.client.get_lead(lead_id, with_="contacts") or this_lead or {}
         if fresh:
+            from app.alerts import lead_without_email, missing_email
+            from app.identity import contact_emails
+
             phones = contact_phones(primary)
-            alerted = alert_new_lead(ctx.client, fresh, phones[0] if phones else "")
+            phone = phones[0] if phones else ""
+            alerted = alert_new_lead(ctx.client, fresh, phone)
+            if lead_without_email(fresh, contact_emails(primary or {})):
+                missing_email(ctx.client, fresh, phone)
     except Exception as exc:  # noqa: BLE001
         log.warning("new lead alert failed for %s: %s", lead_id, exc)
     return {"action": "add_lead_done", "lead": lead_id, "contact": contact_id,

@@ -332,13 +332,19 @@ code {
       <tr><td><strong>Created by</strong></td><td><code>Pavel</code></td></tr>
       <tr><td><strong>Updated by</strong></td><td><code>Pavel</code></td></tr>
       <tr><td><strong>Custom Fields → Phone</strong></td><td>Key: <code>WORK</code> · Value: <code>1. Field data: Phone number</code></td></tr>
+      <tr><td><strong>Custom Fields → Email</strong></td><td>Key: <code>WORK</code> · Value: <code>1. Field data: Email</code>. Без этой строки письмо по заявке не уходит.</td></tr>
     </tbody>
   </table>
 
   <figure class="figure">
     <img src="assets/03_create_contact.png" alt="Настройки Kommo Create a Contact">
-    <figcaption>Full Name и Phone — из Facebook Lead Ads. Created by / Updated by / Responsible — Pavel.</figcaption>
+    <figcaption>Full Name, Phone и Email — из Facebook Lead Ads. Created by / Updated by / Responsible — Pavel.</figcaption>
   </figure>
+
+  <div class="callout callout-warn">
+    <strong>Email обязателен, и на повторе тоже</strong>
+    Рассылка срабатывает в момент создания сделки и читает email контакта. Если почты нет в эту секунду, письмо не уйдёт. Если контакт с таким телефоном уже есть, сценарий не имеет права остановиться на примечании: почту из этой заявки надо дописать в карточку (Update a Contact), когда её там ещё нет.
+  </div>
 
   <div class="callout callout-tip">
     <strong>Зачем везде Pavel</strong>
@@ -435,6 +441,9 @@ code {
       <tr><td>Сделка без контакта</td><td>В Create a Lead поле Contacts → Map ON → Contact ID из шага 3.</td></tr>
       <tr><td>Неверный регион в UTM</td><td>utm_campaign: <code>ny</code> для Нью-Йорка, <code>ca</code> для Калифорнии.</td></tr>
       <tr><td>Сценарий не запускается</td><td>После теста включи переключатель ON и расписание Every 15 minutes.</td></tr>
+      <tr><td>В контакте есть телефон, нет email</td><td>В Create a Contact не замаплен Email (Key <code>WORK</code>, значение <code>Field data: Email</code>). На повторе та же почта должна дописываться через Update a Contact.</td></tr>
+      <tr><td>Лиды новой формы не приходят совсем</td><td>На каждую форму нужен свой сценарий. Новая форма без клона в Make в CRM не попадает. Перед запуском рекламы: Form = эта форма, Run once, в контакте есть email, сценарий ON.</td></tr>
+      <tr><td>Калифорния приходит как FB NY / utm la</td><td>Форма смотрит в чужой сценарий. У калифорнийской формы имя сделки <code>FB CA</code> и utm_campaign <code>ca</code>.</td></tr>
     </tbody>
   </table>
 </section>
