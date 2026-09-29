@@ -150,8 +150,26 @@ def forget_chain(lead_id: int) -> None:
         save_state(data)
 
 
-def remember_chain(lead: dict, steps: list[tuple[str, datetime, int, bool]], index: int, mode: str) -> None:
-    anchor = int(steps[0][1].timestamp())
+def remember_chain(
+    lead: dict,
+    steps: list[tuple[str, datetime, int, bool]],
+    index: int,
+    mode: str,
+    moment: datetime,
+) -> None:
+    # Вход на этап. Повтор с «прошло N» получает этот дедлайн, чтобы просрочка равнялась N.
+    anchor = int(stage_plan.snap(moment).timestamp())
+    saved = []
+    for pos, (text, due, rid, pin) in enumerate(steps):
+        own = int(due.timestamp())
+        till = anchor if mode == "stack" and pos > 0 else own
+        saved.append({
+            "text": text,
+            "due": own,
+            "till": till,
+            "rid": rid,
+            "pin": pin,
+        })
     with STATE_LOCK:
         data = load_state()
         data[str(lead["id"])] = {
@@ -159,16 +177,7 @@ def remember_chain(lead: dict, steps: list[tuple[str, datetime, int, bool]], ind
             "status_id": lead["status_id"],
             "index": index,
             "mode": mode,
-            "steps": [
-                {
-                    "text": text,
-                    "due": int(due.timestamp()),
-                    "till": anchor if mode == "stack" else int(due.timestamp()),
-                    "rid": rid,
-                    "pin": pin,
-                }
-                for text, due, rid, pin in steps
-            ],
+            "steps": saved,
         }
         save_state(data)
 
@@ -215,7 +224,7 @@ def ensure_tasks(amo: lib.Amo, lead: dict) -> None:
         finish_task(amo, task, "этап сменился")
     text, due, rid, _pin = planned[0]
     create_task(amo, lead["id"], text, due, rid)
-    remember_chain(lead, planned, 0, mode)
+    remember_chain(lead, planned, 0, mode, moment)
 
 
 def advance_chains() -> None:
@@ -255,7 +264,6 @@ def advance_one(lead_id: int, target: int) -> None:
         if target <= index:
             return
         if rec.get("mode") == "stack":
-            anchor = int((rec["steps"][0] or {}).get("till") or (rec["steps"][0] or {}).get("due") or 0)
             passed = {step.get("text") for step in rec["steps"][:target]}
             for task in open_tasks(amo, lead_id):
                 if (task.get("text") or "") not in passed:
@@ -267,7 +275,6 @@ def advance_one(lead_id: int, target: int) -> None:
                 })
                 print(f"  stack hold {lead_id} {task.get('text')} -> Maxim", flush=True)
             opened = {(task.get("text") or "") for task in open_tasks(amo, lead_id)}
-            due = datetime.fromtimestamp(anchor, TZ)
             for pos, step in enumerate(rec["steps"][index + 1:target + 1], start=index + 1):
                 if (step.get("text") or "") in opened:
                     continue
@@ -278,6 +285,7 @@ def advance_one(lead_id: int, target: int) -> None:
                     rid = lead.get("responsible_user_id") or step.get("rid") or lib.USER_OKSANA
                 else:
                     rid = lib.USER_MAXIM
+                due = datetime.fromtimestamp(int(step.get("till") or step["due"]), TZ)
                 create_task(amo, lead_id, step["text"], due, rid)
             with STATE_LOCK:
                 data = load_state()

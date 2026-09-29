@@ -73,13 +73,16 @@ def _sequence(jobs: list[tuple[str, datetime, int | None]]) -> list[tuple[str, d
 
 
 def follow_mode(pipeline_id: int, status_id: int) -> str:
-    """stack: следующая задача добавляется в свой срок, предыдущие остаются.
-
-    Дедлайн новой задачи равен дедлайну первой.
-    """
+    """stack: в свой срок новая задача, просроченная остаётся и уходит на Максима."""
     if pipeline_id == lib.PIPELINE_MKT_NEW and status_id == lib.ST["mkt_talk"]:
         return "stack"
-    if pipeline_id == lib.PIPELINE_SALES_NEW and status_id == lib.ST["new"]:
+    if pipeline_id == lib.PIPELINE_SALES_NEW and status_id in (
+        lib.ST["new"],
+        lib.ST["in_work"],
+        lib.ST["waitlist"],
+        lib.ST["pay_wait"],
+        lib.ST["prod"],
+    ):
         return "stack"
     return "replace"
 
@@ -104,32 +107,36 @@ def jobs(pipeline_id: int, status_id: int, moment: datetime) -> list[tuple[str, 
         first = shift(n, hours=3)
         second = shift(n, hours=6)
         return _sequence([
-            ("Повтор, если молчит", first, None),
-            ("Повтор, если молчит, ещё раз", second, None),
-            ("Сутки на этапе: в отмену с причиной", shift(n, days=1), None),
+            ("Молчит 3 часа", first, None),
+            ("Молчит 6 часов", second, None),
+            ("Сутки молчит, в отмену", shift(n, days=1), None),
         ])
     if status_id == lib.ST["waitlist"]:
-        return _sequence([
-            (f"Пришла ли поставка, через {days} {day_word(days)}", morning(n, days), None)
-            for days in (4, 8, 12, 16, 20)
-        ])
+        rows = []
+        for days in (4, 8, 12, 16, 20):
+            if days == 4:
+                text = f"Пришла ли поставка, {days} {day_word(days)}"
+            else:
+                text = f"Пришла ли поставка, прошло {days} {day_word(days)}"
+            rows.append((text, morning(n, days), None))
+        return _sequence(rows)
     if status_id == lib.ST["pay_wait"]:
         return _sequence([
-            ("Написать про оплату", shift(n, hours=1), None),
-            ("Написать про оплату ещё раз", shift(n, hours=4), None),
-            ("Написать про оплату, крайний срок", shift(n, days=1), None),
+            ("Написать про оплату, 1 час", shift(n, hours=1), None),
+            ("Написать про оплату, прошло 4 часа", shift(n, hours=4), None),
+            ("Написать про оплату, прошли сутки", shift(n, days=1), None),
         ])
     if status_id == lib.ST["paid"]:
-        return [("Производство или сборка", shift(n, hours=1), None)]
+        return [("Производство или сборка, 1 час", shift(n, hours=1), None)]
     if status_id == lib.ST["prod"]:
         return _sequence([
             ("Проверить готовность", snap(n), None),
-            ("Проверить готовность, через 4 дня", morning(n, 4), None),
+            ("Проверить готовность, прошло 4 дня", morning(n, 4), None),
         ])
     if status_id == lib.ST["pack"]:
         return [("Собрать и отправить", end_of_shift(n), None)]
     if status_id == lib.ST["sent"]:
         return [("Проставить трек-номер", snap(n), None)]
     if status_id == lib.ST["won"]:
-        return [("Взять обратную связь", morning(n, 2), None)]
+        return [("Взять обратную связь, 2 дня", morning(n, 2), None)]
     return []
