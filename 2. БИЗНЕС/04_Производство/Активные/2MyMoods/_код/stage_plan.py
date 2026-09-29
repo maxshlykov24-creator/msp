@@ -73,17 +73,21 @@ def _sequence(jobs: list[tuple[str, datetime, int | None]]) -> list[tuple[str, d
 
 
 def follow_mode(pipeline_id: int, status_id: int) -> str:
-    """stack: в свой срок новая задача, просроченная остаётся и уходит на Максима."""
+    """stack: просроченная остаётся открытой и уходит на Максима, новая с тем же дедлайном.
+
+    keep: просроченную не трогаем, следующая встаёт своим будущим сроком.
+    handoff: просроченную закрываем на Максима, у менеджера остаётся одна новая.
+    """
     if pipeline_id == lib.PIPELINE_MKT_NEW and status_id == lib.ST["mkt_talk"]:
         return "stack"
-    if pipeline_id == lib.PIPELINE_SALES_NEW and status_id in (
-        lib.ST["new"],
-        lib.ST["in_work"],
-        lib.ST["waitlist"],
-        lib.ST["pay_wait"],
-        lib.ST["prod"],
-    ):
+    if pipeline_id != lib.PIPELINE_SALES_NEW:
+        return "replace"
+    if status_id == lib.ST["new"]:
         return "stack"
+    if status_id == lib.ST["waitlist"]:
+        return "keep"
+    if status_id in (lib.ST["in_work"], lib.ST["pay_wait"], lib.ST["prod"]):
+        return "handoff"
     return "replace"
 
 
@@ -112,14 +116,10 @@ def jobs(pipeline_id: int, status_id: int, moment: datetime) -> list[tuple[str, 
             ("Сутки молчит, в отмену", shift(n, days=1), None),
         ])
     if status_id == lib.ST["waitlist"]:
-        rows = []
-        for days in (4, 8, 12, 16, 20):
-            if days == 4:
-                text = f"Пришла ли поставка, {days} {day_word(days)}"
-            else:
-                text = f"Пришла ли поставка, прошло {days} {day_word(days)}"
-            rows.append((text, morning(n, days), None))
-        return _sequence(rows)
+        return _sequence([
+            (f"Пришла ли поставка, {days} {day_word(days)}", morning(n, days), None)
+            for days in (4, 8, 12, 16, 20)
+        ])
     if status_id == lib.ST["pay_wait"]:
         return _sequence([
             ("Написать про оплату, 1 час", shift(n, hours=1), None),

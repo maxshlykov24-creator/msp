@@ -162,7 +162,12 @@ def remember_chain(
     saved = []
     for pos, (text, due, rid, pin) in enumerate(steps):
         own = int(due.timestamp())
-        till = anchor if mode == "stack" and pos > 0 else own
+        # keep хранит свой день: «8 дней» не рождается уже просроченной.
+        # stack и handoff считают просрочку от входа на этап.
+        if mode == "keep" or pos == 0:
+            till = own
+        else:
+            till = anchor
         saved.append({
             "text": text,
             "due": own,
@@ -213,12 +218,6 @@ def ensure_tasks(amo: lib.Amo, lead: dict) -> None:
         and rec.get("pipeline_id") == lead["pipeline_id"]
     )
     if same:
-        if rec.get("mode") == "stack":
-            return
-        current = (rec["steps"][rec["index"]] or {}).get("text")
-        for task in opened:
-            if (task.get("text") or "") != current:
-                finish_task(amo, task, "этап сменился")
         return
     for task in opened:
         finish_task(amo, task, "этап сменился")
@@ -237,8 +236,14 @@ def advance_chains() -> None:
         steps = rec.get("steps") or []
         index = int(rec.get("index") or 0)
         target = index
-        while target + 1 < len(steps) and now_ts >= int(steps[target + 1].get("due") or 0):
-            target += 1
+        if rec.get("mode") == "keep":
+            if index + 1 < len(steps) and now_ts >= int(steps[index].get("due") or 0):
+                target = index + 1
+                while target + 1 < len(steps) and now_ts >= int(steps[target].get("due") or 0):
+                    target += 1
+        else:
+            while target + 1 < len(steps) and now_ts >= int(steps[target + 1].get("due") or 0):
+                target += 1
         if target == index:
             continue
         try:
