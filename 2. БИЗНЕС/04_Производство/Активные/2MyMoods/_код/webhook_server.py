@@ -101,7 +101,7 @@ def open_tasks(amo: lib.Amo, lead_id: int) -> list[dict]:
     return (body.get("_embedded") or {}).get("tasks") or []
 
 
-def planned_rows(lead: dict, moment: datetime) -> list[tuple[str, datetime, int]]:
+def planned_rows(lead: dict, moment: datetime) -> list[tuple[str, datetime, int, bool]]:
     rows = []
     for text, due, who in stage_plan.jobs(lead["pipeline_id"], lead["status_id"], moment):
         rid = who or lead.get("responsible_user_id") or lib.USER_OKSANA
@@ -109,7 +109,7 @@ def planned_rows(lead: dict, moment: datetime) -> list[tuple[str, datetime, int]
             track = amo_track(lead)
             if track:
                 continue
-        rows.append((text, due, rid))
+        rows.append((text, due, rid, who is not None))
     rows.sort(key=lambda row: row[1].timestamp())
     return rows
 
@@ -150,30 +150,38 @@ def forget_chain(lead_id: int) -> None:
         save_state(data)
 
 
-def remember_chain(lead: dict, steps: list[tuple[str, datetime, int]], index: int) -> None:
+def remember_chain(lead: dict, steps: list[tuple[str, datetime, int, bool]], index: int, mode: str) -> None:
+    anchor = int(steps[0][1].timestamp())
     with STATE_LOCK:
         data = load_state()
         data[str(lead["id"])] = {
             "pipeline_id": lead["pipeline_id"],
             "status_id": lead["status_id"],
             "index": index,
+            "mode": mode,
             "steps": [
-                {"text": text, "due": int(due.timestamp()), "rid": rid}
-                for text, due, rid in steps
+                {
+                    "text": text,
+                    "due": int(due.timestamp()),
+                    "till": anchor if mode == "stack" else int(due.timestamp()),
+                    "rid": rid,
+                    "pin": pin,
+                }
+                for text, due, rid, pin in steps
             ],
         }
         save_state(data)
 
 
-def replace_open(amo: lib.Amo, lead: dict, planned: list[tuple[str, datetime, int]]) -> None:
-    wanted = {(text, rid) for text, _, rid in planned}
+def replace_open(amo: lib.Amo, lead: dict, planned: list[tuple[str, datetime, int, bool]]) -> None:
+    wanted = {(text, rid) for text, _, rid, _ in planned}
     for task in open_tasks(amo, lead["id"]):
         key = (task.get("text") or "", task.get("responsible_user_id"))
         if key in wanted:
             continue
         finish_task(amo, task, "этап сменился")
     existing = {(t.get("text") or "", t.get("responsible_user_id")) for t in open_tasks(amo, lead["id"])}
-    for text, due, rid in planned:
+    for text, due, rid, _pin in planned:
         if (text, rid) in existing:
             continue
         create_task(amo, lead["id"], text, due, rid)
@@ -182,8 +190,8 @@ def replace_open(amo: lib.Amo, lead: dict, planned: list[tuple[str, datetime, in
 def ensure_tasks(amo: lib.Amo, lead: dict) -> None:
     moment = datetime.now(TZ)
     planned = planned_rows(lead, moment)
-    batch = stage_plan.is_batch(lead["pipeline_id"], lead["status_id"]) or len(planned) <= 1
-    if batch:
+    mode = stage_plan.follow_mode(lead["pipeline_id"], lead["status_id"])
+    if len(planned) <= 1:
         forget_chain(lead["id"])
         replace_open(amo, lead, planned)
         return
@@ -196,6 +204,8 @@ def ensure_tasks(amo: lib.Amo, lead: dict) -> None:
         and rec.get("pipeline_id") == lead["pipeline_id"]
     )
     if same:
+        if rec.get("mode") == "stack":
+            return
         current = (rec["steps"][rec["index"]] or {}).get("text")
         for task in opened:
             if (task.get("text") or "") != current:
@@ -203,9 +213,9 @@ def ensure_tasks(amo: lib.Amo, lead: dict) -> None:
         return
     for task in opened:
         finish_task(amo, task, "этап сменился")
-    text, due, rid = planned[0]
+    text, due, rid, _pin = planned[0]
     create_task(amo, lead["id"], text, due, rid)
-    remember_chain(lead, planned, 0)
+    remember_chain(lead, planned, 0, mode)
 
 
 def advance_chains() -> None:
@@ -244,16 +254,34 @@ def advance_one(lead_id: int, target: int) -> None:
         index = int(rec.get("index") or 0)
         if target <= index:
             return
+        if rec.get("mode") == "stack":
+            anchor = int((rec["steps"][0] or {}).get("till") or (rec["steps"][0] or {}).get("due") or 0)
+            opened = {(task.get("text") or "") for task in open_tasks(amo, lead_id)}
+            for step in rec["steps"][index + 1:target + 1]:
+                if (step.get("text") or "") in opened:
+                    continue
+                rid = step.get("rid") if step.get("pin") else (
+                    lead.get("responsible_user_id") or step.get("rid") or lib.USER_OKSANA
+                )
+                create_task(amo, lead_id, step["text"], datetime.fromtimestamp(anchor, TZ), rid)
+            with STATE_LOCK:
+                data = load_state()
+                row = data.get(str(lead_id))
+                if isinstance(row, dict):
+                    row["index"] = target
+                    data[str(lead_id)] = row
+                    save_state(data)
+            return
         current = (rec["steps"][index] or {}).get("text")
         for task in open_tasks(amo, lead_id):
             if (task.get("text") or "") == current:
                 finish_task(amo, task, CHAIN_NOTE, lib.USER_MAXIM)
                 print(f"  chain close {lead_id} {current} -> Maxim", flush=True)
         step = rec["steps"][target]
-        opened = open_tasks(amo, lead_id)
-        if not any((task.get("text") or "") == step.get("text") for task in opened):
+        opened_now = open_tasks(amo, lead_id)
+        if not any((task.get("text") or "") == step.get("text") for task in opened_now):
             rid = lead.get("responsible_user_id") or step.get("rid") or lib.USER_OKSANA
-            due = datetime.fromtimestamp(int(step["due"]), TZ)
+            due = datetime.fromtimestamp(int(step.get("till") or step["due"]), TZ)
             create_task(amo, lead_id, step["text"], due, rid)
         with STATE_LOCK:
             data = load_state()

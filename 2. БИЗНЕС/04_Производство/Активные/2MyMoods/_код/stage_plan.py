@@ -72,11 +72,16 @@ def _sequence(jobs: list[tuple[str, datetime, int | None]]) -> list[tuple[str, d
     return out
 
 
-def is_batch(pipeline_id: int, status_id: int) -> bool:
-    """Новая заявка и переговоры: повтор нужен сразу, это не цепочка одной и той же проверки."""
+def follow_mode(pipeline_id: int, status_id: int) -> str:
+    """stack: следующая задача добавляется в свой срок, предыдущие остаются.
+
+    Дедлайн новой задачи равен дедлайну первой.
+    """
     if pipeline_id == lib.PIPELINE_MKT_NEW and status_id == lib.ST["mkt_talk"]:
-        return True
-    return pipeline_id == lib.PIPELINE_SALES_NEW and status_id == lib.ST["new"]
+        return "stack"
+    if pipeline_id == lib.PIPELINE_SALES_NEW and status_id == lib.ST["new"]:
+        return "stack"
+    return "replace"
 
 
 def jobs(pipeline_id: int, status_id: int, moment: datetime) -> list[tuple[str, datetime, int | None]]:
@@ -85,16 +90,16 @@ def jobs(pipeline_id: int, status_id: int, moment: datetime) -> list[tuple[str, 
     if pipeline_id == lib.PIPELINE_MKT_NEW and status_id == lib.ST["mkt_talk"]:
         return [
             ("Взять в работу", snap(n), lib.USER_POLINA),
-            ("Повтор: 30 минут", snap(n + timedelta(minutes=30)), lib.USER_POLINA),
+            ("Ждёт 30 минут", snap(n + timedelta(minutes=30)), lib.USER_POLINA),
         ]
     if pipeline_id != lib.PIPELINE_SALES_NEW:
         return []
     if status_id == lib.ST["new"]:
-        return _dedupe([
+        return [
             ("Взять заявку", snap(n), None),
-            ("Повтор: заявка ещё новая", snap(n + timedelta(minutes=30)), None),
-            ("Заявку не взяли", shift(n, hours=2), lib.USER_OKSANA),
-        ])
+            ("Ждёт 30 минут", snap(n + timedelta(minutes=30)), None),
+            ("Ждёт 2 часа", shift(n, hours=2), lib.USER_OKSANA),
+        ]
     if status_id == lib.ST["in_work"]:
         first = shift(n, hours=3)
         second = shift(n, hours=6)
