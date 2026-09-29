@@ -59,6 +59,26 @@ def _dedupe(jobs: list[tuple[str, datetime, int | None]]) -> list[tuple[str, dat
     return out
 
 
+def _sequence(jobs: list[tuple[str, datetime, int | None]]) -> list[tuple[str, datetime, int | None]]:
+    """Следующий шаг строго позже предыдущего. Иначе это вторая задача в ту же минуту."""
+    out = []
+    last = -1
+    for text, due, who in jobs:
+        minute = int(due.timestamp()) // 60
+        if minute <= last:
+            continue
+        last = minute
+        out.append((text, due, who))
+    return out
+
+
+def is_batch(pipeline_id: int, status_id: int) -> bool:
+    """Новая заявка и переговоры: повтор нужен сразу, это не цепочка одной и той же проверки."""
+    if pipeline_id == lib.PIPELINE_MKT_NEW and status_id == lib.ST["mkt_talk"]:
+        return True
+    return pipeline_id == lib.PIPELINE_SALES_NEW and status_id == lib.ST["new"]
+
+
 def jobs(pipeline_id: int, status_id: int, moment: datetime) -> list[tuple[str, datetime, int | None]]:
     """Текст, срок, ответственный. None = текущий по сделке."""
     n = moment.astimezone(TZ)
@@ -78,20 +98,18 @@ def jobs(pipeline_id: int, status_id: int, moment: datetime) -> list[tuple[str, 
     if status_id == lib.ST["in_work"]:
         first = shift(n, hours=3)
         second = shift(n, hours=6)
-        rows = [
+        return _sequence([
             ("Повтор, если молчит", first, None),
-        ]
-        if int(second.timestamp()) // 60 != int(first.timestamp()) // 60:
-            rows.append(("Повтор, если молчит, ещё раз", second, None))
-        rows.append(("Сутки на этапе: в отмену с причиной", shift(n, days=1), None))
-        return _dedupe(rows)
+            ("Повтор, если молчит, ещё раз", second, None),
+            ("Сутки на этапе: в отмену с причиной", shift(n, days=1), None),
+        ])
     if status_id == lib.ST["waitlist"]:
-        return [
+        return _sequence([
             (f"Пришла ли поставка, через {days} {day_word(days)}", morning(n, days), None)
             for days in (4, 8, 12, 16, 20)
-        ]
+        ])
     if status_id == lib.ST["pay_wait"]:
-        return _dedupe([
+        return _sequence([
             ("Написать про оплату", shift(n, hours=1), None),
             ("Написать про оплату ещё раз", shift(n, hours=4), None),
             ("Написать про оплату, крайний срок", shift(n, days=1), None),
@@ -99,12 +117,10 @@ def jobs(pipeline_id: int, status_id: int, moment: datetime) -> list[tuple[str, 
     if status_id == lib.ST["paid"]:
         return [("Производство или сборка", shift(n, hours=1), None)]
     if status_id == lib.ST["prod"]:
-        return [
+        return _sequence([
             ("Проверить готовность", snap(n), None),
-            ("Проверить готовность", snap(n), lib.USER_OKSANA),
             ("Проверить готовность, через 4 дня", morning(n, 4), None),
-            ("Проверить готовность, через 4 дня", morning(n, 4), lib.USER_OKSANA),
-        ]
+        ])
     if status_id == lib.ST["pack"]:
         return [("Собрать и отправить", end_of_shift(n), None)]
     if status_id == lib.ST["sent"]:
