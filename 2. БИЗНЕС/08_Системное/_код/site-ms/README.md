@@ -20,6 +20,7 @@ site-ms/
     privacy.html                # политика конфиденциальности (152-ФЗ)
     consent.html                # согласие на обработку ПДн
     offer.html                  # публичная оферта
+    bitrix24.html               # описание внедрения Битрикс24
     js/cookie-consent.js        # баннер cookie / Яндекс.Метрика
     assets/logo-ms-transparent.png
   deploy/
