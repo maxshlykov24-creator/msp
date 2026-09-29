@@ -1,4 +1,4 @@
-"""Исходящая тишина: в группу и чужие лички не пишем."""
+"""Исходящая тишина: сводка в группу идёт отдельным вызовом, остальной шум в чат молчит."""
 
 from __future__ import annotations
 
@@ -35,11 +35,17 @@ def is_outbound_blocked(chat_id: int) -> bool:
     settings = get_settings()
     if not settings.outbound_mute:
         return False
-    return int(chat_id) not in coverage_recipient_ids()
+    # Личка открыта: мастер отчёта и напоминание в 20:00. Группа молчит, кроме сводки.
+    return int(chat_id) == int(settings.group_chat_id)
+
+
+async def send_message_live(bot: Bot, chat_id: int, text: str, **kwargs: Any):
+    """Сводка в группу. MuteBot.send_message её не глотает."""
+    return await Bot.send_message(bot, chat_id, text=text, **kwargs)
 
 
 class MuteBot(Bot):
-    """send_message в группу и чужие лички при MUTE глотается, в лог пишется skip."""
+    """Обычный send_message в группу при MUTE глотается. Сводка идёт через send_message_live."""
 
     async def send_message(self, chat_id: int | str, *args: Any, **kwargs: Any):
         cid = int(chat_id)
@@ -51,7 +57,7 @@ class MuteBot(Bot):
 
 
 class AdminOnlyPrivateMiddleware(BaseMiddleware):
-    """При MUTE личка братьев игнорируется. Группа читается. Твоя личка работает."""
+    """Личка открыта всем из группы: иначе напоминание ведёт в немого бота."""
 
     async def __call__(
         self,
@@ -59,24 +65,4 @@ class AdminOnlyPrivateMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        settings = get_settings()
-        if not settings.outbound_mute:
-            return await handler(event, data)
-
-        chat = None
-        user = None
-        if isinstance(event, Message):
-            chat = event.chat
-            user = event.from_user
-        elif isinstance(event, CallbackQuery):
-            user = event.from_user
-            chat = event.message.chat if event.message else None
-
-        if chat is not None and getattr(chat, "type", None) == "private":
-            uid = user.id if user else None
-            if not is_admin_user(uid):
-                log.info("MUTE ignore private uid=%s", uid)
-                if isinstance(event, CallbackQuery):
-                    await event.answer()
-                return None
         return await handler(event, data)

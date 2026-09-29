@@ -38,7 +38,7 @@ from app.coverage import (
 from app.database import get_session_factory
 from app import keyboards as kb
 from app.models import Revelation, RevelationArchive, Report, User
-from app.mute import AdminOnlyPrivateMiddleware, coverage_recipient_ids, is_admin_user
+from app.mute import AdminOnlyPrivateMiddleware, coverage_recipient_ids, is_admin_user, send_message_live
 from app.states import HashtagStates, WeeklyReportStates
 from app.time_utils import (
     digest_week_monday_on_digest_day,
@@ -387,10 +387,10 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
         )
 
     await message.answer(
-        group_note + "Привет! Здесь ты заполняешь еженедельный отчёт и ведёшь заметки по откровениям. "
-        "Напоминания в группу — по воскресеньям.\n\n"
+        group_note +         "Привет! Здесь ты заполняешь еженедельный отчёт и ведёшь заметки по откровениям. "
+        "Сводка без имён падает в общий чат в 00:00.\n\n"
         "Дедлайн серии «вовремя»: до полуночи понедельника (00:00 МСК), то есть до начала новой недели после отчётного воскресенья.\n\n"
-        "Личное напоминание придёт только если ты уже написал боту /start."
+        "Личное напоминание в 20:00 придёт, только если ты уже открыл этот чат."
         + extra_admin,
         reply_markup=kb.main_menu_kb(),
     )
@@ -1930,10 +1930,25 @@ async def _digest_payload() -> tuple[str, str]:
     return public, private
 
 
-async def _send_coverage_digest(bot: Bot, *, public: str, private: str, to_group: bool) -> None:
+async def _post_public_digest(bot: Bot, public: str) -> bool:
     settings = get_settings()
-    if to_group and not settings.outbound_mute and settings.group_chat_id:
-        await bot.send_message(settings.group_chat_id, public, parse_mode=ParseMode.HTML)
+    if not settings.group_chat_id:
+        log.info("skip group digest: GROUP_CHAT_ID=0")
+        return False
+    sent = await send_message_live(
+        bot,
+        settings.group_chat_id,
+        public,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+    )
+    log.info("group digest msg=%s", getattr(sent, "message_id", None))
+    return sent is not None
+
+
+async def _send_coverage_digest(bot: Bot, *, public: str, private: str, to_group: bool) -> None:
+    if to_group:
+        await _post_public_digest(bot, public)
 
 
 async def _send_private_coverage_dm(bot: Bot, *, replace: bool, only_admin: bool = False) -> None:
@@ -1962,7 +1977,7 @@ async def _send_private_coverage_dm(bot: Bot, *, replace: bool, only_admin: bool
 
 
 async def job_midnight_digest(bot: Bot) -> None:
-    """00:00: в чат без имён только после снятия MUTE. Имена в личку идут в пн 09:00."""
+    """00:00: сводка без имён в группу. Имена в личку идут в пн 09:00."""
     settings = get_settings()
     if not settings.jobs_enabled:
         log.info("skip midnight digest: jobs off")
@@ -1976,8 +1991,8 @@ async def job_midnight_digest(bot: Bot) -> None:
         if not submitted:
             log.info("skip midnight digest: nobody wrote this week yet")
             return
-        await _send_coverage_digest(bot, public=public, private="", to_group=True)
-        log.info("midnight digest sent mute=%s", settings.outbound_mute)
+        ok = await _post_public_digest(bot, public)
+        log.info("midnight digest group=%s", ok)
     except Exception:
         log.exception("job_midnight_digest failed")
 
@@ -2008,6 +2023,55 @@ async def job_monday_coverage_evening(bot: Bot) -> None:
         log.exception("job_monday_coverage_evening failed")
 
 
+_MISSING_NUDGE = (
+    "Отчёт за неделю в чате ещё не вижу. "
+    "Нажми кнопку Отчёт здесь, собери текст и отправь его в Копают рвы."
+)
+
+
+async def job_evening_reminder(bot: Bot) -> None:
+    """20:00 каждый день: сводка в группу, если ещё не все, и личка тем, кто уже открывал бота."""
+    settings = get_settings()
+    if not settings.jobs_enabled:
+        log.info("skip 20:00 reminder: jobs off")
+        return
+    try:
+        public, _private = await _digest_payload()
+        ws = week_start_from_date(now_msk().date())
+        async with get_session_factory()() as session:
+            members = await load_scope_members(session)
+            submitted = await submitted_ids_for_week(session, ws)
+            started = set((await session.scalars(select(User.tg_user_id))).all())
+            await session.commit()
+        missing = [m for m in members if m.tg_user_id not in submitted]
+        if not missing:
+            log.info("20:00 skip, coverage complete")
+            return
+        await _post_public_digest(bot, public)
+        leaders = coverage_recipient_ids()
+        nudged = 0
+        no_start = 0
+        for m in missing:
+            if m.tg_user_id in leaders:
+                continue
+            if m.tg_user_id not in started:
+                no_start += 1
+                continue
+            if not await is_allowed_member(bot, m.tg_user_id):
+                continue
+            try:
+                sent = await bot.send_message(m.tg_user_id, _MISSING_NUDGE)
+            except Exception as e:
+                log.warning("nudge failed uid=%s: %s", m.tg_user_id, e)
+                continue
+            if sent is None:
+                log.info("nudge not sent uid=%s", m.tg_user_id)
+                continue
+            nudged += 1
+        log.info("20:00 reminder missing=%s nudged=%s no_start=%s", len(missing), nudged, no_start)
+    except Exception:
+        log.exception("job_evening_reminder failed")
+
+
 async def job_twenty_reminder(bot: Bot) -> None:
-    """Совместимость: раньше ежедневные 20:00, теперь только пн замена сводки."""
-    await job_monday_coverage_evening(bot)
+    await job_evening_reminder(bot)
