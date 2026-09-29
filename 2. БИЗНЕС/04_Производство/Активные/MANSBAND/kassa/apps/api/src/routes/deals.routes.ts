@@ -72,10 +72,9 @@ export default async function dealsRoutes(app: FastifyInstance) {
   // Список заявок: локальное зеркало + amo (короткий потолок — иначе мобильный логин/первый экран стопорятся).
   app.get("/deals", { preHandler: [app.authenticate] }, async () => {
     const local = await deals.listLocal();
-    // Холодный listAmoOpen на ~1.8k+ сделок занимает ~25–30с. Таймаут — с запасом
-    // сверху; listAmoOpen сам отдаёт устаревший кэш почти мгновенно, если он есть,
-    // так что 40с реально ждём только на самом первом запросе после старта.
-    const amoDeals = await withTimeout(deals.listAmoOpen().catch(() => [] as Deal[]), 40_000, []);
+    // Открытые: тёплый кэш сразу, холодный старт до 40с. Закрытые с июня
+    // подмешиваются из отдельного снимка и этот запрос не ждут.
+    const amoDeals = await withTimeout(deals.listAmoBoardDeals().catch(() => [] as Deal[]), 40_000, []);
     const localAmoIds = new Set(local.map((d) => d.amoLeadId).filter(Boolean));
     const merged = [...local, ...amoDeals.filter((d) => !localAmoIds.has(d.amoLeadId))];
     merged.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));

@@ -27,7 +27,9 @@ export default async function webhooksRoutes(app: FastifyInstance) {
     if (!checkSecret(req)) return reply.code(403).send({ message: "forbidden" });
     try {
       const result = await handleAmoWebhook(req.body);
-      broadcast("deal.updated", { source: "amo", processed: result.processed });
+      for (const row of result.results) {
+        if (row.dealNumber) broadcast("deal.updated", { source: "amo", number: row.dealNumber });
+      }
       // Очереди задач/финансов слушают те же обновления доски.
       if (result.results.some((r) => r.tasks)) {
         broadcast("queue.updated", { source: "amo" });

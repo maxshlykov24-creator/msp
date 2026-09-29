@@ -8,7 +8,12 @@ export default async function authRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: "Некорректные данные" });
     const user = await auth.verifyCredentials(parsed.data.login, parsed.data.password);
     if (!user) return reply.code(401).send({ message: "Неверный логин или пароль" });
-    const token = app.jwt.sign({ sub: user.id, role: user.role, name: user.name });
+    const token = app.jwt.sign({
+      sub: user.id,
+      role: user.role,
+      name: user.name,
+      mustChangePassword: user.mustChangePassword,
+    });
     return { token, user };
   });
 

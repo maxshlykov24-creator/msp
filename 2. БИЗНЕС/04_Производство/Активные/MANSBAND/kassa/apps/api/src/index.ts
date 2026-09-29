@@ -3,7 +3,7 @@ import { getEnv } from "./env.js";
 import { runBootstrap, syncProducts, syncStock } from "./services/bootstrap.js";
 import { scanOverdueReserves } from "./services/taskFlow.js";
 import { enqueueWeeklySalary } from "./services/payroll.js";
-import { prewarmAmoOpen } from "./services/deals.js";
+import { prewarmAmoClosed, prewarmAmoOpen } from "./services/deals.js";
 
 // Мс до ближайшего наступления hour:00 по локальному времени контейнера (TZ).
 function msUntilNextHour(hour: number): number {
@@ -24,10 +24,14 @@ async function main() {
   // Bootstrap-синк в фоне (не блокирует старт; ошибки не валят сервер).
   runBootstrap((m) => app.log.info(m));
 
-  // Прогрев доски заявок (amoCRM) сразу после старта и раз в 35с дальше —
-  // чтобы пользователи не попадали в холодный фетч на ~25–30с после деплоя/рестарта.
+  // Открытые сделки: сразу и раз в 35с. Закрытые с июня — отдельно, первый
+  // прогон через минуту (чтобы не встать в одну очередь с открытыми), дальше раз в 10 минут.
   prewarmAmoOpen();
   setInterval(prewarmAmoOpen, 35_000);
+  setTimeout(() => {
+    prewarmAmoClosed();
+    setInterval(prewarmAmoClosed, 10 * 60_000);
+  }, 60_000);
 
   // Остатки — часто (по умолчанию каждые 10 мин): лёгкий отчёт по двум складам.
   const stockIntervalMs = env.STOCK_SYNC_INTERVAL_MIN * 60_000;

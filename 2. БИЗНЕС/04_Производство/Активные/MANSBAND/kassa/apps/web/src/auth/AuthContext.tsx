@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { AuthResponse, User } from "@kassa/shared";
-import { api, getToken, setToken, USE_MOCK } from "../api/client";
+import type { AuthResponse, User, UserRole } from "@kassa/shared";
+import { api, ApiError, getToken, setToken, USE_MOCK } from "../api/client";
 
 interface AuthState {
   user: User | null;

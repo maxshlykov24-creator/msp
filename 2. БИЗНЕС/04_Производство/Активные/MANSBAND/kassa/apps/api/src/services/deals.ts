@@ -63,9 +63,15 @@ export async function stageNameByStatusId(
   return statuses.find((s) => s.amoId === statusId)?.name ?? "—";
 }
 
-/** Сбросить кэш списка amo — после входящего этапа данные на доске устарели. */
+/**
+ * Доска устарела после этапа из amo. Прошлый список остаётся на экране,
+ * выгрузка идёт в фоне. Обнулять кэш нельзя: следующий /deals тогда ждёт
+ * холодные 25–30с, телефон обрывает запрос, и человека выкидывает на вход.
+ * Повторный вебхук во время уже идущей выгрузки вторую не ставит.
+ */
 export function invalidateAmoOpenCache(): void {
-  amoOpenCache = null;
+  if (amoOpenCache) amoOpenCache.at = 0;
+  if (!amoOpenInflight) refreshAmoOpen().catch(() => {});
 }
 
 /** Этапы воронки доставки: заявка в кассе становится доставкой. */
@@ -792,12 +798,40 @@ function clientFromLead(
   };
 }
 
+/**
+ * Телефон контакта живёт в памяти процесса. Первый проход забирает все id,
+ * дальше в amo уходят только новые. Сбой сети кэш не затирает: те же id
+ * повторятся на следующем проходе. Пустой ответ amo запоминаем, чтобы не
+ * дёргать несуществующий контакт каждые 35 секунд.
+ */
+const contactCache = new Map<number, amo.AmoContact>();
+
 async function contactsForLeads(leads: amo.AmoLead[]): Promise<Map<number, amo.AmoContact>> {
-  const ids = leads
-    .map((l) => amo.mainContactId(l))
-    .filter((id): id is number => id != null);
-  const contacts = await amo.getContactsByIds(ids).catch(() => [] as amo.AmoContact[]);
-  return new Map(contacts.map((c) => [c.id, c]));
+  const ids = [
+    ...new Set(
+      leads.map((l) => amo.mainContactId(l)).filter((id): id is number => id != null)
+    ),
+  ];
+  const missing = ids.filter((id) => !contactCache.has(id));
+  if (missing.length > 0) {
+    const loaded = await amo.getContactsByIds(missing).catch(() => null);
+    if (loaded) {
+      const got = new Set<number>();
+      for (const contact of loaded) {
+        contactCache.set(contact.id, contact);
+        got.add(contact.id);
+      }
+      for (const id of missing) {
+        if (!got.has(id)) contactCache.set(id, { id, name: "" });
+      }
+    }
+  }
+  const out = new Map<number, amo.AmoContact>();
+  for (const id of ids) {
+    const contact = contactCache.get(id);
+    if (contact) out.set(id, contact);
+  }
+  return out;
 }
 
 function mapLeadToDeal(
@@ -850,19 +884,20 @@ function closedStatusIds(pipelineId: number, statuses: StatusRow[]): number[] {
 }
 
 /**
- * Доска заявок: открытые (продажи + жалобы) + Успех/Провал с 1 июня 2026.
- * Кэш 45с + один in-flight: иначе параллельные обновления (телефон/десктоп)
- * бьют amo ~5–7с × N и сайт выглядит «мертвым».
+ * Живая доска: только открытые продажи и жалобы.
+ * Кэш 45с + один in-flight: иначе параллельные обновления с телефонов
+ * бьют amo и сайт выглядит мёртвым.
  *
- * При росте числа сделок (~1800+) полный fetchAmoOpen занимает ~25–30с —
- * дольше, чем таймаут роута. Поэтому при устаревшем кэше отдаём последние
- * известные данные немедленно, а обновление гоняем в фоне (stale-while-
- * revalidate): устаревшие заявки лучше пустой доски. Пустой список — только
- * если кэша ещё не было вообще (холодный старт).
+ * При устаревшем кэше отдаём последний список сразу, выгрузку гоняем в фоне.
+ * Пустой список только на холодном старте, когда кэша ещё не было.
+ * Закрытые с 1 июня лежат отдельно и в этот проход не входят.
  */
 let amoOpenCache: { at: number; deals: Deal[] } | null = null;
 let amoOpenInflight: Promise<Deal[]> | null = null;
 const AMO_OPEN_CACHE_MS = 45_000;
+
+let amoClosedCache: { at: number; deals: Deal[] } | null = null;
+let amoClosedInflight: Promise<Deal[]> | null = null;
 
 function refreshAmoOpen(): Promise<Deal[]> {
   if (amoOpenInflight) return amoOpenInflight;
@@ -878,6 +913,20 @@ function refreshAmoOpen(): Promise<Deal[]> {
   return amoOpenInflight;
 }
 
+function refreshAmoClosed(): Promise<Deal[]> {
+  if (amoClosedInflight) return amoClosedInflight;
+  amoClosedInflight = (async () => {
+    try {
+      const deals = await fetchAmoClosed();
+      amoClosedCache = { at: Date.now(), deals };
+      return deals;
+    } finally {
+      amoClosedInflight = null;
+    }
+  })();
+  return amoClosedInflight;
+}
+
 export async function listAmoOpen(): Promise<Deal[]> {
   const now = Date.now();
   if (amoOpenCache && now - amoOpenCache.at < AMO_OPEN_CACHE_MS) {
@@ -888,23 +937,67 @@ export async function listAmoOpen(): Promise<Deal[]> {
   return refreshing;
 }
 
-/** Прогрев кэша в фоне (бутстрап + периодический таймер) — без ожидания. */
+/** Успех и Провал с 1 июня. Не ждём выгрузку: на входе отдаём то, что уже есть. */
+export function listAmoClosedSnapshot(): Deal[] {
+  return amoClosedCache?.deals ?? [];
+}
+
+/**
+ * Доска для экрана заявок: открытые (можно подождать только холодный старт)
+ * плюс закрытые из отдельного снимка. Закрытая сделка перекрывает открытую
+ * копию, если этап уже сменился, а горячий кэш ещё старый.
+ */
+export async function listAmoBoardDeals(): Promise<Deal[]> {
+  const open = await listAmoOpen();
+  const byId = new Map<number, Deal>();
+  for (const deal of open) {
+    if (deal.amoLeadId) byId.set(deal.amoLeadId, deal);
+  }
+  for (const deal of listAmoClosedSnapshot()) {
+    if (deal.amoLeadId) byId.set(deal.amoLeadId, deal);
+  }
+  return [...byId.values()];
+}
+
+/** Прогрев открытых в фоне (старт + таймер 35с). */
 export function prewarmAmoOpen(): void {
   refreshAmoOpen().catch(() => {});
 }
 
+/** Прогрев закрытых. После удачного прохода кассы забирают снимок одним списком. */
+export function prewarmAmoClosed(): void {
+  refreshAmoClosed()
+    .then(() => {
+      broadcast("deal.updated", { source: "amo-closed" });
+    })
+    .catch(() => {});
+}
+
+async function mapLeads(leads: amo.AmoLead[], statuses: StatusRow[]): Promise<Deal[]> {
+  const storeFieldId = await getFieldIdByName(AMO_LEAD_FIELDS.storeAddress).catch(() => null);
+  const byId = new Map<number, amo.AmoLead>();
+  for (const lead of leads) byId.set(lead.id, lead);
+  const unique = [...byId.values()];
+  const contactsById = await contactsForLeads(unique);
+  return unique.map((lead) => mapLeadToDeal(lead, statuses, storeFieldId, contactsById));
+}
+
 async function fetchAmoOpen(): Promise<Deal[]> {
   const statuses = await statusRows();
-  const storeFieldId = await getFieldIdByName(AMO_LEAD_FIELDS.storeAddress).catch(() => null);
-
   const salesOpen = openStatusIds(AMO_PIPELINE_SALES, statuses, true);
   const complaintsOpen = openStatusIds(AMO_PIPELINE_COMPLAINTS, statuses, false);
-  const salesClosed = closedStatusIds(AMO_PIPELINE_SALES, statuses);
-  const complaintsClosed = closedStatusIds(AMO_PIPELINE_COMPLAINTS, statuses);
-
-  const [salesLeads, complaintsLeads, salesDone, complaintsDone] = await Promise.all([
+  const [salesLeads, complaintsLeads] = await Promise.all([
     amo.listOpenLeadsInPipeline(AMO_PIPELINE_SALES, salesOpen).catch(() => [] as amo.AmoLead[]),
     amo.listOpenLeadsInPipeline(AMO_PIPELINE_COMPLAINTS, complaintsOpen).catch(() => [] as amo.AmoLead[]),
+  ]);
+  return mapLeads([...salesLeads, ...complaintsLeads], statuses);
+}
+
+async function fetchAmoClosed(): Promise<Deal[]> {
+  const statuses = await statusRows();
+  const salesClosed = closedStatusIds(AMO_PIPELINE_SALES, statuses);
+  const complaintsClosed = closedStatusIds(AMO_PIPELINE_COMPLAINTS, statuses);
+  const [salesDone, complaintsDone] = await Promise.all([
     amo
       .listLeadsInPipelineStatuses(AMO_PIPELINE_SALES, salesClosed, { createdFrom: CLOSED_SINCE_UNIX })
       .catch(() => [] as amo.AmoLead[]),
@@ -914,19 +1007,12 @@ async function fetchAmoOpen(): Promise<Deal[]> {
       })
       .catch(() => [] as amo.AmoLead[]),
   ]);
-
-  const byId = new Map<number, amo.AmoLead>();
-  for (const l of [...salesLeads, ...complaintsLeads, ...salesDone, ...complaintsDone]) {
-    byId.set(l.id, l);
-  }
-  const leads = [...byId.values()];
-  const contactsById = await contactsForLeads(leads);
-  return leads.map((l) => mapLeadToDeal(l, statuses, storeFieldId, contactsById));
+  return mapLeads([...salesDone, ...complaintsDone], statuses);
 }
 
-/** Совместимость со старыми вызовами. */
+/** Совместимость со старыми вызовами: открытые плюс уже известные закрытые. */
 export async function listAmo(_params?: amo.ListLeadsParams): Promise<Deal[]> {
-  return listAmoOpen();
+  return listAmoBoardDeals();
 }
 
 export async function searchAmo(args: { phone?: string; name?: string; number?: number }): Promise<Deal[]> {
