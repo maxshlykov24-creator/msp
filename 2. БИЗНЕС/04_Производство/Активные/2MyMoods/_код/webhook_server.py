@@ -256,14 +256,29 @@ def advance_one(lead_id: int, target: int) -> None:
             return
         if rec.get("mode") == "stack":
             anchor = int((rec["steps"][0] or {}).get("till") or (rec["steps"][0] or {}).get("due") or 0)
+            passed = {step.get("text") for step in rec["steps"][:target]}
+            for task in open_tasks(amo, lead_id):
+                if (task.get("text") or "") not in passed:
+                    continue
+                if task.get("responsible_user_id") == lib.USER_MAXIM:
+                    continue
+                amo.req("PATCH", f"/api/v4/tasks/{task['id']}", {
+                    "responsible_user_id": lib.USER_MAXIM,
+                })
+                print(f"  stack hold {lead_id} {task.get('text')} -> Maxim", flush=True)
             opened = {(task.get("text") or "") for task in open_tasks(amo, lead_id)}
-            for step in rec["steps"][index + 1:target + 1]:
+            due = datetime.fromtimestamp(anchor, TZ)
+            for pos, step in enumerate(rec["steps"][index + 1:target + 1], start=index + 1):
                 if (step.get("text") or "") in opened:
                     continue
-                rid = step.get("rid") if step.get("pin") else (
-                    lead.get("responsible_user_id") or step.get("rid") or lib.USER_OKSANA
-                )
-                create_task(amo, lead_id, step["text"], datetime.fromtimestamp(anchor, TZ), rid)
+                last = pos == target
+                if last and step.get("pin"):
+                    rid = step.get("rid") or lib.USER_OKSANA
+                elif last:
+                    rid = lead.get("responsible_user_id") or step.get("rid") or lib.USER_OKSANA
+                else:
+                    rid = lib.USER_MAXIM
+                create_task(amo, lead_id, step["text"], due, rid)
             with STATE_LOCK:
                 data = load_state()
                 row = data.get(str(lead_id))
