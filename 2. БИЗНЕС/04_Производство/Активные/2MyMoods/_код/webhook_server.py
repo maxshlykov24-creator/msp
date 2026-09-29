@@ -268,6 +268,22 @@ def advance_one(lead_id: int, target: int) -> None:
         index = int(rec.get("index") or 0)
         if target <= index:
             return
+        if rec.get("mode") == "keep":
+            opened = {(task.get("text") or "") for task in open_tasks(amo, lead_id)}
+            for step in rec["steps"][index + 1:target + 1]:
+                if (step.get("text") or "") in opened:
+                    continue
+                rid = lead.get("responsible_user_id") or step.get("rid") or lib.USER_OKSANA
+                due = datetime.fromtimestamp(int(step.get("due") or 0), TZ)
+                create_task(amo, lead_id, step["text"], due, rid)
+            with STATE_LOCK:
+                data = load_state()
+                row = data.get(str(lead_id))
+                if isinstance(row, dict):
+                    row["index"] = target
+                    data[str(lead_id)] = row
+                    save_state(data)
+            return
         if rec.get("mode") == "stack":
             passed = {step.get("text") for step in rec["steps"][:target]}
             for task in open_tasks(amo, lead_id):
