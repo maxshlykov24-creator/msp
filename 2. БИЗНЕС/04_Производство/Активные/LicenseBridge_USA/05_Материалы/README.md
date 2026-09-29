@@ -9,5 +9,7 @@
 | [`_generate_whatsapp_pdf.py`](_generate_whatsapp_pdf.py) | служебный скрипт |
 | [`ШПАРГАЛКА_5УТРА_SIP.md`](ШПАРГАЛКА_5УТРА_SIP.md) | Всё остальное (VPN, мониторинг, звонки) я делаю потом сам, удалённо. В окне — только это. |
 | [`регламент_Make_Facebook.md`](регламент_Make_Facebook.md) | Полная инструкция: инструкция/Make_Facebook_Kommo.html |
+| [`MAKE_API.md`](MAKE_API.md) | Как вызывать Make API и что уже включено по формам Facebook |
+| [`MAKE_API.md`](MAKE_API.md) | Как вызывать Make API и что уже включено по формам Facebook |
 
 Наверх: [`../README.md`](../README.md)
