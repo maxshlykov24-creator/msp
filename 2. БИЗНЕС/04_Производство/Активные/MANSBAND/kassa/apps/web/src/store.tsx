@@ -76,11 +76,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // иначе на телефоне фоновый /deals или reconnect «съедает» соединения и риск сброса UI.
   useEffect(() => {
     if (USE_MOCK) return;
-    let dealsTimer: ReturnType<typeof setTimeout> | null = null;
     let wsDelayTimer: ReturnType<typeof setTimeout> | null = null;
     let disconnectWs: (() => void) | null = null;
     let dealsInFlight = false;
     let wasOnForm = isDealFormOpen();
+    const dealFetchGen = new Map<number, number>();
 
     const reloadDealsNow = (opts?: { initial?: boolean; force?: boolean }) => {
       if (!opts?.force && isDealFormOpen()) return;
@@ -96,9 +96,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setDealsLoading(false);
         });
     };
-    const reloadDeals = () => {
-      if (dealsTimer) clearTimeout(dealsTimer);
-      dealsTimer = setTimeout(() => reloadDealsNow(), 2500);
+    const upsertDeal = (deal: Deal) => {
+      setDeals((prev) => {
+        const i = prev.findIndex((d) => d.number === deal.number);
+        if (i === -1) return [deal, ...prev];
+        const next = prev.slice();
+        next[i] = deal;
+        return next;
+      });
+    };
+    const reloadOneDeal = (number: number) => {
+      if (isDealFormOpen()) return;
+      const gen = (dealFetchGen.get(number) ?? 0) + 1;
+      dealFetchGen.set(number, gen);
+      api
+        .get<Deal>(`/deals/${number}`)
+        .then((deal) => {
+          if (dealFetchGen.get(number) !== gen) return;
+          upsertDeal(deal);
+        })
+        .catch(() => {});
     };
     const reloadCerts = (force = false) => {
       if (!force && isDealFormOpen()) return;
@@ -127,11 +144,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (isDealFormOpen() || disconnectWs) return;
         disconnectWs = connectWs((ev) => {
           if (isDealFormOpen()) return;
+          const payload = (ev.payload ?? {}) as { number?: number; source?: string };
           switch (ev.type) {
             case "deal.created":
             case "deal.updated":
             case "deal.stage_changed":
-              reloadDeals();
+              if (typeof payload.number === "number") reloadOneDeal(payload.number);
+              else if (payload.source === "amo-closed") reloadDealsNow();
               break;
             case "certificate.updated":
               reloadCerts();
@@ -156,17 +175,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     reloadSary();
     if (!wasOnForm) startWs();
 
-    const poll = setInterval(() => reloadDealsNow(), 60_000);
-
     const onHash = () => {
       const onForm = isDealFormOpen();
       if (onForm && !wasOnForm) {
         // Зашли на форму продажи — стопаем фоновые обновления
         stopWs();
-        if (dealsTimer) {
-          clearTimeout(dealsTimer);
-          dealsTimer = null;
-        }
       } else if (!onForm && wasOnForm) {
         // Вышли с формы — один тихий рефреш + снова WS
         reloadDealsNow({ force: true });
@@ -180,8 +193,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     return () => {
       stopWs();
-      clearInterval(poll);
-      if (dealsTimer) clearTimeout(dealsTimer);
       window.removeEventListener("hashchange", onHash);
     };
   }, []);

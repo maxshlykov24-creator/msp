@@ -12,6 +12,33 @@ interface AuthState {
 
 const Ctx = createContext<AuthState | null>(null);
 
+const ROLES: UserRole[] = ["consultant", "logist", "finance", "crm", "rop", "admin", "seller"];
+
+/** Имя и роль из JWT, если /auth/me не ответил по сети. Токен при этом не стираем. */
+function userFromToken(token: string): User | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const padded = part.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((part.length + 3) % 4);
+    const json = JSON.parse(atob(padded)) as {
+      sub?: string;
+      role?: string;
+      name?: string;
+      mustChangePassword?: boolean;
+    };
+    if (!json.sub || !json.role || !ROLES.includes(json.role as UserRole)) return null;
+    return {
+      id: json.sub,
+      login: "",
+      name: json.name ?? "",
+      role: json.role as UserRole,
+      mustChangePassword: json.mustChangePassword === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 const MOCK_USER: User = {
   id: "mock",
   login: "demo",
@@ -41,11 +68,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((u) => {
         if (!cancelled) setUser(u);
       })
-      .catch(() => {
-        if (!cancelled) {
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        // Выход только на ответ 401. Таймаут и обрыв сети сессию не сбрасывают.
+        if (err instanceof ApiError && err.status === 401) {
           setToken(null);
           setUser(null);
+          return;
         }
+        const provisional = userFromToken(getToken() ?? "");
+        if (provisional) setUser(provisional);
       })
       .finally(() => {
         window.clearTimeout(hardStop);

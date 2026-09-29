@@ -904,6 +904,10 @@ function refreshAmoOpen(): Promise<Deal[]> {
   amoOpenInflight = (async () => {
     try {
       const deals = await fetchAmoOpen();
+      if (deals.length === 0 && amoOpenCache && amoOpenCache.deals.length > 0) {
+        amoOpenCache = { at: Date.now(), deals: amoOpenCache.deals };
+        return amoOpenCache.deals;
+      }
       amoOpenCache = { at: Date.now(), deals };
       return deals;
     } finally {
@@ -918,6 +922,9 @@ function refreshAmoClosed(): Promise<Deal[]> {
   amoClosedInflight = (async () => {
     try {
       const deals = await fetchAmoClosed();
+      if (deals.length === 0 && amoClosedCache && amoClosedCache.deals.length > 0) {
+        return amoClosedCache.deals;
+      }
       amoClosedCache = { at: Date.now(), deals };
       return deals;
     } finally {
