@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+import subprocess
+import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -25,6 +28,7 @@ NOTE = (
     "Две галочки или пусто: в этот день никого не переключаем."
 )
 _CACHE: dict = {"at": 0.0, "rows": {}}
+_TOK = {"at": 0.0, "token": ""}
 
 
 def sa_path() -> Path | None:
@@ -67,16 +71,52 @@ def _on(value) -> bool:
     return False
 
 
+def _b64(raw: bytes) -> bytes:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=")
+
+
 def _token() -> str:
+    if _TOK["token"] and time.time() - float(_TOK["at"]) < 3000:
+        return _TOK["token"]
     path = sa_path()
     if not path:
         raise RuntimeError("Нет файла ключа Google")
-    from google.auth.transport.requests import Request
-    from google.oauth2 import service_account
-
-    creds = service_account.Credentials.from_service_account_file(str(path), scopes=SCOPES)
-    creds.refresh(Request())
-    return creds.token
+    info = json.loads(path.read_text(encoding="utf-8"))
+    now = int(time.time())
+    header = _b64(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    claims = _b64(json.dumps({
+        "iss": info["client_email"],
+        "scope": " ".join(SCOPES),
+        "aud": "https://oauth2.googleapis.com/token",
+        "iat": now,
+        "exp": now + 3600,
+    }, separators=(",", ":")).encode())
+    signing = header + b"." + claims
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8") as key:
+        key.write(info["private_key"])
+        key.flush()
+        os.chmod(key.name, 0o600)
+        sig = subprocess.check_output(
+            ["openssl", "dgst", "-sha256", "-sign", key.name],
+            input=signing,
+        )
+    body = urllib.parse.urlencode({
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion": (signing + b"." + _b64(sig)).decode(),
+    }).encode()
+    req = urllib.request.Request(
+        "https://oauth2.googleapis.com/token",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    token = data.get("access_token") or ""
+    if not token:
+        raise RuntimeError("Google не выдал токен")
+    _TOK["at"] = time.time()
+    _TOK["token"] = token
+    return token
 
 
 def _a1(cell: str) -> str:
