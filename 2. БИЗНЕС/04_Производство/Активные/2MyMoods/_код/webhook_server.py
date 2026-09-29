@@ -30,6 +30,8 @@ LOCKS: dict[int, threading.Lock] = {}
 LOCKS_GUARD = threading.Lock()
 STATE_LOCK = threading.Lock()
 CHAIN_NOTE = "Подошёл срок следующей задачи"
+# Сделки, созданные раньше этой минуты, на «Новой заявке» и «Взята в работу» не ведём.
+QUIET_BEFORE = int(datetime(2026, 9, 29, 9, 40, tzinfo=TZ).timestamp())
 
 
 def state_path() -> Path:
@@ -132,7 +134,23 @@ def create_task(amo: lib.Amo, lead_id: int, text: str, due: datetime, rid: int) 
     print(f"  task {lead_id} [{st}] {text} -> {due:%d.%m %H:%M} user {rid}", flush=True)
 
 
+def human_task(task: dict) -> bool:
+    """Живой сотрудник. Систему (0) и Максима можно снимать, человека нет."""
+    who = task.get("created_by")
+    return bool(who) and who != lib.USER_MAXIM
+
+
+def quiet_existing(lead: dict) -> bool:
+    if lead.get("pipeline_id") != lib.PIPELINE_SALES_NEW:
+        return False
+    if lead.get("status_id") not in (lib.ST["new"], lib.ST["in_work"]):
+        return False
+    return int(lead.get("created_at") or 0) < QUIET_BEFORE
+
+
 def finish_task(amo: lib.Amo, task: dict, note: str, responsible: int | None = None) -> None:
+    if human_task(task):
+        return
     if responsible:
         amo.req("PATCH", f"/api/v4/tasks/{task['id']}", {"responsible_user_id": responsible})
     amo.req("PATCH", f"/api/v4/tasks/{task['id']}", {
@@ -202,6 +220,8 @@ def replace_open(amo: lib.Amo, lead: dict, planned: list[tuple[str, datetime, in
 
 
 def ensure_tasks(amo: lib.Amo, lead: dict) -> None:
+    if quiet_existing(lead):
+        return
     moment = datetime.now(TZ)
     planned = planned_rows(lead, moment)
     mode = stage_plan.follow_mode(lead["pipeline_id"], lead["status_id"])
@@ -287,6 +307,8 @@ def advance_one(lead_id: int, target: int) -> None:
         if rec.get("mode") == "stack":
             passed = {step.get("text") for step in rec["steps"][:target]}
             for task in open_tasks(amo, lead_id):
+                if human_task(task):
+                    continue
                 if (task.get("text") or "") not in passed:
                     continue
                 if task.get("responsible_user_id") == lib.USER_MAXIM:
