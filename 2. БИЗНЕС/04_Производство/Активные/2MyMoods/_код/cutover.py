@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 
 import lib
 
@@ -12,12 +13,10 @@ import lib
 MAP = {
     80719358: ("Новая заявка", lib.ST["new"]),
     80719298: ("Взято в работу", lib.ST["in_work"]),
-    80719302: ("Хочет заказать / прийти", lib.ST["pay_wait"]),
+    80719302: ("Хочет заказать / прийти", lib.ST["in_work"]),
     80720434: ("Лист ожидания", lib.ST["waitlist"]),
     80721166: ("Запланировал прийти в магазин", lib.ST["visit"]),
     80720958: ("Ожидает оплаты", lib.ST["pay_wait"]),
-    80720574: ("Заказ оплачен", lib.ST["paid"]),
-    80801814: ("Подтвержден", lib.ST["paid"]),
     80720438: ("Передан на сборку", lib.ST["pack"]),
     80720442: ("Собран", lib.ST["pack"]),
     80720446: ("Самовывоз", lib.ST["pack"]),
@@ -34,7 +33,9 @@ SKIP = {
     83347602: "Передан в ремонт",
     83347606: "Получен с ремонта",
     83347610: "Обмен отправлен",
-    83348254: "Возвращен",
+    83348254: "Возвращен — оставляем в старой воронке",
+    80801814: "Подтвержден — ждём решения",
+    80720574: "Заказ оплачен — пока вместе с подтвержденными",
 }
 
 
@@ -66,10 +67,25 @@ def main() -> None:
     print(f"к переносу {move}, оставить {hold}")
     if args.apply and not allow:
         raise SystemExit("Перенос запрещён: нет CUTOVER=ДА. План: только после «да» владельца.")
+    mkt = amo.iter_leads(
+        f"?filter[pipeline_id]={lib.PIPELINE_MKT_OLD}"
+        f"&filter[statuses][0][pipeline_id]={lib.PIPELINE_MKT_OLD}"
+        f"&filter[statuses][0][status_id]=83355150",
+        pages=10,
+    )
+    print(f"Маркетинг, переговоры к переносу: {len(mkt)}")
     if not (args.apply and allow):
         print("Сухой прогон. Входящие не переключал.")
         return
-    # Сюда попадём только с явным «да» в env. Пачками по 50.
+
+    def patch_batch(rows: list[dict]) -> None:
+        for attempt in range(5):
+            st, _ = amo.req("PATCH", "/api/v4/leads", rows)
+            print("patch", len(rows), st)
+            if st != 429 and st < 500:
+                return
+            time.sleep(2 * (attempt + 1))
+
     batch = []
     for lead in leads:
         sid = lead.get("status_id")
@@ -82,12 +98,23 @@ def main() -> None:
             "status_id": target,
         })
         if len(batch) == 50:
-            st, _ = amo.req("PATCH", "/api/v4/leads", batch)
-            print("patch 50", st)
+            patch_batch(batch)
             batch = []
     if batch:
-        st, _ = amo.req("PATCH", "/api/v4/leads", batch)
-        print("patch rest", st, len(batch))
+        patch_batch(batch)
+    batch = []
+    for lead in mkt:
+        batch.append({
+            "id": lead["id"],
+            "pipeline_id": lib.PIPELINE_MKT_NEW,
+            "status_id": lib.ST["mkt_talk"],
+            "responsible_user_id": lib.USER_POLINA,
+        })
+        if len(batch) == 50:
+            patch_batch(batch)
+            batch = []
+    if batch:
+        patch_batch(batch)
 
 
 if __name__ == "__main__":

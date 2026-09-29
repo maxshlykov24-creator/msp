@@ -141,11 +141,15 @@ def human_task(task: dict) -> bool:
 
 
 def quiet_existing(lead: dict) -> bool:
-    if lead.get("pipeline_id") != lib.PIPELINE_SALES_NEW:
+    if int(lead.get("created_at") or 0) >= QUIET_BEFORE:
         return False
-    if lead.get("status_id") not in (lib.ST["new"], lib.ST["in_work"]):
-        return False
-    return int(lead.get("created_at") or 0) < QUIET_BEFORE
+    pipeline = lead.get("pipeline_id")
+    status = lead.get("status_id")
+    if pipeline == lib.PIPELINE_SALES_NEW and status in (lib.ST["new"], lib.ST["in_work"]):
+        return True
+    if pipeline == lib.PIPELINE_MKT_NEW and status == lib.ST["mkt_talk"]:
+        return True
+    return False
 
 
 def finish_task(amo: lib.Amo, task: dict, note: str, responsible: int | None = None) -> None:
@@ -382,7 +386,11 @@ def handle_lead(lead_id: int) -> None:
             return
         if pipeline == lib.PIPELINE_SALES_NEW and wazzup_in.promote_if_pending(amo, lead):
             return
-        if pipeline == lib.PIPELINE_MKT_NEW and lead.get("status_id") == lib.ST["mkt_talk"]:
+        if (
+            pipeline == lib.PIPELINE_MKT_NEW
+            and lead.get("status_id") == lib.ST["mkt_talk"]
+            and not quiet_existing(lead)
+        ):
             if lead.get("responsible_user_id") != lib.USER_POLINA:
                 amo.req("PATCH", f"/api/v4/leads/{lead_id}", {"responsible_user_id": lib.USER_POLINA})
                 lead["responsible_user_id"] = lib.USER_POLINA

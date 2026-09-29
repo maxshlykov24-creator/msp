@@ -39,6 +39,7 @@ from app.database import get_session_factory
 from app import keyboards as kb
 from app.models import Revelation, RevelationArchive, Report, User
 from app.mute import AdminOnlyPrivateMiddleware, coverage_recipient_ids, is_admin_user, send_message_live
+from app.reach import blocked_ids, not_started_ids
 from app.states import HashtagStates, WeeklyReportStates
 from app.time_utils import (
     digest_week_monday_on_digest_day,
@@ -2051,10 +2052,11 @@ async def job_evening_reminder(bot: Bot) -> None:
             return
         await _post_public_digest(bot, public)
         leaders = coverage_recipient_ids()
+        known_closed = not_started_ids() | blocked_ids()
         nudged = 0
         no_start = 0
         for m in missing:
-            if m.tg_user_id in leaders:
+            if m.tg_user_id in leaders or m.tg_user_id in known_closed:
                 continue
             if m.tg_user_id not in started:
                 no_start += 1
