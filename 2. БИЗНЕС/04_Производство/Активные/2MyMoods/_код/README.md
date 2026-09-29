@@ -10,7 +10,7 @@
 | `sla_worker.py` | Задачи SLA на новых id. `--apply` |
 | `route_stock.py` | Оплачен → сборка/производство. `--apply` |
 | `sync_liveinform.py` | Трек → Получен. `--apply` |
-| `assign_shift.py` | Ответственный по CSV смен |
+| `assign_shift.py` | Открытые задачи по графику Кристины и Тани. Лист [График](https://docs.google.com/spreadsheets/d/17V1PO2k4BjFuOQPuXmXvq8ckvOmU8nqD9Q4YhusIwdM/edit). Утро 07:00 внутри `webhook_server.py` |
 | `cutover.py` | Карта переноса. Без `CUTOVER=ДА` не двигает |
 | `map_vitrina.py` | 48 позиций → номенклатура МС |
 | `collect_dashboard.py` | Живой срез → `дашборд/` |

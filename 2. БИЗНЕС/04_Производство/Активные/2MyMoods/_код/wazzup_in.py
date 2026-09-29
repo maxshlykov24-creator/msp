@@ -228,34 +228,75 @@ def _retry(tail: str, tg_id: str, username: str, word: str) -> None:
         traceback.print_exc()
 
 
+def _who(msg: dict) -> tuple[str, str, str]:
+    contact = msg.get("contact") if isinstance(msg.get("contact"), dict) else {}
+    phone_src = str(contact.get("phone") or msg.get("chatId") or "")
+    tail = _digits(phone_src)
+    tail = tail[-10:] if len(tail) >= 10 else ""
+    chat_digits = _digits(str(msg.get("chatId") or ""))
+    tg_id = chat_digits if 5 <= len(chat_digits) < 10 else ""
+    username = str(contact.get("username") or "").lstrip("@").strip().casefold()
+    return tail, tg_id, username
+
+
+def _align(tail: str, tg_id: str, username: str) -> None:
+    import assign_shift
+
+    on_id, _why = assign_shift.shift_roster.duty()
+    off_id = assign_shift.shift_roster.other(on_id)
+    if not off_id:
+        return
+    query = tail or tg_id or username
+    if not query:
+        return
+    amo = lib.Amo()
+    st, body = amo.req("GET", f"/api/v4/leads?query={quote(query)}&limit=50")
+    if not (200 <= st < 300) or not isinstance(body, dict):
+        return
+    leads = (body.get("_embedded") or {}).get("leads") or []
+    seen = 0
+    for lead in leads:
+        if seen >= 5:
+            break
+        if lead.get("responsible_user_id") != off_id:
+            continue
+        if lead.get("pipeline_id") not in (lib.PIPELINE_SALES_NEW, lib.PIPELINE_SALES_OLD):
+            continue
+        if lead.get("status_id") in (lib.ST["won"], lib.ST["lost"]):
+            continue
+        full = _matches(amo, lead, tail, tg_id, username)
+        if not full:
+            continue
+        seen += 1
+        assign_shift.nudge_lead(amo, full)
+
+
 def handle_body(body: dict) -> None:
     for msg in body.get("messages") or []:
         if not isinstance(msg, dict):
             continue
         if msg.get("isEcho") or msg.get("status") != "inbound":
             continue
-        if msg.get("type") not in (None, "text"):
+        tail, tg_id, username = _who(msg)
+        text = str(msg.get("text") or "") if msg.get("type") in (None, "text") else ""
+        found = keyword(text) if text else None
+        if found:
+            if not tail and not tg_id and not username:
+                print(f"  wazzup word {found} chat without phone", flush=True)
+                continue
+            _remember(tail, tg_id, username, found)
+            if _try_move(tail, tg_id, username, found):
+                continue
+            print(f"  wazzup word {found} lead not on new or in work yet", flush=True)
+            for delay in (8, 20, 45, 75, 110):
+                threading.Timer(
+                    delay,
+                    _retry,
+                    args=(tail, tg_id, username, found),
+                ).start()
             continue
-        found = keyword(str(msg.get("text") or ""))
-        if not found:
-            continue
-        contact = msg.get("contact") if isinstance(msg.get("contact"), dict) else {}
-        phone_src = str(contact.get("phone") or msg.get("chatId") or "")
-        tail = _digits(phone_src)
-        tail = tail[-10:] if len(tail) >= 10 else ""
-        chat_digits = _digits(str(msg.get("chatId") or ""))
-        tg_id = chat_digits if 5 <= len(chat_digits) < 10 else ""
-        username = str(contact.get("username") or "").lstrip("@").strip().casefold()
-        if not tail and not tg_id and not username:
-            print(f"  wazzup word {found} chat without phone", flush=True)
-            continue
-        _remember(tail, tg_id, username, found)
-        if _try_move(tail, tg_id, username, found):
-            continue
-        print(f"  wazzup word {found} lead not on new or in work yet", flush=True)
-        for delay in (8, 20, 45, 75, 110):
-            threading.Timer(
-                delay,
-                _retry,
-                args=(tail, tg_id, username, found),
-            ).start()
+        if tail or tg_id or username:
+            try:
+                _align(tail, tg_id, username)
+            except Exception:
+                traceback.print_exc()

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 import traceback
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
+import assign_shift
 import lib
 import route_stock
 import stage_plan
@@ -371,6 +373,17 @@ def chain_loop() -> None:
         threading.Event().wait(30)
 
 
+def shift_loop() -> None:
+    while True:
+        try:
+            nxt = assign_shift.maybe_morning()
+        except Exception:
+            traceback.print_exc()
+            nxt = time.time() + 900
+        wait = max(5, nxt - time.time())
+        threading.Event().wait(wait)
+
+
 def handle_lead(lead_id: int) -> None:
     with lock_for(lead_id):
         amo = lib.Amo()
@@ -380,12 +393,17 @@ def handle_lead(lead_id: int) -> None:
             return
         pipeline = lead.get("pipeline_id")
         if pipeline == lib.PIPELINE_SALES_OLD:
-            wazzup_in.promote_if_pending(amo, lead)
+            if not wazzup_in.promote_if_pending(amo, lead):
+                assign_shift.nudge_lead(amo, lead)
             return
         if pipeline not in (lib.PIPELINE_SALES_NEW, lib.PIPELINE_MKT_NEW):
             return
         if pipeline == lib.PIPELINE_SALES_NEW and wazzup_in.promote_if_pending(amo, lead):
             return
+        if pipeline == lib.PIPELINE_SALES_NEW:
+            nudged = assign_shift.nudge_lead(amo, lead)
+            if nudged:
+                lead["responsible_user_id"] = nudged
         if (
             pipeline == lib.PIPELINE_MKT_NEW
             and lead.get("status_id") == lib.ST["mkt_talk"]
@@ -491,6 +509,7 @@ def main() -> None:
     if not token():
         raise SystemExit("Нет AMO_WEBHOOK_TOKEN")
     threading.Thread(target=chain_loop, daemon=True).start()
+    threading.Thread(target=shift_loop, daemon=True).start()
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"hook {HOST}:{PORT}", flush=True)
     httpd.serve_forever()

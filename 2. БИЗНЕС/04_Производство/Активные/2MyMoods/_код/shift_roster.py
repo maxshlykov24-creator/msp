@@ -178,7 +178,10 @@ def ensure_horizon(days_ahead: int = 21, extend_to: int = 90) -> int:
 
 def publish() -> int:
     """Пустой календарь с галочками. Уже стоящие галочки не затирает."""
-    existing = _rows(force=True)
+    try:
+        existing = _rows(force=True)
+    except Exception:
+        existing = {}
     if any(pair[0] or pair[1] for pair in existing.values()):
         raise SystemExit("В графике уже есть галочки, лист не переписываю")
     start = datetime.now(TZ).date()
