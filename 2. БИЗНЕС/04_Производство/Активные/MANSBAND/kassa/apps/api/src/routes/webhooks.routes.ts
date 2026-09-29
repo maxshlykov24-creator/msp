@@ -28,7 +28,8 @@ export default async function webhooksRoutes(app: FastifyInstance) {
     try {
       const result = await handleAmoWebhook(req.body);
       for (const row of result.results) {
-        if (row.dealNumber) broadcast("deal.updated", { source: "amo", number: row.dealNumber });
+        if (!row.dealNumber || row.skipped === "stage_unchanged") continue;
+        broadcast("deal.updated", { source: "amo", number: row.dealNumber });
       }
       // Очереди задач/финансов слушают те же обновления доски.
       if (result.results.some((r) => r.tasks)) {

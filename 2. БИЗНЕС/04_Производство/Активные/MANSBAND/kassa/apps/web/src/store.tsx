@@ -72,8 +72,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeConsultant, setActiveConsultant] = useState<string>("Матвей");
 
   // Загрузка реальных данных + подписка на WebSocket (только не в мок-режиме).
-  // Пока консультант на #new (продажа и др.) — не трогаем deals/certs/queue и глушим WS:
-  // иначе на телефоне фоновый /deals или reconnect «съедает» соединения и риск сброса UI.
+  // Полный список заявок берём на входе и когда доезжает снимок закрытых.
+  // Событие по одной заявке дописывает только её. Минутного опроса нет.
+  // Пока консультант на #new — не трогаем deals/certs/queue и глушим WS.
   useEffect(() => {
     if (USE_MOCK) return;
     let wsDelayTimer: ReturnType<typeof setTimeout> | null = null;

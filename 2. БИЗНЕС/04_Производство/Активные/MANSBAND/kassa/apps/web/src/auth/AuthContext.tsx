@@ -20,7 +20,9 @@ function userFromToken(token: string): User | null {
     const part = token.split(".")[1];
     if (!part) return null;
     const padded = part.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((part.length + 3) % 4);
-    const json = JSON.parse(atob(padded)) as {
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    const json = JSON.parse(new TextDecoder().decode(bytes)) as {
       sub?: string;
       role?: string;
       name?: string;
