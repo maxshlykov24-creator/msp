@@ -2024,8 +2024,10 @@ async def job_monday_coverage_evening(bot: Bot) -> None:
 
 
 _MISSING_NUDGE = (
-    "Отчёт за неделю в чате ещё не вижу. "
-    "Нажми кнопку Отчёт здесь, собери текст и отправь его в Копают рвы."
+    "Привет!\n"
+    "Ты еще не написал отчет, но помни, что дорогу осилит идущий 🫶\n"
+    "\n"
+    "Могу помочь собрать текст прямо в этом чате по кнопке ниже Отчёт."
 )
 
 
@@ -2060,7 +2062,11 @@ async def job_evening_reminder(bot: Bot) -> None:
             if not await is_allowed_member(bot, m.tg_user_id):
                 continue
             try:
-                sent = await bot.send_message(m.tg_user_id, _MISSING_NUDGE)
+                sent = await bot.send_message(
+                    m.tg_user_id,
+                    _MISSING_NUDGE,
+                    reply_markup=kb.main_menu_kb(),
+                )
             except Exception as e:
                 log.warning("nudge failed uid=%s: %s", m.tg_user_id, e)
                 continue
