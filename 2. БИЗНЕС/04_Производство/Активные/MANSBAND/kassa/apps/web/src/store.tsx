@@ -80,12 +80,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let wsDelayTimer: ReturnType<typeof setTimeout> | null = null;
     let disconnectWs: (() => void) | null = null;
     let dealsInFlight = false;
+    let dealsQueued = false;
     let wasOnForm = isDealFormOpen();
     const dealFetchGen = new Map<number, number>();
 
     const reloadDealsNow = (opts?: { initial?: boolean; force?: boolean }) => {
       if (!opts?.force && isDealFormOpen()) return;
-      if (dealsInFlight) return;
+      if (dealsInFlight) {
+        dealsQueued = true;
+        return;
+      }
       dealsInFlight = true;
       if (opts?.initial) setDealsLoading(true);
       api
@@ -95,6 +99,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         .finally(() => {
           dealsInFlight = false;
           setDealsLoading(false);
+          if (dealsQueued && !isDealFormOpen()) {
+            dealsQueued = false;
+            reloadDealsNow();
+          } else {
+            dealsQueued = false;
+          }
         });
     };
     const upsertDeal = (deal: Deal) => {
