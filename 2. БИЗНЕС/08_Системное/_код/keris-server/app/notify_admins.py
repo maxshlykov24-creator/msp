@@ -17,6 +17,7 @@ from .tg_http import tg_delete_message, tg_edit_message, tg_send_message_id
 log = logging.getLogger("keris.notify_admins")
 
 _BOOKING_ID = re.compile(r"KERIS-\d+")
+CARD_MENU = {"inline_keyboard": [[{"text": "Меню", "callback_data": "menu:new"}]]}
 
 
 def notify(text: str) -> None:
@@ -53,7 +54,7 @@ def _upsert(db, token: str, chat_id: str, booking_id: str, text: str) -> None:
     if row is not None and row.fingerprint == fingerprint:
         return
     if row is None:
-        message_id = tg_send_message_id(token, chat_id, text)
+        message_id = tg_send_message_id(token, chat_id, text, reply_markup=CARD_MENU)
         if not message_id:
             log.warning("карточка %s не отправлена chat_id=%s", booking_id, chat_id)
             return
@@ -65,15 +66,15 @@ def _upsert(db, token: str, chat_id: str, booking_id: str, text: str) -> None:
         ))
         return
     if tg_delete_message(token, chat_id, row.message_id):
-        message_id = tg_send_message_id(token, chat_id, text)
+        message_id = tg_send_message_id(token, chat_id, text, reply_markup=CARD_MENU)
         if message_id:
             row.message_id = message_id
             row.fingerprint = fingerprint
             return
-    if tg_edit_message(token, chat_id, row.message_id, text):
+    if tg_edit_message(token, chat_id, row.message_id, text, reply_markup=CARD_MENU):
         row.fingerprint = fingerprint
         return
-    message_id = tg_send_message_id(token, chat_id, text)
+    message_id = tg_send_message_id(token, chat_id, text, reply_markup=CARD_MENU)
     if message_id:
         row.message_id = message_id
         row.fingerprint = fingerprint

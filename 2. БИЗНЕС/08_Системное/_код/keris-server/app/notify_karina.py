@@ -34,6 +34,31 @@ def fmt_when(dt, bold: bool = False) -> str:
     return f"<b>{text}</b>" if bold else text
 
 
+def _lookups(booking) -> tuple[str, str, dict]:
+    """Имена из каталога. В карточку не должны попадать dog_hygiene и svetlana."""
+    from sqlalchemy.orm import object_session
+
+    from .models import Addon, Master, Service
+
+    service_name = ""
+    master_name = ""
+    addon_titles: dict[str, str] = {}
+    db = object_session(booking)
+    if db is None:
+        return service_name, master_name, addon_titles
+    service = db.get(Service, booking.service_id) if booking.service_id else None
+    master = db.get(Master, booking.master_id) if booking.master_id else None
+    if service is not None and service.name:
+        service_name = service.name
+    if master is not None and master.name:
+        master_name = master.name
+    for addon_id in list(booking.addon_ids or []) + list(booking.free_addon_ids or []):
+        addon = db.get(Addon, addon_id)
+        if addon is not None and addon.name:
+            addon_titles[addon_id] = addon.name
+    return service_name, master_name, addon_titles
+
+
 def booking_created_text(
     booking,
     service_title: str = "",
@@ -42,10 +67,14 @@ def booking_created_text(
 ) -> str:
     """Блоки разделены пустой строкой — премиальный, читаемый вид в Telegram."""
     titles = addon_titles or {}
+    looked_service, looked_master, looked_addons = _lookups(booking)
+    titles = {**looked_addons, **titles}
+    service_title = service_title or looked_service or booking.service_id
+    master_name = master_name or looked_master or booking.master_id
     blocks = [f"🆕 <b>Новая запись {booking.id}</b>"]
 
     blocks.append(
-        f"{booking.owner_name}, {booking.owner_phone}\n{service_title or booking.service_id}"
+        f"{booking.owner_name}, {booking.owner_phone}\n{service_title}"
     )
 
     addon_lines = []
@@ -56,7 +85,7 @@ def booking_created_text(
     if addon_lines:
         blocks.append("\n".join(addon_lines))
 
-    blocks.append(f"Мастер: {master_name or booking.master_id}\n{fmt_when(booking.starts_at, bold=True)}")
+    blocks.append(f"Мастер: {master_name}\n{fmt_when(booking.starts_at, bold=True)}")
 
     if booking.subscription_id:
         money = f"по абонементу (списано визитов: {booking.visits_charged})"
@@ -76,17 +105,34 @@ def _card(booking, title: str) -> str:
     """Полная карточка: после удаления старого сообщения слот не теряется."""
     who = booking.owner_name or "клиент"
     phone = booking.owner_phone or ""
-    service = booking.service_id or ""
-    master = booking.master_id or ""
-    money = f"{booking.price} ₽" if booking.price else "сумма не указана"
-    return (
-        f"<b>{title} {booking.id}</b>\n\n"
-        f"{who}, {phone}\n"
-        f"{service}\n"
-        f"Мастер: {master}\n"
-        f"{fmt_when(booking.starts_at, bold=True)}\n"
-        f"{money}"
-    )
+    service_name, master_name, addon_titles = _lookups(booking)
+    service = service_name or "услуга"
+    master = master_name or "мастер"
+    lines = [
+        f"<b>{title} {booking.id}</b>",
+        "",
+        f"{who}, {phone}",
+        service,
+    ]
+    addon_lines = []
+    if booking.addon_ids:
+        addon_lines.append("Допы: " + ", ".join(addon_titles.get(a, a) for a in booking.addon_ids))
+    if booking.free_addon_ids:
+        addon_lines.append("Бесплатно: " + ", ".join(addon_titles.get(a, a) for a in booking.free_addon_ids))
+    if addon_lines:
+        lines.append("\n".join(addon_lines))
+    lines.append(f"Мастер: {master}")
+    lines.append(fmt_when(booking.starts_at, bold=True))
+    if booking.subscription_id:
+        money = f"по абонементу (списано визитов: {booking.visits_charged})"
+        if booking.price:
+            money += f", доплата {booking.price} ₽"
+    else:
+        money = f"{booking.price} ₽" if booking.price else "сумма не указана"
+    lines.append(f"💰 {money}")
+    if booking.comment:
+        lines.append(f"💬 {booking.comment}")
+    return "\n".join(lines)
 
 
 def booking_cancelled_text(booking) -> str:

@@ -234,6 +234,18 @@ def _is_salon_master(person: dict) -> bool:
     return True
 
 
+def _staff_photo(person: dict) -> str:
+    """Большое фото мастера. Заглушка YCLIENTS «нет фото» в запись не кладём."""
+    for key in ("avatar_big", "avatar"):
+        url = str(person.get(key) or "").strip()
+        if not url.startswith("http"):
+            continue
+        if "no-master" in url:
+            continue
+        return url[:500]
+    return ""
+
+
 def _slug_master_id(name: str, staff_id: int) -> str:
     raw = "".join(_CYR_SLUG.get(ch, ch) for ch in name.lower())
     slug = "".join(ch for ch in raw if ch.isalnum())[:32]
@@ -263,6 +275,7 @@ def _find_or_create_master(db: Session, person: dict) -> Master:
         row.caption = spec
     elif not row.caption:
         row.caption = "Груминг"
+    row.photo_url = _staff_photo(person)
     return row
 
 

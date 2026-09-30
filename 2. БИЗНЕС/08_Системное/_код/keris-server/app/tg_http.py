@@ -221,13 +221,17 @@ def tg_send_message_id(
     text: str,
     *,
     parse_mode: str = "HTML",
+    reply_markup: dict | None = None,
 ) -> int | None:
-    result = tg_call(bot_token, "sendMessage", {
+    payload: dict[str, Any] = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": parse_mode,
         "disable_web_page_preview": True,
-    })
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    result = tg_call(bot_token, "sendMessage", payload)
     if not result:
         return None
     mid = result.get("message_id")
@@ -240,11 +244,21 @@ def tg_delete_message(bot_token: str, chat_id: str | int, message_id: int) -> bo
     }) is not None
 
 
-def tg_edit_message(bot_token: str, chat_id: str | int, message_id: int, text: str) -> bool:
-    return tg_call(bot_token, "editMessageText", {
+def tg_edit_message(
+    bot_token: str,
+    chat_id: str | int,
+    message_id: int,
+    text: str,
+    *,
+    reply_markup: dict | None = None,
+) -> bool:
+    payload: dict[str, Any] = {
         "chat_id": chat_id,
         "message_id": message_id,
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-    }) is not None
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    return tg_call(bot_token, "editMessageText", payload) is not None

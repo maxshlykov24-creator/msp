@@ -274,7 +274,8 @@ def list_masters(db: Session = Depends(get_db)) -> list[dict]:
             {"name": r.author_name, "stars": r.stars, "date": r.created_at.date().isoformat(), "text": r.text}
         )
     return [
-        {"id": r.id, "name": r.name, "caption": r.caption, "reviews": reviews.get(r.id, [])}
+        {"id": r.id, "name": r.name, "caption": r.caption,
+         "photo": r.photo_url or None, "reviews": reviews.get(r.id, [])}
         for r in rows
     ]
 

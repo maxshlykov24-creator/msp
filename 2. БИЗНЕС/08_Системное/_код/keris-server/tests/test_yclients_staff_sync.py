@@ -13,7 +13,8 @@ from app.sync import sync_staff_from_yclients
 def test_sync_staff_activates_scheduled_masters(db_session, monkeypatch):
     people = [
         {"id": 5824353, "name": "Светлана", "fired": 0, "hidden": 0, "is_bookable": 1,
-         "has_schedule": 1, "specialization": "грумер", "services_links": [1]},
+         "has_schedule": 1, "specialization": "грумер", "services_links": [1],
+         "avatar_big": "https://assets.yclients.com/masters/origin/svetlana.jpeg"},
         {"id": 5824356, "name": "Алла", "fired": 0, "hidden": 0, "is_bookable": 1,
          "has_schedule": 1, "specialization": "грумер", "services_links": [1]},
         {"id": 5927391, "name": "Анастасия", "fired": 0, "hidden": 0, "is_bookable": 0,
@@ -33,6 +34,8 @@ def test_sync_staff_activates_scheduled_masters(db_session, monkeypatch):
     result = sync_staff_from_yclients(db_session)
 
     assert db_session.get(Master, "svetlana").active
+    assert db_session.get(Master, "svetlana").photo_url.endswith("svetlana.jpeg")
+    assert db_session.get(Master, "alla").photo_url == ""
     assert db_session.get(Master, "alla").active
     nastya = db_session.get(Master, "anastasiya")
     assert nastya is not None

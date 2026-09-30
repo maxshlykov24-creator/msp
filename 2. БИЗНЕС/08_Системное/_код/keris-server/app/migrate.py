@@ -53,6 +53,7 @@ COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("shift_on", "INTEGER DEFAULT 0"),
         ("shift_off", "INTEGER DEFAULT 0"),
         ("shift_start", "VARCHAR(10) DEFAULT ''"),
+        ("photo_url", "VARCHAR(500) DEFAULT ''"),
     ],
     "subscription_plans": [
         ("bonus_spa", "INTEGER DEFAULT 0"),

@@ -176,6 +176,19 @@ def send(chat_id: int, text: str, keyboard: Optional[dict] = None) -> None:
     present(chat_id, text, keyboard)
 
 
+def reply_below(chat_id: int) -> None:
+    """Ответ на текст или фото — новым сообщением под ним, а не правкой экрана выше."""
+    st = user_state(chat_id)
+    mid = st.get("screen_id")
+    if mid:
+        tg("editMessageReplyMarkup", {
+            "chat_id": chat_id,
+            "message_id": mid,
+            "reply_markup": {"inline_keyboard": []},
+        })
+    st["screen_id"] = None
+
+
 def answer_callback(cb_id: str, text: str = "") -> None:
     tg("answerCallbackQuery", {"callback_query_id": cb_id, "text": text[:200]}, timeout=3)
 
@@ -737,6 +750,12 @@ def on_photo(chat_id: int, message: dict) -> None:
 
 
 def on_callback(chat_id: int, data: str) -> None:
+    if data == "menu:new":
+        reset_flow(chat_id)
+        user_state(chat_id)["screen_id"] = None
+        save_state()
+        show_home(chat_id)
+        return
     if data in ("cancel", "home"):
         reset_flow(chat_id)
         show_home(chat_id)
@@ -869,10 +888,14 @@ def handle(update: dict) -> None:
         chat_id = int((source.get("chat") or {}).get("id") or 0)
         answer_callback(callback.get("id") or "")
         mid = source.get("message_id")
-        if chat_id > 0 and mid:
+        data = callback.get("data") or ""
+        # Кнопка на уведомлении не делает эту карточку экраном: меню уйдёт новым сообщением.
+        if chat_id > 0 and mid and data != "menu:new":
             user_state(chat_id)["screen_id"] = mid
     else:
         chat_id = int((message.get("chat") or {}).get("id") or 0)
+        if chat_id > 0:
+            reply_below(chat_id)
     if chat_id <= 0 or str(chat_id) not in ALLOWED_IDS:
         if chat_id > 0:
             send(chat_id, "Нет доступа.")

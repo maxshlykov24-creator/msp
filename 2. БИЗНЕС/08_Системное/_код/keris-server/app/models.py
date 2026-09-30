@@ -102,6 +102,8 @@ class Master(Base):
     shift_off: Mapped[int] = mapped_column(Integer, default=0)
     shift_start: Mapped[str] = mapped_column(String(10), default="")  # YYYY-MM-DD
     yclients_staff_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Публичная ссылка на фото из YCLIENTS. Пусто — в записи остаётся буква имени.
+    photo_url: Mapped[str] = mapped_column(String(500), default="")
 
     days_off: Mapped[list["MasterDayOff"]] = relationship(back_populates="master", cascade="all, delete-orphan")
 
