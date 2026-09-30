@@ -91,6 +91,32 @@ def test_yesterday_list_carries_photo_counts(client, sessions):
     assert counts == {"KERIS-9001": (0, 0), "KERIS-9002": (1, 1)}
 
 
+def test_photo_list_skips_future_and_no_show(client, sessions, monkeypatch):
+    add_booking(sessions, "KERIS-9010", 8, 0)
+    add_booking(sessions, "KERIS-9011", 23, 0)
+    add_booking(sessions, "KERIS-9012", 10, 0)
+    db = sessions()
+    late = db.get(Booking, "KERIS-9011")
+    missed = db.get(Booking, "KERIS-9010")
+    missed.status = BookingStatus.no_show
+    db.commit()
+    db.close()
+    moment = datetime.combine(clock.today(), datetime.min.time()) + timedelta(hours=12)
+    monkeypatch.setattr(clock, "now", lambda: moment)
+    monkeypatch.setattr("app.main.clock.now", lambda: moment)
+
+    rows = client.get("/admin/bookings", params={"when": "today", "for_photos": 1}, headers=ADMIN).json()
+
+    assert [row["id"] for row in rows] == ["KERIS-9012"]
+    assert late is not None
+
+
+def test_report_requires_pair(client, sessions):
+    add_booking(sessions, "KERIS-9020", 11, -1)
+    r = client.post("/admin/bookings/KERIS-9020/report/send", params={"require_pair": 1}, headers=ADMIN)
+    assert r.status_code == 422
+
+
 def test_unknown_when_rejected(client):
     r = client.get("/admin/bookings", params={"when": "позавчера"}, headers=ADMIN)
     assert r.status_code == 422

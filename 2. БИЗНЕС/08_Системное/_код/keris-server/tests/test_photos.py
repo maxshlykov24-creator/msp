@@ -83,6 +83,7 @@ def test_send_report_marks_sent_and_goes_to_telegram(monkeypatch, db_session, st
     assert result["pending"] is False
     assert sent == [(555000111222, 2, sent[0][2])]
     assert "Моня" in sent[0][2]
+    assert "кабинете" not in sent[0][2]
     assert all(p.sent_at is not None for p in photos.for_booking(db_session, booking.id))
 
 
@@ -166,3 +167,25 @@ def test_client_profile_returns_photos_per_visit(monkeypatch, db_session, storag
     assert [p["kind"] for p in grouped[booking.id]] == ["before", "after"]
     assert "KERIS-НЕТ" not in grouped
     assert db_session.query(BookingPhoto).count() == 2
+
+
+def test_admin_source_replaces_same_kind(monkeypatch, db_session, storage):
+    booking = make_booking(db_session)
+    monkeypatch.setattr(
+        photos, "settings",
+        dataclasses.replace(settings, photos_dir=str(storage), karina_bot_token="admin-token"),
+    )
+    calls = []
+
+    def fake_bytes(token, file_id):
+        calls.append(token)
+        return b"one" if len(calls) == 1 else b"two"
+
+    monkeypatch.setattr(photos, "tg_get_file_bytes", fake_bytes)
+    photos.save_from_telegram(db_session, booking, "before", "file-a", source="admin")
+    photos.save_from_telegram(db_session, booking, "before", "file-b", source="admin")
+
+    rows = photos.for_booking(db_session, booking.id)
+    assert len(rows) == 1
+    assert photos.absolute_path(rows[0]).read_bytes() == b"two"
+    assert calls == ["admin-token", "admin-token"]
