@@ -372,6 +372,29 @@ class OwnerDigest(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class PetProfile(Base):
+    """Правки клиента в паспорте питомца: кличка, заметка мастеру, вес.
+
+    Журнал может вернуть старую кличку. display_name на старом ключе оставляет
+    в кабинете то имя, которое клиент подтвердил как исправление ошибки.
+    Вес из визита новее правки снова становится текущим.
+    """
+
+    __tablename__ = "pet_profiles"
+    __table_args__ = (UniqueConstraint("phone", "name_key", "pet_type", name="uq_pet_profile"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    phone: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    name_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    pet_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), default="")
+    note: Mapped[str] = mapped_column(String(1000), default="")
+    note_set: Mapped[bool] = mapped_column(Boolean, default=False)
+    weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    weight_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class SyncLogDirection(str, enum.Enum):
     push_to_yclients = "push_to_yclients"
     webhook_from_yclients = "webhook_from_yclients"

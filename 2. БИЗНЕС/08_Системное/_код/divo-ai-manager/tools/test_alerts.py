@@ -1351,6 +1351,10 @@ def test_listing_context_cleanup():
     assert "Чат по объявлению держит эту машину" in built
     assert "Не выдумывай соседнюю тему" in built
     assert "Это вы звонили" in built
+    quiet = prompt.build(with_stock=False)
+    assert "Чат по объявлению держит эту машину" in quiet
+    assert "1C4RDJDG4LC342711" in built
+    assert "1C4RDJDG4LC342711" not in quiet
 
 
 def test_avito_history_and_shot():
@@ -2755,6 +2759,74 @@ def test_max_refusal_keeps_sense():
     assert drop_max_app("Максим, напишите номер") == "Максим, напишите номер"
 
 
+def test_listing_price_not_neighbor():
+    """Чат держит объявление. Две похожие карточки не клеятся, чужая цена вырезается."""
+    from bot.avito_match import (
+        allowed_prices,
+        attached_listing,
+        drop_foreign_prices,
+        match_card,
+    )
+    from bot.nudge import asks_other_cars
+
+    stock = (
+        "## Geely Coolray 2022\n"
+        "- VIN: Y4K8622Z3NB905789\n"
+        "- Марка: Geely\n"
+        "- Модель: Coolray\n"
+        "- Пробег: 147 330 км\n"
+        "- Цена в объявлении: 1 160 000 руб.\n"
+        "\n"
+        "## Geely Coolray 2022\n"
+        "- VIN: Y4K8622Z4NB907549\n"
+        "- Марка: Geely\n"
+        "- Модель: Coolray\n"
+        "- Пробег: 152 645 км\n"
+        "- Цена в объявлении: 1 200 000 руб.\n"
+    )
+    twin = match_card("Geely Coolray 1.5 AMT, 2022, 145 000 км", "1 300 000 ₽", stock=stock)
+    assert twin is None
+    inna = match_card(
+        "Geely Coolray 1.5 AMT, 2023, 16 217 км",
+        "1 650 000 ₽",
+        stock=stock,
+    )
+    assert inna is None
+    doc = {
+        "avito": {
+            "title": "Geely Coolray 1.5 AMT, 2023, 16 217 км",
+            "price": "1 650 000 ₽",
+            "url": "https://avito.ru/x",
+        }
+    }
+    assert attached_listing(doc)["title"].startswith("Geely Coolray")
+    assert attached_listing({"avito": {"title": "чат по профилю, объявление не привязано"}}) is None
+    allowed = {1650000}
+    said = (
+        "Цена в объявлении у вас указана 1 650 000, это тоже за наличный расчёт, без НДС. "
+        "У нас в базе эта же машина проходит по 1 160 000, разницу уточню отдельно"
+    )
+    locked = drop_foreign_prices(said, allowed)
+    assert "1 650 000" in locked
+    assert "1 160 000" not in locked
+    assert drop_foreign_prices("Да, цена по этой машине 1 160 000.", allowed) == ""
+    assert "147 330" in drop_foreign_prices("Пробег 147 330 км, цена 1 650 000.", allowed)
+    assert not asks_other_cars("А в объявление указана 1650")
+    assert not asks_other_cars("То есть эту именно машину вы отдаете за 1160000")
+    assert asks_other_cars("А что ещё есть?")
+    assert asks_other_cars("Эта машина не подходит, покажите другие")
+    live = allowed_prices(
+        {
+            "avito": {
+                "title": "Geely Coolray 1.5 AMT, 2023, 16 217 км",
+                "price": "1 650 000 ₽",
+            }
+        }
+    )
+    assert 1650000 in live
+    assert 1160000 not in live
+
+
 if __name__ == "__main__":
     test_needs_reply()
     test_phone()
@@ -2807,5 +2879,6 @@ if __name__ == "__main__":
     test_dash_keeps_clause_whole()
     test_phrasing_leaks()
     test_max_refusal_keeps_sense()
+    test_listing_price_not_neighbor()
     test_autoteka_link_hides_damage()
     print("ok")

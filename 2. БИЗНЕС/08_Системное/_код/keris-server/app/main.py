@@ -58,6 +58,7 @@ from .models import (
     Master,
     MasterDayOff,
     PetType,
+    PetProfile,
     Review,
     SalonClosure,
     Service,
@@ -337,6 +338,131 @@ def create_review(payload: ReviewIn, db: Session = Depends(get_db)) -> dict:
     }
 
 
+def _pet_profile_map(db: Session, phone: str) -> dict[tuple[str, str], PetProfile]:
+    rows = db.execute(select(PetProfile).where(PetProfile.phone == phone)).scalars().all()
+    return {(row.name_key, row.pet_type): row for row in rows}
+
+
+def _pet_display_name(raw_name: str, pet_type: str, profiles: dict) -> str:
+    shown = (raw_name or "").strip()
+    row = profiles.get((shown.lower(), pet_type))
+    if row is not None and (row.display_name or "").strip():
+        return row.display_name.strip()
+    return shown
+
+
+def _apply_pet_profile(pet: dict, profiles: dict) -> None:
+    rows = [profiles[key] for key in pet.get("_keys") or [] if key in profiles]
+    rows.sort(key=lambda row: row.updated_at or datetime.min)
+    for row in rows:
+        if row.note_set:
+            pet["note"] = (row.note or "").strip()
+        if row.weight_kg is not None and row.weight_at is not None:
+            visit_at = pet.get("_weight_at")
+            if visit_at is None or row.weight_at >= visit_at:
+                pet["weight_kg"] = row.weight_kg
+                pet["weight"] = f"{row.weight_kg:g} кг"
+        if (row.display_name or "").strip():
+            pet["name"] = row.display_name.strip()
+
+
+def _pet_profile_row(db: Session, phone: str, name_key: str, pet_type: str) -> PetProfile:
+    row = db.execute(
+        select(PetProfile).where(
+            PetProfile.phone == phone,
+            PetProfile.name_key == name_key,
+            PetProfile.pet_type == pet_type,
+        )
+    ).scalars().first()
+    if row is None:
+        row = PetProfile(phone=phone, name_key=name_key, pet_type=pet_type)
+        db.add(row)
+    row.updated_at = datetime.utcnow()
+    return row
+
+
+class PetUpdateIn(BaseModel):
+    phone: str
+    pet_name: str
+    pet_type: str
+    name: Optional[str] = None
+    note: Optional[str] = None
+    weight_kg: Optional[float] = None
+
+
+@app.post("/api/client/pet")
+def update_client_pet(payload: PetUpdateIn, db: Session = Depends(get_db)) -> dict:
+    """Правка паспорта: кличка только как исправление, заметка мастеру и вес."""
+    phone = normalize_phone(payload.phone)
+    pet_type = (payload.pet_type or "").strip()
+    if pet_type not in {PetType.dog.value, PetType.cat.value}:
+        raise HTTPException(422, "Укажите собаку или кошку")
+    shown = (payload.pet_name or "").strip()
+    if not shown:
+        raise HTTPException(422, "Не указана кличка")
+    if payload.name is None and payload.note is None and payload.weight_kg is None:
+        raise HTTPException(422, "Нечего сохранять")
+    profiles = _pet_profile_map(db, phone)
+    bookings = db.execute(select(Booking).where(Booking.owner_phone == phone)).scalars().all()
+    matched = [
+        b for b in bookings
+        if (b.pet_name or "").strip()
+        and b.pet_type.value == pet_type
+        and _pet_display_name(b.pet_name, pet_type, profiles).lower() == shown.lower()
+    ]
+    if not matched:
+        raise HTTPException(404, "Питомец не найден")
+    keys = {(b.pet_name.strip().lower(), pet_type) for b in matched}
+
+    if payload.name is not None:
+        new_name = payload.name.strip()
+        if len(new_name) < 2 or len(new_name) > 80:
+            raise HTTPException(422, "Кличка должна быть от 2 до 80 букв")
+        if new_name.lower() != shown.lower():
+            clash = [
+                b for b in bookings
+                if b not in matched
+                and b.pet_type.value == pet_type
+                and (b.pet_name or "").strip()
+                and _pet_display_name(b.pet_name, pet_type, profiles).lower() == new_name.lower()
+            ]
+            if clash:
+                raise HTTPException(409, "Питомец с такой кличкой уже есть")
+            for booking in matched:
+                booking.pet_name = new_name
+            for key in keys:
+                row = _pet_profile_row(db, phone, key[0], pet_type)
+                row.display_name = new_name
+            fresh = _pet_profile_row(db, phone, new_name.lower(), pet_type)
+            fresh.display_name = new_name
+            keys.add((new_name.lower(), pet_type))
+
+    if payload.note is not None:
+        text = payload.note.strip()[:1000]
+        for key in keys:
+            row = _pet_profile_row(db, phone, key[0], pet_type)
+            row.note = text
+            row.note_set = True
+        latest = max(matched, key=lambda item: item.starts_at)
+        latest.comment = text
+
+    if payload.weight_kg is not None:
+        weight = float(payload.weight_kg)
+        if weight <= 0 or weight > 120:
+            raise HTTPException(422, "Вес укажите числом больше нуля")
+        moment = datetime.utcnow()
+        for key in keys:
+            row = _pet_profile_row(db, phone, key[0], pet_type)
+            row.weight_kg = weight
+            row.weight_at = moment
+        for booking in matched:
+            if booking.starts_at > clock.now().replace(tzinfo=None):
+                booking.pet_weight_kg = weight
+
+    db.commit()
+    return client_profile(phone, db)
+
+
 @app.get("/api/client")
 def client_profile(phone: str, db: Session = Depends(get_db)) -> dict:
     """Личный кабинет «Мой Keris»: питомцы, абонемент и визиты по номеру телефона."""
@@ -344,6 +470,7 @@ def client_profile(phone: str, db: Session = Depends(get_db)) -> dict:
     bookings = db.execute(
         select(Booking).where(Booking.owner_phone == normalized).order_by(Booking.starts_at)
     ).scalars().all()
+    now = clock.now().replace(tzinfo=None)
 
     service_names = {s.id: s.name for s in db.execute(select(Service)).scalars().all()}
     addon_names = {a.id: a.name for a in db.execute(select(Addon)).scalars().all()}
@@ -351,43 +478,62 @@ def client_profile(phone: str, db: Session = Depends(get_db)) -> dict:
 
     # Питомец в кабинете — только если в записи есть кличка. Без клички (карты YCLIENTS,
     # старые тесты) раньше получалась заглушка «Собака»/«Кошка» рядом с реальной Моней.
+    profiles = _pet_profile_map(db, normalized)
     pets: dict[tuple[str, str], dict] = {}
     for b in bookings:
-        name = (b.pet_name or "").strip()
-        if not name:
+        raw_name = (b.pet_name or "").strip()
+        if not raw_name:
             continue
-        key = (name.lower(), b.pet_type.value)
+        shown = _pet_display_name(raw_name, b.pet_type.value, profiles)
+        key = (shown.lower(), b.pet_type.value)
         pet = pets.get(key)
         if pet is None:
             pet = {
                 "id": f"pet{len(pets) + 1}",
-                "name": name,
+                "name": shown,
                 "type": b.pet_type.value,
                 "breed": b.pet_breed or "",
                 "size": b.pet_size,
-                "weight": f"{b.pet_weight_kg:g} кг" if b.pet_weight_kg else "",
+                "weight": "",
+                "weight_kg": None,
                 "birth_date": b.pet_birth_date or "",
                 "note": "",
+                "_keys": set(),
+                "_weight_at": None,
+                "_note_rank": None,
             }
             pets[key] = pet
-        # последняя известная информация о питомце — из самой свежей записи
+        pet["_keys"].add((raw_name.lower(), b.pet_type.value))
         pet["breed"] = b.pet_breed or pet["breed"]
         pet["size"] = b.pet_size
         pet["birth_date"] = b.pet_birth_date or pet["birth_date"]
-        if b.comment:
-            pet["note"] = b.comment
+        if b.pet_weight_kg and b.starts_at <= now and (
+            pet["_weight_at"] is None or b.starts_at >= pet["_weight_at"]
+        ):
+            pet["_weight_at"] = b.starts_at
+            pet["weight_kg"] = b.pet_weight_kg
+            pet["weight"] = f"{b.pet_weight_kg:g} кг"
+        if (b.comment or "").strip() and (pet["_note_rank"] is None or b.starts_at >= pet["_note_rank"]):
+            pet["_note_rank"] = b.starts_at
+            pet["note"] = b.comment.strip()
+
+    for pet in pets.values():
+        _apply_pet_profile(pet, profiles)
+        pet.pop("_keys", None)
+        pet.pop("_weight_at", None)
+        pet.pop("_note_rank", None)
 
     def _visit_pet_id(b: Booking) -> str:
         name = (b.pet_name or "").strip()
         if name:
-            hit = pets.get((name.lower(), b.pet_type.value))
+            shown = _pet_display_name(name, b.pet_type.value, profiles)
+            hit = pets.get((shown.lower(), b.pet_type.value))
             if hit:
                 return hit["id"]
         # запись без клички: привязать только если у клиента ровно один питомец того же вида
         same = [p for p in pets.values() if p["type"] == b.pet_type.value]
         return same[0]["id"] if len(same) == 1 else ""
 
-    now = clock.now().replace(tzinfo=None)
     photos_by_booking = photos.by_booking_ids(db, [b.id for b in bookings])
     visits = []
     for b in bookings:
@@ -413,7 +559,7 @@ def client_profile(phone: str, db: Session = Depends(get_db)) -> dict:
             "masterId": b.master_id,
             "masterName": master_names.get(b.master_id, ""),
             "petId": _visit_pet_id(b),
-            "petName": (b.pet_name or "").strip(),
+            "petName": _pet_display_name((b.pet_name or "").strip(), b.pet_type.value, profiles) if (b.pet_name or "").strip() else "",
             "service": service_names.get(b.service_id, b.service_id),
             "addons": [addon_names.get(a, a) for a in (b.addon_ids or [])],
             "total": b.price,
