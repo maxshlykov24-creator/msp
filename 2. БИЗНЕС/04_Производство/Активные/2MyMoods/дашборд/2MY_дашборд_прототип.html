@@ -639,7 +639,7 @@
     </div>
     <div class="card">
       <h3>Качество метки</h3>
-      <div class="hint">Считаются только заказы с сайта: у офлайна метки нет по определению, там источник ставит менеджер. Часть заказов приходит с полем «utm» без значения — это теряет сайт, не МойСклад.</div>
+      <div class="hint">Считаются только заказы с сайта: у офлайна метки нет по определению, там источник ставит менеджер. Заказ сайта без utm_source отмечен как пробел данных.</div>
       <div class="donut-wrap">
         <div class="donut" id="utm-donut"><div class="mid"><b id="utm-ok">—</b><i>метка есть</i></div></div>
         <div class="legend" id="utm-legend"></div>
@@ -812,7 +812,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Размеры по категориям</h3>
-      <div class="hint">Видно, что в жакетах чаще берут one size, а в платьях расходится S и M. Тёмная ячейка — размер-лидер категории.</div>
+      <div class="hint">Размеры берутся из характеристики варианта товара. Пустой размер показан как «не указано».</div>
       <div class="matrix" id="sizes"></div>
     </div>
     <div class="card">
@@ -868,7 +868,7 @@
   </section>
 
   <div class="notes">
-    <p><b>Разделы и локальные фильтры.</b> Страница разбита на четыре раздела: продажи и каналы, клиенты, товары, процессы в amoCRM. Период, категория, товар, источник, канал сбыта и город задаются один раз сверху и действуют во всех разделах, листать вниз не нужно. Внутри блока клиентов есть свой поиск по имени и свои условия: сегмент, число покупок, срок тишины, сортировка, а также переключатель «клиенты периода» или «вся база». Внутри точечной аналитики свой разрез по категории, товару, размеру и цвету: он меняет только карточку товара, остальные блоки остаются на общем фильтре.</p>
+    <p><b>Разделы и локальные фильтры.</b> Страница разбита на четыре раздела: продажи и каналы, клиенты, товары, процессы в amoCRM. Период, категория, товар, источник, канал сбыта и город действуют на блоки покупок. Для воронки amoCRM действует период по дате создания сделки. Внутри блока клиентов есть свой поиск по имени и свои условия: сегмент, число покупок, срок тишины, сортировка, а также переключатель «клиенты периода» или «вся база». Внутри точечной аналитики свой разрез по категории, товару, размеру и цвету: он меняет только карточку товара, остальные блоки остаются на общем фильтре.</p>
   </div>
   <div class="footer">
     <div class="footer-brand">
@@ -888,7 +888,7 @@ const money = n => num(Math.round(n || 0)) + ' ₽';
 const pct = (a,b) => b ? Math.round(a/b*100) + '%' : '0%';
 const kv = rows => rows.map(([k,v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
 const sum = (xs, fn) => xs.reduce((a,x)=>a+fn(x),0);
-const group = (xs,key) => { const out={}; xs.forEach(x=>{const k=key(x)||'не указано';(out[k] ||= []).push(x)}); return out; };
+const group = (xs,key) => { const out=Object.create(null); xs.forEach(x=>{const k=key(x)||'не указано';(out[k] ||= []).push(x)}); return out; };
 const table = (id, rows, cols) => { el(id).innerHTML = rows.length ? rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(c(r))+'</td>').join('')+'</tr>').join('') : `<tr><td colspan="${cols.length}" class="empty">Нет данных</td></tr>`; };
 const select = (id, values, label) => { const e=el(id), old=e.value; e.innerHTML='<option value="">'+esc(label)+'</option>'+values.filter(Boolean).sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');e.value=old;};
 const startOfMonth = d => d.slice(0,7)+'-01';
@@ -904,12 +904,13 @@ function orderRev(o,lines){return state.cat||state.prod ? sum(lines,l=>l.rev) : 
 function buildClients(){
  const g=group(data.orders.filter(o=>o.buy&&o.phone),o=>o.phone);
  clients=Object.entries(g).map(([phone,orders])=>{
-   orders.sort((a,b)=>a.paid_date.localeCompare(b.paid_date));
+   orders.sort((a,b)=>(a.paid_date||'9999').localeCompare(b.paid_date||'9999'));
    const buys=orders.length, ltv=sum(orders,o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev));
-   const first=orders[0].paid_date,last=orders[buys-1].paid_date;
+   const dated=orders.filter(o=>o.paid_date);const uncertain=dated.length!==orders.length;const first=uncertain?'':dated[0]?.paid_date||'',last=uncertain?'':dated[dated.length-1]?.paid_date||'';
    return {phone,name:orders[buys-1].client||phone,buys,ltv,first,last,
-     silence:Math.max(0,Math.floor((Date.now()-Date.parse(last+'T00:00:00+03:00'))/864e5)),
+     silence:last?Math.max(0,Math.floor((Date.now()-Date.parse(last+'T00:00:00+03:00'))/864e5)):null,
      tier:buys>=4?'Gold':buys>=2?'Silver':ltv>=20000?'Bronze':'Разовый',
+     freq:first?buys/Math.max(1,(Date.now()-Date.parse(first+'T00:00:00+03:00'))/864e5/365):0,
      orders,rep:buys>1,category:orders.flatMap(o=>o.lines).find(l=>!l.delivery)?.category||'',
      size:orders.flatMap(o=>o.lines).find(l=>l.size)?.size||'',channel:orders[buys-1].channel};
  });
@@ -954,11 +955,11 @@ function refresh(){
  table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>'0 ₽',x=>data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'нет выгрузки']);
  const scopedClients=clients.filter(c=>people.has(c.phone));
  const tiers=['Gold','Silver','Bronze','Разовый'].map(t=>({name:t,cs:scopedClients.filter(c=>c.tier===t)}));
- table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,c=>c.ltv)),x=>pct(sum(x.cs,c=>c.ltv),sum(scopedClients,c=>c.ltv)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>x.cs.length?(sum(x.cs,c=>c.buys)/x.cs.length).toFixed(1):'0']);
+ table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,c=>c.ltv)),x=>pct(sum(x.cs,c=>c.ltv),sum(scopedClients,c=>c.ltv)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>x.cs.length?(sum(x.cs,c=>c.freq)/x.cs.length).toFixed(1):'0']);
  el('rep-share').textContent=pct(repN,n);el('rep-donut').style.background=`conic-gradient(#020202 0 ${n?repN/n*100:0}%,#ededed 0)`;
  el('rep-legend').innerHTML=`<div>Повторные <b>${repN}</b></div><div>Первые <b>${n-repN}</b></div>`;
- el('rep-kv').innerHTML=kv([['Клиентов с двумя и более покупками',num(scopedClients.filter(c=>c.buys>=2).length)],['Средний LTV',money(avgLtv)]]);
- const cohorts=group(clients,c=>c.first.slice(0,7));
+ el('rep-kv').innerHTML=kv([['Клиентов с двумя и более покупками',num(scopedClients.filter(c=>c.buys>=2).length)],['Средний LTV',money(avgLtv)],['Покупок в год на клиента',scopedClients.length?(sum(scopedClients,c=>c.freq)/scopedClients.length).toFixed(1):'0']]);
+ const cohorts=group(clients.filter(c=>c.first),c=>c.first.slice(0,7));
  table('coh',Object.entries(cohorts).sort().slice(-8).map(([name,cs])=>({name,cs})),[x=>x.name,x=>num(x.cs.length),x=>num(x.cs.filter(c=>c.rep).length),x=>pct(x.cs.filter(c=>c.rep).length,x.cs.length),x=>'—']);
  el('base-kv').innerHTML=kv([['Клиентов по телефону',num(clients.length)],['Без телефона',num(data.orders.filter(o=>o.buy&&!o.phone).length)],['Активных в периоде',num(people.size)]]);
  el('churn-kv').innerHTML=kv([['Gold молчат больше 90 дней',num(clients.filter(c=>c.tier==='Gold'&&c.silence>90).length)],['Silver молчат больше 90 дней',num(clients.filter(c=>c.tier==='Silver'&&c.silence>90).length)]]);
@@ -978,21 +979,22 @@ function refresh(){
  const leads=data.leads.filter(l=>l.created>=state.from&&l.created<=state.to);
  const stages=[[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно']];
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${label}</span><span class="nums">${num(leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
- el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Первый ответ Wazzup',data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'0 · нет выгрузки']]);
+ el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Первый ответ Wazzup',data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'0 · нет выгрузки'],['Сообщений Wazzup',num(data.wazzup.messages||0)]]);
  el('partner-kv').innerHTML=kv([['Маркетинг 2MY','отдельная воронка, в конверсию продаж не входит']]);
  el('task-kv').innerHTML=kv([['Открытых задач в выборке amo',num(data.tasks.open)],['Выборка задач',num(data.tasks.sampled)]]);
  const shipped=orders.filter(o=>o.sent_at).length;
  const shipDays=orders.filter(o=>o.sent_at&&o.confirmed_at).map(o=>({days:(Date.parse(o.sent_at)-Date.parse(o.confirmed_at))/864e5,stock:o.await_stock})).filter(x=>x.days>=0);
  const median=xs=>{if(!xs.length)return '0 дн.';const a=xs.map(x=>x.days).sort((x,y)=>x-y);return ((a[Math.floor((a.length-1)/2)]+a[Math.floor(a.length/2)])/2).toFixed(1)+' дн.'};
- el('ship-kv').innerHTML=kv([['Покупок',num(n)],['С датой Отправлен',num(shipped)],['Без даты отправки',num(n-shipped)],['Подтвержден → Отправлен',median(shipDays)],['Ожидает наличия',median(shipDays.filter(x=>x.stock))],['Без ожидания наличия',median(shipDays.filter(x=>!x.stock))],['Возвраты',num(returnN)]]);
+ const reasons=Object.entries(group(orders.filter(o=>o.return),o=>o.return_reason||'не указано')).map(([name,arr])=>['Причина: '+name,num(arr.length)]);
+ el('ship-kv').innerHTML=kv([['Покупок',num(n)],['С датой Отправлен',num(shipped)],['Без даты отправки',num(n-shipped)],['Подтвержден → Отправлен',median(shipDays)],['Ожидает наличия',median(shipDays.filter(x=>x.stock))],['Без ожидания наличия',median(shipDays.filter(x=>!x.stock))],['Возвраты',num(returnN)],...reasons]);
  el('f-cat').value=state.cat;el('f-ch').value=state.source;el('f-sale').value=state.channel;el('f-geo').value=state.city;
 }
 function renderClients(cs){
  const q=(el('c-q').value||'').toLowerCase(),tier=el('c-tier').value,buys=el('c-buys').value,sil=el('c-sil').value;
- let rows=(el('c-base').value==='all'?clients:cs).filter(c=>(!q||c.name.toLowerCase().includes(q)||c.phone.includes(q))&&(!tier||c.tier===tier)&&(!buys||(buys==='1'?c.buys===1:c.buys>=+buys))&&(!sil||(sil==='l30'?c.silence<30:c.silence>+sil.slice(1))));
+ let rows=(el('c-base').value==='all'?clients:cs).filter(c=>(!q||c.name.toLowerCase().includes(q)||c.phone.includes(q))&&(!tier||c.tier===tier)&&(!buys||(buys==='1'?c.buys===1:c.buys>=+buys))&&(!sil||(c.silence!==null&&(sil==='l30'?c.silence<30:c.silence>+sil.slice(1)))));
  const sort=el('c-sort').value;rows.sort((a,b)=>sort==='last'?b.last.localeCompare(a.last):sort==='silence'?b.silence-a.silence:sort==='buys'?b.buys-a.buys:b.ltv-a.ltv);
  el('c-count').textContent=num(rows.length)+' клиентов';
- table('clients',rows.slice(0,20),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>c.first,c=>c.last,c=>c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel]);
+ table('clients',rows.slice(0,20),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>c.first,c=>c.last,c=>c.silence===null?'—':c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel]);
 }
 function init(snap){
  if(!snap||!Array.isArray(snap.orders)) throw Error('Неверный формат среза');
@@ -1025,7 +1027,8 @@ el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).
 document.querySelector('.xls').onclick=()=>{
  const rows=[['Заказ','Дата оплаты','Канал','Источник','Город','Клиент','Телефон','Товар','Размер','Цвет','Количество','Выручка','Закупка']];
  currentLines.forEach(({o,l})=>rows.push([o.number,o.paid_date,o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,l.color,l.qty,l.rev,l.cost]));
- const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
+ const safeCell=v=>{const t=String(v??'');return /^[=+@-]/.test(t)&&!/^-[0-9.,]+$/.test(t)?"'"+t:t};
+ const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+safeCell(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='2MY_выгрузка_'+state.from+'_'+state.to+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
 el('delivery-toggle').onchange=e=>{includeDelivery=e.target.checked;refresh()};

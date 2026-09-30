@@ -120,10 +120,18 @@ def get_amo() -> tuple[list[dict], dict]:
     status, body = amo.req("GET", f"/api/v4/leads?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}&limit=1&page=1")
     if status not in (200, 204):
         raise RuntimeError(f"amo leads: HTTP {status}")
-    status, tasks_body = amo.req("GET", "/api/v4/tasks?limit=250&page=1")
-    if status not in (200, 204):
-        raise RuntimeError(f"amo tasks: HTTP {status}")
-    tasks = (tasks_body.get("_embedded") or {}).get("tasks") or []
+    tasks = []
+    lead_ids = {lead["id"] for lead in leads if lead.get("pipeline_id") == lib.PIPELINE_SALES_NEW}
+    for page in range(1, 501):
+        status, tasks_body = amo.req("GET", f"/api/v4/tasks?limit=250&page={page}")
+        if status == 204:
+            break
+        if status != 200:
+            raise RuntimeError(f"amo tasks: HTTP {status}")
+        batch = (tasks_body.get("_embedded") or {}).get("tasks") or []
+        tasks.extend(t for t in batch if t.get("entity_type") == "leads" and t.get("entity_id") in lead_ids)
+        if len(batch) < 250:
+            break
     result = []
     for lead in leads:
         if lead.get("pipeline_id") != lib.PIPELINE_SALES_NEW:
@@ -230,7 +238,7 @@ def main() -> None:
                 if not str(r.get("description") or "").strip()
             )
         lines = []
-        if is_buy and closed:
+        if is_buy:
             pos = positions[o["id"]]
             for x in pos:
                 aid = mid(x.get("assortment"))
@@ -260,11 +268,11 @@ def main() -> None:
         result.append({
             "number": number, "id": o["id"], "created": (dt(o.get("moment")) or started).date().isoformat(),
             "paid_date": closed.date().isoformat() if closed else None,
-            "sum": total, "paid": paid, "buy": bool(is_buy and closed),
+            "sum": total, "paid": paid, "buy": bool(is_buy),
             "partial": bool(0 < paid < total), "channel": channel,
             "source": utm or "не указано", "utm_medium": a.get(FIELD["utm_medium"]) or "",
             "utm_campaign": a.get(FIELD["utm_campaign"]) or "",
-            "city": geo, "delivery": delivery, "manager": "",
+            "city": geo, "address": address.strip(), "delivery": delivery, "manager": "",
             "phone": ph, "client": agent.get("name") or "",
             "return": bool(ret_list), "return_reason": next((str(r.get("description")) for r in ret_list if r.get("description")), ""),
             "confirmed_at": (dt(a.get(FIELD["confirm"])) or None).isoformat() if a.get(FIELD["confirm"]) else None,
