@@ -676,16 +676,18 @@ def stock_status() -> str:
     return "сток выгружен, метка времени не найдена"
 
 
-def build() -> str:
+def build(*, with_stock: bool = True) -> str:
     blocks = []
     stock_loaded = False
     for rel in PARTS:
+        if not with_stock and rel.startswith("KB/сток"):
+            continue
         text = _read(rel)
         if not text:
             continue
         stock_loaded = stock_loaded or rel.startswith("KB/сток")
         blocks.append(text)
-    if not stock_loaded:
+    if with_stock and not stock_loaded:
         blocks.append(
             "# Сток\n\nВыгрузка стока недоступна. Наличие конкретных машин не "
             "подтверждай и не отрицай: «уточню по наличию» плюс передача человеку."

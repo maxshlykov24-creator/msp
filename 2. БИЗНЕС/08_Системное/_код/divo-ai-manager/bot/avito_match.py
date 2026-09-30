@@ -141,18 +141,100 @@ def score(listing: dict, card: dict) -> int:
     return points
 
 
-def match_card(title: str, price_string: str = "", stock: str = "") -> dict | None:
-    if not stock:
-        path = settings.kb / "сток" / "СТОК.md"
-        stock = path.read_text(encoding="utf-8") if path.exists() else ""
+def _stock_text(stock: str = "") -> str:
+    if stock:
+        return stock
+    path = settings.kb / "сток" / "СТОК.md"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def fitting_cards(title: str, price_string: str = "", stock: str = "") -> list[dict]:
+    """Карточки, которые проходят порог по этому объявлению. Не по реплике клиента."""
     listing = parse_listing(title, price_string)
-    ranked = sorted((_cards(stock)), key=lambda c: score(listing, c), reverse=True)
-    if not ranked:
-        return None
-    best = ranked[0]
-    if score(listing, best) >= 8:
-        return best
+    found = [c for c in _cards(_stock_text(stock)) if score(listing, c) >= 8]
+    found.sort(key=lambda c: score(listing, c), reverse=True)
+    return found
+
+
+def match_card(title: str, price_string: str = "", stock: str = "") -> dict | None:
+    """Одна карточка, если она одна. Две подходящие не клеим: это разные машины."""
+    found = fitting_cards(title, price_string, stock=stock)
+    if len(found) == 1:
+        return found[0]
     return None
+
+
+def attached_listing(doc: dict | None) -> dict | None:
+    """Объявление, привязанное к чату. Реплика клиента это не заменяет."""
+    doc = doc or {}
+    av = doc.get("avito") or {}
+    ar = doc.get("autoru") or {}
+    src = av if (av.get("title") or av.get("url")) else ar
+    title = str((src or {}).get("title") or "").strip()
+    low = title.lower()
+    if not title or "не привязано" in low or low in {"объявление", "чат"}:
+        return None
+    return src
+
+
+_PRICE_RE = re.compile(r"(?<!\d)(\d{1,3}(?:[ \u00a0]\d{3})+|\d{6,9})(?!\d)")
+
+
+def price_amounts(text: str) -> list[int]:
+    """Суммы, похожие на цену машины. Пробег, год и телефон не считаются."""
+    masked = re.sub(r"\d[\d\s\u00a0]{0,14}\s*км\b", " ", text or "", flags=re.I)
+    masked = re.sub(r"\b(?:19|20)\d{2}\b", " ", masked)
+    found: list[int] = []
+    for match in _PRICE_RE.finditer(masked):
+        number = int(re.sub(r"\D", "", match.group(1)))
+        if number < 100_000 or number > 80_000_000:
+            continue
+        if number % 500 != 0:
+            continue
+        found.append(number)
+    return found
+
+
+def allowed_prices(doc: dict | None) -> set[int]:
+    """Цены, которые можно назвать в чате с объявлением.
+
+    Это цена объявления, НДС от неё и, если приклеилась ровно одна карточка,
+    цена этой карточки. Цены соседних машин сюда не входят.
+    """
+    src = attached_listing(doc)
+    if not src:
+        return set()
+    allowed: set[int] = set()
+    listing_n = digits(str(src.get("price") or ""))
+    if listing_n:
+        allowed.add(listing_n)
+    card = match_card(src.get("title") or "", src.get("price") or "")
+    if card and card.get("price"):
+        allowed.add(int(card["price"]))
+    vat_n = digits(vat_for(str(src.get("price") or ""), card))
+    if vat_n:
+        allowed.add(vat_n)
+    return allowed
+
+
+def drop_foreign_prices(text: str, allowed: set[int]) -> str:
+    """Убирает фразу, в которой названа чужая цена."""
+    if not allowed:
+        return text
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    kept: list[str] = []
+    changed = False
+    for part in parts:
+        if not part.strip():
+            continue
+        foreign = [n for n in price_amounts(part) if n not in allowed]
+        if foreign:
+            changed = True
+            continue
+        kept.append(part.strip())
+    if not changed:
+        return text
+    return " ".join(kept).strip()
 
 
 def vat_for(price_string: str = "", card: dict | None = None) -> str:
@@ -241,7 +323,9 @@ def focus_block(
             "Карточка стока к объявлению не подцепилась. Клиенту про это ни слова: "
             "не пиши про сток, VIN, сверку, «не поднимал автотеку», «карточки нет», "
             "«под рукой нет», «наугад», «чтобы не дезинформировать». "
-            "Машина из объявления наша. На ДТП и историю цифры не выдумывай. "
+            "Машина из объявления наша. Цена только из строки «Цена в объявлении» "
+            "выше. «В базе проходит», чужой VIN и цену другой машины не пиши. "
+            "На ДТП и историю цифры не выдумывай. "
             "Попроси Телеграм или Ватсап, туда отправим отчёт. "
             "Телефон чтобы позвонить не проси, пока клиент сам его не дал. "
             "Кредит не оформляем: спросили — наличный расчёт и номер, банки не называй."
