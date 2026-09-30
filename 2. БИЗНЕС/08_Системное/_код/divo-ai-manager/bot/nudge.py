@@ -90,6 +90,9 @@ WRITE_HERE = re.compile(
     r"сюда напиш|"
     r"напиш\w{0,8}\s+сюда|"
     r"в этом чате|"
+    r"продолжить здесь|"
+    r"удобнее здесь|"
+    r"оста[её]мся здесь|"
     r"звонк\w* не (проход|доход)|не беру трубк|"
     r"на звонки не|не звоните|лучше напиш|"
     r"мне нельзя звон|звонки у меня не"
@@ -624,6 +627,12 @@ def asked_vat(messages: list[dict] | None) -> bool:
     return any(key in blob for key in keys)
 
 
+def wants_without_vat(text: str) -> bool:
+    """«Можно и без НДС»: клиент просит наличные, а не ещё одну цену с НДС."""
+    blob = (text or "").lower().replace("ё", "е")
+    return bool(re.search(r"без\s*ндс|можно и без", blob))
+
+
 def asked_torg(messages: list[dict] | None) -> bool:
     blob = _user_blob(messages)
     keys = (
@@ -664,6 +673,49 @@ def asked_torg(messages: list[dict] | None) -> bool:
         r"(?:\s*(?:млн|миллион\w*|тыс\w*|руб\w*))?"
         r".{0,24}(?:интерес|надума)",
         blob,
+    ):
+        return True
+    if re.search(r"какой минимум|минимум.{0,40}(?:обсуж|цен|налич|готов)", blob):
+        return True
+    return False
+
+
+def asks_minimum(text: str) -> bool:
+    blob = (text or "").lower().replace("ё", "е")
+    return bool(re.search(r"какой минимум|минимум.{0,40}(?:обсуж|цен|налич|готов)", blob))
+
+
+DEFER_CONTACT = re.compile(
+    r"("
+    r"обменяемся контакт|"
+    r"если по цене договоримся|"
+    r"сначала по цене|"
+    r"контакт\w*.{0,24}(?:потом|после|если)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def defers_contact(text: str) -> bool:
+    """Номер после договорённости о цене, не в этом сообщении."""
+    return bool(DEFER_CONTACT.search(text or ""))
+
+
+def history_defers_contact(messages: list[dict] | None) -> bool:
+    return any(
+        m.get("role") == "user" and defers_contact(m.get("content") or "")
+        for m in messages or []
+    )
+
+
+def holds_phone(text: str, messages: list[dict] | None) -> bool:
+    """Цену обсуждаем в чате. Номер в этом ходе не просим."""
+    if defers_contact(text) or history_defers_contact(messages):
+        return True
+    if asks_minimum(text):
+        return True
+    if (wants_write_here(text) or history_wants_write_here(messages or [])) and asked_torg(
+        messages
     ):
         return True
     return False

@@ -131,6 +131,13 @@ def score(listing: dict, card: dict) -> int:
     lk, ck = listing.get("km") or 0, card.get("km") or 0
     if lk and ck and abs(lk - ck) <= 15_000:
         points += 3
+    # Год на два и больше или пробег далеко: это другая машина.
+    # Год модели и год выпуска могут разойтись на один, если пробег тот же.
+    ly, cy = int(listing.get("year") or 0), int(card.get("year") or 0)
+    if ly and cy and abs(ly - cy) >= 2:
+        return 0
+    if lk and ck and abs(lk - ck) > 20_000:
+        return 0
     return points
 
 
@@ -266,6 +273,15 @@ def focus_from_doc(doc: dict) -> str:
         src.get("cme_id") or "",
         channel=channel,
     )
+
+
+def listing_price(doc: dict | None) -> str:
+    """Цена объявления, как её видит клиент. Не цена чужой карточки."""
+    doc = doc or {}
+    av = doc.get("avito") or {}
+    ar = doc.get("autoru") or {}
+    src = av if (av.get("price") or av.get("title")) else ar
+    return " ".join(str((src or {}).get("price") or "").split())
 
 
 def vat_from_doc(doc: dict | None) -> str:
