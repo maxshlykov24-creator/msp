@@ -110,6 +110,17 @@ class GroupMember(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class GroupDigestPointer(Base):
+    """Последняя сводка в группе: удаляем и шлём заново, когда кто-то сдал отчёт."""
+
+    __tablename__ = "group_digest_pointer"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    week_start: Mapped[date] = mapped_column(Date, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class DmCoveragePointer(Base):
     """Последнее личное сообщение сводки, чтобы в 20:00 удалить и прислать снова."""
 

@@ -5,6 +5,7 @@ import logging
 import random
 import re
 from datetime import date, datetime, timedelta
+import asyncio
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ChatMemberStatus, ParseMode
@@ -26,10 +27,12 @@ from app.coverage import (
     identity_hashtag,
     last_sunday_on_or_before,
     load_dm_pointer,
+    load_group_digest_pointer,
     load_scope_members,
     looks_like_report,
     override_from_tag,
     save_dm_pointer,
+    save_group_digest_pointer,
     submitted_at_for_week,
     submitted_ids_for_week,
     upsert_member,
@@ -37,7 +40,7 @@ from app.coverage import (
 )
 from app.database import get_session_factory
 from app import keyboards as kb
-from app.models import Revelation, RevelationArchive, Report, User
+from app.models import Revelation, RevelationArchive, Report, User, WeekSubmission
 from app.mute import AdminOnlyPrivateMiddleware, coverage_recipient_ids, is_admin_user, send_message_live
 from app.reach import blocked_ids, not_started_ids
 from app.states import HashtagStates, WeeklyReportStates
@@ -48,10 +51,12 @@ from app.time_utils import (
     submitted_on_time,
     to_msk,
     week_start_from_date,
+    group_digest_follows_reports,
 )
 
 log = logging.getLogger(__name__)
 router = Router()
+_group_digest_lock = asyncio.Lock()
 
 
 class AddRevelationStates(StatesGroup):
@@ -1708,23 +1713,29 @@ def _group_plain(message: Message) -> str:
     return (message.text or message.caption or "").strip()
 
 
-async def _count_group_hashtag(message: Message) -> None:
+async def _count_group_hashtag(message: Message) -> bool:
+    """True, если этот человек впервые засчитан за неделю. Правка уже сданного отчёта сводку не двигает."""
     settings = get_settings()
     if settings.group_chat_id and message.chat.id != settings.group_chat_id:
-        return
+        return False
     if message.chat.type not in ("group", "supergroup"):
-        return
+        return False
     if not message.from_user or message.from_user.is_bot:
-        # Свои посты бота не считаем здесь: зачёт мастера — только после реальной отправки в группу.
-        return
+        return False
     plain = _group_plain(message)
     tag_in_text = extract_hashtag(plain)
     if not tag_in_text and not looks_like_report(plain):
-        return
+        return False
     local = _message_when(message)
     ws = week_start_from_date(local.date())
     fu = message.from_user
     async with get_session_factory()() as session:
+        existed = await session.scalar(
+            select(WeekSubmission.id).where(
+                WeekSubmission.tg_user_id == fu.id,
+                WeekSubmission.week_start == ws,
+            )
+        )
         await upsert_member(
             session,
             tg_user_id=fu.id,
@@ -1760,24 +1771,29 @@ async def _count_group_hashtag(message: Message) -> None:
             elif not (u.report_hashtag_override or "").strip():
                 u.report_hashtag_override = override_from_tag(tag)
         await session.commit()
+    created = existed is None
     log.info(
-        "report counted uid=%s tag=%s week=%s msg=%s from_text=%s",
+        "report counted uid=%s tag=%s week=%s msg=%s from_text=%s new=%s",
         fu.id,
         tag,
         ws,
         message.message_id,
         bool(tag_in_text),
+        created,
     )
+    return created
 
 
 @router.message(F.chat.type.in_({"group", "supergroup"}))
-async def on_group_message(message: Message):
-    await _count_group_hashtag(message)
+async def on_group_message(message: Message, bot: Bot):
+    if await _count_group_hashtag(message) and group_digest_follows_reports():
+        await replace_group_digest(bot)
 
 
 @router.edited_message(F.chat.type.in_({"group", "supergroup"}))
-async def on_group_edited(message: Message):
-    await _count_group_hashtag(message)
+async def on_group_edited(message: Message, bot: Bot):
+    if await _count_group_hashtag(message) and group_digest_follows_reports():
+        await replace_group_digest(bot)
 
 
 @router.chat_member()
@@ -1931,11 +1947,11 @@ async def _digest_payload() -> tuple[str, str]:
     return public, private
 
 
-async def _post_public_digest(bot: Bot, public: str) -> bool:
+async def _post_public_digest(bot: Bot, public: str):
     settings = get_settings()
     if not settings.group_chat_id:
         log.info("skip group digest: GROUP_CHAT_ID=0")
-        return False
+        return None
     sent = await send_message_live(
         bot,
         settings.group_chat_id,
@@ -1944,12 +1960,48 @@ async def _post_public_digest(bot: Bot, public: str) -> bool:
         disable_web_page_preview=True,
     )
     log.info("group digest msg=%s", getattr(sent, "message_id", None))
-    return sent is not None
+    return sent
+
+
+async def replace_group_digest(bot: Bot) -> None:
+    """Удаляет прошлую сводку в группе и шлёт свежую, чтобы чат снова увидел уведомление."""
+    settings = get_settings()
+    if not settings.jobs_enabled or not settings.group_chat_id:
+        log.info("skip group digest replace: jobs or group off")
+        return
+    async with _group_digest_lock:
+        public, _private = await _digest_payload()
+        ws = week_start_from_date(now_msk().date())
+        async with get_session_factory()() as session:
+            submitted = await submitted_ids_for_week(session, ws)
+            pointer = await load_group_digest_pointer(session, settings.group_chat_id)
+            await session.commit()
+        if not submitted:
+            log.info("skip group digest replace: nobody wrote")
+            return
+        if pointer is not None:
+            try:
+                await bot.delete_message(settings.group_chat_id, pointer.message_id)
+            except Exception as e:
+                log.warning("delete group digest msg=%s: %s", pointer.message_id, e)
+        sent = await _post_public_digest(bot, public)
+        if sent is None:
+            log.info("group digest replace not sent")
+            return
+        async with get_session_factory()() as session:
+            await save_group_digest_pointer(
+                session,
+                chat_id=settings.group_chat_id,
+                message_id=sent.message_id,
+                week_start=ws,
+            )
+            await session.commit()
+        log.info("group digest replaced msg=%s week=%s", sent.message_id, ws)
 
 
 async def _send_coverage_digest(bot: Bot, *, public: str, private: str, to_group: bool) -> None:
     if to_group:
-        await _post_public_digest(bot, public)
+        await replace_group_digest(bot)
 
 
 async def _send_private_coverage_dm(bot: Bot, *, replace: bool, only_admin: bool = False) -> None:
@@ -1978,24 +2030,8 @@ async def _send_private_coverage_dm(bot: Bot, *, replace: bool, only_admin: bool
 
 
 async def job_midnight_digest(bot: Bot) -> None:
-    """00:00: сводка без имён в группу. Имена в личку идут в пн 09:00."""
-    settings = get_settings()
-    if not settings.jobs_enabled:
-        log.info("skip midnight digest: jobs off")
-        return
-    try:
-        public, _private = await _digest_payload()
-        ws = week_start_from_date(now_msk().date())
-        async with get_session_factory()() as session:
-            submitted = await submitted_ids_for_week(session, ws)
-            await session.commit()
-        if not submitted:
-            log.info("skip midnight digest: nobody wrote this week yet")
-            return
-        ok = await _post_public_digest(bot, public)
-        log.info("midnight digest group=%s", ok)
-    except Exception:
-        log.exception("job_midnight_digest failed")
+    """Раньше каждый день в 00:00. Сводка в группу больше не по расписанию ночи."""
+    log.info("midnight digest disabled")
 
 
 async def job_monday_coverage_morning(bot: Bot) -> None:
@@ -2019,7 +2055,8 @@ async def job_monday_coverage_evening(bot: Bot) -> None:
         return
     try:
         await _send_private_coverage_dm(bot, replace=True)
-        log.info("monday 20:00 coverage replaced")
+        await replace_group_digest(bot)
+        log.info("monday 20:00 coverage replaced, group digest refreshed")
     except Exception:
         log.exception("job_monday_coverage_evening failed")
 
@@ -2033,52 +2070,8 @@ _MISSING_NUDGE = (
 
 
 async def job_evening_reminder(bot: Bot) -> None:
-    """20:00 каждый день: сводка в группу, если ещё не все, и личка тем, кто уже открывал бота."""
-    settings = get_settings()
-    if not settings.jobs_enabled:
-        log.info("skip 20:00 reminder: jobs off")
-        return
-    try:
-        public, _private = await _digest_payload()
-        ws = week_start_from_date(now_msk().date())
-        async with get_session_factory()() as session:
-            members = await load_scope_members(session)
-            submitted = await submitted_ids_for_week(session, ws)
-            started = set((await session.scalars(select(User.tg_user_id))).all())
-            await session.commit()
-        missing = [m for m in members if m.tg_user_id not in submitted]
-        if not missing:
-            log.info("20:00 skip, coverage complete")
-            return
-        await _post_public_digest(bot, public)
-        leaders = coverage_recipient_ids()
-        known_closed = not_started_ids() | blocked_ids()
-        nudged = 0
-        no_start = 0
-        for m in missing:
-            if m.tg_user_id in leaders or m.tg_user_id in known_closed:
-                continue
-            if m.tg_user_id not in started:
-                no_start += 1
-                continue
-            if not await is_allowed_member(bot, m.tg_user_id):
-                continue
-            try:
-                sent = await bot.send_message(
-                    m.tg_user_id,
-                    _MISSING_NUDGE,
-                    reply_markup=kb.main_menu_kb(),
-                )
-            except Exception as e:
-                log.warning("nudge failed uid=%s: %s", m.tg_user_id, e)
-                continue
-            if sent is None:
-                log.info("nudge not sent uid=%s", m.tg_user_id)
-                continue
-            nudged += 1
-        log.info("20:00 reminder missing=%s nudged=%s no_start=%s", len(missing), nudged, no_start)
-    except Exception:
-        log.exception("job_evening_reminder failed")
+    """Раньше каждый день в 20:00: сводка в группу и личка тем, кто не сдал. Выключено."""
+    log.info("daily 20:00 reminder disabled")
 
 
 async def job_twenty_reminder(bot: Bot) -> None:

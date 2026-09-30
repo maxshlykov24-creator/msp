@@ -116,6 +116,15 @@ def late_report_bucket(submitted_at: datetime, week_start: date) -> str:
     return "later"
 
 
+def group_digest_follows_reports(now: datetime | None = None) -> bool:
+    """Пн с 20:00 по пт включительно: сводку в группе заменяем после нового отчёта."""
+    current = to_msk(now) if now is not None else now_msk()
+    wd = current.weekday()
+    if wd == 0:
+        return current.hour >= 20
+    return wd <= 4
+
+
 def submitted_on_time(submitted_at: datetime, week_start: date) -> bool:
     deadline = submission_deadline_msk(week_start)
     return to_msk(submitted_at) < deadline

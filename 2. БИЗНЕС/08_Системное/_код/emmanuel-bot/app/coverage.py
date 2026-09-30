@@ -17,7 +17,7 @@ from app.hashtag import (
     override_from_tag,
     tag_from_telegram,
 )
-from app.models import DmCoveragePointer, GroupMember, User, WeekSubmission
+from app.models import DmCoveragePointer, GroupDigestPointer, GroupMember, User, WeekSubmission
 from app.time_utils import (
     last_sunday_on_or_before,
     late_report_bucket,
@@ -48,6 +48,8 @@ __all__ = [
     "format_public_digest",
     "load_dm_pointer",
     "save_dm_pointer",
+    "load_group_digest_pointer",
+    "save_group_digest_pointer",
 ]
 
 
@@ -224,6 +226,35 @@ async def submitted_at_for_week(session: AsyncSession, week_start: date) -> dict
         await session.scalars(select(WeekSubmission).where(WeekSubmission.week_start == week_start))
     ).all()
     return {int(r.tg_user_id): to_msk(r.submitted_at) for r in rows}
+
+
+async def load_group_digest_pointer(session: AsyncSession, chat_id: int) -> GroupDigestPointer | None:
+    return await session.scalar(select(GroupDigestPointer).where(GroupDigestPointer.chat_id == chat_id))
+
+
+async def save_group_digest_pointer(
+    session: AsyncSession,
+    *,
+    chat_id: int,
+    message_id: int,
+    week_start: date,
+) -> None:
+    row = await load_group_digest_pointer(session, chat_id)
+    now = now_msk()
+    if row is None:
+        session.add(
+            GroupDigestPointer(
+                chat_id=chat_id,
+                message_id=message_id,
+                week_start=week_start,
+                updated_at=now,
+            )
+        )
+    else:
+        row.message_id = message_id
+        row.week_start = week_start
+        row.updated_at = now
+    await session.flush()
 
 
 async def load_dm_pointer(session: AsyncSession, tg_user_id: int) -> DmCoveragePointer | None:
