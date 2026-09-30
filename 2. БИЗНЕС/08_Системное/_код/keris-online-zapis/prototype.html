@@ -198,6 +198,16 @@
     .summary-row:last-child{border-bottom:0}.summary-row span{color:var(--muted)}.summary-row b{text-align:right;font-family:var(--font);font-weight:600}
     button.summary-row{width:100%;margin:0;border:0;border-bottom:1px solid #f1e6e8;background:transparent;font:inherit;color:inherit;cursor:pointer;text-align:left}
     button.summary-row b{display:inline-flex;align-items:center;justify-content:flex-end;gap:5px}
+    .summary-row.stack{flex-direction:column;align-items:flex-start;gap:6px}
+    .summary-row.stack b,.pet-note{display:block;width:100%;text-align:left;font-weight:500;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45}
+    .pet-name{border:0;background:transparent;padding:0;font:inherit;font-family:var(--font);font-weight:600;color:inherit;cursor:pointer;text-align:left}
+    .pet-edit{margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
+    .pet-edit p{margin:0 0 8px;font-size:12px;color:var(--muted);line-height:1.45}
+    .pet-edit input,.pet-edit textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;font-size:14px;background:#fff}
+    .pet-edit textarea{min-height:44px;resize:none;line-height:1.45}
+    .pet-edit .row{display:flex;gap:8px;margin-top:10px}
+    .pet-edit .row button{flex:1}
+    .master-link{color:var(--rose-dark);text-decoration:underline;text-underline-offset:2px}
     .pet-caret{font-style:normal;font-weight:500;font-size:9px;color:var(--muted);line-height:1}
     .pet-switch{padding:0 0 2px;border-bottom:1px solid #f1e6e8}
     .pet-switch button{width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;background:transparent;font:inherit;color:#8a736a;padding:8px 0;cursor:pointer;text-align:left}
@@ -1145,7 +1155,7 @@
   }
 
   const flow=["pet","service","master","contact"];
-  const state={petType:"dog",coat:"short",size:null,catWeight:null,service:null,addons:[],master:null,date:null,time:null,repeat:false,noSlots:false,subSize:"S",subscription:null,mode:"booking",profileMasterId:null,reviewStars:5,serviceQuery:"",promo:null,petId:null,petPickOpen:false,auth:{ok:false,name:"",visitedMasterIds:[]},
+  const state={petType:"dog",coat:"short",size:null,catWeight:null,service:null,addons:[],master:null,date:null,time:null,repeat:false,noSlots:false,subSize:"S",subscription:null,mode:"booking",profileMasterId:null,reviewStars:5,serviceQuery:"",promo:null,petId:null,petPickOpen:false,auth:{ok:false,name:"",visitedMasterIds:[]},memoryReturnId:null,petEdit:null,
     /* moveId — переносим существующую запись (не создаём новую), booking — запись,
        с которой можно работать после оформления: перенос и отмена. */
     moveId:null,movePhone:"",booking:null};
@@ -1154,7 +1164,17 @@
   const money=n=>new Intl.NumberFormat("ru-RU").format(n)+" ₽";
 
   function track(event,extra={}){console.info("[Keris analytics]",event,{...extra,source:new URLSearchParams(location.search).get("utm_source")||"prototype"});}
-  function goBack(){const prev=history.pop()||"welcome";showScreen(prev,false)}
+  function goBack(){
+    if(state.memoryReturnId && (current==="master" || current==="service")){
+      const id=state.memoryReturnId;
+      state.memoryReturnId=null;
+      while(history.length && ["memory","service","master"].includes(history[history.length-1])) history.pop();
+      const pet=petById(id);
+      if(pet){renderPetMemory(pet);showScreen("memory",false);return}
+    }
+    const prev=history.pop()||"welcome";
+    showScreen(prev,false);
+  }
 
   const STEP_META={
     pet:{label:"Шаг 1 из 4 • Питомец",hint:"Поля со звёздочкой обязательны."},
@@ -1511,10 +1531,17 @@
     const dur=serviceDuration();
     /* Перенос меняет только время той же записи, поэтому мастера не переключаем:
        другой мастер или услуга — это уже новая запись (сервер /reschedule этого не умеет). */
-    const list=state.moveId&&state.master?DATA.masters.filter(m=>m.id===state.master.id):DATA.masters;
+    const list=(state.moveId&&state.master)
+      ? DATA.masters.filter(m=>m.id===state.master.id)
+      : (state.memoryReturnId&&state.master)
+        ? DATA.masters.filter(m=>m.id===state.master.id)
+        : DATA.masters;
+    const focused=list.length===1&&state.memoryReturnId&&state.master;
     $("#masterLead").textContent=state.moveId
       ? "Выберите новое время у того же мастера ("+formatDuration(dur)+"). Другой мастер или услуга — оформите новую запись."
-      : "Выберите мастера и удобное время. На слоте видно начало и конец визита ("+formatDuration(dur)+").";
+      : focused
+        ? "Окна мастера "+state.master.name+". Услуга "+(state.service?state.service.name:"уход")+". Выберите время, чтобы записаться."
+        : "Выберите мастера и удобное время. На слоте видно начало и конец визита ("+formatDuration(dur)+").";
     if(!state.date){
       const first=bookingDays()[0];
       state.date=isoOf(first);
@@ -1789,6 +1816,7 @@
     $("#successEyebrow").textContent=eyebrow;
     $("#successTitle").textContent=title;
     showScreen("success");
+    state.memoryReturnId=null;
   }
   function renderSummary(){$("#summary").innerHTML=summaryHtml();configureNext()}
   /* Запись готова к отправке только с полным набором: питомец, услуга, мастер, слот.
@@ -1985,8 +2013,14 @@
       const n=$("#petName");if(n)n.value=p.name;
       const b=$("#breed");if(b)b.value=p.breed||"";
     }else{
-      state.coat=p.coat;state.catWeight=p.catWeight;state.size=p.coat+"_"+p.catWeight;
-      $$("[data-coat]").forEach(b=>b.classList.toggle("active",b.dataset.coat===p.coat));
+      let coat=p.coat,catWeight=p.catWeight;
+      if((!coat||!catWeight)&&p.size&&String(p.size).includes("_")){
+        const parts=String(p.size).split("_");
+        coat=coat||parts[0];
+        catWeight=catWeight||parts[1];
+      }
+      state.coat=coat;state.catWeight=catWeight;state.size=(coat&&catWeight)?coat+"_"+catWeight:(p.size||null);
+      $$("[data-coat]").forEach(b=>b.classList.toggle("active",b.dataset.coat===coat));
       const n=$("#catPetName");if(n)n.value=p.name;
     }
     const c=$("#comment");
@@ -2004,9 +2038,111 @@
   }
   function openPetCard(id){
     const p=petById(id);if(!p)return;
+    state.petEdit=null;
     renderPetMemory(p);showScreen("memory");track("pet_memory_open",{id});
   }
-  /* Keris Memory — паспорт питомца: считается из истории визитов, отдельных данных нет. */
+  function ruCount(n,one,few,many){
+    const n10=n%10,n100=n%100;
+    if(n10===1&&n100!==11)return one;
+    if(n10>=2&&n10<=4&&(n100<12||n100>14))return few;
+    return many;
+  }
+  function usualService(p){
+    const done=petDoneVisits(p);
+    const counts={};
+    done.forEach(v=>{const name=(v.service||"").trim();if(name)counts[name]=(counts[name]||0)+1});
+    const top=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],"ru"))[0];
+    const name=top?top[0]:"";
+    const catalog=DATA[p.type]||DATA.dog;
+    return name?catalog.services.find(s=>s.name===name)||null:null;
+  }
+  function petRhythm(p){
+    const done=petDoneVisits(p);
+    if(!done.length)return "";
+    if(done.length===1)return "Пока один визит";
+    const newest=done[0],oldest=done[done.length-1];
+    const days=Math.round((new Date(newest.date+"T12:00:00")-new Date(oldest.date+"T12:00:00"))/86400000);
+    const gap=days/Math.max(1,done.length-1);
+    if(gap>=14){
+      const weeks=Math.max(1,Math.round(gap/7));
+      return "Примерно раз в "+weeks+" "+ruCount(weeks,"неделю","недели","недель");
+    }
+    const every=Math.max(1,Math.round(gap));
+    return "Примерно раз в "+every+" "+ruCount(every,"день","дня","дней");
+  }
+  function petFavorite(p){
+    const done=petDoneVisits(p);
+    if(done.length<2)return "";
+    const counts={};
+    done.forEach(v=>{const name=(v.service||"").trim();if(name)counts[name]=(counts[name]||0)+1});
+    const top=Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],"ru"))[0];
+    return top&&top[1]>=2?top[0]:"";
+  }
+  function openPetMasterSlots(petId,masterId){
+    const p=petById(petId);if(!p)return;
+    const master=DATA.masters.find(m=>m.id===masterId);
+    if(!master||master.id==="any"){toast("У этого мастера нет окон в записи.");return}
+    state.memoryReturnId=petId;
+    state.mode="booking";state.moveId=null;state.subscription=null;state.repeat=false;
+    applyPetToForm(p);
+    state.petId=p.id;
+    state.addons=[];state.time=null;state.date=null;state.promo=null;
+    state.master=master;
+    const svc=usualService(p);
+    if(!svc||svc.prices[state.size]==null){
+      state.service=null;
+      toast("Сначала выберите услугу. Затем откроются окна мастера "+master.name+".");
+      renderServices();showScreen("service");
+      return;
+    }
+    state.service=svc;
+    renderMasters();showScreen("master");
+  }
+  async function savePetPatch(p,patch){
+    if(!clientAuth.phone){toast("Сначала войдите в кабинет.");return}
+    try{
+      const r=await fetch("/api/client/pet",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({phone:clientAuth.phone,pet_name:p.name,pet_type:p.type,...patch})});
+      const data=await r.json().catch(()=>null);
+      if(!r.ok){toast((data&&(data.detail||data.message))||"Не получилось сохранить.");return}
+      if(data&&Array.isArray(data.pets)){
+        CLIENT.pets=data.pets;
+        CLIENT.visits=Array.isArray(data.visits)?data.visits:CLIENT.visits;
+      }else{
+        await loadClientProfile();
+      }
+      state.petEdit=null;
+      const next=CLIENT.pets.find(x=>x.type===p.type&&(patch.name?x.name===patch.name.trim():x.name===p.name))||CLIENT.pets.find(x=>x.id===p.id);
+      if(next)renderPetMemory(next);
+      else showScreen("cabinet");
+      toast("Сохранено.");
+    }catch(_){toast("Сервер недоступен. Попробуйте ещё раз.")}
+  }
+  function askPetRename(id){state.petEdit="name";const p=petById(id);if(p)renderPetMemory(p)}
+  function askPetNote(id){state.petEdit="note";const p=petById(id);if(p)renderPetMemory(p)}
+  function askPetWeight(id){state.petEdit="weight";const p=petById(id);if(p)renderPetMemory(p)}
+  function cancelPetEdit(id){state.petEdit=null;const p=petById(id);if(p)renderPetMemory(p)}
+  function fitPetNote(el){if(!el)return;el.style.height="auto";el.style.height=Math.min(el.scrollHeight,220)+"px"}
+  function submitPetRename(id){
+    const p=petById(id);if(!p)return;
+    const value=($("#petRenameInput")&&$("#petRenameInput").value.trim())||"";
+    if(value.length<2){toast("Кличка слишком короткая.");return}
+    if(value.toLowerCase()===p.name.toLowerCase()){cancelPetEdit(id);return}
+    savePetPatch(p,{name:value});
+  }
+  function submitPetNote(id){
+    const p=petById(id);if(!p)return;
+    const value=($("#petNoteInput")&&$("#petNoteInput").value)||"";
+    savePetPatch(p,{note:value.trim()});
+  }
+  function submitPetWeight(id){
+    const p=petById(id);if(!p)return;
+    const raw=($("#petWeightInput")&&$("#petWeightInput").value||"").trim().replace(",",".");
+    const num=Number(raw);
+    if(!raw||!(num>0)||num>120){toast("Вес укажите числом больше нуля.");return}
+    savePetPatch(p,{weight_kg:num});
+  }
+  /* Keris Memory — паспорт питомца: считается из истории визитов, отдельные данные нет. */
   function petDoneVisits(p){
     const name=(p.name||"").trim().toLowerCase();
     return CLIENT.visits.filter(v=>{
@@ -2017,16 +2153,57 @@
   }
   function renderPetMemory(p){
     const body=$("#memoryBody");if(!body)return;
-    const last=petDoneVisits(p)[0];
-    const master=last?((last.masterName||"").trim()||masterName(last.masterId)):"";
-    const showMaster=master&&master!=="Любой свободный";
+    const id=String(p.id).replace(/'/g,"");
+    const done=petDoneVisits(p);
+    const last=done[0];
+    const knownMaster=last&&DATA.masters.find(m=>m.id===last.masterId&&m.id!=="any");
+    const masterLabel=knownMaster?knownMaster.name:((last&&(last.masterName||"").trim())||"");
+    const masterRow=masterLabel
+      ? (knownMaster
+        ? `<button type="button" class="summary-row" onclick="openPetMasterSlots('${id}','${String(last.masterId).replace(/'/g,"")}')"><span>Последний мастер</span><b class="master-link">${esc(masterLabel)}</b></button>`
+        : `<div class="summary-row"><span>Последний мастер</span><b>${esc(masterLabel)}</b></div>`)
+      : "";
+    const rhythm=petRhythm(p);
+    const favorite=petFavorite(p);
+    const lastLine=last?`${ruDate(last.date)}, ${last.service||"визит"}`:"";
+    const weightText=p.weight||"Указать";
+    const noteText=(p.note||"").trim();
+    let editor="";
+    if(state.petEdit==="name"){
+      editor=`<div class="pet-edit"><p>Меняем кличку только если в ней ошибка. Если имя верное, оставьте как есть.</p>
+        <input id="petRenameInput" value="${esc(p.name)}" maxlength="80">
+        <div class="row"><button type="button" class="primary" onclick="submitPetRename('${id}')">Да, в кличке ошибка</button>
+        <button type="button" onclick="cancelPetEdit('${id}')">Не менять</button></div></div>`;
+    }else if(state.petEdit==="note"){
+      editor=`<div class="pet-edit"><p>Это увидит мастер перед визитом.</p>
+        <textarea id="petNoteInput" maxlength="1000" oninput="fitPetNote(this)">${esc(noteText)}</textarea>
+        <div class="row"><button type="button" class="primary" onclick="submitPetNote('${id}')">Сохранить</button>
+        <button type="button" onclick="cancelPetEdit('${id}')">Не менять</button></div></div>`;
+    }else if(state.petEdit==="weight"){
+      const current=p.weight_kg!=null?String(p.weight_kg).replace(".",","):"";
+      editor=`<div class="pet-edit"><p>Вес с последнего визита. Можно поправить, если он уже другой.</p>
+        <input id="petWeightInput" inputmode="decimal" value="${esc(current)}" placeholder="Например, 6,5">
+        <div class="row"><button type="button" class="primary" onclick="submitPetWeight('${id}')">Сохранить</button>
+        <button type="button" onclick="cancelPetEdit('${id}')">Не менять</button></div></div>`;
+    }
+    const stats=[
+      lastLine?`<div class="summary-row"><span>Последний раз</span><b>${esc(lastLine)}</b></div>`:"",
+      rhythm?`<div class="summary-row"><span>Как часто</span><b>${esc(rhythm)}</b></div>`:"",
+      favorite?`<div class="summary-row"><span>Чаще всего</span><b>${esc(favorite)}</b></div>`:""
+    ].filter(Boolean).join("");
     body.innerHTML=`
       <div class="cab-head" style="margin-top:4px">
-        <div><b>${esc(p.name)}${p.breed?" · "+esc(p.breed):""}</b><small>${petTypeLabel(p)}${p.weight?" · "+esc(p.weight):""}</small></div>
+        <div><button type="button" class="pet-name" onclick="askPetRename('${id}')">${esc(p.name)}</button>${p.breed?" · "+esc(p.breed):""}<small>${petTypeLabel(p)}</small></div>
       </div>
-      ${showMaster?`<div class="summary" style="margin-top:12px"><div class="summary-row"><span>Последний мастер</span><b>${esc(master)}</b></div></div>`:""}
-      ${p.note?`<div class="summary" style="margin-top:12px"><div class="summary-row"><span>Важно мастеру</span><b>${esc(p.note)}</b></div></div>`:""}
-      <button class="primary" style="margin-top:17px" onclick="startNew('${String(p.id).replace(/'/g,"")}')">Записать ${esc(p.name)}</button>`;
+      <div class="summary" style="margin-top:12px">
+        ${masterRow}
+        <button type="button" class="summary-row" onclick="askPetWeight('${id}')"><span>Вес</span><b>${esc(weightText)}</b></button>
+        <button type="button" class="summary-row stack" onclick="askPetNote('${id}')"><span>Важно мастеру</span><b class="pet-note">${noteText?esc(noteText):"Добавить"}</b></button>
+      </div>
+      ${editor}
+      ${stats?`<div class="summary pet-stats">${stats}</div>`:""}
+      <button class="primary" style="margin-top:17px" onclick="startNew('${id}')">Записать ${esc(p.name)}</button>`;
+    if(state.petEdit==="note")fitPetNote($("#petNoteInput"));
   }
   function masterName(id){const m=DATA.masters.find(x=>x.id===id);return m?m.name:"Мастер"}
   function visitEnd(v){return minToTime(timeToMin(v.time)+v.duration)}

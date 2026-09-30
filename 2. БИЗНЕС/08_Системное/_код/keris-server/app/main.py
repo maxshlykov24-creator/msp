@@ -433,8 +433,17 @@ def update_client_pet(payload: PetUpdateIn, db: Session = Depends(get_db)) -> di
             for key in keys:
                 row = _pet_profile_row(db, phone, key[0], pet_type)
                 row.display_name = new_name
+            donors = [profiles[key] for key in keys if key in profiles]
             fresh = _pet_profile_row(db, phone, new_name.lower(), pet_type)
             fresh.display_name = new_name
+            if donors:
+                donor = max(donors, key=lambda row: row.updated_at or datetime.min)
+                if donor.note_set:
+                    fresh.note = donor.note
+                    fresh.note_set = True
+                if donor.weight_kg is not None:
+                    fresh.weight_kg = donor.weight_kg
+                    fresh.weight_at = donor.weight_at
             keys.add((new_name.lower(), pet_type))
 
     if payload.note is not None:
