@@ -80,12 +80,13 @@ def validate_schema(client: AmoClient) -> dict[int, dict[str, Any]]:
         )
     pipelines = {p["id"]: p for p in client.pipelines()}
     for pid, label in (
-        (settings.pipeline_sales, "Продажи"),
+        (settings.pipeline_sales, "Питомник"),
         (settings.pipeline_puppies, "Щенки"),
-        (settings.pipeline_installment, "Рассрочка"),
     ):
-        if pid not in pipelines:
+        if pid and pid not in pipelines:
             raise SchemaError(f"воронка {label} (id={pid}) не найдена")
+    if settings.pipeline_installment and settings.pipeline_installment not in pipelines:
+        raise SchemaError(f"воронка Рассрочка (id={settings.pipeline_installment}) не найдена")
 
     sales_ids = {
         s["id"] for s in pipelines[settings.pipeline_sales].get("_embedded", {}).get("statuses", [])
@@ -275,7 +276,7 @@ def _merge_master_load(masters: list[dict[str, Any]], load: dict[str, Any]) -> l
 
 def _kennel_period(leads: list[dict[str, Any]], start: datetime, end: datetime, now: datetime) -> dict[str, Any]:
     cohort = [l for l in leads if _in_range(l.get("created_at"), start, end)]
-    booked_statuses = {settings.status_booked, settings.status_docs, settings.status_sold}
+    booked_statuses = {settings.status_booked, settings.status_sold}
     booked = [l for l in cohort if l.get("status_id") in booked_statuses]
     cohort_sold = [l for l in cohort if l.get("status_id") == settings.status_sold]
     closed = [
@@ -429,7 +430,9 @@ def collect(client: AmoClient) -> dict[str, Any]:
     end = now + timedelta(seconds=1)
 
     sales = [l for l in client.leads(settings.pipeline_sales) if not is_test_lead(l)]
-    installment = [l for l in client.leads(settings.pipeline_installment) if not is_test_lead(l)]
+    installment = []
+    if settings.pipeline_installment:
+        installment = [l for l in client.leads(settings.pipeline_installment) if not is_test_lead(l)]
 
     week_k = _kennel_period(sales, week0, end, now)
     month_k = _kennel_period(sales, month0, end, now)

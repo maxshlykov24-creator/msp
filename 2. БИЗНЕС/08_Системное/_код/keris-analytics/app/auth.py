@@ -56,3 +56,29 @@ def set_session_cookie(response, login: str) -> None:
 
 def clear_session_cookie(response) -> None:
     response.delete_cookie(COOKIE_NAME, path=settings.auth_cookie_path)
+
+
+def verify_pulse_entry(token: str) -> str | None:
+    """Короткая подпись с сервера. Сама по себе сессию не подделывает: вход ставит свою куку."""
+    import hashlib
+    import hmac
+    import json
+    import time
+    from base64 import urlsafe_b64decode
+
+    secret = settings.pulse_entry_secret
+    if not secret or "." not in (token or ""):
+        return None
+    raw, sig = token.rsplit(".", 1)
+    expected = hmac.new(secret.encode(), raw.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        return None
+    pad = "=" * (-len(raw) % 4)
+    try:
+        payload = json.loads(urlsafe_b64decode(raw + pad))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if int(payload.get("exp") or 0) < int(time.time()):
+        return None
+    chat_id = str(payload.get("chat_id") or "")
+    return chat_id or None

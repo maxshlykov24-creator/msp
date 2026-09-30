@@ -564,18 +564,99 @@ def add_lead_note(lead_id: int, text: str) -> None:
     }])
 
 
-def create_puppy_lead(*, name: str, fields: dict[str, Any]) -> int | None:
-    """Карточка щенка (используется админ-ботом Карины «Добавить щенка»).
+PUPPY_FIELDS = (
+    ("Пол", "select", ("Кобель", "Сука")),
+    ("Окрас", "text", ()),
+    ("Дата рождения", "date", ()),
+    ("Размер", "text", ()),
+)
 
-    Реюз пайплайна «Щенки» Этапа 0 (см. ДОСТУПЫ.md / ТЗ_ЭТАП0_ПИТОМНИК.md §6.2).
-    Здесь поля приходят уже с field_id (их печатает setup_amocrm.py), а не по имени.
-    """
-    item: dict[str, Any] = {"name": name}
-    cfs = []
-    for fid, value in fields.items():
-        if not fid:
+
+def ensure_puppy_fields() -> None:
+    """Поля витрины ищем по имени. Старые id из доступов в аккаунте уже не живут."""
+    missing = []
+    for name, ftype, enums in PUPPY_FIELDS:
+        if field_id("leads", name):
             continue
-        cfs.append({"field_id": int(fid), "values": [{"value": value}]})
+        body: dict[str, Any] = {"name": name, "type": ftype}
+        if enums:
+            body["enums"] = [{"value": value, "sort": index} for index, value in enumerate(enums, start=1)]
+        missing.append(body)
+    if not missing:
+        return
+    _request("POST", "/api/v4/leads/custom_fields", json=missing)
+    reset_cache()
+
+
+def find_open_puppy(name: str) -> int | None:
+    pipeline = int(settings.amocrm_pipeline_puppies_id)
+    data = _request("GET", "/api/v4/leads", params={
+        "query": name,
+        "filter[pipeline_id]": pipeline,
+        "limit": 50,
+    })
+    leads = ((data or {}).get("_embedded") or {}).get("leads") or []
+    needle = name.strip().lower()
+    for lead in leads:
+        if lead.get("status_id") in (STATUS_WON, STATUS_LOST):
+            continue
+        if str(lead.get("name") or "").strip().lower() == needle:
+            return int(lead["id"])
+    return None
+
+
+def count_pipeline_created(pipeline_id: int, start: datetime, end: datetime) -> int | None:
+    """Сколько сделок создано в интервале. None, если amoCRM не ответил."""
+    start_at = start if start.tzinfo else start.replace(tzinfo=_MOSCOW)
+    end_at = end if end.tzinfo else end.replace(tzinfo=_MOSCOW)
+    total = 0
+    page = 1
+    try:
+        while page <= 8:
+            data = _request("GET", "/api/v4/leads", params={
+                "filter[pipeline_id]": pipeline_id,
+                "filter[created_at][from]": int(start_at.timestamp()),
+                "filter[created_at][to]": int(end_at.timestamp()),
+                "limit": 250,
+                "page": page,
+            })
+            leads = ((data or {}).get("_embedded") or {}).get("leads") or []
+            if not leads:
+                break
+            total += len(leads)
+            if len(leads) < 250:
+                break
+            page += 1
+    except AmoCrmError:
+        log.warning("не удалось посчитать сделки воронки %s", pipeline_id, exc_info=True)
+        return None
+    return total
+
+
+def create_puppy_lead(
+    *,
+    name: str,
+    sex: str = "",
+    color: str = "",
+    birth_date: str = "",
+    size: str = "",
+    price: int | None = None,
+) -> int | None:
+    """Карточка в воронке «Наши щенки», этап «Свободен». Фото не пишем."""
+    ensure_puppy_fields()
+    item: dict[str, Any] = {
+        "name": name,
+        "pipeline_id": int(settings.amocrm_pipeline_puppies_id),
+        "status_id": int(settings.amocrm_puppy_status_free),
+    }
+    if price:
+        item["price"] = int(price)
+    cfs = custom_fields("leads", {
+        "Пол": sex,
+        "Окрас": color,
+        "Дата рождения": birth_date,
+        "Размер": size,
+    })
     if cfs:
         item["custom_fields_values"] = cfs
     data = _request("POST", "/api/v4/leads", json=[item])

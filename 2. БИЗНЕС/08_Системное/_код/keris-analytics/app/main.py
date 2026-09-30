@@ -15,6 +15,7 @@ from app.auth import (
     is_authenticated,
     set_session_cookie,
     verify_credentials,
+    verify_pulse_entry,
 )
 from app.collector import read_state, snapshot_path
 from app.config import settings
@@ -75,6 +76,15 @@ def health():
     has_data = snapshot_path().exists()
     status = "ok" if (has_data and not fresh["stale"] and fresh["schema_ok"]) else "degraded"
     return {"status": status, "has_data": has_data, **fresh}
+
+
+@app.get("/enter")
+def pulse_enter(token: str = ""):
+    if not verify_pulse_entry(token):
+        return RedirectResponse(url="./login?e=1", status_code=302)
+    resp = RedirectResponse(url="./", status_code=302)
+    set_session_cookie(resp, settings.auth_login)
+    return resp
 
 
 @app.get("/login", response_class=HTMLResponse)

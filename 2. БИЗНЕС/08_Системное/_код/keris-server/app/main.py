@@ -22,7 +22,9 @@ from . import (
     max_bind,
     notify_admins,
     notify_karina,
+    owner_digest,
     photos,
+    pulse_link,
     reminders,
     sms_otp,
     sync,
@@ -151,6 +153,14 @@ async def reminders_loop() -> None:
                     db.close()
             except Exception:  # noqa: BLE001
                 log.warning("цикл графика YCLIENTS: ошибка итерации", exc_info=True)
+        try:
+            db = SessionLocal()
+            try:
+                await asyncio.to_thread(owner_digest.maybe_send, db)
+            finally:
+                db.close()
+        except Exception:  # noqa: BLE001
+            log.warning("цикл сводки Карины: ошибка итерации", exc_info=True)
 
 
 @app.get("/health")
@@ -945,7 +955,11 @@ def require_admin(x_admin_key: str = Header(default="")) -> None:
 
 
 @app.get("/admin/bookings", dependencies=[Depends(require_admin)])
-def admin_bookings(when: str = "today", db: Session = Depends(get_db)) -> list[dict]:
+def admin_bookings(
+    when: str = "today",
+    for_photos: int = 0,
+    db: Session = Depends(get_db),
+) -> list[dict]:
     if when == "today":
         day = clock.today()
     elif when == "tomorrow":
@@ -964,6 +978,12 @@ def admin_bookings(when: str = "today", db: Session = Depends(get_db)) -> list[d
                                Booking.status != BookingStatus.cancelled)
         .order_by(Booking.starts_at)
     ).scalars().all()
+    if for_photos:
+        moment = clock.now()
+        rows = [
+            b for b in rows
+            if b.status != BookingStatus.no_show and b.starts_at <= moment
+        ]
     names = {s.id: s.name for s in db.execute(select(Service)).scalars().all()}
     addon_names = {a.id: a.name for a in db.execute(select(Addon)).scalars().all()}
     booking_photos = photos.by_booking_ids(db, [b.id for b in rows])
@@ -1073,6 +1093,7 @@ class BookingPhotoIn(BaseModel):
     kind: str  # before / after
     file_id: str = ""  # file_id из Telegram: сервер сам скачивает файл себе
     added_by: str = ""
+    source: str = "staff"  # staff — токен фото-бота, admin — токен админ-бота
 
 
 @app.get("/admin/bookings/{booking_id}/photos", dependencies=[Depends(require_admin)])
@@ -1092,7 +1113,8 @@ def admin_add_photo(booking_id: str, payload: BookingPhotoIn, db: Session = Depe
         raise HTTPException(422, "file_id обязателен")
     try:
         row = photos.save_from_telegram(
-            db, booking, payload.kind, payload.file_id, added_by=payload.added_by,
+            db, booking, payload.kind, payload.file_id,
+            added_by=payload.added_by, source=payload.source,
         )
     except photos.PhotoError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
@@ -1105,12 +1127,18 @@ def admin_add_photo(booking_id: str, payload: BookingPhotoIn, db: Session = Depe
 
 
 @app.post("/admin/bookings/{booking_id}/report/send", dependencies=[Depends(require_admin)])
-def admin_send_report(booking_id: str, db: Session = Depends(get_db)) -> dict:
-    """Отчёт клиенту в бота. Клиент не в боте — фото остаются в кабинете, а ответ
+def admin_send_report(
+    booking_id: str,
+    require_pair: int = 0,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Отчёт клиенту в бота. Клиент не в боте — фото остаются на диске, а ответ
     приходит с `pending=true` и ссылками, которые администратор ему передаёт."""
     booking = db.get(Booking, booking_id)
     if booking is None:
         raise HTTPException(404, "Запись не найдена")
+    if require_pair and not photos.has_pair(db, booking.id):
+        raise HTTPException(422, "Нужны оба снимка: до и после")
     service = db.get(Service, booking.service_id)
     try:
         return photos.send_report(db, booking, service.name if service else booking.service_id)
@@ -1180,25 +1208,79 @@ def admin_close_day(date_iso: str, payload: CloseDayIn, db: Session = Depends(ge
     return {"date_iso": date_iso, "status": "closed"}
 
 
+_PUPPY_SEX = {
+    "мальчик": "Кобель",
+    "девочка": "Сука",
+    "кобель": "Кобель",
+    "сука": "Сука",
+}
+
+
 class PuppyIn(BaseModel):
     name: str
-    litter: str = ""
     birth_date: str = ""
     sex: str = ""
     color: str = ""
+    size: str = ""
     price: Optional[int] = None
+    force: bool = False
 
 
 @app.post("/admin/puppies", dependencies=[Depends(require_admin)])
 def admin_add_puppy(payload: PuppyIn) -> dict:
-    """Карточка щенка в amoCRM (реюз воронки «Щенки» Этапа 0)."""
+    """Карточка в воронке «Наши щенки», этап «Свободен»."""
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(422, "Нужна кличка")
+    sex = ""
+    if payload.sex.strip():
+        sex = _PUPPY_SEX.get(payload.sex.strip().lower(), "")
+        if not sex:
+            raise HTTPException(422, "Пол: мальчик или девочка")
     try:
+        if not payload.force:
+            existing = amocrm_client.find_open_puppy(name)
+            if existing:
+                raise HTTPException(409, {"lead_id": existing, "detail": "открытая карточка с этой кличкой уже есть"})
         lead_id = amocrm_client.create_puppy_lead(
-            name=payload.name,
-            fields={},  # field_id полей помёта/д.р./пола/окраса/цены — из .env Этапа 0
+            name=name,
+            sex=sex,
+            color=payload.color.strip(),
+            birth_date=payload.birth_date.strip(),
+            size=payload.size.strip(),
+            price=payload.price,
         )
     except amocrm_client.AmoCrmNotConfigured as e:
         raise HTTPException(503, str(e))
+    except amocrm_client.AmoCrmError as e:
+        raise HTTPException(502, str(e))
     if lead_id is None:
         raise HTTPException(502, "amoCRM не вернул id сделки")
     return {"amocrm_lead_id": lead_id, "status": "created"}
+
+
+@app.get("/admin/today", dependencies=[Depends(require_admin)])
+def admin_today(db: Session = Depends(get_db)) -> dict:
+    from .day_board import today_stats
+    return today_stats(db)
+
+
+@app.post("/admin/digest/run", dependencies=[Depends(require_admin)])
+def admin_run_digest(force: int = 0, db: Session = Depends(get_db)) -> dict:
+    """Ручной прогон сводки Карины. Без force повтор в тот же день не уходит."""
+    return owner_digest.maybe_send(db, force=bool(force))
+
+
+class PulseLinkIn(BaseModel):
+    chat_id: str
+
+
+@app.post("/admin/pulse-link", dependencies=[Depends(require_admin)])
+def admin_pulse_link(payload: PulseLinkIn) -> dict:
+    try:
+        url = pulse_link.issue(payload.chat_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {"url": url}

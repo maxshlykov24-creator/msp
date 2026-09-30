@@ -13,14 +13,15 @@ class Settings(BaseSettings):
 
     pipeline_sales: int = 11036674
     pipeline_puppies: int = 11036834
-    pipeline_installment: int = 11036838
+    pipeline_installment: int = 0
 
     status_new: int = 86717266
     status_in_work: int = 86717270
     status_wait_litter: int = 86717274
     status_puppy_picked: int = 86717278
     status_booked: int = 86718354
-    status_docs: int = 86718358
+    status_docs: int = 0
+    pulse_entry_secret: str = ""
     status_sold: int = 142
     status_lost: int = 143
 
