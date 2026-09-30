@@ -117,6 +117,17 @@ def test_report_requires_pair(client, sessions):
     assert r.status_code == 422
 
 
+def test_today_reads_prepared_slice(client, monkeypatch):
+    from app import day_board
+    monkeypatch.setattr(day_board, "cache_enabled", lambda: True)
+    day_board.store_today({
+        "visits": 4, "revenue": 30665, "cancelled": 0, "no_show": 0, "photos_missing": 1,
+    })
+    body = client.get("/admin/today", headers=ADMIN).json()
+    assert body["visits"] == 4
+    assert body["photos_missing"] == 1
+
+
 def test_unknown_when_rejected(client):
     r = client.get("/admin/bookings", params={"when": "позавчера"}, headers=ADMIN)
     assert r.status_code == 422

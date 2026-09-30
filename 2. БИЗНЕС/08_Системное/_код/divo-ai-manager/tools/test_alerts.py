@@ -991,6 +991,40 @@ def test_widget_score():
     ) == 0
 
 
+def test_widget_picks_chat_not_newer_twin():
+    """Пустая утренняя карточка того же объявления не забирает номер у ночной."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from amo_client import choose_widget_lead
+
+    item = "8336838979"
+
+    def row(lead_id, created, talk_created, talk_updated, score=150, item_id=item):
+        return {
+            "score": score,
+            "created_at": created,
+            "item_id": item_id,
+            "talk_created": talk_created,
+            "talk_updated": talk_updated,
+            "lead": {"id": lead_id},
+        }
+
+    night = row(46170677, 1790714138, 1790714140, 1790751720)
+    morning = row(46172819, 1790739207, 1790739208, 1790751966)
+    assert choose_widget_lead([morning, night], item_id=item)["id"] == 46170677
+    silent = row(46170677, 1790714138, 0, 0)
+    empty = row(46172819, 1790739207, 0, 0)
+    assert choose_widget_lead([empty, silent], item_id=item)["id"] == 46170677
+    quiet = row(46170677, 1790714138, 1790714140, 1790715000)
+    fresh = row(46172819, 1790739207, 1790739208, 1790800000)
+    assert choose_widget_lead([quiet, fresh], item_id=item)["id"] == 46172819
+    other = row(1, 1, 1, 9, score=200, item_id="111")
+    assert choose_widget_lead([other, night, morning], item_id=item)["id"] == 46170677
+    assert choose_widget_lead([other, night, morning])["id"] == 1
+
+
 def test_amo_owner():
     import sys
     from pathlib import Path
@@ -1162,6 +1196,14 @@ def test_autoru_note_finds_room():
     }
     assert autoru_unsorted_lead([avito, row], room) == 45985223
     assert autoru_unsorted_lead([row], "deadbeef") is None
+    older = dict(row)
+    older["created_at"] = 100
+    older["_embedded"] = {"leads": [{"id": 10}]}
+    newer = dict(row)
+    newer["created_at"] = 200
+    newer["uid"] = "u3"
+    newer["_embedded"] = {"leads": [{"id": 20}]}
+    assert autoru_unsorted_lead([newer, older], room) == 10
     assert autoru_note_text("client", "  битая\nили нет ") == "Клиент: битая или нет"
     assert autoru_note_text("bot", "ссылка") == "Бот: ссылка"
 
@@ -2732,6 +2774,7 @@ if __name__ == "__main__":
     test_nudge_step_cooldown()
     test_prior_thread()
     test_widget_score()
+    test_widget_picks_chat_not_newer_twin()
     test_amo_owner()
     test_llm_pause_reason()
     test_llm_outage_not_a_group_alert()

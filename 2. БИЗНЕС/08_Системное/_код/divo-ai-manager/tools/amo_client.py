@@ -94,6 +94,7 @@ FIELD_BRAND = 2027423
 FIELD_MODEL = 2027425
 FIELD_YEAR = 2027427
 FIELD_KM = 2051185
+FIELD_LISTING_URL = 2051461
 SOURCE_AVITO_CHAT = 1641531
 SOURCE_AUTORU_CHAT = 1641533
 CLOSED = {STATUS_WON, STATUS_LOST, STATUS_SPAM}
@@ -587,10 +588,12 @@ def autoru_unsorted_lead(rows: list[dict], room_id: str) -> int | None:
     """Сделка интеграции Авто.ру по id чата кабинета.
 
     В неразобранном amo кладёт id комнаты в metadata.from.
+    Если комната попала в две карточки, берём ту, что создана раньше.
     """
     needle = (room_id or "").strip()
     if not needle:
         return None
+    found: list[tuple[int, int]] = []
     for row in rows or []:
         meta = unsorted_meta(row)
         if meta.get("channel") != "Авто.ру":
@@ -599,8 +602,111 @@ def autoru_unsorted_lead(rows: list[dict], room_id: str) -> int | None:
             continue
         lid = meta.get("lead_id")
         if lid:
-            return int(lid)
-    return None
+            found.append((int(meta.get("created_at") or 0), int(lid)))
+    if not found:
+        return None
+    found.sort()
+    return found[0][1]
+
+
+def listing_item_id(url: str) -> str:
+    """Хвост ссылки объявления. У Авито это id объявления."""
+    match = re.search(r"(\d{6,})/?$", (url or "").strip())
+    return match.group(1) if match else ""
+
+
+def lead_listing_url(lead: dict) -> str:
+    for field in lead.get("custom_fields_values") or []:
+        if int(field.get("field_id") or 0) != FIELD_LISTING_URL:
+            continue
+        for val in field.get("values") or []:
+            text = str(val.get("value") or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def choose_widget_lead(candidates: list[dict], *, item_id: str = "") -> dict | None:
+    """Какую карточку виджета забирать, если на одно объявление их несколько.
+
+    У кандидата есть score, created_at, item_id, talk_created, talk_updated, lead.
+    Сначала объявление этого чата. Среди его карточек берём ту, чей разговор
+    начался раньше, если он ещё жив. Свежая пустая карточка того же объявления
+    не перебивает. Если старый разговор затих до появления новой карточки,
+    берём новую.
+    """
+    pool = [c for c in candidates if int(c.get("score") or 0) >= 40 and c.get("lead")]
+    if not pool:
+        return None
+    want = (item_id or "").strip()
+    same = [c for c in pool if want and str(c.get("item_id") or "") == want]
+    if same:
+        cluster = same
+    else:
+        best = max(int(c.get("score") or 0) for c in pool)
+        cluster = [c for c in pool if int(c.get("score") or 0) == best]
+    if len(cluster) == 1:
+        return cluster[0]["lead"]
+    return _original_talk(cluster)["lead"]
+
+
+def _original_talk(cluster: list[dict]) -> dict:
+    def created(cand: dict) -> int:
+        return int(cand.get("created_at") or 0) or 10**18
+
+    def talk_created(cand: dict) -> int:
+        return int(cand.get("talk_created") or 0)
+
+    def talk_updated(cand: dict) -> int:
+        return int(cand.get("talk_updated") or 0)
+
+    with_talks = [c for c in cluster if talk_created(c)]
+    if not with_talks:
+        return min(cluster, key=created)
+    live: list[dict] = []
+    for cand in with_talks:
+        siblings = [created(other) for other in cluster if other is not cand]
+        later = max(siblings) if siblings else 0
+        if talk_updated(cand) >= later:
+            live.append(cand)
+    pick_from = live or with_talks
+    return min(pick_from, key=lambda c: (talk_created(c) or created(c), created(c)))
+
+
+def lead_talk_span(lead_id: int) -> tuple[int, int]:
+    """Когда на сделке начался и когда обновлялся разговор. (0, 0), если беседы нет."""
+    try:
+        code, data = request(
+            "/api/v4/talks",
+            {
+                "filter[entity_id]": str(int(lead_id)),
+                "filter[entity_type]": "lead",
+                "limit": "20",
+            },
+        )
+    except AmoError:
+        return 0, 0
+    if code >= 400 or not data:
+        return 0, 0
+    talks = items(data, "talks")
+    if not talks:
+        return 0, 0
+    created_vals = [int(t.get("created_at") or 0) for t in talks if int(t.get("created_at") or 0)]
+    updated_vals = [int(t.get("updated_at") or 0) for t in talks]
+    return (min(created_vals) if created_vals else 0, max(updated_vals) if updated_vals else 0)
+
+
+def _widget_cluster(candidates: list[dict], item_id: str) -> list[dict]:
+    """Те же карточки, между которыми выбирает choose_widget_lead."""
+    pool = [c for c in candidates if int(c.get("score") or 0) >= 40 and c.get("lead")]
+    if not pool:
+        return []
+    want = (item_id or "").strip()
+    same = [c for c in pool if want and str(c.get("item_id") or "") == want]
+    if same:
+        return same
+    best = max(int(c.get("score") or 0) for c in pool)
+    return [c for c in pool if int(c.get("score") or 0) == best]
 
 
 def find_unsorted_uid(lead_id: int, rows: list[dict] | None = None) -> str:
@@ -733,17 +839,42 @@ def close_lead_spam(lead_id: int, note: str = "") -> None:
         add_note(int(lead_id), note)
 
 
+def _lead_as_widget(lead_id: int, rows: list[dict]) -> dict | None:
+    lead = get_lead(int(lead_id))
+    if int(lead.get("status_id") or 0) in CLOSED:
+        return None
+    lead["_unsorted_uid"] = find_unsorted_uid(int(lead_id), rows)
+    return lead
+
+
 def find_widget_lead(
     *,
     peer: str = "",
     car: str = "",
     channel: str = "",
+    url: str = "",
+    chat_id: str = "",
 ) -> dict | None:
-    """Сделка виджета Авито / Авто.ру в воронке «Техническое»."""
+    """Сделка виджета Авито / Авто.ру в воронке «Техническое».
+
+    На Авто.ру комната чата однозначна. На Авито имя и название объявления
+    совпадают у пустого дубля, поэтому среди карточек одного объявления
+    берём ту, где разговор уже идёт, а не ту, что новее.
+    """
     if channel not in {"Авито", "Авто.ру"}:
         return None
     rows = iter_unsorted(6)
-    scored: list[tuple[int, int, dict]] = []
+    if channel == "Авто.ру":
+        room = str(chat_id or "")
+        if room.startswith("ar:"):
+            room = room[3:]
+        lid = autoru_unsorted_lead(rows, room)
+        if lid:
+            return _lead_as_widget(lid, rows)
+    want_item = listing_item_id(url)
+    now = time.time()
+    shortlist: list[tuple[int, int, int, dict]] = []
+    peers: list[tuple[int, int, int, dict]] = []
     for row in rows:
         meta = unsorted_meta(row)
         lid = meta.get("lead_id")
@@ -751,25 +882,39 @@ def find_widget_lead(
             continue
         if meta.get("channel") and meta["channel"] != channel:
             continue
-        scored.append(
-            (
-                score_widget_lead(
-                    "",
-                    peer=peer,
-                    car=car,
-                    channel=channel,
-                    from_name=str(meta.get("from") or ""),
-                    created_at=int(meta.get("created_at") or 0),
-                ),
-                int(lid),
-                meta,
-            )
+        created = int(meta.get("created_at") or 0)
+        pts = score_widget_lead(
+            "",
+            peer=peer,
+            car=car,
+            channel=channel,
+            from_name=str(meta.get("from") or ""),
+            created_at=created,
         )
-    scored.sort(key=lambda x: x[0], reverse=True)
-    # Имя машины в unsorted часто пустое: добираем карточку у лучших.
-    best: dict | None = None
-    best_score = 0
-    for _, lid, meta in scored[:12]:
+        item = (pts, created, int(lid), meta)
+        shortlist.append(item)
+        if pts >= 40 and created and now - created <= 72 * 3600:
+            peers.append(item)
+    peers.sort(key=lambda row: row[1], reverse=True)
+    chosen: list[tuple[int, int, int, dict]] = []
+    seen: set[int] = set()
+    for item in peers[:30]:
+        seen.add(item[2])
+        chosen.append(item)
+    # Имя в неразобранном бывает пустым: ещё десять свежих карточек канала,
+    # их добирает совпадение названия машины.
+    shortlist.sort(key=lambda row: row[1], reverse=True)
+    extra = 0
+    for item in shortlist:
+        if item[2] in seen:
+            continue
+        if extra >= 10:
+            break
+        seen.add(item[2])
+        chosen.append(item)
+        extra += 1
+    candidates: list[dict] = []
+    for _, created, lid, meta in chosen:
         try:
             lead = get_lead(lid)
         except AmoError:
@@ -784,13 +929,25 @@ def find_widget_lead(
             car=car,
             channel=channel,
             from_name=str(meta.get("from") or ""),
-            created_at=int(lead.get("created_at") or meta.get("created_at") or 0),
+            created_at=int(lead.get("created_at") or created),
         )
-        if pts > best_score:
-            best_score = pts
-            best = lead
-            best["_widget_from"] = meta.get("from")
-            best["_unsorted_uid"] = meta.get("uid")
-    if best is not None and best_score >= 40:
-        return best
-    return None
+        lead["_widget_from"] = meta.get("from")
+        lead["_unsorted_uid"] = meta.get("uid")
+        candidates.append(
+            {
+                "score": pts,
+                "created_at": int(lead.get("created_at") or created),
+                "item_id": listing_item_id(lead_listing_url(lead)),
+                "talk_created": 0,
+                "talk_updated": 0,
+                "lead": lead,
+                "lead_id": lid,
+            }
+        )
+    cluster = _widget_cluster(candidates, want_item)
+    if len(cluster) > 1:
+        for cand in cluster:
+            created_at, updated_at = lead_talk_span(int(cand["lead_id"]))
+            cand["talk_created"] = created_at
+            cand["talk_updated"] = updated_at
+    return choose_widget_lead(candidates, item_id=want_item)

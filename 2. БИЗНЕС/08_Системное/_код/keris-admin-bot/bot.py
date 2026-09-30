@@ -10,14 +10,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import socket
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
 from typing import Any, Optional
+
+from puppy_parse import parse_birth, parse_price, price_label
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("keris-admin-bot")
@@ -55,7 +56,8 @@ STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-admin-bot/state.json")
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 _state: dict[str, dict[str, Any]] = {}
-_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ready: dict[str, Any] = {"today": None, "bookings": {}}
+_state_lock = threading.Lock()
 
 
 def load_state() -> None:
@@ -70,8 +72,10 @@ def load_state() -> None:
 def save_state() -> None:
     try:
         os.makedirs(os.path.dirname(STATE_FILE) or ".", exist_ok=True)
+        with _state_lock:
+            snapshot = json.dumps(_state, ensure_ascii=False)
         with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(_state, f, ensure_ascii=False)
+            f.write(snapshot)
     except Exception:
         log.warning("save_state failed", exc_info=True)
 
@@ -85,6 +89,7 @@ def reset_flow(chat_id: int) -> None:
     st.pop("flow", None)
     st.pop("step", None)
     st.pop("data", None)
+    st.pop("editing", None)
     save_state()
 
 
@@ -128,37 +133,51 @@ def _http(method: str, url: str, payload: Optional[dict] = None,
         return 0, {}
 
 
-def tg(method: str, payload: dict) -> Any:
-    status, data = _http("POST", f"{TG_API}/{method}", payload)
+def tg(method: str, payload: dict, timeout: float = 8) -> Any:
+    status, data = _http("POST", f"{TG_API}/{method}", payload, timeout=timeout)
     if status != 200:
         log.warning("tg %s -> %s %s", method, status, str(data)[:300])
     return data
 
 
-def api(method: str, path: str, payload: Optional[dict] = None) -> tuple[int, Any]:
-    sep = "&" if "?" in path else "?"
+def api(method: str, path: str, payload: Optional[dict] = None, timeout: float = 4) -> tuple[int, Any]:
     return _http(
-        method,
+        method if method != "GET" else "GET",
         f"{API_BASE}{path}",
-        payload,
+        payload if method != "GET" else None,
         headers={"X-Admin-Key": ADMIN_API_KEY},
-    ) if method != "GET" else _http(
-        "GET",
-        f"{API_BASE}{path}",
-        None,
-        headers={"X-Admin-Key": ADMIN_API_KEY},
+        timeout=timeout,
     )
 
 
-def send(chat_id: int, text: str, keyboard: Optional[dict] = None) -> None:
-    payload: dict[str, Any] = {"chat_id": chat_id, "text": text[:4000], "parse_mode": "HTML"}
+def present(chat_id: int, text: str, keyboard: Optional[dict] = None) -> None:
+    """Один экран на диалог: кнопка меняет это сообщение, а не пишет следующее."""
+    st = user_state(chat_id)
+    body: dict[str, Any] = {"chat_id": chat_id, "text": text[:4000], "parse_mode": "HTML"}
     if keyboard is not None:
-        payload["reply_markup"] = keyboard
-    tg("sendMessage", payload)
+        body["reply_markup"] = keyboard
+    mid = st.get("screen_id")
+    if mid:
+        edit = dict(body)
+        edit["message_id"] = mid
+        status, data = _http("POST", f"{TG_API}/editMessageText", edit, timeout=8)
+        desc = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+        if status == 200 or "message is not modified" in desc:
+            return
+    status, data = _http("POST", f"{TG_API}/sendMessage", body, timeout=8)
+    result = data.get("result") if isinstance(data, dict) else None
+    new_id = (result or {}).get("message_id") if isinstance(result, dict) else None
+    if new_id:
+        st["screen_id"] = new_id
+        save_state()
+
+
+def send(chat_id: int, text: str, keyboard: Optional[dict] = None) -> None:
+    present(chat_id, text, keyboard)
 
 
 def answer_callback(cb_id: str, text: str = "") -> None:
-    tg("answerCallbackQuery", {"callback_query_id": cb_id, "text": text[:200]})
+    tg("answerCallbackQuery", {"callback_query_id": cb_id, "text": text[:200]}, timeout=3)
 
 
 def detail_of(data: Any) -> str:
@@ -180,7 +199,7 @@ def pulse_url(chat_id: int) -> str:
 
 def apply_menu_button(chat_id: int, mode: str) -> str:
     if mode == "karina":
-        url = pulse_url(chat_id)
+        url = user_state(chat_id).get("pulse_url") or pulse_url(chat_id)
         if url:
             tg("setChatMenuButton", {
                 "chat_id": chat_id,
@@ -218,20 +237,19 @@ def show_home(chat_id: int, text: str = "") -> None:
 
 def switch_role(chat_id: int, mode: str) -> None:
     reset_flow(chat_id)
-    st = user_state(chat_id)
-    st["mode"] = mode
-    st["pulse_url"] = apply_menu_button(chat_id, mode) if mode == "karina" else ""
-    if mode != "karina":
-        apply_menu_button(chat_id, "admin")
+    user_state(chat_id)["mode"] = mode
     save_state()
     show_home(chat_id)
 
 
 def show_today(chat_id: int) -> None:
-    status, data = api("GET", "/admin/today")
-    if status != 200 or not isinstance(data, dict):
-        send(chat_id, f"Не удалось собрать день. {detail_of(data)}".strip(), menu_for(chat_id))
-        return
+    data = _ready.get("today")
+    if not isinstance(data, dict):
+        status, data = api("GET", "/admin/today", timeout=4)
+        if status != 200 or not isinstance(data, dict):
+            send(chat_id, "Срез дня ещё собирается. Нажми ещё раз через минуту.", menu_for(chat_id))
+            return
+        _ready["today"] = data
     text = (
         "<b>Сегодня</b>\n"
         f"Визитов: {data.get('visits', 0)}\n"
@@ -257,14 +275,19 @@ def start_photos(chat_id: int) -> None:
 
 
 def show_photo_bookings(chat_id: int, when: str) -> None:
-    status, data = api("GET", f"/admin/bookings?when={urllib.parse.quote(when)}&for_photos=1")
-    if status != 200 or not isinstance(data, list):
-        send(chat_id, f"Не удалось получить записи. {detail_of(data)}".strip(), menu_for(chat_id))
-        reset_flow(chat_id)
-        return
+    cached = (_ready.get("bookings") or {}).get(when)
+    if isinstance(cached, list):
+        data = cached
+    else:
+        status, data = api("GET", f"/admin/bookings?when={urllib.parse.quote(when)}&for_photos=1", timeout=4)
+        if status != 200 or not isinstance(data, list):
+            send(chat_id, "Список визитов ещё собирается. Нажми ещё раз через минуту.", menu_for(chat_id))
+            reset_flow(chat_id)
+            return
+        _ready.setdefault("bookings", {})[when] = data
     rows = list(data)
     if not rows:
-        send(chat_id, "Пар без фото нет.", menu_for(chat_id))
+        send(chat_id, "Таких визитов нет.", menu_for(chat_id))
         reset_flow(chat_id)
         return
     keyboard = []
@@ -321,19 +344,21 @@ def save_photo(chat_id: int, file_id: str) -> None:
         "file_id": file_id,
         "source": "admin",
         "added_by": str(chat_id),
-    })
+    }, timeout=25)
     if status != 200:
         send(chat_id, f"Фото не сохранилось. {detail_of(body)}".strip(), menu_for(chat_id))
         return
-    show_photo_card(chat_id, booking_id)
+    show_photo_card(chat_id, booking_id, shots=body.get("photos") if isinstance(body, dict) else None)
 
 
-def show_photo_card(chat_id: int, booking_id: str) -> None:
-    row = None
-    when = (user_state(chat_id).get("data") or {}).get("when") or "today"
-    status, body = api("GET", f"/admin/bookings?when={urllib.parse.quote(when)}")
-    if status == 200 and isinstance(body, list):
-        row = next((item for item in body if item.get("id") == booking_id), None)
+def show_photo_card(chat_id: int, booking_id: str, shots: Optional[list] = None) -> None:
+    st = user_state(chat_id)
+    rows = (st.get("data") or {}).get("rows") or {}
+    row = rows.get(booking_id)
+    if shots is not None and row is not None:
+        row["photos_before"] = sum(1 for item in shots if item.get("kind") == "before")
+        row["photos_after"] = sum(1 for item in shots if item.get("kind") == "after")
+        save_state()
     if not row:
         send(chat_id, "Запись не найдена.", menu_for(chat_id))
         reset_flow(chat_id)
@@ -359,7 +384,7 @@ def show_photo_card(chat_id: int, booking_id: str) -> None:
 
 
 def send_report(chat_id: int, booking_id: str) -> None:
-    status, body = api("POST", f"/admin/bookings/{booking_id}/report/send?require_pair=1")
+    status, body = api("POST", f"/admin/bookings/{booking_id}/report/send?require_pair=1", timeout=20)
     reset_flow(chat_id)
     if status != 200 or not isinstance(body, dict):
         send(chat_id, f"Отчёт не ушёл. {detail_of(body)}".strip(), menu_for(chat_id))
@@ -392,10 +417,18 @@ def start_puppy(chat_id: int) -> None:
     send(chat_id, "Кличка щенка", {"inline_keyboard": [[{"text": "Отменить", "callback_data": "cancel"}]]})
 
 
+def _ask_name(chat_id: int) -> None:
+    user_state(chat_id)["step"] = "name"
+    save_state()
+    send(chat_id, _puppy_prompt(chat_id, "Кличка щенка"), {"inline_keyboard": [
+        [{"text": "Отменить", "callback_data": "cancel"}],
+    ]})
+
+
 def puppy_sex(chat_id: int) -> None:
     user_state(chat_id)["step"] = "sex"
     save_state()
-    send(chat_id, "Пол", {"inline_keyboard": [
+    send(chat_id, _puppy_prompt(chat_id, "Пол"), {"inline_keyboard": [
         [{"text": "мальчик", "callback_data": "px:мальчик"},
          {"text": "девочка", "callback_data": "px:девочка"}],
         [{"text": "Отменить", "callback_data": "cancel"}],
@@ -405,7 +438,7 @@ def puppy_sex(chat_id: int) -> None:
 def puppy_color(chat_id: int) -> None:
     user_state(chat_id)["step"] = "color"
     save_state()
-    send(chat_id, "Окрас. Можно нажать кнопку или написать свой.", {"inline_keyboard": [
+    send(chat_id, _puppy_prompt(chat_id, "Окрас. Можно нажать кнопку или написать свой."), {"inline_keyboard": [
         [{"text": "gold", "callback_data": "pc:gold"}],
         [{"text": "ice gold", "callback_data": "pc:ice gold"}],
         [{"text": "red brown", "callback_data": "pc:red brown"}],
@@ -416,8 +449,7 @@ def puppy_color(chat_id: int) -> None:
 def puppy_birth(chat_id: int) -> None:
     user_state(chat_id)["step"] = "birth"
     save_state()
-    send(chat_id, "Дата рождения, ГГГГ-ММ-ДД. Или пропусти.", {"inline_keyboard": [
-        [{"text": "Пропустить", "callback_data": "pb:skip"}],
+    send(chat_id, _puppy_prompt(chat_id, "Дата рождения, например 2.08. Год текущий."), {"inline_keyboard": [
         [{"text": "Отменить", "callback_data": "cancel"}],
     ]})
 
@@ -425,11 +457,10 @@ def puppy_birth(chat_id: int) -> None:
 def puppy_size(chat_id: int) -> None:
     user_state(chat_id)["step"] = "size"
     save_state()
-    send(chat_id, "Размер", {"inline_keyboard": [
+    send(chat_id, _puppy_prompt(chat_id, "Размер"), {"inline_keyboard": [
         [{"text": "микро", "callback_data": "pz:микро"},
          {"text": "мини", "callback_data": "pz:мини"},
          {"text": "стандарт", "callback_data": "pz:стандарт"}],
-        [{"text": "Пропустить", "callback_data": "pz:skip"}],
         [{"text": "Отменить", "callback_data": "cancel"}],
     ]})
 
@@ -437,32 +468,88 @@ def puppy_size(chat_id: int) -> None:
 def puppy_price(chat_id: int) -> None:
     user_state(chat_id)["step"] = "price"
     save_state()
-    send(chat_id, "Цена числом. Или пропусти.", {"inline_keyboard": [
-        [{"text": "Пропустить", "callback_data": "pp:skip"}],
+    send(chat_id, _puppy_prompt(chat_id, "Цена: 350 000, 350.000 или 350."), {"inline_keyboard": [
         [{"text": "Отменить", "callback_data": "cancel"}],
     ]})
 
 
-def puppy_confirm(chat_id: int) -> None:
+def puppy_card(chat_id: int) -> str:
     data = user_state(chat_id).get("data") or {}
-    user_state(chat_id)["step"] = "confirm"
-    save_state()
-    lines = [
+    return "\n".join([
         "<b>Запишу так</b>",
         data.get("name") or "",
         f"Пол: {data.get('sex') or ''}",
         f"Окрас: {data.get('color') or ''}",
-        f"Дата рождения: {data.get('birth') or 'не указана'}",
+        f"Дата рождения: {data.get('birth_label') or 'не указана'}",
         f"Размер: {data.get('size') or 'не указан'}",
-        f"Цена: {data.get('price') if data.get('price') is not None else 'не указана'}",
-    ]
-    send(chat_id, "\n".join(lines), {"inline_keyboard": [
+        f"Цена: {price_label(data.get('price'))}",
+    ])
+
+
+def _puppy_prompt(chat_id: int, hint: str) -> str:
+    if user_state(chat_id).get("editing"):
+        return puppy_card(chat_id) + "\n\n" + hint
+    return hint
+
+
+def _after_puppy_field(chat_id: int, nxt) -> None:
+    if user_state(chat_id).pop("editing", None):
+        save_state()
+        puppy_confirm(chat_id)
+        return
+    nxt(chat_id)
+
+
+def _puppy_gap(chat_id: int) -> str:
+    data = user_state(chat_id).get("data") or {}
+    if not data.get("birth"):
+        return "birth"
+    if data.get("size") not in ("микро", "мини", "стандарт"):
+        return "size"
+    if not data.get("price"):
+        return "price"
+    return ""
+
+
+def puppy_confirm(chat_id: int) -> None:
+    gap = _puppy_gap(chat_id)
+    if gap == "birth":
+        puppy_birth(chat_id)
+        return
+    if gap == "size":
+        puppy_size(chat_id)
+        return
+    if gap == "price":
+        puppy_price(chat_id)
+        return
+    user_state(chat_id)["step"] = "confirm"
+    user_state(chat_id)["editing"] = False
+    save_state()
+    send(chat_id, puppy_card(chat_id), {"inline_keyboard": [
         [{"text": "Записать", "callback_data": "py:save"}],
+        [{"text": "Изменить", "callback_data": "py:edit"}],
         [{"text": "Отменить", "callback_data": "cancel"}],
     ]})
 
 
+def puppy_edit_menu(chat_id: int) -> None:
+    user_state(chat_id)["step"] = "editmenu"
+    save_state()
+    send(chat_id, puppy_card(chat_id), {"inline_keyboard": [
+        [{"text": "Кличка", "callback_data": "py:part:name"},
+         {"text": "Пол", "callback_data": "py:part:sex"}],
+        [{"text": "Окрас", "callback_data": "py:part:color"},
+         {"text": "Дата", "callback_data": "py:part:birth"}],
+        [{"text": "Размер", "callback_data": "py:part:size"},
+         {"text": "Цена", "callback_data": "py:part:price"}],
+        [{"text": "Назад", "callback_data": "py:back"}],
+    ]})
+
+
 def save_puppy(chat_id: int, force: bool = False) -> None:
+    if _puppy_gap(chat_id):
+        puppy_confirm(chat_id)
+        return
     data = user_state(chat_id).get("data") or {}
     payload = {
         "name": data.get("name") or "",
@@ -473,7 +560,7 @@ def save_puppy(chat_id: int, force: bool = False) -> None:
         "price": data.get("price"),
         "force": force,
     }
-    status, body = api("POST", "/admin/puppies", payload)
+    status, body = api("POST", "/admin/puppies", payload, timeout=20)
     if status == 409:
         send(chat_id, "Открытая карточка с этой кличкой уже есть. Создать вторую?", {"inline_keyboard": [
             [{"text": "Создать вторую", "callback_data": "py:force"}],
@@ -495,40 +582,35 @@ def on_text(chat_id: int, text: str) -> None:
     if flow == "puppy" and step == "name":
         st.setdefault("data", {})["name"] = raw
         save_state()
-        puppy_sex(chat_id)
+        _after_puppy_field(chat_id, puppy_sex)
         return
     if flow == "puppy" and step == "color":
         st.setdefault("data", {})["color"] = raw
         save_state()
-        puppy_birth(chat_id)
+        _after_puppy_field(chat_id, puppy_birth)
         return
     if flow == "puppy" and step == "birth":
-        if not _DATE.match(raw):
-            send(chat_id, "Нужен формат ГГГГ-ММ-ДД.")
+        parsed = parse_birth(raw)
+        if not parsed:
+            puppy_birth(chat_id)
             return
-        try:
-            datetime.strptime(raw, "%Y-%m-%d")
-        except ValueError:
-            send(chat_id, "Такой даты нет.")
-            return
-        st.setdefault("data", {})["birth"] = raw
+        iso, label = parsed
+        st.setdefault("data", {})["birth"] = iso
+        st["data"]["birth_label"] = label
         save_state()
-        puppy_size(chat_id)
+        _after_puppy_field(chat_id, puppy_size)
         return
     if flow == "puppy" and step == "price":
-        digits = raw.replace(" ", "")
-        if not digits.isdigit():
-            send(chat_id, "Нужно число.")
+        price = parse_price(raw)
+        if price is None:
+            puppy_price(chat_id)
             return
-        st.setdefault("data", {})["price"] = int(digits)
+        st.setdefault("data", {})["price"] = price
         save_state()
         puppy_confirm(chat_id)
         return
     if raw in ("/start", "/menu"):
         reset_flow(chat_id)
-        if str(chat_id) in KARINA_IDS:
-            user_state(chat_id)["pulse_url"] = apply_menu_button(chat_id, role_of(chat_id))
-            save_state()
         show_home(chat_id)
         return
     show_home(chat_id, "Кнопка снизу.")
@@ -585,28 +667,40 @@ def on_callback(chat_id: int, data: str) -> None:
     if data.startswith("px:") and mode == "karina":
         user_state(chat_id).setdefault("data", {})["sex"] = data.split(":", 1)[1]
         save_state()
-        puppy_color(chat_id)
+        _after_puppy_field(chat_id, puppy_color)
         return
     if data.startswith("pc:") and mode == "karina":
         user_state(chat_id).setdefault("data", {})["color"] = data.split(":", 1)[1]
         save_state()
-        puppy_birth(chat_id)
-        return
-    if data == "pb:skip" and mode == "karina":
-        user_state(chat_id).setdefault("data", {})["birth"] = ""
-        save_state()
-        puppy_size(chat_id)
+        _after_puppy_field(chat_id, puppy_birth)
         return
     if data.startswith("pz:") and mode == "karina":
         value = data.split(":", 1)[1]
-        user_state(chat_id).setdefault("data", {})["size"] = "" if value == "skip" else value
+        if value not in ("микро", "мини", "стандарт"):
+            puppy_size(chat_id)
+            return
+        user_state(chat_id).setdefault("data", {})["size"] = value
         save_state()
-        puppy_price(chat_id)
+        _after_puppy_field(chat_id, puppy_price)
         return
-    if data == "pp:skip" and mode == "karina":
-        user_state(chat_id).setdefault("data", {})["price"] = None
-        save_state()
+    if data == "py:edit" and mode == "karina":
+        puppy_edit_menu(chat_id)
+        return
+    if data == "py:back" and mode == "karina":
         puppy_confirm(chat_id)
+        return
+    if data.startswith("py:part:") and mode == "karina":
+        part = data.split(":", 2)[2]
+        user_state(chat_id)["editing"] = True
+        save_state()
+        {
+            "name": lambda: _ask_name(chat_id),
+            "sex": lambda: puppy_sex(chat_id),
+            "color": lambda: puppy_color(chat_id),
+            "birth": lambda: puppy_birth(chat_id),
+            "size": lambda: puppy_size(chat_id),
+            "price": lambda: puppy_price(chat_id),
+        }.get(part, puppy_edit_menu)()
         return
     if data == "py:save" and mode == "karina":
         save_puppy(chat_id, force=False)
@@ -617,12 +711,54 @@ def on_callback(chat_id: int, data: str) -> None:
     show_home(chat_id)
 
 
+def warm_ready() -> None:
+    """Срезы и ссылка пульса обновляются в фоне, кнопка их не ждёт."""
+    status, data = api("GET", "/admin/today", timeout=4)
+    if status == 200 and isinstance(data, dict):
+        _ready["today"] = data
+    bookings: dict[str, list] = {}
+    for when in ("today", "yesterday"):
+        status, rows = api("GET", f"/admin/bookings?when={when}&for_photos=1", timeout=4)
+        if status == 200 and isinstance(rows, list):
+            bookings[when] = rows
+    if bookings:
+        _ready["bookings"] = bookings
+    for raw_id in KARINA_IDS:
+        chat_id = int(raw_id)
+        if role_of(chat_id) != "karina":
+            if user_state(chat_id).get("menu_button") != "admin":
+                apply_menu_button(chat_id, "admin")
+                user_state(chat_id)["menu_button"] = "admin"
+            continue
+        url = pulse_url(chat_id)
+        if not url:
+            continue
+        user_state(chat_id)["pulse_url"] = url
+        if user_state(chat_id).get("menu_button") != "karina":
+            apply_menu_button(chat_id, "karina")
+            user_state(chat_id)["menu_button"] = "karina"
+    save_state()
+
+
+def warm_loop() -> None:
+    while True:
+        try:
+            warm_ready()
+        except Exception:
+            log.warning("фоновый срез не обновился", exc_info=True)
+        time.sleep(600)
+
+
 def handle(update: dict) -> None:
     message = update.get("message") or {}
     callback = update.get("callback_query") or {}
     if callback:
-        chat_id = int((callback.get("message") or {}).get("chat", {}).get("id") or 0)
+        source = callback.get("message") or {}
+        chat_id = int((source.get("chat") or {}).get("id") or 0)
         answer_callback(callback.get("id") or "")
+        mid = source.get("message_id")
+        if chat_id > 0 and mid:
+            user_state(chat_id)["screen_id"] = mid
     else:
         chat_id = int((message.get("chat") or {}).get("id") or 0)
     if chat_id <= 0 or str(chat_id) not in ALLOWED_IDS:
@@ -645,9 +781,10 @@ def handle(update: dict) -> None:
 
 def poll() -> None:
     offset = 0
+    threading.Thread(target=warm_loop, name="keris-warm", daemon=True).start()
     log.info("admin bot started, admin=%s karina=%s", sorted(ADMIN_IDS), sorted(KARINA_IDS))
     while True:
-        status, data = _http("GET", f"{TG_API}/getUpdates?timeout=25&offset={offset}", timeout=35)
+        status, data = _http("GET", f"{TG_API}/getUpdates?timeout=20&offset={offset}", timeout=28)
         if status != 200 or not isinstance(data, dict):
             time.sleep(2)
             continue

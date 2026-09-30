@@ -89,8 +89,34 @@ def on_startup() -> None:
         db.close()
     log.info("Keris Server запущен. Время салона: %s. YCLIENTS настроен: %s. amoCRM настроен: %s",
               clock.now().strftime("%d.%m %H:%M"), settings.yclients_ready, settings.amocrm_ready)
+    asyncio.create_task(board_loop())
     if settings.reminders_enabled or settings.amocrm_ready or settings.yclients_ready:
         asyncio.create_task(reminders_loop())
+
+
+def _warm_board() -> None:
+    from . import day_board
+    from .db import SessionLocal
+    db = SessionLocal()
+    try:
+        day_board.refresh_today(db)
+        day_board.drop_lists()
+        for when in ("today", "yesterday"):
+            for flag in (0, 1):
+                admin_bookings(when=when, for_photos=flag, db=db)
+    finally:
+        db.close()
+
+
+async def board_loop() -> None:
+    """Срез «Сегодня» и списки визитов уже лежат в памяти. Кнопка бота их только читает."""
+    from . import day_board
+    while True:
+        try:
+            await asyncio.to_thread(_warm_board)
+        except Exception:  # noqa: BLE001
+            log.warning("срез дня не собрался", exc_info=True)
+        await asyncio.sleep(day_board.CACHE_SEC)
 
 
 async def reminders_loop() -> None:
@@ -960,6 +986,10 @@ def admin_bookings(
     for_photos: int = 0,
     db: Session = Depends(get_db),
 ) -> list[dict]:
+    from . import day_board
+    cached = day_board.peek_bookings(when, for_photos)
+    if cached is not None:
+        return cached
     if when == "today":
         day = clock.today()
     elif when == "tomorrow":
@@ -1004,6 +1034,8 @@ def admin_bookings(
             "photos_before": sum(1 for p in shots if p["kind"] == "before"),
             "photos_after": sum(1 for p in shots if p["kind"] == "after"),
         })
+    if day_board.cache_enabled() and when in ("today", "yesterday"):
+        day_board.store_bookings(when, for_photos, out)
     return out
 
 
@@ -1232,6 +1264,12 @@ def admin_add_puppy(payload: PuppyIn) -> dict:
     name = payload.name.strip()
     if not name:
         raise HTTPException(422, "Нужна кличка")
+    if not payload.birth_date.strip():
+        raise HTTPException(422, "Нужна дата рождения")
+    if payload.size.strip().lower() not in ("микро", "мини", "стандарт"):
+        raise HTTPException(422, "Нужен размер: микро, мини или стандарт")
+    if payload.price is None or not (100_000 <= payload.price <= 999_999):
+        raise HTTPException(422, "Нужна цена от 100 тысяч до 999 тысяч")
     sex = ""
     if payload.sex.strip():
         sex = _PUPPY_SEX.get(payload.sex.strip().lower(), "")
@@ -1261,8 +1299,11 @@ def admin_add_puppy(payload: PuppyIn) -> dict:
 
 @app.get("/admin/today", dependencies=[Depends(require_admin)])
 def admin_today(db: Session = Depends(get_db)) -> dict:
-    from .day_board import today_stats
-    return today_stats(db)
+    from . import day_board
+    cached = day_board.peek_today()
+    if cached is not None:
+        return cached
+    return day_board.refresh_today(db)
 
 
 @app.post("/admin/digest/run", dependencies=[Depends(require_admin)])

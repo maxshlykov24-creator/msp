@@ -12,6 +12,7 @@ import requests
 from .config import settings
 
 ENTRY_TTL_SEC = 12 * 60 * 60
+_health_ok_until = 0.0
 
 
 def sign(chat_id: str) -> str:
@@ -26,13 +27,16 @@ def issue(chat_id: str) -> str:
         raise PermissionError("этот чат не в роли Карины")
     if not settings.pulse_entry_secret:
         raise RuntimeError("PULSE_ENTRY_SECRET не задан")
-    url = settings.pulse_public_url.rstrip("/") + "/health"
-    try:
-        resp = requests.get(url, timeout=5)
-        body = resp.json()
-    except (requests.RequestException, ValueError) as exc:
-        raise RuntimeError("пульс не ответил") from exc
-    if body.get("status") != "ok":
-        raise RuntimeError("пульс ещё не готов")
+    global _health_ok_until
+    if time.time() >= _health_ok_until:
+        url = settings.pulse_public_url.rstrip("/") + "/health"
+        try:
+            resp = requests.get(url, timeout=3)
+            body = resp.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise RuntimeError("пульс не ответил") from exc
+        if body.get("status") != "ok":
+            raise RuntimeError("пульс ещё не готов")
+        _health_ok_until = time.time() + 600
     token = sign(str(chat_id))
     return f"{settings.pulse_public_url.rstrip('/')}/enter?token={token}"

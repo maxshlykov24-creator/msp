@@ -556,6 +556,8 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
                 peer=snap.get("peer") or snap.get("name") or "",
                 car=snap.get("car") or "",
                 channel=channel,
+                url=snap.get("url") or "",
+                chat_id=str(snap.get("chat_id") or ""),
             )
         except amo_client.AmoError as exc:
             log.warning("виджет amo по чату %s: %s", snap.get("chat_id"), exc)
