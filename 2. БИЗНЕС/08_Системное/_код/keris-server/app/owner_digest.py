@@ -1,6 +1,7 @@
 """Сводка роли Карины: каждый день в 22:15, в воскресенье неделя, в последний день месяца месяц.
 
-Салон до 22:00, поэтому 21:00 режет вечерние визиты. Получатель — KARINA_ROLE_IDS.
+Салон до 22:00, поэтому 21:00 режет вечерние визиты.
+Получатели — DIGEST_CHAT_IDS, а если список пуст, то KARINA_ROLE_IDS.
 """
 from __future__ import annotations
 
@@ -86,7 +87,7 @@ def maybe_send(db: Session, moment: datetime | None = None, *, force: bool = Fal
     if not force and db.get(OwnerDigest, date_iso) is not None:
         return {"sent": False, "reason": "already"}
     token = settings.karina_bot_token
-    chats = settings.karina_role_ids
+    chats = settings.digest_chat_ids or settings.karina_role_ids
     if not token or not chats:
         return {"sent": False, "reason": "no_recipient"}
     text = build_text(db, now)

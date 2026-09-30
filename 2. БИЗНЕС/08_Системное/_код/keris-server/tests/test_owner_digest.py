@@ -43,3 +43,26 @@ def test_sunday_and_month_end_share_one_message(monkeypatch, db_session):
 
     assert "<b>Неделя</b>" in sent[0]
     assert "<b>Месяц</b>" in sent[0]
+
+
+def test_digest_list_excludes_role(monkeypatch, db_session):
+    moment = datetime(2026, 9, 30, 22, 20)
+    monkeypatch.setattr(
+        owner_digest, "settings",
+        dataclasses.replace(
+            settings,
+            karina_bot_token="t",
+            karina_role_ids=["1", "900"],
+            digest_chat_ids=["1"],
+        ),
+    )
+    monkeypatch.setattr(owner_digest, "count_pipeline_created", lambda *args, **kwargs: 0)
+    sent = []
+    monkeypatch.setattr(
+        owner_digest, "tg_send_message",
+        lambda *args, **kwargs: sent.append(args[1]) or True,
+    )
+
+    owner_digest.maybe_send(db_session, moment)
+
+    assert sent == ["1"]

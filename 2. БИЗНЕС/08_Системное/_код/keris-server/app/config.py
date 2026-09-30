@@ -55,8 +55,10 @@ class Settings:
 
     karina_bot_token: str = field(default_factory=lambda: os.environ.get("KARINA_BOT_TOKEN", ""))
     karina_telegram_ids: list[str] = field(default_factory=lambda: _list("KARINA_TELEGRAM_IDS"))
-    # Роль Карины в админ-боте: сводки и пульс. Оперативные карточки записей сюда не идут.
+    # Роль Карины в админ-боте: пульс и вход. Карточки записей сюда не идут.
     karina_role_ids: list[str] = field(default_factory=lambda: _list("KARINA_ROLE_IDS"))
+    # Сводка в 22:15. Пустой список значит «всем из KARINA_ROLE_IDS».
+    digest_chat_ids: list[str] = field(default_factory=lambda: _list("DIGEST_CHAT_IDS"))
     amocrm_pipeline_puppies_id: str = field(
         default_factory=lambda: os.environ.get("AMOCRM_PIPELINE_PUPPIES_ID", "11036834")
     )
