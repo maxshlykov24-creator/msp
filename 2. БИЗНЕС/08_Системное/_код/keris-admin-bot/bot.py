@@ -276,6 +276,22 @@ def show_stats_pick(chat_id: int) -> None:
     send(chat_id, "🐾 <b>Статистика</b>\nСегодня, вчера или неделя.", stats_keyboard())
 
 
+def _photo_line(block: dict) -> str:
+    """Строка про фото только по визитам, которые уже начались. Будущие в это число не входят."""
+    started = block.get("visits_started")
+    if started is None:
+        return ""
+    started = int(started or 0)
+    ready = int(block.get("photos_ready") or 0)
+    if started <= 0:
+        return "📷 Прошедших визитов пока нет, фото не к чему приложить."
+    if ready <= 0:
+        return f"📷 Фото до и после нет ни у одного из {started} прошедших."
+    if ready >= started:
+        return f"📷 Фото до и после есть у всех {started} прошедших."
+    return f"📷 Фото до и после есть у {ready} из {started} прошедших."
+
+
 def show_stat(chat_id: int, key: str) -> None:
     stats = _load_stats()
     block = (stats or {}).get(key) if isinstance(stats, dict) else None
@@ -292,8 +308,10 @@ def show_stat(chat_id: int, key: str) -> None:
         f"💰 Сумма: {_money(block.get('revenue', 0))} ₽",
         f"↩️ Отмены: {block.get('cancelled', 0)}",
         f"🚫 Не пришли: {block.get('no_show', 0)}",
-        f"📷 Без пары фото: {block.get('photos_missing', 0)}",
     ])
+    photo = _photo_line(block)
+    if photo:
+        lines.append(photo)
     send(chat_id, "\n".join(lines), stats_keyboard())
 
 

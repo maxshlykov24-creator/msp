@@ -37,15 +37,20 @@ def period_stats(db: Session, start: date, end: date, *, now: datetime | None = 
     from . import photos
     shots = photos.by_booking_ids(db, [b.id for b in started])
     missing = 0
+    ready = 0
     for booking in started:
         kinds = {item["kind"] for item in shots.get(booking.id, [])}
-        if "before" not in kinds or "after" not in kinds:
+        if "before" in kinds and "after" in kinds:
+            ready += 1
+        else:
             missing += 1
     return {
         "visits": len(visits),
         "revenue": sum(int(b.price or 0) for b in visits),
         "cancelled": sum(1 for b in rows if b.status == BookingStatus.cancelled),
         "no_show": sum(1 for b in rows if b.status == BookingStatus.no_show),
+        "visits_started": len(started),
+        "photos_ready": ready,
         "photos_missing": missing,
     }
 

@@ -37,16 +37,16 @@
     html{min-height:100%;background:var(--bg)}
     body{margin:0;min-height:100%;color:var(--text);font-family:var(--font);
       background:
-        radial-gradient(700px 420px at 100% 0,rgba(224,168,187,.08),transparent 62%),
-        radial-gradient(540px 400px at 0 100%,rgba(212,184,138,.07),transparent 65%),var(--bg);
+        radial-gradient(700px 420px at 100% 0,rgba(141,108,92,.07),transparent 62%),
+        radial-gradient(540px 400px at 0 100%,rgba(212,184,138,.10),transparent 65%),var(--bg);
       -webkit-font-smoothing:antialiased}
     button{font:inherit;color:inherit}
-    button:focus-visible{outline:3px solid rgba(206,124,154,.3);outline-offset:2px}
+    button:focus-visible{outline:3px solid rgba(141,108,92,.35);outline-offset:2px}
     .app{width:min(100%,520px);min-height:100dvh;margin:0 auto;position:relative}
     .topbar{display:flex;align-items:center;justify-content:center;padding:10px 14px 8px;
       padding-top:max(10px,var(--safe-top))}
     .brand-logo{height:46px;width:auto;display:block;object-fit:contain;background:transparent}
-    .sticky{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,var(--bg) 70%,rgba(250,250,242,.92));
+    .sticky{position:relative;z-index:1;
       padding:0 14px 10px;padding-left:max(14px,var(--safe-left));padding-right:max(14px,var(--safe-right))}
     .segmented{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;padding:5px;background:var(--soft);border-radius:15px}
     .segmented.two{grid-template-columns:1fr 1fr 1fr}
@@ -55,12 +55,12 @@
     .dir-wrap{padding:0 14px 4px;padding-left:max(14px,var(--safe-left));padding-right:max(14px,var(--safe-right))}
     .dir-wrap[hidden]{display:none}
     main{padding:8px 18px calc(28px + var(--safe-bottom) + var(--browser-bar))}
-    .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--rose-dark);font-weight:700;margin:14px 0 8px}
+    .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8a6d58;font-weight:700;margin:14px 0 8px}
     .fresh{font-size:11px;color:var(--muted);text-align:center;margin:8px 0 0}
     .range-wrap{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
     .range-wrap[hidden]{display:none}
     .range-wrap label{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;background:#fff;border:1px solid var(--line);border-radius:12px;font-size:13px;font-weight:600;color:var(--muted)}
-    .range-wrap.custom label{border-color:var(--rose)}
+    .range-wrap.custom label{border-color:#c4a574}
     .range-wrap input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-weight:600;color:var(--text);min-height:42px;padding:0}
     .who{font-size:13px;font-weight:700;margin:14px 0 2px}
     .banner{display:none;margin:8px 0 12px;padding:12px 14px;border-radius:14px;font-size:13px;line-height:1.45;
@@ -77,14 +77,10 @@
     .trust div{padding:10px 6px;text-align:center;border-radius:14px;background:rgba(255,255,255,.92);border:1px solid var(--line)}
     .trust b{display:block;font-size:14px;font-weight:700;letter-spacing:-.03em;line-height:1.2;overflow-wrap:anywhere}
     .trust span{display:block;font-size:9px;color:var(--muted);margin-top:3px;line-height:1.2}
-    .chapter{margin-top:16px;padding:6px 12px 14px;border-radius:24px;border:1px solid var(--line)}
-    .chapter[data-ch="pet"]{background:#fffaf3;box-shadow:inset 0 4px 0 #d4b88a}
-    .chapter[data-ch="groom"]{margin-top:22px;background:#fff7f9;box-shadow:inset 0 4px 0 #e0a8bb}
-    .chapter .eyebrow{margin:12px 2px 8px}
-    .chapter[data-ch="pet"] .eyebrow{color:#9a7b4a}
-    .chapter[data-ch="pet"] .pulse-hero{background:linear-gradient(135deg,#6b5348,#9a7a58)}
-    .chapter[data-ch="groom"] .eyebrow{color:var(--rose-dark)}
-    .chapter[data-ch="groom"] .pulse-hero{background:linear-gradient(135deg,#7d5364,#c48aa3)}
+    .chapter{margin-top:16px;padding:6px 12px 14px;border-radius:24px;border:1px solid var(--line);background:#fffcf8}
+    .chapter[data-ch="groom"]{margin-top:22px}
+    .chapter .eyebrow{margin:12px 2px 8px;color:#8a6d58}
+    .chapter .pulse-hero{background:linear-gradient(135deg,#6b5348,#8d6c5c)}
     .chapter .chips{margin-left:-12px;margin-right:-12px;padding-left:12px;padding-right:12px}
     .funnel{background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px 16px}
     .funnel-row{margin-top:10px}
@@ -92,12 +88,12 @@
     .funnel-row .lab{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:600}
     .funnel-row .lab small{color:var(--muted);font-weight:500}
     .bar{height:8px;border-radius:999px;background:#f1e6e8;overflow:hidden;margin-top:7px}
-    .bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(135deg,var(--rose),var(--gold))}
+    .bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(135deg,#8d6c5c,#d4b88a)}
     .source-line{margin-top:12px;font-size:12px;color:#6f5b52;line-height:1.45}
     .chips{display:flex;gap:8px;overflow:auto;margin:10px -18px 4px;padding:0 18px 5px;scrollbar-width:none}
     .chips::-webkit-scrollbar{display:none}
     .chip{min-height:40px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:#fff;white-space:nowrap;font-weight:600;cursor:pointer}
-    .chip.active{color:#fff;border-color:transparent;background:linear-gradient(135deg,var(--rose),var(--gold))}
+    .chip.active{color:#fff;border-color:transparent;background:linear-gradient(135deg,#8d6c5c,#d4b88a)}
     .cab-card{width:100%;text-align:left;display:flex;gap:12px;align-items:center;background:#fff;border:1px solid var(--line);
       border-radius:18px;padding:13px 14px;margin-top:8px}
     .cab-card .vdate{flex:0 0 46px;text-align:center;line-height:1.15}
@@ -138,8 +134,8 @@
   <div class="dir-wrap" id="dirWrap">
     <div class="segmented" id="dirSeg">
       <button type="button" data-dir="all">Всё</button>
-      <button type="button" data-dir="pet">Питомник</button>
       <button type="button" data-dir="groom">Груминг</button>
+      <button type="button" data-dir="pet">Питомник</button>
     </div>
   </div>
   <main>
@@ -424,7 +420,7 @@ function kennelChapter(block, periodLabel){
     '<div class="who">Как дошли</div>' + details + '</section>';
 }
 
-function groomingChapter(block, periodLabel, ui){
+function groomingChapter(block, periodLabel){
   block = block || {};
   var tiles = [
     trustTile(n(block.visits || 0), "пришли"),
@@ -434,23 +430,10 @@ function groomingChapter(block, periodLabel, ui){
   var heroTag = "выручка визитов · " + periodLabel;
   var heroNum = rub(block.revenue || 0);
   var masters = block.masters || [];
-  if(masters.length >= 2 && ui.master !== "all" && !masters.some(function(m){ return m.id === ui.master; })){
-    ui.master = "all";
-    writeUi(ui);
-  }
-  groomMasters = masters;
-  var chips = "";
-  if(masters.length >= 2){
-    var all = [{id:"all", name:"Все"}].concat(masters);
-    chips = '<div class="chips">' + all.map(function(m){
-      var on = ui.master === m.id;
-      return '<button type="button" class="chip' + (on ? " active" : "") + '" data-master="' + m.id + '">' + m.name + '</button>';
-    }).join("") + '</div>';
-  }
   var list = masters.length
-    ? masterBars(masters, masters.length >= 2 ? ui.master : "all")
+    ? masterBars(masters, "all")
     : '<p class="source-line">За этот срок визитов нет.</p>';
-  var who = '<div class="who">Кто стрижёт</div>' + chips + '<div id="masterList">' + list + '</div>';
+  var who = '<div class="who">Кто стрижёт</div><div id="masterList">' + list + '</div>';
   return '<section class="chapter" data-ch="groom">' +
     '<div class="eyebrow">Груминг</div>' +
     '<div class="pulse-hero"><div class="tag">' + heroTag + '</div>' +
@@ -477,8 +460,6 @@ function renderToday(D){
   html += '<div class="now-line"><b>Салон сейчас</b><span>' + gLine + '.</span></div>';
   return html;
 }
-
-var groomMasters = [];
 
 function sumMasters(days, from, to){
   var masters = {};
@@ -539,16 +520,6 @@ function buildRange(D, from, to){
   return {label: label, kennel: k, grooming: g, clipped: clipped};
 }
 
-function paintMasters(ui){
-  var box = document.getElementById("masterList");
-  if(!box) return;
-  var filter = groomMasters.length >= 2 ? ui.master : "all";
-  box.innerHTML = masterBars(groomMasters, filter);
-  document.querySelectorAll(".chip").forEach(function(c){
-    c.classList.toggle("active", c.getAttribute("data-master") === ui.master);
-  });
-}
-
 function startDashboard(D){
   var ui = readUi();
   if(["today","week","month","range"].indexOf(ui.period) < 0) ui.period = "month";
@@ -593,8 +564,8 @@ function startDashboard(D){
   }
   var html = "";
   if(pack.clipped) html += '<div class="now-line"><b>Короткий срез</b><span>' + pack.clipped + '</span></div>';
+  if(ui.dir !== "pet") html += groomingChapter(pack.grooming, pack.label || "");
   if(ui.dir !== "groom") html += kennelChapter(pack.kennel, pack.label || "");
-  if(ui.dir !== "pet") html += groomingChapter(pack.grooming, pack.label || "", ui);
   root.innerHTML = html;
 }
 
@@ -606,15 +577,6 @@ function bind(D){
   document.getElementById("dirSeg").addEventListener("click", function(e){
     var b = e.target.closest("button[data-dir]"); if(!b) return;
     var ui = readUi(); ui.dir = b.getAttribute("data-dir"); writeUi(ui); startDashboard(D);
-  });
-  document.getElementById("root").addEventListener("click", function(e){
-    var chip = e.target.closest("[data-master]");
-    if(chip){
-      var ui = readUi();
-      ui.master = chip.getAttribute("data-master");
-      writeUi(ui);
-      paintMasters(ui);
-    }
   });
   function applyRange(){
     var from = document.getElementById("fromDate").value;
