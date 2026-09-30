@@ -17,6 +17,19 @@ def start_scheduler(bot: Bot) -> AsyncIOScheduler:
 
     if settings.jobs_enabled:
         sched.add_job(
+            job_monday_coverage_morning,
+            "cron",
+            args=[bot],
+            day_of_week="mon",
+            hour=9,
+            minute=0,
+            id="monday_coverage_morning",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=300,
+        )
+        sched.add_job(
             job_monday_coverage_evening,
             "cron",
             args=[bot],

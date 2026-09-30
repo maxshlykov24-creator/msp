@@ -42,7 +42,6 @@ from app.database import get_session_factory
 from app import keyboards as kb
 from app.models import Revelation, RevelationArchive, Report, User, WeekSubmission
 from app.mute import AdminOnlyPrivateMiddleware, coverage_recipient_ids, is_admin_user, send_message_live
-from app.reach import blocked_ids, not_started_ids
 from app.states import HashtagStates, WeeklyReportStates
 from app.time_utils import (
     digest_week_monday_on_digest_day,
@@ -2055,10 +2054,14 @@ async def job_monday_coverage_evening(bot: Bot) -> None:
         return
     try:
         await _send_private_coverage_dm(bot, replace=True)
-        await replace_group_digest(bot)
-        log.info("monday 20:00 coverage replaced, group digest refreshed")
+        log.info("monday 20:00 coverage replaced")
     except Exception:
-        log.exception("job_monday_coverage_evening failed")
+        log.exception("job_monday_coverage_evening private failed")
+    try:
+        await replace_group_digest(bot)
+        log.info("monday 20:00 group digest refreshed")
+    except Exception:
+        log.exception("job_monday_coverage_evening group failed")
 
 
 _MISSING_NUDGE = (
