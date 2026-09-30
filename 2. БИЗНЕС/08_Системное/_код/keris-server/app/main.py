@@ -322,6 +322,10 @@ def create_review(payload: ReviewIn, db: Session = Depends(get_db)) -> dict:
     )
     db.add(review)
     db.commit()
+    try:
+        notify_admins.notify_review(notify_karina.review_text(review, visit))
+    except Exception:
+        log.warning("отзыв сохранён, уведомление не ушло", exc_info=True)
     return {
         "ok": True,
         "review": {

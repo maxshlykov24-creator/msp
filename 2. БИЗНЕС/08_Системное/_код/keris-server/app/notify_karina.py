@@ -136,6 +136,32 @@ def _card(booking, title: str) -> str:
     return "\n".join(lines)
 
 
+def review_text(review, booking) -> str:
+    """Отзыв клиента: кто, о ком, какой визит, оценка и сам текст."""
+    service_name, master_name, _addons = _lookups(booking)
+    service = html.escape(service_name or "услуга")
+    master = html.escape(master_name or "мастер")
+    who = html.escape(getattr(review, "author_name", "") or booking.owner_name or "Клиент")
+    phone = html.escape(getattr(review, "owner_phone", "") or booking.owner_phone or "")
+    pet = html.escape((booking.pet_name or "").strip())
+    body = html.escape((getattr(review, "text", "") or "").strip())
+    stars = max(1, min(5, int(getattr(review, "stars", 0) or 0)))
+    mark = "★" * stars + "☆" * (5 - stars)
+    who_line = f"{who}, {phone}" if phone else who
+    service_line = f"{service}, {pet}" if pet else service
+    lines = [
+        f"★ <b>Новый отзыв {html.escape(str(booking.id))}</b>",
+        "",
+        who_line,
+        f"Мастер: {master}",
+        service_line,
+        fmt_when(booking.starts_at, bold=True),
+        f"Оценка: {mark} {stars} из 5",
+        body or "Текста нет, только оценка.",
+    ]
+    return "\n".join(lines)
+
+
 def booking_cancelled_text(booking) -> str:
     return _card(booking, "Отмена")
 

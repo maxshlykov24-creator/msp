@@ -12,12 +12,37 @@ import re
 
 from .config import settings
 from .models import BookingAdminCard
-from .tg_http import tg_delete_message, tg_edit_message, tg_send_message_id
+from .tg_http import tg_delete_message, tg_edit_message, tg_send_message, tg_send_message_id
 
 log = logging.getLogger("keris.notify_admins")
 
 _BOOKING_ID = re.compile(r"KERIS-\d+")
 CARD_MENU = {"inline_keyboard": [[{"text": "Меню", "callback_data": "menu:new"}]]}
+
+
+def review_chats() -> list[str]:
+    """Админ и роль Карины. Один и тот же chat_id получает отзыв один раз."""
+    chats: list[str] = []
+    for chat_id in [*settings.admin_notify_chat_ids, *settings.karina_role_ids]:
+        key = str(chat_id).strip()
+        if key and key not in chats:
+            chats.append(key)
+    return chats
+
+
+def notify_review(text: str) -> int:
+    token = settings.karina_bot_token
+    chats = review_chats()
+    if not token or not chats:
+        log.info("отзыв не отправлен, бот не настроен: %s", (text or "")[:120])
+        return 0
+    delivered = 0
+    for chat_id in chats:
+        if tg_send_message(token, chat_id, text, reply_markup=CARD_MENU):
+            delivered += 1
+        else:
+            log.warning("отзыв не доставлен chat_id=%s", chat_id)
+    return delivered
 
 
 def notify(text: str) -> None:
