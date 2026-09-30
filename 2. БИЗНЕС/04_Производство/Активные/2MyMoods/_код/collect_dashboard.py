@@ -1,135 +1,293 @@
 #!/usr/bin/env python3
-"""Срез МойСклад для живого дашборда: подтверждённые, шоурум, медиана отправки."""
+"""Полная пересборка локального среза 2MY. Только GET к внешним системам."""
 
 from __future__ import annotations
 
 import json
-import statistics
+import re
+import time
 from collections import defaultdict
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import lib
 
-OUT = Path(__file__).resolve().parents[1] / "дашборд" / "snapshot.json"
-HTML = Path(__file__).resolve().parents[1] / "дашборд" / "2MY_дашборд_живой.html"
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "дашборд" / "snapshot.local.json"
+GAPS = ROOT / "дашборд" / "ПРОБЕЛЫ_ДАННЫХ.local.md"
+TZ = ZoneInfo("Europe/Moscow")
+FIELD = {
+    "paid": "ed14770a-dc0d-11ef-0a80-10cd00226b09",
+    "confirm": "ed14761e-dc0d-11ef-0a80-10cd00226b08",
+    "sent": "ed14796a-dc0d-11ef-0a80-10cd00226b0c",
+    "stock": "ed147544-dc0d-11ef-0a80-0d360015ef35",
+    "delivery": "ed14744d-dc0d-11ef-0a80-10cd00226b06",
+    "promo": "f11cca54-ed68-11ef-0a80-084e000137c7",
+    "utm": "6d95a799-f849-11f0-0a80-009c000b6c8a",
+    "utm_medium": "6d95a996-f849-11f0-0a80-009c000b6c8b",
+    "utm_campaign": "6d95aa5b-f849-11f0-0a80-009c000b6c8c",
+}
 
-SHOWROOM = {lib.MS_STATE_SHOWROOM}
-CONFIRMED_BUY = {lib.MS_STATE_CONFIRMED, lib.MS_STATE_DONE, lib.MS_STATE_SHOWROOM, "655b21e8-c447-11eb-0a80-08be002efc0e"}
+
+def required_rows(ms: lib.MS, path: str, params: dict | None = None) -> list[dict]:
+    params = dict(params or {})
+    params["limit"] = 1000
+    out = []
+    offset = 0
+    while True:
+        params["offset"] = offset
+        status, body = ms.req(path, params)
+        if status != 200:
+            raise RuntimeError(f"GET {path}: HTTP {status}")
+        chunk = body.get("rows", [])
+        out += chunk
+        offset += len(chunk)
+        if not chunk or offset >= body.get("meta", {}).get("size", offset):
+            return out
 
 
-def parse_moment(s: str | None) -> datetime | None:
-    if not s:
+def required_get(ms: lib.MS, path: str) -> dict:
+    status, body = ms.req(path)
+    if status != 200:
+        raise RuntimeError(f"GET {path.split('/entity/')[-1].split('/')[0]}: HTTP {status}")
+    return body
+
+
+def attrs(row: dict) -> dict:
+    return {a.get("id"): a.get("value") for a in row.get("attributes") or []}
+
+
+def mid(ref: dict | None) -> str:
+    return lib.href_id((ref or {}).get("meta"))
+
+
+def rub(value) -> float:
+    return round(float(value or 0) / 100, 2)
+
+
+def dt(value: str | None) -> datetime | None:
+    if not value:
         return None
     try:
-        return datetime.fromisoformat(s.replace(" ", "T")[:19])
+        # МойСклад отдаёт локальное время кабинета; кабинет 2MY в Москве.
+        return datetime.fromisoformat(value.replace(" ", "T")).replace(tzinfo=TZ)
     except ValueError:
         return None
 
 
-def attr(order: dict, aid: str):
-    for a in order.get("attributes") or []:
-        if a.get("id") == aid:
-            return a.get("value")
-    return None
+def phone(value: str | None) -> str:
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) == 11 and digits[0] in "78":
+        return "+7" + digits[1:]
+    return "+" + digits if 10 <= len(digits) <= 15 else ""
 
 
-def state_id(order: dict) -> str:
-    return lib.href_id((order.get("state") or {}).get("meta"))
+def city(address: str, delivery: str) -> str:
+    text = (address + " " + delivery).lower().replace("ё", "е")
+    if "самовывоз" in text:
+        return "Москва, самовывоз"
+    names = [("Санкт-Петербург", r"санкт.петербург|\bспб\b|\bпитер\b"),
+             ("Москва", r"\bмоскв\w*|\bмск\b"),
+             ("Казань", r"\bказан\w*"), ("Екатеринбург", r"екатеринбург"),
+             ("Краснодар", r"краснодар"), ("Новосибирск", r"новосибирск"),
+             ("Нижний Новгород", r"нижн\w* новгород"),
+             ("Ростов-на-Дону", r"ростов.на.дону"),
+             ("Сочи", r"\bсочи\b"), ("Самара", r"\bсамар\w*"),
+             ("Уфа", r"\bуфа\b"), ("Пермь", r"\bперм\w*"),
+             ("Тюмень", r"\bтюмен\w*"), ("Челябинск", r"челябинск"),
+             ("Воронеж", r"\bворонеж\w*"), ("Омск", r"\bомск\b")]
+    for label, pattern in names:
+        if re.search(pattern, text):
+            return label
+    generic = re.search(r"(?:\bг\.?|\bгород)\s*([А-ЯЁ][а-яё]+(?:[ -][А-ЯЁ][а-яё]+)?)", address)
+    if generic:
+        return generic.group(1)
+    return "не распознано"
 
 
-def channel_id(order: dict) -> str:
-    return lib.href_id((order.get("salesChannel") or {}).get("meta"))
+def cf_name(value: object) -> str:
+    if isinstance(value, dict):
+        return str(value.get("name") or value.get("value") or "")
+    return str(value or "")
+
+
+def get_amo() -> tuple[list[dict], dict]:
+    amo = lib.Amo()
+    leads = amo.iter_leads(f"?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}", pages=500)
+    # iter_leads молча прекращает обход при ошибке; проверяем размер первой выборки.
+    status, body = amo.req("GET", f"/api/v4/leads?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}&limit=1&page=1")
+    if status not in (200, 204):
+        raise RuntimeError(f"amo leads: HTTP {status}")
+    status, tasks_body = amo.req("GET", "/api/v4/tasks?limit=250&page=1")
+    if status not in (200, 204):
+        raise RuntimeError(f"amo tasks: HTTP {status}")
+    tasks = (tasks_body.get("_embedded") or {}).get("tasks") or []
+    result = []
+    for lead in leads:
+        if lead.get("pipeline_id") != lib.PIPELINE_SALES_NEW:
+            continue
+        result.append({
+            "id": lead["id"], "created": datetime.fromtimestamp(lead["created_at"], TZ).date().isoformat(),
+            "status": lead.get("status_id"), "manager": lead.get("responsible_user_id"),
+            "won": lead.get("status_id") == 142,
+        })
+    return result, {"open": sum(t.get("is_completed") is False for t in tasks), "sampled": len(tasks)}
+
+
+def positions_for(order_id: str) -> tuple[str, list[dict]]:
+    client = lib.MS()
+    path = f"/entity/customerorder/{order_id}/positions"
+    for attempt in range(6):
+        try:
+            return order_id, required_rows(client, path)
+        except RuntimeError:
+            if attempt == 5:
+                raise
+            time.sleep(2 * (attempt + 1))
+    raise AssertionError("unreachable")
 
 
 def main() -> None:
     ms = lib.MS()
-    print("читаю заказы…")
-    orders = ms.rows("/entity/customerorder", {"limit": 1000, "order": "moment,desc"}, pages=20)
-    print("заказов в срезе", len(orders))
-    by_state: dict[str, int] = defaultdict(int)
-    by_channel: dict[str, int] = defaultdict(int)
-    confirmed_sum = 0
-    confirmed_n = 0
-    showroom_n = 0
-    showroom_sum = 0
-    ship_all = []
-    ship_fast = []
-    ship_slow = []
-    for o in orders:
-        sid = state_id(o)
-        by_state[sid] += 1
-        cid = channel_id(o) or "нет"
-        by_channel[cid] += 1
-        sm = int(o.get("sum") or 0)
-        if sid in CONFIRMED_BUY or sid == lib.MS_STATE_CONFIRMED:
-            confirmed_n += 1
-            confirmed_sum += sm
-        if sid in SHOWROOM or cid == lib.MS_CHANNEL_SHOWROOM:
-            showroom_n += 1
-            showroom_sum += sm
-        t_conf = attr(o, "ed14761e-dc0d-11ef-0a80-10cd00226b08")
-        t_sent = attr(o, "ed14796a-dc0d-11ef-0a80-10cd00226b0c")
-        d1 = parse_moment(t_conf if isinstance(t_conf, str) else None) or parse_moment(o.get("moment"))
-        d2 = parse_moment(t_sent if isinstance(t_sent, str) else None)
-        if d1 and d2 and d2 >= d1:
-            days = (d2 - d1).total_seconds() / 86400
-            ship_all.append(days)
-            if days <= 2:
-                ship_fast.append(days)
-            else:
-                ship_slow.append(days)
-
-    def med(xs):
-        return round(statistics.median(xs), 2) if xs else None
-
-    snap = {
-        "generated": datetime.now().isoformat(timespec="seconds"),
-        "orders_in_slice": len(orders),
-        "note": "Покупка = статусы подтверждён / выполнен / покупка в шоуруме / отправлен, не только отгрузка. Срок отправки: атрибуты Подтвержден→Отправлен, иначе moment. Наличие ≈ ≤2 дней, предзаказ >2 — эвристика, не выдуманный остаток на дату заказа.",
-        "confirmed_count": confirmed_n,
-        "confirmed_sum_kopecks": confirmed_sum,
-        "showroom_count": showroom_n,
-        "showroom_sum_kopecks": showroom_sum,
-        "median_ship_days": med(ship_all),
-        "median_ship_in_stock_days": med(ship_fast),
-        "median_ship_preorder_days": med(ship_slow),
-        "ship_sample": {"all": len(ship_all), "in_stock": len(ship_fast), "preorder": len(ship_slow)},
-        "by_state": dict(by_state),
-        "by_channel": dict(by_channel),
-    }
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
-    rub = lambda k: f"{(k or 0)/100:,.0f} ₽".replace(",", " ")
-    html = f"""<!DOCTYPE html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>2MY дашборд живой</title>
-<style>
-body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f7f7f7;color:#020202;margin:0;padding:32px}}
-h1{{font-size:28px;margin:0 0 8px}} .sub{{color:#4f5354;margin-bottom:24px}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}}
-.card{{background:#fff;border:1px solid #e1e3e5;border-radius:12px;padding:16px}}
-.k{{font-size:12px;color:#4f5354}} .v{{font-size:22px;font-weight:700}}
-table{{width:100%;border-collapse:collapse;margin-top:24px;background:#fff}}
-td,th{{border-bottom:1px solid #e1e3e5;padding:8px 10px;text-align:left;font-size:14px}}
-.note{{margin-top:24px;font-size:13px;color:#4f5354;max-width:720px}}
-</style></head><body>
-<h1>2MyMoods — живой срез</h1>
-<p class="sub">Собрано {snap['generated']}. Покупки по статусу МойСклад, не только по отгрузкам.</p>
-<div class="grid">
-<div class="card"><div class="k">Подтверждённые покупки</div><div class="v">{confirmed_n}</div></div>
-<div class="card"><div class="k">Сумма покупок</div><div class="v">{rub(confirmed_sum)}</div></div>
-<div class="card"><div class="k">Покупка в шоуруме</div><div class="v">{showroom_n}</div></div>
-<div class="card"><div class="k">Шоурум, сумма</div><div class="v">{rub(showroom_sum)}</div></div>
-<div class="card"><div class="k">Медиана отправки, дни</div><div class="v">{snap['median_ship_days'] if snap['median_ship_days'] is not None else "нет даты"}</div></div>
-<div class="card"><div class="k">Наличие ≤2 дн</div><div class="v">{snap['median_ship_in_stock_days'] if snap['median_ship_in_stock_days'] is not None else "—"}</div></div>
-<div class="card"><div class="k">Предзаказ >2 дн</div><div class="v">{snap['median_ship_preorder_days'] if snap['median_ship_preorder_days'] is not None else "—"}</div></div>
-</div>
-<p class="note">{snap['note']} Заказов в срезе: {len(orders)}. Excel пока этот JSON: дашборд/snapshot.json.</p>
-<script>window.SNAPSHOT={json.dumps(snap, ensure_ascii=False)}</script>
-</body></html>"""
-    HTML.write_text(html, encoding="utf-8")
-    print("записал", OUT, "и", HTML)
+    started = datetime.now(TZ)
+    print("МойСклад: заказы, платежи, номенклатура, контрагенты", flush=True)
+    orders = required_rows(ms, "/entity/customerorder", {"order": "moment,desc"})
+    payments = {p["id"]: p for p in required_rows(ms, "/entity/paymentin")}
+    products = {p["id"]: p for p in required_rows(ms, "/entity/product")}
+    variants = {v["id"]: v for v in required_rows(ms, "/entity/variant")}
+    services = {s["id"]: s for s in required_rows(ms, "/entity/service")}
+    agents = {a["id"]: a for a in required_rows(ms, "/entity/counterparty")}
+    channels = {c["id"]: c["name"] for c in required_rows(ms, "/entity/saleschannel")}
+    returns = required_rows(ms, "/entity/salesreturn")
+    demands = {d["id"]: d for d in required_rows(ms, "/entity/demand")}
+    return_orders = defaultdict(list)
+    for ret in returns:
+        demand = demands.get(mid(ret.get("demand")))
+        if demand:
+            return_orders[mid(demand.get("customerOrder"))].append(ret)
+    print(f"справочники готовы; заказов {len(orders)}", flush=True)
+    paid_ids = [o["id"] for o in orders if float(o.get("sum") or 0) > 0
+                and float(o.get("payedSum") or 0) >= float(o.get("sum") or 0)]
+    positions = {}
+    print(f"позиции оплаченных заказов: {len(paid_ids)}", flush=True)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(positions_for, oid) for oid in paid_ids]
+        for count, future in enumerate(as_completed(futures), 1):
+            oid, rows = future.result()
+            positions[oid] = rows
+            if count % 250 == 0:
+                print(f"позиций заказов: {count}/{len(paid_ids)}", flush=True)
+    gaps = defaultdict(list)
+    result = []
+    for index, o in enumerate(orders, 1):
+        number = o.get("name", "")
+        a = attrs(o)
+        total = rub(o.get("sum"))
+        paid = rub(o.get("payedSum"))
+        is_buy = total > 0 and paid + 0.009 >= total
+        if total > 0 and paid == 0:
+            gaps["Оплачено пустое"].append(number)
+        if bool(a.get(FIELD["paid"])) != is_buy:
+            gaps["Галка Оплачен не совпадает с платежом"].append(number)
+        pay_refs = o.get("payments") or []
+        accumulated = 0.0
+        closed = None
+        for ref in sorted(pay_refs, key=lambda r: (payments.get(mid(r), {}).get("moment") or "")):
+            p = payments.get(mid(ref))
+            if not p:
+                continue
+            accumulated += rub(ref.get("linkedSum"))
+            if closed is None and accumulated + 0.009 >= total:
+                closed = dt(p.get("moment"))
+        if is_buy and not closed:
+            gaps["Оплачено закрыто, дата платежа не найдена"].append(number)
+        agent = agents.get(mid(o.get("agent")), {})
+        ph = phone(agent.get("phone"))
+        if is_buy and not ph:
+            gaps["Нет телефона у контрагента"].append(number)
+        channel = channels.get(mid(o.get("salesChannel")), "не указано")
+        address = str(o.get("shipmentAddress") or "")
+        full = o.get("shipmentAddressFull") or {}
+        structured_city = ""
+        if isinstance(full, dict):
+            structured_city = str(full.get("city") or "").strip()
+            address += " " + " ".join(str(v) for k, v in full.items() if k != "meta" and isinstance(v, str))
+        delivery = cf_name(a.get(FIELD["delivery"]))
+        geo = city(address, delivery)
+        if geo == "не распознано" and structured_city:
+            geo = structured_city
+        if geo == "не распознано":
+            gaps["Город не распознан"].append(number)
+        utm = str(a.get(FIELD["utm"]) or "").strip()
+        if channel == "Сайт" and (not utm or utm.lower() == "utm"):
+            gaps["Сайт без utm_source"].append(number)
+        ret_list = return_orders.get(o["id"], [])
+        if ret_list:
+            gaps["Возврат без причины"].extend(
+                str(r.get("name") or r.get("id")) for r in ret_list
+                if not str(r.get("description") or "").strip()
+            )
+        lines = []
+        if is_buy and closed:
+            pos = positions[o["id"]]
+            for x in pos:
+                aid = mid(x.get("assortment"))
+                kind = ((x.get("assortment") or {}).get("meta") or {}).get("type")
+                variant = variants.get(aid, {}) if kind == "variant" else {}
+                product = products.get(mid(variant.get("product")), {}) if variant else products.get(aid, {})
+                service = services.get(aid, {}) if kind == "service" else {}
+                item = product or service or variant
+                name = item.get("name") or variant.get("name") or "не указано"
+                if kind == "service" and name.strip().upper() == "ДОСТАВКА":
+                    delivery_line = True
+                else:
+                    delivery_line = False
+                chars = {c.get("name", "").lower(): c.get("value") for c in variant.get("characteristics") or []}
+                size = str(chars.get("размер") or "").strip()
+                color = str(chars.get("цвет") or "").strip()
+                if not color:
+                    match = re.search(r"(бордов\w*|черн\w*|чёрн\w*|бел\w*|молочн\w*|красн\w*|розов\w*|син\w*|голуб\w*|бежев\w*|зелен\w*|зелён\w*|сер\w*)", name, re.I)
+                    color = match.group(1) if match else ""
+                qty = float(x.get("quantity") or 0)
+                gross = rub(x.get("price")) * qty
+                rev = round(gross * (1 - float(x.get("discount") or 0) / 100), 2)
+                cost = rub((product.get("buyPrice") or {}).get("value")) * qty
+                lines.append({"id": aid, "name": name, "category": product.get("pathName") or "не указано",
+                              "size": size, "color": color, "qty": qty, "rev": rev,
+                              "list": gross, "cost": round(cost, 2), "delivery": delivery_line})
+        result.append({
+            "number": number, "id": o["id"], "created": (dt(o.get("moment")) or started).date().isoformat(),
+            "paid_date": closed.date().isoformat() if closed else None,
+            "sum": total, "paid": paid, "buy": bool(is_buy and closed),
+            "partial": bool(0 < paid < total), "channel": channel,
+            "source": utm or "не указано", "utm_medium": a.get(FIELD["utm_medium"]) or "",
+            "utm_campaign": a.get(FIELD["utm_campaign"]) or "",
+            "city": geo, "delivery": delivery, "manager": "",
+            "phone": ph, "client": agent.get("name") or "",
+            "return": bool(ret_list), "return_reason": next((str(r.get("description")) for r in ret_list if r.get("description")), ""),
+            "confirmed_at": (dt(a.get(FIELD["confirm"])) or None).isoformat() if a.get(FIELD["confirm"]) else None,
+            "sent_at": (dt(a.get(FIELD["sent"])) or None).isoformat() if a.get(FIELD["sent"]) else None,
+            "await_stock": bool(a.get(FIELD["stock"])), "promo": a.get(FIELD["promo"]) or "",
+            "lines": lines,
+        })
+        if index % 500 == 0:
+            print(f"обработано {index}/{len(orders)}", flush=True)
+    print("amoCRM: новая воронка и задачи", flush=True)
+    leads, tasks = get_amo()
+    snap = {"generated": datetime.now(TZ).isoformat(timespec="seconds"), "timezone": "Europe/Moscow",
+            "orders": result, "leads": leads, "tasks": tasks,
+            "wazzup": {"messages": 0, "first_response_minutes": 0, "status": "нет проверенной выгрузки сообщений"}}
+    # Атомарная замена: при ошибке предыдущий срез не получает новый timestamp.
+    tmp = OUT.with_suffix(".tmp")
+    tmp.write_text(json.dumps(snap, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(OUT)
+    report = [f"# Пробелы данных 2MY", "", f"Срез: {snap['generated']}. Источник: МойСклад.", ""]
+    for label, numbers in gaps.items():
+        report += [f"## {label}: {len(numbers)}", "", ", ".join(numbers) if numbers else "Нет", ""]
+    GAPS.write_text("\n".join(report), encoding="utf-8")
+    print(f"готово: {len(orders)} заказов, {len(leads)} сделок новой воронки; пробелы: {dict((k,len(v)) for k,v in gaps.items())}", flush=True)
 
 
 if __name__ == "__main__":

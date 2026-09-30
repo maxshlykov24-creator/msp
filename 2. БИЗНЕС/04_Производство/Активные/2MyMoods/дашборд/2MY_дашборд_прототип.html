@@ -598,6 +598,7 @@
     </div>
   </div>
 
+  <div class="hint" style="margin:12px 0"><label><input type="checkbox" id="delivery-toggle"> С доставкой</label> · <label>Локальный срез <input type="file" id="snapshot-file" accept="application/json"></label></div>
   <div class="stage">
   <section class="hero">
     <div class="hero-grid">
@@ -630,7 +631,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Источник заказа</h3>
-      <div class="hint">UTM-метка приходит с сайта в МойСклад и подтягивается к заказу. Считать вручную по каждому заказу не нужно.</div>
+      <div class="hint">Источник берётся из utm_source заказа МойСклад. Без метки показано «не указано».</div>
       <table>
         <thead><tr><th>Канал</th><th>Заказов</th><th>Выручка</th><th>Средний чек</th><th>Доля</th></tr></thead>
         <tbody id="src"></tbody>
@@ -659,12 +660,12 @@
     </div>
     <div class="card">
       <h3>Скидки и акции</h3>
-      <div class="hint">Сколько выручки прошло по полной цене, а сколько по акции. Средний чек акции обычно ниже.</div>
+      <div class="hint">Скидка берётся из позиции заказа и наличия промокода.</div>
       <div id="disc-kv2"></div>
     </div>
     <div class="card">
       <h3>Менеджеры и скорость ответа</h3>
-      <div class="hint">Первый ответ считается от момента обращения. Долгий первый ответ роняет конверсию сильнее цены.</div>
+      <div class="hint">Скорость первого ответа берётся из сообщений Wazzup при наличии выгрузки.</div>
       <table>
         <thead><tr><th>Менеджер</th><th>Сделок</th><th>Выручка</th><th>Ответ</th></tr></thead>
         <tbody id="mgr"></tbody>
@@ -675,7 +676,7 @@
   <h2 class="sect">Куда уезжают заказы</h2>
   <div class="card">
     <h3>География и способ получения</h3>
-    <div class="hint">Москва с доставкой, Москва самовывоз из шоурума на Настасьинском, Санкт-Петербург, регионы, зарубежье.</div>
+    <div class="hint">Город берётся из адреса доставки. Самовывоз показан отдельно от канала продаж «Шоурум».</div>
     <table>
       <thead><tr><th>Направление</th><th>Заказов</th><th>Выручка</th><th>Средний чек</th><th>Доля</th></tr></thead>
       <tbody id="geo"></tbody>
@@ -688,7 +689,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Gold, Silver, Bronze</h3>
-      <div class="hint">Пороги пока черновые: Gold — четыре покупки и больше, Silver — две или три, Bronze — одна покупка от 20 000 ₽. Смотрите цифры, называете свою границу, после этого сегменты навешиваются в amoCRM автоматически.</div>
+      <div class="hint">Пороги черновые: Gold — от четырёх покупок, Silver — две или три, Bronze — одна покупка от 20 000 ₽. Сегменты считаются только в дашборде.</div>
       <table>
         <thead><tr><th>Сегмент</th><th>Клиентов</th><th>Доля базы</th><th>Выручка</th><th>Доля выручки</th><th>Средний LTV</th><th>Покупок в год</th></tr></thead>
         <tbody id="tier"></tbody>
@@ -696,7 +697,7 @@
     </div>
     <div class="card">
       <h3>Новые и повторные</h3>
-      <div class="hint">История считается по покупкам, а не по отгрузкам: восемь отгрузок и четыре покупки дают четыре.</div>
+      <div class="hint">История считается по полностью оплаченным заказам.</div>
       <div class="donut-wrap">
         <div class="donut" id="rep-donut"><div class="mid"><b id="rep-share">—</b><i>повторные</i></div></div>
         <div class="legend" id="rep-legend"></div>
@@ -799,7 +800,7 @@
     </div>
     <div class="card">
       <h3>Категории: выручка и маржа</h3>
-      <div class="hint">Закупочная цена есть в номенклатуре, поэтому маржа считается сразу по категории. Нажмите на строку, чтобы отфильтровать.</div>
+      <div class="hint">Маржа по закупочной цене карточки товара: без работы и логистики.</div>
       <table>
         <thead><tr><th>Категория</th><th>Изделий</th><th>Выручка</th><th>Средняя цена</th><th>Маржа</th></tr></thead>
         <tbody id="cats"></tbody>
@@ -816,7 +817,7 @@
     </div>
     <div class="card">
       <h3>Цвет и канал</h3>
-      <div class="hint">Пример: бордовое боди чаще всего берут из e-mail рассылки. Значит сработала конкретная рассылка, а не общий спрос.</div>
+      <div class="hint">Сравнение цветов и источников по покупкам текущего фильтра.</div>
       <table>
         <thead><tr><th>Цвет</th><th>Изделий</th><th>Выручка</th><th>Главный канал</th><th>Доля канала</th></tr></thead>
         <tbody id="colors"></tbody>
@@ -836,7 +837,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Короткая воронка, 8 этапов</h3>
-      <div class="hint">Вместо 27 этапов. Видно, где клиент отваливается и где сделка стоит дольше нормы. Список этапов согласуем с вами.</div>
+      <div class="hint">Текущие этапы только новой воронки Продажи 2MY. Показано число сделок на каждом этапе.</div>
       <div id="funnel"></div>
     </div>
     <div class="card">
@@ -855,12 +856,12 @@
   <div class="grid-2">
     <div class="card">
       <h3>Задачи и сроки</h3>
-      <div class="hint">У каждого этапа есть предельный срок. Сделка без задачи не живёт, руководителю приходит уведомление.</div>
+      <div class="hint">Задачи новой воронки из amoCRM.</div>
       <div id="task-kv"></div>
     </div>
     <div class="card">
       <h3>Продажи против отгрузок</h3>
-      <div class="hint">Отгрузка не равна покупке. В аналитике считается покупка, поэтому цифры перестают расходиться с реальностью.</div>
+      <div class="hint">Покупка определяется только полным закрытием суммы входящими платежами.</div>
       <div id="ship-kv"></div>
     </div>
   </div>
@@ -875,1160 +876,161 @@
       <div class="footer-div"></div>
       <span>Дашборд <b>MS Product</b> · 2MY</span>
     </div>
-    <div class="footer-meta">Подготовлено для 2MY · август 2026<br>Прототип панели аналитики · данные иллюстративные</div>
+    <div class="footer-meta">Подготовлено для 2MY<br>Живой локальный срез · по дате сборки</div>
   </div>
 </div>
 
 <script>
-/* ─────────── утилиты ─────────── */
-const money = n => Math.round(n).toLocaleString('ru-RU') + ' ₽';
-const short = n => n >= 1e6 ? (n/1e6).toFixed(n>=1e7?1:2).replace('.',',') + ' млн ₽'
-                 : n >= 1e3 ? Math.round(n/1e3) + ' тыс ₽' : Math.round(n) + ' ₽';
-const num = n => n.toLocaleString('ru-RU');
-const pct = (a,b) => b ? Math.round(a/b*100) + '%' : '—';
-const dec = (n,k=2) => n.toFixed(k).replace('.',',');
 const el = id => document.getElementById(id);
-const kvList = rows => rows.map(r => `<div class="kv"><span>${r.k}</span><b class="${r.c||''}">${r.v}</b></div>`).join('');
-
-let _seed = 20260818;
-const rnd = () => { _seed = (_seed * 1664525 + 1013904223) % 4294967296; return _seed / 4294967296; };
-const pick = arr => arr[Math.floor(rnd() * arr.length)];
-function wpick(items, ws){
-  const t = ws.reduce((s,x)=>s+x,0); let r = rnd()*t;
-  for(let i=0;i<items.length;i++){ r -= ws[i]; if(r<=0) return items[i]; }
-  return items[items.length-1];
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = n => Number(n || 0).toLocaleString('ru-RU');
+const money = n => num(Math.round(n || 0)) + ' ₽';
+const pct = (a,b) => b ? Math.round(a/b*100) + '%' : '0%';
+const kv = rows => rows.map(([k,v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+const sum = (xs, fn) => xs.reduce((a,x)=>a+fn(x),0);
+const group = (xs,key) => { const out={}; xs.forEach(x=>{const k=key(x)||'не указано';(out[k] ||= []).push(x)}); return out; };
+const table = (id, rows, cols) => { el(id).innerHTML = rows.length ? rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(c(r))+'</td>').join('')+'</tr>').join('') : `<tr><td colspan="${cols.length}" class="empty">Нет данных</td></tr>`; };
+const select = (id, values, label) => { const e=el(id), old=e.value; e.innerHTML='<option value="">'+esc(label)+'</option>'+values.filter(Boolean).sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');e.value=old;};
+const startOfMonth = d => d.slice(0,7)+'-01';
+let data=null, clients=[], filtered=[], currentLines=[], includeDelivery=false;
+let state={from:'',to:'',cat:'',prod:'',source:'',channel:'',city:''};
+const views=[['sales','Продажи и каналы'],['clients','Клиенты'],['goods','Товары'],['proc','Процессы в amoCRM']];
+el('nav').innerHTML=views.map(([id,n],i)=>`<button data-v="${id}" class="${i?'':'on'}">${n}</button>`).join('');
+function view(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.dataset.v===id));document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x.dataset.v===id));location.hash='v-'+id;}
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>view(b.dataset.v));
+function lineRev(l){return l.delivery && !includeDelivery ? 0 : l.rev;}
+function linesFor(o){return (o.lines||[]).filter(l=>!l.delivery||includeDelivery).filter(l=>(!state.cat||l.category===state.cat)&&(!state.prod||l.id===state.prod));}
+function orderRev(o,lines){return state.cat||state.prod ? sum(lines,l=>l.rev) : includeDelivery ? o.sum : sum(lines,l=>l.rev);}
+function buildClients(){
+ const g=group(data.orders.filter(o=>o.buy&&o.phone),o=>o.phone);
+ clients=Object.entries(g).map(([phone,orders])=>{
+   orders.sort((a,b)=>a.paid_date.localeCompare(b.paid_date));
+   const buys=orders.length, ltv=sum(orders,o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev));
+   const first=orders[0].paid_date,last=orders[buys-1].paid_date;
+   return {phone,name:orders[buys-1].client||phone,buys,ltv,first,last,
+     silence:Math.max(0,Math.floor((Date.now()-Date.parse(last+'T00:00:00+03:00'))/864e5)),
+     tier:buys>=4?'Gold':buys>=2?'Silver':ltv>=20000?'Bronze':'Разовый',
+     orders,rep:buys>1,category:orders.flatMap(o=>o.lines).find(l=>!l.delivery)?.category||'',
+     size:orders.flatMap(o=>o.lines).find(l=>l.size)?.size||'',channel:orders[buys-1].channel};
+ });
 }
-
-const MONTH_G = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
-const MONTH_S = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
-const START = Date.UTC(2025, 8, 1);
-const DAYS  = 351;
-const dayDate = i => new Date(START + i * 864e5);
-const iso = i => dayDate(i).toISOString().slice(0,10);
-const isoToI = s => Math.round((Date.parse(s + 'T00:00:00Z') - START) / 864e5);
-const human = i => { const d = dayDate(i); return d.getUTCDate() + ' ' + MONTH_G[d.getUTCMonth()] + ' ' + d.getUTCFullYear(); };
-const humanS = i => { const d = dayDate(i); return d.getUTCDate() + ' ' + MONTH_S[d.getUTCMonth()]; };
-
-/* ─────────── каталог из выгрузки МойСклад ─────────── */
-const SZ = {
-  'Жакеты и кардиганы':[['one size','S-M','M-L'],[6,3,1]],
-  'Платья':[['XS','S','M','L'],[2,4,3,1]],
-  'Боди и топы':[['XS','S','M','L'],[3,4,2,1]],
-  'Шорты и юбки':[['XS','S','M','L'],[3,4,2,1]],
-  'Брюки':[['XS','S','M','L'],[2,4,3,1]],
-  'Лонгсливы и свитеры':[['one size','S-M','M-L'],[5,3,2]],
-  'Жилеты и поло':[['one size','S-M','M-L'],[5,3,2]],
-  'Костюмы':[['S','M','L'],[3,3,1]],
-  'Аксессуары':[['one size'],[1]]
+function refresh(){
+ if(!data)return;
+ const basic=data.orders.filter(o=>o.buy&&o.paid_date&&o.paid_date>=state.from&&o.paid_date<=state.to)
+   .filter(o=>(!state.source||o.source===state.source)&&(!state.channel||o.channel===state.channel)&&(!state.city||o.city===state.city));
+ filtered=basic.map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat&&!state.prod));
+ currentLines=filtered.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
+ const orders=filtered.map(x=>x.o), rev=sum(filtered,x=>orderRev(x.o,x.ls));
+ const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
+ const n=orders.length, people=new Set(orders.map(o=>o.phone).filter(Boolean));
+ const returnN=orders.filter(o=>o.return).length, repN=orders.filter(o=>o.phone&&clients.find(c=>c.phone===o.phone)?.first<o.paid_date).length;
+ const avgLtv=people.size?sum(clients.filter(c=>people.has(c.phone)),c=>c.ltv)/people.size:0;
+ el('hero-period').textContent=`${state.from} — ${state.to} · по дате закрывающего платежа, Москва`;
+ el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
+ el('hero-sub').textContent='Выручка по полностью оплаченным заказам'+(includeDelivery?' с доставкой':' без доставки');
+ el('hero-mini').innerHTML=[['Заказов',n],['Средний чек',money(n?rev/n:0)],['Клиентов',people.size],['Маржа',pct(rev-cost,rev)]].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
+ el('head-note').textContent=`Собрано ${data.generated} · деньги по дате платежа, воронка по дате создания · МойСклад и amoCRM`;
+ const kpis=[['Выручка, покупки',money(rev)],['Заказов',num(n)],['Средний чек',money(n?rev/n:0)],['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Маржа по закупке',pct(rev-cost,rev)],['Повторные покупки',pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты',pct(returnN,n)]];
+ el('kpis').innerHTML=kpis.map(([k,v])=>`<div class="kpi"><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
+ const days=group(filtered,x=>x.o.paid_date), keys=Object.keys(days).sort();
+ el('chart-title').textContent='Выручка по дням оплаты';
+ el('chart-peak').textContent=keys.length?'Пик: '+keys.reduce((a,b)=>sum(days[a],x=>orderRev(x.o,x.ls))>sum(days[b],x=>orderRev(x.o,x.ls))?a:b):'Нет покупок';
+ const pts=keys.map((k,i)=>[i,Math.round(sum(days[k],x=>orderRev(x.o,x.ls)))]), max=Math.max(1,...pts.map(x=>x[1]));
+ el('spark').innerHTML=pts.length>1?`<polyline fill="none" stroke="#020202" stroke-width="2" points="${pts.map(([i,v])=>`${i*600/(pts.length-1)},${125-v*115/max}`).join(' ')}"/>`:'';
+ el('ax-l').textContent=state.from;el('ax-r').textContent=state.to;
+ const rowsFor=(key)=>Object.entries(group(filtered,x=>key(x.o))).map(([name,arr])=>({name,n:arr.length,rev:sum(arr,x=>orderRev(x.o,x.ls))})).sort((a,b)=>b.rev-a.rev);
+ const source=rowsFor(o=>o.source), channel=rowsFor(o=>o.channel), geo=rowsFor(o=>o.city);
+ table('src',source,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>money(r.rev/r.n),r=>pct(r.n,n)]);
+ table('sale',channel,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>pct(r.n,n)]);
+ table('geo',geo,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>money(r.rev/r.n),r=>pct(r.n,n)]);
+ const site=orders.filter(o=>o.channel==='Сайт'), marked=site.filter(o=>o.source!=='не указано').length;
+ el('utm-ok').textContent=pct(marked,site.length);el('utm-donut').style.background=`conic-gradient(#020202 0 ${site.length?marked/site.length*100:0}%,#ededed 0)`;
+ el('utm-legend').innerHTML=`<div>Сайт с меткой <b>${marked}</b></div><div>Сайт без метки <b>${site.length-marked}</b></div>`;
+ el('utm-kv').innerHTML=kv([['Заказов сайта',num(site.length)],['Без utm_source',num(site.length-marked)],['Частично оплачено, вне покупок',num(data.orders.filter(o=>o.partial&&o.created>=state.from&&o.created<=state.to).length)]]);
+ const discounts=filtered.filter(x=>x.o.promo||x.ls.some(l=>l.rev<l.list));
+ el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(sum(discounts,x=>orderRev(x.o,x.ls)))],['Скидка по позициям',money(sum(currentLines,x=>Math.max(0,x.l.list-x.l.rev)))]]);
+ const managerNames={8329672:'Оксана',7953124:'Полина',9490530:'Максим',13822894:'Таня',14039978:'Кристина'};
+ const mgr=Object.entries(group(data.leads.filter(l=>l.created>=state.from&&l.created<=state.to),l=>String(l.manager||'не указано'))).map(([name,arr])=>({name:managerNames[name]||name,arr}));
+ table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>'0 ₽',x=>data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'нет выгрузки']);
+ const scopedClients=clients.filter(c=>people.has(c.phone));
+ const tiers=['Gold','Silver','Bronze','Разовый'].map(t=>({name:t,cs:scopedClients.filter(c=>c.tier===t)}));
+ table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,c=>c.ltv)),x=>pct(sum(x.cs,c=>c.ltv),sum(scopedClients,c=>c.ltv)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>x.cs.length?(sum(x.cs,c=>c.buys)/x.cs.length).toFixed(1):'0']);
+ el('rep-share').textContent=pct(repN,n);el('rep-donut').style.background=`conic-gradient(#020202 0 ${n?repN/n*100:0}%,#ededed 0)`;
+ el('rep-legend').innerHTML=`<div>Повторные <b>${repN}</b></div><div>Первые <b>${n-repN}</b></div>`;
+ el('rep-kv').innerHTML=kv([['Клиентов с двумя и более покупками',num(scopedClients.filter(c=>c.buys>=2).length)],['Средний LTV',money(avgLtv)]]);
+ const cohorts=group(clients,c=>c.first.slice(0,7));
+ table('coh',Object.entries(cohorts).sort().slice(-8).map(([name,cs])=>({name,cs})),[x=>x.name,x=>num(x.cs.length),x=>num(x.cs.filter(c=>c.rep).length),x=>pct(x.cs.filter(c=>c.rep).length,x.cs.length),x=>'—']);
+ el('base-kv').innerHTML=kv([['Клиентов по телефону',num(clients.length)],['Без телефона',num(data.orders.filter(o=>o.buy&&!o.phone).length)],['Активных в периоде',num(people.size)]]);
+ el('churn-kv').innerHTML=kv([['Gold молчат больше 90 дней',num(clients.filter(c=>c.tier==='Gold'&&c.silence>90).length)],['Silver молчат больше 90 дней',num(clients.filter(c=>c.tier==='Silver'&&c.silence>90).length)]]);
+ renderClients(scopedClients);
+ const products=Object.entries(group(currentLines,x=>x.l.id)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:arr[0].l.size,color:arr[0].l.color})).sort((a,b)=>b.rev-a.rev);
+ table('items',products.slice(0,20),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.rev-x.cost),x=>x.size,x=>x.color]);
+ const cats=Object.entries(group(currentLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost)})).sort((a,b)=>b.rev-a.rev);
+ table('cats',cats,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.qty?x.rev/x.qty:0),x=>money(x.rev-x.cost)]);
+ el('sizes').innerHTML=Object.entries(group(currentLines,x=>x.l.size)).map(([size,arr])=>`<div class="kv"><span>${esc(size)}</span><b>${num(sum(arr,x=>x.l.qty))}</b></div>`).join('')||'Нет данных';
+ const colors=Object.entries(group(currentLines,x=>x.l.color)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),arr})).sort((a,b)=>b.qty-a.qty);
+ table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>Object.entries(group(x.arr,y=>y.o.source)).sort((a,b)=>b[1].length-a[1].length)[0]?.[0]||'',x=>'']);
+ el('basket-kv').innerHTML=kv([['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
+ const scopeLines=currentLines.filter(x=>(!el('s-size').value||x.l.size===el('s-size').value)&&(!el('s-color').value||x.l.color===el('s-color').value));
+ const sq=sum(scopeLines,x=>x.l.delivery?0:x.l.qty),sr=sum(scopeLines,x=>x.l.rev),sc=sum(scopeLines,x=>x.l.cost);
+ el('scope').innerHTML=kv([['Выбранные изделия',num(sq)],['Выручка',money(sr)],['Закупка',money(sc)],['Маржа',money(sr-sc)]]);
+ el('s-count').textContent=num(products.length)+' товаров';
+ const leads=data.leads.filter(l=>l.created>=state.from&&l.created<=state.to);
+ const stages=[[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно']];
+ el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${label}</span><span class="nums">${num(leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
+ el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Первый ответ Wazzup',data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'0 · нет выгрузки']]);
+ el('partner-kv').innerHTML=kv([['Маркетинг 2MY','отдельная воронка, в конверсию продаж не входит']]);
+ el('task-kv').innerHTML=kv([['Открытых задач в выборке amo',num(data.tasks.open)],['Выборка задач',num(data.tasks.sampled)]]);
+ const shipped=orders.filter(o=>o.sent_at).length;
+ const shipDays=orders.filter(o=>o.sent_at&&o.confirmed_at).map(o=>({days:(Date.parse(o.sent_at)-Date.parse(o.confirmed_at))/864e5,stock:o.await_stock})).filter(x=>x.days>=0);
+ const median=xs=>{if(!xs.length)return '0 дн.';const a=xs.map(x=>x.days).sort((x,y)=>x-y);return ((a[Math.floor((a.length-1)/2)]+a[Math.floor(a.length/2)])/2).toFixed(1)+' дн.'};
+ el('ship-kv').innerHTML=kv([['Покупок',num(n)],['С датой Отправлен',num(shipped)],['Без даты отправки',num(n-shipped)],['Подтвержден → Отправлен',median(shipDays)],['Ожидает наличия',median(shipDays.filter(x=>x.stock))],['Без ожидания наличия',median(shipDays.filter(x=>!x.stock))],['Возвраты',num(returnN)]]);
+ el('f-cat').value=state.cat;el('f-ch').value=state.source;el('f-sale').value=state.channel;el('f-geo').value=state.city;
+}
+function renderClients(cs){
+ const q=(el('c-q').value||'').toLowerCase(),tier=el('c-tier').value,buys=el('c-buys').value,sil=el('c-sil').value;
+ let rows=(el('c-base').value==='all'?clients:cs).filter(c=>(!q||c.name.toLowerCase().includes(q)||c.phone.includes(q))&&(!tier||c.tier===tier)&&(!buys||(buys==='1'?c.buys===1:c.buys>=+buys))&&(!sil||(sil==='l30'?c.silence<30:c.silence>+sil.slice(1))));
+ const sort=el('c-sort').value;rows.sort((a,b)=>sort==='last'?b.last.localeCompare(a.last):sort==='silence'?b.silence-a.silence:sort==='buys'?b.buys-a.buys:b.ltv-a.ltv);
+ el('c-count').textContent=num(rows.length)+' клиентов';
+ table('clients',rows.slice(0,20),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>c.first,c=>c.last,c=>c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel]);
+}
+function init(snap){
+ if(!snap||!Array.isArray(snap.orders)) throw Error('Неверный формат среза');
+ data=snap;buildClients();
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
+ state.to=today;const d0=new Date(today+'T12:00:00+03:00');d0.setDate(d0.getDate()-29);state.from=d0.toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
+ el('d1').value=state.from;el('d2').value=state.to;
+ select('f-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
+ select('f-ch',[...new Set(data.orders.map(o=>o.source))],'Все источники');
+ select('f-sale',[...new Set(data.orders.map(o=>o.channel))],'Все каналы сбыта');
+ select('f-geo',[...new Set(data.orders.map(o=>o.city))],'Все города');
+ select('s-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
+ select('s-size',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.size)))],'Все размеры');
+ select('s-color',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.color)))],'Все цвета');
+ el('periods').innerHTML=['30 дней','90 дней','Полгода','Год'].map(x=>`<button data-p="${x}">${x}</button>`).join('');
+ el('periods').onclick=e=>{if(!e.target.dataset.p)return;const n={'30 дней':30,'90 дней':90,'Полгода':183,'Год':365}[e.target.dataset.p];const d=new Date(today+'T12:00:00+03:00');d.setDate(d.getDate()-n+1);state.from=d.toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});el('d1').value=state.from;refresh();};
+ const names=[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.name)))].filter(Boolean).sort();const dl=document.createElement('datalist');dl.id='products-list';dl.innerHTML=names.map(n=>'<option value="'+esc(n)+'"></option>').join('');document.body.appendChild(dl);el('f-prod').setAttribute('list','products-list');el('s-prod').setAttribute('list','products-list');
+ el('head-note').textContent='Собрано '+snap.generated;
+ refresh();view((location.hash||'#v-sales').replace('#v-',''));
+}
+[['d1','from'],['d2','to'],['f-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-cat','cat']].forEach(([id,key])=>el(id).onchange=e=>{state[key]=e.target.value;refresh()});
+el('f-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.id||'';if(hit){state.cat='';el('f-cat').value='';el('s-cat').value=''}refresh()};
+el('s-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.id||'';if(hit){state.cat='';el('f-cat').value='';el('s-cat').value=''}refresh()};
+el('s-size').onchange=refresh;el('s-color').onchange=refresh;
+el('s-clear').onclick=()=>{state.cat='';state.prod='';el('s-cat').value='';el('s-prod').value='';refresh()};
+el('reset').onclick=()=>{state.cat='';state.prod='';state.source='';state.channel='';state.city='';el('f-prod').value='';refresh()};
+const periodClients=()=>{const phones=new Set(filtered.map(x=>x.o.phone));return clients.filter(c=>phones.has(c.phone))};
+['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener('input',()=>renderClients(periodClients())));
+el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';renderClients(periodClients())};
+document.querySelector('.xls').onclick=()=>{
+ const rows=[['Заказ','Дата оплаты','Канал','Источник','Город','Клиент','Телефон','Товар','Размер','Цвет','Количество','Выручка','Закупка']];
+ currentLines.forEach(({o,l})=>rows.push([o.number,o.paid_date,o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,l.color,l.qty,l.rev,l.cost]));
+ const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='2MY_выгрузка_'+state.from+'_'+state.to+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
-
-const RAW = {
-'Жакеты и кардиганы':[
-  ['Пальто «Форма любви»',59900,10800,['какао','молочный','серый'],2],
-  ['Кардиган с бабочками ручной работы 2MY x Sorelle Era',49900,6700,['голубой','молочный','розовый'],3],
-  ['Жакет из шерсти',39900,7180,['графитовый','лиловый','терракотовый'],4],
-  ['Жакет приталенный из тонкой шерсти',39900,13566,['молочный','чёрный'],3],
-  ['Кардиган «Желание очаровать»',37900,7008,['молочный','чёрный'],4],
-  ['Кардиган с камнями «Облако надежды»',37900,7008,['молочный'],3],
-  ['Кардиган «Шёпот звёзд»',37900,7008,['тёмно-синий'],3],
-  ['Жакет букле «Наивная натура»',36900,8428,['молочный','чёрный'],3],
-  ['Жакет из шерсти «Форма любви»',36900,7742,['бежевый','серый','шоколадный'],2],
-  ['Кардиган из альпаки 2MY x Vlada Nazina',33900,7557,['лиловый','розовый','травяной','серый'],5]],
-'Платья':[
-  ['Платье «Nobly»',59000,10000,['молочный','чёрный'],1],
-  ['Платье «Modest»',59000,10000,['молочный','чёрный'],1],
-  ['Платье макси с морскими деталями ручной работы',49900,9283,['песочный','бирюзовый'],1],
-  ['Платье свадебное «Roses»',49000,10000,['молочный'],1],
-  ['Платье-миди с ажурными вставками ручной работы',34900,4610,['чёрно-белый','алый'],2],
-  ['Платье мини с жемчужной россыпью',34900,8264,['песочный','жемчужный'],2],
-  ['Платье с кружевом 2MY x Sorelle Era',33900,5300,['молочный','чёрный'],3],
-  ['Платье «Конфеты. Тёмная ночь»',29900,7080,['чёрный'],2],
-  ['Платье миди с открытой спиной «Окно настежь»',27900,9486,['голубой','серо-голубой','чёрный'],3],
-  ['Платье «Латте на альтернативном»',27900,3082,['молочный'],2],
-  ['Платье «Сила в слабости»',27900,2672,['молочный'],2]],
-'Боди и топы':[
-  ['Боди с длинным рукавом «На моих условиях»',44900,5698,['молочный','тёмно-синий'],3],
-  ['Ажурный топ с пайетками «Утренняя роса»',39900,13566,['сливочный','чёрный'],2],
-  ['Боди «Красноречивое молчание»',39900,4200,['бордовый','молочный'],4],
-  ['Боди «С иголочки»',37900,4083,['молочный','чёрный'],3],
-  ['Боди со стойкой «Вкус мадлен»',36900,12546,['голубой','серо-голубой','чёрный'],4],
-  ['Боди с цветочными акцентами 2MY x Sorelle Era',29900,5700,['голубой','молочный','чёрный'],3],
-  ['Ажурный топ кроше',24900,4420,['песочный','белый'],3],
-  ['Топ ажурной вязки 2MY x Sorelle Era',18900,3900,['голубой','молочный','чёрный'],4]],
-'Шорты и юбки':[
-  ['Юбка ажурная',24900,5450,['молочный','чёрный'],3],
-  ['Юбка из лисы «Место силы»',23900,6400,['бежевый','лиловый','серый'],2],
-  ['Юбка макси «Смелый шаг»',23900,8126,['чёрный'],3],
-  ['Юбка мини ажурная «Красноречивое молчание»',22900,6813,['бордовый','молочный'],4],
-  ['Юбка «12 месяцев»',19900,6024,['молочный','чёрный'],3],
-  ['Струящаяся юбка миди из тенсела',19900,7217,['молочный','пыльная сирень','тиффани'],3],
-  ['Юбка с воланами «Лимонная сторона»',19900,5700,['лимонный'],2],
-  ['Юбка с разрезом из шерсти',18900,2760,['графитовый','терракотовый'],4],
-  ['Юбка-карандаш с ажурной отделкой',17900,3510,['белый'],2],
-  ['Юбка макси «Сладкий сон»',16900,5356,['молочный'],3]],
-'Лонгсливы и свитеры':[
-  ['Свитер «Вечер у бабушки»',34900,9840,['молочный','чёрный'],3],
-  ['Свитер «Точно не замёрзнешь»',31900,8040,['молочный','чёрный'],3],
-  ['Джемпер из лисы «Место силы»',29900,6200,['бежевый','лиловый','серый'],2],
-  ['Лонгслив из мохера «Прочная связь»',21900,3560,['лиловый','молочный','розовый','серый'],4],
-  ['Худи «Полёт для фантазии»',19900,2503,['молочный','чёрный'],3],
-  ['Лонгслив из хлопка',19900,6766,['голубой','серо-голубой','травяной'],3],
-  ['Лонгслив «У бассейна»',14900,2917,['молочный','чёрный'],2]],
-'Жилеты и поло':[
-  ['Поло с камнями «Шёпот звёзд»',23900,4175,['тёмно-синий','лиловый'],3],
-  ['Поло с камнями «Облако надежды»',23900,4175,['молочный'],3],
-  ['Поло из вискозы «Прислушаться»',19900,5128,['молочный','розовый','голубой'],3],
-  ['Поло «Ягодное лукошко»',18900,4678,['бордовый'],2],
-  ['Жилет «Мягкое настроение»',17900,3400,['молочный','чёрный'],2],
-  ['Жилет на пуговицах',16900,2159,['молочный','чёрный'],2]],
-'Брюки':[
-  ['Брюки из тонкой шерсти',24900,8466,['молочный','чёрный'],3],
-  ['Брюки из тонкой вискозы «Лёгкая на подъём»',24900,8466,['молочный'],3],
-  ['Брюки из шерсти',19900,3560,['графитовый','терракотовый'],4],
-  ['Укороченные брюки 2MY x Vlada Nazina',18900,7857,['молочный','чёрный'],3]],
-'Костюмы':[
-  ['Костюм «Мягкое настроение»',29900,6500,['молочный','чёрный'],2],
-  ['Костюм «Тёплый дом»',23900,5400,['молочный','чёрный'],2],
-  ['Комплект топ и митенки «Сладкий сон»',10900,3613,['молочный','чёрный'],3]],
-'Аксессуары':[
-  ['Шарф с вышивкой',22900,3100,['молочный','тёмно-синий'],2],
-  ['Широкий пояс из цветов «Пробуждение»',21900,7446,['бежевый'],2],
-  ['Кейп «Доспехи принцессы»',18900,3408,['молочный'],2],
-  ['Косынка ажурная',15900,2368,['молочный','чёрный'],3],
-  ['Шарф «Забота о себе»',12900,2600,['молочный','чёрный'],3],
-  ['Перчатки ажурные',11900,3900,['молочный','чёрный'],4],
-  ['Воротничок «Беседа на веранде»',11900,4046,['бежевый','голубой','серо-голубой','чёрный'],4],
-  ['Сумка букле',11900,3100,['молочный','чёрный'],3],
-  ['Косынка «Мама связала»',10900,1750,['молочный','чёрный'],3],
-  ['Ожерелье из жемчуга 2MY x Vlada Nazina',9900,3366,['молочный'],4]]
-};
-
-const PROD = [];
-const CATS = Object.keys(RAW);
-CATS.forEach(cat => RAW[cat].forEach(r =>
-  PROD.push({id:PROD.length, cat, n:r[0], p:r[1], c:r[2], cols:r[3], w:r[4]})));
-const PW = PROD.map(p => p.w);
-
-/* ─────────── справочники ─────────── */
-const CH  = ['Instagram','E-mail рассылка','Telegram','Реклама, Яндекс','Прямой заход','Поиск, organic','Метка не распознана'];
-const CHW = [34,17,13,11,10,9,6];
-const SALE = ['Сайт','Шоурум на Настасьинском','Партнёрские точки и байеры'];
-const SALEW = [64,24,12];
-const GEO = ['Москва, доставка','Москва, самовывоз','Санкт-Петербург','Регионы','Зарубежье'];
-const GEOW = [37,22,11,26,4];
-const MGRS = ['Алина','Кристина','Наталья','Вероника'];
-const MGRSPD = [22,31,44,27];
-const STAGES = ['Новая заявка','Взяли в работу','Согласовали состав','Счёт выставлен','Оплачен','Сборка заказа','Отправлен','Получен, закрыт'];
-const ADV = [.88,.84,.86,.90,.985,.98,.97];
-const NORM = [1,1,2,2,1,2,3,0];
-
-const FN = ['Ирина','Мария','Анна','Ольга','Екатерина','Дарья','Юлия','Светлана','Полина','Вера','Наталья','Ксения','Алиса','Марина','Елена','Татьяна','София','Алёна','Кристина','Диана','Валерия','Людмила','Виктория','Арина','Нина','Лидия','Ева','Милана','Регина','Яна'];
-const LN = ['К.','Д.','Т.','В.','С.','М.','Р.','Б.','Ж.','Н.','П.','Ш.','Г.','Л.','З.','Ф.','Х.','Ч.','А.','Е.'];
-
-/* ─────────── генерация базы ─────────── */
-const PROMO = [isoToI('2026-07-12'), isoToI('2026-07-14')];
-const MFACT = {8:1.12,9:1.18,10:1.24,11:1.28,0:1.0,1:.98,2:1.06,3:1.0,4:.9,5:.84,6:.9,7:.96};
-
-const CL = [];
-const DEALS = [];
-const pool = [];
-
-for(let i=0;i<DAYS;i++){
-  const d = dayDate(i), wd = d.getUTCDay();
-  let base = 3.4 + 5.4 * (i/DAYS);
-  base *= MFACT[d.getUTCMonth()];
-  base *= [.72,1.08,1.12,1.06,1.04,1.0,.8][wd];
-  if(i>=PROMO[0] && i<=PROMO[1]) base *= 3.4;
-  const n = Math.max(0, Math.round(base + (rnd()-.5)*base*.7));
-
-  for(let k=0;k<n;k++){
-    const promo = i>=PROMO[0] && i<=PROMO[1];
-    let reach = 7;
-    for(let s=0;s<7;s++){ if(rnd() > ADV[s]){ reach = s; break; } }
-    const paid = reach >= 4;
-
-    const sale = wpick(SALE, SALEW);
-    let ch = wpick(CH, promo ? [26,32,14,8,9,6,5] : CHW);
-    if(sale !== 'Сайт' && ch === 'Метка не распознана') ch = wpick(CH.slice(0,6), [30,18,13,8,19,12]);
-    const utmQ = sale !== 'Сайт' ? 'manual'
-      : (ch === 'Метка не распознана' ? 'empty' : (rnd()<.76 ? 'full' : 'src'));
-    let geo;
-    if(sale === 'Шоурум на Настасьинском') geo = 'Москва, самовывоз';
-    else if(sale === 'Партнёрские точки и байеры') geo = wpick(['Москва, доставка','Санкт-Петербург','Регионы'],[4,2,4]);
-    else geo = wpick(GEO, [40,12,12,32,4]);
-    const mgr = pick(MGRS);
-    const resp = Math.max(2, Math.round((MGRSPD[MGRS.indexOf(mgr)] * (.5 + rnd()*1.4)) * (promo?1.5:1)));
-
-    const stTimes = STAGES.map((s,si) => si<=reach ? +( (NORM[si]||1) * (.35 + rnd()*1.5) ).toFixed(1) : 0);
-    let stuck = 0;
-    for(let s=0;s<=reach;s++) if(NORM[s] && stTimes[s] > NORM[s]) stuck++;
-
-    const deal = {i, ch, utmQ, sale, geo, mgr, resp, reach, paid, stuck, stTimes,
-                  partner: rnd()<.085, lines:[], rev:0, cost:0, qty:0, cl:-1, rep:false,
-                  ret:false, exch:false, disc:0};
-
-    if(paid){
-      let cl;
-      const pr = .30 + .20*(i/DAYS);
-      if(pool.length > 40 && rnd() < pr){
-        const from = Math.floor(pool.length*.2);
-        let best = -1;
-        for(let a=0;a<3;a++){
-          const c2 = pool[from + Math.floor(rnd()*(pool.length-from))];
-          if(best < 0 || CL[c2].buys > CL[best].buys) best = c2;
-        }
-        cl = best;
-        deal.rep = true;
-      }else{
-        cl = CL.length;
-        CL.push({id:cl, n: pick(FN) + ' ' + pick(LN), buys:0, ltv:0, first:i, last:i,
-                 cats:{}, sizes:{}, chs:{}, dup: rnd()<.14, noPhone: rnd()<.022});
-        pool.push(cl);
-      }
-      deal.cl = cl;
-
-      const nl = wpick([1,2,3],[70,24,6]);
-      const seen = {};
-      for(let l=0;l<nl;l++){
-        const p = wpick(PROD, PW);
-        if(seen[p.id]) continue;
-        seen[p.id] = 1;
-        const prof = SZ[p.cat];
-        const size = wpick(prof[0], prof[1]);
-        const color = pick(p.cols);
-        const qty = rnd()<.07 ? 2 : 1;
-        const disc = promo ? .22 + rnd()*.18 : (rnd()<.06 ? .1 + rnd()*.1 : 0);
-        const rev = Math.round(p.p * (1-disc)) * qty;
-        deal.lines.push({pid:p.id, cat:p.cat, size, color, qty, disc,
-                         rev, list:p.p*qty, cost:p.c*qty});
-        deal.rev += rev; deal.cost += p.c*qty; deal.qty += qty;
-      }
-      deal.disc = deal.lines.reduce((s,l)=>s+l.disc*l.qty,0) / Math.max(1,deal.qty);
-      deal.ret = rnd()<.072;
-      deal.exch = rnd()<.16;
-
-      const c = CL[cl];
-      c.buys++; c.ltv += deal.rev; c.last = i;
-      if(deal.rep === false && c.buys === 1) c.first = i;
-      if(c.buys === 2) c.gap = i - c.first;
-      deal.ord = c.buys;
-      deal.lines.forEach(l => {
-        c.cats[l.cat] = (c.cats[l.cat]||0) + l.qty;
-        c.sizes[l.size] = (c.sizes[l.size]||0) + l.qty;
-      });
-      c.chs[ch] = (c.chs[ch]||0) + 1;
-    }
-    DEALS.push(deal);
-  }
-}
-
-const TODAY = DAYS - 1;
-const topKey = o => { let b=null, m=-1; for(const k in o) if(o[k]>m){m=o[k];b=k;} return b || '—'; };
-CL.forEach(c => {
-  c.favCat = topKey(c.cats); c.favSize = topKey(c.sizes); c.favCh = topKey(c.chs);
-  c.silence = TODAY - c.last;
-  c.freq = c.buys / Math.max(1, (TODAY - c.first) / 365);
-  c.tier = c.buys >= 4 ? 'Gold' : c.buys >= 2 ? 'Silver' : (c.ltv >= 20000 ? 'Bronze' : 'Разовый');
-});
-const TIERS = ['Gold','Silver','Bronze','Разовый'];
-
-/* ─────────── состояние фильтров ─────────── */
-const PERIODS = {
-  '30 дней':   [TODAY-29, TODAY],
-  '90 дней':   [TODAY-89, TODAY],
-  'Акция, 3 дня': [PROMO[0], PROMO[1]],
-  'Полгода':   [TODAY-181, TODAY],
-  'Год':       [0, TODAY]
-};
-const S = {from: TODAY-89, to: TODAY, period:'90 дней', cat:'', prod:'', ch:'', sale:'', geo:''};
-/* фильтры внутри блока клиентов */
-const CS = {q:'', base:'period', tier:'', buys:'', sil:'', sort:'ltv'};
-/* разрез внутри точечной аналитики */
-const SC = {size:'', color:''};
-
-function scope(){
-  const deals = [], orders = [], lines = [], linesAll = [];
-  for(const d of DEALS){
-    if(d.i < S.from || d.i > S.to) continue;
-    if(S.ch && d.ch !== S.ch) continue;
-    if(S.sale && d.sale !== S.sale) continue;
-    if(S.geo && d.geo !== S.geo) continue;
-    deals.push(d);
-    if(!d.paid) continue;
-    d.lines.forEach(l => linesAll.push({l, d}));
-    let ls = d.lines;
-    if(S.prod !== '') ls = ls.filter(l => l.pid === +S.prod);
-    else if(S.cat) ls = ls.filter(l => l.cat === S.cat);
-    if(!ls.length) continue;
-    const rev = ls.reduce((s,l)=>s+l.rev,0);
-    const cost = ls.reduce((s,l)=>s+l.cost,0);
-    const list = ls.reduce((s,l)=>s+l.list,0);
-    const qty = ls.reduce((s,l)=>s+l.qty,0);
-    const o = {d, ls, rev, cost, list, qty};
-    orders.push(o);
-    ls.forEach(l => lines.push({l, d}));
-  }
-  return {deals, orders, lines, linesAll};
-}
-
-function totals(orders){
-  const rev = orders.reduce((s,o)=>s+o.rev,0);
-  const cost = orders.reduce((s,o)=>s+o.cost,0);
-  const list = orders.reduce((s,o)=>s+o.list,0);
-  const qty = orders.reduce((s,o)=>s+o.qty,0);
-  const n = orders.length;
-  const rep = orders.filter(o=>o.d.rep).length;
-  const ret = orders.filter(o=>o.d.ret).length;
-  const cls = new Set(orders.map(o=>o.d.cl));
-  let ltv = 0; cls.forEach(i => ltv += CL[i].ltv);
-  return {rev, cost, list, qty, n, rep, ret, clients:cls.size,
-          aov: n ? rev/n : 0, ipo: n ? qty/n : 0,
-          margin: rev ? (rev-cost)/rev : 0,
-          ltv: cls.size ? ltv/cls.size : 0,
-          repShare: n ? rep/n : 0, retShare: n ? ret/n : 0, cls};
-}
-
-function prevTotals(){
-  const len = S.to - S.from + 1;
-  const from = S.from - len, to = S.from - 1;
-  if(from < 0) return null;
-  const orders = [];
-  for(const d of DEALS){
-    if(d.i < from || d.i > to || !d.paid) continue;
-    if(S.ch && d.ch !== S.ch) continue;
-    if(S.sale && d.sale !== S.sale) continue;
-    if(S.geo && d.geo !== S.geo) continue;
-    let ls = d.lines;
-    if(S.prod !== '') ls = ls.filter(l => l.pid === +S.prod);
-    else if(S.cat) ls = ls.filter(l => l.cat === S.cat);
-    if(!ls.length) continue;
-    orders.push({d, ls, rev: ls.reduce((s,l)=>s+l.rev,0), cost: ls.reduce((s,l)=>s+l.cost,0),
-                 list: ls.reduce((s,l)=>s+l.list,0), qty: ls.reduce((s,l)=>s+l.qty,0)});
-  }
-  return totals(orders);
-}
-
-const delta = (now, was, inv) => {
-  if(was == null || !was) return {d:'нет базы для сравнения', c:''};
-  const p = Math.round((now-was)/was*100);
-  if(p === 0) return {d:'на уровне прошлого периода', c:''};
-  const good = inv ? p < 0 : p > 0;
-  return {d:(p>0?'+':'−') + Math.abs(p) + '% к прошлому периоду', c: good ? 'up' : 'down'};
-};
-
-/* ─────────── график ─────────── */
-let sparkState = null;
-
-function buckets(orders){
-  const len = S.to - S.from + 1;
-  const step = len <= 62 ? 1 : len <= 210 ? 7 : 30;
-  const n = Math.ceil(len/step);
-  const vals = new Array(n).fill(0), cnt = new Array(n).fill(0), labs = [];
-  for(let b=0;b<n;b++){
-    const a = S.from + b*step, z = Math.min(S.to, a + step - 1);
-    labs.push(step === 1 ? human(a) : humanS(a) + ' — ' + humanS(z));
-  }
-  orders.forEach(o => {
-    const b = Math.min(n-1, Math.floor((o.d.i - S.from)/step));
-    vals[b] += o.rev; cnt[b]++;
-  });
-  return {vals, cnt, labs, step};
-}
-
-function drawSpark(values, counts, labels){
-  const W=600, H=132, pad=10;
-  if(values.length < 2){ values = values.concat(values); counts = counts.concat(counts); labels = labels.concat(labels); }
-  const max=Math.max(...values), min=Math.min(...values);
-  const x=i=>i*(W/(values.length-1));
-  const y=v=>H-pad-((v-min)/(max-min||1))*(H-pad*2.6);
-  const line=values.map((v,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-  const area=`${line} L${W},${H} L0,${H} Z`;
-  const peakI=values.indexOf(max);
-  const bars=values.map((v,i)=>
-    `<rect x="${(x(i)-2).toFixed(1)}" y="${(H-((v-min)/(max-min||1))*(H-pad*2.6)-pad).toFixed(1)}" width="3" height="${(((v-min)/(max-min||1))*(H-pad*2.6)+pad).toFixed(1)}" fill="rgba(2,2,2,.06)"/>`).join('');
-  el('spark').innerHTML=`
-    <defs>
-      <linearGradient id="gArea" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#020202" stop-opacity=".16"/>
-        <stop offset="100%" stop-color="#020202" stop-opacity="0"/>
-      </linearGradient>
-    </defs>
-    ${bars}
-    <path d="${area}" fill="url(#gArea)"/>
-    <path class="spark-line" d="${line}" fill="none" stroke="#020202" stroke-width="1.6" stroke-linejoin="round"/>
-    <line class="peak-x" x1="${x(peakI)}" y1="${y(max)}" x2="${x(peakI)}" y2="${H}" stroke="rgba(2,2,2,.28)" stroke-dasharray="2 5"/>
-    <circle class="peak-dot" cx="${x(peakI)}" cy="${y(max)}" r="4" fill="#fffbe8" stroke="#020202" stroke-width="1.6"/>
-    <line class="hover-x" x1="0" y1="0" x2="0" y2="${H}" stroke="rgba(2,2,2,.35)" stroke-dasharray="2 5" opacity="0"/>
-    <circle class="hover-dot" r="4.5" fill="#fffbe8" stroke="#020202" stroke-width="1.6" opacity="0"/>
-    <rect class="hit" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`;
-  sparkState = {values, counts, labels, W, H, x, y, peakI};
-  const lineEl = el('spark').querySelector('.spark-line');
-  try{
-    const len = lineEl.getTotalLength();
-    lineEl.style.strokeDasharray = len;
-    lineEl.style.strokeDashoffset = len;
-    requestAnimationFrame(()=>{
-      lineEl.style.transition = 'stroke-dashoffset .9s cubic-bezier(.25,1,.5,1)';
-      lineEl.style.strokeDashoffset = '0';
-    });
-  }catch(e){}
-}
-
-function bindSpark(){
-  const svg = el('spark'), tip = el('chart-tip');
-  svg.addEventListener('mousemove', e => {
-    if(!sparkState) return;
-    const {values, counts, labels, W, H, x, y} = sparkState;
-    const rect = svg.getBoundingClientRect();
-    const t = (e.clientX - rect.left) / rect.width;
-    const idx = Math.max(0, Math.min(values.length-1, Math.round(t*(values.length-1))));
-    const cx = x(idx), cy = y(values[idx]);
-    svg.querySelector('.hover-x').setAttribute('x1', cx);
-    svg.querySelector('.hover-x').setAttribute('x2', cx);
-    svg.querySelector('.hover-x').setAttribute('opacity','1');
-    svg.querySelector('.hover-dot').setAttribute('cx', cx);
-    svg.querySelector('.hover-dot').setAttribute('cy', cy);
-    svg.querySelector('.hover-dot').setAttribute('opacity','1');
-    svg.querySelector('.peak-x').setAttribute('opacity','0');
-    svg.querySelector('.peak-dot').setAttribute('opacity','0');
-    tip.querySelector('.t-date').textContent = labels[idx];
-    tip.querySelector('b').textContent = money(values[idx]);
-    tip.querySelector('em').textContent = counts[idx] + ' ' +
-      (counts[idx]%10===1 && counts[idx]%100!==11 ? 'заказ' : (counts[idx]%10>=2 && counts[idx]%10<=4 && (counts[idx]%100<10||counts[idx]%100>=20) ? 'заказа' : 'заказов'));
-    tip.style.left = Math.max(9, Math.min(91, cx/W*100)) + '%';
-    tip.style.top = (cy/H*100) + '%';
-    tip.classList.add('on');
-  });
-  svg.addEventListener('mouseleave', () => {
-    svg.querySelector('.hover-x').setAttribute('opacity','0');
-    svg.querySelector('.hover-dot').setAttribute('opacity','0');
-    svg.querySelector('.peak-x').setAttribute('opacity','1');
-    svg.querySelector('.peak-dot').setAttribute('opacity','1');
-    tip.classList.remove('on');
-  });
-}
-
-/* ─────────── рендер ─────────── */
-function scopeName(){
-  if(S.prod !== '') return PROD[+S.prod].n;
-  if(S.cat) return S.cat;
-  return 'Все категории';
-}
-
-function render(){
-  const {deals, orders, lines, linesAll} = scope();
-  const T = totals(orders), P = prevTotals();
-  const days = S.to - S.from + 1;
-
-  /* витрина */
-  el('hero-period').textContent = human(S.from) + ' — ' + human(S.to) + ' · ' + days + ' дн.';
-  el('hero-rev').innerHTML = `${num(Math.round(T.rev))} <span>₽</span>`;
-  el('hero-sub').textContent = (S.prod !== '' || S.cat)
-    ? 'выручка по выбранным позициям: ' + scopeName()
-    : 'выручка по покупкам, без обменов и досылов';
-  el('hero-mini').innerHTML = [
-    {l:'Заказов', v:num(T.n)},
-    {l:'Средний чек', v:money(T.aov)},
-    {l:'Клиентов', v:num(T.clients)},
-    {l:'Маржа', v:Math.round(T.margin*100) + '%'}
-  ].map(m => `<div><div class="l">${m.l}</div><div class="v">${m.v}</div></div>`).join('');
-
-  const B = buckets(orders);
-  drawSpark(B.vals, B.cnt, B.labs);
-  el('chart-title').textContent = B.step === 1 ? 'Выручка по дням' : B.step === 7 ? 'Выручка по неделям' : 'Выручка по месяцам';
-  el('ax-l').textContent = humanS(S.from);
-  el('ax-r').textContent = humanS(S.to);
-  const pi = B.vals.indexOf(Math.max(...B.vals));
-  el('chart-peak').textContent = B.vals.length ? 'пик: ' + B.labs[pi] + ', ' + short(B.vals[pi]) : '—';
-
-  const fl = [];
-  if(S.cat) fl.push(S.cat);
-  if(S.prod !== '') fl.push(PROD[+S.prod].n);
-  if(S.ch) fl.push(S.ch);
-  if(S.sale) fl.push(S.sale);
-  if(S.geo) fl.push(S.geo);
-  el('head-note').textContent = 'Период: ' + human(S.from) + ' — ' + human(S.to) +
-    (fl.length ? ' · фильтры: ' + fl.join(', ') : '') + ' · данные: МойСклад и amoCRM';
-
-  /* KPI */
-  const K = [
-    {l:'Выручка, покупки', v:money(T.rev), ...delta(T.rev, P&&P.rev)},
-    {l:'Заказов', v:num(T.n), ...delta(T.n, P&&P.n)},
-    {l:'Средний чек', v:money(T.aov), ...delta(T.aov, P&&P.aov)},
-    {l:'Изделий в заказе', v:dec(T.ipo), ...delta(T.ipo, P&&P.ipo)},
-    {l:'Маржа по закупке', v:Math.round(T.margin*100)+'%', ...delta(T.margin, P&&P.margin)},
-    {l:'Повторные покупки', v:Math.round(T.repShare*100)+'%', d:T.rep+' из '+T.n+' заказов', c:''},
-    {l:'LTV на клиента', v:money(T.ltv), d:'по склеенной базе', c:''},
-    {l:'Возвраты', v:dec(T.retShare*100,1)+'%', d:T.ret+' возвратов', c: T.retShare>.09?'down':''}
-  ];
-  el('kpis').innerHTML = K.map(k =>
-    `<div class="kpi"><div class="l">${k.l}</div><div class="v">${k.v}</div><div class="d ${k.c||''}">${k.d}</div></div>`).join('');
-
-  /* источники */
-  const byCh = {};
-  orders.forEach(o => { const a = byCh[o.d.ch] || (byCh[o.d.ch] = {o:0,r:0}); a.o++; a.r += o.rev; });
-  const chRows = Object.keys(byCh).map(k => ({n:k, ...byCh[k]})).sort((a,b)=>b.r-a.r);
-  const maxO = Math.max(1, ...chRows.map(r=>r.o));
-  el('src').innerHTML = chRows.length ? chRows.map(s => {
-    const bad = s.n === 'Метка не распознана';
-    return `<tr class="${bad?'flag':''}">
-      <td class="barcell">${s.n}<span class="bar ${bad?'acc':''}" style="width:${Math.round(s.o/maxO*100)}%"></span></td>
-      <td>${num(s.o)}</td><td>${money(s.r)}</td><td>${money(s.r/s.o)}</td><td>${pct(s.o,T.n)}</td></tr>`;
-  }).join('') : '<tr><td colspan="5" class="empty">Нет данных под фильтром</td></tr>';
-
-  /* качество метки */
-  const q = {full:0, src:0, empty:0, manual:0};
-  deals.filter(d=>d.paid).forEach(d => q[d.utmQ]++);
-  const qAll = q.full + q.src + q.empty;
-  const okShare = qAll ? Math.round((q.full+q.src)/qAll*100) : 0;
-  el('utm-donut').style.background = `conic-gradient(#020202 0 ${okShare}%, #8d8278 ${okShare}% 100%)`;
-  el('utm-ok').textContent = okShare + '%';
-  el('utm-legend').innerHTML =
-    `<div><i style="background:#020202"></i>Метка распознана<b>${num(q.full+q.src)}</b></div>
-     <div><i style="background:#8d8278"></i>Пустое значение<b>${num(q.empty)}</b></div>`;
-  const msg = deals.filter(d=>d.paid && d.utmQ!=='manual' && d.ch==='Telegram').length;
-  el('utm-kv').innerHTML = kvList([
-    {k:'Заказов с сайта, считаем метку', v:num(qAll)},
-    {k:'Полный набор: источник и кампания', v:num(q.full), c:'good'},
-    {k:'Только источник, без кампании', v:num(q.src)},
-    {k:'В поле пришло «utm» без значения', v:num(q.empty), c:'bad'},
-    {k:'Из мессенджеров, источник без кампании', v:num(msg)},
-    {k:'Офлайн: источник ставит менеджер вручную', v:num(q.manual)}
-  ]);
-
-  /* каналы сбыта */
-  const bySale = {};
-  orders.forEach(o => { const a = bySale[o.d.sale] || (bySale[o.d.sale] = {o:0,r:0}); a.o++; a.r += o.rev; });
-  const saleRows = Object.keys(bySale).map(k=>({n:k, ...bySale[k]})).sort((a,b)=>b.r-a.r);
-  const maxSO = Math.max(1, ...saleRows.map(r=>r.o));
-  el('sale').innerHTML = saleRows.length ? saleRows.map(s =>
-    `<tr><td class="barcell">${s.n}<span class="bar soft" style="width:${Math.round(s.o/maxSO*100)}%"></span></td>
-     <td>${num(s.o)}</td><td>${money(s.r)}</td><td>${pct(s.r,T.rev)}</td></tr>`).join('')
-    : '<tr><td colspan="4" class="empty">Нет данных под фильтром</td></tr>';
-
-  /* скидки */
-  const dOrders = orders.filter(o => o.ls.some(l=>l.disc>0));
-  const dRev = dOrders.reduce((s,o)=>s+o.rev,0);
-  const lost = T.list - T.rev;
-  const avgDisc = T.list ? lost/T.list : 0;
-  el('disc-kv2').innerHTML = kvList([
-    {k:'Заказов со скидкой', v:num(dOrders.length) + ' из ' + num(T.n)},
-    {k:'Выручка со скидкой', v:money(dRev), c:''},
-    {k:'Доля выручки со скидкой', v:pct(dRev, T.rev)},
-    {k:'Средняя скидка от прайса', v:Math.round(avgDisc*100) + '%'},
-    {k:'Недополучено против прайса', v:money(lost), c:'bad'},
-    {k:'Средний чек со скидкой', v: dOrders.length ? money(dRev/dOrders.length) : '—'},
-    {k:'Средний чек без скидки', v: (T.n-dOrders.length) ? money((T.rev-dRev)/(T.n-dOrders.length)) : '—'}
-  ]);
-
-  /* менеджеры */
-  const byM = {};
-  deals.forEach(d => {
-    const a = byM[d.mgr] || (byM[d.mgr] = {n:0, r:0, resp:0, paid:0});
-    a.n++; a.resp += d.resp;
-    if(d.paid){ const o = orders.find(x=>x.d===d); if(o){ a.r += o.rev; a.paid++; } }
-  });
-  const mRows = Object.keys(byM).map(k=>({name:k, ...byM[k]})).sort((a,b)=>b.r-a.r);
-  el('mgr').innerHTML = mRows.length ? mRows.map(m => {
-    const avg = Math.round(m.resp/m.n);
-    return `<tr><td>${m.name}</td><td>${num(m.paid)}</td><td>${money(m.r)}</td><td>${avg} мин</td></tr>`;
-  }).join('') : '<tr><td colspan="4" class="empty">Нет данных под фильтром</td></tr>';
-
-  /* тиры */
-  const clsArr = [...T.cls].map(i=>CL[i]);
-  const tierAgg = {};
-  TIERS.forEach(t => tierAgg[t] = {c:0, ltv:0, rev:0, freq:0});
-  clsArr.forEach(c => { const a = tierAgg[c.tier]; a.c++; a.ltv += c.ltv; a.freq += c.freq; });
-  orders.forEach(o => tierAgg[CL[o.d.cl].tier].rev += o.rev);
-  el('tier').innerHTML = TIERS.map(t => {
-    const a = tierAgg[t];
-    if(!a.c) return `<tr><td>${t}</td><td>0</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
-    return `<tr><td class="barcell">${t}<span class="bar ${t==='Gold'?'':'soft'}" style="width:${Math.round(a.rev/Math.max(1,T.rev)*100)}%"></span></td>
-      <td>${num(a.c)}</td><td>${pct(a.c, clsArr.length)}</td><td>${money(a.rev)}</td>
-      <td>${pct(a.rev, T.rev)}</td><td>${money(a.ltv/a.c)}</td><td>${dec(a.freq/a.c,1)}</td></tr>`;
-  }).join('');
-
-  /* новые и повторные */
-  const repShare = Math.round(T.repShare*100);
-  el('rep-donut').style.background = `conic-gradient(#020202 0 ${repShare}%, #ededed ${repShare}% 100%)`;
-  el('rep-share').textContent = repShare + '%';
-  el('rep-legend').innerHTML =
-    `<div><i style="background:#020202"></i>Покупали раньше<b>${num(T.rep)}</b></div>
-     <div><i style="background:#ededed"></i>Первый заказ<b>${num(T.n-T.rep)}</b></div>`;
-  const gaps = clsArr.filter(c=>c.gap!=null).map(c=>c.gap);
-  el('rep-kv').innerHTML = kvList([
-    {k:'Средний срок до второй покупки', v: gaps.length ? Math.round(gaps.reduce((s,x)=>s+x,0)/gaps.length) + ' дней' : '—'},
-    {k:'Покупок на клиента в год', v: clsArr.length ? dec(clsArr.reduce((s,c)=>s+c.freq,0)/clsArr.length,1) : '—'},
-    {k:'Клиентов с двумя и более покупками', v: num(clsArr.filter(c=>c.buys>=2).length)},
-    {k:'Молчат больше 90 дней, по всей базе', v: num(CL.filter(c=>c.silence>90).length)}
-  ]);
-
-  /* когорты */
-  const cohorts = {};
-  CL.forEach(c => {
-    const d = dayDate(c.first);
-    const key = d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0');
-    const a = cohorts[key] || (cohorts[key] = {n:0, back:0, gaps:[], label: MONTH_S[d.getUTCMonth()] + ' ' + String(d.getUTCFullYear()).slice(2)});
-    a.n++;
-    if(c.buys >= 2){ a.back++; if(c.gap!=null) a.gaps.push(c.gap); }
-  });
-  const cohKeys = Object.keys(cohorts).sort().reverse().slice(0,8).reverse();
-  el('coh').innerHTML = cohKeys.map(k => {
-    const a = cohorts[k];
-    return `<tr><td class="barcell">${a.label}<span class="bar soft" style="width:${Math.round(a.back/a.n*100)}%"></span></td>
-      <td>${num(a.n)}</td><td>${num(a.back)}</td><td>${pct(a.back,a.n)}</td>
-      <td>${a.gaps.length ? Math.round(a.gaps.reduce((s,x)=>s+x,0)/a.gaps.length) + ' дн.' : '—'}</td></tr>`;
-  }).join('');
-
-  /* база и отток */
-  const dups = CL.filter(c=>c.dup).length;
-  el('base-kv').innerHTML = kvList([
-    {k:'Клиентов в базе после склейки', v:num(CL.length)},
-    {k:'Строк было до склейки', v:num(CL.length + dups), c:''},
-    {k:'Дублей по телефону убрано', v:num(dups), c:'good'},
-    {k:'Без телефона, только e-mail', v:num(CL.filter(c=>c.noPhone).length), c:'bad'},
-    {k:'Заполнена дата первой покупки', v:'100%', c:'good'},
-    {k:'Активных за период', v:num(clsArr.length)}
-  ]);
-  const risky = CL.filter(c => (c.tier==='Gold'||c.tier==='Silver') && c.silence>90);
-  el('churn-kv').innerHTML = kvList([
-    {k:'Gold молчат больше 90 дней', v:num(CL.filter(c=>c.tier==='Gold'&&c.silence>90).length), c:'bad'},
-    {k:'Silver молчат больше 90 дней', v:num(CL.filter(c=>c.tier==='Silver'&&c.silence>90).length), c:'bad'},
-    {k:'Выручка под риском, их LTV', v:money(risky.reduce((s,c)=>s+c.ltv,0))},
-    {k:'Молчат от 60 до 90 дней', v:num(CL.filter(c=>c.silence>=60&&c.silence<=90).length)},
-    {k:'Купили один раз и не вернулись', v:num(CL.filter(c=>c.buys===1&&c.silence>120).length)}
-  ]);
-
-  /* клиенты */
-  lastClients = clsArr;
-  renderClients();
-
-  /* точечная карточка */
-  renderScope(orders, lines, T);
-
-  /* товары */
-  const byP = {};
-  (S.cat && S.prod === '' ? lines : linesAll).forEach(({l}) => {
-    const a = byP[l.pid] || (byP[l.pid] = {q:0, r:0, c:0, sizes:{}, cols:{}});
-    a.q += l.qty; a.r += l.rev; a.c += l.cost;
-    a.sizes[l.size] = (a.sizes[l.size]||0)+l.qty;
-    a.cols[l.color] = (a.cols[l.color]||0)+l.qty;
-  });
-  const pRows = Object.keys(byP).map(k=>({pid:+k, ...byP[k]})).sort((a,b)=>b.r-a.r).slice(0,14);
-  el('items').innerHTML = pRows.length ? pRows.map(p =>
-    `<tr class="pick ${String(p.pid)===S.prod?'picked':''}" data-pid="${p.pid}">
-      <td>${PROD[p.pid].n}</td><td>${num(p.q)}</td><td>${money(p.r)}</td>
-      <td>${p.r ? Math.round((p.r-p.c)/p.r*100)+'%' : '—'}</td><td>${topKey(p.sizes)}</td><td>${topKey(p.cols)}</td></tr>`).join('')
-    : '<tr><td colspan="6" class="empty">Нет продаж под фильтром</td></tr>';
-  el('items').querySelectorAll('tr.pick').forEach(tr => tr.addEventListener('click', () => {
-    const pid = tr.dataset.pid;
-    if(S.prod === pid){ S.prod = ''; }
-    else { S.prod = pid; S.cat = PROD[+pid].cat; }
-    SC.size = ''; SC.color = '';
-    syncControls(); render();
-  }));
-
-  /* категории */
-  const byC = {};
-  linesAll.forEach(({l}) => {
-    const a = byC[l.cat] || (byC[l.cat] = {q:0, r:0, c:0});
-    a.q += l.qty; a.r += l.rev; a.c += l.cost;
-  });
-  const cats2 = Object.keys(byC).map(k=>({n:k, ...byC[k]})).sort((a,b)=>b.r-a.r);
-  const maxCR = Math.max(1, ...cats2.map(c=>c.r));
-  el('cats').innerHTML = cats2.length ? cats2.map(c =>
-    `<tr class="pick ${c.n===S.cat?'picked':''}" data-cat="${c.n}">
-      <td class="barcell">${c.n}<span class="bar soft" style="width:${Math.round(c.r/maxCR*100)}%"></span></td>
-      <td>${num(c.q)}</td><td>${money(c.r)}</td><td>${money(c.r/c.q)}</td>
-      <td>${c.r ? Math.round((c.r-c.c)/c.r*100)+'%' : '—'}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="empty">Нет продаж под фильтром</td></tr>';
-  el('cats').querySelectorAll('tr.pick').forEach(tr => tr.addEventListener('click', () => {
-    const c = tr.dataset.cat;
-    if(S.cat === c && S.prod === '') S.cat = '';
-    else { S.cat = c; S.prod = ''; }
-    SC.size = ''; SC.color = '';
-    syncControls(); render();
-  }));
-
-  /* размеры */
-  const sizeAgg = {}, sizeSet = {};
-  lines.forEach(({l}) => {
-    (sizeAgg[l.cat] || (sizeAgg[l.cat] = {}))[l.size] = (sizeAgg[l.cat][l.size]||0) + l.qty;
-    sizeSet[l.size] = (sizeSet[l.size]||0) + l.qty;
-  });
-  const order = ['XS','S','M','L','one size','S-M','M-L'];
-  const cols = Object.keys(sizeSet).sort((a,b)=>order.indexOf(a)-order.indexOf(b)).slice(0,6);
-  const catsWith = Object.keys(sizeAgg).sort((a,b)=>
-    Object.values(sizeAgg[b]).reduce((s,x)=>s+x,0) - Object.values(sizeAgg[a]).reduce((s,x)=>s+x,0));
-  const gt = `grid-template-columns:150px repeat(${cols.length},1fr)`;
-  el('sizes').innerHTML = cols.length ? (
-    `<div class="mrow mhead" style="${gt}"><div>Категория</div>${cols.map(c=>`<div class="cell">${c}</div>`).join('')}</div>` +
-    catsWith.map(cat => {
-      const row = sizeAgg[cat];
-      const lead = cols.reduce((b,c)=> (row[c]||0) > (row[b]||0) ? c : b, cols[0]);
-      const li = cols.indexOf(lead);
-      return `<div class="mrow" style="${gt}"><div class="nm">${cat}</div>` +
-        cols.map((c,i)=>`<div class="cell ${i===li && row[c]?'lead':(Math.abs(i-li)===1 && row[c]?'mid2':'')}">${row[c]||'—'}</div>`).join('') +
-        `</div>`;
-    }).join('')) : '<div class="empty">Нет продаж под фильтром</div>';
-
-  /* цвета */
-  const byCol = {};
-  lines.forEach(({l,d}) => {
-    const a = byCol[l.color] || (byCol[l.color] = {q:0, r:0, chs:{}});
-    a.q += l.qty; a.r += l.rev; a.chs[d.ch] = (a.chs[d.ch]||0) + l.qty;
-  });
-  const colRows = Object.keys(byCol).map(k=>({n:k, ...byCol[k]})).sort((a,b)=>b.q-a.q).slice(0,8);
-  el('colors').innerHTML = colRows.length ? colRows.map(c => {
-    const top = topKey(c.chs);
-    return `<tr><td>${c.n[0].toUpperCase()+c.n.slice(1)}</td><td>${num(c.q)}</td><td>${money(c.r)}</td>
-      <td>${top}</td><td>${pct(c.chs[top], c.q)}</td></tr>`;
-  }).join('') : '<tr><td colspan="5" class="empty">Нет продаж под фильтром</td></tr>';
-
-  /* гео */
-  const byG = {};
-  orders.forEach(o => { const a = byG[o.d.geo] || (byG[o.d.geo] = {o:0, r:0}); a.o++; a.r += o.rev; });
-  const gRows = Object.keys(byG).map(k=>({n:k, ...byG[k]})).sort((a,b)=>b.o-a.o);
-  const maxG = Math.max(1, ...gRows.map(g=>g.o));
-  el('geo').innerHTML = gRows.length ? gRows.map(g =>
-    `<tr><td class="barcell">${g.n}<span class="bar soft" style="width:${Math.round(g.o/maxG*100)}%"></span></td>
-     <td>${num(g.o)}</td><td>${money(g.r)}</td><td>${money(g.r/g.o)}</td><td>${pct(g.o,T.n)}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="empty">Нет данных под фильтром</td></tr>';
-
-  /* корзина и коллаборации */
-  const multi = orders.filter(o=>o.ls.length>1).length;
-  const collabRev = lines.filter(({l}) => /2MY x/.test(PROD[l.pid].n)).reduce((s,{l})=>s+l.rev,0);
-  const handRev = lines.filter(({l}) => /ручной работы|ажурн/i.test(PROD[l.pid].n)).reduce((s,{l})=>s+l.rev,0);
-  el('basket-kv').innerHTML = kvList([
-    {k:'Изделий в заказе, среднее', v:dec(T.ipo)},
-    {k:'Заказов из двух и более позиций', v:num(multi) + ' · ' + pct(multi, T.n)},
-    {k:'Максимум позиций в одном заказе', v:num(Math.max(0, ...orders.map(o=>o.ls.length)))},
-    {k:'Выручка капсул 2MY x Sorelle Era и Vlada Nazina', v:money(collabRev) + ' · ' + pct(collabRev, T.rev)},
-    {k:'Выручка изделий ручной работы и ажурных', v:money(handRev) + ' · ' + pct(handRev, T.rev)},
-    {k:'Средняя цена изделия', v: T.qty ? money(T.rev/T.qty) : '—'}
-  ]);
-
-  /* воронка */
-  const fdeals = deals;
-  const first = fdeals.length || 1;
-  el('funnel').innerHTML = STAGES.map((s,i) => {
-    const cnt = fdeals.filter(d=>d.reach>=i).length;
-    const prev = i ? fdeals.filter(d=>d.reach>=i-1).length : cnt;
-    const lost = i ? prev - cnt : 0;
-    const inStage = fdeals.filter(d=>d.reach>=i);
-    const t = inStage.length ? inStage.reduce((a,d)=>a+d.stTimes[i],0)/inStage.length : 0;
-    const stuck = NORM[i] ? inStage.filter(d=>d.stTimes[i]>NORM[i]).length : 0;
-    const drop = i>0 && prev && lost/prev > .14;
-    return `<div class="step ${drop?'drop':''}">
-      <div class="row"><span class="nm">${s}</span>
-        <span class="nums">${num(cnt)} · ${Math.round(cnt/first*100)}%${i?` · ушло ${num(lost)}`:''}</span></div>
-      <div class="track"><div class="fill" style="width:${Math.round(cnt/first*100)}%"></div></div>
-      <div class="meta"><span>в этапе ${dec(t,1)} дня</span>
-        <span class="${stuck>Math.max(3,cnt*.06)?'warn':''}">${stuck?`дольше нормы: ${num(stuck)}`:'просрочек нет'}</span></div>
-    </div>`;
-  }).join('');
-
-  /* дисциплина */
-  const paidN = fdeals.filter(d=>d.paid).length;
-  const avgResp = fdeals.length ? Math.round(fdeals.reduce((s,d)=>s+d.resp,0)/fdeals.length) : 0;
-  const cycle = fdeals.filter(d=>d.paid).map(d=>d.stTimes.slice(0,5).reduce((s,x)=>s+x,0));
-  el('disc-kv').innerHTML = kvList([
-    {k:'Сделок без задачи', v:'0', c:'good'},
-    {k:'Сделок в периоде', v:num(fdeals.length)},
-    {k:'Дольше нормы на этапе', v:num(fdeals.reduce((s,d)=>s+d.stuck,0)), c:'bad'},
-    {k:'Средний первый ответ', v:avgResp + ' мин'},
-    {k:'Срок от заявки до оплаты', v: cycle.length ? dec(cycle.reduce((s,x)=>s+x,0)/cycle.length,1) + ' дня' : '—'},
-    {k:'Конверсия заявка в оплату', v:pct(paidN, fdeals.length)}
-  ]);
-  const part = fdeals.filter(d=>d.partner);
-  el('partner-kv').innerHTML = kvList([
-    {k:'Заявок от блогеров и партнёров', v:num(part.length)},
-    {k:'Договорились о бартере', v:num(Math.round(part.length*.34))},
-    {k:'Публикации вышли', v:num(Math.round(part.length*.24))},
-    {k:'Заказов с их метки', v:num(Math.round(part.length*.78))},
-    {k:'В отказ по продажам не ушло', v:num(part.length), c:'good'}
-  ]);
-
-  /* задачи и отгрузки */
-  el('task-kv').innerHTML = kvList([
-    {k:'Этап «согласовали состав»', v:'норма 2 дня'},
-    {k:'Этап «сборка заказа»', v:'норма 2 дня'},
-    {k:'Этап «отправлен»', v:'норма 3 дня'},
-    {k:'Уведомлений руководителю', v:num(fdeals.filter(d=>d.stuck>=2).length)},
-    {k:'Задач ставит робот, не менеджер', v:'78%'}
-  ]);
-  const exch = orders.filter(o=>o.d.exch).length;
-  el('ship-kv').innerHTML = kvList([
-    {k:'Отгрузок создано', v:num(T.n + exch + T.ret)},
-    {k:'Из них покупки', v:num(T.n), c:'good'},
-    {k:'Обмены и досылы', v:num(exch)},
-    {k:'Возвраты', v:num(T.ret)},
-    {k:'Доля возвратов от покупок', v:dec(T.retShare*100,1) + '%'},
-    {k:'Выручка возвратов', v:money(orders.filter(o=>o.d.ret).reduce((s,o)=>s+o.rev,0)), c:'bad'}
-  ]);
-
-  document.querySelectorAll('#periods button').forEach(b =>
-    b.classList.toggle('on', b.dataset.k === S.period));
-}
-
-/* ─────────── клиенты: свой поиск и свои условия ─────────── */
-let lastClients = [];
-const CLIM = 20;
-
-function renderClients(){
-  const src = CS.base === 'all' ? CL : lastClients;
-  const q = CS.q.trim().toLowerCase();
-  let rows = src.filter(c => {
-    if(q && c.n.toLowerCase().indexOf(q) < 0) return false;
-    if(CS.tier && c.tier !== CS.tier) return false;
-    if(CS.buys === '1' && c.buys !== 1) return false;
-    if(CS.buys === '2' && c.buys < 2) return false;
-    if(CS.buys === '4' && c.buys < 4) return false;
-    if(CS.sil === 'l30' && c.silence >= 30) return false;
-    if(CS.sil === 'g30' && c.silence <= 30) return false;
-    if(CS.sil === 'g60' && c.silence <= 60) return false;
-    if(CS.sil === 'g90' && c.silence <= 90) return false;
-    return true;
-  });
-  const cmp = {
-    ltv:     (a,b)=>b.ltv-a.ltv,
-    buys:    (a,b)=>b.buys-a.buys || b.ltv-a.ltv,
-    silence: (a,b)=>b.silence-a.silence,
-    last:    (a,b)=>b.last-a.last,
-    freq:    (a,b)=>b.freq-a.freq
-  }[CS.sort] || ((a,b)=>b.ltv-a.ltv);
-  rows.sort(cmp);
-  const found = rows.length;
-  const shown = rows.slice(0, CLIM);
-  const ltvSum = rows.reduce((s,c)=>s+c.ltv,0);
-
-  el('clients').innerHTML = shown.length ? shown.map(c =>
-    `<tr class="${c.silence>90?'flag':''}"><td>${c.n}</td><td>${c.tier}</td><td>${c.buys}</td><td>${money(c.ltv)}</td>
-     <td>${iso(c.first).split('-').reverse().join('.')}</td><td>${iso(c.last).split('-').reverse().join('.')}</td>
-     <td>${c.silence} дн.</td><td>${c.favSize}</td><td>${c.favCat}</td><td>${c.favCh}</td></tr>`).join('')
-    : '<tr><td colspan="10" class="empty">Под эти условия не попал никто. Снимите часть условий или переключитесь на всю базу.</td></tr>';
-
-  el('c-count').textContent = found
-    ? 'нашли ' + num(found) + ' из ' + num(src.length) + ' · LTV списка ' + short(ltvSum) +
-      (found > CLIM ? ' · показаны первые ' + CLIM : '')
-    : 'нашли 0 из ' + num(src.length);
-}
-
-/* ─────────── точечная аналитика: свой разрез ─────────── */
-let lastScope = null;
-
-function syncScopeBar(linesIn){
-  /* счётчики перекрёстные: размеры считаются с учётом выбранного цвета и наоборот */
-  const sizes = {}, cols = {};
-  linesIn.forEach(({l}) => {
-    if(!SC.color || l.color === SC.color) sizes[l.size] = (sizes[l.size]||0) + l.qty;
-    if(!SC.size  || l.size  === SC.size)  cols[l.color] = (cols[l.color]||0) + l.qty;
-  });
-  const order = ['XS','S','M','L','one size','S-M','M-L'];
-  const sKeys = Object.keys(sizes).sort((a,b)=>order.indexOf(a)-order.indexOf(b));
-  const cKeys = Object.keys(cols).sort((a,b)=>cols[b]-cols[a]);
-  if(SC.size && !sizes[SC.size]) SC.size = '';
-  if(SC.color && !cols[SC.color]) SC.color = '';
-  opts(el('s-cat'), CATS.map(c=>({v:c,n:c})), S.cat, 'Все категории');
-  el('s-prod-combo')._sync();
-  opts(el('s-size'), sKeys.map(s=>({v:s, n:'Размер ' + s + ' · ' + sizes[s] + ' шт'})), SC.size, 'Все размеры');
-  opts(el('s-color'), cKeys.map(c=>({v:c, n:c[0].toUpperCase()+c.slice(1) + ' · ' + cols[c] + ' шт'})), SC.color, 'Все цвета');
-}
-
-function renderScope(orders, linesIn, T){
-  lastScope = {orders, lines: linesIn, T};
-  const isProd = S.prod !== '';
-  const p = isProd ? PROD[+S.prod] : null;
-
-  syncScopeBar(linesIn);
-  let lines = linesIn;
-  if(SC.size)  lines = lines.filter(({l}) => l.size === SC.size);
-  if(SC.color) lines = lines.filter(({l}) => l.color === SC.color);
-
-  const qty = lines.reduce((s,{l})=>s+l.qty,0);
-  const rev = lines.reduce((s,{l})=>s+l.rev,0);
-  const cost = lines.reduce((s,{l})=>s+l.cost,0);
-  const list = lines.reduce((s,{l})=>s+l.list,0);
-  const cut = [SC.size && 'размер ' + SC.size, SC.color && 'цвет ' + SC.color].filter(Boolean).join(', ');
-  el('s-count').textContent = (cut ? cut + ' · ' : '') + num(qty) + ' шт · ' + short(rev);
-
-  const allRev = (() => {
-    let r = 0;
-    for(const d of DEALS){
-      if(d.i < S.from || d.i > S.to || !d.paid) continue;
-      if(S.ch && d.ch !== S.ch) continue;
-      if(S.sale && d.sale !== S.sale) continue;
-      if(S.geo && d.geo !== S.geo) continue;
-      r += d.rev;
-    }
-    return r;
-  })();
-
-  const sizes = {}, cols = {}, chs = {}, geos = {};
-  lines.forEach(({l,d}) => {
-    sizes[l.size] = (sizes[l.size]||0)+l.qty;
-    cols[l.color] = (cols[l.color]||0)+l.qty;
-    chs[d.ch] = (chs[d.ch]||0)+l.qty;
-    geos[d.geo] = (geos[d.geo]||0)+l.qty;
-  });
-  const buyers = new Set(lines.map(({d})=>d.cl));
-  const repBuyers = new Set(lines.filter(({d})=>d.rep).map(({d})=>d.cl));
-
-  const len = S.to - S.from + 1;
-  const step = len <= 62 ? Math.max(1, Math.round(len/22)) : Math.ceil(len/22);
-  const nb = Math.ceil(len/step);
-  const bars = new Array(nb).fill(0);
-  lines.forEach(({l,d}) => bars[Math.min(nb-1, Math.floor((d.i-S.from)/step))] += l.rev);
-  const mx = Math.max(1, ...bars);
-
-  const rows = o => {
-    const k = Object.keys(o).sort((a,b)=>o[b]-o[a]).slice(0,6);
-    return k.length ? k.map(x => `<div class="srow"><span>${x[0].toUpperCase()+x.slice(1)}</span><b>${num(o[x])} шт · ${pct(o[x], qty)}</b></div>`).join('')
-                    : '<div class="empty">—</div>';
-  };
-
-  el('scope').innerHTML = `
-    <div class="scope-head">
-      <div>
-        <div class="kicker">${isProd ? 'Позиция' : (S.cat ? 'Категория' : 'Вся номенклатура')}</div>
-        <h3>${scopeName()}</h3>
-        <div class="price">${isProd
-          ? 'Прайс ' + money(p.p) + ' · закупка ' + money(p.c) + ' · ' + p.cat + ' · цвета: ' + p.cols.join(', ')
-          : (S.cat
-            ? (() => { const ps = PROD.filter(x=>x.cat===S.cat);
-                return ps.length + ' моделей в категории · прайс от ' + money(Math.min(...ps.map(x=>x.p))) +
-                       ' до ' + money(Math.max(...ps.map(x=>x.p))); })()
-            : 'Выберите категорию, товар, размер или цвет в панели над карточкой. То же делает нажатие на строку в таблицах ниже')}</div>
-      </div>
-      <div class="chips">
-        ${Object.keys(sizes).sort((a,b)=>sizes[b]-sizes[a]).slice(0,5)
-          .map(s=>`<span class="chip">${s} <b>${sizes[s]}</b></span>`).join('') || ''}
-      </div>
-    </div>
-    <div class="scope-kpi">
-      <div><div class="l">Продано</div><div class="v">${num(qty)} шт</div></div>
-      <div><div class="l">Выручка</div><div class="v">${short(rev)}</div></div>
-      <div><div class="l">Доля выручки</div><div class="v">${pct(rev, allRev)}</div></div>
-      <div><div class="l">Маржа</div><div class="v">${rev ? Math.round((rev-cost)/rev*100)+'%' : '—'}</div></div>
-      <div><div class="l">Средняя цена</div><div class="v">${qty ? money(rev/qty) : '—'}</div></div>
-    </div>
-    <div class="scope-body">
-      <div>
-        <h4>Динамика выручки${step>1?', по '+step+' дн.':''}</h4>
-        <div class="mbars">${bars.map((v,i)=>`<i style="height:${Math.max(2, v/mx*86)}px" title="${humanS(S.from+i*step)}: ${money(v)}"></i>`).join('')}</div>
-        <div class="mbars-ax"><span>${humanS(S.from)}</span><span>${humanS(S.to)}</span></div>
-        <div style="margin-top:22px">
-          <h4>Кто покупает</h4>
-          <div class="srow"><span>Покупателей</span><b>${num(buyers.size)}</b></div>
-          <div class="srow"><span>Из них покупали раньше</span><b>${num(repBuyers.size)} · ${pct(repBuyers.size, buyers.size)}</b></div>
-          <div class="srow"><span>Скидка от прайса</span><b>${list ? Math.round((list-rev)/list*100) : 0}%</b></div>
-          <div class="srow"><span>Возвраты</span><b>${num(lines.filter(({d})=>d.ret).length)} шт</b></div>
-        </div>
-      </div>
-      <div>
-        <h4>Цвета</h4>
-        ${rows(cols)}
-        <div style="margin-top:22px"><h4>Города</h4>${rows(geos)}</div>
-      </div>
-      <div>
-        <h4>Источники</h4>
-        ${rows(chs)}
-        <div style="margin-top:22px"><h4>Размеры</h4>${rows(sizes)}</div>
-      </div>
-    </div>`;
-}
-
-/* ─────────── контролы ─────────── */
-function opts(sel, list, cur, all){
-  sel.innerHTML = `<option value="">${all}</option>` +
-    list.map(x => `<option value="${x.v}" ${String(x.v)===String(cur)?'selected':''}>${x.n}</option>`).join('');
-}
-
-/* ─────────── поиск товара ─────────── */
-function prodItems(){
-  return PROD.map(p=>({v:String(p.id), n:p.n, meta:p.cat, here: S.cat && p.cat===S.cat}));
-}
-function prodLabel(id){
-  if(id === '' || id == null) return '';
-  return PROD[+id] ? PROD[+id].n : '';
-}
-function applyProd(v){
-  S.prod = v == null ? '' : String(v);
-  if(S.prod !== '') S.cat = PROD[+S.prod].cat;
-  SC.size = ''; SC.color = '';
-  const a = document.activeElement;
-  if(a && a.closest && a.closest('.combo')) a.blur();
-  syncControls(); render();
-}
-function bindCombo(root){
-  const inp = root.querySelector('input');
-  const box = root.querySelector('.combo-list');
-  const LIM = 18;
-  let hi = 0, open = false;
-  function rows(){ return [...box.querySelectorAll('[data-v]')]; }
-  function paint(){ rows().forEach((r,i)=>r.classList.toggle('on', i===hi)); rows()[hi]?.scrollIntoView({block:'nearest'}); }
-  function close(){ box.hidden = true; open = false; }
-  function show(q){
-    const qq = (q||'').trim().toLowerCase().replace(/[«»"]/g,'');
-    const all = prodItems();
-    const hit = all.filter(x => !qq || x.n.toLowerCase().replace(/[«»"]/g,'').includes(qq) || x.meta.toLowerCase().includes(qq))
-      .sort((a,b)=> (b.here?1:0) - (a.here?1:0) || a.n.localeCompare(b.n,'ru'));
-    const slice = hit.slice(0, LIM);
-    if(!slice.length){
-      box.innerHTML = '<div class="empty">Ничего не нашлось. Попробуйте часть названия, например «боди» или «форма любви».</div>';
-    } else {
-      box.innerHTML = slice.map((x,i) =>
-        `<button type="button" data-v="${x.v}" class="${i===0?'on':''}">${x.n}<i>${x.meta}</i></button>`
-      ).join('') + (hit.length > LIM ? `<div class="more">показаны ${LIM} из ${hit.length}, уточните запрос</div>` : '');
-    }
-    box.hidden = false; open = true; hi = 0;
-  }
-  inp.addEventListener('focus', () => {
-    inp.select();
-    show(inp.value === prodLabel(S.prod) ? '' : inp.value);
-  });
-  inp.addEventListener('input', () => show(inp.value));
-  inp.addEventListener('keydown', e => {
-    const r = rows();
-    if(e.key === 'ArrowDown' && r.length){ e.preventDefault(); hi = Math.min(r.length-1, hi+1); paint(); }
-    if(e.key === 'ArrowUp' && r.length){ e.preventDefault(); hi = Math.max(0, hi-1); paint(); }
-    if(e.key === 'Enter'){
-      e.preventDefault();
-      if(!inp.value.trim()){ applyProd(''); return; }
-      if(open && r[hi]) applyProd(r[hi].dataset.v);
-    }
-    if(e.key === 'Escape'){
-      e.preventDefault();
-      inp.value = prodLabel(S.prod);
-      close(); inp.blur();
-    }
-  });
-  box.addEventListener('mousedown', e => {
-    const b = e.target.closest('[data-v]');
-    if(!b) return;
-    e.preventDefault();
-    applyProd(b.dataset.v);
-  });
-  inp.addEventListener('blur', () => {
-    setTimeout(() => {
-      close();
-      if(!inp.value.trim() && S.prod !== ''){ applyProd(''); return; }
-      inp.value = prodLabel(S.prod);
-      inp.placeholder = 'Найти товар по названию';
-    }, 80);
-  });
-  root._sync = () => {
-    if(document.activeElement === inp) return;
-    inp.value = prodLabel(S.prod);
-    inp.placeholder = 'Найти товар по названию';
-  };
-}
-
-function syncControls(){
-  el('d1').value = iso(S.from);
-  el('d2').value = iso(S.to);
-  opts(el('f-cat'), CATS.map(c=>({v:c,n:c})), S.cat, 'Все категории');
-  el('f-prod-combo')._sync();
-  opts(el('f-ch'), CH.map(c=>({v:c,n:c})), S.ch, 'Все источники');
-  opts(el('f-sale'), SALE.map(c=>({v:c,n:c})), S.sale, 'Все каналы сбыта');
-  opts(el('f-geo'), GEO.map(c=>({v:c,n:c})), S.geo, 'Вся Россия и зарубежье');
-  document.querySelectorAll('#periods button').forEach(b => b.classList.toggle('on', b.dataset.k === S.period));
-}
-
-el('periods').innerHTML = Object.keys(PERIODS).map(k => `<button data-k="${k}">${k}</button>`).join('');
-document.querySelectorAll('#periods button').forEach(b => b.addEventListener('click', () => {
-  const r = PERIODS[b.dataset.k];
-  S.from = Math.max(0, r[0]); S.to = r[1]; S.period = b.dataset.k;
-  syncControls(); render();
-}));
-
-el('d1').min = iso(0); el('d1').max = iso(TODAY);
-el('d2').min = iso(0); el('d2').max = iso(TODAY);
-function onDate(){
-  let a = isoToI(el('d1').value), b = isoToI(el('d2').value);
-  if(isNaN(a) || isNaN(b)) return;
-  a = Math.max(0, Math.min(TODAY, a)); b = Math.max(0, Math.min(TODAY, b));
-  if(a > b){ const t = a; a = b; b = t; }
-  S.from = a; S.to = b; S.period = '';
-  syncControls(); render();
-}
-el('d1').addEventListener('change', onDate);
-el('d2').addEventListener('change', onDate);
-
-el('f-cat').addEventListener('change', e => {
-  S.cat = e.target.value; S.prod = ''; SC.size=''; SC.color='';
-  syncControls(); render();
-});
-el('f-ch').addEventListener('change', e => { S.ch = e.target.value; render(); });
-el('f-sale').addEventListener('change', e => { S.sale = e.target.value; render(); });
-el('f-geo').addEventListener('change', e => { S.geo = e.target.value; render(); });
-el('reset').addEventListener('click', () => {
-  S.cat = ''; S.prod = ''; S.ch = ''; S.sale = ''; S.geo = '';
-  S.from = TODAY-89; S.to = TODAY; S.period = '90 дней';
-  SC.size = ''; SC.color = '';
-  syncControls(); render();
-});
-
-/* ─────────── разделы ─────────── */
-const VIEWS = [
-  {v:'sales',   n:'Продажи и каналы'},
-  {v:'clients', n:'Клиенты'},
-  {v:'goods',   n:'Товары'},
-  {v:'proc',    n:'Процессы в amoCRM'}
-];
-el('nav').innerHTML = VIEWS.map((x,i) =>
-  `<button data-v="${x.v}" class="${i?'':'on'}">${x.n}</button>`).join('') +
-  '<span class="nav-hint">фильтры сверху действуют во всех разделах</span>';
-
-function showView(v, scroll){
-  if(!VIEWS.some(x => x.v === v)) v = VIEWS[0].v;
-  document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.dataset.v === v));
-  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  history.replaceState(null, '', '#v-' + v);
-  if(scroll){
-    const top = el('nav').offsetTop;
-    if(window.scrollY > top) window.scrollTo({top, behavior:'smooth'});
-  }
-}
-document.querySelectorAll('#nav button').forEach(b =>
-  b.addEventListener('click', () => showView(b.dataset.v, true)));
-
-/* ─────────── контролы блока клиентов ─────────── */
-el('c-q').addEventListener('input', e => { CS.q = e.target.value; renderClients(); });
-el('c-base').addEventListener('change', e => { CS.base = e.target.value; renderClients(); });
-el('c-tier').addEventListener('change', e => { CS.tier = e.target.value; renderClients(); });
-el('c-buys').addEventListener('change', e => { CS.buys = e.target.value; renderClients(); });
-el('c-sil').addEventListener('change',  e => { CS.sil  = e.target.value; renderClients(); });
-el('c-sort').addEventListener('change', e => { CS.sort = e.target.value; renderClients(); });
-el('c-clear').addEventListener('click', () => {
-  CS.q=''; CS.base='period'; CS.tier=''; CS.buys=''; CS.sil=''; CS.sort='ltv';
-  el('c-q').value=''; el('c-base').value='period'; el('c-tier').value='';
-  el('c-buys').value=''; el('c-sil').value=''; el('c-sort').value='ltv';
-  renderClients();
-});
-
-/* ─────────── контролы точечной аналитики ─────────── */
-el('s-cat').addEventListener('change', e => {
-  S.cat = e.target.value; S.prod = ''; SC.size=''; SC.color='';
-  syncControls(); render();
-});
-el('s-size').addEventListener('change',  e => { SC.size  = e.target.value; if(lastScope) renderScope(lastScope.orders, lastScope.lines, lastScope.T); });
-el('s-color').addEventListener('change', e => { SC.color = e.target.value; if(lastScope) renderScope(lastScope.orders, lastScope.lines, lastScope.T); });
-el('s-clear').addEventListener('click', () => {
-  S.cat=''; S.prod=''; SC.size=''; SC.color='';
-  syncControls(); render();
-});
-
-document.querySelector('.xls').addEventListener('click', () => {
-  alert('В рабочей версии выгружается таблица ровно по текущему фильтру: заказы, состав заказа, размер, цвет, UTM, канал сбыта, город, клиент, LTV, маржа.');
-});
-
-bindCombo(el('f-prod-combo'));
-bindCombo(el('s-prod-combo'));
-bindSpark();
-syncControls();
-render();
-showView((location.hash || '').replace('#v-','').replace('#',''), false);
+el('delivery-toggle').onchange=e=>{includeDelivery=e.target.checked;refresh()};
+el('snapshot-file').onchange=async e=>{try{init(JSON.parse(await e.target.files[0].text()))}catch(err){el('head-note').textContent='Ошибка среза: '+err.message}};
+fetch('snapshot.local.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Срез недоступен');return r.json()}).then(init).catch(()=>{el('head-note').textContent='Срез не загружен. Выбери локальный snapshot.local.json.'});
 </script>
 </body>
 </html>

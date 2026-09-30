@@ -107,3 +107,6 @@ build/
 **/3.7. Финансы/data/operations.jsonl
 **/3.7. Финансы/data/review_queue.json
 **/3.7. Финансы/data/*.csv
+# Локальный срез дашборда 2MY: содержит телефоны и адресные данные.
+**/2MyMoods/дашборд/*.local.json
+**/2MyMoods/дашборд/*.local.md
