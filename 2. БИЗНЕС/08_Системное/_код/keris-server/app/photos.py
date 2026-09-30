@@ -7,6 +7,7 @@ PHOTOS_DIR, а в базе лежит относительный путь.
 """
 from __future__ import annotations
 
+import html
 import logging
 import secrets
 from pathlib import Path
@@ -175,18 +176,20 @@ def save_from_telegram(
     return save_bytes(db, booking, kind, data, added_by=added_by)
 
 
-def report_caption(booking: Booking, service_name: str, *, pair: bool = False) -> str:
-    """Подпись к альбому. «Слева и справа» врали: в чат уходят два фото подряд."""
-    pet = booking.pet_name or "ваш питомец"
+def report_caption(booking: Booking, service_name: str, *, order: str = "") -> str:
+    """Подпись к альбому. Фото идут подряд, не рядом, поэтому не пишем «слева и справа»."""
+    pet = html.escape(booking.pet_name or "ваш питомец")
     when = booking.starts_at.strftime("%d.%m")
-    service = service_name or "визит"
+    service = html.escape(service_name or "визит")
     lines = [
         f"🐾 <b>{pet}</b>",
         "",
         f"Визит {when}, {service}.",
     ]
-    if pair:
+    if order == "exact":
         lines.append("Первое фото: до. Второе фото: после.")
+    elif order == "ordered":
+        lines.append("Сначала фото до, потом фото после.")
     return "\n".join(lines)
 
 
@@ -229,13 +232,18 @@ def send_report(db: Session, booking: Booking, service_name: str) -> dict:
     if not payload:
         raise PhotoError("Файлы фото не найдены на диске", 500)
 
-    pair = sent_kinds[:2] == ["before", "after"] and len(sent_kinds) == 2
-    caption = report_caption(booking, service_name, pair=pair)
+    if sent_kinds == ["before", "after"]:
+        order = "exact"
+    elif "before" in sent_kinds and "after" in sent_kinds:
+        order = "ordered"
+    else:
+        order = ""
+    caption = report_caption(booking, service_name, order=order)
     channels: list[str] = []
     destination, dest_id = client_destination(db, booking)
 
     if destination == "telegram" and dest_id and settings.client_bot_token:
-        if tg_send_photos(settings.client_bot_token, dest_id, payload, caption=caption):
+        if tg_send_photos(settings.client_bot_token, dest_id, payload, caption=caption, timeout=20):
             channels.append("telegram")
     elif destination == "max" and dest_id and settings.max_bot_token:
         if max_http.send_photos(int(dest_id), caption, payload):
@@ -243,7 +251,9 @@ def send_report(db: Session, booking: Booking, service_name: str) -> dict:
         elif max_http.send_message(int(dest_id), caption):
             channels.append("max_text")
 
-    if channels:
+    # Текст без картинок не закрывает отчёт: следующая попытка снова шлёт фото.
+    photos_went = any(item in ("telegram", "max") for item in channels)
+    if photos_went:
         now = clock.now()
         for p in rows:
             p.sent_at = now
@@ -255,7 +265,7 @@ def send_report(db: Session, booking: Booking, service_name: str) -> dict:
         "photos": len(rows),
         "channels": channels,
         "destination": destination,
-        "pending": not channels,
+        "pending": not photos_went,
         "links": {"telegram": settings.telegram_bot_url, "max": settings.max_bot_url},
     }
 

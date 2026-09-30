@@ -165,3 +165,13 @@ def store_bookings(when: str, for_photos: int, rows: list, *, at: datetime | Non
 
 def drop_lists() -> None:
     _lists.clear()
+
+
+def drop_cache() -> None:
+    """После нового фото срезы и списки визитов собираются заново, а не ждут десять минут."""
+    global _stats, _stats_at, _today, _today_at
+    _lists.clear()
+    _stats = None
+    _stats_at = None
+    _today = None
+    _today_at = None
