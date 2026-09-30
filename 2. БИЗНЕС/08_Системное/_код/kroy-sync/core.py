@@ -8,14 +8,18 @@ YUJI_FOLDER = "YUJI"
 SIZES = ("S", "M", "L")
 
 
-def fact_key(date, product, sizes, rolls):
+def fact_payload(date, product, sizes, rolls):
     payload = {
         "d": date,
         "p": product.strip(),
         "s": {k: int(sizes.get(k) or 0) for k in SIZES},
         "r": int(rolls),
     }
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def fact_key(date, product, sizes, rolls):
+    raw = fact_payload(date, product, sizes, rolls)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 

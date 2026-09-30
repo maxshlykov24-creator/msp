@@ -47,7 +47,8 @@ def post_fact(date, product_name, color, sizes, rolls, apply):
     if not store_id or not org_id:
         return "нет склада или организации"
     report = ms_api.stock_on_store(store_id, roll["id"])
-    roll_stock = None if report is None else report.get("stock")
+    # Строки в отчёте нет, пока рулон ни разу не приходовали. Это ноль, не обрыв чтения.
+    roll_stock = 0 if report is None else report.get("stock")
     decision = core.plan_cut(
         roll_stock=roll_stock,
         rolls=rolls,

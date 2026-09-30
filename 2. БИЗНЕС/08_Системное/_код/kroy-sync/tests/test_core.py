@@ -6,6 +6,18 @@ import exchange
 
 
 class Cut(unittest.TestCase):
+    def test_payload_matches_sheet_script(self):
+        raw = core.fact_payload(
+            "2026-09-26",
+            "Футболка сердце — Чёрный",
+            {"S": 42, "M": 42, "L": 0},
+            2,
+        )
+        self.assertEqual(
+            raw,
+            '{"d": "2026-09-26", "p": "Футболка сердце — Чёрный", "r": 2, "s": {"L": 0, "M": 42, "S": 42}}',
+        )
+
     def test_key_stable(self):
         a = core.fact_key("2026-09-26", "Футболка сердце — Чёрный", {"S": 42, "M": 42, "L": 0}, 2)
         b = core.fact_key("2026-09-26", "Футболка сердце — Чёрный", {"M": 42, "S": 42}, 2)
