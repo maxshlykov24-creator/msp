@@ -328,18 +328,34 @@ def start_photos(chat_id: int) -> None:
     ]})
 
 
+def _visit_label(row: dict) -> str:
+    before = int(row.get("photos_before") or 0)
+    after = int(row.get("photos_after") or 0)
+    if before and after:
+        photo = "пара есть"
+    elif before:
+        photo = "есть до"
+    elif after:
+        photo = "есть после"
+    else:
+        photo = "без фото"
+    chat = {"telegram": "Telegram", "max": "MAX"}.get(row.get("client_chat") or "", "нет бота")
+    label = f"{row.get('time') or ''} {row.get('pet') or 'питомец'} · {photo} · {chat}"
+    return label[:60]
+
+
 def show_photo_bookings(chat_id: int, when: str) -> None:
     day = {"today": "сегодня", "yesterday": "вчера"}.get(when, "")
-    cached = (_ready.get("bookings") or {}).get(when)
-    if isinstance(cached, list):
-        data = cached
-    else:
-        status, data = api("GET", f"/admin/bookings?when={urllib.parse.quote(when)}&for_photos=1", timeout=4)
-        if status != 200 or not isinstance(data, list):
-            send(chat_id, "Список визитов ещё собирается. Нажми ещё раз через минуту.", menu_for(chat_id))
-            reset_flow(chat_id)
-            return
+    status, data = api("GET", f"/admin/bookings?when={urllib.parse.quote(when)}&for_photos=1", timeout=8)
+    if status == 200 and isinstance(data, list):
         _ready.setdefault("bookings", {})[when] = data
+    else:
+        cached = (_ready.get("bookings") or {}).get(when)
+        data = cached if isinstance(cached, list) else None
+    if not isinstance(data, list):
+        send(chat_id, "Список визитов ещё собирается. Нажми ещё раз через минуту.", menu_for(chat_id))
+        reset_flow(chat_id)
+        return
     rows = list(data)
     if not rows:
         send(chat_id, f"За {day} таких визитов нет." if day else "Таких визитов нет.", menu_for(chat_id))
@@ -347,7 +363,7 @@ def show_photo_bookings(chat_id: int, when: str) -> None:
         return
     keyboard = []
     for row in rows[:20]:
-        label = f"{row.get('time')} {row.get('pet') or 'питомец'}"
+        label = _visit_label(row)
         keyboard.append([{"text": label, "callback_data": f"phb:{row['id']}"}])
     keyboard.append([{"text": "Отменить", "callback_data": "cancel"}])
     st = user_state(chat_id)
@@ -400,10 +416,12 @@ def save_photo(chat_id: int, file_id: str) -> None:
         "file_id": file_id,
         "source": "admin",
         "added_by": str(chat_id),
-    }, timeout=25)
+    }, timeout=40)
     if status != 200:
         send(chat_id, f"Фото не сохранилось. {detail_of(body)}".strip(), menu_for(chat_id))
         return
+    _ready["stats"] = None
+    _ready["bookings"] = {}
     show_photo_card(
         chat_id,
         booking_id,
@@ -469,7 +487,9 @@ def show_photo_card(
         text += "\n\n" + delivery
     elif not pair:
         text += "\n\nКлиенту уйдёт само, когда будут оба фото."
-    sent_ok = isinstance(report, dict) and bool(report.get("channels"))
+    sent_ok = isinstance(report, dict) and any(
+        item in ("telegram", "max") for item in (report.get("channels") or [])
+    )
     nowhere = isinstance(report, dict) and report.get("pending") and not report.get("destination")
     buttons = [
         [{"text": "До", "callback_data": "phd:before"},
@@ -485,7 +505,7 @@ def show_photo_card(
 
 
 def send_report(chat_id: int, booking_id: str) -> None:
-    status, body = api("POST", f"/admin/bookings/{booking_id}/report/send?require_pair=1", timeout=20)
+    status, body = api("POST", f"/admin/bookings/{booking_id}/report/send?require_pair=1", timeout=40)
     reset_flow(chat_id)
     if status != 200 or not isinstance(body, dict):
         send(chat_id, f"Отчёт не ушёл. {detail_of(body)}".strip(), menu_for(chat_id))

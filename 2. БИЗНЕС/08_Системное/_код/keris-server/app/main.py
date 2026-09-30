@@ -1033,6 +1033,7 @@ def admin_bookings(
             "admin_note": b.admin_note or "",
             "photos_before": sum(1 for p in shots if p["kind"] == "before"),
             "photos_after": sum(1 for p in shots if p["kind"] == "after"),
+            "client_chat": photos.client_destination(db, b)[0],
         })
     if day_board.cache_enabled() and when in ("today", "yesterday"):
         day_board.store_bookings(when, for_photos, out)
@@ -1159,6 +1160,8 @@ def admin_add_photo(booking_id: str, payload: BookingPhotoIn, db: Session = Depe
             report = photos.send_report(db, booking, service.name if service else booking.service_id)
         except photos.PhotoError as exc:
             report_error = exc.message
+    from . import day_board
+    day_board.drop_cache()
     return {
         "booking_id": booking.id,
         "kind": row.kind,
@@ -1184,9 +1187,12 @@ def admin_send_report(
         raise HTTPException(422, "Нужны оба снимка: до и после")
     service = db.get(Service, booking.service_id)
     try:
-        return photos.send_report(db, booking, service.name if service else booking.service_id)
+        result = photos.send_report(db, booking, service.name if service else booking.service_id)
     except photos.PhotoError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    from . import day_board
+    day_board.drop_cache()
+    return result
 
 
 @app.get("/media/{file_path:path}")

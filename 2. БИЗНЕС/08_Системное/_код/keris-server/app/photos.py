@@ -310,6 +310,6 @@ def send_pending_reports(db: Session, phone: str) -> int:
             result = send_report(db, booking, service.name if service else booking.service_id)
         except PhotoError:
             continue
-        if result["channels"]:
+        if any(item in ("telegram", "max") for item in result["channels"]):
             sent += 1
     return sent

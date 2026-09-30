@@ -85,7 +85,7 @@ def test_send_report_marks_sent_and_goes_to_telegram(monkeypatch, db_session, st
     sent = []
     monkeypatch.setattr(
         photos, "tg_send_photos",
-        lambda token, chat_id, files, caption="": sent.append((chat_id, len(files), caption)) or True,
+        lambda token, chat_id, files, caption="", **_kw: sent.append((chat_id, len(files), caption)) or True,
     )
 
     result = photos.send_report(db_session, booking, "Комплекс")
@@ -127,7 +127,7 @@ def test_report_reaches_client_after_bind(monkeypatch, db_session, storage):
     sent = []
     monkeypatch.setattr(
         photos, "tg_send_photos",
-        lambda token, chat_id, files, caption="": sent.append(chat_id) or True,
+        lambda token, chat_id, files, caption="", **_kw: sent.append(chat_id) or True,
     )
     telegram_bind.upsert_client(db_session, PHONE, 900001)
     db_session.commit()
@@ -166,7 +166,9 @@ def test_max_gets_text_when_upload_fails(monkeypatch, db_session, storage):
     result = photos.send_report(db_session, booking, "Комплекс")
 
     assert result["channels"] == ["max_text"]
+    assert result["pending"] is True
     assert texts == [775149185013]
+    assert photos.for_booking(db_session, booking.id)[0].sent_at is None
 
 
 def test_telegram_wins_when_both_chats_exist(monkeypatch, db_session, storage):
