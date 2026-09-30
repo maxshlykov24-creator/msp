@@ -177,7 +177,7 @@ def save_from_telegram(
 
 
 def report_caption(booking: Booking, service_name: str, *, order: str = "") -> str:
-    """Подпись к альбому. Фото идут подряд, не рядом, поэтому не пишем «слева и справа»."""
+    """Подпись к альбому. Фото идут подряд, без пояснения, какое из них до и какое после."""
     pet = html.escape(booking.pet_name or "ваш питомец")
     when = booking.starts_at.strftime("%d.%m")
     service = html.escape(service_name or "визит")
@@ -186,10 +186,8 @@ def report_caption(booking: Booking, service_name: str, *, order: str = "") -> s
         "",
         f"Визит {when}, {service}.",
     ]
-    if order == "exact":
-        lines.append("Первое фото: до. Второе фото: после.")
-    elif order == "ordered":
-        lines.append("Сначала фото до, потом фото после.")
+    if order in ("exact", "ordered"):
+        lines.append("Благодарим за доверие 🫶")
     return "\n".join(lines)
 
 

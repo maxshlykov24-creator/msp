@@ -94,7 +94,8 @@ def test_send_report_marks_sent_and_goes_to_telegram(monkeypatch, db_session, st
     assert result["pending"] is False
     assert sent == [(555000111222, 2, sent[0][2])]
     assert "Моня" in sent[0][2]
-    assert "Первое фото: до" in sent[0][2]
+    assert "Благодарим за доверие" in sent[0][2]
+    assert "Первое фото" not in sent[0][2]
     assert "Слева" not in sent[0][2]
     assert "кабинете" not in sent[0][2]
     assert all(p.sent_at is not None for p in photos.for_booking(db_session, booking.id))
@@ -218,7 +219,7 @@ def test_max_when_telegram_never_started(monkeypatch, db_session, storage):
     assert result["channels"] == ["max"]
     assert sent[0][0] == 775149185013
     assert sent[0][1] == 2
-    assert "Первое фото: до" in sent[0][2]
+    assert "Благодарим за доверие" in sent[0][2]
 
 
 def test_client_profile_returns_photos_per_visit(monkeypatch, db_session, storage):
