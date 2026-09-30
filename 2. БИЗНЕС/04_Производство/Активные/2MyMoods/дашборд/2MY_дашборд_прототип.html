@@ -328,6 +328,31 @@
   .tabs button.on{background:var(--dark);color:#fff}
   select,input[type=date]{font-family:var(--sans);font-size:11.5px;font-weight:500;color:var(--body);padding:9px 12px;border:1px solid var(--line);background:var(--paper);border-radius:0;min-width:150px;height:38px}
   select:focus,input[type=date]:focus{outline:none;border-color:var(--ink)}
+
+  select.pick-native{display:none!important}
+  .pick{position:relative;display:flex;align-items:center;width:100%;min-width:150px;height:38px;padding:0 34px 0 12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;font-weight:500;text-align:left;cursor:pointer;border-radius:0}
+  .pick:hover{border-color:#c5c8ca}
+  .pick.open{border-color:var(--ink);box-shadow:0 0 0 3px rgba(2,2,2,.08)}
+  .pick-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pick .chev{position:absolute;right:12px;top:50%;width:7px;height:7px;border-right:1.5px solid var(--mute);border-bottom:1.5px solid var(--mute);transform:translateY(-70%) rotate(45deg);transition:transform .16s cubic-bezier(.25,1,.5,1)}
+  .pick.open .chev{transform:translateY(-20%) rotate(225deg)}
+  .toolbar .pick{height:34px;min-width:0;width:auto;max-width:280px;padding:0 30px 0 10px;font-size:12.5px}
+  .filters-2 .pick{width:100%;min-width:0}
+  .pick-menu{position:fixed;z-index:80;display:flex;flex-direction:column;overflow:hidden;padding:5px;border-radius:14px;background:#fff;border:1px solid #d5d8da;box-shadow:0 22px 48px -18px rgba(2,2,2,.28);animation:pickIn .16s cubic-bezier(.25,1,.5,1)}
+  .pick-menu[hidden]{display:none}
+  .pick-search{position:relative;padding:2px 2px 8px;margin-bottom:2px;border-bottom:1px solid var(--line)}
+  .pick-search input{width:100%;height:36px;border:1px solid var(--line);border-radius:10px;background:var(--cream);padding:0 12px 0 32px;font-family:var(--sans);font-size:16px;font-weight:500;color:var(--ink);outline:none}
+  .pick-search input:focus{border-color:var(--ink)}
+  .pick-search svg{position:absolute;left:12px;top:20px;transform:translateY(-50%);color:var(--mute);pointer-events:none}
+  .pick-list{overflow-y:auto;overscroll-behavior:contain;min-height:0}
+  .pick-item{width:100%;display:flex;align-items:center;gap:8px;min-height:40px;padding:9px 11px;border:0;border-radius:10px;background:transparent;text-align:left;font-family:var(--sans);font-size:14px;font-weight:500;color:var(--ink);cursor:pointer}
+  .pick-item span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pick-item.hi{background:#f4f4f4}
+  .pick-item.on{background:#fffbe8}
+  .pick-item .mark{margin-left:auto;flex:none;color:var(--ink)}
+  .pick-empty{padding:18px 12px;text-align:center;font-size:13px;color:var(--mute)}
+  @keyframes pickIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.pick-menu{animation:none}}
   .dates{display:flex;align-items:center;gap:8px}
   .dates span{font-size:11px;color:var(--mute)}
   .actions{display:flex;align-items:center;gap:18px;margin-left:auto;padding-bottom:2px}
@@ -367,6 +392,10 @@
   .chart-box .chart-head i{font-style:normal;font-size:11.5px;font-weight:400;color:var(--body)}
   .chart-plot{position:relative}
   svg.spark{width:100%;height:138px;display:block;cursor:crosshair}
+  .chart-guide{position:absolute;top:0;bottom:0;width:1px;background:#020202;opacity:0;pointer-events:none}
+  .chart-guide.on{opacity:.28}
+  .chart-dot{position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:#020202;box-shadow:0 0 0 3px var(--butter);opacity:0;pointer-events:none}
+  .chart-dot.on{opacity:1}
   .chart-axis{display:flex;justify-content:space-between;font-size:10px;font-weight:400;letter-spacing:.08em;color:var(--mute);margin-top:10px}
   .chart-tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--ink);padding:8px 12px;opacity:0;transform:translate(-50%,calc(-100% - 10px));transition:opacity .18s ease;z-index:2;white-space:nowrap}
   .chart-tip.on{opacity:1}
@@ -550,7 +579,7 @@
       <div class="head-right">
         <div class="kicker">Аналитика продаж и клиентской базы</div>
         <h1>Панель управления 2MY</h1>
-        <div class="note" id="head-note">Прототип интерфейса · данные: МойСклад и amoCRM</div>
+        <div class="note" id="head-note"></div>
       </div>
     </div>
   </header>
@@ -598,7 +627,7 @@
     </div>
   </div>
 
-  <div class="hint" style="margin:12px 0"><label><input type="checkbox" id="delivery-toggle"> С доставкой</label> · <label>Локальный срез <input type="file" id="snapshot-file" accept="application/json"></label></div>
+  <div class="hint" style="margin:12px 0"><label><input type="checkbox" id="delivery-toggle"> С доставкой</label></div>
   <div class="stage">
   <section class="hero">
     <div class="hero-grid">
@@ -615,6 +644,8 @@
         </div>
         <div class="chart-plot">
           <svg class="spark" id="spark" viewBox="0 0 600 132" preserveAspectRatio="none"></svg>
+          <div class="chart-guide" id="chart-guide"></div>
+          <div class="chart-dot" id="chart-dot"></div>
           <div class="chart-tip" id="chart-tip"><span class="t-date"></span><b></b><em></em></div>
         </div>
         <div class="chart-axis"><span id="ax-l">—</span><span id="ax-r">—</span></div>
@@ -891,8 +922,128 @@ const sum = (xs, fn) => xs.reduce((a,x)=>a+fn(x),0);
 const group = (xs,key) => { const out=Object.create(null); xs.forEach(x=>{const k=key(x)||'не указано';(out[k] ||= []).push(x)}); return out; };
 const table = (id, rows, cols) => { el(id).innerHTML = rows.length ? rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(c(r))+'</td>').join('')+'</tr>').join('') : `<tr><td colspan="${cols.length}" class="empty">Нет данных</td></tr>`; };
 const select = (id, values, label) => { const e=el(id), old=e.value; e.innerHTML='<option value="">'+esc(label)+'</option>'+values.filter(Boolean).sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');e.value=old;};
+
+(function(){
+ const menu=document.createElement('div');
+ menu.className='pick-menu';
+ menu.hidden=true;
+ menu.setAttribute('role','listbox');
+ menu.tabIndex=-1;
+ document.body.appendChild(menu);
+ let current=null, hi=0, query='';
+ const icon='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
+ const check='<svg class="mark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12.5 9.2 17 19 7"/></svg>';
+ const rowsOf=sel=>[...sel.options].map(o=>({value:o.value,label:o.textContent}));
+ const shown=()=>{const q=query.trim().toLowerCase();const all=rowsOf(current);return q?all.filter(o=>o.label.toLowerCase().includes(q)):all};
+ function syncLabel(sel){
+  const btn=sel.nextElementSibling;
+  if(!btn||!btn.classList.contains('pick'))return;
+  btn.querySelector('.pick-label').textContent=sel.selectedOptions[0]?.textContent||'';
+  btn.setAttribute('aria-expanded', current===sel?'true':'false');
+ }
+ function paint(){
+  const sel=current, rows=shown();
+  if(hi>=rows.length) hi=Math.max(0,rows.length-1);
+  const search=rowsOf(sel).length>8;
+  menu.innerHTML=(search?`<div class="pick-search">${icon}<input type="text" placeholder="Найти…" autocomplete="off" value="${esc(query)}"></div>`:'')+
+   `<div class="pick-list">${rows.length?rows.map((o,i)=>`<button type="button" class="pick-item${i===hi?' hi':''}${o.value===sel.value?' on':''}" data-i="${i}" role="option"><span>${esc(o.label)}</span>${o.value===sel.value?check:''}</button>`).join(''):'<div class="pick-empty">Ничего не найдено</div>'}</div>`;
+  menu.querySelector(`[data-i="${hi}"]`)?.scrollIntoView({block:'nearest'});
+  const input=menu.querySelector('input');
+  if(input){input.focus();const n=input.value.length;input.setSelectionRange(n,n)}
+  else menu.focus();
+ }
+ function place(){
+  const btn=current.nextElementSibling, r=btn.getBoundingClientRect();
+  const width=Math.min(Math.max(r.width,248),window.innerWidth-16);
+  const left=Math.min(Math.max(8,r.left),window.innerWidth-width-8);
+  const below=window.innerHeight-r.bottom-8, above=r.top-8;
+  const up=below<280&&above>below;
+  menu.style.width=width+'px';
+  menu.style.left=left+'px';
+  menu.style.maxHeight=Math.min(420,Math.max(160,up?above:below))+'px';
+  if(up){menu.style.top='auto';menu.style.bottom=(window.innerHeight-r.top+8)+'px'}
+  else{menu.style.bottom='auto';menu.style.top=(r.bottom+8)+'px'}
+ }
+ function close(){
+  if(!current)return;
+  const sel=current; current=null; query='';
+  sel.nextElementSibling?.classList.remove('open');
+  menu.hidden=true; menu.innerHTML='';
+  syncLabel(sel);
+ }
+ function open(sel){
+  if(current&&current!==sel) close();
+  if(current===sel){close();return}
+  current=sel; query='';
+  hi=Math.max(0,[...sel.options].findIndex(o=>o.value===sel.value));
+  sel.nextElementSibling.classList.add('open');
+  menu.hidden=false;
+  paint(); place();
+ }
+ function choose(value){
+  const sel=current;
+  sel.value=value;
+  sel.dispatchEvent(new Event('change'));
+  close();
+  sel.nextElementSibling?.focus();
+ }
+ function dress(sel){
+  if(sel.dataset.pick){syncLabel(sel);return}
+  sel.dataset.pick='1';
+  sel.classList.add('pick-native');
+  const btn=document.createElement('button');
+  btn.type='button'; btn.className='pick';
+  btn.setAttribute('aria-haspopup','listbox');
+  btn.innerHTML='<span class="pick-label"></span><i class="chev" aria-hidden="true"></i>';
+  sel.insertAdjacentElement('afterend', btn);
+  syncLabel(sel);
+  btn.addEventListener('click',()=>open(sel));
+  btn.addEventListener('keydown',e=>{
+   if(e.key==='ArrowDown'||e.key==='Enter'||e.key===' '){e.preventDefault();open(sel)}
+  });
+  sel.addEventListener('pick-sync',()=>syncLabel(sel));
+  new MutationObserver(()=>syncLabel(sel)).observe(sel,{childList:true});
+ }
+ document.querySelectorAll('select').forEach(dress);
+ const desc=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value');
+ Object.defineProperty(HTMLSelectElement.prototype,'value',{
+  configurable:true,
+  get(){return desc.get.call(this)},
+  set(v){desc.set.call(this,v);if(this.dataset&&this.dataset.pick)this.dispatchEvent(new Event('pick-sync'))}
+ });
+ menu.addEventListener('click',e=>{
+  const item=e.target.closest('.pick-item');
+  if(!item||!current)return;
+  choose(shown()[+item.dataset.i].value);
+ });
+ menu.addEventListener('mouseover',e=>{
+  const item=e.target.closest('.pick-item');
+  if(!item)return;
+  hi=+item.dataset.i;
+  menu.querySelectorAll('.pick-item').forEach((n,i)=>n.classList.toggle('hi',i===hi));
+ });
+ menu.addEventListener('input',e=>{
+  if(e.target.tagName!=='INPUT')return;
+  query=e.target.value; hi=0; paint(); place();
+ });
+ menu.addEventListener('keydown',e=>{
+  if(!current)return;
+  const rows=shown();
+  if(e.key==='Escape'){e.preventDefault();const btn=current.nextElementSibling;close();btn.focus()}
+  else if(e.key==='ArrowDown'){e.preventDefault();hi=Math.min(rows.length-1,hi+1);paint()}
+  else if(e.key==='ArrowUp'){e.preventDefault();hi=Math.max(0,hi-1);paint()}
+  else if(e.key==='Enter'){e.preventDefault();if(rows[hi])choose(rows[hi].value)}
+ });
+ document.addEventListener('mousedown',e=>{
+  if(!current)return;
+  if(menu.contains(e.target)||current.nextElementSibling.contains(e.target))return;
+  close();
+ });
+ window.addEventListener('resize',()=>{if(current)place()});
+ window.addEventListener('scroll',()=>{if(current)place()},true);
+})();
 const startOfMonth = d => d.slice(0,7)+'-01';
-let data=null, clients=[], filtered=[], currentLines=[], includeDelivery=false;
+let data=null, clients=[], filtered=[], currentLines=[], includeDelivery=false, chartDays=[];
 let state={from:'',to:'',cat:'',prod:'',source:'',channel:'',city:''};
 const views=[['sales','Продажи и каналы'],['clients','Клиенты'],['goods','Товары'],['proc','Процессы в amoCRM']];
 el('nav').innerHTML=views.map(([id,n],i)=>`<button data-v="${id}" class="${i?'':'on'}">${n}</button>`).join('');
@@ -930,14 +1081,16 @@ function refresh(){
  el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
  el('hero-sub').textContent='Выручка по полностью оплаченным заказам'+(includeDelivery?' с доставкой':' без доставки');
  el('hero-mini').innerHTML=[['Заказов',n],['Средний чек',money(n?rev/n:0)],['Клиентов',people.size],['Маржа',pct(rev-cost,rev)]].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
- el('head-note').textContent=`Собрано ${data.generated} · деньги по дате платежа, воронка по дате создания · МойСклад и amoCRM`;
  const kpis=[['Выручка, покупки',money(rev)],['Заказов',num(n)],['Средний чек',money(n?rev/n:0)],['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Маржа по закупке',pct(rev-cost,rev)],['Повторные покупки',pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты',pct(returnN,n)]];
  el('kpis').innerHTML=kpis.map(([k,v])=>`<div class="kpi"><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
  const days=group(filtered,x=>x.o.paid_date), keys=Object.keys(days).sort();
  el('chart-title').textContent='Выручка по дням оплаты';
- el('chart-peak').textContent=keys.length?'Пик: '+keys.reduce((a,b)=>sum(days[a],x=>orderRev(x.o,x.ls))>sum(days[b],x=>orderRev(x.o,x.ls))?a:b):'Нет покупок';
- const pts=keys.map((k,i)=>[i,Math.round(sum(days[k],x=>orderRev(x.o,x.ls)))]), max=Math.max(1,...pts.map(x=>x[1]));
- el('spark').innerHTML=pts.length>1?`<polyline fill="none" stroke="#020202" stroke-width="2" points="${pts.map(([i,v])=>`${i*600/(pts.length-1)},${125-v*115/max}`).join(' ')}"/>`:'';
+ chartDays=keys.map(k=>({date:k,rev:Math.round(sum(days[k],x=>orderRev(x.o,x.ls))),n:days[k].length}));
+ el('chart-peak').textContent=chartDays.length?'Пик: '+chartDays.reduce((a,b)=>a.rev>b.rev?a:b).date:'Нет покупок';
+ const max=Math.max(1,...chartDays.map(d=>d.rev)), nPts=chartDays.length;
+ const xy=(d,i)=>`${nPts>1?i*600/(nPts-1):300},${125-d.rev*115/max}`;
+ el('spark').innerHTML=nPts>1?`<polyline fill="none" stroke="#020202" stroke-width="2" vector-effect="non-scaling-stroke" points="${chartDays.map(xy).join(' ')}"/>`:nPts?`<circle cx="300" cy="${125-chartDays[0].rev*115/max}" r="3" fill="#020202"/>`:'';
+ if(typeof placeChartTip==='function' && document.querySelector('.chart-plot').matches(':hover')) placeChartTip(lastChartX);
  el('ax-l').textContent=state.from;el('ax-r').textContent=state.to;
  const rowsFor=(key)=>Object.entries(group(filtered,x=>key(x.o))).map(([name,arr])=>({name,n:arr.length,rev:sum(arr,x=>orderRev(x.o,x.ls))})).sort((a,b)=>b.rev-a.rev);
  const source=rowsFor(o=>o.source), channel=rowsFor(o=>o.channel), geo=rowsFor(o=>o.city);
@@ -1012,7 +1165,6 @@ function init(snap){
  el('periods').innerHTML=['30 дней','90 дней','Полгода','Год'].map(x=>`<button data-p="${x}">${x}</button>`).join('');
  el('periods').onclick=e=>{if(!e.target.dataset.p)return;const n={'30 дней':30,'90 дней':90,'Полгода':183,'Год':365}[e.target.dataset.p];const d=new Date(today+'T12:00:00+03:00');d.setDate(d.getDate()-n+1);state.from=d.toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});el('d1').value=state.from;refresh();};
  const names=[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.name)))].filter(Boolean).sort();const dl=document.createElement('datalist');dl.id='products-list';dl.innerHTML=names.map(n=>'<option value="'+esc(n)+'"></option>').join('');document.body.appendChild(dl);el('f-prod').setAttribute('list','products-list');el('s-prod').setAttribute('list','products-list');
- el('head-note').textContent='Собрано '+snap.generated;
  refresh();view((location.hash||'#v-sales').replace('#v-',''));
 }
 [['d1','from'],['d2','to'],['f-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-cat','cat']].forEach(([id,key])=>el(id).onchange=e=>{state[key]=e.target.value;refresh()});
@@ -1032,8 +1184,41 @@ document.querySelector('.xls').onclick=()=>{
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='2MY_выгрузка_'+state.from+'_'+state.to+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
 el('delivery-toggle').onchange=e=>{includeDelivery=e.target.checked;refresh()};
-el('snapshot-file').onchange=async e=>{try{init(JSON.parse(await e.target.files[0].text()))}catch(err){el('head-note').textContent='Ошибка среза: '+err.message}};
-fetch('snapshot.local.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Срез недоступен');return r.json()}).then(init).catch(()=>{el('head-note').textContent='Срез не загружен. Выбери локальный snapshot.local.json.'});
+let lastChartX=0;
+function ordersWord(n){const a=n%10,b=n%100;if(a===1&&b!==11)return n+' заказ';if(a>=2&&a<=4&&(b<12||b>14))return n+' заказа';return n+' заказов'}
+function placeChartTip(clientX){
+ const plot=document.querySelector('.chart-plot'), tip=el('chart-tip'), guide=el('chart-guide'), dot=el('chart-dot');
+ if(!chartDays.length){tip.classList.remove('on');guide.classList.remove('on');dot.classList.remove('on');return}
+ const r=plot.getBoundingClientRect();
+ if(!r.width)return;
+ const x=Math.min(Math.max(0,clientX-r.left),r.width);
+ const last=chartDays.length-1;
+ const i=last?Math.round(x/r.width*last):0;
+ const d=chartDays[i];
+ const max=Math.max(1,...chartDays.map(p=>p.rev));
+ const px=last?i/last*r.width:r.width/2;
+ const y=(125-d.rev*115/max)/132*r.height;
+ const parts=d.date.split('-');
+ tip.querySelector('.t-date').textContent=parts[2]+'.'+parts[1]+'.'+parts[0];
+ tip.querySelector('b').textContent=money(d.rev);
+ tip.querySelector('em').textContent=ordersWord(d.n);
+ tip.classList.add('on');
+ const half=tip.offsetWidth/2;
+ let left=px;
+ if(left<half+8) left=half+8;
+ if(left>r.width-half-8) left=r.width-half-8;
+ tip.style.left=left+'px';
+ tip.style.top=y+'px';
+ guide.style.left=px+'px'; guide.classList.add('on');
+ dot.style.left=px+'px'; dot.style.top=y+'px'; dot.classList.add('on');
+}
+{
+ const plot=document.querySelector('.chart-plot');
+ const hide=()=>{el('chart-tip').classList.remove('on');el('chart-guide').classList.remove('on');el('chart-dot').classList.remove('on')};
+ plot.addEventListener('pointermove',e=>{lastChartX=e.clientX;placeChartTip(e.clientX)});
+ plot.addEventListener('pointerleave',hide);
+}
+fetch('snapshot.local.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Срез недоступен');return r.json()}).then(init).catch(()=>{el('head-note').textContent='Срез не загрузился'});
 </script>
 </body>
 </html>
