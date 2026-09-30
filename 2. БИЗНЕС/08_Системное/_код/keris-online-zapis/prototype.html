@@ -1080,6 +1080,7 @@
           });
         });
         DATA.masters=[any,...[...byId.values()].filter(m=>liveIds.has(m.id))];
+        preloadMasterPhotos();
       }
       if(Array.isArray(subs))subs.forEach(row=>{
         const p=DATA.subscriptions.find(x=>x.id===row.id);
@@ -1093,6 +1094,17 @@
       }
       track("live_catalog_loaded");
     }catch(_){/* автономный режим — остаёмся на встроенных данных */}
+  }
+  const preloadedMasterPhotos=[];
+  function preloadMasterPhotos(){
+    DATA.masters.forEach(m=>{
+      if(!m.photo||preloadedMasterPhotos.some(img=>img.src===m.photo))return;
+      const img=new Image();
+      img.decoding="sync";
+      img.fetchPriority="high";
+      img.src=m.photo;
+      preloadedMasterPhotos.push(img);
+    });
   }
   loadLiveCatalog();
 
