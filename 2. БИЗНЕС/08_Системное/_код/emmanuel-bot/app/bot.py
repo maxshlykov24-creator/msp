@@ -42,6 +42,7 @@ from app.database import get_session_factory
 from app import keyboards as kb
 from app.models import Revelation, RevelationArchive, Report, User, WeekSubmission
 from app.mute import AdminOnlyPrivateMiddleware, coverage_recipient_ids, is_admin_user, send_message_live
+from app.reach import blocked_ids, not_started_ids
 from app.states import HashtagStates, WeeklyReportStates
 from app.time_utils import (
     digest_week_monday_on_digest_day,
@@ -2044,6 +2045,11 @@ async def job_monday_coverage_morning(bot: Bot) -> None:
         log.info("monday 09:00 coverage sent")
     except Exception:
         log.exception("job_monday_coverage_morning failed")
+    try:
+        await _send_missing_nudges(bot, _NUDGE_MONDAY_MORNING)
+        log.info("monday 09:00 nudge sent")
+    except Exception:
+        log.exception("job_monday_coverage_morning nudge failed")
 
 
 async def job_monday_coverage_evening(bot: Bot) -> None:
@@ -2062,14 +2068,72 @@ async def job_monday_coverage_evening(bot: Bot) -> None:
         log.info("monday 20:00 group digest refreshed")
     except Exception:
         log.exception("job_monday_coverage_evening group failed")
+    try:
+        await _send_missing_nudges(bot, _NUDGE_MONDAY_EVENING)
+        log.info("monday 20:00 nudge sent")
+    except Exception:
+        log.exception("job_monday_coverage_evening nudge failed")
 
 
-_MISSING_NUDGE = (
+_NUDGE_MONDAY_MORNING = (
     "Привет!\n"
     "Ты еще не написал отчет, но помни, что дорогу осилит идущий 🫶\n"
     "\n"
     "Могу помочь собрать текст прямо в этом чате по кнопке ниже Отчёт."
 )
+
+_NUDGE_MONDAY_EVENING = (
+    "Привет!\n"
+    "Вечер понедельника, отчет ещё можно собрать спокойно. Дорогу осилит идущий 🫶\n"
+    "\n"
+    "Кнопка ниже Отчёт, текст соберём прямо в этом чате."
+)
+
+_NUDGE_WEDNESDAY = (
+    "Привет!\n"
+    "Середина недели, а отчет в чат ещё не пришёл. Дорогу осилит идущий 🫶\n"
+    "\n"
+    "Если будет время, кнопка ниже Отчёт. Помогу собрать текст здесь."
+)
+
+
+async def _send_missing_nudges(bot: Bot, text: str) -> None:
+    """Личка тем, кто за неделю ещё не сдал отчёт в группу и кому бот вообще может писать."""
+    ws = week_start_from_date(now_msk().date())
+    async with get_session_factory()() as session:
+        members = await load_scope_members(session)
+        submitted = await submitted_ids_for_week(session, ws)
+        await session.commit()
+    skip = coverage_recipient_ids() | not_started_ids() | blocked_ids()
+    missing = [m for m in members if m.tg_user_id not in submitted and m.tg_user_id not in skip]
+    sent_n = 0
+    for m in missing:
+        if not await is_allowed_member(bot, m.tg_user_id):
+            continue
+        try:
+            sent = await bot.send_message(m.tg_user_id, text, reply_markup=kb.main_menu_kb())
+        except Exception as e:
+            log.warning("nudge failed uid=%s: %s", m.tg_user_id, e)
+            continue
+        if sent is None:
+            log.info("nudge not sent uid=%s", m.tg_user_id)
+            continue
+        sent_n += 1
+        await asyncio.sleep(0.35)
+    log.info("nudges sent=%s missing=%s", sent_n, len(missing))
+
+
+async def job_wednesday_nudge(bot: Bot) -> None:
+    """Ср 20:00: другое напоминание тем, кто так и не сдал отчёт."""
+    settings = get_settings()
+    if not settings.jobs_enabled:
+        log.info("skip wednesday nudge: jobs off")
+        return
+    try:
+        await _send_missing_nudges(bot, _NUDGE_WEDNESDAY)
+        log.info("wednesday 20:00 nudge sent")
+    except Exception:
+        log.exception("job_wednesday_nudge failed")
 
 
 async def job_evening_reminder(bot: Bot) -> None:
