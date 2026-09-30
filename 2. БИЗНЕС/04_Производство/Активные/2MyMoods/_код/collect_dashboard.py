@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from collections import defaultdict
@@ -15,8 +16,8 @@ from zoneinfo import ZoneInfo
 import lib
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "дашборд" / "snapshot.local.json"
-GAPS = ROOT / "дашборд" / "ПРОБЕЛЫ_ДАННЫХ.local.md"
+OUT = Path(os.environ.get("DASHBOARD_SNAPSHOT", ROOT / "дашборд" / "snapshot.local.json"))
+GAPS = Path(os.environ.get("DASHBOARD_GAPS", ROOT / "дашборд" / "ПРОБЕЛЫ_ДАННЫХ.local.md"))
 TZ = ZoneInfo("Europe/Moscow")
 FIELD = {
     "paid": "ed14770a-dc0d-11ef-0a80-10cd00226b09",
@@ -284,10 +285,15 @@ def main() -> None:
             print(f"обработано {index}/{len(orders)}", flush=True)
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
+    if os.environ.get("DASHBOARD_STRIP_ADDRESS"):
+        for row in result:
+            row.pop("address", None)
     snap = {"generated": datetime.now(TZ).isoformat(timespec="seconds"), "timezone": "Europe/Moscow",
             "orders": result, "leads": leads, "tasks": tasks,
             "wazzup": {"messages": 0, "first_response_minutes": 0, "status": "нет проверенной выгрузки сообщений"}}
     # Атомарная замена: при ошибке предыдущий срез не получает новый timestamp.
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    GAPS.parent.mkdir(parents=True, exist_ok=True)
     tmp = OUT.with_suffix(".tmp")
     tmp.write_text(json.dumps(snap, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     tmp.replace(OUT)

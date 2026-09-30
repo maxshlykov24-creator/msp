@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ENV_PATH = ROOT / "06_Доступы" / ".env"
+ENV_PATH = Path(os.environ.get("DASHBOARD_ENV", ROOT / "06_Доступы" / ".env"))
 CODE = Path(__file__).resolve().parent
 MS_BASE = "https://api.moysklad.ru/api/remap/1.2"
 

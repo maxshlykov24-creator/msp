@@ -921,7 +921,7 @@
       <div class="footer-div"></div>
       <span>Дашборд <b>MS Product</b> · 2MY</span>
     </div>
-    <div class="footer-meta">Подготовлено для 2MY<br>Живой локальный срез · по дате сборки</div>
+    <div class="footer-meta">Подготовлено для 2MY<br><span id="sync-at">Синхронизация —</span></div>
   </div>
 </div>
 
@@ -1166,6 +1166,8 @@ function renderClients(cs){
 function init(snap){
  if(!snap||!Array.isArray(snap.orders)) throw Error('Неверный формат среза');
  data=snap;buildClients();
+ const syncAt=snap.generated?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(snap.generated)):'';
+ el('sync-at').textContent=syncAt?('Синхронизация '+syncAt):'Синхронизация —';
   const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
  state.to=today;const d0=new Date(today+'T12:00:00+03:00');d0.setDate(d0.getDate()-29);state.from=d0.toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
  el('d1').value=state.from;el('d2').value=state.to;
