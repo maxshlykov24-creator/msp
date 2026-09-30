@@ -264,7 +264,7 @@ def show_photo_bookings(chat_id: int, when: str) -> None:
         send(chat_id, f"Не удалось получить записи. {detail_of(data)}".strip(), menu_for(chat_id))
         reset_flow(chat_id)
         return
-    rows = [row for row in data if not (row.get("photos_before") and row.get("photos_after"))]
+    rows = list(data)
     if not rows:
         send(chat_id, "Пар без фото нет.", menu_for(chat_id))
         reset_flow(chat_id)
@@ -331,7 +331,6 @@ def save_photo(chat_id: int, file_id: str) -> None:
 
 
 def show_photo_card(chat_id: int, booking_id: str) -> None:
-    status, body = api("GET", f"/admin/bookings?when=today&for_photos=1")
     row = None
     when = (user_state(chat_id).get("data") or {}).get("when") or "today"
     status, body = api("GET", f"/admin/bookings?when={urllib.parse.quote(when)}")
@@ -376,7 +375,13 @@ def send_report(chat_id: int, booking_id: str) -> None:
             lines.append(str(links["max"]))
         send(chat_id, "\n".join(lines), menu_for(chat_id))
         return
-    channel = "Telegram" if body.get("telegram") else "MAX" if body.get("max") else "клиенту"
+    channels = body.get("channels") or []
+    if "telegram" in channels:
+        channel = "Telegram"
+    elif "max" in channels or "max_text" in channels:
+        channel = "MAX"
+    else:
+        channel = "клиенту"
     send(chat_id, f"Отправлено в {channel}.", menu_for(chat_id))
 
 
