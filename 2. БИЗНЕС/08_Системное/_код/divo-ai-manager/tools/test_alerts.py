@@ -314,6 +314,17 @@ def test_unsolicited():
     assert asked_torg([{"role": "user", "content": "ЗА 16 млн возьму"}])
     assert asked_torg([{"role": "user", "content": "возьму за 16"}])
     assert not asked_torg([{"role": "user", "content": "за 16 млн какой пробег?"}])
+    assert asked_torg(
+        [{"role": "user", "content": "Если быстро приеду, какой минимум готовы обсуждать?"}]
+    )
+    from bot.nudge import asks_minimum, defers_contact, holds_phone, wants_write_here as write_here
+
+    assert asks_minimum("Какой минимум готовы обсуждать при оплате наличными?")
+
+    stay = "Пока удобнее продолжить здесь. Если по цене договоримся, тогда обменяемся контактами."
+    assert write_here(stay)
+    assert defers_contact(stay)
+    assert holds_phone(stay, [{"role": "user", "content": stay}])
     assert asked_torg([{"role": "user", "content": "Добрый день, за 1,5 интересно?"}])
     assert asked_torg(
         [{"role": "user", "content": "Если надумаете, за 1,5 интересно"}]
@@ -1682,6 +1693,7 @@ def test_tiggo_match_and_messenger():
         "- Цена в объявлении: 4 300 000 руб.\n"
         "- Автотека: https://autoteka.ru/report/web/uuid/test-m8\n"
     )
+    m8_stock = m8_stock.replace("16 584 км", "70 200 км")
     m8 = match_card("GAC M8 2.0 AT, 2024, 72 887 км", "3 900 000 ₽", stock=m8_stock)
     assert m8 is not None
     assert "LMGMU1G82R1236593" in (m8.get("VIN") or "")
@@ -1734,8 +1746,34 @@ def test_mercedes_class_not_confused():
         "7 700 000 ₽",
         stock=stock,
     )
-    assert s is not None
-    assert "WDD2221861A505798" in (s.get("VIN") or "")
+    assert s is None
+    same = match_card(
+        "Mercedes-Benz S-класс 2.9 AT, 2019, 95 000 км",
+        "7 700 000 ₽",
+        stock=stock,
+    )
+    assert same is not None
+    assert "WDD2221861A505798" in (same.get("VIN") or "")
+    coolray = (
+        "## Geely Coolray 2022\n"
+        "- VIN: Y4K8622Z3NB905789\n"
+        "- Марка: Geely\n"
+        "- Модель: Coolray\n"
+        "- Пробег: 147 330 км\n"
+        "- Цена в объявлении: 1 190 000 руб.\n"
+    )
+    wrong = match_card(
+        "Geely Coolray 1.5 AMT, 2023, 16 217 км",
+        "1 650 000 ₽",
+        stock=coolray,
+    )
+    assert wrong is None
+    near = match_card(
+        "Geely Coolray 1.5 AMT, 2023, 145 000 км",
+        "1 200 000 ₽",
+        stock=coolray,
+    )
+    assert near is not None
 
 
 def test_owner_legal():
@@ -2320,6 +2358,23 @@ def test_vat_from_listing_without_cme_flag():
         {"role": "user", "content": "Посчитайте и здесь напишите"},
     ]
     assert asked_vat(hist) is True
+    from bot.human import attach_vat_once, ensure_greeting, glue_lonely_greeting
+    from bot.nudge import wants_without_vat
+
+    assert wants_without_vat("Нам можно и без НДС")
+    assert not wants_without_vat("Какая цена для юрлица?")
+    first = [
+        "Добрый день!",
+        "Цена на юрлицо с НДС по этой машине, 2 100 000 рублей",
+    ]
+    kept = attach_vat_once(first, "2 100 000 руб.")
+    assert kept == first
+    shown = glue_lonely_greeting(ensure_greeting(kept, first=True))
+    assert len(shown) == 1
+    assert shown[0].lower().count("добр") == 1
+    assert "2 100 000" in shown[0]
+    cash_only = ["Без НДС только наличный расчёт, цена в объявлении 1 790 000"]
+    assert "2 100 000" not in cash_only[0]
 
 
 def test_dead_post_leaves_queue():

@@ -1530,6 +1530,42 @@ def ensure_vat_said(text: str, vat: str) -> str:
     return _tidy(line, original)
 
 
+def attach_vat_once(bubbles: list[str], vat: str) -> list[str]:
+    """Цифра с НДС один раз, в ответ. Приветствие отдельным пузырём не переписываем.
+
+    Раньше фильтр вставлял «С НДС …» в каждый кусок без цифры. Приветствие
+    становилось вторым ценником, а следом шёл настоящий ответ.
+    """
+    amount = vat_digits(vat)
+    if not amount or any(amount in vat_digits(b) for b in bubbles):
+        return bubbles
+    line = vat_say(vat)
+    if not line:
+        return bubbles
+    out: list[str] = []
+    placed = False
+    for bubble in bubbles:
+        if not placed and not greeting_only(bubble):
+            out.append(ensure_vat_said(bubble, vat))
+            placed = True
+            continue
+        out.append(bubble)
+    if placed:
+        return out
+    if out:
+        out[-1] = _tidy("%s. %s" % (out[-1].rstrip(".! "), line), out[-1])
+        return out
+    return [line]
+
+
+def cash_hold(price: str) -> str:
+    """Минимум в чате: цена объявления и торг после осмотра, без номера."""
+    shown = " ".join(str(price or "").split()).rstrip(".")
+    if shown:
+        return "Цена в объявлении %s. %s" % (shown, SOFT_TORG)
+    return SOFT_TORG
+
+
 PHONE_FOR_CALL = re.compile(
     r"("
     r"наберу|"
@@ -1685,6 +1721,12 @@ def ensure_greeting(
     out = list(bubbles)
     if GREET_LEAD.match(out[0] or ""):
         out[0] = bang_greeting(out[0], moment)
+        return out
+    if re.search(
+        r"добр(?:ый|ое|ой)\s+(?:день|утро|вечер|ночи)|здравствуйте",
+        out[0] or "",
+        re.IGNORECASE,
+    ):
         return out
     rest = (out[0] or "").strip()
     if rest[:1].islower():

@@ -541,12 +541,12 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if trimmed != bubbles:
             log.info("чат %s: мессенджер уже назван, не спрашиваю какой", chat_id)
             bubbles = trimmed or ["Принял, напишу"]
-    if nudge.asked_vat(history):
+    if nudge.asked_vat([{"role": "user", "content": user_text}]) and not nudge.wants_without_vat(
+        user_text
+    ):
         vat = avito_match.vat_from_doc(store.load_doc(chat_id))
         if vat:
-            filled = [human.ensure_vat_said(b, vat) for b in bubbles]
-            if not any(human.vat_digits(vat) in human.vat_digits(b) for b in filled):
-                filled = [human.vat_say(vat)] + filled
+            filled = human.attach_vat_once(bubbles, vat)
             trimmed = [nudge.drop_phone_ask(b) for b in filled]
             trimmed = [b for b in trimmed if b.strip()]
             if trimmed != bubbles:
@@ -610,7 +610,15 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             if nudge.about_our_call(user_text)
             else human.WEEKDAY_WAIT_VISIT
         ]
-    if nudge.wants_write_here(user_text) or nudge.history_wants_write_here(history):
+    if nudge.holds_phone(user_text, history):
+        trimmed = [nudge.drop_phone_ask(b) for b in bubbles]
+        trimmed = [b for b in trimmed if b.strip()]
+        if not trimmed:
+            trimmed = [human.cash_hold(avito_match.listing_price(store.load_doc(chat_id)))]
+        if trimmed != bubbles:
+            log.info("чат %s: цену обсуждаем здесь, номер не прошу", chat_id)
+        bubbles = trimmed
+    elif nudge.wants_write_here(user_text) or nudge.history_wants_write_here(history):
         rewritten = [human.phone_to_messenger(b) for b in bubbles]
         if rewritten != bubbles:
             log.info("чат %s: вместо звонка прошу Телеграм или Ватсап", chat_id)
@@ -826,7 +834,9 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
         system += (
             "\n\n# Клиент торгуется\n"
             "Свою цифру не подтверждай и не руби «не сможем», «без торга», "
-            "«торга нет», «финальная сумма». «Если надумаете» значит, что "
+            "«торга нет», «финальная сумма». «Какой минимум» — это цена "
+            "объявления и торг после осмотра, не запрос номера. "
+            "«Если надумаете» значит, что "
             "подумать должен салон: не пиши «подумайте». «Всё верно» про торг "
             "не пиши. Цена в объявлении как ориентир. В разумных пределах торг "
             "и условия возможны, обсуждаем после осмотра. Дальше схема визита: "
@@ -1155,6 +1165,17 @@ async def send_nudge(chat_id: int | str) -> None:
     step = nudge.ready_to_send(meta)
     if not step:
         return
+    quiet_phone = (
+        nudge.history_wants_write_here(history)
+        or nudge.history_defers_contact(history)
+        or nudge.asked_torg(history)
+    )
+    if quiet_phone and step >= 3:
+        meta = dict(meta)
+        meta["waiting"] = False
+        doc["nudge"] = meta
+        store.save_doc(chat_id, doc)
+        return
     used = nudge.used_phone_lines(doc.get("messages") or [])
     said_stock = nudge.history_said_in_stock(doc.get("messages") or [])
     text = nudge.build_text(
@@ -1162,7 +1183,7 @@ async def send_nudge(chat_id: int | str) -> None:
         meta.get("name") or "",
         meta.get("car") or "",
         used,
-        asked=bool(meta.get("asked", True)),
+        asked=False if quiet_phone else bool(meta.get("asked", True)),
         address=not nudge.history_has_address(doc.get("messages") or []),
         said_stock=said_stock,
     )
