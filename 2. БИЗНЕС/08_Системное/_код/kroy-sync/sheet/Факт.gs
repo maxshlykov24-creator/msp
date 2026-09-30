@@ -69,10 +69,7 @@ function conductRow_(sheet, row) {
     return;
   }
   var stock = stockOf_(props.getProperty("MS_STORE_ID"), roll.id);
-  if (stock === null) {
-    sheet.getRange(row, 9).setValue("остаток рулона не прочитан");
-    return;
-  }
+  if (stock === null) stock = 0;
   if (stock < rolls) {
     sheet.getRange(row, 9).setValue("рулонов не хватает");
     return;

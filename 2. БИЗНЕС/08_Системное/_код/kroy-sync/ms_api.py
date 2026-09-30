@@ -33,6 +33,16 @@ def request(method, path, body=None):
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
+    last_error = None
+    for _ in range(3):
+        try:
+            return _read(req)
+        except urllib.error.URLError as exc:
+            last_error = exc
+    raise MsError("МойСклад не ответил: %s" % last_error) from last_error
+
+
+def _read(req):
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             raw = resp.read()
@@ -45,6 +55,8 @@ def request(method, path, body=None):
     except urllib.error.HTTPError as exc:
         detail = exc.read()[:300].decode("utf-8", "replace")
         raise MsError("МойСклад %s %s" % (exc.code, detail)) from exc
+    except urllib.error.URLError:
+        raise
 
 
 def rows(path):
