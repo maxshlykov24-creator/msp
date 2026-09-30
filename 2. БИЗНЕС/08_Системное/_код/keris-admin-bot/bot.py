@@ -56,8 +56,6 @@ TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 _state: dict[str, dict[str, Any]] = {}
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_COLORS = ("gold", "ice gold", "red brown")
-_SIZES = ("микро", "мини", "стандарт")
 
 
 def load_state() -> None:
