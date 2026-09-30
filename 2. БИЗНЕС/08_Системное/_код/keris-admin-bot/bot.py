@@ -357,7 +357,7 @@ def _visit_label(row: dict) -> str:
     return label[:60]
 
 
-def show_photo_bookings(chat_id: int, when: str) -> None:
+def show_photo_bookings(chat_id: int, when: str, note: str = "", skip_id: str = "") -> None:
     day = {"today": "сегодня", "yesterday": "вчера"}.get(when, "")
     status, data = api("GET", f"/admin/bookings?when={urllib.parse.quote(when)}&for_photos=1", timeout=8)
     if status == 200 and isinstance(data, list):
@@ -369,9 +369,14 @@ def show_photo_bookings(chat_id: int, when: str) -> None:
         send(chat_id, "Список визитов ещё собирается. Нажми ещё раз через минуту.", menu_for(chat_id))
         reset_flow(chat_id)
         return
-    rows = list(data)
+    rows = [row for row in data if row.get("id") != skip_id]
+    head = note.strip()
     if not rows:
-        send(chat_id, f"За {day} таких визитов нет." if day else "Таких визитов нет.", menu_for(chat_id))
+        if skip_id:
+            tail = f"За {day} других визитов нет." if day else "Других визитов нет."
+        else:
+            tail = f"За {day} таких визитов нет." if day else "Таких визитов нет."
+        send(chat_id, f"{head}\n\n{tail}".strip(), menu_for(chat_id))
         reset_flow(chat_id)
         return
     keyboard = []
@@ -380,10 +385,13 @@ def show_photo_bookings(chat_id: int, when: str) -> None:
         keyboard.append([{"text": label, "callback_data": f"phb:{row['id']}"}])
     keyboard.append([{"text": "Отменить", "callback_data": "cancel"}])
     st = user_state(chat_id)
+    st["flow"] = "photo"
     st["data"] = {"when": when, "rows": {row["id"]: row for row in rows}}
     st["step"] = "booking"
     save_state()
     title = f"Выбери запись за {day}." if day else "Выбери запись."
+    if head:
+        title = f"{head}\n\n{title}"
     send(chat_id, title, {"inline_keyboard": keyboard})
 
 
@@ -435,12 +443,28 @@ def save_photo(chat_id: int, file_id: str) -> None:
         return
     _ready["stats"] = None
     _ready["bookings"] = {}
+    report = body.get("report") if isinstance(body, dict) else None
+    report_error = str(body.get("report_error") or "") if isinstance(body, dict) else ""
+    if _photos_went(report):
+        show_photo_bookings(
+            chat_id,
+            str(data.get("when") or "today"),
+            note=_delivery_line(report, ""),
+            skip_id=str(booking_id),
+        )
+        return
     show_photo_card(
         chat_id,
         booking_id,
         shots=body.get("photos") if isinstance(body, dict) else None,
-        report=body.get("report") if isinstance(body, dict) else None,
-        report_error=str(body.get("report_error") or "") if isinstance(body, dict) else "",
+        report=report,
+        report_error=report_error,
+    )
+
+
+def _photos_went(report: Optional[dict]) -> bool:
+    return isinstance(report, dict) and any(
+        item in ("telegram", "max") for item in (report.get("channels") or [])
     )
 
 
@@ -500,9 +524,7 @@ def show_photo_card(
         text += "\n\n" + delivery
     elif not pair:
         text += "\n\nКлиенту уйдёт само, когда будут оба фото."
-    sent_ok = isinstance(report, dict) and any(
-        item in ("telegram", "max") for item in (report.get("channels") or [])
-    )
+    sent_ok = _photos_went(report)
     nowhere = isinstance(report, dict) and report.get("pending") and not report.get("destination")
     buttons = [
         [{"text": "До", "callback_data": "phd:before"},
@@ -518,11 +540,17 @@ def show_photo_card(
 
 
 def send_report(chat_id: int, booking_id: str) -> None:
+    when = str((user_state(chat_id).get("data") or {}).get("when") or "today")
     status, body = api("POST", f"/admin/bookings/{booking_id}/report/send?require_pair=1", timeout=40)
-    reset_flow(chat_id)
     if status != 200 or not isinstance(body, dict):
         send(chat_id, f"Отчёт не ушёл. {detail_of(body)}".strip(), menu_for(chat_id))
+        reset_flow(chat_id)
         return
+    if _photos_went(body):
+        user_state(chat_id)["flow"] = "photo"
+        show_photo_bookings(chat_id, when, note=_delivery_line(body, ""), skip_id=booking_id)
+        return
+    reset_flow(chat_id)
     send(chat_id, _delivery_line(body, ""), menu_for(chat_id))
 
 

@@ -248,7 +248,7 @@
     .status.cancelled{background:#f2eae8;color:#8a7167}
     .ba-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
     .ba-shot{position:relative;aspect-ratio:3/4;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:linear-gradient(150deg,#f2e7e2,#e3d3cd);display:grid;place-items:center;padding:14px;text-align:center;font-size:11px;color:#8a7167;line-height:1.4}
-    .ba-shot span{position:absolute;left:10px;top:10px;background:rgba(255,255,255,.92);border-radius:999px;padding:3px 9px;font-size:10px;font-weight:700;color:#6f5b52}
+    .ba-shot span{position:absolute;left:10px;top:10px;z-index:2;background:rgba(255,255,255,.92);border-radius:999px;padding:3px 9px;font-size:10px;font-weight:700;color:#6f5b52}
     .ba-shot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
     .photo-viewer{position:fixed;inset:0;z-index:60;display:none;place-items:center;background:rgba(28,20,17,.92);padding:18px;cursor:zoom-out}
     .photo-viewer.open{display:grid}
@@ -2349,7 +2349,7 @@
       ${v.mood?`<div class="section-title">Как перенёс визит</div><p class="offer-note" style="margin-top:0">${v.mood}</p>`:""}
       ${v.recommend
         ?`<div class="notice"><b>Рекомендация мастера.</b> ${v.recommend}${v.next?` Следующий уход — ${String(v.next).toLowerCase()}.`:""}</div>`
-        :`<div class="notice">Отчёт мастера появится здесь после обработки визита.</div>`}
+        :""}
       ${v.comment?`<div class="section-title">Ваш комментарий к записи</div><p class="offer-note" style="margin-top:0">${v.comment}</p>`:""}`
       :missed?`
       <div class="notice">Визит отмечен как «Не пришёл». Слот освобождён — можно записаться заново.</div>`

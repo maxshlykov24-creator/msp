@@ -176,7 +176,7 @@ def test_cabinet_and_visit(page) -> None:
     visit = page.locator("#visitBody").inner_text()
     assert "Комплекс со стрижкой" in visit
     assert "Светлана" in visit
-    assert "Отчёт мастера появится здесь" in visit
+    assert "Отчёт мастера появится здесь" not in visit
     assert page.locator("#visitBody .ba-shot").count() == 2
     page.get_by_role("button", name="Повторить этот уход").click()
     assert page.locator(".choice.service.selected").count() == 1

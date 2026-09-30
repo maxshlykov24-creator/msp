@@ -8,6 +8,7 @@ main.py/sync.py), и pull-команды (keris-admin-bot/bot.py, long polling).
 """
 from __future__ import annotations
 
+import html
 import logging
 from typing import Optional
 
