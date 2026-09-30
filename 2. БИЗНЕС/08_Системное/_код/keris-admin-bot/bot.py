@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """@kerisclubadminbot: две роли в одном процессе.
 
-Админ видит фото до/после, кнопку «Сегодня» и оперативные карточки записей
+Админ видит фото до/после, кнопку «Статистика» и оперативные карточки записей
 (их пишет сервер, не этот цикл). Роль Карины добавляет щенка, открывает пульс
 и получает сводку в 22:15. Пустой список ролей никого не пускает.
 """
@@ -56,7 +56,7 @@ STATE_FILE = os.environ.get("STATE_FILE", "/root/keris-admin-bot/state.json")
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 _state: dict[str, dict[str, Any]] = {}
-_ready: dict[str, Any] = {"today": None, "bookings": {}}
+_ready: dict[str, Any] = {"today": None, "stats": None, "bookings": {}}
 _state_lock = threading.Lock()
 
 
@@ -203,7 +203,7 @@ def apply_menu_button(chat_id: int, mode: str) -> str:
         if url:
             tg("setChatMenuButton", {
                 "chat_id": chat_id,
-                "menu_button": {"type": "web_app", "text": "Пульс", "web_app": {"url": url}},
+                "menu_button": {"type": "web_app", "text": "💗 Пульс", "web_app": {"url": url}},
             })
             return url
     tg("setChatMenuButton", {"chat_id": chat_id, "menu_button": {"type": "default"}})
@@ -215,15 +215,15 @@ def menu_for(chat_id: int) -> dict:
     rows: list[list[dict]] = []
     both = str(chat_id) in ADMIN_IDS and str(chat_id) in KARINA_IDS
     if mode == "karina":
-        rows.append([{"text": "Добавить щенка", "callback_data": "flow:puppy"}])
+        rows.append([{"text": "🐶 Добавить щенка", "callback_data": "flow:puppy"}])
         url = user_state(chat_id).get("pulse_url") or ""
         if url:
-            rows.append([{"text": "Пульс", "web_app": {"url": url}}])
+            rows.append([{"text": "💗 Пульс", "web_app": {"url": url}}])
         if both:
             rows.append([{"text": "Переключить на админа", "callback_data": "role:admin"}])
     else:
-        rows.append([{"text": "Фото-отчёт", "callback_data": "flow:photo"}])
-        rows.append([{"text": "Сегодня", "callback_data": "today"}])
+        rows.append([{"text": "📸 Фото-отчёт", "callback_data": "flow:photo"}])
+        rows.append([{"text": "📊 Статистика", "callback_data": "stats"}])
         if both:
             rows.append([{"text": "Переключить на Карину", "callback_data": "role:karina"}])
     return {"inline_keyboard": rows}
@@ -242,23 +242,59 @@ def switch_role(chat_id: int, mode: str) -> None:
     show_home(chat_id)
 
 
-def show_today(chat_id: int) -> None:
-    data = _ready.get("today")
-    if not isinstance(data, dict):
-        status, data = api("GET", "/admin/today", timeout=4)
-        if status != 200 or not isinstance(data, dict):
-            send(chat_id, "Срез дня ещё собирается. Нажми ещё раз через минуту.", menu_for(chat_id))
-            return
-        _ready["today"] = data
-    text = (
-        "<b>Сегодня</b>\n"
-        f"Визитов: {data.get('visits', 0)}\n"
-        f"Сумма: {data.get('revenue', 0)} ₽\n"
-        f"Отмены: {data.get('cancelled', 0)}\n"
-        f"Не пришли: {data.get('no_show', 0)}\n"
-        f"Без пары фото: {data.get('photos_missing', 0)}"
-    )
-    send(chat_id, text, menu_for(chat_id))
+def stats_keyboard() -> dict:
+    return {"inline_keyboard": [
+        [{"text": "Сегодня", "callback_data": "st:today"},
+         {"text": "Вчера", "callback_data": "st:yesterday"}],
+        [{"text": "Эта неделя", "callback_data": "st:week"},
+         {"text": "Прошлая неделя", "callback_data": "st:prev_week"}],
+        [{"text": "В меню", "callback_data": "home"}],
+    ]}
+
+
+def _money(value: Any) -> str:
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        number = 0
+    return f"{number:,}".replace(",", " ")
+
+
+def _load_stats() -> dict | None:
+    cached = _ready.get("stats")
+    if isinstance(cached, dict) and isinstance(cached.get("today"), dict):
+        return cached
+    status, data = api("GET", "/admin/stats", timeout=8)
+    if status != 200 or not isinstance(data, dict) or not isinstance(data.get("today"), dict):
+        return None
+    _ready["stats"] = data
+    _ready["today"] = data["today"]
+    return data
+
+
+def show_stats_pick(chat_id: int) -> None:
+    send(chat_id, "🐾 <b>Статистика</b>\nСегодня, вчера или неделя.", stats_keyboard())
+
+
+def show_stat(chat_id: int, key: str) -> None:
+    stats = _load_stats()
+    block = (stats or {}).get(key) if isinstance(stats, dict) else None
+    if not isinstance(block, dict):
+        send(chat_id, "Срез ещё собирается. Нажми ещё раз через минуту.", stats_keyboard())
+        return
+    title = block.get("title") or "Статистика"
+    lines = [f"🐾 <b>{title}</b>"]
+    if key in ("week", "prev_week") and block.get("span"):
+        lines.append(str(block["span"]))
+    lines.append("")
+    lines.extend([
+        f"🗓 Визитов: {block.get('visits', 0)}",
+        f"💰 Сумма: {_money(block.get('revenue', 0))} ₽",
+        f"↩️ Отмены: {block.get('cancelled', 0)}",
+        f"🚫 Не пришли: {block.get('no_show', 0)}",
+        f"📷 Без пары фото: {block.get('photos_missing', 0)}",
+    ])
+    send(chat_id, "\n".join(lines), stats_keyboard())
 
 
 def start_photos(chat_id: int) -> None:
@@ -275,6 +311,7 @@ def start_photos(chat_id: int) -> None:
 
 
 def show_photo_bookings(chat_id: int, when: str) -> None:
+    day = {"today": "сегодня", "yesterday": "вчера"}.get(when, "")
     cached = (_ready.get("bookings") or {}).get(when)
     if isinstance(cached, list):
         data = cached
@@ -287,7 +324,7 @@ def show_photo_bookings(chat_id: int, when: str) -> None:
         _ready.setdefault("bookings", {})[when] = data
     rows = list(data)
     if not rows:
-        send(chat_id, "Таких визитов нет.", menu_for(chat_id))
+        send(chat_id, f"За {day} таких визитов нет." if day else "Таких визитов нет.", menu_for(chat_id))
         reset_flow(chat_id)
         return
     keyboard = []
@@ -299,7 +336,8 @@ def show_photo_bookings(chat_id: int, when: str) -> None:
     st["data"] = {"when": when, "rows": {row["id"]: row for row in rows}}
     st["step"] = "booking"
     save_state()
-    send(chat_id, "Выбери запись", {"inline_keyboard": keyboard})
+    title = f"Выбери запись за {day}." if day else "Выбери запись."
+    send(chat_id, title, {"inline_keyboard": keyboard})
 
 
 def ask_kind(chat_id: int, booking_id: str) -> None:
@@ -632,7 +670,7 @@ def on_photo(chat_id: int, message: dict) -> None:
 
 
 def on_callback(chat_id: int, data: str) -> None:
-    if data == "cancel":
+    if data in ("cancel", "home"):
         reset_flow(chat_id)
         show_home(chat_id)
         return
@@ -643,8 +681,14 @@ def on_callback(chat_id: int, data: str) -> None:
         switch_role(chat_id, "karina")
         return
     mode = role_of(chat_id)
+    if data == "stats" and mode == "admin":
+        show_stats_pick(chat_id)
+        return
+    if data.startswith("st:") and mode == "admin":
+        show_stat(chat_id, data.split(":", 1)[1])
+        return
     if data == "today" and mode == "admin":
-        show_today(chat_id)
+        show_stat(chat_id, "today")
         return
     if data == "flow:photo" and mode == "admin":
         start_photos(chat_id)
@@ -713,9 +757,10 @@ def on_callback(chat_id: int, data: str) -> None:
 
 def warm_ready() -> None:
     """Срезы и ссылка пульса обновляются в фоне, кнопка их не ждёт."""
-    status, data = api("GET", "/admin/today", timeout=4)
-    if status == 200 and isinstance(data, dict):
-        _ready["today"] = data
+    status, data = api("GET", "/admin/stats", timeout=8)
+    if status == 200 and isinstance(data, dict) and isinstance(data.get("today"), dict):
+        _ready["stats"] = data
+        _ready["today"] = data["today"]
     bookings: dict[str, list] = {}
     for when in ("today", "yesterday"):
         status, rows = api("GET", f"/admin/bookings?when={when}&for_photos=1", timeout=4)
@@ -734,9 +779,9 @@ def warm_ready() -> None:
         if not url:
             continue
         user_state(chat_id)["pulse_url"] = url
-        if user_state(chat_id).get("menu_button") != "karina":
+        if user_state(chat_id).get("menu_button") != "pulse":
             apply_menu_button(chat_id, "karina")
-            user_state(chat_id)["menu_button"] = "karina"
+            user_state(chat_id)["menu_button"] = "pulse"
     save_state()
 
 

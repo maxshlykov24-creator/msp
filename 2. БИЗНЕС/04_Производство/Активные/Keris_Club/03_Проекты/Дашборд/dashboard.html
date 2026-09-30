@@ -56,9 +56,13 @@
     .dir-wrap[hidden]{display:none}
     main{padding:8px 18px calc(28px + var(--safe-bottom) + var(--browser-bar))}
     .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--rose-dark);font-weight:700;margin:14px 0 8px}
-    .fresh{font-size:11px;color:var(--muted);text-align:center;margin:0 0 8px}
-    .logout{display:none;text-align:center;margin:4px 0 0}
-    .logout a{font-size:12px;color:var(--muted);text-decoration:none;font-weight:600}
+    .fresh{font-size:11px;color:var(--muted);text-align:center;margin:8px 0 0}
+    .range-wrap{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+    .range-wrap[hidden]{display:none}
+    .range-wrap label{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;background:#fff;border:1px solid var(--line);border-radius:12px;font-size:13px;font-weight:600;color:var(--muted)}
+    .range-wrap.custom label{border-color:var(--rose)}
+    .range-wrap input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-weight:600;color:var(--text);min-height:42px;padding:0}
+    .who{font-size:13px;font-weight:700;margin:14px 0 2px}
     .banner{display:none;margin:8px 0 12px;padding:12px 14px;border-radius:14px;font-size:13px;line-height:1.45;
       background:rgba(196,107,107,.10);border:1px solid rgba(196,107,107,.35);color:#a8332c}
     .banner.show{display:block}
@@ -73,9 +77,15 @@
     .trust div{padding:10px 6px;text-align:center;border-radius:14px;background:rgba(255,255,255,.92);border:1px solid var(--line)}
     .trust b{display:block;font-size:14px;font-weight:700;letter-spacing:-.03em;line-height:1.2;overflow-wrap:anywhere}
     .trust span{display:block;font-size:9px;color:var(--muted);margin-top:3px;line-height:1.2}
-    .chapter{margin-bottom:8px}
-    .details-toggle{min-height:28px;border:0;background:transparent;color:var(--rose-dark);font-size:11px;font-weight:700;padding:6px 0;cursor:pointer}
-    .details{display:none;margin-top:4px}.details.open{display:block}
+    .chapter{margin-top:16px;padding:6px 12px 14px;border-radius:24px;border:1px solid var(--line)}
+    .chapter[data-ch="pet"]{background:#fffaf3;box-shadow:inset 0 4px 0 #d4b88a}
+    .chapter[data-ch="groom"]{margin-top:22px;background:#fff7f9;box-shadow:inset 0 4px 0 #e0a8bb}
+    .chapter .eyebrow{margin:12px 2px 8px}
+    .chapter[data-ch="pet"] .eyebrow{color:#9a7b4a}
+    .chapter[data-ch="pet"] .pulse-hero{background:linear-gradient(135deg,#6b5348,#9a7a58)}
+    .chapter[data-ch="groom"] .eyebrow{color:var(--rose-dark)}
+    .chapter[data-ch="groom"] .pulse-hero{background:linear-gradient(135deg,#7d5364,#c48aa3)}
+    .chapter .chips{margin-left:-12px;margin-right:-12px;padding-left:12px;padding-right:12px}
     .funnel{background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px 16px}
     .funnel-row{margin-top:10px}
     .funnel-row:first-child{margin-top:0}
@@ -119,6 +129,11 @@
       <button type="button" data-period="week">Неделя</button>
       <button type="button" data-period="month">Месяц</button>
     </div>
+    <div class="range-wrap" id="rangeWrap" hidden>
+      <label>с<input type="date" id="fromDate"></label>
+      <label>по<input type="date" id="toDate"></label>
+    </div>
+    <p class="fresh" id="freshLine"></p>
   </div>
   <div class="dir-wrap" id="dirWrap">
     <div class="segmented" id="dirSeg">
@@ -128,8 +143,6 @@
     </div>
   </div>
   <main>
-    <p class="fresh" id="freshLine"></p>
-    <div class="logout" id="logoutWrap"><a href="logout">Выйти</a></div>
     <div id="root"><div class="boot" id="boot">Собираем пульс…</div></div>
   </main>
 </div>
@@ -269,31 +282,68 @@ function pct(part, of){
   if(!of || of < 20) return "";
   return Math.round(part * 100 / of) + "%";
 }
-function ageLabel(mins){
+function ageLabel(mins, stamp){
+  if(stamp) return "обновлено " + stamp;
   if(mins == null) return "цифры ещё собираются";
-  if(mins < 1) return "цифры только что";
-  if(mins < 60) return "цифры за " + Math.round(mins) + " мин";
+  if(mins < 1) return "обновлено только что";
+  if(mins < 60) return "обновлено " + Math.round(mins) + " мин назад";
   var h = Math.round(mins / 60);
-  return "цифры за " + h + " ч";
+  return "обновлено " + h + " ч назад";
+}
+function anchorDate(D){
+  if(D.today && D.today.date) return D.today.date;
+  var d = new Date();
+  var m = String(d.getMonth() + 1).padStart(2, "0");
+  var day = String(d.getDate()).padStart(2, "0");
+  return d.getFullYear() + "-" + m + "-" + day;
+}
+function shiftIso(iso, days){
+  var p = iso.split("-").map(Number);
+  var d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+  d.setUTCDate(d.getUTCDate() + days);
+  var m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  var day = String(d.getUTCDate()).padStart(2, "0");
+  return d.getUTCFullYear() + "-" + m + "-" + day;
+}
+function shortDate(iso){
+  var p = iso.split("-");
+  return String(Number(p[2])) + "." + p[1];
+}
+function rangeLabel(from, to){
+  if(from.slice(0, 4) !== to.slice(0, 4)){
+    return shortDate(from) + "." + from.slice(0, 4) + " по " + shortDate(to) + "." + to.slice(0, 4);
+  }
+  return shortDate(from) + " по " + shortDate(to);
 }
 
 function readUi(){
   var q = new URLSearchParams(location.search);
   var ls = {};
   try{ls = JSON.parse(localStorage.getItem(STORAGE) || "{}")}catch(e){}
-  var first = !localStorage.getItem(STORAGE);
+  var period = q.get("period") || ls.period || "month";
   return {
-    period: q.get("period") || ls.period || (first ? "month" : "month"),
+    period: period,
     dir: q.get("dir") || ls.dir || "all",
-    master: ls.master || "all"
+    master: ls.master || "all",
+    from: (period === "range" ? (q.get("from") || ls.from) : (ls.from || "")) || "",
+    to: (period === "range" ? (q.get("to") || ls.to) : (ls.to || "")) || ""
   };
 }
 function writeUi(ui){
-  localStorage.setItem(STORAGE, JSON.stringify({period: ui.period, dir: ui.dir, master: ui.master}));
+  localStorage.setItem(STORAGE, JSON.stringify({
+    period: ui.period, dir: ui.dir, master: ui.master, from: ui.from || "", to: ui.to || ""
+  }));
   var url = new URL(location.href);
   url.searchParams.set("period", ui.period);
   if(ui.period === "today") url.searchParams.delete("dir");
   else url.searchParams.set("dir", ui.dir);
+  if(ui.period === "range" && ui.from && ui.to){
+    url.searchParams.set("from", ui.from);
+    url.searchParams.set("to", ui.to);
+  } else {
+    url.searchParams.delete("from");
+    url.searchParams.delete("to");
+  }
   history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
@@ -318,17 +368,16 @@ function hoursPair(load){
 }
 
 function combinedHero(k, g, label){
-  var money = ((k && k.sold_sum) || 0) + ((g && g.revenue) || 0);
-  if(!money) return "";
-  var bits = [];
-  if(k && k.sold) bits.push("продали " + n(k.sold));
-  if(g && g.visits) bits.push("салон " + vizitov(g.visits));
+  var sold = (k && k.sold_sum) || 0;
+  var salon = (g && g.revenue) || 0;
+  if(!sold || !salon) return "";
   return '<div class="pulse-hero" style="margin-bottom:8px"><div class="tag">деньги · ' + label + '</div>' +
-    '<div class="num">' + rub(money) + '</div>' +
-    '<p class="sub">' + (bits.length ? bits.join(", ") + "." : "") + '</p></div>';
+    '<div class="num">' + rub(sold + salon) + '</div></div>';
 }
 
 function funnelHtml(funnel, source){
+  funnel = funnel || [];
+  if(!funnel.length) return '<p class="source-line">За этот срок заявок нет.</p>';
   var max = Math.max.apply(null, funnel.map(function(s){return s.count}) ) || 1;
   var rows = funnel.map(function(s){
     var w = Math.max(4, Math.round(s.count * 100 / max));
@@ -353,97 +402,61 @@ function masterBars(masters, filterId){
     var w = Math.max(4, Math.round(m.visits * 100 / max));
     return '<div class="funnel-row"><div class="lab"><span>' + m.name + '</span><small>' +
       n(m.visits) + ' · ' + rub(m.revenue) +
-      (m.available_h ? ' · ' + n(m.occupied_h || 0) + ' из ' + n(m.available_h) + ' ч' : '') +
+      (m.available_h && Number(m.occupied_h || 0) <= Number(m.available_h)
+        ? ' · ' + n(m.occupied_h || 0) + ' из ' + n(m.available_h) + ' ч' : '') +
       '</small></div><div class="bar"><i style="width:' + w + '%"></i></div></div>';
   }).join("") + '</div>';
 }
 
 function kennelChapter(block, periodLabel){
-  if(!block || block.leads == null){
-    return '<div class="empty"><div class="big">🐾</div><h3>По питомнику пусто</h3><p>За этот срок новых заявок нет.</p></div>';
-  }
-  var soldSub = "за период";
-  if(block.show_avg_check && block.avg_check){
-    soldSub = "чек " + rub(block.avg_check);
-  } else if(block.sold && block.sold_sum){
-    soldSub = rub(block.sold_sum);
-  }
-  var tiles = [];
-  tiles.push(trustTile(n(block.booked), "бронь · " + periodLabel));
-  tiles.push(trustTile(n(block.sold), "продали · " + soldSub));
-  if(block.show_waiting){
-    tiles.push(trustTile(n(block.waiting_litter), "ждут помёт · сейчас"));
-  }
-  var compare = block.prev_leads != null
-    ? periodLabel.indexOf("7") >= 0
-      ? "На прошлой неделе было " + zayavok(block.prev_leads) + "."
-      : "За предыдущие 30 дней было " + zayavok(block.prev_leads) + "."
-    : "";
+  block = block || {};
+  var tiles = [
+    trustTile(n(block.booked || 0), "бронь"),
+    trustTile(n(block.sold || 0), "продали"),
+    trustTile(rub(block.avg_check || 0), "средний чек")
+  ];
   var details = funnelHtml(block.funnel || [], block.show_source ? block.top_source : null);
   return '<section class="chapter" data-ch="pet">' +
     '<div class="eyebrow">Питомник</div>' +
     '<div class="pulse-hero"><div class="tag">новые заявки · ' + periodLabel + '</div>' +
-    '<div class="num">' + n(block.leads) + '</div>' +
-    '<p class="sub">' + compare + '</p></div>' +
-    '<div class="trust cols-' + tiles.length + '">' + tiles.join("") + '</div>' +
-    '<button type="button" class="details-toggle" data-open="kennel">Как дошли</button>' +
-    '<div class="details" id="det-kennel">' + details + '</div></section>';
+    '<div class="num">' + n(block.leads) + '</div></div>' +
+    '<div class="trust cols-' + Math.min(tiles.length, 3) + '">' + tiles.join("") + '</div>' +
+    '<div class="who">Как дошли</div>' + details + '</section>';
 }
 
 function groomingChapter(block, periodLabel, ui){
-  var hasVisits = block && block.visits;
-  var hasLoad = block && block.load && block.load.show;
-  var hasAhead = block && block.ahead && block.ahead.show;
-  if(!block || (!hasVisits && !hasLoad && !hasAhead)){
-    return '<div class="empty"><div class="big">✂️</div><h3>По салону пусто</h3><p>За этот срок визитов нет.</p></div>';
-  }
-  var tiles = [];
-  tiles.push(trustTile(n(block.visits || 0), "визитов · " + periodLabel));
-  if(hasLoad){
-    tiles.push(trustTile(hoursPair(block.load), "занято · " + periodLabel));
-  }
-  if(hasAhead){
-    tiles.push(trustTile(hoursPair(block.ahead), "на неделю вперёд"));
-  }
-  if(block.show_no_show){
-    tiles.push(trustTile(n(block.no_show), "не пришли"));
-  }
-  if(block.show_repeat){
-    tiles.push(trustTile(n(block.repeat), "снова пришли"));
-  }
-  if(block.show_sleeping){
-    tiles.push(trustTile(n(block.sleeping), "не были 60+ дней"));
-  }
-  var compare = block.prev_visits != null
-    ? "На прошлой неделе было " + vizitov(block.prev_visits) + "."
-    : "";
-  if(periodLabel.indexOf("30") >= 0 && block.prev_visits != null){
-    compare = "За предыдущие 30 дней было " + vizitov(block.prev_visits) + ".";
-  }
-  var checkLine = block.show_avg_check && block.avg_check
-    ? "Средний чек " + rub(block.avg_check) + "."
-    : "";
-  var sub = [checkLine, compare].filter(Boolean).join(" ");
-  var heroTag = hasVisits ? "выручка визитов · " + periodLabel : "запись вперёд";
-  var heroNum = hasVisits ? rub(block.revenue) : hoursPair(block.ahead);
+  block = block || {};
+  var tiles = [
+    trustTile(n(block.visits || 0), "пришли"),
+    trustTile(n(block.no_show || 0), "не пришли"),
+    trustTile(rub(block.avg_check || 0), "средний чек")
+  ];
+  var heroTag = "выручка визитов · " + periodLabel;
+  var heroNum = rub(block.revenue || 0);
   var masters = block.masters || [];
+  if(masters.length >= 2 && ui.master !== "all" && !masters.some(function(m){ return m.id === ui.master; })){
+    ui.master = "all";
+    writeUi(ui);
+  }
+  groomMasters = masters;
   var chips = "";
   if(masters.length >= 2){
     var all = [{id:"all", name:"Все"}].concat(masters);
     chips = '<div class="chips">' + all.map(function(m){
-      var on = (ui.master === m.id) || (m.id === "all" && ui.master === "all");
+      var on = ui.master === m.id;
       return '<button type="button" class="chip' + (on ? " active" : "") + '" data-master="' + m.id + '">' + m.name + '</button>';
     }).join("") + '</div>';
   }
+  var list = masters.length
+    ? masterBars(masters, masters.length >= 2 ? ui.master : "all")
+    : '<p class="source-line">За этот срок визитов нет.</p>';
+  var who = '<div class="who">Кто стрижёт</div>' + chips + '<div id="masterList">' + list + '</div>';
   return '<section class="chapter" data-ch="groom">' +
     '<div class="eyebrow">Груминг</div>' +
     '<div class="pulse-hero"><div class="tag">' + heroTag + '</div>' +
-    '<div class="num">' + heroNum + '</div>' +
-    '<p class="sub">' + sub + '</p></div>' +
+    '<div class="num">' + heroNum + '</div></div>' +
     '<div class="trust cols-' + Math.min(tiles.length, 3) + '">' + tiles.join("") + '</div>' +
-    chips +
-    '<button type="button" class="details-toggle" data-open="groom">Кто стрижёт</button>' +
-    '<div class="details" id="det-groom">' + masterBars(masters, masters.length >= 2 ? ui.master : "all") + '</div></section>';
+    who + '</section>';
 }
 
 function renderToday(D){
@@ -465,25 +478,121 @@ function renderToday(D){
   return html;
 }
 
+var groomMasters = [];
+
+function sumMasters(days, from, to){
+  var masters = {};
+  days.forEach(function(day){
+    if(day.date < from || day.date > to) return;
+    (day.masters || []).forEach(function(m){
+      var row = masters[m.id] || {id: m.id, name: m.name, visits: 0, revenue: 0};
+      row.visits += m.visits || 0;
+      row.revenue += m.revenue || 0;
+      if(m.name) row.name = m.name;
+      masters[m.id] = row;
+    });
+  });
+  return Object.keys(masters).map(function(id){ return masters[id]; })
+    .sort(function(a, b){ return b.visits - a.visits || String(a.name).localeCompare(String(b.name), "ru"); });
+}
+
+function buildRange(D, from, to){
+  var days = D.days || {};
+  var gDays = days.grooming || [];
+  var kDays = days.kennel || [];
+  var label = rangeLabel(from, to);
+  if(!gDays.length && !kDays.length){
+    return {label: label, missing: true, kennel: null, grooming: null};
+  }
+  var g = {revenue: 0, visits: 0, no_show: 0, avg_check: 0, masters: []};
+  gDays.forEach(function(day){
+    if(day.date < from || day.date > to) return;
+    g.visits += day.visits || 0;
+    g.revenue += day.revenue || 0;
+    g.no_show += day.no_show || 0;
+  });
+  g.avg_check = g.visits ? Math.round(g.revenue / g.visits) : 0;
+  g.masters = sumMasters(gDays, from, to);
+  var k = {leads: 0, booked: 0, sold: 0, sold_sum: 0, sold_cohort: 0, avg_check: 0, show_avg_check: false, show_waiting: false, show_source: false, funnel: []};
+  kDays.forEach(function(day){
+    if(day.date < from || day.date > to) return;
+    k.leads += day.leads || 0;
+    k.booked += day.booked || 0;
+    k.sold += day.sold || 0;
+    k.sold_sum += day.sold_sum || 0;
+    k.sold_cohort += day.sold_cohort || 0;
+  });
+  k.avg_check = k.sold ? Math.round(k.sold_sum / k.sold) : 0;
+  k.show_avg_check = k.sold > 0;
+  var monthK = (((D.periods || {}).month) || {}).kennel || {};
+  k.waiting_litter = monthK.waiting_litter || 0;
+  k.show_waiting = !!monthK.show_waiting;
+  k.funnel = [
+    {name: "Заявка", count: k.leads},
+    {name: "Бронь", count: k.booked},
+    {name: "Продано", count: k.sold_cohort}
+  ];
+  var clipped = "";
+  if(days.from && days.to && (from < days.from || to > days.to)){
+    clipped = "В срезе дни с " + shortDate(days.from) + " по " + shortDate(days.to) + ". Более ранние даты в сумму не входят.";
+  }
+  return {label: label, kennel: k, grooming: g, clipped: clipped};
+}
+
+function paintMasters(ui){
+  var box = document.getElementById("masterList");
+  if(!box) return;
+  var filter = groomMasters.length >= 2 ? ui.master : "all";
+  box.innerHTML = masterBars(groomMasters, filter);
+  document.querySelectorAll(".chip").forEach(function(c){
+    c.classList.toggle("active", c.getAttribute("data-master") === ui.master);
+  });
+}
+
 function startDashboard(D){
   var ui = readUi();
-  if(["today","week","month"].indexOf(ui.period) < 0) ui.period = "month";
+  if(["today","week","month","range"].indexOf(ui.period) < 0) ui.period = "month";
   if(["all","pet","groom"].indexOf(ui.dir) < 0) ui.dir = "all";
+  var span = null;
+  if(ui.period === "today") span = {from: anchorDate(D), to: anchorDate(D)};
+  if(ui.period === "week") span = {from: shiftIso(anchorDate(D), -7), to: anchorDate(D)};
+  if(ui.period === "month") span = {from: shiftIso(anchorDate(D), -30), to: anchorDate(D)};
+  if(ui.period === "range"){
+    span = {from: ui.from, to: ui.to};
+    if(!span.from || !span.to){
+      ui.period = "month";
+      span = {from: shiftIso(anchorDate(D), -30), to: anchorDate(D)};
+    } else if(span.from > span.to){
+      var tmp = span.from; span.from = span.to; span.to = tmp;
+    }
+  }
+  if(span){ ui.from = span.from; ui.to = span.to; }
   writeUi(ui);
 
-  document.getElementById("freshLine").textContent = ageLabel(D.age_minutes);
+  document.getElementById("freshLine").textContent = ageLabel(D.age_minutes, D.updated_label);
   setActive(document.getElementById("periodSeg"), "data-period", ui.period);
   setActive(document.getElementById("dirSeg"), "data-dir", ui.dir);
-  document.getElementById("dirWrap").hidden = ui.period === "today";
+  document.getElementById("dirWrap").hidden = false;
+  var range = document.getElementById("rangeWrap");
+  range.hidden = false;
+  range.classList.toggle("custom", ui.period === "range");
+  if(ui.from) document.getElementById("fromDate").value = ui.from;
+  if(ui.to) document.getElementById("toDate").value = ui.to;
 
   var root = document.getElementById("root");
-  if(ui.period === "today"){
-    root.innerHTML = renderToday(D);
+  var pack;
+  if(ui.period === "range" || ui.period === "today"){
+    pack = buildRange(D, ui.from, ui.to);
+    if(ui.period === "today" && pack && !pack.missing) pack.label = "сегодня";
+  } else {
+    pack = (D.periods || {})[ui.period] || {};
+  }
+  if(pack.missing){
+    root.innerHTML = '<div class="empty"><div class="big">·</div><h3>Даты ещё собираются</h3><p>Неделя и месяц уже на экране. Свой период появится после обновления цифр.</p></div>';
     return;
   }
-  var pack = (D.periods || {})[ui.period] || {};
   var html = "";
-  if(ui.dir === "all") html += combinedHero(pack.kennel, pack.grooming, pack.label || "");
+  if(pack.clipped) html += '<div class="now-line"><b>Короткий срез</b><span>' + pack.clipped + '</span></div>';
   if(ui.dir !== "groom") html += kennelChapter(pack.kennel, pack.label || "");
   if(ui.dir !== "pet") html += groomingChapter(pack.grooming, pack.label || "", ui);
   root.innerHTML = html;
@@ -499,18 +608,27 @@ function bind(D){
     var ui = readUi(); ui.dir = b.getAttribute("data-dir"); writeUi(ui); startDashboard(D);
   });
   document.getElementById("root").addEventListener("click", function(e){
-    var tog = e.target.closest(".details-toggle");
-    if(tog){
-      var id = "det-" + tog.getAttribute("data-open");
-      var box = document.getElementById(id);
-      if(box) box.classList.toggle("open");
-      return;
-    }
     var chip = e.target.closest("[data-master]");
     if(chip){
-      var ui = readUi(); ui.master = chip.getAttribute("data-master"); writeUi(ui); startDashboard(D);
+      var ui = readUi();
+      ui.master = chip.getAttribute("data-master");
+      writeUi(ui);
+      paintMasters(ui);
     }
   });
+  function applyRange(){
+    var from = document.getElementById("fromDate").value;
+    var to = document.getElementById("toDate").value;
+    if(!from || !to) return;
+    var ui = readUi();
+    ui.period = "range";
+    ui.from = from;
+    ui.to = to;
+    writeUi(ui);
+    startDashboard(D);
+  }
+  document.getElementById("fromDate").addEventListener("change", applyRange);
+  document.getElementById("toDate").addEventListener("change", applyRange);
 }
 
 document.addEventListener("DOMContentLoaded", function(){

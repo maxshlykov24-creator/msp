@@ -419,6 +419,100 @@ def _grooming_period(
     }
 
 
+def _day_bucket(moment: datetime, start: datetime, end: datetime, buckets: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    naive = _naive(moment)
+    if naive < _naive(start) or naive >= _naive(end):
+        return None
+    key = naive.date().isoformat()
+    return buckets.setdefault(key, {"date": key})
+
+
+def _daily_grooming(
+    visits: list[dict[str, Any]],
+    no_shows: list[dict[str, Any]],
+    masters_map: dict[str, str],
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[str, Any]] = {}
+    for row in visits:
+        item = _day_bucket(row["starts_at"], start, end, buckets)
+        if item is None:
+            continue
+        item.setdefault("visits", 0)
+        item.setdefault("revenue", 0)
+        item.setdefault("no_show", 0)
+        item.setdefault("masters", {})
+        price = int(row.get("price") or 0)
+        item["visits"] += 1
+        item["revenue"] += price
+        mid = str(row.get("master_id") or "")
+        master = item["masters"].get(mid)
+        if master is None:
+            master = {
+                "id": mid,
+                "name": masters_map.get(mid, mid or "без мастера"),
+                "visits": 0,
+                "revenue": 0,
+            }
+            item["masters"][mid] = master
+        master["visits"] += 1
+        master["revenue"] += price
+    for row in no_shows:
+        item = _day_bucket(row["starts_at"], start, end, buckets)
+        if item is None:
+            continue
+        item.setdefault("visits", 0)
+        item.setdefault("revenue", 0)
+        item.setdefault("no_show", 0)
+        item.setdefault("masters", {})
+        item["no_show"] += 1
+    out = []
+    for key in sorted(buckets):
+        item = buckets[key]
+        item["masters"] = sorted(item["masters"].values(), key=lambda m: -int(m["visits"]))
+        out.append(item)
+    return out
+
+
+def _daily_kennel(
+    leads: list[dict[str, Any]],
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    booked_statuses = {settings.status_booked, settings.status_sold}
+    buckets: dict[str, dict[str, Any]] = {}
+
+    def touch(unix: int | None) -> dict[str, Any] | None:
+        dt = _when(unix)
+        if dt is None:
+            return None
+        item = _day_bucket(dt, start, end, buckets)
+        if item is None:
+            return None
+        item.setdefault("leads", 0)
+        item.setdefault("booked", 0)
+        item.setdefault("sold_cohort", 0)
+        item.setdefault("sold", 0)
+        item.setdefault("sold_sum", 0)
+        return item
+
+    for lead in leads:
+        created = touch(lead.get("created_at"))
+        if created is not None:
+            created["leads"] += 1
+            if lead.get("status_id") in booked_statuses:
+                created["booked"] += 1
+            if lead.get("status_id") == settings.status_sold:
+                created["sold_cohort"] += 1
+        if lead.get("status_id") == settings.status_sold:
+            closed = touch(lead.get("closed_at"))
+            if closed is not None:
+                closed["sold"] += 1
+                closed["sold_sum"] += int(lead.get("price") or 0)
+    return [buckets[key] for key in sorted(buckets)]
+
+
 def collect(client: AmoClient) -> dict[str, Any]:
     validate_schema(client)
     now = _now()
@@ -509,6 +603,7 @@ def collect(client: AmoClient) -> dict[str, Any]:
         tasks.append(sleeping_card)
 
     today_leads = sum(1 for l in sales if _in_range(l.get("created_at"), today0, tomorrow0))
+    span0 = today0 - timedelta(days=120)
 
     snapshot = {
         "collected_at": now.isoformat(timespec="seconds"),
@@ -533,6 +628,12 @@ def collect(client: AmoClient) -> dict[str, Any]:
                 "kennel": month_k,
                 "grooming": month_g,
             },
+        },
+        "days": {
+            "from": span0.date().isoformat(),
+            "to": today0.date().isoformat(),
+            "grooming": _daily_grooming(visits, no_shows, masters_map, span0, end),
+            "kennel": _daily_kennel(sales, span0, end),
         },
         "meta": {
             "sales_leads": len(sales),

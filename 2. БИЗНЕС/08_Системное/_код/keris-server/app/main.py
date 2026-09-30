@@ -99,7 +99,7 @@ def _warm_board() -> None:
     from .db import SessionLocal
     db = SessionLocal()
     try:
-        day_board.refresh_today(db)
+        day_board.refresh_board(db)
         day_board.drop_lists()
         for when in ("today", "yesterday"):
             for flag in (0, 1):
@@ -109,7 +109,7 @@ def _warm_board() -> None:
 
 
 async def board_loop() -> None:
-    """Срез «Сегодня» и списки визитов уже лежат в памяти. Кнопка бота их только читает."""
+    """Срезы статистики и списки визитов уже лежат в памяти. Кнопка бота их только читает."""
     from . import day_board
     while True:
         try:
@@ -1178,14 +1178,12 @@ def admin_send_report(
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
 
-@app.get("/media/{booking_id}/{filename}")
-def media_file(booking_id: str, filename: str) -> FileResponse:
-    """Отдача фото. На проде это делает nginx (`location /media/`), маршрут —
-    страховка для дев-окружения и для случая, когда nginx ещё не обновлён."""
-    if "/" in filename or ".." in filename or ".." in booking_id:
-        raise HTTPException(404, "not found")
-    path = photos.root() / booking_id / filename
-    if not path.is_file():
+@app.get("/media/{file_path:path}")
+def media_file(file_path: str) -> FileResponse:
+    """Отдача фото. На проде это делает nginx (`location /media/`)."""
+    root = photos.root().resolve()
+    path = (root / file_path).resolve()
+    if root not in path.parents or not path.is_file():
         raise HTTPException(404, "not found")
     return FileResponse(path)
 
@@ -1304,6 +1302,16 @@ def admin_today(db: Session = Depends(get_db)) -> dict:
     if cached is not None:
         return cached
     return day_board.refresh_today(db)
+
+
+@app.get("/admin/stats", dependencies=[Depends(require_admin)])
+def admin_stats(db: Session = Depends(get_db)) -> dict:
+    """Сегодня, вчера, эта неделя и прошлая. Неделя с понедельника по воскресенье."""
+    from . import day_board
+    cached = day_board.peek_stats()
+    if cached is not None:
+        return cached
+    return day_board.refresh_board(db)
 
 
 @app.post("/admin/digest/run", dependencies=[Depends(require_admin)])

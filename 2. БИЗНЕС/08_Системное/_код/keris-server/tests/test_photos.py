@@ -4,13 +4,23 @@ from __future__ import annotations
 import dataclasses
 from datetime import datetime, timedelta
 
+from io import BytesIO
+
 import pytest
+from PIL import Image
 
 from app import max_bind, photos, telegram_bind
 from app.config import settings
 from app.models import Booking, BookingPhoto, BookingStatus, PetType
 
 PHONE = "+79991112233"
+
+
+def sample_jpeg(color: tuple[int, int, int] = (180, 90, 70)) -> bytes:
+    img = Image.new("RGB", (48, 32), color)
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
 
 
 @pytest.fixture()
@@ -39,18 +49,19 @@ def make_booking(db, bid="KERIS-7001", phone=PHONE, chat_id=None, max_id=None):
 
 def test_save_bytes_keeps_file_and_returns_url(db_session, storage):
     booking = make_booking(db_session)
-    row = photos.save_bytes(db_session, booking, "before", b"\xff\xd8jpeg", added_by="555")
+    row = photos.save_bytes(db_session, booking, "before", sample_jpeg(), added_by="555")
 
     saved = storage / row.path
-    assert saved.read_bytes() == b"\xff\xd8jpeg"
+    assert saved.read_bytes().startswith(b"\xff\xd8")
+    assert row.path.startswith("2026/08/KERIS-7001/")
     assert photos.url_for(row) == "/media/" + row.path
     assert row.sent_at is None
 
 
 def test_before_goes_first_regardless_of_upload_order(db_session, storage):
     booking = make_booking(db_session)
-    photos.save_bytes(db_session, booking, "after", b"after")
-    photos.save_bytes(db_session, booking, "before", b"before")
+    photos.save_bytes(db_session, booking, "after", sample_jpeg())
+    photos.save_bytes(db_session, booking, "before", sample_jpeg((20, 40, 60)))
 
     assert [p["kind"] for p in photos.as_dicts(db_session, booking.id)] == ["before", "after"]
 
@@ -63,8 +74,8 @@ def test_rejects_unknown_kind(db_session, storage):
 
 def test_send_report_marks_sent_and_goes_to_telegram(monkeypatch, db_session, storage):
     booking = make_booking(db_session, chat_id=555000111222)
-    photos.save_bytes(db_session, booking, "before", b"before")
-    photos.save_bytes(db_session, booking, "after", b"after")
+    photos.save_bytes(db_session, booking, "before", sample_jpeg((20, 40, 60)))
+    photos.save_bytes(db_session, booking, "after", sample_jpeg())
     monkeypatch.setattr(
         photos, "settings",
         dataclasses.replace(
@@ -90,7 +101,7 @@ def test_send_report_marks_sent_and_goes_to_telegram(monkeypatch, db_session, st
 def test_send_report_without_bot_stays_pending(monkeypatch, db_session, storage):
     """Клиент не в боте — фото уже в кабинете, отчёт ждёт привязки."""
     booking = make_booking(db_session)
-    photos.save_bytes(db_session, booking, "before", b"before")
+    photos.save_bytes(db_session, booking, "before", sample_jpeg((20, 40, 60)))
 
     result = photos.send_report(db_session, booking, "Комплекс")
 
@@ -102,7 +113,7 @@ def test_send_report_without_bot_stays_pending(monkeypatch, db_session, storage)
 
 def test_report_reaches_client_after_bind(monkeypatch, db_session, storage):
     booking = make_booking(db_session)
-    photos.save_bytes(db_session, booking, "before", b"before")
+    photos.save_bytes(db_session, booking, "before", sample_jpeg((20, 40, 60)))
     photos.send_report(db_session, booking, "Комплекс")  # некуда — ждёт
 
     monkeypatch.setattr(
@@ -134,7 +145,7 @@ def test_send_report_requires_photos(db_session, storage):
 def test_max_gets_text_when_upload_fails(monkeypatch, db_session, storage):
     """Картинку в MAX загрузить не удалось — клиент всё равно узнаёт про отчёт."""
     booking = make_booking(db_session)
-    photos.save_bytes(db_session, booking, "after", b"after")
+    photos.save_bytes(db_session, booking, "after", sample_jpeg())
     max_bind.upsert_client(db_session, PHONE, 775149185013)
     db_session.commit()
     monkeypatch.setattr(
@@ -159,8 +170,8 @@ def test_max_gets_text_when_upload_fails(monkeypatch, db_session, storage):
 def test_client_profile_returns_photos_per_visit(monkeypatch, db_session, storage):
     """Фото приходят в кабинет вместе с визитом — по любой прошлой записи."""
     booking = make_booking(db_session)
-    photos.save_bytes(db_session, booking, "before", b"before")
-    photos.save_bytes(db_session, booking, "after", b"after")
+    photos.save_bytes(db_session, booking, "before", sample_jpeg((20, 40, 60)))
+    photos.save_bytes(db_session, booking, "after", sample_jpeg())
 
     grouped = photos.by_booking_ids(db_session, [booking.id, "KERIS-НЕТ"])
 
@@ -179,7 +190,7 @@ def test_admin_source_replaces_same_kind(monkeypatch, db_session, storage):
 
     def fake_bytes(token, file_id):
         calls.append(token)
-        return b"one" if len(calls) == 1 else b"two"
+        return sample_jpeg((10, 20, 30)) if len(calls) == 1 else sample_jpeg((40, 50, 60))
 
     monkeypatch.setattr(photos, "tg_get_file_bytes", fake_bytes)
     photos.save_from_telegram(db_session, booking, "before", "file-a", source="admin")
@@ -187,5 +198,5 @@ def test_admin_source_replaces_same_kind(monkeypatch, db_session, storage):
 
     rows = photos.for_booking(db_session, booking.id)
     assert len(rows) == 1
-    assert photos.absolute_path(rows[0]).read_bytes() == b"two"
+    assert photos.absolute_path(rows[0]).read_bytes().startswith(b"\xff\xd8")
     assert calls == ["admin-token", "admin-token"]

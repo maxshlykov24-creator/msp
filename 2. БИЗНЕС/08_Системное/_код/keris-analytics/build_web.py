@@ -30,7 +30,7 @@ BOOTSTRAP = """
       if(!payload) return;
       var D = payload.data || {};
       if(payload.age_minutes != null) D.age_minutes = payload.age_minutes;
-      document.getElementById('logoutWrap').style.display = 'block';
+      if(payload.last_success_label) D.updated_label = payload.last_success_label;
       if(payload.stale){
         var el = document.getElementById('staleBanner');
         el.innerHTML = '<b>Цифры не обновлялись ' + payload.age_hours + ' ч.</b> Последний сбор: ' +
@@ -75,7 +75,9 @@ def main() -> int:
         ("нет MOCK в загрузке", "var D = window.KERIS_PULSE_MOCK" not in text),
         ("данные через api/data", "fetch('api/data'" in text),
         ("баннер несвежести", "staleBanner" in text),
-        ("выход", "logoutWrap" in text),
+        ("свой период", "fromDate" in text and "toDate" in text),
+        ("мастера открыты", 'id="masterList"' in text),
+        ("без выхода", "Выйти" not in text),
         ("стиль записи", "--bg:#fafaf2" in text),
         ("нет Google Fonts", "fonts.googleapis.com" not in text),
         ("нет LTV", "LTV" not in text),

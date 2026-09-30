@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from . import clock, max_bind, max_http, telegram_bind
 from .config import settings
 from .models import Booking, BookingPhoto
+from .photo_archive import NotAnImage, archive_jpeg
 from .tg_http import tg_get_file_bytes, tg_send_photos
 
 log = logging.getLogger("keris.photos")
@@ -88,6 +89,12 @@ def by_booking_ids(db: Session, booking_ids: list[str]) -> dict[str, list[dict]]
     return out
 
 
+def visit_folder(booking: Booking) -> str:
+    """Год и месяц визита, внутри папка записи. Повтор до или после старый файл заменяет."""
+    moment = booking.starts_at or clock.now()
+    return f"{moment:%Y}/{moment:%m}/{booking.id}"
+
+
 def save_bytes(
     db: Session,
     booking: Booking,
@@ -95,26 +102,33 @@ def save_bytes(
     data: bytes,
     *,
     added_by: str = "",
-    ext: str = ".jpg",
 ) -> BookingPhoto:
     if kind not in KINDS:
         raise PhotoError("kind: before | after", 422)
     if not data:
         raise PhotoError("Пустой файл", 422)
-    folder = root() / booking.id
+    try:
+        stored = archive_jpeg(data)
+    except NotAnImage as exc:
+        raise PhotoError("Нужно фото", 422) from exc
+    folder = root() / visit_folder(booking)
     folder.mkdir(parents=True, exist_ok=True)
-    name = f"{kind}_{clock.now():%Y%m%d%H%M%S}_{secrets.token_hex(3)}{ext}"
-    (folder / name).write_bytes(data)
+    name = f"{kind}_{clock.now():%Y%m%d%H%M%S}_{secrets.token_hex(3)}.jpg"
+    (folder / name).write_bytes(stored)
+    relative = f"{visit_folder(booking)}/{name}"
     row = BookingPhoto(
         booking_id=booking.id,
         kind=kind,
-        path=f"{booking.id}/{name}",
+        path=relative,
         added_at=clock.now(),
         added_by=str(added_by or ""),
     )
     db.add(row)
     db.commit()
-    log.info("фото %s добавлено к %s (%s, %d КБ)", kind, booking.id, added_by or "—", len(data) // 1024)
+    log.info(
+        "фото %s к %s: было %d КБ, в архиве %d КБ",
+        kind, booking.id, len(data) // 1024, len(stored) // 1024,
+    )
     return row
 
 

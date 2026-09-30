@@ -25,6 +25,15 @@ ADMIN_KEY = "test-admin"
 ADMIN = {"X-Admin-Key": ADMIN_KEY}
 
 
+def sample_jpeg() -> bytes:
+    from io import BytesIO
+    from PIL import Image
+    img = Image.new("RGB", (32, 24), (180, 90, 70))
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
 @pytest.fixture()
 def sessions():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False},
@@ -76,7 +85,7 @@ def attach(sessions, bid: str, *kinds: str) -> None:
     db = sessions()
     booking = db.get(Booking, bid)
     for kind in kinds:
-        photos.save_bytes(db, booking, kind, b"\xff\xd8jpeg")
+        photos.save_bytes(db, booking, kind, sample_jpeg())
     db.close()
 
 

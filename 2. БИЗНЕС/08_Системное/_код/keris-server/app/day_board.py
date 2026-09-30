@@ -16,6 +16,8 @@ from .models import Booking, BookingStatus
 CACHE_SEC = 600
 _today: dict | None = None
 _today_at: datetime | None = None
+_stats: dict | None = None
+_stats_at: datetime | None = None
 _lists: dict[tuple[str, int], tuple[datetime, list]] = {}
 
 
@@ -53,6 +55,48 @@ def today_stats(db: Session, *, now: datetime | None = None) -> dict:
     return period_stats(db, moment.date(), moment.date() + timedelta(days=1), now=moment)
 
 
+def week_range(moment: datetime) -> tuple[date, date]:
+    """Понедельник и следующий понедельник. Воскресенье входит в неделю."""
+    start = moment.date() - timedelta(days=moment.weekday())
+    return start, start + timedelta(days=7)
+
+
+def prev_week_range(moment: datetime) -> tuple[date, date]:
+    start, _end = week_range(moment)
+    return start - timedelta(days=7), start
+
+
+def _span(start: date, end: date) -> str:
+    last = end - timedelta(days=1)
+
+    def dot(day: date) -> str:
+        return f"{day.day}.{day.month:02d}"
+
+    if start == last:
+        return dot(start)
+    return f"{dot(start)} по {dot(last)}"
+
+
+def _slice(db: Session, start: date, end: date, moment: datetime, title: str) -> dict:
+    body = period_stats(db, start, end, now=moment)
+    body["title"] = title
+    body["span"] = _span(start, end)
+    return body
+
+
+def build_stats(db: Session, *, now: datetime | None = None) -> dict:
+    moment = now or clock.now()
+    day = moment.date()
+    this_start, this_end = week_range(moment)
+    prev_start, prev_end = prev_week_range(moment)
+    return {
+        "today": _slice(db, day, day + timedelta(days=1), moment, "Сегодня"),
+        "yesterday": _slice(db, day - timedelta(days=1), day, moment, "Вчера"),
+        "week": _slice(db, this_start, this_end, moment, "Эта неделя"),
+        "prev_week": _slice(db, prev_start, prev_end, moment, "Прошлая неделя"),
+    }
+
+
 def cache_enabled() -> bool:
     return os.environ.get("KERIS_BOARD_CACHE", "1") != "0"
 
@@ -74,6 +118,28 @@ def store_today(payload: dict, *, at: datetime | None = None) -> dict:
 
 def refresh_today(db: Session) -> dict:
     return store_today(today_stats(db))
+
+
+def peek_stats() -> dict | None:
+    if not cache_enabled() or _stats is None or _stats_at is None:
+        return None
+    if (clock.now() - _stats_at).total_seconds() > CACHE_SEC:
+        return None
+    return _stats
+
+
+def store_stats(payload: dict, *, at: datetime | None = None) -> dict:
+    global _stats, _stats_at
+    _stats = payload
+    _stats_at = at or clock.now()
+    return payload
+
+
+def refresh_board(db: Session) -> dict:
+    payload = build_stats(db)
+    store_stats(payload)
+    store_today(payload["today"])
+    return payload
 
 
 def peek_bookings(when: str, for_photos: int) -> list | None:

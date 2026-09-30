@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from app.bookings import is_visit
 from app.collector import (
+    _daily_grooming,
+    _daily_kennel,
     _kennel_period,
     _load_block,
     _sleeping_count,
@@ -153,3 +155,41 @@ def test_is_visit_matches_server():
     assert is_visit("cancelled", past, now) is False
     assert is_visit("no_show", past, now) is False
     assert is_visit("confirmed", future, now) is False
+
+
+def test_daily_grooming_splits_masters_and_no_show():
+    start = datetime(2026, 9, 1, 0, 0)
+    end = datetime(2026, 9, 4, 0, 0)
+    visits = [
+        {"starts_at": datetime(2026, 9, 1, 11, 0), "price": 3000, "master_id": "1"},
+        {"starts_at": datetime(2026, 9, 1, 15, 0), "price": 4000, "master_id": "2"},
+        {"starts_at": datetime(2026, 9, 2, 12, 0), "price": 5000, "master_id": "1"},
+        {"starts_at": datetime(2026, 8, 1, 12, 0), "price": 9000, "master_id": "1"},
+    ]
+    no_shows = [{"starts_at": datetime(2026, 9, 1, 18, 0), "master_id": "1"}]
+    days = _daily_grooming(visits, no_shows, {"1": "Светлана", "2": "Алла"}, start, end)
+    by = {day["date"]: day for day in days}
+    assert set(by) == {"2026-09-01", "2026-09-02"}
+    assert by["2026-09-01"]["visits"] == 2
+    assert by["2026-09-01"]["revenue"] == 7000
+    assert by["2026-09-01"]["no_show"] == 1
+    names = {m["name"]: m["visits"] for m in by["2026-09-01"]["masters"]}
+    assert names == {"Светлана": 1, "Алла": 1}
+
+
+def test_daily_kennel_matches_closed_money():
+    now = datetime(2026, 9, 17, 12, 0, tzinfo=timezone(timedelta(hours=3)))
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)
+    end = now + timedelta(seconds=1)
+    created = now - timedelta(days=2)
+    old = now - timedelta(days=40)
+    closed = now - timedelta(days=1)
+    leads = [
+        _lead(settings.status_new, created, "А"),
+        _lead(settings.status_sold, old, "старая продажа", price=180000, closed=closed),
+    ]
+    days = _daily_kennel(leads, start, end)
+    assert sum(day["leads"] for day in days) == 1
+    assert sum(day["sold"] for day in days) == 1
+    assert sum(day["sold_sum"] for day in days) == 180000
+    assert sum(day["sold_cohort"] for day in days) == 0
