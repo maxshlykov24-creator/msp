@@ -205,8 +205,9 @@
     .pet-edit p{margin:0 0 8px;font-size:12px;color:var(--muted);line-height:1.45}
     .pet-edit input,.pet-edit textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;font-size:14px;background:#fff}
     .pet-edit textarea{min-height:44px;resize:none;line-height:1.45}
-    .pet-edit .row{display:flex;gap:8px;margin-top:10px}
-    .pet-edit .row button{flex:1}
+    .pet-edit .row{display:flex;gap:8px;margin-top:10px;align-items:stretch}
+    .pet-edit .row button{flex:1 1 0;width:0;min-width:0;min-height:50px;padding:0 12px;border:0;border-radius:15px;box-sizing:border-box;font-family:var(--font);font-weight:700;font-size:14px;line-height:1.2;cursor:pointer}
+    .pet-edit .row button:not(.primary){background:#f3f0ea;color:#3d322c;box-shadow:none}
     .master-link{color:var(--rose-dark);text-decoration:underline;text-underline-offset:2px}
     .pet-caret{font-style:normal;font-weight:500;font-size:9px;color:var(--muted);line-height:1}
     .pet-switch{padding:0 0 2px;border-bottom:1px solid #f1e6e8}
