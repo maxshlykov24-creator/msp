@@ -72,14 +72,30 @@ def booking_created_text(
     return "\n\n".join(blocks)
 
 
+def _card(booking, title: str) -> str:
+    """Полная карточка: после удаления старого сообщения слот не теряется."""
+    who = booking.owner_name or "клиент"
+    phone = booking.owner_phone or ""
+    service = booking.service_id or ""
+    master = booking.master_id or ""
+    money = f"{booking.price} ₽" if booking.price else "сумма не указана"
+    return (
+        f"<b>{title} {booking.id}</b>\n\n"
+        f"{who}, {phone}\n"
+        f"{service}\n"
+        f"Мастер: {master}\n"
+        f"{fmt_when(booking.starts_at, bold=True)}\n"
+        f"{money}"
+    )
+
+
 def booking_cancelled_text(booking) -> str:
-    return f"❌ <b>Отмена записи {booking.id}</b>\n{booking.owner_name} · {fmt_when(booking.starts_at)}"
+    return _card(booking, "Отмена")
 
 
 def booking_no_show_text(booking) -> str:
-    return (f"🚫 <b>Не пришёл — {booking.id}</b>\n{booking.owner_name} · {fmt_when(booking.starts_at)}"
-            "\nСлот в онлайн-записи снова свободен.")
+    return _card(booking, "Не пришёл") + "\n\nСлот снова свободен."
 
 
 def booking_rescheduled_text(booking) -> str:
-    return f"🔁 <b>Перенос записи {booking.id}</b>\n{booking.owner_name} → {fmt_when(booking.starts_at, bold=True)}"
+    return _card(booking, "Перенос")

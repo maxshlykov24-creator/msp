@@ -192,3 +192,59 @@ def tg_send_message(
         if attempt < attempts:
             time.sleep(0.4 * attempt)
     return False
+
+
+def tg_call(bot_token: str, method: str, payload: dict, *, timeout: float = 10) -> dict | None:
+    """Вызов метода Bot API. None, если Telegram не принял запрос."""
+    try:
+        resp = tg_post(f"https://api.telegram.org/bot{bot_token}/{method}", json=payload, timeout=timeout)
+    except Exception:
+        log.warning("telegram %s failed", method, exc_info=True)
+        return None
+    if resp.status_code != 200:
+        log.warning("telegram %s HTTP %s %s", method, resp.status_code, resp.text[:300])
+        return None
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    if not body.get("ok"):
+        log.warning("telegram %s not ok %s", method, resp.text[:300])
+        return None
+    result = body.get("result")
+    return result if isinstance(result, dict) else {"ok": True}
+
+
+def tg_send_message_id(
+    bot_token: str,
+    chat_id: str | int,
+    text: str,
+    *,
+    parse_mode: str = "HTML",
+) -> int | None:
+    result = tg_call(bot_token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": parse_mode,
+        "disable_web_page_preview": True,
+    })
+    if not result:
+        return None
+    mid = result.get("message_id")
+    return int(mid) if mid else None
+
+
+def tg_delete_message(bot_token: str, chat_id: str | int, message_id: int) -> bool:
+    return tg_call(bot_token, "deleteMessage", {
+        "chat_id": chat_id, "message_id": message_id,
+    }) is not None
+
+
+def tg_edit_message(bot_token: str, chat_id: str | int, message_id: int, text: str) -> bool:
+    return tg_call(bot_token, "editMessageText", {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }) is not None

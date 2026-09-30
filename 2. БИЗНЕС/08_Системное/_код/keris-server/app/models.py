@@ -347,6 +347,29 @@ class ClientOutreach(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class BookingAdminCard(Base):
+    """Одно сообщение админ-бота на запись. Смена состояния удаляет прошлое и пишет новое."""
+
+    __tablename__ = "booking_admin_cards"
+    __table_args__ = (UniqueConstraint("booking_id", "chat_id", name="uq_admin_card"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    booking_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    chat_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OwnerDigest(Base):
+    """Сводка роли Карины уже ушла в этот календарный день. Повтор в тот же день не шлём."""
+
+    __tablename__ = "owner_digests"
+
+    date_iso: Mapped[str] = mapped_column(String(10), primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class SyncLogDirection(str, enum.Enum):
     push_to_yclients = "push_to_yclients"
     webhook_from_yclients = "webhook_from_yclients"

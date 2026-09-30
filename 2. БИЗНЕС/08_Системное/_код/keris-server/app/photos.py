@@ -118,6 +118,22 @@ def save_bytes(
     return row
 
 
+def _drop_kind(db: Session, booking_id: str, kind: str) -> None:
+    """Повтор того же типа заменяет файл: клиенту уходит одна пара, не пачка."""
+    rows = db.execute(
+        select(BookingPhoto).where(
+            BookingPhoto.booking_id == booking_id,
+            BookingPhoto.kind == kind,
+        )
+    ).scalars().all()
+    for row in rows:
+        path = absolute_path(row)
+        if path.is_file():
+            path.unlink()
+        db.delete(row)
+    db.commit()
+
+
 def save_from_telegram(
     db: Session,
     booking: Booking,
@@ -126,13 +142,22 @@ def save_from_telegram(
     *,
     bot_token: str = "",
     added_by: str = "",
+    source: str = "staff",
 ) -> BookingPhoto:
-    token = bot_token or settings.staff_bot_token
+    """file_id принадлежит боту, который принял снимок. Админ-бот и фото-бот — разные токены."""
+    if source == "admin":
+        token = bot_token or settings.karina_bot_token
+        missing = "KARINA_BOT_TOKEN не задан — фото из админ-бота скачать нечем"
+    else:
+        token = bot_token or settings.staff_bot_token
+        missing = "STAFF_BOT_TOKEN не задан — фото скачать нечем"
     if not token:
-        raise PhotoError("STAFF_BOT_TOKEN не задан — фото скачать нечем", 503)
+        raise PhotoError(missing, 503)
     data = tg_get_file_bytes(token, file_id)
     if not data:
         raise PhotoError("Не удалось скачать фото из Telegram", 502)
+    if source == "admin":
+        _drop_kind(db, booking.id, kind)
     return save_bytes(db, booking, kind, data, added_by=added_by)
 
 
@@ -140,11 +165,16 @@ def report_caption(booking: Booking, service_name: str) -> str:
     pet = booking.pet_name or "ваш питомец"
     when = booking.starts_at.strftime("%d.%m")
     return (
-        f"🐾 <b>Фото-отчёт: {pet}</b>\n\n"
+        f"<b>{pet}</b>\n"
         f"Визит {when}, {service_name}.\n"
-        "Слева — до, справа — после.\n\n"
-        "Отчёт сохранён в кабинете «Мой Keris»: любой прошлый визит можно открыть и посмотреть снова."
+        "Слева до, справа после."
     )
+
+
+def has_pair(db: Session, booking_id: str) -> bool:
+    rows = for_booking(db, booking_id)
+    kinds = {p.kind for p in rows}
+    return "before" in kinds and "after" in kinds
 
 
 def send_report(db: Session, booking: Booking, service_name: str) -> dict:

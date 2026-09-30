@@ -55,6 +55,23 @@ class Settings:
 
     karina_bot_token: str = field(default_factory=lambda: os.environ.get("KARINA_BOT_TOKEN", ""))
     karina_telegram_ids: list[str] = field(default_factory=lambda: _list("KARINA_TELEGRAM_IDS"))
+    # Роль Карины в админ-боте: сводки и пульс. Оперативные карточки записей сюда не идут.
+    karina_role_ids: list[str] = field(default_factory=lambda: _list("KARINA_ROLE_IDS"))
+    amocrm_pipeline_puppies_id: str = field(
+        default_factory=lambda: os.environ.get("AMOCRM_PIPELINE_PUPPIES_ID", "11036834")
+    )
+    amocrm_puppy_status_free: str = field(
+        default_factory=lambda: os.environ.get("AMOCRM_PUPPY_STATUS_FREE", "86718366")
+    )
+    amocrm_pipeline_sales_id: str = field(
+        default_factory=lambda: os.environ.get("AMOCRM_PIPELINE_SALES_ID", "11036674")
+    )
+    pulse_public_url: str = field(
+        default_factory=lambda: os.environ.get(
+            "PULSE_PUBLIC_URL", "https://194.87.118.214.sslip.io/pulse"
+        ).rstrip("/")
+    )
+    pulse_entry_secret: str = field(default_factory=lambda: os.environ.get("PULSE_ENTRY_SECRET", ""))
 
     # Отдельный бот-уведомитель для более широкого круга админов (@kerisclub_notify_bot).
     # Только push, без команд — список получателей пополняется вручную по chat_id.
