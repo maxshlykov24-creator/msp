@@ -175,14 +175,30 @@ def save_from_telegram(
     return save_bytes(db, booking, kind, data, added_by=added_by)
 
 
-def report_caption(booking: Booking, service_name: str) -> str:
+def report_caption(booking: Booking, service_name: str, *, pair: bool = False) -> str:
+    """Подпись к альбому. «Слева и справа» врали: в чат уходят два фото подряд."""
     pet = booking.pet_name or "ваш питомец"
     when = booking.starts_at.strftime("%d.%m")
-    return (
-        f"<b>{pet}</b>\n"
-        f"Визит {when}, {service_name}.\n"
-        "Слева до, справа после."
-    )
+    service = service_name or "визит"
+    lines = [
+        f"🐾 <b>{pet}</b>",
+        "",
+        f"Визит {when}, {service}.",
+    ]
+    if pair:
+        lines.append("Первое фото: до. Второе фото: после.")
+    return "\n".join(lines)
+
+
+def client_destination(db: Session, booking: Booking) -> tuple[str, int | None]:
+    """Один чат. Telegram, если клиент его уже открывал. Иначе MAX. Оба сразу не пишем."""
+    chat_id = booking.telegram_chat_id or telegram_bind.chat_id_for_phone(db, booking.owner_phone)
+    if chat_id:
+        return "telegram", int(chat_id)
+    user_id = booking.max_user_id or max_bind.user_id_for_phone(db, booking.owner_phone)
+    if user_id:
+        return "max", int(user_id)
+    return "", None
 
 
 def has_pair(db: Session, booking_id: str) -> bool:
@@ -192,7 +208,7 @@ def has_pair(db: Session, booking_id: str) -> bool:
 
 
 def send_report(db: Session, booking: Booking, service_name: str) -> dict:
-    """Отчёт клиенту в Telegram и MAX. Фото уже сохранены, отправка — уведомление.
+    """Отчёт в один чат: Telegram, если клиент его открывал, иначе MAX.
 
     Клиент ещё не в боте — не ошибка: возвращаем `pending`, фото остаются в
     кабинете, а администратор видит подсказку перевести клиента в бота.
@@ -202,28 +218,29 @@ def send_report(db: Session, booking: Booking, service_name: str) -> dict:
         raise PhotoError("К записи ещё не добавлено ни одного фото", 404)
 
     payload: list[tuple[str, bytes]] = []
+    sent_kinds: list[str] = []
     for p in rows:
         path = absolute_path(p)
         if not path.exists():
             log.warning("файл фото пропал: %s", path)
             continue
         payload.append((f"{KIND_LABELS.get(p.kind, p.kind)}_{p.id}.jpg", path.read_bytes()))
+        sent_kinds.append(p.kind)
     if not payload:
         raise PhotoError("Файлы фото не найдены на диске", 500)
 
-    caption = report_caption(booking, service_name)
+    pair = sent_kinds[:2] == ["before", "after"] and len(sent_kinds) == 2
+    caption = report_caption(booking, service_name, pair=pair)
     channels: list[str] = []
+    destination, dest_id = client_destination(db, booking)
 
-    chat_id = booking.telegram_chat_id or telegram_bind.chat_id_for_phone(db, booking.owner_phone)
-    if chat_id and settings.client_bot_token:
-        if tg_send_photos(settings.client_bot_token, chat_id, payload, caption=caption):
+    if destination == "telegram" and dest_id and settings.client_bot_token:
+        if tg_send_photos(settings.client_bot_token, dest_id, payload, caption=caption):
             channels.append("telegram")
-
-    user_id = max_bind.user_id_for_phone(db, booking.owner_phone)
-    if user_id and settings.max_bot_token:
-        if max_http.send_photos(int(user_id), caption, payload):
+    elif destination == "max" and dest_id and settings.max_bot_token:
+        if max_http.send_photos(int(dest_id), caption, payload):
             channels.append("max")
-        elif max_http.send_message(int(user_id), caption):
+        elif max_http.send_message(int(dest_id), caption):
             channels.append("max_text")
 
     if channels:
@@ -237,6 +254,7 @@ def send_report(db: Session, booking: Booking, service_name: str) -> dict:
         "booking_id": booking.id,
         "photos": len(rows),
         "channels": channels,
+        "destination": destination,
         "pending": not channels,
         "links": {"telegram": settings.telegram_bot_url, "max": settings.max_bot_url},
     }

@@ -94,6 +94,8 @@ def test_send_report_marks_sent_and_goes_to_telegram(monkeypatch, db_session, st
     assert result["pending"] is False
     assert sent == [(555000111222, 2, sent[0][2])]
     assert "Моня" in sent[0][2]
+    assert "Первое фото: до" in sent[0][2]
+    assert "Слева" not in sent[0][2]
     assert "кабинете" not in sent[0][2]
     assert all(p.sent_at is not None for p in photos.for_booking(db_session, booking.id))
 
@@ -165,6 +167,56 @@ def test_max_gets_text_when_upload_fails(monkeypatch, db_session, storage):
 
     assert result["channels"] == ["max_text"]
     assert texts == [775149185013]
+
+
+def test_telegram_wins_when_both_chats_exist(monkeypatch, db_session, storage):
+    """Переписка в Telegram уже есть: в MAX то же фото не дублируем."""
+    booking = make_booking(db_session, chat_id=555000111222, max_id=775149185013)
+    photos.save_bytes(db_session, booking, "before", sample_jpeg((20, 40, 60)))
+    photos.save_bytes(db_session, booking, "after", sample_jpeg())
+    monkeypatch.setattr(
+        photos, "settings",
+        dataclasses.replace(
+            settings, photos_dir=str(storage), media_base_url="/media",
+            client_bot_token="tg", max_bot_token="max",
+        ),
+    )
+    tg = []
+    mx = []
+    monkeypatch.setattr(photos, "tg_send_photos", lambda *a, **kw: tg.append(1) or True)
+    monkeypatch.setattr(photos.max_http, "send_photos", lambda *a, **kw: mx.append(1) or True)
+
+    result = photos.send_report(db_session, booking, "Комплекс")
+
+    assert result["destination"] == "telegram"
+    assert result["channels"] == ["telegram"]
+    assert tg == [1]
+    assert mx == []
+
+
+def test_max_when_telegram_never_started(monkeypatch, db_session, storage):
+    booking = make_booking(db_session, max_id=775149185013)
+    photos.save_bytes(db_session, booking, "before", sample_jpeg((20, 40, 60)))
+    photos.save_bytes(db_session, booking, "after", sample_jpeg())
+    monkeypatch.setattr(
+        photos, "settings",
+        dataclasses.replace(
+            settings, photos_dir=str(storage), media_base_url="/media", max_bot_token="max",
+        ),
+    )
+    sent = []
+    monkeypatch.setattr(
+        photos.max_http, "send_photos",
+        lambda user_id, text, images: sent.append((user_id, len(images), text)) or True,
+    )
+
+    result = photos.send_report(db_session, booking, "Комплекс")
+
+    assert result["destination"] == "max"
+    assert result["channels"] == ["max"]
+    assert sent[0][0] == 775149185013
+    assert sent[0][1] == 2
+    assert "Первое фото: до" in sent[0][2]
 
 
 def test_client_profile_returns_photos_per_visit(monkeypatch, db_session, storage):

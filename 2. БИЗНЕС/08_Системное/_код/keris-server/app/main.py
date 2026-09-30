@@ -1150,11 +1150,22 @@ def admin_add_photo(booking_id: str, payload: BookingPhotoIn, db: Session = Depe
         )
     except photos.PhotoError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    report = None
+    report_error = ""
+    # Админ занёс пару: клиенту уходит само. Фото-бот салона по-прежнему жмёт кнопку.
+    if payload.source == "admin" and photos.has_pair(db, booking.id):
+        service = db.get(Service, booking.service_id)
+        try:
+            report = photos.send_report(db, booking, service.name if service else booking.service_id)
+        except photos.PhotoError as exc:
+            report_error = exc.message
     return {
         "booking_id": booking.id,
         "kind": row.kind,
         "url": photos.url_for(row),
         "photos": photos.as_dicts(db, booking.id),
+        "report": report,
+        "report_error": report_error,
     }
 
 

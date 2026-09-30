@@ -404,10 +404,48 @@ def save_photo(chat_id: int, file_id: str) -> None:
     if status != 200:
         send(chat_id, f"Фото не сохранилось. {detail_of(body)}".strip(), menu_for(chat_id))
         return
-    show_photo_card(chat_id, booking_id, shots=body.get("photos") if isinstance(body, dict) else None)
+    show_photo_card(
+        chat_id,
+        booking_id,
+        shots=body.get("photos") if isinstance(body, dict) else None,
+        report=body.get("report") if isinstance(body, dict) else None,
+        report_error=str(body.get("report_error") or "") if isinstance(body, dict) else "",
+    )
 
 
-def show_photo_card(chat_id: int, booking_id: str, shots: Optional[list] = None) -> None:
+def _delivery_line(report: Optional[dict], report_error: str) -> str:
+    if report_error:
+        return f"Фото сохранены. Клиенту не ушло: {report_error}"
+    if not isinstance(report, dict):
+        return ""
+    channels = report.get("channels") or []
+    dest = report.get("destination") or ""
+    if "telegram" in channels:
+        return "Клиенту ушло в Telegram. Первое фото до, второе после."
+    if "max" in channels:
+        return "В Telegram клиент не писал. Ушло в MAX. Первое фото до, второе после."
+    if "max_text" in channels:
+        return "В MAX ушёл текст без фото. Картинки не прикрепились."
+    if dest == "telegram":
+        return "Клиент в Telegram, но сообщение не ушло. Можно отправить ещё раз."
+    if dest == "max":
+        return "В Telegram клиент не писал. В MAX сообщение не ушло. Можно отправить ещё раз."
+    lines = ["Клиент ещё не открывал бота. Фото сохранены и уйдут сами, когда он поделится номером."]
+    links = report.get("links") or {}
+    if links.get("telegram"):
+        lines.append(str(links["telegram"]))
+    if links.get("max"):
+        lines.append(str(links["max"]))
+    return "\n".join(lines)
+
+
+def show_photo_card(
+    chat_id: int,
+    booking_id: str,
+    shots: Optional[list] = None,
+    report: Optional[dict] = None,
+    report_error: str = "",
+) -> None:
     st = user_state(chat_id)
     rows = (st.get("data") or {}).get("rows") or {}
     row = rows.get(booking_id)
@@ -426,11 +464,18 @@ def show_photo_card(chat_id: int, booking_id: str, shots: Optional[list] = None)
         f"{row.get('owner') or ''}\n"
         f"До: {row.get('photos_before') or 0}, после: {row.get('photos_after') or 0}"
     )
+    delivery = _delivery_line(report, report_error)
+    if delivery:
+        text += "\n\n" + delivery
+    elif not pair:
+        text += "\n\nКлиенту уйдёт само, когда будут оба фото."
+    sent_ok = isinstance(report, dict) and bool(report.get("channels"))
+    nowhere = isinstance(report, dict) and report.get("pending") and not report.get("destination")
     buttons = [
         [{"text": "До", "callback_data": "phd:before"},
          {"text": "После", "callback_data": "phd:after"}],
     ]
-    if pair:
+    if pair and not sent_ok and not nowhere:
         buttons.append([{"text": "Отправить клиенту", "callback_data": f"phs:{booking_id}"}])
     buttons.append([{"text": "Отменить", "callback_data": "cancel"}])
     user_state(chat_id)["step"] = "kind"
@@ -445,23 +490,7 @@ def send_report(chat_id: int, booking_id: str) -> None:
     if status != 200 or not isinstance(body, dict):
         send(chat_id, f"Отчёт не ушёл. {detail_of(body)}".strip(), menu_for(chat_id))
         return
-    if body.get("pending"):
-        links = body.get("links") or {}
-        lines = ["Отчёт ждёт привязки номера. Клиенту не отправлено."]
-        if links.get("telegram"):
-            lines.append(str(links["telegram"]))
-        if links.get("max"):
-            lines.append(str(links["max"]))
-        send(chat_id, "\n".join(lines), menu_for(chat_id))
-        return
-    channels = body.get("channels") or []
-    if "telegram" in channels:
-        channel = "Telegram"
-    elif "max" in channels or "max_text" in channels:
-        channel = "MAX"
-    else:
-        channel = "клиенту"
-    send(chat_id, f"Отправлено в {channel}.", menu_for(chat_id))
+    send(chat_id, _delivery_line(body, ""), menu_for(chat_id))
 
 
 def start_puppy(chat_id: int) -> None:
