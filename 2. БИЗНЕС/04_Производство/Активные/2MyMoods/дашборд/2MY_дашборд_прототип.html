@@ -557,16 +557,30 @@
     .grid-2,.grid-2e,.grid-3,.hero-grid,.scope-body{grid-template-columns:1fr}
     .scope-kpi{grid-template-columns:repeat(2,1fr)}
     .hero .big{font-size:44px}
+    .card{overflow:visible}
+    .scroll-x th:first-child,.scroll-x td:first-child{position:sticky;left:0;background:var(--paper);z-index:1}
+    .scroll-x td:first-child{box-shadow:8px 0 8px -8px rgba(2,2,2,.18)}
   }
+  .scroll-x{width:0;min-width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .scroll-x table{width:max-content;min-width:100%}
   @media (max-width:620px){
     .wrap{padding:0 16px}
-    .nav{overflow-x:auto;flex-wrap:nowrap}
-    .nav button{padding:13px 14px;font-size:10px;white-space:nowrap}
+    .nav{overflow:visible;flex-wrap:wrap}
+    .nav button{flex:1 1 46%;text-align:center;padding:12px 8px;font-size:10px;letter-spacing:.08em;white-space:normal}
     .nav .nav-hint{display:none}
-    .hero{padding:28px 22px}
+    .hero{padding:28px 18px}
     .logo-2my{height:58px}
     .head-right{text-align:left}
-    .scope{padding:24px 20px}
+    .head-right h1{font-size:24px}
+    .scope{padding:24px 16px}
+    .card{padding:22px 16px}
+    .footer{flex-direction:column;align-items:flex-start;gap:12px;padding:16px 18px}
+    .footer-meta{text-align:left}
+    .toolbar .pick{width:100%;max-width:none}
+    .kv{align-items:baseline}
+    .kv b{white-space:normal;text-align:right}
+    .donut-wrap{flex-wrap:wrap}
+    .hero-mini{gap:16px 22px}
   }
 </style>
 </head>
@@ -663,10 +677,10 @@
     <div class="card">
       <h3>Источник заказа</h3>
       <div class="hint">Источник берётся из utm_source заказа МойСклад. Без метки показано «не указано».</div>
-      <table>
+      <div class="scroll-x"><table>
         <thead><tr><th>Канал</th><th>Заказов</th><th>Выручка</th><th>Средний чек</th><th>Доля</th></tr></thead>
         <tbody id="src"></tbody>
-      </table>
+      </table></div>
     </div>
     <div class="card">
       <h3>Качество метки</h3>
@@ -684,10 +698,10 @@
     <div class="card">
       <h3>Где продали</h3>
       <div class="hint">Сайт, шоурум на Настасьинском и продажи через партнёрские точки считаются отдельно.</div>
-      <table>
+      <div class="scroll-x"><table>
         <thead><tr><th>Канал сбыта</th><th>Заказов</th><th>Выручка</th><th>Доля</th></tr></thead>
         <tbody id="sale"></tbody>
-      </table>
+      </table></div>
     </div>
     <div class="card">
       <h3>Скидки и акции</h3>
@@ -697,10 +711,10 @@
     <div class="card">
       <h3>Менеджеры и скорость ответа</h3>
       <div class="hint">Скорость первого ответа берётся из сообщений Wazzup при наличии выгрузки.</div>
-      <table>
+      <div class="scroll-x"><table>
         <thead><tr><th>Менеджер</th><th>Сделок</th><th>Выручка</th><th>Ответ</th></tr></thead>
         <tbody id="mgr"></tbody>
-      </table>
+      </table></div>
     </div>
   </div>
 
@@ -708,10 +722,10 @@
   <div class="card">
     <h3>География и способ получения</h3>
     <div class="hint">Город берётся из адреса доставки. Самовывоз показан отдельно от канала продаж «Шоурум».</div>
-    <table>
+    <div class="scroll-x"><table>
       <thead><tr><th>Направление</th><th>Заказов</th><th>Выручка</th><th>Средний чек</th><th>Доля</th></tr></thead>
       <tbody id="geo"></tbody>
-    </table>
+    </table></div>
   </div>
   </section>
 
@@ -721,10 +735,10 @@
     <div class="card">
       <h3>Gold, Silver, Bronze</h3>
       <div class="hint">Пороги черновые: Gold — от четырёх покупок, Silver — две или три, Bronze — одна покупка от 20 000 ₽. Сегменты считаются только в дашборде.</div>
-      <table>
+      <div class="scroll-x"><table>
         <thead><tr><th>Сегмент</th><th>Клиентов</th><th>Доля базы</th><th>Выручка</th><th>Доля выручки</th><th>Средний LTV</th><th>Покупок в год</th></tr></thead>
         <tbody id="tier"></tbody>
-      </table>
+      </table></div>
     </div>
     <div class="card">
       <h3>Новые и повторные</h3>
@@ -741,10 +755,10 @@
     <div class="card">
       <h3>Возвращаемость по месяцу первой покупки</h3>
       <div class="hint">Из тех, кто впервые купил в этом месяце, сколько вернулись за второй покупкой. Это и есть retention, который нельзя посчитать без склейки базы.</div>
-      <table>
+      <div class="scroll-x"><table>
         <thead><tr><th>Первая покупка</th><th>Клиентов</th><th>Вернулись</th><th>Доля</th><th>Срок до второй</th></tr></thead>
         <tbody id="coh"></tbody>
-      </table>
+      </table></div>
     </div>
     <div class="card">
       <h3>Состояние базы</h3>
@@ -798,10 +812,10 @@
       <button class="tclear" id="c-clear">Сбросить</button>
       <span class="tcount" id="c-count"></span>
     </div>
-    <table>
+    <div class="scroll-x"><table>
       <thead><tr><th>Клиент</th><th>Сегмент</th><th>Покупок</th><th>LTV</th><th>Первая</th><th>Последняя</th><th>Тишина</th><th>Размер</th><th>Чаще берёт</th><th>Канал</th></tr></thead>
       <tbody id="clients"></tbody>
-    </table>
+    </table></div>
   </div>
   </section>
 
@@ -824,18 +838,18 @@
     <div class="card">
       <h3>Товары: продажи, выручка, маржа</h3>
       <div class="hint">Нажмите на строку, чтобы посмотреть эту модель точечно. Повторное нажатие снимает выбор.</div>
-      <table>
+      <div class="scroll-x"><table>
         <thead><tr><th>Позиция</th><th>Продано</th><th>Выручка</th><th>Маржа</th><th>Размер</th><th>Цвет</th></tr></thead>
         <tbody id="items"></tbody>
-      </table>
+      </table></div>
     </div>
     <div class="card">
       <h3>Категории: выручка и маржа</h3>
       <div class="hint">Маржа по закупочной цене карточки товара: без работы и логистики.</div>
-      <table>
+      <div class="scroll-x"><table>
         <thead><tr><th>Категория</th><th>Изделий</th><th>Выручка</th><th>Средняя цена</th><th>Маржа</th></tr></thead>
         <tbody id="cats"></tbody>
-      </table>
+      </table></div>
     </div>
   </div>
 
@@ -849,10 +863,10 @@
     <div class="card">
       <h3>Цвет и канал</h3>
       <div class="hint">Сравнение цветов и источников по покупкам текущего фильтра.</div>
-      <table>
+      <div class="scroll-x"><table>
         <thead><tr><th>Цвет</th><th>Изделий</th><th>Выручка</th><th>Главный канал</th><th>Доля канала</th></tr></thead>
         <tbody id="colors"></tbody>
-      </table>
+      </table></div>
     </div>
   </div>
 
