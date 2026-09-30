@@ -231,8 +231,13 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
     name = nudge.extract_name(history) or listing.get("peer") or ""
     phone = nudge.extract_phone_from_history(history)
     card = None
-    if listing.get("title"):
-        card = avito_match.match_card(listing.get("title") or "", listing.get("price") or "")
+    title = (listing.get("title") or "").strip()
+    attached = bool(title) and "не привязано" not in title.lower() and title.lower() not in {
+        "объявление",
+        "чат",
+    }
+    if attached:
+        card = avito_match.match_card(title, listing.get("price") or "")
     car = ""
     vin = brand = model = year = km = ""
     price = 0
@@ -244,9 +249,9 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         year = re.sub(r"\D", "", card.get("Год") or card.get("title") or "")[:4]
         km = re.sub(r"\D", "", card.get("Пробег") or "")
         price = digits_price(card.get("Цена в объявлении") or "")
-    if not car:
-        car = listing.get("title") or ""
-    if not car or "не привязано" in car.lower() or car == "объявление":
+    if not car and attached:
+        car = title
+    if not attached:
         car = nudge.extract_car(history) or car
     if not price:
         price = digits_price(listing.get("price") or "")

@@ -623,6 +623,17 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if rewritten != bubbles:
             log.info("чат %s: вместо звонка прошу Телеграм или Ватсап", chat_id)
             bubbles = rewritten
+    doc_now = store.load_doc(chat_id)
+    if avito_match.attached_listing(doc_now) and not nudge.asks_other_cars(user_text):
+        allowed = avito_match.allowed_prices(doc_now)
+        locked = [avito_match.drop_foreign_prices(b, allowed) for b in bubbles]
+        locked = [b for b in locked if b.strip()]
+        if allowed and not locked:
+            shown = avito_match.listing_price(doc_now)
+            locked = ["Цена в объявлении %s." % shown] if shown else []
+        if locked != bubbles:
+            log.info("чат %s: убрал цену не из объявления этого чата", chat_id)
+            bubbles = locked
     if nudge.asked_noncar_trade(user_text) or nudge.still_noncar_trade(history):
         bubbles = human.glue_lonely_greeting(bubbles)
         final = nudge.keep_noncar_boundary(bubbles)
@@ -656,8 +667,13 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
 def _build_system(history: list[dict], chat_id: str = "") -> str:
     """Общие правила плюс поправки под этот конкретный ход диалога."""
     user_text = history[-1]["content"] if history else ""
-    # Всё, что дописано после границы, меняется каждый ход и в кэш не идёт.
-    system = prompt.build() + prompt.CACHE_SPLIT
+    doc = store.load_doc(chat_id) if chat_id else {}
+    listing = avito_match.attached_listing(doc)
+    other_cars = nudge.asks_other_cars(user_text)
+    # В чате с объявлением чужие карточки в запрос не кладём: модель иначе
+    # называет цену соседней машины. Полный сток возвращается, только если
+    # клиент прямо просит другие варианты или объявления у чата нет.
+    system = prompt.build(with_stock=not listing or other_cars) + prompt.CACHE_SPLIT
     now = nudge.now_msk()
     system += (
         "\n\n# Сейчас по Москве\n"
@@ -666,20 +682,32 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
         "если до него мы ещё работаем."
         % (nudge.weekday_ru(now), now.strftime("%H:%M"))
     )
-    doc = store.load_doc(chat_id) if chat_id else {}
     focus = avito_match.focus_from_doc(doc) if doc else ""
     if focus:
         system += "\n\n" + focus
         system += (
             "\n\n# Этот чат уже про объявление выше\n"
-            "Предмет разговора - эта машина, клиент на её карточке. "
+            "Машину задаёт объявление, привязанное к этому чату, а не то, "
+            "какую марку клиент назвал в сообщении. Назвал другую модель "
+            "или другую цену — отвечай про машину объявления.\n"
+            "Предмет разговора - эта машина. "
             "Не перечисляй её заново («этот AMG и ещё новый за столько»). "
-            "Бензин, дизель, «гелик смотрю» - ответ про неё. "
-            "Другие машины - только если спросил что ещё есть или эта не подходит.\n"
+            "Бензин, дизель, «гелик смотрю» - ответ про неё.\n"
             "Не выдумывай тему. «Привезти не выгодно» не разворачивай в пошлины "
             "и логистику. «Наугад не скажу» не пиши, пока не спросил факт "
             "из карточки, которого там нет."
         )
+        if other_cars:
+            system += (
+                "\nКлиент прямо просит другие варианты. Их можно назвать "
+                "из стока. Машина этого чата при этом остаётся объявлением выше."
+            )
+        else:
+            system += (
+                "\nДругие машины и их цены в этот ход не переданы. "
+                "Не пиши «в базе проходит» и не называй цену, которой нет "
+                "в объявлении выше и в его единственной карточке."
+            )
     prior = history[:-1] if history else []
     if any((m.get("role") == "assistant") for m in prior):
         system += (
