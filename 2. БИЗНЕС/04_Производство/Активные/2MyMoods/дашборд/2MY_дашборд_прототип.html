@@ -649,6 +649,7 @@
         <div class="kicker" id="hero-period">Период</div>
         <div class="big" id="hero-rev">—</div>
         <div class="sub" id="hero-sub">выручка по покупкам, без обменов и досылов</div>
+        <div class="hint" id="payment-in-note"></div>
         <div class="hero-mini" id="hero-mini"></div>
       </div>
       <div class="chart-box">
@@ -710,9 +711,9 @@
     </div>
     <div class="card">
       <h3>Менеджеры и скорость ответа</h3>
-      <div class="hint">Скорость первого ответа берётся из сообщений Wazzup при наличии выгрузки.</div>
+      <div class="hint" id="mgr-hint">Менеджер определяется по графику смен на дату закрывающего платежа. Скорость ответа берётся из Wazzup.</div>
       <div class="scroll-x"><table>
-        <thead><tr><th>Менеджер</th><th>Сделок</th><th>Выручка</th><th>Ответ</th></tr></thead>
+        <thead><tr><th>Менеджер</th><th>Оплаченных заказов</th><th>Выручка</th><th>Ответ</th></tr></thead>
         <tbody id="mgr"></tbody>
       </table></div>
     </div>
@@ -1094,6 +1095,9 @@ function refresh(){
  el('hero-period').textContent=`${state.from} — ${state.to} · по дате закрывающего платежа, Москва`;
  el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
  el('hero-sub').textContent='Выручка по полностью оплаченным заказам'+(includeDelivery?' с доставкой':' без доставки');
+ const paymentTotal=sum((data.payment_daily||[]).filter(x=>x.date>=state.from&&x.date<=state.to),x=>x.sum);
+ const paymentScopeClear=!state.cat&&!state.prod&&!state.source&&!state.channel&&!state.city;
+ el('payment-in-note').textContent=paymentScopeClear&&data.payment_daily ? 'Входящие платежи по дате создания: '+paymentTotal.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽. Включают частичную оплату и доставку.' : '';
  el('hero-mini').innerHTML=[['Заказов',n],['Средний чек',money(n?rev/n:0)],['Клиентов',people.size],['Маржа',pct(rev-cost,rev)]].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
  const kpis=[['Выручка, покупки',money(rev)],['Заказов',num(n)],['Средний чек',money(n?rev/n:0)],['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Маржа по закупке',pct(rev-cost,rev)],['Повторные покупки',pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты',pct(returnN,n)]];
  el('kpis').innerHTML=kpis.map(([k,v])=>`<div class="kpi"><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
@@ -1117,9 +1121,11 @@ function refresh(){
  el('utm-kv').innerHTML=kv([['Заказов сайта',num(site.length)],['Без utm_source',num(site.length-marked)],['Частично оплачено, вне покупок',num(data.orders.filter(o=>o.partial&&o.created>=state.from&&o.created<=state.to).length)]]);
  const discounts=filtered.filter(x=>x.o.promo||x.ls.some(l=>l.rev<l.list));
  el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(sum(discounts,x=>orderRev(x.o,x.ls)))],['Скидка по позициям',money(sum(currentLines,x=>Math.max(0,x.l.list-x.l.rev)))]]);
- const managerNames={8329672:'Оксана',7953124:'Полина',9490530:'Максим',13822894:'Таня',14039978:'Кристина'};
- const mgr=Object.entries(group(data.leads.filter(l=>l.created>=state.from&&l.created<=state.to),l=>String(l.manager||'не указано'))).map(([name,arr])=>({name:managerNames[name]||name,arr}));
- table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>'0 ₽',x=>data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'нет выгрузки']);
+ const mgr=Object.entries(group(filtered,x=>x.o.manager||'Нет смены в графике')).map(([name,arr])=>({name,arr,rev:sum(arr,x=>orderRev(x.o,x.ls))}));
+ mgr.sort((a,b)=>a.name==='Нет смены в графике'?1:b.name==='Нет смены в графике'?-1:b.rev-a.rev);
+ const assigned=mgr.filter(x=>x.name!=='Нет смены в графике').reduce((n,x)=>n+x.arr.length,0);
+ el('mgr-hint').textContent=`Менеджер по графику смен на дату закрывающего платежа. Подтверждённая смена: ${num(assigned)} из ${num(n)} покупок в фильтре. Без однозначной смены выручка показана отдельно.`+(data.roster?.status==='ok'?'':' График недоступен при сборке среза.');
+ table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>x.name==='Нет смены в графике'?'—':data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'нет данных']);
  const scopedClients=clients.filter(c=>people.has(c.phone));
  const tiers=['Gold','Silver','Bronze','Разовый'].map(t=>({name:t,cs:scopedClients.filter(c=>c.tier===t)}));
  table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,c=>c.ltv)),x=>pct(sum(x.cs,c=>c.ltv),sum(scopedClients,c=>c.ltv)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>x.cs.length?(sum(x.cs,c=>c.freq)/x.cs.length).toFixed(1):'0']);
@@ -1146,12 +1152,12 @@ function refresh(){
  const leads=data.leads.filter(l=>l.created>=state.from&&l.created<=state.to);
  const stages=[[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно']];
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${label}</span><span class="nums">${num(leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
- el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Первый ответ Wazzup',data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'0 · нет выгрузки'],['Сообщений Wazzup',num(data.wazzup.messages||0)]]);
+ el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Первый ответ Wazzup',data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'нет данных'],['Сообщений Wazzup',data.wazzup.status==='ok'?num(data.wazzup.messages||0):'нет данных']]);
  el('partner-kv').innerHTML=kv([['Маркетинг 2MY','отдельная воронка, в конверсию продаж не входит']]);
  el('task-kv').innerHTML=kv([['Открытых задач в выборке amo',num(data.tasks.open)],['Выборка задач',num(data.tasks.sampled)]]);
  const shipped=orders.filter(o=>o.sent_at).length;
  const shipDays=orders.filter(o=>o.sent_at&&o.confirmed_at).map(o=>({days:(Date.parse(o.sent_at)-Date.parse(o.confirmed_at))/864e5,stock:o.await_stock})).filter(x=>x.days>=0);
- const median=xs=>{if(!xs.length)return '0 дн.';const a=xs.map(x=>x.days).sort((x,y)=>x-y);return ((a[Math.floor((a.length-1)/2)]+a[Math.floor(a.length/2)])/2).toFixed(1)+' дн.'};
+ const median=xs=>{if(!xs.length)return 'нет данных';const a=xs.map(x=>x.days).sort((x,y)=>x-y);return ((a[Math.floor((a.length-1)/2)]+a[Math.floor(a.length/2)])/2).toFixed(1)+' дн.'};
  const reasons=Object.entries(group(orders.filter(o=>o.return),o=>o.return_reason||'не указано')).map(([name,arr])=>['Причина: '+name,num(arr.length)]);
  el('ship-kv').innerHTML=kv([['Покупок',num(n)],['С датой Отправлен',num(shipped)],['Без даты отправки',num(n-shipped)],['Подтвержден → Отправлен',median(shipDays)],['Ожидает наличия',median(shipDays.filter(x=>x.stock))],['Без ожидания наличия',median(shipDays.filter(x=>!x.stock))],['Возвраты',num(returnN)],...reasons]);
  el('f-cat').value=state.cat;el('f-ch').value=state.source;el('f-sale').value=state.channel;el('f-geo').value=state.city;

@@ -160,6 +160,13 @@ table.intake-tbl tr.picked td{background:rgba(59,116,214,.06)}
 .fld.sm{min-width:100px;max-width:140px}
 .fld.grow{flex:1;min-width:220px}
 .fld label{font-size:11px;color:var(--mute-2);text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.fld-head{display:flex;align-items:center;justify-content:flex-start;gap:14px}
+.fld-head .quiet{text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;color:var(--mute);cursor:pointer}
+.fld-head .quiet:hover{color:var(--ink)}
+#iListBox.drag textarea{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,91,255,.15)}
+.file-chip{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink)}
+.file-chip[hidden]{display:none !important}
+.file-chip button{border:0;background:transparent;color:var(--mute-2);cursor:pointer;font-size:14px;line-height:1;padding:0}
 .fld label .opt{text-transform:none;letter-spacing:0;color:var(--mute-2);opacity:.7;font-weight:500}
 .fld input,.fld select,.fld textarea,textarea,.cell{
   width:100%;border:1px solid var(--line-2);background:var(--input-bg);color:var(--ink);

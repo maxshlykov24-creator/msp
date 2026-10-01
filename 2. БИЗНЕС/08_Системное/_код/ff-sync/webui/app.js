@@ -570,11 +570,53 @@ function intakeSummary(res) {
   return bits.filter(Boolean).join(" ");
 }
 
-$("iAdd").onclick = async () => {
+let intakeFile = null;
+
+function showIntakeFile(file) {
+  intakeFile = file || null;
+  const chip = $("iFileChip");
+  if (!intakeFile) {
+    chip.hidden = true;
+    $("iFileName").textContent = "";
+    $("iAdd").textContent = "В очередь";
+    return;
+  }
+  $("iFileName").textContent = intakeFile.name;
+  chip.hidden = false;
+  $("iAdd").textContent = "В очередь · " + intakeFile.name;
+}
+
+async function sendIntakeFile(file) {
   const clientId = resolveIntakeClient();
   if (!clientId) { say($("iMsg"), "Выбери контрагента.", "bad"); return; }
   $("iAdd").disabled = true;
-  say($("iMsg"), "Сверяю с кабинетами WB и Ozon…");
+  say($("iMsg"), "Сверяю с кабинетами…");
+  try {
+    const res = await api("/api/intake/file", {
+      method: "POST",
+      body: JSON.stringify({
+        client_id: clientId,
+        filename: file.name,
+        content: await fileBase64(file),
+      }),
+    });
+    const tail = $("iBarcodes").value.trim() ? " Текст в поле оставил." : "";
+    say($("iMsg"), intakeSummary(res) + tail, res.missing ? "" : "ok");
+    showIntakeFile(null);
+    loadIntake();
+  } catch (e) {
+    say($("iMsg"), e.message, "bad");
+  }
+  $("iAdd").disabled = false;
+}
+
+$("iAdd").onclick = async () => {
+  if (intakeFile) { await sendIntakeFile(intakeFile); return; }
+  const clientId = resolveIntakeClient();
+  if (!clientId) { say($("iMsg"), "Выбери контрагента.", "bad"); return; }
+  if (!$("iBarcodes").value.trim()) { say($("iMsg"), "Вставь штрихкоды или выбери файл.", "bad"); return; }
+  $("iAdd").disabled = true;
+  say($("iMsg"), "Сверяю с кабинетами…");
   try {
     const res = await api("/api/intake", {
       method: "POST",
@@ -591,6 +633,26 @@ $("iAdd").onclick = async () => {
   }
   $("iAdd").disabled = false;
 };
+
+$("iFile").onchange = () => {
+  const file = $("iFile").files[0];
+  $("iFile").value = "";
+  if (file) showIntakeFile(file);
+};
+
+$("iFileClear").onclick = () => showIntakeFile(null);
+
+$("iListBox").addEventListener("dragover", (e) => {
+  e.preventDefault();
+  $("iListBox").classList.add("drag");
+});
+$("iListBox").addEventListener("dragleave", () => $("iListBox").classList.remove("drag"));
+$("iListBox").addEventListener("drop", (e) => {
+  e.preventDefault();
+  $("iListBox").classList.remove("drag");
+  const file = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) showIntakeFile(file);
+});
 
 $("iScan").onkeydown = async (e) => {
   if (e.key !== "Enter") return;
@@ -668,29 +730,6 @@ $("iRegistry").onchange = async () => {
     loadIntake();
   } catch (e) {
     say($("iRegMsg"), e.message, "bad");
-  }
-};
-
-$("iFile").onchange = async () => {
-  const file = $("iFile").files[0];
-  $("iFile").value = "";
-  if (!file) return;
-  const clientId = resolveIntakeClient();
-  if (!clientId) { say($("iMsg"), "Выбери контрагента.", "bad"); return; }
-  say($("iMsg"), "Читаю файл и сверяю с кабинетами…");
-  try {
-    const res = await api("/api/intake/file", {
-      method: "POST",
-      body: JSON.stringify({
-        client_id: clientId,
-        filename: file.name,
-        content: await fileBase64(file),
-      }),
-    });
-    say($("iMsg"), intakeSummary(res), res.missing ? "" : "ok");
-    loadIntake();
-  } catch (e) {
-    say($("iMsg"), e.message, "bad");
   }
 };
 

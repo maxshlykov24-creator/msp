@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=94">
+<link rel="stylesheet" href="/ui/app.css?v=97">
 </head>
 <body>
 
@@ -260,18 +260,21 @@
       </div>
       <div class="actions">
         <label class="btn filebtn">Загрузить реестр поставки<input id="iRegistry" type="file" accept=".xlsx,.xlsm,.xls,.docx"></label>
-        <button class="btn-ghost" id="iSupplies" type="button">Поставки</button>
-        <span class="sel">Excel или Word. Артикул или штрихкод. Колонка «Количество» необязательна: есть число, проставим сразу, нет числа, позицию можно досчитать потом.</span>
       </div>
       <div class="msg" id="iRegMsg"></div>
-      <div class="fld grow" style="margin-top:18px">
-        <label>Штрихкоды вручную</label>
-        <textarea id="iBarcodes" rows="4" placeholder="Штрихкод или артикул. Количество по желанию: 2043339560409 12"></textarea>
+      <div class="fld grow" id="iListBox" style="margin-top:18px">
+        <div class="fld-head">
+          <label>Штрихкоды</label>
+          <label class="quiet filebtn">Файл<input id="iFile" type="file" accept=".txt,.csv,.xlsx,.xls"></label>
+        </div>
+        <textarea id="iBarcodes" rows="4" placeholder="Штрихкод или артикул. Количество: 2043339560409 12. Файл можно перетащить сюда."></textarea>
+        <div class="file-chip" id="iFileChip" hidden>
+          <span id="iFileName"></span>
+          <button type="button" id="iFileClear" title="Убрать файл">✕</button>
+        </div>
       </div>
       <div class="actions">
-        <button class="btn" id="iAdd" type="button">Сверить с кабинетами</button>
-        <label class="btn-ghost filebtn">Загрузить файл<input id="iFile" type="file" accept=".txt,.csv,.xlsx,.xls"></label>
-        <span class="sel">txt, csv, Excel. Без количества тоже берём. Число можно второй колонкой или дописать сканером.</span>
+        <button class="btn" id="iAdd" type="button">В очередь</button>
       </div>
       <div class="msg" id="iMsg"></div>
     </div>
@@ -280,6 +283,7 @@
       <h2>Очередь</h2>
       <div class="sec-side">
         <span id="iCount"></span>
+        <button class="btn-ghost" id="iSupplies" type="button">Поставки</button>
         <button class="btn-ghost" id="iDrop" type="button" disabled>Удалить выбранные</button>
       </div>
     </div>
@@ -710,6 +714,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=97"></script>
+<script src="/ui/app.js?v=98"></script>
 </body>
 </html>
