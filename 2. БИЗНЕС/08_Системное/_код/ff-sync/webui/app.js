@@ -367,12 +367,14 @@ async function loadIntake() {
       + (clash ? " · спорных " + clash : "")
     : "";
   if (!res.rows.length) {
-    body.innerHTML = `<tr><td colspan="9" class="empty">Пусто. Загрузи реестр поставки или вставь штрихкоды сверху.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="10" class="empty">Пусто. Загрузи реестр поставки или вставь штрихкоды сверху.</td></tr>`;
     $("iRun").disabled = true;
+    refreshIntakePick();
     return;
   }
   $("iRun").disabled = res.rows.length === clash;
   body.innerHTML = res.rows.map((r) => `<tr>
+    <td class="pick"><input type="checkbox" data-irow="${r.id}" title="Выбрать"></td>
     <td class="client">${esc(r.client)}${r.supply ? `<span class="badge supply" title="Поставка по реестру">№${esc(r.supply)}</span>` : ""}</td>
     <td class="codes">
       <div class="codes-top"><b>${esc(r.article)}</b>${r.marketplace ? `<span class="badge mp">${esc(r.marketplace)}</span>` : ""}</div>
@@ -387,7 +389,53 @@ async function loadIntake() {
     <td>${intakeState(r)}</td>
     <td><button class="link" data-drop="${r.id}" title="Удалить">✕</button></td>
   </tr>`).join("");
+  refreshIntakePick();
 }
+
+function intakeSelection() {
+  return [...$("iTbl").querySelectorAll("input[data-irow]:checked")].map((b) => Number(b.dataset.irow));
+}
+
+function refreshIntakePick() {
+  const boxes = [...$("iTbl").querySelectorAll("input[data-irow]")];
+  const picked = boxes.filter((b) => b.checked);
+  boxes.forEach((b) => b.closest("tr").classList.toggle("picked", b.checked));
+  const all = $("iAll");
+  all.checked = boxes.length > 0 && picked.length === boxes.length;
+  all.indeterminate = picked.length > 0 && picked.length < boxes.length;
+  all.disabled = boxes.length === 0;
+  const btn = $("iDrop");
+  btn.disabled = picked.length === 0;
+  btn.textContent = picked.length ? "Удалить выбранные · " + picked.length : "Удалить выбранные";
+}
+
+$("iAll").onchange = () => {
+  const on = $("iAll").checked;
+  $("iTbl").querySelectorAll("input[data-irow]").forEach((b) => { b.checked = on; });
+  refreshIntakePick();
+};
+
+$("iDrop").onclick = async () => {
+  const ids = intakeSelection();
+  if (!ids.length) return;
+  const n = ids.length;
+  const n10 = n % 10;
+  const n100 = n % 100;
+  const word = n10 === 1 && n100 !== 11 ? "позицию" : (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14) ? "позиции" : "позиций");
+  if (!confirm("Удалить " + n + " " + word + " из очереди?")) return;
+  $("iDrop").disabled = true;
+  try {
+    const res = await api("/api/intake/drop", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    say($("iRunMsg"), "Удалил " + (res.deleted == null ? ids.length : res.deleted) + ".", "ok");
+    loadIntake();
+  } catch (err) {
+    say($("iRunMsg"), err.message, "bad");
+    refreshIntakePick();
+  }
+};
 
 $("iClientQ").onfocus = () => openCombo($("iClientQ"), $("iClientList"), fillIntakeCombo);
 $("iClientQ").oninput = () => {
@@ -494,6 +542,10 @@ $("supClose").onclick = () => $("supModal").classList.remove("on");
 $("supModal").onclick = (e) => { if (e.target === $("supModal")) $("supModal").classList.remove("on"); };
 
 $("iTbl").onchange = async (e) => {
+  if (e.target.closest("input[data-irow]")) {
+    refreshIntakePick();
+    return;
+  }
   const el = e.target.closest("[data-id][data-field]");
   if (!el) return;
   const body = {};

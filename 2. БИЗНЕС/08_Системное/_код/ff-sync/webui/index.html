@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=93">
+<link rel="stylesheet" href="/ui/app.css?v=94">
 </head>
 <body>
 
@@ -276,7 +276,13 @@
       <div class="msg" id="iMsg"></div>
     </div>
 
-    <div class="sec-title"><h2>Очередь</h2><span id="iCount"></span></div>
+    <div class="sec-title">
+      <h2>Очередь</h2>
+      <div class="sec-side">
+        <span id="iCount"></span>
+        <button class="btn-ghost" id="iDrop" type="button" disabled>Удалить выбранные</button>
+      </div>
+    </div>
     <div class="panel glass">
       <div class="fld grow">
         <label>Сканер количества</label>
@@ -286,6 +292,7 @@
       <div class="tbl-wrap intake-wrap">
         <table class="tbl intake-tbl" id="iTbl">
           <thead><tr>
+            <th class="pick"><input type="checkbox" id="iAll" title="Выбрать все"></th>
             <th>Контрагент</th><th>Товар</th><th>Наименование</th>
             <th>Тип</th><th class="num">Количество</th><th class="num" title="Литраж или габариты 8x8x120">Литраж, л</th>
             <th class="num">Сборка, ₽/шт</th><th>Статус</th><th></th>
@@ -703,6 +710,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=96"></script>
+<script src="/ui/app.js?v=97"></script>
 </body>
 </html>

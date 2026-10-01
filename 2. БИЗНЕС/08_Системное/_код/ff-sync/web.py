@@ -18,6 +18,7 @@ from db import (
     assembly_counts,
     catalog_card,
     delete_intake_row,
+    delete_intake_rows,
     find_wb_supplies,
     get_cabinet,
     get_invoice,
@@ -412,6 +413,16 @@ def intake_drop(row_id: int, ff_session: str = Cookie(default="")):
     init_db()
     delete_intake_row(row_id)
     return {"ok": True}
+
+
+@app.post("/api/intake/drop")
+def intake_drop_many(data: dict = Body(...), ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    ids = data.get("ids") if isinstance(data, dict) else None
+    if not isinstance(ids, list):
+        raise HTTPException(400, "нужен список позиций")
+    return {"ok": True, "deleted": delete_intake_rows(ids)}
 
 
 @app.post("/api/intake/run")

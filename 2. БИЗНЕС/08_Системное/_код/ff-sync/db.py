@@ -938,6 +938,29 @@ def delete_intake_row(row_id):
     conn.close()
 
 
+def delete_intake_rows(row_ids):
+    """Снять с очереди сразу несколько строк. Уже принятые не трогаем."""
+    ids = []
+    for raw in row_ids or []:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return 0
+    marks = ",".join("?" for _ in ids)
+    conn = connect()
+    cur = conn.execute(
+        "DELETE FROM intake_queue WHERE id IN (%s) AND state IN ('draft', 'warn', 'clash')" % marks,
+        tuple(ids),
+    )
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
 # Строки очереди, которые ещё в работе. 'clash' — артикул завёл на несколько
 # карточек: такую строку в МойСклад не пускаем, пока оператор не выберет товар.
 QUEUE_STATES = ("draft", "warn", "clash")
