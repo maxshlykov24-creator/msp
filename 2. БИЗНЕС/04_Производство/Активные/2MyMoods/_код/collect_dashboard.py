@@ -40,7 +40,11 @@ def required_rows(ms: lib.MS, path: str, params: dict | None = None) -> list[dic
     offset = 0
     while True:
         params["offset"] = offset
-        status, body = ms.req(path, params)
+        for attempt in range(8):
+            status, body = ms.req(path, params)
+            if status not in (429, 500, 502, 503, 504):
+                break
+            time.sleep(min(30, 2 * (attempt + 1)))
         if status != 200:
             raise RuntimeError(f"GET {path}: HTTP {status}")
         chunk = body.get("rows", [])
@@ -161,11 +165,11 @@ def positions_for(order_id: str) -> tuple[str, list[dict]]:
 
 
 def positions_in_order(order_ids: list[str]):
-    """Держим в памяти не больше восьми ответов МойСклад одновременно."""
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    """Держим в памяти не больше трёх ответов и не бьём лимит API."""
+    with ThreadPoolExecutor(max_workers=3) as pool:
         source = iter(order_ids)
         pending = deque()
-        for _ in range(min(8, len(order_ids))):
+        for _ in range(min(3, len(order_ids))):
             order_id = next(source)
             pending.append((order_id, pool.submit(positions_for, order_id)))
         for expected_id in order_ids:
