@@ -33,7 +33,8 @@ FIELD = {
 }
 
 
-def required_rows(ms: lib.MS, path: str, params: dict | None = None) -> list[dict]:
+def required_rows(ms: lib.MS, path: str, params: dict | None = None,
+                  keep: tuple[str, ...] | None = None) -> list[dict]:
     params = dict(params or {})
     params["limit"] = 1000
     out = []
@@ -48,7 +49,10 @@ def required_rows(ms: lib.MS, path: str, params: dict | None = None) -> list[dic
         if status != 200:
             raise RuntimeError(f"GET {path}: HTTP {status}")
         chunk = body.get("rows", [])
-        out += chunk
+        if keep is None:
+            out.extend(chunk)
+        else:
+            out.extend({key: row[key] for key in keep if key in row} for row in chunk)
         offset += len(chunk)
         if not chunk or offset >= body.get("meta", {}).get("size", offset):
             return out
@@ -156,7 +160,8 @@ def positions_for(order_id: str) -> tuple[str, list[dict]]:
     path = f"/entity/customerorder/{order_id}/positions"
     for attempt in range(6):
         try:
-            return order_id, required_rows(client, path)
+            return order_id, required_rows(client, path,
+                                           keep=("assortment", "quantity", "price", "discount"))
         except RuntimeError:
             if attempt == 5:
                 raise
@@ -189,15 +194,19 @@ def main() -> None:
     ms = lib.MS()
     started = datetime.now(TZ)
     print("МойСклад: заказы, платежи, номенклатура, контрагенты", flush=True)
-    orders = required_rows(ms, "/entity/customerorder", {"order": "moment,desc"})
-    paymentins = required_rows(ms, "/entity/paymentin")
-    payments = paymentins + required_rows(ms, "/entity/cashin")
+    orders = required_rows(ms, "/entity/customerorder", {"order": "moment,desc"},
+                           keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent",
+                                 "salesChannel", "shipmentAddress", "shipmentAddressFull"))
+    order_count = len(orders)
+    paymentins = required_rows(ms, "/entity/paymentin", keep=("moment", "created", "sum", "operations"))
+    payments = paymentins + required_rows(ms, "/entity/cashin", keep=("moment", "operations"))
     payment_daily = defaultdict(float)
     for payment in paymentins:
         created = dt(payment.get("created"))
         if created:
             payment_daily[created.date().isoformat()] += rub(payment.get("sum"))
-    invoices = {i["id"]: mid(i.get("customerOrder")) for i in required_rows(ms, "/entity/invoiceout")}
+    invoices = {i["id"]: mid(i.get("customerOrder")) for i in required_rows(
+        ms, "/entity/invoiceout", keep=("id", "customerOrder"))}
     order_payments = defaultdict(list)
     for payment in payments:
         for operation in payment.get("operations") or []:
@@ -206,18 +215,25 @@ def main() -> None:
             order_id = target_id if meta.get("type") == "customerorder" else invoices.get(target_id) if meta.get("type") == "invoiceout" else None
             if order_id:
                 order_payments[order_id].append((payment.get("moment"), rub(operation.get("linkedSum"))))
-    products = {p["id"]: p for p in required_rows(ms, "/entity/product")}
-    variants = {v["id"]: v for v in required_rows(ms, "/entity/variant")}
-    services = {s["id"]: s for s in required_rows(ms, "/entity/service")}
-    agents = {a["id"]: a for a in required_rows(ms, "/entity/counterparty")}
-    channels = {c["id"]: c["name"] for c in required_rows(ms, "/entity/saleschannel")}
-    returns = required_rows(ms, "/entity/salesreturn")
-    demands = {d["id"]: d for d in required_rows(ms, "/entity/demand")}
+    del payments, paymentins, invoices
+    products = {p["id"]: p for p in required_rows(ms, "/entity/product",
+                                                   keep=("id", "name", "pathName", "buyPrice"))}
+    variants = {v["id"]: v for v in required_rows(ms, "/entity/variant",
+                                                   keep=("id", "name", "product", "characteristics"))}
+    services = {s["id"]: s for s in required_rows(ms, "/entity/service", keep=("id", "name"))}
+    agents = {a["id"]: a for a in required_rows(ms, "/entity/counterparty",
+                                                 keep=("id", "name", "phone"))}
+    channels = {c["id"]: c["name"] for c in required_rows(ms, "/entity/saleschannel",
+                                                       keep=("id", "name"))}
+    returns = required_rows(ms, "/entity/salesreturn", keep=("id", "name", "demand", "description"))
+    demands = {d["id"]: d for d in required_rows(ms, "/entity/demand",
+                                                  keep=("id", "customerOrder"))}
     return_orders = defaultdict(list)
     for ret in returns:
         demand = demands.get(mid(ret.get("demand")))
         if demand:
             return_orders[mid(demand.get("customerOrder"))].append(ret)
+    del demands, returns
     print(f"справочники готовы; заказов {len(orders)}", flush=True)
     paid_ids = [o["id"] for o in orders if float(o.get("sum") or 0) > 0
                 and float(o.get("payedSum") or 0) >= float(o.get("sum") or 0)]
@@ -319,6 +335,7 @@ def main() -> None:
         if index % 500 == 0:
             print(f"обработано {index}/{len(orders)}", flush=True)
     position_rows.close()
+    del orders, order_payments, products, variants, services, agents, channels, return_orders
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
     try:
@@ -354,7 +371,7 @@ def main() -> None:
     for label, numbers in gaps.items():
         report += [f"## {label}: {len(numbers)}", "", ", ".join(numbers) if numbers else "Нет", ""]
     GAPS.write_text("\n".join(report), encoding="utf-8")
-    print(f"готово: {len(orders)} заказов, {len(leads)} сделок новой воронки; пробелы: {dict((k,len(v)) for k,v in gaps.items())}", flush=True)
+    print(f"готово: {order_count} заказов, {len(leads)} сделок новой воронки; пробелы: {dict((k,len(v)) for k,v in gaps.items())}", flush=True)
 
 
 if __name__ == "__main__":

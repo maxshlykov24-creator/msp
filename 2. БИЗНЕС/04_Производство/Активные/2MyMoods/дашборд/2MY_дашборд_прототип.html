@@ -882,8 +882,8 @@
   <h2 class="sect">Воронка продаж в amoCRM</h2>
   <div class="grid-2">
     <div class="card">
-      <h3>Короткая воронка, 8 этапов</h3>
-      <div class="hint">Текущие этапы только новой воронки Продажи 2MY. Показано число сделок на каждом этапе.</div>
+      <h3>Текущие этапы сделок</h3>
+      <div class="hint">Сделки, созданные в выбранный период в новой воронке продаж. Ответственная за маркетинг Полина не входит в этот блок.</div>
       <div id="funnel"></div>
     </div>
     <div class="card">
@@ -892,7 +892,7 @@
       <div id="disc-kv"></div>
       <div style="margin-top:28px">
         <h3 style="font-size:15px">Маркетинг и партнёрство</h3>
-        <div class="hint" style="margin-bottom:12px">Отдельный поток, своя конверсия</div>
+        <div class="hint" style="margin-bottom:12px">Отдельный поток, вне показателей продаж</div>
         <div id="partner-kv"></div>
       </div>
     </div>
@@ -1125,7 +1125,7 @@ function refresh(){
  mgr.sort((a,b)=>a.name==='Нет смены в графике'?1:b.name==='Нет смены в графике'?-1:b.rev-a.rev);
  const assigned=mgr.filter(x=>x.name!=='Нет смены в графике').reduce((n,x)=>n+x.arr.length,0);
  el('mgr-hint').textContent=`Менеджер по графику смен на дату закрывающего платежа. Подтверждённая смена: ${num(assigned)} из ${num(n)} покупок в фильтре. Без однозначной смены выручка показана отдельно.`+(data.roster?.status==='ok'?'':' График недоступен при сборке среза.');
- table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>x.name==='Нет смены в графике'?'—':data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'нет данных']);
+ table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>'нет данных']);
  const scopedClients=clients.filter(c=>people.has(c.phone));
  const tiers=['Gold','Silver','Bronze','Разовый'].map(t=>({name:t,cs:scopedClients.filter(c=>c.tier===t)}));
  table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,c=>c.ltv)),x=>pct(sum(x.cs,c=>c.ltv),sum(scopedClients,c=>c.ltv)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>x.cs.length?(sum(x.cs,c=>c.freq)/x.cs.length).toFixed(1):'0']);
@@ -1150,7 +1150,7 @@ function refresh(){
  el('scope').innerHTML=kv([['Выбранные изделия',num(sq)],['Выручка',money(sr)],['Закупка',money(sc)],['Маржа',money(sr-sc)]]);
  el('s-count').textContent=num(products.length)+' товаров';
  const leads=data.leads.filter(l=>l.created>=state.from&&l.created<=state.to);
- const stages=[[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно']];
+ const stages=[[88727566,'Неразобранное'],[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно'],[143,'Закрыто без успеха']];
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${label}</span><span class="nums">${num(leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
  el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Первый ответ Wazzup',data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'нет данных'],['Сообщений Wazzup',data.wazzup.status==='ok'?num(data.wazzup.messages||0):'нет данных']]);
  el('partner-kv').innerHTML=kv([['Маркетинг 2MY','отдельная воронка, в конверсию продаж не входит']]);
