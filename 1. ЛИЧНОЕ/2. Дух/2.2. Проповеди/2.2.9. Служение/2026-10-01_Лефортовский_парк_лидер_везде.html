@@ -189,6 +189,26 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
   text-transform: uppercase;
   font-weight: 600;
 }
+.to-top {
+  position: fixed;
+  z-index: 6;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 16px 7px;
+  background: rgba(5, 60, 58, .78);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.to-top[hidden] { display: none; }
 .split { display: grid; grid-template-columns: 1fr; gap: 8px 48px; }
 @media (min-width: 900px) {
   .split { grid-template-columns: .9fr 1.1fr; align-items: end; }
@@ -473,7 +493,9 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
   </div>
   <div class="foot"><span>сохраним</span><span>09</span></div>
 </section>
-</div></main>
+</div>
+<button class="to-top" type="button" hidden>наверх</button>
+</main>
 
 
 
@@ -481,6 +503,7 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
 (function () {
   var deck = document.querySelector(".deck");
   var track = document.querySelector(".track");
+  var topBtn = document.querySelector(".to-top");
   var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
   var i = 0;
   var lock = false;
@@ -492,6 +515,7 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
     track.getAnimations().forEach(function (a) { a.cancel(); });
     track.style.transform = from;
     var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (topBtn) topBtn.hidden = i === 0;
     if (instant || reduce) {
       track.style.transform = y;
       return;
@@ -558,6 +582,13 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
     if (e.key === "End") { e.preventDefault(); i = slides.length - 1; apply(false); }
   });
   window.addEventListener("resize", function () { apply(true); });
+  topBtn.addEventListener("click", function () {
+    if (i === 0) return;
+    i = 0;
+    lock = true;
+    apply(false);
+    setTimeout(function () { lock = false; }, 1250);
+  });
 })();
 </script>
 
