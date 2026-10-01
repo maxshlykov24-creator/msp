@@ -170,6 +170,58 @@ def get_amo() -> tuple[list[dict], dict]:
                     "stages": [{"id": s["id"], "name": s["name"]} for s in stages]}
 
 
+def get_responses(leads: list[dict]) -> dict:
+    """Паузы входящее → первый исходящий в беседе, без текстов и контактов."""
+    amo = lib.Amo()
+    now = datetime.now(TZ)
+    since = (now - timedelta(days=90)).replace(hour=0, minute=0, second=0, microsecond=0)
+    lead_ids = {l["id"] for l in leads}
+    events = {}
+    for page in range(1, 2001):
+        path = ("/api/v4/events?filter[type]=incoming_chat_message,outgoing_chat_message"
+                f"&filter[created_at][from]={int(since.timestamp())}"
+                f"&filter[created_at][to]={int(now.timestamp())}&limit=100&page={page}")
+        for attempt in range(6):
+            status, body = amo.req("GET", path)
+            if status not in (429, 500, 502, 503, 504):
+                break
+            time.sleep(2 * (attempt + 1))
+        if status == 204:
+            break
+        if status != 200:
+            raise RuntimeError(f"amo response events page {page}: HTTP {status}")
+        rows = body.get("_embedded", {}).get("events", [])
+        for row in rows:
+            if row.get("entity_type") == "lead" and row.get("entity_id") in lead_ids:
+                events[row["id"]] = row
+        if len(rows) < 100:
+            break
+    else:
+        raise RuntimeError("amo response events: pagination limit reached")
+    names = {lib.USER_TANYA: "Таня", lib.USER_KRISTINA: "Кристина", lib.USER_OKSANA: "Оксана", lib.USER_MAXIM: "Максим"}
+    pending, samples = {}, []
+    unknown = 0
+    for row in sorted(events.values(), key=lambda r: (r["created_at"], r["type"] != "incoming_chat_message", r["id"])):
+        values = row.get("value_after") or []
+        msg = values[0].get("message", {}) if values else {}
+        if not msg.get("talk_id"):
+            continue
+        key = (msg.get("origin"), msg["talk_id"])
+        if row["type"] == "incoming_chat_message":
+            pending.setdefault(key, row["created_at"])
+        elif key in pending:
+            start = pending.pop(key)
+            manager = names.get(row.get("created_by"))
+            if manager:
+                samples.append({"date": datetime.fromtimestamp(start, TZ).date().isoformat(),
+                                "manager": manager, "minutes": round((row["created_at"] - start) / 60, 2)})
+            else:
+                unknown += 1
+    return {"status": "ok", "source": "amoCRM events", "from": since.date().isoformat(),
+            "to": now.isoformat(), "samples": samples, "messages": len(events),
+            "unknown_author": unknown, "unanswered": len(pending)}
+
+
 def positions_for(order_id: str) -> tuple[str, list[dict]]:
     client = lib.MS()
     path = f"/entity/customerorder/{order_id}/positions"
@@ -355,6 +407,7 @@ def main() -> None:
     del orders, order_payments, products, variants, services, agents, channels, return_orders
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
+    responses = get_responses(leads)
     try:
         roster_rows = shift_roster._rows(force=True)
         roster_status = "ok"
@@ -377,7 +430,8 @@ def main() -> None:
             "orders": result, "leads": leads, "tasks": tasks,
             "roster": {"status": roster_status},
             "payment_daily": [{"date": day, "sum": round(amount, 2)} for day, amount in sorted(payment_daily.items())],
-            "wazzup": {"messages": 0, "first_response_minutes": 0, "status": "нет проверенной выгрузки сообщений"}}
+            "responses": responses,
+            "wazzup": {"status": "метрика ответа рассчитана по событиям amoCRM"}}
     # Атомарная замена: при ошибке предыдущий срез не получает новый timestamp.
     OUT.parent.mkdir(parents=True, exist_ok=True)
     GAPS.parent.mkdir(parents=True, exist_ok=True)

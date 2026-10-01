@@ -270,7 +270,7 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
     <span>Москва</span>
   </div>
   <div class="body">
-    <p class="kicker">Встреча лидеров · Лефортовский парк</p>
+    <p class="kicker">Встреча лидеров</p>
     <h1>Лидер<br>везде</h1>
     <p class="lede">Не в домашней группе и не в час собрания. Лидер остаётся лидером в любом месте, куда его поставил Бог.</p>
   </div>
@@ -490,13 +490,21 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
     var from = getComputedStyle(track).transform;
     if (from === "none") from = "matrix(1, 0, 0, 1, 0, 0)";
     track.getAnimations().forEach(function (a) { a.cancel(); });
-    track.style.transform = y;
+    track.style.transform = from;
     var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (instant || reduce) return;
-    track.animate([{ transform: from }, { transform: y }], {
-      duration: 620,
-      easing: "cubic-bezier(.22, .8, .24, 1)"
+    if (instant || reduce) {
+      track.style.transform = y;
+      return;
+    }
+    var anim = track.animate([{ transform: from }, { transform: y }], {
+      duration: 1800,
+      easing: "cubic-bezier(.45, .05, .55, .95)",
+      fill: "forwards"
     });
+    anim.onfinish = function () {
+      track.style.transform = y;
+      anim.cancel();
+    };
   }
   function step(dir) {
     var next = i + dir;
@@ -504,7 +512,7 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
     i = next;
     lock = true;
     apply(false);
-    setTimeout(function () { lock = false; }, 640);
+    setTimeout(function () { lock = false; }, 1850);
   }
   function bodyOf(target) {
     var node = target && target.closest ? target.closest(".body") : null;

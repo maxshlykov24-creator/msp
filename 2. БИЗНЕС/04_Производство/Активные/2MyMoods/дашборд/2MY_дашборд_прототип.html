@@ -582,6 +582,11 @@
     .donut-wrap{flex-wrap:wrap}
     .hero-mini{gap:16px 22px}
   }
+
+#items td:first-child{white-space:normal;min-width:210px;max-width:380px;width:38%}
+.product-pick{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;white-space:normal}
+#items tr{cursor:pointer}#items tr.selected{background:#fffbe6}.product-pick:focus-visible{outline:2px solid #000}
+.pick-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -618,7 +623,7 @@
   <div class="filters-2">
     <div class="fgroup">
       <div class="flabel">Категория</div>
-      <select id="f-cat"></select>
+      <select multiple id="f-cat"></select>
     </div>
     <div class="fgroup wide">
       <div class="flabel">Товар</div>
@@ -629,15 +634,15 @@
     </div>
     <div class="fgroup">
       <div class="flabel">Источник</div>
-      <select id="f-ch"></select>
+      <select multiple id="f-ch"></select>
     </div>
     <div class="fgroup">
       <div class="flabel">Канал сбыта</div>
-      <select id="f-sale"></select>
+      <select multiple id="f-sale"></select>
     </div>
     <div class="fgroup">
       <div class="flabel">География</div>
-      <select id="f-geo"></select>
+      <select multiple id="f-geo"></select>
     </div>
   </div>
 
@@ -823,13 +828,13 @@
   <section class="view" data-v="goods">
   <h2 class="sect">Точечная аналитика по товару</h2>
   <div class="toolbar scope-bar">
-    <select id="s-cat"></select>
+    <select multiple id="s-cat"></select>
     <div class="combo" id="s-prod-combo">
       <input type="search" id="s-prod" placeholder="Найти товар по названию" autocomplete="off">
       <div class="combo-list" hidden></div>
     </div>
-    <select id="s-size"></select>
-    <select id="s-color"></select>
+    <select multiple id="s-size"></select>
+    <select multiple id="s-color"></select>
     <button class="tclear" id="s-clear">Снять разрез</button>
     <span class="tcount" id="s-count"></span>
   </div>
@@ -838,7 +843,7 @@
   <div class="grid-2" style="margin-top:20px">
     <div class="card">
       <h3>Товары: продажи, выручка, маржа</h3>
-      <div class="hint">Нажмите на строку, чтобы посмотреть эту модель точечно. Повторное нажатие снимает выбор.</div>
+      <div class="hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий; выручка — после скидок, без доставки; маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие выбирает позицию, повторное снимает выбор.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Позиция</th><th>Продано</th><th>Выручка</th><th>Маржа</th><th>Размер</th><th>Цвет</th></tr></thead>
         <tbody id="items"></tbody>
@@ -937,7 +942,10 @@ const kv = rows => rows.map(([k,v]) => `<div class="kv"><span>${esc(k)}</span><b
 const sum = (xs, fn) => xs.reduce((a,x)=>a+fn(x),0);
 const group = (xs,key) => { const out=Object.create(null); xs.forEach(x=>{const k=key(x)||'не указано';(out[k] ||= []).push(x)}); return out; };
 const table = (id, rows, cols) => { el(id).innerHTML = rows.length ? rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(c(r))+'</td>').join('')+'</tr>').join('') : `<tr><td colspan="${cols.length}" class="empty">Нет данных</td></tr>`; };
-const select = (id, values, label) => { const e=el(id), old=e.value; e.innerHTML='<option value="">'+esc(label)+'</option>'+values.filter(Boolean).sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');e.value=old;};
+const selected = id => [...el(id).selectedOptions].map(o=>o.value).filter(Boolean);
+const setSelected=(id,values)=>{const e=el(id);[...e.options].forEach(o=>o.selected=values.includes(o.value));e.dispatchEvent(new Event('pick-sync'))};
+const matches=(values,value)=>!values.length||values.includes(value);
+const select = (id, values, label) => { const e=el(id), old=selected(id); e.innerHTML='<option value="">'+esc(label)+'</option>'+values.filter(Boolean).sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(e.multiple)setSelected(id,old);else e.value=old[0]||'';};
 
 (function(){
  const menu=document.createElement('div');
@@ -954,15 +962,17 @@ const select = (id, values, label) => { const e=el(id), old=e.value; e.innerHTML
  function syncLabel(sel){
   const btn=sel.nextElementSibling;
   if(!btn||!btn.classList.contains('pick'))return;
-  btn.querySelector('.pick-label').textContent=sel.selectedOptions[0]?.textContent||'';
+  const labels=[...sel.selectedOptions].filter(o=>o.value).map(o=>o.textContent);
+  btn.querySelector('.pick-label').textContent=labels.length?labels.join(', '):sel.options[0]?.textContent||'';
   btn.setAttribute('aria-expanded', current===sel?'true':'false');
  }
  function paint(){
   const sel=current, rows=shown();
+  menu.setAttribute('aria-multiselectable',sel.multiple?'true':'false');
   if(hi>=rows.length) hi=Math.max(0,rows.length-1);
   const search=rowsOf(sel).length>8;
   menu.innerHTML=(search?`<div class="pick-search">${icon}<input type="text" placeholder="Найти…" autocomplete="off" value="${esc(query)}"></div>`:'')+
-   `<div class="pick-list">${rows.length?rows.map((o,i)=>`<button type="button" class="pick-item${i===hi?' hi':''}${o.value===sel.value?' on':''}" data-i="${i}" role="option"><span>${esc(o.label)}</span>${o.value===sel.value?check:''}</button>`).join(''):'<div class="pick-empty">Ничего не найдено</div>'}</div>`;
+   `<div class="pick-list">${rows.length?rows.map((o,i)=>`<button type="button" class="pick-item${i===hi?' hi':''}${(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)?' on':''}" data-i="${i}" role="option"><span>${esc(o.label)}</span>${(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)?check:''}</button>`).join(''):'<div class="pick-empty">Ничего не найдено</div>'}</div>`+(sel.multiple?'<button type="button" class="pick-item" data-close="1">Готово</button>':'');
   menu.querySelector(`[data-i="${hi}"]`)?.scrollIntoView({block:'nearest'});
   const input=menu.querySelector('input');
   if(input){input.focus();const n=input.value.length;input.setSelectionRange(n,n)}
@@ -991,13 +1001,14 @@ const select = (id, values, label) => { const e=el(id), old=e.value; e.innerHTML
   if(current&&current!==sel) close();
   if(current===sel){close();return}
   current=sel; query='';
-  hi=Math.max(0,[...sel.options].findIndex(o=>o.value===sel.value));
+  hi=Math.max(0,[...sel.options].findIndex(o=>(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)));
   sel.nextElementSibling.classList.add('open');
   menu.hidden=false;
   paint(); place();
  }
  function choose(value){
   const sel=current;
+  if(sel.multiple){const values=selected(sel.id);setSelected(sel.id,!value?[]:values.includes(value)?values.filter(x=>x!==value):[...values,value]);sel.dispatchEvent(new Event('change'));paint();place();return}
   sel.value=value;
   sel.dispatchEvent(new Event('change'));
   close();
@@ -1028,15 +1039,16 @@ const select = (id, values, label) => { const e=el(id), old=e.value; e.innerHTML
   set(v){desc.set.call(this,v);if(this.dataset&&this.dataset.pick)this.dispatchEvent(new Event('pick-sync'))}
  });
  menu.addEventListener('click',e=>{
+  if(e.target.closest('[data-close]')){close();return}
   const item=e.target.closest('.pick-item');
   if(!item||!current)return;
   choose(shown()[+item.dataset.i].value);
  });
  menu.addEventListener('mouseover',e=>{
   const item=e.target.closest('.pick-item');
-  if(!item)return;
+  if(!item||item.dataset.i===undefined)return;
   hi=+item.dataset.i;
-  menu.querySelectorAll('.pick-item').forEach((n,i)=>n.classList.toggle('hi',i===hi));
+  menu.querySelectorAll('.pick-item[data-i]').forEach((n,i)=>n.classList.toggle('hi',i===hi));
  });
  menu.addEventListener('input',e=>{
   if(e.target.tagName!=='INPUT')return;
@@ -1060,14 +1072,14 @@ const select = (id, values, label) => { const e=el(id), old=e.value; e.innerHTML
 })();
 const startOfMonth = d => d.slice(0,7)+'-01';
 let data=null, clients=[], filtered=[], currentLines=[], includeDelivery=false, chartDays=[];
-let state={from:'',to:'',cat:'',prod:'',source:'',channel:'',city:''};
+let state={from:'',to:'',cat:[],prod:'',source:[],channel:[],city:[],size:[],color:[]};
 const views=[['sales','Продажи и каналы'],['clients','Клиенты'],['goods','Товары'],['proc','Процессы в amoCRM']];
 el('nav').innerHTML=views.map(([id,n],i)=>`<button data-v="${id}" class="${i?'':'on'}">${n}</button>`).join('');
 function view(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.dataset.v===id));document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x.dataset.v===id));location.hash='v-'+id;}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>view(b.dataset.v));
 function lineRev(l){return l.delivery && !includeDelivery ? 0 : l.rev;}
-function linesFor(o){return (o.lines||[]).filter(l=>!l.delivery||includeDelivery).filter(l=>(!state.cat||l.category===state.cat)&&(!state.prod||l.name===state.prod));}
-function orderRev(o,lines){return state.cat||state.prod ? sum(lines,l=>l.rev) : includeDelivery ? o.sum : sum(lines,l=>l.rev);}
+function linesFor(o){return (o.lines||[]).filter(l=>!l.delivery||includeDelivery).filter(l=>matches(state.cat,l.category)&&(!state.prod||l.name===state.prod));}
+function orderRev(o,lines){return state.cat.length||state.prod ? sum(lines,l=>l.rev) : includeDelivery ? o.sum : sum(lines,l=>l.rev);}
 function favorite(orders,key){const totals=group(orders.flatMap(o=>o.lines).filter(l=>!l.delivery),l=>l[key]);return Object.entries(totals).sort((a,b)=>sum(b[1],l=>l.qty)-sum(a[1],l=>l.qty))[0]?.[0]||'нет данных'}
 function buildClients(){
  const g=group(data.orders.filter(o=>o.buy&&o.phone),o=>o.phone);
@@ -1086,8 +1098,8 @@ function buildClients(){
 function refresh(){
  if(!data)return;
  const basic=data.orders.filter(o=>o.buy&&o.paid_date&&o.paid_date>=state.from&&o.paid_date<=state.to)
-   .filter(o=>(!state.source||o.source===state.source)&&(!state.channel||o.channel===state.channel)&&(!state.city||o.city===state.city));
- filtered=basic.map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat&&!state.prod));
+   .filter(o=>matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city));
+ filtered=basic.map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
  currentLines=filtered.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
  const noCost=currentLines.filter(x=>!x.l.delivery&&x.l.rev>0&&x.l.cost===0);
  el('cost-hint').textContent='Маржа по закупочной цене карточки: без работы и логистики.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
@@ -1103,7 +1115,7 @@ function refresh(){
  el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
  el('hero-sub').textContent='Выручка по полностью оплаченным заказам'+(includeDelivery?' с доставкой':' без доставки');
  const paymentTotal=sum((data.payment_daily||[]).filter(x=>x.date>=state.from&&x.date<=state.to),x=>x.sum);
- const paymentScopeClear=!state.cat&&!state.prod&&!state.source&&!state.channel&&!state.city;
+ const paymentScopeClear=!state.cat.length&&!state.prod&&!state.source.length&&!state.channel.length&&!state.city.length;
  el('payment-in-note').textContent=paymentScopeClear&&data.payment_daily ? 'Входящие платежи по дате создания: '+paymentTotal.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽. Включают частичную оплату и доставку.' : '';
  el('hero-mini').innerHTML=[['Заказов',n],['Средний чек',money(n?rev/n:0)],['Клиентов',people.size],['Маржа',pct(rev-cost,rev)]].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
  const kpis=[['Выручка, покупки',money(rev)],['Заказов',num(n)],['Средний чек',money(n?rev/n:0)],['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Маржа по закупке',pct(rev-cost,rev)],['Повторные покупки',(unknownN?'не менее ':'')+pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты',pct(returnN,n)]];
@@ -1129,11 +1141,15 @@ function refresh(){
  el('utm-kv').innerHTML=kv([['Заказов сайта',num(site.length)],['Без utm_source',num(site.length-marked)],['Частично оплаченные: созданы в периоде, все каналы',num(data.orders.filter(o=>o.partial&&o.created>=state.from&&o.created<=state.to).length)]]);
  const discounts=filtered.filter(x=>x.o.promo||x.ls.some(l=>l.rev<l.list));
  el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(sum(discounts,x=>orderRev(x.o,x.ls)))],['Скидка по позициям',money(sum(currentLines,x=>Math.max(0,x.l.list-x.l.rev)))]]);
+ const responseRows=(data.responses?.samples||[]).filter(x=>x.date>=state.from&&x.date<=state.to);
+ const responseMedian=rows=>{const ns=rows.map(x=>x.minutes).sort((a,b)=>a-b);return ns.length?((ns[Math.floor((ns.length-1)/2)]+ns[Math.floor(ns.length/2)])/2).toFixed(1)+' мин ('+ns.length+' ответов)':'нет данных'};
  const mgr=Object.entries(group(filtered,x=>x.o.manager||'Нет смены в графике')).map(([name,arr])=>({name,arr,rev:sum(arr,x=>orderRev(x.o,x.ls))}));
  mgr.sort((a,b)=>a.name==='Нет смены в графике'?1:b.name==='Нет смены в графике'?-1:b.rev-a.rev);
  const assigned=mgr.filter(x=>x.name!=='Нет смены в графике').reduce((n,x)=>n+x.arr.length,0);
  el('mgr-hint').textContent=`Менеджер по графику смен на дату закрывающего платежа. Подтверждённая смена: ${num(assigned)} из ${num(n)} покупок в фильтре. Без однозначной смены выручка показана отдельно.`+(data.roster?.status==='ok'?'':' График недоступен при сборке среза.');
- table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>'нет данных']);
+ for(const name of new Set(responseRows.map(x=>x.manager)))if(!mgr.some(x=>x.name===name))mgr.push({name,arr:[],rev:0});
+ el('mgr-hint').textContent+=' Ответ: медиана календарных минут от первого входящего в серии до следующего исходящего в той же беседе amoCRM, по фактическому автору ответа. Только «Продажи 2MY», период по входящему сообщению; товарные фильтры на ответы не действуют. Ответы без определённого автора исключены.'+(data.responses?.from?` История с ${dmy(data.responses.from)}.`:' История сообщений ещё не загружена.');
+ table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>responseMedian(responseRows.filter(r=>r.manager===x.name))]);
  const scopedClients=clients.filter(c=>people.has(c.phone));
  const datedClients=scopedClients.filter(c=>c.freq!==null);
  const periodRevenue=c=>sum(filtered.filter(x=>x.o.phone===c.phone),x=>orderRev(x.o,x.ls));
@@ -1148,8 +1164,8 @@ function refresh(){
  el('churn-kv').innerHTML=kv([['Gold молчат больше 90 дней',num(clients.filter(c=>c.tier==='Gold'&&c.silence>90).length)],['Silver молчат больше 90 дней',num(clients.filter(c=>c.tier==='Silver'&&c.silence>90).length)]]);
  renderClients(scopedClients);
  const goodsLines=currentLines.filter(x=>!x.l.delivery);
- const products=Object.entries(group(goodsLines,x=>x.l.id)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:arr[0].l.size,color:arr[0].l.color})).sort((a,b)=>b.rev-a.rev);
- table('items',products.slice(0,20),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.rev-x.cost),x=>x.size,x=>x.color]);
+ const products=Object.entries(group(goodsLines,x=>x.l.name)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:[...new Set(arr.map(x=>x.l.size))].join(', '),color:[...new Set(arr.map(x=>x.l.color))].join(', ')})).sort((a,b)=>b.rev-a.rev);
+ el('items').innerHTML=products.slice(0,20).map(x=>`<tr data-product="${esc(x.name)}" class="${state.prod===x.name?'selected':''}"><td><button class="product-pick" aria-pressed="${state.prod===x.name}">${esc(x.name)}</button></td><td>${num(x.qty)}</td><td>${money(x.rev)}</td><td>${money(x.rev-x.cost)}</td><td>${esc(x.size)}</td><td>${esc(x.color)}</td></tr>`).join('')||'<tr><td colspan="6">Нет покупок в выбранном фильтре</td></tr>';
  const cats=Object.entries(group(goodsLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost)})).sort((a,b)=>b.rev-a.rev);
  table('cats',cats,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.qty?x.rev/x.qty:0),x=>money(x.rev-x.cost)]);
  el('sizes').innerHTML=Object.entries(group(goodsLines,x=>x.l.size)).map(([size,arr])=>`<div class="kv"><span>${esc(size)}</span><b>${num(sum(arr,x=>x.l.qty))}</b></div>`).join('')||'Нет данных';
@@ -1159,7 +1175,7 @@ function refresh(){
  }).sort((a,b)=>b.qty-a.qty);
  table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>x.topChannel,x=>x.topShare]);
  el('basket-kv').innerHTML=kv([['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
- const scopeLines=goodsLines.filter(x=>(!el('s-size').value||x.l.size===el('s-size').value)&&(!el('s-color').value||x.l.color===el('s-color').value));
+ const scopeLines=goodsLines.filter(x=>matches(state.size,x.l.size)&&matches(state.color,x.l.color));
  const sq=sum(scopeLines,x=>x.l.delivery?0:x.l.qty),sr=sum(scopeLines,x=>x.l.rev),sc=sum(scopeLines,x=>x.l.cost);
  el('scope').innerHTML=kv([['Выбранные изделия',num(sq)],['Выручка',money(sr)],['Закупка',money(sc)],['Маржа',money(sr-sc)]]);
  el('s-count').textContent=num(products.length)+' товаров';
@@ -1168,7 +1184,7 @@ function refresh(){
  const stages=data.tasks.stages?.map(s=>[s.id,s.name])||fallbackStages;
  el('funnel-hint').textContent=`В срезе: ${num(data.leads.length)} сделок; исключено по Полине: ${num(data.tasks.excluded_marketing_owner||0)}. Обновлено: ${data.tasks.collected_at||data.generated}.`;
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${esc(label)}</span><span class="nums">${num(data.leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
- el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Первый ответ Wazzup',data.wazzup.status==='ok'?data.wazzup.first_response_minutes+' мин':'нет данных'],['Сообщений Wazzup',data.wazzup.status==='ok'?num(data.wazzup.messages||0):'нет данных']]);
+ el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Медиана ответа amoCRM',responseMedian(responseRows)],['Ответов без определённого автора, вся доступная история',data.responses?num(data.responses.unknown_author):'нет данных']]);
  el('partner-kv').innerHTML=kv([['Маркетинг 2MY','отдельная воронка, в конверсию продаж не входит']]);
  el('task-kv').innerHTML=kv([['Открытых задач сейчас, без фильтра периода',num(data.tasks.open)],['Выборка задач',num(data.tasks.sampled)]]);
  const shipped=orders.filter(o=>o.sent_at).length;
@@ -1176,7 +1192,7 @@ function refresh(){
  const median=xs=>{if(!xs.length)return 'нет данных';const a=xs.map(x=>x.days).sort((x,y)=>x-y);return ((a[Math.floor((a.length-1)/2)]+a[Math.floor(a.length/2)])/2).toFixed(1)+' дн.'};
  const reasons=Object.entries(group(orders.filter(o=>o.return),o=>o.return_reason||'не указано')).map(([name,arr])=>['Причина: '+name,num(arr.length)]);
  el('ship-kv').innerHTML=kv([['Покупок',num(n)],['С датой Отправлен',num(shipped)],['Без даты отправки',num(n-shipped)],['Подтвержден → Отправлен',median(shipDays)],['Ожидает наличия',median(shipDays.filter(x=>x.stock))],['Без ожидания наличия',median(shipDays.filter(x=>!x.stock))],['Возвраты',num(returnN)],...reasons]);
- el('f-cat').value=state.cat;el('f-ch').value=state.source;el('f-sale').value=state.channel;el('f-geo').value=state.city;
+ [['f-cat','cat'],['s-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-size','size'],['s-color','color']].forEach(([id,key])=>setSelected(id,state[key]));
 }
 function renderClients(cs){
  const q=(el('c-q').value||'').toLowerCase(),tier=el('c-tier').value,buys=el('c-buys').value,sil=el('c-sil').value;
@@ -1205,12 +1221,13 @@ function init(snap){
  const names=[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.name)))].filter(Boolean).sort();const dl=document.createElement('datalist');dl.id='products-list';dl.innerHTML=names.map(n=>'<option value="'+esc(n)+'"></option>').join('');document.body.appendChild(dl);el('f-prod').setAttribute('list','products-list');el('s-prod').setAttribute('list','products-list');
  refresh();view((location.hash||'#v-sales').replace('#v-',''));
 }
-[['d1','from'],['d2','to'],['f-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-cat','cat']].forEach(([id,key])=>el(id).onchange=e=>{state[key]=e.target.value;refresh()});
-el('f-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.name||'';if(hit){state.cat='';el('f-cat').value='';el('s-cat').value=''}refresh()};
-el('s-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.name||'';if(hit){state.cat='';el('f-cat').value='';el('s-cat').value=''}refresh()};
-el('s-size').onchange=refresh;el('s-color').onchange=refresh;
-el('s-clear').onclick=()=>{state.cat='';state.prod='';el('s-cat').value='';el('s-prod').value='';refresh()};
-el('reset').onclick=()=>{state.cat='';state.prod='';state.source='';state.channel='';state.city='';el('f-prod').value='';refresh()};
+[['d1','from'],['d2','to'],['f-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-cat','cat']].forEach(([id,key])=>el(id).onchange=e=>{state[key]=e.target.multiple?selected(id):e.target.value;refresh()});
+el('f-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.name||'';if(hit){state.cat=[];el('f-cat').value='';el('s-cat').value=''}refresh()};
+el('s-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.name||'';if(hit){state.cat=[];el('f-cat').value='';el('s-cat').value=''}refresh()};
+el('s-size').onchange=()=>{state.size=selected('s-size');refresh()};el('s-color').onchange=()=>{state.color=selected('s-color');refresh()};
+el('s-clear').onclick=()=>{state.size=[];state.color=[];state.cat=[];state.prod='';el('s-cat').value='';el('s-prod').value='';refresh()};
+el('reset').onclick=()=>{state.cat=[];state.prod='';state.source=[];state.channel=[];state.city=[];state.size=[];state.color=[];el('f-prod').value='';refresh()};
+el('items').onclick=e=>{const row=e.target.closest('tr[data-product]');if(!row)return;state.prod=state.prod===row.dataset.product?'':row.dataset.product;el('f-prod').value=state.prod;el('s-prod').value=state.prod;refresh()};
 const periodClients=()=>{const phones=new Set(filtered.map(x=>x.o.phone));return clients.filter(c=>phones.has(c.phone))};
 ['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener('input',()=>renderClients(periodClients())));
 el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';renderClients(periodClients())};
