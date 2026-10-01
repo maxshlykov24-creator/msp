@@ -872,8 +872,8 @@
   </div>
 
   <div class="card" style="margin-top:20px">
-    <h3>Размер заказа и коллаборации</h3>
-    <div class="hint">Сколько изделий в заказе, какая доля заказов собирается из двух и более позиций, сколько выручки дают капсулы с Sorelle Era и Vlada Nazina.</div>
+    <h3>Размер заказа</h3>
+    <div class="hint">Сколько изделий приходится на заказ и сколько заказов содержат два изделия или больше.</div>
     <div id="basket-kv"></div>
   </div>
   </section>
@@ -1091,7 +1091,7 @@ function refresh(){
  const orders=filtered.map(x=>x.o), rev=sum(filtered,x=>orderRev(x.o,x.ls));
  const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
  const n=orders.length, people=new Set(orders.map(o=>o.phone).filter(Boolean));
- const returnN=orders.filter(o=>o.return).length, repN=orders.filter(o=>o.phone&&clients.find(c=>c.phone===o.phone)?.first<o.paid_date).length;
+ const returnN=orders.filter(o=>o.return).length, repN=orders.filter(o=>{const first=clients.find(c=>c.phone===o.phone)?.first;return first&&first<o.paid_date}).length;
  const avgLtv=people.size?sum(clients.filter(c=>people.has(c.phone)),c=>c.ltv)/people.size:0;
  el('hero-period').textContent=`${dmy(state.from)} — ${dmy(state.to)} · по дате закрывающего платежа, Москва`;
  el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
