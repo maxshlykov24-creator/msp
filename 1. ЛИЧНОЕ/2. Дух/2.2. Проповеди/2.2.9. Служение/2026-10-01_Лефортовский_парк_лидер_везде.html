@@ -497,7 +497,7 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
       return;
     }
     var anim = track.animate([{ transform: from }, { transform: y }], {
-      duration: 1800,
+      duration: 1200,
       easing: "cubic-bezier(.45, .05, .55, .95)",
       fill: "forwards"
     });
@@ -512,7 +512,7 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
     i = next;
     lock = true;
     apply(false);
-    setTimeout(function () { lock = false; }, 1850);
+    setTimeout(function () { lock = false; }, 1250);
   }
   function bodyOf(target) {
     var node = target && target.closest ? target.closest(".body") : null;
