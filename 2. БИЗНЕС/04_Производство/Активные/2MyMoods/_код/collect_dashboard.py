@@ -14,6 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import lib
+import shift_roster
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get("DASHBOARD_SNAPSHOT", ROOT / "дашборд" / "snapshot.local.json"))
@@ -163,7 +164,13 @@ def main() -> None:
     started = datetime.now(TZ)
     print("МойСклад: заказы, платежи, номенклатура, контрагенты", flush=True)
     orders = required_rows(ms, "/entity/customerorder", {"order": "moment,desc"})
-    payments = required_rows(ms, "/entity/paymentin") + required_rows(ms, "/entity/cashin")
+    paymentins = required_rows(ms, "/entity/paymentin")
+    payments = paymentins + required_rows(ms, "/entity/cashin")
+    payment_daily = defaultdict(float)
+    for payment in paymentins:
+        created = dt(payment.get("created"))
+        if created:
+            payment_daily[created.date().isoformat()] += rub(payment.get("sum"))
     invoices = {i["id"]: mid(i.get("customerOrder")) for i in required_rows(ms, "/entity/invoiceout")}
     order_payments = defaultdict(list)
     for payment in payments:
@@ -290,11 +297,28 @@ def main() -> None:
             print(f"обработано {index}/{len(orders)}", flush=True)
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
+    try:
+        roster_rows = shift_roster._rows(force=True)
+        roster_status = "ok"
+    except Exception as exc:
+        roster_rows = {}
+        roster_status = f"недоступен: {type(exc).__name__}"
+    for row in result:
+        paid_date = row["paid_date"]
+        flags = roster_rows.get(datetime.fromisoformat(paid_date).date()) if paid_date else None
+        if flags == (True, False):
+            row["manager"] = "Кристина"
+        elif flags == (False, True):
+            row["manager"] = "Таня"
+        else:
+            row["manager"] = ""
     if os.environ.get("DASHBOARD_STRIP_ADDRESS"):
         for row in result:
             row.pop("address", None)
     snap = {"generated": datetime.now(TZ).isoformat(timespec="seconds"), "timezone": "Europe/Moscow",
             "orders": result, "leads": leads, "tasks": tasks,
+            "roster": {"status": roster_status},
+            "payment_daily": [{"date": day, "sum": round(amount, 2)} for day, amount in sorted(payment_daily.items())],
             "wazzup": {"messages": 0, "first_response_minutes": 0, "status": "нет проверенной выгрузки сообщений"}}
     # Атомарная замена: при ошибке предыдущий срез не получает новый timestamp.
     OUT.parent.mkdir(parents=True, exist_ok=True)
