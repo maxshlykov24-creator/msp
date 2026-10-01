@@ -931,6 +931,7 @@ const el = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = n => Number(n || 0).toLocaleString('ru-RU');
 const money = n => num(Math.round(n || 0)) + ' ₽';
+const dmy = v => {const s=String(v??'');const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[3]+'.'+m[2]+'.'+m[1];const mo=s.match(/^(\d{4})-(\d{2})$/);if(mo)return mo[2]+'.'+mo[1];return s};
 const pct = (a,b) => b ? Math.round(a/b*100) + '%' : '0%';
 const kv = rows => rows.map(([k,v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
 const sum = (xs, fn) => xs.reduce((a,x)=>a+fn(x),0);
@@ -1092,7 +1093,7 @@ function refresh(){
  const n=orders.length, people=new Set(orders.map(o=>o.phone).filter(Boolean));
  const returnN=orders.filter(o=>o.return).length, repN=orders.filter(o=>o.phone&&clients.find(c=>c.phone===o.phone)?.first<o.paid_date).length;
  const avgLtv=people.size?sum(clients.filter(c=>people.has(c.phone)),c=>c.ltv)/people.size:0;
- el('hero-period').textContent=`${state.from} — ${state.to} · по дате закрывающего платежа, Москва`;
+ el('hero-period').textContent=`${dmy(state.from)} — ${dmy(state.to)} · по дате закрывающего платежа, Москва`;
  el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
  el('hero-sub').textContent='Выручка по полностью оплаченным заказам'+(includeDelivery?' с доставкой':' без доставки');
  const paymentTotal=sum((data.payment_daily||[]).filter(x=>x.date>=state.from&&x.date<=state.to),x=>x.sum);
@@ -1104,12 +1105,12 @@ function refresh(){
  const days=group(filtered,x=>x.o.paid_date), keys=Object.keys(days).sort();
  el('chart-title').textContent='Выручка по дням оплаты';
  chartDays=keys.map(k=>({date:k,rev:Math.round(sum(days[k],x=>orderRev(x.o,x.ls))),n:days[k].length}));
- el('chart-peak').textContent=chartDays.length?'Пик: '+chartDays.reduce((a,b)=>a.rev>b.rev?a:b).date:'Нет покупок';
+ el('chart-peak').textContent=chartDays.length?'Пик: '+dmy(chartDays.reduce((a,b)=>a.rev>b.rev?a:b).date):'Нет покупок';
  const max=Math.max(1,...chartDays.map(d=>d.rev)), nPts=chartDays.length;
  const xy=(d,i)=>`${nPts>1?i*600/(nPts-1):300},${125-d.rev*115/max}`;
  el('spark').innerHTML=nPts>1?`<polyline fill="none" stroke="#020202" stroke-width="2" vector-effect="non-scaling-stroke" points="${chartDays.map(xy).join(' ')}"/>`:nPts?`<circle cx="300" cy="${125-chartDays[0].rev*115/max}" r="3" fill="#020202"/>`:'';
  if(typeof placeChartTip==='function' && document.querySelector('.chart-plot').matches(':hover')) placeChartTip(lastChartX);
- el('ax-l').textContent=state.from;el('ax-r').textContent=state.to;
+ el('ax-l').textContent=dmy(state.from);el('ax-r').textContent=dmy(state.to);
  const rowsFor=(key)=>Object.entries(group(filtered,x=>key(x.o))).map(([name,arr])=>({name,n:arr.length,rev:sum(arr,x=>orderRev(x.o,x.ls))})).sort((a,b)=>b.rev-a.rev);
  const source=rowsFor(o=>o.source), channel=rowsFor(o=>o.channel), geo=rowsFor(o=>o.city);
  table('src',source,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>money(r.rev/r.n),r=>pct(r.n,n)]);
@@ -1133,7 +1134,7 @@ function refresh(){
  el('rep-legend').innerHTML=`<div>Повторные <b>${repN}</b></div><div>Первые <b>${n-repN}</b></div>`;
  el('rep-kv').innerHTML=kv([['Клиентов с двумя и более покупками',num(scopedClients.filter(c=>c.buys>=2).length)],['Средний LTV',money(avgLtv)],['Покупок в год на клиента',scopedClients.length?(sum(scopedClients,c=>c.freq)/scopedClients.length).toFixed(1):'0']]);
  const cohorts=group(clients.filter(c=>c.first),c=>c.first.slice(0,7));
- table('coh',Object.entries(cohorts).sort().slice(-8).map(([name,cs])=>({name,cs})),[x=>x.name,x=>num(x.cs.length),x=>num(x.cs.filter(c=>c.rep).length),x=>pct(x.cs.filter(c=>c.rep).length,x.cs.length),x=>'—']);
+ table('coh',Object.entries(cohorts).sort().slice(-8).map(([name,cs])=>({name,cs})),[x=>dmy(x.name),x=>num(x.cs.length),x=>num(x.cs.filter(c=>c.rep).length),x=>pct(x.cs.filter(c=>c.rep).length,x.cs.length),x=>'—']);
  el('base-kv').innerHTML=kv([['Клиентов по телефону',num(clients.length)],['Без телефона',num(data.orders.filter(o=>o.buy&&!o.phone).length)],['Активных в периоде',num(people.size)]]);
  el('churn-kv').innerHTML=kv([['Gold молчат больше 90 дней',num(clients.filter(c=>c.tier==='Gold'&&c.silence>90).length)],['Silver молчат больше 90 дней',num(clients.filter(c=>c.tier==='Silver'&&c.silence>90).length)]]);
  renderClients(scopedClients);
@@ -1167,7 +1168,7 @@ function renderClients(cs){
  let rows=(el('c-base').value==='all'?clients:cs).filter(c=>(!q||c.name.toLowerCase().includes(q)||c.phone.includes(q))&&(!tier||c.tier===tier)&&(!buys||(buys==='1'?c.buys===1:c.buys>=+buys))&&(!sil||(c.silence!==null&&(sil==='l30'?c.silence<30:c.silence>+sil.slice(1)))));
  const sort=el('c-sort').value;rows.sort((a,b)=>sort==='last'?b.last.localeCompare(a.last):sort==='silence'?b.silence-a.silence:sort==='buys'?b.buys-a.buys:b.ltv-a.ltv);
  el('c-count').textContent=num(rows.length)+' клиентов';
- table('clients',rows.slice(0,20),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>c.first,c=>c.last,c=>c.silence===null?'—':c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel]);
+ table('clients',rows.slice(0,20),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>dmy(c.first),c=>dmy(c.last),c=>c.silence===null?'—':c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel]);
 }
 function init(snap){
  if(!snap||!Array.isArray(snap.orders)) throw Error('Неверный формат среза');
@@ -1200,10 +1201,10 @@ const periodClients=()=>{const phones=new Set(filtered.map(x=>x.o.phone));return
 el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';renderClients(periodClients())};
 document.querySelector('.xls').onclick=()=>{
  const rows=[['Заказ','Дата оплаты','Канал','Источник','Город','Клиент','Телефон','Товар','Размер','Цвет','Количество','Выручка','Закупка']];
- currentLines.forEach(({o,l})=>rows.push([o.number,o.paid_date,o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,l.color,l.qty,l.rev,l.cost]));
+ currentLines.forEach(({o,l})=>rows.push([o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,l.color,l.qty,l.rev,l.cost]));
  const safeCell=v=>{const t=String(v??'');return /^[=+@-]/.test(t)&&!/^-[0-9.,]+$/.test(t)?"'"+t:t};
  const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+safeCell(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
- const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='2MY_выгрузка_'+state.from+'_'+state.to+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='2MY_выгрузка_'+dmy(state.from)+'_'+dmy(state.to)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
 el('delivery-toggle').onchange=e=>{includeDelivery=e.target.checked;refresh()};
 let lastChartX=0;
@@ -1220,8 +1221,7 @@ function placeChartTip(clientX){
  const max=Math.max(1,...chartDays.map(p=>p.rev));
  const px=last?i/last*r.width:r.width/2;
  const y=(125-d.rev*115/max)/132*r.height;
- const parts=d.date.split('-');
- tip.querySelector('.t-date').textContent=parts[2]+'.'+parts[1]+'.'+parts[0];
+ tip.querySelector('.t-date').textContent=dmy(d.date);
  tip.querySelector('b').textContent=money(d.rev);
  tip.querySelector('em').textContent=ordersWord(d.n);
  tip.classList.add('on');
