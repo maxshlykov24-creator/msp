@@ -314,6 +314,8 @@ def main() -> None:
                 gross = rub(x.get("price")) * qty
                 rev = round(gross * (1 - float(x.get("discount") or 0) / 100), 2)
                 cost = rub((product.get("buyPrice") or {}).get("value")) * qty
+                if rev > 0 and cost == 0 and not delivery_line:
+                    gaps["Позиция без закупочной цены"].append(number)
                 lines.append({"id": aid, "name": name, "category": product.get("pathName") or "не указано",
                               "size": size, "color": color, "qty": qty, "rev": rev,
                               "list": gross, "cost": round(cost, 2), "delivery": delivery_line})

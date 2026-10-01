@@ -679,7 +679,7 @@
       <h3>Источник заказа</h3>
       <div class="hint">Источник берётся из utm_source заказа МойСклад. Без метки показано «не указано».</div>
       <div class="scroll-x"><table>
-        <thead><tr><th>Канал</th><th>Заказов</th><th>Выручка</th><th>Средний чек</th><th>Доля</th></tr></thead>
+        <thead><tr><th>Источник</th><th>Заказов</th><th>Выручка</th><th>Средний чек</th><th>Доля</th></tr></thead>
         <tbody id="src"></tbody>
       </table></div>
     </div>
@@ -846,7 +846,7 @@
     </div>
     <div class="card">
       <h3>Категории: выручка и маржа</h3>
-      <div class="hint">Маржа по закупочной цене карточки товара: без работы и логистики.</div>
+      <div class="hint" id="cost-hint">Маржа по закупочной цене карточки товара: без работы и логистики.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Категория</th><th>Изделий</th><th>Выручка</th><th>Средняя цена</th><th>Маржа</th></tr></thead>
         <tbody id="cats"></tbody>
@@ -863,7 +863,7 @@
     </div>
     <div class="card">
       <h3>Цвет и канал</h3>
-      <div class="hint">Сравнение цветов и источников по покупкам текущего фильтра.</div>
+      <div class="hint">Сравнение цветов и каналов сбыта по покупкам текущего фильтра.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Цвет</th><th>Изделий</th><th>Выручка</th><th>Главный канал</th><th>Доля канала</th></tr></thead>
         <tbody id="colors"></tbody>
@@ -1071,13 +1071,13 @@ function orderRev(o,lines){return state.cat||state.prod ? sum(lines,l=>l.rev) : 
 function buildClients(){
  const g=group(data.orders.filter(o=>o.buy&&o.phone),o=>o.phone);
  clients=Object.entries(g).map(([phone,orders])=>{
-   orders.sort((a,b)=>(a.paid_date||'9999').localeCompare(b.paid_date||'9999'));
+   orders.sort((a,b)=>(a.paid_date||'').localeCompare(b.paid_date||''));
    const buys=orders.length, ltv=sum(orders,o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev));
    const dated=orders.filter(o=>o.paid_date);const uncertain=dated.length!==orders.length;const first=uncertain?'':dated[0]?.paid_date||'',last=uncertain?'':dated[dated.length-1]?.paid_date||'';
    return {phone,name:orders[buys-1].client||phone,buys,ltv,first,last,
      silence:last?Math.max(0,Math.floor((Date.now()-Date.parse(last+'T00:00:00+03:00'))/864e5)):null,
      tier:buys>=4?'Gold':buys>=2?'Silver':ltv>=20000?'Bronze':'Разовый',
-     freq:first?buys/Math.max(1,(Date.now()-Date.parse(first+'T00:00:00+03:00'))/864e5/365):0,
+     freq:first?buys/Math.max(1,(Date.now()-Date.parse(first+'T00:00:00+03:00'))/864e5/365):null,
      orders,rep:buys>1,category:orders.flatMap(o=>o.lines).find(l=>!l.delivery)?.category||'',
      size:orders.flatMap(o=>o.lines).find(l=>l.size)?.size||'',channel:orders[buys-1].channel};
  });
@@ -1088,6 +1088,8 @@ function refresh(){
    .filter(o=>(!state.source||o.source===state.source)&&(!state.channel||o.channel===state.channel)&&(!state.city||o.city===state.city));
  filtered=basic.map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat&&!state.prod));
  currentLines=filtered.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
+ const noCost=currentLines.filter(x=>!x.l.delivery&&x.l.rev>0&&x.l.cost===0);
+ el('cost-hint').textContent='Маржа по закупочной цене карточки: без работы и логистики.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
  const orders=filtered.map(x=>x.o), rev=sum(filtered,x=>orderRev(x.o,x.ls));
  const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
  const n=orders.length, people=new Set(orders.map(o=>o.phone).filter(Boolean));
@@ -1128,11 +1130,12 @@ function refresh(){
  el('mgr-hint').textContent=`Менеджер по графику смен на дату закрывающего платежа. Подтверждённая смена: ${num(assigned)} из ${num(n)} покупок в фильтре. Без однозначной смены выручка показана отдельно.`+(data.roster?.status==='ok'?'':' График недоступен при сборке среза.');
  table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>'нет данных']);
  const scopedClients=clients.filter(c=>people.has(c.phone));
+ const datedClients=scopedClients.filter(c=>c.freq!==null);
  const tiers=['Gold','Silver','Bronze','Разовый'].map(t=>({name:t,cs:scopedClients.filter(c=>c.tier===t)}));
- table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,c=>c.ltv)),x=>pct(sum(x.cs,c=>c.ltv),sum(scopedClients,c=>c.ltv)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>x.cs.length?(sum(x.cs,c=>c.freq)/x.cs.length).toFixed(1):'0']);
+ table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,c=>c.ltv)),x=>pct(sum(x.cs,c=>c.ltv),sum(scopedClients,c=>c.ltv)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>{const dated=x.cs.filter(c=>c.freq!==null);return dated.length?(sum(dated,c=>c.freq)/dated.length).toFixed(1):'нет данных'}]);
  el('rep-share').textContent=pct(repN,n);el('rep-donut').style.background=`conic-gradient(#020202 0 ${n?repN/n*100:0}%,#ededed 0)`;
  el('rep-legend').innerHTML=`<div>Повторные <b>${repN}</b></div><div>Первые <b>${n-repN}</b></div>`;
- el('rep-kv').innerHTML=kv([['Клиентов с двумя и более покупками',num(scopedClients.filter(c=>c.buys>=2).length)],['Средний LTV',money(avgLtv)],['Покупок в год на клиента',scopedClients.length?(sum(scopedClients,c=>c.freq)/scopedClients.length).toFixed(1):'0']]);
+ el('rep-kv').innerHTML=kv([['Клиентов с двумя и более покупками',num(scopedClients.filter(c=>c.buys>=2).length)],['Средний LTV',money(avgLtv)],['Покупок в год на клиента',datedClients.length?(sum(datedClients,c=>c.freq)/datedClients.length).toFixed(1):'нет данных']]);
  const cohorts=group(clients.filter(c=>c.first),c=>c.first.slice(0,7));
  table('coh',Object.entries(cohorts).sort().slice(-8).map(([name,cs])=>({name,cs})),[x=>dmy(x.name),x=>num(x.cs.length),x=>num(x.cs.filter(c=>c.rep).length),x=>pct(x.cs.filter(c=>c.rep).length,x.cs.length),x=>'—']);
  el('base-kv').innerHTML=kv([['Клиентов по телефону',num(clients.length)],['Без телефона',num(data.orders.filter(o=>o.buy&&!o.phone).length)],['Активных в периоде',num(people.size)]]);
@@ -1143,8 +1146,11 @@ function refresh(){
  const cats=Object.entries(group(currentLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost)})).sort((a,b)=>b.rev-a.rev);
  table('cats',cats,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.qty?x.rev/x.qty:0),x=>money(x.rev-x.cost)]);
  el('sizes').innerHTML=Object.entries(group(currentLines,x=>x.l.size)).map(([size,arr])=>`<div class="kv"><span>${esc(size)}</span><b>${num(sum(arr,x=>x.l.qty))}</b></div>`).join('')||'Нет данных';
- const colors=Object.entries(group(currentLines,x=>x.l.color)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),arr})).sort((a,b)=>b.qty-a.qty);
- table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>Object.entries(group(x.arr,y=>y.o.source)).sort((a,b)=>b[1].length-a[1].length)[0]?.[0]||'',x=>'']);
+ const colors=Object.entries(group(currentLines,x=>x.l.color)).map(([name,arr])=>{
+  const qty=sum(arr,x=>x.l.qty),channels=Object.entries(group(arr,x=>x.o.channel)).map(([channel,rows])=>({channel,qty:sum(rows,x=>x.l.qty)})).sort((a,b)=>b.qty-a.qty);
+  return {name,qty,rev:sum(arr,x=>x.l.rev),topChannel:channels[0]?.channel||'не указано',topShare:pct(channels[0]?.qty||0,qty)};
+ }).sort((a,b)=>b.qty-a.qty);
+ table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>x.topChannel,x=>x.topShare]);
  el('basket-kv').innerHTML=kv([['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
  const scopeLines=currentLines.filter(x=>(!el('s-size').value||x.l.size===el('s-size').value)&&(!el('s-color').value||x.l.color===el('s-color').value));
  const sq=sum(scopeLines,x=>x.l.delivery?0:x.l.qty),sr=sum(scopeLines,x=>x.l.rev),sc=sum(scopeLines,x=>x.l.cost);
@@ -1166,7 +1172,7 @@ function refresh(){
 function renderClients(cs){
  const q=(el('c-q').value||'').toLowerCase(),tier=el('c-tier').value,buys=el('c-buys').value,sil=el('c-sil').value;
  let rows=(el('c-base').value==='all'?clients:cs).filter(c=>(!q||c.name.toLowerCase().includes(q)||c.phone.includes(q))&&(!tier||c.tier===tier)&&(!buys||(buys==='1'?c.buys===1:c.buys>=+buys))&&(!sil||(c.silence!==null&&(sil==='l30'?c.silence<30:c.silence>+sil.slice(1)))));
- const sort=el('c-sort').value;rows.sort((a,b)=>sort==='last'?b.last.localeCompare(a.last):sort==='silence'?b.silence-a.silence:sort==='buys'?b.buys-a.buys:b.ltv-a.ltv);
+ const sort=el('c-sort').value;rows.sort((a,b)=>sort==='last'?b.last.localeCompare(a.last):sort==='silence'?(b.silence??-1)-(a.silence??-1):sort==='buys'?b.buys-a.buys:sort==='freq'?(b.freq??-1)-(a.freq??-1):b.ltv-a.ltv);
  el('c-count').textContent=num(rows.length)+' клиентов';
  table('clients',rows.slice(0,20),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>dmy(c.first),c=>dmy(c.last),c=>c.silence===null?'—':c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel]);
 }
