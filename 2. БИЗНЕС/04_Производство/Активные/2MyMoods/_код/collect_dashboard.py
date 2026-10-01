@@ -163,7 +163,16 @@ def main() -> None:
     started = datetime.now(TZ)
     print("МойСклад: заказы, платежи, номенклатура, контрагенты", flush=True)
     orders = required_rows(ms, "/entity/customerorder", {"order": "moment,desc"})
-    payments = {p["id"]: p for p in required_rows(ms, "/entity/paymentin")}
+    payments = required_rows(ms, "/entity/paymentin") + required_rows(ms, "/entity/cashin")
+    invoices = {i["id"]: mid(i.get("customerOrder")) for i in required_rows(ms, "/entity/invoiceout")}
+    order_payments = defaultdict(list)
+    for payment in payments:
+        for operation in payment.get("operations") or []:
+            meta = operation.get("meta") or {}
+            target_id = mid(operation)
+            order_id = target_id if meta.get("type") == "customerorder" else invoices.get(target_id) if meta.get("type") == "invoiceout" else None
+            if order_id:
+                order_payments[order_id].append((payment.get("moment"), rub(operation.get("linkedSum"))))
     products = {p["id"]: p for p in required_rows(ms, "/entity/product")}
     variants = {v["id"]: v for v in required_rows(ms, "/entity/variant")}
     services = {s["id"]: s for s in required_rows(ms, "/entity/service")}
@@ -200,16 +209,12 @@ def main() -> None:
             gaps["Оплачено пустое"].append(number)
         if bool(a.get(FIELD["paid"])) != is_buy:
             gaps["Галка Оплачен не совпадает с платежом"].append(number)
-        pay_refs = o.get("payments") or []
         accumulated = 0.0
         closed = None
-        for ref in sorted(pay_refs, key=lambda r: (payments.get(mid(r), {}).get("moment") or "")):
-            p = payments.get(mid(ref))
-            if not p:
-                continue
-            accumulated += rub(ref.get("linkedSum"))
+        for moment, linked_sum in sorted(order_payments.get(o["id"], []), key=lambda row: row[0] or ""):
+            accumulated += linked_sum
             if closed is None and accumulated + 0.009 >= total:
-                closed = dt(p.get("moment"))
+                closed = dt(moment)
         if is_buy and not closed:
             gaps["Оплачено закрыто, дата платежа не найдена"].append(number)
         agent = agents.get(mid(o.get("agent")), {})
