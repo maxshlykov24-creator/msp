@@ -203,7 +203,8 @@ _PRICE_RE = re.compile(r"(?<!\d)(\d{1,3}(?:[ \u00a0]\d{3})+|\d{6,9})(?!\d)")
 
 def price_amounts(text: str) -> list[int]:
     """Суммы, похожие на цену машины. Пробег, год и телефон не считаются."""
-    masked = re.sub(r"\d[\d\s\u00a0]{0,14}\s*км\b", " ", text or "", flags=re.I)
+    masked = re.sub(r"https?://\S+", " ", text or "", flags=re.I)
+    masked = re.sub(r"\d[\d\s\u00a0]{0,14}\s*км\b", " ", masked, flags=re.I)
     masked = re.sub(r"\b(?:19|20)\d{2}\b", " ", masked)
     found: list[int] = []
     for match in _PRICE_RE.finditer(masked):

@@ -86,7 +86,7 @@ body {
   scroll-snap-align: start;
   display: flex;
   flex-direction: column;
-  padding: 28px var(--pad) 36px;
+  padding: 22px var(--pad) 22px;
 }
 .bar {
   display: flex;
@@ -106,8 +106,8 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  width: min(980px, 100%);
-  padding: 28px 0 12px;
+  width: min(1040px, 100%);
+  padding: 16px 0 8px;
 }
 .kicker {
   margin: 0 0 16px;
@@ -119,7 +119,7 @@ body {
 }
 h1, h2 { margin: 0; font-weight: 620; letter-spacing: -0.035em; }
 h1 { font-size: clamp(56px, 9vw, 112px); line-height: .92; }
-h2 { font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; max-width: 16ch; }
+h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.02; max-width: 18ch; }
 .lede {
   margin: 22px 0 0;
   max-width: 38ch;
@@ -137,7 +137,7 @@ h2 { font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; max-width: 16ch; }
   letter-spacing: -0.02em;
   max-width: 16ch;
 }
-.quote.wide { max-width: 20ch; font-size: clamp(28px, 3.8vw, 48px); }
+.quote.wide { max-width: 22ch; font-size: clamp(26px, 3.1vw, 40px); }
 .sub {
   margin: 22px 0 0;
   max-width: 36ch;
@@ -155,9 +155,9 @@ h2 { font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; max-width: 16ch; }
 .points { margin: 22px 0 0; padding: 0; list-style: none; max-width: 62ch; }
 .points li {
   margin: 0;
-  padding: 13px 0;
+  padding: 9px 0;
   border-top: 1px solid var(--line);
-  font-size: clamp(16.5px, 1.7vw, 19px);
+  font-size: clamp(16px, 1.45vw, 18px);
   color: var(--ink);
 }
 .points li:last-child { border-bottom: 1px solid var(--line); }
@@ -219,6 +219,14 @@ h2 { font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; max-width: 16ch; }
   font-size: clamp(22px, 2.6vw, 30px);
   line-height: 1.25;
   max-width: 22ch;
+}
+@media (max-width: 700px) {
+  .points li { padding: 7px 0; font-size: 15.5px; line-height: 1.38; }
+  h2 { font-size: 28px; }
+  .num { font-size: 48px; margin-bottom: 4px; }
+  .lede { font-size: 16px; margin-top: 14px; }
+  .body { padding-top: 8px; }
+  .amen { margin-top: 12px; }
 }
 </style>
 </head>
@@ -307,9 +315,11 @@ h2 { font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; max-width: 16ch; }
     <span class="grow"></span>
     <span class="n">второе</span>
   </div>
-  <div class="body">
-    <p class="num">02</p>
-    <h2>Кто не почитает другого лидера, рушит культуру.</h2>
+  <div class="body row split">
+    <div>
+      <p class="num">02</p>
+      <h2>Кто не почитает другого лидера, рушит культуру.</h2>
+    </div>
     <ul class="points">
       <li>Лидерство не конкуренция за влияние. Если мне тяжело смотреть на человека, даже когда не нравятся черты, его влияние кажется угрозой моему. Поговорит с моей группой, и они поймут иначе.</li>
       <li>В Царстве почтительностью друг друга предупреждайте. Недопонимание между нами есть. Месяцами тянется и не двигается. Разговаривайте.</li>
@@ -375,10 +385,12 @@ h2 { font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; max-width: 16ch; }
     <span class="grow"></span>
     <span class="n">пятое</span>
   </div>
-  <div class="body">
-    <p class="num">05</p>
-    <h2>Лидер отвечает за атмосферу.</h2>
-    <p class="lede">Не только тем, что говорит. Тем, чему учит образом жизни. Культуру задаёт то, что он допускает.</p>
+  <div class="body row split">
+    <div>
+      <p class="num">05</p>
+      <h2>Лидер отвечает за атмосферу.</h2>
+      <p class="lede">Не только тем, что говорит. Тем, чему учит образом жизни. Культуру задаёт то, что он допускает.</p>
+    </div>
     <ul class="points">
       <li>Если лидер критикует, люди научатся критиковать. Если уважает, будут уважать. Если сплетничает, подхватят именно это, а не проповедь.</li>
       <li>При чужих не говорим плохо о своих. Иначе сами сформируем лукавое отношение к человеку, которого знаем.</li>
@@ -421,7 +433,7 @@ h2 { font-size: clamp(34px, 4.6vw, 58px); line-height: 1.02; max-width: 16ch; }
     <span class="grow"></span>
     <span class="n">тайная комната</span>
   </div>
-  <div class="body">
+  <div class="body row split">
     <p class="quote wide">Лидерство начинается не тогда, когда за тобой пошли. Оно начинается, когда ты сам решил идти за Христом и менять сердце.</p>
     <ul class="points">
       <li>Люди всегда за вами пойдут. Есть те, кому группу даже не доверили, а их уже слушают. Дух побуждает подойти и сказать. Лидерство шире домашней группы.</li>

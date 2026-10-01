@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Репетиции без Telegram: гоняем сценарии через тот же промпт и ту же модель.
 
-Запуск: tools/rehearse.py [номер сценария ...]
+Запуск: tools/rehearse.py --live-source [--compare] [--only текст]
+Без --live-source запускает старые синтетические сценарии по номерам.
 """
 from __future__ import annotations
 
@@ -280,7 +281,6 @@ LIVE_IDS = (
 
 def ssh_read(program: str, payload: dict | None = None) -> dict:
     """Только явные read-only программы и тестовые запросы LLM, без деплоя."""
-    import shlex
     if payload is not None:
         import base64
         program = 'import json,base64\npayload=json.loads(base64.b64decode(%r))\n' % (
@@ -492,10 +492,14 @@ asyncio.run(run())
     return await asyncio.to_thread(ssh_read, program, {'model': model, 'system': system, 'history': history})
 
 
-async def compare(docs: dict, stock: str, models: list[str]) -> None:
+async def compare(docs: dict, stock: str, models: list[str], only: str = '') -> None:
     cases = [(0, 'Завтра могу на тест драйв'), (0, 'Течение часа'),
              (1, 'Здравствуйте'), (2, 'Причина продали'), (2, 'Продажа салонная'),
-             (3, 'Люди то подключаются')]
+             (3, 'Люди то подключаются'), (0, 'Вы же написали вот')]
+    if only:
+        cases = [case for case in cases if only.lower() in case[1].lower()]
+        if not cases:
+            raise ValueError('No matching case')
     total = 0.0
     with patch.object(avito_match, '_stock_text', lambda text='': text or stock):
         for idx, needle in cases:
@@ -503,6 +507,8 @@ async def compare(docs: dict, stock: str, models: list[str]) -> None:
             history = doc['messages'] + [{'role': 'user', 'content': text}]
             with patch.object(store, 'load_doc', return_value=doc):
                 system = bot_main._build_system(history, 'rehearsal')
+            if total >= 3.0:
+                raise RuntimeError('Test budget stopping threshold reached $3')
             answers = await asyncio.gather(*(remote_model(model, system, history) for model in models))
             for model, answer in zip(models, answers):
                 if total >= 3.0:
@@ -511,6 +517,9 @@ async def compare(docs: dict, stock: str, models: list[str]) -> None:
                     print(json.dumps({'case': needle, 'model': model, **answer}), flush=True)
                     continue
                 total += float(answer['usage'].get('cost') or 0)
+                if answer.get('finish') != 'stop':
+                    print(json.dumps({'case': needle, 'model': model, 'error': 'incomplete answer', 'usage': answer['usage']}), flush=True)
+                    continue
                 result = await replay(doc, text, answer['text'])
                 print(json.dumps({'case': needle, 'model': model, 'raw': answer['text'],
                                   'sent': result['sent'], 'paused': result['paused'],
@@ -539,13 +548,14 @@ async def main() -> None:
     parser.add_argument('--live-source', action='store_true', help='Read sanitized live cases over SSH')
     parser.add_argument('--compare', action='store_true', help='Paid isolated model test, $3 stopping threshold')
     parser.add_argument('--models', nargs='+', default=['anthropic/claude-sonnet-5', 'anthropic/claude-haiku-4.5'])
+    parser.add_argument('--only', default='', help='Substring of a live comparison case')
     args = parser.parse_args()
     logging.disable(logging.CRITICAL)
     if args.live_source:
         docs, stock = live_sources()
         await regression(docs, stock)
         if args.compare:
-            await compare(docs, stock, args.models)
+            await compare(docs, stock, args.models, args.only)
         return
     if args.compare:
         parser.error('--compare requires --live-source')

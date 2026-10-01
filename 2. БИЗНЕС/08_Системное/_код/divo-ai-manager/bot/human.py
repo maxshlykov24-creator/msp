@@ -1716,7 +1716,7 @@ def ensure_greeting(
     bubbles: list[str], *, first: bool, moment: datetime | None = None
 ) -> list[str]:
     """Первый ход диалога всегда с приветствием по времени Москвы."""
-    if not first or not bubbles:
+    if not first or not bubbles or (len(bubbles) == 1 and URL.fullmatch(bubbles[0])):
         return bubbles
     out = list(bubbles)
     if GREET_LEAD.match(out[0] or ""):
@@ -1737,6 +1737,8 @@ def ensure_greeting(
 
 def for_chat(text: str) -> str:
     """Как пишет человек в телефоне: без тире-связок, без точки в конце."""
+    if URL.fullmatch((text or "").strip()):
+        return text.strip()
     text = drop_clause_dashes(text or "")
     text = drop_kstati(text)
     text = drop_owner_legal(text)
