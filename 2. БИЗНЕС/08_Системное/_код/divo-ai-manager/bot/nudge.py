@@ -562,16 +562,16 @@ def urgent_reason(user_text: str, history: list[dict] | None = None) -> str:
     hist = list(history or [])
     if is_existing_buyer(text):
         return "aftersale"
+    if is_complaint(text):
+        return "complaint"
+    if wants_person(text):
+        return "handoff"
     phone_now = extract_phone(text)
     if phone_now and is_caller_id_paste(text, hist):
         phone_now = ""
     has_phone = bool(phone_now or history_has_phone(hist))
     if not has_phone:
         return ""
-    if is_complaint(text):
-        return "complaint"
-    if wants_person(text):
-        return "handoff"
     if wants_call(text) or asks_about_call(text) or is_caller_id_paste(text, hist):
         return "call"
     if phone_now and not history_has_phone(hist):
@@ -882,7 +882,8 @@ WANTS_PERSON = re.compile(
     r"("
     r"живого (человека|менеджера|продавца)|"
     r"оператор[аеу]?|подключи(те)? (человека|менеджера|коллегу)|"
-    r"не бот[аом]? (нужен|хочу)|с человеком"
+    r"не бот[аом]? (нужен|хочу)|с человеком|"
+    r"люди.{0,25}подключ|человек.{0,25}подключ"
     r")",
     re.IGNORECASE,
 )

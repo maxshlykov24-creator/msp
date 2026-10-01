@@ -628,6 +628,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
         "aftersale",
         "handoff",
         "complaint",
+        "stuck",
     }:
         return
     crm = dict(doc.get("crm") or {})
@@ -1175,11 +1176,30 @@ def on_foreign_out(chat_id: str | int, msg: dict) -> bool:
     except (TypeError, ValueError):
         created = 0
     out_at = int(crm.get("out_at") or 0)
-    if created and out_at and abs(created - out_at) <= 45:
+    if not mid and created and out_at and abs(created - out_at) <= 45:
         return False
+    # Исходящее сотрудника — часть диалога независимо от наличия алерта.
+    # ID защищает историю от повторного опроса того же сообщения.
+    foreign_ids = list(crm.get("foreign_out_ids") or [])
+    if mid and mid in foreign_ids:
+        return False
+    from bot.avito_loop import outbound_text
+
+    text = outbound_text(msg)
+    if not text:
+        return False
+    if mid:
+        crm["foreign_out_ids"] = (foreign_ids + [mid])[-80:]
+    doc.setdefault("messages", []).append({
+        "role": "assistant", "content": text, "author": "human", "message_id": mid,
+    })
+    doc["crm"] = crm
+    store.save_doc(chat_id, doc)
+    store.pause(chat_id, "менеджер ответил в канале")
+    store.log_line(chat_id, "менеджер", text)
     alert = dict(crm.get("alert") or {})
     if not alert.get("active"):
-        return False
+        return True
     alert["active"] = False
     alert["nags"] = False
     alert["picked"] = "chat"

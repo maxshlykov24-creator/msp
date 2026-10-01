@@ -258,22 +258,20 @@ def silent_reason(
         return "llm"
     if nudge.is_existing_buyer(user_text):
         return "aftersale"
-    if not nudge.history_has_phone(history):
-        return ""
     if nudge.is_complaint(user_text):
         return "complaint"
     if nudge.wants_person(user_text):
         return "handoff"
+    if handoff:
+        return "stuck" if nudge.clarify_count(history) >= 3 else "handoff"
+    if not nudge.history_has_phone(history):
+        return ""
     if (
         nudge.wants_call(user_text)
         or nudge.asks_about_call(user_text)
         or nudge.is_caller_id_paste(user_text, history)
     ):
         return "call"
-    if handoff:
-        if nudge.clarify_count(history) >= 3:
-            return "stuck"
-        return "handoff"
     return ""
 
 
@@ -345,9 +343,17 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     had_phone = nudge.history_has_phone(history)
     history = merge_user_chunks(history, chunks)
     user_text = history[-1]["content"] if history else ""
+    if store.hard_paused(chat_id):
+        store.save_history(chat_id, history)
+        return
     reason = silent_reason(user_text, history)
     if reason:
         await _handoff(channel, chat_id, history, reason)
+        return
+    doc = store.load_doc(chat_id)
+    if (avito_match.attached_listing(doc) and nudge.asked_report(history)
+            and not avito_match.report_link(doc)):
+        await _handoff(channel, chat_id, history, "handoff")
         return
     if not had_phone and nudge.extract_phone(user_text):
         store.save_history(chat_id, history)
@@ -409,7 +415,8 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         return
 
     user_text = history[-1]["content"]
-    handoff = prompt.HANDOFF_MARK in raw
+    # Неизвестное действие не отправляем как текст и не заменяем фактом.
+    handoff = prompt.HANDOFF_MARK in raw or prompt.has_unsupported_action(raw)
     silence = prompt.SILENCE_MARK in raw
     want_photo = prompt.MEDIA_PHOTO_MARK in raw
     want_video = prompt.MEDIA_VIDEO_MARK in raw
@@ -579,21 +586,8 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         invite = human.INVITE_FIRST
         bubbles = [("%s %s" % (bubbles[0].rstrip(), invite)).strip()]
         log.info("чат %s: к голому приветствию дописал осмотр", chat_id)
-    if nudge.history_has_phone(prior):
-        trimmed = [
-            human.drop_push_after_contact(
-                b,
-                allow_invite=nudge.asked_visit(user_text)
-                or nudge.asked_where(user_text),
-                allow_call=nudge.asked_our_hours_day(user_text)
-                or nudge.about_our_call(user_text),
-            )
-            for b in bubbles
-        ]
-        trimmed = [b for b in trimmed if b.strip()]
-        if trimmed != [b for b in bubbles if b.strip()]:
-            log.info("чат %s: после контакта убрал дожим", chat_id)
-        bubbles = trimmed
+    # Наличие контакта не отменяет ответ на вопрос о визите.
+    # Повторный запрос номера удаляется отдельно выше; смысл ответа сохраняем.
     if nudge.asked_our_hours_day(user_text):
         rewritten = [
             human.soften_weekday_wait(
@@ -628,9 +622,6 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         allowed = avito_match.allowed_prices(doc_now)
         locked = [avito_match.drop_foreign_prices(b, allowed) for b in bubbles]
         locked = [b for b in locked if b.strip()]
-        if allowed and not locked:
-            shown = avito_match.listing_price(doc_now)
-            locked = ["Цена в объявлении %s." % shown] if shown else []
         if locked != bubbles:
             log.info("чат %s: убрал цену не из объявления этого чата", chat_id)
             bubbles = locked
@@ -642,22 +633,27 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         bubbles = final
 
     if not bubbles:
-        store.save_history(chat_id, history)
-        _refresh_nudge(chat_id, history)
-        log.info("чат %s: после фильтров пусто, клиенту не пишу", chat_id)
+        await _handoff(channel, chat_id, history, "stuck")
+        log.info("чат %s: после фильтров пусто, передал человеку", chat_id)
         return
 
+    store.save_history(chat_id, history)
     for i, bubble in enumerate(bubbles):
         await type_and_wait(channel, chat_id, human.typing_delay(bubble, first=i == 0))
+        if store.hard_paused(chat_id):
+            return
         await channel.send(chat_id, bubble)
         store.log_line(chat_id, "никита", bubble)
+        # Записываем каждую успешно отправленную реплику сразу: сбой на
+        # следующем пузыре не должен стирать уже сказанное клиенту.
+        history = store.load_history(chat_id)
+        history.append({"role": "assistant", "content": bubble})
+        store.save_history(chat_id, history)
 
     if want_photo or want_video:
         kind = "видео" if want_video else "фото"
         await crm.notify_media(chat_id, kind, history)
 
-    history.append({"role": "assistant", "content": " ".join(bubbles)})
-    store.save_history(chat_id, history)
     _refresh_nudge(chat_id, history)
     crm.dismiss_llm_alert(chat_id)
     if not had_phone and nudge.extract_phone(user_text):
@@ -724,7 +720,8 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "\n\n# Это первый ответ в диалоге\n"
             "Первая реплика начинается с «%s» отдельным предложением, "
             "не через запятую. Другое время суток в приветствии не ставь. "
-            "Потом факт из карточки этой машины. "
+            "Если клиент только поздоровался — приветствие и один вопрос. "
+            "Факты машины называй лишь в ответ на вопрос и при подтверждённой карточке. "
             "Опции, которых в карточке нет (камера), не выдумывай и не начинай "
             "с голого «уточню»: сначала двигатель и комплектация, потом "
             "«уточню по этому экземпляру». На FAW Bestune NAT дизельный "
@@ -778,8 +775,8 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "Конкретный день визита не спрашивай: ни «на какой день удобнее», "
             "ни «во сколько подъедете», ни «завтра». Звать посмотреть машину "
             "вообще - можно и нужно: «посмотреть можно в любой день с 10:00 до 20:00». "
-            "Слово «в наличии» один раз: когда клиент спросил «есть?» или в "
-            "первом ходе. Дальше не повторяй, зови смотреть. Про день "
+            "Наличие подтверждай только по подтверждённому экземпляру в продаже, "
+            "а не по одному объявлению. Про день "
             "спросишь, когда номер будет.\n"
             "Имя и номер в одной реплике не проси: это два вопроса. "
             "Сначала одно, второе следующим ходом."
@@ -791,15 +788,12 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "телефон», ни «напишите номер», ни «по какому телефону». Клиент мог "
             "прислать VIN и номер двумя сообщениями - смотри всю переписку, а не "
             "последнюю строку.\n"
-            "Контакт уже у человека. Ты не знаешь, о чём они говорили по телефону "
-            "или в мессенджере. Поэтому не дожимай: не зови в салон, не спрашивай "
-            "день и время, не пиши «наберу», «свяжусь», «приезжайте», «посмотреть "
-            "можно». Не предлагай следующий шаг. Отвечай только на прямой вопрос "
-            "фактом из карточки. Просят автотеку и в карточке есть ссылка - кинь "
-            "ссылку сюда, без приглашения и без «наберу». Ссылки нет и машина "
-            "новая - «отчёта ещё нет». Ссылки нет на машине с пробегом - не говори "
-            "«автотеки нет». Уточни, пришли в Телеграм или Ватсап. Вопрос закрыл "
-            "фактом - всё."
+            "Контакт уже получен. Не проси его повторно и не обещай новый звонок. "
+            "Отвечай на текущий вопрос: приезд и тест-драйв можно подтвердить "
+            "по графику салона. Не подтверждай скидку или условия, которые "
+            "могли обсуждать с сотрудником вне этого чата. "
+            "Спор о договорённости — [[ЧЕЛОВЕК]]. Ссылка отчёта есть — отправь "
+            "её. Ссылки нет — [[ЧЕЛОВЕК]], без обещания отправки файла."
         )
         if nudge.asked_our_hours_day(user_text):
             system += (
@@ -876,7 +870,7 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     if nudge.asks_if_car_wrong(user_text):
         system += (
             "\n\n# Спрашивает, что с машиной не так\n"
-            "Это вопрос про машину. С ней всё в порядке, цена в объявлении. "
+            "Это вопрос про машину. Отвечай только подтверждёнными фактами карточки. "
             "«Торга нет», «без торга» и «финальная сумма» не пиши. "
             "Если он уже назвал свою сумму, торг в разумных пределах после осмотра."
         )
@@ -957,7 +951,7 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "Звонки не проходят или просит ответить здесь. Это не отказ. "
             "Ответь фактом в чат, если он есть в карточке. Телефон чтобы "
             "позвонить не проси. Нужен отчёт или файл без ссылки — "
-            "«напишите Телеграм или Ватсап, туда пришлю». "
+            "передай человеку через [[ЧЕЛОВЕК]], без обещания отправки. "
             "«Наберу и расскажу» и «скиньте номер, если звонок неудобен» нельзя."
         )
     if nudge.refusals_count(history) >= 2:
@@ -994,6 +988,10 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
 
 async def _generate(history: list[dict], chat_id: str = "") -> str:
     """Реплика модели с проверками на утечку правил и дословные повторы."""
+    if nudge.asked_report(history) and not nudge.asked_damage(history):
+        link = avito_match.report_link(store.load_doc(chat_id)) if chat_id else ""
+        if link:
+            return link
     system = _build_system(history, chat_id)
     raw = await llm.reply(system, history)
     log.info(
@@ -1155,6 +1153,9 @@ def tech_pause_lifted(chat_id: int) -> bool:
 def _refresh_nudge(chat_id: int, history: list[dict]) -> None:
     doc = store.load_doc(chat_id)
     doc["nudge"] = nudge.refresh(doc.get("nudge") or {}, history)
+    listing = avito_match.attached_listing(doc)
+    if listing and not avito_match.match_card(listing.get("title") or "", listing.get("price") or ""):
+        doc["nudge"]["waiting"] = False
     store.save_doc(chat_id, doc)
 
 
@@ -1182,6 +1183,11 @@ async def send_nudge(chat_id: int | str) -> None:
         return
     doc = store.load_doc(chat_id)
     history = list(doc.get("messages") or [])
+    listing = avito_match.attached_listing(doc)
+    if listing and not avito_match.match_card(listing.get("title") or "", listing.get("price") or ""):
+        doc.setdefault("nudge", {})["waiting"] = False
+        store.save_doc(chat_id, doc)
+        return
     if nudge.should_stop_nudge(history):
         meta = dict(doc.get("nudge") or {})
         if meta.get("waiting"):

@@ -109,6 +109,8 @@ def all_chat_ids() -> list[str]:
 
 
 HARD_PAUSE = (
+    "handoff",
+    "менеджер ответил в канале",
     "complaint",
     "llm",
     "stuck",

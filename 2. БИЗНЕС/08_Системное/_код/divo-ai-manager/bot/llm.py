@@ -198,6 +198,8 @@ async def key_budget() -> dict:
 
 async def reply(system: str, history: list[dict]) -> str:
     """history — [{role: user|assistant, content: ...}] в порядке диалога."""
+    # Автор и ID нужны локальной истории, но не входят в протокол LLM.
+    history = [{"role": m["role"], "content": m["content"]} for m in history]
     chain = _chain()
     if not chain:
         raise LlmError("не настроен ни один ключ: OPENROUTER_API_KEY или GEMINI_API_KEY")

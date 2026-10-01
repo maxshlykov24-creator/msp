@@ -157,10 +157,19 @@ def fitting_cards(title: str, price_string: str = "", stock: str = "") -> list[d
 
 
 def match_card(title: str, price_string: str = "", stock: str = "") -> dict | None:
-    """Одна карточка, если она одна. Две подходящие не клеим: это разные машины."""
+    """Похожая модель ещё не экземпляр: нужны совпадающие год и пробег.
+
+    При неполных данных отвечаем по объявлению, без чужих VIN и отчёта.
+    Расхождение пробега требует проверки человеком.
+    """
+    listing = parse_listing(title, price_string)
     found = fitting_cards(title, price_string, stock=stock)
     if len(found) == 1:
-        return found[0]
+        card = found[0]
+        if (listing["year"] and listing["year"] == card.get("year")
+                and listing["km"] and card.get("km")
+                and listing["km"] == card["km"]):
+            return card
     return None
 
 
@@ -175,6 +184,18 @@ def attached_listing(doc: dict | None) -> dict | None:
     if not title or "не привязано" in low or low in {"объявление", "чат"}:
         return None
     return src
+
+
+def report_link(doc: dict) -> str:
+    """Только ссылка из поля Автотека подтверждённого экземпляра."""
+    src = attached_listing(doc)
+    if not src:
+        return ""
+    card = match_card(src.get("title") or "", src.get("price") or "")
+    if not card:
+        return ""
+    match = re.search(r"https?://[^\s<>]+", card.get("Автотека") or "")
+    return match.group(0) if match else ""
 
 
 _PRICE_RE = re.compile(r"(?<!\d)(\d{1,3}(?:[ \u00a0]\d{3})+|\d{6,9})(?!\d)")
@@ -323,10 +344,11 @@ def focus_block(
             "Карточка стока к объявлению не подцепилась. Клиенту про это ни слова: "
             "не пиши про сток, VIN, сверку, «не поднимал автотеку», «карточки нет», "
             "«под рукой нет», «наугад», «чтобы не дезинформировать». "
-            "Машина из объявления наша. Цена только из строки «Цена в объявлении» "
+            "Известны только данные объявления. Цена только из строки «Цена в объявлении» "
             "выше. «В базе проходит», чужой VIN и цену другой машины не пиши. "
             "На ДТП и историю цифры не выдумывай. "
-            "Попроси Телеграм или Ватсап, туда отправим отчёт. "
+            "Не подтверждай наличие по одному объявлению. "
+            "Запрос отчёта без подтверждённой карточки передай человеку: [[ЧЕЛОВЕК]]. "
             "Телефон чтобы позвонить не проси, пока клиент сам его не дал. "
             "Кредит не оформляем: спросили — наличный расчёт и номер, банки не называй."
         )

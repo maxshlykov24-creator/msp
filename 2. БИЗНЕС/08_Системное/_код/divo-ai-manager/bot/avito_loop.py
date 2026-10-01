@@ -550,11 +550,7 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
         seen = int(cursor.get(cid) or 0)
         if last_at <= seen:
             continue
-        if (last.get("direction") or "") != "in":
-            if store.is_paused(store_id(cid)):
-                from bot import crm
-
-                crm.on_foreign_out(store_id(cid), last)
+        if (last.get("direction") or "") != "in" and not allowed(cid, state):
             cursor[cid] = max(seen, last_at)
             changed = True
             continue
@@ -575,14 +571,26 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
             continue
         incoming = []
         max_at = seen
-        for msg in msgs:
+        for msg in sorted(msgs, key=created_of):
             at = created_of(msg)
             max_at = max(max_at, at)
             if at <= seen:
                 continue
+            if allowed(cid, state) and (msg.get("direction") or "") == "out":
+                from bot import crm
+
+                crm.on_foreign_out(store_id(cid), msg)
+                continue
             text = message_text(msg)
             if text:
                 incoming.append((at, text))
+                if allowed(cid, state):
+                    history = store.load_history(store_id(cid))
+                    if history and history[-1].get("role") == "user":
+                        history[-1]["content"] += "\n" + text
+                    else:
+                        history.append({"role": "user", "content": text})
+                    store.save_history(store_id(cid), history)
         incoming.sort()
         cursor[cid] = max_at
         changed = True

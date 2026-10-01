@@ -755,7 +755,7 @@
   <div class="grid-2e" style="margin-top:20px">
     <div class="card">
       <h3>Возвращаемость по месяцу первой покупки</h3>
-      <div class="hint">Из тех, кто впервые купил в этом месяце, сколько вернулись за второй покупкой. Это и есть retention, который нельзя посчитать без склейки базы.</div>
+      <div class="hint">Последние восемь месяцев первой покупки по всей истории, независимо от фильтров. Возврат к покупке и медиана дней до второй. Клиенты с неизвестной датой покупки исключены.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Первая покупка</th><th>Клиентов</th><th>Вернулись</th><th>Доля</th><th>Срок до второй</th></tr></thead>
         <tbody id="coh"></tbody>
@@ -814,7 +814,7 @@
       <span class="tcount" id="c-count"></span>
     </div>
     <div class="scroll-x"><table>
-      <thead><tr><th>Клиент</th><th>Сегмент</th><th>Покупок</th><th>LTV</th><th>Первая</th><th>Последняя</th><th>Тишина</th><th>Размер</th><th>Чаще берёт</th><th>Канал</th></tr></thead>
+      <thead><tr><th>Клиент</th><th>Сегмент</th><th>Покупок</th><th>LTV</th><th>Первая</th><th>Последняя</th><th>Тишина</th><th>Размер</th><th>Чаще берёт</th><th>Последний канал</th></tr></thead>
       <tbody id="clients"></tbody>
     </table></div>
   </div>
@@ -857,7 +857,7 @@
   <h2 class="sect">Что именно покупают</h2>
   <div class="grid-2">
     <div class="card">
-      <h3>Размеры по категориям</h3>
+      <h3>Продажи по размерам</h3>
       <div class="hint">Размеры берутся из характеристики варианта товара. Пустой размер показан как «не указано».</div>
       <div class="matrix" id="sizes"></div>
     </div>
@@ -1106,7 +1106,7 @@ function refresh(){
  const paymentScopeClear=!state.cat&&!state.prod&&!state.source&&!state.channel&&!state.city;
  el('payment-in-note').textContent=paymentScopeClear&&data.payment_daily ? 'Входящие платежи по дате создания: '+paymentTotal.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽. Включают частичную оплату и доставку.' : '';
  el('hero-mini').innerHTML=[['Заказов',n],['Средний чек',money(n?rev/n:0)],['Клиентов',people.size],['Маржа',pct(rev-cost,rev)]].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
- const kpis=[['Выручка, покупки',money(rev)],['Заказов',num(n)],['Средний чек',money(n?rev/n:0)],['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Маржа по закупке',pct(rev-cost,rev)],['Повторные покупки',pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты',pct(returnN,n)]];
+ const kpis=[['Выручка, покупки',money(rev)],['Заказов',num(n)],['Средний чек',money(n?rev/n:0)],['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Маржа по закупке',pct(rev-cost,rev)],['Повторные покупки',(unknownN?'не менее ':'')+pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты',pct(returnN,n)]];
  el('kpis').innerHTML=kpis.map(([k,v])=>`<div class="kpi"><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
  const days=group(filtered,x=>x.o.paid_date), keys=[];
  for(let day=new Date(state.from+'T00:00:00Z');day.toISOString().slice(0,10)<=state.to;day.setUTCDate(day.getUTCDate()+1))keys.push(day.toISOString().slice(0,10));
@@ -1139,7 +1139,7 @@ function refresh(){
  const periodRevenue=c=>sum(filtered.filter(x=>x.o.phone===c.phone),x=>orderRev(x.o,x.ls));
  const tiers=['Gold','Silver','Bronze','Разовый'].map(t=>({name:t,cs:scopedClients.filter(c=>c.tier===t)}));
  table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,periodRevenue)),x=>pct(sum(x.cs,periodRevenue),sum(scopedClients,periodRevenue)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>{const dated=x.cs.filter(c=>c.freq!==null);return dated.length?(sum(dated,c=>c.freq)/dated.length).toFixed(1):'нет данных'}]);
- el('rep-share').textContent=pct(repN,n);el('rep-donut').style.background=`conic-gradient(#020202 0 ${n?repN/n*100:0}%,#ededed 0)`;
+ el('rep-share').textContent=(unknownN?'≥ ':'')+pct(repN,n);el('rep-donut').style.background=`conic-gradient(#020202 0 ${n?repN/n*100:0}%,#ededed 0)`;
  el('rep-legend').innerHTML=`<div>Повторные <b>${repN}</b></div><div>Первые <b>${firstN}</b></div><div>Порядок не определён <b>${unknownN}</b></div>`;
  el('rep-kv').innerHTML=kv([['Клиентов с двумя и более покупками',num(scopedClients.filter(c=>c.buys>=2).length)],['Средний LTV',money(avgLtv)],['Покупок в год на клиента',datedClients.length?(sum(datedClients,c=>c.freq)/datedClients.length).toFixed(1):'нет данных']]);
  const cohorts=group(clients.filter(c=>c.first),c=>c.first.slice(0,7));
