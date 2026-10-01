@@ -7,8 +7,8 @@ import json
 import os
 import re
 import time
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -122,8 +122,10 @@ def get_amo() -> tuple[list[dict], dict]:
     status, body = amo.req("GET", f"/api/v4/leads?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}&limit=1&page=1")
     if status not in (200, 204):
         raise RuntimeError(f"amo leads: HTTP {status}")
+    sales_leads = [lead for lead in leads if lead.get("pipeline_id") == lib.PIPELINE_SALES_NEW
+                   and lead.get("responsible_user_id") != lib.USER_POLINA]
     tasks = []
-    lead_ids = {lead["id"] for lead in leads if lead.get("pipeline_id") == lib.PIPELINE_SALES_NEW}
+    lead_ids = {lead["id"] for lead in sales_leads}
     for page in range(1, 501):
         status, tasks_body = amo.req("GET", f"/api/v4/tasks?limit=250&page={page}")
         if status == 204:
@@ -135,15 +137,14 @@ def get_amo() -> tuple[list[dict], dict]:
         if len(batch) < 250:
             break
     result = []
-    for lead in leads:
-        if lead.get("pipeline_id") != lib.PIPELINE_SALES_NEW:
-            continue
+    for lead in sales_leads:
         result.append({
             "id": lead["id"], "created": datetime.fromtimestamp(lead["created_at"], TZ).date().isoformat(),
             "status": lead.get("status_id"), "manager": lead.get("responsible_user_id"),
             "won": lead.get("status_id") == 142,
         })
-    return result, {"open": sum(t.get("is_completed") is False for t in tasks), "sampled": len(tasks)}
+    return result, {"open": sum(t.get("is_completed") is False for t in tasks), "sampled": len(tasks),
+                    "excluded_marketing_owner": len(leads) - len(sales_leads)}
 
 
 def positions_for(order_id: str) -> tuple[str, list[dict]]:
@@ -157,6 +158,27 @@ def positions_for(order_id: str) -> tuple[str, list[dict]]:
                 raise
             time.sleep(2 * (attempt + 1))
     raise AssertionError("unreachable")
+
+
+def positions_in_order(order_ids: list[str]):
+    """Держим в памяти не больше восьми ответов МойСклад одновременно."""
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        source = iter(order_ids)
+        pending = deque()
+        for _ in range(min(8, len(order_ids))):
+            order_id = next(source)
+            pending.append((order_id, pool.submit(positions_for, order_id)))
+        for expected_id in order_ids:
+            order_id, future = pending.popleft()
+            if order_id != expected_id:
+                raise RuntimeError("Нарушен порядок загрузки позиций")
+            loaded_id, rows = future.result()
+            if loaded_id != expected_id:
+                raise RuntimeError("Позиции не того заказа")
+            next_id = next(source, None)
+            if next_id:
+                pending.append((next_id, pool.submit(positions_for, next_id)))
+            yield rows
 
 
 def main() -> None:
@@ -195,15 +217,9 @@ def main() -> None:
     print(f"справочники готовы; заказов {len(orders)}", flush=True)
     paid_ids = [o["id"] for o in orders if float(o.get("sum") or 0) > 0
                 and float(o.get("payedSum") or 0) >= float(o.get("sum") or 0)]
-    positions = {}
     print(f"позиции оплаченных заказов: {len(paid_ids)}", flush=True)
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = [pool.submit(positions_for, oid) for oid in paid_ids]
-        for count, future in enumerate(as_completed(futures), 1):
-            oid, rows = future.result()
-            positions[oid] = rows
-            if count % 250 == 0:
-                print(f"позиций заказов: {count}/{len(paid_ids)}", flush=True)
+    position_rows = positions_in_order(paid_ids)
+    paid_processed = 0
     gaps = defaultdict(list)
     result = []
     for index, o in enumerate(orders, 1):
@@ -252,7 +268,10 @@ def main() -> None:
             )
         lines = []
         if is_buy:
-            pos = positions[o["id"]]
+            pos = next(position_rows)
+            paid_processed += 1
+            if paid_processed % 250 == 0:
+                print(f"позиций заказов: {paid_processed}/{len(paid_ids)}", flush=True)
             for x in pos:
                 aid = mid(x.get("assortment"))
                 kind = ((x.get("assortment") or {}).get("meta") or {}).get("type")
@@ -295,6 +314,7 @@ def main() -> None:
         })
         if index % 500 == 0:
             print(f"обработано {index}/{len(orders)}", flush=True)
+    position_rows.close()
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
     try:
