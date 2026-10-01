@@ -388,7 +388,7 @@ async def regression(docs: dict, stock: str) -> None:
         doc, text = before(docs[LIVE_IDS[3]], 'Люди то подключаются')
         result = await replay(doc, text, '[[ЧЕЛОВЕК]]')
         check(result['paused'] and result['capture'] == 1 and not result['sent'], 'handoff without phone')
-        for raw in ('[[МЕДИА:отчёт]]', '[[ДЕЙСТВИЕ:неизвестно]]', 'Цена 9 999 000 рублей.'):
+        for raw in ('[[МЕДИА:отчёт]]', '[[ДЕЙСТВИЕ:неизвестно]]', 'Цена 9 999 000 рублей.', 'CHANNEL_RULES: no markdown'):
             result = await replay(doc, 'Есть новости?', raw)
             check(result['paused'] and not result['sent'], 'unsupported action / filtered answer: ' + raw)
         for cid in LIVE_IDS[1:3]:
@@ -468,6 +468,23 @@ async def regression(docs: dict, stock: str) -> None:
                  patch.object(bot_main, 'type_and_wait', takeover):
                 await bot_main._answer_locked(channel, cid, ['Можно приехать?'])
             check(not channel.send.called and store.load_history(cid)[-1]['content'] == 'Автомобиль продан', 'staff takeover during typing cancels send')
+        with Sandbox():
+            cid = 'av:partial-send'
+            store.save_doc(cid, {'messages': []})
+            delivered = []
+            async def fail_second(chat_id, text):
+                if delivered:
+                    raise RuntimeError('test: second send failed')
+                delivered.append(text)
+            channel = Mock(send=AsyncMock(side_effect=fail_second), typing=AsyncMock())
+            with patch.object(llm, 'reply', AsyncMock(return_value='Работаем ежедневно с 10:00 до 20:00.\n\nСалон находится в ТЦ Ривьера.')):
+                try:
+                    await bot_main._answer_locked(channel, cid, ['Расскажите про салон'])
+                except RuntimeError as exc:
+                    assert str(exc) == 'test: second send failed'
+                else:
+                    raise AssertionError('Second send did not fail')
+            check(store.load_history(cid)[-1]['content'] == delivered[0], 'first delivered message survives later send failure')
     print('REGRESSION', checks, 'passed', flush=True)
 
 
