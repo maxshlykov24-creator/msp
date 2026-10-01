@@ -1038,7 +1038,10 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     """Клиент пишет, пока менеджер молчит: в канал клиента не отвечаем."""
     doc = store.load_doc(chat_id)
     history = list(doc.get("messages") or [])
-    history.append({"role": "user", "content": text})
+    last = history[-1] if history else {}
+    if not (last.get("role") == "user" and
+            (last.get("content") == text or str(last.get("content") or "").endswith("\n" + text))):
+        history.append({"role": "user", "content": text})
     doc["messages"] = history
     store.save_doc(chat_id, doc)
     phone_now = nudge.extract_phone_from_history(history)

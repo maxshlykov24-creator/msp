@@ -353,7 +353,7 @@ async def replay(doc: dict, text: str, raw: str | None = None) -> dict:
         channel.notify_owner = AsyncMock()
         with ExitStack() as stack:
             if raw is not None:
-                stack.enter_context(patch.object(bot_main, '_generate', AsyncMock(return_value=raw)))
+                stack.enter_context(patch.object(llm, 'reply', AsyncMock(return_value=raw)))
             await bot_main._answer_locked(channel, cid, [text])
         return {'sent': sent, 'paused': store.is_paused(cid),
                 'capture': crm.capture.await_count, 'history': store.load_history(cid)}
@@ -398,6 +398,10 @@ async def regression(docs: dict, stock: str) -> None:
         doc, text = before(docs[LIVE_IDS[1]], 'Можно отправить отчет')
         result = await replay(doc, text, 'Пришлю отчёт')
         check(result['paused'] and result['capture'] == 1 and not result['sent'], 'missing report handed off')
+        for needle in ('Причина продали', 'Продажа салонная'):
+            doc, text = before(docs[LIVE_IDS[2]], needle)
+            result = await replay(doc, text)
+            check(result['sent'] == [prompt.seller_answer().rstrip('.')], 'KB seller answer, no LLM: ' + needle)
         with Sandbox():
             cid = 'av:staff'
             store.save_doc(cid, {'messages': [], 'crm': {'out_ids': ['bot-1']}})
@@ -443,6 +447,27 @@ async def regression(docs: dict, stock: str) -> None:
         title = '%s, %s км' % (card['title'], card['km'])
         check(avito_match.match_card(title, stock=card['raw']) is not None, 'exact match kept')
         check(avito_match.match_card(title, stock=card['raw'] + '\n' + card['raw']) is None, 'ambiguous match refused')
+        report_card = next((c for c in avito_match._cards(stock)
+                            if c.get('km') and c.get('year') and (c.get('Автотека') or '').startswith('http')), None)
+        assert report_card, 'Live stock has no report link for positive control'
+        doc = {'messages': [], 'avito': {
+            'title': '%s, %s км' % (report_card['title'], report_card['km']),
+            'price': str(report_card.get('price') or ''),
+        }}
+        with patch.object(avito_match, '_stock_text', return_value=report_card['raw']):
+            result = await replay(doc, 'Пришлите отчёт автотеки')
+        check(report_card['Автотека'] in ' '.join(result['sent']) and not result['paused'], 'existing report sent without LLM')
+        with Sandbox():
+            cid = 'av:race'
+            store.save_doc(cid, {'messages': []})
+            msg = {'id': 'staff-race', 'created': 1, 'direction': 'out', 'type': 'text', 'content': {'text': 'Автомобиль продан'}}
+            channel = Mock(send=AsyncMock(), typing=AsyncMock())
+            async def takeover(*args, **kwargs):
+                crm.on_foreign_out(cid, msg)
+            with patch.object(llm, 'reply', AsyncMock(return_value='Приезжайте')), \
+                 patch.object(bot_main, 'type_and_wait', takeover):
+                await bot_main._answer_locked(channel, cid, ['Можно приехать?'])
+            check(not channel.send.called and store.load_history(cid)[-1]['content'] == 'Автомобиль продан', 'staff takeover during typing cancels send')
     print('REGRESSION', checks, 'passed', flush=True)
 
 

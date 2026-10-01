@@ -909,6 +909,16 @@ def wants_person(text: str) -> bool:
     return bool(WANTS_PERSON.search(text or ""))
 
 
+def asks_seller(text: str) -> bool:
+    """Однозначный вопрос о продавце; смешанные вопросы остаются модели."""
+    text = re.sub(r"[?!.,]+", "", (text or "").lower().strip()).strip()
+    return bool(re.fullmatch(
+        r"(?:продажа салонная|салонная продажа|вы (?:салон|частник)|"
+        r"салон или частник|частник|от кого прода[её]тся|кто прода[её]т|"
+        r"почему прода[её]те|причина продали|причина продажи)", text,
+    ))
+
+
 def is_complaint(text: str) -> bool:
     return bool(COMPLAINT.search(text or ""))
 

@@ -988,6 +988,8 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
 
 async def _generate(history: list[dict], chat_id: str = "") -> str:
     """Реплика модели с проверками на утечку правил и дословные повторы."""
+    if history and nudge.asks_seller(history[-1].get("content") or ""):
+        return prompt.seller_answer()
     if nudge.asked_report(history) and not nudge.asked_damage(history):
         link = avito_match.report_link(store.load_doc(chat_id)) if chat_id else ""
         if link:

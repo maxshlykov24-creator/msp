@@ -38,6 +38,13 @@ def has_unsupported_action(text: str) -> bool:
     known = {HANDOFF_MARK, SILENCE_MARK, MEDIA_PHOTO_MARK, MEDIA_VIDEO_MARK}
     return any(mark not in known for mark in re.findall(r"\[\[.*?\]\]", text, re.S))
 
+
+def seller_answer() -> str:
+    """Утверждённый ответ читается из KB, не генерируется заново."""
+    text = _read("KB/ФАКТЫ_КОМПАНИИ.md")
+    match = re.search(r"(?m)^Ответ о продавце: (.+)$", text)
+    return match.group(1).strip() if match else HANDOFF_MARK
+
 CHANNEL_RULES = """
 # Протокол ответа в канале
 
