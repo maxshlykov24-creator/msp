@@ -125,25 +125,37 @@ def cf_name(value: object) -> str:
 
 def get_amo() -> tuple[list[dict], dict]:
     amo = lib.Amo()
-    leads = amo.iter_leads(f"?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}", pages=500)
-    # iter_leads молча прекращает обход при ошибке; проверяем размер первой выборки.
-    status, body = amo.req("GET", f"/api/v4/leads?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}&limit=1&page=1")
-    if status not in (200, 204):
-        raise RuntimeError(f"amo leads: HTTP {status}")
+    def pages(path, key):
+        result = []
+        for page in range(1, 501):
+            for attempt in range(6):
+                status, body = amo.req("GET", f"{path}{'&' if '?' in path else '?'}limit=250&page={page}")
+                if status not in (429, 500, 502, 503, 504):
+                    break
+                time.sleep(2 * (attempt + 1))
+            if status == 204:
+                return result
+            if status != 200:
+                raise RuntimeError(f"amo {key} page {page}: HTTP {status}")
+            batch = (body.get("_embedded") or {}).get(key) or []
+            result.extend(batch)
+            if len(batch) < 250:
+                if len({row["id"] for row in result}) != len(result):
+                    raise RuntimeError(f"amo {key}: duplicate IDs during pagination")
+                return result
+        raise RuntimeError(f"amo {key}: pagination limit reached")
+
+    leads = pages(f"/api/v4/leads?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}", "leads")
+    status, pipeline = amo.req("GET", f"/api/v4/leads/pipelines/{lib.PIPELINE_SALES_NEW}")
+    if status != 200:
+        raise RuntimeError(f"amo pipeline: HTTP {status}")
+    stages = sorted(pipeline.get("_embedded", {}).get("statuses", []), key=lambda s: s["sort"])
     sales_leads = [lead for lead in leads if lead.get("pipeline_id") == lib.PIPELINE_SALES_NEW
                    and lead.get("responsible_user_id") != lib.USER_POLINA]
     tasks = []
     lead_ids = {lead["id"] for lead in sales_leads}
-    for page in range(1, 501):
-        status, tasks_body = amo.req("GET", f"/api/v4/tasks?limit=250&page={page}")
-        if status == 204:
-            break
-        if status != 200:
-            raise RuntimeError(f"amo tasks: HTTP {status}")
-        batch = (tasks_body.get("_embedded") or {}).get("tasks") or []
-        tasks.extend(t for t in batch if t.get("entity_type") == "leads" and t.get("entity_id") in lead_ids)
-        if len(batch) < 250:
-            break
+    tasks = [t for t in pages("/api/v4/tasks", "tasks")
+             if t.get("entity_type") == "leads" and t.get("entity_id") in lead_ids]
     result = []
     for lead in sales_leads:
         result.append({
@@ -152,7 +164,10 @@ def get_amo() -> tuple[list[dict], dict]:
             "won": lead.get("status_id") == 142,
         })
     return result, {"open": sum(t.get("is_completed") is False for t in tasks), "sampled": len(tasks),
-                    "excluded_marketing_owner": len(leads) - len(sales_leads)}
+                    "excluded_marketing_owner": len(leads) - len(sales_leads),
+                    "pipeline_name": pipeline["name"], "pipeline_id": pipeline["id"],
+                    "source_total": len(leads), "collected_at": datetime.now(TZ).isoformat(),
+                    "stages": [{"id": s["id"], "name": s["name"]} for s in stages]}
 
 
 def positions_for(order_id: str) -> tuple[str, list[dict]]:
