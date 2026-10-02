@@ -61,8 +61,19 @@ def job_accept():
 
 
 def job_stock():
-    """Полная выгрузка остатков. В расписание не ставится, пока три тестовые позиции не подтверждены."""
-    return None
+    """Свои кабинеты: включение конфигурацией только после проверенного пилота."""
+    import os
+    from stock_push import own_path, own_config, run_own
+
+    try:
+        if not os.path.exists(own_path()) or not own_config().get("enabled"):
+            return
+        report = run_own("sync")
+        print("свои остатки:", [(r["id"], r["status"]) for r in report.get("targets", [])], flush=True)
+    except BlockingIOError:
+        pass
+    except Exception as exc:
+        print("свои остатки ошибка:", type(exc).__name__, flush=True)
 
 
 print("ff-sync: создаю базу")
@@ -80,7 +91,7 @@ import sync_rota
 step = sync_rota.step_minutes()
 print(
     "ff-sync: клиенты каждые 10 мин, очередь контрагентов шаг %s мин (круг %s мин), "
-    "поставки каждые 5 мин, приёмка каждые 10 мин, ночная сверка в 03:30, остатки площадок не включены"
+    "поставки каждые 5 мин, приёмка каждые 10 мин, ночная сверка в 03:30, свои остатки каждые 5 мин при включённой конфигурации"
     % (step, sync_rota.CIRCLE_MINUTES)
 )
 job_agents()
@@ -90,4 +101,5 @@ sched.add_job(job_rota, "interval", minutes=step, id="rota")
 sched.add_job(job_supplies, "interval", minutes=5, id="supplies")
 sched.add_job(job_accept, "interval", minutes=10, id="accept")
 sched.add_job(job_night, "cron", hour=3, minute=30, id="night")
+sched.add_job(job_stock, "interval", minutes=5, id="own_stock", max_instances=1, coalesce=True)
 sched.start()

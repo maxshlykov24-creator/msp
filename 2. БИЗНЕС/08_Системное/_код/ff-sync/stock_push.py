@@ -1,4 +1,7 @@
-"""Остаток склада Фулфилмент на FBS-склады WB, Ozon и Яндекса.
+"""Остатки МойСклад на FBS-склады WB, Ozon и Яндекса.
+
+run_own: свои юрлица, Основной склад, независимое сопоставление кабинетов.
+Старые build/push_three: прежний ограниченный проход фулфилмента.
 
 На площадку уходит только то, что сопоставилось по штрихкоду у одного контрагента.
 Чужие карточки не обнуляем. Пустой ответ МойСклад не считаем нулём.
@@ -7,10 +10,19 @@
 
 import json
 import os
+import math
+import time
+from urllib.parse import urlsplit
 from datetime import datetime, timedelta, timezone
 
 from db import barcode_norm, connect, get_client, init_db, list_cabinets, update_cabinet
-from net import MS_BASE, OZON_BASE, YANDEX_BASE, ms_headers, ozon_headers, req, wb_headers, yandex_headers
+from net import MS_BASE, OZON_BASE, ms_headers, ozon_headers, req, wb_headers
+
+YANDEX_BASE = "https://api.partner.market.yandex.ru"
+
+
+def yandex_headers(token):
+    return {"Api-Key": token, "Content-Type": "application/json"}
 
 MSK = timezone(timedelta(hours=3))
 
@@ -21,8 +33,10 @@ class Stop(Exception):
 
 def physical(stock, reserve):
     try:
-        qty = float(stock or 0) + float(reserve or 0)
+        qty = float(stock) - float(reserve)
     except (TypeError, ValueError):
+        return None
+    if not math.isfinite(qty):
         return None
     if qty < 0:
         qty = 0
@@ -61,8 +75,8 @@ def one_warehouse(rows, label):
 
 
 def product_id(row):
-    href = (((row.get("assortment") or {}).get("meta") or {}).get("href")) or ""
-    return href.rstrip("/").split("/")[-1]
+    href = (row.get("meta") or {}).get("href") or (((row.get("assortment") or {}).get("meta") or {}).get("href")) or ""
+    return urlsplit(href).path.rstrip("/").split("/")[-1]
 
 
 def ms_rows(store_id):
@@ -79,11 +93,13 @@ def ms_rows(store_id):
         if r.status_code != 200:
             raise Stop("остаток МойСклад %s %s" % (r.status_code, (r.text or "")[:180]))
         data = r.json()
-        if "rows" not in data:
+        if not isinstance(data.get("rows"), list):
             raise Stop("остаток МойСклад пришёл без списка")
         batch = data["rows"] or []
         rows.extend(batch)
         if len(batch) < 1000:
+            if (data.get("meta") or {}).get("size", len(rows)) > len(rows):
+                raise Stop("неполный отчёт остатков МойСклад")
             break
         offset += 1000
     return rows
@@ -219,7 +235,7 @@ def discover_wb(token):
     rows = r.json()
     if not isinstance(rows, list):
         raise Stop("склады WB пришли без списка")
-    return one_warehouse(rows, "WB")
+    return one_warehouse([w for w in rows if w.get("deliveryType") == 1 and not w.get("isDeleting") and not w.get("isProcessing")], "WB")
 
 
 def discover_ozon(client_id_ext, token):
@@ -256,6 +272,8 @@ def read_wb(token, warehouse_id, chrt_ids):
     )
     if r.status_code != 200:
         raise Stop("чтение остатка WB %s %s" % (r.status_code, (r.text or "")[:180]))
+    if not isinstance(r.json().get("stocks"), list):
+        raise Stop("WB не вернул список остатков")
     out = {}
     for row in (r.json() or {}).get("stocks") or []:
         out[str(row.get("chrtId"))] = row.get("amount")
@@ -263,20 +281,32 @@ def read_wb(token, warehouse_id, chrt_ids):
 
 
 def read_ozon(client_id_ext, token, warehouse_id, offer_ids):
-    r = req(
-        "POST",
-        OZON_BASE + "/v2/product/info/stocks-by-warehouse/fbs",
-        headers=ozon_headers(client_id_ext, token),
-        json={"offer_id": list(offer_ids), "limit": 100},
-    )
-    if r.status_code != 200:
-        raise Stop("чтение остатка Ozon %s %s" % (r.status_code, (r.text or "")[:180]))
-    out = {}
-    for row in (r.json().get("products") or r.json().get("result") or []):
-        if str(row.get("warehouse_id")) != str(warehouse_id):
-            continue
-        out[row.get("offer_id")] = row.get("present")
-    return out
+    out, cursor, seen = {}, "", set()
+    while True:
+        body = {"offer_id": list(offer_ids), "limit": 100}
+        if cursor:
+            body["cursor"] = cursor
+        r = req("POST", OZON_BASE + "/v2/product/info/stocks-by-warehouse/fbs",
+                headers=ozon_headers(client_id_ext, token), json=body)
+        if r.status_code != 200:
+            raise Stop("чтение остатка Ozon HTTP %s" % r.status_code)
+        data = r.json()
+        if not isinstance(data.get("products"), list):
+            raise Stop("Ozon: нет списка остатков")
+        for row in data["products"]:
+            if str(row.get("warehouse_id")) != str(warehouse_id):
+                continue
+            # Запись задаёт свободный остаток, present включает резерв Ozon.
+            qty = row.get("free_stock")
+            if qty is None:
+                qty = physical(row.get("present"), row.get("reserved"))
+            out[str(row.get("offer_id"))] = qty
+        if not data.get("has_next"):
+            return out
+        cursor = data.get("cursor")
+        if not cursor or cursor in seen:
+            raise Stop("Ozon: неполная пагинация остатков")
+        seen.add(cursor)
 
 
 def read_yandex(token, campaign_id, skus):
@@ -290,11 +320,13 @@ def read_yandex(token, campaign_id, skus):
         raise Stop("чтение остатка Яндекса %s %s" % (r.status_code, (r.text or "")[:180]))
     out = {}
     result = (r.json().get("result") or {})
-    for row in result.get("warehouses") or result.get("skus") or []:
-        sku = row.get("offerId") or row.get("sku")
-        items = row.get("stocks") or row.get("items") or []
-        if items:
-            out[sku] = items[0].get("count")
+    warehouses = result.get("warehouses") or []
+    if len(warehouses) != 1:
+        raise Stop("Яндекс: неоднозначный склад при чтении")
+    for row in warehouses[0].get("offers") or []:
+        stock = [x for x in row.get("stocks", []) if x.get("type") == "AVAILABLE"]
+        if len(stock) == 1:
+            out[str(row.get("offerId"))] = stock[0].get("count")
     return out
 
 
@@ -323,8 +355,11 @@ def send_ozon(client_id_ext, token, warehouse_id, items):
     )
     if r.status_code != 200:
         raise Stop("запись Ozon %s %s" % (r.status_code, (r.text or "")[:180]))
+    result = r.json().get("result") or []
+    if {str(x.get("offer_id")) for x in result} != {str(x["offer"]) for x in items}:
+        raise Stop("Ozon вернул неполное подтверждение записи")
     bad = []
-    for row in r.json().get("result") or []:
+    for row in result:
         if not row.get("updated"):
             bad.append("%s: %s" % (row.get("offer_id"), row.get("errors")))
     if bad:
@@ -457,8 +492,294 @@ def push_three(client_code):
     return report
 
 
+# Свои кабинеты: отдельная конфигурация, без регистрации в очереди фулфилмента.
+# В конфигурации нет автоматического включения: нужен успешный пилот.
+OWN_STORE = "bad1b6d6-4f99-11f1-0a80-07550012fedb"
+OWN_SUPPLIER = "6fa1608b-bd6e-11f1-0a80-1c880022c69e"
+
+
+def own_path(name="own_stock.json"):
+    from db import db_path
+    return os.path.join(os.path.dirname(db_path()), name)
+
+
+def save_private(path, data):
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
+def own_config():
+    with open(own_path(), encoding="utf-8") as fh:
+        config = json.load(fh)
+    if config.get("store_id") != OWN_STORE or config.get("supplier_id") != OWN_SUPPLIER:
+        raise Stop("неподтверждённый источник своих остатков")
+    ids = [t["id"] for t in config["targets"]]
+    if len(ids) != len(set(ids)):
+        raise Stop("повтор кабинета в настройках")
+    for target in config["targets"]:
+        if target.get("entity") not in ("1000", "1001", "1002", "1003"):
+            raise Stop("кабинет вне четырёх своих юрлиц")
+        if target.get("cabinet_id"):
+            from db import get_cabinet
+            cab = get_cabinet(target["cabinet_id"])
+            if not cab or cab["marketplace"] != target["marketplace"]:
+                raise Stop("неверная ссылка на кабинет")
+            target["token"] = cab["token"]
+    return config
+
+
+def own_cards():
+    cards = {}
+    offset = 0
+    while True:
+        r = req("GET", MS_BASE + "/entity/product", headers=ms_headers(), params={
+            "limit": 100, "offset": offset,
+            "filter": "supplier=" + MS_BASE + "/entity/counterparty/" + OWN_SUPPLIER,
+        })
+        if r.status_code != 200 or not isinstance(r.json().get("rows"), list):
+            raise Stop("не удалось полностью прочитать свою номенклатуру: HTTP %s" % r.status_code)
+        batch = r.json()["rows"]
+        for row in batch:
+            if row.get("archived") or any(a.get("name") == "Клиент фулфилмента" and a.get("value") for a in row.get("attributes", [])):
+                continue
+            codes = [str(v) for bc in row.get("barcodes", []) for v in bc.values() if v]
+            cards[row["id"]] = {"article": row.get("article", ""), "name": row.get("name", ""), "barcodes": codes}
+        if len(batch) < 100:
+            break
+        offset += 100
+    if not cards:
+        raise Stop("своя номенклатура пуста; запись запрещена")
+    return cards
+
+
+def own_source():
+    cards = own_cards()
+    rows = ms_rows(OWN_STORE)
+    if not rows:
+        raise Stop("пустой отчёт МойСклад; массовое обнуление запрещено")
+    quantities = {}
+    for row in rows:
+        pid = product_id(row)
+        if not pid or pid in quantities:
+            raise Stop("неоднозначная строка отчёта МойСклад")
+        qty = physical(row.get("stock"), row.get("reserve"))
+        if qty is None:
+            raise Stop("нечисловой остаток или резерв МойСклад")
+        quantities[pid] = qty
+    if not set(cards).intersection(quantities):
+        raise Stop("в отчёте нет своих товаров; запись запрещена")
+    # Полный непустой отчёт получен: отсутствующие в нём товары каталога имеют ноль.
+    return cards, {pid: quantities.get(pid, 0) for pid in cards}
+
+
+def match_own(cards, quantities, rows):
+    """Каждый оффер отдельно. Любая неоднозначность МС/кабинета исключается."""
+    codes = {}
+    for pid, card in cards.items():
+        for raw in card["barcodes"]:
+            code = str(raw or "").strip()
+            if code and not code.upper().startswith("OZN"):
+                codes.setdefault(code, set()).add(pid)
+    offers = {}
+    barcode_offers = {}
+    for row in rows:
+        ext = str(row.get("ext_key") or "")
+        code = str(row.get("ext_barcode") or "").strip()
+        if not ext or not code:
+            continue
+        offers.setdefault(ext, set()).add(code)
+        barcode_offers.setdefault(code, set()).add(ext)
+    matched, conflicts, unmatched = [], [], []
+    for ext, barcodes in offers.items():
+        pids = set().union(*(codes.get(c, set()) for c in barcodes))
+        ambiguous = any(len(codes.get(c, set())) > 1 or len(barcode_offers[c]) > 1 for c in barcodes if c in codes)
+        if ambiguous or len(pids) > 1:
+            conflicts.append(ext)
+        elif len(pids) == 1:
+            pid = next(iter(pids))
+            matched.append({"ext_key": ext, "product_id": pid, "qty": quantities[pid],
+                            "article": cards[pid]["article"], "name": cards[pid]["name"],
+                            "barcodes": sorted(barcodes.intersection(codes))})
+        else:
+            unmatched.append(ext)
+    matched.sort(key=lambda x: x["ext_key"])
+    return matched, conflicts, unmatched
+
+
+def own_warehouse(target):
+    mp = target["marketplace"]
+    if mp == "wb":
+        warehouse = discover_wb(target["token"])
+        wid = warehouse["id"]
+    elif mp == "ozon":
+        r = req("POST", OZON_BASE + "/v2/warehouse/list", headers=ozon_headers(target["client_id_ext"], target["token"]), json={"limit": 50})
+        if r.status_code != 200:
+            raise Stop("склады Ozon HTTP %s" % r.status_code)
+        data = r.json()
+        if data.get("has_next"):
+            raise Stop("список складов Ozon неполон")
+        warehouses = ozon_fbs_warehouses(data.get("warehouses"))
+        if target.get("warehouse_id"):
+            warehouses = [w for w in warehouses if str(w["warehouse_id"]) == str(target["warehouse_id"])]
+        warehouse = one_warehouse(warehouses, "Ozon")
+        wid = warehouse["warehouse_id"]
+    elif mp == "yandex":
+        warehouse = discover_yandex(target["token"])
+        wid = warehouse["id"]
+    else:
+        raise Stop("неизвестная площадка")
+    if target.get("warehouse_id") and str(target["warehouse_id"]) != str(wid):
+        raise Stop("склад кабинета изменился")
+    return wid
+
+
+def own_catalog(target, warehouse):
+    from catalog_pull import pull_wb, rows_wb, pull_ozon, ozon_info, rows_ozon
+    path = own_path("own_stock_catalog_" + target["id"] + ".json")
+    if os.path.exists(path) and time.time() - os.path.getmtime(path) < 3600:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    mp = target["marketplace"]
+    if mp == "wb":
+        rows = rows_wb(0, pull_wb(target["token"]))
+    elif mp == "ozon":
+        items = pull_ozon(target["client_id_ext"], target["token"])
+        offers = [i["offer_id"] for i in items]
+        info = ozon_info(target["client_id_ext"], target["token"], offers)
+        if set(offers) != set(info):
+            raise Stop("неполный каталог Ozon")
+        rows = rows_ozon(0, items, info)
+    else:
+        from catalog_pull import pull_yandex, rows_yandex
+        rows = rows_yandex(0, pull_yandex(target["token"], warehouse))
+    if not rows:
+        raise Stop("каталог кабинета пуст")
+    save_private(path, rows)
+    return rows
+
+
+def own_read(target, warehouse, items):
+    keys = [x["ext_key"] for x in items]
+    if target["marketplace"] == "wb":
+        return read_wb(target["token"], warehouse, keys)
+    if target["marketplace"] == "ozon":
+        return read_ozon(target["client_id_ext"], target["token"], warehouse, keys)
+    return read_yandex(target["token"], warehouse, keys)
+
+
+def own_send(target, warehouse, items):
+    if target["marketplace"] == "wb":
+        return send_wb(target["token"], warehouse, [{"chrt": x["ext_key"], "qty": x["qty"]} for x in items])
+    if target["marketplace"] == "ozon":
+        return send_ozon(target["client_id_ext"], target["token"], warehouse, [{"offer": x["ext_key"], "qty": x["qty"]} for x in items])
+    return send_yandex(target["token"], warehouse, [{"sku": x["ext_key"], "qty": x["qty"]} for x in items])
+
+
+def run_own(mode="preview", target_id=None, pilot_product_ids=None):
+    """preview / pilot (до трёх офферов) / sync. Снимок пишется ДО записи."""
+    from db import run_lock
+    if mode not in ("preview", "pilot", "sync"):
+        raise ValueError(mode)
+    with run_lock("own-stock", blocking=False):
+        config = own_config()
+        if mode == "pilot" and not target_id:
+            raise Stop("пилот запускается только для одного конкретного кабинета")
+        if mode == "sync" and config.get("shared_stock_confirmed") is not True:
+            raise Stop("нужно решение об общем остатке между своими юрлицами")
+        if mode == "sync" and not config.get("enabled"):
+            return {"status": "disabled"}
+        cards, quantities = own_source()
+        journal = own_path("own_stock_run_" + datetime.now(MSK).strftime("%Y%m%dT%H%M%S%f") + ".json") if mode != "preview" else own_path("own_stock_preview.json")
+        report = {"at": datetime.now(MSK).isoformat(), "mode": mode, "source_products": len(cards), "targets": []}
+        for target in config["targets"]:
+            if target_id and target["id"] != target_id:
+                continue
+            result = {"id": target["id"], "status": "pending"}
+            report["targets"].append(result)
+            try:
+                warehouse = own_warehouse(target)
+                rows = own_catalog(target, warehouse)
+                if mode != "preview":
+                    cards, quantities = own_source()
+                items, conflicts, unmatched = match_own(cards, quantities, rows)
+                result.update(warehouse_id=warehouse, matched=len(items), conflicts=conflicts, unmatched=unmatched,
+                              positive=sum(x["qty"] > 0 for x in items), zero=sum(x["qty"] == 0 for x in items))
+                if not items:
+                    raise Stop("нет однозначных совпадений")
+                result["sample"] = items[:3]
+                if mode == "preview":
+                    result["status"] = "ready"
+                    continue
+                pilot_path = own_path("own_stock_pilot_" + target["id"] + ".json")
+                if mode == "sync":
+                    if not os.path.exists(pilot_path):
+                        raise Stop("нет проверенного пилота")
+                    with open(pilot_path, encoding="utf-8") as fh:
+                        pilot = json.load(fh)
+                    if pilot.get("status") != "verified" or str(pilot.get("warehouse_id")) != str(warehouse):
+                        raise Stop("пилот для этого склада не подтверждён")
+                else:
+                    # Пилот: положительные остатки, плюс ноль при наличии.
+                    all_items = items
+                    readable = {}
+                    for start in range(0, len(items), 100):
+                        readable.update(own_read(target, warehouse, items[start:start + 100]))
+                    positive = [x for x in items if x["qty"] > 0 and x["ext_key"] in readable]
+                    zero = [x for x in items if x["qty"] == 0 and x["ext_key"] in readable]
+                    items = (positive[:2] + zero[:1] + positive[2:3])[:3]
+                    if pilot_product_ids is not None:
+                        chosen = set(pilot_product_ids)
+                        items = [x for x in all_items if x["product_id"] in chosen]
+                        if not 1 <= len(items) <= 3 or {x["product_id"] for x in items} != chosen:
+                            raise Stop("заданные товары пилота не сопоставились однозначно")
+                    if len(items) < min(3, result["matched"]):
+                        raise Stop("недостаточно позиций с читаемым остатком для пилота")
+                result["batches"] = []
+                for start in range(0, len(items), 100):
+                    chunk = items[start:start + 100]
+                    before = own_read(target, warehouse, chunk)
+                    expected = {x["ext_key"]: x["qty"] for x in chunk}
+                    # У сопоставленной карточки может ещё не быть записи остатка на этом складе.
+                    # Не объявляем отсутствие нулём: сохраняем его отдельно и проверяем после PUT.
+                    absent = sorted(set(expected) - set(before))
+                    batch = {"items": chunk, "before": before, "absent_before": absent,
+                             "expected": expected, "status": "prepared"}
+                    result["batches"].append(batch)
+                    save_private(journal, report)
+                    own_send(target, warehouse, chunk)
+                    batch["status"] = "sent"
+                    save_private(journal, report)
+                    for attempt in range(6):
+                        after = own_read(target, warehouse, chunk)
+                        if after == expected:
+                            break
+                        time.sleep(10)
+                    batch["after"] = after
+                    if after != expected:
+                        raise Stop("остатки после записи не совпали; см. снимок")
+                    batch["status"] = "verified"
+                result["status"] = "verified"
+                if mode == "pilot":
+                    save_private(pilot_path, result)
+            except Exception as exc:
+                result["status"] = "error"
+                error = str(exc)
+                for protected in config["targets"]:
+                    if protected.get("token"):
+                        error = error.replace(protected["token"], "[REDACTED]")
+                result["error"] = error[:300]
+            save_private(journal, report)
+        save_private(own_path("own_stock_" + mode + ".json"), report)
+        return report
+
+
 def _self_check():
-    assert physical(2, 1) == 3
+    assert physical(2, 1) == 1
     assert physical(0, 0) == 0
     assert physical("x", 1) is None
     oz = ozon_fbs_warehouses(
@@ -483,7 +804,25 @@ def _self_check():
         assert "Яндекс" in str(exc)
     else:
         raise SystemExit("пустой Яндекс должен останавливать")
-    print("stock_push: проверки прошли")
+    assert physical(1, 4) == 0
+    assert physical(None, 0) is None
+    assert physical("nan", 0) is None
+    assert physical("inf", 0) is None
+    assert product_id({"meta": {"href": MS_BASE + "/entity/product/abc?expand=supplier"}}) == "abc"
+    cards = {"a": {"article": "same", "name": "A", "barcodes": ["123", "124"]},
+             "b": {"article": "same", "name": "B", "barcodes": ["456"]}}
+    rows = [{"ext_key": "one", "ext_barcode": "123"}, {"ext_key": "one", "ext_barcode": "124"},
+            {"ext_key": "zero", "ext_barcode": "456"}, {"ext_key": "foreign", "ext_barcode": "789"}]
+    matched, conflicts, unmatched = match_own(cards, {"a": 5, "b": 0}, rows)
+    assert [(x["ext_key"], x["qty"]) for x in matched] == [("one", 5), ("zero", 0)]
+    assert conflicts == [] and unmatched == ["foreign"]
+    # Повтор одного товара на другой площадке не должен подавляться.
+    assert len(match_own(cards, {"a": 5, "b": 0}, rows)[0]) == 2
+    ambiguous_rows = rows + [{"ext_key": "duplicate", "ext_barcode": "123"}]
+    assert {x["ext_key"] for x in match_own(cards, {"a": 5, "b": 0}, ambiguous_rows)[0]} == {"zero"}
+    cards["b"]["barcodes"].append("123")
+    assert "one" in match_own(cards, {"a": 5, "b": 0}, rows)[1]
+    print("stock_push: проверки количества, ID, нулей, нескольких площадок и неоднозначностей прошли")
 
 
 if __name__ == "__main__":
