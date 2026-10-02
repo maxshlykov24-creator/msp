@@ -870,7 +870,7 @@
       <h3>Цвет и канал</h3>
       <div class="hint">Сравнение цветов и каналов сбыта по покупкам текущего фильтра.</div>
       <div class="scroll-x"><table>
-        <thead><tr><th>Цвет</th><th>Изделий</th><th>Выручка</th><th>Главный канал</th><th>Доля канала</th></tr></thead>
+        <thead><tr><th>Цвет</th><th>Изделий</th><th>Выручка</th><th>Канал до возвратов</th><th>Доля продаж канала</th></tr></thead>
         <tbody id="colors"></tbody>
       </table></div>
     </div>
@@ -1183,8 +1183,8 @@ function refresh(){
  table('cats',cats,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.qty?x.rev/x.qty:0),x=>money(x.rev-x.cost)]);
  el('sizes').innerHTML=Object.entries(group(goodsLines,x=>x.l.size)).map(([size,arr])=>`<div class="kv"><span>${esc(size)}</span><b>${num(sum(arr,x=>x.l.qty))}</b></div>`).join('')||'Нет данных';
  const colors=Object.entries(group(goodsLines,x=>x.l.color)).map(([name,arr])=>{
-  const qty=sum(arr,x=>x.l.qty),channels=Object.entries(group(arr,x=>x.o.channel)).map(([channel,rows])=>({channel,qty:sum(rows,x=>x.l.qty)})).sort((a,b)=>b.qty-a.qty);
-  return {name,qty,rev:sum(arr,x=>x.l.rev),topChannel:channels[0]?.channel||'не указано',topShare:pct(channels[0]?.qty||0,qty)};
+  const qty=sum(arr,x=>x.l.qty),channels=Object.entries(group(arr.filter(x=>!x.o.return_event),x=>x.o.channel)).map(([channel,rows])=>({channel,qty:sum(rows,x=>x.l.qty)})).sort((a,b)=>b.qty-a.qty);
+  return {name,qty,rev:sum(arr,x=>x.l.rev),topChannel:channels[0]?.channel||'не указано',topShare:pct(channels[0]?.qty||0,sum(arr.filter(x=>!x.o.return_event),x=>x.l.qty))};
  }).sort((a,b)=>b.qty-a.qty);
  table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>x.topChannel,x=>x.topShare]);
  el('basket-kv').innerHTML=kv([['Изделий до возвратов / заказ',n?(sum(filtered.flatMap(x=>x.ls),l=>l.delivery?0:l.qty)/n).toFixed(1):'0'],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
@@ -1245,8 +1245,8 @@ const periodClients=()=>{const phones=new Set(filtered.map(x=>x.o.phone));return
 ['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener('input',()=>renderClients(periodClients())));
 el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';renderClients(periodClients())};
 document.querySelector('.xls').onclick=()=>{
- const rows=[['Заказ','Дата оплаты','Канал','Источник','Город','Клиент','Телефон','Товар','Размер','Цвет','Количество','Выручка','Закупка']];
- currentLines.forEach(({o,l})=>rows.push([o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,l.color,l.qty,l.rev,l.cost]));
+ const rows=[['Тип документа','Заказ / возврат','Дата полной оплаты / возврата','Канал','Источник','Город','Клиент','Телефон','Товар','Размер','Цвет','Количество','Выручка','Закупка']];
+ currentLines.forEach(({o,l})=>rows.push([o.return_event?'Возврат':'Продажа',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,l.color,l.qty,l.rev,l.cost]));
  const safeCell=v=>{const t=String(v??'');return /^[=+@-]/.test(t)&&!/^-[0-9.,]+$/.test(t)?"'"+t:t};
  const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+safeCell(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='2MY_выгрузка_'+dmy(state.from)+'_'+dmy(state.to)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
