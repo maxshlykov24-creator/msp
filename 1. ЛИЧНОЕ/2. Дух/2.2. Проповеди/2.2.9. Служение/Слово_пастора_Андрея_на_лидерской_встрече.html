@@ -91,6 +91,18 @@ body {
   padding: 22px var(--pad) 22px;
   overflow: hidden;
 }
+.slide:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 5px;
+  width: 64px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(239, 255, 176, .5), transparent);
+  pointer-events: none;
+}
 .bar {
   display: flex;
   align-items: center;
@@ -283,6 +295,9 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
   .points li { padding: 3px 0; font-size: 13.5px; line-height: 1.28; }
   .lede, .sub { margin-top: 6px; font-size: 14px; }
   .kicker { margin-bottom: 4px; }
+}
+@media (max-width: 899px) {
+  .body.split > :first-child { margin-top: 28px; }
 }
 @keyframes rise {
   from { opacity: .2; transform: translateY(12px); }
