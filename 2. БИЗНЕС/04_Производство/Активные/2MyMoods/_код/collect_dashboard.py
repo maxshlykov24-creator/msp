@@ -170,6 +170,30 @@ def get_amo() -> tuple[list[dict], dict]:
                     "stages": [{"id": s["id"], "name": s["name"]} for s in stages]}
 
 
+def response_rules() -> dict | None:
+    path = os.environ.get("DASHBOARD_RESPONSE_RULES")
+    return json.loads(Path(path).read_text()) if path else None
+
+
+def working_minutes(start: int, end: int, rules: dict | None) -> float | None:
+    if not rules:
+        return None
+    first, last = datetime.fromtimestamp(start, TZ), datetime.fromtimestamp(end, TZ)
+    if first.date().isoformat() < rules["valid_from"] or last.date().isoformat() > rules.get("valid_to", "9999-12-31"):
+        return None
+    total = 0.0
+    day = first.replace(hour=0, minute=0, second=0, microsecond=0)
+    while day <= last:
+        periods = rules.get("dates", {}).get(day.date().isoformat(), rules["weekdays"].get(str(day.isoweekday()), []))
+        for opening, closing in periods:
+            oh, om = map(int, opening.split(":")); ch, cm = map(int, closing.split(":"))
+            left = max(first, day.replace(hour=oh, minute=om))
+            right = min(last, day.replace(hour=ch, minute=cm))
+            total += max(0, (right - left).total_seconds() / 60)
+        day += timedelta(days=1)
+    return round(total, 2)
+
+
 def get_responses(leads: list[dict]) -> dict:
     """Паузы входящее → первый исходящий в беседе, без текстов и контактов."""
     amo = lib.Amo()
@@ -199,7 +223,9 @@ def get_responses(leads: list[dict]) -> dict:
     else:
         raise RuntimeError("amo response events: pagination limit reached")
     names = {lib.USER_TANYA: "Таня", lib.USER_KRISTINA: "Кристина", lib.USER_OKSANA: "Оксана", lib.USER_MAXIM: "Максим"}
-    pending, samples = {}, []
+    pending, samples, unknown_rows = {}, [], []
+    rules = response_rules()
+    current_managers = {l["id"]: names.get(l.get("manager"), "Не определён") for l in leads}
     unknown = 0
     for row in sorted(events.values(), key=lambda r: (r["created_at"], r["type"] != "incoming_chat_message", r["id"])):
         values = row.get("value_after") or []
@@ -208,18 +234,26 @@ def get_responses(leads: list[dict]) -> dict:
             continue
         key = (msg.get("origin"), msg["talk_id"])
         if row["type"] == "incoming_chat_message":
-            pending.setdefault(key, row["created_at"])
+            pending.setdefault(key, (row["created_at"], row["entity_id"]))
         elif key in pending:
-            start = pending.pop(key)
+            start, entity_id = pending.pop(key)
             manager = names.get(row.get("created_by"))
             if manager:
                 samples.append({"date": datetime.fromtimestamp(start, TZ).date().isoformat(),
-                                "manager": manager, "minutes": round((row["created_at"] - start) / 60, 2)})
+                                "manager": manager, "minutes": round((row["created_at"] - start) / 60, 2),
+                                "start_at": start, "end_at": row["created_at"],
+                                "working_minutes": working_minutes(start, row["created_at"], rules)})
             else:
                 unknown += 1
+                unknown_rows.append({"date": datetime.fromtimestamp(start, TZ).date().isoformat()})
+    pending_rows = [{"date": datetime.fromtimestamp(start, TZ).date().isoformat(), "start_at": start,
+                     "minutes": round((now.timestamp() - start) / 60, 2),
+                     "working_minutes": working_minutes(start, int(now.timestamp()), rules),
+                     "manager": current_managers.get(entity_id, "Не определён")} for start, entity_id in pending.values()]
     return {"status": "ok", "source": "amoCRM events", "from": since.date().isoformat(),
             "to": now.isoformat(), "samples": samples, "messages": len(events),
-            "unknown_author": unknown, "unanswered": len(pending)}
+            "unknown_author": unknown, "unanswered": len(pending), "unknown_rows": unknown_rows,
+            "pending": pending_rows, "rules": rules, "rules_status": "configured" if rules else "not_configured"}
 
 
 def positions_for(order_id: str) -> tuple[str, list[dict]]:
@@ -257,6 +291,95 @@ def positions_in_order(order_ids: list[str]):
             yield rows
 
 
+def atomic_json(path: Path, value: dict, mode=0o600) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".next")
+    tmp.write_text(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+    tmp.chmod(mode)
+    tmp.replace(path)
+
+
+def enrich_accounting(snap: dict, ms=None) -> None:
+    """История наблюдённых цен и отдельные отрицательные события возвратов."""
+    ms = ms or lib.MS()
+    observed = datetime.now(TZ).isoformat()
+    history_path = Path(os.environ.get("DASHBOARD_COST_HISTORY", GAPS.parent / "cost-history.local.json"))
+    history = json.loads(history_path.read_text()) if history_path.exists() else {"versions": {}, "locked": {}, "started": observed}
+    products = {r["id"]: r for r in required_rows(ms, "/entity/product", keep=("id", "buyPrice"))}
+    variants = {r["id"]: mid(r.get("product")) for r in required_rows(ms, "/entity/variant", keep=("id", "product"))}
+    for pid, product in products.items():
+        price = rub((product.get("buyPrice") or {}).get("value"))
+        versions = history["versions"].setdefault(pid, [])
+        if not versions or versions[-1]["unit"] != price:
+            versions.append({"observed_from": observed, "unit": price})
+    previous = json.loads(OUT.read_text()) if OUT.exists() else snap
+    for order in previous.get("orders", []):
+        for line in order.get("lines", []):
+            if not line.get("delivery") and line.get("qty"):
+                history["locked"].setdefault(order["id"] + ":" + line["id"],
+                    {"unit": line["cost"] / line["qty"], "basis": "baseline_estimate", "fixed_at": observed})
+    for order in snap["orders"]:
+        for line in order.get("lines", []):
+            if line.get("delivery"):
+                continue
+            key = order["id"] + ":" + line["id"]
+            if key not in history["locked"]:
+                pid = variants.get(line["id"], line["id"])
+                paid = order.get("paid_at") or ((order.get("paid_date") or "") + "T00:00:00+03:00")
+                vs = [v for v in history["versions"].get(pid, []) if v["observed_from"] <= paid]
+                history["locked"][key] = {"unit": vs[-1]["unit"] if vs else line["cost"] / line["qty"] if line["qty"] else 0,
+                    "basis": "observed_price" if vs else "baseline_estimate", "fixed_at": observed}
+            fixed = history["locked"][key]
+            line["cost"] = round(fixed["unit"] * line["qty"], 2)
+            line["cost_basis"] = fixed["basis"]
+    atomic_json(history_path, history)
+    by_id = {o["id"]: o for o in snap["orders"]}
+    demands = {r["id"]: mid(r.get("customerOrder")) for r in required_rows(ms, "/entity/demand", keep=("id", "customerOrder"))}
+    returns, unresolved = [], []
+    for ret in required_rows(ms, "/entity/salesreturn", keep=("id", "name", "moment", "sum", "applicable", "demand")):
+        if ret.get("applicable") is not True:
+            continue
+        date = (dt(ret.get("moment")) or None)
+        original = by_id.get(demands.get(mid(ret.get("demand"))))
+        reason = None
+        if not date: reason = "Нет даты возврата"
+        elif not original: reason = "Нет связи с заказом"
+        elif not original.get("buy") or not original.get("paid_date"): reason = "Не подтверждена признанная продажа"
+        elif date.date().isoformat() < original["paid_date"]: reason = "Возврат раньше признания продажи"
+        if reason:
+            unresolved.append({"date": date.date().isoformat() if date else None, "sum": rub(ret.get("sum")), "reason": reason,
+                               "impact": "outside_revenue" if original and not original.get("buy") else "unresolved"})
+            continue
+        originals = defaultdict(list)
+        for line in original["lines"]:
+            originals[line["id"]].append(line)
+        lines = []
+        for pos in required_rows(ms, f"/entity/salesreturn/{ret['id']}/positions"):
+            aid = mid(pos.get("assortment"))
+            candidates = originals.get(aid, [])
+            if not candidates:
+                reason = "Позиция возврата не найдена в заказе"
+                break
+            costs = {round(x["cost"] / x["qty"], 6) for x in candidates if x["qty"]}
+            if len(costs) != 1:
+                reason = "Неоднозначная закупочная стоимость возврата"
+                break
+            line = dict(candidates[0]);quantity = float(pos.get("quantity") or 0)
+            gross = rub(pos.get("price")) * quantity
+            line.update(qty=-quantity, rev=-round(gross * (1 - float(pos.get("discount") or 0) / 100), 2),
+                        list=-gross, cost=-round(next(iter(costs)) * quantity, 2))
+            lines.append(line)
+        if reason or abs(sum(l["rev"] for l in lines) + rub(ret.get("sum"))) > 0.02:
+            unresolved.append({"date": date.date().isoformat(), "sum": rub(ret.get("sum")), "reason": reason or "Сумма позиций не совпадает с документом"})
+            continue
+        event = {k: original.get(k) for k in ("channel", "source", "city", "phone", "client", "manager")}
+        event.update(id=ret["id"], number=ret.get("name"), original_order=original["id"], return_event=True,
+                     paid_date=date.date().isoformat(), sum=-rub(ret.get("sum")), lines=lines)
+        returns.append(event)
+    snap.update(returns=returns, return_gaps=unresolved,
+                accounting={"cost_history_started": history["started"], "returns_checked_at": observed})
+
+
 def main() -> None:
     ms = lib.MS()
     started = datetime.now(TZ)
@@ -265,10 +388,12 @@ def main() -> None:
                            keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent",
                                  "salesChannel", "shipmentAddress", "shipmentAddressFull"))
     order_count = len(orders)
-    paymentins = required_rows(ms, "/entity/paymentin", keep=("moment", "created", "sum", "operations"))
-    payments = paymentins + required_rows(ms, "/entity/cashin", keep=("moment", "operations"))
+    paymentins = required_rows(ms, "/entity/paymentin", keep=("moment", "created", "sum", "operations", "applicable"))
+    payments = paymentins + required_rows(ms, "/entity/cashin", keep=("moment", "operations", "applicable"))
     payment_daily = defaultdict(float)
     for payment in paymentins:
+        if payment.get("applicable") is not True:
+            continue
         created = dt(payment.get("created"))
         if created:
             payment_daily[created.date().isoformat()] += rub(payment.get("sum"))
@@ -276,6 +401,8 @@ def main() -> None:
         ms, "/entity/invoiceout", keep=("id", "customerOrder"))}
     order_payments = defaultdict(list)
     for payment in payments:
+        if payment.get("applicable") is not True:
+            continue
         for operation in payment.get("operations") or []:
             meta = operation.get("meta") or {}
             target_id = mid(operation)
@@ -389,6 +516,7 @@ def main() -> None:
         result.append({
             "number": number, "id": o["id"], "created": (dt(o.get("moment")) or started).date().isoformat(),
             "paid_date": closed.date().isoformat() if closed else None,
+            "paid_at": closed.isoformat() if closed else None,
             "sum": total, "paid": paid, "buy": bool(is_buy),
             "partial": bool(0 < paid < total), "channel": channel,
             "source": utm or "не указано", "utm_medium": a.get(FIELD["utm_medium"]) or "",
@@ -432,6 +560,7 @@ def main() -> None:
             "payment_daily": [{"date": day, "sum": round(amount, 2)} for day, amount in sorted(payment_daily.items())],
             "responses": responses,
             "wazzup": {"status": "метрика ответа рассчитана по событиям amoCRM"}}
+    enrich_accounting(snap)
     # Атомарная замена: при ошибке предыдущий срез не получает новый timestamp.
     OUT.parent.mkdir(parents=True, exist_ok=True)
     GAPS.parent.mkdir(parents=True, exist_ok=True)

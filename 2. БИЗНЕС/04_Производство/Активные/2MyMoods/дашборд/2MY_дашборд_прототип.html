@@ -715,7 +715,7 @@
       <div id="disc-kv2"></div>
     </div>
     <div class="card">
-      <h3>Менеджеры и скорость ответа</h3>
+      <h3>Менеджеры и скорость ответа</h3><div id="response-quality" class="hint"></div>
       <div class="hint" id="mgr-hint">Менеджер определяется по графику смен на дату закрывающего платежа. Скорость ответа берётся из Wazzup.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Менеджер</th><th>Оплаченных заказов</th><th>Выручка</th><th>Ответ</th></tr></thead>
@@ -828,7 +828,7 @@
   <section class="view" data-v="goods">
   <h2 class="sect">Точечная аналитика по товару</h2>
   <div class="toolbar scope-bar">
-    <select multiple id="s-cat"></select>
+    <span class="hint">Категория и товар меняют продажи во всём дашборде. Размер и цвет меняют только карточку ниже.</span><select multiple id="s-cat"></select>
     <div class="combo" id="s-prod-combo">
       <input type="search" id="s-prod" placeholder="Найти товар по названию" autocomplete="off">
       <div class="combo-list" hidden></div>
@@ -843,7 +843,7 @@
   <div class="grid-2" style="margin-top:20px">
     <div class="card">
       <h3>Товары: продажи, выручка, маржа</h3>
-      <div class="hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий; выручка — после скидок, без доставки; маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие выбирает позицию, повторное снимает выбор.</div>
+      <div class="hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий за вычетом подтверждённых возвратов; выручка — после скидок и возвратов, без доставки; маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие выбирает позицию, повторное снимает выбор.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Позиция</th><th>Продано</th><th>Выручка</th><th>Маржа</th><th>Размер</th><th>Цвет</th></tr></thead>
         <tbody id="items"></tbody>
@@ -884,7 +884,7 @@
   </section>
 
   <section class="view" data-v="proc">
-  <h2 class="sect">Воронка продаж в amoCRM</h2>
+  <h2 class="sect">Воронка продаж в amoCRM</h2><div class="hint">Этапы и задачи — текущее состояние. Период применяется к конверсии и ответам. Категория, товар, источник, канал, география, размер и цвет на amoCRM не действуют.</div>
   <div class="grid-2">
     <div class="card">
       <h3>Текущие этапы сделок</h3>
@@ -1071,7 +1071,7 @@ const select = (id, values, label) => { const e=el(id), old=selected(id); e.inne
  window.addEventListener('scroll',()=>{if(current)place()},true);
 })();
 const startOfMonth = d => d.slice(0,7)+'-01';
-let data=null, clients=[], filtered=[], currentLines=[], includeDelivery=false, chartDays=[];
+let data=null, clients=[], filtered=[], currentLines=[], financial=[], includeDelivery=false, chartDays=[];
 let state={from:'',to:'',cat:[],prod:'',source:[],channel:[],city:[],size:[],color:[]};
 const views=[['sales','Продажи и каналы'],['clients','Клиенты'],['goods','Товары'],['proc','Процессы в amoCRM']];
 el('nav').innerHTML=views.map(([id,n],i)=>`<button data-v="${id}" class="${i?'':'on'}">${n}</button>`).join('');
@@ -1085,7 +1085,7 @@ function buildClients(){
  const g=group(data.orders.filter(o=>o.buy&&o.phone),o=>o.phone);
  clients=Object.entries(g).map(([phone,orders])=>{
    orders.sort((a,b)=>(a.paid_date||'').localeCompare(b.paid_date||''));
-   const buys=orders.length, ltv=sum(orders,o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev));
+   const buys=orders.length, ltv=sum(orders,o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev))+sum((data.returns||[]).filter(o=>o.phone===phone),o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev));
    const dated=orders.filter(o=>o.paid_date);const uncertain=dated.length!==orders.length;const first=uncertain?'':dated[0]?.paid_date||'',last=uncertain?'':dated[dated.length-1]?.paid_date||'';
    return {phone,name:orders[buys-1].client||phone,buys,ltv,first,last,
      silence:last?Math.max(0,Math.floor((Date.now()-Date.parse(last+'T00:00:00+03:00'))/864e5)):null,
@@ -1100,59 +1100,72 @@ function refresh(){
  const basic=data.orders.filter(o=>o.buy&&o.paid_date&&o.paid_date>=state.from&&o.paid_date<=state.to)
    .filter(o=>matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city));
  filtered=basic.map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
- currentLines=filtered.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
+ const returned=(data.returns||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
+ financial=[...filtered,...returned];
+ const periodReturnGaps=(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));
+ const returnGaps=periodReturnGaps.filter(x=>x.impact!=='outside_revenue'),outsideReturns=periodReturnGaps.filter(x=>x.impact==='outside_revenue');
+ const grossRev=sum(filtered,x=>orderRev(x.o,x.ls)),returnedRev=-sum(returned,x=>orderRev(x.o,x.ls));
+ currentLines=financial.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
  const noCost=currentLines.filter(x=>!x.l.delivery&&x.l.rev>0&&x.l.cost===0);
- el('cost-hint').textContent='Маржа по закупочной цене карточки: без работы и логистики.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
- const orders=filtered.map(x=>x.o), rev=sum(filtered,x=>orderRev(x.o,x.ls));
+ el('cost-hint').textContent='Маржа по зафиксированной закупочной цене, без работы и логистики. Исторические цены до начала наблюдений — оценка; новые версии фиксируются при синхронизации.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
+ const orders=filtered.map(x=>x.o), rev=sum(financial,x=>orderRev(x.o,x.ls));
  const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
  const n=orders.length, people=new Set(orders.map(o=>o.phone).filter(Boolean));
- const returnN=orders.filter(o=>o.return).length;
+ const returnN=returned.length;
  // История без телефона или даты не доказывает, что покупка первая.
  const repeatState=o=>{const c=clients.find(c=>c.phone===o.phone);if(!c?.first)return 'unknown';if(c.first<o.paid_date)return 'repeat';const same=c.orders.filter(x=>x.paid_date===c.first);return same.length===1?'first':'unknown'};
  const repN=orders.filter(o=>repeatState(o)==='repeat').length, firstN=orders.filter(o=>repeatState(o)==='first').length, unknownN=n-repN-firstN;
  const avgLtv=people.size?sum(clients.filter(c=>people.has(c.phone)),c=>c.ltv)/people.size:0;
  el('hero-period').textContent=`${dmy(state.from)} — ${dmy(state.to)} · по дате закрывающего платежа, Москва`;
  el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
- el('hero-sub').textContent='Выручка по полностью оплаченным заказам'+(includeDelivery?' с доставкой':' без доставки');
+ el('hero-sub').textContent='Выручка после подтверждённых возвратов'+(includeDelivery?' с доставкой':' без доставки');
  const paymentTotal=sum((data.payment_daily||[]).filter(x=>x.date>=state.from&&x.date<=state.to),x=>x.sum);
  const paymentScopeClear=!state.cat.length&&!state.prod&&!state.source.length&&!state.channel.length&&!state.city.length;
- el('payment-in-note').textContent=paymentScopeClear&&data.payment_daily ? 'Входящие платежи по дате создания: '+paymentTotal.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽. Включают частичную оплату и доставку.' : '';
- el('hero-mini').innerHTML=[['Заказов',n],['Средний чек',money(n?rev/n:0)],['Клиентов',people.size],['Маржа',pct(rev-cost,rev)]].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
- const kpis=[['Выручка, покупки',money(rev)],['Заказов',num(n)],['Средний чек',money(n?rev/n:0)],['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Маржа по закупке',pct(rev-cost,rev)],['Повторные покупки',(unknownN?'не менее ':'')+pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты',pct(returnN,n)]];
+ el('payment-in-note').textContent=`Продажи: ${money(grossRev)}. Возвраты по дате документа: ${money(returnedRev)}. Вся сумма заказа, включая предоплату, признаётся только в день полной оплаты.`+(returnGaps.length?` Не включены ${returnGaps.length} возвратов на ${money(sum(returnGaps,x=>x.sum))}: связь с признанной продажей или позиции требуют проверки. Итог неполный.`:'')+(outsideReturns.length?` Отдельно: возвраты на ${money(sum(outsideReturns,x=>x.sum))} по заказам без полной оплаты. Эти заказы не признавались в выручке, поэтому их возвраты не вычитаются. Сумма по всем каналам.`:'');
+ el('hero-mini').innerHTML=[['Заказов',n],['Чек до возвратов',money(n?grossRev/n:0)],['Клиентов',people.size],['Маржа',pct(rev-cost,rev)]].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
+ const kpis=[['Выручка после возвратов',money(rev)],['Заказов',num(n)],['Чек до возвратов',money(n?grossRev/n:0)],['Изделий до возвратов / заказ',n?(sum(filtered.flatMap(x=>x.ls),l=>l.delivery?0:l.qty)/n).toFixed(1):'0'],['Маржа по закупке',pct(rev-cost,rev)],['Повторные покупки',(unknownN?'не менее ':'')+pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты, документов',num(returnN)]];
  el('kpis').innerHTML=kpis.map(([k,v])=>`<div class="kpi"><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
- const days=group(filtered,x=>x.o.paid_date), keys=[];
+ const days=group(financial,x=>x.o.paid_date), keys=[];
  for(let day=new Date(state.from+'T00:00:00Z');day.toISOString().slice(0,10)<=state.to;day.setUTCDate(day.getUTCDate()+1))keys.push(day.toISOString().slice(0,10));
- el('chart-title').textContent='Выручка по дням оплаты';
- chartDays=keys.map(k=>({date:k,rev:Math.round(sum(days[k]||[],x=>orderRev(x.o,x.ls))),n:(days[k]||[]).length}));
- el('chart-peak').textContent=filtered.length?'Пик: '+dmy(chartDays.reduce((a,b)=>a.rev>b.rev?a:b).date):'Нет покупок';
- const max=Math.max(1,...chartDays.map(d=>d.rev)), nPts=chartDays.length;
- const xy=(d,i)=>`${nPts>1?i*600/(nPts-1):300},${125-d.rev*115/max}`;
- el('spark').innerHTML=nPts>1?`<polyline fill="none" stroke="#020202" stroke-width="2" vector-effect="non-scaling-stroke" points="${chartDays.map(xy).join(' ')}"/>`:nPts?`<circle cx="300" cy="${125-chartDays[0].rev*115/max}" r="3" fill="#020202"/>`:'';
+ el('chart-title').textContent='Продажи минус возвраты по дням';
+ chartDays=keys.map(k=>({date:k,rev:Math.round(sum(days[k]||[],x=>orderRev(x.o,x.ls))),n:(days[k]||[]).filter(x=>!x.o.return_event).length}));
+ el('chart-peak').textContent=financial.length?'Пик: '+dmy(chartDays.reduce((a,b)=>a.rev>b.rev?a:b).date):'Нет покупок';
+ const max=Math.max(1,...chartDays.map(d=>d.rev)),min=Math.min(0,...chartDays.map(d=>d.rev)), nPts=chartDays.length;
+ const xy=(d,i)=>`${nPts>1?i*600/(nPts-1):300},${125-(d.rev-min)*115/(max-min)}`;
+ el('spark').innerHTML=nPts>1?`<polyline fill="none" stroke="#020202" stroke-width="2" vector-effect="non-scaling-stroke" points="${chartDays.map(xy).join(' ')}"/>`:nPts?`<circle cx="300" cy="${125-(chartDays[0].rev-min)*115/(max-min)}" r="3" fill="#020202"/>`:'';
  if(typeof placeChartTip==='function' && document.querySelector('.chart-plot').matches(':hover')) placeChartTip(lastChartX);
  el('ax-l').textContent=dmy(state.from);el('ax-r').textContent=dmy(state.to);
- const rowsFor=(key)=>Object.entries(group(filtered,x=>key(x.o))).map(([name,arr])=>({name,n:arr.length,rev:sum(arr,x=>orderRev(x.o,x.ls))})).sort((a,b)=>b.rev-a.rev);
+ const rowsFor=(key)=>Object.entries(group(financial,x=>key(x.o))).map(([name,arr])=>({name,n:arr.filter(x=>!x.o.return_event).length,gross:sum(arr.filter(x=>!x.o.return_event),x=>orderRev(x.o,x.ls)),rev:sum(arr,x=>orderRev(x.o,x.ls))})).sort((a,b)=>b.rev-a.rev);
  const source=rowsFor(o=>o.source), channel=rowsFor(o=>o.channel), geo=rowsFor(o=>o.city);
- table('src',source,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>money(r.rev/r.n),r=>pct(r.n,n)]);
+ table('src',source,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>r.n?money(r.gross/r.n):'—',r=>pct(r.n,n)]);
  table('sale',channel,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>pct(r.n,n)]);
- table('geo',geo,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>money(r.rev/r.n),r=>pct(r.n,n)]);
+ table('geo',geo,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>r.n?money(r.gross/r.n):'—',r=>pct(r.n,n)]);
  const site=orders.filter(o=>o.channel==='Сайт'), marked=site.filter(o=>o.source!=='не указано').length;
  el('utm-ok').textContent=pct(marked,site.length);el('utm-donut').style.background=`conic-gradient(#020202 0 ${site.length?marked/site.length*100:0}%,#ededed 0)`;
  el('utm-legend').innerHTML=`<div>Сайт с меткой <b>${marked}</b></div><div>Сайт без метки <b>${site.length-marked}</b></div>`;
  el('utm-kv').innerHTML=kv([['Заказов сайта',num(site.length)],['Без utm_source',num(site.length-marked)],['Частично оплаченные: созданы в периоде, все каналы',num(data.orders.filter(o=>o.partial&&o.created>=state.from&&o.created<=state.to).length)]]);
  const discounts=filtered.filter(x=>x.o.promo||x.ls.some(l=>l.rev<l.list));
- el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(sum(discounts,x=>orderRev(x.o,x.ls)))],['Скидка по позициям',money(sum(currentLines,x=>Math.max(0,x.l.list-x.l.rev)))]]);
+ el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(sum(discounts,x=>orderRev(x.o,x.ls)))],['Скидка по позициям',money(sum(filtered.flatMap(x=>x.ls),l=>Math.max(0,l.list-l.rev)))]]);
  const responseRows=(data.responses?.samples||[]).filter(x=>x.date>=state.from&&x.date<=state.to);
+ const waiting=(data.responses?.pending||[]).filter(x=>x.date>=state.from&&x.date<=state.to);
+ const unknownReplies=(data.responses?.unknown_rows||[]).filter(x=>x.date>=state.from&&x.date<=state.to);
+ const rules=data.responses?.rules;
+ const measured=responseRows.filter(x=>x.working_minutes!==null&&x.working_minutes!==undefined);
+ const waitingMeasured=waiting.filter(x=>x.working_minutes!==null&&x.working_minutes!==undefined);
+ const overdue=rules?[...measured,...waitingMeasured].filter(x=>x.working_minutes>rules.threshold_minutes).length:0;
+ el('response-quality').textContent=`Входящих серий без исходящего ответа в загруженной истории: ${num(waiting.length)}. Ответов без установленного автора в периоде: ${num(unknownReplies.length)}. Это наблюдение по событиям, а не подтверждение статуса открытой беседы. `+(rules?`Порог: ${rules.threshold_minutes} рабочих минут. Просрочено: ${overdue} из ${measured.length+waitingMeasured.length} серий с известным графиком (${pct(overdue,measured.length+waitingMeasured.length)}), включая ожидающие ответа. `:'Рабочие часы и допустимое время ответа не заданы: рабочее время и доля просрочек не рассчитываются. ')+(data.responses?.to?`События обновлены: ${new Date(data.responses.to).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})}.`:'');
  const responseMedian=rows=>{const ns=rows.map(x=>x.minutes).sort((a,b)=>a-b);return ns.length?((ns[Math.floor((ns.length-1)/2)]+ns[Math.floor(ns.length/2)])/2).toFixed(1)+' мин ('+ns.length+' ответов)':'нет данных'};
- const mgr=Object.entries(group(filtered,x=>x.o.manager||'Нет смены в графике')).map(([name,arr])=>({name,arr,rev:sum(arr,x=>orderRev(x.o,x.ls))}));
+ const mgr=Object.entries(group(financial,x=>x.o.manager||'Нет смены в графике')).map(([name,arr])=>({name,arr:arr.filter(x=>!x.o.return_event),rev:sum(arr,x=>orderRev(x.o,x.ls))}));
  mgr.sort((a,b)=>a.name==='Нет смены в графике'?1:b.name==='Нет смены в графике'?-1:b.rev-a.rev);
  const assigned=mgr.filter(x=>x.name!=='Нет смены в графике').reduce((n,x)=>n+x.arr.length,0);
  el('mgr-hint').textContent=`Менеджер по графику смен на дату закрывающего платежа. Подтверждённая смена: ${num(assigned)} из ${num(n)} покупок в фильтре. Без однозначной смены выручка показана отдельно.`+(data.roster?.status==='ok'?'':' График недоступен при сборке среза.');
  for(const name of new Set(responseRows.map(x=>x.manager)))if(!mgr.some(x=>x.name===name))mgr.push({name,arr:[],rev:0});
  el('mgr-hint').textContent+=' Ответ: медиана календарных минут от первого входящего в серии до следующего исходящего в той же беседе amoCRM, по фактическому автору ответа. Только «Продажи 2MY», период по входящему сообщению; товарные фильтры на ответы не действуют. Ответы без определённого автора исключены.'+(data.responses?.from?` История с ${dmy(data.responses.from)}.`:' История сообщений ещё не загружена.');
- table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>responseMedian(responseRows.filter(r=>r.manager===x.name))]);
- const scopedClients=clients.filter(c=>people.has(c.phone));
+ table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>{const rs=responseRows.filter(r=>r.manager===x.name);return responseMedian(rs)+(rules?' · рабочее: '+responseMedian(rs.filter(r=>r.working_minutes!==null&&r.working_minutes!==undefined).map(r=>({minutes:r.working_minutes}))):'')}]);
+ const financialPhones=new Set(financial.map(x=>x.o.phone));
+ const scopedClients=clients.filter(c=>financialPhones.has(c.phone));
  const datedClients=scopedClients.filter(c=>c.freq!==null);
- const periodRevenue=c=>sum(filtered.filter(x=>x.o.phone===c.phone),x=>orderRev(x.o,x.ls));
+ const periodRevenue=c=>sum(financial.filter(x=>x.o.phone===c.phone),x=>orderRev(x.o,x.ls));
  const tiers=['Gold','Silver','Bronze','Разовый'].map(t=>({name:t,cs:scopedClients.filter(c=>c.tier===t)}));
  table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,periodRevenue)),x=>pct(sum(x.cs,periodRevenue),sum(scopedClients,periodRevenue)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>{const dated=x.cs.filter(c=>c.freq!==null);return dated.length?(sum(dated,c=>c.freq)/dated.length).toFixed(1):'нет данных'}]);
  el('rep-share').textContent=(unknownN?'≥ ':'')+pct(repN,n);el('rep-donut').style.background=`conic-gradient(#020202 0 ${n?repN/n*100:0}%,#ededed 0)`;
@@ -1174,10 +1187,10 @@ function refresh(){
   return {name,qty,rev:sum(arr,x=>x.l.rev),topChannel:channels[0]?.channel||'не указано',topShare:pct(channels[0]?.qty||0,qty)};
  }).sort((a,b)=>b.qty-a.qty);
  table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>x.topChannel,x=>x.topShare]);
- el('basket-kv').innerHTML=kv([['Изделий в заказе',n?(qty/n).toFixed(1):'0'],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
+ el('basket-kv').innerHTML=kv([['Изделий до возвратов / заказ',n?(sum(filtered.flatMap(x=>x.ls),l=>l.delivery?0:l.qty)/n).toFixed(1):'0'],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
  const scopeLines=goodsLines.filter(x=>matches(state.size,x.l.size)&&matches(state.color,x.l.color));
  const sq=sum(scopeLines,x=>x.l.delivery?0:x.l.qty),sr=sum(scopeLines,x=>x.l.rev),sc=sum(scopeLines,x=>x.l.cost);
- el('scope').innerHTML=kv([['Выбранные изделия',num(sq)],['Выручка',money(sr)],['Закупка',money(sc)],['Маржа',money(sr-sc)]]);
+ el('scope').innerHTML=kv([['Изделия за вычетом возвратов',num(sq)],['Выручка',money(sr)],['Закупка',money(sc)],['Маржа',money(sr-sc)]]);
  el('s-count').textContent=num(products.length)+' товаров';
  const leads=data.leads.filter(l=>l.created>=state.from&&l.created<=state.to);
  const fallbackStages=[[88727566,'Неразобранное'],[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно'],[143,'Закрыто без успеха']];
@@ -1190,7 +1203,7 @@ function refresh(){
  const shipped=orders.filter(o=>o.sent_at).length;
  const shipDays=orders.filter(o=>o.sent_at&&o.confirmed_at).map(o=>({days:(Date.parse(o.sent_at)-Date.parse(o.confirmed_at))/864e5,stock:o.await_stock})).filter(x=>x.days>=0);
  const median=xs=>{if(!xs.length)return 'нет данных';const a=xs.map(x=>x.days).sort((x,y)=>x-y);return ((a[Math.floor((a.length-1)/2)]+a[Math.floor(a.length/2)])/2).toFixed(1)+' дн.'};
- const reasons=Object.entries(group(orders.filter(o=>o.return),o=>o.return_reason||'не указано')).map(([name,arr])=>['Причина: '+name,num(arr.length)]);
+ const reasons=[['Сумма возвратов в фильтре',money(returnedRev)],['Не включено возвратов, требуют проверки',num(returnGaps.length)]];
  el('ship-kv').innerHTML=kv([['Покупок',num(n)],['С датой Отправлен',num(shipped)],['Без даты отправки',num(n-shipped)],['Подтвержден → Отправлен',median(shipDays)],['Ожидает наличия',median(shipDays.filter(x=>x.stock))],['Без ожидания наличия',median(shipDays.filter(x=>!x.stock))],['Возвраты',num(returnN)],...reasons]);
  [['f-cat','cat'],['s-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-size','size'],['s-color','color']].forEach(([id,key])=>setSelected(id,state[key]));
 }
@@ -1252,7 +1265,7 @@ function placeChartTip(clientX){
  const d=chartDays[i];
  const max=Math.max(1,...chartDays.map(p=>p.rev));
  const px=last?i/last*r.width:r.width/2;
- const y=(125-d.rev*115/max)/132*r.height;
+ const y=(125-(d.rev-min)*115/(max-min))/132*r.height;
  tip.querySelector('.t-date').textContent=dmy(d.date);
  tip.querySelector('b').textContent=money(d.rev);
  tip.querySelector('em').textContent=ordersWord(d.n);
