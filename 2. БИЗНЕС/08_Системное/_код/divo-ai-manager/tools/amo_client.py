@@ -132,6 +132,7 @@ def request(
     params: dict | None = None,
     method: str = "GET",
     body: object | None = None,
+    attempts: int = 3,
 ) -> tuple[int, dict]:
     """Запрос к amo. 204 и 4xx не бросают исключение, возвращают код."""
     if not DOMAIN or not TOKEN:
@@ -148,7 +149,7 @@ def request(
     if payload is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=payload, headers=headers, method=method)
-    for attempt in range(3):
+    for attempt in range(attempts):
         try:
             with urllib.request.urlopen(req, timeout=40) as resp:
                 raw = resp.read()
@@ -157,7 +158,7 @@ def request(
                 return resp.status, json.loads(raw)
         except urllib.error.HTTPError as exc:
             body_text = exc.read().decode("utf-8", "replace")
-            if exc.code == 429 and attempt < 2:
+            if exc.code == 429 and attempt < attempts - 1:
                 time.sleep(2 * (attempt + 1))
                 continue
             try:
@@ -166,7 +167,7 @@ def request(
                 data = {"detail": body_text[:400]}
             return exc.code, data
         except urllib.error.URLError as exc:
-            if attempt < 2:
+            if attempt < attempts - 1:
                 time.sleep(2 * (attempt + 1))
                 continue
             raise AmoError(0, str(exc.reason)) from exc
@@ -205,8 +206,8 @@ def paged(path: str, params: dict, key: str, max_pages: int = 50):
         time.sleep(0.2)
 
 
-def write(path: str, body: object, method: str = "POST") -> dict:
-    code, data = request(path, method=method, body=body)
+def write(path: str, body: object, method: str = "POST", *, attempts: int = 3) -> dict:
+    code, data = request(path, method=method, body=body, attempts=attempts)
     if code >= 400:
         raise AmoError(code, str(data.get("detail") or data.get("title") or data)[:300])
     return data

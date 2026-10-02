@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -979,6 +980,18 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "нет. Номер не проси. Не уговаривай купить за наличные. "
             "Дальше молчи, догон не нужен."
         )
+    system += (
+        "\n\n# Тон ответа о состоянии\n"
+        "Отвечай по свежей карточке этого экземпляра. Старые реплики бота не источник "
+        "фактов об окрасах. Первый вопрос про прибор — про окрасы, не утверждение "
+        "о проведённых замерах. Не говори «данных в объявлении нет», «этого у меня нет», "
+        "«толщиномером в чате не проверял». Неизвестное обслуживание: "
+        "«По обслуживанию уточню. Давайте созвонимся, обсудим подробнее». "
+        "Замена ГРМ и проведённое обслуживание требуют подтверждения."
+        " Примеры из разговоров Никиты описывают другие машины. Не переноси "
+        "из них «несущие элементы не пострадали», «без серьёзных аварий» или "
+        "«системы безопасности целы» без прямого подтверждения в текущей карточке."
+    )
     return system
 
 
@@ -991,10 +1004,11 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     prior = history[:-1]
     # Отказ после предложения связи по уточнению: менеджер отвечает здесь.
     waiting = any(m.get("role") == "assistant" and
-                  ("Уточню этот момент" in m.get("content", "") or
-                   "по отчёту" in m.get("content", "")) for m in prior[-3:])
+                  ("уточню этот момент" in m.get("content", "").lower() or
+                   "по отчёту" in m.get("content", "").lower() or
+                   "созвонимся" in m.get("content", "").lower()) for m in prior[-6:])
     if waiting and (nudge.refuses_phone(last) or nudge.wants_write_here(last)
-                    or re.search(r"не (?:хочу|буду|могу).*звон|без звон|не согласен|^нет[.! ]*$", last, re.I)):
+                    or re.search(r"не (?:хочу|буду|могу).*звон|звон\w* не (?:хочу|буду|могу)|ответ\w* (?:здесь|тут)|без звон|не согласен|^нет[.! ]*$", last, re.I)):
         return prompt.HANDOFF_MARK
     if nudge.asked_report(history):
         link = avito_match.report_link(doc)
@@ -1004,15 +1018,18 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
             if nudge.history_has_phone(history) or nudge.refuses_phone(last) or nudge.wants_write_here(last):
                 return prompt.HANDOFF_MARK
             return "По отчёту уточню. Напишите, пожалуйста, номер телефона для связи."
-    if re.search(r"прибор|толщиномер|микрон|замер", last, re.I):
+    paint_only = bool(re.fullmatch(
+        r"\s*(?:здравствуйте[,.! ]*|добрый (?:день|вечер)[,.! ]*)?"
+        r"(?:что по кузову|что по окрасам|есть (?:окрасы|крашеные элементы))[?!. ]*", last, re.I))
+    if paint_only or re.search(r"прибор|толщиномер|микрон|замер", last, re.I):
         repeated = any(m.get("role") == "user" and
                       re.search(r"прибор|толщиномер|микрон|замер", m.get("content", ""), re.I)
                       for m in prior)
         listing = avito_match.attached_listing(doc) or {}
         card = avito_match.match_card(listing.get("title", ""), listing.get("price", ""))
         paint = (card or {}).get("Окрасы", "").strip()
-        if paint and paint.lower() not in {"нет данных", "неизвестно", "—", "-"} and not repeated:
-            answer = "По кузову: %s." % paint.rstrip(".")
+        if paint and paint.lower() not in {"нет данных", "неизвестно", "—", "-"} and (paint_only or not repeated):
+            answer = "Окрасов нет." if paint.lower().rstrip(".") == "нет" else "По кузову: %s." % paint.rstrip(".")
             if re.search(r"грм|обслуж|ремень|цепь", last, re.I):
                 answer += " По обслуживанию уточню. Давайте созвонимся, обсудим подробнее."
             return answer

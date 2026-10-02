@@ -1091,61 +1091,111 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
 
 
 def autoru_note_text(who: str, text: str) -> str:
-    """Одна реплика Авто.ру отдельным примечанием. Пузырь чата это не заменяет."""
-    body = " ".join(str(text or "").split())
-    if len(body) > 3500:
-        body = body[:3500].rstrip() + "..."
-    label = "Клиент" if who == "client" else "Бот"
-    return "%s: %s" % (label, body)
+    """Сохраняем реплику дословно, включая переносы строк."""
+    return ("Клиент: " if who == "client" else "Бот: ") + str(text or "")
 
 
-def mirror_autoru_line(
-    chat_id: str | int, who: str, text: str, msg_id: str = ""
-) -> None:
-    """Пишет ответ бота в сделку интеграции Авто.ру.
+def _note_lead(chat_id: str, doc: dict) -> int | None:
+    existing = (doc.get("crm") or {}).get("lead_id") or (doc.get("crm") or {}).get("note_lead_id")
+    if existing:
+        return int(existing)
+    if chat_id.startswith("ar:"):
+        return amo_client.autoru_unsorted_lead(amo_client.iter_unsorted(4), chat_id[3:])
+    listing = doc.get("avito") or {}
+    peer = listing.get("peer") or ""
+    if not peer or amo_client._norm_txt(peer) in amo_client.GENERIC_PEERS:
+        return None
+    lead = amo_client.find_widget_lead(
+        peer=peer, car=listing.get("title", ""), channel="Авито",
+        url=listing.get("url", ""), chat_id=chat_id,
+    )
+    if not lead:
+        return None
+    # Для примечания не достаточно похожего названия или свежей сделки.
+    wanted = amo_client.listing_item_id(listing.get("url", ""))
+    if (not wanted or wanted != amo_client.listing_item_id(amo_client.lead_listing_url(lead))
+            or amo_client._norm_txt(peer) != amo_client._norm_txt(lead.get("_widget_from", ""))):
+        return None
+    return int(lead["id"])
 
-    Реплика клиента уже приходит самой интеграцией, второй раз её не пишем.
-    Новую сделку не создаёт и этап не двигает. Пока сделки нет, молчит:
-    следующий ответ бота попробует снова.
+
+def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = "") -> None:
+    """Совместимое имя: очередь ответов бота для Авито и Авто.ру.
+
+    Вызывается только после успешной отправки. Не создаёт сделку и не меняет этап.
+    CRM недоступна или сделка ещё не появилась — повторяем через tick.
     """
     key = str(chat_id)
-    if not key.startswith("ar:"):
+    if not key.startswith(("av:", "ar:")) or who != "bot" or not text:
         return
-    body = " ".join(str(text or "").split())
-    if not body:
+    doc = store.load_doc(key)
+    state = doc.setdefault("crm", {})
+    dedupe = str(msg_id or "") or secrets.token_hex(16)
+    if dedupe in state.get("autoru_noted", []):
         return
-    dedupe = str(msg_id or "") or ("%s\t%s" % (who, body[:200]))
+    pending = state.setdefault("note_pending", [])
+    if not any(row["id"] == dedupe for row in pending):
+        pending.append({"id": dedupe, "text": autoru_note_text(who, text)})
+    store.save_doc(key, doc)
+
+
+async def flush_notes(chat_id: str) -> None:
+    import time
     doc = store.load_doc(chat_id)
-    crm = dict(doc.get("crm") or {})
-    seen = [str(x) for x in (crm.get("autoru_noted") or [])]
-    if dedupe in seen:
+    state = doc.get("crm") or {}
+    pending = state.get("note_pending") or []
+    if not pending or time.time() < state.get("note_retry_at", 0):
         return
-    lead_id = crm.get("lead_id")
-    if not lead_id:
-        try:
-            lead_id = amo_client.autoru_unsorted_lead(
-                amo_client.iter_unsorted(4), key[3:]
-            )
-        except amo_client.AmoError as exc:
-            log.warning("чат %s: сделка Авто.ру не нашлась: %s", key, exc)
-            return
-        if not lead_id:
-            log.info("чат %s: примечание Авто.ру ждёт сделку интеграции", key)
-            return
-        crm["lead_id"] = int(lead_id)
-        crm["lead_url"] = amo_client.lead_url(int(lead_id))
-        log.info("чат %s: примечания на сделку %s, этап не меняю", key, lead_id)
-    try:
-        amo_client.add_note(int(lead_id), autoru_note_text(who, body))
-    except amo_client.AmoError as exc:
-        log.warning("чат %s: примечание в %s не записалось: %s", key, lead_id, exc)
-        doc["crm"] = crm
-        store.save_doc(chat_id, doc)
-        return
-    seen.append(dedupe)
-    crm["autoru_noted"] = seen[-80:]
-    doc["crm"] = crm
+    state["note_retry_at"] = time.time() + 60
+    doc["crm"] = state
     store.save_doc(chat_id, doc)
+    try:
+        lead_id = await asyncio.to_thread(_note_lead, chat_id, doc)
+        if not lead_id:
+            return
+        # common notes не поддерживают external_id. До POST сохраняем границу
+        # ID; при потере ответа сверяем точный текст среди более новых записей.
+        notes = []
+        page = 1
+        while True:
+            code, data = await asyncio.to_thread(amo_client.request,
+                "/api/v4/leads/%s/notes" % lead_id, {"limit": "250", "page": str(page)})
+            if code >= 400:
+                return
+            notes.extend(amo_client.items(data or {}, "notes"))
+            if not (data or {}).get("_links", {}).get("next"):
+                break
+            page += 1
+        for queued in list(pending):
+            doc = store.load_doc(chat_id)
+            state = doc.setdefault("crm", {})
+            row = next((r for r in state.get("note_pending", []) if r["id"] == queued["id"]), None)
+            if row is None:
+                continue
+            if "before_id" not in row or row.get("lead_id") != lead_id:
+                row["before_id"] = max((int(n["id"]) for n in notes), default=0)
+                row["lead_id"] = lead_id
+                store.save_doc(chat_id, doc)
+            delivered = any(int(n["id"]) > row["before_id"] and
+                            n.get("note_type") == "common" and
+                            (n.get("params") or {}).get("text") == row["text"] for n in notes)
+            if not delivered:
+                result = await asyncio.to_thread(amo_client.write, "/api/v4/leads/%s/notes" % lead_id, [{
+                    "note_type": "common", "params": {"text": row["text"]},
+                    "is_need_to_trigger_digital_pipeline": False,
+                }], attempts=1)
+                for saved in amo_client.items(result or {}, "notes"):
+                    notes.append({"id": saved["id"], "note_type": "common", "params": {"text": row["text"]}})
+            doc = store.load_doc(chat_id)
+            state = doc.setdefault("crm", {})
+            state["note_pending"] = [r for r in state.get("note_pending", []) if r["id"] != row["id"]]
+            state.setdefault("autoru_noted", []).append(row["id"])
+            state["autoru_noted"] = state["autoru_noted"][-500:]
+            state["note_lead_id"] = lead_id
+            # После await перечитали документ: новые входящие и очередь сохраняются.
+            store.save_doc(chat_id, doc)
+    except Exception:
+        log.warning("чат %s: примечание ожидает повторной записи в amo", chat_id)
 
 
 def remember_out(chat_id: str | int, payload: Any) -> None:
@@ -1557,6 +1607,7 @@ async def tick() -> None:
         await bot.listen(timeout=25)
     for chat_id in store.all_chat_ids():
         try:
+            await flush_notes(str(chat_id))
             await _tick_one(str(chat_id))
         except Exception:
             log.exception("алерт чат %s", chat_id)

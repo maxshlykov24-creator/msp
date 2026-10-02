@@ -276,6 +276,8 @@ LIVE_IDS = (
     'ar:999830c0629c7ff155fd1c84b24b7955',
     'ar:afaf605021d1266c5c45412ef39d37f1',
     'av:u2i-8QGoaK3Fa2JIu9Wy~TItbg',
+    'av:u2i-x~P1GbF7sUnTncys4G9Rpw',
+    'av:u2i-FE9f3AP3sg3tHC_t1hm2uA',
 )
 
 
@@ -397,7 +399,76 @@ async def regression(docs: dict, stock: str) -> None:
             check('70 007' not in avito_match.focus_from_doc(docs[cid]), 'foreign mileage excluded')
         doc, text = before(docs[LIVE_IDS[1]], 'Можно отправить отчет')
         result = await replay(doc, text, 'Пришлю отчёт')
-        check(result['paused'] and result['capture'] == 1 and not result['sent'], 'missing report handed off')
+        check(not result['paused'] and 'номер' in ' '.join(result['sent']), 'missing report asks contact first')
+        doc, text = before(docs[LIVE_IDS[4]], 'Что по кузову')
+        result = await replay(doc, text)
+        check('капот' in ' '.join(result['sent']) and 'несущ' not in ' '.join(result['sent']),
+              'plain body question uses paint facts without borrowing examples')
+        doc, text = before(docs[LIVE_IDS[4]], 'Проверяли прибором')
+        result = await replay(doc, text)
+        answer = ' '.join(result['sent']).lower()
+        check('капот' in answer and 'прибор' not in answer and 'толщиномер' not in answer,
+              'live Coolray instrument question answers paint from exact card')
+        doc['messages'] = result['history']
+        result = await replay(doc, 'Но именно прибором проверяли?')
+        answer = ' '.join(result['sent']).lower()
+        check('уточню' in answer and 'созвонимся' in answer and not result['paused'], 'insistent measurement offers call')
+        doc['messages'] = result['history']
+        result = await replay(doc, 'Нет, звонить не хочу, ответьте здесь')
+        check(result['paused'] and result['capture'] == 1 and not result['sent'], 'measurement call refusal notifies manager')
+        doc, text = before(docs[LIVE_IDS[5]], 'Можно попросить отчет')
+        result = await replay(doc, text)
+        check(not result['paused'] and 'номер' in ' '.join(result['sent']), 'live Jolion report asks contact')
+        doc['messages'] = result['history']
+        result = await replay(doc, 'Напишите здесь, без звонков')
+        check(result['paused'] and result['capture'] == 1, 'report contact refusal notifies manager')
+        with Sandbox():
+            cid = 'av:note-test'
+            store.save_doc(cid, {'crm': {'lead_id': 123}, 'messages': []})
+            exact = 'Первая строка.\nВторая  строка, дословно.'
+            api = Mock(send_text=AsyncMock(return_value={'id': 'sent-1'}))
+            channel = avito_loop.AvitoChannel(api, Mock())
+            await channel.send(cid, exact)
+            sent_text = api.send_text.call_args.args[1]
+            check(store.load_doc(cid)['crm']['note_pending'][0]['text'] == 'Бот: ' + sent_text, 'Avito queues actual sent text')
+            with patch.object(crm.amo_client, 'request', return_value=(200, {})), \
+                 patch.object(crm.amo_client, 'write', side_effect=RuntimeError('offline')):
+                await crm.flush_notes(cid)
+            check(len(store.load_doc(cid)['crm']['note_pending']) == 1, 'CRM failure retains note')
+            d = store.load_doc(cid); d['crm']['note_retry_at'] = 0; store.save_doc(cid, d)
+            with patch.object(crm.amo_client, 'request', return_value=(200, {})), \
+                 patch.object(crm.amo_client, 'write', return_value={}) as write:
+                await crm.flush_notes(cid)
+                check(write.call_args.args[1][0]['params']['text'] == 'Бот: ' + sent_text, 'CRM note is verbatim')
+            crm.mirror_autoru_line(cid, 'bot', sent_text, 'sent-1')
+            check(not store.load_doc(cid)['crm']['note_pending'], 'sent note deduplicates by message id')
+            crm.mirror_autoru_line(cid, 'bot', 'Следующий ответ', 'concurrent')
+            d = store.load_doc(cid); d['crm']['note_retry_at'] = 0; store.save_doc(cid, d)
+            def while_saving(*args, **kwargs):
+                fresh = store.load_doc(cid)
+                fresh['messages'].append({'role': 'user', 'content': 'Новое входящее'})
+                fresh['crm']['foreign_out_ids'] = ['staff-new']
+                store.save_doc(cid, fresh)
+                crm.mirror_autoru_line(cid, 'bot', 'Ещё один ответ', 'queued-later')
+                return {}
+            with patch.object(crm.amo_client, 'request', return_value=(200, {})), \
+                 patch.object(crm.amo_client, 'write', side_effect=while_saving):
+                await crm.flush_notes(cid)
+            fresh = store.load_doc(cid)
+            check(fresh['messages'][-1]['content'] == 'Новое входящее' and
+                  fresh['crm']['foreign_out_ids'] == ['staff-new'] and
+                  fresh['crm']['note_pending'][0]['id'] == 'queued-later',
+                  'note worker preserves concurrent history and queued messages')
+            fresh['crm']['note_pending'] = []; store.save_doc(cid, fresh)
+            crm.mirror_autoru_line(cid, 'bot', sent_text, 'sent-2')
+            d = store.load_doc(cid); d['crm']['note_retry_at'] = 0
+            d['crm']['note_pending'][0].update(before_id=10, lead_id=123)
+            store.save_doc(cid, d)
+            with patch.object(crm.amo_client, 'request', return_value=(200, {'_embedded': {'notes': [
+                    {'id': 11, 'note_type': 'common', 'params': {'text': 'Бот: ' + sent_text}}]}})), \
+                 patch.object(crm.amo_client, 'write', return_value={}) as write:
+                await crm.flush_notes(cid)
+                check(not write.called and not store.load_doc(cid)['crm']['note_pending'], 'lost response retry does not duplicate note')
         for needle in ('Причина продали', 'Продажа салонная'):
             doc, text = before(docs[LIVE_IDS[2]], needle)
             result = await replay(doc, text)
@@ -512,7 +583,8 @@ asyncio.run(run())
 async def compare(docs: dict, stock: str, models: list[str], only: str = '') -> None:
     cases = [(0, 'Завтра могу на тест драйв'), (0, 'Течение часа'),
              (1, 'Здравствуйте'), (2, 'Причина продали'), (2, 'Продажа салонная'),
-             (3, 'Люди то подключаются'), (0, 'Вы же написали вот')]
+             (3, 'Люди то подключаются'), (0, 'Вы же написали вот'),
+             (4, 'Что по кузову'), (4, 'Грм меняли'), (5, 'Можно попросить отчет')]
     if only:
         cases = [case for case in cases if only.lower() in case[1].lower()]
         if not cases:

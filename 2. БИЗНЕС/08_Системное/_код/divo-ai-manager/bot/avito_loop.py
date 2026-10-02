@@ -304,10 +304,13 @@ class AvitoChannel:
         self.tg = tg
 
     async def send(self, chat_id: int | str, text: str) -> None:
-        data = await self.api.send_text(raw_id(str(chat_id)), human.for_chat(text))
+        sent = human.for_chat(text)
+        data = await self.api.send_text(raw_id(str(chat_id)), sent)
         from bot import crm
 
         crm.remember_out(chat_id, data)
+        msg = data if isinstance(data, dict) else {}
+        crm.mirror_autoru_line(chat_id, "bot", sent, msg_id=str(msg.get("id") or (msg.get("message") or {}).get("id") or ""))
 
     async def typing(self, chat_id: int | str) -> None:
         return
