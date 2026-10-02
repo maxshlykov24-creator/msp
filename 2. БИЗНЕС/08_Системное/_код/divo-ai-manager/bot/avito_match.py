@@ -163,13 +163,11 @@ def match_card(title: str, price_string: str = "", stock: str = "") -> dict | No
     Расхождение пробега требует проверки человеком.
     """
     listing = parse_listing(title, price_string)
-    found = fitting_cards(title, price_string, stock=stock)
+    found = [c for c in fitting_cards(title, price_string, stock=stock)
+             if listing["year"] and listing["year"] == c.get("year")
+             and listing["km"] and listing["km"] == c.get("km")]
     if len(found) == 1:
-        card = found[0]
-        if (listing["year"] and listing["year"] == card.get("year")
-                and listing["km"] and card.get("km")
-                and listing["km"] == card["km"]):
-            return card
+        return found[0]
     return None
 
 
@@ -349,8 +347,8 @@ def focus_block(
             "выше. «В базе проходит», чужой VIN и цену другой машины не пиши. "
             "На ДТП и историю цифры не выдумывай. "
             "Не подтверждай наличие по одному объявлению. "
-            "Запрос отчёта без подтверждённой карточки передай человеку: [[ЧЕЛОВЕК]]. "
-            "Телефон чтобы позвонить не проси, пока клиент сам его не дал. "
+            "Запрос отчёта без ссылки: сначала попроси номер для связи по отчёту. "
+            "Номер уже есть или клиент отказывается от связи — [[ЧЕЛОВЕК]]. "
             "Кредит не оформляем: спросили — наличный расчёт и номер, банки не называй."
         )
         vat = vat_for(price_string)

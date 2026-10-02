@@ -351,10 +351,6 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         await _handoff(channel, chat_id, history, reason)
         return
     doc = store.load_doc(chat_id)
-    if (avito_match.attached_listing(doc) and nudge.asked_report(history)
-            and not avito_match.report_link(doc)):
-        await _handoff(channel, chat_id, history, "handoff")
-        return
     if not had_phone and nudge.extract_phone(user_text):
         store.save_history(chat_id, history)
         await crm.capture(chat_id, history, "phone")
@@ -990,10 +986,42 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     """Реплика модели с проверками на утечку правил и дословные повторы."""
     if history and nudge.asks_seller(history[-1].get("content") or ""):
         return prompt.seller_answer()
-    if nudge.asked_report(history) and not nudge.asked_damage(history):
-        link = avito_match.report_link(store.load_doc(chat_id)) if chat_id else ""
-        if link:
+    doc = store.load_doc(chat_id) if chat_id else {}
+    last = history[-1].get("content", "") if history else ""
+    prior = history[:-1]
+    # Отказ после предложения связи по уточнению: менеджер отвечает здесь.
+    waiting = any(m.get("role") == "assistant" and
+                  ("Уточню этот момент" in m.get("content", "") or
+                   "по отчёту" in m.get("content", "")) for m in prior[-3:])
+    if waiting and (nudge.refuses_phone(last) or nudge.wants_write_here(last)
+                    or re.search(r"не (?:хочу|буду|могу).*звон|без звон|не согласен|^нет[.! ]*$", last, re.I)):
+        return prompt.HANDOFF_MARK
+    if nudge.asked_report(history):
+        link = avito_match.report_link(doc)
+        if link and not nudge.asked_damage(history):
             return link
+        if not link:
+            if nudge.history_has_phone(history) or nudge.refuses_phone(last) or nudge.wants_write_here(last):
+                return prompt.HANDOFF_MARK
+            return "По отчёту уточню. Напишите, пожалуйста, номер телефона для связи."
+    if re.search(r"прибор|толщиномер|микрон|замер", last, re.I):
+        repeated = any(m.get("role") == "user" and
+                      re.search(r"прибор|толщиномер|микрон|замер", m.get("content", ""), re.I)
+                      for m in prior)
+        listing = avito_match.attached_listing(doc) or {}
+        card = avito_match.match_card(listing.get("title", ""), listing.get("price", ""))
+        paint = (card or {}).get("Окрасы", "").strip()
+        if paint and paint.lower() not in {"нет данных", "неизвестно", "—", "-"} and not repeated:
+            answer = "По кузову: %s." % paint.rstrip(".")
+            if re.search(r"грм|обслуж|ремень|цепь", last, re.I):
+                answer += " По обслуживанию уточню. Давайте созвонимся, обсудим подробнее."
+            return answer
+        if nudge.refuses_phone(last) or nudge.wants_write_here(last):
+            return prompt.HANDOFF_MARK
+        answer = "Уточню этот момент. Давайте созвонимся, обсудим состояние подробнее."
+        if not nudge.history_has_phone(history):
+            answer += " Напишите, пожалуйста, номер телефона."
+        return answer
     system = _build_system(history, chat_id)
     raw = await llm.reply(system, history)
     log.info(
