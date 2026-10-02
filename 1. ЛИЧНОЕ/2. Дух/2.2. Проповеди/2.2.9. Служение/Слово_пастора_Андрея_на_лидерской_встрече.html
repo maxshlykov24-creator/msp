@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Лидер везде · Эммануил</title>
 
 <style>
@@ -23,7 +23,12 @@
   --pad: clamp(22px, 4vw, 64px);
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+html, body { margin: 0; padding: 0; height: auto; overflow-x: hidden; overflow-y: auto; }
+html {
+  scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
 body {
   color: var(--ink);
   font-family: "Manrope", "Segoe UI", sans-serif;
@@ -68,14 +73,19 @@ body {
 .deck {
   position: relative;
   z-index: 3;
-  height: 100dvh;
-  overflow: hidden;
+  height: auto;
+  overflow: visible;
 }
-.track { height: 100%; }
+.track { height: auto; }
 .slide {
   position: relative;
   z-index: 3;
-  height: 100dvh;
+  height: 100vh;
+  height: 100svh;
+  min-height: 100vh;
+  min-height: 100svh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
   display: flex;
   flex-direction: column;
   padding: 22px var(--pad) 22px;
@@ -541,100 +551,41 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
 
 <script>
 (function () {
-  var deck = document.querySelector(".deck");
-  var track = document.querySelector(".track");
   var topBtn = document.querySelector(".to-top");
   var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
-  var i = 0;
-  var lock = false;
-  function h() { return deck.clientHeight; }
-  function reveal(slide) {
-    if (!slide) return;
-    slides.forEach(function (s) { s.classList.remove("in"); });
-    void slide.offsetWidth;
-    slide.classList.add("in");
+  function syncTop() {
+    if (topBtn) topBtn.hidden = window.scrollY < 24;
   }
-  function apply(instant) {
-    var y = "translateY(" + (-i * h()) + "px)";
-    var from = getComputedStyle(track).transform;
-    if (from === "none") from = "matrix(1, 0, 0, 1, 0, 0)";
-    track.getAnimations().forEach(function (a) { a.cancel(); });
-    track.style.transform = from;
-    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (topBtn) topBtn.hidden = i === 0;
-    if (instant || reduce) {
-      track.style.transform = y;
-      return;
-    }
-    reveal(slides[i]);
-    var anim = track.animate([{ transform: from }, { transform: y }], {
-      duration: 1200,
-      easing: "cubic-bezier(.45, .05, .55, .95)",
-      fill: "forwards"
-    });
-    anim.onfinish = function () {
-      track.style.transform = y;
-      anim.cancel();
-    };
+  function go(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    slides[n].scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  function step(dir) {
-    var next = i + dir;
-    if (next < 0 || next >= slides.length || lock) return;
-    i = next;
-    lock = true;
-    apply(false);
-    setTimeout(function () { lock = false; }, 1250);
+  function current() {
+    var h = window.innerHeight || 1;
+    return Math.round(window.scrollY / h);
   }
-  function bodyOf(target) {
-    var node = target && target.closest ? target.closest(".body") : null;
-    if (!node) return null;
-    if (node.scrollHeight <= node.clientHeight + 8) return null;
-    return node;
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) en.target.classList.add("in");
+        else en.target.classList.remove("in");
+      });
+    }, { threshold: 0.55 });
+    slides.forEach(function (s) { io.observe(s); });
+  } else {
+    slides.forEach(function (s) { s.classList.add("in"); });
   }
-  deck.addEventListener("wheel", function (e) {
-    var body = bodyOf(e.target);
-    if (body) {
-      var atTop = body.scrollTop <= 0;
-      var atBot = body.scrollTop + body.clientHeight >= body.scrollHeight - 2;
-      if (e.deltaY > 0 && !atBot) return;
-      if (e.deltaY < 0 && !atTop) return;
-    }
-    e.preventDefault();
-    if (Math.abs(e.deltaY) < 8) return;
-    step(e.deltaY > 0 ? 1 : -1);
-  }, { passive: false });
-  var y0 = 0, scroll0 = 0, touchBody = null;
-  deck.addEventListener("touchstart", function (e) {
-    y0 = e.touches[0].clientY;
-    touchBody = bodyOf(e.target);
-    scroll0 = touchBody ? touchBody.scrollTop : 0;
-  }, { passive: true });
-  deck.addEventListener("touchend", function (e) {
-    var dy = y0 - e.changedTouches[0].clientY;
-    if (touchBody && Math.abs(touchBody.scrollTop - scroll0) > 6) return;
-    if (Math.abs(dy) < 42) return;
-    if (touchBody) {
-      var atTop = touchBody.scrollTop <= 1;
-      var atBot = touchBody.scrollTop + touchBody.clientHeight >= touchBody.scrollHeight - 2;
-      if (dy > 0 && !atBot) return;
-      if (dy < 0 && !atTop) return;
-    }
-    step(dy > 0 ? 1 : -1);
-  }, { passive: true });
+  window.addEventListener("scroll", syncTop, { passive: true });
+  syncTop();
+  if (topBtn) {
+    topBtn.addEventListener("click", function () { go(0); });
+  }
   document.addEventListener("keydown", function (e) {
     if (e.repeat) return;
-    if (e.key === "ArrowDown" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); step(1); }
-    if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); step(-1); }
-    if (e.key === "Home") { e.preventDefault(); i = 0; apply(false); }
-    if (e.key === "End") { e.preventDefault(); i = slides.length - 1; apply(false); }
-  });
-  window.addEventListener("resize", function () { apply(true); });
-  topBtn.addEventListener("click", function () {
-    if (i === 0) return;
-    i = 0;
-    lock = true;
-    apply(false);
-    setTimeout(function () { lock = false; }, 1250);
+    if (e.key === "ArrowDown" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); go(current() + 1); }
+    if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); go(current() - 1); }
+    if (e.key === "Home") { e.preventDefault(); go(0); }
+    if (e.key === "End") { e.preventDefault(); go(slides.length - 1); }
   });
 })();
 </script>
