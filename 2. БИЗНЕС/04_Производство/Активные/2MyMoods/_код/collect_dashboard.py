@@ -246,14 +246,30 @@ def get_responses(leads: list[dict]) -> dict:
             else:
                 unknown += 1
                 unknown_rows.append({"date": datetime.fromtimestamp(start, TZ).date().isoformat()})
+    open_talks = set()
+    for page in range(1, 2001):
+        status, body = amo.req("GET", f"/api/v4/talks?filter[only_in_work]=1&limit=250&page={page}")
+        if status == 204:
+            break
+        if status != 200:
+            raise RuntimeError(f"amo open talks page {page}: HTTP {status}")
+        batch = body.get("_embedded", {}).get("talks", [])
+        open_talks.update(t["talk_id"] for t in batch if t.get("is_in_work") is True
+                          and t.get("entity_type") == "lead" and t.get("entity_id") in lead_ids)
+        if len(batch) < 250:
+            break
+    else:
+        raise RuntimeError("amo open talks: pagination limit reached")
+    observed_talks = {v.get("message", {}).get("talk_id") for e in events.values() for v in e.get("value_after", [])}
     pending_rows = [{"date": datetime.fromtimestamp(start, TZ).date().isoformat(), "start_at": start,
                      "minutes": round((now.timestamp() - start) / 60, 2),
                      "working_minutes": working_minutes(start, int(now.timestamp()), rules),
-                     "manager": current_managers.get(entity_id, "Не определён")} for start, entity_id in pending.values()]
+                     "manager": current_managers.get(entity_id, "Не определён"), "talk_id": key[1],
+                     "is_open": key[1] in open_talks} for key, (start, entity_id) in pending.items()]
     return {"status": "ok", "source": "amoCRM events", "from": since.date().isoformat(),
             "to": now.isoformat(), "samples": samples, "messages": len(events),
             "unknown_author": unknown, "unanswered": len(pending), "unknown_rows": unknown_rows,
-            "pending": pending_rows, "rules": rules, "rules_status": "configured" if rules else "not_configured"}
+            "pending": pending_rows, "queue_verified": True, "open_without_events": len(open_talks - observed_talks), "rules": rules, "rules_status": "configured" if rules else "not_configured"}
 
 
 def positions_for(order_id: str) -> tuple[str, list[dict]]:
