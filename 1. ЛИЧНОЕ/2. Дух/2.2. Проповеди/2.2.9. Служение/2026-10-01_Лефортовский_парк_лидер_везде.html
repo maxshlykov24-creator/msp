@@ -274,6 +274,41 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
   .lede, .sub { margin-top: 6px; font-size: 14px; }
   .kicker { margin-bottom: 4px; }
 }
+@keyframes rise {
+  from { opacity: .2; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+.slide.in .kicker,
+.slide.in .num {
+  animation: rise .72s cubic-bezier(.22, .8, .24, 1) both;
+  animation-delay: .32s;
+}
+.slide.in h1,
+.slide.in h2,
+.slide.in .quote {
+  animation: rise .8s cubic-bezier(.22, .8, .24, 1) both;
+  animation-delay: .46s;
+}
+.slide.in .lede,
+.slide.in .sub,
+.slide.in .qbig,
+.slide.in .points,
+.slide.in .amen {
+  animation: rise .8s cubic-bezier(.22, .8, .24, 1) both;
+  animation-delay: .62s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide.in .kicker,
+  .slide.in .num,
+  .slide.in h1,
+  .slide.in h2,
+  .slide.in .quote,
+  .slide.in .lede,
+  .slide.in .sub,
+  .slide.in .qbig,
+  .slide.in .points,
+  .slide.in .amen { animation: none; }
+}
 </style>
 
 </head>
@@ -510,6 +545,12 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
   var i = 0;
   var lock = false;
   function h() { return deck.clientHeight; }
+  function reveal(slide) {
+    if (!slide) return;
+    slides.forEach(function (s) { s.classList.remove("in"); });
+    void slide.offsetWidth;
+    slide.classList.add("in");
+  }
   function apply(instant) {
     var y = "translateY(" + (-i * h()) + "px)";
     var from = getComputedStyle(track).transform;
@@ -522,6 +563,7 @@ h2 { font-size: clamp(30px, 3.8vw, 50px); line-height: 1.05; max-width: 18ch; }
       track.style.transform = y;
       return;
     }
+    reveal(slides[i]);
     var anim = track.animate([{ transform: from }, { transform: y }], {
       duration: 1200,
       easing: "cubic-bezier(.45, .05, .55, .95)",
