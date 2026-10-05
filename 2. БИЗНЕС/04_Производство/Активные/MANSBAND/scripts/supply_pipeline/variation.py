@@ -108,6 +108,50 @@ def apply_variation(
             p.status = "blocked"
             p.reason = "ambiguous_model_abbr"
             continue
+        # Сорочка без колонки «Модель»: вариация = сокр.бренда + артикул.
+        # Артикулы 502/220/701 повторяются у Mansband и Saco, без бренда антиключ слипнется.
+        if not model and (p.vid == "Сорочка" or p.src_kit == "Сорочка"):
+            if brand and not ba:
+                blockers.append(
+                    {
+                        "reason": "missing_brand_abbr",
+                        "num": p.src_num,
+                        "kit": p.src_kit,
+                        "vid": p.vid,
+                        "brand": brand,
+                        "model": model,
+                        "art": p.art,
+                        "size": p.size,
+                        "rost": p.rost,
+                        "detail": f"нет сокр. производителя для {brand!r}",
+                    }
+                )
+                p.status = "blocked"
+                p.reason = "missing_brand_abbr"
+                continue
+            if not p.art:
+                blockers.append(
+                    {
+                        "reason": "missing_article",
+                        "num": p.src_num,
+                        "kit": p.src_kit,
+                        "vid": p.vid,
+                        "brand": brand,
+                        "model": model,
+                        "art": "",
+                        "size": p.size,
+                        "rost": p.rost,
+                        "detail": "пустой артикул",
+                    }
+                )
+                p.status = "blocked"
+                p.reason = "missing_article"
+                continue
+            p.brand_abbr = ba or ""
+            p.model_abbr = ""
+            p.variation = f"{ba}{p.art}"
+            ready.append(p)
+            continue
         if brand and not ba:
             blockers.append(
                 {

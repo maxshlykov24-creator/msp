@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import openpyxl
 
-from config import KIT_MAP
+from config import KIT_MAP, KROY_ALIASES
 from expand import _clean, _qty, norm_kit, resolve_kit
 from sostav import normalize_sostav
 
@@ -101,30 +101,43 @@ def parse_supply_xlsx(path: Path) -> Tuple[List[List[Any]], Dict[str, Any]]:
 
     flat: List[List[Any]] = [FLAT_HEADER]
     models: List[Dict[str, Any]] = []
+    no_model = False
     i = 1
     while i <= ws.max_row:
         row = [_clean(ws.cell(i, c).value) for c in range(1, 12)]
         # заголовок блока
         if row[0].lower() == "номер" or (row[2].lower() == "вид" and row[3].lower().startswith("произв")):
+            labels = [c.casefold() for c in row]
+            # сорочки: нет колонки «Модель», рост сразу после производителя
+            no_model = not any(l.startswith("модель") for l in labels) and any(
+                l.startswith("рост") for l in labels
+            )
             i += 1
             continue
         # строка модели: номер числовой
         num = row[0]
         if num.isdigit():
+            if no_model:
+                brand, model, rost, art = row[3], "", row[4], row[5]
+                sostav_raw, color, uzor, kroy = row[6], row[7], row[8], row[9]
+            else:
+                brand, model, rost, art = row[3], row[4], row[5], row[6]
+                sostav_raw, color, uzor, kroy = row[7], row[8], row[9], row[10]
+            kroy = KROY_ALIASES.get(kroy.casefold(), kroy)
             meta = {
                 "num": num,
                 "note": row[1],  # Коробка
                 "kit_raw": row[2],
                 "kit": resolve_kit(row[2]),
-                "brand": row[3],
-                "model": row[4],
-                "rost": row[5],
-                "art": row[6],
-                "sostav_raw": row[7],
-                "sostav": normalize_sostav(row[7]),
-                "color": row[8],
-                "uzor": row[9],
-                "kroy": row[10],
+                "brand": brand,
+                "model": model,
+                "rost": rost,
+                "art": art,
+                "sostav_raw": sostav_raw,
+                "sostav": normalize_sostav(sostav_raw),
+                "color": color,
+                "uzor": uzor,
+                "kroy": kroy,
                 "sizes": [],
                 "total_cell": None,
             }
