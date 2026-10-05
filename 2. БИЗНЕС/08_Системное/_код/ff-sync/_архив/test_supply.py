@@ -422,14 +422,27 @@ assert [r["code"] for r in db.list_shipment_marks([oz_kiz])] == codes, "затё
 
 # 17. WB: код уходит в sgtins, экранированный разделитель GS становится символом
 CALLS.clear()
-out = kiz.submit(wb_kiz, ["0104630568317423215EirD_orEif7X\\u001d91EE12"])
+before_puts = len([c for c in CALLS if c[1].endswith("/meta/sgtin")])
+try:
+    kiz.submit(wb_kiz, ["0104630568317423215EirD_orEif7X91EE1292ABC123"])
+    raise AssertionError("КиЗ без GS отправлен на WB")
+except kiz.KizError as exc:
+    assert "GS" in str(exc), exc
+assert len([c for c in CALLS if c[1].endswith("/meta/sgtin")]) == before_puts
+out = kiz.submit(wb_kiz, ["0104630568317423215EirD_orEif7X\\u001d91EE12\\u001d92ABC123"])
 assert out["sent"] == 1, out
 put = [c for c in CALLS if c[1].endswith("/meta/sgtin")][0]
 assert put[0] == "PUT" and put[1].endswith("/api/v3/orders/777/meta/sgtin"), put
-assert put[2]["sgtins"] == ["0104630568317423215EirD_orEif7X\x1d91EE12"], put[2]
+assert put[2]["sgtins"] == ["0104630568317423215EirD_orEif7X\x1d91EE12\x1d92ABC123"], put[2]
 assert out["state"] == "filled", out
 # площадка приняла — теперь код больше не запрашивается
 assert kiz.plan(wb_kiz)["need"] == 0, kiz.plan(wb_kiz)
+try:
+    kiz.submit(wb_kiz, ["0104630568317423215EirD_orEif7X\\u001d91EE12\\u001d92ABC123"])
+    raise AssertionError("WB принятый КиЗ перезаписан")
+except kiz.KizError as exc:
+    assert "уже принял" in str(exc), exc
+assert len([c for c in CALLS if c[1].endswith("/meta/sgtin")]) == before_puts + 1
 
 # 17б. живые статусы WB: «введён в оборот» — принято, «не обязательно» — не долг,
 # пока карточка сама не маркируется

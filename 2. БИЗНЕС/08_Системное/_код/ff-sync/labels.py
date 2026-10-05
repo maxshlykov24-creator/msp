@@ -483,8 +483,7 @@ def build(rows, mode=MODE_POSTING, fetch=True):
             key = "".join(ch for ch in str(row["ext_id"]) if ch.isdigit())
             got = wb_png.get(key)
             if got:
-                sign = " ".join(x for x in (got["part_a"], got["part_b"]) if x)
-                png_label(c, got["png"], "%s · %s" % (row["ext_id"], sign), font)
+                png_label(c, got["png"], "", font)
                 own += 1
         if mode in (MODE_BOTH, MODE_PRODUCT):
             product_label(c, row, font)
@@ -587,8 +586,7 @@ def build_posting_boxes(rows, box_pngs):
             key = "".join(ch for ch in str(row["ext_id"]) if ch.isdigit())
             got = wb_png.get(key)
             if got:
-                sign = " ".join(x for x in (got["part_a"], got["part_b"]) if x)
-                png_label(c, got["png"], "%s · %s" % (row["ext_id"], sign), font)
+                png_label(c, got["png"], "", font)
                 own += 1
         if ext and ext not in printed_box:
             item = (box_pngs or {}).get(ext)

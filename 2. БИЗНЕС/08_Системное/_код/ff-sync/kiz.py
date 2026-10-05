@@ -16,6 +16,8 @@
 обрезать его нельзя, проверку кода делает площадка.
 """
 
+import re
+
 from db import get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
 from shipments_pull import gtin_of
@@ -352,8 +354,17 @@ def _wb_plan(row, cab):
 
 def _wb_submit(row, cab, codes):
     order = _wb_meta(cab, row["ext_id"])
-    if not _wb_sgtin(order):
+    item = _wb_sgtin(order)
+    if not item:
         raise KizError("WB не принимает коды по этому заданию: в метаданных нет sgtin")
+    decision = str(item.get("decision") or "")
+    if decision in WB_DONE or decision == "pending":
+        raise KizError("WB уже принял код или проверяет его. Повторная отправка затрёт существующий код")
+    for code in codes:
+        # У длинного КиЗ серийный номер переменной длины. Без живых GS перед
+        # группами 91 и 92 WB получает строку, но затем отвергает её формат.
+        if not re.fullmatch(r"01\d{14}21[^\x1d]+\x1d91[^\x1d]+\x1d92[^\x1d]+", code):
+            raise KizError("КиЗ без полного хвоста и разделителей GS. Отсканируй код заново, из Telegram его брать нельзя")
     r = req("PUT", WB_SGTIN % row["ext_id"], headers=wb_headers(cab["token"]), json={"sgtins": codes})
     if r.status_code not in (200, 204):
         _fail(r, "WB не принял коды маркировки")
