@@ -55,7 +55,7 @@ def start_scheduler(bot: Bot) -> AsyncIOScheduler:
             coalesce=True,
             misfire_grace_time=300,
         )
-        log.info("APScheduler: пн 09:00 и 20:00 личка, пн 20:00 сводка в группу, ср 20:00 напоминание")
+        log.info("APScheduler: пн 09:00 личка и сводка в группу, пн 20:00 личка и сводка, ср 20:00 напоминание")
     else:
         log.info("APScheduler 00:00/20:00 not started (JOBS_ENABLED=false)")
 

@@ -2050,6 +2050,11 @@ async def job_monday_coverage_morning(bot: Bot) -> None:
         log.info("monday 09:00 nudge sent")
     except Exception:
         log.exception("job_monday_coverage_morning nudge failed")
+    try:
+        await replace_group_digest(bot)
+        log.info("monday 09:00 group digest sent")
+    except Exception:
+        log.exception("job_monday_coverage_morning group failed")
 
 
 async def job_monday_coverage_evening(bot: Bot) -> None:

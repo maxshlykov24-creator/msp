@@ -84,7 +84,8 @@ def main() -> int:
     check(late_report_bucket(datetime(2026, 9, 22, 0, 0, tzinfo=MSK), ws) == "later", "bucket later")
     from app.time_utils import group_digest_follows_reports
 
-    check(not group_digest_follows_reports(datetime(2026, 9, 28, 19, 59, tzinfo=MSK)), "digest quiet monday morning")
+    check(not group_digest_follows_reports(datetime(2026, 9, 28, 8, 59, tzinfo=MSK)), "digest quiet before monday 9")
+    check(group_digest_follows_reports(datetime(2026, 9, 28, 9, 0, tzinfo=MSK)), "digest monday morning")
     check(group_digest_follows_reports(datetime(2026, 9, 28, 20, 0, tzinfo=MSK)), "digest monday evening")
     check(group_digest_follows_reports(datetime(2026, 9, 30, 9, 0, tzinfo=MSK)), "digest wednesday")
     check(group_digest_follows_reports(datetime(2026, 10, 2, 23, 0, tzinfo=MSK)), "digest friday")

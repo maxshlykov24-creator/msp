@@ -117,11 +117,11 @@ def late_report_bucket(submitted_at: datetime, week_start: date) -> str:
 
 
 def group_digest_follows_reports(now: datetime | None = None) -> bool:
-    """Пн с 20:00 по пт включительно: сводку в группе заменяем после нового отчёта."""
+    """Пн с 09:00 по пт включительно: сводку в группе заменяем после нового отчёта."""
     current = to_msk(now) if now is not None else now_msk()
     wd = current.weekday()
     if wd == 0:
-        return current.hour >= 20
+        return current.hour >= 9
     return wd <= 4
 
 
