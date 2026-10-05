@@ -59,6 +59,11 @@ EARLY = {
     lib.PIPELINE_SALES_NEW: {lib.ST["new"], lib.ST["in_work"]},
     lib.PIPELINE_SALES_OLD: {80719358, 80719298},
 }
+# Ответ менеджера снимает только «Новая заявка». «Взята в работу» уже там.
+FRESH = {
+    lib.PIPELINE_SALES_NEW: {lib.ST["new"]},
+    lib.PIPELINE_SALES_OLD: {80719358},
+}
 
 
 def _stem(phrase: str, token: str) -> bool:
@@ -182,6 +187,102 @@ def _open_sales_lead(amo: lib.Amo, tail: str, tg_id: str = "", username: str = "
     return lost[0] if lost else None
 
 
+def move_fresh_to_work(amo: lib.Amo, lead_id: int) -> bool:
+    """Новая заявка → Взята в работу в Продажи 2MY. Уже взятую не трогает."""
+    st, lead = amo.req("GET", f"/api/v4/leads/{lead_id}")
+    if not (200 <= st < 300) or not isinstance(lead, dict):
+        return False
+    if lead.get("status_id") not in FRESH.get(lead.get("pipeline_id"), ()):
+        return False
+    code, _ = amo.req("PATCH", f"/api/v4/leads/{lead_id}", {
+        "pipeline_id": lib.PIPELINE_SALES_NEW,
+        "status_id": lib.ST["in_work"],
+    })
+    print(f"  reply {lead_id} -> in work [{code}]", flush=True)
+    return 200 <= code < 300
+
+
+def _lead_from_talk(amo: lib.Amo, talk_id: str) -> int | None:
+    st, talk = amo.req("GET", f"/api/v4/talks/{talk_id}")
+    if not (200 <= st < 300) or not isinstance(talk, dict):
+        return None
+    if str(talk.get("entity_type") or "") not in ("lead", "leads", "2"):
+        return None
+    try:
+        return int(talk.get("entity_id"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _lead_from_contact(amo: lib.Amo, contact_id: str) -> int | None:
+    st, contact = amo.req("GET", f"/api/v4/contacts/{contact_id}?with=leads")
+    if not (200 <= st < 300) or not isinstance(contact, dict):
+        return None
+    found = []
+    for lead in (contact.get("_embedded") or {}).get("leads") or []:
+        try:
+            lead_id = int(lead.get("id"))
+        except (TypeError, ValueError):
+            continue
+        full_st, full = amo.req("GET", f"/api/v4/leads/{lead_id}")
+        if not (200 <= full_st < 300) or not isinstance(full, dict):
+            continue
+        if full.get("status_id") in FRESH.get(full.get("pipeline_id"), ()):
+            found.append(lead_id)
+    if len(found) == 1:
+        return found[0]
+    return None
+
+
+def reply_from_amo(row: dict) -> None:
+    """Исходящее из amo, сразу. Текст в лог не пишем."""
+    amo = lib.Amo()
+    lead_id = None
+    element_type = str(row.get("element_type") or "")
+    if row.get("element_id") and element_type in ("2", "lead", "leads"):
+        try:
+            lead_id = int(row["element_id"])
+        except (TypeError, ValueError):
+            lead_id = None
+    if lead_id is None and row.get("talk_id"):
+        lead_id = _lead_from_talk(amo, str(row["talk_id"]))
+    if lead_id is None and row.get("contact_id"):
+        lead_id = _lead_from_contact(amo, str(row["contact_id"]))
+    if lead_id is None:
+        return
+    move_fresh_to_work(amo, lead_id)
+
+
+def _echo(msg: dict) -> bool:
+    if str(msg.get("status") or "") == "error":
+        return False
+    flag = msg.get("isEcho")
+    if flag is True or str(flag).lower() in ("1", "true", "yes"):
+        return True
+    return str(msg.get("status") or "") in ("sent", "delivered", "read", "outbound")
+
+
+def _reply_wazzup(msg: dict) -> None:
+    tail, tg_id, username = _who(msg)
+    query = tail or tg_id or username
+    if not query:
+        return
+    amo = lib.Amo()
+    st, body = amo.req("GET", f"/api/v4/leads?query={quote(query)}&limit=50")
+    if not (200 <= st < 300) or not isinstance(body, dict):
+        return
+    leads = (body.get("_embedded") or {}).get("leads") or []
+    leads.sort(key=lambda row: row.get("updated_at") or 0, reverse=True)
+    for lead in leads:
+        full = _matches(amo, lead, tail, tg_id, username)
+        if not full:
+            continue
+        if full.get("status_id") not in FRESH.get(full.get("pipeline_id"), ()):
+            continue
+        move_fresh_to_work(amo, int(full["id"]))
+        return
+
+
 def _move(amo: lib.Amo, lead: dict, word: str) -> None:
     st, _ = amo.req("PATCH", f"/api/v4/leads/{lead['id']}", {
         "pipeline_id": lib.PIPELINE_MKT_NEW,
@@ -275,7 +376,13 @@ def handle_body(body: dict) -> None:
     for msg in body.get("messages") or []:
         if not isinstance(msg, dict):
             continue
-        if msg.get("isEcho") or msg.get("status") != "inbound":
+        if _echo(msg):
+            try:
+                _reply_wazzup(msg)
+            except Exception:
+                traceback.print_exc()
+            continue
+        if msg.get("status") != "inbound":
             continue
         tail, tg_id, username = _who(msg)
         text = str(msg.get("text") or "") if msg.get("type") in (None, "text") else ""

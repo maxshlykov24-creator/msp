@@ -28,6 +28,7 @@ TZ = ZoneInfo("Europe/Moscow")
 HOST = "127.0.0.1"
 PORT = 8791
 LEAD_KEY = re.compile(r"leads\[(status|add)\]\[(\d+)\]\[(id|status_id|pipeline_id)\]")
+OUT_KEY = re.compile(r"outgoing_message\[add\]\[(\d+)\]\[(.+)\]")
 LOCKS: dict[int, threading.Lock] = {}
 LOCKS_GUARD = threading.Lock()
 STATE_LOCK = threading.Lock()
@@ -63,6 +64,38 @@ def token() -> str:
     return (lib.load_env().get("AMO_WEBHOOK_TOKEN") or "").strip()
 
 
+def quiet_path() -> Path:
+    folder = Path("/opt/2my")
+    if folder.is_dir():
+        return folder / "move_quiet.json"
+    return Path("/tmp/2my_move_quiet.json")
+
+
+QUIET_LOCK = threading.Lock()
+
+
+def take_move_quiet(lead_id: int) -> bool:
+    """Один перенос без задач и без смены ответственного. Следующий живой этап уже обычный."""
+    path = quiet_path()
+    with QUIET_LOCK:
+        if not path.is_file():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return False
+        ids = data.get("ids") if isinstance(data, dict) else None
+        if not isinstance(ids, list):
+            return False
+        key = str(lead_id)
+        if key not in {str(item) for item in ids}:
+            return False
+        data["ids"] = [item for item in ids if str(item) != key]
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    print(f"  quiet move {lead_id}", flush=True)
+    return True
+
+
 def parse_events(raw: bytes, content_type: str) -> list[dict]:
     text = raw.decode("utf-8", "replace")
     if "json" in content_type:
@@ -87,6 +120,33 @@ def parse_events(raw: bytes, content_type: str) -> list[dict]:
             continue
         kind, idx, field = match.groups()
         bucket.setdefault((kind, idx), {})[field] = vals[0]
+    return list(bucket.values())
+
+
+def _put_out(bucket: dict, idx: str, field: str, value) -> None:
+    row = bucket.setdefault(idx, {})
+    if "[" in field:
+        return
+    row[field] = value
+
+
+def parse_outgoing(raw: bytes, content_type: str) -> list[dict]:
+    text = raw.decode("utf-8", "replace")
+    if "json" in content_type:
+        try:
+            body = json.loads(text or "{}")
+        except json.JSONDecodeError:
+            return []
+        block = body.get("outgoing_message") if isinstance(body, dict) else None
+        rows = block.get("add") if isinstance(block, dict) else None
+        return [row for row in rows or [] if isinstance(row, dict)]
+    qs = parse_qs(text, keep_blank_values=False)
+    bucket: dict[str, dict] = {}
+    for key, vals in qs.items():
+        match = OUT_KEY.fullmatch(key)
+        if not match or not vals:
+            continue
+        _put_out(bucket, match.group(1), match.group(2), vals[0])
     return list(bucket.values())
 
 
@@ -398,6 +458,8 @@ def handle_lead(lead_id: int) -> None:
             return
         if pipeline not in (lib.PIPELINE_SALES_NEW, lib.PIPELINE_MKT_NEW):
             return
+        if pipeline == lib.PIPELINE_SALES_NEW and take_move_quiet(lead_id):
+            return
         if pipeline == lib.PIPELINE_SALES_NEW and wazzup_in.promote_if_pending(amo, lead):
             return
         if pipeline == lib.PIPELINE_SALES_NEW:
@@ -434,6 +496,13 @@ def spawn(events: list[dict]) -> None:
             continue
         seen.add(lead_id)
         threading.Thread(target=_safe, args=(lead_id,), daemon=True).start()
+
+
+def _outgoing(row: dict) -> None:
+    try:
+        wazzup_in.reply_from_amo(row)
+    except Exception:
+        traceback.print_exc()
 
 
 def _wazzup(body: dict) -> None:
@@ -500,9 +569,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""
-        events = parse_events(raw, self.headers.get("Content-Type") or "")
+        content_type = self.headers.get("Content-Type") or ""
+        events = parse_events(raw, content_type)
+        outgoing = parse_outgoing(raw, content_type)
         self._send(200, b"ok")
         spawn(events)
+        for row in outgoing:
+            threading.Thread(target=_outgoing, args=(row,), daemon=True).start()
 
 
 def main() -> None:
