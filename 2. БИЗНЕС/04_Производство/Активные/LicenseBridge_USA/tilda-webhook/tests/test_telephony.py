@@ -154,13 +154,14 @@ def test_missed_call_creates_task_for_responsible(fake, session, enable_all, ena
     assert note["note_type"] == "call_in" and note["params"]["call_status"] == 6
 
 
-def test_missed_call_from_unknown_number_creates_card(fake, session, enable_all, enable_telephony):
+def test_missed_call_from_unknown_number_creates_card(fake, session, enable_all, enable_telephony, monkeypatch):
+    monkeypatch.setattr(settings, "telephony_missed_owner_id", PAVEL)
     res = handle_call(_ctx(fake, session, "+15557654321"), "call_missed",
                       {"uniqueid": "1780000000.2", "phone": "+15557654321", "did": "1"})
 
     assert res["contact"] and res["lead"]
-    assert fake.leads[res["lead"]]["responsible_user_id"] == ROP
-    assert len(fake.tasks) == 1 and fake.tasks[0]["responsible_user_id"] == ROP
+    assert fake.leads[res["lead"]]["responsible_user_id"] == PAVEL
+    assert len(fake.tasks) == 1 and fake.tasks[0]["responsible_user_id"] == PAVEL
 
 
 def test_repeated_event_does_not_double_task(fake, session, enable_all, enable_telephony):

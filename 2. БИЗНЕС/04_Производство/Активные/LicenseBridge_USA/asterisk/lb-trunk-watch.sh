@@ -17,12 +17,12 @@ STATE=${LB_WATCH_STATE:-/var/lib/lb-trunk-watch.state}
 FULL=${LB_WATCH_FULL:-/var/log/asterisk/full}
 TRUNKS=${LB_WATCH_TRUNKS:-"telnyx tg400trunk tg400trunk2 tg400trunk3"}
 REGS=${LB_WATCH_REGS:-"telnyx_reg"}
-EXTS=${LB_WATCH_EXTS:-"101 102 103"}
+EXTS=${LB_WATCH_EXTS:-"101 102"}
 # Состояние пишем по всем добавочным, а звоним только по тем, кто должен быть на
 # линии весь день. 101 (Павел, владелец, с 24.08.2026) сидит короткими сменами и
 # офлайн по своему графику — это норма, а не отвал. Вечный алерт про него научил
 # бы игнорировать все алерты подряд.
-ALERT_EXTS=${LB_WATCH_ALERT_EXTS:-"102 103"}
+ALERT_EXTS=${LB_WATCH_ALERT_EXTS:-"102"}
 MAX_LOG_BYTES=${LB_WATCH_MAX_LOG:-5242880}
 # сколько минут добавочный должен лежать, чтобы это был отвал, а не перезапуск
 # MicroSIP или обед: короче — алерт превратится в фон, который перестанут читать
