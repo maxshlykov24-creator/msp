@@ -262,28 +262,40 @@ def ean13_valid(code):
 
 
 def _wrap(text, font, size, width, lines):
-    """Разбить строку по словам под ширину этикетки. Лишнее обрезаем многоточием."""
+    """Разбить строку по ширине того шрифта, которым её напечатаем."""
     from reportlab.pdfbase.pdfmetrics import stringWidth
 
     words = re.sub(r"\s+", " ", str(text or "")).strip().split(" ")
-    out = []
-    cur = ""
+    pieces = []
     for word in words:
         if not word:
             continue
+        chunk = ""
+        for char in word:
+            if chunk and stringWidth(chunk + char, font, size) > width:
+                pieces.append(chunk)
+                chunk = ""
+            chunk += char
+        if chunk:
+            pieces.append(chunk)
+    out = []
+    cur = ""
+    for word in pieces:
         probe = (cur + " " + word).strip()
         if cur and stringWidth(probe, font, size) > width:
             out.append(cur)
             cur = word
-            if len(out) == lines:
-                break
         else:
             cur = probe
-    if cur and len(out) < lines:
+    if cur:
         out.append(cur)
-    if len(out) == lines and cur and out[-1] != cur:
-        out[-1] = _shorten(out[-1] + " " + cur, len(out[-1]))
-    return out[:lines]
+    if len(out) > lines:
+        out = out[:lines]
+        last = out[-1]
+        while last and stringWidth(last + "…", font, size) > width:
+            last = last[:-1]
+        out[-1] = last.rstrip() + "…"
+    return out
 
 
 def _centred_pair(c, cx, y, head, head_font, value, value_font, size):
@@ -351,7 +363,9 @@ def product_label(c, row, font):
         # Code128 рисует сам метод, и подпись легла бы прямо на них
         body.append((hint, font, ""))
     body += [(text, font, "") for text in _wrap(row.get("client"), font, 7, w - 5 * MM, 1)]
-    body += [(text, bold, "") for text in _wrap(row.get("name"), font, 7, w - 5 * MM, 2)]
+    # Замер обычным шрифтом давал слишком длинную строку: жирное название
+    # выходило за физические поля ленты. Оставляем по 4 мм с каждой стороны.
+    body += [(text, bold, "") for text in _wrap(row.get("name"), bold, 7, w - 8 * MM, 3)]
     for title, key in (("Бренд", "brand"), ("Цвет", "color"), ("Размер", "size"), ("Артикул", "article")):
         val = str(row.get(key) or "").strip()
         # WB отдаёт безразмерным товарам размер «0», и на ленте висело «Размер: 0»
