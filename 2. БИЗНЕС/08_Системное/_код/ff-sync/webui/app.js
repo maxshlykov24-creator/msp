@@ -304,6 +304,7 @@ async function loadClients() {
   fillShipCombo();
   fillAsmCombo();
   fillDashCombo();
+  showIntakeClientHint();
   if (state.clients.length === 1 && !$("iClient").value) {
     setIntakeClient(state.clients[0].id, state.clients[0].name);
   }
@@ -322,13 +323,22 @@ function fillIntakeCombo(query) {
   list.innerHTML = items.map((c) => {
     const on = String(c.id) === String($("iClient").value);
     return `<button type="button" class="combo-item${on ? " is-on" : ""}" data-id="${c.id}">${esc(c.name)}</button>`;
-  }).join("") || `<div class="combo-item muted">Никого не нашлось</div>`;
+  }).join("") || `<div class="combo-item muted">Нет в панели. Проверь группу «Фулфилмент» и токен кабинета в МойСклад, затем нажми «Обновить клиентов».</div>`;
 }
 
 function setIntakeClient(id, name) {
   $("iClient").value = id || "";
   $("iClientQ").value = id ? name : "";
   $("iClientList").hidden = true;
+  showIntakeClientHint();
+}
+
+function showIntakeClientHint() {
+  const selected = state.clients.find((c) => String(c.id) === String($("iClient").value));
+  const notes = [];
+  if (selected && !selected.active_cabinets) notes.push("Нет активного кабинета. Проверь токены в карточке МойСклад и обнови клиентов.");
+  if (selected && selected.tariff_pick == null) notes.push("В карточке МойСклад нет ставки сборки. Заполни ₽/шт у каждой позиции.");
+  say($("iClientHint"), notes.join(" "), notes.length ? "bad" : "");
 }
 
 function resolveIntakeClient() {
@@ -359,21 +369,23 @@ async function loadIntake() {
   const res = await api("/api/intake");
   state.kinds = res.kinds;
   const body = $("iTbl").querySelector("tbody");
-  const miss = res.rows.filter((r) => (r.note || "").startsWith("нет в кабинетах")).length;
-  const clash = res.rows.filter((r) => r.state === "clash").length;
-  $("iCount").textContent = res.rows.length
-    ? res.rows.length + " строк · в кабинетах " + (res.rows.length - miss)
+  const selected = $("iClient").value;
+  const rows = selected ? res.rows.filter((r) => String(r.client_id) === selected) : [];
+  const miss = rows.filter((r) => (r.note || "").startsWith("нет в кабинетах")).length;
+  const clash = rows.filter((r) => r.state === "clash").length;
+  $("iCount").textContent = !selected ? "Выбери контрагента" : rows.length
+    ? rows.length + " строк · в кабинетах " + (rows.length - miss)
       + (miss ? " · не нашлось " + miss : "")
       + (clash ? " · спорных " + clash : "")
     : "";
-  if (!res.rows.length) {
-    body.innerHTML = `<tr><td colspan="10" class="empty">Пусто. Загрузи реестр поставки или вставь штрихкоды сверху.</td></tr>`;
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="10" class="empty">${selected ? "Пусто. Загрузи реестр поставки или вставь штрихкоды сверху." : "Выбери контрагента, чтобы увидеть его позиции."}</td></tr>`;
     $("iRun").disabled = true;
     refreshIntakePick();
     return;
   }
-  $("iRun").disabled = res.rows.length === clash;
-  body.innerHTML = res.rows.map((r) => `<tr>
+  $("iRun").disabled = !selected || rows.length === clash;
+  body.innerHTML = rows.map((r) => `<tr>
     <td class="pick"><input type="checkbox" data-irow="${r.id}" title="Выбрать"></td>
     <td class="client">${esc(r.client)}${r.supply ? `<span class="badge supply" title="Поставка по реестру">№${esc(r.supply)}</span>` : ""}</td>
     <td class="codes">
@@ -439,21 +451,26 @@ $("iDrop").onclick = async () => {
 
 $("iClientQ").onfocus = () => openCombo($("iClientQ"), $("iClientList"), fillIntakeCombo);
 $("iClientQ").oninput = () => {
+  // После ручного изменения имени нельзя оставлять ID прежнего клиента.
+  $("iClient").value = "";
+  $("iRun").disabled = true;
+  showIntakeClientHint();
+  $("iTbl").querySelector("tbody").innerHTML = `<tr><td colspan="10" class="empty">Выбери контрагента, чтобы увидеть его позиции.</td></tr>`;
+  $("iCount").textContent = "Выбери контрагента";
   fillIntakeCombo($("iClientQ").value);
   $("iClientList").hidden = false;
-  if (!$("iClientQ").value.trim()) $("iClient").value = "";
 };
 $("iClientQ").onkeydown = (e) => {
   if (e.key === "Escape") $("iClientList").hidden = true;
   if (e.key === "Enter") {
     e.preventDefault();
-    const first = $("iClientList").querySelector(".combo-item[data-id]");
-    if (first) setIntakeClient(first.dataset.id, first.textContent);
+    const items = intakeMatches($("iClientQ").value);
+    if (items.length === 1) { setIntakeClient(items[0].id, items[0].name); loadIntake(); }
   }
 };
 $("iClientList").onclick = (e) => {
   const btn = e.target.closest(".combo-item[data-id]");
-  if (btn) setIntakeClient(btn.dataset.id, btn.textContent);
+  if (btn) { setIntakeClient(btn.dataset.id, btn.textContent); loadIntake(); }
 };
 
 $("iTbl").onclick = async (e) => {
@@ -560,6 +577,7 @@ $("iTbl").onchange = async (e) => {
 
 function intakeSummary(res) {
   const bits = [
+    (res.pulled || []).length ? "Каталог: " + res.pulled.join("; ") + "." : "",
     res.added.length ? `Добавил ${res.added.length}.` : "",
     res.found ? `Нашлось в кабинетах: ${res.found}.` : "",
     res.missing ? `Нет в кабинетах: ${res.missing}.` : "",
@@ -697,6 +715,7 @@ function registrySummary(res) {
     s.car_plate ? s.car_plate : "",
   ].filter(Boolean).join(" · ");
   const bits = [
+    (res.pulled || []).length ? "Каталог: " + res.pulled.join("; ") + "." : "",
     `Прочитал ${res.added.length} позиций.`,
     res.matched ? `Сошлось с кабинетами: ${res.matched}.` : "",
     res.clashes ? `Спорных, нужно выбрать товар: ${res.clashes}.` : "",
@@ -734,21 +753,22 @@ $("iRegistry").onchange = async () => {
 };
 
 $("iRun").onclick = async () => {
+  const clientId = resolveIntakeClient();
+  if (!clientId) { say($("iRunMsg"), "Выбери контрагента.", "bad"); return; }
   $("iRun").disabled = true;
   say($("iRunMsg"), "Создаю товары в МойСклад…");
   try {
-    const res = await api("/api/intake/run", { method: "POST" });
+    const res = await api("/api/intake/run", { method: "POST", body: JSON.stringify({ client_id: clientId }) });
     if (!res.ok) { say($("iRunMsg"), res.msg, "bad"); }
     else {
       const orders = (res.orders || []).map((o) => `${o.client}: заказ поставщика ${o.number}`).join("\n");
       const bad = (res.skipped || []).map((s) => `${s.barcode}: ${s.note}`).join("\n");
       say($("iRunMsg"), [`Создано товаров: ${res.done.length}.`, orders, bad && "Не прошли:\n" + bad].filter(Boolean).join("\n"), bad ? "" : "ok");
     }
-    loadIntake();
   } catch (e) {
     say($("iRunMsg"), e.message, "bad");
   }
-  $("iRun").disabled = false;
+  await loadIntake();
 };
 
 // учёт

@@ -27,6 +27,7 @@ from db import (
     list_assembly,
     list_assembly_supply_exts,
     list_clients,
+    list_cabinets,
     list_intake,
     list_invoice_positions,
     list_invoices,
@@ -169,6 +170,10 @@ def me(ff_session: str = Cookie(default="")):
 def clients(ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
+    active_cabs = {}
+    for cab in list_cabinets():
+        if cab["active"]:
+            active_cabs[cab["client_id"]] = active_cabs.get(cab["client_id"], 0) + 1
     out = []
     for row in list_clients():
         if not row["active"]:
@@ -179,6 +184,8 @@ def clients(ff_session: str = Cookie(default="")):
                 "code": row["code"],
                 "name": row["name"],
                 "tariff_storage": row["tariff_storage"],
+                "tariff_pick": row["tariff_pick"],
+                "active_cabinets": active_cabs.get(row["id"], 0),
             }
         )
     return {"clients": out}
@@ -426,8 +433,14 @@ def intake_drop_many(data: dict = Body(...), ff_session: str = Cookie(default=""
 
 
 @app.post("/api/intake/run")
-def intake_run(ff_session: str = Cookie(default="")):
+def intake_run(data: dict = Body(...), ff_session: str = Cookie(default="")):
     who(ff_session)
+    try:
+        client_id = int(data.get("client_id") or 0)
+    except (TypeError, ValueError):
+        client_id = 0
+    if not client_id or not any(row["id"] == client_id for row in list_clients()):
+        raise HTTPException(status_code=400, detail="выбери контрагента для создания товаров")
     if not _lock.acquire(blocking=False):
         return {"ok": False, "msg": "уже идёт обработка"}
     try:
@@ -435,7 +448,7 @@ def intake_run(ff_session: str = Cookie(default="")):
         from intake import run
 
         try:
-            res = run(blocking=False)
+            res = run(blocking=False, client_id=client_id)
         except BlockingIOError:
             return {"ok": False, "msg": "уже идёт обработка"}
         return {"ok": True, **res}

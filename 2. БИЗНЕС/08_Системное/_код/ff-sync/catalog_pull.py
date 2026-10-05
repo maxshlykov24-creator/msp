@@ -4,7 +4,7 @@ import argparse
 import csv
 import os
 
-from db import get_cabinet, init_db, replace_cache
+from db import cache_count, get_cabinet, init_db, replace_cache
 from ms import kind_from_subject
 from net import OZON_BASE, YANDEX_BASE, req, ozon_headers, wb_headers, yandex_headers
 from products_push import gtin14
@@ -206,8 +206,7 @@ def ozon_info(client_id, api_key, offer_ids):
             json={"offer_id": chunk, "product_id": [], "sku": []},
         )
         if r.status_code != 200:
-            print("Ozon info %s %s" % (r.status_code, (r.text or "")[:200]))
-            continue
+            raise RuntimeError("Ozon не отдал карточки товаров: HTTP %s" % r.status_code)
         for item in r.json().get("items") or []:
             out[item.get("offer_id")] = item
     return out
@@ -413,6 +412,8 @@ def pull_one(cab):
         rows = rows_yandex(cab["id"], offers)
     else:
         return 0, "неизвестный marketplace %s" % cab["marketplace"]
+    if not rows and cache_count(cabinet_id=cab["id"]):
+        return 0, "площадка вернула пустой каталог, прежние карточки сохранены"
     path = os.path.join(out_dir(), "catalog_%s_%s.csv" % (cab["marketplace"], cab["id"]))
     write_csv(path, rows)
     replace_cache(cab["client_id"], cab["id"], rows)

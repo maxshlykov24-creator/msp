@@ -2,7 +2,7 @@
 
 import re
 
-from db import get_cabinet, get_client_by_id, get_sku, get_sku_by_barcode, prefer_hit, upsert_sku
+from db import get_cabinet, get_client_by_id, get_setting, get_sku, get_sku_by_barcode, prefer_hit, upsert_sku
 from ms import ms_meta, org_id, product_attrs, store_id, tracking_code
 from net import MS_BASE, ms_headers, req
 
@@ -49,34 +49,74 @@ def find_product(article):
         params={"filter": "article=%s" % article, "limit": 2},
     )
     if r.status_code != 200:
-        return None
+        raise ValueError("МойСклад не ответил на поиск по артикулу: HTTP %s" % r.status_code)
     rows = r.json().get("rows") or []
+    if len(rows) > 1:
+        raise ValueError("несколько товаров с одним артикулом в МойСклад — проверь карточки")
     return rows[0] if rows else None
 
 
-def find_product_by_barcode(code):
+def find_products_by_barcode(code):
     v = str(code or "").strip()
     if not v:
-        return None
+        return []
     r = req(
         "GET",
         MS_BASE + "/entity/product",
         headers=ms_headers(),
-        params={"filter": "barcode=%s" % v, "limit": 2},
+        params={"filter": "barcode=%s" % v, "limit": 100},
     )
     if r.status_code != 200:
-        return None
-    rows = r.json().get("rows") or []
-    return rows[0] if rows else None
+        raise ValueError("МойСклад не ответил на поиск по штрихкоду: HTTP %s" % r.status_code)
+    data = r.json() or {}
+    rows = data.get("rows") or []
+    if int((data.get("meta") or {}).get("size") or len(rows)) > len(rows):
+        raise ValueError("слишком много товаров с одним штрихкодом в МойСклад — проверь вручную")
+    return rows
 
 
 def get_product(pid):
     if not pid:
         return None
     r = req("GET", MS_BASE + "/entity/product/" + pid, headers=ms_headers())
-    if r.status_code != 200:
+    if r.status_code == 404:
         return None
+    if r.status_code != 200:
+        raise ValueError("МойСклад не ответил на карточку товара: HTTP %s" % r.status_code)
     return r.json()
+
+
+def _ref_id(value):
+    if not isinstance(value, dict):
+        return ""
+    href = ((value.get("meta") or {}).get("href") or "").rstrip("/")
+    return href.rsplit("/", 1)[-1] if href else ""
+
+
+def product_owners(product):
+    """Поставщик и поле клиента должны указывать на одного контрагента."""
+    owners = set()
+    supplier = _ref_id(product.get("supplier"))
+    if supplier:
+        owners.add(supplier)
+    client_attr = get_setting("ATTR_CLIENT_ID")
+    for attr in product.get("attributes") or []:
+        meta = _ref_id(attr.get("meta"))
+        if meta == client_attr or attr.get("name") == "Клиент фулфилмента":
+            owner = _ref_id(attr.get("value"))
+            if owner:
+                owners.add(owner)
+    return owners
+
+
+def same_client_product(product, client, linked=False):
+    owners = product_owners(product)
+    want = client["ms_counterparty_id"]
+    if owners and owners != {want}:
+        raise ValueError("товар в МойСклад закреплён за другим контрагентом — сопоставление остановлено")
+    if not owners and not linked:
+        raise ValueError("у найденного товара в МойСклад не указан контрагент — сопоставление остановлено")
+    return True
 
 
 def find_linked(client, barcode, gtin, hits, article):
@@ -95,12 +135,34 @@ def find_linked(client, barcode, gtin, hits, article):
     for pid in seen:
         found = get_product(pid)
         if found:
+            same_client_product(found, client, linked=True)
             return found
     for code in barcodes_from_hits(hits, barcode, gtin):
-        found = find_product_by_barcode(code)
-        if found:
-            return found
-    return find_product(article)
+        candidates = find_products_by_barcode(code)
+        owned = []
+        unknown = False
+        for candidate in candidates:
+            found = get_product(candidate.get("id")) or candidate
+            owners = product_owners(found)
+            if len(owners) > 1:
+                raise ValueError("у товара в МойСклад расходятся поставщик и клиент фулфилмента — проверь карточку")
+            if owners == {client["ms_counterparty_id"]}:
+                owned.append(found)
+            elif not owners:
+                unknown = True
+        if len(owned) > 1:
+            raise ValueError("несколько товаров клиента с одним штрихкодом в МойСклад — выбери вручную")
+        if owned:
+            return owned[0]
+        if unknown:
+            raise ValueError("у товара с этим штрихкодом в МойСклад не указан контрагент — проверь карточку вручную")
+        # Чужой товар с тем же EAN не обновляем. У каждого клиента своя
+        # карточка с артикулом, начинающимся на код клиента.
+    found = find_product(article)
+    if found:
+        found = get_product(found.get("id")) or found
+        same_client_product(found, client)
+    return found
 
 
 def barcodes_from_hits(hits, barcode, gtin):
@@ -186,7 +248,10 @@ def push_one(row, hits=None, dry=False):
         cab = get_cabinet(first["cabinet_id"]) or cab
     article = article_of(client["code"], row)
     gtin = (row.get("GTIN") or "").strip() or gtin14(row.get("ext_barcode"))
-    existing = find_linked(client, row.get("ext_barcode"), gtin, hits, article)
+    try:
+        existing = find_linked(client, row.get("ext_barcode"), gtin, hits, article)
+    except ValueError as exc:
+        return {"ok": False, "msg": str(exc), "id": None, "article": article, "gtin": gtin, "client": client}
     if existing:
         article = existing.get("article") or article
     mps = "+".join(sorted({h["marketplace"] for h in hits})) if hits else cab["marketplace"]
@@ -284,5 +349,3 @@ def create_purchase_order(client, positions):
         return None, "", "заказ поставщика %s %s" % (r.status_code, (r.text or "")[:160])
     data = r.json()
     return data.get("id"), data.get("name") or "", ""
-
-

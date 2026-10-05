@@ -124,8 +124,7 @@ def iter_agents():
             params={"limit": 100, "offset": offset, "expand": "group"},
         )
         if r.status_code != 200:
-            print("контрагенты: %s %s" % (r.status_code, (r.text or "")[:200]))
-            return
+            raise RuntimeError("МойСклад не отдал список контрагентов: HTTP %s" % r.status_code)
         rows = r.json().get("rows") or []
         if not rows:
             return
@@ -231,6 +230,8 @@ def ensure_client(row):
     ms_id = row.get("id")
     name = (row.get("name") or "").strip()
     found = get_client_by_ms_id(ms_id) or get_client_by_name(name)
+    if found and found["ms_counterparty_id"] and found["ms_counterparty_id"] != ms_id:
+        raise ValueError("контрагент с именем %s уже связан с другой карточкой МойСклад" % name)
     if found:
         patch = {}
         if found["name"] != name and name:
@@ -301,6 +302,8 @@ def sync_wb(client, raw_token, existing):
     if not token:
         return None, False, "нет токена"
     ok, status, body = check_wb(token)
+    if not ok and existing and (token_changed or status in (429, 500, 502, 503, 504)):
+        return existing["id"], False, "WB не проверен (HTTP %s), прежний кабинет сохранён" % status
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cab_id = upsert_cabinet(
         client["id"],
@@ -338,6 +341,8 @@ def sync_ozon(client, cid_raw, key_raw, existing):
     if not token or not cid:
         return None, False, "нет ключа Ozon"
     ok, status, body = check_ozon(cid, token)
+    if not ok and existing and (token_changed or cid != existing["client_id_ext"] or status in (429, 500, 502, 503, 504)):
+        return existing["id"], False, "Ozon не проверен (HTTP %s), прежний кабинет сохранён" % status
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cab_id = upsert_cabinet(
         client["id"],
@@ -377,6 +382,8 @@ def sync_yandex(client, raw_token, existing):
     r = req("GET", YANDEX_BASE + "/v2/campaigns", headers=yandex_headers(token))
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if r.status_code != 200 or "campaigns" not in (r.json() if r.headers.get("content-type", "").startswith("application/json") else {}):
+        if existing and (token_changed or r.status_code in (429, 500, 502, 503, 504)):
+            return existing["id"], False, "Яндекс не проверен (HTTP %s), прежний кабинет сохранён" % r.status_code
         body = (r.text or "")[:160]
         cab_id = upsert_cabinet(client["id"], "yandex", "yandex %s" % client["code"], token, None, 0, None, body)
         return cab_id, False, "Яндекс ключ отклонён %s" % stamp()
@@ -386,6 +393,8 @@ def sync_yandex(client, raw_token, existing):
         if camp is None:
             raise Stop("кампаний FBS %s" % len(live))
     except Stop as exc:
+        if existing:
+            return existing["id"], False, "Яндекс %s, прежний кабинет сохранён" % exc
         cab_id = upsert_cabinet(
             client["id"], "yandex", "yandex %s" % client["code"], token, None, 0, None, str(exc)[:180]
         )

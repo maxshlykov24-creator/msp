@@ -1,5 +1,6 @@
 """Приёмка: список штрихкодов → сверка с кабинетами → товары в МойСклад."""
 
+import math
 import re
 
 import registry
@@ -40,7 +41,8 @@ def parse_num(raw, default=None):
     if not text:
         return default
     try:
-        return float(text)
+        value = float(text)
+        return value if math.isfinite(value) else default
     except ValueError:
         return default
 
@@ -172,7 +174,10 @@ def parse_barcodes(text):
 
 def lookup(client_id, barcode, article="", hits=None):
     if hits is None:
-        hits = find_cache_group(client_id, barcode=barcode or None, article=article or None)
+        # Введённый штрихкод сильнее артикула. Если код не нашёлся, не
+        # подставляем карточку по артикулу с другим штрихкодом.
+        hits = (find_cache_group(client_id, barcode=barcode) if barcode
+                else find_cache_group(client_id, article=article or None))
     if not hits:
         return None
     first = prefer_hit(hits)[0]
@@ -225,6 +230,9 @@ def match_registry(client_id, barcode, article):
         hits = find_cache_group(client_id, barcode=barcode)
         if hits:
             return hits, "", ""
+        if article and article_groups(client_id, article):
+            return [], "штрихкод не совпадает с карточкой артикула %s — выбери товар" % article, ""
+        return [], "", ""
     article = str(article or "").strip()
     if not article:
         return [], "", ""
@@ -245,7 +253,8 @@ def match_registry(client_id, barcode, article):
 
 
 def group_norms(client_id, barcode, article=""):
-    hits = find_cache_group(client_id, barcode=barcode or None, article=article or None)
+    hits = (find_cache_group(client_id, barcode=barcode) if barcode
+            else find_cache_group(client_id, article=article or None))
     return {barcode_norm(h["ext_barcode"]) for h in hits if h["ext_barcode"]}, (hits[0]["gtin"] if hits and hits[0]["gtin"] else "")
 
 
@@ -273,11 +282,14 @@ def find_queued_same(client_id, barcode, gtin, article=""):
 
 def need_of(liters, pick_rate, qty):
     need = []
-    if liters is None:
+    liters_val = parse_num(liters)
+    pick_val = parse_num(pick_rate)
+    qty_val = parse_num(qty)
+    if liters_val is None or liters_val <= 0:
         need.append("литраж")
-    if pick_rate is None:
+    if pick_val is None or pick_val < 0:
         need.append("сборку, ₽/шт")
-    if not qty or float(qty) <= 0:
+    if qty_val is None or qty_val <= 0:
         need.append("количество")
     return need
 
@@ -324,9 +336,10 @@ def refresh_client_catalog(client_id):
     from catalog_pull import pull_one
 
     notes = []
-    for cab in list_cabinets():
-        if cab["client_id"] != client_id or not cab["active"]:
-            continue
+    cabinets = [cab for cab in list_cabinets() if cab["client_id"] == client_id and cab["active"]]
+    if not cabinets:
+        return ["нет активного кабинета: проверь токены контрагента в МойСклад и обнови клиентов"]
+    for cab in cabinets:
         try:
             n, err = pull_one(cab)
             notes.append("%s %s" % (cab["marketplace"], err or ("%s товаров" % n)))
@@ -744,14 +757,16 @@ def process_row(row):
     return {"client": res["client"], "product_id": res["id"], "article": res["article"]}, ""
 
 
-def run(blocking=True):
+def run(blocking=True, client_id=None):
     init_db()
     with run_lock(blocking=blocking):
-        return _run()
+        return _run(client_id=client_id)
 
 
-def _run():
+def _run(client_id=None):
     rows = list_intake(states=("draft", "warn"))
+    if client_id is not None:
+        rows = [row for row in rows if row["client_id"] == int(client_id)]
     done = []
     skipped = []
     pending = {}
