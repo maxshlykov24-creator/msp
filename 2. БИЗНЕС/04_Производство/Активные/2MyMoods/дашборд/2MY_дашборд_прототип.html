@@ -1198,7 +1198,7 @@ function refresh(){
  const promoRows=[...promoBuckets.values()].map(r=>({
   name:r.plain?'без промокода':[...r.spell.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'ru'))[0][0],
   n:r.n,rev:r.rev,disc:r.disc,plain:r.plain
- })).sort((a,b)=>Number(a.plain)-Number(b.plain)||b.disc-a.disc||b.n-a.n||a.name.localeCompare(b.name,'ru'));
+ })).sort((a,b)=>b.rev-a.rev||b.disc-a.disc||b.n-a.n||a.name.localeCompare(b.name,'ru'));
  table('promo-codes',promoRows,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>money(r.disc),r=>pct(r.disc,promoDiscTotal)]);
  const responseRows=(data.responses?.samples||[]).filter(x=>x.date>=state.from&&x.date<=state.to);
  const currentQueue=(data.responses?.pending||[]).filter(x=>x.is_open===true);
