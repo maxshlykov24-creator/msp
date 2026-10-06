@@ -317,6 +317,14 @@
   .head-right .kicker{font-size:10px;font-weight:400;letter-spacing:.26em;text-transform:uppercase;color:var(--mute)}
   .head-right h1{font-family:var(--serif);font-weight:400;font-size:26px;letter-spacing:-.01em;margin-top:8px;color:var(--ink)}
   .head-right .note{font-size:11.5px;font-weight:400;color:var(--mute);margin-top:8px}
+  .explain-btn{display:inline-block;margin-top:14px;font-family:var(--sans);font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;padding:8px 12px;background:var(--dark);color:#fff;border:1px solid var(--dark);border-radius:0;cursor:pointer}
+  .explain-btn.off{background:transparent;color:var(--body);border-color:var(--line)}
+  .explain-btn:hover{background:var(--dark);color:#fff;border-color:var(--dark)}
+  body.quiet .hint,body.quiet .notes,body.quiet .hero .sub{display:none!important}
+  body.quiet .card h3{margin-bottom:16px}
+  .delivery-row{margin:0 0 18px;font-size:12px;font-weight:500;color:var(--body)}
+  .delivery-row label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+  .delivery-row input{width:14px;height:14px;margin:0;accent-color:#020202}
 
   /* ── фильтры ── */
   .filters{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end;margin:26px 0 16px}
@@ -598,6 +606,7 @@
       <div class="head-right">
         <div class="kicker">Аналитика продаж и клиентской базы</div>
         <h1>Панель управления 2MY</h1>
+        <button type="button" class="explain-btn" id="explain-toggle" aria-pressed="true">Пояснения</button>
         <div class="note" id="head-note"></div>
       </div>
     </div>
@@ -646,7 +655,7 @@
     </div>
   </div>
 
-  <div class="hint" style="margin:12px 0"><label><input type="checkbox" id="delivery-toggle"> С доставкой</label></div>
+  <div class="delivery-row"><label><input type="checkbox" id="delivery-toggle"> С доставкой</label></div>
   <div class="stage">
   <section class="hero">
     <div class="hero-grid">
@@ -933,6 +942,20 @@
 
 <script>
 const el = id => document.getElementById(id);
+{
+  const explainBtn = el('explain-toggle');
+  const applyExplain = on => {
+    document.body.classList.toggle('quiet', !on);
+    explainBtn.classList.toggle('off', !on);
+    explainBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  applyExplain(localStorage.getItem('2my-explain') !== '0');
+  explainBtn.addEventListener('click', () => {
+    const on = explainBtn.classList.contains('off');
+    localStorage.setItem('2my-explain', on ? '1' : '0');
+    applyExplain(on);
+  });
+}
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = n => Number(n || 0).toLocaleString('ru-RU');
 const money = n => num(Math.round(n || 0)) + ' ₽';
@@ -1116,7 +1139,7 @@ function refresh(){
  const repeatState=o=>{const c=clients.find(c=>c.phone===o.phone);if(!c?.first)return 'unknown';if(c.first<o.paid_date)return 'repeat';const same=c.orders.filter(x=>x.paid_date===c.first);return same.length===1?'first':'unknown'};
  const repN=orders.filter(o=>repeatState(o)==='repeat').length, firstN=orders.filter(o=>repeatState(o)==='first').length, unknownN=n-repN-firstN;
  const avgLtv=people.size?sum(clients.filter(c=>people.has(c.phone)),c=>c.ltv)/people.size:0;
- el('hero-period').textContent=`${dmy(state.from)} — ${dmy(state.to)} · по дате закрывающего платежа, Москва`;
+ el('hero-period').innerHTML=`${dmy(state.from)} — ${dmy(state.to)}<span class="hint"> · по дате закрывающего платежа, Москва</span>`;
  el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
  el('hero-sub').textContent='Выручка после подтверждённых возвратов'+(includeDelivery?' с доставкой':' без доставки');
  const paymentTotal=sum((data.payment_daily||[]).filter(x=>x.date>=state.from&&x.date<=state.to),x=>x.sum);
