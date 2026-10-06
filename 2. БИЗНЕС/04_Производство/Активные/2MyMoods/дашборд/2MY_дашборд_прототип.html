@@ -1139,7 +1139,7 @@ function refresh(){
  const repeatState=o=>{const c=clients.find(c=>c.phone===o.phone);if(!c?.first)return 'unknown';if(c.first<o.paid_date)return 'repeat';const same=c.orders.filter(x=>x.paid_date===c.first);return same.length===1?'first':'unknown'};
  const repN=orders.filter(o=>repeatState(o)==='repeat').length, firstN=orders.filter(o=>repeatState(o)==='first').length, unknownN=n-repN-firstN;
  const avgLtv=people.size?sum(clients.filter(c=>people.has(c.phone)),c=>c.ltv)/people.size:0;
- el('hero-period').innerHTML=`${dmy(state.from)} — ${dmy(state.to)}<span class="hint"> · по дате закрывающего платежа, Москва</span>`;
+ el('hero-period').innerHTML=`${dmy(state.from)} — ${dmy(state.to)}<span class="hint"> · по дате закрывающего платежа · часовой пояс МСК</span>`;
  el('hero-rev').innerHTML=`${num(Math.round(rev))} <span>₽</span>`;
  el('hero-sub').textContent='Выручка после подтверждённых возвратов'+(includeDelivery?' с доставкой':' без доставки');
  const paymentTotal=sum((data.payment_daily||[]).filter(x=>x.date>=state.from&&x.date<=state.to),x=>x.sum);
@@ -1287,7 +1287,7 @@ function placeChartTip(clientX){
  const last=chartDays.length-1;
  const i=last?Math.round(x/r.width*last):0;
  const d=chartDays[i];
- const max=Math.max(1,...chartDays.map(p=>p.rev));
+ const max=Math.max(1,...chartDays.map(p=>p.rev)),min=Math.min(0,...chartDays.map(p=>p.rev));
  const px=last?i/last*r.width:r.width/2;
  const y=(125-(d.rev-min)*115/(max-min))/132*r.height;
  tip.querySelector('.t-date').textContent=dmy(d.date);
