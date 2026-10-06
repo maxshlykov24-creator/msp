@@ -570,6 +570,9 @@
     .scroll-x td:first-child{box-shadow:8px 0 8px -8px rgba(2,2,2,.18)}
   }
   .scroll-x{width:0;min-width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .scroll-cap{max-height:440px;overflow:auto}
+  .scroll-cap thead th{position:sticky;top:0;background:var(--paper);z-index:2}
+  .scroll-cap thead th:first-child{z-index:3}
   .scroll-x table{width:max-content;min-width:100%}
   @media (max-width:620px){
     .wrap{padding:0 16px}
@@ -731,6 +734,15 @@
         <tbody id="mgr"></tbody>
       </table></div>
     </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <h3>Промокоды</h3>
+    <div class="hint">Код берётся из дополнительного поля заказа. Одинаковые коды в разном регистре собраны вместе. Строка без промокода: скидка есть в позиции, поле пустое.</div>
+    <div class="scroll-x scroll-cap"><table>
+      <thead><tr><th>Промокод</th><th>Заказов</th><th>Выручка</th><th>Скидка</th><th>Доля скидки</th></tr></thead>
+      <tbody id="promo-codes"></tbody>
+    </table></div>
   </div>
 
   <h2 class="sect">Куда уезжают заказы</h2>
@@ -1146,7 +1158,7 @@ function refresh(){
  const paymentScopeClear=!state.cat.length&&!state.prod&&!state.source.length&&!state.channel.length&&!state.city.length;
  el('payment-in-note').textContent=`Продажи: ${money(grossRev)}. Возвраты по дате документа: ${money(returnedRev)}. Вся сумма заказа, включая предоплату, признаётся только в день полной оплаты.`+(returnGaps.length?` Не включены ${returnGaps.length} возвратов на ${money(sum(returnGaps,x=>x.sum))}: связь с признанной продажей или позиции требуют проверки. Итог неполный.`:'')+(outsideReturns.length?` Отдельно: возвраты на ${money(sum(outsideReturns,x=>x.sum))} по заказам без полной оплаты. Эти заказы не признавались в выручке, поэтому их возвраты не вычитаются. Сумма по всем каналам.`:'');
  el('hero-mini').innerHTML=[['Заказов',n],['Чек до возвратов',money(n?grossRev/n:0)],['Клиентов',people.size],['Маржа',rev>0?pct(rev-cost,rev):'—']].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
- const kpis=[['Выручка после возвратов',money(rev)],['Заказов',num(n)],['Чек до возвратов',money(n?grossRev/n:0)],['Изделий до возвратов / заказ',n?(sum(filtered.flatMap(x=>x.ls),l=>l.delivery?0:l.qty)/n).toFixed(1):'0'],['Маржа по закупке',rev>0?pct(rev-cost,rev):'—'],['Повторные покупки',(unknownN?'не менее ':'')+pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты, документов',num(returnN)]];
+ const kpis=[['Выручка после возвратов',money(rev)],['Заказов',num(n)],['Чек до возвратов',money(n?grossRev/n:0)],['Изделий до возвратов / заказ',n?(sum(filtered.flatMap(x=>x.ls),l=>l.delivery?0:l.qty)/n).toFixed(2):'0.00'],['Маржа по закупке',rev>0?pct(rev-cost,rev):'—'],['Повторные покупки',(unknownN?'не менее ':'')+pct(repN,n)],['LTV на клиента',money(avgLtv)],['Возвраты, документов',num(returnN)]];
  el('kpis').innerHTML=kpis.map(([k,v])=>`<div class="kpi"><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
  const days=group(financial,x=>x.o.paid_date), keys=[];
  for(let day=new Date(state.from+'T00:00:00Z');day.toISOString().slice(0,10)<=state.to;day.setUTCDate(day.getUTCDate()+1))keys.push(day.toISOString().slice(0,10));
@@ -1168,7 +1180,26 @@ function refresh(){
  el('utm-legend').innerHTML=`<div>Сайт с меткой <b>${marked}</b></div><div>Сайт без метки <b>${site.length-marked}</b></div>`;
  el('utm-kv').innerHTML=kv([['Заказов сайта',num(site.length)],['Без utm_source',num(site.length-marked)],['Частично оплаченные: созданы в периоде, все каналы',num(data.orders.filter(o=>o.partial&&o.created>=state.from&&o.created<=state.to).length)]]);
  const discounts=filtered.filter(x=>x.o.promo||x.ls.some(l=>l.rev<l.list));
- el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(sum(discounts,x=>orderRev(x.o,x.ls)))],['Скидка по позициям',money(sum(filtered.flatMap(x=>x.ls),l=>Math.max(0,l.list-l.rev)))]]);
+ const lineDiscount=x=>sum(x.ls,l=>Math.max(0,(l.list||0)-(l.rev||0)));
+ el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(sum(discounts,x=>orderRev(x.o,x.ls)))],['Скидка по позициям',money(sum(filtered,lineDiscount))]]);
+ const promoBuckets=new Map();
+ for(const x of filtered){
+  const raw=String(x.o.promo||'').trim();
+  const key=raw.toLocaleLowerCase('ru');
+  const disc=lineDiscount(x);
+  if(!key&&disc<=0) continue;
+  const id=key||'\0';
+  let row=promoBuckets.get(id);
+  if(!row){row={spell:new Map(),n:0,rev:0,disc:0,plain:!key};promoBuckets.set(id,row);}
+  if(key) row.spell.set(raw,(row.spell.get(raw)||0)+1);
+  row.n++; row.rev+=orderRev(x.o,x.ls); row.disc+=disc;
+ }
+ const promoDiscTotal=sum([...promoBuckets.values()],r=>r.disc);
+ const promoRows=[...promoBuckets.values()].map(r=>({
+  name:r.plain?'без промокода':[...r.spell.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'ru'))[0][0],
+  n:r.n,rev:r.rev,disc:r.disc,plain:r.plain
+ })).sort((a,b)=>Number(a.plain)-Number(b.plain)||b.disc-a.disc||b.n-a.n||a.name.localeCompare(b.name,'ru'));
+ table('promo-codes',promoRows,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>money(r.disc),r=>pct(r.disc,promoDiscTotal)]);
  const responseRows=(data.responses?.samples||[]).filter(x=>x.date>=state.from&&x.date<=state.to);
  const currentQueue=(data.responses?.pending||[]).filter(x=>x.is_open===true);
  const waiting=(data.responses?.pending||[]).filter(x=>x.date>=state.from&&x.date<=state.to);
@@ -1211,7 +1242,7 @@ function refresh(){
   return {name,qty,rev:sum(arr,x=>x.l.rev),topChannel:channels[0]?.channel||'нет продаж в периоде',topShare:pct(channels[0]?.qty||0,sum(arr.filter(x=>!x.o.return_event),x=>x.l.qty))};
  }).sort((a,b)=>b.qty-a.qty);
  table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>x.topChannel,x=>x.topShare]);
- el('basket-kv').innerHTML=kv([['Изделий до возвратов / заказ',n?(sum(filtered.flatMap(x=>x.ls),l=>l.delivery?0:l.qty)/n).toFixed(1):'0'],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
+ el('basket-kv').innerHTML=kv([['Изделий до возвратов / заказ',n?(sum(filtered.flatMap(x=>x.ls),l=>l.delivery?0:l.qty)/n).toFixed(2):'0.00'],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
  const scopeLines=goodsLines.filter(x=>matches(state.size,x.l.size)&&matches(state.color,x.l.color));
  const sq=sum(scopeLines,x=>x.l.delivery?0:x.l.qty),sr=sum(scopeLines,x=>x.l.rev),sc=sum(scopeLines,x=>x.l.cost);
  el('scope').innerHTML=kv([['Изделия за вычетом возвратов',num(sq)],['Выручка',money(sr)],['Закупка',money(sc)],['Маржа',money(sr-sc)]]);
