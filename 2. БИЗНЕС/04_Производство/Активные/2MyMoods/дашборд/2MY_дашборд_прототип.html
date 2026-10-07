@@ -1343,7 +1343,7 @@ function refresh(){
  const cats=Object.entries(group(goodsLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost)})).sort((a,b)=>b.rev-a.rev);
  table('cats',cats,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.qty?x.rev/x.qty:0),x=>money(x.rev-x.cost)]);
  el('sizes').innerHTML=Object.entries(group(goodsLines,x=>x.l.size)).map(([size,arr])=>`<div class="kv"><span>${esc(size)}</span><b>${num(sum(arr,x=>x.l.qty))}</b></div>`).join('')||'Нет данных';
- const colors=Object.entries(group(goodsLines,x=>colorLabel(x.l))).map(([name,arr])=>{
+ const colors=Object.entries(group(goodsLines.filter(x=>colorLabel(x.l)!=='не указано'),x=>colorLabel(x.l))).map(([name,arr])=>{
   const qty=sum(arr,x=>x.l.qty),channels=Object.entries(group(arr,x=>x.o.channel)).map(([channel,rows])=>({channel,qty:sum(rows,x=>x.l.qty)})).sort((a,b)=>b.qty-a.qty);
   return {name,qty,rev:sum(arr,x=>x.l.rev),topChannel:channels[0]?.channel||'нет продаж в периоде',topShare:pct(channels[0]?.qty||0,qty)};
  }).sort((a,b)=>b.qty-a.qty);
@@ -1403,7 +1403,7 @@ function init(snap){
  select('f-geo',[...new Set(data.orders.map(o=>o.city))],'Все города');
  select('s-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
  select('s-size',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.size)))],'Все размеры');
- select('s-color',[...new Set(data.orders.flatMap(o=>(o.lines||[]).filter(l=>!l.delivery).map(colorLabel)))],'Все цвета');
+ select('s-color',[...new Set(data.orders.flatMap(o=>(o.lines||[]).filter(l=>!l.delivery).map(colorLabel)))].filter(v=>v!=='не указано'),'Все цвета');
  el('periods').innerHTML=[['month','Текущий месяц'],['prev','Прошлый месяц'],['quarter','Квартал'],['year','Год']].map(([id,name])=>`<button data-p="${id}" class="${id==='month'?'on':''}">${name}</button>`).join('');
  el('periods').onclick=e=>{if(!e.target.dataset.p)return;applyPeriod(e.target.dataset.p);refresh();};
  const names=[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.name)))].filter(Boolean).sort();const dl=document.createElement('datalist');dl.id='products-list';dl.innerHTML=names.map(n=>'<option value="'+esc(n)+'"></option>').join('');document.body.appendChild(dl);el('f-prod').setAttribute('list','products-list');el('s-prod').setAttribute('list','products-list');
