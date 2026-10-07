@@ -429,6 +429,10 @@ def format_alert(snap: dict, ping: int = 0) -> str:
         lines.append("▪️ <b>Сделка:</b> %s" % _esc(snap["lead_url"]))
     elif snap.get("url"):
         lines.append("▪️ <b>Объявление:</b> %s" % _esc(snap["url"]))
+    for interest in snap.get("interests") or []:
+        if interest.get("url") and interest.get("url") != snap.get("url"):
+            lines.append("▪️ <b>Также интересует:</b> %s %s" % (
+                _esc(interest.get("car") or "автомобиль"), _esc(interest["url"])))
     brief = (snap.get("brief") or "").strip()
     if not brief:
         brief = brief_from_thread(snap.get("thread"), snap.get("reason") or "")

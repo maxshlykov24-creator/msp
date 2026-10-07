@@ -382,6 +382,93 @@ async def regression(docs: dict, stock: str) -> None:
         checks += 1
         print('PASS', label, flush=True)
 
+    real_capture = crm.capture
+    def bind_test_lead(snap, doc):
+        # Подмена только amo API. Остальная передача и Telegram publish настоящие.
+        doc.setdefault('crm', {}).update(lead_id=123, status_id=82003646)
+        snap.update(lead_id=123, lead_url='https://example.invalid/leads/123', nags=True)
+        return snap
+    for cid in LIVE_IDS[6:]:
+        source = copy.deepcopy(docs[cid])
+        idx = next(i for i, m in enumerate(source['messages'])
+                   if m['role'] == 'user' and nudge.extract_phone(m['content']))
+        source['messages'] = source['messages'][:idx + 1]
+        phone_text = source['messages'][-1]['content']
+        with Sandbox():
+            key = 'av:handoff-case'
+            source['chat_id'] = key
+            store.save_doc(key, source)  # Тот же порядок, что в poll_once Авито.
+            transport = Mock(send=AsyncMock(return_value=(-100000, 101)), edit=AsyncMock(return_value=True), delete=AsyncMock(return_value=True))
+            with patch.object(crm, 'capture', real_capture), \
+                 patch.object(crm, 'bot', transport), \
+                 patch.object(crm, 'ensure_lead', side_effect=bind_test_lead) as bind, \
+                 patch.object(crm, '_apply_phone_to_doc', Mock()), \
+                 patch.object(crm, 'next_ping', return_value=0):
+                reason = await crm.capture_if_urgent(key, [phone_text])
+                check(reason == 'phone' and bind.call_count == 1 and transport.send.await_count == 1,
+                      'actual screenshot: pre-saved phone creates CRM and manager notification ' + cid[-6:])
+                hist = store.load_history(key)
+                await crm.capture_if_urgent(key, [phone_text])
+                check(transport.send.await_count == 1 and store.load_history(key) == hist,
+                      'actual screenshot: repeated phone does not duplicate handoff ' + cid[-6:])
+                channel = Mock(send=AsyncMock(), typing=AsyncMock())
+                with patch.object(llm, 'reply', AsyncMock()) as model:
+                    await bot_main._answer_locked(channel, key, [phone_text])
+                check(not model.called and channel.send.await_count == 1 and 'передал' in channel.send.call_args.args[1].lower() and 'запрос на звонок' in channel.send.call_args.args[1].lower(),
+                      'phone acknowledgment follows confirmed handoff ' + cid[-6:])
+    with Sandbox():
+        first = {'active': True, 'reason': 'phone', 'tg': {'chat_id': -100000, 'message_id': 104},
+                 'snap': {'phone': '79000000000', 'car': 'Первое авто', 'url': 'https://example.invalid/first'}}
+        store.save_doc('av:first-interest', {'crm': {'alert': first}})
+        new = {'snap': {'phone': '79000000000', 'car': 'Второе авто', 'url': 'https://example.invalid/second'}}
+        crm._adopt_open_card(new, '79000000000', 'av:second-interest')
+        owner = store.load_doc('av:first-interest')['crm']['alert']
+        for alert in (new, owner):
+            body = crm.format_alert(alert['snap'])
+            check('https://example.invalid/first' in body and 'https://example.invalid/second' in body,
+                  'shared phone card preserves both exact listings')
+    with Sandbox():
+        key = 'av:delivery-retry'
+        hist = [{'role': 'user', 'content': '79000000000'}]
+        store.save_doc(key, {'messages': hist})
+        transport = Mock(send=AsyncMock(return_value=None), edit=AsyncMock(return_value=False), delete=AsyncMock(return_value=True))
+        with patch.object(crm, 'capture', real_capture), patch.object(crm, 'bot', transport), \
+             patch.object(crm, 'ensure_lead', side_effect=bind_test_lead), \
+             patch.object(crm, '_apply_phone_to_doc', Mock()), \
+             patch.object(crm, 'next_ping', return_value=0), \
+             patch.object(crm, 'lead_moved', return_value=False), \
+             patch.object(crm, 'close_if_contacted', AsyncMock(return_value=False)):
+            await crm.capture(key, hist, 'phone')
+            alert = store.load_doc(key)['crm']['alert']
+            check(alert['pings'] == [] and not alert.get('tg'), 'failed Telegram send is not marked delivered')
+            raw = await bot_main._generate(hist, key)
+            check('Передаю' in raw and 'Передал' not in raw and 'наберу' not in raw, 'undelivered handoff does not claim success or promise a call')
+            transport.send.return_value = (-100000, 102)
+            await crm._tick_one(key)
+            alert = store.load_doc(key)['crm']['alert']
+            check(alert['pings'] == [0] and alert['tg']['message_id'] == 102, 'manager delivery retries from disk state')
+    with Sandbox():
+        key = 'av:crm-retry'
+        hist = [{'role': 'user', 'content': '79000000000'}]
+        store.save_doc(key, {'messages': hist})
+        transport = Mock(send=AsyncMock(return_value=(-100000, 103)), edit=AsyncMock(return_value=True), delete=AsyncMock(return_value=True))
+        with patch.object(crm, 'capture', real_capture), patch.object(crm, 'bot', transport), \
+             patch.object(crm, 'ensure_lead', side_effect=RuntimeError('amo offline')), \
+             patch.object(crm, 'next_ping', return_value=0):
+            await crm.capture(key, hist, 'phone')
+        d = store.load_doc(key)
+        check(bool(d['crm'].get('handoff_pending')) and bool(d['crm']['alert'].get('tg')), 'CRM failure persists retry and still alerts manager')
+        d['crm']['handoff_pending']['retry_at'] = 0
+        store.save_doc(key, d)
+        with patch.object(crm, 'capture', real_capture), patch.object(crm, 'bot', transport), \
+             patch.object(crm, 'ensure_lead', side_effect=bind_test_lead), \
+             patch.object(crm, '_apply_phone_to_doc', Mock()), \
+             patch.object(crm, 'next_ping', return_value=None), \
+             patch.object(crm, 'lead_moved', return_value=False), \
+             patch.object(crm, 'close_if_contacted', AsyncMock(return_value=False)):
+            await crm._tick_one(key)
+        d = store.load_doc(key)
+        check(not d['crm'].get('handoff_pending') and d['crm']['lead_id'] == 123, 'CRM retry binds lead after restart-equivalent disk reload')
     with patch.object(avito_match, '_stock_text', lambda text='': text or stock):
         for needle, raw in [
             ('Завтра могу на тест драйв', 'Да, конечно, завтра можно приехать, с 10:00 до 20:00 ждём'),

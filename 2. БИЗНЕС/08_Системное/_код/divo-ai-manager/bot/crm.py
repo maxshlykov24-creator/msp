@@ -116,6 +116,19 @@ def _adopt_open_card(new: dict, phone: str, skip: str) -> None:
         tg = other.get("tg")
         if not tg:
             continue
+        # Один телефон может интересоваться несколькими объявлениями.
+        # Общая карточка сохраняет каждое из них, а не затирает первое.
+        interests = {}
+        for snap in (other.get("snap") or {}, new.get("snap") or {}):
+            for row in [snap] + list(snap.get("interests") or []):
+                url = row.get("url") or row.get("lead_url")
+                if url:
+                    interests[url] = {"car": row.get("car") or "", "url": url}
+        rows = list(interests.values())
+        new.setdefault("snap", {})["interests"] = rows
+        other.setdefault("snap", {})["interests"] = rows
+        _doc.setdefault("crm", {})["alert"] = other
+        store.save_doc(cid, _doc)
         new["tg"] = dict(tg)
         new["token"] = other.get("token") or new.get("token")
         new["nags"] = False
@@ -916,8 +929,7 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
                     replace=False,
                     chat_id=chat_id,
                 )
-                doc["crm"]["alert"] = alert
-                store.save_doc(chat_id, doc)
+                _persist_alert(chat_id, alert)
             return snap
         if 0 not in set(int(x) for x in (alert.get("pings") or [])):
             due = next_ping(
@@ -1630,9 +1642,13 @@ async def _tick_one(chat_id: str) -> None:
 async def tick() -> None:
     if bot:
         await bot.listen(timeout=25)
-    for chat_id in store.all_chat_ids():
+    chat_ids = store.all_chat_ids()
+    queued = [cid for cid in chat_ids if (store.load_doc(cid).get("crm") or {}).get("handoff_pending")]
+    # Передачи имеют приоритет над архивом примечаний: медленная amo по
+    # старому диалогу не должна задерживать сегодняшнюю заявку.
+    for chat_id in queued + [cid for cid in chat_ids if cid not in queued]:
         try:
-            await flush_notes(str(chat_id))
             await _tick_one(str(chat_id))
+            await flush_notes(str(chat_id))
         except Exception:
             log.exception("алерт чат %s", chat_id)
