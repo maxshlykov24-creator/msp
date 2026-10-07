@@ -538,7 +538,7 @@ def _adopt_widget(snap: dict, doc: dict, widget: dict) -> dict:
 
 def ensure_lead(snap: dict, doc: dict) -> dict:
     crm = dict(doc.get("crm") or {})
-    old_id = crm.get("lead_id")
+    old_id = crm.get("lead_id") or crm.get("note_lead_id")
     channel = snap.get("channel") or ""
 
     if old_id:
@@ -724,7 +724,7 @@ def _ensure_token(alert: dict) -> str:
 
 async def _publish(
     alert: dict, text: str, *, replace: bool = False, chat_id: str | int | None = None
-) -> None:
+) -> bool:
     """Пинг шлём новым сообщением, чтобы пришёл пуш. Старое сразу снимаем.
 
     Id всех карточек пишем в posts до удаления: если снять не вышло или
@@ -732,7 +732,7 @@ async def _publish(
     Живая карточка всегда с кнопкой Звоню / Беру.
     """
     if not bot:
-        return
+        return False
     wait = (alert.get("snap") or {}).get("wait") or alert.get("wait") or WAIT_CHAT
     token = _ensure_token(alert)
     markup = None if alert.get("picked") else take_keyboard(token, wait)
@@ -760,26 +760,30 @@ async def _publish(
         sent = await bot.send(text, markup)
         if sent:
             await _after_send(sent)
-            return
+            return True
         if old_chat and old_mid:
-            await bot.edit(int(old_chat), int(old_mid), text, markup)
+            if not await bot.edit(int(old_chat), int(old_mid), text, markup):
+                return False
             alert["button_ok"] = bool(markup)
             await _sweep_posts(alert, keep={"chat_id": int(old_chat), "message_id": int(old_mid)})
             _persist_alert(chat_id, alert)
-        return
+            return True
+        return False
     if old_chat and old_mid:
         if await bot.edit(int(old_chat), int(old_mid), text, markup):
             alert["button_ok"] = bool(markup)
             await _sweep_posts(alert, keep={"chat_id": int(old_chat), "message_id": int(old_mid)})
             _persist_alert(chat_id, alert)
-            return
+            return True
     sent = await bot.send(text, markup)
     if sent:
         await _after_send(sent)
+        return True
+    return False
 
 
-async def _ping(alert: dict, minutes: int, chat_id: str | int | None = None) -> None:
-    await _publish(
+async def _ping(alert: dict, minutes: int, chat_id: str | int | None = None) -> bool:
+    return await _publish(
         alert,
         format_alert(alert.get("snap") or {}, minutes),
         replace=minutes > 0,
@@ -789,7 +793,8 @@ async def _ping(alert: dict, minutes: int, chat_id: str | int | None = None) -> 
 
 def already_alerting(chat_id: str | int, reason: str) -> bool:
     alert = ((store.load_doc(chat_id).get("crm") or {}).get("alert") or {})
-    return bool(alert.get("active") and alert.get("reason") == reason)
+    pending = (store.load_doc(chat_id).get("crm") or {}).get("handoff_pending")
+    return bool(alert.get("active") and alert.get("reason") == reason and not pending)
 
 
 async def capture_if_urgent(chat_id: str | int, texts: list[str]) -> str:
@@ -881,14 +886,25 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
                 force=True,
             )
             return snapshot(chat_id, history, "media")
+        # Сначала фиксируем намерение на диске. Сбой amo / рестарт не должен
+        # оставлять только номер в истории и обещание модели.
+        _start_alert(doc, snap, True)
+        doc.setdefault("crm", {})["handoff_pending"] = {
+            "reason": reason, "retry_at": now_msk().timestamp() + 60,
+        }
+        store.save_doc(chat_id, doc)
         nags = True
+        lead_ready = False
         try:
             snap = ensure_lead(snap, doc)
+            lead_ready = bool((doc.get("crm") or {}).get("lead_id") and snap.get("lead_id"))
             nags = bool(snap.get("nags", True))
             if reason in {"call", "complaint", "handoff", "aftersale"}:
                 nags = True
         except Exception:
             log.exception("amo по чату %s не записалась", chat_id)
+        if lead_ready:
+            doc.setdefault("crm", {}).pop("handoff_pending", None)
         _start_alert(doc, snap, nags)
         store.save_doc(chat_id, doc)
         alert = (doc.get("crm") or {}).get("alert") or {}
@@ -908,11 +924,9 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
                 datetime.fromisoformat(alert["started_at"]),
                 alert.get("pings") or [],
             )
-            if due == 0:
-                await _ping(alert, 0, chat_id)
+            if due == 0 and await _ping(alert, 0, chat_id):
                 alert["pings"] = [0]
-                doc["crm"]["alert"] = alert
-                store.save_doc(chat_id, doc)
+                _persist_alert(chat_id, alert)
         return snap
 
 
@@ -1533,6 +1547,16 @@ async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
 
 async def _tick_one(chat_id: str) -> None:
     doc = store.load_doc(chat_id)
+    state = doc.get("crm") or {}
+    queued = state.get("handoff_pending") or {}
+    alert = state.get("alert") or {}
+    if queued and alert.get("picked"):
+        state.pop("handoff_pending", None)
+        doc["crm"] = state
+        store.save_doc(chat_id, doc)
+    elif queued and now_msk().timestamp() >= queued.get("retry_at", 0):
+        await capture(chat_id, list(doc.get("messages") or []), queued["reason"])
+        doc = store.load_doc(chat_id)
     alert = dict((doc.get("crm") or {}).get("alert") or {})
     phone = str((alert.get("snap") or {}).get("phone") or "")
     async with _alert_lock(chat_id, phone):
@@ -1584,7 +1608,8 @@ async def _tick_one(chat_id: str) -> None:
         if history:
             snap["brief"] = brief_from_history(history, alert.get("reason") or "")
             alert["snap"] = snap
-        await _ping(alert, due, chat_id)
+        if not await _ping(alert, due, chat_id):
+            return
         doc = store.load_doc(chat_id)
         fresh = dict((doc.get("crm") or {}).get("alert") or {})
         if not ping_allowed(fresh):

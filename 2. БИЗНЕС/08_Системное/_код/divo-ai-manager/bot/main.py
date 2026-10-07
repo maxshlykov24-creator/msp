@@ -341,7 +341,6 @@ def merge_user_chunks(history: list[dict], chunks: list[str]) -> list[dict]:
 
 async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     history = store.load_history(chat_id)
-    had_phone = nudge.history_has_phone(history)
     history = merge_user_chunks(history, chunks)
     user_text = history[-1]["content"] if history else ""
     if store.hard_paused(chat_id):
@@ -352,10 +351,9 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         await _handoff(channel, chat_id, history, reason)
         return
     doc = store.load_doc(chat_id)
-    if not had_phone and nudge.extract_phone(user_text):
+    if nudge.urgent_reason(user_text, history) == "phone":
         store.save_history(chat_id, history)
         await crm.capture(chat_id, history, "phone")
-        had_phone = True
 
     if not nudge.needs_reply(user_text):
         store.save_history(chat_id, history)
@@ -412,6 +410,8 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         return
 
     user_text = history[-1]["content"]
+    if nudge.urgent_reason(user_text, history) == "phone" and not crm.already_alerting(chat_id, "phone"):
+        await crm.capture(chat_id, history, "phone")
     # Неизвестное действие не отправляем как текст и не заменяем фактом.
     handoff = prompt.HANDOFF_MARK in raw or prompt.has_unsupported_action(raw)
     silence = prompt.SILENCE_MARK in raw
@@ -653,8 +653,6 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
 
     _refresh_nudge(chat_id, history)
     crm.dismiss_llm_alert(chat_id)
-    if not had_phone and nudge.extract_phone(user_text):
-        await crm.capture(chat_id, history, "phone")
 
 
 def _build_system(history: list[dict], chat_id: str = "") -> str:
@@ -997,6 +995,13 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
 
 async def _generate(history: list[dict], chat_id: str = "") -> str:
     """Реплика модели с проверками на утечку правил и дословные повторы."""
+    last_text = history[-1].get("content", "") if history else ""
+    if nudge._just_phone_text(last_text) and nudge.urgent_reason(last_text, history) == "phone":
+        doc = store.load_doc(chat_id) if chat_id else {}
+        alert = (doc.get("crm") or {}).get("alert") or {}
+        if alert.get("tg") and not (doc.get("crm") or {}).get("handoff_pending"):
+            return "Номер принял. Передал менеджеру запрос на звонок."
+        return "Номер получил. Передаю запрос на звонок менеджеру."
     if history and nudge.asks_seller(history[-1].get("content") or ""):
         return prompt.seller_answer()
     doc = store.load_doc(chat_id) if chat_id else {}

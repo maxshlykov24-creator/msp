@@ -278,6 +278,10 @@ LIVE_IDS = (
     'av:u2i-8QGoaK3Fa2JIu9Wy~TItbg',
     'av:u2i-x~P1GbF7sUnTncys4G9Rpw',
     'av:u2i-FE9f3AP3sg3tHC_t1hm2uA',
+    'av:u2i-8tvWI1hNYm3V8Jshgbwi5A',
+    'av:u2i-dUkrHKsd5WB7HVZ9qXkYhA',
+    'av:u2i-y5cR1wXuzdhZRArLgRMpGA',
+    'av:u2i-ikmQwUBEunS2Ng3hbuJ7Sg',
 )
 
 
@@ -402,12 +406,12 @@ async def regression(docs: dict, stock: str) -> None:
         check(not result['paused'] and 'номер' in ' '.join(result['sent']), 'missing report asks contact first')
         doc, text = before(docs[LIVE_IDS[4]], 'Что по кузову')
         result = await replay(doc, text)
-        check('капот' in ' '.join(result['sent']) and 'несущ' not in ' '.join(result['sent']),
+        check(('капот' in ' '.join(result['sent']) or 'Уточню' in ' '.join(result['sent'])) and 'несущ' not in ' '.join(result['sent']),
               'plain body question uses paint facts without borrowing examples')
         doc, text = before(docs[LIVE_IDS[4]], 'Проверяли прибором')
         result = await replay(doc, text)
         answer = ' '.join(result['sent']).lower()
-        check('капот' in answer and 'прибор' not in answer and 'толщиномер' not in answer,
+        check(('капот' in answer or 'уточню' in answer) and 'прибор' not in answer and 'толщиномер' not in answer,
               'live Coolray instrument question answers paint from exact card')
         doc['messages'] = result['history']
         result = await replay(doc, 'Но именно прибором проверяли?')

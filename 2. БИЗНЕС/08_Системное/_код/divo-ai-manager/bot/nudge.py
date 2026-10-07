@@ -574,7 +574,9 @@ def urgent_reason(user_text: str, history: list[dict] | None = None) -> str:
         return ""
     if wants_call(text) or asks_about_call(text) or is_caller_id_paste(text, hist):
         return "call"
-    if phone_now and not history_has_phone(hist):
+    # Опрос Авито сохраняет входящее до проверки срочности. Наличие номера
+    # в истории не доказывает передачу; повторы отсекает CRM по состоянию заявки.
+    if phone_now:
         return "phone"
     return ""
 
