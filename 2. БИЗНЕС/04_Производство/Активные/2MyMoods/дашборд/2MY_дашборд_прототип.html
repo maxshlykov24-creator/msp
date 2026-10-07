@@ -516,7 +516,7 @@
   .legend button:hover,.matrix button.kv:hover,tr.drill:hover td{background:#fafafa}
   tr.drill{cursor:pointer}
   html{scrollbar-gutter:stable}
-  body.sheet-on{position:fixed;left:0;right:0;width:100%;overflow:hidden}
+  html.sheet-on,body.sheet-on{overflow:hidden}
   #sheet[hidden]{display:none}
   #sheet{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;padding:28px 16px;opacity:0;transition:opacity .28s cubic-bezier(.25,1,.5,1)}
   #sheet.on{opacity:1}
@@ -1063,11 +1063,9 @@ const table = (id, rows, cols, open) => { const body=el(id); body.innerHTML = ro
 let sheetReturn=null;
 const msOrder=id=>`https://online.moysklad.ru/app/#customerorder/edit?id=${encodeURIComponent(id)}`;
 const msAgent=id=>`https://online.moysklad.ru/app/#counterparty/edit?id=${encodeURIComponent(id)}`;
-let sheetScroll=0, sheetTimer=0;
-function lockPage(){if(document.body.classList.contains('sheet-on'))return;sheetScroll=window.scrollY||0;const gap=window.innerWidth-document.documentElement.clientWidth;document.body.style.top='-'+sheetScroll+'px';document.body.style.paddingRight=gap>0?gap+'px':'';document.body.classList.add('sheet-on');}
-function unlockPage(){if(!document.body.classList.contains('sheet-on'))return;document.body.classList.remove('sheet-on');document.body.style.paddingRight='';document.body.style.top='';window.scrollTo(0,sheetScroll);}
-function closeSheet(){const sheet=el('sheet');sheet.classList.remove('on');sheetReturn=null;clearTimeout(sheetTimer);sheetTimer=setTimeout(()=>{if(sheet.classList.contains('on'))return;sheet.hidden=true;unlockPage();},280);}
-function showSheet(kicker,title,html,back){sheetReturn=back||null;clearTimeout(sheetTimer);el('sheet-kicker').textContent=kicker;el('sheet-title').textContent=title;el('sheet-body').innerHTML=html;el('sheet-back').hidden=!back;const sheet=el('sheet'),card=sheet.querySelector('.sheet-card');lockPage();sheet.hidden=false;card.classList.remove('rise');void card.offsetWidth;requestAnimationFrame(()=>{card.classList.add('rise');sheet.classList.add('on');});}
+let sheetTimer=0;
+function closeSheet(){const sheet=el('sheet');sheet.classList.remove('on');sheetReturn=null;clearTimeout(sheetTimer);sheetTimer=setTimeout(()=>{if(sheet.classList.contains('on'))return;sheet.hidden=true;document.documentElement.classList.remove('sheet-on');document.body.classList.remove('sheet-on');},280);}
+function showSheet(kicker,title,html,back){sheetReturn=back||null;clearTimeout(sheetTimer);el('sheet-kicker').textContent=kicker;el('sheet-title').textContent=title;el('sheet-body').innerHTML=html;el('sheet-back').hidden=!back;const sheet=el('sheet'),card=sheet.querySelector('.sheet-card');document.documentElement.classList.add('sheet-on');document.body.classList.add('sheet-on');sheet.hidden=false;card.classList.remove('rise');void card.offsetWidth;requestAnimationFrame(()=>{card.classList.add('rise');sheet.classList.add('on');});}
 function orderNoun(n){const a=n%100,b=n%10;if(a>10&&a<20)return 'заказов';if(b===1)return 'заказ';if(b>1&&b<5)return 'заказа';return 'заказов';}
 function showOrders(kicker,title,rows){const list=[...rows].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||''));showSheet(kicker,title,`<div class="sheet-count">${num(list.length)} ${orderNoun(list.length)} · ${money(sum(list,r=>r.amount))}. Нажатие открывает заказ в МойСклад.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата</th><th>Клиент</th><th>Канал</th><th>Выручка</th></tr></thead><tbody>${list.map(r=>`<tr class="drill" data-order="${esc(r.o.id)}"><td>${esc(r.o.number)}</td><td>${dmy(r.o.paid_date)}</td><td>${esc(r.o.client||'—')}</td><td>${esc(r.o.channel||'')}</td><td>${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="5">Нет заказов</td></tr>'}</tbody></table>`);}
 function foldOrders(xs, amountOf){const by=new Map();for(const x of xs){if(!x.o||x.o.exchange)continue;const back=!!x.o.return_event;const id=back?(x.o.original_order||''):x.o.id;if(!id)continue;const cur=by.get(id)||{id,o:back?null:x.o,amount:0};if(!back)cur.o=x.o;cur.amount+=amountOf(x);by.set(id,cur);}for(const cur of by.values())if(!cur.o)cur.o=(data.orders||[]).find(o=>o.id===cur.id)||null;return [...by.values()].filter(r=>r.o&&r.o.id);}
