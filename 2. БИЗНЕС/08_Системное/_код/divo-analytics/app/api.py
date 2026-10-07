@@ -58,6 +58,7 @@ def meta(_: None = Depends(_auth_guard)):
             "schema_ok": bool(schema_ok and schema_ok.value == "true"),
             "last_error": (last_error.value or None) if last_error else None,
             "managers": settings.manager_key_map_dict,
+            "manager_cards": settings.manager_display_list,
         }
     finally:
         db.close()

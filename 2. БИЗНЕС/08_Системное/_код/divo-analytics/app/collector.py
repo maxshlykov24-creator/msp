@@ -23,7 +23,9 @@ BACKFILL_MONTHS_CAP = 24
 # Окно, которое пере-сканируем на КАЖДОМ обычном прогоне (ловит недавние правки).
 EVENT_REFRESH_DAYS = 7
 
-MANAGER_KEYS = ("eugene", "nikita", "elzar")
+# Ключи менеджеров берём из конфига: добавление сотрудника — правка MANAGER_KEY_MAP
+# в .env, без изменения кода коллектора.
+MANAGER_KEYS = tuple(x["key"] for x in settings.manager_display_list)
 
 
 # ──────────────────────────── time helpers ────────────────────────────

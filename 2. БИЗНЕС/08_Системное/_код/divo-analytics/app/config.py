@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,9 +40,11 @@ class Settings(BaseSettings):
     status_purchase_agreed: int = 82004142
 
     # Менеджеры отдела продаж, попадающие в дашборд (whitelist, не EXCLUDED)
-    allowed_manager_ids: str = "13180098,13334858,13835174"
+    allowed_manager_ids: str = "13180098,13334858,13835174,14181846"
     # Соответствие amo user_id -> ключ в объекте mgr{} на фронте
-    manager_key_map: str = "13180098:eugene,13334858:nikita,13835174:elzar"
+    manager_key_map: str = "13180098:eugene,13334858:nikita,13835174:elzar,14181846:nazar"
+    # Подписи карточек менеджеров. Порядок задаёт порядок карточек на дашборде.
+    manager_names: str = "eugene:Евгений,nikita:Никита,elzar:Эльзар,nazar:Назар"
 
     # Custom fields (id) — см. КОНТЕКСТ_AMOCRM.md
     field_source: int = 2026903
@@ -73,7 +77,7 @@ class Settings(BaseSettings):
     calls_recording_hosts: str = ""  # разрешённые точные хосты Mango, проверены на пилоте
     calls_manager_map: str = ""  # source:employee:user_id; только проверенная привязка
     calls_verified_authors: str = ""  # amo user_id, авторство проверено на пилоте
-    calls_manager_names: str = "13180098:Евгений;13334858:Никита;13835174:Эльзар"
+    calls_manager_names: str = "13180098:Евгений;13334858:Никита;13835174:Эльзар;14181846:Назар"
     nexara_api_key: str = ""
     nexara_base_url: str = "https://api.nexara.ru/v1"
     calls_telegram_bot_token: str = ""
@@ -112,6 +116,34 @@ class Settings(BaseSettings):
                 continue
             uid, key = pair.split(":", 1)
             out[int(uid.strip())] = key.strip()
+        return out
+
+    @property
+    def manager_display_list(self) -> list[dict]:
+        """[{key, name, initial}] в порядке manager_names — контракт для фронта."""
+        out: list[dict] = []
+        known = set(self.manager_key_map_dict.values())
+        for pair in self.manager_names.split(","):
+            pair = pair.strip()
+            if not pair or ":" not in pair:
+                continue
+            key, name = pair.split(":", 1)
+            key, name = key.strip(), name.strip()
+            if not key or key not in known:
+                continue
+            out.append({"key": key, "name": name, "initial": name[:1].upper()})
+        # Менеджер есть в key_map, но подпись не задана — показываем ключ, а не прячем цифры.
+        for key in self.manager_key_map_dict.values():
+            if all(x["key"] != key for x in out):
+                out.append({"key": key, "name": key, "initial": key[:1].upper()})
+        # Одинаковая первая буква (Никита / Назар) — аватарки станут неразличимы,
+        # поэтому у таких имён берём две буквы.
+        counts: dict[str, int] = defaultdict(int)
+        for item in out:
+            counts[item["initial"]] += 1
+        for item in out:
+            if counts[item["initial"]] > 1:
+                item["initial"] = item["name"][:2].capitalize()
         return out
 
     @property

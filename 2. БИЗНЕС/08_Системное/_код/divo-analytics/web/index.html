@@ -200,7 +200,8 @@
   .fin-pct{display:inline-block;white-space:nowrap;margin-top:2px}
 
   /* ── managers leaderboard ── */
-  .mgr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  /* auto-fit: состав отдела меняется, сетка не ломается при 3, 4 и 5 карточках */
+  .mgr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}
   @media(max-width:1100px){.mgr-grid{grid-template-columns:1fr}}.mgr-card{min-width:0}
   .mgr-card{padding:30px;position:relative;overflow:hidden}
   .mgr-top{display:flex;align-items:center;gap:14px;margin-bottom:22px}
@@ -246,6 +247,19 @@
   .loss-bar{height:100%;border-radius:6px;background:linear-gradient(90deg,#c98680,#c8a45c)}
   .loss-num{width:30px;text-align:right;font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
 
+  /* ── как считаются цифры ── */
+  .howto{padding:22px 26px;margin-bottom:18px}
+  .howto summary{cursor:pointer;font-size:15px;font-weight:600;color:#e5e7eb;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;list-style:none}
+  .howto summary::-webkit-details-marker{display:none}
+  .howto summary::after{content:'+';margin-left:auto;color:var(--mute-2);font-weight:400;font-size:18px}
+  .howto[open] summary::after{content:'–'}
+  .howto-hint{font-size:12px;font-weight:400;color:var(--mute-2)}
+  .howto-body{margin-top:18px;display:grid;gap:13px}
+  .howto-row{display:grid;grid-template-columns:210px 1fr;gap:16px;align-items:baseline}
+  .howto-row b{font-size:12.5px;font-weight:600;color:var(--mute);letter-spacing:.02em}
+  .howto-row span{font-size:12.5px;line-height:1.6;color:var(--mute-2)}
+  .howto-row u{text-decoration:none;color:#e5e7eb}
+  @media(max-width:760px){.howto-row{grid-template-columns:1fr;gap:4px}}
   .footer{
     margin-top:46px;padding:20px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
   }
@@ -541,6 +555,40 @@
     <div class="split-names" id="splitNames"></div>
   </div>
 
+  <details class="glass howto" id="howto">
+    <summary>Как считаются цифры<span class="howto-hint">трафик, выдачи и конверсия берутся из разных выборок — открыть</span></summary>
+    <div class="howto-body">
+      <div class="howto-row">
+        <b>Входящий трафик</b>
+        <span>Сделки воронки «Продажи» по <u>дате создания</u> внутри периода. Состав отдела: <span id="howtoMgrs"></span>. Сделки других пользователей amoCRM в дашборд не входят.</span>
+      </div>
+      <div class="howto-row">
+        <b>Оплачено за период</b>
+        <span>Сделки «Успех» по <u>дате закрытия</u> внутри периода. Обращение могло прийти месяц назад, поэтому это число не делится на трафик периода.</span>
+      </div>
+      <div class="howto-row">
+        <b>Конверсия в продажу</b>
+        <span>Из обращений <u>этого</u> периода: сколько уже в «Успехе» сейчас. Одна выборка в числителе и знаменателе, поэтому цифра не может быть больше 100%. На свежем периоде она занижена: часть сделок ещё «в работе» — для них решение не принято. Вторая цифра, «по закрытым», считает только решённые сделки: Успех / (Успех + Провал).</span>
+      </div>
+      <div class="howto-row">
+        <b>Запланировано визитов и Визитов состоялось</b>
+        <span>Сделки трафика периода, которые <u>когда-либо</u> доходили до этапа, а не стоят на нём сейчас. Если сделка ушла в «Успех» или «Покупка согласована» минуя этапы визита, визит считается состоявшимся: машину не выдают без визита в салон.</span>
+      </div>
+      <div class="howto-row">
+        <b>Скорость закрытия</b>
+        <span>Среднее время от создания до закрытия по сделкам, закрытым в этом периоде (Успех и Провал вместе).</span>
+      </div>
+      <div class="howto-row">
+        <b>Фильтр по каналам</b>
+        <span>Действует только на трафик и выдачи. Воронка, визиты и карточки менеджеров всегда по всем каналам — в разрезе канала эти данные не собираются.</span>
+      </div>
+      <div class="howto-row">
+        <b>Обновление</b>
+        <span>Данные тянутся из amoCRM каждые 10 минут и пересобираются целиком. Правка старой сделки меняет и прошлые периоды: цифры отражают текущее состояние CRM, а не то, что было на момент прошлого просмотра.</span>
+      </div>
+    </div>
+  </details>
+
   <section id="callQuality" aria-labelledby="callsHeading">
     <div class="sec-title"><h2 id="callsHeading">Качество звонков</h2><span>по дате разговора · МСК</span></div>
     <div class="glass panel">
@@ -579,6 +627,16 @@ let DAILY = {};
 let DAY_KEYS = [];
 let MIN_DATE = null;
 let MAX_DATE = null;
+
+/* Состав отдела продаж приходит из /api/meta (manager_cards) — тот же источник,
+   что и у коллектора. Значения ниже нужны только до первого ответа API. */
+let MGR_CARDS = [
+  {key:'eugene', name:'Евгений', initial:'Е'},
+  {key:'nikita', name:'Никита', initial:'Н'},
+  {key:'elzar',  name:'Эльзар', initial:'Э'},
+  {key:'nazar',  name:'Назар',  initial:'Н'},
+];
+function mgrKeys(){ return MGR_CARDS.map(x=>x.key); }
 
 /* Клик-фильтр по каналам: пустой Set = фильтра нет.
    Фильтруются только трафик и выдачи (src / src_won).
@@ -661,10 +719,11 @@ function aggregateRange(from, to){
   const agg = {
     traffic:0,cohort_won:0,cohort_lost:0,won:0,lost:0,active:0,agreed:0,cash:0,invoice:0,tradein:0,tradein_won:0,
     cycle_sum:0,cycle_n:0, src:{}, src_won:{}, stage:{}, loss:{},
-    managers:{ eugene:{traffic:0,cohort_won:0,cohort_lost:0,won:0,lost:0,active:0,agreed:0,cash:0,tradein:0,tradein_won:0,visit_planned:0,visit_done:0,cycle_sum:0,cycle_n:0},
-               nikita:{traffic:0,cohort_won:0,cohort_lost:0,won:0,lost:0,active:0,agreed:0,cash:0,tradein:0,tradein_won:0,visit_planned:0,visit_done:0,cycle_sum:0,cycle_n:0},
-               elzar:{traffic:0,cohort_won:0,cohort_lost:0,won:0,lost:0,active:0,agreed:0,cash:0,tradein:0,tradein_won:0,visit_planned:0,visit_done:0,cycle_sum:0,cycle_n:0} }
+    managers:{}
   };
+  for(const k of mgrKeys()){
+    agg.managers[k] = {traffic:0,cohort_won:0,cohort_lost:0,won:0,lost:0,active:0,agreed:0,cash:0,tradein:0,tradein_won:0,visit_planned:0,visit_done:0,cycle_sum:0,cycle_n:0};
+  }
   for(const day of DAY_KEYS){
     if(day < from || day > to) continue;
     const b = DAILY[day];
@@ -676,7 +735,7 @@ function aggregateRange(from, to){
     for(const [k,v] of Object.entries(b.src_won||{})) agg.src_won[k] = (agg.src_won[k]||0)+v;
     for(const [k,v] of Object.entries(b.stage||{})) agg.stage[k] = (agg.stage[k]||0)+v;
     for(const [k,v] of Object.entries(b.loss||{})) agg.loss[k] = (agg.loss[k]||0)+v;
-    for(const m of ['eugene','nikita','elzar']){
+    for(const m of mgrKeys()){
       const src = (b.mgr||{})[m] || {}, dst = agg.managers[m];
       dst.traffic += src.traffic||0; dst.cohort_won += src.cohort_won||0; dst.cohort_lost += src.cohort_lost||0;
       dst.won += src.won||0; dst.lost += src.lost||0; dst.active += src.active||0;
@@ -686,7 +745,7 @@ function aggregateRange(from, to){
     }
   }
   agg.cycle = agg.cycle_n ? Math.round(agg.cycle_sum/agg.cycle_n*10)/10 : 0;
-  for(const m of ['eugene','nikita','elzar']){
+  for(const m of mgrKeys()){
     const d = agg.managers[m]; d.cycle = d.cycle_n ? Math.round(d.cycle_sum/d.cycle_n*10)/10 : 0;
   }
   return agg;
@@ -722,12 +781,17 @@ function renderRange(from, to){
 
   const conv = fmtPct(agg.cohort_won, agg.traffic);
   const fConv = fltNames ? fmtPct(fWon, fTraffic) : conv;
+  /* Конверсия по закрытым: из решённых сделок периода. На коротком окне честнее
+     когортной, потому что сделки «в работе» ещё не проиграны. */
+  const closedCohort = agg.cohort_won + agg.cohort_lost;
+  const convClosed = fmtPct(agg.cohort_won, closedCohort);
+  const mgrNames = MGR_CARDS.map(x=>x.name).join(' + ');
   const allChanNote = fltNames ? ' · <span class="allchan">все каналы, фильтр не действует</span>' : '';
   document.getElementById('kpiGrid').innerHTML = `
     <div class="glass kpi feature tilt"><div class="glow"></div>
       <div class="kpi-label">Входящий трафик</div>
       <div class="kpi-val">${fTraffic}</div>
-      <div class="kpi-sub">${fltNames ? `обращений · фильтр: ${fLabel}` : 'обращений · Евгений + Никита + Эльзар'}</div>
+      <div class="kpi-sub">${fltNames ? `обращений · фильтр: ${fLabel}` : `обращений · ${mgrNames}`}</div>
     </div>
     <div class="glass kpi tilt"><div class="glow"></div>
       <div class="kpi-label">Запланировано визитов</div>
@@ -742,12 +806,14 @@ function renderRange(from, to){
     <div class="glass kpi tilt"><div class="glow"></div>
       <div class="kpi-label">Оплачено за период</div>
       <div class="kpi-val">${fWon}</div>
-      <div class="kpi-sub">${fltNames ? `сделок «Успех» · фильтр: ${fLabel}` : '«Успех» по дате закрытия · включая обращения прошлых периодов'}</div>
+      <div class="kpi-sub">${fltNames ? `сделок «Успех» · фильтр: ${fLabel}` : '«Успех» по дате закрытия · включая обращения прошлых периодов, поэтому в конверсию не делится'}</div>
     </div>
     <div class="glass kpi tilt"><div class="glow"></div>
       <div class="kpi-label">Конверсия в продажу</div>
       <div class="kpi-val">${fConv}<small>%</small></div>
-      <div class="kpi-sub">${fltNames ? 'выдачи / обращения выбранных каналов' : 'Успех (сейчас) / трафик этого периода'}</div>
+      <div class="kpi-sub">${fltNames
+        ? `${fWon} выдач / ${fTraffic} обращений выбранных каналов`
+        : `${agg.cohort_won} «Успех» из ${agg.traffic} обращений периода · по закрытым сделкам ${convClosed}% (${agg.cohort_won} из ${closedCohort}), ещё ${agg.active} в работе`}</div>
     </div>
     <div class="glass kpi tilt"><div class="glow"></div>
       <div class="kpi-label">Скорость закрытия</div>
@@ -871,11 +937,7 @@ function renderRange(from, to){
       <div class="fin-sub">обращений с «Авто в обмен»<br><span class="fin-pct">${fmtPct(agg.tradein,agg.traffic)}% трафика</span></div>
     </div>`;
 
-  const list = [
-    {key:'eugene', initial:'Е', name:'Евгений', m:agg.managers.eugene},
-    {key:'nikita', initial:'Н', name:'Никита', m:agg.managers.nikita},
-    {key:'elzar', initial:'Э', name:'Эльзар', m:agg.managers.elzar},
-  ];
+  const list = MGR_CARDS.map(c => ({...c, m: agg.managers[c.key] || {}}));
   const withConv = list.map(x => ({...x, conv: fmtPct(x.m.cohort_won, x.m.traffic||1)}));
   const topConv = Math.max(...withConv.map(x => x.m.traffic ? x.conv : -1));
   document.getElementById('mgrGrid').innerHTML = withConv.map(x =>
@@ -886,13 +948,15 @@ function renderRange(from, to){
   const colors = [
     'linear-gradient(90deg,#e7e9ee,#fff)',
     'linear-gradient(90deg,#6a6e78,#8f939c)',
-    'linear-gradient(90deg,#c8a45c,#e9dcb8)'
+    'linear-gradient(90deg,#c8a45c,#e9dcb8)',
+    'linear-gradient(90deg,#3a3d45,#5b5f69)',
+    'linear-gradient(90deg,#8f7a4a,#c8a45c)',
   ];
   let used = 0;
   document.getElementById('splitBar').innerHTML = withConv.map((x,i)=>{
     let share = i === withConv.length-1 ? (100-used) : Math.round(x.m.traffic/totalTraffic*100);
     used += (i === withConv.length-1 ? 0 : share);
-    return `<div style="width:${share}%;background:${colors[i]}">${share}%</div>`;
+    return `<div style="width:${share}%;background:${colors[i % colors.length]}">${share}%</div>`;
   }).join('');
   document.getElementById('splitNames').innerHTML = withConv.map(x => `<span>${x.name} · ${x.m.traffic}</span>`).join('');
 }
@@ -911,8 +975,8 @@ function mgrCard(initial, name, m, conv, isTop){
         <div class="mgr-stat"><b>${m.traffic}</b><span>Трафик</span></div>
         <div class="mgr-stat"><b>${m.visit_planned||0}</b><span>Запл. визит</span></div>
         <div class="mgr-stat"><b>${m.visit_done||0}</b><span>Визит</span></div>
-        <div class="mgr-stat" title="Сделки «Успех», закрытые в этом периоде (сумма по менеджерам = «Оплачено за период»)"><b>${m.won||0}</b><span>Выдачи</span></div>
-        <div class="mgr-stat" title="Успех из трафика этого периода / трафик периода"><b>${conv}%</b><span>Конверсия</span></div>
+        <div class="mgr-stat" title="Сделки «Успех», закрытые в этом периоде, независимо от даты обращения (сумма по менеджерам = «Оплачено за период»). Это не числитель конверсии."><b>${m.won||0}</b><span>Выдачи</span></div>
+        <div class="mgr-stat" title="${m.cohort_won||0} «Успех» из ${m.traffic||0} обращений этого периода. Считается по обращениям периода, а не по дате закрытия — поэтому не совпадает с «Выдачами»."><b>${conv}%</b><span>Конверсия</span></div>
         <div class="mgr-stat"><b>${m.cycle}<small style="font-size:13px"> дн.</small></b><span>Закрытие</span></div>
       </div>
       <div class="mix-bar">
@@ -1100,6 +1164,12 @@ async function loadDashboard(){
     DAILY = await dailyResp.json();
     const meta = await metaResp.json();
     DAY_KEYS = Object.keys(DAILY).sort();
+
+    if(Array.isArray(meta.manager_cards) && meta.manager_cards.length){
+      MGR_CARDS = meta.manager_cards;
+    }
+    const howtoMgrs = document.getElementById('howtoMgrs');
+    if(howtoMgrs) howtoMgrs.textContent = MGR_CARDS.map(x=>x.name).join(', ');
 
     if(!DAY_KEYS.length){
       showError('Данных пока нет — сборщик amoCRM ещё не завершил первый прогон. Обновите страницу через пару минут.');

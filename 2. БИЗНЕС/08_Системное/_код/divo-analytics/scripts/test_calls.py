@@ -278,6 +278,19 @@ class QueueTest(unittest.TestCase):
             self.assertIsNone(s["managers"][0]["manager_id"])
             self.assertEqual(calls_api.summary(manager="13334858")["total"],0)
 
+    def test_sales_collector_preserves_all_configured_managers(self):
+        from app.collector import build_daily
+        from app.models import LeadSnapshot
+        for i,uid in enumerate(settings.manager_key_map_dict,1):
+            self.db.add(LeadSnapshot(lead_id=i,pipeline_id=1,
+                status_id=settings.status_won,responsible_user_id=uid,created_at=1000,closed_at=1100))
+        self.db.commit()
+        daily=build_daily(self.db)
+        self.assertEqual(sum(b["traffic"] for b in daily.values()),len(settings.manager_key_map_dict))
+        for key in settings.manager_key_map_dict.values():
+            self.assertEqual(sum(b["mgr"][key]["traffic"] for b in daily.values()),1)
+            self.assertEqual(sum(b["mgr"][key]["won"] for b in daily.values()),1)
+
     def test_call_endpoints_require_login(self):
         app=FastAPI();app.include_router(calls_api.router);client=TestClient(app)
         for path in ("/api/calls","/api/calls/summary","/api/calls/1","/api/calls/1/recording"):
