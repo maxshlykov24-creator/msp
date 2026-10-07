@@ -284,6 +284,7 @@ def get_amo() -> tuple[list[dict], dict]:
             "id": lead["id"], "created": datetime.fromtimestamp(lead["created_at"], TZ).date().isoformat(),
             "status": lead.get("status_id"), "manager": lead.get("responsible_user_id"),
             "won": lead.get("status_id") == 142,
+            "order": amo.cf(lead, lib.FIELD_MS_ORDER_NUM).strip(),
         })
     return result, {"open": sum(t.get("is_completed") is False for t in tasks), "sampled": len(tasks),
                     "excluded_marketing_owner": len(leads) - len(sales_leads),
@@ -373,12 +374,35 @@ def working_span(clock: datetime, end_ts: int, roster: dict) -> float:
     return round(total, 2)
 
 
-def get_responses(leads: list[dict]) -> dict:
+def get_responses(leads: list[dict], orders: list[dict] | None = None) -> dict:
     """Паузы входящее → первый исходящий в беседе, без текстов и контактов."""
     amo = lib.Amo()
     now = datetime.now(TZ)
     since = (now - timedelta(days=90)).replace(hour=0, minute=0, second=0, microsecond=0)
     lead_ids = {l["id"] for l in leads}
+    buys = {o["number"]: o for o in (orders or []) if o.get("buy") and o.get("number") and o.get("paid_date")}
+    grouped: dict[str, list[dict]] = defaultdict(list)
+
+    def consider(lead_id: int, created: str, order_no: str) -> None:
+        if order_no not in buys:
+            return
+        bucket = grouped[order_no]
+        if any(row["id"] == lead_id for row in bucket):
+            return
+        bucket.append({"id": lead_id, "created": created})
+
+    for lead in leads:
+        consider(lead["id"], str(lead.get("created") or ""), str(lead.get("order") or ""))
+    for lead in amo.iter_leads(f"?filter[pipeline_id]={lib.PIPELINE_SALES_OLD}", pages=40):
+        if lead.get("responsible_user_id") == lib.USER_POLINA:
+            continue
+        created_at = lead.get("created_at")
+        created = datetime.fromtimestamp(created_at, TZ).date().isoformat() if created_at else ""
+        consider(lead["id"], created, amo.cf(lead, lib.FIELD_MS_ORDER_NUM).strip())
+    watch_ids = {row["id"] for rows in grouped.values() for row in rows}
+    response_ids = set(lead_ids)
+    lead_ids |= watch_ids
+    msg_times: dict[int, list[int]] = defaultdict(list)
     events = {}
     for page in range(1, 2001):
         path = ("/api/v4/events?filter[type]=incoming_chat_message,outgoing_chat_message"
@@ -418,6 +442,10 @@ def get_responses(leads: list[dict]) -> dict:
         if not msg.get("talk_id"):
             continue
         key = (msg.get("origin"), msg["talk_id"])
+        if row["entity_id"] in watch_ids:
+            msg_times[row["entity_id"]].append(row["created_at"])
+        if row["entity_id"] not in response_ids:
+            continue
         if row["type"] == "incoming_chat_message":
             pending.setdefault(key, (row["created_at"], row["entity_id"]))
         elif key in pending:
@@ -462,7 +490,23 @@ def get_responses(leads: list[dict]) -> dict:
         pending_rows.append({"date": pending_date, "start_at": start, "minutes": waited,
                              "working_minutes": waited, "manager": pending_manager, "talk_id": key[1],
                              "is_open": key[1] in open_talks})
+    since_day = since.date().isoformat()
+    since_ts = int(since.timestamp())
+    until = []
+    for number, metas in grouped.items():
+        order = buys[number]
+        paid_at = order.get("paid_at")
+        if paid_at:
+            paid_ts = int(datetime.fromisoformat(paid_at).timestamp())
+        else:
+            paid_ts = int(datetime.fromisoformat(order["paid_date"] + "T23:59:59+03:00").timestamp())
+        count = sum(1 for meta in metas for ts in msg_times.get(meta["id"], []) if ts <= paid_ts)
+        created = [meta["created"] for meta in metas if meta["created"]]
+        earliest = min(created) if created else ""
+        until.append({"paid_date": order["paid_date"], "count": count,
+                      "covered": bool(earliest and earliest >= since_day and paid_ts >= since_ts)})
     return {"status": "ok", "source": "amoCRM events", "from": since.date().isoformat(),
+            "until_revenue": until,
             "to": now.isoformat(), "samples": samples, "messages": len(events),
             "unknown_author": unknown, "unanswered": len(pending), "unknown_rows": unknown_rows,
             "pending": pending_rows, "queue_verified": True, "open_without_events": len(open_talks - observed_talks),
@@ -813,7 +857,7 @@ def main() -> None:
     position_rows.close()
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
-    responses = get_responses(leads)
+    responses = get_responses(leads, result)
     # Список заказов читается в начале сборки. Платёж, пришедший пока считались позиции,
     # в срез не попадал, хотя время среза ставится в конце. Добираем изменения.
     stamp = started.strftime("%Y-%m-%d %H:%M:%S")

@@ -955,7 +955,7 @@
     </div>
     <div class="card">
       <h3>Дисциплина</h3>
-      <div class="hint">Блогеры и бартер идут в воронку «Маркетинг и партнёрство», а не в отказ. Внутренняя статистика amoCRM больше не считает это провалом.</div>
+      <div class="hint">Блогеры и бартер идут в воронку «Маркетинг и партнёрство», а не в отказ. Внутренняя статистика amoCRM больше не считает это провалом. Сообщения до выручки: входящие и исходящие в сделке до полной оплаты заказа. Сделка старше загруженной переписки в среднее не входит.</div>
       <div id="disc-kv"></div>
     </div>
   </div>
@@ -1376,7 +1376,10 @@ function refresh(){
  const stages=data.tasks.stages?.map(s=>[s.id,s.name])||fallbackStages;
  el('funnel-hint').textContent=`В срезе: ${num(data.leads.length)} сделок; исключено по Полине: ${num(data.tasks.excluded_marketing_owner||0)}. Обновлено: ${data.tasks.collected_at||data.generated}.`;
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${esc(label)}</span><span class="nums">${num(data.leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
- el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Медиана ответа, рабочие минуты',responseOne(responseRows,'med')],['Средняя скорость ответа, рабочие минуты',responseOne(responseRows,'avg')],['Ответов без определённого автора, вся доступная история',data.responses?num(data.responses.unknown_author):'нет данных']]);
+ const until=(data.responses?.until_revenue||[]).filter(x=>x.paid_date>=state.from&&x.paid_date<=state.to&&x.covered);
+ const untilAvg=until.length?until.reduce((s,x)=>s+Number(x.count),0)/until.length:null;
+ const untilValue=untilAvg===null?'нет данных':untilAvg.toFixed(1).replace('.', ',')+' · '+num(until.length)+' заказов';
+ el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Сообщений до выручки',untilValue],['Медиана ответа, рабочие минуты',responseOne(responseRows,'med')],['Средняя скорость ответа, рабочие минуты',responseOne(responseRows,'avg')],['Ответов без определённого автора, вся доступная история',data.responses?num(data.responses.unknown_author):'нет данных']]);
  el('task-kv').innerHTML=kv([['Открытых задач сейчас, без фильтра периода',num(data.tasks.open)],['Выборка задач',num(data.tasks.sampled)]]);
  const shipped=orders.filter(o=>o.sent_at).length;
  const shipDays=orders.filter(o=>o.sent_at&&o.confirmed_at).map(o=>({days:(Date.parse(o.sent_at)-Date.parse(o.confirmed_at))/864e5,stock:o.await_stock})).filter(x=>x.days>=0);
