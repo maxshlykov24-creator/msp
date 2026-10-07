@@ -285,12 +285,29 @@ def _ask_text(date, product, rolls, pieces):
     return ""
 
 
-def _paint(row_number, before, status, enter_name, loss_name, digest):
+def _doc_link(kind, entity_id, name):
+    if not entity_id or not name:
+        return ""
+    return '=HYPERLINK("https://online.moysklad.ru/app/#%s/edit?id=%s";"%s")' % (
+        kind, entity_id, name,
+    )
+
+
+def _shown(value):
+    if value is None or value == "":
+        return ""
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return str(number)
+
+
+def _paint(row_number, before, status, enter_name, loss_name, digest, enter_id="", loss_id=""):
     _write("%s!I%d:M%d" % (FACT_SHEET, row_number, row_number), [[
         "" if before is None else before,
         status,
-        enter_name,
-        loss_name,
+        _doc_link("enter", enter_id, enter_name),
+        _doc_link("loss", loss_id, loss_name),
         digest,
     ]])
 
@@ -345,13 +362,23 @@ def process_once():
             print("строка %s: %s" % (row_number, result["text"]), flush=True)
             continue
         before = result["roll_before"]
-        after = None if before is None else float(before) - rolls
-        text = "проведено. Рулон %s, было %s, стало %s" % (
-            result["roll_name"] or color, before, after,
+        if result.get("roll_missing"):
+            before = None
+            text = "проведено. Списание %s. В отчёте остатков этой карточки не было" % (
+                result["roll_name"] or color,
+            )
+        else:
+            after = float(before) - rolls
+            text = "проведено. Списание %s, было %s, стало %s" % (
+                result["roll_name"] or color, _shown(before), _shown(after),
+            )
+            if "меньше" in result["text"]:
+                text += ". На складе было меньше, чем в строке"
+        _paint(
+            row_number, before, text,
+            result["enter_name"], result["loss_name"], digest,
+            result.get("enter_id") or "", result.get("loss_id") or "",
         )
-        if "меньше" in result["text"]:
-            text += ". На складе рулонов было меньше, чем списали"
-        _paint(row_number, before, text, result["enter_name"], result["loss_name"], digest)
         posted += 1
         print("строка %s проведена, приёмка %s, списание %s" % (
             row_number, result["enter_name"], result["loss_name"],

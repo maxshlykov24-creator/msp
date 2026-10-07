@@ -33,6 +33,9 @@ def apply_fact(date, product_name, color, sizes, rolls, apply, external_key=None
         "enter_name": "",
         "roll_name": "",
         "roll_before": None,
+        "roll_missing": False,
+        "loss_id": "",
+        "enter_id": "",
     }
 
     def finish(text, ok=False):
@@ -64,6 +67,7 @@ def apply_fact(date, product_name, color, sizes, rolls, apply, external_key=None
         return finish("нет склада или организации")
     report = ms_api.stock_on_store(store_id, roll["id"])
     # Строки в отчёте нет, пока рулон ни разу не приходовали. Это ноль, не обрыв чтения.
+    result["roll_missing"] = report is None
     roll_stock = 0 if report is None else report.get("stock")
     result["roll_before"] = roll_stock
     decision = core.plan_cut(
@@ -78,6 +82,8 @@ def apply_fact(date, product_name, color, sizes, rolls, apply, external_key=None
     if decision == "уже проведено":
         result["loss_name"] = (loss or {}).get("name") or ""
         result["enter_name"] = (enter or {}).get("name") or ""
+        result["loss_id"] = (loss or {}).get("id") or ""
+        result["enter_id"] = (enter or {}).get("id") or ""
         return finish(decision, ok=True)
     if decision != "провести":
         return finish(decision)
@@ -136,6 +142,8 @@ def apply_fact(date, product_name, color, sizes, rolls, apply, external_key=None
         raise
     result["loss_name"] = (loss or {}).get("name") or ""
     result["enter_name"] = (enter or {}).get("name") or ""
+    result["loss_id"] = (loss or {}).get("id") or ""
+    result["enter_id"] = (enter or {}).get("id") or ""
     text = "проведено " + key
     if short:
         text += ", рулонов на складе было меньше факта"

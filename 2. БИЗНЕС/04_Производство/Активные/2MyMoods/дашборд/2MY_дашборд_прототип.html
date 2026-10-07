@@ -1021,11 +1021,14 @@ function colorKey(line){
  const raw=normPiece(line&&line.color);
  const fromName=colorFromName(line&&line.name);
  const junk=new Set(['сертификат','красноречивое','сера']);
- let key=(!raw||raw==='не указано'||junk.has(raw)||(fromName.startsWith(raw+'-')))?fromName:raw;
+ let key=raw;
+ if(raw && fromName.startsWith(raw+'-')) key=fromName;
+ if(!key||key==='не указано'||junk.has(key)) key=fromName && !junk.has(fromName) ? fromName : '';
  if(colorAlias[key]) key=colorAlias[key];
+ key=key.replace(/\s*\((?:one size|onesize|xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+)\)\s*/g,'').replace(/[,/]\s*(?:one size|onesize|xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+)\s*$/g,'').trim();
  return key==='не указано'?'':key;
 }
-const colorLabel=line=>{const key=colorKey(line);return key?key.replace(/(^|[\s-])(\p{L})/gu,(m,a,b)=>a+b.toLocaleUpperCase('ru')):'не указано'};
+const colorLabel=line=>{const key=colorKey(line);return key?key.charAt(0).toLocaleUpperCase('ru')+key.slice(1):'не указано'};
 const select = (id, values, label) => { const e=el(id), old=selected(id); e.innerHTML='<option value="">'+esc(label)+'</option>'+values.filter(Boolean).sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(e.multiple)setSelected(id,old);else e.value=old[0]||'';};
 
 (function(){
