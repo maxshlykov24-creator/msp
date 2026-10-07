@@ -19,10 +19,10 @@ import ms_api
 SHEET_ID = "1FaVgAGM_RIDcy6PGl0lYIGQuTsQG3H2Fqnf0lHLAiUA"
 MAP_SHEET = "Сопоставление"
 OLD_SHEET = "Приёмка"
-HEADER = ["Изделие", "Цвет", "Рулон", "S, м на 1 шт", "M, м на 1 шт", "L, м на 1 шт"]
+HEADER = ["Изделие", "Рулон", "S, м на 1 шт", "M, м на 1 шт", "L, м на 1 шт"]
 NOTE = (
     "Сколько метров рулона этого цвета уходит на одну штуку размера. "
-    "Цвет и рулон взяты из названия изделия. "
+    "Рулон определяется по цвету в названии изделия. "
     "Когда в Моём Складе проводят приёмку или оприходование, сервер списывает эту длину. "
     "Пустая ячейка значит нормы ещё нет: такую позицию не списываем."
 )
@@ -145,7 +145,7 @@ def mapping_rows(saved):
         color = core.color_of(name)
         roll = ("Рулон " + color) if color else ""
         meters = saved.get(name) or ["", "", ""]
-        rows.append([name, color, roll, meters[0], meters[1], meters[2]])
+        rows.append([name, roll, meters[0], meters[1], meters[2]])
     rows.sort(key=lambda item: item[0])
     return rows
 
@@ -172,23 +172,33 @@ def setup():
     header = _values(MAP_SHEET + "!A2:F2")
     saved = {}
     header_cells = [str(cell) for cell in (header[0] if header else [])]
+    if "Цвет" in header_cells:
+        meter_indexes = (3, 4, 5)
+    else:
+        meter_indexes = (2, 3, 4)
     if "Артикул" not in header_cells and "S, м на 1 шт" in header_cells:
         for raw in _values(MAP_SHEET + "!A3:F"):
             name = str(_cell(raw, 0) or "").strip()
             if not name:
                 continue
             meters = []
-            for index in (3, 4, 5):
+            for index in meter_indexes:
                 value = _cell(raw, index)
                 if isinstance(value, str) and value.strip().upper().startswith("ROL-"):
                     value = ""
                 meters.append(value)
             saved[name] = meters
     catalog_rows = mapping_rows(saved)
+    map_id = _sheet_id_by_title(MAP_SHEET)
+    _api("POST", "/" + sheet_id() + ":batchUpdate", {"requests": [
+        {"unmergeCells": {"range": {"sheetId": map_id}}},
+    ]})
     _write(MAP_SHEET + "!A1", [[NOTE]])
-    _write(MAP_SHEET + "!A2:F2", [HEADER])
+    _write(MAP_SHEET + "!A2:E2", [HEADER])
+    _write(MAP_SHEET + "!F2:F2", [[""]])
     if catalog_rows:
-        _write(MAP_SHEET + "!A3:F%d" % (len(catalog_rows) + 2), catalog_rows)
+        _write(MAP_SHEET + "!A3:E%d" % (len(catalog_rows) + 2), catalog_rows)
+        _write(MAP_SHEET + "!F3:F%d" % (len(catalog_rows) + 2), [[""]] * len(catalog_rows))
     map_id = _sheet_id_by_title(MAP_SHEET)
     _api("POST", "/" + sheet_id() + ":batchUpdate", {"requests": [
         {
@@ -210,8 +220,8 @@ def setup():
                     "sheetId": map_id,
                     "startRowIndex": 2,
                     "endRowIndex": max(len(catalog_rows) + 2, 3),
-                    "startColumnIndex": 3,
-                    "endColumnIndex": 6,
+                    "startColumnIndex": 2,
+                    "endColumnIndex": 5,
                 },
                 "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.###"}}},
                 "fields": "userEnteredFormat.numberFormat",
@@ -224,14 +234,14 @@ def setup():
 
 def norms():
     found = {}
-    for raw in _values(MAP_SHEET + "!A3:F"):
+    for raw in _values(MAP_SHEET + "!A3:E"):
         name = str(_cell(raw, 0) or "").strip()
         if not name:
             continue
         found[name] = {
-            "S": meter(_cell(raw, 3)),
-            "M": meter(_cell(raw, 4)),
-            "L": meter(_cell(raw, 5)),
+            "S": meter(_cell(raw, 2)),
+            "M": meter(_cell(raw, 3)),
+            "L": meter(_cell(raw, 4)),
         }
     return found
 
