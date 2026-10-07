@@ -74,6 +74,38 @@ def full_paid_stamp(moment: datetime) -> str:
     return moment.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def absorb_payment(payment: dict, order_payments: dict, invoices: dict, seen: set[str], replace: bool = False) -> None:
+    """Связь проведённого платежа с заказом. Повтор того же платежа не удваивает сумму."""
+    pid = payment.get("id")
+    if pid and pid in seen and not replace:
+        return
+    if pid and replace:
+        for bucket in order_payments.values():
+            bucket[:] = [item for item in bucket if item[0] != pid]
+    if payment.get("applicable") is not True:
+        if pid:
+            seen.add(pid)
+        return
+    if pid:
+        seen.add(pid)
+    for operation in payment.get("operations") or []:
+        meta = operation.get("meta") or {}
+        target_id = mid(operation)
+        order_id = target_id if meta.get("type") == "customerorder" else invoices.get(target_id) if meta.get("type") == "invoiceout" else None
+        if order_id:
+            order_payments[order_id].append((pid, payment.get("moment"), rub(operation.get("linkedSum"))))
+
+
+def closing_payment(order_id: str, total: float, order_payments: dict) -> datetime | None:
+    accumulated = 0.0
+    closed = None
+    for _pid, moment, linked_sum in sorted(order_payments.get(order_id, []), key=lambda row: row[1] or ""):
+        accumulated += linked_sum
+        if closed is None and accumulated + 0.009 >= total:
+            closed = dt(moment)
+    return closed
+
+
 def stamp_full_paid(ms: lib.MS, order_id: str, moment: datetime) -> bool:
     """Пишет в заказ дату, когда связанные платежи впервые закрыли сумму.
     Одно доп. поле. Остальные поля заказа не передаются.
@@ -625,6 +657,96 @@ def enrich_accounting(snap: dict, ms=None) -> None:
                             "exchanges": len(exchanges)})
 
 
+def build_order(o, positions, ms, started, order_payments, agents, channels, return_orders, products, variants, services, gaps):
+    number = o.get("name", "")
+    a = attrs(o)
+    total = rub(o.get("sum"))
+    paid = rub(o.get("payedSum"))
+    is_buy = total > 0 and paid + 0.009 >= total
+    if total > 0 and paid == 0:
+        gaps["Оплачено пустое"].append(number)
+    if bool(a.get(FIELD["paid"])) != is_buy:
+        gaps["Галка Оплачен не совпадает с платежом"].append(number)
+    closed = closing_payment(o["id"], total, order_payments)
+    if is_buy and not closed:
+        gaps["Оплачено закрыто, дата платежа не найдена"].append(number)
+    elif is_buy and closed and str(a.get(FIELD["full_paid"]) or "")[:10] != closed.date().isoformat():
+        if not stamp_full_paid(ms, o["id"], closed):
+            gaps["Не записана дата полной оплаты"].append(number)
+    agent = agents.get(mid(o.get("agent")), {})
+    ph = phone(agent.get("phone"))
+    if is_buy and not ph:
+        gaps["Нет телефона у контрагента"].append(number)
+    channel = channels.get(mid(o.get("salesChannel")), "не указано")
+    address = str(o.get("shipmentAddress") or "")
+    full = o.get("shipmentAddressFull") or {}
+    structured_city = ""
+    if isinstance(full, dict):
+        structured_city = str(full.get("city") or "").strip()
+        address += " " + " ".join(str(v) for k, v in full.items() if k != "meta" and isinstance(v, str))
+    delivery = cf_name(a.get(FIELD["delivery"]))
+    geo = city(address, delivery)
+    if geo == "не распознано" and structured_city:
+        geo = structured_city
+    if geo == "не распознано":
+        gaps["Город не распознан"].append(number)
+    utm = str(a.get(FIELD["utm"]) or "").strip()
+    if channel == "Сайт" and (not utm or utm.lower() == "utm"):
+        gaps["Сайт без utm_source"].append(number)
+    ret_list = return_orders.get(o["id"], [])
+    if ret_list:
+        gaps["Возврат без причины"].extend(
+            str(r.get("name") or r.get("id")) for r in ret_list
+            if not str(r.get("description") or "").strip()
+        )
+    lines = []
+    if is_buy:
+        for x in positions:
+            aid = mid(x.get("assortment"))
+            kind = ((x.get("assortment") or {}).get("meta") or {}).get("type")
+            variant = variants.get(aid, {}) if kind == "variant" else {}
+            product = products.get(mid(variant.get("product")), {}) if variant else products.get(aid, {})
+            service = services.get(aid, {}) if kind == "service" else {}
+            item = product or service or variant
+            name = item.get("name") or variant.get("name") or "не указано"
+            if kind == "service" and name.strip().upper() == "ДОСТАВКА":
+                delivery_line = True
+            else:
+                delivery_line = False
+            chars = {c.get("name", "").lower(): c.get("value") for c in variant.get("characteristics") or []}
+            size = canon_size(str(chars.get("размер") or ""))
+            if not size:
+                size = size_from_name(name)
+            color = str(chars.get("цвет") or "").strip()
+            if not color:
+                color = color_from_name(name)
+            qty = float(x.get("quantity") or 0)
+            gross = rub(x.get("price")) * qty
+            rev = round(gross * (1 - float(x.get("discount") or 0) / 100), 2)
+            cost = rub((product.get("buyPrice") or {}).get("value")) * qty
+            if rev > 0 and cost == 0 and not delivery_line:
+                gaps["Позиция без закупочной цены"].append(number)
+            lines.append({"id": aid, "name": name, "category": product.get("pathName") or "не указано",
+                          "size": size, "color": color, "qty": qty, "rev": rev,
+                          "list": gross, "cost": round(cost, 2), "delivery": delivery_line})
+    return {
+        "number": number, "id": o["id"], "created": (dt(o.get("moment")) or started).date().isoformat(),
+        "paid_date": closed.date().isoformat() if closed else None,
+        "paid_at": closed.isoformat() if closed else None,
+        "sum": total, "paid": paid, "buy": bool(is_buy),
+        "partial": bool(0 < paid < total), "channel": channel,
+        "source": utm or "не указано", "utm_medium": a.get(FIELD["utm_medium"]) or "",
+        "utm_campaign": a.get(FIELD["utm_campaign"]) or "",
+        "city": geo, "address": address.strip(), "delivery": delivery, "manager": "",
+        "phone": ph, "client": agent.get("name") or "",
+        "return": bool(ret_list), "return_reason": next((str(r.get("description")) for r in ret_list if r.get("description")), ""),
+        "confirmed_at": (dt(a.get(FIELD["confirm"])) or None).isoformat() if a.get(FIELD["confirm"]) else None,
+        "sent_at": (dt(a.get(FIELD["sent"])) or None).isoformat() if a.get(FIELD["sent"]) else None,
+        "await_stock": bool(a.get(FIELD["stock"])), "promo": a.get(FIELD["promo"]) or "",
+        "lines": lines,
+    }
+
+
 def main() -> None:
     ms = lib.MS()
     started = datetime.now(TZ)
@@ -633,8 +755,8 @@ def main() -> None:
                            keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent",
                                  "salesChannel", "shipmentAddress", "shipmentAddressFull"))
     order_count = len(orders)
-    paymentins = required_rows(ms, "/entity/paymentin", keep=("moment", "created", "sum", "operations", "applicable"))
-    payments = paymentins + required_rows(ms, "/entity/cashin", keep=("moment", "operations", "applicable"))
+    paymentins = required_rows(ms, "/entity/paymentin", keep=("id", "moment", "created", "sum", "operations", "applicable"))
+    payments = paymentins + required_rows(ms, "/entity/cashin", keep=("id", "moment", "operations", "applicable"))
     payment_daily = defaultdict(float)
     for payment in paymentins:
         if payment.get("applicable") is not True:
@@ -645,16 +767,10 @@ def main() -> None:
     invoices = {i["id"]: mid(i.get("customerOrder")) for i in required_rows(
         ms, "/entity/invoiceout", keep=("id", "customerOrder"))}
     order_payments = defaultdict(list)
+    linked_ids: set[str] = set()
     for payment in payments:
-        if payment.get("applicable") is not True:
-            continue
-        for operation in payment.get("operations") or []:
-            meta = operation.get("meta") or {}
-            target_id = mid(operation)
-            order_id = target_id if meta.get("type") == "customerorder" else invoices.get(target_id) if meta.get("type") == "invoiceout" else None
-            if order_id:
-                order_payments[order_id].append((payment.get("moment"), rub(operation.get("linkedSum"))))
-    del payments, paymentins, invoices
+        absorb_payment(payment, order_payments, invoices, linked_ids)
+    del payments, paymentins
     products = {p["id"]: p for p in required_rows(ms, "/entity/product",
                                                    keep=("id", "name", "pathName", "buyPrice"))}
     variants = {v["id"]: v for v in required_rows(ms, "/entity/variant",
@@ -682,109 +798,62 @@ def main() -> None:
     gaps = defaultdict(list)
     result = []
     for index, o in enumerate(orders, 1):
-        number = o.get("name", "")
-        a = attrs(o)
-        total = rub(o.get("sum"))
-        paid = rub(o.get("payedSum"))
-        is_buy = total > 0 and paid + 0.009 >= total
-        if total > 0 and paid == 0:
-            gaps["Оплачено пустое"].append(number)
-        if bool(a.get(FIELD["paid"])) != is_buy:
-            gaps["Галка Оплачен не совпадает с платежом"].append(number)
-        accumulated = 0.0
-        closed = None
-        for moment, linked_sum in sorted(order_payments.get(o["id"], []), key=lambda row: row[0] or ""):
-            accumulated += linked_sum
-            if closed is None and accumulated + 0.009 >= total:
-                closed = dt(moment)
-        if is_buy and not closed:
-            gaps["Оплачено закрыто, дата платежа не найдена"].append(number)
-        elif is_buy and closed and str(a.get(FIELD["full_paid"]) or "")[:10] != closed.date().isoformat():
-            if not stamp_full_paid(ms, o["id"], closed):
-                gaps["Не записана дата полной оплаты"].append(number)
-        agent = agents.get(mid(o.get("agent")), {})
-        ph = phone(agent.get("phone"))
-        if is_buy and not ph:
-            gaps["Нет телефона у контрагента"].append(number)
-        channel = channels.get(mid(o.get("salesChannel")), "не указано")
-        address = str(o.get("shipmentAddress") or "")
-        full = o.get("shipmentAddressFull") or {}
-        structured_city = ""
-        if isinstance(full, dict):
-            structured_city = str(full.get("city") or "").strip()
-            address += " " + " ".join(str(v) for k, v in full.items() if k != "meta" and isinstance(v, str))
-        delivery = cf_name(a.get(FIELD["delivery"]))
-        geo = city(address, delivery)
-        if geo == "не распознано" and structured_city:
-            geo = structured_city
-        if geo == "не распознано":
-            gaps["Город не распознан"].append(number)
-        utm = str(a.get(FIELD["utm"]) or "").strip()
-        if channel == "Сайт" and (not utm or utm.lower() == "utm"):
-            gaps["Сайт без utm_source"].append(number)
-        ret_list = return_orders.get(o["id"], [])
-        if ret_list:
-            gaps["Возврат без причины"].extend(
-                str(r.get("name") or r.get("id")) for r in ret_list
-                if not str(r.get("description") or "").strip()
-            )
-        lines = []
-        if is_buy:
-            pos = next(position_rows)
+        total_now = rub(o.get("sum"))
+        paid_now = rub(o.get("payedSum"))
+        if total_now > 0 and paid_now + 0.009 >= total_now:
+            positions = next(position_rows)
             paid_processed += 1
             if paid_processed % 250 == 0:
                 print(f"позиций заказов: {paid_processed}/{len(paid_ids)}", flush=True)
-            for x in pos:
-                aid = mid(x.get("assortment"))
-                kind = ((x.get("assortment") or {}).get("meta") or {}).get("type")
-                variant = variants.get(aid, {}) if kind == "variant" else {}
-                product = products.get(mid(variant.get("product")), {}) if variant else products.get(aid, {})
-                service = services.get(aid, {}) if kind == "service" else {}
-                item = product or service or variant
-                name = item.get("name") or variant.get("name") or "не указано"
-                if kind == "service" and name.strip().upper() == "ДОСТАВКА":
-                    delivery_line = True
-                else:
-                    delivery_line = False
-                chars = {c.get("name", "").lower(): c.get("value") for c in variant.get("characteristics") or []}
-                size = canon_size(str(chars.get("размер") or ""))
-                if not size:
-                    size = size_from_name(name)
-                color = str(chars.get("цвет") or "").strip()
-                if not color:
-                    color = color_from_name(name)
-                qty = float(x.get("quantity") or 0)
-                gross = rub(x.get("price")) * qty
-                rev = round(gross * (1 - float(x.get("discount") or 0) / 100), 2)
-                cost = rub((product.get("buyPrice") or {}).get("value")) * qty
-                if rev > 0 and cost == 0 and not delivery_line:
-                    gaps["Позиция без закупочной цены"].append(number)
-                lines.append({"id": aid, "name": name, "category": product.get("pathName") or "не указано",
-                              "size": size, "color": color, "qty": qty, "rev": rev,
-                              "list": gross, "cost": round(cost, 2), "delivery": delivery_line})
-        result.append({
-            "number": number, "id": o["id"], "created": (dt(o.get("moment")) or started).date().isoformat(),
-            "paid_date": closed.date().isoformat() if closed else None,
-            "paid_at": closed.isoformat() if closed else None,
-            "sum": total, "paid": paid, "buy": bool(is_buy),
-            "partial": bool(0 < paid < total), "channel": channel,
-            "source": utm or "не указано", "utm_medium": a.get(FIELD["utm_medium"]) or "",
-            "utm_campaign": a.get(FIELD["utm_campaign"]) or "",
-            "city": geo, "address": address.strip(), "delivery": delivery, "manager": "",
-            "phone": ph, "client": agent.get("name") or "",
-            "return": bool(ret_list), "return_reason": next((str(r.get("description")) for r in ret_list if r.get("description")), ""),
-            "confirmed_at": (dt(a.get(FIELD["confirm"])) or None).isoformat() if a.get(FIELD["confirm"]) else None,
-            "sent_at": (dt(a.get(FIELD["sent"])) or None).isoformat() if a.get(FIELD["sent"]) else None,
-            "await_stock": bool(a.get(FIELD["stock"])), "promo": a.get(FIELD["promo"]) or "",
-            "lines": lines,
-        })
+        else:
+            positions = []
+        result.append(build_order(o, positions, ms, started, order_payments, agents, channels, return_orders, products, variants, services, gaps))
         if index % 500 == 0:
             print(f"обработано {index}/{len(orders)}", flush=True)
     position_rows.close()
-    del orders, order_payments, products, variants, services, agents, channels, return_orders
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
     responses = get_responses(leads)
+    # Список заказов читается в начале сборки. Платёж, пришедший пока считались позиции,
+    # в срез не попадал, хотя время среза ставится в конце. Добираем изменения.
+    stamp = started.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"добор заказов и платежей с {stamp}", flush=True)
+    try:
+        fresh_orders = required_rows(ms, "/entity/customerorder",
+                                     {"filter": f"updated>={stamp}", "order": "moment,desc"},
+                                     keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent",
+                                           "salesChannel", "shipmentAddress", "shipmentAddressFull"))
+        fresh_payments = required_rows(ms, "/entity/paymentin", {"filter": f"updated>={stamp}"},
+                                       keep=("id", "moment", "created", "sum", "operations", "applicable"))
+        fresh_payments += required_rows(ms, "/entity/cashin", {"filter": f"updated>={stamp}"},
+                                        keep=("id", "moment", "operations", "applicable"))
+    except Exception as exc:
+        fresh_orders, fresh_payments = [], []
+        print(f"добор не удался: {type(exc).__name__}", flush=True)
+    for payment in fresh_payments:
+        absorb_payment(payment, order_payments, invoices, linked_ids, replace=True)
+    original_money = {row["id"]: (rub(row.get("sum")), rub(row.get("payedSum"))) for row in orders}
+    by_id = {row["id"]: row for row in result}
+    caught = []
+    for o in fresh_orders:
+        money = (rub(o.get("sum")), rub(o.get("payedSum")))
+        if o["id"] in original_money and original_money[o["id"]] == money:
+            continue
+        is_buy = money[0] > 0 and money[1] + 0.009 >= money[0]
+        positions = positions_for(o["id"])[1] if is_buy else []
+        row = build_order(o, positions, ms, started, order_payments, agents, channels, return_orders,
+                          products, variants, services, gaps)
+        if o["id"] in by_id:
+            by_id[o["id"]].clear()
+            by_id[o["id"]].update(row)
+        else:
+            result.append(row)
+            by_id[o["id"]] = row
+        caught.append(o.get("name") or o["id"])
+    print(f"добор: {len(caught)}", flush=True)
+    if caught:
+        print("добор заказы: " + ", ".join(caught[:30]), flush=True)
+    del orders, order_payments, products, variants, services, agents, channels, return_orders, invoices
     try:
         roster_rows = shift_roster._rows(force=True)
         roster_status = "ok"
