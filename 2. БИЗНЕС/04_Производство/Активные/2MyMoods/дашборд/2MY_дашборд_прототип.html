@@ -1436,7 +1436,7 @@ el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).
 document.querySelector('.xls').onclick=()=>{
  const rows=[['Тип документа','Заказ / возврат','Дата полной оплаты / возврата','Канал','Источник','Город','Клиент','Телефон','Товар','Размер','Цвет','Количество','Выручка','Закупка']];
  currentLines.forEach(({o,l})=>rows.push([o.return_event?'Возврат':'Продажа',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,sizeLabel(l),colorLabel(l),l.qty,l.rev,l.cost]));
- (data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to).forEach(o=>(o.lines||[]).forEach(l=>rows.push(['Обмен',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,colorLabel(l),l.qty,l.rev,l.cost])));
+ (data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to).forEach(o=>(o.lines||[]).forEach(l=>rows.push(['Обмен',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,sizeLabel(l),colorLabel(l),l.qty,l.rev,l.cost])));
  const safeCell=v=>{const t=String(v??'');return /^[=+@-]/.test(t)&&!/^-[0-9.,]+$/.test(t)?"'"+t:t};
  const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+safeCell(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='2MY_выгрузка_'+dmy(state.from)+'_'+dmy(state.to)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
