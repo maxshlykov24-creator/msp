@@ -467,9 +467,9 @@
   .card .hint{font-size:12px;font-weight:400;color:var(--mute);margin-bottom:20px;line-height:1.65}
 
   table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mute);text-align:right;padding:0 0 10px 8px;border-bottom:1px solid var(--line);white-space:normal;line-height:1.35;overflow-wrap:anywhere;vertical-align:bottom}
+  th{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mute);text-align:right;padding:0 0 10px 8px;border-bottom:1px solid var(--line);white-space:normal;line-height:1.35;overflow-wrap:break-word;vertical-align:bottom}
   th:first-child{text-align:left;padding-left:0}
-  td{padding:10px 0 10px 8px;border-bottom:1px solid var(--line-soft);text-align:right;font-variant-numeric:tabular-nums;color:var(--body);font-weight:500;white-space:normal;line-height:1.35;overflow-wrap:anywhere;vertical-align:top}
+  td{padding:10px 0 10px 8px;border-bottom:1px solid var(--line-soft);text-align:right;font-variant-numeric:tabular-nums;color:var(--body);font-weight:500;white-space:normal;line-height:1.35;overflow-wrap:break-word;vertical-align:top}
   td:first-child{text-align:left;color:var(--ink);font-weight:600;padding-left:0}
   tr:last-child td{border-bottom:none}
   tr.flag td,tr.flag td:first-child{color:var(--bad)}
@@ -571,12 +571,16 @@
   .scroll-x table{width:100%;min-width:0;table-layout:fixed}
   .scroll-cap{max-height:440px;overflow-x:clip;overflow-y:auto}
   .scroll-cap thead th{position:sticky;top:0;background:var(--paper);z-index:2}
-  #items th:first-child,#items td:first-child{width:36%}
-  #cats th:first-child{width:30%}
-  #colors th:first-child{width:24%}
-  #tier th:first-child{width:16%}
-  #mgr th:nth-child(4),#mgr td:nth-child(4){width:38%}
-  #clients th:first-child{width:18%}
+  #items th:first-child,#items td:first-child{width:34%}
+  #cats th:first-child{width:28%}
+  #colors th:nth-child(3){width:28%}
+  #tier th:nth-child(4){width:20%}
+  #sale th:nth-child(3){width:42%}
+  #mgr th:nth-child(1){width:24%}
+  #mgr th:nth-child(3){width:34%}
+  #mgr th:nth-child(4),#mgr td:nth-child(4){width:28%}
+  #clients th:first-child{width:16%}
+  #clients th:nth-child(4){width:12%}
   td.ans{font-size:11px;font-weight:500;line-height:1.45}
   td.ans span{color:var(--mute)}
   @media (max-width:620px){
@@ -974,7 +978,7 @@ const el = id => document.getElementById(id);
 }
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = n => Number(n || 0).toLocaleString('ru-RU');
-const money = n => num(Math.round(n || 0)) + ' ₽';
+const money = n => num(Math.round(n || 0)) + '\u00A0₽';
 const dmy = v => {const s=String(v??'');const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[3]+'.'+m[2]+'.'+m[1];const mo=s.match(/^(\d{4})-(\d{2})$/);if(mo)return mo[2]+'.'+mo[1];return s};
 const pct = (a,b) => b ? Math.round(a/b*100) + '%' : '0%';
 const kv = rows => rows.map(([k,v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
