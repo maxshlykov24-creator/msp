@@ -930,7 +930,7 @@
   <div class="grid-2" style="margin-top:20px">
     <div class="card">
       <h3>Товары: продажи, выручка, маржа</h3>
-      <div class="hint" id="items-hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок, маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие выбирает позицию, повторное снимает выбор.</div>
+      <div class="hint" id="items-hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок, маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие открывает заказы, из которых собрана строка.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Позиция</th><th>Продано</th><th>Выручка</th><th>Маржа</th><th>Размер</th><th>Цвет</th></tr></thead>
         <tbody id="items"></tbody>
@@ -1045,9 +1045,10 @@ function closeSheet(){el('sheet').hidden=true;document.body.classList.remove('sh
 function showSheet(kicker,title,html,back){sheetReturn=back||null;el('sheet-kicker').textContent=kicker;el('sheet-title').textContent=title;el('sheet-body').innerHTML=html;el('sheet-back').hidden=!back;el('sheet').hidden=false;document.body.classList.add('sheet-on');}
 function orderNoun(n){const a=n%100,b=n%10;if(a>10&&a<20)return 'заказов';if(b===1)return 'заказ';if(b>1&&b<5)return 'заказа';return 'заказов';}
 function showOrders(kicker,title,rows){const list=[...rows].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||''));showSheet(kicker,title,`<div class="sheet-count">${num(list.length)} ${orderNoun(list.length)} · ${money(sum(list,r=>r.amount))}. Нажатие открывает заказ в МойСклад.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата</th><th>Клиент</th><th>Канал</th><th>Выручка</th></tr></thead><tbody>${list.map(r=>`<tr class="drill" data-order="${esc(r.o.id)}"><td>${esc(r.o.number)}</td><td>${dmy(r.o.paid_date)}</td><td>${esc(r.o.client||'—')}</td><td>${esc(r.o.channel||'')}</td><td>${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="5">Нет заказов</td></tr>'}</tbody></table>`);}
-const pack=xs=>xs.filter(x=>x.o&&!x.o.return_event&&!x.o.exchange).map(x=>({o:x.o,amount:orderRev(x.o,x.ls)}));
-function ordersFromGoods(lines){const by=new Map();for(const x of lines){const cur=by.get(x.o.id)||{o:x.o,amount:0};cur.amount+=Number(x.l.rev)||0;by.set(x.o.id,cur);}return [...by.values()];}
-let sheetPeople=[], sheetPeopleTitle='';
+function foldOrders(xs, amountOf){const by=new Map();for(const x of xs){if(!x.o||x.o.exchange)continue;const back=!!x.o.return_event;const id=back?(x.o.original_order||''):x.o.id;if(!id)continue;const cur=by.get(id)||{id,o:back?null:x.o,amount:0};if(!back)cur.o=x.o;cur.amount+=amountOf(x);by.set(id,cur);}for(const cur of by.values())if(!cur.o)cur.o=(data.orders||[]).find(o=>o.id===cur.id)||null;return [...by.values()].filter(r=>r.o&&r.o.id);}
+const pack=xs=>foldOrders(xs,x=>orderRev(x.o,x.ls));
+function ordersFromGoods(lines){return foldOrders(lines,x=>Number(x.l.rev)||0);}
+let sheetPeople=[], sheetPeopleTitle='', lastProducts=[];
 function openClientList(title,list){sheetPeople=list;sheetPeopleTitle=title;const rows=[...list].sort((a,b)=>b.ltv-a.ltv);showSheet('Клиенты',title,rows.length?`<div class="sheet-count">${num(rows.length)} в этом списке. Нажатие открывает карточку.</div>`+rows.map(c=>`<button type="button" class="sheet-person" data-phone="${esc(c.phone)}"><span>${esc(c.name)}</span><b>${num(c.buys)} · ${money(c.ltv)}</b></button>`).join(''):'Нет клиентов');}
 function openClientCard(c,back){const latest=[...c.orders].filter(o=>o.agent_id).sort((a,b)=>(b.paid_date||'').localeCompare(a.paid_date||''))[0];const link=latest?`<a class="sheet-go" href="${msAgent(latest.agent_id)}" target="_blank" rel="noopener">Контрагент в МойСклад</a>`:'<div class="hint">Ссылка на контрагента появится после следующей сборки среза.</div>';showSheet(c.tier||'Клиент',c.name,`<div class="sheet-facts">${kv([['Телефон',c.phone||'нет'],['Покупок',num(c.buys)],['LTV',money(c.ltv)],['Первая',c.first?dmy(c.first):'нет даты'],['Последняя',c.last?dmy(c.last):'нет даты'],['Размер',c.size||'нет данных'],['Чаще берёт',c.category||'нет данных']])}</div>${link}`,back);}
 const selected = id => [...el(id).selectedOptions].map(o=>o.value).filter(Boolean);
@@ -1283,7 +1284,7 @@ function refresh(){
  const returnedRev=-sum(returned,x=>orderRev(x.o,x.ls));
  currentLines=basis.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
  const noCost=currentLines.filter(x=>!x.l.delivery&&x.l.rev>0&&x.l.cost===0);
- el('items-hint').textContent='Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок'+(includeDelivery?', с доставкой':', без доставки')+', маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие выбирает позицию, повторное снимает выбор.';
+ el('items-hint').textContent='Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок'+(includeDelivery?', с доставкой':', без доставки')+', маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие открывает заказы, из которых собрана строка.';
  el('cost-hint').textContent='Маржа по зафиксированной закупочной цене, без работы и логистики. Исторические цены до начала наблюдений — оценка; новые версии фиксируются при синхронизации.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
  const orders=filtered.map(x=>x.o), rev=sum(basis,x=>orderRev(x.o,x.ls));
  const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
