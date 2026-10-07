@@ -467,10 +467,10 @@
   .card .hint{font-size:12px;font-weight:400;color:var(--mute);margin-bottom:20px;line-height:1.65}
 
   table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);text-align:right;padding:0 0 11px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mute);text-align:right;padding:0 0 10px 8px;border-bottom:1px solid var(--line);white-space:normal;line-height:1.35;overflow-wrap:anywhere;vertical-align:bottom}
   th:first-child{text-align:left;padding-left:0}
-  td{padding:12px 0 12px 14px;border-bottom:1px solid var(--line-soft);text-align:right;font-variant-numeric:tabular-nums;color:var(--body);font-weight:500;white-space:nowrap}
-  td:first-child{text-align:left;color:var(--ink);font-weight:600;padding-left:0;white-space:normal}
+  td{padding:10px 0 10px 8px;border-bottom:1px solid var(--line-soft);text-align:right;font-variant-numeric:tabular-nums;color:var(--body);font-weight:500;white-space:normal;line-height:1.35;overflow-wrap:anywhere;vertical-align:top}
+  td:first-child{text-align:left;color:var(--ink);font-weight:600;padding-left:0}
   tr:last-child td{border-bottom:none}
   tr.flag td,tr.flag td:first-child{color:var(--bad)}
   tr.pick{cursor:pointer;transition:background .3s}
@@ -566,14 +566,19 @@
     .scope-kpi{grid-template-columns:repeat(2,1fr)}
     .hero .big{font-size:44px}
     .card{overflow:visible}
-    .scroll-x th:first-child,.scroll-x td:first-child{position:sticky;left:0;background:var(--paper);z-index:1}
-    .scroll-x td:first-child{box-shadow:8px 0 8px -8px rgba(2,2,2,.18)}
   }
-  .scroll-x{width:0;min-width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .scroll-cap{max-height:440px;overflow:auto}
+  .scroll-x{width:100%;max-width:100%;overflow-x:clip}
+  .scroll-x table{width:100%;min-width:0;table-layout:fixed}
+  .scroll-cap{max-height:440px;overflow-x:clip;overflow-y:auto}
   .scroll-cap thead th{position:sticky;top:0;background:var(--paper);z-index:2}
-  .scroll-cap thead th:first-child{z-index:3}
-  .scroll-x table{width:max-content;min-width:100%}
+  #items th:first-child,#items td:first-child{width:36%}
+  #cats th:first-child{width:30%}
+  #colors th:first-child{width:24%}
+  #tier th:first-child{width:16%}
+  #mgr th:nth-child(4),#mgr td:nth-child(4){width:38%}
+  #clients th:first-child{width:18%}
+  td.ans{font-size:11px;font-weight:500;line-height:1.45}
+  td.ans span{color:var(--mute)}
   @media (max-width:620px){
     .wrap{padding:0 16px}
     .nav{overflow:visible;flex-wrap:wrap}
@@ -594,8 +599,7 @@
     .hero-mini{gap:16px 22px}
   }
 
-#items td:first-child{white-space:normal;min-width:210px;max-width:380px;width:38%}
-.product-pick{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;white-space:normal}
+.product-pick{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;white-space:normal;display:block;width:100%;overflow-wrap:anywhere}
 #items tr{cursor:pointer}#items tr.selected{background:#fffbe6}.product-pick:focus-visible{outline:2px solid #000}
 .pick-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
@@ -730,7 +734,7 @@
       <h3>Менеджеры и скорость ответа</h3><div id="response-quality" class="hint"></div>
       <div class="hint" id="mgr-hint">Менеджер определяется по графику смен на дату закрывающего платежа. Скорость ответа берётся из Wazzup.</div>
       <div class="scroll-x"><table>
-        <thead><tr><th>Менеджер</th><th>Оплаченных заказов</th><th>Выручка</th><th>Ответ</th></tr></thead>
+        <thead><tr><th>Менеджер</th><th>Заказы</th><th>Выручка</th><th>Ответ</th></tr></thead>
         <tbody id="mgr"></tbody>
       </table></div>
     </div>
@@ -891,7 +895,7 @@
       <h3>Цвет и канал</h3>
       <div class="hint">Сравнение цветов и каналов сбыта по покупкам текущего фильтра.</div>
       <div class="scroll-x"><table>
-        <thead><tr><th>Цвет</th><th>Изделий</th><th>Выручка</th><th>Канал до возвратов</th><th>Доля продаж канала</th></tr></thead>
+        <thead><tr><th>Цвет</th><th>Изделий</th><th>Выручка</th><th>Канал</th><th>Доля канала</th></tr></thead>
         <tbody id="colors"></tbody>
       </table></div>
     </div>
@@ -1210,7 +1214,7 @@ function refresh(){
  const overdue=rules?[...measured,...waitingMeasured].filter(x=>x.working_minutes>rules.threshold_minutes).length:0;
  el('response-quality').textContent=`Открытых бесед сейчас, с входящим без последующего исходящего: ${data.responses?.queue_verified?num(currentQueue.length):'не проверено'} (без фильтра периода). В периоде серий без исходящего: ${num(waiting.length)}. Ответов без установленного автора в периоде: ${num(unknownReplies.length)}. Открытых бесед без событий в доступной истории: ${num(data.responses?.open_without_events||0)}; время ожидания по ним неизвестно. `+(rules?`Порог: ${rules.threshold_minutes} рабочих минут. Просрочено: ${overdue} из ${measured.length+waitingMeasured.length} серий с известным графиком (${pct(overdue,measured.length+waitingMeasured.length)}), включая ожидающие ответа. `:'Рабочие часы и допустимое время ответа не заданы: рабочее время и доля просрочек не рассчитываются. ')+(data.responses?.to?`События обновлены: ${new Date(data.responses.to).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})}.`:'');
  const responseNumbers=rows=>{const ns=rows.map(x=>Number(x.minutes)).filter(n=>Number.isFinite(n)).sort((a,b)=>a-b);if(!ns.length)return null;const med=(ns[Math.floor((ns.length-1)/2)]+ns[Math.floor(ns.length/2)])/2;const avg=ns.reduce((a,b)=>a+b,0)/ns.length;return {med,avg,n:ns.length}};
- const responsePair=rows=>{const s=responseNumbers(rows);return s?`медиана ${s.med.toFixed(1)} · средняя ${s.avg.toFixed(1)} мин (${s.n})`:'нет данных'};
+ const responsePair=rows=>{const s=responseNumbers(rows);return s?`мед. ${s.med.toFixed(1)} · ср. ${s.avg.toFixed(1)}`:'нет данных'};
  const responseOne=(rows,kind)=>{const s=responseNumbers(rows);return s?(kind==='avg'?s.avg:s.med).toFixed(1)+' мин ('+s.n+' ответов)':'нет данных'};
  const mgr=Object.entries(group(financial,x=>x.o.manager||'Нет смены в графике')).map(([name,arr])=>({name,arr:arr.filter(x=>!x.o.return_event),rev:sum(arr,x=>orderRev(x.o,x.ls))}));
  mgr.sort((a,b)=>a.name==='Нет смены в графике'?1:b.name==='Нет смены в графике'?-1:b.rev-a.rev);
@@ -1218,7 +1222,7 @@ function refresh(){
  el('mgr-hint').textContent=`Менеджер по графику смен на дату закрывающего платежа. Подтверждённая смена: ${num(assigned)} из ${num(n)} покупок в фильтре. Без однозначной смены выручка показана отдельно.`+(data.roster?.status==='ok'?'':' График недоступен при сборке среза.');
  for(const name of new Set(responseRows.map(x=>x.manager)))if(!mgr.some(x=>x.name===name))mgr.push({name,arr:[],rev:0});
  el('mgr-hint').textContent+=' Ответ: медиана и средняя календарных минут от первого входящего в серии до следующего исходящего в той же беседе amoCRM, по фактическому автору ответа. Только «Продажи 2MY», период по входящему сообщению; товарные фильтры на ответы не действуют. Ответы без определённого автора исключены.'+(data.responses?.from?` История с ${dmy(data.responses.from)}.`:' История сообщений ещё не загружена.')+(data.responses?.from&&state.from<data.responses.from?' Выбранный период шире доступной истории: показатели ответов неполные.':'');
- table('mgr',mgr,[x=>x.name,x=>num(x.arr.length),x=>money(x.rev),x=>{const rs=responseRows.filter(r=>r.manager===x.name);return responsePair(rs)+(rules?' · рабочее: '+responsePair(rs.filter(r=>r.working_minutes!==null&&r.working_minutes!==undefined).map(r=>({minutes:r.working_minutes}))):'')}]);
+ el('mgr').innerHTML=mgr.length?mgr.map(x=>{const rs=responseRows.filter(r=>r.manager===x.name);const work=rules?responsePair(rs.filter(r=>r.working_minutes!==null&&r.working_minutes!==undefined).map(r=>({minutes:r.working_minutes}))):'';return `<tr><td>${esc(x.name)}</td><td>${num(x.arr.length)}</td><td>${money(x.rev)}</td><td class="ans">${esc(responsePair(rs))}${work?`<br><span>раб. ${esc(work)}</span>`:''}</td></tr>`}).join(''):'<tr><td colspan="4" class="empty">Нет данных</td></tr>';
  const financialPhones=new Set(financial.map(x=>x.o.phone));
  const scopedClients=clients.filter(c=>financialPhones.has(c.phone));
  const datedClients=scopedClients.filter(c=>c.freq!==null);
