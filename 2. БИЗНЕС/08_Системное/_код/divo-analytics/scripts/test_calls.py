@@ -310,6 +310,31 @@ class QueueTest(unittest.TestCase):
             self.assertIsNone(s["managers"][0]["manager_id"])
             self.assertEqual(calls_api.summary(manager="13334858")["total"],0)
 
+    def test_criterion_summary_excludes_na_and_unvalidated_results(self):
+        r=self.call();r.state="complete";r.is_scored=True;r.score=100;r.analysis=analysis()
+        r.analysis["criteria"][4]["status"]="na"
+        c=call_worker.upsert_note(self.db,self.note(id=2,uniq="review"),"lead",100,[100])
+        c.state="needs_review";c.analysis=analysis();self.db.commit()
+        with patch.object(calls_api,"SessionLocal",self.factory):
+            s=calls_api.summary()
+            self.assertEqual(s["criteria"][0]["yes"],1)
+            self.assertEqual(s["criteria"][4]["applicable"],0)
+            self.assertEqual(s["criteria"][4]["na"],1)
+            self.assertIsNone(s["criteria"][4]["completion"])
+
+    def test_status_filter_applies_before_pagination_and_grade_sort(self):
+        for i in range(1,5):
+            r=call_worker.upsert_note(self.db,self.note(id=i,uniq=f"filter-{i}"),"lead",100,[100])
+            r.state="needs_review" if i<3 else "complete"
+            r.is_scored=i>=3;r.score=(100 if i==3 else 50) if i>=3 else None
+        self.db.commit()
+        with patch.object(calls_api,"SessionLocal",self.factory):
+            p=calls_api.calls(view="review",limit=1,offset=1)
+            self.assertEqual(p["total"],2);self.assertEqual(len(p["items"]),1)
+            self.assertEqual(p["items"][0]["state"],"needs_review")
+            p=calls_api.calls(view="scored",sort="score_asc",limit=25,offset=0)
+            self.assertEqual([r["score"] for r in p["items"]],[50,100])
+
     def test_sales_collector_preserves_all_configured_managers(self):
         from app.collector import build_daily
         from app.models import LeadSnapshot

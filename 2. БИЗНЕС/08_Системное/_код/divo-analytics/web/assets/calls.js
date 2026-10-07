@@ -1,112 +1,61 @@
-/* Контроль качества: тот же период и авторизация, независимая загрузка от продаж. */
+/* Общая авторизация и период; сводка, список и разбор загружаются независимо. */
 (() => {
-  'use strict';
-  const el = id => document.getElementById(id);
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const statusNames = {yes:'Да',no:'Нет',na:'Неприменимо',unknown:'Недостаточно данных'};
-  const criterionNames = ['','Установил контакт','Выяснил потребность','Представил автомобиль','Выявил трейд-ин','Предложил оценку','Пригласил на встречу','Зафиксировал следующий шаг'];
-  const deliveryNames = {pending:'Ожидает отправки',sending:'Отправляется',sent:'Доставлен',ambiguous:'Доставку нужно проверить',blocked:'Отправка заблокирована'};
-  let offset = 0, total = 0, generation = 0, timer, initialized = false;
-  const limit = 25;
-  const percent = v => v == null ? '—' : `${Number(v).toLocaleString('ru-RU')}%`;
-  const when = ts => new Date(ts*1000).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-  const ts = value => value == null ? '' : `${Math.floor(value/60).toString().padStart(2,'0')}:${Math.floor(value%60).toString().padStart(2,'0')}`;
-  function query() {
-    const q = new URLSearchParams();
-    if(el('dateFrom').value) q.set('start',el('dateFrom').value);
-    if(el('dateTo').value) q.set('end',el('dateTo').value);
-    if(el('cqManager').value) q.set('manager',el('cqManager').value);
-    if(el('cqCategory').value) q.set('category',el('cqCategory').value);
-    q.set('calibration',String(el('cqCalibration').checked));
-    return q;
-  }
-  async function get(url) {
-    const r = await fetch(url,{credentials:'same-origin',cache:'no-store'});
-    if(r.status === 401){location.href='/login';throw new Error('Нужно войти');}
-    if(!r.ok) throw new Error(`Не удалось получить звонки (${r.status})`);
-    return r.json();
-  }
-  function card(row) {
-    const score = row.is_scored ? `${row.yes_count} из ${row.applicable_count} · ${percent(row.score)}` : row.state_name;
-    return `<details class="cq-call" data-call-id="${Number(row.id)}"><summary><span>${esc(when(row.occurred_at))}</span><strong>${esc(row.manager_name)}</strong><span class="cq-tag">${esc(row.category_name)}</span><span class="cq-score">${esc(score)}</span></summary><div class="cq-detail" data-detail>Открываем разбор…</div></details>`;
-  }
-  function metric(value,label) {return `<div class="cq-metric"><b>${esc(value)}</b><span>${esc(label)}</span></div>`;}
-  async function load() {
-    const gen = ++generation;
-    el('cqStatus').textContent='Обновляем звонки…';
-    try {
-      const q = query();
-      const pageq = new URLSearchParams(q);pageq.set('offset',offset);pageq.set('limit',limit);
-      const [s,page] = await Promise.all([get(`/api/calls/summary?${q}`),get(`/api/calls?${pageq}`)]);
-      if(gen !== generation) return;
-      total=page.total;
-      if(!initialized){
-        for(const m of s.manager_options){const o=document.createElement('option');o.value=m.id;o.textContent=m.name;el('cqManager').append(o);}
-        for(const [key,name] of Object.entries(s.categories)){const o=document.createElement('option');o.value=key;o.textContent=name;el('cqCategory').append(o);}
-        initialized=true;
-      }
-      el('cqMetrics').innerHTML=metric(s.processed,'Обработано разговоров')+metric(s.scored,'Оценено по критериям')+metric(percent(s.average_score),'Среднее выполнение')+metric(percent(s.meeting_rate),'Согласовали встречу · среди оценённых');
-      let note=`Всего: ${s.total}. В очереди: ${s.pending}. Требуют проверки: ${s.needs_review}. Без записи или с ошибкой: ${s.unavailable}.`;
-      if(!s.processing_enabled) note+=' Анализ новых записей пока выключен.';
-      if(s.worker.calls_last_error) note+=' Обработчик требует проверки.';
-      if(!s.amo_enabled) note+=' Примечания пока не отправляются.';
-      if(!s.telegram_enabled || !s.telegram_configured) note+=' Telegram пока не подключён.';
-      if(el('cqCalibration').checked) note+=' Калибровка показана отдельно и не включена в рабочую статистику.';
-      el('cqStatus').textContent=note;
-      el('cqManagers').innerHTML=s.managers.length ? `<div class="cq-table-wrap"><table class="cq-table"><thead><tr><th>Менеджер</th><th>Разговоров</th><th>Оценено</th><th>Среднее</th><th>Частые пропуски</th></tr></thead><tbody>${s.managers.map(m=>`<tr><td>${esc(m.manager_name)}</td><td>${m.calls}</td><td>${m.scored}</td><td>${esc(percent(m.average_score))}</td><td>${m.top_misses.map(x=>`${esc(x.name)} (${x.count})`).join('<br>')||'—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="cq-muted">За этот период данных пока нет.</p>';
-      el('cqList').innerHTML=page.items.map(card).join('') || '<p class="cq-muted">Звонков за выбранный период пока нет.</p>';
-      el('cqPage').textContent=total ? `${offset+1}–${Math.min(offset+limit,total)} из ${total}` : '0 звонков';
-      el('cqPrev').disabled=offset===0;el('cqNext').disabled=offset+limit>=total;
-    } catch(e){if(gen===generation) el('cqStatus').textContent=e.message;}
-  }
-  function evidenceHTML(item) {
-    let evidence=item.evidence || [];
-    if(!evidence.length) evidence=(item.conditions || []).flatMap(c=>c.evidence || []);
-    const seen=new Set();
-    return evidence.filter(e=>{if(seen.has(e.quote))return false;seen.add(e.quote);return true;}).map(e=>`<blockquote>${esc(ts(e.start))} ${esc(e.quote)}</blockquote>`).join('');
-  }
-  async function openDetail(details) {
-    if(details.dataset.loaded) return;
-    const target=details.querySelector('[data-detail]');
-    try {
-      const row=await get(`/api/calls/${Number(details.dataset.callId)}`);
-      const a=row.analysis || {},out=a.outcome || {};
-      const meeting=out.meeting_agreed===true?'согласована':out.meeting_agreed===false?'не согласована':'не выяснено';
-      const trade={interest:'интерес',refused:'отказ',no_car:'нет автомобиля',not_discussed:'не выяснено'}[out.trade_in] || 'не выяснено';
-      let html=row.binding_ambiguous?'<p class="cq-warning">Связь со сделкой неоднозначна. Автоматическое примечание заблокировано.</p>':'';
-      if(row.state==='needs_review') html+='<p class="cq-warning">Результат требует проверки. В среднюю оценку не включён.</p>';
-      if(row.last_error==='nexara_submit_http_402') html+='<p class="cq-warning">Nexara отклонила задание: нужно проверить баланс или доступ к платной обработке. Расшифровка не выполнена.</p>';
-      html+=`<p>${esc(a.summary || row.category_reason)}</p><p>Встреча: ${esc(meeting)}${out.meeting_when?' · '+esc(out.meeting_when):''}. Трейд-ин: ${esc(trade)}.</p>`;
-      if(out.next_contact) html+=`<p>Следующий контакт: ${esc(out.next_contact)}</p>`;
-      html+=(a.criteria || []).map(c=>`<div class="cq-criterion"><strong>${Number(c.id)}. ${esc(criterionNames[c.id])}: ${esc(statusNames[c.status])}</strong><p>${esc(c.explanation)}</p>${evidenceHTML(c)}</div>`).join('');
-      if(a.recommendation) html+=`<p><strong>Приоритет:</strong> ${esc(a.recommendation)}</p>`;
-      html+=`<p>${row.lead_ids.map(id=>`<a href="https://divomotors.amocrm.ru/leads/detail/${Number(id)}" target="_blank" rel="noopener">Открыть сделку ${Number(id)}</a>`).join(' · ')}</p>`;
-      const tr=row.transcript || {},segments=tr.segments || [];
-      const transcript=segments.length?segments.map(s=>`<div class="cq-segment"><time>${esc(ts(s.start))}</time><strong>${esc(s.speaker || 'Спикер')}:</strong> ${esc(s.text)}</div>`).join(''):`<p>${esc(tr.text || 'Транскрипт пока недоступен.')}</p>`;
-      html+=`<details class="cq-transcript"><summary>Запись и полный транскрипт</summary><audio controls preload="none" src="/api/calls/${Number(row.id)}/recording" aria-label="Запись звонка"></audio>${transcript}</details>`;
-      html+=`<p class="cq-muted">${row.deliveries.map(d=>`${d.channel==='amo'?'amoCRM':'Telegram'}: ${deliveryNames[d.state] || d.state}`).join(' · ') || 'Отправок пока нет'} · Версия правил ${esc(row.rule_version || '—')}</p>`;
-      if(row.validation_errors.length) html+='<p class="cq-warning">Доказательства или структура оценки не прошли проверку.</p>';
-      const errors=[row.last_error,...row.validation_errors,...row.deliveries.map(d=>d.last_error)].filter(Boolean);
-      if(errors.length) html+=`<details class="cq-transcript"><summary>Причины ошибок и проверки</summary>${[...new Set(errors)].map(e=>`<p class="cq-muted">${esc(e)}</p>`).join('')}</details>`;
-      target.innerHTML=html;details.dataset.loaded='true';
-    } catch(e){target.textContent=e.message;}
-  }
-  el('cqList').addEventListener('toggle',e=>{if(e.target.matches('.cq-call')&&e.target.open)openDetail(e.target);},true);
-  const schedule=()=>{clearTimeout(timer);timer=setTimeout(load,100);};
-  document.addEventListener('divo:range',()=>{offset=0;schedule();});
-  for(const id of ['cqManager','cqCategory','cqCalibration']) el(id).addEventListener('change',()=>{offset=0;schedule();});
-  el('cqRefresh').addEventListener('click',load);
-  el('cqPrev').addEventListener('click',()=>{offset=Math.max(0,offset-limit);load();});
-  el('cqNext').addEventListener('click',()=>{offset+=limit;load();});
-  setInterval(load,60000);
-  schedule();
-  const linked=Number(new URLSearchParams(location.search).get('call'));
-  if(Number.isSafeInteger(linked)&&linked>0){
-    get(`/api/calls/${linked}`).then(row=>{
-      const box=document.createElement('div');box.innerHTML=card(row);
-      el('callQuality').querySelector('.panel').prepend(box);
-      const details=box.querySelector('details');details.open=true;openDetail(details);
-      el('callQuality').scrollIntoView({behavior:'smooth'});
-    }).catch(e=>{el('cqStatus').textContent=e.message;});
-  }
+'use strict';
+const el=id=>document.getElementById(id), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const names=['','Установил контакт','Выяснил потребность','Представил автомобиль','Выявил трейд-ин','Предложил оценку','Пригласил на встречу','Зафиксировал следующий шаг'];
+const statuses={yes:'Да',no:'Нет',na:'Неприменимо',unknown:'Недостаточно данных'};
+const delivery={pending:'Ожидает отправки',sending:'Отправляется',sent:'Доставлен',ambiguous:'Нужно проверить доставку',blocked:'Отправка заблокирована'};
+const pct=v=>v==null?'—':`${Number(v).toLocaleString('ru-RU')}%`;
+const time=v=>v==null?'—':`${Math.floor(v/60).toString().padStart(2,'0')}:${Math.floor(v%60).toString().padStart(2,'0')}`;
+const date=v=>new Date(v*1000).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+let source=new URLSearchParams(location.search).get('source')==='calibration'?'calibration':'working', mode='sales', view='all',offset=0,total=0,generation=0,detailGeneration=0,initialized=false,lastFocus;
+const limit=20;
+function urlState(call){const u=new URL(location.href);u.hash=mode==='calls'?'callQuality':'salesView';if(source==='calibration')u.searchParams.set('source','calibration');else u.searchParams.delete('source');if(call)u.searchParams.set('call',call);else u.searchParams.delete('call');history.replaceState(null,'',u);}
+function query(){const q=new URLSearchParams({calibration:String(source==='calibration')});for(const [id,key] of [['dateFrom','start'],['dateTo','end'],['cqManager','manager'],['cqCategory','category']])if(el(id).value)q.set(key,el(id).value);return q;}
+async function get(url){const r=await fetch(url,{credentials:'same-origin',cache:'no-store'});if(r.status===401){location.href='/login';throw Error('Нужно войти');}if(!r.ok)throw Error(`Не удалось загрузить данные (${r.status})`);return r.json();}
+function setSource(s){source=s;offset=0;view='all';document.querySelectorAll('[data-call-source]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.callSource===s)));urlState();if(mode==='calls')load();}
+function setMode(m){mode=m;el('salesView').hidden=m!=='sales';el('callQuality').hidden=m!=='calls';document.querySelectorAll('[data-dashboard-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.dashboardView===m)));urlState();if(m==='calls')load();}
+function metric(value,label,note,attention=false){return `<${attention?'button type="button" data-view="review"':'div'} class="cq-metric${attention?' attention':''}"><span class="cq-metric-label">${esc(label)}</span><b>${esc(value)}</b><small>${esc(note)}</small></${attention?'button':'div'}>`;}
+function renderSummary(s){
+ el('cqRange').textContent=`${el('dateFrom').value || 'Начало периода'} — ${el('dateTo').value || 'сегодня'} · МСК`;
+ el('cqMetrics').innerHTML=metric(s.total,'Звонков',`Обработано ${s.processed}`)+metric(pct(s.average_score),'Выполнение критериев',`Оценено ${s.scored} разговоров`)+metric(s.meeting_agreed,'Согласовали встречу',`${pct(s.meeting_rate)} оценённых разговоров`)+metric(s.needs_review,'На проверке','Не включены в среднюю оценку',true);
+ const messages=[];
+ if(source==='calibration')messages.push('Калибровка: проверяем качество анализа. Эти звонки не входят в рабочую статистику и не рассылаются.');
+ else if(!s.processing_enabled)messages.push('Обработка новых звонков пока выключена: идёт калибровка.');
+ if(s.unknown_manager)messages.push(`У ${s.unknown_manager} звонков сотрудник не подтверждён.`);
+ if(s.worker.calls_last_error)messages.push('Обработчик требует проверки.');
+ el('cqAttention').hidden=!messages.length;el('cqAttention').innerHTML=`<span>${esc(messages.join(' '))}</span>${s.needs_review?'<button type="button" data-view="review">Посмотреть проверку →</button>':''}`;
+ el('cqOverview').hidden=!s.total;
+ el('cqCriteriaNote').textContent=`По ${s.scored} оценкам`;
+ el('cqCriteria').innerHTML=(s.criteria||[]).map(c=>`<div class="cq-criterion-bar"><span>${c.id}. ${esc(c.name)}</span><div class="cq-track" title="${c.yes} из ${c.applicable} применимых"><i style="width:${Number(c.completion)||0}%"></i></div><b>${esc(pct(c.completion))}</b></div>`).join('');
+ el('cqManagers').innerHTML='<div class="cq-manager-head"><span>Сотрудник / частые пропуски</span><span>Оценок</span><span>Среднее</span></div>'+s.managers.map(m=>`<button type="button" class="cq-manager-row" data-manager="${m.manager_id==null?'unknown':Number(m.manager_id)}"><span><strong>${esc(m.manager_name)}</strong><small>${esc(m.top_misses.map(x=>`${x.name} (${x.count})`).join(' · ')||`${m.calls} разговоров`)}</small></span><span>${m.scored}</span><b>${esc(pct(m.average_score))}</b></button>`).join('');
+ const tabs=[['all','Все',s.total],['scored','Оценены',s.scored],['review','На проверке',s.needs_review]];if(s.unavailable)tabs.push(['unavailable','Без результата',s.unavailable]);if(s.pending)tabs.push(['pending','В обработке',s.pending]);
+ el('cqViews').innerHTML=tabs.map(([key,name,count])=>`<button type="button" data-view="${key}" aria-pressed="${view===key}">${name} <span>${count}</span></button>`).join('');
+}
+function rowHTML(r){const review=['needs_review','submit_ambiguous'].includes(r.state),out=r.outcome||{};
+ const outcome=review?'Требует проверки':out.meeting_agreed===true?`Встреча согласована${out.meeting_when?' · '+out.meeting_when:''}`:out.next_contact?`Следующий контакт · ${out.next_contact}`:out.meeting_agreed===false?'Встреча не согласована':r.state_name;
+ const grade=r.is_scored?`<b class="cq-score">${pct(r.score)}</b><small>${r.yes_count} из ${r.applicable_count}</small><span class="cq-dots">${r.criteria.map(c=>`<span class="cq-dot ${c.status}" title="${esc(names[c.id]+': '+statuses[c.status])}">${c.id}</span>`).join('')}</span>`:`<span class="cq-badge${review?' review':''}">${esc(review?'На проверке':r.state==='complete'?'Без оценки':r.state_name)}</span>`;
+ return `<button type="button" class="cq-call-row" data-call="${Number(r.id)}" aria-label="Разбор звонка ${esc(date(r.occurred_at))}"><span class="cq-row-person"><strong>${esc(date(r.occurred_at))}</strong><small>${esc(r.manager_name)}</small></span><span class="cq-row-content"><strong>${esc(r.category_name || 'Тип ещё не определён')}</strong><span class="cq-row-summary">${esc(r.summary || r.category_reason || r.state_name)}</span><small>${r.direction==='in'?'Входящий':'Исходящий'} · ${time(r.duration_sec)}</small></span><span class="cq-row-outcome">${esc(outcome)}</span><span class="cq-row-grade">${grade}</span><span class="cq-arrow">›</span></button>`;
+}
+async function load(){const gen=++generation;el('cqStatus').textContent='Обновляем…';try{const q=query(),p=new URLSearchParams(q);p.set('view',view);p.set('sort',el('cqSort').value);p.set('offset',offset);p.set('limit',limit);const [s,page]=await Promise.all([get(`/api/calls/summary?${q}`),get(`/api/calls?${p}`)]);if(gen!==generation)return;
+ if(!initialized){for(const m of s.manager_options)el('cqManager').add(new Option(m.name,m.id));for(const [k,n] of Object.entries(s.categories))el('cqCategory').add(new Option(n,k));initialized=true;}
+ total=page.total;if(offset && offset>=total){offset=0;return load();}renderSummary(s);
+ el('cqList').innerHTML=page.items.map(rowHTML).join('') || `<div class="cq-empty"><strong>${source==='working' && !s.total?'Рабочих звонков за этот период пока нет':'По выбранным фильтрам звонков нет'}</strong><p>${source==='working' && !s.total?'Открой калибровку, чтобы посмотреть первые разборы.':'Измени период или фильтры.'}</p>${source==='working' && !s.total?'<button type="button" data-call-source="calibration">Открыть калибровку</button>':''}</div>`;
+ el('cqStatus').textContent=`${total} разговоров`;el('cqPage').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} из ${total}`:'0 звонков';el('cqPrev').disabled=!offset;el('cqNext').disabled=offset+limit>=total;
+}catch(e){if(gen===generation)el('cqStatus').textContent=e.message;}}
+function evidence(c){const seen=new Set();return [...(c.evidence||[]),...(c.conditions||[]).flatMap(x=>x.evidence||[])].filter(e=>{if(seen.has(e.quote))return false;seen.add(e.quote);return true;}).map(e=>`<blockquote>${esc(e.quote)}${Number.isFinite(e.start)?` <button type="button" class="cq-time-button" data-seek="${Number(e.start)}">${time(e.start)} ↗</button>`:''}</blockquote>`).join('');}
+function tab(name){document.querySelectorAll('[data-detail-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.detailTab===name)));document.querySelectorAll('[data-detail-pane]').forEach(p=>p.hidden=p.dataset.detailPane!==name);}
+function detailHTML(r){const a=r.analysis||{},out=a.outcome||{},draft=r.state==='needs_review',tr=r.transcript||{};
+ const warnings=[];if(draft)warnings.push('Анализ не прошёл проверку. Ниже предварительная версия ИИ; она не входит в среднюю оценку.');if(r.binding_ambiguous)warnings.push('Связь со сделкой неоднозначна. Примечание заблокировано.');if(!r.manager_verified)warnings.push('Сотрудник не подтверждён данными телефонии.');
+ const meeting=out.meeting_agreed===true?'Согласована':out.meeting_agreed===false?'Не согласована':'Не выяснено',trade={interest:'Интерес к обмену',refused:'Отказ от обмена',no_car:'Нет автомобиля',not_discussed:'Не выяснено'}[out.trade_in]||'Не выяснено';
+ const criteria=(a.criteria||[]).map(c=>`<details class="cq-detail-criterion"><summary><strong>${c.id}. ${esc(names[c.id])}</strong><span class="cq-badge ${draft?'':c.status}">${draft?'Версия ИИ: ':''}${esc(statuses[c.status]||c.status)}</span></summary><p>${esc(c.explanation)}</p>${evidence(c)}</details>`).join('');
+ const segments=(tr.segments||[]).map(s=>`<div class="cq-segment" data-segment><button type="button" class="cq-time-button" data-seek="${Number(s.start)||0}">${time(s.start)}</button><p><strong>${esc(s.speaker||'Спикер')}</strong> ${esc(s.text)}</p></div>`).join('') || `<p>${esc(tr.text||'Транскрипт пока недоступен.')}</p>`;
+ const errors=[r.last_error,...(r.validation_errors||[]),...(r.deliveries||[]).map(d=>d.last_error)].filter(Boolean);
+ return `${warnings.length?`<div class="cq-detail-warning">${warnings.map(w=>`<p>${esc(w)}</p>`).join('')}</div>`:''}<div class="cq-detail-top"><strong>${esc(r.is_scored?`${pct(r.score)} · ${r.yes_count} из ${r.applicable_count}`:r.state_name)}</strong><span>${esc(r.category_name||'Тип не определён')}</span></div><div class="cq-detail-tabs"><button type="button" data-detail-tab="analysis" aria-pressed="true">Разбор</button><button type="button" data-detail-tab="transcript" aria-pressed="false">Запись и текст</button><button type="button" data-detail-tab="diagnostics" aria-pressed="false">Диагностика</button></div><div data-detail-pane="analysis"><p>${esc(a.summary||r.category_reason||'Анализ пока недоступен.')}</p>${a.outcome?`<div class="cq-outcomes"><div class="cq-outcome"><span>${draft?'Версия ИИ · ':''}Встреча</span><strong>${esc(meeting)}</strong><p>${esc(out.meeting_when||out.next_contact||'')}</p></div><div class="cq-outcome"><span>${draft?'Версия ИИ · ':''}Трейд-ин</span><strong>${esc(trade)}</strong></div></div>`:''}${criteria}${a.recommendation?`<div class="cq-recommendation"><strong>Что улучшить</strong><p>${esc(a.recommendation)}</p></div>`:''}<p>${(r.lead_ids||[]).map(id=>`<a href="https://divomotors.amocrm.ru/leads/detail/${Number(id)}" target="_blank" rel="noopener">Сделка ${Number(id)} ↗</a>`).join(' · ')}</p></div><div data-detail-pane="transcript" hidden><audio id="cqAudio" class="cq-audio" controls preload="none" src="/api/calls/${Number(r.id)}/recording" aria-label="Запись звонка"></audio><p id="cqAudioError" hidden class="cq-muted">Не удалось загрузить запись. Попробуй позже.</p><input id="cqSearch" class="cq-transcript-search" type="search" placeholder="Найти в разговоре" aria-label="Найти в транскрипте"><div id="cqTranscript">${segments}</div><p id="cqSearchEmpty" hidden class="cq-muted">Совпадений нет.</p></div><div data-detail-pane="diagnostics" hidden><p>Обработка: ${esc(r.state_name)}</p><p>${(r.deliveries||[]).map(d=>`${d.channel==='amo'?'amoCRM':'Telegram'}: ${esc(delivery[d.state]||d.state)}`).join('<br>')||'Отправок пока нет.'}</p><p class="cq-muted">Правила: ${esc(r.rule_version||'—')}<br>Анализ: ${esc(r.analysis_version||'—')}</p>${errors.length?`<details class="cq-diagnostics"><summary>Причины ошибок (${errors.length})</summary>${[...new Set(errors)].map(e=>`<p><code>${esc(e)}</code></p>`).join('')}</details>`:''}</div>`;
+}
+async function openDetail(id){const gen=++detailGeneration;lastFocus=document.activeElement;el('cqDetailTitle').textContent='Разбор звонка';el('cqDetailMeta').textContent='Загружаем…';el('cqDetailBody').textContent='Открываем разбор…';if(!el('cqDrawer').open)el('cqDrawer').showModal();document.body.style.overflow='hidden';urlState(id);try{const r=await get(`/api/calls/${id}`);if(gen!==detailGeneration||!el('cqDrawer').open)return;el('cqDetailTitle').textContent=r.manager_name;el('cqDetailMeta').textContent=`${date(r.occurred_at)} · ${time(r.duration_sec)} · ${r.direction==='in'?'Входящий':'Исходящий'}`;el('cqDetailBody').innerHTML=detailHTML(r);el('cqAudio').addEventListener('error',()=>el('cqAudioError').hidden=false);el('cqSearch').addEventListener('input',()=>{const q=el('cqSearch').value.toLocaleLowerCase('ru-RU');let shown=0;el('cqTranscript').querySelectorAll('[data-segment]').forEach(s=>{s.hidden=!s.textContent.toLocaleLowerCase('ru-RU').includes(q);if(!s.hidden)shown++;});el('cqSearchEmpty').hidden=!q||shown>0;});}catch(e){if(gen===detailGeneration)el('cqDetailBody').textContent=e.message;}}
+el('cqClose').addEventListener('click',()=>el('cqDrawer').close());el('cqDrawer').addEventListener('click',e=>{if(e.target===el('cqDrawer'))el('cqDrawer').close();});el('cqDrawer').addEventListener('close',()=>{detailGeneration++;document.body.style.overflow='';urlState();lastFocus?.focus();});
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.dashboardView)setMode(b.dataset.dashboardView);else if(b.dataset.callSource)setSource(b.dataset.callSource);else if(b.dataset.view){view=b.dataset.view;offset=0;load();}else if(b.dataset.manager){el('cqManager').value=b.dataset.manager;offset=0;load();}else if(b.dataset.call)openDetail(Number(b.dataset.call));else if(b.dataset.detailTab)tab(b.dataset.detailTab);else if(b.dataset.seek){tab('transcript');const audio=el('cqAudio'),seek=Number(b.dataset.seek);if(!Number.isFinite(seek)||seek<0)return;const apply=()=>{audio.currentTime=Number.isFinite(audio.duration)?Math.min(seek,audio.duration):seek;};if(audio.readyState)apply();else {audio.addEventListener('loadedmetadata',apply,{once:true});audio.load();}}});
+for(const id of ['cqManager','cqCategory','cqSort'])el(id).addEventListener('change',()=>{offset=0;load();});el('cqRefresh').addEventListener('click',load);el('cqPrev').addEventListener('click',()=>{offset=Math.max(0,offset-limit);load();});el('cqNext').addEventListener('click',()=>{offset+=limit;load();});document.addEventListener('divo:range',()=>{offset=0;if(mode==='calls')load();});setInterval(()=>{if(mode==='calls'&&!el('cqDrawer').open&&!document.hidden)load();},60000);
+const linked=Number(new URLSearchParams(location.search).get('call')),initialCalls=location.hash==='#callQuality'||linked>0;document.querySelectorAll('[data-call-source]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.callSource===source)));if(initialCalls){setMode('calls');if(Number.isSafeInteger(linked)&&linked>0)openDetail(linked);}
 })();
