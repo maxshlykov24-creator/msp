@@ -9,7 +9,7 @@ import re
 import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -267,6 +267,55 @@ def working_minutes(start: int, end: int, rules: dict | None) -> float | None:
     return round(total, 2)
 
 
+def _shift_manager(flags) -> str | None:
+    if flags == (True, False):
+        return "Кристина"
+    if flags == (False, True):
+        return "Таня"
+    return None
+
+
+def _shift_bounds(day: date) -> tuple[datetime, datetime]:
+    return (datetime(day.year, day.month, day.day, 10, 0, tzinfo=TZ),
+            datetime(day.year, day.month, day.day, 21, 0, tzinfo=TZ))
+
+
+def shift_clock(start_ts: int, roster: dict, horizon: int = 21) -> tuple[datetime | None, str | None]:
+    """Первый момент смены 10:00–21:00 не раньше входящего и менеджер этого дня.
+    До 10:00 счёт начинается в 10:00 того же дня, если в графике ровно один человек.
+    С 21:00 смена уже кончилась: счёт и диалог переходят на следующую смену.
+    День без одной галочки рабочим не считается.
+    """
+    moment = datetime.fromtimestamp(int(start_ts), TZ)
+    day = moment.date()
+    for _ in range(horizon):
+        manager = _shift_manager(roster.get(day))
+        open_at, close_at = _shift_bounds(day)
+        if manager and moment < open_at:
+            return open_at, manager
+        if manager and moment < close_at:
+            return moment, manager
+        day += timedelta(days=1)
+        moment = datetime(day.year, day.month, day.day, tzinfo=TZ)
+    return None, None
+
+
+def working_span(clock: datetime, end_ts: int, roster: dict) -> float:
+    end = datetime.fromtimestamp(int(end_ts), TZ)
+    if end <= clock:
+        return 0.0
+    total = 0.0
+    day = clock.date()
+    while day <= end.date():
+        if _shift_manager(roster.get(day)):
+            open_at, close_at = _shift_bounds(day)
+            left, right = max(clock, open_at), min(end, close_at)
+            if right > left:
+                total += (right - left).total_seconds() / 60
+        day += timedelta(days=1)
+    return round(total, 2)
+
+
 def get_responses(leads: list[dict]) -> dict:
     """Паузы входящее → первый исходящий в беседе, без текстов и контактов."""
     amo = lib.Amo()
@@ -298,6 +347,12 @@ def get_responses(leads: list[dict]) -> dict:
     names = {lib.USER_TANYA: "Таня", lib.USER_KRISTINA: "Кристина", lib.USER_OKSANA: "Оксана", lib.USER_MAXIM: "Максим"}
     pending, samples, unknown_rows = {}, [], []
     rules = response_rules()
+    try:
+        roster = shift_roster._rows(force=True)
+        clock_status = "10-21"
+    except Exception as exc:
+        roster = {}
+        clock_status = f"график недоступен: {type(exc).__name__}"
     current_managers = {l["id"]: names.get(l.get("manager"), "Не определён") for l in leads}
     unknown = 0
     for row in sorted(events.values(), key=lambda r: (r["created_at"], r["type"] != "incoming_chat_message", r["id"])):
@@ -310,12 +365,13 @@ def get_responses(leads: list[dict]) -> dict:
             pending.setdefault(key, (row["created_at"], row["entity_id"]))
         elif key in pending:
             start, entity_id = pending.pop(key)
-            manager = names.get(row.get("created_by"))
-            if manager:
-                samples.append({"date": datetime.fromtimestamp(start, TZ).date().isoformat(),
-                                "manager": manager, "minutes": round((row["created_at"] - start) / 60, 2),
+            clock, manager = shift_clock(start, roster) if clock_status == "10-21" else (None, None)
+            if manager and clock is not None:
+                minutes = working_span(clock, row["created_at"], roster)
+                samples.append({"date": clock.date().isoformat(),
+                                "manager": manager, "minutes": minutes,
                                 "start_at": start, "end_at": row["created_at"],
-                                "working_minutes": working_minutes(start, row["created_at"], rules)})
+                                "working_minutes": minutes})
             else:
                 unknown += 1
                 unknown_rows.append({"date": datetime.fromtimestamp(start, TZ).date().isoformat()})
@@ -334,15 +390,26 @@ def get_responses(leads: list[dict]) -> dict:
     else:
         raise RuntimeError("amo open talks: pagination limit reached")
     observed_talks = {v.get("message", {}).get("talk_id") for e in events.values() for v in e.get("value_after", [])}
-    pending_rows = [{"date": datetime.fromtimestamp(start, TZ).date().isoformat(), "start_at": start,
-                     "minutes": round((now.timestamp() - start) / 60, 2),
-                     "working_minutes": working_minutes(start, int(now.timestamp()), rules),
-                     "manager": current_managers.get(entity_id, "Не определён"), "talk_id": key[1],
-                     "is_open": key[1] in open_talks} for key, (start, entity_id) in pending.items()]
+    pending_rows = []
+    for key, (start, entity_id) in pending.items():
+        clock, shift_name = shift_clock(start, roster) if clock_status == "10-21" else (None, None)
+        end_ts = int(now.timestamp())
+        if clock is not None:
+            waited = working_span(clock, end_ts, roster)
+            pending_date = clock.date().isoformat()
+            pending_manager = shift_name or "Не определён"
+        else:
+            waited = round((now.timestamp() - start) / 60, 2)
+            pending_date = datetime.fromtimestamp(start, TZ).date().isoformat()
+            pending_manager = current_managers.get(entity_id, "Не определён")
+        pending_rows.append({"date": pending_date, "start_at": start, "minutes": waited,
+                             "working_minutes": waited, "manager": pending_manager, "talk_id": key[1],
+                             "is_open": key[1] in open_talks})
     return {"status": "ok", "source": "amoCRM events", "from": since.date().isoformat(),
             "to": now.isoformat(), "samples": samples, "messages": len(events),
             "unknown_author": unknown, "unanswered": len(pending), "unknown_rows": unknown_rows,
-            "pending": pending_rows, "queue_verified": True, "open_without_events": len(open_talks - observed_talks), "rules": rules, "rules_status": "configured" if rules else "not_configured"}
+            "pending": pending_rows, "queue_verified": True, "open_without_events": len(open_talks - observed_talks),
+            "rules": rules, "rules_status": "configured" if rules else "not_configured", "clock": clock_status}
 
 
 def positions_for(order_id: str) -> tuple[str, list[dict]]:
