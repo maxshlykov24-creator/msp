@@ -1013,6 +1013,23 @@
   </div>
 </div>
 
+<div id="sheet" hidden>
+  <div class="sheet-back" data-close="1"></div>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <div>
+        <div class="kicker" id="sheet-kicker"></div>
+        <h3 id="sheet-title"></h3>
+      </div>
+      <div>
+        <button type="button" id="sheet-back" hidden>Назад</button>
+        <button type="button" id="sheet-x">Закрыть</button>
+      </div>
+    </div>
+    <div id="sheet-body" class="sheet-body"></div>
+  </div>
+</div>
+
 <script>
 const el = id => document.getElementById(id);
 {
@@ -1544,21 +1561,5 @@ function placeChartTip(clientX){
 }
 fetch('snapshot.local.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Срез недоступен');return r.json()}).then(init).catch(()=>{el('head-note').textContent='Срез не загрузился'});
 </script>
-<div id="sheet" hidden>
-  <div class="sheet-back" data-close="1"></div>
-  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="sheet-head">
-      <div>
-        <div class="kicker" id="sheet-kicker"></div>
-        <h3 id="sheet-title"></h3>
-      </div>
-      <div>
-        <button type="button" id="sheet-back" hidden>Назад</button>
-        <button type="button" id="sheet-x">Закрыть</button>
-      </div>
-    </div>
-    <div id="sheet-body" class="sheet-body"></div>
-  </div>
-</div>
 </body>
 </html>
