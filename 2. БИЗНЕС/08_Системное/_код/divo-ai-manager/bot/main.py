@@ -380,15 +380,22 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             log.info("чат %s: доклейка %d сообщений, отвечаю заново", chat_id, len(extra))
             await channel.typing(chat_id)
     except llm.LlmError as exc:
-        log.error("LLM: %s", exc)
+        budget_blocked = "HTTP 402" in str(exc)
+        error_text = "OpenRouter: HTTP 402, лимит не допускает запрос" if budget_blocked else str(exc)
+        log.error("LLM: %s", error_text)
         key = str(chat_id)
         fails = llm_fails.get(key, 0) + 1
         llm_fails[key] = fails
         last_try = fails >= MAX_LLM_FAILS
         store.save_history(chat_id, history)
         await channel.notify_owner(
-            "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, exc)
+            "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, error_text)
         )
+        if budget_blocked:
+            # Денежный лимит повтором не исправляется. Клиент сразу идёт
+            # человеку, даже без номера; модель не нужна для этой передачи.
+            await _handoff(channel, chat_id, history, "handoff")
+            return
         if last_try:
             await _handoff(channel, chat_id, history, "llm")
             log.warning("чат %s на паузе: %d сбоя LLM подряд", chat_id, fails)

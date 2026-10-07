@@ -511,6 +511,28 @@
   .legend div{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:500;color:var(--body);padding:7px 0}
   .legend i{width:9px;height:9px;flex:0 0 9px;display:block}
   .legend b{margin-left:auto;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+  .legend button,.matrix button.kv{width:100%;font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:inherit}
+  .legend button{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:500;padding:7px 0}
+  .legend button:hover,.matrix button.kv:hover,tr.drill:hover td{background:#fafafa}
+  tr.drill{cursor:pointer}
+  body.sheet-on{overflow:hidden}
+  #sheet[hidden]{display:none}
+  #sheet{position:fixed;inset:0;z-index:90}
+  .sheet-back{position:absolute;inset:0;background:rgba(2,2,2,.28)}
+  .sheet-card{position:relative;z-index:1;width:min(920px,calc(100% - 32px));max-height:min(78vh,820px);margin:8vh auto 0;background:var(--paper);border:1px solid var(--ink);display:flex;flex-direction:column}
+  .sheet-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:18px 20px 12px;border-bottom:1px solid var(--line)}
+  .sheet-head h3{font-family:var(--sans);font-size:22px;font-weight:500;margin:4px 0 0}
+  .sheet-head button{font:inherit;font-size:11px;letter-spacing:.12em;text-transform:uppercase;background:none;border:0;border-bottom:1px solid var(--line);cursor:pointer;color:var(--mute);padding:0 0 3px}
+  .sheet-body{overflow:auto;padding:8px 20px 20px}
+  .sheet-count{font-size:12px;color:var(--mute);padding:10px 0 12px}
+  .sheet-table{width:100%;border-collapse:collapse;font-size:13px}
+  .sheet-table th{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);text-align:left;padding:0 8px 8px 0}
+  .sheet-table td{padding:10px 8px 10px 0;border-top:1px solid var(--line-soft);text-align:left}
+  .sheet-person{width:100%;display:flex;justify-content:space-between;gap:16px;padding:12px 0;border:0;border-bottom:1px solid var(--line-soft);background:none;font:inherit;cursor:pointer;text-align:left}
+  .sheet-person:hover{background:#fafafa}
+  .sheet-person b{font-weight:500;color:var(--mute);white-space:nowrap}
+  .sheet-go{display:inline-block;margin-top:18px;font-size:13px;color:var(--ink);border-bottom:1px solid var(--ink);text-decoration:none}
+  .sheet-facts .kv b{font-variant-numeric:tabular-nums}
 
   /* ── матрица размеров ── */
   .matrix{font-size:12px}
@@ -1015,7 +1037,17 @@ const pct = (a,b) => b ? Math.round(a/b*100) + '%' : '0%';
 const kv = rows => rows.map(([k,v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
 const sum = (xs, fn) => xs.reduce((a,x)=>a+fn(x),0);
 const group = (xs,key) => { const out=Object.create(null); xs.forEach(x=>{const k=key(x)||'не указано';(out[k] ||= []).push(x)}); return out; };
-const table = (id, rows, cols) => { el(id).innerHTML = rows.length ? rows.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(c(r))+'</td>').join('')+'</tr>').join('') : `<tr><td colspan="${cols.length}" class="empty">Нет данных</td></tr>`; };
+const table = (id, rows, cols, open) => { const body=el(id); body.innerHTML = rows.length ? rows.map((r,i)=>`<tr${open?' class="drill" data-i="'+i+'"':''}>`+cols.map(c=>'<td>'+esc(c(r))+'</td>').join('')+'</tr>').join('') : `<tr><td colspan="${cols.length}" class="empty">Нет данных</td></tr>`; body.onclick = open ? e=>{const tr=e.target.closest('tr[data-i]'); if(tr) open(rows[+tr.dataset.i]);} : null; };
+let sheetReturn=null;
+const msOrder=id=>`https://online.moysklad.ru/app/#customerorder/edit?id=${encodeURIComponent(id)}`;
+const msAgent=id=>`https://online.moysklad.ru/app/#counterparty/edit?id=${encodeURIComponent(id)}`;
+function closeSheet(){el('sheet').hidden=true;document.body.classList.remove('sheet-on');sheetReturn=null;}
+function showSheet(kicker,title,html,back){sheetReturn=back||null;el('sheet-kicker').textContent=kicker;el('sheet-title').textContent=title;el('sheet-body').innerHTML=html;el('sheet-back').hidden=!back;el('sheet').hidden=false;document.body.classList.add('sheet-on');}
+function showOrders(kicker,title,rows){const list=[...rows].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||''));showSheet(kicker,title,`<div class="sheet-count">${num(list.length)} ${list.length===1?'заказ':list.length<5?'заказа':'заказов'} · ${money(sum(list,r=>r.amount))}. Нажатие открывает заказ в МойСклад.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата</th><th>Клиент</th><th>Канал</th><th>Выручка</th></tr></thead><tbody>${list.map(r=>`<tr class="drill" data-order="${esc(r.o.id)}"><td>${esc(r.o.number)}</td><td>${dmy(r.o.paid_date)}</td><td>${esc(r.o.client||'—')}</td><td>${esc(r.o.channel||'')}</td><td>${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="5">Нет заказов</td></tr>'}</tbody></table>`);}
+const pack=xs=>xs.filter(x=>x.o&&!x.o.return_event&&!x.o.exchange).map(x=>({o:x.o,amount:orderRev(x.o,x.ls)}));
+function ordersFromGoods(lines){const by=new Map();for(const x of lines){const cur=by.get(x.o.id)||{o:x.o,amount:0};cur.amount+=Number(x.l.rev)||0;by.set(x.o.id,cur);}return [...by.values()];}
+function openClientList(title,list){const rows=[...list].sort((a,b)=>b.ltv-a.ltv);showSheet('Клиенты',title,rows.length?`<div class="sheet-count">${num(rows.length)} в этом списке. Нажатие открывает карточку.</div>`+rows.map(c=>`<button type="button" class="sheet-person" data-phone="${esc(c.phone)}"><span>${esc(c.name)}</span><b>${num(c.buys)} · ${money(c.ltv)}</b></button>`).join(''):'Нет клиентов',null);sheetReturn={list,title};}
+function openClientCard(c,back){const latest=[...c.orders].filter(o=>o.agent_id).sort((a,b)=>(b.paid_date||'').localeCompare(a.paid_date||''))[0];const link=latest?`<a class="sheet-go" href="${msAgent(latest.agent_id)}" target="_blank" rel="noopener">Контрагент в МойСклад</a>`:'<div class="hint">Ссылка на контрагента появится после следующей сборки среза.</div>';showSheet(c.tier||'Клиент',c.name,`<div class="sheet-facts">${kv([['Телефон',c.phone||'нет'],['Покупок',num(c.buys)],['LTV',money(c.ltv)],['Первая',c.first?dmy(c.first):'нет даты'],['Последняя',c.last?dmy(c.last):'нет даты'],['Размер',c.size||'нет данных'],['Чаще берёт',c.category||'нет данных']])}</div>${link}`,back);}
 const selected = id => [...el(id).selectedOptions].map(o=>o.value).filter(Boolean);
 const setSelected=(id,values)=>{const e=el(id);[...e.options].forEach(o=>o.selected=values.includes(o.value));e.dispatchEvent(new Event('pick-sync'))};
 const matches=(values,value)=>!values.length||values.includes(value);
@@ -1490,5 +1522,21 @@ function placeChartTip(clientX){
 }
 fetch('snapshot.local.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Срез недоступен');return r.json()}).then(init).catch(()=>{el('head-note').textContent='Срез не загрузился'});
 </script>
+<div id="sheet" hidden>
+  <div class="sheet-back" data-close="1"></div>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <div>
+        <div class="kicker" id="sheet-kicker"></div>
+        <h3 id="sheet-title"></h3>
+      </div>
+      <div>
+        <button type="button" id="sheet-back" hidden>Назад</button>
+        <button type="button" id="sheet-x">Закрыть</button>
+      </div>
+    </div>
+    <div id="sheet-body" class="sheet-body"></div>
+  </div>
+</div>
 </body>
 </html>

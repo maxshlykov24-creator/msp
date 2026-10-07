@@ -1643,7 +1643,12 @@ async def tick() -> None:
     if bot:
         await bot.listen(timeout=25)
     chat_ids = store.all_chat_ids()
-    queued = [cid for cid in chat_ids if (store.load_doc(cid).get("crm") or {}).get("handoff_pending")]
+    queued = []
+    for cid in chat_ids:
+        state = store.load_doc(cid).get("crm") or {}
+        alert = state.get("alert") or {}
+        if state.get("handoff_pending") or (ping_allowed(alert) and not alert.get("tg")):
+            queued.append(cid)
     # Передачи имеют приоритет над архивом примечаний: медленная amo по
     # старому диалогу не должна задерживать сегодняшнюю заявку.
     for chat_id in queued + [cid for cid in chat_ids if cid not in queued]:

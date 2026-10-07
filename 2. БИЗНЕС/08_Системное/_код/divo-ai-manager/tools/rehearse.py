@@ -428,6 +428,32 @@ async def regression(docs: dict, stock: str) -> None:
             check('https://example.invalid/first' in body and 'https://example.invalid/second' in body,
                   'shared phone card preserves both exact listings')
     with Sandbox():
+        store.save_doc('av:old-notes', {'messages': []})
+        store.save_doc('av:urgent-queue', {'crm': {'handoff_pending': {'reason': 'phone', 'retry_at': 0}}})
+        order = []
+        async def mark_tick(cid): order.append(('handoff', cid))
+        async def mark_notes(cid): order.append(('notes', cid))
+        with patch.object(crm, 'bot', None), patch.object(store, 'all_chat_ids', return_value=['av:old-notes', 'av:urgent-queue']), \
+             patch.object(crm, '_tick_one', side_effect=mark_tick), patch.object(crm, 'flush_notes', side_effect=mark_notes):
+            await crm.tick()
+        check(order[0] == ('handoff', 'av:urgent-queue'), 'urgent durable handoff runs before older note backlog')
+        doc = store.load_doc('av:urgent-queue')
+        doc['crm'] = {'alert': {'active': True, 'reason': 'phone', 'nags': True, 'pings': []}}
+        store.save_doc('av:urgent-queue', doc)
+        order.clear()
+        with patch.object(crm, 'bot', None), patch.object(store, 'all_chat_ids', return_value=['av:old-notes', 'av:urgent-queue']), \
+             patch.object(crm, '_tick_one', side_effect=mark_tick), patch.object(crm, 'flush_notes', side_effect=mark_notes):
+            await crm.tick()
+        check(order[0] == ('handoff', 'av:urgent-queue'), 'undelivered manager alert retries before old note backlog')
+    with Sandbox():
+        key = 'av:budget-blocked'
+        store.save_doc(key, {'messages': []})
+        channel = Mock(send=AsyncMock(), typing=AsyncMock(), notify_owner=AsyncMock())
+        with patch.object(llm, 'reply', AsyncMock(side_effect=llm.LlmError('model: HTTP 402 prompt tokens limit exceeded'))):
+            await bot_main._answer_locked(channel, key, ['Подскажите про гарантию'])
+        check(store.hard_paused(key) and crm.capture.call_args.args[2] == 'handoff' and channel.send.await_count == 0,
+              'budget denial immediately hands chat to manager without a fabricated answer')
+    with Sandbox():
         key = 'av:delivery-retry'
         hist = [{'role': 'user', 'content': '79000000000'}]
         store.save_doc(key, {'messages': hist})

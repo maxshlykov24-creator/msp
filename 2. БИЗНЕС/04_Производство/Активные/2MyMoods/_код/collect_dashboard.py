@@ -819,7 +819,7 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
         "source": utm or "не указано", "utm_medium": a.get(FIELD["utm_medium"]) or "",
         "utm_campaign": a.get(FIELD["utm_campaign"]) or "",
         "city": geo, "address": address.strip(), "delivery": delivery, "manager": "",
-        "phone": ph, "client": agent.get("name") or "",
+        "phone": ph, "client": agent.get("name") or "", "agent_id": mid(o.get("agent")),
         "return": bool(ret_list), "return_reason": next((str(r.get("description")) for r in ret_list if r.get("description")), ""),
         "confirmed_at": (dt(a.get(FIELD["confirm"])) or None).isoformat() if a.get(FIELD["confirm"]) else None,
         "sent_at": (dt(a.get(FIELD["sent"])) or None).isoformat() if a.get(FIELD["sent"]) else None,
