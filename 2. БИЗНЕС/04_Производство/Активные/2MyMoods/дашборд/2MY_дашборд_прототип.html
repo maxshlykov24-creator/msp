@@ -922,7 +922,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Продажи по размерам</h3>
-      <div class="hint">Размеры берутся из характеристики варианта товара. Пустой размер показан как «не указано».</div>
+      <div class="hint">Сначала характеристика «размер». Если она пустая, размер читается из названия: one size, OS, S-M и остальные буквенные размеры. Кардиган из альпаки 2MY x Vlada Nazina без размера в названии считается one size.</div>
       <div class="matrix" id="sizes"></div>
     </div>
     <div class="card">
@@ -1052,6 +1052,26 @@ function colorKey(line){
  return key==='не указано'?'':key;
 }
 const colorLabel=line=>{const key=colorKey(line);return key?key.charAt(0).toLocaleUpperCase('ru')+key.slice(1):'не указано'};
+const sizeCanon={'one size':'one size','onesize':'one size','os':'one size','xs-s':'XS-S','s-m':'S-M','m-l':'M-L','l-xl':'L-XL','xxxs':'XXXS','xxs':'XXS','xs':'XS','s':'S','m':'M','l':'L','xl':'XL','xxl':'XXL','xxxl':'XXXL'};
+function canonSize(raw){
+ const s=normPiece(raw);
+ if(!s) return '';
+ if(/^(?:one\s*size|onesize|os)$/.test(s)) return 'one size';
+ return sizeCanon[s]||String(raw||'').trim();
+}
+function sizeFromName(name){
+ const text=normPiece(name);
+ const re=/(?:^|[\s,(])(one\s*size|onesize|xxxs|xxs|xs-s|s-m|m-l|l-xl|xxxl|xxl|xs|xl|os|s|m|l)(?=$|[\s),])/g;
+ let last='',m;
+ while((m=re.exec(text))) last=m[1];
+ if(last) return canonSize(last);
+ if(text.includes('кардиган из альпаки 2my x vlada nazina')) return 'one size';
+ return '';
+}
+function sizeLabel(line){
+ const stored=canonSize(line&&line.size);
+ return stored||sizeFromName(line&&line.name);
+}
 const select = (id, values, label) => { const e=el(id), old=selected(id); e.innerHTML='<option value="">'+esc(label)+'</option>'+values.filter(Boolean).sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');if(e.multiple)setSelected(id,old);else e.value=old[0]||'';};
 
 (function(){
@@ -1206,7 +1226,7 @@ function buildClients(){
      tier:buys>=4?'Gold':buys>=2?'Silver':ltv>=20000?'Bronze':'Разовый',
      freq:first?buys/Math.max(1,(Date.now()-Date.parse(first+'T00:00:00+03:00'))/864e5/365):null,
      orders,rep:buys>1,category:favorite(orders,'category'),
-     size:favorite(orders,'size'),channel:orders[buys-1].channel};
+     size:favorite(orders.map(o=>({lines:(o.lines||[]).map(l=>Object.assign({},l,{size:sizeLabel(l)}))})),'size'),channel:orders[buys-1].channel};
  });
 }
 function refresh(){
@@ -1333,18 +1353,18 @@ function refresh(){
  el('churn-kv').innerHTML=kv([['Gold молчат больше 90 дней',num(clients.map(showClient).filter(c=>c.tier==='Gold'&&c.silence>90).length)],['Silver молчат больше 90 дней',num(clients.map(showClient).filter(c=>c.tier==='Silver'&&c.silence>90).length)]]);
  renderClients(scopedClients);
  const goodsLines=currentLines.filter(x=>!x.l.delivery);
- const products=Object.entries(group(goodsLines,x=>x.l.name)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:[...new Set(arr.map(x=>x.l.size))].join(', '),color:[...new Set(arr.map(x=>colorLabel(x.l)))].join(', ')})).sort((a,b)=>b.rev-a.rev);
+ const products=Object.entries(group(goodsLines,x=>x.l.name)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:[...new Set(arr.map(x=>sizeLabel(x.l)).filter(Boolean))].join(', ')||'не указано',color:[...new Set(arr.map(x=>colorLabel(x.l)))].join(', ')})).sort((a,b)=>b.rev-a.rev);
  el('items').innerHTML=products.slice(0,20).map(x=>`<tr data-product="${esc(x.name)}" class="${state.prod===x.name?'selected':''}"><td><button class="product-pick" aria-pressed="${state.prod===x.name}">${esc(x.name)}</button></td><td>${num(x.qty)}</td><td>${money(x.rev)}</td><td>${money(x.rev-x.cost)}</td><td>${esc(x.size)}</td><td>${esc(x.color)}</td></tr>`).join('')||'<tr><td colspan="6">Нет покупок в выбранном фильтре</td></tr>';
  const cats=Object.entries(group(goodsLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost)})).sort((a,b)=>b.rev-a.rev);
  table('cats',cats,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.qty?x.rev/x.qty:0),x=>money(x.rev-x.cost)]);
- el('sizes').innerHTML=Object.entries(group(goodsLines,x=>x.l.size)).map(([size,arr])=>`<div class="kv"><span>${esc(size)}</span><b>${num(sum(arr,x=>x.l.qty))}</b></div>`).join('')||'Нет данных';
+ el('sizes').innerHTML=Object.entries(group(goodsLines,x=>sizeLabel(x.l))).map(([size,arr])=>`<div class="kv"><span>${esc(size)}</span><b>${num(sum(arr,x=>x.l.qty))}</b></div>`).join('')||'Нет данных';
  const colors=Object.entries(group(goodsLines.filter(x=>colorLabel(x.l)!=='не указано'),x=>colorLabel(x.l))).map(([name,arr])=>{
   const qty=sum(arr,x=>x.l.qty),channels=Object.entries(group(arr,x=>x.o.channel)).map(([channel,rows])=>({channel,qty:sum(rows,x=>x.l.qty)})).sort((a,b)=>b.qty-a.qty);
   return {name,qty,rev:sum(arr,x=>x.l.rev),topChannel:channels[0]?.channel||'нет продаж в периоде',topShare:pct(channels[0]?.qty||0,qty)};
  }).sort((a,b)=>b.qty-a.qty);
  table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>x.topChannel,x=>x.topShare]);
  el('basket-kv').innerHTML=kv([['Изделий на заказ',perOrder],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
- const scopeLines=goodsLines.filter(x=>matches(state.size,x.l.size)&&matches(state.color,colorLabel(x.l)));
+ const scopeLines=goodsLines.filter(x=>matches(state.size,sizeLabel(x.l))&&matches(state.color,colorLabel(x.l)));
  const sq=sum(scopeLines,x=>x.l.delivery?0:x.l.qty),sr=sum(scopeLines,x=>x.l.rev),sc=sum(scopeLines,x=>x.l.cost);
  el('scope').innerHTML=kv([['Изделия',num(sq)],['Выручка',money(sr)],['Закупка',money(sc)],['Маржа',money(sr-sc)]]);
  el('s-count').textContent=num(products.length)+' товаров';
@@ -1396,7 +1416,7 @@ function init(snap){
  select('f-sale',[...new Set(data.orders.map(o=>o.channel))],'Все каналы сбыта');
  select('f-geo',[...new Set(data.orders.map(o=>o.city))],'Все города');
  select('s-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
- select('s-size',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.size)))],'Все размеры');
+ select('s-size',[...new Set(data.orders.flatMap(o=>(o.lines||[]).map(sizeLabel)))],'Все размеры');
  select('s-color',[...new Set(data.orders.flatMap(o=>(o.lines||[]).filter(l=>!l.delivery).map(colorLabel)))].filter(v=>v!=='не указано'),'Все цвета');
  el('periods').innerHTML=[['month','Текущий месяц'],['prev','Прошлый месяц'],['quarter','Квартал'],['year','Год']].map(([id,name])=>`<button data-p="${id}" class="${id==='month'?'on':''}">${name}</button>`).join('');
  el('periods').onclick=e=>{if(!e.target.dataset.p)return;applyPeriod(e.target.dataset.p);refresh();};
@@ -1415,7 +1435,7 @@ const periodClients=()=>{const phones=new Set(filtered.map(x=>x.o.phone));return
 el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';renderClients(periodClients())};
 document.querySelector('.xls').onclick=()=>{
  const rows=[['Тип документа','Заказ / возврат','Дата полной оплаты / возврата','Канал','Источник','Город','Клиент','Телефон','Товар','Размер','Цвет','Количество','Выручка','Закупка']];
- currentLines.forEach(({o,l})=>rows.push([o.return_event?'Возврат':'Продажа',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,colorLabel(l),l.qty,l.rev,l.cost]));
+ currentLines.forEach(({o,l})=>rows.push([o.return_event?'Возврат':'Продажа',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,sizeLabel(l),colorLabel(l),l.qty,l.rev,l.cost]));
  (data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to).forEach(o=>(o.lines||[]).forEach(l=>rows.push(['Обмен',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,l.size,colorLabel(l),l.qty,l.rev,l.cost])));
  const safeCell=v=>{const t=String(v??'');return /^[=+@-]/.test(t)&&!/^-[0-9.,]+$/.test(t)?"'"+t:t};
  const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+safeCell(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');

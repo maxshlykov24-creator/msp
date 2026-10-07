@@ -127,6 +127,39 @@ def color_from_name(name: str) -> str:
     return ""
 
 
+_SIZE_CANON = {
+    "one size": "one size", "onesize": "one size", "os": "one size",
+    "xs-s": "XS-S", "s-m": "S-M", "m-l": "M-L", "l-xl": "L-XL",
+    "xxxs": "XXXS", "xxs": "XXS", "xs": "XS", "s": "S", "m": "M", "l": "L",
+    "xl": "XL", "xxl": "XXL", "xxxl": "XXXL",
+}
+_SIZE_FIND = re.compile(
+    r"(?:^|[\s,(])(one\s*size|onesize|xxxs|xxs|xs-s|s-m|m-l|l-xl|xxxl|xxl|xs|xl|os|s|m|l)(?=$|[\s),])"
+)
+
+
+def canon_size(raw: str) -> str:
+    text = _norm_piece(raw)
+    if not text:
+        return ""
+    if re.fullmatch(r"one\s*size|onesize|os", text):
+        return "one size"
+    return _SIZE_CANON.get(text, (raw or "").strip())
+
+
+def size_from_name(name: str) -> str:
+    """Размер из названия, если в характеристике пусто.
+    one size, OS, S-M и буквенные размеры. Кардиган альпаки 2MY x Vlada Nazina без размера в названии — one size.
+    """
+    text = _norm_piece(name)
+    found = _SIZE_FIND.findall(text)
+    if found:
+        return canon_size(found[-1])
+    if "кардиган из альпаки 2my x vlada nazina" in text:
+        return "one size"
+    return ""
+
+
 def phone(value: str | None) -> str:
     digits = re.sub(r"\D", "", value or "")
     if len(digits) == 11 and digits[0] in "78":
@@ -618,7 +651,9 @@ def main() -> None:
                 else:
                     delivery_line = False
                 chars = {c.get("name", "").lower(): c.get("value") for c in variant.get("characteristics") or []}
-                size = str(chars.get("размер") or "").strip()
+                size = canon_size(str(chars.get("размер") or ""))
+                if not size:
+                    size = size_from_name(name)
                 color = str(chars.get("цвет") or "").strip()
                 if not color:
                     color = color_from_name(name)
