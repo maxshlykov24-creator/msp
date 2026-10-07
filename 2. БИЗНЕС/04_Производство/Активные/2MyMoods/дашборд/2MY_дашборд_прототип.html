@@ -568,19 +568,27 @@
     .card{overflow:visible}
   }
   .scroll-x{width:100%;max-width:100%;overflow-x:clip}
-  .scroll-x table{width:100%;min-width:0;table-layout:fixed}
+  .scroll-x table{width:100%;min-width:0;table-layout:fixed;font-size:12px}
   .scroll-cap{max-height:440px;overflow-x:clip;overflow-y:auto}
   .scroll-cap thead th{position:sticky;top:0;background:var(--paper);z-index:2}
-  #items th:first-child,#items td:first-child{width:34%}
-  #cats th:first-child{width:28%}
-  #colors th:nth-child(3){width:28%}
-  #tier th:nth-child(4){width:20%}
-  #sale th:nth-child(3){width:42%}
-  #mgr th:nth-child(1){width:24%}
-  #mgr th:nth-child(3){width:34%}
-  #mgr th:nth-child(4),#mgr td:nth-child(4){width:28%}
-  #clients th:first-child{width:16%}
-  #clients th:nth-child(4){width:12%}
+  .scroll-x td{white-space:nowrap}
+  .scroll-x td:first-child,.scroll-x td.ans,.scroll-x:has(#clients) td:nth-child(9),.scroll-x:has(#items) td:nth-child(5),.scroll-x:has(#items) td:nth-child(6){white-space:normal}
+  .scroll-x:has(#items) th:nth-child(1){width:34%}
+  .scroll-x:has(#cats) th:nth-child(1){width:22%}
+  .scroll-x:has(#cats) th:nth-child(2){width:12%}
+  .scroll-x:has(#cats) th:nth-child(3){width:24%}
+  .scroll-x:has(#cats) th:nth-child(4){width:18%}
+  .scroll-x:has(#cats) th:nth-child(5){width:24%}
+  .scroll-x:has(#colors) th:nth-child(3){width:28%}
+  .scroll-x:has(#tier) th:nth-child(4){width:20%}
+  .scroll-x:has(#tier) th:nth-child(6){width:16%}
+  .scroll-x:has(#sale) th:nth-child(3){width:40%}
+  .scroll-x:has(#mgr) th:nth-child(1){width:22%}
+  .scroll-x:has(#mgr) th:nth-child(3){width:36%}
+  .scroll-x:has(#mgr) th:nth-child(4){width:28%}
+  .scroll-x:has(#clients) th:nth-child(1){width:15%}
+  .scroll-x:has(#clients) th:nth-child(4){width:12%}
+  .scroll-x:has(#clients) th:nth-child(9){width:13%}
   td.ans{font-size:11px;font-weight:500;line-height:1.45}
   td.ans span{color:var(--mute)}
   @media (max-width:620px){
