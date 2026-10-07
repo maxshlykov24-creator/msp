@@ -1354,7 +1354,6 @@ function refresh(){
  el('funnel-hint').textContent=`В срезе: ${num(data.leads.length)} сделок; исключено по Полине: ${num(data.tasks.excluded_marketing_owner||0)}. Обновлено: ${data.tasks.collected_at||data.generated}.`;
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${esc(label)}</span><span class="nums">${num(data.leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
  el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Конверсия заявка → успешно',pct(leads.filter(l=>l.won).length,leads.length)],['Медиана ответа, календарные минуты',responseOne(responseRows,'med')],['Средняя скорость ответа, календарные минуты',responseOne(responseRows,'avg')],['Ответов без определённого автора, вся доступная история',data.responses?num(data.responses.unknown_author):'нет данных']]);
- el('partner-kv').innerHTML=kv([['Маркетинг 2MY','отдельная воронка, в конверсию продаж не входит']]);
  el('task-kv').innerHTML=kv([['Открытых задач сейчас, без фильтра периода',num(data.tasks.open)],['Выборка задач',num(data.tasks.sampled)]]);
  const shipped=orders.filter(o=>o.sent_at).length;
  const shipDays=orders.filter(o=>o.sent_at&&o.confirmed_at).map(o=>({days:(Date.parse(o.sent_at)-Date.parse(o.confirmed_at))/864e5,stock:o.await_stock})).filter(x=>x.days>=0);
