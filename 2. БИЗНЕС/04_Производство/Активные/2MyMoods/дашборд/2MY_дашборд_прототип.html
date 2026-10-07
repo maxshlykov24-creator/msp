@@ -330,7 +330,7 @@
   .filters{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end;margin:26px 0 16px}
   .flabel{font-size:9.5px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--mute);margin-bottom:9px}
   .tabs{display:flex;border:1px solid var(--line);background:var(--paper)}
-  .tabs button{font-family:var(--sans);font-size:11.5px;font-weight:600;letter-spacing:.06em;padding:10px 16px;background:none;border:none;border-right:1px solid var(--line);color:var(--body);cursor:pointer;transition:background .35s cubic-bezier(.25,1,.5,1),color .35s cubic-bezier(.25,1,.5,1)}
+  .tabs button{font-family:var(--sans);font-size:11.5px;font-weight:600;letter-spacing:.06em;padding:10px 16px;background:none;border:none;border-right:1px solid var(--line);color:var(--body);cursor:pointer;white-space:nowrap;transition:background .35s cubic-bezier(.25,1,.5,1),color .35s cubic-bezier(.25,1,.5,1)}
   .tabs button:last-child{border-right:none}
   .tabs button:hover{background:var(--butter)}
   .tabs button.on{background:var(--dark);color:#fff}
@@ -1275,8 +1275,22 @@ function init(snap){
  const syncAt=snap.generated?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(snap.generated)):'';
  el('sync-at').textContent=syncAt?('Синхронизация '+syncAt):'Синхронизация —';
   const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
- state.to=today;const d0=new Date(today+'T12:00:00+03:00');d0.setDate(d0.getDate()-29);state.from=d0.toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
- el('d1').value=state.from;el('d2').value=state.to;
+  const [ty,tm]=today.split('-').map(Number);
+  const iso=(y,m,d)=>`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const lastDay=(y,m)=>[31,(y%4===0&&(y%100!==0||y%400===0))?29:28,31,30,31,30,31,31,30,31,30,31][m-1];
+  const periodRange=key=>{
+    if(key==='month') return [iso(ty,tm,1), today];
+    if(key==='prev'){const y=tm===1?ty-1:ty, m=tm===1?12:tm-1; return [iso(y,m,1), iso(y,m,lastDay(y,m))];}
+    if(key==='quarter'){const qm=Math.floor((tm-1)/3)*3+1; return [iso(ty,qm,1), today];}
+    return [iso(ty,1,1), today];
+  };
+  const applyPeriod=key=>{
+    const [from,to]=periodRange(key);
+    state.from=from; state.to=to;
+    el('d1').value=from; el('d2').value=to;
+    document.querySelectorAll('#periods button').forEach(b=>b.classList.toggle('on', b.dataset.p===key));
+  };
+  applyPeriod('month');
  select('f-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
  select('f-ch',[...new Set(data.orders.map(o=>o.source))],'Все источники');
  select('f-sale',[...new Set(data.orders.map(o=>o.channel))],'Все каналы сбыта');
@@ -1284,12 +1298,12 @@ function init(snap){
  select('s-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
  select('s-size',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.size)))],'Все размеры');
  select('s-color',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.color)))],'Все цвета');
- el('periods').innerHTML=['30 дней','90 дней','Полгода','Год'].map(x=>`<button data-p="${x}">${x}</button>`).join('');
- el('periods').onclick=e=>{if(!e.target.dataset.p)return;const n={'30 дней':30,'90 дней':90,'Полгода':183,'Год':365}[e.target.dataset.p];const d=new Date(today+'T12:00:00+03:00');d.setDate(d.getDate()-n+1);state.from=d.toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});el('d1').value=state.from;refresh();};
+ el('periods').innerHTML=[['month','Текущий месяц'],['prev','Прошлый месяц'],['quarter','Квартал'],['year','Год']].map(([id,name])=>`<button data-p="${id}" class="${id==='month'?'on':''}">${name}</button>`).join('');
+ el('periods').onclick=e=>{if(!e.target.dataset.p)return;applyPeriod(e.target.dataset.p);refresh();};
  const names=[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.name)))].filter(Boolean).sort();const dl=document.createElement('datalist');dl.id='products-list';dl.innerHTML=names.map(n=>'<option value="'+esc(n)+'"></option>').join('');document.body.appendChild(dl);el('f-prod').setAttribute('list','products-list');el('s-prod').setAttribute('list','products-list');
  refresh();view((location.hash||'#v-sales').replace('#v-',''));
 }
-[['d1','from'],['d2','to'],['f-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-cat','cat']].forEach(([id,key])=>el(id).onchange=e=>{state[key]=e.target.multiple?selected(id):e.target.value;refresh()});
+[['d1','from'],['d2','to'],['f-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-cat','cat']].forEach(([id,key])=>el(id).onchange=e=>{state[key]=e.target.multiple?selected(id):e.target.value;if(id==='d1'||id==='d2') document.querySelectorAll('#periods button').forEach(b=>b.classList.remove('on'));refresh()});
 el('f-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.name||'';if(hit){state.cat=[];el('f-cat').value='';el('s-cat').value=''}refresh()};
 el('s-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.name||'';if(hit){state.cat=[];el('f-cat').value='';el('s-cat').value=''}refresh()};
 el('s-size').onchange=()=>{state.size=selected('s-size');refresh()};el('s-color').onchange=()=>{state.color=selected('s-color');refresh()};
