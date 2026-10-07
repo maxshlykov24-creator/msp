@@ -122,6 +122,11 @@ class AmoClient:
         """PATCH массива сущностей (до 250 за раз — вызывающий код должен сам бить на чанки)."""
         return self._patch(path, items)
 
+    def post_once(self, path: str, json_body: Any) -> httpx.Response:
+        """POST без автоматического повтора: после таймаута сначала readback."""
+        self._limiter.wait()
+        return self._client.post(path, json=json_body)
+
     def paginate(
         self,
         path: str,
@@ -146,3 +151,4 @@ class AmoClient:
             if not data.get("_links", {}).get("next"):
                 return
             page += 1
+        raise AmoError("pagination_limit_reached: incomplete collection")

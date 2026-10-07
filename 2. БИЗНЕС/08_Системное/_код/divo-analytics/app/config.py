@@ -59,6 +59,31 @@ class Settings(BaseSettings):
 
     run_mode: str = "api"
 
+    # Звонки: независимые переключатели сбора, платного анализа и доставок.
+    calls_enabled: bool = False
+    calls_process_enabled: bool = False
+    calls_amo_enabled: bool = False
+    calls_telegram_enabled: bool = False
+    calls_start_at: int = 0  # 0 = момент первого включения, не история
+    calls_overlap_sec: int = 86400
+    calls_recording_wait_hours: int = 48
+    calls_max_inflight: int = 3
+    calls_max_audio_mb: int = 100
+    calls_dashboard_url: str = "https://divomotors-analytics.ru"
+    calls_recording_hosts: str = ""  # разрешённые точные хосты Mango, проверены на пилоте
+    calls_manager_map: str = ""  # source:employee:user_id; только проверенная привязка
+    calls_verified_authors: str = ""  # amo user_id, авторство проверено на пилоте
+    calls_manager_names: str = "13180098:Евгений;13334858:Никита;13835174:Эльзар"
+    nexara_api_key: str = ""
+    nexara_base_url: str = "https://api.nexara.ru/v1"
+    calls_telegram_bot_token: str = ""
+    calls_telegram_chat_id: str = ""
+
+    @property
+    def call_manager_names(self) -> dict[int, str]:
+        return {int(p.split(":", 1)[0]): p.split(":", 1)[1]
+                for p in self.calls_manager_names.split(";") if ":" in p}
+
     @property
     def auth_accounts(self) -> dict[str, str]:
         out: dict[str, str] = {}

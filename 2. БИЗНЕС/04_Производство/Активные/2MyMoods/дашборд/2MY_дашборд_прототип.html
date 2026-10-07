@@ -394,8 +394,9 @@
   .hero .big span{font-size:24px;color:var(--mute)}
   .hero .sub{font-size:12.5px;font-weight:400;color:var(--body);max-width:38ch;line-height:1.5}
   .hero-mini{display:flex;gap:36px;margin-top:32px;flex-wrap:wrap;padding-top:22px;border-top:1px solid var(--hair)}
-  .hero-mini div .l{font-size:9px;font-weight:400;letter-spacing:.22em;text-transform:uppercase;color:var(--mute)}
-  .hero-mini div .v{font-family:var(--sans);font-weight:400;font-size:20px;margin-top:8px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .hero-mini .l{font-size:9px;font-weight:400;letter-spacing:.22em;text-transform:uppercase;color:var(--mute)}
+  .hero-mini .v{font-family:var(--sans);font-weight:400;font-size:20px;margin-top:8px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .hero-mini > a{display:block;font:inherit;color:inherit;text-decoration:none}
   .chart-box .chart-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
   .chart-box .chart-head b{font-size:10px;font-weight:400;letter-spacing:.22em;text-transform:uppercase;color:var(--mute)}
   .chart-box .chart-head i{font-style:normal;font-size:11.5px;font-weight:400;color:var(--body)}
@@ -520,11 +521,12 @@
   #sheet[hidden]{display:none}
   #sheet{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;padding:28px 16px;opacity:0;transition:opacity .28s cubic-bezier(.25,1,.5,1)}
   #sheet.on{opacity:1}
-  .sheet-back{position:absolute;inset:0;background:rgba(2,2,2,.28);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .sheet-back{position:absolute;inset:0;background:rgba(2,2,2,0);transition:background .28s cubic-bezier(.25,1,.5,1)}
+  #sheet.on .sheet-back{background:rgba(2,2,2,.28)}
   .sheet-card{position:relative;z-index:1;width:min(920px,100%);max-height:min(78vh,820px);margin:0;background:var(--paper);border:1px solid var(--ink);display:flex;flex-direction:column}
   .sheet-card.rise{animation:sheet-rise .28s cubic-bezier(.25,1,.5,1)}
   @keyframes sheet-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-  @media (prefers-reduced-motion:reduce){#sheet{transition:none}.sheet-card.rise{animation:none}}
+  @media (prefers-reduced-motion:reduce){#sheet,.sheet-back{transition:none}.sheet-card.rise{animation:none}}
   .sheet-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:18px 20px 12px;border-bottom:1px solid var(--line)}
   .sheet-head h3{font-family:var(--sans);font-size:22px;font-weight:500;margin:4px 0 0}
   .sheet-head button{font:inherit;font-size:11px;letter-spacing:.12em;text-transform:uppercase;background:none;border:0;border-bottom:1px solid var(--line);cursor:pointer;color:var(--mute);padding:0 0 3px}
@@ -652,8 +654,9 @@
     .scroll-x td{white-space:normal}
   }
 
-.product-pick{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;white-space:normal;display:block;width:100%;overflow-wrap:anywhere}
-#items tr{cursor:pointer}#items tr.selected{background:#fffbe6}.product-pick:focus-visible{outline:2px solid #000}
+.item-name{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.product-pick{font:inherit;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);background:none;border:0;border-bottom:1px solid var(--line);padding:0 0 2px;cursor:pointer;width:auto}
+#items tr{cursor:pointer}#items tr.selected{background:#fffbe6}#items tr.selected .product-pick{color:var(--ink);border-bottom-color:var(--ink)}.product-pick:focus-visible{outline:2px solid #000}
 .pick-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
@@ -935,7 +938,7 @@
   <div class="grid-2" style="margin-top:20px">
     <div class="card">
       <h3>Товары: продажи, выручка, маржа</h3>
-      <div class="hint" id="items-hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок, маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие открывает заказы, из которых собрана строка.</div>
+      <div class="hint" id="items-hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок, маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Позиция</th><th>Продано</th><th>Выручка</th><th>Маржа</th><th>Размер</th><th>Цвет</th></tr></thead>
         <tbody id="items"></tbody>
@@ -1307,7 +1310,7 @@ function refresh(){
  const returnedRev=-sum(returned,x=>orderRev(x.o,x.ls));
  currentLines=basis.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
  const noCost=currentLines.filter(x=>!x.l.delivery&&x.l.rev>0&&x.l.cost===0);
- el('items-hint').textContent='Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок'+(includeDelivery?', с доставкой':', без доставки')+', маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие открывает заказы, из которых собрана строка.';
+ el('items-hint').textContent='Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок'+(includeDelivery?', с доставкой':', без доставки')+', маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.';
  el('cost-hint').textContent='Маржа по зафиксированной закупочной цене, без работы и логистики. Исторические цены до начала наблюдений — оценка; новые версии фиксируются при синхронизации.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
  const orders=filtered.map(x=>x.o), rev=sum(basis,x=>orderRev(x.o,x.ls));
  const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
@@ -1424,7 +1427,7 @@ function refresh(){
  const goodsLines=currentLines.filter(x=>!x.l.delivery&&matches(state.size,sizeLabel(x.l))&&matches(state.color,colorLabel(x.l)));
  const products=Object.entries(group(goodsLines,x=>x.l.name)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:[...new Set(arr.map(x=>sizeLabel(x.l)).filter(Boolean))].join(', ')||'не указано',color:[...new Set(arr.map(x=>colorLabel(x.l)))].join(', '),lines:arr})).sort((a,b)=>b.rev-a.rev);
  lastProducts=products;
- el('items').innerHTML=products.slice(0,20).map(x=>`<tr class="drill" data-product="${esc(x.name)}"><td>${esc(x.name)}</td><td>${num(x.qty)}</td><td>${money(x.rev)}</td><td>${money(x.rev-x.cost)}</td><td>${esc(x.size)}</td><td>${esc(x.color)}</td></tr>`).join('')||'<tr><td colspan="6">Нет покупок в выбранном фильтре</td></tr>';
+ el('items').innerHTML=products.slice(0,20).map(x=>{const on=state.prod===x.name;return `<tr class="drill${on?' selected':''}" data-product="${esc(x.name)}"><td><div class="item-name"><span>${esc(x.name)}</span><button type="button" class="product-pick" aria-pressed="${on}">${on?'Снять фильтр':'В фильтр'}</button></div></td><td>${num(x.qty)}</td><td>${money(x.rev)}</td><td>${money(x.rev-x.cost)}</td><td>${esc(x.size)}</td><td>${esc(x.color)}</td></tr>`}).join('')||'<tr><td colspan="6">Нет покупок в выбранном фильтре</td></tr>';
  const cats=Object.entries(group(goodsLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),lines:arr})).sort((a,b)=>b.rev-a.rev);
  table('cats',cats,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.qty?x.rev/x.qty:0),x=>money(x.rev-x.cost)],x=>showOrders('Категория',x.name,ordersFromGoods(x.lines)));
  const sizeRows=Object.entries(group(goodsLines,x=>sizeLabel(x.l)));
@@ -1505,7 +1508,7 @@ el('s-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.or
 el('s-size').onchange=()=>{state.size=selected('s-size');refresh()};el('s-color').onchange=()=>{state.color=selected('s-color');refresh()};
 el('s-clear').onclick=()=>{state.size=[];state.color=[];state.cat=[];state.prod='';el('s-cat').value='';el('s-prod').value='';refresh()};
 el('reset').onclick=()=>{state.cat=[];state.prod='';state.source=[];state.channel=[];state.city=[];state.size=[];state.color=[];el('f-prod').value='';refresh()};
-el('items').onclick=e=>{const row=e.target.closest('tr[data-product]');if(!row)return;const p=lastProducts.find(x=>x.name===row.dataset.product);if(p)showOrders('Товар',p.name,ordersFromGoods(p.lines));};
+el('items').onclick=e=>{const row=e.target.closest('tr[data-product]');if(!row)return;if(e.target.closest('.product-pick')){state.prod=state.prod===row.dataset.product?'':row.dataset.product;el('f-prod').value=state.prod;el('s-prod').value=state.prod;refresh();return;}const p=lastProducts.find(x=>x.name===row.dataset.product);if(p)showOrders('Товар',p.name,ordersFromGoods(p.lines));};
 el('sheet').addEventListener('click',e=>{
  if(e.target.closest('[data-close]')||e.target.closest('#sheet-x')){closeSheet();return;}
  if(e.target.closest('#sheet-back')){const back=sheetReturn;if(typeof back==='function')back();else closeSheet();return;}
