@@ -376,11 +376,19 @@ def deliver_telegram(db, delivery: CallDelivery, row: CallRecord):
     delivery.attempts += 1
     db.commit()
     try:
-        with httpx.Client(timeout=30) as client:
+        # Повторяется только установление соединения, до отправки HTTP-запроса.
+        # IPv6 недоступен в текущей Docker-сети; используем IPv4.
+        with httpx.Client(timeout=httpx.Timeout(30, connect=12),
+                          transport=httpx.HTTPTransport(retries=2, local_address="0.0.0.0")) as client:
             resp = client.post(f"https://api.telegram.org/bot{settings.calls_telegram_bot_token}/sendMessage",
                 json={"chat_id": delivery.target, "text": render_report(row, telegram=True),
                       "link_preview_options": {"is_disabled": True}})
         data = resp.json()
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        delivery.state = "pending"
+        retry_later(delivery, "telegram_connection_failed", minutes=2)
+        db.commit()
+        return
     except (httpx.TransportError, ValueError):
         delivery.state, delivery.last_error = "ambiguous", "telegram_delivery_requires_manual_check"
         db.commit()
