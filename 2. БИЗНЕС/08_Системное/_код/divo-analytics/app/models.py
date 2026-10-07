@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -131,6 +132,7 @@ class CallRecord(Base):
     nexara_job_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     transcript: Mapped[dict] = mapped_column(JSONB, default=dict)
     analysis: Mapped[dict] = mapped_column(JSONB, default=dict)
+    provider_result: Mapped[dict] = mapped_column(JSONB, default=dict)
     validation_errors: Mapped[list] = mapped_column(JSONB, default=list)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     yes_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -150,7 +152,7 @@ class CallDelivery(Base):
     __table_args__ = (UniqueConstraint("call_id", "channel", "target", name="uq_call_delivery"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    call_id: Mapped[int] = mapped_column(Integer, index=True)
+    call_id: Mapped[int] = mapped_column(ForeignKey("call_record.id"), index=True)
     channel: Mapped[str] = mapped_column(String(16))
     target: Mapped[str] = mapped_column(String(128))
     state: Mapped[str] = mapped_column(String(32), default="pending", index=True)

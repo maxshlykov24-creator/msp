@@ -65,12 +65,12 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
     summary = redact_phone(a.get("summary", ""))
     if summary:
         lines += ["", summary[:400 if telegram else 1000]]
-    for item in a.get("criteria") or []:
+    for item in ([] if call.validation_errors else a.get("criteria") or []):
         label = CRITERIA.get(item.get("id"), ("Критерий", []))[0]
         lines.append(f"\n{item.get('id')}. {label}: {STATUS_NAMES.get(item.get('status'), 'Требует проверки')}")
         lines.append(redact_phone(item.get("explanation", ""))[:150 if telegram else 600])
         evidence = evidence_for(item)
-        for e in evidence[:1 if telegram else 4]:
+        for e in evidence[:2 if telegram else 4]:
             ts = timestamp(e.get("start"))
             lines.append((ts + " " if ts else "") + "«" + redact_phone(e.get("quote", ""))[:130 if telegram else 500] + "»")
     o = a.get("outcome") or {}
@@ -86,7 +86,9 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
     if a.get("recommendation"):
         lines.append("Приоритет: " + redact_phone(a["recommendation"])[:200 if telegram else 600])
     footer = [f"Разбор и транскрипт: {settings.calls_dashboard_url.rstrip('/')}/?call={call.id}#callQuality"]
-    for lead_id in call.lead_ids:
+    if len(call.lead_ids) != 1:
+        footer.append("Связь со сделкой требует проверки")
+    for lead_id in call.lead_ids[:3]:
         footer.append(f"Сделка: {settings.amo_base_url.rstrip('/')}/leads/detail/{int(lead_id)}")
     if target:
         footer.append(report_marker(call, target))
@@ -94,6 +96,18 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
     body = "\n".join(lines)
     foot = "\n".join(footer)
     limit = 3900 if telegram else 14000
+    if len(body) + len(foot) + 2 > limit and telegram:
+        # Все семь пунктов сохраняются даже при длинных доказательствах.
+        compact = lines[:5] + [summary[:200]]
+        for item in ([] if call.validation_errors else a.get("criteria") or []):
+            name = CRITERIA.get(item.get("id"), ("Критерий", []))[0]
+            ev = evidence_for(item)
+            quote_line = " · ".join((timestamp(e.get("start")) + " «" + redact_phone(e.get("quote", ""))[:70] + "»")
+                                    for e in ev[:2])
+            compact += [f"{item.get('id')}. {name}: {STATUS_NAMES.get(item.get('status'), 'Требует проверки')}",
+                        redact_phone(item.get("explanation", ""))[:90], quote_line]
+        compact += [line for line in lines if line.startswith(("Результат:", "Время встречи:", "Следующий контакт:", "Приоритет:"))]
+        body = "\n".join(compact)
     if len(body) + len(foot) + 2 > limit:
         body = body[:max(0, limit - len(foot) - 40)] + "\nПодробности по ссылке."
     return body + "\n\n" + foot

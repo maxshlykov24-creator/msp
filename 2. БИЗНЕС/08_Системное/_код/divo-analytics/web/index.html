@@ -428,6 +428,7 @@
   #staleBanner{display:none;margin:0 0 18px;padding:13px 18px;border-radius:12px;background:rgba(232,196,120,.1);border:1px solid rgba(232,196,120,.3);color:#e8c478;font-size:13px}
   #staleBanner.show{display:block}
 </style>
+<link rel="stylesheet" href="/assets/calls.css">
 </head>
 <body>
 
@@ -539,6 +540,24 @@
     <div class="split-bar" id="splitBar"></div>
     <div class="split-names" id="splitNames"></div>
   </div>
+
+  <section id="callQuality" aria-labelledby="callsHeading">
+    <div class="sec-title"><h2 id="callsHeading">Качество звонков</h2><span>по дате разговора · МСК</span></div>
+    <div class="glass panel">
+      <div class="cq-filters">
+        <label>Менеджер<select id="cqManager"><option value="">Все менеджеры</option><option value="unknown">Не подтверждён</option></select></label>
+        <label>Тип разговора<select id="cqCategory"><option value="">Все типы</option></select></label>
+        <label class="cq-check"><input type="checkbox" id="cqCalibration"> Калибровка</label>
+        <button type="button" id="cqRefresh">Обновить</button>
+      </div>
+      <p class="psub">Оценка по семи критериям только для первичных входящих продажных звонков. Согласованная встреча отражает слова клиента, фактические визиты показаны выше.</p>
+      <p id="cqStatus" class="cq-muted" role="status">Загрузка звонков…</p>
+      <div id="cqMetrics" class="cq-metrics"></div>
+      <details class="cq-managers"><summary>По менеджерам</summary><div id="cqManagers"></div></details>
+      <div id="cqList"></div>
+      <div class="cq-pager"><button type="button" id="cqPrev">Назад</button><span id="cqPage"></span><button type="button" id="cqNext">Далее</button></div>
+    </div>
+  </section>
 
   <div class="glass footer">
     <div class="footer-brand">
@@ -678,6 +697,7 @@ function renderRange(from, to){
   CUR_FROM = from; CUR_TO = to;
   document.getElementById('dateFrom').value = from;
   document.getElementById('dateTo').value = to;
+  document.dispatchEvent(new CustomEvent('divo:range', {detail:{from,to}}));
   const agg = aggregateRange(from, to);
   const days = Math.round((new Date(to)-new Date(from))/86400000)+1;
 
@@ -1155,5 +1175,6 @@ setInterval(loadDashboard, 5 * 60 * 1000);
   document.addEventListener('pointerleave', ()=>{ if(active){ reset(active); active = null; } });
 })();
 </script>
+<script src="/assets/calls.js"></script>
 </body>
 </html>

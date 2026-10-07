@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
 from app.api import router as api_router
+from app.calls_api import router as calls_router
 from app.auth import (
     clear_session_cookie,
     is_authenticated,
@@ -28,7 +29,16 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 app = FastAPI(title="DIVO Motors Analytics", docs_url=None, redoc_url=None)
 app.include_router(api_router)
+app.include_router(calls_router)
 app.mount("/assets", StaticFiles(directory=WEB_DIR / "assets"), name="assets")
+
+
+@app.middleware("http")
+async def protect_call_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/calls"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/favicon.ico", include_in_schema=False)

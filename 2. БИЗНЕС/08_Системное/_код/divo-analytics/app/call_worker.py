@@ -118,7 +118,10 @@ def collect_calls(amo: AmoClient, *, calibration: int = 0):
     until = int(time.time())
     with SessionLocal() as db:
         start_row = db.get(SyncState, "calls_start_at")
-        if not start_row:
+        if calibration:
+            # Калибровка не устанавливает границу нового рабочего потока.
+            start = until
+        elif not start_row:
             start = settings.calls_start_at or until
             state_set(db, "calls_start_at", str(start))
             db.commit()
@@ -187,7 +190,10 @@ def refresh_recording(db, row: CallRecord, amo: AmoClient):
 
 
 def finish_result(row: CallRecord, result: dict):
+    row.provider_result = result
     transcript = result.get("transcription") or {}
+    if not isinstance(transcript, dict):
+        transcript = {}
     raw = result.get("llm_output")
     if isinstance(raw, str):
         try:
@@ -195,7 +201,14 @@ def finish_result(row: CallRecord, result: dict):
         except ValueError:
             raw = {}
     row.transcript = transcript
-    verdict = validate_analysis(raw if isinstance(raw, dict) else {}, transcript, row.direction)
+    try:
+        verdict = validate_analysis(raw if isinstance(raw, dict) else {}, transcript, row.direction)
+    except (ValueError, TypeError, AttributeError):
+        verdict = {"analysis": {}, "errors": ["invalid_transcript_structure"], "is_scored": False,
+                   "score": None, "yes_count": 0, "applicable_count": 0}
+    if not str(transcript.get("text") or "").strip() and not transcript.get("segments"):
+        verdict["errors"].append("transcript_empty")
+        verdict.update(is_scored=False, score=None)
     row.analysis = verdict["analysis"]
     row.validation_errors = verdict["errors"]
     row.is_scored = verdict["is_scored"]
@@ -206,7 +219,7 @@ def finish_result(row: CallRecord, result: dict):
     row.category_reason = row.analysis.get("category_reason", "Анализ требует проверки")
     row.rule_version = RULE_VERSION
     row.analysis_version = ANALYSIS_VERSION
-    row.state = "needs_review" if row.validation_errors else "complete"
+    row.state = "needs_review" if row.validation_errors or (row.category == "primary_inbound" and not row.is_scored) else "complete"
     row.last_error = "analysis_validation_failed" if row.validation_errors else ""
     row.next_attempt_at = None
 
@@ -224,7 +237,8 @@ def process_calls(amo: AmoClient):
         ).order_by(CallRecord.occurred_at).limit(100)))
         nexara = NexaraClient()
         try:
-            inflight = db.scalar(select(func.count()).select_from(CallRecord).where(CallRecord.state == "processing"))
+            inflight = db.scalar(select(func.count()).select_from(CallRecord).where(
+                CallRecord.state.in_(["processing", "submit_ambiguous"])))
             for row in rows:
                 try:
                     if row.state == "waiting_recording":
@@ -253,6 +267,7 @@ def process_calls(amo: AmoClient):
                             row.state = "submitting"
                             row.rule_version = RULE_VERSION
                             row.analysis_version = ANALYSIS_VERSION
+                            row.provider_result = {"submitted_at": now().isoformat()}
                             db.commit()
                             row.nexara_job_id = nexara.submit(audio, mime, row.direction, row.occurred_at)
                             row.state = "processing"
@@ -265,9 +280,17 @@ def process_calls(amo: AmoClient):
                 except AmbiguousSubmission as exc:
                     row.state = "submit_ambiguous"
                     row.last_error = str(exc)
+                    inflight += 1
                     db.commit()
                 except (RemoteFailure, httpx.TransportError) as exc:
                     code = str(exc) if isinstance(exc, RemoteFailure) else "recording_transport_failed"
+                    if row.state == "processing" and code.endswith("404"):
+                        row.state = "error"
+                        row.last_error = "nexara_job_result_unavailable"
+                        row.next_attempt_at = None
+                        inflight -= 1
+                        db.commit()
+                        continue
                     if row.state == "submitting":
                         row.state = "ready" if code.endswith("429") else "error"
                     retry_later(row, code)
@@ -376,7 +399,7 @@ def deliver_telegram(db, delivery: CallDelivery, row: CallRecord):
 def deliver_calls(amo: AmoClient):
     with SessionLocal() as db:
         rows = list(db.scalars(select(CallRecord).where(CallRecord.is_calibration.is_(False),
-                          CallRecord.state.in_(["complete", "missed", "recording_unavailable"]))))
+                          CallRecord.state.in_(["complete", "needs_review", "missed", "recording_unavailable", "error", "submit_ambiguous"]))))
         for row in rows:
             targets = []
             if settings.calls_amo_enabled and len(row.lead_ids) == 1:
@@ -411,14 +434,25 @@ def run_once(*, calibration: int = 0):
             return
         amo = AmoClient()
         try:
-            if settings.calls_enabled or calibration:
-                collect_calls(amo, calibration=calibration)
-            process_calls(amo)
-            deliver_calls(amo)
+            failures = []
+            for phase, action in [
+                ("collect", lambda: collect_calls(amo, calibration=calibration)
+                 if settings.calls_enabled or calibration else None),
+                ("process", lambda: process_calls(amo)),
+                ("deliver", lambda: deliver_calls(amo)),
+            ]:
+                try:
+                    action()
+                except Exception as exc:
+                    failures.append(f"{phase}:{type(exc).__name__}")
+                    log.error("calls phase failed: %s %s", phase, type(exc).__name__)
             with SessionLocal() as db:
-                state_set(db, "calls_last_success", now().isoformat())
-                state_set(db, "calls_last_error", "")
+                if not failures:
+                    state_set(db, "calls_last_success", now().isoformat())
+                state_set(db, "calls_last_error", ";".join(failures))
                 db.commit()
+            if failures and calibration:
+                raise RuntimeError("calibration_cycle_failed")
         except Exception as exc:
             with SessionLocal() as db:
                 state_set(db, "calls_last_error", type(exc).__name__)

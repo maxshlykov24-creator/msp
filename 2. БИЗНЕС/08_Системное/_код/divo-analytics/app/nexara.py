@@ -4,7 +4,7 @@ import ipaddress
 import json
 import socket
 import tempfile
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -36,6 +36,11 @@ def validate_recording_url(url: str, allowed_hosts: set[str], resolve: bool = Tr
 
 def download_audio(url: str):
     allowed = {h.strip().lower() for h in settings.calls_recording_hosts.split(",") if h.strip()}
+    # Виджет Mango хранит http-ссылки, хотя тот же адрес доступен по HTTPS.
+    # Не передаём подписанную ссылку открытым текстом: сразу повышаем до HTTPS.
+    u = urlsplit(url)
+    if u.scheme == "http" and u.port in (None, 80) and not u.username and not u.password:
+        url = urlunsplit(("https", u.hostname or "", u.path, u.query, u.fragment))
     spool = tempfile.SpooledTemporaryFile(max_size=2 * 1024 * 1024, mode="w+b")
     try:
         with httpx.Client(timeout=httpx.Timeout(90, connect=15), follow_redirects=False) as client:

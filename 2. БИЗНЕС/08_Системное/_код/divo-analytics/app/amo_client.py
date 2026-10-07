@@ -139,6 +139,7 @@ class AmoClient:
         params = dict(params or {})
         params.setdefault("limit", limit)
         page = 1
+        seen_pages: set[tuple] = set()
         while page <= max_pages:
             params["page"] = page
             data = self._get(path, params)
@@ -146,7 +147,13 @@ class AmoClient:
                 return
             items = data.get("_embedded", {}).get(embedded_key, [])
             if not items:
+                if data.get("_links", {}).get("next"):
+                    raise AmoError("pagination_empty_page_with_next")
                 return
+            signature = tuple(str(item.get("id", item)) for item in items)
+            if signature in seen_pages:
+                raise AmoError("pagination_repeated_page: incomplete collection")
+            seen_pages.add(signature)
             yield from items
             if not data.get("_links", {}).get("next"):
                 return

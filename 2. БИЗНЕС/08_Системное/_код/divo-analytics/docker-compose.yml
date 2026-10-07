@@ -53,5 +53,17 @@ services:
         condition: service_healthy
     command: python -m app.scheduler
 
+  calls:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://divoanalytics:divoanalytics@db:5432/divoanalytics
+      RUN_MODE: calls
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m app.call_worker
+
 volumes:
   divo_analytics_pg:

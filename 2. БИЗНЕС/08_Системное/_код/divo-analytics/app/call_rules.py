@@ -32,7 +32,7 @@ STATUS_NAMES = {"yes": "Да", "no": "Нет", "na": "Неприменимо", "
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class Evidence(StrictModel):
@@ -136,7 +136,7 @@ def validate_analysis(raw: dict, transcript: dict, direction: str) -> dict:
         a = Analysis.model_validate(raw)
     except ValidationError as exc:
         # Не включать input/цитаты/ПДн в диагностический текст.
-        return {"analysis": raw, "errors": [f"schema:{'.'.join(map(str,e['loc']))}:{e['type']}"
+        return {"analysis": {}, "errors": [f"schema:{'.'.join(map(str,e['loc']))}:{e['type']}"
                 for e in exc.errors(include_input=False)], "is_scored": False,
                 "score": None, "yes_count": 0, "applicable_count": 0}
     errors: list[str] = []
@@ -148,7 +148,7 @@ def validate_analysis(raw: dict, transcript: dict, direction: str) -> dict:
 
     def check_evidence(e: Evidence, label: str) -> None:
         quote = _norm(e.quote)
-        if quote not in normalized:
+        if not quote or quote not in normalized:
             errors.append(f"{label}:quote_not_in_transcript")
         if e.end is not None and (e.start is None or e.end < e.start):
             errors.append(f"{label}:invalid_time_range")
