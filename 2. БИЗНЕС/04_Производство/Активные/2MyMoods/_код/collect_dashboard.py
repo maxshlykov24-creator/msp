@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Полная пересборка локального среза 2MY. Только GET к внешним системам."""
+"""Полная пересборка локального среза 2MY. Чтение МойСклад и amoCRM, плюс запись даты полной оплаты."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ FIELD = {
     "utm": "6d95a799-f849-11f0-0a80-009c000b6c8a",
     "utm_medium": "6d95a996-f849-11f0-0a80-009c000b6c8b",
     "utm_campaign": "6d95aa5b-f849-11f0-0a80-009c000b6c8c",
+    "full_paid": "015b915a-c21c-11f1-0a80-1e7500283344",
 }
 
 
@@ -67,6 +68,22 @@ def required_get(ms: lib.MS, path: str) -> dict:
 
 def attrs(row: dict) -> dict:
     return {a.get("id"): a.get("value") for a in row.get("attributes") or []}
+
+
+def full_paid_stamp(moment: datetime) -> str:
+    return moment.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def stamp_full_paid(ms: lib.MS, order_id: str, moment: datetime) -> bool:
+    """Пишет в заказ дату, когда связанные платежи впервые закрыли сумму.
+    Одно доп. поле. Остальные поля заказа не передаются.
+    """
+    href = f"{lib.MS_BASE}/entity/customerorder/metadata/attributes/{FIELD['full_paid']}"
+    status, _body = ms.send("PUT", f"/entity/customerorder/{order_id}", {"attributes": [{
+        "meta": {"href": href, "type": "attributemetadata", "mediaType": "application/json"},
+        "value": full_paid_stamp(moment),
+    }]})
+    return 200 <= status < 300
 
 
 def mid(ref: dict | None) -> str:
@@ -682,6 +699,9 @@ def main() -> None:
                 closed = dt(moment)
         if is_buy and not closed:
             gaps["Оплачено закрыто, дата платежа не найдена"].append(number)
+        elif is_buy and closed and str(a.get(FIELD["full_paid"]) or "")[:10] != closed.date().isoformat():
+            if not stamp_full_paid(ms, o["id"], closed):
+                gaps["Не записана дата полной оплаты"].append(number)
         agent = agents.get(mid(o.get("agent")), {})
         ph = phone(agent.get("phone"))
         if is_buy and not ph:

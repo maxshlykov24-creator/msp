@@ -189,6 +189,46 @@ class MS:
                 time.sleep(1.2 * (attempt + 1))
         return 0, {"error": type(last_err).__name__ if last_err else "unknown"}
 
+    def send(self, method: str, path: str, body: dict):
+        """Запись в МойСклад. Повторяет временные ошибки, тело наружу не печатает."""
+        data = json.dumps(body, ensure_ascii=False).encode()
+        last_err = None
+        for attempt in range(5):
+            wait = 0.22 - (time.time() - self._last)
+            if wait > 0:
+                time.sleep(wait)
+            url = path if path.startswith("http") else MS_BASE + path
+            req = urllib.request.Request(url, data=data, method=method, headers={
+                "Authorization": f"Bearer {self.token}",
+                "Accept": "application/json;charset=utf-8",
+                "Accept-Encoding": "gzip",
+                "Content-Type": "application/json",
+                "User-Agent": "MSProduct-2MY/1.0 (max.shlykov24@gmail.com)",
+            })
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    raw = resp.read()
+                    if resp.headers.get("Content-Encoding") == "gzip":
+                        raw = gzip.decompress(raw)
+                    self._last = time.time()
+                    return resp.status, json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:
+                raw = e.read()
+                self._last = time.time()
+                try:
+                    parsed = json.loads(raw)
+                except Exception:
+                    parsed = {"error": raw.decode(errors="replace")[:400]}
+                if e.code in (429, 500, 502, 503, 504) and attempt < 4:
+                    time.sleep(min(30, 2 * (attempt + 1)))
+                    continue
+                return e.code, parsed
+            except Exception as e:
+                last_err = e
+                self._last = time.time()
+                time.sleep(1.2 * (attempt + 1))
+        return 0, {"error": type(last_err).__name__ if last_err else "unknown"}
+
     def rows(self, path: str, params: dict | None = None, pages: int = 200) -> list[dict]:
         params = dict(params or {})
         params.setdefault("limit", 100)
