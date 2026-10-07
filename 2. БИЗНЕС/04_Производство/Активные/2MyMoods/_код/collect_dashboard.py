@@ -286,9 +286,17 @@ def shift_clock(start_ts: int, roster: dict, horizon: int = 21) -> tuple[datetim
     С 21:00 смена уже кончилась: счёт и диалог переходят на следующую смену.
     День без одной галочки рабочим не считается.
     """
+    if not roster:
+        return None, None
+    first_day, last_day = min(roster), max(roster)
     moment = datetime.fromtimestamp(int(start_ts), TZ)
     day = moment.date()
+    # Дней раньше первой строки графика не растягиваем на первый известный день.
+    if day < first_day:
+        return None, None
     for _ in range(horizon):
+        if day > last_day:
+            return None, None
         manager = _shift_manager(roster.get(day))
         open_at, close_at = _shift_bounds(day)
         if manager and moment < open_at:
@@ -409,7 +417,8 @@ def get_responses(leads: list[dict]) -> dict:
             "to": now.isoformat(), "samples": samples, "messages": len(events),
             "unknown_author": unknown, "unanswered": len(pending), "unknown_rows": unknown_rows,
             "pending": pending_rows, "queue_verified": True, "open_without_events": len(open_talks - observed_talks),
-            "rules": rules, "rules_status": "configured" if rules else "not_configured", "clock": clock_status}
+            "rules": rules, "rules_status": "configured" if rules else "not_configured",
+            "clock": clock_status, "clock_from": min(roster).isoformat() if roster and clock_status == "10-21" else None}
 
 
 def positions_for(order_id: str) -> tuple[str, list[dict]]:
