@@ -247,6 +247,22 @@ class QueueTest(unittest.TestCase):
             call_worker.deliver_telegram(self.db,d,r)
         self.assertEqual(d.state,"ambiguous")
 
+    def test_telegram_connection_failure_can_retry_before_request_sent(self):
+        r=self.call();d=self.delivery(r,"telegram")
+        with patch("httpx.Client") as cls:
+            cls.return_value.__enter__.return_value.post.side_effect=httpx.ConnectError("connection not established")
+            call_worker.deliver_telegram(self.db,d,r)
+        self.assertEqual(d.state,"pending")
+        self.assertEqual(d.last_error,"telegram_connection_failed")
+        self.assertIsNotNone(d.next_attempt_at)
+
+    def test_telegram_read_timeout_requires_manual_check(self):
+        r=self.call();d=self.delivery(r,"telegram")
+        with patch("httpx.Client") as cls:
+            cls.return_value.__enter__.return_value.post.side_effect=httpx.ReadTimeout("request may have been received")
+            call_worker.deliver_telegram(self.db,d,r)
+        self.assertEqual(d.state,"ambiguous")
+
     def test_calibration_never_delivers(self):
         r=self.call();r.is_calibration=True;r.state="complete";self.db.commit()
         settings.calls_amo_enabled=True;settings.calls_telegram_enabled=True
