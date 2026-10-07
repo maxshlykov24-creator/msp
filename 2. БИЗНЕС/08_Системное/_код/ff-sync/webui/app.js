@@ -27,9 +27,81 @@ async function api(path, opts) {
 const num = (v, d) => (v === null || v === undefined || v === "" ? "—" : Number(v).toLocaleString("ru-RU", { maximumFractionDigits: d === undefined ? 2 : d }));
 const esc = (s) => String(s === null || s === undefined ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+const TOAST_IDS = new Set(["aMsg", "syncNote", "wbMsg", "shMsg", "sMsg", "mMsg"]);
+let toastTimer = 0;
+
+function polite(text) {
+  const raw = String(text || "").trim();
+  if (raw === "уже идёт обработка") return "Сейчас идёт другая обработка. Подождите и нажмите ещё раз.";
+  return raw;
+}
+
+function toast(text, kind) {
+  const el = $("toast");
+  if (!el) return;
+  clearTimeout(toastTimer);
+  const body = polite(text);
+  if (!body) {
+    el.hidden = true;
+    $("toastText").textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.classList.remove("ok", "bad", "warn", "busy");
+  if (kind) el.classList.add(kind);
+  $("toastText").textContent = body;
+  const ms = kind === "bad" || kind === "warn" ? 8000 : kind === "busy" ? 0 : 4000;
+  if (ms) toastTimer = setTimeout(() => toast(""), ms);
+}
+
+$("toastClose").onclick = () => toast("");
+
 function say(el, text, kind) {
+  if (!el) return;
+  if (TOAST_IDS.has(el.id)) {
+    const body = polite(text);
+    const shown = body && !kind && /…$/.test(body) ? "busy" : (kind || "");
+    toast(body, shown);
+    return;
+  }
   el.textContent = text || "";
-  el.className = "msg" + (kind ? " " + kind : "");
+  el.classList.remove("ok", "bad", "warn");
+  if (kind) el.classList.add(kind);
+}
+
+function syncSummary(res) {
+  if (!res || !res.ok) return toast(polite((res && res.msg) || "Не обновилось."), "bad");
+  const lines = (res.notes || []).map((n) => Array.isArray(n) ? n.filter(Boolean).join(" ") : String(n || "")).filter(Boolean);
+  const none = lines.some((l) => l.includes("нет контрагентов"));
+  const missing = lines.some((l) => /нет ключа|нет токена|отклон/i.test(l));
+  let text = none ? "Новых контрагентов нет." : "Клиенты обновлены.";
+  if (missing) text += "\nУ части кабинетов нет ключа маркетплейса.";
+  toast(text, missing ? "warn" : "ok");
+}
+
+function shipSummary(res) {
+  if (!res || !res.ok) return toast(polite((res && res.msg) || "Не обновилось."), "bad");
+  const notes = res.notes || [];
+  const bad = notes.some((n) => !/отправлений|снял старше/.test(String(n)));
+  toast(bad ? "Отправления обновлены.\nЧасть кабинетов не ответила." : "Отправления обновлены.", bad ? "warn" : "ok");
+}
+
+function printSummary(pages, notes, title) {
+  let text = (title || "Этикетки готовы") + ", " + pages + " шт.";
+  const extra = String(notes || "").split("\n").map((line) => {
+    const s = line.trim();
+    if (!s) return "";
+    if (s.includes("коробов нет")) return "Коробов нет, напечатаны только заказы.";
+    if (s.includes("без грузоместа")) return "Часть заказов без короба. Этикетки напечатаны, QR короба нет.";
+    if (s.includes("ещё не готовы")) return "Часть этикеток ещё не готова. Запроси ещё раз через минуту.";
+    if (s.includes("слишком часто")) return "Площадка просит немного подождать.";
+    if (s.includes("оплаты тарифа")) return "У клиента не оплачен доступ к стикерам.";
+    if (s.includes("58")) return "Этикетки вписаны в ленту принтера.";
+    if (s.includes("не отдал") || s.includes("Нет доступа") || s.includes("нераспознан")) return "Часть этикеток площадка не отдала.";
+    return "";
+  }).filter(Boolean);
+  if (extra.length) text += "\n" + [...new Set(extra)].join("\n");
+  toast(text, extra.length ? "warn" : "ok");
 }
 
 // вход
@@ -279,16 +351,11 @@ $("syncBtn").onclick = async () => {
   $("syncBtn").textContent = "Обновляю…";
   try {
     const res = await api("/api/agents/sync", { method: "POST" });
-    const lines = (res.notes || []).map((n) => Array.isArray(n) ? n.filter(Boolean).join(": ") : String(n || "")).filter(Boolean);
-    const text = res.ok
-      ? (lines.length ? "Обновил из МойСклад.\n" + lines.join("\n") : "Обновил из МойСклад. Новых контрагентов с группой или тегом «Фулфилмент» нет.")
-      : (res.msg || "не обновилось");
-    say($("syncNote"), text, res.ok ? (lines.length ? "ok" : "") : "bad");
-    if ($("iMsg")) say($("iMsg"), text, res.ok ? "ok" : "bad");
+    syncSummary(res);
     await loadClients();
     if ($("view-home") && $("view-home").classList.contains("active")) loadOverview();
   } catch (e) {
-    say($("iMsg"), e.message, "bad");
+    toast(e.message, "bad");
   }
   $("syncBtn").disabled = false;
   $("syncBtn").textContent = "Обновить клиентов";
@@ -1143,7 +1210,7 @@ $("shSync").onclick = async () => {
     const from = $("shFrom").value ? new Date($("shFrom").value) : new Date();
     const days = Math.max(1, Math.round((Date.now() - from.getTime()) / 86400000) + 1);
     const res = await api("/api/shipments/sync", { method: "POST", body: JSON.stringify({ days, client_id: $("shClient").value || "" }) });
-    say($("shMsg"), res.ok ? (res.notes || []).join("\n") || ("Обновлено отправлений: " + res.count) : res.msg, res.ok ? "ok" : "bad");
+    shipSummary(res);
     await loadShips();
   } catch (e) {
     say($("shMsg"), e.message, "bad");
@@ -2019,7 +2086,7 @@ async function printAsm(mode) {
     const pages = res.headers.get("X-Label-Pages") || "?";
     const raw = res.headers.get("X-Label-Notes") || "";
     const notes = raw ? decodeURIComponent(raw) : "";
-    say($("aMsg"), "Готово: этикеток в файле " + pages + "." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+    printSummary(pages, notes);
   } catch (e) {
     say($("aMsg"), e.message, "bad");
   }
@@ -2086,7 +2153,7 @@ $("aSync").onclick = async () => {
     // контрагент из фильтра: обновляем выбранного целиком, а не круг по всем
     const client = $("aClient").value || "";
     const res = await api("/api/shipments/sync", { method: "POST", body: JSON.stringify({ days: 14, client_id: client }) });
-    say($("aMsg"), res.ok ? (res.notes || []).join("\n") || ("Обновлено: " + res.count) : res.msg, res.ok ? "ok" : "bad");
+    shipSummary(res);
     await loadAsm();
   } catch (e) {
     say($("aMsg"), e.message, "bad");
@@ -2372,8 +2439,7 @@ async function printWbBoxes() {
     const pages = res.headers.get("X-Label-Pages") || String(ids.length);
     const raw = res.headers.get("X-Label-Notes") || "";
     const notes = raw ? decodeURIComponent(raw) : "";
-    const scope = state.wbBox ? "выбранный короб" : (ids.length + " кор.");
-    say($("wbMsg"), "QR готов: " + scope + ", листов " + pages + "." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+    printSummary(pages, notes, "QR коробов готов");
   } catch (e) {
     say($("wbMsg"), e.message, "bad");
   }
@@ -2405,8 +2471,7 @@ async function printWb(mode) {
     const pages = res.headers.get("X-Label-Pages") || "?";
     const raw = res.headers.get("X-Label-Notes") || "";
     const notes = raw ? decodeURIComponent(raw) : "";
-    const scope = state.wbPicked.size ? "выбранные" : (state.wbQuery ? "по фильтру" : "вся поставка");
-    say($("wbMsg"), "Готово: " + scope + ", этикеток " + pages + "." + (notes ? "\n" + notes : ""), notes ? "" : "ok");
+    printSummary(pages, notes);
   } catch (e) {
     say($("wbMsg"), e.message, "bad");
   }
@@ -2489,17 +2554,46 @@ async function loadWbPoints(opts) {
 async function pickWbPoint(pointId) {
   const id = state.wbSupply;
   const keep = $("wbPointKeep");
-  say($("wbMsg"), "Ставлю точку сдачи…");
+  const list = $("wbPointList");
+  const buttons = list ? [...list.querySelectorAll("button[data-point]")] : [];
+  buttons.forEach((btn) => {
+    const on = String(btn.dataset.point) === String(pointId);
+    btn.classList.toggle("is-on", on);
+    btn.classList.remove("is-bad");
+    btn.disabled = true;
+    if (!on) return;
+    let mark = btn.querySelector(".wb-point-state");
+    if (!mark) {
+      mark = document.createElement("i");
+      mark.className = "wb-point-state";
+      btn.appendChild(mark);
+    }
+    mark.textContent = "Ставлю…";
+  });
   try {
     const res = await api("/api/wb/supplies/" + id + "/dropoff", {
       method: "POST",
       body: JSON.stringify({ point_id: Number(pointId), remember: !!(keep && keep.checked) }),
     });
+    const label = res.office || res.address || String(pointId);
+    const chosen = buttons.find((btn) => String(btn.dataset.point) === String(pointId));
+    const mark = chosen && chosen.querySelector(".wb-point-state");
+    if (mark) mark.textContent = "Выбрано";
+    toast("Точка сдачи: " + label + ".", "ok");
+    await new Promise((resolve) => setTimeout(resolve, 700));
     await loadWbDetail(id);
     await loadAsm();
-    say($("wbMsg"), "Везём: " + (res.office || res.address || pointId) + ".", "ok");
   } catch (e) {
-    say($("wbMsg"), e.message, "bad");
+    buttons.forEach((btn) => {
+      btn.disabled = false;
+      btn.classList.remove("is-on");
+    });
+    const chosen = buttons.find((btn) => String(btn.dataset.point) === String(pointId));
+    if (chosen) {
+      chosen.classList.add("is-bad");
+      const mark = chosen.querySelector(".wb-point-state");
+      if (mark) mark.textContent = e.message;
+    }
   }
 }
 
