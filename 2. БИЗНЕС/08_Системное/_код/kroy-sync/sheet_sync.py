@@ -1,46 +1,33 @@
-"""Таблица приёмки кроя. Новая строка сама становится приёмкой и списанием рулона.
+"""Норма метров в таблице. Приёмка живёт в Моём Складе, сервер только списывает рулон.
 
-На площадки не ходит. SYNC_ENABLED здесь не читается.
+На площадки не ходит.
 """
 
-import hashlib
 import json
 import os
 import sys
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime
 
+import catalog
 import config
 import core
-import cut
 import ms_api
 
 SHEET_ID = "1FaVgAGM_RIDcy6PGl0lYIGQuTsQG3H2Fqnf0lHLAiUA"
-FACT_SHEET = "Приёмка"
 MAP_SHEET = "Сопоставление"
-HEADER = [
-    "Дата",
-    "Изделие",
-    "S",
-    "M",
-    "L",
-    "Рулонов",
-    "Цвет",
-    "Списать рулон",
-    "Было рулонов",
-    "Статус",
-    "Приёмка",
-    "Списание",
-    "Ключ",
-]
+OLD_SHEET = "Приёмка"
+HEADER = ["Изделие", "Цвет", "Рулон", "S, м на 1 шт", "M, м на 1 шт", "L, м на 1 шт"]
 NOTE = (
-    "Добавь строку: дата, изделие, размеры и сколько рулонов ушло. "
-    "Цвет и рулон посчитаются сами. Через несколько секунд появится приёмка изделий "
-    "и списание этого рулона в Моём Складе. Проведённую строку не пересчитываем, для правки нужна новая."
+    "Сколько метров рулона этого цвета уходит на одну штуку размера. "
+    "Цвет и рулон взяты из названия изделия. "
+    "Когда в Моём Складе проводят приёмку или оприходование, сервер списывает эту длину. "
+    "Пустая ячейка значит нормы ещё нет: такую позицию не списываем."
 )
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+KIND_NAME = {"supply": "приёмке", "enter": "оприходованию"}
 _token = {"value": "", "until": 0}
 
 
@@ -48,55 +35,34 @@ def sheet_id():
     return os.environ.get("SHEET_ID", "").strip() or SHEET_ID
 
 
-def iso_date(value):
-    """Дата из ячейки в ГГГГ-ММ-ДД. Пусто, если разобрать нельзя."""
+def meter(value):
+    """Метры из ячейки. Пусто это отсутствие нормы, не ноль."""
     if value is None or value == "":
-        return ""
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        day = datetime(1899, 12, 30) + timedelta(days=int(value))
-        return day.date().isoformat()
-    text = str(value).strip()
-    for fmt, chunk in (("%Y-%m-%d", text[:10]), ("%d.%m.%Y", text), ("%d.%m.%y", text)):
-        try:
-            return datetime.strptime(chunk, fmt).date().isoformat()
-        except ValueError:
-            continue
-    return ""
-
-
-def whole(value):
-    if value is None or value == "":
-        return 0
+        return None
     if isinstance(value, str):
         value = value.strip().replace(",", ".")
         if value == "":
-            return 0
+            return None
     number = float(value)
-    if number < 0 or number != int(number):
-        raise ValueError("нужно целое число")
-    return int(number)
+    if number < 0:
+        raise ValueError("метры меньше нуля")
+    return number
 
 
-def content_digest(date, product, sizes, rolls):
-    raw = core.fact_payload(date, product, sizes, rolls)
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+def ru(number):
+    text = ("%.3f" % float(number)).rstrip("0").rstrip(".")
+    return text.replace(".", ",")
 
 
-def row_key(spreadsheet_id, row_number, digest):
-    raw = "%s|%s|%s" % (spreadsheet_id, row_number, digest)
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
-
-
-def next_step(status, stored, digest, ready):
-    """skip, ask, wait или post. Повтор той же строки не создаёт второй документ."""
-    status = (status or "").strip()
-    if status.startswith("проведено"):
-        return "skip"
-    if not ready:
-        return "ask"
-    if stored == digest and (status == "проверяю" or status.startswith("ошибка")):
-        return "post"
-    return "wait"
+def loss_text(kind, doc_name, plan):
+    lines = ["Списание метров по %s %s." % (KIND_NAME.get(kind, "документу"), doc_name or "")]
+    for row in plan["details"]:
+        lines.append("%s, %s, %s шт, %s м на штуку, %s м" % (
+            row["product"], row["size"], ru(row["qty"]), ru(row["per"]), ru(row["meters"]),
+        ))
+    for color, meters in sorted(plan["by_color"].items()):
+        lines.append("Итого Рулон %s: %s м" % (color, ru(meters)))
+    return "\n".join(lines)
 
 
 def _creds_token():
@@ -166,7 +132,11 @@ def _write(range_name, values):
     )
 
 
-def mapping_rows():
+def _cell(row, index):
+    return row[index] if index < len(row) else ""
+
+
+def mapping_rows(saved):
     rows = []
     for product in ms_api.rows("/entity/product"):
         if product.get("pathName") != core.YUJI_FOLDER:
@@ -174,225 +144,241 @@ def mapping_rows():
         name = product.get("name") or ""
         color = core.color_of(name)
         roll = ("Рулон " + color) if color else ""
-        article = core.roll_article(color) if color else ""
-        rows.append([name, color, roll, article])
+        meters = saved.get(name) or ["", "", ""]
+        rows.append([name, color, roll, meters[0], meters[1], meters[2]])
     rows.sort(key=lambda item: item[0])
     return rows
 
 
 def setup():
-    """Шапка, формулы и список изделий. Уже введённые строки приёмки не трогает."""
-    sheets = _meta().get("sheets") or []
-    titles = [(s.get("properties") or {}).get("title") for s in sheets]
+    """Лист нормы. Лист приёмки убираем: приёмка живёт в Моём Складе."""
+    titles = {}
+    for sheet in _meta().get("sheets") or []:
+        props = sheet.get("properties") or {}
+        titles[props.get("title")] = props.get("sheetId")
     requests = []
-    if FACT_SHEET not in titles:
-        first = (sheets[0].get("properties") or {}) if sheets else {}
-        requests.append({
-            "updateSheetProperties": {
-                "properties": {"sheetId": first.get("sheetId", 0), "title": FACT_SHEET},
-                "fields": "title",
-            }
-        })
     if MAP_SHEET not in titles:
         requests.append({"addSheet": {"properties": {"title": MAP_SHEET}}})
     if requests:
         _api("POST", "/" + sheet_id() + ":batchUpdate", {"requests": requests})
-    fact_id = _sheet_id_by_title(FACT_SHEET)
+        titles = {}
+        for sheet in _meta().get("sheets") or []:
+            props = sheet.get("properties") or {}
+            titles[props.get("title")] = props.get("sheetId")
+    if OLD_SHEET in titles and len(titles) > 1:
+        _api("POST", "/" + sheet_id() + ":batchUpdate", {
+            "requests": [{"deleteSheet": {"sheetId": titles[OLD_SHEET]}}],
+        })
+    header = _values(MAP_SHEET + "!A2:F2")
+    saved = {}
+    header_cells = header[0] if header else []
+    if "Артикул" not in header_cells:
+        for raw in _values(MAP_SHEET + "!A3:F"):
+            name = str(_cell(raw, 0) or "").strip()
+            if name:
+                saved[name] = [_cell(raw, 3), _cell(raw, 4), _cell(raw, 5)]
+    catalog_rows = mapping_rows(saved)
+    _write(MAP_SHEET + "!A1", [[NOTE]])
+    _write(MAP_SHEET + "!A2:F2", [HEADER])
+    if catalog_rows:
+        _write(MAP_SHEET + "!A3:F%d" % (len(catalog_rows) + 2), catalog_rows)
     map_id = _sheet_id_by_title(MAP_SHEET)
-    _write(FACT_SHEET + "!A1", [[NOTE]])
-    _write(FACT_SHEET + "!A2:M2", [HEADER])
-    _write(FACT_SHEET + "!G3", [[
-        '=ARRAYFORMULA(IF(B3:B="";"";IFERROR(VLOOKUP(B3:B;\'Сопоставление\'!A:B;2;FALSE);"")))'
-    ]])
-    _write(FACT_SHEET + "!H3", [[
-        '=ARRAYFORMULA(IF(B3:B="";"";IFERROR(VLOOKUP(B3:B;\'Сопоставление\'!A:C;3;FALSE);"нет такого изделия")))'
-    ]])
-    catalog = mapping_rows()
-    _write(MAP_SHEET + "!A1:D1", [["Изделие", "Цвет", "Рулон", "Артикул"]])
-    if catalog:
-        _write(MAP_SHEET + "!A2:D%d" % (len(catalog) + 1), catalog)
-    end = max(len(catalog) + 1, 2)
     _api("POST", "/" + sheet_id() + ":batchUpdate", {"requests": [
         {
             "updateSheetProperties": {
-                "properties": {"sheetId": fact_id, "gridProperties": {"frozenRowCount": 2}},
+                "properties": {"sheetId": map_id, "gridProperties": {"frozenRowCount": 2}},
                 "fields": "gridProperties.frozenRowCount",
             }
         },
         {
             "repeatCell": {
-                "range": {"sheetId": fact_id, "startRowIndex": 1, "endRowIndex": 2},
+                "range": {"sheetId": map_id, "startRowIndex": 1, "endRowIndex": 2},
                 "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
                 "fields": "userEnteredFormat.textFormat.bold",
-            }
-        },
-        {
-            "setDataValidation": {
-                "range": {
-                    "sheetId": fact_id,
-                    "startRowIndex": 2,
-                    "endRowIndex": 500,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 2,
-                },
-                "rule": {
-                    "condition": {
-                        "type": "ONE_OF_RANGE",
-                        "values": [{"userEnteredValue": "=%s!A2:A%d" % (MAP_SHEET, end)}],
-                    },
-                    "showCustomUi": True,
-                    "strict": True,
-                },
-            }
-        },
-        {
-            "updateDimensionProperties": {
-                "range": {"sheetId": fact_id, "dimension": "COLUMNS", "startIndex": 12, "endIndex": 13},
-                "properties": {"hiddenByUser": True},
-                "fields": "hiddenByUser",
             }
         },
         {
             "repeatCell": {
                 "range": {
                     "sheetId": map_id,
-                    "startRowIndex": 0,
-                    "endRowIndex": 1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 4,
+                    "startRowIndex": 2,
+                    "endRowIndex": max(len(catalog_rows) + 2, 3),
+                    "startColumnIndex": 3,
+                    "endColumnIndex": 6,
                 },
-                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
-                "fields": "userEnteredFormat.textFormat.bold",
+                "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.###"}}},
+                "fields": "userEnteredFormat.numberFormat",
             }
         },
     ]})
-    return len(catalog)
+    changed = catalog.use_meters()
+    return len(catalog_rows), changed
 
 
-def _cell(row, index):
-    return row[index] if index < len(row) else ""
+def norms():
+    found = {}
+    for raw in _values(MAP_SHEET + "!A3:F"):
+        name = str(_cell(raw, 0) or "").strip()
+        if not name:
+            continue
+        found[name] = {
+            "S": meter(_cell(raw, 3)),
+            "M": meter(_cell(raw, 4)),
+            "L": meter(_cell(raw, 5)),
+        }
+    return found
 
 
-def _ask_text(date, product, rolls, pieces):
-    if not date:
-        return "укажи дату"
-    if not product:
-        return "укажи изделие"
-    if pieces < 1:
-        return "укажи, сколько штук пришло"
-    if rolls < 1:
-        return "укажи, сколько рулонов списать"
-    return ""
+def state_path():
+    return config.ROOT / "state.json"
 
 
-def _doc_link(kind, entity_id, name):
-    if not entity_id or not name:
-        return ""
-    return '=HYPERLINK("https://online.moysklad.ru/app/#%s/edit?id=%s";"%s")' % (
-        kind, entity_id, name,
-    )
+def load_state():
+    path = state_path()
+    if not path.is_file():
+        data = {"watch_from": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "done": [], "noted": []}
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return data, True
+    return json.loads(path.read_text(encoding="utf-8")), False
 
 
-def _shown(value):
-    if value is None or value == "":
-        return ""
-    number = float(value)
-    if number.is_integer():
-        return str(int(number))
-    return str(number)
+def save_state(data):
+    state_path().write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _paint(row_number, before, status, enter_name, loss_name, digest, enter_id="", loss_id=""):
-    _write("%s!I%d:M%d" % (FACT_SHEET, row_number, row_number), [[
-        "" if before is None else before,
-        status,
-        _doc_link("enter", enter_id, enter_name),
-        _doc_link("loss", loss_id, loss_name),
-        digest,
-    ]])
+def _store_id(doc):
+    href = (((doc.get("store") or {}).get("meta") or {}).get("href") or "")
+    return href.rstrip("/").split("/")[-1]
+
+
+def _variant(variant_id, cache):
+    if variant_id in cache:
+        return cache[variant_id]
+    data = ms_api.request("GET", "/entity/variant/" + variant_id)
+    product_href = ((data.get("product") or {}).get("meta") or {}).get("href") or ""
+    product_id = product_href.rstrip("/").split("/")[-1]
+    product = ms_api.request("GET", "/entity/product/" + product_id) if product_id else {}
+    size = ""
+    for char in data.get("characteristics") or []:
+        if char.get("name") == "Размер":
+            size = char.get("value") or ""
+    cache[variant_id] = (product.get("name") or "", product.get("pathName") or "", size)
+    return cache[variant_id]
+
+
+def lines_of(kind, doc, cache):
+    data = ms_api.request("GET", "/entity/%s/%s/positions" % (kind, doc["id"]))
+    lines = []
+    for row in data.get("rows") or []:
+        href = (((row.get("assortment") or {}).get("meta") or {}).get("href") or "")
+        if "/variant/" not in href:
+            continue
+        variant_id = href.rstrip("/").split("/")[-1].split("?")[0]
+        name, path, size = _variant(variant_id, cache)
+        if path != core.YUJI_FOLDER:
+            continue
+        lines.append((name, size, row.get("quantity") or 0))
+    return lines
+
+
+def incoming(kind, watch_from):
+    filt = urllib.parse.quote("moment>%s;applicable=true" % watch_from)
+    return ms_api.rows("/entity/%s?order=moment,asc&filter=%s" % (kind, filt))
+
+
+def _note_missing(kind, doc, missing):
+    line = "Крой: нет нормы метров для %s." % "; ".join(missing)
+    old = doc.get("description") or ""
+    if line in old:
+        return
+    text = (old + "\n" + line).strip()
+    ms_api.request("PUT", "/entity/%s/%s" % (kind, doc["id"]), {"description": text})
+
+
+def _create_loss(kind, doc, plan):
+    code = "kroy-%s-%s-loss" % (kind, doc["id"])
+    existing = ms_api.find_doc("loss", code)
+    if existing:
+        return existing
+    positions = []
+    for color, meters in sorted(plan["by_color"].items()):
+        if meters <= 0:
+            continue
+        roll = ms_api.find_product_by_article(core.roll_article(color))
+        if not roll:
+            raise ms_api.MsError("нет карточки рулона " + color)
+        positions.append({
+            "quantity": meters,
+            "assortment": {"meta": ms_api.meta("product", roll["id"])},
+        })
+    if not positions:
+        return None
+    return ms_api.request("POST", "/entity/loss", {
+        "organization": doc.get("organization"),
+        "store": doc.get("store"),
+        "applicable": True,
+        "externalCode": code,
+        "moment": doc.get("moment"),
+        "description": loss_text(kind, doc.get("name"), plan),
+        "positions": positions,
+    })
 
 
 def process_once():
-    """Один проход. Возвращает, сколько строк проведено."""
-    rows = _values(FACT_SHEET + "!A3:M")
+    """Новые приёмки и оприходования после запуска. История не списывается."""
+    state, first = load_state()
+    if first:
+        print("старт с %s, старые документы не трогаю" % state["watch_from"], flush=True)
+        return 0
+    store_id = os.environ.get("MS_STORE_ID", "").strip()
+    done = set(state.get("done") or [])
+    noted = set(state.get("noted") or [])
     posted = 0
-    for offset, raw in enumerate(rows):
-        row_number = offset + 3
-        product = str(_cell(raw, 1) or "").strip()
-        if not product:
-            continue
-        status = str(_cell(raw, 9) or "").strip()
-        stored = str(_cell(raw, 12) or "").strip()
-        try:
-            sizes = {"S": whole(_cell(raw, 2)), "M": whole(_cell(raw, 3)), "L": whole(_cell(raw, 4))}
-            rolls = whole(_cell(raw, 5))
-        except ValueError:
-            if status != "нужны целые числа":
-                _paint(row_number, _cell(raw, 8), "нужны целые числа", "", "", stored)
-            continue
-        date = iso_date(_cell(raw, 0))
-        pieces = sum(sizes.values())
-        ready = bool(date and product and pieces > 0 and rolls > 0)
-        digest = content_digest(date or "-", product, sizes, rolls) if date else ""
-        step = next_step(status, stored, digest, ready)
-        if step == "skip":
-            continue
-        if step == "ask":
-            hint = _ask_text(date, product, rolls, pieces)
-            if hint and hint != status:
-                _paint(row_number, _cell(raw, 8), hint, "", "", stored)
-            continue
-        if step == "wait":
-            _paint(row_number, _cell(raw, 8), "проверяю", "", "", digest)
-            continue
-        color = core.color_of(product)
-        key = row_key(sheet_id(), row_number, digest)
-        try:
-            result = cut.apply_fact(
-                date, product, color, sizes, rolls, True,
-                external_key=key, force=True,
-            )
-        except Exception as exc:
-            message = "ошибка: %s" % exc
-            _paint(row_number, _cell(raw, 8), message[:400], "", "", digest)
-            print(message, flush=True)
-            continue
-        if not result["ok"]:
-            _paint(row_number, result["roll_before"], result["text"], "", "", digest)
-            print("строка %s: %s" % (row_number, result["text"]), flush=True)
-            continue
-        before = result["roll_before"]
-        if result.get("roll_missing"):
-            before = None
-            text = "проведено. Списание %s. В отчёте остатков этой карточки не было" % (
-                result["roll_name"] or color,
-            )
-        else:
-            after = float(before) - rolls
-            text = "проведено. Списание %s, было %s, стало %s" % (
-                result["roll_name"] or color, _shown(before), _shown(after),
-            )
-            if "меньше" in result["text"]:
-                text += ". На складе было меньше, чем в строке"
-        _paint(
-            row_number, before, text,
-            result["enter_name"], result["loss_name"], digest,
-            result.get("enter_id") or "", result.get("loss_id") or "",
-        )
-        posted += 1
-        print("строка %s проведена, приёмка %s, списание %s" % (
-            row_number, result["enter_name"], result["loss_name"],
-        ), flush=True)
+    cache = {}
+    table = norms()
+    for kind in ("supply", "enter"):
+        for doc in incoming(kind, state["watch_from"]):
+            key = "%s:%s" % (kind, doc.get("id"))
+            if key in done:
+                continue
+            if doc.get("externalCode", "").startswith("kroy-"):
+                done.add(key)
+                continue
+            if store_id and _store_id(doc) != store_id:
+                continue
+            lines = lines_of(kind, doc, cache)
+            if not lines:
+                done.add(key)
+                continue
+            plan = core.plan_consumption(lines, table)
+            if plan["missing"]:
+                if key not in noted:
+                    _note_missing(kind, doc, plan["missing"])
+                    noted.add(key)
+                    print("%s %s ждёт норму: %s" % (
+                        kind, doc.get("name"), "; ".join(plan["missing"]),
+                    ), flush=True)
+                continue
+            loss = _create_loss(kind, doc, plan)
+            done.add(key)
+            noted.discard(key)
+            posted += 1
+            print("%s %s списано %s" % (
+                kind, doc.get("name"), (loss or {}).get("name") or "без метров",
+            ), flush=True)
+    state["done"] = sorted(done)
+    state["noted"] = sorted(noted)
+    save_state(state)
     return posted
 
 
 def main():
     if "--setup" in sys.argv:
-        count = setup()
-        print("таблица готова, изделий %s" % count)
+        count, changed = setup()
+        print("норма готова, изделий %s, рулонов переведено в метры %s" % (count, changed))
         return
     if "--once" in sys.argv:
-        print("проведено строк: %s" % process_once())
+        print("списаний: %s" % process_once())
         return
     pause = int(os.environ.get("POLL_SECONDS", "15") or "15")
     while True:

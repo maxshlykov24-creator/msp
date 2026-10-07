@@ -1,5 +1,6 @@
 .env
 google_sa.json
+state.json
 __pycache__/
 *.pyc
 .venv/

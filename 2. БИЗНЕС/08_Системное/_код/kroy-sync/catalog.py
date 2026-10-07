@@ -1,10 +1,33 @@
 """Рулоны по цветам папки YUJI. Остаток рулонов не ставим: его называет клиент."""
 
-import os
-
-import config
 import core
 import ms_api
+
+
+def meter_uom_id():
+    for row in ms_api.rows("/entity/uom"):
+        if row.get("name") == "м":
+            return row.get("id") or ""
+    return ""
+
+
+def use_meters():
+    """Рулон списывается метрами длины, не штуками."""
+    uom_id = meter_uom_id()
+    if not uom_id:
+        return 0
+    changed = 0
+    for product in ms_api.rows("/entity/product"):
+        if product.get("pathName") != core.ROLL_FOLDER:
+            continue
+        current = (((product.get("uom") or {}).get("meta") or {}).get("href") or "")
+        if current.rstrip("/").endswith(uom_id):
+            continue
+        ms_api.request("PUT", "/entity/product/" + product["id"], {
+            "uom": {"meta": ms_api.meta("uom", uom_id)},
+        })
+        changed += 1
+    return changed
 
 
 def yuji_colors():
@@ -29,7 +52,7 @@ def ensure_rolls(apply):
     skipped = []
     if apply:
         folder = ms_api.ensure_folder(core.ROLL_FOLDER)
-    uom = os.environ.get("MS_UOM_ID", "").strip()
+    uom = meter_uom_id()
     for color in colors:
         article = core.roll_article(color)
         existing = ms_api.find_product_by_article(article) if apply else None

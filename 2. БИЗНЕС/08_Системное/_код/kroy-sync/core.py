@@ -57,6 +57,39 @@ def check_color(product_name, color):
     return ""
 
 
+def plan_consumption(lines, norms):
+    """Метры рулона по цвету на строки приёмки.
+
+    lines: изделие, размер, штуки. norms: изделие -> размер -> метры на штуку.
+    Пустая норма не ноль: такую строку возвращаем в missing, списание по ней не считаем.
+    """
+    missing = []
+    by_color = {}
+    details = []
+    for product, size, qty in lines:
+        qty = float(qty or 0)
+        if qty <= 0:
+            continue
+        product = (product or "").strip()
+        size = (size or "").strip()
+        color = color_of(product)
+        per = (norms.get(product) or {}).get(size)
+        if not color or size not in SIZES or per is None:
+            missing.append("%s, %s" % (product or "без изделия", size or "без размера"))
+            continue
+        meters = round(qty * float(per), 3)
+        by_color[color] = round(by_color.get(color, 0.0) + meters, 3)
+        details.append({
+            "product": product,
+            "size": size,
+            "qty": qty,
+            "per": float(per),
+            "meters": meters,
+            "color": color,
+        })
+    return {"by_color": by_color, "missing": missing, "details": details}
+
+
 def plan_cut(*, roll_stock, rolls, loss_exists, enter_exists):
     """Что делать с фактом. Пустой ответ склада не считаем нулём."""
     if loss_exists and enter_exists:
