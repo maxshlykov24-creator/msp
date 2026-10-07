@@ -315,6 +315,32 @@ def atomic_json(path: Path, value: dict, mode=0o600) -> None:
     tmp.replace(path)
 
 
+def classify_shipments(order_lines, demands) -> list[str]:
+    """Отгрузки, которые не раскладываются по позициям заказа.
+
+    Досыл исходного заказа укладывается в остаток количества и возвратом не становится.
+    Отгрузка с другим товаром или с количеством сверх заказа — обмен.
+    Услуга, которой нет в заказе, сама по себе обмен не создаёт.
+    """
+    remaining = defaultdict(float)
+    for line in order_lines or []:
+        remaining[line.get("id")] += float(line.get("qty") or 0)
+    extra = []
+    for demand in sorted(demands, key=lambda row: row.get("moment") or ""):
+        goods = [p for p in demand.get("positions") or [] if float(p.get("qty") or 0) > 0]
+        if not goods:
+            continue
+        blocked = [p for p in goods if remaining[p.get("id")] + 1e-6 < float(p["qty"]) and p.get("type") != "service"]
+        if blocked:
+            extra.append(demand.get("id"))
+            continue
+        for pos in goods:
+            if pos.get("type") == "service" and remaining[pos.get("id")] + 1e-6 < float(pos["qty"]):
+                continue
+            remaining[pos.get("id")] -= float(pos["qty"])
+    return extra
+
+
 def enrich_accounting(snap: dict, ms=None) -> None:
     """История наблюдённых цен и отдельные отрицательные события возвратов."""
     ms = ms or lib.MS()
@@ -350,8 +376,35 @@ def enrich_accounting(snap: dict, ms=None) -> None:
             line["cost_basis"] = fixed["basis"]
     atomic_json(history_path, history)
     by_id = {o["id"]: o for o in snap["orders"]}
-    demands = {r["id"]: mid(r.get("customerOrder")) for r in required_rows(ms, "/entity/demand", keep=("id", "customerOrder"))}
-    returns, unresolved = [], []
+    demand_rows = required_rows(ms, "/entity/demand", keep=("id", "name", "moment", "sum", "applicable", "customerOrder"))
+    demands = {row["id"]: mid(row.get("customerOrder")) for row in demand_rows}
+    demands_by_order = defaultdict(list)
+    for row in demand_rows:
+        oid = demands.get(row["id"])
+        if oid and row.get("applicable") is not False and rub(row.get("sum")) > 0.009:
+            demands_by_order[oid].append(row)
+    shipment_cache = {}
+
+    def shipment_positions(demand_id):
+        if demand_id not in shipment_cache:
+            rows = []
+            for pos in required_rows(ms, f"/entity/demand/{demand_id}/positions"):
+                meta = ((pos.get("assortment") or {}).get("meta") or {})
+                rows.append({"id": mid(pos.get("assortment")), "qty": float(pos.get("quantity") or 0), "type": meta.get("type") or ""})
+            shipment_cache[demand_id] = rows
+        return shipment_cache[demand_id]
+
+    def exchange_ids(order):
+        rows = demands_by_order.get(order["id"], [])
+        if len(rows) < 2:
+            return []
+        packed = []
+        for row in rows:
+            packed.append({"id": row["id"], "moment": row.get("moment") or "", "positions": shipment_positions(row["id"])})
+        return classify_shipments(order.get("lines"), packed)
+
+    returns, exchanges, unresolved = [], [], []
+    built = defaultdict(list)
     for ret in required_rows(ms, "/entity/salesreturn", keep=("id", "name", "moment", "sum", "applicable", "demand")):
         if ret.get("applicable") is not True:
             continue
@@ -391,9 +444,19 @@ def enrich_accounting(snap: dict, ms=None) -> None:
         event = {k: original.get(k) for k in ("channel", "source", "city", "phone", "client", "manager")}
         event.update(id=ret["id"], number=ret.get("name"), original_order=original["id"], return_event=True,
                      paid_date=date.date().isoformat(), sum=-rub(ret.get("sum")), lines=lines)
-        returns.append(event)
-    snap.update(returns=returns, return_gaps=unresolved,
-                accounting={"cost_history_started": history["started"], "returns_checked_at": observed})
+        built[original["id"]].append(event)
+    for oid, events in built.items():
+        extra = exchange_ids(by_id[oid])
+        events.sort(key=lambda item: item.get("paid_date") or "")
+        keep = len(events) if not extra else max(0, len(events) - len(extra))
+        returns.extend(events[:keep])
+        for event in events[keep:]:
+            event["exchange"] = True
+            event["return_event"] = False
+            exchanges.append(event)
+    snap.update(returns=returns, exchanges=exchanges, return_gaps=unresolved,
+                accounting={"cost_history_started": history["started"], "returns_checked_at": observed,
+                            "exchanges": len(exchanges)})
 
 
 def main() -> None:
