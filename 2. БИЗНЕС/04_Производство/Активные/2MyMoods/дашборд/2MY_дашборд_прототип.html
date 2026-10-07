@@ -764,12 +764,13 @@
     </div>
     <div class="card">
       <h3>Скорость ответа</h3>
-      <div class="hint" id="speed-hint">Минуты от первого входящего в серии до следующего исходящего в той же беседе.</div>
+      <div class="hint" id="speed-hint">Календарные минуты от первого входящего в серии до следующего исходящего. Ночь и выходные входят в счёт.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Менеджер</th><th>Медиана</th><th>Средняя</th><th>Ответов</th></tr></thead>
         <tbody id="speed"></tbody>
       </table></div>
-      <div id="response-quality" class="hint" style="margin-top:16px"></div>
+      <div id="speed-detail" class="hint" style="margin-top:16px"></div>
+      <div id="response-quality" class="hint"></div>
     </div>
   </div>
 
@@ -1018,19 +1019,29 @@ const selected = id => [...el(id).selectedOptions].map(o=>o.value).filter(Boolea
 const setSelected=(id,values)=>{const e=el(id);[...e.options].forEach(o=>o.selected=values.includes(o.value));e.dispatchEvent(new Event('pick-sync'))};
 const matches=(values,value)=>!values.length||values.includes(value);
 const normPiece=s=>String(s||'').trim().replace(/\s+/g,' ').replace(/[‐‑‒–—]/g,'-').replace(/\s*-\s*/g,'-').toLocaleLowerCase('ru').replace(/ё/g,'е');
-const colorAlias={'молочная':'молочный','молочное':'молочный','молочные':'молочный','серая':'серый','серое':'серый','черная':'черный','черное':'черный','белая':'белый','белое':'белый','розовая':'розовый','розовое':'розовый','синяя':'синий','синее':'синий','голубая':'голубой','голубое':'голубой','кремовая':'кремовый','кремовое':'кремовый','бежевая':'бежевый'};
-const isSizeToken=s=>/^(xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|one size|onesize|\d+)$/.test(s);
+const colorAlias={'молочная':'молочный','молочное':'молочный','молочные':'молочный','серая':'серый','серое':'серый','черная':'черный','черное':'черный','белая':'белый','белое':'белый','розовая':'розовый','розовое':'розовый','синяя':'синий','синее':'синий','голубая':'голубой','голубое':'голубой','кремовая':'кремовый','кремовое':'кремовый','бежевая':'бежевый','лиловая':'лиловый','лиловое':'лиловый','ягодная':'ягодный','ягодное':'ягодный','травяная':'травяной','травяное':'травяной','ежевичная':'ежевичный','ежевичное':'ежевичный','шоколадная':'шоколадный','шоколадное':'шоколадный','фиолетовая':'фиолетовый','фиолетовое':'фиолетовый','песочная':'песочный','песочное':'песочный','бирюзовая':'бирюзовый','бирюзовое':'бирюзовый','жемчужная':'жемчужный','жемчужное':'жемчужный','алая':'алый','алое':'алый','лимонная':'лимонный','лимонное':'лимонный','морковная':'морковный','морковное':'морковный','графитовая':'графитовый','графитовое':'графитовый','терракотовая':'терракотовый','терракотовое':'терракотовый','сливочная':'сливочный','сливочное':'сливочный'};
+const isSizeToken=s=>/^(xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|os|one size|onesize|\d+)$/.test(normPiece(s));
+function colorToken(raw){
+ let s=normPiece(raw);
+ if(!s) return '';
+ s=s.replace(/\s*\((?:one size|onesize|os|xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+)\)\s*/g,'').replace(/[,/]\s*(?:one size|onesize|os|xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+)\s*$/g,'').replace(/\s+(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|os|one size|onesize|\d+)\s*$/g,'').trim();
+ if(!s||isSizeToken(s)||!/[а-я]/.test(s)) return '';
+ return s;
+}
 function colorFromName(name){
  const text=String(name||'');
- const groups=[...text.matchAll(/\(([^)]*)\)/g)].map(m=>m[1].trim());
+ const groups=[...text.matchAll(/\(([^)]*)\)/g)].map(m=>m[1]);
  for(let i=groups.length-1;i>=0;i--){
-  const n=normPiece(groups[i].split(',')[0]);
-  if(n && !isSizeToken(n) && /[а-я]/.test(n)) return n;
+  const parts=groups[i].split(',');
+  for(let j=parts.length-1;j>=0;j--){
+   const n=colorToken(parts[j]);
+   if(n) return n;
+  }
  }
- const cut=text.lastIndexOf(',');
- if(cut>=0){
-  const n=normPiece(text.slice(cut+1));
-  if(n && !isSizeToken(n) && /[а-я]/.test(n)) return n;
+ const parts=text.split(',');
+ for(let j=parts.length-1;j>=1;j--){
+  const n=colorToken(parts[j]);
+  if(n) return n;
  }
  return '';
 }
@@ -1303,7 +1314,8 @@ function refresh(){
  mgr.sort((a,b)=>a.name==='Нет смены в графике'?1:b.name==='Нет смены в графике'?-1:b.rev-a.rev);
  const assigned=mgr.filter(x=>x.name!=='Нет смены в графике').reduce((n,x)=>n+x.arr.length,0);
  el('mgr-hint').textContent=`Менеджер по графику смен на дату закрывающего платежа. Подтверждённая смена: ${num(assigned)} из ${num(n)} покупок в фильтре. Без однозначной смены выручка показана отдельно.`+(data.roster?.status==='ok'?'':' График недоступен при сборке среза.');
- el('speed-hint').textContent='Минуты от первого входящего в серии до следующего исходящего в той же беседе. Это календарное время: ночь и выходные входят в счёт. Средняя это обычное среднее, поэтому один долгий ответ поднимает её выше медианы. В расчёт попадают только серии, где ответ уже отправлен. Автор ответа фактический. Только «Продажи 2MY», период по дате входящего. Товарные фильтры на ответы не действуют. Ответы без определённого автора исключены. '+(rules?'Рядом с календарными минутами рабочие часы на странице не смешиваются: график часов задан, но в таблице показаны календарные минуты.':'Рабочие минуты отдельно не показаны: график часов ещё не задан.')+(data.responses?.from?` История с ${dmy(data.responses.from)}.`:' История сообщений ещё не загружена.')+(data.responses?.from&&state.from<data.responses.from?' Выбранный период шире доступной истории: показатели ответов неполные.':'');
+ el('speed-hint').textContent='Календарные минуты от первого входящего в серии до следующего исходящего. Ночь и выходные входят в счёт.';
+ el('speed-detail').textContent='Средняя это обычное среднее, поэтому один долгий ответ поднимает её выше медианы. В расчёт попадают только серии, где ответ уже отправлен. Автор ответа фактический. Только «Продажи 2MY», период по дате входящего. Товарные фильтры на ответы не действуют. Ответы без определённого автора исключены. '+(rules?'Рядом с календарными минутами рабочие часы на странице не смешиваются: график часов задан, но в таблице показаны календарные минуты.':'Рабочие минуты отдельно не показаны: график часов ещё не задан.')+(data.responses?.from?` История с ${dmy(data.responses.from)}.`:' История сообщений ещё не загружена.')+(data.responses?.from&&state.from<data.responses.from?' Выбранный период шире доступной истории: показатели ответов неполные.':'');
  el('mgr').innerHTML=mgr.length?mgr.map(x=>`<tr><td>${esc(x.name)}</td><td>${num(x.arr.length)}</td><td>${money(x.rev)}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">Нет данных</td></tr>';
  const speedNames=[];
  for(const x of mgr) if(x.name!=='Нет смены в графике') speedNames.push(x.name);

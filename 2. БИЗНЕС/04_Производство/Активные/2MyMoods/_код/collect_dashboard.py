@@ -87,6 +87,46 @@ def dt(value: str | None) -> datetime | None:
         return None
 
 
+_SIZE = re.compile(r"^(xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|os|one size|onesize|\d+)$")
+
+
+def _norm_piece(value: str) -> str:
+    text = re.sub(r"\s+", " ", value or "").strip().lower().replace("ё", "е")
+    text = re.sub(r"[‐‑‒–—]", "-", text)
+    return re.sub(r"\s*-\s*", "-", text)
+
+
+def _color_token(raw: str) -> str:
+    text = _norm_piece(raw)
+    if not text:
+        return ""
+    text = re.sub(r"\s*\((?:one size|onesize|os|xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+)\)\s*", "", text)
+    text = re.sub(r"[,/]\s*(?:one size|onesize|os|xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+)\s*$", "", text)
+    text = re.sub(r"\s+(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|os|one size|onesize|\d+)\s*$", "", text).strip()
+    if not text or _SIZE.match(text) or not re.search(r"[а-я]", text):
+        return ""
+    return text
+
+
+def color_from_name(name: str) -> str:
+    """Цвет из хвоста названия: скобки или часть после запятой.
+    Размер и артикул в конце пропускаются. Слова внутри названия не считаются цветом:
+    иначе «бисера» становится «сера», а «Красноречивое молчание» становится цветом.
+    """
+    text = name or ""
+    for group in reversed(re.findall(r"\(([^)]*)\)", text)):
+        for part in reversed(group.split(",")):
+            token = _color_token(part)
+            if token:
+                return token
+    parts = text.split(",")
+    for part in reversed(parts[1:]):
+        token = _color_token(part)
+        if token:
+            return token
+    return ""
+
+
 def phone(value: str | None) -> str:
     digits = re.sub(r"\D", "", value or "")
     if len(digits) == 11 and digits[0] in "78":
@@ -581,8 +621,7 @@ def main() -> None:
                 size = str(chars.get("размер") or "").strip()
                 color = str(chars.get("цвет") or "").strip()
                 if not color:
-                    match = re.search(r"(бордов\w*|черн\w*|чёрн\w*|бел\w*|молочн\w*|красн\w*|розов\w*|син\w*|голуб\w*|бежев\w*|зелен\w*|зелён\w*|сер\w*)", name, re.I)
-                    color = match.group(1) if match else ""
+                    color = color_from_name(name)
                 qty = float(x.get("quantity") or 0)
                 gross = rub(x.get("price")) * qty
                 rev = round(gross * (1 - float(x.get("discount") or 0) / 100), 2)
