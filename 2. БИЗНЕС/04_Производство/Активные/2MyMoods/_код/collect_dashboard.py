@@ -374,34 +374,82 @@ def working_span(clock: datetime, end_ts: int, roster: dict) -> float:
     return round(total, 2)
 
 
+def _amo_get(amo: lib.Amo, path: str):
+    status, body = 0, {}
+    for attempt in range(5):
+        status, body = amo.req("GET", path)
+        if status not in (429, 500, 502, 503, 504):
+            return status, body
+        time.sleep(min(20, 2 * (attempt + 1)))
+    return status, body
+
+
+def _same_phone(left: str, right: str) -> bool:
+    a, b = re.sub(r"\D", "", left or ""), re.sub(r"\D", "", right or "")
+    return len(a) >= 10 and len(b) >= 10 and a[-10:] == b[-10:]
+
+
+def _lead_ids_for_phone(amo: lib.Amo, phone: str, cache: dict[str, list[int] | None]) -> list[int] | None:
+    key = re.sub(r"\D", "", phone or "")[-10:]
+    if len(key) < 10:
+        return None
+    if key in cache:
+        return cache[key]
+    time.sleep(0.15)
+    status, body = _amo_get(amo, f"/api/v4/contacts?query={key}&limit=5")
+    contacts = ((body.get("_embedded") or {}).get("contacts") or []) if status == 200 and isinstance(body, dict) else []
+    found = False
+    lead_ids: list[int] = []
+    for contact in contacts:
+        numbers = []
+        for grp in contact.get("custom_fields_values") or []:
+            if grp.get("field_code") != "PHONE":
+                continue
+            numbers.extend(str((val or {}).get("value") or "") for val in grp.get("values") or [])
+        if not any(_same_phone(number, key) for number in numbers):
+            continue
+        found = True
+        time.sleep(0.15)
+        link_status, links_body = _amo_get(amo, f"/api/v4/contacts/{contact['id']}/links?limit=250")
+        links = ((links_body.get("_embedded") or {}).get("links") or []) if link_status == 200 and isinstance(links_body, dict) else []
+        lead_ids.extend(link["to_entity_id"] for link in links if link.get("to_entity_type") == "leads" and link.get("to_entity_id"))
+    cache[key] = lead_ids if found else None
+    return cache[key]
+
+
+def messages_until_payment(amo: lib.Amo, orders: list[dict], msg_times: dict[int, list[int]],
+                           since_day: str, since_ts: int) -> list[dict]:
+    """Сколько сообщений клиента в amo было до полной оплаты. Без текста и без телефона в ответе."""
+    cache: dict[str, list[int] | None] = {}
+    until = []
+    seen: set[str] = set()
+    for order in orders:
+        paid_date = str(order.get("paid_date") or "")
+        if not order.get("buy") or paid_date < since_day or not order.get("phone") or not order.get("paid_at"):
+            continue
+        number = str(order.get("number") or "")
+        if number and number in seen:
+            continue
+        if number:
+            seen.add(number)
+        paid_ts = int(datetime.fromisoformat(order["paid_at"]).timestamp())
+        if paid_ts < since_ts:
+            continue
+        lead_ids = _lead_ids_for_phone(amo, order["phone"], cache)
+        if lead_ids is None:
+            continue
+        count = sum(1 for lead_id in set(lead_ids) for ts in msg_times.get(lead_id, []) if ts <= paid_ts)
+        until.append({"paid_date": paid_date, "count": count, "covered": True})
+    return until
+
+
 def get_responses(leads: list[dict], orders: list[dict] | None = None) -> dict:
     """Паузы входящее → первый исходящий в беседе, без текстов и контактов."""
     amo = lib.Amo()
     now = datetime.now(TZ)
     since = (now - timedelta(days=90)).replace(hour=0, minute=0, second=0, microsecond=0)
     lead_ids = {l["id"] for l in leads}
-    buys = {o["number"]: o for o in (orders or []) if o.get("buy") and o.get("number") and o.get("paid_date")}
-    grouped: dict[str, list[dict]] = defaultdict(list)
-
-    def consider(lead_id: int, created: str, order_no: str) -> None:
-        if order_no not in buys:
-            return
-        bucket = grouped[order_no]
-        if any(row["id"] == lead_id for row in bucket):
-            return
-        bucket.append({"id": lead_id, "created": created})
-
-    for lead in leads:
-        consider(lead["id"], str(lead.get("created") or ""), str(lead.get("order") or ""))
-    for lead in amo.iter_leads(f"?filter[pipeline_id]={lib.PIPELINE_SALES_OLD}", pages=40):
-        if lead.get("responsible_user_id") == lib.USER_POLINA:
-            continue
-        created_at = lead.get("created_at")
-        created = datetime.fromtimestamp(created_at, TZ).date().isoformat() if created_at else ""
-        consider(lead["id"], created, amo.cf(lead, lib.FIELD_MS_ORDER_NUM).strip())
-    watch_ids = {row["id"] for rows in grouped.values() for row in rows}
     response_ids = set(lead_ids)
-    lead_ids |= watch_ids
     msg_times: dict[int, list[int]] = defaultdict(list)
     events = {}
     for page in range(1, 2001):
@@ -419,7 +467,10 @@ def get_responses(leads: list[dict], orders: list[dict] | None = None) -> dict:
             raise RuntimeError(f"amo response events page {page}: HTTP {status}")
         rows = body.get("_embedded", {}).get("events", [])
         for row in rows:
-            if row.get("entity_type") == "lead" and row.get("entity_id") in lead_ids:
+            if row.get("entity_type") != "lead":
+                continue
+            msg_times[row["entity_id"]].append(row["created_at"])
+            if row.get("entity_id") in lead_ids:
                 events[row["id"]] = row
         if len(rows) < 100:
             break
@@ -442,8 +493,6 @@ def get_responses(leads: list[dict], orders: list[dict] | None = None) -> dict:
         if not msg.get("talk_id"):
             continue
         key = (msg.get("origin"), msg["talk_id"])
-        if row["entity_id"] in watch_ids:
-            msg_times[row["entity_id"]].append(row["created_at"])
         if row["entity_id"] not in response_ids:
             continue
         if row["type"] == "incoming_chat_message":
@@ -492,19 +541,7 @@ def get_responses(leads: list[dict], orders: list[dict] | None = None) -> dict:
                              "is_open": key[1] in open_talks})
     since_day = since.date().isoformat()
     since_ts = int(since.timestamp())
-    until = []
-    for number, metas in grouped.items():
-        order = buys[number]
-        paid_at = order.get("paid_at")
-        if paid_at:
-            paid_ts = int(datetime.fromisoformat(paid_at).timestamp())
-        else:
-            paid_ts = int(datetime.fromisoformat(order["paid_date"] + "T23:59:59+03:00").timestamp())
-        count = sum(1 for meta in metas for ts in msg_times.get(meta["id"], []) if ts <= paid_ts)
-        created = [meta["created"] for meta in metas if meta["created"]]
-        earliest = min(created) if created else ""
-        until.append({"paid_date": order["paid_date"], "count": count,
-                      "covered": bool(earliest and earliest >= since_day and paid_ts >= since_ts)})
+    until = messages_until_payment(amo, orders or [], msg_times, since_day, since_ts)
     return {"status": "ok", "source": "amoCRM events", "from": since.date().isoformat(),
             "until_revenue": until,
             "to": now.isoformat(), "samples": samples, "messages": len(events),
