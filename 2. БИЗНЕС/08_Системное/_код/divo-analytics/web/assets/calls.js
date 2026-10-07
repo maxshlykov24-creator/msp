@@ -75,6 +75,7 @@
       const trade={interest:'интерес',refused:'отказ',no_car:'нет автомобиля',not_discussed:'не выяснено'}[out.trade_in] || 'не выяснено';
       let html=row.binding_ambiguous?'<p class="cq-warning">Связь со сделкой неоднозначна. Автоматическое примечание заблокировано.</p>':'';
       if(row.state==='needs_review') html+='<p class="cq-warning">Результат требует проверки. В среднюю оценку не включён.</p>';
+      if(row.last_error==='nexara_submit_http_402') html+='<p class="cq-warning">Nexara отклонила задание: нужно проверить баланс или доступ к платной обработке. Расшифровка не выполнена.</p>';
       html+=`<p>${esc(a.summary || row.category_reason)}</p><p>Встреча: ${esc(meeting)}${out.meeting_when?' · '+esc(out.meeting_when):''}. Трейд-ин: ${esc(trade)}.</p>`;
       if(out.next_contact) html+=`<p>Следующий контакт: ${esc(out.next_contact)}</p>`;
       html+=(a.criteria || []).map(c=>`<div class="cq-criterion"><strong>${Number(c.id)}. ${esc(criterionNames[c.id])}: ${esc(statusNames[c.status])}</strong><p>${esc(c.explanation)}</p>${evidenceHTML(c)}</div>`).join('');
@@ -85,6 +86,8 @@
       html+=`<details class="cq-transcript"><summary>Запись и полный транскрипт</summary><audio controls preload="none" src="/api/calls/${Number(row.id)}/recording" aria-label="Запись звонка"></audio>${transcript}</details>`;
       html+=`<p class="cq-muted">${row.deliveries.map(d=>`${d.channel==='amo'?'amoCRM':'Telegram'}: ${deliveryNames[d.state] || d.state}`).join(' · ') || 'Отправок пока нет'} · Версия правил ${esc(row.rule_version || '—')}</p>`;
       if(row.validation_errors.length) html+='<p class="cq-warning">Доказательства или структура оценки не прошли проверку.</p>';
+      const errors=[row.last_error,...row.validation_errors,...row.deliveries.map(d=>d.last_error)].filter(Boolean);
+      if(errors.length) html+=`<details class="cq-transcript"><summary>Причины ошибок и проверки</summary>${[...new Set(errors)].map(e=>`<p class="cq-muted">${esc(e)}</p>`).join('')}</details>`;
       target.innerHTML=html;details.dataset.loaded='true';
     } catch(e){target.textContent=e.message;}
   }

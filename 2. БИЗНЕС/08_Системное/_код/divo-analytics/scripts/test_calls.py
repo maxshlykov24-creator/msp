@@ -21,7 +21,8 @@ from app.call_report import render_report
 from app.call_rules import CRITERIA, validate_analysis
 from app.config import settings
 from app.database import Base
-from app.models import CallDelivery, CallRecord
+from app.models import CallDelivery, CallRecord, SyncState
+from app.amo_client import AmoClient, AmoError
 from app.nexara import AmbiguousSubmission, validate_recording_url
 
 
@@ -136,6 +137,16 @@ class RulesTest(unittest.TestCase):
         self.assertTrue(r["errors"])
 
 
+class PaginationTest(unittest.TestCase):
+    def test_repeated_page_is_not_silently_accepted(self):
+        client=AmoClient()
+        try:
+            page={"_embedded":{"events":[{"id":"same"}]},"_links":{"next":{"href":"page=2"}}}
+            with patch.object(client,"_get",return_value=page):
+                with self.assertRaises(AmoError):list(client.paginate("/events","events"))
+        finally:client.close()
+
+
 class QueueTest(unittest.TestCase):
     def setUp(self):
         self.engine=create_engine("sqlite://",connect_args={"check_same_thread":False},poolclass=StaticPool)
@@ -167,6 +178,30 @@ class QueueTest(unittest.TestCase):
         c=call_worker.upsert_note(self.db,self.note(),"lead",100,[100]);self.db.commit()
         self.assertEqual((a.id,b.id,c.id),(a.id,a.id,a.id))
         self.assertEqual(len(list(self.db.scalars(select(CallRecord)))),1)
+
+    def test_collect_both_directions_and_cursor_only_after_complete_read(self):
+        self.db.add(SyncState(key="calls_start_at",value="900"));self.db.commit()
+        seen=[]
+        def paginate(path,key,params=None,**kwargs):
+            if key=="events":
+                seen.append(params)
+                return iter([{"entity_type":"lead","entity_id":100}])
+            return iter([self.note(),{**self.note(id=2,uniq="out"),"note_type":"call_out"}])
+        amo=SimpleNamespace(paginate=paginate)
+        with patch.object(call_worker.time,"time",return_value=1100):
+            call_worker.collect_calls(amo)
+        self.assertEqual(seen[0]["filter[type][0]"],"incoming_call")
+        self.assertEqual(seen[0]["filter[type][1]"],"outgoing_call")
+        self.db.expire_all()
+        self.assertEqual({r.direction for r in self.db.scalars(select(CallRecord))},{"in","out"})
+        self.assertEqual(self.db.get(SyncState,"calls_cursor").value,"1100")
+        def broken(*args,**kwargs):
+            yield {"entity_type":"lead","entity_id":100}
+            raise AmoError("incomplete_collection")
+        with patch.object(call_worker.time,"time",return_value=1200):
+            with self.assertRaises(AmoError):call_worker.collect_calls(SimpleNamespace(paginate=broken))
+        self.db.expire_all()
+        self.assertEqual(self.db.get(SyncState,"calls_cursor").value,"1100")
 
     def test_late_recording_revives_call(self):
         r=self.call();self.assertEqual(r.state,"waiting_recording")

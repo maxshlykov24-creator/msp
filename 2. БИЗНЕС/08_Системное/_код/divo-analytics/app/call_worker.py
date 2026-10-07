@@ -131,7 +131,8 @@ def collect_calls(amo: AmoClient, *, calibration: int = 0):
         cursor = int(cursor_row.value) if cursor_row else start
         since = until - 7 * 86400 if calibration else max(start, cursor - settings.calls_overlap_sec)
         events = list(amo.paginate("/api/v4/events", "events", {
-            "filter[type]": "incoming_call,outgoing_call", "filter[created_at][from]": since,
+            "filter[type][0]": "incoming_call", "filter[type][1]": "outgoing_call",
+            "filter[created_at][from]": since,
             "filter[created_at][to]": until}, limit=100))
         entities = sorted({(e["entity_type"], int(e["entity_id"])) for e in events
                            if e.get("entity_type") in ("lead", "contact")})
@@ -465,14 +466,38 @@ def run_once(*, calibration: int = 0):
             lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK_KEY})
 
 
+def retry_payment_blocked() -> int:
+    """Только подтверждённый отказ до создания задания; неопределённые POST не трогаем."""
+    with engine.connect() as lock:
+        if not lock.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": LOCK_KEY}).scalar():
+            raise RuntimeError("calls_worker_busy")
+        try:
+            with SessionLocal() as db:
+                rows = list(db.scalars(select(CallRecord).where(
+                    CallRecord.state == "error", CallRecord.last_error == "nexara_submit_http_402",
+                    CallRecord.nexara_job_id.is_(None))))
+                for row in rows:
+                    row.state = "ready"
+                    row.last_error = ""
+                    row.next_attempt_at = None
+                db.commit()
+                return len(rows)
+        finally:
+            lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK_KEY})
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--calibrate", type=int, default=0)
+    parser.add_argument("--retry-payment-blocked", action="store_true")
     args = parser.parse_args()
     init_db()
+    if args.retry_payment_blocked:
+        print(json.dumps({"requeued": retry_payment_blocked()}))
+        return
     if args.once or args.calibrate:
         run_once(calibration=args.calibrate)
         return
