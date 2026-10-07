@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -55,18 +56,32 @@ def summary_row(row):
             "is_calibration": row.is_calibration, "score": row.score,
             "yes_count": row.yes_count, "applicable_count": row.applicable_count,
             "is_scored": row.is_scored, "summary": a.get("summary", ""),
-            "outcome": a.get("outcome", {}), "last_error": row.last_error}
+            "outcome": a.get("outcome", {}), "last_error": row.last_error,
+            "criteria": [{"id": c["id"], "status": c["status"]} for c in a.get("criteria", [])] if row.is_scored else []}
 
 
 @router.get("")
 def calls(start: date | None = None, end: date | None = None, manager: str | None = None,
           category: str | None = None, calibration: bool = False,
-          limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+          limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0),
+          view: Literal["all", "scored", "review", "unavailable", "pending"] = "all",
+          sort: Literal["recent", "score_asc", "score_desc"] = "recent"):
     with SessionLocal() as db:
         conditions = filters(start, end, manager, category, calibration)
+        if view == "scored":
+            conditions.append(CallRecord.is_scored.is_(True))
+        elif view == "review":
+            conditions.append(CallRecord.state.in_(["needs_review", "submit_ambiguous"]))
+        elif view == "unavailable":
+            conditions.append(CallRecord.state.in_(["recording_unavailable", "missed", "error"]))
+        elif view == "pending":
+            conditions.append(CallRecord.state.in_(["waiting_recording", "ready", "submitting", "processing"]))
         total = db.scalar(select(func.count()).select_from(CallRecord).where(*conditions))
+        ordering = [CallRecord.occurred_at.desc(), CallRecord.id.desc()]
+        if sort != "recent":
+            ordering.insert(0, (CallRecord.score.asc() if sort == "score_asc" else CallRecord.score.desc()).nulls_last())
         rows = db.scalars(select(CallRecord).where(*conditions)
-                          .order_by(CallRecord.occurred_at.desc(), CallRecord.id.desc()).offset(offset).limit(limit))
+                          .order_by(*ordering).offset(offset).limit(limit))
         return {"total": total, "items": [summary_row(r) for r in rows], "limit": limit, "offset": offset}
 
 
@@ -78,6 +93,13 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
         scored = [r for r in rows if r.is_scored]
         completed = [r for r in rows if r.state in ("complete", "needs_review")]
         meeting_count = sum((r.analysis or {}).get("outcome", {}).get("meeting_agreed") is True for r in scored)
+        criteria = []
+        for cid, (name, _) in CRITERIA.items():
+            statuses = Counter(c["status"] for r in scored for c in (r.analysis or {}).get("criteria", []) if c["id"] == cid)
+            applicable = statuses["yes"] + statuses["no"]
+            criteria.append({"id": cid, "name": name, "yes": statuses["yes"], "no": statuses["no"],
+                "na": statuses["na"], "applicable": applicable,
+                "completion": round(statuses["yes"] * 100 / applicable, 1) if applicable else None})
         managers = []
         groups = {}
         for row in rows:
@@ -105,6 +127,8 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
                 "needs_review": sum(r.state in ("needs_review", "submit_ambiguous") for r in rows),
                 "unavailable": sum(r.state in ("recording_unavailable", "missed", "error") for r in rows),
                 "pending": sum(r.state in ("waiting_recording", "ready", "submitting", "processing") for r in rows),
+                "criteria": criteria,
+                "unknown_manager": sum(not r.manager_verified for r in rows),
                 "managers": sorted(managers, key=lambda m: (m["manager_id"] is None, m["manager_name"])),
                 "manager_options": [{"id": k, "name": v} for k, v in settings.call_manager_names.items()],
                 "categories": CATEGORY_NAMES, "worker": states,
