@@ -720,7 +720,7 @@
     </div>
     <div class="actions">
       <button class="reset" id="reset">Сбросить фильтры</button>
-      <button class="xls">Excel</button>
+      <button class="xls" type="button" title="Скачать книгу Excel">Excel</button>
     </div>
   </div>
 
@@ -1568,14 +1568,286 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&el('sheet')&&!el('s
 const periodClients=()=>{const phones=new Set(filtered.map(x=>x.o.phone));return clients.filter(c=>phones.has(c.phone))};
 ['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener('input',()=>renderClients(periodClients())));
 el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';renderClients(periodClients())};
-document.querySelector('.xls').onclick=()=>{
- const rows=[['Тип документа','Заказ / возврат','Дата полной оплаты / возврата','Канал','Источник','Город','Клиент','Телефон','Товар','Размер','Цвет','Количество','Выручка','Закупка']];
- currentLines.forEach(({o,l})=>rows.push([o.return_event?'Возврат':'Продажа',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,sizeLabel(l),colorLabel(l),l.qty,l.rev,l.cost]));
- (data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to).forEach(o=>(o.lines||[]).forEach(l=>rows.push(['Обмен',o.number,dmy(o.paid_date),o.channel,o.source,o.city,o.client,o.phone,l.name,sizeLabel(l),colorLabel(l),l.qty,l.rev,l.cost])));
- const safeCell=v=>{const t=String(v??'');return /^[=+@-]/.test(t)&&!/^-[0-9.,]+$/.test(t)?"'"+t:t};
- const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+safeCell(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
- const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='2MY_выгрузка_'+dmy(state.from)+'_'+dmy(state.to)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-};
+const X={head:1,sub:2,mute:3,money:4,int:5,date:6,link:7,totalM:8,totalI:9,note:10,text:11,retM:12,retT:13,retL:14,retD:15,retI:16,coverM:17,coverT:18,qty:19,retQ:20,totalQ:21,banner:22};
+function xml(v){return String(v??'').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function rub2(n){const x=Number(n);return Number.isFinite(x)?Math.round(x*100)/100:0;}
+function excelDate(iso){const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return null;return Math.round((Date.UTC(+m[1],+m[2]-1,+m[3])-Date.UTC(1899,11,30))/86400000);}
+function colName(i){let s='',n=i+1;while(n){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
+function linkFormula(url,label){const parts=String(url).split('#');const base=parts[0].replace(/"/g,'""');const frag=(parts[1]||'').replace(/"/g,'""');const text=String(label??'').replace(/"/g,'""');const f=frag?`HYPERLINK("${base}"&"#"&"${frag}","${text}")`:`HYPERLINK("${base}","${text}")`;return {f,v:String(label??'')};}
+function msDocUrl(o){const kind=(o.return_event||o.exchange)?'salesreturn':'customerorder';return `https://online.moysklad.ru/app/#${kind}/edit?id=${encodeURIComponent(o.id)}`;}
+function docLink(o,label,s){if(!o||!o.id)return {t:label||'',s};const cell=linkFormula(msDocUrl(o),label||'Открыть');cell.s=s;return cell;}
+function dateCell(iso,s){const d=excelDate(iso);return d==null?{t:iso?dmy(iso):'',s:X.text}:{d,s};}
+function moneyCell(v,s){if(v==null||v==='')return null;const x=Number(v);return Number.isFinite(x)?{n:x,s}:null;}
+function tone(ret){return ret?{t:X.retT,m:X.retM,d:X.retD,l:X.retL,i:X.retI,q:X.retQ}:{t:X.text,m:X.money,d:X.date,l:X.link,i:X.int,q:X.qty};}
+function cellXml(ref,cell){
+ if(cell==null||cell==='')return '';
+ const s=cell.s||0;
+ if(cell.f){if('n' in cell)return `<c r="${ref}" s="${s}"><f>${xml(cell.f)}</f><v>${cell.n}</v></c>`;return `<c r="${ref}" s="${s}" t="str"><f>${xml(cell.f)}</f><v>${xml(cell.v??'')}</v></c>`;}
+ if('d' in cell&&cell.d!=null)return `<c r="${ref}" s="${s}"><v>${cell.d}</v></c>`;
+ if('n' in cell)return `<c r="${ref}" s="${s}"><v>${cell.n}</v></c>`;
+ return `<c r="${ref}" s="${s}" t="inlineStr"><is><t>${xml(cell.t??'')}</t></is></c>`;
+}
+function stylesXml(){return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="4">
+<numFmt numFmtId="164" formatCode="#,##0.00"/>
+<numFmt numFmtId="165" formatCode="DD.MM.YYYY"/>
+<numFmt numFmtId="166" formatCode="#,##0"/>
+<numFmt numFmtId="167" formatCode="#,##0.##"/>
+</numFmts>
+<fonts count="8">
+<font><sz val="11"/><color rgb="FF141413"/><name val="Calibri"/></font>
+<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+<font><b/><sz val="16"/><color rgb="FF141413"/><name val="Calibri"/></font>
+<font><sz val="10"/><color rgb="FF8C9092"/><name val="Calibri"/></font>
+<font><u/><sz val="11"/><color rgb="FF141413"/><name val="Calibri"/></font>
+<font><b/><sz val="11"/><color rgb="FF141413"/><name val="Calibri"/></font>
+<font><sz val="10"/><color rgb="FF4F5354"/><name val="Calibri"/></font>
+<font><b/><sz val="22"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+</fonts>
+<fills count="5">
+<fill><patternFill patternType="none"/></fill>
+<fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF141413"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFF7F4EC"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFF3EEE8"/></patternFill></fill>
+</fills>
+<borders count="2">
+<border><left/><right/><top/><bottom/><diagonal/></border>
+<border><left style="thin"><color rgb="FFE4E1DA"/></left><right style="thin"><color rgb="FFE4E1DA"/></right><top style="thin"><color rgb="FFE4E1DA"/></top><bottom style="thin"><color rgb="FFE4E1DA"/></bottom><diagonal/></border>
+</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="23">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="164" fontId="5" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="166" fontId="5" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="6" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="164" fontId="0" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="4" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="165" fontId="0" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="166" fontId="0" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="164" fontId="5" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="167" fontId="0" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="167" fontId="5" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="7" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;}
+function worksheetXml(rows,widths,opt){
+ const cols=widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('');
+ const lastCol=colName(Math.max(widths.length-1,0));
+ const body=rows.map((row,ri)=>{
+  const r=ri+1;
+  const cells=(row||[]).map((cell,ci)=>cellXml(colName(ci)+r,cell)).join('');
+  const ht=row&&row.height?` ht="${row.height}" customHeight="1"`:'';
+  return `<row r="${r}"${ht}>${cells}</row>`;
+ }).join('');
+ const dataLast=opt.total?Math.max(rows.length-1,1):rows.length;
+ const views=opt.freeze?`<sheetViews><sheetView workbookViewId="0"${opt.first?' tabSelected="1"':''}><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>`:`<sheetViews><sheetView workbookViewId="0"${opt.first?' tabSelected="1"':''}/></sheetViews>`;
+ const filter=opt.filter?`<autoFilter ref="A1:${lastCol}${dataLast}"/>`:'';
+ const dim=`A1:${lastCol}${Math.max(rows.length,1)}`;
+ return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheetPr><tabColor rgb="${opt.tab||'FF141413'}"/><pageSetUpPr fitToPage="1"/></sheetPr>
+<dimension ref="${dim}"/>
+${views}
+<sheetFormatPr defaultRowHeight="18"/>
+<cols>${cols}</cols>
+<sheetData>${body}</sheetData>
+${filter}
+<pageMargins left="0.5" right="0.5" top="0.7" bottom="0.6" header="0.28" footer="0.28"/>
+<pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/>
+<headerFooter>
+<oddHeader>&amp;L2MY&amp;R${xml(opt.header||'')}</oddHeader>
+<oddFooter>&amp;LВыгрузка дашборда&amp;RСтр. &amp;P</oddFooter>
+</headerFooter>
+</worksheet>`;
+}
+function utf8(s){if(typeof TextEncoder!=='undefined')return new TextEncoder().encode(s);const out=[];for(const ch of s){const c=ch.codePointAt(0);if(c<128)out.push(c);else if(c<2048)out.push(192|c>>6,128|c&63);else if(c<65536)out.push(224|c>>12,128|c>>6&63,128|c&63);else out.push(240|c>>18,128|c>>12&63,128|c>>6&63,128|c&63);}return Uint8Array.from(out);}
+const CRC32=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(b){let c=0xffffffff;for(let i=0;i<b.length;i++)c=CRC32[(c^b[i])&255]^(c>>>8);return (c^0xffffffff)>>>0;}
+function u16(n){return Uint8Array.of(n&255,(n>>>8)&255);}
+function u32(n){return Uint8Array.of(n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255);}
+function cat(parts){let n=0;for(const p of parts)n+=p.length;const out=new Uint8Array(n);let o=0;for(const p of parts){out.set(p,o);o+=p.length;}return out;}
+function zipStore(files){
+ const now=new Date();
+ const time=((now.getHours()&31)<<11)|((now.getMinutes()&63)<<5)|((now.getSeconds()>>1)&31);
+ const date=(((now.getFullYear()-1980)&127)<<9)|(((now.getMonth()+1)&15)<<5)|(now.getDate()&31);
+ const locals=[];const central=[];let offset=0;
+ for(const f of files){
+  const name=utf8(f.name), data=f.data, crc=crc32(data);
+  const local=cat([u32(0x04034b50),u16(20),u16(0x800),u16(0),u16(time),u16(date),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),name,data]);
+  locals.push(local);
+  central.push(cat([u32(0x02014b50),u16(20),u16(20),u16(0x800),u16(0),u16(time),u16(date),u32(crc),u32(data.length),u32(data.length),u16(name.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset),name]));
+  offset+=local.length;
+ }
+ const cd=cat(central);
+ const end=cat([u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(cd.length),u32(offset),u16(0)]);
+ return cat([...locals,cd,end]);
+}
+function xlsxBlob(sheets){
+ const files=[{name:'[Content_Types].xml',data:utf8(contentTypes(sheets.length))},{name:'_rels/.rels',data:utf8(rootRels())},{name:'docProps/core.xml',data:utf8(coreXml())},{name:'docProps/app.xml',data:utf8(appXml())},{name:'xl/workbook.xml',data:utf8(workbookXml(sheets.map(s=>s.name)))},{name:'xl/_rels/workbook.xml.rels',data:utf8(bookRels(sheets.length))},{name:'xl/styles.xml',data:utf8(stylesXml())}];
+ sheets.forEach((s,i)=>files.push({name:`xl/worksheets/sheet${i+1}.xml`,data:utf8(s.xml)}));
+ return new Blob([zipStore(files)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function contentTypes(n){const sheets=Array.from({length:n},(_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('');return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+${sheets}
+<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`;}
+function rootRels(){return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;}
+function coreXml(){return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>2MY, выгрузка продаж</dc:title><dc:creator>2MY</dc:creator><cp:lastModifiedBy>2MY</cp:lastModifiedBy>
+</cp:coreProperties>`;}
+function appXml(){return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>2MY</Application></Properties>`;}
+function workbookXml(names){return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><bookViews><workbookView activeTab="0"/></bookViews><sheets>${names.map((n,i)=>`<sheet name="${xml(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets><calcPr calcMode="auto" fullCalcOnLoad="1"/></workbook>`;}
+function bookRels(n){const sheets=Array.from({length:n},(_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('');return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets}<Relationship Id="rId${n+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;}
+function headRow(labels){const row=labels.map(t=>({t,s:X.head}));row.height=26;return row;}
+function blankTotal(n){return Array.from({length:n},()=>({t:'',s:X.totalI}));}
+function sumFormula(col,r1,r2,value,style){if(r2<r1)return {n:0,s:style};return {f:`SUBTOTAL(109,${col}${r1}:${col}${r2})`,n:value,s:style};}
+function msPeriodUrl(){const stamp=iso=>{const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[3]}.${m[2]}.${m[1]}`:''};return `https://online.moysklad.ru/app/#customerorder?015b915a-c21c-11f1-0a80-1e7500283344=${stamp(state.from)}%2000:00:00,${stamp(state.to)}%2023:59:59,inside_period&sort=o.moment%20d`;}
+function docsWord(n){const a=n%10,b=n%100;const w=a===1&&b!==11?'документ':a>=2&&a<=4&&(b<12||b>14)?'документа':'документов';return num(n)+' '+w;}
+function downloadExcel(){
+ if(!data)return;
+ const basis=includeReturns?financial:filtered;
+ const rev=sum(basis,x=>orderRev(x.o,x.ls));
+ const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost);
+ const qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
+ const n=filtered.length;
+ const people=new Set(filtered.map(x=>x.o.phone).filter(Boolean));
+ const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
+ const gaps=(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));
+ const byId=new Map((data.orders||[]).map(o=>[o.id,o]));
+ const orders=[...basis].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number||'').localeCompare(String(b.o.number||''),'ru'));
+ const lines=[...currentLines].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number||'').localeCompare(String(b.o.number||''),'ru')||String(a.l.name||'').localeCompare(String(b.l.name||''),'ru'));
+ const orderHead=['Документ','Тип','Дата отчёта','Клиент','Телефон','Канал','Источник','Город','Промокод','Сумма документа','Оплачено','Выручка','Позиций','Изделий','Исходный заказ','МойСклад'];
+ const orderBody=orders.map(x=>{
+  const o=x.o, ret=!!o.return_event, st=tone(ret);
+  const goods=x.ls.filter(l=>!l.delivery);
+  const original=o.original_order?byId.get(o.original_order):null;
+  const origin=o.original_order?docLink({id:o.original_order},original?.number||'Заказ',st.l):null;
+  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:o.promo||'',s:st.t},moneyCell(o.sum,st.m),ret?null:moneyCell(o.paid,st.m),moneyCell(orderRev(o,x.ls),st.m),{n:x.ls.length,s:st.i},{n:rub2(sum(goods,l=>l.qty)),s:st.q},origin,docLink(o,'Открыть',st.l)];
+ });
+ const posHead=['Документ','Тип','Дата отчёта','Клиент','Телефон','Канал','Источник','Город','Товар','Категория','Размер','Цвет','Количество','Выручка','Закупка','Маржа','Доставка','МойСклад'];
+ const posBody=lines.map(({o,l})=>{
+  const ret=!!o.return_event, st=tone(ret);
+  const margin=l.delivery?rub2(l.rev):rub2(l.rev-(l.cost||0));
+  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:l.category||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),l.delivery?null:moneyCell(l.cost,st.m),moneyCell(margin,st.m),{t:l.delivery?'да':'',s:st.t},docLink(o,'Открыть',st.l)];
+ });
+ const exLines=exchanged.flatMap(x=>(x.ls.length?x.ls:[null]).map(l=>({o:x.o,l,whole:orderRev(x.o,x.ls)})));
+ const exHead=['Документ','Дата документа','Клиент','Канал','Источник','Город','Товар','Размер','Цвет','Количество','Выручка строки','МойСклад'];
+ const exBody=exLines.map(({o,l})=>{
+  const st=tone(false);
+  if(!l)return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},null,moneyCell(orderRev(o,[]),st.m),docLink(o,'Открыть',st.l)];
+  return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),docLink(o,'Открыть',st.l)];
+ });
+ const gapHead=['Дата','Сумма','Причина','Как учтено'];
+ const gapBody=gaps.map(g=>[dateCell(g.date,X.date),moneyCell(g.sum,X.money),{t:g.reason||'',s:X.text},{t:g.impact==='outside_revenue'?'Не входит в выручку':'Нужна проверка',s:X.text}]);
+ const orderRevCol=colName(orderHead.indexOf('Выручка'));
+ const posRevCol=colName(posHead.indexOf('Выручка'));
+ const posCostCol=colName(posHead.indexOf('Закупка'));
+ const posMarCol=colName(posHead.indexOf('Маржа'));
+ const posQtyCol=colName(posHead.indexOf('Количество'));
+ const exRevCol=colName(exHead.indexOf('Выручка строки'));
+ const orderSum=rub2(orderBody.reduce((a,r)=>a+(r[11]&&r[11].n||0),0));
+ const posSum=rub2(posBody.reduce((a,r)=>a+(r[13]&&r[13].n||0),0));
+ const posCost=rub2(posBody.reduce((a,r)=>a+(r[14]&&r[14].n||0),0));
+ const posMar=rub2(posBody.reduce((a,r)=>a+(r[15]&&r[15].n||0),0));
+ const posQty=rub2(posBody.reduce((a,r)=>a+(r[12]&&r[12].n||0),0));
+ const exSum=rub2(exBody.reduce((a,r)=>a+(r[10]&&r[10].n||0),0));
+ const gapSum=rub2(gapBody.reduce((a,r)=>a+(r[1]&&r[1].n||0),0));
+ const orderLast=orderBody.length+1, posLast=posBody.length+1, exLast=exBody.length+1;
+ const orderTotal=blankTotal(orderHead.length);orderTotal[0]={t:'Итого',s:X.totalI};orderTotal[11]=sumFormula(orderRevCol,2,orderLast,orderSum,X.totalM);orderTotal[12]=sumFormula(colName(12),2,orderLast,orderBody.reduce((a,r)=>a+(r[12]?.n||0),0),X.totalI);orderTotal[13]=sumFormula(colName(13),2,orderLast,rub2(orderBody.reduce((a,r)=>a+(r[13]?.n||0),0)),X.totalQ);
+ const posTotal=blankTotal(posHead.length);posTotal[0]={t:'Итого',s:X.totalI};posTotal[12]=sumFormula(posQtyCol,2,posLast,posQty,X.totalQ);posTotal[13]=sumFormula(posRevCol,2,posLast,posSum,X.totalM);posTotal[14]=sumFormula(posCostCol,2,posLast,posCost,X.totalM);posTotal[15]=sumFormula(posMarCol,2,posLast,posMar,X.totalM);
+ const exTotal=blankTotal(exHead.length);exTotal[0]={t:'Итого',s:X.totalI};exTotal[10]=sumFormula(exRevCol,2,exLast,exSum,X.totalM);
+ const gapTotal=blankTotal(gapHead.length);gapTotal[0]={t:'Итого',s:X.totalI};gapTotal[1]=sumFormula('B',2,gapBody.length+1,gapSum,X.totalM);
+ const close= (a,b)=>Math.abs(a-b)<0.05;
+ const diff=rev-orderSum;
+ const posDiff=rev-posSum;
+ const lineSumTotal=sum(currentLines,x=>x.l.rev);
+ const sync=data.generated?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(data.generated)):'';
+ const picked=arr=>arr&&arr.length?arr.join(', '):'все';
+ const filterText=['категория: '+(state.cat.length?state.cat.join(', '):'все'),'товар: '+(state.prod||'все'),'источник: '+picked(state.source),'канал: '+picked(state.channel),'город: '+picked(state.city)].join('. ');
+ const periodLink=linkFormula(msPeriodUrl(),'Открыть период в МойСклад');periodLink.s=X.link;
+ const cover=[];
+ const banner=[{t:'2MY',s:X.banner},{t:'',s:X.banner},{t:'',s:X.banner}];banner.height=42;cover.push(banner);
+ const sub=[{t:'Выгрузка продаж',s:X.sub}];sub.height=24;cover.push(sub);
+ cover.push([]);
+ cover.push([{t:'Период',s:X.mute},{t:`с ${dmy(state.from)} по ${dmy(state.to)}`,s:X.coverT}]);
+ cover.push([{t:'Срез',s:X.mute},{t:sync?('синхронизация '+sync):'',s:X.coverT}]);
+ cover.push([{t:'Доставка',s:X.mute},{t:includeDelivery?'С доставкой':'Без доставки',s:X.coverT}]);
+ cover.push([{t:'Возвраты',s:X.mute},{t:includeReturns?'Входят в выручку':'Не входят в выручку',s:X.coverT}]);
+ cover.push([{t:'Фильтр',s:X.mute},{t:filterText,s:X.coverT}]);
+ cover.push([periodLink]);
+ cover.push([]);
+ const metricHead=[{t:'Показатель',s:X.head},{t:'Точно',s:X.head},{t:'На странице',s:X.head}];metricHead.height=26;cover.push(metricHead);
+ cover.push([{t:'Выручка',s:X.text},{n:rub2(rev),s:X.coverM},{t:money(rev),s:X.coverT}]);
+ cover.push([{t:'Заказов',s:X.text},{n:n,s:X.int},{t:num(n),s:X.coverT}]);
+ cover.push([{t:'Средний чек',s:X.text},{n:n?rub2(rev/n):0,s:X.coverM},{t:money(n?rev/n:0),s:X.coverT}]);
+ cover.push([{t:'Клиентов',s:X.text},{n:people.size,s:X.int},{t:num(people.size),s:X.coverT}]);
+ cover.push([{t:'Изделий',s:X.text},{n:rub2(qty),s:X.qty},{t:String(rub2(qty)).replace('.',','),s:X.coverT}]);
+ cover.push([{t:'Изделий на заказ',s:X.text},{n:n?rub2(qty/n):0,s:X.qty},{t:n?(qty/n).toFixed(2):'0.00',s:X.coverT}]);
+ cover.push([{t:'Маржа',s:X.text},{n:rub2(rev-cost),s:X.coverM},{t:rev>0?pct(rev-cost,rev):'0%',s:X.coverT}]);
+ cover.push([]);
+ const checkRow=[{t:'Лист «Заказы», колонка «Выручка»',s:X.text},{f:orderBody.length?`SUM('Заказы'!${orderRevCol}2:${orderRevCol}${orderLast})`:null,n:orderSum,s:X.coverM},{t:close(orderSum,rev)?'Сходится с выручкой страницы':('Расхождение '+rub2(diff).toLocaleString('ru-RU')),s:X.coverT}];
+ if(!orderBody.length)checkRow[1]={n:0,s:X.coverM};
+ cover.push(checkRow);
+ const posSame=close(posSum,rev);
+ const posHonest=close(posSum,lineSumTotal);
+ cover.push([{t:'Лист «Позиции», колонка «Выручка»',s:X.text},{f:posBody.length?`SUM('Позиции'!${posRevCol}2:${posRevCol}${posLast})`:null,n:posSum,s:X.coverM},{t:!posHonest?'Строки не сошлись со страницей':posSame?'Равна выручке страницы':('Отличается на '+rub2(posDiff).toLocaleString('ru-RU')+' ₽. Это переплата и отличие суммы заказа от строк.'),s:X.coverT}]);
+ if(!posBody.length)cover[cover.length-1][1]={n:0,s:X.coverM};
+ cover.push([{t:'Обмены, не входят в выручку',s:X.text},{n:exSum,s:X.coverM},{t:docsWord(exchanged.length),s:X.coverT}]);
+ cover.push([{t:'Возвраты на проверке, не входят',s:X.text},{n:gapSum,s:X.coverM},{t:docsWord(gaps.length),s:X.coverT}]);
+ cover.push([]);
+ const notes=[
+  'Колонка «Выручка» на листе «Заказы» складывается в выручку наверху страницы. Это колонка «Оплачено», с переплатой. Доставка и возвраты берутся из тумблеров страницы.',
+  'Номер документа и «Открыть» ведут в МойСклад. Продажа открывает заказ покупателя. Возврат открывает документ возврата, рядом ссылка на исходный заказ. Обмен открывает документ возврата, которым он проведён.',
+  'Ссылка «Открыть период в МойСклад» ставит фильтр по дате полной оплаты. Остальные фильтры страницы в МойСклад не переносятся.',
+  'Лист «Позиции» это строки после скидки. Если сумма строк отличается от выручки страницы, разница это переплата и отличие суммы заказа от строк.',
+  'Обмены и возвраты на проверке в выручку не входят. У возвратов на проверке в срезе нет номера документа, поэтому ссылки на них нет.',
+  'Фильтры размера и цвета на странице меняют только товарные блоки. Здесь выручка как наверху, без этого отсечения.'
+ ];
+ notes.forEach(text=>{const row=[{t:text,s:X.note}];row.height=32;cover.push(row);});
+ const sheets=[
+  {name:'Сводка',xml:worksheetXml(cover,[38,24,62],{first:true,tab:'FF141413',header:'Сводка'})},
+  {name:'Заказы',xml:worksheetXml([headRow(orderHead),...orderBody,orderTotal],[16,12,16,28,18,16,18,18,16,18,16,16,12,12,18,14],{freeze:true,filter:true,total:true,tab:'FF2A2926',header:'Заказы'})},
+  {name:'Позиции',xml:worksheetXml([headRow(posHead),...posBody,posTotal],[16,12,16,24,18,14,16,16,36,22,14,16,12,16,16,16,12,14],{freeze:true,filter:true,total:true,tab:'FF3A3834',header:'Позиции'})},
+  {name:'Обмены',xml:worksheetXml([headRow(exHead),...exBody,exTotal],[16,16,24,16,16,16,36,14,16,12,18,14],{freeze:true,filter:true,total:true,tab:'FF5C5346',header:'Обмены'})},
+  {name:'На проверке',xml:worksheetXml([headRow(gapHead),...gapBody,gapTotal],[16,16,54,28],{freeze:true,filter:true,total:true,tab:'FF8C9092',header:'На проверке'})}
+ ];
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(xlsxBlob(sheets));
+ a.download='2MY_'+dmy(state.from)+'_'+dmy(state.to)+'.xlsx';
+ a.click();
+ setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+}
+document.querySelector('.xls').onclick=downloadExcel;
+
 el('delivery-toggle').onchange=e=>{includeDelivery=e.target.checked;refresh()};
 el('returns-toggle').onchange=e=>{includeReturns=e.target.checked;refresh()};
 let lastChartX=0;

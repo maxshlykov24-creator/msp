@@ -108,7 +108,8 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
                 "managers": sorted(managers, key=lambda m: (m["manager_id"] is None, m["manager_name"])),
                 "manager_options": [{"id": k, "name": v} for k, v in settings.call_manager_names.items()],
                 "categories": CATEGORY_NAMES, "worker": states,
-                "processing_enabled": settings.calls_process_enabled,
+                "processing_enabled": settings.calls_process_enabled and (calibration or not settings.calls_calibration_only),
+                "calibration_only": settings.calls_calibration_only,
                 "amo_enabled": settings.calls_amo_enabled,
                 "telegram_enabled": settings.calls_telegram_enabled,
                 "telegram_configured": bool(settings.calls_telegram_bot_token and settings.calls_telegram_chat_id)}

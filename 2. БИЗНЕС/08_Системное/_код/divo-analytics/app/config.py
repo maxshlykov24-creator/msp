@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     # Звонки: независимые переключатели сбора, платного анализа и доставок.
     calls_enabled: bool = False
     calls_process_enabled: bool = False
+    calls_calibration_only: bool = False  # до приёмки не оплачивать рабочие звонки
     calls_amo_enabled: bool = False
     calls_telegram_enabled: bool = False
     calls_start_at: int = 0  # 0 = момент первого включения, не история

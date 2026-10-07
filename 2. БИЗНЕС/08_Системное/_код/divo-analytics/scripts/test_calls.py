@@ -154,7 +154,7 @@ class QueueTest(unittest.TestCase):
         self.factory=sessionmaker(bind=self.engine,expire_on_commit=False)
         self.db=self.factory()
         self.patch=patch.object(call_worker,"SessionLocal",self.factory);self.patch.start()
-        self.settings={k:getattr(settings,k) for k in ("calls_verified_authors","calls_manager_map","calls_amo_enabled","calls_telegram_enabled","calls_process_enabled","nexara_api_key","calls_recording_hosts")}
+        self.settings={k:getattr(settings,k) for k in ("calls_verified_authors","calls_manager_map","calls_amo_enabled","calls_telegram_enabled","calls_process_enabled","calls_calibration_only","nexara_api_key","calls_recording_hosts")}
         settings.calls_verified_authors="";settings.calls_manager_map=""
 
     def tearDown(self):
@@ -284,6 +284,21 @@ class QueueTest(unittest.TestCase):
             call_worker.process_calls(SimpleNamespace());call_worker.process_calls(SimpleNamespace())
             self.assertEqual(cls.return_value.submit.call_count,1)
         self.db.refresh(r);self.assertEqual(r.state,"submit_ambiguous")
+
+    def test_calibration_only_does_not_submit_working_queue(self):
+        normal=self.call();normal.state="ready";normal.recording_url="https://example.invalid/a.mp3"
+        sample=call_worker.upsert_note(self.db,self.note(id=2,uniq="sample",link="https://example.invalid/b.mp3"),"lead",100,[100],calibration=True)
+        self.db.commit()
+        settings.calls_process_enabled=True;settings.calls_calibration_only=True
+        settings.nexara_api_key="test";settings.calls_recording_hosts="example.invalid"
+        import io
+        with patch.object(call_worker,"download_audio",return_value=(io.BytesIO(b"audio"),"audio/mpeg")),patch.object(call_worker,"NexaraClient") as cls:
+            cls.return_value.submit.return_value="sample-job"
+            call_worker.process_calls(SimpleNamespace())
+            self.assertEqual(cls.return_value.submit.call_count,1)
+        self.db.refresh(normal);self.db.refresh(sample)
+        self.assertEqual(normal.state,"ready");self.assertIsNone(normal.nexara_job_id)
+        self.assertEqual(sample.nexara_job_id,"sample-job")
 
     def test_summary_excludes_calibration_and_unknown_from_named_manager(self):
         r=self.call();r.state="complete";r.is_scored=True;r.score=50;r.analysis=analysis();self.db.commit()

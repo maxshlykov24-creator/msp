@@ -232,10 +232,14 @@ def process_calls(amo: AmoClient):
             row.state = "submit_ambiguous"
             row.last_error = "interrupted_submission_requires_review"
         db.commit()
-        rows = list(db.scalars(select(CallRecord).where(
+        processing_query = select(CallRecord).where(
             CallRecord.state.in_(["waiting_recording", "ready", "processing"]),
             or_(CallRecord.next_attempt_at.is_(None), CallRecord.next_attempt_at <= now())
-        ).order_by(CallRecord.occurred_at).limit(100)))
+        )
+        if settings.calls_calibration_only:
+            processing_query = processing_query.where(or_(CallRecord.is_calibration.is_(True),
+                CallRecord.state.in_(["processing", "waiting_recording"])))
+        rows = list(db.scalars(processing_query.order_by(CallRecord.occurred_at).limit(100)))
         nexara = NexaraClient()
         try:
             inflight = db.scalar(select(func.count()).select_from(CallRecord).where(
@@ -257,6 +261,8 @@ def process_calls(amo: AmoClient):
                             row.next_attempt_at = now() + timedelta(seconds=30)
                         db.commit()
                     elif row.state == "ready" and settings.calls_process_enabled:
+                        if settings.calls_calibration_only and not row.is_calibration:
+                            continue
                         if not settings.nexara_api_key or not settings.calls_recording_hosts:
                             row.last_error = "nexara_or_recording_hosts_not_configured"
                             db.commit()
