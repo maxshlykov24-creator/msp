@@ -689,7 +689,7 @@
 </style>
 </head>
 <body>
-<script>if(localStorage.getItem('2my-night')==='1')document.documentElement.classList.add('night')</script>
+<script>(function(){try{var p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Moscow',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit'}).formatToParts(new Date());var g=function(t){return p.find(function(x){return x.type===t}).value};var h=+g('hour'),y=+g('year'),m=+g('month'),d=+g('day'),id=null;if(h>=21||h<4){if(h<4){var dt=new Date(Date.UTC(y,m-1,d));dt.setUTCDate(dt.getUTCDate()-1);y=dt.getUTCFullYear();m=dt.getUTCMonth()+1;d=dt.getUTCDate()}id=y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');if(localStorage.getItem('2my-night-auto')!==id){localStorage.setItem('2my-night-auto',id);localStorage.setItem('2my-night','1')}}if(localStorage.getItem('2my-night')==='1')document.documentElement.classList.add('night')}catch(e){}})();</script>
 
 <div class="wrap">
   <header>
@@ -1090,12 +1090,23 @@ const el = id => document.getElementById(id);
     document.documentElement.classList.toggle('night', on);
     nightBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
   };
+  const moscowNow = () => {const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Moscow',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit'}).formatToParts(new Date());const g=t=>p.find(x=>x.type===t).value;return {y:+g('year'),m:+g('month'),d:+g('day'),h:+g('hour')}};
+  const nightId = p => {let {y,m,d,h}=p;if(h>=4&&h<21)return null;if(h<4){const dt=new Date(Date.UTC(y,m-1,d));dt.setUTCDate(dt.getUTCDate()-1);y=dt.getUTCFullYear();m=dt.getUTCMonth()+1;d=dt.getUTCDate()}return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0')};
+  const stampNight = () => {const id=nightId(moscowNow());if(id)localStorage.setItem('2my-night-auto',id)};
   applyNight(document.documentElement.classList.contains('night'));
   nightBtn.addEventListener('click', () => {
     const on = !document.documentElement.classList.contains('night');
     localStorage.setItem('2my-night', on ? '1' : '0');
+    stampNight();
     applyNight(on);
   });
+  const armNight = () => {
+    const p=moscowNow();
+    let at=Date.UTC(p.y,p.m-1,p.d,18,0,0);
+    if(at<=Date.now()) at+=86400000;
+    setTimeout(()=>{const id=nightId(moscowNow());if(id&&localStorage.getItem('2my-night-auto')!==id){localStorage.setItem('2my-night-auto',id);localStorage.setItem('2my-night','1');applyNight(true)}armNight()},at-Date.now());
+  };
+  armNight();
 }
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = n => Number(n || 0).toLocaleString('ru-RU');
