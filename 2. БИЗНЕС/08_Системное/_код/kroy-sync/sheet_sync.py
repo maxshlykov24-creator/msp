@@ -171,12 +171,19 @@ def setup():
         })
     header = _values(MAP_SHEET + "!A2:F2")
     saved = {}
-    header_cells = header[0] if header else []
-    if "Артикул" not in header_cells:
+    header_cells = [str(cell) for cell in (header[0] if header else [])]
+    if "Артикул" not in header_cells and "S, м на 1 шт" in header_cells:
         for raw in _values(MAP_SHEET + "!A3:F"):
             name = str(_cell(raw, 0) or "").strip()
-            if name:
-                saved[name] = [_cell(raw, 3), _cell(raw, 4), _cell(raw, 5)]
+            if not name:
+                continue
+            meters = []
+            for index in (3, 4, 5):
+                value = _cell(raw, index)
+                if isinstance(value, str) and value.strip().upper().startswith("ROL-"):
+                    value = ""
+                meters.append(value)
+            saved[name] = meters
     catalog_rows = mapping_rows(saved)
     _write(MAP_SHEET + "!A1", [[NOTE]])
     _write(MAP_SHEET + "!A2:F2", [HEADER])
