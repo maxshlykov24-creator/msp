@@ -458,6 +458,7 @@
   h2.sect{font-size:10.5px;font-weight:400;letter-spacing:.28em;text-transform:uppercase;color:var(--ink);margin:44px 0 18px;padding-bottom:12px;border-bottom:1px solid var(--line)}
   .view > h2.sect:first-child{margin-top:34px}
   .grid-2{display:grid;grid-template-columns:1.25fr 1fr;gap:20px}
+  .grid-2.fit{align-items:start}
   .grid-2e{display:grid;grid-template-columns:1fr 1fr;gap:20px}
   .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
   .card{background:var(--paper);border:1px solid var(--line);padding:28px 26px;position:relative;overflow:hidden;transition:transform .45s cubic-bezier(.25,1,.5,1),border-color .45s cubic-bezier(.25,1,.5,1),box-shadow .45s cubic-bezier(.25,1,.5,1)}
@@ -572,6 +573,7 @@
   .scroll-x table{width:100%;min-width:0;table-layout:fixed;font-size:12px}
   .scroll-cap{max-height:440px;overflow-x:clip;overflow-y:auto}
   .scroll-cap thead th{position:sticky;top:0;background:var(--paper);z-index:2}
+  #clients-sum td{font-weight:650;color:var(--ink);border-top:1px solid var(--line);border-bottom:none}
   .scroll-x td{white-space:nowrap}
   .scroll-x td:first-child,.scroll-x td.ans,.scroll-x:has(#clients) td:nth-child(9),.scroll-x:has(#items) td:nth-child(5),.scroll-x:has(#items) td:nth-child(6){white-space:normal}
   .scroll-x:has(#items) th:nth-child(1){width:34%}
@@ -880,6 +882,7 @@
     <div class="scroll-x"><table>
       <thead><tr><th>Клиент</th><th>Сегмент</th><th>Покупок</th><th>LTV</th><th>Первая</th><th>Последняя</th><th>Тишина</th><th>Размер</th><th>Чаще берёт</th><th>Последний канал</th></tr></thead>
       <tbody id="clients"></tbody>
+        <tfoot id="clients-sum"></tfoot>
     </table></div>
   </div>
   </section>
@@ -919,7 +922,7 @@
   </div>
 
   <h2 class="sect">Что именно покупают</h2>
-  <div class="grid-2">
+  <div class="grid-2 fit">
     <div class="card">
       <h3>Продажи по размерам</h3>
       <div class="hint">Сначала характеристика «размер». Если она пустая, размер читается из названия: one size, OS, S-M и остальные буквенные размеры. Кардиган из альпаки 2MY x Vlada Nazina без размера в названии считается one size.</div>
@@ -928,7 +931,7 @@
     <div class="card">
       <h3>Цвет и канал</h3>
       <div class="hint">Одинаковый цвет с разным регистром, с ё и е, и обрывок цвета из названия собраны в одну строку. Разные оттенки, например синий и тёмно-синий, остаются отдельно.</div>
-      <div class="scroll-x"><table>
+      <div class="scroll-x scroll-cap"><table>
         <thead><tr><th>Цвет</th><th>Изделий</th><th>Выручка</th><th>Канал</th><th>Доля канала</th></tr></thead>
         <tbody id="colors"></tbody>
       </table></div>
@@ -1099,7 +1102,7 @@ const select = (id, values, label) => { const e=el(id), old=selected(id); e.inne
   if(hi>=rows.length) hi=Math.max(0,rows.length-1);
   const search=rowsOf(sel).length>8;
   menu.innerHTML=(search?`<div class="pick-search">${icon}<input type="text" placeholder="Найти…" autocomplete="off" value="${esc(query)}"></div>`:'')+
-   `<div class="pick-list">${rows.length?rows.map((o,i)=>`<button type="button" class="pick-item${i===hi?' hi':''}${(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)?' on':''}" data-i="${i}" role="option"><span>${esc(o.label)}</span>${(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)?check:''}</button>`).join(''):'<div class="pick-empty">Ничего не найдено</div>'}</div>`+(sel.multiple?'<button type="button" class="pick-item" data-close="1">Готово</button>':'');
+   `<div class="pick-list">${rows.length?rows.map((o,i)=>`<button type="button" class="pick-item${i===hi?' hi':''}${(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)?' on':''}" data-i="${i}" role="option"><span>${esc(o.label)}</span>${(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)?check:''}</button>`).join(''):'<div class="pick-empty">Ничего не найдено</div>'}</div>`;
   menu.querySelector(`[data-i="${hi}"]`)?.scrollIntoView({block:'nearest'});
   const input=menu.querySelector('input');
   if(input){input.focus();const n=input.value.length;input.setSelectionRange(n,n)}
@@ -1362,7 +1365,7 @@ function refresh(){
   const qty=sum(arr,x=>x.l.qty),channels=Object.entries(group(arr,x=>x.o.channel)).map(([channel,rows])=>({channel,qty:sum(rows,x=>x.l.qty)})).sort((a,b)=>b.qty-a.qty);
   return {name,qty,rev:sum(arr,x=>x.l.rev),topChannel:channels[0]?.channel||'нет продаж в периоде',topShare:pct(channels[0]?.qty||0,qty)};
  }).sort((a,b)=>b.qty-a.qty);
- table('colors',colors.slice(0,10),[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>x.topChannel,x=>x.topShare]);
+ table('colors',colors,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>x.topChannel,x=>x.topShare]);
  el('basket-kv').innerHTML=kv([['Изделий на заказ',perOrder],['Заказов с двумя изделиями и более',num(filtered.filter(x=>sum(x.ls,l=>l.delivery?0:l.qty)>=2).length)]]);
  const scopeLines=goodsLines.filter(x=>matches(state.size,sizeLabel(x.l))&&matches(state.color,colorLabel(x.l)));
  const sq=sum(scopeLines,x=>x.l.delivery?0:x.l.qty),sr=sum(scopeLines,x=>x.l.rev),sc=sum(scopeLines,x=>x.l.cost);
@@ -1388,6 +1391,7 @@ function renderClients(cs){
  const sort=el('c-sort').value;rows.sort((a,b)=>sort==='last'?b.last.localeCompare(a.last):sort==='silence'?(b.silence??-1)-(a.silence??-1):sort==='buys'?b.buys-a.buys:sort==='freq'?(b.freq??-1)-(a.freq??-1):b.ltv-a.ltv);
  el('c-count').textContent=num(rows.length)+' клиентов';
  table('clients',rows.slice(0,20),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>dmy(c.first),c=>dmy(c.last),c=>c.silence===null?'—':c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel]);
+ el('clients-sum').innerHTML=`<tr><td>Итого</td><td></td><td>${num(sum(rows,c=>c.buys))}</td><td>${money(sum(rows,c=>c.ltv))}</td><td colspan="6"></td></tr>`;
 }
 function init(snap){
  if(!snap||!Array.isArray(snap.orders)) throw Error('Неверный формат среза');
