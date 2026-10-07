@@ -156,6 +156,7 @@ class QueueTest(unittest.TestCase):
         self.patch=patch.object(call_worker,"SessionLocal",self.factory);self.patch.start()
         self.settings={k:getattr(settings,k) for k in ("calls_verified_authors","calls_manager_map","calls_amo_enabled","calls_telegram_enabled","calls_process_enabled","calls_calibration_only","nexara_api_key","calls_recording_hosts")}
         settings.calls_verified_authors="";settings.calls_manager_map=""
+        settings.calls_calibration_only=False
 
     def tearDown(self):
         for k,v in self.settings.items():setattr(settings,k,v)

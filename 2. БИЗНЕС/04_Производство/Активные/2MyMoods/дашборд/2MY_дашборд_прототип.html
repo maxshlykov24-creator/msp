@@ -1734,24 +1734,29 @@ function msPeriodUrl(){const stamp=iso=>{const m=String(iso||'').match(/^(\d{4})
 function docsWord(n){const a=n%10,b=n%100;const w=a===1&&b!==11?'документ':a>=2&&a<=4&&(b<12||b>14)?'документа':'документов';return num(n)+' '+w;}
 function downloadExcel(){
  if(!data)return;
+ const narrow=state.size.length||state.color.length;
+ const cutLines=ls=>narrow?(ls||[]).filter(l=>!l.delivery&&matches(state.size,sizeLabel(l))&&matches(state.color,colorLabel(l))):(ls||[]);
+ const rowRev=(o,ls)=>narrow?sum(ls,l=>l.rev):orderRev(o,ls);
  const basis=includeReturns?financial:filtered;
- const rev=sum(basis,x=>orderRev(x.o,x.ls));
- const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost);
- const qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
- const n=filtered.length;
- const people=new Set(filtered.map(x=>x.o.phone).filter(Boolean));
- const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
- const gaps=(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));
+ const orders=basis.map(x=>({o:x.o,ls:cutLines(x.ls)})).filter(x=>!narrow||x.ls.length).sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number||'').localeCompare(String(b.o.number||''),'ru'));
+ const lines=orders.flatMap(x=>x.ls.map(l=>({o:x.o,l}))).sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number||'').localeCompare(String(b.o.number||''),'ru')||String(a.l.name||'').localeCompare(String(b.l.name||''),'ru'));
+ const purchases=orders.filter(x=>!x.o.return_event);
+ const rev=sum(orders,x=>rowRev(x.o,x.ls));
+ const cost=sum(lines,x=>x.l.delivery?0:x.l.cost);
+ const qty=sum(lines,x=>x.l.delivery?0:x.l.qty);
+ const n=purchases.length;
+ const people=new Set(purchases.map(x=>x.o.phone).filter(Boolean));
+ const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:cutLines(linesFor(o))})).filter(x=>x.ls.length||(!narrow&&!state.cat.length&&!state.prod));
+ const extraFilter=narrow||state.cat.length||!!state.prod||state.source.length||state.channel.length||state.city.length;
+ const gaps=extraFilter?[]:(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));
  const byId=new Map((data.orders||[]).map(o=>[o.id,o]));
- const orders=[...basis].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number||'').localeCompare(String(b.o.number||''),'ru'));
- const lines=[...currentLines].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number||'').localeCompare(String(b.o.number||''),'ru')||String(a.l.name||'').localeCompare(String(b.l.name||''),'ru'));
  const orderHead=['Документ','Тип','Дата отчёта','Клиент','Телефон','Канал','Источник','Город','Промокод','Сумма документа','Оплачено','Выручка','Позиций','Изделий','Исходный заказ','МойСклад'];
  const orderBody=orders.map(x=>{
   const o=x.o, ret=!!o.return_event, st=tone(ret);
   const goods=x.ls.filter(l=>!l.delivery);
   const original=o.original_order?byId.get(o.original_order):null;
   const origin=o.original_order?docLink({id:o.original_order},original?.number||'Заказ',st.l):null;
-  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:o.promo||'',s:st.t},moneyCell(o.sum,st.m),ret?null:moneyCell(o.paid,st.m),moneyCell(orderRev(o,x.ls),st.m),{n:x.ls.length,s:st.i},{n:rub2(sum(goods,l=>l.qty)),s:st.q},origin,docLink(o,'Открыть',st.l)];
+  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:o.promo||'',s:st.t},moneyCell(o.sum,st.m),ret?null:moneyCell(o.paid,st.m),moneyCell(rowRev(o,x.ls),st.m),{n:x.ls.length,s:st.i},{n:rub2(sum(goods,l=>l.qty)),s:st.q},origin,docLink(o,'Открыть',st.l)];
  });
  const posHead=['Документ','Тип','Дата отчёта','Клиент','Телефон','Канал','Источник','Город','Товар','Категория','Размер','Цвет','Количество','Выручка','Закупка','Маржа','Доставка','МойСклад'];
  const posBody=lines.map(({o,l})=>{
@@ -1789,10 +1794,10 @@ function downloadExcel(){
  const close= (a,b)=>Math.abs(a-b)<0.05;
  const diff=rev-orderSum;
  const posDiff=rev-posSum;
- const lineSumTotal=sum(currentLines,x=>x.l.rev);
+ const lineSumTotal=sum(lines,x=>x.l.rev);
  const sync=data.generated?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(data.generated)):'';
  const picked=arr=>arr&&arr.length?arr.join(', '):'все';
- const filterText=['категория: '+(state.cat.length?state.cat.join(', '):'все'),'товар: '+(state.prod||'все'),'источник: '+picked(state.source),'канал: '+picked(state.channel),'город: '+picked(state.city)].join('. ');
+ const filterText=['категория: '+(state.cat.length?state.cat.join(', '):'все'),'товар: '+(state.prod||'все'),'источник: '+picked(state.source),'канал: '+picked(state.channel),'город: '+picked(state.city),'размер: '+picked(state.size),'цвет: '+picked(state.color)].join('. ');
  const periodLink=linkFormula(msPeriodUrl(),'Открыть период в МойСклад');periodLink.s=X.link;
  const cover=[];
  const banner=[{t:'2MY',s:X.banner},{t:'',s:X.banner},{t:'',s:X.banner}];banner.height=42;cover.push(banner);
@@ -1814,12 +1819,12 @@ function downloadExcel(){
  cover.push([{t:'Изделий на заказ',s:X.text},{n:n?rub2(qty/n):0,s:X.qty},{t:n?(qty/n).toFixed(2):'0.00',s:X.coverT}]);
  cover.push([{t:'Маржа',s:X.text},{n:rub2(rev-cost),s:X.coverM},{t:rev>0?pct(rev-cost,rev):'0%',s:X.coverT}]);
  cover.push([]);
- const checkRow=[{t:'Лист «Заказы», колонка «Выручка»',s:X.text},{f:orderBody.length?`SUM('Заказы'!${orderRevCol}2:${orderRevCol}${orderLast})`:null,n:orderSum,s:X.coverM},{t:close(orderSum,rev)?'Сходится с выручкой страницы':('Расхождение '+rub2(diff).toLocaleString('ru-RU')),s:X.coverT}];
+ const checkRow=[{t:'Лист «Заказы», колонка «Выручка»',s:X.text},{f:orderBody.length?`SUM('Заказы'!${orderRevCol}2:${orderRevCol}${orderLast})`:null,n:orderSum,s:X.coverM},{t:close(orderSum,rev)?(narrow?'Сходится с фильтром размера и цвета':'Сходится с выручкой страницы'):('Расхождение '+rub2(diff).toLocaleString('ru-RU')),s:X.coverT}];
  if(!orderBody.length)checkRow[1]={n:0,s:X.coverM};
  cover.push(checkRow);
  const posSame=close(posSum,rev);
  const posHonest=close(posSum,lineSumTotal);
- cover.push([{t:'Лист «Позиции», колонка «Выручка»',s:X.text},{f:posBody.length?`SUM('Позиции'!${posRevCol}2:${posRevCol}${posLast})`:null,n:posSum,s:X.coverM},{t:!posHonest?'Строки не сошлись со страницей':posSame?'Равна выручке страницы':('Отличается на '+rub2(posDiff).toLocaleString('ru-RU')+' ₽. Это переплата и отличие суммы заказа от строк.'),s:X.coverT}]);
+ cover.push([{t:'Лист «Позиции», колонка «Выручка»',s:X.text},{f:posBody.length?`SUM('Позиции'!${posRevCol}2:${posRevCol}${posLast})`:null,n:posSum,s:X.coverM},{t:!posHonest?'Строки не сошлись с заказами':posSame?(narrow?'Равна выручке файла':'Равна выручке страницы'):('Отличается на '+rub2(posDiff).toLocaleString('ru-RU')+' ₽. Это переплата и отличие суммы заказа от строк.'),s:X.coverT}]);
  if(!posBody.length)cover[cover.length-1][1]={n:0,s:X.coverM};
  cover.push([{t:'Обмены, не входят в выручку',s:X.text},{n:exSum,s:X.coverM},{t:docsWord(exchanged.length),s:X.coverT}]);
  cover.push([{t:'Возвраты на проверке, не входят',s:X.text},{n:gapSum,s:X.coverM},{t:docsWord(gaps.length),s:X.coverT}]);
