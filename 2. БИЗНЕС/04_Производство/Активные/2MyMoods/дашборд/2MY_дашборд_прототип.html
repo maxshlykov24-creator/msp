@@ -1258,7 +1258,7 @@ function refresh(){
  el('hero-sub').textContent=includeDelivery?'С доставкой':'Без доставки';
  const paymentTotal=sum((data.payment_daily||[]).filter(x=>x.date>=state.from&&x.date<=state.to),x=>x.sum);
  const paymentScopeClear=!state.cat.length&&!state.prod&&!state.source.length&&!state.channel.length&&!state.city.length;
- el('payment-in-note').textContent=`Вся оплаченная сумма, включая предоплату и переплату, признаётся в день полной оплаты. Это колонка «Оплачено» в МойСклад.`+(returnGaps.length?` Не включены ${returnGaps.length} возвратов на ${money(sum(returnGaps,x=>x.sum))}: связь с признанной продажей или позиции требуют проверки. Итог неполный.`:'')+(outsideReturns.length?` Отдельно: возвраты на ${money(sum(outsideReturns,x=>x.sum))} по заказам без полной оплаты. Эти заказы не признавались в выручке, поэтому их возвраты не вычитаются. Сумма по всем каналам.`:'');
+ el('payment-in-note').textContent='Сумма колонки «Оплачено» в МойСклад. Предоплата и переплата входят в день полной оплаты.';
  const perOrder=n?(sum(basis.flatMap(x=>x.ls),l=>l.delivery?0:l.qty)/n).toFixed(2):'0.00';
  el('hero-mini').innerHTML=[['Заказов',n],['Средний чек',money(n?rev/n:0)],['Клиентов',people.size],['Маржа',rev>0?pct(rev-cost,rev):'—']].map(([k,v])=>`<div><div class="l">${k}</div><div class="v">${v}</div></div>`).join('');
  const kpis=[['Выручка',money(rev)],['Заказов',num(n)],['Средний чек',money(n?rev/n:0)],['Изделий на заказ',perOrder],['Маржа по закупке',rev>0?pct(rev-cost,rev):'—'],['Повторные покупки',num(repN)+' ('+(unknownN?'не менее ':'')+pct(repN,n)+')'],['LTV на клиента',money(avgLtv)],['Возвраты, документов',num(returnN)]];
