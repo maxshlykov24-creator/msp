@@ -6,8 +6,8 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func, select
 
 from app.api import _auth_guard
@@ -195,7 +195,7 @@ def detail(call_id: int):
 
 
 @router.get("/{call_id}/recording")
-def recording(call_id: int):
+def recording(call_id: int, request: Request):
     with SessionLocal() as db:
         row = db.get(CallRecord, call_id)
         if not row or not row.recording_url:
@@ -207,11 +207,45 @@ def recording(call_id: int):
         # Подписанные ссылки Mango остаются на сервере и не попадают в ошибки API.
         raise HTTPException(502, "Не удалось получить запись. Попробуй позже.") from None
 
+    audio.seek(0, 2)
+    size = audio.tell()
+    range_header = request.headers.get("range", "")
+    start, end, status = 0, size - 1, 200
+    if range_header:
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+        if not match or size < 1 or (not match.group(1) and not match.group(2)):
+            audio.close()
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}",
+                                                        "Accept-Ranges": "bytes", "Cache-Control": "no-store"})
+        first, last = match.groups()
+        if first:
+            start = int(first)
+            end = min(int(last), size - 1) if last else size - 1
+        else:
+            suffix = int(last)
+            start = max(0, size - suffix)
+        if start >= size or end < start:
+            audio.close()
+            return Response(status_code=416, headers={"Content-Range": f"bytes */{size}",
+                                                        "Accept-Ranges": "bytes", "Cache-Control": "no-store"})
+        status = 206
+    length = end - start + 1
+    audio.seek(start)
+
     def chunks():
+        remaining = length
         try:
-            while chunk := audio.read(65536):
+            while remaining:
+                chunk = audio.read(min(65536, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
                 yield chunk
         finally:
             audio.close()
-    return StreamingResponse(chunks(), media_type=mime,
-                             headers={"Cache-Control": "no-store", "Content-Disposition": f'inline; filename="call-{call_id}.mp3"'})
+    headers = {"Cache-Control": "no-store", "Accept-Ranges": "bytes",
+               "Content-Length": str(length),
+               "Content-Disposition": f'inline; filename="call-{call_id}.mp3"'}
+    if status == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(chunks(), status_code=status, media_type=mime, headers=headers)
