@@ -433,8 +433,11 @@ function intakeState(r) {
   return `<span class="badge ${r.state === "warn" ? "warn" : "ok"}"><i></i>${esc(r.state === "warn" ? r.note : "готово")}</span>`;
 }
 
+let intakeLoad = 0;
 async function loadIntake() {
+  const mine = ++intakeLoad;
   const res = await api("/api/intake");
+  if (mine !== intakeLoad) return;
   state.kinds = res.kinds;
   const body = $("iTbl").querySelector("tbody");
   const selected = $("iClient").value;
@@ -884,8 +887,17 @@ function pickClient(id, name) {
   loadLots();
 }
 
+let lotsLoad = 0;
 async function loadLots() {
-  const res = await api("/api/lots?" + stockQuery());
+  const mine = ++lotsLoad;
+  state.picked.clear();
+  state.lots = [];
+  refreshPick();
+  $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="14" class="empty">Загружаю…</td></tr>`;
+  let res;
+  try { res = await api("/api/lots?" + stockQuery()); }
+  catch (e) { if (mine === lotsLoad) say($("sMsg"), e.message, "bad"); return; }
+  if (mine !== lotsLoad) return;
   state.lots = res.rows;
   state.picked.clear();
   $("kPos").textContent = num(res.totals.positions, 0);
@@ -1115,9 +1127,18 @@ function refreshShipPick() {
   $("shMs").disabled = withMs === 0;
 }
 
+let shipsLoad = 0;
 async function loadShips() {
+  const mine = ++shipsLoad;
+  state.pickedShip.clear();
+  state.ships = [];
+  refreshShipPick();
+  $("shTbl").querySelector("tbody").innerHTML = `<tr><td colspan="12" class="empty">Загружаю…</td></tr>`;
   tintMp("view-ships", "shMp");
-  const res = await api("/api/shipments?" + shipQuery());
+  let res;
+  try { res = await api("/api/shipments?" + shipQuery()); }
+  catch (e) { if (mine === shipsLoad) say($("shMsg"), e.message, "bad"); return; }
+  if (mine !== shipsLoad) return;
   state.ships = res.rows;
   state.pickedShip.clear();
   $("kShip").textContent = num(res.totals.positions, 0);
@@ -2312,8 +2333,11 @@ function openWb(id) {
   loadWbDetail(state.wbSupply).catch((e) => say($("wbMsg"), e.message, "bad"));
 }
 
+let wbDetailLoad = 0;
 async function loadWbDetail(id) {
+  const mine = ++wbDetailLoad;
   const res = await api("/api/wb/supplies/" + id);
+  if (mine !== wbDetailLoad || Number(id) !== state.wbSupply) return;
   state.wbDetail = res;
   const open = res.supply.state === "open";
   // адрес сдачи не угадываем: точку ПВЗ выбирают в ЛК, и пока её нет — так и пишем
