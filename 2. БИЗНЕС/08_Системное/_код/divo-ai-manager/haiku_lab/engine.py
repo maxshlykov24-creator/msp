@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-INTENTS = ('availability price vat vin year motor power transmission drive color mileage mileage_verified paint measurements damage damage_severity owners owner_reason taxi service long options battery origin warranty tax legal report photo video seller address hours visit discount credit tradein contact call human dispute refusal greeting thanks stop is_bot other_cars unknown').split()
+INTENTS = ('availability price vat vin year motor power transmission drive color mileage mileage_verified paint measurements damage damage_severity owners owner_reason taxi service long options battery origin warranty tax legal report photo video seller address hours visit discount credit tradein contact name call human dispute refusal greeting thanks stop is_bot other_cars unknown').split()
 PHONE = re.compile(r'(?<!\w)(?:\+?7|8)[\s(\-]*\d{3}[\s)\-]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}(?!\d)')
 UNKNOWN_LABELS = {'mileage_verified':'проверку пробега', 'measurements':'замеры кузова', 'damage_severity':'степень повреждений и ремонт', 'owner_reason':'причины смены владельцев', 'service':'обслуживание и техническое состояние', 'long':'длину колёсной базы', 'options':'точную комплектацию', 'battery':'проверку и остаточный ресурс батареи', 'origin':'происхождение автомобиля', 'warranty':'гарантию', 'tax':'утильсбор', 'legal':'документы и ограничения', 'unknown':'этот вопрос'}
 
@@ -40,7 +40,7 @@ def validate_plan(raw):
 
 def deterministic_intents(text):
     low=text.lower().strip()
-    if re.search(r'вы (?:же )?(?:писали|написали|обещали|договорились)|со мной договорились|как было обговорено|люди то подключаются|живого (?:человека|менеджера)|дайте (?:человека|менеджера)',low): return ['dispute']
+    if re.search(r'вы (?:же )?(?:писали|написали|обещали|договорились)|со мной договорились|как было обговорено|клиент прислал фото|скриншот|люди то подключаются|живого (?:человека|менеджера)|дайте (?:человека|менеджера)',low): return ['dispute']
     if re.fullmatch(r'(?:ок|окей|спасибо(?: большое)?|ясно|понятно|удачи(?: вам)?|👍)[\s.!]*',low): return ['thanks']
     if re.fullmatch(r'(?:привет|здравствуйте|доброе утро|добрый (?:день|вечер))[\s.!]*',low): return ['greeting']
     if PHONE.search(text) and not re.search(r'\?|авто|машин|состоя|грм|цен|пробег|вин|отчет|отчёт',low): return ['contact']
@@ -76,7 +76,11 @@ def render(intents, selected, session, company, text):
         if label not in unknown:unknown.append(label)
     for intent in intents:
         if intent in UNKNOWN_LABELS:missing(UNKNOWN_LABELS[intent]);continue
-        if intent=='greeting':lines.append('Здравствуйте!');continue
+        if intent=='greeting':
+            lines.append('Здравствуйте!')
+            if len(intents)==1:lines.append('Что хотите уточнить по автомобилю?')
+            continue
+        if intent=='name':lines.append('Приятно познакомиться. Что хотите уточнить по автомобилю?');continue
         if intent=='is_bot':lines.append('Да, я виртуальный помощник салона. Помогу с известными данными по машине');continue
         if intent=='address':fact('company.address',company.get('address'),'Мы находимся: ');continue
         if intent=='hours':fact('company.hours',company.get('hours'),'Работаем ');continue
