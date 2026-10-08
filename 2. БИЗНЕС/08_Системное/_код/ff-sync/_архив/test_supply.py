@@ -18,6 +18,9 @@ os.environ["FF_DB"] = os.path.join(tempfile.mkdtemp(), "test.db")
 import db
 import net
 
+# Фикстуры относятся к одной смене; окно хранения не зависит от дня запуска теста.
+db.ship_keep_since = lambda: "2026-09-01 00:00"
+
 CALLS = []
 WB_SENT = {}
 SUPPLY_SEQ = []

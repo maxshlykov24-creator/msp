@@ -15,6 +15,7 @@ from db import (
     mark_lot_billed,
     moves_by_day,
     shipped_qty,
+    run_lock,
 )
 from ms import SERVICES, ms_meta, org_id, service_id
 from net import MS_BASE, ms_headers, req
@@ -28,7 +29,7 @@ def collect(lot_ids, date_to=""):
     lots = []
     client = None
     waiting = 0
-    for raw in lot_ids:
+    for raw in dict.fromkeys(int(value) for value in lot_ids):
         lot = get_lot(int(raw))
         if not lot:
             continue
@@ -110,6 +111,11 @@ def description(detail, start, stop):
 
 
 def create(lot_ids, author="", date_to=""):
+    with run_lock(name="billing"):
+        return _create(lot_ids, author, date_to)
+
+
+def _create(lot_ids, author="", date_to=""):
     client, detail, parts, end = collect(lot_ids, date_to)
     if parts["total"] <= 0:
         raise ValueError("по выбранным позициям нечего выставлять")
@@ -132,7 +138,7 @@ def create(lot_ids, author="", date_to=""):
             if parts[key]
         ],
     }
-    r = req("POST", MS_BASE + "/entity/invoiceout", headers=ms_headers(), json=payload)
+    r = req("POST", MS_BASE + "/entity/invoiceout", headers=ms_headers(), json=payload, retry_safe=False)
     if r.status_code not in (200, 201):
         raise RuntimeError("счёт %s %s" % (r.status_code, (r.text or "")[:200]))
     data = r.json()

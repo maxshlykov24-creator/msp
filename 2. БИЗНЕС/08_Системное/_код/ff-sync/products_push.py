@@ -287,16 +287,16 @@ def push_one(row, hits=None, dry=False):
         r = req("PUT", MS_BASE + "/entity/product/" + existing["id"], headers=ms_headers(), json=payload)
         action = "обновлён"
     else:
-        r = req("POST", MS_BASE + "/entity/product", headers=ms_headers(), json=payload)
+        r = req("POST", MS_BASE + "/entity/product", headers=ms_headers(), json=payload, retry_safe=False)
         action = "создан"
-    if r.status_code not in (200, 201) and any("gtin" in c for c in codes):
+    if r.status_code == 400 and any("gtin" in c for c in codes):
         payload["barcodes"] = [c for c in codes if "gtin" not in c] or None
         if not payload.get("barcodes"):
             payload.pop("barcodes", None)
         if existing:
             r = req("PUT", MS_BASE + "/entity/product/" + existing["id"], headers=ms_headers(), json=payload)
         else:
-            r = req("POST", MS_BASE + "/entity/product", headers=ms_headers(), json=payload)
+            r = req("POST", MS_BASE + "/entity/product", headers=ms_headers(), json=payload, retry_safe=False)
     if r.status_code not in (200, 201):
         return {
             "ok": False,
@@ -344,7 +344,7 @@ def create_purchase_order(client, positions):
             for pid, qty in merged.items()
         ],
     }
-    r = req("POST", MS_BASE + "/entity/purchaseorder", headers=ms_headers(), json=payload)
+    r = req("POST", MS_BASE + "/entity/purchaseorder", headers=ms_headers(), json=payload, retry_safe=False)
     if r.status_code not in (200, 201):
         return None, "", "заказ поставщика %s %s" % (r.status_code, (r.text or "")[:160])
     data = r.json()

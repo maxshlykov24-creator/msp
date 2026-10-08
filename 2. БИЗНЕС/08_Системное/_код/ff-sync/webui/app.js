@@ -19,8 +19,9 @@ function openCombo(input, list, fill) {
 async function api(path, opts) {
   const res = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {}));
   let data = null;
-  try { data = await res.json(); } catch (e) { data = {}; }
+  try { data = await res.json(); } catch (e) { throw new Error("Сервер вернул непонятный ответ. Проверь результат операции перед повтором."); }
   if (!res.ok) throw new Error(data.detail || ("ошибка " + res.status));
+  if (data.ok === false) throw new Error(data.msg || "Операция не выполнена.");
   return data;
 }
 
@@ -98,7 +99,7 @@ function printSummary(pages, notes, title) {
     if (s.includes("оплаты тарифа")) return "У клиента не оплачен доступ к стикерам.";
     if (s.includes("58")) return "Этикетки вписаны в ленту принтера.";
     if (s.includes("не отдал") || s.includes("Нет доступа") || s.includes("нераспознан")) return "Часть этикеток площадка не отдала.";
-    return "";
+    return s;
   }).filter(Boolean);
   if (extra.length) text += "\n" + [...new Set(extra)].join("\n");
   toast(text, extra.length ? "warn" : "ok");
@@ -739,14 +740,17 @@ $("iListBox").addEventListener("drop", (e) => {
   if (file) showIntakeFile(file);
 });
 
-$("iScan").onkeydown = async (e) => {
+let intakeScanChain = Promise.resolve();
+const intakeScanIssues = [];
+$("iScan").onkeydown = (e) => {
   if (e.key !== "Enter") return;
   e.preventDefault();
   const code = $("iScan").value.trim();
   if (!code) return;
   const clientId = resolveIntakeClient();
   if (!clientId) { say($("iScanMsg"), "Выбери контрагента.", "bad"); return; }
-  $("iScan").disabled = true;
+  $("iScan").value = "";
+  intakeScanChain = intakeScanChain.then(async () => {
   try {
     const res = await api("/api/intake", {
       method: "POST",
@@ -754,14 +758,14 @@ $("iScan").onkeydown = async (e) => {
     });
     const row = (res.updated || [])[0] || (res.added || [])[0];
     const qty = row && row.qty ? row.qty : "";
-    say($("iScanMsg"), row ? `${row.barcode}: количество ${qty}` : "Не разобрал штрихкод.", row ? "ok" : "bad");
-    $("iScan").value = "";
-    loadIntake();
+    if (!row) throw new Error("Не разобрал штрихкод.");
+    say($("iScanMsg"), intakeScanIssues.length ? intakeScanIssues.join("\n") : `${row.barcode}: количество ${qty}`, intakeScanIssues.length ? "bad" : "ok");
+    if (String($("iClient").value) === String(clientId)) await loadIntake();
   } catch (err) {
-    say($("iScanMsg"), err.message, "bad");
+    intakeScanIssues.push(`${code}: ${err.message} Проверь количество перед повторным сканированием.`);
+    say($("iScanMsg"), intakeScanIssues.join("\n"), "bad");
   }
-  $("iScan").disabled = false;
-  $("iScan").focus();
+  });
 };
 
 function fileBase64(file) {
@@ -1303,6 +1307,11 @@ function asmLoading() {
 
 async function loadAsm() {
   const mine = ++asmLoad;
+  state.pickedAsm.clear();
+  state.asm = [];
+  state.asmSupplies = [];
+  $("aAll").checked = false;
+  refreshAsmPick();
   if (!$("aSince").value) {
     const shift = ((document.querySelector("#aShift button.active") || {}).dataset || {}).shift || "today";
     setShift(shift);
@@ -1894,7 +1903,9 @@ async function openKizFromPick() {
   await openKizQueue(ids);
 }
 
+let kizLoad = 0;
 async function loadKizStep() {
+  const mine = ++kizLoad;
   const id = kizState.ids[kizState.index];
   kizState.id = id;
   kizState.need = 0;
@@ -1908,6 +1919,7 @@ async function loadKizStep() {
   kizRender();
   try {
     const res = await api("/api/assembly/" + id + "/kiz");
+    if (mine !== kizLoad) return;
     kizState.need = res.need || 0;
     kizState.codes = (res.codes || []).slice();
     const mp = res.marketplace === "wb" ? "WB" : "Ozon";
@@ -1917,12 +1929,14 @@ async function loadKizStep() {
     kizRender();
     $("kizInput").focus();
   } catch (e) {
+    if (mine !== kizLoad) return;
     $("kizSub").textContent = "";
     say($("kizMsg"), e.message, "bad");
   }
 }
 
 async function openKizQueue(ids) {
+  if (kizBusy) return;
   ids = ids.map(Number).filter(Boolean);
   const rows = ids.map((id) => state.asm.find((r) => r.id === id)).filter(Boolean);
   const wbNew = rows.filter((r) => r.marketplace === "wb" && !r.supply).map((r) => r.id);
@@ -1950,11 +1964,12 @@ async function openKizQueue(ids) {
 
 $("aKiz").onclick = openKizFromPick;
 $("aKizNew").onclick = openKizFromPick;
-$("kizClose").onclick = () => $("kizModal").classList.remove("on");
-$("kizModal").onclick = (e) => { if (e.target === $("kizModal")) $("kizModal").classList.remove("on"); };
-$("kizClear").onclick = () => { kizState.codes = []; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
+$("kizClose").onclick = () => { if (!kizBusy) $("kizModal").classList.remove("on"); };
+$("kizModal").onclick = (e) => { if (!kizBusy && e.target === $("kizModal")) $("kizModal").classList.remove("on"); };
+$("kizClear").onclick = () => { if (kizBusy) return; kizState.codes = []; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
 
 $("kizInput").onkeydown = (e) => {
+  if (kizBusy) { e.preventDefault(); return; }
   // GS от HID-сканера приходит как Ctrl+], а браузер не вставляет его в input.
   if (e.key === "\u001d" || (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "BracketRight" || e.key === "]"))) {
     e.preventDefault();
@@ -1974,6 +1989,7 @@ $("kizInput").onkeydown = (e) => {
 };
 // вставка пачкой из буфера: сканер в режиме «много кодов» отдаёт их строками
 $("kizInput").onpaste = (e) => {
+  if (kizBusy) { e.preventDefault(); return; }
   const text = (e.clipboardData || window.clipboardData).getData("text");
   if (!text || !/[\r\n]/.test(text)) return;
   e.preventDefault();
@@ -1982,6 +1998,7 @@ $("kizInput").onpaste = (e) => {
 };
 
 $("kizList").onclick = (e) => {
+  if (kizBusy) return;
   const btn = e.target.closest("button[data-kiz-del]");
   if (!btn) return;
   kizState.codes.splice(Number(btn.dataset.kizDel), 1);
@@ -1990,6 +2007,7 @@ $("kizList").onclick = (e) => {
 };
 
 $("kizSkip").onclick = async () => {
+  if (kizBusy) return;
   if (kizState.index < kizState.ids.length - 1) {
     kizState.index += 1;
     await loadKizStep();
@@ -2008,6 +2026,7 @@ $("kizSend").onclick = async () => {
     return;
   }
   kizBusy = true;
+  ["kizInput", "kizSkip", "kizClear", "kizClose"].forEach((id) => $(id).disabled = true);
   $("kizSend").disabled = true;
   say($("kizMsg"), "Отправляю на площадку…");
   try {
@@ -2038,6 +2057,8 @@ $("kizSend").onclick = async () => {
     $("kizSend").disabled = false;
   } finally {
     kizBusy = false;
+    ["kizInput", "kizSkip", "kizClear", "kizClose"].forEach((id) => $(id).disabled = false);
+    if ($("kizModal").classList.contains("on")) $("kizInput").focus();
   }
 };
 

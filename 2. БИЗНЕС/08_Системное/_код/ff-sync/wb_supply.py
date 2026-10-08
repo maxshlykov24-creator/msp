@@ -90,7 +90,7 @@ def _fail(r, what):
 
 
 def create(cab, name):
-    r = req("POST", WB_BASE + "/api/v3/supplies", headers=wb_headers(cab["token"]), json={"name": name})
+    r = req("POST", WB_BASE + "/api/v3/supplies", headers=wb_headers(cab["token"]), json={"name": name}, retry_safe=False)
     if r.status_code not in (200, 201):
         raise _fail(r, "не создал поставку")
     try:
@@ -152,6 +152,7 @@ def add_boxes(cab, supply_ext, amount):
             "%s/api/v3/supplies/%s/trbx" % (WB_BASE, supply_ext),
             headers=wb_headers(cab["token"]),
             json={"amount": step},
+            retry_safe=False,
         )
         if r.status_code not in (200, 201):
             raise _fail(r, "не создал грузоместа")

@@ -73,7 +73,7 @@ def pause():
     _last = time.time()
 
 
-def req(method, url, headers=None, **kw):
+def req(method, url, headers=None, retry_safe=True, **kw):
     """Запрос к внешнему API с повтором.
 
     Повторяем не только 429 и 5xx, но и обрыв соединения: раньше таймаут
@@ -92,11 +92,16 @@ def req(method, url, headers=None, **kw):
             last = session().request(method, url, headers=headers, **kw)
             broke = None
         except requests.RequestException as exc:
+            if not retry_safe:
+                drop_session()
+                raise requests.RequestException("Ответ на создание не получен. Операция могла выполниться: обнови данные и проверь результат перед повтором.") from exc
             broke = exc
             drop_session()
             print("%s %s → %s (попытка %s)" % (method, url, type(exc).__name__, attempt))
             time.sleep(min(2 ** (attempt - 1), 8))
             continue
+        if last.status_code >= 500 and not retry_safe:
+            raise requests.RequestException("Сервис не подтвердил создание (HTTP %s). Операция могла выполниться: обнови данные и проверь результат перед повтором." % last.status_code)
         if last.status_code == 429 or last.status_code >= 500:
             print("%s %s → %s (попытка %s)" % (method, url, last.status_code, attempt))
             time.sleep(min(2 ** (attempt - 1), 8))

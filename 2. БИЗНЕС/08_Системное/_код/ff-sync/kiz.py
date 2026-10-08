@@ -18,7 +18,7 @@
 
 import re
 
-from db import get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks
+from db import get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks, run_lock
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
 from shipments_pull import gtin_of
 
@@ -385,6 +385,8 @@ def _wb_submit(row, cab, codes):
     notes = []
     item = _wb_sgtin(_wb_meta(cab, row["ext_id"])) or {}
     decision = str(item.get("decision") or "")
+    if decision in WB_WANT:
+        raise KizError("WB не подтвердил код: %s. Проверь маркировку; задание остаётся без принятого КиЗ." % WB_DECISION_RU.get(decision, decision))
     if decision:
         notes.append("WB: %s." % WB_DECISION_RU.get(decision, decision))
     return {"sent": len(codes), "state": decision, "notes": notes}
@@ -424,6 +426,14 @@ def plan(ship_id):
 
 
 def submit(ship_id, raw_codes):
+    try:
+        with run_lock(name="kiz-%s" % int(ship_id), blocking=False):
+            return _submit(ship_id, raw_codes)
+    except BlockingIOError:
+        raise KizError("Код этого задания уже отправляется. Дождись результата.")
+
+
+def _submit(ship_id, raw_codes):
     """Передать коды на площадку и записать их себе — но только после её «да»."""
     codes = clean_codes(raw_codes)
     if not codes:
