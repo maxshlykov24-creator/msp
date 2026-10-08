@@ -16,7 +16,7 @@ from app.call_rules import ANALYSIS_VERSION, RULE_VERSION, validate_analysis
 from app.config import settings
 from app.database import SessionLocal, engine, init_db
 from app.models import CallDelivery, CallRecord, SyncState
-from app.nexara import AmbiguousSubmission, NexaraClient, RemoteFailure, download_audio
+from app.nexara import AmbiguousSubmission, NexaraClient, RemoteFailure, SonnetCallAgent, download_audio
 
 log = logging.getLogger("calls")
 LOCK_KEY = 3259059807
@@ -50,8 +50,11 @@ def resolve_manager(candidates: list[dict]) -> int | None:
         pieces = entry.rsplit(":", 2)
         if len(pieces) == 3:
             mapping[(pieces[0], pieces[1])] = int(pieces[2])
+    participants = {int(x) for x in settings.calls_verified_participants.split(",") if x.strip()}
     found = set()
     for p in candidates:
+        if p.get("source") == "MangoOfficeWidget" and p.get("participant") in participants:
+            found.add(int(p["participant"]))
         if (p.get("source", ""), str(p.get("employee", ""))) in mapping:
             found.add(mapping[(p.get("source", ""), str(p.get("employee", "")))])
         if p.get("author") in author_ids:
@@ -93,7 +96,8 @@ def upsert_note(db, note: dict, entity_type: str, entity_id: int, lead_ids: list
     row.entity_refs = refs
     row.lead_ids = sorted(set(row.lead_ids or []) | set(lead_ids))
     candidate = {"source": str(p.get("source") or ""), "employee": str(p.get("call_responsible") or ""),
-                 "author": int(note.get("created_by") or 0)}
+                 "author": int(note.get("created_by") or 0),
+                 "participant": int(note.get("responsible_user_id") or 0)}
     candidates = list(row.owner_candidates or [])
     if candidate not in candidates:
         candidates.append(candidate)
@@ -195,6 +199,18 @@ def finish_result(row: CallRecord, result: dict):
     transcript = result.get("transcription") or {}
     if not isinstance(transcript, dict):
         transcript = {}
+    if settings.calls_analysis_enabled:
+        row.transcript = transcript
+        row.analysis = {}
+        row.is_scored = False
+        row.score = None
+        row.yes_count = row.applicable_count = 0
+        row.validation_errors = []
+        row.state = "analysis_ready" if SonnetCallAgent.catalog(transcript) else "needs_review"
+        row.last_error = "" if row.state == "analysis_ready" else "transcript_empty"
+        row.next_attempt_at = None
+        row.analysis_version = "sonnet.qa.1"
+        return
     raw = result.get("llm_output")
     if isinstance(raw, str):
         try:
@@ -223,6 +239,83 @@ def finish_result(row: CallRecord, result: dict):
     row.state = "needs_review" if row.validation_errors or (row.category == "primary_inbound" and not row.is_scored) else "complete"
     row.last_error = "analysis_validation_failed" if row.validation_errors else ""
     row.next_attempt_at = None
+
+
+def analyze_calls():
+    if not settings.calls_analysis_enabled or not settings.calls_process_enabled:
+        return
+    with SessionLocal() as db:
+        for row in db.scalars(select(CallRecord).where(CallRecord.state == "analyzing")):
+            row.state = "analysis_ambiguous"
+            row.last_error = "agent_interrupted_requires_review"
+        db.commit()
+        if not settings.calls_sonnet_api_key:
+            raise RuntimeError("agent_not_configured")
+        query = select(CallRecord).where(CallRecord.state == "analysis_ready")
+        if settings.calls_calibration_only:
+            query = query.where(CallRecord.is_calibration.is_(True))
+        agent = SonnetCallAgent()
+        try:
+            for row in db.scalars(query.order_by(CallRecord.occurred_at).limit(5)):
+                row.state = "analyzing"
+                row.analysis_version = "sonnet.qa.1"
+                db.commit()
+                try:
+                    result = agent.analyze(row.transcript, row.direction, row.occurred_at)
+                    history = dict(row.provider_result or {})
+                    history["agent_result"] = result
+                    row.provider_result = history
+                    verdict = validate_analysis(result["analysis"], row.transcript, row.direction)
+                    row.analysis = verdict["analysis"]
+                    row.validation_errors = verdict["errors"]
+                    row.is_scored, row.score = verdict["is_scored"], verdict["score"]
+                    row.yes_count, row.applicable_count = verdict["yes_count"], verdict["applicable_count"]
+                    row.category = row.analysis.get("category", "insufficient")
+                    row.category_reason = row.analysis.get("category_reason", "Анализ требует проверки")
+                    row.rule_version = RULE_VERSION
+                    row.state = "needs_review" if row.validation_errors or (row.category == "primary_inbound" and not row.is_scored) else "complete"
+                    row.last_error = "analysis_validation_failed" if row.validation_errors else ""
+                except AmbiguousSubmission as exc:
+                    row.state, row.last_error = "analysis_ambiguous", str(exc)
+                except RemoteFailure as exc:
+                    row.state, row.last_error = "needs_review", str(exc)
+                except Exception:
+                    row.state, row.last_error = "needs_review", "agent_result_invalid"
+                row.next_attempt_at = None
+                db.commit()
+        finally:
+            agent.close()
+
+
+def reanalyze_calibration() -> int:
+    """Явная команда: сохранённые транскрипты, без повторной отправки аудио."""
+    if not settings.calls_analysis_enabled or not settings.calls_sonnet_api_key:
+        raise RuntimeError("agent_not_configured")
+    with engine.connect() as lock:
+        if not lock.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": LOCK_KEY}):
+            raise RuntimeError("calls_worker_busy")
+        try:
+            with SessionLocal() as db:
+                rows = list(db.scalars(select(CallRecord).where(CallRecord.is_calibration.is_(True),
+                    CallRecord.state.in_(["complete", "needs_review"]))))
+                count = 0
+                for row in rows:
+                    if not SonnetCallAgent.catalog(row.transcript):
+                        continue
+                    if row.analysis_version == "sonnet.qa.1" and (row.provider_result or {}).get("agent_result"):
+                        continue
+                    row.state, row.last_error = "analysis_ready", ""
+                    row.analysis = {}
+                    row.validation_errors = []
+                    row.category, row.category_reason = "pending", "Ожидает анализа агента"
+                    row.yes_count = row.applicable_count = 0
+                    row.is_scored, row.score = False, None
+                    row.next_attempt_at = None
+                    count += 1
+                db.commit()
+                return count
+        finally:
+            lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK_KEY})
 
 
 def process_calls(amo: AmoClient):
@@ -453,6 +546,7 @@ def run_once(*, calibration: int = 0):
                 ("collect", lambda: collect_calls(amo, calibration=calibration)
                  if settings.calls_enabled or calibration else None),
                 ("process", lambda: process_calls(amo)),
+                ("analyze", analyze_calls),
                 ("deliver", lambda: deliver_calls(amo)),
             ]:
                 try:
@@ -504,10 +598,14 @@ def main():
     logging.getLogger("httpx").setLevel(logging.WARNING)
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--reanalyze-calibration", action="store_true")
     parser.add_argument("--calibrate", type=int, default=0)
     parser.add_argument("--retry-payment-blocked", action="store_true")
     args = parser.parse_args()
     init_db()
+    if args.reanalyze_calibration:
+        print(json.dumps({"requeued_analysis": reanalyze_calibration()}))
+        return
     if args.retry_payment_blocked:
         print(json.dumps({"requeued": retry_payment_blocked()}))
         return

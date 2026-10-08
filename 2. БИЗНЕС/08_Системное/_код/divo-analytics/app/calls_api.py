@@ -71,11 +71,11 @@ def calls(start: date | None = None, end: date | None = None, manager: str | Non
         if view == "scored":
             conditions.append(CallRecord.is_scored.is_(True))
         elif view == "review":
-            conditions.append(CallRecord.state.in_(["needs_review", "submit_ambiguous"]))
+            conditions.append(CallRecord.state.in_(["needs_review", "submit_ambiguous", "analysis_ambiguous"]))
         elif view == "unavailable":
             conditions.append(CallRecord.state.in_(["recording_unavailable", "missed", "error"]))
         elif view == "pending":
-            conditions.append(CallRecord.state.in_(["waiting_recording", "ready", "submitting", "processing"]))
+            conditions.append(CallRecord.state.in_(["waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing"]))
         total = db.scalar(select(func.count()).select_from(CallRecord).where(*conditions))
         ordering = [CallRecord.occurred_at.desc(), CallRecord.id.desc()]
         if sort != "recent":
@@ -124,9 +124,9 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
                 "average_score": round(sum(r.score for r in scored) / len(scored), 1) if scored else None,
                 "meeting_agreed": meeting_count,
                 "meeting_rate": round(meeting_count * 100 / len(scored), 1) if scored else None,
-                "needs_review": sum(r.state in ("needs_review", "submit_ambiguous") for r in rows),
+                "needs_review": sum(r.state in ("needs_review", "submit_ambiguous", "analysis_ambiguous") for r in rows),
                 "unavailable": sum(r.state in ("recording_unavailable", "missed", "error") for r in rows),
-                "pending": sum(r.state in ("waiting_recording", "ready", "submitting", "processing") for r in rows),
+                "pending": sum(r.state in ("waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing") for r in rows),
                 "criteria": criteria,
                 "unknown_manager": sum(not r.manager_verified for r in rows),
                 "managers": sorted(managers, key=lambda m: (m["manager_id"] is None, m["manager_name"])),

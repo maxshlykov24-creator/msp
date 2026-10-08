@@ -77,8 +77,13 @@ class Settings(BaseSettings):
     calls_dashboard_url: str = "https://divomotors-analytics.ru"
     calls_recording_hosts: str = ""  # разрешённые точные хосты Mango, проверены на пилоте
     calls_manager_map: str = ""  # source:employee:user_id; только проверенная привязка
+    calls_verified_participants: str = ""  # ответственный самого примечания звонка, подтверждённое поле «Кому»
     calls_verified_authors: str = ""  # amo user_id, авторство проверено на пилоте
     calls_manager_names: str = "13180098:Евгений;13334858:Никита;13835174:Эльзар;14181846:Назар"
+    calls_analysis_enabled: bool = False
+    calls_sonnet_api_key: str = ""
+    calls_sonnet_model: str = "anthropic/claude-sonnet-5"
+    calls_sonnet_proxy: str = ""
     nexara_api_key: str = ""
     nexara_base_url: str = "https://api.nexara.ru/v1"
     calls_telegram_bot_token: str = ""

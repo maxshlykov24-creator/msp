@@ -30,7 +30,7 @@ button.cq-metric{font:inherit;cursor:pointer}
 .cq-block-heading{display:flex;gap:12px;align-items:baseline;justify-content:space-between;margin-bottom:17px}
 .cq-block-heading h2,.cq-list-heading h2{font-size:17px;font-weight:500;margin:0}
 .cq-block-heading .cq-muted{font-size:12px}
-.cq-criterion-bar{display:grid;grid-template-columns:215px minmax(0,1fr) 50px;gap:14px;align-items:center;font-size:13px;margin:9px 0;color:var(--mute)}
+.cq-criterion-bar{display:grid;grid-template-columns:215px minmax(0,1fr) 50px;gap:14px;align-items:center;font-size:14px;margin:9px 0;color:var(--mute)}
 .cq-track{height:5px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}
 .cq-track i{display:block;height:100%;background:#c8a45c;border-radius:4px}
 .cq-criterion-bar b{font-weight:400;text-align:right;font-variant-numeric:tabular-nums;color:#e9e4d8}
@@ -57,7 +57,7 @@ button.cq-metric{font:inherit;cursor:pointer}
 .cq-call-row strong{font-size:14px;font-weight:500;display:block;line-height:1.5}
 .cq-call-row small{display:block;font-size:12px;color:var(--mute-2);margin-top:4px;line-height:1.6}
 .cq-row-content{font-size:14px;line-height:1.6;min-width:0}
-.cq-row-summary{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--mute);margin-top:4px;font-size:13px}
+.cq-row-summary{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--mute);margin-top:4px;font-size:14px}
 .cq-row-time{font-size:13px;color:var(--mute);margin-bottom:4px;display:block}
 .cq-badge{display:inline-flex;font-size:12px;color:#c4c7cd;line-height:1.5;padding:3px 7px;border-radius:5px;background:rgba(255,255,255,.055)}
 .cq-badge.review{color:#e4c484;background:rgba(209,171,100,.1)}
@@ -100,14 +100,14 @@ button.cq-metric{font:inherit;cursor:pointer}
 .cq-detail-criterion[open] summary:after{content:'−'}
 .cq-detail-criterion summary b{font-weight:400;flex:1}
 .cq-detail-criterion p{color:#a6adba;font-size:14px;margin:13px 0 10px}
-.cq-detail-criterion blockquote{margin:8px 0;padding:8px 12px;border-left:2px solid #6c6352;background:rgba(255,255,255,.02);font-size:14px;color:#c2c7cf}
+.cq-detail-criterion blockquote{margin:8px 0;padding:8px 12px;border-left:2px solid #6c6352;background:rgba(255,255,255,.02);font-size:15px;color:#c2c7cf}
 .cq-time-button{border:0;background:rgba(255,255,255,.08);border-radius:4px;padding:2px 5px;color:#d7bf91;font-size:12px;font-variant-numeric:tabular-nums;margin-right:7px}
 .cq-recommendation{margin-top:20px;padding:14px 16px;border:1px solid rgba(255,255,255,.1);border-radius:9px;color:#c4cad4;font-size:14px}
 .cq-recommendation strong{display:block;color:#f0ece4;font-weight:500;margin-bottom:5px}
 .cq-audio{width:100%;height:38px;margin:8px 0 18px;display:block}
 .cq-transcript-search{width:100%;padding:10px 12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.025);color:inherit;border-radius:7px;font:inherit;font-size:14px;box-sizing:border-box;margin-bottom:13px}
 .cq-segment{display:grid;grid-template-columns:48px 1fr;gap:10px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.06)}
-.cq-segment p{font-size:14px;color:#c4ccd8;margin:0}
+.cq-segment p{font-size:15px;color:#c4ccd8;margin:0}
 .cq-segment strong{display:block;font-size:12px;font-weight:500;color:#939eb0;margin-bottom:4px}
 .cq-diagnostics{font-size:13px;color:#929bab;line-height:1.8}
 .cq-diagnostics ul{padding-left:16px}

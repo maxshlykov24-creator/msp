@@ -23,7 +23,7 @@ from app.config import settings
 from app.database import Base
 from app.models import CallDelivery, CallRecord, SyncState
 from app.amo_client import AmoClient, AmoError
-from app.nexara import AmbiguousSubmission, validate_recording_url
+from app.nexara import AmbiguousSubmission, NexaraClient, SonnetCallAgent, RemoteFailure, validate_recording_url
 
 
 @compiles(JSONB, "sqlite")
@@ -154,7 +154,7 @@ class QueueTest(unittest.TestCase):
         self.factory=sessionmaker(bind=self.engine,expire_on_commit=False)
         self.db=self.factory()
         self.patch=patch.object(call_worker,"SessionLocal",self.factory);self.patch.start()
-        self.settings={k:getattr(settings,k) for k in ("calls_verified_authors","calls_manager_map","calls_amo_enabled","calls_telegram_enabled","calls_process_enabled","calls_calibration_only","nexara_api_key","calls_recording_hosts")}
+        self.settings={k:getattr(settings,k) for k in ("calls_verified_authors","calls_manager_map","calls_amo_enabled","calls_telegram_enabled","calls_process_enabled","calls_calibration_only","nexara_api_key","calls_recording_hosts","calls_analysis_enabled","calls_sonnet_api_key","calls_verified_participants")}
         settings.calls_verified_authors="";settings.calls_manager_map=""
         settings.calls_calibration_only=False
 
@@ -301,6 +301,58 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(normal.state,"ready");self.assertIsNone(normal.nexara_job_id)
         self.assertEqual(sample.nexara_job_id,"sample-job")
 
+    def test_verified_call_participant_does_not_use_lead_owner_or_author(self):
+        settings.calls_verified_participants="13334858,14181846"
+        n=self.note();n["params"]["source"]="MangoOfficeWidget";n["responsible_user_id"]=14181846
+        r=call_worker.upsert_note(self.db,n,"lead",100,[100])
+        self.assertEqual(r.manager_id,14181846)
+        self.assertNotEqual(r.manager_id,n["created_by"])
+        n=self.note(id=2,uniq="without-participant");n["params"]["source"]="MangoOfficeWidget"
+        r=call_worker.upsert_note(self.db,n,"lead",100,[100]);self.assertIsNone(r.manager_id)
+
+    def test_multiple_verified_call_participants_require_manual_resolution(self):
+        settings.calls_verified_participants="13334858,14181846"
+        candidates=[{"source":"MangoOfficeWidget","participant":uid} for uid in (13334858,14181846)]
+        self.assertIsNone(call_worker.resolve_manager(candidates))
+        self.assertIsNone(call_worker.resolve_manager([{"source":"other","participant":13334858}]))
+
+    def test_transcription_moves_to_agent_without_provider_analysis(self):
+        settings.calls_analysis_enabled=True
+        r=self.call();r.nexara_job_id="preserved"
+        call_worker.finish_result(r,{"transcription":TRANSCRIPT})
+        self.assertEqual(r.state,"analysis_ready");self.assertEqual(r.nexara_job_id,"preserved")
+        self.assertFalse(r.is_scored)
+
+    def test_agent_uses_saved_transcript_and_preserves_nexara_job(self):
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
+        r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";r.nexara_job_id="preserved";r.provider_result={"transcription":TRANSCRIPT};self.db.commit()
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            cls.return_value.analyze.return_value={"analysis":analysis(),"usage":{"cost":0.01}}
+            call_worker.analyze_calls()
+            self.assertEqual(cls.return_value.analyze.call_count,1)
+        self.db.refresh(r);self.assertEqual(r.state,"complete");self.assertEqual(r.nexara_job_id,"preserved")
+        self.assertEqual(r.provider_result["transcription"],TRANSCRIPT)
+
+    def test_agent_restart_and_timeout_never_repeat_paid_request(self):
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
+        r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            cls.return_value.analyze.side_effect=AmbiguousSubmission("agent_transport_ambiguous")
+            call_worker.analyze_calls();call_worker.analyze_calls()
+            self.assertEqual(cls.return_value.analyze.call_count,1)
+        self.db.refresh(r);self.assertEqual(r.state,"analysis_ambiguous")
+        r.state="analyzing";self.db.commit()
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            call_worker.analyze_calls();cls.return_value.analyze.assert_not_called()
+        self.db.refresh(r);self.assertEqual(r.state,"analysis_ambiguous")
+
+    def test_calibration_gate_excludes_working_agent_queue(self):
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_calibration_only=True;settings.calls_sonnet_api_key="test"
+        r=self.call();r.state="analysis_ready";r.transcript=TRANSCRIPT;self.db.commit()
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            call_worker.analyze_calls();cls.return_value.analyze.assert_not_called()
+        self.db.refresh(r);self.assertEqual(r.state,"analysis_ready")
+
     def test_summary_excludes_calibration_and_unknown_from_named_manager(self):
         r=self.call();r.state="complete";r.is_scored=True;r.score=50;r.analysis=analysis();self.db.commit()
         c=call_worker.upsert_note(self.db,self.note(id=2,uniq="calibration"),"lead",100,[100],calibration=True)
@@ -359,6 +411,33 @@ class QueueTest(unittest.TestCase):
         with patch.object(calls_api,"SessionLocal",self.factory):
             self.assertEqual(calls_api.summary(start=date(2026,10,7),end=date(2026,10,7))["total"],0)
             self.assertEqual(calls_api.summary(start=date(2026,10,8),end=date(2026,10,8))["total"],1)
+
+
+class AgentEvidenceTest(unittest.TestCase):
+    def test_references_materialize_exact_source_and_time(self):
+        catalog=SonnetCallAgent.catalog(TRANSCRIPT)
+        grounded=SonnetCallAgent.ground({"evidence":[{"quote":"s0001"}]},catalog)
+        self.assertEqual(grounded["evidence"][0],{"quote":TEXT,"start":0,"end":60})
+        for bad in ({"quote":"invented"},{"quote":"s0001","start":42}):
+            with self.assertRaises(RemoteFailure):SonnetCallAgent.ground(bad,catalog)
+
+    def test_long_segments_remain_contiguous_and_within_quote_limit(self):
+        text="Очень длинный текст. "*80
+        catalog=SonnetCallAgent.catalog({"segments":[{"text":text,"start":10,"end":70,"speaker":"Менеджер"}]})
+        self.assertGreater(len(catalog),1)
+        for part in catalog.values():
+            self.assertIn(part["quote"],text);self.assertLessEqual(len(part["quote"]),400)
+            self.assertEqual((part["start"],part["end"]),(10,70))
+
+    def test_nexara_request_contains_no_analysis(self):
+        import io
+        with patch("httpx.Client") as cls:
+            cls.return_value.post.return_value.status_code=200
+            cls.return_value.post.return_value.json.return_value={"job_id":"test"}
+            n=NexaraClient();n.submit(io.BytesIO(b"audio"),"audio/mpeg","in",1000)
+            data=cls.return_value.post.call_args.kwargs["data"]
+            self.assertNotIn("prompt",data);self.assertNotIn("json_schema",data)
+            self.assertEqual(data["task"],"diarize")
 
 
 class RecordingTest(unittest.TestCase):

@@ -8,6 +8,8 @@ from app.call_rules import CATEGORY_NAMES, CRITERIA, STATUS_NAMES
 from app.config import settings
 
 STATE_NAMES = {
+    "analysis_ready": "Ожидает анализа агента", "analyzing": "Агент анализирует",
+    "analysis_ambiguous": "Анализ агента требует проверки",
     "waiting_recording": "Ожидает запись", "ready": "Готов к анализу",
     "submitting": "Отправляется в Nexara", "submit_ambiguous": "Отправка требует проверки",
     "processing": "Nexara обрабатывает", "complete": "Обработан",
