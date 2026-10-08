@@ -20,8 +20,8 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/divo-haiku-lab/haiku_lab/runtime
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-CPUQuota=15%
-MemoryMax=192M
+CPUQuota=10%
+MemoryMax=96M
 TasksMax=32
 Nice=15
 

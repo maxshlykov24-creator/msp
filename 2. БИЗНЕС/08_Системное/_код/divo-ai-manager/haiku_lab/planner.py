@@ -20,6 +20,7 @@ class Planner:
             response=await self.client.post('https://openrouter.ai/api/v1/chat/completions',headers={'Authorization':'Bearer '+self.cfg['LAB_OPENROUTER_KEY']},json=body)
             if response.status_code!=200:raise RuntimeError('Haiku HTTP '+str(response.status_code))
             data=response.json();cost=(data.get('usage') or {}).get('cost');self.store.settle(reserve,cost)
+            if cost is None:raise RuntimeError('Missing usage cost; reserved budget retained')
             choice=(data.get('choices') or [{}])[0]
             if choice.get('finish_reason')!='stop':raise RuntimeError('Incomplete Haiku plan')
             return (choice.get('message') or {}).get('content') or '',float(cost or 0)

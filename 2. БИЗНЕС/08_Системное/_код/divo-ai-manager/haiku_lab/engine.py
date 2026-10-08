@@ -68,7 +68,9 @@ def render(intents, selected, session, company, text):
     lines=[];unknown=[]
     def fact(key, value, prefix):
         if value and str(value).strip().lower() not in ('нет данных','неизвестно','—','-'):
-            lines.append(prefix+str(value).strip());out.facts.append(key);return True
+            value=re.sub(r'\s+', ' ', str(value)).strip()
+            if value.count('(')>value.count(')'):value+=')'*(value.count('(')-value.count(')'))
+            lines.append(prefix+value);out.facts.append(key);return True
         return False
     def missing(label):
         if label not in unknown:unknown.append(label)

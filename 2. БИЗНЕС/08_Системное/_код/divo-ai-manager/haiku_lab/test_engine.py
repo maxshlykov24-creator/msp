@@ -40,4 +40,19 @@ class EngineTests(unittest.TestCase):
    with self.assertRaises(RuntimeError):s.reserve(.025)
    self.assertTrue(s.claim(1));self.assertFalse(s.claim(1));s.db.close()
    r=Storage(p);self.assertFalse(r.claim(1));self.assertAlmostEqual(r.spent(),.01);r.db.close()
+
+
+class TransportSafetyTests(unittest.TestCase):
+ def test_production_bot_id_rejected_before_network(self):
+  from .main import Lab
+  with self.assertRaisesRegex(RuntimeError,'Production bot'):
+   Lab({'LAB_TELEGRAM_TOKEN':'8840235455:fake-test-only','LAB_ALLOWED_USERS':'1','LAB_FORBIDDEN_BOT_IDS':'8840235455'})
+ def test_outsider_and_group_do_not_reach_handler(self):
+  from .main import Lab
+  from unittest.mock import AsyncMock
+  app=Lab.__new__(Lab);app.allowed={1};app.send=AsyncMock();app.command=AsyncMock()
+  for chat,sender,typ in [(2,2,'private'),(-1,1,'group'),(1,2,'private')]:
+   asyncio.run(app.handle({'update_id':1,'message':{'chat':{'id':chat,'type':typ},'from':{'id':sender},'text':'/start'}}))
+  app.send.assert_not_called();app.command.assert_not_called()
+
 if __name__=='__main__':unittest.main()
