@@ -296,17 +296,6 @@ h2 {
   cursor: pointer;
 }
 .to-top[hidden] { display: none; }
-.verse {
-  background:
-    radial-gradient(ellipse 46% 30% at 8% 16%, rgba(255,255,255,.78), transparent 70%),
-    radial-gradient(ellipse 34% 26% at 92% 8%, rgba(255,255,255,.62), transparent 68%),
-    radial-gradient(ellipse 52% 34% at 84% 86%, rgba(255,255,255,.7), transparent 72%),
-    radial-gradient(ellipse 38% 24% at 14% 84%, rgba(255,255,255,.5), transparent 70%),
-    #f4edd6;
-  color: #3e4b27;
-}
-.verse::after { display: none; }
-.verse .bar, .verse .foot { display: none; }
 .verse .body {
   justify-content: center;
   align-items: center;
@@ -322,7 +311,7 @@ h2 {
   font-size: clamp(36px, 6.4vw, 68px);
   line-height: .95;
   letter-spacing: .01em;
-  color: #3e4b27;
+  color: #FCD4FF;
 }
 .verse .place span { font-style: italic; text-transform: uppercase; letter-spacing: .06em; }
 .verse .place em { font-style: italic; font-weight: 600; }
@@ -334,7 +323,7 @@ h2 {
   font-size: clamp(17px, 2.5vw, 28px);
   line-height: 1.45;
   letter-spacing: .01em;
-  color: #3e4b27;
+  color: var(--ink);
 }
 .verse .reading p + p { margin-top: .85em; }
 .kicker, h1, h2, .quote, .lede, .sub, .points, .amen { opacity: 1; }
