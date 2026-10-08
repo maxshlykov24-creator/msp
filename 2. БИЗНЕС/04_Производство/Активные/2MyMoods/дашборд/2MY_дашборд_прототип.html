@@ -402,9 +402,9 @@
   .combo{position:relative}
   .combo input{font-family:var(--sans);font-size:11.5px;font-weight:500;color:var(--body);padding:9px 12px;border:1px solid var(--line);background:var(--paper);width:100%;height:38px}
   .combo input:focus{outline:none;border-color:var(--ink)}
-  .combo-list{position:absolute;left:0;right:0;top:calc(100% - 1px);max-height:280px;overflow:auto;background:var(--paper);border:1px solid var(--ink);z-index:20;box-shadow:0 16px 28px -22px rgba(2,2,2,.45)}
+  .combo-list{position:absolute;left:0;right:auto;top:calc(100% - 1px);width:max(100%,560px);max-width:min(760px,calc(100vw - 48px));max-height:320px;overflow:auto;background:var(--paper);border:1px solid var(--ink);z-index:40;box-shadow:0 16px 28px -22px rgba(2,2,2,.45)}
   .combo-list[hidden]{display:none}
-  .combo-list button{display:block;width:100%;text-align:left;font-family:var(--sans);font-size:12px;font-weight:500;color:var(--ink);padding:9px 12px;background:none;border:none;border-bottom:1px solid var(--line-soft);cursor:pointer}
+  .combo-list button{display:block;width:100%;text-align:left;font-family:var(--sans);font-size:13px;line-height:1.35;font-weight:500;color:var(--ink);padding:9px 12px;background:none;border:none;border-bottom:1px solid var(--line-soft);cursor:pointer;white-space:normal;overflow-wrap:anywhere}
   .combo-list button:last-child{border-bottom:none}
   .combo-list button:hover,.combo-list button.on{background:var(--butter)}
   .combo-list button i{display:block;font-style:normal;font-size:10px;color:var(--mute);margin-top:2px;font-weight:400}
@@ -1562,15 +1562,46 @@ function init(snap){
  select('s-color',[...new Set(data.orders.flatMap(o=>(o.lines||[]).filter(l=>!l.delivery).map(colorLabel)))].filter(v=>v!=='не указано'),'Все цвета');
  el('periods').innerHTML=[['month','Текущий месяц'],['prev','Прошлый месяц'],['quarter','Квартал'],['year','Год']].map(([id,name])=>`<button data-p="${id}" class="${id==='month'?'on':''}">${name}</button>`).join('');
  el('periods').onclick=e=>{if(!e.target.dataset.p)return;applyPeriod(e.target.dataset.p);refresh();};
- const names=[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.name)))].filter(Boolean).sort();const dl=document.createElement('datalist');dl.id='products-list';dl.innerHTML=names.map(n=>'<option value="'+esc(n)+'"></option>').join('');document.body.appendChild(dl);el('f-prod').setAttribute('list','products-list');el('s-prod').setAttribute('list','products-list');
+ bindProductSearch('f-prod');bindProductSearch('s-prod');
  refresh();view((location.hash||'#v-sales').replace('#v-',''));
 }
 [['d1','from'],['d2','to'],['f-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-cat','cat']].forEach(([id,key])=>el(id).onchange=e=>{state[key]=e.target.multiple?selected(id):e.target.value;if(id==='d1'||id==='d2') document.querySelectorAll('#periods button').forEach(b=>b.classList.remove('on'));refresh()});
-el('f-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.name||'';if(hit){state.cat=[];el('f-cat').value='';el('s-cat').value=''}refresh()};
-el('s-prod').oninput=e=>{const q=e.target.value.toLowerCase();const hit=data?.orders.flatMap(o=>o.lines).find(l=>l.name.toLowerCase()===q);state.prod=hit?.name||'';if(hit){state.cat=[];el('f-cat').value='';el('s-cat').value=''}refresh()};
+function bindProductSearch(id){
+ const input=el(id);
+ const list=input.parentElement.querySelector('.combo-list');
+ const catalog=()=>[...new Set((data.orders||[]).flatMap(o=>(o.lines||[]).map(l=>l.name)))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'ru'));
+ const apply=name=>{
+  input.value=name;
+  el('f-prod').value=name;el('s-prod').value=name;
+  el('f-prod').title=name;el('s-prod').title=name;
+  state.prod=name;state.cat=[];el('f-cat').value='';el('s-cat').value='';
+  list.hidden=true;refresh();
+ };
+ const paint=()=>{
+  const q=input.value.trim().toLocaleLowerCase('ru');
+  const hits=catalog().filter(n=>!q||n.toLocaleLowerCase('ru').includes(q));
+  const shown=hits.slice(0,40);
+  list.innerHTML=shown.map(n=>`<button type="button">${esc(n)}</button>`).join('')+(hits.length>shown.length?`<div class="more">Ещё ${hits.length-shown.length}. Уточни название.</div>`:'')||'<div class="empty">Нет такого товара</div>';
+  list.hidden=false;
+ };
+ input.addEventListener('focus',paint);
+ input.addEventListener('input',()=>{
+  const q=input.value.trim().toLocaleLowerCase('ru');
+  paint();
+  const hit=catalog().find(n=>n.toLocaleLowerCase('ru')===q);
+  if(hit){apply(hit);list.hidden=false;return;}
+  if(!q&&state.prod){state.prod='';el('f-prod').title='';el('s-prod').title='';refresh();}
+ });
+ list.addEventListener('mousedown',e=>{const b=e.target.closest('button');if(!b)return;e.preventDefault();apply(b.textContent);});
+ input.addEventListener('blur',()=>setTimeout(()=>{list.hidden=true;},150));
+ input.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){list.hidden=true;return;}
+  if(e.key==='Enter'){const b=list.querySelector('button');if(b&&!list.hidden){e.preventDefault();apply(b.textContent);}}
+ });
+}
 el('s-size').onchange=()=>{state.size=selected('s-size');refresh()};el('s-color').onchange=()=>{state.color=selected('s-color');refresh()};
-el('s-clear').onclick=()=>{state.size=[];state.color=[];state.cat=[];state.prod='';el('s-cat').value='';el('s-prod').value='';refresh()};
-el('reset').onclick=()=>{state.cat=[];state.prod='';state.source=[];state.channel=[];state.city=[];state.size=[];state.color=[];el('f-prod').value='';refresh()};
+el('s-clear').onclick=()=>{state.size=[];state.color=[];state.cat=[];state.prod='';el('s-cat').value='';el('f-prod').value='';el('s-prod').value='';el('f-prod').title='';el('s-prod').title='';refresh()};
+el('reset').onclick=()=>{state.cat=[];state.prod='';state.source=[];state.channel=[];state.city=[];state.size=[];state.color=[];el('f-prod').value='';el('s-prod').value='';el('f-prod').title='';el('s-prod').title='';refresh()};
 el('items').onclick=e=>{const row=e.target.closest('tr[data-product]');if(!row)return;if(e.target.closest('.product-pick')){state.prod=state.prod===row.dataset.product?'':row.dataset.product;el('f-prod').value=state.prod;el('s-prod').value=state.prod;refresh();return;}const p=lastProducts.find(x=>x.name===row.dataset.product);if(p)showOrders('Товар',p.name,ordersFromGoods(p.lines));};
 el('sheet').addEventListener('click',e=>{
  if(e.target.closest('[data-close]')||e.target.closest('#sheet-x')){closeSheet();return;}
