@@ -189,7 +189,7 @@ class MS:
                 time.sleep(1.2 * (attempt + 1))
         return 0, {"error": type(last_err).__name__ if last_err else "unknown"}
 
-    def send(self, method: str, path: str, body: dict):
+    def send(self, method: str, path: str, body: dict, headers: dict | None = None):
         """Запись в МойСклад. Повторяет временные ошибки, тело наружу не печатает."""
         data = json.dumps(body, ensure_ascii=False).encode()
         last_err = None
@@ -198,13 +198,16 @@ class MS:
             if wait > 0:
                 time.sleep(wait)
             url = path if path.startswith("http") else MS_BASE + path
-            req = urllib.request.Request(url, data=data, method=method, headers={
+            hdr = {
                 "Authorization": f"Bearer {self.token}",
                 "Accept": "application/json;charset=utf-8",
                 "Accept-Encoding": "gzip",
                 "Content-Type": "application/json",
                 "User-Agent": "MSProduct-2MY/1.0 (max.shlykov24@gmail.com)",
-            })
+            }
+            if headers:
+                hdr.update(headers)
+            req = urllib.request.Request(url, data=data, method=method, headers=hdr)
             try:
                 with urllib.request.urlopen(req, timeout=60) as resp:
                     raw = resp.read()
