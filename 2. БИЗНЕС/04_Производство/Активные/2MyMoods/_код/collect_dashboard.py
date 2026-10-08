@@ -31,6 +31,7 @@ FIELD = {
     "utm_medium": "6d95a996-f849-11f0-0a80-009c000b6c8b",
     "utm_campaign": "6d95aa5b-f849-11f0-0a80-009c000b6c8c",
     "full_paid": "015b915a-c21c-11f1-0a80-1e7500283344",
+    "city": "4e029576-c2f6-11f1-0a80-0292004dbac4",
 }
 
 
@@ -738,6 +739,23 @@ def enrich_accounting(snap: dict, ms=None) -> None:
                             "exchanges": len(exchanges)})
 
 
+def order_city(order: dict) -> str:
+    """Город заказа. Сначала допполе Город, иначе разбор адреса и способа доставки."""
+    named = str(attrs(order).get(FIELD["city"]) or "").strip()
+    if named:
+        return named
+    address = str(order.get("shipmentAddress") or "")
+    full = order.get("shipmentAddressFull") or {}
+    structured = ""
+    if isinstance(full, dict):
+        structured = str(full.get("city") or "").strip()
+        address += " " + " ".join(str(v) for k, v in full.items() if k != "meta" and isinstance(v, str))
+    geo = city(address, cf_name(attrs(order).get(FIELD["delivery"])))
+    if geo == "не распознано" and structured:
+        return structured
+    return geo
+
+
 def build_order(o, positions, ms, started, order_payments, agents, channels, return_orders, products, variants, services, gaps):
     number = o.get("name", "")
     a = attrs(o)
@@ -761,14 +779,10 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
     channel = channels.get(mid(o.get("salesChannel")), "не указано")
     address = str(o.get("shipmentAddress") or "")
     full = o.get("shipmentAddressFull") or {}
-    structured_city = ""
     if isinstance(full, dict):
-        structured_city = str(full.get("city") or "").strip()
         address += " " + " ".join(str(v) for k, v in full.items() if k != "meta" and isinstance(v, str))
     delivery = cf_name(a.get(FIELD["delivery"]))
-    geo = city(address, delivery)
-    if geo == "не распознано" and structured_city:
-        geo = structured_city
+    geo = order_city(o)
     if geo == "не распознано":
         gaps["Город не распознан"].append(number)
     utm = str(a.get(FIELD["utm"]) or "").strip()
