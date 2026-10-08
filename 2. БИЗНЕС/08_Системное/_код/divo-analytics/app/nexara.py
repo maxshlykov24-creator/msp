@@ -8,7 +8,7 @@ from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 import httpx
 
-from app.call_rules import Analysis, analysis_prompt
+from app.call_rules import Analysis, analysis_prompt, canonicalize_analysis_text_fields
 from app.config import settings
 
 
@@ -215,7 +215,7 @@ criterion=yes; хотя бы одно conditions=no означает criterion=n
             if choice.get("finish_reason") != "stop":
                 raise RemoteFailure("agent_output_incomplete")
             raw = json.loads(choice["message"]["content"])
-            grounded = self.ground(raw, catalog)
+            grounded = canonicalize_analysis_text_fields(self.ground(raw, catalog))
         except (ValueError, KeyError, IndexError, TypeError):
             raise RemoteFailure("agent_invalid_output") from None
         return {"analysis": grounded, "references": raw, "usage": result.get("usage", {}),

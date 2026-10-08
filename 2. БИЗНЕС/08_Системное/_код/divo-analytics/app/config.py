@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     collect_interval_min: int = 10
     collect_hours: str = "0-23"
 
-    # Воронка «Продажи» DIVO Motors
+    # Воронка «Продажи» DIVO MOTORS
     pipeline_sales: int = 10372290
     status_won: int = 142
     status_lost: int = 143

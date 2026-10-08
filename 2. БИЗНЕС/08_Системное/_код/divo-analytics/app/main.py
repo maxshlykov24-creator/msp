@@ -27,7 +27,7 @@ log = logging.getLogger("main")
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
-app = FastAPI(title="DIVO Motors Analytics", docs_url=None, redoc_url=None)
+app = FastAPI(title="DIVO MOTORS Analytics", docs_url=None, redoc_url=None)
 app.include_router(api_router)
 app.include_router(calls_router)
 app.mount("/assets", StaticFiles(directory=WEB_DIR / "assets"), name="assets")

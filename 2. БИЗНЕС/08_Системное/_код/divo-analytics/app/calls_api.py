@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 
 from app.api import _auth_guard
 from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, manager_name
+from app.call_rules import canonical_company_name, canonicalize_analysis_text_fields
 from app.config import settings
 from app.database import SessionLocal
 from app.models import CallDelivery, CallRecord, SyncState
@@ -82,11 +83,11 @@ def review_reason(row: CallRecord) -> str:
 
 
 def summary_row(row):
-    a = row.analysis or {}
+    a = canonicalize_analysis_text_fields(row.analysis)
     return {"id": row.id, "occurred_at": row.occurred_at, "direction": row.direction,
             "duration_sec": row.duration_sec, "category": row.category,
             "category_name": CATEGORY_NAMES.get(row.category, row.category),
-            "category_reason": row.category_reason, "state": row.state,
+            "category_reason": canonical_company_name(row.category_reason or ""), "state": row.state,
             "state_name": STATE_NAMES.get(row.state, row.state), "manager_id": row.manager_id,
             "manager_verified": row.manager_verified, "manager_name": manager_name(row),
             "lead_ids": row.lead_ids, "binding_ambiguous": len(row.lead_ids) != 1,
@@ -185,7 +186,7 @@ def detail(call_id: int):
             raise HTTPException(404, "Звонок не найден")
         deliveries = list(db.scalars(select(CallDelivery).where(CallDelivery.call_id == row.id)))
         result = summary_row(row)
-        result.update({"transcript": row.transcript, "analysis": row.analysis,
+        result.update({"transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
                        "validation_errors": row.validation_errors, "rule_version": row.rule_version,
                        "analysis_version": row.analysis_version,
                        "nexara_job_id": row.nexara_job_id,

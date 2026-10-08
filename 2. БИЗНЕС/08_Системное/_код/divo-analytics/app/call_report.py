@@ -4,7 +4,8 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.call_rules import CATEGORY_NAMES, CRITERIA, STATUS_NAMES
+from app.call_rules import (CATEGORY_NAMES, CRITERIA, STATUS_NAMES,
+                            canonical_company_name, canonicalize_analysis_text_fields)
 from app.config import settings
 
 STATE_NAMES = {
@@ -52,9 +53,9 @@ def report_marker(call, target: str) -> str:
 
 
 def render_report(call, *, telegram: bool = False, target: str = "") -> str:
-    a = call.analysis or {}
+    a = canonicalize_analysis_text_fields(call.analysis)
     when = datetime.fromtimestamp(call.occurred_at, ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M")
-    lines = [f"DIVO · звонок {when} МСК", manager_name(call),
+    lines = [f"DIVO MOTORS · звонок {when} МСК", manager_name(call),
              CATEGORY_NAMES.get(call.category, call.category),
              f"Длительность: {timestamp(call.duration_sec)}"]
     if call.is_calibration:
@@ -63,7 +64,7 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
         lines.append(f"Выполнено {call.yes_count} из {call.applicable_count} · {call.score:g}%")
     else:
         lines.append("Без общей оценки: " + ("результат требует проверки" if call.state == "needs_review"
-                                             else call.category_reason or STATE_NAMES.get(call.state, call.state)))
+                                             else canonical_company_name(call.category_reason or STATE_NAMES.get(call.state, call.state))))
     summary = redact_phone(a.get("summary", ""))
     if summary:
         lines += ["", summary[:400 if telegram else 1000]]
