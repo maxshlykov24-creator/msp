@@ -635,7 +635,7 @@
   .scroll-cap thead th{position:sticky;top:0;background:var(--paper);z-index:2}
   #clients-sum td{font-weight:650;color:var(--ink);border-top:1px solid var(--line);border-bottom:none}
   .scroll-x td{white-space:nowrap}
-  .scroll-x td:first-child,.scroll-x td.ans,.scroll-x:has(#clients) td:nth-child(9),.scroll-x:has(#items) td:nth-child(5),.scroll-x:has(#items) td:nth-child(6){white-space:normal}
+  .scroll-x td:first-child,.scroll-x td.ans,.scroll-x:has(#clients) td:nth-child(9),.scroll-x:has(#items) td:nth-child(6),.scroll-x:has(#items) td:nth-child(7){white-space:normal}
   .scroll-x:has(#items) th:nth-child(1){width:34%}
   .scroll-x:has(#cats) th:nth-child(1){width:22%}
   .scroll-x:has(#cats) th:nth-child(2){width:12%}
@@ -967,15 +967,15 @@
   </div>
   <div class="scope" id="scope"></div>
 
+  <div class="card" style="margin-top:20px">
+    <h3>Товары: продажи, выручка, маржа</h3>
+    <div class="hint" id="items-hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок, себестоимость — закупочная цена, маржа — выручка минус себестоимость. Показаны первые 20 позиций по выручке. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.</div>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Позиция</th><th>Продано</th><th>Выручка</th><th>Себестоимость</th><th>Маржа</th><th>Размер</th><th>Цвет</th></tr></thead>
+      <tbody id="items"></tbody>
+    </table></div>
+  </div>
   <div class="grid-2" style="margin-top:20px">
-    <div class="card">
-      <h3>Товары: продажи, выручка, маржа</h3>
-      <div class="hint" id="items-hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок, маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.</div>
-      <div class="scroll-x"><table>
-        <thead><tr><th>Позиция</th><th>Продано</th><th>Выручка</th><th>Маржа</th><th>Размер</th><th>Цвет</th></tr></thead>
-        <tbody id="items"></tbody>
-      </table></div>
-    </div>
     <div class="card">
       <h3>Категории: выручка и маржа</h3>
       <div class="hint" id="cost-hint">Маржа по закупочной цене карточки товара: без работы и логистики.</div>
@@ -1373,7 +1373,7 @@ function refresh(){
  const returnedRev=-sum(returned,x=>orderRev(x.o,x.ls));
  currentLines=basis.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
  const noCost=currentLines.filter(x=>!x.l.delivery&&x.l.rev>0&&x.l.cost===0);
- el('items-hint').textContent='Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок'+(includeDelivery?', с доставкой':', без доставки')+', маржа — выручка минус закупочная стоимость. Показаны первые 20 позиций по выручке. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.';
+ el('items-hint').textContent='Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок'+(includeDelivery?', с доставкой':', без доставки')+', себестоимость — закупочная цена, маржа — выручка минус себестоимость. Показаны первые 20 позиций по выручке. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.';
  el('cost-hint').textContent='Маржа по зафиксированной закупочной цене, без работы и логистики. Исторические цены до начала наблюдений — оценка; новые версии фиксируются при синхронизации.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
  const orders=filtered.map(x=>x.o), rev=sum(basis,x=>orderRev(x.o,x.ls));
  const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
