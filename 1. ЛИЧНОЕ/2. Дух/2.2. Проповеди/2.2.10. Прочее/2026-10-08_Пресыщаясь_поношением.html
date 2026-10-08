@@ -112,13 +112,16 @@ body {
   position: absolute;
   z-index: 1;
   right: 0;
+  top: 11%;
   bottom: 0;
-  height: min(76%, 860px);
-  width: min(62%, 480px);
+  width: min(54%, 460px);
+  height: auto;
   object-fit: cover;
-  object-position: center 12%;
+  object-position: center 6%;
   pointer-events: none;
 }
+.cover .body { max-width: 58%; padding-top: 4vh; }
+.cover h1 { font-size: clamp(34px, 8.2vw, 88px); max-width: none; }
 .cover .bar, .cover .body, .cover .plate { position: relative; z-index: 2; }
 .cover .body {
   justify-content: flex-start;
@@ -142,7 +145,7 @@ body {
   gap: 16px;
   margin: 0;
   padding: 22px var(--pad);
-  min-height: 92px;
+  min-height: 108px;
 }
 .play { width: 26px; height: 30px; flex: none; display: block; }
 .who { font-size: clamp(20px, 3.2vw, 34px); font-weight: 600; letter-spacing: .01em; }
@@ -318,8 +321,8 @@ h2 {
   .sign { gap: 8px; }
   .cover .brand { width: 40px; height: 40px; }
   .cover .wname { font-size: 13px; letter-spacing: .42em; padding-left: .42em; }
-  .cover h1 { font-size: 46px; }
-  .cover .plate { min-height: 72px; padding: 16px 18px; }
+  .cover h1 { font-size: 34px; }
+  .cover .plate { min-height: 96px; padding: 18px 18px; }
   .who { font-size: 18px; }
   .kind { font-size: 12px; }
   .play { width: 18px; height: 22px; }
