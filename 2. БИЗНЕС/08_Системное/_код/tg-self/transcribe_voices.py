@@ -119,6 +119,7 @@ async def nexara_transcribe(audio_path: Path, api_key: str) -> str:
         content_type="audio/ogg",
     )
     form.add_field("response_format", "json")
+    form.add_field("model", "nexara-ru")
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(NEXARA_URL, headers=headers, data=form) as resp:
             body = await resp.text()

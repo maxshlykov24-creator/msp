@@ -292,6 +292,9 @@ async def transcribe_file(
                 content_type=mime,
             )
             data.add_field("response_format", "verbose_json")
+            # Без model сервер берёт whisper-1: загрузка файла на ней отвечает 500.
+            # nexara-ru принимает файл. Проверено 2026-10-08 на том же ключе.
+            data.add_field("model", "nexara-ru")
             if diarize:
                 data.add_field("task", "diarize")
                 data.add_field("num_speakers", "2")

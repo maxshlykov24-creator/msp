@@ -52,6 +52,7 @@ async def transcribe_voice(file_path: str, language: str = "ru") -> str:
             )
             # verbose_json даёт segments — если поле text когда-то укорочено, соберём из сегментов.
             data.add_field("response_format", "verbose_json")
+            data.add_field("model", "nexara-ru")
 
             async with session.post(
                 NEXARA_TRANSCRIBE_URL,
