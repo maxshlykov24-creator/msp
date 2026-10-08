@@ -1,0 +1,29 @@
+[Unit]
+Description=DIVO isolated Haiku Telegram laboratory
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=divo-haiku-lab
+Group=divo-haiku-lab
+WorkingDirectory=/opt/divo-haiku-lab
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/divo-haiku-lab/.venv/bin/python -m haiku_lab.main
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/divo-haiku-lab/haiku_lab/runtime
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CPUQuota=15%
+MemoryMax=192M
+TasksMax=32
+Nice=15
+
+[Install]
+WantedBy=multi-user.target
