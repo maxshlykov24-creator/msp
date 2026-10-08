@@ -1146,13 +1146,14 @@ def _note_lead(chat_id: str, doc: dict) -> int | None:
 
 
 def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = "") -> None:
-    """Совместимое имя: очередь ответов бота для Авито и Авто.ру.
+    """Очередь ответов бота в примечания сделки. Только Авто.ру.
 
+    В Авито переписка уже лежит в ленте виджета, примечание её дублирует.
     Вызывается только после успешной отправки. Не создаёт сделку и не меняет этап.
     CRM недоступна или сделка ещё не появилась — повторяем через tick.
     """
     key = str(chat_id)
-    if not key.startswith(("av:", "ar:")) or who != "bot" or not text:
+    if not key.startswith("ar:") or who != "bot" or not text:
         return
     doc = store.load_doc(key)
     state = doc.setdefault("crm", {})
@@ -1167,6 +1168,14 @@ def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = ""
 
 async def flush_notes(chat_id: str) -> None:
     import time
+    if str(chat_id).startswith("av:"):
+        doc = store.load_doc(chat_id)
+        state = doc.get("crm") or {}
+        if state.get("note_pending"):
+            state["note_pending"] = []
+            doc["crm"] = state
+            store.save_doc(chat_id, doc)
+        return
     doc = store.load_doc(chat_id)
     state = doc.get("crm") or {}
     pending = state.get("note_pending") or []

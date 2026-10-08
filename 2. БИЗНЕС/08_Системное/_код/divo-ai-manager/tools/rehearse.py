@@ -540,14 +540,18 @@ async def regression(docs: dict, stock: str) -> None:
         result = await replay(doc, 'Напишите здесь, без звонков')
         check(result['paused'] and result['capture'] == 1, 'report contact refusal notifies manager')
         with Sandbox():
-            cid = 'av:note-test'
-            store.save_doc(cid, {'crm': {'lead_id': 123}, 'messages': []})
+            av = 'av:note-test'
+            store.save_doc(av, {'crm': {'lead_id': 123}, 'messages': []})
             exact = 'Первая строка.\nВторая  строка, дословно.'
             api = Mock(send_text=AsyncMock(return_value={'id': 'sent-1'}))
             channel = avito_loop.AvitoChannel(api, Mock())
-            await channel.send(cid, exact)
+            await channel.send(av, exact)
             sent_text = api.send_text.call_args.args[1]
-            check(store.load_doc(cid)['crm']['note_pending'][0]['text'] == 'Бот: ' + sent_text, 'Avito queues actual sent text')
+            check(not (store.load_doc(av).get('crm') or {}).get('note_pending'), 'Avito does not queue amo notes')
+            cid = 'ar:note-test'
+            store.save_doc(cid, {'crm': {'lead_id': 123}, 'messages': []})
+            crm.mirror_autoru_line(cid, 'bot', sent_text, 'sent-1')
+            check(store.load_doc(cid)['crm']['note_pending'][0]['text'] == 'Бот: ' + sent_text, 'Auto.ru queues actual sent text')
             with patch.object(crm.amo_client, 'request', return_value=(200, {})), \
                  patch.object(crm.amo_client, 'write', side_effect=RuntimeError('offline')):
                 await crm.flush_notes(cid)
