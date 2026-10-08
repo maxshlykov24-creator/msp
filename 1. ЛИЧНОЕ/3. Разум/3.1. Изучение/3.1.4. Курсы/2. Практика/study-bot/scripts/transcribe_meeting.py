@@ -78,6 +78,7 @@ def _parse_nexara_from_dostupy() -> tuple[str, str]:
 
 
 def resolve_api_key() -> str:
+    _load_dotenv()
     key = (os.getenv("NEXARA_API_KEY") or "").strip()
     if key and "YOUR_" not in key and "your_" not in key.lower():
         return key
