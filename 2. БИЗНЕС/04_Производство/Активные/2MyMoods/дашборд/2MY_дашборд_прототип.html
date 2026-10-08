@@ -866,7 +866,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Gold, Silver, Bronze</h3>
-      <div class="hint">Пороги черновые: Gold — от четырёх покупок, Silver — две или три, Bronze — одна покупка от 20 000 ₽. Сегменты считаются только в дашборде.</div>
+      <div class="hint">Пороги черновые: Gold — от четырёх покупок, Silver — две или три, Bronze — одна покупка от 20 000 ₽. Сегменты считаются только в дашборде. LTV за всю историю, без доставки и за вычетом возвратов. Галки «С доставкой» и «С возвратами» его не меняют.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Сегмент</th><th>Клиентов</th><th>Доля базы</th><th>Выручка</th><th>Доля выручки</th><th>Средний LTV</th><th>Покупок в год</th></tr></thead>
         <tbody id="tier"></tbody>
@@ -1119,7 +1119,7 @@ const group = (xs,key) => { const out=Object.create(null); xs.forEach(x=>{const 
 const table = (id, rows, cols, open) => { const body=el(id); body.innerHTML = rows.length ? rows.map((r,i)=>`<tr${open?' class="drill" data-i="'+i+'"':''}>`+cols.map(c=>'<td>'+esc(c(r))+'</td>').join('')+'</tr>').join('') : `<tr><td colspan="${cols.length}" class="empty">Нет данных</td></tr>`; body.onclick = open ? e=>{const tr=e.target.closest('tr[data-i]'); if(tr) open(rows[+tr.dataset.i]);} : null; };
 let sheetReturn=null;
 const msOrder=id=>`https://online.moysklad.ru/app/#customerorder/edit?id=${encodeURIComponent(id)}`;
-const msAgent=id=>`https://online.moysklad.ru/app/#counterparty/edit?id=${encodeURIComponent(id)}`;
+const msAgent=id=>`https://online.moysklad.ru/app/#Company/edit?id=${encodeURIComponent(id)}`;
 let sheetTimer=0;
 function closeSheet(){const sheet=el('sheet');sheet.classList.remove('on');sheetReturn=null;clearTimeout(sheetTimer);sheetTimer=setTimeout(()=>{if(sheet.classList.contains('on'))return;sheet.hidden=true;document.documentElement.classList.remove('sheet-on');document.body.classList.remove('sheet-on');},280);}
 function showSheet(kicker,title,html,back){sheetReturn=back||null;clearTimeout(sheetTimer);el('sheet-kicker').textContent=kicker;el('sheet-title').textContent=title;el('sheet-body').innerHTML=html;el('sheet-back').hidden=!back;const sheet=el('sheet'),card=sheet.querySelector('.sheet-card');document.documentElement.classList.add('sheet-on');document.body.classList.add('sheet-on');sheet.hidden=false;card.classList.remove('rise');void card.offsetWidth;requestAnimationFrame(()=>{card.classList.add('rise');sheet.classList.add('on');});}
@@ -1340,10 +1340,8 @@ function linesFor(o){return (o.lines||[]).filter(l=>!l.delivery||includeDelivery
 function orderRev(o,lines){const lineSum=sum(lines,l=>l.rev);if(state.cat.length||state.prod||o.return_event||o.exchange)return lineSum;const over=Number(o.paid)-Number(o.sum);return (includeDelivery?Number(o.sum):lineSum)+(Number.isFinite(over)?over:0);}
 function favorite(orders,key){const totals=group(orders.flatMap(o=>o.lines).filter(l=>!l.delivery),l=>l[key]);return Object.entries(totals).sort((a,b)=>sum(b[1],l=>l.qty)-sum(a[1],l=>l.qty))[0]?.[0]||'нет данных'}
 function clientLtv(c){
- const lines=o=>sum((o.lines||[]).filter(l=>!l.delivery),l=>l.rev);
- const sales=sum(c.orders,lines);
- if(includeReturns) return sales;
- return sales+sum((data.returns||[]).filter(o=>o.phone===c.phone),lines);
+ const goods=o=>sum((o.lines||[]).filter(l=>!l.delivery),l=>l.rev);
+ return sum(c.orders,goods)+sum((data.returns||[]).filter(o=>o.phone===c.phone),goods);
 }
 function showClient(c){const ltv=clientLtv(c);return {...c,ltv,tier:c.buys>=4?'Gold':c.buys>=2?'Silver':ltv>=20000?'Bronze':'Разовый'};}
 function buildClients(){
