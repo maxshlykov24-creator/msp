@@ -57,9 +57,10 @@ body {
   position: relative;
   z-index: 3;
   height: 100vh;
-  height: 100svh;
-  min-height: 100vh;
-  min-height: 100svh;
+  height: 100dvh;
+  height: var(--app-h, 100dvh);
+  min-height: 0;
+  max-height: var(--app-h, 100dvh);
   scroll-snap-align: start;
   scroll-snap-stop: always;
   display: flex;
@@ -108,13 +109,14 @@ body {
 }
 .cover .brand { width: 46px; height: 46px; }
 .cover .wname { font-size: 15px; letter-spacing: .55em; padding-left: .55em; }
+.cover::after { display: none; }
 .cover .person {
   position: absolute;
   z-index: 1;
   right: 0;
   bottom: 0;
-  width: min(78%, 560px);
-  height: 76%;
+  width: min(72%, 520px);
+  height: 68%;
   object-fit: cover;
   object-position: center 0%;
   pointer-events: none;
@@ -142,7 +144,7 @@ body {
   gap: 16px;
   margin: 0;
   padding: 22px var(--pad);
-  min-height: 108px;
+  min-height: 84px;
 }
 .play { width: 26px; height: 30px; flex: none; display: block; }
 .who { font-size: clamp(20px, 3.2vw, 34px); font-weight: 600; letter-spacing: .01em; }
@@ -294,13 +296,13 @@ h2 {
   cursor: pointer;
 }
 .to-top[hidden] { display: none; }
-.kicker, h1, h2, .quote, .lede, .sub, .points, .amen { opacity: .2; }
-.slide.in .kicker { animation: rise .8s cubic-bezier(.22, .8, .24, 1) .32s both; }
-.slide.in h1, .slide.in h2, .slide.in .quote { animation: rise .8s cubic-bezier(.22, .8, .24, 1) .46s both; }
-.slide.in .lede, .slide.in .sub, .slide.in .points, .slide.in .amen { animation: rise .8s cubic-bezier(.22, .8, .24, 1) .62s both; }
+.kicker, h1, h2, .quote, .lede, .sub, .points, .amen { opacity: 1; }
+.slide.in .kicker { animation: rise .8s cubic-bezier(.22, .8, .24, 1) .32s forwards; }
+.slide.in h1, .slide.in h2, .slide.in .quote { animation: rise .8s cubic-bezier(.22, .8, .24, 1) .46s forwards; }
+.slide.in .lede, .slide.in .sub, .slide.in .points, .slide.in .amen { animation: rise .8s cubic-bezier(.22, .8, .24, 1) .62s forwards; }
 @keyframes rise {
-  from { opacity: .2; transform: translateY(12px); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateY(12px); }
+  to { transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .kicker, h1, h2, .quote, .lede, .sub, .points, .amen { opacity: 1; animation: none !important; }
@@ -318,9 +320,9 @@ h2 {
   .sign { gap: 8px; }
   .cover .brand { width: 40px; height: 40px; }
   .cover .wname { font-size: 13px; letter-spacing: .42em; padding-left: .42em; }
-  .cover h1 { font-size: 40px; }
-  .cover .person { width: min(76%, 560px); height: 72%; }
-  .cover .plate { min-height: 96px; padding: 18px 18px; }
+  .cover h1 { font-size: 36px; }
+  .cover .person { width: min(70%, 520px); height: 62%; }
+  .cover .plate { min-height: 76px; padding: 14px 18px; }
   .who { font-size: 18px; }
   .kind { font-size: 12px; }
   .play { width: 18px; height: 22px; }
@@ -466,10 +468,19 @@ h2 {
 <button class="to-top" type="button" hidden>наверх</button>
 </main>
 <script>
+function fit() {
+  const vv = window.visualViewport;
+  const h = Math.floor(Math.min(window.innerHeight || 0, vv && vv.height ? vv.height : window.innerHeight || 0));
+  if (h > 0) document.documentElement.style.setProperty("--app-h", h + "px");
+}
+fit();
+window.addEventListener("resize", fit);
+if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
 const slides = [...document.querySelectorAll(".slide")];
+slides.forEach((s) => s.classList.add("in"));
 const io = new IntersectionObserver((entries) => {
-  for (const e of entries) e.target.classList.toggle("in", e.isIntersecting);
-}, { threshold: 0.55 });
+  for (const e of entries) if (e.isIntersecting) e.target.classList.add("in");
+}, { threshold: 0.2 });
 slides.forEach((s) => io.observe(s));
 const topBtn = document.querySelector(".to-top");
 window.addEventListener("scroll", () => { topBtn.hidden = window.scrollY < 24; }, { passive: true });
