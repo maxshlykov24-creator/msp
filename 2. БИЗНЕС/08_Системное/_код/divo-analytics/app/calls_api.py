@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import re
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from typing import Literal
@@ -44,6 +45,42 @@ def filters(start: date | None, end: date | None, manager: str | None, category:
     return conditions
 
 
+def review_reason(row: CallRecord) -> str:
+    """Короткое объяснение, почему автооценка не допускается в среднее."""
+    if row.state == "analysis_ambiguous":
+        return "Ответ агента анализа не подтвердился после отправки. Повторный запрос без сверки не выполняется."
+    if row.state == "submit_ambiguous":
+        return "Nexara могла принять задание транскрибации, но подтверждение не получено. Сначала проверьте его статус."
+    if row.state != "needs_review":
+        return ""
+    analysis = row.analysis or {}
+    reasons = []
+    if analysis.get("recording_complete") is False:
+        reasons.append("Запись может обрываться; проверьте, что разговор сохранился целиком.")
+    if analysis.get("speech_clear") is False:
+        reasons.append("В записи есть неразборчивые фрагменты; проверьте соответствующие места в аудио.")
+    if analysis.get("roles_reliable") is False:
+        reasons.append("Разделение реплик менеджера и клиента вызывает сомнение; проверьте роли по аудио.")
+    errors = row.validation_errors or []
+    ids = sorted({int(match.group(1)) for error in errors
+                  if (match := re.match(r"criterion_(\d+):", str(error)))})
+    if ids:
+        names = ", ".join(CRITERIA[i][0] for i in ids if i in CRITERIA)
+        if names:
+            reasons.append(f"Противоречие в критериях: {names}. Нужна ручная сверка.")
+    unknown_ids = sorted({int(c["id"]) for c in analysis.get("criteria", [])
+                          if c.get("status") == "unknown"})
+    if unknown_ids:
+        names = ", ".join(CRITERIA[i][0] for i in unknown_ids if i in CRITERIA)
+        if names:
+            reasons.append(f"Недостаточно данных по пунктам: {names}.")
+    if reasons:
+        return " ".join(reasons)
+    if errors:
+        return "Автооценка не прошла проверку качества. Откройте диагностику и сверьте звонок с записью."
+    return "Оценка не включена в среднее: требуется ручная проверка звонка."
+
+
 def summary_row(row):
     a = row.analysis or {}
     return {"id": row.id, "occurred_at": row.occurred_at, "direction": row.direction,
@@ -57,6 +94,7 @@ def summary_row(row):
             "yes_count": row.yes_count, "applicable_count": row.applicable_count,
             "is_scored": row.is_scored, "summary": a.get("summary", ""),
             "outcome": a.get("outcome", {}), "last_error": row.last_error,
+            "review_reason": review_reason(row),
             "criteria": [{"id": c["id"], "status": c["status"]} for c in a.get("criteria", [])] if row.is_scored else []}
 
 
