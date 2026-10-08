@@ -1566,10 +1566,28 @@ function init(snap){
  refresh();view((location.hash||'#v-sales').replace('#v-',''));
 }
 [['d1','from'],['d2','to'],['f-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-cat','cat']].forEach(([id,key])=>el(id).onchange=e=>{state[key]=e.target.multiple?selected(id):e.target.value;if(id==='d1'||id==='d2') document.querySelectorAll('#periods button').forEach(b=>b.classList.remove('on'));refresh()});
+function productFold(s){return String(s||'').toLocaleLowerCase('ru').replace(/ё/g,'е');}
+function productHits(names, raw){
+ const q=productFold(raw).trim();
+ const parts=q.split(/[^0-9a-zа-я]+/).filter(Boolean);
+ const ranked=names.map(name=>{
+  const n=productFold(name);
+  if(parts.length&&!parts.every(p=>n.includes(p))) return null;
+  const words=n.split(/[^0-9a-zа-я]+/).filter(Boolean);
+  let score=10;
+  if(q&&n.startsWith(q)) score+=1000;
+  if(parts[0]&&n.startsWith(parts[0])) score+=600;
+  if(parts.length&&parts.every(p=>words.some(w=>w.startsWith(p)))) score+=200;
+  if(parts[0]) score+=Math.max(0,80-n.indexOf(parts[0]));
+  return {name,score};
+ }).filter(Boolean);
+ ranked.sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name,'ru'));
+ return ranked.map(x=>x.name);
+}
 function bindProductSearch(id){
  const input=el(id);
  const list=input.parentElement.querySelector('.combo-list');
- const catalog=()=>[...new Set((data.orders||[]).flatMap(o=>(o.lines||[]).map(l=>l.name)))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'ru'));
+ const catalog=()=>[...new Set((data.orders||[]).flatMap(o=>(o.lines||[]).map(l=>l.name)))].filter(Boolean);
  const apply=name=>{
   input.value=name;
   el('f-prod').value=name;el('s-prod').value=name;
@@ -1578,17 +1596,16 @@ function bindProductSearch(id){
   list.hidden=true;refresh();
  };
  const paint=()=>{
-  const q=input.value.trim().toLocaleLowerCase('ru');
-  const hits=catalog().filter(n=>!q||n.toLocaleLowerCase('ru').includes(q));
-  const shown=hits.slice(0,40);
+  const hits=productHits(catalog(), input.value);
+  const shown=hits.slice(0,30);
   list.innerHTML=shown.map(n=>`<button type="button">${esc(n)}</button>`).join('')+(hits.length>shown.length?`<div class="more">Ещё ${hits.length-shown.length}. Уточни название.</div>`:'')||'<div class="empty">Нет такого товара</div>';
   list.hidden=false;
  };
  input.addEventListener('focus',paint);
  input.addEventListener('input',()=>{
-  const q=input.value.trim().toLocaleLowerCase('ru');
+  const q=productFold(input.value).trim();
   paint();
-  const hit=catalog().find(n=>n.toLocaleLowerCase('ru')===q);
+  const hit=catalog().find(n=>productFold(n)===q);
   if(hit){apply(hit);list.hidden=false;return;}
   if(!q&&state.prod){state.prod='';el('f-prod').title='';el('s-prod').title='';refresh();}
  });
