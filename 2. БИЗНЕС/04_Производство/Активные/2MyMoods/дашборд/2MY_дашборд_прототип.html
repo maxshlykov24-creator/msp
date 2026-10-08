@@ -786,7 +786,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Источник заказа</h3>
-      <div class="hint">Источник берётся из utm_source заказа МойСклад. Без метки показано «не указано».</div>
+      <div class="hint">Источник берётся из utm_source заказа МойСклад. ig показан как Instagram, tg как Telegram, email как Email, google как Google, yandex и yandex.ru как Yandex, direct и (direct) как Прямой заход на сайт. Без метки показано «не указано».</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Источник</th><th>Заказов</th><th>Выручка</th><th>Средний чек</th><th>Доля</th></tr></thead>
         <tbody id="src"></tbody>
@@ -1173,6 +1173,16 @@ function colorKey(line){
  return key==='не указано'?'':key;
 }
 const colorLabel=line=>{const key=colorKey(line);return key?key.charAt(0).toLocaleUpperCase('ru')+key.slice(1):'не указано'};
+function sourceLabel(raw){
+ const k=String(raw||'').trim().toLocaleLowerCase('ru');
+ if(k==='ig') return 'Instagram';
+ if(k==='tg') return 'Telegram';
+ if(k==='email') return 'Email';
+ if(k==='google') return 'Google';
+ if(k==='yandex'||k==='yandex.ru'||k==='ya.ru'||k==='yandex.com.tr') return 'Yandex';
+ if(k==='direct'||k==='(direct)') return 'Прямой заход на сайт';
+ return String(raw||'').trim()||'не указано';
+}
 const sizeCanon={'one size':'one size','onesize':'one size','os':'one size','xs-s':'XS-S','s-m':'S-M','m-l':'M-L','l-xl':'L-XL','xxxs':'XXXS','xxs':'XXS','xs':'XS','s':'S','m':'M','l':'L','xl':'XL','xxl':'XXL','xxxl':'XXXL'};
 function canonSize(raw){
  const s=normPiece(raw);
@@ -1353,10 +1363,10 @@ function buildClients(){
 function refresh(){
  if(!data)return;
  const basic=data.orders.filter(o=>o.buy&&o.paid_date&&o.paid_date>=state.from&&o.paid_date<=state.to)
-   .filter(o=>matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city));
+   .filter(o=>matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city));
  filtered=basic.map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
- const returned=(data.returns||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
- const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
+ const returned=(data.returns||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
+ const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
  financial=[...filtered,...returned];
  const basis=includeReturns?financial:filtered;
  const periodReturnGaps=(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));
@@ -1397,7 +1407,7 @@ function refresh(){
  if(typeof placeChartTip==='function' && document.querySelector('.chart-plot').matches(':hover')) placeChartTip(lastChartX);
  el('ax-l').textContent=dmy(state.from);el('ax-r').textContent=dmy(state.to);
  const rowsFor=(key)=>Object.entries(group(basis,x=>key(x.o))).map(([name,arr])=>({name,arr,n:arr.filter(x=>!x.o.return_event).length,rev:sum(arr,x=>orderRev(x.o,x.ls))})).sort((a,b)=>b.rev-a.rev);
- const source=rowsFor(o=>o.source), channel=rowsFor(o=>o.channel), geo=rowsFor(o=>o.city);
+ const source=rowsFor(o=>sourceLabel(o.source)), channel=rowsFor(o=>o.channel), geo=rowsFor(o=>o.city);
  const openMetric=kicker=>r=>showOrders(kicker,r.name||'—',pack(r.arr||[]));
  table('src',source,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>r.n?money(r.rev/r.n):'—',r=>pct(r.n,n)],openMetric('Источник'));
  table('sale',channel,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>pct(r.n,n)],openMetric('Канал'));
@@ -1545,7 +1555,7 @@ function init(snap){
   };
   applyPeriod('month');
  select('f-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
- select('f-ch',[...new Set(data.orders.map(o=>o.source))],'Все источники');
+ select('f-ch',[...new Set(data.orders.map(o=>sourceLabel(o.source)))],'Все источники');
  select('f-sale',[...new Set(data.orders.map(o=>o.channel))],'Все каналы сбыта');
  select('f-geo',[...new Set(data.orders.map(o=>o.city))],'Все города');
  select('s-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
@@ -1757,7 +1767,7 @@ function downloadExcel(){
  const qty=sum(lines,x=>x.l.delivery?0:x.l.qty);
  const n=purchases.length;
  const people=new Set(purchases.map(x=>x.o.phone).filter(Boolean));
- const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,o.source)&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:cutLines(linesFor(o))})).filter(x=>x.ls.length||(!narrow&&!state.cat.length&&!state.prod));
+ const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:cutLines(linesFor(o))})).filter(x=>x.ls.length||(!narrow&&!state.cat.length&&!state.prod));
  const extraFilter=narrow||state.cat.length||!!state.prod||state.source.length||state.channel.length||state.city.length;
  const gaps=extraFilter?[]:(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));
  const byId=new Map((data.orders||[]).map(o=>[o.id,o]));
@@ -1767,20 +1777,20 @@ function downloadExcel(){
   const goods=x.ls.filter(l=>!l.delivery);
   const original=o.original_order?byId.get(o.original_order):null;
   const origin=o.original_order?docLink({id:o.original_order},original?.number||'Заказ',st.l):null;
-  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:o.promo||'',s:st.t},moneyCell(o.sum,st.m),ret?null:moneyCell(o.paid,st.m),moneyCell(rowRev(o,x.ls),st.m),{n:x.ls.length,s:st.i},{n:rub2(sum(goods,l=>l.qty)),s:st.q},origin,docLink(o,'Открыть',st.l)];
+  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:sourceLabel(o.source),s:st.t},{t:o.city||'',s:st.t},{t:o.promo||'',s:st.t},moneyCell(o.sum,st.m),ret?null:moneyCell(o.paid,st.m),moneyCell(rowRev(o,x.ls),st.m),{n:x.ls.length,s:st.i},{n:rub2(sum(goods,l=>l.qty)),s:st.q},origin,docLink(o,'Открыть',st.l)];
  });
  const posHead=['Документ','Тип','Дата отчёта','Клиент','Телефон','Канал','Источник','Город','Товар','Категория','Размер','Цвет','Количество','Выручка','Закупка','Маржа','Доставка','МойСклад'];
  const posBody=lines.map(({o,l})=>{
   const ret=!!o.return_event, st=tone(ret);
   const margin=l.delivery?rub2(l.rev):rub2(l.rev-(l.cost||0));
-  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:l.category||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),l.delivery?null:moneyCell(l.cost,st.m),moneyCell(margin,st.m),{t:l.delivery?'да':'',s:st.t},docLink(o,'Открыть',st.l)];
+  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:sourceLabel(o.source),s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:l.category||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),l.delivery?null:moneyCell(l.cost,st.m),moneyCell(margin,st.m),{t:l.delivery?'да':'',s:st.t},docLink(o,'Открыть',st.l)];
  });
  const exLines=exchanged.flatMap(x=>(x.ls.length?x.ls:[null]).map(l=>({o:x.o,l,whole:orderRev(x.o,x.ls)})));
  const exHead=['Документ','Дата документа','Клиент','Канал','Источник','Город','Товар','Размер','Цвет','Количество','Выручка строки','МойСклад'];
  const exBody=exLines.map(({o,l})=>{
   const st=tone(false);
-  if(!l)return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},null,moneyCell(orderRev(o,[]),st.m),docLink(o,'Открыть',st.l)];
-  return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:o.source||'',s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),docLink(o,'Открыть',st.l)];
+  if(!l)return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:sourceLabel(o.source),s:st.t},{t:o.city||'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},null,moneyCell(orderRev(o,[]),st.m),docLink(o,'Открыть',st.l)];
+  return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:sourceLabel(o.source),s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),docLink(o,'Открыть',st.l)];
  });
  const gapHead=['Дата','Сумма','Причина','Как учтено'];
  const gapBody=gaps.map(g=>[dateCell(g.date,X.date),moneyCell(g.sum,X.money),{t:g.reason||'',s:X.text},{t:g.impact==='outside_revenue'?'Не входит в выручку':'Нужна проверка',s:X.text}]);
