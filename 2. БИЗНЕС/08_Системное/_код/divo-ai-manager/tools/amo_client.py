@@ -627,22 +627,55 @@ def lead_listing_url(lead: dict) -> str:
     return ""
 
 
-def choose_widget_lead(candidates: list[dict], *, item_id: str = "") -> dict | None:
+def different_buyer(peer: str, other: str) -> bool:
+    """Два явных имени и это не один человек.
+
+    Пустое имя и «Пользователь» не считаем другим клиентом: так виджет
+    подписывает дубль того же чата. «Василий» и «Кирилл» по одному объявлению
+    это разные покупатели.
+    """
+    peer_n = _norm_txt(peer)
+    other_n = _norm_txt(other)
+    if not peer_n or peer_n in GENERIC_PEERS:
+        return False
+    if not other_n or other_n in GENERIC_PEERS:
+        return False
+    return not (peer_n == other_n or peer_n in other_n or other_n in peer_n)
+
+
+def _buyer_name(cand: dict) -> str:
+    lead = cand.get("lead") or {}
+    return str(cand.get("from_name") or lead.get("_widget_from") or "")
+
+
+def choose_widget_lead(
+    candidates: list[dict], *, item_id: str = "", peer: str = ""
+) -> dict | None:
     """Какую карточку виджета забирать, если на одно объявление их несколько.
 
     У кандидата есть score, created_at, item_id, talk_created, talk_updated, lead.
-    Сначала объявление этого чата. Среди его карточек берём ту, чей разговор
-    начался раньше, если он ещё жив. Свежая пустая карточка того же объявления
-    не перебивает. Если старый разговор затих до появления новой карточки,
-    берём новую.
+    Сначала объявление этого чата и тот же человек. Среди его карточек берём ту,
+    чей разговор начался раньше, если он ещё жив. Свежая пустая карточка того же
+    объявления не перебивает. Если старый разговор затих до появления новой
+    карточки, берём новую. Карточка другого имени по тому же объявлению не
+    берётся: это новый покупатель, а не дубль виджета.
     """
     pool = [c for c in candidates if int(c.get("score") or 0) >= 40 and c.get("lead")]
+    pool = [c for c in pool if not different_buyer(peer, _buyer_name(c))]
     if not pool:
         return None
     want = (item_id or "").strip()
     same = [c for c in pool if want and str(c.get("item_id") or "") == want]
+    strangers = [
+        c for c in candidates
+        if int(c.get("score") or 0) >= 40 and c.get("lead")
+        and want and str(c.get("item_id") or "") == want
+        and different_buyer(peer, _buyer_name(c))
+    ]
     if same:
         cluster = same
+    elif strangers:
+        return None
     else:
         best = max(int(c.get("score") or 0) for c in pool)
         cluster = [c for c in pool if int(c.get("score") or 0) == best]
@@ -697,15 +730,24 @@ def lead_talk_span(lead_id: int) -> tuple[int, int]:
     return (min(created_vals) if created_vals else 0, max(updated_vals) if updated_vals else 0)
 
 
-def _widget_cluster(candidates: list[dict], item_id: str) -> list[dict]:
+def _widget_cluster(candidates: list[dict], item_id: str, peer: str = "") -> list[dict]:
     """Те же карточки, между которыми выбирает choose_widget_lead."""
     pool = [c for c in candidates if int(c.get("score") or 0) >= 40 and c.get("lead")]
+    pool = [c for c in pool if not different_buyer(peer, _buyer_name(c))]
     if not pool:
         return []
     want = (item_id or "").strip()
     same = [c for c in pool if want and str(c.get("item_id") or "") == want]
     if same:
         return same
+    strangers = [
+        c for c in candidates
+        if int(c.get("score") or 0) >= 40 and c.get("lead")
+        and want and str(c.get("item_id") or "") == want
+        and different_buyer(peer, _buyer_name(c))
+    ]
+    if strangers:
+        return []
     best = max(int(c.get("score") or 0) for c in pool)
     return [c for c in pool if int(c.get("score") or 0) == best]
 
@@ -858,9 +900,10 @@ def find_widget_lead(
 ) -> dict | None:
     """Сделка виджета Авито / Авто.ру в воронке «Техническое».
 
-    На Авто.ру комната чата однозначна. На Авито имя и название объявления
-    совпадают у пустого дубля, поэтому среди карточек одного объявления
-    берём ту, где разговор уже идёт, а не ту, что новее.
+    На Авто.ру комната чата однозначна. На Авито пустой дубль того же чата
+    совпадает по объявлению, поэтому среди карточек одного человека берём ту,
+    где разговор уже идёт, а не ту, что новее. Другое имя на том же объявлении
+    не берём.
     """
     if channel not in {"Авито", "Авто.ру"}:
         return None
