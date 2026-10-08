@@ -464,6 +464,42 @@ def _lead_name(snap: dict) -> str:
     return "%s · %s" % (car, snap.get("channel") or "чат")
 
 
+def _buyer_of(snap: dict) -> str:
+    return str(snap.get("peer") or snap.get("name") or "")
+
+
+def _forget_foreign_lead(snap: dict, doc: dict, crm: dict, lead_id: int) -> None:
+    """Чат прилип к сделке другого человека. Карточку в amo не трогаем."""
+    log.warning(
+        "чат %s: сделка %s это другой клиент, не беру",
+        snap.get("chat_id"),
+        lead_id,
+    )
+    for key in ("lead_id", "note_lead_id", "contact_id", "lead_url"):
+        crm.pop(key, None)
+    alert = dict(crm.get("alert") or {})
+    inner = dict(alert.get("snap") or {})
+    inner.pop("lead_id", None)
+    inner.pop("lead_url", None)
+    if alert:
+        alert["snap"] = inner
+        crm["alert"] = alert
+    doc["crm"] = crm
+    snap["lead_id"] = None
+    snap["lead_url"] = None
+
+
+def _lead_is_other_buyer(snap: dict, lead: dict) -> bool:
+    contacts = (lead.get("_embedded") or {}).get("contacts") or []
+    if not contacts or not contacts[0].get("id"):
+        return False
+    try:
+        current = amo_client.get_contact(int(contacts[0]["id"]))
+    except amo_client.AmoError:
+        return False
+    return amo_client.different_buyer(_buyer_of(snap), str(current.get("name") or ""))
+
+
 def _apply_phone_to_doc(snap: dict, doc: dict) -> None:
     """Пишет номер в карточку контакта amo. Сделку не создаёт."""
     phone = str(snap.get("phone") or "").strip()
@@ -486,6 +522,20 @@ def _apply_phone_to_doc(snap: dict, doc: dict) -> None:
             amo_client.link_contact(int(lead_id), int(contact_id))
             log.info("сделка %s: создал контакт %s под номер", lead_id, contact_id)
         else:
+            buyer = _buyer_of(snap)
+            try:
+                current = amo_client.get_contact(int(contact_id))
+            except amo_client.AmoError:
+                current = {}
+            if amo_client.different_buyer(buyer, str(current.get("name") or "")):
+                log.warning(
+                    "сделка %s: номер не пишу, контакт %s это %s, а чат %s",
+                    lead_id,
+                    contact_id,
+                    current.get("name") or "",
+                    buyer,
+                )
+                return
             amo_client.set_contact_phone(int(contact_id), phone)
         crmd["contact_id"] = int(contact_id)
         crmd["phone"] = formatted
@@ -560,6 +610,10 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
         except amo_client.AmoError as exc:
             log.warning("сделка %s не читается: %s", old_id, exc)
             lead = None
+        if lead and _lead_is_other_buyer(snap, lead):
+            _forget_foreign_lead(snap, doc, crm, int(old_id))
+            old_id = None
+            lead = None
         if lead and lead.get("status_id") not in amo_client.CLOSED:
             if lead.get("pipeline_id") == amo_client.PIPELINE_TECH:
                 return _adopt_widget(snap, doc, lead)
@@ -598,6 +652,14 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
     contact_id = crm.get("contact_id")
     if snap.get("phone"):
         found = amo_client.find_contact(snap["phone"])
+        if found and amo_client.different_buyer(_buyer_of(snap), str(found.get("name") or "")):
+            log.warning(
+                "чат %s: контакт %s это %s, по номеру не беру",
+                snap.get("chat_id"),
+                found.get("id"),
+                found.get("name") or "",
+            )
+            found = None
         if found:
             contact_id = found.get("id")
             open_leads = amo_client.open_leads_of(found)

@@ -1023,6 +1023,16 @@ def test_widget_picks_chat_not_newer_twin():
     other = row(1, 1, 1, 9, score=200, item_id="111")
     assert choose_widget_lead([other, night, morning], item_id=item)["id"] == 46170677
     assert choose_widget_lead([other, night, morning])["id"] == 1
+    kirill = row(46403281, 1791382362, 1791382362, 1791440000)
+    kirill["from_name"] = "Кирилл"
+    vasily = row(46410000, 1791445000, 1791445000, 1791446000)
+    vasily["from_name"] = "Василий"
+    assert choose_widget_lead([kirill, vasily], item_id=item, peer="Василий")["id"] == 46410000
+    assert choose_widget_lead([kirill], item_id=item, peer="Василий") is None
+    same_person = row(46172819, 1790739207, 1790739208, 1790751966)
+    same_person["from_name"] = "Александр"
+    night["from_name"] = "александр"
+    assert choose_widget_lead([same_person, night], item_id=item, peer="Александр")["id"] == 46170677
 
 
 def test_amo_owner():

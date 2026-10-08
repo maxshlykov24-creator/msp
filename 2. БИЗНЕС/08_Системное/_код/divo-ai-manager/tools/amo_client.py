@@ -982,16 +982,17 @@ def find_widget_lead(
                 "score": pts,
                 "created_at": int(lead.get("created_at") or created),
                 "item_id": listing_item_id(lead_listing_url(lead)),
+                "from_name": str(meta.get("from") or ""),
                 "talk_created": 0,
                 "talk_updated": 0,
                 "lead": lead,
                 "lead_id": lid,
             }
         )
-    cluster = _widget_cluster(candidates, want_item)
+    cluster = _widget_cluster(candidates, want_item, peer)
     if len(cluster) > 1:
         for cand in cluster:
             created_at, updated_at = lead_talk_span(int(cand["lead_id"]))
             cand["talk_created"] = created_at
             cand["talk_updated"] = updated_at
-    return choose_widget_lead(candidates, item_id=want_item)
+    return choose_widget_lead(candidates, item_id=want_item, peer=peer)
