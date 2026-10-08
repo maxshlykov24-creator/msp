@@ -6,6 +6,8 @@
 .cq-nav button{padding:11px 22px;border:0;border-radius:9px;color:var(--mute);background:none;font-size:16px}
 .cq-nav button[aria-pressed=true]{color:#fff;background:rgba(255,255,255,.1)}
 #callQuality{scroll-margin-top:160px;padding-top:30px;--mute:#b8bac6;--mute-2:#9498a7}
+#callQuality.cq-entering{animation:cq-content-enter .3s cubic-bezier(.2,.75,.25,1) both}
+@keyframes cq-content-enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .cq-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:25px}
 .cq-eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.16em;color:var(--mute-2);margin:0 0 8px}
 .cq-heading h1{font-size:32px;font-weight:500;letter-spacing:-.7px;margin:0}
@@ -75,8 +77,10 @@ button.cq-metric{font:inherit;cursor:pointer}
 .cq-pager button:disabled{opacity:.3;cursor:default}
 .cq-help{font-size:13px;color:var(--mute-2);margin-top:25px;line-height:1.7;max-width:800px}
 .cq-help summary{cursor:pointer;color:var(--mute)}
-.cq-drawer{position:fixed;inset:0 0 0 auto;margin:0;height:100dvh;max-height:none;width:min(720px,100vw);max-width:none;border:0;border-left:1px solid rgba(255,255,255,.15);padding:0;background:#14161b;color:#edf0f4;box-sizing:border-box;overflow:auto}
-.cq-drawer::backdrop{background:rgba(0,0,0,.55)}
+.cq-drawer{position:fixed;inset:0 0 0 auto;margin:0;height:100dvh;max-height:none;width:min(720px,100vw);max-width:none;border:0;border-left:1px solid rgba(255,255,255,.15);padding:0;background:#14161b;color:#edf0f4;box-sizing:border-box;overflow:auto;opacity:0;transform:translateX(18px);transition:opacity .22s ease,transform .28s cubic-bezier(.2,.75,.25,1)}
+.cq-drawer.cq-visible{opacity:1;transform:translateX(0)}
+.cq-drawer::backdrop{background:rgba(0,0,0,0);transition:background-color .24s ease}
+.cq-drawer.cq-visible::backdrop{background:rgba(0,0,0,.55)}
 .cq-drawer-head{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;gap:15px;background:#14161b;padding:23px 28px;border-bottom:1px solid rgba(255,255,255,.09)}
 .cq-drawer-head h2{font-size:22px;font-weight:500;margin:4px 0}
 .cq-drawer-head p{margin:0;color:#9098a7;font-size:13px}
@@ -123,6 +127,6 @@ button.cq-metric{font:inherit;cursor:pointer}
 .cq-diagnostics code{font-size:12px;overflow-wrap:anywhere}
 @media(max-width:1050px){.cq-overview{grid-template-columns:1fr}.cq-toolbar{display:block}.cq-filters{margin-top:12px}.cq-list-head,.cq-call-row{grid-template-columns:130px 1fr 140px 100px 12px;gap:13px}.cq-criterion-bar{grid-template-columns:215px minmax(0,1fr) 50px}}
 @media(max-width:700px){.cq-heading{align-items:flex-start;flex-direction:column;gap:16px}.cq-heading h1{font-size:28px}.cq-source{width:100%}.cq-source button{flex:1}.cq-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.cq-metric{padding:15px}.cq-metric b{font-size:31px}.cq-attention{align-items:flex-start;flex-direction:column;gap:7px}.cq-block{padding:17px}.cq-criterion-bar{grid-template-columns:165px minmax(0,1fr) 45px;gap:10px}.cq-list-heading{flex-direction:column;gap:7px}.cq-list-head{display:none}.cq-call-row{grid-template-columns:1fr 105px;gap:12px;padding:16px 6px}.cq-row-person{grid-column:1}.cq-row-content{grid-column:1;grid-row:2}.cq-row-outcome{grid-column:1;grid-row:3}.cq-row-grade{grid-column:2;grid-row:1/4;text-align:right}.cq-dots{justify-content:flex-end}.cq-arrow{display:none}.cq-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.cq-filters select{width:100%;max-width:none;min-width:0;font-size:14px;padding:10px 8px}.cq-filters label{min-width:0}.cq-detail,.cq-drawer-head{padding:18px}.cq-detail-criterion summary{grid-template-columns:minmax(0,1fr) minmax(90px,112px) 10px;gap:7px}.cq-detail-tabs button{padding:9px}.cq-outcomes{grid-template-columns:1fr}.cq-block-heading{flex-wrap:wrap;gap:4px}.cq-nav{padding:0 18px 12px}}
-@media(prefers-reduced-motion:reduce){.cq-call-row{transition:none}}
+@media(prefers-reduced-motion:reduce){.cq-call-row{transition:none}#callQuality.cq-entering{animation:none}.cq-drawer,.cq-drawer::backdrop{transition:none}.cq-drawer{opacity:1;transform:none}.cq-drawer::backdrop,.cq-drawer.cq-visible::backdrop{background:rgba(0,0,0,.55)}}
 
 @media(max-width:700px){.footer-brand{min-width:0;max-width:100%;flex-wrap:wrap}.footer-brand>div{min-width:0}.footer-brand span{white-space:normal}.cq-criterion-bar{grid-template-columns:165px minmax(0,1fr) 45px}}
