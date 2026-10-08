@@ -159,7 +159,7 @@ class SonnetCallAgent:
             return {k: SonnetCallAgent.ground(v, catalog) for k, v in value.items()}
         return value
 
-    def analyze(self, transcript: dict, direction: str, occurred_at: int) -> dict:
+    def analyze(self, transcript: dict, direction: str, occurred_at: int, *, correction: dict | None = None) -> dict:
         catalog = self.catalog(transcript)
         if not catalog:
             raise RemoteFailure("agent_transcript_empty")
@@ -177,13 +177,23 @@ class SonnetCallAgent:
 Не считай запись оборванной лишь из-за отсутствия прощания, но при незавершённой
 существенной реплике, пропущенных фрагментах или смене сотрудников отметь сомнение.
 При неизвестных ролях roles_reliable=false. Не используй сведения из других звонков.
+Перед ответом проверь согласованность каждого пункта: все conditions=yes означает
+criterion=yes; хотя бы одно conditions=no означает criterion=no; при неизвестном
+условии без явно отсутствующего действия criterion=unknown. Не ставь no при всех yes.
+Для пункта 5 отсутствие обсуждения обмена означает no с заполненными conditions,
+а не na. na допустим только при outcome.trade_in=no_car/refused и прямой цитате.
+Никогда не ставь yes, если любое обязательное условие имеет no или unknown.
 """
+        payload = {"duration": transcript.get("duration"), "fragments": catalog}
+        if correction:
+            payload["previous_response"] = correction["references"]
+            payload["validation_errors"] = correction["errors"]
+            instruction += "\nПредыдущий ответ не прошёл проверку. Перечитай исходные фрагменты и верни полный исправленный JSON. Не меняй факты ради прохождения проверки; unknown сохраняй при нехватке данных."
         body = {"model": settings.calls_sonnet_model, "max_tokens": 9000,
             "reasoning": {"effort": "low", "exclude": True},
             "provider": {"require_parameters": True, "allow_fallbacks": False},
             "messages": [{"role": "system", "content": instruction},
-                {"role": "user", "content": json.dumps({"duration": transcript.get("duration"),
-                 "fragments": catalog}, ensure_ascii=False)}],
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
             "response_format": {"type": "json_schema", "json_schema": {"name": "divo_call_qa", "strict": True, "schema": schema}}}
         try:
             response = self.client.post("https://openrouter.ai/api/v1/chat/completions",

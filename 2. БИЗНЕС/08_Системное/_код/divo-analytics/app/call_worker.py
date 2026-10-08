@@ -209,7 +209,7 @@ def finish_result(row: CallRecord, result: dict):
         row.state = "analysis_ready" if SonnetCallAgent.catalog(transcript) else "needs_review"
         row.last_error = "" if row.state == "analysis_ready" else "transcript_empty"
         row.next_attempt_at = None
-        row.analysis_version = "sonnet.qa.1"
+        row.analysis_version = "sonnet.qa.2"
         return
     raw = result.get("llm_output")
     if isinstance(raw, str):
@@ -258,14 +258,28 @@ def analyze_calls():
         try:
             for row in db.scalars(query.order_by(CallRecord.occurred_at).limit(5)):
                 row.state = "analyzing"
-                row.analysis_version = "sonnet.qa.1"
+                row.analysis_version = "sonnet.qa.2"
                 db.commit()
                 try:
-                    result = agent.analyze(row.transcript, row.direction, row.occurred_at)
                     history = dict(row.provider_result or {})
-                    history["agent_result"] = result
+                    previous = history.get("agent_result")
+                    correction = {"references": previous["references"], "errors": row.validation_errors} if previous and row.validation_errors else None
+                    result = agent.analyze(row.transcript, row.direction, row.occurred_at, **({"correction": correction} if correction else {}))
+                    attempts = list(history.get("agent_attempts") or [])
+                    if previous and not attempts:
+                        attempts.append(previous)
+                    attempts.append(result)
+                    history.update(agent_result=result, agent_attempts=attempts)
                     row.provider_result = history
                     verdict = validate_analysis(result["analysis"], row.transcript, row.direction)
+                    row.validation_errors = verdict["errors"]
+                    db.commit()  # Сохраняем оплаченный ответ до единственной коррекции.
+                    if verdict["errors"] and not correction:
+                        result = agent.analyze(row.transcript, row.direction, row.occurred_at,
+                            correction={"references": result["references"], "errors": verdict["errors"]})
+                        history = {**history, "agent_result": result, "agent_attempts": attempts + [result]}
+                        row.provider_result = history
+                        verdict = validate_analysis(result["analysis"], row.transcript, row.direction)
                     row.analysis = verdict["analysis"]
                     row.validation_errors = verdict["errors"]
                     row.is_scored, row.score = verdict["is_scored"], verdict["score"]
@@ -287,7 +301,7 @@ def analyze_calls():
             agent.close()
 
 
-def reanalyze_calibration() -> int:
+def reanalyze_calibration(*, repair: bool = False) -> int:
     """Явная команда: сохранённые транскрипты, без повторной отправки аудио."""
     if not settings.calls_analysis_enabled or not settings.calls_sonnet_api_key:
         raise RuntimeError("agent_not_configured")
@@ -302,11 +316,16 @@ def reanalyze_calibration() -> int:
                 for row in rows:
                     if not SonnetCallAgent.catalog(row.transcript):
                         continue
-                    if row.analysis_version == "sonnet.qa.1" and (row.provider_result or {}).get("agent_result"):
+                    prior = (row.provider_result or {}).get("agent_result")
+                    if repair:
+                        if not prior or not row.validation_errors or len((row.provider_result or {}).get("agent_attempts") or []) >= 2:
+                            continue
+                    elif row.analysis_version.startswith("sonnet.qa.") and prior:
                         continue
                     row.state, row.last_error = "analysis_ready", ""
                     row.analysis = {}
-                    row.validation_errors = []
+                    if not repair:
+                        row.validation_errors = []
                     row.category, row.category_reason = "pending", "Ожидает анализа агента"
                     row.yes_count = row.applicable_count = 0
                     row.is_scored, row.score = False, None
@@ -599,12 +618,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--reanalyze-calibration", action="store_true")
+    parser.add_argument("--repair-calibration", action="store_true")
     parser.add_argument("--calibrate", type=int, default=0)
     parser.add_argument("--retry-payment-blocked", action="store_true")
     args = parser.parse_args()
     init_db()
-    if args.reanalyze_calibration:
-        print(json.dumps({"requeued_analysis": reanalyze_calibration()}))
+    if args.reanalyze_calibration or args.repair_calibration:
+        print(json.dumps({"requeued_analysis": reanalyze_calibration(repair=args.repair_calibration)}))
         return
     if args.retry_payment_blocked:
         print(json.dumps({"requeued": retry_payment_blocked()}))

@@ -333,6 +333,33 @@ class QueueTest(unittest.TestCase):
         self.db.refresh(r);self.assertEqual(r.state,"complete");self.assertEqual(r.nexara_job_id,"preserved")
         self.assertEqual(r.provider_result["transcription"],TRANSCRIPT)
 
+    def test_agent_validation_correction_is_bounded_and_keeps_paid_answers(self):
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
+        r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()
+        invalid=analysis();invalid["criteria"][0]["status"]="no"
+        first={"analysis":invalid,"references":{"category":"primary_inbound"},"usage":{"cost":0.01}}
+        second={"analysis":analysis(),"references":{},"usage":{"cost":0.02}}
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            cls.return_value.analyze.side_effect=[first,second]
+            call_worker.analyze_calls();call_worker.analyze_calls()
+            self.assertEqual(cls.return_value.analyze.call_count,2)
+            self.assertIn("criterion_1:no_without_missing_condition",cls.return_value.analyze.call_args.kwargs["correction"]["errors"])
+        self.db.refresh(r);self.assertEqual(r.state,"complete")
+        self.assertEqual(len(r.provider_result["agent_attempts"]),2)
+        self.assertEqual(r.provider_result["agent_attempts"][0],first)
+
+    def test_correction_timeout_preserves_first_answer_without_repeating(self):
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
+        r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()
+        invalid=analysis();invalid["criteria"][0]["status"]="no"
+        first={"analysis":invalid,"references":{},"usage":{}}
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            cls.return_value.analyze.side_effect=[first,AmbiguousSubmission("agent_transport_ambiguous")]
+            call_worker.analyze_calls();call_worker.analyze_calls()
+            self.assertEqual(cls.return_value.analyze.call_count,2)
+        self.db.refresh(r);self.assertEqual(r.state,"analysis_ambiguous")
+        self.assertEqual(r.provider_result["agent_attempts"],[first])
+
     def test_agent_restart_and_timeout_never_repeat_paid_request(self):
         settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
         r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()
