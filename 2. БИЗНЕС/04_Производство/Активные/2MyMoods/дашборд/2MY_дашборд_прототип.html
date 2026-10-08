@@ -1342,7 +1342,7 @@ function favorite(orders,key){const totals=group(orders.flatMap(o=>o.lines).filt
 function clientLtv(c){
  const lines=o=>sum((o.lines||[]).filter(l=>!l.delivery),l=>l.rev);
  const sales=sum(c.orders,lines);
- if(!includeReturns) return sales;
+ if(includeReturns) return sales;
  return sales+sum((data.returns||[]).filter(o=>o.phone===c.phone),lines);
 }
 function showClient(c){const ltv=clientLtv(c);return {...c,ltv,tier:c.buys>=4?'Gold':c.buys>=2?'Silver':ltv>=20000?'Bronze':'Разовый'};}
@@ -1368,7 +1368,8 @@ function refresh(){
  const returned=(data.returns||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
  const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
  financial=[...filtered,...returned];
- const basis=includeReturns?financial:filtered;
+ // Галка выключена: возврат вычтен. Галка «С возвратами»: заказы остаются в сумме.
+ const basis=includeReturns?filtered:financial;
  const periodReturnGaps=(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));
  const returnGaps=periodReturnGaps.filter(x=>x.impact!=='outside_revenue');
  const returnedRev=-sum(returned,x=>orderRev(x.o,x.ls));
@@ -1388,7 +1389,7 @@ function refresh(){
  const msOrdersUrl=()=>{const stamp=iso=>{const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[3]}.${m[2]}.${m[1]}`:''};return `https://online.moysklad.ru/app/#customerorder?015b915a-c21c-11f1-0a80-1e7500283344=${stamp(state.from)}%2000:00:00,${stamp(state.to)}%2023:59:59,inside_period&sort=o.moment%20d`};
  const msLink=(label,value)=>`<a class="ms-open" href="${msOrdersUrl()}" target="_blank" rel="noopener">${label}${value}</a>`;
  el('hero-rev').innerHTML=msLink('',`${num(Math.round(rev))} <span>₽</span>`);
- el('hero-sub').textContent=includeDelivery?'С доставкой':'Без доставки';
+ el('hero-sub').textContent=(includeDelivery?'С доставкой':'Без доставки')+(includeReturns?' · без вычета возвратов':' · возвраты вычтены');
  const paymentTotal=sum((data.payment_daily||[]).filter(x=>x.date>=state.from&&x.date<=state.to),x=>x.sum);
  const paymentScopeClear=!state.cat.length&&!state.prod&&!state.source.length&&!state.channel.length&&!state.city.length;
  el('payment-in-note').textContent='Колонка «Оплачено».';
@@ -1420,7 +1421,7 @@ function refresh(){
  const discounts=filtered.filter(x=>x.o.promo||x.ls.some(l=>l.rev<l.list));
  const lineDiscount=x=>sum(x.ls,l=>Math.max(0,(l.list||0)-(l.rev||0)));
  const discountIds=new Set(discounts.map(x=>x.o.id));
- const discountRev=sum(discounts,x=>orderRev(x.o,x.ls))+(includeReturns?sum(returned.filter(x=>discountIds.has(x.o.original_order)),x=>orderRev(x.o,x.ls)):0);
+ const discountRev=sum(discounts,x=>orderRev(x.o,x.ls))+(!includeReturns?sum(returned.filter(x=>discountIds.has(x.o.original_order)),x=>orderRev(x.o,x.ls)):0);
  el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(discountRev)],['Скидка по позициям',money(sum(filtered,lineDiscount))]]);
  const promoBuckets=new Map(), promoOfOrder=new Map();
  for(const x of filtered){
@@ -1435,7 +1436,7 @@ function refresh(){
   row.n++; row.rev+=orderRev(x.o,x.ls); row.disc+=disc; row.xs.push(x);
   promoOfOrder.set(x.o.id,id);
  }
- if(includeReturns){
+ if(!includeReturns){
   for(const x of returned){
    const id=promoOfOrder.get(x.o.original_order);
    const row=id&&promoBuckets.get(id);
@@ -1758,7 +1759,7 @@ function downloadExcel(){
  const narrow=state.size.length||state.color.length;
  const cutLines=ls=>narrow?(ls||[]).filter(l=>!l.delivery&&matches(state.size,sizeLabel(l))&&matches(state.color,colorLabel(l))):(ls||[]);
  const rowRev=(o,ls)=>narrow?sum(ls,l=>l.rev):orderRev(o,ls);
- const basis=includeReturns?financial:filtered;
+ const basis=includeReturns?filtered:financial;
  const orders=basis.map(x=>({o:x.o,ls:cutLines(x.ls)})).filter(x=>!narrow||x.ls.length).sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number||'').localeCompare(String(b.o.number||''),'ru'));
  const lines=orders.flatMap(x=>x.ls.map(l=>({o:x.o,l}))).sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number||'').localeCompare(String(b.o.number||''),'ru')||String(a.l.name||'').localeCompare(String(b.l.name||''),'ru'));
  const purchases=orders.filter(x=>!x.o.return_event);
@@ -1827,7 +1828,7 @@ function downloadExcel(){
  cover.push([{t:'Период',s:X.mute},{t:`с ${dmy(state.from)} по ${dmy(state.to)}`,s:X.coverT}]);
  cover.push([{t:'Срез',s:X.mute},{t:sync?('синхронизация '+sync):'',s:X.coverT}]);
  cover.push([{t:'Доставка',s:X.mute},{t:includeDelivery?'С доставкой':'Без доставки',s:X.coverT}]);
- cover.push([{t:'Возвраты',s:X.mute},{t:includeReturns?'Входят в выручку':'Не входят в выручку',s:X.coverT}]);
+ cover.push([{t:'Возвраты',s:X.mute},{t:includeReturns?'Без вычета возвратов':'Вычтены из выручки',s:X.coverT}]);
  cover.push([{t:'Фильтр',s:X.mute},{t:filterText,s:X.coverT}]);
  cover.push([periodLink]);
  cover.push([]);
