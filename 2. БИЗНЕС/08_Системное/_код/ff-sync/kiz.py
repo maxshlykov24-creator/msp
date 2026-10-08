@@ -84,6 +84,20 @@ def clean_codes(raw_list):
     return out
 
 
+def normalize_wb_code(code):
+    """Восстановить GS только в однозначном полном формате 01/21/91/92.
+
+    HID-сканер может передать GS как Ctrl+], который обычный input теряет.
+    Длины полей здесь фиксированы: GTIN 14, серия 13, ключ 4, подпись 44.
+    Не ищем 91/92 внутри серии и не достраиваем отсутствующий криптохвост.
+    """
+    code = clean_code(code)
+    if code.startswith("]d2"):
+        code = code[3:]
+    match = re.fullmatch(r"(01\d{14}21[^\x1d]{13})\x1d?(91[^\x1d]{4})\x1d?(92[^\x1d]{44})", code)
+    return "\x1d".join(match.groups()) if match else code
+
+
 def _row(ship_id):
     rows = get_shipments_by_ids([ship_id])
     if not rows:
@@ -364,7 +378,7 @@ def _wb_submit(row, cab, codes):
         # У длинного КиЗ серийный номер переменной длины. Без живых GS перед
         # группами 91 и 92 WB получает строку, но затем отвергает её формат.
         if not re.fullmatch(r"01\d{14}21[^\x1d]+\x1d91[^\x1d]+\x1d92[^\x1d]+", code):
-            raise KizError("КиЗ без полного хвоста и разделителей GS. Отсканируй код заново, из Telegram его брать нельзя")
+            raise KizError("Не удалось распознать полный КиЗ. Отсканируй заново: нужны серийный номер и криптохвост целиком")
     r = req("PUT", WB_SGTIN % row["ext_id"], headers=wb_headers(cab["token"]), json={"sgtins": codes})
     if r.status_code not in (200, 204):
         _fail(r, "WB не принял коды маркировки")
@@ -421,6 +435,7 @@ def submit(ship_id, raw_codes):
     if row["marketplace"] == "ozon":
         res = _ozon_submit(row, cab, codes)
     elif row["marketplace"] == "wb":
+        codes = clean_codes([normalize_wb_code(code) for code in codes])
         res = _wb_submit(row, cab, codes)
     else:
         raise KizError("неизвестная площадка %s" % row["marketplace"])

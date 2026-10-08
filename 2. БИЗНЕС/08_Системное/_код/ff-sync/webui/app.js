@@ -1955,6 +1955,13 @@ $("kizModal").onclick = (e) => { if (e.target === $("kizModal")) $("kizModal").c
 $("kizClear").onclick = () => { kizState.codes = []; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
 
 $("kizInput").onkeydown = (e) => {
+  // GS от HID-сканера приходит как Ctrl+], а браузер не вставляет его в input.
+  if (e.key === "\u001d" || (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "BracketRight" || e.key === "]"))) {
+    e.preventDefault();
+    const input = $("kizInput");
+    input.setRangeText("\u001d", input.selectionStart, input.selectionEnd, "end");
+    return;
+  }
   if (e.key !== "Enter") return;
   e.preventDefault();
   const raw = $("kizInput").value;

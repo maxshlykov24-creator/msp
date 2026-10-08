@@ -421,13 +421,17 @@ assert not [c for c in CALLS if c[1].endswith("/exemplar/set")], "полезли
 assert [r["code"] for r in db.list_shipment_marks([oz_kiz])] == codes, "затёрли принятые коды"
 
 # 17. WB: код уходит в sgtins, экранированный разделитель GS становится символом
+full_code = "0104630568317423215EirD_orEif7X\x1d91EE12\x1d92" + "A" * 44
+for scanned in (full_code, full_code.replace("\x1d", ""), full_code.replace("\x1d", "", 1), "]d2" + full_code):
+    assert kiz.normalize_wb_code(scanned) == full_code
+assert kiz.normalize_wb_code(full_code.replace("\x1d", "")[:-1]).count("\x1d") == 0
 CALLS.clear()
 before_puts = len([c for c in CALLS if c[1].endswith("/meta/sgtin")])
 try:
     kiz.submit(wb_kiz, ["0104630568317423215EirD_orEif7X91EE1292ABC123"])
     raise AssertionError("КиЗ без GS отправлен на WB")
 except kiz.KizError as exc:
-    assert "GS" in str(exc), exc
+    assert "полный КиЗ" in str(exc), exc
 assert len([c for c in CALLS if c[1].endswith("/meta/sgtin")]) == before_puts
 out = kiz.submit(wb_kiz, ["0104630568317423215EirD_orEif7X\\u001d91EE12\\u001d92ABC123"])
 assert out["sent"] == 1, out
