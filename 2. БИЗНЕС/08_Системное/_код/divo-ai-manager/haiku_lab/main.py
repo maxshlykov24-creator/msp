@@ -19,7 +19,8 @@ HELP='''Тестовый агент Haiku 5.5. Сообщения клиента
 /resume — продолжить после тестовой передачи человеку
 /status — модель, машина и дата снимка
 /debug — показать или скрыть разбор ответа
-/export — скачать всю тестовую переписку
+/export — скачать свою тестовую переписку
+/results — скачать автоматические прогоны
 /feedback ТЕКСТ — сохранить замечание к последнему ответу
 
 После выбора машины пиши как клиент. Для проверки контакта используй вымышленный номер.'''
@@ -73,8 +74,12 @@ class Lab:
         elif cmd=='/feedback':
             if not arg.strip():await self.send(chat,'Напиши /feedback и замечание к ответу.');return
             self.store.event(chat,'feedback',{'text':redact(arg),'selected':s.get('selected')});await self.send(chat,'Замечание сохранено вместе с тестовой перепиской.')
-        elif cmd=='/export':
-            content=json.dumps(self.store.transcript(chat),ensure_ascii=False,indent=2).encode()
+        elif cmd in ('/export','/results'):
+            if cmd=='/results':
+                path=self.runtime/'rehearsal.jsonl'
+                if not path.exists():await self.send(chat,'Автоматических прогонов пока нет.');return
+                content=json.dumps([json.loads(line) for line in path.read_text().splitlines() if line.strip()],ensure_ascii=False,indent=2).encode()
+            else:content=json.dumps(self.store.transcript(chat),ensure_ascii=False,indent=2).encode()
             r=await self.tg.post('https://api.telegram.org/bot'+self.token+'/sendDocument',data={'chat_id':str(chat),'caption':'Полный журнал тестов: вопросы, ответы, решения Haiku и замечания.'},files={'document':('haiku-tests.json',content,'application/json')})
             if not r.json().get('ok'):raise RuntimeError('Export failed')
         else:await self.send(chat,'Неизвестная команда. /help')
@@ -105,7 +110,7 @@ class Lab:
         if str(me['id']) in self.cfg.get('LAB_FORBIDDEN_BOT_IDS','').split(','):raise RuntimeError('Production bot is forbidden')
         webhook=await self.api('getWebhookInfo')
         if webhook.get('url'):raise RuntimeError('Existing webhook detected; refusing to alter it')
-        await self.api('setMyCommands',commands=[{'command':cmd,'description':desc} for cmd,desc in [('cars','Выбрать машину'),('cases','Сценарии из переписок'),('reset','Новый диалог'),('status','Проверить тестовый режим'),('debug','Разбор ответа'),('export','Выгрузить переписку'),('feedback','Оставить замечание'),('help','Как тестировать')]])
+        await self.api('setMyCommands',commands=[{'command':cmd,'description':desc} for cmd,desc in [('cars','Выбрать машину'),('cases','Сценарии из переписок'),('reset','Новый диалог'),('status','Проверить тестовый режим'),('debug','Разбор ответа'),('export','Выгрузить свою переписку'),('results','Автоматические прогоны'),('feedback','Оставить замечание'),('help','Как тестировать')]])
         print('LAB_READY @'+me['username'],flush=True)
         while True:
             try:

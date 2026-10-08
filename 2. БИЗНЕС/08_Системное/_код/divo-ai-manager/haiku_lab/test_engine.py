@@ -55,4 +55,14 @@ class TransportSafetyTests(unittest.TestCase):
    asyncio.run(app.handle({'update_id':1,'message':{'chat':{'id':chat,'type':typ},'from':{'id':sender},'text':'/start'}}))
   app.send.assert_not_called();app.command.assert_not_called()
 
+
+
+class FollowupTests(unittest.TestCase):
+ def test_media_mention_is_not_request(self):
+  async def plan(h,t):return '{"intents":["long","options","photo"]}',0
+  a=asyncio.run(respond('На фотографиях колонок не увидел. Это не Long?',{},CAR,COMPANY,plan))
+  self.assertNotIn('photo',a.intents)
+ def test_video_contact_first_ask_not_premature_handoff(self):
+  a=render(['video','contact'],CAR,{},COMPANY,'Видео возможно в Ватсап?')
+  self.assertEqual(a.action,'reply');self.assertEqual(a.text.count('номер телефона'),1)
 if __name__=='__main__':unittest.main()

@@ -56,6 +56,7 @@ def render(intents, selected, session, company, text):
     """Only trusted fields/templates become customer text. Model text is never sent."""
     out=Answer(intents=intents)
     history=session.get('messages',[])
+    asked_before=bool(session.get('contact_asked'))
     contact=bool(session.get('has_contact')) or history_contact(history) or bool(PHONE.search(text)) or bool(re.search(r'@[A-Za-z0-9_]+',text))
     session['has_contact']=contact
     if any(x in intents for x in ('human','dispute')):
@@ -130,7 +131,7 @@ def render(intents, selected, session, company, text):
     if unknown:
         out.unknown=unknown
         lines.append('Нужно уточнить '+', '.join(unknown)+'.')
-        if contact or session.get('contact_asked') or 'refusal' in intents or 'legal' in intents:
+        if contact or asked_before or 'refusal' in intents or 'legal' in intents:
             out.action='handoff';out.reason='нужны данные сотрудника'
         else:
             lines.append('Напишите, пожалуйста, номер телефона для связи');session['contact_asked']=True
@@ -149,6 +150,9 @@ async def respond(text, session, selected, company, planner):
         except Exception as exc:
             result=Answer(action='error',reason='Не удалось получить корректный план Haiku: '+type(exc).__name__)
             return result
+    low=text.lower()
+    media_request=bool(re.search(r'(?:пришл|скин|отправ|можно|можете|покаж|сдела|прошу|дай|хочу).*?(?:фото|видео)|(?:фото|видео).*?(?:можно|можете|возможно)|^\s*(?:фото|видео)(?:графии|обзор)?(?: авто)?[?!. ]*$',low))
+    if not media_request:intents=[x for x in intents if x not in ('photo','video')] or ['unknown']
     result=render(intents,selected,session,company,text);result.raw=raw;result.cost=cost
     session.setdefault('messages',[]).append({'role':'user','content':redact(text)})
     if result.text:session['messages'].append({'role':'assistant','content':result.text})
