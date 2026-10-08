@@ -385,7 +385,7 @@ def _wb_submit(row, cab, codes):
     notes = []
     item = _wb_sgtin(_wb_meta(cab, row["ext_id"])) or {}
     decision = str(item.get("decision") or "")
-    if decision in WB_WANT:
+    if decision in WB_WANT and decision != "required":
         raise KizError("WB не подтвердил код: %s. Проверь маркировку; задание остаётся без принятого КиЗ." % WB_DECISION_RU.get(decision, decision))
     if decision:
         notes.append("WB: %s." % WB_DECISION_RU.get(decision, decision))
