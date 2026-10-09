@@ -367,6 +367,15 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             remember_allow(state, cid)
             save_state(state)
             log.info("авто.ру новый чат %s, беру (%s)", cid[:12], title)
+        # Сохраняем очередь до сетевой эскалации и debounce: catchup
+        # увидит входящее даже при рестарте до генерации ответа.
+        history = store.load_history(chat_key)
+        blob = "\n".join(texts)
+        if history and history[-1].get("role") == "user":
+            history[-1]["content"] += "\n" + blob
+        else:
+            history.append({"role": "user", "content": blob})
+        store.save_history(chat_key, history)
         for text in texts:
             store.log_line(chat_key, "клиент", text)
         if store.hard_paused(chat_key):

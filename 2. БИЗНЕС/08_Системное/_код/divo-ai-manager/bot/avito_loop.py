@@ -480,9 +480,11 @@ async def adopt_profile_chat(api: Avito) -> None:
             state["cursor"] = cursor
         else:
             log.warning("авито adopt: профиль-чат Михаила снова не найден")
+        # Одноразовая миграция u2u. На обычном рестарте новые чаты
+        # должен забирать poll_once, иначе входящее теряется в курсоре.
+        await prime_unseen(api, state)
         state[ADOPT_PROFILE_KEY] = True
         save_state(state)
-    await prime_unseen(api, state)
 
 
 async def remember_listing(chat_key: str, chat: dict, api: Avito) -> None:
@@ -618,6 +620,10 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
             remember_allow(state, cid)
             save_state(state)
             log.info("авито новый чат %s, беру (%s)", cid[:12], title)
+        # Новый чат тоже сохраняем до любых сетевых вызовов и debounce.
+        # После рестарта штатный catchup восстановит ещё не отправленный ответ.
+        if not store.load_history(chat_key):
+            store.save_history(chat_key, [{"role": "user", "content": "\n".join(texts)}])
         for text in texts:
             store.log_line(chat_key, "клиент", text)
         if store.hard_paused(chat_key):

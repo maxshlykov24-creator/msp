@@ -284,6 +284,13 @@ def asked_phone(text: str) -> bool:
 def is_closed(text: str) -> bool:
     """Клиент снял интерес: не актуально, уже купил, удачи."""
     raw = text or ""
+    # Отказ от способа оплаты не закрывает интерес к автомобилю.
+    # Реальный чат: «НДС и р/с не интересуют — доплата налом».
+    payment = r"(?:ндс|р\s*/\s*с|расч[её]тн\w* сч[её]т\w*|лизинг|кредит|безнал\w*)"
+    raw = re.sub(
+        payment + r"(?:\s*(?:и|,)\s*" + payment + r")*\s+не интересу(?:ет|ют)(?![а-яё])",
+        "", raw, flags=re.IGNORECASE,
+    )
     if CLOSED.search(raw):
         return True
     blob = raw.lower().replace("ё", "е")
@@ -632,7 +639,10 @@ def asked_vat(messages: list[dict] | None) -> bool:
 def wants_without_vat(text: str) -> bool:
     """«Можно и без НДС»: клиент просит наличные, а не ещё одну цену с НДС."""
     blob = (text or "").lower().replace("ё", "е")
-    return bool(re.search(r"без\s*ндс|можно и без", blob))
+    return bool(re.search(
+        r"без\s*ндс|можно и без|ндс.{0,30}не интересу|"
+        r"(?:доплата|оплата|расч[её]т)\s+(?:налом|наличн)", blob
+    ))
 
 
 def asked_torg(messages: list[dict] | None) -> bool:

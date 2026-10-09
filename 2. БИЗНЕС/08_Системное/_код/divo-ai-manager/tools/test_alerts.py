@@ -2882,7 +2882,70 @@ def test_promised_action_suspends_nudge():
     assert 'площадке' not in nudge.build_text(1, '', '', asked=True)
 
 
+def test_restart_preserves_marketplace_incoming():
+    import asyncio
+    from unittest.mock import AsyncMock, Mock, patch
+    from tools.rehearse import Sandbox
+    from bot import avito_loop as av, autoru_loop as ar, crm, store, main
+
+    async def run():
+        # Реальное входящее Романа: пришло во время рестарта 09.10 13:51:44.
+        msg = {'id': '8b15679d52afab7e7eaec98d01faad63', 'created': 1791543104,
+               'direction': 'in', 'type': 'text',
+               'content': {'text': 'Здравствуйте! Скажите, торг уместен?'}}
+        cid = 'u2i-uLw9NNuV4UwLNkmFzt5s6w'
+        state = {'cursor': {'old': 1}, 'allow': [], 'legacy': [], av.ADOPT_PROFILE_KEY: True}
+        with Sandbox(), patch.object(av, 'load_state', return_value=state), \
+             patch.object(av, 'save_state', Mock()), \
+             patch.object(av, 'remember_listing', AsyncMock()), \
+             patch.object(crm, 'capture_if_urgent', AsyncMock(return_value='')):
+            api = Mock(chats=AsyncMock(return_value=[{'id': cid, 'last_message': msg}]),
+                       messages=AsyncMock(return_value=[msg]))
+            await av.adopt_profile_chat(api)
+            assert not api.chats.called and cid not in state['cursor']
+            pending = {}; schedule = Mock()
+            await av.poll_once(api, Mock(), schedule, pending)
+            assert pending['av:' + cid] == [msg['content']['text']]
+            assert store.load_history('av:' + cid) == [{'role': 'user', 'content': msg['content']['text']}]
+            assert main.waiting_for_bot('av:' + cid)  # durable queue after lost debounce
+            schedule.reset_mock()
+            await av.poll_once(api, Mock(), schedule, {})
+            assert not schedule.called  # same API message is not queued twice
+        with Sandbox(), patch.object(ar, 'is_offer_room', return_value=True), \
+             patch.object(ar, 'we_sell', return_value=True), \
+             patch.object(ar, 'source_id', return_value=''), \
+             patch.object(ar, 'listing_from_room', return_value={}), \
+             patch.object(ar, 'remember_listing', AsyncMock()), \
+             patch.object(ar, 'save_state', Mock()), \
+             patch.object(crm, 'capture_if_urgent', AsyncMock(return_value='')):
+            state = {'cursor': {}, 'allow': [], 'legacy': []}
+            m = {'id': 'test', 'created': 1791543104, 'author': 'buyer',
+                 'payload': {'content_type': 'TEXT_PLAIN', 'value': msg['content']['text']}}
+            api = Mock(own_offers=AsyncMock(return_value={}),
+                       rooms=AsyncMock(return_value=[{'id': 'test', 'me': 'seller', 'last_message': m}]),
+                       messages=AsyncMock(return_value=[m]))
+            with patch.object(ar, 'load_state', return_value=state):
+                await ar.poll_once(api, Mock(), Mock(), {})
+            assert main.waiting_for_bot('ar:test')
+            assert len(store.load_history('ar:test')) == 1
+    asyncio.run(run())
+
+
+def test_payment_refusal_keeps_dialog_open():
+    from bot import nudge
+    text = 'НДС и р/с не интересуют- доплата налом\nТем более в объявлении указано -7450 000 цена за наличный расчет, без «скрытых» допплатежей и тд'
+    assert not nudge.is_closed(text) and nudge.needs_reply(text)
+    assert nudge.wants_without_vat(text)
+    assert nudge.needs_reply('Кредит не интересует, куплю за наличные')
+    assert nudge.needs_reply('Лизинг не интересует')
+    assert nudge.is_closed('Машина больше не интересует')
+    assert nudge.is_closed('Кредит не интересует, машина тоже не интересует')
+    assert nudge.is_closed('Уже купил, спасибо')
+
+
 if __name__ == "__main__":
+    test_restart_preserves_marketplace_incoming()
+    test_payment_refusal_keeps_dialog_open()
     test_cash_only_priority_and_stale_card()
     test_promised_action_suspends_nudge()
     test_needs_reply()
