@@ -1,8 +1,9 @@
 import fcntl
+import json
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 SHIP_KEEP_DAYS = 14
 
@@ -13,18 +14,20 @@ def ship_keep_since():
 
 
 def prune_old_shipments(days=SHIP_KEEP_DAYS):
-    """Убираем отправления старше окна синка — иначе «Заказы» копят историю."""
-    cut = (datetime.now() - timedelta(days=int(days or SHIP_KEEP_DAYS))).strftime("%Y-%m-%d 00:00")
+    """Архивируем только завершённые заказы. Историю и КиЗ сохраняем."""
+    cut = (datetime.now() - timedelta(days=SHIP_KEEP_DAYS)).strftime("%Y-%m-%d 00:00")
     when = "replace(coalesce(nullif(accepted_at,''), shipped_at), 'T', ' ')"
     conn = connect()
-    ids = [r["id"] for r in conn.execute("SELECT id FROM shipments WHERE %s < ? AND COALESCE(assembly_excluded, 0) = 0" % when, (cut,)).fetchall()]
-    if ids:
-        idq = ",".join("?" * len(ids))
-        conn.execute("DELETE FROM shipment_marks WHERE shipment_id IN (%s)" % idq, ids)
-        conn.execute("DELETE FROM shipments WHERE id IN (%s)" % idq, ids)
-        conn.commit()
+    cur = conn.execute(
+        "UPDATE shipments SET archived_at = ? WHERE %s < ? "
+        "AND status_group IN ('delivered','cancelled') AND COALESCE(archived_at,'') = '' "
+        "AND COALESCE(assembly_excluded,0) = 0" % when,
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"), cut),
+    )
+    n = cur.rowcount
+    conn.commit()
     conn.close()
-    return len(ids)
+    return n
 
 SCHEMA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
 
@@ -154,13 +157,17 @@ def migrate(conn):
     fresh = "status_group" not in ships
     for col in (
         "status_group", "work_state", "accepted_at", "deadline_at", "track", "warehouse", "image",
-        "supply_ext", "trbx_ext",
+        "supply_ext", "trbx_ext", "archived_at",
         # куда везти задание и его габаритный тип: от них зависит,
         # ПВЗ это или сортировочный центр и нужны ли грузоместа
         "office", "cargo_type", "pickup_allowed",
     ):
         if col not in ships:
             conn.execute("ALTER TABLE shipments ADD COLUMN %s TEXT" % col)
+    if "archived_at" not in ships:
+        conn.execute("UPDATE shipments SET status_group='pickup', work_state='' "
+                     "WHERE marketplace='wb' AND status_group='delivered' "
+                     "AND status LIKE '%прибыло на ПВЗ%'")
     supplies = _cols(conn, "wb_supplies")
     if "cargo_type" not in supplies:
         conn.execute("ALTER TABLE wb_supplies ADD COLUMN cargo_type TEXT")
@@ -417,6 +424,42 @@ def get_setting(key):
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
     conn.close()
     return row["value"] if row else None
+
+
+def record_sync(cabinet_id, stream, error="", count=0):
+    """Последняя попытка отдельно от последнего полного успешного ответа."""
+    key = "sync:%s:%s" % (int(cabinet_id), stream)
+    old = json.loads(get_setting(key) or "{}")
+    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    old.update(attempt=stamp, error=str(error or "")[:240], count=int(count))
+    if not error:
+        old["success"] = stamp
+    set_setting(key, json.dumps(old, ensure_ascii=False))
+
+
+def sync_health(client_id=None, marketplace=""):
+    conn = connect()
+    saved = {r["key"]: r["value"] for r in conn.execute("SELECT key,value FROM settings WHERE key LIKE 'sync:%'")}
+    cabs = conn.execute("SELECT c.id,c.client_id,c.marketplace,c.name,cl.name AS client "
+                        "FROM cabinets c JOIN clients cl ON cl.id=c.client_id WHERE c.active=1").fetchall()
+    conn.close()
+    out = []
+    for cab in cabs:
+        if client_id and cab["client_id"] != int(client_id):
+            continue
+        if marketplace and cab["marketplace"] != marketplace:
+            continue
+        streams = ["fbs", "fbo", "statuses"] + (["supplies"] if cab["marketplace"] == "wb" else [])
+        for stream in streams:
+            data = json.loads(saved.get("sync:%s:%s" % (cab["id"], stream)) or "{}")
+            age = None
+            if data.get("success"):
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(data["success"])).total_seconds()
+            item = dict(cab)
+            item.update(stream=stream, stale=age is None or age > (900 if stream in ("statuses", "supplies") else 3600))
+            item.update(data)
+            out.append(item)
+    return out
 
 
 def get_sku(cabinet_id, ext_key):
@@ -1146,6 +1189,8 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
             ] + more,
         )
         sid = cur.lastrowid
+    if extra.get("status_group") not in ("delivered", "cancelled"):
+        conn.execute("UPDATE shipments SET archived_at='' WHERE id=?", (sid,))
     conn.commit()
     conn.close()
     return sid
@@ -1244,6 +1289,8 @@ def set_shipment_status(ship_id, status, status_group, clear_work=False, track=N
     """
     sets = ["status = ?", "status_group = ?"]
     vals = [status or "", status_group or ""]
+    if status_group not in ("delivered", "cancelled"):
+        sets.append("archived_at = ''")
     if clear_work:
         sets.append("work_state = ''")
     if track is not None:
@@ -1508,20 +1555,20 @@ def settle_delivered_orders():
         "UPDATE shipments SET"
         " work_state = '',"
         " status_group = CASE"
-        "  WHEN COALESCE(status_group,'') IN ('cancelled','delivered','shipped') THEN status_group"
+        "  WHEN COALESCE(status_group,'') IN ('cancelled','delivered','pickup','shipped') THEN status_group"
         "  ELSE 'shipped' END,"
         " status = CASE"
-        "  WHEN COALESCE(status_group,'') IN ('cancelled','delivered','shipped') THEN status"
+        "  WHEN COALESCE(status_group,'') IN ('cancelled','delivered','pickup','shipped') THEN status"
         "  ELSE 'передано в доставку / в работе' END"
         " WHERE id IN ("
         "  SELECT shipments.id FROM shipments"
         "  JOIN wb_supplies ON wb_supplies.cabinet_id = shipments.cabinet_id"
         "   AND wb_supplies.ext_id = shipments.supply_ext"
         "  WHERE wb_supplies.state = 'delivered'"
-        "   AND COALESCE(shipments.status_group,'') NOT IN ('cancelled','delivered')"
+        "   AND COALESCE(shipments.status_group,'') NOT IN ('cancelled','delivered','pickup')"
         "   AND ("
         "    COALESCE(shipments.work_state,'') IN ('assembling','ready')"
-        "    OR COALESCE(shipments.status_group,'') NOT IN ('shipped','cancelled','delivered')"
+        "    OR COALESCE(shipments.status_group,'') NOT IN ('shipped','pickup','cancelled','delivered')"
         "   )"
         " )"
     )
@@ -1719,10 +1766,10 @@ def shipped_by_day(client_id, day_from, day_to):
         "SELECT substr(shipments.shipped_at,1,10) AS day, shipments.article AS article, "
         "shipments.barcode AS barcode, shipments.name AS name, shipments.marketplace AS mp, "
         "SUM(shipments.qty) AS qty FROM shipments "
-        "WHERE shipments.client_id = ? AND %s IN ('shipped','delivered') "
+        "WHERE shipments.client_id = ? AND shipments.status_group IN ('shipped','pickup','delivered') "
         "AND substr(shipments.shipped_at,1,10) >= ? AND substr(shipments.shipped_at,1,10) <= ? "
         "GROUP BY day, shipments.article, shipments.barcode "
-        "ORDER BY shipments.article, day" % EFF_GROUP,
+        "ORDER BY shipments.article, day",
         (int(client_id), day_from, day_to),
     ).fetchall()
     conn.close()
@@ -1784,7 +1831,8 @@ def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_fro
 # кнопка «Собрано», и во «Отгружены» его переводит только «Отгружено».
 EFF_GROUP = (
     "CASE"
-    " WHEN COALESCE(shipments.status_group,'') IN ('cancelled','delivered')"
+    " WHEN COALESCE(shipments.archived_at,'') <> '' THEN 'archived'"
+    " WHEN COALESCE(shipments.status_group,'') IN ('cancelled','delivered','pickup')"
     " THEN shipments.status_group"
     " WHEN COALESCE(shipments.status_group,'') = 'shipped'"
     "  AND COALESCE(shipments.work_state,'') = 'assembling'"
@@ -1802,56 +1850,22 @@ ASM_WHEN = "replace(COALESCE(NULLIF(shipments.accepted_at, ''), shipments.shippe
 
 
 def _assembly_date_clauses(since, until, keep_floor, group=""):
-    """Дата для выборки сборки: открытая работа — пол 14 дней, закрытая — смена."""
-    clauses = []
-    args = []
-    floor = ship_keep_since() if keep_floor else ""
-    period = []
-    pargs = []
+    """Рабочие заказы без срока давности, архив доступен отдельной вкладкой."""
+    if group in OPEN_GROUPS or group == "archived":
+        return [], []
+    period, args = [], []
     if since:
         period.append("%s >= ?" % ASM_WHEN)
-        pargs.append(since)
+        args.append(since)
     if until:
         period.append("%s <= ?" % ASM_WHEN)
-        pargs.append(until)
-    open_in = "%s IN ('new','assembling','ready')" % EFF_GROUP
-    closed = "%s NOT IN ('new','assembling','ready')" % EFF_GROUP
-
-    if group in OPEN_GROUPS:
-        if floor:
-            clauses.append("%s >= ?" % ASM_WHEN)
-            args.append(floor)
-        return clauses, args
-
-    if group:
-        if floor:
-            clauses.append("%s >= ?" % ASM_WHEN)
-            args.append(floor)
-        clauses.extend(period)
-        args.extend(pargs)
-        return clauses, args
-
+        args.append(until)
     if not period:
-        if floor:
-            clauses.append("%s >= ?" % ASM_WHEN)
-            args.append(floor)
-        return clauses, args
-
-    open_sql = open_in
-    open_args = []
-    if floor:
-        open_sql = "(%s AND %s >= ?)" % (open_in, ASM_WHEN)
-        open_args.append(floor)
-    closed_sql = closed
-    closed_args = []
-    if floor:
-        closed_sql = "(%s AND %s >= ?)" % (closed, ASM_WHEN)
-        closed_args.append(floor)
-    closed_sql = "(%s AND %s)" % (closed_sql, " AND ".join(period))
-    closed_args.extend(pargs)
-    clauses.append("(%s OR %s)" % (open_sql, closed_sql))
-    args.extend(open_args + closed_args)
-    return clauses, args
+        return [], []
+    dates = " AND ".join(period)
+    if group:
+        return [dates], args
+    return ["(%s IN ('new','assembling','ready','archived') OR (%s))" % (EFF_GROUP, dates)], args
 
 
 def _assembly_filters(

@@ -75,6 +75,9 @@ def sync_client(client_id, days=14):
     try:
         res = run_ships(days=days, blocking=False, client_id=client_id)
         notes.extend(res.get("notes") or [])
+        notes.extend(res.get("errors") or [])
+        # Метка очереди — время попытки. Успех каждого источника хранит sync_health.
+        # Ошибка доступа к FBO не должна запускать весь кабинет каждые пять минут.
         done = True
     except Exception as exc:
         notes.append("отправления: %s" % exc)
@@ -102,7 +105,7 @@ def step():
     if not due(client):
         return {"client": None, "notes": []}
     notes = sync_client(client["id"])
-    print("очередь: %s обновлён" % client["name"])
+    print("очередь: %s, проход завершён" % client["name"])
     for note in notes:
         print("  %s" % note)
     return {"client": client["name"], "notes": notes}

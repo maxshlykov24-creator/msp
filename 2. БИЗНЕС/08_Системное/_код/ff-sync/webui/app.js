@@ -83,7 +83,7 @@ function syncSummary(res) {
 function shipSummary(res) {
   if (!res || !res.ok) return toast(polite((res && res.msg) || "Не обновилось."), "bad");
   const notes = res.notes || [];
-  const bad = notes.some((n) => !/отправлений|снял старше/.test(String(n)));
+  const bad = !!res.partial || (res.errors || []).length > 0;
   toast(bad ? "Отправления обновлены.\nЧасть кабинетов не ответила." : "Отправления обновлены.", bad ? "warn" : "ok");
 }
 
@@ -1289,7 +1289,7 @@ function tintMp(viewId, navId) {
 
 // колонок в таблице «Заказов»: считаем один раз, чтобы пустая строка и строка
 // поставки не разъезжались с шапкой при добавлении колонки
-const ASM_COLS = 11;
+let ASM_COLS = 12;
 
 function asmQuery(group) {
   const params = new URLSearchParams();
@@ -1350,6 +1350,11 @@ async function loadAsm() {
   }
   if (mine !== asmLoad) return;
   state.asm = res.rows;
+  const hasTrack = res.rows.some((r) => r.track);
+  ASM_COLS = hasTrack ? 12 : 11;
+  $("aTbl").classList.toggle("no-track", !hasTrack);
+  $("aArchiveNote").hidden = state.asmGroup !== "archived";
+  renderSyncHealth(res.sync || []);
   state.asmSupplies = res.supplies || [];
   state.pickedAsm.clear();
   // галка «выбрать все» живёт вне таблицы и при перерисовке не сбрасывается сама:
@@ -1383,7 +1388,8 @@ function asmRowHtml(r) {
     <td class="ph">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy" title="увеличить">` : `<span class="noph"></span>`}</td>
     <td class="artq"><b>${num(r.qty, 0)} шт</b> · ${r.article ? `<button type="button" class="artlink" data-art="${esc(r.article)}" title="Найти этот артикул">${esc(r.article)}</button>` : "—"}</td>
     <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
-    <td class="trk">${esc(r.track || "—")}</td>
+    <td class="platform-status">${esc(r.status || "Не проверен")}</td>
+    <td class="trk track-col">${esc(r.track || "—")}</td>
     <td class="dest">${r.office ? esc(r.office) : "—"}${r.cargo ? `<span class="cargo">${esc(r.cargo)}</span>` : ""}</td>
     <td class="sup">${r.supply ? `<span class="badge supply">${esc(r.supply)}</span>` : "—"}${r.box ? `<span class="badge box">${esc(r.box)}</span>` : ""}</td>
     <td class="num">${kizCell(r)}</td>
@@ -1411,25 +1417,42 @@ function wbSupplyPill(supply) {
 // Поставка — та же строка таблицы, что и заказ, но с бейджем и полосой WB.
 // Задания внутри не раскрываем: состав, короба и сдача живут в окне поставки.
 function asmSupplyHtml(sup, rows) {
-  const fromRows = rows.reduce((a, r) => a + Number(r.qty || 0), 0);
-  const qty = fromRows || Number(sup.qty || 0) || Number(sup.orders || 0);
-  const bits = [qty + " шт", sup.orders + " зак.", sup.boxes + " кор."];
-  // точку ПВЗ выбирают в ЛК: не выбрали — так и говорим, а не подставляем адрес
-  bits.push(sup.office || "точка не выбрана");
+  const qty = rows.reduce((a, r) => a + Number(r.qty || 0), 0) || Number(sup.qty || 0);
+  const status = [...new Set(rows.map((r) => r.status).filter(Boolean))].join("; ") || wbSupplyTrack(sup.state);
+  const tracks = [...new Set(rows.map((r) => r.track).filter(Boolean))].join(", ");
   return `<tr class="sup-head" data-supply="${esc(sup.ext_id)}" data-sid="${sup.id}" title="Открыть поставку">
     <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}" title="Выбрать все задания поставки"></td>
-    <td colspan="${ASM_COLS - 1}"><div class="sup-bar">
-      <b>${esc(sup.ext_id)}</b>
-      <span>${esc(sup.client)}</span>
-      <span>${esc(bits.join(" · "))}</span>
-      <i>${esc(wbSupplyTrack(sup.state))}</i>
-    </div></td>
+    <td class="client">${esc(sup.client)}</td>
+    <td class="ext">${num(sup.orders, 0)} зак.<span class="badge mp">WB</span><span class="badge mp">FBS</span></td>
+    <td class="when">${esc(sup.created || "—")}</td>
+    <td class="ph"></td>
+    <td class="artq"><b>${num(qty, 0)} шт</b></td>
+    <td class="nm">Открыть поставку · ${num(sup.boxes, 0)} кор.</td>
+    <td class="platform-status" title="${esc(status)}">${esc(status)}</td>
+    <td class="trk track-col">${esc(tracks || "—")}</td>
+    <td class="dest">${esc(sup.office || "Точка не выбрана")}</td>
+    <td class="sup"><span class="badge supply">${esc(sup.ext_id)}</span></td>
+    <td class="num">${rows.reduce((n, r) => n + Number(r.marks || 0), 0) || "—"}</td>
   </tr>`;
+}
+
+function renderSyncHealth(rows) {
+  const labels = { fbs: "Заказы FBS", fbo: "Заказы FBO", statuses: "Статусы FBS", supplies: "Поставки WB" };
+  const errors = rows.filter((r) => r.error).length;
+  const stale = rows.filter((r) => !r.error && r.stale).length;
+  const root = $("aSyncHealth");
+  root.classList.toggle("has-errors", errors > 0);
+  root.querySelector("summary").textContent = errors ? `Обновление кабинетов: ошибок ${errors}` : stale ? `Обновление кабинетов: требуют проверки ${stale}` : "Кабинеты обновлены · подробности";
+  root.querySelector("div").innerHTML = rows.map((r) => {
+    const stamp = r.success ? new Date(r.success).toLocaleString("ru-RU", {timeZone: "Europe/Moscow"}) : "ещё не проверено";
+    const note = r.error || (r.stale ? "Нужна повторная сверка" : "Обновлено");
+    return `<p><b>${esc(r.client)} · ${esc(r.marketplace.toUpperCase())} · ${esc(r.name || "")} · ${esc(labels[r.stream])}</b><br>Успешное обновление: ${esc(stamp)} МСК · ${esc(note)}</p>`;
+  }).join("");
 }
 
 function asmBodyHtml(rows) {
   // в «Новых» поставки ещё нет: каждое задание само по себе
-  if (state.asmGroup === "new") {
+  if (state.asmGroup === "new" || state.asmGroup === "archived") {
     return rows.map((r) => asmRowHtml(r)).join("");
   }
   const bySupply = new Map();
@@ -1474,6 +1497,7 @@ function supplyMembers(ext) {
 
 function pickedAsmExpanded() {
   const ids = new Set(state.pickedAsm);
+  if (state.asmGroup === "archived") return [...ids];
   (state.asmSupplies || []).forEach((s) => {
     const members = (s.ship_ids || []).map(Number);
     if (members.some((id) => ids.has(id))) members.forEach((id) => ids.add(id));
@@ -1487,7 +1511,7 @@ function refreshAsmDock() {
   $("aActsAssembling").hidden = group !== "assembling";
   $("aActsReady").hidden = group !== "ready";
   if (group !== "assembling" && group !== "ready") hidePrintMenu();
-  const shipTools = group === "shipped" || group === "delivered";
+  const shipTools = ["shipped", "pickup", "delivered", "archived"].includes(group);
   $("aPicking").hidden = group !== "new" && group !== "assembling";
   $("aWeekly").hidden = !shipTools;
   $("shReport").hidden = !shipTools;
@@ -2000,11 +2024,11 @@ async function loadKizStep() {
   }
 }
 
-async function openKizQueue(ids) {
+async function openKizQueue(ids, opts) {
   if (kizBusy) return;
   ids = ids.map(Number).filter(Boolean);
   const rows = ids.map((id) => state.asm.find((r) => r.id === id)).filter(Boolean);
-  const wbNew = rows.filter((r) => r.marketplace === "wb" && !r.supply).map((r) => r.id);
+  const wbNew = opts && opts.inSupply ? [] : rows.filter((r) => r.marketplace === "wb" && !r.supply).map((r) => r.id);
   if (wbNew.length) {
     let placed;
     try {
@@ -2471,7 +2495,10 @@ async function loadWbDetail(id) {
     </section>
     <div class="wb-foot">
       ${open ? `<button class="btn wb-deliver" id="wbDeliver" type="button">На отгрузку</button>` : `<span></span>`}
-      ${printWrap}
+      <div class="wb-foot-actions">
+        <button class="btn-ghost" id="wbKiz" type="button"${!open || !res.rows.length ? " disabled" : ""}>Сканировать КиЗ</button>
+        ${printWrap}
+      </div>
     </div>`;
   bindWbDetail();
   renderWbRows();
@@ -2763,6 +2790,13 @@ function bindWbDetail() {
     if (pr.disabled) return;
     const menu = $("wbPrintMenu");
     if (menu) menu.hidden = !menu.hidden;
+  };
+  const kz = $("wbKiz");
+  if (kz) kz.onclick = () => {
+    const rows = (state.wbDetail && state.wbDetail.rows) || [];
+    const ids = rows.map((r) => Number(r.id)).filter(Boolean);
+    if (!ids.length) return;
+    openKizQueue(ids, { inSupply: true }).catch((e) => say($("wbMsg"), e.message, "bad"));
   };
   const menu = $("wbPrintMenu");
   if (menu) menu.onclick = (e) => {

@@ -12,6 +12,9 @@ import pack
 import wb_supply
 from db import (
     catalog_card,
+    connect,
+    record_sync,
+    run_lock,
     delete_shipments_by_ext,
     delete_wb_boxes,
     get_cabinet,
@@ -708,50 +711,89 @@ def sync_open(cabinet_id=None, client_id=None, author="площадка", min_ga
         if cab["marketplace"] != "wb" or not cab["token"]:
             continue
         try:
-            rows = wb_supply.list_supplies(cab, only_open=True)
-        except wb_supply.SupplyError as exc:
-            notes.append("%s: %s" % (cab["name"], exc))
+            with run_lock(name="ff-supplies-%s" % cab["id"], blocking=False):
+                n, more = _sync_supply_cabinet(cab, author)
+                found += n
+                notes.extend(more)
+                record_sync(cab["id"], "supplies", error="; ".join(more), count=n)
+        except BlockingIOError:
             continue
-        live = {str(x.get("id") or "") for x in rows if x.get("id")}
-        for item in rows:
-            ext = str(item.get("id") or "")
-            if not ext:
-                continue
-            mine = [r for r in find_wb_supplies([ext]) if r["cabinet_id"] == cab["id"]]
-            cargo, flag, point = _dropoff_from_card(item)
-            if mine:
-                _apply_dropoff(mine[0], flag, cargo or str(mine[0]["cargo_type"] or ""), point)
-                # состав тоже сверяем: задание, добавленное в ЛК после нашего
-                # прошлого прохода, иначе остаётся отдельной строкой
-                try:
-                    linked = _attach_supply_orders(cab, ext)
-                except wb_supply.SupplyError as exc:
-                    notes.append("%s: состав не сверить, %s" % (ext, exc))
-                    continue
-                if linked:
-                    notes.append("%s: с площадки подтянул %s заданий." % (ext, linked))
-                continue
-            try:
-                refresh_from_wb(cab["id"], ext, author)
-            except (ValueError, wb_supply.SupplyError) as exc:
-                notes.append("%s: %s" % (ext, exc))
-                continue
-            found += 1
-        # у себя открыта, а в списке её нет: скорее всего сдали через ЛК. Перед
-        # тем как закрыть, спрашиваем карточку — список мог оборваться на
-        # пагинации, и закрыть живую поставку хуже, чем не заметить сданную
-        for row in list_wb_supplies(client_id=cab["client_id"], state="open"):
-            if row["cabinet_id"] != cab["id"] or row["ext_id"] in live:
-                continue
-            card = wb_supply.info(cab, row["ext_id"]) or {}
-            if not card.get("done"):
-                continue
-            mark_wb_supply_delivered(row["id"], _wb_stamp(card.get("closedAt")))
-            notes.append("%s: на площадке уже закрыта, отметил сданной." % row["ext_id"])
+        except Exception as exc:
+            err = str(exc) if isinstance(exc, (ValueError, wb_supply.SupplyError)) else type(exc).__name__
+            record_sync(cab["id"], "supplies", error=err)
+            notes.append("Кабинет %s: %s" % (cab["id"], err))
     moved = settle_delivered_orders()
-    if moved:
-        notes.append("Сданные поставки убраны со сборки: заданий %s." % moved)
-    return {"found": found, "notes": notes}
+    return {"found": found, "notes": notes, "settled": moved}
+
+
+def _sync_supply_cabinet(cab, author):
+    # Список уже содержит закрытые карточки: не спрашиваем их ещё раз по одной.
+    cards = {str(x["id"]): x for x in wb_supply.list_supplies(cab, only_open=False) if x.get("id")}
+    known = {r["ext_id"]: r for r in list_wb_supplies(client_id=cab["client_id"], limit=100000) if r["cabinet_id"] == cab["id"]}
+    conn = connect()
+    relevant = {r["supply_ext"] for r in conn.execute(
+        "SELECT DISTINCT supply_ext FROM shipments WHERE cabinet_id=? AND COALESCE(supply_ext,'')<>''",
+        (cab["id"],))}
+    conn.close()
+    fresh_since = (datetime.now(MSK) - timedelta(days=2)).isoformat()
+    found, notes = 0, []
+    for ext, card in cards.items():
+        mine = known.get(ext)
+        if not mine:
+            # Старые пустые поставки не забивают опрос. При появлении заказа
+            # связь supplyId из выгрузки вернёт карточку в актуальную выборку.
+            if ext not in relevant and card.get("done"):
+                continue
+            cargo, flag, point = _dropoff_from_card(card)
+            sid = insert_wb_supply(cab["client_id"], cab["id"], ext, str(card.get("name") or ext),
+                                   _wb_stamp(card.get("createdAt")), author, cargo, flag, point)
+            mine = get_wb_supply(sid)
+            found += 1
+        cargo, flag, point = _dropoff_from_card(card)
+        _apply_dropoff(mine, flag, cargo or str(mine["cargo_type"] or ""), point)
+        if card.get("done"):
+            members = list_supply_shipments(cab["id"], ext)
+            # deliver закрывает поставку ещё до физической сдачи. Локальное
+            # ожидание снимается по дальнейшему статусу задания или вручную.
+            waiting = mine["state"] == "ready" and members and all(
+                (r["work_state"] or "") == "ready" and "отсортировано" not in (r["status"] or "")
+                and r["status_group"] not in ("pickup", "delivered") for r in members)
+            if not waiting:
+                mark_wb_supply_delivered(mine["id"], _wb_stamp(card.get("closedAt")))
+        elif ext in relevant or _wb_stamp(card.get("createdAt")) >= fresh_since:
+            try:
+                _attach_supply_orders(cab, ext)
+            except Exception as exc:
+                notes.append("%s: состав не сверить (%s)" % (ext, type(exc).__name__))
+        if ext not in known and (ext in relevant or _wb_stamp(card.get("createdAt")) >= fresh_since):
+            try:
+                boxes = wb_supply.list_boxes(cab, ext)
+                if boxes:
+                    insert_wb_boxes(mine["id"], boxes, now_iso())
+                    members = list_supply_shipments(cab["id"], ext)
+                    if len(boxes) == 1 and members:
+                        set_shipment_supply([r["id"] for r in members], ext, trbx_ext=boxes[0])
+            except Exception as exc:
+                notes.append("%s: короба не сверить (%s)" % (ext, type(exc).__name__))
+    # Обрабатываем также ready. Отсутствие в списке не означает закрытие.
+    empty_checked = 0
+    for ext, mine in known.items():
+        if ext in cards or mine["state"] not in ("open", "ready"):
+            continue
+        check_key = "supply-empty-check:%s:%s" % (cab["id"], ext)
+        if ext not in relevant:
+            checked = float(get_setting(check_key) or 0)
+            if empty_checked >= 2 or time.time() - checked < 86400:
+                continue
+            empty_checked += 1
+            set_setting(check_key, str(time.time()))
+        time.sleep(1.1)
+        card = wb_supply.info(cab, ext)
+        if not card:
+            notes.append("%s: WB не подтвердил состояние" % ext)
+        elif card.get("done"):
+            mark_wb_supply_delivered(mine["id"], _wb_stamp(card.get("closedAt")))
+    return found, notes
 
 
 def refresh_from_wb(cabinet_id, ext_id, author="площадка"):
@@ -800,11 +842,13 @@ def refresh_from_wb(cabinet_id, ext_id, author="площадка"):
     if done:
         mark_wb_supply_delivered(sid, _wb_stamp(info.get("closedAt")))
     for row in ships:
-        st = statuses_map.get(str(row["ext_id"])) or {}
+        st = statuses_map.get(str(row["ext_id"]))
+        if not st:
+            continue
         group = statuses.wb_group(st.get("supplier"), st.get("wb"), row["work_state"] or "")
         text = statuses.wb_text(st.get("supplier"), st.get("wb")) or row["status"]
-        if group == statuses.CANCELLED:
-            work = statuses.CANCELLED
+        if group in (statuses.CANCELLED, statuses.DELIVERED, statuses.PICKUP):
+            work = ""
         elif done or group == statuses.SHIPPED:
             work = statuses.SHIPPED
         elif group == statuses.ASSEMBLING:

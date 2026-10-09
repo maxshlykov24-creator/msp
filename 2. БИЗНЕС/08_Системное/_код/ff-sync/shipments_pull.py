@@ -15,6 +15,7 @@ from db import (
     map_shipments,
     prefer_hit,
     prune_old_shipments,
+    record_sync,
     replace_shipment_marks,
     run_lock,
     set_shipment_supply,
@@ -175,7 +176,7 @@ def save_row(client, cab, kind, ext_id, status, shipped_at, article, barcode, na
     return 1
 
 
-def wb_statuses(token, order_ids):
+def wb_statuses(token, order_ids, strict=False):
     found = {}
     ids = []
     for raw in order_ids:
@@ -194,15 +195,21 @@ def wb_statuses(token, order_ids):
         except Exception as exc:
             # без статуса задание всё равно сохраним: wb_group отдаст «Новые», и
             # сборщик увидит заказ, а не потеряет его вместе со всей пачкой
+            if strict:
+                raise RuntimeError("WB статусы: ошибка соединения") from exc
             print("WB статусы не ответили: %s" % exc)
             continue
         if r.status_code != 200:
+            if strict:
+                raise RuntimeError("WB статусы: HTTP %s" % r.status_code)
             continue
         for row in (r.json() or {}).get("orders") or []:
             found[str(row.get("id") or "")] = {
                 "supplier": row.get("supplierStatus") or "",
                 "wb": row.get("wbStatus") or "",
             }
+    if strict and set(map(str, ids)) - set(found):
+        raise RuntimeError("WB статусы: ответ неполный, прежние статусы сохранены")
     return found
 
 
@@ -238,7 +245,7 @@ def wb_meta(token, order_ids):
     return found
 
 
-def pull_ozon_get(headers, kind, posting_number):
+def pull_ozon_get(headers, kind, posting_number, strict=False):
     if kind == "fbo":
         urls = (OZON_BASE + "/v2/posting/fbo/get", OZON_BASE + "/v3/posting/fbo/get")
         body = {"posting_number": posting_number, "with": {"analytics_data": True, "financial_data": True}}
@@ -253,6 +260,8 @@ def pull_ozon_get(headers, kind, posting_number):
         if r.status_code == 200:
             data = r.json()
             return data.get("result") or data
+    if strict:
+        raise RuntimeError("Ozon детали: HTTP %s" % r.status_code)
     return None
 
 
@@ -281,7 +290,7 @@ def handle_wb_fbs(client, cab, orders):
     n = 0
     known = map_shipments(cab["id"], "fbs")
     ids = [str(o.get("id") or "") for o in orders if o.get("id")]
-    statuses = wb_statuses(cab["token"], ids)
+    statuses = wb_statuses(cab["token"], ids, strict=True)
     # коды маркировки нужны тому, что ещё в работе: у отгруженного они уже
     # переданы площадке и лежат у нас
     asked = [
@@ -293,7 +302,9 @@ def handle_wb_fbs(client, cab, orders):
     fresh = set(asked)
     for order in orders:
         ext_id = str(order.get("id") or "")
-        info = statuses.get(ext_id) or {}
+        info = statuses.get(ext_id)
+        if not info:
+            continue
         status = statuses_mod.wb_text(info.get("supplier"), info.get("wb"))
         group = statuses_mod.wb_group(info.get("supplier"), info.get("wb"))
         row = known.get(ext_id)
@@ -322,7 +333,7 @@ def handle_wb_fbs(client, cab, orders):
             cat["name"] or article,
             1,
             # коды не спрашивали — те, что есть, не трогаем
-            (meta.get(ext_id) or []) if ext_id in fresh else None,
+            meta.get(ext_id) if ext_id in fresh else None,
             known=row,
             extra={
                 "status_group": group,
@@ -436,7 +447,7 @@ def handle_ozon(client, cab, kind, postings, headers):
         detail = post
         fetched = False
         if kind == "fbs" and need_detail(row, post):
-            got = pull_ozon_get(headers, kind, ext_id)
+            got = pull_ozon_get(headers, kind, ext_id, strict=True)
             if got:
                 detail = as_dict(got)
                 fetched = True
@@ -462,7 +473,9 @@ def handle_ozon(client, cab, kind, postings, headers):
             or analytics.get("delivery_date")
             or post.get("in_process_at")
         )
-        raw_status = detail.get("status") or post.get("status") or kind.upper()
+        raw_status = detail.get("status") or post.get("status") or ""
+        if raw_status not in statuses_mod.OZON:
+            raise RuntimeError("Ozon: неизвестный или пустой статус, прежние данные сохранены")
         method = detail.get("delivery_method") or post.get("delivery_method") or {}
         if not isinstance(method, dict):
             method = {}
@@ -555,48 +568,41 @@ def run(days=14, blocking=True, client_id=None):
 
 
 def _run(days, client_id=None):
-    """Проход по кабинетам. `client_id` сужает до одного контрагента.
-
-    Кнопка «Обновить отправления» присылает контрагента из фильтра: полный круг
-    по всем кабинетам — это 17 тысяч отправлений и четверть часа, столько склад
-    у экрана не стоит.
-    """
+    """FBS и FBO обновляются независимо; частичный ответ не считается успехом."""
     fill_wb_names(client_id)
     fill_images(client_id)
     start = since_days(int(days or 14))
-    created = 0
-    notes = []
+    created, notes, errors = 0, [], []
     for cab in list_cabinets():
-        if not cab["active"] or not cab["token"]:
-            continue
-        if client_id and cab["client_id"] != int(client_id):
+        if not cab["active"] or not cab["token"] or (client_id and cab["client_id"] != int(client_id)):
             continue
         client = get_client_by_id(cab["client_id"])
-        if not client:
+        if not client or cab["marketplace"] not in ("wb", "ozon"):
             continue
-        try:
-            n = 0
-            if cab["marketplace"] == "wb":
-                n += handle_wb_fbs(client, cab, pull_wb_fbs(cab["token"], start))
-                n += handle_wb_fbo(client, cab, pull_wb_fbo(cab["token"], start))
-            elif cab["marketplace"] == "ozon":
-                headers = ozon_headers(cab["client_id_ext"], cab["token"])
-                n += handle_ozon(
-                    client, cab, "fbs", ozon_list(OZON_BASE + "/v3/posting/fbs/list", headers, start), headers
-                )
-                n += handle_ozon(
-                    client, cab, "fbo", ozon_list(OZON_BASE + "/v2/posting/fbo/list", headers, start), headers
-                )
-            created += n
-            notes.append("%s %s: %s отправлений" % (client["name"], cab["marketplace"], n))
-        except Exception as exc:
-            notes.append("%s %s: %s" % (client["name"], cab["marketplace"], exc))
-    gone = prune_old_shipments(int(days or 14))
-    if gone:
-        print("отправлений старше окна: снял %s" % gone)
-        notes.append("снял старше %s дней: %s" % (int(days or 14), gone))
-    print("отгрузок обновлено: %s" % created)
-    return {"count": created, "notes": notes}
+        for kind in ("fbs", "fbo"):
+            try:
+                if cab["marketplace"] == "wb":
+                    pull = pull_wb_fbs if kind == "fbs" else pull_wb_fbo
+                    handler = handle_wb_fbs if kind == "fbs" else handle_wb_fbo
+                    rows = pull(cab["token"], start, strict=True)
+                    n = handler(client, cab, rows)
+                else:
+                    headers = ozon_headers(cab["client_id_ext"], cab["token"])
+                    url = OZON_BASE + ("/v3/posting/fbs/list" if kind == "fbs" else "/v2/posting/fbo/list")
+                    rows = ozon_list(url, headers, start, strict=True)
+                    n = handle_ozon(client, cab, kind, rows, headers)
+                created += n
+                record_sync(cab["id"], kind, count=len(rows))
+                notes.append("%s %s %s: %s отправлений" % (client["name"], cab["marketplace"], kind, n))
+            except Exception as exc:
+                err = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+                record_sync(cab["id"], kind, error=err)
+                errors.append("%s %s %s: %s" % (client["name"], cab["marketplace"], kind, err))
+    archived = prune_old_shipments()
+    if archived:
+        notes.append("Перенесено в архив: %s" % archived)
+    print("отгрузок обновлено: %s, ошибок источников: %s" % (created, len(errors)))
+    return {"count": created, "notes": notes, "errors": errors, "partial": bool(errors), "archived": archived}
 
 
 if __name__ == "__main__":

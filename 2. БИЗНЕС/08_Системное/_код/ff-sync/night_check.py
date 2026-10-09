@@ -17,13 +17,17 @@ from db import (
     list_open_shipments,
     run_lock,
     set_shipment_status,
+    record_sync,
+    lock_name,
+    prune_old_shipments,
 )
 from net import OZON_BASE, ozon_headers
 from orders_pull import ozon_list, since_days
 from shipments_pull import pull_ozon_get, wb_statuses
 
 # Площадка ушла вперёд — складская отметка больше не главная
-DONE = (statuses_mod.SHIPPED, statuses_mod.DELIVERED, statuses_mod.CANCELLED)
+DONE = (statuses_mod.SHIPPED, statuses_mod.PICKUP, statuses_mod.DELIVERED, statuses_mod.CANCELLED)
+WATCH = ("new", "assembling", "ready", "shipped", "pickup")
 # Потолок на одиночные запросы: те, кого не было в списке площадки, спрашиваем
 # поштучно, и упереться в это на всю ночь не хочется
 OZON_CAP = 300
@@ -33,12 +37,12 @@ def _changed(row, status, group):
     return (row["status"] or "") != (status or "") or (row["status_group"] or "") != (group or "")
 
 
-def check_wb(cab):
-    rows = list_open_shipments(cab["id"], kind="fbs")
+def check_wb(cab, live=False):
+    rows = list_open_shipments(cab["id"], kind="fbs", groups=WATCH)
     if not rows:
         return 0, 0
     ids = [str(r["ext_id"]) for r in rows]
-    found = wb_statuses(cab["token"], ids)
+    found = wb_statuses(cab["token"], ids, strict=True)
     if not found:
         return len(rows), 0
     fixed = 0
@@ -51,46 +55,47 @@ def check_wb(cab):
         stale = _changed(row, status, group) or (group in DONE and (row["work_state"] or ""))
         if not stale:
             continue
-        set_shipment_status(row["id"], status, group, clear_work=group in DONE)
+        set_shipment_status(row["id"], status, group, clear_work=group in DONE and not (
+            row["work_state"] == "ready" and info.get("wb") == "waiting" and info.get("supplier") == "complete"))
         fixed += 1
     return len(rows), fixed
 
 
-def check_ozon(cab):
+def check_ozon(cab, live=False):
     """Статусы Ozon одним списком, а не по отправлению за запрос.
 
     В работе и в пути у площадок больше четырёх тысяч отправлений. Ручка `get`
     отдаёт одно за запрос, а `list` — сотню, и окно совпадает с тем, что мы
     вообще храним. Одиночный `get` оставлен для тех, кого в списке не оказалось.
     """
-    rows = list_open_shipments(cab["id"], kind="fbs")
+    rows = list_open_shipments(cab["id"], kind="fbs", groups=WATCH)
     if not rows:
         return 0, 0
     headers = ozon_headers(cab["client_id_ext"], cab["token"])
-    try:
-        listed = ozon_list(OZON_BASE + "/v3/posting/fbs/list", headers, since_days(SHIP_KEEP_DAYS))
-    except Exception as exc:
-        print("ozon список не ответил: %s" % exc)
-        listed = []
+    listed = ozon_list(OZON_BASE + "/v3/posting/fbs/list", headers, since_days(SHIP_KEEP_DAYS), strict=True)
     found = {}
     for post in listed:
         if isinstance(post, dict) and post.get("posting_number"):
             found[str(post["posting_number"])] = post
     fixed = 0
     late = 0
+    incomplete = False
     for row in rows:
         post = found.get(str(row["ext_id"]))
         if post is None:
             if late >= OZON_CAP:
+                incomplete = True
                 continue
             late += 1
             try:
-                post = pull_ozon_get(headers, "fbs", str(row["ext_id"])) or {}
+                post = pull_ozon_get(headers, "fbs", str(row["ext_id"]), strict=True) or {}
             except Exception as exc:
+                incomplete = True
                 print("ozon %s не ответил: %s" % (row["ext_id"], exc))
                 continue
         raw = (post or {}).get("status") or ""
-        if not raw:
+        if not raw or raw not in statuses_mod.OZON:
+            incomplete = True
             continue
         status = statuses_mod.ru(raw)
         group = statuses_mod.ozon_group(raw)
@@ -104,6 +109,8 @@ def check_ozon(cab):
             continue
         set_shipment_status(row["id"], status, group, clear_work=group in DONE, track=track)
         fixed += 1
+    if incomplete:
+        raise RuntimeError("Ozon: часть рабочих отправлений не удалось сверить")
     return len(rows), fixed
 
 
@@ -124,30 +131,38 @@ def run(blocking=True):
         return _run()
 
 
-def _run():
-    seen = 0
-    fixed = 0
-    notes = []
+def _run(client_id=None, live=False):
+    seen, fixed, notes = 0, 0, []
     for cab in list_cabinets():
-        if not cab["active"] or not cab["token"]:
+        if not cab["active"] or not cab["token"] or (client_id and cab["client_id"] != int(client_id)):
+            continue
+        if cab["marketplace"] not in ("wb", "ozon"):
             continue
         try:
-            if cab["marketplace"] == "wb":
-                n, k = check_wb(cab)
-            elif cab["marketplace"] == "ozon":
-                n, k = check_ozon(cab)
-            else:
-                continue
+            with run_lock(name=lock_name(cab["client_id"]), blocking=False):
+                check = check_wb if cab["marketplace"] == "wb" else check_ozon
+                n, k = check(cab, live=live)
+                record_sync(cab["id"], "statuses", count=n)
+        except BlockingIOError:
+            continue
         except Exception as exc:
-            notes.append("кабинет %s: %s" % (cab["id"], exc))
+            err = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+            record_sync(cab["id"], "statuses", error=err)
+            notes.append("Кабинет %s: %s" % (cab["id"], err))
             continue
         seen += n
         fixed += k
-        if k:
-            notes.append("кабинет %s %s: поправил %s из %s" % (cab["id"], cab["marketplace"], k, n))
-    check_supplies()
-    print("ночная сверка: проверено %s, поправлено %s" % (seen, fixed))
+    prune_old_shipments()
+    if not live:
+        check_supplies()
+    print("сверка: проверено %s, поправлено %s, ошибок %s" % (seen, fixed, len(notes)), flush=True)
     return {"seen": seen, "fixed": fixed, "notes": notes}
+
+
+def run_live(client_id=None):
+    init_db()
+    with run_lock(name="ff-live-statuses", blocking=False):
+        return _run(client_id=client_id, live=True)
 
 
 if __name__ == "__main__":

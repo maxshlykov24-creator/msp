@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from ms import order_app_url
 from db import (
     assembly_counts,
+    sync_health,
     catalog_card,
     delete_intake_row,
     delete_intake_rows,
@@ -855,6 +856,7 @@ def assembly(
     return {
         "rows": out,
         "supplies": supplies,
+        "sync": sync_health(client_id=client_id or None, marketplace=mp),
         "groups": [
             {"code": code, "label": label, "count": counts.get(code, 0)}
             for code, label in statuses.GROUPS
@@ -1335,6 +1337,15 @@ def shipments_sync(data: dict = Body(None), ff_session: str = Cookie(default="")
         days = min(14, max(1, int((data or {}).get("days") or 14)))
         client_id = int((data or {}).get("client_id") or 0) or None
         res = run(days=days, blocking=False, client_id=client_id)
+        import night_check, supply_flow
+        try:
+            checked = night_check.run_live(client_id=client_id)
+            res["errors"].extend(checked["notes"])
+        except BlockingIOError:
+            res["notes"].append("Оперативная сверка уже выполняется")
+        supplies = supply_flow.sync_open(client_id=client_id)
+        res["errors"].extend(supplies["notes"])
+        res["partial"] = bool(res["errors"])
         return {"ok": True, **res}
     except BlockingIOError:
         return {"ok": False, "msg": "этот контрагент уже обновляется, подожди"}

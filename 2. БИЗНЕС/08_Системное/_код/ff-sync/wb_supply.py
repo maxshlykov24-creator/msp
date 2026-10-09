@@ -278,6 +278,7 @@ def list_supplies(cab, only_open=True, pages=30):
     heads = wb_headers(cab["token"])
     out = []
     nxt = 0
+    seen_cursors = set()
     for _ in range(max(1, int(pages))):
         r = req(
             "GET",
@@ -294,8 +295,13 @@ def list_supplies(cab, only_open=True, pages=30):
         got = [x for x in (data.get("supplies") or []) if isinstance(x, dict)]
         out.extend(got)
         nxt = data.get("next") or 0
-        if len(got) < SUPPLIES_CHUNK:
+        if len(got) < SUPPLIES_CHUNK or not nxt:
             break
+        if nxt in seen_cursors:
+            raise SupplyError("WB: повтор курсора списка поставок, ответ неполный")
+        seen_cursors.add(nxt)
+    else:
+        raise SupplyError("WB: не удалось загрузить все страницы поставок")
     if only_open:
         out = [x for x in out if not x.get("done")]
     return out

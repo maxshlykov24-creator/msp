@@ -134,7 +134,7 @@ def since_days(days=3):
     return start
 
 
-def pull_wb_new(token):
+def pull_wb_new(token, strict=False):
     """Актуальные новые сборочные задания одним ответом.
 
     Отдельная ручка WB, без страниц и без окна дат. Спрашиваем её всегда: пока
@@ -144,22 +144,26 @@ def pull_wb_new(token):
     try:
         r = req("GET", WB_BASE + "/api/v3/orders/new", headers=wb_headers(token))
     except Exception as exc:
+        if strict:
+            raise RuntimeError("WB новые: ошибка соединения") from exc
         print("WB новые не ответили: %s" % exc)
         return []
     if r.status_code != 200:
+        if strict:
+            raise RuntimeError("WB новые: HTTP %s" % r.status_code)
         print("WB новые %s %s" % (r.status_code, (r.text or "")[:180]))
         return []
     return (r.json() or {}).get("orders") or []
 
 
-def pull_wb_fbs(token, date_from):
+def pull_wb_fbs(token, date_from, strict=False):
     """Задания за окно плюс все новые.
 
     Страницы идут от старых к новым, поэтому обрыв выборки терял свежие заказы.
     Начинаем с `orders/new`, дальше добираем историю по страницам, дубли по id
     отбрасываем.
     """
-    out = list(pull_wb_new(token))
+    out = list(pull_wb_new(token, strict=strict))
     seen = {str(o.get("id") or "") for o in out}
     nxt = 0
     ts = int(date_from.timestamp())
@@ -172,9 +176,13 @@ def pull_wb_fbs(token, date_from):
                 params={"limit": 1000, "next": nxt, "dateFrom": ts},
             )
         except Exception as exc:
+            if strict:
+                raise RuntimeError("WB FBS: неполный список, ошибка соединения") from exc
             print("WB FBS страница оборвалась, беру что успел: %s" % exc)
             break
         if r.status_code != 200:
+            if strict:
+                raise RuntimeError("WB FBS: неполный список, HTTP %s" % r.status_code)
             print("WB FBS %s %s" % (r.status_code, (r.text or "")[:180]))
             break
         data = r.json()
@@ -191,7 +199,7 @@ def pull_wb_fbs(token, date_from):
     return out
 
 
-def pull_wb_fbo(token, date_from):
+def pull_wb_fbo(token, date_from, strict=False):
     r = req(
         "GET",
         WB_STATS + "/api/v1/supplier/orders",
@@ -199,6 +207,8 @@ def pull_wb_fbo(token, date_from):
         params={"dateFrom": date_from.strftime("%Y-%m-%d"), "flag": 0},
     )
     if r.status_code != 200:
+        if strict:
+            raise RuntimeError("WB FBO: HTTP %s%s" % (r.status_code, " — нет доступа к статистике" if r.status_code == 403 else ""))
         print("WB FBO %s %s" % (r.status_code, (r.text or "")[:180]))
         return []
     rows = r.json() if isinstance(r.json(), list) else []
@@ -209,13 +219,13 @@ def pull_wb_fbo(token, date_from):
             continue
         if not wtype:
             continue
-        if row.get("isCancel"):
+        if row.get("isCancel") and not strict:
             continue
         fbo.append(row)
     return fbo
 
 
-def ozon_list(url, headers, date_from):
+def ozon_list(url, headers, date_from, strict=False):
     out = []
     offset = 0
     since = date_from.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -233,6 +243,8 @@ def ozon_list(url, headers, date_from):
             },
         )
         if r.status_code != 200:
+            if strict:
+                raise RuntimeError("Ozon: неполный список, HTTP %s" % r.status_code)
             print("Ozon %s %s %s" % (url, r.status_code, (r.text or "")[:180]))
             break
         data = r.json()

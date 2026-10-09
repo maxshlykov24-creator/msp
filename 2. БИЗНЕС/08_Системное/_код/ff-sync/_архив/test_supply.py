@@ -1007,4 +1007,64 @@ except ValueError as exc:
 with db.connect() as conn:
     assert conn.execute("SELECT count(*) FROM shipments WHERE id=?", (excluded_id,)).fetchone()[0] == 1
 
-print("все проверки поставок, сборки и КиЗ прошли")
+
+
+# История и коды не удаляются; старые рабочие заказы видны независимо от смены.
+from datetime import datetime, timedelta
+old = (datetime.now() - timedelta(days=40)).strftime("%Y-%m-%d 10:00")
+archive_ids = {}
+for group in ("new", "assembling", "ready", "shipped", "pickup", "delivered", "cancelled"):
+    sid = db.upsert_shipment(client_id, wb_cab, "wb", "fbs", "audit-" + group,
+                            group, old[:10], "AUDIT", "", "Проверка", 1, None, 1, old,
+                            extra={"status_group": group, "accepted_at": old})
+    db.replace_shipment_marks(sid, [{"code": "012345678901234567890123456789", "gtin": "", "article": "AUDIT"}])
+    archive_ids[group] = sid
+before_count = len(db.map_shipments(wb_cab, "fbs"))
+db.prune_old_shipments(1)  # Короткий ручной период не сокращает срок хранения.
+assert len(db.map_shipments(wb_cab, "fbs")) == before_count
+for group, sid in archive_ids.items():
+    row = db.get_shipments_by_ids([sid])[0]
+    assert bool(row["archived_at"]) == (group in ("delivered", "cancelled")), dict(row)
+    assert len(db.list_shipment_marks([sid])) == 1
+    if group in ("new", "assembling", "ready"):
+        assert sid in {r["id"] for r in db.list_assembly(group=group, since="2099-01-01", until="2099-01-02")}
+assert archive_ids["delivered"] in {r["id"] for r in db.list_assembly(group="archived", since="2099-01-01")}
+db.set_shipment_status(archive_ids["delivered"], "на сборке", "assembling", clear_work=True)
+assert not db.get_shipments_by_ids([archive_ids["delivered"]])[0]["archived_at"]
+assert statuses.wb_group("complete", "ready_for_pickup") == "pickup"
+assert statuses.group_from_text("передано в доставку / прибыло на ПВЗ") == "pickup"
+assert db.shipped_by_day(client_id, old[:10], old[:10])
+
+# Пропущенный ответ статусов не сбрасывает отгруженный заказ в Новые.
+with patch.object(shipments_pull, "req", return_value=Fake(200, {"orders": []})):
+    try:
+        shipments_pull.wb_statuses("test", [123], strict=True)
+        raise AssertionError("incomplete statuses accepted")
+    except RuntimeError:
+        pass
+
+# Сбой метаданных сохраняет ранее отсканированные КиЗ.
+marked_id = db.upsert_shipment(client_id, wb_cab, "wb", "fbs", "99887766", "на сборке / в работе", old[:10],
+                               "AUDIT", "", "Проверка", 1, None, 1, old,
+                               extra={"status_group": "assembling", "accepted_at": old})
+db.replace_shipment_marks(marked_id, [{"code": "012345678901234567890123456789", "gtin": "", "article": "AUDIT"}])
+client = db.get_client_by_id(client_id)
+with patch.object(shipments_pull, "wb_statuses", return_value={"99887766": {"supplier": "confirm", "wb": "waiting"}}), patch.object(shipments_pull, "wb_meta", return_value={}):
+    shipments_pull.handle_wb_fbs(client, db.get_cabinet(wb_cab), [{"id": 99887766, "article": "AUDIT", "createdAt": old}])
+assert len(db.list_shipment_marks([marked_id])) == 1
+
+# Ошибка после успешного прохода не обновляет дату последнего успеха.
+db.record_sync(wb_cab, "fbs", count=2)
+last = json.loads(db.get_setting("sync:%s:fbs" % wb_cab))["success"]
+db.record_sync(wb_cab, "fbs", error="HTTP 429")
+health = json.loads(db.get_setting("sync:%s:fbs" % wb_cab))
+assert health["success"] == last and health["error"] == "HTTP 429"
+
+# Закрытая на WB ready-поставка обновляется по общему списку без GET карточки.
+ready_sid = db.insert_wb_supply(client_id, wb_cab, "WB-GI-AUDIT", "Аудит", old, "тест")
+db.set_wb_supply_state(ready_sid, "ready")
+card = {"id": "WB-GI-AUDIT", "done": True, "closedAt": "2026-10-09T11:53:51Z"}
+with patch.object(supply_flow, "list_wb_supplies", return_value=[db.get_wb_supply(ready_sid)]), patch.object(wb_supply, "list_supplies", return_value=[card]), patch.object(wb_supply, "info", side_effect=AssertionError("unneeded per-supply GET")):
+    supply_flow._sync_supply_cabinet(db.get_cabinet(wb_cab), "тест")
+assert db.get_wb_supply(ready_sid)["state"] == "delivered"
+print("все проверки поставок, сборки, КиЗ, архива и актуальности прошли")

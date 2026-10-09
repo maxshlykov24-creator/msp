@@ -9,6 +9,8 @@ NEW = "new"
 ASSEMBLING = "assembling"
 READY = "ready"
 SHIPPED = "shipped"
+PICKUP = "pickup"
+ARCHIVED = "archived"
 DELIVERED = "delivered"
 CANCELLED = "cancelled"
 
@@ -17,8 +19,10 @@ GROUPS = (
     (ASSEMBLING, "На сборке"),
     (READY, "Ожидают отгрузки"),
     (SHIPPED, "Отгружены"),
+    (PICKUP, "На ПВЗ"),
     (DELIVERED, "Доставлены"),
     (CANCELLED, "Отменены"),
+    (ARCHIVED, "Архив"),
 )
 GROUP_CODES = tuple(code for code, _ in GROUPS)
 GROUP_LABELS = dict(GROUPS)
@@ -183,7 +187,7 @@ WB_SUPPLIER = {
 # Wildberries: wbStatus — то, что делает площадка. Уточняет группу.
 WB_STATUS = {
     "sold": DELIVERED,
-    "ready_for_pickup": DELIVERED,
+    "ready_for_pickup": PICKUP,
     "canceled": CANCELLED,
     "canceled_by_client": CANCELLED,
     "declined_by_client": CANCELLED,
@@ -259,7 +263,7 @@ def group_from_text(text):
     if DELIVERED in found:
         return DELIVERED
     # у пары «поставщик / площадка» приоритет за тем, что дальше по маршруту
-    order = [NEW, ASSEMBLING, READY, SHIPPED, DELIVERED, CANCELLED]
+    order = [NEW, ASSEMBLING, READY, SHIPPED, PICKUP, DELIVERED, CANCELLED]
     return max(found, key=order.index)
 
 
@@ -275,8 +279,8 @@ def wb_group(supplier, wb_status, work_state=""):
     # отмена с любой стороны важнее всего остального
     if WB_SUPPLIER.get(sup) == CANCELLED or WB_STATUS.get(wbs) == CANCELLED:
         return CANCELLED
-    if WB_STATUS.get(wbs) == DELIVERED:
-        return DELIVERED
+    if WB_STATUS.get(wbs) in (PICKUP, DELIVERED):
+        return WB_STATUS[wbs]
     if sup in WB_SUPPLIER:
         return WB_SUPPLIER[sup]
     if work_state:

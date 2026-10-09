@@ -35,6 +35,17 @@ def job_supplies():
         print("поставки ошибка:", exc)
 
 
+def job_live():
+    """Актуальные статусы каждые пять минут, без записи на маркетплейсы."""
+    import night_check
+    try:
+        night_check.run_live()
+    except BlockingIOError:
+        pass
+    except Exception as exc:
+        print("оперативная сверка:", type(exc).__name__, flush=True)
+
+
 def job_night():
     """Ночная сверка того, что ждёт отгрузки и уже уехало."""
     import night_check
@@ -99,6 +110,7 @@ sched = BlockingScheduler(timezone="Europe/Moscow")
 sched.add_job(job_agents, "interval", minutes=10, id="agents")
 sched.add_job(job_rota, "interval", minutes=step, id="rota")
 sched.add_job(job_supplies, "interval", minutes=5, id="supplies")
+sched.add_job(job_live, "interval", minutes=5, id="live_statuses", max_instances=1, coalesce=True)
 sched.add_job(job_accept, "interval", minutes=10, id="accept")
 sched.add_job(job_night, "cron", hour=3, minute=30, id="night")
 sched.add_job(job_stock, "interval", minutes=5, id="own_stock", max_instances=1, coalesce=True)

@@ -450,6 +450,7 @@ table.asm-tbl tr.sup-head:hover .sup-bar i{opacity:1}
 .wb-foot{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-top:12px;margin-top:6px;border-top:1px solid var(--line)}
 .wb-foot .wb-deliver{margin-right:auto}
 .wb-foot .print-wrap{flex:0 0 auto}
+.wb-foot-actions{display:flex;align-items:center;gap:8px}
 .wb-foot .print-menu{left:auto;right:0;bottom:calc(100% + 8px);top:auto;min-width:240px}
 .wb-deliver{background:linear-gradient(160deg,#c45b55,#d4922a);box-shadow:0 10px 24px -12px rgba(196,91,85,.5)}
 .badge.box{color:var(--accent);border-color:rgba(59,116,214,.35);background:rgba(59,116,214,.08);font-weight:600;font-size:10px;padding:2px 7px}
@@ -616,3 +617,13 @@ table.asm-tbl td.num .kiz-link.is-on{border-color:transparent;background:rgba(0,
   .panel{padding:18px}
   .sec-title span{display:none}
 }
+
+/* Состояния площадок и история заказов. */
+.asm-tbl.no-track .track-col { display: none; }
+.asm-tbl .platform-status { min-width: 145px; max-width: 240px; white-space: normal; font-size: 12px; }
+.asm-tbl .sup-head > td { vertical-align: middle; }
+.sync-health { margin: 12px 0; padding: 10px 14px; border: 1px solid var(--line, #d7dce4); border-radius: 12px; font-size: 12px; }
+.sync-health summary { cursor: pointer; font-weight: 600; }
+.sync-health.has-errors summary { color: #b86409; }
+.sync-health > div { max-height: 300px; overflow: auto; }
+.sync-health p { padding: 8px 0; margin: 0; border-bottom: 1px solid var(--line, #d7dce4); }

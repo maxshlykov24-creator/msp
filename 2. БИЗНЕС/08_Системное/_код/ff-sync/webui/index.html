@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=101">
+<link rel="stylesheet" href="/ui/app.css?v=102">
 </head>
 <body>
 
@@ -224,6 +224,8 @@
       </div>
     </div>
 
+    <details class="sync-health" id="aSyncHealth"><summary>Проверка обновления кабинетов</summary><div></div></details>
+    <p class="muted" id="aArchiveNote" hidden>Архив завершённых заказов за всё время. Коды маркировки и история сохранены.</p>
     <div class="panel glass">
       <div class="tbl-wrap asm-wrap">
         <table class="tbl asm-tbl" id="aTbl">
@@ -235,7 +237,8 @@
             <th class="ph">Фото</th>
             <th>Кол-во, артикул</th>
             <th>Наименование</th>
-            <th>Трек</th>
+            <th>Статус площадки</th>
+            <th class="track-col">Трек</th>
             <th>Куда везти</th>
             <th>Поставка</th>
             <th class="num">КиЗ</th>
@@ -719,6 +722,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=105"></script>
+<script src="/ui/app.js?v=107"></script>
 </body>
 </html>
