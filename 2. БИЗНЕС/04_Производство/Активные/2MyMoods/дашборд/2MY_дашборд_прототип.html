@@ -1056,7 +1056,7 @@
       <div id="ship-kv"></div>
       <h3>Срок отправки</h3>
       <div class="hint">От «Подтвержден» до «Отправлен» в МойСкладе, в календарных днях. Заказы отбираются по дате полной оплаты и фильтрам продаж. «Без ожидания» означает, что дата «Ожидает наличия» не заполнена; это не подтверждение остатков каждого товара. Смешанный заказ считается целиком. Неотправленные заказы в среднее и медиану не входят.</div>
-      <div class="table-wrap"><table><thead><tr><th>Наличие по заказу</th><th>Заказов</th><th>Среднее</th><th>Медиана</th></tr></thead><tbody id="ship-times"></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Наличие по заказу</th><th>Срок рассчитан</th><th>Среднее</th><th>Медиана</th></tr></thead><tbody id="ship-times"></tbody></table></div>
       <div class="hint" id="ship-quality"></div>
     </div>
   </div>
@@ -1314,6 +1314,7 @@ const select = (id, values, label) => { const e=el(id), old=selected(id); e.inne
  }
  document.querySelectorAll('select').forEach(dress);
  document.addEventListener('pointerdown',e=>{if(!e.target.closest('#conversion-card')&&!e.target.closest('.pick-menu'))el('conversion-card').classList.remove('conversion-selected')},true);
+ document.addEventListener('pointermove',e=>{if(!current&&!e.target.closest('#conversion-card')&&!e.target.closest('.pick-menu'))el('conversion-card').classList.remove('conversion-selected')},true);
  const desc=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value');
  Object.defineProperty(HTMLSelectElement.prototype,'value',{
   configurable:true,
@@ -1390,20 +1391,25 @@ function stageConversion(leads,history,stages,fromStage=88727570,toStage=142){
   return events.length?events.flatMap(e=>[e.before,e.after]).filter(x=>x!==null):[l.status];
  });
  const pair=(a,b)=>{let entered=0,reached=0;for(const path of paths){const i=path.indexOf(a);if(i<0)continue;entered++;if(path.slice(i+1).includes(b))reached++;}return {entered,reached,rate:entered?(100*reached/entered).toFixed(1).replace('.',',')+'%':'—'}};
- const ordered=stages.filter(([id])=>id!==143);
- return {rows:ordered.slice(0,-1).map(([id,name],i)=>({label:name+' → '+ordered[i+1][1],...pair(id,ordered[i+1][0])})),overall:pair(fromStage,toStage),full:pair(88727570,142),withEvents:leads.filter(l=>(byLead[l.id]||[]).length).length};
+ const ordered=stages.filter(([id])=>Number(id)!==143&&Number(id)!==88727566);
+ const rows=ordered.slice(0,-1).map(([id,name],i)=>({label:name+' → '+ordered[i+1][1],...pair(id,ordered[i+1][0])}));
+ const names=new Map(ordered);
+ const additional=[[88727574,88727582],[88727574,88727586],[88727578,88727586],[88727590,88727598]];
+ rows.push(...additional.filter(([a,b])=>names.has(a)&&names.has(b)).map(([a,b])=>({label:names.get(a)+' → '+names.get(b),...pair(a,b)})));
+ return {rows,overall:pair(fromStage,toStage),full:pair(88727570,142),withEvents:leads.filter(l=>(byLead[l.id]||[]).length).length};
 }
 function shippingStats(orders){
- const groups=[{label:'Все отправленные',values:[]},{label:'Без ожидания наличия',values:[]},{label:'Ожидали наличия',values:[]},{label:'Признак наличия не проверен',values:[]}];
- let missing=0,invalid=0;
+ const groups=[{label:'Все заказы с обеими датами',values:[]},{label:'Без ожидания наличия',values:[]},{label:'Ожидали наличия',values:[]},{label:'Признак наличия не проверен',values:[]}];
+ let missing=0,missingConfirm=0,missingSent=0,invalid=0,sent=0;
  for(const o of orders){
-  if(!o.confirmed_at||!o.sent_at){missing++;continue;}
+  if(o.sent_at)sent++;
+  if(!o.confirmed_at||!o.sent_at){missing++;if(!o.confirmed_at)missingConfirm++;if(!o.sent_at)missingSent++;continue;}
   const days=(Date.parse(o.sent_at)-Date.parse(o.confirmed_at))/864e5;
   if(!Number.isFinite(days)||days<0){invalid++;continue;}
   groups[0].values.push(days);
   groups[o.stock_checked!==true?3:o.await_stock?2:1].values.push(days);
  }
- return {missing,invalid,groups:groups.map(g=>{const a=g.values.sort((x,y)=>x-y),n=a.length;return {label:g.label,count:n,mean:n?a.reduce((x,y)=>x+y,0)/n:null,median:n?(a[Math.floor((n-1)/2)]+a[Math.floor(n/2)])/2:null};})};
+ return {missing,missingConfirm,missingSent,invalid,sent,groups:groups.map(g=>{const a=g.values.sort((x,y)=>x-y),n=a.length;return {label:g.label,count:n,mean:n?a.reduce((x,y)=>x+y,0)/n:null,median:n?(a[Math.floor((n-1)/2)]+a[Math.floor(n/2)])/2:null};})};
 }
 function refresh(){
  if(!data)return;
@@ -1555,12 +1561,13 @@ function refresh(){
  el('s-count').textContent=num(products.length)+' товаров';
  const leads=data.leads.filter(l=>l.created>=state.from&&l.created<=state.to);
  const fallbackStages=[[88727566,'Неразобранное'],[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно'],[143,'Закрыто без успеха']];
- const stages=data.tasks.stages?.map(s=>[s.id,s.name])||fallbackStages;
+ const stages=data.tasks.stages?.map(s=>[Number(s.id),s.name])||fallbackStages;
+ const conversionStages=stages.filter(([id])=>Number(id)!==88727566);
  el('funnel-hint').textContent=`В срезе: ${num(data.leads.length)} сделок; исключено по Полине: ${num(data.tasks.excluded_marketing_owner||0)}. Обновлено: ${data.tasks.collected_at||data.generated}.`;
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${esc(label)}</span><span class="nums">${num(data.leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
- for(const [id,fallback] of [['conversion-from',88727570],['conversion-to',142]]){const e=el(id),previous=Number(e.value);e.innerHTML=stages.map(([id,name])=>`<option value="${id}">${esc(name)}</option>`).join('');e.value=String(stages.some(([id])=>id===previous)?previous:fallback);}
+ for(const [id,fallback] of [['conversion-from',88727570],['conversion-to',142]]){const e=el(id),previous=Number(e.value);e.innerHTML=conversionStages.map(([id,name])=>`<option value="${id}">${esc(name)}</option>`).join('');e.value=String(conversionStages.some(([id])=>id===previous)?previous:fallback);}
  const fromStage=Number(el('conversion-from').value),toStage=Number(el('conversion-to').value);
- const conversion=stageConversion(leads,data.stage_history,stages,fromStage,toStage);
+ const conversion=stageConversion(leads,data.stage_history,conversionStages,fromStage,toStage);
  const conversionPct=x=>x.rate+' ('+num(x.reached)+' из '+num(x.entered)+')';
  const finalName=stages.find(([id])=>id===toStage)?.[1]||'—',firstName=stages.find(([id])=>id===fromStage)?.[1]||'—';
  el('conversion-summary').innerHTML=conversion?kv([['Новая заявка → '+(stages.find(([id])=>id===142)?.[1]||'Успешно'),conversionPct(conversion.full)],...((fromStage!==88727570||toStage!==142)?[[firstName+' → '+finalName,fromStage===toStage?'Выбери разные этапы':conversionPct(conversion.overall)]]:[])]):'История переходов ещё не загружена. Проценты не рассчитаны.';
@@ -1575,7 +1582,7 @@ function refresh(){
  const timing=shippingStats(orders);
  const dayText=x=>x===null?'—':x.toFixed(1).replace('.',',')+' дн.';
  el('ship-times').innerHTML=timing.groups.map(g=>`<tr><td>${esc(g.label)}</td><td>${num(g.count)}</td><td>${dayText(g.mean)}</td><td>${dayText(g.median)}</td></tr>`).join('');
- el('ship-quality').textContent=`Не включено в сроки: без одной из дат — ${timing.missing}; некорректные даты или отправка раньше подтверждения — ${timing.invalid}. Непроверенный признак наличия показан отдельно.`;
+ el('ship-quality').textContent=`В периоде ${num(orders.length)} оплаченных заказов: отправлено ${num(timing.sent)}. Для срока нужны обе даты. Без даты подтверждения: ${num(timing.missingConfirm)}; без даты отправки: ${num(timing.missingSent)}. Срок рассчитан для ${num(timing.groups[0].count)} заказов; некорректных интервалов — ${num(timing.invalid)}. Непроверенный признак наличия выделен отдельно.`;
  const reasons=[['Сумма возвратов в фильтре',money(returnedRev)],['Обмены',num(exchangeN)],['Сумма обменов',money(exchangeRev)],['Не включено возвратов, требуют проверки',num(returnGaps.length)]];
  el('ship-kv').innerHTML=kv([['Покупок',num(n)],['С датой Отправлен',num(shipped)],['Без даты отправки',num(n-shipped)],['Возвраты',num(returnN)],...reasons]);
  [['f-cat','cat'],['s-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-size','size'],['s-color','color']].forEach(([id,key])=>setSelected(id,state[key]));
