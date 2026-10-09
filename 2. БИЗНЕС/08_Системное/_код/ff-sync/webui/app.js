@@ -2317,7 +2317,8 @@ function ask(title, text, okLabel) {
   askIsNum = false;
   $("askNumWrap").hidden = true;
   $("askTitle").textContent = title;
-  $("askText").textContent = text;
+  $("askText").textContent = text || "";
+  $("askText").hidden = !text;
   $("askYes").textContent = okLabel || "Подтверждаю";
   $("askModal").classList.add("on");
   return new Promise((resolve) => { askResolve = resolve; });
@@ -2775,8 +2776,7 @@ function bindWbDetail() {
     const left = Math.max(0, limit - have);
     const answer = await askNumber(
       "Сколько коробов добавить?",
-      "WB печатает QR на короб. Состав внутрь площадке не передаётся, товар выбирать не нужно."
-        + " В поставке " + orders + " заданий, уже " + have + " кор., максимум " + limit + " (для одного задания — один короб, далее половина с округлением вниз).",
+      "",
       "Добавить",
       left ? 1 : 0,
       left ? 1 : 0,
