@@ -56,6 +56,15 @@ if os.path.isdir(UI_DIR):
     app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 
+
+def checked_day(raw):
+    from account import calculation_end
+    try:
+        return calculation_end(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 def secret():
     return (env_opt("FF_SECRET") or env_opt("FF_WEB_TOKEN") or "ff-sync").encode()
 
@@ -488,15 +497,19 @@ def marked_flag(raw):
 def lots(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
-    from account import as_day, lot_rows, totals
+    from account import lot_rows, totals
 
     rows = lot_rows(
         client_id=client_id or None,
         query=q,
         marked=marked_flag(marked),
-        date_to=as_day(date_to),
+        date_to=checked_day(date_to),
     )
-    return {"rows": rows, "totals": totals(rows)}
+    from db import connect
+    conn = connect()
+    movement = conn.execute("SELECT max(m.created_at) FROM lot_moves m JOIN lots l ON l.id=m.lot_id WHERE (?=0 OR l.client_id=?)", (client_id, client_id)).fetchone()[0]
+    conn.close()
+    return {"rows": rows, "totals": totals(rows), "last_movement": movement or ""}
 
 
 @app.get("/api/calendar")
@@ -511,12 +524,10 @@ def calendar_view(
     init_db()
     from account import as_day, calendar
 
-    return calendar(
-        client_id=client_id or None,
-        query=q,
-        date_from=as_day(date_from),
-        date_to=as_day(date_to),
-    )
+    try:
+        return calendar(client_id=client_id or None, query=q, date_from=as_day(date_from), date_to=checked_day(date_to))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/api/calendar.xlsx")
@@ -532,12 +543,10 @@ def calendar_export(
     from account import as_day
     from export_xlsx import build_calendar
 
-    name, raw = build_calendar(
-        client_id=client_id or None,
-        query=q,
-        date_from=as_day(date_from),
-        date_to=as_day(date_to),
-    )
+    try:
+        name, raw = build_calendar(client_id=client_id or None, query=q, date_from=as_day(date_from), date_to=checked_day(date_to))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return xlsx_file(name, raw)
 
 
@@ -584,11 +593,13 @@ def period_label(row):
 
 
 @app.get("/api/invoices")
-def invoices(ff_session: str = Cookie(default="")):
+def invoices(client_id: int = 0, ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
+    from billing import payment_state
     rows = [
         {
+            **payment_state(r),
             "id": r["id"],
             "client": r["client_name"],
             "number": r["ms_number"],
@@ -600,7 +611,7 @@ def invoices(ff_session: str = Cookie(default="")):
             "created": (r["created_at"] or "")[:16].replace("T", " "),
             "author": r["author"],
         }
-        for r in list_invoices()
+        for r in list_invoices(client_id=client_id or None)
     ]
     return {"rows": rows}
 
@@ -609,56 +620,41 @@ def invoices(ff_session: str = Cookie(default="")):
 def invoice_detail(invoice_id: int, ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
-    inv = get_invoice(invoice_id)
-    if not inv:
-        raise HTTPException(status_code=404, detail="счёт не найден")
-    positions = []
-    liter_days = 0.0
-    for r in list_invoice_positions(invoice_id):
-        storage = float(r["storage"] or 0)
-        liter_days += float(r["liter_days"] or 0)
-        positions.append(
-            {
-                "article": r["article"] or "",
-                "barcode": r["barcode"] or "",
-                "gtin": r["gtin"] or "",
-                "name": r["name"] or "",
-                "qty_in": r["qty_in"],
-                "liters": r["liters"],
-                "tariff": r["tariff"],
-                "received": ru_day(r["received_at"]),
-                "period": period_label(r),
-                "days": r["days"],
-                "liter_days": round(float(r["liter_days"] or 0), 2),
-                "storage": storage,
-                "total": storage,
-            }
-        )
-    return {
-        "invoice": {
-            "id": inv["id"],
-            "client": inv["client_name"],
-            "number": inv["ms_number"],
-            "ms_id": inv["ms_invoice_id"],
-            "storage": inv["storage"],
-            "total": inv["total"],
-            "positions": inv["lots_count"],
-            "period": period_label(inv),
-            "liter_days": round(liter_days, 2),
-            "created": (inv["created_at"] or "")[:16].replace("T", " "),
-            "author": inv["author"],
-        },
-        "positions": positions,
-    }
+    from billing import invoice_data
+    try:
+        result = invoice_data(invoice_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    result["invoice"]["period"] = period_label(result["invoice"])
+    for row in result["positions"]:
+        row["period"] = period_label(row)
+    return result
+
+
+@app.post("/api/invoices/sync")
+def invoices_sync(data: dict = Body(...), ff_session: str = Cookie(default="")):
+    who(ff_session)
+    from billing import sync_invoices
+    try:
+        return {"ok": True, **sync_invoices(int(data.get("client_id") or 0) or None)}
+    except BlockingIOError:
+        return {"ok": False, "msg": "сверка счетов уже идёт"}
+
+
+@app.get("/api/invoices/{invoice_id}/report.xlsx")
+def invoice_report(invoice_id: int, ff_session: str = Cookie(default="")):
+    who(ff_session)
+    from export_xlsx import build_invoice
+    return xlsx_file(*build_invoice(invoice_id))
 
 
 @app.get("/api/export.xlsx")
-def export(client_id: int = 0, q: str = "", marked: str = "", ff_session: str = Cookie(default="")):
+def export(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
     from export_xlsx import build
 
-    name, data = build(client_id=client_id or None, query=q, marked=marked_flag(marked))
+    name, data = build(client_id=client_id or None, query=q, marked=marked_flag(marked), date_to=checked_day(date_to))
     return xlsx_file(name, data)
 
 
@@ -1418,7 +1414,10 @@ def lots_report(data: dict = Body(...), ff_session: str = Cookie(default="")):
     ids = data.get("ids") or []
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны позиции")
-    name, raw = build_client_stock(ids)
+    try:
+        name, raw = build_client_stock(ids, date_to=checked_day(data.get("date_to") or ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return xlsx_file(name, raw)
 
 

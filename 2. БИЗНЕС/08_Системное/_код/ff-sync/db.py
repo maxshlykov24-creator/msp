@@ -140,6 +140,8 @@ def migrate(conn):
     for col in ("period_from", "period_to"):
         if col not in inv_lots:
             conn.execute("ALTER TABLE invoice_lots ADD COLUMN %s TEXT" % col)
+    if "snapshot_json" not in inv_lots:
+        conn.execute("ALTER TABLE invoice_lots ADD COLUMN snapshot_json TEXT")
     cache = _cols(conn, "catalog_cache")
     for col, decl in (
         ("gtin", "TEXT"),
@@ -1066,6 +1068,29 @@ def insert_invoice(client_id, ms_invoice_id, ms_number, storage, intake, ship, t
     return iid
 
 
+def save_invoice_snapshot(client_id, data, parts, detail, start, stop, author, now):
+    conn = connect()
+    try:
+        with conn:
+            old = conn.execute("SELECT id FROM invoices WHERE ms_invoice_id = ?", (data["id"],)).fetchone()
+            if old:
+                return old["id"]
+            cur = conn.execute(
+                "INSERT INTO invoices (client_id,ms_invoice_id,ms_number,storage,intake,ship,total,lots_count,period_from,period_to,created_at,author) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (client_id, data["id"], data.get("name") or "", parts["storage"], parts["intake"], parts["ship"], parts["total"], len(detail), start, stop, now, author))
+            iid = cur.lastrowid
+            for lot, calc in detail:
+                conn.execute(
+                    "INSERT INTO invoice_lots (invoice_id,lot_id,storage,intake,ship,days,liter_days,period_from,period_to,snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (iid, lot["id"], calc["storage"], 0, calc["ship"], calc["bill_days"], calc["liter_days"], calc["bill_from"], stop, json.dumps(calc, ensure_ascii=False)))
+                conn.execute(
+                    "UPDATE lots SET billed_until=CASE WHEN coalesce(billed_until,'') < ? THEN ? ELSE billed_until END, billed_days=?,billed_in=?,billed_out=? WHERE id=?",
+                    (stop, stop, calc["bill_days"], lot["qty_in"], calc["shipped"], lot["id"]))
+            return iid
+    finally:
+        conn.close()
+
+
 def add_invoice_lot(invoice_id, lot_id, storage, days=0, liter_days=0, period_from="", period_to="", ship=0):
     conn = connect()
     conn.execute(
@@ -1077,12 +1102,13 @@ def add_invoice_lot(invoice_id, lot_id, storage, days=0, liter_days=0, period_fr
     conn.close()
 
 
-def list_invoices(limit=100):
+def list_invoices(limit=-1, client_id=None):
     conn = connect()
     rows = conn.execute(
         "SELECT invoices.*, clients.name AS client_name FROM invoices "
-        "JOIN clients ON clients.id = invoices.client_id ORDER BY invoices.id DESC LIMIT ?",
-        (limit,),
+        "JOIN clients ON clients.id = invoices.client_id WHERE (? IS NULL OR invoices.client_id = ?) "
+        "ORDER BY invoices.id DESC LIMIT ?",
+        (client_id, client_id, limit),
     ).fetchall()
     conn.close()
     return rows
@@ -1102,7 +1128,7 @@ def get_invoice(invoice_id):
 def list_invoice_positions(invoice_id):
     conn = connect()
     rows = conn.execute(
-        "SELECT invoice_lots.storage, invoice_lots.ship, invoice_lots.days, invoice_lots.liter_days, "
+        "SELECT invoice_lots.storage, invoice_lots.intake, invoice_lots.ship, invoice_lots.days, invoice_lots.liter_days, invoice_lots.snapshot_json, "
         "invoice_lots.period_from, invoice_lots.period_to, "
         "lots.article, lots.barcode, lots.gtin, lots.name, lots.liters, lots.pick_rate, "
         "lots.qty_in, lots.received_at, lots.accepted_at "

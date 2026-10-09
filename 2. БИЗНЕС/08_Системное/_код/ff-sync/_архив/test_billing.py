@@ -195,3 +195,110 @@ cal_name, cal_raw = build_calendar()
 assert cal_raw, "календарь не собрался"
 
 print("хранение, сборка, приёмка и КиЗ: прогон прошёл")
+
+# Регрессии аудита учёта: старые счета, суммы услуг, дата выгрузки, повторы HTTP.
+from unittest.mock import patch
+from datetime import timedelta
+from export_xlsx import build_client_stock, build_invoice
+
+for bad_date in ("не дата", (account.today() + timedelta(days=1)).isoformat()):
+    try:
+        billing.preview([lot_id], bad_date)
+        raise AssertionError("неверная/будущая дата принята")
+    except ValueError:
+        pass
+
+info = billing.invoice_data(inv["id"])
+assert info["invoice"]["pick"] == 12
+assert sum(p["total"] for p in info["positions"]) == inv["total"]
+original = info["positions"][0]["name"]
+conn = db.connect()
+conn.execute("UPDATE lots SET name='изменённая карточка',liters=100 WHERE id=?", (lot_id,))
+conn.commit(); conn.close()
+assert billing.invoice_data(inv["id"])["positions"][0]["name"] == original
+assert billing.invoice_data(inv["id"])["positions"][0]["liters"] == 2
+report_name, report_raw = build_invoice(inv["id"])
+assert load_workbook(io.BytesIO(report_raw)).active.cell(4,9).value == inv["total"]
+conn = db.connect(); conn.execute("UPDATE lots SET liters=2 WHERE id=?",(lot_id,)); conn.commit(); conn.close()
+
+# Excel respects the selected cutoff, and never includes another client's rows.
+_, raw = build(date_to=account.as_day("2026-09-06"))
+ws = load_workbook(io.BytesIO(raw)).active
+assert ws.cell(2,20).value == account.lot_rows(date_to=account.as_day("2026-09-06"))[0]["total"]
+other = db.insert_client("other", "Другой", "A2", "ORG-1", "STORE-1")
+other_lot = db.insert_lot(other, "P2", "=1+1", "2", "", "Другой товар", "", 1, 1, "2026-09-01", "PO2", accepted_at="2026-09-01")
+try:
+    build_client_stock([lot_id,other_lot])
+    raise AssertionError("в клиентский отчёт попал другой клиент")
+except ValueError:
+    pass
+_, raw = build_client_stock([other_lot])
+assert load_workbook(io.BytesIO(raw)).active.cell(2,2).data_type == "s"
+
+# Waiting acceptance and future lots cannot have a billed boundary advanced.
+waiting_id = db.insert_lot(client_id,"W","W","W","","Ждёт","",1,1,"2026-09-01","PW")
+try:
+    billing.preview([lot_id,waiting_id], "2026-09-06")
+    raise AssertionError("непринятая строка пропущена молча")
+except ValueError:
+    pass
+assert account.row_of(db.get_lot(waiting_id))["days"] == 0
+future_id = db.insert_lot(client_id,"F","F","F","","Поздняя","",1,1,"2026-09-10","PF",accepted_at="2026-09-10")
+assert len(billing.preview([lot_id,future_id],"2026-09-06")["positions"]) == 1
+
+# Unknown outcome: repeat the exact payload/syncId, even if rate/card changes meanwhile.
+real_req = billing.req
+attempts = []
+def lost_reply(method,url,**kw):
+    if method == "POST" and url.endswith("invoiceout"):
+        attempts.append(kw["json"])
+        raise TimeoutError("ответ потерян")
+    return real_req(method,url,**kw)
+with patch.object(billing,"req",lost_reply):
+    try:
+        billing.create([lot_id],date_to="2026-09-06")
+        raise AssertionError("ожидался таймаут")
+    except TimeoutError:
+        pass
+assert db.get_lot(lot_id)["billed_until"] == "2026-09-05"
+try:
+    billing.create([other_lot],date_to="2026-09-06")
+    raise AssertionError("незавершённый счёт проигнорирован")
+except ValueError:
+    pass
+def recovered(method,url,**kw):
+    if method == "POST" and url.endswith("invoiceout"):
+        attempts.append(kw["json"])
+        return Fake(200,{"id":"INV-2","name":"СЧ-2"})
+    return real_req(method,url,**kw)
+with patch.object(billing,"req",recovered):
+    result = billing.create([lot_id],date_to="2026-09-06")
+assert attempts[0] == attempts[1] and attempts[0]["syncId"]
+assert db.get_lot(lot_id)["billed_until"] == "2026-09-06"
+assert len(db.list_invoices()) == 2
+assert not json.loads(db.get_setting("billing:pending"))
+
+# Atomic rollback after header INSERT; no partial invoice and no period loss.
+conn = db.connect()
+conn.execute("CREATE TRIGGER test_invoice_fail BEFORE INSERT ON invoice_lots BEGIN SELECT RAISE(ABORT, 'test rollback'); END")
+conn.commit();conn.close()
+lot = db.get_lot(lot_id); calc = account.row_of(lot,date_to=account.as_day("2026-09-07"))
+try:
+    db.save_invoice_snapshot(client_id,{"id":"INV-FAIL"},{"storage":1,"intake":0,"ship":0,"total":1},[(lot,calc)],"2026-09-07","2026-09-07","test","2026-09-07")
+    raise AssertionError("ожидался отказ записи")
+except Exception as exc:
+    assert "test rollback" in str(exc), exc
+assert len(db.list_invoices()) == 2
+assert db.get_lot(lot_id)["billed_until"] == "2026-09-06"
+
+# An old intake-only invoice retains the service and reconciles exactly.
+conn=db.connect();conn.execute("DROP TRIGGER test_invoice_fail");conn.commit();conn.close()
+old = db.insert_invoice(client_id,"OLD","OLD",0,150,0,150,1,"2026-09-01","test")
+conn=db.connect();conn.execute("INSERT INTO invoice_lots(invoice_id,lot_id,intake) VALUES (?,?,150)",(old,lot_id));conn.commit();conn.close()
+old_data=billing.invoice_data(old)
+assert old_data["positions"][0]["total"] == old_data["invoice"]["total"] == 150
+assert old_data["invoice"]["payment_status"] == "Не проверено"
+db.set_setting("invoice:ms:%s" % old,json.dumps({"total":150,"paid":50,"applicable":True}))
+assert billing.payment_state(db.get_invoice(old))["due"] == 100
+assert billing.payment_state(db.get_invoice(old))["payment_status"] == "Частично оплачен"
+print("аудит учёта: суммы, снимки, даты, изоляция клиентов, повторы и атомарность — OK")

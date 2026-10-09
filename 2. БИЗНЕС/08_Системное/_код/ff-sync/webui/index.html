@@ -354,6 +354,7 @@
       <button class="btn btn-file" id="sExport" type="button">Выгрузить в Excel</button>
     </div>
 
+    <p class="muted" id="sLedgerInfo"></p>
     <div class="kpi-grid k5">
       <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Позиций</div><div class="kpi-val" id="kPos">—</div></div>
       <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Штук на складе</div><div class="kpi-val" id="kQty">—</div></div>
@@ -529,19 +530,20 @@
     <div class="modal-head">
       <div>
         <h3>Счета</h3>
-        <p>Выставленные счета покупателю в МойСклад</p>
+        <p>Счета выбранного контрагента. Оплаты обновляются кнопкой сверки с МойСклад.</p>
       </div>
-      <button class="btn-ghost" id="billsClose" type="button">Закрыть</button>
+      <div class="modal-head-tools"><button class="btn" id="bSync" type="button">Сверить оплаты</button><button class="btn-ghost" id="billsClose" type="button">Закрыть</button></div>
     </div>
     <div class="tbl-wrap bills-wrap">
       <table class="tbl" id="bTbl">
         <thead><tr>
-          <th>Номер</th><th>Контрагент</th><th>Период</th><th>Дата</th><th class="num">Позиций</th>
-          <th class="num">Хранение</th><th class="num">Итого, ₽</th><th>Кто</th>
+          <th>Номер</th><th>Контрагент</th><th>Период</th><th>Дата</th>
+          <th class="num">Счёт, ₽</th><th class="num">Оплачено, ₽</th><th class="num">Осталось, ₽</th><th>Статус</th><th>Проверено</th><th>Кто</th>
         </tr></thead>
         <tbody></tbody>
       </table>
     </div>
+    <div class="msg" id="bMsg"></div>
   </div>
 </div>
 
@@ -552,11 +554,13 @@
         <h3 id="bdTitle">Счёт</h3>
         <p id="bdSub"></p>
       </div>
-      <button class="btn-ghost" id="bdClose" type="button">Закрыть</button>
+      <div class="modal-head-tools"><a class="btn-ghost" id="bdMs" target="_blank" rel="noopener">В МойСклад</a><button class="btn btn-file" id="bdExport" type="button">Отчёт по счёту</button><button class="btn-ghost" id="bdClose" type="button">Закрыть</button></div>
     </div>
-    <div class="kpi-grid k4 bill-kpi">
+    <p id="bdPayment" class="muted"></p>
+    <div class="kpi-grid k5 bill-kpi">
       <div class="kpi glass"><div class="kpi-label">Литро-суток</div><div class="kpi-val" id="bdLiterDays">—</div></div>
       <div class="kpi glass"><div class="kpi-label">Хранение</div><div class="kpi-val" id="bdStorage">—</div></div>
+      <div class="kpi glass"><div class="kpi-label">Приёмка</div><div class="kpi-val" id="bdIntake">—</div></div>
       <div class="kpi glass"><div class="kpi-label">Сборка</div><div class="kpi-val" id="bdPick">—</div></div>
       <div class="kpi glass feature"><div class="kpi-label">Итого</div><div class="kpi-val gold" id="bdTotal">—</div></div>
     </div>
@@ -564,7 +568,7 @@
       <table class="tbl" id="bdTbl">
         <thead><tr>
           <th>Артикул</th><th>Наименование</th><th>Период</th>
-          <th class="num">Дней</th><th class="num">Литро-сутки</th><th class="num">Сборка, ₽</th><th class="num">Итого, ₽</th>
+          <th class="num">Дней</th><th class="num">Литро-сутки</th><th class="num">Хранение, ₽</th><th class="num">Приёмка, ₽</th><th class="num">Сборка, ₽</th><th class="num">Итого, ₽</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -722,6 +726,6 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=108"></script>
+<script src="/ui/app.js?v=109"></script>
 </body>
 </html>

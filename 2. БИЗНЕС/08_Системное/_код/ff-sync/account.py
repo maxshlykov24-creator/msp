@@ -57,6 +57,15 @@ def days_on_stock(received_at):
     return max(0, (today() - parse_when(received_at).date()).days)
 
 
+def calculation_end(raw=""):
+    if raw and as_day(raw) is None:
+        raise ValueError("неверная дата расчёта")
+    end = as_day(raw) or today()
+    if end > today():
+        raise ValueError("нельзя выставлять хранение за будущие дни")
+    return end
+
+
 def storage_rate():
     """Ставка хранения одна на всех. Меняется переменной, а не в карточке."""
     raw = environ.get("FF_STORAGE_RATE")
@@ -116,6 +125,8 @@ def storage_of(lot, client, date_from=None, date_to=None, ship_days=None):
         return {"from": "", "to": "", "days": 0, "liter_days": 0.0, "storage": 0.0, "by_day": []}
     out = ship_days if ship_days is not None else moves_by_day(lot["id"]).get(lot["id"], {})
     qty = float(lot["qty_in"] or 0) - sum(q for day, q in out.items() if as_day(day, date.max) < start)
+    if (end - start).days >= MAX_DAYS:
+        raise ValueError("слишком длинный период расчёта: максимум %s дней" % MAX_DAYS)
     days = []
     cur = start
     guard = 0
@@ -155,7 +166,7 @@ def money(lot, client, date_from=None, date_to=None, ship_days=None):
     calc = storage_of(lot, client, date_from, date_to, out)
     pick = pick_of(lot, client, date_from, date_to, out)
     return {
-        "days": days_on_stock(lot["received_at"]),
+        "days": max(0, (today() - accepted_day(lot)).days) if accepted_day(lot) else 0,
         "bill_days": calc["days"],
         "bill_from": calc["from"],
         "bill_to": calc["to"],
@@ -276,7 +287,9 @@ def calendar(client_id=None, query="", date_from=None, date_to=None):
     end = date_to or today()
     start = date_from or (end - timedelta(days=13))
     if start > end:
-        start = end
+        raise ValueError("конец периода раньше начала")
+    if (end - start).days >= MAX_DAYS:
+        raise ValueError("слишком длинный период календаря")
     days = []
     cur = start
     while cur <= end and len(days) < MAX_DAYS:
@@ -324,7 +337,7 @@ def calendar(client_id=None, query="", date_from=None, date_to=None):
             "rate": tariff,
             "received": got.isoformat(),
             "cells": cells,
-            "sum": round(sum(c["sum"] for c in cells), 2),
+            "sum": round(round(sum(c["qty"] or 0 for c in cells) * liters, 3) * tariff, 2),
             "shipped": round(sum(c["ship"] for c in cells), 3),
         })
     per_day = [

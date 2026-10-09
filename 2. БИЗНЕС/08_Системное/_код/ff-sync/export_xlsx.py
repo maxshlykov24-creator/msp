@@ -51,8 +51,8 @@ def excel_text(raw):
     return "".join(ch for ch in text if ord(ch) >= 32 or ch in "\t\n\r")
 
 
-def build(client_id=None, query="", marked=None):
-    rows = lot_rows(client_id=client_id, query=query, marked=marked)
+def build(client_id=None, query="", marked=None, date_to=None):
+    rows = lot_rows(client_id=client_id, query=query, marked=marked, date_to=date_to)
     sums = totals(rows)
     wb = Workbook()
     ws = wb.active
@@ -64,7 +64,8 @@ def build(client_id=None, query="", marked=None):
         cell.alignment = Alignment(vertical="center", wrap_text=True)
     for row in rows:
         ws.append([row[key] for _title, key, _w in COLUMNS])
-    ws.append([])
+        _literal_strings(ws)
+    ws.append(["Начисления по %s. Остаток на текущую дату. Источник: партии и движения панели." % (date_to or datetime.now(MSK).date())])
     last = ws.max_row + 1
     ws.cell(row=last, column=1, value="Итого: %s позиций" % sums["positions"]).font = Font(bold=True)
     ws.cell(row=last, column=QTY_COL, value=sums["qty"]).font = Font(bold=True)
@@ -123,7 +124,7 @@ def build_calendar(client_id=None, query="", date_from=None, date_to=None):
         ws.append([])
 
     block("Остаток на утро, шт", lambda c: c["qty"])
-    block("Стоимость хранения, ₽", lambda c: c["sum"])
+    block("Стоимость хранения, ₽ (итог округляется за весь период, по каждой партии)", lambda c: c["sum"])
     block("Отгружено за день, шт", lambda c: c["ship"] or None)
 
     last = ws.max_row + 1
@@ -162,9 +163,34 @@ def _new_sheet(title, columns):
     return wb, ws
 
 
+def _literal_strings(ws):
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
+
+
 def _finish(wb, ws, columns, name):
+    _literal_strings(ws)
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.print_title_rows = "1:1"
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=isinstance(cell.value, str))
+            if isinstance(cell.value, float):
+                cell.number_format = '#,##0.00'
+
     for i, (_title, width) in enumerate(columns, start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
+    for row in list(ws.iter_rows(min_row=2)):
+        nonempty = [c for c in row if c.value is not None]
+        if len(nonempty) == 1 and isinstance(nonempty[0].value, str) and len(nonempty[0].value) > 45:
+            ws.merge_cells(start_row=row[0].row, start_column=1, end_row=row[0].row, end_column=len(columns))
+            ws.row_dimensions[row[0].row].height = 32
     ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
@@ -423,13 +449,19 @@ CLIENT_STOCK_COLUMNS = [
     ("Объём, л", 11),
     ("Приёмка на склад", 16),
     ("Дней на складе", 14),
+    ("Начислено с", 12), ("Начислено по", 12),
+    ("Хранение, ₽", 15), ("Собрано, шт", 13), ("Сборка, ₽", 15), ("К выставлению, ₽", 18),
 ]
 
 
-def build_client_stock(ids):
+def build_client_stock(ids, date_to=None):
     wanted = [int(x) for x in ids]
     order = {lid: i for i, lid in enumerate(wanted)}
-    rows = [r for r in lot_rows(only_open=False) if r["id"] in order]
+    rows = [r for r in lot_rows(only_open=False, date_to=date_to) if r["id"] in order]
+    if len(rows) != len(order):
+        raise ValueError("часть выбранных партий не найдена")
+    if len({r["client_id"] for r in rows}) != 1:
+        raise ValueError("в отчёте для клиента должны быть позиции одного контрагента")
     rows.sort(key=lambda r: order.get(r["id"], 0))
     wb, ws = _new_sheet("Остаток", CLIENT_STOCK_COLUMNS)
     qty = 0
@@ -450,13 +482,41 @@ def build_client_stock(ids):
                 row["volume"],
                 excel_text(row["accepted"] or "ждёт приёмки"),
                 row["days"],
+                row["bill_from"], row["bill_to"], row["storage"], row["pick_qty"], row["pick"], row["total"],
             ]
         )
+    ws.append(["Остаток на %s. Начисления по %s включительно, с прошлого счёта. Источник: партии и движения панели." % (datetime.now(MSK).date(), date_to or datetime.now(MSK).date())])
     if not rows:
         ws.append(["Нет выбранных позиций"])
     last = ws.max_row + 1
     ws.cell(row=last, column=1, value="Позиций: %s" % len(rows)).font = Font(bold=True)
     ws.cell(row=last, column=8, value=qty).font = Font(bold=True)
     ws.cell(row=last, column=9, value=round(volume, 2)).font = Font(bold=True)
+    for column, key in ((14,"storage"),(15,"pick_qty"),(16,"pick"),(17,"total")):
+        ws.cell(row=last, column=column, value=round(sum(r[key] for r in rows),2)).font = Font(bold=True)
     who = rows[0]["client"] if len({r["client"] for r in rows}) == 1 else "клиенту"
     return _finish(wb, ws, CLIENT_STOCK_COLUMNS, "остаток_%s_%s.xlsx" % (_file_part(who), _stamp()))
+
+
+def build_invoice(invoice_id):
+    """Сохранённая детализация: повторная выгрузка не пересчитывает старый счёт."""
+    from billing import invoice_data
+    data = invoice_data(invoice_id)
+    inv = data["invoice"]
+    columns = [("Артикул",22),("Наименование",38),("Период с",12),("Период по",12),
+               ("Литро-сутки",14),("Хранение, ₽",16),("Приёмка, ₽",16),("Сборка, ₽",16),("Итого, ₽",16)]
+    wb, ws = _new_sheet("Расшифровка счёта", columns)
+    ws.append(["Счёт %s · %s" % (inv["number"] or inv["id"], inv["client"])])
+    for row in data["positions"]:
+        ws.append([row["article"],row["name"],row["period_from"],row["period_to"],row["liter_days"],row["storage"],row["intake"],row["pick"],row["total"]])
+    ws.append(["Итого по счёту",None,None,None,inv["liter_days"],inv["storage"],inv["intake"],inv["pick"],inv["total"]])
+    for cell in ws[ws.max_row]:
+        cell.fill = SUM_FILL
+        cell.font = Font(bold=True)
+    ws.append(["Оплата: %s" % inv["payment_status"], "Оплачено, ₽", inv.get("paid"), "Осталось, ₽", inv.get("due")])
+    ws.append(["Источник: сохранённый счёт панели. Оплата: МойСклад, проверено %s" % (inv.get("checked_at") or "не проверено")])
+    if inv.get("error"):
+        ws.append([inv["error"]])
+    if any(not row["snapshot"] for row in data["positions"]):
+        ws.append(["Исторический счёт: суммы сохранены; описания товаров взяты из текущих карточек партий."])
+    return _finish(wb, ws, columns, "счёт_%s.xlsx" % _file_part(inv["number"] or inv["id"]))

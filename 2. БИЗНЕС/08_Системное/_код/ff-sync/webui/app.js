@@ -896,9 +896,17 @@ async function loadLots() {
   $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="14" class="empty">Загружаю…</td></tr>`;
   let res;
   try { res = await api("/api/lots?" + stockQuery()); }
-  catch (e) { if (mine === lotsLoad) say($("sMsg"), e.message, "bad"); return; }
+  catch (e) {
+    if (mine === lotsLoad) {
+      say($("sMsg"), e.message, "bad");
+      $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="14" class="empty">Расчёт не получен. Проверь дату и повтори.</td></tr>`;
+      ["kPos","kQty","kVol","kLiterDays","kMoney"].forEach((id) => $(id).textContent = "—");
+    }
+    return;
+  }
   if (mine !== lotsLoad) return;
   state.lots = res.rows;
+  $("sLedgerInfo").textContent = "Источник расчёта: партии и списания панели. Последнее движение: " + (res.last_movement ? ruDay(res.last_movement) : "нет данных") + ". Остаток показан на текущую дату; выбранная дата ограничивает начисления. Перед выставлением счёта сверь полноту приёмок и списаний.";
   state.picked.clear();
   $("kPos").textContent = num(res.totals.positions, 0);
   $("kQty").textContent = num(res.totals.qty, 0);
@@ -932,8 +940,11 @@ function refreshPick() {
   const n = state.picked.size;
   const sum = state.lots.filter((r) => state.picked.has(r.id)).reduce((a, r) => a + r.total, 0);
   $("sSel").textContent = n ? `Выбрано ${n} позиций на ${num(sum)} ₽` : "Ничего не выбрано";
-  $("sBill").disabled = n === 0;
-  $("sReport").disabled = n === 0;
+  const selected = state.lots.filter((r) => state.picked.has(r.id));
+  const oneClient = new Set(selected.map((r) => r.client_id)).size === 1;
+  $("sBill").disabled = !oneClient || sum <= 0 || selected.some((r) => !r.accepted);
+  $("sReport").disabled = !oneClient;
+  if (n && !oneClient) $("sSel").textContent += ". Для счёта и отчёта выбери одного контрагента.";
 }
 
 $("sTbl").onclick = (e) => {
@@ -1008,6 +1019,7 @@ $("sMark").onclick = (e) => {
 };
 let timer = null;
 $("sQuery").oninput = () => { clearTimeout(timer); timer = setTimeout(loadLots, 250); };
+$("sTo").max = isoDay(new Date());
 $("sTo").onchange = () => loadLots();
 $("sWeek").onclick = () => { $("sTo").value = isoDay(lastFriday()); loadLots(); };
 $("sExport").onclick = () => { window.location = "/api/export.xlsx?" + stockQuery(); };
@@ -1016,7 +1028,7 @@ $("sBills").onclick = () => openBills();
 $("sReport").onclick = async () => {
   $("sReport").disabled = true;
   try {
-    await downloadXlsx("/api/lots/report.xlsx", [...state.picked], "остаток.xlsx", "Отчёт для клиента скачан.", $("sMsg"));
+    await downloadXlsx("/api/lots/report.xlsx", [...state.picked], "остаток.xlsx", "Отчёт для клиента скачан.", $("sMsg"), { date_to: $("sTo").value });
   } catch (e) {
     say($("sMsg"), e.message, "bad");
   }
@@ -1037,7 +1049,7 @@ $("sBill").onclick = async () => {
       body: JSON.stringify({ lot_ids: [...state.picked], date_to: $("sTo").value }),
     });
     $("mTitle").textContent = "Счёт: " + res.client;
-    $("mPeriod").textContent = "Хранение " + ruDay(res.period_from) + " — " + ruDay(res.period_to) + " · литро-суток " + num(res.liter_days, 1);
+    $("mPeriod").textContent = "Услуги за " + ruDay(res.period_from) + " — " + ruDay(res.period_to) + " · литро-суток " + num(res.liter_days, 1);
     $("mLines").innerHTML = res.lines.map((l) => `<div class="inv-line"><span>${esc(l.name)}</span><b>${num(l.sum)} ₽</b></div>`).join("");
     $("mTotal").textContent = num(res.total) + " ₽";
     say($("mMsg"), res.total > 0 ? "" : "По выбранным позициям всё уже выставлено.", res.total > 0 ? "" : "bad");
@@ -2947,7 +2959,7 @@ $("shMs").onclick = () => {
 
 function openBills() {
   $("billsModal").classList.add("on");
-  loadBills();
+  loadBills().catch((e) => say($("bMsg"), e.message, "bad"));
 }
 function closeBills() {
   $("billsModal").classList.remove("on");
@@ -2956,18 +2968,32 @@ $("billsClose").onclick = closeBills;
 $("billsModal").onclick = (e) => { if (e.target === $("billsModal")) closeBills(); };
 
 async function loadBills() {
-  const res = await api("/api/invoices");
+  const res = await api("/api/invoices?client_id=" + encodeURIComponent($("sClient").value || "0"));
   const body = $("bTbl").querySelector("tbody");
   if (!res.rows.length) {
-    body.innerHTML = `<tr><td colspan="8" class="empty">Счетов пока нет.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="10" class="empty">Счетов этого контрагента пока нет.</td></tr>`;
     return;
   }
   body.innerHTML = res.rows.map((r) => `<tr class="clickable" data-bill="${r.id}">
-    <td>${esc(r.number)}</td><td>${esc(r.client)}</td><td>${esc(r.period)}</td><td>${esc(r.created)}</td><td class="num">${r.positions}</td>
-    <td class="num">${num(r.storage)}</td>
-    <td class="num money gold">${num(r.total)}</td><td>${esc(r.author)}</td>
+    <td>${esc(r.number)}</td><td>${esc(r.client)}</td><td>${esc(r.period)}</td><td>${esc(r.created)}</td>
+    <td class="num money">${num(r.total)}</td>
+    <td class="num">${r.paid == null ? "—" : num(r.paid)}</td>
+    <td class="num">${r.due == null ? "—" : num(r.due)}</td>
+    <td>${esc(r.payment_status)}${r.error ? `<div class="msg bad">${esc(r.error)}</div>` : ""}</td>
+    <td>${r.checked_at ? esc(ruDay(r.checked_at) + " " + r.checked_at.slice(11,16)) : "Не проверено"}</td><td>${esc(r.author)}</td>
   </tr>`).join("");
 }
+
+$("bSync").onclick = async () => {
+  $("bSync").disabled = true;
+  say($("bMsg"), "Проверяю суммы и оплаты в МойСклад…");
+  try {
+    const r = await api("/api/invoices/sync", {method:"POST", body:JSON.stringify({client_id:$("sClient").value || 0})});
+    say($("bMsg"), r.ok ? `Проверено счетов: ${r.checked}. Ошибок: ${r.errors}.` : r.msg, r.errors || !r.ok ? "bad" : "ok");
+    await loadBills();
+  } catch (e) { say($("bMsg"), e.message, "bad"); }
+  finally { $("bSync").disabled = false; }
+};
 
 function closeBillDetail() {
   $("billDetail").classList.remove("on");
@@ -2977,14 +3003,18 @@ async function openBillDetail(id) {
   const res = await api("/api/invoices/" + id);
   const inv = res.invoice;
   $("bdTitle").textContent = "Счёт " + (inv.number || "#" + inv.id);
-  $("bdSub").textContent = [inv.client, "хранение " + inv.period, inv.created, inv.author ? "выставил " + inv.author : ""].filter(Boolean).join(" · ");
+  $("bdSub").textContent = [inv.client, "услуги за " + inv.period, inv.created, inv.author ? "выставил " + inv.author : ""].filter(Boolean).join(" · ");
+  $("bdExport").onclick = () => { window.location = "/api/invoices/" + inv.id + "/report.xlsx"; };
+  $("bdMs").href = "https://online.moysklad.ru/app/#invoiceout/edit?id=" + encodeURIComponent(inv.ms_id);
+  $("bdPayment").textContent = inv.payment_status + (inv.paid == null ? "" : " · оплачено " + num(inv.paid) + " ₽ · осталось " + num(inv.due) + " ₽") + (inv.error ? " · " + inv.error : "");
+  $("bdIntake").innerHTML = num(inv.intake) + " <small>₽</small>";
   $("bdLiterDays").textContent = num(inv.liter_days, 1);
   $("bdStorage").innerHTML = num(inv.storage) + " <small>₽</small>";
   $("bdPick").innerHTML = num(inv.pick) + " <small>₽</small>";
   $("bdTotal").innerHTML = num(inv.total) + " <small>₽</small>";
   const body = $("bdTbl").querySelector("tbody");
   if (!res.positions.length) {
-    body.innerHTML = `<tr><td colspan="7" class="empty">Позиции счёта не сохранились.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="empty">Позиции счёта не сохранились.</td></tr>`;
   } else {
     body.innerHTML = res.positions.map((r) => `<tr>
       <td class="code">${esc(r.article)}</td>
@@ -2992,6 +3022,8 @@ async function openBillDetail(id) {
       <td>${esc(r.period)}</td>
       <td class="num">${num(r.days, 0)}</td>
       <td class="num">${num(r.liter_days, 1)}</td>
+      <td class="num">${num(r.storage, 2)}</td>
+      <td class="num">${num(r.intake, 2)}</td>
       <td class="num">${num(r.pick, 2)}</td>
       <td class="num money">${num(r.total)}</td>
     </tr>`).join("");
