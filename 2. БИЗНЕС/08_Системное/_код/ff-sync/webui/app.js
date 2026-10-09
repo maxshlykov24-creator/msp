@@ -2453,17 +2453,11 @@ async function loadWbDetail(id) {
               <button type="button" data-mode="posting_product_box">Заказ + товар + короб</button>
             </div>
           </div>`;
-  const warn = res.supply.warn
-    ? `<div class="wb-warn">
-        <b>${esc(dest === "точка сдачи не выбрана" ? "Точка сдачи не выбрана" : "Проверь точку сдачи")}</b>
-        <p>${esc(res.supply.warn)}</p>
-        ${open ? `<button class="btn-ghost" id="wbRefresh" type="button">Обновить с площадки</button>` : ""}
-      </div>`
-    : "";
   const dropoff = `<section class="wb-sec wb-sec-dest">
       <div class="wb-sec-h">
         <h4>Куда везти</h4>
         <div class="wb-sec-acts">
+          ${open ? `<button class="btn-ghost" id="wbRefresh" type="button">Обновить с площадки</button>` : ""}
           ${open ? `<button class="btn-ghost" id="wbPointBtn" type="button">${res.supply.point_id ? "Сменить точку" : "Выбрать точку"}</button>` : ""}
         </div>
       </div>
@@ -2480,7 +2474,6 @@ async function loadWbDetail(id) {
   pill.className = "wb-pill " + res.supply.state;
   pill.textContent = wbSupplyPill(res.supply);
   $("wbDetail").innerHTML = `
-    ${warn}
     ${dropoff}
     <section class="wb-sec">
       <div class="wb-sec-h">
