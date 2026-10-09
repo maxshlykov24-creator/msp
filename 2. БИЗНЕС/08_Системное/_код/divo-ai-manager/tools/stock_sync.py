@@ -220,6 +220,18 @@ def money(raw: str) -> str:
     return "%s руб." % format(n, ",").replace(",", " ") if n else "не указана"
 
 
+CASH_ONLY_REPLY = "Этот автомобиль продаём только за наличный расчёт. Продажа с НДС, по расчётному счёту, в лизинг и кредит по нему недоступна."
+
+
+def cash_only(title: str, note: str = "") -> bool:
+    """NAT policy and explicit VIN-specific payment restrictions outrank generic VAT."""
+    if re.search(r"\b(?:bestune\s+)?nat\b|бестюн\w*\s+нат\b", title, re.I):
+        return True
+    return bool(re.search(
+        r"только\s+(?:за\s+)?наличн|исключительно\s+(?:за\s+)?наличн|"
+        r"(?:продажа\s+)?с\s+ндс\s+(?:недоступна|невозможна|запрещена)", note, re.I))
+
+
 def vat_price(raw: str) -> str:
     """Цена на юрлицо: плюс 15%% и вверх до ровных 50 тысяч.
 
@@ -442,8 +454,12 @@ def card(
     lines.append("- Лига: %s" % league(d["Марка"]))
     lines.append("- Тип: %s" % body(d["Модель"], d.get("Тип кузова", "")))
     lines.append("- Цена в объявлении: %s (наличный расчет, без НДС)" % money(d["Цена продажи"]))
-    vat_total = vat_price(d["Цена продажи"])
-    if vat_total:
+    note = (marks or {}).get((d["VIN"] or "").strip().upper(), "")
+    restricted = cash_only(title, note)
+    vat_total = "" if restricted else vat_price(d["Цена продажи"])
+    if restricted:
+        lines.append("- Условия оплаты: " + CASH_ONLY_REPLY)
+    elif vat_total:
         lines.append("- Цена на юрлицо с НДС: %s (расчетный счет)" % vat_total)
     else:
         lines.append(
@@ -535,7 +551,7 @@ def build_stock(
         "> складе без цены. Чего нет ни там, ни там — того у нас нет.",
         "> Не называть VIN, цену и комплектацию, которых здесь нет.",
         "> «Цена на юрлицо с НДС» уже посчитана — бери строкой, сам не умножай.",
-        "> Формула одна на все машины, флаг НДС для цифры не нужен. Нет цены ни в",
+        "> Ограничения оплаты конкретной машины приоритетны. Только наличные — НДС и лизинг запрещены. Нет цены ни в",
         "> карточке, ни в объявлении — тогда «уточню», а не «нельзя».",
         "> «История эксплуатации» — такси или каршеринг по нашей базе. Строки нет —",
         "> данных нет: не отрицать, что машина была в такси, а звать менеджера.",

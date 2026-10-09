@@ -231,7 +231,7 @@ def allowed_prices(doc: dict | None) -> set[int]:
     card = match_card(src.get("title") or "", src.get("price") or "")
     if card and card.get("price"):
         allowed.add(int(card["price"]))
-    vat_n = digits(vat_for(str(src.get("price") or ""), card))
+    vat_n = 0 if cash_only_card(src.get("title") or "", card) else digits(vat_for(str(src.get("price") or ""), card))
     if vat_n:
         allowed.add(vat_n)
     return allowed
@@ -257,10 +257,34 @@ def drop_foreign_prices(text: str, allowed: set[int]) -> str:
     return " ".join(kept).strip()
 
 
+def cash_only_card(title: str = "", card: dict | None = None) -> bool:
+    from tools.stock_sync import cash_only
+    card = card or {}
+    return cash_only(title or card.get("title", ""), card.get("raw", ""))
+
+
+def cash_only_doc(doc: dict) -> bool:
+    listing = attached_listing(doc) or {}
+    title = listing.get("title") or ""
+    card = match_card(title, listing.get("price") or "") if title else None
+    return cash_only_card(title, card)
+
+
+def cash_only_answer(doc: dict, text: str) -> str:
+    from tools.stock_sync import CASH_ONLY_REPLY
+    if cash_only_doc(doc) and re.search(r"ндс|лизинг|кредит|расч[её]тн|безнал|на\s+юр|юридическ|на\s+организац|наличн|способ\w*\s+оплат", text, re.I):
+        # Historical leasing/pledge questions are not payment requests.
+        if not re.search(r"лизинг", text, re.I) or re.search(r"куп|оформ|можно|или\s+кредит|взять|оплат|ндс", text, re.I) or re.fullmatch(r"\s*(?:а\s+)?(?:в\s+)?лизинг[?!., ]*", text, re.I):
+            return CASH_ONLY_REPLY
+    return ""
+
+
 def vat_for(price_string: str = "", card: dict | None = None) -> str:
     """Готовая цена с НДС: строка карточки или наличные плюс 15% до 50 тысяч."""
     from tools.stock_sync import vat_price
 
+    if cash_only_card(card=card):
+        return ""
     if card:
         raw = card.get("raw") or ""
         found = re.search(r"Цена на юрлицо с НДС:\s*([0-9\s]+руб\.)", raw)
@@ -315,7 +339,7 @@ def focus_block(
                 "Цена для клиента — из объявления выше. В карточке стока цены "
                 "может не быть. Клиенту про пустую базу и «цены нет» ни слова."
             )
-        vat = vat_for(price_string, card)
+        vat = "" if cash_only_card(title, card) else vat_for(price_string, card)
         if vat:
             lines.append(
                 "Цена на юрлицо с НДС: %s. Клиент спросил НДС, юрлицо или счёт — "
@@ -351,13 +375,20 @@ def focus_block(
             "Номер уже есть или клиент отказывается от связи — [[ЧЕЛОВЕК]]. "
             "Кредит не оформляем: спросили — наличный расчёт и номер, банки не называй."
         )
-        vat = vat_for(price_string)
+        vat = "" if cash_only_card(title) else vat_for(price_string)
         if vat:
             lines.append(
                 "Цена на юрлицо с НДС по цене объявления: %s. "
                 "Клиент спросил НДС — называй эту цифру в чат, номер не проси."
                 % vat
             )
+    if cash_only_card(title, card):
+        from tools.stock_sync import CASH_ONLY_REPLY
+        lines = ["\n".join(part for part in line.splitlines()
+                 if "Цена на юрлицо" not in part and "Оплата салона:" not in part)
+                 for line in lines]
+        lines.append("ПРИОРИТЕТ УСЛОВИЙ ЭТОГО АВТО: " + CASH_ONLY_REPLY +
+                     " Общая формула НДС к нему не применяется. Старые ответы с НДС ошибочны.")
     return "\n".join(lines)
 
 
@@ -395,5 +426,7 @@ def vat_from_doc(doc: dict | None) -> str:
     ar = doc.get("autoru") or {}
     src = av if (av.get("title") or av.get("price")) else ar
     if not src:
+        return ""
+    if cash_only_doc(doc):
         return ""
     return vat_for(src.get("price") or "", match_card(src.get("title") or "", src.get("price") or ""))

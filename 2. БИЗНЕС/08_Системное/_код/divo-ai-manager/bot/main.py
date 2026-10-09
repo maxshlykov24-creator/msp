@@ -622,6 +622,9 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             log.info("чат %s: вместо звонка прошу Телеграм или Ватсап", chat_id)
             bubbles = rewritten
     doc_now = store.load_doc(chat_id)
+    payment_answer = avito_match.cash_only_answer(doc_now, user_text)
+    if payment_answer:
+        bubbles = [payment_answer]
     if avito_match.attached_listing(doc_now) and not nudge.asks_other_cars(user_text):
         allowed = avito_match.allowed_prices(doc_now)
         locked = [avito_match.drop_foreign_prices(b, allowed) for b in bubbles]
@@ -997,6 +1000,9 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
         "из них «несущие элементы не пострадали», «без серьёзных аварий» или "
         "«системы безопасности целы» без прямого подтверждения в текущей карточке."
     )
+    if avito_match.cash_only_doc(doc):
+        from tools.stock_sync import CASH_ONLY_REPLY
+        system += "\n\n# Обязательное исключение для выбранного автомобиля\n" + CASH_ONLY_REPLY + " Общие инструкции про НДС и лизинг к этому авто не применяются."
     return system
 
 
@@ -1014,6 +1020,9 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     doc = store.load_doc(chat_id) if chat_id else {}
     last = history[-1].get("content", "") if history else ""
     prior = history[:-1]
+    payment_answer = avito_match.cash_only_answer(doc, last)
+    if payment_answer:
+        return payment_answer
     # Отказ после предложения связи по уточнению: менеджер отвечает здесь.
     waiting = any(m.get("role") == "assistant" and
                   ("уточню этот момент" in m.get("content", "").lower() or
@@ -1210,6 +1219,7 @@ def _refresh_nudge(chat_id: int, history: list[dict]) -> None:
     doc = store.load_doc(chat_id)
     doc["nudge"] = nudge.refresh(doc.get("nudge") or {}, history)
     listing = avito_match.attached_listing(doc)
+    doc["nudge"]["car"] = (listing.get("title") or "") if listing else ""
     if listing and not avito_match.match_card(listing.get("title") or "", listing.get("price") or ""):
         doc["nudge"]["waiting"] = False
     store.save_doc(chat_id, doc)
@@ -1271,7 +1281,7 @@ async def send_nudge(chat_id: int | str) -> None:
     text = nudge.build_text(
         step,
         meta.get("name") or "",
-        meta.get("car") or "",
+        (listing.get("title") or "") if listing else "",
         used,
         asked=False if quiet_phone else bool(meta.get("asked", True)),
         address=not nudge.history_has_address(doc.get("messages") or []),

@@ -2837,7 +2837,53 @@ def test_listing_price_not_neighbor():
     assert 1160000 not in live
 
 
+
+def test_cash_only_priority_and_stale_card():
+    from bot import avito_match as a
+    from tools.stock_sync import HEADER, card, CASH_ONLY_REPLY
+    from unittest.mock import patch
+    vals = {h: '' for h in HEADER}
+    vals.update({'VIN': 'LFP8C7PC5P1D70967', 'Марка': 'FAW', 'Модель': 'Bestune NAT', 'Год выпуска': '2023', 'Цена продажи': '1700000', 'Пробег': '6798'})
+    fresh = card([vals[h] for h in HEADER])
+    assert CASH_ONLY_REPLY in fresh and 'Цена на юрлицо с НДС:' not in fresh
+    stale = fresh + '\n- Цена на юрлицо с НДС: 2 000 000 руб. (расчетный счет)'
+    doc = {'avito': {'title': 'FAW Bestune NAT AT, 2023, 6 798 км', 'price': '1 700 000 ₽'}}
+    with patch.object(a, '_stock_text', return_value=stale):
+        assert a.vat_from_doc(doc) == ''
+        assert a.allowed_prices(doc) == {1700000}
+        focus = a.focus_from_doc(doc)
+        assert '2 000 000' not in focus and CASH_ONLY_REPLY in focus
+        for text in ['День добрый. Лизинг или кредит?', 'Машина с НДС?', 'Можно на организацию?', 'В лизинг?', 'Только наличные?']:
+            assert a.cash_only_answer(doc, text) == CASH_ONLY_REPLY
+        assert not a.cash_only_answer(doc, 'Она раньше была в лизинге?')
+    # Unmatched NAT listing must not fall back to computed VAT either.
+    with patch.object(a, '_stock_text', return_value=''):
+        assert a.vat_from_doc(doc) == '' and a.allowed_prices(doc) == {1700000}
+        assert '2 000 000' not in a.focus_from_doc(doc)
+    vals.update({'Марка': 'Tank', 'Модель': '700'})
+    ordinary = card([vals[h] for h in HEADER])
+    restricted = card([vals[h] for h in HEADER], marks={vals['VIN']: 'Только наличный расчёт'})
+    assert 'Цена на юрлицо с НДС: 2 000 000 руб.' in ordinary
+    assert 'Цена на юрлицо с НДС:' not in restricted
+
+
+def test_promised_action_suspends_nudge():
+    from bot import nudge
+    for text in ['Понял, будет под рукой vin обязательно пришлю', 'Завтра пришлю VIN', 'Наберу на днях вас', 'Я переговорю со своим лизингом и вернусь']:
+        hist = [{'role': 'user', 'content': text}, {'role': 'assistant', 'content': 'Хорошо, буду ждать'}]
+        assert nudge.should_stop_nudge(hist)
+        assert not nudge.refresh({'waiting': True, 'car': 'X7'}, hist)['waiting']
+        hist += [{'role': 'user', 'content': 'А какой пробег?'}, {'role': 'assistant', 'content': '75 800 км'}]
+        assert not nudge.should_stop_nudge(hist)
+    hist = [{'role': 'user', 'content': 'Мой BMW X7 в обмен'}, {'role': 'assistant', 'content': 'По вашему X7 напишите VIN'}]
+    assert nudge.refresh({}, hist)['car'] == ''
+    assert 'наличии' not in nudge.build_text(1, '', '', asked=False)
+    assert 'площадке' not in nudge.build_text(1, '', '', asked=True)
+
+
 if __name__ == "__main__":
+    test_cash_only_priority_and_stale_card()
+    test_promised_action_suspends_nudge()
     test_needs_reply()
     test_phone()
     test_urgent_reason()

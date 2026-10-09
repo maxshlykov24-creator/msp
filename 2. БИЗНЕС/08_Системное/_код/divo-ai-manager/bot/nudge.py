@@ -1343,6 +1343,8 @@ def build_text(
     """
     who = (name + ", ") if name else ""
     where = (", " + ADDRESS_SHORT) if address else ""
+    if not car:
+        return "Подскажите, остались вопросы по автомобилю?" if step == 1 else "Если вопрос ещё актуален, напишите здесь."
     if step == 1:
         if not asked:
             if said_stock:
@@ -1380,6 +1382,15 @@ def build_text(
     return "%s Напишите номер, если актуально" % greeting_now()
 
 
+def promised_next_step(messages: list[dict]) -> bool:
+    last = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
+    return bool(re.search(
+        r"(?:пришлю|вышлю|отправлю|скину|предоставлю)|"
+        r"(?:наберу|позвоню|свяжусь|вернусь|напишу)\s+(?:вам|вас|позже|потом|сам|завтра|на днях)|"
+        r"(?:сам|позже|потом|завтра)\s+(?:наберу|позвоню|свяжусь|напишу)|"
+        r"переговорю.*(?:вернусь|напишу)", last, re.I))
+
+
 def should_stop_nudge(messages: list[dict]) -> bool:
     """Догон только если клиент замолчал после нашего ответа.
 
@@ -1388,7 +1399,7 @@ def should_stop_nudge(messages: list[dict]) -> bool:
     """
     if history_wants_stop(messages) or history_has_phone(messages) or history_refuses_phone(messages):
         return True
-    if still_noncar_trade(messages):
+    if still_noncar_trade(messages) or promised_next_step(messages):
         return True
     if messages and (messages[-1].get("role") == "user"):
         return True
@@ -1413,7 +1424,9 @@ def refresh(nudge: dict, messages: list[dict]) -> dict:
     out["asked"] = history_asked_phone(messages)
     out["asked_at"] = now_msk().isoformat(timespec="seconds")
     out["name"] = extract_name(messages) or out.get("name") or ""
-    out["car"] = extract_car(messages) or out.get("car") or ""
+    # Vehicle names from conversation can belong to the trade-in customer.
+    # The sender resolves the sale vehicle from its attached listing.
+    out["car"] = ""
     return out
 
 
