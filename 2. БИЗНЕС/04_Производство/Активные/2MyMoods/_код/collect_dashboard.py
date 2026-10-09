@@ -525,7 +525,7 @@ def get_amo() -> tuple[list[dict], dict]:
                 return result
         raise RuntimeError(f"amo {key}: pagination limit reached")
 
-    leads = pages(f"/api/v4/leads?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}", "leads")
+    leads = pages(f"/api/v4/leads?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}&with=source", "leads")
     status, pipeline = amo.req("GET", f"/api/v4/leads/pipelines/{lib.PIPELINE_SALES_NEW}")
     if status != 200:
         raise RuntimeError(f"amo pipeline: HTTP {status}")
@@ -541,6 +541,8 @@ def get_amo() -> tuple[list[dict], dict]:
         result.append({
             "id": lead["id"], "created": datetime.fromtimestamp(lead["created_at"], TZ).date().isoformat(),
             "status": lead.get("status_id"), "manager": lead.get("responsible_user_id"),
+            "created_at": lead["created_at"], "updated_at": lead.get("updated_at"),
+            "source_id": (lead.get("_embedded", {}).get("source") or {}).get("id"),
             "won": lead.get("status_id") == 142,
             "order": amo.cf(lead, lib.FIELD_MS_ORDER_NUM).strip(),
         })
@@ -594,6 +596,131 @@ def get_stage_history(leads: list[dict]) -> dict:
         raise RuntimeError("amo stage history: pagination limit reached")
     return {"status": "ok", "from": since, "to": now.isoformat(),
             "events": sorted(events, key=lambda x: (x["at"], x["id"]))}
+
+
+# Source IDs verified from live amoCRM _embedded.source, 09.10.2026.
+# Unknown sources are never guessed from a linked order, manager or current stage.
+AMO_CONVERSION_SOURCES = {
+    23495049: ('orders', 'МойСклад'),
+    23495409: ('inquiries', 'Telegram'),
+    23495411: ('inquiries', 'WhatsApp'),
+    23496967: ('inquiries', 'Instagram'),
+    23509924: ('unknown', '2_mymoods'),
+}
+
+
+def get_amo_conversion_events(leads: list[dict]) -> dict:
+    """Cache all account status/create events so later pipeline entrants retain history."""
+    amo = lib.Amo()
+    until = int(time.time())
+    since = min((l['created_at'] for l in leads), default=until) - 1
+    path = Path(os.environ.get('DASHBOARD_AMO_HISTORY', str(GAPS.parent / 'amo-conversion-history.local.json')))
+    old = json.loads(path.read_text()) if path.exists() else {}
+    reuse = old.get('version') == 1 and old.get('from', until) <= since and old.get('to', 0) <= until
+    start = max(since, old['to'] - 300) if reuse else since
+    events = {e['id']: e for e in old.get('events', [])} if reuse else {}
+    seen = set()
+    for page in range(1, 2001):
+        endpoint = ('/api/v4/events?filter[type]=lead_added,lead_status_changed'
+                    f'&filter[created_at][from]={start}&filter[created_at][to]={until}&limit=100&page={page}')
+        for attempt in range(6):
+            try:
+                code, body = amo.req('GET', endpoint)
+            except Exception:
+                code, body = 0, {}
+            if code not in (0, 429, 500, 502, 503, 504):
+                break
+            time.sleep(2 * (attempt + 1))
+        if code == 204:
+            break
+        if code != 200:
+            raise RuntimeError(f'amo conversion events page {page}: HTTP {code}')
+        rows = body.get('_embedded', {}).get('events')
+        if not isinstance(rows, list):
+            raise RuntimeError('amo conversion invalid events page')
+        for e in rows:
+            if e['id'] in seen:
+                raise RuntimeError('amo conversion duplicate event during pagination')
+            seen.add(e['id'])
+            if e.get('entity_type') == 'lead':
+                events[e['id']] = {k: e.get(k) for k in ('id', 'type', 'entity_id', 'created_at', 'value_before', 'value_after')}
+        if page % 25 == 0:
+            print(f'amoCRM: история конверсии, страница {page}', flush=True)
+        if len(rows) < 100:
+            break
+    else:
+        raise RuntimeError('amo conversion events pagination limit')
+    result = {'version': 1, 'from': old['from'] if reuse else since, 'to': until,
+              'events': sorted(events.values(), key=lambda e: (e['created_at'], e['id']))}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix('.tmp')
+    temp.write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
+    os.chmod(temp, 0o600)
+    temp.replace(path)
+    return result
+
+
+def amo_conversion_path(lead: dict, events: list[dict]) -> dict:
+    flow, source = AMO_CONVERSION_SOURCES.get(lead.get('source_id'), ('unknown', 'Источник не определён'))
+    row = {'id': lead['id'], 'number': str(lead['id']), 'date': lead['created'],
+           'source_id': lead.get('source_id'), 'source': source, 'flow': flow,
+           'path': [], 'events': [], 'complete': False, 'reason': ''}
+    created = [e for e in events if e['type'] == 'lead_added']
+    if len(created) != 1 or abs(created[0]['created_at'] - lead['created_at']) > 2:
+        row['reason'] = 'Не подтверждена история от создания сделки'
+        return row
+    changes = []
+    for e in sorted(events, key=lambda e: (e['created_at'], e['id'])):
+        if e['type'] != 'lead_status_changed':
+            continue
+        before = (e.get('value_before') or [{}])[0].get('lead_status', {})
+        after = (e.get('value_after') or [{}])[0].get('lead_status', {})
+        if not all(v.get('id') and v.get('pipeline_id') for v in (before, after)):
+            row['reason'] = 'Не получены этапы перехода'
+            return row
+        changes.append({'at': e['created_at'], 'before': (before['pipeline_id'], before['id']),
+                        'after': (after['pipeline_id'], after['id'])})
+    current = (lib.PIPELINE_SALES_NEW, lead['status'])
+    path = [changes[0]['before']] if changes else [current]
+    stamp = created[0]['created_at']
+    for change in changes:
+        if change['at'] < stamp or change['before'] != path[-1]:
+            row['reason'] = 'Разрыв последовательности этапов'
+            return row
+        path.append(change['after'])
+        stamp = change['at']
+    if path[-1] != current:
+        row['reason'] = 'Текущий этап не совпал с историей'
+        return row
+    row.update(complete=True, path=[str(stage) for pipeline, stage in path if pipeline == lib.PIPELINE_SALES_NEW],
+               events=[{'at': e['at'], 'before': str(e['before'][1]) if e['before'][0] == lib.PIPELINE_SALES_NEW else None,
+                        'after': str(e['after'][1]) if e['after'][0] == lib.PIPELINE_SALES_NEW else None} for e in changes])
+    return row
+
+
+def build_amo_conversion(leads: list[dict], tasks: dict, history: dict) -> dict:
+    by_lead = defaultdict(list)
+    for e in history['events']:
+        by_lead[e['entity_id']].append(e)
+    ids = [str(lib.ST[k]) for k in ('new', 'in_work', 'waitlist', 'visit', 'pay_wait', 'paid', 'prod', 'pack', 'sent', 'won')]
+    names = {str(s['id']): s['name'] for s in tasks['stages']}
+    if any(x not in names for x in ids):
+        raise RuntimeError('amo conversion missing stage')
+    stages = [{'id': x, 'name': names[x]} for x in ids]
+    pairs = list(zip(ids, ids[1:])) + [(ids[a], ids[b]) for a, b in ((1, 3), (1, 4), (2, 4), (5, 7))]
+    pairs.sort(key=lambda x: (ids.index(x[0]), ids.index(x[1])))
+    return {'status': 'ok', 'source': 'amoCRM: история сделок и источник создания',
+            'to': datetime.fromtimestamp(history['to'], TZ).isoformat(timespec='seconds'),
+            'stages': stages, 'available_stages': stages + [{'id': str(lib.ST['lost']), 'name': names[str(lib.ST['lost'])]}],
+            'pairs': pairs, 'start': ids[0], 'finish': ids[-1], 'order_start': str(lib.ST['pay_wait']),
+            'flows': [{'id': 'inquiries', 'name': 'Заявки из мессенджеров'},
+                      {'id': 'orders', 'name': 'Заказы из МойСклада'},
+                      {'id': 'unknown', 'name': 'Источник не определён'}],
+            'orders': [amo_conversion_path(l, by_lead[l['id']]) for l in leads]}
+
+
+def get_amo_conversion(leads: list[dict], tasks: dict) -> dict:
+    return build_amo_conversion(leads, tasks, get_amo_conversion_events(leads))
 
 
 def response_rules() -> dict | None:
@@ -1454,11 +1581,11 @@ def main() -> None:
             "wazzup": {"status": "метрика ответа рассчитана по событиям amoCRM"}}
     enrich_accounting(snap)
     try:
-        snap['ms_conversion'] = get_ms_conversion()
+        snap['amo_conversion'] = get_amo_conversion(leads, tasks)
     except Exception as exc:
-        snap['ms_conversion'] = {'status': 'unavailable', 'source': 'МойСклад',
+        snap['amo_conversion'] = {'status': 'unavailable', 'source': 'amoCRM',
                                  'reason': type(exc).__name__, 'orders': []}
-        print('История статусов МойСклад недоступна: ' + type(exc).__name__, flush=True)
+        print('История конверсии amoCRM недоступна: ' + type(exc).__name__, flush=True)
     # Атомарная замена: при ошибке предыдущий срез не получает новый timestamp.
     OUT.parent.mkdir(parents=True, exist_ok=True)
     GAPS.parent.mkdir(parents=True, exist_ok=True)
