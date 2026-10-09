@@ -1053,6 +1053,7 @@ def test_amo_owner():
     assert match_amo_user(KNOWN_USERS, username="Elzar_Asadzade") == 13835174
     assert match_amo_user(KNOWN_USERS, last="Asadzade") == 13835174
     assert match_amo_user(KNOWN_USERS, first="Nazar") == 14181846
+    assert match_amo_user(KNOWN_USERS, tg_id=558228956, first="U") == 14181846
     assert match_amo_user(KNOWN_USERS, first="U") is None
     assert match_amo_user(KNOWN_USERS, first="Кто-то") is None
 
