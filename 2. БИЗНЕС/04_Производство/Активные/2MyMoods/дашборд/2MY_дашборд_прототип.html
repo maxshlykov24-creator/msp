@@ -504,7 +504,8 @@
   .conversion-controls label{display:flex;flex-direction:column;gap:7px;color:var(--mute);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .conversion-controls .pick{font-size:12.5px;font-weight:500;letter-spacing:0;text-transform:none}
   #conversion-summary{margin:10px 0 18px}
-  #conversion-hint{margin:0 0 16px;font-size:11.5px}
+  #conversion-hint{margin:0 0 16px;font-size:11.5px;color:var(--mute);line-height:1.65}
+  .conversion-proof{border:0;background:none;font:inherit;font-weight:600;color:var(--ink);cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:0}
   #conversion-card .scroll-x{margin-top:4px}
   @media(max-width:640px){.conversion-controls{grid-template-columns:1fr;gap:10px}}
 
@@ -1020,7 +1021,7 @@
   </section>
 
   <section class="view" data-v="proc">
-  <h2 class="sect">Воронка продаж в amoCRM</h2><div class="hint">Этапы и задачи — текущее состояние. Период применяется к конверсии и ответам. Категория, товар, источник, канал, география, размер и цвет на amoCRM не действуют.</div>
+  <h2 class="sect">Этапы заказов и работа менеджеров</h2><div class="hint">Текущая воронка, задачи и ответы — amoCRM. Конверсия — история статусов заказов МойСклада, период по дате заказа. Категория, товар, источник, канал, география, размер и цвет на конверсию и amoCRM не действуют.</div>
   <div class="grid-2">
     <div class="card">
       <h3>Текущие этапы сделок</h3>
@@ -1035,11 +1036,11 @@
   </div>
 
   <div class="card" id="conversion-card">
-    <h3>Конверсия между этапами</h3>
-    <div class="hint">Считаются сделки, созданные в выбранный период, в текущей воронке «Продажи 2MY», без Полины. Одна сделка — одно наблюдение, не уникальный контакт. Процент = дошли до следующего этапа после исходного / были на исходном. Переходы прежней воронки и пропущенные этапы не засчитываются; повторные заходы не увеличивают количество. Результат по доступной истории на момент обновления, дальнейшие переходы могут изменить его.</div>
+    <h3>Конверсия заказов в МойСкладе</h3>
+    <div class="hint">История статусов заказов покупателей МойСклада. Период — дата документа заказа, независимо от оплаты. Остальные фильтры на этот блок не действуют. Один заказ учитывается один раз в каждой паре. Процент = число заказов, дошедших до целевого статуса после исходного, / число заказов, бывших на исходном. Промежуточные статусы допустимы, пропущенные не додумываются. Неполные истории исключены. «Оплачен» здесь — статус заказа; выручка рассчитывается отдельно по платежам. Статусы «На сборке» и «Передан на сборку» не объединены.</div>
     <div class="conversion-controls"><label>От этапа<select id="conversion-from"></select></label><label>До этапа<select id="conversion-to"></select></label></div>
     <div id="conversion-summary"></div>
-    <div id="conversion-hint" class="hint"></div>
+    <div id="conversion-hint" class="conversion-quality"></div>
     <div class="scroll-x"><table><thead><tr><th>Переход</th><th>Были на этапе</th><th>Дошли далее</th><th>Конверсия</th></tr></thead><tbody id="conversion"></tbody></table></div>
   </div>
 
@@ -1356,7 +1357,7 @@ const select = (id, values, label) => { const e=el(id), old=selected(id); e.inne
 const startOfMonth = d => d.slice(0,7)+'-01';
 let data=null, clients=[], filtered=[], currentLines=[], financial=[], includeDelivery=false, includeReturns=false, chartDays=[];
 let state={from:'',to:'',cat:[],prod:'',source:[],channel:[],city:[],size:[],color:[]};
-const views=[['sales','Продажи и каналы'],['clients','Клиенты'],['goods','Товары'],['proc','Процессы в amoCRM']];
+const views=[['sales','Продажи и каналы'],['clients','Клиенты'],['goods','Товары'],['proc','Процессы']];
 el('nav').innerHTML=views.map(([id,n],i)=>`<button data-v="${id}" class="${i?'':'on'}">${n}</button>`).join('');
 function view(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.dataset.v===id));document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x.dataset.v===id));location.hash='v-'+id;}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>view(b.dataset.v));
@@ -1383,22 +1384,18 @@ function buildClients(){
      size:favorite(orders.map(o=>({lines:(o.lines||[]).map(l=>Object.assign({},l,{size:sizeLabel(l)}))})),'size'),channel:orders[buys-1].channel};
  });
 }
-function stageConversion(leads,history,stages,fromStage=88727570,toStage=142){
- if(history?.status!=='ok')return null;
- const byLead=group((history.events||[]).filter(e=>e.before!=null||e.after!=null),x=>x.lead);
- const paths=leads.map(l=>{
-  const events=(byLead[l.id]||[]).slice().sort((a,b)=>a.at-b.at||a.id.localeCompare(b.id));
-  return events.length?events.flatMap(e=>[e.before,e.after]).filter(x=>x!==null):[l.status];
- });
- const pair=(a,b)=>{let entered=0,reached=0;for(const path of paths){const i=path.indexOf(a);if(i<0)continue;entered++;if(path.slice(i+1).includes(b))reached++;}return {entered,reached,rate:entered?(100*reached/entered).toFixed(1).replace('.',',')+'%':'—'}};
- const ordered=stages.filter(([id])=>Number(id)!==143&&Number(id)!==88727566);
- const rows=ordered.slice(0,-1).map(([id,name],i)=>({from:id,to:ordered[i+1][0],label:name+' → '+ordered[i+1][1],...pair(id,ordered[i+1][0])}));
- const names=new Map(ordered);
- const additional=[[88727574,88727582],[88727574,88727586],[88727578,88727586],[88727590,88727598]];
- rows.push(...additional.filter(([a,b])=>names.has(a)&&names.has(b)).map(([a,b])=>({from:a,to:b,label:names.get(a)+' → '+names.get(b),...pair(a,b)})));
- const stageOrder=new Map(ordered.map(([id],i)=>[id,i]));
- rows.sort((a,b)=>stageOrder.get(a.from)-stageOrder.get(b.from)||stageOrder.get(a.to)-stageOrder.get(b.to));
- return {rows,overall:pair(fromStage,toStage),full:pair(88727570,142),withEvents:leads.filter(l=>(byLead[l.id]||[]).length).length};
+function stageConversion(orders,history,fromStage,toStage){
+ if(!history||!['ok','partial'].includes(history.status))return null;
+ const checked=orders.filter(o=>o.complete),excluded=orders.filter(o=>!o.complete);
+ const names=new Map((history.available_stages||history.stages).map(s=>[s.id,s.name]));
+ const pair=(a,b)=>{const entered=checked.filter(o=>o.path.includes(a));const reached=entered.filter(o=>o.path.slice(o.path.indexOf(a)+1).includes(b));return {from:a,to:b,entered:entered.length,reached:reached.length,enteredOrders:entered,reachedOrders:reached,rate:entered.length?(100*reached.length/entered.length).toFixed(1).replace('.',',')+'%':'—'};};
+ return {rows:history.pairs.map(([a,b])=>({label:names.get(a)+' → '+names.get(b),...pair(a,b)})),overall:pair(fromStage,toStage),full:pair(history.start,history.finish),checked:checked.length,excluded,total:orders.length};
+}
+function showConversionOrders(title,rows,transition){
+ const names=new Map((data.ms_conversion.available_stages||[]).map(s=>[s.id,s.name]));
+ const reached=new Set(transition?.reachedOrders.map(o=>o.id)||[]);
+ const rowsHtml=rows.map(o=>`<tr class="drill" data-order="${esc(o.id)}"><td>${esc(o.number)}</td><td>${dmy(o.date)}</td><td>${esc(o.complete?o.path.map(id=>names.get(id)||'Другой статус').join(' → '):o.reason)}</td>${transition?`<td>${reached.has(o.id)?'Да':'Нет'}</td>`:''}</tr>`).join('');
+ showSheet('МойСклад · история статусов',title,`<div class="sheet-count">${num(rows.length)} ${orderNoun(rows.length)}. Нажми на заказ, затем открой в МойСкладе историю изменений. Количество считается по заказам, не по уникальным покупателям.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата заказа</th><th>История статусов</th>${transition?'<th>Дошёл далее</th>':''}</tr></thead><tbody>${rowsHtml||'<tr><td colspan="4">Нет заказов</td></tr>'}</tbody></table>`);
 }
 function shippingStats(orders){
  const groups=[{label:'Все заказы с обеими датами',values:[]},{label:'Без ожидания наличия',values:[]},{label:'Ожидали наличия',values:[]},{label:'Признак наличия не проверен',values:[]}];
@@ -1564,17 +1561,25 @@ function refresh(){
  const leads=data.leads.filter(l=>l.created>=state.from&&l.created<=state.to);
  const fallbackStages=[[88727566,'Неразобранное'],[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно'],[143,'Закрыто без успеха']];
  const stages=data.tasks.stages?.map(s=>[Number(s.id),s.name])||fallbackStages;
- const conversionStages=stages.filter(([id])=>Number(id)!==88727566);
  el('funnel-hint').textContent=`В срезе: ${num(data.leads.length)} сделок; исключено по Полине: ${num(data.tasks.excluded_marketing_owner||0)}. Обновлено: ${data.tasks.collected_at||data.generated}.`;
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${esc(label)}</span><span class="nums">${num(data.leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
- for(const [id,fallback] of [['conversion-from',88727570],['conversion-to',142]]){const e=el(id),previous=Number(e.value);e.innerHTML=conversionStages.map(([id,name])=>`<option value="${id}">${esc(name)}</option>`).join('');e.value=String(conversionStages.some(([id])=>id===previous)?previous:fallback);}
- const fromStage=Number(el('conversion-from').value),toStage=Number(el('conversion-to').value);
- const conversion=stageConversion(leads,data.stage_history,conversionStages,fromStage,toStage);
+ const msHistory=data.ms_conversion;
+ const msStages=msHistory?.available_stages||[];
+ const msOrders=(msHistory?.orders||[]).filter(o=>o.date>=state.from&&o.date<=state.to);
+ for(const [id,fallback] of [['conversion-from',msHistory?.start],['conversion-to',msHistory?.finish]]){const e=el(id),previous=e.value;e.innerHTML=msStages.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');e.value=msStages.some(s=>s.id===previous)?previous:(fallback||'');}
+ const fromStage=el('conversion-from').value,toStage=el('conversion-to').value;
+ const conversion=stageConversion(msOrders,msHistory,fromStage,toStage);
  const conversionPct=x=>x.rate+' ('+num(x.reached)+' из '+num(x.entered)+')';
- const finalName=stages.find(([id])=>id===toStage)?.[1]||'—',firstName=stages.find(([id])=>id===fromStage)?.[1]||'—';
- el('conversion-summary').innerHTML=conversion?kv([['Новая заявка → '+(stages.find(([id])=>id===142)?.[1]||'Успешно'),conversionPct(conversion.full)],...((fromStage!==88727570||toStage!==142)?[[firstName+' → '+finalName,fromStage===toStage?'Выбери разные этапы':conversionPct(conversion.overall)]]:[])]):'История переходов ещё не загружена. Проценты не рассчитаны.';
- el('conversion-hint').textContent=conversion?`Сделок в периоде: ${num(leads.length)}. С событиями переходов: ${num(conversion.withEvents)}. Для остальных известен только текущий этап. Обновлено: ${data.stage_history.to}.` : '';
- table('conversion',conversion?.rows||[],[x=>x.label,x=>num(x.entered),x=>num(x.reached),x=>x.rate]);
+ const stageName=id=>msStages.find(s=>s.id===id)?.name||'—';
+ const fullLabel=stageName(msHistory?.start)+' → '+stageName(msHistory?.finish);
+ const selectedLabel=stageName(fromStage)+' → '+stageName(toStage);
+ const summaryRows=conversion?[{label:fullLabel,pair:conversion.full},...((fromStage!==msHistory.start||toStage!==msHistory.finish)&&fromStage!==toStage?[{label:selectedLabel,pair:conversion.overall}]:[])]:[];
+ el('conversion-summary').innerHTML=conversion?summaryRows.map((x,i)=>`<div class="kv"><span>${esc(x.label)}</span><button class="conversion-proof" data-pair="${i}">${esc(conversionPct(x.pair))}</button></div>`).join(''):'История статусов МойСклада недоступна. Конверсия не рассчитана.';
+ el('conversion-summary').onclick=e=>{const b=e.target.closest('[data-pair]');if(b){const x=summaryRows[+b.dataset.pair];showConversionOrders(x.label,x.pair.enteredOrders,x.pair);}};
+ el('conversion-hint').innerHTML=conversion?`Период ${dmy(state.from)}–${dmy(state.to)}: дата заказа в МойСкладе. Проверена полная история ${num(conversion.checked)} из ${num(conversion.total)} заказов.${conversion.excluded.length?` <button class="conversion-proof" id="conversion-excluded">Не включено: ${num(conversion.excluded.length)}</button>. Проценты только по проверенной части.`:''} Обновлено: ${esc(new Date(msHistory.to).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}))}. Нажми на число для списка заказов.`:'';
+ const excludedButton=el('conversion-excluded');if(excludedButton)excludedButton.onclick=()=>showConversionOrders('Заказы без полной истории',conversion.excluded);
+ el('conversion').innerHTML=conversion?conversion.rows.map((x,i)=>`<tr><td>${esc(x.label)}</td><td><button class="conversion-proof" data-row="${i}" data-part="entered">${num(x.entered)}</button></td><td><button class="conversion-proof" data-row="${i}" data-part="reached">${num(x.reached)}</button></td><td>${esc(x.rate)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Нет проверенной истории МойСклада</td></tr>';
+ el('conversion').onclick=e=>{const b=e.target.closest('[data-row]');if(!b)return;const x=conversion.rows[+b.dataset.row];showConversionOrders(x.label,b.dataset.part==='reached'?x.reachedOrders:x.enteredOrders,x);};
  const until=(data.responses?.until_revenue||[]).filter(x=>x.paid_date>=state.from&&x.paid_date<=state.to&&x.covered);
  const untilAvg=until.length?until.reduce((s,x)=>s+Number(x.count),0)/until.length:null;
  const untilValue=untilAvg===null?'нет данных':untilAvg.toFixed(1).replace('.', ',')+' · '+num(until.length)+' заказов';
