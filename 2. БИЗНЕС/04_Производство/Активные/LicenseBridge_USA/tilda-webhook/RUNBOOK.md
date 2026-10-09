@@ -687,3 +687,10 @@ Replaces the simultaneous ring group described above, per Max's explicit request
 - Test entrypoints in lb-cascade-test: 8890 staged local channels; 8891 nonexistent endpoints; 8892 read-only planning against actual registrations. Not exposed through the inbound menu.
 - Real incoming conversation after this change still requires verification; all three manager endpoints were offline at the final check.
 - Rollback backups: PBX extensions.conf.bak-cascade-20261009; hub app/telephony.py.bak-cascade-20261009, then rebuild/recreate api and worker. Backups retain the previous three-person simultaneous ring configuration.
+
+
+### 2026-10-09: retry registration while all managers are offline
+
+User requested keeping the inbound attempt alive even with all managers offline. The empty branch of lb-cascade now plays ringback, waits one second and rebuilds the eligible contact list until the original 35-second deadline. A newly registered manager is dialed with zero initial delay; the overall deadline is not reset on retry. The planning-only diagnostic still returns immediately. Previously the offline branch returned immediately and the caller only heard filler ringback in padring.
+
+PBX backup: extensions.conf.bak-offline-retry-20261009. Production dialplan reloaded. Isolated 8891 test confirms repeated one-second availability checks without SIP calls or CRM records. Reconnection of a real manager during a waiting call still requires a live handset test.
