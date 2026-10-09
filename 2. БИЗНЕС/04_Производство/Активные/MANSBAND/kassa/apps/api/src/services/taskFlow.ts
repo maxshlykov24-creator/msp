@@ -7,6 +7,7 @@ import {
   CENTRAL_WAREHOUSE,
   STORE_TO_WAREHOUSE,
   flowsForStage,
+  rentalEndPassed,
   taskFlowOf,
   taskTitle,
 } from "@kassa/shared";
@@ -418,6 +419,34 @@ export async function scanOverdueReserves(): Promise<number> {
   }
   await cancelStaleDeferredTasks(today);
   return created;
+}
+
+/**
+ * Аренда на «Аренда оплачена», у которой «Аренда до» уже в прошлом, переходит
+ * на «Аренда просрочена». Сегодняшний день ещё не просрочка. В amoCRM не пишем.
+ */
+export async function scanOverdueRentals(): Promise<number> {
+  const today = todayYmd();
+  const rows = await db
+    .select({ data: dealsTable.data })
+    .from(dealsTable)
+    .where(
+      and(
+        eq(dealsTable.stage, "Аренда оплачена"),
+        sql`(${dealsTable.data}->>'kind') = 'rental'`,
+        sql`left(coalesce(${dealsTable.data}->>'rentalTo', ''), 10) < ${today}`
+      )
+    )
+    .limit(200);
+
+  let changed = 0;
+  for (const row of rows) {
+    const deal = row.data as Deal;
+    if (!rentalEndPassed(deal.rentalTo, today)) continue;
+    const saved = await deals.markRentalOverdue(deal);
+    if (saved.stage === "Аренда просрочена" && deal.stage === "Аренда оплачена") changed += 1;
+  }
+  return changed;
 }
 
 /**

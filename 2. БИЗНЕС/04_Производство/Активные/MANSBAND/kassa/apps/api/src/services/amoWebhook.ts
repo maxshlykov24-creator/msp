@@ -1,3 +1,4 @@
+import { rentalEndPassed } from "@kassa/shared";
 import * as amo from "../clients/amo.js";
 import * as deals from "./deals.js";
 import * as taskFlow from "./taskFlow.js";
@@ -138,6 +139,12 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
   await writeKassaLink(event.id, deal.number).catch((err: Error) => {
     console.warn(`[amo] ссылка на кассу, сделка #${event.id}: ${err.message}`);
   });
+
+  // Срок аренды вышел. В amo этап остаётся «Аренда оплачена»: статуса «Аренда просрочена» там нет.
+  // Иначе вебхук возвращал бы кассу на оплаченную аренду при каждом эхе.
+  if (deal.kind === "rental" && stage === "Аренда оплачена" && rentalEndPassed(deal.rentalTo)) {
+    return { dealNumber: deal.number, stage: "Аренда просрочена", tasks: false, skipped: "rental_overdue" };
+  }
 
   // Не слив в amoCRM лежит на системном «Провал». В кассе этот этап не показываем.
   if (deal.kind === "no_sliv" && stage === "Провал") {

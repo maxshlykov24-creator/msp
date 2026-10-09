@@ -7,8 +7,12 @@ import {
   AMO_PIPELINE_COMPLAINTS,
   AMO_PIPELINE_SALES,
   AMO_SYSTEM_STATUS_IDS,
+  RENTAL_OVERDUE_STAGE,
   RENTAL_SERVICE_PRICE,
   STAGE_ALIASES,
+  moscowTodayYmd,
+  rentalEndPassed,
+  rentalEndYmd,
 } from "@kassa/shared";
 import type { Deal, DealKind, FunnelType, Store } from "@kassa/shared";
 import { getFieldIdByName } from "./bootstrap.js";
@@ -37,6 +41,15 @@ const CLOSED_SINCE_UNIX = Math.floor(new Date("2026-06-01T00:00:00+03:00").getTi
 /** В кассе у не слива нет этапа «Провал». Старые записи с этим этапом показываем как «Не слив». */
 function presentDeal(deal: Deal): Deal {
   if (deal.kind === "no_sliv" && deal.stage === "Провал") return { ...deal, stage: "Не слив" };
+  if (deal.kind !== "rental") return deal;
+  const today = moscowTodayYmd();
+  if (deal.stage === "Аренда оплачена" && rentalEndPassed(deal.rentalTo, today)) {
+    return { ...deal, stage: RENTAL_OVERDUE_STAGE };
+  }
+  const end = rentalEndYmd(deal.rentalTo);
+  if (deal.stage === RENTAL_OVERDUE_STAGE && end && end >= today) {
+    return { ...deal, stage: "Аренда оплачена" };
+  }
   return deal;
 }
 
@@ -169,6 +182,26 @@ export async function resolve(ref: string): Promise<Deal | null> {
 /** postgres.js не принимает undefined в jsonb — вычищаем перед записью. */
 function dealForDb(deal: Deal): Deal {
   return JSON.parse(JSON.stringify(deal)) as Deal;
+}
+
+/** «Аренда оплачена» с вышедшим сроком → «Аренда просрочена». В amoCRM этап не пишем: такого статуса там нет. */
+export async function markRentalOverdue(deal: Deal): Promise<Deal> {
+  if (deal.kind !== "rental" || deal.stage !== "Аренда оплачена" || !rentalEndPassed(deal.rentalTo)) return deal;
+  const updated: Deal = {
+    ...deal,
+    stage: RENTAL_OVERDUE_STAGE,
+    history: [
+      ...(deal.history ?? []),
+      {
+        at: new Date().toISOString(),
+        who: "Касса (авто)",
+        action: "Этап изменён: Аренда оплачена → Аренда просрочена · Срок аренды вышел",
+      },
+    ],
+  };
+  await persist(updated);
+  broadcast("deal.stage_changed", { number: deal.number, stage: updated.stage });
+  return updated;
 }
 
 export async function persist(deal: Deal): Promise<Deal> {

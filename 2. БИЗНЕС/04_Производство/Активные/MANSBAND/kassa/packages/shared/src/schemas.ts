@@ -450,7 +450,7 @@ export const createDealSchema = z
       if (!v.rentalFrom || !v.rentalTo) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["rentalFrom"], message: "Укажите плановые даты аренды" });
       }
-      if (["Аренда оплачена", "Комплект выдан", "Комплект возвращён", "Успех"].includes(v.stage) && v.paid < v.total) {
+      if (["Аренда оплачена", "Аренда просрочена", "Комплект выдан", "Комплект возвращён", "Успех"].includes(v.stage) && v.paid < v.total) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["paid"], message: "Аренда ещё не оплачена полностью" });
       }
       if (["Комплект выдан", "Комплект возвращён", "Успех"].includes(v.stage) && !v.rentalIssuedAt) {

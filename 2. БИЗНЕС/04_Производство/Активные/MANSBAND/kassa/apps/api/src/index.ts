@@ -1,7 +1,7 @@
 import { buildServer } from "./server.js";
 import { getEnv } from "./env.js";
 import { runBootstrap, syncProducts, syncStock } from "./services/bootstrap.js";
-import { scanOverdueReserves } from "./services/taskFlow.js";
+import { scanOverdueRentals, scanOverdueReserves } from "./services/taskFlow.js";
 import { enqueueWeeklySalary } from "./services/payroll.js";
 import { prewarmAmoClosed, prewarmAmoOpen } from "./services/deals.js";
 
@@ -63,6 +63,11 @@ async function main() {
         if (n > 0) app.log.info(`Просроченные отложки: поставлено задач — ${n}.`);
       })
       .catch((e) => app.log.warn(`Скан просрочек не удался: ${(e as Error).message}`));
+    scanOverdueRentals()
+      .then((n) => {
+        if (n > 0) app.log.info(`Просроченная аренда: этап сменён — ${n}.`);
+      })
+      .catch((e) => app.log.warn(`Скан просроченной аренды не удался: ${(e as Error).message}`));
   };
   runOverdueScan();
   setInterval(runOverdueScan, OVERDUE_SCAN_MS);

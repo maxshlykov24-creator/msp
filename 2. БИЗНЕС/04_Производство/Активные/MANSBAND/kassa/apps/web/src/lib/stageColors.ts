@@ -99,6 +99,7 @@ const stageToGroup: Record<string, keyof typeof palette> = {
   "Встреча назначена": "meeting",
 
   "Аренда оплачена": "rental",
+  "Аренда просрочена": "negative",
   "В аренде": "rental",
   Возвращена: "rental",
 

@@ -30,7 +30,7 @@ export const KIND_LABEL: Record<DealKind, string> = {
 /** @deprecated Используйте StageBadge + getStageStyle из stageColors.ts */
 export function stageTone(stage: string): "green" | "red" | "amber" | "blue" | "gold" | "gray" {
   if (stage === "Успех") return "green";
-  if (stage === "Провал") return "red";
+  if (stage === "Провал" || stage === "Аренда просрочена") return "red";
   if (["В аренде", "Товар отложен", "Дано обещание", "Аренда оплачена"].includes(stage)) return "amber";
   if (["Отправлен", "Доставлен", "Передан на сборку", "Собран", "Вызван курьер"].includes(stage)) return "blue";
   if (stage === "Сертификат оплачен") return "gold";

@@ -742,11 +742,38 @@ export const RENTAL_STAGES = [
   "Новая заявка",
   "Зарезервировано",
   "Аренда оплачена",
+  "Аренда просрочена",
   "Комплект выдан",
   "Комплект возвращён",
   "Успех",
   "Провал",
 ] as const;
+
+/** Этап кассы, когда срок аренды вышел, а заявка всё ещё на «Аренда оплачена». В amoCRM такого статуса нет, туда его не пишем. */
+export const RENTAL_OVERDUE_STAGE = "Аренда просрочена";
+
+export function moscowTodayYmd(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** YYYY-MM-DD из «Аренда до». Пустая или кривая дата — пустая строка. */
+export function rentalEndYmd(value: string | undefined): string {
+  const end = (value ?? "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(end) ? end : "";
+}
+
+/** Срок аренды уже прошёл по календарю Москвы. Сегодняшняя дата ещё не просрочка. */
+export function rentalEndPassed(rentalTo: string | undefined, today = moscowTodayYmd()): boolean {
+  const end = rentalEndYmd(rentalTo);
+  return !!end && end < today;
+}
 
 // Имена кастом-полей сделки (лида) amoCRM для writeback.
 // Точные field_id резолвятся по имени при bootstrap-синке (getLeadFieldIds/getFieldIdByName) —
