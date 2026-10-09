@@ -1067,4 +1067,23 @@ card = {"id": "WB-GI-AUDIT", "done": True, "closedAt": "2026-10-09T11:53:51Z"}
 with patch.object(supply_flow, "list_wb_supplies", return_value=[db.get_wb_supply(ready_sid)]), patch.object(wb_supply, "list_supplies", return_value=[card]), patch.object(wb_supply, "info", side_effect=AssertionError("unneeded per-supply GET")):
     supply_flow._sync_supply_cabinet(db.get_cabinet(wb_cab), "тест")
 assert db.get_wb_supply(ready_sid)["state"] == "delivered"
+
+# Короб сохраняется при повторной привязке, но не переносится в чужую поставку.
+db.set_shipment_supply([marked_id], "WB-GI-OLD", trbx_ext="WB-MP-OLD")
+db.set_shipment_supply([marked_id], "WB-GI-OLD")
+assert db.get_shipments_by_ids([marked_id])[0]["trbx_ext"] == "WB-MP-OLD"
+db.set_shipment_supply([marked_id], "WB-GI-NEW")
+assert not db.get_shipments_by_ids([marked_id])[0]["trbx_ext"]
+db.set_shipment_supply([marked_id], "WB-GI-THIRD", trbx_ext="WB-MP-THIRD")
+assert db.get_shipments_by_ids([marked_id])[0]["trbx_ext"] == "WB-MP-THIRD"
+
+# Старые пустые поставки не задерживают рабочие: максимум две проверки в проход.
+empty_cards = [{"id": 800+i, "cabinet_id": wb_cab, "ext_id": "WB-GI-EMPTY-%s" % i,
+                "state": "open"} for i in range(5)]
+with patch.object(supply_flow, "list_wb_supplies", return_value=empty_cards), patch.object(wb_supply, "list_supplies", return_value=[]), patch.object(wb_supply, "info", return_value={}) as info_call, patch.object(supply_flow.time, "sleep"):
+    supply_flow._sync_supply_cabinet(db.get_cabinet(wb_cab), "тест")
+    assert info_call.call_count == 2
+    supply_flow._sync_supply_cabinet(db.get_cabinet(wb_cab), "тест")
+    assert info_call.call_count == 4
+    assert len({call.args[1] for call in info_call.call_args_list}) == 4
 print("все проверки поставок, сборки, КиЗ, архива и актуальности прошли")

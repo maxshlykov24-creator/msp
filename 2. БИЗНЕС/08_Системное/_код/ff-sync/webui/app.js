@@ -1423,7 +1423,7 @@ function asmSupplyHtml(sup, rows) {
   return `<tr class="sup-head" data-supply="${esc(sup.ext_id)}" data-sid="${sup.id}" title="Открыть поставку">
     <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}" title="Выбрать все задания поставки"></td>
     <td class="client">${esc(sup.client)}</td>
-    <td class="ext">${num(sup.orders, 0)} зак.<span class="badge mp">WB</span><span class="badge mp">FBS</span></td>
+    <td class="ext">${esc(sup.ext_id)}<br><small>${num(sup.orders, 0)} зак.</small><span class="badge mp">WB</span><span class="badge mp">FBS</span></td>
     <td class="when">${esc(sup.created || "—")}</td>
     <td class="ph"></td>
     <td class="artq"><b>${num(qty, 0)} шт</b></td>

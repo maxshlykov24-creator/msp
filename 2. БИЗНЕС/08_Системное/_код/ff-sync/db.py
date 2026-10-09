@@ -168,6 +168,8 @@ def migrate(conn):
         conn.execute("UPDATE shipments SET status_group='pickup', work_state='' "
                      "WHERE marketplace='wb' AND status_group='delivered' "
                      "AND status LIKE '%прибыло на ПВЗ%'")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_shipments_cabinet_supply "
+                 "ON shipments(cabinet_id, supply_ext)")
     supplies = _cols(conn, "wb_supplies")
     if "cargo_type" not in supplies:
         conn.execute("ALTER TABLE wb_supplies ADD COLUMN cargo_type TEXT")
@@ -1308,8 +1310,8 @@ def set_shipment_status(ship_id, status, status_group, clear_work=False, track=N
 def set_shipment_supply(ids, supply_ext, trbx_ext=None):
     """Пометить отправления поставкой WB и, если задано, грузоместом.
 
-    trbx_ext=None оставляет грузоместо как было: заказ сначала кладут в поставку,
-    а по коробкам раскладывают отдельным движением.
+    trbx_ext=None сохраняет грузоместо только внутри той же поставки.
+    При переносе старый короб больше не относится к заказу.
     """
     if not ids:
         return 0
@@ -1320,6 +1322,9 @@ def set_shipment_supply(ids, supply_ext, trbx_ext=None):
     if trbx_ext is not None:
         sql += ", trbx_ext = ?"
         args.append(trbx_ext or "")
+    else:
+        sql += ", trbx_ext = CASE WHEN COALESCE(supply_ext,'') = ? THEN trbx_ext ELSE '' END"
+        args.append(supply_ext or "")
     cur = conn.execute(sql + " WHERE id IN (%s)" % q, args + [int(x) for x in ids])
     conn.commit()
     n = cur.rowcount
