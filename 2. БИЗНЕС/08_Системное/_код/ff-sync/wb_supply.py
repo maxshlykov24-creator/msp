@@ -53,8 +53,12 @@ TRBX_PER_BOX = 2
 
 
 def box_limit(orders):
-    """Сколько грузомест WB даст завести на поставку из `orders` заданий."""
-    return int(orders or 0) // TRBX_PER_BOX
+    """Половина заданий вниз, минимум один короб для непустой поставки.
+
+    Один заказ / один короб подтверждён живым WB 09.10.2026, см. README.
+    """
+    count = max(0, int(orders or 0))
+    return max(1, count // TRBX_PER_BOX) if count else 0
 
 
 class SupplyError(Exception):

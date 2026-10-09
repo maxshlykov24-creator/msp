@@ -223,7 +223,7 @@ except ValueError as exc:
     assert "не больше половины заданий" in str(exc), exc
 import wb_supply
 assert wb_supply.box_limit(2) == 1 and wb_supply.box_limit(3) == 1 and wb_supply.box_limit(10) == 5
-assert wb_supply.box_limit(1) == 0 and wb_supply.box_limit(0) == 0
+assert wb_supply.box_limit(1) == 1 and wb_supply.box_limit(0) == 0
 # отказ площадки 409 не роняет «Собрано», а уходит заметкой
 db.delete_wb_boxes(sup["id"], ["WB-TRBX-2"])
 _real_req = wb_supply.req
@@ -592,8 +592,9 @@ assert len(db.list_wb_boxes(pvz["id"])) == 1, [dict(b) for b in db.list_wb_boxes
 out = supply_flow.assemble(mgt + kgt, split=False, boxes=1)
 assert not out["boxes"] and any("поставки" in n for n in out["notes"]), out
 
-# 22. поставка из одного задания: по правилу половины предел ноль, но первый
-# короб мы не блокируем, а спрашиваем площадку — решение за WB, не за нами
+# 22. Единый предел для пустой, одиночной и обычной поставки.
+assert [wb_supply.box_limit(n) for n in (0, 1, 2, 3, 4, 5, 10)] == [0, 1, 1, 1, 2, 2, 5]
+# Первый короб на одно задание доходит до WB, повторный блокируется.
 solo_id = db.insert_wb_supply(client_id, wb_cab, "WB-GI-SOLO", "Одно задание", "2026-09-20T11:00:00", "тест", "1")
 one = db.upsert_shipment(
     client_id, wb_cab, "wb", "fbs", "204", "Новый", "2026-09-20", "ART-1", "2000000000019",

@@ -1690,6 +1690,12 @@ function pickedPickupSupplies() {
   return (state.asmSupplies || []).filter((s) => exts.has(s.ext_id) && s.state === "open");
 }
 
+// Для непустой поставки доступен хотя бы один короб, как на сервере.
+function wbBoxLimit(orders) {
+  const count = Math.max(0, Math.floor(Number(orders) || 0));
+  return count ? Math.max(1, Math.floor(count / 2)) : 0;
+}
+
 async function asmDone() {
   const ids = [...state.pickedAsm];
   if (!ids.length) return;
@@ -1697,11 +1703,11 @@ async function asmDone() {
   const supplies = pickedPickupSupplies();
   if (supplies.length === 1) {
     const sup = supplies[0];
-    const limit = Math.max(0, Math.floor(Number(sup.orders || 0) / 2) - Number(sup.boxes || 0));
+    const limit = Math.max(0, wbBoxLimit(sup.orders) - Number(sup.boxes || 0));
     const answer = await askNumber(
       "Сколько коробов в поставке " + sup.ext_id + "?",
       "WB печатает QR на короб, а не на поставку. Заведи столько коробов, сколько реально собрал:"
-        + " максимум " + Math.max(1, Math.floor(sup.orders / 2)) + " при " + sup.orders + " заданиях (WB даёт половину, округление вниз), уже создано " + sup.boxes + "."
+        + " максимум " + wbBoxLimit(sup.orders) + " при " + sup.orders + " заданиях (половина с округлением вниз; для одного задания — один короб), уже создано " + sup.boxes + "."
         + " Состав короба площадке не передаётся, его заводит ПВЗ при приёмке. Ноль — пропустить.",
       "Собрано",
       limit ? 1 : 0,
@@ -1887,11 +1893,53 @@ function kizRender() {
   $("kizSend").disabled = !have;
 }
 
+// ЙЦУКЕН → та клавиша, которую сканер жал на латинской раскладке.
+const RU_LAYOUT = "йцукенгшщзхъфывапролджэячсмитьбю.ёЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ,Ё\"№;:?/";
+const EN_LAYOUT = "qwertyuiop[]asdfghjkl;'zxcvbnm,./`QWERTYUIOP{}ASDFGHJKL:\"ZXCVBNM<>?~@#$^&|";
+// Физическая клавиша, без оглядки на раскладку ОС. Пара: без Shift и с Shift.
+const QWERTY = {
+  Backquote: "`~", Digit1: "1!", Digit2: "2@", Digit3: "3#", Digit4: "4$", Digit5: "5%",
+  Digit6: "6^", Digit7: "7&", Digit8: "8*", Digit9: "9(", Digit0: "0)", Minus: "-_", Equal: "=+",
+  KeyQ: "qQ", KeyW: "wW", KeyE: "eE", KeyR: "rR", KeyT: "tT", KeyY: "yY", KeyU: "uU", KeyI: "iI", KeyO: "oO", KeyP: "pP",
+  BracketLeft: "[{", BracketRight: "]}", Backslash: "\\|", IntlBackslash: "\\|",
+  KeyA: "aA", KeyS: "sS", KeyD: "dD", KeyF: "fF", KeyG: "gG", KeyH: "hH", KeyJ: "jJ", KeyK: "kK", KeyL: "lL",
+  Semicolon: ";:", Quote: "'\"",
+  KeyZ: "zZ", KeyX: "xX", KeyC: "cC", KeyV: "vV", KeyB: "bB", KeyN: "nN", KeyM: "mM",
+  Comma: ",<", Period: ".>", Slash: "/?", Space: "  ",
+};
+
+function layoutToEn(text) {
+  const src = String(text || "");
+  if (!/[А-Яа-яЁё№]/.test(src)) return src;
+  let out = "";
+  for (const ch of src) {
+    const i = RU_LAYOUT.indexOf(ch);
+    out += i >= 0 ? EN_LAYOUT[i] : ch;
+  }
+  return out;
+}
+
+function qwertyChar(e) {
+  if (e.code && e.code.indexOf("Numpad") === 0) return e.key && e.key.length === 1 ? e.key : "";
+  const pair = QWERTY[e.code];
+  if (!pair) return "";
+  const letter = pair[0] >= "a" && pair[0] <= "z";
+  const upper = letter ? e.shiftKey !== e.getModifierState("CapsLock") : e.shiftKey;
+  return pair[upper ? 1 : 0];
+}
+
+function kizInsert(ch) {
+  const input = $("kizInput");
+  const start = input.selectionStart == null ? input.value.length : input.selectionStart;
+  const end = input.selectionEnd == null ? input.value.length : input.selectionEnd;
+  input.setRangeText(ch, start, end, "end");
+}
+
 function kizAdd(raw) {
   let added = 0;
   let dupe = 0;
   String(raw || "").split(/[\r\n]+/).forEach((part) => {
-    const code = part.trim();
+    const code = layoutToEn(part.trim());
     if (!code) return;
     if (kizState.codes.includes(code)) { dupe += 1; return; }
     kizState.codes.push(code);
@@ -1989,19 +2037,35 @@ $("kizInput").onkeydown = (e) => {
   // GS от HID-сканера приходит как Ctrl+], а браузер не вставляет его в input.
   if (e.key === "\u001d" || (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "BracketRight" || e.key === "]"))) {
     e.preventDefault();
-    const input = $("kizInput");
-    input.setRangeText("\u001d", input.selectionStart, input.selectionEnd, "end");
+    kizInsert("\u001d");
     return;
   }
-  if (e.key !== "Enter") return;
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const raw = layoutToEn($("kizInput").value);
+    if (!String(raw || "").trim() && kizState.need && kizState.codes.length === kizState.need) {
+      $("kizSend").click();
+      return;
+    }
+    kizAdd(raw);
+    $("kizInput").value = "";
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  if (e.key === "Backspace" || e.key === "Delete" || e.key === "Tab" || e.key === "Home" || e.key === "End" || (e.key || "").indexOf("Arrow") === 0) return;
+  const ch = qwertyChar(e);
+  if (!ch) return;
   e.preventDefault();
-  const raw = $("kizInput").value;
-  if (!String(raw || "").trim() && kizState.need && kizState.codes.length === kizState.need) {
-    $("kizSend").click();
-    return;
-  }
-  kizAdd(raw);
-  $("kizInput").value = "";
+  kizInsert(ch);
+};
+// если клавиша пришла без кода (вставка, редкий сканер), кириллицу всё равно снимаем
+$("kizInput").oninput = () => {
+  const input = $("kizInput");
+  const fixed = layoutToEn(input.value);
+  if (fixed === input.value) return;
+  const pos = input.selectionStart;
+  input.value = fixed;
+  if (pos != null) input.setSelectionRange(pos, pos);
 };
 // вставка пачкой из буфера: сканер в режиме «много кодов» отдаёт их строками
 $("kizInput").onpaste = (e) => {
@@ -2675,12 +2739,12 @@ function bindWbDetail() {
   if (nb) nb.onclick = async () => {
     const have = ((state.wbDetail && state.wbDetail.boxes) || []).length;
     const orders = ((state.wbDetail && state.wbDetail.rows) || []).length;
-    const limit = Math.floor(orders / 2);
+    const limit = wbBoxLimit(orders);
     const left = Math.max(0, limit - have);
     const answer = await askNumber(
       "Сколько коробов добавить?",
       "WB печатает QR на короб. Состав внутрь площадке не передаётся, товар выбирать не нужно."
-        + " В поставке " + orders + " заданий, уже " + have + " кор., максимум " + limit + " (половина, округление вниз).",
+        + " В поставке " + orders + " заданий, уже " + have + " кор., максимум " + limit + " (для одного задания — один короб, далее половина с округлением вниз).",
       "Добавить",
       left ? 1 : 0,
       left ? 1 : 0,
