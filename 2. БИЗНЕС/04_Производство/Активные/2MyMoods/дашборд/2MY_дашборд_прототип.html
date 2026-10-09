@@ -496,9 +496,17 @@
   .card{background:var(--paper);border:1px solid var(--line);padding:28px 26px;position:relative;overflow:hidden;transition:transform .45s cubic-bezier(.25,1,.5,1),border-color .45s cubic-bezier(.25,1,.5,1),box-shadow .45s cubic-bezier(.25,1,.5,1)}
   .card::before{content:'';position:absolute;left:0;top:0;height:1px;width:0;background:var(--ink);transition:width .5s cubic-bezier(.25,1,.5,1)}
   .card:hover{transform:translateY(-3px);border-color:var(--ink);box-shadow:0 22px 40px -28px rgba(2,2,2,.42)}
-  .card:hover::before{width:100%}
+  .card:hover::before,.card.conversion-selected::before{width:100%}
+  .card.conversion-selected{transform:translateY(-3px);border-color:var(--ink);box-shadow:0 22px 40px -28px rgba(2,2,2,.42)}
   .card h3{font-family:var(--serif);font-weight:400;font-size:17px;margin-bottom:6px}
   .card .hint{font-size:12px;font-weight:400;color:var(--mute);margin-bottom:20px;line-height:1.65}
+  .conversion-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:22px 0 18px}
+  .conversion-controls label{display:flex;flex-direction:column;gap:7px;color:var(--mute);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .conversion-controls .pick{font-size:12.5px;font-weight:500;letter-spacing:0;text-transform:none}
+  #conversion-summary{margin:10px 0 18px}
+  #conversion-hint{margin:0 0 16px;font-size:11.5px}
+  #conversion-card .scroll-x{margin-top:4px}
+  @media(max-width:640px){.conversion-controls{grid-template-columns:1fr;gap:10px}}
 
   table{width:100%;border-collapse:collapse;font-size:12.5px}
   th{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mute);text-align:right;padding:0 0 10px 8px;border-bottom:1px solid var(--line);white-space:normal;line-height:1.35;overflow-wrap:break-word;vertical-align:bottom}
@@ -823,8 +831,7 @@
   <div class="grid-2e">
     <div class="card">
       <h3>Выручка и средний чек по менеджерам</h3>
-      <label>Возвраты <select id="mgr-returns"><option value="net">Вычесть возвраты</option><option value="gross">Не вычитать возвраты</option></select></label>
-      <div class="hint">Режим возвратов применяется ко всем финансовым блокам. Средний чек = выручка выбранного режима / число оплаченных заказов. Возврат относится к менеджеру исходной продажи, по дате возврата; число заказов не уменьшает.</div>
+      <div class="hint">Режим возвратов управляется верхним флажком «Не вычитать возвраты» и применяется ко всем финансовым блокам. Средний чек = выручка выбранного режима / число оплаченных заказов. Возврат относится к менеджеру исходной продажи, по дате возврата; число заказов не уменьшает.</div>
       <div class="hint" id="mgr-hint">Менеджер определяется по графику смен на дату закрывающего платежа.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Менеджер</th><th>Заказы</th><th>Выручка</th><th>Средний чек</th></tr></thead>
@@ -1027,10 +1034,10 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="conversion-card">
     <h3>Конверсия между этапами</h3>
     <div class="hint">Считаются сделки, созданные в выбранный период, в текущей воронке «Продажи 2MY», без Полины. Одна сделка — одно наблюдение, не уникальный контакт. Процент = дошли до следующего этапа после исходного / были на исходном. Переходы прежней воронки и пропущенные этапы не засчитываются; повторные заходы не увеличивают количество. Результат по доступной истории на момент обновления, дальнейшие переходы могут изменить его.</div>
-    <label>От этапа <select id="conversion-from"></select></label> <label>До этапа <select id="conversion-to"></select></label>
+    <div class="conversion-controls"><label>От этапа<select id="conversion-from"></select></label><label>До этапа<select id="conversion-to"></select></label></div>
     <div id="conversion-summary"></div>
     <div id="conversion-hint" class="hint"></div>
     <div class="scroll-x"><table><thead><tr><th>Переход</th><th>Были на этапе</th><th>Дошли далее</th><th>Конверсия</th></tr></thead><tbody id="conversion"></tbody></table></div>
@@ -1274,6 +1281,7 @@ const select = (id, values, label) => { const e=el(id), old=selected(id); e.inne
   if(current&&current!==sel) close();
   if(current===sel){close();return}
   current=sel; query='';
+  if(sel.id==='conversion-from'||sel.id==='conversion-to')el('conversion-card').classList.add('conversion-selected');
   hi=Math.max(0,[...sel.options].findIndex(o=>(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)));
   sel.nextElementSibling.classList.add('open');
   menu.hidden=false;
@@ -1305,6 +1313,7 @@ const select = (id, values, label) => { const e=el(id), old=selected(id); e.inne
   new MutationObserver(()=>syncLabel(sel)).observe(sel,{childList:true});
  }
  document.querySelectorAll('select').forEach(dress);
+ document.addEventListener('pointerdown',e=>{if(!e.target.closest('#conversion-card')&&!e.target.closest('.pick-menu'))el('conversion-card').classList.remove('conversion-selected')},true);
  const desc=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value');
  Object.defineProperty(HTMLSelectElement.prototype,'value',{
   configurable:true,
@@ -1497,7 +1506,6 @@ function refresh(){
  const responseNumbers=rows=>{const ns=rows.map(x=>Number(x.minutes)).filter(n=>Number.isFinite(n)).sort((a,b)=>a-b);if(!ns.length)return null;const med=(ns[Math.floor((ns.length-1)/2)]+ns[Math.floor(ns.length/2)])/2;const avg=ns.reduce((a,b)=>a+b,0)/ns.length;return {med,avg,n:ns.length}};
  const responsePair=rows=>{const s=responseNumbers(rows);return s?`мед. ${s.med.toFixed(1)} · ср. ${s.avg.toFixed(1)}`:'нет данных'};
  const responseOne=(rows,kind)=>{const s=responseNumbers(rows);return s?(kind==='avg'?s.avg:s.med).toFixed(1)+' мин ('+s.n+' ответов)':'нет данных'};
- el('mgr-returns').value=includeReturns?'gross':'net';
  const mgr=Object.entries(group(basis,x=>x.o.manager||'Нет смены в графике')).map(([name,arr])=>({name,arr,n:arr.filter(x=>!x.o.return_event).length,rev:sum(arr,x=>orderRev(x.o,x.ls))}));
  mgr.sort((a,b)=>a.name==='Нет смены в графике'?1:b.name==='Нет смены в графике'?-1:b.rev-a.rev);
  const assigned=mgr.filter(x=>x.name!=='Нет смены в графике').reduce((n,x)=>n+x.n,0);
@@ -1973,7 +1981,6 @@ document.querySelector('.xls').onclick=downloadExcel;
 el('delivery-toggle').onchange=e=>{includeDelivery=e.target.checked;refresh()};
 el('returns-toggle').onchange=e=>{includeReturns=e.target.checked;refresh()};
 ['conversion-from','conversion-to'].forEach(id=>el(id).onchange=()=>refresh());
-el('mgr-returns').onchange=e=>{includeReturns=e.target.value==='gross';el('returns-toggle').checked=includeReturns;refresh()};
 let lastChartX=0;
 function ordersWord(n){const a=n%10,b=n%100;if(a===1&&b!==11)return n+' заказ';if(a>=2&&a<=4&&(b<12||b>14))return n+' заказа';return n+' заказов'}
 function placeChartTip(clientX){
