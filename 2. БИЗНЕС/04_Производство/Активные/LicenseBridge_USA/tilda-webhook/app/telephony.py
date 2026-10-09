@@ -135,36 +135,12 @@ def lead_status_for_phone(client: Any, phone: str) -> int | None:
 
 
 def maybe_move_to_reactivation(ctx: Ctx, phone: str, lead_id: int | None) -> bool:
-    """Третий недозвон за сутки → этап Reactivation. Иначе запись врёт."""
-    if not lead_id or not settings.status_reactivation:
-        return False
-    try:
-        lead = ctx.client.get_lead(int(lead_id))
-    except Exception as exc:  # noqa: BLE001
-        log.warning("reactivation lookup failed lead=%s: %s", lead_id, exc)
-        return False
-    if not lead:
-        return False
-    if lead.get("pipeline_id") != settings.pipeline_id:
-        return False
-    status = lead.get("status_id")
-    if status in (settings.status_won, settings.status_lost, settings.status_reactivation):
-        return False
-    now = time.time()
-    rows = list(ctx.s.scalars(
-        select(CallEvent)
-        .where(CallEvent.phone == phone, CallEvent.direction == "out")
-        .order_by(CallEvent.id.desc())
-        .limit(50)
-    ))
-    no_answers = [r for r in rows
-                  if _call_age_sec(r, now) < 24 * 3600 and not _is_answered(r)]
-    if len(no_answers) < settings.dial_guard_max_per_day:
-        return False
-    ctx.client.update_lead(int(lead_id), {"status_id": settings.status_reactivation})
-    log_decision(ctx, "call.reactivation", lead=lead_id, phone=phone,
-                 no_answers=len(no_answers))
-    return True
+    """Reactivation ставит только менеджер вручную (09.10.2026).
+
+    Сохраняем совместимость обработчика и поля результата; звонки не должны
+    запускать скидочную рассылку сменой этапа, независимо от числа попыток.
+    """
+    return False
 
 
 # ── сторож дозвона: чтобы номер не заработал спам-метку заново ──
@@ -173,8 +149,8 @@ def dial_guard(session: Any, phone: str,
     """Можно ли сейчас набирать этот номер. Возвращает вердикт и причину.
 
     Лестница 27.08 (схема Павла): после 1-го недозвона 15 минут, после 2-го
-    3 часа, после 3-го сделка уходит в Reactivation и дальше один звонок
-    в сутки. Успешный разговор лестницу недозвона не поднимает. После любого
+    3 часа, после 3-го действует суточный лимит без смены этапа.
+    Вручную выставленный Reactivation ограничивает звонки до одного в сутки. Успешный разговор лестницу недозвона не поднимает. После любого
     набора, в том числе дозвона, всё равно ждём `dial_guard_min_gap_min`.
 
     Вердикты: `ok`, `soft` (режим warn), `deny` (режим block).

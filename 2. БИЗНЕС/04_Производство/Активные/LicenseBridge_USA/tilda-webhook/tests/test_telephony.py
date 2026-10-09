@@ -515,3 +515,25 @@ def test_recording_link_signature(enable_telephony):
     assert rec_verify(name, rec_sign(name))
     assert not rec_verify(name, "deadbeef")
     assert not rec_verify("../../etc/passwd", rec_sign("../../etc/passwd"))
+
+
+def test_missed_calls_never_move_to_reactivation(fake, session, enable_telephony):
+    """Даже три и более недозвона Полины не запускают скидку сменой этапа."""
+    contact = fake.add_contact(name="Regression", phone=PHONE)
+    lead = fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=POLINA)
+    for attempt in range(5):
+        result = handle_call(_ctx(fake, session), "call_finished", {
+            "uniqueid": f"manual-reactivation-{attempt}", "phone": PHONE,
+            "direction": "out", "ext": "102", "duration": 0,
+            "disposition": "NOANSWER",
+        })
+        assert result["reactivation"] is False
+        assert fake.leads[lead]["status_id"] == settings.status_new
+    assert len(_notes(fake, "leads", lead)) == 5
+    fake.update_lead(lead, {"status_id": settings.status_reactivation})
+    result = handle_call(_ctx(fake, session), "call_finished", {
+        "uniqueid": "manual-reactivation-existing", "phone": PHONE,
+        "direction": "out", "ext": "102", "disposition": "NOANSWER",
+    })
+    assert result["reactivation"] is False
+    assert fake.leads[lead]["status_id"] == settings.status_reactivation

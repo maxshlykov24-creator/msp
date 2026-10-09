@@ -200,24 +200,26 @@ def _recently_cancelled(ms, order_id: str) -> bool:
     return False
 
 
-def _has_shipment(ms, order_id: str) -> bool:
-    href = f"{lib.MS_BASE}/entity/customerorder/{order_id}"
-    for row in _rows(ms, "/entity/demand", {"filter": f"customerOrder={href}"}):
-        if row.get("applicable") is True and kopecks(row.get("sum")) > 0:
+def _doc_kind(meta: dict | None) -> str:
+    meta = meta or {}
+    kind = str(meta.get("type") or "")
+    if kind:
+        return kind
+    href = str(meta.get("href") or "")
+    for name in ("paymentin", "cashin", "paymentout", "cashout"):
+        if f"/{name}/" in href:
+            return name
+    return ""
+
+
+def _has_shipment(order: dict) -> bool:
+    """Проведённая отгрузка. Черновик отгрузки отгрузкой не считается."""
+    if kopecks(order.get("shippedSum")) > 0:
+        return True
+    for stub in order.get("demands") or []:
+        if stub.get("applicable") is True and kopecks(stub.get("sum")) > 0:
             return True
     return False
-
-
-def _invoices(ms, order_id: str) -> list[dict]:
-    href = f"{lib.MS_BASE}/entity/customerorder/{order_id}"
-    rows = _rows(ms, "/entity/invoiceout", {"filter": f"customerOrder={href}"})
-    full = []
-    for row in rows:
-        if isinstance(row.get("payments"), list):
-            full.append(row)
-        elif row.get("id"):
-            full.append(_get(ms, f"/entity/invoiceout/{row['id']}"))
-    return full
 
 
 def _remember(found: dict[str, dict], row: dict, kind: str, linked: int) -> None:
@@ -236,21 +238,24 @@ def _remember(found: dict[str, dict], row: dict, kind: str, linked: int) -> None
         prev["_linked"] = max(int(prev.get("_linked") or 0), linked)
 
 
-def _incomings(ms, order: dict, invoices: list[dict]) -> list[dict]:
-    """Входящие этого заказа: платежи счетов и платежи контрагента, привязанные к заказу."""
+def _incomings(ms, order: dict) -> list[dict]:
+    """Входящие, которые МойСклад уже отнёс на этот заказ."""
     found: dict[str, dict] = {}
-    targets = {order["id"]} | {row["id"] for row in invoices if row.get("id")}
-    for invoice in invoices:
-        for pay in invoice.get("payments") or []:
-            kind = ((pay.get("meta") or {}).get("type")) or ""
-            _remember(found, dict(pay), kind, kopecks(pay.get("linkedSum")))
-    agent = _meta(order.get("agent"))
-    if agent:
-        for entity in ("paymentin", "cashin"):
-            for row in _rows(ms, f"/entity/{entity}", {"filter": f"agent={agent['href']}"}):
-                if row.get("applicable") is not True:
-                    continue
-                _remember(found, row, entity, portion(row, targets))
+    for pay in order.get("payments") or []:
+        meta = pay.get("meta") or {}
+        kind = _doc_kind(meta)
+        pid = lib.href_id(meta) or pay.get("id")
+        if not pid:
+            continue
+        _remember(found, {"id": pid, "meta": meta}, kind, kopecks(pay.get("linkedSum") or pay.get("sum")))
+    if not found and kopecks(order.get("payedSum")) > 0:
+        agent = _meta(order.get("agent"))
+        if agent:
+            for entity in ("paymentin", "cashin"):
+                for row in _rows(ms, f"/entity/{entity}", {"filter": f"agent={agent['href']}"}):
+                    if row.get("applicable") is not True:
+                        continue
+                    _remember(found, row, entity, portion(row, {order["id"]}))
     hydrated = []
     for row in found.values():
         if row.get("applicable") is False:
@@ -368,12 +373,11 @@ def handle_cancel(ms, order: dict, state_changed: bool) -> str:
     """Исходящие по отмене без отгрузки. На чужом обновлении заказ не трогаем."""
     if _state_id(order) != STATE_CANCELLED:
         return "не отмена"
-    if _has_shipment(ms, order["id"]):
+    if _has_shipment(order):
         return "есть отгрузка"
     number = str(order.get("name") or order["id"])
     reason = reason_text(_attr(order, ATTR_ORDER_REASON))
-    invoices = _invoices(ms, order["id"])
-    incomings = _incomings(ms, order, invoices)
+    incomings = _incomings(ms, order)
     if not incomings:
         return "нет входящих"
     created = 0
@@ -437,8 +441,7 @@ def handle_return(ms, ret: dict) -> str:
     if state == STATE_CANCELLED and not ours:
         return "не полный возврат"
     if state == STATE_RETURN and not linked:
-        invoices = _invoices(ms, order_id)
-        incomings = _incomings(ms, order, invoices)
+        incomings = _incomings(ms, order)
         incoming = max(incomings, key=lambda row: int(row.get("_linked") or 0), default=None)
         organization = _meta((incoming or {}).get("organization")) or _meta(ret.get("organization")) or _meta(demand.get("organization"))
         agent = _order_agent(order, incoming)
@@ -486,6 +489,8 @@ def handle_event(ms, event: dict) -> str:
     if kind == "customerorder" and action == "UPDATE":
         fields = event.get("updatedFields")
         if isinstance(fields, list) and "state" not in fields and "attributes" not in fields:
+            names = ",".join(str(item) for item in fields[:8])
+            print(f"поля: {names}", flush=True)
             return "не статус"
         order = _get(ms, f"/entity/customerorder/{entity_id}")
         if isinstance(fields, list) and "state" not in fields:
@@ -530,6 +535,11 @@ def _selftest() -> None:
             "state": {"meta": {"href": f"https://x/states/{STATE_CANCELLED}"}},
             "agent": {"meta": {"href": "https://x/counterparty/c1", "type": "counterparty"}},
             "attributes": [],
+            "shippedSum": 0,
+            "payments": [{
+                "linkedSum": 21000,
+                "meta": {"href": "https://x/paymentin/pin1", "type": "paymentin"},
+            }],
         },
         "demands": [],
         "invoices": [{
@@ -610,13 +620,14 @@ def _selftest() -> None:
                                 "action": "UPDATE", "updatedFields": ["state"]}]}, fake)
     assert len(posts) == 1
 
-    world["demands"] = [{"id": "d1", "applicable": True, "sum": 21000}]
+    world["order"]["shippedSum"] = 21000
     posts.clear()
     world["paymentout"].clear()
     handle_payload({"events": [{"meta": {"type": "customerorder", "href": "https://x/customerorder/o1"},
                                 "action": "UPDATE", "updatedFields": ["state"]}]}, fake)
     assert posts == []
 
+    world["order"]["shippedSum"] = 0
     world["order"]["state"]["meta"]["href"] = f"https://x/states/{STATE_RETURN}"
     world["demands"] = [{"id": "d1", "applicable": True, "sum": 21000,
                          "customerOrder": {"meta": {"href": "https://x/customerorder/o1"}},
