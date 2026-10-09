@@ -530,6 +530,7 @@ table.tbl tbody tr.clickable:hover{background:rgba(0,91,255,.08)}
   padding:13px 15px;outline:none;
 }
 #kizInput:focus{border-color:var(--accent)}
+.kiz-layout-hint{margin:6px 2px 0;color:var(--mute-2);font-size:12px;line-height:1.45}
 .kiz-list{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto;margin-top:12px}
 .kiz-list .empty{text-align:center;color:var(--mute-2);padding:22px;font-size:13px}
 .kiz-item{display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--glass-2)}
