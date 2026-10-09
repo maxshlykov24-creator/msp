@@ -1367,7 +1367,7 @@ async function loadAsm() {
 }
 
 function kizCell(r) {
-  const onList = state.asmGroup === "new" || state.asmGroup === "assembling";
+  const onList = state.asmGroup === "assembling";
   const fbs = r.kind === "fbs" && (r.marketplace === "wb" || r.marketplace === "ozon");
   if (!onList || !fbs) return r.marks ? String(r.marks) : "—";
   if (r.marks) return `<button type="button" class="kiz-link is-on" data-kiz="${r.id}">КиЗ · ${r.marks}</button>`;
@@ -1512,14 +1512,9 @@ function refreshAsmPick() {
   const marks = state.asm.filter((r) => state.pickedAsm.has(r.id)).reduce((a, r) => a + (r.marks || 0), 0);
   $("aSel").textContent = n ? "Выбрано " + n : "Ничего не выбрано";
   ["aWork", "aDone", "aPrint", "aPrintReady", "aShipped"].forEach((id) => { $(id).disabled = !n; });
-  const canKiz = (state.asmGroup === "new" || state.asmGroup === "assembling") && n >= 1;
+  const canKiz = state.asmGroup === "assembling" && n >= 1;
   $("aKiz").disabled = !canKiz;
   $("aKiz").textContent = n > 1 ? "КиЗ · " + n : "КиЗ";
-  const kn = $("aKizNew");
-  if (kn) {
-    kn.disabled = state.asmGroup !== "new" || !n;
-    kn.textContent = n > 1 ? "Указать КиЗ · " + n : "Указать КиЗ";
-  }
   if (!n) hidePrintMenu();
   $("shReport").disabled = !n;
   $("shExport").disabled = marks === 0;
@@ -1631,7 +1626,7 @@ $("aTbl").onclick = (e) => {
   }
   const kizBtn = e.target.closest("button[data-kiz]");
   if (kizBtn) {
-    openKizQueue([Number(kizBtn.dataset.kiz)]);
+    if (state.asmGroup !== "new") openKizQueue([Number(kizBtn.dataset.kiz)]);
     return;
   }
   const art = e.target.closest("button[data-art]");
@@ -1916,6 +1911,7 @@ function kizTargets(ids) {
 }
 
 async function openKizFromPick() {
+  if (state.asmGroup === "new") return;
   const ids = kizTargets([...state.pickedAsm]);
   if (!ids.length) {
     say($("aMsg"), "КиЗ вносится по заказам FBS.", "bad");
@@ -1984,7 +1980,6 @@ async function openKizQueue(ids) {
 }
 
 $("aKiz").onclick = openKizFromPick;
-$("aKizNew").onclick = openKizFromPick;
 $("kizClose").onclick = () => { if (!kizBusy) $("kizModal").classList.remove("on"); };
 $("kizModal").onclick = (e) => { if (!kizBusy && e.target === $("kizModal")) $("kizModal").classList.remove("on"); };
 $("kizClear").onclick = () => { if (kizBusy) return; kizState.codes = []; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
