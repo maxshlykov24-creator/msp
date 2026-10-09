@@ -21,7 +21,7 @@ from db import (
     upsert_shipment,
 )
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
-from orders_pull import moment_of, ozon_list, pull_wb_fbo, pull_wb_fbs, since_days
+from orders_pull import WB_FBS_WAREHOUSES, filter_wb_fbs, moment_of, ozon_list, pull_wb_fbo, pull_wb_fbs, since_days
 
 MSK = timezone(timedelta(hours=3))
 MARK_KEYS = {
@@ -277,6 +277,7 @@ def handle_wb_fbs(client, cab, orders):
     круг — это ~85 тысяч обращений к базе и запрос кодов маркировки на каждую
     сотню заданий. Статус спрашиваем у всех, это 22 запроса, а пишем дельту.
     """
+    orders = filter_wb_fbs(client, orders)
     n = 0
     known = map_shipments(cab["id"], "fbs")
     ids = [str(o.get("id") or "") for o in orders if o.get("id")]
@@ -330,7 +331,9 @@ def handle_wb_fbs(client, cab, orders):
                 # идентификатор отправления — сам стикер
                 "deadline_at": "",
                 "track": "",
-                "warehouse": "",
+                "warehouse": WB_FBS_WAREHOUSES.get(
+                    client["ms_counterparty_id"] if "ms_counterparty_id" in client.keys() else None, {}
+                ).get(str(order.get("warehouseId") or ""), ""),
                 "image": cat["image"],
                 # адрес сдачи здесь не ставим: точку выбирают в ЛК на поставке,
                 # и до неё везти некуда. Кластер покупателя из `offices` и флаг

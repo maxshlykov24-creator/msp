@@ -17,7 +17,7 @@ def prune_old_shipments(days=SHIP_KEEP_DAYS):
     cut = (datetime.now() - timedelta(days=int(days or SHIP_KEEP_DAYS))).strftime("%Y-%m-%d 00:00")
     when = "replace(coalesce(nullif(accepted_at,''), shipped_at), 'T', ' ')"
     conn = connect()
-    ids = [r["id"] for r in conn.execute("SELECT id FROM shipments WHERE %s < ?" % when, (cut,)).fetchall()]
+    ids = [r["id"] for r in conn.execute("SELECT id FROM shipments WHERE %s < ? AND COALESCE(assembly_excluded, 0) = 0" % when, (cut,)).fetchall()]
     if ids:
         idq = ",".join("?" * len(ids))
         conn.execute("DELETE FROM shipment_marks WHERE shipment_id IN (%s)" % idq, ids)
@@ -69,6 +69,8 @@ def _rewrite_wb_dropoff(conn):
 
 
 def migrate(conn):
+    if "assembly_excluded" not in _cols(conn, "shipments"):
+        conn.execute("ALTER TABLE shipments ADD COLUMN assembly_excluded INTEGER NOT NULL DEFAULT 0")
     clients = _cols(conn, "clients")
     for col, decl in (
         ("tariff_storage", "REAL"),
@@ -1855,7 +1857,7 @@ def _assembly_date_clauses(since, until, keep_floor, group=""):
 def _assembly_filters(
     client_id=None, group="", marketplace="", kind="", article="", query="", since="", until="", keep_floor=True,
 ):
-    sql = " JOIN clients ON clients.id = shipments.client_id WHERE 1=1"
+    sql = " JOIN clients ON clients.id = shipments.client_id WHERE COALESCE(shipments.assembly_excluded, 0) = 0"
     args = []
     if client_id:
         sql += " AND shipments.client_id = ?"
@@ -1961,6 +1963,8 @@ def get_shipments_by_ids(ids):
         [int(x) for x in ids],
     ).fetchall()
     conn.close()
+    if any(r["assembly_excluded"] for r in rows):
+        raise ValueError("Заказ исключён из сборки: склад не обслуживается. Обнови список заказов.")
     return rows
 
 

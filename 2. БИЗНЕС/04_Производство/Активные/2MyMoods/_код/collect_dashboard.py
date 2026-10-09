@@ -14,6 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import lib
+import refund_flow
 import shift_roster
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1097,6 +1098,23 @@ def enrich_accounting(snap: dict, ms=None) -> None:
         oid = demands.get(row["id"])
         if oid and row.get("applicable") is not False and rub(row.get("sum")) > 0.009:
             demands_by_order[oid].append(row)
+    shipped = set()
+    for row in demand_rows:
+        if row.get("applicable") is True and rub(row.get("sum")) > 0.009:
+            oid = mid(row.get("customerOrder"))
+            if oid:
+                shipped.add(oid)
+    dropped = 0
+    dropped_sum = 0.0
+    for order in snap["orders"]:
+        if not refund_flow.should_drop_cancelled_sale(order.get("state_id") or "", order["id"] in shipped, order.get("buy")):
+            continue
+        dropped_sum += sum(float(line.get("rev") or 0) for line in order.get("lines") or [])
+        order["buy"] = False
+        order["lines"] = []
+        dropped += 1
+    if dropped:
+        print(f"отмены без отгрузки сняты с выручки: {dropped} на {round(dropped_sum, 2)}", flush=True)
     shipment_cache = {}
 
     def shipment_positions(demand_id):
@@ -1272,7 +1290,7 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
         "confirmed_at": (dt(a.get(FIELD["confirm"])) or None).isoformat() if a.get(FIELD["confirm"]) else None,
         "sent_at": (dt(a.get(FIELD["sent"])) or None).isoformat() if a.get(FIELD["sent"]) else None,
         "stock_checked": True, "await_stock": bool(a.get(FIELD["stock"])), "promo": a.get(FIELD["promo"]) or "",
-        "lines": lines,
+        "lines": lines, "state_id": mid(o.get("state")) or "",
     }
 
 
@@ -1459,7 +1477,7 @@ def main() -> None:
     print("МойСклад: заказы, платежи, номенклатура, контрагенты", flush=True)
     orders = required_rows(ms, "/entity/customerorder", {"order": "moment,desc"},
                            keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent",
-                                 "salesChannel", "shipmentAddress", "shipmentAddressFull"))
+                                 "state", "salesChannel", "shipmentAddress", "shipmentAddressFull"))
     order_count = len(orders)
     paymentins = required_rows(ms, "/entity/paymentin", keep=("id", "moment", "created", "sum", "operations", "applicable"))
     payments = paymentins + required_rows(ms, "/entity/cashin", keep=("id", "moment", "operations", "applicable"))
@@ -1527,7 +1545,7 @@ def main() -> None:
     try:
         fresh_orders = required_rows(ms, "/entity/customerorder",
                                      {"filter": f"updated>={stamp}", "order": "moment,desc"},
-                                     keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent",
+                                     keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent", "state",
                                            "salesChannel", "shipmentAddress", "shipmentAddressFull"))
         fresh_payments = required_rows(ms, "/entity/paymentin", {"filter": f"updated>={stamp}"},
                                        keep=("id", "moment", "created", "sum", "operations", "applicable"))

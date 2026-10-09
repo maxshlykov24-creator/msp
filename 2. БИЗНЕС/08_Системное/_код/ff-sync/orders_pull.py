@@ -21,6 +21,29 @@ from net import MS_BASE, OZON_BASE, WB_BASE, WB_STATS, ms_headers, ozon_headers,
 MSK = timezone(timedelta(hours=3))
 
 
+
+# Овчинников: согласованный список складов FBS, проверен в WB 2026-10-09.
+# Ключ — UUID контрагента МойСклад: переименование клиента правило не снимает.
+WB_FBS_WAREHOUSES = {
+    "0c28fc33-b1cf-11f1-0a80-1ed500791c0a": {
+        "1877978": "МСК",
+        "2084561": "Смоленск (МСК)",
+        "2084659": "Ярославль (МСК)",
+        "2084459": "Москва 2",
+        "2193868": "Внуково (МСК)",
+    },
+}
+
+
+def filter_wb_fbs(client, orders):
+    """До любых записей/списаний. Неизвестный склад ограниченного клиента запрещён."""
+    owner = client["ms_counterparty_id"] if "ms_counterparty_id" in client.keys() else None
+    allowed = WB_FBS_WAREHOUSES.get(owner)
+    if allowed is None:
+        return orders
+    return [o for o in orders if str(o.get("warehouseId") or "") in allowed]
+
+
 def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -239,6 +262,7 @@ def moment_of(raw):
 
 
 def handle_wb_fbs(client, cab, orders):
+    orders = filter_wb_fbs(client, orders)
     n = 0
     for order in orders:
         ext_id = str(order.get("id") or order.get("rid") or "")

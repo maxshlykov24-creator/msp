@@ -977,4 +977,33 @@ out = supply_flow.ensure_dropoff(kgt_sid)
 assert not out["point_id"] and any("малогабарит" in n for n in out["notes"]), out
 assert not (db.get_wb_supply(kgt_sid)["shipping_point"] or ""), dict(db.get_wb_supply(kgt_sid))
 
+# Ограничение складов действует до любых записей и запросов статусов.
+import orders_pull
+from unittest.mock import patch
+owner = {"ms_counterparty_id": "0c28fc33-b1cf-11f1-0a80-1ed500791c0a"}
+allowed = orders_pull.WB_FBS_WAREHOUSES[owner["ms_counterparty_id"]]
+scans = [{"id": i, "warehouseId": wid} for i, wid in enumerate(allowed, 1)]
+blocked = [{"id": 90, "warehouseId": 1912772}, {"id": 91}, {"id": 92, "warehouseId": "unknown"}]
+assert orders_pull.filter_wb_fbs(owner, scans + blocked) == scans
+assert orders_pull.filter_wb_fbs(owner, [{"warehouseId": int(next(iter(allowed)))}])
+assert orders_pull.filter_wb_fbs({"ms_counterparty_id": "another"}, blocked) == blocked
+with patch.object(orders_pull, "already_ok", side_effect=AssertionError("excluded order reached MS")):
+    assert orders_pull.handle_wb_fbs(owner, {}, blocked) == 0
+with patch.object(shipments_pull, "map_shipments", return_value={}), patch.object(shipments_pull, "wb_statuses", return_value={}) as statuses_call:
+    assert shipments_pull.handle_wb_fbs(owner, {"id": wb_cab, "token": "test"}, blocked) == 0
+    assert statuses_call.call_args.args[1] == []
+# Скрытие сохраняет запись и запрещает действие по старому выделению.
+with db.connect() as conn:
+    excluded_id = conn.execute("SELECT id FROM shipments LIMIT 1").fetchone()[0]
+    conn.execute("UPDATE shipments SET assembly_excluded=1 WHERE id=?", (excluded_id,))
+    conn.commit()
+assert excluded_id not in {r["id"] for r in db.list_assembly(keep_floor=False)}
+try:
+    db.get_shipments_by_ids([excluded_id])
+    raise AssertionError("excluded order was actionable")
+except ValueError as exc:
+    assert "исключён" in str(exc)
+with db.connect() as conn:
+    assert conn.execute("SELECT count(*) FROM shipments WHERE id=?", (excluded_id,)).fetchone()[0] == 1
+
 print("все проверки поставок, сборки и КиЗ прошли")
