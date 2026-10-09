@@ -24,7 +24,7 @@ FIELD = {
     "paid": "ed14770a-dc0d-11ef-0a80-10cd00226b09",
     "confirm": "ed14761e-dc0d-11ef-0a80-10cd00226b08",
     "sent": "ed14796a-dc0d-11ef-0a80-10cd00226b0c",
-    "stock": "ed147544-dc0d-11ef-0a80-0d360015ef35",
+    "stock": "ed147544-dc0d-11ef-0a80-10cd00226b07",
     "delivery": "ed14744d-dc0d-11ef-0a80-10cd00226b06",
     "promo": "f11cca54-ed68-11ef-0a80-084e000137c7",
     "utm": "6d95a799-f849-11f0-0a80-009c000b6c8a",
@@ -292,6 +292,51 @@ def get_amo() -> tuple[list[dict], dict]:
                     "pipeline_name": pipeline["name"], "pipeline_id": pipeline["id"],
                     "source_total": len(leads), "collected_at": datetime.now(TZ).isoformat(),
                     "stages": [{"id": s["id"], "name": s["name"]} for s in stages]}
+
+
+def get_stage_history(leads: list[dict]) -> dict:
+    """Observed status changes only; never infer skipped stages from current status."""
+    amo = lib.Amo()
+    now = datetime.now(TZ)
+    since = min((l["created"] for l in leads), default=now.date().isoformat())
+    start = int(datetime.fromisoformat(since).replace(tzinfo=TZ).timestamp())
+    ids = {l["id"] for l in leads}
+    events, seen = [], set()
+    for page in range(1, 2001):
+        path = ("/api/v4/events?filter[type]=lead_status_changed"
+                f"&filter[created_at][from]={start}&filter[created_at][to]={int(now.timestamp())}"
+                f"&limit=100&page={page}")
+        for attempt in range(6):
+            status, body = amo.req("GET", path)
+            if status not in (429, 500, 502, 503, 504):
+                break
+            time.sleep(2 * (attempt + 1))
+        if status == 204:
+            break
+        if status != 200:
+            raise RuntimeError(f"amo stage history page {page}: HTTP {status}")
+        rows = body.get("_embedded", {}).get("events", [])
+        for r in rows:
+            if r["id"] in seen:
+                raise RuntimeError("amo stage history: duplicate event during pagination")
+            seen.add(r["id"])
+            if r.get("entity_type") != "lead" or r.get("entity_id") not in ids:
+                continue
+            before = (r.get("value_before") or [{}])[0].get("lead_status", {})
+            after = (r.get("value_after") or [{}])[0].get("lead_status", {})
+            if not before.get("id") or not after.get("id"):
+                raise RuntimeError("amo stage history: missing status values")
+            if before.get("pipeline_id") != lib.PIPELINE_SALES_NEW and after.get("pipeline_id") != lib.PIPELINE_SALES_NEW:
+                continue
+            events.append({"id": r["id"], "lead": r["entity_id"], "at": r["created_at"],
+                           "before": before["id"] if before.get("pipeline_id") == lib.PIPELINE_SALES_NEW else None,
+                           "after": after["id"] if after.get("pipeline_id") == lib.PIPELINE_SALES_NEW else None})
+        if len(rows) < 100:
+            break
+    else:
+        raise RuntimeError("amo stage history: pagination limit reached")
+    return {"status": "ok", "from": since, "to": now.isoformat(),
+            "events": sorted(events, key=lambda x: (x["at"], x["id"]))}
 
 
 def response_rules() -> dict | None:
@@ -837,7 +882,7 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
         "return": bool(ret_list), "return_reason": next((str(r.get("description")) for r in ret_list if r.get("description")), ""),
         "confirmed_at": (dt(a.get(FIELD["confirm"])) or None).isoformat() if a.get(FIELD["confirm"]) else None,
         "sent_at": (dt(a.get(FIELD["sent"])) or None).isoformat() if a.get(FIELD["sent"]) else None,
-        "await_stock": bool(a.get(FIELD["stock"])), "promo": a.get(FIELD["promo"]) or "",
+        "stock_checked": True, "await_stock": bool(a.get(FIELD["stock"])), "promo": a.get(FIELD["promo"]) or "",
         "lines": lines,
     }
 
@@ -908,6 +953,7 @@ def main() -> None:
     position_rows.close()
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
+    stage_history = get_stage_history(leads)
     responses = get_responses(leads, result)
     # Список заказов читается в начале сборки. Платёж, пришедший пока считались позиции,
     # в срез не попадал, хотя время среза ставится в конце. Добираем изменения.
@@ -971,7 +1017,7 @@ def main() -> None:
             "orders": result, "leads": leads, "tasks": tasks,
             "roster": {"status": roster_status},
             "payment_daily": [{"date": day, "sum": round(amount, 2)} for day, amount in sorted(payment_daily.items())],
-            "responses": responses,
+            "responses": responses, "stage_history": stage_history,
             "wazzup": {"status": "метрика ответа рассчитана по событиям amoCRM"}}
     enrich_accounting(snap)
     # Атомарная замена: при ошибке предыдущий срез не получает новый timestamp.
