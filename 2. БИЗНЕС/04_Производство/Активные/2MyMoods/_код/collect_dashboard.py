@@ -1144,6 +1144,173 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
     }
 
 
+# These are distinct real customer-order states; do not merge similarly named states.
+MS_CONVERSION_IDS = [
+    'eb1c23ae-ae7d-11f0-0a80-00c10010d9e0',  # Новая заявка
+    '4df095f0-af3b-11f0-0a80-0ba0000e3a2d',  # Взято в работу
+    '7b7e1feb-dc0a-11ef-0a80-06a30022a4f9',  # Лист ожидания
+    '1f5b3cd6-ab3c-11f0-0a80-0c040009b767',  # Запланировал прийти в магазин
+    '655b1d27-c447-11eb-0a80-08be002efc0b',  # Ожидается оплата
+    '84693479-5033-11f0-0a80-10380089eac2',  # Оплачен
+    '0d5519ad-b728-11f1-0a80-19e8000bf4b3',  # В производстве
+    'a09255af-c0a0-11f1-0a80-0370002cfca7',  # На сборке
+    '655b21e8-c447-11eb-0a80-08be002efc0e',  # Отправлен
+    '655b226e-c447-11eb-0a80-08be002efc0f',  # Выполнен
+]
+
+
+def ms_audit_path(order: dict, events: list[dict]) -> dict:
+    """Only accept a complete, chronological audit with a consistent state chain."""
+    changes, created = [], []
+    for event in reversed(events):  # entity audit is newest first
+        stamp = dt(event.get('moment'))
+        if not stamp:
+            raise ValueError('audit_missing_moment')
+        if event.get('eventType') == 'create':
+            created.append(stamp)
+        diff = (event.get('diff') or {}).get('state')
+        if diff is not None:
+            if not isinstance(diff, dict) or not ('oldValue' in diff or 'newValue' in diff):
+                raise ValueError('audit_state_schema')
+            changes.append({'at': stamp.isoformat(), 'before': mid(diff.get('oldValue')) or None,
+                            'after': mid(diff.get('newValue')) or None})
+    row = {'id': order['id'], 'number': order.get('name') or '',
+           'date': (dt(order.get('moment')) or dt(order['created'])).date().isoformat(),
+           'created_at': order.get('created'), 'updated': order.get('updated'),
+           'state': mid(order.get('state')) or None, 'path': [], 'events': changes,
+           'complete': False, 'reason': ''}
+    if len(created) != 1:
+        row['reason'] = 'Нет полной истории создания'
+        return row
+    actual_created = dt(order.get('created'))
+    if not actual_created or abs((created[0] - actual_created).total_seconds()) > 2:
+        row['reason'] = 'История начинается после создания заказа'
+        return row
+    path = [changes[0]['before']] if changes else [row['state']]
+    last_at = created[0]
+    for change in changes:
+        at = dt(change['at'])
+        if at < last_at or path[-1] != change['before']:
+            row['reason'] = 'Разрыв последовательности статусов'
+            return row
+        path.append(change['after'])
+        last_at = at
+    if path[-1] != row['state']:
+        row['reason'] = 'Статус изменился во время чтения'
+        return row
+    row.update(path=[x for x in path if x], complete=True)
+    return row
+
+
+def get_ms_conversion() -> dict:
+    """Read all orders plus cached entity audit. Cache contains no customer contacts."""
+    import threading
+    from concurrent.futures import as_completed
+    started = datetime.now(TZ)
+    cache_path = Path(os.environ.get('DASHBOARD_MS_HISTORY',
+                                    str(OUT.parent / 'ms-stage-history.local.json')))
+    cache = {}
+    if cache_path.exists():
+        saved = json.loads(cache_path.read_text())
+        if saved.get('version') == 1:
+            cache = saved.get('orders', {})
+    ms = lib.MS()
+    meta = required_get(ms, '/entity/customerorder/metadata')
+    states = {s['id']: s['name'] for s in meta['states']}
+    if not all(x in states for x in MS_CONVERSION_IDS):
+        raise RuntimeError('MoySklad conversion state missing')
+    orders = required_rows(ms, '/entity/customerorder', {'order': 'moment,desc'},
+                           keep=('id', 'name', 'moment', 'created', 'updated', 'state'))
+    if len({o['id'] for o in orders}) != len(orders):
+        raise RuntimeError('MoySklad duplicate orders')
+    result, pending = {}, []
+    for o in orders:
+        old = cache.get(o['id'])
+        if old and old.get('updated') == o.get('updated') and old.get('reason') != 'Статус изменился во время чтения':
+            result[o['id']] = old
+        else:
+            pending.append(o)
+    lock, next_request = threading.Lock(), [0.0]
+
+    def collect(order):
+        client = lib.MS()
+        offset, events, seen = 0, [], set()
+        last_stamp = None
+        while True:
+            for attempt in range(6):
+                with lock:
+                    delay = max(0, next_request[0] - time.monotonic())
+                    next_request[0] = max(time.monotonic(), next_request[0]) + .12
+                if delay:
+                    time.sleep(delay)
+                code, body = client.req('/entity/customerorder/' + order['id'] + '/audit',
+                                        {'limit': 100, 'offset': offset})
+                if code not in (429, 500, 502, 503, 504):
+                    break
+                time.sleep(2 * (attempt + 1))
+            if code != 200:
+                raise RuntimeError(f'MoySklad audit HTTP {code}')
+            chunk = body.get('rows')
+            if not isinstance(chunk, list) or 'size' not in body.get('meta', {}):
+                raise RuntimeError('MoySklad audit invalid page')
+            for event in chunk:
+                stamp = dt(event.get('moment'))
+                if not stamp or (last_stamp and stamp > last_stamp):
+                    raise RuntimeError('MoySklad audit order changed during pagination')
+                last_stamp = stamp
+                key = (mid(event.get('audit')), event.get('moment'), event.get('eventType'))
+                if key in seen:
+                    raise RuntimeError('MoySklad duplicate audit event')
+                seen.add(key)
+                # Retain only the data needed for state history, never customer details.
+                events.append({'moment': event['moment'], 'eventType': event.get('eventType'),
+                               'diff': {'state': event['diff']['state']} if 'state' in (event.get('diff') or {}) else {}})
+            offset += len(chunk)
+            if offset >= body['meta']['size']:
+                break
+            if not chunk:
+                raise RuntimeError('MoySklad audit incomplete pagination')
+        row = ms_audit_path(order, events)
+        row['checked_at'] = datetime.now(TZ).isoformat(timespec='seconds')
+        return row
+
+    def save_cache():
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = cache_path.with_suffix('.tmp')
+        temp.write_text(json.dumps({'version': 1, 'orders': {**cache, **result}},
+                                   ensure_ascii=False, separators=(',', ':')))
+        os.chmod(temp, 0o600)
+        temp.replace(cache_path)
+
+    failures = 0
+    print(f'МойСклад: история статусов {len(pending)} заказов, кэш {len(result)}', flush=True)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs = {pool.submit(collect, o): o for o in pending}
+        for index, future in enumerate(as_completed(jobs), 1):
+            o = jobs[future]
+            try:
+                result[o['id']] = future.result()
+            except Exception as exc:
+                failures += 1
+                result[o['id']] = {'id': o['id'], 'number': o.get('name') or '',
+                                    'date': dt(o['moment']).date().isoformat(), 'updated': None,
+                                    'state': mid(o.get('state')), 'path': [], 'complete': False,
+                                    'reason': 'История не получена: ' + str(exc)}
+            if index % 250 == 0:
+                save_cache()
+                print(f'История МойСклад: {index}/{len(pending)}, ошибок {failures}', flush=True)
+    save_cache()
+    stages = [{'id': x, 'name': states[x]} for x in MS_CONVERSION_IDS]
+    pairs = list(zip(MS_CONVERSION_IDS, MS_CONVERSION_IDS[1:]))
+    pairs += [(MS_CONVERSION_IDS[a], MS_CONVERSION_IDS[b]) for a, b in [(1, 3), (1, 4), (2, 4), (5, 7)]]
+    pairs.sort(key=lambda x: (MS_CONVERSION_IDS.index(x[0]), MS_CONVERSION_IDS.index(x[1])))
+    return {'status': 'ok' if not failures else 'partial', 'source': 'МойСклад: аудит заказов покупателей',
+            'from': started.isoformat(timespec='seconds'), 'to': datetime.now(TZ).isoformat(timespec='seconds'),
+            'stages': stages, 'available_stages': [{'id': k, 'name': v} for k, v in states.items()],
+            'pairs': pairs, 'start': MS_CONVERSION_IDS[0], 'finish': MS_CONVERSION_IDS[-1],
+            'orders': [result[o['id']] for o in orders]}
+
+
 def main() -> None:
     ms = lib.MS()
     started = datetime.now(TZ)
@@ -1210,7 +1377,6 @@ def main() -> None:
     position_rows.close()
     print("amoCRM: новая воронка и задачи", flush=True)
     leads, tasks = get_amo()
-    stage_history = get_stage_history(leads)
     responses = get_responses(leads, result)
     # Список заказов читается в начале сборки. Платёж, пришедший пока считались позиции,
     # в срез не попадал, хотя время среза ставится в конце. Добираем изменения.
@@ -1274,9 +1440,15 @@ def main() -> None:
             "orders": result, "leads": leads, "tasks": tasks,
             "roster": {"status": roster_status},
             "payment_daily": [{"date": day, "sum": round(amount, 2)} for day, amount in sorted(payment_daily.items())],
-            "responses": responses, "stage_history": stage_history,
+            "responses": responses,
             "wazzup": {"status": "метрика ответа рассчитана по событиям amoCRM"}}
     enrich_accounting(snap)
+    try:
+        snap['ms_conversion'] = get_ms_conversion()
+    except Exception as exc:
+        snap['ms_conversion'] = {'status': 'unavailable', 'source': 'МойСклад',
+                                 'reason': type(exc).__name__, 'orders': []}
+        print('История статусов МойСклад недоступна: ' + type(exc).__name__, flush=True)
     # Атомарная замена: при ошибке предыдущий срез не получает новый timestamp.
     OUT.parent.mkdir(parents=True, exist_ok=True)
     GAPS.parent.mkdir(parents=True, exist_ok=True)
