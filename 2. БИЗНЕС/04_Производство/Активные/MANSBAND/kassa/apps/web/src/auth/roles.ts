@@ -6,7 +6,6 @@ import { USE_MOCK } from "../api/client";
  * Владелец (Максим) видит их для проверки, даже если роль в БД временно не admin.
  */
 const FINANCE_ROLES = ["finance", "rop", "admin"];
-const CLOSED_EDIT_ROLES = ["rop", "admin"];
 
 function isMaxim(login?: string, name?: string): boolean {
   const who = `${login ?? ""} ${name ?? ""}`.toLowerCase();
@@ -18,8 +17,3 @@ export function canSeeFinanceQueues(role?: string, login?: string, name?: string
   return isMaxim(login, name);
 }
 
-/** Закрытые сделки (Успех/Провал) правят только РОП, admin и Максим. */
-export function canEditClosedDeals(role?: string, login?: string, name?: string): boolean {
-  if (USE_MOCK || CLOSED_EDIT_ROLES.includes(role ?? "")) return true;
-  return isMaxim(login, name);
-}

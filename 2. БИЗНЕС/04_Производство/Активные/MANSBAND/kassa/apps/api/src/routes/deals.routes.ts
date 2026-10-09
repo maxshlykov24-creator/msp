@@ -182,21 +182,12 @@ export default async function dealsRoutes(app: FastifyInstance) {
     }
   });
 
-  function canEditClosed(user: { role: string; name?: string; login?: string }): boolean {
-    if (["rop", "admin"].includes(user.role)) return true;
-    const who = `${user.login ?? ""} ${user.name ?? ""}`.toLowerCase();
-    return who.includes("max") || who.includes("максим");
-  }
-
   app.patch("/deals/:ref", { preHandler: [app.authenticate] }, async (req, reply) => {
     const { ref } = req.params as { ref: string };
     const parsed = updateDealSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? "Некорректные данные" });
     const existing = await deals.resolve(ref);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
-    if (COMPLETED_STAGES.has(existing.stage) && !canEditClosed(req.user)) {
-      return reply.code(403).send({ message: "Завершённые сделки может менять только РОП или Максим" });
-    }
     if (COMPLETED_STAGES.has(existing.stage) && parsed.data.stage && parsed.data.stage !== existing.stage && !parsed.data.reason?.trim()) {
       return reply.code(400).send({ message: "Укажите причину изменения завершённой сделки" });
     }
@@ -256,9 +247,6 @@ export default async function dealsRoutes(app: FastifyInstance) {
     ) {
       return reply.code(400).send({ message: "Менять тип можно у отложки, обещания и продажи" });
     }
-    if (COMPLETED_STAGES.has(existing.stage) && !canEditClosed(req.user)) {
-      return reply.code(403).send({ message: "Завершённые сделки может менять только РОП или Максим" });
-    }
     try {
       const { photos, ...kindPatch } = parsed.data;
       const updated = await deals.convertDealKind(ref, kindPatch, req.user.name);
@@ -292,9 +280,6 @@ export default async function dealsRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? "Некорректный этап" });
     const existing = await deals.resolve(ref);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
-    if (COMPLETED_STAGES.has(existing.stage) && !canEditClosed(req.user)) {
-      return reply.code(403).send({ message: "Завершённые сделки может менять только РОП или Максим" });
-    }
     if (COMPLETED_STAGES.has(existing.stage) && !parsed.data.reason?.trim()) {
       return reply.code(400).send({ message: "Укажите причину изменения завершённой сделки" });
     }

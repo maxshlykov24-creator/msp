@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import type { CartItem, Deal, Payment } from "../data/types";
 import { useStore } from "../store";
-import { useAuth } from "../auth/AuthContext";
-import { canEditClosedDeals } from "../auth/roles";
 import { KIND_LABEL } from "../lib/labels";
 import { Button, Card, Field, Modal, StageBadge, Select, opts } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
@@ -130,12 +128,9 @@ export function DealWorkspace({
   onDisplayStage?: (stage: string) => void;
 }) {
   const { deals, updateDeal, replaceDeal, addDealComment, activeConsultant } = useStore();
-  const { user } = useAuth();
   const live = deals.find((d) => d.id === deal.id || d.number === deal.number) ?? deal;
 
   const closed = isClosed(live);
-  const canEdit = !closed || canEditClosedDeals(user?.role, user?.login, user?.name);
-  const readOnly = !canEdit;
 
   const [consultants, setConsultants] = useState<ConsultantData>({
     consultant: live.consultant,
@@ -265,10 +260,9 @@ export function DealWorkspace({
     .filter((s) => !(live.kind === "sliv" && !live.meetingDate && s !== "Провал"));
   const stageOptions = stages.includes(stage) || HIDDEN_STAGES.has(stage) ? stages : [stage, ...stages];
   const history = [...(live.history ?? [])].reverse();
-  const closedNeedsReason = closed && canEdit && stage !== live.stage;
+  const closedNeedsReason = closed && stage !== live.stage;
 
   async function saveAll() {
-    if (readOnly) return;
     if (closedNeedsReason && !stageReason.trim()) {
       setError("Укажите причину изменения завершённой заявки");
       return;
@@ -375,7 +369,6 @@ export function DealWorkspace({
   // Отложку/обещание проводят как продажу, компанию или аренду: тот же номер
   // заявки и все данные (правки владельца 10.08.2026, п.1.1).
   const canConvert =
-    !readOnly &&
     !closed &&
     (live.kind === "deferred" || live.kind === "promise" || live.kind === "sale");
 
@@ -428,20 +421,15 @@ export function DealWorkspace({
               </span>
             )}
           </div>
-          {readOnly && (
-            <p className="text-mute text-sm mt-0.5">Только просмотр — менять может РОП или Максим</p>
-          )}
         </div>
         {!hideBack && (
           <StageBadge stage={stage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
         )}
       </div>
-      {!readOnly && (
-        <Hint>
-          Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
-          сверху. Перемещение из продажи и других видов спросит, сменить ли тип на отложку или обещание.
-        </Hint>
-      )}
+      <Hint>
+        Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
+        сверху. Перемещение из продажи и других видов спросит, сменить ли тип на отложку или обещание.
+      </Hint>
 
       <div className="space-y-5">
         <DealActionsBar
@@ -449,7 +437,7 @@ export function DealWorkspace({
           onConvert={canConvert ? () => setConvertOpen(true) : undefined}
           onHistory={() => setHistoryOpen(true)}
           historyCount={history.length}
-          onMovement={!readOnly ? () => setMoveOpen(true) : undefined}
+          onMovement={() => setMoveOpen(true)}
         />
 
         <MovementModal
@@ -486,7 +474,7 @@ export function DealWorkspace({
 
         <Card>
           <SectionTitle>Консультант и клиент</SectionTitle>
-          <fieldset disabled={readOnly} className="space-y-4 disabled:opacity-80">
+          <fieldset className="space-y-4 disabled:opacity-80">
             <ConsultantFields data={consultants} onChange={setConsultants} />
             <ClientFields data={client} onChange={setClient} />
           </fieldset>
@@ -495,7 +483,7 @@ export function DealWorkspace({
         {live.kind === "company" && (
           <Card>
             <SectionTitle>Компания</SectionTitle>
-            <fieldset disabled={readOnly} className="grid sm:grid-cols-2 gap-3 disabled:opacity-80">
+            <fieldset className="grid sm:grid-cols-2 gap-3 disabled:opacity-80">
               <Field label="Телефон руководителя" required>
                 <input
                   className="input"
@@ -560,7 +548,7 @@ export function DealWorkspace({
         {live.kind === "rental" && (
           <Card>
             <SectionTitle>Сроки аренды</SectionTitle>
-            <fieldset disabled={readOnly} className="grid sm:grid-cols-2 gap-3 disabled:opacity-80">
+            <fieldset className="grid sm:grid-cols-2 gap-3 disabled:opacity-80">
               <Field label="Начало аренды">
                 <input
                   className="input"
@@ -586,7 +574,6 @@ export function DealWorkspace({
           <ProductPicker
             items={items}
             onChange={setItems}
-            readOnly={readOnly}
             dealNumber={live.number}
             dealKind={live.kind}
           />
@@ -613,14 +600,14 @@ export function DealWorkspace({
 
         <Card>
           <SectionTitle>Оплата</SectionTitle>
-          <fieldset disabled={readOnly} className="disabled:opacity-80">
+          <fieldset className="disabled:opacity-80">
             <PaymentBlock total={live.total || total} payments={payments} onChange={setPayments} />
           </fieldset>
         </Card>
 
         <Card>
           <SectionTitle>Источник и цель</SectionTitle>
-          <fieldset disabled={readOnly} className="disabled:opacity-80">
+          <fieldset className="disabled:opacity-80">
             <SourceFields
               data={client}
               onChange={setClient}
@@ -638,7 +625,7 @@ export function DealWorkspace({
         {refundAmount > 0 && (
           <Card>
             <SectionTitle>Возврат средств клиенту</SectionTitle>
-            <fieldset disabled={readOnly} className="disabled:opacity-80">
+            <fieldset className="disabled:opacity-80">
               <ReturnBlock amount={refundAmount} info={returnInfo} onChange={setReturnInfo} />
             </fieldset>
           </Card>
@@ -646,7 +633,7 @@ export function DealWorkspace({
 
         <Card>
           <SectionTitle>Комментарий</SectionTitle>
-          <fieldset disabled={readOnly} className="disabled:opacity-80">
+          <fieldset className="disabled:opacity-80">
             <CommentField value={comment} onChange={setComment} />
           </fieldset>
         </Card>
@@ -658,7 +645,6 @@ export function DealWorkspace({
               size="sm"
               className="w-[240px]"
               value={stage}
-              disabled={readOnly}
               onChange={setStage}
               options={opts(...stageOptions)}
             />
@@ -678,11 +664,6 @@ export function DealWorkspace({
                 placeholder="Зачем меняем закрытую заявку"
               />
             </label>
-          )}
-          {readOnly && (
-            <div className="mt-2 text-[12px] text-amber-300/90">
-              Завершённые заявки может править только РОП или Максим.
-            </div>
           )}
           {canReturnExchange && (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -723,7 +704,7 @@ export function DealWorkspace({
             <Button variant="subtle" onClick={onClose}>
               Закрыть
             </Button>
-            {!readOnly && (dirty || saving || savedFlash) && (
+            {(dirty || saving || savedFlash) && (
               <Button disabled={saving} onClick={() => void saveAll()}>
                 {savedFlash ? "Сохранено" : saving ? "Сохраняем…" : "Сохранить"}
               </Button>
