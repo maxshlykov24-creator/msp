@@ -29,11 +29,17 @@ const COMPLETED_STAGES = new Set(["Успех", "Провал"]);
 
 async function validateReturnItems(deal: Deal): Promise<string | null> {
   if (deal.kind !== "refund" && deal.kind !== "exchange") return null;
-  if (!deal.linkedDealNumber) return "Нужна исходная сделка";
-  const source = await deals.getByNumber(deal.linkedDealNumber);
-  if (!source) return `Исходная сделка #${deal.linkedDealNumber} не найдена`;
+  const selected = deal.kind === "refund" ? deal.items : deal.items.filter((item) => item.isReturn);
+  if (!selected.length) return "Не выбраны позиции возврата";
+  if (!deal.linkedDealNumber) return null;
+  const source =
+    (await deals.getByNumber(deal.linkedDealNumber)) ??
+    (await deals.getByAmoLeadId(deal.linkedDealNumber));
+  if (!source) return null;
+  const sold = source.items.filter((item) => !item.isReturn && item.price >= 0);
+  if (!sold.length) return null;
   const available = new Map<string, number>();
-  for (const item of source.items) available.set(item.productId, (available.get(item.productId) ?? 0) + item.qty);
+  for (const item of sold) available.set(item.productId, (available.get(item.productId) ?? 0) + item.qty);
   const priorReturns = (await deals.listLocal()).filter(
     (row) =>
       row.linkedDealNumber === deal.linkedDealNumber &&
@@ -46,13 +52,12 @@ async function validateReturnItems(deal: Deal): Promise<string | null> {
       available.set(item.productId, (available.get(item.productId) ?? 0) - item.qty);
     }
   }
-  const selected = deal.kind === "refund" ? deal.items : deal.items.filter((i) => i.isReturn);
   for (const item of selected) {
     const left = available.get(item.productId) ?? 0;
     if (item.qty > left) return `Позиция «${item.name}» отсутствует в исходной сделке или превышает проданное количество`;
     available.set(item.productId, left - item.qty);
   }
-  return selected.length ? null : "Не выбраны позиции возврата";
+  return null;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {

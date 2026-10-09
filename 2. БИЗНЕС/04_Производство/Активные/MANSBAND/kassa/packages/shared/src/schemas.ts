@@ -422,9 +422,6 @@ export const createDealSchema = z
     if (v.stage === "Встреча назначена" && !v.meetingDate) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["meetingDate"], message: "Для этапа «Встреча назначена» нужна дата встречи" });
     }
-    if ((v.kind === "refund" || v.kind === "exchange") && !v.linkedDealNumber) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["linkedDealNumber"], message: "Нужна исходная сделка" });
-    }
     if (v.kind === "company" && v.stage === "Успех" && v.issued !== true) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["issued"], message: "Продажа компании завершается только после фактической выдачи" });
     }

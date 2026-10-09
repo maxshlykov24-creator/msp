@@ -232,21 +232,26 @@ export interface AmoContact {
   custom_fields_values?: Array<{ field_id?: number; field_code?: string; values: Array<{ value: unknown }> }> | null;
 }
 
-export async function findContactByPhone(phone: string): Promise<AmoContact | null> {
+function contactMatchesPhone(contact: AmoContact, tail: string): boolean {
+  const phones = (contact.custom_fields_values ?? [])
+    .filter((f) => f.field_code === "PHONE")
+    .flatMap((f) => f.values.map((v) => String(v.value)));
+  return phones.some((p) => phoneTail(p) === tail);
+}
+
+/** Все контакты с точным совпадением последних 10 цифр. Поиск amo по сделке телефон часто не видит. */
+export async function findContactsByPhone(phone: string): Promise<AmoContact[]> {
   const tail = phoneTail(phone);
-  if (!tail) return null;
+  if (!tail) return [];
   const res = await http.get<AmoListResponse<AmoContact>>(
     `/contacts?query=${encodeURIComponent(tail)}&limit=10`
   );
-  const contacts = res._embedded?.contacts ?? [];
-  // Только точное совпадение последних 10 цифр — иначе можно взять чужой контакт.
-  for (const c of contacts) {
-    const phones = (c.custom_fields_values ?? [])
-      .filter((f) => f.field_code === "PHONE")
-      .flatMap((f) => f.values.map((v) => String(v.value)));
-    if (phones.some((p) => phoneTail(p) === tail)) return c;
-  }
-  return null;
+  return (res._embedded?.contacts ?? []).filter((contact) => contactMatchesPhone(contact, tail));
+}
+
+export async function findContactByPhone(phone: string): Promise<AmoContact | null> {
+  const contacts = await findContactsByPhone(phone);
+  return contacts[0] ?? null;
 }
 
 export interface AmoLink {

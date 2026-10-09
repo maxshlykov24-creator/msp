@@ -60,8 +60,8 @@ export function NoSlivForm({ onDone }: { onDone: () => void }) {
       missingRequired={missingRequired}
       footer={
         <StageActions
-          stages={["Провал"]}
-          stage="Провал"
+          stages={["Не слив"]}
+          stage="Не слив"
           onStageChange={() => {}}
           onSave={save}
           saved={saved}

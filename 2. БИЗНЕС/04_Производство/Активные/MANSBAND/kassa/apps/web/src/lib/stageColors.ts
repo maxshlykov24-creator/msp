@@ -116,6 +116,7 @@ const stageToGroup: Record<string, keyof typeof palette> = {
   Отправлен: "logistics",
   Доставлен: "logistics",
 
+  "Не слив": "neutral",
   Успех: "success",
   Провал: "fail",
 };

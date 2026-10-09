@@ -139,6 +139,17 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
     console.warn(`[amo] ссылка на кассу, сделка #${event.id}: ${err.message}`);
   });
 
+  // Не слив в amoCRM лежит на системном «Провал». В кассе этот этап не показываем.
+  if (deal.kind === "no_sliv" && stage === "Провал") {
+    if (deal.stage !== "Не слив") {
+      await deals.updateStage(String(deal.number), "Не слив", ACTOR, {
+        skipAmoWriteback: true,
+        reason: "У не слива в кассе нет этапа «Провал»",
+      });
+    }
+    return { dealNumber: deal.number, stage: "Не слив", tasks: false, skipped: "no_sliv" };
+  }
+
   // Этап из amo задаёт вид заявки: доставка по воронке СДЭК, отложка по
   // «Ждет товар» / «Товар в магазине» (созвон 04.09, примечание №1).
   const nextKind = deals.kindForAmoStage(stage, deal.kind);

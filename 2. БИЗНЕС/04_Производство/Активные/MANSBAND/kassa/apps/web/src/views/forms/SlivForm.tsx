@@ -26,16 +26,18 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
   const [meetingDate, setMeetingDate] = useState("");
   const [comment, setComment] = useState("");
   const [stage, setStage] = useState("Провал");
-  const stages = meetingDate ? ["Встреча назначена", "Провал"] : ["Провал"];
+  const stages = ["Встреча назначена", "Провал"];
 
   function handleMeetingDate(value: string) {
     setMeetingDate(value);
-    setStage(value ? "Встреча назначена" : "Провал");
+    if (value && stage === "Провал") setStage("Встреча назначена");
+    if (!value && stage === "Встреча назначена") setStage("Провал");
   }
 
-  // На «Провале» телефон не нужен — консультант фиксирует только факт и комментарий.
+  // На «Провале» телефон и дата не нужны. «Встреча назначена» без них не сохраняется.
   const phoneRequired = stage === "Встреча назначена";
   const missingRequired = [
+    phoneRequired && !meetingDate && "Дата встречи",
     phoneRequired && !client.phone && "Телефон",
     !comment.trim() && "Комментарий",
   ].filter(Boolean) as string[];
@@ -86,8 +88,7 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
       }
     >
       <Hint>
-        Передать клиента в другой шоурум: конверсия защитит обоих консультантов. Слив, добитый в
-        другом магазине, не портит конверсию исходного.
+        «Провал» можно выбрать и с датой, и без неё. «Встреча назначена» сохраняется только с датой и телефоном.
       </Hint>
       <Card>
         <SectionTitle>Консультант и клиент</SectionTitle>
@@ -101,7 +102,7 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
           />
         </div>
         <div className="mt-4 max-w-[220px]">
-          <Field label="Дата встречи" hint="Без даты заявка может быть сохранена только в «Провал»">
+          <Field label="Дата встречи" hint="Нужна, если этап «Встреча назначена»">
             <input type="date" className="input" value={meetingDate} onChange={(e) => handleMeetingDate(e.target.value)} />
           </Field>
         </div>
@@ -116,7 +117,7 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
           <div>
             <div className="text-white font-semibold">Конверсия консультанта {consultants.consultant}</div>
             <div className="text-mute text-sm">
-              Слив убирает клиента из знаменателя конверсии — не ухудшает и не улучшает показатель; за слив капают бонусы.
+              Если клиент с телефоном купил в другом магазине, этот слив вычитается из знаменателя и конверсия растёт. Пока такой покупки нет, слив в конверсии остаётся.
             </div>
           </div>
         </div>

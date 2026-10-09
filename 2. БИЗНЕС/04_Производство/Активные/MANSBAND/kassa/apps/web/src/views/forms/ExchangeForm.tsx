@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Search } from "lucide-react";
 import { useStore } from "../../store";
-import { Button, Card, Field } from "../../components/ui";
+import { Card } from "../../components/ui";
 import { ProductPicker, cartTotal } from "../../components/ProductPicker";
 import { ReturnItemsSelector } from "../../components/ReturnItemsSelector";
+import { SourceDealSearch } from "../../components/SourceDealSearch";
 import {
   CommentField,
   ConsultantFields,
@@ -25,7 +25,7 @@ import {
   type TipsInfo,
 } from "./common";
 import { STORE_ADDRESS } from "../../data/mock";
-import { formatPhone, money } from "../../lib/format";
+import { money } from "../../lib/format";
 import type { CartItem, Deal, Payment } from "../../data/types";
 import { USE_MOCK } from "../../api/client";
 
@@ -38,8 +38,7 @@ export function ExchangeForm({
   sourceDeal?: Deal | null;
   embedded?: boolean;
 }) {
-  const { activeStore, activeConsultant, addDeal, addQueueItem, nextNumber, findByPhone, deals } =
-    useStore();
+  const { activeStore, activeConsultant, addDeal, addQueueItem, nextNumber, deals } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
 
@@ -47,8 +46,10 @@ export function ExchangeForm({
     consultant: activeConsultant,
     referredBy: "",
   });
-  const [phone, setPhone] = useState(sourceDeal?.clientPhone ?? "");
+  const [clientName, setClientName] = useState(sourceDeal?.clientName ?? "");
+  const [clientPhone, setClientPhone] = useState(sourceDeal?.clientPhone ?? "");
   const [source, setSource] = useState<Deal | null>(() => sourceDeal ?? null);
+  const [unlinked, setUnlinked] = useState(false);
 
   const [returnItems, setReturnItems] = useState<CartItem[]>([]);
   const [newItems, setNewItems] = useState<CartItem[]>([]);
@@ -64,18 +65,6 @@ export function ExchangeForm({
     if (sourceDeal) setSource(sourceDeal);
   }, [sourceDeal]);
 
-  function openSourceDeal(number: number) {
-    window.location.hash = `board/all/all/${number}`;
-  }
-
-  function findSource() {
-    const found =
-      findByPhone(phone) ??
-      deals.find((d) => d.clientPhone === phone && (d.stage === "Успех" || d.stage === "Провал"));
-    setSource(found ?? null);
-    setReturnItems([]);
-  }
-
   const returnSum = cartTotal(returnItems);
   const newSum = cartTotal(newItems);
   const diff = newSum - returnSum;
@@ -84,8 +73,11 @@ export function ExchangeForm({
   const change = diff > 0 ? Math.max(0, paid - diff) : 0;
   const refundAmount = diff < 0 ? -diff : 0;
 
+  const phoneDigits = clientPhone.replace(/\D/g, "");
   const missingRequired = [
-    !source && "Исходная заявка",
+    !source && !unlinked && "Исходная заявка",
+    unlinked && !clientName.trim() && "Имя клиента",
+    unlinked && phoneDigits.length < 10 && "Телефон клиента",
     returnItems.length === 0 && "Позиции к возврату",
     newItems.length === 0 && "Новые позиции",
     diff > 0 && paid < diff && `Доплата ещё ${money(diff - paid)}`,
@@ -95,7 +87,7 @@ export function ExchangeForm({
   const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
-    if (!source) return;
+    if (!source && !unlinked) return;
     addDeal({
       id: crypto.randomUUID(),
       number: meta.number,
@@ -103,13 +95,13 @@ export function ExchangeForm({
       funnel: "return",
       kind: "exchange",
       consultant: consultants.consultant,
-      clientName: source.clientName,
-      clientPhone: source.clientPhone,
+      clientName: source?.clientName || clientName.trim() || "Клиент",
+      clientPhone: source?.clientPhone || clientPhone,
       store: activeStore,
       storeAddress: STORE_ADDRESS[activeStore],
-      channel: source.channel,
-      purpose: source.purpose,
-      linkedDealNumber: source.number,
+      channel: source?.channel,
+      purpose: source?.purpose,
+      linkedDealNumber: source?.number,
       items: [
         ...returnItems.map((it) => ({
           ...it,
@@ -134,7 +126,7 @@ export function ExchangeForm({
         id: crypto.randomUUID(),
         kind: "refund",
         dealNumber: meta.number,
-        client: source.clientName,
+        client: source?.clientName || clientName.trim() || "Клиент",
         amount: refundAmount,
         destination: returnInfo.destination,
         status: "pending",
@@ -177,57 +169,48 @@ export function ExchangeForm({
 
       <Card>
         <SectionTitle>Исходная заявка</SectionTitle>
-        {source ? (
-          <div className="flex flex-wrap items-center gap-2 justify-between">
-            <div className="text-[13px] text-white min-w-0">
-              <span className="font-semibold">#{source.number}</span>
-              <span className="text-mute">
-                {" "}
-                · {source.clientName} · {formatPhone(source.clientPhone)} · {money(source.total)}
-              </span>
-            </div>
-            <Button variant="subtle" onClick={() => openSourceDeal(source.number)}>
-              <ExternalLink size={14} /> Открыть исходную
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <Field label="Телефон клиента" required>
-                  <input
-                    className="input"
-                    inputMode="tel"
-                    value={phone}
-                    placeholder="+7 (___) ___-__-__"
-                    onChange={(e) => setPhone(formatPhone(e.target.value))}
-                  />
-                </Field>
-              </div>
-              <button
-                type="button"
-                onClick={findSource}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white font-semibold px-3 py-2.5"
-              >
-                <Search size={16} /> Найти
-              </button>
-            </div>
-            {phone && !source && (
-              <div className="mt-3 text-[12px] text-amber-300/80">Заявка по телефону не найдена</div>
-            )}
-          </>
-        )}
+        <SourceDealSearch
+          deals={deals}
+          source={source}
+          unlinked={unlinked}
+          clientName={clientName}
+          onClientName={setClientName}
+          onPhone={setClientPhone}
+          onPick={(deal) => {
+            setSource(deal);
+            setUnlinked(false);
+            setClientName(deal.clientName);
+            setClientPhone(deal.clientPhone);
+            setReturnItems([]);
+          }}
+          onUnlinked={(phone, name) => {
+            setSource(null);
+            setUnlinked(true);
+            setClientPhone(phone);
+            setClientName(name);
+            setReturnItems([]);
+          }}
+          onClear={() => {
+            setSource(null);
+            setUnlinked(false);
+            setReturnItems([]);
+          }}
+        />
       </Card>
 
-      {source && (
+      {(source || unlinked) && (
         <Card>
           <SectionTitle>Позиции к возврату</SectionTitle>
+          {source && source.items.some((item) => !item.isReturn && item.price >= 0) ? (
           <ReturnItemsSelector
             original={source.items.filter((item) => !item.isReturn && item.price >= 0)}
             selected={returnItems}
             onChange={setReturnItems}
             onManualWithoutBarcode={setManualCheck}
           />
+          ) : (
+            <ProductPicker items={returnItems} onChange={setReturnItems} />
+          )}
           {manualCheck.length > 0 && (
             <div className="mt-3 text-[12px] text-mute">
               Без штрихкода: {manualCheck.length} поз. — после сохранения задача на проверку консультанту.

@@ -1,5 +1,5 @@
 import { desc, eq, sql } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { db, sql as pg } from "../db/index.js";
 import { deals as dealsTable, amoMeta } from "../db/schema.js";
 import * as amo from "../clients/amo.js";
 import {
@@ -34,14 +34,21 @@ const CLOSED_SINCE_UNIX = Math.floor(new Date("2026-06-01T00:00:00+03:00").getTi
 
 // ── Локальное зеркало заявок (то, что знает касса) ──────────────────
 
+/** В кассе у не слива нет этапа «Провал». Старые записи с этим этапом показываем как «Не слив». */
+function presentDeal(deal: Deal): Deal {
+  if (deal.kind === "no_sliv" && deal.stage === "Провал") return { ...deal, stage: "Не слив" };
+  return deal;
+}
+
 export async function listLocal(): Promise<Deal[]> {
   const rows = await db.select().from(dealsTable).orderBy(desc(dealsTable.number)).limit(500);
-  return rows.map((r) => r.data as Deal);
+  return rows.map((r) => presentDeal(r.data as Deal));
 }
 
 export async function getByNumber(n: number): Promise<Deal | null> {
   const rows = await db.select().from(dealsTable).where(eq(dealsTable.number, n)).limit(1);
-  return (rows[0]?.data as Deal | undefined) ?? null;
+  const deal = rows[0]?.data as Deal | undefined;
+  return deal ? presentDeal(deal) : null;
 }
 
 export async function getByAmoLeadId(amoLeadId: number): Promise<Deal | null> {
@@ -50,7 +57,8 @@ export async function getByAmoLeadId(amoLeadId: number): Promise<Deal | null> {
     .from(dealsTable)
     .where(eq(dealsTable.amoLeadId, amoLeadId))
     .limit(1);
-  return (rows[0]?.data as Deal | undefined) ?? null;
+  const deal = rows[0]?.data as Deal | undefined;
+  return deal ? presentDeal(deal) : null;
 }
 
 /** Имя этапа по id статуса amo (для вебхука). */
@@ -154,7 +162,8 @@ export async function resolve(ref: string): Promise<Deal | null> {
     if (byNum) return byNum;
   }
   const all = await db.select().from(dealsTable).limit(1000);
-  return (all.find((r) => (r.data as Deal).id === ref)?.data as Deal | undefined) ?? null;
+  const found = all.find((r) => (r.data as Deal).id === ref)?.data as Deal | undefined;
+  return found ? presentDeal(found) : null;
 }
 
 /** postgres.js не принимает undefined в jsonb — вычищаем перед записью. */
@@ -1022,6 +1031,23 @@ export async function listAmo(_params?: amo.ListLeadsParams): Promise<Deal[]> {
   return listAmoBoardDeals();
 }
 
+function phoneTail(value: string | undefined | null): string {
+  const digits = (value ?? "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+/** Успешные заявки всех видов с этим телефоном, включая те, что не попали в последние 500 на доске. */
+async function searchLocalSuccessByPhone(tail: string): Promise<Deal[]> {
+  const rows = await pg<{ data: Deal }[]>`
+    select data from deals
+    where (stage = 'Успех' or data->>'stage' = 'Успех')
+      and right(regexp_replace(coalesce(data->>'clientPhone', ''), '\\D', '', 'g'), 10) = ${tail}
+    order by created_at desc
+    limit 30
+  `;
+  return rows.map((row) => presentDeal(row.data));
+}
+
 export async function searchAmo(args: { phone?: string; name?: string; number?: number }): Promise<Deal[]> {
   const statuses = await statusRows();
   const storeFieldId = await getFieldIdByName(AMO_LEAD_FIELDS.storeAddress).catch(() => null);
@@ -1031,8 +1057,38 @@ export async function searchAmo(args: { phone?: string; name?: string; number?: 
     const contactsById = await contactsForLeads([lead]);
     return [mapLeadToDeal(lead, statuses, storeFieldId, contactsById)];
   }
-  const query = args.phone ?? args.name ?? "";
-  const leads = await amo.listLeads({ query, limit: 20 });
+  const tail = phoneTail(args.phone);
+  const query = tail || args.phone || args.name || "";
+  const leads = query ? await amo.listLeads({ query, limit: 50 }) : [];
+  if (tail) {
+    const contacts = await amo.findContactsByPhone(tail).catch(() => [] as amo.AmoContact[]);
+    const linkedIds: number[] = [];
+    for (const contact of contacts.slice(0, 5)) {
+      const ids = await amo.listLeadIdsByContact(contact.id).catch(() => [] as number[]);
+      linkedIds.push(...ids);
+    }
+    const known = new Set(leads.map((lead) => lead.id));
+    const extraIds = [...new Set(linkedIds)].filter((id) => !known.has(id)).slice(0, 40);
+    if (extraIds.length) {
+      const extra = await amo.getLeadsByIds(extraIds).catch(() => [] as amo.AmoLead[]);
+      leads.push(...extra);
+    }
+  }
   const contactsById = await contactsForLeads(leads);
-  return leads.map((l) => mapLeadToDeal(l, statuses, storeFieldId, contactsById));
+  const fromAmo = leads.map((l) => mapLeadToDeal(l, statuses, storeFieldId, contactsById));
+  if (!tail) return fromAmo;
+
+  const local = await searchLocalSuccessByPhone(tail).catch(() => [] as Deal[]);
+  const amoSuccess = fromAmo.filter((deal) => {
+    if (deal.stage !== "Успех") return false;
+    const dealTail = phoneTail(deal.clientPhone);
+    return !dealTail || dealTail === tail;
+  });
+  const byNumber = new Map<number, Deal>();
+  for (const deal of amoSuccess) byNumber.set(deal.number, deal);
+  for (const deal of local) {
+    if (deal.amoLeadId) byNumber.delete(deal.amoLeadId);
+  }
+  for (const deal of local) byNumber.set(deal.number, deal);
+  return [...byNumber.values()].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 }

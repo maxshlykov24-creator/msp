@@ -86,7 +86,7 @@ function isFail(d: Deal): boolean {
 }
 
 function isClosed(d: Deal): boolean {
-  return isSuccess(d) || isFail(d);
+  return isSuccess(d) || isFail(d) || d.stage === "Не слив";
 }
 
 function isOverdue(d: Deal, today: string): boolean {

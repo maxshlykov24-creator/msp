@@ -33,7 +33,7 @@ import {
 } from "./forms/common";
 
 function isClosed(deal: Deal): boolean {
-  return deal.stage === "Успех" || deal.stage === "Провал";
+  return deal.stage === "Успех" || deal.stage === "Провал" || deal.stage === "Не слив";
 }
 
 function formatHistoryAction(action: string): string {

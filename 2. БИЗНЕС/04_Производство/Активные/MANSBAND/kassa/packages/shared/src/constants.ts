@@ -686,6 +686,8 @@ export const STAGE_ALIASES: Record<string, string[]> = {
 export const AMO_SYSTEM_STATUS_IDS: Record<string, number> = {
   успех: 142,
   провал: 143,
+  // В кассе у не слива свой этап. В amoCRM это тот же закрытый «Провал».
+  "не слив": 143,
 };
 
 /**
