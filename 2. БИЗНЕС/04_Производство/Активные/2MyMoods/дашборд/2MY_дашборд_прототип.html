@@ -505,7 +505,6 @@
   .conversion-controls label{display:flex;flex-direction:column;gap:7px;color:var(--mute);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .conversion-controls .pick{font-size:12.5px;font-weight:500;letter-spacing:0;text-transform:none}
   #conversion-summary{margin:10px 0 18px}
-  #conversion-hint{margin:0 0 16px;font-size:11.5px;color:var(--mute);line-height:1.65}
   .conversion-proof{border:0;background:none;font:inherit;font-weight:600;color:var(--ink);cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:0}
   #conversion-card .scroll-x{margin-top:4px}
   #conversion-card th:first-child{width:46%}
@@ -1043,7 +1042,6 @@
     <div class="hint">История этапов воронки «Продажи 2MY». Поток определяется источником сделки в amoCRM. Заявки и заказы из интеграции считаются отдельно. Период — дата создания сделки; переходы учитываются до последнего обновления. В расчёт заявок входят сделки, прошедшие «Новую заявку», в расчёт заказов — прошедшие «Ждёт оплаты». Все строки прослеживают только эту группу. Процент — доля сделок, достигших целевого этапа после исходного; повторные заходы не увеличивают количество, пропущенные этапы не додумываются. Остальные фильтры страницы здесь не действуют.</div>
     <div class="conversion-controls"><label class="conversion-flow-label">Поток<select id="conversion-flow"></select></label><label>От этапа<select id="conversion-from"></select></label><label>До этапа<select id="conversion-to"></select></label></div>
     <div id="conversion-summary"></div>
-    <div id="conversion-hint" class="conversion-quality"></div>
     <div class="scroll-x"><table><thead><tr><th>Переход</th><th>Были на этапе</th><th>Дошли до целевого</th><th>Конверсия</th></tr></thead><tbody id="conversion"></tbody></table></div>
   </div>
 
@@ -1589,13 +1587,6 @@ function refresh(){
  const summaryRows=conversion?[{label:fullLabel,pair:conversion.full},...((fromStage!==anchor||toStage!==amoHistory.finish)&&fromStage!==toStage?[{label:selectedLabel,pair:conversion.overall}]:[])]:[];
  el('conversion-summary').innerHTML=conversion?summaryRows.map((x,i)=>`<div class="kv"><span>${esc(x.label)}</span><button class="conversion-proof" data-pair="${i}">${esc(conversionPct(x.pair))}</button></div>`).join(''):'История этапов amoCRM недоступна. Конверсия не рассчитана.';
  el('conversion-summary').onclick=e=>{const b=e.target.closest('[data-pair]');if(b){const x=summaryRows[+b.dataset.pair];showConversionOrders(x.label,x.pair.enteredOrders,x.pair);}};
- el('conversion-hint').innerHTML=conversion?`Период ${dmy(state.from)}–${dmy(state.to)}: дата создания сделки в amoCRM. Сделок в выбранном потоке: <button class="conversion-proof" id="conversion-all">${num(conversion.total)}</button>. В расчёте <button class="conversion-proof" id="conversion-cohort">${num(conversion.checked)}</button>: подтверждён этап «${esc(stageName(anchor))}».${conversion.noAnchor.length?` <button class="conversion-proof" id="conversion-no-anchor">Без этого этапа: ${num(conversion.noAnchor.length)}</button>.`:''}${conversion.excluded.length?` <button class="conversion-proof" id="conversion-excluded">Неполная история: ${num(conversion.excluded.length)}</button>. Проценты только по проверенной части.`:''} Обновлено: ${esc(new Date(amoHistory.to).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}))}.<br>${flow==='inquiries'?'Заказы, созданные интеграцией МойСклада, в этот поток не входят.':flow==='orders'?'Этот поток начинается с «Ждёт оплаты»; конверсия обращений к нему не применяется.':'Источник этих сделок не подтверждён; они не входят в заявки или заказы МойСклада.'} Завершение проверяется по этой же сделке. Покупка в отдельно созданной сделке не засчитывается без подтверждённой связи. Этапы могут пропускаться: у соседних переходов бывает разная база.`:'';
- if(conversion){
-  el('conversion-all').onclick=()=>showConversionOrders('Все сделки выбранного потока',flowLeads);
-  el('conversion-cohort').onclick=()=>showConversionOrders('Сделки, включённые в расчёт',conversion.cohort);
-  const excludedButton=el('conversion-excluded');if(excludedButton)excludedButton.onclick=()=>showConversionOrders('Сделки без полной истории',conversion.excluded);
-  const noAnchorButton=el('conversion-no-anchor');if(noAnchorButton)noAnchorButton.onclick=()=>showConversionOrders('Не подтверждён этап «'+stageName(anchor)+'»',conversion.noAnchor);
- }
  el('conversion').innerHTML=conversion?conversion.rows.map((x,i)=>`<tr><td>${esc(x.label)}</td><td><button class="conversion-proof" data-row="${i}" data-part="entered">${num(x.entered)}</button></td><td><button class="conversion-proof" data-row="${i}" data-part="reached">${num(x.reached)}</button></td><td>${esc(x.rate)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Нет проверенной истории amoCRM</td></tr>';
  el('conversion').onclick=e=>{const b=e.target.closest('[data-row]');if(!b)return;const x=conversion.rows[+b.dataset.row];showConversionOrders(x.label,b.dataset.part==='reached'?x.reachedOrders:x.enteredOrders,x);};
  const until=(data.responses?.until_revenue||[]).filter(x=>x.paid_date>=state.from&&x.paid_date<=state.to&&x.covered);
