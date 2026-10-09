@@ -40,15 +40,11 @@ REC_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]{4,160}$")
 
 # ── очередь дозвона ──
 def ring_order(client: Any, phone: str, did: str = "") -> tuple[list[str], dict[str, Any]]:
-    """Кому звонить и в каком порядке.
+    """Меню 1: ответственный, затем общий порядок без повторов.
 
-    Сначала ответственный клиента (если у него есть добавочный и он не из
-    клиентского отдела), затем владелец набранной линии, затем остальной круг
-    продаж. Неизвестный номер → просто круг продаж.
-
-    Исключение — клиент в воронке «Сборка»: он уже оплатил, его ведёт клиентский
-    отдел, и звонок начинается с него. Круг продаж остаётся позади как запас,
-    чтобы звонок не пропал, если в клиентском отделе никого нет."""
+    Набранная линия и отдел ответственного приоритет не меняют.
+    Меню 2 использует фиксированный порядок в диалплане без CRM.
+    """
     resolved: dict[str, Any] = {"found": False}
     if phone:
         try:
@@ -59,18 +55,10 @@ def ring_order(client: Any, phone: str, did: str = "") -> tuple[list[str], dict[
 
     order: list[str] = []
     uid = resolved.get("responsible_user_id")
-    in_assembly = resolved.get("pipeline_id") == settings.assembly_pipeline_id
-    if uid and (in_assembly or int(uid) not in settings.client_dept_owner_id_set):
+    if uid:
         ext = settings.user_to_ext.get(int(uid))
         if ext:
             order.append(ext)
-    if in_assembly:
-        service_ext = settings.user_to_ext.get(settings.telephony_service_owner_id)
-        if service_ext:
-            order.append(service_ext)
-    did_ext = settings.did_to_ext.get(str(did or "").strip())
-    if did_ext and did_ext in settings.sales_order:
-        order.append(did_ext)
     order.extend(settings.sales_order)
 
     seen: set[str] = set()

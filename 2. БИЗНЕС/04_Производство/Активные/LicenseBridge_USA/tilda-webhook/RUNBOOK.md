@@ -672,3 +672,18 @@ GROUP BY action ORDER BY 2 DESC;
 - Полина: в журнале 07.10 есть попытки Dial на 102 с CHANUNAVAIL, то есть сервер не мог вызвать зарегистрированное устройство. На момент проверки 09.10 добавочные 101/102/103 не зарегистрированы. Настройки NAT на endpoint 103: rewrite_contact, force_rport, rtp_symmetric включены, direct_media выключен. Причина текущего отсутствия регистрации на компьютерах не установлена.
 - Проверка: 43 теста телефонии прошли; на живых данных контакта сделки 31807159 маршруты для did 1/2/3 содержат всех троих, привязка 103 соответствует пользователю Егора в Kommo. Приём звонка и двусторонний звук ещё НЕ проверены: требуется MicroSIP менеджеров онлайн и контрольный входящий.
 - Откат: на хабе `.env.bak-inbound-20261009T141956Z`, затем пересоздать api/worker; на АТС `/etc/asterisk/extensions.conf.bak-inbound-20261009T1420`, затем dialplan reload. Резервные файлы содержат секреты, не публиковать.
+
+
+### 2026-10-09: staged ringing, current routing
+
+Replaces the simultaneous ring group described above, per Max's explicit request.
+- Menu 1: CRM owner first if mapped, then 103 (Egor), 101 (Pavel), 102 (Polina), deduplicated. Unknown caller: 103-101-102. DID does not change priority.
+- Menu 2: always 102-103-101, no CRM lookup. Lookup moved into the sales branch.
+- Asterisk lb-cascade filters unavailable DEVICE_STATE and empty PJSIP_DIAL_CONTACTS before assigning 0/10/20-second delays. Local channels retain earlier calls and cancel all other legs when one answers. All registered contacts of each endpoint are called. Total timeout remains 35 seconds.
+- Availability is sampled when building the group; contacts are read again before Dial. Disconnects during a scheduled delay do not reschedule other delayed legs.
+- Deployed ring_order to API/worker (rebuilt), and lb-inbound/lb-cascade/lb-cascade-leg to PBX (reloaded).
+- Verification: 44 telephony tests passed. Live API for lead 31807159: 101-103-102 for DID 1/2/3; empty caller: 103-101-102. Health 200.
+- Isolated test on production PBX, no CRM writes or human calls: 14:47:46 UTC first leg, 14:47:56 second, 14:48:06 third. First answered at +25s; other two legs canceled immediately. All-unavailable test returned CHANUNAVAIL immediately.
+- Test entrypoints in lb-cascade-test: 8890 staged local channels; 8891 nonexistent endpoints; 8892 read-only planning against actual registrations. Not exposed through the inbound menu.
+- Real incoming conversation after this change still requires verification; all three manager endpoints were offline at the final check.
+- Rollback backups: PBX extensions.conf.bak-cascade-20261009; hub app/telephony.py.bak-cascade-20261009, then rebuild/recreate api and worker. Backups retain the previous three-person simultaneous ring configuration.

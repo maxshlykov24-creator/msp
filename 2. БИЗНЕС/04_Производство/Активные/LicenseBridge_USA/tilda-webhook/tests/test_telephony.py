@@ -69,14 +69,14 @@ def test_former_line_of_fired_manager_rings_sales(fake, session):
     assert order == ["103", "101"]
 
 
-def test_client_of_service_department_still_goes_to_sales(fake, session):
-    """Полина ведёт клиентский отдел — в круг продаж её не ставим."""
+def test_client_of_service_department_starts_with_responsible(fake, session):
+    """Меню 1 уважает ответственного, включая Полину."""
     contact = fake.add_contact(name="Клиент", phone=PHONE)
     fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=POLINA)
 
     order, _ = ring_order(fake, PHONE, did="2")
 
-    assert order == ["103", "101"]
+    assert order == ["102", "103", "101"]
 
 
 def test_client_in_assembly_rings_client_department_first(fake, session):
@@ -537,3 +537,14 @@ def test_missed_calls_never_move_to_reactivation(fake, session, enable_telephony
     })
     assert result["reactivation"] is False
     assert fake.leads[lead]["status_id"] == settings.status_reactivation
+
+
+def test_cascade_order_ignores_did_and_keeps_all_managers(fake, session, monkeypatch):
+    monkeypatch.setattr(settings, "telephony_sales_order", "103,101,102")
+    monkeypatch.setattr(settings, "telephony_did_ext", "1:101,2:102,3:103")
+    for did in ("1", "2", "3"):
+        assert ring_order(fake, "+15550001111", did)[0] == ["103", "101", "102"]
+    contact = fake.add_contact(name="Клиент", phone=PHONE)
+    fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=PAVEL)
+    for did in ("1", "2", "3"):
+        assert ring_order(fake, PHONE, did)[0] == ["101", "103", "102"]
