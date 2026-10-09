@@ -507,6 +507,8 @@
   #conversion-hint{margin:0 0 16px;font-size:11.5px;color:var(--mute);line-height:1.65}
   .conversion-proof{border:0;background:none;font:inherit;font-weight:600;color:var(--ink);cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:0}
   #conversion-card .scroll-x{margin-top:4px}
+  #conversion-card th:first-child{width:46%}
+  #conversion-card th:not(:first-child){width:18%}
   @media(max-width:640px){.conversion-controls{grid-template-columns:1fr;gap:10px}}
 
   table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -1024,7 +1026,7 @@
   <h2 class="sect">Этапы заказов и работа менеджеров</h2><div class="hint">Текущая воронка, задачи и ответы — amoCRM. Конверсия — история статусов заказов МойСклада, период по дате заказа. Категория, товар, источник, канал, география, размер и цвет на конверсию и amoCRM не действуют.</div>
   <div class="grid-2">
     <div class="card">
-      <h3>Текущие этапы сделок</h3>
+      <h3>Текущие этапы amoCRM</h3>
       <div class="hint">Все текущие сделки воронки «Продажи 2MY», независимо от даты создания. Полина исключена. Период и товарные фильтры не применяются. <span id="funnel-hint"></span></div>
       <div id="funnel"></div>
     </div>
@@ -1037,11 +1039,11 @@
 
   <div class="card" id="conversion-card">
     <h3>Конверсия заказов в МойСкладе</h3>
-    <div class="hint">История статусов заказов покупателей МойСклада. Период — дата документа заказа, независимо от оплаты. Остальные фильтры на этот блок не действуют. Один заказ учитывается один раз в каждой паре. Процент = число заказов, дошедших до целевого статуса после исходного, / число заказов, бывших на исходном. Промежуточные статусы допустимы, пропущенные не додумываются. Неполные истории исключены. «Оплачен» здесь — статус заказа; выручка рассчитывается отдельно по платежам. Статусы «На сборке» и «Передан на сборку» не объединены.</div>
+    <div class="hint">История статусов заказов покупателей МойСклада. Период — дата документа заказа, независимо от оплаты. Остальные фильтры на этот блок не действуют. Один заказ учитывается один раз в каждой паре. Процент = число заказов, дошедших до целевого статуса после исходного, / число заказов, бывших на исходном. Последующие переходы учитываются до обновления, в том числе после конца выбранного периода. Промежуточные статусы допустимы, пропущенные не додумываются. Неполные истории исключены. «Оплачен» здесь — статус заказа; выручка рассчитывается отдельно по платежам. Статусы «На сборке» и «Передан на сборку» не объединены.</div>
     <div class="conversion-controls"><label>От этапа<select id="conversion-from"></select></label><label>До этапа<select id="conversion-to"></select></label></div>
     <div id="conversion-summary"></div>
     <div id="conversion-hint" class="conversion-quality"></div>
-    <div class="scroll-x"><table><thead><tr><th>Переход</th><th>Были на этапе</th><th>Дошли далее</th><th>Конверсия</th></tr></thead><tbody id="conversion"></tbody></table></div>
+    <div class="scroll-x"><table><thead><tr><th>Переход</th><th>Были на этапе</th><th>Дошли до целевого</th><th>Конверсия</th></tr></thead><tbody id="conversion"></tbody></table></div>
   </div>
 
   <h2 class="sect">Задачи и отгрузка</h2>

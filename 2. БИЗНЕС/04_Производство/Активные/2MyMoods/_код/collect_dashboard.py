@@ -1316,7 +1316,7 @@ def get_ms_conversion() -> dict:
     pairs.sort(key=lambda x: (MS_CONVERSION_IDS.index(x[0]), MS_CONVERSION_IDS.index(x[1])))
     return {'status': 'ok' if not failures else 'partial', 'source': 'МойСклад: аудит заказов покупателей',
             'from': started.isoformat(timespec='seconds'), 'to': datetime.now(TZ).isoformat(timespec='seconds'),
-            'stages': stages, 'available_stages': [{'id': k, 'name': v} for k, v in states.items()],
+            'stages': stages, 'available_stages': [{'id': k, 'name': states[k]} for k in MS_CONVERSION_IDS + [x for x in states if x not in MS_CONVERSION_IDS]],
             'pairs': pairs, 'start': MS_CONVERSION_IDS[0], 'finish': MS_CONVERSION_IDS[-1],
             'orders': [result[o['id']] for o in orders]}
 
