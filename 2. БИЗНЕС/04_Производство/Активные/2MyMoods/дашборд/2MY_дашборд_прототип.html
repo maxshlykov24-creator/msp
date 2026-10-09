@@ -501,6 +501,7 @@
   .card h3{font-family:var(--serif);font-weight:400;font-size:17px;margin-bottom:6px}
   .card .hint{font-size:12px;font-weight:400;color:var(--mute);margin-bottom:20px;line-height:1.65}
   .conversion-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:22px 0 18px}
+  .conversion-flow-label{grid-column:1 / -1}
   .conversion-controls label{display:flex;flex-direction:column;gap:7px;color:var(--mute);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .conversion-controls .pick{font-size:12.5px;font-weight:500;letter-spacing:0;text-transform:none}
   #conversion-summary{margin:10px 0 18px}
@@ -1023,7 +1024,7 @@
   </section>
 
   <section class="view" data-v="proc">
-  <h2 class="sect">Этапы заказов и работа менеджеров</h2><div class="hint">Текущая воронка, задачи и ответы — amoCRM. Конверсия — история статусов заказов МойСклада, период по дате заказа. Категория, товар, источник, канал, география, размер и цвет на конверсию и amoCRM не действуют.</div>
+  <h2 class="sect">Этапы заказов и работа менеджеров</h2><div class="hint">Текущая воронка, задачи и ответы — amoCRM. Конверсия — история этапов amoCRM, период по дате создания сделки. Потоки заявок и заказов МойСклада разделены. Категория, товар, источник, канал, география, размер и цвет на конверсию и amoCRM не действуют.</div>
   <div class="grid-2">
     <div class="card">
       <h3>Текущие этапы amoCRM</h3>
@@ -1038,9 +1039,9 @@
   </div>
 
   <div class="card" id="conversion-card">
-    <h3>Конверсия заказов в МойСкладе</h3>
-    <div class="hint">История статусов заказов покупателей МойСклада. Период — дата документа заказа, независимо от оплаты. Остальные фильтры на этот блок не действуют. Один заказ учитывается один раз в каждой паре. Процент = число заказов, дошедших до целевого статуса после исходного, / число заказов, бывших на исходном. Последующие переходы учитываются до обновления, в том числе после конца выбранного периода. Промежуточные статусы допустимы, пропущенные не додумываются. Неполные истории исключены. «Оплачен» здесь — статус заказа; выручка рассчитывается отдельно по платежам. Статусы «На сборке» и «Передан на сборку» не объединены.</div>
-    <div class="conversion-controls"><label>От этапа<select id="conversion-from"></select></label><label>До этапа<select id="conversion-to"></select></label></div>
+    <h3>Конверсия между этапами amoCRM</h3>
+    <div class="hint">Поток определяется источником сделки в amoCRM. Заявки и заказы из интеграции считаются отдельно. Период — дата создания сделки; переходы учитываются до последнего обновления. В расчёт заявок входят сделки, прошедшие «Новую заявку», в расчёт заказов — прошедшие «Ждёт оплаты». Все строки прослеживают только эту группу. Процент — доля сделок, достигших целевого этапа после исходного; повторные заходы не увеличивают количество, пропущенные этапы не додумываются. Остальные фильтры страницы здесь не действуют.</div>
+    <div class="conversion-controls"><label class="conversion-flow-label">Поток<select id="conversion-flow"></select></label><label>От этапа<select id="conversion-from"></select></label><label>До этапа<select id="conversion-to"></select></label></div>
     <div id="conversion-summary"></div>
     <div id="conversion-hint" class="conversion-quality"></div>
     <div class="scroll-x"><table><thead><tr><th>Переход</th><th>Были на этапе</th><th>Дошли до целевого</th><th>Конверсия</th></tr></thead><tbody id="conversion"></tbody></table></div>
@@ -1066,7 +1067,7 @@
   </section>
 
   <div class="notes">
-    <p><b>Разделы и локальные фильтры.</b> Страница разбита на четыре раздела: продажи и каналы, клиенты, товары, процессы. Период, категория, товар, источник, канал сбыта и город действуют на блоки покупок. Текущая воронка amoCRM не ограничена периодом; для конверсии МойСклада период задаёт дату документа заказа, остальные фильтры не применяются. Внутри блока клиентов есть свой поиск по имени и свои условия: сегмент, число покупок, срок тишины, сортировка, а также переключатель «клиенты периода» или «вся база». Внутри точечной аналитики свой разрез по категории, товару, размеру и цвету. Категория и товар меняют продажи во всём дашборде. Размер и цвет меняют товары, категории, продажи по размерам, цвет и канал, и карточку товара.</p>
+    <p><b>Разделы и локальные фильтры.</b> Страница разбита на четыре раздела: продажи и каналы, клиенты, товары, процессы. Период, категория, товар, источник, канал сбыта и город действуют на блоки покупок. Текущая воронка amoCRM не ограничена периодом; для конверсии amoCRM период задаёт дату создания сделки, остальные фильтры не применяются. В блоке конверсии заявки и заказы МойСклада разделены по источнику сделки. Внутри блока клиентов есть свой поиск по имени и свои условия: сегмент, число покупок, срок тишины, сортировка, а также переключатель «клиенты периода» или «вся база». Внутри точечной аналитики свой разрез по категории, товару, размеру и цвету. Категория и товар меняют продажи во всём дашборде. Размер и цвет меняют товары, категории, продажи по размерам, цвет и канал, и карточку товара.</p>
   </div>
   <div class="footer">
     <div class="footer-brand">
@@ -1284,7 +1285,7 @@ const select = (id, values, label) => { const e=el(id), old=selected(id); e.inne
   if(current&&current!==sel) close();
   if(current===sel){close();return}
   current=sel; query='';
-  if(sel.id==='conversion-from'||sel.id==='conversion-to')el('conversion-card').classList.add('conversion-selected');
+  if(sel.id.startsWith('conversion-'))el('conversion-card').classList.add('conversion-selected');
   hi=Math.max(0,[...sel.options].findIndex(o=>(sel.multiple?selected(sel.id).includes(o.value):o.value===sel.value)));
   sel.nextElementSibling.classList.add('open');
   menu.hidden=false;
@@ -1386,18 +1387,22 @@ function buildClients(){
      size:favorite(orders.map(o=>({lines:(o.lines||[]).map(l=>Object.assign({},l,{size:sizeLabel(l)}))})),'size'),channel:orders[buys-1].channel};
  });
 }
-function stageConversion(orders,history,fromStage,toStage){
+function stageConversion(orders,history,fromStage,toStage,anchor){
  if(!history||!['ok','partial'].includes(history.status))return null;
- const checked=orders.filter(o=>o.complete),excluded=orders.filter(o=>!o.complete);
+ anchor=anchor||history.start;
+ const complete=orders.filter(o=>o.complete),excluded=orders.filter(o=>!o.complete);
+ const cohort=complete.filter(o=>o.path.includes(anchor)),noAnchor=complete.filter(o=>!o.path.includes(anchor));
  const names=new Map((history.available_stages||history.stages).map(s=>[s.id,s.name]));
- const pair=(a,b)=>{const entered=checked.filter(o=>o.path.includes(a));const reached=entered.filter(o=>o.path.slice(o.path.indexOf(a)+1).includes(b));return {from:a,to:b,entered:entered.length,reached:reached.length,enteredOrders:entered,reachedOrders:reached,rate:entered.length?(100*reached.length/entered.length).toFixed(1).replace('.',',')+'%':'—'};};
- return {rows:history.pairs.map(([a,b])=>({label:names.get(a)+' → '+names.get(b),...pair(a,b)})),overall:pair(fromStage,toStage),full:pair(history.start,history.finish),checked:checked.length,excluded,total:orders.length};
+ const path=o=>o.path.slice(o.path.indexOf(anchor));
+ const pair=(a,b)=>{const entered=cohort.filter(o=>path(o).includes(a));const reached=a===b?[]:entered.filter(o=>{const p=path(o);return p.slice(p.indexOf(a)+1).includes(b)});return {from:a,to:b,entered:entered.length,reached:reached.length,enteredOrders:entered,reachedOrders:reached,rate:entered.length&&a!==b?(100*reached.length/entered.length).toFixed(1).replace('.',',')+'%':'—'};};
+ const anchorIndex=history.stages.findIndex(s=>s.id===anchor);
+ return {rows:history.pairs.filter(([a])=>history.stages.findIndex(s=>s.id===a)>=anchorIndex).map(([a,b])=>({label:names.get(a)+' → '+names.get(b),...pair(a,b)})),overall:pair(fromStage,toStage),full:pair(anchor,history.finish),checked:cohort.length,cohort,noAnchor,excluded,total:orders.length};
 }
 function showConversionOrders(title,rows,transition){
- const names=new Map((data.ms_conversion.available_stages||[]).map(s=>[s.id,s.name]));
+ const names=new Map((data.amo_conversion.available_stages||[]).map(s=>[s.id,s.name]));
  const reached=new Set(transition?.reachedOrders.map(o=>o.id)||[]);
- const rowsHtml=rows.map(o=>`<tr class="drill" data-order="${esc(o.id)}"><td>${esc(o.number)}</td><td>${dmy(o.date)}</td><td>${esc(o.complete?o.path.map(id=>names.get(id)||'Другой статус').join(' → '):o.reason)}</td>${transition?`<td>${reached.has(o.id)?'Да':'Нет'}</td>`:''}</tr>`).join('');
- showSheet('МойСклад · история статусов',title,`<div class="sheet-count">${num(rows.length)} ${orderNoun(rows.length)}. Нажми на заказ, затем открой в МойСкладе историю изменений. Количество считается по заказам, не по уникальным покупателям.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата заказа</th><th>История статусов</th>${transition?'<th>Дошёл далее</th>':''}</tr></thead><tbody>${rowsHtml||'<tr><td colspan="4">Нет заказов</td></tr>'}</tbody></table>`);
+ const rowsHtml=rows.map(o=>`<tr><td><a class="ms-open" href="https://2my.amocrm.ru/leads/detail/${encodeURIComponent(o.id)}" target="_blank" rel="noopener">Сделка ${esc(o.id)}</a></td><td>${dmy(o.date)}</td><td>${esc(o.source)}</td><td>${esc(o.complete?o.path.map(id=>names.get(id)||'Другой этап').join(' → '):o.reason)}</td>${transition?`<td>${reached.has(o.id)?'Да':'Нет'}</td>`:''}</tr>`).join('');
+ showSheet('amoCRM · история этапов',title,`<div class="sheet-count">${num(rows.length)} сделок. Ссылка открывает сделку в amoCRM: проверь источник и историю этапов. Количество считается по сделкам, не по уникальным клиентам. Показана история воронки «Продажи 2MY».</div><table class="sheet-table"><thead><tr><th>Сделка</th><th>Создана</th><th>Источник</th><th>История этапов</th>${transition?'<th>Дошла далее</th>':''}</tr></thead><tbody>${rowsHtml||'<tr><td colspan="5">Нет сделок</td></tr>'}</tbody></table>`);
 }
 function shippingStats(orders){
  const groups=[{label:'Все заказы с обеими датами',values:[]},{label:'Без ожидания наличия',values:[]},{label:'Ожидали наличия',values:[]},{label:'Признак наличия не проверен',values:[]}];
@@ -1565,27 +1570,38 @@ function refresh(){
  const stages=data.tasks.stages?.map(s=>[Number(s.id),s.name])||fallbackStages;
  el('funnel-hint').textContent=`В срезе: ${num(data.leads.length)} сделок; исключено по Полине: ${num(data.tasks.excluded_marketing_owner||0)}. Обновлено: ${data.tasks.collected_at||data.generated}.`;
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${esc(label)}</span><span class="nums">${num(data.leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
- const msHistory=data.ms_conversion;
- const msStages=msHistory?.available_stages||[];
- const msOrders=(msHistory?.orders||[]).filter(o=>o.date>=state.from&&o.date<=state.to);
- for(const [id,fallback] of [['conversion-from',msHistory?.start],['conversion-to',msHistory?.finish]]){const e=el(id),previous=e.value;e.innerHTML=msStages.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');e.value=msStages.some(s=>s.id===previous)?previous:(fallback||'');}
+ const amoHistory=data.amo_conversion;
+ const amoStages=amoHistory?.available_stages||[];
+ const allConversionLeads=(amoHistory?.orders||[]).filter(o=>o.date>=state.from&&o.date<=state.to);
+ const flowSelect=el('conversion-flow'),previousFlow=flowSelect.value;
+ flowSelect.innerHTML=(amoHistory?.flows||[]).map(f=>`<option value="${f.id}">${esc(f.name)} · ${num(allConversionLeads.filter(o=>o.flow===f.id).length)}</option>`).join('');
+ flowSelect.value=(amoHistory?.flows||[]).some(f=>f.id===previousFlow)?previousFlow:'inquiries';
+ const flow=flowSelect.value,anchor=flow==='orders'?amoHistory?.order_start:amoHistory?.start;
+ const flowLeads=allConversionLeads.filter(o=>o.flow===flow);
+ const flowChanged=el('conversion-card').dataset.flow!==flow;el('conversion-card').dataset.flow=flow;
+ for(const [id,fallback] of [['conversion-from',anchor],['conversion-to',amoHistory?.finish]]){const e=el(id),previous=e.value;e.innerHTML=amoStages.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');e.value=!flowChanged&&amoStages.some(s=>s.id===previous)?previous:(fallback||'');}
  const fromStage=el('conversion-from').value,toStage=el('conversion-to').value;
- const conversion=stageConversion(msOrders,msHistory,fromStage,toStage);
+ const conversion=stageConversion(flowLeads,amoHistory,fromStage,toStage,anchor);
  const conversionPct=x=>x.rate+' ('+num(x.reached)+' из '+num(x.entered)+')';
- const stageName=id=>msStages.find(s=>s.id===id)?.name||'—';
- const fullLabel=stageName(msHistory?.start)+' → '+stageName(msHistory?.finish);
+ const stageName=id=>amoStages.find(s=>s.id===id)?.name||'—';
+ const fullLabel=stageName(anchor)+' → '+stageName(amoHistory?.finish);
  const selectedLabel=stageName(fromStage)+' → '+stageName(toStage);
- const summaryRows=conversion?[{label:fullLabel,pair:conversion.full},...((fromStage!==msHistory.start||toStage!==msHistory.finish)&&fromStage!==toStage?[{label:selectedLabel,pair:conversion.overall}]:[])]:[];
- el('conversion-summary').innerHTML=conversion?summaryRows.map((x,i)=>`<div class="kv"><span>${esc(x.label)}</span><button class="conversion-proof" data-pair="${i}">${esc(conversionPct(x.pair))}</button></div>`).join(''):'История статусов МойСклада недоступна. Конверсия не рассчитана.';
+ const summaryRows=conversion?[{label:fullLabel,pair:conversion.full},...((fromStage!==anchor||toStage!==amoHistory.finish)&&fromStage!==toStage?[{label:selectedLabel,pair:conversion.overall}]:[])]:[];
+ el('conversion-summary').innerHTML=conversion?summaryRows.map((x,i)=>`<div class="kv"><span>${esc(x.label)}</span><button class="conversion-proof" data-pair="${i}">${esc(conversionPct(x.pair))}</button></div>`).join(''):'История этапов amoCRM недоступна. Конверсия не рассчитана.';
  el('conversion-summary').onclick=e=>{const b=e.target.closest('[data-pair]');if(b){const x=summaryRows[+b.dataset.pair];showConversionOrders(x.label,x.pair.enteredOrders,x.pair);}};
- el('conversion-hint').innerHTML=conversion?`Период ${dmy(state.from)}–${dmy(state.to)}: дата заказа в МойСкладе. Проверена полная история ${num(conversion.checked)} из ${num(conversion.total)} заказов.${conversion.excluded.length?` <button class="conversion-proof" id="conversion-excluded">Не включено: ${num(conversion.excluded.length)}</button>. Проценты только по проверенной части.`:''} Обновлено: ${esc(new Date(msHistory.to).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}))}. Нажми на число для списка заказов.`:'';
- const excludedButton=el('conversion-excluded');if(excludedButton)excludedButton.onclick=()=>showConversionOrders('Заказы без полной истории',conversion.excluded);
- el('conversion').innerHTML=conversion?conversion.rows.map((x,i)=>`<tr><td>${esc(x.label)}</td><td><button class="conversion-proof" data-row="${i}" data-part="entered">${num(x.entered)}</button></td><td><button class="conversion-proof" data-row="${i}" data-part="reached">${num(x.reached)}</button></td><td>${esc(x.rate)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Нет проверенной истории МойСклада</td></tr>';
+ el('conversion-hint').innerHTML=conversion?`Период ${dmy(state.from)}–${dmy(state.to)}: дата создания сделки в amoCRM. В выбранном потоке <button class="conversion-proof" id="conversion-all">${num(conversion.total)} сделок</button>. В расчёте <button class="conversion-proof" id="conversion-cohort">${num(conversion.checked)}</button>: подтверждён этап «${esc(stageName(anchor))}».${conversion.noAnchor.length?` <button class="conversion-proof" id="conversion-no-anchor">Без этого этапа: ${num(conversion.noAnchor.length)}</button>.`:''}${conversion.excluded.length?` <button class="conversion-proof" id="conversion-excluded">Неполная история: ${num(conversion.excluded.length)}</button>. Проценты только по проверенной части.`:''} Обновлено: ${esc(new Date(amoHistory.to).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}))}.<br>${flow==='inquiries'?'Заказы, созданные интеграцией МойСклада, в этот поток не входят.':flow==='orders'?'Этот поток начинается с «Ждёт оплаты»; конверсия обращений к нему не применяется.':'Источник этих сделок не подтверждён; они не входят в заявки или заказы МойСклада.'} Завершение проверяется по этой же сделке. Покупка в отдельно созданной сделке не засчитывается без подтверждённой связи. Этапы могут пропускаться: у соседних переходов бывает разная база.`:'';
+ if(conversion){
+  el('conversion-all').onclick=()=>showConversionOrders('Все сделки выбранного потока',flowLeads);
+  el('conversion-cohort').onclick=()=>showConversionOrders('Сделки, включённые в расчёт',conversion.cohort);
+  const excludedButton=el('conversion-excluded');if(excludedButton)excludedButton.onclick=()=>showConversionOrders('Сделки без полной истории',conversion.excluded);
+  const noAnchorButton=el('conversion-no-anchor');if(noAnchorButton)noAnchorButton.onclick=()=>showConversionOrders('Не подтверждён этап «'+stageName(anchor)+'»',conversion.noAnchor);
+ }
+ el('conversion').innerHTML=conversion?conversion.rows.map((x,i)=>`<tr><td>${esc(x.label)}</td><td><button class="conversion-proof" data-row="${i}" data-part="entered">${num(x.entered)}</button></td><td><button class="conversion-proof" data-row="${i}" data-part="reached">${num(x.reached)}</button></td><td>${esc(x.rate)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Нет проверенной истории amoCRM</td></tr>';
  el('conversion').onclick=e=>{const b=e.target.closest('[data-row]');if(!b)return;const x=conversion.rows[+b.dataset.row];showConversionOrders(x.label,b.dataset.part==='reached'?x.reachedOrders:x.enteredOrders,x);};
  const until=(data.responses?.until_revenue||[]).filter(x=>x.paid_date>=state.from&&x.paid_date<=state.to&&x.covered);
  const untilAvg=until.length?until.reduce((s,x)=>s+Number(x.count),0)/until.length:null;
  const untilValue=untilAvg===null?'нет данных':untilAvg.toFixed(1).replace('.', ',')+' · '+num(until.length)+' заказов';
- el('disc-kv').innerHTML=kv([['Сделок создано в новой воронке',num(leads.length)],['Успешно из тех же сделок',num(leads.filter(l=>l.won).length)],['Доля текущих успешных среди созданных',leads.length?pct(leads.filter(l=>l.won).length,leads.length):'—'],['Сообщений до выручки',untilValue],['Медиана ответа, рабочие минуты',responseOne(responseRows,'med')],['Средняя скорость ответа, рабочие минуты',responseOne(responseRows,'avg')],['Ответов без определённого автора, вся доступная история',data.responses?num(data.responses.unknown_author):'нет данных']]);
+ el('disc-kv').innerHTML=kv([['Создано сделок, все источники',num(leads.length)],['Сейчас успешно из них, все источники',num(leads.filter(l=>l.won).length)],['Сообщений до выручки',untilValue],['Медиана ответа, рабочие минуты',responseOne(responseRows,'med')],['Средняя скорость ответа, рабочие минуты',responseOne(responseRows,'avg')],['Ответов без определённого автора, вся доступная история',data.responses?num(data.responses.unknown_author):'нет данных']]);
  el('task-kv').innerHTML=kv([['Открытых задач сейчас, без фильтра периода',num(data.tasks.open)],['Выборка задач',num(data.tasks.sampled)]]);
  const shipped=orders.filter(o=>o.sent_at).length;
  const timing=shippingStats(orders);
@@ -1996,7 +2012,7 @@ document.querySelector('.xls').onclick=downloadExcel;
 
 el('delivery-toggle').onchange=e=>{includeDelivery=e.target.checked;refresh()};
 el('returns-toggle').onchange=e=>{includeReturns=e.target.checked;refresh()};
-['conversion-from','conversion-to'].forEach(id=>el(id).onchange=()=>refresh());
+['conversion-flow','conversion-from','conversion-to'].forEach(id=>el(id).onchange=()=>refresh());
 let lastChartX=0;
 function ordersWord(n){const a=n%10,b=n%100;if(a===1&&b!==11)return n+' заказ';if(a>=2&&a<=4&&(b<12||b>14))return n+' заказа';return n+' заказов'}
 function placeChartTip(clientX){

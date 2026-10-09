@@ -617,6 +617,9 @@ def get_amo_conversion_events(leads: list[dict]) -> dict:
     path = Path(os.environ.get('DASHBOARD_AMO_HISTORY', str(GAPS.parent / 'amo-conversion-history.local.json')))
     old = json.loads(path.read_text()) if path.exists() else {}
     reuse = old.get('version') == 1 and old.get('from', until) <= since and old.get('to', 0) <= until
+    if reuse and 'known_ids' in old:
+        known = set(old['known_ids'])
+        reuse = all(l['id'] in known or l['created_at'] >= old['to'] - 300 for l in leads)
     start = max(since, old['to'] - 300) if reuse else since
     events = {e['id']: e for e in old.get('events', [])} if reuse else {}
     seen = set()
@@ -652,6 +655,8 @@ def get_amo_conversion_events(leads: list[dict]) -> dict:
         raise RuntimeError('amo conversion events pagination limit')
     result = {'version': 1, 'from': old['from'] if reuse else since, 'to': until,
               'events': sorted(events.values(), key=lambda e: (e['created_at'], e['id']))}
+    if reuse and 'known_ids' in old:
+        result['known_ids'] = sorted(set(old['known_ids']) | {l['id'] for l in leads})
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
