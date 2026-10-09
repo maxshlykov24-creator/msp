@@ -1208,7 +1208,7 @@ def get_ms_conversion() -> dict:
     from concurrent.futures import as_completed
     started = datetime.now(TZ)
     cache_path = Path(os.environ.get('DASHBOARD_MS_HISTORY',
-                                    str(OUT.parent / 'ms-stage-history.local.json')))
+                                    str(GAPS.parent / 'ms-stage-history.local.json')))
     cache = {}
     if cache_path.exists():
         saved = json.loads(cache_path.read_text())
@@ -1230,10 +1230,16 @@ def get_ms_conversion() -> dict:
             result[o['id']] = old
         else:
             pending.append(o)
+    import requests
     lock, next_request = threading.Lock(), [0.0]
+    thread_sessions = threading.local()
 
     def collect(order):
-        client = lib.MS()
+        if not hasattr(thread_sessions, 'session'):
+            thread_sessions.session = requests.Session()
+            thread_sessions.session.headers.update({'Authorization': 'Bearer ' + ms.token,
+                                                     'Accept': 'application/json;charset=utf-8'})
+        session = thread_sessions.session
         offset, events, seen = 0, [], set()
         last_stamp = None
         while True:
@@ -1243,9 +1249,13 @@ def get_ms_conversion() -> dict:
                     next_request[0] = max(time.monotonic(), next_request[0]) + .12
                 if delay:
                     time.sleep(delay)
-                code, body = client.req('/entity/customerorder/' + order['id'] + '/audit',
-                                        {'limit': 100, 'offset': offset})
-                if code not in (429, 500, 502, 503, 504):
+                try:
+                    response = session.get(lib.MS_BASE + '/entity/customerorder/' + order['id'] + '/audit',
+                                           params={'limit': 100, 'offset': offset}, timeout=(10, 60))
+                    code, body = response.status_code, response.json()
+                except (requests.RequestException, ValueError):
+                    code, body = 0, {}
+                if code not in (0, 429, 500, 502, 503, 504):
                     break
                 time.sleep(2 * (attempt + 1))
             if code != 200:
