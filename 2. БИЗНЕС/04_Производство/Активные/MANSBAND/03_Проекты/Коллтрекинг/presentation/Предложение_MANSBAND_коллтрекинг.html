@@ -778,6 +778,12 @@
   .ask-list li{font-size:14.5px;color:var(--body);line-height:1.45;font-weight:500;padding-left:18px;position:relative}
   .ask-list li::before{content:'';position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;background:var(--a1)}
 
+  .extend{margin-top:16px;max-width:900px;display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;padding:16px 20px;border-radius:18px;border:1px solid rgba(var(--a1-rgb),.35);background:linear-gradient(100deg, rgba(var(--a1-rgb),.16), rgba(255,255,255,.03) 58%)}
+  .extend-mark{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;letter-spacing:-.03em;color:var(--ink);background:rgba(var(--a1-rgb),.22);border:1px solid rgba(var(--a1-rgb),.4)}
+  .extend-body b{display:block;font-size:16px;font-weight:700;letter-spacing:-.02em}
+  .extend-body span{display:block;margin-top:4px;font-size:13.5px;color:var(--body);line-height:1.4;font-weight:500}
+  .extend-amt{font-size:26px;font-weight:800;letter-spacing:-.03em;white-space:nowrap}
+
   /* Телефон / Telegram: одна длинная страница. screen — чтобы печать не ловила этот режим */
   @media screen and (max-width: 900px){
     html,body{
@@ -814,6 +820,8 @@
     .shot-full{max-width:none;padding:10px}
     .shot-card img,.shot-solo .shot-card img{max-height:none}
     .pay-amt{font-size:28px}
+    .extend{grid-template-columns:auto 1fr;max-width:none}
+    .extend-amt{grid-column:2}
     .card,.anchor,.phase,.bonus,.step,.mock,.shot-card{
       transform:none !important;will-change:auto;
     }
@@ -884,9 +892,14 @@
     .plan-grid{grid-template-columns:repeat(3,1fr) !important;gap:8px;margin-top:12px}
     .shot-grid{grid-template-columns:1.15fr .85fr !important;gap:10px;margin-top:8px;align-items:stretch}
     .shot-solo{grid-template-columns:1.32fr .68fr !important;gap:10px;margin-top:8px;align-items:stretch}
-    .card,.anchor,.phase,.bonus,.step,.mock,.shot-card{
+    .card,.anchor,.phase,.bonus,.step,.mock,.shot-card,.extend{
       transform:none !important;will-change:auto;padding:10px 12px;border-radius:12px;
     }
+    .extend{max-width:none;gap:10px;margin-top:8px}
+    .extend-mark{width:36px;height:36px;font-size:13pt;border-radius:10px}
+    .extend-body b{font-size:11pt}
+    .extend-body span{font-size:8.5pt;margin-top:2px}
+    .extend-amt{font-size:14pt}
     .card h3{font-size:11.5pt;margin-bottom:4px}
     .card p{font-size:9pt;line-height:1.35}
     .card .num,.phase-num,.anchor .n{font-size:8.5pt;margin-bottom:6px}
@@ -1015,56 +1028,6 @@
     </div>
   </section>
 
-  <section class="slide" data-title="Почему так">
-    <div class="kicker">Почему так</div>
-    <h2 class="stag">Строим на том, что уже работает<span class="dot">.</span></h2>
-    <div class="grid g2">
-      <div class="anchor stag"><span class="n">01</span><div><b>Телфин остаётся</b><span>Номера подключаем у вашего оператора, менеджеры работают в том же приложении.</span></div></div>
-      <div class="anchor stag"><span class="n">02</span><div><b>Половина механики уже в работе</b><span>Мост чата на вашем сервере с сентября находит сделку по телефону и дописывает метки. Звонки встают в тот же контур.</span></div></div>
-      <div class="anchor stag"><span class="n">03</span><div><b>Цена не растёт с трафиком</b><span>Больше визитов не переводит на новый тариф. Постоянно платятся только номера Телфин и сервер, около 6 250 ₽ в месяц.</span></div></div>
-      <div class="anchor stag"><span class="n">04</span><div><b>Без лишнего кабинета</b><span>Расходы и окупаемость кампаний агентство смотрит в Директе и Метрике. Ему нужен источник в сделке, его и даём. Отдельный кабинет аналитики, как у Roistat, не нужен.</span></div></div>
-    </div>
-  </section>
-
-  <section class="slide" data-title="План">
-    <div class="kicker">План на три недели</div>
-    <h2 class="stag">Три недели, два платежа, срок с гарантией<span class="dot">.</span></h2>
-    <p class="lead stag">Срок 3 календарные недели со следующего дня после стартовой оплаты. За каждую неделю просрочки вычитаем 10 000 ₽ из второго платежа.</p>
-    <div class="plan-grid">
-      <div class="phase hl stag">
-        <div class="phase-num">Неделя 1</div>
-        <div class="phase-title">Номера и сервер</div>
-        <ul class="phase-dod">
-          <li>Посчитали пул по нагрузке из Метрики</li>
-          <li>15 номеров Телфин для сайта ведут на ваших менеджеров</li>
-          <li>Сервис работает рядом с мостом чата</li>
-          <li>Звонок на номер канала получает источник канала</li>
-        </ul>
-        <div class="phase-pay"><div class="lbl">Старт, на этой неделе</div><div class="amt">70 000 ₽</div></div>
-      </div>
-      <div class="phase stag">
-        <div class="phase-num">Неделя 2</div>
-        <div class="phase-title">Подмена на сайте</div>
-        <ul class="phase-dod">
-          <li>Скрипт на сайте, номер закреплён за визитом</li>
-          <li>Метки визита пишутся в сделку: звонок, чат, квиз</li>
-          <li>Контрольные звонки с каждого источника: метки в сделке совпадают со ссылкой</li>
-        </ul>
-      </div>
-      <div class="phase stag">
-        <div class="phase-num">Неделя 3</div>
-        <div class="phase-title">Переключение и отладка</div>
-        <ul class="phase-dod">
-          <li>Свой пул на сайте, номера Roistat сняты</li>
-          <li>Отладка на живых звонках: разбираем каждый случай без источника</li>
-          <li>Вопросы маркетинга по ходу, например передача меток в Яндекс, закрываем в рамках проекта</li>
-          <li>Сверка в Telegram и инструкция для команды</li>
-        </ul>
-        <div class="phase-pay"><div class="lbl">После сдачи</div><div class="amt">50 000 ₽</div></div>
-      </div>
-    </div>
-  </section>
-
   <section class="slide" data-title="Деньги">
     <div class="kicker">Деньги</div>
     <h2 class="stag">Один раз за систему вместо счёта каждый год<span class="dot">.</span></h2>
@@ -1082,24 +1045,27 @@
 
   <section class="slide" data-title="Старт">
     <div class="kicker">Старт</div>
-    <h2 class="stag">120 000 ₽<span class="dot">.</span> Старт на этой неделе<span class="dot">.</span></h2>
-    <div class="grid g3" style="max-width:900px">
-      <div class="phase hl stag"><div class="phase-num">Платёж 1 · старт</div><div class="pay-amt">70 000 ₽</div><div class="phase-sub">На этой неделе. Срок идёт со следующего дня.</div></div>
-      <div class="phase stag"><div class="phase-num">Платёж 2 · сдача</div><div class="pay-amt">50 000 ₽</div><div class="phase-sub">Когда свой пул работает на сайте, а звонки, чат и квиз пишут метки в сделки.</div></div>
-      <div class="phase stag"><div class="phase-num">Гарантия срока</div><div class="pay-amt">−10 000 ₽</div><div class="phase-sub">За каждую неделю просрочки, из второго платежа.</div></div>
+    <h2 class="stag">120 000 ₽<span class="dot">.</span> 3 недели реализации<span class="dot">.</span></h2>
+    <div class="grid g2" style="max-width:900px">
+      <div class="phase hl stag"><div class="phase-num">Платёж 1 · старт</div><div class="pay-amt">80 000 ₽</div><div class="phase-sub">На этой неделе. Срок идёт со следующего дня.</div></div>
+      <div class="phase stag"><div class="phase-num">Платёж 2 · сдача</div><div class="pay-amt">40 000 ₽</div><div class="phase-sub">Когда свой пул работает на сайте, а звонки, чат и квиз пишут метки в сделки.</div></div>
+    </div>
+    <div class="extend stag">
+      <div class="extend-mark">+1</div>
+      <div class="extend-body"><b>Неделя сверх срока</b><span>Срок реализации можно увеличить на одну неделю. Оплата за срочность по факту, когда работа сдана.</span></div>
+      <div class="extend-amt">30 000 ₽</div>
     </div>
     <div class="card stag" style="margin-top:16px;max-width:900px">
       <div class="num">Что нужно от вас</div>
       <ul class="ask-list">
         <li>Поставить скрипт на сайт силами Сергея. Готовый код и инструкцию передаём мы</li>
-        <li>Контактное лицо для приёмки этапов</li>
       </ul>
     </div>
   </section>
 
 </div>
 
-<div class="counter" id="counter"><b>1</b> / 8 · Обложка</div>
+<div class="counter" id="counter"><b>1</b> / 6 · Обложка</div>
 <div class="nav">
   <button id="prevBtn" aria-label="Назад">←</button>
   <button id="nextBtn" aria-label="Вперёд">→</button>
