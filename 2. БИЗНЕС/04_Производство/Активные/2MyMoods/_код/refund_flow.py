@@ -3,6 +3,7 @@
 
 Без отгрузки: статус только что стал «Отменён» и есть входящие платежи.
 Исходящий на сумму каждого входящего, контрагент заказа, без привязки к заказу.
+Статья расходов у любого такого исходящего: «Возврат».
 Причина берётся из допполя «Причина отмены». Пустая причина не останавливает платёж.
 
 С отгрузкой: возврат покупателя проведён, а у связанного заказа статус «Возврат».
@@ -27,7 +28,8 @@ from zoneinfo import ZoneInfo
 import lib
 
 STATE_CANCELLED = "655b234b-c447-11eb-0a80-08be002efc11"
-STATE_RETURN = "806f1421-0a41-11ef-0a80-06ea001dc554"
+STATE_RETURN = "806f1421-0a41-11f0-0a80-06ea001dc554"
+EXPENSE_RETURN = "5582f424-0a01-11e4-844d-0cc47a02273e"
 ATTR_ORDER_REASON = "b9461617-c3cb-11f1-0a80-18f80010a4d1"
 ATTR_RETURN_REASON = "2a823092-c3cc-11f1-0a80-1f6400119180"
 NO_HOOK = {"X-Lognex-WebHook-Disable": "true"}
@@ -349,6 +351,13 @@ def _create_outgoing(ms, kind: str, organization: dict, agent: dict, account: di
     }
     if account:
         body["organizationAccount"] = {"meta": account}
+    body["expenseItem"] = {
+        "meta": {
+            "href": f"{lib.MS_BASE}/entity/expenseitem/{EXPENSE_RETURN}",
+            "type": "expenseitem",
+            "mediaType": "application/json",
+        }
+    }
     if isinstance(rate, dict) and rate:
         body["rate"] = rate
     if operation:
@@ -613,6 +622,7 @@ def _selftest() -> None:
     assert posts[0][1] == "/entity/paymentout"
     assert posts[0][2]["sum"] == 21000
     assert "operations" not in posts[0][2]
+    assert posts[0][2]["expenseItem"]["meta"]["href"].endswith(EXPENSE_RETURN)
     assert posts[0][2]["agent"]["meta"]["href"].endswith("/c1")
     assert "02014" in posts[0][2]["description"]
     assert "не указана" in posts[0][2]["description"]
