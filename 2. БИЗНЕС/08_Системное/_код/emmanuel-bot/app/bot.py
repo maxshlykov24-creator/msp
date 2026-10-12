@@ -2185,7 +2185,7 @@ _NUDGE_SUNDAY = (
 
 
 async def job_sunday_evening(bot: Bot) -> None:
-    """Вс 20:00: напоминание написать отчёт и новая сводка тебе и Андрею."""
+    """Вс 20:00: напоминание в личку тем, кто не сдал, и то же сообщение в группу."""
     settings = get_settings()
     if not settings.jobs_enabled:
         log.info("skip sunday 20:00: jobs off")
@@ -2195,11 +2195,14 @@ async def job_sunday_evening(bot: Bot) -> None:
         log.info("sunday 20:00 nudge sent")
     except Exception:
         log.exception("job_sunday_evening nudge failed")
+    if not settings.group_chat_id:
+        log.info("sunday 20:00 group skip: no chat")
+        return
     try:
-        await _send_private_coverage_dm(bot, replace=True)
-        log.info("sunday 20:00 coverage sent")
+        sent = await send_message_live(bot, settings.group_chat_id, _NUDGE_SUNDAY)
+        log.info("sunday 20:00 group msg=%s", getattr(sent, "message_id", None))
     except Exception:
-        log.exception("job_sunday_evening coverage failed")
+        log.exception("job_sunday_evening group failed")
 
 
 async def job_wednesday_nudge(bot: Bot) -> None:
