@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Пример · путь в презентации</title>
+<style>
+  :root{
+    --bg:#000;
+    --card:#1C1C1E;
+    --ink:#F5F5F7;
+    --body:#A1A1A6;
+    --mute:#6E6E73;
+    --line:rgba(255,255,255,.08);
+    --a1:#5B7CDE;
+    --a2:#8AA4F0;
+    --a1-rgb:91,124,222;
+    --a2-rgb:138,164,240;
+    --ease:cubic-bezier(.45,.05,.55,.95);
+    --font:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    --mono:ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:#000;color:var(--ink);font-family:var(--font);
+    overflow:hidden;-webkit-font-smoothing:antialiased;
+  }
+  .aura{position:fixed;inset:-30%;z-index:0;pointer-events:none}
+  .aura.a{
+    background:radial-gradient(880px 640px at 80% 12%, rgba(var(--a1-rgb),.55), transparent 66%);
+    animation:drift 24s var(--ease) infinite alternate;
+  }
+  .aura.b{
+    background:radial-gradient(740px 560px at 18% 88%, rgba(var(--a1-rgb),.28), transparent 66%);
+    animation:drift 33s var(--ease) infinite alternate-reverse;
+  }
+  @keyframes drift{from{transform:translate3d(-3%,-2%,0)}to{transform:translate3d(4%,3%,0)}}
+  .rays{
+    position:fixed;top:50%;left:50%;width:190vmax;height:190vmax;margin:-95vmax 0 0 -95vmax;
+    z-index:0;pointer-events:none;opacity:.9;
+    background:conic-gradient(from 0deg at 50% 50%,
+      transparent 0deg, rgba(var(--a1-rgb),.28) 7deg, transparent 20deg,
+      transparent 42deg, rgba(var(--a2-rgb),.16) 51deg, transparent 66deg,
+      transparent 194deg, rgba(var(--a2-rgb),.1) 203deg, transparent 218deg);
+    -webkit-mask-image:radial-gradient(90vw 80vh at 70% 18%, #000 0%, transparent 72%);
+    mask-image:radial-gradient(90vw 80vh at 70% 18%, #000 0%, transparent 72%);
+    animation:sweep 120s linear infinite;
+  }
+  @keyframes sweep{to{transform:rotate(360deg)}}
+  .stage{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;justify-content:center;padding:7vh 7vw 108px}
+  .badge{
+    position:fixed;top:18px;left:22px;z-index:5;
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--a2);
+  }
+  .kicker{font-family:var(--mono);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px;color:var(--a2);margin-bottom:16px}
+  h2{font-size:clamp(26px,3.4vw,44px);font-weight:800;letter-spacing:-.03em;line-height:1.12}
+  h2 .dot{color:var(--a1)}
+  .note{margin-top:18px;color:var(--mute);font-size:14px;font-weight:500;max-width:70ch}
+
+  .flow{margin-top:36px;position:relative}
+  .flow[hidden],.ritual[hidden]{display:none !important}
+  .rail{position:absolute;left:0;right:0;top:0;height:2px;background:rgba(255,255,255,.08);border-radius:2px}
+  .rail i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--a1),var(--a2));border-radius:2px;transition:width .7s var(--ease)}
+  .token{
+    position:absolute;top:-15px;left:0;transform:translateX(-50%);
+    height:32px;padding:0 12px;border-radius:999px;
+    background:var(--a1);color:#fff;font-family:var(--mono);font-size:12px;font-weight:600;
+    display:flex;align-items:center;white-space:nowrap;
+    box-shadow:0 8px 24px -8px rgba(var(--a1-rgb),.9);
+    transition:left .7s var(--ease);opacity:0;
+  }
+  .token.show{opacity:1}
+  .cards{display:grid;gap:14px;margin-top:28px}
+  .cards.c4{grid-template-columns:repeat(4,1fr)}
+  .cards.c6{grid-template-columns:repeat(6,1fr)}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 16px 16px;
+    opacity:.34;transform:translateY(8px);
+    transition:opacity .45s var(--ease), transform .45s var(--ease), border-color .45s, box-shadow .45s;
+  }
+  .card.on{opacity:1;transform:none}
+  .card.hot{
+    border-color:rgba(var(--a1-rgb),.55);
+    box-shadow:0 0 36px -16px rgba(var(--a1-rgb),.85);
+  }
+  .num{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--a2);margin-bottom:10px}
+  .card h3{font-size:18px;letter-spacing:-.02em;line-height:1.2;margin-bottom:8px}
+  .cards.c6 h3{font-size:15px}
+  .card p{color:var(--body);font-size:13.5px;line-height:1.45;font-weight:500}
+  .cards.c6 p{font-size:12.5px}
+
+  .ritual{margin-top:32px;display:grid;grid-template-columns:1.15fr .85fr;gap:16px;align-items:stretch}
+  .sheet,.gantt{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;
+    min-height:220px;
+  }
+  .sheet-label,.gantt-label{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-weight:600;color:var(--mute);font-size:12px;padding:0 10px 10px;font-family:var(--mono)}
+  td{padding:12px 10px;border-top:1px solid var(--line);font-weight:600}
+  td.empty{color:transparent}
+  td.fill{color:var(--ink);animation:ink .5s var(--ease)}
+  @keyframes ink{from{color:transparent}to{color:var(--ink)}}
+  tr.hot td{background:rgba(var(--a1-rgb),.12)}
+  .bars{display:grid;gap:14px;margin-top:8px}
+  .bar-row{display:grid;grid-template-columns:92px 1fr;gap:10px;align-items:center;color:var(--body);font-size:13px;font-weight:600}
+  .track{height:10px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
+  .track span{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--a1),var(--a2));transition:width .9s var(--ease)}
+  .gantt.go .track span{width:var(--w)}
+  .gantt{opacity:.4;transition:opacity .5s var(--ease)}
+  .gantt.go{opacity:1}
+
+  .bar{
+    position:fixed;left:0;right:0;bottom:0;z-index:6;
+    display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    padding:16px 22px 18px;background:linear-gradient(180deg,transparent,rgba(0,0,0,.72) 28%);
+  }
+  button{
+    appearance:none;border:1px solid var(--line);background:#141416;color:var(--ink);
+    font:600 13px/1 var(--font);padding:10px 14px;border-radius:999px;cursor:pointer;
+  }
+  button.on{border-color:rgba(var(--a1-rgb),.7);background:rgba(var(--a1-rgb),.18);color:#fff}
+  button.ghost{margin-left:auto;color:var(--body)}
+
+  body.as-phone .rail,body.as-phone .token{display:none}
+  body.as-phone .cards,body.as-phone .cards.c4,body.as-phone .cards.c6{grid-template-columns:1fr}
+  body.as-phone .card{opacity:1;transform:none}
+  body.as-phone .card:first-child{border-color:rgba(var(--a1-rgb),.4)}
+  body.as-phone .ritual{grid-template-columns:1fr}
+  body.as-phone .gantt,body.as-phone .gantt.go{opacity:1}
+  body.as-phone .gantt .track span{width:var(--w);transition:none}
+  @media screen and (max-width:720px){
+    body{overflow:auto}
+    .stage{height:auto;padding:72px 18px 120px}
+    .rail,.token{display:none}
+    .cards,.cards.c4,.cards.c6{grid-template-columns:1fr}
+    .card{opacity:1;transform:none}
+    .ritual{grid-template-columns:1fr}
+    .gantt{opacity:1}
+    .gantt .track span{width:var(--w)}
+    h2{font-size:26px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .aura,.rays{animation:none}
+    .card{opacity:1;transform:none;transition:none}
+    .token{transition:none}
+  }
+</style>
+</head>
+<body>
+<div class="aura a"></div>
+<div class="aura b"></div>
+<div class="rays"></div>
+<div class="badge">Пример механизма · данные выдуманы</div>
+
+<div class="stage">
+  <div class="kicker" id="kicker"></div>
+  <h2 id="title"></h2>
+  <div class="flow" id="flow">
+    <div class="rail"><i id="fill"></i></div>
+    <b class="token" id="token"></b>
+    <div class="cards" id="cards"></div>
+  </div>
+  <div class="ritual" id="ritual" hidden>
+    <div class="sheet">
+      <div class="sheet-label" id="sheetLabel">Таблица, как сейчас</div>
+      <table>
+        <thead><tr><th>Дело</th><th>Исполнитель</th><th>Срок</th></tr></thead>
+        <tbody>
+          <tr id="row">
+            <td>Монтаж ролика</td>
+            <td class="empty" id="who">Анна</td>
+            <td class="empty" id="when">Пятница</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="gantt" id="gantt">
+      <div class="gantt-label">Гант собирается из сроков</div>
+      <div class="bars">
+        <div class="bar-row"><span>Съёмка</span><div class="track"><span style="--w:100%"></span></div></div>
+        <div class="bar-row"><span>Монтаж</span><div class="track"><span style="--w:64%"></span></div></div>
+        <div class="bar-row"><span>Приёмка</span><div class="track"><span style="--w:28%"></span></div></div>
+      </div>
+    </div>
+  </div>
+  <p class="note" id="note"></p>
+</div>
+
+<div class="bar">
+  <button type="button" data-scene="call">Звонок</button>
+  <button type="button" data-scene="car">Машина</button>
+  <button type="button" data-scene="cell">Ячейка</button>
+  <button type="button" id="replay">Ещё раз</button>
+  <button type="button" class="ghost" id="phone">Как в Telegram</button>
+</div>
+
+<script>
+const scenes = {
+  call: {
+    a1:'#5B7CDE', a2:'#8AA4F0', rgb1:'91,124,222', rgb2:'138,164,240',
+    kicker:'Как это работает',
+    title:'Четыре шага от клика до сделки',
+    token:'Звонок с меткой',
+    note:'На встрече метка сама проходит шаги. В Telegram и в PDF ряд уже собран, без движения.',
+    kind:'path',
+    steps:[
+      ['01 Визит','Клиент на сайте','Скрипт запоминает источник, кампанию и страницу входа.'],
+      ['02 Свой номер','Номер из пула','За этим визитом закреплён один номер. У соседа номер другой.'],
+      ['03 Звонок','Та же линия','Звонок приходит менеджерам туда же, куда приходит сейчас.'],
+      ['04 Сделка','Метки в CRM','Источник и страница входа лежат в полях сделки.']
+    ]
+  },
+  car: {
+    a1:'#E15A52', a2:'#F0A097', rgb1:'225,90,82', rgb2:'240,160,151',
+    kicker:'Один путь вместо четырёх переписок',
+    title:'От звонка до выдачи видно, где стоит машина',
+    token:'Кроссовер, серый',
+    note:'Шесть шагов, тот же приём. Предмет другой, потому что другой разговор.',
+    kind:'path',
+    steps:[
+      ['01','Обращение','Звонок записан, источник проставлен.'],
+      ['02','Контакт','Вилка цены и первое сообщение.'],
+      ['03','Визит','Дата приезда и напоминание.'],
+      ['04','Площадка','Осмотр, карточка авто.'],
+      ['05','В работе','Мастер, срок, сумма.'],
+      ['06','Выдача','Оплата и задача на возврат.']
+    ]
+  },
+  cell: {
+    a1:'#C8A45C', a2:'#E9DCB8', rgb1:'200,164,92', rgb2:'233,220,184',
+    kicker:'Утро без списка',
+    title:'У шага появляются исполнитель и срок',
+    note:'Здесь нет пути заявки. Пустая ячейка заполняется, затем гант рисуется из этих сроков. В Telegram оба кадра уже в конечном виде.',
+    kind:'cell'
+  }
+};
+
+const root = document.documentElement;
+const cardsEl = document.getElementById('cards');
+const flowEl = document.getElementById('flow');
+const ritualEl = document.getElementById('ritual');
+const tokenEl = document.getElementById('token');
+const fillEl = document.getElementById('fill');
+const buttons = [...document.querySelectorAll('[data-scene]')];
+let sceneId = 'call';
+let timers = [];
+let phone = false;
+
+function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+function later(fn, ms){ timers.push(setTimeout(fn, ms)); }
+
+function paintAccent(s){
+  root.style.setProperty('--a1', s.a1);
+  root.style.setProperty('--a2', s.a2);
+  root.style.setProperty('--a1-rgb', s.rgb1);
+  root.style.setProperty('--a2-rgb', s.rgb2);
+}
+
+function setTitle(s){
+  document.getElementById('kicker').textContent = s.kicker;
+  document.getElementById('title').innerHTML = s.title + '<span class="dot">.</span>';
+  document.getElementById('note').textContent = phone
+    ? 'Так слайд стоит в Telegram и в PDF. Движения нет, смысл тот же.'
+    : s.note;
+}
+
+function renderPath(s){
+  flowEl.hidden = false;
+  ritualEl.hidden = true;
+  cardsEl.className = 'cards c' + s.steps.length;
+  cardsEl.innerHTML = s.steps.map(function(step){
+    return '<article class="card"><div class="num">' + step[0] + '</div><h3>' + step[1] + '</h3><p>' + step[2] + '</p></article>';
+  }).join('');
+  tokenEl.textContent = s.token;
+}
+
+function place(i){
+  const cards = [...cardsEl.children];
+  const card = cards[i];
+  const flow = flowEl.getBoundingClientRect();
+  const box = card.getBoundingClientRect();
+  const x = box.left - flow.left + box.width / 2;
+  tokenEl.style.left = x + 'px';
+  tokenEl.classList.add('show');
+  const end = cards[cards.length - 1].getBoundingClientRect();
+  const endX = end.left - flow.left + end.width / 2;
+  const startX = cards[0].getBoundingClientRect().left - flow.left + cards[0].getBoundingClientRect().width / 2;
+  fillEl.style.width = Math.max(0, x - startX) + 'px';
+  fillEl.style.marginLeft = startX + 'px';
+  cards.forEach(function(c, n){
+    c.classList.toggle('on', n <= i);
+    c.classList.toggle('hot', n === i);
+  });
+}
+
+function playPath(){
+  const cards = [...cardsEl.children];
+  cards.forEach(function(c){ c.classList.remove('on','hot'); });
+  tokenEl.classList.remove('show');
+  fillEl.style.width = '0';
+  if (phone || matchMedia('(max-width:720px)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches){
+    cards.forEach(function(c){ c.classList.add('on'); });
+    return;
+  }
+  let i = 0;
+  function tick(){
+    place(i);
+    i += 1;
+    if (i < cards.length) later(tick, 1150);
+  }
+  later(tick, 280);
+}
+
+function resetCell(){
+  document.getElementById('who').className = 'empty';
+  document.getElementById('when').className = 'empty';
+  document.getElementById('row').classList.remove('hot');
+  document.getElementById('gantt').classList.remove('go');
+  document.getElementById('sheetLabel').textContent = 'Таблица, как сейчас';
+}
+
+function playCell(){
+  resetCell();
+  if (phone || matchMedia('(max-width:720px)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches){
+    document.getElementById('who').className = 'fill';
+    document.getElementById('when').className = 'fill';
+    document.getElementById('row').classList.add('hot');
+    document.getElementById('gantt').classList.add('go');
+    document.getElementById('sheetLabel').textContent = 'Шаг со сроком';
+    return;
+  }
+  later(function(){
+    document.getElementById('row').classList.add('hot');
+    document.getElementById('who').className = 'fill';
+    document.getElementById('sheetLabel').textContent = 'Появился исполнитель';
+  }, 900);
+  later(function(){
+    document.getElementById('when').className = 'fill';
+    document.getElementById('sheetLabel').textContent = 'Появился срок';
+  }, 1900);
+  later(function(){
+    document.getElementById('gantt').classList.add('go');
+    document.getElementById('sheetLabel').textContent = 'Гант из этих сроков';
+  }, 2800);
+}
+
+function show(id){
+  clearTimers();
+  sceneId = id;
+  const s = scenes[id];
+  paintAccent(s);
+  setTitle(s);
+  buttons.forEach(function(b){ b.classList.toggle('on', b.dataset.scene === id); });
+  if (s.kind === 'path'){
+    renderPath(s);
+    playPath();
+  } else {
+    flowEl.hidden = true;
+    ritualEl.hidden = false;
+    playCell();
+  }
+}
+
+buttons.forEach(function(b){ b.addEventListener('click', function(){ show(b.dataset.scene); }); });
+document.getElementById('replay').addEventListener('click', function(){ show(sceneId); });
+document.getElementById('phone').addEventListener('click', function(){
+  phone = !phone;
+  document.body.classList.toggle('as-phone', phone);
+  this.classList.toggle('on', phone);
+  this.textContent = phone ? 'Как на встрече' : 'Как в Telegram';
+  show(sceneId);
+});
+window.addEventListener('keydown', function(e){
+  if (e.key === '1') show('call');
+  if (e.key === '2') show('car');
+  if (e.key === '3') show('cell');
+  if (e.key === ' '){ e.preventDefault(); show(sceneId); }
+});
+show('call');
+</script>
+</body>
+</html>
