@@ -4,7 +4,8 @@
 Без отгрузки: статус только что стал «Отменён» и есть входящие платежи.
 Исходящий на сумму каждого входящего, контрагент заказа, без привязки к заказу.
 Статья расходов у любого такого исходящего: «Возврат».
-Причина берётся из допполя «Причина отмены». Пустая причина не останавливает платёж.
+Причина пишется в допполе «Причина отмены» исходящего, не в комментарий.
+Номер входящего в комментарий не попадает. Пустая причина не останавливает платёж.
 
 С отгрузкой: возврат покупателя проведён, а у связанного заказа статус «Возврат».
 Исходящий на всю сумму возврата и привязан к этому возврату. Причина из возврата
@@ -32,6 +33,7 @@ STATE_RETURN = "806f1421-0a41-11f0-0a80-06ea001dc554"
 EXPENSE_RETURN = "5582f424-0a01-11e4-844d-0cc47a02273e"
 ATTR_ORDER_REASON = "b9461617-c3cb-11f1-0a80-18f80010a4d1"
 ATTR_RETURN_REASON = "2a823092-c3cc-11f1-0a80-1f6400119180"
+ATTR_PAYMENT_REASON = "bee865d9-c61a-11f1-0a80-04050045e826"
 NO_HOOK = {"X-Lognex-WebHook-Disable": "true"}
 MARKER = "Возврат денег по заказу"
 CANCEL_WINDOW = timedelta(days=7)
@@ -73,14 +75,11 @@ def reason_href(value) -> str:
     return str((value.get("meta") or {}).get("href") or "")
 
 
-def comment_for(number: str, reason: str, incoming_id: str = "", return_name: str = "") -> str:
-    text = reason.strip() if reason and reason.strip() else "не указана"
-    head = f"{MARKER} {number}."
+def comment_for(number: str, return_name: str = "") -> str:
+    text = f"{MARKER} {number}."
     if return_name:
-        head += f" Возврат {return_name}."
-    if incoming_id:
-        head += f" Входящий {incoming_id}."
-    return f"{head} Причина отмены: {text}."
+        text += f" Возврат {return_name}."
+    return text
 
 
 def kopecks(value) -> int:
@@ -279,11 +278,16 @@ def _outgoing_kind(incoming_kind: str) -> str:
     return "cashout" if incoming_kind == "cashin" else "paymentout"
 
 
-def _existing_outgoing(ms, marker: str) -> list[dict]:
-    rows = []
+def _existing_for_incoming(ms, incoming_id: str) -> list[dict]:
+    """Уже созданный исходящий по этому входящему. Номер входящего в комментарии не ищем у новых."""
+    found: dict[str, dict] = {}
+    legacy = f"Входящий {incoming_id}"
     for entity in ("paymentout", "cashout"):
-        rows.extend(_rows(ms, f"/entity/{entity}", {"filter": f"description~={marker}"}))
-    return rows
+        for filt in (f"externalCode={incoming_id}", f"description~={legacy}"):
+            for row in _rows(ms, f"/entity/{entity}", {"filter": filt}):
+                if row.get("id"):
+                    found[row["id"]] = row
+    return list(found.values())
 
 
 def _linked_outgoing(ms, agent: dict | None, return_id: str) -> list[dict]:
@@ -308,6 +312,20 @@ def _put_order(ms, order_id: str, body: dict) -> None:
     if not body:
         return
     _send(ms, "PUT", f"/entity/customerorder/{order_id}", body)
+
+
+def _payment_reason_attribute(value) -> dict | None:
+    href = reason_href(value)
+    if not href:
+        return None
+    return {
+        "meta": {
+            "href": f"{lib.MS_BASE}/entity/paymentout/metadata/attributes/{ATTR_PAYMENT_REASON}",
+            "type": "attributemetadata",
+            "mediaType": "application/json",
+        },
+        "value": {"meta": value.get("meta") if isinstance(value, dict) else {}},
+    }
 
 
 def _reason_attribute(value) -> dict | None:
@@ -341,7 +359,8 @@ def _status_body(reason_value=None) -> dict:
 
 
 def _create_outgoing(ms, kind: str, organization: dict, agent: dict, account: dict | None,
-                     rate, amount: int, description: str, operation: dict | None = None) -> None:
+                     rate, amount: int, description: str, operation: dict | None = None,
+                     external_code: str = "", reason_value=None) -> None:
     body = {
         "organization": {"meta": organization},
         "agent": {"meta": agent},
@@ -362,20 +381,35 @@ def _create_outgoing(ms, kind: str, organization: dict, agent: dict, account: di
         body["rate"] = rate
     if operation:
         body["operations"] = [operation]
+    if external_code:
+        body["externalCode"] = external_code
+    if kind == "paymentout":
+        attribute = _payment_reason_attribute(reason_value)
+        if attribute:
+            body["attributes"] = [attribute]
     _send(ms, "POST", f"/entity/{kind}", body)
 
 
-def _refresh_comment(ms, rows: list[dict], description: str) -> None:
+def _sync_outgoing(ms, rows: list[dict], description: str, reason_value=None, external_code: str = "") -> None:
+    attribute = _payment_reason_attribute(reason_value)
     for row in rows:
         if row.get("applicable") is False:
             continue
         current = str(row.get("description") or "")
-        if not current.startswith(MARKER) or current == description:
+        if not current.startswith(MARKER):
             continue
         kind = (row.get("meta") or {}).get("type") or ""
         if kind not in ("paymentout", "cashout") or not row.get("id"):
             continue
-        _send(ms, "PUT", f"/entity/{kind}/{row['id']}", {"description": description})
+        body: dict = {}
+        if current != description:
+            body["description"] = description
+        if external_code and str(row.get("externalCode") or "") != external_code:
+            body["externalCode"] = external_code
+        if attribute and kind == "paymentout" and reason_href(_attr(row, ATTR_PAYMENT_REASON)) != reason_href(reason_value):
+            body["attributes"] = [attribute]
+        if body:
+            _send(ms, "PUT", f"/entity/{kind}/{row['id']}", body)
 
 
 def handle_cancel(ms, order: dict, state_changed: bool) -> str:
@@ -385,7 +419,8 @@ def handle_cancel(ms, order: dict, state_changed: bool) -> str:
     if _has_shipment(order):
         return "есть отгрузка"
     number = str(order.get("name") or order["id"])
-    reason = reason_text(_attr(order, ATTR_ORDER_REASON))
+    reason_value = _attr(order, ATTR_ORDER_REASON)
+    reason = reason_text(reason_value)
     incomings = _incomings(ms, order)
     if not incomings:
         return "нет входящих"
@@ -394,10 +429,9 @@ def handle_cancel(ms, order: dict, state_changed: bool) -> str:
         needed = int(incoming.get("_linked") or 0)
         if needed <= 0:
             continue
-        marker = f"Входящий {incoming['id']}"
-        existing = _existing_outgoing(ms, marker)
-        already = _covered(existing, marker)
-        description = comment_for(number, reason, incoming_id=incoming["id"])
+        existing = _existing_for_incoming(ms, incoming["id"])
+        already = _covered(existing, MARKER)
+        description = comment_for(number)
         if already + 1 < needed:
             if not state_changed:
                 continue
@@ -414,11 +448,13 @@ def handle_cancel(ms, order: dict, state_changed: bool) -> str:
                 incoming.get("rate"),
                 needed - already,
                 description,
+                external_code=incoming["id"],
+                reason_value=reason_value,
             )
             created += 1
             print(f"исходящий по отмене {number}: {(needed - already) / 100:.2f}", flush=True)
-        elif reason:
-            _refresh_comment(ms, existing, description)
+        elif reason or any(str(row.get("description") or "") != description for row in existing):
+            _sync_outgoing(ms, existing, description, reason_value, external_code=incoming["id"])
     if created:
         return f"создано {created}"
     return "уже закрыто"
@@ -469,11 +505,12 @@ def handle_return(ms, ret: dict) -> str:
         }
         _create_outgoing(
             ms, kind, organization, agent, account, rate, kopecks(ret.get("sum")),
-            comment_for(number, reason, return_name=return_name), operation,
+            comment_for(number, return_name=return_name), operation,
+            reason_value=reason_value,
         )
         print(f"исходящий по возврату {number}: {kopecks(ret.get('sum')) / 100:.2f}", flush=True)
-    elif reason and ours:
-        _refresh_comment(ms, ours, comment_for(number, reason, return_name=return_name))
+    elif ours:
+        _sync_outgoing(ms, ours, comment_for(number, return_name=return_name), reason_value)
     same_reason = bool(reason_href(reason_value)) and reason_href(_attr(order, ATTR_ORDER_REASON)) == reason_href(reason_value)
     if state == STATE_RETURN:
         _put_order(ms, order_id, _status_body(None if same_reason else reason_value))
@@ -532,8 +569,9 @@ def _selftest() -> None:
     assert not should_drop_cancelled_sale(STATE_CANCELLED, True, True)
     assert not should_drop_cancelled_sale(STATE_RETURN, False, True)
     assert not should_drop_cancelled_sale(STATE_CANCELLED, False, False)
-    assert comment_for("02014", "").endswith("Причина отмены: не указана.")
-    assert "02014" in comment_for("02014", "Брак")
+    assert comment_for("02014") == "Возврат денег по заказу 02014."
+    assert "Входящий" not in comment_for("02014", return_name="00012")
+    assert comment_for("02014", return_name="00012") == "Возврат денег по заказу 02014. Возврат 00012."
     assert portion({"sum": 5000, "operations": [{"meta": {"href": "https://x/customerorder/o1"}, "linkedSum": 1500},
                                                 {"meta": {"href": "https://x/customerorder/o2"}, "linkedSum": 3500}]},
                    {"o1"}) == 1500
@@ -608,6 +646,8 @@ def _selftest() -> None:
                 world["paymentout"].append({
                     "id": "pout1", "applicable": True, "sum": body["sum"],
                     "description": body["description"], "meta": {"type": "paymentout"},
+                    "externalCode": body.get("externalCode") or "",
+                    "attributes": body.get("attributes") or [],
                     "operations": body.get("operations") or [], "agent": body.get("agent"),
                 })
             return 200, {"id": "pout1"}
@@ -624,8 +664,9 @@ def _selftest() -> None:
     assert "operations" not in posts[0][2]
     assert posts[0][2]["expenseItem"]["meta"]["href"].endswith(EXPENSE_RETURN)
     assert posts[0][2]["agent"]["meta"]["href"].endswith("/c1")
-    assert "02014" in posts[0][2]["description"]
-    assert "не указана" in posts[0][2]["description"]
+    assert posts[0][2]["description"] == "Возврат денег по заказу 02014."
+    assert posts[0][2]["externalCode"] == "pin1"
+    assert "attributes" not in posts[0][2]
     handle_payload({"events": [{"meta": {"type": "customerorder", "href": "https://x/customerorder/o1"},
                                 "action": "UPDATE", "updatedFields": ["state"]}]}, fake)
     assert len(posts) == 1
@@ -666,7 +707,9 @@ def _selftest() -> None:
                 world["paymentout"][-1]["_linked"] = True
                 assert body["operations"][0]["linkedSum"] == 21000
                 assert body["operations"][0]["meta"]["type"] == "salesreturn"
-                assert "Брак" in body["description"]
+                assert body["description"] == "Возврат денег по заказу 02014. Возврат 00012."
+                assert "Входящий" not in body["description"]
+                assert body["attributes"][0]["value"]["meta"]["href"].endswith("el1")
             if method == "PUT" and path.startswith("/entity/customerorder/"):
                 if "state" in body:
                     assert body["state"]["meta"]["href"].endswith(STATE_CANCELLED)
