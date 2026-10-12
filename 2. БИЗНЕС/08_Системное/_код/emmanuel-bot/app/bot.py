@@ -1786,13 +1786,19 @@ async def _count_group_hashtag(message: Message) -> bool:
 
 @router.message(F.chat.type.in_({"group", "supergroup"}))
 async def on_group_message(message: Message, bot: Bot):
-    if await _count_group_hashtag(message) and group_digest_follows_reports():
+    if not await _count_group_hashtag(message):
+        return
+    await _edit_private_coverage(bot)
+    if group_digest_follows_reports():
         await replace_group_digest(bot)
 
 
 @router.edited_message(F.chat.type.in_({"group", "supergroup"}))
 async def on_group_edited(message: Message, bot: Bot):
-    if await _count_group_hashtag(message) and group_digest_follows_reports():
+    if not await _count_group_hashtag(message):
+        return
+    await _edit_private_coverage(bot)
+    if group_digest_follows_reports():
         await replace_group_digest(bot)
 
 
@@ -2014,7 +2020,8 @@ async def _send_private_coverage_dm(bot: Bot, *, replace: bool, only_admin: bool
             async with get_session_factory()() as session:
                 pointer = await load_dm_pointer(session, uid)
                 await session.commit()
-            if pointer is not None:
+            same_week = pointer is not None and _as_date(pointer.week_start) == ws
+            if same_week:
                 try:
                     await bot.delete_message(uid, pointer.message_id)
                 except Exception as e:
@@ -2029,6 +2036,45 @@ async def _send_private_coverage_dm(bot: Bot, *, replace: bool, only_admin: bool
         log.info("coverage dm uid=%s msg=%s replace=%s", uid, sent.message_id, replace)
 
 
+def _as_date(value: date | datetime | str) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+async def _edit_private_coverage(bot: Bot) -> bool:
+    """Правит уже отправленную сводку. Нового сообщения и уведомления нет."""
+    _, private = await _digest_payload()
+    ws = week_start_from_date(now_msk().date())
+    edited = False
+    for uid in sorted(coverage_recipient_ids()):
+        async with get_session_factory()() as session:
+            pointer = await load_dm_pointer(session, uid)
+            await session.commit()
+        if pointer is None or _as_date(pointer.week_start) != ws:
+            log.info("coverage edit skip uid=%s", uid)
+            continue
+        try:
+            await bot.edit_message_text(
+                private,
+                chat_id=uid,
+                message_id=pointer.message_id,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            if "not modified" in str(e).lower():
+                edited = True
+                continue
+            log.warning("coverage edit uid=%s msg=%s: %s", uid, pointer.message_id, e)
+            continue
+        edited = True
+        log.info("coverage edited uid=%s msg=%s", uid, pointer.message_id)
+    return edited
+
+
 async def job_midnight_digest(bot: Bot) -> None:
     """Раньше каждый день в 00:00. Сводка в группу больше не по расписанию ночи."""
     log.info("midnight digest disabled")
@@ -2041,7 +2087,9 @@ async def job_monday_coverage_morning(bot: Bot) -> None:
         log.info("skip monday 09:00 coverage: jobs off")
         return
     try:
-        await _send_private_coverage_dm(bot, replace=False)
+        edited = await _edit_private_coverage(bot)
+        if not edited:
+            await _send_private_coverage_dm(bot, replace=False)
         log.info("monday 09:00 coverage sent")
     except Exception:
         log.exception("job_monday_coverage_morning failed")
@@ -2126,6 +2174,32 @@ async def _send_missing_nudges(bot: Bot, text: str) -> None:
         sent_n += 1
         await asyncio.sleep(0.35)
     log.info("nudges sent=%s missing=%s", sent_n, len(missing))
+
+
+_NUDGE_SUNDAY = (
+    "Привет!\n"
+    "Воскресенье, самое время собрать отчет. Дорогу осилит идущий 🫶\n"
+    "\n"
+    "Кнопка ниже Отчёт, я помогу с текстом прямо в этом чате."
+)
+
+
+async def job_sunday_evening(bot: Bot) -> None:
+    """Вс 20:00: напоминание написать отчёт и новая сводка тебе и Андрею."""
+    settings = get_settings()
+    if not settings.jobs_enabled:
+        log.info("skip sunday 20:00: jobs off")
+        return
+    try:
+        await _send_missing_nudges(bot, _NUDGE_SUNDAY)
+        log.info("sunday 20:00 nudge sent")
+    except Exception:
+        log.exception("job_sunday_evening nudge failed")
+    try:
+        await _send_private_coverage_dm(bot, replace=True)
+        log.info("sunday 20:00 coverage sent")
+    except Exception:
+        log.exception("job_sunday_evening coverage failed")
 
 
 async def job_wednesday_nudge(bot: Bot) -> None:

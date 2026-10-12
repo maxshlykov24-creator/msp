@@ -5,7 +5,12 @@ import logging
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from app.bot import job_monday_coverage_evening, job_monday_coverage_morning, job_wednesday_nudge
+from app.bot import (
+    job_monday_coverage_evening,
+    job_monday_coverage_morning,
+    job_sunday_evening,
+    job_wednesday_nudge,
+)
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -43,6 +48,19 @@ def start_scheduler(bot: Bot) -> AsyncIOScheduler:
             misfire_grace_time=300,
         )
         sched.add_job(
+            job_sunday_evening,
+            "cron",
+            args=[bot],
+            day_of_week="sun",
+            hour=20,
+            minute=0,
+            id="sunday_evening",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=300,
+        )
+        sched.add_job(
             job_wednesday_nudge,
             "cron",
             args=[bot],
@@ -55,7 +73,7 @@ def start_scheduler(bot: Bot) -> AsyncIOScheduler:
             coalesce=True,
             misfire_grace_time=300,
         )
-        log.info("APScheduler: пн 09:00 личка и сводка в группу, пн 20:00 личка и сводка, ср 20:00 напоминание")
+        log.info("APScheduler: вс 20:00 напоминание и сводка, пн 09:00 правка сводки и группа, пн 20:00 новая сводка, ср 20:00 напоминание")
     else:
         log.info("APScheduler 00:00/20:00 not started (JOBS_ENABLED=false)")
 
