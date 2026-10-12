@@ -491,6 +491,7 @@
   .view > h2.sect:first-child{margin-top:34px}
   .grid-2{display:grid;grid-template-columns:1.25fr 1fr;gap:20px}
   .grid-2.fit{align-items:start}
+  .grid-2.buy-what{grid-template-columns:minmax(240px,300px) minmax(0,1fr)}
   .grid-2e{display:grid;grid-template-columns:1fr 1fr;gap:20px}
   .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
   .card{background:var(--paper);border:1px solid var(--line);padding:28px 26px;position:relative;overflow:hidden;transition:transform .45s cubic-bezier(.25,1,.5,1),border-color .45s cubic-bezier(.25,1,.5,1),box-shadow .45s cubic-bezier(.25,1,.5,1)}
@@ -635,7 +636,7 @@
 
   @media (max-width:1040px){
     .kpis{grid-template-columns:repeat(2,1fr)}
-    .grid-2,.grid-2e,.grid-3,.hero-grid,.scope-body{grid-template-columns:1fr}
+    .grid-2,.grid-2e,.grid-3,.hero-grid,.scope-body,.grid-2.buy-what{grid-template-columns:1fr}
     .scope-kpi{grid-template-columns:repeat(2,1fr)}
     .hero .big{font-size:44px}
     .card{overflow:visible}
@@ -653,7 +654,8 @@
   .scroll-x:has(#cats) th:nth-child(3){width:24%}
   .scroll-x:has(#cats) th:nth-child(4){width:18%}
   .scroll-x:has(#cats) th:nth-child(5){width:24%}
-  .scroll-x:has(#colors) th:nth-child(3){width:28%}
+  .scroll-x:has(#colors) table{table-layout:auto}
+  .scroll-x:has(#colors) th:first-child,.scroll-x:has(#colors) td:first-child{white-space:nowrap;width:auto}
   .scroll-x:has(#tier) th:nth-child(4){width:20%}
   .scroll-x:has(#tier) th:nth-child(6){width:16%}
   .scroll-x:has(#sale) th:nth-child(3){width:40%}
@@ -999,7 +1001,7 @@
   </div>
 
   <h2 class="sect">Что именно покупают</h2>
-  <div class="grid-2 fit">
+  <div class="grid-2 fit buy-what">
     <div class="card">
       <h3>Продажи по размерам</h3>
       <div class="hint">Сначала характеристика «размер». Если она пустая, размер читается из названия: one size, OS, S-M и остальные буквенные размеры. Кардиган из альпаки 2MY x Vlada Nazina без размера в названии считается one size.</div>
