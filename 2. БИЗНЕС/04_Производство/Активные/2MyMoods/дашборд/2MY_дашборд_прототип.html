@@ -1550,9 +1550,9 @@ function refresh(){
  const products=Object.entries(group(goodsLines,x=>x.l.name)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:[...new Set(arr.map(x=>sizeLabel(x.l)).filter(Boolean))].join(', ')||'не указано',color:[...new Set(arr.map(x=>colorLabel(x.l)))].join(', '),lines:arr})).sort((a,b)=>b.qty-a.qty||b.rev-a.rev);
  lastProducts=products;
  el('items').innerHTML=products.slice(0,20).map(x=>{const on=state.prod===x.name;return `<tr class="drill${on?' selected':''}" data-product="${esc(x.name)}"><td><div class="item-name"><span>${esc(x.name)}</span><button type="button" class="product-pick" aria-pressed="${on}">${on?'Снять фильтр':'В фильтр'}</button></div></td><td>${num(x.qty)}</td><td>${money(x.rev)}</td><td>${money(x.cost)}</td><td>${money(Math.round(x.rev)-Math.round(x.cost))}</td><td>${esc(x.size)}</td><td>${esc(x.color)}</td></tr>`}).join('')||'<tr><td colspan="7">Нет покупок в выбранном фильтре</td></tr>';
- const cats=Object.entries(group(goodsLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),lines:arr})).sort((a,b)=>b.rev-a.rev);
+ const cats=Object.entries(group(goodsLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),lines:arr})).sort((a,b)=>b.qty-a.qty||b.rev-a.rev);
  table('cats',cats,[x=>x.name,x=>num(x.qty),x=>money(x.rev),x=>money(x.qty?x.rev/x.qty:0),x=>money(x.rev-x.cost)],x=>showOrders('Категория',x.name,ordersFromGoods(x.lines)));
- const sizeRows=Object.entries(group(goodsLines,x=>sizeLabel(x.l)));
+ const sizeRows=Object.entries(group(goodsLines,x=>sizeLabel(x.l))).sort((a,b)=>sum(b[1],x=>x.l.qty)-sum(a[1],x=>x.l.qty)||sum(b[1],x=>x.l.rev)-sum(a[1],x=>x.l.rev));
  el('sizes').innerHTML=sizeRows.map(([size,arr],i)=>`<button type="button" class="kv" data-i="${i}"><span>${esc(size)}</span><b>${num(sum(arr,x=>x.l.qty))}</b></button>`).join('')||'Нет данных';
  el('sizes').onclick=e=>{const b=e.target.closest('button[data-i]');if(!b)return;const row=sizeRows[+b.dataset.i];if(row)showOrders('Размер',row[0],ordersFromGoods(row[1]));};
  const colors=Object.entries(group(goodsLines.filter(x=>colorLabel(x.l)!=='не указано'),x=>colorLabel(x.l))).map(([name,arr])=>{
