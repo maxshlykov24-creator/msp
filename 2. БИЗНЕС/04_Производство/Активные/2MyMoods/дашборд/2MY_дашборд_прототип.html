@@ -981,7 +981,7 @@
 
   <div class="card" style="margin-top:20px">
     <h3>Товары: продажи, выручка, маржа</h3>
-    <div class="hint" id="items-hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок, себестоимость — закупочная цена, маржа — выручка минус себестоимость. Показаны первые 20 позиций по выручке. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.</div>
+    <div class="hint" id="items-hint">Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок, себестоимость — закупочная цена, маржа — выручка минус себестоимость. Показаны первые 20 позиций по количеству. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.</div>
     <div class="scroll-x"><table>
       <thead><tr><th>Позиция</th><th>Продано</th><th>Выручка</th><th>Себестоимость</th><th>Маржа</th><th>Размер</th><th>Цвет</th></tr></thead>
       <tbody id="items"></tbody>
@@ -1430,7 +1430,7 @@ function refresh(){
  const returnedRev=-sum(returned,x=>orderRev(x.o,x.ls));
  currentLines=basis.flatMap(x=>x.ls.map(l=>({o:x.o,l})));
  const noCost=currentLines.filter(x=>!x.l.delivery&&x.l.rev>0&&x.l.cost===0);
- el('items-hint').textContent='Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок'+(includeDelivery?', с доставкой':', без доставки')+', себестоимость — закупочная цена, маржа — выручка минус себестоимость. Показаны первые 20 позиций по выручке. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.';
+ el('items-hint').textContent='Оплаченные заказы МойСклад за выбранный период. Продано — количество изделий, выручка — после скидок'+(includeDelivery?', с доставкой':', без доставки')+', себестоимость — закупочная цена, маржа — выручка минус себестоимость. Показаны первые 20 позиций по количеству. Нажатие на строку открывает заказы. «В фильтр» у названия оставляет на странице только эту позицию, повторное снимает.';
  el('cost-hint').textContent='Маржа по зафиксированной закупочной цене, без работы и логистики. Исторические цены до начала наблюдений — оценка; новые версии фиксируются при синхронизации.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
  const orders=filtered.map(x=>x.o), rev=sum(basis,x=>orderRev(x.o,x.ls));
  const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
@@ -1545,7 +1545,7 @@ function refresh(){
  el('churn-kv').innerHTML=kv([['Gold молчат больше 90 дней',num(clients.map(showClient).filter(c=>c.tier==='Gold'&&c.silence>90).length)],['Silver молчат больше 90 дней',num(clients.map(showClient).filter(c=>c.tier==='Silver'&&c.silence>90).length)]]);
  renderClients(scopedClients);
  const goodsLines=currentLines.filter(x=>!x.l.delivery&&matches(state.size,sizeLabel(x.l))&&matches(state.color,colorLabel(x.l)));
- const products=Object.entries(group(goodsLines,x=>x.l.name)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:[...new Set(arr.map(x=>sizeLabel(x.l)).filter(Boolean))].join(', ')||'не указано',color:[...new Set(arr.map(x=>colorLabel(x.l)))].join(', '),lines:arr})).sort((a,b)=>b.rev-a.rev);
+ const products=Object.entries(group(goodsLines,x=>x.l.name)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:[...new Set(arr.map(x=>sizeLabel(x.l)).filter(Boolean))].join(', ')||'не указано',color:[...new Set(arr.map(x=>colorLabel(x.l)))].join(', '),lines:arr})).sort((a,b)=>b.qty-a.qty||b.rev-a.rev);
  lastProducts=products;
  el('items').innerHTML=products.slice(0,20).map(x=>{const on=state.prod===x.name;return `<tr class="drill${on?' selected':''}" data-product="${esc(x.name)}"><td><div class="item-name"><span>${esc(x.name)}</span><button type="button" class="product-pick" aria-pressed="${on}">${on?'Снять фильтр':'В фильтр'}</button></div></td><td>${num(x.qty)}</td><td>${money(x.rev)}</td><td>${money(x.cost)}</td><td>${money(Math.round(x.rev)-Math.round(x.cost))}</td><td>${esc(x.size)}</td><td>${esc(x.color)}</td></tr>`}).join('')||'<tr><td colspan="7">Нет покупок в выбранном фильтре</td></tr>';
  const cats=Object.entries(group(goodsLines,x=>x.l.category)).map(([name,arr])=>({name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),lines:arr})).sort((a,b)=>b.rev-a.rev);
