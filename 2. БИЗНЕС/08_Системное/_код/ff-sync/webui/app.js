@@ -1640,10 +1640,8 @@ function renderSyncHealth(rows) {
   rows = rows || [];
   const errors = rows.filter((r) => r.error).length;
   const stale = rows.filter((r) => !r.error && r.stale).length;
-  const btn = $("syncBtn");
-  btn.textContent = !rows.length ? "Кабинеты" : errors ? "Ошибок " + errors : stale ? "Проверить " + stale : "Кабинеты обновлены";
-  btn.classList.toggle("is-bad", errors > 0);
-  btn.classList.toggle("is-warn", !errors && stale > 0);
+  $("syncBtn").textContent = "Обновления";
+  $("syncBtn").classList.remove("is-bad", "is-warn");
   $("syncSub").textContent = !rows.length
     ? "Сведений ещё нет."
     : errors
