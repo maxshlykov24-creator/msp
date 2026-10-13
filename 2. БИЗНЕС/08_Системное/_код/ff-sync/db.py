@@ -89,6 +89,17 @@ def migrate(conn):
     if "stock_warehouse_id" not in cabs:
         conn.execute("ALTER TABLE cabinets ADD COLUMN stock_warehouse_id TEXT")
     lots = _cols(conn, "lots")
+    for col, decl in (("source_key", "TEXT"), ("source_active", "INTEGER NOT NULL DEFAULT 1"),
+                      ("ledger_kind", "TEXT NOT NULL DEFAULT 'legacy'"), ("ms_store_id", "TEXT"),
+                      ("source_document", "TEXT")):
+        if col not in lots:
+            conn.execute("ALTER TABLE lots ADD COLUMN %s %s" % (col, decl))
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS lots_source ON lots(source_key)")
+    moves = _cols(conn, "lot_moves")
+    for col, decl in (("source_key", "TEXT"), ("source_active", "INTEGER NOT NULL DEFAULT 1")):
+        if col not in moves:
+            conn.execute("ALTER TABLE lot_moves ADD COLUMN %s %s" % (col, decl))
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS moves_source ON lot_moves(source_key)")
     for col in ("billed_days", "billed_in", "billed_out"):
         if col not in lots:
             conn.execute("ALTER TABLE lots ADD COLUMN %s REAL NOT NULL DEFAULT 0" % col)
@@ -757,13 +768,15 @@ def list_lots(only_open=False):
     conn = connect()
     if only_open:
         rows = conn.execute(
-            "SELECT * FROM lots WHERE qty_left > 0 OR billed_until IS NULL "
+            "SELECT * FROM lots WHERE source_active=1 AND (source_key IS NOT NULL OR NOT EXISTS "
+            "(SELECT 1 FROM settings WHERE key='ledger:enabled' AND value='1')) AND (qty_left > 0 OR billed_until IS NULL "
             "OR billed_until < COALESCE((SELECT max(substr(created_at, 1, 10)) "
-            "FROM lot_moves WHERE lot_moves.lot_id = lots.id), substr(received_at, 1, 10)) "
+            "FROM lot_moves WHERE lot_moves.lot_id = lots.id AND source_active=1), substr(received_at, 1, 10))) "
             "ORDER BY received_at, id"
         ).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM lots ORDER BY received_at, id").fetchall()
+        rows = conn.execute("SELECT * FROM lots WHERE source_active=1 AND (source_key IS NOT NULL OR NOT EXISTS "
+                            "(SELECT 1 FROM settings WHERE key='ledger:enabled' AND value='1')) ORDER BY received_at, id").fetchall()
     conn.close()
     return rows
 
@@ -836,7 +849,7 @@ def moves_by_day(lot_id=None):
     conn = connect()
     sql = (
         "SELECT lot_id, substr(created_at, 1, 10) AS day, SUM(qty) AS qty FROM lot_moves "
-        "WHERE kind = 'ship'"
+        "WHERE kind IN ('ship','pick','out') AND source_active=1"
     )
     args = []
     if lot_id is not None:

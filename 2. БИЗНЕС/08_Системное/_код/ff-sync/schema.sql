@@ -326,3 +326,23 @@ CREATE TABLE IF NOT EXISTS shipment_marks (
 
 CREATE INDEX IF NOT EXISTS shipment_marks_ship
     ON shipment_marks (shipment_id);
+
+-- Полные версии источника сохраняются только при изменении данных.
+CREATE TABLE IF NOT EXISTS ms_ledger_history (
+    digest TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ms_ledger_products (
+    id TEXT PRIMARY KEY,
+    data_json TEXT NOT NULL,
+    synced_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS ms_ledger_documents (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    synced_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
+);
