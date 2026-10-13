@@ -1185,6 +1185,12 @@ $("sClientList").onclick = (e) => {
 document.addEventListener("click", (e) => {
   if ($("iClientBox") && !$("iClientBox").contains(e.target)) $("iClientList").hidden = true;
   if (!$("sClientBox").contains(e.target)) $("sClientList").hidden = true;
+  if ($("aClientBox") && !$("aClientBox").contains(e.target)) {
+    $("aClientList").hidden = true;
+    const id = $("aClient").value;
+    const picked = id ? state.clients.find((c) => String(c.id) === String(id)) : null;
+    $("aClientQ").value = picked ? picked.name : "";
+  }
   if ($("shClientBox") && !$("shClientBox").contains(e.target)) $("shClientList").hidden = true;
   if ($("dClientBox") && !$("dClientBox").contains(e.target)) $("dClientList").hidden = true;
 });
