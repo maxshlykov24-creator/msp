@@ -372,6 +372,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     try:
         rounds = 0
         while True:
+            generated_history_key = store.history_key(history)
             raw = await _generate(history, chat_id)
             extra = pending.pop(str(chat_id), [])
             if not extra or rounds >= MAX_MERGE_ROUNDS:
@@ -439,7 +440,8 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     )
     if silence and not clean_text:
         store.save_history(chat_id, history)
-        store.mark_silence(chat_id, history)
+        if store.history_key(history) == generated_history_key:
+            store.mark_silence(chat_id, history)
         _refresh_nudge(chat_id, history)
         log.info("чат %s: модель решила молчать", chat_id)
         return

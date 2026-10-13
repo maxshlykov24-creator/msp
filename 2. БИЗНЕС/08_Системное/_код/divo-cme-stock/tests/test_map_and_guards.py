@@ -3,6 +3,31 @@ from app.map_row import CORE_HEADER, HEADER, dedup_sort, map_row
 from app.state import guard_write
 
 
+def test_cme_server_page_cap_does_not_truncate():
+    from app.cme_client import CmeClient
+    c = object.__new__(CmeClient)
+    pages = [[{"id": n} for n in range(1, 51)], [{"id": 51}], []]
+    calls = []
+    def page(params):
+        calls.append(params["page"])
+        rows = pages[params["page"] - 1]
+        return rows, rows
+    c.cars_page = page
+    assert len(c.iter_cars()) == 51
+    assert calls == [1, 2, 3]
+
+
+def test_cme_duplicate_page_fails_closed():
+    from app.cme_client import CmeClient, CmeError
+    c = object.__new__(CmeClient)
+    c.cars_page = lambda params: ([{"id": 1}], [{"id": 1}])
+    try:
+        c.iter_cars()
+    except CmeError:
+        return
+    assert False, "repeated page must not be published as a complete stock"
+
+
 def test_core_header_is_amo_contract():
     """A–O читает amo через FILTER на Sheet1. Порядок и ширина неприкосновенны."""
     assert len(CORE_HEADER) == 15

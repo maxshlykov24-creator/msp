@@ -3029,7 +3029,120 @@ def test_oct14_note_requires_readback():
             assert len(store.load_doc(cid)["crm"]["note_pending"]) == 1
     asyncio.run(run())
 
+def test_oct14_note_retry_without_duplicate():
+    import asyncio
+    from unittest.mock import Mock, patch
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    async def run():
+        with Sandbox():
+            cid = "ar:oct14-note-retry"
+            store.save_doc(cid, {"crm": {"note_pending": [{"id": "out-1", "text": "Бот: ответ"}]}})
+            notes = []
+            readable = False
+            def request(path, *args, **kwargs):
+                if path.endswith('/notes/12'):
+                    return (200, notes[0]) if readable else (503, {})
+                return 200, {"_embedded": {"notes": list(notes)}}
+            def write(*args, **kwargs):
+                notes.append({"id": 12, "note_type": "common", "params": {"text": "Бот: ответ"}})
+                return {"_embedded": {"notes": [{"id": 12}]}}
+            with patch.object(crm, "_note_lead", return_value=321), \
+                 patch.object(crm.amo_client, "request", side_effect=request), \
+                 patch.object(crm.amo_client, "write", side_effect=write) as post:
+                await crm.flush_notes(cid)
+                assert store.load_doc(cid)["crm"]["note_pending"]
+                # Same on-disk queue survives a process restart and retry.
+                d = store.load_doc(cid); d["crm"]["note_retry_at"] = 0
+                store.save_doc(cid, d); readable = True
+                await crm.flush_notes(cid)
+                assert not store.load_doc(cid)["crm"]["note_pending"]
+                assert store.load_doc(cid)["crm"]["autoru_noted"] == ["out-1"]
+                assert post.call_count == 1
+    asyncio.run(run())
+
+
+def test_oct14_silence_does_not_hide_errors():
+    import asyncio
+    from unittest.mock import AsyncMock, Mock, patch
+    from tools.rehearse import Sandbox
+    from bot import main, store, llm
+    async def run():
+        with Sandbox():
+            cid = "av:oct14-errors"
+            store.save_history(cid, [{"role": "user", "content": "Какой пробег?"}])
+            ch = Mock(send=AsyncMock(side_effect=RuntimeError("send unavailable")),
+                      typing=AsyncMock(), notify_owner=AsyncMock())
+            with patch.object(llm, "reply", AsyncMock(return_value="Пробег 50 000 км.")):
+                try:
+                    await main._answer_locked(ch, cid, ["Какой пробег?"])
+                except RuntimeError:
+                    pass
+            assert not store.silence_handled(store.load_doc(cid))
+            assert main.waiting_for_bot(cid)
+    asyncio.run(run())
+
+
+def test_oct14_silence_concurrent_incoming():
+    import asyncio
+    from unittest.mock import AsyncMock, Mock, patch
+    from tools.rehearse import Sandbox
+    from bot import main, store, llm
+    async def run():
+        with Sandbox():
+            cid = "av:oct14-concurrent"
+            hist = [{"role": "user", "content": "Ок жду"}]
+            store.save_history(cid, hist)
+            async def model(*args, **kwargs):
+                store.save_history(cid, hist + [{"role": "user", "content": "А какой пробег?"}])
+                return "[[ТИШИНА]]"
+            ch = Mock(send=AsyncMock(), typing=AsyncMock(), notify_owner=AsyncMock())
+            with patch.object(llm, "reply", side_effect=model):
+                await main._answer_locked(ch, cid, ["Ок жду"])
+            assert not store.silence_handled(store.load_doc(cid))
+            assert main.waiting_for_bot(cid)
+    asyncio.run(run())
+
+
+def test_oct14_report_handoff_and_legal_context():
+    import asyncio
+    from tools.rehearse import replay
+    from bot import nudge
+    for text in ("Автотека есть, просто если юрлицо уйдет в банкротство",
+                 "Она раньше была в лизинге?", "Кто сейчас собственник, юрлицо?"):
+        assert nudge.document_question(text)
+    async def run():
+        for question in ("Направте тогда автотеку тут в сообщении",
+                         "Автотека есть, просто если юрлицо уйдет в банкротство"):
+            result = await replay({"messages": []}, question, raw="Напишите номер телефона")
+            assert not result["sent"] and result["capture"] == 1
+    asyncio.run(run())
+
+
+def test_oct14_picked_does_not_rewind_sales():
+    from unittest.mock import patch
+    from bot import crm
+    a = crm.amo_client
+    widget = {"id": 321, "pipeline_id": a.PIPELINE_SALES, "status_id": a.STATUS_IN_WORK,
+              "_embedded": {"contacts": [{"id": 123}]}}
+    doc = {"crm": {"alert": {"picked": "button", "picked_amo": 111}}}
+    with patch.object(a, "find_unsorted_uid", return_value=""), \
+         patch.object(a, "move_lead_to_sales") as move, \
+         patch.object(a, "add_note"), patch.object(crm, "_bind_lead", return_value={}):
+        crm._adopt_widget({}, doc, widget)
+        move.assert_not_called()
+
+
 if __name__ == "__main__":
+    test_oct14_silence_and_new_message()
+    test_oct14_real_jolion_and_vat()
+    test_oct14_picked_keeps_crm_retry()
+    test_oct14_note_requires_readback()
+    test_oct14_note_retry_without_duplicate()
+    test_oct14_silence_does_not_hide_errors()
+    test_oct14_silence_concurrent_incoming()
+    test_oct14_report_handoff_and_legal_context()
+    test_oct14_picked_does_not_rewind_sales()
     test_restart_preserves_marketplace_incoming()
     test_payment_refusal_keeps_dialog_open()
     test_cash_only_priority_and_stale_card()
