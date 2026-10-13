@@ -2923,28 +2923,32 @@ async function downloadXlsx(url, ids, fallback, okText, msgEl, extra) {
   return res;
 }
 
-async function saveDownload(res, fallback) {
-  const blob = await res.blob();
+async function saveDownload(res, fallback, downloadUrl) {
+  const blob = downloadUrl ? null : await res.blob();
   const a = document.createElement("a");
   const cd = res.headers.get("Content-Disposition") || "";
   const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
   a.download = m ? decodeURIComponent(m[1]) : fallback;
-  a.href = URL.createObjectURL(blob);
+  a.href = downloadUrl || URL.createObjectURL(blob);
   document.body.appendChild(a);
   a.click();
   a.remove();
-  const objectUrl = a.href;
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+  if (!downloadUrl) {
+    const objectUrl = a.href;
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+  }
 }
 
 async function downloadInvoice(id) {
-  const res = await fetch("/api/invoices/" + id + "/document.xlsx");
+  const url = "/api/invoices/" + id + "/document.xlsx";
+  const res = await fetch(url);
   if (!res.ok) {
     let data = {};
     try { data = await res.json(); } catch (e) {}
     throw new Error(data.detail || ("Не удалось скачать Excel (HTTP " + res.status + ")"));
   }
-  await saveDownload(res, "СЧЕТ.xlsx");
+  // Обычный URL поддерживает штатную загрузку в браузерах и встроенных WebView.
+  await saveDownload(res, "СЧЕТ.xlsx", url);
 }
 
 $("shExport").onclick = async () => {

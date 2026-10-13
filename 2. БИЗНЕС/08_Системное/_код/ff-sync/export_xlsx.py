@@ -106,7 +106,7 @@ def render_invoice_document(data, profile):
             text = "%s: %s" % (label, profile.get(key) or "не указан")
             row = mapped[n + delta]
             _invoice_cell(row, "B", text)
-            row.set("ht", str(max(30, 15 * ((len(text) + 39) // 40))))
+            row.set("ht", str(max(30, 16 * ((len(text) + 31) // 32) + 4)))
         sheet_data[:] = rows
         dimension = sheet.find(_xlsx_tag("dimension"))
         if dimension is not None:
