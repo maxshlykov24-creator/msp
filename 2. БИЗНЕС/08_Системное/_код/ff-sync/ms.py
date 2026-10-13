@@ -6,8 +6,6 @@ from net import MS_BASE, env, ms_headers, req
 PRODUCT_ATTRS = [
     ("Литраж, л", "double", "ATTR_LITERS_ID"),
     ("Клиент фулфилмента", "counterparty", "ATTR_CLIENT_ID"),
-    ("Маркетплейс", "string", "ATTR_MP_ID"),
-    ("GTIN", "string", "ATTR_GTIN_ID"),
 ]
 
 AGENT_ATTRS = [
@@ -159,7 +157,8 @@ def attr_value(entity, name, meta_key, value):
     }
 
 
-def product_attrs(liters, agent_id, marketplace, gtin):
+def product_attrs(liters, agent_id):
+    """Литраж и клиент фулфилмента. Площадка живёт в кабинетах, GTIN — в штрихкодах."""
     out = []
     if liters is not None and liters != "":
         try:
@@ -171,14 +170,6 @@ def product_attrs(liters, agent_id, marketplace, gtin):
             out.append(item)
     if agent_id:
         item = attr_value("product", "Клиент фулфилмента", "ATTR_CLIENT_ID", ms_meta("counterparty", agent_id))
-        if item:
-            out.append(item)
-    if marketplace:
-        item = attr_value("product", "Маркетплейс", "ATTR_MP_ID", marketplace)
-        if item:
-            out.append(item)
-    if gtin:
-        item = attr_value("product", "GTIN", "ATTR_GTIN_ID", gtin)
         if item:
             out.append(item)
     return out

@@ -18,6 +18,8 @@ def barcode_obj(raw):
         return {"ean13": digits}
     if len(digits) == 8:
         return {"ean8": digits}
+    if len(digits) in (12, 14) and gtin_ok(digits):
+        return {"gtin": digits}
     return {"code128": digits or v}
 
 
@@ -26,6 +28,27 @@ def gtin14(raw):
     if len(digits) == 13:
         return "0" + digits
     if len(digits) == 14:
+        return digits
+    return ""
+
+
+def gtin_ok(digits):
+    """Контрольная цифра GS1. МойСклад иначе отвергает штрихкод типа GTIN."""
+    if not digits or not str(digits).isdigit() or len(digits) not in (8, 12, 13, 14):
+        return False
+    body, check = digits[:-1], int(digits[-1])
+    total = 0
+    for i, ch in enumerate(reversed(body)):
+        total += int(ch) * (3 if i % 2 == 0 else 1)
+    return (10 - (total % 10)) % 10 == check
+
+
+def gtin_code(raw):
+    """Цифры для штрихкода типа GTIN. 13 знаков дополняются до 14, цифра та же."""
+    digits = re.sub(r"\D", "", str(raw or ""))
+    if len(digits) == 13 and gtin_ok(digits):
+        digits = "0" + digits
+    if len(digits) in (8, 12, 14) and gtin_ok(digits):
         return digits
     return ""
 
@@ -177,10 +200,23 @@ def barcodes_from_hits(hits, barcode, gtin):
     return out
 
 
+def _same_gtin(raw, norm):
+    digits = re.sub(r"\D", "", str(raw or ""))
+    if not norm or not digits:
+        return False
+    if digits == norm:
+        return True
+    return len(digits) == 13 and ("0" + digits) == norm
+
+
 def barcodes_of_many(codes, gtin):
     out = []
     seen = set()
-    for raw in list(codes or []) + ([gtin] if gtin else []):
+    norm = gtin_code(gtin)
+    for raw in list(codes or []):
+        digits = re.sub(r"\D", "", str(raw or ""))
+        if norm and digits == norm and len(digits) != 13:
+            continue
         item = barcode_obj(raw)
         if not item:
             continue
@@ -188,6 +224,20 @@ def barcodes_of_many(codes, gtin):
         if key in seen:
             continue
         seen.add(key)
+        out.append(item)
+    if norm and not any(item.get("gtin") == norm for item in out):
+        out.append({"gtin": norm})
+    return out
+
+
+def drop_gtin_code128(barcodes, norm):
+    """Тот же номер не держим вторым штрихкодом Code128 рядом с типом GTIN."""
+    if not norm:
+        return list(barcodes or [])
+    out = []
+    for item in barcodes or []:
+        if item.get("code128") and re.sub(r"\D", "", str(item.get("code128"))) == norm:
+            continue
         out.append(item)
     return out
 
@@ -247,17 +297,27 @@ def push_one(row, hits=None, dry=False):
         row.setdefault("ext_barcode", first["ext_barcode"])
         cab = get_cabinet(first["cabinet_id"]) or cab
     article = article_of(client["code"], row)
-    gtin = (row.get("GTIN") or "").strip() or gtin14(row.get("ext_barcode"))
+    explicit_gtin = (row.get("GTIN") or "").strip()
+    gtin = explicit_gtin or gtin14(row.get("ext_barcode"))
+    if explicit_gtin and not gtin_code(explicit_gtin):
+        return {
+            "ok": False,
+            "msg": "GTIN не проходит контрольную цифру",
+            "id": None,
+            "article": article,
+            "gtin": explicit_gtin,
+            "client": client,
+        }
     try:
         existing = find_linked(client, row.get("ext_barcode"), gtin, hits, article)
     except ValueError as exc:
         return {"ok": False, "msg": str(exc), "id": None, "article": article, "gtin": gtin, "client": client}
     if existing:
         article = existing.get("article") or article
-    mps = "+".join(sorted({h["marketplace"] for h in hits})) if hits else cab["marketplace"]
     track = tracking_code(row.get("Тип продукции"))
     extra = barcodes_of_many(barcodes_from_hits(hits, row.get("ext_barcode"), gtin), gtin)
     codes = merge_barcodes(existing or {}, extra) if existing else extra
+    codes = drop_gtin_code128(codes, gtin_code(gtin))
     payload = {
         "name": (existing.get("name") if existing else None) or row.get("name") or article,
         "article": article,
@@ -266,8 +326,6 @@ def push_one(row, hits=None, dry=False):
         "attributes": product_attrs(
             row.get("Литраж_л"),
             client["ms_counterparty_id"],
-            mps,
-            gtin,
         ),
     }
     if client["ms_counterparty_id"]:
@@ -289,14 +347,6 @@ def push_one(row, hits=None, dry=False):
     else:
         r = req("POST", MS_BASE + "/entity/product", headers=ms_headers(), json=payload, retry_safe=False)
         action = "создан"
-    if r.status_code == 400 and any("gtin" in c for c in codes):
-        payload["barcodes"] = [c for c in codes if "gtin" not in c] or None
-        if not payload.get("barcodes"):
-            payload.pop("barcodes", None)
-        if existing:
-            r = req("PUT", MS_BASE + "/entity/product/" + existing["id"], headers=ms_headers(), json=payload)
-        else:
-            r = req("POST", MS_BASE + "/entity/product", headers=ms_headers(), json=payload, retry_safe=False)
     if r.status_code not in (200, 201):
         return {
             "ok": False,
