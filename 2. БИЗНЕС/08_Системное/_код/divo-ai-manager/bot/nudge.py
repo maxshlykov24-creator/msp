@@ -84,6 +84,10 @@ REFUSES_PHONE = re.compile(
 )
 WRITE_HERE = re.compile(
     r"("
+    r"^\s*а\s+(?:тут|здесь)[?!. ]*$|"
+    r"ответьте.{0,30}(?:вопрос|сначала|для начала)|"
+    r"(?:не могу|не хочу|не буду).{0,12}созвон|"
+    r"(?:мне )?удобно (?:тут|здесь)|"
     r"здесь напиш|"
     r"(?<![А-Яа-яA-Za-z])пишите здесь(?!\s+цен)|"
     r"напиш\w{0,8}\s+здесь(?!\s+цен)|"
@@ -838,9 +842,25 @@ def asked_condition(messages: list[dict] | None) -> bool:
     return any(key in blob for key in keys)
 
 
+def document_question(text: str) -> bool:
+    """Ownership/legal history is not an offer to buy with VAT."""
+    return bool(re.search(
+        r"банкрот|конкурсн.{0,12}масс|залог|арест|судеб|недействитель|"
+        r"(?:сейчас|оформлен|учет|учёт|собственник|владелец).{0,35}юр.?лиц|"
+        r"юр.?лиц.{0,35}(?:собственник|владелец|оформлен)|"
+        r"(?:была|был|находил).{0,20}в лизинг", text or "", re.I))
+
+
 def asked_report(messages: list[dict] | None) -> bool:
-    """Просят ссылку на автотеку, а не разбор аварий."""
-    return bool(re.search(r"автотек|отч[её]т", _last_user(messages)))
+    """A request to send a report, not any mention of its contents."""
+    text = _last_user(messages)
+    if document_question(text) or re.search(r"не (?:нуж|надо).*отчет|автотека (?:у меня |уже )?есть[, .]", text):
+        return False
+    report = r"(?:авто\s?тек\w*|отчет\w*)"
+    return bool(re.search(
+        r"(?:пришл|скин|скид|направ|отправ|предостав|можно|есть|нужен).{0,45}" + report
+        + "|" + report + r".{0,35}(?:есть|пришл|скин|направ|отправ|можно|сюда|тут|здесь)"
+        + r"|^\s*" + report + r"[?! .]*$", text))
 
 
 def asked_damage(messages: list[dict] | None) -> bool:

@@ -2943,6 +2943,92 @@ def test_payment_refusal_keeps_dialog_open():
     assert nudge.is_closed('Уже купил, спасибо')
 
 
+
+def test_oct14_silence_and_new_message():
+    import asyncio
+    from unittest.mock import AsyncMock, Mock, patch
+    from tools.rehearse import Sandbox
+    from bot import main, store, llm
+    async def run():
+        with Sandbox():
+            cid = "av:oct14-silence"
+            hist = [{"role": "user", "content": "Ок жду"}]
+            store.save_history(cid, hist)
+            ch = Mock(send=AsyncMock(), typing=AsyncMock(), notify_owner=AsyncMock())
+            with patch.object(llm, "reply", AsyncMock(return_value="[[ТИШИНА]]")) as model:
+                await main._answer_locked(ch, cid, ["Ок жду"])
+                await main._answer_locked(ch, cid, ["Ок жду"])
+                assert model.await_count == 1
+                assert not main.waiting_for_bot(cid)
+                store.save_history(cid, hist + [{"role": "user", "content": "А фото есть?"}])
+                assert main.waiting_for_bot(cid)
+                await main._answer_locked(ch, cid, ["А фото есть?"])
+                assert model.await_count == 2
+            assert ch.send.await_count == 0
+    asyncio.run(run())
+
+
+def test_oct14_real_jolion_and_vat():
+    import asyncio
+    from tools.rehearse import replay
+    from bot import nudge
+    assert nudge.wants_write_here("А тут?")
+    assert nudge.wants_write_here("Ответьте просто на вопросы для начала. А потом пойму целесообразность звонка")
+    assert not nudge.asked_report([{"role": "user", "content": "Автотека есть, просто если юрлицо уйдет в банкротство"}])
+    assert nudge.asked_report([{"role": "user", "content": "Можете скинуть авто теку?"}])
+    async def run():
+        doc = {"messages": [
+            {"role": "user", "content": "Есть фото ДТП?"},
+            {"role": "assistant", "content": "Давайте созвонимся, напишите номер телефона"}], "nudge": {}}
+        r = await replay(doc, "Ответьте просто на вопросы для начала", raw="Напишите номер телефона")
+        assert not r["sent"] and r["capture"] == 1
+        doc = {"messages": [], "avito": {"title": "Land Rover Defender 3.0 AT, 2021, 75 800 км", "price": "7 450 000 ₽"}}
+        r = await replay(doc, "Здравствуйте. Цена с НДС указана?", raw="Да, с НДС, 8 600 000")
+        assert "Нет" in " ".join(r["sent"])
+        assert "7 450 000" in " ".join(r["sent"]) and "8 600 000" in " ".join(r["sent"])
+    asyncio.run(run())
+
+
+def test_oct14_picked_keeps_crm_retry():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    async def run():
+        with Sandbox():
+            cid = "ar:oct14-crm"
+            store.save_doc(cid, {"messages": [], "crm": {"handoff_pending": {"reason": "phone", "retry_at": 0},
+                                 "alert": {"picked": "button", "active": True, "reason": "phone"}}})
+            with patch.object(crm, "ensure_lead", side_effect=lambda snap, doc: snap), \
+                 patch.object(crm, "ping_allowed", return_value=False), \
+                 patch.object(crm, "_sweep_posts", AsyncMock()):
+                await crm._tick_one(cid)
+            d = store.load_doc(cid)
+            assert d["crm"]["handoff_pending"]["retry_at"] > 0
+            assert d["crm"]["alert"]["picked"] == "button"
+    asyncio.run(run())
+
+
+def test_oct14_note_requires_readback():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    async def run():
+        with Sandbox():
+            cid = "ar:oct14-notes"
+            store.save_doc(cid, {"messages": [], "crm": {"note_pending": [{"id": "message-1", "text": "Бот: ответ"}]}})
+            def request(path, *args, **kwargs):
+                if path.endswith('/notes/12'):
+                    return 404, {}
+                return 200, {"_embedded": {"notes": []}}
+            with patch.object(crm, "_note_lead", return_value=321), \
+                 patch.object(crm.amo_client, "request", side_effect=request), \
+                 patch.object(crm.amo_client, "write", return_value={"_embedded": {"notes": [{"id": 12}]}}):
+                await crm.flush_notes(cid)
+            assert len(store.load_doc(cid)["crm"]["note_pending"]) == 1
+    asyncio.run(run())
+
 if __name__ == "__main__":
     test_restart_preserves_marketplace_incoming()
     test_payment_refusal_keeps_dialog_open()

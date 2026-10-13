@@ -630,6 +630,7 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
                 channel=channel,
                 url=snap.get("url") or "",
                 chat_id=str(snap.get("chat_id") or ""),
+                customer_id=(doc.get("autoru") or {}).get("customer_id", ""),
             )
         except amo_client.AmoError as exc:
             log.warning("виджет amo по чату %s: %s", snap.get("chat_id"), exc)
@@ -1186,9 +1187,14 @@ def autoru_note_text(who: str, text: str) -> str:
 def _note_lead(chat_id: str, doc: dict) -> int | None:
     existing = (doc.get("crm") or {}).get("lead_id") or (doc.get("crm") or {}).get("note_lead_id")
     if existing:
-        return int(existing)
+        code, lead = amo_client.request("/api/v4/leads/%s" % int(existing))
+        if code == 200 and lead and not lead.get("is_deleted"):
+            return int(existing)
+        if code not in {200, 204, 404, 410}:
+            raise RuntimeError("CRM lead read failed")
     if chat_id.startswith("ar:"):
-        return amo_client.autoru_unsorted_lead(amo_client.iter_unsorted(4), chat_id[3:])
+        src = doc.get("autoru") or {}
+        return amo_client.autoru_bound_lead(chat_id[3:], src.get("customer_id", ""), src.get("url", ""))
     listing = doc.get("avito") or {}
     peer = listing.get("peer") or ""
     if not peer or amo_client._norm_txt(peer) in amo_client.GENERIC_PEERS:
@@ -1281,8 +1287,21 @@ async def flush_notes(chat_id: str) -> None:
                     "note_type": "common", "params": {"text": row["text"]},
                     "is_need_to_trigger_digital_pipeline": False,
                 }], attempts=1)
-                for saved in amo_client.items(result or {}, "notes"):
+                saved_notes = amo_client.items(result or {}, "notes")
+                if not saved_notes:
+                    raise RuntimeError("CRM note write returned no note id")
+                for saved in saved_notes:
                     notes.append({"id": saved["id"], "note_type": "common", "params": {"text": row["text"]}})
+            # Confirm the exact content by a fresh GET before acknowledging.
+            matches = [n for n in notes if int(n["id"]) > row["before_id"]
+                       and (n.get("params") or {}).get("text") == row["text"]]
+            if not matches:
+                raise RuntimeError("CRM note not confirmed")
+            note_id = int(matches[-1]["id"])
+            check_code, checked = await asyncio.to_thread(amo_client.request,
+                "/api/v4/leads/%s/notes/%s" % (lead_id, note_id))
+            if check_code != 200 or (checked or {}).get("params", {}).get("text") != row["text"]:
+                raise RuntimeError("CRM note readback failed")
             doc = store.load_doc(chat_id)
             state = doc.setdefault("crm", {})
             state["note_pending"] = [r for r in state.get("note_pending", []) if r["id"] != row["id"]]
@@ -1633,12 +1652,28 @@ async def _tick_one(chat_id: str) -> None:
     state = doc.get("crm") or {}
     queued = state.get("handoff_pending") or {}
     alert = state.get("alert") or {}
-    if queued and alert.get("picked"):
-        state.pop("handoff_pending", None)
+    if queued and now_msk().timestamp() >= queued.get("retry_at", 0):
+        queued["retry_at"] = now_msk().timestamp() + 120
+        state["handoff_pending"] = queued
         doc["crm"] = state
         store.save_doc(chat_id, doc)
-    elif queued and now_msk().timestamp() >= queued.get("retry_at", 0):
-        await capture(chat_id, list(doc.get("messages") or []), queued["reason"])
+        if alert.get("picked"):
+            snap = snapshot(chat_id, list(doc.get("messages") or []), queued["reason"])
+            try:
+                snap = await asyncio.to_thread(ensure_lead, snap, doc)
+                if (doc.get("crm") or {}).get("lead_id") and snap.get("lead_id"):
+                    # Re-read after network calls, preserving newly arrived history.
+                    current = store.load_doc(chat_id)
+                    current.setdefault("crm", {}).update({k: v for k, v in doc["crm"].items()
+                                                          if k not in {"alert", "handoff_pending", "note_pending"}})
+                    current["crm"].pop("handoff_pending", None)
+                    current["crm"].setdefault("alert", {}).setdefault("snap", {}).update(
+                        lead_id=snap["lead_id"], lead_url=snap.get("lead_url", ""))
+                    store.save_doc(chat_id, current)
+            except Exception:
+                log.warning("чат %s: CRM передача ожидает повторной записи", chat_id)
+        else:
+            await capture(chat_id, list(doc.get("messages") or []), queued["reason"])
         doc = store.load_doc(chat_id)
     alert = dict((doc.get("crm") or {}).get("alert") or {})
     phone = str((alert.get("snap") or {}).get("phone") or "")

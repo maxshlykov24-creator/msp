@@ -251,7 +251,12 @@ async def prime_cursor(api: Autoru) -> None:
 
 async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) -> None:
     doc = store.load_doc(chat_key)
+    last = room.get("last_message") or {}
+    customer_id = str(last.get("author") or "") if not is_out(last, str(room.get("me") or "")) else ""
     if (doc.get("autoru") or {}).get("title"):
+        if customer_id and customer_id != str(room.get("me") or ""):
+            doc["autoru"]["customer_id"] = customer_id
+            store.save_doc(chat_key, doc)
         return
     listing = listing_from_room(room, catalog)
     title = listing.get("title") or ""
@@ -259,6 +264,7 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
     url = listing.get("url") or ""
     doc["autoru"] = {
         "chat_id": raw_id(chat_key),
+        "customer_id": customer_id,
         "title": title,
         "price": price,
         "url": url,
@@ -277,12 +283,25 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
 async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict) -> None:
     state = load_state()
     cursor: dict = dict(state.get("cursor") or {})
+    health = state.get("health") or {}
+    if time.time() < health.get("retry_at", 0):
+        return
     try:
         own = await api.own_offers()
         rooms = await api.rooms()
     except AutoruError as exc:
         log.warning("авто.ру чаты: %s", exc)
+        now = time.time()
+        health.update(retry_at=now + 60, failed_since=health.get("failed_since") or now)
+        if now - health.get("notified_at", 0) >= 3600:
+            await channel.notify_owner("Авто.ру: входящие не читаются. Требуется проверка доступа к кабинету; новые чаты могут оставаться без ответа.")
+            health["notified_at"] = now
+        state["health"] = health
+        save_state(state)
         return
+    if health:
+        state.pop("health", None)
+        save_state(state)
     changed = False
     for room in rooms:
         cid = str(room.get("id") or "")

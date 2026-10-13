@@ -346,6 +346,8 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if store.hard_paused(chat_id):
         store.save_history(chat_id, history)
         return
+    if store.silence_handled(store.load_doc(chat_id), history):
+        return
     reason = silent_reason(user_text, history)
     if reason:
         await _handoff(channel, chat_id, history, reason)
@@ -437,6 +439,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     )
     if silence and not clean_text:
         store.save_history(chat_id, history)
+        store.mark_silence(chat_id, history)
         _refresh_nudge(chat_id, history)
         log.info("чат %s: модель решила молчать", chat_id)
         return
@@ -617,10 +620,11 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             log.info("чат %s: цену обсуждаем здесь, номер не прошу", chat_id)
         bubbles = trimmed
     elif nudge.wants_write_here(user_text) or nudge.history_wants_write_here(history):
-        rewritten = [human.phone_to_messenger(b) for b in bubbles]
-        if rewritten != bubbles:
-            log.info("чат %s: вместо звонка прошу Телеграм или Ватсап", chat_id)
-            bubbles = rewritten
+        rewritten = [nudge.drop_phone_ask(b) for b in bubbles]
+        bubbles = [b for b in rewritten if b.strip()]
+        if not bubbles:
+            await _handoff(channel, chat_id, history, "handoff")
+            return
     doc_now = store.load_doc(chat_id)
     payment_answer = avito_match.cash_only_answer(doc_now, user_text)
     if payment_answer:
@@ -1020,9 +1024,27 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     doc = store.load_doc(chat_id) if chat_id else {}
     last = history[-1].get("content", "") if history else ""
     prior = history[:-1]
+    if nudge.document_question(last):
+        return prompt.HANDOFF_MARK
     payment_answer = avito_match.cash_only_answer(doc, last)
     if payment_answer:
         return payment_answer
+    vat = avito_match.vat_from_doc(doc)
+    if (vat and nudge.asked_vat([{"role": "user", "content": last}])
+            and not nudge.wants_without_vat(last) and len(last) <= 150
+            and re.search(r"цен|стоим|сколько", last, re.I)
+            and not re.search(r"торг|скид|обмен|кредит|рассроч", last, re.I)):
+        cash = avito_match.listing_price(doc)
+        if cash and re.search(r"указан|эта цена|это цена|включ|входит", last, re.I):
+            if avito_match.digits(cash) != avito_match.digits(vat):
+                return f"Нет, в объявлении цена за наличный расчёт — {cash}. С НДС по расчётному счёту — {vat}"
+        return f"Цена с НДС по расчётному счёту — {vat}"
+    if nudge.asked_report(history):
+        link = avito_match.report_link(doc)
+        if link and not nudge.asked_damage(history):
+            return link
+        if not link and nudge.wants_write_here(last):
+            return prompt.HANDOFF_MARK
     # Отказ после предложения связи по уточнению: менеджер отвечает здесь.
     waiting = any(m.get("role") == "assistant" and
                   ("уточню этот момент" in m.get("content", "").lower() or
@@ -1117,6 +1139,8 @@ def waiting_for_bot(chat_id: str) -> bool:
     if alert.get("picked") in {"button", "chat", "call", "stage"}:
         return False
     hist = list(doc.get("messages") or [])
+    if store.silence_handled(doc, hist):
+        return False
     if not hist or hist[-1].get("role") != "user":
         return False
     last = str(hist[-1].get("content") or "")

@@ -567,6 +567,70 @@ def iter_unsorted(max_pages: int = 5) -> list[dict]:
     return out
 
 
+_UNSORTED_SNAPSHOT: tuple[float, list[dict]] = (0, [])
+
+
+def all_unsorted() -> list[dict]:
+    """Complete, short-lived snapshot; never cache a partial CRM response."""
+    global _UNSORTED_SNAPSHOT
+    at, cached = _UNSORTED_SNAPSHOT
+    if time.time() - at < 120:
+        return cached
+    out = []
+    seen = set()
+    for page in range(1, 101):
+        code, data = request("/api/v4/leads/unsorted", {
+            "limit": "250", "page": str(page),
+            "filter[pipeline_id]": str(PIPELINE_TECH),
+        })
+        if code >= 400:
+            raise AmoError(code, "incomplete unsorted snapshot")
+        rows = items(data or {}, "unsorted")
+        for row in rows:
+            uid = str(row.get("uid") or "")
+            if not uid or uid in seen:
+                raise AmoError(0, "duplicate or missing unsorted identity")
+            seen.add(uid)
+            out.append(row)
+        if not (data or {}).get("_links", {}).get("next"):
+            _UNSORTED_SNAPSHOT = (time.time(), out)
+            return out
+        if not rows:
+            break
+    raise AmoError(0, "unsorted pagination incomplete")
+
+
+def autoru_bound_lead(room_id: str, customer_id: str = "", url: str = "") -> int | None:
+    identities = {x for x in (room_id, customer_id) if x}
+    rows = all_unsorted()
+    found = {autoru_unsorted_lead(rows, identity) for identity in identities}
+    found.discard(None)
+    if len(found) == 1:
+        return next(iter(found))
+    if len(found) > 1:
+        return None
+    # Accepted/merged deals no longer appear in Unsorted. Resolve only an
+    # exact provider identity AND exact listing, never a similar car/name.
+    item_id = listing_item_id(url)
+    if not item_id:
+        return None
+    candidates = set()
+    for identity in identities:
+        code, data = request("/api/v4/contacts", {"query": identity, "with": "leads", "limit": "250"})
+        if code >= 400:
+            raise AmoError(code, "contact identity lookup failed")
+        if (data or {}).get("_links", {}).get("next"):
+            continue
+        for contact in items(data or {}, "contacts"):
+            if str(contact.get("name") or "").strip() != identity:
+                continue
+            for ref in (contact.get("_embedded") or {}).get("leads") or []:
+                lead = get_lead(int(ref["id"]))
+                if lead and listing_item_id(lead_listing_url(lead)) == item_id:
+                    candidates.add(int(lead["id"]))
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def unsorted_meta(row: dict) -> dict:
     md = row.get("metadata") or {}
     client = md.get("client") or {}
@@ -898,6 +962,7 @@ def find_widget_lead(
     channel: str = "",
     url: str = "",
     chat_id: str = "",
+    customer_id: str = "",
 ) -> dict | None:
     """Сделка виджета Авито / Авто.ру в воронке «Техническое».
 
@@ -908,14 +973,13 @@ def find_widget_lead(
     """
     if channel not in {"Авито", "Авто.ру"}:
         return None
-    rows = iter_unsorted(6)
+    rows = all_unsorted()
     if channel == "Авто.ру":
         room = str(chat_id or "")
         if room.startswith("ar:"):
             room = room[3:]
-        lid = autoru_unsorted_lead(rows, room)
-        if lid:
-            return _lead_as_widget(lid, rows)
+        lid = autoru_bound_lead(room, customer_id, url)
+        return _lead_as_widget(lid, rows) if lid else None
     want_item = listing_item_id(url)
     now = time.time()
     shortlist: list[tuple[int, int, int, dict]] = []

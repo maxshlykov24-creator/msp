@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,7 +48,7 @@ def save_doc(chat_id: int | str, doc: dict) -> None:
         "messages": messages,
         "nudge": doc.get("nudge") or {},
     }
-    for key in ("avito", "autoru", "crm"):
+    for key in ("avito", "autoru", "crm", "processing"):
         extra = doc.get(key)
         if extra:
             payload[key] = extra
@@ -172,3 +173,23 @@ def log_line(chat_id: int | str, who: str, text: str) -> None:
     flat = text.replace("\n", " ⏎ ")
     with (log_dir / ("%s.log" % day)).open("a", encoding="utf-8") as fh:
         fh.write("%s\t%s\t%s\t%s\n" % (_now(), chat_id, who, flat))
+
+
+def history_key(messages: list[dict]) -> str:
+    payload = json.dumps(messages[-settings.history_turns:], ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def silence_handled(doc: dict, messages: list[dict] | None = None) -> bool:
+    return (doc.get("processing") or {}).get("silence_key") == history_key(
+        messages if messages is not None else list(doc.get("messages") or [])
+    )
+
+
+def mark_silence(chat_id: str | int, messages: list[dict]) -> None:
+    doc = load_doc(chat_id)
+    # An incoming message may have arrived while the model was running.
+    if history_key(list(doc.get("messages") or [])) != history_key(messages):
+        return
+    doc.setdefault("processing", {})["silence_key"] = history_key(messages)
+    save_doc(chat_id, doc)
