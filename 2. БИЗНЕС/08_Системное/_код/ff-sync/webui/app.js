@@ -1078,7 +1078,7 @@ async function loadLots() {
       <td class="pick"><input type="checkbox" data-lot="${r.id}"></td>
       <td class="client">${esc(r.client)}</td>
       <td class="codes"><b>${esc(r.article)}</b><span>ШК ${esc(r.barcode)}</span><span>GTIN ${esc(r.gtin)}</span></td>
-      <td class="name">${esc(r.name)}${r.source_document ? `<span class="muted">${esc(r.source_document)}${r.kind === "assembly" ? " · сборка" : " · хранение"}</span>` : ""}</td>
+      <td class="name">${esc(r.name)}${r.source_document ? `<br><span class="muted">${esc(r.source_document)}${r.kind === "assembly" ? " · сборка" : " · хранение"}</span>` : ""}</td>
       <td class="num" title="${r.dims ? esc(r.dims) + " см" : ""}">${num(r.liters || null, 3)}</td><td class="num">${r.pick_rate_known ? num(r.pick_rate) : "—"}</td>
       <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.shipped, 0)}</td><td class="num">${num(r.pick_qty, 0)}</td>
       <td class="num">${num(r.qty, 0)}</td>
