@@ -1558,7 +1558,6 @@ async function loadAsm() {
   const hasTrack = res.rows.some((r) => r.track);
   ASM_COLS = hasTrack ? 12 : 11;
   $("aTbl").classList.toggle("no-track", !hasTrack);
-  $("aArchiveNote").hidden = state.asmGroup !== "archived";
   renderSyncHealth(res.sync || []);
   state.asmSupplies = res.supplies || [];
   state.pickedAsm.clear();
