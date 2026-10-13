@@ -37,7 +37,7 @@ def test_same_user_new_phone_updates_row(db_session):
 
 
 def test_bind_attaches_future_booking(db_session):
-    starts = datetime(2026, 9, 1, 12, 0)
+    starts = max_bind.clock.now() + timedelta(days=1)
     b = Booking(
         id="KERIS-9901", owner_name="Ольга", owner_phone="+79991112233", pet_name="Моня",
         pet_type=PetType.dog, pet_size="XS", service_id="dog_hygiene",
@@ -127,7 +127,7 @@ def test_max_bind_thanks_only_max_not_telegram(monkeypatch, db_session):
     from app.telegram_bind import bind_client as bind_tg
 
     bind_tg(db_session, "+79990000088", 111)
-    starts = datetime(2026, 9, 1, 12, 0)
+    starts = max_bind.clock.now() + timedelta(days=1)
     b = Booking(
         id="KERIS-9905", owner_name="Ольга", owner_phone="+79990000088", pet_name="Моня",
         pet_type=PetType.dog, pet_size="XS", service_id="dog_hygiene",

@@ -66,6 +66,7 @@ class Service(Base):
     yclients_service_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # legacy, не используется
     # {"XS": yc_id, "S": yc_id, ...} — своя услуга YCLIENTS на каждый размер (точная цена, без диапазона).
     yclients_service_ids: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    master_overrides: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
 
 class Addon(Base):
@@ -85,6 +86,7 @@ class Addon(Base):
     yclients_service_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # legacy, не используется
     # Допы с ценой по размеру (окрашивание) — {"XS": yc_id, ...}; допы с фикс. ценой — {"flat": yc_id}.
     yclients_service_ids: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    master_overrides: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
 
 class Master(Base):
@@ -393,6 +395,15 @@ class PetProfile(Base):
     weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     weight_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FinanceSnapshot(Base):
+    """Полная последняя сверка финансов YCLIENTS; без телефонов и имён."""
+    __tablename__ = "finance_snapshots"
+    company_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(String(200), default="")
 
 
 class SyncLogDirection(str, enum.Enum):

@@ -33,7 +33,7 @@ def test_resolve_explicit_chat_also_saves_directory(db_session):
 
 
 def test_bind_attaches_future_booking_without_chat_id(db_session):
-    starts = datetime(2026, 9, 1, 12, 0)
+    starts = telegram_bind.clock.now() + timedelta(days=1)
     b = Booking(
         id="KERIS-8801", owner_name="Ольга", owner_phone="+79991112233", pet_name="Моня",
         pet_type=PetType.dog, pet_size="XS", service_id="dog_hygiene",
@@ -71,7 +71,7 @@ def test_bind_skips_past_and_done_bookings(db_session):
 
 
 def test_bind_sends_thanks_for_active_bookings(monkeypatch, db_session):
-    starts = datetime(2026, 9, 1, 12, 0)
+    starts = telegram_bind.clock.now() + timedelta(days=1)
     b = Booking(
         id="KERIS-8806", owner_name="Ольга", owner_phone="+79991112255", pet_name="Моня",
         pet_type=PetType.dog, pet_size="XS", service_id="dog_hygiene",

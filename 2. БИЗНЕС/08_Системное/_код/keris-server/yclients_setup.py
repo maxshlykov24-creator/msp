@@ -229,6 +229,9 @@ def cleanup_old_catalog(db) -> None:
 
 
 def sync_catalog(db) -> None:
+    from app.seed import yclients_catalog_enabled
+    if yclients_catalog_enabled():
+        raise RuntimeError("Каталог ведётся в YCLIENTS: выгрузка локального прайса запрещена")
     print("--- Каталог YCLIENTS: услуги по размерным категориям + допы ---")
     cats = ensure_categories()
     yc_by_id = {int(s["id"]): s for s in yclients_client.get_services() if s.get("id")}

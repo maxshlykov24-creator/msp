@@ -62,6 +62,41 @@ def test_incomplete_sheet_is_not_applied(db_session):
     assert "error" in refresh_price_sheet(db_session, text=text, sync_yclients=False)
 
 
+def test_yclients_catalog_uses_each_master_price_and_duration(db_session, monkeypatch):
+    from app.models import Service
+    from app.seed import refresh_yclients_catalog, apply_seed
+    service = db_session.get(Service, "dog_complex_cut")
+    service.yclients_service_ids = {"XS": 1}
+    db_session.get(Master, "svetlana").yclients_staff_id = 10
+    db_session.get(Master, "alla").yclients_staff_id = 11
+    db_session.commit()
+    source = [{"id": 1, "active": 1, "price_min": 7800, "duration": 5400,
+               "staff": [{"id": 10, "price": 8500, "seance_length": 7200},
+                         {"id": 11, "price": None, "seance_length": 9000}]}]
+    result = refresh_yclients_catalog(db_session, raw=source)
+    assert result["error"] is None
+    assert compute_price_and_duration(service, [], "XS", master_id="svetlana") == (8500, 120)
+    assert compute_price_and_duration(service, [], "XS", master_id="alla") == (7800, 150)
+    assert compute_price_and_duration(service, [], "XS") == (7800, 90)
+    monkeypatch.setenv("KERIS_PRICE_SOURCE", "yclients")
+    apply_seed(db_session)
+    assert compute_price_and_duration(service, [], "XS", master_id="svetlana") == (8500, 120)
+    with pytest.raises(BookingError):
+        compute_price_and_duration(service, [], "XS", master_id="unknown")
+
+
+def test_incomplete_yclients_catalog_keeps_last_good_values(db_session):
+    from app.models import Service
+    from app.seed import refresh_yclients_catalog
+    service = db_session.get(Service, "dog_complex_cut")
+    service.yclients_service_ids = {"XS": 1, "S": 2}
+    db_session.commit()
+    result = refresh_yclients_catalog(db_session, raw=[{"id": 1, "active": 1,
+        "price_min": 9999, "duration": 7200, "staff": []}])
+    assert result["error"]
+    assert compute_price_and_duration(service, [], "XS") == (7800, 90)
+
+
 def test_price_and_duration_base_service(db_session):
     service, addons = service_and_addons(db_session, "dog_complex_cut", [])
     price, duration = compute_price_and_duration(service, addons, "M")

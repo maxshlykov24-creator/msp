@@ -37,6 +37,7 @@ from .booking_logic import (
     booking_horizon_days,
     check_horizon,
     compute_price_and_duration,
+    catalog_value,
     has_overlap,
     next_booking_id,
     normalize_phone,
@@ -92,7 +93,7 @@ def on_startup() -> None:
     log.info("Keris Server запущен. Время салона: %s. YCLIENTS настроен: %s. amoCRM настроен: %s",
               clock.now().strftime("%d.%m %H:%M"), settings.yclients_ready, settings.amocrm_ready)
     asyncio.create_task(board_loop())
-    asyncio.create_task(price_sheet_loop())
+    asyncio.create_task(catalog_loop())
     if settings.reminders_enabled or settings.amocrm_ready or settings.yclients_ready:
         asyncio.create_task(reminders_loop())
 
@@ -102,6 +103,7 @@ def _warm_board() -> None:
     from .db import SessionLocal
     db = SessionLocal()
     try:
+        day_board.refresh_finance(db)
         day_board.refresh_board(db)
         day_board.drop_lists()
         for when in ("today", "yesterday"):
@@ -111,19 +113,19 @@ def _warm_board() -> None:
         db.close()
 
 
-async def price_sheet_loop() -> None:
-    """Последняя корректная копия в БД доступна и при сбое Google."""
-    from .seed import refresh_price_sheet, price_sheet_enabled
+async def catalog_loop() -> None:
+    """YCLIENTS → последняя корректная копия в БД, раз в минуту."""
+    from .seed import refresh_yclients_catalog, yclients_catalog_enabled
     from .db import SessionLocal
     while True:
-        if price_sheet_enabled():
+        if yclients_catalog_enabled():
             try:
                 def refresh():
                     with SessionLocal() as db:
-                        return refresh_price_sheet(db)
+                        return refresh_yclients_catalog(db)
                 await asyncio.to_thread(refresh)
             except Exception:
-                log.warning("синхронизация Google-прайса не удалась", exc_info=True)
+                log.warning("синхронизация каталога YCLIENTS не удалась", exc_info=True)
         await asyncio.sleep(60)
 
 
@@ -210,13 +212,13 @@ async def reminders_loop() -> None:
 
 @app.get("/health")
 def health() -> dict:
-    from .seed import price_sheet_status
+    from .seed import catalog_status
     return {
         "ok": True,
         "yclients_ready": settings.yclients_ready,
         "amocrm_ready": settings.amocrm_ready,
         "targetsms_ready": settings.targetsms_ready,
-        "price_sheet": price_sheet_status,
+        "catalog": catalog_status,
     }
 
 
@@ -263,21 +265,26 @@ def list_rules(db: Session = Depends(get_db)) -> dict:
 
 @app.get("/api/services")
 def list_services(pet_type: PetType, db: Session = Depends(get_db)) -> list[dict]:
+    from .seed import refresh_yclients_catalog
+    refresh_yclients_catalog(db)
     rows = db.execute(select(Service).where(Service.pet_type == pet_type, Service.active.is_(True))).scalars().all()
     return [
         {"id": r.id, "name": r.name, "prices": r.prices, "durations": r.durations,
          "duration": r.duration_min, "group": r.group, "desc": r.description,
-         "includes": r.includes, "visits": visits_cost(r.id)}
+         "includes": r.includes, "visits": visits_cost(r.id), "master_overrides": r.master_overrides}
         for r in rows
     ]
 
 
 @app.get("/api/addons")
 def list_addons(pet_type: PetType, db: Session = Depends(get_db)) -> list[dict]:
+    from .seed import refresh_yclients_catalog
+    refresh_yclients_catalog(db)
     rows = db.execute(select(Addon).where(Addon.pet_type == pet_type, Addon.active.is_(True))).scalars().all()
     return [
         {"id": r.id, "name": r.name, "price": r.price, "prices": r.prices,
          "price_from": r.price_from, "duration": r.duration_min, "durations": r.durations,
+         "master_overrides": r.master_overrides,
          "group": r.group}
         for r in rows
     ]
@@ -712,8 +719,11 @@ def get_slots(
     addon_ids: str = "",
     master_id: Optional[str] = None,
     size: str = "",
+    duration_min: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
+    from .seed import refresh_yclients_catalog
+    refresh_yclients_catalog(db)
     try:
         day = date.fromisoformat(date_iso)
     except ValueError:
@@ -732,12 +742,24 @@ def get_slots(
         m.id for m in db.execute(select(Master).where(Master.active.is_(True))).scalars().all()
     ]
     result = {}
+    quotes = {}
     for mid in master_ids:
         master = db.get(Master, mid)
         if master is None or not master.active:
             continue
-        result[mid] = slots_for_master(db, master, day, duration)
-    return {"duration": duration, "masters": result}
+        try:
+            price, master_duration = compute_price_and_duration(service, addons, size or next(iter(service.prices)), master_id=mid)
+            if duration_min is not None:
+                if not 1 <= duration_min <= 1440:
+                    raise HTTPException(422, "Некорректная длительность визита")
+                master_duration = duration_min
+            result[mid] = slots_for_master(db, master, day, master_duration)
+            quotes[mid] = {"price": price, "duration": master_duration,
+                           "service_price": catalog_value(service, size or next(iter(service.prices)), mid, "price"),
+                           "addon_prices": {a.id: catalog_value(a, size or next(iter(service.prices)), mid, "price") for a in addons}}
+        except BookingError:
+            result[mid] = []
+    return {"duration": quotes.get(master_id, {}).get("duration", duration), "masters": result, "quotes": quotes}
 
 
 @app.get("/api/slots/range")
@@ -748,8 +770,11 @@ def get_slots_range(
     addon_ids: str = "",
     master_id: Optional[str] = None,
     size: str = "",
+    duration_min: Optional[int] = None,
     db: Session = Depends(get_db),
 ) -> dict:
+    from .seed import refresh_yclients_catalog
+    refresh_yclients_catalog(db)
     """Слоты на весь горизонт графика одним ответом — лента дат в записи."""
     try:
         start = date.fromisoformat(date_from)
@@ -778,6 +803,19 @@ def get_slots_range(
         m.id for m in db.execute(select(Master).where(Master.active.is_(True))).scalars().all()
     ]
     days: dict[str, dict] = {}
+    quotes = {}
+    for mid in master_ids:
+        try:
+            price, master_duration = compute_price_and_duration(service, addons, size or next(iter(service.prices)), master_id=mid)
+            if duration_min is not None:
+                if not 1 <= duration_min <= 1440:
+                    raise HTTPException(422, "Некорректная длительность визита")
+                master_duration = duration_min
+            quotes[mid] = {"price": price, "duration": master_duration,
+                           "service_price": catalog_value(service, size or next(iter(service.prices)), mid, "price"),
+                           "addon_prices": {a.id: catalog_value(a, size or next(iter(service.prices)), mid, "price") for a in addons}}
+        except BookingError:
+            pass
     cursor = start
     while cursor <= end:
         day_slots = {}
@@ -785,13 +823,15 @@ def get_slots_range(
             master = db.get(Master, mid)
             if master is None or not master.active:
                 continue
-            day_slots[mid] = slots_for_master(db, master, cursor, duration)
+            day_slots[mid] = slots_for_master(db, master, cursor, quotes[mid]["duration"]) if mid in quotes else []
         days[cursor.isoformat()] = day_slots
         cursor += timedelta(days=1)
-    return {"duration": duration, "masters_by_date": days}
+    return {"duration": quotes.get(master_id, {}).get("duration", duration), "masters_by_date": days, "quotes": quotes}
 
 
 class BookingIn(BaseModel):
+    quoted_price: Optional[int] = None
+    quoted_duration: Optional[int] = None
     owner_name: str
     owner_phone: str
     pet_name: str = ""
@@ -816,6 +856,8 @@ class BookingIn(BaseModel):
 
 @app.post("/api/bookings")
 def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
+    from .seed import refresh_yclients_catalog
+    refresh_yclients_catalog(db, force=True)
     if not payload.personal_data_consent:
         raise HTTPException(422, "Требуется согласие на обработку персональных данных")
     pet_name = (payload.pet_name or "").strip()
@@ -843,10 +885,11 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
         free_addon_ids, applied_promos = resolve_free_addons(db, owner_phone, service, subscription)
         # В журнал и YCLIENTS идут только допы, которые клиент отметил сам.
         # Подарки остаются в free_addon_ids для уведомлений, без отдельных строк в записи.
-        price, duration = compute_price_and_duration(service, addons, payload.pet_size, free_addon_ids)
+        price, duration = compute_price_and_duration(service, addons, payload.pet_size, free_addon_ids,
+                                                    master_id=payload.master_id)
         if subscription is not None:
             # услуга покрыта визитами абонемента: к оплате только доплата и платные допы
-            price = price - int(service.prices[payload.pet_size]) + top_up
+            price = price - catalog_value(service, payload.pet_size, payload.master_id, "price") + top_up
     except BookingError as e:
         raise HTTPException(422, e.message)
 
@@ -855,8 +898,16 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
         day = date.fromisoformat(payload.date_iso)
         free_master = None
         for m in db.execute(select(Master).where(Master.active.is_(True))).scalars().all():
-            if payload.time_hhmm in slots_for_master(db, m, day, duration):
+            try:
+                candidate_price, candidate_duration = compute_price_and_duration(
+                    service, addons, payload.pet_size, free_addon_ids, master_id=m.id)
+            except BookingError:
+                continue
+            if payload.time_hhmm in slots_for_master(db, m, day, candidate_duration):
                 free_master = m
+                price, duration = candidate_price, candidate_duration
+                if subscription is not None:
+                    price = price - catalog_value(service, payload.pet_size, m.id, "price") + top_up
                 break
         if free_master is None:
             raise HTTPException(409, "На это время свободных мастеров не осталось")
@@ -865,6 +916,13 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
     chosen = db.get(Master, master_id)
     if chosen is None or not chosen.active:
         raise HTTPException(422, "Этот мастер сейчас не принимает онлайн-запись")
+
+    if payload.quoted_price is not None and subscription is None and payload.quoted_price != price:
+        raise HTTPException(409, "Цена услуги изменилась в YCLIENTS. Обновите страницу и проверьте запись.")
+    if payload.quoted_duration is not None and payload.quoted_duration != duration:
+        raise HTTPException(409, "Длительность услуги изменилась в YCLIENTS. Обновите страницу и выберите время заново.")
+    if payload.time_hhmm not in slots_for_master(db, chosen, date.fromisoformat(payload.date_iso), duration):
+        raise HTTPException(409, "Выбранное время уже недоступно для этой длительности услуги")
 
     starts_at = datetime.combine(date.fromisoformat(payload.date_iso), datetime.min.time()) + timedelta(
         hours=int(payload.time_hhmm.split(":")[0]), minutes=int(payload.time_hhmm.split(":")[1])

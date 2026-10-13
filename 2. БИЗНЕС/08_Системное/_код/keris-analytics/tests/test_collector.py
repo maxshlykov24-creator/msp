@@ -39,6 +39,27 @@ def test_skips_test_leads():
     assert not is_test_lead({"name": "Заявка от (Елена "})
 
 
+def test_finance_uses_payment_days_and_does_not_mix_goods_into_service_check():
+    from app.collector import _apply_finance, _daily_grooming_finance
+    start, end = datetime(2026, 10, 10), datetime(2026, 10, 13)
+    finance = {"available": True, "as_of": datetime.now().isoformat(), "days": [
+        {"date": "2026-10-10", "services_kop": 450000, "goods_kop": 75050,
+         "prepayments_kop": 100000, "unresolved_kop": 0, "paid_records": ["b1"],
+         "master_services_kop": {"svetlana": 450000}},
+        {"date": "2026-10-11", "services_kop": 50000, "goods_kop": 0,
+         "prepayments_kop": 0, "unresolved_kop": 0, "paid_records": ["b1"],
+         "master_services_kop": {"svetlana": 50000}},
+    ]}
+    result = _apply_finance({"masters": []}, finance, start, end)
+    assert result["revenue"] == 5750.5
+    assert result["avg_check"] == 5000
+    assert result["paid_visits"] == 1
+    assert result["prepayments"] == 1000
+    days = _daily_grooming_finance([], [], {"svetlana": "Светлана"}, start, end, finance)
+    assert sum(d["revenue"] for d in days) == result["revenue"]
+    assert days[0]["masters"][0]["name"] == "Светлана"
+
+
 def test_cohort_funnel_booked_and_sold():
     now = datetime(2026, 9, 17, 12, 0, tzinfo=timezone(timedelta(hours=3)))
     start = now.replace(hour=0) - timedelta(days=7)

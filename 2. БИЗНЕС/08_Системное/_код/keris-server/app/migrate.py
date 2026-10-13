@@ -16,6 +16,7 @@ log = logging.getLogger("keris.migrate")
 # table -> (column, DDL-тип с DEFAULT)
 COLUMNS: dict[str, list[tuple[str, str]]] = {
     "services": [
+        ("master_overrides", "JSON"),
         ("durations", "JSON"),
         ("group", "VARCHAR(32) DEFAULT 'base'"),
         ("description", "VARCHAR(2000) DEFAULT ''"),
@@ -23,6 +24,7 @@ COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("yclients_service_ids", "JSON"),
     ],
     "addons": [
+        ("master_overrides", "JSON"),
         ("prices", "JSON"),
         ("durations", "JSON"),
         ("group", "VARCHAR(64) DEFAULT ''"),

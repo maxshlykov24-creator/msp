@@ -120,11 +120,25 @@ def service_duration(service: Service, size: str) -> int:
     return int(service.duration_min)
 
 
+def catalog_value(item, size: str, master_id: str | None, field: str) -> int:
+    key = "flat" if isinstance(item, Addon) and not item.prices else size
+    overrides = getattr(item, "master_overrides", None)
+    if master_id and master_id != "any" and overrides is not None:
+        value = overrides.get(master_id, {}).get(key)
+        if value is None:
+            raise BookingError("master_service_unavailable", "Мастер не оказывает выбранную услугу для этой категории")
+        return int(value[field])
+    if field == "price":
+        return addon_price(item, size) if isinstance(item, Addon) else int(item.prices[size])
+    return addon_duration(item, size) if isinstance(item, Addon) else service_duration(item, size)
+
+
 def compute_price_and_duration(
     service: Service,
     addons: list[Addon],
     size: str,
     free_addon_ids: tuple[str, ...] | list[str] = (),
+    master_id: str | None = None,
 ) -> tuple[int, int]:
     """Итог по записи. Бесплатные допы (промо/абонемент) не добавляют к цене.
 
@@ -134,13 +148,13 @@ def compute_price_and_duration(
     """
     if size not in service.prices:
         raise BookingError("size_not_found", f"Размер {size} не найден для услуги {service.id}")
-    price = int(service.prices[size])
-    duration = service_duration(service, size)
+    price = catalog_value(service, size, master_id, "price")
+    duration = catalog_value(service, size, master_id, "duration")
     free = set(free_addon_ids)
     for addon in addons:
         if addon.id not in free:
-            price += addon_price(addon, size)
-        duration += addon_duration(addon, size)
+            price += catalog_value(addon, size, master_id, "price")
+        duration += catalog_value(addon, size, master_id, "duration")
     return price, duration
 
 

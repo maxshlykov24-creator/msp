@@ -265,7 +265,7 @@ window.KERIS_PULSE_MOCK = {
 const STORAGE = "keris-pulse";
 
 function n(v){return Number(v||0).toLocaleString("ru-RU")}
-function rub(v){return n(v)+" ₽"}
+function rub(v){return Number(v||0).toLocaleString("ru-RU",{maximumFractionDigits:2})+" ₽"}
 function plural(num, one, few, many){
   var n10 = num % 10, n100 = num % 100;
   if(n10 === 1 && n100 !== 11) return one;
@@ -425,10 +425,14 @@ function groomingChapter(block, periodLabel){
   var tiles = [
     trustTile(n(block.visits || 0), "пришли"),
     trustTile(n(block.no_show || 0), "не пришли"),
-    trustTile(rub(block.avg_check || 0), "средний чек")
+    trustTile(block.finance_available?rub(block.avg_check || 0):"—", "средняя оплата визита"),
+    trustTile(block.finance_available?rub(block.revenue_services || 0):"—", "услуги, оплачено"),
+    trustTile(block.finance_available?rub(block.revenue_goods || 0):"—", "товары, оплачено"),
+    trustTile(block.finance_available?rub(block.prepayments || 0):"—", "предоплаты будущих визитов")
   ];
-  var heroTag = "выручка визитов · " + periodLabel;
-  var heroNum = rub(block.revenue || 0);
+  var heroTag = "услуги + товары, оплачено · " + periodLabel;
+  var heroNum = block.finance_available?rub(block.revenue || 0):"—";
+  var financeNote=!block.finance_available?"Данные оплат YCLIENTS пока недоступны.":block.finance_stale?"Показан последний доступный срез оплат. Обновление задерживается.":"По дате оплаты, с учётом возвратов. Предоплаты будущих визитов в итог не входят.";
   var masters = block.masters || [];
   var list = masters.length
     ? masterBars(masters, "all")
@@ -438,6 +442,7 @@ function groomingChapter(block, periodLabel){
     '<div class="eyebrow">Груминг</div>' +
     '<div class="pulse-hero"><div class="tag">' + heroTag + '</div>' +
     '<div class="num">' + heroNum + '</div></div>' +
+    '<p class="source-line">' + financeNote + (block.finance_unresolved?" Есть оплаты без сопоставленного визита.":"") + '</p>' +
     '<div class="trust cols-' + Math.min(tiles.length, 3) + '">' + tiles.join("") + '</div>' +
     who + '</section>';
 }
@@ -485,14 +490,24 @@ function buildRange(D, from, to){
   if(!gDays.length && !kDays.length){
     return {label: label, missing: true, kennel: null, grooming: null};
   }
-  var g = {revenue: 0, visits: 0, no_show: 0, avg_check: 0, masters: []};
+  var g = {revenue: 0, revenue_services:0, revenue_goods:0, prepayments:0, visits: 0, no_show: 0, avg_check: 0, masters: []};
+  var paidRecords=new Set();
+  var financeReference=((((D.periods||{}).month||{}).grooming)||{});
+  g.finance_available=!!financeReference.finance_available;
+  g.finance_stale=!!financeReference.finance_stale;
   gDays.forEach(function(day){
     if(day.date < from || day.date > to) return;
     g.visits += day.visits || 0;
     g.revenue += day.revenue || 0;
+    g.revenue_services += day.revenue_services || 0;
+    g.revenue_goods += day.revenue_goods || 0;
+    g.prepayments += day.prepayments || 0;
+    g.finance_unresolved=(g.finance_unresolved||0)+(day.finance_unresolved||0);
+    (day.paid_record_ids||[]).forEach(function(id){paidRecords.add(id)});
     g.no_show += day.no_show || 0;
   });
-  g.avg_check = g.visits ? Math.round(g.revenue / g.visits) : 0;
+  g.paid_visits=paidRecords.size;
+  g.avg_check = g.paid_visits ? Math.round(g.revenue_services / g.paid_visits * 100)/100 : 0;
   g.masters = sumMasters(gDays, from, to);
   var k = {leads: 0, booked: 0, sold: 0, sold_sum: 0, sold_cohort: 0, avg_check: 0, show_avg_check: false, show_waiting: false, show_source: false, funnel: []};
   kDays.forEach(function(day){

@@ -11,6 +11,7 @@ import io
 import os
 import logging
 import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -23,10 +24,16 @@ from .models import Addon, Master, PetType, Service, SubscriptionPlan
 SEED_PATH = Path(__file__).with_name("seed_data.json")
 _price_lock = threading.Lock()
 price_sheet_status: dict = {"enabled": False, "last_success": None, "error": None}
+catalog_status: dict = {"source": "seed", "last_success": None, "error": None}
+_catalog_at = 0.0
+
+
+def yclients_catalog_enabled() -> bool:
+    return os.environ.get("KERIS_PRICE_SOURCE", "") == "yclients"
 
 
 def price_sheet_enabled() -> bool:
-    return bool(os.environ.get("KERIS_PRICE_SHEET_ID"))
+    return not yclients_catalog_enabled() and bool(os.environ.get("KERIS_PRICE_SHEET_ID"))
 
 
 def load_seed() -> dict:
@@ -36,13 +43,14 @@ def load_seed() -> dict:
 
 def apply_seed(db: Session) -> None:
     data = load_seed()
-    managed = price_sheet_enabled()
+    managed = price_sheet_enabled() or yclients_catalog_enabled()
     seen_services: set[str] = set()
     seen_addons: set[str] = set()
 
     for pet_type in ("dog", "cat"):
         for svc in data[pet_type]["services"]:
             row = db.get(Service, svc["id"])
+            existing = row is not None
             if row is None:
                 row = Service(id=svc["id"], pet_type=PetType(pet_type))
                 db.add(row)
@@ -54,11 +62,13 @@ def apply_seed(db: Session) -> None:
             row.group = svc.get("group", "base")
             row.description = svc.get("desc", "")
             row.includes = svc.get("includes", "")
-            row.active = True
+            if not managed or not existing:
+                row.active = True
             seen_services.add(svc["id"])
 
         for ad in data[pet_type]["addons"]:
             row = db.get(Addon, ad["id"])
+            existing = row is not None
             if row is None:
                 row = Addon(id=ad["id"], pet_type=PetType(pet_type))
                 db.add(row)
@@ -70,7 +80,8 @@ def apply_seed(db: Session) -> None:
                 row.duration_min = ad["duration"]
             row.price_from = bool(ad.get("price_from", False))
             row.group = ad.get("group", "")
-            row.active = True
+            if not managed or not existing:
+                row.active = True
             seen_addons.add(ad["id"])
 
     for row in db.execute(select(Service)).scalars().all():
@@ -132,6 +143,81 @@ def _catalog_entries(db: Session) -> dict:
     return result
 
 
+def refresh_yclients_catalog(db: Session, *, force: bool = False, raw: list | None = None) -> dict:
+    """YCLIENTS — единственный автор цен/минут услуг. Только GET, без записи обратно."""
+    global _catalog_at
+    if not yclients_catalog_enabled() and raw is None:
+        return {"skipped": True}
+    if raw is None and not force and time.monotonic() - _catalog_at < 60:
+        return catalog_status
+    from . import yclients_client
+    with _price_lock:
+        if raw is None and not force and time.monotonic() - _catalog_at < 60:
+            return catalog_status
+        try:
+            source = raw if raw is not None else yclients_client.get_services()
+            by_id = {int(s["id"]): s for s in source}
+            if not by_id or len(by_id) != len(source):
+                raise ValueError("Пустой или повторный каталог YCLIENTS")
+            staff_ids = {int(m.yclients_staff_id): m.id for m in db.execute(select(Master)).scalars()
+                         if m.yclients_staff_id}
+            prepared = []
+            def price(value):
+                from decimal import Decimal
+                n = Decimal(str(value))
+                if not n.is_finite() or n < 0 or n != n.to_integral_value():
+                    raise ValueError("Некорректная цена YCLIENTS")
+                return int(n)
+            for cls in (Service, Addon):
+                for row in db.execute(select(cls)).scalars():
+                    mapping = row.yclients_service_ids or {}
+                    if not mapping:
+                        continue
+                    prices, durations, overrides = {}, {}, {}
+                    for size, yc_id in mapping.items():
+                        s = by_id.get(int(yc_id))
+                        if s is None:
+                            raise ValueError(f"Нет сопоставленной услуги YCLIENTS: {yc_id}")
+                        if not s.get("active"):
+                            continue
+                        minutes = int(s.get("duration") or 0) / 60
+                        if not 0 < minutes <= 1440 or int(minutes) != minutes:
+                            raise ValueError(f"Некорректное время YCLIENTS: {yc_id}")
+                        prices[size], durations[size] = price(s["price_min"]), int(minutes)
+                        for staff in s.get("staff") or []:
+                            mid = staff_ids.get(int(staff["id"]))
+                            if mid is None:
+                                continue
+                            duration = int(staff.get("seance_length") or s["duration"]) / 60
+                            if not 0 < duration <= 1440 or int(duration) != duration:
+                                raise ValueError("Некорректное время мастера YCLIENTS")
+                            value = staff.get("price")
+                            if isinstance(value, dict):
+                                value = value.get("price_min", value.get("price"))
+                            overrides.setdefault(mid, {})[size] = {
+                                "price": prices[size] if value is None else price(value),
+                                "duration": int(duration),
+                            }
+                    prepared.append((row, prices, durations, overrides))
+            for row, prices, durations, overrides in prepared:
+                row.active = bool(prices)
+                row.master_overrides = overrides
+                if isinstance(row, Addon) and "flat" in prices:
+                    row.price, row.duration_min = prices["flat"], durations["flat"]
+                else:
+                    row.prices, row.durations = prices, durations
+                    if durations:
+                        row.duration_min = next(iter(durations.values()))
+            db.commit()
+            _catalog_at = time.monotonic()
+            catalog_status.update(source="yclients", last_success=clock.now().isoformat(), error=None)
+        except Exception as exc:
+            db.rollback()
+            catalog_status.update(source="yclients", error=type(exc).__name__ + ": " + str(exc)[:150])
+            logging.getLogger("keris.catalog").warning("Каталог YCLIENTS не обновлён: %s", type(exc).__name__)
+        return catalog_status
+
+
 def parse_price_sheet(text: str, expected: set) -> dict:
     """Полная проверка перед изменением БД. Пустой/частичный лист не прайс."""
     header = ["Услуга", "Питомец", "Категория", "Цена, ₽", "Время, мин", "Тип",
@@ -168,6 +254,8 @@ def parse_price_sheet(text: str, expected: set) -> dict:
 
 def refresh_price_sheet(db: Session, *, text: str | None = None, sync_yclients: bool = True) -> dict:
     """Google → каталог БД → каталог YCLIENTS. Таблицу bookings не меняем."""
+    if yclients_catalog_enabled():
+        return {"enabled": False, "reason": "source_yclients"}
     import requests
     from . import yclients_client
     if text is None and not price_sheet_enabled():

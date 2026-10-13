@@ -39,9 +39,20 @@ def _kennel_line(start: datetime, end: datetime) -> str:
 
 
 def _salon_lines(stats: dict) -> list[str]:
+    money = lambda value: f"{float(value or 0):,.2f}".replace(",", " ").rstrip("0").rstrip(".").replace(".", ",")
+    finance = [
+        f"Услуги, оплачено: {money(stats.get('revenue_services'))} ₽",
+        f"Товары, оплачено: {money(stats.get('revenue_goods'))} ₽",
+        f"Выручка итого: {money(stats.get('revenue'))} ₽",
+        f"Предоплаты будущих визитов: {money(stats.get('prepayments'))} ₽",
+    ] if stats.get("finance_available") else ["Оплаты: данные YCLIENTS пока недоступны"]
+    if stats.get("finance_available") and stats.get("finance_stale"):
+        finance.append("Оплаты: последний доступный срез, обновление задерживается")
+    if stats.get("finance_unresolved"):
+        finance.append("Есть оплаты без сопоставленного визита, требуется сверка")
     return [
         f"Визитов: {stats['visits']}",
-        f"Выручка: {stats['revenue']} ₽",
+        *finance,
         f"Отмены: {stats['cancelled']}",
         f"Не пришли: {stats['no_show']}",
     ]

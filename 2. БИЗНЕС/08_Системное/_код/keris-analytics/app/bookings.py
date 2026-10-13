@@ -68,3 +68,19 @@ def fetch_bookings() -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[d
     if closed_days:
         shifts = [s for s in shifts if str(s.get("date_iso") or "") not in closed_days]
     return bookings, masters, shifts
+
+
+def fetch_finance() -> dict:
+    """Готовая каноническая разбивка оплат из keris-server, без своих цен визитов."""
+    import psycopg
+    from psycopg.rows import dict_row
+    if not settings.database_url:
+        return {"available": False, "days": []}
+    with psycopg.connect(_dsn(settings.database_url)) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT data, synced_at, last_error FROM finance_snapshots ORDER BY synced_at DESC NULLS LAST LIMIT 1")
+            row = cur.fetchone()
+    if not row or not row["synced_at"]:
+        return {"available": False, "days": []}
+    return {"available": True, "days": row["data"].get("days", []),
+            "as_of": row["synced_at"].isoformat(), "error": row["last_error"]}

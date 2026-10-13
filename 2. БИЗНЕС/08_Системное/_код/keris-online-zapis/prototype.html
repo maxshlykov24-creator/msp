@@ -1048,10 +1048,13 @@
       if(![dogSvc,catSvc,dogAd,catAd,subs].every(Array.isArray))throw new Error("Каталог недоступен");
       const mergePrices=(list,live)=>{
         if(!Array.isArray(live))return;
+        const allowed=new Set(live.map(row=>row.id));
+        for(let i=list.length-1;i>=0;i--)if(!allowed.has(list[i].id))list.splice(i,1);
         live.forEach(row=>{
           const item=list.find(x=>x.id===row.id);
           if(!item){list.push({...row,icon:"✦"});return}
           item.prices=row.prices;item.duration=row.duration;
+          item.master_overrides=row.master_overrides;
           if(row.durations)item.durations=row.durations;
           if(row.price!=null)item.price=row.price;
           if(row.desc)item.desc=row.desc;
@@ -1144,7 +1147,9 @@
       client_pet_id:state.petId||null,
       service_id:state.service.id,
       addon_ids:state.addons.slice(),
-      master_id:state.master.id,
+      master_id:effectiveMasterId()||state.master.id,
+      quoted_price:total(),
+      quoted_duration:serviceDuration(),
       date_iso:state.date,
       time_hhmm:state.time,
       source:(window.Telegram&&window.Telegram.WebApp&&window.Telegram.WebApp.initData)?"miniapp":"website",
@@ -1387,7 +1392,7 @@
     if(wrap)wrap.classList.toggle("has-query",!!q);
     const inp=$("#serviceSearch");
     if(inp&&document.activeElement!==inp&&inp.value!==state.serviceQuery)inp.value=state.serviceQuery||"";
-    const services=pet.services.filter(s=>serviceMatches(s,q));
+    const services=pet.services.filter(s=>s.prices[state.size]!=null&&serviceMatches(s,q));
     /* Допуслуги («Можно добавить») не зависят от поиска — всегда полный список */
     const addons=pet.addons;
     $("#serviceList").innerHTML=services.length?services.map(s=>`<article class="choice service ${state.service?.id===s.id?"selected":""}" onclick="chooseService('${s.id}')">
@@ -1419,25 +1424,38 @@
   function formatDuration(min){if(min<60)return min+" мин";const h=Math.floor(min/60),m=min%60;return m?h+" ч "+m+" мин":h+" ч"}
   /* Цена и время зависят от размера питомца: у услуг и части допов (окрашивание)
      своя сетка по размеру, у остальных допов — фиксированные значения. */
-  function addonPrice(a){return (a.prices&&a.prices[state.size]!=null)?a.prices[state.size]:a.price}
-  function serviceTime(s){return (s.durations&&s.durations[state.size]!=null)?s.durations[state.size]:(s.duration||90)}
-  function addonTime(a){return (a.durations&&a.durations[state.size]!=null)?a.durations[state.size]:(a.duration||0)}
+  function effectiveMasterId(time=state.time){
+    const id=state.master&&state.master.id;
+    if(id!=="any")return id||"";
+    const live=liveSlotsFor(state.date)||{};
+    return time?(Object.keys(live).find(mid=>Array.isArray(live[mid])&&live[mid].includes(time))||""):"";
+  }
+  function masterValue(item,field){
+    const mid=effectiveMasterId(),key=item.prices?state.size:"flat";
+    return item.master_overrides&&item.master_overrides[mid]&&item.master_overrides[mid][key]?.[field];
+  }
+  function currentQuote(){return liveSlots.key===slotsKey()?liveSlots.quotes[effectiveMasterId()]:null}
+  function addonPrice(a){return currentQuote()?.addon_prices?.[a.id]??masterValue(a,"price")??((a.prices&&a.prices[state.size]!=null)?a.prices[state.size]:a.price)}
+  function serviceTime(s){return masterValue(s,"duration")??((s.durations&&s.durations[state.size]!=null)?s.durations[state.size]:(s.duration||90))}
+  function addonTime(a){return masterValue(a,"duration")??((a.durations&&a.durations[state.size]!=null)?a.durations[state.size]:(a.duration||0))}
   function selectedAddons(){return DATA[state.petType].addons.filter(a=>state.addons.includes(a.id))}
   function freeAddonIds(){return (state.promo&&state.promo.free_addons||[]).map(a=>a.id)}
   function total(){
+    if(state.moveId&&state.movePrice!=null)return state.movePrice;
     if(!state.service)return 0;
     const free=freeAddonIds();
     const adds=selectedAddons().reduce((s,a)=>s+(free.includes(a.id)?0:addonPrice(a)),0);
-    return state.service.prices[state.size]+adds;
+    return (currentQuote()?.service_price??masterValue(state.service,"price")??state.service.prices[state.size])+adds;
   }
   function addonDuration(){return selectedAddons().reduce((s,a)=>s+addonTime(a),0)}
   function baseServiceDuration(){return state.service?serviceTime(state.service):90}
   /* Подарочные допы (промо/абонемент) не удлиняют слот: когти, уши и маска входят
      в процесс комплекса — иначе слот в календаре расходился бы с показанным клиенту. */
-  function serviceDuration(){return baseServiceDuration()+addonDuration()}
+  function serviceDuration(){return state.moveId?(state.moveDuration||baseServiceDuration()+addonDuration()):(currentQuote()?.duration??baseServiceDuration()+addonDuration())}
   function timeToMin(t){const [h,m]=t.split(":").map(Number);return h*60+m}
   function minToTime(min){const h=Math.floor(min/60),m=min%60;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")}
-  function slotEnd(time){return minToTime(timeToMin(time)+serviceDuration())}
+  function durationForSlot(time){return state.moveId?serviceDuration():((liveSlots.key===slotsKey()?liveSlots.quotes[effectiveMasterId(time)]?.duration:null)??serviceDuration())}
+  function slotEnd(time){return minToTime(timeToMin(time)+durationForSlot(time))}
   function slotRange(time){return time+"–"+slotEnd(time)}
   function buttonWhen(){
     if(!state.date||!state.time)return "";
@@ -1445,7 +1463,7 @@
       :new Date(state.date+"T12:00:00").toLocaleDateString("ru-RU",{day:"numeric",month:"short"}).replace(".","");
     return day+" · "+slotRange(state.time);
   }
-  function slotFits(time){return timeToMin(time)+serviceDuration()<=DATA.salonCloseMin}
+  function slotFits(time){return timeToMin(time)+durationForSlot(time)<=DATA.salonCloseMin}
   /* Сегодня в ленте дат есть. Слишком ранние слоты режет minLeadHours (сейчас 2 ч),
      а не целые сутки. Горизонт 60 дней проверяет сервер. */
   function bookingDays(){
@@ -1477,8 +1495,8 @@
   /* ── Свободное время из календаря сервера ─────────────────────────────
      Слоты из календаря сервера. Без ответа API слоты считаются свободными
      по сетке (сервер всё равно проверит при создании записи). */
-  const liveSlots={key:null,rangeKey:null,byDate:{},pending:{}};
-  function slotsKey(){return [state.service&&state.service.id,state.size,state.addons.slice().sort().join("|")].join("~")}
+  const liveSlots={key:null,rangeKey:null,byDate:{},pending:{},quotes:{}};
+  function slotsKey(){return [state.service&&state.service.id,state.size,state.addons.slice().sort().join("|"),state.moveId?(state.moveDuration||""):""].join("~")}
   function liveSlotsFor(iso){return liveSlots.key===slotsKey()?liveSlots.byDate[iso]:null}
   async function loadSlotsRange(){
     if(!state.service||!state.size)return;
@@ -1488,13 +1506,16 @@
     const from=isoOf(days[0]), to=isoOf(days[days.length-1]);
     const rangeKey=key+"~"+from+"~"+to;
     if(liveSlots.rangeKey===rangeKey)return;
-    if(liveSlots.key!==key){liveSlots.key=key;liveSlots.byDate={};liveSlots.pending={}}
+    if(liveSlots.key!==key){liveSlots.key=key;liveSlots.byDate={};liveSlots.pending={};liveSlots.quotes={}}
     liveSlots.rangeKey=rangeKey;
     const qs=new URLSearchParams({date_from:from,date_to:to,service_id:state.service.id,size:state.size,addon_ids:state.addons.join(",")});
+    if(state.moveId&&state.moveDuration)qs.set("duration_min",state.moveDuration);
     try{
       const r=await fetch("/api/slots/range?"+qs.toString());
       if(r.ok){
         const data=await r.json();
+        if(liveSlots.key!==key)return;
+        liveSlots.quotes=data.quotes||{};
         const byDate=data.masters_by_date||{};
         Object.keys(byDate).forEach(iso=>{liveSlots.byDate[iso]=byDate[iso]});
         track("live_slots_loaded",{days:Object.keys(liveSlots.byDate).length});
@@ -1507,12 +1528,14 @@
     todo.forEach(iso=>{liveSlots.pending[iso]=true});
     const results=await Promise.all(todo.map(iso=>{
       const qsDay=new URLSearchParams({date_iso:iso,service_id:state.service.id,size:state.size,addon_ids:state.addons.join(",")});
+      if(state.moveId&&state.moveDuration)qsDay.set("duration_min",state.moveDuration);
       return fetch("/api/slots?"+qsDay.toString()).then(r=>r.ok?r.json():null).then(data=>({iso,data})).catch(()=>({iso,data:null}));
     }));
     let loaded=false;
+    if(liveSlots.key!==key)return;
     results.forEach(({iso,data})=>{
       delete liveSlots.pending[iso];
-      if(data&&data.masters){liveSlots.byDate[iso]=data.masters;loaded=true}
+      if(data&&data.masters){liveSlots.byDate[iso]=data.masters;Object.assign(liveSlots.quotes,data.quotes||{});loaded=true}
     });
     if(loaded){track("live_slots_loaded",{days:Object.keys(liveSlots.byDate).length});if(current==="master")renderMasters()}
   }
@@ -1568,7 +1591,7 @@
       ? "Выберите новое время у того же мастера ("+formatDuration(dur)+"). Другой мастер или услуга — оформите новую запись."
       : focused
         ? "Окна мастера "+state.master.name+". Услуга "+(state.service?state.service.name:"уход")+". Выберите время, чтобы записаться."
-        : "Выберите мастера и удобное время. На слоте видно начало и конец визита ("+formatDuration(dur)+").";
+        : "Выберите мастера и удобное время. Цена и длительность указаны у мастера, на слоте видно начало и конец визита.";
     if(!state.date){
       const first=bookingDays()[0];
       state.date=isoOf(first);
@@ -1586,7 +1609,7 @@
         <div class="master-row">
           <button type="button" class="master-main" onclick="chooseMaster('${m.id}')">
             <span class="master-avatar">${avatar}</span>
-            <span class="copy"><strong>${m.name}</strong><small>${m.caption}</small>${wasHtml}${nearHtml}</span>
+            <span class="copy"><strong>${m.name}</strong><small>${m.caption}</small>${liveSlots.quotes[m.id]?`<small>${formatDuration(liveSlots.quotes[m.id].duration)} · ${money(liveSlots.quotes[m.id].price)}</small>`:""}${wasHtml}${nearHtml}</span>
             <span class="price">${m.rating||""}</span>
             <span class="check">${on?"✓":""}</span>
           </button>
@@ -2654,6 +2677,7 @@
       return;
     }
     state.moveId=t.id;state.movePhone=t.phone||"";
+    state.moveDuration=t.visit?.duration||null;state.movePrice=t.visit?.total??null;
     state.date=null;state.time=null;state.noSlots=false;
     renderMasters();showScreen("master");
     toast("Выберите новое время — прежнее сохранится, пока не подтвердите новое.");

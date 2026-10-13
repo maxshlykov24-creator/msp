@@ -343,7 +343,8 @@ def sync_staff_from_yclients(db: Session) -> dict:
             hidden += 1
 
     linked = {"updated": 0}
-    if need_link:
+    from .seed import yclients_catalog_enabled
+    if need_link and not yclients_catalog_enabled():
         # Нового мастера ещё нет в БД до commit — берём id из этого прохода, не select.
         try:
             linked = yclients_client.ensure_staff_on_services(
@@ -982,6 +983,7 @@ def _update_from_yclients(db: Session, booking: Booking, master: Master,
     db.commit()
 
     from . import day_board
+    day_board.reclassify_finance(db)
     day_board.drop_cache()
 
     if target == BookingStatus.no_show:

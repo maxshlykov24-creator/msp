@@ -267,10 +267,10 @@ def stats_keyboard() -> dict:
 
 def _money(value: Any) -> str:
     try:
-        number = int(value or 0)
+        number = float(value or 0)
     except (TypeError, ValueError):
         number = 0
-    return f"{number:,}".replace(",", " ")
+    return f"{number:,.2f}".replace(",", " ").rstrip("0").rstrip(".").replace(".", ",")
 
 
 def _load_stats() -> dict | None:
@@ -318,10 +318,19 @@ def show_stat(chat_id: int, key: str) -> None:
     lines.append("")
     lines.extend([
         f"🗓 Визитов: {block.get('visits', 0)}",
-        f"💰 Сумма: {_money(block.get('revenue', 0))} ₽",
+        *([
+            f"Услуги, оплачено: {_money(block.get('revenue_services', 0))} ₽",
+            f"Товары, оплачено: {_money(block.get('revenue_goods', 0))} ₽",
+            f"💰 Итого: {_money(block.get('revenue', 0))} ₽",
+            f"Предоплаты будущих визитов: {_money(block.get('prepayments', 0))} ₽",
+        ] if block.get('finance_available') else ["Оплаты: данные YCLIENTS пока недоступны"]),
         f"↩️ Отмены: {block.get('cancelled', 0)}",
         f"🚫 Не пришли: {block.get('no_show', 0)}",
     ])
+    if block.get('finance_available') and block.get('finance_stale'):
+        lines.append("Оплаты: последний доступный срез, обновление задерживается")
+    if block.get('finance_unresolved'):
+        lines.append("Есть оплаты без сопоставленного визита, требуется сверка")
     photo = _photo_line(block)
     if photo:
         lines.append(photo)

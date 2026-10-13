@@ -101,6 +101,43 @@ def test_complex_booking_does_not_attach_unselected_addons(client, sessions):
     assert "dog_ears" not in (booking.free_addon_ids or [])
 
 
+def test_slots_and_new_booking_use_master_override_without_changing_old(client, sessions):
+    from app.models import Service
+    old = make_booking(client, day_offset=5)
+    before = db_booking(sessions, old["booking_id"])
+    old_duration, old_price = before.ends_at-before.starts_at, before.price
+    db = sessions()
+    service = db.get(Service, "dog_complex_cut")
+    service.master_overrides = {before.master_id: {"XS": {"price": 8500, "duration": 120}}}
+    db.commit()
+    db.close()
+    day = (date.today()+timedelta(days=8)).isoformat()
+    slots = client.get("/api/slots", params={"date_iso": day, "service_id": "dog_complex_cut",
+                                             "size": "XS", "master_id": before.master_id}).json()
+    assert slots["quotes"][before.master_id]["duration"] == 120
+    assert slots["quotes"][before.master_id]["price"] == 8500
+    # Найти рабочий день для того же мастера.
+    for offset in range(8, 16):
+        day = (date.today()+timedelta(days=offset)).isoformat()
+        slots = client.get("/api/slots", params={"date_iso": day, "service_id": "dog_complex_cut",
+                                                 "size": "XS", "master_id": before.master_id}).json()
+        if slots["masters"][before.master_id]:
+            break
+    payload = {"owner_name": "Test", "owner_phone": PHONE, "pet_name": "Test", "pet_type": "dog",
+        "pet_size": "XS", "service_id": "dog_complex_cut", "addon_ids": [], "master_id": before.master_id,
+        "date_iso": day, "time_hhmm": slots["masters"][before.master_id][0], "personal_data_consent": True,
+        "quoted_price": 7800, "quoted_duration": 90}
+    assert client.post("/api/bookings", json=payload).status_code == 409
+    payload.update(quoted_price=8500, quoted_duration=120)
+    created = client.post("/api/bookings", json=payload)
+    assert created.status_code == 200, created.text
+    new = db_booking(sessions, created.json()["booking_id"])
+    assert new.price == 8500
+    assert new.ends_at-new.starts_at == timedelta(minutes=120)
+    original = db_booking(sessions, old["booking_id"])
+    assert (original.ends_at-original.starts_at, original.price) == (old_duration, old_price)
+
+
 def test_reschedule_moves_the_same_booking(client, sessions):
     booking = make_booking(client, day_offset=5)
     old_starts = datetime.fromisoformat(booking["starts_at"])

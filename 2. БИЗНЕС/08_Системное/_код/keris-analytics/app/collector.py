@@ -15,7 +15,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.amocrm import AmoClient
-from app.bookings import fetch_bookings, is_visit
+from app.bookings import fetch_bookings, fetch_finance, is_visit
 from app.config import TEST_NAME_MARKERS, settings
 
 log = logging.getLogger("collector")
@@ -419,6 +419,34 @@ def _grooming_period(
     }
 
 
+def _apply_finance(block: dict, finance: dict, start: datetime, end: datetime) -> dict:
+    """Оплаты и средний чек по оплаченным визитам; товары не повышают чек услуги."""
+    services = goods = advances = unresolved = 0
+    paid, masters = set(), {}
+    for day in finance.get("days", []):
+        if not start.date().isoformat() <= day["date"] < (end.date()+timedelta(days=1 if end.time()!=datetime.min.time() else 0)).isoformat():
+            continue
+        services += day["services_kop"]
+        goods += day["goods_kop"]
+        advances += day["prepayments_kop"]
+        unresolved += day.get("unresolved_kop", 0)
+        paid.update(day.get("paid_records", []))
+        for mid, amount in day.get("master_services_kop", {}).items():
+            masters[mid] = masters.get(mid, 0) + amount
+    block.update(revenue=(services+goods)/100, revenue_services=services/100, revenue_goods=goods/100,
+                 prepayments=advances/100, paid_visits=len(paid),
+                 avg_check=round(services/100/len(paid), 2) if paid else 0,
+                 show_avg_check=bool(paid), finance_available=finance.get("available", False),
+                 finance_as_of=finance.get("as_of"), finance_unresolved=unresolved/100,
+                 finance_stale=bool(finance.get("error")) or not finance.get("as_of") or
+                    (_naive(_now())-datetime.fromisoformat(finance["as_of"])).total_seconds()>1800)
+    for master in block.get("masters", []):
+        master["revenue"] = masters.pop(master["id"], 0)/100
+    for mid, amount in masters.items():
+        block.setdefault("masters", []).append({"id": mid, "name": mid, "visits": 0, "revenue": amount/100})
+    return block
+
+
 def _day_bucket(moment: datetime, start: datetime, end: datetime, buckets: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
     naive = _naive(moment)
     if naive < _naive(start) or naive >= _naive(end):
@@ -473,6 +501,22 @@ def _daily_grooming(
         item["masters"] = sorted(item["masters"].values(), key=lambda m: -int(m["visits"]))
         out.append(item)
     return out
+
+
+def _daily_grooming_finance(visits, no_shows, masters_map, start, end, finance):
+    existing = {d["date"]: d for d in _daily_grooming(visits, no_shows, masters_map, start, end)}
+    for row in finance.get("days", []):
+        when = datetime.fromisoformat(row["date"])
+        if _naive(start) <= when < _naive(end):
+            existing.setdefault(row["date"], {"date": row["date"], "visits": 0, "no_show": 0, "masters": []})
+    for key, day in existing.items():
+        when = datetime.fromisoformat(key)
+        _apply_finance(day, finance, when, when+timedelta(days=1))
+        paid = next((r.get("paid_records", []) for r in finance.get("days", []) if r["date"] == key), [])
+        day["paid_record_ids"] = paid
+        for master in day["masters"]:
+            master["name"] = masters_map.get(master["id"], master["name"])
+    return [existing[k] for k in sorted(existing)]
 
 
 def _daily_kennel(
@@ -534,6 +578,7 @@ def collect(client: AmoClient) -> dict[str, Any]:
     month_k["prev_leads"] = _kennel_period(sales, prev_month0, month0, now)["leads"]
 
     bookings, masters_rows, shifts = fetch_bookings()
+    finance = fetch_finance()
     now_naive = _naive(now)
     usable = [b for b in bookings if b.get("starts_at") is not None]
     has_no_show = any(str(b.get("status")) == "no_show" for b in usable)
@@ -560,6 +605,9 @@ def collect(client: AmoClient) -> dict[str, Any]:
         block["sleeping"] = sleeping
         block["show_sleeping"] = sleeping > 0
         block["masters"] = _merge_master_load(block["masters"], load)
+        _apply_finance(block, finance, _naive(start), _naive(end))
+        for master in block["masters"]:
+            master["name"] = masters_map.get(master["id"], master["name"])
         return block
 
     week_g = groom(week0, end, False)
@@ -632,7 +680,7 @@ def collect(client: AmoClient) -> dict[str, Any]:
         "days": {
             "from": span0.date().isoformat(),
             "to": today0.date().isoformat(),
-            "grooming": _daily_grooming(visits, no_shows, masters_map, span0, end),
+            "grooming": _daily_grooming_finance(visits, no_shows, masters_map, span0, end, finance),
             "kennel": _daily_kennel(sales, span0, end),
         },
         "meta": {
