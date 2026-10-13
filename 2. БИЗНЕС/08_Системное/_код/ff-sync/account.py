@@ -21,7 +21,7 @@ from db import (
     list_lots_fifo,
     moves_by_day,
 )
-from ms import tracking_code
+from ms import tracking_code, TRACKING
 
 MSK = timezone(timedelta(hours=3))
 MAX_DAYS = 1500
@@ -225,7 +225,7 @@ def row_of(lot, client=None, ship_days=None, date_from=None, date_to=None):
         "barcode": lot["barcode"] or "",
         "gtin": lot["gtin"] or "",
         "name": lot["name"] or "",
-        "tracking": lot["tracking_type"] or "",
+        "tracking": next((label for label, code in TRACKING.items() if code == lot["tracking_type"]), lot["tracking_type"] or ""),
         "dims": (lot["dims"] if "dims" in lot.keys() else "") or "",
         "rate": storage_rate(),
         "pick_rate": pick_rate_of(lot, client),
@@ -253,6 +253,9 @@ def row_of(lot, client=None, ship_days=None, date_from=None, date_to=None):
 
 
 def is_marked(tracking):
+    # МойСклад возвращает enum (LP_CLOTHES и др.), старые партии хранили русскую подпись.
+    if tracking and tracking == tracking.upper():
+        return tracking != "NOT_TRACKED"
     return tracking_code(tracking) != "NOT_TRACKED"
 
 
