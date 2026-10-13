@@ -1056,6 +1056,21 @@ function pickClient(id, name) {
   loadLots();
 }
 
+function updateStockScroll() {
+  const el = $("sTableScroll");
+  const remaining = el.scrollWidth - el.clientWidth;
+  $("sTableNav").hidden = !el.clientWidth || remaining < 2;
+  $("sScrollLeft").disabled = el.scrollLeft < 2;
+  $("sScrollRight").disabled = el.scrollLeft >= remaining - 2;
+}
+$("sTableScroll").addEventListener("scroll", updateStockScroll, { passive: true });
+$("sScrollLeft").onclick = () => $("sTableScroll").scrollBy({ left: -Math.max(240, $("sTableScroll").clientWidth - 470), behavior: "smooth" });
+$("sScrollRight").onclick = () => $("sTableScroll").scrollBy({ left: Math.max(240, $("sTableScroll").clientWidth - 470), behavior: "smooth" });
+new ResizeObserver(updateStockScroll).observe($("sTableScroll"));
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty("--stock-dock-height", Math.ceil($("appDock").getBoundingClientRect().height) + "px");
+}).observe($("appDock"));
+
 let lotsLoad = 0;
 async function loadLots() {
   const mine = ++lotsLoad;

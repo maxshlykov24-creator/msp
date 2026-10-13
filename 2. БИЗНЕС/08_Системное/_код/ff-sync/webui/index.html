@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=112">
+<link rel="stylesheet" href="/ui/app.css?v=113">
 </head>
 <body>
 
@@ -362,8 +362,13 @@
     </div>
 
     <div class="panel glass">
-      <div class="tbl-wrap stock-wrap">
+      <div class="stock-table-nav" id="sTableNav" hidden>
+        <span>Все столбцы доступны по горизонтальной прокрутке</span>
+        <div><button class="btn-ghost slimbtn" id="sScrollLeft" type="button" aria-label="Столбцы влево" aria-controls="sTableScroll">←</button><button class="btn-ghost slimbtn" id="sScrollRight" type="button" aria-label="Столбцы вправо" aria-controls="sTableScroll">→</button></div>
+      </div>
+      <div class="tbl-wrap stock-wrap" id="sTableScroll" tabindex="0" role="region" aria-label="Позиции учёта. Таблица прокручивается по горизонтали и вертикали">
         <table class="tbl stock-tbl" id="sTbl">
+          <colgroup><col style="width:40px"><col style="width:150px"><col style="width:175px"><col style="width:300px"><col style="width:85px"><col style="width:100px"><col style="width:85px"><col style="width:95px"><col style="width:85px"><col style="width:85px"><col style="width:115px"><col style="width:95px"><col style="width:90px"><col style="width:95px"><col style="width:105px"></colgroup>
           <thead><tr>
             <th class="pick"><input type="checkbox" id="sAll"></th>
             <th>Контрагент</th><th>Коды</th><th>Наименование</th>
@@ -792,6 +797,6 @@
   </div>
 </div>
 
-<script src="/ui/app.js?v=125"></script>
+<script src="/ui/app.js?v=126"></script>
 </body>
 </html>
