@@ -1044,9 +1044,10 @@ function ruDay(iso) {
 
 $("sBill").onclick = async () => {
   try {
+    state.invoiceRequest = { lot_ids: [...state.picked], date_to: $("sTo").value };
     const res = await api("/api/invoice/preview", {
       method: "POST",
-      body: JSON.stringify({ lot_ids: [...state.picked], date_to: $("sTo").value }),
+      body: JSON.stringify(state.invoiceRequest),
     });
     $("mTitle").textContent = "Счёт: " + res.client;
     $("mPeriod").textContent = "Услуги за " + ruDay(res.period_from) + " — " + ruDay(res.period_to) + " · литро-суток " + num(res.liter_days, 1);
@@ -1072,7 +1073,7 @@ $("mOk").onclick = async () => {
   try {
     const res = await api("/api/invoice", {
       method: "POST",
-      body: JSON.stringify({ lot_ids: [...state.picked], date_to: $("sTo").value }),
+      body: JSON.stringify(state.invoiceRequest),
     });
     created = res;
     $("modal").classList.remove("on");
@@ -3027,7 +3028,7 @@ async function openBillDetail(id) {
     try {
       await downloadInvoice(inv.id);
     } catch (err) {
-      say($("bdPay"), err.message, "bad");
+      say($("bdPayment"), err.message, "bad");
     } finally {
       $("bdInvoice").disabled = false;
     }

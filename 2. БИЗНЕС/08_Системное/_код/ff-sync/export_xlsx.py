@@ -69,7 +69,7 @@ def render_invoice_document(data, profile):
     for p in positions:
         if cent(p.get("pick")):
             qty, rate = p.get("pick_qty"), p.get("pick_rate")
-            if qty is None or rate is None or cent(Decimal(str(qty)) * Decimal(str(rate))) != cent(p["pick"]):
+            if qty is None or rate is None or cent(round(float(qty) * float(rate), 2)) != cent(p["pick"]):
                 raise ValueError("в счёте нет сохранённых количества и ставки обработки")
             items.append((" ".join(str(p.get(k) or "") for k in ("article", "name")).strip(), rate, qty, p["pick"]))
     if cent(inv["intake"]):
@@ -103,7 +103,10 @@ def render_invoice_document(data, profile):
         labels = (("Наименование", "name"), ("Адрес", "address"), ("Номер счёта", "account"),
                   ("ИНН", "inn"), ("ОГРН", "ogrn"), ("Банк", "bank"), ("Корреспондентский счёт", "correspondent"), ("БИК", "bic"))
         for n, (label, key) in enumerate(labels, 38):
-            _invoice_cell(mapped[n + delta], "B", "%s: %s" % (label, profile.get(key) or "не указан"))
+            text = "%s: %s" % (label, profile.get(key) or "не указан")
+            row = mapped[n + delta]
+            _invoice_cell(row, "B", text)
+            row.set("ht", str(max(30, 15 * ((len(text) + 39) // 40))))
         sheet_data[:] = rows
         dimension = sheet.find(_xlsx_tag("dimension"))
         if dimension is not None:

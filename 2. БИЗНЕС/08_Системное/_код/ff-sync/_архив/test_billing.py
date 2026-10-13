@@ -52,6 +52,10 @@ class Fake:
 
 def fake_req(method, url, headers=None, **kw):
     CALLS.append((method, url, kw.get("json"), kw.get("params")))
+    if "/entity/counterparty/" in url:
+        if url.endswith("/accounts"):
+            return Fake(200, {"meta": {"size": 1}, "rows": [{"accountNumber": "00000000000000000001", "bankName": "Тестовый банк", "bic": "000000001", "correspondentAccount": "00000000000000000002"}]})
+        return Fake(200, {"legalTitle": "Тест ООО", "inn": "0000000001", "legalAddress": "Тестовый адрес", "ogrn": "0000000000001"})
     if url.endswith("/entity/purchaseorder/%s" % ORDER_ID):
         return Fake(200, {"id": ORDER_ID, "supplies": [{"meta": {"href": net.MS_BASE + "/entity/supply/" + SUPPLY_ID}}]})
     if url.endswith("/entity/supply/%s/positions" % SUPPLY_ID):
@@ -302,3 +306,77 @@ db.set_setting("invoice:ms:%s" % old,json.dumps({"total":150,"paid":50,"applicab
 assert billing.payment_state(db.get_invoice(old))["due"] == 100
 assert billing.payment_state(db.get_invoice(old))["payment_status"] == "Частично оплачен"
 print("аудит учёта: суммы, снимки, даты, изоляция клиентов, повторы и атомарность — OK")
+
+# Шаблон владельца: числа, оформление, расширение таблицы и реквизиты.
+from export_xlsx import build_invoice_document, render_invoice_document
+from zipfile import ZipFile
+from pathlib import Path
+frozen_profile = billing.invoice_profile(inv['id'])
+assert frozen_profile['name'] == 'Тест ООО'
+_, document = build_invoice_document(inv['id'])
+ws = load_workbook(io.BytesIO(document)).active
+assert ws['B1'].value == 'БЕРЁЗА ФУЛФИЛМЕНТ'
+assert ws['C4'].value == 'Тест ООО'
+assert ws['C3'].value == 'с 01.09.2026 по 05.09.2026'
+assert [ws.cell(9,c).value for c in range(2,6)] == ['ART-1 Ремень кожаный',3,4,12]
+assert ws['E7'].value == stored['storage']
+assert ws['E12'].value == inv['total']
+assert ws['B23'].value == 'Номер счёта: 00000000000000000001'
+assert ws.tables['Table_1'].ref == 'B6:E10'
+assert ws.column_dimensions['B'].width == 36.13
+assert ws.sheet_view.showGridLines is False
+with ZipFile(io.BytesIO(document)) as result_zip, ZipFile(Path(__file__).resolve().parents[1]/'invoice_template.xlsx') as source_zip:
+    assert result_zip.read('xl/styles.xml') == source_zip.read('xl/styles.xml')
+    assert result_zip.read('xl/theme/theme1.xml') == source_zip.read('xl/theme/theme1.xml')
+
+# Перевыгрузка нового счёта не читает изменившуюся карточку контрагента.
+with patch.object(billing, 'client_invoice_profile', side_effect=AssertionError('реквизиты должны быть сохранены')):
+    assert build_invoice_document(inv['id'])[1] == document
+
+# Шаблон с большим числом товаров двигает итог и реквизиты, не теряет строки.
+profile = {**frozen_profile, 'name': '=1+1'}
+for count in (0,1,18,31):
+    lines = [{'article':'SKU%s'%n,'name':'Товар %s'%n,'pick_qty':2,'pick_rate':3,'pick':6,'storage':1,'intake':0} for n in range(count)]
+    if not lines:
+        lines=[{'article':'S','name':'Хранение','pick':0,'storage':4,'intake':0}]
+    storage=sum(p['storage'] for p in lines)
+    data={'invoice':{'storage':storage,'pick':count*6,'intake':0,'total':storage+count*6,'period_from':'2026-09-01','period_to':'2026-09-05'},'positions':lines}
+    _, raw=render_invoice_document(data,profile)
+    ws=load_workbook(io.BytesIO(raw)).active
+    delta=max(1,count)-18
+    assert ws.cell(29+delta,5).value == data['invoice']['total']
+    assert ws.cell(40+delta,2).value == 'Номер счёта: 00000000000000000001'
+    assert ws['C4'].data_type == 's'
+    assert ws.max_row == 45+delta
+
+# Подмена клиента не может взять банковские данные из чужого присланного файла.
+db.set_setting('client:invoice-requisites:%s'%client_id,json.dumps({'inn':'другой','account':'ЧУЖОЙ'}))
+def no_accounts(method,url,**kw):
+    if url.endswith('/accounts'):
+        return Fake(200,{'meta':{'size':0},'rows':[]})
+    return fake_req(method,url,**kw)
+with patch.object(billing,'req',no_accounts):
+    assert billing.client_invoice_profile(db.get_client_by_id(client_id))['account'] == ''
+# Несколько счетов без основного: не выбираем случайный.
+def ambiguous_accounts(method,url,**kw):
+    if url.endswith('/accounts'):
+        return Fake(200,{'meta':{'size':2},'rows':[{'accountNumber':'1'},{'accountNumber':'2'}]})
+    return fake_req(method,url,**kw)
+with patch.object(billing,'req',ambiguous_accounts):
+    try:
+        billing.client_invoice_profile(db.get_client_by_id(client_id))
+        raise AssertionError('выбран случайный банковский счёт')
+    except ValueError:
+        pass
+
+# Ошибка подготовки Excel не создаёт финансовый документ и не закрывает период.
+before_count=len(db.list_invoices())
+with patch('export_xlsx.render_invoice_document',side_effect=ValueError('шаблон недоступен')):
+    try:
+        billing.create([lot_id],date_to='2026-09-07')
+        raise AssertionError('ожидался отказ до МойСклад')
+    except ValueError as exc:
+        assert 'шаблон недоступен' in str(exc)
+assert len(db.list_invoices()) == before_count
+assert db.get_lot(lot_id)['billed_until'] == '2026-09-06'
+print('счёт по шаблону: суммы, стили, 0/1/18/31 строка, реквизиты и повторы — OK')
