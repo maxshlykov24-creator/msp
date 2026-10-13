@@ -562,6 +562,28 @@ def ledger_sync_status(ff_session: str = Cookie(default="")):
     return {"last_sync": get_setting("ledger:last_success") or "", "error": get_setting("ledger:last_error") or "", "summary": __import__("json").loads(get_setting("ledger:summary") or "{}")}
 
 
+@app.get("/api/lots/{lot_id}/product")
+def lot_product_card(lot_id: int, ff_session: str = Cookie(default="")):
+    who(ff_session)
+    from account import lot_product
+    try:
+        return lot_product(lot_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/lots/{lot_id}/product")
+def lot_product_save(lot_id: int, data: dict = Body(...), ff_session: str = Cookie(default="")):
+    actor = who(ff_session)
+    from account import save_lot_product
+    try:
+        return save_lot_product(lot_id, data, actor)
+    except BlockingIOError:
+        raise HTTPException(status_code=409, detail="Идёт синхронизация или выставление счёта. Подожди и сохрани ещё раз.")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @app.get("/api/calendar")
 def calendar_view(
     client_id: int = 0,

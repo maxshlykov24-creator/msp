@@ -217,6 +217,7 @@ def row_of(lot, client=None, ship_days=None, date_from=None, date_to=None):
         errors.append("не заполнена ставка сборки")
     return {
         "id": lot["id"],
+        "ms_product_id": lot["ms_product_id"],
         "kind": lot["ledger_kind"],
         "source_document": lot["source_document"] or "",
         "client_id": lot["client_id"],
@@ -400,3 +401,134 @@ def require_current_ledger():
     raw = get_setting('ledger:last_success')
     if not raw or (datetime.now(MSK) - datetime.fromisoformat(raw)).total_seconds() > 1800:
         raise ValueError('Данные учёта требуют обновления. Нажми «Обновить учёт».')
+
+
+PRODUCT_FIELDS = {
+    'liters': ('Литраж, л', 'ATTR_LITERS_ID'),
+    'pick_rate': ('Стоимость сборки, ₽', 'ATTR_PICK_RATE_ID'),
+}
+
+
+def _product_for_lot(lot_id):
+    from db import connect
+    conn = connect()
+    try:
+        lot = conn.execute('SELECT ms_product_id FROM lots WHERE id=? AND source_active=1', (lot_id,)).fetchone()
+    finally:
+        conn.close()
+    if not lot or not lot['ms_product_id']:
+        raise ValueError('Позиция больше не участвует в учёте. Обнови таблицу.')
+    # UUID берём из сверенной партии, а не из запроса браузера.
+    from uuid import UUID
+    try:
+        return str(UUID(lot['ms_product_id']))
+    except ValueError:
+        raise ValueError('У позиции нет корректной ссылки на карточку МойСклад.')
+
+
+def _product_card(pid):
+    from accept import canonical, ms_get, number, ref_id
+    from db import connect, get_setting
+    import hashlib
+    p = ms_get('/entity/product/' + pid)
+    attrs = {ref_id(a): a for a in p.get('attributes', [])}
+    fields = {}
+    for key, (name, setting) in PRODUCT_FIELDS.items():
+        aid = get_setting(setting)
+        if not aid:
+            raise ValueError('Не настроено допполе МойСклад «%s».' % name)
+        attr = attrs.get(aid)
+        if attr and attr.get('name') != name:
+            raise ValueError('Изменено допполе МойСклад «%s». Нужна проверка настройки.' % name)
+        fields[key] = number(attr.get('value') if attr else None, name, True)
+    conn = connect()
+    try:
+        rows = conn.execute('SELECT DISTINCT c.name FROM lots l JOIN clients c ON c.id=l.client_id WHERE l.ms_product_id=? AND l.source_active=1 ORDER BY c.name', (pid,)).fetchall()
+    finally:
+        conn.close()
+    version = dict(fields, updated=p.get('updated'), product_id=pid,
+                   attributes={key: get_setting(setting) for key, (_, setting) in PRODUCT_FIELDS.items()})
+    return dict(fields, product_id=pid, name=p.get('name', ''), article=p.get('article', ''),
+                clients=[r['name'] for r in rows], archived=bool(p.get('archived')),
+                revision=hashlib.sha256(canonical(version).encode()).hexdigest())
+
+
+def lot_product(lot_id):
+    return _product_card(_product_for_lot(lot_id))
+
+
+def save_lot_product(lot_id, data, actor):
+    """Обновить только введённые допполя; пересчитать весь источник под замками."""
+    from accept import apply_plan, build_plan, canonical, fetch_snapshot, ms_get, number, stamp
+    from db import get_setting, run_lock, set_setting
+    from ms import attr_value
+    from net import MS_BASE, ms_headers, req
+    from intake import parse_liters
+    import json
+    import math
+
+    # Пустое поле сохраняет прежнее значение. Ноль сборки — явная бесплатная сборка.
+    desired = {}
+    for key, (name, _) in PRODUCT_FIELDS.items():
+        raw = data.get(key)
+        if raw is None or str(raw).strip() == '':
+            continue
+        if isinstance(raw, bool):
+            raise ValueError('Некорректное поле ' + name)
+        if key == 'liters':
+            value, _ = parse_liters(raw)
+            if value is None or not math.isfinite(value) or value <= 0:
+                raise ValueError('Литраж должен быть больше нуля. Можно ввести габариты в сантиметрах: 8×8×120.')
+        else:
+            value = number(raw, name)
+        desired[key] = value
+    if not desired:
+        raise ValueError('Введи литраж или стоимость сборки.')
+    with run_lock('ledger', blocking=False), run_lock('billing', blocking=False):
+        if json.loads(get_setting('billing:pending') or 'null'):
+            raise ValueError('Есть неподтверждённый счёт. Сначала заверши его, затем изменяй товар.')
+        pid = _product_for_lot(lot_id)
+        current = _product_card(pid)
+        if data.get('revision') != current['revision']:
+            raise ValueError('Карточка изменилась после открытия. Закрой окно и открой товар заново.')
+        changed = {key: value for key, value in desired.items() if current[key] != value}
+        if changed:
+            metadata = ms_get('/entity/product/metadata/attributes')
+            known = {a['id']: a for a in metadata.get('rows', [])}
+            attrs = []
+            for key, value in changed.items():
+                name, setting = PRODUCT_FIELDS[key]
+                a = known.get(get_setting(setting))
+                if not a or a.get('name') != name or a.get('type') != 'double':
+                    raise ValueError('Не найдено числовое допполе МойСклад «%s».' % name)
+                attrs.append(attr_value('product', name, setting, value))
+            # Если процесс прервётся после записи, счета останутся заблокированы до сверки.
+            set_setting('ledger:last_error', 'Обновляется карточка товара. Требуется завершить сверку учёта.')
+            try:
+                response = req('PUT', MS_BASE + '/entity/product/' + pid, headers=ms_headers(),
+                               json={'attributes': attrs}, retry_safe=False)
+                if response.status_code != 200:
+                    raise ValueError('МойСклад не подтвердил сохранение: HTTP %s.' % response.status_code)
+            except Exception:
+                # Ответ мог потеряться после успешной записи: проверяем саму карточку.
+                verified = _product_card(pid)
+                if any(verified[key] != value for key, value in changed.items()):
+                    raise ValueError('Сохранение не подтверждено. Открой товар заново и проверь значения перед повтором.')
+            current = _product_card(pid)
+            if any(current[key] != value for key, value in changed.items()):
+                raise ValueError('МойСклад не сохранил введённые значения. Открой товар заново и проверь карточку.')
+            print('Учёт: допполя товара %s, пользователь %s, %s' % (pid, actor, canonical(changed)))
+        try:
+            groups = json.loads(get_setting('ledger:groups') or '[]')
+            if not groups:
+                raise ValueError('Не настроены подтверждённые группы контрагентов для учёта.')
+            set_setting('ledger:last_attempt', stamp())
+            snapshot = fetch_snapshot()
+            if any(snapshot['products'][pid][key] != value for key, value in desired.items()):
+                raise ValueError('Карточка изменилась во время сверки. Проверь её значения.')
+            result = apply_plan(snapshot, build_plan(snapshot, groups), groups)
+        except Exception as exc:
+            set_setting('ledger:last_error', str(exc)[:500])
+            return {'ok': True, 'saved': True, 'synced': False, 'product': current,
+                    'msg': 'Данные карточки сохранены в МойСклад. Учёт требует обновления: ' + str(exc)}
+        return {'ok': True, 'saved': True, 'synced': True, 'product': current, 'last_sync': result['last_sync']}

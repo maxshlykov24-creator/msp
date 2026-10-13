@@ -642,3 +642,64 @@ attrs={pp._ref_id(x['meta']):x['value'] for x in sent[0][1]['attributes']}
 assert attrs['COST']==7 and attrs['LIT']==2 and 'OWNER' not in attrs
 zero=ms.product_attrs(2,'B',0);assert any(pp._ref_id(x['meta'])=='COST' and x['value']==0 for x in zero)
 print('Заведение: стоимость сборки сохраняется в МойСклад; карточка общей компании сохраняет владельца — OK')
+
+# Редактирование из учёта: точный UUID, частичная запись, проверка ответа и пересчёт.
+pid = '00000000-0000-0000-0000-000000000001'
+conn = db.connect()
+conn.execute('UPDATE lots SET ms_product_id=?', (pid,))
+conn.commit(); conn.close()
+edit_lot = db.list_lots(only_open=False)[0]['id']
+remote = {'id':pid, 'name':'Общий товар', 'article':'P', 'updated':'v1', 'attributes':[
+    {'name':'Литраж, л','meta':{'href':net.MS_BASE+'/entity/product/metadata/attributes/LIT'},'value':2},
+    {'name':'Стоимость сборки, ₽','meta':{'href':net.MS_BASE+'/entity/product/metadata/attributes/COST'},'value':3},
+    {'name':'Клиент фулфилмента','meta':{'href':net.MS_BASE+'/entity/product/metadata/attributes/OWNER'},'value':ms.ms_meta('counterparty','A')}]}
+edit_writes=[]
+lose_response=False
+def edit_get(path):
+    if path.endswith('/metadata/attributes'):
+        return {'rows':[{'id':'LIT','name':'Литраж, л','type':'double'}, {'id':'COST','name':'Стоимость сборки, ₽','type':'double'}]}
+    assert path == '/entity/product/' + pid
+    return deepcopy(remote)
+def edit_put(method,url,**kw):
+    assert method=='PUT' and url.endswith('/'+pid) and kw['retry_safe'] is False
+    assert set(kw['json'])=={'attributes'}
+    edit_writes.append(deepcopy(kw['json']))
+    for sent_attr in kw['json']['attributes']:
+        aid=accept.ref_id(sent_attr)
+        existing=next(a for a in remote['attributes'] if accept.ref_id(a)==aid)
+        existing['value']=sent_attr['value']
+    remote['updated']+='x'
+    if lose_response:raise OSError('потерян ответ')
+    return Fake(200,deepcopy(remote))
+def edit_snapshot():
+    return {'products':{pid:{'liters':next(a['value'] for a in remote['attributes'] if a['name']=='Литраж, л'),
+                             'pick_rate':next(a['value'] for a in remote['attributes'] if a['name']=='Стоимость сборки, ₽')}}}
+db.set_setting('billing:pending','null')
+with patch.object(accept,'ms_get',edit_get),patch.object(net,'req',edit_put),patch.object(accept,'fetch_snapshot',edit_snapshot),patch.object(accept,'build_plan',return_value={}),patch.object(accept,'apply_plan',return_value={'last_sync':'now'}) as applied:
+    card=account.lot_product(edit_lot)
+    assert card['liters']==2 and card['pick_rate']==3
+    for fields in ({'liters':'0'}, {'liters':'-1'}, {'liters':'NaN'}, {'liters':'inf'}, {'pick_rate':'-1'}, {'pick_rate':'nan'}, {'pick_rate':True}, {}):
+        try:account.save_lot_product(edit_lot,dict(fields,revision=card['revision']),'tester');raise AssertionError(fields)
+        except ValueError:pass
+    assert not edit_writes
+    try:account.save_lot_product(edit_lot,{'liters':'5','revision':'stale'},'tester');raise AssertionError('принята устаревшая карточка')
+    except ValueError:pass
+    db.set_setting('billing:pending','{"syncId":"pending"}')
+    try:account.save_lot_product(edit_lot,{'liters':'5','revision':card['revision']},'tester');raise AssertionError('изменение при неизвестном счёте')
+    except ValueError:pass
+    db.set_setting('billing:pending','null')
+    result=account.save_lot_product(edit_lot,{'liters':'8х8х120','pick_rate':'','revision':card['revision']},'tester')
+    assert result['synced'] and result['product']['liters']==7.68 and result['product']['pick_rate']==3
+    assert len(edit_writes[-1]['attributes'])==1 and accept.ref_id(edit_writes[-1]['attributes'][0])=='LIT'
+    assert next(a for a in remote['attributes'] if a['name']=='Клиент фулфилмента')['value']==ms.ms_meta('counterparty','A')
+    lose_response=True
+    result=account.save_lot_product(edit_lot,{'pick_rate':'0','revision':result['product']['revision']},'tester')
+    assert result['synced'] and result['product']['pick_rate']==0
+    assert applied.call_count==2
+    with patch.object(accept,'fetch_snapshot',side_effect=ValueError('неполный источник')):
+        result=account.save_lot_product(edit_lot,{'pick_rate':'4,50','revision':result['product']['revision']},'tester')
+        assert result['saved'] and not result['synced'] and 'неполный источник' in db.get_setting('ledger:last_error')
+        assert applied.call_count==2
+    try:account._product_for_lot(-1);raise AssertionError('допущена неизвестная партия')
+    except ValueError:pass
+print('Учёт: запись допполей, габариты, нулевая сборка, защита от конфликта/счёта, потеря ответа и неполная сверка — OK')

@@ -1093,8 +1093,8 @@ async function loadLots() {
       <td class="pick"><input type="checkbox" data-lot="${r.id}"></td>
       <td class="client">${esc(r.client)}</td>
       <td class="codes"><b>${esc(r.article)}</b><span>ШК ${esc(r.barcode)}</span><span>GTIN ${esc(r.gtin)}</span></td>
-      <td class="name">${esc(r.name)}${r.source_document ? `<br><span class="muted">${esc(r.source_document)}${r.kind === "assembly" ? " · сборка" : " · хранение"}</span>` : ""}</td>
-      <td class="num" title="${r.dims ? esc(r.dims) + " см" : ""}">${num(r.liters || null, 3)}</td><td class="num">${r.pick_rate_known ? num(r.pick_rate) : "—"}</td>
+      <td class="name"><button type="button" class="stock-edit" data-product-lot="${r.id}" title="Изменить литраж и стоимость сборки">${esc(r.name)} <span aria-hidden="true">✎</span></button>${r.source_document ? `<br><span class="muted">${esc(r.source_document)}${r.kind === "assembly" ? " · сборка" : " · хранение"}</span>` : ""}</td>
+      <td class="num"><button type="button" class="stock-edit${r.liters > 0 ? "" : " missing"}" data-product-lot="${r.id}" data-focus="liters" title="Изменить литраж">${r.liters > 0 ? num(r.liters, 3) : "Указать"}</button></td><td class="num"><button type="button" class="stock-edit${r.pick_rate_known ? "" : " missing"}" data-product-lot="${r.id}" data-focus="pick_rate" title="Изменить стоимость сборки">${r.pick_rate_known ? num(r.pick_rate) : "Указать"}</button></td>
       <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.shipped, 0)}</td><td class="num">${num(r.pick_qty, 0)}</td>
       <td class="num">${num(r.qty, 0)}</td>
       <td title="${esc(r.source_document || "")}">${r.accepted ? (r.kind === "assembly" ? "Отгр. " : "") + esc(r.accepted) : `<span class="badge warn" title="Счётчик пойдёт после приёмки на склад «Фулфилмент»"><i></i>ждёт приёмки</span>`}</td><td class="num ${r.days > 90 ? "aged" : ""}">${r.days}</td>
@@ -1127,11 +1127,84 @@ function refreshPick() {
 }
 
 $("sTbl").onclick = (e) => {
+  const edit = e.target.closest("button[data-product-lot]");
+  if (edit) { openStockProduct(Number(edit.dataset.productLot), edit.dataset.focus); return; }
   const box = e.target.closest("input[data-lot]");
   if (!box) return;
   const id = Number(box.dataset.lot);
   if (box.checked) state.picked.add(id); else state.picked.delete(id);
   refreshPick();
+};
+
+let stockProduct = null;
+let stockProductLoad = 0;
+let stockProductSaving = false;
+async function openStockProduct(lotId, focus) {
+  const mine = ++stockProductLoad;
+  stockProduct = null;
+  $("pModal").classList.add("on");
+  $("pTitle").textContent = "Данные товара";
+  $("pInfo").textContent = "Загружаю карточку МойСклад…";
+  $("pShared").textContent = "";
+  $("pLiters").value = "";
+  $("pRate").value = "";
+  $("pLiters").disabled = $("pRate").disabled = $("pSave").disabled = true;
+  say($("pMsg"), "");
+  try {
+    const p = await api(`/api/lots/${lotId}/product`);
+    if (mine !== stockProductLoad) return;
+    stockProduct = { lotId, ...p };
+    $("pTitle").textContent = p.name;
+    $("pInfo").textContent = [p.article, p.archived ? "Архивная карточка" : "", ...p.clients].filter(Boolean).join(" · ");
+    $("pShared").textContent = p.clients.length > 1
+      ? "Общая карточка: значения обновятся во всех её партиях у перечисленных контрагентов. Счета останутся отдельными."
+      : "Значения обновятся во всех партиях этого товара. Уже выставленные счета сохранят свои суммы.";
+    $("pLiters").value = p.liters == null || p.liters <= 0 ? "" : String(p.liters).replace(".", ",");
+    $("pRate").value = p.pick_rate == null ? "" : String(p.pick_rate).replace(".", ",");
+    $("pLiters").disabled = $("pRate").disabled = $("pSave").disabled = false;
+    $(focus === "pick_rate" ? "pRate" : "pLiters").focus();
+  } catch (e) {
+    if (mine === stockProductLoad) say($("pMsg"), e.message, "bad");
+  }
+}
+
+function closeStockProduct() {
+  if (stockProductSaving) return;
+  ++stockProductLoad;
+  stockProduct = null;
+  $("pModal").classList.remove("on");
+}
+$("pClose").onclick = closeStockProduct;
+$("pModal").onclick = (e) => { if (e.target === $("pModal")) closeStockProduct(); };
+$("pModal").onkeydown = (e) => { if (e.key === "Escape") closeStockProduct(); };
+$("pForm").onsubmit = async (e) => {
+  e.preventDefault();
+  if (!stockProduct || stockProductSaving) return;
+  const p = stockProduct;
+  const data = { revision: p.revision, liters: $("pLiters").value.trim(), pick_rate: $("pRate").value.trim() };
+  stockProductSaving = true;
+  $("pLiters").disabled = $("pRate").disabled = $("pSave").disabled = $("pClose").disabled = true;
+  say($("pMsg"), "Сохраняю в МойСклад и пересчитываю учёт…");
+  let saved = false;
+  try {
+    const res = await api(`/api/lots/${p.lotId}/product`, { method: "POST", body: JSON.stringify(data) });
+    saved = true;
+    stockProduct = { lotId: p.lotId, ...res.product };
+    if (res.synced) {
+      stockProductSaving = false;
+      closeStockProduct();
+      await loadLots();
+      say($("sMsg"), "Сохранено в МойСклад. Учёт и суммы обновлены.", "ok");
+    } else {
+      say($("pMsg"), res.msg, "warn");
+      await loadLots();
+    }
+  } catch (err) {
+    say($("pMsg"), saved ? "Данные сохранены. Таблица не обновилась: " + err.message : err.message, "bad");
+  } finally {
+    stockProductSaving = false;
+    $("pLiters").disabled = $("pRate").disabled = $("pSave").disabled = $("pClose").disabled = false;
+  }
 };
 
 $("sAccept").onclick = async () => {
