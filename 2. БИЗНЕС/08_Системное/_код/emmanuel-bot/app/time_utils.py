@@ -102,18 +102,25 @@ def monday_after_week(week_start: date) -> datetime:
 
 
 def late_report_bucket(submitted_at: datetime, week_start: date) -> str:
-    """sun | mon_am | mon_pm | later относительно вс 23:59 и половин понедельника."""
+    """sun | night | mon_am | mon_pm | day:YYYY-MM-DD.
+
+    До вс 23:59, затем до 2:00, затем пн до 12:00 и после 12:00.
+    Дальше отдельный день, пустые дни в сводку не попадают.
+    """
     dt = to_msk(submitted_at)
     monday = monday_after_week(week_start)
+    two_am = monday.replace(hour=2)
     noon = monday.replace(hour=12)
     tuesday = monday + timedelta(days=1)
     if dt < monday:
         return "sun"
+    if dt < two_am:
+        return "night"
     if dt < noon:
         return "mon_am"
     if dt < tuesday:
         return "mon_pm"
-    return "later"
+    return f"day:{dt.date().isoformat()}"
 
 
 def group_digest_follows_reports(now: datetime | None = None) -> bool:

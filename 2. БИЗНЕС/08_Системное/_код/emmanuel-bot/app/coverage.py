@@ -292,12 +292,27 @@ def coverage_pct(wrote: int, total: int) -> int:
     return round(100 * wrote / total)
 
 
-_BUCKET_TITLES = (
+_ALWAYS_BUCKETS = (
     ("sun", "Написали до вс 23:59"),
+    ("night", "Написали до 2:00"),
     ("mon_am", "Написали в пн до 12:00"),
-    ("mon_pm", "Написали в пн после 12:00"),
-    ("later", "Написали позже пн"),
 )
+
+_MON_PM_TITLE = "Написали в пн после 12:00"
+
+_WEEKDAY_TITLES = (
+    "Написали в понедельник",
+    "Написали во вторник",
+    "Написали в среду",
+    "Написали в четверг",
+    "Написали в пятницу",
+    "Написали в субботу",
+    "Написали в воскресенье",
+)
+
+
+def _day_bucket_title(day: date) -> str:
+    return _WEEKDAY_TITLES[day.weekday()]
 
 
 def _append_member_list(lines: list[str], people: list[GroupMember]) -> None:
@@ -321,18 +336,23 @@ def format_coverage_text(
     missing = [m for m in members if m.tg_user_id not in submitted_ids]
     n_ok = len(wrote)
     times = submitted_at or {}
-    buckets: dict[str, list[GroupMember]] = {key: [] for key, _ in _BUCKET_TITLES}
+    buckets: dict[str, list[GroupMember]] = {}
     for m in wrote:
         when = times.get(m.tg_user_id)
         bucket = late_report_bucket(when, week_start) if when is not None else "sun"
-        buckets[bucket].append(m)
+        buckets.setdefault(bucket, []).append(m)
     lines = [
         f"<b>{n_ok} из {total}</b>, {coverage_pct(n_ok, total)}% ({html.escape(week_range_label(week_start))})",
     ]
-    for key, title in _BUCKET_TITLES:
-        if key == "later" and not buckets[key]:
-            continue
+    for key, title in _ALWAYS_BUCKETS:
         lines += ["", f"<b>{title}</b>"]
+        _append_member_list(lines, buckets.get(key, []))
+    if buckets.get("mon_pm"):
+        lines += ["", f"<b>{_MON_PM_TITLE}</b>"]
+        _append_member_list(lines, buckets["mon_pm"])
+    for key in sorted(k for k in buckets if k.startswith("day:")):
+        day = date.fromisoformat(key.removeprefix("day:"))
+        lines += ["", f"<b>{_day_bucket_title(day)}</b>"]
         _append_member_list(lines, buckets[key])
     lines += ["", "<b>Не написали</b>"]
     _append_member_list(lines, missing)
