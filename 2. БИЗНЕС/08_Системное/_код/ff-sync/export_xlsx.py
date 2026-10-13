@@ -573,10 +573,10 @@ CLIENT_STOCK_COLUMNS = [
     ("Литраж, л", 11),
     ("Остаток, шт", 12),
     ("Объём, л", 11),
-    ("Приёмка на склад", 16),
+    ("Дата документа", 16),
     ("Дней на складе", 14),
     ("Начислено с", 12), ("Начислено по", 12),
-    ("Хранение, ₽", 15), ("Собрано, шт", 13), ("Сборка, ₽", 15), ("К выставлению, ₽", 18),
+    ("Хранение, ₽", 15), ("Собрано, шт", 13), ("Сборка, ₽", 15), ("К выставлению, ₽", 18), ("Документ", 28),
 ]
 
 
@@ -613,7 +613,7 @@ def build_client_stock(ids, date_to=None):
                 row["volume"],
                 excel_text(row["accepted"] or "ждёт приёмки"),
                 row["days"],
-                row["bill_from"], row["bill_to"], row["storage"], row["pick_qty"], row["pick"], row["total"],
+                row["bill_from"], row["bill_to"], row["storage"], row["pick_qty"], row["pick"], row["total"], excel_text(row.get("source_document", "")),
             ]
         )
     ws.append(["Остаток на %s. Начисления по %s включительно, с прошлого счёта. Источник: документы МойСклад." % (datetime.now(MSK).date(), date_to or datetime.now(MSK).date())])

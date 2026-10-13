@@ -216,12 +216,15 @@ def migrate(conn):
 
 
 def init_db():
-    conn = connect()
-    with open(SCHEMA_FILE, encoding="utf-8") as f:
-        conn.executescript(f.read())
-    migrate(conn)
-    conn.commit()
-    conn.close()
+    with run_lock('schema'):
+        conn = connect()
+        try:
+            with open(SCHEMA_FILE, encoding="utf-8") as f:
+                conn.executescript(f.read())
+            migrate(conn)
+            conn.commit()
+        finally:
+            conn.close()
     return db_path()
 
 

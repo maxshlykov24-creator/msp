@@ -6,7 +6,7 @@
 товара, ни от клиента. Разная только сборка — напильник и игрушка стоят
 по-разному, поэтому ставка сборки живёт у позиции, в ₽ за штуку.
 
-Счётчик стартует от фактической приёмки на склад, а не от заведения карточки:
+Хранение стартует на следующий день после фактической приёмки и включает день отгрузки:
 пока в lots.accepted_at пусто, партия ничего не должна.
 """
 
@@ -67,12 +67,12 @@ def calculation_end(raw=""):
 
 
 def storage_rate():
-    """Ставка хранения одна на всех. Меняется переменной, а не в карточке."""
+    """Подтверждённая ставка хранения: 0,15 рубля за литр в сутки для всех."""
     return STORAGE_RATE
 
 
 def pick_rate_of(lot, client):
-    """Сборка, ₽ за штуку: у позиции своя, иначе ставка клиента по умолчанию."""
+    """Сборка из допполя товара; тариф клиента сохранён только для старых архивных партий."""
     if "pick_rate" in lot.keys() and lot["pick_rate"] is not None:
         return float(lot["pick_rate"])
     if not ("source_key" in lot.keys() and lot["source_key"]) and client and "tariff_pick" in client.keys() and client["tariff_pick"] is not None:
@@ -171,7 +171,7 @@ def money(lot, client, date_from=None, date_to=None, ship_days=None):
         "days": (0 if lot["ledger_kind"] == "assembly" or not accepted_day(lot) else max(0, ((min(today(), as_day(max(out))) if float(lot["qty_left"] or 0) <= 0 and out else today()) - accepted_day(lot)).days)),
         "bill_days": calc["days"],
         "bill_from": (max(accepted_day(lot), (billed_until(lot) + timedelta(days=1)) if billed_until(lot) else accepted_day(lot)).isoformat() if lot["ledger_kind"] == "assembly" else calc["from"]),
-        "bill_to": calc["to"],
+        "bill_to": ((date_to or today()).isoformat() if lot["ledger_kind"] == "assembly" else calc["to"]),
         "liter_days": calc["liter_days"],
         "shipped": (0.0 if lot["ledger_kind"] == "assembly" else round(sum(out.values()), 3)),
         "storage": calc["storage"],
@@ -185,6 +185,9 @@ def money(lot, client, date_from=None, date_to=None, ship_days=None):
 
 def consume_fifo(client_id, ms_product_id, qty, ref, when=None):
     """Списываем по FIFO датой отгрузки с площадки, а не временем воркера."""
+    from db import get_setting
+    if get_setting("ledger:enabled") == "1":
+        raise ValueError("Остаток учёта изменяют только документы МойСклад")
     left = float(qty or 0)
     if left <= 0:
         return 0

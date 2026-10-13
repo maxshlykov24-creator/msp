@@ -1,4 +1,7 @@
-"""Фактическая приёмка на склад: с неё стартует счётчик денег.
+"""Полная сверка учёта по проведённым Приёмкам и Отгрузкам МойСклад.
+
+run() — актуальный полный источник. legacy_run() сохраняет старую проверку
+для совместимости архивных тестов; в рабочем расписании она не вызывается.
 
 Заведение карточки и заказ поставщика — ещё не приёмка. Товар считается
 принятым, когда кладовщик провёл в МойСклад «Приёмку» по этому заказу и
@@ -343,6 +346,8 @@ def apply_plan(snapshot, plan, groups):
             for m in conn.execute('SELECT m.*,l.source_key AS lot_key FROM lot_moves m JOIN lots l ON l.id=m.lot_id WHERE m.source_active=1'):
                 old_moves[m['lot_key']].append(dict(m))
             cutoffs = {x['client_id']:x['day'] for x in conn.execute('SELECT client_id,max(billed_until) day FROM lots GROUP BY client_id') if x['day']}
+            if conn.execute("SELECT ms_counterparty_id FROM clients WHERE coalesce(ms_counterparty_id,'')<>'' GROUP BY ms_counterparty_id HAVING count(*)>1").fetchone():
+                raise ValueError('В панели есть дубли привязки к контрагенту МойСклад. Нужна сверка клиентов.')
             clients = {x['ms_counterparty_id']:x['id'] for x in conn.execute('SELECT * FROM clients')}
             for key, old in old_lots.items():
                 closed = old['billed_until']

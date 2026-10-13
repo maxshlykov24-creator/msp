@@ -63,8 +63,7 @@ def job_accept():
 
     try:
         res = run_accept(blocking=False)
-        if res["accepted"]:
-            print("приёмка: встало на счётчик партий %s" % len(res["accepted"]))
+        print("учёт: товаров %s, приёмок %s, отгрузок %s" % (res["products"], res["receipts"], res["demands"]))
     except BlockingIOError:
         pass
     except Exception as exc:
