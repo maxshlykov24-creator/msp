@@ -39,6 +39,7 @@ def db_path():
 def connect():
     conn = sqlite3.connect(db_path(), timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.create_function('casefold', 1, lambda value: str(value or '').casefold(), deterministic=True)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
@@ -72,6 +73,8 @@ def _rewrite_wb_dropoff(conn):
 
 
 def migrate(conn):
+    if "items_json" not in _cols(conn, "shipments"):
+        conn.execute("ALTER TABLE shipments ADD COLUMN items_json TEXT NOT NULL DEFAULT '[]'")
     if "assembly_excluded" not in _cols(conn, "shipments"):
         conn.execute("ALTER TABLE shipments ADD COLUMN assembly_excluded INTEGER NOT NULL DEFAULT 0")
     clients = _cols(conn, "clients")
@@ -1227,15 +1230,39 @@ def upsert_order_log(cabinet_id, ext_order_id, ms_order_id, result, error, creat
 SHIP_EXTRA = (
     "status_group", "accepted_at", "deadline_at", "track", "warehouse", "image",
     # куда везти задание и его габаритный тип
-    "office", "cargo_type", "pickup_allowed",
+    "office", "cargo_type", "pickup_allowed", "items_json",
 )
+
+
+def shipment_items(row):
+    """Товарные строки отправления; старые однопозиционные записи совместимы."""
+    data = dict(row)
+    items = json.loads(data.get('items_json') or '[]')
+    if items:
+        return items
+    if data.get('marketplace') == 'ozon' and ' · ещё ' in (data.get('name') or ''):
+        return []
+    return [{k: data.get(k) for k in ('article', 'barcode', 'name', 'qty', 'image')}]
+
+
+def expand_shipment_items(rows):
+    """Одна строка на SKU для подбора, товарных этикеток и отчётов."""
+    for row in rows:
+        items = shipment_items(row)
+        if not items:
+            raise ValueError('Обнови отправление %s: полный состав ещё не получен от Ozon.' % row['ext_id'])
+        for item in items:
+            out = dict(row)
+            out.update(item)
+            out['items_json'] = '[]'
+            yield out
 
 
 def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, shipped_at, article, barcode, name, qty, ms_order_id, marks_count, pulled_at, extra=None):
     extra = extra or {}
     conn = connect()
     existing = conn.execute(
-        "SELECT id, pickup_allowed, office FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
+        "SELECT id, pickup_allowed, office, items_json FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
         (cabinet_id, kind, ext_id),
     ).fetchone()
     # адрес сдачи и флаг ПВЗ приходят не из выгрузки, а от поставки: точку
@@ -1243,6 +1270,8 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
     for col in ("pickup_allowed", "office"):
         if existing and not extra.get(col):
             extra[col] = str(col in existing.keys() and existing[col] or "")
+    if 'items_json' not in extra:
+        extra['items_json'] = existing['items_json'] if existing else '[]'
     more = [str(extra.get(col) or "") for col in SHIP_EXTRA]
     if existing:
         conn.execute(
@@ -1269,7 +1298,7 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
         )
         sid = cur.lastrowid
     if extra.get("status_group") not in ("delivered", "cancelled"):
-        conn.execute("UPDATE shipments SET archived_at='' WHERE id=?", (sid,))
+        conn.execute("UPDATE shipments SET archived_at='' WHERE id=? AND COALESCE(work_state,'') <> 'replaced'", (sid,))
     conn.commit()
     conn.close()
     return sid
@@ -1410,11 +1439,7 @@ def set_shipment_supply(ids, supply_ext, trbx_ext=None):
 
 
 def delete_shipments_by_ext(cabinet_id, kind, ext_ids):
-    """Убрать отправления, которых на площадке больше нет.
-
-    Ozon при сборке с дроблением заменяет номер отправления на несколько новых:
-    старый номер перестаёт существовать, и держать его в списке — врать сборщику.
-    """
+    """Архивировать заменённые при дроблении отправления вместе с историей КиЗ."""
     if not ext_ids:
         return 0
     conn = connect()
@@ -1428,8 +1453,8 @@ def delete_shipments_by_ext(cabinet_id, kind, ext_ids):
     ]
     if ids:
         idq = ",".join("?" * len(ids))
-        conn.execute("DELETE FROM shipment_marks WHERE shipment_id IN (%s)" % idq, ids)
-        conn.execute("DELETE FROM shipments WHERE id IN (%s)" % idq, ids)
+        conn.execute("UPDATE shipments SET archived_at=?, work_state='replaced' WHERE id IN (%s)" % idq,
+                     [datetime.now(timezone.utc).isoformat(timespec='seconds')] + ids)
     conn.commit()
     conn.close()
     return len(ids)
@@ -1845,17 +1870,22 @@ def shipped_by_day(client_id, day_from, day_to):
     """
     conn = connect()
     rows = conn.execute(
-        "SELECT substr(shipments.shipped_at,1,10) AS day, shipments.article AS article, "
-        "shipments.barcode AS barcode, shipments.name AS name, shipments.marketplace AS mp, "
-        "SUM(shipments.qty) AS qty FROM shipments "
+        "SELECT * FROM shipments "
         "WHERE shipments.client_id = ? AND shipments.status_group IN ('shipped','pickup','delivered') "
+        "AND COALESCE(shipments.work_state,'') <> 'replaced' "
         "AND substr(shipments.shipped_at,1,10) >= ? AND substr(shipments.shipped_at,1,10) <= ? "
-        "GROUP BY day, shipments.article, shipments.barcode "
-        "ORDER BY shipments.article, day",
+        "ORDER BY shipments.article, shipments.shipped_at",
         (int(client_id), day_from, day_to),
     ).fetchall()
     conn.close()
-    return rows
+    grouped = {}
+    for item in expand_shipment_items(rows):
+        day = (item['shipped_at'] or '')[:10]
+        key = (day, item['article'], item['barcode'])
+        out = grouped.setdefault(key, {'day': day, 'article': item['article'], 'barcode': item['barcode'],
+                                      'name': item['name'], 'mp': item['marketplace'], 'qty': 0})
+        out['qty'] += float(item['qty'])
+    return sorted(grouped.values(), key=lambda r: (r['article'], r['day']))
 
 
 def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_from="", day_to="", query=""):
@@ -1975,15 +2005,17 @@ def _assembly_filters(
     # отбирает позиции на печать этикеток, и «777» не должен тянуть «7777».
     art = (article or "").strip().lower()
     if art:
-        sql += " AND lower(trim(ifnull(shipments.article,''))) = ?"
-        args.append(art)
+        sql += (" AND (casefold(trim(ifnull(shipments.article,''))) = ? OR EXISTS "
+                "(SELECT 1 FROM json_each(coalesce(nullif(shipments.items_json,''),'[]')) i "
+                "WHERE casefold(trim(json_extract(i.value,'$.article'))) = ?))")
+        args.extend([art.casefold(), art.casefold()])
     text = (query or "").strip().lower()
     if text:
         sql += (
-            " AND lower(ifnull(shipments.ext_id,'') || ' ' || ifnull(shipments.article,'') || ' ' || "
+            " AND casefold(ifnull(shipments.ext_id,'') || ' ' || ifnull(shipments.article,'') || ' ' || "
             "ifnull(shipments.barcode,'') || ' ' || ifnull(shipments.name,'') || ' ' || "
             "ifnull(shipments.status,'') || ' ' || ifnull(clients.name,'') || ' ' || "
-            "ifnull(shipments.track,'') || ' ' || ifnull(shipments.warehouse,'')) LIKE ?"
+            "ifnull(shipments.track,'') || ' ' || ifnull(shipments.warehouse,'') || ' ' || ifnull(shipments.items_json,'')) LIKE ?"
         )
         args.append("%" + text + "%")
     return sql, args

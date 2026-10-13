@@ -21,21 +21,14 @@ class PackError(Exception):
 
 def ozon_products(cab, posting):
     """Состав отправления: product_id и количество. Без них `ship` не примет тело."""
-    from shipments_pull import pull_ozon_get
+    from shipments_pull import pull_ozon_get, ozon_composition
 
     heads = ozon_headers(cab["client_id_ext"], cab["token"])
     detail = pull_ozon_get(heads, "fbs", posting) or {}
     if isinstance(detail, list):
         detail = detail[0] if detail else {}
-    out = []
-    for prod in detail.get("products") or []:
-        if not isinstance(prod, dict):
-            continue
-        pid = prod.get("product_id") or prod.get("sku")
-        if not pid:
-            continue
-        out.append({"product_id": int(pid), "quantity": int(float(prod.get("quantity") or 1))})
-    return out
+    return [{'product_id': p['product_id'], 'quantity': p['qty']}
+            for p in ozon_composition(detail.get('products'))]
 
 
 def packages(products, split=True):
@@ -64,7 +57,7 @@ def ship_ozon(cab, posting, split=True):
         "packages": packages(products, split=split),
         "with": {"additional_data": False},
     }
-    r = req("POST", OZON_SHIP, headers=ozon_headers(cab["client_id_ext"], cab["token"]), json=body)
+    r = req("POST", OZON_SHIP, headers=ozon_headers(cab["client_id_ext"], cab["token"]), json=body, retry_safe=False)
     if r.status_code != 200:
         detail = (r.text or "")[:300]
         low = detail.lower()
@@ -83,7 +76,10 @@ def ship_ozon(cab, posting, split=True):
         result = result.get("posting_numbers") or result.get("result") or []
     numbers = [str(x) for x in (result or []) if x]
     if not numbers:
-        # метод отвечает 200 и пустым списком, когда отправление уже собрано
+        from shipments_pull import pull_ozon_get
+        detail = pull_ozon_get(ozon_headers(cab['client_id_ext'], cab['token']), 'fbs', posting, strict=True)
+        if detail.get('status') not in ('awaiting_deliver', 'delivering', 'driver_pickup', 'delivered'):
+            raise PackError('Ozon не подтвердил сборку. Обнови отправление перед повтором.')
         numbers = [posting]
     if len(numbers) > 1:
         notes.append("Ozon %s разделено на %s отправлений: %s" % (posting, len(numbers), ", ".join(numbers)))

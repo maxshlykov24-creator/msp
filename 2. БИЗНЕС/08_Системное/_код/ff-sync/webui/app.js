@@ -1668,20 +1668,22 @@ function kizCell(r) {
 }
 
 function asmRowHtml(r) {
-  return `<tr>
-    <td class="pick"><input type="checkbox" data-asm="${r.id}"></td>
-    <td class="client">${esc(r.client)}</td>
-    <td class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span></td>
-    <td class="when">${esc(r.accepted || "—")}</td>
-    <td class="ph">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy" title="увеличить">` : `<span class="noph"></span>`}</td>
-    <td class="artq"><b>${num(r.qty, 0)} шт</b> · ${r.article ? `<button type="button" class="artlink" data-art="${esc(r.article)}" title="Найти этот артикул">${esc(r.article)}</button>` : "—"}</td>
-    <td class="nm" title="${esc(r.name)}">${esc(r.name || "—")}</td>
-    <td class="platform-status">${esc(r.status || "Не проверен")}</td>
-    <td class="trk track-col">${esc(r.track || "—")}</td>
-    <td class="dest">${r.office ? esc(r.office) : "—"}${r.cargo ? `<span class="cargo">${esc(r.cargo)}</span>` : ""}</td>
-    <td class="sup">${r.supply ? `<span class="badge supply">${esc(r.supply)}</span>` : "—"}${r.box ? `<span class="badge box">${esc(r.box)}</span>` : ""}</td>
-    <td class="num">${kizCell(r)}</td>
-  </tr>`;
+  const items = r.items && r.items.length ? r.items : [{ qty: r.qty, article: "", name: "Обнови отправление: состав не загружен" }];
+  const span = `rowspan="${items.length}"`;
+  return items.map((item, index) => `<tr class="${items.length > 1 ? "posting-item" : ""}">
+    ${index ? "" : `<td ${span} class="pick"><input type="checkbox" data-asm="${r.id}"></td>
+    <td ${span} class="client">${esc(r.client)}</td>
+    <td ${span} class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span>${items.length > 1 ? `<small>${items.length} артикула · ${num(r.qty, 0)} шт всего</small>` : ""}</td>
+    <td ${span} class="when">${esc(r.accepted || "—")}</td>`}
+    <td class="ph">${item.image ? `<img src="${esc(item.image)}" alt="" loading="lazy" title="увеличить">` : `<span class="noph"></span>`}</td>
+    <td class="artq"><b>${num(item.qty, 0)} шт</b> · ${item.article ? `<button type="button" class="artlink" data-art="${esc(item.article)}" title="Найти этот артикул">${esc(item.article)}</button>` : "—"}</td>
+    <td class="nm" title="${esc(item.name)}">${esc(item.name || "—")}</td>
+    ${index ? "" : `<td ${span} class="platform-status">${esc(r.status || "Не проверен")}</td>
+    <td ${span} class="trk track-col">${esc(r.track || "—")}</td>
+    <td ${span} class="dest">${r.office ? esc(r.office) : "—"}${r.cargo ? `<span class="cargo">${esc(r.cargo)}</span>` : ""}</td>
+    <td ${span} class="sup">${r.supply ? `<span class="badge supply">${esc(r.supply)}</span>` : "—"}${r.box ? `<span class="badge box">${esc(r.box)}</span>` : ""}</td>
+    <td ${span} class="num">${kizCell(r)}</td>`}
+  </tr>`).join("");
 }
 
 function wbSupplyShort(state) {
@@ -2194,7 +2196,7 @@ $("aDone").onclick = asmDone;
 
 // коды маркировки: склад пикает сканером, отправляем на площадку набором
 
-let kizState = { ids: [], index: 0, id: 0, need: 0, codes: [] };
+let kizState = { ids: [], index: 0, id: 0, need: 0, codes: [], products: [], assignments: {} };
 
 function kizRender() {
   const have = kizState.codes.length;
@@ -2205,11 +2207,22 @@ function kizRender() {
     : "Внесено кодов: " + have;
   $("kizCount").classList.toggle("is-ok", matched);
   $("kizList").innerHTML = have
-    ? kizState.codes.map((code, i) => `<div class="kiz-item"><span>${i + 1}</span><code>${esc(code)}</code><button type="button" data-kiz-del="${i}">Убрать</button></div>`).join("")
+    ? kizState.codes.map((code, i) => {
+      const product = (kizState.products || []).find((p) => String(p.product_id) === String((kizState.assignments || {})[code]));
+      return `<div class="kiz-item"><span>${i + 1}</span><code>${product ? `<b>${esc(product.article)}</b><br>` : ""}${esc(code)}</code><button type="button" data-kiz-del="${i}">Убрать</button></div>`;
+    }).join("")
     : `<div class="empty">Пока ничего не просканировано.</div>`;
   const more = kizState.ids.length > 1 && kizState.index < kizState.ids.length - 1;
   $("kizSend").textContent = more ? "Отправить и дальше" : "Отправить на площадку";
   $("kizSend").disabled = !have;
+  const products = (kizState.products || []).filter((p) => p.marked);
+  $("kizProductWrap").hidden = products.length < 2;
+  const selected = $("kizProduct").value;
+  $("kizProduct").innerHTML = '<option value="">Выбери артикул</option>' + products.map((p) => {
+    const count = kizState.codes.filter((code) => String((kizState.assignments || {})[code]) === String(p.product_id)).length;
+    return `<option value="${esc(p.product_id)}">${esc(p.article || p.name)} · ${count} из ${p.quantity}</option>`;
+  }).join("");
+  $("kizProduct").value = selected;
 }
 
 // ЙЦУКЕН → та клавиша, которую сканер жал на латинской раскладке.
@@ -2261,6 +2274,17 @@ function kizAdd(raw) {
     const code = layoutToEn(part.trim());
     if (!code) return;
     if (kizState.codes.includes(code)) { dupe += 1; return; }
+    const products = (kizState.products || []).filter((p) => p.marked);
+    if (products.length) {
+      const gtin = code.replace(/^\]d2/, "").match(/^01(\d{14})/);
+      const matches = gtin ? products.filter((p) => p.gtin && String(p.gtin).padStart(14, "0") === gtin[1]) : [];
+      const selected = $("kizProduct").value;
+      const product = matches.length === 1 ? matches[0] : products.length === 1 ? products[0] : products.find((p) => String(p.product_id) === selected);
+      if (!product) { say($("kizMsg"), "Выбери артикул этого кода перед сканированием.", "bad"); return; }
+      const count = kizState.codes.filter((c) => String(kizState.assignments[c]) === String(product.product_id)).length;
+      if (count >= product.quantity) { say($("kizMsg"), "Для этого артикула уже внесены все коды. Выбери следующий.", "bad"); return; }
+      kizState.assignments[code] = product.product_id;
+    }
     kizState.codes.push(code);
     added += 1;
   });
@@ -2294,6 +2318,8 @@ async function loadKizStep() {
   kizState.id = id;
   kizState.need = 0;
   kizState.codes = [];
+  kizState.products = [];
+  kizState.assignments = {};
   const total = kizState.ids.length;
   $("kizStep").textContent = total > 1 ? (kizState.index + 1) + " из " + total : "";
   $("kizSkip").hidden = total < 2;
@@ -2306,8 +2332,10 @@ async function loadKizStep() {
     if (mine !== kizLoad) return;
     kizState.need = res.need || 0;
     kizState.codes = (res.codes || []).slice();
+    kizState.products = res.products || [];
+    kizState.assignments = Object.fromEntries((res.assignments || []).map((a) => [a.code, a.product_id]));
     const mp = res.marketplace === "wb" ? "WB" : "Ozon";
-    const title = res.article || res.name || "";
+    const title = kizState.products.length > 1 ? kizState.products.map((p) => `${p.article || p.name}: ${p.quantity} шт`).join("; ") : res.article || res.name || "";
     $("kizSub").textContent = mp + " " + res.ext_id + " · " + title + " · " + res.qty + " шт";
     say($("kizMsg"), res.note || "");
     kizRender();
@@ -2341,7 +2369,7 @@ async function openKizQueue(ids, opts) {
     }
     await loadAsm();
   }
-  kizState = { ids, index: 0, id: 0, need: 0, codes: [] };
+  kizState = { ids, index: 0, id: 0, need: 0, codes: [], products: [], assignments: {} };
   $("kizModal").classList.add("on");
   await loadKizStep();
 }
@@ -2349,7 +2377,8 @@ async function openKizQueue(ids, opts) {
 $("aKiz").onclick = openKizFromPick;
 $("kizClose").onclick = () => { if (!kizBusy) $("kizModal").classList.remove("on"); };
 $("kizModal").onclick = (e) => { if (!kizBusy && e.target === $("kizModal")) $("kizModal").classList.remove("on"); };
-$("kizClear").onclick = () => { if (kizBusy) return; kizState.codes = []; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
+$("kizClear").onclick = () => { if (kizBusy) return; kizState.codes = []; kizState.assignments = {}; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
+$("kizProduct").onchange = () => $("kizInput").focus();
 
 $("kizInput").onkeydown = (e) => {
   if (kizBusy) { e.preventDefault(); return; }
@@ -2400,7 +2429,8 @@ $("kizList").onclick = (e) => {
   if (kizBusy) return;
   const btn = e.target.closest("button[data-kiz-del]");
   if (!btn) return;
-  kizState.codes.splice(Number(btn.dataset.kizDel), 1);
+  const removed = kizState.codes.splice(Number(btn.dataset.kizDel), 1);
+  removed.forEach((code) => delete kizState.assignments[code]);
   kizRender();
   $("kizInput").focus();
 };
@@ -2425,13 +2455,13 @@ $("kizSend").onclick = async () => {
     return;
   }
   kizBusy = true;
-  ["kizInput", "kizSkip", "kizClear", "kizClose"].forEach((id) => $(id).disabled = true);
+  ["kizInput", "kizSkip", "kizClear", "kizClose", "kizProduct"].forEach((id) => $(id).disabled = true);
   $("kizSend").disabled = true;
   say($("kizMsg"), "Отправляю на площадку…");
   try {
     const res = await api("/api/assembly/" + kizState.id + "/kiz", {
       method: "POST",
-      body: JSON.stringify({ codes: kizState.codes }),
+      body: JSON.stringify({ codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
     });
     const row = state.asm.find((r) => r.id === kizState.id);
     if (row) row.marks = res.sent;
@@ -2456,7 +2486,7 @@ $("kizSend").onclick = async () => {
     $("kizSend").disabled = false;
   } finally {
     kizBusy = false;
-    ["kizInput", "kizSkip", "kizClear", "kizClose"].forEach((id) => $(id).disabled = false);
+    ["kizInput", "kizSkip", "kizClear", "kizClose", "kizProduct"].forEach((id) => $(id).disabled = false);
     if ($("kizModal").classList.contains("on")) $("kizInput").focus();
   }
 };

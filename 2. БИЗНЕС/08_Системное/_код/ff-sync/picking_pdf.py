@@ -10,7 +10,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
 
-from db import catalog_card
+from db import catalog_card, expand_shipment_items
 from labels import _font, _font_bold, _wrap
 
 MSK = timezone(timedelta(hours=3))
@@ -68,7 +68,7 @@ def _size(val):
 def _rows(raw):
     out = []
     cards = {}
-    for row in raw:
+    for row in expand_shipment_items(raw):
         article = (row["article"] or "").strip()
         barcode = (row["barcode"] or "").strip()
         key = (row["client_id"], article, barcode)

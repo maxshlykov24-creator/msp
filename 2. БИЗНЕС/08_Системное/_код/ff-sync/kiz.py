@@ -18,7 +18,7 @@
 
 import re
 
-from db import get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks, run_lock
+from db import get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks, run_lock, shipment_items
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
 from shipments_pull import gtin_of
 
@@ -149,21 +149,43 @@ def _ozon_create(cab, posting):
         raise KizError("Ozon вернул нераспознанный ответ по экземплярам")
 
 
+def _ozon_product_info(row, data):
+    items = shipment_items(row)
+    by_id = {str(i.get('product_id')): i for i in items if i.get('product_id')}
+    products = data.get('products') or []
+    out = []
+    for prod in products:
+        if not isinstance(prod, dict) or not prod.get('product_id'):
+            raise KizError('Ozon не отдал полный состав экземпляров')
+        item = by_id.get(str(prod.get('product_id')))
+        if item is None and len(products) == 1 and len(items) == 1 and not items[0].get('product_id'):
+            item = items[0]
+        if item is None:
+            raise KizError('Состав отправления изменился. Обнови отправления и открой КиЗ заново.')
+        if int(prod.get('quantity') or 0) != int(item.get('qty') or 0):
+            raise KizError('Количество товара изменилось. Обнови отправления и открой КиЗ заново.')
+        out.append((prod, item))
+    return out
+
+
 def _ozon_plan(row, cab):
     data = _ozon_create(cab, row["ext_id"])
     need = 0
     have = 0
     products = []
-    for prod in data.get("products") or []:
+    for prod, item in _ozon_product_info(row, data):
         if not isinstance(prod, dict):
             continue
         qty = int(float(prod.get("quantity") or 0))
-        marked = bool(prod.get("is_mandatory_mark_needed")) or bool(prod.get("is_mandatory_mark_possible"))
+        required = bool(prod.get('is_mandatory_mark_needed')) or bool(item.get('need_kiz'))
+        if len(shipment_items(row)) == 1:
+            required = required or product_marked(row)
+        marked = required or bool(prod.get("is_mandatory_mark_possible"))
         filled = 0
         for ex in prod.get("exemplars") or []:
             if any((m or {}).get("mark") for m in (ex.get("marks") or [])):
                 filled += 1
-        if bool(prod.get("is_mandatory_mark_needed")):
+        if required:
             need += qty
         have += filled
         products.append(
@@ -171,55 +193,83 @@ def _ozon_plan(row, cab):
                 "product_id": prod.get("product_id"),
                 "quantity": qty,
                 "marked": marked,
-                "required": bool(prod.get("is_mandatory_mark_needed")),
+                "required": required,
+                "article": item.get('article') or '',
+                "name": item.get('name') or '',
+                "gtin": item.get('gtin') or '',
                 "filled": filled,
             }
         )
     note = ""
-    if product_marked(row):
-        qty = max(1, int(float(row["qty"] or 1)))
-        if need < qty:
-            need = qty
-            note = "Товар с маркировкой: код обязателен у нас."
     if row["status_group"] and row["status_group"] != "new":
         note = "Ozon принимает коды только до сборки: отправление уже ушло дальше «ожидает упаковки»."
     return {"need": need, "have": have, "products": products, "note": note}
 
 
-def _ozon_submit(row, cab, codes):
+def _ozon_submit(row, cab, codes, assignments=None):
     """Экземпляры Ozon: сначала проверка кодов, потом set, потом ждём ship_available."""
+    if row['status_group'] != 'new':
+        raise KizError('Ozon принимает КиЗ до сборки. Обнови статус отправления.')
     heads = ozon_headers(cab["client_id_ext"], cab["token"])
     data = _ozon_create(cab, row["ext_id"])
     notes = []
-    slots = []
-    for prod in data.get("products") or []:
-        if not isinstance(prod, dict) or not prod.get("product_id"):
+    info = _ozon_product_info(row, data)
+    pools, articles, gtins, required = {}, {}, {}, {}
+    for prod, item in info:
+        pid = int(prod['product_id'])
+        must = bool(prod.get('is_mandatory_mark_needed')) or bool(item.get('need_kiz'))
+        if len(info) == 1:
+            must = must or product_marked(row)
+        if not (must or prod.get('is_mandatory_mark_possible')):
             continue
-        exemplars = [ex for ex in (prod.get("exemplars") or []) if isinstance(ex, dict)]
-        for ex in exemplars:
-            slots.append((int(prod["product_id"]), ex))
-    if not slots:
+        pools[pid] = [ex for ex in prod.get('exemplars') or [] if isinstance(ex, dict) and ex.get('exemplar_id')]
+        articles[pid] = item.get('article') or str(pid)
+        gtins[pid] = str(item.get('gtin') or '').zfill(14) if item.get('gtin') else ''
+        required[pid] = int(prod.get('quantity') or 0) if must else 0
+    if not pools:
         raise KizError("Ozon не создал экземпляры под это отправление, коды передавать некуда")
-    if len(codes) > len(slots):
-        raise KizError(
-            "кодов больше, чем экземпляров у площадки: кодов %s, экземпляров %s" % (len(codes), len(slots))
-        )
-    if len(codes) < len(slots):
-        notes.append("Ozon ждёт %s кодов, передаю %s — остальные останутся пустыми." % (len(slots), len(codes)))
+    explicit = {}
+    for assignment in assignments or []:
+        code = clean_code(assignment.get('code'))
+        try:
+            pid = int(assignment.get('product_id'))
+        except (TypeError, ValueError):
+            raise KizError('Не выбран артикул кода маркировки')
+        if code in explicit and explicit[code] != pid:
+            raise KizError('Один код назначен разным артикулам')
+        explicit[code] = pid
+    slots, counts, saved = [], {}, []
+    for code in codes:
+        gtin = gtin_of(code)
+        matched = [pid for pid, value in gtins.items() if value and value == gtin]
+        pid = explicit.get(code)
+        if pid is None:
+            pid = matched[0] if len(matched) == 1 else next(iter(pools)) if len(pools) == 1 else None
+        if pid not in pools:
+            raise KizError('Для каждого кода выбери его артикул. Порядок сканирования не определяет товар.')
+        if gtins[pid] and gtin != gtins[pid]:
+            raise KizError('Код не относится к выбранному артикулу %s' % articles[pid])
+        index = counts.get(pid, 0)
+        if index >= len(pools[pid]):
+            raise KizError('Кодов больше, чем экземпляров артикула %s' % articles[pid])
+        counts[pid] = index + 1
+        slots.append((pid, pools[pid][index]))
+        saved.append({'code': code, 'gtin': gtin, 'article': articles[pid]})
+    for pid, qty in required.items():
+        if counts.get(pid, 0) < qty:
+            raise KizError('Артикул %s: нужно %s кодов, внесено %s' % (articles[pid], qty, counts.get(pid, 0)))
 
+    validation = {}
+    for (pid, ex), code in zip(slots, codes):
+        validation.setdefault(pid, {'product_id': pid, 'exemplars': []})['exemplars'].append(
+            {'exemplar_id': ex['exemplar_id'], 'marks': [{'mark': code, 'mark_type': 'mandatory_mark'}]})
     r = req(
         "POST",
         OZON_VALIDATE,
         headers=heads,
         json={
             "posting_number": row["ext_id"],
-            "products": [
-                {
-                    "product_id": pid,
-                    "exemplars": [{"marks": [{"mark": code, "mark_type": "mandatory_mark"}]}],
-                }
-                for (pid, _ex), code in zip(slots, codes)
-            ],
+            "products": list(validation.values()),
         },
     )
     if r.status_code == 200:
@@ -227,16 +277,20 @@ def _ozon_submit(row, cab, codes):
             checked = r.json() or {}
         except ValueError:
             checked = {}
-        bad = []
+        bad, verified = [], set()
         for prod in checked.get("products") or []:
             for ex in prod.get("exemplars") or []:
                 for mark in ex.get("marks") or []:
                     if mark.get("valid") is False:
                         bad.append("%s: %s" % ((mark.get("mark") or "")[:20], ", ".join(mark.get("errors") or []) or "не принят"))
+                    elif mark.get('valid') is True:
+                        verified.add(mark.get('mark'))
         if bad:
             raise KizError("Ozon не принял коды: " + "; ".join(bad))
+        if verified != set(codes):
+            raise KizError('Ozon не подтвердил проверку всех кодов, передача остановлена')
     else:
-        notes.append("Ozon не проверил коды заранее (%s), отправляю как есть." % r.status_code)
+        _fail(r, 'Ozon не проверил коды, передача остановлена')
 
     products = {}
     for (pid, ex), code in zip(slots, codes):
@@ -258,6 +312,7 @@ def _ozon_submit(row, cab, codes):
         OZON_SET,
         headers=heads,
         json={"posting_number": row["ext_id"], "products": list(products.values())},
+        retry_safe=False,
     )
     if r.status_code != 200:
         _fail(r, "Ozon не принял коды маркировки")
@@ -273,10 +328,12 @@ def _ozon_submit(row, cab, codes):
     if state == "validation_in_process":
         notes.append("Ozon ещё проверяет коды. Жми «Собрано», когда проверка пройдёт.")
     elif state == "ship_not_available":
-        notes.append("Ozon пока не разрешает сборку по этим кодам — проверь их в кабинете.")
+        raise KizError('Ozon отклонил маркировку: сборка недоступна. Проверь коды в кабинете.')
     elif state == "ship_available":
         notes.append("Ozon проверил коды: сборка доступна.")
-    return {"sent": len(codes), "state": state, "notes": notes}
+    else:
+        raise KizError('Коды отправлены, но Ozon ещё не подтвердил результат. Проверь отправление перед повтором.')
+    return {"sent": len(codes), "state": state, "notes": notes, '_saved': saved}
 
 
 # --- Wildberries --------------------------------------------------------
@@ -328,6 +385,15 @@ def missing_mark_note(rows):
     """Текст отказа, если маркированный товар идёт дальше без кодов. Пусто, если можно."""
     missing = []
     for row in rows:
+        if dict(row).get('marketplace') == 'ozon' and dict(row).get('items_json') not in (None, '', '[]'):
+            marks = list_shipment_marks([row['id']])
+            for item in shipment_items(row):
+                if not item.get('need_kiz'):
+                    continue
+                have = sum(m['article'] == item['article'] for m in marks)
+                if have < item['qty']:
+                    missing.append('%s: %s из %s' % (item['article'], have, item['qty']))
+            continue
         keys = row.keys() if hasattr(row, "keys") else ()
         if "kind" in keys and str(row["kind"] or "") != "fbs":
             continue
@@ -427,6 +493,12 @@ def plan(ship_id):
     else:
         raise KizError("неизвестная площадка %s" % row["marketplace"])
     saved = [r["code"] for r in list_shipment_marks([row["id"]])]
+    assignments = []
+    if row['marketplace'] == 'ozon':
+        for mark in list_shipment_marks([row['id']]):
+            matches = [p for p in out['products'] if p['article'] == mark['article']]
+            if len(matches) == 1:
+                assignments.append({'code': mark['code'], 'product_id': matches[0]['product_id']})
     out.update(
         {
             "id": row["id"],
@@ -439,20 +511,21 @@ def plan(ship_id):
             # уже просканированное показываем снова: повторная отправка затирает
             # прежний набор целиком, и пустой список стёр бы принятые коды
             "codes": saved,
+            "assignments": assignments,
         }
     )
     return out
 
 
-def submit(ship_id, raw_codes):
+def submit(ship_id, raw_codes, assignments=None):
     try:
         with run_lock(name="kiz-%s" % int(ship_id), blocking=False):
-            return _submit(ship_id, raw_codes)
+            return _submit(ship_id, raw_codes, assignments)
     except BlockingIOError:
         raise KizError("Код этого задания уже отправляется. Дождись результата.")
 
 
-def _submit(ship_id, raw_codes):
+def _submit(ship_id, raw_codes, assignments=None):
     """Передать коды на площадку и записать их себе — но только после её «да»."""
     codes = clean_codes(raw_codes)
     if not codes:
@@ -462,7 +535,7 @@ def _submit(ship_id, raw_codes):
     if row["kind"] != "fbs":
         raise KizError("коды маркировки вводим только по FBS")
     if row["marketplace"] == "ozon":
-        res = _ozon_submit(row, cab, codes)
+        res = _ozon_submit(row, cab, codes, assignments)
     elif row["marketplace"] == "wb":
         codes = clean_codes([normalize_wb_code(code) for code in codes])
         res = _wb_submit(row, cab, codes)
@@ -470,6 +543,6 @@ def _submit(ship_id, raw_codes):
         raise KizError("неизвестная площадка %s" % row["marketplace"])
     replace_shipment_marks(
         row["id"],
-        [{"code": code, "gtin": gtin_of(code), "article": row["article"] or ""} for code in codes],
+        res.pop('_saved', None) or [{"code": code, "gtin": gtin_of(code), "article": row["article"] or ""} for code in codes],
     )
     return res

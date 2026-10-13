@@ -336,24 +336,29 @@ def handle_wb_fbo(client, cab, orders):
 
 
 def handle_ozon(client, cab, kind, postings):
+    from shipments_pull import ozon_composition, ozon_stamp
     n = 0
     for post in postings:
         ext_id = str(post.get("posting_number") or "")
         if not ext_id or already_ok(cab["id"], ext_id):
             continue
+        if post.get('status') in ('cancelled', 'canceled'):
+            continue
         positions = []
-        for prod in post.get("products") or []:
+        missing = []
+        for prod in ozon_composition(post.get('products')):
             pid = resolve_product(
                 client["id"],
                 cab["id"],
-                ext_key=prod.get("offer_id"),
-                article=prod.get("offer_id"),
+                ext_key=prod['article'],
+                article=prod['article'],
             )
             if not pid:
+                missing.append(prod['article'])
                 continue
-            positions.append({"product_id": pid, "qty": float(prod.get("quantity") or 1)})
-        if not positions:
-            upsert_order_log(cab["id"], ext_id, None, "нет товара", "", now_iso())
+            positions.append({"product_id": pid, "qty": prod['qty']})
+        if missing or not positions:
+            upsert_order_log(cab["id"], ext_id, None, "нет товара", 'Не сопоставлены: ' + ', '.join(missing), now_iso())
             continue
         oid, msg = create_order(
             client,
@@ -362,9 +367,9 @@ def handle_ozon(client, cab, kind, postings):
             ext_id,
             positions,
             ext_id,
-            moment_of((post.get("analytics_data") or {}).get("delivery_date") or post.get("in_process_at")),
+            ozon_stamp((post.get("analytics_data") or {}).get("delivery_date") or post.get("in_process_at")),
             post.get("status") or kind.upper(),
-            moment_of(post.get("in_process_at")),
+            ozon_stamp(post.get("in_process_at")),
         )
         print("Ozon %s %s: %s" % (kind, ext_id, msg))
         if oid:

@@ -95,11 +95,14 @@ async def pleep_sync(request: Request, x_api_key: str = Header(default="")) -> R
         "name": fields.get("name", ""), "phone": phone, "email": fields.get("email", ""),
         "channel": "Pleep AI", "notes": fields.get("notes", ""),
         "tags": fields.get("tags", ""),
+        "task_text": fields.get("task_text", "").strip()[:4000],
     }
     key = f"pleep:{phone}:{int(time.time())}"
     with session_scope() as s:
         eid, _ = enqueue(s, "pleep", "intake", key, payload, phone=phone)
-    return JSONResponse({"ok": True, "accepted": True, "event_id": eid}, 202)
+    return JSONResponse({"ok": True, "accepted": True, "event_id": eid,
+                         "status": "queued", "task_requested": bool(payload["task_text"]),
+                         "message": "Queued for processing; CRM writes are not yet confirmed."}, 202)
 
 
 # ── Kommo native webhook ──

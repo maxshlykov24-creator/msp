@@ -1,6 +1,8 @@
 """Отгрузки FBS/FBO из кабинетов + коды маркировки."""
 
 from datetime import datetime, timedelta, timezone
+import json
+import math
 
 import statuses as statuses_mod
 from db import (
@@ -49,6 +51,51 @@ def day_of(raw):
 def stamp_of(raw):
     """Дата и время до минуты: смена делит заказы по времени поступления."""
     return (moment_of(raw) or "")[:16]
+
+
+def ozon_stamp(raw):
+    """Ozon отдаёт UTC; смена и крайний срок отображаются по Москве."""
+    if not raw:
+        return ''
+    dt = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(MSK).strftime('%Y-%m-%d %H:%M')
+
+
+def ozon_composition(products):
+    """Проверяем весь состав до записи. Нулевая/дробная строка не становится 1 шт."""
+    if not isinstance(products, list) or not products:
+        raise ValueError('Ozon не отдал полный состав отправления. Обнови данные.')
+    out = []
+    seen = set()
+    for p in products:
+        if not isinstance(p, dict):
+            raise ValueError('Ozon: неверная товарная строка')
+        pid = str(p.get('sku') or p.get('product_id') or '')
+        article = str(p.get('offer_id') or '').strip()
+        try:
+            qty = float(p.get('quantity'))
+        except (TypeError, ValueError):
+            qty = 0
+        if not pid.isdigit() or int(pid) <= 0 or not article or not math.isfinite(qty) or qty <= 0 or not qty.is_integer() or pid in seen:
+            raise ValueError('Ozon: неполный или противоречивый состав, прежние данные сохранены')
+        seen.add(pid)
+        out.append({'product_id': int(pid), 'article': article, 'name': str(p.get('name') or article), 'qty': int(qty)})
+    return out
+
+
+def ozon_items(client, cab, products):
+    items = ozon_composition(products)
+    for item in items:
+        hits = [dict(h) for h in find_cache(client['id'], article=item['article'])
+                if h['cabinet_id'] == cab['id']]
+        hit = hits[0] if hits else {}
+        item.update({
+            'barcode': hit.get('ext_barcode') or '', 'gtin': hit.get('gtin') or '',
+            'image': hit.get('image') or '', 'need_kiz': bool(hit.get('need_kiz')),
+        })
+    return items
 
 
 _catalog_mem = {}
@@ -429,6 +476,13 @@ def same_ozon(row, post):
     track = post.get("tracking_number")
     if track and str(track) != (row["track"] or ""):
         return False
+    saved = json.loads(dict(row).get('items_json') or '[]')
+    if not saved:
+        return False
+    current = ozon_composition(post.get('products'))
+    signature = lambda items: sorted((int(i['product_id']), i['article'], i['name'], i['qty']) for i in items)
+    if signature(saved) != signature(current):
+        return False
     return True
 
 
@@ -454,16 +508,12 @@ def handle_ozon(client, cab, kind, postings, headers):
         elif row is not None and same_ozon(row, post):
             # ни статус, ни трек не менялись — строку не перезаписываем
             continue
-        products = detail.get("products") or post.get("products") or []
-        if not isinstance(products, list):
-            products = []
-        articles = [p.get("offer_id") or "" for p in products if isinstance(p, dict) and p.get("offer_id")]
-        names = [p.get("name") or p.get("offer_id") or "" for p in products if isinstance(p, dict)]
-        qty = sum(float(p.get("quantity") or 1) for p in products if isinstance(p, dict)) or 1
-        article = articles[0] if articles else ""
-        name = names[0] if names else article
-        if len(articles) > 1:
-            name = "%s · ещё %s" % (name, len(articles) - 1)
+        items = ozon_items(client, cab, detail.get('products') or post.get('products'))
+        qty = sum(p['qty'] for p in items)
+        article = items[0]['article']
+        name = items[0]['name']
+        if len(items) > 1:
+            name += ' · ещё %s' % (len(items) - 1)
         analytics = detail.get("analytics_data") if isinstance(detail.get("analytics_data"), dict) else {}
         shipped = day_of(
             detail.get("shipment_date")
@@ -495,12 +545,13 @@ def handle_ozon(client, cab, kind, postings, headers):
             known=row,
             extra={
                 "status_group": statuses_mod.ozon_group(raw_status),
-                "accepted_at": stamp_of(detail.get("in_process_at") or post.get("in_process_at")),
+                "accepted_at": ozon_stamp(detail.get("in_process_at") or post.get("in_process_at")),
                 # крайний срок отгрузки: до него отправление надо собрать и сдать
-                "deadline_at": stamp_of(detail.get("shipment_date") or post.get("shipment_date")),
+                "deadline_at": ozon_stamp(detail.get("shipment_date") or post.get("shipment_date")),
                 "track": detail.get("tracking_number") or post.get("tracking_number") or "",
                 "warehouse": method.get("warehouse") or "",
-                "image": photo_of(client["id"], "", article),
+                "image": items[0]['image'],
+                "items_json": json.dumps(items, ensure_ascii=False),
             },
         )
     return n

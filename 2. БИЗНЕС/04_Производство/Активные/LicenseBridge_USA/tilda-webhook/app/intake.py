@@ -178,3 +178,25 @@ def process_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
         sync_contact_owner(ctx, created, owner)
     log_decision(ctx, "intake.created", lead=lead_id, contact=contact_id, owner=owner, channel=channel)
     return {"action": "created", "lead_id": lead_id, "contact_id": contact_id, "owner": owner}
+
+
+def process_pleep_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
+    """Legacy Pleep tool: reuse the intake result when only task delivery failed."""
+    from sqlalchemy import select
+    from app.models import Decision
+    from app.tasks import create_pleep_handoff_task
+
+    previous = ctx.s.scalar(select(Decision).where(
+        Decision.inbox_id == ctx.inbox_id,
+        Decision.action == "pleep.intake_done",
+    ).order_by(Decision.id.desc())) if ctx.inbox_id is not None else None
+    result = dict(previous.detail["result"]) if previous else process_intake(ctx, payload)
+    if not previous and result.get("lead_id"):
+        log_decision(ctx, "pleep.intake_done", result=result)
+    task_text = str(payload.get("task_text") or "").strip()
+    if task_text and result.get("lead_id"):
+        result["task_id"] = create_pleep_handoff_task(
+            ctx, int(result["lead_id"]), task_text,
+            request_key=f"inbox:{ctx.inbox_id}",
+        )
+    return result

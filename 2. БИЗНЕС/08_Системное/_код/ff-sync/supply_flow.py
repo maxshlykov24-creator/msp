@@ -1128,7 +1128,8 @@ def boxes_pdf(supply_id, box_ids=None):
 def _label_payload(rows):
     """Поля этикетки: бренд и цвет только из каталога, в задании их нет."""
     out = []
-    for s in rows:
+    from db import expand_shipment_items
+    for s in expand_shipment_items(rows):
         cab = get_cabinet(s["cabinet_id"])
         card = catalog_card(s["client_id"], barcode=s["barcode"] or "", article=s["article"] or "")
         out.append(
@@ -1146,6 +1147,7 @@ def _label_payload(rows):
                 "size": card.get("size") or "",
                 "box": (s["trbx_ext"] or ""),
                 "id": s["id"],
+                "qty": s['qty'],
             }
         )
     return out

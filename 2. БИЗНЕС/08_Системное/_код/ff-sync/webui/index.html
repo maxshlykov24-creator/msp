@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=113">
+<link rel="stylesheet" href="/ui/app.css?v=114">
 </head>
 <body>
 
@@ -670,6 +670,9 @@
       <button class="btn-ghost" id="kizClose" type="button">Закрыть</button>
     </div>
     <p class="kiz-count" id="kizCount"></p>
+    <label id="kizProductWrap" hidden>Артикул для сканирования
+      <select id="kizProduct"></select>
+    </label>
     <input id="kizInput" type="text" placeholder="Сканируй код в любой раскладке" autocomplete="off">
     <p class="kiz-layout-hint">Менять язык клавиатуры не нужно. Русский ввод автоматически преобразуется в символы кода маркировки.</p>
     <div class="kiz-list" id="kizList"></div>
@@ -795,6 +798,6 @@
   </div>
 </div>
 
-<script src="/ui/app.js?v=127"></script>
+<script src="/ui/app.js?v=128"></script>
 </body>
 </html>

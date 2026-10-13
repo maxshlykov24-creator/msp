@@ -14,7 +14,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from account import lot_rows, totals
-from db import catalog_card, find_cache, get_shipments_by_ids, list_shipment_marks, prefer_hit, status_label
+from db import catalog_card, find_cache, get_shipments_by_ids, list_shipment_marks, prefer_hit, status_label, expand_shipment_items
 from ms import order_app_url
 
 MSK = timezone(timedelta(hours=3))
@@ -388,10 +388,12 @@ SHIP_COLUMNS = [
 
 def build_ships(ids):
     ships = get_shipments_by_ids(ids)
+    mark_rows = list_shipment_marks(ids)
     wb, ws = _new_sheet("Отгрузки", SHIP_COLUMNS)
     qty = 0
     marks = 0
-    for ship in ships:
+    for ship in expand_shipment_items(ships):
+        ship['marks_count'] = sum(1 for m in mark_rows if m['shipment_id'] == ship['id'] and m['article'] == ship['article'])
         qty += float(ship["qty"] or 0)
         marks += int(ship["marks_count"] or 0)
         ws.append(

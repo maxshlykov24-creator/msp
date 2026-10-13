@@ -1,3 +1,5 @@
+import pytest
+
 from app.actions import Ctx
 from app.config import settings
 from app.intake import process_intake
@@ -66,3 +68,123 @@ def test_repeat_keeps_existing_email(fake, session, enable_all):
         "name": "Old", "phone": "+15551234567", "email": "A@b.co", "channel": "Tilda",
     })
     assert fake.contacts[cid]["custom_fields_values"] == before
+
+
+# Pleep task delivery is isolated from other intake sources and from telephony.
+@pytest.fixture()
+def pleep_task_env(fake, session, monkeypatch):
+    import contextlib
+    from app import db
+
+    @contextlib.contextmanager
+    def scope():
+        yield session
+        session.commit()
+
+    @contextlib.contextmanager
+    def lock(*args):
+        yield
+
+    monkeypatch.setattr(db, 'session_scope', scope)
+    monkeypatch.setattr(db, 'phone_lock', lock)
+    fake.task_posts = 0
+
+    def paginate(path, key, params):
+        assert path == '/tasks' and key == 'tasks'
+        return iter(fake.tasks)
+
+    def post_once(path, payload):
+        assert path == '/tasks'
+        fake.task_posts += 1
+        item = dict(payload[0], id=800000 + fake.task_posts, is_completed=False)
+        fake.tasks.append(item)
+        return {'_embedded': {'tasks': [{'id': item['id']}]}}
+
+    def get(path, params=None):
+        return next((t for t in fake.tasks if path == f"/tasks/{t['id']}"), None)
+
+    monkeypatch.setattr(fake, 'paginate', paginate, raising=False)
+    monkeypatch.setattr(fake, 'post_once', post_once, raising=False)
+    monkeypatch.setattr(fake, 'get', get)
+    return fake
+
+
+def test_pleep_task_preserves_owner_and_reuses_open(fake, session, pleep_task_env):
+    from app.tasks import create_pleep_handoff_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=15293564)
+    task = create_pleep_handoff_task(_ctx(fake, session), lid, 'Нужен человек', 'event-1')
+    again = create_pleep_handoff_task(_ctx(fake, session), lid, 'Готов оплатить', 'event-2')
+    assert task == again and fake.task_posts == 1
+    assert fake.tasks[0]['responsible_user_id'] == 15293564
+    assert fake.leads[lid]['responsible_user_id'] == 15293564
+
+
+def test_pleep_task_replay_completed_and_new_handoff(fake, session, pleep_task_env):
+    from app.tasks import create_pleep_handoff_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=13291175)
+    first = create_pleep_handoff_task(_ctx(fake, session), lid, 'Человек', 'event-1')
+    fake.tasks[0]['is_completed'] = True
+    assert create_pleep_handoff_task(_ctx(fake, session), lid, 'Человек', 'event-1') == first
+    second = create_pleep_handoff_task(_ctx(fake, session), lid, 'Снова человек', 'event-2')
+    assert second != first and fake.task_posts == 2
+
+
+def test_pleep_task_timeout_after_accept_recovers(fake, session, pleep_task_env, monkeypatch):
+    from app.tasks import create_pleep_handoff_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=13291175)
+    post = fake.post_once
+
+    def timeout(path, payload):
+        post(path, payload)
+        raise TimeoutError('accepted remotely, lost response')
+
+    monkeypatch.setattr(fake, 'post_once', timeout)
+    with pytest.raises(TimeoutError):
+        create_pleep_handoff_task(_ctx(fake, session), lid, 'Человек', 'event-1')
+    result = create_pleep_handoff_task(_ctx(fake, session), lid, 'Человек', 'event-1')
+    assert result == fake.tasks[0]['id'] and fake.task_posts == 1
+
+
+def test_pleep_task_uncertain_never_posts_again(fake, session, pleep_task_env, monkeypatch):
+    from app.tasks import create_pleep_handoff_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=13291175)
+
+    def timeout(*args):
+        fake.task_posts += 1
+        raise TimeoutError('unknown result')
+
+    monkeypatch.setattr(fake, 'post_once', timeout)
+    with pytest.raises(TimeoutError):
+        create_pleep_handoff_task(_ctx(fake, session), lid, 'Человек', 'event-1')
+    with pytest.raises(RuntimeError, match='uncertain'):
+        create_pleep_handoff_task(_ctx(fake, session), lid, 'Человек', 'event-2')
+    assert fake.task_posts == 1
+
+
+def test_pleep_task_shadow_and_inactive_owner(fake, session, pleep_task_env):
+    from app.tasks import create_pleep_handoff_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=999)
+    ctx = _ctx(fake, session)
+    ctx.shadow = True
+    assert create_pleep_handoff_task(ctx, lid, 'Человек', 'event-1') is None
+    ctx.shadow = False
+    with pytest.raises(RuntimeError, match='inactive'):
+        create_pleep_handoff_task(ctx, lid, 'Человек', 'event-1')
+    assert fake.task_posts == 0
+
+
+def test_pleep_intake_without_handoff_creates_no_task(fake, session, enable_all, monkeypatch):
+    from app.intake import process_pleep_intake
+    from app import tasks
+    cid = fake.add_contact(phone='+15551234567')
+    fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=13291175)
+    def unexpected(*args, **kwargs):
+        raise AssertionError('task must only be created at handoff')
+    monkeypatch.setattr(tasks, 'create_pleep_handoff_task', unexpected)
+    result = process_pleep_intake(_ctx(fake, session), {'phone': '+15551234567'})
+    assert result['action'] == 'repeat'

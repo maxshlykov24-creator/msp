@@ -221,3 +221,17 @@ class DupManual(Base):
     resolved_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class PleepTaskDelivery(Base):
+    """Durable write intent: an uncertain task POST must never be replayed blindly."""
+
+    __tablename__ = "pleep_task_delivery"
+    lead_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_key: Mapped[str] = mapped_column(String(64))
+    marker: Mapped[str] = mapped_column(String(100))
+    task_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    state: Mapped[str] = mapped_column(String(16), default="sending")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )

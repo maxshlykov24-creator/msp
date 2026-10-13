@@ -482,7 +482,7 @@ def build(rows, mode=MODE_POSTING, fetch=True):
                 notes.append("Нет доступа к кабинету %s, этикетки не запрошены." % cab_id)
                 continue
             if cab["marketplace"] == "ozon":
-                pdfs, more = ozon_labels(cab, [r["ext_id"] for r in group])
+                pdfs, more = ozon_labels(cab, list(dict.fromkeys(r["ext_id"] for r in group)))
                 platform_pdfs.extend(pdfs)
                 notes.extend(more)
             elif cab["marketplace"] == "wb":
@@ -500,8 +500,10 @@ def build(rows, mode=MODE_POSTING, fetch=True):
                 png_label(c, got["png"], "", font)
                 own += 1
         if mode in (MODE_BOTH, MODE_PRODUCT):
-            product_label(c, row, font)
-            own += 1
+            copies = int(row.get('qty') or 1) if row['marketplace'] == 'ozon' else 1
+            for _ in range(copies):
+                product_label(c, row, font)
+                own += 1
     c.save()
 
     from pypdf import PdfReader, PdfWriter

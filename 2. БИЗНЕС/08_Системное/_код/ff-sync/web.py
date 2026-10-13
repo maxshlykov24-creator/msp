@@ -877,6 +877,7 @@ def assembly(
     # без потолка строк: галка в шапке берёт всю вкладку с текущим фильтром,
     # а не первую сотню. Счётчик вкладки и таблица должны совпадать.
     rows = list_assembly(group=group, keep_floor=not fallback, **filters)
+    from db import shipment_items
     out = []
     qty = 0.0
     for r in rows:
@@ -896,6 +897,7 @@ def assembly(
                 "article": r["article"] or "",
                 "name": r["name"] or "",
                 "qty": r["qty"],
+                "items": shipment_items(r),
                 "track": r["track"] or "",
                 "warehouse": r["warehouse"] or "",
                 "image": r["image"] or "",
@@ -1057,7 +1059,7 @@ def assembly_kiz_submit(ship_id: int, data: dict = Body(...), ff_session: str = 
     import kiz
 
     try:
-        return {"ok": True, **kiz.submit(ship_id, data.get("codes") or [])}
+        return {"ok": True, **kiz.submit(ship_id, data.get("codes") or [], data.get('assignments'))}
     except kiz.KizError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

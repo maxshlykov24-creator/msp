@@ -85,6 +85,11 @@ class KommoClient:
         params: dict[str, Any] | None = None,
         json: Any = None,
     ) -> dict[str, Any] | None:
+        return self._request_once(method, path, params=params, json=json)
+
+    def _request_once(self, method: str, path: str,
+                      params: dict[str, Any] | None = None,
+                      json: Any = None) -> dict[str, Any] | None:
         self._limiter.wait()
         try:
             resp = self._client.request(method, path, params=params, json=json)
@@ -109,6 +114,10 @@ class KommoClient:
 
     def post(self, path: str, json: Any) -> dict[str, Any] | None:
         return self._request("POST", path, json=json)
+
+    def post_once(self, path: str, json: Any) -> dict[str, Any] | None:
+        """Non-idempotent write: caller must reconcile an ambiguous response."""
+        return self._request_once("POST", path, json=json)
 
     def patch(self, path: str, json: Any) -> dict[str, Any] | None:
         return self._request("PATCH", path, json=json)
