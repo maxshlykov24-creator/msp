@@ -1003,6 +1003,23 @@ def reschedule_booking(booking_id: str, payload: RescheduleIn,
     только время. Старый слот освобождается сам — второй записи не появляется."""
     booking = owned_booking(db, booking_id, payload.phone, x_admin_key)
     admin = bool(settings.admin_api_key and x_admin_key == settings.admin_api_key)
+    if booking.yclients_record_id and settings.yclients_ready:
+        # Вебхук мог ещё не успеть прийти. Переносим текущую карточку журнала,
+        # сохраняя назначенные администратором длительность и мастера.
+        try:
+            current_raw = yclients_client.get_record(booking.yclients_record_id)
+            current = current_raw.get("data", current_raw)
+            current_start = sync._record_datetime(current)
+            current_master = sync._master_by_staff(db, current.get("staff_id"))
+            seconds = int(current.get("seance_length") or 0)
+            if current_start is None or current_master is None or seconds <= 0:
+                raise ValueError("Нет актуального времени визита")
+            booking.starts_at = current_start
+            booking.ends_at = current_start + timedelta(seconds=seconds)
+            booking.master_id = current_master.id
+            db.commit()
+        except Exception:
+            raise HTTPException(503, "Не удалось проверить актуальное время записи. Попробуйте позже.") from None
     if booking.status not in ACTIVE_STATUSES:
         raise HTTPException(409, "Эту запись уже нельзя перенести — оформите новую")
     if not admin:

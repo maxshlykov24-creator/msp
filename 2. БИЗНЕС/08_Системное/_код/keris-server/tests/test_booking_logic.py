@@ -18,6 +18,50 @@ from app.models import Booking, BookingStatus, Master, MasterShift, PetType, Sub
 from app.seed import compute_expiry
 
 
+def _price_sheet_csv(db, change=None):
+    import csv
+    import io
+    from app.seed import _catalog_entries
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["Услуга", "Питомец", "Категория", "Цена, ₽", "Время, мин", "Тип",
+                     "Код позиции", "Ключ категории", "ID YCLIENTS"])
+    for key, row in _catalog_entries(db).items():
+        kind, code, size = key
+        price = (row.prices or {}).get(size, getattr(row, "price", 0))
+        minutes = "" if kind == "Абонемент" else (row.durations or {}).get(size, row.duration_min)
+        if change and key == ("Услуга", "dog_complex_cut", "XS"):
+            price, minutes = change
+        writer.writerow([row.name, "", "", price, minutes, kind, code, size, ""])
+    return out.getvalue()
+
+
+def test_sheet_price_survives_seed_restart(db_session, monkeypatch):
+    from app.seed import refresh_price_sheet, apply_seed
+    from app.models import Service
+    text = _price_sheet_csv(db_session, change=(7900, 120))
+    result = refresh_price_sheet(db_session, text=text, sync_yclients=False)
+    assert result["changed"] == 1
+    monkeypatch.setenv("KERIS_PRICE_SHEET_ID", "test")
+    apply_seed(db_session)
+    svc = db_session.get(Service, "dog_complex_cut")
+    assert compute_price_and_duration(svc, [], "XS") == (7900, 120)
+
+
+@pytest.mark.parametrize("change", [(7900, ""), (-1, 120), (7900, 0), (7900, "1.5"), ("NaN", 120)])
+def test_invalid_sheet_keeps_last_good_catalog(db_session, change):
+    from app.seed import refresh_price_sheet
+    from app.models import Service
+    assert "error" in refresh_price_sheet(db_session, text=_price_sheet_csv(db_session, change), sync_yclients=False)
+    assert compute_price_and_duration(db_session.get(Service, "dog_complex_cut"), [], "XS") == (7800, 90)
+
+
+def test_incomplete_sheet_is_not_applied(db_session):
+    from app.seed import refresh_price_sheet
+    text = _price_sheet_csv(db_session).rsplit("\r\n", 2)[0] + "\r\n"
+    assert "error" in refresh_price_sheet(db_session, text=text, sync_yclients=False)
+
+
 def test_price_and_duration_base_service(db_session):
     service, addons = service_and_addons(db_session, "dog_complex_cut", [])
     price, duration = compute_price_and_duration(service, addons, "M")
