@@ -1160,7 +1160,6 @@ async function openStockProduct(lotId, focus) {
   $("pModal").classList.add("on");
   $("pTitle").textContent = "Данные товара";
   $("pInfo").textContent = "Загружаю карточку МойСклад…";
-  $("pShared").textContent = "";
   $("pLiters").value = "";
   $("pRate").value = "";
   $("pLiters").disabled = $("pRate").disabled = $("pSave").disabled = true;
@@ -1171,9 +1170,6 @@ async function openStockProduct(lotId, focus) {
     stockProduct = { lotId, ...p };
     $("pTitle").textContent = p.name;
     $("pInfo").textContent = [p.article, p.archived ? "Архивная карточка" : "", ...p.clients].filter(Boolean).join(" · ");
-    $("pShared").textContent = p.clients.length > 1
-      ? "Общая карточка: значения обновятся во всех её партиях у перечисленных контрагентов. Счета останутся отдельными."
-      : "Значения обновятся во всех партиях этого товара. Уже выставленные счета сохранят свои суммы.";
     $("pLiters").value = p.liters == null || p.liters <= 0 ? "" : String(p.liters).replace(".", ",");
     $("pRate").value = p.pick_rate == null ? "" : String(p.pick_rate).replace(".", ",");
     $("pLiters").disabled = $("pRate").disabled = $("pSave").disabled = false;
