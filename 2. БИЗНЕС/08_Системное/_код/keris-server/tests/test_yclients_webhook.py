@@ -396,7 +396,7 @@ def test_partial_future_no_show_keeps_master_and_releases_slot(db_session, monke
     result = handle_yclients_webhook(db_session, record_event(datetime=future.isoformat(), attendance=0))
     booking = db_session.get(Booking, result["booking_id"])
     before = (booking.master_id, booking.starts_at, booking.ends_at, booking.price)
-    monkeypatch.setattr(sync.yclients_client, "get_record", lambda *_: {"data": {}})
+    monkeypatch.setattr(sync.yclients_client, "get_record", lambda *_: {"data": {"attendance": 0}})
     partial = {"resource": "record", "status": "update", "data": {"id": booking.yclients_record_id, "visit_attendance": -1}}
     assert handle_yclients_webhook(db_session, partial)["status"] == "no_show"
     assert (booking.master_id, booking.starts_at, booking.ends_at, booking.price) == before

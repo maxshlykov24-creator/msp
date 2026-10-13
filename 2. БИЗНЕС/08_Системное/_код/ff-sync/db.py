@@ -1068,7 +1068,7 @@ def insert_invoice(client_id, ms_invoice_id, ms_number, storage, intake, ship, t
     return iid
 
 
-def save_invoice_snapshot(client_id, data, parts, detail, start, stop, author, now):
+def save_invoice_snapshot(client_id, data, parts, detail, start, stop, author, now, document=None):
     conn = connect()
     try:
         with conn:
@@ -1079,6 +1079,9 @@ def save_invoice_snapshot(client_id, data, parts, detail, start, stop, author, n
                 "INSERT INTO invoices (client_id,ms_invoice_id,ms_number,storage,intake,ship,total,lots_count,period_from,period_to,created_at,author) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (client_id, data["id"], data.get("name") or "", parts["storage"], parts["intake"], parts["ship"], parts["total"], len(detail), start, stop, now, author))
             iid = cur.lastrowid
+            if document is not None:
+                conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)",
+                             ("invoice:document:%s" % iid, json.dumps(document, ensure_ascii=False)))
             for lot, calc in detail:
                 conn.execute(
                     "INSERT INTO invoice_lots (invoice_id,lot_id,storage,intake,ship,days,liter_days,period_from,period_to,snapshot_json) VALUES (?,?,?,?,?,?,?,?,?,?)",

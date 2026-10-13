@@ -118,6 +118,50 @@ def description(detail, start, stop):
     )
 
 
+def client_invoice_profile(client):
+    """Реквизиты только выбранного контрагента; токены и доп.поля не сохраняем."""
+    cid = client["ms_counterparty_id"]
+    r = req("GET", MS_BASE + "/entity/counterparty/" + cid, headers=ms_headers())
+    if r.status_code != 200:
+        raise ValueError("не удалось получить реквизиты клиента из МойСклад (HTTP %s)" % r.status_code)
+    entity = r.json()
+    r = req("GET", MS_BASE + "/entity/counterparty/" + cid + "/accounts", headers=ms_headers(), params={"limit": 100})
+    if r.status_code != 200:
+        raise ValueError("не удалось получить банковские реквизиты клиента (HTTP %s)" % r.status_code)
+    accounts = r.json()
+    rows = accounts.get("rows", [])
+    if accounts.get("meta", {}).get("size", len(rows)) != len(rows):
+        raise ValueError("список банковских счетов клиента получен не полностью")
+    primary = entity.get("primaryAccount", {}).get("meta", {}).get("href")
+    bank = next((a for a in rows if primary and a.get("meta", {}).get("href") == primary), None)
+    if bank is None:
+        if len(rows) > 1:
+            raise ValueError("у клиента несколько банковских счетов. Укажи основной счёт в МойСклад")
+        bank = rows[0] if rows else {}
+    profile = {"name": entity.get("legalTitle") or entity.get("name") or client["name"],
+               "address": entity.get("legalAddress") or entity.get("actualAddress") or "",
+               "inn": entity.get("inn") or "", "ogrn": entity.get("ogrnip") or entity.get("ogrn") or "",
+               "account": bank.get("accountNumber") or "", "bank": bank.get("bankName") or "",
+               "correspondent": bank.get("correspondentAccount") or "", "bic": bank.get("bic") or ""}
+    # Присланный владельцем файл может дополнить отсутствующие реквизиты.
+    # Привязка по ИНН защищает от переноса данных другого контрагента.
+    supplied = json.loads(get_setting("client:invoice-requisites:%s" % client["id"]) or "{}")
+    if supplied and supplied.get("inn") and supplied["inn"] == profile["inn"]:
+        for key in ("address", "ogrn", "account", "bank", "correspondent", "bic"):
+            if not profile[key]:
+                profile[key] = supplied.get(key) or ""
+    profile["checked_at"] = datetime.now(MSK).isoformat(timespec="seconds")
+    return profile
+
+
+def invoice_profile(invoice_id):
+    inv = get_invoice(invoice_id)
+    if not inv:
+        raise ValueError("счёт не найден")
+    frozen = json.loads(get_setting("invoice:document:%s" % invoice_id) or "null")
+    return frozen or client_invoice_profile(get_client_by_id(inv["client_id"]))
+
+
 def create(lot_ids, author="", date_to=""):
     with run_lock(name="billing"):
         return _create(lot_ids, author, date_to)
@@ -137,6 +181,11 @@ def _create(lot_ids, author="", date_to=""):
     if not client["ms_counterparty_id"]:
         raise ValueError("у клиента нет карточки в МойСклад")
     start, stop = span_of(detail, end)
+    profile = client_invoice_profile(client)
+    from export_xlsx import render_invoice_document
+    # Проверяем готовность файла до создания финансового документа.
+    render_invoice_document({"invoice": {**parts, "pick": parts["ship"], "period_from": start, "period_to": stop},
+                             "positions": [calc for _lot, calc in detail]}, profile)
     payload = {
         "organization": ms_meta("organization", client["ms_org_id"] or org_id()),
         "agent": ms_meta("counterparty", client["ms_counterparty_id"]),
@@ -156,12 +205,16 @@ def _create(lot_ids, author="", date_to=""):
     }
     pending = {"request": request_key, "client_id": client["id"], "client": client["name"],
                "payload": payload, "parts": parts, "detail": [(dict(l), c) for l, c in detail],
-               "start": start, "stop": stop, "author": author, "now": datetime.now(MSK).isoformat()}
+               "start": start, "stop": stop, "author": author, "now": datetime.now(MSK).isoformat(), "document": profile}
     set_setting("billing:pending", json.dumps(pending, ensure_ascii=False))
     return _send_pending(pending)
 
 
 def _send_pending(pending):
+    if not pending.get("document"):
+        # Совместимость с незавершённым запросом прежней версии.
+        pending["document"] = client_invoice_profile(get_client_by_id(pending["client_id"]))
+        set_setting("billing:pending", json.dumps(pending, ensure_ascii=False))
     r = req("POST", MS_BASE + "/entity/invoiceout", headers=ms_headers(), json=pending["payload"], retry_safe=False)
     if r.status_code not in (200, 201):
         if 400 <= r.status_code < 500 and r.status_code not in (408, 409, 429):
@@ -172,10 +225,11 @@ def _send_pending(pending):
         raise RuntimeError("МойСклад не вернул номер документа. Повтори с теми же партиями и датой.")
     if "sum" in data and round(float(data["sum"]) / 100, 2) != pending["parts"]["total"]:
         raise RuntimeError("сумма МойСклад отличается от расчёта. Нужна сверка счёта, период не закрыт.")
-    iid = save_invoice_snapshot(pending["client_id"], data, pending["parts"], pending["detail"], pending["start"], pending["stop"], pending["author"], pending["now"])
+    iid = save_invoice_snapshot(pending["client_id"], data, pending["parts"], pending["detail"], pending["start"], pending["stop"], pending["author"], pending["now"], document=pending["document"])
     set_setting("billing:pending", "null")
     return {"id": iid, "ms_id": data["id"], "number": data.get("name") or "", "client": pending["client"],
-            "total": pending["parts"]["total"], "period_from": pending["start"], "period_to": pending["stop"], "positions": len(pending["detail"])}
+            "total": pending["parts"]["total"], "period_from": pending["start"], "period_to": pending["stop"], "positions": len(pending["detail"]),
+            "download_url": "/api/invoices/%s/document.xlsx" % iid}
 
 
 def payment_state(inv):
@@ -229,7 +283,7 @@ def invoice_data(invoice_id):
         row = {k: snap.get(k, r[k]) for k in ("article", "barcode", "gtin", "name", "liters", "qty_in")}
         row.update({"period_from": r["period_from"] or "", "period_to": r["period_to"] or "", "days": r["days"],
                     "liter_days": r["liter_days"], "storage": r["storage"], "intake": r["intake"], "pick": r["ship"],
-                    "pick_qty": snap.get("pick_qty"), "total": round(r["storage"]+r["intake"]+r["ship"],2),
+                    "pick_qty": snap.get("pick_qty"), "pick_rate": snap.get("pick_rate"), "total": round(r["storage"]+r["intake"]+r["ship"],2),
                     "snapshot": bool(snap)})
         positions.append(row)
     return {"invoice": {"id": inv["id"], "client": inv["client_name"], "number": inv["ms_number"], "ms_id": inv["ms_invoice_id"],

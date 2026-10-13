@@ -1,6 +1,12 @@
 """Выгрузка учёта в Excel по кнопке."""
 
 import io
+import copy
+import os
+import re
+import xml.etree.ElementTree as ET
+from decimal import Decimal, ROUND_HALF_UP
+from zipfile import ZipFile
 from datetime import datetime, timedelta, timezone
 
 from openpyxl import Workbook
@@ -12,6 +18,119 @@ from db import catalog_card, find_cache, get_shipments_by_ids, list_shipment_mar
 from ms import order_app_url
 
 MSK = timezone(timedelta(hours=3))
+INVOICE_TEMPLATE = os.path.join(os.path.dirname(__file__), "invoice_template.xlsx")
+_XLS_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+
+
+def _xlsx_tag(name):
+    return "{%s}%s" % (_XLS_NS, name)
+
+
+def _invoice_cell(row, column, value):
+    """Меняем только значение XML-ячейки, сохраняя стиль исходного шаблона."""
+    address = column + row.attrib["r"]
+    cell = next((c for c in row if c.get("r") == address), None)
+    if cell is None:
+        cell = ET.SubElement(row, _xlsx_tag("c"), {"r": address})
+    for child in list(cell):
+        cell.remove(child)
+    cell.attrib.pop("t", None)
+    if value is None:
+        return
+    if isinstance(value, (int, float, Decimal)):
+        ET.SubElement(cell, _xlsx_tag("v")).text = str(value)
+    else:
+        # Inline strings also keep formula-like articles and requisites literal.
+        cell.set("t", "inlineStr")
+        text = ET.SubElement(ET.SubElement(cell, _xlsx_tag("is")), _xlsx_tag("t"))
+        text.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        text.text = excel_text(value)
+
+
+def _invoice_row(source, number):
+    row = copy.deepcopy(source)
+    row.set("r", str(number))
+    for cell in row:
+        cell.set("r", re.sub(r"\d+$", str(number), cell.get("r", "")))
+    return row
+
+
+def render_invoice_document(data, profile):
+    """Исходный файл пользователя: сохраняем стили, таблицу, ширины и оформление."""
+    inv = data["invoice"]
+    cent = lambda x: Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    positions = data["positions"]
+    for service, total in (("storage", inv["storage"]), ("pick", inv["pick"]), ("intake", inv["intake"])):
+        if sum((cent(p.get(service)) for p in positions), Decimal(0)) != cent(total):
+            raise ValueError("суммы позиций не совпали с итогом счёта")
+    if cent(inv["storage"]) + cent(inv["pick"]) + cent(inv["intake"]) != cent(inv["total"]):
+        raise ValueError("суммы услуг не совпали с итогом счёта")
+    items = []
+    for p in positions:
+        if cent(p.get("pick")):
+            qty, rate = p.get("pick_qty"), p.get("pick_rate")
+            if qty is None or rate is None or cent(Decimal(str(qty)) * Decimal(str(rate))) != cent(p["pick"]):
+                raise ValueError("в счёте нет сохранённых количества и ставки обработки")
+            items.append((" ".join(str(p.get(k) or "") for k in ("article", "name")).strip(), rate, qty, p["pick"]))
+    if cent(inv["intake"]):
+        items.append(("Приёмка товара", inv["intake"], 1, inv["intake"]))
+    # Одна пустая строка сохраняет вид таблицы у счёта только за хранение.
+    items = items or [(None, None, None, None)]
+    with ZipFile(INVOICE_TEMPLATE) as src:
+        sheet = ET.fromstring(src.read("xl/worksheets/sheet1.xml"))
+        sheet_data = sheet.find(_xlsx_tag("sheetData"))
+        originals = {int(r.get("r")): r for r in sheet_data}
+        rows = [_invoice_row(originals[n], n) for n in range(1, 9)]
+        day = lambda raw: datetime.strptime(str(raw)[:10], "%Y-%m-%d").strftime("%d.%m.%Y")
+        period = ("с %s по %s" % (day(inv["period_from"]), day(inv["period_to"]))) if inv.get("period_from") and inv.get("period_to") else "Период не указан"
+        _invoice_cell(rows[2], "C", period)
+        _invoice_cell(rows[3], "C", profile["name"])
+        _invoice_cell(rows[6], "E", inv["storage"])
+        for index, item in enumerate(items):
+            row = _invoice_row(originals[9 + index % 2], 9 + index)
+            for column, value in zip(("B", "C", "D", "E"), item):
+                _invoice_cell(row, column, value)
+            # Расширяем только строку с длинным названием, сохраняя ширины шаблона.
+            if item[0]:
+                row.set("ht", str(max(30, 15 * ((len(item[0]) + 45) // 46))))
+                row.set("customHeight", "1")
+            rows.append(row)
+        delta = len(items) - 18
+        rows.extend(_invoice_row(originals[n], n + delta) for n in range(27, 46))
+        mapped = {int(r.get("r")): r for r in rows}
+        _invoice_cell(mapped[27 + delta], "E", float(cent(inv["pick"]) + cent(inv["intake"])))
+        _invoice_cell(mapped[29 + delta], "E", inv["total"])
+        labels = (("Наименование", "name"), ("Адрес", "address"), ("Номер счёта", "account"),
+                  ("ИНН", "inn"), ("ОГРН", "ogrn"), ("Банк", "bank"), ("Корреспондентский счёт", "correspondent"), ("БИК", "bic"))
+        for n, (label, key) in enumerate(labels, 38):
+            _invoice_cell(mapped[n + delta], "B", "%s: %s" % (label, profile.get(key) or "не указан"))
+        sheet_data[:] = rows
+        dimension = sheet.find(_xlsx_tag("dimension"))
+        if dimension is not None:
+            dimension.set("ref", "A1:F%s" % (45 + delta))
+        table = ET.fromstring(src.read("xl/tables/table1.xml"))
+        table.set("ref", "B6:E%s" % (27 + delta))
+        workbook = ET.fromstring(src.read("xl/workbook.xml"))
+        names = workbook.find(_xlsx_tag("definedNames"))
+        if names is None:
+            names = ET.SubElement(workbook, _xlsx_tag("definedNames"))
+        area = next((n for n in names if n.get("name") == "_xlnm.Print_Area"), None)
+        if area is None:
+            area = ET.SubElement(names, _xlsx_tag("definedName"), {"name": "_xlnm.Print_Area", "localSheetId": "0"})
+        area.text = "'Счет'!$B$1:$E$%s" % (45 + delta)
+        updates = {"xl/worksheets/sheet1.xml": ET.tostring(sheet, encoding="utf-8", xml_declaration=True),
+                   "xl/tables/table1.xml": ET.tostring(table, encoding="utf-8", xml_declaration=True),
+                   "xl/workbook.xml": ET.tostring(workbook, encoding="utf-8", xml_declaration=True)}
+        buf = io.BytesIO()
+        with ZipFile(buf, "w") as out:
+            for entry in src.infolist():
+                out.writestr(entry, updates.get(entry.filename, src.read(entry.filename)))
+    return "СЧЕТ %s %s.xlsx" % (_file_part(profile["name"]), _file_part(inv.get("number") or inv.get("id") or "")), buf.getvalue()
+
+
+def build_invoice_document(invoice_id):
+    from billing import invoice_data, invoice_profile
+    return render_invoice_document(invoice_data(invoice_id), invoice_profile(invoice_id))
 
 COLUMNS = [
     ("Контрагент", "client", 26),

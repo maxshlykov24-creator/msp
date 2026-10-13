@@ -648,6 +648,19 @@ def invoice_report(invoice_id: int, ff_session: str = Cookie(default="")):
     return xlsx_file(*build_invoice(invoice_id))
 
 
+@app.get("/api/invoices/{invoice_id}/document.xlsx")
+def invoice_document(invoice_id: int, ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    from export_xlsx import build_invoice_document
+    if not get_invoice(invoice_id):
+        raise HTTPException(status_code=404, detail="счёт не найден")
+    try:
+        return xlsx_file(*build_invoice_document(invoice_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @app.get("/api/export.xlsx")
 def export(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", ff_session: str = Cookie(default="")):
     who(ff_session)

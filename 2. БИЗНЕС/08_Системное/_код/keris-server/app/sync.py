@@ -871,6 +871,8 @@ def _hydrate_record_from_api(data: dict) -> dict:
     if not isinstance(full, dict):
         return data
     merged = dict(data)
+    if merged.get("attendance") is None and merged.get("visit_attendance") is not None:
+        merged["attendance"] = merged["visit_attendance"]
     for key in ("services", "seance_length", "client", "staff_id", "date", "datetime", "comment", "custom_fields", "attendance", "visit_attendance"):
         val = full.get(key)
         if val in (None, [], ""):

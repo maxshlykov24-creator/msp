@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Маской, а не перечислением: при перечислении новый модуль легко забыть,
 # и контейнер падает на импорте уже в проде. Так было с registry.py и statuses.py.
 COPY schema.sql ./
+COPY invoice_template.xlsx ./
 COPY *.py ./
 COPY webui ./webui
 

@@ -1068,18 +1068,27 @@ $("sBill").onclick = async () => {
 $("mCancel").onclick = () => $("modal").classList.remove("on");
 $("mOk").onclick = async () => {
   $("mOk").disabled = true;
+  let created = null;
   try {
     const res = await api("/api/invoice", {
       method: "POST",
       body: JSON.stringify({ lot_ids: [...state.picked], date_to: $("sTo").value }),
     });
+    created = res;
     $("modal").classList.remove("on");
     say($("iRunMsg"), "");
+    await downloadInvoice(res.id);
     await loadLots();
-    say($("sMsg"), "Счёт " + (res.number || "") + " за " + ruDay(res.period_from) + " — " + ruDay(res.period_to) + " на " + num(res.total) + " ₽ создан в МойСклад.", "ok");
+    say($("sMsg"), "Счёт " + (res.number || "") + " за " + ruDay(res.period_from) + " — " + ruDay(res.period_to) + " на " + num(res.total) + " ₽ создан в МойСклад. Excel скачан.", "ok");
     openBills();
   } catch (e) {
-    say($("mMsg"), e.message, "bad");
+    if (created) {
+      say($("sMsg"), "Счёт " + (created.number || "") + " уже создан. " + e.message + ". Скачать его повторно можно в разделе «Счета».", "bad");
+      loadLots().catch(() => {});
+      openBills();
+    } else {
+      say($("mMsg"), e.message, "bad");
+    }
   }
   $("mOk").disabled = false;
 };
@@ -2908,6 +2917,12 @@ async function downloadXlsx(url, ids, fallback, okText, msgEl, extra) {
     try { data = await res.json(); } catch (e) {}
     throw new Error(data.detail || ("ошибка " + res.status));
   }
+  await saveDownload(res, fallback);
+  if (msgEl) say(msgEl, okText, "ok");
+  return res;
+}
+
+async function saveDownload(res, fallback) {
   const blob = await res.blob();
   const a = document.createElement("a");
   const cd = res.headers.get("Content-Disposition") || "";
@@ -2917,9 +2932,18 @@ async function downloadXlsx(url, ids, fallback, okText, msgEl, extra) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(a.href);
-  if (msgEl) say(msgEl, okText, "ok");
-  return res;
+  const objectUrl = a.href;
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+}
+
+async function downloadInvoice(id) {
+  const res = await fetch("/api/invoices/" + id + "/document.xlsx");
+  if (!res.ok) {
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    throw new Error(data.detail || ("Не удалось скачать Excel (HTTP " + res.status + ")"));
+  }
+  await saveDownload(res, "СЧЕТ.xlsx");
 }
 
 $("shExport").onclick = async () => {
@@ -2998,6 +3022,16 @@ async function openBillDetail(id) {
   $("bdTitle").textContent = "Счёт " + (inv.number || "#" + inv.id);
   $("bdSub").textContent = [inv.client, "услуги за " + inv.period, inv.created, inv.author ? "выставил " + inv.author : ""].filter(Boolean).join(" · ");
   $("bdExport").onclick = () => { window.location = "/api/invoices/" + inv.id + "/report.xlsx"; };
+  $("bdInvoice").onclick = async () => {
+    $("bdInvoice").disabled = true;
+    try {
+      await downloadInvoice(inv.id);
+    } catch (err) {
+      say($("bdPay"), err.message, "bad");
+    } finally {
+      $("bdInvoice").disabled = false;
+    }
+  };
   $("bdMs").href = "https://online.moysklad.ru/app/#invoiceout/edit?id=" + encodeURIComponent(inv.ms_id);
   $("bdPayment").textContent = inv.payment_status + (inv.paid == null ? "" : " · оплачено " + num(inv.paid) + " ₽ · осталось " + num(inv.due) + " ₽") + (inv.error ? " · " + inv.error : "");
   $("bdIntake").innerHTML = num(inv.intake) + " <small>₽</small>";
