@@ -765,7 +765,8 @@ def _yclients_cost(data: dict) -> int:
     total = 0
     for item in data.get("services") or []:
         if isinstance(item, dict):
-            total += int(item.get("cost_to_pay") or item.get("cost") or 0)
+            value = item.get("cost_to_pay")
+            total += int((item.get("cost") if value is None else value) or 0)
     return total
 
 
@@ -941,7 +942,9 @@ def _apply_catalog_from_record(db: Session, booking: Booking, data: dict) -> boo
     if service is None:
         return False
     size = size or _default_size(service)
-    price = _yclients_cost(data) or int((service.prices or {}).get(size) or 0)
+    has_cost = any(isinstance(item, dict) and (item.get("cost_to_pay") is not None or item.get("cost") is not None)
+                   for item in data.get("services") or [])
+    price = _yclients_cost(data) if has_cost else int((service.prices or {}).get(size) or 0)
     changed = (
         booking.service_id != service.id
         or booking.pet_size != size
@@ -1076,7 +1079,9 @@ def _create_from_yclients(db: Session, data: dict, record_id: int, master: Maste
     ends_at = starts_at + timedelta(minutes=duration_min)
     client = data.get("client") if isinstance(data.get("client"), dict) else {}
     price = _yclients_cost(data)
-    if price == 0 and not catalog_guess:
+    has_cost = any(isinstance(item, dict) and (item.get("cost_to_pay") is not None or item.get("cost") is not None)
+                   for item in data.get("services") or [])
+    if price == 0 and not catalog_guess and not has_cost:
         price = int((service.prices or {}).get(size) or 0)
 
     pet_info = _pet_info_from_record(data)

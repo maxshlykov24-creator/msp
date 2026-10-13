@@ -45,6 +45,33 @@ def test_update_stops_when_current_timing_cannot_be_read(monkeypatch):
     assert calls == ["GET"]
 
 
+def test_update_preserves_old_prices_discount_and_quantity(monkeypatch):
+    from app import yclients_client as yc
+    old_services = [{"id": 1, "cost": 8000, "first_cost": 10000, "discount": 20, "amount": 2},
+                    {"id": 2, "cost": 0, "first_cost": 0, "discount": 0, "amount": 1}]
+    captured = []
+    def request(method, path, **kwargs):
+        if method == "GET":
+            return {"data": {"datetime": "2026-10-15T14:00:00+03:00", "staff_id": 9,
+                             "seance_length": 7200, "services": old_services}}
+        captured.append(kwargs["json"])
+        return {"success": True}
+    monkeypatch.setattr(yc, "_request", request)
+    yc.update_record(1, {"datetime": "2026-10-16T12:00:00", "staff_id": 9,
+                         "seance_length": 5400, "services": [{"id": 1}, {"id": 2}]}, allow_time_change=True)
+    assert captured[0]["services"] == old_services
+
+
+def test_zero_manual_service_cost_is_not_replaced_by_catalog(db_session):
+    from app.sync import _yclients_cost
+    assert _yclients_cost({"services": [{"cost_to_pay": 0, "cost": 5000}]}) == 0
+    mapped(db_session)
+    created = handle_yclients_webhook(db_session, record_event())
+    handle_yclients_webhook(db_session, record_event(status="update", services=[
+        {"id": YC_SERVICE_HYGIENE_M, "cost": 0, "cost_to_pay": 0}]))
+    assert db_session.get(Booking, created["booking_id"]).price == 0
+
+
 def mapped(db):
     """Маппинг проставлен yclients_setup.py --sync-catalog, в сиде его нет — ставим руками.
     Каждый размер — своя услуга YCLIENTS (yclients_service_ids: {размер: yc_id})."""

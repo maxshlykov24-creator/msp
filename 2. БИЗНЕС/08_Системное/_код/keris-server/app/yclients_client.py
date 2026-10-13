@@ -210,6 +210,15 @@ def update_record(record_id: int, payload: dict, company_id: str | None = None,
         raise YClientsError("Не удалось прочитать актуальное время записи")
     payload = dict(payload)
     payload["seance_length"] = int(current["seance_length"])
+    if "services" in payload:
+        if not isinstance(current.get("services"), list):
+            raise YClientsError("Не удалось прочитать сохранённые цены услуг визита")
+        # ID без цены заставляет журнал применять свежий прайс к старому визиту.
+        # Перенос/подтверждение сохраняют исходные строки, скидку и количество.
+        payload["services"] = [
+            {key: item[key] for key in ("id", "cost", "first_cost", "discount", "amount") if key in item}
+            for item in current["services"]
+        ]
     if not allow_time_change:
         when = current.get("datetime") or current.get("date")
         if not when or not current.get("staff_id"):
