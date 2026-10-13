@@ -1116,17 +1116,14 @@ function refreshPick() {
   const explicit = state.picked.size > 0;
   const selected = stockChoice();
   const sum = selected.reduce((a, r) => a + (Number(r.total) || 0), 0);
-  const oneClient = new Set(selected.map((r) => r.client_id)).size === 1;
-  const incomplete = selected.some((r) => (r.billing_errors || []).length);
   $("sSel").textContent = !selected.length
     ? "Нет позиций"
     : explicit
       ? `Выбрано ${selected.length} позиций на ${num(sum)} ₽`
       : `Все позиции, ${selected.length} на ${num(sum)} ₽`;
-  $("sBill").disabled = !selected.length || !oneClient || sum <= 0 || incomplete || selected.some((r) => !r.accepted);
-  $("sReport").disabled = !selected.length || !oneClient || incomplete;
-  if (incomplete) $("sSel").textContent += ". Заполни литраж и ставку сборки для выбранных позиций.";
-  if (selected.length && !oneClient) $("sSel").textContent += ". Для счёта и отчёта выбери одного контрагента.";
+  const ready = selected.length > 0;
+  $("sBill").disabled = !ready;
+  $("sReport").disabled = !ready;
 }
 
 $("sTbl").onclick = (e) => {
