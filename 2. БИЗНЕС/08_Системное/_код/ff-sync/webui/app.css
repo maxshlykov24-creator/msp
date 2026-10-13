@@ -497,6 +497,8 @@ table.tbl tbody tr.clickable:hover{background:rgba(0,91,255,.08)}
 .client-grid .fld{min-width:0}
 .client-span{grid-column:1 / -1}
 .client-card h3.client-section{margin:22px 0 8px}
+.client-card details.client-section{margin-top:20px;font-size:13px}
+.client-card summary{cursor:pointer}
 .client-card .muted{font-size:12px;line-height:1.5}
 .client-card input[readonly],.client-card textarea[readonly]{opacity:.75}
 .client-card [hidden]{display:none!important}

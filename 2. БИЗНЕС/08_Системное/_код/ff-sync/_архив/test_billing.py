@@ -501,3 +501,30 @@ with patch.object(onboarding,'req',onboarding_req):
     assert len(db.list_clients())==before
     conn=db.connect();conn.execute('DROP TRIGGER fail_onboard');conn.commit();conn.close()
 print('контрагенты: ИНН, справочник, дубли, архив, ключи, потеря ответа и атомарность — OK')
+
+# Банковские реквизиты: необязательны, но частичный ввод не принимается.
+assert onboarding._onboard_bank({}) is None
+try:onboarding._onboard_bank({'bic':'123456789'});raise AssertionError('частичный банк принят')
+except ValueError:pass
+bank={'accountNumber':'40802810000000000001','bic':'044525225','bankName':'Банк для проверки','correspondentAccount':'30101810000000000002'}
+assert onboarding._onboard_bank(bank)==bank
+bank_rows=[];bank_posts=[];bank_lost=True
+
+def bank_req(method,path,**kw):
+    global bank_lost
+    if method=='GET':return {'meta':{'size':len(bank_rows)},'rows':copy.deepcopy(bank_rows)}
+    assert method=='POST' and kw['retry_safe'] is False
+    bank_posts.append(kw['json']);bank_rows.append(copy.deepcopy(kw['json']))
+    if bank_lost:
+        bank_lost=False
+        raise TimeoutError('потерян ответ банка')
+    return kw['json']
+with patch.object(onboarding,'_agent_request',bank_req):
+    try:onboarding._save_onboard_bank('test',bank);raise AssertionError('ожидался обрыв')
+    except TimeoutError:pass
+    onboarding._save_onboard_bank('test',bank)
+    assert len(bank_posts)==1 and len(bank_rows)==1
+    try:onboarding._save_onboard_bank('test',{**bank,'accountNumber':'40802810000000000003'});raise AssertionError('заменён банк')
+    except ValueError:pass
+assert onboarding.checked_inn('770300584079')=='770300584079'
+print('банковские реквизиты: частичный ввод, сохранение и повтор после обрыва — OK')

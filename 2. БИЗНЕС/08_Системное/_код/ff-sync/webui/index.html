@@ -745,6 +745,15 @@
       <div class="fld"><label for="cPhone">Телефон</label><input id="cPhone" type="tel" maxlength="255"></div>
       <div class="fld"><label for="cEmail">Электронная почта</label><input id="cEmail" type="email" maxlength="255"></div>
     </div>
+    <details class="client-section"><summary>Банковские реквизиты для счёта</summary>
+      <p class="muted">Необязательно. Заполни все четыре поля, если хочешь сразу указать реквизиты в счёте клиенту. Существующие реквизиты банка сохраняются.</p>
+      <div class="client-grid">
+        <div class="fld"><label for="cAccount">Расчётный счёт</label><input id="cAccount" inputmode="numeric" maxlength="20"></div>
+        <div class="fld"><label for="cBic">БИК</label><input id="cBic" inputmode="numeric" maxlength="9"></div>
+        <div class="fld client-span"><label for="cBankName">Название банка</label><input id="cBankName" maxlength="255"></div>
+        <div class="fld client-span"><label for="cCorr">Корреспондентский счёт</label><input id="cCorr" inputmode="numeric" maxlength="20"></div>
+      </div>
+    </details>
     <h3 class="client-section">Кабинеты маркетплейсов</h3>
     <p class="muted">Заполни ключи площадок, с которыми работает клиент. Пустые поля сохраняют прежнее подключение. Ключи проверяются перед сохранением.</p>
     <div class="client-grid">

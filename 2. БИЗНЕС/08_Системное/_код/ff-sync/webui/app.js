@@ -421,6 +421,7 @@ $("cClose").onclick = () => {
 $("cInn").oninput = () => {
   companyLookupVersion++;
   companyMatches = [];
+  ["cWb","cOzonId","cOzonKey","cAccount","cBic","cBankName","cCorr"].forEach(id => { $(id).value = ""; });
   $("cExisting").innerHTML = "";
   $("cExistingBox").hidden = true;
   fillCompany({}, false);
@@ -469,7 +470,8 @@ $("clientForm").onsubmit = async (event) => {
   event.preventDefault();
   if (companyBusy) return;
   const data = {inn:$("cInn").value.trim(),existing_id:$("cExisting").value,companyType:$("cType").value,
-                tariff_pick:$("cTariff").value,wb_token:$("cWb").value,ozon_client_id:$("cOzonId").value,ozon_key:$("cOzonKey").value};
+                tariff_pick:$("cTariff").value,wb_token:$("cWb").value,ozon_client_id:$("cOzonId").value,ozon_key:$("cOzonKey").value,
+                accountNumber:$("cAccount").value,bic:$("cBic").value,bankName:$("cBankName").value,correspondentAccount:$("cCorr").value};
   Object.entries(companyFields).forEach(([key,id]) => { data[key] = $(id).value; });
   const controls = [...$("clientForm").querySelectorAll("input,textarea,select,button")];
   const disabled = controls.map(c => c.disabled);

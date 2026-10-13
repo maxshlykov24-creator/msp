@@ -49,15 +49,21 @@ def find_by_inn(inn):
     found = {}
     for archived in ("false", "true"):
         offset = 0
+        page_ids = set()
+        expected = None
         while True:
             data = _agent_request("GET", "/entity/counterparty", params={"filter": "inn=%s;archived=%s" % (inn, archived), "limit": 100, "offset": offset})
             rows = data.get("rows") or []
             size = data.get("meta", {}).get("size")
-            if size is None or (not rows and offset < size):
+            if size is None or (expected is not None and size != expected) or (not rows and offset < size):
                 raise ValueError("МойСклад не вернул полный список дублей. Создание остановлено")
+            expected = size
             for row in rows:
                 if str(row.get("inn") or "").strip() != inn:
                     raise ValueError("МойСклад вернул карточку с другим ИНН")
+                if row["id"] in page_ids:
+                    raise ValueError("МойСклад повторил страницу дублей. Повтори поиск")
+                page_ids.add(row["id"])
                 found[row["id"]] = row
             offset += len(rows)
             if offset >= size:
@@ -160,10 +166,41 @@ def _onboard_credentials(data, existing_client, row=None):
     return creds
 
 
+def _onboard_bank(data):
+    bank = {k: _onboard_text(data,k) for k in ("accountNumber", "bic", "bankName", "correspondentAccount")}
+    if not any(bank.values()):
+        return None
+    for key, length in (("accountNumber",20),("bic",9),("correspondentAccount",20)):
+        if not re.fullmatch(r"[0-9]{%s}" % length,bank[key]):
+            raise ValueError("В банковских реквизитах нужны счёт и корреспондентский счёт по 20 цифр, БИК из 9 цифр")
+    if not bank["bankName"]:
+        raise ValueError("Укажи наименование банка")
+    return bank
+
+
+def _save_onboard_bank(agent_id, bank):
+    if not bank:
+        return
+    path = "/entity/counterparty/" + agent_id + "/accounts"
+    data = _agent_request("GET",path,params={"limit":100})
+    rows = data.get("rows") or []
+    if data.get("meta",{}).get("size") != len(rows):
+        raise ValueError("Банковские счета получены не полностью. Проверь карточку МойСклад")
+    if rows:
+        if any(all(str(r.get(k) or "")==bank[k] for k in ("accountNumber","bic","correspondentAccount")) for r in rows):
+            return
+        raise ValueError("У клиента уже есть другие банковские реквизиты. Проверь и измени их в МойСклад, затем оставь банковские поля формы пустыми")
+    _agent_request("POST",path,json=bank,retry_safe=False)
+    data = _agent_request("GET",path,params={"limit":100})
+    if not any(all(str(r.get(k) or "")==bank[k] for k in bank) for r in data.get("rows",[])):
+        raise ValueError("Банковские реквизиты не подтверждены. Повтори поиск по ИНН и заверши добавление")
+
+
 def onboard_client(data):
     """Проверка дубля → проверка ключей → МойСклад → атомарная локальная связь."""
     from db import get_setting, save_onboard_client
     inn = checked_inn(data.get("inn"))
+    bank = _onboard_bank(data)
     with run_lock(blocking=False):
         matches = find_by_inn(inn)
         chosen = str(data.get("existing_id") or "")
@@ -204,6 +241,8 @@ def onboard_client(data):
                 raise ValueError("Для ИП нужен ОГРНИП из 15 цифр")
             for key in (("ogrnip",) if kind == "legal" else ("kpp", "ogrn")):
                 payload.pop(key, None)
+            if kind == "individual":
+                payload.pop("ogrnip", None)
             payload = {k:v for k,v in payload.items() if v != ""}
             payload.update(inn=inn, companyType=kind, tags=[TAG], syncId=str(uuid.uuid5(uuid.NAMESPACE_URL, "ff-client:" + org_id() + ":" + inn + ":" + payload.get("kpp", ""))))
         creds = _onboard_credentials(data, client, row)
@@ -225,9 +264,13 @@ def onboard_client(data):
         full = _agent_request("GET", "/entity/counterparty/" + created["id"])
         if str(full.get("inn") or "") != inn or full.get("archived") or not any(str(t).lower()==TAG.lower() for t in full.get("tags") or []):
             raise ValueError("Карточка МойСклад сохранена, но проверка данных не прошла. Повтори поиск по ИНН")
+        for key in ("name", "legalTitle", "legalAddress", "phone", "email", "kpp", "ogrn", "ogrnip", "companyType"):
+            if key in payload and str(full.get(key) or "").strip() != str(payload[key]).strip():
+                raise ValueError("МойСклад не подтвердил реквизит %s. Повтори поиск и проверь карточку" % key)
         saved = {a.get("meta", {}).get("href", "").rsplit("/", 1)[-1]: a.get("value") for a in full.get("attributes") or []}
         if any(saved.get(get_setting(key)) != value for key, value in values.items()):
             raise ValueError("МойСклад не подтвердил сохранение настроек. Повтори добавление для существующей карточки")
+        _save_onboard_bank(full["id"],bank)
         code = client["code"] if client else code_from_name(full["name"])
         local_rate = rate if rate is not None else parse_num(attrs_by_name(full).get("Сборка, руб/шт"))
         cid = save_onboard_client(full, code, org_id(), store_id(), creds, local_rate)
