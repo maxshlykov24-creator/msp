@@ -972,12 +972,17 @@ def _update_from_yclients(db: Session, booking: Booking, master: Master,
         return {"status": "unchanged", "booking_id": booking.id}
 
     if moved:
+        if booking.starts_at != starts_at:
+            booking.reminders_sent = []
         booking.starts_at = starts_at
         booking.ends_at = ends_at
         booking.master_id = master.id
     if target is not None:
         booking.status = target
     db.commit()
+
+    from . import day_board
+    day_board.drop_cache()
 
     if target == BookingStatus.no_show:
         # Слот у нас освободился — сообщаем и Карине, и в админский чат.

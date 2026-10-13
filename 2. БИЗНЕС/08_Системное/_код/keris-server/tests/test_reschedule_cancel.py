@@ -144,6 +144,32 @@ def test_reschedule_keeps_duration_and_resets_reminders(client, sessions):
     assert moved.reminders_sent == []  # напоминания посчитаются от нового времени
 
 
+def test_reschedule_uses_manual_duration_even_before_webhook(client, sessions, monkeypatch):
+    from app.models import Master
+    import app.main as main
+    booking = make_booking(client, day_offset=5)
+    db = sessions()
+    row = db.get(Booking, booking["booking_id"])
+    row.yclients_record_id = 777
+    master = db.get(Master, row.master_id)
+    master.yclients_staff_id = 999
+    db.commit()
+    db.close()
+    monkeypatch.setattr(main, "settings", dataclasses.replace(settings, admin_api_key=ADMIN_KEY,
+                         yclients_partner_token="test", yclients_user_token="test", yclients_company_id="test"))
+    monkeypatch.setattr(main.yclients_client, "get_record", lambda *a: {"data": {
+        "datetime": booking["starts_at"], "staff_id": 999, "seance_length": 7200, "attendance": 0}})
+    pushes = []
+    monkeypatch.setattr(main.sync, "push_booking_to_yclients", lambda *a, **kw: pushes.append(kw))
+    new_day, _, new_time = free_slot(client, 8)
+    result = client.post(f"/api/bookings/{booking['booking_id']}/reschedule",
+                         json={"date_iso": new_day, "time_hhmm": new_time, "phone": PHONE})
+    assert result.status_code == 200, result.text
+    moved = db_booking(sessions, booking["booking_id"])
+    assert moved.ends_at - moved.starts_at == timedelta(hours=2)
+    assert pushes == [{"allow_time_change": True}]
+
+
 def test_reschedule_requires_owner_phone(client):
     booking = make_booking(client)
     new_day, _, new_time = free_slot(client, 7)

@@ -29,6 +29,7 @@ from . import (
     sms_otp,
     sync,
     telegram_bind,
+    yclients_client,
 )
 from .booking_logic import (
     BookingError,
@@ -1017,6 +1018,9 @@ def reschedule_booking(booking_id: str, payload: RescheduleIn,
             booking.starts_at = current_start
             booking.ends_at = current_start + timedelta(seconds=seconds)
             booking.master_id = current_master.id
+            current_status = sync.attendance_status(current)
+            if current_status is not None:
+                booking.status = current_status
             db.commit()
         except Exception:
             raise HTTPException(503, "Не удалось проверить актуальное время записи. Попробуйте позже.") from None
