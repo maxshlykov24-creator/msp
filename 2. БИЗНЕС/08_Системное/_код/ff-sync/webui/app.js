@@ -304,7 +304,7 @@ async function loadOverview() {
   $("dQtySub").textContent = num(res.stock.positions, 0) + " позиций · сейчас";
   $("dVol").innerHTML = num(res.stock.volume, 1) + " <small>л</small>";
   $("dVolSub").textContent = res.stock.aged ? res.stock.aged + " позиций старше 90 дней" : "занято на складе";
-  $("dMoney").innerHTML = num(res.stock.money, 0) + " <small>₽</small>";
+  $("dMoney").innerHTML = num(res.stock.incomplete ? null : res.stock.money, 0) + " <small>₽</small>";
   $("dShip").textContent = num(res.ships.n, 0);
   $("dShipSub").textContent = num(res.ships.qty, 0) + " шт · FBS и FBO";
   $("dMarks").textContent = num(res.ships.marks, 0);
@@ -1047,13 +1047,13 @@ async function loadLots() {
   state.picked.clear();
   state.lots = [];
   refreshPick();
-  $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="14" class="empty">Загружаю…</td></tr>`;
+  $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="15" class="empty">Загружаю…</td></tr>`;
   let res;
   try { res = await api("/api/lots?" + stockQuery()); }
   catch (e) {
     if (mine === lotsLoad) {
       say($("sMsg"), e.message, "bad");
-      $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="14" class="empty">Расчёт не получен. Проверь дату и повтори.</td></tr>`;
+      $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="15" class="empty">Расчёт не получен. Проверь дату и повтори.</td></tr>`;
       ["kPos","kQty","kVol","kLiterDays","kMoney"].forEach((id) => $(id).textContent = "—");
     }
     return;
@@ -1061,6 +1061,7 @@ async function loadLots() {
   if (mine !== lotsLoad) return;
   state.lots = res.rows;
   renderLedgerSync(res);
+  if (res.sync_error) say($("sMsg"), "Обновление учёта не завершено: " + res.sync_error, "bad");
   state.picked.clear();
   $("kPos").textContent = num(res.totals.positions, 0);
   $("kQty").textContent = num(res.totals.qty, 0);
@@ -1071,17 +1072,17 @@ async function loadLots() {
   $("kAged").textContent = res.totals.aged ? res.totals.aged + " позиций лежат больше 90 дней" : "";
   const body = $("sTbl").querySelector("tbody");
   if (!res.rows.length) {
-    body.innerHTML = `<tr><td colspan="14" class="empty">Ничего не нашлось.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="15" class="empty">Ничего не нашлось.</td></tr>`;
   } else {
     body.innerHTML = res.rows.map((r) => `<tr>
       <td class="pick"><input type="checkbox" data-lot="${r.id}"></td>
       <td class="client">${esc(r.client)}</td>
       <td class="codes"><b>${esc(r.article)}</b><span>ШК ${esc(r.barcode)}</span><span>GTIN ${esc(r.gtin)}</span></td>
-      <td class="name">${esc(r.name)}</td>
-      <td class="num" title="${r.dims ? esc(r.dims) + " см" : ""}">${num(r.liters, 3)}</td><td class="num">${r.pick_rate_known ? num(r.pick_rate) : "—"}</td>
-      <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.shipped, 0)}</td>
+      <td class="name">${esc(r.name)}${r.source_document ? `<span class="muted">${esc(r.source_document)}${r.kind === "assembly" ? " · сборка" : " · хранение"}</span>` : ""}</td>
+      <td class="num" title="${r.dims ? esc(r.dims) + " см" : ""}">${num(r.liters || null, 3)}</td><td class="num">${r.pick_rate_known ? num(r.pick_rate) : "—"}</td>
+      <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.shipped, 0)}</td><td class="num">${num(r.pick_qty, 0)}</td>
       <td class="num">${num(r.qty, 0)}</td>
-      <td>${r.accepted ? esc(r.accepted) : `<span class="badge warn" title="Счётчик пойдёт после приёмки на склад «Фулфилмент»"><i></i>ждёт приёмки</span>`}</td><td class="num ${r.days > 90 ? "aged" : ""}">${r.days}</td>
+      <td title="${esc(r.source_document || "")}">${r.accepted ? (r.kind === "assembly" ? "Отгр. " : "") + esc(r.accepted) : `<span class="badge warn" title="Счётчик пойдёт после приёмки на склад «Фулфилмент»"><i></i>ждёт приёмки</span>`}</td><td class="num ${r.days > 90 ? "aged" : ""}">${r.days}</td>
       <td class="num" title="${esc(r.bill_from)} — ${esc(r.bill_to)}">${r.bill_days}</td>
       <td class="num">${num(r.liter_days, 1)}</td>
       <td class="num money" title="${esc((r.billing_errors || []).join("; "))}">${(r.billing_errors || []).length ? "нужны данные" : num(r.total)}</td>
@@ -1114,15 +1115,13 @@ $("sTbl").onclick = (e) => {
 
 $("sAccept").onclick = async () => {
   $("sAccept").disabled = true;
-  say($("sMsg"), "Смотрю приёмки в МойСклад…");
+  say($("sMsg"), "Синхронизирую товары, приёмки и отгрузки МойСклад…");
   try {
     const res = await api("/api/lots/accept", { method: "POST" });
     if (!res.ok) { say($("sMsg"), res.msg, "bad"); return; }
-    const parts = [`Проверил партий: ${res.checked}.`];
-    parts.push(res.accepted.length ? `Встали на счётчик: ${res.accepted.length}.` : "Новых приёмок нет.");
-    if (res.errors.length) parts.push(res.errors.join(" "));
-    say($("sMsg"), parts.join(" "), res.accepted.length ? "ok" : "");
-    if (res.accepted.length) loadLots();
+    say($("sMsg"), `Обновлено: ${res.products} товаров, ${res.receipts} приёмок, ${res.demands} отгрузок.`, "ok");
+    await loadClients();
+    await loadLots();
   } catch (e) {
     say($("sMsg"), e.message, "bad");
   } finally {

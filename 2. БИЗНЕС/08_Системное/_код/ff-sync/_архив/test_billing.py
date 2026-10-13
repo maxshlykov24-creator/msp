@@ -105,23 +105,23 @@ except ValueError as exc:
 supply_applicable = False
 import accept
 
-res = accept.run()
+res = accept.legacy_run()
 assert res["accepted"] == [], "непроведённая приёмка не должна ставить дату: %r" % res
 
 # приёмка в корзине остаток уже не держит
 supply_applicable = True
 supply_deleted = "2026-09-02 10:00:00"
-res = accept.run()
+res = accept.legacy_run()
 assert res["accepted"] == [], "удалённая приёмка не должна ставить дату: %r" % res
 
 supply_deleted = None
-res = accept.run()
+res = accept.legacy_run()
 assert len(res["accepted"]) == 1, "приёмку не увидел: %r" % res
 assert res["accepted"][0]["at"].startswith("2026-09-01T12:30"), res["accepted"][0]
 
 # повторный прогон не переписывает дату и не дёргает МойСклад
 before = len(CALLS)
-res = accept.run()
+res = accept.legacy_run()
 assert res["checked"] == 0 and len(CALLS) == before, "принятые партии больше не опрашиваем"
 
 row = account.lot_rows(only_open=False)[0]
@@ -130,9 +130,9 @@ assert row["bill_days"] > 0, "после приёмки счётчик долж�
 
 # хранение: 10 шт × 2 л × 0,15 ₽ за каждые сутки периода
 day = account.storage_of(db.get_lot(lot_id), db.get_client_by_id(client_id), None, account.as_day("2026-09-05"))
-assert day["days"] == 5, day
-assert day["liter_days"] == 100.0, day
-assert day["storage"] == 15.0, day
+assert day["days"] == 4, day
+assert day["liter_days"] == 80.0, day
+assert day["storage"] == 12.0, day
 
 # сборка: уехало 4 шт по ставке позиции 3 ₽
 db.set_lot_pick_rate(lot_id, 3.0)
@@ -317,7 +317,7 @@ _, document = build_invoice_document(inv['id'])
 ws = load_workbook(io.BytesIO(document)).active
 assert ws['B1'].value == 'БЕРЁЗА ФУЛФИЛМЕНТ'
 assert ws['C4'].value == 'Тест ООО'
-assert ws['C3'].value == 'с 01.09.2026 по 05.09.2026'
+assert ws['C3'].value == 'с 02.09.2026 по 05.09.2026'
 assert [ws.cell(9,c).value for c in range(2,6)] == ['ART-1 Ремень кожаный',3,4,12]
 assert ws['E7'].value == stored['storage']
 assert ws['E12'].value == inv['total']
@@ -549,3 +549,72 @@ rate_row = account.row_of(db.get_lot(rate_lot), date_to=account.as_day('2026-09-
 assert rate_row['billing_errors'] == [] and rate_row['pick_rate_known']
 assert billing.preview([rate_lot], '2026-09-03')['pick_qty'] == 1
 print('сборка: отсутствующая ставка блокирует счёт и отчёт; явный ноль допустим — OK')
+
+# Полный складской источник: отдельные счета при общем товаре группы.
+os.environ['FF_DB'] = os.path.join(tempfile.mkdtemp(), 'ledger.db')
+db.init_db()
+aid=db.insert_client('A','Приёмка','A','ORG','S');bid=db.insert_client('B','Отгрузка','B','ORG','S')
+def ledger_fixture(qty=4, same_day=False):
+    return {'products':{'P':{'id':'P','name':'Товар','article':'P','barcode':'','gtin':'','tracking_type':'NOT_TRACKED','liters':2,'pick_rate':3}},
+            'parties':{'A':{'id':'A','name':'Приёмка'},'B':{'id':'B','name':'Отгрузка'}},
+            'documents':[{'id':'IN','kind':'supply','name':'IN','moment':'2026-09-10T10:00:00','party':'A','store':'S','positions':[{'id':'I1','product':'P','qty':10}]},
+                         {'id':'OUT','kind':'demand','name':'OUT','moment':'2026-09-%sT12:00:00'%('10' if same_day else '12'),'party':'B','store':'S','positions':[{'id':'O1','product':'P','qty':qty}]}],
+            'stock':{'P':10-qty}}
+snap=ledger_fixture();groups=[['A','B']];plan=accept.build_plan(snap,groups)
+accept.apply_plan(snap,plan,groups)
+receipt=next(x for x in db.list_lots() if x['ledger_kind']=='receipt');assembly=next(x for x in db.list_lots() if x['ledger_kind']=='assembly')
+assert receipt['client_id']==aid and assembly['client_id']==bid
+r=account.row_of(receipt,date_to=account.as_day('2026-09-12'));a=account.row_of(assembly,date_to=account.as_day('2026-09-12'))
+assert r['bill_days']==2 and r['liter_days']==40 and r['storage']==6 and r['pick']==0,r
+assert a['storage']==0 and a['pick_qty']==4 and a['pick']==12,a
+assert billing.preview([receipt['id']],'2026-09-12')['total']==6
+assert billing.preview([assembly['id']],'2026-09-12')['total']==12
+cal=account.calendar(date_from=account.as_day('2026-09-10'),date_to=account.as_day('2026-09-12'))
+assert len(cal['rows'])==1 and [c['sum'] for c in cal['rows'][0]['cells']]==[0,3,3],cal
+assert cal['total']==6
+ids=[x['id'] for x in db.list_lots()];conn=db.connect();n_moves=conn.execute('select count(*) from lot_moves').fetchone()[0];conn.close()
+accept.apply_plan(snap,accept.build_plan(snap,groups),groups)
+assert [x['id'] for x in db.list_lots()]==ids
+conn=db.connect();assert conn.execute('select count(*) from lot_moves').fetchone()[0]==n_moves;assert conn.execute('select count(*) from ms_ledger_history').fetchone()[0]==1;conn.close()
+try:accept.build_plan(snap,[]);raise AssertionError('смешаны чужие группы')
+except ValueError as e:assert 'не хватает' in str(e)
+# День приёмки бесплатный, сборка в этот день платная.
+same=ledger_fixture(qty=10,same_day=True);accept.apply_plan(same,accept.build_plan(same,groups),groups)
+rr=account.row_of(db.get_lot(receipt['id']),date_to=account.as_day('2026-09-12'))
+aa=account.row_of(db.get_lot(assembly['id']),date_to=account.as_day('2026-09-12'))
+assert rr['storage']==0 and rr['bill_days']==0 and aa['pick']==30,(rr,aa)
+# Отмена/распроведение источника восстанавливает остаток и архивирует начисление.
+cancel=ledger_fixture();cancel['documents']=cancel['documents'][:1];cancel['stock']={'P':10}
+accept.apply_plan(cancel,accept.build_plan(cancel,groups),groups)
+assert len(db.list_lots())==1 and db.list_lots()[0]['qty_left']==10
+assert db.get_lot(assembly['id'])['source_active']==0
+# Повторные строки приёмки не схлопываются по артикулу.
+dup=ledger_fixture();dup['documents'][0]['positions']=[{'id':'I1','product':'P','qty':5},{'id':'I2','product':'P','qty':5}]
+p=accept.build_plan(dup,groups);assert len([x for x in p['lots'].values() if x['ledger_kind']=='receipt'])==2
+# Тариф клиента не подменяет отсутствующее допполе товара.
+missing=ledger_fixture();missing['products']['P']['pick_rate']=None;missing['products']['P']['liters']=None
+accept.apply_plan(missing,accept.build_plan(missing,groups),groups);db.update_client(bid,tariff_pick=999)
+try:billing.preview([assembly['id']],'2026-09-12');raise AssertionError('подставлен тариф клиента')
+except ValueError as e:assert 'ставк' in str(e)
+# Сборку можно выставлять без литража, когда её цена заполнена.
+missing['products']['P']['pick_rate']=3
+accept.apply_plan(missing,accept.build_plan(missing,groups),groups)
+assert billing.preview([assembly['id']],'2026-09-12')['total']==12
+try:billing.preview([receipt['id']],'2026-09-12');raise AssertionError('пустой литраж принят за бесплатное хранение')
+except ValueError as e:assert 'литраж' in str(e)
+assert account.calendar(date_from=account.as_day('2026-09-10'),date_to=account.as_day('2026-09-12'))['total'] is None
+# Изменение закрытого периода не переписывает учёт и границы счёта.
+accept.apply_plan(snap,accept.build_plan(snap,groups),groups)
+db.mark_lot_billed(assembly['id'],'2026-09-12',0,0,4)
+changed=ledger_fixture(qty=5)
+try:accept.apply_plan(changed,accept.build_plan(changed,groups),groups);raise AssertionError('изменён выставленный период')
+except ValueError as e:assert 'закрытого периода' in str(e)
+assert db.get_lot(assembly['id'])['billed_until']=='2026-09-12'
+assert account.row_of(db.get_lot(receipt['id']),date_to=account.as_day('2026-09-12'))['qty']==6
+assert billing.preview([assembly['id']],'2026-09-12')['total']==0
+# Ошибка/неполная страница не выдаётся за успешный пустой ответ.
+with patch.object(accept,'req',lambda *a,**k: Fake(200,{'meta':{'size':2},'rows':[]})):
+    try:accept.ms_pages('/bad');raise AssertionError('принята неполная страница')
+    except ValueError:pass
+assert db.connect().execute('pragma quick_check').fetchone()[0]=='ok'
+print('МойСклад: группы, раздельные начисления, даты, отмены, дубли строк, пустые поля, повтор и закрытые периоды — OK')

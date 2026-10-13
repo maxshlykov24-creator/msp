@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta, timezone
 
-from account import consume_fifo
 from db import (
     find_cache_group,
     get_client_by_id,
@@ -120,11 +119,6 @@ def create_order(client, cab, kind, ext_id, positions, posting, ship_date, statu
     if r.status_code not in (200, 201):
         return None, "%s %s" % (r.status_code, (r.text or "")[:180])
     oid = r.json().get("id")
-    for item in positions:
-        # списываем датой заказа с площадки: воркер мог забрать его на сутки позже
-        left = consume_fifo(client["id"], item["product_id"], item["qty"], oid, when=moment or ship_date)
-        if left > 0:
-            print("заказ %s: не хватило остатка %s шт товара %s" % (ext_id, left, item["product_id"]))
     upsert_order_log(cab["id"], ext_id, oid, "ok", "", now_iso())
     return oid, "создан"
 

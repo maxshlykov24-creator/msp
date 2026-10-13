@@ -550,7 +550,7 @@ def lots(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", f
         date_to=checked_day(date_to),
     )
     from db import get_setting
-    return {"rows": rows, "totals": totals(rows), "last_sync": get_setting("ledger:last_success") or ""}
+    return {"rows": rows, "totals": totals(rows), "last_sync": get_setting("ledger:last_success") or "", "sync_error": get_setting("ledger:last_error") or ""}
 
 
 @app.get("/api/ledger/sync-status")
@@ -559,7 +559,7 @@ def ledger_sync_status(ff_session: str = Cookie(default="")):
     init_db()
     from db import get_setting
     # Только завершённая сверка всего учёта, не дата движения или попытки запроса.
-    return {"last_sync": get_setting("ledger:last_success") or ""}
+    return {"last_sync": get_setting("ledger:last_success") or "", "error": get_setting("ledger:last_error") or "", "summary": __import__("json").loads(get_setting("ledger:summary") or "{}")}
 
 
 @app.get("/api/calendar")

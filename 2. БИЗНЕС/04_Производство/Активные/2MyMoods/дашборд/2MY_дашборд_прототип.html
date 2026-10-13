@@ -799,7 +799,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Источник заказа</h3>
-      <div class="hint">Источник берётся из utm_source заказа МойСклад. ig показан как Instagram, tg как Telegram, email как Email, google как Google, yandex и yandex.ru как Yandex, direct и (direct) как Прямой заход на сайт. Без метки показано «не указано».</div>
+      <div class="hint">Сначала используется utm_source заказа. Без метки: статус «Покупка в шоуруме» → ОП Шоу-рум; канал продаж Instagram, Telegram или WhatsApp → соответствующий источник «ОП». Если определить источник нельзя, остаётся «не указано». Возврат относится к источнику исходного заказа.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Источник</th><th>Заказов</th><th>Выручка</th><th>Средний чек</th><th>Доля</th></tr></thead>
         <tbody id="src"></tbody>
@@ -1150,7 +1150,7 @@ let sheetTimer=0;
 function closeSheet(){const sheet=el('sheet');sheet.classList.remove('on');sheetReturn=null;clearTimeout(sheetTimer);sheetTimer=setTimeout(()=>{if(sheet.classList.contains('on'))return;sheet.hidden=true;document.documentElement.classList.remove('sheet-on');document.body.classList.remove('sheet-on');},280);}
 function showSheet(kicker,title,html,back){sheetReturn=back||null;clearTimeout(sheetTimer);el('sheet-kicker').textContent=kicker;el('sheet-title').textContent=title;el('sheet-body').innerHTML=html;el('sheet-back').hidden=!back;const sheet=el('sheet'),card=sheet.querySelector('.sheet-card');document.documentElement.classList.add('sheet-on');document.body.classList.add('sheet-on');sheet.hidden=false;card.classList.remove('rise');void card.offsetWidth;requestAnimationFrame(()=>{card.classList.add('rise');sheet.classList.add('on');});}
 function orderNoun(n){const a=n%100,b=n%10;if(a>10&&a<20)return 'заказов';if(b===1)return 'заказ';if(b>1&&b<5)return 'заказа';return 'заказов';}
-function showOrders(kicker,title,rows){const list=[...rows].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||''));showSheet(kicker,title,`<div class="sheet-count">${num(list.length)} ${orderNoun(list.length)} · ${money(sum(list,r=>r.amount))}. Нажатие открывает заказ в МойСклад.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата</th><th>Клиент</th><th>Канал</th><th>Выручка</th></tr></thead><tbody>${list.map(r=>`<tr class="drill" data-order="${esc(r.o.id)}"><td>${esc(r.o.number)}</td><td>${dmy(r.o.paid_date)}</td><td>${esc(r.o.client||'—')}</td><td>${esc(r.o.channel||'')}</td><td>${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="5">Нет заказов</td></tr>'}</tbody></table>`);}
+function showOrders(kicker,title,rows){const list=[...rows].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||''));showSheet(kicker,title,`<div class="sheet-count">${num(list.length)} ${orderNoun(list.length)} · ${money(sum(list,r=>r.amount))}. Нажатие открывает заказ в МойСклад.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата</th><th>Клиент</th><th>Канал</th><th>Источник</th><th>Выручка</th></tr></thead><tbody>${list.map(r=>`<tr class="drill" data-order="${esc(r.o.id)}"><td>${esc(r.o.number)}</td><td>${dmy(r.o.paid_date)}</td><td>${esc(r.o.client||'—')}</td><td>${esc(r.o.channel||'')}</td><td title="${esc(r.o.source_basis||'utm_source заказа МойСклад')}">${esc(orderSource(r.o))}</td><td>${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="6">Нет заказов</td></tr>'}</tbody></table>`);}
 function foldOrders(xs, amountOf){const by=new Map();for(const x of xs){if(!x.o||x.o.exchange)continue;const back=!!x.o.return_event;const id=back?(x.o.original_order||''):x.o.id;if(!id)continue;const cur=by.get(id)||{id,o:back?null:x.o,amount:0};if(!back)cur.o=x.o;cur.amount+=amountOf(x);by.set(id,cur);}for(const cur of by.values())if(!cur.o)cur.o=(data.orders||[]).find(o=>o.id===cur.id)||null;return [...by.values()].filter(r=>r.o&&r.o.id);}
 const pack=xs=>foldOrders(xs,x=>orderRev(x.o,x.ls));
 function ordersFromGoods(lines){return foldOrders(lines,x=>Number(x.l.rev)||0);}
@@ -1209,6 +1209,7 @@ function sourceLabel(raw){
  if(k==='direct'||k==='(direct)') return 'Прямой заход на сайт';
  return String(raw||'').trim()||'не указано';
 }
+function orderSource(order){return sourceLabel(order.source_fallback||order.source)}
 const sizeCanon={'one size':'one size','onesize':'one size','os':'one size','xs-s':'XS-S','s-m':'S-M','m-l':'M-L','l-xl':'L-XL','xxxs':'XXXS','xxs':'XXS','xs':'XS','s':'S','m':'M','l':'L','xl':'XL','xxl':'XXL','xxxl':'XXXL'};
 function canonSize(raw){
  const s=normPiece(raw);
@@ -1420,10 +1421,10 @@ function shippingStats(orders){
 function refresh(){
  if(!data)return;
  const basic=data.orders.filter(o=>o.buy&&o.paid_date&&o.paid_date>=state.from&&o.paid_date<=state.to)
-   .filter(o=>matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city));
+   .filter(o=>matches(state.source,orderSource(o))&&matches(state.channel,o.channel)&&matches(state.city,o.city));
  filtered=basic.map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
- const returned=(data.returns||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
- const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
+ const returned=(data.returns||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,orderSource(o))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
+ const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,orderSource(o))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:linesFor(o)})).filter(x=>x.ls.length||(!state.cat.length&&!state.prod));
  financial=[...filtered,...returned];
  // Галка выключена: возвраты вычитаются. Включена: продажи до возвратов.
  const basis=includeReturns?filtered:financial;
@@ -1465,7 +1466,7 @@ function refresh(){
  if(typeof placeChartTip==='function' && document.querySelector('.chart-plot').matches(':hover')) placeChartTip(lastChartX);
  el('ax-l').textContent=dmy(state.from);el('ax-r').textContent=dmy(state.to);
  const rowsFor=(key)=>Object.entries(group(basis,x=>key(x.o))).map(([name,arr])=>({name,arr,n:arr.filter(x=>!x.o.return_event).length,rev:sum(arr,x=>orderRev(x.o,x.ls))})).sort((a,b)=>b.rev-a.rev);
- const source=rowsFor(o=>sourceLabel(o.source)), channel=rowsFor(o=>o.channel), geo=rowsFor(o=>o.city);
+ const source=rowsFor(o=>orderSource(o)), channel=rowsFor(o=>o.channel), geo=rowsFor(o=>o.city);
  const openMetric=kicker=>r=>showOrders(kicker,r.name||'—',pack(r.arr||[]));
  table('src',source,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>r.n?money(r.rev/r.n):'—',r=>pct(r.n,n)],openMetric('Источник'));
  table('sale',channel,[r=>r.name,r=>num(r.n),r=>money(r.rev),r=>pct(r.n,n)],openMetric('Канал'));
@@ -1636,7 +1637,7 @@ function init(snap){
   };
   applyPeriod('month');
  select('f-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
- select('f-ch',[...new Set(data.orders.map(o=>sourceLabel(o.source)))],'Все источники');
+ select('f-ch',[...new Set(data.orders.map(o=>orderSource(o)))],'Все источники');
  select('f-sale',[...new Set(data.orders.map(o=>o.channel))],'Все каналы сбыта');
  select('f-geo',[...new Set(data.orders.map(o=>o.city))],'Все города');
  select('s-cat',[...new Set(data.orders.flatMap(o=>o.lines.map(l=>l.category)))],'Все категории');
@@ -1896,7 +1897,7 @@ function downloadExcel(){
  const qty=sum(lines,x=>x.l.delivery?0:x.l.qty);
  const n=purchases.length;
  const people=new Set(purchases.map(x=>x.o.phone).filter(Boolean));
- const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,sourceLabel(o.source))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:cutLines(linesFor(o))})).filter(x=>x.ls.length||(!narrow&&!state.cat.length&&!state.prod));
+ const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,orderSource(o))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:cutLines(linesFor(o))})).filter(x=>x.ls.length||(!narrow&&!state.cat.length&&!state.prod));
  const extraFilter=narrow||state.cat.length||!!state.prod||state.source.length||state.channel.length||state.city.length;
  const gaps=extraFilter?[]:(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));
  const byId=new Map((data.orders||[]).map(o=>[o.id,o]));
@@ -1906,20 +1907,20 @@ function downloadExcel(){
   const goods=x.ls.filter(l=>!l.delivery);
   const original=o.original_order?byId.get(o.original_order):null;
   const origin=o.original_order?docLink({id:o.original_order},original?.number||'Заказ',st.l):null;
-  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:sourceLabel(o.source),s:st.t},{t:o.city||'',s:st.t},{t:o.promo||'',s:st.t},moneyCell(o.sum,st.m),ret?null:moneyCell(o.paid,st.m),moneyCell(rowRev(o,x.ls),st.m),{n:x.ls.length,s:st.i},{n:rub2(sum(goods,l=>l.qty)),s:st.q},origin,docLink(o,'Открыть',st.l)];
+  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:orderSource(o),s:st.t},{t:o.city||'',s:st.t},{t:o.promo||'',s:st.t},moneyCell(o.sum,st.m),ret?null:moneyCell(o.paid,st.m),moneyCell(rowRev(o,x.ls),st.m),{n:x.ls.length,s:st.i},{n:rub2(sum(goods,l=>l.qty)),s:st.q},origin,docLink(o,'Открыть',st.l)];
  });
  const posHead=['Документ','Тип','Дата отчёта','Клиент','Телефон','Канал','Источник','Город','Товар','Категория','Размер','Цвет','Количество','Выручка','Закупка','Маржа','Доставка','МойСклад'];
  const posBody=lines.map(({o,l})=>{
   const ret=!!o.return_event, st=tone(ret);
   const margin=l.delivery?rub2(l.rev):rub2(l.rev-(l.cost||0));
-  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:sourceLabel(o.source),s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:l.category||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),l.delivery?null:moneyCell(l.cost,st.m),moneyCell(margin,st.m),{t:l.delivery?'да':'',s:st.t},docLink(o,'Открыть',st.l)];
+  return [docLink(o,o.number||'Документ',st.l),{t:ret?'Возврат':'Продажа',s:st.t},dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.phone||'',s:st.t},{t:o.channel||'',s:st.t},{t:orderSource(o),s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:l.category||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),l.delivery?null:moneyCell(l.cost,st.m),moneyCell(margin,st.m),{t:l.delivery?'да':'',s:st.t},docLink(o,'Открыть',st.l)];
  });
  const exLines=exchanged.flatMap(x=>(x.ls.length?x.ls:[null]).map(l=>({o:x.o,l,whole:orderRev(x.o,x.ls)})));
  const exHead=['Документ','Дата документа','Клиент','Канал','Источник','Город','Товар','Размер','Цвет','Количество','Выручка строки','МойСклад'];
  const exBody=exLines.map(({o,l})=>{
   const st=tone(false);
-  if(!l)return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:sourceLabel(o.source),s:st.t},{t:o.city||'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},null,moneyCell(orderRev(o,[]),st.m),docLink(o,'Открыть',st.l)];
-  return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:sourceLabel(o.source),s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),docLink(o,'Открыть',st.l)];
+  if(!l)return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:orderSource(o),s:st.t},{t:o.city||'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},{t:'',s:st.t},null,moneyCell(orderRev(o,[]),st.m),docLink(o,'Открыть',st.l)];
+  return [docLink(o,o.number||'Документ',st.l),dateCell(o.paid_date,st.d),{t:o.client||'',s:st.t},{t:o.channel||'',s:st.t},{t:orderSource(o),s:st.t},{t:o.city||'',s:st.t},{t:l.name||'',s:st.t},{t:sizeLabel(l),s:st.t},{t:colorLabel(l),s:st.t},{n:rub2(l.qty),s:st.q},moneyCell(l.rev,st.m),docLink(o,'Открыть',st.l)];
  });
  const gapHead=['Дата','Сумма','Причина','Как учтено'];
  const gapBody=gaps.map(g=>[dateCell(g.date,X.date),moneyCell(g.sum,X.money),{t:g.reason||'',s:X.text},{t:g.impact==='outside_revenue'?'Не входит в выручку':'Нужна проверка',s:X.text}]);

@@ -68,27 +68,21 @@ def calculation_end(raw=""):
 
 def storage_rate():
     """Ставка хранения одна на всех. Меняется переменной, а не в карточке."""
-    raw = environ.get("FF_STORAGE_RATE")
-    if not raw:
-        return STORAGE_RATE
-    try:
-        return float(str(raw).replace(",", "."))
-    except ValueError:
-        return STORAGE_RATE
+    return STORAGE_RATE
 
 
 def pick_rate_of(lot, client):
     """Сборка, ₽ за штуку: у позиции своя, иначе ставка клиента по умолчанию."""
     if "pick_rate" in lot.keys() and lot["pick_rate"] is not None:
         return float(lot["pick_rate"])
-    if client and "tariff_pick" in client.keys() and client["tariff_pick"] is not None:
+    if not ("source_key" in lot.keys() and lot["source_key"]) and client and "tariff_pick" in client.keys() and client["tariff_pick"] is not None:
         return float(client["tariff_pick"] or 0)
     return 0.0
 
 
 def pick_rate_known(lot, client):
     return ("pick_rate" in lot.keys() and lot["pick_rate"] is not None) or bool(
-        client and "tariff_pick" in client.keys() and client["tariff_pick"] is not None
+        not ("source_key" in lot.keys() and lot["source_key"]) and client and "tariff_pick" in client.keys() and client["tariff_pick"] is not None
     )
 
 
@@ -108,11 +102,13 @@ def billed_until(lot):
     return as_day(lot["billed_until"])
 
 
-def window(lot, date_from=None, date_to=None):
+def window(lot, date_from=None, date_to=None, storage=True):
     """Что ещё не выставлено: со дня после прошлого счёта по date_to включительно."""
     start = accepted_day(lot)
     if start is None:
         return None, None
+    if storage:
+        start += timedelta(days=1)
     closed = billed_until(lot)
     if closed and closed >= start:
         start = closed + timedelta(days=1)
@@ -127,7 +123,7 @@ def storage_of(lot, client, date_from=None, date_to=None, ship_days=None):
     liters = float(lot["liters"] or 0)
     tariff = storage_rate()
     start, end = window(lot, date_from, date_to)
-    if start is None:
+    if start is None or lot["ledger_kind"] == "assembly":
         return {"from": "", "to": "", "days": 0, "liter_days": 0.0, "storage": 0.0, "by_day": []}
     out = ship_days if ship_days is not None else moves_by_day(lot["id"]).get(lot["id"], {})
     qty = float(lot["qty_in"] or 0) - sum(q for day, q in out.items() if as_day(day, date.max) < start)
@@ -158,8 +154,8 @@ def storage_of(lot, client, date_from=None, date_to=None, ship_days=None):
 
 def pick_of(lot, client, date_from=None, date_to=None, ship_days=None):
     """Сборка за период: сколько штук уехало × ставка сборки этой позиции."""
-    start, end = window(lot, date_from, date_to)
-    if start is None:
+    start, end = window(lot, date_from, date_to, storage=False)
+    if start is None or lot["ledger_kind"] == "receipt":
         return {"qty": 0.0, "rate": pick_rate_of(lot, client), "sum": 0.0}
     out = ship_days if ship_days is not None else moves_by_day(lot["id"]).get(lot["id"], {})
     qty = sum(q for day, q in out.items() if start <= as_day(day, date.max) <= end)
@@ -172,12 +168,12 @@ def money(lot, client, date_from=None, date_to=None, ship_days=None):
     calc = storage_of(lot, client, date_from, date_to, out)
     pick = pick_of(lot, client, date_from, date_to, out)
     return {
-        "days": max(0, (today() - accepted_day(lot)).days) if accepted_day(lot) else 0,
+        "days": (0 if lot["ledger_kind"] == "assembly" or not accepted_day(lot) else max(0, ((min(today(), as_day(max(out))) if float(lot["qty_left"] or 0) <= 0 and out else today()) - accepted_day(lot)).days)),
         "bill_days": calc["days"],
-        "bill_from": calc["from"],
+        "bill_from": (max(accepted_day(lot), (billed_until(lot) + timedelta(days=1)) if billed_until(lot) else accepted_day(lot)).isoformat() if lot["ledger_kind"] == "assembly" else calc["from"]),
         "bill_to": calc["to"],
         "liter_days": calc["liter_days"],
-        "shipped": round(sum(out.values()), 3),
+        "shipped": (0.0 if lot["ledger_kind"] == "assembly" else round(sum(out.values()), 3)),
         "storage": calc["storage"],
         "pick_qty": pick["qty"],
         "pick": pick["sum"],
@@ -218,6 +214,8 @@ def row_of(lot, client=None, ship_days=None, date_from=None, date_to=None):
         errors.append("не заполнена ставка сборки")
     return {
         "id": lot["id"],
+        "kind": lot["ledger_kind"],
+        "source_document": lot["source_document"] or "",
         "client_id": lot["client_id"],
         "client": client["name"] if client else "",
         "article": lot["article"] or "",
@@ -233,7 +231,7 @@ def row_of(lot, client=None, ship_days=None, date_from=None, date_to=None):
         "liters": liters,
         "qty": qty_left,
         "qty_in": float(lot["qty_in"] or 0),
-        "shipped": round(sum(out.values()), 3),
+        "shipped": (0.0 if lot["ledger_kind"] == "assembly" else round(sum(out.values()), 3)),
         "volume": round(liters * qty_left, 3),
         "received": parse_when(lot["received_at"]).strftime("%d.%m.%Y"),
         "accepted": (accepted_day(lot).strftime("%d.%m.%Y") if accepted_day(lot) else ""),
@@ -255,7 +253,7 @@ def is_marked(tracking):
     return tracking_code(tracking) != "NOT_TRACKED"
 
 
-def lot_rows(client_id=None, query="", marked=None, only_open=True, date_from=None, date_to=None):
+def _lot_rows(client_id=None, query="", marked=None, only_open=True, date_from=None, date_to=None):
     text = (query or "").strip().lower()
     clients = {c["id"]: c for c in list_clients()}
     moves = moves_by_day()
@@ -289,14 +287,14 @@ def totals(rows):
         "incomplete": sum(bool(r.get("billing_errors")) for r in rows),
         "positions": len(rows),
         "qty": round(sum(r["qty"] for r in rows), 3),
-        "volume": round(sum(r["volume"] for r in rows), 2),
+        "volume": (None if any(r["qty"] > 0 and not r["liters"] for r in rows) else round(sum(r["volume"] for r in rows), 2)),
         "liter_days": round(sum(r["liter_days"] for r in rows), 2),
         "money": round(sum(r["total"] for r in rows), 2),
         "aged": sum(1 for r in rows if r["days"] > 90),
     }
 
 
-def calendar(client_id=None, query="", date_from=None, date_to=None):
+def _calendar(client_id=None, query="", date_from=None, date_to=None):
     """Сетка как в таблице Глеба: строка — позиция, колонка — сутки."""
     end = date_to or today()
     start = date_from or (end - timedelta(days=13))
@@ -313,6 +311,8 @@ def calendar(client_id=None, query="", date_from=None, date_to=None):
     moves = moves_by_day()
     rows = []
     for lot in list_lots(only_open=False):
+        if lot["ledger_kind"] == "assembly":
+            continue
         if client_id and lot["client_id"] != int(client_id):
             continue
         client = clients.get(lot["client_id"])
@@ -333,7 +333,7 @@ def calendar(client_id=None, query="", date_from=None, date_to=None):
                 continue
             cells.append({
                 "qty": round(qty, 3),
-                "sum": round(qty * liters * tariff, 2),
+                "sum": (0 if here == got else (round(qty * liters * tariff, 2) if liters > 0 or qty == 0 else None)),
                 "ship": round(out.get(day, 0), 3),
             })
             qty -= out.get(day, 0)
@@ -351,13 +351,13 @@ def calendar(client_id=None, query="", date_from=None, date_to=None):
             "rate": tariff,
             "received": got.isoformat(),
             "cells": cells,
-            "sum": round(round(sum(c["qty"] or 0 for c in cells) * liters, 3) * tariff, 2),
+            "sum": (None if any(c["sum"] is None for c in cells) else round(round(sum(c["qty"] or 0 for i,c in enumerate(cells) if as_day(days[i]) > got) * liters, 3) * tariff, 2)),
             "shipped": round(sum(c["ship"] for c in cells), 3),
         })
     per_day = [
         {
             "day": day,
-            "sum": round(sum(r["cells"][i]["sum"] for r in rows), 2),
+            "sum": (None if any(r["cells"][i]["sum"] is None for r in rows) else round(sum(r["cells"][i]["sum"] for r in rows), 2)),
             "ship": round(sum(r["cells"][i]["ship"] for r in rows), 3),
             "qty": round(sum(r["cells"][i]["qty"] or 0 for r in rows), 3),
         }
@@ -369,5 +369,28 @@ def calendar(client_id=None, query="", date_from=None, date_to=None):
         "days": days,
         "rows": rows,
         "per_day": per_day,
-        "total": round(sum(r["sum"] for r in rows), 2),
+        "total": (None if any(r["sum"] is None for r in rows) else round(sum(r["sum"] for r in rows), 2)),
     }
+
+
+def lot_rows(*args, **kwargs):
+    from db import run_lock
+    with run_lock('billing'):
+        return _lot_rows(*args, **kwargs)
+
+
+def calendar(*args, **kwargs):
+    from db import run_lock
+    with run_lock('billing'):
+        return _calendar(*args, **kwargs)
+
+
+def require_current_ledger():
+    from db import get_setting
+    if get_setting('ledger:enabled') != '1':
+        return
+    if get_setting('ledger:last_error'):
+        raise ValueError('Последняя синхронизация учёта не завершена. Обнови учёт перед счётом или клиентским отчётом.')
+    raw = get_setting('ledger:last_success')
+    if not raw or (datetime.now(MSK) - datetime.fromisoformat(raw)).total_seconds() > 1800:
+        raise ValueError('Данные учёта требуют обновления. Нажми «Обновить учёт».')

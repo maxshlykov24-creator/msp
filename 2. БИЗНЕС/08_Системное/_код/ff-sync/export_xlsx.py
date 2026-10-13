@@ -156,6 +156,9 @@ COLUMNS = [
     ("Дней к оплате", "bill_days", 14),
     ("Литро-суток", "liter_days", 13),
     ("К выставлению, ₽", "total", 17),
+    ("Собрано, шт", "pick_qty", 14),
+    ("Документ", "source_document", 28),
+    ("Требует заполнения", "billing_note", 34),
 ]
 
 QTY_COL = 13
@@ -185,14 +188,15 @@ def build(client_id=None, query="", marked=None, date_to=None):
         cell.fill = HEAD_FILL
         cell.alignment = Alignment(vertical="center", wrap_text=True)
     for row in rows:
-        ws.append([row[key] for _title, key, _w in COLUMNS])
-        _literal_strings(ws)
-    ws.append(["Начисления по %s. Остаток на текущую дату. Источник: партии и движения панели." % (date_to or datetime.now(MSK).date())])
+        row["billing_note"] = "; ".join(row.get("billing_errors", []))
+        ws.append([None if row.get("billing_errors") and key == "total" else row.get(key) for _title, key, _w in COLUMNS])
+    _literal_strings(ws)
+    ws.append(["Начисления по %s. Остаток на текущую дату. Источник: документы МойСклад." % (date_to or datetime.now(MSK).date())])
     last = ws.max_row + 1
     ws.cell(row=last, column=1, value="Итого: %s позиций" % sums["positions"]).font = Font(bold=True)
     ws.cell(row=last, column=QTY_COL, value=sums["qty"]).font = Font(bold=True)
     ws.cell(row=last, column=VOLUME_COL, value=sums["volume"]).font = Font(bold=True)
-    ws.cell(row=last, column=MONEY_COL, value=sums["money"]).font = Font(bold=True)
+    ws.cell(row=last, column=MONEY_COL, value=None if sums["incomplete"] else sums["money"]).font = Font(bold=True)
     for col in range(1, len(COLUMNS) + 1):
         ws.cell(row=last, column=col).fill = SUM_FILL
     for i, (_title, _key, width) in enumerate(COLUMNS, start=1):
@@ -577,6 +581,8 @@ CLIENT_STOCK_COLUMNS = [
 
 
 def build_client_stock(ids, date_to=None):
+    from account import require_current_ledger
+    require_current_ledger()
     wanted = [int(x) for x in ids]
     order = {lid: i for i, lid in enumerate(wanted)}
     rows = [r for r in lot_rows(only_open=False, date_to=date_to) if r["id"] in order]
@@ -610,7 +616,7 @@ def build_client_stock(ids, date_to=None):
                 row["bill_from"], row["bill_to"], row["storage"], row["pick_qty"], row["pick"], row["total"],
             ]
         )
-    ws.append(["Остаток на %s. Начисления по %s включительно, с прошлого счёта. Источник: партии и движения панели." % (datetime.now(MSK).date(), date_to or datetime.now(MSK).date())])
+    ws.append(["Остаток на %s. Начисления по %s включительно, с прошлого счёта. Источник: документы МойСклад." % (datetime.now(MSK).date(), date_to or datetime.now(MSK).date())])
     if not rows:
         ws.append(["Нет выбранных позиций"])
     last = ws.max_row + 1

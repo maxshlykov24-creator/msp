@@ -1191,6 +1191,43 @@ def enrich_accounting(snap: dict, ms=None) -> None:
                             "exchanges": len(exchanges)})
 
 
+# Verified customer-order state and sales channels in MoySklad, 13.10.2026.
+MS_SHOWROOM_STATE = "b452b1cc-1553-11f0-0a80-0b560012bbdd"
+ORDER_MESSENGER_SOURCES = {
+    "Instagram": "ОП Instagram",
+    "Telegram": "ОП Telegram",
+    "WhatsApp": "ОП WhatsApp",
+}
+
+
+def enrich_order_sources(snap: dict) -> None:
+    """Dashboard-only fallback. Preserve raw utm_source and UTM-quality metrics."""
+    by_id = {}
+    for order in snap.get("orders", []):
+        # Rebuild on every collection, including when a UTM or state has changed.
+        order.pop("source_fallback", None)
+        order.pop("source_basis", None)
+        raw = str(order.get("source") or "").strip()
+        if not raw or raw.casefold() == "не указано":
+            if order.get("state_id") == MS_SHOWROOM_STATE:
+                order["source_fallback"] = "ОП Шоу-рум"
+                order["source_basis"] = "Статус МойСклад: Покупка в шоуруме"
+            elif order.get("channel") in ORDER_MESSENGER_SOURCES:
+                order["source_fallback"] = ORDER_MESSENGER_SOURCES[order["channel"]]
+                order["source_basis"] = "Канал продаж МойСклад: " + order["channel"]
+        by_id[order["id"]] = order
+    # A refund/exchange belongs to the same source as the original sale.
+    for event in snap.get("returns", []) + snap.get("exchanges", []):
+        event.pop("source_fallback", None)
+        event.pop("source_basis", None)
+        original = by_id.get(event.get("original_order"))
+        if original:
+            event["source"] = original.get("source", "не указано")
+            for key in ("source_fallback", "source_basis"):
+                if key in original:
+                    event[key] = original[key]
+
+
 def order_city(order: dict) -> str:
     """Город заказа. Сначала допполе Город, иначе разбор адреса и способа доставки."""
     named = str(attrs(order).get(FIELD["city"]) or "").strip()
@@ -1603,6 +1640,7 @@ def main() -> None:
             "responses": responses,
             "wazzup": {"status": "метрика ответа рассчитана по событиям amoCRM"}}
     enrich_accounting(snap)
+    enrich_order_sources(snap)
     try:
         snap['amo_conversion'] = get_amo_conversion(leads, tasks)
     except Exception as exc:

@@ -29,13 +29,15 @@ MSK = timezone(timedelta(hours=3))
 
 def collect(lot_ids, date_to=""):
     """Партии одного клиента и суммы, которые ещё не выставлялись."""
+    from account import require_current_ledger
+    require_current_ledger()
     end = calculation_end(date_to)
     lots = []
     client = None
     waiting = 0
     for raw in dict.fromkeys(int(value) for value in lot_ids):
         lot = get_lot(int(raw))
-        if not lot:
+        if not lot or not lot["source_active"] or (get_setting("ledger:enabled") == "1" and not lot["source_key"]):
             raise ValueError("выбранная партия не найдена: %s" % raw)
         if client is None:
             client = get_client_by_id(lot["client_id"])
@@ -61,7 +63,7 @@ def collect(lot_ids, date_to=""):
             raise ValueError("Партия %s: %s. Заполни данные перед выставлением счёта." % (lot["id"], ", ".join(calc["billing_errors"])))
         if calc["bill_days"] == 0 and calc["pick_qty"] == 0:
             continue
-        if calc["liters"] <= 0 or calc["pick_rate"] < 0:
+        if calc["pick_rate"] < 0:
             raise ValueError("проверь литраж и ставку сборки партии %s" % lot["id"])
         storage += calc["storage"]
         pick += calc["pick"]
@@ -85,7 +87,7 @@ def span_of(detail, end):
     return (min(starts) if starts else end.isoformat()), end.isoformat()
 
 
-def preview(lot_ids, date_to=""):
+def _preview(lot_ids, date_to=""):
     client, detail, parts, end = collect(lot_ids, date_to)
     moves = moves_by_day()
     start, stop = span_of(detail, end)
@@ -294,3 +296,8 @@ def invoice_data(invoice_id):
                         "positions": inv["lots_count"], "liter_days": round(sum(r["liter_days"] for r in positions),3),
                         "created": (inv["created_at"] or "")[:16].replace("T"," "), "author": inv["author"], **payment_state(inv)},
             "positions": positions}
+
+
+def preview(lot_ids, date_to=""):
+    with run_lock('billing'):
+        return _preview(lot_ids, date_to)

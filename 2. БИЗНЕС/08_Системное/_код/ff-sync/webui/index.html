@@ -370,9 +370,9 @@
             <th class="pick"><input type="checkbox" id="sAll"></th>
             <th>Контрагент</th><th>Коды</th><th>Наименование</th>
             <th class="num">Литраж, л</th><th class="num">Сборка, ₽/шт</th>
-            <th class="num">Принято, шт</th><th class="num">Отгружено, шт</th>
+            <th class="num">Принято, шт</th><th class="num">Отгружено, шт</th><th class="num">Собрано, шт</th>
             <th class="num">Остаток, шт</th>
-            <th title="День фактической приёмки на склад: с него идёт счётчик">Приёмка на склад</th>
+            <th title="Хранение начинается на следующий день после приёмки; у сборки указана дата отгрузки">Дата документа</th>
             <th class="num">Дней на складе</th>
             <th class="num">Дней к оплате</th><th class="num">Литро-сутки</th>
             <th class="num">Итого, ₽</th>
@@ -382,7 +382,7 @@
       </div>
       <div class="actions">
         <span class="sel" id="sSel">Ничего не выбрано</span>
-        <button class="btn-ghost" id="sAccept" type="button" title="Сверить с МойСклад, какие партии уже приняли на склад">Проверить приёмку</button>
+        <button class="btn-ghost" id="sAccept" type="button" title="Синхронизировать товары, приёмки и отгрузки из МойСклад">Обновить учёт</button>
         <button class="btn btn-file" id="sReport" type="button" disabled>Отчёт для клиента</button>
         <button class="btn" id="sBill" type="button" disabled>Выставить счёт</button>
       </div>
@@ -763,6 +763,6 @@
   </form>
 </div>
 
-<script src="/ui/app.js?v=114"></script>
+<script src="/ui/app.js?v=115"></script>
 </body>
 </html>
