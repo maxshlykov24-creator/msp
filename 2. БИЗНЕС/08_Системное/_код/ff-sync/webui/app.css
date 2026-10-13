@@ -261,6 +261,10 @@ table.tbl td{padding:14px;font-size:13px;border-bottom:1px solid var(--line);whi
 table.stock-tbl{width:100%}
 table.stock-tbl th,table.stock-tbl td{padding:6px 5px;font-size:12px;line-height:1.3;white-space:nowrap}
 table.stock-tbl th{letter-spacing:.04em;padding:7px 5px}
+#sTbl th{font-size:10.5px;letter-spacing:.03em}
+#sTbl th,#sTbl td{text-align:center;vertical-align:middle}
+#sTbl th:nth-child(-n+4),#sTbl td.pick,#sTbl td.client,#sTbl td.codes,#sTbl td.name{text-align:left}
+#sTbl td.num{text-align:center}
 table.stock-tbl td.client,table.stock-tbl td.name,table.stock-tbl td.codes{white-space:normal}
 table.stock-tbl td.client{max-width:130px}
 table.stock-tbl td.name{max-width:190px;font-weight:600}
