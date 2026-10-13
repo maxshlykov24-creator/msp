@@ -51,7 +51,7 @@ def create_pleep_handoff_task(ctx: Ctx, lead_id: int, text: str,
     import hashlib
     import uuid
     from app.db import phone_lock, session_scope
-    from app.models import PleepTaskDelivery
+    from app.models import PleepTaskDelivery, PleepTaskReceipt
 
     if ctx.shadow:
         log_decision(ctx, "pleep.task_shadow", lead=lead_id)
@@ -61,6 +61,15 @@ def create_pleep_handoff_task(ctx: Ctx, lead_id: int, text: str,
     # Do not use the phone lock: worker already holds it on another connection.
     with session_scope() as delivery_session:
         with phone_lock(delivery_session, f"pleep-task:{lead_id}"):
+            receipt = delivery_session.get(PleepTaskReceipt, (lead_id, request_digest))
+            if receipt:
+                return receipt.task_id
+
+            def remember(task_id: int) -> int:
+                delivery_session.add(PleepTaskReceipt(
+                    lead_id=lead_id, request_key=request_digest, task_id=task_id))
+                return task_id
+
             row = delivery_session.get(PleepTaskDelivery, lead_id)
             tasks = list(ctx.client.paginate("/tasks", "tasks", {
                 "filter[entity_type]": "leads", "filter[entity_id][]": lead_id,
@@ -72,16 +81,16 @@ def create_pleep_handoff_task(ctx: Ctx, lead_id: int, text: str,
                 if matched:
                     row.task_id, row.state = int(matched["id"]), "done"
                     if row.request_key == request_digest or not matched.get("is_completed"):
-                        return row.task_id
+                        return remember(row.task_id)
                 elif row.state == "sending":
                     raise RuntimeError("Pleep task outcome uncertain; reconcile CRM marker before retrying")
                 elif row.request_key == request_digest:
                     # Even a deleted task must not be recreated by event redelivery.
-                    return row.task_id
+                    return remember(row.task_id)
             opened = next((t for t in tasks if not t.get("is_completed")
                            and (t.get("text") or "").startswith("[Pleep handoff:")), None)
             if opened:
-                return int(opened["id"])
+                return remember(int(opened["id"]))
             lead = ctx.client.get_lead(lead_id)
             if not lead:
                 raise RuntimeError("Pleep handoff deal not found")
@@ -115,5 +124,8 @@ def create_pleep_handoff_task(ctx: Ctx, lead_id: int, text: str,
         row = delivery_session.get(PleepTaskDelivery, lead_id)
         if row and row.marker == marker:
             row.task_id, row.state = task_id, "done"
+        if not delivery_session.get(PleepTaskReceipt, (lead_id, request_digest)):
+            delivery_session.add(PleepTaskReceipt(
+                lead_id=lead_id, request_key=request_digest, task_id=task_id))
     log_decision(ctx, "pleep.task_created", lead=lead_id, task=task_id, owner=owner)
     return task_id

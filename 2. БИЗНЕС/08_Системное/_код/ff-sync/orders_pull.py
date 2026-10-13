@@ -81,7 +81,7 @@ def find_ms_order(ext_code):
         params={"filter": "externalCode=%s" % ext_code, "limit": 1},
     )
     if r.status_code != 200:
-        return None
+        raise RuntimeError('МойСклад не подтвердил поиск существующего заказа. Создание остановлено.')
     rows = r.json().get("rows") or []
     return rows[0]["id"] if rows else None
 
@@ -115,7 +115,7 @@ def create_order(client, cab, kind, ext_id, positions, posting, ship_date, statu
     attrs = order_attrs(posting, ship_date, cab["name"] or cab["marketplace"], status)
     if attrs:
         payload["attributes"] = attrs
-    r = req("POST", MS_BASE + "/entity/customerorder", headers=ms_headers(), json=payload)
+    r = req("POST", MS_BASE + "/entity/customerorder", headers=ms_headers(), json=payload, retry_safe=False)
     if r.status_code not in (200, 201):
         return None, "%s %s" % (r.status_code, (r.text or "")[:180])
     oid = r.json().get("id")
@@ -221,6 +221,7 @@ def pull_wb_fbo(token, date_from, strict=False):
 
 def ozon_list(url, headers, date_from, strict=False):
     out = []
+    seen = set()
     offset = 0
     since = date_from.strftime("%Y-%m-%dT%H:%M:%SZ")
     until = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -242,17 +243,27 @@ def ozon_list(url, headers, date_from, strict=False):
             print("Ozon %s %s %s" % (url, r.status_code, (r.text or "")[:180]))
             break
         data = r.json()
-        block = data.get("result") or data
+        block = data.get('result', data) if isinstance(data, dict) else data
         if isinstance(block, list):
             batch = block
         elif isinstance(block, dict):
-            batch = block.get("postings") or []
+            batch = block.get("postings")
         else:
-            batch = []
+            batch = None
+        if not isinstance(batch, list):
+            raise RuntimeError('Ozon: список отправлений отсутствует в ответе')
+        for post in batch:
+            key = post.get('posting_number') if isinstance(post, dict) else None
+            if not key or key in seen:
+                raise RuntimeError('Ozon: неполный или повторяющийся список отправлений')
+            seen.add(key)
         out.extend(batch)
-        if len(batch) < 100:
+        more = block.get('has_next') if isinstance(block, dict) else None
+        if more is False or (more is None and len(batch) < 100):
             break
-        offset += 100
+        if not batch:
+            raise RuntimeError('Ozon: пустая страница при наличии продолжения')
+        offset += len(batch)
     return out
 
 
@@ -367,9 +378,9 @@ def handle_ozon(client, cab, kind, postings):
             ext_id,
             positions,
             ext_id,
-            ozon_stamp((post.get("analytics_data") or {}).get("delivery_date") or post.get("in_process_at")),
+            ozon_stamp((post.get("analytics_data") or {}).get("delivery_date") or post.get("in_process_at"), seconds=True),
             post.get("status") or kind.upper(),
-            ozon_stamp(post.get("in_process_at")),
+            ozon_stamp(post.get("in_process_at"), seconds=True),
         )
         print("Ozon %s %s: %s" % (kind, ext_id, msg))
         if oid:

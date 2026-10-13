@@ -97,7 +97,12 @@ async def pleep_sync(request: Request, x_api_key: str = Header(default="")) -> R
         "tags": fields.get("tags", ""),
         "task_text": fields.get("task_text", "").strip()[:4000],
     }
-    key = f"pleep:{phone}:{int(time.time())}"
+    # Intake and handoff can arrive in the same second with different bodies.
+    # Include the body fingerprint so a first-message intake cannot swallow handoff.
+    import hashlib
+    import json
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
+    key = f"pleep:{phone}:{int(time.time())}:{digest}"
     with session_scope() as s:
         eid, _ = enqueue(s, "pleep", "intake", key, payload, phone=phone)
     return JSONResponse({"ok": True, "accepted": True, "event_id": eid,

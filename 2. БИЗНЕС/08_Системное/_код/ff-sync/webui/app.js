@@ -1670,7 +1670,7 @@ function kizCell(r) {
 function asmRowHtml(r) {
   const items = r.items && r.items.length ? r.items : [{ qty: r.qty, article: "", name: "Обнови отправление: состав не загружен" }];
   const span = `rowspan="${items.length}"`;
-  return items.map((item, index) => `<tr class="${items.length > 1 ? "posting-item" : ""}">
+  return items.map((item, index) => `<tr data-posting="${r.id}" class="${items.length > 1 ? "posting-item" : ""}">
     ${index ? "" : `<td ${span} class="pick"><input type="checkbox" data-asm="${r.id}"></td>
     <td ${span} class="client">${esc(r.client)}</td>
     <td ${span} class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span>${items.length > 1 ? `<small>${items.length} артикула · ${num(r.qty, 0)} шт всего</small>` : ""}</td>
@@ -1842,7 +1842,7 @@ function refreshAsmPick() {
   $("aTbl").querySelectorAll("tr").forEach((tr) => {
     const box = tr.querySelector("input[data-asm]");
     const sup = tr.querySelector("input[data-supbox]");
-    tr.classList.toggle("picked", !!(box && box.checked) || !!(sup && sup.checked));
+    tr.classList.toggle("picked", state.pickedAsm.has(Number(tr.dataset.posting)) || !!(box && box.checked) || !!(sup && sup.checked));
   });
   refreshAsmDock();
 }
@@ -1973,7 +1973,7 @@ $("aTbl").onclick = (e) => {
     return;
   }
   const tr = e.target.closest("tbody tr");
-  const box = tr && tr.querySelector("input[data-asm]");
+  const box = tr && (tr.querySelector("input[data-asm]") || (tr.dataset.posting && $("aTbl").querySelector(`input[data-asm="${Number(tr.dataset.posting)}"]`)));
   if (!box) return;
   if (e.target !== box) box.checked = !box.checked;
   const id = Number(box.dataset.asm);

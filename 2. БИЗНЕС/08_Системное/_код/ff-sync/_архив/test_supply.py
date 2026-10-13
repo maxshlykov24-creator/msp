@@ -84,7 +84,7 @@ def fake_req(method, url, headers=None, **kw):
     if url.endswith("/barcode"):
         return Fake(200, {"barcode": "WB-GI-777", "file": base64.b64encode(PNG).decode()})
     if url.endswith("/v3/posting/fbs/get"):
-        return Fake(200, {"result": {"posting_number": "0001-1", "products": [{"product_id": 55, "quantity": 2, "offer_id": "ART-1", "name": "Ремень"}], "status": "awaiting_deliver", "in_process_at": "2026-09-20T10:00:00Z"}})
+        return Fake(200, {"result": {"posting_number": kw['json']['posting_number'], "products": [{"product_id": 55, "quantity": 2, "offer_id": "ART-1", "name": "Ремень"}], "status": "awaiting_deliver", "in_process_at": "2026-09-20T10:00:00Z"}})
     if url.endswith("/v4/posting/fbs/ship"):
         body = kw.get("json") or {}
         packs = body.get("packages") or []
@@ -506,7 +506,7 @@ try:
     kiz.submit(oz_kiz, codes + ["0104630568317423215ZzZzZzZzZz99"])
     raise AssertionError("передали лишний код")
 except kiz.KizError as exc:
-    assert "кодов больше" in str(exc), exc
+    assert "кодов больше" in str(exc).lower(), exc
 
 
 # 19. «Взять в сборку»: поставка заводится сама, габаритные типы не смешиваются.
@@ -1088,3 +1088,116 @@ with patch.object(supply_flow, "list_wb_supplies", return_value=empty_cards), pa
     assert info_call.call_count == 4
     assert len({call.args[1] for call in info_call.call_args_list}) == 4
 print("все проверки поставок, сборки, КиЗ, архива и актуальности прошли")
+
+# Ozon: один заказ с двумя размерами по две штуки.
+import copy
+import orders_pull
+import picking_pdf
+import export_xlsx
+import labels
+from openpyxl import load_workbook
+
+multi = {'posting_number': 'MULTI-2X2', 'status': 'awaiting_packaging',
+         'in_process_at': '2026-10-13T13:11:00Z', 'shipment_date': '2026-10-13T17:59:00Z',
+         'products': [{'sku': 5655461112, 'offer_id': 'Комбинезон L', 'name': 'Комбинезон размер L', 'quantity': 2},
+                      {'sku': 5655501130, 'offer_id': 'Комбинезон XL', 'name': 'Комбинезон размер XL', 'quantity': 2}]}
+db.replace_cache(client_id, oz_cab, [{'marketplace': 'ozon', 'ext_key': p['offer_id'],
+    'ext_article': p['offer_id'], 'ext_barcode': 'OZN%s' % p['sku'], 'name': p['name'],
+    'gtin': '', 'need_kiz': 1, 'image': ''} for p in multi['products']])
+client, cab = db.get_client_by_id(client_id), db.get_cabinet(oz_cab)
+with patch.object(shipments_pull, 'pull_ozon_get', return_value=multi):
+    shipments_pull.handle_ozon(client, cab, 'fbs', [multi], {})
+row = db.get_shipments_by_ext(oz_cab, 'fbs', ['MULTI-2X2'])[0]
+mid = row['id']
+assert row['qty'] == 4
+assert [(i['article'],i['qty']) for i in db.shipment_items(row)] == [('Комбинезон L',2),('Комбинезон XL',2)]
+assert row['accepted_at'] == '2026-10-13 16:11' and row['deadline_at'] == '2026-10-13 20:59'
+assert any(r['id']==mid for r in db.list_assembly(article='КОМБИНЕЗОН XL'))
+assert any(r['id']==mid for r in db.list_assembly(query='размер xl'))
+assert not db.list_assembly(article='Комбинезон X')
+assert [(r['article'],r['qty']) for r in picking_pdf._rows([row])] == [('Комбинезон L',2),('Комбинезон XL',2)]
+_, _, pages = labels.build(supply_flow._label_payload([row]), mode=labels.MODE_PRODUCT, fetch=False)
+assert pages == 4
+_, raw = export_xlsx.build_ships([mid])
+sheet=load_workbook(io.BytesIO(raw)).active
+assert [(r[6],r[9]) for r in list(sheet.values)[1:3]] == [('Комбинезон L',2),('Комбинезон XL',2)]
+
+# Состав обновляется даже при неизменном терминальном статусе.
+delivered = copy.deepcopy(multi)
+delivered['status']='delivered'
+with patch.object(shipments_pull,'pull_ozon_get',return_value=delivered):
+    shipments_pull.handle_ozon(client,cab,'fbs',[delivered],{})
+delivered['products'][1]['quantity']=1
+shipments_pull.handle_ozon(client,cab,'fbs',[delivered],{})
+assert db.get_shipments_by_ids([mid])[0]['qty'] == 3
+weekly=db.shipped_by_day(client_id,'2026-10-13','2026-10-13')
+assert {(r['article'],r['qty']) for r in weekly if r['article'].startswith('Комбинезон')} == {('Комбинезон L',2),('Комбинезон XL',1)}
+with patch.object(shipments_pull,'pull_ozon_get',return_value=multi):
+    shipments_pull.handle_ozon(client,cab,'fbs',[multi],{})
+
+# Неполный состав не приводит к частичному заказу МойСклада.
+with patch.object(orders_pull,'resolve_product',side_effect=['uuid-L',None]), patch.object(orders_pull,'create_order') as create:
+    orders_pull.handle_ozon(client,cab,'fbs',[multi])
+    create.assert_not_called()
+assert 'Комбинезон XL' in db.get_order_log(oz_cab,'MULTI-2X2')['error']
+for invalid in (0,-1,1.5,None,float('nan')):
+    bad=copy.deepcopy(multi['products']); bad[1]['quantity']=invalid
+    try:
+        shipments_pull.ozon_composition(bad)
+        raise AssertionError('invalid quantity accepted')
+    except ValueError:
+        pass
+
+# Коды сканируются в обратном порядке: назначение сохраняет артикул и экземпляр.
+exemplars={'products':[{'product_id':p['sku'],'quantity':2,'is_mandatory_mark_needed':True,
+    'exemplars':[{'exemplar_id':p['sku']*10+j,'marks':[]} for j in range(2)]} for p in multi['products']]}
+multi_codes=['010463056831742321MULTIXL1','010463056831742321MULTIL1','010463056831742321MULTIXL2','010463056831742321MULTIL2']
+assignments=[{'code':c,'product_id':multi['products'][1 if 'XL' in c else 0]['sku']} for c in multi_codes]
+with patch.object(kiz,'_ozon_create',return_value=exemplars):
+    assert kiz.plan(mid)['need'] == 4
+    CALLS.clear()
+    try:
+        kiz.submit(mid,multi_codes)
+        raise AssertionError('guessed product from scan order')
+    except kiz.KizError as exc:
+        assert 'выбери' in str(exc)
+    result=kiz.submit(mid,multi_codes,assignments)
+    assert result['sent']==4
+    sent=[c for c in CALLS if c[1]==kiz.OZON_SET][-1][2]['products']
+    assert len(sent)==2 and all(len(p['exemplars'])==2 for p in sent)
+    for p in sent:
+        expected='MULTIXL' if p['product_id']==5655501130 else 'MULTIL'
+        assert all(expected in ex['marks'][0]['mark'] for ex in p['exemplars'])
+    assert len(kiz.plan(mid)['assignments'])==4
+    old_saved=[dict(m) for m in db.list_shipment_marks([mid])]
+    def reject_validation(method,url,**kwargs):
+        return Fake(503,{}) if url==kiz.OZON_VALIDATE else fake_req(method,url,**kwargs)
+    CALLS.clear()
+    with patch.object(kiz,'req',side_effect=reject_validation):
+        try:
+            kiz.submit(mid,multi_codes,assignments)
+            raise AssertionError('sent without validation')
+        except kiz.KizError:
+            pass
+    assert not any(c[1]==kiz.OZON_SET for c in CALLS)
+    assert [dict(m) for m in db.list_shipment_marks([mid])]==old_saved
+
+# Отсутствующие в GET коды не стирают уже сохранённую маркировку.
+with patch.object(shipments_pull,'pull_ozon_get',return_value=multi):
+    shipments_pull.handle_ozon(client,cab,'fbs',[multi],{})
+assert len(db.list_shipment_marks([mid]))==4
+assert {m['article'] for m in db.list_shipment_marks([mid])}=={'Комбинезон L','Комбинезон XL'}
+assert not kiz.missing_mark_note(db.get_shipments_by_ids([mid]))
+
+# Явное продолжение на короткой странице и повтор страницы.
+page1=Fake(200,{'result':{'postings':[multi],'has_next':True}})
+page2=Fake(200,{'result':{'postings':[dict(multi,posting_number='SECOND')],'has_next':False}})
+with patch.object(orders_pull,'req',side_effect=[page1,page2]):
+    assert len(orders_pull.ozon_list('test',{},orders_pull.since_days(1),strict=True))==2
+with patch.object(orders_pull,'req',side_effect=[page1,page1]):
+    try:
+        orders_pull.ozon_list('test',{},orders_pull.since_days(1),strict=True)
+        raise AssertionError('duplicate page accepted')
+    except RuntimeError:
+        pass
+print('Ozon: состав 2×2, поиск, московское время, печать, отчёты, КиЗ по SKU, обновление состава и защита частичной записи проверены')

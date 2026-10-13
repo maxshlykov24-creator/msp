@@ -188,3 +188,14 @@ def test_pleep_intake_without_handoff_creates_no_task(fake, session, enable_all,
     monkeypatch.setattr(tasks, 'create_pleep_handoff_task', unexpected)
     result = process_pleep_intake(_ctx(fake, session), {'phone': '+15551234567'})
     assert result['action'] == 'repeat'
+
+
+def test_pleep_consumed_repeat_not_recreated_after_completion(fake, session, pleep_task_env):
+    from app.tasks import create_pleep_handoff_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=13291175)
+    first = create_pleep_handoff_task(_ctx(fake, session), lid, 'Человек', 'event-1')
+    assert create_pleep_handoff_task(_ctx(fake, session), lid, 'Повтор', 'event-2') == first
+    fake.tasks[0]['is_completed'] = True
+    assert create_pleep_handoff_task(_ctx(fake, session), lid, 'Повтор', 'event-2') == first
+    assert fake.task_posts == 1

@@ -53,14 +53,14 @@ def stamp_of(raw):
     return (moment_of(raw) or "")[:16]
 
 
-def ozon_stamp(raw):
+def ozon_stamp(raw, seconds=False):
     """Ozon отдаёт UTC; смена и крайний срок отображаются по Москве."""
     if not raw:
         return ''
     dt = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(MSK).strftime('%Y-%m-%d %H:%M')
+    return dt.astimezone(MSK).strftime('%Y-%m-%d %H:%M:%S' if seconds else '%Y-%m-%d %H:%M')
 
 
 def ozon_composition(products):
@@ -509,6 +509,8 @@ def handle_ozon(client, cab, kind, postings, headers):
             # ни статус, ни трек не менялись — строку не перезаписываем
             continue
         items = ozon_items(client, cab, detail.get('products') or post.get('products'))
+        if str(detail.get('posting_number') or '') != ext_id:
+            raise ValueError('Ozon: номер отправления в ответе не совпал с запросом')
         qty = sum(p['qty'] for p in items)
         article = items[0]['article']
         name = items[0]['name']

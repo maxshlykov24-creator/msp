@@ -235,3 +235,12 @@ class PleepTaskDelivery(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+
+
+class PleepTaskReceipt(Base):
+    """Remember every consumed request, including requests reusing an open task."""
+
+    __tablename__ = "pleep_task_receipt"
+    lead_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_id: Mapped[int] = mapped_column(BigInteger)

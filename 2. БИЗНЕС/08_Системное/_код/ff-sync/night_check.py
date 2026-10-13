@@ -68,6 +68,9 @@ def check_ozon(cab, live=False):
     отдаёт одно за запрос, а `list` — сотню, и окно совпадает с тем, что мы
     вообще храним. Одиночный `get` оставлен для тех, кого в списке не оказалось.
     """
+    from db import get_client_by_id
+    from shipments_pull import same_ozon, handle_ozon
+    client = get_client_by_id(cab['client_id'])
     rows = list_open_shipments(cab["id"], kind="fbs", groups=WATCH)
     if not rows:
         return 0, 0
@@ -105,7 +108,15 @@ def check_ozon(cab, live=False):
             or track != (row["track"] or "")
             or (group in DONE and (row["work_state"] or ""))
         )
+        try:
+            composition_changed = not same_ozon(row, post)
+            if composition_changed:
+                handle_ozon(client, cab, 'fbs', [post], headers)
+        except (ValueError, RuntimeError):
+            incomplete = True
+            continue
         if not stale:
+            fixed += int(composition_changed)
             continue
         set_shipment_status(row["id"], status, group, clear_work=group in DONE, track=track)
         fixed += 1
