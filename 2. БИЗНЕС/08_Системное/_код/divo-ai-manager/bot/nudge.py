@@ -848,6 +848,9 @@ def document_question(text: str) -> bool:
         r"банкрот|конкурсн.{0,12}масс|залог|арест|судеб|недействитель|"
         r"(?:сейчас|оформлен|учет|учёт|собственник|владелец).{0,35}юр.?лиц|"
         r"юр.?лиц.{0,35}(?:собственник|владелец|оформлен)|"
+        r"кто.{0,20}(?:собственник|владелец)|"
+        r"на (?:ком|кого).{0,25}(?:оформлен|птс)|"
+        r"по птс.{0,25}(?:кто|на ком|на кого)|"
         r"(?:была|был|находил).{0,20}в лизинг", text or "", re.I))
 
 
@@ -1073,10 +1076,15 @@ def drop_messenger_choice(text: str) -> str:
 
 
 def history_wants_write_here(messages: list[dict]) -> bool:
-    return any(
-        m.get("role") == "user" and wants_write_here(m.get("content") or "")
-        for m in messages
-    )
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        text = message.get("content") or ""
+        if wants_write_here(text):
+            return True
+        if wants_call(text):
+            return False
+    return False
 
 
 def history_refuses_phone(messages: list[dict]) -> bool:

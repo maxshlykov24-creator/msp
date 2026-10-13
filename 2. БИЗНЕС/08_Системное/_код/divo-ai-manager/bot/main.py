@@ -1021,13 +1021,13 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
         if alert.get("tg") and not (doc.get("crm") or {}).get("handoff_pending"):
             return "Номер принял. Передал менеджеру запрос на звонок."
         return "Номер получил. Передаю запрос на звонок менеджеру."
-    if history and nudge.asks_seller(history[-1].get("content") or ""):
-        return prompt.seller_answer()
     doc = store.load_doc(chat_id) if chat_id else {}
     last = history[-1].get("content", "") if history else ""
     prior = history[:-1]
     if nudge.document_question(last):
         return prompt.HANDOFF_MARK
+    if nudge.asks_seller(last):
+        return prompt.seller_answer()
     payment_answer = avito_match.cash_only_answer(doc, last)
     if payment_answer:
         return payment_answer

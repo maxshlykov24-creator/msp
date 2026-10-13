@@ -280,7 +280,9 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         channel = "Авто.ру"
     else:
         channel = "Telegram"
-    if reason == "media":
+    if nudge.history_wants_write_here(history):
+        wait = WAIT_CHAT
+    elif reason == "media":
         wait = WAIT_CHAT
     elif reason == "aftersale":
         wait = WAIT_CHAT
@@ -355,7 +357,7 @@ def handover_from_history(history: list[dict] | None, snap: dict | None = None) 
     low = blob.lower()
     why = REASON_NOTE.get(snap.get("reason") or "", snap.get("reason") or "нужен человек")
     wait = snap.get("wait") or ""
-    task = "позвонить" if wait == WAIT_CALL or snap.get("phone") else "ответить в чате"
+    task = "позвонить" if wait == WAIT_CALL or (not wait and snap.get("phone")) else "ответить в чате"
     lines = ["Передача менеджеру. %s. Нужно %s." % (_cap_first(why), task), ""]
 
     who = (snap.get("name") or "").strip()
@@ -416,6 +418,12 @@ def handover_from_history(history: list[dict] | None, snap: dict | None = None) 
         lines.append("Из диалога:")
         for item in details:
             lines.append("- %s" % item)
+    recent = [m for m in hist if m.get("role") in {"user", "assistant"}][-8:]
+    if recent:
+        lines.extend(["", "Последние реплики (дословно):"])
+        for message in recent:
+            label = "Клиент" if message["role"] == "user" else "Бот"
+            lines.append(label + ": " + str(message.get("content") or ""))
     return "\n".join(lines).strip() + "\n"
 
 

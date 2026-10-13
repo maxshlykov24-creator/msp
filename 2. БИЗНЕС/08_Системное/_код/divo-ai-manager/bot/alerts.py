@@ -174,6 +174,10 @@ def _all_blob(history: list[dict] | None) -> str:
 
 
 def _topic_line(history: list[dict] | None) -> str:
+    from bot.nudge import document_question
+    last = next((m.get("content", "") for m in reversed(history or []) if m.get("role") == "user"), "")
+    if document_question(last):
+        return "вопрос о документах и юридическом статусе автомобиля"
     blob = _client_blob(history)
     if not blob:
         return ""
@@ -255,6 +259,9 @@ def brief_from_history(history: list[dict] | None, reason: str = "") -> str:
     """
     blob = _all_blob(history)
     notes: list[str] = []
+    from bot.nudge import history_wants_write_here
+    if history_wants_write_here(history or []):
+        notes.append("Ответить в текущем чате")
     if reason == "aftersale":
         notes.append("Уже покупал у нас")
     topic = _topic_line(history)

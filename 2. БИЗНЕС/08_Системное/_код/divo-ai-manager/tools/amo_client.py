@@ -688,8 +688,14 @@ def autoru_unsorted_lead(rows: list[dict], room_id: str) -> int | None:
 
 
 def listing_item_id(url: str) -> str:
-    """Хвост ссылки объявления. У Авито это id объявления."""
-    match = re.search(r"(\d{6,})/?$", (url or "").strip())
+    """Provider listing identity; optional brand/model paths are not IDs."""
+    from urllib.parse import urlsplit
+    parsed = urlsplit((url or "").strip())
+    if parsed.hostname in {"auto.ru", "www.auto.ru"}:
+        match = re.search(r"/(\d{6,}-[a-zA-Z0-9]+)/?$", parsed.path)
+        if match:
+            return match.group(1).lower()
+    match = re.search(r"(\d{6,})/?$", parsed.path)
     return match.group(1) if match else ""
 
 

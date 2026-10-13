@@ -3080,6 +3080,10 @@ def test_oct14_silence_does_not_hide_errors():
                     pass
             assert not store.silence_handled(store.load_doc(cid))
             assert main.waiting_for_bot(cid)
+            with patch.object(llm, "reply", AsyncMock(side_effect=llm.LlmError("temporary failure"))):
+                await main._answer_locked(ch, cid, ["Какой пробег?"])
+            assert not store.silence_handled(store.load_doc(cid))
+            assert main.waiting_for_bot(cid)
     asyncio.run(run())
 
 
@@ -3109,7 +3113,8 @@ def test_oct14_report_handoff_and_legal_context():
     from tools.rehearse import replay
     from bot import nudge
     for text in ("Автотека есть, просто если юрлицо уйдет в банкротство",
-                 "Она раньше была в лизинге?", "Кто сейчас собственник, юрлицо?"):
+                 "Она раньше была в лизинге?", "Кто сейчас собственник, юрлицо?",
+                 "Кто сейчас собственник?", "На кого оформлена машина?", "По ПТС на ком машина?"):
         assert nudge.document_question(text)
     async def run():
         for question in ("Направте тогда автотеку тут в сообщении",
@@ -3117,6 +3122,20 @@ def test_oct14_report_handoff_and_legal_context():
             result = await replay({"messages": []}, question, raw="Напишите номер телефона")
             assert not result["sent"] and result["capture"] == 1
     asyncio.run(run())
+    from tools.rehearse import Sandbox
+    from bot import crm
+    from bot.alerts import brief_from_history
+    hist = [{'role': 'user', 'content': 'Есть фото ДТП?'},
+            {'role': 'assistant', 'content': 'Давайте созвонимся'},
+            {'role': 'user', 'content': 'Ответьте просто на вопросы для начала'}]
+    with Sandbox():
+        snap = crm.snapshot('av:handover-test', hist, 'handoff')
+        assert snap['wait'] == 'chat'
+        note = crm.handover_from_history(hist, {**snap, 'phone': '79000000000'})
+        assert 'Нужно ответить в чате' in note and 'Клиент: Есть фото ДТП?' in note
+        assert 'Бот: Давайте созвонимся' in note
+        assert 'Ответить в текущем чате' in brief_from_history(hist)
+    assert not nudge.history_wants_write_here(hist + [{'role': 'user', 'content': 'Теперь позвоните мне'}])
 
 
 def test_oct14_picked_does_not_rewind_sales():
@@ -3133,7 +3152,48 @@ def test_oct14_picked_does_not_rewind_sales():
         move.assert_not_called()
 
 
+def test_oct14_old_note_identity_recovery_preserves_pause():
+    import asyncio
+    from unittest.mock import AsyncMock, Mock
+    from tools.rehearse import Sandbox
+    from bot import autoru_loop as ar, store
+    async def run():
+        with Sandbox():
+            cid = 'ar:old-room'
+            store.save_doc(cid, {'autoru': {'title': 'Haval Jolion'},
+                'crm': {'note_pending': [{'id': 'old-out', 'text': 'Бот: ответ'}]}})
+            store.pause(cid, 'менеджер')
+            api = Mock(messages=AsyncMock(return_value=[
+                {'author': 'buyer-id', 'payload': {'content_type': 'TEXT_PLAIN', 'value': 'Здравствуйте'}},
+                {'author': 'seller-id', 'payload': {'content_type': 'TEXT_PLAIN', 'value': 'Ответ'}}]))
+            await ar.recover_customer_identity(api, {'id': 'old-room', 'me': 'seller-id'})
+            await ar.recover_customer_identity(api, {'id': 'old-room', 'me': 'seller-id'})
+            doc = store.load_doc(cid)
+            assert doc['autoru']['customer_id'] == 'buyer-id'
+            assert store.is_paused(cid) and doc['crm']['note_pending']
+            assert api.messages.await_count == 1
+            assert doc['messages'] == []
+    asyncio.run(run())
+
+
+def test_oct14_autoru_binding_requires_identity_and_listing():
+    from unittest.mock import patch
+    from tools import amo_client as a
+    assert a.listing_item_id('https://auto.ru/cars/used/sale/haval/jolion/1133975625-500d0436/') == '1133975625-500d0436'
+    assert a.listing_item_id('https://auto.ru/cars/used/sale/1133975625-500d0436/?from=search') == '1133975625-500d0436'
+    contact = {'name': 'buyer-id', '_embedded': {'leads': [{'id': 123}]}}
+    with patch.object(a, 'all_unsorted', return_value=[]), \
+         patch.object(a, 'request', return_value=(200, {'_embedded': {'contacts': [contact]}})), \
+         patch.object(a, 'get_lead', return_value={'id': 123}), \
+         patch.object(a, 'lead_listing_url', return_value='https://auto.ru/cars/used/sale/1234567890/'):
+        assert a.autoru_bound_lead('room-id', 'buyer-id', 'https://auto.ru/cars/used/sale/1234567890/') == 123
+        assert a.autoru_bound_lead('room-id', 'another-buyer', 'https://auto.ru/cars/used/sale/1234567890/') is None
+        assert a.autoru_bound_lead('room-id', 'buyer-id', 'https://auto.ru/cars/used/sale/9876543210/') is None
+
+
 if __name__ == "__main__":
+    test_oct14_old_note_identity_recovery_preserves_pause()
+    test_oct14_autoru_binding_requires_identity_and_listing()
     test_oct14_silence_and_new_message()
     test_oct14_real_jolion_and_vat()
     test_oct14_picked_keeps_crm_retry()

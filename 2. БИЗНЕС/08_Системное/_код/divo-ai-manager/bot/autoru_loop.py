@@ -280,6 +280,32 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
     store.save_doc(chat_key, doc)
 
 
+async def recover_customer_identity(api: Autoru, room: dict) -> None:
+    """Recover CRM identity for an old queued note without reopening the chat."""
+    key = store_id(str(room.get("id") or ""))
+    doc = store.load_doc(key)
+    src = doc.get("autoru") or {}
+    crm = doc.get("crm") or {}
+    if src.get("customer_id") or not (crm.get("note_pending") or crm.get("handoff_pending")):
+        return
+    if time.time() < src.get("identity_retry_at", 0):
+        return
+    src["identity_retry_at"] = time.time() + 300
+    doc["autoru"] = src
+    store.save_doc(key, doc)
+    try:
+        messages = await api.messages(raw_id(key), count=50)
+    except AutoruError:
+        return
+    me = str(room.get("me") or "")
+    authors = {str(m.get("author")) for m in messages
+               if m.get("author") and not is_out(m, me) and message_text(m, me)}
+    if len(authors) == 1:
+        doc = store.load_doc(key)
+        doc.setdefault("autoru", {})["customer_id"] = next(iter(authors))
+        store.save_doc(key, doc)
+
+
 async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict) -> None:
     state = load_state()
     cursor: dict = dict(state.get("cursor") or {})
@@ -309,6 +335,7 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
         cid = str(room.get("id") or "")
         if not cid or not is_offer_room(room):
             continue
+        await recover_customer_identity(api, room)
         oid = source_id(room)
         if oid and oid not in own and oid not in set(state.get("foreign") or []):
             own = await _classify_new_offer(api, oid, own, state)
