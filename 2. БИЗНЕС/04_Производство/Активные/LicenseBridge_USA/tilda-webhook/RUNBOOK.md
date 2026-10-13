@@ -694,3 +694,20 @@ Replaces the simultaneous ring group described above, per Max's explicit request
 User requested keeping the inbound attempt alive even with all managers offline. The empty branch of lb-cascade now plays ringback, waits one second and rebuilds the eligible contact list until the original 35-second deadline. A newly registered manager is dialed with zero initial delay; the overall deadline is not reset on retry. The planning-only diagnostic still returns immediately. Previously the offline branch returned immediately and the caller only heard filler ringback in padring.
 
 PBX backup: extensions.conf.bak-offline-retry-20261009. Production dialplan reloaded. Isolated 8891 test confirms repeated one-second availability checks without SIP calls or CRM records. Reconnection of a real manager during a waiting call still requires a live handset test.
+
+
+### 2026-10-13: Pleep → Kommo, согласованные требования
+
+Источник: ответы Максима в текущем чате 13.10.2026. Статус: обследование, новая интеграция не включена.
+
+- Только новые обращения после запуска; исторический импорт не выполнять. Точный момент запуска фиксировать при включении.
+- Для новых сделок согласованы Pipeline (11274779), этап «Новая заявка» (108112044).
+- Идентификатор диалога Pleep сохранять всегда, в том числе при наличии телефона или email. При отсутствии телефона использовать email; если есть только ID диалога, принимать обращение по нему. Повторную доставку и последующее появление контактных данных обрабатывать без создания дубля.
+- Задача менеджеру нужна при необходимости передачи, а не с самого начала. После ответа менеджера диалог должен перейти человеку; прекращение ответов AI нужно проверить в реальном выбранном канале.
+- До реализации бизнес-правил уточнить: момент создания сделки; условия передачи; ответственный и срок задачи; место ответа менеджера (Kommo или Pleep); каналы и состав переносимых данных; поведение для существующей сделки и возврат в AI.
+- Обследование сервера: ключ приёмника настроен, Kommo API доступен; inbox содержит 13 событий source=pleep со статусом done, последнее 07.09.2026 18:31:22 UTC. Это не доказательство текущей сквозной передачи.
+- Текущий /pleep/sync требует телефон, не сохраняет thread_id и использует текущую секунду в ключе события. До запуска требуется поддержка согласованной идентификации и устойчивой защиты от повторов. Общий intake используется также другими источниками: изменения не должны менять их поведение без отдельного основания.
+- Доступ к кабинету: обнаружена открытая вкладка агента «Тимофей» в Chrome. Управление кликом вернуло noWindowsAvailable; владельцу предложено развернуть Chrome. Соответствие агента нужным каналам ещё проверить. MCP-форма на скриншоте подключает внешние инструменты к Pleep, а не предоставляет административный доступ Codex.
+- Приёмка: новое обращение доходит в согласованный этап; варианты телефон/email/только thread_id; повтор события не создаёт дублей; новые контактные данные дополняют связанную запись; задача создаётся один раз по условию передачи; ответ менеджера отключает AI в том же диалоге; ошибки доставки видны и повторяются безопасно. Не объявлять готовым без сквозной проверки.
+
+Документация: https://docs.pleep.app/ru/api/webhooks-outgoing , https://docs.pleep.app/ru/api/api-keys , https://docs.pleep.app/ru/chats/operator-handoff .
