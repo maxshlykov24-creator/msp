@@ -164,9 +164,12 @@ $("viewNav").onclick = (e) => {
 
 function syncDock() {
   const asm = !!document.querySelector("#view-asm.active");
+  const stock = !!document.querySelector("#view-stock.active");
   const acts = $("dockAsm");
+  const stockActs = $("dockStock");
   if (acts) acts.hidden = !asm;
-  document.body.classList.toggle("dock-asm", asm);
+  if (stockActs) stockActs.hidden = !stock;
+  document.body.classList.toggle("dock-asm", asm || stock);
   if (!asm) hidePrintMenu();
 }
 
