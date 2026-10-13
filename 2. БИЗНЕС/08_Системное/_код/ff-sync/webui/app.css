@@ -268,6 +268,9 @@ table.stock-tbl th{letter-spacing:.04em;padding:7px 5px}
 #sTbl th,#sTbl td{text-align:center;vertical-align:middle}
 #sTbl th:nth-child(-n+4),#sTbl td.pick,#sTbl td.client,#sTbl td.codes,#sTbl td.name{text-align:left}
 #sTbl td.num{text-align:center}
+#sTbl td.codes{min-width:0;width:108px;max-width:108px}
+#sTbl td.codes b,#sTbl td.codes span{overflow-wrap:anywhere}
+#sTbl td.name{min-width:300px;max-width:none}
 table.stock-tbl td.client,table.stock-tbl td.name,table.stock-tbl td.codes{white-space:normal}
 table.stock-tbl td.client{max-width:130px}
 table.stock-tbl td.name{max-width:190px;font-weight:600}
