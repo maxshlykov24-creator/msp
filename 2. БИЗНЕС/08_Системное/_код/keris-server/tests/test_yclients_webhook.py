@@ -13,6 +13,38 @@ YC_SERVICE_HYGIENE_M = 30786306  # "Гигиена (собака)" — разм�
 YC_ADDON_NAILS = 30800001  # доп с фикс. ценой (не зависит от размера) — ключ "flat"
 
 
+def test_update_does_not_overwrite_manually_changed_time(monkeypatch):
+    from app import yclients_client as yc
+    calls = []
+    def request(method, path, **kwargs):
+        calls.append((method, kwargs.get("json")))
+        if method == "GET":
+            return {"data": {"datetime": "2026-10-15T14:00:00+03:00", "staff_id": 9,
+                             "seance_length": 7200}}
+        return {"success": True}
+    monkeypatch.setattr(yc, "_request", request)
+    yc.update_record(1, {"datetime": "2026-10-15T12:00:00", "staff_id": 7, "seance_length": 5400})
+    assert calls[-1][1] == {"datetime": "2026-10-15T14:00:00+03:00", "staff_id": 9,
+                           "seance_length": 7200}
+    yc.update_record(1, {"datetime": "2026-10-16T13:00:00", "staff_id": 9, "seance_length": 5400},
+                     allow_time_change=True)
+    assert calls[-1][1]["datetime"] == "2026-10-16T13:00:00"
+    assert calls[-1][1]["seance_length"] == 7200
+
+
+def test_update_stops_when_current_timing_cannot_be_read(monkeypatch):
+    import pytest
+    from app import yclients_client as yc
+    calls = []
+    def request(method, path, **kwargs):
+        calls.append(method)
+        return {"data": {}}
+    monkeypatch.setattr(yc, "_request", request)
+    with pytest.raises(yc.YClientsError):
+        yc.update_record(1, {"seance_length": 5400})
+    assert calls == ["GET"]
+
+
 def mapped(db):
     """Маппинг проставлен yclients_setup.py --sync-catalog, в сиде его нет — ставим руками.
     Каждый размер — своя услуга YCLIENTS (yclients_service_ids: {размер: yc_id})."""

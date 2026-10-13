@@ -195,8 +195,27 @@ def create_record(payload: dict, company_id: str | None = None) -> dict:
     return _request("POST", f"/records/{cid}", json=payload)
 
 
-def update_record(record_id: int, payload: dict, company_id: str | None = None) -> dict:
+def update_record(record_id: int, payload: dict, company_id: str | None = None,
+                  *, allow_time_change: bool = False) -> dict:
+    """Обычный sync не имеет права отменять ручной перенос в журнале.
+
+    Читаем текущую карточку непосредственно перед PUT. При недоступности GET
+    не отправляем старое время. Только явный перенос с сайта разрешает менять
+    начало; длительность сохраняется из актуальной карточки YCLIENTS.
+    """
     cid = company_id or settings.yclients_company_id
+    raw = get_record(record_id, cid)
+    current = raw.get("data", raw)
+    if not isinstance(current, dict) or not current.get("seance_length"):
+        raise YClientsError("Не удалось прочитать актуальное время записи")
+    payload = dict(payload)
+    payload["seance_length"] = int(current["seance_length"])
+    if not allow_time_change:
+        when = current.get("datetime") or current.get("date")
+        if not when or not current.get("staff_id"):
+            raise YClientsError("В карточке отсутствует время или мастер")
+        payload["datetime"] = when
+        payload["staff_id"] = current["staff_id"]
     return _request("PUT", f"/record/{cid}/{record_id}", json=payload)
 
 

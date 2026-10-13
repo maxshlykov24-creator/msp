@@ -1032,6 +1032,8 @@
      На проде (nginx location /api/) даёт реальные данные и создаёт запись.
      Локально/офлайн (file://, автономный прототип) fetch падает — тихий catch,
      работаем на встроенных DATA/логике слотов как раньше, без регрессий. */
+  let liveCatalogReady=location.protocol==="file:";
+  let liveCatalogError=false;
   async function loadLiveCatalog(){
     try{
       const [dogSvc,catSvc,dogAd,catAd,masters,subs,rules]=await Promise.all([
@@ -1043,6 +1045,7 @@
         fetch("/api/subscriptions").then(r=>r.ok?r.json():null),
         fetch("/api/rules").then(r=>r.ok?r.json():null),
       ]);
+      if(![dogSvc,catSvc,dogAd,catAd,subs].every(Array.isArray))throw new Error("Каталог недоступен");
       const mergePrices=(list,live)=>{
         if(!Array.isArray(live))return;
         live.forEach(row=>{
@@ -1093,8 +1096,14 @@
         DATA.rules.freeRescheduleHours=Number(rules.free_reschedule_hours ?? DATA.rules.freeRescheduleHours);
         DATA.rules.lateGraceMin=Number(rules.late_grace_min ?? DATA.rules.lateGraceMin);
       }
+      liveCatalogReady=true;liveCatalogError=false;
+      if(state.petType&&state.size)renderServices();
+      if(state.mode==="subscription")renderSubscriptions();
       track("live_catalog_loaded");
-    }catch(_){/* автономный режим — остаёмся на встроенных данных */}
+    }catch(_){
+      liveCatalogError=true;
+      if(!liveCatalogReady&&state.petType&&state.size)renderServices();
+    }
   }
   const preloadedMasterPhotos=[];
   function preloadMasterPhotos(){
@@ -1366,6 +1375,11 @@
     return q.split(/\s+/).filter(Boolean).every(part=>hay.includes(part));
   }
   function renderServices(){
+    if(!liveCatalogReady){
+      $("#serviceList").innerHTML=`<p class="lead">${liveCatalogError?"Не удалось загрузить прайс. Обнови страницу чуть позже.":"Загружаем актуальный прайс…"}</p>`;
+      $("#addonList").innerHTML="";
+      return;
+    }
     const pet=DATA[state.petType],label=state.petType==="dog"?(state.size||"—"):String(state.size||"—").replace("_"," · ");
     $("#serviceLead").textContent="Категория: "+label+". Реальные цены из прайса Keris Club.";
     const q=(state.serviceQuery||"").trim().toLowerCase();
@@ -1396,7 +1410,7 @@
       <span class="price">${a.from?"от ":"+"}${money(addonPrice(a))}</span><span class="check">${state.addons.includes(a.id)?"✓":""}</span></button>`).join("");
     configureNext();
   }
-  function chooseService(id){state.service=DATA[state.petType].services.find(s=>s.id===id);if(state.time&&!slotFits(state.time)){state.time=null;toast("Время сброшено: для новой услуги нужен другой слот.");}renderServices();track("service_selected",{id})}
+  function chooseService(id){if(!liveCatalogReady)return;state.service=DATA[state.petType].services.find(s=>s.id===id);if(state.time&&!slotFits(state.time)){state.time=null;toast("Время сброшено: для новой услуги нужен другой слот.");}renderServices();track("service_selected",{id})}
   function toggleAddon(id){
     state.addons=state.addons.includes(id)?state.addons.filter(x=>x!==id):[...state.addons,id];
     if(state.time&&!slotFits(state.time)){state.time=null;toast("Время сброшено: с допуслугами нужен более ранний слот.");}
@@ -1746,6 +1760,7 @@
   }
   function chooseSubSize(id){state.subSize=id;state.subscription=null;renderSubSizes();renderSubscriptions();configureNext()}
   function renderSubscriptions(){
+    if(!liveCatalogReady){$("#subList").innerHTML='<p class="lead">Не удалось загрузить прайс. Обнови страницу чуть позже.</p>';return}
     $("#subList").innerHTML=DATA.subscriptions.map(s=>{
       const price=s.prices[state.subSize];
       const on=state.subscription?.id===s.id;

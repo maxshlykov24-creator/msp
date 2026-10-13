@@ -405,7 +405,7 @@ def refresh_from_yclients(db: Session, days: int | None = None, force: bool = Fa
         return {"staff": staff, "shifts": shifts}
 
 
-def push_booking_to_yclients(db: Session, booking: Booking) -> None:
+def push_booking_to_yclients(db: Session, booking: Booking, *, allow_time_change: bool = False) -> None:
     """Пуш записи в YCLIENTS почти в реальном времени. Не бросает исключение
     наверх — при сбое запись у нас остаётся валидной, попытка логируется
     как retry и может быть повторена отдельным воркером/командой."""
@@ -443,7 +443,8 @@ def push_booking_to_yclients(db: Session, booking: Booking) -> None:
                        {"skipped": "no_yclients_record"})
             return
         elif booking.yclients_record_id:
-            yclients_client.update_record(booking.yclients_record_id, payload)
+            yclients_client.update_record(booking.yclients_record_id, payload,
+                                         allow_time_change=allow_time_change)
         else:
             result = yclients_client.create_record(payload)
             record = (result.get("data") or [{}])[0] if isinstance(result.get("data"), list) else result.get("data") or {}

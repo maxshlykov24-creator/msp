@@ -91,6 +91,7 @@ def on_startup() -> None:
     log.info("Keris Server запущен. Время салона: %s. YCLIENTS настроен: %s. amoCRM настроен: %s",
               clock.now().strftime("%d.%m %H:%M"), settings.yclients_ready, settings.amocrm_ready)
     asyncio.create_task(board_loop())
+    asyncio.create_task(price_sheet_loop())
     if settings.reminders_enabled or settings.amocrm_ready or settings.yclients_ready:
         asyncio.create_task(reminders_loop())
 
@@ -107,6 +108,22 @@ def _warm_board() -> None:
                 admin_bookings(when=when, for_photos=flag, db=db)
     finally:
         db.close()
+
+
+async def price_sheet_loop() -> None:
+    """Последняя корректная копия в БД доступна и при сбое Google."""
+    from .seed import refresh_price_sheet, price_sheet_enabled
+    from .db import SessionLocal
+    while True:
+        if price_sheet_enabled():
+            try:
+                def refresh():
+                    with SessionLocal() as db:
+                        return refresh_price_sheet(db)
+                await asyncio.to_thread(refresh)
+            except Exception:
+                log.warning("синхронизация Google-прайса не удалась", exc_info=True)
+        await asyncio.sleep(60)
 
 
 async def board_loop() -> None:
@@ -192,11 +209,13 @@ async def reminders_loop() -> None:
 
 @app.get("/health")
 def health() -> dict:
+    from .seed import price_sheet_status
     return {
         "ok": True,
         "yclients_ready": settings.yclients_ready,
         "amocrm_ready": settings.amocrm_ready,
         "targetsms_ready": settings.targetsms_ready,
+        "price_sheet": price_sheet_status,
     }
 
 
@@ -1015,7 +1034,7 @@ def reschedule_booking(booking_id: str, payload: RescheduleIn,
     # Напоминания за 24 ч и 3 ч считаются от нового времени.
     booking.reminders_sent = []
     db.commit()
-    sync.push_booking_to_yclients(db, booking)
+    sync.push_booking_to_yclients(db, booking, allow_time_change=True)
     sync.sync_booking_to_amocrm(
         db, booking,
         note=f"Перенос: было {was:%d.%m %H:%M}, стало {booking.starts_at:%d.%m %H:%M}",
