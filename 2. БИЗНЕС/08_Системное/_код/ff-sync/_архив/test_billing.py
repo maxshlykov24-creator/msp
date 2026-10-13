@@ -618,3 +618,27 @@ with patch.object(accept,'req',lambda *a,**k: Fake(200,{'meta':{'size':2},'rows'
     except ValueError:pass
 assert db.connect().execute('pragma quick_check').fetchone()[0]=='ok'
 print('МойСклад: группы, раздельные начисления, даты, отмены, дубли строк, пустые поля, повтор и закрытые периоды — OK')
+
+# Цена из «Заведения» записывается в карточку; общая карточка не меняет владельца.
+import products_push as pp
+import ms
+from copy import deepcopy
+db.set_setting('ledger:groups',json.dumps([['A','B']]))
+db.set_setting('ATTR_PICK_RATE_ID','COST');db.set_setting('ATTR_LITERS_ID','LIT');db.set_setting('ATTR_CLIENT_ID','OWNER')
+shared={'id':'SHARED','article':'P','name':'Общий товар','supplier':ms.ms_meta('counterparty','A'),
+        'attributes':[{'name':'Клиент фулфилмента','meta':{'href':net.MS_BASE+'/entity/product/metadata/attributes/OWNER'},'value':ms.ms_meta('counterparty','A')}]}
+assert pp.same_client_product(shared,db.get_client_by_id(bid))
+try:pp.same_client_product(shared,{'ms_counterparty_id':'OUTSIDER'});raise AssertionError('разрешена чужая группа')
+except ValueError:pass
+sent=[]
+def product_saved(method,url,headers=None,**kw):
+    sent.append((method,deepcopy(kw['json'])))
+    return Fake(200,{'id':'SHARED','attributes':kw['json']['attributes']})
+with patch.object(pp,'get_cabinet',return_value={'id':1,'client_id':bid,'marketplace':'wb'}),patch.object(pp,'find_linked',return_value=deepcopy(shared)),patch.object(pp,'link_hits'),patch.object(pp,'req',product_saved):
+    result=pp.push_one({'cabinet_id':1,'name':'Общий товар','Литраж_л':2,'Стоимость сборки':7})
+    assert result['ok'],result
+assert sent[0][0]=='PUT' and 'supplier' not in sent[0][1]
+attrs={pp._ref_id(x['meta']):x['value'] for x in sent[0][1]['attributes']}
+assert attrs['COST']==7 and attrs['LIT']==2 and 'OWNER' not in attrs
+zero=ms.product_attrs(2,'B',0);assert any(pp._ref_id(x['meta'])=='COST' and x['value']==0 for x in zero)
+print('Заведение: стоимость сборки сохраняется в МойСклад; карточка общей компании сохраняет владельца — OK')

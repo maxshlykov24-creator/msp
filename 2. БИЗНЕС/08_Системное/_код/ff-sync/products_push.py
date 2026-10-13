@@ -1,6 +1,7 @@
 """Создание и обновление товара в МойСклад и заказа поставщика."""
 
 import re
+import json
 
 from db import get_cabinet, get_client_by_id, get_setting, get_sku, get_sku_by_barcode, prefer_hit, upsert_sku
 from ms import ms_meta, org_id, product_attrs, store_id, tracking_code
@@ -112,7 +113,8 @@ def get_product(pid):
 def _ref_id(value):
     if not isinstance(value, dict):
         return ""
-    href = ((value.get("meta") or {}).get("href") or "").rstrip("/")
+    meta = value.get("meta") or value
+    href = (meta.get("href") or "").split("?")[0].rstrip("/")
     return href.rsplit("/", 1)[-1] if href else ""
 
 
@@ -135,7 +137,11 @@ def product_owners(product):
 def same_client_product(product, client, linked=False):
     owners = product_owners(product)
     want = client["ms_counterparty_id"]
-    if owners and owners != {want}:
+    allowed = {want}
+    for group in json.loads(get_setting("ledger:groups") or "[]"):
+        if want in group:
+            allowed.update(group)
+    if owners and not owners.issubset(allowed):
         raise ValueError("товар в МойСклад закреплён за другим контрагентом — сопоставление остановлено")
     if not owners and not linked:
         raise ValueError("у найденного товара в МойСклад не указан контрагент — сопоставление остановлено")
@@ -309,6 +315,12 @@ def push_one(row, hits=None, dry=False):
     extra = barcodes_of_many(barcodes_from_hits(hits, row.get("ext_barcode"), gtin), gtin)
     codes = merge_barcodes(existing or {}, extra) if existing else extra
     codes = drop_gtin_code128(codes, gtin_code(gtin))
+    pick_rate = row.get("Стоимость сборки")
+    if pick_rate is not None and not get_setting("ATTR_PICK_RATE_ID"):
+        if dry:
+            return {"ok": False, "msg": "Не настроено допполе стоимости сборки", "id": None, "article": article, "gtin": gtin, "client": client}
+        from ms import ensure_attrs
+        ensure_attrs("product", [("Стоимость сборки, ₽", "double", "ATTR_PICK_RATE_ID")])
     payload = {
         "name": (existing.get("name") if existing else None) or row.get("name") or article,
         "article": article,
@@ -317,12 +329,17 @@ def push_one(row, hits=None, dry=False):
         "attributes": product_attrs(
             row.get("Литраж_л"),
             client["ms_counterparty_id"],
+            pick_rate=pick_rate,
         ),
     }
     if client["ms_counterparty_id"]:
         payload["supplier"] = ms_meta("counterparty", client["ms_counterparty_id"])
     if codes:
         payload["barcodes"] = codes
+    if existing and product_owners(existing) and product_owners(existing) != {client["ms_counterparty_id"]}:
+        payload.pop("supplier", None)
+        owner_attr = get_setting("ATTR_CLIENT_ID")
+        payload["attributes"] = [a for a in payload["attributes"] if _ref_id(a.get("meta")) != owner_attr]
     if dry:
         return {
             "ok": True,
@@ -347,7 +364,13 @@ def push_one(row, hits=None, dry=False):
             "gtin": gtin,
             "client": client,
         }
-    pid = r.json().get("id")
+    saved = r.json()
+    pid = saved.get("id")
+    if pick_rate is not None:
+        cost_attr = get_setting("ATTR_PICK_RATE_ID")
+        actual = next((a.get("value") for a in saved.get("attributes", []) if _ref_id(a.get("meta")) == cost_attr), None)
+        if actual is None or abs(float(actual)-float(str(pick_rate).replace(",", "."))) > 1e-7:
+            return {"ok": False, "msg": "МойСклад не подтвердил стоимость сборки. Проверь карточку товара и повтори.", "id": pid, "article": article, "gtin": gtin, "client": client}
     link_hits(client, hits or [{"cabinet_id": cab["id"], "marketplace": cab["marketplace"],
                                  "ext_key": row.get("ext_key") or "", "ext_article": row.get("ext_article") or "",
                                  "ext_barcode": row.get("ext_barcode") or ""}], row.get("ext_barcode"), pid)

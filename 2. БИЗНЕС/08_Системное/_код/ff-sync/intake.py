@@ -720,6 +720,7 @@ def recheck(row):
         "name": first["name"],
         "size": first["size"],
         "Литраж_л": liters,
+        "Стоимость сборки": pick_rate,
         "Тип продукции": kind,
         "GTIN": gtin,
     }

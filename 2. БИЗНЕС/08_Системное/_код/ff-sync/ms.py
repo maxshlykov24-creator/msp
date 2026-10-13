@@ -5,6 +5,7 @@ from net import MS_BASE, env, ms_headers, req
 
 PRODUCT_ATTRS = [
     ("Литраж, л", "double", "ATTR_LITERS_ID"),
+    ("Стоимость сборки, ₽", "double", "ATTR_PICK_RATE_ID"),
     ("Клиент фулфилмента", "counterparty", "ATTR_CLIENT_ID"),
 ]
 
@@ -157,7 +158,7 @@ def attr_value(entity, name, meta_key, value):
     }
 
 
-def product_attrs(liters, agent_id):
+def product_attrs(liters, agent_id, pick_rate=None):
     """Литраж и клиент фулфилмента. Площадка живёт в кабинетах, GTIN — в штрихкодах."""
     out = []
     if liters is not None and liters != "":
@@ -172,6 +173,15 @@ def product_attrs(liters, agent_id):
         item = attr_value("product", "Клиент фулфилмента", "ATTR_CLIENT_ID", ms_meta("counterparty", agent_id))
         if item:
             out.append(item)
+    if pick_rate is not None and pick_rate != "":
+        import math
+        rate = float(str(pick_rate).replace(",", "."))
+        if not math.isfinite(rate) or rate < 0:
+            raise ValueError("Некорректная стоимость сборки")
+        item = attr_value("product", "Стоимость сборки, ₽", "ATTR_PICK_RATE_ID", rate)
+        if not item:
+            raise ValueError("Не настроено допполе стоимости сборки МойСклад")
+        out.append(item)
     return out
 
 
