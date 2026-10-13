@@ -738,6 +738,7 @@ def get_slots(
         raise HTTPException(422, e.message)
 
     sync.refresh_from_yclients(db)
+    sync.refresh_slot_statuses(db)
     master_ids = [master_id] if master_id and master_id != "any" else [
         m.id for m in db.execute(select(Master).where(Master.active.is_(True))).scalars().all()
     ]
@@ -785,6 +786,7 @@ def get_slots_range(
         raise HTTPException(422, "date_to раньше date_from")
 
     sync.refresh_from_yclients(db)
+    sync.refresh_slot_statuses(db)
     today = clock.today()
     if start < today:
         start = today
@@ -937,7 +939,7 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
     same_client = db.execute(
         select(Booking).where(
             Booking.owner_phone == owner_phone,
-            Booking.status != BookingStatus.cancelled,
+            Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
             Booking.starts_at < ends_at,
             Booking.ends_at > starts_at,
         )

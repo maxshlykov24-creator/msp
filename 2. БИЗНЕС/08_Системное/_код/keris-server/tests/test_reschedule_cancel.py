@@ -401,3 +401,30 @@ def test_reschedule_keeps_subscription_charge(client, sessions):
                     json={"date_iso": new_day, "time_hhmm": new_time, "phone": PHONE})
     assert r.status_code == 200, r.text
     assert visits_used(sessions, sub_id) == charged  # перенос не списывает визит повторно
+
+
+def test_future_no_show_reopens_same_master_slot_for_same_client(client, sessions, monkeypatch):
+    from app import sync
+    from app.models import Master
+    created = make_booking(client)
+    old = db_booking(sessions, created["booking_id"])
+    day, tm, mid = old.starts_at.date().isoformat(), old.starts_at.strftime("%H:%M"), old.master_id
+    query = {"date_iso": day, "service_id": old.service_id, "size": old.pet_size, "master_id": mid}
+    assert tm not in client.get("/api/slots", params=query).json()["masters"][mid]
+    with sessions() as db:
+        b = db.get(Booking, old.id)
+        b.yclients_record_id = 123456
+        db.commit()
+        # Реальное полное событие журнала, мастер не меняется.
+        sync.handle_yclients_webhook(db, {"resource": "record", "status": "update", "data": {
+            "id": b.yclients_record_id, "attendance": -1, "staff_id": db.get(Master, mid).yclients_staff_id,
+            "datetime": b.starts_at.isoformat(), "seance_length": int((b.ends_at-b.starts_at).total_seconds()),
+            "services": [{"id": 0, "cost": b.price}]}})
+    assert tm in client.get("/api/slots", params=query).json()["masters"][mid]
+    response = client.post("/api/bookings", json={"owner_name": "Test", "owner_phone": PHONE,
+        "pet_name": "Test", "pet_type": "dog", "pet_size": old.pet_size, "service_id": old.service_id,
+        "addon_ids": [], "master_id": mid, "date_iso": day, "time_hhmm": tm, "personal_data_consent": True})
+    assert response.status_code == 200, response.text
+    unchanged = db_booking(sessions, old.id)
+    assert unchanged.status == BookingStatus.no_show
+    assert (unchanged.master_id, unchanged.starts_at, unchanged.ends_at, unchanged.price) == (old.master_id, old.starts_at, old.ends_at, old.price)

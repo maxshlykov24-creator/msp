@@ -386,3 +386,46 @@ def test_failed_webhook_is_retried(db_session, monkeypatch):
     assert log_row.status == "ok"
     assert log_row.booking_id == second["booking_id"]
     assert log_row.attempts == 2
+
+
+def test_partial_future_no_show_keeps_master_and_releases_slot(db_session, monkeypatch):
+    from app import sync
+    mapped(db_session)
+    future = datetime.now() + timedelta(days=3)
+    future = future.replace(hour=12, minute=0, second=0, microsecond=0)
+    result = handle_yclients_webhook(db_session, record_event(datetime=future.isoformat(), attendance=0))
+    booking = db_session.get(Booking, result["booking_id"])
+    before = (booking.master_id, booking.starts_at, booking.ends_at, booking.price)
+    monkeypatch.setattr(sync.yclients_client, "get_record", lambda *_: {"data": {}})
+    partial = {"resource": "record", "status": "update", "data": {"id": booking.yclients_record_id, "visit_attendance": -1}}
+    assert handle_yclients_webhook(db_session, partial)["status"] == "no_show"
+    assert (booking.master_id, booking.starts_at, booking.ends_at, booking.price) == before
+    assert not has_overlap(db_session, booking.master_id, booking.starts_at, booking.ends_at)
+    assert "12:00" in slots_for_master(db_session, db_session.get(Master, booking.master_id), future.date(), 90, now=future-timedelta(days=1))
+
+
+def test_missed_no_show_webhook_reconciles_without_writes(db_session, monkeypatch):
+    import dataclasses
+    from app import sync
+    mapped(db_session)
+    future = datetime.now() + timedelta(days=3)
+    result = handle_yclients_webhook(db_session, record_event(datetime=future.isoformat(), attendance=0))
+    booking = db_session.get(Booking, result["booking_id"])
+    before = (booking.master_id, booking.starts_at, booking.ends_at, booking.price)
+    monkeypatch.setattr(sync, "settings", dataclasses.replace(sync.settings, yclients_company_id="2125383", yclients_partner_token="p", yclients_user_token="u"))
+    monkeypatch.setattr(sync.yclients_client, "get_record", lambda rid: {"data": {"id": rid, "attendance": -1}})
+    monkeypatch.setattr(sync.yclients_client, "update_record", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no PUT")))
+    assert sync.refresh_slot_statuses(db_session, force=True)["released"] == 1
+    assert booking.status == BookingStatus.no_show
+    assert (booking.master_id, booking.starts_at, booking.ends_at, booking.price) == before
+    assert not has_overlap(db_session, booking.master_id, booking.starts_at, booking.ends_at)
+    assert sync.refresh_slot_statuses(db_session) == {"skipped": True}
+
+
+def test_hydration_includes_attendance(db_session, monkeypatch):
+    from app import sync
+    mapped(db_session)
+    result = handle_yclients_webhook(db_session, record_event(attendance=0))
+    monkeypatch.setattr(sync.yclients_client, "get_record", lambda rid: {"data": {"id": rid, "attendance": -1}})
+    assert handle_yclients_webhook(db_session, record_event(status="update", services=[]))["status"] == "no_show"
+    assert db_session.get(Booking, result["booking_id"]).master_id == "alla"

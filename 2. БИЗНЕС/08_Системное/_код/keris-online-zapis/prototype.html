@@ -1495,7 +1495,7 @@
   /* ── Свободное время из календаря сервера ─────────────────────────────
      Слоты из календаря сервера. Без ответа API слоты считаются свободными
      по сетке (сервер всё равно проверит при создании записи). */
-  const liveSlots={key:null,rangeKey:null,byDate:{},pending:{},quotes:{}};
+  const liveSlots={key:null,rangeKey:null,byDate:{},pending:{},quotes:{},loadedAt:0,loading:null};
   function slotsKey(){return [state.service&&state.service.id,state.size,state.addons.slice().sort().join("|"),state.moveId?(state.moveDuration||""):""].join("~")}
   function liveSlotsFor(iso){return liveSlots.key===slotsKey()?liveSlots.byDate[iso]:null}
   async function loadSlotsRange(){
@@ -1505,40 +1505,61 @@
     const key=slotsKey();
     const from=isoOf(days[0]), to=isoOf(days[days.length-1]);
     const rangeKey=key+"~"+from+"~"+to;
-    if(liveSlots.rangeKey===rangeKey)return;
+    if(liveSlots.loading===rangeKey)return;
+    if(liveSlots.rangeKey===rangeKey&&Date.now()-liveSlots.loadedAt<30000)return;
     if(liveSlots.key!==key){liveSlots.key=key;liveSlots.byDate={};liveSlots.pending={};liveSlots.quotes={}}
     liveSlots.rangeKey=rangeKey;
+    liveSlots.loading=rangeKey;
     const qs=new URLSearchParams({date_from:from,date_to:to,service_id:state.service.id,size:state.size,addon_ids:state.addons.join(",")});
     if(state.moveId&&state.moveDuration)qs.set("duration_min",state.moveDuration);
     try{
-      const r=await fetch("/api/slots/range?"+qs.toString());
+      const r=await fetch("/api/slots/range?"+qs.toString(),{cache:"no-store"});
       if(r.ok){
         const data=await r.json();
-        if(liveSlots.key!==key)return;
+        if(liveSlots.key!==key){if(liveSlots.loading===rangeKey)liveSlots.loading=null;return}
+        liveSlots.loadedAt=Date.now();liveSlots.loading=null;
         liveSlots.quotes=data.quotes||{};
         const byDate=data.masters_by_date||{};
         Object.keys(byDate).forEach(iso=>{liveSlots.byDate[iso]=byDate[iso]});
         track("live_slots_loaded",{days:Object.keys(liveSlots.byDate).length});
-        if(current==="master")renderMasters();
+        if(current==="master")refreshMastersAvailability();
         return;
       }
     }catch(_){}
-    const todo=days.map(isoOf).filter(iso=>!liveSlots.byDate[iso]&&!liveSlots.pending[iso]);
-    if(!todo.length)return;
+    const todo=days.map(isoOf).filter(iso=>!liveSlots.pending[iso]);
+    if(!todo.length){liveSlots.loading=null;liveSlots.loadedAt=Date.now();return}
     todo.forEach(iso=>{liveSlots.pending[iso]=true});
     const results=await Promise.all(todo.map(iso=>{
       const qsDay=new URLSearchParams({date_iso:iso,service_id:state.service.id,size:state.size,addon_ids:state.addons.join(",")});
       if(state.moveId&&state.moveDuration)qsDay.set("duration_min",state.moveDuration);
-      return fetch("/api/slots?"+qsDay.toString()).then(r=>r.ok?r.json():null).then(data=>({iso,data})).catch(()=>({iso,data:null}));
+      return fetch("/api/slots?"+qsDay.toString(),{cache:"no-store"}).then(r=>r.ok?r.json():null).then(data=>({iso,data})).catch(()=>({iso,data:null}));
     }));
     let loaded=false;
+    if(liveSlots.loading===rangeKey)liveSlots.loading=null;
+    liveSlots.loadedAt=Date.now();
     if(liveSlots.key!==key)return;
     results.forEach(({iso,data})=>{
       delete liveSlots.pending[iso];
       if(data&&data.masters){liveSlots.byDate[iso]=data.masters;Object.assign(liveSlots.quotes,data.quotes||{});loaded=true}
     });
-    if(loaded){track("live_slots_loaded",{days:Object.keys(liveSlots.byDate).length});if(current==="master")renderMasters()}
+    if(loaded){track("live_slots_loaded",{days:Object.keys(liveSlots.byDate).length});if(current==="master")refreshMastersAvailability()}
   }
+  function refreshMastersAvailability(){
+    if(state.master&&state.time&&isSlotTaken(state.master.id,0,0,state.time,state.date))state.time=null;
+    const y=window.scrollY;
+    const positions=Array.from(document.querySelectorAll("#masterList *,#dateList")).filter(el=>el.scrollLeft).map(el=>[el.id,el.className,el.scrollLeft]);
+    renderMasters();
+    positions.forEach(([id,cls,x])=>{const el=id?document.getElementById(id):Array.from(document.querySelectorAll("#masterList *")).find(n=>n.className===cls);if(el)el.scrollLeft=x});
+    window.scrollTo({top:y,behavior:"instant"});
+  }
+  // Обновляем открытую форму после изменений администратора в журнале.
+  setInterval(()=>{if(current==="master"&&!document.hidden)loadSlotsRange()},30000);
+  document.addEventListener("visibilitychange",()=>{
+    if(!document.hidden&&current==="master"){liveSlots.loadedAt=0;loadSlotsRange()}
+  });
+  window.addEventListener("focus",()=>{
+    if(current==="master"){liveSlots.loadedAt=0;loadSlotsRange()}
+  });
   function isSlotTaken(masterId,gi,i,time,iso){
     const live=liveSlotsFor(iso||state.date);
     if(live){

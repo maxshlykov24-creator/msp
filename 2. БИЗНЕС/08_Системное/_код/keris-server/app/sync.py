@@ -55,6 +55,9 @@ from .models import (
 _REFRESH_TTL_SEC = 5 * 60
 _last_refresh = 0.0
 _refresh_lock = threading.Lock()
+_slot_status_lock = threading.Lock()
+_last_slot_status_refresh = 0.0
+_SLOT_STATUS_TTL_SEC = 30
 
 _CYR_SLUG = {
     "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
@@ -86,11 +89,56 @@ def attendance_status(data: dict) -> BookingStatus | None:
     """Статус визита из журнала YCLIENTS. None — поля нет или значение незнакомое."""
     raw = data.get("attendance")
     if raw is None:
+        raw = data.get("visit_attendance")
+    if raw is None:
         return None
     try:
         return ATTENDANCE_STATUS.get(int(raw))
     except (TypeError, ValueError):
         return None
+
+
+def refresh_slot_statuses(db: Session, *, force: bool = False) -> dict:
+    """Страховка пропущенного вебхука: освобождаем будущие неявки по GET журнала.
+
+    Не отправляем PUT, уведомления или изменения мастера/цены/времени. При
+    недоступности источника оставляем слот занятым, а не угадываем его статус.
+    """
+    global _last_slot_status_refresh
+    if not settings.yclients_ready:
+        return {"skipped": True}
+    with _slot_status_lock:
+        if not force and time.monotonic() - _last_slot_status_refresh < _SLOT_STATUS_TTL_SEC:
+            return {"skipped": True}
+        _last_slot_status_refresh = time.monotonic()
+        rows = db.execute(select(Booking).where(
+            Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
+            Booking.ends_at > clock.now(), Booking.yclients_record_id.is_not(None),
+        )).scalars().all()
+        changed = 0
+        for booking in rows:
+            try:
+                raw = yclients_client.get_record(booking.yclients_record_id)
+                data = raw.get("data", raw)
+                if not isinstance(data, dict) or data.get("id") != booking.yclients_record_id:
+                    continue
+                status = (BookingStatus.cancelled if data.get("deleted") else attendance_status(data))
+                if status not in CLOSED_STATUSES:
+                    continue
+                booking.status = status
+                if status == BookingStatus.cancelled:
+                    refund_subscription_visit(db, booking)
+                db.commit()
+                changed += 1
+            except Exception:
+                db.rollback()
+                log.warning("сверка статусов слотов недоступна; прежняя занятость сохранена")
+                break
+        if changed:
+            from . import day_board
+            day_board.reclassify_finance(db)
+            day_board.drop_cache()
+        return {"checked": len(rows), "released": changed}
 
 
 def service_yclients_id(service: Service, size: str) -> int | None:
@@ -808,7 +856,8 @@ def handle_yclients_webhook(db: Session, payload: dict) -> dict:
 def _hydrate_record_from_api(data: dict) -> dict:
     """Вебхук журнала часто приходит в момент создания слота, ещё без услуг.
     Без GET запись не импортируется, клиент не получает «спасибо» в бота."""
-    if data.get("services"):
+    if (data.get("services") and (data.get("datetime") or data.get("date"))
+            and data.get("staff_id") and attendance_status(data) is not None):
         return data
     record_id = data.get("id")
     if not isinstance(record_id, int):
@@ -819,14 +868,14 @@ def _hydrate_record_from_api(data: dict) -> dict:
         log.warning("не удалось дочитать запись YCLIENTS %s: %s", record_id, e)
         return data
     full = raw.get("data") if isinstance(raw.get("data"), dict) else raw
-    if not isinstance(full, dict) or not full.get("services"):
+    if not isinstance(full, dict):
         return data
     merged = dict(data)
-    for key in ("services", "seance_length", "client", "staff_id", "date", "datetime", "comment", "custom_fields"):
+    for key in ("services", "seance_length", "client", "staff_id", "date", "datetime", "comment", "custom_fields", "attendance", "visit_attendance"):
         val = full.get(key)
         if val in (None, [], ""):
             continue
-        if key in ("services", "seance_length") or not merged.get(key):
+        if key in ("services", "seance_length") or merged.get(key) is None or merged.get(key) == "":
             merged[key] = val
     log.info("YCLIENTS record %s: услуги дочитаны из API (%s шт.)",
              record_id, len(merged.get("services") or []))
@@ -858,9 +907,13 @@ def _apply_yclients_record(db: Session, data: dict, status: str) -> dict:
 
     data = _hydrate_record_from_api(data)
     starts_at = _record_datetime(data)
+    if starts_at is None and booking is not None:
+        starts_at = booking.starts_at
     if starts_at is None:
         return {"status": "skipped", "reason": "no_datetime", "sync_status": "failed"}
     master = _master_by_staff(db, data.get("staff_id"))
+    if master is None and booking is not None and (not data.get("staff_id") or attendance_status(data) == BookingStatus.no_show):
+        master = db.get(Master, booking.master_id)
     if master is None:
         log.warning("YCLIENTS record %s: staff_id=%s не сопоставлен", record_id, data.get("staff_id"))
         return {"status": "skipped", "reason": "staff_not_mapped", "sync_status": "failed"}
