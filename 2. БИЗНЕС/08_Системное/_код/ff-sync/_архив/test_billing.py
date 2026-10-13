@@ -380,3 +380,124 @@ with patch('export_xlsx.render_invoice_document',side_effect=ValueError('шаб�
 assert len(db.list_invoices()) == before_count
 assert db.get_lot(lot_id)['billed_until'] == '2026-09-06'
 print('счёт по шаблону: суммы, стили, 0/1/18/31 строка, реквизиты и повторы — OK')
+
+# Добавление контрагента: дубли всего аккаунта, секреты, ошибка ключа и повтор.
+import copy
+import agents_sync as onboarding
+os.environ['MS_ORG_ID']='ORG-1'
+os.environ['MS_STORE_ID']='STORE-1'
+for _name,_typ,key in onboarding.AGENT_ATTRS:
+    db.set_setting(key,'META-'+key)
+entities={}
+mutations=[]
+reject_wb=False
+lose_create=False
+
+def onboarding_req(method,url,headers=None,**kw):
+    global lose_create
+    if 'suggestions.dadata.ru' in url:
+        return Fake(200,{'suggestions':[{'data':{'inn':'7730588444','kpp':'770501001','ogrn':'1087746982157','type':'LEGAL','state':{'status':'ACTIVE'},'name':{'short_with_opf':'ООО Пример','full_with_opf':'Общество Пример'},'address':{'unrestricted_value':'Адрес из справочника'}}}]})
+    if url.endswith('/ping'):
+        return Fake(401 if reject_wb else 200,{})
+    if '/content/v2/get/cards/list' in url:
+        return Fake(200,{'cards':[]})
+    if '/api/v3/warehouses' in url:
+        return Fake(200,[])
+    if '/v3/product/list' in url:
+        return Fake(200,{'result':{'items':[]}})
+    root=net.MS_BASE+'/entity/counterparty'
+    if url==root and method=='GET':
+        filt=kw['params']['filter']; inn=filt.split(';')[0].split('=')[1]
+        archived='archived=true' in filt
+        rows=[copy.deepcopy(e) for e in entities.values() if e.get('inn')==inn and bool(e.get('archived'))==archived]
+        return Fake(200,{'meta':{'size':len(rows)},'rows':rows})
+    if method in ('POST','PUT') and url.startswith(root):
+        data=copy.deepcopy(kw['json']);mutations.append((method,data))
+        eid=url.rsplit('/',1)[-1] if method=='PUT' else 'NEW-%s'%(len(entities)+1)
+        entity=entities.setdefault(eid,{'id':eid})
+        attrs={a['meta']['href']:a for a in entity.get('attributes',[])}
+        for a in data.get('attributes',[]):
+            a['name']=next(n for n,t,k in onboarding.AGENT_ATTRS if a['meta']['href'].endswith('META-'+k))
+            attrs[a['meta']['href']]=a
+        entity.update({k:v for k,v in data.items() if k!='attributes'})
+        entity['attributes']=list(attrs.values())
+        if method=='POST' and lose_create:
+            lose_create=False
+            raise TimeoutError('ответ потерян')
+        return Fake(200,copy.deepcopy(entity))
+    if method=='GET' and url.startswith(root+'/'):
+        return Fake(200,copy.deepcopy(entities[url.rsplit('/',1)[-1]]))
+    raise AssertionError((method,url))
+
+form={'inn':'7730588444','companyType':'legal','name':'ООО Пример','legalTitle':'Общество Пример','legalAddress':'Адрес компании',
+      'kpp':'770501001','ogrn':'1087746982157','tariff_pick':'12,50','wb_token':'verified-wb-secret','ozon_client_id':'123456','ozon_key':'verified-ozon-secret'}
+with patch.object(onboarding,'req',onboarding_req):
+    for bad in ('0000000000','7730588445','123','1;archived=true'):
+        try:onboarding.checked_inn(bad);raise AssertionError('принят неверный ИНН')
+        except ValueError:pass
+    assert onboarding.checked_inn('7730588444') == '7730588444'
+    lookup=onboarding.lookup_company(form['inn'])
+    assert lookup['existing']==[] and lookup['company'] is None
+    with patch.dict(os.environ,{'DADATA_API_KEY':'test-private-key'}):
+        lookup=onboarding.lookup_company(form['inn'])
+        assert lookup['company']['legalAddress']=='Адрес из справочника'
+    # Неверный ключ не создаёт компанию и не меняет локальную базу.
+    before=len(db.list_clients());reject_wb=True
+    try:onboarding.onboard_client(form);raise AssertionError('неверный WB токен принят')
+    except ValueError as exc:assert 'WB' in str(exc)
+    assert not mutations and len(db.list_clients())==before
+    reject_wb=False
+    made=onboarding.onboard_client(form)
+    assert made['created'] and made['connected']==['WB','Ozon']
+    local=db.get_client_by_id(made['id'])
+    assert local['tariff_pick']==12.5
+    assert db.get_cabinet_by_client_mp(local['id'],'wb')['token']==form['wb_token']
+    assert db.get_cabinet_by_client_mp(local['id'],'ozon')['client_id_ext']=='123456'
+    assert form['wb_token'] not in json.dumps(mutations,ensure_ascii=False)
+    assert form['ozon_key'] not in json.dumps(mutations,ensure_ascii=False)
+    duplicate=onboarding.lookup_company(form['inn'])
+    assert duplicate['existing'][0]['client_id']==made['id']
+    assert 'token' not in json.dumps(duplicate) and form['wb_token'] not in json.dumps(duplicate)
+    # Повтор без выбранной карточки показывает совпадение, ничего не создаёт.
+    before=len(mutations)
+    assert onboarding.onboard_client(form)['existing']
+    assert len(mutations)==before
+    old_id=duplicate['existing'][0]['id']
+    reuse={**form,'existing_id':old_id,'name':'Не подменять имя','wb_token':'','ozon_client_id':'','ozon_key':'','tariff_pick':''}
+    reused=onboarding.onboard_client(reuse)
+    assert reused['id']==made['id'] and not reused['created']
+    assert entities[old_id]['name']==form['name']
+    assert db.get_cabinet_by_client_mp(made['id'],'wb')['token']==form['wb_token']
+    assert db.get_client_by_id(made['id'])['tariff_pick']==12.5
+    # Архивный дубль нельзя обойти созданием нового.
+    entities['ARCHIVED']={**copy.deepcopy(entities[old_id]),'id':'ARCHIVED','archived':True}
+    assert len(onboarding.lookup_company(form['inn'])['existing'])==2
+    try:onboarding.onboard_client({**reuse,'existing_id':'ARCHIVED'});raise AssertionError('архивная карточка принята')
+    except ValueError as exc:assert 'архив' in str(exc)
+    # Другому клиенту нельзя передать тот же кабинет.
+    other_form={**form,'inn':'7707083893','kpp':'773601001','ogrn':'1027700132195'}
+    before=len(mutations)
+    try:onboarding.onboard_client(other_form);raise AssertionError('кабинет присвоен другому клиенту')
+    except ValueError as exc:assert 'другому клиенту' in str(exc)
+    assert len(mutations)==before
+    # Ответ потерян после фактического создания: новый дубль не появляется.
+    lose_create=True
+    lost={**other_form,'wb_token':'','ozon_client_id':'','ozon_key':''}
+    try:onboarding.onboard_client(lost);raise AssertionError('ожидалась потеря ответа')
+    except TimeoutError:pass
+    assert len([e for e in entities.values() if e['inn']==lost['inn']])==1
+    retry=onboarding.onboard_client(lost)
+    assert len(retry['existing'])==1
+    recovered=onboarding.onboard_client({**lost,'existing_id':retry['existing'][0]['id']})
+    assert not recovered['created']
+    assert len([e for e in entities.values() if e['inn']==lost['inn']])==1
+    # Любая локальная ошибка откатывает и клиента, и кабинеты.
+    conn=db.connect();conn.execute("CREATE TRIGGER fail_onboard BEFORE INSERT ON cabinets BEGIN SELECT RAISE(ABORT,'atomic onboarding'); END");conn.commit();conn.close()
+    before=len(db.list_clients())
+    try:
+        db.save_onboard_client({'id':'LOCAL-FAIL','name':'Локальный тест'},'LOCALFAIL','ORG-1','STORE-1',{'wb_token':'private-test','ozon_key':'','ozon_client_id':''},1)
+        raise AssertionError('ожидался отказ записи')
+    except Exception as exc:assert 'atomic onboarding' in str(exc)
+    assert len(db.list_clients())==before
+    conn=db.connect();conn.execute('DROP TRIGGER fail_onboard');conn.commit();conn.close()
+print('контрагенты: ИНН, справочник, дубли, архив, ключи, потеря ответа и атомарность — OK')

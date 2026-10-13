@@ -492,6 +492,15 @@ table.tbl tbody tr.clickable{cursor:pointer}
 table.tbl tbody tr.clickable:hover{background:rgba(0,91,255,.08)}
 .modal-card{width:100%;max-width:460px;padding:30px;animation:rise .28s var(--ease)}
 .modal-card.wide{max-width:1080px;padding:26px 28px}
+.modal-card.client-card{max-width:780px;max-height:90vh;overflow:auto}
+.client-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.client-grid .fld{min-width:0}
+.client-span{grid-column:1 / -1}
+.client-card h3.client-section{margin:22px 0 8px}
+.client-card .muted{font-size:12px;line-height:1.5}
+.client-card input[readonly],.client-card textarea[readonly]{opacity:.75}
+.client-card [hidden]{display:none!important}
+@media(max-width:600px){.client-grid{grid-template-columns:1fr}.client-span{grid-column:auto}.modal-card.client-card{padding:20px}.client-card .modal-head{flex-wrap:wrap}}
 .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
 .modal-head h3{margin-bottom:4px}
 .modal-head p{font-size:13px;color:var(--mute);margin:0}

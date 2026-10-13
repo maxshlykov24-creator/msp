@@ -364,6 +364,145 @@ $("syncBtn").onclick = async () => {
 
 // приёмка
 
+const companyFields = {name:"cName",legalTitle:"cLegal",legalAddress:"cAddress",kpp:"cKpp",ogrn:"cOgrn",ogrnip:"cOgrnip",phone:"cPhone",email:"cEmail"};
+let companyMatches = [];
+let companyLookupVersion = 0;
+let companyBusy = false;
+
+function fillCompany(company, existing) {
+  Object.entries(companyFields).forEach(([key,id]) => {
+    $(id).value = company[key] || "";
+    $(id).readOnly = !!existing && !!company[key];
+    $(id).required = !existing && ["name","legalTitle","legalAddress"].includes(key);
+  });
+  $("cType").value = company.companyType || ($("cInn").value.length === 12 ? "entrepreneur" : "legal");
+  $("cType").disabled = !!existing && !!company.companyType;
+  $("cTariff").value = company.tariff_pick == null ? "" : company.tariff_pick;
+  $("cSubmit").textContent = existing ? "Подключить контрагента" : "Добавить контрагента";
+  $("cSubmit").disabled = !!company.archived;
+  $("cKeysHint").textContent = existing ? [company.has_wb ? "Ключ WB уже сохранён." : "", company.has_ozon ? "Ключ Ozon уже сохранён." : "", "Заполненные реквизиты существующей карточки сохраняются."].filter(Boolean).join(" ") : "";
+  if (company.archived) say($("cMsg"), "Карточка в архиве. Восстанови её в МойСклад и повтори поиск.", "bad");
+}
+
+function showCompanyLookup(result) {
+  companyMatches = result.existing || [];
+  $("cExistingBox").hidden = !companyMatches.length;
+  $("cExisting").innerHTML = '<option value="">Выбери карточку</option>' + companyMatches.map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c.kpp ? " · КПП " + esc(c.kpp) : ""}${c.archived ? " · В архиве" : ""}</option>`).join("");
+  say($("cLookupMsg"), [result.source ? "Источник: " + result.source + "." : "", result.notice].filter(Boolean).join(" "));
+  if (companyMatches.length === 1) {
+    $("cExisting").value = companyMatches[0].id;
+    fillCompany(companyMatches[0], true);
+  } else if (companyMatches.length > 1) {
+    $("cSubmit").disabled = true;
+    say($("cMsg"), "Найдено несколько карточек с этим ИНН. Выбери нужную по названию и КПП.", "bad");
+  } else if (result.company) {
+    fillCompany(result.company, false);
+  }
+}
+
+$("iNewClient").onclick = () => {
+  $("clientForm").reset();
+  companyMatches = [];
+  companyLookupVersion++;
+  $("cExistingBox").hidden = true;
+  $("cExisting").innerHTML = "";
+  fillCompany({}, false);
+  say($("cMsg"), "");
+  say($("cLookupMsg"), "");
+  $("clientModal").classList.add("on");
+  $("cInn").focus();
+};
+$("cClose").onclick = () => {
+  if (companyBusy) return;
+  companyLookupVersion++;
+  $("clientModal").classList.remove("on");
+  $("cWb").value = $("cOzonKey").value = "";
+};
+$("cInn").oninput = () => {
+  companyLookupVersion++;
+  companyMatches = [];
+  $("cExisting").innerHTML = "";
+  $("cExistingBox").hidden = true;
+  fillCompany({}, false);
+  say($("cLookupMsg"), "");
+  say($("cMsg"), "");
+};
+$("cExisting").onchange = () => {
+  const hit = companyMatches.find(c => c.id === $("cExisting").value);
+  say($("cMsg"), "");
+  if (hit) fillCompany(hit, true);
+  else $("cSubmit").disabled = true;
+};
+$("cLookup").onclick = async () => {
+  const inn = $("cInn").value.trim();
+  const version = ++companyLookupVersion;
+  $("cLookup").disabled = true;
+  say($("cLookupMsg"), "Проверяю ИНН и дубли…");
+  try {
+    const result = await api("/api/clients/lookup?inn=" + encodeURIComponent(inn));
+    if (version === companyLookupVersion) showCompanyLookup(result);
+  } catch (err) {
+    if (version === companyLookupVersion) say($("cLookupMsg"), err.message, "bad");
+  } finally {
+    if (!companyBusy) $("cLookup").disabled = false;
+  }
+};
+
+async function followClientCatalog(id, attempt) {
+  if (String($("iClient").value) !== String(id)) return;
+  try {
+    const res = await api("/api/clients/" + id + "/catalog-status");
+    if (res.state === "ready") {
+      await loadIntake();
+      say($("iClientHint"), "Контрагент готов. Каталог обновлён.", "ok");
+    } else if (res.state === "error") {
+      say($("iClientHint"), "Контрагент сохранён. Не удалось загрузить каталог: " + (res.failed || []).join(", ") + ". Повтори кнопкой «Обновить клиентов».", "bad");
+    } else if (attempt < 60) {
+      setTimeout(() => followClientCatalog(id, attempt + 1), 5000);
+    }
+  } catch (err) {
+    say($("iClientHint"), "Контрагент сохранён. Проверь загрузку каталога кнопкой «Обновить клиентов».", "bad");
+  }
+}
+
+$("clientForm").onsubmit = async (event) => {
+  event.preventDefault();
+  if (companyBusy) return;
+  const data = {inn:$("cInn").value.trim(),existing_id:$("cExisting").value,companyType:$("cType").value,
+                tariff_pick:$("cTariff").value,wb_token:$("cWb").value,ozon_client_id:$("cOzonId").value,ozon_key:$("cOzonKey").value};
+  Object.entries(companyFields).forEach(([key,id]) => { data[key] = $(id).value; });
+  const controls = [...$("clientForm").querySelectorAll("input,textarea,select,button")];
+  const disabled = controls.map(c => c.disabled);
+  companyBusy = true;
+  companyLookupVersion++;
+  controls.forEach(c => { c.disabled = true; });
+  say($("cMsg"), "Проверяю дубли и ключи, сохраняю контрагента…");
+  let saved = null;
+  try {
+    const res = await api("/api/clients", {method:"POST",body:JSON.stringify(data)});
+    if (res.existing) {
+      showCompanyLookup({existing:res.existing,source:"МойСклад",notice:"Карточка уже есть. Выбери её и заверши подключение."});
+      return;
+    }
+    saved = res;
+    $("clientModal").classList.remove("on");
+    $("cWb").value = $("cOzonKey").value = "";
+    await loadClients();
+    setIntakeClient(res.id,res.name);
+    await loadIntake();
+    say($("iClientHint"), "Контрагент сохранён и выбран. Каталог загружается…", "ok");
+    followClientCatalog(res.id,0);
+  } catch (err) {
+    say(saved ? $("iClientHint") : $("cMsg"), saved ? "Контрагент сохранён. Обнови список клиентов: " + err.message : err.message, "bad");
+  } finally {
+    companyBusy = false;
+    controls.forEach((c,i) => { c.disabled = disabled[i]; });
+    const hit = companyMatches.find(c => c.id === $("cExisting").value);
+    if (hit) { $("cType").disabled = !!hit.companyType; $("cSubmit").disabled = !!hit.archived; }
+    else if (companyMatches.length > 1) $("cSubmit").disabled = true;
+  }
+};
+
 async function loadClients() {
   const res = await api("/api/clients");
   state.clients = res.clients;

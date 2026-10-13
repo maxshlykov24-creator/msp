@@ -1,5 +1,8 @@
 """Контрагенты МойСклад с группой Фулфилмент → клиенты и кабинеты в базе."""
 
+import math
+import re
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from db import (
@@ -17,10 +20,238 @@ from db import (
     upsert_cabinet,
 )
 from ms import AGENT_ATTRS, attrs_by_name, ensure_all_attrs, org_id, store_id
-from net import MS_BASE, OZON_BASE, WB_BASE, YANDEX_BASE, ms_headers, ozon_headers, req, wb_headers, yandex_headers
+from net import MS_BASE, OZON_BASE, WB_BASE, YANDEX_BASE, env_opt, ms_headers, ozon_headers, req, wb_headers, yandex_headers
 
 TAG = "Фулфилмент"
 MSK = timezone(timedelta(hours=3))
+
+
+def checked_inn(raw):
+    inn = str(raw or "").strip()
+    if not re.fullmatch(r"(?:[0-9]{10}|[0-9]{12})", inn) or len(set(inn)) == 1:
+        raise ValueError("ИНН должен содержать 10 или 12 цифр")
+    digits = list(map(int, inn))
+    checks = [(9, (2,4,10,3,5,9,4,6,8))] if len(inn) == 10 else [(10,(7,2,4,10,3,5,9,4,6,8)),(11,(3,7,2,4,10,3,5,9,4,6,8))]
+    if any(sum(a*b for a,b in zip(digits, weights)) % 11 % 10 != digits[pos] for pos,weights in checks):
+        raise ValueError("В ИНН ошибка: не совпала контрольная цифра")
+    return inn
+
+
+def _agent_request(method, path, **kw):
+    r = req(method, MS_BASE + path, headers=ms_headers(), **kw)
+    if r.status_code not in (200, 201):
+        raise ValueError("МойСклад не подтвердил операцию (HTTP %s). Проверь результат перед повтором." % r.status_code)
+    return r.json()
+
+
+def find_by_inn(inn):
+    """Проверяем активные и архивные карточки всего аккаунта, без фильтра по тегу."""
+    found = {}
+    for archived in ("false", "true"):
+        offset = 0
+        while True:
+            data = _agent_request("GET", "/entity/counterparty", params={"filter": "inn=%s;archived=%s" % (inn, archived), "limit": 100, "offset": offset})
+            rows = data.get("rows") or []
+            size = data.get("meta", {}).get("size")
+            if size is None or (not rows and offset < size):
+                raise ValueError("МойСклад не вернул полный список дублей. Создание остановлено")
+            for row in rows:
+                if str(row.get("inn") or "").strip() != inn:
+                    raise ValueError("МойСклад вернул карточку с другим ИНН")
+                found[row["id"]] = row
+            offset += len(rows)
+            if offset >= size:
+                break
+    return list(found.values())
+
+
+def public_agent(row):
+    from db import get_cabinet_by_client_mp
+    client = get_client_by_ms_id(row["id"])
+    fields = attrs_by_name(row)
+    out = {k: row.get(k) or "" for k in ("id", "name", "inn", "kpp", "legalTitle", "legalAddress", "ogrn", "ogrnip", "companyType", "phone", "email")}
+    out["archived"] = bool(row.get("archived"))
+    out["tariff_pick"] = parse_num(fields.get("Сборка, руб/шт"))
+    out["client_id"] = client["id"] if client else None
+    out["has_wb"] = bool(client and get_cabinet_by_client_mp(client["id"], "wb"))
+    out["has_ozon"] = bool(client and get_cabinet_by_client_mp(client["id"], "ozon"))
+    return out
+
+
+def lookup_company(raw):
+    inn = checked_inn(raw)
+    existing = find_by_inn(inn)
+    if existing:
+        return {"source": "МойСклад", "existing": [public_agent(r) for r in existing], "company": None, "notice": "Выбери существующую карточку. Дубль создаваться не будет."}
+    token = env_opt("DADATA_API_KEY")
+    if not token:
+        return {"source": "", "existing": [], "company": None, "notice": "Дублей в МойСклад нет. Автозаполнение новых компаний пока не подключено. Заполни реквизиты вручную."}
+    r = req("POST", "https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party",
+            headers={"Authorization": "Token " + token, "Content-Type": "application/json", "Accept": "application/json"},
+            json={"query": inn, "branch_type": "MAIN", "count": 20}, timeout=(5, 15))
+    if r.status_code != 200:
+        raise ValueError("Справочник реквизитов не ответил (HTTP %s). Можно заполнить данные вручную" % r.status_code)
+    matches = [x["data"] for x in r.json().get("suggestions", []) if str(x.get("data", {}).get("inn") or "") == inn]
+    if len(matches) != 1:
+        return {"source": "DaData", "existing": [], "company": None, "notice": "По ИНН не найдена одна головная организация. Проверь ИНН или заполни реквизиты вручную."}
+    d = matches[0]
+    individual = d.get("type") == "INDIVIDUAL"
+    company = {"inn": inn, "companyType": "entrepreneur" if individual else "legal",
+               "name": d.get("name", {}).get("short_with_opf") or d.get("name", {}).get("full_with_opf") or "",
+               "legalTitle": d.get("name", {}).get("full_with_opf") or "", "kpp": d.get("kpp") or "",
+               "legalAddress": (d.get("address") or {}).get("unrestricted_value") or (d.get("address") or {}).get("value") or "",
+               "ogrnip" if individual else "ogrn": d.get("ogrn") or ""}
+    status = (d.get("state") or {}).get("status") or ""
+    return {"source": "DaData", "existing": [], "company": company,
+            "notice": "Реквизиты заполнены. Проверь их перед сохранением." if status == "ACTIVE" else "Проверь статус компании в реестре: %s" % (status or "не указан")}
+
+
+def _onboard_text(data, key, limit=255):
+    text = str(data.get(key) or "").strip()
+    if len(text) > limit or any(ord(c) < 32 for c in text):
+        raise ValueError("Некорректное значение поля %s" % key)
+    return text
+
+
+def _onboard_credentials(data, existing_client, row=None):
+    from db import list_cabinets, get_cabinet_by_client_mp
+    data = dict(data)
+    # Ещё не синхронизированные ключи в выбранной карточке тоже проверяем.
+    fields = attrs_by_name(row or {})
+    wb = get_cabinet_by_client_mp(existing_client["id"], "wb") if existing_client else None
+    ozon = get_cabinet_by_client_mp(existing_client["id"], "ozon") if existing_client else None
+    if not data.get("wb_token") and not wb and looks_token(fields.get("WB токен")):
+        data["wb_token"] = fields["WB токен"]
+    if not data.get("ozon_key") and not ozon and looks_token(fields.get("Ozon Api-Key")):
+        data["ozon_key"] = fields["Ozon Api-Key"]
+        data["ozon_client_id"] = fields.get("Ozon Client-Id")
+    creds = {k: _onboard_text(data, k, 8192 if k != "ozon_client_id" else 40) for k in ("wb_token", "ozon_client_id", "ozon_key")}
+    if bool(creds["ozon_key"]) != bool(creds["ozon_client_id"]):
+        raise ValueError("Для Ozon нужны оба поля: Client-Id и API Key")
+    if creds["ozon_client_id"] and not re.fullmatch(r"[0-9]+", creds["ozon_client_id"]):
+        raise ValueError("Ozon Client-Id должен состоять из цифр")
+    for cab in list_cabinets():
+        if existing_client and cab["client_id"] == existing_client["id"]:
+            continue
+        if (creds["wb_token"] and cab["marketplace"] == "wb" and cab["token"] == creds["wb_token"]) or (
+            cab["marketplace"] == "ozon" and ((creds["ozon_client_id"] and cab["client_id_ext"] == creds["ozon_client_id"]) or (creds["ozon_key"] and cab["token"] == creds["ozon_key"]))):
+            raise ValueError("Этот кабинет уже подключён к другому клиенту. Проверь ключи и контрагента")
+    if creds["wb_token"]:
+        if not looks_token(creds["wb_token"]):
+            raise ValueError("Введи полный токен WB")
+        ok, status, _body = check_wb(creds["wb_token"])
+        if not ok:
+            raise ValueError("WB не подтвердил токен (HTTP %s). Контрагент не изменён" % status)
+        r = req("POST", "https://content-api.wildberries.ru/content/v2/get/cards/list", headers=wb_headers(creds["wb_token"]),
+                json={"settings": {"cursor": {"limit": 1}, "filter": {"withPhoto": -1}}})
+        if r.status_code != 200:
+            raise ValueError("У токена WB нет подтверждённого доступа к каталогу (HTTP %s)" % r.status_code)
+        if not isinstance(r.json().get("cards"), list):
+            raise ValueError("WB вернул неполный ответ каталога. Повтори проверку")
+        r = req("GET", WB_BASE + "/api/v3/warehouses", headers=wb_headers(creds["wb_token"]))
+        if r.status_code != 200 or not isinstance(r.json(), list):
+            raise ValueError("У токена WB нет подтверждённого доступа к Маркетплейсу (HTTP %s)" % r.status_code)
+    if creds["ozon_key"]:
+        if not looks_token(creds["ozon_key"]):
+            raise ValueError("Введи полный API Key Ozon")
+        ok, status, _body = check_ozon(creds["ozon_client_id"], creds["ozon_key"])
+        if not ok:
+            raise ValueError("Ozon не подтвердил Client-Id и API Key (HTTP %s). Контрагент не изменён" % status)
+    return creds
+
+
+def onboard_client(data):
+    """Проверка дубля → проверка ключей → МойСклад → атомарная локальная связь."""
+    from db import get_setting, save_onboard_client
+    inn = checked_inn(data.get("inn"))
+    with run_lock(blocking=False):
+        matches = find_by_inn(inn)
+        chosen = str(data.get("existing_id") or "")
+        if matches and not chosen:
+            return {"existing": [public_agent(r) for r in matches]}
+        row = next((r for r in matches if r["id"] == chosen), None) if chosen else None
+        if chosen and row is None:
+            raise ValueError("Выбранная карточка не найдена по этому ИНН. Повтори поиск")
+        if row and row.get("archived"):
+            raise ValueError("Контрагент в архиве МойСклад. Восстанови его карточку, затем повтори добавление")
+        client = get_client_by_ms_id(chosen) if chosen else None
+        rate_raw = _onboard_text(data, "tariff_pick", 30)
+        rate = parse_num(rate_raw)
+        if rate_raw and (rate is None or not math.isfinite(rate) or rate < 0):
+            raise ValueError("Ставка сборки должна быть числом от нуля")
+        if not row and rate is None:
+            raise ValueError("Укажи ставку сборки по умолчанию, ₽/шт")
+        if row:
+            payload = {"tags": list(dict.fromkeys(list(row.get("tags") or []) + [TAG]))}
+            # Дополняем только пустые реквизиты существующей карточки.
+            for key in ("legalTitle", "legalAddress", "phone", "email", "kpp", "ogrn", "ogrnip"):
+                value = _onboard_text(data,key,1024 if key == "legalAddress" else 255)
+                if not row.get(key) and value:
+                    if key in ("kpp", "ogrn", "ogrnip") and not re.fullmatch(r"[0-9]{%s}" % {"kpp":9,"ogrn":13,"ogrnip":15}[key],value):
+                        raise ValueError("Проверь реквизит %s" % key)
+                    payload[key] = value
+        else:
+            kind = _onboard_text(data, "companyType")
+            if kind not in ("legal", "entrepreneur", "individual") or (kind == "legal") != (len(inn) == 10):
+                raise ValueError("Тип контрагента не соответствует ИНН")
+            payload = {k: _onboard_text(data, k, 1024 if k == "legalAddress" else 255) for k in ("name", "legalTitle", "legalAddress", "kpp", "ogrn", "ogrnip", "phone", "email")}
+            for key in ("name", "legalTitle", "legalAddress"):
+                if not payload[key]:
+                    raise ValueError("Заполни название, полное наименование и юридический адрес")
+            if kind == "legal" and (not re.fullmatch(r"[0-9]{9}", payload["kpp"]) or not re.fullmatch(r"[0-9]{13}", payload["ogrn"])):
+                raise ValueError("Для организации нужны КПП из 9 цифр и ОГРН из 13 цифр")
+            if kind == "entrepreneur" and not re.fullmatch(r"[0-9]{15}", payload["ogrnip"]):
+                raise ValueError("Для ИП нужен ОГРНИП из 15 цифр")
+            for key in (("ogrnip",) if kind == "legal" else ("kpp", "ogrn")):
+                payload.pop(key, None)
+            payload = {k:v for k,v in payload.items() if v != ""}
+            payload.update(inn=inn, companyType=kind, tags=[TAG], syncId=str(uuid.uuid5(uuid.NAMESPACE_URL, "ff-client:" + org_id() + ":" + inn + ":" + payload.get("kpp", ""))))
+        creds = _onboard_credentials(data, client, row)
+        values = {}
+        if rate is not None:
+            values["ATTR_AGENT_TARIFF_PICK"] = rate
+        if creds["wb_token"]:
+            values["ATTR_AGENT_WB"] = mask_token("wb", creds["wb_token"])
+        if creds["ozon_key"]:
+            values.update(ATTR_AGENT_OZON_CID=creds["ozon_client_id"], ATTR_AGENT_OZON_KEY=mask_token("ozon", creds["ozon_key"]))
+        payload["attributes"] = []
+        for key, value in values.items():
+            aid = get_setting(key)
+            if not aid:
+                raise ValueError("Не настроены поля клиента в МойСклад. Нажми «Обновить клиентов»")
+            payload["attributes"].append({"meta": {"href": MS_BASE + "/entity/counterparty/metadata/attributes/" + aid, "type": "attributemetadata", "mediaType": "application/json"}, "value": value})
+        # Повтор с тем же ИНН/КПП использует тот же syncId даже после потери ответа.
+        created = _agent_request("PUT" if row else "POST", "/entity/counterparty" + ("/" + chosen if row else ""), json=payload, retry_safe=bool(row))
+        full = _agent_request("GET", "/entity/counterparty/" + created["id"])
+        if str(full.get("inn") or "") != inn or full.get("archived") or not any(str(t).lower()==TAG.lower() for t in full.get("tags") or []):
+            raise ValueError("Карточка МойСклад сохранена, но проверка данных не прошла. Повтори поиск по ИНН")
+        saved = {a.get("meta", {}).get("href", "").rsplit("/", 1)[-1]: a.get("value") for a in full.get("attributes") or []}
+        if any(saved.get(get_setting(key)) != value for key, value in values.items()):
+            raise ValueError("МойСклад не подтвердил сохранение настроек. Повтори добавление для существующей карточки")
+        code = client["code"] if client else code_from_name(full["name"])
+        local_rate = rate if rate is not None else parse_num(attrs_by_name(full).get("Сборка, руб/шт"))
+        cid = save_onboard_client(full, code, org_id(), store_id(), creds, local_rate)
+        return {"id": cid, "name": full["name"], "created": row is None,
+                "connected": [mp for mp,key in (("WB", "wb_token"), ("Ozon", "ozon_key")) if creds[key]]}
+
+
+def warm_onboard_catalog(client_id):
+    """Каталог только нового/подключённого клиента; ключи не возвращаем браузеру."""
+    from db import list_cabinets, set_setting
+    import json
+    key = "client:catalog-job:%s" % client_id
+    try:
+        with run_lock():
+            set_setting(key, json.dumps({"state": "running"}))
+            failed = []
+            for cab in list_cabinets():
+                if cab["client_id"] == client_id and cab["active"]:
+                    _n, err = pull_if_needed(cab, False)
+                    if err:
+                        failed.append(cab["marketplace"])
+            set_setting(key, json.dumps({"state": "error" if failed else "ready", "failed": failed}))
+    except Exception:
+        set_setting(key, json.dumps({"state": "error", "failed": ["каталог"]}))
 
 TR = {
     "а": "a",

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=102">
+<link rel="stylesheet" href="/ui/app.css?v=103">
 </head>
 <body>
 
@@ -254,6 +254,7 @@
       <div>
         <h1>Заведение</h1>
       </div>
+      <button class="btn" id="iNewClient" type="button">Добавить контрагента</button>
     </div>
 
     <div class="panel glass">
@@ -726,6 +727,37 @@
   <img id="photoZoomImg" alt="">
 </div>
 
-<script src="/ui/app.js?v=112"></script>
+<div id="clientModal" class="modal">
+  <form id="clientForm" class="glass modal-card client-card" autocomplete="off">
+    <div class="modal-head"><div><h3>Добавить контрагента</h3><p>Проверим ИНН в МойСклад и подключим кабинеты клиента.</p></div><button class="btn-ghost" id="cClose" type="button">Закрыть</button></div>
+    <div class="form"><div class="fld grow"><label for="cInn">ИНН *</label><input id="cInn" inputmode="numeric" maxlength="12" required></div><button class="btn-ghost" id="cLookup" type="button">Заполнить по ИНН</button></div>
+    <div class="msg" id="cLookupMsg"></div>
+    <div class="fld" id="cExistingBox" hidden><label for="cExisting">Найденные карточки МойСклад</label><select id="cExisting"></select></div>
+    <div class="client-grid">
+      <div class="fld"><label for="cType">Тип контрагента *</label><select id="cType"><option value="legal">Организация</option><option value="entrepreneur">ИП</option><option value="individual">Физическое лицо</option></select></div>
+      <div class="fld"><label for="cName">Название в списке *</label><input id="cName" maxlength="255" required></div>
+      <div class="fld client-span"><label for="cLegal">Полное наименование *</label><input id="cLegal" maxlength="255" required></div>
+      <div class="fld client-span"><label for="cAddress">Юридический адрес *</label><textarea id="cAddress" rows="2" maxlength="1024" required></textarea></div>
+      <div class="fld"><label for="cKpp">КПП <span class="opt">для организации</span></label><input id="cKpp" inputmode="numeric" maxlength="9"></div>
+      <div class="fld"><label for="cOgrn">ОГРН <span class="opt">для организации</span></label><input id="cOgrn" inputmode="numeric" maxlength="13"></div>
+      <div class="fld"><label for="cOgrnip">ОГРНИП <span class="opt">для ИП</span></label><input id="cOgrnip" inputmode="numeric" maxlength="15"></div>
+      <div class="fld"><label for="cTariff">Сборка по умолчанию, ₽/шт *</label><input id="cTariff" inputmode="decimal" placeholder="0, если бесплатно"></div>
+      <div class="fld"><label for="cPhone">Телефон</label><input id="cPhone" type="tel" maxlength="255"></div>
+      <div class="fld"><label for="cEmail">Электронная почта</label><input id="cEmail" type="email" maxlength="255"></div>
+    </div>
+    <h3 class="client-section">Кабинеты маркетплейсов</h3>
+    <p class="muted">Заполни ключи площадок, с которыми работает клиент. Пустые поля сохраняют прежнее подключение. Ключи проверяются перед сохранением.</p>
+    <div class="client-grid">
+      <div class="fld client-span"><label for="cWb">WB токен</label><input id="cWb" type="password" autocomplete="new-password" spellcheck="false" maxlength="8192"></div>
+      <div class="fld"><label for="cOzonId">Ozon Client-Id</label><input id="cOzonId" inputmode="numeric" maxlength="40" autocomplete="off"></div>
+      <div class="fld"><label for="cOzonKey">Ozon API Key</label><input id="cOzonKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="8192"></div>
+    </div>
+    <p class="muted" id="cKeysHint"></p>
+    <div class="msg" id="cMsg"></div>
+    <div class="modal-actions"><button class="btn" id="cSubmit" type="submit">Добавить контрагента</button></div>
+  </form>
+</div>
+
+<script src="/ui/app.js?v=113"></script>
 </body>
 </html>

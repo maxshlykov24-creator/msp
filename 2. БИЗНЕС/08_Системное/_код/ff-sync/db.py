@@ -296,6 +296,38 @@ def insert_client(code, name, ms_counterparty_id, ms_org_id, ms_store_id):
     return cid
 
 
+def save_onboard_client(agent, code, org, store, credentials, tariff_pick):
+    """Связь клиента и проверенных кабинетов одной транзакцией, без потери старых ключей."""
+    conn = connect()
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        with conn:
+            rows = conn.execute("SELECT * FROM clients WHERE ms_counterparty_id=?", (agent["id"],)).fetchall()
+            if len(rows) > 1:
+                raise ValueError("В панели несколько клиентов связаны с этой карточкой. Нужна сверка")
+            if rows:
+                cid = rows[0]["id"]
+                conn.execute("UPDATE clients SET name=?,active=1 WHERE id=?", (agent["name"],cid))
+            else:
+                cid = conn.execute("INSERT INTO clients(code,name,ms_counterparty_id,ms_org_id,ms_store_id,active) VALUES (?,?,?,?,?,1)",
+                                   (code,agent["name"],agent["id"],org,store)).lastrowid
+            if tariff_pick is not None:
+                conn.execute("UPDATE clients SET tariff_pick=? WHERE id=?", (tariff_pick,cid))
+            for mp, token, ext in (("wb", credentials["wb_token"], ""), ("ozon", credentials["ozon_key"], credentials["ozon_client_id"])):
+                if not token:
+                    continue
+                found = conn.execute("SELECT id FROM cabinets WHERE client_id=? AND marketplace=?", (cid,mp)).fetchall()
+                if len(found) > 1:
+                    raise ValueError("В панели несколько кабинетов %s у клиента. Нужна сверка" % mp)
+                if found:
+                    conn.execute("UPDATE cabinets SET token=?,client_id_ext=?,active=1,last_ok_at=?,last_error='',last_pull_at=NULL WHERE id=?", (token,ext,now,found[0]["id"]))
+                else:
+                    conn.execute("INSERT INTO cabinets(client_id,marketplace,name,token,client_id_ext,active,last_ok_at,last_error) VALUES (?,?,?,?,?,1,?,'')", (cid,mp,mp+' '+code,token,ext,now))
+            return cid
+    finally:
+        conn.close()
+
+
 def update_client(cid, **fields):
     allowed = {
         "name",

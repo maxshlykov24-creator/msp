@@ -9,7 +9,7 @@ import threading
 import time
 from urllib.parse import quote
 
-from fastapi import Body, Cookie, FastAPI, HTTPException, Query, Response
+from fastapi import BackgroundTasks, Body, Cookie, FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -199,6 +199,48 @@ def clients(ff_session: str = Cookie(default="")):
             }
         )
     return {"clients": out}
+
+
+@app.get("/api/clients/lookup")
+def client_lookup(inn: str, ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    from agents_sync import lookup_company
+    try:
+        return {"ok": True, **lookup_company(inn)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Не удалось проверить ИНН. Повтори поиск перед созданием")
+
+
+@app.post("/api/clients")
+def client_create(data: dict, background_tasks: BackgroundTasks, ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    from agents_sync import onboard_client, warm_onboard_catalog
+    try:
+        result = onboard_client(data)
+        if result.get("id"):
+            import json
+            from db import set_setting
+            set_setting("client:catalog-job:%s" % result["id"], json.dumps({"state": "queued"}))
+            background_tasks.add_task(warm_onboard_catalog, result["id"])
+        return {"ok": True, **result}
+    except BlockingIOError:
+        raise HTTPException(status_code=409, detail="Сейчас обновляются клиенты. Сохрани форму и повтори добавление после обновления")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Создание не подтверждено. Данные формы сохранены. Повтори поиск по ИНН: если карточка появилась, выбери её и заверши подключение")
+
+
+@app.get("/api/clients/{client_id}/catalog-status")
+def client_catalog_status(client_id: int, ff_session: str = Cookie(default="")):
+    who(ff_session)
+    import json
+    from db import get_setting
+    return {"ok": True, **json.loads(get_setting("client:catalog-job:%s" % client_id) or '{"state":"ready"}')}
 
 
 @app.get("/api/overview")
