@@ -315,8 +315,9 @@ assert body["packages"] == [
     {"products": [{"product_id": 55, "quantity": 1}]},
     {"products": [{"product_id": 55, "quantity": 1}]},
 ], body
-left = {r["ext_id"] for r in db.list_assembly(client_id=client_id, marketplace="ozon")}
+left = {r["ext_id"] for r in db.list_assembly(client_id=client_id, marketplace="ozon") if r['eff_group'] != 'archived'}
 assert left == {"0001-1-1", "0001-1-2"}, left
+assert db.get_shipments_by_ids([oz_ship])[0]['work_state'] == 'replaced'
 
 # 10. один пакет без дробления
 oz2 = db.upsert_shipment(
@@ -416,7 +417,7 @@ assert kiz.plan(oz_kiz)["codes"] == codes, "окно КиЗ открылось �
 # 16. Честный знак забраковал код: на площадку не отправляем и своё не затираем
 CALLS.clear()
 try:
-    kiz.submit(oz_kiz, ["0104630568317423215EirD_orEifXX"])
+    kiz.submit(oz_kiz, ["0104630568317423215EirD_orEifXX", codes[1]])
     raise AssertionError("отправили код, который не прошёл проверку")
 except kiz.KizError as exc:
     assert "не принял коды" in str(exc), exc

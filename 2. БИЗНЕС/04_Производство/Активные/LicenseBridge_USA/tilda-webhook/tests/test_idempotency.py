@@ -54,3 +54,20 @@ def test_assignment_skips_other_funnels(fake, session, enable_all):
 
     assert owner == 15293564
     assert fake.leads[lead_id]["responsible_user_id"] == 15293564
+
+
+def test_kommo_task_post_once_does_not_retry_timeout():
+    import httpx
+    import pytest
+    from app.kommo.client import KommoClient
+    calls = []
+    def lost_response(request):
+        calls.append(request)
+        raise httpx.ReadTimeout('lost response', request=request)
+    with KommoClient(base='https://example.invalid/api/v4', token='test') as c:
+        c._client.close()
+        c._client = httpx.Client(transport=httpx.MockTransport(lost_response),
+                                base_url='https://example.invalid/api/v4')
+        with pytest.raises(httpx.ReadTimeout):
+            c.post_once('/tasks', [{'text': 'test'}])
+    assert len(calls) == 1

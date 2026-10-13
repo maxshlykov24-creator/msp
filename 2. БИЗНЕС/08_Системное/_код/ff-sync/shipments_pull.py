@@ -541,7 +541,7 @@ def handle_ozon(client, cab, kind, postings, headers):
             name,
             qty,
             # детали не запрашивали — коды маркировки оставляем как есть
-            ozon_marks(detail) if fetched or kind == "fbo" else None,
+            None,
             known=row,
             extra={
                 "status_group": statuses_mod.ozon_group(raw_status),
@@ -554,6 +554,23 @@ def handle_ozon(client, cab, kind, postings, headers):
                 "items_json": json.dumps(items, ensure_ascii=False),
             },
         )
+        # Чтение отправления не всегда содержит экземпляры. Пустой/неполный
+        # ответ не стирает сканы; полученные коды сохраняются за своим SKU.
+        if fetched or kind == 'fbo':
+            by_pid = {str(i['product_id']): i for i in items}
+            mark_rows = []
+            for prod in detail.get('products') or []:
+                item = by_pid.get(str(prod.get('sku') or prod.get('product_id')))
+                bag = []
+                collect_marks(prod, bag)
+                if item:
+                    mark_rows.extend({'code': code, 'gtin': gtin_of(code), 'article': item['article']} for code in uniq_marks(bag))
+            if mark_rows:
+                saved = get_shipments_by_ext(cab['id'], kind, [ext_id])[0]
+                from db import list_shipment_marks
+                previous = {m['code']: {'code': m['code'], 'gtin': m['gtin'], 'article': m['article']} for m in list_shipment_marks([saved['id']])}
+                previous.update({m['code']: m for m in mark_rows})
+                replace_shipment_marks(saved['id'], list(previous.values()))
     return n
 
 

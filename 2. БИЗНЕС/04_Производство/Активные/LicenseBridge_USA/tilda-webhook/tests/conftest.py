@@ -40,24 +40,24 @@ class FakeKommo:
         self._ids = itertools.count(30000001)
 
     # ── наполнение из тестов ──
-    def add_contact(self, name: str = "", phone: str = "", **fields: Any) -> int:
+    def add_contact(self, name: str = "", phone: str = "", created_at: int | None = None, **fields: Any) -> int:
         cid = next(self._ids)
         cf = [{"field_id": settings.field_phone, "values": [{"value": phone}]}] if phone else []
         for fid, value in fields.items():
             cf.append({"field_id": int(fid), "values": [{"value": value}]})
-        self.contacts[cid] = {"id": cid, "name": name, "created_at": cid,
+        self.contacts[cid] = {"id": cid, "name": name, "created_at": created_at if created_at is not None else cid,
                               "custom_fields_values": cf,
                               "_embedded": {"leads": [], "tags": []}}
         return cid
 
     def add_lead(self, contact_id: int, pipeline_id: int, status_id: int,
                  responsible: int | None = None, closed_at: int | None = None,
-                 name: str = "Сделка") -> int:
+                 name: str = "Сделка", created_at: int | None = None) -> int:
         lid = next(self._ids)
         self.leads[lid] = {
             "id": lid, "name": name, "pipeline_id": pipeline_id, "status_id": status_id,
             "responsible_user_id": responsible, "closed_at": closed_at,
-            "created_at": lid, "custom_fields_values": [],
+            "created_at": created_at if created_at is not None else lid, "custom_fields_values": [],
             "_embedded": {"contacts": [{"id": contact_id}], "tags": []},
         }
         self.contacts[contact_id]["_embedded"]["leads"].append({"id": lid})
@@ -128,6 +128,8 @@ class FakeKommo:
                            "name": item.get("name", ""),
                            "custom_fields_values": item.get("custom_fields_values") or [],
                            "_embedded": {"contacts": [], "tags": []}}
+        for contact in item.get("_embedded", {}).get("contacts", []):
+            self.link_lead_contact(lid, int(contact["id"]))
         return {"_embedded": {"leads": [{"id": lid}]}}
 
     def link_lead_contact(self, lead_id: int, contact_id: int, main: bool = False) -> None:

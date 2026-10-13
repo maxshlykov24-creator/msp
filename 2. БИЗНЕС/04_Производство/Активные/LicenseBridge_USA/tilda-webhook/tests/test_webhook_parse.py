@@ -24,3 +24,30 @@ def test_parse_status_and_contact():
     assert ("update_contact", 20) in types
     status_ev = next(e for e in events if e["type"] == "status_lead")
     assert status_ev["status_id"] == 142
+
+
+def test_pleep_webhook_preserves_handoff_request(monkeypatch):
+    import contextlib
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app import webhooks
+    from app.config import settings
+
+    received = []
+    @contextlib.contextmanager
+    def scope():
+        yield object()
+    monkeypatch.setattr(settings, 'pleep_api_key', 'test-key')
+    monkeypatch.setattr(webhooks, 'session_scope', scope)
+    monkeypatch.setattr(webhooks, 'enqueue', lambda s, source, kind, key, payload, **kw:
+                        (received.append(payload) or 123, True))
+    app = FastAPI()
+    app.include_router(webhooks.router)
+    client = TestClient(app)
+    assert client.post('/pleep/sync', json={'phone': '+15551234567'}).status_code == 401
+    response = client.post('/pleep/sync', headers={'X-Api-Key': 'test-key'},
+                           json={'phone': '+15551234567', 'task_text': ' Нужен менеджер '})
+    assert response.status_code == 202
+    assert received[0]['task_text'] == 'Нужен менеджер'
+    assert response.json()['status'] == 'queued'
+    assert response.json()['task_requested'] is True
