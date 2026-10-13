@@ -643,8 +643,10 @@ table.asm-tbl td.num .kiz-link.is-on{border-color:transparent;background:rgba(0,
 .asm-tbl.no-track .track-col { display: none; }
 .asm-tbl .platform-status { min-width: 145px; max-width: 240px; white-space: normal; font-size: 12px; }
 .asm-tbl .sup-head > td { vertical-align: middle; }
-.sync-health { margin: 12px 0; padding: 10px 14px; border: 1px solid var(--line, #d7dce4); border-radius: 12px; font-size: 12px; }
-.sync-health summary { cursor: pointer; font-weight: 600; }
-.sync-health.has-errors summary { color: #b86409; }
-.sync-health > div { max-height: 300px; overflow: auto; }
-.sync-health p { padding: 8px 0; margin: 0; border-bottom: 1px solid var(--line, #d7dce4); }
+.sync-status.is-bad{color:#b86409;border-color:rgba(212,146,42,.5)}
+.sync-status.is-warn{color:var(--amber);border-color:rgba(212,146,42,.4)}
+.sync-card{max-width:760px;max-height:86vh;display:flex;flex-direction:column}
+.sync-list{overflow:auto;min-height:80px}
+.sync-list p{padding:10px 0;margin:0;border-bottom:1px solid var(--line);font-size:13px;line-height:1.45}
+.sync-list p b{font-weight:650}
+.sync-list .empty{padding:18px 0}

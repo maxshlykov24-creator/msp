@@ -361,19 +361,23 @@ $("view-home").onclick = (e) => {
   if (card) goView(card.dataset.go);
 };
 
-$("syncBtn").onclick = async () => {
-  $("syncBtn").disabled = true;
-  $("syncBtn").textContent = "Обновляю…";
+$("syncBtn").onclick = () => $("syncModal").classList.add("on");
+$("syncClose").onclick = () => $("syncModal").classList.remove("on");
+$("syncModal").onclick = (e) => { if (e.target === $("syncModal")) $("syncModal").classList.remove("on"); };
+$("syncRun").onclick = async () => {
+  $("syncRun").disabled = true;
+  $("syncRun").textContent = "Обновляю…";
   try {
     const res = await api("/api/agents/sync", { method: "POST" });
     syncSummary(res);
     await loadClients();
     if ($("view-home") && $("view-home").classList.contains("active")) loadOverview();
+    if ($("view-asm") && $("view-asm").classList.contains("active")) await loadAsm();
   } catch (e) {
     toast(e.message, "bad");
   }
-  $("syncBtn").disabled = false;
-  $("syncBtn").textContent = "Обновить клиентов";
+  $("syncRun").disabled = false;
+  $("syncRun").textContent = "Обновить клиентов";
 };
 
 // приёмка
@@ -471,14 +475,14 @@ async function followClientCatalog(id, attempt) {
       await loadIntake();
       say($("iClientHint"), res.connected === 0 ? "Контрагент сохранён. Ключи площадок можно добавить этой же кнопкой." : "Контрагент готов. Каталог обновлён.", "ok");
     } else if (res.state === "error") {
-      say($("iClientHint"), "Контрагент сохранён. Не удалось загрузить каталог: " + (res.failed || []).join(", ") + ". Повтори кнопкой «Обновить клиентов».", "bad");
+      say($("iClientHint"), "Контрагент сохранён. Не удалось загрузить каталог: " + (res.failed || []).join(", ") + ". Повтори кнопкой «Обновить клиентов» в окне кабинетов сверху.", "bad");
     } else if (attempt < 60) {
       setTimeout(() => followClientCatalog(id, attempt + 1), 5000);
     } else {
       say($("iClientHint"), "Контрагент сохранён. Загрузка каталога ещё не подтверждена. Обнови клиентов позже.");
     }
   } catch (err) {
-    say($("iClientHint"), "Контрагент сохранён. Проверь загрузку каталога кнопкой «Обновить клиентов».", "bad");
+    say($("iClientHint"), "Контрагент сохранён. Проверь загрузку каталога кнопкой «Обновить клиентов» в окне кабинетов сверху.", "bad");
   }
 }
 
@@ -548,7 +552,7 @@ function fillIntakeCombo(query) {
   list.innerHTML = items.map((c) => {
     const on = String(c.id) === String($("iClient").value);
     return `<button type="button" class="combo-item${on ? " is-on" : ""}" data-id="${c.id}">${esc(c.name)}</button>`;
-  }).join("") || `<div class="combo-item muted">Нет в панели. Проверь группу «Фулфилмент» и токен кабинета в МойСклад, затем нажми «Обновить клиентов».</div>`;
+  }).join("") || `<div class="combo-item muted">Нет в панели. Проверь группу «Фулфилмент» и токен кабинета в МойСклад, затем открой кабинеты сверху и нажми «Обновить клиентов».</div>`;
 }
 
 function setIntakeClient(id, name) {
@@ -720,7 +724,7 @@ async function openPick(rowId) {
   try {
     const res = await api("/api/intake/" + rowId + "/candidates");
     if (!res.rows.length) {
-      $("pickList").innerHTML = `<div class="empty">Вариантов не нашлось. Обнови каталог кнопкой «Обновить клиентов».</div>`;
+      $("pickList").innerHTML = `<div class="empty">Вариантов не нашлось. Открой кабинеты сверху и нажми «Обновить клиентов».</div>`;
       return;
     }
     $("pickSub").textContent = "Один артикул на несколько карточек. Отметь тот товар, который реально приехал.";
@@ -1636,16 +1640,25 @@ function asmSupplyHtml(sup, rows) {
 
 function renderSyncHealth(rows) {
   const labels = { fbs: "Заказы FBS", fbo: "Заказы FBO", statuses: "Статусы FBS", supplies: "Поставки WB" };
+  rows = rows || [];
   const errors = rows.filter((r) => r.error).length;
   const stale = rows.filter((r) => !r.error && r.stale).length;
-  const root = $("aSyncHealth");
-  root.classList.toggle("has-errors", errors > 0);
-  root.querySelector("summary").textContent = errors ? `Обновление кабинетов: ошибок ${errors}` : stale ? `Обновление кабинетов: требуют проверки ${stale}` : "Кабинеты обновлены · подробности";
-  root.querySelector("div").innerHTML = rows.map((r) => {
+  const btn = $("syncBtn");
+  btn.textContent = !rows.length ? "Кабинеты" : errors ? "Ошибок " + errors : stale ? "Проверить " + stale : "Кабинеты обновлены";
+  btn.classList.toggle("is-bad", errors > 0);
+  btn.classList.toggle("is-warn", !errors && stale > 0);
+  $("syncSub").textContent = !rows.length
+    ? "Сведений ещё нет."
+    : errors
+      ? "Ошибок " + errors + "."
+      : stale
+        ? "Требуют проверки " + stale + "."
+        : "Все кабинеты обновлены.";
+  $("syncList").innerHTML = rows.length ? rows.map((r) => {
     const stamp = r.success ? new Date(r.success).toLocaleString("ru-RU", {timeZone: "Europe/Moscow"}) : "ещё не проверено";
     const note = r.error || (r.stale ? "Нужна повторная сверка" : "Обновлено");
     return `<p><b>${esc(r.client)} · ${esc(r.marketplace.toUpperCase())} · ${esc(r.name || "")} · ${esc(labels[r.stream])}</b><br>Успешное обновление: ${esc(stamp)} МСК · ${esc(note)}</p>`;
-  }).join("");
+  }).join("") : `<div class="empty">Подробности появятся после загрузки заказов.</div>`;
 }
 
 function asmBodyHtml(rows) {
