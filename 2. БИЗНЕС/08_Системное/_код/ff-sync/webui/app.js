@@ -1103,17 +1103,26 @@ async function loadLots() {
   refreshPick();
 }
 
+function stockChoice() {
+  const picked = state.lots.filter((r) => state.picked.has(r.id));
+  return picked.length ? picked : state.lots.slice();
+}
+
 function refreshPick() {
-  const n = state.picked.size;
-  const sum = state.lots.filter((r) => state.picked.has(r.id)).reduce((a, r) => a + r.total, 0);
-  $("sSel").textContent = n ? `Выбрано ${n} позиций на ${num(sum)} ₽` : "Ничего не выбрано";
-  const selected = state.lots.filter((r) => state.picked.has(r.id));
+  const explicit = state.picked.size > 0;
+  const selected = stockChoice();
+  const sum = selected.reduce((a, r) => a + (Number(r.total) || 0), 0);
   const oneClient = new Set(selected.map((r) => r.client_id)).size === 1;
   const incomplete = selected.some((r) => (r.billing_errors || []).length);
-  $("sBill").disabled = !oneClient || sum <= 0 || incomplete || selected.some((r) => !r.accepted);
-  $("sReport").disabled = !oneClient || incomplete;
+  $("sSel").textContent = !selected.length
+    ? "Нет позиций"
+    : explicit
+      ? `Выбрано ${selected.length} позиций на ${num(sum)} ₽`
+      : `Все позиции, ${selected.length} на ${num(sum)} ₽`;
+  $("sBill").disabled = !selected.length || !oneClient || sum <= 0 || incomplete || selected.some((r) => !r.accepted);
+  $("sReport").disabled = !selected.length || !oneClient || incomplete;
   if (incomplete) $("sSel").textContent += ". Заполни литраж и ставку сборки для выбранных позиций.";
-  if (n && !oneClient) $("sSel").textContent += ". Для счёта и отчёта выбери одного контрагента.";
+  if (selected.length && !oneClient) $("sSel").textContent += ". Для счёта и отчёта выбери одного контрагента.";
 }
 
 $("sTbl").onclick = (e) => {
@@ -1195,7 +1204,7 @@ $("sBills").onclick = () => openBills();
 $("sReport").onclick = async () => {
   $("sReport").disabled = true;
   try {
-    await downloadXlsx("/api/lots/report.xlsx", [...state.picked], "остаток.xlsx", "Отчёт для клиента скачан.", $("sMsg"), { date_to: $("sTo").value });
+    await downloadXlsx("/api/lots/report.xlsx", stockChoice().map((r) => r.id), "остаток.xlsx", "Отчёт для клиента скачан.", $("sMsg"), { date_to: $("sTo").value });
   } catch (e) {
     say($("sMsg"), e.message, "bad");
   }
@@ -1211,7 +1220,7 @@ function ruDay(iso) {
 
 $("sBill").onclick = async () => {
   try {
-    state.invoiceRequest = { lot_ids: [...state.picked], date_to: $("sTo").value };
+    state.invoiceRequest = { lot_ids: stockChoice().map((r) => r.id), date_to: $("sTo").value };
     const res = await api("/api/invoice/preview", {
       method: "POST",
       body: JSON.stringify(state.invoiceRequest),
