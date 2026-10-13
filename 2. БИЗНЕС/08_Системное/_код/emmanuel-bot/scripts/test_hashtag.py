@@ -77,11 +77,43 @@ def main() -> int:
     check(t16.startswith("#рвыотчёт <b>16 из 34</b>, 47% (14-20 сентября)"), "public 16 of 34")
     ws = date(2026, 9, 14)
     check(late_report_bucket(datetime(2026, 9, 20, 23, 59, tzinfo=MSK), ws) == "sun", "bucket sun")
-    check(late_report_bucket(datetime(2026, 9, 21, 0, 0, tzinfo=MSK), ws) == "mon_am", "bucket mon 00")
+    check(late_report_bucket(datetime(2026, 9, 21, 0, 0, tzinfo=MSK), ws) == "night", "bucket night 00")
+    check(late_report_bucket(datetime(2026, 9, 21, 1, 59, tzinfo=MSK), ws) == "night", "bucket night 2")
+    check(late_report_bucket(datetime(2026, 9, 21, 2, 0, tzinfo=MSK), ws) == "mon_am", "bucket mon 2")
     check(late_report_bucket(datetime(2026, 9, 21, 11, 59, tzinfo=MSK), ws) == "mon_am", "bucket mon am")
     check(late_report_bucket(datetime(2026, 9, 21, 12, 0, tzinfo=MSK), ws) == "mon_pm", "bucket mon noon")
     check(late_report_bucket(datetime(2026, 9, 21, 23, 59, tzinfo=MSK), ws) == "mon_pm", "bucket mon pm")
-    check(late_report_bucket(datetime(2026, 9, 22, 0, 0, tzinfo=MSK), ws) == "later", "bucket later")
+    check(late_report_bucket(datetime(2026, 9, 22, 0, 0, tzinfo=MSK), ws) == "day:2026-09-22", "bucket tuesday")
+    check(late_report_bucket(datetime(2026, 9, 23, 15, 0, tzinfo=MSK), ws) == "day:2026-09-23", "bucket wednesday")
+    from app.coverage import format_coverage_text
+    from app.models import GroupMember
+
+    def member(uid: int, name: str) -> GroupMember:
+        return GroupMember(
+            tg_user_id=uid,
+            tg_first_name=name,
+            status="member",
+            is_bot=False,
+            in_scope=True,
+            updated_at=datetime(2026, 9, 21, tzinfo=MSK),
+        )
+
+    text = format_coverage_text(
+        week_start=ws,
+        members=[member(1, "А"), member(2, "Б"), member(3, "В")],
+        submitted_ids={1, 2, 3},
+        submitted_at={
+            1: datetime(2026, 9, 20, 21, 0, tzinfo=MSK),
+            2: datetime(2026, 9, 21, 1, 0, tzinfo=MSK),
+            3: datetime(2026, 9, 23, 10, 0, tzinfo=MSK),
+        },
+    )
+    check("Написали до вс 23:59" in text and "· А" in text, "coverage sun")
+    check("Написали до 2:00" in text and "· Б" in text, "coverage night")
+    check("Написали в пн до 12:00" in text and "· никого" in text, "coverage monday morning empty stays")
+    check("Написали в пн после 12:00" not in text, "coverage monday afternoon hidden")
+    check("Написали во вторник" not in text, "coverage empty tuesday hidden")
+    check("Написали в среду" in text and "· В" in text, "coverage wednesday")
     from app.time_utils import group_digest_follows_reports
 
     check(not group_digest_follows_reports(datetime(2026, 9, 28, 8, 59, tzinfo=MSK)), "digest quiet before monday 9")
