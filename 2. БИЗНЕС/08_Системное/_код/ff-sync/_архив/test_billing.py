@@ -528,3 +528,24 @@ with patch.object(onboarding,'_agent_request',bank_req):
     except ValueError:pass
 assert onboarding.checked_inn('770300584079')=='770300584079'
 print('банковские реквизиты: частичный ввод, сохранение и повтор после обрыва — OK')
+
+# Пустая цена сборки не означает бесплатную услугу. Явный ноль допустим.
+rate_client = db.insert_client('rate-check', 'Проверка ставки', 'AGENT-RATE', 'ORG-1', 'STORE-1')
+rate_lot = db.insert_lot(rate_client, 'RATE-PRODUCT', 'RATE', '', '', 'Проверка', '', 1, 3,
+                         '2026-09-01T10:00:00', '', accepted_at='2026-09-01T10:00:00')
+db.add_lot_move(rate_lot, 1, 'ship', 'RATE-DEMAND', '2026-09-02T10:00:00')
+rate_row = account.row_of(db.get_lot(rate_lot), date_to=account.as_day('2026-09-03'))
+assert rate_row['billing_errors'] == ['не заполнена ставка сборки']
+assert account.totals([rate_row])['incomplete'] == 1
+for action in (lambda: billing.preview([rate_lot], '2026-09-03'),
+               lambda: __import__('export_xlsx').build_client_stock([rate_lot], account.as_day('2026-09-03'))):
+    try:
+        action()
+        raise AssertionError('отсутствующая ставка скрыто принята за ноль')
+    except ValueError as exc:
+        assert 'ставк' in str(exc)
+db.set_lot_pick_rate(rate_lot, 0)
+rate_row = account.row_of(db.get_lot(rate_lot), date_to=account.as_day('2026-09-03'))
+assert rate_row['billing_errors'] == [] and rate_row['pick_rate_known']
+assert billing.preview([rate_lot], '2026-09-03')['pick_qty'] == 1
+print('сборка: отсутствующая ставка блокирует счёт и отчёт; явный ноль допустим — OK')

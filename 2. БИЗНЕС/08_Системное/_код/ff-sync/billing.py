@@ -57,6 +57,8 @@ def collect(lot_ids, date_to=""):
     pick = 0.0
     for lot in lots:
         calc = row_of(lot, client, moves.get(lot["id"], {}), date_to=end)
+        if calc["billing_errors"]:
+            raise ValueError("Партия %s: %s. Заполни данные перед выставлением счёта." % (lot["id"], ", ".join(calc["billing_errors"])))
         if calc["bill_days"] == 0 and calc["pick_qty"] == 0:
             continue
         if calc["liters"] <= 0 or calc["pick_rate"] < 0:

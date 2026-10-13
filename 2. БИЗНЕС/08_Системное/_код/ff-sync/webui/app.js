@@ -107,6 +107,14 @@ function printSummary(pages, notes, title) {
 
 // вход
 
+function renderLedgerSync(res) {
+  const when = res.last_sync ? new Date(res.last_sync) : null;
+  const stamp = when && !isNaN(when.getTime())
+    ? when.toLocaleString("ru-RU", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "ещё не проводилась";
+  $("footerSync").textContent = "Синхронизация: " + stamp;
+}
+
 async function boot() {
   try {
     const me = await api("/api/me");
@@ -114,6 +122,9 @@ async function boot() {
     $("login").classList.add("off");
     $("app").classList.add("on");
     syncDock();
+    api("/api/ledger/sync-status").then(renderLedgerSync).catch(() => {
+      $("footerSync").textContent = "Синхронизация: не удалось проверить";
+    });
     await loadClients();
     await loadAsm();
     await loadIntake();
@@ -1049,13 +1060,14 @@ async function loadLots() {
   }
   if (mine !== lotsLoad) return;
   state.lots = res.rows;
-  $("sLedgerInfo").textContent = "Источник расчёта: партии и списания панели. Последнее движение: " + (res.last_movement ? ruDay(res.last_movement) : "нет данных") + ". Остаток показан на текущую дату; выбранная дата ограничивает начисления. Перед выставлением счёта сверь полноту приёмок и списаний.";
+  renderLedgerSync(res);
   state.picked.clear();
   $("kPos").textContent = num(res.totals.positions, 0);
   $("kQty").textContent = num(res.totals.qty, 0);
   $("kVol").innerHTML = num(res.totals.volume, 1) + ' <small>л</small>';
   $("kLiterDays").textContent = num(res.totals.liter_days, 0);
-  $("kMoney").innerHTML = num(res.totals.money, 2) + ' <small>₽</small>';
+  $("kMoney").innerHTML = (res.totals.incomplete ? "—" : num(res.totals.money, 2)) + ' <small>₽</small>';
+  $("kMoney").title = res.totals.incomplete ? "Не хватает данных для расчёта: " + res.totals.incomplete + " позиций" : "";
   $("kAged").textContent = res.totals.aged ? res.totals.aged + " позиций лежат больше 90 дней" : "";
   const body = $("sTbl").querySelector("tbody");
   if (!res.rows.length) {
@@ -1066,13 +1078,13 @@ async function loadLots() {
       <td class="client">${esc(r.client)}</td>
       <td class="codes"><b>${esc(r.article)}</b><span>ШК ${esc(r.barcode)}</span><span>GTIN ${esc(r.gtin)}</span></td>
       <td class="name">${esc(r.name)}</td>
-      <td class="num" title="${r.dims ? esc(r.dims) + " см" : ""}">${num(r.liters, 3)}</td><td class="num">${num(r.pick_rate)}</td>
+      <td class="num" title="${r.dims ? esc(r.dims) + " см" : ""}">${num(r.liters, 3)}</td><td class="num">${r.pick_rate_known ? num(r.pick_rate) : "—"}</td>
       <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.shipped, 0)}</td>
       <td class="num">${num(r.qty, 0)}</td>
       <td>${r.accepted ? esc(r.accepted) : `<span class="badge warn" title="Счётчик пойдёт после приёмки на склад «Фулфилмент»"><i></i>ждёт приёмки</span>`}</td><td class="num ${r.days > 90 ? "aged" : ""}">${r.days}</td>
       <td class="num" title="${esc(r.bill_from)} — ${esc(r.bill_to)}">${r.bill_days}</td>
       <td class="num">${num(r.liter_days, 1)}</td>
-      <td class="num money">${num(r.total)}</td>
+      <td class="num money" title="${esc((r.billing_errors || []).join("; "))}">${(r.billing_errors || []).length ? "нужны данные" : num(r.total)}</td>
     </tr>`).join("");
   }
   $("sAll").checked = false;
@@ -1085,8 +1097,10 @@ function refreshPick() {
   $("sSel").textContent = n ? `Выбрано ${n} позиций на ${num(sum)} ₽` : "Ничего не выбрано";
   const selected = state.lots.filter((r) => state.picked.has(r.id));
   const oneClient = new Set(selected.map((r) => r.client_id)).size === 1;
-  $("sBill").disabled = !oneClient || sum <= 0 || selected.some((r) => !r.accepted);
-  $("sReport").disabled = !oneClient;
+  const incomplete = selected.some((r) => (r.billing_errors || []).length);
+  $("sBill").disabled = !oneClient || sum <= 0 || incomplete || selected.some((r) => !r.accepted);
+  $("sReport").disabled = !oneClient || incomplete;
+  if (incomplete) $("sSel").textContent += ". Заполни литраж и ставку сборки для выбранных позиций.";
   if (n && !oneClient) $("sSel").textContent += ". Для счёта и отчёта выбери одного контрагента.";
 }
 

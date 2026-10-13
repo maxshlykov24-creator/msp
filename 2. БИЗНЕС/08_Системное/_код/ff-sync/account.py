@@ -86,6 +86,12 @@ def pick_rate_of(lot, client):
     return 0.0
 
 
+def pick_rate_known(lot, client):
+    return ("pick_rate" in lot.keys() and lot["pick_rate"] is not None) or bool(
+        client and "tariff_pick" in client.keys() and client["tariff_pick"] is not None
+    )
+
+
 def accepted_day(lot):
     """День фактической приёмки. Пусто — партия ещё не встала на счётчик."""
     if "accepted_at" not in lot.keys():
@@ -205,6 +211,11 @@ def row_of(lot, client=None, ship_days=None, date_from=None, date_to=None):
     calc = money(lot, client, date_from, date_to, out)
     liters = float(lot["liters"] or 0)
     qty_left = float(lot["qty_left"] or 0)
+    errors = []
+    if calc["bill_days"] and liters <= 0:
+        errors.append("не заполнен литраж")
+    if calc["pick_qty"] and not pick_rate_known(lot, client):
+        errors.append("не заполнена ставка сборки")
     return {
         "id": lot["id"],
         "client_id": lot["client_id"],
@@ -217,6 +228,8 @@ def row_of(lot, client=None, ship_days=None, date_from=None, date_to=None):
         "dims": (lot["dims"] if "dims" in lot.keys() else "") or "",
         "rate": storage_rate(),
         "pick_rate": pick_rate_of(lot, client),
+        "pick_rate_known": pick_rate_known(lot, client),
+        "billing_errors": errors,
         "liters": liters,
         "qty": qty_left,
         "qty_in": float(lot["qty_in"] or 0),
@@ -273,6 +286,7 @@ def lot_rows(client_id=None, query="", marked=None, only_open=True, date_from=No
 
 def totals(rows):
     return {
+        "incomplete": sum(bool(r.get("billing_errors")) for r in rows),
         "positions": len(rows),
         "qty": round(sum(r["qty"] for r in rows), 3),
         "volume": round(sum(r["volume"] for r in rows), 2),

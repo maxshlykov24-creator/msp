@@ -580,6 +580,9 @@ def build_client_stock(ids, date_to=None):
     wanted = [int(x) for x in ids]
     order = {lid: i for i, lid in enumerate(wanted)}
     rows = [r for r in lot_rows(only_open=False, date_to=date_to) if r["id"] in order]
+    incomplete = [r for r in rows if r.get("billing_errors")]
+    if incomplete:
+        raise ValueError("Отчёт не сформирован: у выбранных позиций не заполнен литраж или ставка сборки. Заполни данные и повтори.")
     if len(rows) != len(order):
         raise ValueError("часть выбранных партий не найдена")
     if len({r["client_id"] for r in rows}) != 1:

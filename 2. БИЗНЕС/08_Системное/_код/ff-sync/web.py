@@ -549,11 +549,17 @@ def lots(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", f
         marked=marked_flag(marked),
         date_to=checked_day(date_to),
     )
-    from db import connect
-    conn = connect()
-    movement = conn.execute("SELECT max(m.created_at) FROM lot_moves m JOIN lots l ON l.id=m.lot_id WHERE (?=0 OR l.client_id=?)", (client_id, client_id)).fetchone()[0]
-    conn.close()
-    return {"rows": rows, "totals": totals(rows), "last_movement": movement or ""}
+    from db import get_setting
+    return {"rows": rows, "totals": totals(rows), "last_sync": get_setting("ledger:last_success") or ""}
+
+
+@app.get("/api/ledger/sync-status")
+def ledger_sync_status(ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    from db import get_setting
+    # Только завершённая сверка всего учёта, не дата движения или попытки запроса.
+    return {"last_sync": get_setting("ledger:last_success") or ""}
 
 
 @app.get("/api/calendar")
