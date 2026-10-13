@@ -259,6 +259,8 @@ def onboard_client(data):
             if not aid:
                 raise ValueError("Не настроены поля клиента в МойСклад. Нажми «Обновить клиентов»")
             payload["attributes"].append({"meta": {"href": MS_BASE + "/entity/counterparty/metadata/attributes/" + aid, "type": "attributemetadata", "mediaType": "application/json"}, "value": value})
+        if not payload["attributes"]:
+            payload.pop("attributes")
         # Повтор с тем же ИНН/КПП использует тот же syncId даже после потери ответа.
         created = _agent_request("PUT" if row else "POST", "/entity/counterparty" + ("/" + chosen if row else ""), json=payload, retry_safe=bool(row))
         full = _agent_request("GET", "/entity/counterparty/" + created["id"])
@@ -287,12 +289,14 @@ def warm_onboard_catalog(client_id):
         with run_lock():
             set_setting(key, json.dumps({"state": "running"}))
             failed = []
+            connected = 0
             for cab in list_cabinets():
                 if cab["client_id"] == client_id and cab["active"]:
+                    connected += 1
                     _n, err = pull_if_needed(cab, False)
                     if err:
                         failed.append(cab["marketplace"])
-            set_setting(key, json.dumps({"state": "error" if failed else "ready", "failed": failed}))
+            set_setting(key, json.dumps({"state": "error" if failed else "ready", "failed": failed, "connected": connected}))
     except Exception:
         set_setting(key, json.dumps({"state": "error", "failed": ["каталог"]}))
 

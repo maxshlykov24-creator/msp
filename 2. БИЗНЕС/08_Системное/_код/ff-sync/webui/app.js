@@ -455,11 +455,13 @@ async function followClientCatalog(id, attempt) {
     const res = await api("/api/clients/" + id + "/catalog-status");
     if (res.state === "ready") {
       await loadIntake();
-      say($("iClientHint"), "Контрагент готов. Каталог обновлён.", "ok");
+      say($("iClientHint"), res.connected === 0 ? "Контрагент сохранён. Ключи площадок можно добавить этой же кнопкой." : "Контрагент готов. Каталог обновлён.", "ok");
     } else if (res.state === "error") {
       say($("iClientHint"), "Контрагент сохранён. Не удалось загрузить каталог: " + (res.failed || []).join(", ") + ". Повтори кнопкой «Обновить клиентов».", "bad");
     } else if (attempt < 60) {
       setTimeout(() => followClientCatalog(id, attempt + 1), 5000);
+    } else {
+      say($("iClientHint"), "Контрагент сохранён. Загрузка каталога ещё не подтверждена. Обнови клиентов позже.");
     }
   } catch (err) {
     say($("iClientHint"), "Контрагент сохранён. Проверь загрузку каталога кнопкой «Обновить клиентов».", "bad");

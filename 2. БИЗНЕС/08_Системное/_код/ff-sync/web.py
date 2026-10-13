@@ -239,8 +239,10 @@ def client_create(data: dict, background_tasks: BackgroundTasks, ff_session: str
 def client_catalog_status(client_id: int, ff_session: str = Cookie(default="")):
     who(ff_session)
     import json
-    from db import get_setting
-    return {"ok": True, **json.loads(get_setting("client:catalog-job:%s" % client_id) or '{"state":"ready"}')}
+    from db import get_setting, get_client_by_id
+    if not get_client_by_id(client_id):
+        raise HTTPException(status_code=404, detail="контрагент не найден")
+    return {"ok": True, **json.loads(get_setting("client:catalog-job:%s" % client_id) or '{"state":"unknown"}')}
 
 
 @app.get("/api/overview")
