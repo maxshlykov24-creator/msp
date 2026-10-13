@@ -173,6 +173,7 @@ def _ozon_plan(row, cab):
     need = 0
     have = 0
     products = []
+    remote_marks = []
     for prod, item in _ozon_product_info(row, data):
         if not isinstance(prod, dict):
             continue
@@ -185,6 +186,9 @@ def _ozon_plan(row, cab):
         for ex in prod.get("exemplars") or []:
             if any((m or {}).get("mark") for m in (ex.get("marks") or [])):
                 filled += 1
+            for mark in ex.get('marks') or []:
+                if mark.get('mark') and mark.get('mark_type') == 'mandatory_mark':
+                    remote_marks.append({'code': mark['mark'], 'gtin': gtin_of(mark['mark']), 'article': item.get('article') or ''})
         if required:
             need += qty
         have += filled
@@ -203,7 +207,7 @@ def _ozon_plan(row, cab):
     note = ""
     if row["status_group"] and row["status_group"] != "new":
         note = "Ozon принимает коды только до сборки: отправление уже ушло дальше «ожидает упаковки»."
-    return {"need": need, "have": have, "products": products, "note": note}
+    return {"need": need, "have": have, "products": products, "note": note, '_remote_marks': remote_marks}
 
 
 def _ozon_submit(row, cab, codes, assignments=None):
@@ -492,6 +496,11 @@ def plan(ship_id):
         out = _wb_plan(row, cab)
     else:
         raise KizError("неизвестная площадка %s" % row["marketplace"])
+    remote_marks = out.pop('_remote_marks', [])
+    if remote_marks:
+        known = {r['code']: {'code': r['code'], 'gtin': r['gtin'], 'article': r['article']} for r in list_shipment_marks([row['id']])}
+        known.update({r['code']: r for r in remote_marks})
+        replace_shipment_marks(row['id'], list(known.values()))
     saved = [r["code"] for r in list_shipment_marks([row["id"]])]
     assignments = []
     if row['marketplace'] == 'ozon':

@@ -1189,6 +1189,16 @@ assert len(db.list_shipment_marks([mid]))==4
 assert {m['article'] for m in db.list_shipment_marks([mid])}=={'Комбинезон L','Комбинезон XL'}
 assert not kiz.missing_mark_note(db.get_shipments_by_ids([mid]))
 
+# Коды, внесённые в ЛК, возвращаются к своему артикулу при открытии КиЗ.
+remote_exemplars=copy.deepcopy(exemplars)
+remote_code='010463056831742321FROMOZONXL'
+remote_exemplars['products'][1]['exemplars'][0]['marks']=[{'mark':remote_code,'mark_type':'mandatory_mark'}]
+with patch.object(kiz,'_ozon_create',return_value=remote_exemplars):
+    remote_plan=kiz.plan(mid)
+    assert remote_code in remote_plan['codes']
+    assert {'code':remote_code,'product_id':5655501130} in remote_plan['assignments']
+assert next(m for m in db.list_shipment_marks([mid]) if m['code']==remote_code)['article']=='Комбинезон XL'
+
 # Явное продолжение на короткой странице и повтор страницы.
 page1=Fake(200,{'result':{'postings':[multi],'has_next':True}})
 page2=Fake(200,{'result':{'postings':[dict(multi,posting_number='SECOND')],'has_next':False}})
