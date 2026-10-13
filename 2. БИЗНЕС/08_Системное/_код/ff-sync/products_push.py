@@ -119,7 +119,7 @@ def _ref_id(value):
 
 
 def product_owners(product):
-    """Поставщик и поле клиента должны указывать на одного контрагента."""
+    """Ссылки владельца для проверки контрагента и подтверждённой группы."""
     owners = set()
     supplier = _ref_id(product.get("supplier"))
     if supplier:

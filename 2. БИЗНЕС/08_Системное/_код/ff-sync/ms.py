@@ -159,7 +159,7 @@ def attr_value(entity, name, meta_key, value):
 
 
 def product_attrs(liters, agent_id, pick_rate=None):
-    """Литраж и клиент фулфилмента. Площадка живёт в кабинетах, GTIN — в штрихкодах."""
+    """Литраж, стоимость сборки и клиент. Площадка — в кабинетах, GTIN — в штрихкодах."""
     out = []
     if liters is not None and liters != "":
         try:
