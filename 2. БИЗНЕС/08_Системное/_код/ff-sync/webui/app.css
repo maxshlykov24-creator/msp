@@ -143,6 +143,9 @@ body{font-family:var(--font);color:var(--ink);background:var(--bg);background-im
 .link:hover{color:var(--red)}
 
 .hero-head{padding:28px 0 14px}
+#view-intake #iClientHint:empty{display:none;margin:0}
+#view-intake .intake-client-act{margin-top:16px}
+#view-intake #iListBox{margin-top:28px}
 .hero-head h1{font-size:27px;font-weight:500;letter-spacing:-.02em}
 .sec-title{display:flex;align-items:baseline;gap:12px;margin:34px 0 16px;justify-content:space-between;flex-wrap:wrap}
 .sec-title h2{font-size:17px;font-weight:650}

@@ -818,6 +818,10 @@ function intakeSummary(res) {
 
 let intakeFile = null;
 
+function syncIntakeAdd() {
+  $("iAdd").disabled = !(($("iBarcodes").value || "").trim() || intakeFile);
+}
+
 function showIntakeFile(file) {
   intakeFile = file || null;
   const chip = $("iFileChip");
@@ -825,11 +829,13 @@ function showIntakeFile(file) {
     chip.hidden = true;
     $("iFileName").textContent = "";
     $("iAdd").textContent = "В очередь";
+    syncIntakeAdd();
     return;
   }
   $("iFileName").textContent = intakeFile.name;
   chip.hidden = false;
   $("iAdd").textContent = "В очередь · " + intakeFile.name;
+  syncIntakeAdd();
 }
 
 async function sendIntakeFile(file) {
@@ -853,7 +859,7 @@ async function sendIntakeFile(file) {
   } catch (e) {
     say($("iMsg"), e.message, "bad");
   }
-  $("iAdd").disabled = false;
+  syncIntakeAdd();
 }
 
 $("iAdd").onclick = async () => {
@@ -877,8 +883,10 @@ $("iAdd").onclick = async () => {
   } catch (e) {
     say($("iMsg"), e.message, "bad");
   }
-  $("iAdd").disabled = false;
+  syncIntakeAdd();
 };
+
+$("iBarcodes").oninput = syncIntakeAdd;
 
 $("iFile").onchange = () => {
   const file = $("iFile").files[0];
