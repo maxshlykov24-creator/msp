@@ -200,15 +200,6 @@ def barcodes_from_hits(hits, barcode, gtin):
     return out
 
 
-def _same_gtin(raw, norm):
-    digits = re.sub(r"\D", "", str(raw or ""))
-    if not norm or not digits:
-        return False
-    if digits == norm:
-        return True
-    return len(digits) == 13 and ("0" + digits) == norm
-
-
 def barcodes_of_many(codes, gtin):
     out = []
     seen = set()
@@ -399,3 +390,181 @@ def create_purchase_order(client, positions):
         return None, "", "заказ поставщика %s %s" % (r.status_code, (r.text or "")[:160])
     data = r.json()
     return data.get("id"), data.get("name") or "", ""
+
+
+def _attr_row(product, name):
+    for row in product.get("attributes") or []:
+        if row.get("name") == name:
+            return row
+    return None
+
+
+def _attr_text(product, name):
+    row = _attr_row(product, name)
+    if not row or not isinstance(row.get("value"), str):
+        return ""
+    return row["value"].strip()
+
+
+def _has_gtin_barcode(product, norm):
+    return any(str(item.get("gtin") or "") == norm for item in (product.get("barcodes") or []))
+
+
+def _each_product():
+    """Активные и архивные: иначе GTIN архивной карточки потеряется при снятии поля."""
+    for archived in ("false", "true"):
+        offset = 0
+        while True:
+            r = req(
+                "GET",
+                MS_BASE + "/entity/product",
+                headers=ms_headers(),
+                params={"limit": 100, "offset": offset, "filter": "archived=%s" % archived},
+            )
+            if r.status_code != 200:
+                raise ValueError("список товаров %s %s" % (r.status_code, (r.text or "")[:160]))
+            rows = (r.json() or {}).get("rows") or []
+            for row in rows:
+                yield row
+            if len(rows) < 100:
+                break
+            offset += 100
+
+
+def _field_defs():
+    r = req("GET", MS_BASE + "/entity/product/metadata/attributes", headers=ms_headers())
+    if r.status_code != 200:
+        raise ValueError("поля товара %s %s" % (r.status_code, (r.text or "")[:160]))
+    return {row.get("name"): row for row in (r.json().get("rows") or [])}
+
+
+def _drop_field(defs, name):
+    row = defs.get(name)
+    if not row:
+        return "нет поля"
+    href = (row.get("meta") or {}).get("href")
+    if not href:
+        return "у поля нет ссылки"
+    r = req("DELETE", href, headers=ms_headers())
+    if r.status_code in (200, 204, 404):
+        return "снято"
+    return "не снято %s %s" % (r.status_code, (r.text or "")[:120])
+
+
+def rehome_card_fields(apply=False):
+    """GTIN из допполя переносит в штрихкод типа GTIN и снимает поле «Маркетплейс».
+
+    «Клиент фулфилмента» и «Организация» не меняются.
+    """
+    defs = _field_defs()
+    planned, ready, leftovers, junk, mismatches, errors = [], [], [], [], [], []
+    marketplace_n = 0
+    for product in _each_product():
+        article = product.get("article") or product.get("name") or product.get("id")
+        supplier = _ref_id(product.get("supplier"))
+        client = _attr_row(product, "Клиент фулфилмента")
+        client_id = _ref_id((client or {}).get("value")) if client else ""
+        if client_id and supplier and client_id != supplier:
+            mismatches.append(article)
+        if _attr_text(product, "Маркетплейс"):
+            marketplace_n += 1
+        raw = _attr_text(product, "GTIN")
+        if not raw:
+            continue
+        norm = gtin_code(raw)
+        if not norm:
+            digits = re.sub(r"\D", "", raw)
+            bucket = leftovers if len(digits) >= 8 else junk
+            bucket.append("%s: %s" % (article, raw))
+            continue
+        if _has_gtin_barcode(product, norm):
+            ready.append(article)
+            continue
+        planned.append("%s → %s" % (article, norm))
+        if not apply:
+            continue
+        codes = drop_gtin_code128(merge_barcodes(product, [{"gtin": norm}]), norm)
+        r = req(
+            "PUT",
+            MS_BASE + "/entity/product/" + product["id"],
+            headers=ms_headers(),
+            json={"barcodes": codes},
+        )
+        if r.status_code not in (200, 201):
+            errors.append("%s %s %s" % (article, r.status_code, (r.text or "")[:160]))
+            continue
+        got = (r.json() or {}).get("barcodes") or []
+        if not any(str(item.get("gtin") or "") == norm for item in got):
+            errors.append("%s: в ответе нет штрихкода GTIN" % article)
+
+    removed = {}
+    if apply and not errors and not leftovers:
+        removed["GTIN"] = _drop_field(defs, "GTIN")
+    if apply:
+        removed["Маркетплейс"] = _drop_field(defs, "Маркетплейс")
+
+    def head(items, limit=20):
+        shown = list(items[:limit])
+        extra = len(items) - limit
+        if extra > 0:
+            shown.append("… ещё %s" % extra)
+        return shown
+
+    print("режим: %s" % ("запись" if apply else "просмотр"))
+    print("GTIN записать в штрихкоды: %s" % len(planned))
+    for line in head(planned):
+        print("  ", line)
+    print("GTIN уже в штрихкодах: %s" % len(ready))
+    print("GTIN с битой цифрой, поле остаётся: %s" % len(leftovers))
+    for line in head(leftovers):
+        print("  ", line)
+    print("в поле GTIN не номер, снимем вместе с полем: %s" % len(junk))
+    for line in head(junk):
+        print("  ", line)
+    print("заполнено «Маркетплейс»: %s" % marketplace_n)
+    print("поставщик и клиент фулфилмента расходятся: %s" % len(mismatches))
+    for line in head(mismatches):
+        print("  ", line)
+    print("ошибки: %s" % len(errors))
+    for line in head(errors):
+        print("  ", line)
+    if removed:
+        print("поля: " + ", ".join("%s %s" % (name, state) for name, state in removed.items()))
+    elif apply:
+        print("поле GTIN оставлено: есть ошибки или битые номера")
+    return {
+        "planned": planned,
+        "ready": ready,
+        "leftovers": leftovers,
+        "junk": junk,
+        "mismatches": mismatches,
+        "errors": errors,
+        "removed": removed,
+    }
+
+
+def _self_check():
+    body = "0460123456789"
+    total = 0
+    for i, ch in enumerate(reversed(body)):
+        total += int(ch) * (3 if i % 2 == 0 else 1)
+    code14 = body + str((10 - (total % 10)) % 10)
+    assert gtin_ok(code14), code14
+    assert gtin_code(code14) == code14
+    code13 = code14[1:]
+    assert gtin_ok(code13), code13
+    assert gtin_code(code13) == code14
+    assert gtin_code("123") == ""
+    assert gtin_code("") == ""
+    codes = barcodes_of_many(["OZN2062192717", code13], code13)
+    assert {"code128": "OZN2062192717"} in codes
+    assert {"ean13": code13} in codes
+    assert {"gtin": code14} in codes
+    only = barcodes_of_many([code14], code14)
+    assert only == [{"gtin": code14}], only
+    assert drop_gtin_code128([{"code128": code14}, {"ean13": code13}], code14) == [{"ean13": code13}]
+    print("products_push: GTIN уходит в штрихкод, Code128 того же номера не дублируется")
+
+
+if __name__ == "__main__":
+    _self_check()

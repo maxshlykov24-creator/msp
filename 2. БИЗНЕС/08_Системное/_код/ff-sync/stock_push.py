@@ -105,16 +105,21 @@ def ms_rows(store_id):
     return rows
 
 
-def client_cards(agent_id, attr_id):
-    """Товары, у которых «Клиент фулфилмента» указывает на этого контрагента."""
-    if not attr_id or not agent_id:
-        raise Stop("нет поля «Клиент фулфилмента» или контрагента")
-    filt = "%s/entity/product/metadata/attributes/%s=%s/entity/counterparty/%s" % (
-        MS_BASE,
-        attr_id,
-        MS_BASE,
-        agent_id,
-    )
+def supplier_filter(agent_id):
+    return "supplier=" + MS_BASE + "/entity/counterparty/" + agent_id
+
+
+def _barcode_list(row):
+    codes = []
+    for bc in row.get("barcodes") or []:
+        if isinstance(bc, dict):
+            codes.extend(str(v) for v in bc.values() if v)
+        elif bc:
+            codes.append(str(bc))
+    return codes
+
+
+def _cards_by_filter(filt):
     cards = {}
     offset = 0
     while True:
@@ -131,20 +136,49 @@ def client_cards(agent_id, attr_id):
             raise Stop("товары контрагента пришли без списка")
         batch = data["rows"] or []
         for row in batch:
-            codes = []
-            for bc in row.get("barcodes") or []:
-                if isinstance(bc, dict):
-                    codes.extend(str(v) for v in bc.values() if v)
-                elif bc:
-                    codes.append(str(bc))
             cards[row.get("id")] = {
                 "article": row.get("article") or "",
                 "name": row.get("name") or "",
-                "barcodes": codes,
+                "barcodes": _barcode_list(row),
+                "supplier": product_id(row.get("supplier") or {}),
             }
         if len(batch) < 100:
             break
         offset += 100
+    return cards
+
+
+def client_cards(agent_id):
+    """Товары контрагента по полю «Поставщик».
+
+    Старое поле «Клиент фулфилмента» добавляет только карточку без поставщика,
+    чтобы уже заведённый товар не выпал из остатков. Если поставщик указан
+    и это другой контрагент, карточка остаётся у поставщика.
+    """
+    if not agent_id:
+        raise Stop("нет контрагента")
+    cards = _cards_by_filter(supplier_filter(agent_id))
+    from db import get_setting
+
+    attr_id = get_setting("ATTR_CLIENT_ID")
+    if not attr_id:
+        for card in cards.values():
+            card.pop("supplier", None)
+        return cards
+    legacy = "%s/entity/product/metadata/attributes/%s=%s/entity/counterparty/%s" % (
+        MS_BASE,
+        attr_id,
+        MS_BASE,
+        agent_id,
+    )
+    for pid, card in _cards_by_filter(legacy).items():
+        if pid in cards:
+            continue
+        if card.get("supplier") and card["supplier"] != agent_id:
+            continue
+        cards[pid] = card
+    for card in cards.values():
+        card.pop("supplier", None)
     return cards
 
 
@@ -393,9 +427,7 @@ def build(client_code, limit=3):
     store = client["ms_store_id"] or os.environ.get("MS_STORE_ID") or ""
     if not store:
         raise Stop("нет склада Фулфилмент")
-    from db import get_setting
-
-    cards = client_cards(client["ms_counterparty_id"], get_setting("ATTR_CLIENT_ID"))
+    cards = client_cards(client["ms_counterparty_id"])
     stock_rows = ms_rows(store)
     stock_by_product = {}
     for row in stock_rows:
@@ -809,6 +841,7 @@ def _self_check():
     assert physical("nan", 0) is None
     assert physical("inf", 0) is None
     assert product_id({"meta": {"href": MS_BASE + "/entity/product/abc?expand=supplier"}}) == "abc"
+    assert supplier_filter("agent") == "supplier=" + MS_BASE + "/entity/counterparty/agent"
     cards = {"a": {"article": "same", "name": "A", "barcodes": ["123", "124"]},
              "b": {"article": "same", "name": "B", "barcodes": ["456"]}}
     rows = [{"ext_key": "one", "ext_barcode": "123"}, {"ext_key": "one", "ext_barcode": "124"},

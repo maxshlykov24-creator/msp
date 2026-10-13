@@ -176,6 +176,12 @@ def cmd_list(_args):
         )
 
 
+def cmd_rehome_cards(args):
+    from products_push import rehome_card_fields
+
+    rehome_card_fields(apply=args.apply)
+
+
 def main():
     p = argparse.ArgumentParser(prog="cli.py")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -208,6 +214,10 @@ def main():
 
     l = sub.add_parser("list")
     l.set_defaults(func=cmd_list)
+
+    h = sub.add_parser("rehome-cards")
+    h.add_argument("--apply", action="store_true")
+    h.set_defaults(func=cmd_rehome_cards)
 
     args = p.parse_args()
     args.func(args)
