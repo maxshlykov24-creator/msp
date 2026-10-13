@@ -578,9 +578,14 @@ def _adopt_widget(snap: dict, doc: dict, widget: dict) -> dict:
         widget["_unsorted_uid"] = uid
     pipe = widget.get("pipeline_id")
     status = widget.get("status_id")
-    if pipe != amo_client.PIPELINE_SALES or status != amo_client.STATUS_NEW:
+    alert = (doc.get("crm") or {}).get("alert") or {}
+    picked = bool(alert.get("picked"))
+    # A delayed CRM retry must not rewind a deal already handled by staff.
+    if pipe != amo_client.PIPELINE_SALES or (not picked and status != amo_client.STATUS_NEW):
         widget = amo_client.move_lead_to_sales(
             lead_id,
+            status_id=amo_client.STATUS_IN_WORK if picked else amo_client.STATUS_NEW,
+            responsible_user_id=(alert.get("picked_amo") or widget.get("responsible_user_id")) if picked else amo_client.BOT_RESPONSIBLE,
             price=int(snap.get("price") or 0),
             fields=_fields(snap),
             unsorted_uid=str(uid or ""),

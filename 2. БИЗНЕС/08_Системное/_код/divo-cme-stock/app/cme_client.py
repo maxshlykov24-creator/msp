@@ -141,6 +141,7 @@ class CmeClient:
 
     def iter_cars(self, extra: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         collected: list[dict[str, Any]] = []
+        seen: set[str] = set()
         page = 1
         per_page = 100
         while page <= 100:
@@ -154,6 +155,10 @@ class CmeClient:
                 extra = None
             if not items:
                 break
+            ids = [str(item.get("id") or "") for item in items]
+            if any(not ident for ident in ids) or len(set(ids)) != len(ids) or seen.intersection(ids):
+                raise CmeError("pagination safety: повторяющиеся или отсутствующие ID машин")
+            seen.update(ids)
             collected.extend(items)
             total = None
             if isinstance(payload, dict):
@@ -164,8 +169,8 @@ class CmeClient:
                         break
                 except (TypeError, ValueError):
                     pass
-            if len(items) < per_page:
-                break
+            # API can cap the requested 100 rows at 50. A short page is not
+            # evidence of completion; continue until empty or reported total.
             page += 1
         if page > 100:
             raise CmeError("pagination safety: больше 100 страниц")

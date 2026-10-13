@@ -603,15 +603,27 @@ def all_unsorted() -> list[dict]:
 def autoru_bound_lead(room_id: str, customer_id: str = "", url: str = "") -> int | None:
     identities = {x for x in (room_id, customer_id) if x}
     rows = all_unsorted()
-    found = {autoru_unsorted_lead(rows, identity) for identity in identities}
-    found.discard(None)
+    item_id = listing_item_id(url)
+    found = set()
+    for row in rows:
+        meta = unsorted_meta(row)
+        if meta.get("channel") != "Авто.ру" or str(meta.get("from") or "") not in identities:
+            continue
+        lid = meta.get("lead_id")
+        if not lid:
+            continue
+        lead = get_lead(int(lid))
+        # A customer can ask about several cars; their identity alone is
+        # insufficient. Room identity is acceptable without a listing URL.
+        if (item_id and listing_item_id(lead_listing_url(lead)) == item_id
+                or not item_id and str(meta.get("from") or "") == room_id):
+            found.add(int(lid))
     if len(found) == 1:
         return next(iter(found))
     if len(found) > 1:
         return None
     # Accepted/merged deals no longer appear in Unsorted. Resolve only an
     # exact provider identity AND exact listing, never a similar car/name.
-    item_id = listing_item_id(url)
     if not item_id:
         return None
     candidates = set()

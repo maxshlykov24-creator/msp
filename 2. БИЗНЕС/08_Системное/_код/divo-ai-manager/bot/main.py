@@ -1043,7 +1043,7 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
         link = avito_match.report_link(doc)
         if link and not nudge.asked_damage(history):
             return link
-        if not link and nudge.wants_write_here(last):
+        if not link:
             return prompt.HANDOFF_MARK
     # Отказ после предложения связи по уточнению: менеджер отвечает здесь.
     waiting = any(m.get("role") == "assistant" and
@@ -1053,14 +1053,6 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     if waiting and (nudge.refuses_phone(last) or nudge.wants_write_here(last)
                     or re.search(r"не (?:хочу|буду|могу).*звон|звон\w* не (?:хочу|буду|могу)|ответ\w* (?:здесь|тут)|без звон|не согласен|^нет[.! ]*$", last, re.I)):
         return prompt.HANDOFF_MARK
-    if nudge.asked_report(history):
-        link = avito_match.report_link(doc)
-        if link and not nudge.asked_damage(history):
-            return link
-        if not link:
-            if nudge.history_has_phone(history) or nudge.refuses_phone(last) or nudge.wants_write_here(last):
-                return prompt.HANDOFF_MARK
-            return "По отчёту уточню. Напишите, пожалуйста, номер телефона для связи."
     paint_only = bool(re.fullmatch(
         r"\s*(?:здравствуйте[,.! ]*|добрый (?:день|вечер)[,.! ]*)?"
         r"(?:что по кузову|что по окрасам|есть (?:окрасы|крашеные элементы))[?!. ]*", last, re.I))

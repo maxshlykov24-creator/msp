@@ -293,6 +293,8 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
         log.warning("авто.ру чаты: %s", exc)
         now = time.time()
         health.update(retry_at=now + 60, failed_since=health.get("failed_since") or now)
+        state["health"] = health
+        save_state(state)
         if now - health.get("notified_at", 0) >= 3600:
             await channel.notify_owner("Авто.ру: входящие не читаются. Требуется проверка доступа к кабинету; новые чаты могут оставаться без ответа.")
             health["notified_at"] = now
