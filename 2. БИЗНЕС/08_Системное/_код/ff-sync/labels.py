@@ -101,7 +101,15 @@ def ozon_labels(cab, postings):
             json={"posting_number": list(chunk)},
         )
         if r.status_code == 200:
-            pdfs.append(_ozon_pdf_bytes(r))
+            blob = _ozon_pdf_bytes(r)
+            from pypdf import PdfReader
+            try:
+                count = len(PdfReader(io.BytesIO(blob)).pages)
+            except Exception as exc:
+                raise LabelError("Ozon вернул повреждённый PDF. Повтори печать.") from exc
+            if count != len(chunk):
+                raise LabelError("Ozon вернул %s этикеток для %s отправлений. Неполный комплект не скачан; обнови заказы и повтори печать." % (count, len(chunk)))
+            pdfs.append(blob)
             continue
         detail = (r.text or "")[:300]
         # «этикетки ещё не готовы» — Ozon просит подождать 45-60 секунд после сборки
@@ -111,7 +119,20 @@ def ozon_labels(cab, postings):
         if r.status_code == 429:
             notes.append("Ozon: слишком часто запрашиваем этикетки, подожди немного.")
             continue
-        notes.append("Ozon: не отдал этикетки (%s) %s" % (r.status_code, detail))
+        if r.status_code == 400:
+            from shipments_pull import pull_ozon_get
+            pending = []
+            for posting in chunk:
+                try:
+                    info = pull_ozon_get(heads, "fbs", posting, strict=True)
+                except Exception as exc:
+                    raise LabelError("Ozon не отдал этикетку %s; проверить текущий статус не удалось. Обнови заказы и повтори печать." % posting) from exc
+                if info.get("status") == "awaiting_packaging":
+                    pending.append(posting)
+            if pending:
+                notes.append("Ozon: сначала подтверди сборку кнопкой «Собрано», затем печатай в «Ожидают отгрузки». Этикетки заказов до подтверждения недоступны: %s. Для предварительной печати штрихкодов выбери «Товар»." % ", ".join(pending))
+                continue
+        notes.append("Ozon: не отдал этикетки (%s) для %s. Обнови заказы и повтори печать." % (r.status_code, ", ".join(chunk)))
     return pdfs, notes
 
 
@@ -421,8 +442,8 @@ def _fit_pages(writer, pdfs):
     for blob in pdfs:
         try:
             reader = PdfReader(io.BytesIO(blob))
-        except Exception:
-            continue
+        except Exception as exc:
+            raise LabelError("Повреждён PDF этикеток площадки. Повтори печать.") from exc
         for page in reader.pages:
             box = page.mediabox
             pw = float(box.width) or target_w
@@ -479,10 +500,11 @@ def build(rows, mode=MODE_POSTING, fetch=True):
         for cab_id, group in by_cab.items():
             cab = group[0]["cabinet"]
             if not cab:
-                notes.append("Нет доступа к кабинету %s, этикетки не запрошены." % cab_id)
-                continue
+                raise LabelError("Нет доступа к кабинету %s. Комплект этикеток не скачан." % cab_id)
             if cab["marketplace"] == "ozon":
                 pdfs, more = ozon_labels(cab, list(dict.fromkeys(r["ext_id"] for r in group)))
+                if more:
+                    raise LabelError("Комплект этикеток не скачан. " + "; ".join(more))
                 platform_pdfs.extend(pdfs)
                 notes.extend(more)
             elif cab["marketplace"] == "wb":

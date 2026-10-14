@@ -2131,7 +2131,8 @@ async function asmDone() {
     if (res.marked) bits.push("отмечено складом: " + res.marked);
     const notes = (res.notes || []).join("\n");
     say($("aMsg"), (bits.join(" · ") || "Готово") + (notes ? "\n" + notes : ""), notes ? "" : "ok");
-    state.asmGroup = "ready";
+    // При отказе Ozon оставляем не собранные задания перед глазами.
+    if (!notes && (res.shipped || res.marked)) state.asmGroup = "ready";
     await loadAsm();
   } catch (e) {
     say($("aMsg"), e.message, "bad");

@@ -1211,3 +1211,37 @@ with patch.object(orders_pull,'req',side_effect=[page1,page1]):
     except RuntimeError:
         pass
 print('Ozon: состав 2×2, поиск, московское время, печать, отчёты, КиЗ по SKU, обновление состава и защита частичной записи проверены')
+
+# Ozon: режим «Заказ + товар» не должен выдавать товарные этикетки без заказа.
+def ozon_pdf(pages):
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=58 * labels.MM, height=40 * labels.MM)
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+label_rows = supply_flow._label_payload([db.get_shipments_by_ids([mid])[0]])
+with patch.object(labels, 'req', return_value=Fake(400, {'message':'INVALID_ARGUMENT'})), \
+     patch.object(shipments_pull, 'pull_ozon_get', return_value={'status':'awaiting_packaging'}):
+    for mode in (labels.MODE_BOTH, labels.MODE_POSTING):
+        try:
+            labels.build(label_rows, mode)
+            raise AssertionError('incomplete label set downloaded')
+        except labels.LabelError as exc:
+            assert 'Собрано' in str(exc)
+    _, _, pages = labels.build(label_rows, labels.MODE_PRODUCT)
+    assert pages == 4
+with patch.object(labels, 'req', return_value=Fake(200, raw=ozon_pdf(1))) as call:
+    _, _, pages = labels.build(label_rows, labels.MODE_BOTH)
+    assert pages == 5  # Один заказ и 2+2 товарных этикетки, без дубля заказа.
+    assert len(call.call_args.kwargs['json']['posting_number']) == 1
+for response in (Fake(429), Fake(200, raw=ozon_pdf(0)), Fake(200, raw=b'%PDF-broken')):
+    with patch.object(labels, 'req', return_value=response):
+        try:
+            labels.build(label_rows, labels.MODE_BOTH)
+            raise AssertionError('missing/corrupt label accepted')
+        except labels.LabelError:
+            pass
+print('Ozon printing: complete 1+4 labels, product-only, pending assembly, throttling and corrupt PDFs checked')
