@@ -13,7 +13,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from account import lot_rows, totals
+from account import lot_rows, totals, group_rows
 from db import catalog_card, find_cache, get_shipments_by_ids, list_shipment_marks, prefer_hit, status_label, expand_shipment_items
 from ms import order_app_url
 
@@ -59,7 +59,7 @@ def render_invoice_document(data, profile):
     """Исходный файл пользователя: сохраняем стили, таблицу, ширины и оформление."""
     inv = data["invoice"]
     cent = lambda x: Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    positions = data["positions"]
+    positions = group_rows(data["positions"])
     for service, total in (("storage", inv["storage"]), ("pick", inv["pick"]), ("intake", inv["intake"])):
         if sum((cent(p.get(service)) for p in positions), Decimal(0)) != cent(total):
             raise ValueError("суммы позиций не совпали с итогом счёта")
@@ -69,9 +69,17 @@ def render_invoice_document(data, profile):
     for p in positions:
         if cent(p.get("pick")):
             qty, rate = p.get("pick_qty"), p.get("pick_rate")
+            label = " ".join(str(p.get(k) or "") for k in ("article", "name")).strip()
+            if p.get("mixed_pick_rates"):
+                rates = p.get("pick_rates", [])
+                if qty is None or not rates or any(r["rate"] is None or cent(round(r["qty"]*r["rate"],2)) != cent(r["sum"]) for r in rates) or sum((cent(r["sum"]) for r in rates),Decimal(0)) != cent(p["pick"]):
+                    raise ValueError("не сохранена расшифровка ставок обработки")
+                label += "; сборка: " + ", ".join("%g шт × %g ₽" % (r["qty"],r["rate"]) for r in rates)
+                items.append((label,"По ставкам",qty,p["pick"]))
+                continue
             if qty is None or rate is None or cent(round(float(qty) * float(rate), 2)) != cent(p["pick"]):
                 raise ValueError("в счёте нет сохранённых количества и ставки обработки")
-            items.append((" ".join(str(p.get(k) or "") for k in ("article", "name")).strip(), rate, qty, p["pick"]))
+            items.append((label, rate, qty, p["pick"]))
     if cent(inv["intake"]):
         items.append(("Приёмка товара", inv["intake"], 1, inv["intake"]))
     # Одна пустая строка сохраняет вид таблицы у счёта только за хранение.
@@ -147,7 +155,7 @@ COLUMNS = [
     ("Ставка хранения, ₽/л/сутки", "rate", 22),
     ("Сборка, ₽/шт", "pick_rate", 13),
     ("Принято, шт", "qty_in", 12),
-    ("Отгружено, шт", "shipped", 13),
+    ("Выбыло из приёмок, шт", "shipped", 20),
     ("Остаток, шт", "qty", 12),
     ("Объём, л", "volume", 11),
     ("Заведено", "received", 12),
@@ -156,7 +164,7 @@ COLUMNS = [
     ("Дней к оплате", "bill_days", 14),
     ("Литро-суток", "liter_days", 13),
     ("К выставлению, ₽", "total", 17),
-    ("Собрано, шт", "pick_qty", 14),
+    ("Отгружено к оплате, шт", "pick_qty", 20),
     ("Документ", "source_document", 28),
     ("Требует заполнения", "billing_note", 34),
 ]
@@ -177,7 +185,7 @@ def excel_text(raw):
 
 
 def build(client_id=None, query="", marked=None, date_to=None):
-    rows = lot_rows(client_id=client_id, query=query, marked=marked, date_to=date_to)
+    rows = group_rows(lot_rows(client_id=client_id, query=query, marked=marked, date_to=date_to))
     sums = totals(rows)
     wb = Workbook()
     ws = wb.active
@@ -575,10 +583,10 @@ CLIENT_STOCK_COLUMNS = [
     ("Литраж, л", 11),
     ("Остаток, шт", 12),
     ("Объём, л", 11),
-    ("Дата документа", 16),
+    ("Даты документов", 24),
     ("Дней на складе", 14),
     ("Начислено с", 12), ("Начислено по", 12),
-    ("Хранение, ₽", 15), ("Собрано, шт", 13), ("Сборка, ₽", 15), ("К выставлению, ₽", 18), ("Документ", 28),
+    ("Хранение, ₽", 15), ("Отгружено к оплате, шт", 20), ("Сборка, ₽", 15), ("К выставлению, ₽", 18), ("Документы", 36),
 ]
 
 
@@ -596,6 +604,7 @@ def build_client_stock(ids, date_to=None):
     if len({r["client_id"] for r in rows}) != 1:
         raise ValueError("в отчёте для клиента должны быть позиции одного контрагента")
     rows.sort(key=lambda r: order.get(r["id"], 0))
+    rows = group_rows(rows)
     wb, ws = _new_sheet("Остаток", CLIENT_STOCK_COLUMNS)
     qty = 0
     volume = 0

@@ -269,7 +269,7 @@ table.stock-tbl th{letter-spacing:.04em;padding:7px 5px}
 #view-stock .stock-wrap::-webkit-scrollbar{width:12px;height:12px}
 #view-stock .stock-wrap::-webkit-scrollbar-track{background:var(--line)}
 #view-stock .stock-wrap::-webkit-scrollbar-thumb{background:var(--mute-2);border:3px solid var(--tbl-sticky);border-radius:12px}
-#sTbl{table-layout:fixed;width:max(100%,1700px);min-width:1700px;border-collapse:separate;border-spacing:0}
+#sTbl{table-layout:fixed;width:max(100%,1560px);min-width:1560px;border-collapse:separate;border-spacing:0}
 #sTbl th{font-size:10.5px;letter-spacing:.03em;white-space:normal;overflow-wrap:normal;line-height:1.4}
 #sTbl th,#sTbl td{text-align:center;vertical-align:middle;padding:9px 8px;border-right:1px solid var(--line)}
 #sTbl th:nth-child(-n+4),#sTbl td.pick,#sTbl td.client,#sTbl td.codes,#sTbl td.name{text-align:left}
@@ -681,5 +681,10 @@ table.asm-tbl td.num .kiz-link.is-on{border-color:transparent;background:rgba(0,
 .stock-edit:hover,.stock-edit:focus-visible{color:#2563eb;text-decoration-color:currentColor}
 .stock-edit span{opacity:.45;font-size:.85em}
 .stock-edit.missing{color:#a16207;background:rgba(234,179,8,.09);border-radius:5px;padding:3px 7px}
+.stock-docs{font:inherit;font-size:11px;color:var(--mute-2);background:none;border:0;padding:5px 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+#sTbl .stock-detail-row>td{position:static;text-align:left;white-space:normal;border-right:0;padding:14px 18px;background:var(--tbl-sticky);left:auto;right:auto}
+.stock-detail-note{font-size:12px;color:var(--mute-2);margin-bottom:10px}
+#sTbl .ledger-detail-table{width:100%;table-layout:auto;min-width:0}
+#sTbl .ledger-detail-table :is(th,td){position:static;left:auto;right:auto;text-align:left;white-space:normal;padding:7px;font-size:12px;border-left:0}
 #pForm .fld{margin-top:16px}
 #pForm .muted{font-size:13px;line-height:1.5}

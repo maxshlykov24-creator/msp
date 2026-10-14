@@ -1072,18 +1072,22 @@ new ResizeObserver(() => {
 }).observe($("appDock"));
 
 let lotsLoad = 0;
+let invoicePreviewLoad = 0;
 async function loadLots() {
   const mine = ++lotsLoad;
+  ++invoicePreviewLoad;
+  state.invoiceRequest = null;
+  $("modal").classList.remove("on");
   state.picked.clear();
   state.lots = [];
   refreshPick();
-  $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="15" class="empty">Загружаю…</td></tr>`;
+  $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="13" class="empty">Загружаю…</td></tr>`;
   let res;
   try { res = await api("/api/lots?" + stockQuery()); }
   catch (e) {
     if (mine === lotsLoad) {
       say($("sMsg"), e.message, "bad");
-      $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="15" class="empty">Расчёт не получен. Проверь дату и повтори.</td></tr>`;
+      $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="13" class="empty">Расчёт не получен. Проверь дату и повтори.</td></tr>`;
       ["kPos","kQty","kVol","kLiterDays","kMoney"].forEach((id) => $(id).textContent = "—");
     }
     return;
@@ -1091,7 +1095,7 @@ async function loadLots() {
   if (mine !== lotsLoad) return;
   state.lots = res.rows;
   renderLedgerSync(res);
-  if (res.sync_error) say($("sMsg"), "Обновление учёта не завершено: " + res.sync_error, "bad");
+  say($("sMsg"), res.sync_error ? "Обновление учёта не завершено: " + res.sync_error : "", res.sync_error ? "bad" : "");
   state.picked.clear();
   $("kPos").textContent = num(res.totals.positions, 0);
   $("kQty").textContent = num(res.totals.qty, 0);
@@ -1102,21 +1106,23 @@ async function loadLots() {
   $("kAged").textContent = res.totals.aged ? res.totals.aged + " позиций лежат больше 90 дней" : "";
   const body = $("sTbl").querySelector("tbody");
   if (!res.rows.length) {
-    body.innerHTML = `<tr><td colspan="15" class="empty">Ничего не нашлось.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="13" class="empty">Ничего не нашлось.</td></tr>`;
   } else {
-    body.innerHTML = res.rows.map((r) => `<tr>
+    body.innerHTML = res.rows.map((r) => {
+      const edit = r.edit_lot_id ? `data-product-lot="${r.edit_lot_id}"` : `data-ledger-details="${r.id}"`;
+      const barcodes = r.barcodes || [r.barcode];
+      return `<tr data-stock-row="${r.id}">
       <td class="pick"><input type="checkbox" data-lot="${r.id}"></td>
       <td class="client">${esc(r.client)}</td>
-      <td class="codes"><b>${esc(r.article)}</b><span>ШК ${esc(r.barcode)}</span><span>GTIN ${esc(r.gtin)}</span></td>
-      <td class="name"><button type="button" class="stock-edit" data-product-lot="${r.id}" title="Изменить литраж и стоимость сборки">${esc(r.name)} <span aria-hidden="true">✎</span></button>${r.source_document ? `<br><span class="muted">${esc(r.source_document)}${r.kind === "assembly" ? " · сборка" : " · хранение"}</span>` : ""}</td>
-      <td class="num"><button type="button" class="stock-edit${r.liters > 0 ? "" : " missing"}" data-product-lot="${r.id}" data-focus="liters" title="Изменить литраж">${r.liters > 0 ? num(r.liters, 3) : "Указать"}</button></td><td class="num"><button type="button" class="stock-edit${r.pick_rate_known ? "" : " missing"}" data-product-lot="${r.id}" data-focus="pick_rate" title="Изменить стоимость сборки">${r.pick_rate_known ? num(r.pick_rate) : "Указать"}</button></td>
-      <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.shipped, 0)}</td><td class="num">${num(r.pick_qty, 0)}</td>
+      <td class="codes"><b>${esc(r.article)}</b><span title="${esc(r.barcode)}">ШК ${esc(barcodes[0] || "")}${barcodes.length > 1 ? ` · ещё ${barcodes.length - 1}` : ""}</span>${r.gtin ? `<span>GTIN ${esc(r.gtin)}</span>` : ""}</td>
+      <td class="name"><button type="button" class="stock-edit" ${edit} title="${r.edit_lot_id ? "Изменить литраж и стоимость сборки" : "Выбрать карточку в документах"}">${esc(r.name)} <span aria-hidden="true">✎</span></button><br><button type="button" class="stock-docs" data-ledger-details="${r.id}" aria-expanded="false">Документы (${(r.details || []).length})</button></td>
+      <td class="num"><button type="button" class="stock-edit${!r.mixed_liters && !(r.liters > 0) ? " missing" : ""}" ${edit} data-focus="liters" title="Изменить литраж">${r.mixed_liters ? "Разный" : r.liters > 0 ? num(r.liters, 3) : "Указать"}</button></td><td class="num"><button type="button" class="stock-edit${r.pick_rate_known ? "" : " missing"}" ${edit} data-focus="pick_rate" title="Изменить стоимость сборки">${r.mixed_pick_rates ? "Разные ставки" : r.pick_rate_known ? num(r.pick_rate) : "Указать"}</button></td>
+      <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.pick_qty, 0)}</td>
       <td class="num">${num(r.qty, 0)}</td>
-      <td title="${esc(r.source_document || "")}">${r.accepted ? (r.kind === "assembly" ? "Отгр. " : "") + esc(r.accepted) : `<span class="badge warn" title="Счётчик пойдёт после приёмки на склад «Фулфилмент»"><i></i>ждёт приёмки</span>`}</td><td class="num ${r.days > 90 ? "aged" : ""}">${r.days}</td>
-      <td class="num" title="${esc(r.bill_from)} — ${esc(r.bill_to)}">${r.bill_days}</td>
-      <td class="num">${num(r.liter_days, 1)}</td>
+      <td class="num ${r.days > 90 ? "aged" : ""}">${r.days_min !== r.days ? `${r.days_min}–${r.days}` : r.days}</td>
+      <td class="num" title="${esc(r.bill_from)} — ${esc(r.bill_to)}">${num(r.storage)}</td><td class="num">${num(r.pick)}</td>
       <td class="num money" title="${esc((r.billing_errors || []).join("; "))}">${(r.billing_errors || []).length ? "нужны данные" : num(r.total)}</td>
-    </tr>`).join("");
+    </tr>`; }).join("");
   }
   $("sAll").checked = false;
   refreshPick();
@@ -1125,6 +1131,21 @@ async function loadLots() {
 function stockChoice() {
   const picked = state.lots.filter((r) => state.picked.has(r.id));
   return picked.length ? picked : state.lots.slice();
+}
+
+function stockLotIds() {
+  return [...new Set(stockChoice().flatMap((r) => r.lot_ids || [r.id]))];
+}
+
+function toggleLedgerDetails(id) {
+  const row = state.lots.find((r) => r.id === id);
+  if (!row) return;
+  const main = $("sTbl").querySelector(`tr[data-stock-row="${id}"]`);
+  const existing = $("sTbl").querySelector(`tr[data-stock-details="${id}"]`);
+  main.querySelectorAll("[data-ledger-details]").forEach((b) => b.setAttribute("aria-expanded", String(!existing)));
+  if (existing) { existing.remove(); return; }
+  const html = `<tr class="stock-detail-row" data-stock-details="${id}"><td colspan="13"><div class="stock-detail-note">Хранение начисляется владельцу Приёмки. Сборка — владельцу Отгрузки. Ниже исходные документы этого артикула.</div><table class="ledger-detail-table"><thead><tr><th>Документ</th><th>Дата</th><th>Принято, шт</th><th>Выбыло из партии, шт</th><th>Отгружено к оплате, шт</th><th>Дни к оплате</th><th>Хранение, ₽</th><th>Сборка, ₽</th><th>Карточка товара</th></tr></thead><tbody>${(row.details || []).map((r) => `<tr><td>${esc(r.source_document)}</td><td>${esc(r.accepted || r.received)}</td><td>${num(r.qty_in,0)}</td><td>${r.kind === "assembly" ? "—" : num(r.shipped,0)}</td><td>${r.kind === "receipt" ? "—" : num(r.pick_qty,0)}</td><td>${r.bill_days}</td><td>${num(r.storage)}</td><td>${num(r.pick)}</td><td><button type="button" class="stock-edit" data-product-lot="${r.id}">Литраж и сборка</button></td></tr>`).join("")}</tbody></table></td></tr>`;
+  main.insertAdjacentHTML("afterend", html);
 }
 
 function refreshPick() {
@@ -1136,14 +1157,19 @@ function refreshPick() {
     : explicit
       ? `Выбрано ${selected.length} позиций на ${num(sum)} ₽`
       : `Все позиции, ${selected.length} на ${num(sum)} ₽`;
-  const ready = selected.length > 0;
-  $("sBill").disabled = !ready;
+  const oneClient = new Set(selected.map((r) => r.client_id)).size === 1;
+  const incomplete = selected.some((r) => (r.billing_errors || []).length);
+  const ready = selected.length > 0 && oneClient && !incomplete;
+  $("sBill").disabled = !ready || sum <= 0;
+  $("sBill").title = !oneClient ? "Выбери одного контрагента" : incomplete ? "Заполни литраж и стоимость сборки выделенных товаров" : sum <= 0 ? "По выбранным товарам всё уже выставлено" : "";
   $("sReport").disabled = !ready;
 }
 
 $("sTbl").onclick = (e) => {
   const edit = e.target.closest("button[data-product-lot]");
   if (edit) { openStockProduct(Number(edit.dataset.productLot), edit.dataset.focus); return; }
+  const details = e.target.closest("button[data-ledger-details]");
+  if (details) { toggleLedgerDetails(Number(details.dataset.ledgerDetails)); return; }
   const box = e.target.closest("input[data-lot]");
   if (!box) return;
   const id = Number(box.dataset.lot);
@@ -1224,9 +1250,9 @@ $("sAccept").onclick = async () => {
   try {
     const res = await api("/api/lots/accept", { method: "POST" });
     if (!res.ok) { say($("sMsg"), res.msg, "bad"); return; }
-    say($("sMsg"), `Обновлено: ${res.products} товаров, ${res.receipts} приёмок, ${res.demands} отгрузок.`, "ok");
     await loadClients();
     await loadLots();
+    say($("sMsg"), `Обновлено: ${res.products} товаров, ${res.receipts} приёмок, ${res.demands} отгрузок.`, "ok");
   } catch (e) {
     say($("sMsg"), e.message, "bad");
   } finally {
@@ -1295,7 +1321,7 @@ $("sBills").onclick = () => openBills();
 $("sReport").onclick = async () => {
   $("sReport").disabled = true;
   try {
-    await downloadXlsx("/api/lots/report.xlsx", stockChoice().map((r) => r.id), "остаток.xlsx", "Отчёт для клиента скачан.", $("sMsg"), { date_to: $("sTo").value });
+    await downloadXlsx("/api/lots/report.xlsx", stockLotIds(), "остаток.xlsx", "Отчёт для клиента скачан.", $("sMsg"), { date_to: $("sTo").value });
   } catch (e) {
     say($("sMsg"), e.message, "bad");
   }
@@ -1310,12 +1336,16 @@ function ruDay(iso) {
 }
 
 $("sBill").onclick = async () => {
+  const mine = ++invoicePreviewLoad;
+  $("sBill").disabled = true;
   try {
-    state.invoiceRequest = { lot_ids: stockChoice().map((r) => r.id), date_to: $("sTo").value };
+    const request = { lot_ids: stockLotIds(), date_to: $("sTo").value };
     const res = await api("/api/invoice/preview", {
       method: "POST",
-      body: JSON.stringify(state.invoiceRequest),
+      body: JSON.stringify(request),
     });
+    if (mine !== invoicePreviewLoad) return;
+    state.invoiceRequest = request;
     $("mTitle").textContent = "Счёт: " + res.client;
     $("mPeriod").textContent = "Услуги за " + ruDay(res.period_from) + " — " + ruDay(res.period_to) + " · литро-суток " + num(res.liter_days, 1);
     $("mLines").innerHTML = res.lines.map((l) => `<div class="inv-line"><span>${esc(l.name)}</span><b>${num(l.sum)} ₽</b></div>`).join("");
@@ -1324,6 +1354,7 @@ $("sBill").onclick = async () => {
     $("mOk").disabled = res.total <= 0;
     $("modal").classList.add("on");
   } catch (e) {
+    if (mine !== invoicePreviewLoad) return;
     say($("mMsg"), e.message, "bad");
     $("mPeriod").textContent = "";
     $("mLines").innerHTML = "";
@@ -1331,10 +1362,12 @@ $("sBill").onclick = async () => {
     $("mOk").disabled = true;
     $("modal").classList.add("on");
   }
+  finally { if (mine === invoicePreviewLoad) refreshPick(); }
 };
 
 $("mCancel").onclick = () => $("modal").classList.remove("on");
 $("mOk").onclick = async () => {
+  if (!state.invoiceRequest) return;
   $("mOk").disabled = true;
   let created = null;
   try {

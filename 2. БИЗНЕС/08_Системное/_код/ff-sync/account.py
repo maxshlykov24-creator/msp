@@ -294,11 +294,90 @@ def totals(rows):
         "incomplete": sum(bool(r.get("billing_errors")) for r in rows),
         "positions": len(rows),
         "qty": round(sum(r["qty"] for r in rows), 3),
-        "volume": (None if any(r["qty"] > 0 and not r["liters"] for r in rows) else round(sum(r["volume"] for r in rows), 2)),
+        "volume": (None if any(r["qty"] > 0 and not r.get("volume_known", bool(r["liters"])) for r in rows) else round(sum(r["volume"] for r in rows), 2)),
         "liter_days": round(sum(r["liter_days"] for r in rows), 2),
         "money": round(sum(r["total"] for r in rows), 2),
         "aged": sum(1 for r in rows if r["days"] > 90),
     }
+
+
+def group_rows(rows):
+    """Одна строка артикула у клиента; исходные партии остаются для FIFO и закрытия счёта."""
+    from collections import OrderedDict
+    grouped = OrderedDict()
+    for raw in [leaf for r in rows for leaf in (dict(r).get("details") or [r])]:
+        row = dict(raw)
+        article = str(row.get("article") or "").strip()
+        key = (row.get("client_id"), article or ("product:" + str(row.get("ms_product_id") or row.get("id"))))
+        grouped.setdefault(key, []).append(row)
+    result = []
+    money_fields = ("storage", "intake", "pick", "ship", "total")
+    quantity_fields = ("qty", "qty_in", "shipped", "pick_qty", "volume", "liter_days")
+    for members in grouped.values():
+        row = dict(members[0])
+        row["details"] = members
+        row["lot_ids"] = list(dict.fromkeys(x["id"] for x in members if x.get("id") is not None))
+        if row["lot_ids"]:
+            row["id"] = min(row["lot_ids"])
+        row["product_ids"] = list(dict.fromkeys(x.get("ms_product_id") for x in members if x.get("ms_product_id")))
+        row["edit_lot_id"] = row.get("id") if len(row["product_ids"]) <= 1 else None
+        for field in money_fields + quantity_fields:
+            # A missing historical assembly quantity stays unknown, rather than becoming zero.
+            if field == "pick_qty" and any(x.get("pick") and x.get(field) is None for x in members):
+                row[field] = None
+            else:
+                row[field] = round(sum(float(x.get(field) or 0) for x in members), 2 if field in money_fields else 3)
+        row["billing_errors"] = list(dict.fromkeys(e for x in members for e in x.get("billing_errors", [])))
+        row["volume_known"] = all(x.get("liters", 0) and x["liters"] > 0 for x in members if x.get("qty", 0) > 0)
+        for field, mixed in (("liters", "mixed_liters"), ("pick_rate", "mixed_pick_rates")):
+            values = {x.get(field) for x in members}
+            row[mixed] = len(values) > 1
+            row[field] = next(iter(values)) if len(values) == 1 else None
+        row["pick_rate_known"] = all(x.get("pick_rate_known", x.get("pick_rate") is not None) for x in members)
+        rates = OrderedDict()
+        for x in members:
+            if not x.get("pick"):
+                continue
+            rate = x.get("pick_rate")
+            values = rates.setdefault(rate, {"rate": rate, "qty": 0.0, "sum": 0.0})
+            values["qty"] += float(x.get("pick_qty") or 0)
+            values["sum"] = round(values["sum"] + float(x["pick"]), 2)
+        row["pick_rates"] = list(rates.values())
+        # The assembly unit price belongs to charged movements, not to unrelated receipt rows.
+        if len(rates) == 1:
+            row["pick_rate"] = next(iter(rates))
+            row["mixed_pick_rates"] = False
+        row["barcodes"] = list(dict.fromkeys(x.get("barcode") for x in members if x.get("barcode")))
+        row["gtins"] = list(dict.fromkeys(x.get("gtin") for x in members if x.get("gtin")))
+        row["barcode"] = ", ".join(row["barcodes"])
+        row["gtin"] = ", ".join(row["gtins"])
+        row["names"] = list(dict.fromkeys(x.get("name") for x in members if x.get("name")))
+        row["name"] = "; ".join(row["names"])
+        row["documents"] = list(dict.fromkeys(x.get("source_document") for x in members if x.get("source_document")))
+        row["source_document"] = "\n".join(row["documents"])
+        for field in ("accepted", "received"):
+            dates = sorted({x[field] for x in members if x.get(field)})
+            row[field] = (dates[0] if len(dates) == 1 else " — ".join((dates[0], dates[-1]))) if dates else ""
+        receipt_days = [int(x.get("days") or 0) for x in members if x.get("kind") != "assembly"]
+        row["days_min"] = min(receipt_days, default=0)
+        row["days"] = max(receipt_days, default=0)
+        charged_days = set()
+        for x in members:
+            if x.get("kind") == "assembly" or not (x.get("bill_days") or x.get("storage")):
+                continue
+            start = as_day(x.get("bill_from") or x.get("period_from"))
+            end = as_day(x.get("bill_to") or x.get("period_to"))
+            if start and end:
+                charged_days.update((start + timedelta(days=n)).isoformat() for n in range(max(0, (end-start).days+1)))
+        row["bill_days"] = len(charged_days)
+        for start_key, end_key in (("bill_from", "bill_to"), ("period_from", "period_to")):
+            starts = [x[start_key] for x in members if x.get(start_key)]
+            stops = [x[end_key] for x in members if x.get(end_key)]
+            row[start_key] = min(starts, default="")
+            row[end_key] = max(stops, default="")
+        row["snapshot"] = all(x.get("snapshot", True) for x in members)
+        result.append(row)
+    return result
 
 
 def _calendar(client_id=None, query="", date_from=None, date_to=None):

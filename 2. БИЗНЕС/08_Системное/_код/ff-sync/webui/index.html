@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БЕРЕЗА ГРУПП — кабинет склада</title>
-<link rel="stylesheet" href="/ui/app.css?v=114">
+<link rel="stylesheet" href="/ui/app.css?v=115">
 </head>
 <body>
 
@@ -354,7 +354,7 @@
     </div>
 
     <div class="kpi-grid k5">
-      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Позиций</div><div class="kpi-val" id="kPos">—</div></div>
+      <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Товаров</div><div class="kpi-val" id="kPos">—</div></div>
       <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Штук на складе</div><div class="kpi-val" id="kQty">—</div></div>
       <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Объём</div><div class="kpi-val" id="kVol">— <small>л</small></div></div>
       <div class="kpi glass tilt"><div class="glow"></div><div class="kpi-label">Литро-суток</div><div class="kpi-val" id="kLiterDays">—</div><div class="kpi-sub">с прошлого счёта</div></div>
@@ -368,16 +368,15 @@
       </div>
       <div class="tbl-wrap stock-wrap" id="sTableScroll" tabindex="0" role="region" aria-label="Позиции учёта. Таблица прокручивается по горизонтали и вертикали">
         <table class="tbl stock-tbl" id="sTbl">
-          <colgroup><col style="width:40px"><col style="width:150px"><col style="width:175px"><col style="width:300px"><col style="width:85px"><col style="width:100px"><col style="width:85px"><col style="width:95px"><col style="width:85px"><col style="width:85px"><col style="width:115px"><col style="width:95px"><col style="width:90px"><col style="width:95px"><col style="width:105px"></colgroup>
+          <colgroup><col style="width:40px"><col style="width:150px"><col style="width:175px"><col style="width:300px"><col style="width:85px"><col style="width:100px"><col style="width:85px"><col style="width:125px"><col style="width:85px"><col style="width:100px"><col style="width:105px"><col style="width:105px"><col style="width:105px"></colgroup>
           <thead><tr>
             <th class="pick"><input type="checkbox" id="sAll"></th>
             <th>Контрагент</th><th>Коды</th><th>Наименование</th>
             <th class="num">Литраж, л</th><th class="num">Сборка, ₽/шт</th>
-            <th class="num">Принято, шт</th><th class="num">Отгружено, шт</th><th class="num">Собрано, шт</th>
+            <th class="num" title="Количество в приёмках показанного товара">Принято, шт</th><th class="num" title="Количество в Отгрузках этого клиента, ещё не включённое в счёт, по выбранную дату">Отгружено к оплате, шт</th>
             <th class="num">Остаток, шт</th>
-            <th title="Хранение начинается на следующий день после приёмки; у сборки указана дата отгрузки">Дата документа</th>
-            <th class="num">Дней на складе</th>
-            <th class="num">Дней к оплате</th><th class="num">Литро-сутки</th>
+            <th class="num" title="Возраст партий; если приёмок несколько, показан диапазон">Дней на складе</th>
+            <th class="num">Хранение, ₽</th><th class="num">Сборка, ₽</th>
             <th class="num">Итого, ₽</th>
           </tr></thead>
           <tbody></tbody>
@@ -798,6 +797,6 @@
   </div>
 </div>
 
-<script src="/ui/app.js?v=128"></script>
+<script src="/ui/app.js?v=129"></script>
 </body>
 </html>

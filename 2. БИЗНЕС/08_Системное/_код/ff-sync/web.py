@@ -541,14 +541,14 @@ def marked_flag(raw):
 def lots(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
-    from account import lot_rows, totals
+    from account import lot_rows, totals, group_rows
 
-    rows = lot_rows(
+    rows = group_rows(lot_rows(
         client_id=client_id or None,
         query=q,
         marked=marked_flag(marked),
         date_to=checked_day(date_to),
-    )
+    ))
     from db import get_setting
     return {"rows": rows, "totals": totals(rows), "last_sync": get_setting("ledger:last_success") or "", "sync_error": get_setting("ledger:last_error") or ""}
 

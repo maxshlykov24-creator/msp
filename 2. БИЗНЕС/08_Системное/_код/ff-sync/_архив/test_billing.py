@@ -379,7 +379,43 @@ with patch('export_xlsx.render_invoice_document',side_effect=ValueError('шаб�
         assert 'шаблон недоступен' in str(exc)
 assert len(db.list_invoices()) == before_count
 assert db.get_lot(lot_id)['billed_until'] == '2026-09-06'
-print('счёт по шаблону: суммы, стили, 0/1/18/31 строка, реквизиты и повторы — OK')
+# Объединение артикулов меняет представление, сохраняя все исходные партии и ставки.
+base = {'client_id': 1, 'article': 'ONE', 'name': 'Товар', 'ms_product_id': 'P',
+        'liters': 2, 'pick_rate': 34, 'qty': 0, 'qty_in': 0, 'storage': 0,
+        'pick': 0, 'pick_qty': 0, 'total': 0, 'billing_errors': []}
+raw_rows = [
+    {**base, 'id': 101, 'kind': 'receipt', 'qty_in': 10, 'qty': 5, 'storage': 8.25,
+     'total': 8.25, 'bill_days': 7, 'bill_from': '2026-10-05', 'bill_to': '2026-10-11'},
+    {**base, 'id': 102, 'kind': 'assembly', 'pick_qty': 2, 'pick': 68, 'total': 68},
+    {**base, 'id': 103, 'kind': 'assembly', 'pick_qty': 3, 'pick': 102, 'total': 102},
+]
+grouped = account.group_rows(raw_rows)
+assert len(grouped) == 1 and grouped[0]['lot_ids'] == [101, 102, 103]
+assert grouped[0]['pick_qty'] == 5 and grouped[0]['total'] == 178.25
+assert grouped[0]['bill_days'] == 7
+assert account.group_rows(grouped) == grouped
+assert len(account.group_rows(raw_rows + [{**base, 'id': 104, 'client_id': 2}])) == 2
+assert account.group_rows(raw_rows + [{**base, 'id': 105, 'billing_errors': ['не заполнен литраж']}])[0]['billing_errors']
+group_data = {'invoice': {'storage': 8.25, 'pick': 170, 'intake': 0, 'total': 178.25,
+                          'period_from': '2026-10-05', 'period_to': '2026-10-11'}, 'positions': raw_rows}
+_, raw = render_invoice_document(group_data, frozen_profile)
+ws = load_workbook(io.BytesIO(raw)).active
+assert [ws.cell(9,c).value for c in range(2,6)] == ['ONE Товар', 34, 5, 170]
+assert sum(str(cell.value or '').startswith('ONE ') for row in ws for cell in row) == 1
+# Разные реальные ставки сохраняются в одной строке без выдуманной средней цены.
+raw_rows[2].update(pick_rate=35, pick=105, total=105)
+group_data['invoice'].update(pick=173, total=181.25)
+_, raw = render_invoice_document(group_data, frozen_profile)
+ws = load_workbook(io.BytesIO(raw)).active
+assert [ws.cell(9,c).value for c in range(3,6)] == ['По ставкам', 5, 173]
+assert '2 шт × 34 ₽' in ws['B9'].value and '3 шт × 35 ₽' in ws['B9'].value
+raw_rows[2]['pick_qty'] = None
+try:
+    render_invoice_document(group_data, frozen_profile)
+    raise AssertionError('неизвестное количество нельзя заменять нулём')
+except ValueError:
+    pass
+print('счёт по шаблону: суммы, стили, объединение артикулов, разные ставки, реквизиты и повторы — OK')
 
 # Добавление контрагента: дубли всего аккаунта, секреты, ошибка ключа и повтор.
 import copy

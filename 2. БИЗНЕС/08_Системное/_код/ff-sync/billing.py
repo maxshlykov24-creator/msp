@@ -8,7 +8,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from account import accepted_day, as_day, calculation_end, money, row_of, today
+from account import accepted_day, as_day, calculation_end, money, row_of, today, group_rows
 from db import (
     get_setting,
     set_setting,
@@ -100,10 +100,10 @@ def _preview(lot_ids, date_to=""):
         "liter_days": round(sum(c["liter_days"] for _l, c in detail), 2),
         "pick_qty": round(sum(c["pick_qty"] for _l, c in detail), 3),
         "total": parts["total"],
-        "positions": [
+        "positions": group_rows([
             row_of(lot, client=client, ship_days=moves.get(lot["id"], {}), date_to=end)
             for lot, _calc in detail
-        ],
+        ]),
     }
 
 
@@ -116,7 +116,7 @@ def description(detail, start, stop):
     return "Фулфилмент %s — %s: позиций %s, литро-суток %s, собрано %s шт" % (
         ru_day(start),
         ru_day(stop),
-        len(detail),
+        len(group_rows([c for _l, c in detail])),
         round(sum(c["liter_days"] for _l, c in detail), 2),
         round(sum(c["pick_qty"] for _l, c in detail), 3),
     )
@@ -232,7 +232,7 @@ def _send_pending(pending):
     iid = save_invoice_snapshot(pending["client_id"], data, pending["parts"], pending["detail"], pending["start"], pending["stop"], pending["author"], pending["now"], document=pending["document"])
     set_setting("billing:pending", "null")
     return {"id": iid, "ms_id": data["id"], "number": data.get("name") or "", "client": pending["client"],
-            "total": pending["parts"]["total"], "period_from": pending["start"], "period_to": pending["stop"], "positions": len(pending["detail"]),
+            "total": pending["parts"]["total"], "period_from": pending["start"], "period_to": pending["stop"], "positions": len(group_rows([c for _l, c in pending["detail"]])),
             "download_url": "/api/invoices/%s/document.xlsx" % iid}
 
 
@@ -282,18 +282,23 @@ def invoice_data(invoice_id):
     if not inv:
         raise ValueError("счёт не найден")
     positions = []
-    for r in list_invoice_positions(invoice_id):
+    for index, r in enumerate(list_invoice_positions(invoice_id)):
         snap = json.loads(r["snapshot_json"] or "{}")
         row = {k: snap.get(k, r[k]) for k in ("article", "barcode", "gtin", "name", "liters", "qty_in")}
-        row.update({"period_from": r["period_from"] or "", "period_to": r["period_to"] or "", "days": r["days"],
+        row.update({"id": snap.get("id", index), "ms_product_id": snap.get("ms_product_id"), "client_id": inv["client_id"],
+                    "kind": snap.get("kind", "legacy"), "bill_days": r["days"],
+                    "period_from": r["period_from"] or "", "period_to": r["period_to"] or "", "days": r["days"],
                     "liter_days": r["liter_days"], "storage": r["storage"], "intake": r["intake"], "pick": r["ship"],
                     "pick_qty": snap.get("pick_qty"), "pick_rate": snap.get("pick_rate"), "total": round(r["storage"]+r["intake"]+r["ship"],2),
                     "snapshot": bool(snap)})
         positions.append(row)
+    positions = group_rows(positions)
+    for row in positions:
+        row["days"] = row["bill_days"]
     return {"invoice": {"id": inv["id"], "client": inv["client_name"], "number": inv["ms_number"], "ms_id": inv["ms_invoice_id"],
                         "period_from": inv["period_from"] or "", "period_to": inv["period_to"] or "",
                         "storage": inv["storage"], "intake": inv["intake"], "pick": inv["ship"], "total": inv["total"],
-                        "positions": inv["lots_count"], "liter_days": round(sum(r["liter_days"] for r in positions),3),
+                        "positions": len(positions), "source_positions": inv["lots_count"], "liter_days": round(sum(r["liter_days"] for r in positions),3),
                         "created": (inv["created_at"] or "")[:16].replace("T"," "), "author": inv["author"], **payment_state(inv)},
             "positions": positions}
 
