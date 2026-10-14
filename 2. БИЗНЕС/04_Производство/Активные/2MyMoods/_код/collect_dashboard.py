@@ -1532,10 +1532,14 @@ def main() -> None:
     for payment in payments:
         absorb_payment(payment, order_payments, invoices, linked_ids)
     del payments, paymentins
-    products = {p["id"]: p for p in required_rows(ms, "/entity/product",
-                                                   keep=("id", "name", "pathName", "buyPrice"))}
-    variants = {v["id"]: v for v in required_rows(ms, "/entity/variant",
-                                                   keep=("id", "name", "product", "characteristics"))}
+    # Historical sales can reference archived cards and variants. API excludes
+    # those by default; fetch both sets without reactivating existing cards.
+    products = {p["id"]: p for archived in ("false", "true")
+                for p in required_rows(ms, "/entity/product", {"filter": f"archived={archived}"},
+                                       keep=("id", "name", "pathName", "buyPrice"))}
+    variants = {v["id"]: v for archived in ("false", "true")
+                for v in required_rows(ms, "/entity/variant", {"filter": f"archived={archived}"},
+                                       keep=("id", "name", "product", "characteristics"))}
     services = {s["id"]: s for s in required_rows(ms, "/entity/service", keep=("id", "name"))}
     agents = {a["id"]: a for a in required_rows(ms, "/entity/counterparty",
                                                  keep=("id", "name", "phone"))}

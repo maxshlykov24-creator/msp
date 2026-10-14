@@ -608,6 +608,7 @@ def build_client_stock(ids, date_to=None):
     wb, ws = _new_sheet("Остаток", CLIENT_STOCK_COLUMNS)
     qty = 0
     volume = 0
+    volume_unknown = any(r["qty"] > 0 and not r.get("volume_known", bool(r["liters"])) for r in rows)
     for row in rows:
         qty += float(row["qty"] or 0)
         volume += float(row["volume"] or 0)
@@ -619,9 +620,9 @@ def build_client_stock(ids, date_to=None):
                 excel_text(row["gtin"]),
                 excel_text(row["name"]),
                 excel_text(row["tracking"]),
-                row["liters"],
+                row["liters"] if row["liters"] > 0 else None,
                 row["qty"],
-                row["volume"],
+                row["volume"] if row.get("volume_known", bool(row["liters"])) else None,
                 excel_text(row["accepted"] or "ждёт приёмки"),
                 row["days"],
                 row["bill_from"], row["bill_to"], row["storage"], row["pick_qty"], row["pick"], row["total"], excel_text(row.get("source_document", "")),
@@ -633,7 +634,7 @@ def build_client_stock(ids, date_to=None):
     last = ws.max_row + 1
     ws.cell(row=last, column=1, value="Позиций: %s" % len(rows)).font = Font(bold=True)
     ws.cell(row=last, column=8, value=qty).font = Font(bold=True)
-    ws.cell(row=last, column=9, value=round(volume, 2)).font = Font(bold=True)
+    ws.cell(row=last, column=9, value=None if volume_unknown else round(volume, 2)).font = Font(bold=True)
     for column, key in ((14,"storage"),(15,"pick_qty"),(16,"pick"),(17,"total")):
         ws.cell(row=last, column=column, value=round(sum(r[key] for r in rows),2)).font = Font(bold=True)
     who = rows[0]["client"] if len({r["client"] for r in rows}) == 1 else "клиенту"

@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -757,3 +758,25 @@ with patch.object(web, 'who', return_value='tester'), patch.object(web, 'init_db
             assert result['period_to'] == '2026-10-11'
             assert action.call_args.args[-1] == '2026-10-11'
 print('Счёт: обязательная дата, неверная дата, будущий период и точная передача выбранного окончания — OK')
+
+# Бесплатное хранение и фиксированная сборка применяются только к нужному UUID.
+policy_client = {"id": 900, "name": "Ермолаева", "ms_counterparty_id": "5ce83c78-b1ce-11f1-0a80-186800788b61"}
+ordinary_client = dict(policy_client, ms_counterparty_id="other-agent")
+policy_lot = dict(db.get_lot(lot_id))
+policy_lot.update(liters=None, pick_rate=None, qty_in=10, qty_left=8,
+                  accepted_at="2026-10-09T10:00:00", received_at="2026-10-09T10:00:00",
+                  billed_until="2026-10-04", ledger_kind="receipt", source_key="policy-receipt")
+policy_out = {"2026-10-09": 2}
+free_row = account.row_of(policy_lot, policy_client, policy_out, date_to=date(2026,10,11))
+assert free_row["storage"] == 0 and free_row["bill_days"] == 0 and not free_row["billing_errors"]
+assert free_row["storage_enabled"] is False
+ordinary_row = account.row_of(policy_lot, ordinary_client, policy_out, date_to=date(2026,10,11))
+assert "не заполнен литраж" in ordinary_row["billing_errors"]
+ordinary_liters = account.row_of(dict(policy_lot, liters=1), ordinary_client, policy_out, date_to=date(2026,10,11))
+assert ordinary_liters["storage"] == 2.4 and ordinary_liters["rate"] == 0.15
+assembly_row = account.row_of(dict(policy_lot, ledger_kind="assembly", qty_in=0, qty_left=0), policy_client, policy_out, date_to=date(2026,10,11))
+assert assembly_row["pick_qty"] == 2 and assembly_row["pick"] == 142 and not assembly_row["billing_errors"]
+assert billing.lines_of({"storage":0,"ship":assembly_row["pick"]}) == [{"name":"Сборка заказов","sum":142}]
+assert account.pick_rate_of(dict(policy_lot, pick_rate=999), policy_client) == 71
+assert account.pick_rate_known(policy_lot, policy_client)
+print('Ермолаева: без хранения и литража, сборка 71, другие UUID сохраняют прежние правила — OK')

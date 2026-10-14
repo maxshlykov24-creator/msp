@@ -2,9 +2,8 @@
 
 Две метрики, а не одна колонка «тариф». Хранение считаем как в таблице Глеба:
 у каждых суток свой остаток, формула дня — остаток на утро × литраж × ставка.
-Ставка хранения одна на всех, 0,15 ₽ за литр в сутки: она не зависит ни от
-товара, ни от клиента. Разная только сборка — напильник и игрушка стоят
-по-разному, поэтому ставка сборки живёт у позиции, в ₽ за штуку.
+Общая ставка хранения 0,15 ₽ за литр в сутки. Подтверждённые исключения
+привязаны к UUID контрагента МойСклад. Сборка обычно берётся из карточки товара.
 
 Хранение стартует на следующий день после фактической приёмки и включает день отгрузки:
 пока в lots.accepted_at пусто, партия ничего не должна.
@@ -26,6 +25,16 @@ from ms import tracking_code, TRACKING
 MSK = timezone(timedelta(hours=3))
 MAX_DAYS = 1500
 STORAGE_RATE = 0.15
+# Подтверждено владельцем 15.10.2026: Ермолаева, хранение бесплатно,
+# все товары собираются по 71 ₽. UUID сохраняет правило при переименовании клиента.
+COUNTERPARTY_ACCOUNTING = {
+    "5ce83c78-b1ce-11f1-0a80-186800788b61": {"storage_rate": 0.0, "pick_rate": 71.0},
+}
+
+
+def accounting_policy(client):
+    key = client["ms_counterparty_id"] if client and "ms_counterparty_id" in client.keys() else ""
+    return COUNTERPARTY_ACCOUNTING.get(key, {})
 
 
 def parse_when(raw):
@@ -66,13 +75,15 @@ def calculation_end(raw=""):
     return end
 
 
-def storage_rate():
-    """Подтверждённая ставка хранения: 0,15 рубля за литр в сутки для всех."""
-    return STORAGE_RATE
+def storage_rate(client=None):
+    """Общая ставка с явно подтверждёнными исключениями по контрагенту."""
+    return accounting_policy(client).get("storage_rate", STORAGE_RATE)
 
 
 def pick_rate_of(lot, client):
     """Сборка из допполя товара; тариф клиента сохранён только для старых архивных партий."""
+    if "pick_rate" in accounting_policy(client):
+        return accounting_policy(client)["pick_rate"]
     if "pick_rate" in lot.keys() and lot["pick_rate"] is not None:
         return float(lot["pick_rate"])
     if not ("source_key" in lot.keys() and lot["source_key"]) and client and "tariff_pick" in client.keys() and client["tariff_pick"] is not None:
@@ -81,6 +92,8 @@ def pick_rate_of(lot, client):
 
 
 def pick_rate_known(lot, client):
+    if "pick_rate" in accounting_policy(client):
+        return True
     return ("pick_rate" in lot.keys() and lot["pick_rate"] is not None) or bool(
         not ("source_key" in lot.keys() and lot["source_key"]) and client and "tariff_pick" in client.keys() and client["tariff_pick"] is not None
     )
@@ -121,9 +134,9 @@ def window(lot, date_from=None, date_to=None, storage=True):
 def storage_of(lot, client, date_from=None, date_to=None, ship_days=None):
     """Дни периода с остатком на каждое утро и деньги за них."""
     liters = float(lot["liters"] or 0)
-    tariff = storage_rate()
+    tariff = storage_rate(client)
     start, end = window(lot, date_from, date_to)
-    if start is None or lot["ledger_kind"] == "assembly":
+    if start is None or lot["ledger_kind"] == "assembly" or tariff == 0:
         return {"from": "", "to": "", "days": 0, "liter_days": 0.0, "storage": 0.0, "by_day": []}
     out = ship_days if ship_days is not None else moves_by_day(lot["id"]).get(lot["id"], {})
     qty = float(lot["qty_in"] or 0) - sum(q for day, q in out.items() if as_day(day, date.max) < start)
@@ -228,7 +241,8 @@ def row_of(lot, client=None, ship_days=None, date_from=None, date_to=None):
         "name": lot["name"] or "",
         "tracking": next((label for label, code in TRACKING.items() if code == lot["tracking_type"]), lot["tracking_type"] or ""),
         "dims": (lot["dims"] if "dims" in lot.keys() else "") or "",
-        "rate": storage_rate(),
+        "rate": storage_rate(client),
+        "storage_enabled": storage_rate(client) > 0,
         "pick_rate": pick_rate_of(lot, client),
         "pick_rate_known": pick_rate_known(lot, client),
         "billing_errors": errors,
@@ -407,7 +421,7 @@ def _calendar(client_id=None, query="", date_from=None, date_to=None):
         if got is None or got > end:
             continue
         liters = float(lot["liters"] or 0)
-        tariff = storage_rate()
+        tariff = storage_rate(client)
         qty = float(lot["qty_in"] or 0) - sum(
             q for day, q in out.items() if as_day(day, date.max) < max(start, got)
         )
@@ -419,7 +433,7 @@ def _calendar(client_id=None, query="", date_from=None, date_to=None):
                 continue
             cells.append({
                 "qty": round(qty, 3),
-                "sum": (0 if here == got else (round(qty * liters * tariff, 2) if liters > 0 or qty == 0 else None)),
+                "sum": (0 if here == got or tariff == 0 else (round(qty * liters * tariff, 2) if liters > 0 or qty == 0 else None)),
                 "ship": round(out.get(day, 0), 3),
             })
             qty -= out.get(day, 0)
