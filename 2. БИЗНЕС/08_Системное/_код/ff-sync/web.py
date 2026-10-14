@@ -629,7 +629,7 @@ def invoice_preview(data: dict = Body(...), ff_session: str = Cookie(default="")
     from billing import preview
 
     try:
-        return {"ok": True, **preview(data.get("lot_ids") or [], data.get("date_to") or "")}
+        return {"ok": True, **preview(data.get("lot_ids") or [], required_invoice_day(data))}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -641,11 +641,19 @@ def invoice_create(data: dict = Body(...), ff_session: str = Cookie(default=""))
     from billing import create
 
     try:
-        return {"ok": True, **create(data.get("lot_ids") or [], login, data.get("date_to") or "")}
+        return {"ok": True, **create(data.get("lot_ids") or [], login, required_invoice_day(data))}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+def required_invoice_day(data):
+    value = data.get("date_to")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Укажи дату окончания расчёта перед выставлением счёта.")
+    from account import calculation_end
+    return calculation_end(value).isoformat()
 
 
 def ru_day(iso):

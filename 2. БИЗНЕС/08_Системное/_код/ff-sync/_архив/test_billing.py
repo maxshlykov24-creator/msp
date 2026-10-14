@@ -739,3 +739,21 @@ with patch.object(accept,'ms_get',edit_get),patch.object(net,'req',edit_put),pat
     try:account._product_for_lot(-1);raise AssertionError('допущена неизвестная партия')
     except ValueError:pass
 print('Учёт: запись допполей, габариты, нулевая сборка, защита от конфликта/счёта, потеря ответа и неполная сверка — OK')
+
+# Финансовые endpoints требуют явную дату; пустой фильтр не становится сегодняшним днём.
+import web
+from fastapi import HTTPException
+with patch.object(web, 'who', return_value='tester'), patch.object(web, 'init_db'):
+    for endpoint, function in ((web.invoice_preview, 'preview'), (web.invoice_create, 'create')):
+        with patch.object(billing, function, return_value={'period_to':'2026-10-11'}) as action:
+            for value in ('', None, 'не дата', '2099-01-01'):
+                try:
+                    endpoint({'lot_ids':[lot_id], 'date_to':value}, '')
+                    raise AssertionError('неявная или неверная дата допустила счёт')
+                except HTTPException as exc:
+                    assert exc.status_code == 400
+            action.assert_not_called()
+            result = endpoint({'lot_ids':[lot_id], 'date_to':'2026-10-11'}, '')
+            assert result['period_to'] == '2026-10-11'
+            assert action.call_args.args[-1] == '2026-10-11'
+print('Счёт: обязательная дата, неверная дата, будущий период и точная передача выбранного окончания — OK')

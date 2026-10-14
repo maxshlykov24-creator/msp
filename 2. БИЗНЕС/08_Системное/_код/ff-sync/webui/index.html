@@ -344,7 +344,7 @@
         <label>Считать по дату</label>
         <div class="daterange">
           <input type="date" id="sTo">
-          <button class="btn-ghost slimbtn" id="sWeek" type="button" title="Закрыть неделю по пятницу">Неделя</button>
+          <button class="btn-ghost slimbtn" id="sWeek" type="button" title="Считать по последнее завершённое воскресенье">Неделя</button>
         </div>
       </div>
       <div class="fld grow"><label>Поиск</label><input id="sQuery" type="search" placeholder="артикул, штрихкод, GTIN, наименование"></div>
@@ -538,7 +538,7 @@
     <div class="tbl-wrap bills-wrap">
       <table class="tbl" id="bTbl">
         <thead><tr>
-          <th>Номер</th><th>Контрагент</th><th>Период</th><th>Дата</th>
+          <th>Номер</th><th>Контрагент</th><th>Период начислений</th><th>Создан</th>
           <th class="num">Счёт, ₽</th><th class="num">Оплачено, ₽</th><th class="num">Осталось, ₽</th><th>Статус</th><th>Проверено</th><th>Кто</th>
         </tr></thead>
         <tbody></tbody>
@@ -797,6 +797,6 @@
   </div>
 </div>
 
-<script src="/ui/app.js?v=129"></script>
+<script src="/ui/app.js?v=130"></script>
 </body>
 </html>

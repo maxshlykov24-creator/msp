@@ -119,6 +119,7 @@ async function boot() {
   try {
     const me = await api("/api/me");
     $("who").textContent = me.login;
+    restoreStockDate(me.login);
     $("login").classList.add("off");
     $("app").classList.add("on");
     syncDock();
@@ -1026,10 +1027,22 @@ function stockQuery() {
   return params.toString();
 }
 
-function lastFriday() {
+function lastCompletedSunday() {
   const d = new Date();
-  d.setDate(d.getDate() - ((d.getDay() + 2) % 7));
+  d.setDate(d.getDate() - (d.getDay() || 7));
   return d;
+}
+
+let stockDateKey = "";
+function validStockDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && value <= isoDay(new Date()) && $("sTo").validity.valid;
+}
+function restoreStockDate(login) {
+  stockDateKey = "ff-account-end:" + login;
+  let saved = "";
+  try { saved = localStorage.getItem(stockDateKey) || ""; } catch (_) {}
+  $("sTo").value = saved || isoDay(lastCompletedSunday());
+  if (!validStockDate($("sTo").value)) $("sTo").value = isoDay(lastCompletedSunday());
 }
 
 function clientMatches(query) {
@@ -1080,7 +1093,16 @@ async function loadLots() {
   $("modal").classList.remove("on");
   state.picked.clear();
   state.lots = [];
+  state.stockDateTo = "";
   refreshPick();
+  const dateTo = $("sTo").value;
+  if (!validStockDate(dateTo)) {
+    say($("sMsg"), "Укажи дату окончания расчёта. Начисления по сегодняшний день автоматически не выбираются.", "bad");
+    $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="13" class="empty">Укажи дату расчёта.</td></tr>`;
+    ["kPos","kQty","kVol","kLiterDays","kMoney"].forEach((id) => $(id).textContent = "—");
+    return;
+  }
+  try { if (stockDateKey) localStorage.setItem(stockDateKey, dateTo); } catch (_) {}
   $("sTbl").querySelector("tbody").innerHTML = `<tr><td colspan="13" class="empty">Загружаю…</td></tr>`;
   let res;
   try { res = await api("/api/lots?" + stockQuery()); }
@@ -1094,6 +1116,7 @@ async function loadLots() {
   }
   if (mine !== lotsLoad) return;
   state.lots = res.rows;
+  state.stockDateTo = dateTo;
   renderLedgerSync(res);
   say($("sMsg"), res.sync_error ? "Обновление учёта не завершено: " + res.sync_error : "", res.sync_error ? "bad" : "");
   state.picked.clear();
@@ -1159,7 +1182,7 @@ function refreshPick() {
       : `Все позиции, ${selected.length} на ${num(sum)} ₽`;
   const oneClient = new Set(selected.map((r) => r.client_id)).size === 1;
   const incomplete = selected.some((r) => (r.billing_errors || []).length);
-  const ready = selected.length > 0 && oneClient && !incomplete;
+  const ready = selected.length > 0 && oneClient && !incomplete && validStockDate($("sTo").value) && state.stockDateTo === $("sTo").value;
   $("sBill").disabled = !ready || sum <= 0;
   $("sBill").title = !oneClient ? "Выбери одного контрагента" : incomplete ? "Заполни литраж и стоимость сборки выделенных товаров" : sum <= 0 ? "По выбранным товарам всё уже выставлено" : "";
   $("sReport").disabled = !ready;
@@ -1314,7 +1337,15 @@ let timer = null;
 $("sQuery").oninput = () => { clearTimeout(timer); timer = setTimeout(loadLots, 250); };
 $("sTo").max = isoDay(new Date());
 $("sTo").onchange = () => loadLots();
-$("sWeek").onclick = () => { $("sTo").value = isoDay(lastFriday()); loadLots(); };
+$("sTo").oninput = () => {
+  if ($("sTo").value !== state.stockDateTo) {
+    ++invoicePreviewLoad;
+    state.invoiceRequest = null;
+    $("modal").classList.remove("on");
+  }
+  refreshPick();
+};
+$("sWeek").onclick = () => { $("sTo").value = isoDay(lastCompletedSunday()); loadLots(); };
 $("sExport").onclick = () => { window.location = "/api/export.xlsx?" + stockQuery(); };
 $("sCal").onclick = () => openCalendar();
 $("sBills").onclick = () => openBills();
@@ -1336,6 +1367,10 @@ function ruDay(iso) {
 }
 
 $("sBill").onclick = async () => {
+  if (!validStockDate($("sTo").value) || state.stockDateTo !== $("sTo").value) {
+    say($("sMsg"), "Выбери дату и дождись обновления расчёта.", "bad");
+    return;
+  }
   const mine = ++invoicePreviewLoad;
   $("sBill").disabled = true;
   try {
@@ -1368,6 +1403,12 @@ $("sBill").onclick = async () => {
 $("mCancel").onclick = () => $("modal").classList.remove("on");
 $("mOk").onclick = async () => {
   if (!state.invoiceRequest) return;
+  if (state.invoiceRequest.date_to !== $("sTo").value || !validStockDate(state.invoiceRequest.date_to)) {
+    state.invoiceRequest = null;
+    $("modal").classList.remove("on");
+    say($("sMsg"), "Дата изменилась. Открой предпросмотр счёта заново.", "bad");
+    return;
+  }
   $("mOk").disabled = true;
   let created = null;
   try {
