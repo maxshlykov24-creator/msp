@@ -16,6 +16,7 @@ import re
 import sys
 import time
 import urllib.parse
+import unicodedata
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -277,6 +278,10 @@ def phone_norm(value: object, address: object = "") -> str:
 def email_norm(value: object) -> str:
     text = str(value or "").strip().casefold()
     return text if re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", text) else ""
+
+
+def name_norm(value: object) -> str:
+    return " ".join(unicodedata.normalize("NFKC", str(value or "")).split()).casefold()
 
 
 def amo_lead_url(amo: lib.Amo, lead_id: str | int) -> str:
@@ -1103,11 +1108,12 @@ def save_journal(journal: dict) -> None:
     atomic_json(JOURNAL, journal)
 
 
-def confirm_contact(amo: lib.Amo, contact_id: str, row: dict) -> dict:
+def confirm_contact(amo: lib.Amo, contact_id: str, row: dict,
+                    expect_name: bool = False) -> dict:
     status, contact = amo_read(amo, f"/api/v4/contacts/{contact_id}")
     if status != 200 or str(contact.get("id")) != str(contact_id):
         raise Stop("Контакт не перечитался после записи")
-    if str(contact.get("name") or "").strip() != str(row.get("buyer") or "").strip():
+    if expect_name and name_norm(contact.get("name")) != name_norm(row.get("buyer")):
         raise Stop("Имя контакта после записи не совпало с покупателем заказа")
     values = []
     for group in contact.get("custom_fields_values") or []:
@@ -1389,7 +1395,7 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
                 else:
                     _set_entry(journal, oid, status="DEFERRED", reason=f"CONTACT_CREATE_HTTP_{code}")
                     continue
-            confirm_contact(amo, contact_id, row)
+            confirm_contact(amo, contact_id, row, expect_name=True)
             journal["counterparty_contacts"][cp_id] = contact_id
             _set_entry(journal, oid, status="CONTACT_VERIFIED", contact_id=contact_id)
 
