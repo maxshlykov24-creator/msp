@@ -537,6 +537,22 @@ def order_hash(order: dict) -> str:
     )} | {"agent_identity": stable_agent})
 
 
+def order_core_hash(order: dict) -> str:
+    """Сверка базовых фактов при восстановлении уже созданной сделки."""
+    projection = {k: order.get(k) for k in (
+        "id", "name", "moment", "sum", "payedSum", "state", "positions",
+        "organization", "store", "salesChannel",
+    )}
+    projection["attributes"] = [x for x in (order.get("attributes") or [])
+                                if str(x.get("id") or id_of(x)) != MS_AMO_ATTR]
+    agent = order.get("agent") or {}
+    projection["agent_identity"] = {k: agent.get(k) for k in (
+        "id", "name", "phone", "email", "legalFirstName", "legalLastName", "legalTitle",
+        "actualAddress", "actualAddressFull",
+    )}
+    return digest(projection)
+
+
 def get_roster() -> dict:
     try:
         return shift_roster._rows(force=True)
@@ -1232,10 +1248,26 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
     current_returns = return_map(current_data)
     current_outflow = return_outflow(current_data)
     current_by_order: dict[str, dict] = {}
+    recovery_ids = {r["order_id"] for r in candidates
+                    if journal["rows"].get(r["order_id"], {}).get("status") in (
+                        "LEAD_VERIFIED", "LEAD_RECOVERED", "BACKLINK_WRITE_INTENT", "COMMENT_WRITE_INTENT")}
+    planned_orders = {}
+    if recovery_ids:
+        try:
+            with RAW_CACHE.open(encoding="utf-8") as source:
+                raw_source = json.load(source)
+        except Exception as exc:
+            raise Stop("Исходный снимок нужен для безопасного восстановления сделки") from exc
+        planned_orders = {str(o.get("id")).casefold(): o for o in raw_source.get("orders", [])
+                          if str(o.get("id")).casefold() in recovery_ids}
     for row in candidates:
         oid = row["order_id"]
         order = current_orders.get(oid.casefold())
-        if not order or order_hash(order) != row["source_hash"]:
+        entry_status = journal["rows"].get(oid, {}).get("status")
+        recovery_ok = (entry_status in ("LEAD_VERIFIED", "LEAD_RECOVERED", "BACKLINK_WRITE_INTENT", "COMMENT_WRITE_INTENT")
+                       and oid in planned_orders and order is not None
+                       and order_core_hash(order) == order_core_hash(planned_orders[oid]))
+        if not order or (order_hash(order) != row["source_hash"] and not recovery_ok):
             raise Stop("План устарел: заказ изменился или вышел из разрешённых статусов")
         paid_total, paid_moment = payment_close(order, current_payments)
         if paid_total != row["payment_kopecks"] or paid_moment != row["payment_moment"]:
@@ -1256,7 +1288,7 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
         entry = journal["rows"].setdefault(oid, {"status": "PLANNED"})
         recovered_lead_id = ""
         if entry.get("status") in ("CONTACT_WRITE_INTENT", "LEAD_WRITE_INTENT", "LEAD_VERIFIED", "BACKLINK_WRITE_INTENT",
-                                    "COUNTERPARTY_WRITE_INTENT"):
+                                    "COMMENT_WRITE_INTENT", "COUNTERPARTY_WRITE_INTENT"):
             # Recovery checks every possible target before any retry.
             found = exact_leads(amo, oid)
             if len(found) > 1:
@@ -1291,7 +1323,10 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
                 raise Stop("Результат прошлой записи сделки/ссылки не удалось однозначно восстановить")
 
         fresh = fresh_order(mss, oid, ms_pace)
-        if order_hash(fresh) != row["source_hash"]:
+        source_match = order_hash(fresh) == row["source_hash"]
+        recovery_match = (bool(recovered_lead_id) and oid in planned_orders
+                          and order_core_hash(fresh) == order_core_hash(planned_orders[oid]))
+        if not source_match and not recovery_match:
             raise Stop("Источник изменился после плана; остановлен до следующей записи")
         if order_hash(fresh) != order_hash(current_by_order[oid]):
             raise Stop("Заказ изменился уже после повторной полной сверки")
@@ -1401,9 +1436,34 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
         _set_entry(journal, oid, status="CONTACT_VERIFIED", contact_id=contact_id)
         if recovered_lead_id:
             lead_id = recovered_lead_id
-            lead_payload = entry.get("lead_payload") or {}
-            if not lead_payload or str(entry.get("contact_id") or "") != contact_id:
+            previous_payload = entry.get("lead_payload") or {}
+            if not previous_payload or str(entry.get("contact_id") or "") != contact_id:
                 raise Stop("Восстановленной сделке не хватает зафиксированного payload/контакта")
+            lead_payload = make_lead_payload(amo, fresh, row, contact_id, roster)
+            def without_comment(payload: dict) -> dict:
+                clean = {k: v for k, v in payload.items() if k != "source_id"}
+                clean["custom_fields_values"] = [x for x in payload.get("custom_fields_values", [])
+                                                 if str(x.get("field_id")) != str(FIELDS["comment"])]
+                return clean
+            if without_comment(previous_payload) != without_comment(lead_payload):
+                raise Stop("Восстановленная сделка отличается от текущего заказа не только описанием")
+            old_comment = next((x for x in previous_payload.get("custom_fields_values", [])
+                                if str(x.get("field_id")) == str(FIELDS["comment"])), None)
+            new_comment = next((x for x in lead_payload.get("custom_fields_values", [])
+                                if str(x.get("field_id")) == str(FIELDS["comment"])), None)
+            if old_comment != new_comment:
+                _set_entry(journal, oid, status="COMMENT_WRITE_INTENT", contact_id=contact_id,
+                           lead_id=lead_id, lead_payload=lead_payload,
+                           comment_update="Перечитано актуальное описание из МойСклад")
+                code, body, error = api_write(amos, "PATCH", amo.base + f"/api/v4/leads/{lead_id}",
+                                              {"custom_fields_values": [new_comment]}, pace=writer_pace)
+                read_status, readback = amo_read(amo, f"/api/v4/leads/{lead_id}")
+                if (read_status != 200 or field(readback, FIELDS["comment"])
+                        != str((new_comment.get("values") or [{}])[0].get("value") or "")):
+                    journal["unknown_write"] = {"order_id": oid, "kind": "comment_update",
+                                                 "http": code, "error": error}
+                    save_journal(journal)
+                    raise Stop("Актуальное описание сделки после записи не подтверждено")
             confirm_lead(amo, lead_id, fresh, row, contact_id, lead_payload)
         else:
             lead_payload = make_lead_payload(amo, fresh, row, contact_id, roster)
