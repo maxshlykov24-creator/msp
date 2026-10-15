@@ -1130,8 +1130,6 @@ def confirm_contact(amo: lib.Amo, contact_id: str, row: dict,
     status, contact = amo_read(amo, f"/api/v4/contacts/{contact_id}")
     if status != 200 or str(contact.get("id")) != str(contact_id):
         raise Stop("Контакт не перечитался после записи")
-    if expect_name and name_norm(contact.get("name")) != name_norm(row.get("buyer")):
-        raise Stop("Имя контакта после записи не совпало с покупателем заказа")
     values = []
     for group in contact.get("custom_fields_values") or []:
         values.extend(v.get("value") for v in group.get("values") or []
@@ -1140,6 +1138,16 @@ def confirm_contact(amo: lib.Amo, contact_id: str, row: dict,
     got_email = {email_norm(x) for x in values if x and "@" in str(x)}
     if row.get("phone") and row["phone"] not in got_phone:
         raise Stop("Созданный контакт не содержит ожидаемый точный телефон")
+    name_mismatch = name_norm(contact.get("name")) != name_norm(row.get("buyer"))
+    if name_mismatch:
+        # amoCRM может вернуть уже существующую карточку вместо новой.
+        # Используем её только при уникальном точном телефоне и email из
+        # заказа (email обязателен, когда он есть в МойСклад); имя не меняем.
+        exact_identity = (row.get("phone") and row["phone"] in got_phone
+                          and (not row.get("email") or row["email"] in got_email))
+        if not exact_identity:
+            raise Stop("Имя контакта отличается, а телефон/email не подтверждают точное совпадение")
+        contact["_migration_name_mismatch"] = True
     if row.get("email") and row["email"] not in got_email:
         # У существующей карточки не заменяем заполненный email из заказа.
         # Разрешаем использовать её только при точном телефоне и имени;
@@ -1412,17 +1420,24 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
         if row.get("contact_id") and contacts_now and str(contacts_now[0]["id"]) != str(row["contact_id"]):
             raise Stop("Контакт изменился после плана; требуется повторный полный аудит")
         existing_email_mismatch = False
+        contact_name_mismatch = False
         if row.get("contact_id"):
             if not contacts_now:
                 raise Stop("Контакт из полного индекса не находится свежим поиском")
             contact_id = str(contacts_now[0]["id"])
-            existing_email_mismatch = bool(confirm_contact(amo, contact_id, row).get("_migration_email_mismatch"))
+            checked_contact = confirm_contact(amo, contact_id, row)
+            existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
+            contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
         elif cp_id in journal["counterparty_contacts"]:
             contact_id = str(journal["counterparty_contacts"][cp_id])
-            existing_email_mismatch = bool(confirm_contact(amo, contact_id, row).get("_migration_email_mismatch"))
+            checked_contact = confirm_contact(amo, contact_id, row)
+            existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
+            contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
         elif contacts_now:
             contact_id = str(contacts_now[0]["id"])
-            existing_email_mismatch = bool(confirm_contact(amo, contact_id, row).get("_migration_email_mismatch"))
+            checked_contact = confirm_contact(amo, contact_id, row)
+            existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
+            contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
             journal["counterparty_contacts"][cp_id] = contact_id
             save_journal(journal)
         else:
@@ -1449,13 +1464,16 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
                 else:
                     _set_entry(journal, oid, status="DEFERRED", reason=f"CONTACT_CREATE_HTTP_{code}")
                     continue
-            confirm_contact(amo, contact_id, row, expect_name=True)
+            checked_contact = confirm_contact(amo, contact_id, row, expect_name=True)
+            contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
             journal["counterparty_contacts"][cp_id] = contact_id
             _set_entry(journal, oid, status="CONTACT_VERIFIED", contact_id=contact_id)
 
         contact_entry_updates = {"status": "CONTACT_VERIFIED", "contact_id": contact_id}
         if existing_email_mismatch:
             contact_entry_updates["existing_contact_email_mismatch"] = True
+        if contact_name_mismatch:
+            contact_entry_updates["contact_name_mismatch"] = True
         _set_entry(journal, oid, **contact_entry_updates)
         if recovered_lead_id:
             lead_id = recovered_lead_id
