@@ -554,7 +554,8 @@ def buyer_identity(cp: dict) -> tuple[str, str]:
     first, last = str(cp.get("legalFirstName") or "").strip(), str(cp.get("legalLastName") or "").strip()
     if company_type == "individual":
         name = str(cp.get("name") or "").strip()
-        if len(name.split()) < 2:
+        parts = name.split()
+        if len(parts) < 2 or parts[0].casefold() == parts[-1].casefold():
             return "", "DEFERRED_BUYER_IDENTITY"
         return name, ""
     corporate = re.search(r"\b(ооо|ип|зао|пао|оао|магазин|бутик|lamoda|опт|компания|салон)\b",
