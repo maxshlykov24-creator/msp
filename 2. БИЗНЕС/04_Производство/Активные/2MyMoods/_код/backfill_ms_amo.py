@@ -191,10 +191,32 @@ def ms_rows(session: requests.Session, path: str, params: dict | None = None,
             return out
 
 
+def amo_request(amo: lib.Amo, method: str, path: str) -> tuple[int, dict]:
+    last_error = ""
+    for attempt in range(6):
+        try:
+            status, body = amo.req(method, path)
+        except Exception as exc:
+            last_error = type(exc).__name__
+            if attempt == 5:
+                raise Stop(f"Чтение amo не подтверждено после повторов: {last_error}") from exc
+            print(f"Повтор чтения amo после временной ошибки (попытка {attempt + 2}/6)…", flush=True)
+            time.sleep(min(30.0, 2.0 ** attempt))
+            continue
+        if status in (429, 500, 502, 503, 504):
+            if attempt == 5:
+                raise Stop(f"Чтение amo не подтверждено: HTTP {status}")
+            print(f"Повтор чтения amo после HTTP {status} (попытка {attempt + 2}/6)…", flush=True)
+            time.sleep(min(30.0, 2.0 ** attempt))
+            continue
+        return status, body if isinstance(body, dict) else {}
+    raise Stop(f"Чтение amo не подтверждено: {last_error or 'неизвестная ошибка'}")
+
+
 def amo_pages(amo: lib.Amo, path: str, key: str) -> list[dict]:
     out = []
     for page in range(1, 501):
-        status, body = amo.req("GET", f"{path}{'&' if '?' in path else '?'}limit=250&page={page}")
+        status, body = amo_request(amo, "GET", f"{path}{'&' if '?' in path else '?'}limit=250&page={page}")
         if status == 204:
             return out
         if status != 200:
@@ -424,7 +446,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
     contacts = amo_pages(amo, "/api/v4/contacts", "contacts")
     mfields = amo_pages(amo, "/api/v4/leads/custom_fields", "custom_fields")
     cfields = amo_pages(amo, "/api/v4/contacts/custom_fields", "custom_fields")
-    pipeline_status, pipeline = amo.req("GET", f"/api/v4/leads/pipelines/{PIPELINE}")
+    pipeline_status, pipeline = amo_request(amo, "GET", f"/api/v4/leads/pipelines/{PIPELINE}")
     if pipeline_status != 200 or pipeline.get("name") != "Продажи 2MY":
         raise Stop("Целевая воронка не совпала с утверждённой схемой")
     won = [x for x in pipeline.get("_embedded", {}).get("statuses", []) if x.get("id") == WON]
@@ -989,10 +1011,7 @@ def journal_load() -> dict:
 
 
 def amo_read(amo: lib.Amo, path: str) -> tuple[int, dict]:
-    try:
-        status, body = amo.req("GET", path)
-    except Exception as exc:
-        raise Stop(f"Чтение amoCRM не подтверждено: {type(exc).__name__}") from exc
+    status, body = amo_request(amo, "GET", path)
     if status not in (200, 204):
         raise Stop(f"Чтение amoCRM: HTTP {status}")
     return status, body if isinstance(body, dict) else {}
@@ -1002,7 +1021,7 @@ def amo_search_pages(amo: lib.Amo, entity: str, query: str, key: str) -> list[di
     rows = []
     encoded = urllib.parse.quote(query)
     for page in range(1, 501):
-        status, body = amo.req("GET", f"/api/v4/{entity}?query={encoded}&limit=250&page={page}")
+        status, body = amo_request(amo, "GET", f"/api/v4/{entity}?query={encoded}&limit=250&page={page}")
         if status == 204:
             return rows
         if status != 200:
