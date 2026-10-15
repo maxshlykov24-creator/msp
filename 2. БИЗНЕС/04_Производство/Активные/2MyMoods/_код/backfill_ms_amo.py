@@ -290,6 +290,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
     order_rows = []
     counts = {}
     for name, sid in STATUS_IDS.items():
+        print(f"Читаю заказы МойСклад: {name}…", flush=True)
         href = f"{lib.MS_BASE}/entity/customerorder/metadata/states/{sid}"
         rows = ms_rows(mss, "/entity/customerorder", {
             "limit": 100, "filter": "state=" + href,
@@ -297,6 +298,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
             "expand": "positions,positions.assortment,agent,state",
         }, pace)
         counts[name] = len(rows)
+        print(f"  строк: {len(rows)}", flush=True)
         for row in rows:
             if state_id(row) != sid:
                 raise Stop("Статус заказа изменился во время расширенной выгрузки")
@@ -308,6 +310,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
     if len({x.get("id") for x in order_rows}) != len(order_rows):
         raise Stop("Пересекающиеся фильтры статусов МойСклад")
 
+    print("Читаю оплаты и связанные документы МойСклад…", flush=True)
     paymentins = ms_rows(mss, "/entity/paymentin", {"limit": 1000}, pace)
     cashins = ms_rows(mss, "/entity/cashin", {"limit": 1000}, pace)
     invoices = ms_rows(mss, "/entity/invoiceout", {"limit": 1000}, pace)
@@ -322,6 +325,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
     if len(default_currency) != 1 or str(default_currency[0].get("isoCode") or "").upper() != "RUB":
         raise Stop("Валюта по умолчанию МойСклад не подтверждена как RUB")
 
+    print("Читаю полный индекс amoCRM…", flush=True)
     leads = amo_pages(amo, "/api/v4/leads?with=contacts,source", "leads")
     contacts = amo_pages(amo, "/api/v4/contacts", "contacts")
     mfields = amo_pages(amo, "/api/v4/leads/custom_fields", "custom_fields")
@@ -352,6 +356,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
     maxim = active_users.get(str(MAXIM))
     if not maxim or not maxim.get("rights", {}).get("is_active", True):
         raise Stop("Технический ответственный неактивен")
+    print(f"Индекс собран: {len(order_rows)} заказов, {len(leads)} сделок, {len(contacts)} контактов", flush=True)
     payload = {
         "captured_at": datetime.now(TZ).isoformat(timespec="seconds"),
         "state_counts": counts, "all_orders_count": total_orders, "orders": order_rows,
