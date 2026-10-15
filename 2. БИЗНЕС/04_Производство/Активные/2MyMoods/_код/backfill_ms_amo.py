@@ -184,7 +184,7 @@ def ms_rows(session: requests.Session, path: str, params: dict | None = None,
         out.extend(rows)
         offset += len(rows)
         if offset >= expected:
-            row_keys = [str(r.get("id") or r.get("uid") or id_of(r.get("audit")) or digest(r)) for r in out]
+            row_keys = [str(r.get("id") or digest(r)) for r in out]
             if len(out) != expected or len(set(row_keys)) != len(out):
                 raise Stop(f"Полнота/уникальность набора МойСклад {path} не подтверждена")
             return out
@@ -790,6 +790,7 @@ def classify(data: dict, ms: lib.MS) -> dict:
     phone_index, email_index = all_contacts_index(data["contacts"])
     cp_contact = {str(c.get("id")): c for c in data["contacts"]}
     plan_rows, counts = [], defaultdict(int)
+    audit_checks = 0
     for order in orders:
         name = str(order.get("_verified_state_name") or "")
         if not name:
@@ -855,12 +856,6 @@ def classify(data: dict, ms: lib.MS) -> dict:
 
         close_moment = paid_moment if allocated >= total and total > 0 else None
         close_basis = "дата полного связанного платежа" if close_moment else ""
-        if category == "CREATE" and not close_moment and name in ALWAYS:
-            close_moment = audit_current_state(ms, order)
-            if close_moment:
-                close_basis = "последний подтверждённый переход в текущий статус МойСклад"
-        if category == "CREATE" and not close_moment:
-            category, reason = "DEFERRED", "NO_VERIFIED_CLOSE_DATE"
 
         if category == "CREATE":
             contact_id = ""
@@ -911,6 +906,16 @@ def classify(data: dict, ms: lib.MS) -> dict:
             rate = order.get("rate")
             if isinstance(rate, dict) and rate.get("value") not in (None, 1, 1.0, "1", "1.0"):
                 category, reason = "DEFERRED", "FOREIGN_CURRENCY_OR_NONDEFAULT_RATE"
+
+        if category == "CREATE" and not close_moment and name in ALWAYS:
+            if audit_checks % 25 == 0:
+                print(f"Проверяю историю статусов: {audit_checks} заказов…", flush=True)
+            close_moment = audit_current_state(ms, order)
+            audit_checks += 1
+            if close_moment:
+                close_basis = "последний подтверждённый переход в текущий статус МойСклад"
+        if category == "CREATE" and not close_moment:
+            category, reason = "DEFERRED", "NO_VERIFIED_CLOSE_DATE"
 
         counts[category] += 1
         plan_rows.append({
