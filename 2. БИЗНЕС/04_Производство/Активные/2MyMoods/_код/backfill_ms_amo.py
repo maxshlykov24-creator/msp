@@ -32,6 +32,7 @@ TZ = ZoneInfo("Europe/Moscow")
 WORK = Path.home() / "Library" / "Caches"
 PLAN = WORK / "2my-ms-amo-backfill-plan.local.json"
 RAW_CACHE = WORK / "2my-ms-amo-backfill-source.local.json"
+ORDER_CACHE = WORK / "2my-ms-amo-expanded-orders.local.jsonl"
 JOURNAL = WORK / "2my-ms-amo-backfill-journal.local.json"
 LOCK = WORK / "2my-ms-amo-backfill.lock"
 PIPELINE = 11318374
@@ -273,8 +274,98 @@ def linked_order_id(url: str) -> str:
         return ""
 
 
+def compact_order_snapshot(mss: requests.Session, pace: list[float]) -> tuple[dict[str, dict], dict[str, int]]:
+    snapshot: dict[str, dict] = {}
+    counts = {}
+    for name, sid in STATUS_IDS.items():
+        href = f"{lib.MS_BASE}/entity/customerorder/metadata/states/{sid}"
+        rows = ms_rows(mss, "/entity/customerorder", {
+            "limit": 1000, "filter": "state=" + href,
+            "order": "moment,desc",
+        }, pace)
+        if any(state_id(row) != sid for row in rows):
+            raise Stop(f"Фильтр статуса МойСклад не совпал: {name}")
+        counts[name] = len(rows)
+        for row in rows:
+            oid = str(row.get("id") or "").casefold()
+            if not oid or oid in snapshot:
+                raise Stop("Пустой или повторный UUID в текущем списке заказов")
+            snapshot[oid] = row
+    return snapshot, counts
+
+
+def compact_signature(snapshot: dict[str, dict]) -> str:
+    return digest({oid: (row.get("updated"), state_id(row)) for oid, row in snapshot.items()})
+
+
+def read_order_cache() -> dict[str, dict]:
+    if not ORDER_CACHE.exists():
+        raise Stop("Защищённый локальный кэш подробных заказов отсутствует")
+    result = {}
+    try:
+        with ORDER_CACHE.open(encoding="utf-8") as source:
+            for line in source:
+                row = json.loads(line)
+                oid = str(row.get("id") or "").casefold()
+                if not oid or oid in result:
+                    raise Stop("Локальный кэш заказов содержит пустой или повторный ID")
+                result[oid] = row
+    except Stop:
+        raise
+    except Exception as exc:
+        raise Stop("Локальный кэш подробных заказов повреждён") from exc
+    return result
+
+
+def write_order_cache(rows: list[dict]) -> None:
+    tmp = ORDER_CACHE.with_suffix(ORDER_CACHE.suffix + ".next")
+    with tmp.open("w", encoding="utf-8") as target:
+        for row in rows:
+            target.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+        target.flush()
+        os.fsync(target.fileno())
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, ORDER_CACHE)
+
+
+def reconcile_orders(mss: requests.Session, pace: list[float]) -> tuple[list[dict], dict[str, int], int]:
+    cached = read_order_cache()
+    for attempt in range(1, 4):
+        print(f"Сверяю полный список заказов с защищённым подробным кэшем (попытка {attempt}/3)…", flush=True)
+        compact, counts = compact_order_snapshot(mss, pace)
+        resolved = []
+        changed = 0
+        stable = True
+        for oid, brief in compact.items():
+            prior = cached.get(oid)
+            if prior and str(prior.get("updated") or "") == str(brief.get("updated") or "") and state_id(prior) == state_id(brief):
+                resolved.append(prior)
+                continue
+            changed += 1
+            detail = api_get(mss, lib.MS_BASE + f"/entity/customerorder/{oid}", {
+                "expand": "positions,positions.assortment,agent,state",
+            }, pace)
+            if (str(detail.get("updated") or "") != str(brief.get("updated") or "")
+                    or state_id(detail) != state_id(brief)):
+                stable = False
+                break
+            resolved.append(detail)
+        if stable:
+            confirm, confirm_counts = compact_order_snapshot(mss, pace)
+            stable = (compact_signature(compact) == compact_signature(confirm)
+                      and counts == confirm_counts)
+        if stable:
+            if len(resolved) != len(compact) or len({str(x.get("id")).casefold() for x in resolved}) != len(resolved):
+                raise Stop("Полнота подробных заказов не подтверждена")
+            write_order_cache(resolved)
+            print(f"  текущих заказов: {len(resolved)}, подробностей перечитано: {changed}", flush=True)
+            return resolved, counts, changed
+        print("  набор менялся при сверке; повторяю компактный срез.", flush=True)
+    raise Stop("Не удалось получить стабильный состав заказов за три попытки")
+
+
 def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
-    """Полные исходные индексы. Расширенный MS-ответ ограничен 100 строками."""
+    """Полные исходные индексы с проверкой стабильного состава заказов."""
     mss = ms_session(ms)
     pace = [0.0]
     ms_meta = api_get(mss, lib.MS_BASE + "/entity/customerorder/metadata", last_call=pace)
@@ -288,22 +379,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
     amo_attr_ids = {str(x.get("id")) for x in attr_rows}
     if MS_AMO_ATTR not in amo_attr_ids:
         raise Stop("Поле ссылки на amo отсутствует в метаданных заказа")
-    order_rows = []
-    counts = {}
-    for name, sid in STATUS_IDS.items():
-        print(f"Читаю заказы МойСклад: {name}…", flush=True)
-        href = f"{lib.MS_BASE}/entity/customerorder/metadata/states/{sid}"
-        rows = ms_rows(mss, "/entity/customerorder", {
-            "limit": 100, "filter": "state=" + href,
-            "order": "moment,desc",
-            "expand": "positions,positions.assortment,agent,state",
-        }, pace)
-        counts[name] = len(rows)
-        print(f"  строк: {len(rows)}", flush=True)
-        for row in rows:
-            if state_id(row) != sid:
-                raise Stop("Статус заказа изменился во время расширенной выгрузки")
-            order_rows.append(row)
+    order_rows, counts, _changed = reconcile_orders(mss, pace)
     total_page = api_get(mss, lib.MS_BASE + "/entity/customerorder", {"limit": 1}, pace)
     total_orders = (total_page.get("meta") or {}).get("size")
     if not isinstance(total_orders, int) or sum(counts.values()) > total_orders:
