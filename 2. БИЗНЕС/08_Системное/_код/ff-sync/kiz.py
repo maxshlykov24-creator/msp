@@ -17,6 +17,10 @@
 """
 
 import re
+import json
+import logging
+
+log = logging.getLogger(__name__)
 
 from db import get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks, run_lock, shipment_items
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
@@ -210,6 +214,29 @@ def _ozon_plan(row, cab):
     return {"need": need, "have": have, "products": products, "note": note, '_remote_marks': remote_marks}
 
 
+def _check_ozon_validation(checked, codes, articles):
+    """Ошибки бывают у товара, экземпляра и марки; HTTP 200 не означает успех."""
+    bad, verified = [], set()
+    for prod in checked.get('products') or []:
+        article = articles.get(prod.get('product_id'), str(prod.get('product_id') or 'товар'))
+        if prod.get('valid') is False or prod.get('error'):
+            bad.append('%s: %s' % (article, prod.get('error') or 'товар не прошёл проверку'))
+        for number, ex in enumerate(prod.get('exemplars') or [], 1):
+            if ex.get('valid') is False or ex.get('errors'):
+                bad.append('%s, экземпляр %s: %s' % (article, number,
+                    ', '.join(map(str, ex.get('errors') or [])) or 'экземпляр не прошёл проверку'))
+            for mark in ex.get('marks') or []:
+                if mark.get('valid') is False or mark.get('errors'):
+                    bad.append('%s, код %s: %s' % (article, number,
+                        ', '.join(map(str, mark.get('errors') or [])) or 'код не принят'))
+                elif mark.get('valid') is True:
+                    verified.add(mark.get('mark'))
+    if bad:
+        raise KizError('Ozon не принял коды: ' + '; '.join(bad))
+    if verified != set(codes):
+        raise KizError('Ozon не подтвердил проверку всех кодов, передача остановлена')
+
+
 def _ozon_submit(row, cab, codes, assignments=None):
     """Экземпляры Ozon: сначала проверка кодов, потом set, потом ждём ship_available."""
     if row['status_group'] != 'new':
@@ -234,7 +261,7 @@ def _ozon_submit(row, cab, codes, assignments=None):
         raise KizError("Ozon не создал экземпляры под это отправление, коды передавать некуда")
     explicit = {}
     for assignment in assignments or []:
-        code = clean_code(assignment.get('code'))
+        code = normalize_wb_code(assignment.get('code'))
         try:
             pid = int(assignment.get('product_id'))
         except (TypeError, ValueError):
@@ -281,18 +308,7 @@ def _ozon_submit(row, cab, codes, assignments=None):
             checked = r.json() or {}
         except ValueError:
             checked = {}
-        bad, verified = [], set()
-        for prod in checked.get("products") or []:
-            for ex in prod.get("exemplars") or []:
-                for mark in ex.get("marks") or []:
-                    if mark.get("valid") is False:
-                        bad.append("%s: %s" % ((mark.get("mark") or "")[:20], ", ".join(mark.get("errors") or []) or "не принят"))
-                    elif mark.get('valid') is True:
-                        verified.add(mark.get('mark'))
-        if bad:
-            raise KizError("Ozon не принял коды: " + "; ".join(bad))
-        if verified != set(codes):
-            raise KizError('Ozon не подтвердил проверку всех кодов, передача остановлена')
+        _check_ozon_validation(checked, codes, articles)
     else:
         _fail(r, 'Ozon не проверил коды, передача остановлена')
 
@@ -532,11 +548,24 @@ def submit(ship_id, raw_codes, assignments=None):
             return _submit(ship_id, raw_codes, assignments)
     except BlockingIOError:
         raise KizError("Код этого задания уже отправляется. Дождись результата.")
+    except KizError as exc:
+        # В журнале только причина и ID. Полный КиЗ и криптохвост не записываем.
+        reason = str(exc)
+        for raw in raw_codes or []:
+            for code in (str(raw or ''), clean_code(raw), normalize_wb_code(raw)):
+                if code:
+                    reason = reason.replace(json.dumps(code, ensure_ascii=False)[1:-1], '[КиЗ]')
+                    reason = reason.replace(json.dumps(code)[1:-1], '[КиЗ]')
+                    reason = reason.replace(code, '[КиЗ]')
+                    reason = reason.replace(code[:20], '[КиЗ]')
+        reason = re.sub(r'01\d{14}21[^\s,;]*', '[КиЗ]', reason)
+        log.warning('kiz_rejected shipment_id=%s reason=%s', ship_id, reason[:600])
+        raise
 
 
 def _submit(ship_id, raw_codes, assignments=None):
     """Передать коды на площадку и записать их себе — но только после её «да»."""
-    codes = clean_codes(raw_codes)
+    codes = clean_codes([normalize_wb_code(code) for code in raw_codes or []])
     if not codes:
         raise KizError("нет кодов для передачи")
     row = _row(ship_id)

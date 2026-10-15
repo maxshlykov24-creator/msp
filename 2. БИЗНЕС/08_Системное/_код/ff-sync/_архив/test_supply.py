@@ -1245,3 +1245,35 @@ for response in (Fake(429), Fake(200, raw=ozon_pdf(0)), Fake(200, raw=b'%PDF-bro
         except labels.LabelError:
             pass
 print('Ozon printing: complete 1+4 labels, product-only, pending assembly, throttling and corrupt PDFs checked')
+
+# Ozon: ошибки товара/экземпляра не теряются даже при HTTP 200.
+for response, expected in (
+    ({'products':[{'product_id':5655461112,'valid':False,'error':'MANDATORY_MARK_REDUNDANT','exemplars':[]}]}, 'MANDATORY_MARK_REDUNDANT'),
+    ({'products':[{'product_id':5655461112,'exemplars':[{'valid':False,'errors':['GTD_REQUIRED'],'marks':[]}]}]}, 'GTD_REQUIRED'),
+):
+    try:
+        kiz._check_ozon_validation(response, ['test-code'], {5655461112:'Комбинезон L'})
+        raise AssertionError('invalid response accepted')
+    except kiz.KizError as exc:
+        assert expected in str(exc) and 'Комбинезон L' in str(exc)
+
+# Сканер Ozon: AIM-префикс, пропущенные GS и назначение разным SKU.
+scan_codes=['010463056831742321' + ('SERIAL%07d' % i) + '91ABCD92' + 'x'*44 for i in range(4)]
+scan_raw=[']d2'+code for code in scan_codes]
+scan_assign=[{'code':code,'product_id':multi['products'][i%2]['sku']} for i,code in enumerate(scan_raw)]
+with patch.object(kiz,'_ozon_create',return_value=exemplars):
+    CALLS.clear()
+    result=kiz.submit(mid,scan_raw,scan_assign)
+    assert result['sent']==4
+    sent=[c for c in CALLS if c[1]==kiz.OZON_SET][-1][2]['products']
+    assert len(sent)==2 and all(len(p['exemplars'])==2 for p in sent)
+    assert all(m['mark'].count('\x1d')==2 and not m['mark'].startswith(']d2') for p in sent for ex in p['exemplars'] for m in ex['marks'])
+    CALLS.clear()
+    with patch.object(kiz,'req',side_effect=lambda method,url,**kw: Fake(200,{'products':[{'product_id':5655461112,'valid':False,'error':'MANDATORY_MARK_REDUNDANT'}]}) if url==kiz.OZON_VALIDATE else fake_req(method,url,**kw)):
+        try:
+            kiz.submit(mid,scan_raw,scan_assign)
+            raise AssertionError('set after product error')
+        except kiz.KizError as exc:
+            assert 'MANDATORY_MARK_REDUNDANT' in str(exc)
+    assert not any(c[1]==kiz.OZON_SET for c in CALLS)
+print('Ozon: GS, AIM, назначения SKU и причины отказов проверены')

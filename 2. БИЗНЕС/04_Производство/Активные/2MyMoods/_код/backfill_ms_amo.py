@@ -31,6 +31,7 @@ import shift_roster
 TZ = ZoneInfo("Europe/Moscow")
 WORK = Path.home() / "Library" / "Caches"
 PLAN = WORK / "2my-ms-amo-backfill-plan.local.json"
+RAW_CACHE = WORK / "2my-ms-amo-backfill-source.local.json"
 JOURNAL = WORK / "2my-ms-amo-backfill-journal.local.json"
 LOCK = WORK / "2my-ms-amo-backfill.lock"
 PIPELINE = 11318374
@@ -172,19 +173,19 @@ def ms_rows(session: requests.Session, path: str, params: dict | None = None,
         size = meta.get("size")
         rows = body.get("rows")
         if not isinstance(size, int) or not isinstance(rows, list):
-            raise Stop("Страница МойСклад не содержит полный meta.size/rows")
+            raise Stop(f"Страница МойСклад {path} не содержит полный meta.size/rows")
         if expected is None:
             expected = size
         elif size != expected:
-            raise Stop("Размер набора МойСклад изменился во время чтения")
+            raise Stop(f"Размер набора МойСклад {path} изменился во время чтения")
         if not rows and offset < expected:
-            raise Stop("Пагинация МойСклад оборвалась")
+            raise Stop(f"Пагинация МойСклад {path} оборвалась")
         out.extend(rows)
         offset += len(rows)
         if offset >= expected:
-            row_keys = [str(r.get("id") or id_of(r.get("audit")) or digest(r)) for r in out]
+            row_keys = [str(r.get("id") or r.get("uid") or id_of(r.get("audit")) or digest(r)) for r in out]
             if len(out) != expected or len(set(row_keys)) != len(out):
-                raise Stop("Полнота/уникальность набора МойСклад не подтверждена")
+                raise Stop(f"Полнота/уникальность набора МойСклад {path} не подтверждена")
             return out
 
 
@@ -1333,6 +1334,8 @@ def main() -> None:
     parser.add_argument("--sha256", default="")
     parser.add_argument("--max-orders", type=int, default=5)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--reuse-raw", action="store_true",
+                        help="reclassify the protected read-only source snapshot without refetching")
     args = parser.parse_args()
     private_storage()
     with LOCK.open("a+") as lockfile:
@@ -1342,9 +1345,17 @@ def main() -> None:
         except BlockingIOError as exc:
             raise Stop("Уже работает другой экземпляр переноса") from exc
         if not args.apply:
-            ms, amo = lib.MS(), assign_shift.amo_client()
-            print("Снимаю полный исходный индекс МойСклад и amoCRM…", flush=True)
-            data, _schema = collect_current(ms, amo)
+            if args.reuse_raw:
+                if not RAW_CACHE.exists():
+                    raise Stop("Защищённый исходный снимок для повторной классификации не найден")
+                ms = lib.MS()
+                data = json.loads(RAW_CACHE.read_text(encoding="utf-8"))
+            else:
+                ms, amo = lib.MS(), assign_shift.amo_client()
+                print("Снимаю полный исходный индекс МойСклад и amoCRM…", flush=True)
+                data, _schema = collect_current(ms, amo)
+                atomic_json(RAW_CACHE, data)
+                print("Защищённый исходный срез сохранён локально для сверки.", flush=True)
             result = classify(data, ms)
             atomic_json(args.plan, result)
             file_hash = hashlib.sha256(args.plan.read_bytes()).hexdigest()
