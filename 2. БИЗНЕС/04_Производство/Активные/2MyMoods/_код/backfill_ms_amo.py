@@ -1524,6 +1524,8 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
         _set_entry(journal, oid, status="VERIFIED", lead_id=lead_id, contact_id=contact_id,
                    backlink=got_link, verified_at=datetime.now(TZ).isoformat(timespec="seconds"))
         processed += 1
+        if processed % 25 == 0:
+            print(f"Подтверждено {processed} заказов в текущем запуске; журнал сохранён.", flush=True)
     done = sum(1 for item in journal["rows"].values() if item.get("status") == "VERIFIED")
     return {"verified_before": done - processed, "processed": processed,
             "verified_total": done, "remaining_create_rows": max(0, len(create_rows) - done)}
@@ -1567,8 +1569,8 @@ def main() -> None:
             return
         if not args.sha256:
             raise Stop("Для apply обязателен SHA256 плана")
-        if args.max_orders < 1 or args.max_orders > 25:
-            raise Stop("Размер одного запуска должен быть от 1 до 25 заказов")
+        if args.max_orders < 1 or args.max_orders > 5000:
+            raise Stop("Размер запуска должен быть от 1 до 5000 заказов")
         raw = args.plan.read_bytes()
         if hashlib.sha256(raw).hexdigest() != args.sha256:
             raise Stop("SHA256 плана не совпал")
