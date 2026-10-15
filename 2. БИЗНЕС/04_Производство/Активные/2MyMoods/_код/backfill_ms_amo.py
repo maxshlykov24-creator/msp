@@ -33,6 +33,7 @@ WORK = Path.home() / "Library" / "Caches"
 PLAN = WORK / "2my-ms-amo-backfill-plan.local.json"
 RAW_CACHE = WORK / "2my-ms-amo-backfill-source.local.json"
 ORDER_CACHE = WORK / "2my-ms-amo-expanded-orders.local.jsonl"
+STATUS_AUDIT_CACHE = WORK / "2my-ms-amo-status-audit.local.json"
 JOURNAL = WORK / "2my-ms-amo-backfill-journal.local.json"
 LOCK = WORK / "2my-ms-amo-backfill.lock"
 PIPELINE = 11318374
@@ -326,6 +327,22 @@ def write_order_cache(rows: list[dict]) -> None:
         os.fsync(target.fileno())
     os.chmod(tmp, 0o600)
     os.replace(tmp, ORDER_CACHE)
+
+
+def status_audit_cache_load() -> dict[str, str | None]:
+    if not STATUS_AUDIT_CACHE.exists():
+        return {}
+    try:
+        value = json.loads(STATUS_AUDIT_CACHE.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise Stop("Кэш истории статусов повреждён") from exc
+    if not isinstance(value, dict):
+        raise Stop("Формат кэша истории статусов не распознан")
+    return value
+
+
+def status_audit_cache_save(value: dict[str, str | None]) -> None:
+    atomic_json(STATUS_AUDIT_CACHE, value)
 
 
 def reconcile_orders(mss: requests.Session, pace: list[float]) -> tuple[list[dict], dict[str, int], int]:
@@ -791,6 +808,7 @@ def classify(data: dict, ms: lib.MS) -> dict:
     cp_contact = {str(c.get("id")): c for c in data["contacts"]}
     plan_rows, counts = [], defaultdict(int)
     audit_checks = 0
+    audit_cache = status_audit_cache_load()
     for order in orders:
         name = str(order.get("_verified_state_name") or "")
         if not name:
@@ -800,11 +818,18 @@ def classify(data: dict, ms: lib.MS) -> dict:
         allocated, paid_moment = payment_close(order, payments)
         selected = name in ALWAYS or (name in PAID_REQUIRED and total > 0 and
                                        (paid_recorded >= total or allocated >= total))
-        if not selected:
-            counts["EXCLUDED_NOT_FULLY_PAID"] += 1
-            continue
         uid = str(order.get("id") or "").casefold()
         signature = order_hash(order)
+        if not selected:
+            counts["EXCLUDED_NOT_FULLY_PAID"] += 1
+            plan_rows.append({"order_id": uid, "source_hash": signature,
+                              "number": str(order.get("name") or ""),
+                              "category": "EXCLUDED_NOT_FULLY_PAID",
+                              "reason": "STATUS_REQUIRES_FULL_PAYMENT", "state": name,
+                              "moment": order.get("moment"), "updated": order.get("updated"),
+                              "total_kopecks": total, "payment_kopecks": allocated,
+                              "payed_sum_kopecks": paid_recorded})
+            continue
         link = ms_link(order)
         uuid_matches = uuid_index.get(uid, [])
         url_matches = url_index.get(uid, [])
@@ -910,12 +935,24 @@ def classify(data: dict, ms: lib.MS) -> dict:
         if category == "CREATE" and not close_moment and name in ALWAYS:
             if audit_checks % 25 == 0:
                 print(f"Проверяю историю статусов: {audit_checks} заказов…", flush=True)
-            close_moment = audit_current_state(ms, order)
+            if uid in audit_cache:
+                close_moment = audit_cache[uid]
+            else:
+                close_moment = audit_current_state(ms, order)
+                audit_cache[uid] = close_moment
+                status_audit_cache_save(audit_cache)
             audit_checks += 1
             if close_moment:
                 close_basis = "последний подтверждённый переход в текущий статус МойСклад"
         if category == "CREATE" and not close_moment:
             category, reason = "DEFERRED", "NO_VERIFIED_CLOSE_DATE"
+        if category == "CREATE":
+            created_dt, close_dt = moscow_dt(order.get("moment")), moscow_dt(close_moment)
+            now_dt = datetime.now(TZ)
+            if not created_dt or created_dt > now_dt:
+                category, reason = "DEFERRED", "INVALID_ORDER_DATE"
+            elif not close_dt or close_dt < created_dt or close_dt > now_dt:
+                category, reason = "DEFERRED", "INVALID_CLOSE_DATE"
 
         counts[category] += 1
         plan_rows.append({
@@ -1146,9 +1183,8 @@ def fresh_order(ms_session_: requests.Session, order_id: str, pace: list[float])
 
 def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -> dict:
     ms, amo = lib.MS(), assign_shift.amo_client()
-    mss, amos, amo_writer = ms_session(ms), None, amo_session(amo)
-    amo_reads = None
-    # API read wrapper uses the established library client; writes use a no-retry transport.
+    mss, amos = ms_session(ms), amo_session(amo)
+    # API reads use the established client; writes use a no-retry transport.
     roster = get_roster()
     journal = journal_load()
     if journal.get("unknown_write"):
