@@ -1145,9 +1145,12 @@ def confirm_contact(amo: lib.Amo, contact_id: str, row: dict,
         # заказа (email обязателен, когда он есть в МойСклад); имя не меняем.
         exact_identity = (row.get("phone") and row["phone"] in got_phone
                           and (not row.get("email") or row["email"] in got_email))
-        if not exact_identity:
+        if not exact_identity and expect_name:
             raise Stop("Имя контакта отличается, а телефон/email не подтверждают точное совпадение")
-        contact["_migration_name_mismatch"] = True
+        if exact_identity:
+            contact["_migration_name_mismatch"] = True
+        else:
+            contact["_migration_identity_mismatch"] = True
     if row.get("email") and row["email"] not in got_email:
         # У существующей карточки не заменяем заполненный email из заказа.
         # Разрешаем использовать её только при точном телефоне и имени;
@@ -1155,9 +1158,12 @@ def confirm_contact(amo: lib.Amo, contact_id: str, row: dict,
         same_existing_person = (not expect_name and row.get("phone")
                                 and row["phone"] in got_phone
                                 and name_norm(contact.get("name")) == name_norm(row.get("buyer")))
-        if not same_existing_person:
+        if not same_existing_person and expect_name:
             raise Stop("Контакт не содержит ожидаемый email и не подтверждён точным именем и телефоном")
-        contact["_migration_email_mismatch"] = True
+        if same_existing_person:
+            contact["_migration_email_mismatch"] = True
+        else:
+            contact["_migration_identity_mismatch"] = True
     return contact
 
 
@@ -1264,7 +1270,8 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
     create_rows = sorted((r for r in plan["rows"] if r["category"] == "CREATE"),
                          key=lambda x: (x.get("moment") or "", x["order_id"]))
     done = sum(1 for rid, x in journal["rows"].items() if x.get("status") == "VERIFIED")
-    candidates = [r for r in create_rows if journal["rows"].get(r["order_id"], {}).get("status") != "VERIFIED"]
+    candidates = [r for r in create_rows if journal["rows"].get(r["order_id"], {}).get("status")
+                  not in {"VERIFIED", "DEFERRED", "EXISTS_BACKLINK", "EXISTS_AMO_ID"}]
     if not candidates:
         return {"verified_before": done, "processed": 0, "remaining": 0}
     candidates = candidates[:maximum]
@@ -1426,16 +1433,25 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
                 raise Stop("Контакт из полного индекса не находится свежим поиском")
             contact_id = str(contacts_now[0]["id"])
             checked_contact = confirm_contact(amo, contact_id, row)
+            if checked_contact.get("_migration_identity_mismatch"):
+                _set_entry(journal, oid, status="DEFERRED", reason="CONTACT_IDENTITY_MISMATCH")
+                continue
             existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
             contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
         elif cp_id in journal["counterparty_contacts"]:
             contact_id = str(journal["counterparty_contacts"][cp_id])
             checked_contact = confirm_contact(amo, contact_id, row)
+            if checked_contact.get("_migration_identity_mismatch"):
+                _set_entry(journal, oid, status="DEFERRED", reason="CONTACT_IDENTITY_MISMATCH")
+                continue
             existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
             contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
         elif contacts_now:
             contact_id = str(contacts_now[0]["id"])
             checked_contact = confirm_contact(amo, contact_id, row)
+            if checked_contact.get("_migration_identity_mismatch"):
+                _set_entry(journal, oid, status="DEFERRED", reason="CONTACT_IDENTITY_MISMATCH")
+                continue
             existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
             contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
             journal["counterparty_contacts"][cp_id] = contact_id
