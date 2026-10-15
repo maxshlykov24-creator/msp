@@ -1498,37 +1498,55 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
         _set_entry(journal, oid, status="LEAD_VERIFIED", contact_id=contact_id, lead_id=lead_id)
         confirmed_lead = confirm_lead(amo, lead_id, fresh, row, contact_id, lead_payload)
 
-        fresh_after = fresh_order(mss, oid, ms_pace)
-        if ms_link(fresh_after):
-            raise Stop("После создания сделки в МойСклад уже появилась посторонняя ссылка")
-        attrs_now = fresh_after.get("attributes") or []
-        found_attr = False
-        for item in attrs_now:
-            if str(item.get("id") or id_of(item)) == MS_AMO_ATTR:
-                item["value"] = amo_lead_url(amo, lead_id)
-                found_attr = True
-                break
-        if not found_attr:
-            metadata = api_get(mss, lib.MS_BASE + "/entity/customerorder/metadata/attributes", last_call=ms_pace)
-            attr_rows = metadata.get("rows")
-            if not isinstance(attr_rows, list) or not any(str(x.get("id")) == MS_AMO_ATTR for x in attr_rows):
-                raise Stop("Атрибут обратной ссылки отсутствует в метаданных заказа")
-            attrs_now.append({"id": MS_AMO_ATTR,
-                              "meta": {"href": f"{lib.MS_BASE}/entity/customerorder/metadata/attributes/{MS_AMO_ATTR}",
-                                       "type": "attributemetadata", "mediaType": "application/json"},
-                              "value": amo_lead_url(amo, lead_id)})
+        target_link = amo_lead_url(amo, lead_id)
         _set_entry(journal, oid, status="BACKLINK_WRITE_INTENT", lead_id=lead_id,
-                   contact_id=contact_id, backlink=amo_lead_url(amo, lead_id))
-        code, body, error = api_write(mss, "PUT", lib.MS_BASE + f"/entity/customerorder/{oid}",
-                                      {"attributes": attrs_now},
-                                      headers={"X-Lognex-WebHook-Disable": "true"}, pace=writer_pace)
-        after = fresh_order(mss, oid, ms_pace)
-        got_link = ms_link(after)
-        if got_link != amo_lead_url(amo, lead_id):
-            if code is None:
-                journal["unknown_write"] = {"order_id": oid, "kind": "backlink", "error": error}
-                save_journal(journal)
-            raise Stop(f"Обратная ссылка после записи не подтверждена (HTTP {code})")
+                   contact_id=contact_id, backlink=target_link)
+        got_link = ""
+        code = None
+        error = ""
+        for attempt in range(5):
+            if attempt:
+                time.sleep(min(30, 5 * attempt))
+            # После HTTP 429 перечитываем заказ и только затем повторяем
+            # идемпотентное обновление одного атрибута. Чужую ссылку не трогаем.
+            fresh_after = fresh_order(mss, oid, ms_pace)
+            got_link = ms_link(fresh_after)
+            if got_link == target_link:
+                break
+            if got_link:
+                raise Stop("После создания сделки в МойСклад появилась другая ссылка")
+            attrs_now = fresh_after.get("attributes") or []
+            found_attr = False
+            for item in attrs_now:
+                if str(item.get("id") or id_of(item)) == MS_AMO_ATTR:
+                    item["value"] = target_link
+                    found_attr = True
+                    break
+            if not found_attr:
+                metadata = api_get(mss, lib.MS_BASE + "/entity/customerorder/metadata/attributes", last_call=ms_pace)
+                attr_rows = metadata.get("rows")
+                if not isinstance(attr_rows, list) or not any(str(x.get("id")) == MS_AMO_ATTR for x in attr_rows):
+                    raise Stop("Атрибут обратной ссылки отсутствует в метаданных заказа")
+                attrs_now.append({"id": MS_AMO_ATTR,
+                                  "meta": {"href": f"{lib.MS_BASE}/entity/customerorder/metadata/attributes/{MS_AMO_ATTR}",
+                                           "type": "attributemetadata", "mediaType": "application/json"},
+                                  "value": target_link})
+            code, body, error = api_write(mss, "PUT", lib.MS_BASE + f"/entity/customerorder/{oid}",
+                                          {"attributes": attrs_now},
+                                          headers={"X-Lognex-WebHook-Disable": "true"}, pace=writer_pace)
+            after = fresh_order(mss, oid, ms_pace)
+            got_link = ms_link(after)
+            if got_link == target_link:
+                break
+            if got_link:
+                raise Stop("После записи в МойСклад появилась другая ссылка")
+            if code != 429:
+                if code is None:
+                    journal["unknown_write"] = {"order_id": oid, "kind": "backlink", "error": error}
+                    save_journal(journal)
+                raise Stop(f"Обратная ссылка после записи не подтверждена (HTTP {code})")
+        if got_link != target_link:
+            raise Stop(f"Обратная ссылка не записалась после повторов (HTTP {code})")
         read_lead = confirm_lead(amo, lead_id, after, row, contact_id, lead_payload)
         if field(read_lead, FIELDS["ms_url"]) != ms_order_url(oid):
             raise Stop("Ссылка из сделки ведёт не на текущий заказ МойСклад")
