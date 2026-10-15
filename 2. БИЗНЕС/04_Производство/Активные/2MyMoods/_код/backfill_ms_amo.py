@@ -1164,15 +1164,26 @@ def confirm_lead(amo: lib.Amo, lead_id: str, order: dict, row: dict,
                        if str(x.get("field_id")) == str(fid)), None)
         if actual is None:
             raise Stop(f"Поле amo {fid} отсутствует после записи")
-        def normalized_values(values: list[dict]) -> list[tuple[str, str]]:
+        def normalized_values(field_id: int, values: list[dict]) -> list[tuple[str, str]]:
             result = []
             for value in values:
                 if "enum_id" in value:
                     result.append(("enum_id", str(value.get("enum_id"))))
                 elif "value" in value:
-                    result.append(("value", str(value.get("value"))))
+                    raw_value = value.get("value")
+                    if str(field_id) == str(FIELDS["delivery"]):
+                        # amo отдаёт числовые денежные поля в разных форматах
+                        # (например, 395, 395.0 и 395.00). Сравниваем число,
+                        # сохраняя точность Decimal, а не текстовое оформление.
+                        try:
+                            normalized = format(Decimal(str(raw_value)).normalize(), "f")
+                        except Exception as exc:
+                            raise Stop(f"Поле amo {field_id} содержит нечисловое значение") from exc
+                        result.append(("number", normalized))
+                    else:
+                        result.append(("value", str(raw_value)))
             return result
-        if normalized_values(actual.get("values") or []) != normalized_values(item.get("values") or []):
+        if normalized_values(fid, actual.get("values") or []) != normalized_values(fid, item.get("values") or []):
             raise Stop(f"Значение поля amo {fid} не совпало с планом")
     if int(lead.get("created_at") or 0) != expected_payload["created_at"]:
         raise Stop("Дата создания сделки не совпала с датой заказа")
