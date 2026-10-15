@@ -62,7 +62,6 @@ ENUM = {"source_ms": 1255285, "unpaid": 1255257,
 AMO_ORDER_FIELD = 929081
 AMO_PHONE_FIELD = 928609
 AMO_EMAIL_FIELD = 928611
-SOURCE_ID = 23495049
 
 
 class Stop(RuntimeError):
@@ -372,7 +371,8 @@ def status_audit_cache_save(value: dict[str, str | None]) -> None:
     atomic_json(STATUS_AUDIT_CACHE, value)
 
 
-def reconcile_orders(mss: requests.Session, pace: list[float]) -> tuple[list[dict], dict[str, int], int]:
+def reconcile_orders(mss: requests.Session, pace: list[float],
+                     strict_snapshot: bool = True) -> tuple[list[dict], dict[str, int], int]:
     cached = read_order_cache()
     for attempt in range(1, 4):
         print(f"Сверяю полный список заказов с защищённым подробным кэшем (попытка {attempt}/3)…", flush=True)
@@ -394,7 +394,7 @@ def reconcile_orders(mss: requests.Session, pace: list[float]) -> tuple[list[dic
                 stable = False
                 break
             resolved.append(detail)
-        if stable:
+        if stable and strict_snapshot:
             confirm, confirm_counts = compact_order_snapshot(mss, pace)
             stable = (compact_signature(compact) == compact_signature(confirm)
                       and counts == confirm_counts)
@@ -408,7 +408,8 @@ def reconcile_orders(mss: requests.Session, pace: list[float]) -> tuple[list[dic
     raise Stop("Не удалось получить стабильный состав заказов за три попытки")
 
 
-def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
+def collect_current(ms: lib.MS, amo: lib.Amo,
+                    strict_order_snapshot: bool = True) -> tuple[dict, dict]:
     """Полные исходные индексы с проверкой стабильного состава заказов."""
     mss = ms_session(ms)
     pace = [0.0]
@@ -423,7 +424,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo) -> tuple[dict, dict]:
     amo_attr_ids = {str(x.get("id")) for x in attr_rows}
     if MS_AMO_ATTR not in amo_attr_ids:
         raise Stop("Поле ссылки на amo отсутствует в метаданных заказа")
-    order_rows, counts, _changed = reconcile_orders(mss, pace)
+    order_rows, counts, _changed = reconcile_orders(mss, pace, strict_order_snapshot)
     total_page = api_get(mss, lib.MS_BASE + "/entity/customerorder", {"limit": 1}, pace)
     total_orders = (total_page.get("meta") or {}).get("size")
     if not isinstance(total_orders, int) or sum(counts.values()) > total_orders:
@@ -1139,8 +1140,6 @@ def confirm_lead(amo: lib.Amo, lead_id: str, order: dict, row: dict,
         raise Stop("Сумма сделки не совпала с планом")
     if str(lead.get("name") or "") != str(expected_payload.get("name") or ""):
         raise Stop("Название сделки не совпало с планом")
-    if int(lead.get("source_id") or 0) != SOURCE_ID:
-        raise Stop("Источник сделки не совпал с МойСклад")
     if int(lead.get("responsible_user_id") or 0) != int(expected_payload["responsible_user_id"]):
         raise Stop("Ответственный сделки не совпал с планом")
     for item in expected_payload["custom_fields_values"]:
@@ -1185,7 +1184,7 @@ def make_lead_payload(amo: lib.Amo, order: dict, row: dict,
         "name": f"Заказ МойСклад №{order.get('name')}",
         "price": rubles_round(int(row["net_kopecks"])),
         "pipeline_id": PIPELINE, "status_id": WON,
-        "source_id": SOURCE_ID, "responsible_user_id": manager_id,
+        "responsible_user_id": manager_id,
         "created_at": created_at, "closed_at": closed_at,
         "request_id": "ms-order:" + row["order_id"],
         "custom_fields_values": fields,
@@ -1227,7 +1226,7 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
         return {"verified_before": done, "processed": 0, "remaining": 0}
     candidates = candidates[:maximum]
     print("Повторно сверяю текущие оплаты, возвраты, сделки и контакты перед этой партией…", flush=True)
-    current_data, _ = collect_current(ms, amo)
+    current_data, _ = collect_current(ms, amo, strict_order_snapshot=False)
     current_orders = {str(x.get("id")).casefold(): x for x in current_data["orders"]}
     current_payments, _ = allocations(current_data)
     current_returns = return_map(current_data)
@@ -1256,7 +1255,7 @@ def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -
         oid = row["order_id"]
         entry = journal["rows"].setdefault(oid, {"status": "PLANNED"})
         recovered_lead_id = ""
-        if entry.get("status") in ("CONTACT_WRITE_INTENT", "LEAD_WRITE_INTENT", "BACKLINK_WRITE_INTENT",
+        if entry.get("status") in ("CONTACT_WRITE_INTENT", "LEAD_WRITE_INTENT", "LEAD_VERIFIED", "BACKLINK_WRITE_INTENT",
                                     "COUNTERPARTY_WRITE_INTENT"):
             # Recovery checks every possible target before any retry.
             found = exact_leads(amo, oid)
