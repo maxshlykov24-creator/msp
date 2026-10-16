@@ -390,16 +390,19 @@ def ship_ozon(ship_ids, split=True):
     for cab_id, bag in replaced.items():
         client = get_client_by_id(bag["client"])
         cab = cabs[cab_id]
+        # Успешный ship подтверждает сборку раньше, чем GET успевает обновить статус.
+        # Сохраняем это подтверждение и для номеров, появившихся после дробления.
+        if stay:
+            set_work_state(stay, "ready")
         if client and cab:
             pack.refresh_ozon(client, cab, bag["new"])
+        refreshed = get_shipments_by_ext(cab_id, "fbs", bag["new"])
+        set_work_state([r["id"] for r in refreshed], "ready")
         if bag["gone"]:
             # номера, которых после дробления на площадке больше нет
             delete_shipments_by_ext(cab_id, "fbs", bag["gone"])
     if stay:
-        # площадка увела отправление в «ожидают отгрузки». Отметка «на сборке»
-        # старше её по нашему правилу чтения, поэтому снимаем: дальше статус
-        # ведёт Ozon, иначе заказ залипнет на вкладке «На сборке».
-        set_work_state(stay, "")
+        set_work_state(stay, "ready")
     return {"shipped": done, "notes": notes}
 
 

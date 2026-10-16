@@ -372,7 +372,7 @@ db.set_work_state([oz3], "assembling")
 out = supply_flow.assemble([oz3], split=False)
 assert out["shipped"] == 1 and out["marked"] == 0, out
 row = db.get_shipments_by_ids([oz3])[0]
-assert (row["work_state"] or "") == "", dict(row)
+assert row["work_state"] == "ready", dict(row)
 eff = {r["ext_id"]: r["eff_group"] for r in db.list_assembly(client_id=client_id, marketplace="ozon")}
 assert eff.get("0001-9") == "ready", eff
 
@@ -1373,3 +1373,13 @@ with patch.object(kiz, '_ozon_create', return_value=required_data):
     except kiz.KizError as exc:
         assert 'не подтвердил удаление' in str(exc)
 print('Ozon: ручной ввод необязательных КиЗ, удаление с readback проверены')
+
+# Ozon принимает ship, но первый GET ещё возвращает старый статус.
+lag = db.upsert_shipment(client_id, oz_cab, "ozon", "fbs", "LAG-1", "Ожидает упаковки", "2026-09-20", "ART-1", "", "Товар", 1, None, 0, "2026-09-20T10:00:00", extra={"status_group":"new"})
+db.set_work_state([lag], 'assembling')
+with patch.object(supply_flow.pack, 'ship_ozon', return_value=(['LAG-1'], [])), patch.object(supply_flow.pack, 'refresh_ozon', return_value=0):
+    result = supply_flow.ship_ozon([lag])
+assert result['shipped'] == 1
+assert db.get_shipments_by_ids([lag])[0]['work_state'] == 'ready'
+assert next(r for r in db.list_assembly(client_id=client_id, marketplace='ozon') if r['ext_id']=='LAG-1')['eff_group']=='ready'
+print('Ozon: задержка GET после успешного ship не возвращает заказ в новые')
