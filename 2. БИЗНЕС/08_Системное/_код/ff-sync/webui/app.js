@@ -2301,7 +2301,8 @@ function kizRender() {
     : `<div class="empty">Пока ничего не просканировано.</div>`;
   const more = kizState.ids.length > 1 && kizState.index < kizState.ids.length - 1;
   $("kizSend").textContent = more ? "Отправить и дальше" : "Отправить на площадку";
-  $("kizSend").disabled = !have;
+  $("kizSend").disabled = !have || kizState.canSubmit === false;
+  $("kizInput").disabled = kizState.canSubmit === false;
   const products = (kizState.products || []).filter((p) => p.marked);
   $("kizProductWrap").hidden = products.length < 2;
   const selected = $("kizProduct").value;
@@ -2355,6 +2356,7 @@ function kizInsert(ch) {
 }
 
 function kizAdd(raw) {
+  if (kizState.canSubmit === false) return;
   let added = 0;
   let dupe = 0;
   String(raw || "").split(/[\r\n]+/).forEach((part) => {
@@ -2404,6 +2406,7 @@ async function loadKizStep() {
   const id = kizState.ids[kizState.index];
   kizState.id = id;
   kizState.need = 0;
+  kizState.canSubmit = false;
   kizState.codes = [];
   kizState.products = [];
   kizState.assignments = {};
@@ -2417,6 +2420,7 @@ async function loadKizStep() {
   try {
     const res = await api("/api/assembly/" + id + "/kiz");
     if (mine !== kizLoad) return;
+    kizState.canSubmit = res.can_submit !== false;
     kizState.need = res.need || 0;
     kizState.codes = (res.codes || []).slice();
     kizState.products = res.products || [];
@@ -2535,7 +2539,7 @@ $("kizSkip").onclick = async () => {
 
 let kizBusy = false;
 $("kizSend").onclick = async () => {
-  if (kizBusy || !kizState.codes.length) return;
+  if (kizBusy || !kizState.codes.length || kizState.canSubmit === false) return;
   if (kizState.need && kizState.codes.length !== kizState.need) {
     say($("kizMsg"), "Нужно " + kizState.need + " кодов, сейчас " + kizState.codes.length + ". Досканируй.", "bad");
     $("kizInput").focus();

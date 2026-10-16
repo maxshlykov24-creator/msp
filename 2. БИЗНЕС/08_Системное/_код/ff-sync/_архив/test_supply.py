@@ -1277,3 +1277,25 @@ with patch.object(kiz,'_ozon_create',return_value=exemplars):
             assert 'MANDATORY_MARK_REDUNDANT' in str(exc)
     assert not any(c[1]==kiz.OZON_SET for c in CALLS)
 print('Ozon: GS, AIM, назначения SKU и причины отказов проверены')
+
+# Реальный класс отказа: экземпляры есть, но Ozon запрещает mandatory_mark.
+unmarked = copy.deepcopy(exemplars)
+for p in unmarked['products']:
+    p['is_mandatory_mark_needed'] = False
+    p['is_mandatory_mark_possible'] = False
+with patch.object(kiz, '_ozon_create', return_value=unmarked):
+    plan = kiz.plan(mid)
+    assert plan['can_submit'] is False
+    assert all(not p['marked'] for p in plan['products'])
+    assert 'Нужен код маркировки' in plan['note']
+    CALLS.clear()
+    try:
+        kiz.submit(mid, scan_raw, scan_assign)
+        raise AssertionError('Ozon prohibition ignored')
+    except kiz.KizError as exc:
+        assert 'не разрешает' in str(exc)
+        assert 'не создал экземпляры' not in str(exc)
+    assert not any(c[1] in (kiz.OZON_VALIDATE, kiz.OZON_SET) for c in CALLS)
+with patch.object(kiz, '_ozon_create', return_value=exemplars):
+    assert kiz.plan(mid)['can_submit'] is True
+print('Ozon: существующие экземпляры с запретом маркировки распознаны')

@@ -172,6 +172,18 @@ def _ozon_product_info(row, data):
     return out
 
 
+def _ozon_mark_available(prod):
+    # Явный запрет площадки важнее локального признака маркируемого товара.
+    return bool(prod.get("is_mandatory_mark_needed") or prod.get("is_mandatory_mark_possible"))
+
+
+OZON_MARK_UNAVAILABLE = (
+    "Ozon не разрешает передать КиЗ по этим товарам. "
+    "Проверь признак «Нужен код маркировки» в карточках Ozon. "
+    "Если товар маркирован, не подтверждай сборку без выяснения причины."
+)
+
+
 def _ozon_plan(row, cab):
     data = _ozon_create(cab, row["ext_id"])
     need = 0
@@ -185,7 +197,7 @@ def _ozon_plan(row, cab):
         required = bool(prod.get('is_mandatory_mark_needed')) or bool(item.get('need_kiz'))
         if len(shipment_items(row)) == 1:
             required = required or product_marked(row)
-        marked = required or bool(prod.get("is_mandatory_mark_possible"))
+        marked = _ozon_mark_available(prod)
         filled = 0
         for ex in prod.get("exemplars") or []:
             if any((m or {}).get("mark") for m in (ex.get("marks") or [])):
@@ -208,10 +220,14 @@ def _ozon_plan(row, cab):
                 "filled": filled,
             }
         )
+    available = any(p['marked'] for p in products)
+    blocked = [p['article'] or p['name'] for p in products if not p['marked']]
     note = ""
+    if blocked:
+        note = OZON_MARK_UNAVAILABLE + " Товары: " + "; ".join(blocked)
     if row["status_group"] and row["status_group"] != "new":
         note = "Ozon принимает коды только до сборки: отправление уже ушло дальше «ожидает упаковки»."
-    return {"need": need, "have": have, "products": products, "note": note, '_remote_marks': remote_marks}
+    return {"need": need, "have": have, "products": products, "note": note, "can_submit": available, '_remote_marks': remote_marks}
 
 
 def _check_ozon_validation(checked, codes, articles):
@@ -220,7 +236,7 @@ def _check_ozon_validation(checked, codes, articles):
     for prod in checked.get('products') or []:
         article = articles.get(prod.get('product_id'), str(prod.get('product_id') or 'товар'))
         if prod.get('valid') is False or prod.get('error'):
-            bad.append('%s: %s' % (article, prod.get('error') or 'товар не прошёл проверку'))
+            bad.append('%s: %s' % (article, (OZON_MARK_UNAVAILABLE + ' (MANDATORY_MARK_REDUNDANT)' if prod.get('error') == 'MANDATORY_MARK_REDUNDANT' else prod.get('error')) or 'товар не прошёл проверку'))
         for number, ex in enumerate(prod.get('exemplars') or [], 1):
             if ex.get('valid') is False or ex.get('errors'):
                 bad.append('%s, экземпляр %s: %s' % (article, number,
@@ -251,14 +267,14 @@ def _ozon_submit(row, cab, codes, assignments=None):
         must = bool(prod.get('is_mandatory_mark_needed')) or bool(item.get('need_kiz'))
         if len(info) == 1:
             must = must or product_marked(row)
-        if not (must or prod.get('is_mandatory_mark_possible')):
+        if not _ozon_mark_available(prod):
             continue
         pools[pid] = [ex for ex in prod.get('exemplars') or [] if isinstance(ex, dict) and ex.get('exemplar_id')]
         articles[pid] = item.get('article') or str(pid)
         gtins[pid] = str(item.get('gtin') or '').zfill(14) if item.get('gtin') else ''
         required[pid] = int(prod.get('quantity') or 0) if must else 0
     if not pools:
-        raise KizError("Ozon не создал экземпляры под это отправление, коды передавать некуда")
+        raise KizError(OZON_MARK_UNAVAILABLE if info else "Ozon вернул пустой состав отправления. Обнови отправления и открой КиЗ заново.")
     explicit = {}
     for assignment in assignments or []:
         code = normalize_wb_code(assignment.get('code'))
