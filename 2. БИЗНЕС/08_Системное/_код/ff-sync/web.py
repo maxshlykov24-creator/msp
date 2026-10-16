@@ -1059,6 +1059,17 @@ def assembly_kiz_plan(ship_id: int, ff_session: str = Cookie(default="")):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@app.post("/api/assembly/{ship_id}/kiz/clear")
+def assembly_kiz_clear(ship_id: int, ff_session: str = Cookie(default="")):
+    who(ff_session)
+    init_db()
+    import kiz
+    try:
+        return {"ok": True, **kiz.clear_ozon_marks(ship_id)}
+    except kiz.KizError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @app.post("/api/assembly/{ship_id}/kiz")
 def assembly_kiz_submit(ship_id: int, data: dict = Body(...), ff_session: str = Cookie(default="")):
     """Передать на площадку коды, которые склад просканировал."""

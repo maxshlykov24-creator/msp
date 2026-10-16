@@ -2033,7 +2033,7 @@ $("aTbl").onclick = (e) => {
   }
   const kizBtn = e.target.closest("button[data-kiz]");
   if (kizBtn) {
-    if (state.asmGroup !== "new") openKizQueue([Number(kizBtn.dataset.kiz)]);
+    if (state.asmGroup !== "new") openKizQueue([Number(kizBtn.dataset.kiz)], { manual: true });
     return;
   }
   const art = e.target.closest("button[data-art]");
@@ -2410,6 +2410,7 @@ async function loadKizStep() {
   kizState.codes = [];
   kizState.products = [];
   kizState.assignments = {};
+  $("kizRemoveRemote").hidden = true;
   const total = kizState.ids.length;
   $("kizStep").textContent = total > 1 ? (kizState.index + 1) + " из " + total : "";
   $("kizSkip").hidden = total < 2;
@@ -2422,7 +2423,7 @@ async function loadKizStep() {
   try {
     const res = await api("/api/assembly/" + id + "/kiz");
     if (mine !== kizLoad) return;
-    if (res.marketplace === "ozon" && res.skip_scan) {
+    if (res.marketplace === "ozon" && res.skip_scan && !(kizState.manual && res.can_submit)) {
       kizState.skipped = kizState.skipped || [];
       kizState.skipped.push(`${res.ext_id}: ${res.note}`);
       say($("aMsg"), kizState.skipped.join("\n"));
@@ -2436,11 +2437,12 @@ async function loadKizStep() {
       return;
     }
     kizState.canSubmit = res.can_submit !== false;
+    $("kizRemoveRemote").hidden = res.marketplace !== "ozon" || !res.have || !res.can_submit;
     kizState.need = res.need || 0;
-    const allowedIds = new Set((res.products || []).filter((p) => p.required).map((p) => String(p.product_id)));
+    const allowedIds = new Set((res.products || []).filter((p) => p.required || (kizState.manual && p.marked)).map((p) => String(p.product_id)));
     const allowedCodes = new Set((res.assignments || []).filter((a) => allowedIds.has(String(a.product_id))).map((a) => a.code));
     kizState.codes = (res.codes || []).filter((code) => res.marketplace !== "ozon" || allowedCodes.has(code));
-    kizState.products = res.products || [];
+    kizState.products = (res.products || []).map((p) => res.marketplace === "ozon" && !kizState.manual ? { ...p, marked: p.required } : p);
     kizState.assignments = Object.fromEntries((res.assignments || []).map((a) => [a.code, a.product_id]));
     const mp = res.marketplace === "wb" ? "WB" : "Ozon";
     const title = kizState.products.length > 1 ? kizState.products.map((p) => `${p.article || p.name}: ${p.quantity} шт`).join("; ") : res.article || res.name || "";
@@ -2477,7 +2479,7 @@ async function openKizQueue(ids, opts) {
     }
     await loadAsm();
   }
-  kizState = { ids, index: 0, id: 0, need: 0, codes: [], products: [], assignments: {} };
+  kizState = { ids, index: 0, id: 0, need: 0, codes: [], products: [], assignments: {}, manual: !!(opts && opts.manual) };
   $("kizModal").classList.add("on");
   await loadKizStep();
 }
@@ -2485,6 +2487,18 @@ async function openKizQueue(ids, opts) {
 $("aKiz").onclick = openKizFromPick;
 $("kizClose").onclick = () => { if (!kizBusy) $("kizModal").classList.remove("on"); };
 $("kizModal").onclick = (e) => { if (!kizBusy && e.target === $("kizModal")) $("kizModal").classList.remove("on"); };
+$("kizRemoveRemote").onclick = async () => {
+  if (kizBusy || !confirm("Удалить сохранённые КиЗ этого отправления из Ozon? После удаления можно отсканировать правильные коды.")) return;
+  kizBusy = true;
+  $("kizRemoveRemote").disabled = true;
+  try {
+    await api("/api/assembly/" + kizState.id + "/kiz/clear", { method: "POST" });
+    await loadKizStep();
+    await loadAsm();
+    say($("kizMsg"), "Удаление из Ozon подтверждено. Можно сканировать правильный код.", "ok");
+  } catch (e) { say($("kizMsg"), e.message, "bad"); }
+  finally { kizBusy = false; $("kizRemoveRemote").disabled = false; }
+};
 $("kizClear").onclick = () => { if (kizBusy) return; kizState.codes = []; kizState.assignments = {}; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
 $("kizProduct").onchange = () => $("kizInput").focus();
 

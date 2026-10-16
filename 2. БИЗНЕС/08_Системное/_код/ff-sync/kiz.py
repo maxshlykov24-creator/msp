@@ -217,7 +217,7 @@ def _ozon_plan(row, cab):
             continue
         qty = int(float(prod.get("quantity") or 0))
         required = bool(prod.get('is_mandatory_mark_needed'))
-        marked = required
+        marked = _ozon_mark_available(prod)
         filled = 0
         for ex in prod.get("exemplars") or []:
             if any((m or {}).get("mark") and m.get("mark_type") == "mandatory_mark" for m in (ex.get("marks") or [])):
@@ -240,14 +240,16 @@ def _ozon_plan(row, cab):
                 "filled": filled,
             }
         )
-    available = any(p['required'] for p in products)
+    available = any(p['marked'] for p in products)
     blocked = [p['article'] or p['name'] for p in products if not p['marked']]
     note = ""
     if not available:
         note = "Ozon не требует КиЗ. Сканирование пропущено."
+    if available and not need:
+        note = "Ozon разрешает КиЗ, но не требует его. Можно отсканировать код вручную."
     if blocked and available:
         note += " Без КиЗ: " + "; ".join(blocked) + "."
-    return {"need": need, "have": have, "products": products, "note": note, "can_submit": available, "skip_scan": not available, '_remote_marks': remote_marks}
+    return {"need": need, "have": have, "products": products, "note": note, "can_submit": available, "skip_scan": not need, '_remote_marks': remote_marks}
 
 
 def _check_ozon_validation(checked, codes, articles):
@@ -288,7 +290,7 @@ def _ozon_submit(row, cab, codes, assignments=None):
     for prod, item in info:
         pid = int(prod['product_id'])
         must = bool(prod.get('is_mandatory_mark_needed'))
-        if not must:
+        if not _ozon_mark_available(prod):
             continue
         pools[pid] = [ex for ex in prod.get('exemplars') or [] if isinstance(ex, dict) and ex.get('exemplar_id')]
         articles[pid] = item.get('article') or str(pid)
@@ -579,6 +581,45 @@ def plan(ship_id):
         }
     )
     return out
+
+
+def clear_ozon_marks(ship_id):
+    """Явное удаление пользователем: сохраняем прочие данные экземпляров и сверяем Ozon."""
+    try:
+        with run_lock(name="kiz-%s" % int(ship_id), blocking=False):
+            row = _row(ship_id)
+            if row['marketplace'] != 'ozon' or row['kind'] != 'fbs':
+                raise KizError('Удаление доступно только для КиЗ Ozon FBS')
+            cab = _cab(row)
+            note = _ozon_edit_note(row, cab)
+            if note:
+                raise KizError(note)
+            data = _ozon_create(cab, row['ext_id'])
+            products = []
+            for prod, item in _ozon_product_info(row, data):
+                examples = []
+                for ex in prod.get('exemplars') or []:
+                    if not any(m.get('mark_type') == 'mandatory_mark' for m in ex.get('marks') or []):
+                        continue
+                    body = {k: ex[k] for k in ('exemplar_id', 'gtd', 'rnpt', 'weight', 'is_gtd_absent', 'is_rnpt_absent') if ex.get(k) is not None}
+                    body['marks'] = [m for m in ex.get('marks') or [] if m.get('mark_type') != 'mandatory_mark']
+                    examples.append(body)
+                if examples:
+                    products.append({'product_id': prod['product_id'], 'exemplars': examples})
+            if products:
+                r = req('POST', OZON_SET, headers=ozon_headers(cab['client_id_ext'], cab['token']),
+                        json={'posting_number': row['ext_id'], 'products': products}, retry_safe=False)
+                if r.status_code != 200:
+                    _fail(r, 'Ozon не подтвердил удаление КиЗ')
+                fresh = _ozon_create(cab, row['ext_id'])
+                if any(m.get('mark') and m.get('mark_type') == 'mandatory_mark'
+                       for p in fresh.get('products') or [] for e in p.get('exemplars') or [] for m in e.get('marks') or []):
+                    raise KizError('Ozon ещё не подтвердил удаление. Обнови проверку КиЗ; локальные коды пока сохранены.')
+                _ozon_product_info(row, fresh)
+            replace_shipment_marks(row['id'], [])
+            return {'removed': True}
+    except BlockingIOError:
+        raise KizError('Коды этого задания уже изменяются. Дождись результата.')
 
 
 def submit(ship_id, raw_codes, assignments=None):

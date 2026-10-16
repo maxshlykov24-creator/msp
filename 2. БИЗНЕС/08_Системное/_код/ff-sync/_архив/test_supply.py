@@ -1332,16 +1332,11 @@ for p in optional_data['products']:
     p['is_mandatory_mark_possible'] = True
 with patch.object(kiz, '_ozon_create', return_value=optional_data):
     assert kiz.plan(mid)['need'] == 0
-    assert kiz.plan(mid)['can_submit'] is False
+    assert kiz.plan(mid)['can_submit'] is True
     assert kiz.plan(mid)['skip_scan'] is True
     assert kiz.missing_mark_note(db.get_shipments_by_ids([mid])) == ''
     CALLS.clear()
-    try:
-        kiz.submit(mid,scan_raw,scan_assign)
-        raise AssertionError('optional marking sent')
-    except kiz.KizError:
-        pass
-    assert not any(c[1] == kiz.OZON_SET for c in CALLS)
+    assert kiz.submit(mid,scan_raw,scan_assign)['sent'] == 4
 print('Ozon: требования API, необязательные КиЗ и коды из ЛК проверены')
 
 # Отмена и смена статуса между сканированием и отправкой: ни create, ни set.
@@ -1364,5 +1359,17 @@ mixed_data['products'][1]['is_mandatory_mark_possible'] = True
 with patch.object(kiz, '_ozon_create', return_value=mixed_data):
     result = kiz.plan(mid)
     assert result['need'] == 2
-    assert [p['marked'] for p in result['products']] == [True, False]
+    assert [p['required'] for p in result['products']] == [True, False]
 print('Ozon: отмены, смена статуса, пропуск необязательных и смешанный состав проверены')
+
+# Удаление только после подтверждения площадки, без очистки кеша при отказе.
+with patch.object(kiz, '_ozon_create', side_effect=[required_data, exemplars]):
+    assert kiz.clear_ozon_marks(mid)['removed']
+assert not db.list_shipment_marks([mid])
+with patch.object(kiz, '_ozon_create', return_value=required_data):
+    try:
+        kiz.clear_ozon_marks(mid)
+        raise AssertionError('unconfirmed clear accepted')
+    except kiz.KizError as exc:
+        assert 'не подтвердил удаление' in str(exc)
+print('Ozon: ручной ввод необязательных КиЗ, удаление с readback проверены')
