@@ -1383,3 +1383,51 @@ assert result['shipped'] == 1
 assert db.get_shipments_by_ids([lag])[0]['work_state'] == 'ready'
 assert next(r for r in db.list_assembly(client_id=client_id, marketplace='ozon') if r['ext_id']=='LAG-1')['eff_group']=='ready'
 print('Ozon: задержка GET после успешного ship не возвращает заказ в новые')
+
+# Ozon может добавить товарную страницу после каждой этикетки заказа.
+from reportlab.pdfgen import canvas as test_canvas
+from pypdf import PdfReader as LabelReader
+paired_buf = io.BytesIO()
+pc = test_canvas.Canvas(paired_buf, pagesize=(164, 113))
+for number in range(2):
+    pc.drawString(10, 50, 'ii5003562 %s' % number); pc.showPage()
+    pc.drawString(10, 50, 'OZN5613373790'); pc.showPage()
+pc.save()
+with patch.object(labels, 'req', return_value=Fake(200, raw=paired_buf.getvalue())):
+    blobs, notes = labels.ozon_labels({'client_id_ext':'test','token':'test'}, ['ONE','TWO'])
+    pages = LabelReader(io.BytesIO(blobs[0])).pages
+    assert len(pages)==2 and all('OZN' not in p.extract_text() for p in pages)
+print('Ozon: парные товарные страницы не считаются лишними отправлениями')
+
+
+def test_product_posting_pairs():
+    import io
+    from unittest.mock import patch
+    import labels
+    from pypdf import PdfReader
+    from reportlab.pdfgen import canvas
+    
+    def pdf(text):
+     b=io.BytesIO(); c=canvas.Canvas(b); c.drawString(20,40,text);c.showPage();c.save();return b.getvalue()
+    def product(c,row,font):
+     c.drawString(20,40,'PRODUCT '+row['article']+' '+row['label_posting']);c.showPage()
+    def png(c,raw,caption,font):
+     c.drawString(20,40,raw.decode());c.showPage()
+    rows=[]
+    for cab,mp,ext,art,qty in [(1,'ozon','O1','A',2),(2,'wb','21','B',1),(1,'ozon','O2','C',1),(1,'ozon','O1','D',1),(3,'wb','21','E',1)]:
+     rows.append(dict(cabinet_id=cab,marketplace=mp,ext_id=ext,article=art,qty=qty,cabinet={'marketplace':mp,'id':cab}))
+    def oz(cab,ids):
+     assert len(ids)==1
+     return [pdf('ORDER '+ids[0])],[]
+    def wb(cab,ids):
+     return {x:{'png':('WB '+str(cab['id'])+' '+x).encode()} for x in reversed(ids)},[]
+    with patch.object(labels,'ozon_labels',side_effect=oz),patch.object(labels,'wb_stickers',side_effect=wb),patch.object(labels,'product_label',side_effect=product),patch.object(labels,'png_label',side_effect=png):
+     blob,notes,n=labels.build(rows,'both')
+     texts=[p.extract_text().strip() for p in PdfReader(io.BytesIO(blob)).pages]
+     assert texts==['PRODUCT A O1','PRODUCT A O1','PRODUCT D O1','ORDER O1','PRODUCT B 21','WB 2 21','PRODUCT C O2','ORDER O2','PRODUCT E 21','WB 3 21'],texts
+     print('PASS pairs, multiple SKU/qty, mixed marketplaces, repeated IDs in different cabinets:',n)
+     with patch.object(labels,'wb_stickers',return_value=({},[])):
+      try: labels.build(rows,'both');raise AssertionError('missing accepted')
+      except labels.LabelError: print('PASS missing sticker blocks partial PDF')
+
+test_product_posting_pairs()

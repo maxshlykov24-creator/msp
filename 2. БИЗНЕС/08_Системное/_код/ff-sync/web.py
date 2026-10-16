@@ -751,6 +751,12 @@ def export(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "",
     return xlsx_file(name, data)
 
 
+def require_warehouse_shipments(ids):
+    rows = get_shipments_by_ids(ids)
+    if any(r['kind'] != 'fbs' for r in rows):
+        raise HTTPException(status_code=400, detail="Покупательские FBO-заказы обрабатывает маркетплейс. Складские действия недоступны.")
+
+
 @app.post("/api/assembly/labels")
 def assembly_labels(data: dict = Body(...), ff_session: str = Cookie(default="")):
     """Один PDF с этикетками на выбранные отправления."""
@@ -761,6 +767,7 @@ def assembly_labels(data: dict = Body(...), ff_session: str = Cookie(default="")
     ids = data.get("ids") or []
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
+    require_warehouse_shipments(ids)
     mode = str(data.get("mode") or labels_mod.MODE_POSTING)
     import supply_flow
 
@@ -1012,6 +1019,7 @@ def assembly_work(data: dict = Body(...), ff_session: str = Cookie(default="")):
     ids = data.get("ids") or []
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
+    require_warehouse_shipments(ids)
     state = str(data.get("state") or "")
     import statuses
 
@@ -1035,6 +1043,7 @@ def assembly_take(data: dict = Body(...), ff_session: str = Cookie(default="")):
     ids = data.get("ids") or []
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
+    require_warehouse_shipments(ids)
     raw_choices = data.get("choices")
     choices = raw_choices if isinstance(raw_choices, dict) else None
     try:
@@ -1110,6 +1119,7 @@ def assembly_ship(data: dict = Body(...), ff_session: str = Cookie(default="")):
     ids = data.get("ids") or []
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
+    require_warehouse_shipments(ids)
     try:
         return {
             "ok": True,

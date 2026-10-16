@@ -1983,7 +1983,7 @@ def _assembly_date_clauses(since, until, keep_floor, group=""):
 def _assembly_filters(
     client_id=None, group="", marketplace="", kind="", article="", query="", since="", until="", keep_floor=True,
 ):
-    sql = " JOIN clients ON clients.id = shipments.client_id WHERE COALESCE(shipments.assembly_excluded, 0) = 0"
+    sql = " JOIN clients ON clients.id = shipments.client_id WHERE COALESCE(shipments.assembly_excluded, 0) = 0 AND shipments.kind = 'fbs'"
     args = []
     if client_id:
         sql += " AND shipments.client_id = ?"

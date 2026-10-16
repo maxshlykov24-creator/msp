@@ -107,8 +107,27 @@ def ozon_labels(cab, postings):
                 count = len(PdfReader(io.BytesIO(blob)).pages)
             except Exception as exc:
                 raise LabelError("Ozon вернул повреждённый PDF. Повтори печать.") from exc
+            if count == 2 * len(chunk):
+                # В кабинете может быть включена товарная этикетка после каждой
+                # этикетки отправления. Не считаем её вторым заказом и не дублируем
+                # нашу товарную этикетку в MODE_BOTH. Неизвестный формат не режем.
+                from pypdf import PdfWriter
+                reader = PdfReader(io.BytesIO(blob))
+                paired = all(
+                    re.search(r"(?:^|\s)OZN\d+(?:\s|$)", reader.pages[i + 1].extract_text() or "")
+                    and not re.search(r"(?:^|\s)OZN\d+(?:\s|$)", reader.pages[i].extract_text() or "")
+                    for i in range(0, count, 2)
+                )
+                if paired:
+                    writer = PdfWriter()
+                    for i in range(0, count, 2):
+                        writer.add_page(reader.pages[i])
+                    clean = io.BytesIO()
+                    writer.write(clean)
+                    blob = clean.getvalue()
+                    count = len(writer.pages)
             if count != len(chunk):
-                raise LabelError("Ozon вернул %s этикеток для %s отправлений. Неполный комплект не скачан; обнови заказы и повтори печать." % (count, len(chunk)))
+                raise LabelError("Ozon вернул %s страниц для %s отправлений. Состав PDF не удалось подтвердить; печать остановлена, чтобы не выдать неверные этикетки." % (count, len(chunk)))
             pdfs.append(blob)
             continue
         detail = (r.text or "")[:300]
@@ -395,6 +414,9 @@ def product_label(c, row, font):
         if val:
             body.append(("%s: " % title, font, _shorten(val, 24)))
 
+    if row.get("label_posting"):
+        body.append(("Заказ: " + str(row["label_posting"]), font, ""))
+
     top = h - 15.5 * MM
     step = min(2.9 * MM, (top - 1.5 * MM) / max(1, len(body)))
     size = min(7.0, step / MM * 2.5)
@@ -480,6 +502,65 @@ def build_pngs(items):
     return buf.getvalue(), len(items)
 
 
+def _build_paired(rows):
+    """Товары отправления, затем его стикер; связь по кабинету и ext_id."""
+    from pypdf import PdfReader, PdfWriter
+
+    groups = {}
+    for row in rows:
+        groups.setdefault((row["cabinet_id"], str(row["ext_id"])), []).append(row)
+    writer = PdfWriter()
+    notes = []
+    font = _font()
+    wb = {}
+    for (cab_id, ext), group in groups.items():
+        row = group[0]
+        cab = row.get("cabinet")
+        if not cab:
+            raise LabelError("Нет доступа к кабинету %s. Комплект этикеток не скачан." % cab_id)
+        if row["marketplace"] == "wb" and cab_id not in wb:
+            ids = [key[1] for key in groups if key[0] == cab_id]
+            got, more = wb_stickers(cab, ids)
+            if more:
+                raise LabelError("Комплект этикеток не скачан. " + "; ".join(more))
+            wb[cab_id] = got
+
+        # Один запрос на отправление: порядок страниц группового PDF Ozon
+        # не является доказательством соответствия товару.
+        platform = []
+        sticker = None
+        if row["marketplace"] == "ozon":
+            platform, more = ozon_labels(cab, [ext])
+            if more:
+                raise LabelError("Комплект этикеток не скачан. " + "; ".join(more))
+        elif row["marketplace"] == "wb":
+            key = "".join(ch for ch in ext if ch.isdigit())
+            sticker = wb[cab_id].get(key)
+            if not sticker:
+                raise LabelError("WB не вернул стикер заказа %s. Комплект не скачан." % ext)
+        else:
+            raise LabelError("Неизвестная площадка: %s" % row["marketplace"])
+
+        buf, c = _canvas()
+        for product in group:
+            item = dict(product, label_posting=ext)
+            copies = int(product.get("qty") or 1) if row["marketplace"] == "ozon" else 1
+            for _ in range(copies):
+                product_label(c, item, font)
+        if sticker:
+            png_label(c, sticker["png"], "", font)
+        c.save()
+        for page in PdfReader(io.BytesIO(buf.getvalue())).pages:
+            writer.add_page(page)
+        if platform:
+            _fit_pages(writer, platform)
+    if not writer.pages:
+        raise LabelError("Нечего печатать: не выбраны отправления.")
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue(), notes, len(writer.pages)
+
+
 def build(rows, mode=MODE_POSTING, fetch=True):
     """Собирает один PDF на выбранные отправления.
 
@@ -488,6 +569,8 @@ def build(rows, mode=MODE_POSTING, fetch=True):
     """
     if mode not in MODES:
         raise LabelError("неизвестный режим печати %s" % mode)
+    if mode == MODE_BOTH and fetch:
+        return _build_paired(rows)
     notes = []
     font = _font()
 
