@@ -21,6 +21,7 @@ import net
 # Фикстуры относятся к одной смене; окно хранения не зависит от дня запуска теста.
 db.ship_keep_since = lambda: "2026-09-01 00:00"
 
+OZON_SHIPPED = set()
 CALLS = []
 WB_SENT = {}
 SUPPLY_SEQ = []
@@ -84,15 +85,27 @@ def fake_req(method, url, headers=None, **kw):
     if url.endswith("/barcode"):
         return Fake(200, {"barcode": "WB-GI-777", "file": base64.b64encode(PNG).decode()})
     if url.endswith("/v3/posting/fbs/get"):
-        return Fake(200, {"result": {"posting_number": kw['json']['posting_number'], "products": [{"product_id": 55, "quantity": 2, "offer_id": "ART-1", "name": "Ремень"}], "status": "awaiting_deliver", "in_process_at": "2026-09-20T10:00:00Z"}})
+        return Fake(200, {"result": {"posting_number": kw['json']['posting_number'], "products": [{"product_id": 55, "quantity": 2, "offer_id": "ART-1", "name": "Ремень"}], "status": "awaiting_deliver" if kw["json"]["posting_number"] in OZON_SHIPPED else "awaiting_packaging", "in_process_at": "2026-09-20T10:00:00Z"}})
     if url.endswith("/v4/posting/fbs/ship"):
         body = kw.get("json") or {}
         packs = body.get("packages") or []
         # одно грузовое место — номер у Ozon остаётся прежним, дробления нет
         if len(packs) < 2:
+            OZON_SHIPPED.add(body.get("posting_number"))
             return Fake(200, {"result": [body.get("posting_number")]})
+        OZON_SHIPPED.update("0001-1-%s" % (i + 1) for i in range(len(packs)))
         return Fake(200, {"result": ["0001-1-%s" % (i + 1) for i in range(len(packs))]})
     if url.endswith("/v6/fbs/posting/product/exemplar/create-or-get"):
+        posting = (kw.get('json') or {}).get('posting_number')
+        if posting != '0001-7':
+            with db.connect() as con:
+                row = con.execute('SELECT * FROM shipments WHERE ext_id=?', (posting,)).fetchone()
+            if row:
+                return Fake(200, {'products': [dict(product_id=i.get('product_id') or 55,
+                    quantity=int(i['qty']), is_mandatory_mark_needed=False,
+                    is_mandatory_mark_possible=False,
+                    exemplars=[{'exemplar_id':1000+j,'marks':[]} for j in range(int(i['qty']))])
+                    for i in db.shipment_items(row)]})
         return Fake(200, {"posting_number": (kw.get("json") or {}).get("posting_number"), "products": [{
             "product_id": 55, "quantity": 2,
             "is_mandatory_mark_needed": True, "is_mandatory_mark_possible": True,
@@ -1187,7 +1200,8 @@ with patch.object(shipments_pull,'pull_ozon_get',return_value=multi):
     shipments_pull.handle_ozon(client,cab,'fbs',[multi],{})
 assert len(db.list_shipment_marks([mid]))==4
 assert {m['article'] for m in db.list_shipment_marks([mid])}=={'Комбинезон L','Комбинезон XL'}
-assert not kiz.missing_mark_note(db.get_shipments_by_ids([mid]))
+with patch.object(kiz, '_ozon_create', return_value=exemplars):
+    assert kiz.missing_mark_note(db.get_shipments_by_ids([mid])), 'Локальные коды не заменяют подтверждение Ozon'
 
 # Коды, внесённые в ЛК, возвращаются к своему артикулу при открытии КиЗ.
 remote_exemplars=copy.deepcopy(exemplars)
@@ -1287,15 +1301,68 @@ with patch.object(kiz, '_ozon_create', return_value=unmarked):
     plan = kiz.plan(mid)
     assert plan['can_submit'] is False
     assert all(not p['marked'] for p in plan['products'])
-    assert 'Нужен код маркировки' in plan['note']
+    assert plan['skip_scan'] is True
     CALLS.clear()
     try:
         kiz.submit(mid, scan_raw, scan_assign)
         raise AssertionError('Ozon prohibition ignored')
     except kiz.KizError as exc:
-        assert 'не разрешает' in str(exc)
+        assert 'не требует и не принимает' in str(exc)
         assert 'не создал экземпляры' not in str(exc)
     assert not any(c[1] in (kiz.OZON_VALIDATE, kiz.OZON_SET) for c in CALLS)
 with patch.object(kiz, '_ozon_create', return_value=exemplars):
     assert kiz.plan(mid)['can_submit'] is True
 print('Ozon: существующие экземпляры с запретом маркировки распознаны')
+
+# Требование Ozon сильнее локального кеша; коды из ЛК признаются перед сборкой.
+with patch.object(kiz, '_ozon_create', return_value=unmarked):
+    assert kiz.plan(mid)['need'] == 0
+    assert kiz.missing_mark_note(db.get_shipments_by_ids([mid])) == ''
+required_data = copy.deepcopy(exemplars)
+with patch.object(kiz, '_ozon_create', return_value=required_data):
+    assert kiz.missing_mark_note(db.get_shipments_by_ids([mid]))
+for p in required_data['products']:
+    for ex in p['exemplars']:
+        ex['marks'] = [{'mark_type':'mandatory_mark', 'mark':'already-in-ozon'}]
+with patch.object(kiz, '_ozon_create', return_value=required_data):
+    assert kiz.missing_mark_note(db.get_shipments_by_ids([mid])) == ''
+optional_data = copy.deepcopy(exemplars)
+for p in optional_data['products']:
+    p['is_mandatory_mark_needed'] = False
+    p['is_mandatory_mark_possible'] = True
+with patch.object(kiz, '_ozon_create', return_value=optional_data):
+    assert kiz.plan(mid)['need'] == 0
+    assert kiz.plan(mid)['can_submit'] is False
+    assert kiz.plan(mid)['skip_scan'] is True
+    assert kiz.missing_mark_note(db.get_shipments_by_ids([mid])) == ''
+    CALLS.clear()
+    try:
+        kiz.submit(mid,scan_raw,scan_assign)
+        raise AssertionError('optional marking sent')
+    except kiz.KizError:
+        pass
+    assert not any(c[1] == kiz.OZON_SET for c in CALLS)
+print('Ozon: требования API, необязательные КиЗ и коды из ЛК проверены')
+
+# Отмена и смена статуса между сканированием и отправкой: ни create, ни set.
+for status in ('cancelled', 'delivering'):
+    CALLS.clear()
+    with patch.object(kiz, 'req', return_value=Fake(200, {'result': {'posting_number': kiz._row(mid)['ext_id'], 'status': status}})), patch.object(kiz, '_ozon_create') as create:
+        result = kiz.plan(mid)
+        assert result['skip_scan'] and result['state_blocked']
+        assert not result['can_submit']
+        try:
+            kiz.submit(mid, scan_raw, scan_assign)
+            raise AssertionError('closed posting accepted')
+        except kiz.KizError:
+            pass
+        create.assert_not_called()
+# В смешанном заказе сканируем только обязательный артикул.
+mixed_data = copy.deepcopy(exemplars)
+mixed_data['products'][1]['is_mandatory_mark_needed'] = False
+mixed_data['products'][1]['is_mandatory_mark_possible'] = True
+with patch.object(kiz, '_ozon_create', return_value=mixed_data):
+    result = kiz.plan(mid)
+    assert result['need'] == 2
+    assert [p['marked'] for p in result['products']] == [True, False]
+print('Ozon: отмены, смена статуса, пропуск необязательных и смешанный состав проверены')

@@ -1750,7 +1750,7 @@ function kizCell(r) {
   const fbs = r.kind === "fbs" && (r.marketplace === "wb" || r.marketplace === "ozon");
   if (!onList || !fbs) return r.marks ? String(r.marks) : "—";
   if (r.marks) return `<button type="button" class="kiz-link is-on" data-kiz="${r.id}">КиЗ · ${r.marks}</button>`;
-  return `<button type="button" class="kiz-link" data-kiz="${r.id}">Указать КиЗ</button>`;
+  return `<button type="button" class="kiz-link" data-kiz="${r.id}">${r.marketplace === "ozon" ? "Проверить КиЗ" : "Указать КиЗ"}</button>`;
 }
 
 function asmRowHtml(r) {
@@ -2291,7 +2291,7 @@ function kizRender() {
   const matched = need > 0 && have === need;
   $("kizCount").textContent = need
     ? "Нужно кодов: " + need + " · внесено: " + have + (matched ? ". Enter ещё раз отправит" : "")
-    : "Внесено кодов: " + have;
+    : kizState.canSubmit === false ? "КиЗ не требуется" : "Внесено кодов: " + have;
   $("kizCount").classList.toggle("is-ok", matched);
   $("kizList").innerHTML = have
     ? kizState.codes.map((code, i) => {
@@ -2413,16 +2413,33 @@ async function loadKizStep() {
   const total = kizState.ids.length;
   $("kizStep").textContent = total > 1 ? (kizState.index + 1) + " из " + total : "";
   $("kizSkip").hidden = total < 2;
-  $("kizSub").textContent = "Спрашиваю площадку, сколько кодов нужно…";
+  const localRow = state.asm.find((r) => Number(r.id) === Number(id));
+  const identity = localRow ? `${localRow.ext_id || id} · ${localRow.article || localRow.name || ""}` : `Отправление ${id}`;
+  $("kizSub").textContent = identity + " · Проверяю требования площадки…";
   $("kizInput").value = "";
   say($("kizMsg"), "");
   kizRender();
   try {
     const res = await api("/api/assembly/" + id + "/kiz");
     if (mine !== kizLoad) return;
+    if (res.marketplace === "ozon" && res.skip_scan) {
+      kizState.skipped = kizState.skipped || [];
+      kizState.skipped.push(`${res.ext_id}: ${res.note}`);
+      say($("aMsg"), kizState.skipped.join("\n"));
+      if (kizState.index < kizState.ids.length - 1) {
+        kizState.index += 1;
+        return await loadKizStep();
+      }
+      $("kizModal").classList.remove("on");
+      await loadAsm();
+      say($("aMsg"), kizState.skipped.join("\n"));
+      return;
+    }
     kizState.canSubmit = res.can_submit !== false;
     kizState.need = res.need || 0;
-    kizState.codes = (res.codes || []).slice();
+    const allowedIds = new Set((res.products || []).filter((p) => p.required).map((p) => String(p.product_id)));
+    const allowedCodes = new Set((res.assignments || []).filter((a) => allowedIds.has(String(a.product_id))).map((a) => a.code));
+    kizState.codes = (res.codes || []).filter((code) => res.marketplace !== "ozon" || allowedCodes.has(code));
     kizState.products = res.products || [];
     kizState.assignments = Object.fromEntries((res.assignments || []).map((a) => [a.code, a.product_id]));
     const mp = res.marketplace === "wb" ? "WB" : "Ozon";
@@ -2433,7 +2450,7 @@ async function loadKizStep() {
     $("kizInput").focus();
   } catch (e) {
     if (mine !== kizLoad) return;
-    $("kizSub").textContent = "";
+    $("kizSub").textContent = identity;
     say($("kizMsg"), e.message, "bad");
   }
 }
@@ -2540,7 +2557,7 @@ $("kizSkip").onclick = async () => {
 let kizBusy = false;
 $("kizSend").onclick = async () => {
   if (kizBusy || !kizState.codes.length || kizState.canSubmit === false) return;
-  if (kizState.need && kizState.codes.length !== kizState.need) {
+  if (kizState.need && (kizState.codes.length < kizState.need || (!kizState.products.length && kizState.codes.length !== kizState.need))) {
     say($("kizMsg"), "Нужно " + kizState.need + " кодов, сейчас " + kizState.codes.length + ". Досканируй.", "bad");
     $("kizInput").focus();
     return;
@@ -2578,7 +2595,7 @@ $("kizSend").onclick = async () => {
   } finally {
     kizBusy = false;
     ["kizInput", "kizSkip", "kizClear", "kizClose", "kizProduct"].forEach((id) => $(id).disabled = false);
-    if ($("kizModal").classList.contains("on")) $("kizInput").focus();
+    if ($("kizModal").classList.contains("on")) { kizRender(); $("kizInput").focus(); }
   }
 };
 
