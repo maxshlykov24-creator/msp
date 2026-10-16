@@ -1134,11 +1134,14 @@ async function loadLots() {
     body.innerHTML = res.rows.map((r) => {
       const edit = r.edit_lot_id ? `data-product-lot="${r.edit_lot_id}"` : `data-ledger-details="${r.id}"`;
       const barcodes = r.barcodes || [r.barcode];
-      return `<tr data-stock-row="${r.id}">
+      const pencil = r.edit_lot_id
+        ? `<button type="button" class="stock-edit" data-product-lot="${r.edit_lot_id}" title="Изменить литраж и стоимость сборки" aria-label="Изменить литраж и стоимость сборки"><span aria-hidden="true">✎</span></button>`
+        : `<button type="button" class="stock-edit" data-ledger-details="${r.id}" title="Выбрать карточку в документах" aria-label="Выбрать карточку в документах"><span aria-hidden="true">✎</span></button>`;
+      return `<tr data-stock-row="${r.id}" aria-expanded="false">
       <td class="pick"><input type="checkbox" data-lot="${r.id}"></td>
       <td class="client">${esc(r.client)}</td>
       <td class="codes"><b>${esc(r.article)}</b><span title="${esc(r.barcode)}">ШК ${esc(barcodes[0] || "")}${barcodes.length > 1 ? ` · ещё ${barcodes.length - 1}` : ""}</span>${r.gtin ? `<span>GTIN ${esc(r.gtin)}</span>` : ""}</td>
-      <td class="name"><button type="button" class="stock-edit" ${edit} title="${r.edit_lot_id ? "Изменить литраж и стоимость сборки" : "Выбрать карточку в документах"}">${esc(r.name)} <span aria-hidden="true">✎</span></button><br><button type="button" class="stock-docs" data-ledger-details="${r.id}" aria-expanded="false">Документы (${(r.details || []).length})</button></td>
+      <td class="name">${esc(r.name)} ${pencil}<br><button type="button" class="stock-docs" data-ledger-details="${r.id}" aria-expanded="false">Документы (${(r.details || []).length})</button></td>
       <td class="num">${r.storage_enabled === false ? '<span class="muted" title="Хранение не начисляется, литраж необязателен">Не требуется</span>' : `<button type="button" class="stock-edit${!r.mixed_liters && !(r.liters > 0) ? " missing" : ""}" ${edit} data-focus="liters" title="Изменить литраж">${r.mixed_liters ? "Разный" : r.liters > 0 ? num(r.liters, 3) : "Указать"}</button>`}</td><td class="num"><button type="button" class="stock-edit${r.pick_rate_known ? "" : " missing"}" ${edit} data-focus="pick_rate" title="Изменить стоимость сборки">${r.mixed_pick_rates ? "Разные ставки" : r.pick_rate_known ? num(r.pick_rate) : "Указать"}</button></td>
       <td class="num">${num(r.qty_in, 0)}</td><td class="num">${num(r.pick_qty, 0)}</td>
       <td class="num">${num(r.qty, 0)}</td>
@@ -1165,7 +1168,10 @@ function toggleLedgerDetails(id) {
   if (!row) return;
   const main = $("sTbl").querySelector(`tr[data-stock-row="${id}"]`);
   const existing = $("sTbl").querySelector(`tr[data-stock-details="${id}"]`);
-  main.querySelectorAll("[data-ledger-details]").forEach((b) => b.setAttribute("aria-expanded", String(!existing)));
+  const open = !existing;
+  main.classList.toggle("is-open", open);
+  main.setAttribute("aria-expanded", String(open));
+  main.querySelectorAll("[data-ledger-details]").forEach((b) => b.setAttribute("aria-expanded", String(open)));
   if (existing) { existing.remove(); return; }
   const html = `<tr class="stock-detail-row" data-stock-details="${id}"><td colspan="13"><div class="stock-detail-note">Хранение начисляется владельцу Приёмки. Сборка — владельцу Отгрузки. Ниже исходные документы этого артикула.</div><table class="ledger-detail-table"><thead><tr><th>Документ</th><th>Дата</th><th>Принято, шт</th><th>Выбыло из партии, шт</th><th>Отгружено к оплате, шт</th><th>Дни к оплате</th><th>Хранение, ₽</th><th>Сборка, ₽</th><th>Карточка товара</th></tr></thead><tbody>${(row.details || []).map((r) => `<tr><td>${esc(r.source_document)}</td><td>${esc(r.accepted || r.received)}</td><td>${num(r.qty_in,0)}</td><td>${r.kind === "assembly" ? "—" : num(r.shipped,0)}</td><td>${r.kind === "receipt" ? "—" : num(r.pick_qty,0)}</td><td>${r.bill_days}</td><td>${num(r.storage)}</td><td>${num(r.pick)}</td><td><button type="button" class="stock-edit" data-product-lot="${r.id}">Литраж и сборка</button></td></tr>`).join("")}</tbody></table></td></tr>`;
   main.insertAdjacentHTML("afterend", html);
@@ -1194,10 +1200,16 @@ $("sTbl").onclick = (e) => {
   const details = e.target.closest("button[data-ledger-details]");
   if (details) { toggleLedgerDetails(Number(details.dataset.ledgerDetails)); return; }
   const box = e.target.closest("input[data-lot]");
-  if (!box) return;
-  const id = Number(box.dataset.lot);
-  if (box.checked) state.picked.add(id); else state.picked.delete(id);
-  refreshPick();
+  if (box) {
+    const id = Number(box.dataset.lot);
+    if (box.checked) state.picked.add(id); else state.picked.delete(id);
+    refreshPick();
+    return;
+  }
+  if (e.target.closest("button, a, input, label, .stock-detail-row")) return;
+  const row = e.target.closest("tr[data-stock-row]");
+  if (!row) return;
+  toggleLedgerDetails(Number(row.dataset.stockRow));
 };
 
 let stockProduct = null;

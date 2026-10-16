@@ -270,6 +270,8 @@ table.stock-tbl th{letter-spacing:.04em;padding:7px 5px}
 #view-stock .stock-wrap::-webkit-scrollbar-track{background:var(--line)}
 #view-stock .stock-wrap::-webkit-scrollbar-thumb{background:var(--mute-2);border:3px solid var(--tbl-sticky);border-radius:12px}
 #sTbl{table-layout:fixed;width:max(100%,1560px);min-width:1560px;border-collapse:separate;border-spacing:0}
+#sTbl tr[data-stock-row]{cursor:pointer}
+#sTbl tr[data-stock-row].is-open>td{background:var(--glass-2)}
 #sTbl th{font-size:10.5px;letter-spacing:.03em;white-space:normal;overflow-wrap:normal;line-height:1.4}
 #sTbl th,#sTbl td{text-align:center;vertical-align:middle;padding:9px 8px;border-right:1px solid var(--line)}
 #sTbl th:nth-child(-n+4),#sTbl td.pick,#sTbl td.client,#sTbl td.codes,#sTbl td.name{text-align:left}
