@@ -434,7 +434,7 @@ table.asm-tbl tr.sup-head:hover .sup-bar i{opacity:1}
 .wb-detail{min-width:0;display:flex;flex-direction:column;gap:16px}
 .wb-empty,.wb-idle{font-size:13px;color:var(--mute);line-height:1.4;padding:8px 0}
 .wb-idle{display:flex;align-items:center;justify-content:center;min-height:160px}
-.wb-pill{font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;background:var(--glass-2);border:1px solid var(--line);white-space:nowrap}
+.wb-pill{font-size:16px;font-weight:700;letter-spacing:.01em;padding:11px 20px;border-radius:999px;background:var(--glass-2);border:1px solid var(--line);white-space:nowrap}
 .wb-pill.open{color:var(--amber)}
 .wb-pill.ready{color:var(--accent)}
 .wb-pill.delivered{color:var(--mute-2)}
