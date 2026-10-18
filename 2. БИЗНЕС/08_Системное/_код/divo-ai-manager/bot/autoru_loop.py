@@ -254,6 +254,7 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
     last = room.get("last_message") or {}
     customer_id = str(last.get("author") or "") if not is_out(last, str(room.get("me") or "")) else ""
     if (doc.get("autoru") or {}).get("title"):
+        doc["autoru"]["customer_names"] = customer_names(room)
         if customer_id and customer_id != str(room.get("me") or ""):
             doc["autoru"]["customer_id"] = customer_id
             store.save_doc(chat_key, doc)
@@ -265,6 +266,7 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
     doc["autoru"] = {
         "chat_id": raw_id(chat_key),
         "customer_id": customer_id,
+        "customer_names": customer_names(room),
         "title": title,
         "price": price,
         "url": url,
@@ -280,12 +282,29 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
     store.save_doc(chat_key, doc)
 
 
+def customer_names(room: dict) -> list[str]:
+    me = str(room.get("me") or "")
+    if not me:
+        return []
+    peers = [u for u in (room.get("users") or []) if u.get("id") and str(u["id"]) != me]
+    if len(peers) != 1:
+        return []
+    profile = peers[0].get("profile") or {}
+    return sorted({str(profile[k]).strip() for k in ("alias", "full_name")
+                   if isinstance(profile.get(k), str) and profile[k].strip()})
+
+
 async def recover_customer_identity(api: Autoru, room: dict) -> None:
     """Recover CRM identity for an old queued note without reopening the chat."""
     key = store_id(str(room.get("id") or ""))
     doc = store.load_doc(key)
     src = doc.get("autoru") or {}
     crm = doc.get("crm") or {}
+    names = customer_names(room)
+    if src and names and names != src.get("customer_names"):
+        src["customer_names"] = names
+        doc["autoru"] = src
+        store.save_doc(key, doc)
     if src.get("customer_id") or not (crm.get("note_pending") or crm.get("handoff_pending")):
         return
     if time.time() < src.get("identity_retry_at", 0):

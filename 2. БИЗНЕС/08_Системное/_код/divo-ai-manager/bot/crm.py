@@ -644,6 +644,7 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
                 url=snap.get("url") or "",
                 chat_id=str(snap.get("chat_id") or ""),
                 customer_id=(doc.get("autoru") or {}).get("customer_id", ""),
+                customer_names=(doc.get("autoru") or {}).get("customer_names", []),
             )
         except amo_client.AmoError as exc:
             log.warning("виджет amo по чату %s: %s", snap.get("chat_id"), exc)
@@ -1207,7 +1208,7 @@ def _note_lead(chat_id: str, doc: dict) -> int | None:
             raise RuntimeError("CRM lead read failed")
     if chat_id.startswith("ar:"):
         src = doc.get("autoru") or {}
-        return amo_client.autoru_bound_lead(chat_id[3:], src.get("customer_id", ""), src.get("url", ""))
+        return amo_client.autoru_bound_lead(chat_id[3:], src.get("customer_id", ""), src.get("url", ""), src.get("customer_names", []))
     listing = doc.get("avito") or {}
     peer = listing.get("peer") or ""
     if not peer or amo_client._norm_txt(peer) in amo_client.GENERIC_PEERS:

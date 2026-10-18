@@ -285,6 +285,20 @@ async def _handoff(channel, chat_id, history: list[dict], reason: str) -> None:
     if reason == "llm":
         return
     await crm.capture(chat_id, history, reason)
+    if reason == "handoff":
+        current = store.load_doc(chat_id)
+        alert = (current.get("crm") or {}).get("alert") or {}
+        # Подтверждаем только состоявшееся уведомление сотрудника. Если он
+        # уже забрал разговор, не вклиниваемся со служебной репликой.
+        if alert.get("tg") and not alert.get("picked"):
+            text = "Передал ваш вопрос менеджеру для ответа в этом чате."
+            latest = current.get("messages") or []
+            if not latest or latest[-1].get("content") != text:
+                await channel.send(chat_id, text)
+                store.log_line(chat_id, "никита", text)
+                latest = store.load_history(chat_id)
+                latest.append({"role": "assistant", "content": text})
+                store.save_history(chat_id, latest)
 
 
 async def type_and_wait(channel, chat_id, delay: float) -> None:
@@ -639,6 +653,10 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if locked != bubbles:
             log.info("чат %s: убрал цену не из объявления этого чата", chat_id)
             bubbles = locked
+    if (nudge.asked_torg([{"role": "user", "content": user_text}])
+            and not re.search(r"торг|обсуд\w*.{0,25}цен|согласов", " ".join(bubbles), re.I)):
+        # Удаление неподтверждённой цены не должно удалять ответ на торг.
+        bubbles.append(human.SOFT_TORG)
     if nudge.asked_noncar_trade(user_text) or nudge.still_noncar_trade(history):
         bubbles = human.glue_lonely_greeting(bubbles)
         final = nudge.keep_noncar_boundary(bubbles)
@@ -1032,6 +1050,13 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     payment_answer = avito_match.cash_only_answer(doc, last)
     if payment_answer:
         return payment_answer
+    if re.search(r"согласов\w*.{0,40}(?:цен|сумм)|переговор\w*.{0,30}руковод", last, re.I):
+        return prompt.HANDOFF_MARK
+    if (nudge.asked_credit([{"role": "user", "content": last}])
+            or re.search(r"\bкр[еи]дит\w*\b", last, re.I)):
+        return "Салон кредит не оформляет. Автомобиль можно приобрести за наличный расчёт."
+    if re.search(r"(?:заберу|забрать|куплю|взять)\s+за\s*\d", last, re.I):
+        return human.cash_hold(avito_match.listing_price(doc))
     vat = avito_match.vat_from_doc(doc)
     if (vat and nudge.asked_vat([{"role": "user", "content": last}])
             and not nudge.wants_without_vat(last) and len(last) <= 150
@@ -1073,10 +1098,7 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
             return answer
         if nudge.refuses_phone(last) or nudge.wants_write_here(last):
             return prompt.HANDOFF_MARK
-        answer = "Уточню этот момент. Давайте созвонимся, обсудим состояние подробнее."
-        if not nudge.history_has_phone(history):
-            answer += " Напишите, пожалуйста, номер телефона."
-        return answer
+        return prompt.HANDOFF_MARK
     system = _build_system(history, chat_id)
     raw = await llm.reply(system, history)
     log.info(
@@ -1107,6 +1129,10 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
             system + "\n\nВопрос про имя уже задавал. Не повторяй его. Ответь по делу.",
             history,
         )
+    if re.search(r"\b(?:уточню|уточним|проверю|проверим)\b|(?:нужно|надо) уточнить|информации нет|сведений нет", raw, re.I):
+        # Обещание уточнить должно создавать реальное действие сотруднику,
+        # а не заменяться очередным требованием телефона.
+        return prompt.HANDOFF_MARK
     return raw
 
 
@@ -1158,6 +1184,46 @@ def waiting_for_bot(chat_id: str) -> bool:
     return True
 
 
+async def catchup_channel_current(channel, cid: str) -> bool:
+    """Перед догоном перечитываем площадку: сотрудник мог ответить вне бота."""
+    api = getattr(channel, "api", None)
+    if not api or not cid.startswith(("av:", "ar:")):
+        return True
+    try:
+        if cid.startswith("av:"):
+            msgs = await api.messages(cid[3:], limit=50)
+            msgs = [m for m in msgs if m.get("type") != "system"]
+            last = max(msgs, key=lambda m: int(m.get("created") or 0), default={})
+            outgoing = last.get("direction") == "out" or last.get("author_id") == api.user_id
+            text = (last.get("content") or {}).get("text") or ""
+        else:
+            room = await api.room(cid[3:])
+            if not room or not room.get("me"):
+                return False
+            msgs = await api.messages(cid[3:])
+            msgs = [m for m in msgs if autoru_loop._usable(m)]
+            last = max(msgs, key=autoru_loop.created_of, default={})
+            outgoing = autoru_loop.is_out(last, str(room["me"]))
+            text = (str((last.get("payload") or {}).get("value") or "") if outgoing
+                    else autoru_loop.message_text(last, str(room["me"])))
+            last = {**last, "created": autoru_loop.created_of(last), "content": {"text": text},
+                    "direction": "out" if outgoing else "in", "type": "text"}
+        if not last:
+            return False
+        if outgoing:
+            crm.on_foreign_out(cid, {**last, "direction": "out"})
+            return False
+        if not text:
+            return False
+        history = store.load_history(cid)
+        # Если пришло продолжение, отвечаем с учётом него, а не старой реплики.
+        store.save_history(cid, merge_user_chunks(history, [text]))
+        return waiting_for_bot(cid)
+    except Exception:
+        log.exception("догон очереди: не удалось сверить площадку %s", cid)
+        return False
+
+
 async def catchup_waiting() -> int:
     """После простоя ключа отвечаем тем, кто уже написал и не получил ответ."""
     for _ in range(40):
@@ -1173,14 +1239,17 @@ async def catchup_waiting() -> int:
         running = tasks.get(str(cid))
         if str(cid) in inflight or (running and not running.done()):
             continue
-        if is_llm_pause_reason(store.pause_info(cid).get("reason") or ""):
-            store.resume(cid)
-        llm_fails.pop(str(cid), None)
         channel = _nudge_channel(cid)
         if channel is None:
             log.warning("догон очереди: нет канала для %s", cid)
             continue
+        if not await catchup_channel_current(channel, cid):
+            continue
+        if is_llm_pause_reason(store.pause_info(cid).get("reason") or ""):
+            store.resume(cid)
+        llm_fails.pop(str(cid), None)
         last = str((store.load_history(cid) or [{}])[-1].get("content") or "")
+        inflight.add(str(cid))
         try:
             await _answer_locked(channel, cid, [last])
             hist = store.load_history(cid)
@@ -1191,6 +1260,10 @@ async def catchup_waiting() -> int:
                 log.warning("догон очереди: %s без исходящего", cid)
         except Exception:
             log.exception("догон очереди: %s упал", cid)
+        finally:
+            inflight.discard(str(cid))
+            if pending.get(str(cid)):
+                schedule(channel, str(cid))
         await asyncio.sleep(1.2)
     log.info("догон очереди: готово, ответил %d", sent)
     return sent

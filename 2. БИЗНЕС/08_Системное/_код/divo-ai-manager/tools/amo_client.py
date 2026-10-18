@@ -600,8 +600,12 @@ def all_unsorted() -> list[dict]:
     raise AmoError(0, "unsorted pagination incomplete")
 
 
-def autoru_bound_lead(room_id: str, customer_id: str = "", url: str = "") -> int | None:
+def autoru_bound_lead(room_id: str, customer_id: str = "", url: str = "", customer_names: list[str] | None = None) -> int | None:
     identities = {x for x in (room_id, customer_id) if x}
+    # Виджет использует alias/full_name профиля вместо зашифрованного ID.
+    # Только точное совпадение, конкретное объявление и единственная сделка.
+    identities.update(str(x).strip() for x in (customer_names or [])
+                      if str(x).strip() and _norm_txt(str(x)) not in GENERIC_PEERS)
     rows = all_unsorted()
     item_id = listing_item_id(url)
     found = set()
@@ -981,6 +985,7 @@ def find_widget_lead(
     url: str = "",
     chat_id: str = "",
     customer_id: str = "",
+    customer_names: list[str] | None = None,
 ) -> dict | None:
     """Сделка виджета Авито / Авто.ру в воронке «Техническое».
 
@@ -996,7 +1001,7 @@ def find_widget_lead(
         room = str(chat_id or "")
         if room.startswith("ar:"):
             room = room[3:]
-        lid = autoru_bound_lead(room, customer_id, url)
+        lid = autoru_bound_lead(room, customer_id, url, customer_names)
         return _lead_as_widget(lid, rows) if lid else None
     want_item = listing_item_id(url)
     now = time.time()
