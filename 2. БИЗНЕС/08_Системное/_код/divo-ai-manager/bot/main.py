@@ -395,9 +395,10 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
             "LLM не ответил по чату %s (подряд %d): %s" % (chat_id, fails, error_text)
         )
         if budget_blocked:
-            # Денежный лимит повтором не исправляется. Клиент сразу идёт
-            # человеку, даже без номера; модель не нужна для этой передачи.
-            await _handoff(channel, chat_id, history, "handoff")
+            # Это техническая пауза, а не решение передать диалог человеку.
+            # catchup повторит попытку после пополнения; реальный захват
+            # менеджером по-прежнему запрещает автоматическое возобновление.
+            await _handoff(channel, chat_id, history, "llm")
             return
         if last_try:
             await _handoff(channel, chat_id, history, "llm")
