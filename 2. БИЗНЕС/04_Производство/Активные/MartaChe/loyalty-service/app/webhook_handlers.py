@@ -27,7 +27,7 @@ from app.field_guard import (
     reconcile_tier_status,
     status_str_for,
 )
-from app.models import BonusBatch, LoyaltyMember, ProcessedEvent, ProcessedEventStatus
+from app.models import BonusBatch, BonusLog, LoyaltyMember, ProcessedEvent, ProcessedEventStatus
 from app.moysklad_client import MoySkladClient
 from app.order_loyalty_view import (
     append_comment_to_log,
@@ -40,6 +40,7 @@ from app.order_loyalty_view import (
 )
 from app.spend_engine import (
     SpendResult,
+    _spend_fifo,
     apply_spend_intent,
     compute_active_balance,
     compute_pending_balance,
@@ -426,6 +427,53 @@ def _build_member_attrs_for_cp(
     }
 
 
+def _align_ms_bonus_balance(
+    client: MoySkladClient,
+    settings: Settings,
+    agent_id: str,
+    target_active: int,
+) -> None:
+    """Баланс активной программы МойСклад = наши активные бонусы.
+
+    Источник суммы — наш расчёт. Ручное начисление и списание уже сидят в
+    `target_active`. Здесь закрываем остаток: история в неактивной программе
+    «Тест» на карточку не попадает, пока не выровняем живой баланс.
+    """
+    cp = client.fetch_counterparty(agent_id)
+    current = int(round(float(cp.get("bonusPoints") or 0)))
+    target = max(0, int(target_active))
+    delta = target - current
+    if delta == 0:
+        return
+    client.post(
+        "/entity/bonustransaction",
+        {
+            "bonusProgram": {"meta": client.fetch_bonus_program_meta()},
+            "agent": {
+                "meta": {
+                    "href": f"{settings.api_base.rstrip('/')}/entity/counterparty/{agent_id}",
+                    "type": "counterparty",
+                    "mediaType": "application/json",
+                }
+            },
+            "transactionType": "EARNING" if delta > 0 else "SPENDING",
+            "bonusValue": abs(delta),
+            "executionDate": _fmt_ms_moment(_ms_now()),
+            "externalCode": settings.loyalty_external_code,
+            "name": unique_bt_name("Выравнивание баланса ПЛ"),
+        },
+        disable_webhook=True,
+    )
+    log.info(
+        "bonus balance aligned agent=%s %s -> %s (%s %s)",
+        agent_id,
+        current,
+        target,
+        "EARNING" if delta > 0 else "SPENDING",
+        abs(delta),
+    )
+
+
 def _sync_member_card(
     client: MoySkladClient,
     settings: Settings,
@@ -440,6 +488,16 @@ def _sync_member_card(
     if not _safe_sync_counterparty_attributes(client, settings, agent_id=member.agent_id, attrs=attrs):
         return False
     _save_last_synced_cp_attrs(member, settings, attrs)
+    try:
+        _align_ms_bonus_balance(
+            client,
+            settings,
+            member.agent_id,
+            int(attrs.get("active_bonuses") or 0),
+        )
+    except Exception:
+        # Поля карточки уже записаны. Остаток добьёт следующий синк или ночной прогон.
+        log.warning("bonus balance align failed agent=%s", member.agent_id, exc_info=True)
     return True
 
 
@@ -1147,6 +1205,22 @@ def handle_counterparty_update(db: Session, client: MoySkladClient, agent_id: st
 # ================= bonustransaction CREATE (как было) =================
 
 
+def _manual_bt_already_applied(db: Session, bt_id: str) -> bool:
+    """Повтор вебхука не должен начислить или списать ту же операцию второй раз."""
+    if not bt_id:
+        return False
+    if db.scalar(select(BonusBatch.id).where(BonusBatch.bonustransaction_id == bt_id).limit(1)):
+        return True
+    if db.scalar(
+        select(BonusLog.id).where(
+            BonusLog.bonustransaction_id == bt_id,
+            BonusLog.action == "MANUAL_SYNC",
+        ).limit(1)
+    ):
+        return True
+    return False
+
+
 def handle_bonustransaction_create(db: Session, client: MoySkladClient, bt_id: str) -> None:
     settings = get_settings()
     bt = client.get(f"/entity/bonustransaction/{bt_id}")
@@ -1164,36 +1238,44 @@ def handle_bonustransaction_create(db: Session, client: MoySkladClient, bt_id: s
         return
     v = int(float(bt.get("bonusValue") or 0))
     t = str(bt.get("transactionType") or "")
-    if t == "EARNING" and v > 0:
-        db.add(
-            BonusBatch(
-                agent_id=agent_id,
-                original_amount=v,
-                remaining=v,
-                expires_at=date.today() + timedelta(days=365),
-                activates_at=None,
-                source_order_id=None,
-                bonustransaction_id=str(bt.get("id")),
-                batch_type="manual_earn",
+    doc_id = str(bt.get("id") or bt_id)
+    # autoflush выключен: без flush новый батч не попадёт в расчёт карточки,
+    # и «Активные бонусы» останутся прежними при уже созданной операции в МС.
+    if not _manual_bt_already_applied(db, doc_id):
+        if t == "EARNING" and v > 0:
+            db.add(
+                BonusBatch(
+                    agent_id=agent_id,
+                    original_amount=v,
+                    remaining=v,
+                    expires_at=date.today() + timedelta(days=365),
+                    activates_at=None,
+                    source_order_id=None,
+                    bonustransaction_id=doc_id,
+                    batch_type="manual_earn",
+                )
             )
-        )
-        log_bonus(db, action="MANUAL_SYNC", agent_id=agent_id, bonus_amount=v, bonustransaction_id=str(bt.get("id")), details={"transactionType": t})
-    elif t == "SPENDING" and v > 0:
-        remaining = v
-        batches = list(
-            db.scalars(
-                select(BonusBatch).where(BonusBatch.agent_id == agent_id, BonusBatch.remaining > 0).order_by(BonusBatch.created_at.asc())
-            ).all()
-        )
-        for b in batches:
-            if remaining <= 0:
-                break
-            take = min(int(b.remaining), remaining)
-            b.remaining = int(b.remaining) - take
-            remaining -= take
-        log_bonus(db, action="MANUAL_SYNC", agent_id=agent_id, bonus_amount=v, bonustransaction_id=str(bt.get("id")), details={"transactionType": t})
+            log_bonus(
+                db,
+                action="MANUAL_SYNC",
+                agent_id=agent_id,
+                bonus_amount=v,
+                bonustransaction_id=doc_id,
+                details={"transactionType": t},
+            )
+        elif t == "SPENDING" and v > 0:
+            # Только активные батчи. Ожидающие активации этой операцией не трогаем.
+            _spend_fifo(db, agent_id, v)
+            log_bonus(
+                db,
+                action="MANUAL_SYNC",
+                agent_id=agent_id,
+                bonus_amount=v,
+                bonustransaction_id=doc_id,
+                details={"transactionType": t},
+            )
+    db.flush()
 
-    # Синкаем attributes контрагента, чтобы новый баланс отразился сразу
     cp_target = _build_member_attrs_for_cp(db, settings, member)
     _sync_member_card(client, settings, member, cp_target)
 

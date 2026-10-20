@@ -16,6 +16,7 @@ from app.moysklad_client import MoySkladClient
 from app.spend_engine import unique_bt_name
 from app.tier_manager import tier_index_from_annual_sum, tier_name_ru
 from app.webhook_handlers import (
+    _align_ms_bonus_balance,
     _build_member_attrs_for_cp,
     _cp_attrs_snapshot,
     _ms_now,
@@ -103,6 +104,14 @@ def daily_tier_resync_job() -> None:
                 cp_target = _build_member_attrs_for_cp(db, settings, m)
                 if _cp_attrs_snapshot(settings, cp_target) != (m.last_synced_cp_attrs or {}):
                     _sync_member_card(client, settings, m, cp_target)
+                else:
+                    # Карточка уже совпадает с расчётом, но баланс программы в МС мог отстать.
+                    _align_ms_bonus_balance(
+                        client,
+                        settings,
+                        m.agent_id,
+                        int(cp_target.get("active_bonuses") or 0),
+                    )
             except Exception:
                 log.warning("card resync failed agent=%s", m.agent_id, exc_info=True)
         db.commit()
@@ -165,6 +174,7 @@ def birthday_bonus_job() -> None:
                 bonustransaction_id=None,
                 details={"year": today.year, "activates_at": activates_at.isoformat(), "ms_transaction": "deferred"},
             )
+            db.flush()
             try:
                 cp_target = _build_member_attrs_for_cp(db, settings, m)
                 _sync_member_card(client, settings, m, cp_target)

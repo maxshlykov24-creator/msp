@@ -122,11 +122,27 @@ class MoySkladClient:
         raise RuntimeError("DELETE failed")
 
     def fetch_bonus_program_meta(self) -> dict[str, Any]:
-        data = self.get("/entity/bonusprogram", params={"limit": 1})
-        rows = data.get("rows") or []
+        """Мета активной программы, которую менеджер видит в карточке контрагента.
+
+        `limit=1` без фильтра возвращает неактивную «Тест» первой. Все операции
+        уходили туда и не меняли баланс «Программа лояльности».
+        """
+        pinned = (get_settings().bonus_program_id or "").strip()
+        if pinned:
+            row = self.get(f"/entity/bonusprogram/{pinned}")
+            if isinstance(row, dict) and row.get("meta"):
+                return row["meta"]
+        data = self.get("/entity/bonusprogram", params={"limit": 100})
+        rows = [r for r in (data.get("rows") or []) if isinstance(r, dict)]
         if not rows:
             raise RuntimeError("В аккаунте нет бонусной программы. Создайте её в МойСклад.")
-        return rows[0]["meta"]
+        active = [r for r in rows if r.get("active")]
+        if len(active) > 1:
+            named = [r for r in active if str(r.get("name") or "").strip().lower() != "тест"]
+            if named:
+                active = named
+        chosen = active[0] if active else rows[0]
+        return chosen["meta"]
 
     def fetch_customerorder(self, order_id: str) -> dict[str, Any]:
         return self.get(

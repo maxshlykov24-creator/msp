@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     status_return_partial: str = "Частичный возврат"
 
     loyalty_external_code: str = "loyalty-service"
+    # Пусто = активная бонусная программа аккаунта (не первая в списке: там лежит неактивная «Тест»).
+    bonus_program_id: str = ""
 
     outlet_folder_ids: str = ""
     gift_folder_ids: str = ""
