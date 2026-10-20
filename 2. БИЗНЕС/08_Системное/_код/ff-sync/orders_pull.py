@@ -1,6 +1,7 @@
 """Заказы FBS/FBO из кабинетов → заказ покупателя в МойСклад."""
 
 from datetime import datetime, timedelta, timezone
+import time
 
 from db import (
     find_cache_group,
@@ -220,12 +221,20 @@ def pull_wb_fbo(token, date_from, strict=False):
 
 
 def ozon_list(url, headers, date_from, strict=False):
+    from net import clear_fbs_list_pause, fbs_list_paused
+
+    if "/posting/fbs/list" in url and fbs_list_paused():
+        raise RuntimeError("Ozon: список на паузе после 429")
     out = []
     seen = set()
     offset = 0
     since = date_from.strftime("%Y-%m-%dT%H:%M:%SZ")
     until = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     while True:
+        # Лимит списка FBS у Ozon: один запрос в секунду. Чаще он отвечает 429
+        # и после серии отказов перестаёт отдавать список совсем.
+        if "/posting/fbs/list" in url:
+            time.sleep(1.1)
         r = req(
             "POST",
             url,
@@ -242,6 +251,8 @@ def ozon_list(url, headers, date_from, strict=False):
                 raise RuntimeError("Ozon: неполный список, HTTP %s" % r.status_code)
             print("Ozon %s %s %s" % (url, r.status_code, (r.text or "")[:180]))
             break
+        if "/posting/fbs/list" in url and offset == 0:
+            clear_fbs_list_pause()
         data = r.json()
         block = data.get('result', data) if isinstance(data, dict) else data
         if isinstance(block, list):

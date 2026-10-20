@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -19,6 +20,11 @@ YANDEX_BASE = "https://api.partner.market.yandex.ru"
 CONNECT_TIMEOUT = 5
 READ_TIMEOUT = 60
 TRIES = 6
+# Список FBS у Ozon общий на кабинет. Шесть быстрых повторов по каждому
+# клиенту каждые несколько минут держали ответ 429 сутками, и панель
+# оставалась со вчерашними заказами. После отказа молчим, пока лимит не спадёт.
+FBS_LIST_PAUSE_KEY = "ozon_fbs_list_pause"
+FBS_LIST_PAUSE_SECONDS = 180
 
 _last = 0.0
 _sessions = {}
@@ -73,6 +79,45 @@ def pause():
     _last = time.time()
 
 
+def fbs_list_paused():
+    from db import get_setting
+
+    raw = get_setting(FBS_LIST_PAUSE_KEY) or ""
+    if not raw:
+        return False
+    try:
+        until = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) < until
+
+
+def pause_fbs_list(response=None):
+    from db import set_setting
+
+    seconds = FBS_LIST_PAUSE_SECONDS
+    retry = ""
+    if response is not None:
+        retry = str(response.headers.get("Retry-After") or "")
+        if retry.isdigit():
+            seconds = min(900, max(int(retry), 30))
+    until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    set_setting(FBS_LIST_PAUSE_KEY, until.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    body = ""
+    if response is not None:
+        body = (response.text or "").replace("\n", " ")[:160]
+    print("Ozon список на паузе %s с, ответ: %s" % (seconds, body), flush=True)
+
+
+def clear_fbs_list_pause():
+    from db import get_setting, set_setting
+
+    if get_setting(FBS_LIST_PAUSE_KEY):
+        set_setting(FBS_LIST_PAUSE_KEY, "")
+
+
 def req(method, url, headers=None, retry_safe=True, **kw):
     """Запрос к внешнему API с повтором.
 
@@ -102,6 +147,10 @@ def req(method, url, headers=None, retry_safe=True, **kw):
             continue
         if last.status_code >= 500 and not retry_safe:
             raise requests.RequestException("Сервис не подтвердил создание (HTTP %s). Операция могла выполниться: обнови данные и проверь результат перед повтором." % last.status_code)
+        if last.status_code == 429 and "/posting/fbs/list" in url:
+            print("%s %s → 429" % (method, url), flush=True)
+            pause_fbs_list(last)
+            return last
         if last.status_code == 429 or last.status_code >= 500:
             print("%s %s → %s (попытка %s)" % (method, url, last.status_code, attempt))
             time.sleep(min(2 ** (attempt - 1), 8))
