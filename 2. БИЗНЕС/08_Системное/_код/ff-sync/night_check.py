@@ -21,7 +21,7 @@ from db import (
     lock_name,
     prune_old_shipments,
 )
-from net import OZON_BASE, ozon_headers
+from net import OZON_BASE, ozon_headers, req
 from orders_pull import ozon_list, since_days
 from shipments_pull import pull_ozon_get, wb_statuses
 
@@ -61,13 +61,59 @@ def check_wb(cab, live=False):
     return len(rows), fixed
 
 
+def check_ozon_live(cab):
+    """Сверка заказов, которые склад ещё держит в работе. Список FBS не трогаем.
+
+    Список раз в пять минут по всем кабинетам и закрыл метод: Ozon перестал
+    отдавать новые заказы. Точечный запрос одного отправления в этот лимит не входит.
+    """
+    import time
+
+    rows = list_open_shipments(cab["id"], kind="fbs", groups=("new", "assembling", "ready"))[:15]
+    if not rows:
+        return 0, 0
+    headers = ozon_headers(cab["client_id_ext"], cab["token"])
+    fixed = 0
+    for row in rows:
+        time.sleep(0.4)
+        r = req(
+            "POST",
+            OZON_BASE + "/v3/posting/fbs/get",
+            headers=headers,
+            json={"posting_number": row["ext_id"]},
+        )
+        if r.status_code == 429:
+            raise RuntimeError("Ozon: точечная проверка, HTTP 429")
+        if r.status_code != 200:
+            continue
+        result = (r.json() or {}).get("result") or {}
+        raw = result.get("status") or ""
+        if result.get("posting_number") != row["ext_id"] or raw not in statuses_mod.OZON:
+            continue
+        status = statuses_mod.ru(raw)
+        group = statuses_mod.ozon_group(raw)
+        track = result.get("tracking_number") or row["track"] or ""
+        if not _changed(row, status, group) and not (group in DONE and (row["work_state"] or "")):
+            if not (group == statuses_mod.READY and (row["work_state"] or "") == statuses_mod.ASSEMBLING):
+                continue
+        set_shipment_status(row["id"], status, group, clear_work=group in DONE, track=track)
+        if group == statuses_mod.READY and (row["work_state"] or "") == statuses_mod.ASSEMBLING:
+            from db import set_work_state
+
+            set_work_state([row["id"]], statuses_mod.READY)
+        fixed += 1
+    return len(rows), fixed
+
+
 def check_ozon(cab, live=False):
-    """Статусы Ozon одним списком, а не по отправлению за запрос.
+    """Ночью статусы одним списком. Днём список не зовём: он уже отказывал.
 
     В работе и в пути у площадок больше четырёх тысяч отправлений. Ручка `get`
-    отдаёт одно за запрос, а `list` — сотню, и окно совпадает с тем, что мы
-    вообще храним. Одиночный `get` оставлен для тех, кого в списке не оказалось.
+    отдаёт одно за запрос, а `list` — сотню. Днём хватает точечной сверки тех,
+    кто ещё на сборке.
     """
+    if live:
+        return check_ozon_live(cab)
     from db import get_client_by_id
     from shipments_pull import same_ozon, handle_ozon
     client = get_client_by_id(cab['client_id'])

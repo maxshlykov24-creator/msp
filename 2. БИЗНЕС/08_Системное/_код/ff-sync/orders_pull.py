@@ -234,7 +234,7 @@ def ozon_list(url, headers, date_from, strict=False):
         # Лимит списка FBS у Ozon: один запрос в секунду. Чаще он отвечает 429
         # и после серии отказов перестаёт отдавать список совсем.
         if "/posting/fbs/list" in url:
-            time.sleep(1.1)
+            time.sleep(2)
         r = req(
             "POST",
             url,

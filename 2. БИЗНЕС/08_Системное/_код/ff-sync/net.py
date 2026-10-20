@@ -153,11 +153,13 @@ def req(method, url, headers=None, retry_safe=True, **kw):
             continue
         if last.status_code >= 500 and not retry_safe:
             raise requests.RequestException("Сервис не подтвердил создание (HTTP %s). Операция могла выполниться: обнови данные и проверь результат перед повтором." % last.status_code)
-        if last.status_code == 429 and "/posting/fbs/list" in url:
+        if last.status_code == 429 and "api-seller.ozon.ru" in url:
+            # Повтор сразу продлевает отказ. Список после этого молчит полчаса.
             print("%s %s → 429" % (method, url), flush=True)
-            pause_fbs_list(last)
+            if "/posting/fbs/list" in url:
+                pause_fbs_list(last)
             return last
-        if last.status_code == 429 or last.status_code >= 500:
+        if last.status_code >= 500:
             print("%s %s → %s (попытка %s)" % (method, url, last.status_code, attempt))
             time.sleep(min(2 ** (attempt - 1), 8))
             continue

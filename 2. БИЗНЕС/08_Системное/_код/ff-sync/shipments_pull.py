@@ -659,7 +659,10 @@ def _run(days, client_id=None):
                 else:
                     headers = ozon_headers(cab["client_id_ext"], cab["token"])
                     url = OZON_BASE + ("/v3/posting/fbs/list" if kind == "fbs" else "/v2/posting/fbo/list")
-                    rows = ozon_list(url, headers, start, strict=True)
+                    # Три дня, не четырнадцать: новые заказы внутри этого окна,
+                    # а длинный список по всем кабинетам как раз закрыл метод.
+                    window = since_days(min(int(days or 14), 3)) if kind == "fbs" else start
+                    rows = ozon_list(url, headers, window, strict=True)
                     n = handle_ozon(client, cab, kind, rows, headers)
                 created += n
                 record_sync(cab["id"], kind, count=len(rows))
