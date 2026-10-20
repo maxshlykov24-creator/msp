@@ -1050,6 +1050,12 @@ def deliver(supply_id, confirm=False, force=False):
     gap = kiz.missing_mark_note(rows)
     if gap:
         raise ValueError(gap)
+    try:
+        gap = kiz.wb_dispatch_gap(rows)
+    except kiz.KizError as exc:
+        raise ValueError(str(exc))
+    if gap:
+        raise ValueError(gap)
     flag, _cargo, point = _sync_dropoff(supply)
     pickup = statuses.to_pickup("", flag, point)
     loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []
@@ -1087,6 +1093,14 @@ def preflight(supply_id):
         if ensure_dropoff(supply_id)["point_id"]:
             flag, cargo, point = _sync_dropoff(_supply(supply_id))
     rows = list_supply_shipments(supply["cabinet_id"], supply["ext_id"])
+    kiz_note = ""
+    if supply["state"] == "open" and rows:
+        import kiz
+
+        try:
+            kiz_note = kiz.wb_dispatch_gap(rows)
+        except kiz.KizError as exc:
+            kiz_note = str(exc)
     boxes = list_wb_boxes(supply["id"])
     pickup = statuses.to_pickup(cargo, flag, point)
     loose = [r for r in rows if not (r["trbx_ext"] or "")] if pickup else []
@@ -1102,6 +1116,7 @@ def preflight(supply_id):
         "office": statuses.dropoff(cargo, flag, point, point_address(point)),
         "pickup": pickup,
         "warn": statuses.dropoff_warning(supply["state"], flag, point),
+        "kiz": kiz_note,
     }
 
 

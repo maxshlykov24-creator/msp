@@ -462,6 +462,83 @@ def _wb_sgtin(order):
     return None
 
 
+def _wb_meta_many(cab, ext_ids):
+    """Метаданные пачкой. WB принимает список заказов одним запросом."""
+    heads = wb_headers(cab["token"])
+    found = {}
+    ids = []
+    for ext in ext_ids:
+        try:
+            ids.append(int(ext))
+        except (TypeError, ValueError):
+            continue
+    for start in range(0, len(ids), 100):
+        chunk = ids[start:start + 100]
+        r = req("POST", WB_META, headers=heads, json={"orders": chunk})
+        if r.status_code != 200:
+            _fail(r, "WB не отдал метаданные заданий")
+        try:
+            data = r.json() or {}
+        except ValueError:
+            raise KizError("WB вернул нераспознанный ответ по метаданным")
+        for order in data.get("orders") or []:
+            found[str(order.get("id"))] = order
+    return found
+
+
+def wb_dispatch_gap(rows):
+    """Почему поставку нельзя передать в доставку. Пусто, если WB зачёл КиЗ.
+
+    Сохранённый у нас код ещё не значит, что площадка его приняла. Пока
+    decision не из принятых, deliver отвечает 409 и сырой текст WB.
+    """
+    grouped = {}
+    for row in rows:
+        keys = row.keys() if hasattr(row, "keys") else ()
+        if "marketplace" in keys and str(row["marketplace"] or "") not in ("", "wb"):
+            continue
+        if "kind" in keys and str(row["kind"] or "") != "fbs":
+            continue
+        grouped.setdefault(row["cabinet_id"], []).append(row)
+    problems = []
+    for cab_id, group in grouped.items():
+        cab = get_cabinet(cab_id)
+        if not cab or not cab["token"]:
+            raise KizError("у кабинета нет токена")
+        orders = _wb_meta_many(cab, [row["ext_id"] for row in group])
+        for row in group:
+            ext = str(row["ext_id"])
+            order = orders.get(ext)
+            if order is None:
+                problems.append("%s: WB не отдал данные по заданию." % ext)
+                continue
+            item = _wb_sgtin(order)
+            if not item:
+                continue
+            decision = str(item.get("decision") or "")
+            if decision in WB_DONE or decision == "optional":
+                continue
+            label = ""
+            if "article" in (row.keys() if hasattr(row, "keys") else ()):
+                label = str(row["article"] or "")
+            who = "%s (%s)" % (ext, label) if label else ext
+            if decision == "pending":
+                problems.append("%s: WB ещё проверяет КиЗ. Повтори отгрузку, когда проверка пройдёт." % who)
+            elif decision == "required":
+                problems.append("%s: WB ещё не принял КиЗ. Отсканируй код и дождись, пока площадка его зачтёт." % who)
+            elif decision in WB_WANT:
+                why = WB_DECISION_RU.get(decision, decision)
+                problems.append("%s: WB не принял КиЗ (%s). Отсканируй код заново." % (who, why))
+            else:
+                problems.append("%s: WB не подтвердил КиЗ. Отгрузку не отправляю." % who)
+    if not problems:
+        return ""
+    shown = " ".join(problems[:6])
+    if len(problems) > 6:
+        shown += " И ещё %s." % (len(problems) - 6)
+    return "WB не закроет поставку, пока не зачтёт КиЗ. " + shown
+
+
 def product_marked(row):
     """Карточка в нашем каталоге помечена как маркируемая.
 

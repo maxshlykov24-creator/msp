@@ -3254,6 +3254,10 @@ function bindWbDetail() {
       return;
     }
     // точку сдачи preflight перечитывает с площадки: после закрытия её не поменять
+    if (pre.kiz) {
+      say($("wbMsg"), pre.kiz, "bad");
+      return;
+    }
     const okay = await ask(
       "Отправить поставку на отгрузку?",
       (pre.office ? pre.office + ". " : "") + pre.ext_id + " · " + pre.client
