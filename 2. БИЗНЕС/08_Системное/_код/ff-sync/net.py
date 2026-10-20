@@ -99,10 +99,16 @@ def pause_fbs_list(response=None):
 
     seconds = FBS_LIST_PAUSE_SECONDS
     retry = ""
+    remaining = ""
     if response is not None:
         retry = str(response.headers.get("Retry-After") or "")
-        if retry.isdigit():
+        remaining = str(response.headers.get("ratelimit-remaining") or "")
+        # Retry-After: 0 при remaining 0 значит, что секундное окно уже не лечит.
+        # Короткий повтор только удерживает отказ.
+        if retry.isdigit() and int(retry) > 0:
             seconds = min(900, max(int(retry), 30))
+        elif remaining == "0":
+            seconds = 1800
     until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
     set_setting(FBS_LIST_PAUSE_KEY, until.strftime("%Y-%m-%dT%H:%M:%SZ"))
     body = ""
