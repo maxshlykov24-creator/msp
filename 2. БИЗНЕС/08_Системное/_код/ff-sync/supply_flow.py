@@ -420,12 +420,14 @@ def assemble(ship_ids, split=True, boxes=0):
         raise ValueError("отправления не найдены")
     import kiz
 
-    gap = kiz.missing_mark_note(rows)
+    moved = []
+    gap = kiz.missing_mark_note(rows, moved)
     if gap:
         raise ValueError(gap)
-    ozon = [r["id"] for r in rows if r["marketplace"] == "ozon" and r["kind"] == "fbs"]
-    rest = [r["id"] for r in rows if r["id"] not in set(ozon)]
-    notes = []
+    skip = {item["id"] for item in moved}
+    ozon = [r["id"] for r in rows if r["marketplace"] == "ozon" and r["kind"] == "fbs" and r["id"] not in skip]
+    rest = [r["id"] for r in rows if r["id"] not in set(ozon) and r["id"] not in skip]
+    notes = [item["note"] for item in moved]
     shipped = 0
     if ozon:
         res = ship_ozon(ozon, split=split)

@@ -185,6 +185,46 @@ OZON_MARK_UNAVAILABLE = (
 )
 
 
+def _sentence(text):
+    text = str(text or "").strip()
+    if not text:
+        return ""
+    return text[0].upper() + text[1:]
+
+
+def _park_ozon(row, status):
+    """Записать живой статус Ozon, чтобы заказ ушёл со вкладки «На сборке».
+
+    Список отправлений иногда отстаёт. Проверка КиЗ и «Собрано» уже спросили
+    площадку точечно: этого достаточно, чтобы не оставлять оператору ошибку
+    про статус, с которым работать нельзя.
+    """
+    import statuses
+    from db import set_shipment_status, set_work_state
+
+    group = statuses.OZON.get(str(status or "").strip().lower())
+    if not group or group == statuses.NEW:
+        return ""
+    text = statuses.ru(status)
+    keys = row.keys() if hasattr(row, "keys") else ()
+    work = str(row["work_state"] or "") if "work_state" in keys else ""
+    # «Собрано» само держит вкладку «Ожидают отгрузки».
+    # Во «Отгружены» такой заказ переводит кнопка «Отгружено».
+    if group == statuses.SHIPPED and work == statuses.READY:
+        set_shipment_status(row["id"], text, group)
+        return _sentence(text) + ". Остаётся в «Ожидают отгрузки» до кнопки «Отгружено»."
+    clear = group in (statuses.CANCELLED, statuses.DELIVERED, statuses.PICKUP) or (
+        group == statuses.SHIPPED and work == statuses.ASSEMBLING
+    )
+    set_shipment_status(row["id"], text, group, clear_work=clear)
+    if group == statuses.READY and work == statuses.ASSEMBLING:
+        set_work_state([row["id"]], statuses.READY)
+    tab = statuses.GROUP_LABELS.get(group, "")
+    if not tab:
+        return _sentence(text)
+    return "%s. Перенёс в «%s»." % (_sentence(text), tab)
+
+
 def _ozon_edit_note(row, cab):
     r = req("POST", "https://api-seller.ozon.ru/v3/posting/fbs/get",
             headers=ozon_headers(cab["client_id_ext"], cab["token"]),
@@ -195,6 +235,9 @@ def _ozon_edit_note(row, cab):
     status = result.get("status")
     if not status or result.get("posting_number") != row["ext_id"]:
         raise KizError("Ozon не подтвердил статус отправления. Повтори проверку.")
+    parked = _park_ozon(row, status)
+    if parked:
+        return parked
     if status == "cancelled":
         return "Заказ отменён в Ozon. Сканирование не требуется."
     if status != "awaiting_packaging":
@@ -440,8 +483,12 @@ def product_marked(row):
     return False
 
 
-def missing_mark_note(rows):
-    """Текст отказа, если маркированный товар идёт дальше без кодов. Пусто, если можно."""
+def missing_mark_note(rows, moved=None):
+    """Текст отказа, если маркированный товар идёт дальше без кодов. Пусто, если можно.
+
+    `moved` собирает отправления, которые Ozon уже увёл со сборки. Их статус
+    записан, в сборку они больше не идут и весь проход из-за них не останавливается.
+    """
     missing = []
     for row in rows:
         if dict(row).get('marketplace') == 'ozon' and dict(row).get('kind') == 'fbs':
@@ -449,7 +496,11 @@ def missing_mark_note(rows):
             # При недоступности API сборку не продолжаем вслепую.
             remote = _ozon_plan(row, _cab(row))
             if remote.get('state_blocked'):
-                raise KizError(str(row['ext_id']) + ': ' + remote['note'])
+                line = str(row['ext_id']) + ': ' + remote['note']
+                if moved is not None:
+                    moved.append({"id": row["id"], "note": line})
+                    continue
+                raise KizError(line)
             for product in remote['products']:
                 if product['required'] and product['filled'] < product['quantity']:
                     missing.append('%s: %s из %s' % (
