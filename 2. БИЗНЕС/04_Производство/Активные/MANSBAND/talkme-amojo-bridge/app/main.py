@@ -94,6 +94,37 @@ from app.calltrack.routes import router as calltrack_router
 app.include_router(calltrack_router)
 
 
+@app.middleware("http")
+async def track_ct_errors(request: Request, call_next):
+    """Счётчик серверных ошибок выдачи номера, без URL и данных посетителя."""
+    watched = request.url.path in {"/ct/session", "/ct/ping"}
+    async def record():
+        def persist():
+            from sqlalchemy import text
+            from app.database import get_session_factory
+            with get_session_factory()() as db:
+                db.execute(text("""
+                    INSERT INTO kv_state (key, value, updated_at)
+                    VALUES ('ct_api_errors', '1', now())
+                    ON CONFLICT (key) DO UPDATE SET
+                      value = (kv_state.value::int + 1)::text, updated_at = now()
+                """))
+                db.commit()
+        try:
+            await asyncio.to_thread(persist)
+        except Exception:
+            log.exception("ct: не удалось сохранить счётчик ошибок")
+    try:
+        response = await call_next(request)
+    except Exception:
+        if watched:
+            await record()
+        raise
+    if watched and response.status_code >= 500:
+        await record()
+    return response
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

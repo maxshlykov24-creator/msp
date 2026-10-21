@@ -152,8 +152,9 @@ def monitor_once(db: Session, now: Optional[dt.datetime] = None) -> None:
              f"Пул заполнен минимум на 80%: {load['busy']} из {load['total']}. Следи за нехваткой.", now)
     incident(db, "пустой пул", bool(get_settings().ct_live and not load["total"]),
              "Боевой режим включён, пул пуст. Проверь настройки номеров.", now)
-    since = now - timedelta(days=1)
-    calls = db.execute(select(CallEvent).where(CallEvent.started_at >= since)).scalars().all()
+    calls = db.execute(select(CallEvent).where(
+        CallEvent.status.in_(["new", "retry", "error", "no_lead", "unattributed"])
+    )).scalars().all()
     groups = {
         "формат Телфин": [c for c in calls if not c.called],
         "звонки без номера клиента": [c for c in calls if c.called and not c.caller],
@@ -164,16 +165,20 @@ def monitor_once(db: Session, now: Optional[dt.datetime] = None) -> None:
     for key, rows in groups.items():
         links = [f"https://{get_settings().amo_subdomain}.{get_settings().amo_base_domain}/leads/detail/{c.lead_id}"
                  for c in rows if c.lead_id][:3]
-        incident(db, key, bool(rows), f"{key}: {len(rows)} за последние сутки. " + " ".join(links), now)
+        incident(db, key, bool(rows), f"{key}: {len(rows)} не закрыто. " + " ".join(links), now)
+    api_errors = db.get(KvState, "ct_api_errors")
+    recent_error = bool(api_errors and now - api_errors.updated_at < timedelta(minutes=5))
+    incident(db, "ошибки выдачи номера", recent_error,
+             "Ошибка сервера при выдаче или продлении номера. Проверь журнал сервиса; посетителю остаётся исходный номер.", now)
     state.update(exhausted_day=day, exhausted_seen=exhausted, heartbeat=now.isoformat())
     _save_state(db, state)
     db.commit()
 
 
-def summary_text(db: Session, now: Optional[dt.datetime] = None) -> str:
+def summary_text(db: Session, now: Optional[dt.datetime] = None, *, previous_day: bool = False) -> str:
     now = now or dt.datetime.now(timezone.utc)
     local = now.astimezone(MSK)
-    report_date = local.date() - timedelta(days=1) if local.hour == 9 else local.date()
+    report_date = local.date() - timedelta(days=1) if previous_day else local.date()
     start = dt.datetime.combine(report_date, dt.time.min, tzinfo=MSK).astimezone(timezone.utc)
     end = start + timedelta(days=1)
     total = db.execute(
@@ -261,7 +266,7 @@ def maybe_summary(db: Optional[Session] = None, now: Optional[dt.datetime] = Non
                 state["last_hour"] = hour_key
         day_key = local.date().isoformat()
         if state.get("mode") == "daily" and local.hour == 9 and state.get("last_daily") != day_key:
-            sent = send(summary_text(db, now)) or sent
+            sent = send(summary_text(db, now, previous_day=True)) or sent
             if sent:
                 state["last_daily"] = day_key
         _save_state(db, state)

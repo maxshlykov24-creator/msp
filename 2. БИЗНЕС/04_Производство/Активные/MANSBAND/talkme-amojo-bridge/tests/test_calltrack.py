@@ -657,3 +657,157 @@ def test_classify_repeat_and_no_lead():
     assert classify_call(old, [{"id": 1}], now) == "repeat"
     assert classify_call(old, [], now) == "no_lead"
     assert classify_call(fresh, [], now) == "wait"
+
+
+def test_shared_number_never_claims_organic():
+    from app.calltrack.matching import attribute_call
+    from app.calltrack.models import CallEvent
+    from app.calltrack.pool import sync_numbers
+    with _db() as db:
+        sync_numbers(db)
+        db.commit()
+        attr = attribute_call(db, CallEvent(called="9310090251"))
+        assert attr.kind == "shared"
+        assert attr.tech_source is None and attr.tracking == {}
+
+
+def test_alert_failure_retry_dedup_recovery(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.calltrack import telegram
+    from app.models import KvState
+    import json
+    sent = []
+    outcomes = iter([False, True, False, True])
+    monkeypatch.setattr(telegram, "send", lambda message: sent.append(message) or next(outcomes))
+    now = datetime.now(timezone.utc)
+    with _db() as db:
+        assert not telegram.incident(db, "test", True, "problem", now)
+        db.commit()
+        assert telegram.incident(db, "test", True, "problem", now + timedelta(minutes=1))
+        db.commit()
+        assert not telegram.incident(db, "test", True, "problem", now + timedelta(minutes=2))
+        assert len(sent) == 2
+        assert not telegram.incident(db, "test", False, "problem", now + timedelta(minutes=3))
+        db.commit()
+        assert telegram.incident(db, "test", False, "problem", now + timedelta(minutes=4))
+        db.commit()
+        assert json.loads(db.get(KvState, "ct_alert:test").value) == {}
+
+
+def test_crm_error_persists_and_reconcile_retries(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    import httpx
+    from app import amo_v4, tokens
+    from app.calltrack.matching import apply_call
+    from app.calltrack.models import CallEvent
+    from app.calltrack.pool import sync_numbers
+    from app.calltrack.reconcile import run_reconcile_once
+    monkeypatch.setattr(tokens, "get_valid_access_token", lambda db: "test")
+    monkeypatch.setattr(amo_v4, "field_id_by_key", lambda **kw: {})
+    monkeypatch.setattr(amo_v4, "select_field", lambda **kw: {"field_id": 99, "enums": {"Авито": 5}})
+    lead = {"id": 123, "custom_fields_values": []}
+    monkeypatch.setattr(amo_v4, "get_lead", lambda **kw: lead)
+    responses = iter([500, 200])
+    monkeypatch.setattr(amo_v4, "patch_lead_fields", lambda **kw: httpx.Response(next(responses), request=httpx.Request("PATCH", "https://example.test")))
+    notes = []
+    monkeypatch.setattr(amo_v4, "add_lead_note", lambda **kw: notes.append(kw))
+    with _db() as db:
+        sync_numbers(db)
+        call = CallEvent(call_id="retry-test", called="9311111111", caller="9000000000",
+                         started_at=datetime.now(timezone.utc) - timedelta(minutes=6), status="new")
+        db.add(call)
+        db.commit()
+        assert not apply_call(db, call, 123, lead, "test")["ok"]
+        cid = call.id
+        assert call.status == "retry" and call.lead_id == 123
+    with _db() as db:
+        result = run_reconcile_once(db)
+        call = db.get(CallEvent, cid)
+        assert result["retry"] == 1
+        assert call.status == "matched"
+        assert call.result["attempts"] == 2
+        assert len(notes) == 1
+
+
+def test_summary_delivery_is_retried(monkeypatch):
+    from datetime import datetime, timezone
+    from app.calltrack import reconcile
+    monkeypatch.setattr(reconcile, "summary_text", lambda *args: "summary")
+    outcomes = iter([False, True])
+    monkeypatch.setattr(reconcile, "send", lambda message: next(outcomes))
+    now = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
+    with _db() as db:
+        assert not reconcile.maybe_summary(db, now)
+        assert "last_hour" not in reconcile._load_state(db)
+        assert reconcile.maybe_summary(db, now)
+        assert reconcile._load_state(db)["last_hour"]
+
+
+def test_monitor_detects_exhaustion_and_persists_heartbeat(client, monkeypatch):
+    from app.calltrack import reconcile, telegram
+    from app.calltrack.routes import _hits
+    messages = []
+    monkeypatch.setattr(telegram, "send", lambda message: messages.append(message) or True)
+    for _ in range(16):
+        _hits.clear()
+        assert client.post("/ct/session", headers=ORIGIN, json={"url": PAID_URL}).status_code == 200
+    with _db() as db:
+        reconcile.monitor_once(db)
+        assert any("Не хватает номеров" in message for message in messages)
+        assert reconcile._load_state(db)["heartbeat"]
+        report = reconcile.summary_text(db)
+        assert "активных рекламных визитов: 16" in report
+        assert "Ответов с резервным номером: 1" in report
+
+
+def test_crm_retries_stop_after_six_failures(monkeypatch):
+    from datetime import datetime, timezone
+    from app import amo_v4
+    from app.calltrack.matching import apply_call
+    from app.calltrack.models import CallEvent
+    monkeypatch.setattr(amo_v4, "field_id_by_key", lambda **kw: (_ for _ in ()).throw(RuntimeError("down")))
+    with _db() as db:
+        call = CallEvent(call_id="failed", called="9311111111", caller="9000000000", started_at=datetime.now(timezone.utc))
+        db.add(call); db.commit()
+        for _ in range(6):
+            assert not apply_call(db, call, 123, {"id": 123}, "test")["ok"]
+        assert call.status == "error"
+        assert call.result["attempts"] == 6
+
+
+def test_failed_api_request_is_counted(client, monkeypatch):
+    from fastapi import HTTPException
+    from app.calltrack import routes
+    from app.models import KvState
+    def fail(*args):
+        raise HTTPException(status_code=503, detail="test")
+    monkeypatch.setattr(routes, "_issue", fail)
+    assert client.post("/ct/session", headers=ORIGIN, json={"url": PAID_URL}).status_code == 503
+    with _db() as db:
+        assert db.get(KvState, "ct_api_errors").value == "1"
+
+
+def test_health_checks_monitor_liveness(client, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.config import get_settings
+    from app.calltrack.reconcile import _save_state
+    monkeypatch.setattr(get_settings(), "ct_reconcile_enabled", True)
+    assert client.get("/ct/health").status_code == 503
+    with _db() as db:
+        _save_state(db, {"heartbeat": datetime.now(timezone.utc).isoformat()})
+        db.commit()
+    assert client.get("/ct/health").status_code == 200
+    with _db() as db:
+        _save_state(db, {"heartbeat": (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat()})
+        db.commit()
+    assert client.get("/ct/health").status_code == 503
+
+
+def test_ten_number_pool_falls_back_on_eleventh(client, monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "ct_pool_numbers", ",".join(f"931000{i:04d}" for i in range(10)))
+    issued = [client.post("/ct/session", headers=ORIGIN, json={"url": PAID_URL}).json() for _ in range(11)]
+    assert len({r["number"] for r in issued[:10]}) == 10
+    assert all(r["mode"] == "pool" for r in issued[:10])
+    assert issued[10]["mode"] == "fallback"
+    assert issued[10]["number"] == "+79310090251"
