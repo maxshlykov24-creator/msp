@@ -31,5 +31,20 @@ services:
         condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080
 
+  reminders:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.reminders
+    environment:
+      DATABASE_URL: postgresql+psycopg2://bridge:bridge@db:5432/bridge
+    ports:
+      - "127.0.0.1:19081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.reservation_reminders:app --host 0.0.0.0 --port 8080 --no-access-log
+
 volumes:
   talkme_amojo_pg:
