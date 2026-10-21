@@ -72,6 +72,23 @@ class Stop(RuntimeError):
     pass
 
 
+class Temporary(Stop):
+    """Transport is unavailable; never translate this to an empty index."""
+
+
+class PacedSession(requests.Session):
+    def __init__(self, system: str):
+        super().__init__()
+        self.system = system
+
+    def request(self, *args, **kwargs):
+        time.sleep(max(0.0, 1.0 - (time.monotonic() - _PACE[self.system])))
+        try:
+            return super().request(*args, **kwargs)
+        finally:
+            _PACE[self.system] = time.monotonic()
+
+
 def atomic_json(path: Path, value: object) -> None:
     tmp = path.with_suffix(path.suffix + ".next")
     with tmp.open("w", encoding="utf-8") as f:
@@ -146,7 +163,7 @@ def api_get(session: requests.Session, url: str, params: dict | None = None,
                     raise Stop("Неверный формат обязательного GET")
                 return body
             if response.status_code == 204:
-                return {}
+                raise Stop("Обязательный GET МойСклад вернул пустой ответ")
             if response.status_code not in (429, 500, 502, 503, 504):
                 raise Stop(f"Обязательный GET: HTTP {response.status_code}")
             retry = response.headers.get("Retry-After", "")
@@ -159,13 +176,13 @@ def api_get(session: requests.Session, url: str, params: dict | None = None,
             if last_call is not None:
                 last_call[0] = time.monotonic()
             if attempt == 5:
-                raise Stop(f"Обязательный GET не подтверждён: {type(exc).__name__}") from exc
+                raise Temporary(f"Обязательный GET не подтверждён: {type(exc).__name__}") from exc
             time.sleep(min(60.0, 2.0 ** (attempt + 1)))
-    raise Stop("Обязательный GET исчерпал повторы")
+    raise Temporary("Обязательный GET исчерпал повторы")
 
 
 def ms_session(ms: lib.MS) -> requests.Session:
-    s = requests.Session()
+    s = PacedSession("ms")
     s.headers.update({"Authorization": "Bearer " + ms.token,
                       "Accept": "application/json;charset=utf-8",
                       "User-Agent": "MSProduct-2MY/1.0"})
@@ -201,25 +218,34 @@ def ms_rows(session: requests.Session, path: str, params: dict | None = None,
 
 
 def amo_request(amo: lib.Amo, method: str, path: str) -> tuple[int, dict]:
+    if method != "GET":
+        raise Stop("Повторы amo_request разрешены только для GET")
     last_error = ""
     for attempt in range(6):
         try:
-            status, body = amo.req(method, path)
+            response = amo_session(amo).get(amo.base + path, timeout=(10, 60))
+            status = response.status_code
+            body = response.json() if response.content else {}
         except Exception as exc:
             last_error = type(exc).__name__
             if attempt == 5:
-                raise Stop(f"Чтение amo не подтверждено после повторов: {last_error}") from exc
+                raise Temporary(f"Чтение amo не подтверждено после повторов: {last_error}") from exc
             print(f"Повтор чтения amo после временной ошибки (попытка {attempt + 2}/6)…", flush=True)
             time.sleep(min(30.0, 2.0 ** attempt))
             continue
         if status in (429, 500, 502, 503, 504):
             if attempt == 5:
-                raise Stop(f"Чтение amo не подтверждено: HTTP {status}")
+                raise Temporary(f"Чтение amo не подтверждено: HTTP {status}")
             print(f"Повтор чтения amo после HTTP {status} (попытка {attempt + 2}/6)…", flush=True)
-            time.sleep(min(30.0, 2.0 ** attempt))
+            retry_after = response.headers.get("Retry-After", "")
+            try:
+                delay = min(60.0, max(1.0, float(retry_after)))
+            except ValueError:
+                delay = min(30.0, 2.0 ** attempt)
+            time.sleep(delay)
             continue
         return status, body if isinstance(body, dict) else {}
-    raise Stop(f"Чтение amo не подтверждено: {last_error or 'неизвестная ошибка'}")
+    raise Temporary(f"Чтение amo не подтверждено: {last_error or 'неизвестная ошибка'}")
 
 
 def amo_pages(amo: lib.Amo, path: str, key: str) -> list[dict]:
@@ -1128,10 +1154,18 @@ def api_write(session: requests.Session, method: str, url: str, body: object,
 
 
 def amo_session(amo: lib.Amo) -> requests.Session:
-    s = requests.Session()
+    if getattr(amo, "_backfill_session", None) is not None:
+        return amo._backfill_session
+    s = PacedSession("amo")
+    s.trust_env = False
+    # Exactly the route selected by assign_shift.amo_client(), for reads AND writes.
+    for handler in amo.opener.handlers:
+        if isinstance(handler, urllib.request.ProxyHandler):
+            s.proxies.update(handler.proxies)
     s.headers.update({"Authorization": "Bearer " + amo.token,
                       "Content-Type": "application/json",
                       "Accept": "application/hal+json"})
+    amo._backfill_session = s
     return s
 
 
