@@ -223,12 +223,13 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
 @router.get("/{call_id}")
 def detail(call_id: int):
     with SessionLocal() as db:
-        record = db.execute(select(CallRecord, CallRecord.provider_result["manual_review"])
+        record = db.execute(select(CallRecord, CallRecord.provider_result["manual_review"],
+                                   CallRecord.provider_result["manager_resolution"])
                             .options(defer(CallRecord.provider_result, raiseload=True))
                             .where(CallRecord.id == call_id, *published_conditions())).first()
         if not record:
             raise HTTPException(404, "Звонок не найден")
-        row, manual_review = record
+        row, manual_review, manager_resolution = record
         deliveries = list(db.scalars(select(CallDelivery).where(CallDelivery.call_id == row.id)))
         result = summary_row(row)
         result.update({"transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
@@ -236,7 +237,7 @@ def detail(call_id: int):
                        "analysis_version": row.analysis_version,
                        "nexara_job_id": row.nexara_job_id,
                        "delivery_skip_reason": "" if deliveries and all(d.state == "sent" for d in deliveries) else delivery_skip_reason(row),
-                       "manual_review": manual_review,
+                       "manual_review": manual_review, "manager_resolution": manager_resolution,
                        "deliveries": [{"channel": d.channel, "state": d.state,
                                        "remote_id": d.remote_id, "last_error": d.last_error} for d in deliveries]})
         return result

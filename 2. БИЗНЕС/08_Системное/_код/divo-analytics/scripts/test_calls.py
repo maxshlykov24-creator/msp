@@ -352,7 +352,7 @@ class QueueTest(unittest.TestCase):
         call_worker.finish_result(r,raw)
         self.assertEqual(r.state,"analysis_ready")
         self.assertEqual(r.transcript["text"],TRANSCRIPT["text"])
-        self.assertEqual(r.provider_result,raw)
+        self.assertEqual({key:r.provider_result[key] for key in raw},raw)
         self.assertEqual(r.nexara_job_id,"paid-job")
 
     def test_submit_timeout_does_not_resubmit(self):
@@ -394,6 +394,49 @@ class QueueTest(unittest.TestCase):
         candidates=[{"source":"MangoOfficeWidget","participant":uid} for uid in (13334858,14181846)]
         self.assertIsNone(call_worker.resolve_manager(candidates))
         self.assertIsNone(call_worker.resolve_manager([{"source":"other","participant":13334858}]))
+
+    def test_spoken_self_introduction_overrides_changed_crm_participant(self):
+        settings.calls_verified_participants="13334858,14181846"
+        r=self.call();r.owner_candidates=[{"source":"MangoOfficeWidget","participant":14181846}]
+        r.transcript={"segments":[{"text":"Добрый день, Никита, слушаю вас.","speaker":"Менеджер","start":0,"end":3},
+                                  {"text":"Меня зовут Назар.","speaker":"Клиент_2","start":4,"end":5}]}
+        call_worker.assign_call_manager(r)
+        self.assertEqual(r.manager_id,13334858)
+        self.assertTrue(r.manager_verified)
+        self.assertEqual(r.provider_result["manager_resolution"]["source"],"spoken_self_intro")
+        r.owner_candidates.append({"source":"MangoOfficeWidget","participant":13334858})
+        call_worker.assign_call_manager(r)
+        self.assertEqual(r.manager_id,13334858)
+
+    def test_client_name_or_address_does_not_identify_the_employee(self):
+        r=self.call();r.owner_candidates=[]
+        r.transcript={"segments":[{"text":"Никита, здравствуйте. Меня зовут Назар.","speaker":"Клиент","start":1,"end":4},
+                                  {"text":"Как могу обращаться к вам?","speaker":"Менеджер","start":5,"end":6}]}
+        call_worker.assign_call_manager(r)
+        self.assertIsNone(r.manager_id)
+
+    def test_multiple_self_introductions_are_not_arbitrarily_merged(self):
+        r=self.call();r.owner_candidates=[]
+        r.transcript={"segments":[{"text":"Меня зовут Никита.","speaker":"Менеджер","start":0,"end":2},
+                                  {"text":"Меня зовут Назар.","speaker":"Менеджер_2","start":20,"end":22}]}
+        call_worker.assign_call_manager(r)
+        self.assertIsNone(r.manager_id)
+        self.assertEqual(r.provider_result["manager_resolution"]["source"],"multiple_self_introductions")
+
+    def test_contextual_review_requires_exact_current_transcript_fragments(self):
+        r=self.call();r.owner_candidates=[]
+        r.transcript={"segments":[{"text":"Меня Евгений? Добрый день!","speaker":"Клиент","start":1,"end":4}]}
+        r.provider_result={"manager_resolution":{"source":"reviewed_self_intro","manager_id":13180098,
+                            "evidence":[{"quote":"Меня Евгений? Добрый день!","start":1,"end":4}]}}
+        call_worker.assign_call_manager(r)
+        self.assertEqual(r.manager_id,13180098)
+        r.transcript=TRANSCRIPT
+        call_worker.assign_call_manager(r)
+        self.assertIsNone(r.manager_id)
+
+    def test_first_name_opening_greeting_identifies_employee(self):
+        result=call_worker.spoken_manager_resolution({"segments":[{"text":"Евгений. Добрый день!","speaker":"Менеджер","start":2,"end":4}]})
+        self.assertEqual(result["manager_id"],13180098)
 
     def test_transcription_moves_to_agent_without_provider_analysis(self):
         settings.calls_analysis_enabled=True

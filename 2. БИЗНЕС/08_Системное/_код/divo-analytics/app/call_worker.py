@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -62,6 +63,64 @@ def resolve_manager(candidates: list[dict]) -> int | None:
     return next(iter(found)) if len(found) == 1 else None
 
 
+def spoken_manager_resolution(transcript: dict) -> dict | None:
+    """Only direct employee self-introductions, never a client's address/name."""
+    found = {}
+    for segment in (transcript or {}).get("segments") or []:
+        speaker = str(segment.get("speaker") or "").lower()
+        if not any(role in speaker for role in ("менеджер", "сотрудник", "оператор")):
+            continue
+        text_value = str(segment.get("text") or "")
+        for uid, name in settings.call_manager_names.items():
+            name_pattern = re.escape(name)
+            patterns = [rf"меня\s+зовут\s+{name_pattern}\b",
+                        rf"меня\s+{name_pattern}\s+зовут\b",
+                        rf"\b{name_pattern}[,.]?\s+слушаю\s+вас\b"]
+            # A name-only opening greeting is also a self-introduction.
+            if float(segment.get("start") or 0) <= 10:
+                patterns.append(rf"^\s*{name_pattern}[,.!]+\s*Добрый\s+(?:день|вечер)\b")
+            for pattern in patterns:
+                match = re.search(pattern, text_value, re.IGNORECASE)
+                if match:
+                    found.setdefault(uid, {"quote": match.group(0), "start": segment.get("start"),
+                                           "end": segment.get("end"), "speaker": segment.get("speaker")})
+                    break
+    if len(found) == 1:
+        uid = next(iter(found))
+        return {"source": "spoken_self_intro", "manager_id": uid,
+                "evidence": [found[uid]], "version": "self-intro.1"}
+    if found:
+        return {"source": "multiple_self_introductions", "manager_id": None,
+                "evidence": list(found.values()), "version": "self-intro.1"}
+    return None
+
+
+def assign_call_manager(row: CallRecord) -> None:
+    history = dict(row.provider_result or {})
+    previous = history.get("manager_resolution") or {}
+    # Retain a contextual human review only while its exact source fragments exist.
+    reviewed = previous.get("source") == "reviewed_self_intro" and previous.get("manager_id") in settings.call_manager_names
+    texts = [str(s.get("text") or "") for s in (row.transcript or {}).get("segments", [])]
+    reviewed = reviewed and bool(previous.get("evidence")) and all(
+        e.get("quote") and any(e["quote"] in text_value for text_value in texts)
+        for e in previous.get("evidence", []))
+    resolution = previous if reviewed else spoken_manager_resolution(row.transcript or {})
+    if resolution is None:
+        resolution = {"source": "call_participant", "manager_id": resolve_manager(row.owner_candidates or []),
+                      "evidence": [], "version": "self-intro.1"}
+    uid = resolution["manager_id"]
+    if previous != resolution:
+        if row.manager_id != uid or row.manager_verified != (uid is not None):
+            changes = list(history.get("manager_resolution_history") or [])
+            changes.append({"at": now().isoformat(), "previous_manager_id": row.manager_id,
+                            "previous_verified": row.manager_verified, "resolution": resolution})
+            history["manager_resolution_history"] = changes
+        history["manager_resolution"] = resolution
+        row.provider_result = history
+    row.manager_id = uid
+    row.manager_verified = uid is not None
+
+
 def unique_contact_leads(amo: AmoClient, entity_id: int) -> list[int]:
     links = list(amo.paginate(f"/api/v4/contacts/{entity_id}/links", "links"))
     return sorted({int(x["to_entity_id"]) for x in links if x.get("to_entity_type") == "leads"})
@@ -102,8 +161,7 @@ def upsert_note(db, note: dict, entity_type: str, entity_id: int, lead_ids: list
     if candidate not in candidates:
         candidates.append(candidate)
     row.owner_candidates = candidates
-    row.manager_id = resolve_manager(candidates)
-    row.manager_verified = row.manager_id is not None
+    assign_call_manager(row)
     row.source = str(p.get("source") or "")[:128]
     row.duration_sec = max(row.duration_sec or 0, int(p.get("duration") or 0))
     if p.get("link"):
@@ -207,6 +265,8 @@ def finish_result(row: CallRecord, result: dict):
     transcript = result.get("transcription") or (result if "text" in result or "segments" in result else {})
     if not isinstance(transcript, dict):
         transcript = {}
+    row.transcript = transcript
+    assign_call_manager(row)
     if row.duration_sec < MIN_CALL_DURATION_SEC:
         row.transcript = transcript
         row.state, row.category = "ignored_short", "insufficient"
