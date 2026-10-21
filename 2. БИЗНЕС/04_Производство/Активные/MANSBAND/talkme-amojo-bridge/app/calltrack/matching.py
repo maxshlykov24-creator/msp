@@ -30,6 +30,7 @@ class CallAttribution:
     visit: Optional[Visit]
     disputed: bool
     kind: str
+    landing_url: Optional[str] = None
 
 
 def _aware(value: dt.datetime) -> dt.datetime:
@@ -79,11 +80,11 @@ def visit_for_call(db: Session, call: CallEvent) -> tuple[Optional[Visit], bool]
         .join(PoolNumber, PoolNumber.id == Assignment.number_id)
         .join(Visit, Visit.id == Assignment.visit_id)
         .where(PoolNumber.number == call.called, Assignment.started_at <= started)
-        .order_by(Assignment.started_at.desc())
+        .order_by(Assignment.started_at.desc(), Assignment.id.desc()).limit(1)
     ).all()
     for assignment, visit in rows:
         seen = _aware(assignment.last_seen_at)
-        if started <= seen + hold:
+        if started < (_aware(assignment.expires_at) if assignment.expires_at else seen + hold):
             return visit, bool(visit.disputed)
     return None, False
 
@@ -100,6 +101,13 @@ def _visit_tracking(visit: Visit) -> dict[str, str]:
 
 
 def attribute_call(db: Session, call: CallEvent) -> CallAttribution:
+    snapshot = (call.result or {}).get("attribution_snapshot")
+    if snapshot is not None:
+        return CallAttribution(
+            dict(snapshot["tracking"]), snapshot.get("tech_source"),
+            db.get(Visit, snapshot["visit_id"]) if snapshot.get("visit_id") else None,
+            bool(snapshot.get("disputed")), snapshot["kind"], snapshot.get("landing_url"),
+        )
     number = db.execute(select(PoolNumber).where(PoolNumber.number == call.called)).scalar_one_or_none()
     kind = number.kind if number is not None else "unknown"
     if kind == "channel":
@@ -122,6 +130,7 @@ def attribute_call(db: Session, call: CallEvent) -> CallAttribution:
         visit,
         disputed or bool(visit.disputed),
         "pool",
+        visit.landing_url,
     )
 
 
@@ -200,8 +209,8 @@ def call_note(call: CallEvent, attr: CallAttribution) -> str:
     lines = ["Звонок на номер коллтрекинга", f"Номер набора: +7{call.called}"]
     if attr.visit is not None:
         lines.append(f"Визит: {attr.visit.id}")
-        if attr.visit.landing_url:
-            lines.append(f"Страница входа: {attr.visit.landing_url}")
+        if attr.landing_url:
+            lines.append(f"Страница входа: {attr.landing_url}")
     if attr.kind == "shared":
         lines.append("Основной и резервный номер: точный источник не определён")
     if attr.disputed:

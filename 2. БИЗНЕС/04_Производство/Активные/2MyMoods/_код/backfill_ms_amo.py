@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import time
 import urllib.parse
@@ -37,6 +38,9 @@ ORDER_CACHE = WORK / "2my-ms-amo-expanded-orders.local.jsonl"
 STATUS_AUDIT_CACHE = WORK / "2my-ms-amo-status-audit.local.json"
 JOURNAL = WORK / "2my-ms-amo-backfill-journal.local.json"
 LOCK = WORK / "2my-ms-amo-backfill.lock"
+REPORT = WORK / "2my-ms-amo-backfill-verification.local.json"
+TERMINAL = {"VERIFIED", "DEFERRED", "EXISTS_BACKLINK", "EXISTS_AMO_ID", "QUARANTINED"}
+_PACE = {"ms": 0.0, "amo": 0.0}
 PIPELINE = 11318374
 WON = 142
 MAXIM = 9490530
@@ -76,6 +80,11 @@ def atomic_json(path: Path, value: object) -> None:
         os.fsync(f.fileno())
     os.chmod(tmp, 0o600)
     os.replace(tmp, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def private_storage() -> None:
@@ -261,6 +270,8 @@ def rubles_round(kopecks: int) -> int:
 
 def phone_norm(value: object, address: object = "") -> str:
     raw = str(value or "").strip()
+    if re.search(r"[,;\n/]", raw):
+        return ""
     digits = re.sub(r"\D", "", raw)
     if raw.startswith("+") and 8 <= len(digits) <= 15:
         return "+" + digits
@@ -571,22 +582,25 @@ def manager_for(moment: str | None, roster: dict) -> tuple[int, str]:
 
 
 def buyer_identity(cp: dict) -> tuple[str, str]:
-    company_type = str(cp.get("companyType") or "")
-    legal_title = str(cp.get("legalTitle") or "").strip()
     first, last = str(cp.get("legalFirstName") or "").strip(), str(cp.get("legalLastName") or "").strip()
-    if company_type == "individual":
-        name = str(cp.get("name") or "").strip()
-        parts = name.split()
-        if len(parts) < 2 or parts[0].casefold() == parts[-1].casefold():
-            return "", "DEFERRED_BUYER_IDENTITY"
-        return name, ""
+    name = " ".join(str(cp.get("name") or "").split())
     corporate = re.search(r"\b(ооо|ип|зао|пао|оао|магазин|бутик|lamoda|опт|компания|салон)\b",
                           str(cp.get("name") or ""), re.IGNORECASE)
-    if company_type == "legal" and first and last and not legal_title and not corporate:
-        return " ".join((first, last)), "FIX_CONFIRMED_PERSON_TYPE"
-    if company_type in ("legal", "entrepreneur"):
+    if corporate:
         return "", "DEFERRED_BUSINESS_CUSTOMER"
-    return "", "DEFERRED_BUYER_IDENTITY"
+    if first and last:
+        personal = " ".join((first, last)).strip()
+        if name and not set(name_norm(personal).split()).issubset(set(name_norm(name).split())):
+            return "", "DEFERRED_BUYER_IDENTITY"
+        return personal, ""
+    if not name or not re.search(r"[^\W\d_]", name, re.UNICODE):
+        return "", "DEFERRED_BUYER_IDENTITY"
+    tokens = name_norm(name).split()
+    if len(tokens) > 1 and len(set(tokens)) == 1:
+        return "", "DEFERRED_BUYER_IDENTITY"
+    if re.search(r"\b(покупатель|клиент|розница|физлицо|тест|неизвестный)\b", name, re.I):
+        return "", "DEFERRED_BUYER_IDENTITY"
+    return name, ""
 
 
 def unix_time(value: object) -> int | None:

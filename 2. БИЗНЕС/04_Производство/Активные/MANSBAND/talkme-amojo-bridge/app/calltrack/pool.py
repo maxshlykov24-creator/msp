@@ -115,6 +115,7 @@ def _touch_assignment(db: Session, number: PoolNumber, visit: Visit, now: dt.dat
     )
     if row is not None:
         row.last_seen_at = now
+        row.expires_at = number.held_until
 
 
 def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) -> Optional[PoolNumber]:
@@ -141,7 +142,7 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
         .first()
     )
     if own is not None and own.held_until is not None and own.held_until > now:
-        own.held_until = now + hold
+        own.held_until = max(own.held_until, now + hold)
         visit.last_seen_at = now
         _touch_assignment(db, own, visit, now)
         return own
@@ -152,7 +153,7 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
             .where(
                 PoolNumber.kind == "pool",
                 PoolNumber.active.is_(True),
-                (PoolNumber.held_until.is_(None)) | (PoolNumber.held_until < now),
+                (PoolNumber.held_until.is_(None)) | (PoolNumber.held_until <= now),
             )
             .order_by(PoolNumber.held_until.asc().nullsfirst())
             .limit(1)
@@ -174,6 +175,7 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
             visit_id=visit.id,
             started_at=now,
             last_seen_at=now,
+            expires_at=free.held_until,
         )
     )
     db.flush()

@@ -157,9 +157,20 @@ def ingest(db: Session, raw: Any) -> Optional[CallEvent]:
     )
     db.add(row)
     db.flush()
-    if row.caller is None and row.called:
-        from app.calltrack.telegram import send
+    # Freeze attribution before acknowledging the event. Later reconciliation,
+    # long calls and number reuse must not change this source.
+    if fully:
+        from app.calltrack.matching import attribute_call
 
-        if send(f"Звонок без номера клиента. Набор +7{row.called}, id {row.call_id}"):
-            row.alerted_at = now
+        attr = attribute_call(db, row)
+        row.visit_id = attr.visit.id if attr.visit else None
+        row.number_kind = attr.kind
+        row.result = {"attribution_snapshot": {
+            "version": 1, "captured_at": now.isoformat(),
+            "tracking": {k: str(v)[:2048 if k == "utm_referrer" else 255]
+                         for k, v in attr.tracking.items()},
+            "tech_source": attr.tech_source, "visit_id": row.visit_id,
+            "kind": attr.kind, "disputed": attr.disputed,
+            "landing_url": (attr.landing_url or "")[:4096],
+        }}
     return row

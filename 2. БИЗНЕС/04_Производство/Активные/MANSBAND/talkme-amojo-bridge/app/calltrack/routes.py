@@ -342,7 +342,9 @@ async def telphin_webhook(
         finally:
             session.close()
 
-    background_tasks.add_task(_run, data)
+    from starlette.concurrency import run_in_threadpool
+
+    await run_in_threadpool(_run, data)
     return Response(status_code=200)
 
 

@@ -64,6 +64,8 @@ class Assignment(Base):
     started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
+    expires_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 class CallEvent(Base):
     """Входящий звонок Телфин. Сделку не создаёт."""

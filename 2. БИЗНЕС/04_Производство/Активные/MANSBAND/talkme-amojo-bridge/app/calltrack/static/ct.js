@@ -155,7 +155,12 @@
     });
   }
 
+  var activated = false;
+  var inFlight = false;
   function requestNumber() {
+    activated = true;
+    if (inFlight) return;
+    inFlight = true;
     var body = {
       visit_id: visitId,
       url: location.href,
@@ -163,7 +168,7 @@
       ym_uid: readCookie("_ym_uid") || null,
       test: !LIVE && test
     };
-    post("/ct/session", body).then(apply).catch(function () {});
+    post("/ct/session", body).then(apply).catch(function () {}).then(function () { inFlight = false; });
   }
 
   if (location.hostname === "zamer.mansband.ru" && window.fetch) {
@@ -202,8 +207,12 @@
     });
   }
 
+  document.addEventListener("visibilitychange", function () {
+    if (activated && document.visibilityState === "visible") requestNumber();
+  });
+
   setInterval(function () {
-    if (!visitId || document.visibilityState !== "visible") return;
-    post("/ct/ping", { visit_id: visitId }).then(apply).catch(function () {});
+    if (!activated || document.visibilityState !== "visible") return;
+    requestNumber();
   }, 60000);
 })();

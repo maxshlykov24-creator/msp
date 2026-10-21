@@ -940,3 +940,91 @@ def test_native_telphin_dial_in_microseconds_and_did():
     assert parse_telphin({**raw, "CallFlow": "out"})["incoming"] is False
     assert parse_telphin({**raw, "EventTime": "invalid"})["parsed"] is False
     assert parse_telphin({**raw, "CalledDID": ""})["parsed"] is False
+
+
+def test_snapshot_survives_long_call_reassignment_and_duplicate(monkeypatch):
+    import datetime as dt
+    from app.calltrack.models import Visit, PoolNumber, Assignment
+    from app.calltrack.telphin import ingest
+    from app.calltrack.matching import attribute_call
+    now = dt.datetime.now(dt.timezone.utc)
+    with _db() as db:
+        visit = Visit(utm_source="yandex", utm_campaign="original", landing_url="https://mansband.ru/original")
+        db.add(visit)
+        db.flush()
+        number = PoolNumber(number="9310000000", kind="pool")
+        db.add(number)
+        db.flush()
+        db.add(Assignment(number_id=number.id, visit_id=visit.id,
+                          started_at=now-dt.timedelta(minutes=2), last_seen_at=now,
+                          expires_at=now+dt.timedelta(minutes=5)))
+        db.flush()
+        raw = dict(call_id="long-call", called=number.number, caller="9310000099", started_at=now.isoformat())
+        call = ingest(db, raw)
+        db.commit()
+        saved = dict(call.result)
+        visit.utm_campaign = "changed"
+        visit.landing_url = "https://mansband.ru/changed"
+        number.kind = "channel"
+        number.source = "other"
+        db.commit()
+        assert ingest(db, raw).result == saved
+        attr = attribute_call(db, call)
+        assert attr.tracking["utm_campaign"] == "original"
+        assert attr.landing_url.endswith("/original")
+        assert attr.kind == "pool"
+
+
+def test_historical_expiry_and_no_fallthrough(monkeypatch):
+    import datetime as dt
+    from app.calltrack.models import Visit, PoolNumber, Assignment, CallEvent
+    from app.calltrack.matching import visit_for_call
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "ct_hold_minutes", 5)
+    now = dt.datetime.now(dt.timezone.utc)
+    with _db() as db:
+        a, b = Visit(), Visit()
+        n = PoolNumber(number="9310000000", kind="pool")
+        db.add_all([a, b, n]); db.flush()
+        db.add(Assignment(number_id=n.id, visit_id=a.id, started_at=now,
+                          last_seen_at=now, expires_at=now+dt.timedelta(minutes=15)))
+        db.flush()
+        assert visit_for_call(db, CallEvent(called=n.number, started_at=now+dt.timedelta(minutes=9)))[0] == a
+        db.add(Assignment(number_id=n.id, visit_id=b.id, started_at=now+dt.timedelta(minutes=10),
+                          last_seen_at=now+dt.timedelta(minutes=10), expires_at=now+dt.timedelta(minutes=11)))
+        db.flush()
+        assert visit_for_call(db, CallEvent(called=n.number, started_at=now+dt.timedelta(minutes=12)))[0] is None
+
+
+def test_five_minute_lease_preserves_existing_promise(monkeypatch):
+    import datetime as dt
+    from app.calltrack.models import Visit, PoolNumber, Assignment
+    from app.calltrack.pool import allocate_pool
+    from app.config import get_settings
+    from sqlalchemy import select
+    monkeypatch.setattr(get_settings(), "ct_hold_minutes", 5)
+    now = dt.datetime.now(dt.timezone.utc)
+    with _db() as db:
+        v = Visit()
+        n = PoolNumber(number="9310000000", kind="pool")
+        db.add_all([v, n]); db.flush()
+        assert allocate_pool(db, v, now).held_until == now+dt.timedelta(minutes=5)
+        db.flush()
+        n.held_until = now+dt.timedelta(minutes=15)
+        assert allocate_pool(db, v, now).held_until == now+dt.timedelta(minutes=15)
+        db.flush()
+        assert db.scalar(select(Assignment)).expires_at == n.held_until
+
+
+def test_telphin_does_not_ack_failed_persistence(client, monkeypatch):
+    from app.calltrack import routes
+    def fail(*args):
+        raise RuntimeError("database unavailable")
+    monkeypatch.setattr(routes, "ingest", fail)
+    # A background task would already have emitted HTTP 200 here.
+    client.raise_server_exceptions = False
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app, raise_server_exceptions=False) as c:
+        response = c.post("/webhooks/telphin/telphin-test", json={"call_id": "failed"})
+    assert response.status_code == 500

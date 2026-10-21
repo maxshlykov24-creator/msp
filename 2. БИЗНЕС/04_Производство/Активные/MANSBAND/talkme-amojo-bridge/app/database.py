@@ -65,3 +65,9 @@ def init_db() -> None:
                 conn.execute(text(sql))
             except Exception:
                 pass
+
+    # Historical leases used 15 minutes before explicit expiration was introduced.
+    # Fail startup on migration failure rather than acknowledge unpersisted calls.
+    with eng.begin() as conn:
+        conn.execute(text("ALTER TABLE ct_assignment ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"))
+        conn.execute(text("UPDATE ct_assignment SET expires_at = last_seen_at + interval '15 minutes' WHERE expires_at IS NULL"))
