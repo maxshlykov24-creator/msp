@@ -307,6 +307,8 @@ def phone_norm(value: object, address: object = "") -> str:
     if re.search(r"[,;\n/]", raw):
         return ""
     digits = re.sub(r"\D", "", raw)
+    if len(digits) == 11 and digits.startswith("8"):
+        return "+7" + digits[-10:]
     if raw.startswith("+") and 8 <= len(digits) <= 15:
         return "+" + digits
     if digits.startswith("00") and 10 <= len(digits) <= 17:
@@ -796,7 +798,8 @@ def return_state(order: dict, returns: list[dict]) -> tuple[str, int, str]:
     for ret in returns:
         refund += amount(ret.get("sum"))
         lines = ((ret.get("positions") or {}).get("rows") or [])
-        if not lines and (ret.get("positions") or {}).get("meta", {}).get("size", 0):
+        expected_size = (ret.get("positions") or {}).get("meta", {}).get("size")
+        if isinstance(expected_size, int) and len(lines) != expected_size:
             return "deferred", 0, "RETURN_POSITIONS_INCOMPLETE"
         for line in lines:
             if is_delivery(line):
@@ -1214,6 +1217,10 @@ def confirm_contact(amo: lib.Amo, contact_id: str, row: dict,
     status, contact = amo_read(amo, f"/api/v4/contacts/{contact_id}")
     if status != 200 or str(contact.get("id")) != str(contact_id):
         raise Stop("Контакт не перечитался после записи")
+    return validate_contact(contact, row, expect_name)
+
+
+def validate_contact(contact: dict, row: dict, expect_name: bool = False) -> dict:
     got_phone, got_email = set(), set()
     for group in contact.get("custom_fields_values") or []:
         if group.get("field_code") == "PHONE" or group.get("field_id") == AMO_PHONE_FIELD:
@@ -1433,7 +1440,7 @@ def set_backlink(ms: lib.MS, amo: lib.Amo, journal: dict, oid: str, lead_id: str
 def create_entity(amo: lib.Amo, journal: dict, oid: str, row: dict, kind: str, payload: dict) -> str:
     plural = "contacts" if kind == "contact" else "leads"
     intent = "CONTACT_WRITE_INTENT" if kind == "contact" else "LEAD_WRITE_INTENT"
-    if kind == "lead" and journal.get("active_run"):
+    if journal.get("active_run"):
         attempts = journal.setdefault("run_attempts", {}).setdefault(journal["active_run"], [])
         if oid not in attempts:
             attempts.append(oid)
@@ -1512,7 +1519,7 @@ def current_row(data: dict, ms: lib.MS, amo: lib.Amo, oid: str, roster: dict) ->
     mss = ms_session(ms)
     order = complete_positions(mss, "customerorder", fresh_order(mss, oid, [0.0]))
     finance = linked_finance(mss, order)
-    after = fresh_order(mss, oid, [0.0])
+    after = complete_positions(mss, "customerorder", fresh_order(mss, oid, [0.0]))
     if order_hash(order) != order_hash(after):
         raise RowDeferred("ORDER_CHANGED_DURING_FINANCIAL_READ")
     data_one = {**data, **finance, "orders": [order]}
@@ -1550,7 +1557,11 @@ def recover_pending(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict) -> None
                 quarantine(journal, oid, row, "RECOVERY_PAYLOAD_OR_CONTACT_MISSING")
                 continue
             # The saved source/amount must still agree; do not rewrite an existing deal.
-            order, recalculated = current_row(data, ms, amo, oid, {})
+            try:
+                order, recalculated = current_row(data, ms, amo, oid, {})
+            except RowDeferred as exc:
+                quarantine(journal, oid, row, "RECOVERY_" + str(exc))
+                continue
             checks = ("total_kopecks", "payment_kopecks", "payment_moment", "return_kopecks", "return_state", "counterparty_id", "composition", "moment")
             if any(recalculated.get(k) != row.get(k) for k in checks):
                 quarantine(journal, oid, row, "SOURCE_CHANGED_AFTER_CREATION")
@@ -1675,6 +1686,34 @@ def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict
     return result
 
 
+def refresh_contact_leads(data: dict, amo: lib.Amo, contact_id: str) -> None:
+    page, seen, linked = 1, set(), set()
+    while True:
+        status, body = amo_request(amo, "GET", f"/api/v4/contacts/{contact_id}/links?limit=250&page={page}")
+        if status == 204:
+            break
+        rows = (body.get("_embedded") or {}).get("links")
+        if status != 200 or not isinstance(rows, list):
+            raise Stop("CONTACT_LINKS_INCOMPLETE")
+        for item in rows:
+            key = digest(item)
+            if key in seen:
+                raise Stop("CONTACT_LINKS_REPEATED_PAGE")
+            seen.add(key)
+            if item.get("to_entity_type") == "leads":
+                linked.add(str(item["to_entity_id"]))
+        if len(rows) < 250:
+            break
+        page += 1
+    leads = {str(l["id"]): l for l in data["leads"]}
+    for lid in sorted(linked):
+        status, lead = amo_read(amo, f"/api/v4/leads/{lid}?with=contacts")
+        if status != 200 or str(lead.get("id")) != lid:
+            raise Stop("LINKED_LEAD_NOT_READABLE")
+        leads[lid] = lead
+    data["leads"] = list(leads.values())
+
+
 def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict, roster: dict) -> bool:
     oid = planned["order_id"]
     if journal["rows"].get(oid, {}).get("status") in TERMINAL:
@@ -1721,6 +1760,8 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
             raise UnknownWrite("CREATED_CONTACT_IDENTITY_MISMATCH")
     journal["counterparty_contacts"][row["counterparty_id"]] = cid
     _set_entry(journal, oid, status="CONTACT_VERIFIED", contact_id=cid)
+    data["contacts"] = [c for c in data["contacts"] if str(c["id"]) != cid] + [contact]
+    refresh_contact_leads(data, amo, cid)
     # A contact creation can take time. Recheck all financial facts and duplicate keys.
     fresh, again = current_row(data, ms, amo, oid, roster)
     keys = ("counterparty_id", "buyer", "phone", "email", "net_kopecks", "total_kopecks", "payment_kopecks", "payment_moment", "return_state", "return_kopecks", "close_moment", "composition")
@@ -1744,9 +1785,17 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
 def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] | None = None,
                    full_data: dict | None = None) -> dict:
     result = {"checked_at": datetime.now(TZ).isoformat(timespec="seconds"), "checked": 0,
-              "ok": 0, "issues": [], "source_drift": [], "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
+              "ok": 0, "issues": [], "source_drift": [], "identity_differences": [],
+              "technical_manager": 0, "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
     mss = ms_session(ms)
     indexes = {key: {str(x["id"]): x for x in full_data[key]} for key in ("orders", "leads", "contacts")} if full_data else {}
+    current_returns = return_map(full_data) if full_data else {}
+    uuid_matches = defaultdict(dict)
+    if full_data:
+        for lead in full_data["leads"]:
+            keys = amo_links(lead) | {field(lead, FIELDS["ms_id"]).casefold()}
+            for uid in keys - {""}:
+                uuid_matches[uid][str(lead["id"])] = lead
     seen = set()
     for oid, entry in journal["rows"].items():
         if entry.get("status") != "VERIFIED" or (only_ids is not None and oid not in only_ids):
@@ -1776,19 +1825,26 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
                 raise Stop("VERIFIED_CONTACT_NOT_READABLE")
         if ms_link(order) != amo_lead_url(amo, lid):
             raise Stop("VERIFIED_BACKLINK_MISMATCH")
-        matches = [l for l in full_data["leads"] if field(l, FIELDS["ms_id"]).casefold() == oid or oid in amo_links(l)] if full_data is not None else exact_leads(amo, oid)
+        matches = list(uuid_matches[oid].values()) if full_data is not None else exact_leads(amo, oid)
         if len(matches) != 1 or str(matches[0]["id"]) != lid:
             raise Stop("VERIFIED_UUID_NOT_UNIQUE")
         row = entry.get("source_row") or next((r for r in journal.get("legacy_plan_rows", []) if r["order_id"] == oid), {})
         net = int(row.get("net_kopecks", entry.get("net_kopecks", 0)))
+        if row and validate_contact(contact, row).get("_migration_identity_mismatch"):
+            difference = {"order_id": oid, "reason": "CONTACT_IDENTITY_DIFFERS_FROM_ORIGINAL_BUYER"}
+            if oid in journal.get("run_attempts", {}).get(journal.get("active_run"), []):
+                result["issues"].append(difference)
+            else:
+                result["identity_differences"].append(difference)
         if full_data is not None:
-            ret_state, returned, ret_reason = return_state(order, return_map(full_data).get(oid, []))
+            ret_state, returned, ret_reason = return_state(order, current_returns.get(oid, []))
             if amount(order.get("sum")) - returned != net or ret_state == "deferred":
                 result["source_drift"].append({"order_id": oid, "reason": ret_reason or "SOURCE_AMOUNT_CHANGED",
                                              "imported_net_kopecks": net, "current_net_kopecks": amount(order.get("sum")) - returned})
         result["net_kopecks"] += net
         result["budget_rubles"] += lead["price"]
         result["rounding_kopecks"] += lead["price"] * 100 - net
+        result["technical_manager"] += int(lead.get("responsible_user_id") == MAXIM)
         result["ok"] += 1
     atomic_json(REPORT, result)
     if result["issues"]:
@@ -1865,9 +1921,9 @@ def night_run(args) -> dict:
     journal = journal_load()
     journal["active_run"] = datetime.now(TZ).isoformat(timespec="microseconds")
     save_journal(journal)
-    data, _ = collect_current(ms, amo, strict_order_snapshot=False)
+    data, _ = wait_for_reads(lambda: collect_current(ms, amo, strict_order_snapshot=False))
     atomic_json(RAW_CACHE, data)
-    plan = prepare_night(ms, amo, data, journal, apply_recovery=args.apply)
+    plan = wait_for_reads(lambda: prepare_night(ms, amo, data, journal, apply_recovery=args.apply))
     result = {"backup": backup, "counts": plan["counts"], "processed": 0, "deferred": 0}
     if args.prepare or not args.apply:
         return result
@@ -1895,6 +1951,7 @@ def night_run(args) -> dict:
         if at_limit():
             break
         batch = candidates[start:start + args.batch_size]
+        batch_ids = set()
         for row in batch:
             if at_limit():
                 break
@@ -1907,6 +1964,7 @@ def night_run(args) -> dict:
                     if apply_one(data, ms, amo, journal, row, roster):
                         result["processed"] += 1
                         created_ids.add(oid)
+                        batch_ids.add(oid)
                     break
                 except Temporary:
                     if time.monotonic() >= deadline:
@@ -1919,6 +1977,7 @@ def night_run(args) -> dict:
                         if journal["rows"][oid]["status"] == "VERIFIED":
                             result["processed"] += 1
                             created_ids.add(oid)
+                            batch_ids.add(oid)
                         break
                 except UnknownWrite:
                     result["deferred"] += 1
@@ -1927,11 +1986,11 @@ def night_run(args) -> dict:
                     _set_entry(journal, oid, status="DEFERRED", reason=str(exc))
                     result["deferred"] += 1
                     break
-        if created_ids:
-            verify_journal(ms, amo, journal, created_ids)
+        if batch_ids:
+            verify_journal(ms, amo, journal, batch_ids)
         print(f"Партия проверена. Новых сделок: {result['processed']}; отложено: {result['deferred']}.", flush=True)
     # A fresh complete index proves no processed UUID becomes CREATE again.
-    after, _ = collect_current(ms, amo, strict_order_snapshot=False)
+    after, _ = wait_for_reads(lambda: collect_current(ms, amo, strict_order_snapshot=False))
     result["verification"] = verify_journal(ms, amo, journal, full_data=after)
     final_plan = prepare_night(ms, amo, after, journal, apply_recovery=True)
     atomic_json(RAW_CACHE, after)
@@ -1940,6 +1999,18 @@ def night_run(args) -> dict:
     journal["last_run"] = result
     save_journal(journal)
     return result
+
+
+def wait_for_reads(operation):
+    deadline = time.monotonic() + 1800
+    while True:
+        try:
+            return operation()
+        except Temporary:
+            if time.monotonic() >= deadline:
+                raise Stop("NETWORK_UNAVAILABLE_30_MINUTES")
+            print("Временная ошибка чтения; прогресс сохранён, повтор через минуту.", flush=True)
+            time.sleep(60)
 
 
 def self_test() -> None:
@@ -1958,6 +2029,7 @@ def self_test() -> None:
 
         def test_phone_and_money(self):
             self.assertEqual(phone_norm("8 (999) 111-22-33"), "+79991112233")
+            self.assertEqual(phone_norm("+8 (999) 111-22-33"), "+79991112233")
             self.assertEqual(phone_norm("9991112233", "Россия"), "+79991112233")
             self.assertEqual(phone_norm("9991112233"), "")
             self.assertEqual(phone_norm("+442012345678"), "+442012345678")
@@ -1968,6 +2040,22 @@ def self_test() -> None:
             order = {"id": "o", "sum": 10000}
             self.assertEqual(payment_close(order, {"o": [("2026-10-01", 4000), ("2026-10-03", 6000)]}), (10000, "2026-10-03"))
             self.assertEqual(payment_close(order, {"o": [("2026-10-01", 4000)]}), (4000, None))
+
+        def test_unposted_order_is_excluded_before_contact(self):
+            data = {k: [] for k in LEDGERS}
+            data.update(orders=[{"id": "o", "applicable": False, "sum": 10000,
+                                 "state": {"meta": {"href": "/states/" + STATUS_IDS["Выполнен"]}}}],
+                        leads=[], contacts=[], captured_at="2026-10-01", state_counts={}, all_orders_count=1)
+            with patch.object(module, "status_audit_cache_load", return_value={}):
+                row = classify(data, object(), {})["rows"][0]
+            self.assertEqual(row["reason"], "ORDER_NOT_APPLICABLE")
+
+        def test_fractional_unit_kopecks_not_truncated(self):
+            order = {"sum": 201, "positions": {"meta": {"size": 1}, "rows": [
+                {"price": 100.5, "quantity": 2, "assortment": {"name": "Товар"}}]}}
+            composition, _, total, issue = compose_order(order)
+            self.assertEqual(total, 201)
+            self.assertEqual(issue, "")
 
         def test_return_once_and_all_goods_without_delivery(self):
             goods = {"quantity": 1, "assortment": {"meta": {"href": "/product/g", "type": "product"}}}
@@ -2102,7 +2190,7 @@ def main() -> None:
     parser.add_argument("--plan", type=Path, default=PLAN)
     parser.add_argument("--sha256", default="")
     parser.add_argument("--max-orders", type=int, default=None,
-                        help="maximum new lead attempts, including uncertain writes (legacy default 5)")
+                        help="maximum orders with contact/lead creation attempts, including uncertain writes (legacy default 5)")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--night-run", action="store_true")
     parser.add_argument("--prepare", action="store_true", help="refresh plan and journal without CRM writes")
