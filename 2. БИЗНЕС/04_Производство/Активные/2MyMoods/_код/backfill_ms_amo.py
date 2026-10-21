@@ -1536,6 +1536,8 @@ def recover_pending(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict) -> None
                 quarantine(journal, oid, row, "SOURCE_CHANGED_AFTER_CREATION")
                 continue
             set_backlink(ms, amo, journal, oid, lead_id, row, payload, cid)
+            repaired = fresh_order(ms_session(ms), oid, [0.0])
+            data["orders"] = [o for o in data["orders"] if str(o["id"]) != oid] + [repaired]
             continue
         if entry.get("lead_id") or entry.get("status") in {"LEAD_WRITE_INTENT", "LEAD_VERIFIED", "BACKLINK_WRITE_INTENT", "COMMENT_WRITE_INTENT"}:
             quarantine(journal, oid, row, "UNRESOLVED_LEAD_WRITE")
