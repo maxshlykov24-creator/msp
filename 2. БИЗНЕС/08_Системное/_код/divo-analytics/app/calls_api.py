@@ -53,7 +53,7 @@ def review_reason(row: CallRecord) -> str:
         return "Ответ агента анализа не подтвердился после отправки. Повторный запрос без сверки не выполняется."
     if row.state == "submit_ambiguous":
         return "Nexara могла принять задание транскрибации, но подтверждение не получено. Сначала проверьте его статус."
-    if row.state != "needs_review":
+    if row.state not in ("needs_review", "insufficient"):
         return ""
     analysis = row.analysis or {}
     reasons = []
@@ -71,7 +71,8 @@ def review_reason(row: CallRecord) -> str:
         if names:
             reasons.append(f"Противоречие в критериях: {names}. Нужна ручная сверка.")
     unknown_ids = sorted({int(c["id"]) for c in analysis.get("criteria", [])
-                          if c.get("status") == "unknown"})
+                          if c.get("status") == "unknown" or any(v.get("status") == "unknown"
+                              for v in c.get("conditions", []))})
     if unknown_ids:
         names = ", ".join(CRITERIA[i][0] for i in unknown_ids if i in CRITERIA)
         if names:

@@ -416,6 +416,38 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(len(r.provider_result["agent_attempts"]),2)
         self.assertEqual(r.provider_result["agent_attempts"][0],first)
 
+    def test_rate_limited_correction_waits_then_reuses_saved_answer(self):
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
+        r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";r.nexara_job_id="paid-job";self.db.commit()
+        invalid=analysis();invalid["criteria"][0]["status"]="no"
+        first={"analysis":invalid,"references":{"previous":"paid"},"usage":{"cost":0.01}}
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            cls.return_value.analyze.side_effect=[first,RemoteFailure("agent_http_429")]
+            call_worker.analyze_calls();call_worker.analyze_calls()
+            self.assertEqual(cls.return_value.analyze.call_count,2)
+        self.db.refresh(r)
+        self.assertEqual(r.state,"analysis_ready");self.assertIsNotNone(r.next_attempt_at)
+        self.assertEqual(r.provider_result["agent_result"],first)
+        r.next_attempt_at=None;self.db.commit()
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            cls.return_value.analyze.return_value={"analysis":analysis(),"references":{}}
+            call_worker.analyze_calls()
+            self.assertEqual(cls.return_value.analyze.call_args.kwargs["correction"]["references"],first["references"])
+        self.db.refresh(r);self.assertEqual(r.state,"complete");self.assertEqual(r.nexara_job_id,"paid-job")
+
+    def test_uncertain_condition_finishes_without_score_or_external_report(self):
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
+        r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()
+        a=analysis();fail_condition(a,1,"client_name")
+        a["criteria"][0]["conditions"][0]["status"]="unknown"
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            cls.return_value.analyze.return_value={"analysis":a,"references":{}}
+            call_worker.analyze_calls()
+        self.db.refresh(r)
+        self.assertEqual(r.state,"insufficient");self.assertFalse(r.is_scored)
+        self.assertIn("Установил контакт",calls_api.review_reason(r))
+        self.assertTrue(call_worker.delivery_skip_reason(r))
+
     def test_correction_timeout_preserves_first_answer_without_repeating(self):
         settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
         r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()

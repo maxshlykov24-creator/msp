@@ -255,7 +255,8 @@ def analyze_calls():
         db.commit()
         if not settings.calls_sonnet_api_key:
             raise RuntimeError("agent_not_configured")
-        query = select(CallRecord).where(CallRecord.state == "analysis_ready")
+        query = select(CallRecord).where(CallRecord.state == "analysis_ready",
+            or_(CallRecord.next_attempt_at.is_(None), CallRecord.next_attempt_at <= now()))
         if settings.calls_process_from:
             query = query.where(CallRecord.occurred_at >= settings.calls_process_from)
         if settings.calls_calibration_only:
@@ -293,11 +294,19 @@ def analyze_calls():
                     row.category = row.analysis.get("category", "insufficient")
                     row.category_reason = row.analysis.get("category_reason", "Анализ требует проверки")
                     row.rule_version = RULE_VERSION
-                    row.state = "needs_review" if row.validation_errors or (row.category == "primary_inbound" and not row.is_scored) else "complete"
+                    row.state = "needs_review" if row.validation_errors else (
+                        "insufficient" if row.category == "primary_inbound" and not row.is_scored else "complete")
                     row.last_error = "analysis_validation_failed" if row.validation_errors else ""
                 except AmbiguousSubmission as exc:
                     row.state, row.last_error = "analysis_ambiguous", str(exc)
                 except RemoteFailure as exc:
+                    if str(exc) == "agent_http_429":
+                        # Explicit rejection is safe to retry. Preserve any paid first
+                        # answer and continue its correction after the cooldown.
+                        row.state = "analysis_ready"
+                        retry_later(row, str(exc))
+                        db.commit()
+                        break
                     row.state, row.last_error = "needs_review", str(exc)
                 except Exception:
                     row.state, row.last_error = "needs_review", "agent_result_invalid"
@@ -655,7 +664,8 @@ def close_insufficient(call_id: int, reviewer: str, reason: str, *, apply: bool 
             return {"id": call_id, "state": row.state, "changed": False}
         a = row.analysis or {}
         quality_issue = any(a.get(k) is False for k in ("recording_complete", "speech_clear", "roles_reliable"))
-        unknown = any(c.get("status") == "unknown" for c in a.get("criteria", []))
+        unknown = any(c.get("status") == "unknown" or any(v.get("status") == "unknown"
+                      for v in c.get("conditions", [])) for c in a.get("criteria", []))
         if row.state != "needs_review" or row.validation_errors or row.is_scored or not (quality_issue or unknown):
             raise ValueError("not_a_quality_insufficiency")
         result = {"id": call_id, "state": "insufficient", "changed": apply}
