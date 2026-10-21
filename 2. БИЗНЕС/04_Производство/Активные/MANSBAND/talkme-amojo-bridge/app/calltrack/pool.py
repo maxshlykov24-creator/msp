@@ -188,7 +188,12 @@ def pool_snapshot(db: Session, now: Optional[dt.datetime] = None) -> dict[str, i
         PoolNumber.kind == "pool", PoolNumber.active.is_(True))) or 0
     busy = db.scalar(select(func.count()).select_from(PoolNumber).where(
         PoolNumber.kind == "pool", PoolNumber.active.is_(True), PoolNumber.held_until > now)) or 0
+    from app.models import KvState
+
+    reset = db.get(KvState, "ct_visit_reset_max_id")
+    cutoff = int(reset.value) if reset else 0
     demand = db.scalar(select(func.count()).select_from(Visit).where(
+        Visit.id > cutoff,
         Visit.is_paid.is_(True), Visit.last_seen_at > now - timedelta(minutes=get_settings().ct_hold_minutes))) or 0
     return {"total": total, "busy": busy, "free": total - busy, "demand": demand}
 

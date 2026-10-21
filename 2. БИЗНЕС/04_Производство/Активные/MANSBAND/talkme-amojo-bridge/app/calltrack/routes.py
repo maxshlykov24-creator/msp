@@ -133,6 +133,11 @@ def _load_visit(db: Session, visit_id: Optional[int], now: datetime):
 
     if not visit_id:
         return None
+    from app.models import KvState
+
+    reset = db.get(KvState, "ct_visit_reset_max_id")
+    if reset and visit_id <= int(reset.value):
+        return None
     visit = db.get(Visit, visit_id)
     if visit is None:
         return None

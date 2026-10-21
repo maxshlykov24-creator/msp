@@ -1028,3 +1028,20 @@ def test_telphin_does_not_ack_failed_persistence(client, monkeypatch):
     with TestClient(app, raise_server_exceptions=False) as c:
         response = c.post("/webhooks/telphin/telphin-test", json={"call_id": "failed"})
     assert response.status_code == 500
+
+
+def test_reset_archives_old_visit_and_cookie_starts_new(client):
+    from app.models import KvState
+    from app.calltrack.models import Visit, PoolNumber
+    from app.calltrack.pool import pool_snapshot
+    from sqlalchemy import update
+    first = client.post("/ct/session", headers=ORIGIN, json={"url": PAID_URL}).json()
+    with _db() as db:
+        db.add(KvState(key="ct_visit_reset_max_id", value=str(first["visit_id"])))
+        db.execute(update(PoolNumber).values(held_by_visit_id=None, held_until=None))
+        db.commit()
+        assert pool_snapshot(db)["demand"] == 0
+        assert db.get(Visit, first["visit_id"]) is not None
+    second = client.post("/ct/session", headers=ORIGIN,
+                         json={"url": PAID_URL, "visit_id": first["visit_id"]}).json()
+    assert second["visit_id"] > first["visit_id"]

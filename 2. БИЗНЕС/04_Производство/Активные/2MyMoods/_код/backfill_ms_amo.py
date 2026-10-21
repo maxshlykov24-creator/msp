@@ -17,9 +17,10 @@ import shutil
 import sys
 import time
 import urllib.parse
+import urllib.request
 import unicodedata
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -250,7 +251,9 @@ def amo_request(amo: lib.Amo, method: str, path: str) -> tuple[int, dict]:
 
 def amo_pages(amo: lib.Amo, path: str, key: str) -> list[dict]:
     out = []
-    for page in range(1, 501):
+    seen = set()
+    page = 1
+    while True:
         status, body = amo_request(amo, "GET", f"{path}{'&' if '?' in path else '?'}limit=250&page={page}")
         if status == 204:
             return out
@@ -259,13 +262,18 @@ def amo_pages(amo: lib.Amo, path: str, key: str) -> list[dict]:
         chunk = (body.get("_embedded") or {}).get(key)
         if not isinstance(chunk, list):
             raise Stop(f"Неполная страница amo {key}")
+        for item in chunk:
+            uid = str(item.get("id") or "")
+            if not uid or uid in seen:
+                raise Stop(f"Пустой/повторный ID в полном индексе amo {key}")
+            seen.add(uid)
         out.extend(chunk)
         if len(chunk) < 250:
             if len({str(x.get("id")) for x in out}) != len(out):
                 raise Stop(f"Дубли ID в полном индексе amo {key}")
             return out
         time.sleep(0.15)
-    raise Stop(f"Предел страниц amo {key}")
+        page += 1
 
 
 def amount(value: object) -> int:
@@ -448,6 +456,7 @@ def reconcile_orders(mss: requests.Session, pace: list[float],
 def collect_current(ms: lib.MS, amo: lib.Amo,
                     strict_order_snapshot: bool = True) -> tuple[dict, dict]:
     """Полные исходные индексы с проверкой стабильного состава заказов."""
+    started = datetime.now(TZ).isoformat(timespec="seconds")
     mss = ms_session(ms)
     pace = [0.0]
     ms_meta = api_get(mss, lib.MS_BASE + "/entity/customerorder/metadata", last_call=pace)
@@ -518,6 +527,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo,
     print(f"Индекс собран: {len(order_rows)} заказов, {len(leads)} сделок, {len(contacts)} контактов", flush=True)
     payload = {
         "captured_at": datetime.now(TZ).isoformat(timespec="seconds"),
+        "ledger_watermark": started,
         "state_counts": counts, "all_orders_count": total_orders, "orders": order_rows,
         "paymentin": paymentins, "cashin": cashins, "invoiceout": invoices,
         "salesreturn": returns, "demand": demands,
@@ -866,12 +876,12 @@ def amo_links(lead: dict) -> set[str]:
     return {linked_order_id(v) for v in field_values(lead, AMO_ORDER_FIELD) if linked_order_id(v)}
 
 
-def classify(data: dict, ms: lib.MS) -> dict:
+def classify(data: dict, ms: lib.MS, roster: dict | None = None) -> dict:
     orders = data["orders"]
     payments, invoices = allocations(data)
     returns_by_order = return_map(data)
     outflow_by_return = return_outflow(data)
-    roster = get_roster()
+    roster = get_roster() if roster is None else roster
     leads = data["leads"]
     uuid_index: dict[str, list[dict]] = defaultdict(list)
     url_index: dict[str, list[dict]] = defaultdict(list)
@@ -903,6 +913,7 @@ def classify(data: dict, ms: lib.MS) -> dict:
         allocated, paid_moment = payment_close(order, payments)
         selected = name in ALWAYS or (name in PAID_REQUIRED and total > 0 and
                                        (paid_recorded >= total or allocated >= total))
+        selected = selected and order.get("applicable") is True
         uid = str(order.get("id") or "").casefold()
         signature = order_hash(order)
         if not selected:
@@ -910,7 +921,7 @@ def classify(data: dict, ms: lib.MS) -> dict:
             plan_rows.append({"order_id": uid, "source_hash": signature,
                               "number": str(order.get("name") or ""),
                               "category": "EXCLUDED_NOT_FULLY_PAID",
-                              "reason": "STATUS_REQUIRES_FULL_PAYMENT", "state": name,
+                              "reason": "ORDER_NOT_APPLICABLE" if order.get("applicable") is not True else "STATUS_REQUIRES_FULL_PAYMENT", "state": name,
                               "moment": order.get("moment"), "updated": order.get("updated"),
                               "total_kopecks": total, "payment_kopecks": allocated,
                               "payed_sum_kopecks": paid_recorded})
@@ -971,6 +982,8 @@ def classify(data: dict, ms: lib.MS) -> dict:
             contact_id = ""
             phone = phone_norm(cp.get("phone"), cp.get("actualAddressFull") or cp.get("actualAddress"))
             email = email_norm(cp.get("email"))
+            if cp.get("phone") and not phone:
+                category, reason = "DEFERRED", "BUYER_PHONE_INVALID_OR_MULTIPLE"
             pids, eids = phone_index.get(phone, set()) if phone else set(), email_index.get(email, set()) if email else set()
             if len(pids) > 1 or len(eids) > 1:
                 category, reason = "DEFERRED", "AMBIGUOUS_CONTACT_MATCH"
@@ -1020,11 +1033,12 @@ def classify(data: dict, ms: lib.MS) -> dict:
         if category == "CREATE" and not close_moment and name in ALWAYS:
             if audit_checks % 25 == 0:
                 print(f"Проверяю историю статусов: {audit_checks} заказов…", flush=True)
-            if uid in audit_cache:
-                close_moment = audit_cache[uid]
+            cache_key = uid + ":" + signature
+            if cache_key in audit_cache:
+                close_moment = audit_cache[cache_key]
             else:
                 close_moment = audit_current_state(ms, order)
-                audit_cache[uid] = close_moment
+                audit_cache[cache_key] = close_moment
                 status_audit_cache_save(audit_cache)
             audit_checks += 1
             if close_moment:
@@ -1083,7 +1097,8 @@ def amo_read(amo: lib.Amo, path: str) -> tuple[int, dict]:
 def amo_search_pages(amo: lib.Amo, entity: str, query: str, key: str) -> list[dict]:
     rows = []
     encoded = urllib.parse.quote(query)
-    for page in range(1, 501):
+    page, seen = 1, set()
+    while True:
         status, body = amo_request(amo, "GET", f"/api/v4/{entity}?query={encoded}&limit=250&page={page}")
         if status == 204:
             return rows
@@ -1092,6 +1107,11 @@ def amo_search_pages(amo: lib.Amo, entity: str, query: str, key: str) -> list[di
         chunk = (body.get("_embedded") or {}).get(key)
         if not isinstance(chunk, list):
             raise Stop(f"Неполный точный поиск amo {entity}")
+        for item in chunk:
+            uid = str(item.get("id") or "")
+            if not uid or uid in seen:
+                raise Stop(f"Повтор/пустой ID при точном поиске amo {entity}")
+            seen.add(uid)
         rows.extend(chunk)
         if len(chunk) < 250:
             ids = [str(x.get("id")) for x in rows]
@@ -1099,7 +1119,7 @@ def amo_search_pages(amo: lib.Amo, entity: str, query: str, key: str) -> list[di
                 raise Stop(f"Повтор ID при точном поиске amo {entity}")
             return rows
         time.sleep(0.15)
-    raise Stop(f"Предел страниц точного поиска amo {entity}")
+        page += 1
 
 
 def exact_leads(amo: lib.Amo, order_id: str) -> list[dict]:
@@ -1178,40 +1198,20 @@ def confirm_contact(amo: lib.Amo, contact_id: str, row: dict,
     status, contact = amo_read(amo, f"/api/v4/contacts/{contact_id}")
     if status != 200 or str(contact.get("id")) != str(contact_id):
         raise Stop("Контакт не перечитался после записи")
-    values = []
+    got_phone, got_email = set(), set()
     for group in contact.get("custom_fields_values") or []:
-        values.extend(v.get("value") for v in group.get("values") or []
-                      if group.get("field_code") in ("PHONE", "EMAIL"))
-    got_phone = {phone_norm(x) for x in values if x and (str(x).startswith("+") or len(re.sub(r"\D", "", str(x))) >= 10)}
-    got_email = {email_norm(x) for x in values if x and "@" in str(x)}
-    if row.get("phone") and row["phone"] not in got_phone:
-        raise Stop("Созданный контакт не содержит ожидаемый точный телефон")
-    name_mismatch = name_norm(contact.get("name")) != name_norm(row.get("buyer"))
-    if name_mismatch:
-        # amoCRM может вернуть уже существующую карточку вместо новой.
-        # Используем её только при уникальном точном телефоне и email из
-        # заказа (email обязателен, когда он есть в МойСклад); имя не меняем.
-        exact_identity = (row.get("phone") and row["phone"] in got_phone
-                          and (not row.get("email") or row["email"] in got_email))
-        if not exact_identity and expect_name:
-            raise Stop("Имя контакта отличается, а телефон/email не подтверждают точное совпадение")
-        if exact_identity:
-            contact["_migration_name_mismatch"] = True
-        else:
-            contact["_migration_identity_mismatch"] = True
-    if row.get("email") and row["email"] not in got_email:
-        # У существующей карточки не заменяем заполненный email из заказа.
-        # Разрешаем использовать её только при точном телефоне и имени;
-        # расхождение сохраняется в журнале переноса.
-        same_existing_person = (not expect_name and row.get("phone")
-                                and row["phone"] in got_phone
-                                and name_norm(contact.get("name")) == name_norm(row.get("buyer")))
-        if not same_existing_person and expect_name:
-            raise Stop("Контакт не содержит ожидаемый email и не подтверждён точным именем и телефоном")
-        if same_existing_person:
-            contact["_migration_email_mismatch"] = True
-        else:
-            contact["_migration_identity_mismatch"] = True
+        if group.get("field_code") == "PHONE" or group.get("field_id") == AMO_PHONE_FIELD:
+            got_phone.update(phone_norm(v.get("value")) for v in group.get("values") or [])
+        elif group.get("field_code") == "EMAIL" or group.get("field_id") == AMO_EMAIL_FIELD:
+            got_email.update(email_norm(v.get("value")) for v in group.get("values") or [])
+    same_name = sorted(name_norm(contact.get("name")).split()) == sorted(name_norm(row.get("buyer")).split())
+    mismatch = (not same_name or bool(row.get("phone") and row["phone"] not in got_phone)
+                or bool(row.get("email") and row["email"] not in got_email)
+                or contact.get("is_deleted") is True)
+    if mismatch and expect_name:
+        raise Stop("Созданный контакт не соответствует подтверждённому покупателю")
+    if mismatch:
+        contact["_migration_identity_mismatch"] = True
     return contact
 
 
@@ -1260,8 +1260,11 @@ def confirm_lead(amo: lib.Amo, lead_id: str, order: dict, row: dict,
     if int(lead.get("closed_at") or 0) != expected_payload["closed_at"]:
         raise Stop("Дата закрытия сделки не совпала с подтверждённой датой")
     linked = {str(x.get("id")) for x in (lead.get("_embedded") or {}).get("contacts", []) if x.get("id")}
-    if contact_id not in linked:
+    main = {str(x.get("id")) for x in (lead.get("_embedded") or {}).get("contacts", []) if x.get("is_main")}
+    if linked != {contact_id} or main != {contact_id}:
         raise Stop("Сделка не связана с выбранным контактом")
+    if (lead.get("_embedded") or {}).get("companies"):
+        raise Stop("У импортированной сделки обнаружена компания")
     return lead
 
 
