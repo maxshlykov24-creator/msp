@@ -40,6 +40,7 @@ STATUS_AUDIT_CACHE = WORK / "2my-ms-amo-status-audit.local.json"
 JOURNAL = WORK / "2my-ms-amo-backfill-journal.local.json"
 LOCK = WORK / "2my-ms-amo-backfill.lock"
 REPORT = WORK / "2my-ms-amo-backfill-verification.local.json"
+EXCLUSIONS = WORK / "2my-ms-amo-backfill-exclusions.local.json"
 TERMINAL = {"VERIFIED", "DEFERRED", "EXISTS_BACKLINK", "EXISTS_AMO_ID", "QUARANTINED"}
 _PACE = {"ms": 0.0, "amo": 0.0}
 PIPELINE = 11318374
@@ -650,6 +651,18 @@ def buyer_identity(cp: dict) -> tuple[str, str]:
     return name, ""
 
 
+def excluded_phone_hashes() -> set[str]:
+    if not EXCLUSIONS.exists():
+        return set()
+    try:
+        hashes = json.loads(EXCLUSIONS.read_text())["confirmed_test_phone_sha256"]
+        if not hashes or any(not re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes):
+            raise ValueError("Invalid hash list")
+        return set(hashes)
+    except Exception as exc:
+        raise Stop("Подтверждённые исключения повреждены; перенос запрещён") from exc
+
+
 def unix_time(value: object) -> int | None:
     stamp = moscow_dt(value)
     return int(stamp.timestamp()) if stamp else None
@@ -920,6 +933,7 @@ def classify(data: dict, ms: lib.MS, roster: dict | None = None) -> dict:
     plan_rows, counts = [], defaultdict(int)
     audit_checks = 0
     audit_cache = status_audit_cache_load()
+    test_hashes = excluded_phone_hashes()
     for order in orders:
         name = str(order.get("_verified_state_name") or "")
         if not name:
@@ -990,6 +1004,10 @@ def classify(data: dict, ms: lib.MS, roster: dict | None = None) -> dict:
             category, reason = "DEFERRED", buyer_reason
         if category == "CREATE" and not cp_id:
             category, reason = "DEFERRED", "COUNTERPARTY_ID_MISSING"
+        raw_phone = phone_norm(cp.get("phone"), cp.get("actualAddressFull") or cp.get("actualAddress"))
+        if (raw_phone and hashlib.sha256(raw_phone.encode()).hexdigest() in test_hashes
+                and category not in {"EXISTS_BACKLINK", "EXISTS_AMO_ID"}):
+            category, reason = "EXCLUDED_CONFIRMED_TEST", "OWNER_CONFIRMED_TEST_PHONE_WC_6896"
 
         close_moment = paid_moment if allocated >= total and total > 0 else None
         close_basis = "дата полного связанного платежа" if close_moment else ""
@@ -1372,7 +1390,7 @@ LEDGERS = ("paymentin", "cashin", "invoiceout", "salesreturn", "demand", "paymen
 def checkpoint_backup() -> str:
     folder = WORK / ("2my-ms-amo-backup-" + datetime.now(TZ).strftime("%Y%m%d-%H%M%S-%f"))
     folder.mkdir(mode=0o700)
-    for path in (PLAN, RAW_CACHE, JOURNAL, ORDER_CACHE, STATUS_AUDIT_CACHE):
+    for path in (PLAN, RAW_CACHE, JOURNAL, ORDER_CACHE, STATUS_AUDIT_CACHE, EXCLUSIONS):
         if path.exists():
             shutil.copy2(path, folder / path.name)
             os.chmod(folder / path.name, 0o600)
@@ -2271,6 +2289,8 @@ def main() -> None:
         code_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         if args.expected_code_sha256 != code_hash:
             raise Stop("Ночной запуск требует SHA256 проверенного импортёра (--expected-code-sha256)")
+        if not excluded_phone_hashes():
+            raise Stop("Нет сохранённого подтверждения исключения тестового телефона; записи запрещены")
     private_storage()
     with LOCK.open("a+") as lockfile:
         os.chmod(LOCK, 0o600)

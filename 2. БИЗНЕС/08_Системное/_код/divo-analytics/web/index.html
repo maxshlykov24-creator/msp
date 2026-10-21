@@ -442,7 +442,7 @@
   #staleBanner{display:none;margin:0 0 18px;padding:13px 18px;border-radius:12px;background:rgba(232,196,120,.1);border:1px solid rgba(232,196,120,.3);color:#e8c478;font-size:13px}
   #staleBanner.show{display:block}
 </style>
-<link rel="stylesheet" href="/assets/calls.css?v=20261021-finished">
+<link rel="stylesheet" href="/assets/calls.css?v=20261021-kpi-dd">
 </head>
 <body>
 
@@ -611,9 +611,21 @@
     <div class="cq-toolbar">
       <div id="cqViews" class="cq-views" aria-label="Состояние звонка"></div>
       <div class="cq-filters">
-        <label><span class="sr-only">Менеджер звонка</span><select id="cqManager" aria-label="Менеджер звонка"><option value="">Все менеджеры</option><option value="unknown">Не определён</option></select></label>
-        <label><span class="sr-only">Тип разговора</span><select id="cqCategory" aria-label="Тип разговора"><option value="">Все типы</option></select></label>
-        <label><span class="sr-only">Порядок звонков</span><select id="cqSort" aria-label="Порядок звонков"><option value="recent">Сначала новые</option><option value="score_asc">Сначала ниже оценка</option><option value="score_desc">Сначала выше оценка</option></select></label>
+        <div class="cq-dd">
+          <select id="cqManager" aria-hidden="true" tabindex="-1"><option value="">Все менеджеры</option><option value="unknown">Не определён</option></select>
+          <button type="button" class="cq-dd-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="cqManagerMenu" aria-label="Менеджер звонка"><span class="cq-dd-label">Все менеджеры</span><svg class="cq-dd-chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.2 4.3 6 8.1 9.8 4.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div id="cqManagerMenu" class="cq-dd-menu" role="listbox" aria-label="Менеджер звонка" hidden></div>
+        </div>
+        <div class="cq-dd">
+          <select id="cqCategory" aria-hidden="true" tabindex="-1"><option value="">Все типы</option></select>
+          <button type="button" class="cq-dd-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="cqCategoryMenu" aria-label="Тип разговора"><span class="cq-dd-label">Все типы</span><svg class="cq-dd-chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.2 4.3 6 8.1 9.8 4.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div id="cqCategoryMenu" class="cq-dd-menu" role="listbox" aria-label="Тип разговора" hidden></div>
+        </div>
+        <div class="cq-dd">
+          <select id="cqSort" aria-hidden="true" tabindex="-1"><option value="recent">Сначала новые</option><option value="score_asc">Сначала ниже оценка</option><option value="score_desc">Сначала выше оценка</option></select>
+          <button type="button" class="cq-dd-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="cqSortMenu" aria-label="Порядок звонков"><span class="cq-dd-label">Сначала новые</span><svg class="cq-dd-chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.2 4.3 6 8.1 9.8 4.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div id="cqSortMenu" class="cq-dd-menu" role="listbox" aria-label="Порядок звонков" hidden></div>
+        </div>
         <button type="button" id="cqRefresh" aria-label="Обновить звонки" title="Обновить звонки">↻</button>
       </div>
     </div>
@@ -1265,6 +1277,6 @@ setInterval(loadDashboard, 5 * 60 * 1000);
   document.addEventListener('pointerleave', ()=>{ if(active){ reset(active); active = null; } });
 })();
 </script>
-<script src="/assets/calls.js?v=20261021-context5-audio2"></script>
+<script src="/assets/calls.js?v=20261021-kpi-dd"></script>
 </body>
 </html>
