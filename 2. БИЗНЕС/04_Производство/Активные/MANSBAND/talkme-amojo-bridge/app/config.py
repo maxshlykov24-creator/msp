@@ -65,6 +65,23 @@ class Settings(BaseSettings):
     # Имя бота/канала в payload для new_message (косметика)
     integration_title: str = "MansbandTalkmeBridge"
 
+    # Коллтрекинг. Боевой режим включается отдельно от вставки скрипта.
+    ct_live: bool = False
+    ct_reconcile_enabled: bool = True
+    ct_original_number: str = "9310090251"
+    ct_pool_numbers: str = ""
+    ct_organic_number: str = ""
+    ct_channel_numbers: str = ""
+    ct_hold_minutes: int = 15
+    ct_call_window_minutes: int = 15
+    ct_visit_id_base: int = 900000000
+    ct_allowed_origins: str = "https://mansband.ru,https://www.mansband.ru,https://zamer.mansband.ru"
+    ct_utm_source_map: str = ""
+    ct_tech_source_field: str = "Источник (техническое)"
+    telphin_webhook_secret: str = ""
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

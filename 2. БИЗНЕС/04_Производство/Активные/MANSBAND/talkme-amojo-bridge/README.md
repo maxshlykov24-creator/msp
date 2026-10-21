@@ -24,6 +24,10 @@
 | POST | `/webhooks/quiz/{secret}` | Заявка квиза `zamer.mansband.ru` → сделка в «Продажи» |
 | POST | `/amo/webhooks/leads/{secret}` | Хук amoCRM «сделка добавлена» → метки визита в поля сделки |
 | POST | `/internal/setup-lead-webhook` | Зарегистрировать хук `add_lead` в amoCRM (нужен `X-Internal-Secret`) |
+| GET | `/ct.js` | Скрипт подмены номера. Пока `CT_LIVE=false`, работает только с `?ct=1` |
+| POST | `/ct/session` | Выдача номера из пула или статичного номера органики |
+| POST | `/ct/ping` | Продление брони номера |
+| POST | `/webhooks/telphin/{secret}` | Входящий звонок Телфин, сделку не создаёт |
 
 ## Метки визита (UTM, Roistat, yclid)
 

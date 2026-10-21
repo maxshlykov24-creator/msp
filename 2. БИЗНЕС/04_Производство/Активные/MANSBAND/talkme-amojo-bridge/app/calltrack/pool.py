@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+import datetime as dt
+from datetime import timedelta, timezone
+from typing import Optional
+
+from sqlalchemy import select, text, update
+from sqlalchemy.orm import Session
+
+from app.calltrack.models import Assignment, PoolNumber, Visit
+from app.calltrack.phones import digits10
+from app.config import Settings, get_settings
+
+MSK = timezone(timedelta(hours=3))
+
+
+def _pairs(raw: str, sep: str) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for part in (raw or "").split(sep):
+        if "=" not in part:
+            continue
+        left, right = part.split("=", 1)
+        if left.strip() and right.strip():
+            out.append((left.strip(), right.strip()))
+    return out
+
+
+def pool_numbers(settings: Settings) -> list[str]:
+    out: list[str] = []
+    for part in (settings.ct_pool_numbers or "").split(","):
+        n = digits10(part.strip())
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
+def channel_map(settings: Settings) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for num, source in _pairs(settings.ct_channel_numbers, ";"):
+        n = digits10(num)
+        if n:
+            out[n] = source
+    return out
+
+
+def utm_source_map(settings: Settings) -> dict[str, str]:
+    return {k.lower(): v for k, v in _pairs(settings.ct_utm_source_map, ";")}
+
+
+def wanted_numbers(settings: Settings) -> dict[str, tuple[str, Optional[str]]]:
+    """Пул важнее органики и канала: один номер не может быть в двух ролях."""
+    wanted: dict[str, tuple[str, Optional[str]]] = {}
+    for n in pool_numbers(settings):
+        wanted[n] = ("pool", None)
+    organic = digits10(settings.ct_organic_number)
+    if organic and organic not in wanted:
+        wanted[organic] = ("organic", "Сайт (органика)")
+    for n, source in channel_map(settings).items():
+        if n not in wanted:
+            wanted[n] = ("channel", source)
+    return wanted
+
+
+def sync_numbers(db: Session, settings: Optional[Settings] = None) -> None:
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    settings = settings or get_settings()
+    wanted = wanted_numbers(settings)
+    if wanted:
+        rows = [
+            {"number": n, "kind": kind, "source": source, "active": True}
+            for n, (kind, source) in wanted.items()
+        ]
+        stmt = pg_insert(PoolNumber).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["number"],
+            set_={"kind": stmt.excluded.kind, "source": stmt.excluded.source, "active": True},
+        )
+        db.execute(stmt)
+    seen = list(wanted)
+    if seen:
+        db.execute(update(PoolNumber).where(PoolNumber.number.not_in(seen)).values(active=False))
+    elif db.execute(select(PoolNumber.id).limit(1)).first():
+        db.execute(update(PoolNumber).values(active=False))
+    db.flush()
+
+
+def _bump_exhausted(db: Session, now: dt.datetime) -> None:
+    day = now.astimezone(MSK).date().isoformat()
+    db.execute(
+        text(
+            """
+            INSERT INTO kv_state (key, value, updated_at)
+            VALUES (:key, '1', now())
+            ON CONFLICT (key) DO UPDATE
+            SET value = (kv_state.value::int + 1)::text,
+                updated_at = now()
+            """
+        ),
+        {"key": f"ct_pool_exhausted:{day}"},
+    )
+
+
+def _touch_assignment(db: Session, number: PoolNumber, visit: Visit, now: dt.datetime) -> None:
+    row = (
+        db.execute(
+            select(Assignment)
+            .where(Assignment.number_id == number.id, Assignment.visit_id == visit.id)
+            .order_by(Assignment.id.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if row is not None:
+        row.last_seen_at = now
+
+
+def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) -> Optional[PoolNumber]:
+    """Выдать номер пула. Одна транзакция, строка номера блокируется.
+
+    Свободный номер берётся с SKIP LOCKED. Если свободных нет, забирается
+    номер с самой ранней бронью, оба визита помечаются спорными.
+    """
+    settings = get_settings()
+    now = now or dt.datetime.now(timezone.utc)
+    hold = timedelta(minutes=int(settings.ct_hold_minutes))
+
+    own = (
+        db.execute(
+            select(PoolNumber)
+            .where(
+                PoolNumber.kind == "pool",
+                PoolNumber.active.is_(True),
+                PoolNumber.held_by_visit_id == visit.id,
+            )
+            .with_for_update()
+        )
+        .scalars()
+        .first()
+    )
+    if own is not None and own.held_until is not None and own.held_until > now:
+        own.held_until = now + hold
+        visit.last_seen_at = now
+        _touch_assignment(db, own, visit, now)
+        return own
+
+    free = (
+        db.execute(
+            select(PoolNumber)
+            .where(
+                PoolNumber.kind == "pool",
+                PoolNumber.active.is_(True),
+                (PoolNumber.held_until.is_(None)) | (PoolNumber.held_until < now),
+            )
+            .order_by(PoolNumber.held_until.asc().nullsfirst())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        .scalars()
+        .first()
+    )
+    stolen = False
+    if free is None:
+        free = (
+            db.execute(
+                select(PoolNumber)
+                .where(PoolNumber.kind == "pool", PoolNumber.active.is_(True))
+                .order_by(PoolNumber.held_until.asc().nullsfirst())
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+            .scalars()
+            .first()
+        )
+        stolen = free is not None
+    if free is None:
+        return None
+
+    if stolen and free.held_by_visit_id and free.held_by_visit_id != visit.id:
+        old = db.get(Visit, free.held_by_visit_id)
+        if old is not None:
+            old.disputed = True
+        visit.disputed = True
+        _bump_exhausted(db, now)
+
+    free.held_by_visit_id = visit.id
+    free.held_until = now + hold
+    visit.last_seen_at = now
+    db.add(
+        Assignment(
+            number_id=free.id,
+            visit_id=visit.id,
+            started_at=now,
+            last_seen_at=now,
+        )
+    )
+    db.flush()
+    return free

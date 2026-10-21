@@ -24,7 +24,7 @@ FIELD_CODE_BY_KEY = {
     "yclid": "YCLID",
 }
 
-_fields_cache: dict[str, Any] = {"at": 0.0, "map": {}}
+_fields_cache: dict[str, Any] = {"at": 0.0, "map": {}, "selects": {}}
 _FIELDS_TTL_SEC = 3600
 
 
@@ -32,16 +32,14 @@ def _headers(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
 
 
-def field_id_by_key(*, access_token: str, settings: Optional[Settings] = None) -> dict[str, int]:
-    """Карта «ключ метки → id поля сделки». Кэш на час."""
+def _refresh_fields(*, access_token: str, settings: Optional[Settings] = None) -> None:
     now = time.time()
-    if _fields_cache["map"] and now - float(_fields_cache["at"]) < _FIELDS_TTL_SEC:
-        return dict(_fields_cache["map"])
-
+    if _fields_cache["at"] and now - float(_fields_cache["at"]) < _FIELDS_TTL_SEC:
+        return
     settings = settings or get_settings()
     url = f"{api_base(settings)}/api/v4/leads/custom_fields"
-    out: dict[str, int] = {}
     by_code: dict[str, int] = {}
+    selects: dict[str, dict[str, Any]] = {}
     with httpx.Client(timeout=30.0) as client:
         page = 1
         while page <= 10:
@@ -56,15 +54,38 @@ def field_id_by_key(*, access_token: str, settings: Optional[Settings] = None) -
                 code = (f.get("code") or "").upper()
                 if code:
                     by_code[code] = int(f["id"])
+                if (f.get("type") or "") in {"select", "multiselect", "radiobutton"}:
+                    enums: dict[str, int] = {}
+                    for enum in f.get("enums") or []:
+                        val = enum.get("value")
+                        if val not in (None, "") and enum.get("id") is not None:
+                            enums[str(val)] = int(enum["id"])
+                    name = (f.get("name") or "").strip()
+                    if name and name not in selects:
+                        selects[name] = {"field_id": int(f["id"]), "enums": enums}
             page += 1
-
+    out: dict[str, int] = {}
     for key, code in FIELD_CODE_BY_KEY.items():
         if code in by_code:
             out[key] = by_code[code]
-
     _fields_cache["map"] = dict(out)
+    _fields_cache["selects"] = selects
     _fields_cache["at"] = now
-    return out
+
+
+def field_id_by_key(*, access_token: str, settings: Optional[Settings] = None) -> dict[str, int]:
+    """Карта «ключ метки → id поля сделки». Кэш на час."""
+    _refresh_fields(access_token=access_token, settings=settings)
+    return dict(_fields_cache["map"])
+
+
+def select_field(
+    *, name: str, access_token: str, settings: Optional[Settings] = None
+) -> dict[str, Any]:
+    """Поле-список сделки по имени: field_id и enum_id значений."""
+    _refresh_fields(access_token=access_token, settings=settings)
+    found = (_fields_cache.get("selects") or {}).get(name) or {}
+    return {"field_id": found.get("field_id"), "enums": dict(found.get("enums") or {})}
 
 
 def get_lead(*, lead_id: int, access_token: str, settings: Optional[Settings] = None) -> dict[str, Any]:
@@ -128,6 +149,17 @@ def lead_contact_names(
         if name:
             names.append(name)
     return names
+
+
+def lead_field_filled(lead: dict[str, Any], field_id: int) -> bool:
+    """В поле уже есть значение или выбран пункт списка."""
+    for cf in lead.get("custom_fields_values") or []:
+        if cf.get("field_id") != field_id:
+            continue
+        for v in cf.get("values") or []:
+            if v.get("enum_id") not in (None, "") or v.get("value") not in (None, ""):
+                return True
+    return False
 
 
 def existing_tracking_values(*, lead: dict[str, Any], id_by_key: dict[str, int]) -> dict[str, str]:
@@ -303,6 +335,34 @@ def add_lead_note(
         r = client.post(url, json=body, headers=_headers(access_token))
         if r.status_code >= 400:
             log.error("note lead %s failed: %s %s", lead_id, r.status_code, r.text[:300])
+
+
+def open_leads_for_phone(
+    *, phone: str, access_token: str, settings: Optional[Settings] = None
+) -> list[dict[str, Any]]:
+    """Открытые сделки контакта. 142 и 143 в amoCRM — успех и провал."""
+    settings = settings or get_settings()
+    contact = find_contact_by_phone(phone=phone, access_token=access_token, settings=settings)
+    if not contact or not contact.get("id"):
+        return []
+    url = f"{api_base(settings)}/api/v4/contacts/{int(contact['id'])}"
+    with httpx.Client(timeout=30.0) as client:
+        r = client.get(url, params={"with": "leads"}, headers=_headers(access_token))
+        if r.status_code >= 400:
+            return []
+        leads = ((r.json() or {}).get("_embedded") or {}).get("leads") or []
+    ids = sorted((int(l["id"]) for l in leads if l.get("id")), reverse=True)
+    opened: list[dict[str, Any]] = []
+    for lead_id in ids[:15]:
+        try:
+            full = get_lead(lead_id=lead_id, access_token=access_token, settings=settings)
+        except Exception:
+            continue
+        if int(full.get("status_id") or 0) in (142, 143):
+            continue
+        opened.append(full)
+        break
+    return opened
 
 
 def subscribe_webhook(

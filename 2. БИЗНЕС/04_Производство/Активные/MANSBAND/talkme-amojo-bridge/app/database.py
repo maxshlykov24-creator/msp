@@ -37,6 +37,7 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     from app import models  # noqa: F401
+    from app.calltrack import models as _ct_models  # noqa: F401
     from sqlalchemy import text
 
     eng = get_engine()
@@ -56,6 +57,7 @@ def init_db() -> None:
         "ALTER TABLE conversation_map ADD COLUMN IF NOT EXISTS tracking_applied_at TIMESTAMPTZ",
         "CREATE INDEX IF NOT EXISTS ix_conv_client_phone ON conversation_map (client_phone)",
         "CREATE INDEX IF NOT EXISTS ix_conv_amo_lead ON conversation_map (amo_lead_id)",
+        "ALTER TABLE conversation_map ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ",
     ]
     with eng.begin() as conn:
         for sql in migrations:

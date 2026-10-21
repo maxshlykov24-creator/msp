@@ -60,6 +60,10 @@ class ConversationMap(Base):
     tracking_applied_at: Mapped[Optional[dt.datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Время последнего входящего сообщения. Нужно, чтобы выбрать чат или звонок.
+    last_message_at: Mapped[Optional[dt.datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (UniqueConstraint("scope_id", "external_conversation_id", name="uq_conv_scope"),)
 

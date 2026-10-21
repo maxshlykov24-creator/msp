@@ -45,18 +45,46 @@ log = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     init_db()
     s = get_settings()
+    _sync_calltrack_pool()
     poll_task: Optional[asyncio.Task[None]] = None
+    reconcile_task: Optional[asyncio.Task[None]] = None
     if s.talkme_poll_enabled:
         poll_task = asyncio.create_task(_talkme_poll_loop())
         log.info("Talk-me poll loop scheduled")
+    if s.ct_reconcile_enabled:
+        from app.calltrack.reconcile import reconcile_loop
+
+        reconcile_task = asyncio.create_task(reconcile_loop())
+        log.info("Calltrack reconcile scheduled")
     try:
         yield
     finally:
         if poll_task is not None:
             poll_task.cancel()
+        if reconcile_task is not None:
+            reconcile_task.cancel()
+
+
+def _sync_calltrack_pool() -> None:
+    from app.calltrack.pool import sync_numbers
+    from app.database import get_session_factory
+
+    db = get_session_factory()()
+    try:
+        sync_numbers(db, get_settings())
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.exception("ct pool sync failed")
+    finally:
+        db.close()
 
 
 app = FastAPI(title="Talk-me ↔ amoCRM bridge", lifespan=lifespan)
+
+from app.calltrack.routes import router as calltrack_router
+
+app.include_router(calltrack_router)
 
 
 @app.get("/health")
@@ -498,6 +526,7 @@ def _talkme_incoming_task(payload: dict[str, Any]) -> None:
             cm.talkme_client_ref = p_client_id
         if dialog_id is not None:
             cm.talkme_dialog_id = str(dialog_id)
+        cm.last_message_at = datetime.now(timezone.utc)
 
         # Метки визита: фиксируем первое касание и больше не перезаписываем.
         fresh_tracking = parse_talkme_tracking(payload)
@@ -620,8 +649,17 @@ def quiz_webhook(
         contact_id = int(contact["id"])
 
         id_by_key = amo_v4.field_id_by_key(access_token=token, settings=settings)
+        try:
+            from app.calltrack.matching import resolve_our_visit
+
+            quiz_tracking = resolve_our_visit(db, parsed.get("tracking") or {})
+        except Exception:
+            log.exception("ct: квиз без разворота визита")
+            quiz_tracking = parsed.get("tracking") or {}
         fields = amo_v4.build_custom_fields_payload(
-            tracking=parsed.get("tracking") or {}, id_by_key=id_by_key, skip_keys=set()
+            tracking=quiz_tracking,
+            id_by_key=id_by_key,
+            skip_keys=set(),
         )
         tags = [settings.quiz_tag] if settings.quiz_tag else []
         lead = amo_v4.create_lead(
@@ -674,18 +712,25 @@ def apply_tracking_to_lead(
 ) -> dict[str, Any]:
     """Записать метки беседы в поля сделки amoCRM. Занятые поля не трогаем."""
     settings = get_settings()
+    try:
+        from app.calltrack.matching import resolve_our_visit
+
+        tracking = resolve_our_visit(db, cm.tracking or {})
+    except Exception:
+        log.exception("ct: не развернули визит, пишем метки чата как есть")
+        tracking = dict(cm.tracking or {})
     id_by_key = amo_v4.field_id_by_key(access_token=access_token, settings=settings)
     if not id_by_key:
         return {"ok": False, "reason": "в amoCRM нет полей tracking_data"}
     lead = amo_v4.get_lead(lead_id=lead_id, access_token=access_token, settings=settings)
     busy = amo_v4.existing_tracking_values(lead=lead, id_by_key=id_by_key)
     values = amo_v4.build_custom_fields_payload(
-        tracking=cm.tracking or {}, id_by_key=id_by_key, skip_keys=set(busy)
+        tracking=tracking, id_by_key=id_by_key, skip_keys=set(busy)
     )
     if not values:
         return {"ok": True, "written": {}, "skipped": busy, "reason": "нечего писать"}
     written = {
-        k: v for k, v in (cm.tracking or {}).items() if k in id_by_key and k not in busy and v
+        k: v for k, v in tracking.items() if k in id_by_key and k not in busy and v
     }
     if dry_run:
         return {"ok": True, "dry_run": True, "written": written, "skipped": busy}
@@ -762,16 +807,23 @@ def _match_conversation(
 
 
 def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
-    """Новая сделка в amoCRM: найти беседу Talk-me и проставить метки.
+    """Новая сделка в amoCRM: звонок коллтрекинга или беседа Talk-me.
 
-    Сначала телефон контакта, если его нет — имя посетителя из чата.
-    Контакт цепляется не мгновенно, поэтому две отложенные попытки.
+    Сначала звонок в окне 15 минут, затем беседа. Если нашлись оба, берётся
+    то, что ближе по времени к созданию сделки. Контакт цепляется не сразу,
+    событие Телфин тоже может опоздать, поэтому повторы 10, 45 и 120 секунд.
+    Сделка без звонка идёт прежним путём чата.
     """
+    from app.calltrack.matching import apply_call, decide
     from app.database import get_session_factory
 
     settings = get_settings()
-    if attempt:
-        time.sleep(10 if attempt == 1 else 45)
+    if attempt == 1:
+        time.sleep(10)
+    elif attempt == 2:
+        time.sleep(45)
+    elif attempt >= 3:
+        time.sleep(120)
     Sess = get_session_factory()
     db = Sess()
     retry: list[int] = []
@@ -780,21 +832,31 @@ def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
         for lead_id in lead_ids:
             try:
                 lead = amo_v4.get_lead(lead_id=lead_id, access_token=token, settings=settings)
+                created_raw = lead.get("created_at")
+                created = datetime.fromtimestamp(int(created_raw or time.time()), tz=timezone.utc)
                 phones = amo_v4.lead_phones(lead=lead, access_token=token, settings=settings)
                 names = amo_v4.lead_contact_names(lead=lead, access_token=token, settings=settings)
-                cm = _match_conversation(db, phones, names)
-                if cm is None or tracking_is_empty(cm.tracking):
-                    if attempt < 2:
+                decision = decide(db, phones=phones, names=names, lead_created_at=created)
+                if decision["kind"] == "none":
+                    if attempt < 3:
                         retry.append(lead_id)
                     else:
-                        log.info("lead %s: беседа Talk-me с метками не найдена", lead_id)
+                        log.info("lead %s: ни звонок, ни беседа Talk-me с метками не найдены", lead_id)
                     continue
-                apply_tracking_to_lead(db, cm, lead_id, token)
+                if decision["kind"] == "chat":
+                    cm = decision["conversation"]
+                    if tracking_is_empty(cm.tracking):
+                        if attempt < 3:
+                            retry.append(lead_id)
+                        continue
+                    apply_tracking_to_lead(db, cm, lead_id, token)
+                    continue
+                apply_call(db, decision["call"], lead_id, lead, token)
             except Exception:
                 log.exception("lead %s: обработка add_lead упала", lead_id)
     finally:
         db.close()
-    if retry and attempt < 2:
+    if retry and attempt < 3:
         threading.Thread(target=_amo_lead_added_task, args=(retry, attempt + 1), daemon=True).start()
 
 
