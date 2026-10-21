@@ -428,22 +428,39 @@ async def worker(s: ReminderSettings):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    from app import certificate_mail
+
     s = ReminderSettings()
     if s.mode == "live" and not s.live_ready():
         raise RuntimeError("Reminder live prerequisites are incomplete")
     Base.metadata.create_all(get_engine(), tables=TABLES)
+    mail_settings = certificate_mail.MailSettings()
+    if mail_settings.mode == "live" and not mail_settings.live_ready():
+        # A new mail rule must not take down existing Wazzup forwarding.
+        log.error("Certificate email live prerequisites are incomplete; sending disabled")
+    Base.metadata.create_all(get_engine(), tables=certificate_mail.TABLES)
     task = asyncio.create_task(worker(s))
+    mail_task = asyncio.create_task(certificate_mail.worker(mail_settings))
     try:
         yield
     finally:
         task.cancel()
+        mail_task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await mail_task
         except asyncio.CancelledError:
             pass
 
 
 app = FastAPI(title="Mansband reservation reminders", lifespan=lifespan)
+
+from app.certificate_mail import router as certificate_router
+
+app.include_router(certificate_router)
 
 
 @app.get("/health")
@@ -460,8 +477,11 @@ def status(x_reminder_key: str = Header(default="")):
     try:
         jobs = list(db.scalars(select(ReminderJob)))
         attempts = list(db.scalars(select(ReminderAttempt)))
+        from app.certificate_mail import summary as mail_summary
+
         return {"mode": s.mode, "ready": s.live_ready(), "hour_msk": s.hour,
             "last_scan": last_scan, "callback_forwarding": callback_stats,
+            "certificate_mail": mail_summary(db),
             "jobs": [{"lead_id": j.lead_id, "until": j.until.isoformat(), "state": j.state,
                       "reason": j.reason} for j in jobs],
             "attempts": [{"job_id": a.job_id, "transport": a.transport, "state": a.state,
