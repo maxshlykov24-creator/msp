@@ -407,6 +407,7 @@ def tick(s: ReminderSettings, *, do_scan: bool = False) -> dict:
 
 
 last_scan: dict = {}
+callback_stats: dict = {"received": 0, "forwarded_ok": 0, "forwarded_failed": 0}
 
 
 async def worker(s: ReminderSettings):
@@ -460,7 +461,7 @@ def status(x_reminder_key: str = Header(default="")):
         jobs = list(db.scalars(select(ReminderJob)))
         attempts = list(db.scalars(select(ReminderAttempt)))
         return {"mode": s.mode, "ready": s.live_ready(), "hour_msk": s.hour,
-            "last_scan": last_scan,
+            "last_scan": last_scan, "callback_forwarding": callback_stats,
             "jobs": [{"lead_id": j.lead_id, "until": j.until.isoformat(), "state": j.state,
                       "reason": j.reason} for j in jobs],
             "attempts": [{"job_id": a.job_id, "transport": a.transport, "state": a.state,
@@ -485,6 +486,7 @@ async def webhook(secret: str, request: Request):
         raise HTTPException(400, "Invalid JSON")
     if not isinstance(body, dict):
         raise HTTPException(400, "Expected object")
+    callback_stats["received"] += 1
     forwarded = None
     url = s.forward_url.get_secret_value()
     if url:
@@ -495,7 +497,12 @@ async def webhook(secret: str, request: Request):
             async with httpx.AsyncClient(timeout=15, follow_redirects=False) as c:
                 forwarded = await c.post(url, content=raw, headers=headers)
         except httpx.HTTPError:
+            callback_stats["forwarded_failed"] += 1
             raise HTTPException(502, "Existing subscriber unavailable")
+        callback_stats["last_http"] = forwarded.status_code
+        callback_stats["last_at"] = utcnow().isoformat()
+        counter = "forwarded_ok" if 200 <= forwarded.status_code < 300 else "forwarded_failed"
+        callback_stats[counter] += 1
     db = get_session_factory()()
     try:
         record_events(db, body)
