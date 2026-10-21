@@ -853,6 +853,19 @@ def test_ten_number_pool_falls_back_on_eleventh(client, monkeypatch):
     assert issued[10]["number"] == "+79310090251"
 
 
+def test_duplicate_lead_hook_does_not_fall_back_to_old_chat(monkeypatch):
+    from datetime import datetime, timezone
+    from app import main, amo_v4
+    from app.calltrack.models import CallEvent
+    monkeypatch.setattr(main, "get_valid_access_token", lambda db: "test")
+    monkeypatch.setattr(amo_v4, "get_lead", lambda **kw: pytest.fail("completed call must be skipped"))
+    with _db() as db:
+        db.add(CallEvent(call_id="completed", called="9311111111", lead_id=123,
+                         started_at=datetime.now(timezone.utc), status="matched"))
+        db.commit()
+    main._amo_lead_added_task([123])
+
+
 def test_amo_lead_webhook_decodes_form_and_schedules(client, monkeypatch):
     from app import main
     received = []

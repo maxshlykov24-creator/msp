@@ -913,6 +913,7 @@ def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
     Сделка без звонка идёт прежним путём чата.
     """
     from app.calltrack.matching import apply_call, decide
+    from app.calltrack.models import CallEvent
     from app.database import get_session_factory
 
     settings = get_settings()
@@ -929,6 +930,12 @@ def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
         token = get_valid_access_token(db)
         for lead_id in lead_ids:
             try:
+                completed = db.execute(select(CallEvent.id).where(
+                    CallEvent.lead_id == lead_id,
+                    CallEvent.status.in_(["matched", "unattributed", "repeat"]),
+                ).limit(1)).first()
+                if completed:
+                    continue
                 lead = amo_v4.get_lead(lead_id=lead_id, access_token=token, settings=settings)
                 created_raw = lead.get("created_at")
                 created = datetime.fromtimestamp(int(created_raw or time.time()), tz=timezone.utc)
