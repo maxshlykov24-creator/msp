@@ -213,7 +213,7 @@ def finish_result(row: CallRecord, result: dict):
         row.state = "analysis_ready" if SonnetCallAgent.catalog(transcript) else "needs_review"
         row.last_error = "" if row.state == "analysis_ready" else "transcript_empty"
         row.next_attempt_at = None
-        row.analysis_version = "sonnet.qa.2"
+        row.analysis_version = "sonnet.qa.3"
         return
     raw = result.get("llm_output")
     if isinstance(raw, str):
@@ -264,7 +264,7 @@ def analyze_calls():
         try:
             for row in db.scalars(query.order_by(CallRecord.occurred_at.desc()).limit(5)):
                 row.state = "analyzing"
-                row.analysis_version = "sonnet.qa.2"
+                row.analysis_version = "sonnet.qa.3"
                 db.commit()
                 try:
                     history = dict(row.provider_result or {})
