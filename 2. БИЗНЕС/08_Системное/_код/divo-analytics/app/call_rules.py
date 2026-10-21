@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 RULE_VERSION = "2026-10-07.1"
 MIN_CALL_DURATION_SEC = 30
-ANALYSIS_VERSION = "sonnet.qa.4"
+ANALYSIS_VERSION = "sonnet.qa.5"
 CATEGORY_NAMES = {
     "primary_inbound": "Первичный входящий продажный",
     "repeat": "Повторный разговор",
@@ -161,7 +161,10 @@ na ТОЛЬКО для пункта 5, если явно сказано, что 
 unknown — невозможность проверить из-за обрыва/неразборчивости/сомнительных ролей;
 не подменяй unknown значениями no или na. recording_complete, speech_clear и roles_reliable
 должны честно отражать доступность доказательств. При существенном обрыве или неразборчивости
-оценка не считается полной. Перевод на третьего сотрудника требует проверки ролей.
+оценка не считается полной. При нескольких голосах сначала установи роли по контексту,
+а не по количеству меток диаризации: дополнительные спикеры сами по себе не мешают оценке.
+Метки «Клиент 2», «Клиент 3», «Спикер 3» могут быть фрагментами голоса того же клиента.
+Передача разговора между сотрудниками также сама по себе не делает роли ненадёжными.
 outcome — отдельный результат, а не оценка действий. meeting_agreed=true только если клиент
 подтвердил встречу: обязательна meeting_evidence. meeting_when — только услышанное время;
 если его нет, null. Для неизвестного результата meeting_agreed=null.
@@ -245,7 +248,10 @@ def validate_analysis(raw: dict, transcript: dict, direction: str) -> dict:
         if c.id in (4, 5) and a.outcome.trade_in == "not_discussed" and c.status != "no":
             errors.append(f"{label}:trade_in_not_discussed_must_be_no")
     complete = a.recording_complete and a.speech_clear and a.roles_reliable
-    complete = complete and all(c.status != "unknown" and all(v.status != "unknown" for v in c.conditions)
+    # A known missing mandatory action already proves an AND criterion false;
+    # uncertainty in a different subcondition cannot change that verdict.
+    complete = complete and all(c.status != "unknown" and
+                                (c.status == "no" or all(v.status != "unknown" for v in c.conditions))
                                 for c in a.criteria)
     scored = a.category == "primary_inbound" and complete and not errors
     yes = sum(c.status == "yes" for c in a.criteria)

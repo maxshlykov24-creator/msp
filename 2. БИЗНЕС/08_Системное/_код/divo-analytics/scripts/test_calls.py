@@ -111,10 +111,21 @@ class RulesTest(unittest.TestCase):
         a=analysis();a.update(category="repeat",criteria=[])
         self.assertIn("category:repeat_requires_evidence",self.check(a)["errors"])
 
-    def test_cutoff_unclear_or_transferred_roles_exclude_average(self):
+    def test_cutoff_unclear_or_unresolved_roles_exclude_average(self):
         for key in ("recording_complete","speech_clear","roles_reliable"):
             a=analysis();a[key]=False;self.assertFalse(self.check(a)["is_scored"])
         a=analysis();a["criteria"][0]["status"]="unknown"
+        self.assertFalse(self.check(a)["is_scored"])
+
+    def test_unknown_subcondition_does_not_cancel_known_failed_and_criterion(self):
+        a=analysis();fail_condition(a,1,"client_name")
+        a["criteria"][0]["conditions"][0].update(status="unknown",evidence=[])
+        result=self.check(a)
+        self.assertEqual(result["errors"],[])
+        self.assertTrue(result["is_scored"])
+        self.assertEqual(result["score"],85.71)
+        self.assertEqual(result["analysis"]["criteria"][0]["conditions"][0]["status"],"unknown")
+        a["roles_reliable"]=False
         self.assertFalse(self.check(a)["is_scored"])
 
     def test_fabricated_quote_and_wrong_timestamp_rejected(self):
@@ -456,8 +467,8 @@ class QueueTest(unittest.TestCase):
     def test_uncertain_condition_finishes_without_score_or_external_report(self):
         settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
         r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()
-        a=analysis();fail_condition(a,1,"client_name")
-        a["criteria"][0]["conditions"][0]["status"]="unknown"
+        a=analysis();a["criteria"][0]["status"]="unknown"
+        a["criteria"][0]["conditions"][0].update(status="unknown",evidence=[])
         with patch.object(call_worker,"SonnetCallAgent") as cls:
             cls.return_value.analyze.return_value={"analysis":a,"references":{}}
             call_worker.analyze_calls()

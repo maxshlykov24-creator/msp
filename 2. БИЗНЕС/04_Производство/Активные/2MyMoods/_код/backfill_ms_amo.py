@@ -1243,10 +1243,28 @@ def confirm_lead(amo: lib.Amo, lead_id: str, order: dict, row: dict,
     status, lead = amo_read(amo, f"/api/v4/leads/{lead_id}?with=contacts")
     if status != 200 or str(lead.get("id")) != str(lead_id):
         raise Stop("Сделка не перечиталась после записи")
-    return validate_lead(lead, contact_id, expected_payload)
+    return validate_lead(lead, contact_id, expected_payload, order)
 
 
-def validate_lead(lead: dict, contact_id: str, expected_payload: dict) -> dict:
+def known_integration_text(field_id: int, actual: str, expected: str, order: dict) -> bool:
+    if field_id == FIELDS["comment"]:
+        description = str(order.get("description") or "").strip()
+        return (actual == description and expected.startswith(description)
+                and "[Исторический импорт МС→amo " in expected)
+    if field_id == FIELDS["items"]:
+        moment = moscow_dt(order.get("moment"))
+        if not moment:
+            return False
+        lines = [f"Заказ № {order.get('name')} от {moment:%d.%m.%Y}:"]
+        for i, line in enumerate((order.get("positions") or {}).get("rows") or [], 1):
+            name = str((line.get("assortment") or {}).get("name") or "").strip()
+            qty = format(Decimal(str(line.get("quantity") or 0)).normalize(), "f")
+            lines.append(f"{i}. {name}, {qty} шт")
+        return actual in {"\n".join(lines), "\\n".join(lines)}
+    return False
+
+
+def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: dict | None = None) -> dict:
     if int(lead.get("pipeline_id") or 0) != PIPELINE or int(lead.get("status_id") or 0) != WON:
         raise Stop("Новая сделка не оказалась в целевой воронке/этапе")
     if int(lead.get("price") or 0) != expected_payload["price"]:
@@ -1260,6 +1278,10 @@ def validate_lead(lead: dict, contact_id: str, expected_payload: dict) -> dict:
         actual = next((x for x in lead.get("custom_fields_values") or []
                        if str(x.get("field_id")) == str(fid)), None)
         if actual is None:
+            if (order is not None and item["field_id"] == FIELDS["comment"]
+                    and known_integration_text(FIELDS["comment"], "", str(item["values"][0].get("value") or ""), order)):
+                lead.setdefault("_migration_text_normalizations", []).append(fid)
+                continue
             raise Stop(f"Поле amo {fid} отсутствует после записи")
         def normalized_values(field_id: int, values: list[dict]) -> list[tuple[str, str]]:
             result = []
@@ -1281,6 +1303,9 @@ def validate_lead(lead: dict, contact_id: str, expected_payload: dict) -> dict:
                         result.append(("value", str(raw_value)))
             return result
         if normalized_values(fid, actual.get("values") or []) != normalized_values(fid, item.get("values") or []):
+            if order is not None and known_integration_text(fid, field(lead, fid), str(item["values"][0].get("value") or ""), order):
+                lead.setdefault("_migration_text_normalizations", []).append(fid)
+                continue
             raise Stop(f"Значение поля amo {fid} не совпало с планом")
     if int(lead.get("created_at") or 0) != expected_payload["created_at"]:
         raise Stop("Дата создания сделки не совпала с датой заказа")
@@ -1457,6 +1482,9 @@ def create_entity(amo: lib.Amo, journal: dict, oid: str, row: dict, kind: str, p
             _set_entry(journal, oid, **{kind + "_id": result})
             return result
         found = exact_contacts(amo, row.get("phone", ""), row.get("email", "")) if kind == "contact" else exact_leads(amo, oid)
+        if len(found) > 1:
+            quarantine(journal, oid, row, "MULTIPLE_ENTITIES_AFTER_WRITE")
+            raise Stop("MULTIPLE_ENTITIES_AFTER_WRITE")
         if len(found) == 1:
             result = str(found[0]["id"])
             _set_entry(journal, oid, **{kind + "_id": result}, recovered_after_post=True)
@@ -1769,6 +1797,7 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
         raise RowDeferred("SOURCE_CHANGED_BEFORE_DEAL_CREATION")
     if ms_link(fresh) or exact_leads(amo, oid):
         raise RowDeferred("LINK_OR_LEAD_APPEARED_BEFORE_CREATION")
+    data.setdefault("references", {})
     row["optional_fields"] = optional_fields({**data, **again["related_finance"]}, fresh, row, ms)
     row.pop("related_finance", None)
     _set_entry(journal, oid, source_row=row)
@@ -1786,10 +1815,12 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
                    full_data: dict | None = None) -> dict:
     result = {"checked_at": datetime.now(TZ).isoformat(timespec="seconds"), "checked": 0,
               "ok": 0, "issues": [], "source_drift": [], "identity_differences": [],
-              "technical_manager": 0, "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
+              "technical_manager": 0, "integration_text_normalizations": 0,
+              "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
     mss = ms_session(ms)
     indexes = {key: {str(x["id"]): x for x in full_data[key]} for key in ("orders", "leads", "contacts")} if full_data else {}
     current_returns = return_map(full_data) if full_data else {}
+    phone_index, email_index = all_contacts_index(full_data["contacts"]) if full_data else ({}, {})
     uuid_matches = defaultdict(dict)
     if full_data:
         for lead in full_data["leads"]:
@@ -1813,7 +1844,7 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
                 result["issues"].append({"order_id": oid, "reason": "VERIFIED_ENTITY_NOT_IN_FULL_INDEX"})
                 continue
             try:
-                validate_lead(lead, cid, entry["lead_payload"])
+                validate_lead(lead, cid, entry["lead_payload"], order)
             except Stop as exc:
                 result["issues"].append({"order_id": oid, "reason": str(exc)})
                 continue
@@ -1836,6 +1867,11 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
                 result["issues"].append(difference)
             else:
                 result["identity_differences"].append(difference)
+        if oid in journal.get("run_attempts", {}).get(journal.get("active_run"), []):
+            matches_now = ({str(c["id"]) for c in exact_contacts(amo, row.get("phone", ""), row.get("email", ""))}
+                           if full_data is None else set(phone_index.get(row.get("phone"), set())) | set(email_index.get(row.get("email"), set())))
+            if matches_now != {cid}:
+                result["issues"].append({"order_id": oid, "reason": "CREATED_CONTACT_NOT_UNIQUE"})
         if full_data is not None:
             ret_state, returned, ret_reason = return_state(order, current_returns.get(oid, []))
             if amount(order.get("sum")) - returned != net or ret_state == "deferred":
@@ -1845,6 +1881,7 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
         result["budget_rubles"] += lead["price"]
         result["rounding_kopecks"] += lead["price"] * 100 - net
         result["technical_manager"] += int(lead.get("responsible_user_id") == MAXIM)
+        result["integration_text_normalizations"] += int(bool(lead.get("_migration_text_normalizations")))
         result["ok"] += 1
     atomic_json(REPORT, result)
     if result["issues"]:
@@ -1885,6 +1922,22 @@ def prepare_night(ms: lib.MS, amo: lib.Amo, data: dict, journal: dict, apply_rec
     if PLAN.exists() and not journal.get("legacy_plan_rows"):
         old = json.loads(PLAN.read_text(encoding="utf-8"))
         journal["legacy_plan_rows"] = old["rows"]
+    # The old unversioned audit cache is reusable only when the entire source
+    # fingerprint still equals its saved, audited plan. Never reuse by UUID alone.
+    legacy = {r["order_id"]: r for r in journal.get("legacy_plan_rows", [])}
+    audit_cache = status_audit_cache_load()
+    upgraded = 0
+    for order in data["orders"]:
+        oid = str(order["id"])
+        fingerprint = order_hash(order)
+        key = oid + ":" + fingerprint
+        if (oid in audit_cache and key not in audit_cache
+                and legacy.get(oid, {}).get("source_hash") == fingerprint):
+            audit_cache[key] = audit_cache[oid]
+            upgraded += 1
+    if upgraded:
+        status_audit_cache_save(audit_cache)
+        print(f"История статусов: {upgraded} подтверждений привязано к неизменившейся версии заказа.", flush=True)
     journal.setdefault("schema_version", 2)
     journal.setdefault("plan_history", [])
     if apply_recovery:
@@ -2166,6 +2219,16 @@ def self_test() -> None:
             uid = "81b03243-1a83-11ef-0a80-01c7004e6c19"
             self.assertEqual(linked_order_id(ms_order_url(uid)), uid)
             self.assertEqual(linked_order_id("https://example.com/app/#CustomerOrder/edit?id=" + uid), "")
+
+        def test_only_exact_integration_text_is_accepted(self):
+            order = {"name": "123", "moment": "2026-10-01 12:00:00", "description": "Исходный комментарий",
+                     "positions": {"rows": [{"quantity": 1, "assortment": {"name": "Товар"}}]}}
+            actual = "Заказ № 123 от 01.10.2026:\\n1. Товар, 1 шт"
+            self.assertTrue(known_integration_text(929063, actual, "Товар × 1: 100.00 ₽", order))
+            self.assertFalse(known_integration_text(929063, actual.replace("1 шт", "2 шт"), "", order))
+            expected = "Исходный комментарий\n[Исторический импорт МС→amo 2026-10-21]"
+            self.assertTrue(known_integration_text(929071, "Исходный комментарий", expected, order))
+            self.assertFalse(known_integration_text(929071, "Иной комментарий", expected, order))
 
         def test_dashboard_import_is_not_messenger_inquiry(self):
             import collect_dashboard as dashboard

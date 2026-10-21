@@ -615,25 +615,32 @@ AMO_CONVERSION_SOURCES = {
 }
 
 
-def verified_historical_ms_import(lead: dict) -> bool:
+def verified_ms_order_origin(lead: dict) -> bool:
     uid = str(lead.get('ms_id') or '').casefold()
     link = urlsplit(str(lead.get('ms_url') or ''))
     fragment = link.fragment.split('?', 1)
     linked_uid = (parse_qs(fragment[1]).get('id') or [''])[0].casefold() if len(fragment) == 2 else ''
-    return bool(lead.get('historical_ms_import') and lead.get('ms_source') == 'Из МойСклад'
+    explicit_inquiry = lead.get('source_id') in {23495409, 23495411, 23496967}
+    return bool((not explicit_inquiry or lead.get('historical_ms_import')) and lead.get('ms_source') == 'Из МойСклад'
                 and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', uid)
                 and link.hostname == 'online.moysklad.ru' and link.scheme == 'https'
                 and fragment[0].casefold() == 'customerorder/edit' and linked_uid == uid)
 
 
+def verified_historical_ms_import(lead: dict) -> bool:
+    return bool(verified_ms_order_origin(lead) and lead.get('historical_ms_import'))
+
+
 def get_amo_conversion_events(leads: list[dict]) -> dict:
     """Cache all account status/create events so later pipeline entrants retain history."""
-    leads = [lead for lead in leads if not verified_historical_ms_import(lead)]
+    leads = [lead for lead in leads if not verified_ms_order_origin(lead)]
     amo = lib.Amo()
     until = int(time.time())
     since = min((l['created_at'] for l in leads), default=until) - 1
     path = Path(os.environ.get('DASHBOARD_AMO_HISTORY', str(GAPS.parent / 'amo-conversion-history.local.json')))
     old = json.loads(path.read_text()) if path.exists() else {}
+    if old.get('version') == 1:
+        since = min(since, old.get('from', since))
     reuse = old.get('version') == 1 and old.get('from', until) <= since and old.get('to', 0) <= until
     if reuse and 'known_ids' in old:
         known = set(old['known_ids'])
@@ -686,8 +693,8 @@ def get_amo_conversion_events(leads: list[dict]) -> dict:
 def amo_conversion_path(lead: dict, events: list[dict]) -> dict:
     flow, source = AMO_CONVERSION_SOURCES.get(lead.get('source_id'), ('unknown', 'Источник не определён'))
     confirmed_import = verified_historical_ms_import(lead)
-    if confirmed_import:
-        flow, source = 'orders', 'МойСклад (исторический импорт)'
+    if verified_ms_order_origin(lead):
+        flow, source = 'orders', 'МойСклад (исторический импорт)' if confirmed_import else 'МойСклад'
     row = {'id': lead['id'], 'number': str(lead['id']), 'date': lead['created'],
            'source_id': lead.get('source_id'), 'source': source, 'flow': flow,
            'path': [], 'events': [], 'complete': False, 'reason': ''}
