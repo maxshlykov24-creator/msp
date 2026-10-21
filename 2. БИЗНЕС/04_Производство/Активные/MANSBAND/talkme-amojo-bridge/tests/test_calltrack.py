@@ -564,6 +564,23 @@ def test_14_our_visit_id_expands_and_foreign_stays():
         db.close()
 
 
+def test_chat_stale_visit_does_not_mix_campaigns():
+    from app.calltrack.matching import resolve_our_visit
+    from app.calltrack.models import Visit
+    with _db() as db:
+        db.add(Visit(id=900000123, utm_source="yandex", utm_medium="cpc",
+                     utm_campaign="old", utm_content="old_ad", utm_term="old_term",
+                     yclid="old_click", is_paid=True))
+        db.commit()
+        current = {"roistat": "900000123", "utm_source": "yandex",
+                   "utm_medium": "cpc", "utm_campaign": "new"}
+        resolved = resolve_our_visit(db, current)
+        assert resolved == {"utm_source": "yandex", "utm_medium": "cpc", "utm_campaign": "new"}
+        compatible = resolve_our_visit(db, {"roistat": "900000123", "utm_campaign": "old"})
+        assert compatible["utm_content"] == "old_ad"
+        assert "roistat" not in compatible
+
+
 def test_15_origin_rate_limit_and_off_mode(client):
     from app.config import get_settings
 

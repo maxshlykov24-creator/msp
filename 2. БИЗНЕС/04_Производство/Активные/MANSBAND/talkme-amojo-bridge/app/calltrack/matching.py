@@ -143,6 +143,12 @@ def resolve_our_visit(db: Session, tracking: Optional[dict[str, Any]]) -> dict[s
     visit = db.get(Visit, vid)
     if visit is None:
         return out
+    # Виджет может прислать прежнюю cookie вместе с UTM нового перехода.
+    # Такой визит не является источником недостающих меток текущего чата.
+    out.pop("roistat", None)
+    if any(out.get(key) and str(out[key]) != str(getattr(visit, key) or "")
+           for key in UTM_ATTRS):
+        return out
     for key in UTM_ATTRS:
         if not out.get(key):
             val = getattr(visit, key, None)
