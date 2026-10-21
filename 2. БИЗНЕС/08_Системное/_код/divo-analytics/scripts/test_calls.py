@@ -497,17 +497,67 @@ class QueueTest(unittest.TestCase):
         self.db.refresh(r);self.assertEqual(r.state,"analysis_ready")
 
     def test_summary_excludes_calibration_and_unknown_from_named_manager(self):
-        r=self.call();r.state="complete";r.is_scored=True;r.score=50;r.analysis=analysis();self.db.commit()
+        r=self.reportable();r.is_scored=True;r.score=50;self.db.commit()
         c=call_worker.upsert_note(self.db,self.note(id=2,uniq="calibration"),"lead",100,[100],calibration=True)
-        c.state="complete";c.is_scored=True;c.score=100;c.analysis=analysis();self.db.commit()
+        c.state="complete";c.is_scored=True;c.score=100;c.analysis=analysis();c.transcript=TRANSCRIPT;c.recording_url=r.recording_url;self.db.commit()
         with patch.object(calls_api,"SessionLocal",self.factory):
             s=calls_api.summary(calibration=False);self.assertEqual(s["scored"],1);self.assertEqual(s["average_score"],50)
             self.assertEqual(calls_api.summary()["total"],2)
             self.assertIsNone(s["managers"][0]["manager_id"])
             self.assertEqual(calls_api.summary(manager="13334858")["total"],0)
 
+    def test_only_finished_recorded_calls_of_at_least_30_seconds_are_published(self):
+        from fastapi import HTTPException
+        r=self.reportable();r.duration_sec=30;self.db.commit()
+        cases=[({},True),({'duration_sec':29},False),({'recording_url':''},False),
+               ({'recording_url':'   '},False),({'state':'processing'},False),
+               ({'state':'analysis_ready'},False),({'state':'analyzing'},False),
+               ({'state':'needs_review'},False),({'state':'error'},False),
+               ({'transcript':{}},False),({'analysis':{}},False),
+               ({'validation_errors':['bad_quote']},False),({'state':'insufficient'},True)]
+        with patch.object(calls_api,'SessionLocal',self.factory):
+            for changes,visible in cases:
+                r.duration_sec=30;r.recording_url='https://example.invalid/audio';r.state='complete'
+                r.analysis=analysis();r.transcript=TRANSCRIPT;r.validation_errors=[]
+                for key,value in changes.items():setattr(r,key,value)
+                self.db.commit()
+                with self.subTest(changes=changes):
+                    self.assertEqual(calls_api.summary()['total'],int(visible))
+                    self.assertEqual(calls_api.calls(limit=20,offset=0)['total'],int(visible))
+                    if visible:self.assertEqual(calls_api.detail(r.id)['id'],r.id)
+                    else:
+                        with self.assertRaises(HTTPException) as e:calls_api.detail(r.id)
+                        self.assertEqual(e.exception.status_code,404)
+                        with patch.object(calls_api,'download_audio') as download:
+                            with self.assertRaises(HTTPException):calls_api.recording(r.id,SimpleNamespace(headers={}))
+                            download.assert_not_called()
+            self.assertEqual(len(list(self.db.scalars(select(CallRecord)))),1)
+
+    def test_short_calls_are_not_paid_or_sent_and_late_duration_can_reactivate(self):
+        r=self.reportable();r.duration_sec=29;r.state='ready';self.db.commit()
+        settings.calls_process_enabled=True;settings.nexara_api_key='test';settings.calls_recording_hosts='example.invalid'
+        with patch.object(call_worker,'NexaraClient') as nx,patch.object(call_worker,'download_audio') as download:
+            call_worker.process_calls(SimpleNamespace());nx.return_value.submit.assert_not_called();download.assert_not_called()
+        self.db.refresh(r);self.assertEqual(r.state,'ignored_short')
+        note=self.note(link=r.recording_url);note['params']['duration']=30
+        call_worker.upsert_note(self.db,note,'lead',100,[100]);self.db.commit()
+        self.assertEqual(r.state,'analysis_ready')
+        r.state='complete';r.duration_sec=29;self.db.commit()
+        with patch.object(call_worker,'deliver_telegram') as send:
+            call_worker.deliver_calls(SimpleNamespace());send.assert_not_called()
+            r.duration_sec=30;self.db.commit();call_worker.deliver_calls(SimpleNamespace());send.assert_called_once()
+
+    def test_already_paid_short_job_is_collected_without_analysis(self):
+        settings.calls_analysis_enabled=True
+        r=self.call();r.duration_sec=29;r.nexara_job_id='paid';r.state='processing';self.db.commit()
+        with patch.object(call_worker,'NexaraClient') as nx:
+            nx.return_value.poll.return_value={'status':'complete','result':TRANSCRIPT}
+            call_worker.process_calls(SimpleNamespace())
+            nx.return_value.poll.assert_called_once_with('paid');nx.return_value.submit.assert_not_called()
+        self.db.refresh(r);self.assertEqual(r.state,'ignored_short');self.assertEqual(r.transcript,TRANSCRIPT)
+
     def test_criterion_summary_excludes_na_and_unvalidated_results(self):
-        r=self.call();r.state="complete";r.is_scored=True;r.score=100;r.analysis=analysis()
+        r=self.reportable();r.is_scored=True;r.score=100
         r.analysis["criteria"][4]["status"]="na"
         c=call_worker.upsert_note(self.db,self.note(id=2,uniq="review"),"lead",100,[100])
         c.state="needs_review";c.analysis=analysis();self.db.commit()
@@ -521,13 +571,14 @@ class QueueTest(unittest.TestCase):
     def test_status_filter_applies_before_pagination_and_grade_sort(self):
         for i in range(1,5):
             r=call_worker.upsert_note(self.db,self.note(id=i,uniq=f"filter-{i}"),"lead",100,[100])
-            r.state="needs_review" if i<3 else "complete"
+            r.state="insufficient" if i<3 else "complete"
+            r.analysis=analysis();r.transcript=TRANSCRIPT;r.recording_url="https://example.invalid/audio"
             r.is_scored=i>=3;r.score=(100 if i==3 else 50) if i>=3 else None
         self.db.commit()
         with patch.object(calls_api,"SessionLocal",self.factory):
-            p=calls_api.calls(view="review",limit=1,offset=1)
+            p=calls_api.calls(view="unscored",limit=1,offset=1)
             self.assertEqual(p["total"],2);self.assertEqual(len(p["items"]),1)
-            self.assertEqual(p["items"][0]["state"],"needs_review")
+            self.assertEqual(p["items"][0]["state"],"insufficient")
             p=calls_api.calls(view="scored",sort="score_asc",limit=25,offset=0)
             self.assertEqual([r["score"] for r in p["items"]],[50,100])
 
@@ -551,7 +602,7 @@ class QueueTest(unittest.TestCase):
 
     def test_msk_midnight_bounds(self):
         from datetime import date
-        r=self.call();r.occurred_at=int(datetime(2026,10,7,21,0,tzinfo=timezone.utc).timestamp());self.db.commit()
+        r=self.reportable();r.occurred_at=int(datetime(2026,10,7,21,0,tzinfo=timezone.utc).timestamp());self.db.commit()
         with patch.object(calls_api,"SessionLocal",self.factory):
             self.assertEqual(calls_api.summary(start=date(2026,10,7),end=date(2026,10,7))["total"],0)
             self.assertEqual(calls_api.summary(start=date(2026,10,8),end=date(2026,10,8))["total"],1)
