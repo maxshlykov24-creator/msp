@@ -60,6 +60,48 @@ def _save_state(db: Session, state: dict[str, Any]) -> None:
         row.updated_at = dt.datetime.now(timezone.utc)
 
 
+def save_repeat_call(db: Session, call: CallEvent, lead_id: int, token: str) -> None:
+    """Compact attribution snapshot committed before CRM; retries reuse it."""
+    from app import amo_v4
+    result = dict(call.result or {})
+    snapshot = result.get("repeat_snapshot")
+    if snapshot is None:
+        attr = attribute_call(db, call)
+        snapshot = {
+            "tracking": {k: str(v)[:2048 if k == "utm_referrer" else 255]
+                         for k, v in attr.tracking.items() if v},
+            "tech_source": attr.tech_source,
+            "disputed": attr.disputed,
+        }
+        call.visit_id = attr.visit.id if attr.visit else None
+        call.number_kind = attr.kind
+        call.lead_id = lead_id
+        result.update(repeat_snapshot=snapshot, repeat_note_pending=True)
+        call.result = result
+        db.commit()
+    marker = f"[ct-repeat:{call.id}]"
+    lines = ["Повторный звонок", f"Время: {call.started_at.astimezone(MSK):%d.%m.%Y %H:%M:%S} МСК",
+             f"Номер набора: +7{call.called}"]
+    if call.visit_id:
+        lines.append(f"Визит: {call.visit_id}")
+    if snapshot.get("tech_source"):
+        lines.append(f"Источник: {snapshot['tech_source']}")
+    if snapshot.get("disputed"):
+        lines.append("Привязка к визиту спорная")
+    tracking = snapshot["tracking"]
+    lines.extend(f"{k}: {v}" for k, v in tracking.items())
+    if not tracking:
+        lines.append("Метки визита не найдены")
+    lines.append(marker)
+    if not amo_v4.lead_has_note_text(lead_id=call.lead_id, needle=marker, access_token=token):
+        amo_v4.add_lead_note(lead_id=call.lead_id, text="\n".join(lines),
+                             access_token=token, raise_on_error=True)
+    call.status = "repeat"
+    call.result = {**result, "repeat": True, "repeat_note_pending": False,
+                   "tech_source": snapshot.get("tech_source")}
+    db.commit()
+
+
 def run_reconcile_once(db: Optional[Session] = None) -> dict[str, int]:
     own = db is None
     if db is None:
@@ -81,6 +123,10 @@ def run_reconcile_once(db: Optional[Session] = None) -> dict[str, int]:
                 continue  # Отдельные сгруппированные сигналы monitor_once.
             try:
                 token = token or get_valid_access_token(db)
+                if (call.result or {}).get("repeat_note_pending") and call.lead_id:
+                    save_repeat_call(db, call, call.lead_id, token)
+                    counts["repeat"] += 1
+                    continue
                 if call.status == "retry" and call.lead_id:
                     lead = amo_v4.get_lead(lead_id=call.lead_id, access_token=token, settings=settings)
                     apply_call(db, call, call.lead_id, lead, token)
@@ -102,15 +148,7 @@ def run_reconcile_once(db: Optional[Session] = None) -> dict[str, int]:
                         if started - timedelta(minutes=2) <= created <= started + timedelta(minutes=settings.ct_call_window_minutes):
                             apply_call(db, call, int(lead["id"]), lead, token)
                         else:
-                            attr = attribute_call(db, call)
-                            amo_v4.add_lead_note(lead_id=int(lead["id"]),
-                                text=f"повторный звонок, источник {attr.tech_source or 'не определён'}",
-                                access_token=token, settings=settings, raise_on_error=True)
-                            call.status = "repeat"
-                            call.lead_id = int(lead["id"])
-                            call.number_kind = attr.kind
-                            call.visit_id = attr.visit.id if attr.visit else None
-                            call.result = {"repeat": True, "tech_source": attr.tech_source}
+                            save_repeat_call(db, call, int(lead["id"]), token)
                             counts["repeat"] += 1
                 elif kind == "no_lead":
                     call.status = "no_lead"

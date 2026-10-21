@@ -729,6 +729,46 @@ def test_crm_error_persists_and_reconcile_retries(monkeypatch):
         assert len(notes) == 1
 
 
+def test_repeat_tracking_survives_crm_timeout_without_duplicate(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app import amo_v4, tokens
+    from app.calltrack import reconcile
+    from app.calltrack.matching import CallAttribution
+    from app.calltrack.models import CallEvent, Visit
+    monkeypatch.setattr(tokens, "get_valid_access_token", lambda db: "test")
+    notes = []
+    monkeypatch.setattr(amo_v4, "lead_has_note_text", lambda **kw: any(kw["needle"] in n for n in notes))
+    def accepted_but_timeout(**kw):
+        notes.append(kw["text"])
+        raise TimeoutError("accepted but response lost")
+    monkeypatch.setattr(amo_v4, "add_lead_note", accepted_but_timeout)
+    with _db() as db:
+        visit = Visit(utm_source="yandex", utm_campaign="repeat-test")
+        db.add(visit)
+        db.flush()
+        attr = CallAttribution({"utm_source": "yandex", "utm_campaign": "repeat-test"}, None, visit, False, "pool")
+        monkeypatch.setattr(reconcile, "attribute_call", lambda *args: attr)
+        call = CallEvent(call_id="repeat-test", called="9311111111", caller="9000000000",
+                         started_at=datetime.now(timezone.utc) - timedelta(minutes=6), status="new")
+        db.add(call)
+        db.commit()
+        cid = call.id
+        with pytest.raises(TimeoutError):
+            reconcile.save_repeat_call(db, call, 123, "test")
+        db.rollback()
+    with _db() as db:
+        call = db.get(CallEvent, cid)
+        assert call.result["repeat_snapshot"]["tracking"]["utm_campaign"] == "repeat-test"
+        monkeypatch.setattr(reconcile, "attribute_call", lambda *args: pytest.fail("must reuse snapshot"))
+        monkeypatch.setattr(amo_v4, "patch_lead_fields", lambda **kw: pytest.fail("must not change lead fields"))
+        assert reconcile.run_reconcile_once(db)["repeat"] == 1
+        assert call.status == "repeat"
+        assert not call.result["repeat_note_pending"]
+        assert len(notes) == 1
+        assert "utm_source: yandex" in notes[0]
+        assert "utm_campaign: repeat-test" in notes[0]
+
+
 def test_summary_delivery_is_retried(monkeypatch):
     from datetime import datetime, timezone
     from app.calltrack import reconcile
