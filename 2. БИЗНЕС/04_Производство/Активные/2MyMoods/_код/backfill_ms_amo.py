@@ -339,9 +339,17 @@ def ms_order_url(order_id: str) -> str:
 def linked_order_id(url: str) -> str:
     try:
         u = urllib.parse.urlsplit(url.strip())
+        if u.scheme != "https" or u.hostname not in {"online.moysklad.ru", "api.moysklad.ru"}:
+            return ""
+        if u.hostname == "api.moysklad.ru" and "/entity/customerorder/" in u.path:
+            uid = u.path.rstrip("/").rsplit("/", 1)[-1].lower()
+            return uid if re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", uid) else ""
         frag = u.fragment
+        if not frag.casefold().startswith("customerorder/edit?"):
+            return ""
         query = frag.split("?", 1)[1] if "?" in frag else ""
-        return (urllib.parse.parse_qs(query).get("id") or [""])[0].lower()
+        uid = (urllib.parse.parse_qs(query).get("id") or [""])[0].lower()
+        return uid if re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", uid) else ""
     except Exception:
         return ""
 
@@ -1723,7 +1731,7 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
 def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] | None = None,
                    full_data: dict | None = None) -> dict:
     result = {"checked_at": datetime.now(TZ).isoformat(timespec="seconds"), "checked": 0,
-              "ok": 0, "issues": [], "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
+              "ok": 0, "issues": [], "source_drift": [], "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
     mss = ms_session(ms)
     indexes = {key: {str(x["id"]): x for x in full_data[key]} for key in ("orders", "leads", "contacts")} if full_data else {}
     seen = set()
@@ -1737,6 +1745,8 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
         seen.add(lid)
         if full_data is not None:
             order, lead, contact = indexes["orders"].get(oid), indexes["leads"].get(lid), indexes["contacts"].get(cid)
+            if not order:
+                order = fresh_order(mss, oid, [0.0])
             if not order or not lead or not contact:
                 result["issues"].append({"order_id": oid, "reason": "VERIFIED_ENTITY_NOT_IN_FULL_INDEX"})
                 continue
@@ -1758,6 +1768,11 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
             raise Stop("VERIFIED_UUID_NOT_UNIQUE")
         row = entry.get("source_row") or next((r for r in journal.get("legacy_plan_rows", []) if r["order_id"] == oid), {})
         net = int(row.get("net_kopecks", entry.get("net_kopecks", 0)))
+        if full_data is not None:
+            ret_state, returned, ret_reason = return_state(order, return_map(full_data).get(oid, []))
+            if amount(order.get("sum")) - returned != net or ret_state == "deferred":
+                result["source_drift"].append({"order_id": oid, "reason": ret_reason or "SOURCE_AMOUNT_CHANGED",
+                                             "imported_net_kopecks": net, "current_net_kopecks": amount(order.get("sum")) - returned})
         result["net_kopecks"] += net
         result["budget_rubles"] += lead["price"]
         result["rounding_kopecks"] += lead["price"] * 100 - net
@@ -1814,7 +1829,7 @@ def prepare_night(ms: lib.MS, amo: lib.Amo, data: dict, journal: dict, apply_rec
         if entry.get("status") in {"DEFERRED", "QUARANTINED"}:
             row.update(category="DEFERRED", reason=entry.get("reason", "PRIOR_UNRESOLVED_ATTEMPT"))
         elif entry.get("status") == "VERIFIED":
-            if row["category"] not in {"EXISTS_BACKLINK", "EXISTS_AMO_ID"}:
+            if row["category"] == "CREATE":
                 raise Stop("PREVIOUSLY_VERIFIED_ORDER_NO_LONGER_LINKED")
         if identity_blocked(journal, row) and row["category"] == "CREATE":
             row.update(category="DEFERRED", reason="IDENTITY_HAS_UNRESOLVED_WRITE")
