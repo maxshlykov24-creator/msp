@@ -1224,6 +1224,10 @@ def confirm_lead(amo: lib.Amo, lead_id: str, order: dict, row: dict,
     status, lead = amo_read(amo, f"/api/v4/leads/{lead_id}?with=contacts")
     if status != 200 or str(lead.get("id")) != str(lead_id):
         raise Stop("Сделка не перечиталась после записи")
+    return validate_lead(lead, contact_id, expected_payload)
+
+
+def validate_lead(lead: dict, contact_id: str, expected_payload: dict) -> dict:
     if int(lead.get("pipeline_id") or 0) != PIPELINE or int(lead.get("status_id") or 0) != WON:
         raise Stop("Новая сделка не оказалась в целевой воронке/этапе")
     if int(lead.get("price") or 0) != expected_payload["price"]:
@@ -1714,10 +1718,12 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
     return True
 
 
-def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] | None = None) -> dict:
+def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] | None = None,
+                   full_data: dict | None = None) -> dict:
     result = {"checked_at": datetime.now(TZ).isoformat(timespec="seconds"), "checked": 0,
               "ok": 0, "issues": [], "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
     mss = ms_session(ms)
+    indexes = {key: {str(x["id"]): x for x in full_data[key]} for key in ("orders", "leads", "contacts")} if full_data else {}
     seen = set()
     for oid, entry in journal["rows"].items():
         if entry.get("status") != "VERIFIED" or (only_ids is not None and oid not in only_ids):
@@ -1727,14 +1733,25 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
         if not lid or lid in seen:
             raise Stop("JOURNAL_DUPLICATE_LEAD_ID")
         seen.add(lid)
-        order = fresh_order(mss, oid, [0.0])
-        lead = confirm_lead(amo, lid, order, {}, cid, entry["lead_payload"])
-        st, contact = amo_read(amo, f"/api/v4/contacts/{cid}")
-        if st != 200:
-            raise Stop("VERIFIED_CONTACT_NOT_READABLE")
+        if full_data is not None:
+            order, lead, contact = indexes["orders"].get(oid), indexes["leads"].get(lid), indexes["contacts"].get(cid)
+            if not order or not lead or not contact:
+                result["issues"].append({"order_id": oid, "reason": "VERIFIED_ENTITY_NOT_IN_FULL_INDEX"})
+                continue
+            try:
+                validate_lead(lead, cid, entry["lead_payload"])
+            except Stop as exc:
+                result["issues"].append({"order_id": oid, "reason": str(exc)})
+                continue
+        else:
+            order = fresh_order(mss, oid, [0.0])
+            lead = confirm_lead(amo, lid, order, {}, cid, entry["lead_payload"])
+            st, contact = amo_read(amo, f"/api/v4/contacts/{cid}")
+            if st != 200:
+                raise Stop("VERIFIED_CONTACT_NOT_READABLE")
         if ms_link(order) != amo_lead_url(amo, lid):
             raise Stop("VERIFIED_BACKLINK_MISMATCH")
-        matches = exact_leads(amo, oid)
+        matches = [l for l in full_data["leads"] if field(l, FIELDS["ms_id"]).casefold() == oid or oid in amo_links(l)] if full_data is not None else exact_leads(amo, oid)
         if len(matches) != 1 or str(matches[0]["id"]) != lid:
             raise Stop("VERIFIED_UUID_NOT_UNIQUE")
         row = entry.get("source_row") or next((r for r in journal.get("legacy_plan_rows", []) if r["order_id"] == oid), {})
@@ -1744,6 +1761,8 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
         result["rounding_kopecks"] += lead["price"] * 100 - net
         result["ok"] += 1
     atomic_json(REPORT, result)
+    if result["issues"]:
+        raise Stop(f"Полная сверка обнаружила расхождения: {len(result['issues'])}; подробности в защищённом отчёте")
     return result
 
 
@@ -1822,6 +1841,7 @@ def night_run(args) -> dict:
     result = {"backup": backup, "counts": plan["counts"], "processed": 0, "deferred": 0}
     if args.prepare or not args.apply:
         return result
+    result["previous_verification"] = verify_journal(ms, amo, journal, full_data=data)
     candidates = sorted((r for r in plan["rows"] if r["category"] == "CREATE"), key=lambda r: (r.get("moment", ""), r["order_id"]))
     roster = get_roster()
     limit = args.max_orders if args.max_orders is not None else len(candidates)
@@ -1867,9 +1887,9 @@ def night_run(args) -> dict:
         if created_ids:
             verify_journal(ms, amo, journal, created_ids)
         print(f"Партия проверена. Новых сделок: {result['processed']}; отложено: {result['deferred']}.", flush=True)
-    result["verification"] = verify_journal(ms, amo, journal, created_ids if args.max_orders is not None else None)
     # A fresh complete index proves no processed UUID becomes CREATE again.
     after, _ = collect_current(ms, amo, strict_order_snapshot=False)
+    result["verification"] = verify_journal(ms, amo, journal, full_data=after)
     final_plan = prepare_night(ms, amo, after, journal, apply_recovery=True)
     atomic_json(RAW_CACHE, after)
     result["counts_after"] = final_plan["counts"]
@@ -2023,7 +2043,9 @@ def main() -> None:
         if args.verify:
             if args.apply or args.night_run or args.prepare:
                 raise Stop("--verify является отдельной проверкой без записи в CRM")
-            print(json.dumps(verify_journal(lib.MS(), assign_shift.amo_client(), journal_load()), ensure_ascii=False))
+            ms, amo = lib.MS(), assign_shift.amo_client()
+            data, _ = collect_current(ms, amo, strict_order_snapshot=False)
+            print(json.dumps(verify_journal(ms, amo, journal_load(), full_data=data), ensure_ascii=False))
             return
         if args.night_run or args.prepare:
             if args.prepare and args.apply:
