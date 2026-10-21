@@ -373,13 +373,13 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             continue
         me = str(room.get("me") or "")
         if is_out(last, me):
-            if store.is_paused(store_id(cid)):
-                from bot import crm
+            from bot import crm
 
-                crm.on_foreign_out(
-                    store_id(cid),
-                    {"id": last.get("id"), "created": last_at},
-                )
+            crm.on_foreign_out(store_id(cid), {
+                "id": last.get("id"), "created": last_at,
+                "direction": "out", "type": "text",
+                "content": {"text": str((last.get("payload") or {}).get("value") or "")},
+            })
             cursor[cid] = max(seen, last_at)
             changed = True
             continue
@@ -404,6 +404,15 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             at = created_of(msg)
             max_at = max(max_at, at)
             if at <= seen:
+                continue
+            if is_out(msg, me):
+                from bot import crm
+
+                crm.on_foreign_out(store_id(cid), {
+                    "id": msg.get("id"), "created": at,
+                    "direction": "out", "type": "text",
+                    "content": {"text": str((msg.get("payload") or {}).get("value") or "")},
+                })
                 continue
             text = message_text(msg, me)
             if text:
