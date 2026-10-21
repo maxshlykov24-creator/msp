@@ -542,7 +542,7 @@ class QueueTest(unittest.TestCase):
         note=self.note(link=r.recording_url);note['params']['duration']=30
         call_worker.upsert_note(self.db,note,'lead',100,[100]);self.db.commit()
         self.assertEqual(r.state,'analysis_ready')
-        r.state='complete';r.duration_sec=29;self.db.commit()
+        r.state='complete';r.category='primary_inbound';r.duration_sec=29;self.db.commit()
         with patch.object(call_worker,'deliver_telegram') as send:
             call_worker.deliver_calls(SimpleNamespace());send.assert_not_called()
             r.duration_sec=30;self.db.commit();call_worker.deliver_calls(SimpleNamespace());send.assert_called_once()
@@ -558,7 +558,7 @@ class QueueTest(unittest.TestCase):
 
     def test_criterion_summary_excludes_na_and_unvalidated_results(self):
         r=self.reportable();r.is_scored=True;r.score=100
-        r.analysis["criteria"][4]["status"]="na"
+        a=copy.deepcopy(r.analysis);a["criteria"][4]["status"]="na";r.analysis=a
         c=call_worker.upsert_note(self.db,self.note(id=2,uniq="review"),"lead",100,[100])
         c.state="needs_review";c.analysis=analysis();self.db.commit()
         with patch.object(calls_api,"SessionLocal",self.factory):
