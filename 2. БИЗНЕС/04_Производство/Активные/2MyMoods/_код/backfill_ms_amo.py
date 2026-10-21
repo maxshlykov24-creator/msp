@@ -714,6 +714,7 @@ def deal_custom_fields(order: dict, row: dict, composition: str, delivery: int,
     notes.append(f"Дата создания и статус: дата заказа МойСклад {order.get('moment')}; этап установлен напрямую по плану миграции.")
     notes.append(f"Дата закрытия: {row['close_moment']} ({row['close_basis']}).")
     notes.append(f"Ответственный: {manager_reason}.")
+    notes.extend(row.get("related_documents") or [])
     note = "\n".join(notes)
     if len(note) > 60000:
         raise Stop("Комментарий заказа превышает лимит поля, заказ отложен")
@@ -1463,6 +1464,8 @@ def create_entity(amo: lib.Amo, journal: dict, oid: str, row: dict, kind: str, p
         _set_entry(journal, oid, status=intent, **{kind + "_payload": payload},
                    write_started_at=datetime.now(TZ).isoformat(timespec="seconds"))
         code, body, error = api_write(amo_session(amo), "POST", amo.base + "/api/v4/" + plural, [payload])
+        _set_entry(journal, oid, last_write_http=code, last_write_error=error,
+                   last_validation_errors=body.get("validation-errors") or body.get("validation_errors"))
         embedded = (body.get("_embedded") or {}).get(plural) or []
         if code in (200, 201) and len(embedded) == 1 and embedded[0].get("id"):
             result = str(embedded[0]["id"])
@@ -1550,6 +1553,102 @@ def recover_pending(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict) -> None
             _set_entry(journal, oid, status="PLANNED", source_row=row)
 
 
+def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict]:
+    """Only existing fields and exact enum ID/code/name correspondences."""
+    schema, result, omissions = data.get("amo_fields", {}), [], []
+    mss = ms_session(ms)
+    references = data.setdefault("references", {})
+
+    def ref_name(ref):
+        if not isinstance(ref, dict):
+            return str(ref or "").strip()
+        if ref.get("name"):
+            return str(ref["name"])
+        href = (ref.get("meta") or {}).get("href", "")
+        if not href.startswith(lib.MS_BASE + "/entity/"):
+            return ""
+        if href not in references:
+            references[href] = api_get(mss, href)
+        return str(references[href].get("name") or "")
+
+    def add(fid: int, value, ref=None):
+        if value in (None, "") and not ref:
+            omissions.append({"field_id": fid, "reason": "SOURCE_EMPTY"})
+            return
+        meta = schema.get(str(fid))
+        if not meta:
+            omissions.append({"field_id": fid, "reason": "FIELD_ABSENT"})
+            return
+        if meta["type"] == "select":
+            uid = id_of(ref) if ref else ""
+            enums = meta.get("enums") or []
+            matches = [e for e in enums if uid and e.get("code") == uid]
+            if not matches:
+                value = ref_name(ref) if ref else value
+                matches = [e for e in enums if name_norm(e.get("value")) == name_norm(value)]
+            if len(matches) != 1:
+                omissions.append({"field_id": fid, "reason": "NO_EXACT_EXISTING_ENUM"})
+                return
+            values = [{"enum_id": matches[0]["id"]}]
+        elif meta["type"] == "date_time":
+            stamp = unix_time(value)
+            if not stamp:
+                omissions.append({"field_id": fid, "reason": "DATE_INVALID"})
+                return
+            values = [{"value": stamp}]
+        elif meta["type"] in {"text", "textarea", "tracking_data", "streetaddress", "url"}:
+            value = ref_name(ref) if ref else str(value)
+            if not value:
+                omissions.append({"field_id": fid, "reason": "REFERENCE_NAME_EMPTY"})
+                return
+            if len(value) > (60000 if meta["type"] == "textarea" else 255):
+                omissions.append({"field_id": fid, "reason": "OPTIONAL_VALUE_EXCEEDS_LIMIT"})
+                return
+            values = [{"value": value}]
+        else:
+            omissions.append({"field_id": fid, "reason": "UNSUPPORTED_FIELD_TYPE"})
+            return
+        result.append({"field_id": fid, "values": values})
+
+    av = attrs(order)
+    for fid, attr in ((928623, "6d95a799-f849-11f0-0a80-009c000b6c8a"),
+                      (928619, "6d95a996-f849-11f0-0a80-009c000b6c8b"),
+                      (928621, "6d95aa5b-f849-11f0-0a80-009c000b6c8c"),
+                      (928967, "f11cca54-ed68-11ef-0a80-084e000137c7"),
+                      (929039, lib.MS_ATTR_TRACK)):
+        add(fid, av.get(attr))
+    for fid in (928617, 928625):
+        label = schema.get(str(fid), {}).get("name")
+        source = [a.get("value") for a in order.get("attributes") or [] if a.get("name") == label]
+        add(fid, source[0] if len(source) == 1 else None)
+    for fid, key in ((929033, "organization"), (929083, "store"), (929085, "salesChannel"), (929087, "project")):
+        add(fid, None, ref=order.get(key))
+    add(929089, None, ref=(order.get("rate") or {}).get("currency"))
+    add(928931, ref_name(order.get("salesChannel")))
+    add(928941, None, ref=av.get("ed14744d-dc0d-11ef-0a80-10cd00226b06"))
+    add(928959, None, ref=av.get("ed1471ec-dc0d-11ef-0a80-10cd00226b05"))
+    add(929079, order.get("shipmentAddress"))
+    address = order.get("shipmentAddressFull") or {}
+    add(929025, address.get("comment") or address.get("addInfo"))
+    add(929073, order.get("deliveryPlannedMoment"))
+    add(929091, order.get("paymentPlannedMoment"))
+    related = []
+    for kind, ids in (("invoiceout", (929053, 929061, 929045)), ("demand", (929051, 929059, 929047))):
+        docs = [d for d in data[kind] if id_of(d.get("customerOrder")) == order["id"]]
+        entity = "InvoiceOut" if kind == "invoiceout" else "Demand"
+        if len(docs) == 1:
+            doc = docs[0]
+            for fid, value in zip(ids, (doc["id"], doc.get("name"), f"https://online.moysklad.ru/app/#{entity}/edit?id={doc['id']}")):
+                add(fid, value)
+        else:
+            for fid in ids:
+                omissions.append({"field_id": fid, "reason": "MULTIPLE_DOCUMENTS" if docs else "SOURCE_EMPTY"})
+        related.extend(f"{kind}: https://online.moysklad.ru/app/#{entity}/edit?id={d['id']}" for d in docs if len(docs) > 1)
+    row["related_documents"] = related
+    row["field_omissions"] = omissions
+    return result
+
+
 def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict, roster: dict) -> bool:
     oid = planned["order_id"]
     if journal["rows"].get(oid, {}).get("status") in TERMINAL:
@@ -1603,6 +1702,8 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
         raise RowDeferred("SOURCE_CHANGED_BEFORE_DEAL_CREATION")
     if ms_link(fresh) or exact_leads(amo, oid):
         raise RowDeferred("LINK_OR_LEAD_APPEARED_BEFORE_CREATION")
+    row["optional_fields"] = optional_fields(data, fresh, row, ms)
+    _set_entry(journal, oid, source_row=row)
     payload = make_lead_payload(amo, fresh, row, cid, roster)
     lid = create_entity(amo, journal, oid, row, "lead", payload)
     _set_entry(journal, oid, status="LEAD_VERIFIED", contact_id=cid, lead_id=lid, lead_payload=payload)
@@ -1897,12 +1998,17 @@ def main() -> None:
     parser.add_argument("--verify", action="store_true", help="read back every previously verified import")
     parser.add_argument("--self-test", action="store_true", help="run isolated regression tests; no CRM access")
     parser.add_argument("--batch-size", type=int, default=25)
+    parser.add_argument("--expected-code-sha256", default="", help="required for night writes; rejects an unreviewed importer")
     parser.add_argument("--reuse-raw", action="store_true",
                         help="reclassify the protected read-only source snapshot without refetching")
     args = parser.parse_args()
     if args.self_test:
         self_test()
         return
+    if args.night_run and args.apply:
+        code_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        if args.expected_code_sha256 != code_hash:
+            raise Stop("Ночной запуск требует SHA256 проверенного импортёра (--expected-code-sha256)")
     private_storage()
     with LOCK.open("a+") as lockfile:
         os.chmod(LOCK, 0o600)

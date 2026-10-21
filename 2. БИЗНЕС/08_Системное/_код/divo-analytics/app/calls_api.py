@@ -9,6 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func, select
+from sqlalchemy.orm import defer
 
 from app.api import _auth_guard
 from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, manager_name
@@ -30,6 +31,16 @@ def published_conditions():
             CallRecord.state.in_(["complete", "insufficient"]),
             CallRecord.transcript != {}, CallRecord.validation_errors == [],
             func.length(func.trim(CallRecord.analysis["summary"].as_string())) > 0]
+
+
+def overview_query():
+    # Raw provider responses and transcripts can outweigh the dashboard data by
+    # orders of magnitude. Never hydrate them for a list or an aggregate.
+    return select(CallRecord).options(
+        defer(CallRecord.provider_result, raiseload=True),
+        defer(CallRecord.transcript, raiseload=True),
+        defer(CallRecord.entity_refs, raiseload=True),
+        defer(CallRecord.owner_candidates, raiseload=True))
 
 
 def filters(start: date | None, end: date | None, manager: str | None, category: str | None,
@@ -134,7 +145,7 @@ def calls(start: date | None = None, end: date | None = None, manager: str | Non
         ordering = [CallRecord.occurred_at.desc(), CallRecord.id.desc()]
         if sort != "recent":
             ordering.insert(0, (CallRecord.score.asc() if sort == "score_asc" else CallRecord.score.desc()).nulls_last())
-        rows = db.scalars(select(CallRecord).where(*conditions)
+        rows = db.scalars(overview_query().where(*conditions)
                           .order_by(*ordering).offset(offset).limit(limit))
         return {"total": total, "items": [summary_row(r) for r in rows], "limit": limit, "offset": offset}
 
@@ -143,7 +154,7 @@ def calls(start: date | None = None, end: date | None = None, manager: str | Non
 def summary(start: date | None = None, end: date | None = None, manager: str | None = None,
             category: str | None = None, calibration: bool | None = None):
     with SessionLocal() as db:
-        rows = list(db.scalars(select(CallRecord).where(*filters(start, end, manager, category, calibration))))
+        rows = list(db.scalars(overview_query().where(*filters(start, end, manager, category, calibration))))
         scored = [r for r in rows if r.is_scored]
         completed = [r for r in rows if r.state in ("complete", "needs_review", "insufficient")]
         meeting_count = sum((r.analysis or {}).get("outcome", {}).get("meeting_agreed") is True for r in scored)
@@ -212,9 +223,12 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
 @router.get("/{call_id}")
 def detail(call_id: int):
     with SessionLocal() as db:
-        row = db.scalar(select(CallRecord).where(CallRecord.id == call_id, *published_conditions()))
-        if not row:
+        record = db.execute(select(CallRecord, CallRecord.provider_result["manual_review"])
+                            .options(defer(CallRecord.provider_result, raiseload=True))
+                            .where(CallRecord.id == call_id, *published_conditions())).first()
+        if not record:
             raise HTTPException(404, "Звонок не найден")
+        row, manual_review = record
         deliveries = list(db.scalars(select(CallDelivery).where(CallDelivery.call_id == row.id)))
         result = summary_row(row)
         result.update({"transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
@@ -222,7 +236,7 @@ def detail(call_id: int):
                        "analysis_version": row.analysis_version,
                        "nexara_job_id": row.nexara_job_id,
                        "delivery_skip_reason": "" if deliveries and all(d.state == "sent" for d in deliveries) else delivery_skip_reason(row),
-                       "manual_review": (row.provider_result or {}).get("manual_review"),
+                       "manual_review": manual_review,
                        "deliveries": [{"channel": d.channel, "state": d.state,
                                        "remote_id": d.remote_id, "last_error": d.last_error} for d in deliveries]})
         return result
@@ -231,10 +245,9 @@ def detail(call_id: int):
 @router.get("/{call_id}/recording")
 def recording(call_id: int, request: Request):
     with SessionLocal() as db:
-        row = db.scalar(select(CallRecord).where(CallRecord.id == call_id, *published_conditions()))
-        if not row or not row.recording_url:
+        url = db.scalar(select(CallRecord.recording_url).where(CallRecord.id == call_id, *published_conditions()))
+        if not url:
             raise HTTPException(404, "Запись недоступна")
-        url = row.recording_url
     try:
         audio, mime = download_audio(url)
     except Exception:

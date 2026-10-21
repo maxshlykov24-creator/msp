@@ -10,7 +10,7 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import sessionmaker
@@ -617,6 +617,28 @@ class QueueTest(unittest.TestCase):
         app=FastAPI();app.include_router(calls_api.router);client=TestClient(app)
         for path in ("/api/calls","/api/calls/summary","/api/calls/1","/api/calls/1/recording"):
             self.assertEqual(client.get(path).status_code,401)
+
+    def test_dashboard_avoids_raw_history_and_keeps_detail_review(self):
+        r=self.reportable()
+        r.provider_result={"raw_response":"x"*500_000,"manual_review":{"reason":"Проверен полный текст"}}
+        self.db.commit()
+        statements=[]
+        def capture(conn,cursor,statement,parameters,context,executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement.split("FROM",1)[0])
+        event.listen(self.engine,"before_cursor_execute",capture)
+        try:
+            with patch.object(calls_api,"SessionLocal",self.factory):
+                self.assertEqual(calls_api.calls(limit=25,offset=0)["total"],1)
+                self.assertEqual(calls_api.summary()["total"],1)
+                self.assertTrue(statements)
+                self.assertFalse(any("call_record.provider_result" in s or "call_record.transcript" in s for s in statements))
+                detail=calls_api.detail(r.id)
+                self.assertEqual(detail["manual_review"],{"reason":"Проверен полный текст"})
+                self.assertEqual(detail["transcript"],TRANSCRIPT)
+                self.assertNotIn("provider_result",detail)
+        finally:
+            event.remove(self.engine,"before_cursor_execute",capture)
 
     def test_msk_midnight_bounds(self):
         from datetime import date
