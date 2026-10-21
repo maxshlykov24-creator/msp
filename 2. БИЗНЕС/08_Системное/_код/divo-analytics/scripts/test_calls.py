@@ -335,6 +335,15 @@ class QueueTest(unittest.TestCase):
             call_worker.process_calls(SimpleNamespace())
         self.db.refresh(r);self.assertEqual(r.state,"submit_ambiguous")
 
+    def test_live_nexara_diarization_unwrapped_result_reaches_agent(self):
+        r=self.call();r.nexara_job_id="paid-job";settings.calls_analysis_enabled=True
+        raw={"task":"diarize",**copy.deepcopy(TRANSCRIPT)}
+        call_worker.finish_result(r,raw)
+        self.assertEqual(r.state,"analysis_ready")
+        self.assertEqual(r.transcript["text"],TRANSCRIPT["text"])
+        self.assertEqual(r.provider_result,raw)
+        self.assertEqual(r.nexara_job_id,"paid-job")
+
     def test_submit_timeout_does_not_resubmit(self):
         r=self.call();r.state="ready";r.recording_url="https://example.invalid/a.mp3";self.db.commit()
         settings.calls_process_enabled=True;settings.nexara_api_key="test";settings.calls_recording_hosts="example.invalid"

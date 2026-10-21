@@ -199,7 +199,8 @@ def refresh_recording(db, row: CallRecord, amo: AmoClient):
 
 def finish_result(row: CallRecord, result: dict):
     row.provider_result = result
-    transcript = result.get("transcription") or {}
+    # Pure diarization returns the transcript itself; legacy combined jobs wrap it.
+    transcript = result.get("transcription") or (result if "text" in result or "segments" in result else {})
     if not isinstance(transcript, dict):
         transcript = {}
     if settings.calls_analysis_enabled:
@@ -537,10 +538,10 @@ def delivery_skip_reason(row: CallRecord) -> str:
     """Диагностика не является отчётом о разговоре и остаётся в дашборде."""
     if row.is_calibration:
         return "calibration_sample"
-    if settings.calls_delivery_from and row.occurred_at < settings.calls_delivery_from:
-        return "historical_call"
     if not row.recording_url:
         return "no_recording"
+    if settings.calls_delivery_from and row.occurred_at < settings.calls_delivery_from:
+        return "historical_call"
     if not SonnetCallAgent.catalog(row.transcript or {}):
         return "no_transcript"
     if row.state not in ("complete", "needs_review") or row.validation_errors:

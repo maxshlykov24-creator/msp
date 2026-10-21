@@ -32,7 +32,7 @@ STATUS_NAMES = {"yes": "Да", "no": "Нет", "na": "Неприменимо", "
 
 _COMPANY_TYPO_RE = re.compile(
     r"(?<!\w)(?:d[i1][vwuo]o?\s*[-–—]?\s*m[o0a]t[o0a]r[s5]?|"
-    r"diomators|diomotors|divomotors|дио\s*моторс|диво\s*моторс|"
+    r"diomators|diomotors|diomoto|divomotors|дио\s*моторс|диво\s*моторс|"
     r"диомоторс|дивомоторс)(?!\w)", re.IGNORECASE)
 
 

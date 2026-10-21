@@ -110,3 +110,10 @@
 ### Личные сигналы подключены 21.10.2026
 
 Владелец отправил согласованную команду запуска. Найден ровно один соответствующий личный чат; адресат сохранён только в закрытом серверном env. Контейнер пересоздан. Тестовое уведомление отправлено штатной функцией сервиса, Telegram подтвердил успешный приём. Прочтение сообщения владельцем не проверялось. `CT_LIVE=false` сохранён. Независимый монитор доступности и контрольные звонки остаются открытыми.
+
+
+### Telphin events configured 2026-10-21
+
+Scope: mansband.ru only; zamer excluded from current stage by owner. Test visit 900000000 at 18:01:42 MSK: yandex / cpc / ct_check; assigned number ending 3424. Owner confirmed calling it and receiving the call in amoCRM. Our ct_call and inbound webhook log were empty at inspection.
+
+Added separate POST dial-in callbacks to our protected endpoint for extensions 101, 102, 103, 104 through Telphin UI; each save verified. Existing integration callbacks unchanged. Pending: a new control call, actual payload inspection, parser verification, UTM readback in amoCRM. CT_LIVE not enabled.
