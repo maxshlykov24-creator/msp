@@ -76,7 +76,8 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
         evidence = evidence_for(item)
         for e in evidence[:2 if telegram else 4]:
             ts = timestamp(e.get("start"))
-            lines.append((ts + " " if ts else "") + "«" + redact_phone(e.get("quote", ""))[:130 if telegram else 500] + "»")
+            # Canonical spelling is a display-only correction; stored evidence stays exact.
+            lines.append((ts + " " if ts else "") + "«" + redact_phone(canonical_company_name(e.get("quote", "")))[:130 if telegram else 500] + "»")
     o = a.get("outcome") or {}
     if o:
         meeting = {True: "согласована", False: "не согласована", None: "не выяснено"}.get(o.get("meeting_agreed"))
@@ -106,7 +107,7 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
         for item in ([] if call.validation_errors else a.get("criteria") or []):
             name = CRITERIA.get(item.get("id"), ("Критерий", []))[0]
             ev = evidence_for(item)
-            quote_line = " · ".join((timestamp(e.get("start")) + " «" + redact_phone(e.get("quote", ""))[:70] + "»")
+            quote_line = " · ".join((timestamp(e.get("start")) + " «" + redact_phone(canonical_company_name(e.get("quote", "")))[:70] + "»")
                                     for e in ev[:2])
             compact += [f"{item.get('id')}. {name}: {STATUS_NAMES.get(item.get('status'), 'Требует проверки')}",
                         redact_phone(item.get("explanation", ""))[:90], quote_line]

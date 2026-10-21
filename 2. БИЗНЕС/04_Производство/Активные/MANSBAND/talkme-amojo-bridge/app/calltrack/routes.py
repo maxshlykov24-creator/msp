@@ -309,14 +309,19 @@ async def telphin_webhook(
             import json
 
             data = json.loads(raw_body.decode("utf-8") or "{}")
-        except Exception:
-            data = {}
-    else:
+        except (UnicodeDecodeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+    elif "application/x-www-form-urlencoded" in content_type:
+        # Decode directly: Starlette request.form requires python-multipart,
+        # even for URL-encoded events. Never acknowledge a discarded body.
+        from urllib.parse import parse_qsl
+
         try:
-            form = await request.form()
-            data = dict(form)
-        except Exception:
-            data = {}
+            data = dict(parse_qsl(raw_body.decode("utf-8"), keep_blank_values=True, strict_parsing=True))
+        except (UnicodeDecodeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid form body")
+    else:
+        raise HTTPException(status_code=415, detail="Unsupported event content type")
     if not isinstance(data, dict):
         data = {"items": data}
 

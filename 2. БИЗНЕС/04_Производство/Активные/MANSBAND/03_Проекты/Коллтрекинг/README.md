@@ -127,3 +127,8 @@ Public Google DNS confirms two A records for ai-msp.ru: 5.42.104.112 and 213.176
 ### DNS corrected and browser substitution verified 2026-10-21
 
 Owner explicitly approved removal. Deleted only A ai-msp.ru -> 213.176.65.241 (record 85008720, TTL 300) in Timeweb. UI readback: main A 5.42.104.112 remains; dkacademy-bot A 213.176.65.241 and other records unchanged. Public resolver still returned cached old pair immediately afterward; propagation not yet universally confirmed. Direct normal HTTPS ct.js returned 200. Reloaded main site with ct=1 and campaign ct_diagnostic, scrolled: footer phone and both tel links changed to pool number ending 0841. CT_LIVE not enabled; owner control call still needed. Rollback, if needed: restore removed root A with value 213.176.65.241 and TTL 300.
+
+
+### Webhook form decoder fix 2026-10-21
+
+Owner confirmed phone substitution and another call. nginx received POST Telphin at 18:48:42 MSK, HTTP 200, but application logged empty parsed payload. Production has no multipart package; request.form raised an exception and old handler silently substituted {}. Replaced URL-encoded parsing with urllib.parse.parse_qsl; malformed JSON/form returns 400, unsupported content type 415. 34 tests pass, including form field preservation and rejection cases. Deployed routes.py after backup /root/bridge-backups/ct-form-20261021/routes.py. Prior call body was not retained, so actual provider payload and CRM write still need verification on next call. No successful attribution claim; CT_LIVE remains false.

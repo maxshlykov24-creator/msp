@@ -811,3 +811,21 @@ def test_ten_number_pool_falls_back_on_eleventh(client, monkeypatch):
     assert all(r["mode"] == "pool" for r in issued[:10])
     assert issued[10]["mode"] == "fallback"
     assert issued[10]["number"] == "+79310090251"
+
+
+def test_telphin_urlencoded_preserves_real_event_fields(client):
+    from sqlalchemy import select
+    from app.calltrack.models import CallEvent
+    payload = {"EventType": "dial-in", "CallID": "form-event-1", "CalledDID": "+79310000000", "Empty": ""}
+    response = client.post("/webhooks/telphin/telphin-test", data=payload)
+    assert response.status_code == 200
+    with _db() as db:
+        event = db.execute(select(CallEvent)).scalar_one()
+        assert event.raw == payload
+
+
+def test_telphin_invalid_body_not_acknowledged(client):
+    path = "/webhooks/telphin/telphin-test"
+    assert client.post(path, content="{", headers={"Content-Type": "application/json"}).status_code == 400
+    assert client.post(path, content="broken", headers={"Content-Type": "application/x-www-form-urlencoded"}).status_code == 400
+    assert client.post(path, content="unhandled", headers={"Content-Type": "text/plain"}).status_code == 415

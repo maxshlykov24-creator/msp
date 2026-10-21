@@ -603,8 +603,12 @@ class ReportTest(unittest.TestCase):
                             is_scored=True,yes_count=7,applicable_count=7,score=100,
                             category="primary_inbound",category_reason="Входящий",state="complete",
                             lead_ids=[100],rule_version="test",validation_errors=[])
+        a["criteria"][0]["evidence"][0]["quote"]="Автосалон Diomators, добрый день."
         result=render_report(row,telegram=True)
         self.assertLessEqual(len(result),3900)
+        self.assertNotIn("Diomators",result)
+        self.assertIn("Автосалон DIVO MOTORS",result)
+        self.assertEqual(a["criteria"][0]["evidence"][0]["quote"],"Автосалон Diomators, добрый день.")
         for i,(name,_) in CRITERIA.items():self.assertIn(f"{i}. {name}:",result)
         self.assertIn('/?call=1#callQuality',result)
 
