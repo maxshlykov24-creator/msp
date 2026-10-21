@@ -61,8 +61,10 @@ button:focus-visible,.cq-drawer summary:focus-visible{outline:2px solid #d1ab64;
 .cq-dd-opt[aria-selected=true]::after{content:'';width:6px;height:6px;border-radius:50%;background:#e4c484;box-shadow:0 0 8px rgba(228,196,132,.65);flex-shrink:0}
 .cq-list-head,.cq-call-row{display:grid;grid-template-columns:155px minmax(200px,1fr) 165px 110px 16px;gap:22px;align-items:center}
 .cq-list-head{padding:10px 17px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--mute-2);border-bottom:1px solid rgba(255,255,255,.1)}
-.cq-call-row{width:100%;text-align:left;border:0;border-bottom:1px solid rgba(255,255,255,.07);border-radius:0;background:transparent;color:inherit;font:inherit;padding:17px;cursor:pointer;transition:background .15s}
+.cq-call-row{width:100%;text-align:left;border:0;border-bottom:1px solid rgba(255,255,255,.07);border-radius:0;background:transparent;color:inherit;font:inherit;padding:17px;cursor:pointer;transition:background .4s ease,box-shadow .4s ease}
 .cq-call-row:hover{background:rgba(255,255,255,.035)}
+.cq-call-row.is-recent{background:linear-gradient(90deg,rgba(200,164,92,.09),rgba(255,255,255,.02) 34%,transparent 68%);box-shadow:inset 2px 0 0 rgba(200,164,92,.42)}
+.cq-call-row.is-recent:hover{background:linear-gradient(90deg,rgba(200,164,92,.12),rgba(255,255,255,.04) 40%,transparent 74%)}
 .cq-call-row strong{font-size:14px;font-weight:500;display:block;line-height:1.5}
 .cq-call-row small{display:block;font-size:12px;color:var(--mute-2);margin-top:4px;line-height:1.6}
 .cq-row-content{font-size:14px;line-height:1.6;min-width:0}
