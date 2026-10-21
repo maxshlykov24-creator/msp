@@ -442,7 +442,7 @@
   #staleBanner{display:none;margin:0 0 18px;padding:13px 18px;border-radius:12px;background:rgba(232,196,120,.1);border:1px solid rgba(232,196,120,.3);color:#e8c478;font-size:13px}
   #staleBanner.show{display:block}
 </style>
-<link rel="stylesheet" href="/assets/calls.css?v=20261008-motion">
+<link rel="stylesheet" href="/assets/calls.css?v=20261021-live">
 </head>
 <body>
 
@@ -599,10 +599,7 @@
   <section id="callQuality" aria-labelledby="callsHeading" hidden>
     <div class="cq-heading">
       <div><p class="cq-eyebrow">Контроль разговоров</p><h1 id="callsHeading">Качество звонков</h1><p id="cqRange" class="cq-muted">По дате разговора · МСК</p></div>
-      <div class="cq-source" aria-label="Набор звонков">
-        <button type="button" data-call-source="working" aria-pressed="true">Рабочие звонки</button>
-        <button type="button" data-call-source="calibration" aria-pressed="false">Калибровка</button>
-      </div>
+
     </div>
     <div id="cqMetrics" class="cq-metrics"></div>
     <div id="cqAttention" class="cq-attention" hidden></div>
@@ -623,7 +620,7 @@
     <div class="cq-list-head" aria-hidden="true"><span>Когда / менеджер</span><span>Разговор</span><span>Результат</span><span>Оценка</span><span></span></div>
     <div id="cqList" class="cq-list"></div>
     <div class="cq-pager"><button type="button" id="cqPrev">← Назад</button><span id="cqPage"></span><button type="button" id="cqNext">Далее →</button></div>
-    <details class="cq-help"><summary>Как читать оценки</summary><p>Семь равнозначных критериев применяются только к первичным входящим продажным звонкам. «Неприменимо» исключается из знаменателя. Неполные и непроверенные оценки не входят в среднее. Встреча означает договорённость в разговоре; фактические визиты показаны во вкладке «Продажи». Калибровка учитывается отдельно от рабочих звонков.</p></details>
+    <details class="cq-help"><summary>Как читать оценки</summary><p>Семь равнозначных критериев применяются только к первичным входящим продажным звонкам. «Неприменимо» исключается из знаменателя. Неполные и непроверенные оценки не входят в среднее. Встреча означает договорённость в разговоре; фактические визиты показаны во вкладке «Продажи».</p></details>
   </section>
   <dialog id="cqDrawer" class="cq-drawer" aria-labelledby="cqDetailTitle">
     <div class="cq-drawer-head"><div><p id="cqDetailMeta" class="cq-muted"></p><h2 id="cqDetailTitle">Разбор звонка</h2></div><button type="button" id="cqClose" aria-label="Закрыть разбор">×</button></div>
@@ -1268,6 +1265,6 @@ setInterval(loadDashboard, 5 * 60 * 1000);
   document.addEventListener('pointerleave', ()=>{ if(active){ reset(active); active = null; } });
 })();
 </script>
-<script src="/assets/calls.js?v=20261008-motion"></script>
+<script src="/assets/calls.js?v=20261021-live"></script>
 </body>
 </html>

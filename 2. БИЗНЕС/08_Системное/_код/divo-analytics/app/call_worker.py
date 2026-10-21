@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import case, func, or_, select, text
 
 from app.amo_client import AmoClient, AmoError
 from app.call_report import render_report, report_marker
@@ -118,13 +118,15 @@ def upsert_note(db, note: dict, entity_type: str, entity_id: int, lead_ids: list
     return row
 
 
-def collect_calls(amo: AmoClient, *, calibration: int = 0):
+def collect_calls(amo: AmoClient, *, calibration: int = 0, backfill_days: int = 0):
     until = int(time.time())
     with SessionLocal() as db:
         start_row = db.get(SyncState, "calls_start_at")
         if calibration:
             # Калибровка не устанавливает границу нового рабочего потока.
             start = until
+        elif backfill_days:
+            start = until - backfill_days * 86400
         elif not start_row:
             start = settings.calls_start_at or until
             state_set(db, "calls_start_at", str(start))
@@ -133,7 +135,8 @@ def collect_calls(amo: AmoClient, *, calibration: int = 0):
             start = int(start_row.value)
         cursor_row = db.get(SyncState, "calls_cursor")
         cursor = int(cursor_row.value) if cursor_row else start
-        since = until - 7 * 86400 if calibration else max(start, cursor - settings.calls_overlap_sec)
+        since = (until - 7 * 86400 if calibration else start if backfill_days
+                 else max(start, cursor - settings.calls_overlap_sec))
         events = list(amo.paginate("/api/v4/events", "events", {
             "filter[type][0]": "incoming_call", "filter[type][1]": "outgoing_call",
             "filter[created_at][from]": since,
@@ -166,7 +169,7 @@ def collect_calls(amo: AmoClient, *, calibration: int = 0):
             notes = [n for n in notes if str((n[0].get("params") or {}).get("uniq") or n[0]["id"]) in keys]
         for note, typ, entity_id, leads in notes:
             upsert_note(db, note, typ, entity_id, leads, calibration=bool(calibration))
-        if not calibration:
+        if not calibration and not backfill_days:
             state_set(db, "calls_cursor", str(until))
             state_set(db, "calls_last_collection", now().isoformat())
         db.commit()
@@ -252,11 +255,13 @@ def analyze_calls():
         if not settings.calls_sonnet_api_key:
             raise RuntimeError("agent_not_configured")
         query = select(CallRecord).where(CallRecord.state == "analysis_ready")
+        if settings.calls_process_from:
+            query = query.where(CallRecord.occurred_at >= settings.calls_process_from)
         if settings.calls_calibration_only:
             query = query.where(CallRecord.is_calibration.is_(True))
         agent = SonnetCallAgent()
         try:
-            for row in db.scalars(query.order_by(CallRecord.occurred_at).limit(5)):
+            for row in db.scalars(query.order_by(CallRecord.occurred_at.desc()).limit(5)):
                 row.state = "analyzing"
                 row.analysis_version = "sonnet.qa.2"
                 db.commit()
@@ -348,10 +353,16 @@ def process_calls(amo: AmoClient):
             CallRecord.state.in_(["waiting_recording", "ready", "processing"]),
             or_(CallRecord.next_attempt_at.is_(None), CallRecord.next_attempt_at <= now())
         )
+        if settings.calls_process_from:
+            processing_query = processing_query.where(or_(
+                CallRecord.occurred_at >= settings.calls_process_from,
+                CallRecord.state == "processing"))
         if settings.calls_calibration_only:
             processing_query = processing_query.where(or_(CallRecord.is_calibration.is_(True),
                 CallRecord.state.in_(["processing", "waiting_recording"])))
-        rows = list(db.scalars(processing_query.order_by(CallRecord.occurred_at).limit(100)))
+        rows = list(db.scalars(processing_query.order_by(
+            case((CallRecord.state == "processing", 0), else_=1),
+            CallRecord.occurred_at.desc()).limit(100)))
         nexara = NexaraClient()
         try:
             inflight = db.scalar(select(func.count()).select_from(CallRecord).where(
@@ -522,11 +533,30 @@ def deliver_telegram(db, delivery: CallDelivery, row: CallRecord):
     db.commit()
 
 
+def delivery_skip_reason(row: CallRecord) -> str:
+    """Диагностика не является отчётом о разговоре и остаётся в дашборде."""
+    if row.is_calibration:
+        return "calibration_sample"
+    if settings.calls_delivery_from and row.occurred_at < settings.calls_delivery_from:
+        return "historical_call"
+    if not row.recording_url:
+        return "no_recording"
+    if not SonnetCallAgent.catalog(row.transcript or {}):
+        return "no_transcript"
+    if row.state not in ("complete", "needs_review") or row.validation_errors:
+        return "analysis_not_validated"
+    if not (row.analysis or {}).get("summary", "").strip():
+        return "no_analysis"
+    return ""
+
+
 def deliver_calls(amo: AmoClient):
     with SessionLocal() as db:
         rows = list(db.scalars(select(CallRecord).where(CallRecord.is_calibration.is_(False),
                           CallRecord.state.in_(["complete", "needs_review", "missed", "recording_unavailable", "error", "submit_ambiguous"]))))
         for row in rows:
+            if delivery_skip_reason(row):
+                continue
             targets = []
             if settings.calls_amo_enabled and len(row.lead_ids) == 1:
                 targets.append(("amo", str(row.lead_ids[0])))
@@ -553,7 +583,7 @@ def deliver_calls(amo: AmoClient):
                     db.commit()
 
 
-def run_once(*, calibration: int = 0):
+def run_once(*, calibration: int = 0, backfill_days: int = 0):
     # Отдельное соединение держит session advisory lock на весь цикл.
     with engine.connect() as lock:
         if not lock.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": LOCK_KEY}):
@@ -562,8 +592,8 @@ def run_once(*, calibration: int = 0):
         try:
             failures = []
             for phase, action in [
-                ("collect", lambda: collect_calls(amo, calibration=calibration)
-                 if settings.calls_enabled or calibration else None),
+                ("collect", lambda: collect_calls(amo, calibration=calibration, backfill_days=backfill_days)
+                 if settings.calls_enabled or calibration or backfill_days else None),
                 ("process", lambda: process_calls(amo)),
                 ("analyze", analyze_calls),
                 ("deliver", lambda: deliver_calls(amo)),
@@ -578,7 +608,7 @@ def run_once(*, calibration: int = 0):
                     state_set(db, "calls_last_success", now().isoformat())
                 state_set(db, "calls_last_error", ";".join(failures))
                 db.commit()
-            if failures and calibration:
+            if failures and (calibration or backfill_days):
                 raise RuntimeError("calibration_cycle_failed")
         except Exception as exc:
             with SessionLocal() as db:
@@ -612,6 +642,38 @@ def retry_payment_blocked() -> int:
             lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK_KEY})
 
 
+def close_insufficient(call_id: int, reviewer: str, reason: str, *, apply: bool = False) -> dict:
+    """Закрыть нехватку данных без присвоения оценки, сохранив решение и исходник."""
+    if not reviewer.strip() or not reason.strip():
+        raise ValueError("reviewer_and_reason_required")
+    with SessionLocal() as db:
+        row = db.scalar(select(CallRecord).where(CallRecord.id == call_id).with_for_update())
+        if not row:
+            raise ValueError("call_not_found")
+        if row.state == "insufficient":
+            return {"id": call_id, "state": row.state, "changed": False}
+        a = row.analysis or {}
+        quality_issue = any(a.get(k) is False for k in ("recording_complete", "speech_clear", "roles_reliable"))
+        unknown = any(c.get("status") == "unknown" for c in a.get("criteria", []))
+        if row.state != "needs_review" or row.validation_errors or row.is_scored or not (quality_issue or unknown):
+            raise ValueError("not_a_quality_insufficiency")
+        result = {"id": call_id, "state": "insufficient", "changed": apply}
+        if apply:
+            history = dict(row.provider_result or {})
+            reviews = list(history.get("reviews") or [])
+            reviews.append({"at": now().isoformat(), "reviewer": reviewer, "reason": reason,
+                            "previous_state": row.state, "decision": "insufficient", "analysis": row.analysis})
+            history.update(reviews=reviews, manual_review=reviews[-1])
+            row.provider_result = history
+            row.state = "insufficient"
+            row.category_reason = reason
+            row.score, row.is_scored = None, False
+            row.yes_count = row.applicable_count = 0
+            row.last_error = ""
+            db.commit()
+        return result
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -620,17 +682,25 @@ def main():
     parser.add_argument("--reanalyze-calibration", action="store_true")
     parser.add_argument("--repair-calibration", action="store_true")
     parser.add_argument("--calibrate", type=int, default=0)
+    parser.add_argument("--backfill-days", type=int, choices=range(1, 32))
     parser.add_argument("--retry-payment-blocked", action="store_true")
+    parser.add_argument("--close-insufficient", type=int)
+    parser.add_argument("--reviewer", default="")
+    parser.add_argument("--reason", default="")
+    parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     init_db()
+    if args.close_insufficient:
+        print(json.dumps(close_insufficient(args.close_insufficient, args.reviewer, args.reason, apply=args.apply)))
+        return
     if args.reanalyze_calibration or args.repair_calibration:
         print(json.dumps({"requeued_analysis": reanalyze_calibration(repair=args.repair_calibration)}))
         return
     if args.retry_payment_blocked:
         print(json.dumps({"requeued": retry_payment_blocked()}))
         return
-    if args.once or args.calibrate:
-        run_once(calibration=args.calibrate)
+    if args.once or args.calibrate or args.backfill_days:
+        run_once(calibration=args.calibrate, backfill_days=args.backfill_days or 0)
         return
     while True:
         started = time.monotonic()

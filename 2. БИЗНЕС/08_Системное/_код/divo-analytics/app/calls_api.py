@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
 
@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from app.api import _auth_guard
 from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, manager_name
 from app.call_rules import canonical_company_name, canonicalize_analysis_text_fields
+from app.call_worker import delivery_skip_reason
 from app.config import settings
 from app.database import SessionLocal
 from app.models import CallDelivery, CallRecord, SyncState
@@ -23,10 +24,10 @@ MSK = ZoneInfo("Europe/Moscow")
 
 
 def filters(start: date | None, end: date | None, manager: str | None, category: str | None,
-            calibration: bool):
+            calibration: bool | None):
     if start and end and start > end:
         raise HTTPException(422, "Начало периода позже конца")
-    conditions = [CallRecord.is_calibration.is_(calibration)]
+    conditions = [] if calibration is None else [CallRecord.is_calibration.is_(calibration)]
     if start:
         conditions.append(CallRecord.occurred_at >= int(datetime.combine(start, time.min, MSK).timestamp()))
     if end:
@@ -101,7 +102,7 @@ def summary_row(row):
 
 @router.get("")
 def calls(start: date | None = None, end: date | None = None, manager: str | None = None,
-          category: str | None = None, calibration: bool = False,
+          category: str | None = None, calibration: bool | None = None,
           limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0),
           view: Literal["all", "scored", "review", "unavailable", "pending"] = "all",
           sort: Literal["recent", "score_asc", "score_desc"] = "recent"):
@@ -112,7 +113,7 @@ def calls(start: date | None = None, end: date | None = None, manager: str | Non
         elif view == "review":
             conditions.append(CallRecord.state.in_(["needs_review", "submit_ambiguous", "analysis_ambiguous"]))
         elif view == "unavailable":
-            conditions.append(CallRecord.state.in_(["recording_unavailable", "missed", "error"]))
+            conditions.append(CallRecord.state.in_(["recording_unavailable", "missed", "error", "insufficient"]))
         elif view == "pending":
             conditions.append(CallRecord.state.in_(["waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing"]))
         total = db.scalar(select(func.count()).select_from(CallRecord).where(*conditions))
@@ -126,11 +127,11 @@ def calls(start: date | None = None, end: date | None = None, manager: str | Non
 
 @router.get("/summary")
 def summary(start: date | None = None, end: date | None = None, manager: str | None = None,
-            category: str | None = None, calibration: bool = False):
+            category: str | None = None, calibration: bool | None = None):
     with SessionLocal() as db:
         rows = list(db.scalars(select(CallRecord).where(*filters(start, end, manager, category, calibration))))
         scored = [r for r in rows if r.is_scored]
-        completed = [r for r in rows if r.state in ("complete", "needs_review")]
+        completed = [r for r in rows if r.state in ("complete", "needs_review", "insufficient")]
         meeting_count = sum((r.analysis or {}).get("outcome", {}).get("meeting_agreed") is True for r in scored)
         criteria = []
         for cid, (name, _) in CRITERIA.items():
@@ -159,18 +160,33 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
         states = {k: v.value for k, v in ((r.key, r) for r in db.scalars(
             select(SyncState).where(SyncState.key.in_(["calls_last_success", "calls_last_collection", "calls_last_error", "calls_start_at"]))
         ))}
+        pending_states = ["waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing"]
+        oldest = min((r.occurred_at for r in rows if r.state in pending_states), default=None)
+        last_collection = states.get("calls_last_collection")
+        collection_age = None
+        if last_collection:
+            try:
+                collection_age = max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(last_collection)).total_seconds()))
+            except (ValueError, TypeError):
+                pass
+        delivery_states = Counter(db.scalars(select(CallDelivery.state).join(CallRecord).where(
+            *filters(start, end, manager, category, calibration))))
         return {"total": len(rows), "processed": len(completed), "scored": len(scored),
                 "average_score": round(sum(r.score for r in scored) / len(scored), 1) if scored else None,
                 "meeting_agreed": meeting_count,
                 "meeting_rate": round(meeting_count * 100 / len(scored), 1) if scored else None,
                 "needs_review": sum(r.state in ("needs_review", "submit_ambiguous", "analysis_ambiguous") for r in rows),
-                "unavailable": sum(r.state in ("recording_unavailable", "missed", "error") for r in rows),
+                "unavailable": sum(r.state in ("recording_unavailable", "missed", "error", "insufficient") for r in rows),
                 "pending": sum(r.state in ("waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing") for r in rows),
                 "criteria": criteria,
                 "unknown_manager": sum(not r.manager_verified for r in rows),
                 "managers": sorted(managers, key=lambda m: (m["manager_id"] is None, m["manager_name"])),
                 "manager_options": [{"id": k, "name": v} for k, v in settings.call_manager_names.items()],
                 "categories": CATEGORY_NAMES, "worker": states,
+                "diagnostics": {"collection_age_sec": collection_age,
+                    "collection_stale": collection_age is None or collection_age > 300,
+                    "oldest_pending_at": oldest, "deliveries": dict(delivery_states),
+                    "process_from": settings.calls_process_from, "delivery_from": settings.calls_delivery_from},
                 "processing_enabled": settings.calls_process_enabled and (calibration or not settings.calls_calibration_only),
                 "calibration_only": settings.calls_calibration_only,
                 "amo_enabled": settings.calls_amo_enabled,
@@ -190,6 +206,8 @@ def detail(call_id: int):
                        "validation_errors": row.validation_errors, "rule_version": row.rule_version,
                        "analysis_version": row.analysis_version,
                        "nexara_job_id": row.nexara_job_id,
+                       "delivery_skip_reason": delivery_skip_reason(row),
+                       "manual_review": (row.provider_result or {}).get("manual_review"),
                        "deliveries": [{"channel": d.channel, "state": d.state,
                                        "remote_id": d.remote_id, "last_error": d.last_error} for d in deliveries]})
         return result

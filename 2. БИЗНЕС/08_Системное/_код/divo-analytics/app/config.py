@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     calls_amo_enabled: bool = False
     calls_telegram_enabled: bool = False
     calls_start_at: int = 0  # 0 = момент первого включения, не история
+    calls_process_from: int = 0  # нижняя граница оплачиваемой очереди; сбор не сбрасывается
+    calls_delivery_from: int = 0  # история анализируется без рассылки старых отчётов
     calls_overlap_sec: int = 86400
     calls_recording_wait_hours: int = 48
     calls_max_inflight: int = 3

@@ -9,6 +9,7 @@ from app.call_rules import (CATEGORY_NAMES, CRITERIA, STATUS_NAMES,
 from app.config import settings
 
 STATE_NAMES = {
+    "insufficient": "Недостаточно данных",
     "analysis_ready": "Ожидает анализа агента", "analyzing": "Агент анализирует",
     "analysis_ambiguous": "Анализ агента требует проверки",
     "waiting_recording": "Ожидает запись", "ready": "Готов к анализу",
