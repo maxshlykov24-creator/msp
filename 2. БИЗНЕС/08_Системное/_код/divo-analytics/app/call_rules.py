@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 RULE_VERSION = "2026-10-07.1"
+MIN_CALL_DURATION_SEC = 30
 ANALYSIS_VERSION = "sonnet.qa.4"
 CATEGORY_NAMES = {
     "primary_inbound": "Первичный входящий продажный",

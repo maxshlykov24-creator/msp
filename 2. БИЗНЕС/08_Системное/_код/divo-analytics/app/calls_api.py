@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 
 from app.api import _auth_guard
 from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, manager_name
-from app.call_rules import canonical_company_name, canonicalize_analysis_text_fields
+from app.call_rules import MIN_CALL_DURATION_SEC, canonical_company_name, canonicalize_analysis_text_fields
 from app.call_worker import delivery_skip_reason
 from app.config import settings
 from app.database import SessionLocal
@@ -23,11 +23,22 @@ router = APIRouter(prefix="/api/calls", dependencies=[Depends(_auth_guard)])
 MSK = ZoneInfo("Europe/Moscow")
 
 
+def published_conditions():
+    """Product shows finished conversations; raw queue remains in storage for recovery."""
+    return [CallRecord.duration_sec >= MIN_CALL_DURATION_SEC,
+            func.length(func.trim(CallRecord.recording_url)) > 0,
+            CallRecord.state.in_(["complete", "insufficient"]),
+            CallRecord.transcript != {}, CallRecord.validation_errors == [],
+            func.length(func.trim(CallRecord.analysis["summary"].as_string())) > 0]
+
+
 def filters(start: date | None, end: date | None, manager: str | None, category: str | None,
             calibration: bool | None):
     if start and end and start > end:
         raise HTTPException(422, "Начало периода позже конца")
-    conditions = [] if calibration is None else [CallRecord.is_calibration.is_(calibration)]
+    conditions = published_conditions()
+    if calibration is not None:
+        conditions.append(CallRecord.is_calibration.is_(calibration))
     if start:
         conditions.append(CallRecord.occurred_at >= int(datetime.combine(start, time.min, MSK).timestamp()))
     if end:
@@ -105,12 +116,14 @@ def summary_row(row):
 def calls(start: date | None = None, end: date | None = None, manager: str | None = None,
           category: str | None = None, calibration: bool | None = None,
           limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0),
-          view: Literal["all", "scored", "review", "unavailable", "pending"] = "all",
+          view: Literal["all", "scored", "unscored", "review", "unavailable", "pending"] = "all",
           sort: Literal["recent", "score_asc", "score_desc"] = "recent"):
     with SessionLocal() as db:
         conditions = filters(start, end, manager, category, calibration)
         if view == "scored":
             conditions.append(CallRecord.is_scored.is_(True))
+        elif view == "unscored":
+            conditions.append(CallRecord.is_scored.is_(False))
         elif view == "review":
             conditions.append(CallRecord.state.in_(["needs_review", "submit_ambiguous", "analysis_ambiguous"]))
         elif view == "unavailable":
@@ -173,6 +186,7 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
         delivery_states = Counter(db.scalars(select(CallDelivery.state).join(CallRecord).where(
             *filters(start, end, manager, category, calibration))))
         return {"total": len(rows), "processed": len(completed), "scored": len(scored),
+                "unscored": len(rows) - len(scored),
                 "average_score": round(sum(r.score for r in scored) / len(scored), 1) if scored else None,
                 "meeting_agreed": meeting_count,
                 "meeting_rate": round(meeting_count * 100 / len(scored), 1) if scored else None,
@@ -198,7 +212,7 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
 @router.get("/{call_id}")
 def detail(call_id: int):
     with SessionLocal() as db:
-        row = db.get(CallRecord, call_id)
+        row = db.scalar(select(CallRecord).where(CallRecord.id == call_id, *published_conditions()))
         if not row:
             raise HTTPException(404, "Звонок не найден")
         deliveries = list(db.scalars(select(CallDelivery).where(CallDelivery.call_id == row.id)))
@@ -217,7 +231,7 @@ def detail(call_id: int):
 @router.get("/{call_id}/recording")
 def recording(call_id: int, request: Request):
     with SessionLocal() as db:
-        row = db.get(CallRecord, call_id)
+        row = db.scalar(select(CallRecord).where(CallRecord.id == call_id, *published_conditions()))
         if not row or not row.recording_url:
             raise HTTPException(404, "Запись недоступна")
         url = row.recording_url

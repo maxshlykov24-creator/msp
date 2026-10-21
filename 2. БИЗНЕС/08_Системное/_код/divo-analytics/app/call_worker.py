@@ -12,7 +12,7 @@ from sqlalchemy import case, func, or_, select, text
 
 from app.amo_client import AmoClient, AmoError
 from app.call_report import render_report, report_marker
-from app.call_rules import ANALYSIS_VERSION, RULE_VERSION, validate_analysis
+from app.call_rules import ANALYSIS_VERSION, MIN_CALL_DURATION_SEC, RULE_VERSION, validate_analysis
 from app.config import settings
 from app.database import SessionLocal, engine, init_db
 from app.models import CallDelivery, CallRecord, SyncState
@@ -112,6 +112,10 @@ def upsert_note(db, note: dict, entity_type: str, entity_id: int, lead_ids: list
         row.state = "ready"
         row.last_error = ""
         row.next_attempt_at = None
+    if row.state == "ignored_short" and row.duration_sec >= MIN_CALL_DURATION_SEC and row.recording_url:
+        row.state = "analysis_ready" if SonnetCallAgent.catalog(row.transcript or {}) else "ready"
+        row.last_error = ""
+        row.next_attempt_at = None
     if len(row.lead_ids) != 1:
         # Уже отправленный отчёт не переадресуем при позднем появлении второй связи.
         row.last_error = "ambiguous_lead_binding"
@@ -203,6 +207,15 @@ def finish_result(row: CallRecord, result: dict):
     transcript = result.get("transcription") or (result if "text" in result or "segments" in result else {})
     if not isinstance(transcript, dict):
         transcript = {}
+    if row.duration_sec < MIN_CALL_DURATION_SEC:
+        row.transcript = transcript
+        row.state, row.category = "ignored_short", "insufficient"
+        row.category_reason = "Разговор короче 30 секунд"
+        row.analysis, row.validation_errors = {}, []
+        row.is_scored, row.score = False, None
+        row.yes_count = row.applicable_count = 0
+        row.next_attempt_at = None
+        return
     if settings.calls_analysis_enabled:
         row.transcript = transcript
         row.analysis = {}
@@ -256,6 +269,7 @@ def analyze_calls():
         if not settings.calls_sonnet_api_key:
             raise RuntimeError("agent_not_configured")
         query = select(CallRecord).where(CallRecord.state == "analysis_ready",
+            CallRecord.duration_sec >= MIN_CALL_DURATION_SEC,
             or_(CallRecord.next_attempt_at.is_(None), CallRecord.next_attempt_at <= now()))
         if settings.calls_process_from:
             # The original accepted sample may predate the live/history boundary.
@@ -357,6 +371,13 @@ def reanalyze_calibration(*, repair: bool = False) -> int:
 
 def process_calls(amo: AmoClient):
     with SessionLocal() as db:
+        for row in db.scalars(select(CallRecord).where(
+                CallRecord.state.in_(["ready", "analysis_ready"]),
+                CallRecord.duration_sec < MIN_CALL_DURATION_SEC)):
+            row.state, row.category = "ignored_short", "insufficient"
+            row.category_reason = "Разговор короче 30 секунд"
+            row.next_attempt_at = None
+        db.commit()
         # Перезапуск между POST и commit: неизвестно, был ли платный запрос принят.
         for row in db.scalars(select(CallRecord).where(CallRecord.state == "submitting")):
             row.state = "submit_ambiguous"
@@ -397,6 +418,12 @@ def process_calls(amo: AmoClient):
                             row.next_attempt_at = now() + timedelta(seconds=30)
                         db.commit()
                     elif row.state == "ready" and settings.calls_process_enabled:
+                        if row.duration_sec < MIN_CALL_DURATION_SEC:
+                            row.state, row.category = "ignored_short", "insufficient"
+                            row.category_reason = "Разговор короче 30 секунд"
+                            row.next_attempt_at = None
+                            db.commit()
+                            continue
                         if settings.calls_calibration_only and not row.is_calibration:
                             continue
                         if not settings.nexara_api_key or not settings.calls_recording_hosts:
@@ -548,6 +575,8 @@ def deliver_telegram(db, delivery: CallDelivery, row: CallRecord):
 
 def delivery_skip_reason(row: CallRecord) -> str:
     """Диагностика не является отчётом о разговоре и остаётся в дашборде."""
+    if row.duration_sec < MIN_CALL_DURATION_SEC:
+        return "short_call"
     if row.is_calibration:
         return "calibration_sample"
     if not row.recording_url:
