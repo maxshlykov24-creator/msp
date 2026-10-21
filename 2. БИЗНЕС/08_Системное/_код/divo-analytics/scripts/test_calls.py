@@ -154,9 +154,10 @@ class QueueTest(unittest.TestCase):
         self.factory=sessionmaker(bind=self.engine,expire_on_commit=False)
         self.db=self.factory()
         self.patch=patch.object(call_worker,"SessionLocal",self.factory);self.patch.start()
-        self.settings={k:getattr(settings,k) for k in ("calls_verified_authors","calls_manager_map","calls_amo_enabled","calls_telegram_enabled","calls_process_enabled","calls_calibration_only","nexara_api_key","calls_recording_hosts","calls_analysis_enabled","calls_sonnet_api_key","calls_verified_participants")}
+        self.settings={k:getattr(settings,k) for k in ("calls_verified_authors","calls_manager_map","calls_amo_enabled","calls_telegram_enabled","calls_process_enabled","calls_calibration_only","nexara_api_key","calls_recording_hosts","calls_analysis_enabled","calls_sonnet_api_key","calls_verified_participants","calls_process_from","calls_delivery_from","calls_telegram_bot_token","calls_telegram_chat_id")}
         settings.calls_verified_authors="";settings.calls_manager_map=""
         settings.calls_calibration_only=False
+        settings.calls_process_from=0;settings.calls_delivery_from=0
 
     def tearDown(self):
         for k,v in self.settings.items():setattr(settings,k,v)
@@ -269,6 +270,64 @@ class QueueTest(unittest.TestCase):
         settings.calls_amo_enabled=True;settings.calls_telegram_enabled=True
         call_worker.deliver_calls(SimpleNamespace())
         self.assertEqual(list(self.db.scalars(select(CallDelivery))),[])
+
+    def reportable(self):
+        r=self.call();r.recording_url="https://example.invalid/recording";r.transcript=TRANSCRIPT
+        r.analysis=analysis();r.analysis["summary"]="Обсудили автомобиль";r.state="complete";self.db.commit()
+        settings.calls_telegram_enabled=True;settings.calls_telegram_bot_token="test";settings.calls_telegram_chat_id="100"
+        settings.calls_amo_enabled=False
+        return r
+
+    def test_empty_and_invalid_calls_never_deliver(self):
+        r=self.reportable()
+        for state in ["missed","recording_unavailable","error","submit_ambiguous","analysis_ambiguous","insufficient"]:
+            r.state=state;self.db.commit();call_worker.deliver_calls(SimpleNamespace())
+        r.state="complete";r.recording_url="";self.db.commit();call_worker.deliver_calls(SimpleNamespace())
+        r.recording_url="https://example.invalid/a";r.transcript={};self.db.commit();call_worker.deliver_calls(SimpleNamespace())
+        r.transcript=TRANSCRIPT;r.validation_errors=["bad_quote"];self.db.commit();call_worker.deliver_calls(SimpleNamespace())
+        self.assertEqual(list(self.db.scalars(select(CallDelivery))),[])
+
+    def test_historical_results_stay_local_and_live_reports_deliver(self):
+        r=self.reportable();settings.calls_delivery_from=1001
+        with patch.object(call_worker,"deliver_telegram") as send:
+            call_worker.deliver_calls(SimpleNamespace());send.assert_not_called()
+            r.occurred_at=1001;self.db.commit();call_worker.deliver_calls(SimpleNamespace())
+            send.assert_called_once()
+
+    def test_review_preview_and_insufficiency_keep_source(self):
+        r=self.call();r.state="needs_review";r.analysis=analysis();r.analysis["speech_clear"]=False
+        self.db.commit()
+        preview=call_worker.close_insufficient(r.id,"tester","Неразборчивый фрагмент")
+        self.assertFalse(preview["changed"]);self.db.refresh(r);self.assertEqual(r.state,"needs_review")
+        call_worker.close_insufficient(r.id,"tester","Неразборчивый фрагмент",apply=True)
+        self.db.refresh(r);self.assertEqual(r.state,"insufficient");self.assertIsNone(r.score)
+        self.assertFalse(r.provider_result["reviews"][0]["analysis"]["speech_clear"])
+        self.assertFalse(call_worker.close_insufficient(r.id,"tester","Повтор",apply=True)["changed"])
+
+    def test_review_cannot_hide_validation_error(self):
+        r=self.call();r.state="needs_review";r.analysis=analysis();r.analysis["speech_clear"]=False
+        r.validation_errors=["invented_quote"];self.db.commit()
+        with self.assertRaises(ValueError):call_worker.close_insufficient(r.id,"tester","Причина",apply=True)
+
+    def test_process_boundary_and_polling_already_paid_job(self):
+        r=self.call();r.state="ready";r.recording_url="https://example.invalid/a";self.db.commit()
+        settings.calls_process_from=1001;settings.calls_process_enabled=True
+        with patch.object(call_worker,"NexaraClient") as cls,patch.object(call_worker,"download_audio") as download:
+            call_worker.process_calls(SimpleNamespace());download.assert_not_called()
+            r.state="processing";r.nexara_job_id="saved-job";self.db.commit()
+            cls.return_value.poll.return_value={"status":"processing"}
+            call_worker.process_calls(SimpleNamespace());cls.return_value.poll.assert_called_once_with("saved-job")
+
+    def test_backfill_does_not_rewind_live_cursor(self):
+        self.db.add(SyncState(key="calls_start_at",value="100"))
+        self.db.add(SyncState(key="calls_cursor",value="200"));self.db.commit()
+        captured=[]
+        def paginate(path,key,params=None,**kwargs):
+            captured.append(params);return []
+        with patch("time.time",return_value=2000000):
+            call_worker.collect_calls(SimpleNamespace(paginate=paginate),backfill_days=14)
+        self.assertEqual(captured[0]["filter[created_at][from]"],2000000-14*86400)
+        self.db.expire_all();self.assertEqual(self.db.get(SyncState,"calls_cursor").value,"200")
 
     def test_restart_during_nexara_submit_requires_review(self):
         r=self.call();r.state="submitting";self.db.commit()
@@ -385,7 +444,8 @@ class QueueTest(unittest.TestCase):
         c=call_worker.upsert_note(self.db,self.note(id=2,uniq="calibration"),"lead",100,[100],calibration=True)
         c.state="complete";c.is_scored=True;c.score=100;c.analysis=analysis();self.db.commit()
         with patch.object(calls_api,"SessionLocal",self.factory):
-            s=calls_api.summary();self.assertEqual(s["scored"],1);self.assertEqual(s["average_score"],50)
+            s=calls_api.summary(calibration=False);self.assertEqual(s["scored"],1);self.assertEqual(s["average_score"],50)
+            self.assertEqual(calls_api.summary()["total"],2)
             self.assertIsNone(s["managers"][0]["manager_id"])
             self.assertEqual(calls_api.summary(manager="13334858")["total"],0)
 
