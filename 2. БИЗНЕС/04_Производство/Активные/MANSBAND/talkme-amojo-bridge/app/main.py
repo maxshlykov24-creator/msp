@@ -20,7 +20,14 @@ from sqlalchemy.orm import Session
 
 from app import amo_v4
 from app.amojo_client import post_connect, post_delivery_status, post_disconnect, post_new_message
-from app.quiz_lead import build_note, lead_title, parse_quiz_payload, require_phone
+from app.quiz_lead import (
+    QUIZ_NOTE_MARK,
+    build_note,
+    lead_title,
+    parse_quiz_payload,
+    pick_recent_quiz_lead,
+    require_phone,
+)
 from app.amojo_sign import verify_amojo_webhook_body
 from app.config import get_settings
 from app.database import get_db, init_db
@@ -635,8 +642,29 @@ def quiz_webhook(
         )
 
     settings = get_settings()
+    note = build_note(parsed=parsed)
     try:
         token = get_valid_access_token(db)
+        recent = pick_recent_quiz_lead(
+            amo_v4.search_leads(query=phone, access_token=token, settings=settings),
+            pipeline_id=settings.quiz_pipeline_id,
+            now=int(time.time()),
+        )
+        if recent is not None:
+            lead_id = int(recent["id"])
+            contact_id = _quiz_contact_id(recent)
+            if not amo_v4.lead_has_note_text(
+                lead_id=lead_id,
+                needle=QUIZ_NOTE_MARK,
+                access_token=token,
+                settings=settings,
+            ):
+                _add_quiz_note(lead_id=lead_id, text=note, access_token=token, settings=settings)
+                log.info("quiz note attached to recent lead %s", lead_id)
+            else:
+                log.info("quiz retry kept lead %s", lead_id)
+            return _quiz_response(settings, lead_id, contact_id)
+
         contact = amo_v4.find_contact_by_phone(phone=phone, access_token=token, settings=settings)
         if contact is None:
             contact = amo_v4.create_contact(
@@ -673,9 +701,7 @@ def quiz_webhook(
             settings=settings,
         )
         lead_id = int(lead["id"])
-        amo_v4.add_lead_note(
-            lead_id=lead_id, text=build_note(parsed=parsed), access_token=token, settings=settings
-        )
+        _add_quiz_note(lead_id=lead_id, text=note, access_token=token, settings=settings)
     except httpx.HTTPStatusError as e:
         log.exception("quiz amo failed: %s %s", e.response.status_code, e.response.text[:300])
         raise HTTPException(
@@ -689,7 +715,24 @@ def quiz_webhook(
             status_code=502, detail="не удалось создать сделку", headers=_quiz_cors_headers()
         ) from e
 
-    log.info("quiz lead %s contact %s phone_tail=%s", lead_id, contact_id, normalize_phone(phone))
+    log.info(
+        "quiz lead %s contact %s phone_tail=%s comment=%s",
+        lead_id,
+        contact_id,
+        normalize_phone(phone),
+        bool(parsed.get("comment")),
+    )
+    return _quiz_response(settings, lead_id, contact_id)
+
+
+def _quiz_contact_id(lead: dict[str, Any]) -> int:
+    contacts = ((lead.get("_embedded") or {}).get("contacts")) or []
+    if contacts and contacts[0].get("id"):
+        return int(contacts[0]["id"])
+    return 0
+
+
+def _quiz_response(settings: Any, lead_id: int, contact_id: int) -> JSONResponse:
     base = f"https://{settings.amo_subdomain}.{settings.amo_base_domain}"
     return JSONResponse(
         {
@@ -700,6 +743,29 @@ def quiz_webhook(
         },
         headers=_quiz_cors_headers(),
     )
+
+
+def _add_quiz_note(*, lead_id: int, text: str, access_token: str, settings: Any) -> None:
+    """Примечание с ответами. Один сбой amo не должен оставлять сделку без текста квиза."""
+    delay = 0.4
+    last: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            amo_v4.add_lead_note(
+                lead_id=lead_id,
+                text=text,
+                access_token=access_token,
+                settings=settings,
+                raise_on_error=True,
+            )
+            return
+        except httpx.HTTPError as exc:
+            last = exc
+            log.warning("quiz note attempt %s lead %s failed: %s", attempt + 1, lead_id, exc)
+            time.sleep(delay)
+            delay *= 2
+    if last is not None:
+        raise last
 
 
 def apply_tracking_to_lead(

@@ -325,6 +325,7 @@ def add_lead_note(
     text: str,
     access_token: str,
     settings: Optional[Settings] = None,
+    raise_on_error: bool = False,
 ) -> None:
     if not (text or "").strip():
         return
@@ -335,6 +336,47 @@ def add_lead_note(
         r = client.post(url, json=body, headers=_headers(access_token))
         if r.status_code >= 400:
             log.error("note lead %s failed: %s %s", lead_id, r.status_code, r.text[:300])
+            if raise_on_error:
+                r.raise_for_status()
+
+
+def search_leads(
+    *,
+    query: str,
+    access_token: str,
+    settings: Optional[Settings] = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    settings = settings or get_settings()
+    url = f"{api_base(settings)}/api/v4/leads"
+    with httpx.Client(timeout=20.0) as client:
+        r = client.get(
+            url,
+            params={"query": query, "limit": limit, "order[created_at]": "desc"},
+            headers=_headers(access_token),
+        )
+        if r.status_code == 204 or not r.content:
+            return []
+        r.raise_for_status()
+        return ((r.json() or {}).get("_embedded") or {}).get("leads") or []
+
+
+def lead_has_note_text(
+    *,
+    lead_id: int,
+    needle: str,
+    access_token: str,
+    settings: Optional[Settings] = None,
+) -> bool:
+    settings = settings or get_settings()
+    url = f"{api_base(settings)}/api/v4/leads/{lead_id}/notes"
+    with httpx.Client(timeout=20.0) as client:
+        r = client.get(url, params={"limit": 50}, headers=_headers(access_token))
+        if r.status_code == 204 or not r.content:
+            return False
+        r.raise_for_status()
+        notes = ((r.json() or {}).get("_embedded") or {}).get("notes") or []
+    return any(needle in str((n.get("params") or {}).get("text") or "") for n in notes)
 
 
 def open_leads_for_phone(
