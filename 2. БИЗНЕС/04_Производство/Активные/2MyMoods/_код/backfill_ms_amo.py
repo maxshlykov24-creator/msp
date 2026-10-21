@@ -1909,6 +1909,19 @@ def night_run(args) -> dict:
         return result
     result["previous_verification"] = verify_journal(ms, amo, journal, full_data=data)
     candidates = sorted((r for r in plan["rows"] if r["category"] == "CREATE"), key=lambda r: (r.get("moment", ""), r["order_id"]))
+    if args.max_orders is not None and args.max_orders <= 5:
+        pilot = []
+        legal = next((r for r in candidates if r.get("counterparty_type") == "legal"), None)
+        if legal:
+            pilot.append(legal)
+        for state in STATUS_IDS:
+            if any(r["state"] == state for r in pilot):
+                continue
+            sample = next((r for r in candidates if r["state"] == state), None)
+            if sample:
+                pilot.append(sample)
+        chosen = {r["order_id"] for r in pilot}
+        candidates = pilot + [r for r in candidates if r["order_id"] not in chosen]
     roster = get_roster()
     limit = args.max_orders if args.max_orders is not None else len(candidates)
     created_ids = set()
