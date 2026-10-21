@@ -829,3 +829,17 @@ def test_telphin_invalid_body_not_acknowledged(client):
     assert client.post(path, content="{", headers={"Content-Type": "application/json"}).status_code == 400
     assert client.post(path, content="broken", headers={"Content-Type": "application/x-www-form-urlencoded"}).status_code == 400
     assert client.post(path, content="unhandled", headers={"Content-Type": "text/plain"}).status_code == 415
+
+
+def test_native_telphin_dial_in_microseconds_and_did():
+    from app.calltrack.telphin import parse_telphin
+    from datetime import datetime, timezone
+    raw = {"EventType": "dial-in", "CallFlow": "in", "CallID": "native-test-id", "CalledDID": "+79310000000", "CalledNumber": "account*102", "CallerIDNum": "+79001112233", "EventTime": "1792598074745888"}
+    result = parse_telphin(raw)
+    assert result["parsed"] is True
+    assert result["called"] == "9310000000"
+    assert result["caller"] == "9001112233"
+    assert result["started_at"] == datetime(2026, 10, 21, 15, 54, 34, 745888, tzinfo=timezone.utc)
+    assert parse_telphin({**raw, "CallFlow": "out"})["incoming"] is False
+    assert parse_telphin({**raw, "EventTime": "invalid"})["parsed"] is False
+    assert parse_telphin({**raw, "CalledDID": ""})["parsed"] is False

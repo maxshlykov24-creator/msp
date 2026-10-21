@@ -132,3 +132,11 @@ Owner explicitly approved removal. Deleted only A ai-msp.ru -> 213.176.65.241 (r
 ### Webhook form decoder fix 2026-10-21
 
 Owner confirmed phone substitution and another call. nginx received POST Telphin at 18:48:42 MSK, HTTP 200, but application logged empty parsed payload. Production has no multipart package; request.form raised an exception and old handler silently substituted {}. Replaced URL-encoded parsing with urllib.parse.parse_qsl; malformed JSON/form returns 400, unsupported content type 415. 34 tests pass, including form field preservation and rejection cases. Deployed routes.py after backup /root/bridge-backups/ct-form-20261021/routes.py. Prior call body was not retained, so actual provider payload and CRM write still need verification on next call. No successful attribution claim; CT_LIVE remains false.
+### Контрольный звонок 21.10.2026, проверка в 19:00 МСК
+
+Получен настоящий dial-in в 18:54:34 МСК. Исправлен разбор нативных полей Телфин CallID, CalledDID, CallerIDNum, CallFlow и EventTime (Unix microseconds). 35 тестов проекта проходят. Парсер выложен после резервной копии /root/bridge-backups/ct-form-20261021/telphin.py. Полученный звонок повторно разобран из сохранённого тела без нового звонка владельца.
+
+Живая сверка: ct_call id=2 связан с визитом 900000000 и существующей сделкой amoCRM 61260974. Результат: repeat=1, errors=0, статус repeat. Через API CRM подтверждено примечание «повторный звонок, источник не определён». Сделка создана раньше звонка, метки не перезаписывались. Заполнение полей новой сделки пока не доказано.
+
+CT_UTM_SOURCE_MAP пуст. Значение «Яндекс Директ» в поле «Источник (техническое)» подтверждено; сопоставление yandex → Яндекс Директ требует согласования по плану. Боевой режим не включён. Открыты: сопоставление источника, поля новой сделки, чат, Метрика и независимый монитор доступности. Замер исключён владельцем из текущего этапа.
+

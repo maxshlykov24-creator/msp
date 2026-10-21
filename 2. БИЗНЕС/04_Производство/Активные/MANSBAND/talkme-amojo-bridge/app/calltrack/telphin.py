@@ -1,7 +1,6 @@
 """Приём звонка Телфин.
 
-Имена полей боевого вебхука сюда не подставляются, пока не разобран первый
-реальный payload. Пока событие не разобрано, оно лежит в ct_call со status=new
+Нативный dial-in подтверждён реальным событием 21.10.2026. Пока событие не разобрано, оно лежит в ct_call со status=new
 и сырым телом. Тесты и ручная проверка шлют уже нормализованные ключи:
 call_id, called, caller, started_at, incoming.
 """
@@ -68,16 +67,36 @@ def _as_time(value: Any) -> Optional[dt.datetime]:
 
 
 def parse_telphin(raw: Any) -> dict[str, Any]:
-    """Разобрать только нормализованное тело. Чужой формат возвращается пустым."""
+    """Разобрать нормализованное тело и подтверждённый нативный dial-in."""
     if not isinstance(raw, dict):
         return {"parsed": False, "incoming": True, "call_id": None, "called": None, "caller": None, "started_at": None}
-    call_id = raw.get("call_id")
-    called = digits10(raw.get("called"))
-    caller_raw = raw.get("caller")
+    # Native fields verified on a production dial-in event on 2026-10-21.
+    native = "EventType" in raw and "CallID" in raw
+    if native:
+        incoming = raw.get("CallFlow") != "out"
+        call_id = raw.get("CallID")
+        called = digits10(raw.get("CalledDID"))
+        caller_raw = raw.get("CallerIDNum")
+        started = None
+        try:
+            # Telphin EventTime is Unix microseconds, not seconds.
+            micros = int(raw.get("EventTime") or 0)
+            if micros > 0:
+                started = dt.datetime.fromtimestamp(micros / 1_000_000, timezone.utc)
+        except (ValueError, TypeError, OverflowError, OSError):
+            pass
+        parsed = bool(call_id and called and started and raw.get("EventType") == "dial-in" and raw.get("CallFlow") == "in")
+    else:
+        call_id = raw.get("call_id")
+        called = digits10(raw.get("called"))
+        caller_raw = raw.get("caller")
+        started = _as_time(raw.get("started_at"))
+        incoming = _as_bool(raw.get("incoming"), True)
+        parsed = bool(call_id) and bool(called)
     caller = digits10(caller_raw) if caller_raw not in (None, "") else None
-    started = _as_time(raw.get("started_at"))
-    incoming = _as_bool(raw.get("incoming"), True)
-    parsed = bool(call_id) and bool(called)
+    if native and not parsed:
+        call_id = None
+        called = None
     return {
         "parsed": parsed,
         "incoming": incoming,
