@@ -117,3 +117,8 @@
 Scope: mansband.ru only; zamer excluded from current stage by owner. Test visit 900000000 at 18:01:42 MSK: yandex / cpc / ct_check; assigned number ending 3424. Owner confirmed calling it and receiving the call in amoCRM. Our ct_call and inbound webhook log were empty at inspection.
 
 Added separate POST dial-in callbacks to our protected endpoint for extensions 101, 102, 103, 104 through Telphin UI; each save verified. Existing integration callbacks unchanged. Pending: a new control call, actual payload inspection, parser verification, UTM readback in amoCRM. CT_LIVE not enabled.
+
+
+### DNS blocker 2026-10-21
+
+Public Google DNS confirms two A records for ai-msp.ru: 5.42.104.112 and 213.176.65.241 (TTL 300). curl with --resolve: 5.42.104.112 returns ct.js HTTP 200; 213.176.65.241 times out during TLS. VPS public IP is 5.42.104.112; its local ct/health is healthy, live=false. NS: Timeweb. No new visit was created for owner retry. Need inspect DNS zone and purpose of second IP before correcting routing. DNS not changed.
