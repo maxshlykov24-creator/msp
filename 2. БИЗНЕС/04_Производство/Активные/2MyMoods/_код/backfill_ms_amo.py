@@ -418,39 +418,37 @@ def status_audit_cache_save(value: dict[str, str | None]) -> None:
 
 def reconcile_orders(mss: requests.Session, pace: list[float],
                      strict_snapshot: bool = True) -> tuple[list[dict], dict[str, int], int]:
-    cached = read_order_cache()
+    cached = read_order_cache() if ORDER_CACHE.exists() else {}
+    changed = 0
     for attempt in range(1, 4):
-        print(f"Сверяю полный список заказов с защищённым подробным кэшем (попытка {attempt}/3)…", flush=True)
-        compact, counts = compact_order_snapshot(mss, pace)
+        compact, _ = compact_order_snapshot(mss, pace)
         resolved = []
-        changed = 0
-        stable = True
         for oid, brief in compact.items():
             prior = cached.get(oid)
-            if prior and str(prior.get("updated") or "") == str(brief.get("updated") or "") and state_id(prior) == state_id(brief):
-                resolved.append(prior)
+            if prior and str(prior.get("updated")) == str(brief.get("updated")) and state_id(prior) == state_id(brief):
+                detail = prior
+            else:
+                detail = fresh_order(mss, oid, pace)
+                changed += 1
+                cached[oid] = detail
+                if changed % 25 == 0:
+                    write_order_cache(list(cached.values()))
+                    print(f"Подробности заказов: перечитано {changed}; промежуточный кэш сохранён.", flush=True)
+            # A moving order does not invalidate unrelated completed reads.
+            if state_id(detail) in STATUS_IDS.values():
+                resolved.append(detail)
+        counts = {name: sum(state_id(o) == sid for o in resolved) for name, sid in STATUS_IDS.items()}
+        if strict_snapshot:
+            after, _ = compact_order_snapshot(mss, pace)
+            if compact_signature(compact) != compact_signature(after):
+                write_order_cache(list(cached.values()))
                 continue
-            changed += 1
-            detail = api_get(mss, lib.MS_BASE + f"/entity/customerorder/{oid}", {
-                "expand": "positions,positions.assortment,agent,state",
-            }, pace)
-            if (str(detail.get("updated") or "") != str(brief.get("updated") or "")
-                    or state_id(detail) != state_id(brief)):
-                stable = False
-                break
-            resolved.append(detail)
-        if stable and strict_snapshot:
-            confirm, confirm_counts = compact_order_snapshot(mss, pace)
-            stable = (compact_signature(compact) == compact_signature(confirm)
-                      and counts == confirm_counts)
-        if stable:
-            if len(resolved) != len(compact) or len({str(x.get("id")).casefold() for x in resolved}) != len(resolved):
-                raise Stop("Полнота подробных заказов не подтверждена")
-            write_order_cache(resolved)
-            print(f"  текущих заказов: {len(resolved)}, подробностей перечитано: {changed}", flush=True)
-            return resolved, counts, changed
-        print("  набор менялся при сверке; повторяю компактный срез.", flush=True)
-    raise Stop("Не удалось получить стабильный состав заказов за три попытки")
+        if len({str(x.get("id")) for x in resolved}) != len(resolved):
+            raise Stop("Повтор UUID в подробных заказах")
+        write_order_cache(list(cached.values()))
+        print(f"Текущих заказов: {len(resolved)}, подробностей перечитано: {changed}", flush=True)
+        return resolved, counts, changed
+    raise Temporary("Состав заказов менялся во время трёх проверок; кэш сохранён")
 
 
 def collect_current(ms: lib.MS, amo: lib.Amo,
@@ -534,6 +532,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo,
         "paymentout": paymentouts, "cashout": cashouts,
         "default_currency": default_currency[0],
         "leads": leads, "contacts": contacts,
+        "amo_fields": {str(k): v for k, v in mf.items()},
     }
     schema = {"pipeline": pipeline.get("name"), "won": won[0].get("name"),
               "lead_fields": {str(k): v.get("type") for k, v in mf.items() if k in FIELDS.values()},
@@ -707,7 +706,7 @@ def deal_custom_fields(order: dict, row: dict, composition: str, delivery: int,
     rounded = rubles_round(price)
     round_delta = rounded * 100 - price
     notes = [original_comment] if original_comment else []
-    notes.append("[Исторический импорт МС→amo 2026-10-15]")
+    notes.append("[Исторический импорт МС→amo " + datetime.now(TZ).date().isoformat() + "]")
     notes.append(f"Сумма заказа: {amount_text(total)} ₽")
     if row["return_kopecks"]:
         notes.append(f"Подтверждённый возврат: {amount_text(int(row['return_kopecks']))} ₽; вычтен один раз по документу возврата")
@@ -734,6 +733,7 @@ def deal_custom_fields(order: dict, row: dict, composition: str, delivery: int,
         values.append({"field_id": FIELDS["delivery"], "values": [{"value": float(Decimal(delivery) / 100)}]})
     if row["return_state"] == "partial":
         values.append({"field_id": FIELDS["partial_return"], "values": [{"value": True}]})
+    values.extend(row.get("optional_fields") or [])
     return values
 
 
@@ -1029,6 +1029,9 @@ def classify(data: dict, ms: lib.MS, roster: dict | None = None) -> dict:
             rate = order.get("rate")
             if isinstance(rate, dict) and rate.get("value") not in (None, 1, 1.0, "1", "1.0"):
                 category, reason = "DEFERRED", "FOREIGN_CURRENCY_OR_NONDEFAULT_RATE"
+            if (isinstance(rate, dict) and id_of(rate.get("currency"))
+                    and id_of(rate.get("currency")) != str(data.get("default_currency", {}).get("id"))):
+                category, reason = "DEFERRED", "FOREIGN_CURRENCY_OR_NONDEFAULT_RATE"
 
         if category == "CREATE" and not close_moment and name in ALWAYS:
             if audit_checks % 25 == 0:
@@ -1306,355 +1309,579 @@ def fresh_order(ms_session_: requests.Session, order_id: str, pace: list[float])
                    {"expand": "positions,positions.assortment,agent,state"}, pace)
 
 
-def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False) -> dict:
-    ms, amo = lib.MS(), assign_shift.amo_client()
-    mss, amos = ms_session(ms), amo_session(amo)
-    # API reads use the established client; writes use a no-retry transport.
-    roster = get_roster()
-    journal = journal_load()
-    if journal.get("unknown_write"):
-        raise Stop("Предыдущая неопределённая запись требует ручного сверочного разбора")
-    if journal.get("plan_sha256") and journal["plan_sha256"] != plan_hash:
-        raise Stop("Журнал относится к другому плану")
-    journal["plan_sha256"] = plan_hash
-    save_journal(journal)
-    create_rows = sorted((r for r in plan["rows"] if r["category"] == "CREATE"),
-                         key=lambda x: (x.get("moment") or "", x["order_id"]))
-    done = sum(1 for rid, x in journal["rows"].items() if x.get("status") == "VERIFIED")
-    candidates = [r for r in create_rows if journal["rows"].get(r["order_id"], {}).get("status")
-                  not in {"VERIFIED", "DEFERRED", "EXISTS_BACKLINK", "EXISTS_AMO_ID"}]
-    if not candidates:
-        return {"verified_before": done, "processed": 0, "remaining": 0}
-    candidates = candidates[:maximum]
-    print("Повторно сверяю текущие оплаты, возвраты, сделки и контакты перед этой партией…", flush=True)
-    current_data, _ = collect_current(ms, amo, strict_order_snapshot=False)
-    current_orders = {str(x.get("id")).casefold(): x for x in current_data["orders"]}
-    current_payments, _ = allocations(current_data)
-    current_returns = return_map(current_data)
-    current_outflow = return_outflow(current_data)
-    current_by_order: dict[str, dict] = {}
-    recovery_ids = {r["order_id"] for r in candidates
-                    if journal["rows"].get(r["order_id"], {}).get("status") in (
-                        "LEAD_VERIFIED", "LEAD_RECOVERED", "BACKLINK_WRITE_INTENT", "COMMENT_WRITE_INTENT")}
-    planned_orders = {}
-    if recovery_ids:
-        try:
-            with RAW_CACHE.open(encoding="utf-8") as source:
-                raw_source = json.load(source)
-        except Exception as exc:
-            raise Stop("Исходный снимок нужен для безопасного восстановления сделки") from exc
-        planned_orders = {str(o.get("id")).casefold(): o for o in raw_source.get("orders", [])
-                          if str(o.get("id")).casefold() in recovery_ids}
-    for row in candidates:
-        oid = row["order_id"]
-        order = current_orders.get(oid.casefold())
-        entry_status = journal["rows"].get(oid, {}).get("status")
-        recovery_ok = (entry_status in ("LEAD_VERIFIED", "LEAD_RECOVERED", "BACKLINK_WRITE_INTENT", "COMMENT_WRITE_INTENT")
-                       and oid in planned_orders and order is not None
-                       and order_core_hash(order) == order_core_hash(planned_orders[oid]))
-        if not order or (order_hash(order) != row["source_hash"] and not recovery_ok):
-            raise Stop("План устарел: заказ изменился или вышел из разрешённых статусов")
-        paid_total, paid_moment = payment_close(order, current_payments)
-        if paid_total != row["payment_kopecks"] or paid_moment != row["payment_moment"]:
-            raise Stop("План устарел: связанная полная оплата изменилась")
-        ret_state, ret_sum, _ = return_state(order, current_returns.get(oid, []))
-        for ret in current_returns.get(oid, []):
-            linked_out = current_outflow.get(str(ret.get("id")), 0)
-            if linked_out and linked_out != amount(ret.get("sum")):
-                ret_state = "deferred"
-        if ret_state != row["return_state"] or ret_sum != row["return_kopecks"]:
-            raise Stop("План устарел: возврат заказа изменился")
-        current_by_order[oid] = order
-    writer_pace = [0.0]
-    ms_pace = [0.0]
-    processed = 0
-    for row in candidates:
-        oid = row["order_id"]
-        entry = journal["rows"].setdefault(oid, {"status": "PLANNED"})
-        recovered_lead_id = ""
-        if entry.get("status") in ("CONTACT_WRITE_INTENT", "LEAD_WRITE_INTENT", "LEAD_VERIFIED", "BACKLINK_WRITE_INTENT",
-                                    "COMMENT_WRITE_INTENT", "COUNTERPARTY_WRITE_INTENT"):
-            # Recovery checks every possible target before any retry.
-            found = exact_leads(amo, oid)
-            if len(found) > 1:
-                raise Stop("После прошлой записи найдено несколько сделок с UUID заказа")
-            if found:
-                recovered_lead_id = str(found[0]["id"])
-                entry["lead_id"] = recovered_lead_id
-                if entry.get("status") != "CONTACT_WRITE_INTENT":
-                    entry["status"] = "LEAD_RECOVERED"
-                    save_journal(journal)
-            elif entry.get("status") == "CONTACT_WRITE_INTENT":
-                found_contacts = exact_contacts(amo, row.get("phone", ""), row.get("email", ""))
-                if len(found_contacts) != 1:
-                    journal["unknown_write"] = {"order_id": oid, "kind": "contact_recovery",
-                                                "matches": len(found_contacts)}
-                    save_journal(journal)
-                    raise Stop("После незавершённой записи нельзя однозначно восстановить контакт")
-                contact_id = str(found_contacts[0]["id"])
-                journal["counterparty_contacts"][row["counterparty_id"]] = contact_id
-                _set_entry(journal, oid, status="CONTACT_VERIFIED", contact_id=contact_id)
-            elif entry.get("status") == "COUNTERPARTY_WRITE_INTENT":
-                cp_detail = api_get(mss, lib.MS_BASE + f"/entity/counterparty/{row['counterparty_id']}",
-                                    last_call=ms_pace)
-                if cp_detail.get("companyType") != "individual":
-                    journal["unknown_write"] = {"order_id": oid, "kind": "companyType_recovery"}
-                    save_journal(journal)
-                    raise Stop("После прерванного исправления типа контрагента состояние не подтверждено")
-                _set_entry(journal, oid, status="COUNTERPARTY_VERIFIED")
-            else:
-                journal["unknown_write"] = {"order_id": oid, "status": entry["status"]}
-                save_journal(journal)
-                raise Stop("Результат прошлой записи сделки/ссылки не удалось однозначно восстановить")
+class RowDeferred(Exception):
+    """A known data problem: do not invent a resolution."""
 
-        fresh = fresh_order(mss, oid, ms_pace)
-        source_match = order_hash(fresh) == row["source_hash"]
-        recovery_match = (bool(recovered_lead_id) and oid in planned_orders
-                          and order_core_hash(fresh) == order_core_hash(planned_orders[oid]))
-        if not source_match and not recovery_match:
-            raise Stop("Источник изменился после плана; остановлен до следующей записи")
-        if order_hash(fresh) != order_hash(current_by_order[oid]):
-            raise Stop("Заказ изменился уже после повторной полной сверки")
-        if ms_link(fresh):
-            if recovered_lead_id and ms_link(fresh) == amo_lead_url(amo, recovered_lead_id):
-                contact_id = str(entry.get("contact_id") or journal["counterparty_contacts"].get(row["counterparty_id"]) or "")
-                lead_payload = entry.get("lead_payload") or {}
-                if not contact_id or not lead_payload:
-                    raise Stop("Восстановленной сделке не хватает зафиксированного payload для проверки")
-                confirmed = confirm_lead(amo, recovered_lead_id, fresh, row, contact_id, lead_payload)
-                if field(confirmed, FIELDS["ms_url"]) != ms_order_url(oid):
-                    raise Stop("Восстановленная сделка содержит другую ссылку на заказ")
-                _set_entry(journal, oid, status="VERIFIED", lead_id=recovered_lead_id,
-                           contact_id=contact_id, backlink=ms_link(fresh),
-                           verified_at=datetime.now(TZ).isoformat(timespec="seconds"))
-                processed += 1
-                continue
-            if recovered_lead_id:
-                raise Stop("Ссылка МойСклад после прошлой записи указывает на другую сделку")
-            _set_entry(journal, oid, status="EXISTS_BACKLINK", backlink=ms_link(fresh))
-            continue
-        matches = exact_leads(amo, oid)
-        if matches:
-            if recovered_lead_id and len(matches) == 1 and str(matches[0].get("id")) == recovered_lead_id:
-                pass
-            elif len(matches) == 1:
-                _set_entry(journal, oid, status="EXISTS_AMO_ID", lead_id=str(matches[0]["id"]))
-                continue
-            else:
-                raise Stop("Свежая проверка нашла несколько сделок с UUID заказа")
-        cp = fresh.get("agent") or {}
-        cp_id = row["counterparty_id"]
-        if str(cp.get("id") or id_of(cp)) != cp_id:
-            raise Stop("Контрагент заказа изменился после плана")
-        if row.get("fix_company_type"):
-            cp_detail = api_get(mss, lib.MS_BASE + f"/entity/counterparty/{cp_id}", last_call=ms_pace)
-            if cp_detail.get("companyType") == "individual":
-                pass
-            elif cp_detail.get("companyType") == "legal" and cp_detail.get("legalFirstName") and cp_detail.get("legalLastName") and not cp_detail.get("legalTitle"):
-                _set_entry(journal, oid, status="COUNTERPARTY_WRITE_INTENT", counterparty_snapshot=cp_detail)
-                code, body, error = api_write(mss, "PUT", lib.MS_BASE + f"/entity/counterparty/{cp_id}",
-                                              {"companyType": "individual"}, pace=writer_pace)
-                check = api_get(mss, lib.MS_BASE + f"/entity/counterparty/{cp_id}", last_call=ms_pace)
-                if check.get("companyType") != "individual":
-                    if code is None:
-                        journal["unknown_write"] = {"order_id": oid, "kind": "companyType", "error": error}
-                        save_journal(journal)
-                        raise Stop("Тип контрагента после записи не подтверждён")
-                    raise Stop(f"Не удалось исправить тип физлица: HTTP {code}")
-                _set_entry(journal, oid, status="COUNTERPARTY_VERIFIED")
-            else:
-                _set_entry(journal, oid, status="DEFERRED", reason="COUNTERPARTY_CHANGED_OR_NOT_PERSON")
-                continue
-        else:
-            if cp.get("companyType") != "individual":
-                _set_entry(journal, oid, status="DEFERRED", reason="COUNTERPARTY_TYPE_CHANGED")
-                continue
 
-        phone, email = row.get("phone", ""), row.get("email", "")
-        contacts_now = exact_contacts(amo, phone, email)
-        if len(contacts_now) > 1:
-            _set_entry(journal, oid, status="DEFERRED", reason="CONTACT_BECAME_AMBIGUOUS")
+class UnknownWrite(RowDeferred):
+    """A possibly completed creation must never be submitted again."""
+
+
+LEDGERS = ("paymentin", "cashin", "invoiceout", "salesreturn", "demand", "paymentout", "cashout")
+
+
+def checkpoint_backup() -> str:
+    folder = WORK / ("2my-ms-amo-backup-" + datetime.now(TZ).strftime("%Y%m%d-%H%M%S-%f"))
+    folder.mkdir(mode=0o700)
+    for path in (PLAN, RAW_CACHE, JOURNAL, ORDER_CACHE, STATUS_AUDIT_CACHE):
+        if path.exists():
+            shutil.copy2(path, folder / path.name)
+            os.chmod(folder / path.name, 0o600)
+    return str(folder)
+
+
+def quarantine(journal: dict, oid: str, row: dict, reason: str) -> None:
+    entry = journal["rows"].setdefault(oid, {})
+    entry["quarantine_identity"] = {k: row.get(k) for k in ("counterparty_id", "phone", "email")}
+    _set_entry(journal, oid, status="QUARANTINED", reason=reason)
+
+
+def identity_blocked(journal: dict, row: dict) -> bool:
+    for entry in journal["rows"].values():
+        if entry.get("status") != "QUARANTINED":
             continue
-        if row.get("contact_id") and contacts_now and str(contacts_now[0]["id"]) != str(row["contact_id"]):
-            raise Stop("Контакт изменился после плана; требуется повторный полный аудит")
-        existing_email_mismatch = False
-        contact_name_mismatch = False
-        if row.get("contact_id"):
-            if not contacts_now:
-                raise Stop("Контакт из полного индекса не находится свежим поиском")
-            contact_id = str(contacts_now[0]["id"])
-            checked_contact = confirm_contact(amo, contact_id, row)
-            if checked_contact.get("_migration_identity_mismatch"):
-                _set_entry(journal, oid, status="DEFERRED", reason="CONTACT_IDENTITY_MISMATCH")
-                continue
-            existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
-            contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
-        elif cp_id in journal["counterparty_contacts"]:
-            contact_id = str(journal["counterparty_contacts"][cp_id])
-            checked_contact = confirm_contact(amo, contact_id, row)
-            if checked_contact.get("_migration_identity_mismatch"):
-                _set_entry(journal, oid, status="DEFERRED", reason="CONTACT_IDENTITY_MISMATCH")
-                continue
-            existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
-            contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
-        elif contacts_now:
-            contact_id = str(contacts_now[0]["id"])
-            checked_contact = confirm_contact(amo, contact_id, row)
-            if checked_contact.get("_migration_identity_mismatch"):
-                _set_entry(journal, oid, status="DEFERRED", reason="CONTACT_IDENTITY_MISMATCH")
-                continue
-            existing_email_mismatch = bool(checked_contact.get("_migration_email_mismatch"))
-            contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
-            journal["counterparty_contacts"][cp_id] = contact_id
+        identity = entry.get("quarantine_identity") or {}
+        if any(row.get(k) and row[k] == identity.get(k) for k in ("counterparty_id", "phone", "email")):
+            return True
+    return False
+
+
+def complete_positions(session: requests.Session, entity: str, obj: dict) -> dict:
+    positions = obj.get("positions") or {}
+    size = (positions.get("meta") or {}).get("size")
+    rows = positions.get("rows")
+    if not isinstance(size, int):
+        raise RowDeferred("POSITIONS_SIZE_MISSING")
+    if not isinstance(rows, list) or len(rows) != size:
+        rows = ms_rows(session, f"/entity/{entity}/{obj['id']}/positions",
+                       {"limit": 1000, "expand": "assortment"})
+        obj["positions"] = {**positions, "rows": rows}
+    if len(rows) != size:
+        raise RowDeferred("POSITIONS_INCOMPLETE")
+    return obj
+
+
+def finance_refresh(data: dict, mss: requests.Session, oid: str) -> None:
+    """Capture global changes, including payments made by a different payer.
+
+    Known dependencies are also read individually: deletes never disappear as
+    a false zero return/payment. Supported updated filters were checked live.
+    """
+    start = datetime.now(TZ)
+    since = moscow_dt(data.get("ledger_watermark") or data["captured_at"]) - timedelta(seconds=5)
+    for kind in LEDGERS:
+        params = {"limit": 1000, "filter": "updated>=" + since.strftime("%Y-%m-%d %H:%M:%S")}
+        if kind == "salesreturn":
+            params.update(limit=100, expand="positions,positions.assortment,demand")
+        changed = ms_rows(mss, "/entity/" + kind, params)
+        index = {str(x["id"]): x for x in data[kind]}
+        index.update({str(x["id"]): x for x in changed})
+        data[kind] = list(index.values())
+    invoices = {str(x["id"]) for x in data["invoiceout"] if id_of(x.get("customerOrder")) == oid}
+    demands = {str(x["id"]) for x in data["demand"] if id_of(x.get("customerOrder")) == oid}
+    returns = {str(x["id"]) for x in data["salesreturn"] if id_of(x.get("demand")) in demands}
+    targets = {oid} | invoices | demands | returns
+    for kind in LEDGERS:
+        index = {str(x["id"]): x for x in data[kind]}
+        relevant = [x for x in data[kind] if str(x["id"]) in targets
+                    or any(id_of(op.get("meta")) in targets for op in x.get("operations") or [])]
+        for old in relevant:
+            params = {"expand": "positions,positions.assortment,demand"} if kind == "salesreturn" else None
+            try:
+                obj = api_get(mss, lib.MS_BASE + f"/entity/{kind}/{old['id']}", params)
+            except Stop as exc:
+                if "HTTP 404" in str(exc) or "HTTP 410" in str(exc):
+                    raise RowDeferred("LINKED_DOCUMENT_DELETED") from exc
+                raise
+            if kind == "salesreturn":
+                complete_positions(mss, kind, obj)
+            index[str(obj["id"])] = obj
+        data[kind] = list(index.values())
+    data["ledger_watermark"] = start.isoformat(timespec="seconds")
+
+
+def confirm_buyer(amo: lib.Amo, cid: str, row: dict, new: bool = False) -> dict:
+    contact = confirm_contact(amo, cid, row, expect_name=False)
+    if contact.get("_migration_identity_mismatch"):
+        raise RowDeferred("CONTACT_IDENTITY_MISMATCH")
+    if new and row.get("phone"):
+        numbers = [str(v.get("value") or "") for f in contact.get("custom_fields_values") or []
+                   if f.get("field_code") == "PHONE" or f.get("field_id") == AMO_PHONE_FIELD
+                   for v in f.get("values") or []]
+        if row["phone"] not in numbers:
+            raise RowDeferred("NEW_PHONE_NOT_CANONICAL")
+    return contact
+
+
+def set_backlink(ms: lib.MS, amo: lib.Amo, journal: dict, oid: str, lead_id: str,
+                 row: dict, payload: dict, contact_id: str) -> None:
+    mss = ms_session(ms)
+    target = amo_lead_url(amo, lead_id)
+    _set_entry(journal, oid, status="BACKLINK_WRITE_INTENT", lead_id=lead_id,
+               contact_id=contact_id, backlink=target)
+    for attempt in range(5):
+        order = fresh_order(mss, oid, [0.0])
+        link = ms_link(order)
+        if link and link != target:
+            raise Stop("BACKLINK_CONFLICT_AFTER_CREATION")
+        confirm_lead(amo, lead_id, order, row, contact_id, payload)
+        if link == target:
+            _set_entry(journal, oid, status="VERIFIED", verified_at=datetime.now(TZ).isoformat(timespec="seconds"))
+            return
+        # Remap updates the supplied attribute; no stale copy of other attributes.
+        before = attrs(order)
+        attribute = {"id": MS_AMO_ATTR,
+                     "meta": {"href": lib.MS_BASE + "/entity/customerorder/metadata/attributes/" + MS_AMO_ATTR,
+                              "type": "attributemetadata", "mediaType": "application/json"}, "value": target}
+        code, _, error = api_write(mss, "PUT", lib.MS_BASE + "/entity/customerorder/" + oid,
+                                  {"attributes": [attribute]}, headers={"X-Lognex-WebHook-Disable": "true"})
+        after = fresh_order(mss, oid, [0.0])
+        if any(attrs(after).get(k) != v for k, v in before.items() if k != MS_AMO_ATTR):
+            raise Stop("UNRELATED_ATTRIBUTE_CHANGED_DURING_BACKLINK")
+        if ms_link(after) == target:
+            confirm_lead(amo, lead_id, after, row, contact_id, payload)
+            _set_entry(journal, oid, status="VERIFIED", verified_at=datetime.now(TZ).isoformat(timespec="seconds"))
+            return
+        if ms_link(after):
+            raise Stop("BACKLINK_CONFLICT_AFTER_WRITE")
+        if code not in (None, 429, 500, 502, 503, 504):
+            raise Stop(f"BACKLINK_NOT_CONFIRMED_HTTP_{code}")
+        # A PUT of this same link is safe only after a fresh read of an empty link.
+        time.sleep(min(30, 2 ** (attempt + 1)))
+    raise Temporary("BACKLINK_NOT_CONFIRMED_AFTER_RETRIES")
+
+
+def create_entity(amo: lib.Amo, journal: dict, oid: str, row: dict, kind: str, payload: dict) -> str:
+    plural = "contacts" if kind == "contact" else "leads"
+    intent = "CONTACT_WRITE_INTENT" if kind == "contact" else "LEAD_WRITE_INTENT"
+    if kind == "lead" and journal.get("active_run"):
+        attempts = journal.setdefault("run_attempts", {}).setdefault(journal["active_run"], [])
+        if oid not in attempts:
+            attempts.append(oid)
             save_journal(journal)
-        else:
-            contact_payload = {"name": row["buyer"], "responsible_user_id": MAXIM,
-                               "request_id": "ms-counterparty:" + cp_id,
-                               "custom_fields_values": []}
-            if phone:
-                contact_payload["custom_fields_values"].append({"field_code": "PHONE", "values": [{"value": phone}]})
-            if email:
-                contact_payload["custom_fields_values"].append({"field_code": "EMAIL", "values": [{"value": email}]})
-            _set_entry(journal, oid, status="CONTACT_WRITE_INTENT", contact_payload=contact_payload)
-            code, body, error = api_write(amos, "POST", amo.base + "/api/v4/contacts", [contact_payload], pace=writer_pace)
-            embedded = ((body.get("_embedded") or {}).get("contacts") or []) if isinstance(body, dict) else []
-            if code in (200, 201) and len(embedded) == 1 and embedded[0].get("id"):
-                contact_id = str(embedded[0]["id"])
-            else:
-                recovered = exact_contacts(amo, phone, email)
-                if len(recovered) == 1:
-                    contact_id = str(recovered[0]["id"])
-                elif code is None or code >= 500:
-                    journal["unknown_write"] = {"order_id": oid, "kind": "contact", "error": error or code}
-                    save_journal(journal)
-                    raise Stop("Результат создания контакта не удалось однозначно восстановить")
-                else:
-                    _set_entry(journal, oid, status="DEFERRED", reason=f"CONTACT_CREATE_HTTP_{code}")
-                    continue
-            checked_contact = confirm_contact(amo, contact_id, row, expect_name=True)
-            contact_name_mismatch = bool(checked_contact.get("_migration_name_mismatch"))
-            journal["counterparty_contacts"][cp_id] = contact_id
-            _set_entry(journal, oid, status="CONTACT_VERIFIED", contact_id=contact_id)
+    for attempt in range(5):
+        _set_entry(journal, oid, status=intent, **{kind + "_payload": payload},
+                   write_started_at=datetime.now(TZ).isoformat(timespec="seconds"))
+        code, body, error = api_write(amo_session(amo), "POST", amo.base + "/api/v4/" + plural, [payload])
+        embedded = (body.get("_embedded") or {}).get(plural) or []
+        if code in (200, 201) and len(embedded) == 1 and embedded[0].get("id"):
+            result = str(embedded[0]["id"])
+            _set_entry(journal, oid, **{kind + "_id": result})
+            return result
+        found = exact_contacts(amo, row.get("phone", ""), row.get("email", "")) if kind == "contact" else exact_leads(amo, oid)
+        if len(found) == 1:
+            result = str(found[0]["id"])
+            _set_entry(journal, oid, **{kind + "_id": result}, recovered_after_post=True)
+            return result
+        if code == 429 and not found:
+            time.sleep(min(30, 2 ** (attempt + 1)))
+            continue
+        if code is None or code >= 500 or code in (200, 201) or found:
+            quarantine(journal, oid, row, "UNKNOWN_" + kind.upper() + "_WRITE")
+            raise UnknownWrite("UNKNOWN_" + kind.upper() + "_WRITE")
+        if code in (401, 403):
+            raise Stop(f"WRITE_PERMISSION_HTTP_{code}")
+        raise RowDeferred(f"{kind.upper()}_CREATE_HTTP_{code}")
+    raise RowDeferred(kind.upper() + "_CREATE_RATE_LIMIT")
 
-        contact_entry_updates = {"status": "CONTACT_VERIFIED", "contact_id": contact_id}
-        if existing_email_mismatch:
-            contact_entry_updates["existing_contact_email_mismatch"] = True
-        if contact_name_mismatch:
-            contact_entry_updates["contact_name_mismatch"] = True
-        _set_entry(journal, oid, **contact_entry_updates)
-        if recovered_lead_id:
-            lead_id = recovered_lead_id
-            previous_payload = entry.get("lead_payload") or {}
-            if not previous_payload or str(entry.get("contact_id") or "") != contact_id:
-                raise Stop("Восстановленной сделке не хватает зафиксированного payload/контакта")
-            lead_payload = make_lead_payload(amo, fresh, row, contact_id, roster)
-            def without_comment(payload: dict) -> dict:
-                clean = {k: v for k, v in payload.items() if k != "source_id"}
-                clean["custom_fields_values"] = [x for x in payload.get("custom_fields_values", [])
-                                                 if str(x.get("field_id")) != str(FIELDS["comment"])]
-                return clean
-            if without_comment(previous_payload) != without_comment(lead_payload):
-                raise Stop("Восстановленная сделка отличается от текущего заказа не только описанием")
-            old_comment = next((x for x in previous_payload.get("custom_fields_values", [])
-                                if str(x.get("field_id")) == str(FIELDS["comment"])), None)
-            new_comment = next((x for x in lead_payload.get("custom_fields_values", [])
-                                if str(x.get("field_id")) == str(FIELDS["comment"])), None)
-            if old_comment != new_comment:
-                _set_entry(journal, oid, status="COMMENT_WRITE_INTENT", contact_id=contact_id,
-                           lead_id=lead_id, lead_payload=lead_payload,
-                           comment_update="Перечитано актуальное описание из МойСклад")
-                code, body, error = api_write(amos, "PATCH", amo.base + f"/api/v4/leads/{lead_id}",
-                                              {"custom_fields_values": [new_comment]}, pace=writer_pace)
-                read_status, readback = amo_read(amo, f"/api/v4/leads/{lead_id}")
-                if (read_status != 200 or field(readback, FIELDS["comment"])
-                        != str((new_comment.get("values") or [{}])[0].get("value") or "")):
-                    journal["unknown_write"] = {"order_id": oid, "kind": "comment_update",
-                                                 "http": code, "error": error}
-                    save_journal(journal)
-                    raise Stop("Актуальное описание сделки после записи не подтверждено")
-            confirm_lead(amo, lead_id, fresh, row, contact_id, lead_payload)
-        else:
-            lead_payload = make_lead_payload(amo, fresh, row, contact_id, roster)
-            _set_entry(journal, oid, status="LEAD_WRITE_INTENT", contact_id=contact_id,
-                       lead_payload=lead_payload)
-            code, body, error = api_write(amos, "POST", amo.base + "/api/v4/leads", [lead_payload], pace=writer_pace)
-            embedded = ((body.get("_embedded") or {}).get("leads") or []) if isinstance(body, dict) else []
-            if code in (200, 201) and len(embedded) == 1 and embedded[0].get("id"):
-                lead_id = str(embedded[0]["id"])
-            else:
-                recovered = exact_leads(amo, oid)
-                if len(recovered) == 1:
-                    lead_id = str(recovered[0]["id"])
-                elif code is None or code >= 500:
-                    journal["unknown_write"] = {"order_id": oid, "kind": "lead", "error": error or code}
-                    save_journal(journal)
-                    raise Stop("Результат создания сделки не удалось однозначно восстановить")
-                else:
-                    _set_entry(journal, oid, status="DEFERRED", reason=f"LEAD_CREATE_HTTP_{code}")
-                    continue
-        _set_entry(journal, oid, status="LEAD_VERIFIED", contact_id=contact_id, lead_id=lead_id)
-        confirmed_lead = confirm_lead(amo, lead_id, fresh, row, contact_id, lead_payload)
 
-        target_link = amo_lead_url(amo, lead_id)
-        _set_entry(journal, oid, status="BACKLINK_WRITE_INTENT", lead_id=lead_id,
-                   contact_id=contact_id, backlink=target_link)
-        got_link = ""
-        code = None
-        error = ""
-        for attempt in range(5):
-            if attempt:
-                time.sleep(min(30, 5 * attempt))
-            # После HTTP 429 перечитываем заказ и только затем повторяем
-            # идемпотентное обновление одного атрибута. Чужую ссылку не трогаем.
-            fresh_after = fresh_order(mss, oid, ms_pace)
-            got_link = ms_link(fresh_after)
-            if got_link == target_link:
+def current_row(data: dict, ms: lib.MS, amo: lib.Amo, oid: str, roster: dict) -> tuple[dict, dict]:
+    mss = ms_session(ms)
+    finance_refresh(data, mss, oid)
+    order = complete_positions(mss, "customerorder", fresh_order(mss, oid, [0.0]))
+    data_one = {**data, "orders": [order]}
+    row = classify(data_one, ms, roster)["rows"][0]
+    return order, row
+
+
+def recover_pending(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict) -> None:
+    unknown = journal.get("unknown_write")
+    if unknown:
+        oid = unknown.get("order_id")
+        if not oid or oid not in journal["rows"]:
+            raise Stop("UNKNOWN_WRITE_WITHOUT_ORDER")
+        journal["rows"][oid]["previous_unknown_write"] = unknown
+        journal["unknown_write"] = None
+        save_journal(journal)
+    for oid, entry in list(journal["rows"].items()):
+        if entry.get("status") in TERMINAL:
+            continue
+        row = entry.get("source_row")
+        if not row:
+            row = next((r for r in journal.get("legacy_plan_rows", []) if r.get("order_id") == oid), None)
+        if not row:
+            raise Stop("RECOVERY_SOURCE_ROW_MISSING")
+        matches = exact_leads(amo, oid)
+        if len(matches) > 1:
+            raise Stop("MULTIPLE_LEADS_DURING_RECOVERY")
+        if matches:
+            lead_id = str(matches[0]["id"])
+            if entry.get("lead_id") and str(entry["lead_id"]) != lead_id:
+                raise Stop("RECOVERY_LEAD_ID_CONFLICT")
+            payload, cid = entry.get("lead_payload"), str(entry.get("contact_id") or "")
+            if not payload or not cid:
+                quarantine(journal, oid, row, "RECOVERY_PAYLOAD_OR_CONTACT_MISSING")
+                continue
+            # The saved source/amount must still agree; do not rewrite an existing deal.
+            order, recalculated = current_row(data, ms, amo, oid, {})
+            checks = ("total_kopecks", "payment_kopecks", "payment_moment", "return_kopecks", "return_state", "counterparty_id", "composition", "moment")
+            if any(recalculated.get(k) != row.get(k) for k in checks):
+                quarantine(journal, oid, row, "SOURCE_CHANGED_AFTER_CREATION")
+                continue
+            set_backlink(ms, amo, journal, oid, lead_id, row, payload, cid)
+            continue
+        if entry.get("lead_id") or entry.get("status") in {"LEAD_WRITE_INTENT", "LEAD_VERIFIED", "BACKLINK_WRITE_INTENT", "COMMENT_WRITE_INTENT"}:
+            quarantine(journal, oid, row, "UNRESOLVED_LEAD_WRITE")
+            continue
+        contacts = exact_contacts(amo, row.get("phone", ""), row.get("email", ""))
+        if len(contacts) == 1:
+            cid = str(contacts[0]["id"])
+            try:
+                confirm_buyer(amo, cid, row)
+            except RowDeferred:
+                quarantine(journal, oid, row, "RECOVERY_CONTACT_IDENTITY_MISMATCH")
+                continue
+            journal["counterparty_contacts"][row["counterparty_id"]] = cid
+            _set_entry(journal, oid, status="CONTACT_VERIFIED", contact_id=cid, source_row=row)
+            # Can enter the fresh plan; the contact will be reused, never created twice.
+        elif entry.get("status") in {"CONTACT_WRITE_INTENT", "CONTACT_VERIFIED", "COUNTERPARTY_WRITE_INTENT"} or entry.get("contact_id"):
+            quarantine(journal, oid, row, "UNRESOLVED_CONTACT_WRITE")
+        else:
+            _set_entry(journal, oid, status="PLANNED", source_row=row)
+
+
+def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict, roster: dict) -> bool:
+    oid = planned["order_id"]
+    if journal["rows"].get(oid, {}).get("status") in TERMINAL:
+        return False
+    order, row = current_row(data, ms, amo, oid, roster)
+    if identity_blocked(journal, row):
+        raise RowDeferred("IDENTITY_HAS_UNRESOLVED_WRITE")
+    if row["category"] != "CREATE":
+        status = row["category"] if row["category"] in {"EXISTS_BACKLINK", "EXISTS_AMO_ID"} else "DEFERRED"
+        _set_entry(journal, oid, status=status, reason=row["reason"], source_row=row, lead_id=row.get("lead_id"))
+        return False
+    if not moscow_dt(order.get("moment")) or state_id(order) not in STATUS_IDS.values():
+        raise RowDeferred("ORDER_LEFT_ALLOWED_STATUSES")
+    matches = exact_leads(amo, oid)
+    if matches:
+        if len(matches) != 1:
+            raise RowDeferred("MULTIPLE_EXISTING_LEADS")
+        _set_entry(journal, oid, status="EXISTS_AMO_ID", lead_id=str(matches[0]["id"]))
+        return False
+    contacts = exact_contacts(amo, row.get("phone", ""), row.get("email", ""))
+    if len(contacts) > 1:
+        raise RowDeferred("AMBIGUOUS_CONTACT_MATCH")
+    entry = _set_entry(journal, oid, status="PLANNED", source_row=row,
+                       source_hash=row["source_hash"], net_kopecks=row["net_kopecks"])
+    cid = str(row.get("contact_id") or journal["counterparty_contacts"].get(row["counterparty_id"]) or "")
+    if contacts:
+        found_id = str(contacts[0]["id"])
+        if cid and cid != found_id:
+            raise RowDeferred("CONTACT_INDEX_CHANGED")
+        cid = found_id
+    if cid:
+        contact = confirm_buyer(amo, cid, row)
+    else:
+        payload = {"name": row["buyer"], "responsible_user_id": MAXIM,
+                   "request_id": "ms-counterparty:" + row["counterparty_id"], "custom_fields_values": []}
+        for key, code in (("phone", "PHONE"), ("email", "EMAIL")):
+            if row.get(key):
+                payload["custom_fields_values"].append({"field_code": code, "values": [{"value": row[key]}]})
+        cid = create_entity(amo, journal, oid, row, "contact", payload)
+        try:
+            contact = confirm_buyer(amo, cid, row, new=True)
+        except RowDeferred:
+            quarantine(journal, oid, row, "CREATED_CONTACT_IDENTITY_MISMATCH")
+            raise UnknownWrite("CREATED_CONTACT_IDENTITY_MISMATCH")
+    journal["counterparty_contacts"][row["counterparty_id"]] = cid
+    _set_entry(journal, oid, status="CONTACT_VERIFIED", contact_id=cid)
+    # A contact creation can take time. Recheck all financial facts and duplicate keys.
+    fresh, again = current_row(data, ms, amo, oid, roster)
+    keys = ("counterparty_id", "buyer", "phone", "email", "net_kopecks", "total_kopecks", "payment_kopecks", "payment_moment", "return_state", "return_kopecks", "close_moment", "composition")
+    if again["category"] != "CREATE" or any(row.get(k) != again.get(k) for k in keys):
+        raise RowDeferred("SOURCE_CHANGED_BEFORE_DEAL_CREATION")
+    if ms_link(fresh) or exact_leads(amo, oid):
+        raise RowDeferred("LINK_OR_LEAD_APPEARED_BEFORE_CREATION")
+    payload = make_lead_payload(amo, fresh, row, cid, roster)
+    lid = create_entity(amo, journal, oid, row, "lead", payload)
+    _set_entry(journal, oid, status="LEAD_VERIFIED", contact_id=cid, lead_id=lid, lead_payload=payload)
+    lead = confirm_lead(amo, lid, fresh, row, cid, payload)
+    set_backlink(ms, amo, journal, oid, lid, row, payload, cid)
+    data["contacts"] = [c for c in data["contacts"] if str(c["id"]) != cid] + [contact]
+    data["leads"] = [l for l in data["leads"] if str(l["id"]) != lid] + [lead]
+    return True
+
+
+def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] | None = None) -> dict:
+    result = {"checked_at": datetime.now(TZ).isoformat(timespec="seconds"), "checked": 0,
+              "ok": 0, "issues": [], "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
+    mss = ms_session(ms)
+    seen = set()
+    for oid, entry in journal["rows"].items():
+        if entry.get("status") != "VERIFIED" or (only_ids is not None and oid not in only_ids):
+            continue
+        result["checked"] += 1
+        lid, cid = str(entry.get("lead_id") or ""), str(entry.get("contact_id") or "")
+        if not lid or lid in seen:
+            raise Stop("JOURNAL_DUPLICATE_LEAD_ID")
+        seen.add(lid)
+        order = fresh_order(mss, oid, [0.0])
+        lead = confirm_lead(amo, lid, order, {}, cid, entry["lead_payload"])
+        st, contact = amo_read(amo, f"/api/v4/contacts/{cid}")
+        if st != 200:
+            raise Stop("VERIFIED_CONTACT_NOT_READABLE")
+        if ms_link(order) != amo_lead_url(amo, lid):
+            raise Stop("VERIFIED_BACKLINK_MISMATCH")
+        matches = exact_leads(amo, oid)
+        if len(matches) != 1 or str(matches[0]["id"]) != lid:
+            raise Stop("VERIFIED_UUID_NOT_UNIQUE")
+        row = entry.get("source_row") or next((r for r in journal.get("legacy_plan_rows", []) if r["order_id"] == oid), {})
+        net = int(row.get("net_kopecks", entry.get("net_kopecks", 0)))
+        result["net_kopecks"] += net
+        result["budget_rubles"] += lead["price"]
+        result["rounding_kopecks"] += lead["price"] * 100 - net
+        result["ok"] += 1
+    atomic_json(REPORT, result)
+    return result
+
+
+def apply_plan(plan: dict, plan_hash: str, maximum: int, resume: bool = False,
+               current_data: dict | None = None) -> dict:
+    ms, amo = lib.MS(), assign_shift.amo_client()
+    journal = journal_load()
+    if journal.get("plan_sha256") and journal["plan_sha256"] != plan_hash:
+        raise Stop("Журнал относится к другому плану; используйте --prepare --resume")
+    if current_data is None:
+        current_data, _ = collect_current(ms, amo, strict_order_snapshot=False)
+    journal.setdefault("legacy_plan_rows", plan["rows"])
+    recover_pending(current_data, ms, amo, journal)
+    roster = get_roster()
+    processed, deferred = 0, 0
+    candidates = sorted((r for r in plan["rows"] if r["category"] == "CREATE"), key=lambda r: (r.get("moment", ""), r["order_id"]))
+    for row in candidates:
+        if processed >= maximum:
+            break
+        if journal["rows"].get(row["order_id"], {}).get("status") in TERMINAL:
+            continue
+        try:
+            if apply_one(current_data, ms, amo, journal, row, roster):
+                processed += 1
+        except UnknownWrite:
+            deferred += 1
+        except RowDeferred as exc:
+            _set_entry(journal, row["order_id"], status="DEFERRED", reason=str(exc))
+            deferred += 1
+    return {"processed": processed, "deferred": deferred}
+
+
+def prepare_night(ms: lib.MS, amo: lib.Amo, data: dict, journal: dict, apply_recovery: bool) -> dict:
+    if PLAN.exists() and not journal.get("legacy_plan_rows"):
+        old = json.loads(PLAN.read_text(encoding="utf-8"))
+        journal["legacy_plan_rows"] = old["rows"]
+    journal.setdefault("schema_version", 2)
+    journal.setdefault("plan_history", [])
+    if apply_recovery:
+        recover_pending(data, ms, amo, journal)
+    plan = classify(data, ms)
+    old_rows = {r["order_id"]: r for r in journal.get("legacy_plan_rows", [])}
+    # Known failures are retained, but never-attempted old policy exclusions are reclassified.
+    for row in plan["rows"]:
+        entry = journal["rows"].get(row["order_id"], {})
+        entry.setdefault("source_row", old_rows.get(row["order_id"], row))
+        if entry.get("status") in {"DEFERRED", "QUARANTINED"}:
+            row.update(category="DEFERRED", reason=entry.get("reason", "PRIOR_UNRESOLVED_ATTEMPT"))
+        elif entry.get("status") == "VERIFIED":
+            if row["category"] not in {"EXISTS_BACKLINK", "EXISTS_AMO_ID"}:
+                raise Stop("PREVIOUSLY_VERIFIED_ORDER_NO_LONGER_LINKED")
+        if identity_blocked(journal, row) and row["category"] == "CREATE":
+            row.update(category="DEFERRED", reason="IDENTITY_HAS_UNRESOLVED_WRITE")
+    plan["counts"] = dict(__import__('collections').Counter(r["category"] for r in plan["rows"]))
+    atomic_json(PLAN, plan)
+    sha = hashlib.sha256(PLAN.read_bytes()).hexdigest()
+    if journal.get("plan_sha256") != sha:
+        journal["plan_history"].append({"sha256": journal.get("plan_sha256"), "changed_at": datetime.now(TZ).isoformat(timespec="seconds")})
+    journal["plan_sha256"] = sha
+    journal["prepared_at"] = datetime.now(TZ).isoformat(timespec="seconds")
+    save_journal(journal)
+    return plan
+
+
+def night_run(args) -> dict:
+    if not args.resume:
+        raise Stop("Ночной режим требует --resume, журнал нельзя начинать заново")
+    backup = checkpoint_backup()
+    ms, amo = lib.MS(), assign_shift.amo_client()
+    journal = journal_load()
+    journal["active_run"] = datetime.now(TZ).isoformat(timespec="microseconds")
+    save_journal(journal)
+    data, _ = collect_current(ms, amo, strict_order_snapshot=False)
+    atomic_json(RAW_CACHE, data)
+    plan = prepare_night(ms, amo, data, journal, apply_recovery=args.apply)
+    result = {"backup": backup, "counts": plan["counts"], "processed": 0, "deferred": 0}
+    if args.prepare or not args.apply:
+        return result
+    candidates = sorted((r for r in plan["rows"] if r["category"] == "CREATE"), key=lambda r: (r.get("moment", ""), r["order_id"]))
+    roster = get_roster()
+    limit = args.max_orders if args.max_orders is not None else len(candidates)
+    created_ids = set()
+    def at_limit() -> bool:
+        return len(journal.get("run_attempts", {}).get(journal["active_run"], [])) >= limit
+    for start in range(0, len(candidates), args.batch_size):
+        if at_limit():
+            break
+        batch = candidates[start:start + args.batch_size]
+        for row in batch:
+            if at_limit():
                 break
-            if got_link:
-                raise Stop("После создания сделки в МойСклад появилась другая ссылка")
-            attrs_now = fresh_after.get("attributes") or []
-            found_attr = False
-            for item in attrs_now:
-                if str(item.get("id") or id_of(item)) == MS_AMO_ATTR:
-                    item["value"] = target_link
-                    found_attr = True
+            oid = row["order_id"]
+            if journal["rows"].get(oid, {}).get("status") in TERMINAL:
+                continue
+            deadline = time.monotonic() + 1800
+            while True:
+                try:
+                    if apply_one(data, ms, amo, journal, row, roster):
+                        result["processed"] += 1
+                        created_ids.add(oid)
                     break
-            if not found_attr:
-                metadata = api_get(mss, lib.MS_BASE + "/entity/customerorder/metadata/attributes", last_call=ms_pace)
-                attr_rows = metadata.get("rows")
-                if not isinstance(attr_rows, list) or not any(str(x.get("id")) == MS_AMO_ATTR for x in attr_rows):
-                    raise Stop("Атрибут обратной ссылки отсутствует в метаданных заказа")
-                attrs_now.append({"id": MS_AMO_ATTR,
-                                  "meta": {"href": f"{lib.MS_BASE}/entity/customerorder/metadata/attributes/{MS_AMO_ATTR}",
-                                           "type": "attributemetadata", "mediaType": "application/json"},
-                                  "value": target_link})
-            code, body, error = api_write(mss, "PUT", lib.MS_BASE + f"/entity/customerorder/{oid}",
-                                          {"attributes": attrs_now},
-                                          headers={"X-Lognex-WebHook-Disable": "true"}, pace=writer_pace)
-            after = fresh_order(mss, oid, ms_pace)
-            got_link = ms_link(after)
-            if got_link == target_link:
-                break
-            if got_link:
-                raise Stop("После записи в МойСклад появилась другая ссылка")
-            if code != 429:
-                if code is None:
-                    journal["unknown_write"] = {"order_id": oid, "kind": "backlink", "error": error}
-                    save_journal(journal)
-                raise Stop(f"Обратная ссылка после записи не подтверждена (HTTP {code})")
-        if got_link != target_link:
-            raise Stop(f"Обратная ссылка не записалась после повторов (HTTP {code})")
-        read_lead = confirm_lead(amo, lead_id, after, row, contact_id, lead_payload)
-        if field(read_lead, FIELDS["ms_url"]) != ms_order_url(oid):
-            raise Stop("Ссылка из сделки ведёт не на текущий заказ МойСклад")
-        _set_entry(journal, oid, status="VERIFIED", lead_id=lead_id, contact_id=contact_id,
-                   backlink=got_link, verified_at=datetime.now(TZ).isoformat(timespec="seconds"))
-        processed += 1
-        if processed % 25 == 0:
-            print(f"Подтверждено {processed} заказов в текущем запуске; журнал сохранён.", flush=True)
-    done = sum(1 for item in journal["rows"].values() if item.get("status") == "VERIFIED")
-    return {"verified_before": done - processed, "processed": processed,
-            "verified_total": done, "remaining_create_rows": max(0, len(create_rows) - done)}
+                except Temporary:
+                    if time.monotonic() >= deadline:
+                        raise Stop("NETWORK_UNAVAILABLE_30_MINUTES")
+                    print("Связь временно недоступна; журнал сохранён, проверю через минуту.", flush=True)
+                    time.sleep(60)
+                    # Recover before any new POST; a timeout may follow a completed write.
+                    recover_pending(data, ms, amo, journal)
+                    if journal["rows"].get(oid, {}).get("status") in TERMINAL:
+                        if journal["rows"][oid]["status"] == "VERIFIED":
+                            result["processed"] += 1
+                            created_ids.add(oid)
+                        break
+                except UnknownWrite:
+                    result["deferred"] += 1
+                    break
+                except RowDeferred as exc:
+                    _set_entry(journal, oid, status="DEFERRED", reason=str(exc))
+                    result["deferred"] += 1
+                    break
+        if created_ids:
+            verify_journal(ms, amo, journal, created_ids)
+        print(f"Партия проверена. Новых сделок: {result['processed']}; отложено: {result['deferred']}.", flush=True)
+    result["verification"] = verify_journal(ms, amo, journal, created_ids if args.max_orders is not None else None)
+    # A fresh complete index proves no processed UUID becomes CREATE again.
+    after, _ = collect_current(ms, amo, strict_order_snapshot=False)
+    final_plan = prepare_night(ms, amo, after, journal, apply_recovery=True)
+    atomic_json(RAW_CACHE, after)
+    result["counts_after"] = final_plan["counts"]
+    result["remaining"] = sum(r["category"] == "CREATE" and journal["rows"].get(r["order_id"], {}).get("status") not in TERMINAL for r in final_plan["rows"])
+    journal["last_run"] = result
+    save_journal(journal)
+    return result
+
+
+def self_test() -> None:
+    """Regression checks use in-memory API doubles, never production writes."""
+    import unittest
+    from unittest.mock import patch
+    import tempfile
+
+    module = sys.modules[__name__]
+
+    class Regression(unittest.TestCase):
+        def test_person_type_does_not_choose_entity(self):
+            for kind in ("individual", "legal", "entrepreneur", ""):
+                self.assertEqual(buyer_identity({"companyType": kind, "name": "Анна"}), ("Анна", ""))
+            self.assertEqual(buyer_identity({"companyType": "legal", "name": "ООО Магазин"})[1], "DEFERRED_BUSINESS_CUSTOMER")
+            self.assertTrue(buyer_identity({"name": "Анна Анна"})[1])
+
+        def test_phone_and_money(self):
+            self.assertEqual(phone_norm("8 (999) 111-22-33"), "+79991112233")
+            self.assertEqual(phone_norm("9991112233", "Россия"), "+79991112233")
+            self.assertEqual(phone_norm("9991112233"), "")
+            self.assertEqual(phone_norm("+442012345678"), "+442012345678")
+            self.assertEqual(phone_norm("+79991112233, +79992223344"), "")
+            self.assertEqual(rubles_round(123450), 1235)
+
+        def test_full_payment_allocated_not_document_total(self):
+            order = {"id": "o", "sum": 10000}
+            self.assertEqual(payment_close(order, {"o": [("2026-10-01", 4000), ("2026-10-03", 6000)]}), (10000, "2026-10-03"))
+            self.assertEqual(payment_close(order, {"o": [("2026-10-01", 4000)]}), (4000, None))
+
+        def test_return_once_and_all_goods_without_delivery(self):
+            goods = {"quantity": 1, "assortment": {"meta": {"href": "/product/g", "type": "product"}}}
+            shipping = {"quantity": 1, "assortment": {"name": "Доставка", "meta": {"href": "/service/d", "type": "service"}}}
+            order = {"sum": 11000, "positions": {"rows": [goods, shipping]}}
+            self.assertEqual(return_state(order, [{"sum": 10000, "positions": {"rows": [goods]}}])[:2], ("full", 10000))
+            self.assertEqual(return_state(order, [{"sum": 5000, "positions": {"rows": [{**goods, "quantity": .5}]}}])[:2], ("partial", 5000))
+            self.assertEqual(return_state(order, [{"sum": 12000, "positions": {"rows": [goods]}}])[0], "deferred")
+
+        def test_unknown_post_is_never_retried(self):
+            j = {"rows": {}, "counterparty_contacts": {}, "active_run": "test"}
+            row = {"phone": "+79991112233", "email": "", "counterparty_id": "cp"}
+            with patch.object(module, "save_journal"), patch.object(module, "amo_session", return_value=object()), \
+                    patch.object(module, "api_write", return_value=(None, {}, "Timeout")) as write, \
+                    patch.object(module, "exact_contacts", return_value=[]):
+                with self.assertRaises(UnknownWrite):
+                    create_entity(type("A", (), {"base": "https://example"})(), j, "o", row, "contact", {})
+                self.assertEqual(write.call_count, 1)
+                self.assertEqual(j["rows"]["o"]["status"], "QUARANTINED")
+                self.assertTrue(identity_blocked(j, {"counterparty_id": "other", "phone": row["phone"]}))
+
+        def test_lead_cap_includes_uncertain_attempt(self):
+            j = {"rows": {}, "counterparty_contacts": {}, "active_run": "test"}
+            with patch.object(module, "save_journal"), patch.object(module, "amo_session", return_value=object()), \
+                    patch.object(module, "api_write", return_value=(500, {}, "")), \
+                    patch.object(module, "exact_leads", return_value=[]):
+                with self.assertRaises(UnknownWrite):
+                    create_entity(type("A", (), {"base": "https://example"})(), j, "o", {}, "lead", {})
+            self.assertEqual(j["run_attempts"]["test"], ["o"])
+
+        def test_existing_backlink_never_written_again(self):
+            amo = type("A", (), {"base": "https://example.amocrm.ru"})()
+            target = amo_lead_url(amo, "1")
+            order = {"attributes": [{"id": MS_AMO_ATTR, "value": target}]}
+            j = {"rows": {}}
+            with patch.object(module, "save_journal"), patch.object(module, "ms_session"), \
+                    patch.object(module, "fresh_order", return_value=order), \
+                    patch.object(module, "confirm_lead"), patch.object(module, "api_write") as write:
+                set_backlink(object(), amo, j, "o", "1", {}, {}, "2")
+                write.assert_not_called()
+                self.assertEqual(j["rows"]["o"]["status"], "VERIFIED")
+
+        def test_foreign_backlink_is_system_stop(self):
+            j = {"rows": {}}
+            with patch.object(module, "save_journal"), patch.object(module, "ms_session"), \
+                    patch.object(module, "fresh_order", return_value={"attributes": [{"id": MS_AMO_ATTR, "value": "https://other"}]}), \
+                    patch.object(module, "api_write") as write:
+                with self.assertRaises(Stop):
+                    set_backlink(object(), type("A", (), {"base": "https://example"})(), j, "o", "1", {}, {}, "2")
+                write.assert_not_called()
+
+        def test_contact_fields_do_not_cross_match(self):
+            contact = {"id": 1, "name": "Анна", "custom_fields_values": [
+                {"field_code": "EMAIL", "values": [{"value": "79991112233@example.com"}]}]}
+            with patch.object(module, "amo_read", return_value=(200, contact)):
+                result = confirm_contact(object(), "1", {"buyer": "Анна", "phone": "+79991112233"})
+            self.assertTrue(result.get("_migration_identity_mismatch"))
+
+        def test_pagination_duplicate_before_204_stops(self):
+            page = [{"id": i} for i in range(1, 251)]
+            with patch.object(module, "amo_request", side_effect=[(200, {"_embedded": {"contacts": page}}), (200, {"_embedded": {"contacts": page}})]), patch.object(module.time, "sleep"):
+                with self.assertRaises(Stop):
+                    amo_pages(object(), "/contacts", "contacts")
+
+        def test_payload_is_contact_only(self):
+            row = {"net_kopecks": 10000, "total_kopecks": 10000, "payment_kopecks": 10000,
+                   "payment_moment": "2026-10-01 12:00:00", "close_moment": "2026-10-01 12:00:00",
+                   "composition": "Товар", "return_kopecks": 0, "return_state": "none",
+                   "counterparty_id": "cp", "buyer": "Анна", "state": "Выполнен", "order_id": "o"}
+            payload = make_lead_payload(object(), {"id": "o", "moment": "2026-10-01 11:00:00"}, row, "5", {})
+            self.assertEqual(payload["_embedded"], {"contacts": [{"id": 5, "is_main": True}]})
+            self.assertNotIn("source_id", payload)
+
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(Regression)
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    if not result.wasSuccessful():
+        raise Stop("REGRESSION_TESTS_FAILED")
 
 
 def main() -> None:
@@ -1662,11 +1889,20 @@ def main() -> None:
     parser.add_argument("--apply", action="store_true", help="apply an audited plan")
     parser.add_argument("--plan", type=Path, default=PLAN)
     parser.add_argument("--sha256", default="")
-    parser.add_argument("--max-orders", type=int, default=5)
+    parser.add_argument("--max-orders", type=int, default=None,
+                        help="maximum new lead attempts, including uncertain writes (legacy default 5)")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--night-run", action="store_true")
+    parser.add_argument("--prepare", action="store_true", help="refresh plan and journal without CRM writes")
+    parser.add_argument("--verify", action="store_true", help="read back every previously verified import")
+    parser.add_argument("--self-test", action="store_true", help="run isolated regression tests; no CRM access")
+    parser.add_argument("--batch-size", type=int, default=25)
     parser.add_argument("--reuse-raw", action="store_true",
                         help="reclassify the protected read-only source snapshot without refetching")
     args = parser.parse_args()
+    if args.self_test:
+        self_test()
+        return
     private_storage()
     with LOCK.open("a+") as lockfile:
         os.chmod(LOCK, 0o600)
@@ -1674,6 +1910,20 @@ def main() -> None:
             fcntl.flock(lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise Stop("Уже работает другой экземпляр переноса") from exc
+        if not 1 <= args.batch_size <= 25:
+            raise Stop("Размер партии должен быть от 1 до 25")
+        if args.max_orders is not None and not 1 <= args.max_orders <= 5000:
+            raise Stop("Лимит создания должен быть от 1 до 5000")
+        if args.verify:
+            if args.apply or args.night_run or args.prepare:
+                raise Stop("--verify является отдельной проверкой без записи в CRM")
+            print(json.dumps(verify_journal(lib.MS(), assign_shift.amo_client(), journal_load()), ensure_ascii=False))
+            return
+        if args.night_run or args.prepare:
+            if args.prepare and args.apply:
+                raise Stop("--prepare не совместим с --apply")
+            print(json.dumps(night_run(args), ensure_ascii=False))
+            return
         if not args.apply:
             if args.reuse_raw:
                 if not RAW_CACHE.exists():
@@ -1695,6 +1945,8 @@ def main() -> None:
             return
         if not args.sha256:
             raise Stop("Для apply обязателен SHA256 плана")
+        if args.max_orders is None:
+            args.max_orders = 5
         if args.max_orders < 1 or args.max_orders > 5000:
             raise Stop("Размер запуска должен быть от 1 до 5000 заказов")
         raw = args.plan.read_bytes()

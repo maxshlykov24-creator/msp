@@ -544,6 +544,10 @@ def get_amo() -> tuple[list[dict], dict]:
             "status": lead.get("status_id"), "manager": lead.get("responsible_user_id"),
             "created_at": lead["created_at"], "updated_at": lead.get("updated_at"),
             "source_id": (lead.get("_embedded", {}).get("source") or {}).get("id"),
+            "ms_id": amo.cf(lead, 929049).strip(),
+            "ms_url": amo.cf(lead, 929081).strip(),
+            "ms_source": amo.cf(lead, 929043).strip(),
+            "historical_ms_import": "[Исторический импорт МС→amo " in amo.cf(lead, 929071),
             "won": lead.get("status_id") == 142,
             "order": amo.cf(lead, lib.FIELD_MS_ORDER_NUM).strip(),
         })
@@ -668,9 +672,18 @@ def get_amo_conversion_events(leads: list[dict]) -> dict:
 
 def amo_conversion_path(lead: dict, events: list[dict]) -> dict:
     flow, source = AMO_CONVERSION_SOURCES.get(lead.get('source_id'), ('unknown', 'Источник не определён'))
+    uid = str(lead.get('ms_id') or '').casefold()
+    confirmed_import = (lead.get('historical_ms_import') and lead.get('ms_source') == 'Из МойСклад'
+                        and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', uid)
+                        and uid in str(lead.get('ms_url') or '').casefold())
+    if confirmed_import:
+        flow, source = 'orders', 'МойСклад (исторический импорт)'
     row = {'id': lead['id'], 'number': str(lead['id']), 'date': lead['created'],
            'source_id': lead.get('source_id'), 'source': source, 'flow': flow,
            'path': [], 'events': [], 'complete': False, 'reason': ''}
+    if confirmed_import:
+        row['reason'] = 'Исторический импорт: реальные переходы до создания в amoCRM не подтверждены'
+        return row
     created = [e for e in events if e['type'] == 'lead_added']
     if len(created) != 1 or abs(created[0]['created_at'] - lead['created_at']) > 2:
         row['reason'] = 'Не подтверждена история от создания сделки'
