@@ -515,7 +515,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo,
     for fid, typ in ((929049, "text"), (929057, "text"), (929081, "url"),
                      (929055, "text"), (929031, "text"), (929043, "select"),
                      (929075, "text"), (929029, "select"), (929063, "textarea"),
-                     (929071, "textarea")):
+                     (929071, "textarea"), (929041, "numeric"), (1151124, "checkbox")):
         if fid not in mf or mf[fid].get("type") != typ:
             raise Stop(f"Обязательное поле сделки {fid} отсутствует или изменило тип")
     source_enum = {int(x.get("id")): x.get("value") for x in mf[929043].get("enums") or []}
@@ -690,7 +690,7 @@ def compose_order(order: dict) -> tuple[str, int, int, str]:
         if not name:
             return "", 0, 0, "ORDER_ITEM_NAME_MISSING"
         qty = Decimal(str(line.get("quantity") or "0"))
-        unit = amount(line.get("price"))
+        unit = Decimal(str(line.get("price") or "0"))
         discount = Decimal(str(line.get("discount") or "0"))
         line_sum = int((Decimal(unit) * qty * (Decimal(100) - discount) / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
         total_lines += line_sum
@@ -741,7 +741,7 @@ def deal_custom_fields(order: dict, row: dict, composition: str, delivery: int,
         {"field_id": FIELDS["comment"], "values": [{"value": note}]},
     ]
     if delivery:
-        values.append({"field_id": FIELDS["delivery"], "values": [{"value": float(Decimal(delivery) / 100)}]})
+        values.append({"field_id": FIELDS["delivery"], "values": [{"value": format(Decimal(delivery) / 100, "f")}]})
     if row["return_state"] == "partial":
         values.append({"field_id": FIELDS["partial_return"], "values": [{"value": True}]})
     values.extend(row.get("optional_fields") or [])
@@ -807,6 +807,8 @@ def return_state(order: dict, returns: list[dict]) -> tuple[str, int, str]:
             returned[aid] += Decimal(str(line.get("quantity") or 0))
     if refund < 0 or refund > amount(order.get("sum")):
         return "deferred", 0, "RETURN_AMOUNT_CONFLICT"
+    if any(returned[k] < 0 or returned[k] > qty for k, qty in ordered.items()):
+        return "deferred", 0, "RETURN_QUANTITY_EXCEEDS_ORDER"
     if amount(order.get("sum")) > 0 and refund >= amount(order.get("sum")):
         return "full", refund, "FULL_AMOUNT_RETURNED"
     if ordered and all(returned[k] >= qty for k, qty in ordered.items()):
@@ -1376,44 +1378,6 @@ def complete_positions(session: requests.Session, entity: str, obj: dict) -> dic
     return obj
 
 
-def finance_refresh(data: dict, mss: requests.Session, oid: str) -> None:
-    """Capture global changes, including payments made by a different payer.
-
-    Known dependencies are also read individually: deletes never disappear as
-    a false zero return/payment. Supported updated filters were checked live.
-    """
-    start = datetime.now(TZ)
-    since = moscow_dt(data.get("ledger_watermark") or data["captured_at"]) - timedelta(seconds=5)
-    for kind in LEDGERS:
-        params = {"limit": 1000, "filter": "updated>=" + since.strftime("%Y-%m-%d %H:%M:%S")}
-        if kind == "salesreturn":
-            params.update(limit=100, expand="positions,positions.assortment,demand")
-        changed = ms_rows(mss, "/entity/" + kind, params)
-        index = {str(x["id"]): x for x in data[kind]}
-        index.update({str(x["id"]): x for x in changed})
-        data[kind] = list(index.values())
-    invoices = {str(x["id"]) for x in data["invoiceout"] if id_of(x.get("customerOrder")) == oid}
-    demands = {str(x["id"]) for x in data["demand"] if id_of(x.get("customerOrder")) == oid}
-    returns = {str(x["id"]) for x in data["salesreturn"] if id_of(x.get("demand")) in demands}
-    targets = {oid} | invoices | demands | returns
-    for kind in LEDGERS:
-        index = {str(x["id"]): x for x in data[kind]}
-        relevant = [x for x in data[kind] if str(x["id"]) in targets
-                    or any(id_of(op.get("meta")) in targets for op in x.get("operations") or [])]
-        for old in relevant:
-            params = {"expand": "positions,positions.assortment,demand"} if kind == "salesreturn" else None
-            try:
-                obj = api_get(mss, lib.MS_BASE + f"/entity/{kind}/{old['id']}", params)
-            except Stop as exc:
-                if "HTTP 404" in str(exc) or "HTTP 410" in str(exc):
-                    raise RowDeferred("LINKED_DOCUMENT_DELETED") from exc
-                raise
-            if kind == "salesreturn":
-                complete_positions(mss, kind, obj)
-            index[str(obj["id"])] = obj
-        data[kind] = list(index.values())
-    data["ledger_watermark"] = start.isoformat(timespec="seconds")
-
 
 def confirm_buyer(amo: lib.Amo, cid: str, row: dict, new: bool = False) -> dict:
     contact = confirm_contact(amo, cid, row, expect_name=False)
@@ -1982,7 +1946,6 @@ def self_test() -> None:
     """Regression checks use in-memory API doubles, never production writes."""
     import unittest
     from unittest.mock import patch
-    import tempfile
 
     module = sys.modules[__name__]
 
@@ -2077,6 +2040,55 @@ def self_test() -> None:
             payload = make_lead_payload(object(), {"id": "o", "moment": "2026-10-01 11:00:00"}, row, "5", {})
             self.assertEqual(payload["_embedded"], {"contacts": [{"id": 5, "is_main": True}]})
             self.assertNotIn("source_id", payload)
+
+        def test_resume_verified_never_recreates(self):
+            j = {"rows": {"o": {"status": "VERIFIED"}}}
+            with patch.object(module, "current_row") as read, patch.object(module, "create_entity") as create:
+                self.assertFalse(apply_one({}, object(), object(), j, {"order_id": "o"}, {}))
+                read.assert_not_called()
+                create.assert_not_called()
+
+        def test_backlink_supplies_only_its_attribute(self):
+            amo = type("A", (), {"base": "https://example.amocrm.ru"})()
+            before = {"attributes": [{"id": "other", "value": "keep"}]}
+            after = {"attributes": before["attributes"] + [{"id": MS_AMO_ATTR, "value": amo_lead_url(amo, "1")}]}
+            with patch.object(module, "save_journal"), patch.object(module, "ms_session"), \
+                    patch.object(module, "fresh_order", side_effect=[before, after]), \
+                    patch.object(module, "confirm_lead"), patch.object(module, "api_write", return_value=(200, {}, "")) as write:
+                set_backlink(object(), amo, {"rows": {}}, "o", "1", {}, {}, "2")
+                self.assertEqual(len(write.call_args.args[3]["attributes"]), 1)
+                self.assertEqual(write.call_args.args[3]["attributes"][0]["id"], MS_AMO_ATTR)
+
+        def test_graph_includes_invoice_payment_and_return(self):
+            def ref(kind, uid):
+                return {"meta": {"type": kind, "href": lib.MS_BASE + f"/entity/{kind}/{uid}"}}
+            order = {"id": "o", "invoicesOut": [ref("invoiceout", "i")], "demands": [ref("demand", "d")]}
+            docs = {"i": {"id": "i", "customerOrder": ref("customerorder", "o"), "payments": [ref("paymentin", "p")]},
+                    "d": {"id": "d", "customerOrder": ref("customerorder", "o"), "returns": [ref("salesreturn", "r")]},
+                    "p": {"id": "p", "applicable": True, "moment": "2026-10-01", "sum": 100000,
+                          "operations": [{**ref("invoiceout", "i"), "linkedSum": 10000}]},
+                    "r": {"id": "r", "demand": ref("demand", "d"), "positions": {"meta": {"size": 0}, "rows": []}, "payments": [ref("paymentout", "out")]},
+                    "out": {"id": "out"}}
+            with patch.object(module, "api_get", side_effect=lambda session, url, params=None: docs[url.rsplit("/", 1)[-1]]):
+                graph = linked_finance(object(), order)
+            self.assertEqual(sum(map(len, graph.values())), 5)
+            self.assertEqual(payment_close({"id": "o", "sum": 10000}, allocations(graph)[0]), (10000, "2026-10-01"))
+
+        def test_wrong_domain_is_not_moysklad_order(self):
+            uid = "81b03243-1a83-11ef-0a80-01c7004e6c19"
+            self.assertEqual(linked_order_id(ms_order_url(uid)), uid)
+            self.assertEqual(linked_order_id("https://example.com/app/#CustomerOrder/edit?id=" + uid), "")
+
+        def test_dashboard_import_is_not_messenger_inquiry(self):
+            import collect_dashboard as dashboard
+            uid = "81b03243-1a83-11ef-0a80-01c7004e6c19"
+            lead = {"id": 1, "created": "2020-01-01", "created_at": 1, "status": WON,
+                    "ms_id": uid, "ms_url": ms_order_url(uid), "ms_source": "Из МойСклад", "historical_ms_import": True}
+            result = dashboard.amo_conversion_path(lead, [])
+            self.assertEqual(result["flow"], "orders")
+            self.assertFalse(result["complete"])
+            lead.update(historical_ms_import=False, source_id=23495409)
+            self.assertEqual(dashboard.amo_conversion_path(lead, [])["flow"], "inquiries")
 
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(Regression)
     result = unittest.TextTestRunner(verbosity=2).run(suite)

@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from urllib.parse import urlsplit, parse_qs
 
 import lib
 import refund_flow
@@ -673,9 +674,13 @@ def get_amo_conversion_events(leads: list[dict]) -> dict:
 def amo_conversion_path(lead: dict, events: list[dict]) -> dict:
     flow, source = AMO_CONVERSION_SOURCES.get(lead.get('source_id'), ('unknown', 'Источник не определён'))
     uid = str(lead.get('ms_id') or '').casefold()
+    link = urlsplit(str(lead.get('ms_url') or ''))
+    fragment = link.fragment.split('?', 1)
+    linked_uid = (parse_qs(fragment[1]).get('id') or [''])[0].casefold() if len(fragment) == 2 else ''
     confirmed_import = (lead.get('historical_ms_import') and lead.get('ms_source') == 'Из МойСклад'
                         and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', uid)
-                        and uid in str(lead.get('ms_url') or '').casefold())
+                        and link.hostname == 'online.moysklad.ru' and link.scheme == 'https'
+                        and fragment[0].casefold() == 'customerorder/edit' and linked_uid == uid)
     if confirmed_import:
         flow, source = 'orders', 'МойСклад (исторический импорт)'
     row = {'id': lead['id'], 'number': str(lead['id']), 'date': lead['created'],
