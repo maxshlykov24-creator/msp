@@ -553,6 +553,8 @@ def delivery_skip_reason(row: CallRecord) -> str:
         return "historical_call"
     if not SonnetCallAgent.catalog(row.transcript or {}):
         return "no_transcript"
+    if row.category == "insufficient" or row.state == "insufficient":
+        return "insufficient_data"
     if row.state not in ("complete", "needs_review") or row.validation_errors:
         return "analysis_not_validated"
     if not (row.analysis or {}).get("summary", "").strip():

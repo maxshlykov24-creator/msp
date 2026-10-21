@@ -448,6 +448,13 @@ class QueueTest(unittest.TestCase):
         self.assertIn("Установил контакт",calls_api.review_reason(r))
         self.assertTrue(call_worker.delivery_skip_reason(r))
 
+    def test_transcribed_non_conversation_is_not_sent(self):
+        r=self.call();r.transcript=TRANSCRIPT;r.state="complete";r.category="insufficient"
+        r.is_calibration=False;r.recording_url="https://example.invalid/audio"
+        r.analysis={"summary":"Клиент попросил перезвонить; разговора о покупке не было."}
+        settings.calls_delivery_from=0
+        self.assertEqual(call_worker.delivery_skip_reason(r),"insufficient_data")
+
     def test_correction_timeout_preserves_first_answer_without_repeating(self):
         settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
         r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()

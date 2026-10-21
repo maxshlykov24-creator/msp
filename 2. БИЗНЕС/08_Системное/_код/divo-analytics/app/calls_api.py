@@ -207,7 +207,7 @@ def detail(call_id: int):
                        "validation_errors": row.validation_errors, "rule_version": row.rule_version,
                        "analysis_version": row.analysis_version,
                        "nexara_job_id": row.nexara_job_id,
-                       "delivery_skip_reason": delivery_skip_reason(row),
+                       "delivery_skip_reason": "" if deliveries and all(d.state == "sent" for d in deliveries) else delivery_skip_reason(row),
                        "manual_review": (row.provider_result or {}).get("manual_review"),
                        "deliveries": [{"channel": d.channel, "state": d.state,
                                        "remote_id": d.remote_id, "last_error": d.last_error} for d in deliveries]})

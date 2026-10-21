@@ -122,3 +122,8 @@ Added separate POST dial-in callbacks to our protected endpoint for extensions 1
 ### DNS blocker 2026-10-21
 
 Public Google DNS confirms two A records for ai-msp.ru: 5.42.104.112 and 213.176.65.241 (TTL 300). curl with --resolve: 5.42.104.112 returns ct.js HTTP 200; 213.176.65.241 times out during TLS. VPS public IP is 5.42.104.112; its local ct/health is healthy, live=false. NS: Timeweb. No new visit was created for owner retry. Need inspect DNS zone and purpose of second IP before correcting routing. DNS not changed.
+
+
+### DNS corrected and browser substitution verified 2026-10-21
+
+Owner explicitly approved removal. Deleted only A ai-msp.ru -> 213.176.65.241 (record 85008720, TTL 300) in Timeweb. UI readback: main A 5.42.104.112 remains; dkacademy-bot A 213.176.65.241 and other records unchanged. Public resolver still returned cached old pair immediately afterward; propagation not yet universally confirmed. Direct normal HTTPS ct.js returned 200. Reloaded main site with ct=1 and campaign ct_diagnostic, scrolled: footer phone and both tel links changed to pool number ending 0841. CT_LIVE not enabled; owner control call still needed. Rollback, if needed: restore removed root A with value 213.176.65.241 and TTL 300.
