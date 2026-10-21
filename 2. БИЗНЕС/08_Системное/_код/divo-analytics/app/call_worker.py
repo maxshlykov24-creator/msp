@@ -262,6 +262,9 @@ def analyze_calls():
     if not settings.calls_analysis_enabled or not settings.calls_process_enabled:
         return
     with SessionLocal() as db:
+        cooldown = db.get(SyncState, "calls_analysis_retry_after")
+        if cooldown and cooldown.value and now().timestamp() < float(cooldown.value):
+            return
         for row in db.scalars(select(CallRecord).where(CallRecord.state == "analyzing")):
             row.state = "analysis_ambiguous"
             row.last_error = "agent_interrupted_requires_review"
@@ -289,6 +292,8 @@ def analyze_calls():
                     previous = history.get("agent_result")
                     correction = {"references": previous["references"], "errors": row.validation_errors} if previous and row.validation_errors else None
                     result = agent.analyze(row.transcript, row.direction, row.occurred_at, **({"correction": correction} if correction else {}))
+                    state_set(db, "calls_analysis_retry_after", "")
+                    state_set(db, "calls_analysis_blocked", "")
                     attempts = list(history.get("agent_attempts") or [])
                     if previous and not attempts:
                         attempts.append(previous)
@@ -317,6 +322,13 @@ def analyze_calls():
                 except AmbiguousSubmission as exc:
                     row.state, row.last_error = "analysis_ambiguous", str(exc)
                 except RemoteFailure as exc:
+                    if str(exc) == "agent_http_402":
+                        row.state = "analysis_ready"
+                        retry_later(row, str(exc), minutes=30)
+                        state_set(db, "calls_analysis_retry_after", str((now() + timedelta(minutes=30)).timestamp()))
+                        state_set(db, "calls_analysis_blocked", str(exc))
+                        db.commit()
+                        break
                     if str(exc) == "agent_http_429":
                         # Explicit rejection is safe to retry. Preserve any paid first
                         # answer and continue its correction after the cooldown.

@@ -435,6 +435,24 @@ class QueueTest(unittest.TestCase):
             self.assertEqual(cls.return_value.analyze.call_args.kwargs["correction"]["references"],first["references"])
         self.db.refresh(r);self.assertEqual(r.state,"complete");self.assertEqual(r.nexara_job_id,"paid-job")
 
+    def test_payment_failure_pauses_analysis_queue_and_retries_after_cooldown(self):
+        from datetime import timedelta
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key='test'
+        r=self.reportable();r.state='analysis_ready';r.nexara_job_id='paid-transcript';self.db.commit()
+        other=call_worker.upsert_note(self.db,self.note(id=2,uniq='other'),'lead',100,[100])
+        other.occurred_at=900;other.transcript=TRANSCRIPT;other.state='analysis_ready';self.db.commit()
+        with patch.object(call_worker,'SonnetCallAgent') as agent:
+            agent.return_value.analyze.side_effect=RemoteFailure('agent_http_402')
+            call_worker.analyze_calls();call_worker.analyze_calls()
+            self.assertEqual(agent.return_value.analyze.call_count,1)
+        self.db.refresh(r);self.db.refresh(other)
+        self.assertEqual(r.state,'analysis_ready');self.assertEqual(other.state,'analysis_ready')
+        future=call_worker.now()+timedelta(minutes=31)
+        with patch.object(call_worker,'now',return_value=future),patch.object(call_worker,'SonnetCallAgent') as agent:
+            agent.return_value.analyze.return_value={'analysis':analysis(),'references':{}}
+            call_worker.analyze_calls();self.assertEqual(agent.return_value.analyze.call_count,2)
+        self.db.refresh(r);self.assertEqual(r.state,'complete');self.assertEqual(r.nexara_job_id,'paid-transcript')
+
     def test_uncertain_condition_finishes_without_score_or_external_report(self):
         settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
         r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()

@@ -9,6 +9,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import parse_qsl
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -980,10 +981,14 @@ async def amo_leads_webhook(
     s = get_settings()
     if not s.internal_secret or secret != s.internal_secret:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    content_type = (request.headers.get("content-type") or "").split(";", 1)[0].lower()
+    if content_type != "application/x-www-form-urlencoded":
+        raise HTTPException(status_code=415, detail="Expected URL-encoded form")
     try:
-        form = dict(await request.form())
-    except Exception:
-        form = {}
+        form = dict(parse_qsl((await request.body()).decode("utf-8"),
+                              keep_blank_values=True, strict_parsing=True))
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid form")
     lead_ids = _lead_ids_from_form(form)
     if lead_ids:
         background_tasks.add_task(_amo_lead_added_task, lead_ids, 0)

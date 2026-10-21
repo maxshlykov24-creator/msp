@@ -249,6 +249,10 @@ def ct_session(
         now = datetime.now(timezone.utc)
         fresh = tracking_from_url(payload.url)
         visit = _load_visit(db, payload.visit_id, now)
+        # Новый размеченный переход не смешиваем с метками прошлой кампании.
+        if visit is not None and any(getattr(visit, k) for k in fresh):
+            if any(v and v != getattr(visit, k) for k, v in fresh.items()):
+                visit = None
         if visit is None:
             visit = _new_visit(db, fresh, payload.url, payload.referrer, payload.ym_uid, ua, now)
         else:

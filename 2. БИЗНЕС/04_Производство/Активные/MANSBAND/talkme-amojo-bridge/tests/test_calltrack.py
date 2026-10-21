@@ -853,6 +853,33 @@ def test_ten_number_pool_falls_back_on_eleventh(client, monkeypatch):
     assert issued[10]["number"] == "+79310090251"
 
 
+def test_amo_lead_webhook_decodes_form_and_schedules(client, monkeypatch):
+    from app import main
+    received = []
+    monkeypatch.setattr(main, "_amo_lead_added_task", lambda ids, attempt: received.append((ids, attempt)))
+    path = "/amo/webhooks/leads/test-secret"
+    assert client.post(path, data={"leads[add][0][id]": "123"}).status_code == 200
+    assert received == [([123], 0)]
+    assert client.post(path, content="broken", headers={"Content-Type": "application/x-www-form-urlencoded"}).status_code == 400
+    assert client.post(path, json={}).status_code == 415
+
+
+def test_new_campaign_creates_visit_without_mixing_old_tags(client):
+    from app.calltrack.models import Visit
+    first = client.post("/ct/session", headers=ORIGIN, json={"url": PAID_URL}).json()
+    new_url = "https://mansband.ru/?utm_source=vk&utm_medium=social&utm_campaign=new"
+    second = client.post("/ct/session", headers=ORIGIN, json={"url": new_url, "visit_id": first["visit_id"]}).json()
+    assert second["visit_id"] != first["visit_id"]
+    with _db() as db:
+        old = db.get(Visit, first["visit_id"])
+        new = db.get(Visit, second["visit_id"])
+        assert old.utm_campaign == "brand"
+        assert new.utm_campaign == "new"
+        assert new.utm_content is None and new.utm_term is None and new.yclid is None
+    plain = client.post("/ct/session", headers=ORIGIN, json={"url": "https://mansband.ru/catalog", "visit_id": second["visit_id"]}).json()
+    assert plain["visit_id"] == second["visit_id"]
+
+
 def test_telphin_urlencoded_preserves_real_event_fields(client):
     from sqlalchemy import select
     from app.calltrack.models import CallEvent
