@@ -455,6 +455,15 @@ class QueueTest(unittest.TestCase):
         settings.calls_delivery_from=0
         self.assertEqual(call_worker.delivery_skip_reason(r),"insufficient_data")
 
+    def test_explicit_calibration_reanalysis_survives_live_cutoff(self):
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
+        r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";r.is_calibration=True
+        settings.calls_process_from=r.occurred_at+86400;self.db.commit()
+        with patch.object(call_worker,"SonnetCallAgent") as cls:
+            cls.return_value.analyze.return_value={"analysis":analysis(),"references":{}}
+            call_worker.analyze_calls();self.assertEqual(cls.return_value.analyze.call_count,1)
+        self.db.refresh(r);self.assertEqual(r.state,"complete")
+
     def test_correction_timeout_preserves_first_answer_without_repeating(self):
         settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key="test"
         r=self.call();r.transcript=TRANSCRIPT;r.state="analysis_ready";self.db.commit()

@@ -258,7 +258,10 @@ def analyze_calls():
         query = select(CallRecord).where(CallRecord.state == "analysis_ready",
             or_(CallRecord.next_attempt_at.is_(None), CallRecord.next_attempt_at <= now()))
         if settings.calls_process_from:
-            query = query.where(CallRecord.occurred_at >= settings.calls_process_from)
+            # The original accepted sample may predate the live/history boundary.
+            # Explicitly queued text-only calibration must still finish.
+            query = query.where(or_(CallRecord.occurred_at >= settings.calls_process_from,
+                                   CallRecord.is_calibration.is_(True)))
         if settings.calls_calibration_only:
             query = query.where(CallRecord.is_calibration.is_(True))
         agent = SonnetCallAgent()
