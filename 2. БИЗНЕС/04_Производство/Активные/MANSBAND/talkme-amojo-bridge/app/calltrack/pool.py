@@ -4,7 +4,7 @@ import datetime as dt
 from datetime import timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.calltrack.models import Assignment, PoolNumber, Visit
@@ -48,11 +48,13 @@ def utm_source_map(settings: Settings) -> dict[str, str]:
 
 
 def wanted_numbers(settings: Settings) -> dict[str, tuple[str, Optional[str]]]:
-    """Пул важнее органики и канала: один номер не может быть в двух ролях."""
+    """Не допускаем общий номер в динамический пул."""
     wanted: dict[str, tuple[str, Optional[str]]] = {}
     for n in pool_numbers(settings):
         wanted[n] = ("pool", None)
     organic = digits10(settings.ct_organic_number)
+    if organic and organic in wanted:
+        raise ValueError("Основной номер должен быть вне пула")
     if organic and organic not in wanted:
         wanted[organic] = ("organic", "Сайт (органика)")
     for n, source in channel_map(settings).items():
@@ -118,8 +120,8 @@ def _touch_assignment(db: Session, number: PoolNumber, visit: Visit, now: dt.dat
 def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) -> Optional[PoolNumber]:
     """Выдать номер пула. Одна транзакция, строка номера блокируется.
 
-    Свободный номер берётся с SKIP LOCKED. Если свободных нет, забирается
-    номер с самой ранней бронью, оба визита помечаются спорными.
+    Свободный номер берётся с SKIP LOCKED. Занятые номера не отбираются.
+    При нехватке возвращается None, вызывающий код показывает резерв.
     """
     settings = get_settings()
     now = now or dt.datetime.now(timezone.utc)
@@ -159,29 +161,9 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
         .scalars()
         .first()
     )
-    stolen = False
     if free is None:
-        free = (
-            db.execute(
-                select(PoolNumber)
-                .where(PoolNumber.kind == "pool", PoolNumber.active.is_(True))
-                .order_by(PoolNumber.held_until.asc().nullsfirst())
-                .limit(1)
-                .with_for_update(skip_locked=True)
-            )
-            .scalars()
-            .first()
-        )
-        stolen = free is not None
-    if free is None:
-        return None
-
-    if stolen and free.held_by_visit_id and free.held_by_visit_id != visit.id:
-        old = db.get(Visit, free.held_by_visit_id)
-        if old is not None:
-            old.disputed = True
-        visit.disputed = True
         _bump_exhausted(db, now)
+        return None
 
     free.held_by_visit_id = visit.id
     free.held_until = now + hold
@@ -196,3 +178,26 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
     )
     db.flush()
     return free
+
+
+def pool_snapshot(db: Session, now: Optional[dt.datetime] = None) -> dict[str, int]:
+    now = now or dt.datetime.now(timezone.utc)
+    total = db.scalar(select(func.count()).select_from(PoolNumber).where(
+        PoolNumber.kind == "pool", PoolNumber.active.is_(True))) or 0
+    busy = db.scalar(select(func.count()).select_from(PoolNumber).where(
+        PoolNumber.kind == "pool", PoolNumber.active.is_(True), PoolNumber.held_until > now)) or 0
+    demand = db.scalar(select(func.count()).select_from(Visit).where(
+        Visit.is_paid.is_(True), Visit.last_seen_at > now - timedelta(minutes=get_settings().ct_hold_minutes))) or 0
+    return {"total": total, "busy": busy, "free": total - busy, "demand": demand}
+
+
+def record_load(db: Session, now: dt.datetime) -> None:
+    db.flush()
+    state = pool_snapshot(db, now)
+    for metric in ("busy", "demand"):
+        db.execute(text("""
+            INSERT INTO kv_state (key, value, updated_at) VALUES (:key, :value, now())
+            ON CONFLICT (key) DO UPDATE SET
+              value = GREATEST(kv_state.value::int, :number)::text, updated_at = now()
+        """), {"key": f"ct_peak_{metric}:{now.astimezone(MSK).date()}",
+               "value": str(state[metric]), "number": state[metric]})

@@ -105,7 +105,7 @@ def attribute_call(db: Session, call: CallEvent) -> CallAttribution:
     if kind == "channel":
         return CallAttribution({}, number.source if number else None, None, False, "channel")
     if kind == "organic":
-        return CallAttribution({}, "Сайт (органика)", None, False, "organic")
+        return CallAttribution({}, None, None, False, "shared")
     if kind != "pool":
         return CallAttribution({}, None, None, False, "unknown")
     visit, disputed = visit_for_call(db, call)
@@ -196,6 +196,8 @@ def call_note(call: CallEvent, attr: CallAttribution) -> str:
         lines.append(f"Визит: {attr.visit.id}")
         if attr.visit.landing_url:
             lines.append(f"Страница входа: {attr.visit.landing_url}")
+    if attr.kind == "shared":
+        lines.append("Основной и резервный номер: точный источник не определён")
     if attr.disputed:
         lines.append("спорный")
     return "\n".join(lines)
@@ -252,51 +254,47 @@ def apply_call(
     from app import amo_v4
 
     settings = get_settings()
-    attr = attribute_call(db, call)
-    id_by_key = amo_v4.field_id_by_key(access_token=access_token, settings=settings)
-    select_info = amo_v4.select_field(
-        name=settings.ct_tech_source_field, access_token=access_token, settings=settings
-    )
-    values, meta = plan_lead_patch(
-        tracking=attr.tracking,
-        tech_source=attr.tech_source,
-        lead=lead,
-        id_by_key=id_by_key,
-        select_info=select_info,
-    )
-    if values:
-        r = amo_v4.patch_lead_fields(
-            lead_id=lead_id,
-            custom_fields_values=values,
-            access_token=access_token,
-            settings=settings,
-        )
-        if r.status_code >= 400:
-            return {"ok": False, "reason": f"amo {r.status_code}"}
-    amo_v4.add_lead_note(
-        lead_id=lead_id,
-        text=call_note(call, attr),
-        access_token=access_token,
-        settings=settings,
-    )
-    call.visit_id = attr.visit.id if attr.visit is not None else None
+    # Сохраняем намерение ДО внешнего запроса: перезапуск не потеряет повтор.
+    meta_old = dict(call.result or {})
+    if call.status in {"matched", "unattributed"} and call.lead_id == lead_id:
+        return {"ok": True, "status": call.status}
     call.lead_id = lead_id
-    call.number_kind = attr.kind
-    has_source = bool(meta["tech_written"] or meta["written"])
-    call.status = "matched" if has_source else "new"
-    call.result = {
-        "written": meta["written"],
-        "tech_source": attr.tech_source,
-        "tech_written": meta["tech_written"],
-        "disputed": attr.disputed,
-    }
+    call.status = "retry"
+    meta_old["attempts"] = int(meta_old.get("attempts", 0)) + 1
+    call.result = meta_old
     db.commit()
-    if not has_source:
-        from app.calltrack.telegram import send
-
-        send(
-            f"Сделка {lead_id} по звонку без источника. Набор +7{call.called}, id {call.call_id}"
-        )
-        call.alerted_at = dt.datetime.now(timezone.utc)
+    try:
+        attr = attribute_call(db, call)
+        id_by_key = amo_v4.field_id_by_key(access_token=access_token, settings=settings)
+        select_info = amo_v4.select_field(
+            name=settings.ct_tech_source_field, access_token=access_token, settings=settings)
+        values, meta = plan_lead_patch(
+            tracking=attr.tracking, tech_source=attr.tech_source, lead=lead,
+            id_by_key=id_by_key, select_info=select_info)
+        if values:
+            response = amo_v4.patch_lead_fields(
+                lead_id=lead_id, custom_fields_values=values,
+                access_token=access_token, settings=settings)
+            response.raise_for_status()
+        if not meta_old.get("note_sent"):
+            amo_v4.add_lead_note(lead_id=lead_id, text=call_note(call, attr),
+                                access_token=access_token, settings=settings, raise_on_error=True)
+            meta_old["note_sent"] = True
+        call.visit_id = attr.visit.id if attr.visit else None
+        call.number_kind = attr.kind
+        # Произвольное заполненное UTM-поле не доказывает наличие источника.
+        has_source = bool(meta["tech_written"])
+        call.status = "matched" if has_source else "unattributed"
+        call.result = {**meta_old, "written": meta["written"],
+                       "tech_source": attr.tech_source, "tech_written": has_source,
+                       "disputed": attr.disputed, "error": None}
         db.commit()
-    return {"ok": True, "status": call.status, "result": call.result}
+        return {"ok": True, "status": call.status, "result": call.result}
+    except Exception as exc:
+        db.rollback()
+        call.lead_id = lead_id
+        call.status = "retry" if meta_old["attempts"] < 6 else "error"
+        # Не сохраняем тела ответов CRM или URL с секретами.
+        call.result = {**meta_old, "error": type(exc).__name__}
+        db.commit()
+        return {"ok": False, "reason": type(exc).__name__}

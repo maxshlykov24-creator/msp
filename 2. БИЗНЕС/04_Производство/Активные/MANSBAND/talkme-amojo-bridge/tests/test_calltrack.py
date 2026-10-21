@@ -124,7 +124,7 @@ def test_02_organic_creates_visit_without_pool(client):
         db.close()
 
 
-def test_03_sixteenth_visit_is_disputed(client):
+def test_03_sixteenth_visit_uses_fallback_without_stealing(client):
     numbers = []
     for i in range(16):
         r = client.post(
@@ -135,6 +135,8 @@ def test_03_sixteenth_visit_is_disputed(client):
         assert r.status_code == 200, r.text
         numbers.append(r.json()["number"])
     assert len(set(numbers[:15])) == 15
+    assert numbers[15] == "+79310090251"
+    assert r.json()["mode"] == "fallback"
     db = _db()
     try:
         from sqlalchemy import func, select
@@ -143,7 +145,7 @@ def test_03_sixteenth_visit_is_disputed(client):
         from app.models import KvState
 
         disputed = db.execute(select(func.count()).select_from(Visit).where(Visit.disputed.is_(True))).scalar_one()
-        assert disputed == 2
+        assert disputed == 0
         row = db.execute(select(KvState).where(KvState.key.like("ct_pool_exhausted:%"))).scalar_one()
         assert row.value == "1"
     finally:
@@ -215,18 +217,10 @@ def test_04_parallel_allocate_does_not_share_without_dispute():
         t.join(10)
     assert not errors
     assert len(out) == 2
-    n1, n2 = out
-    assert n1 and n2
+    assert sum(number is not None for number in out) == 1
     check = _db()
     try:
-        if n1 == n2:
-            a = check.get(Visit, ids[0])
-            b = check.get(Visit, ids[1])
-            check.refresh(a)
-            check.refresh(b)
-            assert a.disputed and b.disputed
-        else:
-            assert n1 != n2
+        assert not any(check.get(Visit, vid).disputed for vid in ids)
     finally:
         check.close()
 

@@ -10,10 +10,10 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.calltrack.matching import attribute_call
+from app.calltrack.matching import attribute_call, apply_call
 from app.calltrack.models import CallEvent, Visit
-from app.calltrack.pool import MSK
-from app.calltrack.telegram import send
+from app.calltrack.pool import MSK, pool_snapshot
+from app.calltrack.telegram import send, incident
 from app.config import get_settings
 from app.models import KvState
 
@@ -61,94 +61,120 @@ def _save_state(db: Session, state: dict[str, Any]) -> None:
 
 
 def run_reconcile_once(db: Optional[Session] = None) -> dict[str, int]:
-    """Звонок без сделки и сделка звонка без источника. Открытая сделка — примечание, не сигнал."""
     own = db is None
     if db is None:
         from app.database import get_session_factory
-
         db = get_session_factory()()
-    assert db is not None
-    counts = {"repeat": 0, "no_lead": 0, "hidden": 0, "no_source": 0}
+    counts = {"repeat": 0, "no_lead": 0, "retry": 0, "errors": 0}
     try:
+        from app import amo_v4
+        from app.tokens import get_valid_access_token
         now = dt.datetime.now(timezone.utc)
-        cutoff = now - timedelta(minutes=5)
-        calls = (
-            db.execute(
-                select(CallEvent).where(CallEvent.status == "new", CallEvent.started_at <= cutoff)
-            )
-            .scalars()
-            .all()
-        )
-        token: Optional[str] = None
         settings = get_settings()
+        calls = db.execute(select(CallEvent).where(
+            CallEvent.status.in_(["new", "retry"]),
+            CallEvent.started_at <= now - timedelta(minutes=5)
+        ).order_by(CallEvent.started_at).limit(100)).scalars().all()
+        token = None
         for call in calls:
-            if not call.caller:
-                if call.alerted_at is None:
-                    if send(f"Звонок без номера клиента. Набор +7{call.called}, id {call.call_id}"):
-                        call.alerted_at = now
-                    counts["hidden"] += 1
-                continue
-            if call.lead_id and not _has_source(call):
-                if call.alerted_at is None:
-                    if send(
-                        f"Сделка {call.lead_id} по звонку без источника. "
-                        f"Набор +7{call.called}, id {call.call_id}"
-                    ):
-                        call.alerted_at = now
-                    counts["no_source"] += 1
-                continue
+            if not call.called or not call.caller:
+                continue  # Отдельные сгруппированные сигналы monitor_once.
             try:
-                from app import amo_v4
-                from app.tokens import get_valid_access_token
-
                 token = token or get_valid_access_token(db)
+                if call.status == "retry" and call.lead_id:
+                    lead = amo_v4.get_lead(lead_id=call.lead_id, access_token=token, settings=settings)
+                    apply_call(db, call, call.lead_id, lead, token)
+                    counts["retry"] += 1
+                    continue
                 opens = amo_v4.open_leads_for_phone(
-                    phone=call.caller, access_token=token, settings=settings
-                )
-            except Exception:
-                log.exception("ct reconcile: не прочитали сделки по звонку %s", call.call_id)
-                continue
-            kind = classify_call(call, opens, now)
-            if kind == "repeat":
-                lead = opens[0]
-                attr = attribute_call(db, call)
-                source = attr.tech_source or "не определён"
-                from app import amo_v4
-
-                amo_v4.add_lead_note(
-                    lead_id=int(lead["id"]),
-                    text=f"повторный звонок, источник {source}",
-                    access_token=token or "",
-                    settings=settings,
-                )
-                call.status = "repeat"
-                call.lead_id = int(lead["id"])
-                call.number_kind = attr.kind
-                call.visit_id = attr.visit.id if attr.visit is not None else call.visit_id
-                call.result = {"repeat": True, "tech_source": source}
-                counts["repeat"] += 1
-            elif kind == "no_lead":
-                if call.alerted_at is None and send(
-                    f"Звонок без сделки. Набор +7{call.called}, клиент +7{call.caller}, id {call.call_id}"
-                ):
-                    call.alerted_at = now
-                call.status = "no_lead"
-                counts["no_lead"] += 1
-        db.commit()
-        return counts
-    except Exception:
-        db.rollback()
-        log.exception("ct reconcile failed")
+                    phone=call.caller, access_token=token, settings=settings)
+                kind = classify_call(call, opens, now)
+                if kind == "repeat":
+                    # Новая сделка рядом со звонком: возможно, add_lead был потерян.
+                    # Не помечаем такой звонок повторным без попытки дописать метки.
+                    if len(opens) != 1:
+                        call.status = "error"
+                        call.result = {"error": "multiple_open_leads"}
+                    else:
+                        lead = amo_v4.get_lead(lead_id=int(opens[0]["id"]), access_token=token, settings=settings)
+                        created = dt.datetime.fromtimestamp(int(lead.get("created_at") or 0), timezone.utc)
+                        started = call.started_at
+                        if started - timedelta(minutes=2) <= created <= started + timedelta(minutes=settings.ct_call_window_minutes):
+                            apply_call(db, call, int(lead["id"]), lead, token)
+                        else:
+                            attr = attribute_call(db, call)
+                            amo_v4.add_lead_note(lead_id=int(lead["id"]),
+                                text=f"повторный звонок, источник {attr.tech_source or 'не определён'}",
+                                access_token=token, settings=settings, raise_on_error=True)
+                            call.status = "repeat"
+                            call.lead_id = int(lead["id"])
+                            call.number_kind = attr.kind
+                            call.visit_id = attr.visit.id if attr.visit else None
+                            call.result = {"repeat": True, "tech_source": attr.tech_source}
+                            counts["repeat"] += 1
+                elif kind == "no_lead":
+                    call.status = "no_lead"
+                    counts["no_lead"] += 1
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                counts["errors"] += 1
+                previous = dict(call.result or {})
+                attempts = int(previous.get("reconcile_attempts", 0)) + 1
+                call.result = {**previous, "reconcile_attempts": attempts, "error": type(exc).__name__}
+                if attempts >= 6:
+                    call.status = "error"
+                db.commit()
         return counts
     finally:
         if own:
             db.close()
 
 
+def monitor_once(db: Session, now: Optional[dt.datetime] = None) -> None:
+    now = now or dt.datetime.now(timezone.utc)
+    load = pool_snapshot(db, now)
+    day = now.astimezone(MSK).date().isoformat()
+    state = _load_state(db)
+    exhausted_row = db.get(KvState, f"ct_pool_exhausted:{day}")
+    exhausted = int(exhausted_row.value) if exhausted_row else 0
+    if state.get("exhausted_day") != day:
+        state["exhausted_seen"] = 0
+    new_exhaustion = exhausted > int(state.get("exhausted_seen", 0))
+    # Недавний отказ удерживает инцидент, чтобы не объявлять восстановление немедленно.
+    if new_exhaustion:
+        state["last_exhaustion"] = now.timestamp()
+    overloaded = now.timestamp() - float(state.get("last_exhaustion", 0)) < 300
+    incident(db, "нехватка номеров", overloaded,
+             f"Не хватает номеров. Занято {load['busy']} из {load['total']}, активных рекламных визитов {load['demand']}. "
+             "Показываем основной номер. Проверь пик нагрузки перед докупкой.", now)
+    incident(db, "загрузка пула", bool(load["total"] and load["busy"] / load["total"] >= .8),
+             f"Пул заполнен минимум на 80%: {load['busy']} из {load['total']}. Следи за нехваткой.", now)
+    incident(db, "пустой пул", bool(get_settings().ct_live and not load["total"]),
+             "Боевой режим включён, пул пуст. Проверь настройки номеров.", now)
+    since = now - timedelta(days=1)
+    calls = db.execute(select(CallEvent).where(CallEvent.started_at >= since)).scalars().all()
+    groups = {
+        "формат Телфин": [c for c in calls if not c.called],
+        "звонки без номера клиента": [c for c in calls if c.called and not c.caller],
+        "ошибка CRM": [c for c in calls if c.status in {"retry", "error"}],
+        "звонки без сделки": [c for c in calls if c.status == "no_lead"],
+        "звонки без источника": [c for c in calls if c.status == "unattributed" and c.number_kind != "shared"],
+    }
+    for key, rows in groups.items():
+        links = [f"https://{get_settings().amo_subdomain}.{get_settings().amo_base_domain}/leads/detail/{c.lead_id}"
+                 for c in rows if c.lead_id][:3]
+        incident(db, key, bool(rows), f"{key}: {len(rows)} за последние сутки. " + " ".join(links), now)
+    state.update(exhausted_day=day, exhausted_seen=exhausted, heartbeat=now.isoformat())
+    _save_state(db, state)
+    db.commit()
+
+
 def summary_text(db: Session, now: Optional[dt.datetime] = None) -> str:
     now = now or dt.datetime.now(timezone.utc)
     local = now.astimezone(MSK)
-    start = dt.datetime.combine(local.date(), dt.time.min, tzinfo=MSK).astimezone(timezone.utc)
+    report_date = local.date() - timedelta(days=1) if local.hour == 9 else local.date()
+    start = dt.datetime.combine(report_date, dt.time.min, tzinfo=MSK).astimezone(timezone.utc)
     end = start + timedelta(days=1)
     total = db.execute(
         select(func.count()).select_from(CallEvent).where(
@@ -181,18 +207,31 @@ def summary_text(db: Session, now: Optional[dt.datetime] = None) -> str:
             Visit.disputed.is_(True), Visit.created_at >= start, Visit.created_at < end
         )
     ).scalar_one()
-    key = f"ct_pool_exhausted:{local.date().isoformat()}"
+    key = f"ct_pool_exhausted:{report_date.isoformat()}"
     exhausted_row = db.execute(select(KvState).where(KvState.key == key)).scalar_one_or_none()
     exhausted = int(exhausted_row.value) if exhausted_row and str(exhausted_row.value).isdigit() else 0
+    visits = db.execute(select(Visit).where(Visit.created_at >= start, Visit.created_at < end)).scalars().all()
+    sources: dict[str, int] = {}
+    for visit in visits:
+        source = visit.utm_source or ("yclid" if visit.yclid else "без рекламных меток")
+        sources[source] = sources.get(source, 0) + 1
+    peaks = {}
+    for metric in ("busy", "demand"):
+        row = db.get(KvState, f"ct_peak_{metric}:{report_date}")
+        peaks[metric] = int(row.value) if row else 0
+    unresolved = db.scalar(select(func.count()).select_from(CallEvent).where(
+        CallEvent.started_at >= start, CallEvent.started_at < end,
+        CallEvent.status.in_(["new", "retry", "error", "no_lead", "unattributed"]))) or 0
     return (
-        f"Коллтрекинг за {local.date().isoformat()}\n"
-        f"Звонков: {total}\n"
-        f"Сопоставлено: {matched}\n"
-        f"Повторных: {repeat}\n"
-        f"Без сделки: {no_lead}\n"
-        f"Спорных визитов: {disputed}\n"
-        f"Исчерпаний пула: {exhausted}"
+        f"Коллтрекинг за {report_date}\n"
+        f"Визитов, увиденных скриптом: {len(visits)}\n"
+        f"Источники: {sources}\n"
+        f"Пик занятых номеров: {peaks['busy']}; активных рекламных визитов: {peaks['demand']}\n"
+        f"Ответов с резервным номером: {exhausted}\n"
+        f"Звонков: {total}; с источником: {matched}; повторных: {repeat}\n"
+        f"Без сделки: {no_lead}; требуют разбора или не имеют точной атрибуции: {unresolved}"
     )
+
 
 
 def maybe_summary(db: Optional[Session] = None, now: Optional[dt.datetime] = None) -> bool:
@@ -218,11 +257,13 @@ def maybe_summary(db: Optional[Session] = None, now: Optional[dt.datetime] = Non
         hour_key = local.strftime("%Y-%m-%d %H")
         if state.get("mode") == "hourly" and state.get("last_hour") != hour_key:
             sent = send(summary_text(db, now))
-            state["last_hour"] = hour_key
+            if sent:
+                state["last_hour"] = hour_key
         day_key = local.date().isoformat()
         if state.get("mode") == "daily" and local.hour == 9 and state.get("last_daily") != day_key:
             sent = send(summary_text(db, now)) or sent
-            state["last_daily"] = day_key
+            if sent:
+                state["last_daily"] = day_key
         _save_state(db, state)
         db.commit()
         return sent
@@ -245,6 +286,11 @@ async def reconcile_loop() -> None:
             if now_m - last_check >= 300:
                 await asyncio.to_thread(run_reconcile_once)
                 last_check = now_m
+            from app.database import get_session_factory
+            def monitor():
+                with get_session_factory()() as db:
+                    monitor_once(db)
+            await asyncio.to_thread(monitor)
             await asyncio.to_thread(maybe_summary)
         except asyncio.CancelledError:
             raise

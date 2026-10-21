@@ -31,3 +31,37 @@ def send(text: str) -> bool:
         log.error("telegram send http=%s", r.status_code)
         return False
     return True
+
+
+def incident(db, key: str, active: bool, message: str, now=None) -> bool:
+    """Один сигнал, повтор через 30 минут, затем восстановление. Неудача не гасит сигнал."""
+    import datetime as dt
+    import json
+    from sqlalchemy import select
+    from app.models import KvState
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    row = db.execute(select(KvState).where(KvState.key == "ct_alert:" + key)).scalar_one_or_none()
+    state = json.loads(row.value) if row and row.value else {}
+    sent = False
+    if active:
+        last = float(state.get("last_sent", 0))
+        if not last or now.timestamp() - last >= 1800:
+            sent = send(message)
+            if sent:
+                state["last_sent"] = now.timestamp()
+                state["notified"] = True
+        state["active"] = True
+    elif state.get("notified"):
+        sent = send("Восстановлено: " + key)
+        if sent:
+            state = {}
+    else:
+        state = {}
+    if row is None:
+        row = KvState(key="ct_alert:" + key, value="{}")
+        db.add(row)
+    row.value = json.dumps(state, ensure_ascii=False)
+    row.updated_at = now
+    db.flush()
+    return sent

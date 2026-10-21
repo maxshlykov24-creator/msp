@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.calltrack.phones import digits10, display, e164
-from app.calltrack.pool import allocate_pool, sync_numbers
+from app.calltrack.pool import allocate_pool, sync_numbers, record_load
 from app.calltrack.telphin import ingest
 from app.config import get_settings
 from app.database import get_db
@@ -191,7 +191,7 @@ def _issue(db: Session, visit, now: datetime) -> dict:
         return _payload("organic", visit.id, _organic_number())
     number = allocate_pool(db, visit, now)
     if number is None:
-        return _payload("organic", visit.id, _organic_number())
+        return _payload("fallback", visit.id, _organic_number())
     return _payload("pool", visit.id, number.number)
 
 
@@ -254,6 +254,7 @@ def ct_session(
         else:
             _fill_visit(visit, fresh, payload.url, payload.referrer, payload.ym_uid, ua, now)
         body = _issue(db, visit, now)
+        record_load(db, now)
         db.commit()
     except Exception:
         db.rollback()
@@ -278,6 +279,7 @@ def ct_ping(
             raise HTTPException(status_code=404, detail="visit", headers=headers)
         visit.last_seen_at = now
         body = _issue(db, visit, now)
+        record_load(db, now)
         db.commit()
     except HTTPException:
         db.rollback()
@@ -333,3 +335,22 @@ async def telphin_webhook(
 
     background_tasks.add_task(_run, data)
     return Response(status_code=200)
+
+
+@router.get("/ct/health")
+def ct_health(db: Session = Depends(get_db)) -> Response:
+    """Проверка БД и живости сверки без клиентских данных."""
+    import json
+    from fastapi.responses import JSONResponse
+    from sqlalchemy import text
+    from app.models import KvState
+    try:
+        db.execute(text("SELECT 1"))
+        row = db.get(KvState, "ct_reconcile_state")
+        state = json.loads(row.value) if row and row.value else {}
+        stamp = datetime.fromisoformat(state["heartbeat"]) if state.get("heartbeat") else None
+        healthy = bool(get_settings().ct_reconcile_enabled and stamp and datetime.now(timezone.utc) - stamp < timedelta(minutes=10))
+        return JSONResponse({"status": "ok" if healthy else "degraded", "live": get_settings().ct_live},
+                            status_code=200 if healthy else 503, headers={"Cache-Control": "no-store"})
+    except Exception:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
