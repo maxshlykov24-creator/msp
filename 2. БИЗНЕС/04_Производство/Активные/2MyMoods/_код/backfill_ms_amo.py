@@ -550,6 +550,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo,
 
 def allocations(data: dict) -> tuple[dict[str, list[tuple[str, int]]], dict[str, str]]:
     invoice_order = {str(x.get("id")): id_of(x.get("customerOrder")) for x in data["invoiceout"]}
+    demand_order = {str(x.get("id")): id_of(x.get("customerOrder")) for x in data.get("demand", [])}
     by_order: dict[str, list[tuple[str, int]]] = defaultdict(list)
     for kind in ("paymentin", "cashin"):
         for payment in data[kind]:
@@ -559,7 +560,8 @@ def allocations(data: dict) -> tuple[dict[str, list[tuple[str, int]]], dict[str,
                 meta = op.get("meta") or {}
                 ref_type = meta.get("type") or ""
                 ref_id = id_of(meta)
-                oid = ref_id if ref_type == "customerorder" else invoice_order.get(ref_id) if ref_type == "invoiceout" else ""
+                oid = (ref_id if ref_type == "customerorder" else invoice_order.get(ref_id)
+                       if ref_type == "invoiceout" else demand_order.get(ref_id) if ref_type == "demand" else "")
                 linked = amount(op.get("linkedSum"))
                 if oid and linked > 0:
                     by_order[oid].append((str(payment.get("moment") or ""), linked))
@@ -1500,12 +1502,58 @@ def create_entity(amo: lib.Amo, journal: dict, oid: str, row: dict, kind: str, p
     raise RowDeferred(kind.upper() + "_CREATE_RATE_LIMIT")
 
 
+def linked_finance(mss: requests.Session, order: dict) -> dict:
+    """Read the current related-document graph, not agent/date approximations.
+
+    Orders/invoices/demands expose payments, demands expose returns, and returns
+    expose outgoing payments. These lists were checked on real API documents.
+    """
+    out = {kind: [] for kind in LEDGERS}
+    queue, seen = [], set()
+    def enqueue(obj):
+        for key in ("payments", "invoicesOut", "demands", "returns"):
+            refs = obj.get(key) or []
+            if not isinstance(refs, list):
+                raise RowDeferred("RELATED_DOCUMENT_LIST_INCOMPLETE")
+            queue.extend(refs)
+    enqueue(order)
+    for ref in queue:
+        kind = (ref.get("meta") or {}).get("type")
+        uid = id_of(ref)
+        if kind not in out or not uid:
+            raise RowDeferred("RELATED_DOCUMENT_TYPE_UNKNOWN")
+        if (kind, uid) in seen:
+            continue
+        seen.add((kind, uid))
+        params = {"expand": "positions,positions.assortment,demand"} if kind == "salesreturn" else None
+        try:
+            obj = api_get(mss, lib.MS_BASE + f"/entity/{kind}/{uid}", params)
+        except Stop as exc:
+            if "HTTP 404" in str(exc) or "HTTP 410" in str(exc):
+                raise RowDeferred("RELATED_DOCUMENT_DELETED") from exc
+            raise
+        if str(obj.get("id")) != uid:
+            raise Stop("RELATED_DOCUMENT_ID_MISMATCH")
+        if kind in {"demand", "invoiceout"} and id_of(obj.get("customerOrder")) != order["id"]:
+            raise RowDeferred("RELATED_DOCUMENT_POINTS_TO_OTHER_ORDER")
+        if kind == "salesreturn":
+            complete_positions(mss, kind, obj)
+        out[kind].append(obj)
+        if kind in {"invoiceout", "demand", "salesreturn"}:
+            enqueue(obj)
+    return out
+
+
 def current_row(data: dict, ms: lib.MS, amo: lib.Amo, oid: str, roster: dict) -> tuple[dict, dict]:
     mss = ms_session(ms)
-    finance_refresh(data, mss, oid)
     order = complete_positions(mss, "customerorder", fresh_order(mss, oid, [0.0]))
-    data_one = {**data, "orders": [order]}
+    finance = linked_finance(mss, order)
+    after = fresh_order(mss, oid, [0.0])
+    if order_hash(order) != order_hash(after):
+        raise RowDeferred("ORDER_CHANGED_DURING_FINANCIAL_READ")
+    data_one = {**data, **finance, "orders": [order]}
     row = classify(data_one, ms, roster)["rows"][0]
+    row["related_finance"] = finance
     return order, row
 
 
@@ -1716,7 +1764,8 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
         raise RowDeferred("SOURCE_CHANGED_BEFORE_DEAL_CREATION")
     if ms_link(fresh) or exact_leads(amo, oid):
         raise RowDeferred("LINK_OR_LEAD_APPEARED_BEFORE_CREATION")
-    row["optional_fields"] = optional_fields(data, fresh, row, ms)
+    row["optional_fields"] = optional_fields({**data, **again["related_finance"]}, fresh, row, ms)
+    row.pop("related_finance", None)
     _set_entry(journal, oid, source_row=row)
     payload = make_lead_payload(amo, fresh, row, cid, roster)
     lid = create_entity(amo, journal, oid, row, "lead", payload)
