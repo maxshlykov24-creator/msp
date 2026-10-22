@@ -2021,11 +2021,21 @@ function downloadExcel(){
   'Обмены режутся теми же фильтрами и в выручку не входят. Возвраты на проверке не режутся: в срезе нет размера, цвета, канала и города, поэтому при таком фильтре их в файле нет.'
  ];
  notes.forEach(text=>{const row=[{t:text,s:X.note}];row.height=32;cover.push(row);});
+ const shipment=shipmentDiscountSelection();
+ const shipmentRows=shipment.docs.filter(d=>!includeReturns||d.kind==='demand').flatMap(d=>d.lines.map(l=>[
+  {t:d.kind==='demand'?'Отгрузка':'Возврат',s:X.text},
+  {...linkFormula(`https://online.moysklad.ru/app/#${d.kind==='demand'?'demand':'salesreturn'}/edit?id=${encodeURIComponent(d.id)}`,d.number),s:X.link},
+  dateCell(d.date,X.date),{...linkFormula(msOrder(d.o.id),d.o.number),s:X.link},dateCell(d.o.paid_date,X.date),
+  {t:l.name,s:X.text},{t:l.size,s:X.text},{t:l.color,s:X.text},{n:l.qty,s:X.qty},
+  moneyCell(l.price_kopecks/100,X.money),{n:l.discount_percent,s:X.qty},moneyCell((d.kind==='salesreturn'?-1:1)*l.discount_kopecks/100,X.money)
+ ]));
+ cover.push([{t:'Скидки на отгруженные товары',s:X.text},{n:shipment.total/100,s:X.coverM},{t:shipment.source?(shipment.gaps.length?'Неполный расчёт: есть документы на проверке':'По дате полной оплаты заказа'):'Данные не загружены',s:X.coverT}]);
  const sheets=[
   {name:'Сводка',xml:worksheetXml(cover,[38,24,62],{first:true,tab:'FF141413',header:'Сводка'})},
   {name:'Заказы',xml:worksheetXml([headRow(orderHead),...orderBody,orderTotal],[16,12,16,28,18,16,18,18,16,18,16,16,12,12,18,14],{freeze:true,filter:true,total:true,tab:'FF2A2926',header:'Заказы'})},
   {name:'Позиции',xml:worksheetXml([headRow(posHead),...posBody,posTotal],[16,12,16,24,18,14,16,16,36,22,14,16,12,16,16,16,12,14],{freeze:true,filter:true,total:true,tab:'FF3A3834',header:'Позиции'})},
   {name:'Обмены',xml:worksheetXml([headRow(exHead),...exBody,exTotal],[16,16,24,16,16,16,36,14,16,12,18,14],{freeze:true,filter:true,total:true,tab:'FF5C5346',header:'Обмены'})},
+  {name:'Скидки отгрузок',xml:worksheetXml([headRow(['Тип','Документ','Дата документа','Заказ','Полная оплата','Товар','Размер','Цвет','Количество','Цена до скидки','Скидка, %','Сумма скидки']),...shipmentRows],[16,16,18,16,18,48,14,16,14,18,14,20],{freeze:true,filter:true,header:'Скидки отгрузок'})},
   {name:'На проверке',xml:worksheetXml([headRow(gapHead),...gapBody,gapTotal],[16,16,54,28],{freeze:true,filter:true,total:true,tab:'FF8C9092',header:'На проверке'})}
  ];
  const a=document.createElement('a');
