@@ -64,7 +64,11 @@ def required_rows(ms: lib.MS, path: str, params: dict | None = None,
 
 
 def required_get(ms: lib.MS, path: str) -> dict:
-    status, body = ms.req(path)
+    for attempt in range(8):
+        status, body = ms.req(path)
+        if status not in (429, 500, 502, 503, 504):
+            break
+        time.sleep(min(30, 2 * (attempt + 1)))
     if status != 200:
         raise RuntimeError(f"GET {path.split('/entity/')[-1].split('/')[0]}: HTTP {status}")
     return body
