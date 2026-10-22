@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 RULE_VERSION = "2026-10-07.1"
 MIN_CALL_DURATION_SEC = 30
-ANALYSIS_VERSION = "sonnet.qa.5"
+ANALYSIS_VERSION = "sonnet.qa.6"
 CATEGORY_NAMES = {
     "primary_inbound": "Первичный входящий продажный",
     "repeat": "Повторный разговор",
@@ -102,6 +102,7 @@ class Analysis(StrictModel):
     category_reason: str = Field(min_length=1, max_length=600)
     category_evidence: list[Evidence] = Field(default_factory=list, max_length=4)
     summary: str = Field(min_length=1, max_length=1000)
+    conversation_occurred: bool | None = None
     recording_complete: bool
     speech_clear: bool
     roles_reliable: bool
@@ -210,6 +211,11 @@ def validate_analysis(raw: dict, transcript: dict, direction: str) -> dict:
         errors.append("category:outgoing_cannot_be_primary_inbound")
     if a.category == "repeat" and not a.category_evidence:
         errors.append("category:repeat_requires_evidence")
+    if a.conversation_occurred is False:
+        if a.category != "insufficient":
+            errors.append("category:no_conversation_must_be_insufficient")
+        if not a.category_evidence:
+            errors.append("category:no_conversation_requires_evidence")
     for e in a.category_evidence:
         check_evidence(e, "category")
     if a.outcome.trade_in in ("refused", "no_car", "interest") and not a.outcome.trade_in_evidence:
@@ -247,7 +253,8 @@ def validate_analysis(raw: dict, transcript: dict, direction: str) -> dict:
             errors.append(f"{label}:invalid_na")
         if c.id in (4, 5) and a.outcome.trade_in == "not_discussed" and c.status != "no":
             errors.append(f"{label}:trade_in_not_discussed_must_be_no")
-    complete = a.recording_complete and a.speech_clear and a.roles_reliable
+    complete = (a.conversation_occurred is not False and
+                a.recording_complete and a.speech_clear and a.roles_reliable)
     # A known missing mandatory action already proves an AND criterion false;
     # uncertainty in a different subcondition cannot change that verdict.
     complete = complete and all(c.status != "unknown" and

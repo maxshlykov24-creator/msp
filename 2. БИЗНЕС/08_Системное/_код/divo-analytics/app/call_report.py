@@ -11,6 +11,7 @@ from app.config import settings
 STATE_NAMES = {
     "insufficient": "Разбор готов",
     "ignored_short": "Разговор короче 30 секунд",
+    "ignored_no_conversation": "Разговор не состоялся",
     "analysis_ready": "Ожидает анализа агента", "analyzing": "Агент анализирует",
     "analysis_ambiguous": "Анализ агента требует проверки",
     "waiting_recording": "Ожидает запись", "ready": "Готов к анализу",

@@ -29,6 +29,7 @@ def published_conditions():
     return [CallRecord.duration_sec >= MIN_CALL_DURATION_SEC,
             func.length(func.trim(CallRecord.recording_url)) > 0,
             CallRecord.state.in_(["complete", "insufficient"]),
+            CallRecord.analysis["conversation_occurred"].as_boolean().is_not(False),
             CallRecord.transcript != {}, CallRecord.validation_errors == [],
             func.length(func.trim(CallRecord.analysis["summary"].as_string())) > 0]
 

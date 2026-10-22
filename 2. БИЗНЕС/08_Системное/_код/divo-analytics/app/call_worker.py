@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy import case, func, or_, select, text
+from sqlalchemy.orm import defer
 
 from app.amo_client import AmoClient, AmoError
 from app.call_report import render_report, report_marker
@@ -377,6 +378,7 @@ def analyze_calls():
                     row.category_reason = row.analysis.get("category_reason", "Анализ требует проверки")
                     row.rule_version = RULE_VERSION
                     row.state = "needs_review" if row.validation_errors else (
+                        "ignored_no_conversation" if row.analysis.get("conversation_occurred") is False else
                         "insufficient" if row.category == "primary_inbound" and not row.is_scored else "complete")
                     row.last_error = "analysis_validation_failed" if row.validation_errors else ""
                 except AmbiguousSubmission as exc:
@@ -653,6 +655,8 @@ def delivery_skip_reason(row: CallRecord) -> str:
         return "calibration_sample"
     if not row.recording_url:
         return "no_recording"
+    if (row.analysis or {}).get("conversation_occurred") is False:
+        return "no_conversation"
     if settings.calls_delivery_from and row.occurred_at < settings.calls_delivery_from:
         return "historical_call"
     if not SonnetCallAgent.catalog(row.transcript or {}):
@@ -668,9 +672,22 @@ def delivery_skip_reason(row: CallRecord) -> str:
 
 def deliver_calls(amo: AmoClient):
     with SessionLocal() as db:
-        rows = list(db.scalars(select(CallRecord).where(CallRecord.is_calibration.is_(False),
-                          CallRecord.state.in_(["complete", "needs_review", "missed", "recording_unavailable", "error", "submit_ambiguous"]))))
-        for row in rows:
+        # Filter historical/non-reportable calls before loading their paid payloads.
+        conditions = [CallRecord.is_calibration.is_(False),
+                      CallRecord.duration_sec >= MIN_CALL_DURATION_SEC,
+                      CallRecord.recording_url != "",
+                      CallRecord.state.in_(["complete", "needs_review"])]
+        if settings.calls_delivery_from:
+            conditions.append(CallRecord.occurred_at >= settings.calls_delivery_from)
+        ids = list(db.scalars(select(CallRecord.id).where(*conditions)))
+        for call_id in ids:
+            row = db.scalar(select(CallRecord).options(
+                defer(CallRecord.provider_result, raiseload=True),
+                defer(CallRecord.entity_refs, raiseload=True),
+                defer(CallRecord.owner_candidates, raiseload=True))
+                .where(CallRecord.id == call_id))
+            if row is None:
+                continue
             if delivery_skip_reason(row):
                 continue
             targets = []

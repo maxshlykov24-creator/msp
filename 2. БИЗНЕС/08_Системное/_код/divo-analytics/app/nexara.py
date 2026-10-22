@@ -164,10 +164,19 @@ class SonnetCallAgent:
         if not catalog:
             raise RemoteFailure("agent_transcript_empty")
         schema = Analysis.model_json_schema()
+        schema["required"].append("conversation_occurred")
         schema["$defs"]["Evidence"] = {"type": "object", "additionalProperties": False,
             "properties": {"quote": {"type": "string", "enum": list(catalog),
                 "description": "ID фрагмента расшифровки, который доказывает это условие"}}, "required": ["quote"]}
         instruction = analysis_prompt(direction, occurred_at) + """
+Сначала установи, состоялся ли живой разговор: conversation_occurred=true при
+любом реальном диалоге, даже коротком, сервисном, нецелевом или оборвавшемся.
+conversation_occurred=false только если вся запись состоит из автоответчика,
+IVR, сообщения о недозвоне/занятости или ожидания без живого разговора.
+Тогда category=insufficient, criteria=[], а category_evidence обязана содержать
+фрагмент автоматического сообщения. Само упоминание недозвона человеком в живом
+разговоре НЕ означает false. При неуверенности оставь null и объясни недостаточность.
+
 Специальный формат доказательств: вместо копирования цитаты в поле quote укажи
 ТОЛЬКО ID фрагмента из каталога (например s0001). Полей start/end в ответе нет.
 Код возьмёт дословный текст и время из этого фрагмента. Выбирай фрагмент, который

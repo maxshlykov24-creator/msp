@@ -305,6 +305,44 @@ class QueueTest(unittest.TestCase):
             r.occurred_at=1001;self.db.commit();call_worker.deliver_calls(SimpleNamespace())
             send.assert_called_once()
 
+    def test_delivery_does_not_load_historical_calls_or_provider_payloads(self):
+        live=self.reportable();live.occurred_at=2001
+        live.provider_result={"paid_response":"x"*500_000}
+        old=call_worker.upsert_note(self.db,self.note(id=2,uniq="old-heavy"),"lead",100,[100])
+        old.state="complete";old.recording_url=live.recording_url;old.transcript=TRANSCRIPT
+        old.analysis=analysis();old.provider_result={"paid_response":"x"*500_000}
+        self.db.commit();settings.calls_delivery_from=2000
+        loaded=[];projections=[]
+        def on_load(row,context):loaded.append(row.id)
+        def capture(conn,cursor,statement,parameters,context,executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                projections.append(statement.split("FROM",1)[0])
+        event.listen(CallRecord,"load",on_load)
+        event.listen(self.engine,"before_cursor_execute",capture)
+        try:
+            with patch.object(call_worker,"deliver_telegram") as send:
+                call_worker.deliver_calls(SimpleNamespace());send.assert_called_once()
+            self.assertEqual(set(loaded),{live.id})
+            self.assertFalse(any("call_record.provider_result" in s for s in projections))
+        finally:
+            event.remove(CallRecord,"load",on_load)
+            event.remove(self.engine,"before_cursor_execute",capture)
+
+    def test_automated_only_recording_is_not_scored_published_or_delivered(self):
+        r=self.reportable();a=analysis()
+        a.update(category="insufficient",conversation_occurred=False,criteria=[],
+                 category_evidence=[{"quote":TRANSCRIPT["segments"][0]["text"],"start":0,"end":8}])
+        result=validate_analysis(a,TRANSCRIPT,"in")
+        self.assertEqual(result["errors"],[]);self.assertFalse(result["is_scored"])
+        r.analysis=result["analysis"];self.db.commit()
+        with patch.object(calls_api,"SessionLocal",self.factory):
+            self.assertEqual(calls_api.summary()["total"],0)
+            self.assertEqual(calls_api.calls(limit=25,offset=0)["total"],0)
+        with patch.object(call_worker,"deliver_telegram") as send:
+            call_worker.deliver_calls(SimpleNamespace());send.assert_not_called()
+        a["category"]="primary_inbound";a["criteria"]=analysis()["criteria"]
+        self.assertIn("category:no_conversation_must_be_insufficient",validate_analysis(a,TRANSCRIPT,"in")["errors"])
+
     def test_review_preview_and_insufficiency_keep_source(self):
         r=self.call();r.state="needs_review";r.analysis=analysis();r.analysis["speech_clear"]=False
         self.db.commit()
