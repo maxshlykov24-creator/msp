@@ -1250,6 +1250,19 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
     def money_int(value):
         return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
+    def goods_info(aid, kind):
+        if aid not in catalog:
+            card = required_get(ms, f"/entity/{kind}/{aid}")
+            product = required_get(ms, f"/entity/product/{mid(card.get('product'))}") if kind == "variant" else card
+            chars = {c.get("name", "").lower(): c.get("value") for c in card.get("characteristics") or []}
+            name = product.get("name") or card.get("name")
+            if not name:
+                raise ValueError("Нет товарных данных для фильтров")
+            catalog[aid] = {"id": aid, "name": name, "category": product.get("pathName") or "не указано",
+                            "size": canon_size(str(chars.get("размер") or "")) or size_from_name(name),
+                            "color": str(chars.get("цвет") or "").strip() or color_from_name(name)}
+        return catalog[aid]
+
     def source_documents(entity):
         # Expanded positions are limited by the API; fetch the full collection if needed.
         seen = set()
@@ -1283,9 +1296,7 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                 continue
             if kind not in ("product", "variant", "bundle") or not aid:
                 raise ValueError("Не определён товар позиции")
-            info = catalog.get(aid)
-            if info is None:
-                raise ValueError("Нет товарных данных для фильтров")
+            info = goods_info(aid, kind)
             lines.append({**{k: info.get(k, "") for k in ("id", "name", "category", "size", "color")},
                           "qty": float(qty), "price_kopecks": float(price), "discount_percent": float(discount),
                           "discount_kopecks": gross - after})
