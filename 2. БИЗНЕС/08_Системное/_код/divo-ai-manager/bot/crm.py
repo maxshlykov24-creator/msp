@@ -613,6 +613,20 @@ def _adopt_widget(snap: dict, doc: dict, widget: dict) -> dict:
 
 
 def ensure_lead(snap: dict, doc: dict) -> dict:
+    # Без номера чат остаётся в текущем этапе. Нельзя ни создавать сделку,
+    # ни принимать Неразобранное, включая медиа и отложенные передачи.
+    if not phone_key(str(snap.get("phone") or "")):
+        if snap.get("channel") in {"Авито", "Авто.ру"}:
+            widget = amo_client.find_widget_lead(
+                peer=snap.get("peer") or snap.get("name") or "",
+                car=snap.get("car") or "", channel=snap["channel"],
+                url=snap.get("url") or "", chat_id=str(snap.get("chat_id") or ""),
+                customer_id=(doc.get("autoru") or {}).get("customer_id", ""),
+                customer_names=(doc.get("autoru") or {}).get("customer_names", []),
+            )
+            if widget:
+                snap["chat_url"] = amo_client.lead_url(int(widget["id"]))
+        return snap
     crm = dict(doc.get("crm") or {})
     old_id = crm.get("lead_id") or crm.get("note_lead_id")
     channel = snap.get("channel") or ""
@@ -731,6 +745,8 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
             "car",
             "channel",
             "lead_url",
+            "chat_url",
+            "ask",
             "lead_id",
             "url",
             "brief",
@@ -764,6 +780,9 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
             "wait": snap.get("wait"),
             "brief": snap.get("brief") or "",
             "lead_url": snap.get("lead_url"),
+            "chat_url": snap.get("chat_url") or "",
+            "chat_id": snap.get("chat_id") or "",
+            "ask": snap.get("ask") or "",
             "lead_id": snap.get("lead_id"),
             "media_kind": snap.get("media_kind") or "",
             "url": snap.get("url") or "",
@@ -993,7 +1012,7 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
                 nags = True
         except Exception:
             log.exception("amo по чату %s не записалась", chat_id)
-        if lead_ready:
+        if lead_ready or not phone_key(phone):
             doc.setdefault("crm", {}).pop("handoff_pending", None)
         _start_alert(doc, snap, nags)
         store.save_doc(chat_id, doc)
@@ -1082,6 +1101,8 @@ async def _notify_media_locked(
         inner["name"] = snap.get("name") or inner.get("name")
         inner["car"] = snap.get("car") or inner.get("car")
         inner["channel"] = snap.get("channel") or inner.get("channel")
+        inner["chat_url"] = snap.get("chat_url") or inner.get("chat_url")
+        inner["ask"] = snap.get("ask") or inner.get("ask")
         inner["lead_url"] = snap.get("lead_url") or inner.get("lead_url")
         inner["lead_id"] = snap.get("lead_id") or inner.get("lead_id")
         inner["url"] = snap.get("url") or inner.get("url")
@@ -1592,7 +1613,7 @@ async def _claim_locked(
     store.save_doc(chat_id, doc)
     if amo_user is None:
         log.warning("кнопка: не нашёл amo-пользователя для %s tg=%s", who, person.get("id"))
-    if lead_id:
+    if lead_id and phone_key(str(snap.get("phone") or "")):
         try:
             lead = amo_client.set_lead_status(
                 int(lead_id),
@@ -1666,6 +1687,11 @@ async def _tick_one(chat_id: str) -> None:
     state = doc.get("crm") or {}
     queued = state.get("handoff_pending") or {}
     alert = state.get("alert") or {}
+    if queued and not phone_key(nudge.extract_phone_from_history(doc.get("messages") or [])):
+        state.pop("handoff_pending", None)
+        doc["crm"] = state
+        store.save_doc(chat_id, doc)
+        queued = {}
     if queued and now_msk().timestamp() >= queued.get("retry_at", 0):
         queued["retry_at"] = now_msk().timestamp() + 120
         state["handoff_pending"] = queued

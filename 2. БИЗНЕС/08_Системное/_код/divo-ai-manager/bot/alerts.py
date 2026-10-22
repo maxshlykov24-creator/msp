@@ -52,7 +52,7 @@ REASON_LINE = {
     "call": "просит позвонить",
     "stuck": "агент в тупике",
     "complaint": "жалоба, конфликт",
-    "handoff": "нужен живой менеджер",
+    "handoff": "нужен ответ сотрудника в чате",
     "llm": "бот не смог ответить",
     "media": "клиент просит фото",
     "aftersale": "уже покупал у нас, сервисный вопрос",
@@ -430,11 +430,17 @@ def format_alert(snap: dict, ping: int = 0) -> str:
         why = "клиент просит %s" % media_kind_of(media_kind)
     else:
         why = REASON_LINE.get(reason, "")
+    if reason in {"handoff", "stuck"} and snap.get("ask"):
+        why = "Нерешённый вопрос: " + " ".join(str(snap["ask"]).split())[:350]
     if why:
         lines.append("▪️ <b>Повод:</b> %s" % _esc(why))
     if snap.get("lead_url"):
         lines.append("▪️ <b>Сделка:</b> %s" % _esc(snap["lead_url"]))
-    elif snap.get("url"):
+    if snap.get("chat_url") and snap.get("chat_url") != snap.get("lead_url"):
+        lines.append("▪️ <b>Переписка в amoCRM:</b> %s" % _esc(snap["chat_url"]))
+    elif not snap.get("lead_url"):
+        lines.append("▪️ <b>Чат:</b> %s (ссылка на переписку не найдена)" % _esc(snap.get("chat_id") or "не определён"))
+    if snap.get("url"):
         lines.append("▪️ <b>Объявление:</b> %s" % _esc(snap["url"]))
     for interest in snap.get("interests") or []:
         if interest.get("url") and interest.get("url") != snap.get("url"):

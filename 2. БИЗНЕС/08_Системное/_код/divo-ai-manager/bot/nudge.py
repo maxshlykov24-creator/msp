@@ -675,6 +675,10 @@ def asked_torg(messages: list[dict] | None) -> bool:
         blob,
     ) and re.search(r"продад|отдад|готов за|забер", blob):
         return True
+    if re.search(r"за\s*\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?", blob) and re.search(
+        r"забер|забрат|готов\s+куп", blob,
+    ):
+        return True
     # «ЗА 16 млн возьму», «возьму за 16» — это своя сумма, не вопрос про пробег.
     if re.search(r"за\s+\d", blob) and re.search(
         r"возьм|купл[юи]|\bберу\b|\bберем\b|\bберём\b",

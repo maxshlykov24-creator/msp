@@ -1054,7 +1054,10 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
         return prompt.HANDOFF_MARK
     if (nudge.asked_credit([{"role": "user", "content": last}])
             or re.search(r"\bкр[еи]дит\w*\b", last, re.I)):
-        return "Салон кредит не оформляет. Автомобиль можно приобрести за наличный расчёт."
+        answer = "Салон кредит не оформляет. Автомобиль можно приобрести за наличный расчёт."
+        if nudge.asked_torg([{"role": "user", "content": last}]):
+            answer += " " + human.cash_hold(avito_match.listing_price(doc))
+        return answer
     if re.search(r"(?:заберу|забрать|куплю|взять)\s+за\s*\d", last, re.I):
         return human.cash_hold(avito_match.listing_price(doc))
     vat = avito_match.vat_from_doc(doc)
