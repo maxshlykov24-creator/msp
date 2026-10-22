@@ -10,6 +10,7 @@ import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from urllib.parse import urlsplit, parse_qs
@@ -40,7 +41,7 @@ FIELD = {
 def required_rows(ms: lib.MS, path: str, params: dict | None = None,
                   keep: tuple[str, ...] | None = None) -> list[dict]:
     params = dict(params or {})
-    params["limit"] = 1000
+    params.setdefault("limit", 1000)
     out = []
     offset = 0
     while True:
@@ -1230,6 +1231,114 @@ ORDER_MESSENGER_SOURCES = {
 }
 
 
+def enrich_shipment_discounts(snap: dict, ms=None) -> None:
+    """Recorded goods discounts, shipment/return documents; cohort = order full payment.
+
+    Read-only in MoySklad. Never infer a discount from today's catalogue price.
+    Returns stay in their original payment cohort, irrespective of return date.
+    """
+    ms = ms or lib.MS()
+    orders = {o["id"]: o for o in snap["orders"]}
+    catalog = {}
+    for o in snap["orders"]:
+        for line in o.get("lines", []):
+            catalog.setdefault(line["id"], line)
+    documents, gaps = [], []
+    shipments, returned_qty = {}, defaultdict(Decimal)
+    unlinked = defaultdict(int)
+
+    def money_int(value):
+        return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    def source_documents(entity):
+        # Expanded positions are limited by the API; fetch the full collection if needed.
+        seen = set()
+        for doc in required_rows(ms, f"/entity/{entity}",
+                                 {"filter": "applicable=true", "expand": "positions", "limit": 100}):
+            if doc["id"] in seen:
+                raise RuntimeError("Duplicate shipment-discount document")
+            seen.add(doc["id"])
+            collection = doc.get("positions") or {}
+            positions = collection.get("rows", [])
+            if len(positions) != collection.get("meta", {}).get("size", -1):
+                positions = required_rows(ms, f"/entity/{entity}/{doc['id']}/positions")
+            yield doc, positions
+
+    def parse_lines(doc, positions):
+        lines, net = [], 0
+        for p in positions:
+            if any(p.get(k) is None for k in ("price", "quantity", "discount")):
+                raise ValueError("Нет цены, количества или скидки позиции")
+            price, qty, discount = (Decimal(str(p[k])) for k in ("price", "quantity", "discount"))
+            if not all(v.is_finite() for v in (price, qty, discount)) or price < 0 or qty < 0 or not 0 <= discount <= 100:
+                raise ValueError("Некорректная цена, количество или скидка")
+            vat = Decimal(str(p.get("vat") or 0))
+            tax = 1 + vat / 100 if doc.get("vatEnabled") and not doc.get("vatIncluded") else Decimal(1)
+            gross = money_int(price * qty * tax)
+            after = money_int(price * qty * (1 - discount / 100) * tax)
+            net += after
+            aid = mid(p.get("assortment"))
+            kind = (p.get("assortment", {}).get("meta") or {}).get("type")
+            if kind == "service":
+                continue
+            if kind not in ("product", "variant", "bundle") or not aid:
+                raise ValueError("Не определён товар позиции")
+            info = catalog.get(aid)
+            if info is None:
+                raise ValueError("Нет товарных данных для фильтров")
+            lines.append({**{k: info.get(k, "") for k in ("id", "name", "category", "size", "color")},
+                          "qty": float(qty), "price_kopecks": float(price), "discount_percent": float(discount),
+                          "discount_kopecks": gross - after})
+        if abs(net - money_int(Decimal(str(doc.get("sum") or 0)))) > 1:
+            raise ValueError("Сумма позиций не совпадает с документом")
+        return lines
+
+    for entity in ("demand", "salesreturn"):
+        for doc, positions in source_documents(entity):
+            shipment_id = mid(doc.get("demand")) if entity == "salesreturn" else doc["id"]
+            original = shipments.get(shipment_id)
+            oid = original["order_id"] if original else mid(doc.get("customerOrder"))
+            order = orders.get(oid)
+            if entity == "demand":
+                shipments[doc["id"]] = {"order_id": oid, "lines": None}
+            if not order:
+                unlinked[entity] += 1
+                continue
+            if not order.get("buy") or not order.get("paid_date"):
+                continue
+            item = {"id": doc["id"], "number": doc.get("name") or "", "kind": entity,
+                    "order_id": oid, "date": str(doc.get("moment") or "")[:10]}
+            try:
+                # Currency conversion is not implicit in the dashboard's ruble totals.
+                rate = doc.get("rate") or {}
+                if rate.get("value") not in (None, 1, 1.0):
+                    raise ValueError("Валютный документ требует проверки")
+                lines = parse_lines(doc, positions)
+                if entity == "salesreturn":
+                    if not original or original["lines"] is None:
+                        raise ValueError("Исходная отгрузка не прошла проверку")
+                    available, requested = defaultdict(Decimal), defaultdict(Decimal)
+                    for l in original["lines"]:
+                        key = (l["id"], l["price_kopecks"], l["discount_percent"])
+                        available[key] += Decimal(str(l["qty"]))
+                    for l in lines:
+                        key = (l["id"], l["price_kopecks"], l["discount_percent"])
+                        requested[key] += Decimal(str(l["qty"]))
+                    for key, qty in requested.items():
+                        if qty + returned_qty[(shipment_id, key)] > available[key]:
+                            raise ValueError("Позиции возврата не совпадают с отгрузкой или превышают её")
+                    for key, qty in requested.items():
+                        returned_qty[(shipment_id, key)] += qty
+                else:
+                    shipments[doc["id"]]["lines"] = lines
+                documents.append({**item, "lines": lines})
+            except ValueError as exc:
+                gaps.append({**item, "reason": str(exc)})
+    snap["shipment_discounts"] = {"status": "partial" if gaps else "ok", "documents": documents,
+                                  "gaps": gaps, "unlinked": dict(unlinked),
+                                  "checked_at": datetime.now(TZ).isoformat(timespec="seconds")}
+
+
 def enrich_order_sources(snap: dict) -> None:
     """Dashboard-only fallback. Preserve raw utm_source and UTM-quality metrics."""
     by_id = {}
@@ -1675,6 +1784,8 @@ def main() -> None:
             "wazzup": {"status": "метрика ответа рассчитана по событиям amoCRM"}}
     enrich_accounting(snap)
     enrich_order_sources(snap)
+    print("Скидки на отгруженные товары: сверка документов", flush=True)
+    enrich_shipment_discounts(snap)
     try:
         snap['amo_conversion'] = get_amo_conversion(leads, tasks)
     except Exception as exc:
