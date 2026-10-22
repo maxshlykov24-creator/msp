@@ -597,6 +597,7 @@
   .kv b{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
   .kv b.bad{color:var(--bad)}
   .kv b.good{color:var(--good)}
+  .kv > .conversion-proof{flex-shrink:0;white-space:nowrap;font-variant-numeric:tabular-nums}
 
   /* ── карточка товара ── */
   .scope{background:var(--butter);padding:34px 32px;position:relative}
@@ -828,12 +829,11 @@
     </div>
     <div class="card">
       <h3>Скидки на отгруженные товары</h3>
-      <div class="hint">Заказы отбираются по дате полной оплаты, как выручка. Скидки считаются по фактически отгруженным позициям проведённых отгрузок, без услуг и доставки. Частичные отгрузки учитываются в своём количестве.</div>
+      <div class="hint">Только фактически отгруженные товары, без услуг и доставки. Период — по дате полной оплаты заказа. Нажми на сумму, чтобы увидеть её состав.</div>
       <div id="shipment-discounts"></div>
       <div class="hint" id="shipment-discounts-hint"></div>
-      <button type="button" class="ms-open" id="shipment-discounts-open" style="margin-top:12px">Документы и расчёт</button>
       <h4 style="margin:28px 0 12px">Скидки в оплаченных заказах</h4>
-      <div class="hint">Скидки по всем позициям заказов, включая ещё не отгруженные.</div>
+      <div class="hint" id="order-discounts-hint">Все позиции оплаченных заказов, включая ещё не отгруженные. Цены и скидки в заказах могут отличаться от отгрузок. Нажми на число, чтобы открыть заказы.</div>
       <div id="disc-kv2"></div>
     </div>
   </div>
@@ -1423,6 +1423,7 @@ function shippingStats(orders){
  }
  return {missing,missingConfirm,missingSent,invalid,sent,groups:groups.map(g=>{const a=g.values.sort((x,y)=>x-y),n=a.length;return {label:g.label,count:n,mean:n?a.reduce((x,y)=>x+y,0)/n:null,median:n?(a[Math.floor((n-1)/2)]+a[Math.floor(n/2)])/2:null};})};
 }
+const discountKv=rows=>rows.map(([label,value,key])=>`<div class="kv"><span>${esc(label)}</span><button type="button" class="conversion-proof" data-discount-metric="${esc(key)}" aria-label="${esc(label+': '+value+'. Открыть расшифровку')}">${esc(value)}</button></div>`).join('');
 const preciseMoney=n=>Number(n||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽';
 function shipmentDiscountSelection(){
  const source=data.shipment_discounts;
@@ -1430,24 +1431,34 @@ function shipmentDiscountSelection(){
  const docs=(source?.documents||[]).filter(d=>eligible.has(d.order_id)).map(d=>({...d,o:eligible.get(d.order_id),lines:d.lines.filter(l=>matches(state.cat,l.category)&&(!state.prod||l.name===state.prod)&&matches(state.size,sizeLabel(l))&&matches(state.color,colorLabel(l)))})).filter(d=>d.lines.length);
  const amount=d=>sum(d.lines,l=>l.discount_kopecks);
  const gross=sum(docs.filter(d=>d.kind==='demand'),amount),returned=sum(docs.filter(d=>d.kind==='salesreturn'),amount);
- const gaps=(source?.gaps||[]).filter(d=>eligible.has(d.order_id)&&(!includeReturns||d.kind==='demand'));
- return {source,docs,gaps,gross,returned,total:gross-(includeReturns?0:returned)};
+ const allGaps=(source?.gaps||[]).filter(d=>eligible.has(d.order_id));
+ const gaps=allGaps.filter(d=>!includeReturns||d.kind==='demand');
+ return {source,docs,gaps,allGaps,gross,returned,total:gross-(includeReturns?0:returned)};
 }
-function showShipmentDiscounts(){
- const v=shipmentDiscountSelection(),docs=v.docs.filter(d=>includeReturns?d.kind==='demand':true);
+function showShipmentDiscounts(mode='total'){
+ const v=shipmentDiscountSelection();
+ const accepts=d=>mode==='gross'?d.kind==='demand':mode==='returned'?d.kind==='salesreturn':!includeReturns||d.kind==='demand';
+ const docs=v.docs.filter(accepts),excluded=v.allGaps.filter(accepts);
+ const sign=d=>mode!=='returned'&&d.kind==='salesreturn'?-1:1;
+ const total=sum(docs,d=>sign(d)*sum(d.lines,l=>l.discount_kopecks));
+ const title=mode==='gross'?'Скидки на отгруженные товары до возвратов':mode==='returned'?'Скидки на возвращённые товары':includeReturns?'Скидки на отгруженные товары до возвратов':'Скидки на отгруженные товары после возвратов';
  const link=d=>`https://online.moysklad.ru/app/#${d.kind==='demand'?'demand':'salesreturn'}/edit?id=${encodeURIComponent(d.id)}`;
- const rows=docs.flatMap(d=>d.lines.map(l=>`<tr><td><a class="ms-open" href="${link(d)}" target="_blank" rel="noopener">${d.kind==='demand'?'Отгрузка':'Возврат'} ${esc(d.number)}</a><div class="hint">${dmy(d.date)}</div></td><td><a class="ms-open" href="${msOrder(d.o.id)}" target="_blank" rel="noopener">${esc(d.o.number)}</a><div class="hint">${dmy(d.o.paid_date)}</div></td><td>${esc(l.name)}<div class="hint">${esc(l.size)} ${esc(l.color)}</div></td><td>${num(l.qty)}</td><td>${preciseMoney(l.price_kopecks/100)}</td><td>${num(l.discount_percent)}%</td><td>${preciseMoney((d.kind==='salesreturn'?-1:1)*l.discount_kopecks/100)}</td></tr>`)).join('');
- const gaps=v.gaps.length?'<p class="hint">Не вошли в расчёт:</p>'+v.gaps.map(g=>`<p><a class="ms-open" href="${link(g)}" target="_blank" rel="noopener">${g.kind==='demand'?'Отгрузка':'Возврат'} ${esc(g.number)}</a>: ${esc(g.reason)}</p>`).join(''):'';
- showSheet('МойСклад · скидки на отгруженные товары','Документы и расчёт',`<div class="sheet-count">${v.gaps.length?'Подтверждённая часть':'Итого'}: ${preciseMoney(v.total/100)} · ${docsWord(docs.length)}. Период ${dmy(state.from)}–${dmy(state.to)} по дате полной оплаты заказа. Отгрузки и возвраты учтены по состоянию на ${dmy(v.source?.checked_at)}. ${includeReturns?'Возвраты не вычитаются.':'Возвраты вычитаются из когорты исходного заказа, независимо от даты возврата.'} Сумма строки = стоимость до скидки минус стоимость после скидки, с округлением до копеек.</div><table class="sheet-table"><thead><tr><th>Документ / дата</th><th>Заказ / полная оплата</th><th>Товар</th><th>Количество</th><th>Цена до скидки</th><th>Скидка</th><th>Сумма скидки</th></tr></thead><tbody>${rows||'<tr><td colspan="7">Нет отгруженных позиций</td></tr>'}</tbody></table>${gaps}`);
+ const rows=docs.flatMap(d=>d.lines.map(l=>`<tr><td><a class="ms-open" href="${link(d)}" target="_blank" rel="noopener">${d.kind==='demand'?'Отгрузка':'Возврат'} ${esc(d.number)}</a><div class="hint">${dmy(d.date)}</div></td><td><a class="ms-open" href="${msOrder(d.o.id)}" target="_blank" rel="noopener">${esc(d.o.number)}</a><div class="hint">${dmy(d.o.paid_date)}</div></td><td>${esc(l.name)}<div class="hint">${esc(l.size)} ${esc(l.color)}</div></td><td>${num(l.qty)}</td><td>${preciseMoney(l.price_kopecks/100)}</td><td>${num(l.discount_percent)}%</td><td>${preciseMoney(sign(d)*l.discount_kopecks/100)}</td></tr>`)).join('');
+ const gaps=excluded.length?'<p class="hint">Не вошли в расчёт:</p>'+excluded.map(g=>`<p><a class="ms-open" href="${link(g)}" target="_blank" rel="noopener">${g.kind==='demand'?'Отгрузка':'Возврат'} ${esc(g.number)}</a>: ${esc(g.reason)}</p>`).join(''):'';
+ const note=mode==='gross'?'Только отгрузки, до вычета возвратов.':mode==='returned'?'Только возвраты. Здесь скидки показаны положительными суммами; в общем итоге они вычитаются.':includeReturns?'Возвраты не вычитаются.':'Возвраты вычитаются из когорты исходного заказа, независимо от даты возврата.';
+ showSheet('МойСклад · скидки на отгруженные товары',title,`<div class="sheet-count">${excluded.length?'Подтверждённая часть':'Итого'}: ${preciseMoney(total/100)} · ${docsWord(docs.length)}. Период ${dmy(state.from)}–${dmy(state.to)} по дате полной оплаты заказа. Документы учтены по состоянию на ${dmy(v.source?.checked_at)}. ${note} Сумма строки = стоимость до скидки минус стоимость после скидки, с округлением до копеек.</div><table class="sheet-table"><thead><tr><th>Документ / дата</th><th>Заказ / полная оплата</th><th>Товар</th><th>Количество</th><th>Цена до скидки</th><th>Скидка</th><th>Сумма скидки</th></tr></thead><tbody>${rows||'<tr><td colspan="7">Нет позиций</td></tr>'}</tbody></table>${gaps}`);
+}
+function showDiscountOrderList(title,rows,amountLabel,note){
+ const list=[...rows].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number).localeCompare(String(b.o.number),'ru'));
+ showSheet('МойСклад · оплаченные заказы',title,`<div class="sheet-count">${num(list.length)} ${orderNoun(list.length)} · ${esc(amountLabel)}: ${preciseMoney(sum(list,r=>r.amount))}. ${esc(note)} Нажатие на заказ открывает его в МойСклад.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата полной оплаты</th><th>Канал</th><th>Промокод</th><th>${esc(amountLabel)}</th></tr></thead><tbody>${list.map(r=>`<tr class="drill" data-order="${esc(r.o.id)}"><td><a class="ms-open" href="${msOrder(r.o.id)}" target="_blank" rel="noopener">${esc(r.o.number)}</a></td><td>${dmy(r.o.paid_date)}</td><td>${esc(r.o.channel||'—')}</td><td>${esc(r.o.promo||'—')}</td><td>${preciseMoney(r.amount)}</td></tr>`).join('')||'<tr><td colspan="5">Нет заказов</td></tr>'}</tbody></table>`);
 }
 function renderShipmentDiscounts(){
  const v=shipmentDiscountSelection();
- el('shipment-discounts-open').disabled=!v.source;
- if(!v.source){el('shipment-discounts').innerHTML=kv([['Сумма скидок','—']]);el('shipment-discounts-hint').textContent='Данные отгрузок ещё не загружены.';return;}
- el('shipment-discounts').innerHTML=kv([['Скидки по отгрузкам',preciseMoney(v.gross/100)],['Скидки по возвращённым товарам',preciseMoney(v.returned/100)],[(v.gaps.length?'Подтверждённая часть':'Итого')+(includeReturns?' · без вычета возвратов':' · с учётом возвратов'),preciseMoney(v.total/100)]]);
+ if(!v.source){el('shipment-discounts').innerHTML=kv([['Сумма скидок','—']]);el('shipment-discounts-hint').textContent='Данные отгрузок ещё не загружены.';el('shipment-discounts').onclick=null;return;}
+ el('shipment-discounts').innerHTML=discountKv([['На отгруженные товары · до возвратов',preciseMoney(v.gross/100),'gross'],['На возвращённые товары',preciseMoney(v.returned/100),'returned'],[(v.gaps.length?'Подтверждённая часть':'Итого')+(includeReturns?' · без вычета возвратов':' · после возвратов'),preciseMoney(v.total/100),'total']]);
  const missing=sum(Object.values(v.source.unlinked||{}),Number);
- el('shipment-discounts-hint').textContent='Отгрузки и возвраты учитываются на дату обновления. Возврат относится к дате полной оплаты исходного заказа. Размер, цвет и остальные товарные фильтры действуют на этот блок. '+(v.gaps.length?`Расчёт неполный: ${docsWord(v.gaps.length)} требуют проверки. Открой список документов. `:'')+(missing?`Во всей базе ${docsWord(missing)} без подтверждённой связи с проведённой отгрузкой и заказом; дата полной оплаты для них неизвестна, они исключены. `:'')+'Учитываются записанные в документах скидки. Снижение цены без записи скидки восстановить нельзя.';
- el('shipment-discounts-open').onclick=showShipmentDiscounts;
+ el('shipment-discounts-hint').textContent='Возвраты относятся к полной оплате исходного заказа. Учитываются документы на дату обновления, размер, цвет и остальные товарные фильтры. '+(v.gaps.length?`Расчёт неполный: ${docsWord(v.gaps.length)} требуют проверки. Нажми на сумму для подробностей. `:'')+(missing?`Во всей базе ${docsWord(missing)} без подтверждённой связи с проведённой отгрузкой и заказом исключены: дата полной оплаты неизвестна. `:'')+'Снижение цены без записи скидки восстановить нельзя.';
+ el('shipment-discounts').onclick=e=>{const b=e.target.closest('[data-discount-metric]');if(b)showShipmentDiscounts(b.dataset.discountMetric)};
 }
 function refresh(){
  if(!data)return;
@@ -1512,7 +1523,19 @@ function refresh(){
  const lineDiscount=x=>sum(x.ls,l=>Math.max(0,(l.list||0)-(l.rev||0)));
  const discountIds=new Set(discounts.map(x=>x.o.id));
  const discountRev=sum(discounts,x=>orderRev(x.o,x.ls))+(!includeReturns?sum(returned.filter(x=>discountIds.has(x.o.original_order)),x=>orderRev(x.o,x.ls)):0);
- el('disc-kv2').innerHTML=kv([['Заказов со скидкой или промокодом',num(discounts.length)],['Выручка этих заказов',money(discountRev)],['Скидка по позициям',money(sum(filtered,lineDiscount))]]);
+ el('disc-kv2').innerHTML=discountKv([['Заказов со скидкой или промокодом',num(discounts.length),'count'],['Выручка этих заказов',preciseMoney(discountRev),'revenue'],['Скидки в заказах · до возвратов',preciseMoney(sum(filtered,lineDiscount)),'discount']]);
+ el('order-discounts-hint').textContent='Все позиции оплаченных заказов, включая ещё не отгруженные. Цены и скидки могут отличаться от отгрузок. '+(includeDelivery?'Доставка включена. ':'Доставка исключена. ')+'Размер и цвет относятся к блоку отгрузок и товарной аналитике; здесь действуют остальные фильтры. Нажми на число, чтобы открыть заказы.';
+ el('disc-kv2').onclick=e=>{
+  const b=e.target.closest('[data-discount-metric]');if(!b)return;
+  const mode=b.dataset.discountMetric;
+  if(mode==='revenue'){
+   const revenueRows=[...discounts,...(!includeReturns?returned.filter(x=>discountIds.has(x.o.original_order)):[])];
+   showDiscountOrderList('Выручка заказов со скидкой или промокодом',pack(revenueRows),'Выручка',includeReturns?'Возвраты не вычитаются.':'Возвраты этих заказов вычтены по дате возврата в выбранном периоде.');
+  }else{
+   const rows=(mode==='count'?discounts:filtered.filter(x=>lineDiscount(x)>0)).map(x=>({o:x.o,amount:lineDiscount(x)}));
+   showDiscountOrderList(mode==='count'?'Заказы со скидкой или промокодом':'Скидки во всех оплаченных заказах',rows,'Скидки до возвратов',mode==='count'?'Промокод может быть указан и при нулевой скидке.':'Включены ещё не отгруженные позиции. Сумма скидок показана до возвратов.');
+  }
+ };
  const promoBuckets=new Map(), promoOfOrder=new Map();
  for(const x of filtered){
   const raw=String(x.o.promo||'').trim();
@@ -1738,6 +1761,7 @@ el('items').onclick=e=>{const row=e.target.closest('tr[data-product]');if(!row)r
 el('sheet').addEventListener('click',e=>{
  if(e.target.closest('[data-close]')||e.target.closest('#sheet-x')){closeSheet();return;}
  if(e.target.closest('#sheet-back')){const back=sheetReturn;if(typeof back==='function')back();else closeSheet();return;}
+ if(e.target.closest('a[href]'))return;
  const order=e.target.closest('[data-order]');
  if(order&&order.dataset.order){window.open(msOrder(order.dataset.order),'_blank','noopener');return;}
  const person=e.target.closest('[data-phone]');
