@@ -103,6 +103,21 @@ def test_missing_fields_or_changed_stage_no_send(store, cfg, change, expected):
     assert job.state == expected and not calls and job.attempted_at is None
 
 
+@pytest.mark.parametrize("missing_field", [3829210, 3169911, 3135463])
+def test_each_required_field_blocks_smtp(store, cfg, missing_field):
+    cfg.include_number = True
+    job = enqueue(store, cfg)
+    data = lead()
+    data["custom_fields_values"] = [
+        field for field in data["custom_fields_values"]
+        if field["field_id"] != missing_field
+    ]
+    calls = []
+    process_job(store, 17, cfg, NOW, fetch=lambda *args: data,
+                deliver=lambda *args: calls.append(args))
+    assert job.state == "blocked" and not calls and job.attempted_at is None
+
+
 @pytest.mark.parametrize("error,state", [
     (TimeoutError("lost SMTP acknowledgement"), "uncertain"),
     (smtplib.SMTPServerDisconnected("lost connection"), "uncertain"),

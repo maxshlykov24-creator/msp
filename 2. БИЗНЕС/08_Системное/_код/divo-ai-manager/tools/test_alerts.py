@@ -3191,7 +3191,31 @@ def test_oct14_autoru_binding_requires_identity_and_listing():
         assert a.autoru_bound_lead('room-id', 'buyer-id', 'https://auto.ru/cars/used/sale/9876543210/') is None
 
 
+def test_oct22_no_phone_no_sales():
+    from unittest.mock import patch
+    from bot import crm
+    for channel in ("Авито", "Авто.ру", "Telegram"):
+        for reason in ("handoff", "media", "phone", "complaint", "stuck", "aftersale"):
+            snap = {"channel": channel, "phone": "", "reason": reason, "chat_id": "av:test"}
+            doc = {"crm": {"lead_id": 123}}
+            with patch.object(crm.amo_client, "find_widget_lead", return_value={"id": 123}), patch.object(
+                crm.amo_client, "request", side_effect=AssertionError("CRM mutation without phone")
+            ):
+                crm.ensure_lead(snap, doc)
+            assert doc == {"crm": {"lead_id": 123}}
+    snap = {"chat_id": "av:test", "channel": "Авито", "phone": "", "reason": "handoff",
+            "ask": "Есть фото ДТП?", "chat_url": "https://test.amocrm.ru/leads/detail/123",
+            "url": "https://avito.ru/car"}
+    doc = {}
+    crm._start_alert(doc, snap, True)
+    card = format_alert(doc["crm"]["alert"]["snap"])
+    assert "Есть фото ДТП?" in card and "Переписка в amoCRM" in card
+    assert "живой менеджер" not in card
+    assert asked_torg([{"role": "user", "content": "Готов забрать за 6 000 000 руб. наличными )!"}])
+
+
 if __name__ == "__main__":
+    test_oct22_no_phone_no_sales()
     test_oct14_old_note_identity_recovery_preserves_pause()
     test_oct14_autoru_binding_requires_identity_and_listing()
     test_oct14_silence_and_new_message()
