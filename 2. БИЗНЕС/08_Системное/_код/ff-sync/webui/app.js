@@ -2331,6 +2331,18 @@ function layoutToEn(text) {
 let kizTrace = [];
 let kizTraceTime = performance.now();
 let kizExpectedInput = null;
+let kizKeyText = "";
+let kizKeyTraceUsable = true;
+$("kizInput").addEventListener("keydown", (e) => {
+  if (kizBusy) return;
+  const gs = e.key === "\u001d" || (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "BracketRight" || e.key === "]"));
+  if (gs) kizKeyText += "\u001d";
+  else if (e.ctrlKey || e.altKey || e.metaKey || e.isComposing) kizKeyTraceUsable = false;
+  else if (e.key === "Enter") kizKeyText += "\n";
+  else if (e.key && e.key.length === 1) kizKeyText += e.key;
+  else if (["Backspace", "Delete", "Home", "End", "ArrowLeft", "ArrowRight"].includes(e.key)) kizKeyTraceUsable = false;
+});
+$("kizInput").addEventListener("paste", () => { kizKeyTraceUsable = false; });
 const kizInputTypes = ["insertText", "insertLineBreak", "insertParagraph", "insertFromPaste", "insertReplacementText", "deleteContentBackward", "deleteContentForward", "insertCompositionText"];
 function kizTraceEvent(type, e, match = -1) {
   const input = $("kizInput");
@@ -2363,6 +2375,13 @@ function kizFlushScan() {
   const input = $("kizInput");
   const raw = input.value;
   kizTraceEvent(4);
+  // Compare two observed streams locally; log lengths/first mismatch, never text.
+  let firstDiff = -1;
+  for (let i = 0; i < Math.max(raw.length, kizKeyText.length); i++) {
+    if (raw[i] !== kizKeyText[i]) { firstDiff = i; break; }
+  }
+  kizTrace.push([5, 0, raw.length, kizKeyText.length, firstDiff, 0, -1, +kizKeyTraceUsable, 0, 0]);
+  kizKeyText = ""; kizKeyTraceUsable = true;
   input.value = "";
   if (raw.trim()) kizAdd(raw);
 }
@@ -2432,6 +2451,7 @@ async function openKizFromPick() {
 
 let kizLoad = 0;
 async function loadKizStep() {
+  kizKeyText = ""; kizKeyTraceUsable = true;
   kizTrace = []; kizExpectedInput = null; kizTraceTime = performance.now();
   kizResetScan();
   const mine = ++kizLoad;
@@ -2531,7 +2551,7 @@ $("kizRemoveRemote").onclick = async () => {
   } catch (e) { say($("kizMsg"), e.message, "bad"); }
   finally { kizBusy = false; $("kizRemoveRemote").disabled = false; }
 };
-$("kizClear").onclick = () => { if (kizBusy) return; kizResetScan(); $("kizInput").value = ""; kizState.codes = []; kizState.assignments = {}; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
+$("kizClear").onclick = () => { if (kizBusy) return; kizKeyText = ""; kizKeyTraceUsable = true; kizResetScan(); $("kizInput").value = ""; kizState.codes = []; kizState.assignments = {}; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
 $("kizProduct").onchange = () => $("kizInput").focus();
 
 $("kizInput").onkeydown = (e) => {
@@ -2590,7 +2610,7 @@ $("kizSend").onclick = async () => {
   try {
     const res = await api("/api/assembly/" + kizState.id + "/kiz", {
       method: "POST",
-      body: JSON.stringify({ scan_trace: { version: 142, events: kizTrace }, codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
+      body: JSON.stringify({ scan_trace: { version: 143, events: kizTrace }, codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
     });
     const row = state.asm.find((r) => r.id === kizState.id);
     if (row) row.marks = res.sent;
