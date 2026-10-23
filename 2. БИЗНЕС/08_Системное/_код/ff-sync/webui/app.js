@@ -2352,11 +2352,17 @@ function qwertyChar(e) {
   return pair[upper ? 1 : 0];
 }
 
-function kizInsert(ch) {
+// Scanner payload is independent of DOM selection and browser text replacement.
+let kizScanText = "";
+function kizShowScan() {
   const input = $("kizInput");
-  const start = input.selectionStart == null ? input.value.length : input.selectionStart;
-  const end = input.selectionEnd == null ? input.value.length : input.selectionEnd;
-  input.setRangeText(ch, start, end, "end");
+  input.value = kizScanText;
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+function kizInsert(ch) {
+  kizScanText += ch;
+  kizShowScan();
+  if (kizScanParts.length) kizWaitScan();
 }
 
 // A HID scanner may emit Enter inside one DataMatrix, including its signature.
@@ -2367,13 +2373,15 @@ function kizResetScan() {
   clearTimeout(kizScanTimer);
   kizScanTimer = null;
   kizScanParts = [];
+  kizScanText = "";
 }
 function kizFlushScan() {
   clearTimeout(kizScanTimer);
   kizScanTimer = null;
   const input = $("kizInput");
-  const raw = [...kizScanParts, input.value].join("\n");
+  const raw = [...kizScanParts, kizScanText].join("\n");
   kizScanParts = [];
+  kizScanText = "";
   input.value = "";
   if (raw.trim()) kizAdd(raw);
 }
@@ -2554,43 +2562,55 @@ $("kizInput").onkeydown = (e) => {
   }
   if (e.key === "Enter") {
     e.preventDefault();
-    const raw = layoutToEn($("kizInput").value);
+    const raw = kizScanText;
     if (!String(raw || "").trim() && !kizScanParts.length && kizState.need && kizState.codes.length === kizState.need) {
       $("kizSend").click();
       return;
     }
     if (raw) kizScanParts.push(raw);
-    $("kizInput").value = "";
+    kizScanText = "";
+    kizShowScan();
     kizWaitScan();
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
-  if (e.key === "Backspace" || e.key === "Delete" || e.key === "Tab" || e.key === "Home" || e.key === "End" || (e.key || "").indexOf("Arrow") === 0) return;
-  const ch = qwertyChar(e);
+  if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault();
+    kizScanText = e.key === "Backspace" ? kizScanText.slice(0, -1) : "";
+    kizShowScan();
+    return;
+  }
+  if (e.key === "Tab" || e.key === "Home" || e.key === "End" || (e.key || "").indexOf("Arrow") === 0) {
+    if (kizScanText || kizScanParts.length) e.preventDefault();
+    return;
+  }
+  const ch = qwertyChar(e) || (e.key && e.key.length === 1 ? layoutToEn(e.key) : "");
   if (!ch) return;
   e.preventDefault();
   kizInsert(ch);
   if (kizScanParts.length) kizWaitScan();
 };
-// если клавиша пришла без кода (вставка, редкий сканер), кириллицу всё равно снимаем
-$("kizInput").oninput = () => {
-  if (kizScanParts.length) kizWaitScan();
-  const input = $("kizInput");
-  const fixed = layoutToEn(input.value);
-  if (fixed === input.value) return;
-  const pos = input.selectionStart;
-  input.value = fixed;
-  if (pos != null) input.setSelectionRange(pos, pos);
-};
-// вставка пачкой из буфера: сканер в режиме «много кодов» отдаёт их строками
-$("kizInput").onpaste = (e) => {
-  if (kizBusy) { e.preventDefault(); return; }
-  const text = (e.clipboardData || window.clipboardData).getData("text");
-  if (!text || !/[\r\n]/.test(text)) return;
+// Text input without keydown (mobile/virtual keyboards) is also appended as data.
+$("kizInput").onbeforeinput = (e) => {
   e.preventDefault();
+  if (kizBusy) return;
+  if (e.inputType === "insertText" && e.data) kizInsert(layoutToEn(e.data));
+  else if (e.inputType === "deleteContentBackward") {
+    kizScanText = kizScanText.slice(0, -1);
+    kizShowScan();
+  }
+};
+// Do not let autocomplete, selection replacement or a delayed native edit mutate
+// a captured scan. The input is a view; keydown/beforeinput/paste own the payload.
+$("kizInput").oninput = kizShowScan;
+$("kizInput").onpaste = (e) => {
+  e.preventDefault();
+  if (kizBusy) return;
+  const text = (e.clipboardData || window.clipboardData).getData("text");
+  if (!text) return;
   kizResetScan();
   kizAdd(text);
-  $("kizInput").value = "";
+  kizShowScan();
 };
 
 $("kizList").onclick = (e) => {
@@ -2616,7 +2636,7 @@ $("kizSkip").onclick = async () => {
 
 let kizBusy = false;
 $("kizSend").onclick = async () => {
-  if (!kizBusy && (kizScanParts.length || $("kizInput").value)) kizFlushScan();
+  if (!kizBusy && (kizScanParts.length || kizScanText)) kizFlushScan();
   if (kizBusy || !kizState.codes.length || kizState.canSubmit === false) return;
   if (kizState.need && (kizState.codes.length < kizState.need || (!kizState.products.length && kizState.codes.length !== kizState.need))) {
     say($("kizMsg"), "Нужно " + kizState.need + " кодов, сейчас " + kizState.codes.length + ". Досканируй.", "bad");
