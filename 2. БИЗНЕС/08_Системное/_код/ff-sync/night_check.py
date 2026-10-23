@@ -121,7 +121,7 @@ def check_ozon(cab, live=False):
     if not rows:
         return 0, 0
     headers = ozon_headers(cab["client_id_ext"], cab["token"])
-    listed = ozon_list(OZON_BASE + "/v3/posting/fbs/list", headers, since_days(SHIP_KEEP_DAYS), strict=True)
+    listed = ozon_list(OZON_BASE + "/v4/posting/fbs/list", headers, since_days(SHIP_KEEP_DAYS), strict=True)
     found = {}
     for post in listed:
         if isinstance(post, dict) and post.get("posting_number"):

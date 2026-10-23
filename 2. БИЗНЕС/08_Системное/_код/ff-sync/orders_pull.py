@@ -2,11 +2,14 @@
 
 from datetime import datetime, timedelta, timezone
 import time
+import json
 
 from db import (
     find_cache_group,
     get_client_by_id,
     get_order_log,
+    get_setting,
+    set_setting,
     get_sku,
     get_sku_by_barcode,
     init_db,
@@ -220,62 +223,65 @@ def pull_wb_fbo(token, date_from, strict=False):
     return fbo
 
 
+def ozon_since(cabinet_id, kind, days=3, orders=False):
+    """После сбоя догоняем период от последнего успеха с суточным перекрытием."""
+    start = since_days(days)
+    saved = get_setting("orders:%s:%s:success" % (cabinet_id, kind)) if orders else None
+    if not saved:
+        saved = json.loads(get_setting("sync:%s:%s" % (cabinet_id, kind)) or "{}").get("success")
+    if saved:
+        last = datetime.fromisoformat(saved.replace("Z", "+00:00"))
+        if last.tzinfo is None:
+            raise RuntimeError("Ozon: время последней загрузки без часового пояса")
+        start = min(start, last - timedelta(days=1))
+    if start < since_days(364):
+        raise RuntimeError("Ozon: перерыв больше года, нужна загрузка истории отдельными периодами")
+    return start
+
+
 def ozon_list(url, headers, date_from, strict=False):
+    """FBS v4 / FBO v3: полный список по cursor, без применения оборванных страниц."""
     from net import clear_fbs_list_pause, fbs_list_paused
 
-    if "/posting/fbs/list" in url and fbs_list_paused():
+    is_fbs = "/posting/fbs/list" in url
+    if is_fbs and fbs_list_paused():
         raise RuntimeError("Ozon: список на паузе после 429")
-    out = []
-    seen = set()
-    offset = 0
-    since = date_from.strftime("%Y-%m-%dT%H:%M:%SZ")
+    out, seen, cursors = [], set(), set()
+    cursor = ""
+    since = date_from.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     until = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     while True:
-        # Лимит списка FBS у Ozon: один запрос в секунду. Чаще он отвечает 429
-        # и после серии отказов перестаёт отдавать список совсем.
-        if "/posting/fbs/list" in url:
+        if is_fbs:
             time.sleep(2)
         r = req(
-            "POST",
-            url,
-            headers=headers,
-            json={
-                "dir": "ASC",
-                "filter": {"since": since, "to": until},
-                "limit": 100,
-                "offset": offset,
-            },
+            "POST", url, headers=headers,
+            json={"dir": "ASC", "filter": {"since": since, "to": until},
+                  "limit": 100, "cursor": cursor},
         )
         if r.status_code != 200:
-            if strict:
-                raise RuntimeError("Ozon: неполный список, HTTP %s" % r.status_code)
-            print("Ozon %s %s %s" % (url, r.status_code, (r.text or "")[:180]))
-            break
-        if "/posting/fbs/list" in url and offset == 0:
-            clear_fbs_list_pause()
+            reason = " — у ключа нет нужных прав" if r.status_code == 403 else ""
+            raise RuntimeError("Ozon: неполный список, HTTP %s%s" % (r.status_code, reason))
         data = r.json()
-        block = data.get('result', data) if isinstance(data, dict) else data
-        if isinstance(block, list):
-            batch = block
-        elif isinstance(block, dict):
-            batch = block.get("postings")
-        else:
-            batch = None
-        if not isinstance(batch, list):
-            raise RuntimeError('Ozon: список отправлений отсутствует в ответе')
+        if not isinstance(data, dict) or not isinstance(data.get("postings"), list):
+            raise RuntimeError("Ozon: список отправлений отсутствует в ответе")
+        batch, more = data["postings"], data.get("has_next")
+        if not isinstance(more, bool):
+            raise RuntimeError("Ozon: признак продолжения списка отсутствует в ответе")
         for post in batch:
-            key = post.get('posting_number') if isinstance(post, dict) else None
-            if not key or key in seen:
-                raise RuntimeError('Ozon: неполный или повторяющийся список отправлений')
+            key = post.get("posting_number") if isinstance(post, dict) else None
+            if not isinstance(key, str) or not key or key in seen:
+                raise RuntimeError("Ozon: неполный или повторяющийся список отправлений")
             seen.add(key)
         out.extend(batch)
-        more = block.get('has_next') if isinstance(block, dict) else None
-        if more is False or (more is None and len(batch) < 100):
-            break
-        if not batch:
-            raise RuntimeError('Ozon: пустая страница при наличии продолжения')
-        offset += len(batch)
-    return out
+        if not more:
+            if is_fbs:
+                clear_fbs_list_pause()
+            return out
+        nxt = data.get("cursor")
+        if not batch or not isinstance(nxt, str) or not nxt or nxt in cursors:
+            raise RuntimeError("Ozon: пустая страница или повтор курсора при наличии продолжения")
+        cursors.add(nxt)
+        cursor = nxt
 
 
 def moment_of(raw):
@@ -424,12 +430,15 @@ def _run(client_id=None):
                 created += handle_wb_fbo(client, cab, pull_wb_fbo(cab["token"], start))
             elif cab["marketplace"] == "ozon":
                 headers = ozon_headers(cab["client_id_ext"], cab["token"])
-                created += handle_ozon(
-                    client, cab, "fbs", ozon_list(OZON_BASE + "/v3/posting/fbs/list", headers, start)
-                )
-                created += handle_ozon(
-                    client, cab, "fbo", ozon_list(OZON_BASE + "/v2/posting/fbo/list", headers, start)
-                )
+                for kind, path in (("fbs", "/v4/posting/fbs/list"), ("fbo", "/v3/posting/fbo/list")):
+                    try:
+                        attempt = now_iso()
+                        window = ozon_since(cab["id"], kind, orders=True)
+                        posts = ozon_list(OZON_BASE + path, headers, window, strict=True)
+                        created += handle_ozon(client, cab, kind, posts)
+                        set_setting("orders:%s:%s:success" % (cab["id"], kind), attempt)
+                    except Exception as exc:
+                        print("кабинет %s Ozon %s сбой: %s" % (cab["id"], kind, exc))
         except Exception as exc:
             print("кабинет %s сбой: %s" % (cab["id"], exc))
     print("заказов создано: %s" % created)

@@ -57,6 +57,66 @@ class Fake:
         return self._data
 
 
+def test_ozon_cursor():
+    from unittest.mock import patch
+    import orders_pull
+    db.init_db()
+    multi = {"posting_number": "FIRST"}
+    # Cursor API: короткая страница не завершает список, фильтр времени фиксирован.
+    page1=Fake(200,{'postings':[multi],'has_next':True,'cursor':'page-2'})
+    page2=Fake(200,{'postings':[dict(multi,posting_number='SECOND')],'has_next':False,'cursor':''})
+    for endpoint in ('/v4/posting/fbs/list','/v3/posting/fbo/list'):
+        with patch.object(orders_pull,'req',side_effect=[page1,page2]) as calls, patch.object(orders_pull.time,'sleep'):
+            assert len(orders_pull.ozon_list(orders_pull.OZON_BASE+endpoint,{},orders_pull.since_days(1),strict=True))==2
+            bodies=[x.kwargs['json'] for x in calls.call_args_list]
+            assert [b['cursor'] for b in bodies]==['','page-2']
+            assert bodies[0]['filter']==bodies[1]['filter'] and all('offset' not in b for b in bodies)
+    
+    # Любая неполная выборка отклоняется целиком, даже у прежних нестрогих вызовов.
+    for pages in (
+        [page1,page1],
+        [page1,Fake(200,{'postings':[dict(multi,posting_number='SECOND')],'has_next':True,'cursor':'page-2'})],
+        [Fake(200,{'postings':[multi],'has_next':True})],
+        [Fake(200,{'postings':[],'has_next':True,'cursor':'next'})],
+        [Fake(200,{'postings':[multi]})],
+        [Fake(200,{'result':{'postings':[multi],'has_next':False}})],
+        [page1,Fake(403,{})],
+        [page1,Fake(500,{})],
+    ):
+        with patch.object(orders_pull,'req',side_effect=pages):
+            try:
+                orders_pull.ozon_list('test',{},orders_pull.since_days(1))
+                raise AssertionError('incomplete cursor list accepted')
+            except RuntimeError:
+                pass
+    with patch.object(orders_pull,'req',return_value=Fake(200,{'postings':[],'has_next':False})):
+        assert orders_pull.ozon_list('test',{},orders_pull.since_days(1))==[]
+    
+    # После простоя окно включает пропущенные дни; метки FBS/FBO/заказов независимы.
+    from datetime import datetime, timedelta, timezone
+    recovery_now=datetime(2026,10,23,12,tzinfo=timezone.utc)
+    old_success='2026-10-19T06:07:32+00:00'
+    with patch.object(orders_pull,'since_days',side_effect=lambda d:recovery_now-timedelta(days=d)):
+        with patch.object(orders_pull,'get_setting',return_value=json.dumps({'success':old_success})):
+            assert orders_pull.ozon_since(20,'fbs')==datetime(2026,10,18,6,7,32,tzinfo=timezone.utc)
+        with patch.object(orders_pull,'get_setting',return_value=None):
+            assert orders_pull.ozon_since(20,'fbs')==recovery_now-timedelta(days=3)
+        with patch.object(orders_pull,'get_setting',side_effect=lambda key:old_success if key=='orders:20:fbs:success' else None):
+            assert orders_pull.ozon_since(20,'fbs',orders=True)==datetime(2026,10,18,6,7,32,tzinfo=timezone.utc)
+        with patch.object(orders_pull,'get_setting',return_value=json.dumps({'success':'2025-01-01T00:00:00Z'})):
+            try:
+                orders_pull.ozon_since(20,'fbs')
+                raise AssertionError('history beyond API limit silently skipped')
+            except RuntimeError:
+                pass
+
+
+if "--ozon-cursor" in sys.argv:
+    test_ozon_cursor()
+    print("Ozon cursor: FBS/FBO pagination, truncated pages, repeated cursors and recovery windows OK")
+    sys.exit(0)
+
+
 PNG = base64.b64decode(
     # 1x1 прозрачный png: важен сам факт картинки, а не её содержимое
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -1213,17 +1273,7 @@ with patch.object(kiz,'_ozon_create',return_value=remote_exemplars):
     assert {'code':remote_code,'product_id':5655501130} in remote_plan['assignments']
 assert next(m for m in db.list_shipment_marks([mid]) if m['code']==remote_code)['article']=='Комбинезон XL'
 
-# Явное продолжение на короткой странице и повтор страницы.
-page1=Fake(200,{'result':{'postings':[multi],'has_next':True}})
-page2=Fake(200,{'result':{'postings':[dict(multi,posting_number='SECOND')],'has_next':False}})
-with patch.object(orders_pull,'req',side_effect=[page1,page2]):
-    assert len(orders_pull.ozon_list('test',{},orders_pull.since_days(1),strict=True))==2
-with patch.object(orders_pull,'req',side_effect=[page1,page1]):
-    try:
-        orders_pull.ozon_list('test',{},orders_pull.since_days(1),strict=True)
-        raise AssertionError('duplicate page accepted')
-    except RuntimeError:
-        pass
+test_ozon_cursor()
 print('Ozon: состав 2×2, поиск, московское время, печать, отчёты, КиЗ по SKU, обновление состава и защита частичной записи проверены')
 
 # Ozon: режим «Заказ + товар» не должен выдавать товарные этикетки без заказа.
