@@ -2355,11 +2355,48 @@ function kizInsert(ch) {
   input.setRangeText(ch, start, end, "end");
 }
 
+// A HID scanner may emit Enter inside one DataMatrix, including its signature.
+// Collect the whole burst; a new GS1 header, not a newline, starts another code.
+let kizScanTimer = null;
+let kizScanParts = [];
+function kizResetScan() {
+  clearTimeout(kizScanTimer);
+  kizScanTimer = null;
+  kizScanParts = [];
+}
+function kizFlushScan() {
+  clearTimeout(kizScanTimer);
+  kizScanTimer = null;
+  const input = $("kizInput");
+  const raw = [...kizScanParts, input.value].join("\n");
+  kizScanParts = [];
+  input.value = "";
+  if (raw.trim()) kizAdd(raw);
+}
+function kizWaitScan() {
+  clearTimeout(kizScanTimer);
+  kizScanTimer = setTimeout(kizFlushScan, 350);
+}
+function kizScanCodes(raw) {
+  const codes = [];
+  for (const part of layoutToEn(String(raw || "")).split(/[\r\n]+/)) {
+    const text = part.trim();
+    if (!text) continue;
+    if (/^(?:\]d2)?01\d{14}21/.test(text)) codes.push(text);
+    else if (codes.length) codes[codes.length - 1] += text;
+    else throw new Error("Получен фрагмент КиЗ без начала. Отсканируй полный код заново.");
+  }
+  return codes;
+}
+
 function kizAdd(raw) {
   if (kizState.canSubmit === false) return;
   let added = 0;
   let dupe = 0;
-  String(raw || "").split(/[\r\n]+/).forEach((part) => {
+  let scanned;
+  try { scanned = kizScanCodes(raw); }
+  catch (e) { say($("kizMsg"), e.message, "bad"); return; }
+  scanned.forEach((part) => {
     const code = layoutToEn(part.trim());
     if (!code) return;
     if (kizState.codes.includes(code)) { dupe += 1; return; }
@@ -2402,6 +2439,7 @@ async function openKizFromPick() {
 
 let kizLoad = 0;
 async function loadKizStep() {
+  kizResetScan();
   const mine = ++kizLoad;
   const id = kizState.ids[kizState.index];
   kizState.id = id;
@@ -2499,7 +2537,7 @@ $("kizRemoveRemote").onclick = async () => {
   } catch (e) { say($("kizMsg"), e.message, "bad"); }
   finally { kizBusy = false; $("kizRemoveRemote").disabled = false; }
 };
-$("kizClear").onclick = () => { if (kizBusy) return; kizState.codes = []; kizState.assignments = {}; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
+$("kizClear").onclick = () => { if (kizBusy) return; kizResetScan(); $("kizInput").value = ""; kizState.codes = []; kizState.assignments = {}; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
 $("kizProduct").onchange = () => $("kizInput").focus();
 
 $("kizInput").onkeydown = (e) => {
@@ -2513,12 +2551,13 @@ $("kizInput").onkeydown = (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     const raw = layoutToEn($("kizInput").value);
-    if (!String(raw || "").trim() && kizState.need && kizState.codes.length === kizState.need) {
+    if (!String(raw || "").trim() && !kizScanParts.length && kizState.need && kizState.codes.length === kizState.need) {
       $("kizSend").click();
       return;
     }
-    kizAdd(raw);
+    if (raw) kizScanParts.push(raw);
     $("kizInput").value = "";
+    kizWaitScan();
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
@@ -2527,9 +2566,11 @@ $("kizInput").onkeydown = (e) => {
   if (!ch) return;
   e.preventDefault();
   kizInsert(ch);
+  if (kizScanParts.length) kizWaitScan();
 };
 // если клавиша пришла без кода (вставка, редкий сканер), кириллицу всё равно снимаем
 $("kizInput").oninput = () => {
+  if (kizScanParts.length) kizWaitScan();
   const input = $("kizInput");
   const fixed = layoutToEn(input.value);
   if (fixed === input.value) return;
@@ -2543,6 +2584,7 @@ $("kizInput").onpaste = (e) => {
   const text = (e.clipboardData || window.clipboardData).getData("text");
   if (!text || !/[\r\n]/.test(text)) return;
   e.preventDefault();
+  kizResetScan();
   kizAdd(text);
   $("kizInput").value = "";
 };
@@ -2570,6 +2612,7 @@ $("kizSkip").onclick = async () => {
 
 let kizBusy = false;
 $("kizSend").onclick = async () => {
+  if (!kizBusy && (kizScanParts.length || $("kizInput").value)) kizFlushScan();
   if (kizBusy || !kizState.codes.length || kizState.canSubmit === false) return;
   if (kizState.need && (kizState.codes.length < kizState.need || (!kizState.products.length && kizState.codes.length !== kizState.need))) {
     say($("kizMsg"), "Нужно " + kizState.need + " кодов, сейчас " + kizState.codes.length + ". Досканируй.", "bad");

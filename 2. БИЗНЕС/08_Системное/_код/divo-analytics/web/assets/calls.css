@@ -47,7 +47,7 @@ button:focus-visible,.cq-drawer summary:focus-visible{outline:2px solid #d1ab64;
 #cqRefresh{width:40px;height:40px;padding:0;display:inline-grid;place-items:center;font-size:16px;line-height:1;flex-shrink:0}
 #cqRefresh:hover{border-color:rgba(255,255,255,.28);color:#fff}
 .cq-dd{position:relative;display:inline-flex;vertical-align:middle}
-.cq-dd select{position:absolute;left:0;top:0;width:1px;height:1px;margin:0;padding:0;border:0;opacity:0;pointer-events:none;appearance:none;-webkit-appearance:none;color:transparent;background:transparent;overflow:hidden}
+.cq-dd select{display:none !important}
 .cq-dd-trigger{display:inline-flex;align-items:center;justify-content:space-between;gap:12px;min-width:168px;max-width:230px;height:40px;padding:0 12px 0 14px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.035);color:#e7e8ee;font:inherit;font-size:13.5px;line-height:1;white-space:nowrap;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
 .cq-dd-trigger:hover{border-color:rgba(255,255,255,.28);color:#fff}
 .cq-dd-trigger[aria-expanded=true]{border-color:rgba(200,164,92,.5);color:#f6f1e6;background:rgba(200,164,92,.07)}
