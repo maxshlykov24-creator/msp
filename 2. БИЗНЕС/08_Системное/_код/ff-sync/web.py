@@ -1079,6 +1079,30 @@ def assembly_kiz_clear(ship_id: int, ff_session: str = Cookie(default="")):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+def _kiz_scan_diagnostic(ship_id, data):
+    """Log bounded numeric trace only. Never log key text, marks or clipboard."""
+    import json
+    import logging
+    import uuid
+    trace = data.get("scan_trace")
+    trace = trace if isinstance(trace, dict) else {}
+    def number(value):
+        return max(-1, min(60000, value)) if type(value) is int else -1
+    events = trace.get("events")
+    events = events if isinstance(events, list) else []
+    safe = [[number(v) for v in row[:10]] for row in events[-800:] if isinstance(row, list)]
+    codes = data.get("codes")
+    codes = codes if isinstance(codes, list) else []
+    shapes = [{"length": len(code), "gs": [i for i, ch in enumerate(code) if ch == "\x1d"][:8],
+               "cr": code.count("\r"), "lf": code.count("\n")}
+              for code in codes[:20] if isinstance(code, str)]
+    diagnostic_id = uuid.uuid4().hex[:12]
+    logging.getLogger(__name__).warning("kiz_scan_diagnostic %s", json.dumps({
+        "id": diagnostic_id, "ship_id": ship_id, "version": number(trace.get("version")),
+        "events": safe, "shapes": shapes}, separators=(",", ":")))
+    return diagnostic_id
+
+
 @app.post("/api/assembly/{ship_id}/kiz")
 def assembly_kiz_submit(ship_id: int, data: dict = Body(...), ff_session: str = Cookie(default="")):
     """Передать на площадку коды, которые склад просканировал."""
@@ -1089,7 +1113,8 @@ def assembly_kiz_submit(ship_id: int, data: dict = Body(...), ff_session: str = 
     try:
         return {"ok": True, **kiz.submit(ship_id, data.get("codes") or [], data.get('assignments'))}
     except kiz.KizError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        diagnostic_id = _kiz_scan_diagnostic(ship_id, data)
+        raise HTTPException(status_code=400, detail=str(exc) + " · Диагностика: " + diagnostic_id)
 
 
 def pdf_file(name, data, notes=(), pages=0):

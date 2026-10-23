@@ -2316,18 +2316,6 @@ function kizRender() {
 // ЙЦУКЕН → та клавиша, которую сканер жал на латинской раскладке.
 const RU_LAYOUT = "йцукенгшщзхъфывапролджэячсмитьбю.ёЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ,Ё\"№;:?/";
 const EN_LAYOUT = "qwertyuiop[]asdfghjkl;'zxcvbnm,./`QWERTYUIOP{}ASDFGHJKL:\"ZXCVBNM<>?~@#$^&|";
-// Физическая клавиша, без оглядки на раскладку ОС. Пара: без Shift и с Shift.
-const QWERTY = {
-  Backquote: "`~", Digit1: "1!", Digit2: "2@", Digit3: "3#", Digit4: "4$", Digit5: "5%",
-  Digit6: "6^", Digit7: "7&", Digit8: "8*", Digit9: "9(", Digit0: "0)", Minus: "-_", Equal: "=+",
-  KeyQ: "qQ", KeyW: "wW", KeyE: "eE", KeyR: "rR", KeyT: "tT", KeyY: "yY", KeyU: "uU", KeyI: "iI", KeyO: "oO", KeyP: "pP",
-  BracketLeft: "[{", BracketRight: "]}", Backslash: "\\|", IntlBackslash: "\\|",
-  KeyA: "aA", KeyS: "sS", KeyD: "dD", KeyF: "fF", KeyG: "gG", KeyH: "hH", KeyJ: "jJ", KeyK: "kK", KeyL: "lL",
-  Semicolon: ";:", Quote: "'\"",
-  KeyZ: "zZ", KeyX: "xX", KeyC: "cC", KeyV: "vV", KeyB: "bB", KeyN: "nN", KeyM: "mM",
-  Comma: ",<", Period: ".>", Slash: "/?", Space: "  ",
-};
-
 function layoutToEn(text) {
   const src = String(text || "");
   if (!/[А-Яа-яЁё№]/.test(src)) return src;
@@ -2339,55 +2327,48 @@ function layoutToEn(text) {
   return out;
 }
 
-function qwertyChar(e) {
-  if (e.code && e.code.indexOf("Numpad") === 0) return e.key && e.key.length === 1 ? e.key : "";
-  const pair = QWERTY[e.code];
-  if (!pair) return "";
-  // Trust the actual Latin symbol. Some HID/virtual keyboards send an upper-case
-  // key (or +) without Shift in the event; reconstructing it corrupts the code.
-  // Physical mapping is only needed when the OS produced another layout.
-  if (e.key && e.key.length === 1 && pair.includes(e.key)) return e.key;
-  const letter = pair[0] >= "a" && pair[0] <= "z";
-  const upper = letter ? e.shiftKey !== e.getModifierState("CapsLock") : e.shiftKey;
-  return pair[upper ? 1 : 0];
-}
-
-// Scanner payload is independent of DOM selection and browser text replacement.
-let kizScanText = "";
-function kizShowScan() {
+// Numeric-only diagnostics: no code characters or clipboard contents leave here.
+let kizTrace = [];
+let kizTraceTime = performance.now();
+let kizExpectedInput = null;
+const kizInputTypes = ["insertText", "insertLineBreak", "insertParagraph", "insertFromPaste", "insertReplacementText", "deleteContentBackward", "deleteContentForward", "insertCompositionText"];
+function kizTraceEvent(type, e, match = -1) {
   const input = $("kizInput");
-  input.value = kizScanText;
-  input.setSelectionRange(input.value.length, input.value.length);
+  const now = performance.now();
+  const key = e && e.key || "";
+  const keyClass = key.length === 1 ? 1 : ["Enter", "Backspace", "Delete", "Home", "End", "ArrowLeft", "ArrowRight", "Tab"].indexOf(key) + 2;
+  kizTrace.push([type, Math.min(60000, Math.round(now - kizTraceTime)), input.value.length,
+    input.selectionStart || 0, input.selectionEnd || 0, e && e.data ? e.data.length : 0,
+    kizInputTypes.indexOf(e && e.inputType), match,
+    e ? (+e.ctrlKey + 2 * +e.altKey + 4 * +e.shiftKey + 8 * +e.metaKey) || 0 : 0, keyClass]);
+  kizTraceTime = now;
+  if (kizTrace.length > 800) kizTrace.shift();
 }
-function kizInsert(ch) {
-  kizScanText += ch;
-  kizShowScan();
-  if (kizScanParts.length) kizWaitScan();
-}
+$("kizInput").addEventListener("beforeinput", (e) => {
+  const input = $("kizInput");
+  const data = e.inputType === "insertLineBreak" || e.inputType === "insertParagraph" ? "\n" : e.data;
+  kizExpectedInput = data != null && e.inputType.startsWith("insert")
+    ? input.value.slice(0, input.selectionStart) + data + input.value.slice(input.selectionEnd) : null;
+  kizTraceEvent(2, e);
+});
 
-// A HID scanner may emit Enter inside one DataMatrix, including its signature.
-// Collect the whole burst; a new GS1 header, not a newline, starts another code.
+// Native multiline input: never rewrite characters/caret during a scan.
 let kizScanTimer = null;
-let kizScanParts = [];
 function kizResetScan() {
   clearTimeout(kizScanTimer);
   kizScanTimer = null;
-  kizScanParts = [];
-  kizScanText = "";
 }
 function kizFlushScan() {
-  clearTimeout(kizScanTimer);
-  kizScanTimer = null;
+  kizResetScan();
   const input = $("kizInput");
-  const raw = [...kizScanParts, kizScanText].join("\n");
-  kizScanParts = [];
-  kizScanText = "";
+  const raw = input.value;
+  kizTraceEvent(4);
   input.value = "";
   if (raw.trim()) kizAdd(raw);
 }
 function kizWaitScan() {
-  clearTimeout(kizScanTimer);
-  kizScanTimer = setTimeout(kizFlushScan, 350);
+  kizResetScan();
+  kizScanTimer = setTimeout(kizFlushScan, 1000);
 }
 function kizScanCodes(raw) {
   const codes = [];
@@ -2451,6 +2432,7 @@ async function openKizFromPick() {
 
 let kizLoad = 0;
 async function loadKizStep() {
+  kizTrace = []; kizExpectedInput = null; kizTraceTime = performance.now();
   kizResetScan();
   const mine = ++kizLoad;
   const id = kizState.ids[kizState.index];
@@ -2553,64 +2535,22 @@ $("kizClear").onclick = () => { if (kizBusy) return; kizResetScan(); $("kizInput
 $("kizProduct").onchange = () => $("kizInput").focus();
 
 $("kizInput").onkeydown = (e) => {
+  kizTraceEvent(1, e);
   if (kizBusy) { e.preventDefault(); return; }
-  // GS от HID-сканера приходит как Ctrl+], а браузер не вставляет его в input.
+  // Only the non-printing GS needs help; all text and Enter use native editing.
   if (e.key === "\u001d" || (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "BracketRight" || e.key === "]"))) {
     e.preventDefault();
-    kizInsert("\u001d");
-    return;
-  }
-  if (e.key === "Enter") {
-    e.preventDefault();
-    const raw = kizScanText;
-    if (!String(raw || "").trim() && !kizScanParts.length && kizState.need && kizState.codes.length === kizState.need) {
-      $("kizSend").click();
-      return;
-    }
-    if (raw) kizScanParts.push(raw);
-    kizScanText = "";
-    kizShowScan();
+    const input = $("kizInput");
+    input.setRangeText("\u001d", input.selectionStart, input.selectionEnd, "end");
     kizWaitScan();
-    return;
-  }
-  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
-  if (e.key === "Backspace" || e.key === "Delete") {
-    e.preventDefault();
-    kizScanText = e.key === "Backspace" ? kizScanText.slice(0, -1) : "";
-    kizShowScan();
-    return;
-  }
-  if (e.key === "Tab" || e.key === "Home" || e.key === "End" || (e.key || "").indexOf("Arrow") === 0) {
-    if (kizScanText || kizScanParts.length) e.preventDefault();
-    return;
-  }
-  const ch = qwertyChar(e) || (e.key && e.key.length === 1 ? layoutToEn(e.key) : "");
-  if (!ch) return;
-  e.preventDefault();
-  kizInsert(ch);
-  if (kizScanParts.length) kizWaitScan();
-};
-// Text input without keydown (mobile/virtual keyboards) is also appended as data.
-$("kizInput").onbeforeinput = (e) => {
-  e.preventDefault();
-  if (kizBusy) return;
-  if (e.inputType === "insertText" && e.data) kizInsert(layoutToEn(e.data));
-  else if (e.inputType === "deleteContentBackward") {
-    kizScanText = kizScanText.slice(0, -1);
-    kizShowScan();
   }
 };
-// Do not let autocomplete, selection replacement or a delayed native edit mutate
-// a captured scan. The input is a view; keydown/beforeinput/paste own the payload.
-$("kizInput").oninput = kizShowScan;
-$("kizInput").onpaste = (e) => {
-  e.preventDefault();
-  if (kizBusy) return;
-  const text = (e.clipboardData || window.clipboardData).getData("text");
-  if (!text) return;
-  kizResetScan();
-  kizAdd(text);
-  kizShowScan();
+$("kizInput").oninput = (e) => {
+  kizTraceEvent(3, e, kizExpectedInput == null ? -1 : +($("kizInput").value === kizExpectedInput));
+  kizExpectedInput = null;
+  // Restart on EVERY native edit, including delayed scanner characters/paste.
+  kizWaitScan();
+  $("kizSend").disabled = kizBusy || kizState.canSubmit === false || (!$("kizInput").value.trim() && !kizState.codes.length);
 };
 
 $("kizList").onclick = (e) => {
@@ -2636,7 +2576,7 @@ $("kizSkip").onclick = async () => {
 
 let kizBusy = false;
 $("kizSend").onclick = async () => {
-  if (!kizBusy && (kizScanParts.length || kizScanText)) kizFlushScan();
+  if (!kizBusy && $("kizInput").value) kizFlushScan();
   if (kizBusy || !kizState.codes.length || kizState.canSubmit === false) return;
   if (kizState.need && (kizState.codes.length < kizState.need || (!kizState.products.length && kizState.codes.length !== kizState.need))) {
     say($("kizMsg"), "Нужно " + kizState.need + " кодов, сейчас " + kizState.codes.length + ". Досканируй.", "bad");
@@ -2650,7 +2590,7 @@ $("kizSend").onclick = async () => {
   try {
     const res = await api("/api/assembly/" + kizState.id + "/kiz", {
       method: "POST",
-      body: JSON.stringify({ codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
+      body: JSON.stringify({ scan_trace: { version: 142, events: kizTrace }, codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
     });
     const row = state.asm.find((r) => r.id === kizState.id);
     if (row) row.marks = res.sent;
