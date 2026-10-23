@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import re
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import JSON, select, text
@@ -59,6 +60,8 @@ def enqueue_call(db, call, *, pilot=False):
         reason = "not_native_incoming"
     elif snap.get("kind", call.number_kind) != "pool" or not visit:
         reason = "no_unique_visit"
+    elif urlparse(snap.get("landing_url") or visit.landing_url or "").hostname not in {"mansband.ru", "www.mansband.ru"}:
+        reason = "not_main_site"
     elif snap.get("disputed") or visit.disputed:
         reason = "disputed_visit"
     uid = str(snap.get("ym_uid") or (visit.ym_uid if visit else "") or "").strip()
@@ -220,7 +223,14 @@ def run_once():
                     if state is None:
                         state = KvState(key="ct_metrika_state")
                         db.add(state)
-                    state.value = json.dumps({"heartbeat": now.isoformat(), "counts": counts, "errors": errors})
+                    previous = json.loads(state.value or "{}")
+                    if counts.get("processed") and not previous.get("first_processed_notified"):
+                        from app.calltrack.telegram import send
+
+                        if send(f"Метрика завершила обработку первой конверсии {s.ct_metrika_goal}, счётчик {s.ct_metrika_counter_id}. Статистика в отчётах может обновиться позже."):
+                            previous["first_processed_notified"] = True
+                    previous.update(heartbeat=now.isoformat(), counts=counts, errors=errors)
+                    state.value = json.dumps(previous)
                     db.commit()
                     return counts
         finally:

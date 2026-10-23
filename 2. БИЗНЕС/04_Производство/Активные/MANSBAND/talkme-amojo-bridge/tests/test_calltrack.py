@@ -1061,7 +1061,7 @@ def metrika_settings(monkeypatch):
 def _metrika_call(db):
     import datetime as dt
     from app.calltrack.models import Visit, CallEvent
-    visit = Visit(ym_uid="1792580245123456789", utm_source="yandex")
+    visit = Visit(ym_uid="1792580245123456789", utm_source="yandex", landing_url="https://mansband.ru/")
     db.add(visit); db.flush()
     call = CallEvent(call_id="native-pilot", called="9310000000", visit_id=visit.id,
                      number_kind="pool", status="new",
@@ -1215,7 +1215,10 @@ def test_metrika_network_connection_failure_retries_safely(metrika_settings):
 def test_metrika_worker_scans_once_and_does_not_resend_processed(metrika_settings, monkeypatch):
     import httpx
     from app.calltrack import metrika
+    from app.calltrack import telegram
     posts=[]
+    notifications=[]
+    monkeypatch.setattr(telegram,"send",lambda message:notifications.append(message) or True)
     def respond(request):
         if request.method == "POST":
             posts.append(request)
@@ -1229,6 +1232,7 @@ def test_metrika_worker_scans_once_and_does_not_resend_processed(metrika_setting
     assert metrika.run_once()=={"processed":1}
     assert metrika.run_once()=={"processed":1}
     assert len(posts)==1
+    assert len(notifications)==1
 
 
 def test_metrika_revoked_token_retries_without_marking_delivered(metrika_settings):
@@ -1257,3 +1261,42 @@ def test_metrika_unmatched_identifier_is_failure_not_success(metrika_settings):
         _deliver(db,row,state,client,_now())
         assert state["status"]=="failed"
         assert state["error"]=="linkage_failure"
+
+
+def test_metrika_does_not_export_quiz_subdomain(metrika_settings):
+    import json
+    from app.calltrack.metrika import enqueue_call, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    with _db() as db:
+        call,visit=_metrika_call(db)
+        visit.landing_url="https://zamer.mansband.ru/"
+        enqueue_call(db,call);db.commit()
+        row=db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        assert json.loads(row.value)["reason"]=="not_main_site"
+
+
+def test_native_webhook_atomically_queues_metrika_once(metrika_settings, client):
+    import datetime as dt, json
+    from sqlalchemy import select,func
+    from app.calltrack.models import Visit,PoolNumber,Assignment,CallEvent
+    from app.models import KvState
+    from app.calltrack.metrika import PREFIX
+    now=dt.datetime.now(dt.timezone.utc)
+    with _db() as db:
+        v=Visit(utm_source="yandex",ym_uid="1792580245123456789",landing_url="https://mansband.ru/")
+        n=db.scalar(select(PoolNumber).where(PoolNumber.number=="9310000000"))
+        db.add(v);db.flush()
+        db.add(Assignment(number_id=n.id,visit_id=v.id,started_at=now-dt.timedelta(minutes=1),
+                          last_seen_at=now,expires_at=now+dt.timedelta(minutes=5)))
+        db.commit()
+    raw={"EventType":"dial-in","CallFlow":"in","CallID":"native-metrika-hook",
+         "CalledDID":"79310000000","CallerIDNum":"79310000999","EventTime":str(int(now.timestamp()*1000000))}
+    for _ in range(2):
+        assert client.post("/webhooks/telphin/telphin-test",data=raw).status_code==200
+    with _db() as db:
+        call=db.scalar(select(CallEvent).where(CallEvent.call_id=="native-metrika-hook"))
+        assert call.result["attribution_snapshot"]["ym_uid"]=="1792580245123456789"
+        rows=db.scalars(select(KvState).where(KvState.key.like(PREFIX+"%"))).all()
+        assert len(rows)==1
+        assert json.loads(rows[0].value)["status"]=="pending"
