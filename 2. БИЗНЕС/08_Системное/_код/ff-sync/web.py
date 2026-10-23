@@ -1094,12 +1094,33 @@ def _kiz_scan_diagnostic(ship_id, data):
     codes = data.get("codes")
     codes = codes if isinstance(codes, list) else []
     shapes = [{"length": len(code), "gs": [i for i, ch in enumerate(code) if ch == "\x1d"][:8],
-               "cr": code.count("\r"), "lf": code.count("\n")}
+               "cr": code.count("\r"), "lf": code.count("\n"),
+               "controls": [[i, ord(ch)] for i, ch in enumerate(code) if ord(ch) < 32 or ord(ch) == 127][:20],
+               "non_ascii": [[i, ord(ch)] for i, ch in enumerate(code) if ord(ch) > 127][:20],
+               "spaces": [i for i, ch in enumerate(code) if ch == " "][:20],
+               "ai91": [i for i in range(len(code)) if code.startswith("91", i)][:10],
+               "ai92": [i for i in range(len(code)) if code.startswith("92", i)][:10]}
               for code in codes[:20] if isinstance(code, str)]
     diagnostic_id = uuid.uuid4().hex[:12]
-    logging.getLogger(__name__).warning("kiz_scan_diagnostic %s", json.dumps({
+    payload = json.dumps({
         "id": diagnostic_id, "ship_id": ship_id, "version": number(trace.get("version")),
-        "events": safe, "shapes": shapes}, separators=(",", ":")))
+        "events": safe, "shapes": shapes}, separators=(",", ":"))
+    logging.getLogger(__name__).warning("kiz_scan_diagnostic %s", payload)
+    # /data is a persistent volume; container stdout disappears on recreation.
+    try:
+        from logging.handlers import RotatingFileHandler
+        logger = logging.getLogger("kiz.scan.persistent")
+        with _lock:
+            if not logger.handlers:
+                path = os.path.join(os.path.dirname(os.environ.get("FF_DB", "/data/ff.db")), "kiz-diagnostics.log")
+                handler = RotatingFileHandler(path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8")
+                os.chmod(path, 0o600)
+                handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+                logger.addHandler(handler)
+                logger.propagate = False
+        logger.warning(payload)
+    except Exception:
+        logging.getLogger(__name__).exception("kiz_diagnostic_persist_failed id=%s", diagnostic_id)
     return diagnostic_id
 
 
