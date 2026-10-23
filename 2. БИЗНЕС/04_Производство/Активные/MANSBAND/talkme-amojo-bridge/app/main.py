@@ -56,6 +56,11 @@ async def lifespan(_: FastAPI):
     _sync_calltrack_pool()
     poll_task: Optional[asyncio.Task[None]] = None
     reconcile_task: Optional[asyncio.Task[None]] = None
+    metrika_task: Optional[asyncio.Task[None]] = None
+    if s.ct_metrika_enabled:
+        from app.calltrack.metrika import delivery_loop
+
+        metrika_task = asyncio.create_task(delivery_loop())
     if s.talkme_poll_enabled:
         poll_task = asyncio.create_task(_talkme_poll_loop())
         log.info("Talk-me poll loop scheduled")
@@ -71,6 +76,8 @@ async def lifespan(_: FastAPI):
             poll_task.cancel()
         if reconcile_task is not None:
             reconcile_task.cancel()
+        if metrika_task is not None:
+            metrika_task.cancel()
 
 
 def _sync_calltrack_pool() -> None:

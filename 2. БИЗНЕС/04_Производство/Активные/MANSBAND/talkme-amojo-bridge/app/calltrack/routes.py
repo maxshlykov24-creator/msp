@@ -366,6 +366,11 @@ def ct_health(db: Session = Depends(get_db)) -> Response:
         state = json.loads(row.value) if row and row.value else {}
         stamp = datetime.fromisoformat(state["heartbeat"]) if state.get("heartbeat") else None
         healthy = bool(get_settings().ct_reconcile_enabled and stamp and datetime.now(timezone.utc) - stamp < timedelta(minutes=10))
+        if get_settings().ct_metrika_enabled:
+            metric_row = db.get(KvState, "ct_metrika_state")
+            metric_state = json.loads(metric_row.value) if metric_row and metric_row.value else {}
+            metric_stamp = datetime.fromisoformat(metric_state["heartbeat"]) if metric_state.get("heartbeat") else None
+            healthy = bool(healthy and metric_stamp and datetime.now(timezone.utc) - metric_stamp < timedelta(minutes=10))
         return JSONResponse({"status": "ok" if healthy else "degraded", "live": get_settings().ct_live},
                             status_code=200 if healthy else 503, headers={"Cache-Control": "no-store"})
     except Exception:

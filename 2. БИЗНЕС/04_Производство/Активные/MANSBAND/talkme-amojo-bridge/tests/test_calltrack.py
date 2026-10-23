@@ -1045,3 +1045,215 @@ def test_reset_archives_old_visit_and_cookie_starts_new(client):
     second = client.post("/ct/session", headers=ORIGIN,
                          json={"url": PAID_URL, "visit_id": first["visit_id"]}).json()
     assert second["visit_id"] > first["visit_id"]
+
+
+@pytest.fixture
+def metrika_settings(monkeypatch):
+    from app.config import get_settings
+    settings = get_settings()
+    for key, value in dict(ct_metrika_enabled=True, ct_metrika_counter_id=95530802,
+                           ct_metrika_goal="coll_r", ct_metrika_token="test-only",
+                           ct_metrika_start_call_id=0).items():
+        monkeypatch.setattr(settings, key, value)
+    return settings
+
+
+def _metrika_call(db):
+    import datetime as dt
+    from app.calltrack.models import Visit, CallEvent
+    visit = Visit(ym_uid="1792580245123456789", utm_source="yandex")
+    db.add(visit); db.flush()
+    call = CallEvent(call_id="native-pilot", called="9310000000", visit_id=visit.id,
+                     number_kind="pool", status="new",
+                     started_at=dt.datetime.now(dt.timezone.utc)-dt.timedelta(minutes=1),
+                     raw={"EventType":"dial-in", "CallFlow":"in"},
+                     result={"attribution_snapshot":{"kind":"pool", "visit_id":visit.id,
+                             "ym_uid":visit.ym_uid,"tracking":{},"disputed":False}})
+    db.add(call); db.flush()
+    return call, visit
+
+
+def test_metrika_outbox_survives_crm_rewrite_and_duplicate(metrika_settings):
+    import json
+    from app.calltrack.metrika import enqueue_call, _csv, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    with _db() as db:
+        call, visit = _metrika_call(db)
+        assert enqueue_call(db, call)
+        db.commit()
+        assert not enqueue_call(db, call)
+        call.result = {"error":"crm_failed"}
+        visit.ym_uid = "999999"
+        db.commit()
+        row = db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        state = json.loads(row.value)
+        assert state["identifier"] == "1792580245123456789"
+        assert _csv(state).decode().splitlines() == ["ClientId,Target,DateTime",
+               f"1792580245123456789,coll_r,{state['time']}"]
+
+
+def test_metrika_excludes_shared_disputed_and_history(metrika_settings):
+    import json
+    from app.calltrack.metrika import enqueue_call, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    with _db() as db:
+        call, visit = _metrika_call(db)
+        metrika_settings.ct_metrika_start_call_id = call.id
+        assert not enqueue_call(db, call)
+        call.result = {"attribution_snapshot":{"kind":"shared"}}
+        assert enqueue_call(db, call, pilot=True)
+        db.commit()
+        row = db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        assert json.loads(row.value)["status"] == "skipped"
+        assert json.loads(row.value)["reason"] == "no_unique_visit"
+
+
+def test_metrika_yclid_fallback(metrika_settings):
+    import json
+    from app.calltrack.metrika import enqueue_call, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    with _db() as db:
+        call, visit = _metrika_call(db)
+        visit.ym_uid = None
+        call.result = {"attribution_snapshot":{"kind":"pool", "visit_id":visit.id,
+                                              "tracking":{"yclid":"12345678901234567890"}}}
+        assert enqueue_call(db, call)
+        db.commit()
+        state = json.loads(db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%"))).value)
+        assert state["id_type"] == "Yclid"
+        assert state["identifier"] == "12345678901234567890"
+
+
+def test_metrika_delivery_polls_without_duplicate_post(metrika_settings):
+    import json, httpx
+    from app.calltrack.metrika import enqueue_call, _deliver, _now, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    posts=[]
+    def respond(request):
+        if request.method == "POST":
+            posts.append(request)
+            return httpx.Response(200, json={"uploading":{"id":123,"status":"UPLOADED"}})
+        return httpx.Response(200,json={"uploading":{"id":123,"status":"PROCESSED","line_quantity":1}})
+    with _db() as db, httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        call, _ = _metrika_call(db)
+        enqueue_call(db, call);db.commit()
+        row=db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        state=json.loads(row.value)
+        _deliver(db,row,state,client,_now())
+        assert state["status"] == "uploaded"
+        _deliver(db,row,state,client,_now())
+        assert state["status"] == "processed"
+        _deliver(db,row,state,client,_now())
+        assert len(posts) == 1
+
+
+def test_metrika_timeout_recovers_accepted_upload(metrika_settings):
+    import json, httpx
+    from app.calltrack.metrika import enqueue_call, _deliver, _now, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    posts=[]
+    comment=[None]
+    def respond(request):
+        if request.method == "POST":
+            posts.append(request)
+            comment[0]=request.url.params["comment"]
+            raise httpx.ReadTimeout("response lost",request=request)
+        return httpx.Response(200,json={"uploadings":[{"id":456,"comment":comment[0]}]})
+    with _db() as db, httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        call,_=_metrika_call(db)
+        enqueue_call(db,call);db.commit()
+        row=db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        state=json.loads(row.value)
+        _deliver(db,row,state,client,_now())
+        assert state["status"] == "uncertain"
+        state["next_try"]=0
+        _deliver(db,row,state,client,_now())
+        assert state["upload_id"] == 456
+        assert len(posts) == 1
+
+
+def test_metrika_ambiguous_request_is_never_blindly_reposted(metrika_settings):
+    import json, httpx
+    from app.calltrack.metrika import enqueue_call, _deliver, _now, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    def respond(request):
+        assert request.method == "GET"
+        return httpx.Response(200,json={"uploadings":[]})
+    with _db() as db, httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        call,_=_metrika_call(db)
+        enqueue_call(db,call);db.commit()
+        row=db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        state=json.loads(row.value);state["status"]="sending"
+        _deliver(db,row,state,client,_now())
+        assert state["status"]=="uncertain"
+        assert state["error"]=="ambiguous_upload"
+
+
+def test_metrika_network_connection_failure_retries_safely(metrika_settings):
+    import json, httpx
+    from app.calltrack.metrika import enqueue_call, _deliver, _now, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    def respond(request):
+        raise httpx.ConnectTimeout("not connected",request=request)
+    with _db() as db, httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        call,_=_metrika_call(db)
+        enqueue_call(db,call);db.commit()
+        row=db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        state=json.loads(row.value)
+        _deliver(db,row,state,client,_now())
+        assert state["status"]=="retry"
+        assert state["attempts"]==1
+
+
+def test_metrika_worker_scans_once_and_does_not_resend_processed(metrika_settings, monkeypatch):
+    import httpx
+    from app.calltrack import metrika
+    posts=[]
+    def respond(request):
+        if request.method == "POST":
+            posts.append(request)
+            return httpx.Response(200,json={"uploading":{"id":789}})
+        return httpx.Response(200,json={"uploading":{"id":789,"status":"PROCESSED","line_quantity":1}})
+    real_client=httpx.Client
+    monkeypatch.setattr(metrika.httpx,"Client",lambda **kw:real_client(transport=httpx.MockTransport(respond),**kw))
+    with _db() as db:
+        _metrika_call(db);db.commit()
+    assert metrika.run_once()=={"uploaded":1}
+    assert metrika.run_once()=={"processed":1}
+    assert metrika.run_once()=={"processed":1}
+    assert len(posts)==1
+
+
+def test_metrika_revoked_token_retries_without_marking_delivered(metrika_settings):
+    import json, httpx
+    from app.calltrack.metrika import enqueue_call, _deliver, _now, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    with _db() as db, httpx.Client(transport=httpx.MockTransport(lambda r:httpx.Response(403))) as client:
+        call,_=_metrika_call(db);enqueue_call(db,call);db.commit()
+        row=db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        state=json.loads(row.value)
+        _deliver(db,row,state,client,_now())
+        assert state["status"]=="retry"
+        assert "upload_id" not in state
+
+
+def test_metrika_unmatched_identifier_is_failure_not_success(metrika_settings):
+    import json, httpx
+    from app.calltrack.metrika import enqueue_call, _deliver, _now, PREFIX
+    from app.models import KvState
+    from sqlalchemy import select
+    with _db() as db, httpx.Client(transport=httpx.MockTransport(lambda r:httpx.Response(200,json={"uploading":{"id":123,"status":"LINKAGE_FAILURE"}}))) as client:
+        call,_=_metrika_call(db);enqueue_call(db,call);db.commit()
+        row=db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%")))
+        state=json.loads(row.value);state.update(status="uploaded",upload_id=123)
+        _deliver(db,row,state,client,_now())
+        assert state["status"]=="failed"
+        assert state["error"]=="linkage_failure"

@@ -172,5 +172,9 @@ def ingest(db: Session, raw: Any) -> Optional[CallEvent]:
             "tech_source": attr.tech_source, "visit_id": row.visit_id,
             "kind": attr.kind, "disputed": attr.disputed,
             "landing_url": (attr.landing_url or "")[:4096],
+            "ym_uid": attr.visit.ym_uid if attr.visit else None,
         }}
+        from app.calltrack.metrika import enqueue_call
+
+        enqueue_call(db, row)
     return row
