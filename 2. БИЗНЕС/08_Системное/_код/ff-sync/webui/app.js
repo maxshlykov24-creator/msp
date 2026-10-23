@@ -2343,6 +2343,10 @@ function qwertyChar(e) {
   if (e.code && e.code.indexOf("Numpad") === 0) return e.key && e.key.length === 1 ? e.key : "";
   const pair = QWERTY[e.code];
   if (!pair) return "";
+  // Trust the actual Latin symbol. Some HID/virtual keyboards send an upper-case
+  // key (or +) without Shift in the event; reconstructing it corrupts the code.
+  // Physical mapping is only needed when the OS produced another layout.
+  if (e.key && e.key.length === 1 && pair.includes(e.key)) return e.key;
   const letter = pair[0] >= "a" && pair[0] <= "z";
   const upper = letter ? e.shiftKey !== e.getModifierState("CapsLock") : e.shiftKey;
   return pair[upper ? 1 : 0];
