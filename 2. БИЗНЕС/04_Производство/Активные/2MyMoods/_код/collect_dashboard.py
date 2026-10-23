@@ -1028,7 +1028,7 @@ def positions_for(order_id: str) -> tuple[str, list[dict]]:
     for attempt in range(6):
         try:
             return order_id, required_rows(client, path,
-                                           keep=("assortment", "quantity", "price", "discount"))
+                                           keep=("assortment", "quantity", "price", "discount", "vat"))
         except RuntimeError:
             if attempt == 5:
                 raise
@@ -1201,8 +1201,8 @@ def enrich_accounting(snap: dict, ms=None) -> None:
                 reason = "Неоднозначная закупочная стоимость возврата"
                 break
             line = dict(candidates[0]);quantity = float(pos.get("quantity") or 0)
-            gross = rub(pos.get("price")) * quantity
-            line.update(qty=-quantity, rev=-round(gross * (1 - float(pos.get("discount") or 0) / 100), 2),
+            gross, rev = position_totals(pos, ret)
+            line.update(qty=-quantity, rev=-rev,
                         list=-gross, cost=-round(next(iter(costs)) * quantity, 2))
             lines.append(line)
         if reason or abs(sum(l["rev"] for l in lines) + rub(ret.get("sum"))) > 0.02:
@@ -1399,6 +1399,23 @@ def order_city(order: dict) -> str:
     return geo
 
 
+def position_totals(position: dict, document: dict) -> tuple[float, float]:
+    """Document line totals in rubles, rounded from Decimal kopecks like MoySklad.
+
+    Round the net line amount, then derive its discount from gross minus net.
+    Rounding a float ruble amount can move a half-kopeck in the wrong direction.
+    """
+    price = Decimal(str(position.get("price") or 0))
+    quantity = Decimal(str(position.get("quantity") or 0))
+    discount = Decimal(str(position.get("discount") or 0))
+    tax = (1 + Decimal(str(position.get("vat") or 0)) / 100
+           if document.get("vatEnabled") and not document.get("vatIncluded") else Decimal(1))
+    gross = price * quantity * tax
+    net = gross * (1 - discount / 100)
+    return tuple(float(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP) / 100)
+                 for value in (gross, net))
+
+
 def build_order(o, positions, ms, started, order_payments, agents, channels, return_orders, products, variants, services, gaps):
     number = o.get("name", "")
     a = attrs(o)
@@ -1459,8 +1476,7 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
             if not color:
                 color = color_from_name(name)
             qty = float(x.get("quantity") or 0)
-            gross = rub(x.get("price")) * qty
-            rev = round(gross * (1 - float(x.get("discount") or 0) / 100), 2)
+            gross, rev = position_totals(x, o)
             cost = rub((product.get("buyPrice") or {}).get("value")) * qty
             if rev > 0 and cost == 0 and not delivery_line:
                 gaps["Позиция без закупочной цены"].append(number)
