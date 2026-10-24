@@ -110,16 +110,33 @@ def _blocked(mode: str, reason: str) -> tuple[str, str]:
     return ("deny" if mode == "block" else "soft"), reason
 
 
-def lead_status_for_phone(client: Any, phone: str) -> int | None:
-    """Открытая сделка по номеру: нужен этап Reactivation в стороже."""
+def dial_guard_context(client: Any, phone: str) -> tuple[int | None, bool]:
+    """CRM context; paid service is an open assembly deal or latest won sale.
+
+    A newer open sales deal keeps sales restrictions. A lost sale does not
+    prove payment. No entity is changed by this lookup.
+    """
+    from app.dedup_deals import load_leads
+
     phone = normalize_phone(phone)
-    if not phone:
-        return None
-    contact = _oldest_contact(client, phone)
+    contact = _oldest_contact(client, phone) if phone else None
     if not contact:
-        return None
-    lead = _open_lead(client, int(contact["id"]))
-    return int(lead["status_id"]) if lead and lead.get("status_id") else None
+        return None, False
+    leads = load_leads(client, int(contact["id"]))
+    opens = [l for l in leads if l.get("closed_at") in (None, 0)
+             and l.get("status_id") not in CLOSED_STATUS_IDS
+             and l.get("pipeline_id") in (settings.pipeline_id, settings.assembly_pipeline_id)]
+    opens.sort(key=lambda l: l.get("created_at") or 0, reverse=True)
+    if opens:
+        lead = opens[0]
+        return lead.get("status_id"), lead.get("pipeline_id") == settings.assembly_pipeline_id
+    sales = [l for l in leads if l.get("pipeline_id") == settings.pipeline_id]
+    sales.sort(key=lambda l: l.get("created_at") or 0, reverse=True)
+    return None, bool(sales and sales[0].get("status_id") == settings.status_won)
+
+
+def lead_status_for_phone(client: Any, phone: str) -> int | None:
+    return dial_guard_context(client, phone)[0]
 
 
 def maybe_move_to_reactivation(ctx: Ctx, phone: str, lead_id: int | None) -> bool:
@@ -133,25 +150,27 @@ def maybe_move_to_reactivation(ctx: Ctx, phone: str, lead_id: int | None) -> boo
 
 # ── сторож дозвона: чтобы номер не заработал спам-метку заново ──
 def dial_guard(session: Any, phone: str,
-               lead_status_id: int | None = None) -> tuple[str, str]:
+               lead_status_id: int | None = None, *,
+               paid_service: bool = False) -> tuple[str, str]:
     """Можно ли сейчас набирать этот номер. Возвращает вердикт и причину.
 
     Лестница 27.08 (схема Павла): после 1-го недозвона 15 минут, после 2-го
     3 часа, после 3-го действует суточный лимит без смены этапа.
-    Вручную выставленный Reactivation ограничивает звонки до одного в сутки. Успешный разговор лестницу недозвона не поднимает. После любого
-    набора, в том числе дозвона, всё равно ждём `dial_guard_min_gap_min`.
+    Вручную выставленный Reactivation ограничивает недозвоны до одного в сутки.
+    Успешный разговор сбрасывает лестницу и разрешает быстрый перезвон.
+    Обслуживание оплаченных заказов освобождено от ограничений (24.10.2026).
 
     Вердикты: `ok`, `soft` (режим warn), `deny` (режим block).
     """
     mode = (settings.dial_guard_mode or "off").strip().lower()
     phone = normalize_phone(phone)
-    if mode == "off" or not phone:
+    if mode == "off" or not phone or paid_service:
         return "ok", ""
 
     now = time.time()
     rows = list(session.scalars(
         select(CallEvent)
-        .where(CallEvent.phone == phone, CallEvent.direction == "out")
+        .where(CallEvent.phone == phone)
         .order_by(CallEvent.id.desc())
         .limit(50)
     ))
@@ -160,9 +179,19 @@ def dial_guard(session: Any, phone: str,
             return "ok", ""
         return "ok", ""
 
-    today = [r for r in rows if _call_age_sec(r, now) < 24 * 3600]
-    no_answers = [r for r in today if not _is_answered(r)]
-    last = _call_age_sec(rows[0], now)
+    # Only consecutive outgoing misses after the latest human conversation.
+    # Incoming IVR/AI time must not clear the ladder; a manager extension is required.
+    no_answers = []
+    for row in rows:
+        if _call_age_sec(row, now) >= 24 * 3600:
+            continue
+        if _is_answered(row) and (row.direction == "out" or row.ext in settings.ext_to_user):
+            break
+        if row.direction == "out":
+            no_answers.append(row)
+    if not no_answers:
+        return "ok", ""
+    last = _call_age_sec(no_answers[0], now)
 
     if lead_status_id == settings.status_reactivation:
         window = settings.dial_guard_reactivation_hours * 3600
@@ -172,8 +201,6 @@ def dial_guard(session: Any, phone: str,
 
     if last < settings.dial_guard_hard_gap_sec:
         return _blocked(mode, f"redial_{int(last)}s")
-    if len(today) >= settings.dial_guard_max_per_day:
-        return _blocked(mode, f"day_limit_{len(today)}")
     if len(no_answers) >= settings.dial_guard_max_per_day:
         return _blocked(mode, f"day_limit_{len(no_answers)}")
     if len(no_answers) >= 2:

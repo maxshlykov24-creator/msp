@@ -312,12 +312,13 @@ async def call_guard(request: Request, x_internal_key: str = Header(default=""))
     if not _authorized(body.get("key", "") or x_internal_key):
         return PlainTextResponse("", status_code=401)
     phone = normalize_phone(body.get("phone", ""))
-    from app.telephony import dial_guard, lead_status_for_phone
+    from app.telephony import dial_guard, dial_guard_context
 
     status_id = None
+    paid_service = False
     client = KommoClient()
     try:
-        status_id = lead_status_for_phone(client, phone)
+        status_id, paid_service = dial_guard_context(client, phone)
     except Exception as exc:  # noqa: BLE001 — этап не важнее дозвона
         log.warning("dial guard status lookup failed: %s", exc)
     finally:
@@ -325,7 +326,8 @@ async def call_guard(request: Request, x_internal_key: str = Header(default=""))
 
     try:
         with session_scope() as s:
-            verdict, reason = dial_guard(s, phone, lead_status_id=status_id)
+            verdict, reason = dial_guard(s, phone, lead_status_id=status_id,
+                                         paid_service=paid_service)
     except Exception as exc:  # noqa: BLE001 — звонок важнее учёта
         log.warning("dial guard failed: %s", exc)
         return PlainTextResponse("ok")

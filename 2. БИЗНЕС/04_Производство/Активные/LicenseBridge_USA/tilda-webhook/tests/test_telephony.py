@@ -548,3 +548,55 @@ def test_cascade_order_ignores_did_and_keeps_all_managers(fake, session, monkeyp
     fake.add_lead(contact, settings.pipeline_id, settings.status_new, responsible=PAVEL)
     for did in ("1", "2", "3"):
         assert ring_order(fake, PHONE, did)[0] == ["101", "103", "102"]
+
+
+def test_quick_callback_after_conversation_is_allowed(session, enable_telephony, monkeypatch):
+    monkeypatch.setattr(settings, "dial_guard_mode", "block")
+    _out_call(session, PHONE, 40, "old-miss")
+    _out_call(session, PHONE, 1, "answered-now", disposition="ANSWER", duration=90)
+    assert dial_guard(session, PHONE) == ("ok", "")
+
+
+def test_miss_after_conversation_starts_new_ladder(session, enable_telephony, monkeypatch):
+    monkeypatch.setattr(settings, "dial_guard_mode", "block")
+    for n in range(3):
+        _out_call(session, PHONE, 100+n, f"old-{n}")
+    _out_call(session, PHONE, 30, "talk", disposition="ANSWER", duration=90)
+    _out_call(session, PHONE, 5, "new-miss")
+    assert dial_guard(session, PHONE) == ("deny", "attempt1_15min")
+
+
+def test_paid_service_ignores_sales_miss_limit(session, enable_telephony, monkeypatch):
+    monkeypatch.setattr(settings, "dial_guard_mode", "block")
+    for n in range(3):
+        _out_call(session, PHONE, n, f"service-{n}")
+    assert dial_guard(session, PHONE, paid_service=True) == ("ok", "")
+    assert dial_guard(session, PHONE)[0] == "deny"
+
+
+def test_crm_paid_service_context_respects_new_sale(fake):
+    from app.telephony import dial_guard_context
+    cid = fake.add_contact(phone=PHONE)
+    lid = fake.add_lead(cid, settings.assembly_pipeline_id, settings.assembly_status_start)
+    assert dial_guard_context(fake, PHONE)[1] is True
+    fake.add_lead(cid, settings.pipeline_id, settings.status_new)
+    assert dial_guard_context(fake, PHONE) == (settings.status_new, False)
+
+
+def test_won_is_paid_but_lost_is_not(fake):
+    from app.telephony import dial_guard_context
+    cid = fake.add_contact(phone=PHONE)
+    fake.add_lead(cid, settings.pipeline_id, settings.status_won, closed_at=100)
+    assert dial_guard_context(fake, PHONE)[1] is True
+    fake.add_lead(cid, settings.pipeline_id, settings.status_lost, closed_at=200)
+    assert dial_guard_context(fake, PHONE)[1] is False
+
+
+def test_incoming_ivr_does_not_reset_but_manager_does(session, enable_telephony, monkeypatch):
+    monkeypatch.setattr(settings, "dial_guard_mode", "block")
+    _out_call(session, PHONE, 5, "miss-before-inbound")
+    row = CallEvent(uniqueid="inbound", phone=PHONE, direction="in", duration=90, disposition="ANSWER", ext="")
+    session.add(row); session.commit()
+    assert dial_guard(session, PHONE)[0] == "deny"
+    row.ext="102"; session.commit()
+    assert dial_guard(session, PHONE) == ("ok", "")
