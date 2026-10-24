@@ -328,7 +328,7 @@ def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fe
         recipient, body = render(lead, s, now)
     except InvalidCertificate as exc:
         job.state, job.reason = "blocked", str(exc)
-        job.check_at = now + timedelta(seconds=60)
+        job.check_at = now + timedelta(hours=1)
         db.commit()
         return
     job.message_id = f"<mansband-certificate-{lead_id}@mansband.ru>"

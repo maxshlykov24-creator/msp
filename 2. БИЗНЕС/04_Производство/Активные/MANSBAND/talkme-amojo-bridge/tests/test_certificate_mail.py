@@ -261,7 +261,7 @@ def test_missing_data_resumes_days_later_without_new_transition(store, cfg, miss
             deliver=lambda *args: calls.append(args), persist_expiry=expiry_writer(data))
     run(NOW + timedelta(minutes=5))
     assert job.state == "blocked" and not calls and job.attempted_at is None
-    assert job.check_at is not None
+    assert job.check_at.replace(tzinfo=None) == (NOW + timedelta(minutes=5, hours=1)).replace(tzinfo=None)
     assert ingest(store, transitions(form(), cfg, NOW)) == 0
     # Still incomplete several days later; it must remain waiting, not expire.
     run(NOW + timedelta(days=2))
