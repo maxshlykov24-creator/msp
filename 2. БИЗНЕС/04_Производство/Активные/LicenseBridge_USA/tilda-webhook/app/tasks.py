@@ -129,3 +129,65 @@ def create_pleep_handoff_task(ctx: Ctx, lead_id: int, text: str,
                 lead_id=lead_id, request_key=request_digest, task_id=task_id))
     log_decision(ctx, "pleep.task_created", lead=lead_id, task=task_id, owner=owner)
     return task_id
+
+
+def create_repeat_inquiry_task(ctx: Ctx, lead_id: int, request_key: str,
+                               channel: str) -> int | None:
+    """Each distinct inquiry gets a task; retries recover the same durable intent."""
+    import hashlib
+    from app.db import phone_lock, session_scope
+    from app.models import IntakeTaskDelivery
+
+    if ctx.shadow:
+        log_decision(ctx, "intake.task_shadow", lead=lead_id)
+        return None
+    digest = hashlib.sha256(request_key.encode()).hexdigest()
+    marker = f"[Repeat inquiry:{digest}]"
+    with session_scope() as s:
+        with phone_lock(s, f"repeat-task:{digest}"):
+            row = s.get(IntakeTaskDelivery, digest)
+            if row:
+                if row.lead_id != lead_id:
+                    raise RuntimeError("Repeat inquiry target changed; reconcile before retry")
+                if row.state == "done":
+                    return row.task_id
+                tasks = ctx.client.paginate("/tasks", "tasks", {
+                    "filter[entity_type]": "leads", "filter[entity_id][]": lead_id,
+                })
+                found = next((t for t in tasks if t.get("entity_type") == "leads"
+                              and int(t.get("entity_id") or 0) == lead_id
+                              and marker in (t.get("text") or "")), None)
+                if found:
+                    row.task_id, row.state = int(found["id"]), "done"
+                    return row.task_id
+                raise RuntimeError("Repeat task outcome uncertain; reconcile CRM marker")
+            lead = ctx.client.get_lead(lead_id)
+            if not lead:
+                raise RuntimeError("Repeat inquiry deal not found")
+            owner = int(lead.get("responsible_user_id") or 0)
+            active = {int(u["id"]) for u in ctx.client.users()
+                      if u.get("rights", {}).get("is_active")}
+            if owner not in active:
+                raise RuntimeError("Repeat inquiry owner inactive; explicit reassignment required")
+            s.add(IntakeTaskDelivery(request_key=digest, lead_id=lead_id,
+                                     marker=marker, state="sending"))
+    data = ctx.client.post_once("/tasks", [{
+        "entity_id": lead_id, "entity_type": "leads",
+        "responsible_user_id": owner, "task_type_id": TASK_TYPE_CALL,
+        "complete_till": int(time.time()),
+        "text": f"Клиент оставил повторную заявку. Источник: {channel[:150]}.\n{marker}",
+    }])
+    items = (data or {}).get("_embedded", {}).get("tasks", [])
+    if not items:
+        raise RuntimeError("Repeat task response has no ID; reconciliation required")
+    task_id = int(items[0]["id"])
+    verified = ctx.client.get(f"/tasks/{task_id}") or {}
+    if (int(verified.get("entity_id") or 0) != lead_id
+            or int(verified.get("responsible_user_id") or 0) != owner
+            or marker not in (verified.get("text") or "")):
+        raise RuntimeError("Repeat task readback failed; reconciliation required")
+    with session_scope() as s:
+        row = s.get(IntakeTaskDelivery, digest)
+        row.task_id, row.state = task_id, "done"
+    log_decision(ctx, "intake.task_created", lead=lead_id, task=task_id, owner=owner)
+    return task_id

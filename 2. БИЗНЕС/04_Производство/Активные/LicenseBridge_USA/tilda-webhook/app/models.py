@@ -244,3 +244,16 @@ class PleepTaskReceipt(Base):
     lead_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     request_key: Mapped[str] = mapped_column(String(64), primary_key=True)
     task_id: Mapped[int] = mapped_column(BigInteger)
+
+
+class IntakeTaskDelivery(Base):
+    """One repeat-inquiry task per source event, including uncertain POSTs."""
+    __tablename__ = "intake_task_delivery"
+    request_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    lead_id: Mapped[int] = mapped_column(BigInteger)
+    marker: Mapped[str] = mapped_column(String(100))
+    task_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    state: Mapped[str] = mapped_column(String(16), default="sending")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )

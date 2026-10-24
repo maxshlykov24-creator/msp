@@ -169,6 +169,11 @@ def handle_kommo_status_lead(ctx: Ctx, lead_id: int, status_id: int | None) -> d
 # ── диспетчер одного события ──
 def process_event(ctx: Ctx, ev: InboxEvent) -> dict[str, Any]:
     src, typ, payload = ev.source, ev.event_type, ev.payload or {}
+    if src == "facebook_repeat":
+        from app.tasks import create_repeat_inquiry_task
+        task_id = create_repeat_inquiry_task(
+            ctx, int(payload["lead_id"]), ev.event_key, "Facebook")
+        return {"action": "repeat_task", "task_id": task_id, "lead_id": payload["lead_id"]}
     if src == "pleep":
         from app.intake import process_pleep_intake
         return process_pleep_intake(ctx, payload)

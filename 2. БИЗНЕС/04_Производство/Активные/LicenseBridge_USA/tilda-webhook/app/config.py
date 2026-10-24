@@ -91,6 +91,7 @@ class Settings(BaseSettings):
 
     # ── Секреты входящих каналов ──
     pleep_api_key: str = ""
+    make_repeat_api_key: str = ""
     # path-secret для нативных вебхуков Kommo: /kommo/webhook/{secret}
     kommo_webhook_secret: str = ""
     # отдельный ключ для внутреннего resolver телефонии

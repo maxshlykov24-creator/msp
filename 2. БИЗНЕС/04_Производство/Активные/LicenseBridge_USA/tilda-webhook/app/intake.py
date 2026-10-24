@@ -119,7 +119,7 @@ def _create_lead(ctx: Ctx, name: str, contact_id: int, channel: str,
     return lid
 
 
-def process_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
+def _process_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
     name = (payload.get("name") or "").strip()
     phone = normalize_phone(payload.get("phone"))
     email = (payload.get("email") or "").strip()
@@ -177,7 +177,29 @@ def process_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
         }
         sync_contact_owner(ctx, created, owner)
     log_decision(ctx, "intake.created", lead=lead_id, contact=contact_id, owner=owner, channel=channel)
-    return {"action": "created", "lead_id": lead_id, "contact_id": contact_id, "owner": owner}
+    return {"action": "created", "lead_id": lead_id, "contact_id": contact_id, "owner": owner, "repeat_customer": bool(leads)}
+
+
+def process_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
+    from sqlalchemy import select
+    from app.models import Decision, InboxEvent
+    from app.tasks import create_repeat_inquiry_task
+
+    previous = ctx.s.scalar(select(Decision).where(
+        Decision.inbox_id == ctx.inbox_id, Decision.action == "intake.resolved",
+    ).order_by(Decision.id.desc())) if ctx.inbox_id is not None else None
+    result = dict(previous.detail["result"]) if previous else _process_intake(ctx, payload)
+    if not previous and result.get("lead_id") and ctx.inbox_id is not None:
+        log_decision(ctx, "intake.resolved", result=result)
+    event = ctx.s.get(InboxEvent, ctx.inbox_id) if ctx.inbox_id is not None else None
+    # A Pleep update is not a new inquiry; it has its own handoff task contract.
+    if (event and event.source in {"tilda", "facebook", "intake"}
+            and result.get("lead_id")
+            and (result.get("action") == "repeat" or result.get("repeat_customer"))):
+        result["task_id"] = create_repeat_inquiry_task(
+            ctx, int(result["lead_id"]), event.event_key,
+            str(payload.get("channel") or event.source))
+    return result
 
 
 def process_pleep_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:

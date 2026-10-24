@@ -74,10 +74,33 @@ async def tilda_webhook(request: Request) -> Response:
         "utm_campaign": _pick(fields, "utm_campaign", "utm-campaign"),
         "notes": f"Class: {license_class}" if license_class else "",
     }
-    key = f"tilda:{_pick(fields, 'tranid') or phone or email}:{int(time.time())}"
+    transaction_id = _pick(fields, "tranid")
+    key = (f"tilda:{transaction_id}" if transaction_id else
+           f"tilda:{phone or email}:{int(time.time())}")
     with session_scope() as s:
         enqueue(s, "tilda", "intake", key, payload, phone=phone or None)
     return PlainTextResponse("ok")
+
+
+# Make sends only an already resolved deal and the immutable Facebook lead ID.
+@router.post("/intake/repeat")
+async def repeat_inquiry(request: Request, x_api_key: str = Header(default="")) -> Response:
+    import hmac
+    if not settings.make_repeat_api_key or not hmac.compare_digest(x_api_key, settings.make_repeat_api_key):
+        return JSONResponse({"ok": False}, 401)
+    fields = await _form_or_json(request)
+    event_id = fields.get("event_id", "").strip()
+    lead_id = fields.get("lead_id", "").strip()
+    form_id = fields.get("form_id", "").strip()
+    if not all(re.fullmatch(r"[0-9]{1,30}", v) for v in (event_id, lead_id, form_id)):
+        return JSONResponse({"ok": False, "error": "numeric event_id, lead_id, form_id required"}, 400)
+    if int(lead_id) <= 0:
+        return JSONResponse({"ok": False}, 400)
+    payload = {"lead_id": int(lead_id), "form_id": form_id, "channel": "Facebook"}
+    key = f"facebook-repeat:{form_id}:{event_id}"
+    with session_scope() as s:
+        eid, created = enqueue(s, "facebook_repeat", "repeat", key, payload)
+    return JSONResponse({"ok": True, "event_id": eid, "created": created, "status": "queued"}, 202)
 
 
 # ── Pleep ──

@@ -199,3 +199,70 @@ def test_pleep_consumed_repeat_not_recreated_after_completion(fake, session, ple
     fake.tasks[0]['is_completed'] = True
     assert create_pleep_handoff_task(_ctx(fake, session), lid, 'Повтор', 'event-2') == first
     assert fake.task_posts == 1
+
+
+def test_repeat_task_each_submission_not_each_delivery(fake, session, pleep_task_env):
+    from app.tasks import create_repeat_inquiry_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=15648532)
+    ctx = _ctx(fake, session)
+    first = create_repeat_inquiry_task(ctx, lid, 'fb:100', 'Facebook')
+    assert create_repeat_inquiry_task(ctx, lid, 'fb:100', 'Facebook') == first
+    second = create_repeat_inquiry_task(ctx, lid, 'fb:101', 'Facebook')
+    assert second != first and fake.task_posts == 2
+    assert all(t['responsible_user_id'] == 15648532 for t in fake.tasks)
+    fake.tasks[0]['is_completed'] = True
+    assert create_repeat_inquiry_task(ctx, lid, 'fb:100', 'Facebook') == first
+    assert fake.task_posts == 2
+
+
+def test_repeat_task_timeout_is_reconciled(fake, session, pleep_task_env, monkeypatch):
+    from app.tasks import create_repeat_inquiry_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=13291175)
+    post = fake.post_once
+    def lost_response(*args):
+        post(*args)
+        raise TimeoutError()
+    monkeypatch.setattr(fake, 'post_once', lost_response)
+    with pytest.raises(TimeoutError):
+        create_repeat_inquiry_task(_ctx(fake, session), lid, 'fb:102', 'Facebook')
+    assert create_repeat_inquiry_task(_ctx(fake, session), lid, 'fb:102', 'Facebook')
+    assert fake.task_posts == 1
+
+
+def test_repeat_task_unknown_result_not_reposted(fake, session, pleep_task_env, monkeypatch):
+    from app.tasks import create_repeat_inquiry_task
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=13291175)
+    def lost(*args):
+        fake.task_posts += 1
+        raise TimeoutError()
+    monkeypatch.setattr(fake, 'post_once', lost)
+    with pytest.raises(TimeoutError):
+        create_repeat_inquiry_task(_ctx(fake, session), lid, 'fb:103', 'Facebook')
+    with pytest.raises(RuntimeError, match='uncertain'):
+        create_repeat_inquiry_task(_ctx(fake, session), lid, 'fb:103', 'Facebook')
+    assert fake.task_posts == 1
+
+
+@pytest.mark.parametrize('status', [142, 143, None])
+def test_repeat_intake_task_open_and_closed(fake, session, enable_all, monkeypatch, status):
+    from app.models import InboxEvent
+    from app import tasks
+    cid = fake.add_contact(phone='+15551234567')
+    fake.add_lead(cid, settings.pipeline_id, status or settings.status_new,
+                  responsible=13291175, closed_at=100 if status else None)
+    ev = InboxEvent(source='tilda', event_type='intake', event_key=f'tilda:test-{status}',
+                    payload={}, phone='+15551234567', status='pending')
+    session.add(ev); session.flush()
+    called = []
+    monkeypatch.setattr(tasks, 'create_repeat_inquiry_task',
+                        lambda ctx, lid, key, channel: called.append((lid, key)) or 999)
+    ctx = _ctx(fake, session); ctx.inbox_id = ev.id
+    result = process_intake(ctx, {'phone': '+15551234567', 'channel': 'Tilda'})
+    assert result['task_id'] == 999
+    count = len(fake.leads)
+    process_intake(ctx, {'phone': '+15551234567', 'channel': 'Tilda'})
+    assert len(fake.leads) == count
+    assert called[0] == called[1]
