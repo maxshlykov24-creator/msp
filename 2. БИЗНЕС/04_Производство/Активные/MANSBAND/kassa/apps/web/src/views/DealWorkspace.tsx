@@ -1,10 +1,10 @@
-import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, defaultHoldUntil, holdStageError } from "@kassa/shared";
+import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, isHoldStage, defaultHoldUntil, holdStageError } from "@kassa/shared";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import type { CartItem, Deal, Payment } from "../data/types";
 import { useStore } from "../store";
 import { KIND_LABEL } from "../lib/labels";
-import { Button, Card, Field, Modal, StageBadge, Select, opts } from "../components/ui";
+import { Button, Card, Field, Modal, StageBadge } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
 import { PaymentBlock } from "../components/PaymentBlock";
 import { DealActionsBar } from "../components/DealActionsBar";
@@ -65,6 +65,8 @@ function formFromDeal(live: Deal): {
   issued: boolean;
   rentalFrom: string;
   rentalTo: string;
+  actualUntil: string;
+  reservedUntil: string;
   returnInfo: ReturnInfo;
 } {
   return {
@@ -511,7 +513,7 @@ export function DealWorkspace({
           <Card>
             <SectionTitle>Компания</SectionTitle>
             <fieldset className="grid sm:grid-cols-2 gap-3 disabled:opacity-80">
-              <Field label="Телефон руководителя" required>
+              <Field label="Телефон руководителя" required={!isHoldStage(stage)}>
                 <input
                   className="input"
                   inputMode="tel"
@@ -519,7 +521,7 @@ export function DealWorkspace({
                   onChange={(e) => setManagerPhone(formatPhone(e.target.value))}
                 />
               </Field>
-              <Field label="Имя руководителя" required>
+              <Field label="Имя руководителя" required={!isHoldStage(stage)}>
                 <input
                   className="input"
                   value={managerName}
@@ -597,7 +599,7 @@ export function DealWorkspace({
         )}
 
         <Card>
-          <SectionTitle>Товары</SectionTitle>
+          <SectionTitle>{stage === "Дано обещание" ? "Интересующие товары" : "Товары"}</SectionTitle>
           <ProductPicker
             items={items}
             onChange={setItems}

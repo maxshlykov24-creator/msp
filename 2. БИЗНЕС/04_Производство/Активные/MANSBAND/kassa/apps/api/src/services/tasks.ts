@@ -495,7 +495,8 @@ export async function createMovement(input: {
     const sourceName = source.name;
     const assigneeRole: Task["assigneeRole"] = isCentralWarehouse(sourceName)
       ? "logist"
-      : input.assigneeRole;
+      : "consultant";
+    const sourceStore = storeForAcceptQueue(sourceName) || sourceName;
     // Позиции запоминаем в задаче: документ перемещения в МойСклад создаётся
     // только при приёмке, чтобы остаток не «прыгал» на склад-получатель заранее.
     for (const item of input.positions) {
@@ -562,7 +563,7 @@ export async function createMovement(input: {
           .set({
             assigneeRole,
             title,
-            store: input.store ?? pending.store,
+            store: sourceStore,
             dealItemId: input.dealItemId ?? pending.dealItemId,
             idempotencyKey: input.idempotencyKey,
             metadata: movementMeta,
@@ -577,7 +578,7 @@ export async function createMovement(input: {
       kind: "movement",
       dealNumber: input.dealNumber,
       dealItemId: input.dealItemId,
-      store: input.store,
+      store: sourceStore,
       assigneeRole,
       title,
       idempotencyKey: input.idempotencyKey,
@@ -609,7 +610,9 @@ export async function createMovement(input: {
     return toTask(row);
   });
 
-  // По заявке — всегда уводим на «Ждет товар» (отложка / обещание).
+  // Повтор уже отправленного перемещения не откатывает заявку назад.
+  if (task.status !== "pending") return task;
+  // При новом перемещении сохраняем вид и ставим «Ждет товар».
   if (input.dealNumber && dealKind) {
     const deal = await deals.getByNumber(input.dealNumber).catch(() => null);
     if (deal && deal.stage !== "Ждет товар") {

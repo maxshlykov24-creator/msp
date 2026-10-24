@@ -441,8 +441,8 @@ export async function convertDealKind(
     // непустое поле не трогаем. Отложка колл-менеджера до продажи не принадлежит
     // никому — продавцом становится тот, кто провёл конвертацию.
     consultant: deal.consultant?.trim() ? deal.consultant : who,
-    reservedUntil: undefined,
-    deferredUntil: undefined,
+    reservedUntil: deal.reservedUntil,
+    deferredUntil: deal.deferredUntil,
     ...(nextKind === "company"
       ? {
           companyName: patch.companyName?.trim() || deal.companyName,
@@ -507,11 +507,11 @@ export async function convertDealKind(
  * Компания без товарного этапа → «Товар отложен» (как при создании + счёт Эдвину).
  */
 function convertedStage(stage: string, nextKind: "sale" | "company" | "rental"): string {
-  const shared = ["Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"];
+  const shared = ["Дано обещание", "Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"];
   if (shared.includes(stage)) return stage;
   return {
     sale: "Хочет прийти",
-    company: "Товар отложен",
+    company: "Товар в магазине",
     rental: "Аренда оплачена",
   }[nextKind];
 }

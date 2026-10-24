@@ -214,7 +214,7 @@ export async function afterKindConverted(
   who: string,
   photos?: PhotoInput[]
 ): Promise<void> {
-  await taskFlow.cancelOnKindConvert(deal.number);
+  if (!["Дано обещание", "Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"].includes(deal.stage)) await taskFlow.cancelOnKindConvert(deal.number);
   if (deal.kind === "company") {
     await enqueueCompanyChain(deal, {
       dealNumber: deal.number,

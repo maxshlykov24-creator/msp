@@ -182,3 +182,134 @@ test("only mansband rows go to Edwin queue", () => {
   assert.equal(mansbandPayoutAmount(rows), 600);
   assert.deepEqual(selfPayouts(rows), [{ methodId: "cash_zhenya", amount: 400 }]);
 });
+
+// Сквозная проверка реальных сервисов, внешние CRM/МС и SQL заменены памятью.
+// Проверяем назначение, переходы и повтор запроса без документов в рабочем МС.
+test("promise-to-reserve logistics preserves kind, source queue and idempotency", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { createRequire } = await import("node:module");
+  const { runInNewContext } = await import("node:vm");
+  const apiRequire = createRequire(new URL("../../../apps/api/package.json", import.meta.url));
+  const ts = apiRequire("typescript");
+  const shared = await import("../dist/index.js");
+  for (const kind of ["sale", "company", "rental"]) {
+    for (const sourceName of [shared.CENTRAL_WAREHOUSE, "На Новокузнецкой"]) {
+      const table = (name, columns) => Object.assign({ table: name }, Object.fromEntries(columns.map((c) => [c, c])));
+      const schema = {
+        tasks: table("tasks", ["id", "kind", "dealNumber", "status", "idempotencyKey", "assigneeRole", "store", "createdAt"]),
+        msRefs: table("refs", ["kind"]),
+        dealItemState: table("items", ["dealNumber", "itemId"]),
+        deals: table("deals", ["number", "stage", "data"]),
+      };
+      const state = { tasks: [], items: [], deals: [], refs: [
+        { kind: "store", msId: "source", name: sourceName, payload: { name: sourceName, meta: {} } },
+        { kind: "store", msId: "target", name: "На Бауманской", payload: { name: "На Бауманской", meta: {} } },
+      ] };
+      let serial = 0, moves = 0;
+      const deal = { ...baseDeal, id: `flow-${kind}`, number: 9001, kind, stage: "Дано обещание", companyName: "Тест", actualUntil: "2026-11-07", comment: "Привезти размер", items: [{ productId: "product", name: "Комплект", qty: 1, price: 100 }], total: 100, paid: 0 };
+      const query = (operation, fields) => {
+        let target, predicate = () => true, values, patch, limit = Infinity, conflict, cached;
+        const q = {
+          from(t) { target = t.table; return q; }, where(p) { predicate = p || (() => true); return q; },
+          limit(n) { limit = n; return q; }, orderBy() { return q; },
+          values(v) { values = v; return q; }, set(v) { patch = v; return q; },
+          onConflictDoNothing() { conflict = {}; return q; }, onConflictDoUpdate(v) { conflict = v; return q; },
+          returning(f) { fields = f; return q; },
+          catch(reject) { return q.then(undefined, reject); },
+          then(resolve, reject) {
+            if (!cached) cached = Promise.resolve().then(() => {
+              let rows;
+              if (operation === "select") rows = state[target].filter(predicate).slice(0, limit);
+              if (operation === "update") { rows = state[target].filter(predicate); rows.forEach((r) => Object.assign(r, patch)); }
+              if (operation === "insert") {
+                const existing = state[target].find((r) => values.idempotencyKey ? r.idempotencyKey === values.idempotencyKey : conflict?.target && conflict.target.every((c) => r[c] === values[c]));
+                if (existing) { if (conflict?.set) Object.assign(existing, conflict.set); rows = []; }
+                else { const row = { id: String(++serial), status: "pending", createdAt: new Date(), ...values }; state[target].push(row); rows = [row]; }
+              }
+              return fields ? rows.map((r) => Object.fromEntries(Object.entries(fields).map(([key, col]) => [key, r[col]]))) : rows;
+            });
+            return cached.then(resolve, reject);
+          },
+        };
+        return q;
+      };
+      const db = {
+        select: (fields) => query("select", fields), insert: (t) => query("insert").from(t), update: (t) => query("update").from(t),
+        transaction: (fn) => fn(db), execute: async () => {},
+      };
+      const orm = { eq: (c, v) => (r) => r[c] === v, ne: (c, v) => (r) => r[c] !== v, inArray: (c, vs) => (r) => vs.includes(r[c]), and: (...ps) => (r) => ps.every((p) => p(r)), desc: (v) => v, sql: () => () => true };
+      const services = {};
+      const dealService = {
+        getByNumber: async () => deal,
+        updateStage: async (_ref, stage) => {
+          if (stage === "Товар отложен" && stage !== deal.stage) deal.reservedUntil = shared.defaultHoldUntil(deal.paid);
+          deal.stage = stage; return { ...deal };
+        },
+      };
+      const dependencies = {
+        "@kassa/shared": shared, "drizzle-orm": orm, "../db/index.js": { db }, "../db/schema.js": schema,
+        "./deals.js": dealService, "./audit.js": { appendSystemAudit: async () => {} }, "./queue.js": {},
+        "./sale.js": { enqueueCompanyChain: async () => {} },
+        "../clients/ms.js": { createMove: async () => { moves++; return { id: "test-move" }; } },
+        "./bootstrap.js": { getMsRef: async () => ({ meta: {} }) },
+        "./catalog.js": { resolveAssortment: async () => ({ href: "test", type: "variant" }), productNamesByMsIds: async () => new Map(), productCodesByMsIds: async () => new Map() },
+      };
+      for (const name of ["taskFlow", "tasks"]) {
+        const filename = new URL(`../../../apps/api/src/services/${name}.ts`, import.meta.url);
+        const code = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+        const module = { exports: {} };
+        runInNewContext(code, { module, exports: module.exports, require: (id) => {
+          if (id === "./taskFlow.js") return services.taskFlow;
+          if (!(id in dependencies)) throw new Error(`Unmocked dependency ${id}`);
+          return dependencies[id];
+        }, Date, console });
+        services[name] = module.exports;
+      }
+      await services.taskFlow.onDealStage(deal, "Тест");
+      assert.equal(state.tasks.length, 0, "promise does not dispatch logistics");
+      deal.stage = "Ждет товар";
+      await services.taskFlow.onDealStage(deal, "Тест");
+      await services.taskFlow.onDealStage(deal, "Тест");
+      assert.equal(state.tasks.length, 1, "one setup reminder");
+      assert.equal(state.tasks[0].assigneeRole, "consultant");
+      const input = { idempotencyKey: `move-${kind}-${sourceName}`, dealNumber: deal.number, fromStoreMsId: "source", toStoreMsId: "target", positions: [{ productId: "product", quantity: 1 }], store: "Неверный магазин", assigneeRole: "crm", title: "Перемещение" };
+      const task = await services.tasks.createMovement(input, "Тест");
+      await services.tasks.createMovement(input, "Тест");
+      assert.equal(state.tasks.length, 1, "setup reused; retry doesn't duplicate");
+      assert.equal(task.assigneeRole, sourceName === shared.CENTRAL_WAREHOUSE ? "logist" : "consultant");
+      assert.equal(task.store, shared.storeForAcceptQueue(sourceName));
+      await services.tasks.completeTask(task.id, "Тест");
+      assert.equal(deal.stage, "Товар в пути");
+      await services.tasks.createMovement(input, "Тест");
+      assert.equal(deal.stage, "Товар в пути", "retry of dispatched movement must not reset stage");
+      const acceptance = state.tasks.find((t) => t.kind === "movement_accept");
+      assert.equal(acceptance.store, "На Бауманской");
+      assert.equal(acceptance.assigneeRole, "consultant");
+      await services.tasks.completeTask(acceptance.id, "Тест");
+      assert.equal(deal.stage, "Товар в магазине");
+      const reserve = state.tasks.find((t) => t.kind === "reserve");
+      assert.ok(reserve, "acceptance creates reserve task");
+      await services.tasks.completeTask(reserve.id, "Тест");
+      assert.equal(deal.stage, "Товар отложен");
+      assert.equal(deal.reservedUntil, shared.defaultHoldUntil(0));
+      assert.equal(deal.kind, kind);
+      await services.tasks.completeTask(acceptance.id, "Тест");
+      assert.equal(moves, 1, "repeated acceptance doesn't create another movement");
+    }
+  }
+});
+
+test("hold stages require promise details and reserve dates without premature rental payment", async () => {
+  const { holdStageError, defaultHoldUntil, isDealOverdue } = await import("../dist/index.js");
+  for (const kind of ["sale", "company", "rental"]) {
+    const promise = { ...baseDeal, kind, stage: "Дано обещание", companyName: "Тест", items: [{ productId: "p", name: "Товар", price: 100, qty: 1 }], total: 100, comment: "Привезти товар", actualUntil: "2026-11-07" };
+    assert.equal(createDealSchema.safeParse(promise).success, true);
+    assert.ok(holdStageError({ ...promise, comment: "" }));
+    assert.ok(holdStageError({ ...promise, actualUntil: "" }));
+    assert.ok(holdStageError({ ...promise, stage: "Товар отложен" }));
+    assert.equal(holdStageError({ ...promise, stage: "Товар отложен", reservedUntil: "2026-11-08" }), null);
+    assert.equal(isDealOverdue({ ...promise, stage: "Ждет товар", actualUntil: "2026-10-01" }, "2026-10-24"), false);
+  }
+  assert.equal(defaultHoldUntil(0, "2026-10-24"), "2026-10-25");
+  assert.equal(defaultHoldUntil(100, "2026-10-24"), "2026-11-07");
+});

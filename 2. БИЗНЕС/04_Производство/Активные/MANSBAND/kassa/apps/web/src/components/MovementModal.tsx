@@ -89,7 +89,7 @@ export function MovementModal({
   /** Вид заявки, если уже известен. Иначе модалка сама читает заявку по номеру. */
   dealKind?: string;
 }) {
-  const seedItems = initialItems ?? EMPTY_ITEMS;
+  const seedItems = useMemo(() => (initialItems ?? EMPTY_ITEMS).filter((item) => item.productId !== "rent"), [initialItems]);
   const [items, setItems] = useState<CartItem[]>(seedItems);
   const [warehouses, setWarehouses] = useState<WarehouseRef[]>([]);
   const [target, setTarget] = useState(MOVEMENT_TARGETS[0]!);

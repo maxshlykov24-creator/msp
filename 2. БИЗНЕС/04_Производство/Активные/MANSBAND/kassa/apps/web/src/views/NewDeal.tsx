@@ -12,8 +12,6 @@ import { CompanyForm } from "./forms/CompanyForm";
 import { CertificateForm } from "./forms/CertificateForm";
 import { RentalForm } from "./forms/RentalForm";
 import { SlivForm } from "./forms/SlivForm";
-import { DeferredForm } from "./forms/DeferredForm";
-import { PromiseForm } from "./forms/PromiseForm";
 import { NoSlivForm } from "./forms/NoSlivForm";
 import { DeliveryForm } from "./forms/DeliveryForm";
 import { DefectForm } from "./forms/DefectForm";
@@ -90,8 +88,7 @@ export function NewDeal({
   if (kind === "cert_digital") return <CertificateForm onDone={onClose} digital />;
   if (kind === "rental") return <RentalForm onDone={onClose} />;
   if (kind === "sliv") return <SlivForm onDone={onClose} />;
-  if (kind === "deferred") return <DeferredForm onDone={onClose} />;
-  if (kind === "promise") return <PromiseForm onDone={onClose} />;
+  if (kind === "deferred" || kind === "promise") return <SaleForm onDone={onClose} />;
   if (kind === "no_sliv") return <NoSlivForm onDone={onClose} />;
   if (kind === "delivery") return <DeliveryForm onDone={onClose} />;
   if (

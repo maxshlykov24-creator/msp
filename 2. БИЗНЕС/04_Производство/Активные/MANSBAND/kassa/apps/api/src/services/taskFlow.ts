@@ -220,6 +220,9 @@ export async function onTaskCompleted(task: Task, who: string, depth = 0): Promi
     }).catch(() => {});
   }
 
+  // При нескольких складах ждём приёмки всех перемещений заявки.
+  if (task.kind === "movement_accept" && await hasTaskForDeal(task.dealNumber, ["movement", "movement_accept"])) return;
+
   if (rule.nextStage) {
     const deal = await deals.getByNumber(task.dealNumber);
     if (!deal) return;
@@ -261,7 +264,7 @@ async function setDealItemsLocation(
   if (!deal) return;
   const state = opts.state ?? "in_transit";
   for (const item of deal.items) {
-    if (!item.productId) continue;
+    if (!item.productId || item.productId === "rent") continue;
     await db
       .insert(dealItemState)
       .values({
@@ -284,7 +287,7 @@ async function setDealItemsLocation(
  * разобрать отложку. Этап заявки при этом не меняем (решение владельца).
  */
 function dealPositionsMeta(deal: Deal) {
-  return deal.items.map((item) => ({
+  return deal.items.filter((item) => item.productId !== "rent").map((item) => ({
     productId: item.productId,
     quantity: item.qty,
     name: item.name,
@@ -300,7 +303,7 @@ function deferredTaskMeta(deal: Deal, until: string | undefined, extra?: Record<
     consultant: deal.consultant,
     route: deal.store,
     dealKind: deal.kind,
-    dealKindLabel: deal.kind === "promise" ? "Обещание" : "Отложка",
+    dealKindLabel: ({ sale: "Продажа", company: "Продажа компании", rental: "Аренда", promise: "Обещание", deferred: "Отложка" } as Record<string, string>)[deal.kind] ?? deal.kind,
     positions: dealPositionsMeta(deal),
     ...extra,
   };

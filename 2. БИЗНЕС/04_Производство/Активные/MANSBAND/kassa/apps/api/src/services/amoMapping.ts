@@ -158,7 +158,7 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("rentalDeposit", deal.rentalDeposit);
 
   // Отложка (kind=deferred): срок + признак «платная/бесплатная» по наличию аванса.
-  if (deal.kind === "deferred" && deal.reservedUntil) {
+  if (deal.stage === "Товар отложен" && deal.reservedUntil) {
     put("reservedUntil", deal.reservedUntil);
     put("otlozhkaKind", deal.paid > 0 ? "Платная" : "Бесплатная");
   }

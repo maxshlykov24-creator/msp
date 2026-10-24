@@ -25,7 +25,11 @@ export function holdStageError(deal: Pick<Deal, "kind" | "stage" | "comment" | "
 /** Открытая заявка с истёкшим календарным сроком. Сегодня ещё не просрочка. */
 export function isDealOverdue(deal: Deal, today: string): boolean {
   if (["Успех", "Провал", "Не слив"].includes(deal.stage)) return false;
-  const deadline = deal.reservedUntil || deal.actualUntil || deal.deferredUntil || deal.validUntil || deal.rentalTo;
+  const deadline = deal.stage === "Дано обещание" ? deal.actualUntil
+    : deal.stage === "Товар отложен" ? (deal.reservedUntil || deal.deferredUntil)
+    : isHoldStage(deal.stage) ? undefined
+    : deal.kind === "rental" ? deal.rentalTo
+    : deal.validUntil;
   return !!deadline && deadline.slice(0, 10) < today;
 }
 
