@@ -667,7 +667,7 @@ export function DealWorkspace({
           </fieldset>
         </Card>
 
-        <Card>
+        {(holdKind || closedNeedsReason || canReturnExchange || linkedReturns.length > 0) && <Card>
           <SectionTitle>Дополнительные действия</SectionTitle>
           {holdKind && <p className="text-[12px] text-mute">Это заявка старого вида. Перед завершением выберите продажу, компанию или аренду через «Сменить тип».</p>}
           {closedNeedsReason && (
@@ -704,7 +704,7 @@ export function DealWorkspace({
               ))}
             </div>
           )}
-        </Card>
+        </Card>}
 
         {error && (
           <div className="rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">

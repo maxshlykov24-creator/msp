@@ -117,7 +117,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
   ].filter(Boolean) as string[];
   const missingForSuccess = sourceMissingForSuccess(client);
   const baseFilled = missingRequired.length === 0;
-  const canSuccess = baseFilled && missingForSuccess.length === 0 && remainder <= 0;
+  const canSuccess = items.length > 0 && baseFilled && missingForSuccess.length === 0 && remainder <= 0;
 
   function onFound(deal: Deal) {
     if (deal.referredBy) setConsultants((prev) => (prev.referredBy ? prev : { ...prev, referredBy: deal.referredBy! }));

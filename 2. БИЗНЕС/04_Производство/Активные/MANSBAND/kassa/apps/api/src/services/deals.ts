@@ -19,6 +19,7 @@ import type { Deal, DealKind, FunnelType, Store } from "@kassa/shared";
 import { getFieldIdByName } from "./bootstrap.js";
 import { broadcast } from "../ws/hub.js";
 import * as financeQueue from "./queue.js";
+import { buildLeadCustomFields } from "./amoMapping.js";
 
 // Системные закрытые статусы amo (общие id для воронок).
 const CLOSED_OR_JUNK_STATUS_IDS = new Set([
@@ -317,6 +318,10 @@ export async function updateDealFields(
     const statusId = await resolveStatusId(deal.amoLeadId, nextStage);
     if (statusId) await amo.updateLead(deal.amoLeadId, { statusId }).catch(() => {});
   }
+  if (deal.amoLeadId && (fields.actualUntil !== undefined || fields.reservedUntil !== undefined)) {
+    const customFields = await buildLeadCustomFields(updated).catch(() => []);
+    if (customFields.length) await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
+  }
   broadcast("deal.updated", { number: deal.number });
   return updated;
 }
@@ -356,6 +361,10 @@ export async function updateStage(
   if (deal.amoLeadId && !patch?.skipAmoWriteback) {
     const statusId = await resolveStatusId(deal.amoLeadId, stage);
     if (statusId) await amo.updateLead(deal.amoLeadId, { statusId }).catch(() => {});
+  }
+  if (deal.amoLeadId && !patch?.skipAmoWriteback && stage === "Товар отложен") {
+    const customFields = await buildLeadCustomFields(updated).catch(() => []);
+    if (customFields.length) await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
   }
   broadcast("deal.stage_changed", { number: deal.number, stage });
   return updated;

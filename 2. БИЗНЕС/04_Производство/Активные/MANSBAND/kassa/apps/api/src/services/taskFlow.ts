@@ -127,6 +127,7 @@ export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<v
     }
 
     if (rule.kind === "reserve") {
+      if (await hasTaskForDeal(deal.number, ["movement", "movement_accept"])) continue;
       if (await hasTaskForDeal(deal.number, ["reserve"])) continue;
       await insertTask(
         {

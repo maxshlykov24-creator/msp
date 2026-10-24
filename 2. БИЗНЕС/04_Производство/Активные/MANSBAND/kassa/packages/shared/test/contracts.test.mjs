@@ -278,6 +278,7 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
       assert.equal(state.tasks.length, 1, "setup reused; retry doesn't duplicate");
       assert.equal(task.assigneeRole, sourceName === shared.CENTRAL_WAREHOUSE ? "logist" : "consultant");
       assert.equal(task.store, shared.storeForAcceptQueue(sourceName));
+      const second = await services.tasks.createMovement({ ...input, idempotencyKey: `${input.idempotencyKey}-second`, positions: [{ productId: "product-2", quantity: 1 }] }, "Тест");
       await services.tasks.completeTask(task.id, "Тест");
       assert.equal(deal.stage, "Товар в пути");
       await services.tasks.createMovement(input, "Тест");
@@ -286,6 +287,11 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
       assert.equal(acceptance.store, "На Бауманской");
       assert.equal(acceptance.assigneeRole, "consultant");
       await services.tasks.completeTask(acceptance.id, "Тест");
+      assert.equal(deal.stage, "Товар в пути", "first acceptance waits for remaining shipment");
+      assert.equal(state.tasks.some((t) => t.kind === "reserve"), false);
+      await services.tasks.completeTask(second.id, "Тест");
+      const secondAcceptance = state.tasks.find((t) => t.kind === "movement_accept" && t.id !== acceptance.id);
+      await services.tasks.completeTask(secondAcceptance.id, "Тест");
       assert.equal(deal.stage, "Товар в магазине");
       const reserve = state.tasks.find((t) => t.kind === "reserve");
       assert.ok(reserve, "acceptance creates reserve task");
@@ -294,7 +300,7 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
       assert.equal(deal.reservedUntil, shared.defaultHoldUntil(0));
       assert.equal(deal.kind, kind);
       await services.tasks.completeTask(acceptance.id, "Тест");
-      assert.equal(moves, 1, "repeated acceptance doesn't create another movement");
+      assert.equal(moves, 2, "repeated acceptance doesn't create another movement");
     }
   }
 });
