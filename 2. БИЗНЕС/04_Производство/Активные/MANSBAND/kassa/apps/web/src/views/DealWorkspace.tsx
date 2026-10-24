@@ -1,3 +1,4 @@
+import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, defaultHoldUntil, holdStageError } from "@kassa/shared";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import type { CartItem, Deal, Payment } from "../data/types";
@@ -90,6 +91,8 @@ function formFromDeal(live: Deal): {
     issued: Boolean(live.issued),
     rentalFrom: live.rentalFrom || "",
     rentalTo: live.rentalTo || "",
+    actualUntil: live.actualUntil || "",
+    reservedUntil: live.reservedUntil || live.deferredUntil || "",
     returnInfo: {
       status: live.returnStatus ?? "issued",
       destination: live.returnDestination ?? "",
@@ -156,6 +159,9 @@ export function DealWorkspace({
   const [payments, setPayments] = useState<Payment[]>(live.payments);
   const [comment, setComment] = useState(live.comment || "");
   const [stage, setStage] = useState(live.stage);
+  const [actualUntil, setActualUntil] = useState(live.actualUntil || "");
+  const [reservedUntil, setReservedUntil] = useState(live.reservedUntil || live.deferredUntil || "");
+  useEffect(() => { if (stage === "Дано обещание" && !actualUntil) setActualUntil(defaultHoldUntil(1)); }, [stage, actualUntil]);
   useEffect(() => {
     if (hideBack) onDisplayStage?.(stage);
   }, [hideBack, onDisplayStage, stage]);
@@ -223,6 +229,8 @@ export function DealWorkspace({
     setIssued(form.issued);
     setRentalFrom(form.rentalFrom);
     setRentalTo(form.rentalTo);
+    setActualUntil(form.actualUntil);
+    setReservedUntil(form.reservedUntil);
     setReturnInfo(form.returnInfo);
     setBaseline(formSnapshot(form));
   }, [live.id, live.number, live.kind]);
@@ -244,6 +252,8 @@ export function DealWorkspace({
       issued,
       rentalFrom,
       rentalTo,
+      actualUntil,
+      reservedUntil,
       returnInfo,
     }) !== baseline;
 
@@ -261,6 +271,7 @@ export function DealWorkspace({
   const holdKind = live.kind === "deferred" || live.kind === "promise";
   const stages = (STAGES_BY_KIND[live.kind] ?? [])
     .filter((s) => !HIDDEN_STAGES.has(s))
+    .filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))
     .filter((s) => !(holdKind && s === "Успех"))
     .filter((s) => !(live.kind === "sliv" && !live.meetingDate && s !== "Провал"));
   const stageOptions = stages.includes(stage) || HIDDEN_STAGES.has(stage) ? stages : [stage, ...stages];
@@ -268,6 +279,8 @@ export function DealWorkspace({
   const closedNeedsReason = closed && stage !== live.stage;
 
   async function saveAll() {
+    const holdError = holdStageError({ ...live, stage, comment, companyName, items, actualUntil, reservedUntil });
+    if (holdError) { setError(holdError); return; }
     if (closedNeedsReason && !stageReason.trim()) {
       setError("Укажите причину изменения завершённой заявки");
       return;
@@ -314,6 +327,8 @@ export function DealWorkspace({
         payments,
         comment: comment || undefined,
         stage,
+        actualUntil,
+        reservedUntil,
         reason: stageReason.trim() || undefined,
         total: live.total || total,
         paid,
@@ -356,6 +371,8 @@ export function DealWorkspace({
           issued,
           rentalFrom,
           rentalTo,
+      actualUntil,
+      reservedUntil,
           returnInfo,
         })
       );
@@ -427,16 +444,16 @@ export function DealWorkspace({
             )}
           </div>
         </div>
-        {!hideBack && (
-          <StageBadge stage={stage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
-        )}
+        <StageBadge stage={stage} options={stageOptions.filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))} onChange={setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
       </div>
       <Hint>
         Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
-        сверху. Перемещение из продажи и других видов спросит, сменить ли тип на отложку или обещание.
+        сверху. Этап меняется в цветной плашке. Перемещение сохраняет вид заявки.
       </Hint>
 
       <div className="space-y-5">
+        {stage === "Дано обещание" && <Card><Field label="Актуально до" required><input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} /></Field></Card>}
+        {stage === "Товар отложен" && <Card><Field label="Срок действия отложки" required><input type="date" className="input" value={reservedUntil} onChange={(e) => setReservedUntil(e.target.value)} /></Field></Card>}
         <DealActionsBar
           onTask={() => setTaskOpen(true)}
           onConvert={canConvert ? () => setConvertOpen(true) : undefined}
@@ -644,26 +661,13 @@ export function DealWorkspace({
         <Card>
           <SectionTitle>Комментарий</SectionTitle>
           <fieldset className="disabled:opacity-80">
-            <CommentField value={comment} onChange={setComment} />
+            <CommentField value={comment} onChange={setComment} required={stage === "Дано обещание"} />
           </fieldset>
         </Card>
 
         <Card>
-          <SectionTitle>Этап заявки</SectionTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              size="sm"
-              className="w-[240px]"
-              value={stage}
-              onChange={setStage}
-              options={opts(...stageOptions)}
-            />
-            {holdKind && (
-              <span className="text-[12px] text-mute">
-                В Успех отсюда не закрывается. Сначала «Сменить тип»: продажа, компания или аренда. Появятся поля этого вида, включая оплату.
-              </span>
-            )}
-          </div>
+          <SectionTitle>Дополнительные действия</SectionTitle>
+          {holdKind && <p className="text-[12px] text-mute">Это заявка старого вида. Перед завершением выберите продажу, компанию или аренду через «Сменить тип».</p>}
           {closedNeedsReason && (
             <label className="block mt-3">
               <span className="field-label">Причина изменения</span>

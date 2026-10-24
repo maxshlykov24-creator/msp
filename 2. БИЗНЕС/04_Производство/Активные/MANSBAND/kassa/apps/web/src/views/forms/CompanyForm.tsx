@@ -1,6 +1,7 @@
+import { defaultHoldUntil, isHoldStage } from "@kassa/shared";
 import { useState } from "react";
 import { useStore } from "../../store";
-import { Card, Field } from "../../components/ui";
+import { Card, Field, StageBadge } from "../../components/ui";
 import { AtelierAmountField } from "../../components/AtelierAmountField";
 import { ProductPicker, cartTotal, cartItemsDiscount } from "../../components/ProductPicker";
 import {
@@ -31,7 +32,7 @@ import { formatPhone } from "../../lib/format";
 import type { CartItem, Deal, Payment } from "../../data/types";
 
 /** При создании компании — только «Товар отложен»; счёт Эдвину уходит автоматически. */
-const COMPANY_CREATE_STAGES = ["Товар отложен"];
+const COMPANY_CREATE_STAGES = ["Дано обещание", "Ждет товар", "Товар в магазине"];
 
 export function CompanyForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
@@ -67,13 +68,16 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
   const [tips, setTips] = useState<TipsInfo>({ amount: 0, status: "issued", destination: "" });
 
   const [comment, setComment] = useState("");
-  const [stage, setStage] = useState("Товар отложен");
+  const [stage, setStage] = useState("Товар в магазине");
 
+  const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
   const missingRequired = [
+    stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
+    stage === "Дано обещание" && !actualUntil && "Актуально до",
     !client.phone && "Телефон клиента",
     !client.name && "Имя клиента",
-    !managerPhone && "Телефон руководителя",
-    !managerName && "Имя руководителя",
+    !isHoldStage(stage) && !managerPhone && "Телефон руководителя",
+    !isHoldStage(stage) && !managerName && "Имя руководителя",
     !companyName.trim() && "Наименование компании",
     items.length === 0 && "Товары",
     ...changeTipsMissing(paid, total, changeInfo, tips),
@@ -109,6 +113,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       items,
       payments,
       stage: s,
+      actualUntil: s === "Дано обещание" ? actualUntil : undefined,
       comment,
       paymentDate: lastPaymentDate(payments),
       checkDiscount: discount || undefined,
@@ -129,10 +134,12 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       subtitle="Оффлайн"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
+      stageBadge={<StageBadge stage={stage} options={COMPANY_CREATE_STAGES} onChange={setStage} className="text-[16px] px-3.5 py-2" />}
       summary={<SummaryBar total={total} paid={paid} />}
       missingRequired={missingRequired}
       footer={
         <StageActions
+          hideStageSelector
           stages={COMPANY_CREATE_STAGES}
           stage={stage}
           onStageChange={setStage}
@@ -149,7 +156,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
           <ClientFields data={client} onChange={setClient} nameLabel="ФИО клиента" />
         </div>
         <div className="mt-4 grid sm:grid-cols-2 gap-4">
-          <Field label="Телефон руководителя" required>
+          <Field label="Телефон руководителя" required={!isHoldStage(stage)}>
             <input
               className="input"
               inputMode="tel"
@@ -158,7 +165,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
               onChange={(e) => setManagerPhone(formatPhone(e.target.value))}
             />
           </Field>
-          <Field label="Имя руководителя" required>
+          <Field label="Имя руководителя" required={!isHoldStage(stage)}>
             <input
               className="input"
               value={managerName}
@@ -178,7 +185,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       </Card>
 
       <Card>
-        <SectionTitle>Товары, стоимость и скидка</SectionTitle>
+        <SectionTitle>{stage === "Дано обещание" ? "Интересующие товары" : "Товары, стоимость и скидка"}</SectionTitle>
         <ProductPicker items={items} onChange={setItems} />
         <div className="mt-4 grid sm:grid-cols-2 gap-4">
           <AtelierAmountField value={atelier} onChange={setAtelier} />
@@ -200,7 +207,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       <Card>
         <SectionTitle>Документы и выдача</SectionTitle>
         <p className="hint-only text-[12px] text-mute mb-3">
-          При сохранении Эдвину автоматически уходит задача «Выставить счет». Номер и дату счёта
+          После выполнения задачи «Сделать отложку» Эдвину уходит задача «Выставить счет». Номер и дату счёта
           он заполняет в своей очереди.
         </p>
         <label className={`rounded-lg border p-3 flex items-center gap-3 cursor-pointer ${issued ? "border-emerald-400/40 bg-emerald-400/10" : "border-ink-700"}`}>
@@ -229,9 +236,10 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       </Card>
 
       <Card>
-        <CommentField value={comment} onChange={setComment} />
+        <CommentField value={comment} onChange={setComment} required={stage === "Дано обещание"} />
       </Card>
 
+      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} /></Field></Card>}
       {toast}
     </FormShell>
   );

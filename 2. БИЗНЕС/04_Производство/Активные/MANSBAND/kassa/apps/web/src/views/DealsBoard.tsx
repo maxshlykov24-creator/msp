@@ -144,7 +144,7 @@ export function DealsBoard({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [active, setActive] = useState<Deal | null>(null);
-  const [headerStage, setHeaderStage] = useState<string | null>(null);
+  const [, setHeaderStage] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(60);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -517,14 +517,6 @@ export function DealsBoard({
         open={!!active}
         onClose={closeDeal}
         title={active ? `Заявка №${active.number}` : "Заявка"}
-        aside={
-          (headerStage ?? active?.stage) ? (
-            <StageBadge
-              stage={(headerStage ?? active?.stage) as string}
-              className="text-[16px] px-3.5 py-2 font-semibold"
-            />
-          ) : null
-        }
         xl
       >
         {active && (

@@ -1,3 +1,4 @@
+import { defaultHoldUntil } from "@kassa/shared";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
@@ -33,7 +34,7 @@ import { STAGES_BY_KIND, STORE_ADDRESS } from "../../data/mock";
 import type { CartItem, Deal, Payment } from "../../data/types";
 
 // При создании: без «Провал» (это слив/не слив) и без «Товар в магазине» (проставляют позже).
-const SAVE_STAGES = STAGES_BY_KIND.sale.filter((s) => s !== "Успех" && s !== "Товар в магазине");
+const SAVE_STAGES = STAGES_BY_KIND.sale.filter((s) => !["Успех", "Товар в пути", "Товар отложен"].includes(s));
 
 export function SaleForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
@@ -102,13 +103,16 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
   const [comment, setComment] = useState("");
 
   // Этап для ручного сохранения
-  const [stage, setStage] = useState("Товар отложен");
+  const [stage, setStage] = useState("Товар в магазине");
   const [taskOpen, setTaskOpen] = useState(false);
 
+  const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
   const missingRequired = [
+    stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
+    stage === "Дано обещание" && !actualUntil && "Актуально до",
     !client.phone && "Телефон клиента",
     !client.name && "Имя клиента",
-    items.length === 0 && "Товары",
+    stage !== "Дано обещание" && items.length === 0 && "Товары",
     ...changeTipsMissing(paid, total, changeInfo, tips),
   ].filter(Boolean) as string[];
   const missingForSuccess = sourceMissingForSuccess(client);
@@ -142,6 +146,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       items,
       payments,
       stage: s,
+      actualUntil: s === "Дано обещание" ? actualUntil : undefined,
       comment,
       paymentDate: lastPaymentDate(payments),
       linkedDealNumber: slivFound?.number,
@@ -162,7 +167,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       subtitle="Оффлайн"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
-      stageBadge={<StageBadge stage={stage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0" />}
+      stageBadge={<StageBadge stage={stage} options={SAVE_STAGES} onChange={setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0" />}
       headerActions={
         <DealActionsBar onTask={() => setTaskOpen(true)} />
       }
@@ -170,6 +175,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       missingRequired={missingRequired}
       footer={
         <StageActions
+          hideStageSelector
           stages={SAVE_STAGES}
           stage={stage}
           onStageChange={setStage}
@@ -236,7 +242,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
 
       {/* Товары, стоимость и скидка */}
       <Card>
-        <SectionTitle>Товары, стоимость и скидка</SectionTitle>
+        <SectionTitle>{stage === "Дано обещание" ? "Интересующие товары" : "Товары, стоимость и скидка"}</SectionTitle>
         <ProductPicker items={items} onChange={setItems} dealNumber={meta.number} dealKind="sale" />
         <div className="mt-3 max-w-[220px]">
           <div className="field-label">Доставка</div>
@@ -286,10 +292,11 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
           items={items}
         />
         <div className="mt-4">
-          <CommentField value={comment} onChange={setComment} />
+          <CommentField value={comment} onChange={setComment} required={stage === "Дано обещание"} />
         </div>
       </Card>
 
+      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} /></Field></Card>}
       {toast}
     </FormShell>
   );

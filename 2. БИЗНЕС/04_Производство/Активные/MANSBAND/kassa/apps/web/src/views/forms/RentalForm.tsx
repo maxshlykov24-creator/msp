@@ -1,7 +1,8 @@
+import { defaultHoldUntil, isHoldStage } from "@kassa/shared";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
-import { Card, Field } from "../../components/ui";
+import { Card, Field, StageBadge } from "../../components/ui";
 import { ProductPicker } from "../../components/ProductPicker";
 import {
   ClientFields,
@@ -37,7 +38,7 @@ import { attachmentsToUpload, type PhotoAttachment } from "../../lib/photo";
 import type { CartItem, Deal, Payment } from "../../data/types";
 
 // При создании — только оплата и «Ждет товар». «В аренде» / возврат — позже в карточке.
-const SAVE_STAGES = ["Аренда оплачена", "Ждет товар"];
+const SAVE_STAGES = ["Аренда оплачена", "Дано обещание", "Ждет товар", "Товар в магазине"];
 
 /** Прибавить дни к дате YYYY-MM-DD. */
 function addDays(dateStr: string, days: number): string {
@@ -117,13 +118,16 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
   const topUpPaid = topUp.payments.reduce((s, p) => s + p.amount, 0);
   const totalPaid = paid + topUpPaid;
   const topUpChange = Math.max(0, topUpPaid - Math.max(0, remainder));
+  const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
   const missingRequired = [
+    stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
+    stage === "Дано обещание" && !actualUntil && "Актуально до",
     !client.phone && "Телефон клиента",
     !client.name && "Имя клиента",
-    !from && "Дата начала аренды",
-    !to && "Дата конца аренды",
-    items.length === 0 && "Комплект",
-    photos.length === 0 && "Фото паспорта",
+    !isHoldStage(stage) && !from && "Дата начала аренды",
+    !isHoldStage(stage) && !to && "Дата конца аренды",
+    stage !== "Дано обещание" && items.length === 0 && "Комплект",
+    !isHoldStage(stage) && photos.length === 0 && "Фото паспорта",
     stage === "Аренда оплачена" && totalPaid < total && "Полная оплата аренды",
     ...changeTipsMissing(paid, total, changeInfo, tips),
     ...changeTipsMissing(topUpPaid, Math.max(0, remainder), topUp.changeInfo, topUp.tips),
@@ -156,6 +160,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       ],
       payments: [...payments, ...topUp.payments],
       stage: s,
+      actualUntil: s === "Дано обещание" ? actualUntil : undefined,
       rentalFrom: from,
       rentalTo: to,
       issueDate: issueDate || undefined,
@@ -195,10 +200,12 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       subtitle="Оффлайн"
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
+      stageBadge={<StageBadge stage={stage} options={SAVE_STAGES} onChange={setStage} className="text-[16px] px-3.5 py-2" />}
       summary={<SummaryBar total={total} paid={totalPaid} />}
       missingRequired={missingRequired}
       footer={
         <StageActions
+          hideStageSelector
           stages={SAVE_STAGES}
           stage={stage}
           onStageChange={setStage}
@@ -225,7 +232,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
 
       {/* Товары, стоимость и скидка */}
       <Card>
-        <SectionTitle>Товары, стоимость и скидка</SectionTitle>
+        <SectionTitle>{stage === "Дано обещание" ? "Интересующие товары" : "Товары, стоимость и скидка"}</SectionTitle>
         <div className="flex items-center justify-between rounded-lg bg-ink-900 border border-ink-700 px-4 py-3 mb-3">
           <span className="text-white text-sm">Аренда комплекта</span>
           <span className="text-gold-soft font-semibold">{money(RENTAL_SERVICE_PRICE)}</span>
@@ -241,11 +248,11 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       <Card>
         <SectionTitle>Сроки</SectionTitle>
         <div className="grid sm:grid-cols-2 gap-4">
-          <Field label="Дата начала аренды" required>
+          <Field label="Дата начала аренды" required={!isHoldStage(stage)}>
             <input type="date" className="input" value={from} onChange={(e) => handleFrom(e.target.value)} />
             <DateFieldHint value={from} />
           </Field>
-          <Field label="Дата конца аренды" required>
+          <Field label="Дата конца аренды" required={!isHoldStage(stage)}>
             <input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} />
             <DateFieldHint value={to} />
           </Field>
@@ -288,7 +295,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
         <SectionTitle>Источник и цель</SectionTitle>
         <SourceFields data={client} onChange={setClient} />
         <div className="mt-4">
-          <CommentField value={comment} onChange={setComment} />
+          <CommentField value={comment} onChange={setComment} required={stage === "Дано обещание"} />
         </div>
       </Card>
 
@@ -298,6 +305,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
         <PhotoField photos={photos} onChange={setPhotos} label="Фото паспорта / прав" />
       </Card>
 
+      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} /></Field></Card>}
       {toast}
     </FormShell>
   );

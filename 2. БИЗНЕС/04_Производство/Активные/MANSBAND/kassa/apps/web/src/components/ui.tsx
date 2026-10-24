@@ -83,8 +83,14 @@ export function Badge({
 }
 
 /** Бейдж этапа amoCRM — палитра в CSS, светлая тема читается отдельно. */
-export function StageBadge({ stage, className = "" }: { stage: string; className?: string }) {
+export function StageBadge({ stage, className = "", options, onChange }: { stage: string; className?: string; options?: string[]; onChange?: (stage: string) => void }) {
   const group = getStageGroup(stage);
+  if (options && onChange) return (
+    <select aria-label="Этап заявки" title="Изменить этап заявки" className={`chip stage-tone stage-tone-${group} cursor-pointer pr-7 ${className}`} value={stage} onChange={(e) => onChange(e.target.value)}>
+      {!options.includes(stage) && <option value={stage} disabled>{stage}</option>}
+      {options.map((s) => <option key={s} value={s}>{s}</option>)}
+    </select>
+  );
   return (
     <span
       title={stage}

@@ -1260,6 +1260,7 @@ export function StageActions({
   successStage,
   successDisabled,
   successHint,
+  hideStageSelector = false,
   onSuccess,
 }: {
   stages: string[];
@@ -1271,6 +1272,7 @@ export function StageActions({
   successStage?: string;
   successDisabled?: boolean;
   successHint?: string;
+  hideStageSelector?: boolean;
   onSuccess?: () => void;
 }) {
   // «Новая заявка» / «Взято в работу» в селекте не показываем, если есть другие этапы.
@@ -1294,14 +1296,14 @@ export function StageActions({
           {successHint}
         </span>
       )}
-      <Select
+      {!hideStageSelector && <Select
         value={effectiveStage}
         onChange={onStageChange}
         options={opts(...selectStages)}
         disabled={saved}
         size="sm"
         className="w-[220px]"
-      />
+      />}
       <Button variant="subtle" className="py-2" disabled={disabled || saved} onClick={() => onSave(effectiveStage)}>
         Сохранить
       </Button>

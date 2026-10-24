@@ -10,7 +10,7 @@ import {
   taskTitle,
   type Product,
 } from "@kassa/shared";
-import type { CartItem, Deal, DealKind } from "../data/types";
+import type { CartItem } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
 import { Button, Modal, Select, opts } from "./ui";
 import { groupLocations } from "../lib/selectGroups";
@@ -74,7 +74,6 @@ export function MovementModal({
   /** Перед созданием задачи: сохранить заявку и вернуть серверный номер (форма создания). */
   ensureDeal,
   onCreated,
-  dealKind,
 }: {
   open: boolean;
   onClose: () => void;
