@@ -56,6 +56,8 @@ function matchesKindGroup(
   group: (typeof KIND_GROUPS)[number]
 ): boolean {
   if (!group.kinds) return true;
+  if (group.id === "promise") return d.stage === "Дано обещание" || (d.kind === "promise" && !["Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"].includes(d.stage));
+  if (group.id === "deferred") return ["sale", "company", "rental", "deferred", "promise"].includes(d.kind) && ["Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"].includes(d.stage);
   if (group.kinds.includes(d.kind)) return true;
   // Продажи на этапах отложки — во вкладке «Отложка», но не компания/аренда.
   if (group.saleStages && d.kind === "sale" && group.saleStages.includes(d.stage)) {

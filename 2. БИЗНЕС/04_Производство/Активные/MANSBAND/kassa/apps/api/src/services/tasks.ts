@@ -431,8 +431,8 @@ async function acceptMovement(row: TaskRow, by: string): Promise<Task> {
       if (p.productId) itemIds.add(p.productId);
     }
     for (const itemId of itemIds) {
-      // Приёмка сразу = отложка: этап сделки «Товар отложен».
-      await setItemState(row.dealNumber, itemId, "reserved", location, itemMeta);
+      // Приёмка подтверждает наличие; физический резерв — отдельная задача.
+      await setItemState(row.dealNumber, itemId, "in_store", location, itemMeta);
     }
   }
   return toTask(updated ?? row);

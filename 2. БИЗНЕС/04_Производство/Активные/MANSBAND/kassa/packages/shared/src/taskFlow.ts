@@ -1,5 +1,27 @@
 import type { Deal, DealKind, Task, TaskAssigneeRole, TaskKind, User } from "./types.js";
 
+/** Продажа сохраняет вид на этапах обещания, доставки в магазин и резерва. */
+export const HOLD_DEAL_KINDS: DealKind[] = ["sale", "company", "rental", "deferred", "promise"];
+export const HOLD_STAGES = ["Дано обещание", "Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"];
+export const AUTOMATIC_HOLD_STAGES = ["Товар в пути", "Товар отложен"];
+export function isHoldStage(stage: string): boolean { return HOLD_STAGES.includes(stage); }
+export function defaultHoldUntil(paid: number, today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date())): string {
+  const date = new Date(`${today}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + (paid > 0 ? 14 : 1));
+  return date.toISOString().slice(0, 10);
+}
+export function holdStageError(deal: Pick<Deal, "kind" | "stage" | "comment" | "actualUntil" | "reservedUntil" | "deferredUntil" | "companyName" | "items">): string | null {
+  if (!HOLD_DEAL_KINDS.includes(deal.kind) || !isHoldStage(deal.stage)) return null;
+  if (deal.stage === "Дано обещание") {
+    if (!deal.comment?.trim()) return "Для обещания нужен комментарий";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(deal.actualUntil || "")) return "Укажите, до какого числа актуально обещание";
+  }
+  if (deal.kind === "company" && !deal.companyName?.trim()) return "Укажите наименование компании";
+  if (deal.kind === "company" && !deal.items.length) return "Укажите товары компании";
+  if (deal.stage === "Товар отложен" && !/^\d{4}-\d{2}-\d{2}$/.test(deal.reservedUntil || deal.deferredUntil || "")) return "Укажите срок отложки";
+  return null;
+}
+
 /** Открытая заявка с истёкшим календарным сроком. Сегодня ещё не просрочка. */
 export function isDealOverdue(deal: Deal, today: string): boolean {
   if (["Успех", "Провал", "Не слив"].includes(deal.stage)) return false;
@@ -87,28 +109,28 @@ export const TASK_FLOW: TaskFlowRule[] = [
     trigger: {
       source: "stage",
       stage: "Ждет товар",
-      // Перемещение только из отложки / обещания (правки владельца 12.08.2026).
-      dealKinds: ["deferred", "promise"],
+      // Продажа, компания и аренда сохраняют вид; старые виды поддерживаются.
+      dealKinds: HOLD_DEAL_KINDS,
       description: "Отложка или обещание встала на этап «Ждет товар» / создано перемещение",
     },
     assignee: "source_warehouse",
     nextStage: IN_TRANSIT_STAGE,
     followUp: "movement_accept",
     inside: "Откуда и куда везём + позиции заявки; «Отправлено» → этап «Товар в пути» и задача приёмки у получателя",
-    note: "Только отложка и обещание. При создании перемещения заявка уходит на «Ждет товар»",
+    note: "При создании перемещения вид сохраняется, этап → «Ждет товар»",
   },
   {
     kind: "movement_accept",
     label: "Принять товар",
-    actionLabel: "Товар отложен",
+    actionLabel: "Товар принят",
     trigger: {
       source: "task_done",
       afterKind: "movement",
       description: "Отправитель отметил «Товар в пути»",
     },
     assignee: "target_warehouse",
-    nextStage: "Товар отложен",
-    inside: "Приёмка: документ в МойСклад + этап заявки «Товар отложен»",
+    nextStage: IN_STORE_STAGE,
+    inside: "Приёмка: документ в МойСклад → «Товар в магазине» → задача «Сделать отложку»",
   },
   {
     kind: "reserve",
@@ -118,7 +140,7 @@ export const TASK_FLOW: TaskFlowRule[] = [
       source: "stage",
       stage: IN_STORE_STAGE,
       // Отложка/обещание: товар уже на точке (без перемещения или после приёмки).
-      dealKinds: ["deferred", "promise"],
+      dealKinds: HOLD_DEAL_KINDS,
       description: "Отложка/обещание на этапе «Товар в магазине» — отложить сейчас",
     },
     assignee: "consultant",

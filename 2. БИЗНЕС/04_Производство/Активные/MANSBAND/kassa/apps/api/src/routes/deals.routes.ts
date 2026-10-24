@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import {
   addCommentSchema,
+  holdStageError,
+  HOLD_DEAL_KINDS,
+  AUTOMATIC_HOLD_STAGES,
   companyHandoverSchema,
   companyStatusSchema,
   convertKindSchema,
@@ -193,6 +196,10 @@ export default async function dealsRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? "Некорректные данные" });
     const existing = await deals.resolve(ref);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
+    const holdError = holdStageError({ ...existing, ...parsed.data });
+    if (holdError) return reply.code(400).send({ message: holdError });
+    if (parsed.data.stage && parsed.data.stage !== existing.stage && HOLD_DEAL_KINDS.includes(existing.kind) && AUTOMATIC_HOLD_STAGES.includes(parsed.data.stage)) return reply.code(400).send({ message: "Этот этап устанавливается после выполнения задачи" });
+
     if (COMPLETED_STAGES.has(existing.stage) && parsed.data.stage && parsed.data.stage !== existing.stage && !parsed.data.reason?.trim()) {
       return reply.code(400).send({ message: "Укажите причину изменения завершённой сделки" });
     }
@@ -285,6 +292,10 @@ export default async function dealsRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? "Некорректный этап" });
     const existing = await deals.resolve(ref);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
+    const holdError = holdStageError({ ...existing, ...parsed.data });
+    if (holdError) return reply.code(400).send({ message: holdError });
+    if (parsed.data.stage !== existing.stage && HOLD_DEAL_KINDS.includes(existing.kind) && AUTOMATIC_HOLD_STAGES.includes(parsed.data.stage)) return reply.code(400).send({ message: "Этот этап устанавливается после выполнения задачи" });
+
     if (COMPLETED_STAGES.has(existing.stage) && !parsed.data.reason?.trim()) {
       return reply.code(400).send({ message: "Укажите причину изменения завершённой сделки" });
     }

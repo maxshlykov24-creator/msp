@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { holdStageError, isHoldStage } from "./taskFlow.js";
+import type { Deal } from "./types.js";
 import { COMPANY_STAGES_WITH_INVOICE, EDWIN_EXPENSE_CATEGORIES } from "./constants.js";
 
 // Zod-схемы для валидации запросов на бэке и форм на фронте.
@@ -127,6 +129,8 @@ const payoutRowSchema = z.object({
 /** Частичное обновление заявки из карточки (вид как при создании). */
 export const updateDealSchema = z
   .object({
+    actualUntil: z.string().optional(),
+    reservedUntil: z.string().optional(),
     consultant: z.string().optional(),
     referredBy: z.string().optional(),
     clientName: z.string().optional(),
@@ -413,6 +417,8 @@ export const createDealSchema = z
   })
   .passthrough()
   .superRefine((v, ctx) => {
+    const holdError = holdStageError(v as unknown as Deal);
+    if (holdError) ctx.addIssue({ code: z.ZodIssueCode.custom, message: holdError });
     if (!v.idempotencyKey && !v.id) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["idempotencyKey"], message: "Нужен idempotencyKey или id" });
     }
@@ -446,7 +452,7 @@ export const createDealSchema = z
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["documentsStatus"], message: "Документы не готовы — заявку нельзя закрыть" });
       }
     }
-    if (v.kind === "rental" && v.stage !== "Провал") {
+    if (v.kind === "rental" && v.stage !== "Провал" && !isHoldStage(v.stage)) {
       if (!v.rentalFrom || !v.rentalTo) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["rentalFrom"], message: "Укажите плановые даты аренды" });
       }

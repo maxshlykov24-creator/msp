@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  ShoppingBag, Building2, Ticket, Shirt, Clock, HandHeart, XCircle, Send,
+  ShoppingBag, Building2, Ticket, Shirt, XCircle, Send,
   Mail, Truck, AlertTriangle, Droplets, Scissors, Replace, Undo2, RefreshCw, Tag,
 } from "lucide-react";
 import type { Deal, DealKind, FunnelType } from "../data/types";
@@ -27,8 +27,6 @@ const KINDS: Record<FunnelType, { kind: DealKind; icon: typeof ShoppingBag }[]> 
     { kind: "company", icon: Building2 },
     { kind: "cert_plastic", icon: Ticket },
     { kind: "rental", icon: Shirt },
-    { kind: "deferred", icon: Clock },
-    { kind: "promise", icon: HandHeart },
     { kind: "no_sliv", icon: XCircle },
     { kind: "sliv", icon: Send },
   ],

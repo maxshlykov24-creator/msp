@@ -4,6 +4,7 @@ import { deals as dealsTable, amoMeta } from "../db/schema.js";
 import * as amo from "../clients/amo.js";
 import {
   AMO_LEAD_FIELDS,
+  defaultHoldUntil,
   AMO_PIPELINE_COMPLAINTS,
   AMO_PIPELINE_SALES,
   AMO_SYSTEM_STATUS_IDS,
@@ -119,7 +120,7 @@ export function kindForAmoStage(stage: string, currentKind: DealKind): DealKind 
   if (AMO_DELIVERY_STAGES.has(stage) && currentKind !== "delivery") return "delivery";
   if (
     AMO_DEFERRED_STAGES.has(stage) &&
-    (currentKind === "sale" || currentKind === "defect")
+    currentKind === "defect"
   ) {
     return "deferred";
   }
@@ -339,6 +340,7 @@ export async function updateStage(
     ...deal,
     stage,
     kind: patch?.kind ?? deal.kind,
+    reservedUntil: stage === "Товар отложен" && deal.stage !== stage ? defaultHoldUntil(deal.paid) : deal.reservedUntil,
     meetingDate: patch?.meetingDate ?? deal.meetingDate,
     issued: patch?.issued ?? deal.issued,
     history: [

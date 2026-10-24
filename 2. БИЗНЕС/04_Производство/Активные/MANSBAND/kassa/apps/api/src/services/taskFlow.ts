@@ -13,6 +13,7 @@ import {
 } from "@kassa/shared";
 import * as deals from "./deals.js";
 import * as financeQueue from "./queue.js";
+import { enqueueCompanyChain } from "./sale.js";
 import { appendSystemAudit } from "./audit.js";
 
 /**
@@ -93,6 +94,9 @@ async function hasTaskForDeal(dealNumber: number, kinds: TaskKind[]): Promise<bo
  */
 export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<void> {
   if (depth > 3) return; // защита от циклов в правилах
+  if (deal.kind === "company" && deal.stage === "Товар отложен") {
+    await enqueueCompanyChain(deal, { dealNumber: deal.number, client: deal.clientName, status: "pending" });
+  }
   const rules = flowsForStage(deal.stage, deal.kind);
   for (const rule of rules) {
     if (rule.kind === "movement") {

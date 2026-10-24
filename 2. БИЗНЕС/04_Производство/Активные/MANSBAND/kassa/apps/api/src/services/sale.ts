@@ -242,11 +242,11 @@ export async function afterKindConverted(
   broadcast("queue.updated", {});
 }
 
-async function enqueueCompanyChain(
+export async function enqueueCompanyChain(
   deal: Deal,
   common: { dealNumber: number; client: string; status: "pending" }
 ): Promise<void> {
-  if (deal.kind !== "company") return;
+  if (deal.kind !== "company" || ["Дано обещание", "Ждет товар", "Товар в пути", "Товар в магазине", "Провал"].includes(deal.stage)) return;
   const company = deal.companyName?.trim() || deal.clientName;
   const due = Math.max(0, deal.total - deal.paid);
   const meta = {
