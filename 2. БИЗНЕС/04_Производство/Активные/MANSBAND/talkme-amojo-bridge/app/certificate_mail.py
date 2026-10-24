@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 BODY = """Вас приветствует магазин мужских костюмов Mansband👋🏻
 Поздравляем! Вам подарили сертификат на сумму {{lead.sale}} в сеть наших магазинов🎁
 
-Сертификат действителен с {{date.now}} по {{lead.cf(3169911)}}
+Сертификат действителен с {{lead.cf(3829442)}} по {{lead.cf(3169911)}}
 
 При посещение магазина достаточно просто показать электронный сертификат или назвать его номер
 
@@ -69,7 +69,9 @@ class MailSettings(BaseSettings):
     status_id: int = 0  # Must be confirmed against the actual account by the owner.
     account_id: int = 32417154
     email_field: int = 3829210
+    from_field: int = 3829442
     until_field: int = 3169911
+    delay_seconds: int = 300
     number_field: int = 3135463
     include_number: bool = False
     legacy_checked: bool = False
@@ -105,6 +107,8 @@ class CertificateMailJob(Base):
     state: Mapped[str] = mapped_column(String(32), default="queued", index=True)
     event_key: Mapped[str] = mapped_column(String(64))
     event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    check_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     message_id: Mapped[str] = mapped_column(String(120), default="")
@@ -127,6 +131,21 @@ def field_value(lead: dict, field_id: int) -> str:
 
 class InvalidCertificate(ValueError):
     pass
+
+
+def start_date(lead: dict, s: MailSettings):
+    try:
+        return datetime.fromtimestamp(int(field_value(lead, s.from_field)), MSK).date()
+    except (ValueError, OSError, OverflowError):
+        raise InvalidCertificate("missing_or_invalid_start")
+
+
+def anniversary(start):
+    # A calendar year: 29 February becomes 28 February in a non-leap year.
+    try:
+        return start.replace(year=start.year + 1)
+    except ValueError:
+        return start.replace(year=start.year + 1, day=28)
 
 
 def email_address(raw: str) -> str:
@@ -153,6 +172,7 @@ def email_address(raw: str) -> str:
 
 
 def render(lead: dict, s: MailSettings, now: datetime) -> tuple[str, str]:
+    start = start_date(lead, s)
     recipient = email_address(field_value(lead, s.email_field))
     price = lead.get("price")
     if isinstance(price, bool) or not re.fullmatch(r"[0-9]+", str(price)) or int(price) <= 0:
@@ -164,8 +184,10 @@ def render(lead: dict, s: MailSettings, now: datetime) -> tuple[str, str]:
     today = now.astimezone(MSK).date()
     if until < today:
         raise InvalidCertificate("certificate_expired")
+    if until != anniversary(start):
+        raise InvalidCertificate("expiry_not_anniversary")
     body = (BODY.replace("{{lead.sale}}", f"{int(price):,}".replace(",", " "))
-            .replace("{{date.now}}", today.strftime("%d.%m.%Y"))
+            .replace("{{lead.cf(3829442)}}", start.strftime("%d.%m.%Y"))
             .replace("{{lead.cf(3169911)}}", until.strftime("%d.%m.%Y")))
     if s.include_number:
         number = field_value(lead, s.number_field).strip()
@@ -224,6 +246,7 @@ def ingest(db: Session, rows: list[dict]) -> int:
             previous = job.event_at.replace(tzinfo=timezone.utc) if job.event_at.tzinfo is None else job.event_at
             if row["source_at"] > previous:
                 job.state, job.reason, job.event_key, job.event_at = "queued", "", row["key"], row["source_at"]
+                job.due_at, job.check_at = None, None
                 queued += 1
     db.commit()
     return queued
@@ -257,17 +280,21 @@ def read_lead(db: Session, lead_id: int) -> dict:
     return amo_v4.get_lead(lead_id=lead_id, access_token=get_valid_access_token(db))
 
 
-def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fetch=None, deliver=None):
+def write_expiry(db: Session, lead_id: int, stamp: int, s: MailSettings):
+    response = amo_v4.patch_lead_fields(lead_id=lead_id,
+        custom_fields_values=[{"field_id": s.until_field, "values": [{"value": stamp}]}],
+        access_token=get_valid_access_token(db))
+    if response.status_code not in (200, 204):
+        raise RuntimeError("expiry_update_failed")
+
+
+def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fetch=None, deliver=None, persist_expiry=None):
     if not s.live_ready():
         return
     job = db.get(CertificateMailJob, lead_id)
     if not job or job.state != "queued" or job.attempted_at is not None:
         return
     event_at = job.event_at.replace(tzinfo=timezone.utc) if job.event_at.tzinfo is None else job.event_at
-    if now - event_at > timedelta(seconds=s.max_age_seconds):
-        job.state, job.reason = "expired", "transition_too_old"
-        db.commit()
-        return
     lead = (fetch or read_lead)(db, lead_id)
     if (lead.get("pipeline_id") != s.pipeline_id or lead.get("status_id") != s.status_id
             or lead.get("is_deleted")):
@@ -275,6 +302,34 @@ def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fe
         db.commit()
         return
     try:
+        start = start_date(lead, s)
+        until = anniversary(start)
+        stamp = int(datetime.combine(until, datetime.min.time(), MSK).timestamp())
+        if field_value(lead, s.until_field) != str(stamp):
+            (persist_expiry or write_expiry)(db, lead_id, stamp, s)
+            lead = (fetch or read_lead)(db, lead_id)
+            # Never send until the CRM write is confirmed by a fresh read.
+            if field_value(lead, s.until_field) != str(stamp):
+                raise RuntimeError("expiry_update_not_confirmed")
+            if start_date(lead, s) != start:
+                return  # Manager changed start during PATCH; recompute on next tick.
+            if (lead.get("pipeline_id") != s.pipeline_id or lead.get("status_id") != s.status_id
+                    or lead.get("is_deleted")):
+                job.state, job.reason = "cancelled", "stage_changed"
+                db.commit()
+                return
+        due = max(event_at + timedelta(seconds=s.delay_seconds),
+                  datetime.combine(start, datetime.min.time(), MSK).astimezone(timezone.utc))
+        job.due_at = due
+        if now < due:
+            job.reason = "waiting_due_date"
+            job.check_at = min(due, now + timedelta(seconds=60))
+            db.commit()
+            return
+        if now - due > timedelta(seconds=s.max_age_seconds):
+            job.state, job.reason = "expired", "scheduled_send_too_old"
+            db.commit()
+            return
         recipient, body = render(lead, s, now)
     except InvalidCertificate as exc:
         job.state, job.reason = "blocked", str(exc)
@@ -314,7 +369,9 @@ def tick(s: MailSettings):
                 job.state, job.reason = "uncertain", "worker_interrupted"
         db.commit()
         ids = list(db.scalars(select(CertificateMailJob.lead_id).where(
-            CertificateMailJob.state == "queued").order_by(CertificateMailJob.created_at).limit(20)))
+            CertificateMailJob.state == "queued",
+            (CertificateMailJob.check_at.is_(None) | (CertificateMailJob.check_at <= now))
+            ).order_by(CertificateMailJob.check_at.asc().nullsfirst(), CertificateMailJob.created_at).limit(20)))
         for lid in ids:
             try:
                 process_job(db, lid, s, utcnow())
@@ -341,6 +398,7 @@ def summary(db: Session) -> dict:
     jobs = list(db.scalars(select(CertificateMailJob).order_by(CertificateMailJob.created_at.desc()).limit(50)))
     return {"mode": s.mode, "ready": s.live_ready(), "status_id": s.status_id,
         "jobs": [{"lead_id": j.lead_id, "state": j.state, "reason": j.reason,
+                  "due_at": j.due_at.isoformat() if j.due_at else None,
                   "attempted": j.attempted_at is not None} for j in jobs]}
 
 

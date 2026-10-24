@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.certificate_mail import (
     BODY, MSK, TABLES, CertificateMailJob, CertificateTransition, InvalidCertificate,
     MailSettings, email_address, ingest, process_job, render, transitions,
+    anniversary,
 )
 
 NOW = datetime(2026, 10, 22, 0, 20, tzinfo=MSK)
@@ -17,7 +18,7 @@ NOW = datetime(2026, 10, 22, 0, 20, tzinfo=MSK)
 @pytest.fixture
 def cfg():
     return MailSettings(mode="live", status_id=76675038, activated_at=int(NOW.timestamp()) - 10,
-        legacy_checked=True, webhook_secret=SecretStr("test-hook"), smtp_password=SecretStr("test-smtp"))
+        delay_seconds=0, legacy_checked=True, webhook_secret=SecretStr("test-hook"), smtp_password=SecretStr("test-smtp"))
 
 
 @pytest.fixture
@@ -33,6 +34,7 @@ def lead(**kw):
     return {"id": 17, "pipeline_id": 9601214, "status_id": 76675038, "price": 10000,
         "custom_fields_values": [
             {"field_id": 3829210, "values": [{"value": "owner@example.test"}]},
+            {"field_id": 3829442, "values": [{"value": int(datetime(2026, 10, 22, tzinfo=MSK).timestamp())}]},
             {"field_id": 3169911, "values": [{"value": int(datetime(2027, 10, 22, tzinfo=MSK).timestamp())}]},
             {"field_id": 3135463, "values": [{"value": "TEST-17"}]}], **kw}
 
@@ -48,13 +50,94 @@ def enqueue(store, cfg):
     return store.get(CertificateMailJob, 17)
 
 
+def set_field(data, fid, value):
+    data["custom_fields_values"] = [f for f in data["custom_fields_values"] if f["field_id"] != fid]
+    data["custom_fields_values"].append({"field_id": fid, "values": [{"value": value}]})
+
+
+def expiry_writer(data, calls=None):
+    def write(db, lid, stamp, settings):
+        if calls is not None:
+            calls.append(stamp)
+        set_field(data, settings.until_field, stamp)
+    return write
+
+
+def test_five_minute_delay_and_required_expiry_autofill(store, cfg):
+    cfg.delay_seconds = 300
+    job = enqueue(store, cfg)
+    data = lead()
+    set_field(data, cfg.until_field, "")
+    sends, writes = [], []
+    def run(now):
+        process_job(store, 17, cfg, now, fetch=lambda *args: data,
+            deliver=lambda *args: sends.append(args), persist_expiry=expiry_writer(data, writes))
+    run(NOW)
+    assert job.state == "queued" and not sends and len(writes) == 1
+    assert job.due_at.replace(tzinfo=timezone.utc) == (NOW + timedelta(minutes=5)).astimezone(timezone.utc)
+    run(NOW + timedelta(minutes=4, seconds=59))
+    assert not sends and len(writes) == 1
+    run(NOW + timedelta(minutes=5))
+    assert job.state == "accepted" and len(sends) == 1
+
+
+def test_future_start_survives_days_and_refetches_changes(store, cfg):
+    cfg.delay_seconds = 300
+    job = enqueue(store, cfg)
+    data = lead()
+    future = datetime(2026, 11, 1, tzinfo=MSK)
+    set_field(data, cfg.from_field, int(future.timestamp()))
+    sends = []
+    def run(now):
+        process_job(store, 17, cfg, now, fetch=lambda *args: data,
+            deliver=lambda *args: sends.append(args), persist_expiry=expiry_writer(data))
+    run(NOW)
+    assert job.state == "queued" and job.due_at.replace(tzinfo=timezone.utc) == future.astimezone(timezone.utc)
+    run(NOW + timedelta(days=2))
+    assert not sends and job.state == "queued"
+    # Manager moves start later: neither the old date nor old expiry may be used.
+    later = future + timedelta(days=1)
+    set_field(data, cfg.from_field, int(later.timestamp()))
+    run(future)
+    assert not sends and job.due_at.replace(tzinfo=timezone.utc) == later.astimezone(timezone.utc)
+    run(later)
+    assert len(sends) == 1 and "с 02.11.2026 по 02.11.2027" in sends[0][2]
+
+
+def test_stage_change_during_delay_cancels(store, cfg):
+    cfg.delay_seconds = 300
+    job = enqueue(store, cfg)
+    data = lead()
+    sends = []
+    process_job(store, 17, cfg, NOW, fetch=lambda *args: data, deliver=lambda *args: sends.append(args))
+    data["status_id"] = 142
+    process_job(store, 17, cfg, NOW + timedelta(minutes=5), fetch=lambda *args: data,
+                deliver=lambda *args: sends.append(args))
+    assert job.state == "cancelled" and not sends
+
+
+def test_expiry_write_must_be_confirmed_before_send(store, cfg):
+    job = enqueue(store, cfg)
+    data = lead()
+    set_field(data, cfg.until_field, "")
+    sends = []
+    with pytest.raises(RuntimeError, match="expiry_update_not_confirmed"):
+        process_job(store, 17, cfg, NOW, fetch=lambda *args: data,
+            deliver=lambda *args: sends.append(args), persist_expiry=lambda *args: None)
+    assert job.attempted_at is None and not sends
+
+
+def test_leap_anniversary():
+    assert str(anniversary(datetime(2028, 2, 29).date())) == "2029-02-28"
+
+
 def test_substitutions_moscow_current_date_and_number(cfg):
     recipient, body = render(lead(), cfg, NOW.astimezone(timezone.utc))
     assert recipient == "owner@example.test"
     assert "на сумму 10 000 в сеть" in body
     assert "с 22.10.2026 по 22.10.2027" in body
     assert "{{" not in body and "89310090251" in body
-    assert body == BODY.replace("{{lead.sale}}", "10 000").replace("{{date.now}}", "22.10.2026").replace("{{lead.cf(3169911)}}", "22.10.2027")
+    assert body == BODY.replace("{{lead.sale}}", "10 000").replace("{{lead.cf(3829442)}}", "22.10.2026").replace("{{lead.cf(3169911)}}", "22.10.2027")
     cfg.include_number = True
     assert "Номер сертификата: TEST-17" in render(lead(), cfg, NOW)[1]
 
@@ -103,7 +186,7 @@ def test_missing_fields_or_changed_stage_no_send(store, cfg, change, expected):
     assert job.state == expected and not calls and job.attempted_at is None
 
 
-@pytest.mark.parametrize("missing_field", [3829210, 3169911, 3135463])
+@pytest.mark.parametrize("missing_field", [3829210, 3829442, 3135463])
 def test_each_required_field_blocks_smtp(store, cfg, missing_field):
     cfg.include_number = True
     job = enqueue(store, cfg)
