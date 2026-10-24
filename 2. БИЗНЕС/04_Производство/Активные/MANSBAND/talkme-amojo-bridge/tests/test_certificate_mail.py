@@ -116,6 +116,20 @@ def test_stage_change_during_delay_cancels(store, cfg):
     assert job.state == "cancelled" and not sends
 
 
+def test_reentry_restarts_delay_even_if_exit_was_not_observed(store, cfg):
+    cfg.delay_seconds = 300
+    job = enqueue(store, cfg)
+    later = NOW + timedelta(minutes=4)
+    assert ingest(store, transitions(form(last_modified=str(int(later.timestamp()))), cfg, later)) == 1
+    calls = []
+    process_job(store, 17, cfg, NOW + timedelta(minutes=5), fetch=lambda *args: lead(),
+                deliver=lambda *args: calls.append(args))
+    assert job.state == "queued" and not calls
+    process_job(store, 17, cfg, later + timedelta(minutes=5), fetch=lambda *args: lead(),
+                deliver=lambda *args: calls.append(args))
+    assert len(calls) == 1
+
+
 def test_expiry_write_must_be_confirmed_before_send(store, cfg):
     job = enqueue(store, cfg)
     data = lead()

@@ -242,7 +242,7 @@ def ingest(db: Session, rows: list[dict]) -> int:
             job = CertificateMailJob(lead_id=row["lead_id"], event_key=row["key"], event_at=row["source_at"])
             db.add(job)
             queued += 1
-        elif job.attempted_at is None and job.state in {"blocked", "cancelled", "expired"}:
+        elif job.attempted_at is None and job.state in {"queued", "blocked", "cancelled", "expired"}:
             previous = job.event_at.replace(tzinfo=timezone.utc) if job.event_at.tzinfo is None else job.event_at
             if row["source_at"] > previous:
                 job.state, job.reason, job.event_key, job.event_at = "queued", "", row["key"], row["source_at"]
