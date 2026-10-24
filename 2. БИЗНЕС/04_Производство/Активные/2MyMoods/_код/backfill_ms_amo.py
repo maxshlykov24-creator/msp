@@ -1463,8 +1463,13 @@ def set_backlink(ms: lib.MS, amo: lib.Amo, journal: dict, oid: str, lead_id: str
     target = amo_lead_url(amo, lead_id)
     _set_entry(journal, oid, status="BACKLINK_WRITE_INTENT", lead_id=lead_id,
                contact_id=contact_id, backlink=target)
+    source_core = None
     for attempt in range(5):
         order = fresh_order(mss, oid, [0.0])
+        core = order_core_hash(order)
+        if source_core is not None and core != source_core:
+            raise Stop("SOURCE_CHANGED_DURING_BACKLINK_RETRY")
+        source_core = core
         link = ms_link(order)
         if link and link != target:
             raise Stop("BACKLINK_CONFLICT_AFTER_CREATION")
@@ -1477,7 +1482,7 @@ def set_backlink(ms: lib.MS, amo: lib.Amo, journal: dict, oid: str, lead_id: str
         attribute = {"id": MS_AMO_ATTR,
                      "meta": {"href": lib.MS_BASE + "/entity/customerorder/metadata/attributes/" + MS_AMO_ATTR,
                               "type": "attributemetadata", "mediaType": "application/json"}, "value": target}
-        code, _, error = api_write(mss, "PUT", lib.MS_BASE + "/entity/customerorder/" + oid,
+        code, response_body, error = api_write(mss, "PUT", lib.MS_BASE + "/entity/customerorder/" + oid,
                                   {"attributes": [attribute]}, headers={"X-Lognex-WebHook-Disable": "true"})
         after = fresh_order(mss, oid, [0.0])
         if any(attrs(after).get(k) != v for k, v in before.items() if k != MS_AMO_ATTR):
@@ -1488,7 +1493,16 @@ def set_backlink(ms: lib.MS, amo: lib.Amo, journal: dict, oid: str, lead_id: str
             return
         if ms_link(after):
             raise Stop("BACKLINK_CONFLICT_AFTER_WRITE")
-        if code not in (None, 429, 500, 502, 503, 504):
+        if code == 412:
+            _set_entry(journal, oid, last_backlink_error={
+                "http": code, "codes": [e.get("code") for e in response_body.get("errors", [])],
+                "at": datetime.now(TZ).isoformat(timespec="seconds"), "attempt": attempt + 1})
+            if order_core_hash(after) != source_core:
+                raise Stop("SOURCE_CHANGED_DURING_BACKLINK_RETRY")
+            if attempt == 4:
+                raise Stop("BACKLINK_NOT_CONFIRMED_HTTP_412_AFTER_5_READBACKS")
+            print("МойСклад HTTP 412: ссылка пуста, данные сохранны; повторю только запись ссылки после нового чтения.", flush=True)
+        if code not in (None, 412, 429, 500, 502, 503, 504):
             raise Stop(f"BACKLINK_NOT_CONFIRMED_HTTP_{code}")
         # A PUT of this same link is safe only after a fresh read of an empty link.
         time.sleep(min(30, 2 ** (attempt + 1)))
@@ -2240,6 +2254,37 @@ def self_test() -> None:
                 set_backlink(object(), amo, {"rows": {}}, "o", "1", {}, {}, "2")
                 self.assertEqual(len(write.call_args.args[3]["attributes"]), 1)
                 self.assertEqual(write.call_args.args[3]["attributes"][0]["id"], MS_AMO_ATTR)
+
+        def test_backlink_412_retry_is_bounded_and_readback_guarded(self):
+            import copy
+            amo = type("A", (), {"base": "https://example.amocrm.ru"})()
+            before = {"sum": 10000, "attributes": [{"id": "other", "value": "keep"}]}
+            after = {**before, "attributes": before["attributes"] + [{"id": MS_AMO_ATTR, "value": amo_lead_url(amo, "1")}]}
+            with patch.object(module, "save_journal"), patch.object(module, "ms_session"), \
+                 patch.object(module, "fresh_order", side_effect=[before, before, before, after]), \
+                 patch.object(module, "confirm_lead"), patch.object(module.time, "sleep"), \
+                 patch.object(module, "api_write", side_effect=[(412, {}, ""), (200, {}, "")]) as write:
+                j = {"rows": {}}
+                set_backlink(object(), amo, j, "o", "1", {}, {}, "2")
+                self.assertEqual(write.call_count, 2)
+                self.assertTrue(all(c.args[1] == "PUT" for c in write.call_args_list))
+                self.assertEqual(j["rows"]["o"]["status"], "VERIFIED")
+            with patch.object(module, "save_journal"), patch.object(module, "ms_session"), \
+                 patch.object(module, "fresh_order", return_value=before), \
+                 patch.object(module, "confirm_lead"), patch.object(module.time, "sleep"), \
+                 patch.object(module, "api_write", return_value=(412, {}, "")) as write:
+                with self.assertRaisesRegex(Stop, "412_AFTER_5_READBACKS"):
+                    set_backlink(object(), amo, {"rows": {}}, "o", "1", {}, {}, "2")
+                self.assertEqual(write.call_count, 5)
+            for changed in ({**before, "sum": 20000},
+                            {**before, "attributes": [{"id": MS_AMO_ATTR, "value": "https://other"}]}):
+                with patch.object(module, "save_journal"), patch.object(module, "ms_session"), \
+                     patch.object(module, "fresh_order", side_effect=[before, changed]), \
+                     patch.object(module, "confirm_lead"), patch.object(module.time, "sleep"), \
+                     patch.object(module, "api_write", return_value=(412, {}, "")) as write:
+                    with self.assertRaises(Stop):
+                        set_backlink(object(), amo, {"rows": {}}, "o", "1", {}, {}, "2")
+                    self.assertEqual(write.call_count, 1)
 
         def test_graph_includes_invoice_payment_and_return(self):
             def ref(kind, uid):
