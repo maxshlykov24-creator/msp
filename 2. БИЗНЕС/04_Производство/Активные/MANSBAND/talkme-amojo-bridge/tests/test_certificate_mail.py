@@ -244,15 +244,64 @@ def test_preview_and_crash_guard(store, cfg):
     assert not calls
 
 
-def test_blocked_requires_new_transition_not_field_edit_or_replayed_event(store, cfg):
+@pytest.mark.parametrize("missing", ["email", "number", "price", "start"])
+def test_missing_data_resumes_days_later_without_new_transition(store, cfg, missing):
+    cfg.include_number = True
+    cfg.delay_seconds = 300
+    job = enqueue(store, cfg)
+    data = lead()
+    if missing == "price":
+        data["price"] = 0
+    else:
+        fid = {"email": cfg.email_field, "number": cfg.number_field, "start": cfg.from_field}[missing]
+        set_field(data, fid, "")
+    calls = []
+    def run(now):
+        process_job(store, 17, cfg, now, fetch=lambda *args: data,
+            deliver=lambda *args: calls.append(args), persist_expiry=expiry_writer(data))
+    run(NOW + timedelta(minutes=5))
+    assert job.state == "blocked" and not calls and job.attempted_at is None
+    assert job.check_at is not None
+    assert ingest(store, transitions(form(), cfg, NOW)) == 0
+    # Still incomplete several days later; it must remain waiting, not expire.
+    run(NOW + timedelta(days=2))
+    assert job.state == "blocked" and not calls
+    data = lead()
+    store.expire_all()  # Simulate reloading the persisted queue after a restart.
+    run(NOW + timedelta(days=3))
+    job = store.get(CertificateMailJob, 17)
+    assert job.state == "accepted" and len(calls) == 1
+    run(NOW + timedelta(days=4))
+    assert len(calls) == 1
+
+
+def test_blocked_deal_leaving_stage_cancels(store, cfg):
     job = enqueue(store, cfg)
     calls = []
-    process_job(store, 17, cfg, NOW, fetch=lambda *args: lead(custom_fields_values=[]), deliver=lambda *args: calls.append(args))
+    process_job(store, 17, cfg, NOW, fetch=lambda *args: lead(custom_fields_values=[]),
+                deliver=lambda *args: calls.append(args))
     assert job.state == "blocked"
-    assert ingest(store, transitions(form(), cfg, NOW)) == 0
-    process_job(store, 17, cfg, NOW, fetch=lambda *args: lead(), deliver=lambda *args: calls.append(args))
+    process_job(store, 17, cfg, NOW + timedelta(days=2), fetch=lambda *args: lead(status_id=142),
+                deliver=lambda *args: calls.append(args))
+    assert job.state == "cancelled" and not calls
+
+
+def test_late_start_field_still_respects_future_date(store, cfg):
+    cfg.delay_seconds = 300
+    job = enqueue(store, cfg)
+    calls = []
+    data = lead()
+    set_field(data, cfg.from_field, "")
+    def run(now):
+        process_job(store, 17, cfg, now, fetch=lambda *args: data,
+            deliver=lambda *args: calls.append(args), persist_expiry=expiry_writer(data))
+    run(NOW)
+    assert job.state == "blocked"
+    future = datetime(2026, 11, 1, tzinfo=MSK)
+    set_field(data, cfg.from_field, int(future.timestamp()))
+    run(NOW + timedelta(days=3))
+    assert job.state == "queued" and not calls
+    run(future - timedelta(seconds=1))
     assert not calls
-    newer = NOW + timedelta(seconds=1)
-    assert ingest(store, transitions(form(last_modified=str(int(newer.timestamp()))), cfg, newer)) == 1
-    process_job(store, 17, cfg, newer, fetch=lambda *args: lead(), deliver=lambda *args: calls.append(args))
+    run(future)
     assert len(calls) == 1

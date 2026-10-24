@@ -82,7 +82,6 @@ class MailSettings(BaseSettings):
     smtp_user: str = "promo@mansband.ru"
     smtp_password: SecretStr = SecretStr("")
     subject: str = "Вам подарили сертификат Mansband 🎁"
-    max_age_seconds: int = 86400
     tick_seconds: int = 5
 
     def live_ready(self) -> bool:
@@ -292,7 +291,7 @@ def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fe
     if not s.live_ready():
         return
     job = db.get(CertificateMailJob, lead_id)
-    if not job or job.state != "queued" or job.attempted_at is not None:
+    if not job or job.state not in {"queued", "blocked"} or job.attempted_at is not None:
         return
     event_at = job.event_at.replace(tzinfo=timezone.utc) if job.event_at.tzinfo is None else job.event_at
     lead = (fetch or read_lead)(db, lead_id)
@@ -322,17 +321,14 @@ def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fe
                   datetime.combine(start, datetime.min.time(), MSK).astimezone(timezone.utc))
         job.due_at = due
         if now < due:
-            job.reason = "waiting_due_date"
+            job.state, job.reason = "queued", "waiting_due_date"
             job.check_at = min(due, now + timedelta(seconds=60))
-            db.commit()
-            return
-        if now - due > timedelta(seconds=s.max_age_seconds):
-            job.state, job.reason = "expired", "scheduled_send_too_old"
             db.commit()
             return
         recipient, body = render(lead, s, now)
     except InvalidCertificate as exc:
         job.state, job.reason = "blocked", str(exc)
+        job.check_at = now + timedelta(seconds=60)
         db.commit()
         return
     job.message_id = f"<mansband-certificate-{lead_id}@mansband.ru>"
@@ -369,7 +365,8 @@ def tick(s: MailSettings):
                 job.state, job.reason = "uncertain", "worker_interrupted"
         db.commit()
         ids = list(db.scalars(select(CertificateMailJob.lead_id).where(
-            CertificateMailJob.state == "queued",
+            CertificateMailJob.state.in_(["queued", "blocked"]),
+            CertificateMailJob.attempted_at.is_(None),
             (CertificateMailJob.check_at.is_(None) | (CertificateMailJob.check_at <= now))
             ).order_by(CertificateMailJob.check_at.asc().nullsfirst(), CertificateMailJob.created_at).limit(20)))
         for lid in ids:
