@@ -315,11 +315,13 @@ def send_job(db, job, c, s, r, now, *, clock=None):
                 result = {}
             if response.status_code == 201 and result.get("messageId"):
                 a.message_id = str(result["messageId"])
-                a.state, job.state = "pending", "pending"
+                a.state, job.state, job.reason = "pending", "pending", ""
                 db.commit(); reconcile(db, now)
                 return
             code = str(result.get("error") or "")[:80]
-            if 400 <= response.status_code < 500 and code in REJECTED:
+            # Observed Wazzup 400 rejection on the owner test: no account exists
+            # for that MAX phone, no messageId was created.
+            if 400 <= response.status_code < 500 and code in REJECTED | {"CHANNEL_MAX_PHONE_NOT_OCCUPIED"}:
                 a.state, a.reason, job.state = "error", code, "ready"
                 db.commit()
                 continue

@@ -109,6 +109,12 @@ def test_confirmed_error_only_tries_next_channel(db,cfg):
     assert len({p["crmMessageId"] for p in c.posts})==2
 
 
+def test_max_phone_not_registered_is_confirmed_rejection(db,cfg):
+    j=job(db);c=Fake([(400,{"error":"CHANNEL_MAX_PHONE_NOT_OCCUPIED"}),(201,{"messageId":"m2"})])
+    run(db,j,c,cfg)
+    assert len(c.posts)==2 and j.state=="pending"
+
+
 @pytest.mark.parametrize("result", [(500,{}),httpx.ReadTimeout("lost reply"),(400,{"error":"UNRECOGNIZED"})])
 def test_unknown_result_never_uses_next_channel(db,cfg,result):
     j=job(db);c=Fake([result]);run(db,j,c,cfg);run(db,j,c,cfg)
