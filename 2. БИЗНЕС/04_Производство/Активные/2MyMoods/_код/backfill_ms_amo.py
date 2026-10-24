@@ -1282,7 +1282,8 @@ def known_integration_text(field_id: int, actual: str, expected: str, order: dic
     return False
 
 
-def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: dict | None = None) -> dict:
+def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: dict | None = None,
+                  allow_comment_drift: bool = False) -> dict:
     if int(lead.get("pipeline_id") or 0) != PIPELINE or int(lead.get("status_id") or 0) != WON:
         raise Stop("Новая сделка не оказалась в целевой воронке/этапе")
     if int(lead.get("price") or 0) != expected_payload["price"]:
@@ -1295,6 +1296,20 @@ def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: di
         fid = item["field_id"]
         actual = next((x for x in lead.get("custom_fields_values") or []
                        if str(x.get("field_id")) == str(fid)), None)
+        # A saved comment can be edited by a person or the integration after
+        # migration. Only historical readback may report it without blocking;
+        # immediate creation/recovery and every other field remain strict.
+        if allow_comment_drift and fid == FIELDS["comment"]:
+            actual_text = field(lead, fid)
+            expected_text = str(item["values"][0].get("value") or "")
+            if actual_text != expected_text and not (order is not None and known_integration_text(fid, actual_text, expected_text, order)):
+                lead.setdefault("_migration_comment_differences", []).append({
+                    "field_id": fid, "reason": "HISTORICAL_COMMENT_CHANGED",
+                    "expected_sha256": hashlib.sha256(expected_text.encode()).hexdigest(),
+                    "actual_sha256": hashlib.sha256(actual_text.encode()).hexdigest(),
+                    "expected_length": len(expected_text), "actual_length": len(actual_text),
+                })
+                continue
         if actual is None:
             if (order is not None and item["field_id"] == FIELDS["comment"]
                     and known_integration_text(FIELDS["comment"], "", str(item["values"][0].get("value") or ""), order)):
@@ -1832,7 +1847,7 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
 def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] | None = None,
                    full_data: dict | None = None) -> dict:
     result = {"checked_at": datetime.now(TZ).isoformat(timespec="seconds"), "checked": 0,
-              "ok": 0, "issues": [], "source_drift": [], "identity_differences": [],
+              "ok": 0, "issues": [], "source_drift": [], "identity_differences": [], "comment_differences": [],
               "technical_manager": 0, "integration_text_normalizations": 0,
               "net_kopecks": 0, "budget_rubles": 0, "rounding_kopecks": 0}
     mss = ms_session(ms)
@@ -1862,7 +1877,8 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
                 result["issues"].append({"order_id": oid, "reason": "VERIFIED_ENTITY_NOT_IN_FULL_INDEX"})
                 continue
             try:
-                validate_lead(lead, cid, entry["lead_payload"], order)
+                validate_lead(lead, cid, entry["lead_payload"], order,
+                              allow_comment_drift=oid not in journal.get("run_attempts", {}).get(journal.get("active_run"), []))
             except Stop as exc:
                 result["issues"].append({"order_id": oid, "reason": str(exc)})
                 continue
@@ -1872,6 +1888,8 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
             st, contact = amo_read(amo, f"/api/v4/contacts/{cid}")
             if st != 200:
                 raise Stop("VERIFIED_CONTACT_NOT_READABLE")
+        for difference in lead.get("_migration_comment_differences", []):
+            result["comment_differences"].append({"order_id": oid, "lead_id": lid, **difference})
         if ms_link(order) != amo_lead_url(amo, lid):
             raise Stop("VERIFIED_BACKLINK_MISMATCH")
         matches = list(uuid_matches[oid].values()) if full_data is not None else exact_leads(amo, oid)
@@ -1962,8 +1980,13 @@ def prepare_night(ms: lib.MS, amo: lib.Amo, data: dict, journal: dict, apply_rec
         recover_pending(data, ms, amo, journal)
     plan = classify(data, ms)
     old_rows = {r["order_id"]: r for r in journal.get("legacy_plan_rows", [])}
-    # Known failures are retained, but never-attempted old policy exclusions are reclassified.
+    if not old_rows:
+        raise Stop("APPROVED_ORDER_SCOPE_MISSING")
+    # Resume only the approved UUID set. New live orders stay visible in the
+    # audit but cannot silently join an old migration queue.
     for row in plan["rows"]:
+        if row["order_id"] not in old_rows and row["category"] == "CREATE":
+            row.update(category="DEFERRED", reason="OUTSIDE_APPROVED_ORDER_SCOPE")
         entry = journal["rows"].get(row["order_id"], {})
         entry.setdefault("source_row", old_rows.get(row["order_id"], row))
         if entry.get("status") in {"DEFERRED", "QUARANTINED"}:
@@ -2247,6 +2270,53 @@ def self_test() -> None:
             expected = "Исходный комментарий\n[Исторический импорт МС→amo 2026-10-21]"
             self.assertTrue(known_integration_text(929071, "Исходный комментарий", expected, order))
             self.assertFalse(known_integration_text(929071, "Иной комментарий", expected, order))
+
+        def test_historical_comment_drift_does_not_weaken_other_checks(self):
+            import copy
+            payload = {"pipeline_id": PIPELINE, "status_id": WON, "price": 123,
+                       "name": "Заказ 1", "responsible_user_id": MAXIM, "created_at": 1, "closed_at": 2,
+                       "custom_fields_values": [
+                           {"field_id": FIELDS["comment"], "values": [{"value": "Исходный комментарий"}]},
+                           {"field_id": FIELDS["ms_id"], "values": [{"value": "uuid"}]}],
+                       "_embedded": {"contacts": [{"id": 5, "is_main": True}]}}
+            for missing in (False, True):
+                lead = copy.deepcopy(payload)
+                if missing:
+                    lead["custom_fields_values"].pop(0)
+                else:
+                    lead["custom_fields_values"][0]["values"][0]["value"] = "Изменённый текст"
+                with self.assertRaises(Stop):
+                    validate_lead(copy.deepcopy(lead), "5", payload)
+                checked = validate_lead(copy.deepcopy(lead), "5", payload, allow_comment_drift=True)
+                self.assertEqual(len(checked["_migration_comment_differences"]), 1)
+                self.assertNotIn("Изменённый текст", json.dumps(checked["_migration_comment_differences"], ensure_ascii=False))
+                for key, value in (("price", 124), ("closed_at", 3), ("status_id", 143), ("responsible_user_id", 1)):
+                    altered = copy.deepcopy(lead); altered[key] = value
+                    with self.assertRaises(Stop):
+                        validate_lead(altered, "5", payload, allow_comment_drift=True)
+                altered = copy.deepcopy(lead)
+                next(f for f in altered["custom_fields_values"] if f["field_id"] == FIELDS["ms_id"])["values"][0]["value"] = "wrong"
+                with self.assertRaises(Stop):
+                    validate_lead(altered, "5", payload, allow_comment_drift=True)
+                for embedded in ({"contacts": [{"id": 6, "is_main": True}]},
+                                 {"contacts": [{"id": 5, "is_main": True}], "companies": [{"id": 1}]}):
+                    altered = copy.deepcopy(lead); altered["_embedded"] = embedded
+                    with self.assertRaises(Stop):
+                        validate_lead(altered, "5", payload, allow_comment_drift=True)
+
+        def test_resume_preserves_original_approved_uuid_scope(self):
+            import tempfile
+            import copy
+            with tempfile.TemporaryDirectory() as directory:
+                journal = {"rows": {}, "legacy_plan_rows": [{"order_id": "approved"}], "plan_history": []}
+                plan = {"rows": [{"order_id": "approved", "category": "CREATE"},
+                                 {"order_id": "new", "category": "CREATE"}]}
+                with patch.object(module, "PLAN", Path(directory) / "plan.json"), patch.object(module, "save_journal"), \
+                     patch.object(module, "status_audit_cache_load", return_value={}), \
+                     patch.object(module, "classify", return_value=copy.deepcopy(plan)):
+                    checked = prepare_night(object(), object(), {"orders": []}, journal, False)
+                self.assertEqual(checked["rows"][0]["category"], "CREATE")
+                self.assertEqual(checked["rows"][1]["reason"], "OUTSIDE_APPROVED_ORDER_SCOPE")
 
         def test_dashboard_import_is_not_messenger_inquiry(self):
             import collect_dashboard as dashboard

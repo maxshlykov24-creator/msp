@@ -112,9 +112,17 @@ async def pleep_sync(request: Request, x_api_key: str = Header(default="")) -> R
         return JSONResponse({"ok": False, "error": "invalid api key"}, 401)
     fields = await _form_or_json(request)
     phone = normalize_phone(fields.get("phone"))
-    if not phone:
-        return JSONResponse({"ok": False, "error": "phone is required"}, 400)
+    thread_id = fields.get("thread_id", "").strip()
+    native_lead_id = fields.get("kommo_lead_id", "").strip()
+    email = fields.get("email", "").strip()
+    if thread_id and not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", thread_id):
+        return JSONResponse({"ok": False, "error": "invalid thread_id"}, 400)
+    if native_lead_id and not re.fullmatch(r"[1-9][0-9]{0,19}", native_lead_id):
+        return JSONResponse({"ok": False, "error": "invalid kommo_lead_id"}, 400)
+    if not (phone or thread_id or native_lead_id or email):
+        return JSONResponse({"ok": False, "error": "client identity is required"}, 400)
     payload = {
+        "thread_id": thread_id, "kommo_lead_id": native_lead_id,
         "name": fields.get("name", ""), "phone": phone, "email": fields.get("email", ""),
         "channel": "Pleep AI", "notes": fields.get("notes", ""),
         "tags": fields.get("tags", ""),

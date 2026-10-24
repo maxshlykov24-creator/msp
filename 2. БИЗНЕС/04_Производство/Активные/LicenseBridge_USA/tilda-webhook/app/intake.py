@@ -212,7 +212,7 @@ def process_pleep_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
         Decision.inbox_id == ctx.inbox_id,
         Decision.action == "pleep.intake_done",
     ).order_by(Decision.id.desc())) if ctx.inbox_id is not None else None
-    result = dict(previous.detail["result"]) if previous else process_intake(ctx, payload)
+    result = dict(previous.detail["result"]) if previous else _resolve_pleep_target(ctx, payload)
     if not previous and result.get("lead_id"):
         log_decision(ctx, "pleep.intake_done", result=result)
     task_text = str(payload.get("task_text") or "").strip()
@@ -222,3 +222,58 @@ def process_pleep_intake(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
             request_key=f"inbox:{ctx.inbox_id}",
         )
     return result
+
+
+def _resolve_pleep_target(ctx: Ctx, payload: dict[str, Any]) -> dict[str, Any]:
+    """Prefer the native integration's deal; never create an anonymous duplicate."""
+    from app.models import PleepThreadBinding
+    thread_id = str(payload.get("thread_id") or "").strip()
+    native_id = int(payload.get("kommo_lead_id") or 0)
+    binding = ctx.s.get(PleepThreadBinding, thread_id) if thread_id else None
+    if binding and native_id and binding.lead_id != native_id:
+        raise RuntimeError("Pleep thread changed CRM deal; manual reconciliation required")
+    lead_id = binding.lead_id if binding else native_id
+    if not lead_id:
+        email = str(payload.get("email") or "").strip().lower()
+        if email:
+            matches = [c for c in ctx.client.search_contacts(email, limit=100)
+                       if email in {x.lower() for x in contact_emails(c)}]
+            if len(matches) > 1:
+                raise RuntimeError("Pleep email matches multiple contacts; reconciliation required")
+            if matches:
+                leads = load_leads(ctx.client, int(matches[0]["id"]))
+                open_lead = _find_open_pipeline_lead(leads)
+                if open_lead:
+                    lead_id = int(open_lead["id"])
+        if not lead_id:
+            if thread_id or native_id or not payload.get("phone"):
+                # Native integration creates at first message. Wait for its ID instead
+                # of racing it with an independently created contact/deal.
+                raise RuntimeError("Pleep native CRM deal ID not available; retry after native sync")
+            return process_intake(ctx, payload)  # backward compatibility for legacy calls
+    lead = ctx.client.get_lead(lead_id, with_="contacts")
+    if not lead:
+        raise RuntimeError("Pleep linked CRM deal missing; do not create a replacement")
+    if lead.get("pipeline_id") not in {settings.pipeline_id, settings.assembly_pipeline_id}:
+        raise RuntimeError("Pleep linked CRM deal outside configured pipelines")
+    contacts = lead.get("_embedded", {}).get("contacts", [])
+    contact_id = next((int(c["id"]) for c in contacts if c.get("is_main")),
+                      int(contacts[0]["id"]) if len(contacts) == 1 else None)
+    if payload.get("email") and contact_id:
+        _ensure_contact_email(ctx, contact_id, None, str(payload["email"]))
+    if thread_id and not binding and not ctx.shadow:
+        ctx.s.add(PleepThreadBinding(thread_id=thread_id, lead_id=lead_id))
+        ctx.s.flush()
+    notes = str(payload.get("notes") or "").strip()
+    if notes:
+        import hashlib
+        marker = "[Pleep sync:" + hashlib.sha256(
+            (thread_id + ":" + notes).encode()).hexdigest()[:32] + "]"
+        existing = ctx.client.paginate(f"/leads/{lead_id}/notes", "notes", {"filter[note_type]": "common"})
+        if not any(marker in (n.get("params") or {}).get("text", "") for n in existing):
+            detail = f"{marker}\nPleep dialog: {thread_id or 'legacy'}\n{notes}"
+            if thread_id:
+                detail += "\nhttps://app.pleep.app/dashboard/157a8400-abee-42bb-8c0f-d3d283afece8/monitor?threadId=" + thread_id
+            add_note(ctx, "deal", lead_id, detail)
+    return {"action": "pleep_linked", "lead_id": lead_id, "contact_id": contact_id,
+            "thread_id": thread_id, "owner": lead.get("responsible_user_id")}

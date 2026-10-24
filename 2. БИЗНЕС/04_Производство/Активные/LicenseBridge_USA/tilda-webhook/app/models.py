@@ -257,3 +257,11 @@ class IntakeTaskDelivery(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+
+
+class PleepThreadBinding(Base):
+    """Native Pleep dialog -> existing Kommo deal, independent of contact details."""
+    __tablename__ = "pleep_thread_binding"
+    thread_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    lead_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

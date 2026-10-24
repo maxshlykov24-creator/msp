@@ -266,3 +266,33 @@ def test_repeat_intake_task_open_and_closed(fake, session, enable_all, monkeypat
     process_intake(ctx, {'phone': '+15551234567', 'channel': 'Tilda'})
     assert len(fake.leads) == count
     assert called[0] == called[1]
+
+
+def test_pleep_native_id_only_preserves_deal_owner(fake, session, enable_all):
+    from app.intake import process_pleep_intake
+    from app.models import PleepThreadBinding
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=15648532)
+    result = process_pleep_intake(_ctx(fake, session), {'thread_id': 'thread_native', 'kommo_lead_id': str(lid)})
+    assert result['lead_id'] == lid and result['owner'] == 15648532
+    assert session.get(PleepThreadBinding, 'thread_native').lead_id == lid
+    later = process_pleep_intake(_ctx(fake, session), {'thread_id': 'thread_native', 'phone': '+15551234567'})
+    assert later['lead_id'] == lid
+    assert len(fake.leads) == 1 and len(fake.contacts) == 1
+
+
+def test_pleep_thread_without_native_id_does_not_create_duplicate(fake, session, enable_all):
+    from app.intake import process_pleep_intake
+    with pytest.raises(RuntimeError, match='not available'):
+        process_pleep_intake(_ctx(fake, session), {'thread_id': 'thread_pending'})
+    assert not fake.leads and not fake.contacts
+
+
+def test_pleep_thread_cannot_silently_switch_deal(fake, session, enable_all):
+    from app.intake import process_pleep_intake
+    cid = fake.add_contact()
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=13291175)
+    process_pleep_intake(_ctx(fake, session), {'thread_id': 'thread_bound', 'kommo_lead_id': str(lid)})
+    with pytest.raises(RuntimeError, match='changed CRM deal'):
+        process_pleep_intake(_ctx(fake, session), {'thread_id': 'thread_bound', 'kommo_lead_id': str(lid+1)})
+    assert len(fake.leads) == 1

@@ -51,3 +51,23 @@ def test_pleep_webhook_preserves_handoff_request(monkeypatch):
     assert received[0]['task_text'] == 'Нужен менеджер'
     assert response.json()['status'] == 'queued'
     assert response.json()['task_requested'] is True
+
+
+def test_pleep_identity_only_and_invalid_native_id(monkeypatch):
+    import contextlib
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app import webhooks
+    from app.config import settings
+    received=[]
+    @contextlib.contextmanager
+    def scope(): yield object()
+    monkeypatch.setattr(settings,'pleep_api_key','test-key')
+    monkeypatch.setattr(webhooks,'session_scope',scope)
+    monkeypatch.setattr(webhooks,'enqueue',lambda s,src,typ,key,payload,**kw: (received.append(payload) or 1,True))
+    app=FastAPI();app.include_router(webhooks.router);client=TestClient(app)
+    headers={'X-Api-Key':'test-key'}
+    assert client.post('/pleep/sync',headers=headers,json={'thread_id':'thread_native','kommo_lead_id':'123'}).status_code==202
+    assert received[0]['thread_id']=='thread_native'
+    assert client.post('/pleep/sync',headers=headers,json={'kommo_lead_id':'{{unmapped}}'}).status_code==400
+    assert client.post('/pleep/sync',headers=headers,json={}).status_code==400

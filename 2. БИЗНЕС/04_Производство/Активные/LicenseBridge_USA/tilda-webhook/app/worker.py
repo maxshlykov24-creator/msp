@@ -224,7 +224,9 @@ def process_one(client: KommoClient, event_id: int) -> None:
             return
         ev.attempts += 1
         flags = current_flags(s)
-        with phone_lock(s, ev.phone):
+        lock_key = ("pleep-thread:" + str(ev.payload["thread_id"])
+                    if ev.source == "pleep" and (ev.payload or {}).get("thread_id") else ev.phone)
+        with phone_lock(s, lock_key):
             ctx = Ctx(client=client, session=s, inbox_id=ev.id, phone=ev.phone,
                       shadow=flags.shadow, flags=flags)
             try:
