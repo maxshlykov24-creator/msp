@@ -28,6 +28,9 @@ def run_preflight(client: KommoClient | None = None) -> list[str]:
     problems: list[str] = []
     if not settings.kommo_token:
         return ["KOMMO_TOKEN пуст"]
+    overlap = settings.departed_owner_id_set.intersection(settings.user_to_ext)
+    if overlap:
+        problems.append(f"DEPARTED_OWNER_IDS пересекается с TELEPHONY_EXT_USERS: {sorted(overlap)}")
     close = False
     if client is None:
         client = KommoClient()

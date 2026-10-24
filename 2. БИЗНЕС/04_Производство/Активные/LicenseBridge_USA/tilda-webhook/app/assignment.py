@@ -176,8 +176,11 @@ def assign_new_lead(ctx: Ctx, lead: dict, sibling_leads: list[dict]) -> int:
         log_decision(ctx, "assign.skip_funnel", lead=lead_id,
                      pipeline=lead.get("pipeline_id"), owner=current_owner)
         return current_owner
-    owner = resolve_owner_for_new(ctx, [l for l in sibling_leads if int(l["id"]) != lead_id])
     current = lead.get("responsible_user_id")
+    # Повторный вебхук или возврат в «Новую заявку» не отбирает карточку
+    # у работающего менеджера. Дефолт применяется к неназначенным/ушедшим.
+    owner = (int(current) if holds_sales_card(ctx.client, current) else
+             resolve_owner_for_new(ctx, [l for l in sibling_leads if int(l["id"]) != lead_id]))
     if not ctx.flags.assignment or ctx.shadow:
         log_decision(ctx, "assign.skip", lead=lead_id, owner=owner,
                      current=current, shadow=ctx.shadow)

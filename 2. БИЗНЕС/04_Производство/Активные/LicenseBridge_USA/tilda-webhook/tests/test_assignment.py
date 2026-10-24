@@ -88,7 +88,7 @@ def test_sweep_moves_stuck_lead_to_sales(fake, session, enable_all):
     возвращает карточку тому, кто принимает звонки."""
     from app.assignment import sweep_non_sales_owners
 
-    pavel = 13291175
+    pavel = 15537380  # действительно ушедший, не действующий Павел
     fake.users_list.append({"id": pavel, "rights": {"is_active": True}})
     cid = fake.add_contact(name="A", phone="+15551234567")
     fake.contacts[cid]["responsible_user_id"] = pavel
@@ -157,3 +157,15 @@ def test_assign_skips_contact_on_assembly(fake, session, enable_all):
     assign_new_lead(_ctx(fake, session), fake.leads[lid], [])
 
     assert fake.contacts[cid]["responsible_user_id"] == pavel
+
+
+def test_egor_is_preserved_by_sweep_and_repeated_assignment(fake, session, enable_all, monkeypatch):
+    from app.assignment import sweep_non_sales_owners
+    monkeypatch.setattr(settings, "departed_owner_ids", "15537380")
+    cid = fake.add_contact(name="TEST owner", phone="+15551234567")
+    lid = fake.add_lead(cid, settings.pipeline_id, settings.status_new, responsible=15648532)
+    ctx = _ctx(fake, session)
+    assert sweep_non_sales_owners(ctx) == []
+    assert assign_new_lead(ctx, fake.leads[lid], []) == 15648532
+    assert fake.leads[lid]["responsible_user_id"] == 15648532
+    assert fake.contacts[cid]["responsible_user_id"] == 15648532

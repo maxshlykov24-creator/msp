@@ -73,3 +73,8 @@ def test_empty_token_reported_without_network(monkeypatch):
     monkeypatch.setattr(settings, "kommo_token", "")
 
     assert preflight.run_preflight() == ["KOMMO_TOKEN пуст"]
+
+
+def test_departed_manager_cannot_be_in_active_phone_map(leadflow_on, monkeypatch):
+    monkeypatch.setattr(settings, "departed_owner_ids", "15537380,15648532")
+    assert any("DEPARTED_OWNER_IDS" in p for p in preflight.run_preflight(FakeKommo()))

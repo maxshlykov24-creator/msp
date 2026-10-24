@@ -90,6 +90,12 @@ class FakeKommo:
     def get_notes(self, entity: str, entity_id: int) -> list[dict[str, Any]]:
         return self.notes.get((entity, int(entity_id)), [])
 
+    def paginate(self, path, key, params=None):
+        if path == "/leads" and key == "leads":
+            yield from list(self.leads.values())
+        else:
+            raise AssertionError(f"Unsupported test pagination: {path}")
+
     # ── мутации ──
     def add_note_raw(self, entity: str, note: dict[str, Any]) -> dict[str, Any] | None:
         self.notes.setdefault((entity, int(note["entity_id"])), []).append(note)
