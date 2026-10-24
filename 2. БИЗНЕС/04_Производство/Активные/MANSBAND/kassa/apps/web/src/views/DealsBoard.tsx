@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { isDealOverdue, isDealRelevantToUser, type Task } from "@kassa/shared";
+import { useAuth } from "../auth/AuthContext";
+import { api, USE_MOCK } from "../api/client";
 import { ArrowRight, Search, Filter, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useStore } from "../store";
 import { money, shortDate, timeOf } from "../lib/format";
@@ -72,11 +75,6 @@ const STATUS_FILTERS = [
 const STORE_OPTIONS = STORES.filter((s) => s !== "Онлайн-магазин");
 const CONSULTANT_OPTIONS = CONSULTANTS.filter((c) => c.role === "consultant").map((c) => c.name);
 
-/** Контрольная дата заявки (срок отложки / актуальности / аренды). */
-function dealDeadline(d: Deal): string | undefined {
-  return d.reservedUntil || d.actualUntil || d.deferredUntil || d.validUntil || d.rentalTo;
-}
-
 function isSuccess(d: Deal): boolean {
   return d.stage === "Успех";
 }
@@ -90,9 +88,7 @@ function isClosed(d: Deal): boolean {
 }
 
 function isOverdue(d: Deal, today: string): boolean {
-  if (isClosed(d)) return false;
-  const dl = dealDeadline(d);
-  return !!dl && dl < today;
+  return isDealOverdue(d, today);
 }
 
 function createdDay(iso: string): string {
@@ -118,7 +114,25 @@ export function DealsBoard({
   origin?: string | null;
 }) {
   const { deals, dealsLoading } = useStore();
-  const today = new Date().toISOString().slice(0, 10);
+  const { user } = useAuth();
+  const moscowDay = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
+  const [today, setToday] = useState(moscowDay);
+  const [attentionTasks, setAttentionTasks] = useState<Task[]>([]);
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      setToday(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date()));
+      if (!USE_MOCK) void api.get<Task[]>("/tasks").then((rows) => {
+        if (active) setAttentionTasks(rows);
+      }).catch(() => {});
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+  const myOverdue = useMemo(() => new Set(deals.filter((d) =>
+    isOverdue(d, today) && isDealRelevantToUser(d, user, attentionTasks)
+  ).map((d) => d.number)), [deals, today, user, attentionTasks]);
   const [q, setQ] = useState("");
   const [kindGroup, setKindGroup] = useState<string>(initialGroup ?? "all");
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus ?? "all");
@@ -222,7 +236,7 @@ export function DealsBoard({
               ? isSuccess(d)
               : statusFilter === "fail"
                 ? isFail(d)
-                : isOverdue(d, today);
+                : myOverdue.has(d.number);
       const matchStore = storeFilter === "all" || d.store === storeFilter;
       const matchConsultant = consultantFilter === "all" || d.consultant === consultantFilter;
       const matchStage = stageFilter === "all" || d.stage === stageFilter;
@@ -252,7 +266,7 @@ export function DealsBoard({
     stageFilter,
     dateFrom,
     dateTo,
-    today,
+    myOverdue,
   ]);
 
   // Сброс пагинации при смене фильтров — иначе «пусто» при узком срезе.
@@ -315,6 +329,12 @@ export function DealsBoard({
               }`}
             >
               {f.label}
+              {f.id === "overdue" && myOverdue.size > 0 && (
+                <span className="ml-1.5 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white"
+                  title="Незакрытые просроченные заявки, относящиеся к вам">
+                  {myOverdue.size}
+                </span>
+              )}
             </button>
           ))}
         </div>

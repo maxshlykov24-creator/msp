@@ -1,4 +1,23 @@
-import type { DealKind, TaskAssigneeRole, TaskKind } from "./types.js";
+import type { Deal, DealKind, Task, TaskAssigneeRole, TaskKind, User } from "./types.js";
+
+/** Открытая заявка с истёкшим календарным сроком. Сегодня ещё не просрочка. */
+export function isDealOverdue(deal: Deal, today: string): boolean {
+  if (["Успех", "Провал", "Не слив"].includes(deal.stage)) return false;
+  const deadline = deal.reservedUntil || deal.actualUntil || deal.deferredUntil || deal.validUntil || deal.rentalTo;
+  return !!deadline && deadline.slice(0, 10) < today;
+}
+
+/** Ответственный в заявке или в незакрытой задаче; руководители видят всё. */
+export function isDealRelevantToUser(deal: Deal, user: User | null, tasks: Task[]): boolean {
+  if (!user) return false;
+  if (user.role === "admin" || user.role === "rop") return true;
+  const sameName = (value?: string) => !!value?.trim() && value.trim().toLowerCase() === user.name.trim().toLowerCase();
+  if (sameName(deal.consultant) || sameName(deal.callManager)) return true;
+  const role = user.role === "seller" ? "consultant" : user.role;
+  return tasks.some((task) => task.dealNumber === deal.number && task.status === "pending"
+    && task.assigneeRole === role
+    && (role !== "consultant" || (!!user.store && task.store === user.store)));
+}
 
 /**
  * Формула задачи (созвон 05.08.2026, п.7–9): откуда появляется задача → кому

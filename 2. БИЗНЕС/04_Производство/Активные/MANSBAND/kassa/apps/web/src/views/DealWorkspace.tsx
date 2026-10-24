@@ -101,7 +101,13 @@ function formFromDeal(live: Deal): {
 function formSnapshot(form: ReturnType<typeof formFromDeal>): string {
   return JSON.stringify({
     ...form,
-    items: form.items.map(({ suitGroupId: _g, suitPriceApplied: _a, suitOriginalPrice: _o, ...rest }) => rest),
+    items: form.items.map((item) => {
+      const rest = { ...item };
+      delete rest.suitGroupId;
+      delete rest.suitPriceApplied;
+      delete rest.suitOriginalPrice;
+      return rest;
+    }),
   });
 }
 
@@ -112,7 +118,6 @@ function formSnapshot(form: ReturnType<typeof formFromDeal>): string {
 export function DealWorkspace({
   deal,
   onClose,
-  onReturnExchange: _onReturnExchange,
   backLabel = "К заявкам",
   hideBack = false,
   /** Шапка окна с номером заявки: туда уезжает статус, чтобы стоять на той же строке. */

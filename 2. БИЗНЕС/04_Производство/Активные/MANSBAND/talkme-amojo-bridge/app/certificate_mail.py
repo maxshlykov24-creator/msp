@@ -415,6 +415,8 @@ async def webhook(secret: str, request: Request):
     db = get_session_factory()()
     try:
         queued = ingest(db, rows)
-        return {"ok": True, "queued": queued}
+        from app.stage_notifications import ingest as ingest_stage
+        stage_queued = ingest_stage(db, form, utcnow())
+        return {"ok": True, "queued": queued, "stage_queued": stage_queued}
     finally:
         db.close()

@@ -22,7 +22,7 @@ SOCIAL = {"vk", "avito", "instagram"}
 DIRECT = ("telegram", "whatsapp", "max")
 # Legacy Wazzup origins must be verified before enabling live.
 ORIGINS = {"com.wazzup24.max": "max", "com.wazzup24.wz": "whatsapp",
-           "com.wazzup24-1": "telegram", "com.wazzup24.vk": "vk",
+           "com.wazzup24-1": "telegram", "com.wazzup24": "vk", "com.wazzup24.vk": "vk",
            "com.wazzup24.avito": "avito", "com.wazzup24.instagram": "instagram"}
 SOCIAL_FIELDS = {"vk": 3642123, "avito": 3642125, "instagram": 3816137}
 
@@ -85,8 +85,6 @@ class Conversation(Base):
     channel_id: Mapped[str] = mapped_column(String(80))
     transport: Mapped[str] = mapped_column(String(20))
     chat_id: Mapped[str] = mapped_column(String(200), index=True)
-    phone: Mapped[str] = mapped_column(String(30), default="", index=True)
-    username: Mapped[str] = mapped_column(String(100), default="", index=True)
     last_incoming: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -129,6 +127,8 @@ def ingest(db, form, now, settings=None):
 
 def record_messages(db, body):
     # Only routing metadata is retained, never message text or attachments.
+    if not body.get("messages"):
+        return
     for msg in body.get("messages") or []:
         if msg.get("isEcho") is not False or msg.get("isDeleted") or msg.get("isEdited"):
             continue
@@ -145,13 +145,10 @@ def record_messages(db, body):
         con = db.get(Conversation, key)
         if con is not None and aware(con.last_incoming) >= stamp:
             continue
-        contact = msg.get("contact") or {}
         if con is None:
             con = Conversation(key=key, channel_id=channel, transport=transport, chat_id=chat)
             db.add(con)
         con.last_incoming = stamp
-        con.phone = "".join(c for c in str(contact.get("phone") or "") if c.isdigit())[:30]
-        con.username = str(contact.get("username") or "").lstrip("@").lower()[:100]
     db.commit()
 
 
@@ -244,6 +241,10 @@ def reconcile(db, now):
     from app.reservation_reminders import ReminderEvent, SUCCESS
     for a in db.scalars(select(StageAttempt).where(StageAttempt.state.in_(["inflight", "pending", "error", "unknown"]))):
         if not a.message_id:
+            if a.state == "inflight":
+                a.state = "unknown"
+                job = db.get(StageJob, a.job_id)
+                job.state, job.reason = "uncertain", "interrupted_send_claim"
             continue
         events = list(db.scalars(select(ReminderEvent).where(ReminderEvent.message_id == a.message_id)))
         job = db.get(StageJob, a.job_id)

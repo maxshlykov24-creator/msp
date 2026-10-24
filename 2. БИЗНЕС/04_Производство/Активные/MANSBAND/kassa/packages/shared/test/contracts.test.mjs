@@ -10,7 +10,35 @@ import {
   movementTaskSchema,
   normalizePayouts,
   selfPayouts,
+  isDealOverdue,
+  isDealRelevantToUser,
 } from "../dist/index.js";
+
+test("overdue remains until closed or extended; today's deadline is not overdue", () => {
+  const rental = { kind: "rental", stage: "Аренда оплачена", rentalTo: "2026-10-23" };
+  assert.equal(isDealOverdue(rental, "2026-10-24"), true);
+  assert.equal(isDealOverdue({ ...rental, stage: "Аренда просрочена" }, "2026-10-24"), true);
+  assert.equal(isDealOverdue({ ...rental, rentalTo: "2026-10-24" }, "2026-10-24"), false);
+  for (const stage of ["Успех", "Провал", "Не слив"]) {
+    assert.equal(isDealOverdue({ ...rental, stage }, "2026-10-24"), false);
+  }
+});
+
+test("overdue responsibility follows consultant, call manager and pending task role/store", () => {
+  const deal = { number: 100, consultant: "Анна", callManager: "Нина" };
+  const user = { name: "Иван", role: "consultant", store: "На Бауманской" };
+  const task = { dealNumber: 100, assigneeRole: "consultant", store: "На Бауманской", status: "pending" };
+  assert.equal(isDealRelevantToUser(deal, { ...user, name: "Анна" }, []), true);
+  assert.equal(isDealRelevantToUser(deal, { ...user, name: "Нина", role: "crm" }, []), true);
+  assert.equal(isDealRelevantToUser(deal, user, []), false);
+  assert.equal(isDealRelevantToUser(deal, user, [task]), true);
+  assert.equal(isDealRelevantToUser(deal, user, [{ ...task, status: "done" }]), false);
+  assert.equal(isDealRelevantToUser(deal, user, [{ ...task, store: "На Пятницкой" }]), false);
+  assert.equal(isDealRelevantToUser(deal, { ...user, role: "logist" }, [task]), false);
+  assert.equal(isDealRelevantToUser(deal, { ...user, role: "logist" }, [{ ...task, assigneeRole: "logist" }]), true);
+  assert.equal(isDealRelevantToUser(deal, { ...user, role: "admin" }, []), true);
+  assert.equal(isDealRelevantToUser(deal, null, []), false);
+});
 
 const baseDeal = {
   id: "request-123",
