@@ -125,6 +125,15 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("storeAddress", deal.storeAddress);
   put("guestName", deal.guestName);
   put("certificateNumber", deal.certificateNumber);
+  if (deal.kind === "cert_digital" || deal.kind === "cert_plastic") {
+    // Почтовый сервис читает поля сделки, а не email контакта.
+    // Пустые значения не стирают данные, заполненные менеджером в amoCRM.
+    if (deal.kind === "cert_digital") put("certificateEmail", deal.email?.trim());
+    if (deal.receivedAt && /^\d{4}-\d{2}-\d{2}$/.test(deal.receivedAt)) {
+      const timestamp = Date.parse(`${deal.receivedAt}T00:00:00+03:00`);
+      if (Number.isFinite(timestamp)) put("certificateFrom", Math.floor(timestamp / 1000));
+    }
+  }
   put("validUntil", deal.validUntil);
   put("invoiceNo", deal.invoiceNo);
   if (deal.items.length) put("orderContains", cartSummary(deal));

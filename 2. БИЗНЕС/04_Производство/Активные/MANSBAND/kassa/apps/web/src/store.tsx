@@ -534,8 +534,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const tail = digits.slice(-10);
         return deals.find(
           (d) =>
-            (d.kind === "sliv" || d.kind === "promise") &&
-            d.clientPhone.replace(/\D/g, "").includes(tail)
+            d.kind === "sliv" &&
+            d.clientPhone.replace(/\D/g, "").slice(-10) === tail
         );
       },
     }),

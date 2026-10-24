@@ -788,6 +788,8 @@ export const AMO_LEAD_FIELDS = {
   storeAddress: "Адрес магазина",
   guestName: "Имя гостя",
   certificateNumber: "№ Сертификата",
+  certificateEmail: "Email получателя",
+  certificateFrom: "Сертификат действителен От",
   validUntil: "Сертификат действителен до",
   invoiceNo: "№ Счета",
   orderContains: "Состав заказа",

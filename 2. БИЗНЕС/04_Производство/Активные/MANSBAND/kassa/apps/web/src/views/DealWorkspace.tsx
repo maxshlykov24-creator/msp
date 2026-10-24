@@ -477,6 +477,11 @@ export function DealWorkspace({
           <fieldset className="space-y-4 disabled:opacity-80">
             <ConsultantFields data={consultants} onChange={setConsultants} />
             <ClientFields data={client} onChange={setClient} />
+            {live.kind === "cert_digital" && (
+              <Field label="Почта клиента">
+                <input className="input" type="email" value={live.email || ""} readOnly placeholder="Не указана" />
+              </Field>
+            )}
           </fieldset>
         </Card>
 
