@@ -109,6 +109,33 @@ def test_confirmed_error_only_tries_next_channel(db,cfg):
     assert len({p["crmMessageId"] for p in c.posts})==2
 
 
+@pytest.mark.parametrize("next_result,expected", [((201,{"messageId":"m2"}),"pending"),
+    (httpx.ReadTimeout("lost second reply"),"uncertain")])
+def test_old_error_cannot_reopen_next_attempt(db,cfg,next_result,expected):
+    j=job(db);c=Fake([(201,{"messageId":"m1"}),next_result])
+    run(db,j,c,cfg)
+    db.add(ReminderEvent(key="first-failed",message_id="m1",status="error"));db.commit()
+    reconcile(db,NOW);run(db,j,c,cfg)
+    assert j.state==expected
+    for _ in range(3):
+        reconcile(db,NOW);run(db,j,c,cfg)
+    assert j.state==expected and len(c.posts)==2
+
+
+def test_stage_changes_while_routes_are_resolving(db,cfg):
+    j=job(db);c=Fake();original=c.get;reads=[]
+    def get(path,**kwargs):
+        data=original(path,**kwargs)
+        if path.startswith("/api/v4/leads/"):
+            reads.append(path)
+            if len(reads)>1:return {**data,"status_id":142}
+        return data
+    c.get=get
+    run(db,j,c,cfg)
+    assert j.state=="cancelled" and not c.posts
+    assert list(db.scalars(select(StageAttempt)))==[]
+
+
 def test_max_phone_not_registered_is_confirmed_rejection(db,cfg):
     j=job(db);c=Fake([(400,{"error":"CHANNEL_MAX_PHONE_NOT_OCCUPIED"}),(201,{"messageId":"m2"})])
     run(db,j,c,cfg)
@@ -179,6 +206,6 @@ def test_new_event_dedup_and_no_resend_after_attempt(db,cfg):
             "account_id":32417154,"last_modified":int(stamp.timestamp())}.items()}
     assert ingest(db,form(NOW),NOW,cfg)==1
     assert ingest(db,form(NOW),NOW,cfg)==0
-    j=db.scalar(select(StageJob));j.plan=[{"transport":"telegram","channelId":"telegram","recipient":{"chatId":"123"}}];db.commit()
+    j=db.scalar(select(StageJob));j.contact_id=123;j.plan=[{"transport":"telegram","channelId":"telegram","recipient":{"chatId":"123"}}];db.commit()
     c=Fake([(201,{"messageId":"m1"})]);run(db,j,c,cfg)
     assert ingest(db,form(NOW+timedelta(seconds=1)),NOW+timedelta(seconds=1),cfg)==0

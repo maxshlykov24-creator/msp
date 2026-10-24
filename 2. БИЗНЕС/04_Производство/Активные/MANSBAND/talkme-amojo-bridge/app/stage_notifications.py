@@ -250,7 +250,7 @@ def reconcile(db, now):
         job = db.get(StageJob, a.job_id)
         if any(e.status in SUCCESS for e in events):
             a.state, job.state, job.reason = "sent", "sent", ""
-        elif job.state not in {"sent", "cancelled"} and any(e.status == "error" for e in events):
+        elif a.state != "error" and job.state not in {"sent", "cancelled"} and any(e.status == "error" for e in events):
             a.state, a.reason = "error", "confirmed_delivery_error"
             job.state, job.reason, job.check_at = "ready", a.reason, dispatch_time(now)
     db.commit()
@@ -290,17 +290,31 @@ def send_job(db, job, c, s, r, now, *, clock=None):
             if prior.state not in {"skipped", "error"}:
                 return
             continue
-        current = (clock or utcnow)()
-        if dispatch_time(current) != current:
-            job.check_at, job.state = dispatch_time(current), "ready"
-            db.commit()
-            return
         channel = channels.get(route["channelId"]) or {}
         expected = "tgapi" if route["transport"] == "telegram" else route["transport"]
+        available = bool(route["recipient"]) and channel.get("state") == "active" and channel.get("transport") == expected
+        if available:
+            fresh = get_lead(c, job.lead_id)
+            if (fresh.get("pipeline_id") != 9601214 or fresh.get("status_id") != job.status_id
+                    or fresh.get("is_deleted") or primary_contact(fresh) != job.contact_id):
+                job.state, job.reason = "cancelled", "stage_or_contact_changed"
+                db.commit()
+                return
+            try:
+                body = render(fresh, s)
+            except ValueError as exc:
+                job.state, job.reason, job.check_at = "blocked", str(exc)[:100], now + timedelta(hours=1)
+                db.commit()
+                return
+            current = (clock or utcnow)()
+            if dispatch_time(current) != current:
+                job.check_at, job.state = dispatch_time(current), "ready"
+                db.commit()
+                return
         a = StageAttempt(job_id=job.id, position=pos, transport=route["transport"],
             crm_message_id=f"stage-{job.lead_id}-{job.status_id}-{pos}")
         db.add(a)
-        if not route["recipient"] or channel.get("state") != "active" or channel.get("transport") != expected:
+        if not available:
             a.state, a.reason = "skipped", "no_recipient_or_inactive_channel"
             db.commit()
             continue
