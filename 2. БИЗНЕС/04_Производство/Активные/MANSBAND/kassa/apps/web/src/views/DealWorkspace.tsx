@@ -446,11 +446,10 @@ export function DealWorkspace({
               </span>
             )}
           </div>
-          <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
-            <div className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-2.5 py-1">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-mute">Вид заявки</span>
-              <span className="truncate text-[13px] font-medium text-mute-soft">{FUNNEL_LABEL[live.funnel] ?? live.funnel}</span>
-            </div>
+          <div className="mt-2 flex min-w-0 flex-wrap items-center justify-start gap-2">
+            <span className="chip border border-white/10 bg-white/[0.035] text-mute-soft">
+              {FUNNEL_LABEL[live.funnel] ?? live.funnel}
+            </span>
             {live.store && (
               <span className="chip shrink-0 border border-white/10 bg-white/[0.07] text-mute-soft">
                 <Store size={13} aria-hidden="true" />

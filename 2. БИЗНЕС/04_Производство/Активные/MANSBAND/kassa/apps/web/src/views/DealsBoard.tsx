@@ -472,10 +472,10 @@ export function DealsBoard({
                     <Badge tone="blue">{KIND_LABEL[d.kind]}</Badge>
                   </td>
                   <td
-                    className="px-2 py-2.5 align-top text-mute-soft truncate"
+                    className="px-2 py-2.5 align-top text-mute-soft whitespace-nowrap"
                     title={d.store}
                   >
-                    {d.store.replace(/^На\s+/i, "")}
+                    {d.store}
                   </td>
                   <td className="px-2 py-2.5 align-top text-mute-soft truncate" title={d.consultant || undefined}>
                     {d.consultant || "—"}
