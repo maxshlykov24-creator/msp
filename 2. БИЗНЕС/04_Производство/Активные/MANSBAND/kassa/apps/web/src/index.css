@@ -512,7 +512,7 @@ html.theme-light nav {
   transition: background-color 0.35s var(--ease), border-color 0.35s var(--ease);
 }
 
-/* Узкая колонка разделов. Без backdrop-filter: иначе меню профиля обрезается. */
+/* Узкая колонка разделов. Без backdrop-filter, чтобы подсказка не обрезалась. */
 .kassa-rail {
   width: 72px;
   height: 100%;
