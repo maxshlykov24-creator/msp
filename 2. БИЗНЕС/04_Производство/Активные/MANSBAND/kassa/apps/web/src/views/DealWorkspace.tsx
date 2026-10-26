@@ -1,9 +1,9 @@
 import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, isHoldStage, defaultHoldUntil, holdStageError } from "@kassa/shared";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Store } from "lucide-react";
 import type { CartItem, Deal, Payment } from "../data/types";
 import { useStore } from "../store";
-import { KIND_LABEL } from "../lib/labels";
+import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
 import { Button, Card, Field, Modal, StageBadge } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
 import { PaymentBlock } from "../components/PaymentBlock";
@@ -436,12 +436,24 @@ export function DealWorkspace({
       )}
 
       <div className="mb-1 flex items-center justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-white">{KIND_LABEL[live.kind] ?? live.kind}</h1>
             {!hideBack && (
               <span className="chip bg-white/10 text-white font-mono text-[15px] font-semibold tracking-wide">
                 Заявка №{live.number}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
+            <div className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-2.5 py-1">
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-mute">Вид заявки</span>
+              <span className="truncate text-[13px] font-medium text-mute-soft">{FUNNEL_LABEL[live.funnel] ?? live.funnel}</span>
+            </div>
+            {live.store && (
+              <span className="chip shrink-0 border border-white/10 bg-white/[0.07] text-mute-soft">
+                <Store size={13} aria-hidden="true" />
+                {live.store}
               </span>
             )}
           </div>
