@@ -10,6 +10,40 @@ export function defaultHoldUntil(paid: number, today = new Intl.DateTimeFormat("
   date.setUTCDate(date.getUTCDate() + (paid > 0 ? 14 : 1));
   return date.toISOString().slice(0, 10);
 }
+
+/** Заявки, у которых срок «Отложка до» считается от оплаты. */
+export const RESERVE_UNTIL_KINDS: DealKind[] = ["sale", "company", "rental", "deferred", "exchange"];
+
+/** Оплата есть, но заказ ею не закрыт. */
+export function isPartialPayment(paid: number, total: number): boolean {
+  return paid > 0 && total > paid;
+}
+
+/**
+ * Срок «Отложка до» при сохранении.
+ * Частичная оплата — выбранная дата или две недели.
+ * Без оплаты и не «Успех» — уже сохранённая дата или следующий день.
+ * Полная оплата и пустой заказ срок не назначают.
+ */
+export function reserveUntilForSave(input: {
+  paid: number;
+  total: number;
+  stage?: string;
+  chosen?: string;
+  today?: string;
+}): string | undefined {
+  if ((input.stage ?? "") === "Успех") return undefined;
+  const chosen = (input.chosen ?? "").slice(0, 10);
+  const hasChosen = /^\d{4}-\d{2}-\d{2}$/.test(chosen);
+  if (isPartialPayment(input.paid, input.total)) {
+    return hasChosen ? chosen : defaultHoldUntil(input.paid, input.today);
+  }
+  if (input.paid <= 0) {
+    if (input.total <= 0) return hasChosen ? chosen : undefined;
+    return hasChosen ? chosen : defaultHoldUntil(0, input.today);
+  }
+  return undefined;
+}
 export function holdStageError(deal: Pick<Deal, "kind" | "stage" | "comment" | "actualUntil" | "reservedUntil" | "deferredUntil" | "companyName" | "items">): string | null {
   if (!HOLD_DEAL_KINDS.includes(deal.kind) || !isHoldStage(deal.stage)) return null;
   if (deal.stage === "Дано обещание") {

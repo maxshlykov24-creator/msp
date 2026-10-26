@@ -1,4 +1,5 @@
 import { DatePicker } from "../../components/DatePicker";
+import { defaultHoldUntil } from "@kassa/shared";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
@@ -102,11 +103,6 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
   const [payments, setPayments] = useState<Payment[]>([]);
   const paid = payments.reduce((s, p) => s + p.amount, 0);
 
-  // Срок отложки авто: без аванса — 1 день (бесплатно), с авансом — 2 недели.
-  useEffect(() => {
-    if (reservedManual) return;
-    setReservedUntil(addDays(todayStr(), paid > 0 ? 14 : 1));
-  }, [paid, reservedManual]);
   const remainder = total - paid;
   const change = Math.max(0, paid - total);
 
@@ -120,13 +116,18 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
 
   const topUpPaid = topUp.payments.reduce((s, p) => s + p.amount, 0);
   const totalPaid = paid + topUpPaid;
+  useEffect(() => {
+    if (reservedManual) return;
+    if (totalPaid <= 0) setReservedUntil(defaultHoldUntil(0));
+    else if (totalPaid < total) setReservedUntil(defaultHoldUntil(totalPaid));
+  }, [totalPaid, total, reservedManual]);
   const topUpChange = Math.max(0, topUpPaid - Math.max(0, remainder));
   const [movementCreated, setMovementCreated] = useState(false);
   const fieldGaps = [
     !client.phone && "Телефон клиента",
     !client.name && "Имя клиента",
     items.length === 0 && "Товары",
-    !reservedUntil && "Срок действия отложки",
+    !reservedUntil && "Отложка до",
     ...changeTipsMissing(paid, total, changeInfo, tips),
     ...changeTipsMissing(topUpPaid, Math.max(0, remainder), topUp.changeInfo, topUp.tips),
   ].filter(Boolean) as string[];
@@ -252,7 +253,7 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
           <Field label="Дата отложки">
             <DatePicker className="input opacity-70" readOnly value={reservedAt} />
           </Field>
-          <Field label="Срок действия отложки" required hint={paid > 0 ? "С авансом — 2 недели (можно изменить)" : "Без аванса — 1 день (можно изменить)"}>
+          <Field label="Отложка до" required hint={totalPaid <= 0 ? "Без оплаты — следующий день, можно изменить" : totalPaid < total ? "Частичная оплата — две недели, можно изменить" : "Можно изменить"}>
             <DatePicker
               className="input"
               value={reservedUntil}

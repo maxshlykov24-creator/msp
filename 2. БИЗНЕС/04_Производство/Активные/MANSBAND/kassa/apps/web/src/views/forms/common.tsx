@@ -19,6 +19,9 @@ import { useStore } from "../../store";
 import type { CartItem, Deal, Payment, Payout } from "../../data/types";
 import {
   SARY_BONUS,
+  defaultHoldUntil,
+  isPartialPayment,
+  reserveUntilForSave,
   isSuitCategory,
   mansbandPayoutAmount,
   normalizePayouts,
@@ -1341,6 +1344,45 @@ export function CommentField({
 /** Новая заявка на «Ждет товар» не сохраняется, пока не запущено перемещение. */
 export function movementRequiredGap(stage: string, movementCreated: boolean): string | false {
   return stage === "Ждет товар" && !movementCreated && "Задача на перемещение";
+}
+
+/** Срок «Отложка до»: при частичной оплате поле видно и стоит на две недели. */
+export function useAutoReserveUntil(paid: number, total: number) {
+  const partial = isPartialPayment(paid, total);
+  const [until, setUntil] = useState("");
+  const [manual, setManual] = useState(false);
+  const wasPartial = useRef(false);
+  const seenPaid = useRef(paid);
+  const untilRef = useRef("");
+  untilRef.current = until;
+
+  useEffect(() => {
+    if (partial) wasPartial.current = true;
+    else setManual(false);
+    const paidChanged = seenPaid.current !== paid;
+    seenPaid.current = paid;
+    if (!partial || manual) return;
+    if (!untilRef.current || paidChanged) setUntil(defaultHoldUntil(paid));
+  }, [partial, paid, manual]);
+
+  function forSave(stage: string): string | undefined {
+    return reserveUntilForSave({
+      paid,
+      total,
+      stage,
+      chosen: partial ? until : paid <= 0 && wasPartial.current ? "" : until,
+    });
+  }
+
+  return {
+    partial,
+    until,
+    onChange: (value: string) => {
+      setManual(true);
+      setUntil(value);
+    },
+    forSave,
+  };
 }
 
 export function FormShell({

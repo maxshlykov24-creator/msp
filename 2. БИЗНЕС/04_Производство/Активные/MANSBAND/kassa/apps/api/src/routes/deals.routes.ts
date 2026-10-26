@@ -5,6 +5,8 @@ import {
   stageDateError,
   HOLD_DEAL_KINDS,
   AUTOMATIC_HOLD_STAGES,
+  RESERVE_UNTIL_KINDS,
+  reserveUntilForSave,
   companyHandoverSchema,
   companyStatusSchema,
   convertKindSchema,
@@ -143,6 +145,15 @@ export default async function dealsRoutes(app: FastifyInstance) {
     requested.id = raw.id ?? idempotencyKey;
     requested.subtotal = requested.items.reduce((sum, i) => sum + i.price * i.qty, 0);
     requested.discountTotal = Math.max(0, requested.subtotal - requested.total);
+    if (RESERVE_UNTIL_KINDS.includes(requested.kind)) {
+      const until = reserveUntilForSave({
+        paid: requested.paid,
+        total: requested.total,
+        stage: requested.stage,
+        chosen: requested.reservedUntil,
+      });
+      if (until) requested.reservedUntil = until;
+    }
     const returnError = await validateReturnItems(requested as Deal);
     if (returnError) return reply.code(400).send({ message: returnError });
 
@@ -215,6 +226,14 @@ export default async function dealsRoutes(app: FastifyInstance) {
       return reply.code(400).send({
         message: "Отложку и обещание нельзя закрыть в Успех. Сначала смените тип заявки.",
       });
+    }
+    if (RESERVE_UNTIL_KINDS.includes(existing.kind) && parsed.data.reservedUntil === undefined && !existing.reservedUntil) {
+      const until = reserveUntilForSave({
+        paid: merged.paid,
+        total: merged.total,
+        stage: merged.stage,
+      });
+      if (until) parsed.data.reservedUntil = until;
     }
     const updated = await deals.updateDealFields(ref, parsed.data, req.user.name);
     if (!updated) return reply.code(404).send({ message: "Заявка не найдена" });

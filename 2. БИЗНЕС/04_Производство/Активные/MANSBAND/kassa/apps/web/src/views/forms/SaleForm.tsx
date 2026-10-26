@@ -25,6 +25,7 @@ import {
   sourceMissingForSuccess,
   movementRequiredGap,
   tipsDealFields,
+  useAutoReserveUntil,
   useSaved,
   type ChangeInfo,
   type ClientData,
@@ -72,6 +73,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [tips, setTips] = useState<TipsInfo>({ amount: 0, status: "issued", destination: "" });
   const paid = payments.reduce((s, p) => s + p.amount, 0);
+  const reserve = useAutoReserveUntil(paid, total);
   const remainder = total - paid;
   const change = Math.max(0, paid - total);
 
@@ -164,6 +166,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       payments,
       stage: s,
       actualUntil: s === "Дано обещание" ? actualUntil : undefined,
+      reservedUntil: reserve.forSave(s),
       comment,
       paymentDate: lastPaymentDate(payments),
       linkedDealNumber: slivFound?.number,
@@ -345,6 +348,13 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       </Card>
 
       {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+      {reserve.partial && stage !== "Успех" && (
+        <Card>
+          <Field label="Отложка до" hint="Частичная оплата — две недели вперёд, дату можно изменить">
+            <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
+          </Field>
+        </Card>
+      )}
       {isApproxDateStage(stage) && <Card><Field label="Примерная дата встречи или заказа" required><DatePicker className="input" value={approxMeetingDate} onChange={(value) => setApproxMeetingDate(value)} /></Field></Card>}
       {stage === "Встреча назначена" && !slivFound && <Card><Field label="Дата встречи" required><DatePicker className="input" value={meetingDate} onChange={(value) => setMeetingDate(value)} /></Field></Card>}
       {toast}

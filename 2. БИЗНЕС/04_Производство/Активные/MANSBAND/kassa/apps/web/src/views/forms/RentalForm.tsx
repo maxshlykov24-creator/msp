@@ -26,6 +26,7 @@ import {
   lastPaymentDate,
   movementRequiredGap,
   tipsDealFields,
+  useAutoReserveUntil,
   useSaved,
   type ChangeInfo,
   type ClientData,
@@ -122,6 +123,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
 
   const topUpPaid = topUp.payments.reduce((s, p) => s + p.amount, 0);
   const totalPaid = paid + topUpPaid;
+  const reserve = useAutoReserveUntil(totalPaid, total);
   const topUpChange = Math.max(0, topUpPaid - Math.max(0, remainder));
   const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
   const [movementCreated, setMovementCreated] = useState(false);
@@ -174,6 +176,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       payments: [...payments, ...topUp.payments],
       stage: s,
       actualUntil: s === "Дано обещание" ? actualUntil : undefined,
+      reservedUntil: reserve.forSave(s),
       rentalFrom: from,
       rentalTo: to,
       issueDate: issueDate || undefined,
@@ -352,6 +355,13 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       </Card>
 
       {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+      {reserve.partial && stage !== "Успех" && (
+        <Card>
+          <Field label="Отложка до" hint="Частичная оплата — две недели вперёд, дату можно изменить">
+            <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
+          </Field>
+        </Card>
+      )}
       {toast}
     </FormShell>
   );

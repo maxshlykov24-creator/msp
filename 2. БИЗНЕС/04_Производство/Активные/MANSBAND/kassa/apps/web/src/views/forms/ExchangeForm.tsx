@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../../store";
-import { Card } from "../../components/ui";
+import { Card, Field } from "../../components/ui";
+import { DatePicker } from "../../components/DatePicker";
 import { ProductPicker, cartTotal } from "../../components/ProductPicker";
 import { ReturnItemsSelector } from "../../components/ReturnItemsSelector";
 import { SourceDealSearch } from "../../components/SourceDealSearch";
@@ -18,6 +19,7 @@ import {
   returnDealFields,
   returnPayoutMissing,
   tipsDealFields,
+  useAutoReserveUntil,
   useSaved,
   type ChangeInfo,
   type ConsultantData,
@@ -70,6 +72,8 @@ export function ExchangeForm({
   const diff = newSum - returnSum;
 
   const paid = payments.reduce((s, p) => s + p.amount, 0);
+  const due = diff > 0 ? diff : 0;
+  const reserve = useAutoReserveUntil(due > 0 ? paid : 0, due);
   const change = diff > 0 ? Math.max(0, paid - diff) : 0;
   const refundAmount = diff < 0 ? -diff : 0;
 
@@ -113,6 +117,7 @@ export function ExchangeForm({
       ],
       payments,
       stage: s,
+      reservedUntil: reserve.forSave(s),
       comment,
       paymentDate: lastPaymentDate(payments),
       ...tipsDealFields(tips, change),
@@ -255,6 +260,13 @@ export function ExchangeForm({
             tips={tips}
             onTips={setTips}
           />
+          {reserve.partial && (
+            <div className="mt-4 max-w-xs">
+              <Field label="Отложка до" hint="Частичная оплата — две недели вперёд, дату можно изменить">
+                <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
+              </Field>
+            </div>
+          )}
         </Card>
       )}
 

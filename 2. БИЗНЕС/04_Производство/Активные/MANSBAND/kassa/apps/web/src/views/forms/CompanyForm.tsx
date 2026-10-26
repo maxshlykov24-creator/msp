@@ -22,6 +22,7 @@ import {
   lastPaymentDate,
   movementRequiredGap,
   tipsDealFields,
+  useAutoReserveUntil,
   useSaved,
   type ChangeInfo,
   type ClientData,
@@ -68,6 +69,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
 
   const [payments, setPayments] = useState<Payment[]>([]);
   const paid = payments.reduce((s, p) => s + p.amount, 0);
+  const reserve = useAutoReserveUntil(paid, total);
   const change = Math.max(0, paid - total);
   const [changeInfo, setChangeInfo] = useState<ChangeInfo>({ status: "issued", destination: "" });
   const [tips, setTips] = useState<TipsInfo>({ amount: 0, status: "issued", destination: "" });
@@ -127,6 +129,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       payments,
       stage: s,
       actualUntil: s === "Дано обещание" ? actualUntil : undefined,
+      reservedUntil: reserve.forSave(s),
       comment,
       paymentDate: lastPaymentDate(payments),
       checkDiscount: discount || undefined,
@@ -284,6 +287,13 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       </Card>
 
       {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+      {reserve.partial && stage !== "Успех" && (
+        <Card>
+          <Field label="Отложка до" hint="Частичная оплата — две недели вперёд, дату можно изменить">
+            <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
+          </Field>
+        </Card>
+      )}
       {toast}
     </FormShell>
   );

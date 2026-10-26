@@ -158,9 +158,11 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("rentalReturnedAt", deal.rentalReturnedAt);
   put("rentalDeposit", deal.rentalDeposit);
 
-  // Отложка (kind=deferred): срок + признак «платная/бесплатная» по наличию аванса.
+  // «Отложка до» пишется при любой заявке, не только на этапе «Товар отложен».
+  if (deal.reservedUntil && /^\d{4}-\d{2}-\d{2}/.test(deal.reservedUntil)) {
+    put("reservedUntil", deal.reservedUntil.slice(0, 10));
+  }
   if (deal.stage === "Товар отложен" && deal.reservedUntil) {
-    put("reservedUntil", deal.reservedUntil);
     put("otlozhkaKind", deal.paid > 0 ? "Платная" : "Бесплатная");
   }
   // Резерв компании (kind=company).
