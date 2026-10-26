@@ -1361,12 +1361,13 @@ def confirm_lead_after_comment_sync(mss: requests.Session, amo: lib.Amo, lead_id
 
 
 def known_integration_text(field_id: int, actual: str, expected: str, order: dict) -> bool:
-    if field_id == 929025:
-        # This existing single-line address-comment field saves LF as a space.
+    if field_id in (929025, 929079):
+        # These existing address fields save LF as a space.
         # Accept only that exact observed conversion, confirmed by the source;
         # never collapse arbitrary whitespace or accept changed words/numbers.
         address = order.get("shipmentAddressFull") or {}
-        source = str(address.get("comment") or address.get("addInfo") or "")
+        source = (str(order.get("shipmentAddress") or "") if field_id == 929079
+                  else str(address.get("comment") or address.get("addInfo") or ""))
         return ("\n" in expected and actual == expected.replace("\n", " ")
                 and source in (expected, actual))
     if field_id == FIELDS["comment"]:
@@ -2591,6 +2592,37 @@ def self_test() -> None:
                                                    {"shipmentAddressFull": {"comment": actual}}))
             self.assertFalse(known_integration_text(FIELDS["ms_id"], actual, expected,
                                                    {"shipmentAddressFull": {"comment": actual}}))
+
+        def test_delivery_address_accepts_only_source_confirmed_lf_to_space(self):
+            import copy
+            expected, actual = "Город 1\nДом 2", "Город 1 Дом 2"
+            order = {"shipmentAddress": expected}
+            self.assertTrue(known_integration_text(929079, actual, expected, order))
+            self.assertTrue(known_integration_text(929079, actual, expected, {"shipmentAddress": actual}))
+            for source in ({}, {"shipmentAddress": "Иной адрес"},
+                           {"shipmentAddressFull": {"comment": expected}}):
+                self.assertFalse(known_integration_text(929079, actual, expected, source))
+            for changed in ("Город 1 Дом 3", "Город 1  Дом 2", "Город 1\tДом 2", ""):
+                self.assertFalse(known_integration_text(929079, changed, expected, order))
+            payload = {"pipeline_id": PIPELINE, "status_id": WON, "price": 123,
+                       "name": "Заказ 1", "responsible_user_id": MAXIM, "created_at": 1, "closed_at": 2,
+                       "custom_fields_values": [
+                           {"field_id": 929079, "values": [{"value": expected}]},
+                           {"field_id": FIELDS["ms_id"], "values": [{"value": "uuid"}]}],
+                       "_embedded": {"contacts": [{"id": 5, "is_main": True}]}}
+            lead = copy.deepcopy(payload);lead["custom_fields_values"][0]["values"][0]["value"] = actual
+            with patch.object(module, "api_write") as write, patch.object(module, "amo_request") as request:
+                checked = validate_lead(copy.deepcopy(lead), "5", payload, order)
+                self.assertEqual(checked["_migration_text_normalizations"], [929079])
+                for key, value in (("price", 124), ("closed_at", 3), ("status_id", 143)):
+                    altered = copy.deepcopy(lead);altered[key] = value
+                    with self.assertRaises(Stop):
+                        validate_lead(altered, "5", payload, order)
+                altered = copy.deepcopy(lead);altered["custom_fields_values"][1]["values"][0]["value"] = "another-uuid"
+                with self.assertRaises(Stop):
+                    validate_lead(altered, "5", payload, order)
+                write.assert_not_called()
+                request.assert_not_called()
 
         def test_address_normalization_keeps_all_other_lead_checks_strict(self):
             import copy
