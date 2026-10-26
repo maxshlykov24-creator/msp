@@ -9,7 +9,6 @@ import { Button, Card, Field, Modal, StageBadge } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
 import { PaymentBlock } from "../components/PaymentBlock";
 import { DealActionsBar } from "../components/DealActionsBar";
-import { MovementModal, defaultMovementTarget } from "../components/MovementModal";
 import { CreateTaskForm } from "../components/CreateTaskForm";
 import { ConvertKindForm, type ConvertKindPayload } from "../components/ConvertKindForm";
 import { RefundForm } from "./forms/RefundForm";
@@ -178,7 +177,6 @@ export function DealWorkspace({
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
-  const [moveOpen, setMoveOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
   const [returnMode, setReturnMode] = useState<null | "refund" | "exchange">(null);
@@ -491,39 +489,6 @@ export function DealWorkspace({
           onConvert={canConvert ? () => setConvertOpen(true) : undefined}
           onHistory={() => setHistoryOpen(true)}
           historyCount={history.length}
-          onMovement={() => setMoveOpen(true)}
-        />
-
-        <MovementModal
-          open={moveOpen}
-          onClose={() => setMoveOpen(false)}
-          dealNumber={live.number}
-          store={live.store || "На Бауманской"}
-          items={items}
-          // Заявка-зеркало из amoCRM приходит без состава: консультант выбирает
-          // позиции из каталога прямо в перемещении (созвон 04.09).
-          allowCatalogPick={items.length === 0}
-          defaultTarget={defaultMovementTarget(live.store || "На Бауманской")}
-          dealKind={live.kind}
-          onCreated={(summary) => {
-            void (async () => {
-              addDealComment(live.id, `Перемещение ${summary}`, activeConsultant);
-              setStage("Ждет товар");
-              if (USE_MOCK) {
-                await updateDeal(live.id, { stage: "Ждет товар" } as Partial<Deal>);
-                return;
-              }
-              try {
-                const updated = await api.get<Deal>(`/deals/${live.number}`);
-                if (updated) {
-                  replaceDeal(updated);
-                  setStage(updated.stage || "Ждет товар");
-                }
-              } catch {
-                // этап уже выставил API при создании задачи
-              }
-            })();
-          }}
         />
 
         <Card>
@@ -633,6 +598,26 @@ export function DealWorkspace({
             onChange={setItems}
             dealNumber={live.number}
             dealKind={live.kind}
+            movementStore={live.store || "На Бауманской"}
+            onMovementCreated={(summary) => {
+              void (async () => {
+                addDealComment(live.id, `Перемещение ${summary}`, activeConsultant);
+                setStage("Ждет товар");
+                if (USE_MOCK) {
+                  await updateDeal(live.id, { stage: "Ждет товар" } as Partial<Deal>);
+                  return;
+                }
+                try {
+                  const updated = await api.get<Deal>(`/deals/${live.number}`);
+                  if (updated) {
+                    replaceDeal(updated);
+                    setStage(updated.stage || "Ждет товар");
+                  }
+                } catch {
+                  // этап уже выставил API при создании задачи
+                }
+              })();
+            }}
           />
           {itemStates.length > 0 && (
             <div className="mt-3 border-t border-ink-800 pt-3">

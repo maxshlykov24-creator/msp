@@ -364,6 +364,7 @@ export function ProductPicker({
   showMovement = true,
   ensureDeal,
   onMovementCreated,
+  movementStore,
 }: {
   items: CartItem[];
   onChange: (items: CartItem[]) => void;
@@ -376,6 +377,8 @@ export function ProductPicker({
   /** Черновик ещё не в базе: по «Запустить» сначала сохранить заявку. */
   ensureDeal?: () => Promise<{ dealNumber: number; store: string } | null>;
   onMovementCreated?: (summary: string) => void;
+  /** Склад заявки. Если не передан, берётся выбранный в шапке. */
+  movementStore?: string;
 }) {
   const { activeStore } = useStore();
   const suitGroupMeta = useSuitGrouping(items, onChange);
@@ -1067,7 +1070,7 @@ export function ProductPicker({
         open={moveOpen}
         onClose={() => setMoveOpen(false)}
         dealNumber={dealNumber}
-        store={activeStore}
+        store={movementStore || activeStore}
         items={items}
         dealKind={dealKind}
         ensureDeal={ensureDeal}

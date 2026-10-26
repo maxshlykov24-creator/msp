@@ -4,8 +4,6 @@ import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
 import { Card, Field } from "../../components/ui";
 import { ProductPicker, cartTotal, cartItemsDiscount } from "../../components/ProductPicker";
-import { DealActionsBar } from "../../components/DealActionsBar";
-import { MovementModal, defaultMovementTarget } from "../../components/MovementModal";
 import {
   ClientFields,
   CommentField,
@@ -118,7 +116,6 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
 
   const [comment, setComment] = useState("");
   const [stage, setStage] = useState("Товар в магазине");
-  const [moveOpen, setMoveOpen] = useState(false);
   const [persistedNumber, setPersistedNumber] = useState<number | null>(null);
 
   const topUpPaid = topUp.payments.reduce((s, p) => s + p.amount, 0);
@@ -203,9 +200,6 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
       storeAddress={STORE_ADDRESS[activeStore]}
       summary={<SummaryBar total={total} paid={totalPaid} />}
       missingRequired={missingRequired}
-      headerActions={
-        <DealActionsBar onMovement={items.length > 0 ? () => setMoveOpen(true) : undefined} />
-      }
       footer={
         <StageActions
           stages={SAVE_STAGES}
@@ -217,22 +211,6 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
         />
       }
     >
-      <MovementModal
-        open={moveOpen}
-        onClose={() => setMoveOpen(false)}
-        dealNumber={persistedNumber ?? undefined}
-        store={activeStore}
-        items={items}
-        defaultTarget={defaultMovementTarget(activeStore)}
-        ensureDeal={persistedNumber == null ? () => ensureDealForMove() : undefined}
-        onCreated={() => {
-          setMovementCreated(true);
-          setStage("Ждет товар");
-          setSaved(true);
-          setTimeout(onDone, 600);
-        }}
-      />
-
       <Card>
         <SectionTitle>Консультант и клиент</SectionTitle>
         <ConsultantFields

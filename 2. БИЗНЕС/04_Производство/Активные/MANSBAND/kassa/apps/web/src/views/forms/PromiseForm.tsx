@@ -5,8 +5,6 @@ import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
 import { Card, Field } from "../../components/ui";
 import { ProductPicker, cartTotal } from "../../components/ProductPicker";
-import { DealActionsBar } from "../../components/DealActionsBar";
-import { MovementModal, defaultMovementTarget } from "../../components/MovementModal";
 import {
   ClientFields,
   CommentField,
@@ -72,7 +70,6 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
   const [approxMeetingDate, setApproxMeetingDate] = useState("");
   const [comment, setComment] = useState("");
   const [stage, setStage] = useState("Дано обещание");
-  const [moveOpen, setMoveOpen] = useState(false);
   const [persistedNumber, setPersistedNumber] = useState<number | null>(null);
 
   const [movementCreated, setMovementCreated] = useState(false);
@@ -142,9 +139,6 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
       meta={meta}
       storeAddress={STORE_ADDRESS[activeStore]}
       missingRequired={missingRequired}
-      headerActions={
-        <DealActionsBar onMovement={items.length > 0 ? () => setMoveOpen(true) : undefined} />
-      }
       footer={
         <StageActions
           stages={["Дано обещание", "Хочет прийти", "Хочет заказать", "Ждет товар"]}
@@ -156,22 +150,6 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
         />
       }
     >
-      <MovementModal
-        open={moveOpen}
-        onClose={() => setMoveOpen(false)}
-        dealNumber={persistedNumber ?? undefined}
-        store={activeStore}
-        items={items}
-        defaultTarget={defaultMovementTarget(activeStore)}
-        ensureDeal={persistedNumber == null ? () => ensureDealForMove() : undefined}
-        onCreated={() => {
-          setMovementCreated(true);
-          setStage("Ждет товар");
-          setSaved(true);
-          setTimeout(onDone, 600);
-        }}
-      />
-
       <Card>
         <SectionTitle>Консультант и клиент</SectionTitle>
         <ConsultantFields
