@@ -1,3 +1,4 @@
+import { DatePicker } from "../components/DatePicker";
 import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, isHoldStage, defaultHoldUntil, holdStageError } from "@kassa/shared";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Store } from "lucide-react";
@@ -466,8 +467,8 @@ export function DealWorkspace({
       </Hint>
 
       <div className="space-y-5">
-        {stage === "Дано обещание" && <Card><Field label="Актуально до" required><input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} /></Field></Card>}
-        {stage === "Товар отложен" && <Card><Field label="Срок действия отложки" required><input type="date" className="input" value={reservedUntil} onChange={(e) => setReservedUntil(e.target.value)} /></Field></Card>}
+        {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+        {stage === "Товар отложен" && <Card><Field label="Срок действия отложки" required><DatePicker className="input" value={reservedUntil} onChange={(value) => setReservedUntil(value)} /></Field></Card>}
         <DealActionsBar
           onTask={() => setTaskOpen(true)}
           onConvert={canConvert ? () => setConvertOpen(true) : undefined}
@@ -591,19 +592,17 @@ export function DealWorkspace({
             <SectionTitle>Сроки аренды</SectionTitle>
             <fieldset className="grid sm:grid-cols-2 gap-3 disabled:opacity-80">
               <Field label="Начало аренды">
-                <input
+                <DatePicker
                   className="input"
-                  type="date"
                   value={rentalFrom}
-                  onChange={(e) => setRentalFrom(e.target.value)}
+                  onChange={(value) => setRentalFrom(value)}
                 />
               </Field>
               <Field label="Конец аренды">
-                <input
+                <DatePicker
                   className="input"
-                  type="date"
                   value={rentalTo}
-                  onChange={(e) => setRentalTo(e.target.value)}
+                  onChange={(value) => setRentalTo(value)}
                 />
               </Field>
             </fieldset>

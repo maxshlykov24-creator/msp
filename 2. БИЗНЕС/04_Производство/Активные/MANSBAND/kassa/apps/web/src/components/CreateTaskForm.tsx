@@ -1,3 +1,4 @@
+import { DatePicker } from "./DatePicker";
 import { useEffect, useMemo, useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { STORES, TASK_FLOW, TASK_QUEUES, taskTitle } from "@kassa/shared";
@@ -224,7 +225,7 @@ export function CreateTaskForm({
       </div>
       <label className="block">
         <div className="field-label">Срок</div>
-        <input className="input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        <DatePicker className="input"  value={dueDate} onChange={(value) => setDueDate(value)} />
       </label>
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="block">

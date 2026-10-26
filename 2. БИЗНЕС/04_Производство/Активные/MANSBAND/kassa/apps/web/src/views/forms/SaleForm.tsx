@@ -1,3 +1,4 @@
+import { DatePicker } from "../../components/DatePicker";
 import { defaultHoldUntil } from "@kassa/shared";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
@@ -229,11 +230,10 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
         {slivFound && (
           <div className="mt-3 max-w-[220px]">
             <Field label="Дата встречи">
-              <input
-                type="date"
+              <DatePicker
                 className="input"
                 value={meetingDate}
-                onChange={(e) => setMeetingDate(e.target.value)}
+                onChange={(value) => setMeetingDate(value)}
               />
             </Field>
           </div>
@@ -296,7 +296,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
         </div>
       </Card>
 
-      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} /></Field></Card>}
+      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
       {toast}
     </FormShell>
   );

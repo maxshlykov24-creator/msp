@@ -1,3 +1,4 @@
+import { DatePicker } from "./DatePicker";
 import { useMemo, useState } from "react";
 import { Button, Field } from "./ui";
 import { AtelierAmountField } from "./AtelierAmountField";
@@ -241,23 +242,21 @@ export function ConvertKindForm({
         <div className="space-y-3">
           <div className="grid sm:grid-cols-2 gap-3">
             <Field label="Начало аренды" required>
-              <input
+              <DatePicker
                 className="input"
-                type="date"
                 value={rentalFrom}
-                onChange={(e) => {
-                  const v = e.target.value;
+                onChange={(value) => {
+                  const v = value;
                   setRentalFrom(v);
                   if (v && !rentalTo) setRentalTo(addDays(v, 2));
                 }}
               />
             </Field>
             <Field label="Конец аренды" required>
-              <input
+              <DatePicker
                 className="input"
-                type="date"
                 value={rentalTo}
-                onChange={(e) => setRentalTo(e.target.value)}
+                onChange={(value) => setRentalTo(value)}
               />
             </Field>
           </div>

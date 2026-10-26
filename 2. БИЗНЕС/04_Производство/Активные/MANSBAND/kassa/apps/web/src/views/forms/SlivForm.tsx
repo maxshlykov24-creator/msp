@@ -1,3 +1,4 @@
+import { DatePicker } from "../../components/DatePicker";
 import { useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { useStore } from "../../store";
@@ -103,7 +104,7 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
         </div>
         <div className="mt-4 max-w-[220px]">
           <Field label="Дата встречи" hint="Нужна, если этап «Встреча назначена»">
-            <input type="date" className="input" value={meetingDate} onChange={(e) => handleMeetingDate(e.target.value)} />
+            <DatePicker className="input" value={meetingDate} onChange={(value) => handleMeetingDate(value)} />
           </Field>
         </div>
         <div className="mt-4">

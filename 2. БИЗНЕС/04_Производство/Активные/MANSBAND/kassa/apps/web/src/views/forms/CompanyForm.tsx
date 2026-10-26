@@ -1,3 +1,4 @@
+import { DatePicker } from "../../components/DatePicker";
 import { defaultHoldUntil, isHoldStage } from "@kassa/shared";
 import { useState } from "react";
 import { useStore } from "../../store";
@@ -239,7 +240,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
         <CommentField value={comment} onChange={setComment} required={stage === "Дано обещание"} />
       </Card>
 
-      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} /></Field></Card>}
+      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
       {toast}
     </FormShell>
   );

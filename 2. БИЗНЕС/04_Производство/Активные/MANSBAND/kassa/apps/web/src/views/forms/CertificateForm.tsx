@@ -1,3 +1,4 @@
+import { DatePicker } from "../../components/DatePicker";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useStore } from "../../store";
@@ -380,19 +381,17 @@ export function CertificateForm({ onDone, digital = false }: { onDone: () => voi
             </Field>
           </div>
           <Field label="Дата получения">
-            <input
-              type="date"
+            <DatePicker
               className="input"
               value={receivedAt}
-              onChange={(e) => handleReceivedAt(e.target.value)}
+              onChange={(value) => handleReceivedAt(value)}
             />
           </Field>
           <Field label="Действителен до">
-            <input
-              type="date"
+            <DatePicker
               className="input"
               value={validUntil}
-              onChange={(e) => setValidUntil(e.target.value)}
+              onChange={(value) => setValidUntil(value)}
             />
           </Field>
         </div>

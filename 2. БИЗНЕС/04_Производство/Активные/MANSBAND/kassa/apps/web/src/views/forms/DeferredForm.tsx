@@ -1,3 +1,4 @@
+import { DatePicker } from "../../components/DatePicker";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
@@ -254,14 +255,13 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
         </div>
         <div className="grid sm:grid-cols-2 gap-4 mt-4">
           <Field label="Дата отложки">
-            <input type="date" className="input opacity-70" readOnly value={reservedAt} />
+            <DatePicker className="input opacity-70" readOnly value={reservedAt} />
           </Field>
           <Field label="Срок действия отложки" required hint={paid > 0 ? "С авансом — 2 недели (можно изменить)" : "Без аванса — 1 день (можно изменить)"}>
-            <input
-              type="date"
+            <DatePicker
               className="input"
               value={reservedUntil}
-              onChange={(e) => { setReservedUntil(e.target.value); setReservedManual(true); }}
+              onChange={(value) => { setReservedUntil(value); setReservedManual(true); }}
             />
           </Field>
         </div>

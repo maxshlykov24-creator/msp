@@ -1,3 +1,4 @@
+import { DatePicker } from "../../components/DatePicker";
 import { defaultHoldUntil, isHoldStage } from "@kassa/shared";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
@@ -249,19 +250,19 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
         <SectionTitle>Сроки</SectionTitle>
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Дата начала аренды" required={!isHoldStage(stage)}>
-            <input type="date" className="input" value={from} onChange={(e) => handleFrom(e.target.value)} />
+            <DatePicker className="input" value={from} onChange={(value) => handleFrom(value)} />
             <DateFieldHint value={from} />
           </Field>
           <Field label="Дата конца аренды" required={!isHoldStage(stage)}>
-            <input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} />
+            <DatePicker className="input" value={to} onChange={(value) => setTo(value)} />
             <DateFieldHint value={to} />
           </Field>
           <Field label="Фактическая дата выдачи">
-            <input type="date" className="input" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+            <DatePicker className="input" value={issueDate} onChange={(value) => setIssueDate(value)} />
             <DateFieldHint value={issueDate} />
           </Field>
           <Field label="Фактическая дата возврата">
-            <input type="date" className="input" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+            <DatePicker className="input" value={returnDate} onChange={(value) => setReturnDate(value)} />
             <DateFieldHint value={returnDate} />
           </Field>
         </div>
@@ -305,7 +306,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
         <PhotoField photos={photos} onChange={setPhotos} label="Фото паспорта / прав" />
       </Card>
 
-      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} /></Field></Card>}
+      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
       {toast}
     </FormShell>
   );

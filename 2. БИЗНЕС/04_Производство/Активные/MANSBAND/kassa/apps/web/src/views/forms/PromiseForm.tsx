@@ -1,3 +1,4 @@
+import { DatePicker } from "../../components/DatePicker";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
@@ -184,7 +185,7 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
         <ProductPicker items={items} onChange={setItems} />
         <div className="mt-4 max-w-[220px]">
           <Field label="Актуально до" required>
-            <input type="date" className="input" value={actualUntil} onChange={(e) => setActualUntil(e.target.value)} />
+            <DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} />
           </Field>
         </div>
       </Card>
