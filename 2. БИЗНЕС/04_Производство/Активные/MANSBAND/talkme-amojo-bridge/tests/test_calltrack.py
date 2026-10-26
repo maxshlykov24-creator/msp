@@ -814,8 +814,9 @@ def test_monitor_detects_exhaustion_and_persists_heartbeat(client, monkeypatch):
         assert any("Не хватает номеров" in message for message in messages)
         assert reconcile._load_state(db)["heartbeat"]
         report = reconcile.summary_text(db)
-        assert "активных рекламных визитов: 16" in report
-        assert "Ответов с резервным номером: 1" in report
+        assert "визитов с метками: 16" in report
+        assert "Резерв: 1 показов" in report
+        assert "Визитов с резервом: 1" in report
 
 
 def test_crm_retries_stop_after_six_failures(monkeypatch):

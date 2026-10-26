@@ -107,6 +107,46 @@ body {
   white-space: normal;
   line-height: 1.25;
 }
+
+/* Загрузка в поле поиска: полоска, не кружок-«буква С». */
+.kassa-load {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 6px;
+  height: 2px;
+  border-radius: 99px;
+  overflow: hidden;
+  pointer-events: none;
+  background: color-mix(in srgb, rgb(var(--fg)) 12%, transparent);
+}
+.kassa-load::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  border-radius: inherit;
+  background: rgb(var(--fg));
+  opacity: 0.72;
+  animation: kassa-load 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.kassa-spin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, rgb(var(--fg)) 22%, transparent);
+  border-top-color: rgb(var(--fg));
+  animation: kassa-spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes kassa-load {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+@keyframes kassa-spin {
+  to { transform: rotate(360deg); }
+}
 .deals-table-scroll::-webkit-scrollbar {
   height: 6px;
 }
@@ -868,6 +908,10 @@ html:not(.theme-light) .rail-mark-img {
   .kassa-modal,
   .stat-tile {
     transition: none;
+  }
+  .kassa-load::before,
+  .kassa-spin {
+    animation: none;
   }
 }
 

@@ -232,37 +232,16 @@ def summary_text(db: Session, now: Optional[dt.datetime] = None, *, previous_day
     report_date = local.date() - timedelta(days=1) if previous_day else local.date()
     start = dt.datetime.combine(report_date, dt.time.min, tzinfo=MSK).astimezone(timezone.utc)
     end = start + timedelta(days=1)
-    total = db.execute(
-        select(func.count()).select_from(CallEvent).where(
-            CallEvent.started_at >= start, CallEvent.started_at < end
-        )
-    ).scalar_one()
-    matched = db.execute(
-        select(func.count()).select_from(CallEvent).where(
-            CallEvent.started_at >= start,
-            CallEvent.started_at < end,
-            CallEvent.status == "matched",
-        )
-    ).scalar_one()
-    repeat = db.execute(
-        select(func.count()).select_from(CallEvent).where(
-            CallEvent.started_at >= start,
-            CallEvent.started_at < end,
-            CallEvent.status == "repeat",
-        )
-    ).scalar_one()
-    no_lead = db.execute(
-        select(func.count()).select_from(CallEvent).where(
-            CallEvent.started_at >= start,
-            CallEvent.started_at < end,
-            CallEvent.status == "no_lead",
-        )
-    ).scalar_one()
-    disputed = db.execute(
-        select(func.count()).select_from(Visit).where(
-            Visit.disputed.is_(True), Visit.created_at >= start, Visit.created_at < end
-        )
-    ).scalar_one()
+    calls = db.scalars(select(CallEvent).where(
+        CallEvent.started_at >= start, CallEvent.started_at < end,
+        CallEvent.status != "archived_test")).all()
+    total = len(calls)
+    repeat = sum(c.status == "repeat" for c in calls)
+    linked = sum(bool(c.lead_id) for c in calls)
+    by_visit = sum(c.number_kind == "pool" and bool(c.visit_id) for c in calls)
+    by_channel = sum(c.number_kind == "channel" for c in calls)
+    shared = sum(c.number_kind == "shared" for c in calls)
+    other = total - by_visit - by_channel - shared
     key = f"ct_pool_exhausted:{report_date.isoformat()}"
     exhausted_row = db.execute(select(KvState).where(KvState.key == key)).scalar_one_or_none()
     exhausted = int(exhausted_row.value) if exhausted_row and str(exhausted_row.value).isdigit() else 0
@@ -272,26 +251,52 @@ def summary_text(db: Session, now: Optional[dt.datetime] = None, *, previous_day
     recovered = sum(bool(item.get("recovered_at")) for item in fallback)
     visits = db.execute(select(Visit).where(Visit.created_at >= start, Visit.created_at < end)).scalars().all()
     sources: dict[str, int] = {}
+    from app.calltrack.pool import utm_source_map
+
+    aliases = utm_source_map(get_settings())
     for visit in visits:
-        source = visit.utm_source or ("yclid" if visit.yclid else "без рекламных меток")
+        raw = (visit.utm_source or "").strip().lower()
+        source = aliases.get(raw, raw) if raw else ("Яндекс Директ" if visit.yclid else "Без меток")
+        source = " ".join(source.split())[:48]
         sources[source] = sources.get(source, 0) + 1
     peaks = {}
     for metric in ("busy", "demand"):
         row = db.get(KvState, f"ct_peak_{metric}:{report_date}")
-        peaks[metric] = int(row.value) if row else 0
-    unresolved = db.scalar(select(func.count()).select_from(CallEvent).where(
-        CallEvent.started_at >= start, CallEvent.started_at < end,
-        CallEvent.status.in_(["new", "retry", "error", "no_lead", "unattributed"]))) or 0
-    return (
-        f"Коллтрекинг за {report_date}\n"
-        f"Визитов, увиденных скриптом: {len(visits)}\n"
-        f"Источники: {sources}\n"
-        f"Пик занятых номеров: {peaks['busy']}; активных рекламных визитов: {peaks['demand']}\n"
-        f"Ответов с резервным номером: {exhausted}\n"
-        f"Визитов с резервом (учёт после исправления): {len(fallback)}; позже получили подмену: {recovered}\n"
-        f"Звонков: {total}; с источником: {matched}; повторных: {repeat}\n"
-        f"Без сделки: {no_lead}; требуют разбора или не имеют точной атрибуции: {unresolved}"
-    )
+        peaks[metric] = int(row.value) if row else "нет данных"
+    problems = []
+    for label, count in (
+        ("ошибки CRM", sum(c.status in {"retry", "error"} for c in calls)),
+        ("не найдена связь со сделкой", sum(c.status == "no_lead" for c in calls)),
+        ("источник требует проверки", sum(c.status == "unattributed" and c.number_kind != "shared" for c in calls)),
+        ("ожидают обработки", sum(c.status == "new" for c in calls)),
+    ):
+        if count:
+            problems.append(f"{label}: {count}")
+    attribution = f"Привязка: визит — {by_visit} · канал — {by_channel} · общий номер — {shared}"
+    if other:
+        attribution += f" · не определена — {other}"
+    lines = [f"Коллтрекинг · {report_date:%d.%m.%Y}", "",
+             f"Звонки: {total} · повторные: {repeat}",
+             f"Со сделкой: {linked} из {total}", attribution,
+             "Обработка: " + ("; ".join(problems) if problems else "ошибок нет"), "",
+             "Номера",
+             f"Пик занятости: {peaks['busy']} · визитов с метками: {peaks['demand']}",
+             f"Резерв: {exhausted} показов" if exhausted else "Резерв: не понадобился"]
+    if fallback:
+        lines.append(f"Визитов с резервом: {len(fallback)} · позже получили подмену: {recovered}")
+    elif exhausted:
+        lines.append("Число визитов с резервом за этот день не записывалось.")
+    lines.extend(["", f"Трафик: {len(visits)} визитов скрипта"])
+    ranked = sorted(sources.items(), key=lambda item: (-item[1], item[0]))
+    top = [f"{name}: {count}" for name, count in ranked[:3]]
+    remaining = sum(count for _, count in ranked[3:])
+    if remaining:
+        top.append(f"Остальные: {remaining}")
+    for index in range(0, len(top), 2):
+        lines.append(" · ".join(top[index:index + 2]))
+    if exhausted:
+        lines.extend(["", "Резерв — общий номер: звонок проходит, точные метки могут отсутствовать."])
+    return "\n".join(lines)
 
 
 

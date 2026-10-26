@@ -5,7 +5,6 @@ import {
   ChevronRight,
   ChevronUp,
   Filter,
-  Loader2,
   Printer,
   ScanLine,
   Search,
@@ -761,15 +760,14 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         <div className="relative flex-1 min-w-0 w-full sm:min-w-[220px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
           <input
-            className="input pl-9 pr-10"
+            className="input pl-9"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Вариация, артикул, цвет или штрихкод…"
             autoComplete="off"
+            aria-busy={loading}
           />
-          {loading && (
-            <Loader2 size={17} className="absolute right-3 top-1/2 -translate-y-1/2 text-mute animate-spin" />
-          )}
+          {loading && <span className="kassa-load" aria-hidden />}
         </div>
         <button
           type="button"
@@ -1178,7 +1176,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                                                   className="inline-flex items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-[13px] text-mute-soft hover:border-gold/40 hover:text-white disabled:opacity-50"
                                                 >
                                                   {printingId === product.id ? (
-                                                    <Loader2 size={14} className="animate-spin" />
+                                                    <span className="kassa-spin" aria-hidden />
                                                   ) : (
                                                     <Printer size={14} className="text-gold" />
                                                   )}
@@ -1265,7 +1263,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
               disabled={loadingMore}
               className="inline-flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-[13px] text-mute-soft hover:border-gold/40 hover:text-white disabled:opacity-50"
             >
-              {loadingMore && <Loader2 size={14} className="animate-spin" />}
+              {loadingMore && <span className="kassa-spin" aria-hidden />}
               Показать ещё
             </button>
           )}
