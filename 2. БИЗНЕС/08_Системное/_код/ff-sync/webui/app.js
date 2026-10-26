@@ -3589,8 +3589,11 @@ $("calExport").onclick = () => { window.location = "/api/calendar.xlsx?" + calQu
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem("bg-theme", theme);
-  const label = $("themeLabel");
-  if (label) label.textContent = theme === "dark" ? "Тёмная" : "Светлая";
+  const btn = $("themeToggle");
+  if (!btn) return;
+  const dark = theme === "dark";
+  btn.setAttribute("aria-checked", dark ? "true" : "false");
+  btn.setAttribute("aria-label", dark ? "Тёмная тема" : "Светлая тема");
 }
 applyTheme(localStorage.getItem("bg-theme") || "light");
 $("themeToggle").onclick = () => {

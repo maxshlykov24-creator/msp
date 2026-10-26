@@ -70,12 +70,31 @@ body{font-family:var(--font);color:var(--ink);background:var(--bg);background-im
   font-size:18px;line-height:1;cursor:pointer;padding:0 2px;font-family:inherit;
 }
 .toast button:hover{color:var(--ink)}
-.theme-toggle{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 12px;border-radius:999px;background:var(--glass);border:1px solid var(--line);cursor:pointer;font-size:12px;font-weight:600;color:var(--mute);font-family:var(--font)}
-.theme-toggle:hover{color:var(--ink)}
-.theme-switch{width:38px;height:22px;border-radius:999px;background:var(--glass-2);border:1px solid var(--line);position:relative}
-.theme-switch::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink);transition:.2s}
-[data-theme="dark"] .theme-switch{background:rgba(61,139,255,.35);border-color:rgba(61,139,255,.5)}
-[data-theme="dark"] .theme-switch::after{left:18px;background:#9ec2ff}
+.theme-toggle{
+  position:relative;width:68px;height:34px;padding:0;flex:0 0 auto;
+  border-radius:999px;border:2px solid #fff;background:#e7edf5;
+  box-shadow:0 0 0 1px rgba(10,22,40,.06);
+  cursor:pointer;color:#fff;
+}
+.theme-toggle:hover{background:#dfe6f1}
+.theme-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.theme-knob{
+  position:absolute;z-index:0;top:3px;left:3px;width:26px;height:26px;border-radius:50%;
+  background:#0a1628;box-shadow:0 1px 2px rgba(10,22,40,.28);
+  transition:transform .22s var(--ease);
+}
+.theme-ico{position:absolute;z-index:1;top:3px;width:26px;height:26px;display:grid;place-items:center;pointer-events:none}
+.theme-ico svg{display:block}
+.theme-sun{left:3px;color:#fff}
+.theme-sun svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.theme-sun svg circle{fill:currentColor;stroke:none}
+.theme-moon{right:3px;color:#8b97ab}
+.theme-moon svg{width:13px;height:13px;fill:currentColor}
+[data-theme="dark"] .theme-toggle{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16);box-shadow:none}
+[data-theme="dark"] .theme-toggle:hover{background:rgba(255,255,255,.1)}
+[data-theme="dark"] .theme-knob{transform:translateX(32px);background:#e8eef8;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+[data-theme="dark"] .theme-sun{color:#8b97ab}
+[data-theme="dark"] .theme-moon{color:#0a1628}
 
 .viewnav{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--glass);border:1px solid var(--line)}
 .viewnav button{border:0;background:transparent;color:var(--mute);font-family:var(--font);font-size:13px;font-weight:600;padding:7px 16px;border-radius:10px;cursor:pointer;transition:.18s}
