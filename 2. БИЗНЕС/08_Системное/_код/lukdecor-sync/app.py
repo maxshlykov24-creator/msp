@@ -64,6 +64,11 @@ class Action(BaseModel):
     target: str = Field(default="", max_length=100)
 
 
+class StationScan(BaseModel):
+    wave: str
+    code: str = Field(min_length=1, max_length=1000)
+
+
 @app.get("/")
 def index():
     return FileResponse(ROOT / "web/index.html")
@@ -103,6 +108,16 @@ def wave(body: Wave, request: Request):
 @app.post("/api/action")
 def action(body: Action, request: Request):
     return flow.action(actor(request), body.job, body.action, body.code, body.target)
+
+
+@app.post('/api/station-scan')
+def station_scan(body: StationScan, request: Request):
+    return flow.station_scan(actor(request), body.wave, body.code)
+
+
+@app.get('/proposal')
+def proposal():
+    return FileResponse(ROOT.parents[2] / '04_Производство/Активные/ЛУКДЕКОР/presentation/Предложение_ЛУКДЕКОР.html')
 
 
 @app.get("/api/label/{oid}")

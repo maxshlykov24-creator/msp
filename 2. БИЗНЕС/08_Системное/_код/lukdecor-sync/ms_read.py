@@ -117,6 +117,7 @@ class MoySklad:
                 continue
             result.append({
                 "id": order["id"], "number": order["name"], "store": store,
+                "moment": order.get('moment', ''),
                 "product_id": product["id"], "product": product["name"],
                 "article": product.get("article", ""), "barcodes": codes,
                 "quantity": 1, "label_url": label, "status": READY,

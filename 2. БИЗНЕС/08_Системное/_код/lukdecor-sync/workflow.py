@@ -174,6 +174,24 @@ class Workflow:
             self.event(db, actor, oid, action, "Проверка скана пройдена" if code else target)
             return {"message": "Сохранено в демо-журнале"}
 
+    def station_scan(self, actor, wave, code):
+        with self.db() as db:
+            rows = db.execute('SELECT j.id,j.state,j.station,s.payload FROM jobs j JOIN snapshot s ON s.id=j.id WHERE j.wave=?', (wave,)).fetchall()
+            pending = db.execute("SELECT j.id,s.payload FROM jobs j JOIN snapshot s ON s.id=j.id WHERE j.station=? AND j.state='printing'", (actor['station'],)).fetchone()
+            if pending:
+                if code not in json.loads(pending['payload'])['barcodes']:
+                    raise ReadError('На станции есть незакрытый стикер другого товара')
+                oid = pending['id']
+            else:
+                candidates = [(json.loads(r['payload']).get('moment', ''), r['id']) for r in rows
+                              if r['state'] == 'picked' and code in json.loads(r['payload'])['barcodes']]
+                if not candidates:
+                    raise ReadError('Нет отобранного товара с таким штрихкодом в этой волне')
+                oid = min(candidates)[1]
+        # Захват задания остаётся атомарным внутри action: гонка даст отказ второй станции.
+        result = self.action(actor, oid, 'print', code)
+        return {**result, 'job': oid}
+
     def label(self, actor, oid):
         with self.db() as db:
             row = db.execute("SELECT pdf,station,state FROM jobs WHERE id=?", (oid,)).fetchone()

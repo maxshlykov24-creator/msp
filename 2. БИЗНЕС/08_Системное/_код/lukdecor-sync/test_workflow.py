@@ -101,6 +101,17 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(ReadError): MoySklad().get('https://example.com/entity/customerorder')
         with self.assertRaises(ReadError): fetch_label('http://127.0.0.1/secret')
 
+    def test_auto_station_scan_reuses_pending_job(self):
+        result = self.f.station_scan(self.a, self.wave['wave'], '123')
+        self.assertEqual(result['job'], '1')
+        self.assertEqual(self.f.station_scan(self.a, self.wave['wave'], '123')['job'], '1')
+        with self.assertRaises(ReadError): self.f.station_scan(self.a, self.wave['wave'], 'WRONG')
+
+    def test_pdf_qr_must_match_current_ms_order(self):
+        with patch.object(self.ms, 'verify_label', return_value=False):
+            with self.assertRaises(ReadError): self.f.action(self.a, '1', 'print', '123')
+        self.assertEqual(next(o['state'] for o in self.f.view()['orders'] if o['id']=='1'), 'picked')
+
 
 if __name__ == '__main__':
     unittest.main()
