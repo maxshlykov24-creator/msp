@@ -837,7 +837,7 @@ def test_failed_api_request_is_counted(client, monkeypatch):
     from fastapi import HTTPException
     from app.calltrack import routes
     from app.models import KvState
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise HTTPException(status_code=503, detail="test")
     monkeypatch.setattr(routes, "_issue", fail)
     assert client.post("/ct/session", headers=ORIGIN, json={"url": PAID_URL}).status_code == 503
@@ -1301,3 +1301,216 @@ def test_native_webhook_atomically_queues_metrika_once(metrika_settings, client)
         rows=db.scalars(select(KvState).where(KvState.key.like(PREFIX+"%"))).all()
         assert len(rows)==1
         assert json.loads(rows[0].value)["status"]=="pending"
+
+
+def test_organic_call_intent_allocates_only_on_dial_and_renews(client, monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "ct_call_intent_enabled", True)
+    first = client.post("/ct/session", headers=ORIGIN, json={"url": "https://mansband.ru/"}).json()
+    assert first["mode"] == "organic"
+    dial = client.post("/ct/session", headers=ORIGIN, json={
+        "url": "https://mansband.ru/", "visit_id": first["visit_id"], "call_intent": True}).json()
+    assert dial["mode"] == "pool" and dial["lease_seconds"] > 0
+    again = client.post("/ct/ping", headers=ORIGIN, json={"visit_id": first["visit_id"]}).json()
+    assert again["mode"] == "pool" and again["number"] == dial["number"]
+
+
+def test_fallback_journal_counts_visits_and_recovery(client, monkeypatch):
+    import json
+    from app.config import get_settings
+    from app.calltrack.models import PoolNumber
+    from app.models import KvState
+    from sqlalchemy import select
+    monkeypatch.setattr(get_settings(), "ct_pool_numbers", "9310000000")
+    client.post("/ct/session", headers=ORIGIN, json={"url": PAID_URL})
+    blocked = client.post("/ct/session", headers=ORIGIN, json={"url": PAID_URL}).json()
+    assert blocked["mode"] == "fallback"
+    client.post("/ct/ping", headers=ORIGIN, json={"visit_id": blocked["visit_id"]})
+    with _db() as db:
+        rows = db.scalars(select(KvState).where(KvState.key.like("ct_fallback:%"))).all()
+        assert len(rows) == 1 and json.loads(rows[0].value)["responses"] == 2
+        db.scalar(select(PoolNumber).where(PoolNumber.kind == "pool")).held_until = None
+        db.commit()
+    recovered = client.post("/ct/ping", headers=ORIGIN, json={"visit_id": blocked["visit_id"]}).json()
+    assert recovered["mode"] == "pool"
+    with _db() as db:
+        assert json.loads(db.scalar(select(KvState).where(KvState.key.like("ct_fallback:%"))).value)["recovered_at"]
+
+
+def test_frozen_ya_alias_is_enriched_without_changing_snapshot():
+    from app.calltrack.models import CallEvent
+    from app.calltrack.matching import attribute_call
+    with _db() as db:
+        call = CallEvent(call_id="alias", called="9310000000", result={"attribution_snapshot": {
+            "tracking": {"utm_source": "ya", "utm_campaign": "original"}, "kind": "pool",
+            "visit_id": None, "tech_source": None}})
+        attr = attribute_call(db, call)
+        assert attr.tech_source == "Яндекс Директ"
+        assert attr.tracking["utm_campaign"] == "original" and attr.visit is None
+        assert call.result["attribution_snapshot"]["tech_source"] is None
+
+
+def test_ysclid_is_not_an_ad_click_identifier():
+    from app.calltrack.routes import tracking_from_url
+    assert tracking_from_url("https://mansband.ru/?ysclid=organic_search")["yclid"] is None
+
+
+def test_recent_closed_deal_receives_repeat_note_without_reopening(monkeypatch):
+    import datetime as dt
+    from app import amo_v4, tokens
+    from app.calltrack.models import CallEvent
+    from app.calltrack.reconcile import run_reconcile_once
+    monkeypatch.setattr(tokens, "get_valid_access_token", lambda db: "test")
+    monkeypatch.setattr(amo_v4, "open_leads_for_phone", lambda **kw: [])
+    monkeypatch.setattr(amo_v4, "recent_closed_leads_for_call", lambda **kw: [{"id": 123, "status_id": 143}])
+    monkeypatch.setattr(amo_v4, "lead_has_note_text", lambda **kw: False)
+    notes = []
+    monkeypatch.setattr(amo_v4, "add_lead_note", lambda **kw: notes.append(kw))
+    monkeypatch.setattr(amo_v4, "patch_lead_fields", lambda **kw: pytest.fail("must not modify a closed deal"))
+    with _db() as db:
+        call = CallEvent(call_id="closed", called="9311111111", caller="9000000000",
+                         started_at=dt.datetime.now(dt.timezone.utc)-dt.timedelta(minutes=6), status="new")
+        db.add(call); db.commit()
+        assert run_reconcile_once(db)["repeat"] == 1
+        assert call.lead_id == 123 and call.status == "repeat" and len(notes) == 1
+
+
+def test_ambiguous_deals_keep_frozen_snapshot(monkeypatch):
+    import datetime as dt
+    from app import amo_v4, tokens
+    from app.calltrack.models import CallEvent
+    from app.calltrack.reconcile import run_reconcile_once
+    monkeypatch.setattr(tokens, "get_valid_access_token", lambda db: "test")
+    monkeypatch.setattr(amo_v4, "open_leads_for_phone", lambda **kw: [{"id": 1}, {"id": 2}])
+    with _db() as db:
+        call = CallEvent(call_id="ambiguous", called="9311111111", caller="9000000000",
+                         started_at=dt.datetime.now(dt.timezone.utc)-dt.timedelta(minutes=6),
+                         result={"attribution_snapshot": {"tracking": {"utm_source": "ya"}}}, status="new")
+        db.add(call); db.commit()
+        run_reconcile_once(db)
+        assert call.status == "error" and call.result["error"] == "multiple_open_leads"
+        assert call.result["attribution_snapshot"]["tracking"]["utm_source"] == "ya"
+
+
+def test_stale_source_alarm_rechecks_actual_crm_without_duplicate_note(monkeypatch):
+    import datetime as dt
+    from app import amo_v4, tokens
+    from app.calltrack.models import CallEvent
+    from app.calltrack.reconcile import run_reconcile_once
+    monkeypatch.setattr(tokens, "get_valid_access_token", lambda db: "test")
+    monkeypatch.setattr(amo_v4, "get_lead", lambda **kw: {"id": 123, "custom_fields_values": [
+        {"field_id": 99, "values": [{"value": "Яндекс Карты"}]}]})
+    monkeypatch.setattr(amo_v4, "field_id_by_key", lambda **kw: {})
+    monkeypatch.setattr(amo_v4, "select_field", lambda **kw: {"field_id": 99, "enums": {}})
+    monkeypatch.setattr(amo_v4, "add_lead_note", lambda **kw: pytest.fail("already noted"))
+    with _db() as db:
+        call = CallEvent(call_id="stale", called="9310000000", caller="9000000000", lead_id=123,
+            started_at=dt.datetime.now(dt.timezone.utc)-dt.timedelta(minutes=6),
+            status="unattributed", result={"note_sent": True})
+        db.add(call); db.commit()
+        run_reconcile_once(db)
+        assert call.status == "matched" and call.result["tech_written"]
+
+
+def test_initial_note_timeout_recovers_marker_without_duplicate(monkeypatch):
+    import datetime as dt
+    from app import amo_v4
+    from app.calltrack.models import CallEvent
+    from app.calltrack.matching import apply_call
+    monkeypatch.setattr(amo_v4, "field_id_by_key", lambda **kw: {})
+    monkeypatch.setattr(amo_v4, "select_field", lambda **kw: {"field_id": 99, "enums": {}})
+    lead = {"id": 123, "custom_fields_values": [{"field_id": 99, "values": [{"value": "source"}]}]}
+    notes = []
+    monkeypatch.setattr(amo_v4, "lead_has_note_text", lambda **kw: any(kw["needle"] in n for n in notes))
+    def accepted(**kw):
+        notes.append(kw["text"])
+        raise TimeoutError()
+    monkeypatch.setattr(amo_v4, "add_lead_note", accepted)
+    with _db() as db:
+        call = CallEvent(call_id="note-timeout", called="9310000000",
+                         started_at=dt.datetime.now(dt.timezone.utc), status="new")
+        db.add(call); db.commit()
+        assert not apply_call(db, call, 123, lead, "test")["ok"]
+        assert apply_call(db, call, 123, lead, "test")["ok"]
+        assert len(notes) == 1
+
+
+def test_note_marker_is_found_after_first_page(monkeypatch):
+    import httpx
+    from app import amo_v4
+    pages = []
+    def handler(request):
+        pages.append(request.url.params["page"])
+        if len(pages) == 1:
+            return httpx.Response(200, json={"_embedded": {"notes": [{"params": {"text": "other"}}]},
+                                            "_links": {"next": {"href": "ignored"}}})
+        return httpx.Response(200, json={"_embedded": {"notes": [{"params": {"text": "[ct-call:123]"}}]}})
+    original = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kw: original(transport=httpx.MockTransport(handler)))
+    assert amo_v4.lead_has_note_text(lead_id=123, needle="[ct-call:123]", access_token="test")
+    assert pages == ["1", "2"]
+
+
+def test_contact_search_never_uses_partial_phone_match(monkeypatch):
+    import httpx
+    from app import amo_v4
+    original = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kw: original(transport=httpx.MockTransport(
+        lambda req: httpx.Response(200, json={"_embedded": {"contacts": [{"id": 1}]}}))))
+    monkeypatch.setattr(amo_v4, "get_contact_phones", lambda **kw: ["+79310000001"])
+    assert amo_v4.find_contact_by_phone(phone="+79310000002", access_token="test") is None
+
+
+def test_mobile_click_waits_for_number_and_fails_open_to_base():
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        pytest.skip("Node required for frontend runtime check")
+    script = r'''
+const vm = require('node:vm'), fs = require('node:fs'), assert = require('node:assert/strict');
+const source = fs.readFileSync('app/calltrack/static/ct.js', 'utf8')
+  .replace('__CT_LIVE__', 'true').replace('__CT_API__', 'https://example.test').replace('__CT_ORIGINAL__', '9310090251');
+const settle = async () => { for(let i=0;i<12;i++) await Promise.resolve(); };
+function setup(fetcher) {
+  const events={}, calls=[];
+  const link={href:'tel:+79310090251', getAttribute(){return this.href}, setAttribute(k,v){this.href=v}};
+  const location={hostname:'mansband.ru',search:'',href:'https://mansband.ru/'};
+  const document={cookie:'',body:null,referrer:'',visibilityState:'visible',
+    addEventListener(k,v){events[k]=v}, querySelectorAll(){return [link]}};
+  const window={addEventListener(k,v){events[k]=v}, removeEventListener(){}};
+  vm.runInNewContext(source,{window,document,location,navigator:{webdriver:false},
+    URLSearchParams,AbortController,Date,Promise, setInterval(){},setTimeout(){return 1},clearTimeout(){},
+    fetch(url,opts){ const body=JSON.parse(opts.body);calls.push(body);return fetcher(body,calls.length)} });
+  function click(){ const e={defaultPrevented:false,target:{closest(){return link}},preventDefault(){this.defaultPrevented=true}};
+    events.click(e);return e.defaultPrevented; }
+  return {events,calls,link,location,click};
+}
+const response = data => Promise.resolve({ok:true,json:()=>Promise.resolve(data)});
+(async()=>{
+  // An untagged visitor consumes no pool until the phone click.
+  const a=setup(body=>response({visit_id:1,mode:body.call_intent?'pool':'organic',
+    number:body.call_intent?'+79310000001':'+79310090251',display:'phone',lease_seconds:300}));
+  a.events.scroll();await settle();assert.equal(a.calls[0].call_intent,false);
+  assert.equal(a.click(),true);await settle();assert.equal(a.calls[1].call_intent,true);
+  assert.equal(a.location.href,'tel:+79310000001');
+  // A server failure must never prevent a real call.
+  const b=setup(()=>Promise.reject(new Error('offline')));
+  assert.equal(b.click(),true);await settle();assert.equal(b.location.href,'tel:+79310090251');
+  // An expired tab must refresh instead of dialing a number now owned by another visit.
+  const c=setup((body,n)=>response({visit_id:2,mode:'pool',number:n===1?'+79310000002':'+79310000003',
+    display:'phone',lease_seconds:n===1?1:300}));
+  c.events.scroll();await settle();assert.equal(c.click(),true);await settle();
+  assert.equal(c.location.href,'tel:+79310000003');
+  // A click while the initial request is in flight reuses the returned visit ID.
+  let release;
+  const d=setup((body,n)=>n===1?new Promise(r=>{release=r}):response({visit_id:7,mode:'pool',
+    number:'+79310000004',display:'phone',lease_seconds:300}));
+  d.events.scroll();assert.equal(d.click(),true);
+  release({ok:true,json:()=>Promise.resolve({visit_id:7,mode:'organic',number:'+79310090251',display:'phone'})});
+  await settle();assert.equal(d.calls.length,2);assert.equal(d.calls[1].visit_id,7);
+  assert.equal(d.location.href,'tel:+79310000004');
+  console.log('mobile click scenarios passed');
+})().catch(e=>{console.error(e);process.exitCode=1});
+'''
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
