@@ -1421,6 +1421,20 @@ def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: di
                     "expected_length": len(expected_text), "actual_length": len(actual_text),
                 })
                 continue
+        if fid == 929025 and order is not None and not field(lead, fid):
+            # The sync can remove a redundant address comment. Its entire text
+            # must remain exactly in both source and saved lead address fields,
+            # and the source comment must still confirm it. No content is lost.
+            expected_text = str(item["values"][0].get("value") or "")
+            address = order.get("shipmentAddressFull") or {}
+            source_comment = str(address.get("comment") or address.get("addInfo") or "")
+            expected_address = next((str(f["values"][0].get("value") or "")
+                                     for f in expected_payload["custom_fields_values"]
+                                     if f["field_id"] == 929079), "")
+            if (expected_text and expected_text == source_comment == expected_address
+                    == str(order.get("shipmentAddress") or "") == field(lead, 929079)):
+                lead.setdefault("_migration_text_normalizations", []).append(fid)
+                continue
         if actual is None:
             if (order is not None and item["field_id"] == FIELDS["comment"]
                     and known_integration_text(FIELDS["comment"], "", str(item["values"][0].get("value") or ""), order)):
@@ -2607,6 +2621,46 @@ def self_test() -> None:
                     altered = copy.deepcopy(lead);altered["_embedded"] = embedded
                     with self.assertRaises(Stop):
                         validate_lead(altered, "5", payload, order)
+                write.assert_not_called()
+                request.assert_not_called()
+
+        def test_missing_address_comment_requires_exact_preserved_duplicate(self):
+            import copy
+            text = "Адрес доставки 1"
+            payload = {"pipeline_id": PIPELINE, "status_id": WON, "price": 123,
+                       "name": "Заказ 1", "responsible_user_id": MAXIM, "created_at": 1, "closed_at": 2,
+                       "custom_fields_values": [
+                           {"field_id": 929025, "values": [{"value": text}]},
+                           {"field_id": 929079, "values": [{"value": text}]},
+                           {"field_id": FIELDS["ms_id"], "values": [{"value": "uuid"}]}],
+                       "_embedded": {"contacts": [{"id": 5, "is_main": True}]}}
+            lead = copy.deepcopy(payload);lead["custom_fields_values"].pop(0)
+            order = {"shipmentAddress": text, "shipmentAddressFull": {"addInfo": text}}
+            with patch.object(module, "api_write") as write, patch.object(module, "amo_request") as request:
+                checked = validate_lead(copy.deepcopy(lead), "5", payload, order)
+                self.assertEqual(checked["_migration_text_normalizations"], [929025])
+                for source in ({}, {"shipmentAddress": text},
+                               {"shipmentAddress": "Другой адрес", "shipmentAddressFull": {"addInfo": text}},
+                               {"shipmentAddress": text, "shipmentAddressFull": {"addInfo": "Отдельное указание"}}):
+                    with self.assertRaises(Stop):
+                        validate_lead(copy.deepcopy(lead), "5", payload, source)
+                for fid in (929079, FIELDS["ms_id"]):
+                    altered = copy.deepcopy(lead)
+                    next(f for f in altered["custom_fields_values"] if f["field_id"] == fid)["values"][0]["value"] = "Иное значение"
+                    with self.assertRaises(Stop):
+                        validate_lead(altered, "5", payload, order)
+                altered = copy.deepcopy(payload)
+                altered["custom_fields_values"] = [f for f in altered["custom_fields_values"] if f["field_id"] != 929079]
+                with self.assertRaises(Stop):
+                    validate_lead(copy.deepcopy(lead), "5", altered, order)
+                for key, value in (("price", 124), ("created_at", 3), ("closed_at", 3),
+                                   ("pipeline_id", 1), ("status_id", 143), ("responsible_user_id", 1)):
+                    altered = copy.deepcopy(lead);altered[key] = value
+                    with self.assertRaises(Stop):
+                        validate_lead(altered, "5", payload, order)
+                altered = copy.deepcopy(lead);altered["_embedded"] = {"contacts": [{"id": 6, "is_main": True}]}
+                with self.assertRaises(Stop):
+                    validate_lead(altered, "5", payload, order)
                 write.assert_not_called()
                 request.assert_not_called()
 
