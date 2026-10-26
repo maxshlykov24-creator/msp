@@ -44,6 +44,8 @@ EXCLUSIONS = WORK / "2my-ms-amo-backfill-exclusions.local.json"
 TERMINAL = {"VERIFIED", "DEFERRED", "EXISTS_BACKLINK", "EXISTS_AMO_ID", "QUARANTINED"}
 _PACE = {"ms": 0.0, "amo": 0.0}
 _REQUEST_INTERVAL = 1.0
+_SYSTEM_INTERVAL = {"ms": None, "amo": None}
+_SERVER_FLOOR = {"ms": 0.07, "amo": 0.17}
 _RATE_BLOCK_UNTIL = {"ms": 0.0, "amo": 0.0}
 _HTTP_STATS = {"ms": 0, "amo": 0, "rate_limit_responses": 0, "headroom_pauses": 0}
 PIPELINE = 11318374
@@ -88,12 +90,27 @@ def configure_request_interval(value: float) -> None:
     _REQUEST_INTERVAL = value
 
 
+def configure_system_intervals(ms: float | None = None, amo: float | None = None) -> None:
+    for system, value, floor in (("ms", ms, 0.07), ("amo", amo, 0.17)):
+        if value is not None and not floor <= value <= 10.0:
+            raise Stop(f"Интервал {system} должен быть от {floor} до 10 секунд")
+        _SYSTEM_INTERVAL[system] = value
+
+
+def current_request_interval(system: str) -> float:
+    requested = _SYSTEM_INTERVAL[system]
+    return max(_REQUEST_INTERVAL if requested is None else requested, _SERVER_FLOOR[system])
+
+
 def rate_feedback(system: str, response) -> None:
     global _REQUEST_INTERVAL
     now = time.monotonic()
     if response.status_code == 429:
         _HTTP_STATS["rate_limit_responses"] += 1
         _REQUEST_INTERVAL = max(_REQUEST_INTERVAL, 1.0)
+        for name in _SYSTEM_INTERVAL:
+            if _SYSTEM_INTERVAL[name] is not None:
+                _SYSTEM_INTERVAL[name] = max(_SYSTEM_INTERVAL[name], 1.0)
         try:
             wait = float(response.headers.get("Retry-After") or 0)
             if system == "ms":
@@ -108,6 +125,8 @@ def rate_feedback(system: str, response) -> None:
             window = float(response.headers.get("X-Lognex-Retry-TimeInterval") or 3000) / 1000
         except (KeyError, TypeError, ValueError):
             return
+        if limit > 0 and window > 0:
+            _SERVER_FLOOR["ms"] = max(0.07, window / limit * 1.1)
         if remaining <= max(5.0, limit * 0.25):
             _HTTP_STATS["headroom_pauses"] += 1
             _RATE_BLOCK_UNTIL[system] = max(_RATE_BLOCK_UNTIL[system], now + max(1.0, min(60.0, window)) + 0.1)
@@ -120,7 +139,7 @@ class PacedSession(requests.Session):
 
     def request(self, *args, **kwargs):
         now = time.monotonic()
-        time.sleep(max(0.0, _REQUEST_INTERVAL - (now - _PACE[self.system]),
+        time.sleep(max(0.0, current_request_interval(self.system) - (now - _PACE[self.system]),
                        _RATE_BLOCK_UNTIL[self.system] - now))
         try:
             response = super().request(*args, **kwargs)
@@ -192,7 +211,7 @@ def api_get(session: requests.Session, url: str, params: dict | None = None,
             last_call: list[float] | None = None) -> dict:
     for attempt in range(6):
         if last_call is not None:
-            pause = max(0.0, _REQUEST_INTERVAL - (time.monotonic() - last_call[0]))
+            pause = max(0.0, current_request_interval(getattr(session, "system", "ms")) - (time.monotonic() - last_call[0]))
             if pause:
                 time.sleep(pause)
         try:
@@ -1232,7 +1251,7 @@ def exact_contacts(amo: lib.Amo, phone: str, email: str) -> list[dict]:
 def api_write(session: requests.Session, method: str, url: str, body: object,
               headers: dict | None = None, pace: list[float] | None = None) -> tuple[int | None, dict, str]:
     if pace is not None:
-        pause = max(0.0, _REQUEST_INTERVAL - (time.monotonic() - pace[0]))
+        pause = max(0.0, current_request_interval(getattr(session, "system", "ms")) - (time.monotonic() - pace[0]))
         if pause:
             time.sleep(pause)
     try:
@@ -1307,6 +1326,13 @@ def confirm_lead(amo: lib.Amo, lead_id: str, order: dict, row: dict,
 def known_integration_text(field_id: int, actual: str, expected: str, order: dict) -> bool:
     if field_id == FIELDS["comment"]:
         description = str(order.get("description") or "").strip()
+        if actual == description and "[Исторический импорт МС→amo " in expected:
+            # A live sync can remove four-byte emoji from the comment. Accept
+            # only that exact formatting change and only when the resulting
+            # comment equals the freshly read source; words/numbers stay strict.
+            without_emoji = lambda text: "".join(c for c in text if not 0x1F300 <= ord(c) <= 0x1FAFF)
+            if without_emoji(actual) == without_emoji(expected):
+                return True
         return (actual == description and expected.startswith(description)
                 and "[Исторический импорт МС→amo " in expected)
     if field_id == FIELDS["items"]:
@@ -2152,7 +2178,9 @@ def night_run(args) -> dict:
         journal["progress"] = {"run": journal["active_run"],
                                "at": datetime.now(TZ).isoformat(timespec="seconds"),
                                "processed": result["processed"], "deferred": result["deferred"],
-                               "request_interval": _REQUEST_INTERVAL, "http": dict(_HTTP_STATS)}
+                               "request_interval": _REQUEST_INTERVAL,
+                               "effective_intervals": {name: current_request_interval(name) for name in ("ms", "amo")},
+                               "http": dict(_HTTP_STATS)}
         save_journal(journal)
         print(f"Партия проверена. Новых сделок: {result['processed']}; отложено: {result['deferred']}.", flush=True)
     # A fresh complete index proves no processed UUID becomes CREATE again.
@@ -2470,6 +2498,33 @@ def self_test() -> None:
                 self.assertAlmostEqual(sleep.call_args_list[1].args[0], 0.2)
                 self.assertAlmostEqual(sleep.call_args_list[2].args[0], 0.2)
 
+        def test_system_intervals_follow_reported_vendor_limits(self):
+            from types import SimpleNamespace
+            with patch.object(module, "_REQUEST_INTERVAL", 0.2), \
+                 patch.object(module, "_SYSTEM_INTERVAL", {"ms": None, "amo": None}), \
+                 patch.object(module, "_SERVER_FLOOR", {"ms": 0.07, "amo": 0.17}), \
+                 patch.object(module, "_RATE_BLOCK_UNTIL", {"ms": 0.0, "amo": 0.0}):
+                with self.assertRaises(Stop):
+                    configure_system_intervals(0.06, 0.17)
+                with self.assertRaises(Stop):
+                    configure_system_intervals(0.07, 0.16)
+                configure_system_intervals(0.07, 0.17)
+                self.assertEqual(current_request_interval("amo"), 0.17)
+                rate_feedback("ms", SimpleNamespace(status_code=200, headers={
+                    "X-RateLimit-Limit": "11", "X-RateLimit-Remaining": "10", "X-Lognex-Retry-TimeInterval": "3000"}))
+                self.assertAlmostEqual(current_request_interval("ms"), 0.3)
+                rate_feedback("amo", SimpleNamespace(status_code=429, headers={"Retry-After": "5"}))
+                self.assertGreaterEqual(current_request_interval("ms"), 1.0)
+                self.assertGreaterEqual(current_request_interval("amo"), 1.0)
+
+        def test_source_confirmed_comment_emoji_normalization(self):
+            expected = "Данные заказа 14900 ₽ 🙏\n[Исторический импорт МС→amo 2026-10-26]"
+            actual = expected.replace("🙏", "")
+            self.assertTrue(known_integration_text(FIELDS["comment"], actual, expected, {"description": actual}))
+            self.assertFalse(known_integration_text(FIELDS["comment"], actual.replace("14900", "15000"), expected,
+                                                   {"description": actual.replace("14900", "15000")}))
+            self.assertFalse(known_integration_text(FIELDS["comment"], actual, expected, {"description": "Другая запись"}))
+
         def test_dashboard_import_is_not_messenger_inquiry(self):
             import collect_dashboard as dashboard
             uid = "81b03243-1a83-11ef-0a80-01c7004e6c19"
@@ -2502,11 +2557,14 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=25)
     parser.add_argument("--request-interval", type=float, default=1.0,
                         help="minimum delay after each HTTP response, 0.2..10 seconds; sequential requests only")
+    parser.add_argument("--ms-request-interval", type=float, default=None)
+    parser.add_argument("--amo-request-interval", type=float, default=None)
     parser.add_argument("--expected-code-sha256", default="", help="required for night writes; rejects an unreviewed importer")
     parser.add_argument("--reuse-raw", action="store_true",
                         help="reclassify the protected read-only source snapshot without refetching")
     args = parser.parse_args()
     configure_request_interval(args.request_interval)
+    configure_system_intervals(args.ms_request_interval, args.amo_request_interval)
     if args.self_test:
         self_test()
         return
