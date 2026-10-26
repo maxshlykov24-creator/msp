@@ -348,7 +348,7 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
         detail = str(exc).upper()
         if "NO_AUTH" in detail or "401" in detail or "403" in detail:
             reason = "отказ авторизации или доступа"
-        elif isinstance(exc, httpx.RequestError):
+        elif isinstance(exc, httpx.RequestError) or "REQUEST_TIMEOUT" in detail:
             reason = "сетевая ошибка или тайм-аут"
         elif "429" in detail:
             reason = "ограничение частоты запросов"
