@@ -17,7 +17,7 @@ import {
 import { STORE_ADDRESS } from "../../data/mock";
 import { Hint, useHints } from "../../lib/hints";
 
-export function SlivForm({ onDone }: { onDone: () => void }) {
+export function SlivForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { enabled: hintsOn } = useHints();
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
   const { saved, setSaved, toast } = useSaved();
@@ -72,7 +72,7 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Слив"
       subtitle="Оффлайн"
       meta={meta}

@@ -29,6 +29,9 @@ import { HintsToggle } from "../lib/hints";
 import { ThemeToggle } from "../lib/theme";
 import { BrandLogo } from "./BrandLogo";
 
+/** Экран готов не до конца. Вернуть true, когда закрытие смены снова включаем в работу. */
+export const SHOW_SHIFT_CLOSE = false;
+
 export type Route =
   | "board"
   | "new"
@@ -207,13 +210,17 @@ export function Layout({
           },
         ]
       : []),
-    {
-      id: "shift",
-      label: "Закрытие смены",
-      icon: <Wallet {...ICO} />,
-      active: route === "shift",
-      onClick: () => setRoute("shift"),
-    },
+    ...(SHOW_SHIFT_CLOSE
+      ? [
+          {
+            id: "shift" as const,
+            label: "Закрытие смены",
+            icon: <Wallet {...ICO} />,
+            active: route === "shift",
+            onClick: () => setRoute("shift"),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -253,12 +260,16 @@ export function Layout({
               <RailButton key={item.id} {...item} open={railOpen} />
             ))}
           </div>
-          <div className="rail-sep" aria-hidden />
-          <div className="rail-stack">
-            {backoffice.map((item) => (
-              <RailButton key={item.id} {...item} open={railOpen} />
-            ))}
-          </div>
+          {backoffice.length > 0 && (
+            <>
+              <div className="rail-sep" aria-hidden />
+              <div className="rail-stack">
+                {backoffice.map((item) => (
+                  <RailButton key={item.id} {...item} open={railOpen} />
+                ))}
+              </div>
+            </>
+          )}
         </nav>
         {createPortal(<div ref={tipRef} className="rail-tip" role="tooltip" hidden />, document.body)}
       </aside>

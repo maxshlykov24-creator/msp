@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { StoreProvider } from "./store";
-import { Layout, type Route } from "./components/Layout";
+import { Layout, SHOW_SHIFT_CLOSE, type Route } from "./components/Layout";
 import type { DealKind } from "./data/types";
 import { DealsBoard } from "./views/DealsBoard";
 import { NewDeal } from "./views/NewDeal";
@@ -172,6 +172,12 @@ export default function App() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  useEffect(() => {
+    if (SHOW_SHIFT_CLOSE || state.route !== "shift") return;
+    setState({ ...EMPTY, route: "board", boardGroup: "all", boardStatus: "all" });
+    window.location.hash = "board/all/all";
+  }, [state.route]);
 
   const setRoute = (r: Route) => {
     setNavSeq((n) => n + 1);

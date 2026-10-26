@@ -33,7 +33,7 @@ function addWeeks(dateStr: string, weeks: number): string {
   }
 }
 
-export function PromiseForm({ onDone }: { onDone: () => void }) {
+export function PromiseForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
   const { user } = useAuth();
   const { saved, setSaved, toast } = useSaved();
@@ -133,7 +133,7 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Обещание"
       subtitle="Оффлайн"
       meta={meta}

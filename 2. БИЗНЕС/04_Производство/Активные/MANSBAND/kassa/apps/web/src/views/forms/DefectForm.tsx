@@ -47,7 +47,15 @@ const CONFIG: Record<DefectKind, { subtitle: string; needPhoto: boolean; note: s
   },
 };
 
-export function DefectForm({ kind, onDone }: { kind: DealKind; onDone: () => void }) {
+export function DefectForm({
+  kind,
+  onDone,
+  onBack = onDone,
+}: {
+  kind: DealKind;
+  onDone: () => void;
+  onBack?: () => void;
+}) {
   const k = kind as DefectKind;
   const cfg = CONFIG[k] ?? CONFIG.defect;
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
@@ -94,7 +102,7 @@ export function DefectForm({ kind, onDone }: { kind: DealKind; onDone: () => voi
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title={KIND_LABEL[kind]}
       subtitle={cfg.subtitle}
       meta={meta}

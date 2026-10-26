@@ -793,7 +793,7 @@ export function ProductPicker({
                     <div className="text-[12px] text-mute">
                       {allowedMap
                         ? `из сделки · ещё можно ${fmtQty(remainingQty(p.id) ?? 0)} шт`
-                        : `${p.sku} · ${p.category} · доступно ${fmtQty(p.stock)}`}
+                        : [p.sku, `доступно ${fmtQty(p.stock)}`].filter(Boolean).join(" · ")}
                     </div>
                   </div>
                   {!noPrice && <div className="text-gold-soft font-semibold">{money(p.price)}</div>}

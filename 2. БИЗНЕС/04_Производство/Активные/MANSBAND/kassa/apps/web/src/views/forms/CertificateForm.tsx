@@ -62,7 +62,15 @@ function addYear(dateStr: string): string {
   }
 }
 
-export function CertificateForm({ onDone, digital = false }: { onDone: () => void; digital?: boolean }) {
+export function CertificateForm({
+  onDone,
+  onBack = onDone,
+  digital = false,
+}: {
+  onDone: () => void;
+  onBack?: () => void;
+  digital?: boolean;
+}) {
   const { activeStore, activeConsultant, addDeal, nextNumber, certificates } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
@@ -221,7 +229,7 @@ export function CertificateForm({ onDone, digital = false }: { onDone: () => voi
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title={digital ? "Сертификат (электронный)" : "Сертификат (пластиковый)"}
       subtitle={digital ? "Онлайн" : "Оффлайн"}
       meta={meta}

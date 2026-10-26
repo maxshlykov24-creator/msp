@@ -159,7 +159,7 @@ function CityCombobox({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
-export function DeliveryForm({ onDone }: { onDone: () => void }) {
+export function DeliveryForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeConsultant, addDeal, nextNumber } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
@@ -241,7 +241,7 @@ export function DeliveryForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Доставка (СДЭК)"
       subtitle="Онлайн"
       meta={meta}

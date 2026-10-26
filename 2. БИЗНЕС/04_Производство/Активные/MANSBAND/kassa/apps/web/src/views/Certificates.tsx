@@ -1,11 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
-import { Ticket, Wallet, Search, Filter, RefreshCw, Upload, Loader2 } from "lucide-react";
+import { Ticket, Wallet, Search, Filter, RefreshCw, Loader2 } from "lucide-react";
 import { useStore } from "../store";
 import { money, dateRu } from "../lib/format";
 import { Badge, Button, Modal, Field, StageBadge, StatTile, Select, opts } from "../components/ui";
 import type { Certificate } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
-import { useAuth } from "../auth/AuthContext";
 import { Hint } from "../lib/hints";
 
 interface ImportPreview {
@@ -36,7 +35,6 @@ function wasSpent(c: Certificate): boolean {
 
 export function Certificates() {
   const { certificates, redeemCertificate } = useStore();
-  const { user } = useAuth();
   const [redeem, setRedeem] = useState<Certificate | null>(null);
   const [usageCert, setUsageCert] = useState<Certificate | null>(null);
   const [usages, setUsages] = useState<CertificateUsage[]>([]);
@@ -140,11 +138,6 @@ export function Certificates() {
           <h1 className="text-2xl font-extrabold text-white mb-1">Реестр сертификатов</h1>
         </div>
         <div className="flex gap-2">
-          {user?.role === "admin" && (
-            <Button variant="subtle" className="py-2 px-3" onClick={() => setImportOpen(true)}>
-              <Upload size={14} /> Импорт CSV
-            </Button>
-          )}
           <Button variant="subtle" className="py-2 px-3" onClick={() => void refresh()} disabled={refreshing}>
             <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
             Обновить
@@ -153,8 +146,7 @@ export function Certificates() {
       </div>
       <Hint>
         Актуальные балансы пластиковых и электронных сертификатов. Поиск и фильтр по сроку.
-        «Не погашено» — сумма остатков на балансах. Импорт CSV доступен администратору: сначала
-        обязателен прогон без записи.
+        «Не погашено» — сумма остатков на балансах.
       </Hint>
 
       <div className="grid sm:grid-cols-3 gap-3 mb-4 mt-4">

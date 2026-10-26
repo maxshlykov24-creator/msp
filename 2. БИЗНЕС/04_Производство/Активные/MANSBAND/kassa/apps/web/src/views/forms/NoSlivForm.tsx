@@ -14,7 +14,7 @@ import {
 } from "./common";
 import { STORE_ADDRESS } from "../../data/mock";
 
-export function NoSlivForm({ onDone }: { onDone: () => void }) {
+export function NoSlivForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
@@ -52,7 +52,7 @@ export function NoSlivForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Не слив"
       subtitle="Оффлайн"
       meta={meta}

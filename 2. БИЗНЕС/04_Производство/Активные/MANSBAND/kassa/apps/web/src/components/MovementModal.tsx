@@ -466,7 +466,7 @@ export function MovementModal({
                         <div className="flex-1 min-w-0">
                           <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{p.name}</div>
                           <div className="text-[12px] text-mute">
-                            {p.sku} · {p.category} · доступно {fmtQty(p.stock)}
+                            {[p.sku, `доступно ${fmtQty(p.stock)}`].filter(Boolean).join(" · ")}
                           </div>
                         </div>
                         <div className="text-gold-soft font-semibold shrink-0">{money(p.price)}</div>

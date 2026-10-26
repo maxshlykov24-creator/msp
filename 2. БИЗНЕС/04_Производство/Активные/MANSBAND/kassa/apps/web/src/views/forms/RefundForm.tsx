@@ -24,10 +24,12 @@ import { USE_MOCK } from "../../api/client";
 
 export function RefundForm({
   onDone,
+  onBack = onDone,
   sourceDeal,
   embedded = false,
 }: {
   onDone: () => void;
+  onBack?: () => void;
   sourceDeal?: Deal | null;
   embedded?: boolean;
 }) {
@@ -115,7 +117,7 @@ export function RefundForm({
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Возврат"
       subtitle={source ? "Новая заявка" : "Возврат"}
       meta={meta}

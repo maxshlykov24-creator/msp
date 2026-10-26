@@ -521,6 +521,46 @@ def reconcile_orders(mss: requests.Session, pace: list[float],
     raise Temporary("Состав заказов менялся во время трёх проверок; кэш сохранён")
 
 
+def target_won_status(pipeline: dict) -> dict:
+    won = [x for x in pipeline.get("_embedded", {}).get("statuses", []) if x.get("id") == WON]
+    if (int(pipeline.get("id") or 0) != PIPELINE or len(won) != 1
+            or won[0].get("name") not in {"Успешно реализовано", "Выполнен"}
+            or won[0].get("is_editable") is not False):
+        raise Stop("Этап успешной реализации не совпал")
+    return won[0]
+
+
+def read_amo_schema(amo: lib.Amo) -> tuple[dict, list[dict], dict, dict]:
+    """Validate cheap schema metadata before reading all historical ledgers."""
+    mfields = amo_pages(amo, "/api/v4/leads/custom_fields", "custom_fields")
+    cfields = amo_pages(amo, "/api/v4/contacts/custom_fields", "custom_fields")
+    pipeline_status, pipeline = amo_request(amo, "GET", f"/api/v4/leads/pipelines/{PIPELINE}")
+    if pipeline_status != 200 or pipeline.get("name") != "Продажи 2MY":
+        raise Stop("Целевая воронка не совпала с утверждённой схемой")
+    won = [target_won_status(pipeline)]
+    mf = {x.get("id"): x for x in mfields}
+    cf = {x.get("id"): x for x in cfields}
+    for fid, typ in ((929049, "text"), (929057, "text"), (929081, "url"),
+                     (929055, "text"), (929031, "text"), (929043, "select"),
+                     (929075, "text"), (929029, "select"), (929063, "textarea"),
+                     (929071, "textarea"), (929041, "numeric"), (1151124, "checkbox")):
+        if fid not in mf or mf[fid].get("type") != typ:
+            raise Stop(f"Обязательное поле сделки {fid} отсутствует или изменило тип")
+    source_enum = {int(x.get("id")): x.get("value") for x in mf[929043].get("enums") or []}
+    payment_enum = {int(x.get("id")): x.get("value") for x in mf[929029].get("enums") or []}
+    if source_enum.get(ENUM["source_ms"]) != "Из МойСклад" or any(
+        payment_enum.get(ENUM[key]) != label for key, label in (
+            ("unpaid", "Не оплачен"), ("partial", "Частично оплачен"), ("paid", "Оплачен"))):
+        raise Stop("Справочник источника/оплаты amoCRM изменился")
+    if cf.get(AMO_PHONE_FIELD, {}).get("type") != "multitext" or cf.get(AMO_EMAIL_FIELD, {}).get("type") != "multitext":
+        raise Stop("Поля телефона/email контакта не совпали со схемой")
+    active_users = {str(x.get("id")): x for x in amo_pages(amo, "/api/v4/users", "users")}
+    maxim = active_users.get(str(MAXIM))
+    if not maxim or not maxim.get("rights", {}).get("is_active", True):
+        raise Stop("Технический ответственный неактивен")
+    return pipeline, won, mf, cf
+
+
 def collect_current(ms: lib.MS, amo: lib.Amo,
                     strict_order_snapshot: bool = True) -> tuple[dict, dict]:
     """Полные исходные индексы с проверкой стабильного состава заказов."""
@@ -538,6 +578,7 @@ def collect_current(ms: lib.MS, amo: lib.Amo,
     amo_attr_ids = {str(x.get("id")) for x in attr_rows}
     if MS_AMO_ATTR not in amo_attr_ids:
         raise Stop("Поле ссылки на amo отсутствует в метаданных заказа")
+    pipeline, won, mf, cf = read_amo_schema(amo)
     order_rows, counts, _changed = reconcile_orders(mss, pace, strict_order_snapshot)
     total_page = api_get(mss, lib.MS_BASE + "/entity/customerorder", {"limit": 1}, pace)
     total_orders = (total_page.get("meta") or {}).get("size")
@@ -564,34 +605,6 @@ def collect_current(ms: lib.MS, amo: lib.Amo,
     print("Читаю полный индекс amoCRM…", flush=True)
     leads = amo_pages(amo, "/api/v4/leads?with=contacts,source", "leads")
     contacts = amo_pages(amo, "/api/v4/contacts", "contacts")
-    mfields = amo_pages(amo, "/api/v4/leads/custom_fields", "custom_fields")
-    cfields = amo_pages(amo, "/api/v4/contacts/custom_fields", "custom_fields")
-    pipeline_status, pipeline = amo_request(amo, "GET", f"/api/v4/leads/pipelines/{PIPELINE}")
-    if pipeline_status != 200 or pipeline.get("name") != "Продажи 2MY":
-        raise Stop("Целевая воронка не совпала с утверждённой схемой")
-    won = [x for x in pipeline.get("_embedded", {}).get("statuses", []) if x.get("id") == WON]
-    if len(won) != 1 or won[0].get("name") != "Успешно реализовано":
-        raise Stop("Этап успешной реализации не совпал")
-    mf = {x.get("id"): x for x in mfields}
-    cf = {x.get("id"): x for x in cfields}
-    for fid, typ in ((929049, "text"), (929057, "text"), (929081, "url"),
-                     (929055, "text"), (929031, "text"), (929043, "select"),
-                     (929075, "text"), (929029, "select"), (929063, "textarea"),
-                     (929071, "textarea"), (929041, "numeric"), (1151124, "checkbox")):
-        if fid not in mf or mf[fid].get("type") != typ:
-            raise Stop(f"Обязательное поле сделки {fid} отсутствует или изменило тип")
-    source_enum = {int(x.get("id")): x.get("value") for x in mf[929043].get("enums") or []}
-    payment_enum = {int(x.get("id")): x.get("value") for x in mf[929029].get("enums") or []}
-    if source_enum.get(ENUM["source_ms"]) != "Из МойСклад" or any(
-        payment_enum.get(ENUM[key]) != label for key, label in (
-            ("unpaid", "Не оплачен"), ("partial", "Частично оплачен"), ("paid", "Оплачен"))):
-        raise Stop("Справочник источника/оплаты amoCRM изменился")
-    if cf.get(AMO_PHONE_FIELD, {}).get("type") != "multitext" or cf.get(AMO_EMAIL_FIELD, {}).get("type") != "multitext":
-        raise Stop("Поля телефона/email контакта не совпали со схемой")
-    active_users = {str(x.get("id")): x for x in amo_pages(amo, "/api/v4/users", "users")}
-    maxim = active_users.get(str(MAXIM))
-    if not maxim or not maxim.get("rights", {}).get("is_active", True):
-        raise Stop("Технический ответственный неактивен")
     print(f"Индекс собран: {len(order_rows)} заказов, {len(leads)} сделок, {len(contacts)} контактов", flush=True)
     payload = {
         "captured_at": datetime.now(TZ).isoformat(timespec="seconds"),
@@ -2524,6 +2537,20 @@ def self_test() -> None:
             self.assertFalse(known_integration_text(FIELDS["comment"], actual.replace("14900", "15000"), expected,
                                                    {"description": actual.replace("14900", "15000")}))
             self.assertFalse(known_integration_text(FIELDS["comment"], actual, expected, {"description": "Другая запись"}))
+
+        def test_won_stage_rename_preserves_system_id(self):
+            import copy
+            pipeline = {"id": PIPELINE, "_embedded": {"statuses": [{"id": WON, "name": "Выполнен", "is_editable": False}]}}
+            self.assertEqual(target_won_status(pipeline)["id"], WON)
+            pipeline["_embedded"]["statuses"][0]["name"] = "Успешно реализовано"
+            self.assertEqual(target_won_status(pipeline)["id"], WON)
+            for key, value in (("id", 143), ("name", "Неизвестный этап"), ("is_editable", True)):
+                changed = copy.deepcopy(pipeline);changed["_embedded"]["statuses"][0][key] = value
+                with self.assertRaises(Stop):
+                    target_won_status(changed)
+            changed = copy.deepcopy(pipeline);changed["id"] = PIPELINE + 1
+            with self.assertRaises(Stop):
+                target_won_status(changed)
 
         def test_dashboard_import_is_not_messenger_inquiry(self):
             import collect_dashboard as dashboard

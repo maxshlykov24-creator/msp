@@ -227,3 +227,56 @@ def test_ledger_outbox_consistency(setup):
                 value = s.scalar(select(func.sum(Movement.quantity)).where(Movement.item_id == b.item_id, Movement.location == b.location, Movement.bucket == bucket)) or 0
                 assert getattr(b, bucket) == value
         assert all(s.get(Document, o.document_id) for o in s.scalars(select(Outbox)))
+
+
+def test_publication_stale_and_quota_transfer():
+    from app.publication import plan_publication
+    from app.db import now
+    p = dict(available=10, safety_stock=0, desired={'wb': 5, 'ozon': 5}, confirmed={'wb': 10, 'ozon': 0},
+             orders_read_at=now().isoformat(), max_age_seconds=60, mappings_verified=True,
+             single_writer=True, reductions_confirmed=False)
+    with pytest.raises(DomainError):
+        plan_publication(**p)
+    assert plan_publication(**{**p, 'reductions_confirmed': True})['publication_enabled'] is False
+    with pytest.raises(DomainError):
+        plan_publication(**{**p, 'reductions_confirmed': True, 'orders_read_at': '2020-01-01T00:00:00Z'})
+    with pytest.raises(DomainError):
+        plan_publication(**{**p, 'desired': {'wb': 10, 'ozon': 10}})
+
+
+def test_connector_pagination_and_no_personal_data():
+    from app.connectors import ozon_postings, ReadFailure, ReadClient
+    class Fake:
+        def __init__(self, repeat=False):
+            self.calls, self.repeat = 0, repeat
+        def request(self, path, body):
+            self.calls += 1
+            return {'postings': [{'posting_number': str(self.calls), 'status': 'awaiting_packaging', 'customer': {'name': 'must-not-leak'}, 'products': []}],
+                    'has_next': self.calls == 1 or self.repeat, 'cursor': 'next'}
+    assert len(ozon_postings(Fake(), 'start', 'end')) == 2
+    assert 'customer' not in ozon_postings(Fake(), 'start', 'end')[0]
+    with pytest.raises(ReadFailure):
+        ozon_postings(Fake(True), 'start', 'end')
+    with pytest.raises(ReadFailure):
+        ReadClient('ozon', {}).request('/v2/products/stocks', {'stocks': []})
+
+
+def test_auto_freeze_requires_explicit_policy_and_no_double_release(setup):
+    engine, user, cmd = setup
+    f = cmd('freeze.create', {'item_id': 's', 'location': 'own', 'version': 1, 'quantity': 4, 'until': '2020-01-01T00:00:00Z'})
+    cmd('freeze.configure', {'id': f['id'], 'version': f['version'], 'mode': 'auto'})
+    assert tick(engine) == 1
+    assert tick(engine) == 0
+    assert balance(engine)['free'] == 10
+    assert balance(engine)['frozen'] == 0
+
+
+def test_unknown_scan_resolution_auditable(setup):
+    engine, user, cmd = setup
+    c = cmd('count.create', {'location': 'own', 'item_ids': ['s']})
+    c = cmd('count.scan', {'id': c['id'], 'version': c['version'], 'barcode': 'unknown'})
+    with pytest.raises(DomainError):
+        cmd('count.post', {'id': c['id'], 'version': c['version'], 'confirm_zeroes': True})
+    c = cmd('count.resolve', {'id': c['id'], 'version': c['version'], 'index': 0, 'item_id': 's'})
+    cmd('count.post', {'id': c['id'], 'version': c['version'], 'confirm_zeroes': True})
+    assert balance(engine)['free'] == 1

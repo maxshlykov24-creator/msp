@@ -54,7 +54,7 @@ function addDays(dateStr: string, n: number): string {
   }
 }
 
-export function DeferredForm({ onDone }: { onDone: () => void }) {
+export function DeferredForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
   const { user } = useAuth();
   const { saved, setSaved, toast } = useSaved();
@@ -194,7 +194,7 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Отложка"
       subtitle="Оффлайн"
       meta={meta}

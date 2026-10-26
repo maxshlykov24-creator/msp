@@ -81,7 +81,7 @@ def create_app(engine=None):
 
     @app.get('/api/entities/{kind}')
     def entities(kind: str, user=Depends(auth)):
-        if kind not in ('task', 'freeze', 'count', 'order', 'fbo', 'finance', 'notice'):
+        if kind not in ('task', 'freeze', 'count', 'order', 'fbo', 'finance', 'notice', 'integration'):
             raise HTTPException(404, 'Раздел не найден')
         if kind == 'finance' and 'finance' not in PERMISSIONS[user.role]:
             raise HTTPException(403, 'Нет доступа к финансам')
@@ -107,8 +107,10 @@ def create_app(engine=None):
         with Session(engine) as s:
             pending = list(s.scalars(select(Outbox).where(Outbox.status == 'held')))
             snapshots = list(s.scalars(select(Entity).where(Entity.kind == 'snapshot')))
+            integration = [e.data for e in s.scalars(select(Entity).where(Entity.kind == 'integration'))]
+            marketplace = [e.data for e in s.scalars(select(Entity).where(Entity.kind == 'marketplace_snapshot'))]
             return {'publication': 'disabled', 'queue_held': len(pending),
-                    'snapshots': [e.data for e in snapshots], 'finance': 'rules_pending',
+                    'snapshots': [e.data for e in snapshots], 'integration': integration, 'marketplace': marketplace, 'finance': 'rules_pending',
                     'blockers': ['Пилотные позиции и единственный источник записи не подтверждены',
                                  'Живые сценарии WB и Ozon не пройдены', 'Правила оплаты цеха не получены']}
 

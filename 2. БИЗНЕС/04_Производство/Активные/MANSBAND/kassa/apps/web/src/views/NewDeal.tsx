@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ShoppingBag, Building2, Ticket, Shirt, XCircle, Send,
   Mail, Truck, AlertTriangle, Droplets, Scissors, Replace, Undo2, RefreshCw, Tag,
@@ -45,6 +45,14 @@ const KINDS: Record<FunnelType, { kind: DealKind; icon: typeof ShoppingBag }[]> 
   ],
 };
 
+function funnelFor(kind: DealKind | null | undefined): FunnelType {
+  if (!kind) return "offline";
+  const match = (Object.entries(KINDS) as [FunnelType, { kind: DealKind }[]][]).find(([, items]) =>
+    items.some((item) => item.kind === kind)
+  );
+  return match?.[0] ?? "offline";
+}
+
 export function NewDeal({
   onClose,
   initialKind,
@@ -55,9 +63,27 @@ export function NewDeal({
   sourceDealNumber?: number | null;
 }) {
   const { deals } = useStore();
-  const [funnel, setFunnel] = useState<FunnelType>("offline");
+  const [funnel, setFunnel] = useState<FunnelType>(() => funnelFor(initialKind));
   const [kind, setKind] = useState<DealKind | null>(initialKind ?? null);
   const [fetchedSource, setFetchedSource] = useState<Deal | null>(null);
+  const skipHashSync = useRef(true);
+
+  // Смена хеша (#new/вид ↔ #new) открывает форму или возвращает к выбору.
+  // Первый прогон пропускаем: вид, выбранный кликом, в хеш не пишется.
+  useEffect(() => {
+    if (skipHashSync.current) {
+      skipHashSync.current = false;
+      return;
+    }
+    setKind(initialKind ?? null);
+    if (initialKind) setFunnel(funnelFor(initialKind));
+  }, [initialKind]);
+
+  function backToPicker() {
+    if (kind) setFunnel(funnelFor(kind));
+    setKind(null);
+    if (window.location.hash !== "#new") window.location.hash = "new";
+  }
 
   const sourceDeal =
     sourceDealNumber != null
@@ -82,15 +108,15 @@ export function NewDeal({
     };
   }, [sourceDealNumber, deals]);
 
-  if (kind === "sale") return <SaleForm onDone={onClose} />;
-  if (kind === "company") return <CompanyForm onDone={onClose} />;
-  if (kind === "cert_plastic") return <CertificateForm onDone={onClose} />;
-  if (kind === "cert_digital") return <CertificateForm onDone={onClose} digital />;
-  if (kind === "rental") return <RentalForm onDone={onClose} />;
-  if (kind === "sliv") return <SlivForm onDone={onClose} />;
-  if (kind === "deferred" || kind === "promise") return <SaleForm onDone={onClose} />;
-  if (kind === "no_sliv") return <NoSlivForm onDone={onClose} />;
-  if (kind === "delivery") return <DeliveryForm onDone={onClose} />;
+  if (kind === "sale") return <SaleForm onDone={onClose} onBack={backToPicker} />;
+  if (kind === "company") return <CompanyForm onDone={onClose} onBack={backToPicker} />;
+  if (kind === "cert_plastic") return <CertificateForm onDone={onClose} onBack={backToPicker} />;
+  if (kind === "cert_digital") return <CertificateForm onDone={onClose} onBack={backToPicker} digital />;
+  if (kind === "rental") return <RentalForm onDone={onClose} onBack={backToPicker} />;
+  if (kind === "sliv") return <SlivForm onDone={onClose} onBack={backToPicker} />;
+  if (kind === "deferred" || kind === "promise") return <SaleForm onDone={onClose} onBack={backToPicker} />;
+  if (kind === "no_sliv") return <NoSlivForm onDone={onClose} onBack={backToPicker} />;
+  if (kind === "delivery") return <DeliveryForm onDone={onClose} onBack={backToPicker} />;
   if (
     kind === "defect" ||
     kind === "drycleaning" ||
@@ -98,9 +124,9 @@ export function NewDeal({
     kind === "wrong_size" ||
     kind === "wrong_label"
   )
-    return <DefectForm kind={kind} onDone={onClose} />;
-  if (kind === "refund") return <RefundForm onDone={onClose} sourceDeal={sourceDeal} />;
-  if (kind === "exchange") return <ExchangeForm onDone={onClose} sourceDeal={sourceDeal} />;
+    return <DefectForm kind={kind} onDone={onClose} onBack={backToPicker} />;
+  if (kind === "refund") return <RefundForm onDone={onClose} onBack={backToPicker} sourceDeal={sourceDeal} />;
+  if (kind === "exchange") return <ExchangeForm onDone={onClose} onBack={backToPicker} sourceDeal={sourceDeal} />;
 
   return (
     <div className="max-w-4xl mx-auto">

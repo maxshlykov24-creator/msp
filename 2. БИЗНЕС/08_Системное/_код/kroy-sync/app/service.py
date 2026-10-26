@@ -15,9 +15,9 @@ PERMISSIONS = {
 }
 COMMAND_RIGHT = {
     'item.create': 'catalog', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
-    'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'task.create': 'cut',
+    'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut',
     'task.approve': 'cut', 'task.confirm': 'cut', 'task.cancel': 'cut',
-    'count.create': 'count', 'count.scan': 'count', 'count.post': 'adjust',
+    'count.create': 'count', 'count.scan': 'count', 'count.set': 'count', 'count.resolve': 'count', 'count.post': 'adjust',
     'order.create': 'orders', 'order.ship': 'orders', 'order.cancel': 'orders',
     'return.receive': 'orders', 'fbo.create': 'orders', 'fbo.dispatch': 'orders',
     'fbo.accept': 'orders', 'finance.record': 'finance',
@@ -191,6 +191,10 @@ def dispatch(s, doc, command, p):
             require(q <= Decimal(d['remaining']), 'Количество больше остатка заморозки')
             move(s, doc, d['item_id'], d['location'], {'frozen': -q, 'free': q})
             d['remaining'] = str(Decimal(d['remaining']) - q)
+        elif command == 'freeze.configure':
+            require(p['mode'] in ('manual', 'auto'), 'Режим: manual или auto', 422)
+            require(p['mode'] != 'auto' or d.get('until'), 'Для автоматического снятия нужен срок')
+            d['mode'] = p['mode']
         else:
             d['until'], d['reminded'] = deadline(p['until']), False
         save(e, d)
@@ -269,8 +273,26 @@ def dispatch(s, doc, command, p):
                 i = candidates[0]
                 require(i.unit in ('piece', 'roll'), 'Метры требуют ручного измерения', 422)
                 d['items'][i.id]['count'] = str(Decimal(d['items'][i.id]['count']) + 1)
+        elif command == 'count.set':
+            require(p['item_id'] in d['items'], 'Позиция вне области пересчёта')
+            q = quantity(p['quantity'], get_item(s, p['item_id']), positive=False)
+            require(q >= 0, 'Посчитанное количество не может быть отрицательным')
+            d['items'][p['item_id']]['count'] = str(q)
+        elif command == 'count.resolve':
+            index = p['index']
+            require(type(index) is int and 0 <= index < len(d['unknown']), 'Неизвестная строка сканирования')
+            row = d['unknown'][index]
+            require(not row.get('resolved'), 'Скан уже разобран')
+            if p.get('item_id'):
+                require(p['item_id'] in d['items'], 'Позиция вне области пересчёта')
+                i = get_item(s, p['item_id'])
+                require(i.unit in ('piece', 'roll'), 'Метры требуют измерения')
+                d['items'][i.id]['count'] = str(Decimal(d['items'][i.id]['count']) + 1)
+            row['resolved'] = True
+            row['resolution'] = p.get('item_id') or 'ignored_out_of_scope'
+            row['document_id'] = doc
         else:
-            require(not d['unknown'], 'Есть неразобранные коды. Создай уточнённый пересчёт')
+            require(not any(not row.get('resolved') for row in d['unknown']), 'Есть неразобранные коды. Нужна сверка')
             require(p.get('confirm_zeroes') is True, 'Подтверди нули для несканированных позиций', 422)
             for item_id, row in d['items'].items():
                 b = get_balance(s, item_id, d['location'])

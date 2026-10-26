@@ -54,7 +54,7 @@ function addDays(dateStr: string, days: number): string {
   }
 }
 
-export function RentalForm({ onDone }: { onDone: () => void }) {
+export function RentalForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
@@ -233,7 +233,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Аренда"
       subtitle="Оффлайн"
       meta={meta}

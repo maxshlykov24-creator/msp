@@ -37,7 +37,7 @@ import type { CartItem, Deal, Payment } from "../../data/types";
 /** При создании компании — только «Товар отложен»; счёт Эдвину уходит автоматически. */
 const COMPANY_CREATE_STAGES = ["Дано обещание", "Ждет товар", "Товар в магазине"];
 
-export function CompanyForm({ onDone }: { onDone: () => void }) {
+export function CompanyForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
@@ -166,7 +166,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Продажа компании"
       subtitle="Оффлайн"
       meta={meta}

@@ -38,7 +38,7 @@ import type { CartItem, Deal, Payment } from "../../data/types";
 // При создании: без «Провал» (это слив/не слив) и без «Товар в магазине» (проставляют позже).
 const SAVE_STAGES = STAGES_BY_KIND.sale.filter((s) => !["Успех", "Товар в пути", "Товар отложен"].includes(s));
 
-export function SaleForm({ onDone }: { onDone: () => void }) {
+export function SaleForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
@@ -202,7 +202,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
 
   return (
     <FormShell
-      onBack={onDone}
+      onBack={onBack}
       title="Продажа"
       subtitle="Оффлайн"
       meta={meta}
