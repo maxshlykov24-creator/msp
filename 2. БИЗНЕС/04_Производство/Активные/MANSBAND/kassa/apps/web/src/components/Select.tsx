@@ -55,10 +55,12 @@ export function Select({
   disabled,
   id,
   className = "",
+  triggerClassName,
   size = "md",
   leading,
   searchable,
   menuMinWidth = 248,
+  fitLabel = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -68,10 +70,14 @@ export function Select({
   disabled?: boolean;
   id?: string;
   className?: string;
+  /** Шрифт кнопки. Если не задан, мелкий размер берёт 13px. */
+  triggerClassName?: string;
   size?: "md" | "sm";
   leading?: ReactNode;
   searchable?: boolean;
   menuMinWidth?: number;
+  /** Подпись не обрезается, кнопка шире текста. */
+  fitLabel?: boolean;
 }) {
   const uid = useId();
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -269,11 +275,11 @@ export function Select({
         }}
         onKeyDown={onTriggerKey}
         className={`input w-full flex items-center gap-2 text-left cursor-pointer ${
-          sm ? "py-2 text-[13px]" : ""
-        } ${open ? "kassa-select-trigger-open" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+          sm ? "py-2" : ""
+        } ${triggerClassName ?? (sm ? "text-[13px]" : "")} ${open ? "kassa-select-trigger-open" : ""} ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
       >
         {leading && <span className="text-mute shrink-0">{leading}</span>}
-        <span className={`flex-1 min-w-0 truncate ${selected ? "text-white" : "text-mute/70"}`}>
+        <span className={`${fitLabel ? "whitespace-nowrap" : "flex-1 min-w-0 truncate"} ${selected ? "text-white" : "text-mute/70"}`}>
           {selected?.label ?? placeholder}
         </span>
         <ChevronDown size={sm ? 14 : 16} className={`text-mute shrink-0 transition ${open ? "rotate-180" : ""}`} />

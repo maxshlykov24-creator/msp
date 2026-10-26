@@ -269,6 +269,8 @@ def summary_text(db: Session, now: Optional[dt.datetime] = None, *, previous_day
         ("не найдена связь со сделкой", sum(c.status == "no_lead" for c in calls)),
         ("источник требует проверки", sum(c.status == "unattributed" and c.number_kind != "shared" for c in calls)),
         ("ожидают обработки", sum(c.status == "new" for c in calls)),
+        ("спорная привязка", sum(bool((c.result or {}).get("disputed") or
+            (c.result or {}).get("attribution_snapshot", {}).get("disputed")) for c in calls)),
     ):
         if count:
             problems.append(f"{label}: {count}")
@@ -281,7 +283,7 @@ def summary_text(db: Session, now: Optional[dt.datetime] = None, *, previous_day
              "Обработка: " + ("; ".join(problems) if problems else "ошибок нет"), "",
              "Номера",
              f"Пик занятости: {peaks['busy']} · визитов с метками: {peaks['demand']}",
-             f"Резерв: {exhausted} показов" if exhausted else "Резерв: не понадобился"]
+             f"Показов резерва: {exhausted}" if exhausted else "Резерв: не понадобился"]
     if fallback:
         lines.append(f"Визитов с резервом: {len(fallback)} · позже получили подмену: {recovered}")
     elif exhausted:

@@ -815,7 +815,7 @@ def test_monitor_detects_exhaustion_and_persists_heartbeat(client, monkeypatch):
         assert reconcile._load_state(db)["heartbeat"]
         report = reconcile.summary_text(db)
         assert "визитов с метками: 16" in report
-        assert "Резерв: 1 показов" in report
+        assert "Показов резерва: 1" in report
         assert "Визитов с резервом: 1" in report
 
 
@@ -1538,3 +1538,36 @@ def test_metrika_diagnostic_visit_never_creates_business_conversion(metrika_sett
         assert enqueue_call(db, call, pilot=True)
         state = json.loads(db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%"))).value)
         assert state["status"] == "skipped" and state["reason"] == "diagnostic_visit"
+
+
+def test_summary_separates_calls_coverage_and_errors_and_merges_aliases():
+    import datetime as dt
+    from app.calltrack.models import Visit, CallEvent
+    from app.calltrack.reconcile import summary_text
+    from app.models import KvState
+    now = dt.datetime(2026, 10, 25, 12, tzinfo=dt.timezone.utc)
+    with _db() as db:
+        visits = [Visit(utm_source=source, yclid=yclid, created_at=now, last_seen_at=now)
+                  for source, yclid in [("yandex", None), ("ya", None), (None, "123"), (None, None)]]
+        db.add_all(visits); db.flush()
+        db.add_all([
+            CallEvent(call_id="report-pool", called="9310000000", started_at=now,
+                      status="matched", number_kind="pool", visit_id=visits[0].id, lead_id=101),
+            CallEvent(call_id="report-channel", called="9311111111", started_at=now,
+                      status="repeat", number_kind="channel", lead_id=102),
+            CallEvent(call_id="report-shared", called="9310090251", started_at=now,
+                      status="unattributed", number_kind="shared", lead_id=103),
+            CallEvent(call_id="report-error", called="9312222222", started_at=now,
+                      status="error", number_kind="unknown"),
+            CallEvent(call_id="report-archived", called="", started_at=now, status="archived_test"),
+            KvState(key="ct_pool_exhausted:2026-10-25", value="3"),
+        ])
+        db.commit()
+        report = summary_text(db, now)
+        assert "Звонки: 4 · повторные: 1" in report
+        assert "Со сделкой: 3 из 4" in report
+        assert "визит — 1 · канал — 1 · общий номер — 1 · не определена — 1" in report
+        assert "ошибки CRM: 1" in report and "источник требует проверки" not in report
+        assert "Яндекс Директ: 3" in report and "Без меток: 1" in report
+        assert "Число визитов с резервом за этот день не записывалось" in report
+        assert "{'" not in report and "yclid:" not in report

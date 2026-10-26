@@ -397,8 +397,10 @@ function Selector({
       onChange={onChange}
       options={opts(...options)}
       leading={icon}
-      size={compact ? "sm" : "md"}
-      className={compact ? "flex-1 min-w-0" : "w-[168px] xl:w-[220px]"}
+      size="sm"
+      triggerClassName={compact ? "text-[12px]" : "text-[13px]"}
+      fitLabel
+      className={compact ? "flex-1 min-w-[10.75rem]" : "w-max shrink-0"}
     />
   );
 }

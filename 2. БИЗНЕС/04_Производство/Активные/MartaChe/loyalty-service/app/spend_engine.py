@@ -127,6 +127,23 @@ def _line_amount_kop(pos: dict[str, Any], discount_pct: float) -> float:
     return max(0.0, price * qty * (1.0 - max(0.0, min(100.0, discount_pct)) / 100.0))
 
 
+def _is_service_position(pos: dict[str, Any]) -> bool:
+    """Услуга. В аккаунте MartaChe это единственная услуга «Доставка».
+
+    Бонусная скидка кладётся только на товар. Папки доставки в .env нет:
+    строка не в productFolder, опознать её можно только по type=service.
+    """
+    assortment = pos.get("assortment") or {}
+    if not isinstance(assortment, dict):
+        return False
+    meta = assortment.get("meta") or {}
+    if not isinstance(meta, dict):
+        return False
+    if str(meta.get("type") or "") == "service":
+        return True
+    return "/entity/service/" in str(meta.get("href") or "")
+
+
 def apply_spend_discount_to_positions(
     client: MoySkladClient,
     *,
@@ -135,13 +152,15 @@ def apply_spend_discount_to_positions(
     prev_per_pos: Optional[dict[str, Any]],
 ) -> dict[str, float]:
     """
-    Применяет ровно `cap_rub` рублей скидки к позициям заказа за счёт поля `discount`.
-    
-    Распределяет сумму скидки пропорционально вкладу позиции в общий итог
-    (после восстановления «исходного» discount без нашего вклада).
-    
+    Применяет ровно `cap_rub` рублей скидки к товарным позициям заказа через `discount`.
+
+    Доля считается от суммы товаров после снятия нашей прошлой надбавки.
+    Услуга («Доставка») в долю не входит. Если на ней уже лежит наша скидка
+    с прошлого пересчёта, надбавка снимается и та же сумма перекладывается на товар.
+    Итог заказа в рублях не меняется.
+
     Возвращает новый словарь {position_id: extra_pct} — нашу часть скидки на каждую
-    позицию для последующих идемпотентных пересчётов.
+    товарную позицию для последующих идемпотентных пересчётов.
     """
     order_id = str(order.get("id") or "")
     if not order_id:
@@ -162,7 +181,8 @@ def apply_spend_discount_to_positions(
         orig_discounts[pid] = orig
         amount = _line_amount_kop(pos, orig)
         line_amounts[pid] = amount
-        total_kop += amount
+        if not _is_service_position(pos):
+            total_kop += amount
 
     cap_kop = max(0, int(cap_rub)) * 100
     # Не можем дать скидку больше, чем итог по «исходному» состоянию.
@@ -182,7 +202,7 @@ def apply_spend_discount_to_positions(
         if gross <= 0:
             target_discounts[pid] = orig_discounts.get(pid, 0.0)
             continue
-        if cap_kop <= 0 or total_kop <= 0:
+        if _is_service_position(pos) or cap_kop <= 0 or total_kop <= 0:
             extra_amount = 0.0
         else:
             share = line_amounts[pid] / total_kop
@@ -229,7 +249,7 @@ def _fetch_order_positions(client: MoySkladClient, order: dict[str, Any]) -> lis
         try:
             data = client.get(
                 f"/entity/customerorder/{order_id}/positions",
-                params={"limit": 1000},
+                params={"limit": 1000, "expand": "assortment"},
             )
             rows = list(data.get("rows") or []) if isinstance(data, dict) else []
             if rows:
