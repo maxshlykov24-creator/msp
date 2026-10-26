@@ -1361,6 +1361,14 @@ def confirm_lead_after_comment_sync(mss: requests.Session, amo: lib.Amo, lead_id
 
 
 def known_integration_text(field_id: int, actual: str, expected: str, order: dict) -> bool:
+    if field_id == 929025:
+        # This existing single-line address-comment field saves LF as a space.
+        # Accept only that exact observed conversion, confirmed by the source;
+        # never collapse arbitrary whitespace or accept changed words/numbers.
+        address = order.get("shipmentAddressFull") or {}
+        source = str(address.get("comment") or address.get("addInfo") or "")
+        return ("\n" in expected and actual == expected.replace("\n", " ")
+                and source in (expected, actual))
     if field_id == FIELDS["comment"]:
         description = str(order.get("description") or "").strip()
         if actual == description and "[Исторический импорт МС→amo " in expected:
@@ -2553,6 +2561,54 @@ def self_test() -> None:
             expected = "Исходный комментарий\n[Исторический импорт МС→amo 2026-10-21]"
             self.assertTrue(known_integration_text(929071, "Исходный комментарий", expected, order))
             self.assertFalse(known_integration_text(929071, "Иной комментарий", expected, order))
+
+        def test_address_comment_accepts_only_source_confirmed_lf_to_space(self):
+            expected = "Подъезд 1\nЭтаж 2"
+            actual = "Подъезд 1 Этаж 2"
+            for source in (expected, actual):
+                order = {"shipmentAddressFull": {"comment": source}}
+                self.assertTrue(known_integration_text(929025, actual, expected, order))
+                for changed in ("Подъезд 1 Этаж 3", "Подъезд 1  Этаж 2", "Подъезд 1\tЭтаж 2", "Другой текст"):
+                    self.assertFalse(known_integration_text(929025, changed, expected, order))
+            self.assertFalse(known_integration_text(929025, actual, expected, {}))
+            self.assertFalse(known_integration_text(929025, actual, expected,
+                                                   {"shipmentAddressFull": {"comment": "Другой текст"}}))
+            self.assertFalse(known_integration_text(929025, actual, "Подъезд 1\tЭтаж 2",
+                                                   {"shipmentAddressFull": {"comment": actual}}))
+            self.assertFalse(known_integration_text(FIELDS["ms_id"], actual, expected,
+                                                   {"shipmentAddressFull": {"comment": actual}}))
+
+        def test_address_normalization_keeps_all_other_lead_checks_strict(self):
+            import copy
+            expected, actual = "Подъезд 1\nЭтаж 2", "Подъезд 1 Этаж 2"
+            payload = {"pipeline_id": PIPELINE, "status_id": WON, "price": 123,
+                       "name": "Заказ 1", "responsible_user_id": MAXIM, "created_at": 1, "closed_at": 2,
+                       "custom_fields_values": [
+                           {"field_id": 929025, "values": [{"value": expected}]},
+                           {"field_id": FIELDS["ms_id"], "values": [{"value": "uuid"}]}],
+                       "_embedded": {"contacts": [{"id": 5, "is_main": True}]}}
+            lead = copy.deepcopy(payload)
+            lead["custom_fields_values"][0]["values"][0]["value"] = actual
+            order = {"shipmentAddressFull": {"comment": actual}}
+            with patch.object(module, "api_write") as write, patch.object(module, "amo_request") as request:
+                checked = validate_lead(copy.deepcopy(lead), "5", payload, order)
+                self.assertEqual(checked["_migration_text_normalizations"], [929025])
+                for key, value in (("price", 124), ("closed_at", 3), ("created_at", 3),
+                                   ("status_id", 143), ("pipeline_id", 1), ("responsible_user_id", 1)):
+                    altered = copy.deepcopy(lead);altered[key] = value
+                    with self.assertRaises(Stop):
+                        validate_lead(altered, "5", payload, order)
+                altered = copy.deepcopy(lead)
+                altered["custom_fields_values"][1]["values"][0]["value"] = "another-uuid"
+                with self.assertRaises(Stop):
+                    validate_lead(altered, "5", payload, order)
+                for embedded in ({"contacts": [{"id": 6, "is_main": True}]},
+                                 {"contacts": [{"id": 5, "is_main": True}], "companies": [{"id": 1}]}):
+                    altered = copy.deepcopy(lead);altered["_embedded"] = embedded
+                    with self.assertRaises(Stop):
+                        validate_lead(altered, "5", payload, order)
+                write.assert_not_called()
+                request.assert_not_called()
 
         def test_historical_comment_drift_does_not_weaken_other_checks(self):
             import copy
