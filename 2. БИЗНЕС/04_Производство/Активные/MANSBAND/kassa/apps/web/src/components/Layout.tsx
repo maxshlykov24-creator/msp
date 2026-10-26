@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   PanelLeft,
@@ -117,7 +117,7 @@ export function Layout({
       return false;
     }
   });
-  const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -128,13 +128,22 @@ export function Layout({
   }, [railOpen]);
 
   function showTip(el: HTMLElement) {
+    const tip = tipRef.current;
+    if (!tip) return;
     const label = el.dataset.label;
     if (!label || el.getAttribute("aria-expanded") === "true") {
-      setTip(null);
+      tip.hidden = true;
       return;
     }
     const rect = el.getBoundingClientRect();
-    setTip({ label, top: rect.top + rect.height / 2, left: rect.right + 12 });
+    tip.textContent = label;
+    tip.style.top = `${rect.top + rect.height / 2}px`;
+    tip.style.left = `${rect.right + 10}px`;
+    tip.hidden = false;
+  }
+
+  function hideTip() {
+    if (tipRef.current) tipRef.current.hidden = true;
   }
 
   const work: RailItem[] = [
@@ -218,12 +227,12 @@ export function Layout({
             const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-label]");
             if (btn) showTip(btn);
           }}
-          onMouseLeave={() => setTip(null)}
+          onMouseLeave={hideTip}
           onFocus={(e) => {
             const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-label]");
             if (btn) showTip(btn);
           }}
-          onBlur={() => setTip(null)}
+          onBlur={hideTip}
         >
           <button
             type="button"
@@ -232,7 +241,7 @@ export function Layout({
             aria-label={railOpen ? "Свернуть меню" : "Развернуть меню"}
             data-label={railOpen ? undefined : "Развернуть меню"}
             onClick={() => {
-              setTip(null);
+              hideTip();
               setRailOpen((v) => !v);
             }}
           >
@@ -250,11 +259,7 @@ export function Layout({
             ))}
           </div>
         </nav>
-        {tip && !railOpen && (
-          <div className="rail-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
-            {tip.label}
-          </div>
-        )}
+        <div ref={tipRef} className="rail-tip" role="tooltip" hidden />
       </aside>
 
       {/* Main */}
