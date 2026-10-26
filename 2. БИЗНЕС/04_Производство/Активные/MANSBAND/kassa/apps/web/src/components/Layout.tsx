@@ -1,19 +1,19 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  LayoutList,
   PlusCircle,
-  Send,
-  BarChart3,
-  Wallet,
+  LayoutList,
+  Boxes,
+  ClipboardList,
   Ticket,
+  Building2,
+  Send,
+  Wallet,
+  BarChart3,
   Store as StoreIcon,
   ChevronDown,
   LogOut,
-  Boxes,
-  ClipboardList,
   History,
-  Building2,
   UserCog,
   SlidersHorizontal,
 } from "lucide-react";
@@ -43,20 +43,32 @@ export type Route =
   | "settings"
   | "audit"; // старый hash → история
 
-// Нижнее меню на мобильном: товар и очереди — на виду, не в бургер-меню.
+const ICO = { size: 22 } as const;
+
+// Нижнее меню на мобильном: те же значки, что в колонке, плюс короткая подпись.
 // «Эдвин» добавляется только финансам: консультанту денежные очереди не показываем.
 const MOBILE_NAV_BASE: { id: Route; label: string; icon: ReactNode; badge?: "queue" }[] = [
-  { id: "new", label: "Новая", icon: <PlusCircle size={22} /> },
-  { id: "board", label: "Заявки", icon: <LayoutList size={22} /> },
-  { id: "products", label: "Товар", icon: <Boxes size={22} /> },
-  { id: "tasks", label: "Очереди", icon: <ClipboardList size={22} /> },
+  { id: "new", label: "Новая", icon: <PlusCircle {...ICO} /> },
+  { id: "board", label: "Заявки", icon: <LayoutList {...ICO} /> },
+  { id: "products", label: "Товар", icon: <Boxes {...ICO} /> },
+  { id: "tasks", label: "Задачи", icon: <ClipboardList {...ICO} /> },
 ];
 
 const MOBILE_NAV_FINANCE: { id: Route; label: string; icon: ReactNode; badge?: "queue" } = {
   id: "queue",
   label: "Эдвин",
-  icon: <Send size={22} />,
+  icon: <Send {...ICO} />,
   badge: "queue",
+};
+
+type RailItem = {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  active: boolean;
+  onClick: () => void;
+  badge?: number;
+  create?: boolean;
 };
 
 export function Layout({
@@ -95,82 +107,132 @@ export function Layout({
   }, [user?.name, setActiveConsultant]);
 
   const displayName = user?.name ?? "Пользователь";
+  const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(null);
+
+  function showTip(el: HTMLElement) {
+    const label = el.dataset.label;
+    if (!label || el.getAttribute("aria-expanded") === "true") {
+      setTip(null);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    setTip({ label, top: rect.top + rect.height / 2, left: rect.right + 12 });
+  }
+
+  const work: RailItem[] = [
+    {
+      id: "new",
+      label: "Новая заявка",
+      icon: <PlusCircle {...ICO} />,
+      create: true,
+      active: route === "new",
+      onClick: () => setRoute("new"),
+    },
+    {
+      id: "board",
+      label: "Заявки",
+      icon: <LayoutList {...ICO} />,
+      active: route === "board",
+      onClick: () => onBoard("all", "all"),
+    },
+    {
+      id: "products",
+      label: "Товар",
+      icon: <Boxes {...ICO} />,
+      active: route === "products" || route === "suits",
+      onClick: () => setRoute("products"),
+    },
+    {
+      id: "tasks",
+      label: "Задачи",
+      icon: <ClipboardList {...ICO} />,
+      active: route === "tasks",
+      onClick: () => setRoute("tasks"),
+    },
+    {
+      id: "certificates",
+      label: "Сертификаты",
+      icon: <Ticket {...ICO} />,
+      active: route === "certificates",
+      onClick: () => setRoute("certificates"),
+    },
+  ];
+
+  const backoffice: RailItem[] = [
+    ...(canSeeMoney
+      ? [
+          {
+            id: "misha" as const,
+            label: "Очередь Миши",
+            icon: <Building2 {...ICO} />,
+            active: route === "misha",
+            badge: pendingCompany,
+            onClick: () => setRoute("misha"),
+          },
+          {
+            id: "queue" as const,
+            label: "Очередь Эдвина",
+            icon: <Send {...ICO} />,
+            active: route === "queue",
+            badge: pendingQueue,
+            onClick: () => setRoute("queue"),
+          },
+        ]
+      : []),
+    {
+      id: "shift",
+      label: "Закрытие смены",
+      icon: <Wallet {...ICO} />,
+      active: route === "shift",
+      onClick: () => setRoute("shift"),
+    },
+  ];
 
   return (
     <div className="min-h-screen flex flex-col w-full overflow-x-hidden">
       <OfflineBanner />
       <div className="flex flex-1 min-h-0 w-full">
-      {/* Sidebar */}
-      <aside className="kassa-chrome hidden md:flex w-64 shrink-0 flex-col border-r sticky top-0 h-screen">
-        <button
-          type="button"
-          onClick={onHome}
-          aria-label="На главную"
-          className="px-5 py-6 border-b border-ink-800 text-left w-full hover:bg-ink-800/40 transition"
+      <aside className="hidden md:flex shrink-0 sticky top-0 h-dvh p-3 z-20">
+        <nav
+          className="kassa-rail"
+          aria-label="Разделы кассы"
+          onMouseOver={(e) => {
+            const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-label]");
+            if (btn) showTip(btn);
+          }}
+          onMouseLeave={() => setTip(null)}
+          onFocus={(e) => {
+            const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-label]");
+            if (btn) showTip(btn);
+          }}
+          onBlur={() => setTip(null)}
         >
-          <BrandLogo className="h-14" />
-          <div className="text-[11px] text-mute tracking-[0.28em] uppercase mt-2.5 pl-0.5">Касса</div>
-        </button>
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          <NavButton
-            active={route === "new"}
-            icon={<PlusCircle size={18} />}
-            label="Новая заявка"
-            onClick={() => setRoute("new")}
-          />
-          <NavButton
-            active={route === "board"}
-            icon={<LayoutList size={18} />}
-            label="Все заявки"
-            onClick={() => onBoard("all", "all")}
-          />
-          <NavButton
-            active={route === "products" || route === "suits"}
-            icon={<Boxes size={18} />}
-            label="Поиск товара"
-            onClick={() => setRoute("products")}
-          />
-          <NavButton
-            active={route === "tasks"}
-            icon={<ClipboardList size={18} />}
-            label="Задачи"
-            onClick={() => setRoute("tasks")}
-          />
-          <NavButton
-            active={route === "certificates"}
-            icon={<Ticket size={18} />}
-            label="Реестр сертификатов"
-            onClick={() => setRoute("certificates")}
-          />
-          {canSeeMoney && (
-            <>
-              <NavButton
-                active={route === "misha"}
-                icon={<Building2 size={18} />}
-                label="Очередь Миши"
-                onClick={() => setRoute("misha")}
-                badge={pendingCompany}
-              />
-              <NavButton
-                active={route === "queue"}
-                icon={<Send size={18} />}
-                label="Очередь Эдвина"
-                onClick={() => setRoute("queue")}
-                badge={pendingQueue}
-              />
-            </>
-          )}
-
-          <NavButton
-            active={route === "shift"}
-            icon={<Wallet size={18} />}
-            label="Закрытие смены"
-            onClick={() => setRoute("shift")}
-          />
+          <button
+            type="button"
+            className="rail-mark"
+            onClick={onHome}
+            aria-label="На главную"
+            data-label="Главная"
+          >
+            <img src="/logo-m.svg" alt="" className="rail-mark-img" draggable={false} />
+          </button>
+          <div className="rail-stack">
+            {work.map((item) => (
+              <RailButton key={item.id} {...item} />
+            ))}
+          </div>
+          <div className="rail-sep" aria-hidden />
+          <div className="rail-stack">
+            {backoffice.map((item) => (
+              <RailButton key={item.id} {...item} />
+            ))}
+          </div>
         </nav>
-        <div className="p-4 border-t text-[11px] text-mute/60 tracking-[0.18em] uppercase" style={{ borderColor: "var(--line)" }}>
-          MANSBAND
-        </div>
+        {tip && (
+          <div className="rail-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
+            {tip.label}
+          </div>
+        )}
       </aside>
 
       {/* Main */}
@@ -268,30 +330,19 @@ export function Layout({
   );
 }
 
-function NavButton({
-  active,
-  icon,
-  label,
-  onClick,
-  badge,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-  badge?: number;
-}) {
+function RailButton({ active, icon, label, onClick, badge, create }: RailItem) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[14px] font-medium transition-[background-color,color] duration-200 ${
-        active ? "bg-gold/15 text-gold-soft" : "text-mute hover:bg-ink-800 hover:text-white"
-      }`}
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+      data-label={label}
+      className={`rail-btn ${active ? "is-on" : ""} ${create ? "is-create" : ""}`}
     >
-      <span className={active ? "text-gold" : ""}>{icon}</span>
-      <span className="flex-1 text-left">{label}</span>
+      {icon}
       {badge !== undefined && badge > 0 && (
-        <span className="chip bg-white text-ink-950 font-semibold px-2 py-0.5">{badge}</span>
+        <span className="rail-badge">{badge > 99 ? "99+" : badge}</span>
       )}
     </button>
   );

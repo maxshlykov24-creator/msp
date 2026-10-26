@@ -512,6 +512,137 @@ html.theme-light nav {
   transition: background-color 0.35s var(--ease), border-color 0.35s var(--ease);
 }
 
+/* Узкая колонка разделов. Без backdrop-filter: иначе меню профиля обрезается. */
+.kassa-rail {
+  width: 72px;
+  height: 100%;
+  padding: 10px 8px 12px;
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  background: color-mix(in srgb, rgb(var(--ink-900)) 94%, transparent);
+  border: 1px solid var(--line);
+  box-shadow: var(--glass-edge), var(--shadow-card);
+}
+.kassa-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.rail-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.rail-sep {
+  width: 22px;
+  height: 1px;
+  margin: 4px 0;
+  flex: none;
+  background: var(--line);
+}
+
+.rail-mark,
+.rail-btn {
+  position: relative;
+  width: 48px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: rgb(var(--fg));
+  transition: background-color 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+
+.rail-mark {
+  height: 44px;
+  margin-bottom: 2px;
+  color: rgb(var(--fg));
+}
+.rail-mark-img {
+  width: 30px;
+  height: 24px;
+  display: block;
+}
+html:not(.theme-light) .rail-mark-img {
+  filter: invert(1);
+}
+.rail-mark:hover {
+  background: rgb(var(--ink-800));
+}
+
+.rail-btn {
+  height: 48px;
+  background: rgb(var(--ink-900));
+  border: 1px solid var(--line);
+}
+.rail-btn:hover {
+  background: rgb(var(--ink-850));
+  border-color: var(--line-2);
+}
+.rail-btn.is-on {
+  background: rgb(var(--gold));
+  color: rgb(var(--ink-950));
+  border-color: transparent;
+}
+.rail-btn.is-create:not(.is-on) {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, rgb(var(--gold)) 72%, transparent);
+}
+.rail-mark:focus-visible,
+.rail-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--ink-950)), 0 0 0 4px rgb(var(--gold));
+}
+
+.rail-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgb(var(--gold));
+  color: rgb(var(--ink-950));
+  border: 2px solid rgb(var(--ink-900));
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+.rail-btn.is-on .rail-badge {
+  background: rgb(var(--ink-950));
+  color: rgb(var(--gold));
+  border-color: rgb(var(--gold));
+}
+
+.rail-tip {
+  position: fixed;
+  z-index: 80;
+  transform: translateY(-50%);
+  padding: 7px 11px;
+  border-radius: 11px;
+  background: rgb(var(--ink-850));
+  color: rgb(var(--fg));
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-card);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .kassa-ov {
   position: fixed;
   inset: 0;
