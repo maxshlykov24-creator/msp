@@ -318,7 +318,13 @@ export async function updateDealFields(
     const statusId = await resolveStatusId(deal.amoLeadId, nextStage);
     if (statusId) await amo.updateLead(deal.amoLeadId, { statusId }).catch(() => {});
   }
-  if (deal.amoLeadId && (fields.actualUntil !== undefined || fields.reservedUntil !== undefined)) {
+  if (
+    deal.amoLeadId &&
+    (fields.actualUntil !== undefined ||
+      fields.reservedUntil !== undefined ||
+      fields.meetingDate !== undefined ||
+      fields.approxMeetingDate !== undefined)
+  ) {
     const customFields = await buildLeadCustomFields(updated).catch(() => []);
     if (customFields.length) await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
   }
@@ -362,7 +368,7 @@ export async function updateStage(
     const statusId = await resolveStatusId(deal.amoLeadId, stage);
     if (statusId) await amo.updateLead(deal.amoLeadId, { statusId }).catch(() => {});
   }
-  if (deal.amoLeadId && !patch?.skipAmoWriteback && stage === "Товар отложен") {
+  if (deal.amoLeadId && !patch?.skipAmoWriteback && (stage === "Товар отложен" || patch?.meetingDate)) {
     const customFields = await buildLeadCustomFields(updated).catch(() => []);
     if (customFields.length) await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
   }

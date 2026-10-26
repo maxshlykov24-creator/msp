@@ -1,5 +1,5 @@
 import { DatePicker } from "../../components/DatePicker";
-import { defaultHoldUntil } from "@kassa/shared";
+import { defaultHoldUntil, isApproxDateStage } from "@kassa/shared";
 import { useEffect, useRef, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
@@ -23,6 +23,7 @@ import {
   changeTipsMissing,
   lastPaymentDate,
   sourceMissingForSuccess,
+  movementRequiredGap,
   tipsDealFields,
   useSaved,
   type ChangeInfo,
@@ -79,6 +80,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
 
   // Слив: подставляется автоматически по телефону (без отдельного блока)
   const [meetingDate, setMeetingDate] = useState("");
+  const [approxMeetingDate, setApproxMeetingDate] = useState("");
   const [slivFound, setSlivFound] = useState<Deal | null>(null);
 
   // Авто-проверка слива при полном вводе телефона (11 цифр).
@@ -111,17 +113,22 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
   const [taskOpen, setTaskOpen] = useState(false);
 
   const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
-  const missingRequired = [
+  const [movementCreated, setMovementCreated] = useState(false);
+  const fieldGaps = [
     stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
     stage === "Дано обещание" && !actualUntil && "Актуально до",
+    isApproxDateStage(stage) && !approxMeetingDate && "Примерная дата встречи или заказа",
+    stage === "Встреча назначена" && !meetingDate && "Дата встречи",
     !client.phone && "Телефон клиента",
     !client.name && "Имя клиента",
     stage !== "Дано обещание" && items.length === 0 && "Товары",
     ...changeTipsMissing(paid, total, changeInfo, tips),
   ].filter(Boolean) as string[];
+  const missingRequired = [...fieldGaps, movementRequiredGap(stage, movementCreated)].filter(Boolean) as string[];
+  const fieldsFilled = fieldGaps.length === 0;
   const missingForSuccess = sourceMissingForSuccess(client);
   const baseFilled = missingRequired.length === 0;
-  const canSuccess = items.length > 0 && baseFilled && missingForSuccess.length === 0 && remainder <= 0;
+  const canSuccess = items.length > 0 && fieldsFilled && missingForSuccess.length === 0 && remainder <= 0;
 
   function onFound(deal: Deal) {
     if (deal.referredBy) setConsultants((prev) => (prev.referredBy ? prev : { ...prev, referredBy: deal.referredBy! }));
@@ -143,6 +150,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       consultant: consultants.consultant,
       referredBy: consultants.referredBy || undefined,
       meetingDate: meetingDate || undefined,
+      approxMeetingDate: isApproxDateStage(s) ? approxMeetingDate : undefined,
       clientName: client.name,
       clientPhone: client.phone,
       store: activeStore,
@@ -182,8 +190,8 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
     if (persistedRef.current != null) {
       return { dealNumber: persistedRef.current, store: activeStore };
     }
-    if (!baseFilled) {
-      throw new Error(`Сначала заполните: ${missingRequired.join(", ")}`);
+    if (!fieldsFilled) {
+      throw new Error(`Сначала заполните: ${fieldGaps.join(", ")}`);
     }
     const savedDeal = await addDeal(buildDeal(stage), undefined, { strict: true });
     rememberDeal(savedDeal.number);
@@ -215,7 +223,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
           successStage="Успех"
           successDisabled={!canSuccess}
           successHint={
-            baseFilled && remainder <= 0 && missingForSuccess.length > 0
+            fieldsFilled && remainder <= 0 && missingForSuccess.length > 0
               ? `Для Успех: ${missingForSuccess.join(", ")}`
               : undefined
           }
@@ -258,7 +266,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
         )}
         {slivFound && (
           <div className="mt-3 max-w-[220px]">
-            <Field label="Дата встречи">
+            <Field label="Дата встречи" required={stage === "Встреча назначена"}>
               <DatePicker
                 className="input"
                 value={meetingDate}
@@ -279,6 +287,7 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
           dealKind="sale"
           ensureDeal={ensureDealForMove}
           onMovementCreated={() => {
+            setMovementCreated(true);
             setSaved(true);
             setTimeout(onDone, 600);
           }}
@@ -336,6 +345,8 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       </Card>
 
       {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+      {isApproxDateStage(stage) && <Card><Field label="Примерная дата встречи или заказа" required><DatePicker className="input" value={approxMeetingDate} onChange={(value) => setApproxMeetingDate(value)} /></Field></Card>}
+      {stage === "Встреча назначена" && !slivFound && <Card><Field label="Дата встречи" required><DatePicker className="input" value={meetingDate} onChange={(value) => setMeetingDate(value)} /></Field></Card>}
       {toast}
     </FormShell>
   );

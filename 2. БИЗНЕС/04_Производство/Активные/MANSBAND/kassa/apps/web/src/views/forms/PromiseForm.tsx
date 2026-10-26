@@ -1,4 +1,5 @@
 import { DatePicker } from "../../components/DatePicker";
+import { isApproxDateStage } from "@kassa/shared";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
@@ -14,6 +15,7 @@ import {
   SectionTitle,
   SourceFields,
   StageActions,
+  movementRequiredGap,
   todayStr,
   useSaved,
   type ClientData,
@@ -67,18 +69,23 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
 
   const [items, setItems] = useState<CartItem[]>([]);
   const [actualUntil, setActualUntil] = useState(addWeeks(todayStr(), 2));
+  const [approxMeetingDate, setApproxMeetingDate] = useState("");
   const [comment, setComment] = useState("");
   const [stage, setStage] = useState("Дано обещание");
   const [moveOpen, setMoveOpen] = useState(false);
   const [persistedNumber, setPersistedNumber] = useState<number | null>(null);
 
+  const [movementCreated, setMovementCreated] = useState(false);
   const missingRequired = [
     !client.phone && "Телефон клиента",
     !client.name && "Имя клиента",
     items.length === 0 && "Товары",
     !actualUntil && "Актуально до",
     !comment.trim() && "Комментарий",
+    isApproxDateStage(stage) && !approxMeetingDate && "Примерная дата встречи или заказа",
+    movementRequiredGap(stage, movementCreated),
   ].filter(Boolean) as string[];
+  const fieldsFilled = missingRequired.filter((item) => item !== "Задача на перемещение").length === 0;
   const baseFilled = missingRequired.length === 0;
 
   function buildDeal(s: string): Deal {
@@ -101,6 +108,7 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
       payments: [],
       stage: s,
       actualUntil,
+      approxMeetingDate: isApproxDateStage(s) ? approxMeetingDate : undefined,
       comment,
       total: cartTotal(items),
       paid: 0,
@@ -115,7 +123,7 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
   }
 
   async function ensureDealForMove() {
-    if (!baseFilled) return null;
+    if (!fieldsFilled) return null;
     if (persistedNumber != null) {
       return { dealNumber: persistedNumber, store: activeStore };
     }
@@ -139,7 +147,7 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
       }
       footer={
         <StageActions
-          stages={["Дано обещание", "Хочет прийти", "Ждет товар"]}
+          stages={["Дано обещание", "Хочет прийти", "Хочет заказать", "Ждет товар"]}
           stage={stage}
           onStageChange={setStage}
           onSave={(s) => void save(s)}
@@ -157,6 +165,7 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
         defaultTarget={defaultMovementTarget(activeStore)}
         ensureDeal={persistedNumber == null ? () => ensureDealForMove() : undefined}
         onCreated={() => {
+          setMovementCreated(true);
           setStage("Ждет товар");
           setSaved(true);
           setTimeout(onDone, 600);
@@ -189,6 +198,7 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
           dealKind="promise"
           ensureDeal={persistedNumber == null ? () => ensureDealForMove() : undefined}
           onMovementCreated={() => {
+            setMovementCreated(true);
             setStage("Ждет товар");
             setSaved(true);
             setTimeout(onDone, 600);
@@ -198,6 +208,11 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
           <Field label="Актуально до" required>
             <DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} />
           </Field>
+          {isApproxDateStage(stage) && (
+            <Field label="Примерная дата встречи или заказа" required>
+              <DatePicker className="input" value={approxMeetingDate} onChange={(value) => setApproxMeetingDate(value)} />
+            </Field>
+          )}
         </div>
       </Card>
 

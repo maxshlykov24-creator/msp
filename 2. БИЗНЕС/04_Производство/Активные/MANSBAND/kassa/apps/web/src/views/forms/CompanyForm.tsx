@@ -20,6 +20,7 @@ import {
   changeDealFields,
   changeTipsMissing,
   lastPaymentDate,
+  movementRequiredGap,
   tipsDealFields,
   useSaved,
   type ChangeInfo,
@@ -75,7 +76,8 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
   const [stage, setStage] = useState("Товар в магазине");
 
   const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
-  const missingRequired = [
+  const [movementCreated, setMovementCreated] = useState(false);
+  const fieldGaps = [
     stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
     stage === "Дано обещание" && !actualUntil && "Актуально до",
     !client.phone && "Телефон клиента",
@@ -86,6 +88,8 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
     items.length === 0 && "Товары",
     ...changeTipsMissing(paid, total, changeInfo, tips),
   ].filter(Boolean) as string[];
+  const missingRequired = [...fieldGaps, movementRequiredGap(stage, movementCreated)].filter(Boolean) as string[];
+  const fieldsFilled = fieldGaps.length === 0;
   const baseFilled = missingRequired.length === 0;
 
   function rememberDeal(number: number) {
@@ -148,8 +152,8 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
     if (persistedRef.current != null) {
       return { dealNumber: persistedRef.current, store: activeStore };
     }
-    if (!baseFilled) {
-      throw new Error(`Сначала заполните: ${missingRequired.join(", ")}`);
+    if (!fieldsFilled) {
+      throw new Error(`Сначала заполните: ${fieldGaps.join(", ")}`);
     }
     const savedDeal = await addDeal(buildDeal(stage), undefined, { strict: true });
     rememberDeal(savedDeal.number);
@@ -222,6 +226,7 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
           dealKind="company"
           ensureDeal={ensureDealForMove}
           onMovementCreated={() => {
+            setMovementCreated(true);
             setSaved(true);
             setTimeout(onDone, 600);
           }}

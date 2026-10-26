@@ -1,5 +1,5 @@
 import { DatePicker } from "../components/DatePicker";
-import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, isHoldStage, defaultHoldUntil, holdStageError } from "@kassa/shared";
+import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, isApproxDateStage, isHoldStage, defaultHoldUntil, holdStageError, stageDateError } from "@kassa/shared";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Store } from "lucide-react";
 import type { CartItem, Deal, Payment } from "../data/types";
@@ -68,6 +68,8 @@ function formFromDeal(live: Deal): {
   rentalTo: string;
   actualUntil: string;
   reservedUntil: string;
+  meetingDate: string;
+  approxMeetingDate: string;
   returnInfo: ReturnInfo;
 } {
   return {
@@ -96,6 +98,8 @@ function formFromDeal(live: Deal): {
     rentalTo: live.rentalTo || "",
     actualUntil: live.actualUntil || "",
     reservedUntil: live.reservedUntil || live.deferredUntil || "",
+    meetingDate: (live.meetingDate || "").slice(0, 10),
+    approxMeetingDate: (live.approxMeetingDate || "").slice(0, 10),
     returnInfo: {
       status: live.returnStatus ?? "issued",
       destination: live.returnDestination ?? "",
@@ -164,6 +168,8 @@ export function DealWorkspace({
   const [stage, setStage] = useState(live.stage);
   const [actualUntil, setActualUntil] = useState(live.actualUntil || "");
   const [reservedUntil, setReservedUntil] = useState(live.reservedUntil || live.deferredUntil || "");
+  const [meetingDate, setMeetingDate] = useState((live.meetingDate || "").slice(0, 10));
+  const [approxMeetingDate, setApproxMeetingDate] = useState((live.approxMeetingDate || "").slice(0, 10));
   useEffect(() => { if (stage === "Дано обещание" && !actualUntil) setActualUntil(defaultHoldUntil(1)); }, [stage, actualUntil]);
   useEffect(() => {
     if (hideBack) onDisplayStage?.(stage);
@@ -234,6 +240,8 @@ export function DealWorkspace({
     setRentalTo(form.rentalTo);
     setActualUntil(form.actualUntil);
     setReservedUntil(form.reservedUntil);
+    setMeetingDate(form.meetingDate);
+    setApproxMeetingDate(form.approxMeetingDate);
     setReturnInfo(form.returnInfo);
     setBaseline(formSnapshot(form));
   }, [live.id, live.number, live.kind]);
@@ -257,6 +265,8 @@ export function DealWorkspace({
       rentalTo,
       actualUntil,
       reservedUntil,
+      meetingDate,
+      approxMeetingDate,
       returnInfo,
     }) !== baseline;
 
@@ -284,6 +294,8 @@ export function DealWorkspace({
   async function saveAll() {
     const holdError = holdStageError({ ...live, stage, comment, companyName, items, actualUntil, reservedUntil });
     if (holdError) { setError(holdError); return; }
+    const dateError = stageDateError({ stage, meetingDate, approxMeetingDate });
+    if (dateError) { setError(dateError); return; }
     if (closedNeedsReason && !stageReason.trim()) {
       setError("Укажите причину изменения завершённой заявки");
       return;
@@ -332,6 +344,8 @@ export function DealWorkspace({
         stage,
         actualUntil,
         reservedUntil,
+        meetingDate: meetingDate || undefined,
+        approxMeetingDate: approxMeetingDate || undefined,
         reason: stageReason.trim() || undefined,
         total: live.total || total,
         paid,
@@ -374,8 +388,10 @@ export function DealWorkspace({
           issued,
           rentalFrom,
           rentalTo,
-      actualUntil,
-      reservedUntil,
+          actualUntil,
+          reservedUntil,
+          meetingDate,
+          approxMeetingDate,
           returnInfo,
         })
       );
@@ -467,6 +483,8 @@ export function DealWorkspace({
 
       <div className="space-y-5">
         {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+        {isApproxDateStage(stage) && <Card><Field label="Примерная дата встречи или заказа" required><DatePicker className="input" value={approxMeetingDate} onChange={(value) => setApproxMeetingDate(value)} /></Field></Card>}
+        {stage === "Встреча назначена" && <Card><Field label="Дата встречи" required><DatePicker className="input" value={meetingDate} onChange={(value) => setMeetingDate(value)} /></Field></Card>}
         {stage === "Товар отложен" && <Card><Field label="Срок действия отложки" required><DatePicker className="input" value={reservedUntil} onChange={(value) => setReservedUntil(value)} /></Field></Card>}
         <DealActionsBar
           onTask={() => setTaskOpen(true)}

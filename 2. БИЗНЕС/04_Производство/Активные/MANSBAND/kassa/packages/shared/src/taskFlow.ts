@@ -22,6 +22,25 @@ export function holdStageError(deal: Pick<Deal, "kind" | "stage" | "comment" | "
   return null;
 }
 
+const DATE_YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Этапы, на которых нужна примерная дата встречи или заказа. */
+export function isApproxDateStage(stage: string): boolean {
+  return stage === "Хочет прийти" || stage === "Хочет заказать";
+}
+
+/** Обязательные даты этапов. Пустая строка даты не проходит. */
+export function stageDateError(deal: { stage?: string; meetingDate?: string; approxMeetingDate?: string }): string | null {
+  const stage = deal.stage ?? "";
+  if (isApproxDateStage(stage) && !DATE_YMD.test(deal.approxMeetingDate || "")) {
+    return "Укажите примерную дату встречи или заказа";
+  }
+  if (stage === "Встреча назначена" && !DATE_YMD.test((deal.meetingDate || "").slice(0, 10))) {
+    return "Укажите дату встречи";
+  }
+  return null;
+}
+
 /** Открытая заявка с истёкшим календарным сроком. Сегодня ещё не просрочка. */
 export function isDealOverdue(deal: Deal, today: string): boolean {
   if (["Успех", "Провал", "Не слив"].includes(deal.stage)) return false;

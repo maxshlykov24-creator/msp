@@ -141,6 +141,7 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("msDemand", deal.msDemandId);
   put("paymentStatus", paymentStatusLabel(deal));
   put("meetingDate", deal.meetingDate);
+  put("approxMeetingDate", deal.approxMeetingDate);
   put("actualUntil", deal.actualUntil);
   put("rentalFrom", deal.rentalFrom);
   put("rentalTo", deal.rentalTo);
@@ -186,6 +187,15 @@ const ENUM_SYNONYMS: Record<string, string[]> = {
   "Не оплачено": ["Не оплачен"],
 };
 
+/** amoCRM ждёт дату числом unix. Полдень по Москве не съезжает на соседние сутки. */
+function amoDateEntry(value: unknown): { value: unknown } {
+  if (typeof value === "number") return { value };
+  const match = String(value ?? "").match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!match) return { value };
+  const timestamp = Date.parse(`${match[1]}T12:00:00+03:00`);
+  return { value: Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : value };
+}
+
 function normalizeEnum(value: string): string {
   return value.toLowerCase().trim().replace(/ё/g, "е").replace(/\s+/g, " ");
 }
@@ -204,6 +214,13 @@ async function sanitizeSelectValues(values: LeadCustomFieldValue[]): Promise<Lea
   const out: LeadCustomFieldValue[] = [];
   for (const item of values) {
     const field = meta.get(item.field_id);
+    if (field && field.type.includes("date") && !field.type.includes("select")) {
+      out.push({
+        field_id: item.field_id,
+        values: item.values.map((entry) => amoDateEntry(entry.value)),
+      });
+      continue;
+    }
     if (!field || !field.type.includes("select") || field.enums.length === 0) {
       out.push(item);
       continue;

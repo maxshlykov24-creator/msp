@@ -161,6 +161,8 @@ export interface Deal {
   reservedUntil?: string;
   comment?: string;
   meetingDate?: string;
+  /** Примерная дата для этапов «Хочет прийти» и «Хочет заказать». */
+  approxMeetingDate?: string;
   tips?: number;
   tipsDestination?: string;
   /** Способ, которым консультант выдал чаевые сам (id из PAYMENT_METHODS). */

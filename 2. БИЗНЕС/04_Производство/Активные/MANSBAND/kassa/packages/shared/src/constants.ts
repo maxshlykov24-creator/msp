@@ -800,6 +800,8 @@ export const AMO_LEAD_FIELDS = {
   otlozhkaKind: "Отложка", // select: "Платная" / "Бесплатная"
   deferredUntil: "Резерв до",
   meetingDate: "Дата встречи",
+  // Поле уже есть в amoCRM, касса его не создаёт.
+  approxMeetingDate: "Примерная дата встречи / отправки",
   actualUntil: "Актуально до (обещание)", // новое
   rentalFrom: "Аренда от", // новое
   rentalTo: "Аренда до",

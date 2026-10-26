@@ -1338,6 +1338,11 @@ export function CommentField({
 
 // ── FormShell ──────────────────────────────────────────────────────────
 
+/** Новая заявка на «Ждет товар» не сохраняется, пока не запущено перемещение. */
+export function movementRequiredGap(stage: string, movementCreated: boolean): string | false {
+  return stage === "Ждет товар" && !movementCreated && "Задача на перемещение";
+}
+
 export function FormShell({
   title,
   subtitle,

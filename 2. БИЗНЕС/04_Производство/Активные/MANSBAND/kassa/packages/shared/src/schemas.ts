@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { holdStageError, isHoldStage } from "./taskFlow.js";
+import { holdStageError, isApproxDateStage, isHoldStage, stageDateError } from "./taskFlow.js";
 import type { Deal } from "./types.js";
 import { COMPANY_STAGES_WITH_INVOICE, EDWIN_EXPENSE_CATEGORIES } from "./constants.js";
 
@@ -140,6 +140,8 @@ export const updateDealSchema = z
     items: z.array(cartItemSchema).optional(),
     payments: z.array(paymentSchema).optional(),
     comment: z.string().optional(),
+    meetingDate: z.string().optional(),
+    approxMeetingDate: z.string().optional(),
     stage: z.string().optional(),
     total: z.number().optional(),
     paid: z.number().optional(),
@@ -425,8 +427,13 @@ export const createDealSchema = z
     if (!v.consultant.trim() && !KINDS_WITHOUT_CONSULTANT.has(v.kind)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["consultant"], message: "Укажите консультанта" });
     }
-    if (v.stage === "Встреча назначена" && !v.meetingDate) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["meetingDate"], message: "Для этапа «Встреча назначена» нужна дата встречи" });
+    const dateError = stageDateError(v);
+    if (dateError) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [isApproxDateStage(v.stage) ? "approxMeetingDate" : "meetingDate"],
+        message: dateError,
+      });
     }
     if (v.kind === "company" && v.stage === "Успех" && v.issued !== true) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["issued"], message: "Продажа компании завершается только после фактической выдачи" });

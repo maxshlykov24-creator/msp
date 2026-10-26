@@ -24,6 +24,7 @@ import {
   changeDealFields,
   changeTipsMissing,
   lastPaymentDate,
+  movementRequiredGap,
   tipsDealFields,
   useSaved,
   type ChangeInfo,
@@ -123,7 +124,8 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
   const totalPaid = paid + topUpPaid;
   const topUpChange = Math.max(0, topUpPaid - Math.max(0, remainder));
   const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
-  const missingRequired = [
+  const [movementCreated, setMovementCreated] = useState(false);
+  const fieldGaps = [
     stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
     stage === "Дано обещание" && !actualUntil && "Актуально до",
     !client.phone && "Телефон клиента",
@@ -136,6 +138,8 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
     ...changeTipsMissing(paid, total, changeInfo, tips),
     ...changeTipsMissing(topUpPaid, Math.max(0, remainder), topUp.changeInfo, topUp.tips),
   ].filter(Boolean) as string[];
+  const missingRequired = [...fieldGaps, movementRequiredGap(stage, movementCreated)].filter(Boolean) as string[];
+  const fieldsFilled = fieldGaps.length === 0;
   const baseFilled = missingRequired.length === 0;
 
   function rememberDeal(number: number) {
@@ -215,8 +219,8 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
     if (persistedRef.current != null) {
       return { dealNumber: persistedRef.current, store: activeStore };
     }
-    if (!baseFilled) {
-      throw new Error(`Сначала заполните: ${missingRequired.join(", ")}`);
+    if (!fieldsFilled) {
+      throw new Error(`Сначала заполните: ${fieldGaps.join(", ")}`);
     }
     const savedDeal = await addDeal(buildDeal(stage), attachmentsToUpload(photos), { strict: true });
     rememberDeal(savedDeal.number);
@@ -276,6 +280,7 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
           dealKind="rental"
           ensureDeal={ensureDealForMove}
           onMovementCreated={() => {
+            setMovementCreated(true);
             setSaved(true);
             setTimeout(onDone, 600);
           }}

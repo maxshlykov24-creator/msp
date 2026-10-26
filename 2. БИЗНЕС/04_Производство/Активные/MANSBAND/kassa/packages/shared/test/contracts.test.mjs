@@ -62,6 +62,16 @@ test("POST /deals contract accepts legacy web payload", () => {
 test("meeting stage requires date", () => {
   const parsed = createDealSchema.safeParse({ ...baseDeal, stage: "Встреча назначена" });
   assert.equal(parsed.success, false);
+  assert.equal(createDealSchema.safeParse({ ...baseDeal, stage: "Встреча назначена", meetingDate: "2026-11-03" }).success, true);
+});
+
+test("want-to-come stages require approximate date", () => {
+  assert.equal(createDealSchema.safeParse({ ...baseDeal, stage: "Хочет прийти" }).success, false);
+  assert.equal(createDealSchema.safeParse({ ...baseDeal, stage: "Хочет заказать" }).success, false);
+  assert.equal(
+    createDealSchema.safeParse({ ...baseDeal, stage: "Хочет прийти", approxMeetingDate: "2026-11-02" }).success,
+    true
+  );
 });
 
 test("company success requires issued flag", () => {

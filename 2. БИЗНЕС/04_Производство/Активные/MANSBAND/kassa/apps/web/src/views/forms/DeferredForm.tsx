@@ -25,6 +25,7 @@ import {
   lastPaymentDate,
   tipsDealFields,
   todayStr,
+  movementRequiredGap,
   useSaved,
   type ChangeInfo,
   type ClientData,
@@ -123,7 +124,8 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
   const topUpPaid = topUp.payments.reduce((s, p) => s + p.amount, 0);
   const totalPaid = paid + topUpPaid;
   const topUpChange = Math.max(0, topUpPaid - Math.max(0, remainder));
-  const missingRequired = [
+  const [movementCreated, setMovementCreated] = useState(false);
+  const fieldGaps = [
     !client.phone && "Телефон клиента",
     !client.name && "Имя клиента",
     items.length === 0 && "Товары",
@@ -131,6 +133,8 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
     ...changeTipsMissing(paid, total, changeInfo, tips),
     ...changeTipsMissing(topUpPaid, Math.max(0, remainder), topUp.changeInfo, topUp.tips),
   ].filter(Boolean) as string[];
+  const missingRequired = [...fieldGaps, movementRequiredGap(stage, movementCreated)].filter(Boolean) as string[];
+  const fieldsFilled = fieldGaps.length === 0;
   const baseFilled = missingRequired.length === 0;
 
   function buildDeal(s: string): Deal {
@@ -179,7 +183,7 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
   }
 
   async function ensureDealForMove() {
-    if (!baseFilled) return null;
+    if (!fieldsFilled) return null;
     if (persistedNumber != null) {
       return { dealNumber: persistedNumber, store: activeStore };
     }
@@ -222,6 +226,7 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
         defaultTarget={defaultMovementTarget(activeStore)}
         ensureDeal={persistedNumber == null ? () => ensureDealForMove() : undefined}
         onCreated={() => {
+          setMovementCreated(true);
           setStage("Ждет товар");
           setSaved(true);
           setTimeout(onDone, 600);
@@ -254,6 +259,7 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
           dealKind="deferred"
           ensureDeal={persistedNumber == null ? () => ensureDealForMove() : undefined}
           onMovementCreated={() => {
+            setMovementCreated(true);
             setStage("Ждет товар");
             setSaved(true);
             setTimeout(onDone, 600);
