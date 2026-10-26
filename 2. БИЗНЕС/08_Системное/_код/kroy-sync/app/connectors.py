@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 
 READS = {
     'wb': {'/api/v3/warehouses': 'GET', '/api/v3/orders/new': 'GET', '/api/v3/orders/status': 'POST'},
-    'ozon': {'/v2/warehouse/list': 'POST', '/v4/posting/fbs/list': 'POST', '/v4/product/info/stocks': 'POST'},
+    'ozon': {'/v2/warehouse/list': 'POST', '/v4/posting/fbs/list': 'POST', '/v4/product/info/stocks': 'POST',
+             '/v4/posting/fbs/unfulfilled/list': 'POST'},
 }
 HOSTS = {'wb': 'https://marketplace-api.wildberries.ru', 'ozon': 'https://api-seller.ozon.ru'}
 
@@ -102,3 +103,44 @@ def wb_new_orders(client):
         raise ReadFailure('WB orders response incomplete')
     # New orders only. Explicitly not history or all open orders.
     return [{k: o.get(k) for k in ('id', 'createdAt', 'warehouseId', 'nmId', 'chrtId', 'skus')} for o in data['orders']]
+
+
+def ozon_unfulfilled(client, cutoff_from, cutoff_to):
+    """Open postings by handover deadline, independent of creation-date history."""
+    rows, seen, cursor = [], set(), ''
+    for _ in range(1000):
+        result = client.request('/v4/posting/fbs/unfulfilled/list', {
+            'dir': 'ASC', 'filter': {'cutoff_from': cutoff_from, 'cutoff_to': cutoff_to},
+            'limit': 100, 'cursor': cursor, 'with': {'analytics_data': False, 'financial_data': False}})
+        result = result.get('result', result)
+        if not isinstance(result.get('postings'), list) or type(result.get('has_next')) is not bool:
+            raise ReadFailure('Unfulfilled response incomplete')
+        for posting in result['postings']:
+            key = posting.get('posting_number')
+            if not key or key in seen:
+                raise ReadFailure('Unfulfilled identity missing or repeated')
+            seen.add(key)
+            row = {k: posting.get(k) for k in ('posting_number', 'status', 'in_process_at', 'shipment_date')}
+            row['warehouse_id'] = (posting.get('delivery_method') or {}).get('warehouse_id')
+            row['products'] = [{k: product.get(k) for k in ('sku', 'offer_id', 'quantity')} for product in posting.get('products', [])]
+            rows.append(row)
+        if not result['has_next']:
+            return rows
+        next_cursor = result.get('cursor')
+        if not next_cursor or next_cursor == cursor or not result['postings']:
+            raise ReadFailure('Unfulfilled cursor did not advance')
+        cursor = next_cursor
+    raise ReadFailure('Unfulfilled pagination cap reached')
+
+
+def wb_order_statuses(client, ids):
+    unique = list(dict.fromkeys(ids))
+    rows = []
+    for start in range(0, len(unique), 1000):
+        batch = unique[start:start + 1000]
+        data = client.request('/api/v3/orders/status', {'orders': batch})
+        values = data.get('orders')
+        if not isinstance(values, list) or {r.get('id') for r in values} != set(batch) or len(values) != len(batch):
+            raise ReadFailure('WB status response does not cover requested identities')
+        rows.extend({k: r.get(k) for k in ('id', 'supplierStatus', 'wbStatus')} for r in values)
+    return rows

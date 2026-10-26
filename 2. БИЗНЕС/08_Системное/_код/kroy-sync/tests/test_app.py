@@ -85,6 +85,25 @@ def test_fbo_discrepancy_remains_in_transit_until_resolved(setup):
         cmd('fbo.accept', {'id': fbo['id'], 'version': lost['version'], 'lines': [{'item_id': 's', 'quantity': 2}]})
 
 
+def test_open_order_pagination_and_missing_status_fail_closed():
+    from app.connectors import ozon_unfulfilled, wb_order_statuses, ReadFailure
+    class Ozon:
+        def request(self, path, body):
+            assert path == '/v4/posting/fbs/unfulfilled/list'
+            assert body['filter']['cutoff_from'] == 'start'
+            second = bool(body['cursor'])
+            return {'postings': [{'posting_number': 'old' if not second else 'new',
+                                 'products': [{'sku': 1, 'quantity': 2}], 'customer': 'not exported'}],
+                    'cursor': 'next', 'has_next': not second}
+    rows = ozon_unfulfilled(Ozon(), 'start', 'end')
+    assert len(rows) == 2 and all('customer' not in r for r in rows)
+    class WB:
+        def request(self, path, body):
+            return {'orders': [{'id': 1, 'supplierStatus': 'new'}]}
+    with pytest.raises(ReadFailure):
+        wb_order_statuses(WB(), [1, 2])
+
+
 @pytest.fixture
 def setup(tmp_path):
     import os

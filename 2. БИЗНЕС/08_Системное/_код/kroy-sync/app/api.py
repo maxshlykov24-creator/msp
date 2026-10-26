@@ -140,7 +140,8 @@ def create_app(engine=None):
             integration = [e.data for e in s.scalars(select(Entity).where(Entity.kind == 'integration'))]
             maintenance = {e.id.split(':', 1)[1]: e.data for e in s.scalars(select(Entity).where(Entity.kind == 'maintenance'))}
             marketplace = [e.data for e in s.scalars(select(Entity).where(Entity.kind == 'marketplace_snapshot'))]
-            return {'publication': 'disabled', 'queue_held': len(pending), 'maintenance': maintenance,
+            open_orders = [e.data for e in s.scalars(select(Entity).where(Entity.kind == 'open_order_summary'))]
+            return {'publication': 'disabled', 'queue_held': len(pending), 'maintenance': maintenance, 'open_orders': open_orders,
                     'snapshots': [e.data for e in snapshots], 'integration': integration, 'marketplace': marketplace, 'finance': 'rules_pending',
                     'blockers': ['Пилот: весь каталог. Требуется сверить единственный источник записи',
                                  'Живые сценарии WB и Ozon не пройдены', 'Правила оплаты цеха не получены']}
