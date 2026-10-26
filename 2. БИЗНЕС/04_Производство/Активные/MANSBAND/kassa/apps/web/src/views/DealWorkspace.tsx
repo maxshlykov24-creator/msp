@@ -1,6 +1,6 @@
 import { DatePicker } from "../components/DatePicker";
-import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, isApproxDateStage, isHoldStage, defaultHoldUntil, holdStageError, stageDateError } from "@kassa/shared";
-import { useEffect, useMemo, useState } from "react";
+import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, RESERVE_UNTIL_KINDS, isApproxDateStage, isHoldStage, isPartialPayment, defaultHoldUntil, holdStageError, reserveUntilForSave, stageDateError } from "@kassa/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Store } from "lucide-react";
 import type { CartItem, Deal, Payment } from "../data/types";
 import { useStore } from "../store";
@@ -167,6 +167,7 @@ export function DealWorkspace({
   const [stage, setStage] = useState(live.stage);
   const [actualUntil, setActualUntil] = useState(live.actualUntil || "");
   const [reservedUntil, setReservedUntil] = useState(live.reservedUntil || live.deferredUntil || "");
+  const reserveTracked = useRef({ manual: false, wasPartial: false, seenPaid: null as number | null });
   const [meetingDate, setMeetingDate] = useState((live.meetingDate || "").slice(0, 10));
   const [approxMeetingDate, setApproxMeetingDate] = useState((live.approxMeetingDate || "").slice(0, 10));
   useEffect(() => { if (stage === "Дано обещание" && !actualUntil) setActualUntil(defaultHoldUntil(1)); }, [stage, actualUntil]);
@@ -238,6 +239,7 @@ export function DealWorkspace({
     setRentalTo(form.rentalTo);
     setActualUntil(form.actualUntil);
     setReservedUntil(form.reservedUntil);
+    reserveTracked.current = { manual: false, wasPartial: false, seenPaid: null };
     setMeetingDate(form.meetingDate);
     setApproxMeetingDate(form.approxMeetingDate);
     setReturnInfo(form.returnInfo);
@@ -273,6 +275,22 @@ export function DealWorkspace({
     [items]
   );
   const paid = payments.reduce((s, p) => s + p.amount, 0);
+  const orderTotal = live.total || total;
+  const partialPay = isPartialPayment(paid, orderTotal);
+  useEffect(() => {
+    if (!RESERVE_UNTIL_KINDS.includes(live.kind) || stage === "Успех") return;
+    const track = reserveTracked.current;
+    if (partialPay) {
+      track.wasPartial = true;
+      const paidChanged = track.seenPaid !== null && track.seenPaid !== paid;
+      track.seenPaid = paid;
+      if (track.manual) return;
+      if (!reservedUntil || paidChanged) setReservedUntil(defaultHoldUntil(paid));
+      return;
+    }
+    if (track.wasPartial) track.manual = false;
+    track.seenPaid = paid;
+  }, [partialPay, paid, stage, live.kind, reservedUntil]);
   /** Сумма к возврату клиенту: чистый возврат или обмен «мы должны». */
   const refundAmount = useMemo(() => {
     if (live.kind === "refund") return Math.max(0, Math.abs(live.total || total || 0));
@@ -341,7 +359,16 @@ export function DealWorkspace({
         comment: comment || undefined,
         stage,
         actualUntil,
-        reservedUntil,
+        reservedUntil: (() => {
+          if (!RESERVE_UNTIL_KINDS.includes(live.kind)) return reservedUntil || undefined;
+          const track = reserveTracked.current;
+          return reserveUntilForSave({
+            paid,
+            total: orderTotal,
+            stage,
+            chosen: partialPay ? reservedUntil : paid <= 0 && track.wasPartial && !track.manual ? "" : reservedUntil,
+          });
+        })(),
         meetingDate: meetingDate || undefined,
         approxMeetingDate: approxMeetingDate || undefined,
         reason: stageReason.trim() || undefined,
@@ -483,7 +510,24 @@ export function DealWorkspace({
         {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
         {isApproxDateStage(stage) && <Card><Field label="Примерная дата встречи или заказа" required><DatePicker className="input" value={approxMeetingDate} onChange={(value) => setApproxMeetingDate(value)} /></Field></Card>}
         {stage === "Встреча назначена" && <Card><Field label="Дата встречи" required><DatePicker className="input" value={meetingDate} onChange={(value) => setMeetingDate(value)} /></Field></Card>}
-        {stage === "Товар отложен" && <Card><Field label="Срок действия отложки" required><DatePicker className="input" value={reservedUntil} onChange={(value) => setReservedUntil(value)} /></Field></Card>}
+        {(stage === "Товар отложен" || (partialPay && RESERVE_UNTIL_KINDS.includes(live.kind) && stage !== "Успех")) && (
+          <Card>
+            <Field
+              label="Отложка до"
+              required={stage === "Товар отложен"}
+              hint={partialPay ? "Частичная оплата — две недели вперёд, дату можно изменить" : undefined}
+            >
+              <DatePicker
+                className="input"
+                value={reservedUntil}
+                onChange={(value) => {
+                  reserveTracked.current.manual = true;
+                  setReservedUntil(value);
+                }}
+              />
+            </Field>
+          </Card>
+        )}
         <DealActionsBar
           onTask={() => setTaskOpen(true)}
           onConvert={canConvert ? () => setConvertOpen(true) : undefined}

@@ -333,4 +333,11 @@ test("hold stages require promise details and reserve dates without premature re
   }
   assert.equal(defaultHoldUntil(0, "2026-10-24"), "2026-10-25");
   assert.equal(defaultHoldUntil(100, "2026-10-24"), "2026-11-07");
+  const { isPartialPayment, reserveUntilForSave } = await import("../dist/index.js");
+  assert.equal(isPartialPayment(3000, 34900), true);
+  assert.equal(isPartialPayment(34900, 34900), false);
+  assert.equal(reserveUntilForSave({ paid: 3000, total: 34900, stage: "Товар в магазине", today: "2026-10-26" }), "2026-11-09");
+  assert.equal(reserveUntilForSave({ paid: 0, total: 34900, stage: "Товар в магазине", today: "2026-10-26" }), "2026-10-27");
+  assert.equal(reserveUntilForSave({ paid: 0, total: 34900, stage: "Успех", today: "2026-10-26" }), undefined);
+  assert.equal(reserveUntilForSave({ paid: 3000, total: 34900, stage: "Товар в магазине", chosen: "2026-12-01", today: "2026-10-26" }), "2026-12-01");
 });
