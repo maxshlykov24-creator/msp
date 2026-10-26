@@ -22,5 +22,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.vault_access:
         load_vault_access()
+    # Хост проверен GET-запросом из заказа katrina10 26.10.2026.
+    os.environ.setdefault('TOPSELLER_LABEL_HOSTS', 'print.topseller.ru')
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=args.port)

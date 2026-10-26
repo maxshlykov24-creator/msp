@@ -19,6 +19,7 @@ class Workflow:
                 CREATE TABLE IF NOT EXISTS waves (id TEXT PRIMARY KEY, employee TEXT, cart TEXT, store TEXT, box TEXT, created REAL);
                 CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, wave TEXT, state TEXT, station TEXT, cell_ok INTEGER DEFAULT 0, pdf BLOB, qr TEXT, sticker_ok INTEGER DEFAULT 0);
                 CREATE UNIQUE INDEX IF NOT EXISTS pending_station ON jobs(station) WHERE station IS NOT NULL AND state='printing';
+                CREATE UNIQUE INDEX IF NOT EXISTS unique_sticker ON jobs(qr) WHERE qr IS NOT NULL;
                 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at REAL, employee TEXT, station TEXT, job TEXT, action TEXT, detail TEXT);
                 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
             ''')
@@ -86,7 +87,7 @@ class Workflow:
                 raise ReadError("Одна волна должна относиться к одному складу")
             wid = uuid.uuid4().hex[:8]
             box = "DEMO-BOX-" + wid
-            db.execute("INSERT INTO waves VALUES(?,?,?,?,?,?,?)", (wid, actor["employee"], cart, orders[0]["store"], box, time.time()))
+            db.execute("INSERT INTO waves VALUES(?,?,?,?,?,?)", (wid, actor["employee"], cart, orders[0]["store"], box, time.time()))
             for o in orders:
                 db.execute("INSERT INTO jobs(id,wave,state) VALUES(?,?,'picking')", (o["id"], wid))
             self.event(db, actor, wid, "wave", "Тележка " + cart + "; " + box)
@@ -142,8 +143,10 @@ class Workflow:
                 if not (abs(mm[0] - 58) < 2 and abs(mm[1] - 40) < 2):
                     raise ReadError("Размер оригинального стикера отличается от 58 × 40 мм")
                 # Повторная проверка после загрузки PDF.
-                if self.ms.status(oid) != READY:
-                    raise ReadError("Статус изменился во время получения этикетки")
+                if not self.ms.verify_label(oid, qr):
+                    raise ReadError("QR не совпал с полем ШККОД128 заказа или статус изменился")
+                if db.execute('SELECT 1 FROM jobs WHERE qr=? AND id<>?', (qr, oid)).fetchone():
+                    raise ReadError('Этот стикер уже связан с другим заданием')
                 db.execute("UPDATE jobs SET state='printing',station=?,pdf=?,qr=? WHERE id=?", (actor["station"], pdf, qr, oid))
                 self.event(db, actor, oid, "print", "Оригинальный PDF; открытие ещё не доказывает физическую печать")
                 return {"message": "Оригинальный стикер подготовлен. Открой PDF и напечатай вручную.", "pdf": "/api/label/" + oid}

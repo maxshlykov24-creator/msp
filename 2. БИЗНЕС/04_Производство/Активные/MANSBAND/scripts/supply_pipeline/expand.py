@@ -56,17 +56,33 @@ def uzor_for_vid(vid: str, default_uzor: str, note: str) -> str:
     """
     Косяк №1 и аналоги: в Коробке помечено, что у частей комплекта разный узор.
     Пример: «Жилет и брюки текстурный узор, пиджак - принц уэльский»
+    Короткая пометка ревизии: «Жилет и брюки текстурные!!», принц стоит в колонке Узор.
     Live МС: вариация общая, узор разный по виду.
     """
     n = _clean(note).lower()
     if not n:
         return default_uzor
-    if "текстурн" in n and "принц" in n:
+    prince = "принц" in n or "принц" in _clean(default_uzor).lower()
+    if "текстурн" in n and prince and ("жилет" in n or "брюк" in n):
         if vid.startswith("Пиджак"):
             return "Принц Уэльский"
         if vid.startswith("Брюки") or vid.startswith("Жилет"):
             return "Текстурный"
     return default_uzor
+
+
+def color_for_vid(vid: str, default_color: str, note: str) -> str:
+    """
+    «Жилет и брюки черные!!»: пиджак остаётся цвета строки, жилет и брюки — Черный.
+    Отдельная модификация из-за цвета не создаётся: цвет не входит в антиключ.
+    """
+    n = _clean(note).lower()
+    if "черн" in n and ("жилет" in n or "брюк" in n):
+        if vid.startswith("Пиджак"):
+            return default_color
+        if vid.startswith("Брюки") or vid.startswith("Жилет"):
+            return "Черный"
+    return default_color
 
 
 def _qty(v: Any) -> Optional[int]:
@@ -165,7 +181,7 @@ def expand_flat(
                     rost=rost,
                     art=art,
                     sostav=sostav,
-                    color=color,
+                    color=color_for_vid(vid, color, note),
                     uzor=uzor_for_vid(vid, uzor, note),
                     kroy=kroy,
                     size=size,

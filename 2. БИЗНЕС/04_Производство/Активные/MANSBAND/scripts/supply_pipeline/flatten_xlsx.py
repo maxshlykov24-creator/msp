@@ -59,7 +59,13 @@ def kit_spr_mismatches(path: Path, kit_raws: List[str]) -> List[str]:
             continue
         header, parts = hit
         expected = KIT_MAP.get(canon)
-        if sorted(expected or []) == sorted(parts):
+        def _fold_part(name: str) -> str:
+            # опечатка файла 25.10: «Пилджак» = «Пиджак», это не другой вид
+            return norm_kit(name).replace("пилджак", "пиджак")
+
+        if sorted(_fold_part(x) for x in (expected or [])) == sorted(
+            _fold_part(x) for x in parts
+        ):
             continue
         key = (norm_kit(header), tuple(sorted(parts)), tuple(sorted(expected or [])))
         if key in seen:

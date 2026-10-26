@@ -21,6 +21,12 @@ class MoySklad:
     def __init__(self):
         self.session = requests.Session()
         self.last = 0
+        self.states = {}
+
+    def load_states(self):
+        self.states = {s['meta']['href']: s['name'] for s in self.get('/entity/customerorder/metadata').get('states', [])}
+        if READY not in self.states.values():
+            raise ReadError("Не найден разрешённый статус МойСклад")
 
     def get(self, path, **params):
         token = os.environ.get("MOYSKLAD_TOKEN", "")
@@ -71,18 +77,31 @@ class MoySklad:
         return result
 
     def status(self, order_id):
-        return self.attributes(self.get("/entity/customerorder/" + order_id)).get("Статус в топселлере", "")
+        if not self.states:
+            self.load_states()
+        o = self.get("/entity/customerorder/" + order_id)
+        return self.states.get(o.get('state', {}).get('meta', {}).get('href'), '')
+
+    def verify_label(self, order_id, qr):
+        order = self.get('/entity/customerorder/' + order_id)
+        return (self.states.get(order.get('state', {}).get('meta', {}).get('href')) == READY
+                and self.attributes(order).get('ШККОД128') == qr)
 
     def collect(self, count=20):
         # Ограниченная выборка. Никаких контрагентов, адресов и телефонов в снимке.
         stores = {s["meta"]["href"]: s["name"] for s in self.rows("/entity/store")}
-        orders = self.get("/entity/customerorder", limit=100, order="moment,desc")
+        projects = {p['meta']['href']: p['name'] for p in self.rows('/entity/project')}
+        self.load_states()
+        ready_href = next(k for k,v in self.states.items() if v == READY)
+        orders = self.get("/entity/customerorder", limit=100, order="moment,desc", filter="state=" + ready_href)
         result = []
         skipped = 0
         for order in orders.get("rows", []):
             a = self.attributes(order)
             store = stores.get(order.get("store", {}).get("meta", {}).get("href"), "")
-            if a.get("Статус в топселлере") != READY or store not in ("Склад ФБС", "Склад Екатеринбург"):
+            if projects.get(order.get('project', {}).get('meta', {}).get('href')) != 'WB FBS':
+                continue
+            if self.states.get(order.get('state', {}).get('meta', {}).get('href')) != READY or store not in ("Склад ФБС", "Склад Екатеринбург"):
                 continue
             label = a.get("Ссылка на этикетку", "")
             if not label:
@@ -100,7 +119,7 @@ class MoySklad:
                 "id": order["id"], "number": order["name"], "store": store,
                 "product_id": product["id"], "product": product["name"],
                 "article": product.get("article", ""), "barcodes": codes,
-                "quantity": 1, "label_url": label, "status": a["Статус в топселлере"],
+                "quantity": 1, "label_url": label, "status": READY,
                 "cell": "", "cell_verified": False, "marketplace": "wb",
                 "supply": None, "deadline": None,
             })
