@@ -33,6 +33,9 @@
   var shown = ORIGINAL;
   var current = null;
   var watching = false;
+  var leaseUntil = 0;
+  var failures = 0;
+  var retryTimer = null;
 
   function last10(value) {
     var digits = String(value || "").replace(/\D/g, "");
@@ -41,11 +44,11 @@
 
   function pageUtm() {
     var q = new URLSearchParams(location.search);
-    var keys = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "yclid", "ysclid"];
+    var keys = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "yclid"];
     var out = {};
     for (var i = 0; i < keys.length; i++) {
       var val = q.get(keys[i]);
-      if (val) out[keys[i] === "ysclid" ? "yclid" : keys[i]] = val;
+      if (val) out[keys[i]] = val;
     }
     return out;
   }
@@ -131,6 +134,8 @@
     }
     if (data.number && data.display) {
       current = data;
+      // Leave room for response transit and timer throttling in mobile browsers.
+      leaseUntil = Date.now() + Math.max(0, (data.lease_seconds || 0) - 10) * 1000;
       replacePhones(data.number, data.display);
       watch();
     }
@@ -138,7 +143,7 @@
 
   function post(path, body) {
     var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, 2000);
+    var timer = setTimeout(function () { ctrl.abort(); }, 3500);
     return fetch(API + path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -156,20 +161,58 @@
   }
 
   var activated = false;
-  var inFlight = false;
-  function requestNumber() {
+  var inFlight = null;
+  function requestNumber(callIntent) {
     activated = true;
-    if (inFlight) return;
-    inFlight = true;
+    if (inFlight) {
+      if (callIntent === true) return inFlight.then(function () { return requestNumber(true); });
+      return inFlight;
+    }
     var body = {
       visit_id: visitId,
       url: location.href,
       referrer: document.referrer || "",
       ym_uid: readCookie("_ym_uid") || null,
-      test: !LIVE && test
+      test: !LIVE && test,
+      call_intent: callIntent === true
     };
-    post("/ct/session", body).then(apply).catch(function () {}).then(function () { inFlight = false; });
+    inFlight = post("/ct/session", body).then(function (data) {
+      failures = 0;
+      apply(data);
+      return data;
+    }).catch(function () {
+      failures++;
+      if (failures <= 3 && !retryTimer) {
+        retryTimer = setTimeout(function () {
+          retryTimer = null;
+          if (document.visibilityState === "visible") requestNumber();
+        }, failures * 1500);
+      }
+      return null;
+    }).then(function (data) { inFlight = null; return data; });
+    return inFlight;
   }
+
+  // A rapid mobile tap can precede the first response, or resume an expired tab.
+  // Refresh before dialing; if the server is unavailable, preserve the call via the base number.
+  var dialing = false;
+  document.addEventListener("click", function (event) {
+    if (location.hostname !== "mansband.ru" && location.hostname !== "www.mansband.ru") return;
+    var link = event.target && event.target.closest ? event.target.closest('a[href^="tel:"]') : null;
+    if (!link || event.defaultPrevented) return;
+    var target = last10(link.getAttribute("href"));
+    if (target !== ORIGINAL && target !== shown) return;
+    if (current && current.mode === "pool" && leaseUntil > Date.now() + 15000) return;
+    event.preventDefault();
+    if (dialing) return;
+    dialing = true;
+    requestNumber(true).then(function (data) {
+      var number = data && data.number;
+      if (!number && current && current.mode === "pool" && leaseUntil > Date.now()) number = current.number;
+      location.href = "tel:" + (number || "+7" + ORIGINAL);
+      dialing = false;
+    });
+  }, true);
 
   if (location.hostname === "zamer.mansband.ru" && window.fetch) {
     var origFetch = window.fetch;

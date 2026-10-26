@@ -68,7 +68,7 @@ def record_fallback(db: Session, visit: Visit, now: dt.datetime, *, recovered: b
         INSERT INTO kv_state (key, value, updated_at) VALUES (:key, :value, :now)
         ON CONFLICT (key) DO UPDATE SET value =
           (kv_state.value::jsonb || jsonb_build_object(
-            'last_at', :stamp, 'responses', (kv_state.value::jsonb->>'responses')::int + 1))::text,
+            'last_at', CAST(:stamp AS text), 'responses', (kv_state.value::jsonb->>'responses')::int + 1))::text,
           updated_at = :now
     """), {"key": key, "now": now, "stamp": now.isoformat(), "value": json.dumps({
         "visit": visit.id, "first_at": now.isoformat(), "last_at": now.isoformat(),

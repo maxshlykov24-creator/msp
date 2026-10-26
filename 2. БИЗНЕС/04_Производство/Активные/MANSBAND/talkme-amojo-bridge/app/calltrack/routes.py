@@ -105,7 +105,7 @@ def tracking_from_url(url: str) -> dict[str, Optional[str]]:
         "utm_campaign": _one(qs, "utm_campaign"),
         "utm_content": _one(qs, "utm_content"),
         "utm_term": _one(qs, "utm_term"),
-        "yclid": _one(qs, "yclid") or _one(qs, "ysclid"),
+        "yclid": _one(qs, "yclid"),
     }
 
 
@@ -204,7 +204,9 @@ def _issue(db: Session, visit, now: datetime, *, call_intent: bool = False) -> d
     number = allocate_pool(db, visit, now)
     if number is None:
         return _payload("fallback", visit.id, _organic_number())
-    return _payload("pool", visit.id, number.number)
+    body = _payload("pool", visit.id, number.number)
+    body["lease_seconds"] = max(0, int((number.held_until - now).total_seconds()))
+    return body
 
 
 @router.get("/ct.js")
