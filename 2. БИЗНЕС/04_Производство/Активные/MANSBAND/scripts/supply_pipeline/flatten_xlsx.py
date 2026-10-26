@@ -267,6 +267,93 @@ def parse_supply_xlsx(path: Path) -> Tuple[List[List[Any]], Dict[str, Any]]:
     return flat, stats
 
 
+def parse_revision_xlsx(path: Path) -> Tuple[List[List[Any]], Dict[str, Any]]:
+    """
+    Ревизия 25.10: одна строка = один комплект и один размер.
+    Колонки: Номер, Вид, Производитель, Модель, Рост, Размер, Артикул,
+    Состав, Цвет, Узор, Крой, Особенности, Штук.
+    Пальто 5032 M серое однотонное — это уже BAZ5032MLGR (London GR + артикул 5032M),
+    не новая вариация из текста «LONDON DK NAVY».
+    """
+    wb = openpyxl.load_workbook(path, data_only=True)
+    sheet_name = next(n for n in wb.sheetnames if "правочник" not in n.lower())
+    ws = wb[sheet_name]
+    flat: List[List[Any]] = [FLAT_HEADER]
+    models: List[Dict[str, Any]] = []
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_col=13, values_only=True), start=1):
+        cells = [_clean(v) for v in row]
+        if not cells or not cells[0]:
+            continue
+        if cells[0].casefold() == "номер":
+            continue
+        if not cells[0].isdigit():
+            continue
+        while len(cells) < 13:
+            cells.append("")
+        num, kit_raw, brand, model, rost, size, art = cells[:7]
+        sostav_raw, color, uzor, kroy, note, qty_raw = cells[7:13]
+        model_key = " ".join(model.split()).casefold()
+        if model_key in ("5032 m", "5032m") and "сер" in color.casefold():
+            src_art = art
+            art = "5032M"
+            model = "London GR"
+            extra = f"в файле артикул {src_art}" if src_art else ""
+            note = " | ".join(x for x in (note, extra) if x)
+        kroy = KROY_ALIASES.get(kroy.casefold(), kroy)
+        qty = _qty(qty_raw)
+        meta = {
+            "num": num,
+            "note": note,
+            "kit_raw": kit_raw,
+            "kit": resolve_kit(kit_raw),
+            "brand": brand,
+            "model": model,
+            "rost": rost,
+            "art": art,
+            "sostav": normalize_sostav(sostav_raw),
+            "color": color,
+            "uzor": uzor,
+            "kroy": kroy,
+            "sizes": [(size, qty)] if qty else [],
+            "total_cell": qty,
+            "fact_qty": qty or 0,
+        }
+        if qty:
+            flat.append(
+                [
+                    num,
+                    meta["kit"],
+                    brand,
+                    model,
+                    rost,
+                    art,
+                    meta["sostav"],
+                    color,
+                    uzor,
+                    kroy,
+                    size,
+                    qty,
+                    note,
+                ]
+            )
+        models.append(meta)
+    stats = {
+        "sheet": sheet_name,
+        "models": len(models),
+        "flat_rows": len(flat) - 1,
+        "sum_fact_qty": sum(m["fact_qty"] for m in models),
+        "sum_total_cells": sum(m["total_cell"] or 0 for m in models),
+        "qty_mismatches": [],
+        "kit_spr_mismatches": kit_spr_mismatches(path, [m["kit_raw"] for m in models]),
+    }
+    if stats["kit_spr_mismatches"]:
+        raise RuntimeError(
+            "Справочник файла не совпал с KIT_MAP:\n"
+            + "\n".join(stats["kit_spr_mismatches"])
+        )
+    return flat, stats
+
+
 parse_xlsx = parse_supply_xlsx
 
 
