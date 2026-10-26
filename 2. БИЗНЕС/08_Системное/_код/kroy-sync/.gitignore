@@ -1,7 +1,5 @@
-.env
-google_sa.json
-state.json
-__pycache__/
-*.pyc
-.venv/
-reports/*.json
+.venv-app/
+.runtime/
+web/dist/
+web/node_modules/
+*.sqlite*

@@ -22,6 +22,10 @@ export default async function tasksRoutes(app: FastifyInstance) {
   app.post("/tasks", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = taskSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
+    const dueDate = parsed.data.metadata?.dueDate;
+    if (typeof dueDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      return reply.code(400).send({ message: "Укажите срок" });
+    }
     // createdBy = ФИО из JWT; в metadata дублируем userId — чтобы отличить одноимённых.
     const task = await taskService.createTask(
       {

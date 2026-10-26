@@ -4,7 +4,7 @@ import { ClipboardList } from "lucide-react";
 import { STORES, TASK_FLOW, TASK_QUEUES, taskTitle } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { CONSULTANTS } from "../data/mock";
-import { Button, Select, opts } from "./ui";
+import { Button, Field, Select, opts } from "./ui";
 
 // Виды задач и подписи — из реестра формулы (@kassa/shared/taskFlow).
 // Приёмку перемещения руками не создают: она рождается после отправки.
@@ -223,10 +223,10 @@ export function CreateTaskForm({
           </label>
         )}
       </div>
-      <label className="block">
-        <div className="field-label">Срок</div>
-        <DatePicker className="input"  value={dueDate} onChange={(value) => setDueDate(value)} />
-      </label>
+      <Field label="Срок" required>
+        <DatePicker className="input" value={dueDate} required onChange={(value) => setDueDate(value)} />
+        <div className="text-[12px] text-mute mt-1">Без срока задачу создать нельзя</div>
+      </Field>
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="block">
           <div className="field-label">Очередь</div>
@@ -250,7 +250,12 @@ export function CreateTaskForm({
       </div>
       {error && <div className="text-[12px] text-amber-300/90">{error}</div>}
       <div className="flex justify-end">
-            <Button type="button" disabled={saving || saved} onClick={() => void submit()}>
+            <Button
+              type="button"
+              disabled={saving || saved || !dueDate}
+              title={dueDate ? undefined : "Укажите срок"}
+              onClick={() => void submit()}
+            >
           {saved ? "Задача создана" : saving ? "Сохранение…" : "Создать задачу"}
         </Button>
       </div>
