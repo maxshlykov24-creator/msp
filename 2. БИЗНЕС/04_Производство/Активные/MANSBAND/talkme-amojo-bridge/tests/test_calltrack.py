@@ -1474,16 +1474,17 @@ const settle = () => new Promise(setImmediate);
 function setup(fetcher) {
   const events={}, calls=[];
   const link={href:'tel:+79310090251', getAttribute(){return this.href}, setAttribute(k,v){this.href=v}};
-  const location={hostname:'mansband.ru',search:'',href:'https://mansband.ru/'};
+  const footer={href:'/',textContent:'+7 931 009-02-51',getAttribute(){return this.href},setAttribute(k,v){this.href=v}};
+  const location={hostname:'mansband.ru',origin:'https://mansband.ru',search:'',href:'https://mansband.ru/'};
   const document={cookie:'',body:null,referrer:'',visibilityState:'visible',
-    addEventListener(k,v){events[k]=v}, querySelectorAll(){return [link]}};
+    addEventListener(k,v){events[k]=v}, querySelectorAll(){return [link,footer]}};
   const window={addEventListener(k,v){events[k]=v}, removeEventListener(){}};
   vm.runInNewContext(source,{window,document,location,navigator:{webdriver:false},
-    URLSearchParams,AbortController,Date,Promise, setInterval(){},setTimeout(){return 1},clearTimeout(){},
+    URL,URLSearchParams,AbortController,Date,Promise, setInterval(){},setTimeout(){return 1},clearTimeout(){},
     fetch(url,opts){ const body=JSON.parse(opts.body);calls.push(body);return fetcher(body,calls.length)} });
   function click(){ const e={defaultPrevented:false,target:{closest(){return link}},preventDefault(){this.defaultPrevented=true}};
     events.click(e);return e.defaultPrevented; }
-  return {events,calls,link,location,click};
+  return {events,calls,link,footer,location,click};
 }
 const response = data => Promise.resolve({ok:true,json:()=>Promise.resolve(data)});
 (async()=>{
@@ -1491,8 +1492,10 @@ const response = data => Promise.resolve({ok:true,json:()=>Promise.resolve(data)
   const a=setup(body=>response({visit_id:1,mode:body.call_intent?'pool':'organic',
     number:body.call_intent?'+79310000001':'+79310090251',display:'phone',lease_seconds:300}));
   a.events.scroll();await settle();assert.equal(a.calls[0].call_intent,false);
+  assert.equal(a.footer.href,'tel:+79310090251');
   assert.equal(a.click(),true);await settle();assert.equal(a.calls[1].call_intent,true);
   assert.equal(a.location.href,'tel:+79310000001');
+  assert.equal(a.footer.href,'tel:+79310000001');
   // A server failure must never prevent a real call.
   const b=setup(()=>Promise.reject(new Error('offline')));
   assert.equal(b.click(),true);await settle();assert.equal(b.location.href,'tel:+79310090251');

@@ -87,11 +87,21 @@
   }
 
   function replaceHrefs(source, e164) {
-    var links = document.querySelectorAll('a[href^="tel:"]');
+    var links = document.querySelectorAll('a[href]');
     for (var i = 0; i < links.length; i++) {
       var href = links[i].getAttribute("href") || "";
       if (/wa\.me|whatsapp|t\.me/i.test(href)) continue;
-      if (last10(href) !== source) continue;
+      if (/^tel:/i.test(href)) {
+        if (last10(href) !== source) continue;
+      } else {
+        // The live footer links its phone text to the home page. Repair only
+        // this exact phone label on a local placeholder, never external links.
+        if (last10(links[i].textContent) !== source) continue;
+        try {
+          var url = new URL(href, location.href);
+          if (url.origin !== location.origin || (url.pathname !== "/" && href !== "#")) continue;
+        } catch (e) { continue; }
+      }
       links[i].setAttribute("href", "tel:" + e164);
     }
   }
@@ -99,7 +109,7 @@
   function replacePhones(e164, display) {
     var target = last10(e164);
     var sources = [];
-    if (ORIGINAL && ORIGINAL !== target) sources.push(ORIGINAL);
+    if (ORIGINAL) sources.push(ORIGINAL);
     if (shown && shown !== target && sources.indexOf(shown) === -1) sources.push(shown);
     for (var i = 0; i < sources.length; i++) {
       replaceHrefs(sources[i], e164);
