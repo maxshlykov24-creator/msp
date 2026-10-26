@@ -151,9 +151,11 @@
       signal: ctrl.signal,
       credentials: "omit"
     }).then(function (r) {
-      clearTimeout(timer);
       if (!r.ok) throw new Error("ct");
       return r.json();
+    }).then(function (data) {
+      clearTimeout(timer);
+      return data;
     }, function (err) {
       clearTimeout(timer);
       throw err;
@@ -165,7 +167,10 @@
   function requestNumber(callIntent) {
     activated = true;
     if (inFlight) {
-      if (callIntent === true) return inFlight.then(function () { return requestNumber(true); });
+      if (callIntent === true) return inFlight.then(function (data) {
+        if (data && data.mode === "pool" && leaseUntil > Date.now() + 15000) return data;
+        return requestNumber(true);
+      });
       return inFlight;
     }
     var body = {
@@ -206,7 +211,8 @@
     event.preventDefault();
     if (dialing) return;
     dialing = true;
-    requestNumber(true).then(function (data) {
+    var deadline = new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 5000); });
+    Promise.race([requestNumber(true), deadline]).then(function (data) {
       var number = data && data.number;
       if (!number && current && current.mode === "pool" && leaseUntil > Date.now()) number = current.number;
       location.href = "tel:" + (number || "+7" + ORIGINAL);

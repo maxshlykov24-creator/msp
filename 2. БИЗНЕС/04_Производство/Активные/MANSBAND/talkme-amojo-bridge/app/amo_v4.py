@@ -418,7 +418,6 @@ def open_leads_for_phone(
 def recent_closed_leads_for_call(*, phone: str, started_at, access_token: str,
                                 settings: Optional[Settings] = None) -> list[dict[str, Any]]:
     """A short-lived deal may already be closed before the five-minute worker."""
-    import datetime as dt
     settings = settings or get_settings()
     stamp = started_at.timestamp()
     return [lead for lead in _phone_leads(phone=phone, access_token=access_token, settings=settings)

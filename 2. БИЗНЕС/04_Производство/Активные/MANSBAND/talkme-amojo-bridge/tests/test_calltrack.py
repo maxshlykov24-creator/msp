@@ -1470,7 +1470,7 @@ def test_mobile_click_waits_for_number_and_fails_open_to_base():
 const vm = require('node:vm'), fs = require('node:fs'), assert = require('node:assert/strict');
 const source = fs.readFileSync('app/calltrack/static/ct.js', 'utf8')
   .replace('__CT_LIVE__', 'true').replace('__CT_API__', 'https://example.test').replace('__CT_ORIGINAL__', '9310090251');
-const settle = async () => { for(let i=0;i<12;i++) await Promise.resolve(); };
+const settle = () => new Promise(setImmediate);
 function setup(fetcher) {
   const events={}, calls=[];
   const link={href:'tel:+79310090251', getAttribute(){return this.href}, setAttribute(k,v){this.href=v}};
