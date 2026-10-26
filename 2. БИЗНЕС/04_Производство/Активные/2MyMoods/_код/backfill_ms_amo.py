@@ -1408,6 +1408,8 @@ def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: di
         fid = item["field_id"]
         actual = next((x for x in lead.get("custom_fields_values") or []
                        if str(x.get("field_id")) == str(fid)), None)
+        actual_values = (actual or {}).get("values") or []
+        raw_text = str((actual_values or [{}])[0].get("value") or "")
         # A saved comment can be edited by a person or the integration after
         # migration. Only historical readback may report it without blocking;
         # immediate creation/recovery and every other field remain strict.
@@ -1422,7 +1424,7 @@ def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: di
                     "expected_length": len(expected_text), "actual_length": len(actual_text),
                 })
                 continue
-        if fid == 929025 and order is not None and not field(lead, fid):
+        if fid == 929025 and order is not None and not raw_text and len(actual_values) <= 1:
             # The sync can remove a redundant address comment. Its entire text
             # must remain exactly in both source and saved lead address fields,
             # and the source comment must still confirm it. No content is lost.
@@ -1432,8 +1434,13 @@ def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: di
             expected_address = next((str(f["values"][0].get("value") or "")
                                      for f in expected_payload["custom_fields_values"]
                                      if f["field_id"] == 929079), "")
+            address_values = next((f.get("values") or [] for f in lead.get("custom_fields_values") or []
+                                   if f.get("field_id") == 929079), [])
+            actual_address = str((address_values or [{}])[0].get("value") or "")
             if (expected_text and expected_text == source_comment == expected_address
-                    == str(order.get("shipmentAddress") or "") == field(lead, 929079)):
+                    == str(order.get("shipmentAddress") or "")
+                    and len(address_values) == 1
+                    and actual_address in (expected_text, expected_text.replace("\n", " "))):
                 lead.setdefault("_migration_text_normalizations", []).append(fid)
                 continue
         if actual is None:
@@ -1462,7 +1469,10 @@ def validate_lead(lead: dict, contact_id: str, expected_payload: dict, order: di
                         result.append(("value", str(raw_value)))
             return result
         if normalized_values(fid, actual.get("values") or []) != normalized_values(fid, item.get("values") or []):
-            if order is not None and known_integration_text(fid, field(lead, fid), str(item["values"][0].get("value") or ""), order):
+            address_field = fid in (929025, 929079)
+            text = raw_text if address_field else field(lead, fid)
+            if (order is not None and (not address_field or len(actual_values) == 1)
+                    and known_integration_text(fid, text, str(item["values"][0].get("value") or ""), order)):
                 lead.setdefault("_migration_text_normalizations", []).append(fid)
                 continue
             raise Stop(f"Значение поля amo {fid} не совпало с планом")
@@ -1878,7 +1888,8 @@ def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict
     for fid, key in ((929033, "organization"), (929083, "store"), (929085, "salesChannel"), (929087, "project")):
         add(fid, None, ref=order.get(key))
     add(929089, None, ref=(order.get("rate") or {}).get("currency"))
-    add(928931, ref_name(order.get("salesChannel")))
+    channel_name = ref_name(order.get("salesChannel"))
+    add(928931, channel_name)
     channel_fields = {f["field_id"]: f for f in result if f["field_id"] in (928931, 929085)}
     legacy_channel = channel_fields.get(928931)
     technical_channel = channel_fields.get(929085)
@@ -1887,12 +1898,15 @@ def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict
         technical_enum = technical_channel["values"][0].get("enum_id")
         legacy_meta = next((e for e in schema["928931"].get("enums") or []
                             if e.get("id") == legacy_enum), {})
-        # Live audit: the sync removes this exact label-only legacy copy after
-        # creation. Keep the verified technical channel; do not submit a value
-        # that fails readback, or weaken validation of an existing saved lead.
-        if (id_of(order.get("salesChannel")) == "f53f1c00-dc10-11ef-0a80-0d2f00232e63"
-                and legacy_enum == 1255187 and technical_enum == 1255303
-                and not legacy_meta.get("code")):
+        technical_meta = next((e for e in schema["929085"].get("enums") or []
+                               if e.get("id") == technical_enum), {})
+        # Two live audits found label-only legacy copies removed after creation.
+        # Omit this optional copy only when the technical enum preserves the
+        # exact source UUID and both enum labels exactly confirm the source.
+        channel_id = id_of(order.get("salesChannel"))
+        if (channel_id and not legacy_meta.get("code")
+                and technical_meta.get("code") == channel_id
+                and legacy_meta.get("value") == technical_meta.get("value") == channel_name):
             result.remove(legacy_channel)
             omissions.append({"field_id": 928931, "reason": "UNSTABLE_LEGACY_CHANNEL_COPY"})
     add(928941, None, ref=av.get("ed14744d-dc0d-11ef-0a80-10cd00226b06"))
@@ -2729,17 +2743,50 @@ def self_test() -> None:
                 variants = []
                 changed = copy.deepcopy(data);changed["amo_fields"]["928931"]["enums"][0]["code"] = channel_id
                 variants.append((changed, order))
-                changed = copy.deepcopy(data);changed["amo_fields"]["928931"]["enums"][0]["id"] = 1255189
+                changed = copy.deepcopy(data);changed["amo_fields"]["928931"]["enums"][0]["value"] = "канал"
                 variants.append((changed, order))
-                changed = copy.deepcopy(data);changed["amo_fields"]["929085"]["enums"][0]["id"] = 1255305
+                changed = copy.deepcopy(data);changed["amo_fields"]["929085"]["enums"][0]["code"] = "another"
                 variants.append((changed, order))
                 changed_order = copy.deepcopy(order);changed_order["salesChannel"]["meta"]["href"] = lib.MS_BASE + "/entity/saleschannel/another"
                 variants.append((data, changed_order))
                 for source, source_order in variants:
                     checked = optional_fields(copy.deepcopy(source), source_order, {}, object())
                     self.assertIn(928931, {f["field_id"] for f in checked})
+                changed = copy.deepcopy(data);changed_order = copy.deepcopy(order)
+                changed_order["salesChannel"]["meta"]["href"] = lib.MS_BASE + "/entity/saleschannel/another"
+                changed["amo_fields"]["928931"]["enums"][0]["id"] = 1255191
+                changed["amo_fields"]["929085"]["enums"][0].update(id=1255305, code="another")
+                checked = optional_fields(changed, changed_order, {}, object())
+                self.assertNotIn(928931, {f["field_id"] for f in checked})
+                self.assertEqual(next(f for f in checked if f["field_id"] == 929085)["values"], [{"enum_id": 1255305}])
                 get.assert_not_called()
                 write.assert_not_called()
+
+        def test_duplicate_address_comment_keeps_exact_lf_normalized_address(self):
+            import copy
+            text = "Город 1\nДом 2"
+            payload = {"pipeline_id": PIPELINE, "status_id": WON, "price": 123,
+                       "name": "Заказ 1", "responsible_user_id": MAXIM, "created_at": 1, "closed_at": 2,
+                       "custom_fields_values": [
+                           {"field_id": 929025, "values": [{"value": text}]},
+                           {"field_id": 929079, "values": [{"value": text}]}],
+                       "_embedded": {"contacts": [{"id": 5, "is_main": True}]}}
+            lead = copy.deepcopy(payload);lead["custom_fields_values"].pop(0)
+            lead["custom_fields_values"][0]["values"][0]["value"] = text.replace("\n", " ")
+            order = {"shipmentAddress": text, "shipmentAddressFull": {"addInfo": text}}
+            checked = validate_lead(copy.deepcopy(lead), "5", payload, order)
+            self.assertEqual(checked["_migration_text_normalizations"], [929025, 929079])
+            for changed in ("Город 1 Дом 3", "Город 1  Дом 2", " Город 1 Дом 2", "Город 1\tДом 2"):
+                bad = copy.deepcopy(lead);bad["custom_fields_values"][0]["values"][0]["value"] = changed
+                with self.assertRaises(Stop):
+                    validate_lead(bad, "5", payload, order)
+            for key in ("shipmentAddress", "shipmentAddressFull"):
+                source = copy.deepcopy(order);source.pop(key)
+                with self.assertRaises(Stop):
+                    validate_lead(copy.deepcopy(lead), "5", payload, source)
+            bad = copy.deepcopy(lead);bad["price"] = 124
+            with self.assertRaises(Stop):
+                validate_lead(bad, "5", payload, order)
 
         def test_historical_comment_drift_does_not_weaken_other_checks(self):
             import copy
