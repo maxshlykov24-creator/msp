@@ -11,6 +11,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
+
 from bot import avito_match, human, store
 from bot.autoru import Autoru, AutoruError, is_offer_room, listing_from_room, source_id
 from bot.config import settings
@@ -331,23 +333,60 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
     health = state.get("health") or {}
     if time.time() < health.get("retry_at", 0):
         return
+    stage = "список объявлений API"
     try:
         own = await api.own_offers()
+        stage = "список чатов кабинета" if api._use_cabinet() else "список чатов API"
         rooms = await api.rooms()
-    except AutoruError as exc:
+    except (AutoruError, httpx.RequestError) as exc:
         log.warning("авто.ру чаты: %s", exc)
         now = time.time()
+        if health.pop("recovered_since", None) is not None:
+            health["failed_since"] = now
         health.update(retry_at=now + 60, failed_since=health.get("failed_since") or now)
+        health["consecutive_failures"] = health.get("consecutive_failures", 0) + 1
+        detail = str(exc).upper()
+        if "NO_AUTH" in detail or "401" in detail or "403" in detail:
+            reason = "отказ авторизации или доступа"
+        elif isinstance(exc, httpx.RequestError):
+            reason = "сетевая ошибка или тайм-аут"
+        elif "429" in detail:
+            reason = "ограничение частоты запросов"
+        else:
+            reason = "ошибка ответа сервиса"
+        health.update(stage=stage, reason=reason)
         state["health"] = health
         save_state(state)
-        if now - health.get("notified_at", 0) >= 3600:
-            await channel.notify_owner("Авто.ру: входящие не читаются. Требуется проверка доступа к кабинету; новые чаты могут оставаться без ответа.")
+        last_notice = max(state.get("health_notified_at", 0), health.get("notified_at", 0))
+        if health["consecutive_failures"] >= 3 and now - last_notice >= 3600:
+            await channel.notify_owner(
+                "Авто.ру: повторяются ошибки чтения. Этап: %s. Причина: %s. "
+                "Новые сообщения могут обрабатываться с задержкой. Повторяем автоматически."
+                % (stage, reason)
+            )
             health["notified_at"] = now
+            state["health_notified_at"] = now
+            health["incident_notified"] = True
         state["health"] = health
         save_state(state)
         return
     if health:
-        state.pop("health", None)
+        now = time.time()
+        health["retry_at"] = 0
+        health["consecutive_failures"] = 0
+        health.setdefault("recovered_since", now)
+        # Keep the throttle outside the incident, including older state files.
+        state["health_notified_at"] = max(state.get("health_notified_at", 0), health.get("notified_at", 0))
+        if now - health["recovered_since"] >= 60:
+            if health.get("incident_notified") or health.get("notified_at"):
+                await channel.notify_owner(
+                    "Авто.ру: чтение объявлений и списка чатов восстановлено. "
+                    "Успешные опросы идут не менее минуты. "
+                    "Это подтверждает доступ, но не проверку доставки каждого ответа."
+                )
+            state.pop("health", None)
+        else:
+            state["health"] = health
         save_state(state)
     changed = False
     for room in rooms:

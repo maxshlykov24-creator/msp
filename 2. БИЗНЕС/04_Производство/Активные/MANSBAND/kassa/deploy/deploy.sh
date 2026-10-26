@@ -7,6 +7,7 @@
 #   VPS_USER=root
 #   VPS_PORT=22
 #   REMOTE_DIR=/opt/mansband-kassa
+#   VPS_SSH_INTERFACE=en0  # необязательно: прямой интерфейс macOS при проблемах с VPN
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,10 +20,21 @@ VPS_HOST="${VPS_HOST:-72.56.240.103}"
 VPS_USER="${VPS_USER:-root}"
 VPS_PORT="${VPS_PORT:-22}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/mansband-kassa}"
+VPS_SSH_INTERFACE="${VPS_SSH_INTERFACE:-}"
+
+ssh_cmd=(ssh -p "${VPS_PORT}" -o ConnectTimeout=15)
+if [ -n "${VPS_SSH_INTERFACE}" ]; then
+  if [[ ! "${VPS_SSH_INTERFACE}" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+    echo "Некорректный VPS_SSH_INTERFACE" >&2
+    exit 1
+  fi
+  ssh_cmd+=(-o "ProxyCommand=nc -b ${VPS_SSH_INTERFACE} %h %p")
+fi
+printf -v rsync_ssh '%q ' "${ssh_cmd[@]}"
 
 echo "== rsync кода на ${VPS_USER}@${VPS_HOST}:${REMOTE_DIR} =="
 rsync -az --delete \
-  -e "ssh -p ${VPS_PORT}" \
+  -e "${rsync_ssh}" \
   --exclude node_modules \
   --exclude dist \
   --exclude .git \
@@ -33,7 +45,7 @@ rsync -az --delete \
   ./ "${VPS_USER}@${VPS_HOST}:${REMOTE_DIR}/"
 
 echo "== Сборка и запуск на сервере =="
-ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" \
+"${ssh_cmd[@]}" "${VPS_USER}@${VPS_HOST}" \
   "chmod +x ${REMOTE_DIR}/deploy/remote-up.sh && bash ${REMOTE_DIR}/deploy/remote-up.sh"
 
 echo "Деплой завершён."

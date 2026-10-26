@@ -3214,7 +3214,64 @@ def test_oct22_no_phone_no_sales():
     assert asked_torg([{"role": "user", "content": "Готов забрать за 6 000 000 руб. наличными )!"}])
 
 
+def test_oct26_autoru_health_alerts():
+    import asyncio
+    import copy
+    import httpx
+    from unittest.mock import AsyncMock, Mock, patch
+    from bot import autoru_loop as ar
+
+    async def run():
+        disk = {}
+        def save(state):
+            disk.clear()
+            disk.update(copy.deepcopy(state))
+        api = Mock(own_offers=AsyncMock(return_value={}), rooms=AsyncMock(return_value=[]))
+        api._use_cabinet.return_value = True
+        channel = Mock(notify_owner=AsyncMock())
+        async def tick(now, error=None, offers_error=None):
+            api.rooms.side_effect = error
+            api.own_offers.side_effect = offers_error
+            with patch.object(ar.time, "time", return_value=now):
+                await ar.poll_once(api, channel, Mock(), {})
+        with patch.object(ar, "load_state", side_effect=lambda: copy.deepcopy(disk)), \
+             patch.object(ar, "save_state", side_effect=save):
+            error = ar.AutoruError("POST chat 403 NO_AUTH secret-must-not-be-shown")
+            await tick(10000, error)
+            await tick(10060, error)
+            assert not channel.notify_owner.called
+            await tick(10120, error)
+            assert channel.notify_owner.call_count == 1
+            message = channel.notify_owner.call_args.args[0]
+            assert "кабинета" in message and "авторизации" in message
+            assert "secret" not in message
+            await tick(10180)
+            assert channel.notify_owner.call_count == 1  # recovery needs sustained success
+            await tick(10240)
+            assert channel.notify_owner.call_count == 2
+            assert "восстановлено" in channel.notify_owner.call_args.args[0]
+            assert "health" not in disk and disk["health_notified_at"] == 10120
+            # A fresh loaded state still throttles another incident after recovery.
+            for now in (10300, 10360, 10420):
+                await tick(now, error)
+            assert channel.notify_owner.call_count == 2
+            await tick(13720, offers_error=httpx.ReadTimeout("private-url"))
+            assert channel.notify_owner.call_count == 3
+            message = channel.notify_owner.call_args.args[0]
+            assert "объявлений API" in message and "сетевая" in message
+            assert "private-url" not in message
+            # A one-off error heals without either failure or recovery spam.
+            disk.clear()
+            channel.notify_owner.reset_mock()
+            await tick(15000, error)
+            await tick(15060)
+            await tick(15120)
+            assert not channel.notify_owner.called and "health" not in disk
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
+    test_oct26_autoru_health_alerts()
     test_oct22_no_phone_no_sales()
     test_oct14_old_note_identity_recovery_preserves_pause()
     test_oct14_autoru_binding_requires_identity_and_listing()
