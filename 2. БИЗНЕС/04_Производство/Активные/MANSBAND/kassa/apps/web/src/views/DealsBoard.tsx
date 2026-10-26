@@ -319,13 +319,13 @@ export function DealsBoard({
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <div className="inline-flex flex-wrap rounded-lg border border-ink-700 max-w-full overflow-hidden">
+        <div className="inline-flex flex-wrap rounded-lg border border-ink-700 max-w-full">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.id}
               onClick={() => pickStatus(f.id)}
               className={`px-3 py-2 text-[13px] font-medium ${
-                statusFilter === f.id ? "bg-gold text-ink-950" : "text-mute hover:bg-ink-800"
+                statusFilter === f.id ? "tab-on" : "text-mute hover:bg-ink-800"
               }`}
             >
               {f.label}

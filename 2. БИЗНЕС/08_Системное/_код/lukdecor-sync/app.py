@@ -86,6 +86,14 @@ def login(body: Login):
     return result
 
 
+@app.post("/api/logout")
+def logout(request: Request):
+    sessions.pop(request.cookies.get("demo_session"), None)
+    result = JSONResponse({"ok": True})
+    result.delete_cookie("demo_session", httponly=True, samesite="strict")
+    return result
+
+
 @app.get("/api/state")
 def state(request: Request):
     person = actor(request)

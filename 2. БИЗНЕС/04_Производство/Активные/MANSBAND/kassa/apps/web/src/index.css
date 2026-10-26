@@ -95,6 +95,18 @@ body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
 }
+.deals-table-scroll table {
+  min-width: 1120px;
+}
+.deals-table-scroll th,
+.deals-table-scroll td {
+  overflow: hidden;
+}
+.deals-table-scroll .chip {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.25;
+}
 .deals-table-scroll::-webkit-scrollbar {
   height: 6px;
 }
@@ -217,6 +229,13 @@ html.theme-light body::after {
 .sw.compact {
   padding: 8px 10px;
   min-height: 40px;
+}
+
+/* Выбранная вкладка: тише сплошной заливки, на обеих темах */
+.tab-on {
+  background: color-mix(in srgb, rgb(var(--gold)) 12%, transparent);
+  color: rgb(var(--fg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, rgb(var(--gold)) 28%, transparent);
 }
 
 /* Тема: солнце и луна в одной капсуле */
@@ -572,6 +591,13 @@ html.theme-light nav {
   background: color-mix(in srgb, rgb(var(--ink-900)) 94%, transparent);
   border: 1px solid var(--line);
   box-shadow: var(--glass-edge), var(--shadow-card);
+  transition: width 0.2s var(--ease);
+}
+.kassa-rail.is-open {
+  width: 228px;
+  align-items: stretch;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 .kassa-rail::-webkit-scrollbar {
   display: none;
@@ -583,6 +609,9 @@ html.theme-light nav {
   align-items: center;
   gap: 6px;
   flex: none;
+}
+.kassa-rail.is-open .rail-stack {
+  align-items: stretch;
 }
 
 .rail-sep {
@@ -604,6 +633,38 @@ html.theme-light nav {
   color: rgb(var(--fg));
   transition: background-color 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease),
     box-shadow 0.2s var(--ease);
+}
+
+.rail-toggle {
+  align-self: flex-start;
+}
+
+.rail-label {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kassa-rail.is-open .rail-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.kassa-rail.is-open .rail-btn:not(.rail-toggle) {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 12px;
+}
+.kassa-rail.is-open .rail-sep {
+  width: calc(100% - 16px);
+  margin-left: 8px;
 }
 
 .rail-mark {
@@ -633,9 +694,9 @@ html:not(.theme-light) .rail-mark-img {
   border-color: var(--line-2);
 }
 .rail-btn.is-on {
-  background: rgb(var(--gold));
-  color: rgb(var(--ink-950));
-  border-color: transparent;
+  background: color-mix(in srgb, rgb(var(--gold)) 12%, transparent);
+  color: rgb(var(--fg));
+  border-color: color-mix(in srgb, rgb(var(--gold)) 32%, transparent);
 }
 .rail-btn.is-create:not(.is-on) {
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, rgb(var(--gold)) 72%, transparent);
@@ -664,10 +725,10 @@ html:not(.theme-light) .rail-mark-img {
   line-height: 1;
   pointer-events: none;
 }
-.rail-btn.is-on .rail-badge {
-  background: rgb(var(--ink-950));
-  color: rgb(var(--gold));
-  border-color: rgb(var(--gold));
+.kassa-rail.is-open .rail-btn:not(.rail-toggle) .rail-badge {
+  position: static;
+  margin-left: auto;
+  border-width: 0;
 }
 
 .rail-tip {

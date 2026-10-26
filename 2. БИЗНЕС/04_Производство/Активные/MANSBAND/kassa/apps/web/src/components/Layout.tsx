@@ -45,6 +45,7 @@ export type Route =
   | "audit"; // старый hash → история
 
 const ICO = { size: 22 } as const;
+const RAIL_KEY = "kassa.rail";
 
 // Нижнее меню на мобильном: те же значки, что в колонке, плюс короткая подпись.
 // «Эдвин» добавляется только финансам: консультанту денежные очереди не показываем.
@@ -70,6 +71,7 @@ type RailItem = {
   onClick: () => void;
   badge?: number;
   create?: boolean;
+  open?: boolean;
 };
 
 export function Layout({
@@ -108,7 +110,22 @@ export function Layout({
   }, [user?.name, setActiveConsultant]);
 
   const displayName = user?.name ?? "Пользователь";
+  const [railOpen, setRailOpen] = useState(() => {
+    try {
+      return localStorage.getItem(RAIL_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RAIL_KEY, railOpen ? "1" : "0");
+    } catch {
+      /* приватный режим */
+    }
+  }, [railOpen]);
 
   function showTip(el: HTMLElement) {
     const label = el.dataset.label;
@@ -195,7 +212,7 @@ export function Layout({
       <div className="flex flex-1 min-h-0 w-full">
       <aside className="hidden md:flex shrink-0 sticky top-0 h-dvh p-3 z-20">
         <nav
-          className="kassa-rail"
+          className={`kassa-rail ${railOpen ? "is-open" : ""}`}
           aria-label="Разделы кассы"
           onMouseOver={(e) => {
             const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-label]");
@@ -210,26 +227,30 @@ export function Layout({
         >
           <button
             type="button"
-            className="rail-mark"
-            onClick={onHome}
-            aria-label="На главную"
-            data-label="Главная"
+            className="rail-btn rail-toggle"
+            aria-expanded={railOpen}
+            aria-label={railOpen ? "Свернуть меню" : "Развернуть меню"}
+            data-label={railOpen ? undefined : "Развернуть меню"}
+            onClick={() => {
+              setTip(null);
+              setRailOpen((v) => !v);
+            }}
           >
-            <img src="/logo-m.svg" alt="" className="rail-mark-img" draggable={false} />
+            <PanelLeft size={20} />
           </button>
           <div className="rail-stack">
             {work.map((item) => (
-              <RailButton key={item.id} {...item} />
+              <RailButton key={item.id} {...item} open={railOpen} />
             ))}
           </div>
           <div className="rail-sep" aria-hidden />
           <div className="rail-stack">
             {backoffice.map((item) => (
-              <RailButton key={item.id} {...item} />
+              <RailButton key={item.id} {...item} open={railOpen} />
             ))}
           </div>
         </nav>
-        {tip && (
+        {tip && !railOpen && (
           <div className="rail-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
             {tip.label}
           </div>
@@ -269,7 +290,10 @@ export function Layout({
             </div>
           </div>
           {/* Десктопная шапка */}
-          <div className="hidden md:flex px-8 py-3.5 items-center gap-3">
+          <div className="hidden md:flex flex-wrap px-4 lg:px-8 py-3.5 items-center gap-2 lg:gap-3">
+            <button type="button" onClick={onHome} aria-label="На главную" className="shrink-0">
+              <BrandLogo className="h-8" />
+            </button>
             <div className="flex-1" />
             <ThemeToggle />
             <HintsToggle />
@@ -331,20 +355,20 @@ export function Layout({
   );
 }
 
-function RailButton({ active, icon, label, onClick, badge, create }: RailItem) {
+function RailButton({ active, icon, label, onClick, badge, create, open }: RailItem) {
+  const count = badge !== undefined && badge > 0 ? (badge > 99 ? "99+" : badge) : null;
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
       aria-current={active ? "page" : undefined}
-      data-label={label}
+      data-label={open ? undefined : label}
       className={`rail-btn ${active ? "is-on" : ""} ${create ? "is-create" : ""}`}
     >
       {icon}
-      {badge !== undefined && badge > 0 && (
-        <span className="rail-badge">{badge > 99 ? "99+" : badge}</span>
-      )}
+      {open && <span className="rail-label">{label}</span>}
+      {count !== null && <span className="rail-badge">{count}</span>}
     </button>
   );
 }
@@ -369,7 +393,7 @@ function Selector({
       options={opts(...options)}
       leading={icon}
       size={compact ? "sm" : "md"}
-      className={compact ? "flex-1" : "w-[220px]"}
+      className={compact ? "flex-1 min-w-0" : "w-[168px] xl:w-[220px]"}
     />
   );
 }
