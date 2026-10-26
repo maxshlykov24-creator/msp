@@ -267,8 +267,19 @@ html.theme-light body::after {
   background: rgb(var(--gold));
 }
 .sw.compact {
-  padding: 8px 10px;
-  min-height: 40px;
+  position: relative;
+  padding: 6px 8px;
+  min-height: 32px;
+  border-radius: 999px;
+}
+@media (max-width: 380px) {
+  .sw.compact span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
 }
 
 /* Выбранная вкладка: тише сплошной заливки, на обеих темах */

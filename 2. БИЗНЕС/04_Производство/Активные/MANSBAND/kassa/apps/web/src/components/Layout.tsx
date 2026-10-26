@@ -266,19 +266,18 @@ export function Layout({
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 w-full overflow-x-hidden">
         <header className="kassa-chrome sticky top-0 z-30 border-b pt-[env(safe-area-inset-top)]">
-          {/* Мобильная шапка: лого по центру, магазин + пользователь — отдельной строкой */}
-          <div className="md:hidden px-4 pb-3">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center py-2.5 gap-2">
-              <div />
-              <button type="button" onClick={onHome} aria-label="На главную">
+          {/* Мобильная шапка: лого слева, переключатели в одну линию, магазин снизу */}
+          <div className="md:hidden px-3 pt-2.5 pb-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <button type="button" onClick={onHome} aria-label="На главную" className="shrink-0">
                 <BrandLogo className="h-7" />
               </button>
-              <div className="justify-self-end flex flex-col items-end gap-1">
+              <div className="ml-auto flex items-center gap-1.5 shrink-0">
                 <ThemeToggle compact />
                 <HintsToggle compact />
               </div>
             </div>
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="mt-2 flex items-center gap-2 min-w-0">
               <Selector
                 compact
                 icon={<StoreIcon size={14} />}
@@ -400,8 +399,8 @@ function Selector({
       leading={icon}
       size="sm"
       triggerClassName={compact ? "text-[12px]" : "text-[13px]"}
-      fitLabel
-      className={compact ? "flex-1 min-w-[10.75rem]" : "w-max shrink-0"}
+      fitLabel={!compact}
+      className={compact ? "flex-1 min-w-0" : "w-max shrink-0"}
     />
   );
 }
@@ -420,7 +419,7 @@ function UserMenu({
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [box, setBox] = useState({ top: 0, right: 8 });
+  const [box, setBox] = useState({ top: 0, right: 8, width: 256 });
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
@@ -435,7 +434,11 @@ function UserMenu({
     function place() {
       const rect = btnRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setBox({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
+      const vw = window.visualViewport?.width ?? window.innerWidth;
+      const width = Math.min(256, Math.max(180, vw - 16));
+      const alignRight = Math.max(8, vw - rect.right);
+      const right = Math.min(alignRight, Math.max(8, vw - width - 8));
+      setBox({ top: rect.bottom + 8, right, width });
     }
     place();
     window.addEventListener("resize", place);
@@ -500,10 +503,8 @@ function UserMenu({
             <div className="fixed inset-0 z-[80]" />
             <div
               ref={menuRef}
-              className={`fixed z-[90] card p-1.5 kassa-pop ${
-                compact ? "w-[min(calc(100%-2rem),16rem)]" : "w-64"
-              }`}
-              style={{ top: box.top, right: box.right }}
+              className="fixed z-[90] card p-1.5 kassa-pop"
+              style={{ top: box.top, right: box.right, width: box.width }}
             >
             <div className="flex items-center gap-2.5 px-3 py-2.5">
               <span className="w-9 h-9 rounded-full bg-gold/20 text-gold-soft grid place-items-center text-sm font-bold">
