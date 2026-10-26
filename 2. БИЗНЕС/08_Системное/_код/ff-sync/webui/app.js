@@ -2290,7 +2290,7 @@ function kizRender() {
   const need = kizState.need;
   const matched = need > 0 && have === need;
   $("kizCount").textContent = need
-    ? "Нужно кодов: " + need + " · внесено: " + have + (matched ? ". Enter ещё раз отправит" : "")
+    ? "Нужно кодов: " + need + " · внесено: " + have + (matched ? ". Нажми «Отправить»" : "")
     : kizState.canSubmit === false ? "КиЗ не требуется" : "Внесено кодов: " + have;
   $("kizCount").classList.toggle("is-ok", matched);
   $("kizList").innerHTML = have
@@ -2366,6 +2366,7 @@ $("kizInput").addEventListener("beforeinput", (e) => {
 
 // Native multiline input: never rewrite characters/caret during a scan.
 let kizScanTimer = null;
+let kizAltDigits = null;
 function kizResetScan() {
   clearTimeout(kizScanTimer);
   kizScanTimer = null;
@@ -2374,6 +2375,8 @@ function kizFlushScan() {
   kizResetScan();
   const input = $("kizInput");
   const raw = input.value;
+  try { kizScanCodes(raw); }
+  catch (e) { say($("kizMsg"), e.message, "bad"); return false; }
   kizTraceEvent(4);
   // Compare two observed streams locally; log lengths/first mismatch, never text.
   let firstDiff = -1;
@@ -2384,10 +2387,17 @@ function kizFlushScan() {
   kizKeyText = ""; kizKeyTraceUsable = true;
   input.value = "";
   if (raw.trim()) kizAdd(raw);
+  return true;
 }
 function kizWaitScan() {
   kizResetScan();
-  kizScanTimer = setTimeout(kizFlushScan, 1000);
+  // Never clear a native scan on an idle timeout: pauses are not code boundaries.
+  // Parse only on the explicit Send action, keeping the complete original draft.
+  try {
+    const draft = kizScanCodes($("kizInput").value);
+    const count = new Set([...kizState.codes, ...draft]).size;
+    $("kizCount").textContent = "Нужно кодов: " + kizState.need + " · в списке и поле: " + count + ". После сканирования нажми «Отправить».";
+  } catch (_) { /* Keep an unfinished draft untouched. */ }
 }
 function kizScanCodes(raw) {
   const codes = [];
@@ -2557,14 +2567,36 @@ $("kizProduct").onchange = () => $("kizInput").focus();
 $("kizInput").onkeydown = (e) => {
   kizTraceEvent(1, e);
   if (kizBusy) { e.preventDefault(); return; }
-  // Only the non-printing GS needs help; all text and Enter use native editing.
-  if (e.key === "\u001d" || (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "BracketRight" || e.key === "]"))) {
+  // WB Seller supports GS as F8 and Windows Alt+0029 as well as Ctrl+].
+  if (e.key === "Alt" && !e.ctrlKey && !e.metaKey) {
+    kizAltDigits = "";
+    e.preventDefault();
+    return;
+  }
+  if (kizAltDigits !== null && e.altKey && /^Numpad[0-9]$/.test(e.code)) {
+    kizAltDigits += e.code.slice(-1);
+    e.preventDefault();
+    return;
+  }
+  if (e.key !== "Alt" && !e.altKey) kizAltDigits = null;
+  // All printable text and Enter use native editing.
+  if (e.key === "F8" || e.key === "\u001d" || (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "BracketRight" || e.key === "]"))) {
     e.preventDefault();
     const input = $("kizInput");
     input.setRangeText("\u001d", input.selectionStart, input.selectionEnd, "end");
     kizWaitScan();
   }
 };
+$("kizInput").addEventListener("keyup", (e) => {
+  if (e.key !== "Alt") return;
+  const digits = kizAltDigits;
+  kizAltDigits = null;
+  if (digits !== "0029" || kizBusy) return;
+  e.preventDefault();
+  const input = $("kizInput");
+  input.setRangeText("\u001d", input.selectionStart, input.selectionEnd, "end");
+  kizWaitScan();
+});
 $("kizInput").oninput = (e) => {
   kizTraceEvent(3, e, kizExpectedInput == null ? -1 : +($("kizInput").value === kizExpectedInput));
   kizExpectedInput = null;
@@ -2596,7 +2628,7 @@ $("kizSkip").onclick = async () => {
 
 let kizBusy = false;
 $("kizSend").onclick = async () => {
-  if (!kizBusy && $("kizInput").value) kizFlushScan();
+  if (!kizBusy && $("kizInput").value && !kizFlushScan()) return;
   if (kizBusy || !kizState.codes.length || kizState.canSubmit === false) return;
   if (kizState.need && (kizState.codes.length < kizState.need || (!kizState.products.length && kizState.codes.length !== kizState.need))) {
     say($("kizMsg"), "Нужно " + kizState.need + " кодов, сейчас " + kizState.codes.length + ". Досканируй.", "bad");
@@ -2610,7 +2642,7 @@ $("kizSend").onclick = async () => {
   try {
     const res = await api("/api/assembly/" + kizState.id + "/kiz", {
       method: "POST",
-      body: JSON.stringify({ scan_trace: { version: 143, events: kizTrace }, codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
+      body: JSON.stringify({ scan_trace: { version: 145, events: kizTrace }, codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
     });
     const row = state.asm.find((r) => r.id === kizState.id);
     if (row) row.marks = res.sent;

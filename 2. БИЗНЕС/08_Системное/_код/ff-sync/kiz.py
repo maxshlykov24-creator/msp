@@ -118,7 +118,11 @@ def normalize_wb_code(code):
     if code.startswith("]d2"):
         code = code[3:]
     match = re.fullmatch(r"(01\d{14}21[^\x1d]{13})\x1d?(91[^\x1d]{4})\x1d?(92[^\x1d]{44})", code)
-    return "\x1d".join(match.groups()) if match else code
+    if match:
+        return "\x1d".join(match.groups())
+    # Official short toy marking: serial 6 + GS + AI 93 + verification 4.
+    short = re.fullmatch(r"(01\d{14}21[^\x1d]{6})\x1d?(93[^\x1d]{4})", code)
+    return "\x1d".join(short.groups()) if short else code
 
 
 def _row(ship_id):
@@ -651,7 +655,8 @@ def _wb_submit(row, cab, codes):
     for code in codes:
         # У длинного КиЗ серийный номер переменной длины. Без живых GS перед
         # группами 91 и 92 WB получает строку, но затем отвергает её формат.
-        if not re.fullmatch(r"01\d{14}21[^\x1d]+\x1d91[^\x1d]+\x1d92[^\x1d]+", code):
+        if not (re.fullmatch(r"01\d{14}21[^\x1d]+\x1d91[^\x1d]+\x1d92[^\x1d]+", code) or
+                re.fullmatch(r"01\d{14}21[^\x1d]{6}\x1d93[^\x1d]{4}", code)):
             raise KizError("Не удалось распознать полный КиЗ. Отсканируй заново: нужны серийный номер и криптохвост целиком")
     r = req("PUT", WB_SGTIN % row["ext_id"], headers=wb_headers(cab["token"]), json={"sgtins": codes})
     if r.status_code not in (200, 204):
