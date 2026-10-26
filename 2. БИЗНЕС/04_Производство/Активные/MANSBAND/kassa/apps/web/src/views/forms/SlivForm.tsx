@@ -15,9 +15,10 @@ import {
   type ConsultantData,
 } from "./common";
 import { STORE_ADDRESS } from "../../data/mock";
-import { Hint } from "../../lib/hints";
+import { Hint, useHints } from "../../lib/hints";
 
 export function SlivForm({ onDone }: { onDone: () => void }) {
+  const { enabled: hintsOn } = useHints();
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
@@ -112,7 +113,7 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
         </div>
       </Card>
 
-      <Card>
+      {hintsOn && <Card>
         <div className="flex items-center gap-3">
           <TrendingUp className="text-white" size={20} />
           <div>
@@ -122,7 +123,7 @@ export function SlivForm({ onDone }: { onDone: () => void }) {
             </div>
           </div>
         </div>
-      </Card>
+      </Card>}
       {toast}
     </FormShell>
   );
