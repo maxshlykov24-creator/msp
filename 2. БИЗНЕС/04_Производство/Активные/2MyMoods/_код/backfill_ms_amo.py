@@ -52,6 +52,9 @@ PIPELINE = 11318374
 WON = 142
 MAXIM = 9490530
 MS_AMO_ATTR = lib.MS_ATTR_AMO_LINK
+MS_LEGACY_CHANNEL = "48be380c-dc17-11ef-0a80-03cd0022c50b"
+# Only this source customentity/manual-enum pair has a stable live repair proof.
+PRESERVED_LEGACY_CHANNELS = {"6aa0854e-dc17-11ef-0a80-040f0023133c": 1255183}
 STATUS_IDS = {
     "Выполнен": lib.MS_STATE_DONE,
     "Покупка в шоуруме": lib.MS_STATE_SHOWROOM,
@@ -1604,7 +1607,7 @@ def set_backlink(ms: lib.MS, amo: lib.Amo, journal: dict, oid: str, lead_id: str
     target = amo_lead_url(amo, lead_id)
     _set_entry(journal, oid, status="BACKLINK_WRITE_INTENT", lead_id=lead_id,
                contact_id=contact_id, backlink=target)
-    source_core = None
+    source_core = journal["rows"][oid].get("source_core_before_creation")
     for attempt in range(5):
         order = fresh_order(mss, oid, [0.0])
         core = order_core_hash(order)
@@ -1808,6 +1811,40 @@ def recover_pending(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict) -> None
             _set_entry(journal, oid, status="PLANNED", source_row=row)
 
 
+def preserved_legacy_channel(data: dict, order: dict, ms: lib.MS) -> dict | None:
+    """Preserve the actual MS custom attribute, never copy the primary channel.
+
+    An empty manual field can delete the source custom attribute through reverse
+    sync. Unknown or unstable mappings therefore defer before any creation.
+    """
+    source = attrs(order).get(MS_LEGACY_CHANNEL)
+    if source in (None, ""):
+        return None
+    source_id = id_of(source) if isinstance(source, dict) else ""
+    enum_id = PRESERVED_LEGACY_CHANNELS.get(source_id)
+    meta = data.get("amo_fields", {}).get("928931", {})
+    href = (source.get("meta") or {}).get("href", "") if isinstance(source, dict) else ""
+    if not enum_id or meta.get("type") != "select" or not href.startswith(lib.MS_BASE + "/entity/customentity/"):
+        raise RowDeferred("LEGACY_CHANNEL_MAPPING_NOT_VERIFIED")
+    references = data.setdefault("references", {})
+    if href not in references:
+        references[href] = api_get(ms_session(ms), href)
+    reference = references[href]
+    name = reference.get("name")
+    matches = [e for e in meta.get("enums") or [] if e.get("value") == name]
+    if (id_of(reference) != source_id or not name or len(matches) != 1
+            or matches[0].get("id") != enum_id
+            or matches[0].get("code") not in (None, "", source_id)):
+        raise RowDeferred("LEGACY_CHANNEL_MAPPING_NOT_VERIFIED")
+    return {"field_id": 928931, "values": [{"enum_id": enum_id}]}
+
+
+def source_attributes_preserved(order: dict, expected: dict) -> bool:
+    actual = {k: v for k, v in attrs(order).items() if k != MS_AMO_ATTR}
+    baseline = {k: v for k, v in expected.items() if k != MS_AMO_ATTR}
+    return actual == baseline
+
+
 def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict]:
     """Only existing fields and exact enum ID/code/name correspondences."""
     schema, result, omissions = data.get("amo_fields", {}), [], []
@@ -1888,27 +1925,11 @@ def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict
     for fid, key in ((929033, "organization"), (929083, "store"), (929085, "salesChannel"), (929087, "project")):
         add(fid, None, ref=order.get(key))
     add(929089, None, ref=(order.get("rate") or {}).get("currency"))
-    channel_name = ref_name(order.get("salesChannel"))
-    add(928931, channel_name)
-    channel_fields = {f["field_id"]: f for f in result if f["field_id"] in (928931, 929085)}
-    legacy_channel = channel_fields.get(928931)
-    technical_channel = channel_fields.get(929085)
-    if legacy_channel and technical_channel:
-        legacy_enum = legacy_channel["values"][0].get("enum_id")
-        technical_enum = technical_channel["values"][0].get("enum_id")
-        legacy_meta = next((e for e in schema["928931"].get("enums") or []
-                            if e.get("id") == legacy_enum), {})
-        technical_meta = next((e for e in schema["929085"].get("enums") or []
-                               if e.get("id") == technical_enum), {})
-        # Two live audits found label-only legacy copies removed after creation.
-        # Omit this optional copy only when the technical enum preserves the
-        # exact source UUID and both enum labels exactly confirm the source.
-        channel_id = id_of(order.get("salesChannel"))
-        if (channel_id and not legacy_meta.get("code")
-                and technical_meta.get("code") == channel_id
-                and legacy_meta.get("value") == technical_meta.get("value") == channel_name):
-            result.remove(legacy_channel)
-            omissions.append({"field_id": 928931, "reason": "UNSTABLE_LEGACY_CHANNEL_COPY"})
+    legacy_channel = preserved_legacy_channel(data, order, ms)
+    if legacy_channel:
+        result.append(legacy_channel)
+    else:
+        omissions.append({"field_id": 928931, "reason": "SOURCE_EMPTY"})
     add(928941, None, ref=av.get("ed14744d-dc0d-11ef-0a80-10cd00226b06"))
     add(928959, None, ref=av.get("ed1471ec-dc0d-11ef-0a80-10cd00226b05"))
     add(929079, order.get("shipmentAddress"))
@@ -1982,6 +2003,8 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
         raise RowDeferred("ORDER_LEFT_ALLOWED_STATUSES")
     if has_active_reserve(order):
         raise RowDeferred("ACTIVE_RESERVE_REQUIRES_REVIEW")
+    # Resolve preservation before even creating a contact.
+    preserved_legacy_channel(data, order, ms)
     matches = exact_leads(amo, oid)
     if matches:
         if len(matches) != 1:
@@ -2029,7 +2052,9 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
     data.setdefault("references", {})
     row["optional_fields"] = optional_fields({**data, **again["related_finance"]}, fresh, row, ms)
     row.pop("related_finance", None)
-    _set_entry(journal, oid, source_row=row)
+    _set_entry(journal, oid, source_row=row,
+               source_core_before_creation=order_core_hash(fresh),
+               source_attributes_before_creation=attrs(fresh))
     payload = make_lead_payload(amo, fresh, row, cid, roster)
     lid = create_entity(amo, journal, oid, row, "lead", payload)
     _set_entry(journal, oid, status="LEAD_VERIFIED", contact_id=cid, lead_id=lid, lead_payload=payload)
@@ -2086,6 +2111,10 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
                 raise Stop("VERIFIED_CONTACT_NOT_READABLE")
         for difference in lead.get("_migration_comment_differences", []):
             result["comment_differences"].append({"order_id": oid, "lead_id": lid, **difference})
+        if ("source_attributes_before_creation" in entry
+                and not source_attributes_preserved(order, entry["source_attributes_before_creation"])):
+            result["issues"].append({"order_id": oid, "reason": "SOURCE_ATTRIBUTES_CHANGED_AFTER_CREATION"})
+            continue
         if ms_link(order) != amo_lead_url(amo, lid):
             raise Stop("VERIFIED_BACKLINK_MISMATCH")
         matches = list(uuid_matches[oid].values()) if full_data is not None else exact_leads(amo, oid)
@@ -2726,41 +2755,58 @@ def self_test() -> None:
                 write.assert_not_called()
                 request.assert_not_called()
 
-        def test_unstable_legacy_channel_is_omitted_only_for_verified_mapping(self):
+        def test_legacy_channel_uses_source_custom_attribute_or_defers(self):
             import copy
-            channel_id = "f53f1c00-dc10-11ef-0a80-0d2f00232e63"
-            order = {"id": "o", "salesChannel": {"meta": {"href": lib.MS_BASE + "/entity/saleschannel/" + channel_id}, "name": "Канал"}}
-            data = {"invoiceout": [], "demand": [], "amo_fields": {
-                "928931": {"type": "select", "enums": [{"id": 1255187, "value": "Канал"}]},
-                "929085": {"type": "select", "enums": [{"id": 1255303, "value": "Канал", "code": channel_id}]}}}
-            with patch.object(module, "ms_session"), patch.object(module, "api_get") as get, \
+            uid = "6aa0854e-dc17-11ef-0a80-040f0023133c"
+            ref = {"id": uid, "name": "Сохранённый канал", "meta": {"href": lib.MS_BASE + "/entity/customentity/schema/" + uid}}
+            order = {"id": "o", "attributes": [{"id": MS_LEGACY_CHANNEL, "value": ref}]}
+            data = {"amo_fields": {"928931": {"type": "select", "enums": [{"id": 1255183, "value": ref["name"]}]}}}
+            with patch.object(module, "ms_session"), patch.object(module, "api_get", return_value=ref), \
                  patch.object(module, "api_write") as write:
-                row = {};fields = optional_fields(copy.deepcopy(data), order, row, object())
-                mapped = {f["field_id"]: f for f in fields}
-                self.assertNotIn(928931, mapped)
-                self.assertEqual(mapped[929085]["values"], [{"enum_id": 1255303}])
-                self.assertIn({"field_id": 928931, "reason": "UNSTABLE_LEGACY_CHANNEL_COPY"}, row["field_omissions"])
-                variants = []
-                changed = copy.deepcopy(data);changed["amo_fields"]["928931"]["enums"][0]["code"] = channel_id
-                variants.append((changed, order))
-                changed = copy.deepcopy(data);changed["amo_fields"]["928931"]["enums"][0]["value"] = "канал"
-                variants.append((changed, order))
-                changed = copy.deepcopy(data);changed["amo_fields"]["929085"]["enums"][0]["code"] = "another"
-                variants.append((changed, order))
-                changed_order = copy.deepcopy(order);changed_order["salesChannel"]["meta"]["href"] = lib.MS_BASE + "/entity/saleschannel/another"
-                variants.append((data, changed_order))
-                for source, source_order in variants:
-                    checked = optional_fields(copy.deepcopy(source), source_order, {}, object())
-                    self.assertIn(928931, {f["field_id"] for f in checked})
-                changed = copy.deepcopy(data);changed_order = copy.deepcopy(order)
-                changed_order["salesChannel"]["meta"]["href"] = lib.MS_BASE + "/entity/saleschannel/another"
-                changed["amo_fields"]["928931"]["enums"][0]["id"] = 1255191
-                changed["amo_fields"]["929085"]["enums"][0].update(id=1255305, code="another")
-                checked = optional_fields(changed, changed_order, {}, object())
-                self.assertNotIn(928931, {f["field_id"] for f in checked})
-                self.assertEqual(next(f for f in checked if f["field_id"] == 929085)["values"], [{"enum_id": 1255305}])
-                get.assert_not_called()
+                self.assertEqual(preserved_legacy_channel(data, order, object())["values"], [{"enum_id": 1255183}])
+                for altered in ("unverified", "f53f1c00-dc10-11ef-0a80-0d2f00232e63"):
+                    bad = copy.deepcopy(order);bad["attributes"][0]["value"]["id"] = altered
+                    bad["attributes"][0]["value"]["meta"]["href"] = lib.MS_BASE + "/entity/customentity/schema/" + altered
+                    with self.assertRaisesRegex(RowDeferred, "LEGACY_CHANNEL_MAPPING_NOT_VERIFIED"):
+                        preserved_legacy_channel(copy.deepcopy(data), bad, object())
+                for key, value in (("id", 1255187), ("value", "Другой канал"), ("code", "other")):
+                    bad = copy.deepcopy(data);bad["amo_fields"]["928931"]["enums"][0][key] = value
+                    with self.assertRaises(RowDeferred):
+                        preserved_legacy_channel(bad, order, object())
+                bad = copy.deepcopy(data);bad["amo_fields"]["928931"]["enums"].append({"id": 1, "value": ref["name"]})
+                with self.assertRaises(RowDeferred):
+                    preserved_legacy_channel(bad, order, object())
+                self.assertIsNone(preserved_legacy_channel({}, {"id": "o", "salesChannel": ref}, object()))
                 write.assert_not_called()
+
+        def test_unverified_legacy_channel_defers_before_any_creation(self):
+            order = {"moment": "2020-01-01 12:00:00", "state": {"meta": {"href": lib.MS_BASE + "/entity/customerorder/metadata/states/" + next(iter(STATUS_IDS.values()))}},
+                     "attributes": [{"id": MS_LEGACY_CHANNEL, "value": {"id": "unverified"}}]}
+            with patch.object(module, "current_row", return_value=(order, {"category": "CREATE"})), \
+                 patch.object(module, "exact_leads") as search, patch.object(module, "create_entity") as create:
+                with self.assertRaisesRegex(RowDeferred, "LEGACY_CHANNEL_MAPPING_NOT_VERIFIED"):
+                    apply_one({}, object(), object(), {"rows": {}}, {"order_id": "o"}, {})
+                search.assert_not_called();create.assert_not_called()
+
+        def test_precreation_source_core_guards_already_present_backlink(self):
+            order = {"id": "o", "sum": 101}
+            journal = {"rows": {"o": {"source_core_before_creation": order_core_hash({"id": "o", "sum": 100})}}}
+            with patch.object(module, "ms_session"), patch.object(module, "save_journal"), \
+                 patch.object(module, "fresh_order", return_value=order), patch.object(module, "api_write") as write, \
+                 patch.object(module, "confirm_lead_after_comment_sync") as confirm:
+                with self.assertRaisesRegex(Stop, "SOURCE_CHANGED_DURING_BACKLINK_RETRY"):
+                    set_backlink(object(), type("A", (), {"base": "https://example.amocrm.ru"})(), journal, "o", "1", {}, {}, "2")
+                write.assert_not_called();confirm.assert_not_called()
+
+        def test_source_attribute_preservation_rejects_loss_change_and_addition(self):
+            expected = {MS_LEGACY_CHANNEL: {"id": "old"}, "track": "x"}
+            order = {"attributes": [{"id": k, "value": v} for k, v in expected.items()]}
+            self.assertTrue(source_attributes_preserved(order, expected))
+            order["attributes"].append({"id": MS_AMO_ATTR, "value": "target"})
+            self.assertTrue(source_attributes_preserved(order, expected))
+            for attrs_ in ([], [{"id": "track", "value": "x"}],
+                           order["attributes"] + [{"id": "new", "value": 1}]):
+                self.assertFalse(source_attributes_preserved({"attributes": attrs_}, expected))
 
         def test_duplicate_address_comment_keeps_exact_lf_normalized_address(self):
             import copy
