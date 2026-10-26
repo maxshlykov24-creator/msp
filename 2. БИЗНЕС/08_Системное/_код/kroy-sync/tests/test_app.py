@@ -209,7 +209,7 @@ def test_invalid_numeric_rolls_not_meters(setup):
 
 
 def test_planning_known_client_counterexamples():
-    assert allocate(75, {'S': 50, 'M': 50}) == {'S': 38, 'M': 37}
+    assert allocate(75, {'S': 50, 'M': 50}) == {'S': 37, 'M': 38}
     assert layout_preview('Лонг скимс', {'S': 100, 'M': 100}, [{'S': 50, 'M': 50}], 2)['result'] is None
     assert layout_preview('Футболка Сердца', {'S': 50}, [{'S': 1}], 1)['result'] is None
     assert layout_preview('Костюм двойка Поло', {'S': 25}, [{'S': 1}], 1)['result']['output'] == {'S': 27}

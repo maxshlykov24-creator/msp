@@ -6,6 +6,13 @@ import { appendAudit } from "../services/audit.js";
 export default async function certificatesRoutes(app: FastifyInstance) {
   app.get("/certificates", { preHandler: [app.authenticate] }, async () => certs.list());
 
+  app.get("/certificates/:number/usages", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const { number } = req.params as { number: string };
+    const needle = decodeURIComponent(number ?? "").trim();
+    if (!needle) return reply.code(400).send({ message: "Нет номера сертификата" });
+    return certs.listUsages(needle);
+  });
+
   // Предгенерация 6-значного номера для электронного сертификата: консультант
   // видит номер до сохранения заявки и может продиктовать его клиенту.
   app.post("/certificates/next-number", { preHandler: [app.authenticate] }, async (_req, reply) => {

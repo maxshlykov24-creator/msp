@@ -25,6 +25,62 @@ export async function list(): Promise<Certificate[]> {
   return rows.map(toCert);
 }
 
+export interface CertificateUsage {
+  dealNumber: number;
+  createdAt: string;
+  paidAt: string | null;
+  clientName: string;
+  store: string;
+  consultant: string;
+  stage: string;
+  amount: number;
+}
+
+/** Заявки, в оплате которых списан этот сертификат. Продажа самого сертификата сюда не входит. */
+export async function listUsages(number: string): Promise<CertificateUsage[]> {
+  const needle = number.trim();
+  if (!needle) return [];
+  const result = await db.execute(sql`
+    SELECT d.number, d.stage, d.created_at, d.data
+    FROM deals d
+    WHERE EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(COALESCE(d.data->'payments', '[]'::jsonb)) p
+      WHERE btrim(COALESCE(p->>'certificateNumber', '')) = ${needle}
+    )
+    ORDER BY d.created_at DESC
+  `);
+  const rawRows = (Array.isArray(result)
+    ? result
+    : ((result as { rows?: unknown[] }).rows ?? [])) as Array<Record<string, unknown>>;
+
+  return rawRows.map((row) => {
+    const data = row.data && typeof row.data === "object" ? (row.data as Record<string, unknown>) : {};
+    const payments = Array.isArray(data.payments) ? data.payments : [];
+    let amount = 0;
+    let paidAt: string | null = null;
+    for (const payment of payments) {
+      if (!payment || typeof payment !== "object") continue;
+      const line = payment as { certificateNumber?: unknown; amount?: unknown; paidAt?: unknown };
+      if (String(line.certificateNumber ?? "").trim() !== needle) continue;
+      const sum = Number(line.amount);
+      if (Number.isFinite(sum) && sum > 0) amount += sum;
+      if (typeof line.paidAt === "string" && line.paidAt.trim()) paidAt = line.paidAt.trim();
+    }
+    const created = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? "");
+    return {
+      dealNumber: Number(row.number),
+      createdAt: created,
+      paidAt,
+      clientName: typeof data.clientName === "string" ? data.clientName : "",
+      store: typeof data.store === "string" ? data.store : "",
+      consultant: typeof data.consultant === "string" ? data.consultant : "",
+      stage: typeof row.stage === "string" ? row.stage : "",
+      amount,
+    };
+  });
+}
+
 export async function redeem(number: string, amountRub: number): Promise<Certificate | null> {
   const amount = Math.round(amountRub * 100);
   if (amount <= 0) return null;

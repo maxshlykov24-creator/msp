@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
-import { Ticket, Wallet, Search, Filter, RefreshCw, Upload } from "lucide-react";
+import { Ticket, Wallet, Search, Filter, RefreshCw, Upload, Loader2 } from "lucide-react";
 import { useStore } from "../store";
 import { money, dateRu } from "../lib/format";
-import { Badge, Button, Modal, Field, StatTile, Select, opts } from "../components/ui";
+import { Badge, Button, Modal, Field, StageBadge, StatTile, Select, opts } from "../components/ui";
 import type { Certificate } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -19,10 +19,29 @@ interface ImportPreview {
 const statusTone = { active: "green", used: "gray", expired: "red" } as const;
 const statusLabel = { active: "Активен", used: "Использован", expired: "Просрочен" } as const;
 
+interface CertificateUsage {
+  dealNumber: number;
+  createdAt: string;
+  paidAt: string | null;
+  clientName: string;
+  store: string;
+  consultant: string;
+  stage: string;
+  amount: number;
+}
+
+function wasSpent(c: Certificate): boolean {
+  return c.status === "used" || c.balance < c.nominal;
+}
+
 export function Certificates() {
   const { certificates, redeemCertificate } = useStore();
   const { user } = useAuth();
   const [redeem, setRedeem] = useState<Certificate | null>(null);
+  const [usageCert, setUsageCert] = useState<Certificate | null>(null);
+  const [usages, setUsages] = useState<CertificateUsage[]>([]);
+  const [usagesLoading, setUsagesLoading] = useState(false);
+  const [usagesError, setUsagesError] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [q, setQ] = useState("");
   const [validFrom, setValidFrom] = useState("");
@@ -39,6 +58,24 @@ export function Certificates() {
   useEffect(() => {
     setList(certificates);
   }, [certificates]);
+
+  async function openUsages(cert: Certificate) {
+    setUsageCert(cert);
+    setUsages([]);
+    setUsagesError(null);
+    if (USE_MOCK) return;
+    setUsagesLoading(true);
+    try {
+      const rows = await api.get<CertificateUsage[]>(
+        `/certificates/${encodeURIComponent(cert.number)}/usages`
+      );
+      setUsages(Array.isArray(rows) ? rows : []);
+    } catch (err) {
+      setUsagesError(err instanceof Error ? err.message : "Не удалось загрузить заявки");
+    } finally {
+      setUsagesLoading(false);
+    }
+  }
 
   async function refresh() {
     if (USE_MOCK) return;
@@ -207,7 +244,13 @@ export function Certificates() {
             </thead>
             <tbody className="divide-y divide-ink-800">
               {filtered.map((c) => (
-                <tr key={c.number} className="hover:bg-ink-800/40">
+                <tr
+                  key={c.number}
+                  className={`hover:bg-ink-800/40 ${wasSpent(c) ? "cursor-pointer" : ""}`}
+                  onClick={() => {
+                    if (wasSpent(c)) void openUsages(c);
+                  }}
+                >
                   <td className="px-4 py-3 font-mono text-gold-soft">№{c.number}</td>
                   <td className="px-4 py-3 text-white">{c.guestName || "—"}</td>
                   <td className="px-4 py-3 hidden md:table-cell text-mute text-sm">
@@ -232,7 +275,8 @@ export function Certificates() {
                       <Button
                         variant="subtle"
                         className="py-1.5 px-3 text-[13px]"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setRedeem(c);
                           setAmount("");
                         }}
@@ -255,6 +299,68 @@ export function Certificates() {
           </table>
         </div>
       </div>
+
+      <Modal
+        open={!!usageCert}
+        onClose={() => setUsageCert(null)}
+        title={usageCert ? `Сертификат №${usageCert.number} · где использован` : "Сертификат"}
+        wide
+      >
+        {usageCert && (
+          <div className="space-y-3">
+            <div className="text-[13px] text-mute">
+              Номинал {money(usageCert.nominal)}
+              {" · "}остаток {money(usageCert.balance)}
+              {usageCert.guestName ? ` · ${usageCert.guestName}` : ""}
+            </div>
+            {usagesLoading && (
+              <div className="flex items-center justify-center gap-2 text-mute text-sm py-8">
+                <Loader2 size={16} className="animate-spin" /> Загрузка заявок…
+              </div>
+            )}
+            {usagesError && <div className="text-amber-300/90 text-sm py-4 text-center">{usagesError}</div>}
+            {!usagesLoading && !usagesError && usages.length === 0 && (
+              <div className="text-mute text-sm py-8 text-center">В заявках этот сертификат ещё не списывали</div>
+            )}
+            {!usagesLoading && !usagesError && usages.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[640px]">
+                  <thead>
+                    <tr className="text-left text-mute border-b border-ink-700">
+                      <th className="pb-2 pr-3 font-medium">№ заявки</th>
+                      <th className="pb-2 pr-3 font-medium">Дата</th>
+                      <th className="pb-2 pr-3 font-medium">Клиент</th>
+                      <th className="pb-2 pr-3 font-medium">Магазин</th>
+                      <th className="pb-2 pr-3 font-medium">Консультант</th>
+                      <th className="pb-2 pr-3 font-medium text-right">Списано</th>
+                      <th className="pb-2 font-medium">Этап</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-800">
+                    {usages.map((row) => (
+                      <tr key={row.dealNumber}>
+                        <td className="py-2.5 pr-3 font-mono text-gold-soft whitespace-nowrap">№{row.dealNumber}</td>
+                        <td className="py-2.5 pr-3 text-mute whitespace-nowrap">
+                          {dateRu(row.paidAt || row.createdAt)}
+                        </td>
+                        <td className="py-2.5 pr-3 text-white">{row.clientName || "—"}</td>
+                        <td className="py-2.5 pr-3 text-mute">{row.store || "—"}</td>
+                        <td className="py-2.5 pr-3 text-mute">{row.consultant || "—"}</td>
+                        <td className="py-2.5 pr-3 text-right font-semibold text-white whitespace-nowrap">
+                          {money(row.amount)}
+                        </td>
+                        <td className="py-2.5">
+                          {row.stage ? <StageBadge stage={row.stage} /> : <span className="text-mute">—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <Modal open={!!redeem} onClose={() => setRedeem(null)} title={`Списание с сертификата №${redeem?.number}`}>
         {redeem && (
