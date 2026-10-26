@@ -29,7 +29,7 @@ for name,(m,t) in variants.items():
 for name,bg,v in [('dark','#07060b','gradient-light'),('light','#f8f7fc','gradient-dark'),('violet','#7546df','white')]:
  body=f'<rect width="1200" height="630" fill="{bg}"/><g transform="translate({(1200-w*1.5)/2} 225) scale(1.5)">'+lock(*variants[v])+'</g>'
  (root/'svg'/f'cover-{name}.svg').write_text(svg(1200,630,body))
-background=Path('/Users/max/.codex/generated_images/01a177bc-4cda-7453-9ec3-567e701f3cee/exec-2ccc7995-af45-498e-8b3a-a8a8f09a595b.png')
+background=Path('/Users/max/.codex/generated_images/01a177bc-4cda-7453-9ec3-567e701f3cee/exec-a583cd45-4c19-433e-9049-6b4c46cf5355.png')
 shutil.copy2(background,root/'backgrounds'/'aura-source.png')
 data=base64.b64encode(background.read_bytes()).decode()
 for name,cw,ch in [('cover-aura',1200,630),('hero-aura',1920,1080),('social-square',1080,1080)]:
@@ -39,5 +39,5 @@ for name,cw,ch in [('cover-aura',1200,630),('hero-aura',1920,1080),('social-squa
 icon=svg(512,512,'<rect width="512" height="512" rx="112" fill="#100d1b"/><g transform="translate(92 66) scale(.37)">'+mark('#ffffff')+'</g>')
 (root/'icons'/'favicon.svg').write_text(icon)
 (root/'icons'/'site.webmanifest').write_text(json.dumps({'name':'MS Product','short_name':'MS Product','icons':[{'src':'/assets/ms-product/icons/icon-192.png','sizes':'192x192','type':'image/png'},{'src':'/assets/ms-product/icons/icon-512.png','sizes':'512x512','type':'image/png','purpose':'any'}],'theme_color':'#07060b','background_color':'#07060b','display':'standalone'},indent=2))
-(root/'source'/'design-notes.txt').write_text('MS Product web kit, 2026-10-26\nSource mark: ../logo-ms-transparent.png (canonical brand folder)\nWordmark: Helvetica Neue Medium, converted to outlines. No runtime font dependency.\nPalette: mark reconstructed from original purple-blue mark; surfaces from site-ms/public/index.html.\nBackground created with built-in image_gen. Prompt: restrained abstract near-black #07060b paper, soft violet #9d6bff and blue light, subtle magenta, fine grain, architectural shadows, no text or symbols.\nAll geometry reconstructed as SVG, not raster embedded in a vector container. Background covers contain an embedded raster background.\n')
+(root/'source'/'design-notes.txt').write_text('MS Product web kit, 2026-10-26\nSource mark: ../logo-ms-transparent.png (canonical brand folder)\nWordmark: Helvetica Neue Medium, converted to outlines. No runtime font dependency.\nPalette: mark reconstructed from original purple-blue mark; surfaces from site-ms/public/index.html.\nBackground created with built-in image_gen. Prompt: restrained abstract near-black #07060b paper, soft violet #9d6bff and blue light, fine grain, single large curved black void rising from lower-left, diffuse halo above and to right matching user reference, no folds, no crossing planes, no X shapes, no text or symbols. Revised per owner feedback on 2026-10-26.\nAll geometry reconstructed as SVG, not raster embedded in a vector container. Background covers contain an embedded raster background.\n')
 print(root, w, 'SVG assets generated')
