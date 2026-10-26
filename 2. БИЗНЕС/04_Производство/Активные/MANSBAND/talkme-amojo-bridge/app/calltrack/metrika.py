@@ -56,8 +56,11 @@ def enqueue_call(db, call, *, pilot=False):
     # Only a verified incoming provider event, with an unambiguous pool visit.
     raw = call.raw or {}
     reason = None
+    campaign = str(snap.get("tracking", {}).get("utm_campaign") or (visit.utm_campaign if visit else "") or "").lower()
     if raw.get("EventType") != "dial-in" or raw.get("CallFlow") != "in":
         reason = "not_native_incoming"
+    elif campaign.startswith(("ct_ops_check_", "chat_check_", "live_launch_20261021", "launch_check")):
+        reason = "diagnostic_visit"
     elif snap.get("kind", call.number_kind) != "pool" or not visit:
         reason = "no_unique_visit"
     elif urlparse(snap.get("landing_url") or visit.landing_url or "").hostname not in {"mansband.ru", "www.mansband.ru"}:

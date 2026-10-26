@@ -1517,3 +1517,23 @@ const response = data => Promise.resolve({ok:true,json:()=>Promise.resolve(data)
 '''
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
+
+
+def test_metrika_diagnostic_visit_never_creates_business_conversion(metrika_settings):
+    import datetime as dt
+    import json
+    from sqlalchemy import select
+    from app.calltrack.models import Visit, CallEvent
+    from app.calltrack.metrika import enqueue_call, PREFIX
+    from app.models import KvState
+    with _db() as db:
+        visit = Visit(utm_source="ya", utm_campaign="ct_ops_check_20261026", ym_uid="1792580245123456789",
+                      landing_url="https://mansband.ru/", is_paid=True)
+        db.add(visit); db.flush()
+        call = CallEvent(call_id="diagnostic-goal", called="9310000000", visit_id=visit.id, number_kind="pool",
+                         started_at=dt.datetime.now(dt.timezone.utc),
+                         raw={"EventType": "dial-in", "CallFlow": "in"})
+        db.add(call); db.flush()
+        assert enqueue_call(db, call, pilot=True)
+        state = json.loads(db.scalar(select(KvState).where(KvState.key.like(PREFIX+"%"))).value)
+        assert state["status"] == "skipped" and state["reason"] == "diagnostic_visit"

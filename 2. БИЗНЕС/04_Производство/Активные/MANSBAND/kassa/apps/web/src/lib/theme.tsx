@@ -1,3 +1,4 @@
+import { Moon, Sun } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 const STORAGE_KEY = "kassa.theme";
@@ -57,18 +58,29 @@ export function useTheme(): ThemeState {
 }
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
-  const { theme, toggle } = useTheme();
+  const { theme, setTheme } = useTheme();
   const light = theme === "light";
+  const icon = compact ? 14 : 15;
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      className={`sw ${light ? "on" : ""} ${compact ? "compact" : ""}`}
-      aria-pressed={light}
-      aria-label={light ? "Включить тёмную тему" : "Включить светлую тему"}
-    >
-      <i />
-      <span>Тема</span>
-    </button>
+    <div className={`theme-pill ${compact ? "is-compact" : ""}`} role="group" aria-label="Тема">
+      <button
+        type="button"
+        className={light ? "is-on" : ""}
+        aria-pressed={light}
+        aria-label="Светлая тема"
+        onClick={() => setTheme("light")}
+      >
+        <Sun size={icon} />
+      </button>
+      <button
+        type="button"
+        className={light ? "" : "is-on"}
+        aria-pressed={!light}
+        aria-label="Тёмная тема"
+        onClick={() => setTheme("dark")}
+      >
+        <Moon size={icon} />
+      </button>
+    </div>
   );
 }
