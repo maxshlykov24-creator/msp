@@ -65,6 +65,18 @@ def create_app(engine=None):
     def me(user=Depends(auth)):
         return {'id': user.id, 'name': user.name, 'role': user.role, 'permissions': sorted(PERMISSIONS[user.role])}
 
+    @app.get('/api/users')
+    def users(user=Depends(auth)):
+        if 'settings' not in PERMISSIONS[user.role]:
+            raise HTTPException(403, 'Нет права управления сотрудниками')
+        with Session(engine) as s:
+            result = []
+            for u in s.scalars(select(User)):
+                version = s.get(Entity, 'user-version:' + u.id)
+                result.append({'id': u.id, 'name': u.name, 'role': u.role, 'active': u.active,
+                               'version': version.version if version else 1})
+            return result
+
     @app.get('/api/catalog')
     def catalog(user=Depends(auth)):
         with Session(engine) as s:
@@ -81,8 +93,10 @@ def create_app(engine=None):
 
     @app.get('/api/entities/{kind}')
     def entities(kind: str, user=Depends(auth)):
-        if kind not in ('task', 'freeze', 'count', 'order', 'fbo', 'finance', 'notice', 'integration'):
+        if kind not in ('task', 'freeze', 'count', 'order', 'fbo', 'finance', 'notice', 'integration', 'norm', 'telegram_link', 'mapping'):
             raise HTTPException(404, 'Раздел не найден')
+        if kind == 'telegram_link' and 'settings' not in PERMISSIONS[user.role]:
+            raise HTTPException(403, 'Нет права управления привязками')
         if kind == 'finance' and 'finance' not in PERMISSIONS[user.role]:
             raise HTTPException(403, 'Нет доступа к финансам')
         with Session(engine) as s:
@@ -124,10 +138,11 @@ def create_app(engine=None):
             pending = list(s.scalars(select(Outbox).where(Outbox.status == 'held')))
             snapshots = list(s.scalars(select(Entity).where(Entity.kind == 'snapshot')))
             integration = [e.data for e in s.scalars(select(Entity).where(Entity.kind == 'integration'))]
+            maintenance = {e.id.split(':', 1)[1]: e.data for e in s.scalars(select(Entity).where(Entity.kind == 'maintenance'))}
             marketplace = [e.data for e in s.scalars(select(Entity).where(Entity.kind == 'marketplace_snapshot'))]
-            return {'publication': 'disabled', 'queue_held': len(pending),
+            return {'publication': 'disabled', 'queue_held': len(pending), 'maintenance': maintenance,
                     'snapshots': [e.data for e in snapshots], 'integration': integration, 'marketplace': marketplace, 'finance': 'rules_pending',
-                    'blockers': ['Пилотные позиции и единственный источник записи не подтверждены',
+                    'blockers': ['Пилот: весь каталог. Требуется сверить единственный источник записи',
                                  'Живые сценарии WB и Ozon не пройдены', 'Правила оплаты цеха не получены']}
 
     @app.post('/api/commands')

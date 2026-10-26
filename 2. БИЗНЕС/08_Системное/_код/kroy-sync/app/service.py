@@ -14,9 +14,9 @@ PERMISSIONS = {
     'cutter': {'cut'}, 'viewer': set(),
 }
 COMMAND_RIGHT = {
-    'item.create': 'catalog', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
+    'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
     'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut',
-    'task.approve': 'cut', 'task.confirm': 'cut', 'task.cancel': 'cut',
+    'task.reverse_fact': 'adjust', 'order.reserve': 'orders', 'fbo.reserve': 'orders', 'fbo.resolve': 'adjust', 'task.approve': 'cut', 'task.revise': 'cut', 'task.confirm': 'cut', 'task.cancel': 'cut',
     'count.create': 'count', 'count.scan': 'count', 'count.set': 'count', 'count.resolve': 'count', 'count.post': 'adjust',
     'order.create': 'orders', 'order.ship': 'orders', 'order.cancel': 'orders',
     'return.receive': 'orders', 'fbo.create': 'orders', 'fbo.dispatch': 'orders',
@@ -136,7 +136,14 @@ def execute(engine, user, op_id, command, payload, reason):
             require(old.fingerprint == fingerprint, 'ID операции уже использован с другим содержанием')
             return old.result
         s.add(Document(id=op_id, kind=command, actor=user.id, reason=reason, payload=payload))
-        result = dispatch(s, op_id, command, copy.deepcopy(payload))
+        if command in ('task.reverse_fact', 'order.reserve', 'fbo.reserve', 'fbo.resolve'):
+            from .corrections import correct
+            result = correct(s, op_id, command, copy.deepcopy(payload))
+        elif command in ('item.update', 'user.create', 'user.update', 'norm.set', 'telegram.link'):
+            from .administration import administer
+            result = administer(s, op_id, command, copy.deepcopy(payload), user.id)
+        else:
+            result = dispatch(s, op_id, command, copy.deepcopy(payload))
         result = {'document_id': op_id, **result}
         s.add(Operation(id=op_id, fingerprint=fingerprint, result=result))
         s.flush()
@@ -201,7 +208,7 @@ def dispatch(s, doc, command, p):
         return {'id': e.id, 'version': e.version}
     if command == 'task.create':
         products = lines(s, p['products'], 'garment')
-        materials = lines(s, p['materials'], 'material')
+        materials = lines(s, p['materials'], 'material', allow_empty=True)
         e = create_entity(s, doc, 'task', {'title': p['title'], 'location': p['location'],
                 'products': products, 'materials': materials, 'status': 'draft',
                 'remaining_products': products, 'remaining_materials': materials, 'facts': []})
@@ -211,10 +218,33 @@ def dispatch(s, doc, command, p):
         d = copy.deepcopy(e.data)
         if command == 'task.approve':
             require(d['status'] == 'draft', 'Утверждать можно только черновик')
+            require(d['materials'], 'До утверждения укажи материал и расход в его единице')
             for line in d['materials']:
                 q = Decimal(line['quantity'])
                 move(s, doc, line['item_id'], d['location'], {'free': -q, 'reserved': q})
             d['status'] = 'approved'
+        elif command == 'task.revise':
+            require(d['status'] in ('draft', 'approved', 'partial'), 'Задание уже закрыто')
+            for key, kind in (('products', 'garment'), ('materials', 'material')):
+                updated = lines(s, p[key], kind)
+                old = {l['item_id']: Decimal(l['quantity']) for l in d[key]}
+                rest = {l['item_id']: Decimal(l['quantity']) for l in d['remaining_' + key]}
+                proposed = {l['item_id']: Decimal(l['quantity']) for l in updated}
+                remaining = {}
+                for i in set(old) | set(proposed):
+                    completed = old.get(i, Decimal(0)) - rest.get(i, Decimal(0))
+                    require(proposed.get(i, 0) >= completed, 'Новый план меньше уже выполненного')
+                    left = proposed.get(i, Decimal(0)) - completed
+                    if left:
+                        remaining[i] = left
+                    if key == 'materials' and d['status'] != 'draft':
+                        delta = left - rest.get(i, Decimal(0))
+                        if delta:
+                            move(s, doc, i, d['location'], {'free': -delta, 'reserved': delta})
+                d[key] = updated
+                d['remaining_' + key] = [{'item_id': i, 'quantity': str(q)} for i, q in remaining.items()]
+            require(d['remaining_products'], 'Для закрытия используй подтверждение или отмену остатка')
+            d['title'] = p.get('title', d['title'])
         elif command == 'task.cancel':
             require(d['status'] in ('draft', 'approved', 'partial'), 'Задание уже закрыто')
             if d['status'] != 'draft':
@@ -226,7 +256,7 @@ def dispatch(s, doc, command, p):
             require(d['status'] in ('approved', 'partial'), 'Задание не утверждено или уже закрыто')
             products = lines(s, p.get('products', d['remaining_products']), 'garment')
             materials = lines(s, p.get('materials', d['remaining_materials']), 'material', allow_empty=True)
-            require(materials or d['facts'], 'Для первого факта нужен подтверждённый расход ткани')
+            require(materials or [f for f in d['facts'] if f not in d.get('reversed_facts', [])], 'Для первого факта нужен подтверждённый расход ткани')
             require(p.get('confirm_actual') is True, 'Подтверди, что количества являются фактическими', 422)
             until = deadline(p.get('until'))
             for actual, key, bucket in ((materials, 'remaining_materials', 'reserved'), (products, 'remaining_products', 'frozen')):
@@ -357,13 +387,13 @@ def dispatch(s, doc, command, p):
             expected = {l['item_id']: Decimal(l['quantity']) for l in d['lines']}
             for line in actual:
                 i, q = line['item_id'], Decimal(line['quantity'])
-                require(i in expected and Decimal(d['accepted'][i]) + q <= expected[i], 'Пересорт или излишек: требуется отдельная сверка')
+                require(i in expected and Decimal(d['accepted'][i]) + Decimal(d.get('resolved', {}).get(i, '0')) + q <= expected[i], 'Пересорт или излишек: требуется отдельная сверка')
                 move(s, doc, i, 'transit:' + e.id, {'free': -q})
                 destination = 'marketplace:' + d['platform'] + ':' + d['account']
                 get_balance(s, i, destination).known = True
                 move(s, doc, i, destination, {'free': q})
                 d['accepted'][i] = str(Decimal(d['accepted'][i]) + q)
-            d['status'] = 'accepted' if all(Decimal(d['accepted'][i]) == q for i, q in expected.items()) else 'partial'
+            d['status'] = ('settled' if d.get('resolved') else 'accepted') if all(Decimal(d['accepted'][i]) + Decimal(d.get('resolved', {}).get(i, '0')) == q for i, q in expected.items()) else 'partial'
         save(e, d)
         return {'id': e.id, 'version': e.version, 'status': d['status']}
     if command == 'return.receive':

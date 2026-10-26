@@ -15,6 +15,76 @@ from app.service import DomainError, execute, get_balance
 from app.worker import tick
 
 
+def test_reverse_fact_restores_cloth_and_requires_original_freeze(setup):
+    engine, user, cmd = setup
+    t = task(cmd, qty=10, cloth='10')
+    fact = cmd('task.confirm', {'id': t['id'], 'version': t['version'], 'confirm_actual': True,
+                              'materials': [{'item_id': 'cloth', 'quantity': '8'}]})
+    assert balance(engine, 'cloth')['free'] == Decimal('92.5')
+    rev = cmd('task.reverse_fact', {'id': t['id'], 'version': fact['version'], 'fact_id': fact['document_id']})
+    assert balance(engine)['frozen'] == 0
+    assert balance(engine, 'cloth')['reserved'] == 10
+    assert balance(engine, 'cloth')['free'] == Decimal('90.5')
+    next_fact = cmd('task.confirm', {'id': t['id'], 'version': rev['version'], 'confirm_actual': True})
+    cmd('freeze.release', {'id': next_fact['document_id'] + ':s', 'version': 1, 'quantity': 1})
+    with pytest.raises(DomainError, match='разморожен'):
+        cmd('task.reverse_fact', {'id': t['id'], 'version': next_fact['version'], 'fact_id': next_fact['document_id']})
+
+
+def test_order_shortage_can_be_reserved_after_receipt(setup):
+    engine, user, cmd = setup
+    order = cmd('order.create', {'platform': 'wb', 'account': 'test', 'external_id': 'short',
+                                'location': 'own', 'lines': [{'item_id': 's', 'quantity': 15}]})
+    b = balance(engine)
+    cmd('stock.adjust', {'item_id': 's', 'location': 'own', 'version': b['version'], 'physical': 15})
+    result = cmd('order.reserve', {'id': order['id'], 'version': order['version']})
+    assert result['status'] == 'reserved'
+    assert balance(engine)['reserved'] == 15
+    cmd('order.ship', {'id': result['id'], 'version': result['version']})
+    assert balance(engine)['reserved'] == 0
+
+
+def test_draft_without_material_never_posts_output(setup):
+    engine, user, cmd = setup
+    t = cmd('task.create', {'title': 'Расход уточняется', 'location': 'own',
+                           'products': [{'item_id': 's', 'quantity': 10}], 'materials': []})
+    with pytest.raises(DomainError, match='расход'):
+        cmd('task.approve', {'id': t['id'], 'version': t['version']})
+    assert balance(engine)['frozen'] == 0
+
+
+def test_mapping_covers_missing_and_ambiguous(setup):
+    from app.mappings import import_candidates
+    engine, user, cmd = setup
+    wb = {'at': '2026-10-26T00:00:00Z', 'cards': [{'id': 1, 'sizes': [{'chrtID': 2, 'skus': ['001']}]}]}
+    ozon = {'at': wb['at'], 'items': [{'id': 1, 'offer_id': 'a', 'barcodes': ['002']},
+                                    {'id': 2, 'offer_id': 'b', 'barcodes': ['002']}]}
+    counts = import_candidates(engine, wb, ozon)
+    assert counts['wb'] == {'unique': 1, 'missing': 1, 'ambiguous': 0}
+    assert counts['ozon'] == {'unique': 0, 'missing': 1, 'ambiguous': 1}
+    assert import_candidates(engine, wb, ozon) == counts
+    assert balance(engine)['free'] == 10
+
+
+def test_fbo_discrepancy_remains_in_transit_until_resolved(setup):
+    engine, user, cmd = setup
+    fbo = cmd('fbo.create', {'platform': 'ozon', 'account': 'test', 'external_id': 'discrepancy',
+                          'location': 'own', 'lines': [{'item_id': 's', 'quantity': 10}]})
+    sent = cmd('fbo.dispatch', {'id': fbo['id'], 'version': fbo['version']})
+    accepted = cmd('fbo.accept', {'id': fbo['id'], 'version': sent['version'], 'lines': [{'item_id': 's', 'quantity': 6}]})
+    assert balance(engine, loc='transit:' + fbo['id'])['free'] == 4
+    returned = cmd('fbo.resolve', {'id': fbo['id'], 'version': accepted['version'],
+                    'resolution': 'returned', 'condition': 'damaged', 'lines': [{'item_id': 's', 'quantity': 2}]})
+    assert balance(engine)['damaged'] == 2
+    assert balance(engine)['free'] == 0
+    lost = cmd('fbo.resolve', {'id': fbo['id'], 'version': returned['version'],
+                    'resolution': 'lost', 'lines': [{'item_id': 's', 'quantity': 2}]})
+    assert lost['status'] == 'settled'
+    assert balance(engine, loc='transit:' + fbo['id'])['free'] == 0
+    with pytest.raises(DomainError):
+        cmd('fbo.accept', {'id': fbo['id'], 'version': lost['version'], 'lines': [{'item_id': 's', 'quantity': 2}]})
+
+
 @pytest.fixture
 def setup(tmp_path):
     import os
@@ -300,3 +370,44 @@ def test_second_partial_fact_after_cloth_consumed(setup):
     assert t['status'] == 'complete'
     assert balance(engine)['frozen'] == 75
     assert balance(engine, 'cloth')['free'] == 90
+
+
+def test_task_revision_preserves_fact_and_reallocates(setup):
+    engine, user, cmd = setup
+    t = task(cmd)
+    t = cmd('task.confirm', {'id': t['id'], 'version': t['version'], 'confirm_actual': True,
+                            'products': [{'item_id': 's', 'quantity': 30}], 'materials': [{'item_id': 'cloth', 'quantity': 4}]})
+    t = cmd('task.revise', {'id': t['id'], 'version': t['version'], 'products': [{'item_id': 's', 'quantity': 50}],
+                           'materials': [{'item_id': 'cloth', 'quantity': 8}]})
+    assert balance(engine, 'cloth')['reserved'] == 4
+    assert balance(engine, 'cloth')['free'] == Decimal('92.5')
+    with pytest.raises(DomainError):
+        cmd('task.revise', {'id': t['id'], 'version': t['version'], 'products': [{'item_id': 's', 'quantity': 29}],
+                           'materials': [{'item_id': 'cloth', 'quantity': 8}]})
+    cmd('task.confirm', {'id': t['id'], 'version': t['version'], 'confirm_actual': True})
+    assert balance(engine)['frozen'] == 50
+
+
+def test_staff_rights_and_owner_guard(setup):
+    engine, user, cmd = setup
+    created = cmd('user.create', {'id': 'cutter', 'name': 'Закройщик', 'role': 'cutter', 'token_hash': hashlib.sha256(b'new-secret').hexdigest()})
+    with Session(engine) as s:
+        cutter = s.get(User, 'cutter');s.expunge(cutter)
+    with pytest.raises(DomainError):
+        cmd('stock.adjust', {'item_id': 's','location':'own','version':1,'physical':100}, actor=cutter)
+    with pytest.raises(DomainError):
+        cmd('user.update', {'id':'owner','version':1,'role':'viewer','active':True})
+    cmd('user.update', {'id':'cutter','version':1,'role':'cutter','active':False})
+    with pytest.raises(DomainError):
+        cmd('task.create', {'title':'test','location':'own','products':[{'item_id':'s','quantity':1}],'materials':[{'item_id':'cloth','quantity':1}]}, actor=cutter)
+
+
+def test_catalog_update_keeps_id_unit_and_history(setup):
+    engine, user, cmd = setup
+    cmd('item.update', {'id':'s','version':1,'name':'Новое название','model':'Модель','barcodes':['001']})
+    with Session(engine) as s:
+        assert s.get(Item,'s').unit=='piece'
+        assert s.get(Item,'s').source['version']==2
+        assert s.scalar(select(Entity).where(Entity.kind=='item_revision')) is not None
+    with pytest.raises(DomainError):
+        cmd('item.update', {'id':'m','version':1,'name':'M','model':'Модель','barcodes':['001']})

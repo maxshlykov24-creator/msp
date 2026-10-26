@@ -1,0 +1,61 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH||'playwright');
+const fs=require('fs');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:1440,height:1000}}), errors=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('http://127.0.0.1:18766/yuji/');
+  await page.getByLabel('Личный ключ доступа').fill(fs.readFileSync('.runtime/owner.key','utf8').trim());
+  await page.getByRole('button',{name:'Войти',exact:true}).click();
+  await page.getByRole('heading',{name:'Каталог',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Сотрудники',exact:true}).click();
+  await page.getByLabel('Имя',{exact:true}).fill('Проверка кладовщика');
+  await page.getByLabel('Логин',{exact:true}).fill('warehouse-e2e-'+Date.now());
+  await page.getByLabel('Роль',{exact:true}).selectOption('warehouse');
+  await page.getByRole('button',{name:'Создать личный доступ'}).click();
+  await page.getByLabel('Новый личный ключ').waitFor();
+  const staffKey=await page.getByLabel('Новый личный ключ').inputValue();
+  const fixture=JSON.parse(fs.readFileSync('.runtime/e2e-fixture.json','utf8'));
+  const token=fs.readFileSync('.runtime/owner.key','utf8').trim();
+  const response=await page.request.get('http://127.0.0.1:18766/yuji/api/catalog',{headers:{Authorization:'Bearer '+token}});
+  const catalog=await response.json(), item=catalog.items.find(i=>i.id===fixture.items[0].id);
+  if(!item.barcodes.length)throw new Error('Fixture has no barcode');
+  await page.getByRole('button',{name:'Пересчёт',exact:true}).click();
+  await page.getByLabel(item.name,{exact:true}).check();
+  const createdResponse=page.waitForResponse(r=>r.url().endsWith('/api/commands')&&r.request().postDataJSON()?.command==='count.create');
+  await page.getByRole('button',{name:'Начать · 1 позиций'}).click();
+  const created=await (await createdResponse).json();
+  await page.locator('.session-button').filter({hasText:created.id.slice(0,8)}).click();
+  const scanner=page.getByLabel('Сканируй штрихкод и нажми Enter');
+  for(let i=1;i<=2;i++){
+   await scanner.fill(item.barcodes[0]);await scanner.press('Enter');
+   await page.getByRole('cell',{name:String(i),exact:true}).waitFor();
+  }
+  await page.getByLabel('Количество проверено, нули в выбранной области подтверждаю').check();
+  await page.getByRole('button',{name:'Провести пересчёт',exact:true}).click();
+  await page.getByText('Пересчёт проведён',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Планирование',exact:true}).click();
+  await page.getByLabel('Продано, шт.',{exact:true}).fill('10');
+  await page.getByLabel('Доступный остаток, шт.',{exact:true}).fill('2');
+  await page.getByRole('button',{name:'Рассчитать потребность',exact:true}).click();
+  await page.getByText('Целевой запас: 20 шт. К производству: 18 шт.').waitFor();
+  await page.getByLabel('Цвет 1',{exact:true}).fill('Бордо');
+  const planning=page.getByRole('heading',{name:'Общий раскрой нескольких цветов'}).locator('..');
+  await planning.locator('tbody').first().locator('input[type=number]').nth(0).fill('1');
+  for(const [s,q] of [['S','75'],['M','0'],['L','0']])await page.getByLabel('Бордо '+s,{exact:true}).fill(q);
+  await page.getByRole('button',{name:'Подобрать общий раскрой',exact:true}).click();
+  await page.getByRole('heading',{name:'Бордо · 1 рул.',exact:true}).waitFor();
+  await page.screenshot({path:'.runtime/planning-desktop.png',fullPage:true});
+  await page.getByRole('button',{name:'Выйти',exact:true}).click();
+  await page.getByLabel('Личный ключ доступа').fill(staffKey);
+  await page.getByRole('button',{name:'Войти',exact:true}).click();
+  await page.getByRole('heading',{name:'Каталог',exact:true}).waitFor();
+  if(await page.getByRole('button',{name:'Сотрудники',exact:true}).count())throw new Error('Staff management leaked');
+  if(await page.getByRole('button',{name:'Цех',exact:true}).count())throw new Error('Finance leaked');
+  const denied=await page.request.get('http://127.0.0.1:18766/yuji/api/users',{headers:{Authorization:'Bearer '+staffKey}});
+  if(denied.status()!==403)throw new Error('Staff API not protected');
+  console.log(JSON.stringify({staff_create:true,scanner_two_physical_scans:true,count_posted:true,demand:18,three_size_layout:true,role_isolation:true,js_errors:errors}));
+  if(errors.length)process.exitCode=1;
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e.message);process.exitCode=1});

@@ -64,7 +64,10 @@ def layout_preview(model, need, ratios, max_rolls, confirmed=False):
 
 
 def demand(sales, period_days, horizon_days, eligible_stock, expected_remaining):
-    if period_days <= 0 or horizon_days <= 0 or min(sales, eligible_stock, expected_remaining) < 0:
+    if any(type(v) is not int or v < 0 or v > 1000000000 for v in
+           (sales, period_days, horizon_days, eligible_stock, expected_remaining)):
+        raise ValueError('Периоды и количества должны быть целыми неотрицательными числами')
+    if period_days <= 0 or horizon_days <= 0:
         raise ValueError('Проверь период и количества')
     target = ceil(Decimal(str(sales)) * Decimal(str(horizon_days)) / Decimal(str(period_days)))
     return {'target': target, 'need': max(0, target - eligible_stock - expected_remaining),
@@ -77,10 +80,25 @@ def grouped_layout_preview(model, needs_by_color, ratios, available_by_color):
     Each colour has separate whole-roll availability. Patterns are shared only inside
     a model; the caller must still confirm fabric/technology compatibility.
     """
+    if model not in NORMS:
+        raise ValueError('Нет нормы модели')
     if not needs_by_color or set(needs_by_color) != set(available_by_color):
         raise ValueError('Потребность и доступная ткань должны включать одинаковые цвета')
     if len(needs_by_color) > 12 or not 1 <= len(ratios) <= 8:
         raise ValueError('Предварительный поиск: до 12 цветов и 8 раскладок')
+    sizes = set(next(iter(needs_by_color.values())))
+    if not sizes or len(sizes) > 12:
+        raise ValueError('Нужно от 1 до 12 размеров')
+    for color, need in needs_by_color.items():
+        if set(need) != sizes or any(type(v) is not int or v < 0 for v in need.values()):
+            raise ValueError('Нужны одинаковые размеры и целая неотрицательная потребность')
+        rolls = available_by_color[color]
+        if type(rolls) is not int or not 0 <= rolls <= 30:
+            raise ValueError('Доступность: от 0 до 30 целых рулонов')
+    for ratio in ratios:
+        if set(ratio) != sizes:
+            raise ValueError('Размеры раскладки должны совпадать с потребностью')
+        allocate(NORMS[model], ratio)
     from itertools import combinations
     colors = sorted(needs_by_color)
     checked = 0
