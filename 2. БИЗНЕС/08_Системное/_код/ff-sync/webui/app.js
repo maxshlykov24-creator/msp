@@ -1664,7 +1664,7 @@ function tintMp(viewId, navId) {
 
 // колонок в таблице «Заказов»: считаем один раз, чтобы пустая строка и строка
 // поставки не разъезжались с шапкой при добавлении колонки
-let ASM_COLS = 12;
+let ASM_COLS = 11;
 
 function asmQuery(group) {
   const params = new URLSearchParams();
@@ -1726,7 +1726,7 @@ async function loadAsm() {
   if (mine !== asmLoad) return;
   state.asm = res.rows;
   const hasTrack = res.rows.some((r) => r.track);
-  ASM_COLS = hasTrack ? 12 : 11;
+  ASM_COLS = hasTrack ? 11 : 10;
   $("aTbl").classList.toggle("no-track", !hasTrack);
   renderSyncHealth(res.sync || []);
   state.asmSupplies = res.supplies || [];
@@ -1754,20 +1754,39 @@ function kizCell(r) {
 }
 
 // accepted: WB сохраняет UTC без суффикса, Ozon — московское время.
-function asmAge(raw, marketplace, now = Date.now()) {
+function asmTimestamp(raw, marketplace) {
   let stamp = String(raw || "").trim().replace(" ", "T");
-  if (!stamp) return "";
+  if (!stamp) return NaN;
   if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(stamp)) stamp += marketplace === "wb" ? "Z" : "+03:00";
-  const time = Date.parse(stamp);
+  return Date.parse(stamp);
+}
+
+function asmDate(raw, marketplace) {
+  const time = asmTimestamp(raw, marketplace);
+  if (!Number.isFinite(time)) return "";
+  const d = new Date(time + 3 * 60 * 60 * 1000).toISOString();
+  return `от ${d.slice(8,10)}.${d.slice(5,7)}.${d.slice(0,4)} ${d.slice(11,16)}`;
+}
+
+function asmAge(raw, marketplace, now = Date.now()) {
+  const time = asmTimestamp(raw, marketplace);
   if (!Number.isFinite(time) || time > now) return "";
   const minutes = Math.floor((now - time) / 60000);
   const hours = Math.floor(minutes / 60);
   return (hours ? `${hours} ч ` : "") + `${minutes % 60} мин назад`;
 }
 
+function asmAgeLate(raw, marketplace, deadline, group, now = Date.now()) {
+  if (!["new", "assembling", "ready"].includes(group)) return false;
+  const due = asmTimestamp(deadline, marketplace);
+  const accepted = asmTimestamp(raw, marketplace);
+  return Number.isFinite(due) ? now >= due : Number.isFinite(accepted) && now - accepted >= 24 * 60 * 60 * 1000;
+}
+
 function refreshAsmAges() {
   document.querySelectorAll("#aTbl [data-asm-age]").forEach((el) => {
     el.textContent = asmAge(el.dataset.asmAge, el.dataset.ageMp);
+    el.classList.toggle("is-late", asmAgeLate(el.dataset.asmAge, el.dataset.ageMp, el.dataset.ageDeadline, el.dataset.ageGroup));
   });
 }
 setInterval(refreshAsmAges, 60000);
@@ -1781,8 +1800,7 @@ function asmRowHtml(r) {
   return items.map((item, index) => `<tr data-posting="${r.id}" class="${items.length > 1 ? "posting-item" : ""}">
     ${index ? "" : `<td ${span} class="pick"><input type="checkbox" data-asm="${r.id}"></td>
     <td ${span} class="client">${esc(r.client)}</td>
-    <td ${span} class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span><small data-asm-age="${esc(r.accepted || "")}" data-age-mp="${esc(r.marketplace)}">${asmAge(r.accepted, r.marketplace)}</small>${items.length > 1 ? `<small>${items.length} артикула · ${num(r.qty, 0)} шт всего</small>` : ""}</td>
-    <td ${span} class="when">${esc(r.accepted || "—")}</td>`}
+    <td ${span} class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span><small>${asmDate(r.accepted, r.marketplace)}</small><small class="order-age${asmAgeLate(r.accepted, r.marketplace, r.deadline, r.group) ? " is-late" : ""}" data-asm-age="${esc(r.accepted || "")}" data-age-mp="${esc(r.marketplace)}" data-age-deadline="${esc(r.deadline || "")}" data-age-group="${esc(r.group || "")}">${asmAge(r.accepted, r.marketplace)}</small>${items.length > 1 ? `<small>${items.length} артикула · ${num(r.qty, 0)} шт всего</small>` : ""}</td>`}
     <td class="ph">${item.image ? `<img src="${esc(item.image)}" alt="" loading="lazy" title="увеличить">` : `<span class="noph"></span>`}</td>
     <td class="artq"><b>${num(item.qty, 0)} шт</b> · ${item.article ? `<button type="button" class="artlink" data-art="${esc(item.article)}" title="Найти этот артикул">${esc(item.article)}</button>` : "—"}</td>
     <td class="nm" title="${esc(item.name)}">${esc(item.name || "—")}</td>
@@ -1821,8 +1839,7 @@ function asmSupplyHtml(sup, rows) {
   return `<tr class="sup-head" data-supply="${esc(sup.ext_id)}" data-sid="${sup.id}" title="Открыть поставку">
     <td class="pick"><input type="checkbox" data-supbox="${esc(sup.ext_id)}" title="Выбрать все задания поставки"></td>
     <td class="client">${esc(sup.client)}</td>
-    <td class="ext">${esc(sup.ext_id)}<br><small>${num(sup.orders, 0)} зак.</small><span class="badge mp">WB</span><span class="badge mp">FBS</span></td>
-    <td class="when">${esc(sup.created || "—")}</td>
+    <td class="ext">${esc(sup.ext_id)}<small>${asmDate(sup.created)}</small><small>${num(sup.orders, 0)} зак.</small><span class="badge mp">WB</span><span class="badge mp">FBS</span></td>
     <td class="ph"></td>
     <td class="artq"><b>${num(qty, 0)} шт</b></td>
     <td class="nm">Открыть поставку · ${num(sup.boxes, 0)} кор.</td>

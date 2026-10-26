@@ -1789,6 +1789,12 @@ def refresh_contact_leads(data: dict, amo: lib.Amo, contact_id: str) -> None:
     data["leads"] = list(leads.values())
 
 
+def has_active_reserve(order: dict) -> bool:
+    """Do not start a historical import that can release live warehouse stock."""
+    return any(Decimal(str(line.get("reserve") or 0)) > 0
+               for line in (order.get("positions") or {}).get("rows") or [])
+
+
 def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict, roster: dict) -> bool:
     oid = planned["order_id"]
     if journal["rows"].get(oid, {}).get("status") in TERMINAL:
@@ -1802,6 +1808,8 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
         return False
     if not moscow_dt(order.get("moment")) or state_id(order) not in STATUS_IDS.values():
         raise RowDeferred("ORDER_LEFT_ALLOWED_STATUSES")
+    if has_active_reserve(order):
+        raise RowDeferred("ACTIVE_RESERVE_REQUIRES_REVIEW")
     matches = exact_leads(amo, oid)
     if matches:
         if len(matches) != 1:
@@ -1842,6 +1850,8 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
     keys = ("counterparty_id", "buyer", "phone", "email", "net_kopecks", "total_kopecks", "payment_kopecks", "payment_moment", "return_state", "return_kopecks", "close_moment", "composition")
     if again["category"] != "CREATE" or any(row.get(k) != again.get(k) for k in keys):
         raise RowDeferred("SOURCE_CHANGED_BEFORE_DEAL_CREATION")
+    if has_active_reserve(fresh):
+        raise RowDeferred("ACTIVE_RESERVE_REQUIRES_REVIEW")
     if ms_link(fresh) or exact_leads(amo, oid):
         raise RowDeferred("LINK_OR_LEAD_APPEARED_BEFORE_CREATION")
     data.setdefault("references", {})
@@ -1998,9 +2008,12 @@ def prepare_night(ms: lib.MS, amo: lib.Amo, data: dict, journal: dict, apply_rec
         raise Stop("APPROVED_ORDER_SCOPE_MISSING")
     # Resume only the approved UUID set. New live orders stay visible in the
     # audit but cannot silently join an old migration queue.
+    source_orders = {str(order["id"]): order for order in data["orders"]}
     for row in plan["rows"]:
         if row["order_id"] not in old_rows and row["category"] == "CREATE":
             row.update(category="DEFERRED", reason="OUTSIDE_APPROVED_ORDER_SCOPE")
+        if row["category"] == "CREATE" and has_active_reserve(source_orders.get(row["order_id"], {})):
+            row.update(category="DEFERRED", reason="ACTIVE_RESERVE_REQUIRES_REVIEW")
         entry = journal["rows"].get(row["order_id"], {})
         entry.setdefault("source_row", old_rows.get(row["order_id"], row))
         if entry.get("status") in {"DEFERRED", "QUARANTINED"}:
@@ -2362,6 +2375,20 @@ def self_test() -> None:
                     checked = prepare_night(object(), object(), {"orders": []}, journal, False)
                 self.assertEqual(checked["rows"][0]["category"], "CREATE")
                 self.assertEqual(checked["rows"][1]["reason"], "OUTSIDE_APPROVED_ORDER_SCOPE")
+
+        def test_active_reserve_defers_before_any_contact_or_lead_write(self):
+            planned = {"order_id": "o"}
+            row = {"order_id": "o", "category": "CREATE"}
+            order = {"moment": "2020-01-01 12:00:00", "state": {"meta": {"href": lib.MS_BASE + "/entity/customerorder/metadata/states/" + next(iter(STATUS_IDS.values()))}},
+                     "positions": {"rows": [{"reserve": 1, "quantity": 1}]}}
+            self.assertTrue(has_active_reserve(order))
+            self.assertFalse(has_active_reserve({"positions": {"rows": [{"reserve": 0}]}}))
+            with patch.object(module, "current_row", return_value=(order, row)), \
+                 patch.object(module, "exact_leads") as search, patch.object(module, "create_entity") as create:
+                with self.assertRaisesRegex(RowDeferred, "ACTIVE_RESERVE_REQUIRES_REVIEW"):
+                    apply_one({}, object(), object(), {"rows": {}}, planned, {})
+                search.assert_not_called()
+                create.assert_not_called()
 
         def test_dashboard_import_is_not_messenger_inquiry(self):
             import collect_dashboard as dashboard

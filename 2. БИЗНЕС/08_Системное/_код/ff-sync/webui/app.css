@@ -414,6 +414,9 @@ table.asm-tbl td.when.late{color:var(--red);font-weight:600}
 table.asm-tbl td.artq{white-space:nowrap}
 table.asm-tbl td.artq b{font-weight:650}
 table.asm-tbl td.ext small{display:block;margin-top:5px;color:var(--mute);white-space:nowrap}
+table.asm-tbl td.ext small.order-age{display:table;padding:2px 5px;border-radius:3px;font-size:10px;font-weight:600;line-height:1.3;color:var(--green);background:rgba(47,158,107,.12)}
+table.asm-tbl td.ext small.order-age.is-late{color:var(--red);background:rgba(196,91,85,.13)}
+table.asm-tbl td.ext small.order-age:empty{display:none}
 table.asm-tbl tr.posting-item td{border-bottom:1px solid var(--line)}
 #kizProductWrap{display:block;margin-bottom:12px}
 #kizProductWrap[hidden]{display:none}
