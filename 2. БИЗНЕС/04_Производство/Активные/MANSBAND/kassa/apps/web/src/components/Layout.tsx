@@ -217,10 +217,10 @@ export function Layout({
   ];
 
   return (
-    <div className="min-h-screen flex flex-col w-full overflow-x-hidden">
+    <div className="h-full min-h-0 flex flex-col w-full overflow-hidden">
       <OfflineBanner />
       <div className="flex flex-1 min-h-0 w-full">
-      <aside className="hidden md:flex shrink-0 sticky top-0 h-dvh p-3 z-20">
+      <aside className="hidden md:flex shrink-0 h-full min-h-0 p-3 z-20">
         <nav
           className={`kassa-rail ${railOpen ? "is-open" : ""}`}
           aria-label="Разделы кассы"
@@ -264,8 +264,8 @@ export function Layout({
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0 w-full overflow-x-hidden">
-        <header className="kassa-chrome sticky top-0 z-30 border-b pt-[env(safe-area-inset-top)]">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 w-full overflow-hidden">
+        <header className="kassa-chrome shrink-0 z-30 border-b pt-[env(safe-area-inset-top)]">
           {/* Мобильная шапка: лого по центру, магазин + пользователь — отдельной строкой */}
           <div className="md:hidden px-4 pb-3">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center py-2.5 gap-2">
@@ -317,11 +317,7 @@ export function Layout({
             />
           </div>
         </header>
-        <main
-          className={`flex-1 px-4 md:px-8 py-6 overflow-x-hidden max-w-full ${
-            showMobileNav ? "pb-24 md:pb-6" : "pb-6"
-          }`}
-        >
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 max-w-full">
           <div key={route} className="page-in">
             {children}
           </div>
@@ -329,7 +325,7 @@ export function Layout({
         {/* Mobile bottom nav — скрыт на «Новой заявке», чтобы не перекрывать sticky-бар */}
         {showMobileNav && (
           <nav
-            className={`kassa-chrome md:hidden sticky bottom-0 z-20 border-t grid pb-[env(safe-area-inset-bottom)] ${
+            className={`kassa-chrome md:hidden shrink-0 z-20 border-t grid pb-[env(safe-area-inset-bottom)] ${
               mobileNav.length === 5 ? "grid-cols-5" : "grid-cols-4"
             }`}
           >
@@ -401,7 +397,7 @@ function Selector({
       size="sm"
       triggerClassName={compact ? "text-[12px]" : "text-[13px]"}
       fitLabel
-      className={compact ? "flex-1 min-w-[10.75rem]" : "w-max shrink-0"}
+      className={compact ? "flex-1 min-w-0" : "w-max shrink-0"}
     />
   );
 }

@@ -254,8 +254,8 @@ export function Dashboard() {
         парой пиджак плюс брюки, не тремя отдельными позициями.
       </Hint>
 
-      <div className="card filter-bar p-4 mb-5 flex flex-wrap items-center gap-2.5">
-        <div className="inline-flex border border-ink-700 rounded-lg overflow-hidden">
+      <div className="card filter-bar p-3 sm:p-4 mb-5 flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap max-w-full border border-ink-700 rounded-lg overflow-hidden">
           {([
             ["day", "День"],
             ["week", "Неделя"],
@@ -265,7 +265,7 @@ export function Dashboard() {
             <button
               key={value}
               onClick={() => applyPreset(value)}
-              className={`px-4 py-2 text-sm ${preset === value ? "bg-gold text-ink-950 font-semibold" : "text-mute hover:text-white"}`}
+              className={`px-3 sm:px-4 py-2 text-sm ${preset === value ? "bg-gold text-ink-950 font-semibold" : "text-mute hover:text-white"}`}
             >
               {label}
             </button>
@@ -273,7 +273,7 @@ export function Dashboard() {
         </div>
         <input
           type="date"
-          className="input py-2 text-sm w-auto"
+          className="input py-2 text-sm min-w-0 flex-1 basis-[9.5rem]"
           value={range.from}
           onChange={(e) => {
             setPreset("custom");
@@ -283,7 +283,7 @@ export function Dashboard() {
         />
         <input
           type="date"
-          className="input py-2 text-sm w-auto"
+          className="input py-2 text-sm min-w-0 flex-1 basis-[9.5rem]"
           value={range.to}
           min={range.from}
           onChange={(e) => {

@@ -286,7 +286,7 @@ export function DealsBoard({
             {dealsLoading ? "Загрузка заявок…" : `${filtered.length} из ${deals.length}`}
           </p>
         </div>
-        <Button onClick={onNew}>+ Новая заявка</Button>
+        <Button className="w-full sm:w-auto" onClick={onNew}>+ Новая заявка</Button>
       </div>
       <Hint>
         Все операции магазина. Фильтры по виду и этапу. Во вкладке «Отложка» — продажи, компании
@@ -413,7 +413,49 @@ export function DealsBoard({
         )}
       </div>
 
-      <div className="card p-0 overflow-hidden">
+      <div className="md:hidden space-y-2">
+        {visible.map((d) => (
+          <button
+            key={d.id}
+            type="button"
+            onClick={() => openDeal(d)}
+            className="card w-full text-left p-3"
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-[13px] text-mute">#{d.number}</span>
+              <span className="text-[12px] text-mute shrink-0">
+                {shortDate(d.createdAt)} {timeOf(d.createdAt)}
+              </span>
+            </div>
+            <div className="mt-1 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-white font-medium truncate">{d.clientName}</div>
+                <div className="text-[12px] text-mute truncate">{d.clientPhone || "—"}</div>
+              </div>
+              <div className="text-white font-semibold tabular-nums shrink-0">
+                {d.total ? money(d.total) : "—"}
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <Badge tone="gray">{FUNNEL_LABEL[d.funnel]}</Badge>
+              <Badge tone="blue">{KIND_LABEL[d.kind]}</Badge>
+              <StageBadge stage={d.stage} />
+            </div>
+            <div className="mt-1.5 text-[12px] text-mute truncate">
+              {d.store.replace(/^На\s+/i, "")}
+              {d.consultant ? ` · ${d.consultant}` : ""}
+            </div>
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <div className="card px-4 py-10 text-center text-mute">
+            <Filter size={20} className="mx-auto mb-2 opacity-50" />
+            {dealsLoading ? "Загрузка заявок…" : "Ничего не найдено"}
+          </div>
+        )}
+      </div>
+
+      <div className="card p-0 overflow-hidden hidden md:block">
         <div
           className="overflow-x-auto overscroll-x-contain deals-table-scroll"
           style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y" }}
@@ -502,14 +544,14 @@ export function DealsBoard({
             </tbody>
           </table>
         </div>
-        {hasMore && (
-          <div className="p-3 border-t border-ink-700 text-center">
-            <Button variant="subtle" onClick={() => setVisibleCount((n) => n + 60)}>
-              Показать ещё ({filtered.length - visibleCount})
-            </Button>
-          </div>
-        )}
       </div>
+      {hasMore && (
+        <div className="mt-3 text-center">
+          <Button variant="subtle" onClick={() => setVisibleCount((n) => n + 60)}>
+            Показать ещё ({filtered.length - visibleCount})
+          </Button>
+        </div>
+      )}
 
       <Modal
         open={!!active}
