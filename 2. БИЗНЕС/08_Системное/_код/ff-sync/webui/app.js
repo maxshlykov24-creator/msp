@@ -2285,6 +2285,7 @@ $("aDone").onclick = asmDone;
 
 let kizState = { ids: [], index: 0, id: 0, need: 0, codes: [], products: [], assignments: {} };
 
+let kizProductSelection = "";
 function kizRender() {
   const have = kizState.codes.length;
   const need = kizState.need;
@@ -2301,7 +2302,7 @@ function kizRender() {
     : `<div class="empty">Пока ничего не просканировано.</div>`;
   const more = kizState.ids.length > 1 && kizState.index < kizState.ids.length - 1;
   $("kizSend").textContent = more ? "Отправить и дальше" : "Отправить на площадку";
-  $("kizSend").disabled = !have || kizState.canSubmit === false;
+  $("kizSend").disabled = (!have && !$("kizInput").value.trim()) || kizState.canSubmit === false;
   $("kizInput").disabled = kizState.canSubmit === false;
   const products = (kizState.products || []).filter((p) => p.marked);
   $("kizProductWrap").hidden = products.length < 2;
@@ -2311,6 +2312,7 @@ function kizRender() {
     return `<option value="${esc(p.product_id)}">${esc(p.article || p.name)} · ${count} из ${p.quantity}</option>`;
   }).join("");
   $("kizProduct").value = selected;
+  kizProductSelection = selected;
 }
 
 // ЙЦУКЕН → та клавиша, которую сканер жал на латинской раскладке.
@@ -2562,7 +2564,14 @@ $("kizRemoveRemote").onclick = async () => {
   finally { kizBusy = false; $("kizRemoveRemote").disabled = false; }
 };
 $("kizClear").onclick = () => { if (kizBusy) return; kizKeyText = ""; kizKeyTraceUsable = true; kizResetScan(); $("kizInput").value = ""; kizState.codes = []; kizState.assignments = {}; say($("kizMsg"), ""); kizRender(); $("kizInput").focus(); };
-$("kizProduct").onchange = () => $("kizInput").focus();
+$("kizProduct").onchange = () => {
+  const next = $("kizProduct").value;
+  $("kizProduct").value = kizProductSelection;
+  if ($("kizInput").value && !kizFlushScan()) { $("kizInput").focus(); return; }
+  $("kizProduct").value = next;
+  kizProductSelection = next;
+  $("kizInput").focus();
+};
 
 $("kizInput").onkeydown = (e) => {
   kizTraceEvent(1, e);
@@ -2591,10 +2600,15 @@ $("kizInput").addEventListener("keyup", (e) => {
   if (e.key !== "Alt") return;
   const digits = kizAltDigits;
   kizAltDigits = null;
-  if (digits !== "0029" || kizBusy) return;
+  if (!digits || kizBusy) return;
   e.preventDefault();
+  const value = Number(digits);
+  if (value !== 29 && (value < 32 || value > 126)) {
+    say($("kizMsg"), "Неизвестная управляющая последовательность сканера. Код не изменён; проверь ввод.", "bad");
+    return;
+  }
   const input = $("kizInput");
-  input.setRangeText("\u001d", input.selectionStart, input.selectionEnd, "end");
+  input.setRangeText(String.fromCharCode(value), input.selectionStart, input.selectionEnd, "end");
   kizWaitScan();
 });
 $("kizInput").oninput = (e) => {

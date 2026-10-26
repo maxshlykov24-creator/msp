@@ -1,0 +1,6 @@
+MS Product web kit, 2026-10-26
+Source mark: ../logo-ms-transparent.png (canonical brand folder)
+Wordmark: Helvetica Neue Medium, converted to outlines. No runtime font dependency.
+Palette: mark reconstructed from original purple-blue mark; surfaces from site-ms/public/index.html.
+Background created with built-in image_gen. Prompt: restrained abstract near-black #07060b paper, soft violet #9d6bff and blue light, subtle magenta, fine grain, architectural shadows, no text or symbols.
+All geometry reconstructed as SVG, not raster embedded in a vector container. Background covers contain an embedded raster background.
