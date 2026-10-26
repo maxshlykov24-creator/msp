@@ -608,9 +608,9 @@ html.theme-light nav {
 }
 
 .kassa-chrome {
-  background: var(--glass-top);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  background: rgb(var(--ink-950));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border-color: var(--line);
   transition: background-color 0.35s var(--ease), border-color 0.35s var(--ease);
 }
