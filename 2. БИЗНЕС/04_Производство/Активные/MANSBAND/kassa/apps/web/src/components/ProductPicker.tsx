@@ -48,6 +48,31 @@ export function lineDiscount(it: CartItem): number {
   return Math.max(0, it.price * it.qty - lineTotal(it));
 }
 
+function DiscountInput({
+  unit,
+  value,
+  widthClass,
+  onChange,
+}: {
+  unit: "%" | "₽";
+  value: number | undefined;
+  widthClass: string;
+  onChange: (value: number | undefined) => void;
+}) {
+  return (
+    <label className={`relative inline-flex items-center ${widthClass}`}>
+      <input
+        className="input py-1.5 text-[13px] w-full pr-7"
+        placeholder="скидка"
+        inputMode="decimal"
+        value={value ?? ""}
+        onChange={(e) => onChange(Number(e.target.value.replace(",", ".")) || undefined)}
+      />
+      <span className="pointer-events-none absolute right-2.5 text-[12px] font-semibold text-mute">{unit}</span>
+    </label>
+  );
+}
+
 /** Полная сумма позиций без скидок (до %). */
 export function cartGross(items: CartItem[]): number {
   return items.reduce((s, it) => {
@@ -819,21 +844,16 @@ export function ProductPicker({
                               suitTitleText
                             )}
                           </div>
-                          <div className="text-[12px] text-mute flex flex-wrap gap-x-2 mt-0.5">
-                            <span>{money((first?.price ?? 0) as number)} / шт</span>
-                            {meta && meta.matrixUnitPriceRub == null && (
-                              <span className="text-amber-300/90">
-                                цена костюма не определена — цены частей из МойСклад
-                              </span>
-                            )}
-                            {groupIsGift && <span>подарок (−100%)</span>}
-                            {!groupIsGift && (!!groupDiscountPct || !!groupDiscountRub) && (
-                              <span className="text-amber-200">
-                                скидка −{money(groupItems.reduce((s, it) => s + lineDiscount(it), 0))}
-                                {groupDiscountPct ? ` (${groupDiscountPct}%)` : ""}
-                              </span>
-                            )}
-                          </div>
+                          {((meta != null && meta.matrixUnitPriceRub == null) || groupIsGift) && (
+                            <div className="text-[12px] text-mute flex flex-wrap gap-x-2 mt-0.5">
+                              {meta != null && meta.matrixUnitPriceRub == null && (
+                                <span className="text-amber-300/90">
+                                  цена костюма не определена — цены частей из МойСклад
+                                </span>
+                              )}
+                              {groupIsGift && <span>подарок (−100%)</span>}
+                            </div>
+                          )}
                         </div>
                       </button>
                       <button
@@ -872,27 +892,17 @@ export function ProductPicker({
                     )}
                     {!readOnly && (
                       <div className="flex flex-wrap gap-2 mt-2 items-center">
-                        <input
-                          className="input py-1.5 text-[13px] w-24"
-                          placeholder="скидка %"
-                          value={groupDiscountPct ?? ""}
-                          onChange={(e) =>
-                            updateGroup(groupId, {
-                              discountPct: Number(e.target.value) || undefined,
-                              isGift: false,
-                            })
-                          }
+                        <DiscountInput
+                          unit="%"
+                          widthClass="w-24"
+                          value={groupDiscountPct}
+                          onChange={(discountPct) => updateGroup(groupId, { discountPct, isGift: false })}
                         />
-                        <input
-                          className="input py-1.5 text-[13px] w-28"
-                          placeholder="скидка ₽"
-                          value={groupDiscountRub ?? ""}
-                          onChange={(e) =>
-                            updateGroup(groupId, {
-                              discountRub: Number(e.target.value) || undefined,
-                              isGift: false,
-                            })
-                          }
+                        <DiscountInput
+                          unit="₽"
+                          widthClass="w-28"
+                          value={groupDiscountRub}
+                          onChange={(discountRub) => updateGroup(groupId, { discountRub, isGift: false })}
                         />
                         <button
                           onClick={() => updateGroup(groupId, { isGift: !groupIsGift })}
@@ -918,32 +928,27 @@ export function ProductPicker({
                       title="Остатки по складам"
                     >
                       <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{it.name}</div>
-                      <div className="text-[12px] text-mute flex flex-wrap gap-x-2 mt-0.5">
-                        {!it.noPrice && <span>{money(it.price)} / шт</span>}
-                        {avail !== undefined && (
-                          <span
-                            className={
-                              avail <= 0
-                                ? "text-amber-300/90"
-                                : avail < it.qty
-                                  ? "text-amber-200"
-                                  : "text-emerald-300/90"
-                            }
-                          >
-                            доступно {fmtQty(avail)}
-                          </span>
-                        )}
-                        {it.isGift && <span>подарок (−100%)</span>}
-                        {!it.isGift && (!!it.discountPct || !!it.discountRub) && (
-                          <span className="text-amber-200">
-                            скидка −{money(lineDiscount(it))}
-                            {it.discountPct ? ` (${it.discountPct}%)` : ""}
-                          </span>
-                        )}
-                        {it.suitGroupId && it.suitSplit && (
-                          <span className="text-mute-soft">часть разделённого костюма</span>
-                        )}
-                      </div>
+                      {(avail !== undefined || it.isGift || (it.suitGroupId && it.suitSplit)) && (
+                        <div className="text-[12px] text-mute flex flex-wrap gap-x-2 mt-0.5">
+                          {avail !== undefined && (
+                            <span
+                              className={
+                                avail <= 0
+                                  ? "text-amber-300/90"
+                                  : avail < it.qty
+                                    ? "text-amber-200"
+                                    : "text-emerald-300/90"
+                              }
+                            >
+                              доступно {fmtQty(avail)}
+                            </span>
+                          )}
+                          {it.isGift && <span>подарок (−100%)</span>}
+                          {it.suitGroupId && it.suitSplit && (
+                            <span className="text-mute-soft">часть разделённого костюма</span>
+                          )}
+                        </div>
+                      )}
                     </button>
                     {!readOnly && it.suitGroupId && it.suitSplit && (
                       <button
@@ -1003,27 +1008,17 @@ export function ProductPicker({
                   </div>
                   {!readOnly && !it.noPrice && (
                     <div className="flex flex-wrap gap-2 mt-2 items-center">
-                      <input
-                        className="input py-1.5 text-[13px] w-24"
-                        placeholder="скидка %"
-                        value={it.discountPct ?? ""}
-                        onChange={(e) =>
-                          update(itemKey(it), {
-                            discountPct: Number(e.target.value) || undefined,
-                            isGift: false,
-                          })
-                        }
+                      <DiscountInput
+                        unit="%"
+                        widthClass="w-24"
+                        value={it.discountPct}
+                        onChange={(discountPct) => update(itemKey(it), { discountPct, isGift: false })}
                       />
-                      <input
-                        className="input py-1.5 text-[13px] w-28"
-                        placeholder="скидка ₽"
-                        value={it.discountRub ?? ""}
-                        onChange={(e) =>
-                          update(itemKey(it), {
-                            discountRub: Number(e.target.value) || undefined,
-                            isGift: false,
-                          })
-                        }
+                      <DiscountInput
+                        unit="₽"
+                        widthClass="w-28"
+                        value={it.discountRub}
+                        onChange={(discountRub) => update(itemKey(it), { discountRub, isGift: false })}
                       />
                       <button
                         onClick={() => update(itemKey(it), { isGift: !it.isGift })}
