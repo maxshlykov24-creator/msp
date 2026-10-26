@@ -23,14 +23,15 @@ REMOTE_DIR="${REMOTE_DIR:-/opt/mansband-kassa}"
 VPS_SSH_INTERFACE="${VPS_SSH_INTERFACE:-}"
 
 ssh_cmd=(ssh -p "${VPS_PORT}" -o ConnectTimeout=15)
+rsync_ssh="ssh -p ${VPS_PORT} -o ConnectTimeout=15"
 if [ -n "${VPS_SSH_INTERFACE}" ]; then
   if [[ ! "${VPS_SSH_INTERFACE}" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
     echo "Некорректный VPS_SSH_INTERFACE" >&2
     exit 1
   fi
   ssh_cmd+=(-o "ProxyCommand=nc -b ${VPS_SSH_INTERFACE} %h %p")
+  rsync_ssh+=" -o 'ProxyCommand=nc -b ${VPS_SSH_INTERFACE} %h %p'"
 fi
-printf -v rsync_ssh '%q ' "${ssh_cmd[@]}"
 
 echo "== rsync кода на ${VPS_USER}@${VPS_HOST}:${REMOTE_DIR} =="
 rsync -az --delete \
