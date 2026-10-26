@@ -8,6 +8,7 @@ const querySchema = z.object({
   role: z.string().optional(),
   status: z.string().optional(),
   store: z.string().optional(),
+  dealNumber: z.coerce.number().int().positive().optional(),
 });
 
 export default async function tasksRoutes(app: FastifyInstance) {

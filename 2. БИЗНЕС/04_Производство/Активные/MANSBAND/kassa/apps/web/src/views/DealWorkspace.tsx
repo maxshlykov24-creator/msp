@@ -9,7 +9,6 @@ import { Button, Card, Field, Modal, StageBadge } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
 import { PaymentBlock } from "../components/PaymentBlock";
 import { DealActionsBar } from "../components/DealActionsBar";
-import { CreateTaskForm } from "../components/CreateTaskForm";
 import { ConvertKindForm, type ConvertKindPayload } from "../components/ConvertKindForm";
 import { RefundForm } from "./forms/RefundForm";
 import { ExchangeForm } from "./forms/ExchangeForm";
@@ -177,7 +176,6 @@ export function DealWorkspace({
   const [stageReason, setStageReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
-  const [taskOpen, setTaskOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
   const [returnMode, setReturnMode] = useState<null | "refund" | "exchange">(null);
@@ -529,7 +527,17 @@ export function DealWorkspace({
           </Card>
         )}
         <DealActionsBar
-          onTask={() => setTaskOpen(true)}
+          tasks={{
+            dealNumber: live.number,
+            store: live.store || "На Бауманской",
+            onCreated: (task) => {
+              addDealComment(
+                live.id,
+                `Задача: ${task.title} → ${task.assigneeName || task.assigneeRole}`,
+                activeConsultant
+              );
+            },
+          }}
           onConvert={canConvert ? () => setConvertOpen(true) : undefined}
           onHistory={() => setHistoryOpen(true)}
           historyCount={history.length}
@@ -785,34 +793,6 @@ export function DealWorkspace({
           </div>
         </div>
       </div>
-
-      <Modal
-        open={taskOpen}
-        onClose={() => setTaskOpen(false)}
-        title={
-          <>
-            Создать задачу
-            <span className="ml-2 text-[13px] font-normal text-mute">№{live.number}</span>
-          </>
-        }
-      >
-        <CreateTaskForm
-          defaultStore={live.store || "На Бауманской"}
-          dealNumber={live.number}
-          lockDealNumber
-          includeMovement={false}
-          simple
-          compact
-          onCreated={(task) => {
-            addDealComment(
-              live.id,
-              `Задача: ${task.title} → ${task.assigneeName || task.assigneeRole}`,
-              activeConsultant
-            );
-            setTaskOpen(false);
-          }}
-        />
-      </Modal>
 
       <Modal
         open={convertOpen}

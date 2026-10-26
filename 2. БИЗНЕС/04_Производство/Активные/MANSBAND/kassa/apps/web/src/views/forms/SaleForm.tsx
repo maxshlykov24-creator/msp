@@ -3,10 +3,9 @@ import { defaultHoldUntil, isApproxDateStage } from "@kassa/shared";
 import { useEffect, useRef, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
-import { Card, Field, Modal, StageBadge } from "../../components/ui";
+import { Card, Field, StageBadge } from "../../components/ui";
 import { ProductPicker, cartTotal, cartItemsDiscount } from "../../components/ProductPicker";
 import { DealActionsBar } from "../../components/DealActionsBar";
-import { CreateTaskForm } from "../../components/CreateTaskForm";
 import {
   ClientFields,
   CommentField,
@@ -112,7 +111,6 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
 
   // Этап для ручного сохранения
   const [stage, setStage] = useState("Товар в магазине");
-  const [taskOpen, setTaskOpen] = useState(false);
 
   const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
   const [movementCreated, setMovementCreated] = useState(false);
@@ -211,7 +209,13 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       storeAddress={STORE_ADDRESS[activeStore]}
       stageBadge={<StageBadge stage={stage} options={SAVE_STAGES} onChange={setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0" />}
       headerActions={
-        <DealActionsBar onTask={() => setTaskOpen(true)} />
+        <DealActionsBar
+          tasks={{
+            dealNumber: persistedNumber ?? meta.number,
+            store: activeStore,
+            load: persistedNumber != null,
+          }}
+        />
       }
       summary={<SummaryBar total={total} paid={paid} />}
       missingRequired={missingRequired}
@@ -234,25 +238,6 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
         />
       }
     >
-      <Modal
-        open={taskOpen}
-        onClose={() => setTaskOpen(false)}
-        title={
-          <>
-            Создать задачу
-            <span className="ml-2 text-[13px] font-normal text-mute">№{meta.number}</span>
-          </>
-        }
-      >
-        <CreateTaskForm
-          defaultStore={activeStore}
-          dealNumber={meta.number}
-          lockDealNumber
-          simple
-          compact
-          onCreated={() => setTaskOpen(false)}
-        />
-      </Modal>
       {/* Консультант + клиент (объединённый блок) */}
       <Card>
         <SectionTitle>Консультант и клиент</SectionTitle>

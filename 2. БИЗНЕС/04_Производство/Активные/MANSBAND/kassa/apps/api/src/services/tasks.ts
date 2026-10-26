@@ -93,11 +93,13 @@ export async function listTasks(filters: {
   role?: string;
   status?: string;
   store?: string;
+  dealNumber?: number;
 }): Promise<Task[]> {
   const clauses = [];
   if (filters.role) clauses.push(eq(tasks.assigneeRole, filters.role));
   if (filters.status) clauses.push(eq(tasks.status, filters.status));
   if (filters.store) clauses.push(eq(tasks.store, filters.store));
+  if (filters.dealNumber != null) clauses.push(eq(tasks.dealNumber, filters.dealNumber));
   // Сары ведутся только в разделе «Сары», не в общем списке задач.
   clauses.push(ne(tasks.kind, "sary_send"));
   const rows = await db

@@ -43,6 +43,9 @@ REPORT = WORK / "2my-ms-amo-backfill-verification.local.json"
 EXCLUSIONS = WORK / "2my-ms-amo-backfill-exclusions.local.json"
 TERMINAL = {"VERIFIED", "DEFERRED", "EXISTS_BACKLINK", "EXISTS_AMO_ID", "QUARANTINED"}
 _PACE = {"ms": 0.0, "amo": 0.0}
+_REQUEST_INTERVAL = 1.0
+_RATE_BLOCK_UNTIL = {"ms": 0.0, "amo": 0.0}
+_HTTP_STATS = {"ms": 0, "amo": 0, "rate_limit_responses": 0, "headroom_pauses": 0}
 PIPELINE = 11318374
 WON = 142
 MAXIM = 9490530
@@ -78,15 +81,52 @@ class Temporary(Stop):
     """Transport is unavailable; never translate this to an empty index."""
 
 
+def configure_request_interval(value: float) -> None:
+    global _REQUEST_INTERVAL
+    if not 0.2 <= value <= 10.0:
+        raise Stop("Интервал запросов должен быть от 0.2 до 10 секунд")
+    _REQUEST_INTERVAL = value
+
+
+def rate_feedback(system: str, response) -> None:
+    global _REQUEST_INTERVAL
+    now = time.monotonic()
+    if response.status_code == 429:
+        _HTTP_STATS["rate_limit_responses"] += 1
+        _REQUEST_INTERVAL = max(_REQUEST_INTERVAL, 1.0)
+        try:
+            wait = float(response.headers.get("Retry-After") or 0)
+            if system == "ms":
+                wait = max(wait, float(response.headers.get("X-Lognex-Retry-After") or 0) / 1000)
+        except (TypeError, ValueError):
+            wait = 0
+        _RATE_BLOCK_UNTIL[system] = max(_RATE_BLOCK_UNTIL[system], now + max(3.0, min(60.0, wait)))
+    if system == "ms":
+        try:
+            remaining = float(response.headers["X-RateLimit-Remaining"])
+            limit = float(response.headers["X-RateLimit-Limit"])
+            window = float(response.headers.get("X-Lognex-Retry-TimeInterval") or 3000) / 1000
+        except (KeyError, TypeError, ValueError):
+            return
+        if remaining <= max(5.0, limit * 0.25):
+            _HTTP_STATS["headroom_pauses"] += 1
+            _RATE_BLOCK_UNTIL[system] = max(_RATE_BLOCK_UNTIL[system], now + max(1.0, min(60.0, window)) + 0.1)
+
+
 class PacedSession(requests.Session):
     def __init__(self, system: str):
         super().__init__()
         self.system = system
 
     def request(self, *args, **kwargs):
-        time.sleep(max(0.0, 1.0 - (time.monotonic() - _PACE[self.system])))
+        now = time.monotonic()
+        time.sleep(max(0.0, _REQUEST_INTERVAL - (now - _PACE[self.system]),
+                       _RATE_BLOCK_UNTIL[self.system] - now))
         try:
-            return super().request(*args, **kwargs)
+            response = super().request(*args, **kwargs)
+            _HTTP_STATS[self.system] += 1
+            rate_feedback(self.system, response)
+            return response
         finally:
             _PACE[self.system] = time.monotonic()
 
@@ -152,7 +192,7 @@ def api_get(session: requests.Session, url: str, params: dict | None = None,
             last_call: list[float] | None = None) -> dict:
     for attempt in range(6):
         if last_call is not None:
-            pause = max(0.0, 1.0 - (time.monotonic() - last_call[0]))
+            pause = max(0.0, _REQUEST_INTERVAL - (time.monotonic() - last_call[0]))
             if pause:
                 time.sleep(pause)
         try:
@@ -1192,7 +1232,7 @@ def exact_contacts(amo: lib.Amo, phone: str, email: str) -> list[dict]:
 def api_write(session: requests.Session, method: str, url: str, body: object,
               headers: dict | None = None, pace: list[float] | None = None) -> tuple[int | None, dict, str]:
     if pace is not None:
-        pause = max(0.0, 1.0 - (time.monotonic() - pace[0]))
+        pause = max(0.0, _REQUEST_INTERVAL - (time.monotonic() - pace[0]))
         if pause:
             time.sleep(pause)
     try:
@@ -2109,6 +2149,11 @@ def night_run(args) -> dict:
                     break
         if batch_ids:
             verify_journal(ms, amo, journal, batch_ids)
+        journal["progress"] = {"run": journal["active_run"],
+                               "at": datetime.now(TZ).isoformat(timespec="seconds"),
+                               "processed": result["processed"], "deferred": result["deferred"],
+                               "request_interval": _REQUEST_INTERVAL, "http": dict(_HTTP_STATS)}
+        save_journal(journal)
         print(f"Партия проверена. Новых сделок: {result['processed']}; отложено: {result['deferred']}.", flush=True)
     # A fresh complete index proves no processed UUID becomes CREATE again.
     after, _ = wait_for_reads(lambda: collect_current(ms, amo, strict_order_snapshot=False))
@@ -2390,6 +2435,41 @@ def self_test() -> None:
                 search.assert_not_called()
                 create.assert_not_called()
 
+        def test_rate_interval_floor_and_vendor_headroom(self):
+            from types import SimpleNamespace
+            with patch.object(module, "_REQUEST_INTERVAL", 1.0), \
+                 patch.object(module, "_RATE_BLOCK_UNTIL", {"ms": 0.0, "amo": 0.0}), \
+                 patch.object(module, "_HTTP_STATS", {"ms": 0, "amo": 0, "rate_limit_responses": 0, "headroom_pauses": 0}), \
+                 patch.object(module.time, "monotonic", return_value=100.0):
+                for value in (0.0, 0.199, float("nan"), 11.0):
+                    with self.assertRaises(Stop):
+                        configure_request_interval(value)
+                configure_request_interval(0.2)
+                rate_feedback("ms", SimpleNamespace(status_code=200, headers={
+                    "X-RateLimit-Limit": "45", "X-RateLimit-Remaining": "8", "X-Lognex-Retry-TimeInterval": "3000"}))
+                self.assertGreaterEqual(_RATE_BLOCK_UNTIL["ms"], 103.0)
+                rate_feedback("amo", SimpleNamespace(status_code=429, headers={"Retry-After": "5"}))
+                self.assertGreaterEqual(_RATE_BLOCK_UNTIL["amo"], 105.0)
+                self.assertEqual(_REQUEST_INTERVAL, 1.0)
+                self.assertEqual(_HTTP_STATS["rate_limit_responses"], 1)
+
+        def test_pacing_applies_to_every_get_and_write(self):
+            from types import SimpleNamespace
+            response = SimpleNamespace(status_code=200, headers={})
+            with patch.object(module, "_REQUEST_INTERVAL", 0.2), \
+                 patch.object(module, "_PACE", {"ms": 99.9, "amo": 99.9}), \
+                 patch.object(module, "_RATE_BLOCK_UNTIL", {"ms": 0.0, "amo": 0.0}), \
+                 patch.object(module.time, "monotonic", return_value=100.0), \
+                 patch.object(module.time, "sleep") as sleep, \
+                 patch.object(requests.Session, "request", return_value=response) as http:
+                session = PacedSession("amo")
+                for method in ("GET", "POST", "PUT"):
+                    session.request(method, "https://example.test")
+                self.assertEqual(http.call_count, 3)
+                self.assertAlmostEqual(sleep.call_args_list[0].args[0], 0.1)
+                self.assertAlmostEqual(sleep.call_args_list[1].args[0], 0.2)
+                self.assertAlmostEqual(sleep.call_args_list[2].args[0], 0.2)
+
         def test_dashboard_import_is_not_messenger_inquiry(self):
             import collect_dashboard as dashboard
             uid = "81b03243-1a83-11ef-0a80-01c7004e6c19"
@@ -2420,10 +2500,13 @@ def main() -> None:
     parser.add_argument("--verify", action="store_true", help="read back every previously verified import")
     parser.add_argument("--self-test", action="store_true", help="run isolated regression tests; no CRM access")
     parser.add_argument("--batch-size", type=int, default=25)
+    parser.add_argument("--request-interval", type=float, default=1.0,
+                        help="minimum delay after each HTTP response, 0.2..10 seconds; sequential requests only")
     parser.add_argument("--expected-code-sha256", default="", help="required for night writes; rejects an unreviewed importer")
     parser.add_argument("--reuse-raw", action="store_true",
                         help="reclassify the protected read-only source snapshot without refetching")
     args = parser.parse_args()
+    configure_request_interval(args.request_interval)
     if args.self_test:
         self_test()
         return

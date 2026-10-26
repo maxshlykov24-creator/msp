@@ -336,7 +336,7 @@ export function MovementModal({
               <div className="text-white text-lg font-bold">Перемещение запущено</div>
               <div className="text-mute text-sm mt-2 max-w-md mx-auto break-words">{success}</div>
               <div className="text-mute text-[12px] mt-3">
-                Задача появилась в очереди логиста или консультанта источника
+                Задача появилась в очереди
               </div>
             </div>
             <div className="flex justify-center">
