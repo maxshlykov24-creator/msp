@@ -727,6 +727,7 @@ def test_crm_error_persists_and_reconcile_retries(monkeypatch):
     responses = iter([500, 200])
     monkeypatch.setattr(amo_v4, "patch_lead_fields", lambda **kw: httpx.Response(next(responses), request=httpx.Request("PATCH", "https://example.test")))
     notes = []
+    monkeypatch.setattr(amo_v4, "lead_has_note_text", lambda **kw: False)
     monkeypatch.setattr(amo_v4, "add_lead_note", lambda **kw: notes.append(kw))
     with _db() as db:
         sync_numbers(db)
