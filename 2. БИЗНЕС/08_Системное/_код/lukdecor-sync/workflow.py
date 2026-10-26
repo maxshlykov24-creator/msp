@@ -51,14 +51,19 @@ class Workflow:
                 if not db.execute("SELECT 1 FROM jobs WHERE id=?", (o["id"],)).fetchone():
                     db.execute("INSERT OR REPLACE INTO snapshot VALUES(?,?)", (o["id"], json.dumps(o, ensure_ascii=False)))
             db.execute("INSERT OR REPLACE INTO settings VALUES('updated',?)", (str(time.time()),))
+            db.execute("INSERT OR REPLACE INTO settings VALUES('current_ids',?)", (json.dumps([o['id'] for o in snapshot['orders']]),))
             self.event(db, actor, "", "refresh", f'{len(snapshot["orders"])} заданий, {snapshot["scanned_orders"]} заказов просмотрено')
         return snapshot
 
     def view(self):
         with self.db() as db:
             orders = []
+            current = db.execute("SELECT value FROM settings WHERE key='current_ids'").fetchone()
+            current_ids = set(json.loads(current[0])) if current else None
             for row in db.execute("SELECT s.payload,j.wave,j.state,j.station,j.sticker_ok FROM snapshot s LEFT JOIN jobs j ON s.id=j.id"):
                 item = json.loads(row["payload"])
+                if current_ids is not None and item['id'] not in current_ids and not row['wave']:
+                    continue
                 item.pop("label_url", None)
                 item.update({k: row[k] for k in ("wave", "state", "station", "sticker_ok")})
                 orders.append(item)

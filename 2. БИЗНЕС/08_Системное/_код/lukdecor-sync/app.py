@@ -107,7 +107,13 @@ def wave(body: Wave, request: Request):
 
 @app.post("/api/action")
 def action(body: Action, request: Request):
-    return flow.action(actor(request), body.job, body.action, body.code, body.target)
+    person = actor(request)
+    try:
+        return flow.action(person, body.job, body.action, body.code, body.target)
+    except ReadError as exc:
+        with flow.db() as db:
+            flow.event(db, person, body.job, 'blocked_' + body.action, str(exc))
+        raise
 
 
 @app.post('/api/station-scan')

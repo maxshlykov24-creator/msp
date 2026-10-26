@@ -1023,6 +1023,7 @@
   };
   phone.addEventListener("change", render);
   document.addEventListener("keydown", e => {
+    if (e.target.matches("input,textarea,select")) return;
     if (isPhone()) return;
     if (["ArrowRight","ArrowDown","PageDown"," "].includes(e.key)) { go(1); e.preventDefault(); }
     if (["ArrowLeft","ArrowUp","PageUp"].includes(e.key)) { go(-1); e.preventDefault(); }

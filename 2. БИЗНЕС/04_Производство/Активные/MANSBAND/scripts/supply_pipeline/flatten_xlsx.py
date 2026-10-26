@@ -292,6 +292,9 @@ def parse_revision_xlsx(path: Path) -> Tuple[List[List[Any]], Dict[str, Any]]:
             cells.append("")
         num, kit_raw, brand, model, rost, size, art = cells[:7]
         sostav_raw, color, uzor, kroy, note, qty_raw = cells[7:13]
+        # эти артикулы в МС уже на «Пиджак блейзер»; однобортный был бы второй карточкой
+        if model.upper().replace(" ", "").startswith("IM422"):
+            kit_raw = "Двойка блейзер"
         model_key = " ".join(model.split()).casefold()
         if model_key in ("5032 m", "5032m") and "сер" in color.casefold():
             src_art = art
