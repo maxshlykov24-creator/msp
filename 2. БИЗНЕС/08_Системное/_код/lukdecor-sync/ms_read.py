@@ -24,7 +24,8 @@ class MoySklad:
 
     def get(self, path, **params):
         token = os.environ.get("MOYSKLAD_TOKEN", "")
-        if not token:
+        login, password = os.environ.get("MOYSKLAD_LOGIN"), os.environ.get("MOYSKLAD_PASSWORD")
+        if not token and not (login and password):
             raise ReadError("Нет MOYSKLAD_TOKEN. Живые данные не загружены.")
         url = path if path.startswith("https://") else MS_BASE + path
         if not url.startswith(MS_BASE + "/") or urlparse(url).netloc != "api.moysklad.ru":
@@ -33,9 +34,12 @@ class MoySklad:
             time.sleep(max(0, .25 - (time.monotonic() - self.last)))
             self.last = time.monotonic()
             try:
-                r = self.session.get(url, params=params, headers={
-                    "Authorization": "Bearer " + token, "Accept-Encoding": "gzip",
-                }, timeout=(5, 30), allow_redirects=False)
+                headers = {"Accept-Encoding": "gzip"}
+                if token:
+                    headers["Authorization"] = "Bearer " + token
+                r = self.session.get(url, params=params, headers=headers,
+                                     auth=None if token else (login, password),
+                                     timeout=(5, 30), allow_redirects=False)
             except requests.RequestException:
                 if attempt == 2:
                     raise ReadError("МойСклад не отвечает. Операция остановлена.") from None
