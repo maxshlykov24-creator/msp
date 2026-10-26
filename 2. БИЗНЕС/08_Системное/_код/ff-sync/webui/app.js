@@ -2285,6 +2285,16 @@ $("aDone").onclick = asmDone;
 
 let kizState = { ids: [], index: 0, id: 0, need: 0, codes: [], products: [], assignments: {} };
 
+const kizLayoutMessage = "В коде есть русские буквы. Переключи клавиатуру на ENG, очисти этот ввод и отсканируй код заново. Отправка заблокирована.";
+function kizHasRussian(text) { return /[\u0400-\u052f№]/.test(String(text || "")); }
+function kizCheckLayout() {
+  const input = $("kizInput");
+  const bad = kizHasRussian(input.value) || kizState.codes.some(kizHasRussian);
+  $("kizLayoutWarning").hidden = !bad;
+  input.setAttribute("aria-invalid", String(bad));
+  $("kizSend").disabled = bad || kizBusy || kizState.canSubmit === false || (!input.value.trim() && !kizState.codes.length);
+  return !bad;
+}
 let kizProductSelection = "";
 function kizRender() {
   const have = kizState.codes.length;
@@ -2313,6 +2323,7 @@ function kizRender() {
   }).join("");
   $("kizProduct").value = selected;
   kizProductSelection = selected;
+  kizCheckLayout();
 }
 
 // ЙЦУКЕН → та клавиша, которую сканер жал на латинской раскладке.
@@ -2400,10 +2411,12 @@ function kizWaitScan() {
     const count = new Set([...kizState.codes, ...draft]).size;
     $("kizCount").textContent = "Нужно кодов: " + kizState.need + " · в списке и поле: " + count + ". После сканирования нажми «Отправить».";
   } catch (_) { /* Keep an unfinished draft untouched. */ }
+  kizCheckLayout();
 }
 function kizScanCodes(raw) {
   const codes = [];
-  for (const part of layoutToEn(String(raw || "")).split(/[\r\n]+/)) {
+  if (kizHasRussian(raw)) throw new Error(kizLayoutMessage);
+  for (const part of String(raw || "").split(/[\r\n]+/)) {
     const text = part.trim();
     if (!text) continue;
     if (/^(?:\]d2)?01\d{14}21/.test(text)) codes.push(text);
@@ -2421,7 +2434,7 @@ function kizAdd(raw) {
   try { scanned = kizScanCodes(raw); }
   catch (e) { say($("kizMsg"), e.message, "bad"); return; }
   scanned.forEach((part) => {
-    const code = layoutToEn(part.trim());
+    const code = part.trim();
     if (!code) return;
     if (kizState.codes.includes(code)) { dupe += 1; return; }
     const products = (kizState.products || []).filter((p) => p.marked);
@@ -2611,12 +2624,13 @@ $("kizInput").addEventListener("keyup", (e) => {
   input.setRangeText(String.fromCharCode(value), input.selectionStart, input.selectionEnd, "end");
   kizWaitScan();
 });
+$("kizInput").addEventListener("focus", kizCheckLayout);
 $("kizInput").oninput = (e) => {
   kizTraceEvent(3, e, kizExpectedInput == null ? -1 : +($("kizInput").value === kizExpectedInput));
   kizExpectedInput = null;
   // Restart on EVERY native edit, including delayed scanner characters/paste.
   kizWaitScan();
-  $("kizSend").disabled = kizBusy || kizState.canSubmit === false || (!$("kizInput").value.trim() && !kizState.codes.length);
+  kizCheckLayout();
 };
 
 $("kizList").onclick = (e) => {
@@ -2642,6 +2656,7 @@ $("kizSkip").onclick = async () => {
 
 let kizBusy = false;
 $("kizSend").onclick = async () => {
+  if (!kizCheckLayout()) return;
   if (!kizBusy && $("kizInput").value && !kizFlushScan()) return;
   if (kizBusy || !kizState.codes.length || kizState.canSubmit === false) return;
   if (kizState.need && (kizState.codes.length < kizState.need || (!kizState.products.length && kizState.codes.length !== kizState.need))) {
@@ -2656,7 +2671,7 @@ $("kizSend").onclick = async () => {
   try {
     const res = await api("/api/assembly/" + kizState.id + "/kiz", {
       method: "POST",
-      body: JSON.stringify({ scan_trace: { version: 145, events: kizTrace }, codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
+      body: JSON.stringify({ scan_trace: { version: 146, events: kizTrace }, codes: kizState.codes, assignments: kizState.codes.filter((code) => kizState.assignments[code] != null).map((code) => ({ code, product_id: kizState.assignments[code] })) }),
     });
     const row = state.asm.find((r) => r.id === kizState.id);
     if (row) row.marks = res.sent;

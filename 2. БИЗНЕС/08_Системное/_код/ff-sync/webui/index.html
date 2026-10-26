@@ -671,8 +671,9 @@
     <label id="kizProductWrap" class="fld" hidden>Артикул для сканирования
       <select id="kizProduct"></select>
     </label>
-    <textarea id="kizInput" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Отсканируй или вставь полный КиЗ" autocomplete="off" style="width:100%;box-sizing:border-box;resize:vertical;padding:10px;border:1px solid #9aa8bd;border-radius:10px;font:inherit"></textarea>
-    <p class="kiz-layout-hint">Версия 145. Сканируй в английской раскладке и нажми «Отправить». Ввод сохраняется целиком, паузы и Enter внутри скана его не разделяют.</p>
+    <textarea id="kizInput" rows="2" aria-describedby="kizLayoutHint kizLayoutWarning" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Отсканируй или вставь полный КиЗ" autocomplete="off" style="width:100%;box-sizing:border-box;resize:vertical;padding:10px;border:1px solid #9aa8bd;border-radius:10px;font:inherit"></textarea>
+    <p id="kizLayoutHint" class="kiz-layout-hint">Версия 146. Перед сканированием включи ENG. Сканируй в английской раскладке и нажми «Отправить». Ввод сохраняется целиком, паузы и Enter внутри скана его не разделяют.</p>
+    <p id="kizLayoutWarning" class="msg bad" role="alert" hidden>В коде есть русские буквы. Переключи клавиатуру на ENG, очисти этот ввод и отсканируй код заново. Отправка заблокирована.</p>
     <div class="kiz-list" id="kizList"></div>
     <div class="msg" id="kizMsg"></div>
     <div class="modal-actions">
@@ -797,6 +798,6 @@
   </div>
 </div>
 
-<script src="/ui/app.js?v=145"></script>
+<script src="/ui/app.js?v=146"></script>
 </body>
 </html>
