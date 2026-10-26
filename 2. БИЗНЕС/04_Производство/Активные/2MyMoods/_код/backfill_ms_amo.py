@@ -2111,8 +2111,9 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
                 raise Stop("VERIFIED_CONTACT_NOT_READABLE")
         for difference in lead.get("_migration_comment_differences", []):
             result["comment_differences"].append({"order_id": oid, "lead_id": lid, **difference})
-        if ("source_attributes_before_creation" in entry
-                and not source_attributes_preserved(order, entry["source_attributes_before_creation"])):
+        expected_attributes = entry.get("source_attributes_before_creation", entry.get("source_attributes_readback_baseline"))
+        if (expected_attributes is not None
+                and not source_attributes_preserved(order, expected_attributes)):
             result["issues"].append({"order_id": oid, "reason": "SOURCE_ATTRIBUTES_CHANGED_AFTER_CREATION"})
             continue
         if ms_link(order) != amo_lead_url(amo, lid):
@@ -2519,6 +2520,21 @@ def self_test() -> None:
                     verify_journal(object(), amo, j, full_data=data)
                 self.assertEqual(len(save.call_args.args[1]["source_drift"]), 1)
                 write.assert_not_called()
+
+        def test_verification_rejects_delayed_source_attribute_loss(self):
+            amo = type("A", (), {"base": "https://example.amocrm.ru"})()
+            data = {"orders": [{"id": "o", "attributes": []}], "leads": [{"id": "1"}], "contacts": [{"id": "2"}]}
+            for key in ("source_attributes_before_creation", "source_attributes_readback_baseline"):
+                j = {"rows": {"o": {"status": "VERIFIED", "lead_id": "1", "contact_id": "2", "lead_payload": {},
+                                       key: {MS_LEGACY_CHANNEL: {"id": "original"}}}}}
+                with patch.object(module, "ms_session"), patch.object(module, "return_map", return_value={}), \
+                     patch.object(module, "all_contacts_index", return_value=({}, {})), \
+                     patch.object(module, "amo_links", return_value={"o"}), patch.object(module, "validate_lead"), \
+                     patch.object(module, "atomic_json") as save, patch.object(module, "api_write") as write:
+                    with self.assertRaisesRegex(Stop, "расхождения: 1"):
+                        verify_journal(object(), amo, j, full_data=data)
+                    self.assertEqual(save.call_args.args[1]["issues"][0]["reason"], "SOURCE_ATTRIBUTES_CHANGED_AFTER_CREATION")
+                    write.assert_not_called()
 
         def test_backlink_cannot_hide_source_money_change(self):
             amo = type("A", (), {"base": "https://example.amocrm.ru"})()
