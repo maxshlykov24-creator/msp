@@ -1879,6 +1879,22 @@ def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict
         add(fid, None, ref=order.get(key))
     add(929089, None, ref=(order.get("rate") or {}).get("currency"))
     add(928931, ref_name(order.get("salesChannel")))
+    channel_fields = {f["field_id"]: f for f in result if f["field_id"] in (928931, 929085)}
+    legacy_channel = channel_fields.get(928931)
+    technical_channel = channel_fields.get(929085)
+    if legacy_channel and technical_channel:
+        legacy_enum = legacy_channel["values"][0].get("enum_id")
+        technical_enum = technical_channel["values"][0].get("enum_id")
+        legacy_meta = next((e for e in schema["928931"].get("enums") or []
+                            if e.get("id") == legacy_enum), {})
+        # Live audit: the sync removes this exact label-only legacy copy after
+        # creation. Keep the verified technical channel; do not submit a value
+        # that fails readback, or weaken validation of an existing saved lead.
+        if (id_of(order.get("salesChannel")) == "f53f1c00-dc10-11ef-0a80-0d2f00232e63"
+                and legacy_enum == 1255187 and technical_enum == 1255303
+                and not legacy_meta.get("code")):
+            result.remove(legacy_channel)
+            omissions.append({"field_id": 928931, "reason": "UNSTABLE_LEGACY_CHANNEL_COPY"})
     add(928941, None, ref=av.get("ed14744d-dc0d-11ef-0a80-10cd00226b06"))
     add(928959, None, ref=av.get("ed1471ec-dc0d-11ef-0a80-10cd00226b05"))
     add(929079, order.get("shipmentAddress"))
@@ -2695,6 +2711,35 @@ def self_test() -> None:
                     validate_lead(altered, "5", payload, order)
                 write.assert_not_called()
                 request.assert_not_called()
+
+        def test_unstable_legacy_channel_is_omitted_only_for_verified_mapping(self):
+            import copy
+            channel_id = "f53f1c00-dc10-11ef-0a80-0d2f00232e63"
+            order = {"id": "o", "salesChannel": {"meta": {"href": lib.MS_BASE + "/entity/saleschannel/" + channel_id}, "name": "Канал"}}
+            data = {"invoiceout": [], "demand": [], "amo_fields": {
+                "928931": {"type": "select", "enums": [{"id": 1255187, "value": "Канал"}]},
+                "929085": {"type": "select", "enums": [{"id": 1255303, "value": "Канал", "code": channel_id}]}}}
+            with patch.object(module, "ms_session"), patch.object(module, "api_get") as get, \
+                 patch.object(module, "api_write") as write:
+                row = {};fields = optional_fields(copy.deepcopy(data), order, row, object())
+                mapped = {f["field_id"]: f for f in fields}
+                self.assertNotIn(928931, mapped)
+                self.assertEqual(mapped[929085]["values"], [{"enum_id": 1255303}])
+                self.assertIn({"field_id": 928931, "reason": "UNSTABLE_LEGACY_CHANNEL_COPY"}, row["field_omissions"])
+                variants = []
+                changed = copy.deepcopy(data);changed["amo_fields"]["928931"]["enums"][0]["code"] = channel_id
+                variants.append((changed, order))
+                changed = copy.deepcopy(data);changed["amo_fields"]["928931"]["enums"][0]["id"] = 1255189
+                variants.append((changed, order))
+                changed = copy.deepcopy(data);changed["amo_fields"]["929085"]["enums"][0]["id"] = 1255305
+                variants.append((changed, order))
+                changed_order = copy.deepcopy(order);changed_order["salesChannel"]["meta"]["href"] = lib.MS_BASE + "/entity/saleschannel/another"
+                variants.append((data, changed_order))
+                for source, source_order in variants:
+                    checked = optional_fields(copy.deepcopy(source), source_order, {}, object())
+                    self.assertIn(928931, {f["field_id"] for f in checked})
+                get.assert_not_called()
+                write.assert_not_called()
 
         def test_historical_comment_drift_does_not_weaken_other_checks(self):
             import copy
