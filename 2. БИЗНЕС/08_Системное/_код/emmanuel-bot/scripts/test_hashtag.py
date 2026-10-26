@@ -100,14 +100,17 @@ def main() -> int:
 
     text = format_coverage_text(
         week_start=ws,
-        members=[member(1, "А"), member(2, "Б"), member(3, "В")],
-        submitted_ids={1, 2, 3},
+        members=[member(1, "А"), member(2, "Б"), member(3, "В"), member(4, "Я")],
+        submitted_ids={1, 2, 3, 4},
         submitted_at={
             1: datetime(2026, 9, 20, 21, 0, tzinfo=MSK),
+            4: datetime(2026, 9, 20, 10, 0, tzinfo=MSK),
             2: datetime(2026, 9, 21, 1, 0, tzinfo=MSK),
             3: datetime(2026, 9, 23, 10, 0, tzinfo=MSK),
         },
     )
+    sun = text.split("Написали до 2:00")[0]
+    check(sun.index("· Я") < sun.index("· А"), "coverage time order")
     check("Написали до вс 23:59" in text and "· А" in text, "coverage sun")
     check("Написали до 2:00" in text and "· Б" in text, "coverage night")
     check("Написали в пн до 12:00" in text and "· никого" in text, "coverage monday morning empty stays")

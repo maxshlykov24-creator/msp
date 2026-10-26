@@ -19,6 +19,7 @@ from app.hashtag import (
 )
 from app.models import DmCoveragePointer, GroupDigestPointer, GroupMember, User, WeekSubmission
 from app.time_utils import (
+    MSK,
     last_sunday_on_or_before,
     late_report_bucket,
     now_msk,
@@ -315,12 +316,29 @@ def _day_bucket_title(day: date) -> str:
     return _WEEKDAY_TITLES[day.weekday()]
 
 
-def _append_member_list(lines: list[str], people: list[GroupMember]) -> None:
-    if people:
-        for m in sorted(people, key=lambda x: member_label(x).lower()):
-            lines.append(f"· {html.escape(member_label(m))}")
-    else:
+def _append_member_list(
+    lines: list[str],
+    people: list[GroupMember],
+    *,
+    times: dict[int, datetime] | None = None,
+) -> None:
+    if not people:
         lines.append("· никого")
+        return
+    if times is None:
+        ordered = sorted(people, key=lambda x: member_label(x).lower())
+    else:
+        # Время сдачи: кто раньше, тот выше. Без времени — в конец окна.
+        far = datetime(9999, 1, 1, tzinfo=MSK)
+
+        def by_time(m: GroupMember) -> tuple[datetime, str]:
+            when = times.get(m.tg_user_id)
+            stamp = to_msk(when) if when is not None else far
+            return stamp, member_label(m).lower()
+
+        ordered = sorted(people, key=by_time)
+    for m in ordered:
+        lines.append(f"· {html.escape(member_label(m))}")
 
 
 def format_coverage_text(
@@ -346,14 +364,14 @@ def format_coverage_text(
     ]
     for key, title in _ALWAYS_BUCKETS:
         lines += ["", f"<b>{title}</b>"]
-        _append_member_list(lines, buckets.get(key, []))
+        _append_member_list(lines, buckets.get(key, []), times=times)
     if buckets.get("mon_pm"):
         lines += ["", f"<b>{_MON_PM_TITLE}</b>"]
-        _append_member_list(lines, buckets["mon_pm"])
+        _append_member_list(lines, buckets["mon_pm"], times=times)
     for key in sorted(k for k in buckets if k.startswith("day:")):
         day = date.fromisoformat(key.removeprefix("day:"))
         lines += ["", f"<b>{_day_bucket_title(day)}</b>"]
-        _append_member_list(lines, buckets[key])
+        _append_member_list(lines, buckets[key], times=times)
     lines += ["", "<b>Не написали</b>"]
     _append_member_list(lines, missing)
     return "\n".join(lines)
