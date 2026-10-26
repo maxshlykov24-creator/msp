@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, Package, ScanLine } from "lucide-react";
+import { ArrowRight, Check, Package, ScanLine, Undo2 } from "lucide-react";
 import { TASK_QUEUES, taskActionLabel, taskKindLabel, type Product } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { Button, StageBadge } from "./ui";
@@ -154,16 +154,27 @@ export function TaskDetail({
   task,
   onClose,
   onComplete,
+  onReopen,
   onOpenDeal,
 }: {
   task: TaskDetailModel;
   onClose: () => void;
   onComplete?: () => void;
+  onReopen?: () => Promise<void>;
   onOpenDeal?: (dealNumber: number) => void;
 }) {
   const { deals } = useStore();
+  const [reopening, setReopening] = useState(false);
+  const [reopenError, setReopenError] = useState<string | null>(null);
   const meta = task.metadata ?? undefined;
-  const route = routeFromTaskMeta(meta);
+  const parsedRoute = routeFromTaskMeta(meta);
+  const route =
+    task.kind === "assemble_cdek"
+      ? {
+          from: parsedRoute?.from && parsedRoute.from !== "—" ? parsedRoute.from : task.store?.trim() || "—",
+          to: parsedRoute?.to && parsedRoute.to !== "—" ? parsedRoute.to : "СДЭК",
+        }
+      : parsedRoute;
   const basePositions = useMemo(() => {
     const list = positionsFromTaskMeta(meta);
     if (!task.dealNumber || list.length === 0) return list;
@@ -371,7 +382,7 @@ export function TaskDetail({
         </div>
       )}
 
-      {isMove && route && (
+      {(isMove || isAssemble) && route && (
         <div className="rounded-xl border border-ink-700 bg-ink-900/50 p-4">
           <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
             <div className="min-w-0 rounded-lg bg-ink-800/80 px-3 py-3">
@@ -505,10 +516,29 @@ export function TaskDetail({
         </ul>
       )}
 
+      {reopenError && <div className="text-[13px] text-amber-300/90">{reopenError}</div>}
       <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-ink-700">
         <Button variant="subtle" onClick={onClose}>
           Закрыть
         </Button>
+        {task.status === "done" && onReopen && (
+          <Button
+            variant="subtle"
+            disabled={reopening}
+            onClick={() => {
+              setReopening(true);
+              setReopenError(null);
+              void onReopen()
+                .then(() => onClose())
+                .catch((err: unknown) => {
+                  setReopenError(err instanceof Error ? err.message : "Не удалось отменить выполнение");
+                })
+                .finally(() => setReopening(false));
+            }}
+          >
+            <Undo2 size={15} /> {reopening ? "Отмена…" : "Отменить выполнение"}
+          </Button>
+        )}
         {task.dealNumber != null && onOpenDeal && (
           <Button variant="subtle" onClick={() => onOpenDeal(task.dealNumber!)}>
             Открыть заявку

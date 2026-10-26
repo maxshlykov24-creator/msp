@@ -82,6 +82,25 @@ export default async function tasksRoutes(app: FastifyInstance) {
     }
   });
 
+  app.patch("/tasks/:id/reopen", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const task = await taskService.reopenTask(id, req.user.name);
+      if (!task) return reply.code(404).send({ message: "Задача не найдена" });
+      await appendAudit({
+        actor: { id: req.user.sub, name: req.user.name, role: req.user.role },
+        action: "task.reopened",
+        entityType: "task",
+        entityId: id,
+        after: task,
+      });
+      return task;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Не удалось отменить выполнение";
+      return reply.code(400).send({ message });
+    }
+  });
+
   app.patch("/tasks/:id/complete", { preHandler: [app.authenticate] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     try {

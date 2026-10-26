@@ -84,7 +84,15 @@ const MOCK_TASKS: OperationTask[] = [
     status: "pending",
     createdAt: "2026-07-22T09:10:00",
     createdBy: "Максим",
-    metadata: { assigneeName: "Матвей" },
+    metadata: {
+      assigneeName: "Матвей",
+      dealStage: "Передан на сборку",
+      from: "На Бауманской",
+      to: "СДЭК",
+      positions: [
+        { productId: "p-cdek", quantity: 1, name: "Оксфорды (39, черный)", barcode: "2000000205380" },
+      ],
+    },
   },
   {
     id: "t2",
@@ -149,8 +157,17 @@ function passesStore(task: OperationTask, store: string): boolean {
 }
 
 function dealStageOf(task: OperationTask): string | null {
-  const stage = task.metadata?.dealStage;
+  const stage = task.metadata?.dealStage ?? task.metadata?.stage;
   return typeof stage === "string" && stage.trim() ? stage.trim() : null;
+}
+
+/** Сборка для СДЭК едет в СДЭК. Откуда — склад позиций, иначе магазин заявки. */
+function displayRoute(task: OperationTask): { from: string; to: string } | null {
+  const route = routeFromTaskMeta(task.metadata);
+  if (task.kind !== "assemble_cdek") return route;
+  const from = route?.from && route.from !== "—" ? route.from : task.store?.trim() || "—";
+  const to = route?.to && route.to !== "—" ? route.to : "СДЭК";
+  return { from, to };
 }
 
 function clientOf(task: OperationTask): string | null {
@@ -204,7 +221,7 @@ function TaskRow({
   const needsSetup = task.kind === "movement" && task.metadata?.needsSetup === true;
   const isMove = task.kind === "movement" || task.kind === "movement_accept";
   const needsCardScan = isMove || task.kind === "assemble_cdek" || task.kind === "reserve";
-  const route = routeFromTaskMeta(task.metadata);
+  const route = displayRoute(task);
   const stage = dealStageOf(task);
   const queueShort = TASK_QUEUES.find((q) => q.role === task.assigneeRole)?.short;
 
@@ -499,6 +516,20 @@ export function TasksMovements() {
     }
   }
 
+  async function reopen(id: string) {
+    setActionError(null);
+    if (USE_MOCK) {
+      setTasks((list) =>
+        list.map((task) =>
+          task.id === id ? { ...task, status: "pending", completedAt: undefined } : task
+        )
+      );
+      return;
+    }
+    await api.patch(`/tasks/${id}/reopen`, {});
+    await load();
+  }
+
   function onTaskCreated(task: CreatedTask) {
     setTasks((prev) => [
       {
@@ -777,6 +808,11 @@ export function TasksMovements() {
             onComplete={
               openTask.status === "pending"
                 ? () => void complete(openTask.id)
+                : undefined
+            }
+            onReopen={
+              openTask.status === "done"
+                ? () => reopen(openTask.id)
                 : undefined
             }
             onOpenDeal={(n) => {

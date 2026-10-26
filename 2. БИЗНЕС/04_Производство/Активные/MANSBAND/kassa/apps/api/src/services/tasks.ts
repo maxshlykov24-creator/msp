@@ -3,6 +3,7 @@ import { db } from "../db/index.js";
 import { dealItemState, deals as dealsTable, msRefs, tasks } from "../db/schema.js";
 import type { Task } from "@kassa/shared";
 import {
+  CDEK_LOCATION,
   findWarehouseId,
   isCentralWarehouse,
   itemLocationFromMsName,
@@ -111,45 +112,102 @@ export async function listTasks(filters: {
   return enrichDealInfoOnTasks(withNames);
 }
 
-/** Вид и этап заявки — чтобы в очереди был цветной статус, как на доске. */
+interface DealQueueInfo {
+  kind: string;
+  label: string;
+  stage: string;
+  store: string;
+  positions: Array<{ productId: string; quantity: number; name: string; barcode?: string }>;
+}
+
+function positionsFromDealData(data: unknown): DealQueueInfo["positions"] {
+  if (!data || typeof data !== "object" || !("items" in data)) return [];
+  const items = (data as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  const out: DealQueueInfo["positions"] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as { productId?: unknown; name?: unknown; qty?: unknown; barcode?: unknown };
+    const productId = typeof row.productId === "string" ? row.productId : "";
+    if (!productId || productId === "rent") continue;
+    const quantity = Number(row.qty);
+    out.push({
+      productId,
+      quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+      name: typeof row.name === "string" ? row.name : "",
+      ...(typeof row.barcode === "string" && row.barcode ? { barcode: row.barcode } : {}),
+    });
+  }
+  return out;
+}
+
+/** Вид, этап, товар и маршрут — чтобы очередь показывала то же, что карточка заявки. */
 async function enrichDealInfoOnTasks(list: Task[]): Promise<Task[]> {
   const numbers = [...new Set(list.map((t) => t.dealNumber).filter((n): n is number => n != null))];
-  if (numbers.length === 0) return list;
-  const rows = await db
-    .select({
-      number: dealsTable.number,
-      stage: dealsTable.stage,
-      data: dealsTable.data,
-    })
-    .from(dealsTable)
-    .where(inArray(dealsTable.number, numbers));
-  const info = new Map<number, { kind: string; label: string; stage: string }>();
-  for (const row of rows) {
-    const kind =
-      row.data && typeof row.data === "object" && "kind" in row.data
-        ? String((row.data as { kind?: string }).kind ?? "")
-        : "";
-    const label = MOVEMENT_DEAL_KIND_LABEL[kind] || kind;
-    info.set(row.number, { kind, label, stage: row.stage });
+  const info = new Map<number, DealQueueInfo>();
+  const locations = new Map<number, string[]>();
+  if (numbers.length > 0) {
+    const rows = await db
+      .select({
+        number: dealsTable.number,
+        stage: dealsTable.stage,
+        data: dealsTable.data,
+      })
+      .from(dealsTable)
+      .where(inArray(dealsTable.number, numbers));
+    for (const row of rows) {
+      const data = row.data;
+      const kind =
+        data && typeof data === "object" && "kind" in data
+          ? String((data as { kind?: string }).kind ?? "")
+          : "";
+      const store =
+        data && typeof data === "object" && "store" in data
+          ? String((data as { store?: string }).store ?? "")
+          : "";
+      info.set(row.number, {
+        kind,
+        label: MOVEMENT_DEAL_KIND_LABEL[kind] || kind,
+        stage: row.stage,
+        store,
+        positions: positionsFromDealData(data),
+      });
+    }
+    const locRows = await db
+      .select({
+        dealNumber: dealItemState.dealNumber,
+        location: dealItemState.location,
+      })
+      .from(dealItemState)
+      .where(inArray(dealItemState.dealNumber, numbers));
+    for (const row of locRows) {
+      const location = row.location?.trim() ?? "";
+      if (!location || /^сдэк/i.test(location)) continue;
+      const listForDeal = locations.get(row.dealNumber) ?? [];
+      listForDeal.push(location);
+      locations.set(row.dealNumber, listForDeal);
+    }
   }
-  if (info.size === 0) return list;
+
   return list.map((task) => {
-    if (!task.dealNumber) return task;
-    const found = info.get(task.dealNumber);
-    if (!found) return task;
-    const meta = task.metadata ?? {};
-    return {
-      ...task,
-      metadata: {
-        ...meta,
-        dealKind: typeof meta.dealKind === "string" && meta.dealKind ? meta.dealKind : found.kind,
-        dealKindLabel:
-          typeof meta.dealKindLabel === "string" && meta.dealKindLabel
-            ? meta.dealKindLabel
-            : found.label,
-        dealStage: found.stage,
-      },
-    };
+    const found = task.dealNumber != null ? info.get(task.dealNumber) : undefined;
+    const meta: Record<string, unknown> = { ...(task.metadata ?? {}) };
+    if (found) {
+      if (typeof meta.dealKind !== "string" || !meta.dealKind) meta.dealKind = found.kind;
+      if (typeof meta.dealKindLabel !== "string" || !meta.dealKindLabel) meta.dealKindLabel = found.label;
+      meta.dealStage = found.stage;
+    }
+    if (task.kind === "assemble_cdek") {
+      const savedPositions = meta.positions;
+      if ((!Array.isArray(savedPositions) || savedPositions.length === 0) && found && found.positions.length > 0) {
+        meta.positions = found.positions;
+      }
+      const locs = [...new Set(locations.get(task.dealNumber ?? -1) ?? [])];
+      const savedFrom = typeof meta.from === "string" ? meta.from.trim() : "";
+      meta.from = locs.join(", ") || savedFrom || found?.store || task.store || "";
+      meta.to = CDEK_LOCATION;
+    }
+    return { ...task, metadata: meta };
   });
 }
 
@@ -232,6 +290,66 @@ export async function completeTask(id: string, by: string): Promise<Task | null>
   const task = toTask(row);
   await taskFlow.onTaskCompleted(task, by).catch(() => {});
   return task;
+}
+
+/**
+ * Снимает «выполнено» и возвращает задачу в очередь.
+ * Приёмку с уже созданным документом МойСклад не откатываем.
+ * Если отправка ещё не принята, задача приёмки снимается.
+ */
+export async function reopenTask(id: string, by: string): Promise<Task | null> {
+  const [current] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+  if (!current) return null;
+  if (current.status !== "done") {
+    throw new Error("Отменить можно только выполненную задачу");
+  }
+
+  const meta = (current.metadata as MovementMeta | null) ?? {};
+  if (current.kind === "movement_accept" && meta.msMovementId) {
+    throw new Error("Приёмка уже проведена в МойСклад — отменить выполнение нельзя");
+  }
+
+  if (current.kind === "movement") {
+    const [accept] = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.idempotencyKey, `${current.id}:accept`))
+      .limit(1);
+    if (accept?.status === "done") {
+      throw new Error("Товар уже приняли — отменить отправку нельзя");
+    }
+    if (accept && accept.status === "pending") {
+      await db
+        .update(tasks)
+        .set({ status: "cancelled", completedBy: by, completedAt: new Date() })
+        .where(eq(tasks.id, accept.id));
+      const from = typeof meta.from === "string" ? meta.from.trim() : "";
+      if (current.dealNumber && from) {
+        for (const position of movementPositions(meta.positions)) {
+          if (!position.productId || position.productId.startsWith("name:")) continue;
+          await setItemState(current.dealNumber, position.productId, "in_store", from, {
+            reopenedFrom: current.id,
+          });
+        }
+      }
+    }
+  }
+
+  const [row] = await db
+    .update(tasks)
+    .set({
+      status: "pending",
+      completedBy: null,
+      completedAt: null,
+      metadata: {
+        ...meta,
+        reopenedBy: by,
+        reopenedAt: new Date().toISOString(),
+      },
+    })
+    .where(eq(tasks.id, id))
+    .returning();
+  return row ? toTask(row) : null;
 }
 
 type TaskRow = typeof tasks.$inferSelect;

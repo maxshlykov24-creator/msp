@@ -257,7 +257,16 @@ export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<v
           store: deal.store,
           dealNumber: deal.number,
           idempotencyKey: `${rule.kind}:${deal.id}`,
-          metadata: deliveryTaskMeta(deal),
+          metadata: deliveryTaskMeta(
+            deal,
+            rule.kind === "assemble_cdek"
+              ? {
+                  from: storeLocation(deal.store) || deal.store,
+                  to: CDEK_LOCATION,
+                  dealStage: deal.stage,
+                }
+              : undefined
+          ),
         },
         who
       );
@@ -404,6 +413,7 @@ function deferredTaskMeta(deal: Deal, until: string | undefined, extra?: Record<
 function deliveryTaskMeta(deal: Deal, extra?: Record<string, unknown>) {
   return {
     stage: deal.stage,
+    dealStage: deal.stage,
     client: deal.clientName,
     phone: deal.clientPhone,
     route: deal.store,
