@@ -543,7 +543,8 @@ def read_amo_schema(amo: lib.Amo) -> tuple[dict, list[dict], dict, dict]:
     for fid, typ in ((929049, "text"), (929057, "text"), (929081, "url"),
                      (929055, "text"), (929031, "text"), (929043, "select"),
                      (929075, "text"), (929029, "select"), (929063, "textarea"),
-                     (929071, "textarea"), (929041, "numeric"), (1151124, "checkbox")):
+                     (929071, "textarea"), (929041, "numeric"), (1151124, "checkbox"),
+                     (lib.FIELD_TRACK, "text"), (lib.FIELD_TRACK_MS, "text")):
         if fid not in mf or mf[fid].get("type") != typ:
             raise Stop(f"Обязательное поле сделки {fid} отсутствует или изменило тип")
     source_enum = {int(x.get("id")): x.get("value") for x in mf[929043].get("enums") or []}
@@ -1336,6 +1337,29 @@ def confirm_lead(amo: lib.Amo, lead_id: str, order: dict, row: dict,
     return validate_lead(lead, contact_id, expected_payload, order, allow_comment_drift=allow_comment_drift)
 
 
+def confirm_lead_after_comment_sync(mss: requests.Session, amo: lib.Amo, lead_id: str,
+                                    order: dict, row: dict, contact_id: str, payload: dict) -> tuple[dict, dict]:
+    """Wait briefly for the source side of a concurrent comment sync, read-only.
+
+    Every attempt still performs the original strict validation. Only the exact
+    comment-mismatch exception permits a retry, never money or another field.
+    The refreshed source must preserve its entire core before it can be used.
+    """
+    core = order_core_hash(order)
+    for attempt in range(4):
+        try:
+            lead = confirm_lead(amo, lead_id, order, row, contact_id, payload)
+            return order, lead
+        except Stop as exc:
+            if str(exc) != f"Значение поля amo {FIELDS['comment']} не совпало с планом" or attempt == 3:
+                raise
+            time.sleep(2 ** attempt)
+            refreshed = fresh_order(mss, str(order["id"]), [0.0])
+            if order_core_hash(refreshed) != core:
+                raise Stop("SOURCE_CHANGED_DURING_COMMENT_READBACK") from exc
+            order = refreshed
+
+
 def known_integration_text(field_id: int, actual: str, expected: str, order: dict) -> bool:
     if field_id == FIELDS["comment"]:
         description = str(order.get("description") or "").strip()
@@ -1482,9 +1506,14 @@ LEDGERS = ("paymentin", "cashin", "invoiceout", "salesreturn", "demand", "paymen
 
 
 def checkpoint_backup() -> str:
+    paths = (PLAN, RAW_CACHE, JOURNAL, ORDER_CACHE, STATUS_AUDIT_CACHE, EXCLUSIONS,
+             REPORT, Path(__file__))
+    required = sum(path.stat().st_size for path in paths if path.exists()) + 1024 ** 3
+    if shutil.disk_usage(WORK).free < required:
+        raise Stop("DISK_SPACE_INSUFFICIENT_FOR_BACKUP_AND_PROGRESS")
     folder = WORK / ("2my-ms-amo-backup-" + datetime.now(TZ).strftime("%Y%m%d-%H%M%S-%f"))
     folder.mkdir(mode=0o700)
-    for path in (PLAN, RAW_CACHE, JOURNAL, ORDER_CACHE, STATUS_AUDIT_CACHE, EXCLUSIONS):
+    for path in paths:
         if path.exists():
             shutil.copy2(path, folder / path.name)
             os.chmod(folder / path.name, 0o600)
@@ -1552,7 +1581,7 @@ def set_backlink(ms: lib.MS, amo: lib.Amo, journal: dict, oid: str, lead_id: str
         link = ms_link(order)
         if link and link != target:
             raise Stop("BACKLINK_CONFLICT_AFTER_CREATION")
-        confirm_lead(amo, lead_id, order, row, contact_id, payload)
+        order, _ = confirm_lead_after_comment_sync(mss, amo, lead_id, order, row, contact_id, payload)
         if link == target:
             _set_entry(journal, oid, status="VERIFIED", verified_at=datetime.now(TZ).isoformat(timespec="seconds"))
             return
@@ -1566,8 +1595,10 @@ def set_backlink(ms: lib.MS, amo: lib.Amo, journal: dict, oid: str, lead_id: str
         after = fresh_order(mss, oid, [0.0])
         if any(attrs(after).get(k) != v for k, v in before.items() if k != MS_AMO_ATTR):
             raise Stop("UNRELATED_ATTRIBUTE_CHANGED_DURING_BACKLINK")
+        if order_core_hash(after) != core:
+            raise Stop("SOURCE_CHANGED_DURING_BACKLINK_WRITE")
         if ms_link(after) == target:
-            confirm_lead(amo, lead_id, after, row, contact_id, payload)
+            confirm_lead_after_comment_sync(mss, amo, lead_id, after, row, contact_id, payload)
             _set_entry(journal, oid, status="VERIFIED", verified_at=datetime.now(TZ).isoformat(timespec="seconds"))
             return
         if ms_link(after):
@@ -1806,8 +1837,17 @@ def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict
                       (928619, "6d95a996-f849-11f0-0a80-009c000b6c8b"),
                       (928621, "6d95aa5b-f849-11f0-0a80-009c000b6c8c"),
                       (928967, "f11cca54-ed68-11ef-0a80-084e000137c7"),
-                      (929039, lib.MS_ATTR_TRACK)):
+                      (lib.FIELD_TRACK_MS, lib.MS_ATTR_TRACK),
+                      (lib.FIELD_TRACK, lib.MS_ATTR_TRACK)):
         add(fid, av.get(attr))
+    # Both existing tracking fields must be populated before creating a lead.
+    # The primary amo field drives the reverse sync; leaving it empty can clear
+    # a nonempty source track after the backlink makes that order discoverable.
+    if av.get(lib.MS_ATTR_TRACK) not in (None, ""):
+        mapped = {f["field_id"]: f["values"][0].get("value") for f in result}
+        if any(mapped.get(fid) != str(av[lib.MS_ATTR_TRACK])
+               for fid in (lib.FIELD_TRACK, lib.FIELD_TRACK_MS)):
+            raise RowDeferred("TRACK_FIELDS_NOT_PRESERVED")
     for fid in (928617, 928625):
         label = schema.get(str(fid), {}).get("name")
         source = [a.get("value") for a in order.get("attributes") or [] if a.get("name") == label]
@@ -1940,7 +1980,7 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
     payload = make_lead_payload(amo, fresh, row, cid, roster)
     lid = create_entity(amo, journal, oid, row, "lead", payload)
     _set_entry(journal, oid, status="LEAD_VERIFIED", contact_id=cid, lead_id=lid, lead_payload=payload)
-    lead = confirm_lead(amo, lid, fresh, row, cid, payload)
+    fresh, lead = confirm_lead_after_comment_sync(ms_session(ms), amo, lid, fresh, row, cid, payload)
     set_backlink(ms, amo, journal, oid, lid, row, payload, cid)
     data["contacts"] = [c for c in data["contacts"] if str(c["id"]) != cid] + [contact]
     data["leads"] = [l for l in data["leads"] if str(l["id"]) != lid] + [lead]
@@ -2023,8 +2063,9 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
         result["integration_text_normalizations"] += int(bool(lead.get("_migration_text_normalizations")))
         result["ok"] += 1
     atomic_json(REPORT, result)
-    if result["issues"]:
-        raise Stop(f"Полная сверка обнаружила расхождения: {len(result['issues'])}; подробности в защищённом отчёте")
+    if result["issues"] or result["source_drift"]:
+        raise Stop(f"Полная сверка обнаружила расхождения: {len(result['issues'])}; "
+                   f"изменений исходной суммы: {len(result['source_drift'])}; подробности в защищённом отчёте")
     return result
 
 
@@ -2353,6 +2394,104 @@ def self_test() -> None:
                 set_backlink(object(), amo, {"rows": {}}, "o", "1", {}, {}, "2")
                 self.assertEqual(len(write.call_args.args[3]["attributes"]), 1)
                 self.assertEqual(write.call_args.args[3]["attributes"][0]["id"], MS_AMO_ATTR)
+
+        def test_tracking_populates_both_existing_fields(self):
+            data = {"amo_fields": {str(fid): {"type": "text"}
+                                   for fid in (lib.FIELD_TRACK, lib.FIELD_TRACK_MS)},
+                    "invoiceout": [], "demand": []}
+            order = {"id": "o", "attributes": [{"id": lib.MS_ATTR_TRACK, "value": "12345678901"}]}
+            with patch.object(module, "ms_session"):
+                fields = optional_fields(data, order, {}, object())
+            self.assertEqual({f["field_id"]: f["values"][0]["value"] for f in fields},
+                             {lib.FIELD_TRACK: "12345678901", lib.FIELD_TRACK_MS: "12345678901"})
+            for missing in (lib.FIELD_TRACK, lib.FIELD_TRACK_MS):
+                broken = {**data, "amo_fields": {k: v for k, v in data["amo_fields"].items() if k != str(missing)}}
+                with patch.object(module, "ms_session"), self.assertRaisesRegex(RowDeferred, "TRACK_FIELDS_NOT_PRESERVED"):
+                    optional_fields(broken, order, {}, object())
+            with patch.object(module, "ms_session"):
+                self.assertEqual(optional_fields(data, {"id": "o"}, {}, object()), [])
+
+        def test_low_disk_stops_before_creating_a_partial_backup(self):
+            from types import SimpleNamespace
+            with patch.object(shutil, "disk_usage", return_value=SimpleNamespace(free=0)), \
+                 patch.object(Path, "mkdir") as mkdir:
+                with self.assertRaisesRegex(Stop, "DISK_SPACE_INSUFFICIENT"):
+                    checkpoint_backup()
+                mkdir.assert_not_called()
+
+        def test_full_verification_rejects_source_amount_drift(self):
+            amo = type("A", (), {"base": "https://example.amocrm.ru"})()
+            lead = {"id": "1", "price": 100}
+            data = {"orders": [{"id": "o", "sum": 20000, "attributes": [
+                        {"id": MS_AMO_ATTR, "value": amo_lead_url(amo, "1")}]}],
+                    "leads": [lead], "contacts": [{"id": "2"}]}
+            j = {"rows": {"o": {"status": "VERIFIED", "lead_id": "1", "contact_id": "2",
+                                    "lead_payload": {}, "source_row": {"net_kopecks": 10000}}}}
+            with patch.object(module, "ms_session"), patch.object(module, "return_map", return_value={}), \
+                 patch.object(module, "return_state", return_value=("none", 0, "")), \
+                 patch.object(module, "all_contacts_index", return_value=({}, {})), \
+                 patch.object(module, "amo_links", return_value={"o"}), \
+                 patch.object(module, "validate_lead"), patch.object(module, "validate_contact", return_value={}), \
+                 patch.object(module, "atomic_json") as save, patch.object(module, "api_write") as write:
+                with self.assertRaisesRegex(Stop, "изменений исходной суммы: 1"):
+                    verify_journal(object(), amo, j, full_data=data)
+                self.assertEqual(len(save.call_args.args[1]["source_drift"]), 1)
+                write.assert_not_called()
+
+        def test_backlink_cannot_hide_source_money_change(self):
+            amo = type("A", (), {"base": "https://example.amocrm.ru"})()
+            before = {"sum": 10000, "payedSum": 10000, "attributes": []}
+            for change in ({"sum": 20000}, {"payedSum": 0}, {"state": {"name": "other"}},
+                           {"positions": {"rows": [{"reserve": 1}]}}):
+                after = {**before, **change, "attributes": [{"id": MS_AMO_ATTR, "value": amo_lead_url(amo, "1")}]}
+                with patch.object(module, "save_journal"), patch.object(module, "ms_session"), \
+                     patch.object(module, "fresh_order", side_effect=[before, after]), \
+                     patch.object(module, "confirm_lead"), \
+                     patch.object(module, "api_write", return_value=(200, {}, "")):
+                    with self.assertRaisesRegex(Stop, "SOURCE_CHANGED_DURING_BACKLINK_WRITE"):
+                        set_backlink(object(), amo, {"rows": {}}, "o", "1", {}, {}, "2")
+
+        def test_backlink_still_rejects_tracking_loss(self):
+            amo = type("A", (), {"base": "https://example.amocrm.ru"})()
+            before = {"attributes": [{"id": lib.MS_ATTR_TRACK, "value": "12345678901"}]}
+            after = {"attributes": [{"id": lib.MS_ATTR_TRACK, "value": ""},
+                                    {"id": MS_AMO_ATTR, "value": amo_lead_url(amo, "1")}]}
+            with patch.object(module, "save_journal"), patch.object(module, "ms_session"), \
+                 patch.object(module, "fresh_order", side_effect=[before, after]), \
+                 patch.object(module, "confirm_lead"), \
+                 patch.object(module, "api_write", return_value=(200, {}, "")):
+                with self.assertRaisesRegex(Stop, "UNRELATED_ATTRIBUTE_CHANGED_DURING_BACKLINK"):
+                    set_backlink(object(), amo, {"rows": {}}, "o", "1", {}, {}, "2")
+
+        def test_comment_sync_retries_reads_without_weakening_validation(self):
+            mismatch = f"Значение поля amo {FIELDS['comment']} не совпало с планом"
+            before = {"id": "o", "sum": 10000, "description": "before"}
+            after = {**before, "description": "after"}
+            with patch.object(module, "confirm_lead", side_effect=[Stop(mismatch), {"id": 1}]) as check, \
+                 patch.object(module, "fresh_order", return_value=after), patch.object(module.time, "sleep"), \
+                 patch.object(module, "api_write") as write:
+                source, lead = confirm_lead_after_comment_sync(object(), object(), "1", before, {}, "2", {})
+                self.assertEqual(source, after)
+                self.assertEqual(lead, {"id": 1})
+                self.assertEqual(check.call_count, 2)
+                self.assertNotIn("allow_comment_drift", check.call_args.kwargs)
+                write.assert_not_called()
+            with patch.object(module, "confirm_lead", side_effect=Stop(mismatch)) as check, \
+                 patch.object(module, "fresh_order", return_value=after), patch.object(module.time, "sleep"), \
+                 patch.object(module, "api_write") as write:
+                with self.assertRaisesRegex(Stop, mismatch):
+                    confirm_lead_after_comment_sync(object(), object(), "1", before, {}, "2", {})
+                self.assertEqual(check.call_count, 4)
+                write.assert_not_called()
+            with patch.object(module, "confirm_lead", side_effect=Stop("Сумма сделки не совпала с планом")), \
+                 patch.object(module, "fresh_order") as read:
+                with self.assertRaisesRegex(Stop, "Сумма сделки"):
+                    confirm_lead_after_comment_sync(object(), object(), "1", before, {}, "2", {})
+                read.assert_not_called()
+            with patch.object(module, "confirm_lead", side_effect=Stop(mismatch)), \
+                 patch.object(module, "fresh_order", return_value={**after, "sum": 20000}), patch.object(module.time, "sleep"):
+                with self.assertRaisesRegex(Stop, "SOURCE_CHANGED_DURING_COMMENT_READBACK"):
+                    confirm_lead_after_comment_sync(object(), object(), "1", before, {}, "2", {})
 
         def test_backlink_412_retry_is_bounded_and_readback_guarded(self):
             import copy
