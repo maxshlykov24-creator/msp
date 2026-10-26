@@ -452,41 +452,41 @@ export function DealsBoard({
                   className="hover:bg-ink-800/40 cursor-pointer transition"
                   onClick={() => openDeal(d)}
                 >
-                  <td className="px-2 py-2.5 font-mono text-mute whitespace-nowrap align-top">
+                  <td className="px-2 py-2.5 font-mono text-mute whitespace-nowrap align-middle">
                     #{d.number}
                   </td>
-                  <td className="px-2 py-2.5 align-top text-mute whitespace-nowrap">
+                  <td className="px-2 py-2.5 align-middle text-mute whitespace-nowrap">
                     <div>{shortDate(d.createdAt)}</div>
                     <div className="text-[11px] text-mute/80">{timeOf(d.createdAt)}</div>
                   </td>
-                  <td className="px-2 py-2.5 align-top min-w-0">
+                  <td className="px-2 py-2.5 align-middle min-w-0">
                     <div className="text-white font-medium truncate leading-snug" title={d.clientName}>
                       {d.clientName}
                     </div>
                     <div className="text-[11px] text-mute truncate mt-0.5">{d.clientPhone || "—"}</div>
                   </td>
-                  <td className="px-2 py-2.5 align-top min-w-0">
+                  <td className="px-2 py-2.5 align-middle min-w-0">
                     <Badge tone="gray">{FUNNEL_LABEL[d.funnel]}</Badge>
                   </td>
-                  <td className="px-2 py-2.5 align-top min-w-0">
+                  <td className="px-2 py-2.5 align-middle min-w-0">
                     <Badge tone="blue">{KIND_LABEL[d.kind]}</Badge>
                   </td>
                   <td
-                    className="px-2 py-2.5 align-top text-mute-soft whitespace-nowrap"
+                    className="px-2 py-2.5 align-middle text-mute-soft whitespace-nowrap"
                     title={d.store}
                   >
                     {d.store}
                   </td>
-                  <td className="px-2 py-2.5 align-top text-mute-soft truncate" title={d.consultant || undefined}>
+                  <td className="px-2 py-2.5 align-middle text-mute-soft truncate" title={d.consultant || undefined}>
                     {d.consultant || "—"}
                   </td>
-                  <td className="px-2 py-2.5 align-top font-semibold text-white whitespace-nowrap text-right tabular-nums">
+                  <td className="px-2 py-2.5 align-middle font-semibold text-white whitespace-nowrap text-right tabular-nums">
                     {d.total ? money(d.total) : "—"}
                   </td>
-                  <td className="px-2 py-2.5 align-top min-w-0">
-                    <StageBadge stage={d.stage} className="inline-block align-top" />
+                  <td className="px-2 py-2.5 align-middle min-w-0">
+                    <StageBadge stage={d.stage} className="inline-block align-middle" />
                   </td>
-                  <td className="px-1 py-2.5 align-top text-mute">
+                  <td className="px-1 py-2.5 align-middle text-mute">
                     <ArrowRight size={14} />
                   </td>
                 </tr>
