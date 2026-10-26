@@ -1096,6 +1096,19 @@ html.theme-light .kassa-select-menu {
   transform: translateY(-1px);
 }
 
+/* Рядом с «Сохранить»: тот же бейдж, что справа в шапке, в высоту кнопки. */
+.stage-select-trigger.stage-select-dock {
+  box-sizing: border-box;
+  min-height: 41px;
+  height: 41px;
+  padding: 0 14px 0 16px;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.15;
+  border-radius: 999px;
+}
+
 /* Подпись и стрелка используют палитру выбранного этапа в обеих темах. */
 .stage-select-trigger > span,
 .stage-select-trigger > svg {

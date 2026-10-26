@@ -11,7 +11,7 @@ import {
   Upload,
   UserCheck,
 } from "lucide-react";
-import { Button, Field, Select, opts } from "../../components/ui";
+import { Button, Field, Select, StageBadge, opts } from "../../components/ui";
 import { CONSULTANTS, HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
 import { CHANNEL_GROUPS } from "../../lib/selectGroups";
 import { dateCompact, dateRu, formatPhone, money, moneyPlain } from "../../lib/format";
@@ -1247,8 +1247,9 @@ export function PhotoField({
 // ── Этап + кнопки сохранения ──────────────────────────────────────────
 
 /**
- * Footer формы: выбор этапа → «Сохранить заявку».
- * Отдельная кнопка «Провести в Успех» (если successStage передан).
+ * Footer формы: выбор этапа слева от «Сохранить».
+ * Вид как у бейджа справа в шапке, высота как у кнопки.
+ * Отдельная кнопка «Успех» (если successStage передан).
  */
 export function StageActions({
   stages,
@@ -1260,7 +1261,6 @@ export function StageActions({
   successStage,
   successDisabled,
   successHint,
-  hideStageSelector = false,
   onSuccess,
 }: {
   stages: string[];
@@ -1272,7 +1272,6 @@ export function StageActions({
   successStage?: string;
   successDisabled?: boolean;
   successHint?: string;
-  hideStageSelector?: boolean;
   onSuccess?: () => void;
 }) {
   // «Новая заявка» / «Взято в работу» в селекте не показываем, если есть другие этапы.
@@ -1296,14 +1295,13 @@ export function StageActions({
           {successHint}
         </span>
       )}
-      {!hideStageSelector && <Select
-        value={effectiveStage}
+      <StageBadge
+        stage={effectiveStage}
+        options={selectStages}
         onChange={onStageChange}
-        options={opts(...selectStages)}
         disabled={saved}
-        size="sm"
-        className="w-[220px]"
-      />}
+        compact
+      />
       <Button variant="subtle" className="py-2" disabled={disabled || saved} onClick={() => onSave(effectiveStage)}>
         Сохранить
       </Button>

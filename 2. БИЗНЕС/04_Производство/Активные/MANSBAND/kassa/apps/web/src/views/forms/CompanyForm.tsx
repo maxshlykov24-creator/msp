@@ -140,7 +140,6 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       missingRequired={missingRequired}
       footer={
         <StageActions
-          hideStageSelector
           stages={COMPANY_CREATE_STAGES}
           stage={stage}
           onStageChange={setStage}

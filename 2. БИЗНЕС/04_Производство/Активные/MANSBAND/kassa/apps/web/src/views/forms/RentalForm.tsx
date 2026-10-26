@@ -206,7 +206,6 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       missingRequired={missingRequired}
       footer={
         <StageActions
-          hideStageSelector
           stages={SAVE_STAGES}
           stage={stage}
           onStageChange={setStage}

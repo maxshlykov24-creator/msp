@@ -84,7 +84,22 @@ export function Badge({
 }
 
 /** Бейдж этапа amoCRM — палитра в CSS, светлая тема читается отдельно. */
-export function StageBadge({ stage, className = "", options, onChange }: { stage: string; className?: string; options?: string[]; onChange?: (stage: string) => void }) {
+export function StageBadge({
+  stage,
+  className = "",
+  options,
+  onChange,
+  disabled = false,
+  compact = false,
+}: {
+  stage: string;
+  className?: string;
+  options?: string[];
+  onChange?: (stage: string) => void;
+  disabled?: boolean;
+  /** Высота кнопки «Сохранить», тот же вид, что у бейджа в шапке. */
+  compact?: boolean;
+}) {
   const group = getStageGroup(stage);
   if (options && onChange) return (
     <Select
@@ -92,9 +107,11 @@ export function StageBadge({ stage, className = "", options, onChange }: { stage
       onChange={onChange}
       options={opts(...(options.includes(stage) ? options : [stage, ...options]))}
       className="w-fit shrink-0 self-center"
-      triggerClassName={`stage-select-trigger stage-tone stage-tone-${group} ${className}`}
+      triggerClassName={`stage-select-trigger stage-tone stage-tone-${group} ${compact ? "stage-select-dock" : ""} ${className}`}
       fitLabel
       colorOptions
+      disabled={disabled}
+      size={compact ? "sm" : "md"}
       ariaLabel="Изменить этап заявки"
       menuMinWidth={260}
     />
