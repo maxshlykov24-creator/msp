@@ -1,6 +1,7 @@
 import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { getStageGroup } from "../lib/stageColors";
+import { Select, opts } from "./Select";
 
 export { Select, opts } from "./Select";
 export type { SelectGroup, SelectOption } from "./Select";
@@ -86,10 +87,17 @@ export function Badge({
 export function StageBadge({ stage, className = "", options, onChange }: { stage: string; className?: string; options?: string[]; onChange?: (stage: string) => void }) {
   const group = getStageGroup(stage);
   if (options && onChange) return (
-    <select aria-label="Этап заявки" title="Изменить этап заявки" className={`chip stage-tone stage-tone-${group} cursor-pointer pr-7 ${className}`} value={stage} onChange={(e) => onChange(e.target.value)}>
-      {!options.includes(stage) && <option value={stage} disabled>{stage}</option>}
-      {options.map((s) => <option key={s} value={s}>{s}</option>)}
-    </select>
+    <Select
+      value={stage}
+      onChange={onChange}
+      options={opts(...(options.includes(stage) ? options : [stage, ...options]))}
+      className="w-fit shrink-0 self-center"
+      triggerClassName={`stage-select-trigger stage-tone stage-tone-${group} ${className}`}
+      fitLabel
+      colorOptions
+      ariaLabel="Изменить этап заявки"
+      menuMinWidth={260}
+    />
   );
   return (
     <span

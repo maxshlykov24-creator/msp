@@ -1069,6 +1069,42 @@ html.theme-light .kassa-select-menu {
   flex-shrink: 0;
 }
 
+.kassa-select-tone-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 999px;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.stage-select-trigger {
+  display: inline-flex;
+  width: auto;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 15px;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 4px 18px -12px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  transition: filter 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.stage-select-trigger:hover:not(:disabled) {
+  filter: brightness(1.14);
+  transform: translateY(-1px);
+}
+
+.stage-select-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, rgb(var(--fg)) 55%, transparent);
+  outline-offset: 3px;
+}
+
+html.theme-light .stage-select-trigger {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82), 0 4px 16px -12px rgba(0, 0, 0, 0.3);
+}
+
 .kassa-select-empty {
   padding: 20px 12px;
   text-align: center;

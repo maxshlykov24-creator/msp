@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search } from "lucide-react";
+import { getStageStyle } from "../lib/stageColors";
 
 export type SelectOption = {
   value: string;
@@ -61,6 +62,8 @@ export function Select({
   searchable,
   menuMinWidth = 248,
   fitLabel = false,
+  colorOptions = false,
+  ariaLabel,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -78,6 +81,9 @@ export function Select({
   menuMinWidth?: number;
   /** Подпись не обрезается, кнопка шире текста. */
   fitLabel?: boolean;
+  /** Показывает цвет этапа рядом с пунктами списка. */
+  colorOptions?: boolean;
+  ariaLabel?: string;
 }) {
   const uid = useId();
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -261,6 +267,7 @@ export function Select({
         ref={btnRef}
         type="button"
         id={id}
+        aria-label={ariaLabel}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -349,6 +356,16 @@ export function Select({
                           item.value === "" && !active ? " is-empty" : ""
                         }`}
                       >
+                        {colorOptions && (
+                          <span
+                            aria-hidden="true"
+                            className="kassa-select-tone-dot"
+                            style={{
+                              background: getStageStyle(item.value).text,
+                              boxShadow: `0 0 12px ${getStageStyle(item.value).ring}`,
+                            }}
+                          />
+                        )}
                         <span className="min-w-0 flex items-center gap-1.5">
                           <span className="truncate">{item.shortLabel ?? item.label}</span>
                           {item.hint && <span className="kassa-select-hint">{item.hint}</span>}
