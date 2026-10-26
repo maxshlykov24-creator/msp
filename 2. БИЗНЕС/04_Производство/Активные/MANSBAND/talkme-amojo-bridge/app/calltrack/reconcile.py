@@ -252,11 +252,28 @@ def summary_text(db: Session, now: Optional[dt.datetime] = None, *, previous_day
     visits = db.execute(select(Visit).where(Visit.created_at >= start, Visit.created_at < end)).scalars().all()
     sources: dict[str, int] = {}
     from app.calltrack.pool import utm_source_map
+    from urllib.parse import parse_qs, urlparse
 
     aliases = utm_source_map(get_settings())
     for visit in visits:
         raw = (visit.utm_source or "").strip().lower()
-        source = aliases.get(raw, raw) if raw else ("Яндекс Директ" if visit.yclid else "Без меток")
+        if raw:
+            source = aliases.get(raw, raw)
+        elif visit.yclid:
+            # Older visits may contain ysclid in the yclid column. Display the
+            # actual search marker without rewriting historical attribution.
+            try:
+                query = parse_qs(urlparse(visit.landing_url or "").query)
+            except ValueError:
+                query = {}
+            if query.get("ysclid", [None])[0] == visit.yclid and not query.get("yclid"):
+                source = "Яндекс Поиск"
+            elif visit.yclid.isascii() and visit.yclid.isdigit():
+                source = "Яндекс Директ"
+            else:
+                source = "Источник не определён"
+        else:
+            source = "Без меток"
         source = " ".join(source.split())[:48]
         sources[source] = sources.get(source, 0) + 1
     peaks = {}

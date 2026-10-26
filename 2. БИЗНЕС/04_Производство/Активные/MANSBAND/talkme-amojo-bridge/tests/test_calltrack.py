@@ -1549,6 +1549,8 @@ def test_summary_separates_calls_coverage_and_errors_and_merges_aliases():
     with _db() as db:
         visits = [Visit(utm_source=source, yclid=yclid, created_at=now, last_seen_at=now)
                   for source, yclid in [("yandex", None), ("ya", None), (None, "123"), (None, None)]]
+        visits.append(Visit(yclid="old_search", landing_url="https://mansband.ru/?ysclid=old_search",
+                            created_at=now, last_seen_at=now))
         db.add_all(visits); db.flush()
         db.add_all([
             CallEvent(call_id="report-pool", called="9310000000", started_at=now,
@@ -1569,5 +1571,6 @@ def test_summary_separates_calls_coverage_and_errors_and_merges_aliases():
         assert "визит — 1 · канал — 1 · общий номер — 1 · не определена — 1" in report
         assert "ошибки CRM: 1" in report and "источник требует проверки" not in report
         assert "Яндекс Директ: 3" in report and "Без меток: 1" in report
+        assert "Яндекс Поиск: 1" in report
         assert "Число визитов с резервом за этот день не записывалось" in report
         assert "{'" not in report and "yclid:" not in report
