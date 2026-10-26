@@ -337,6 +337,7 @@ export function ProductPicker({
   dealNumber,
   dealKind,
   showMovement = true,
+  ensureDeal,
   onMovementCreated,
 }: {
   items: CartItem[];
@@ -347,6 +348,8 @@ export function ProductPicker({
   dealNumber?: number;
   dealKind?: string;
   showMovement?: boolean;
+  /** Черновик ещё не в базе: по «Запустить» сначала сохранить заявку. */
+  ensureDeal?: () => Promise<{ dealNumber: number; store: string } | null>;
   onMovementCreated?: (summary: string) => void;
 }) {
   const { activeStore } = useStore();
@@ -1072,6 +1075,7 @@ export function ProductPicker({
         store={activeStore}
         items={items}
         dealKind={dealKind}
+        ensureDeal={ensureDeal}
         onCreated={onMovementCreated}
       />
 

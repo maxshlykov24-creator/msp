@@ -183,7 +183,7 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
     if (persistedNumber != null) {
       return { dealNumber: persistedNumber, store: activeStore };
     }
-    const savedDeal = await addDeal(buildDeal("Ждет товар"));
+    const savedDeal = await addDeal(buildDeal("Ждет товар"), undefined, { strict: true });
     setPersistedNumber(savedDeal.number);
     setStage("Ждет товар");
     setSaved(true);
@@ -247,7 +247,18 @@ export function DeferredForm({ onDone }: { onDone: () => void }) {
 
       <Card>
         <SectionTitle>Товары, стоимость и скидка</SectionTitle>
-        <ProductPicker items={items} onChange={setItems} />
+        <ProductPicker
+          items={items}
+          onChange={setItems}
+          dealNumber={persistedNumber ?? undefined}
+          dealKind="deferred"
+          ensureDeal={persistedNumber == null ? () => ensureDealForMove() : undefined}
+          onMovementCreated={() => {
+            setStage("Ждет товар");
+            setSaved(true);
+            setTimeout(onDone, 600);
+          }}
+        />
         <div className="mt-3 max-w-[220px]">
           <Field label="Доставка, ₽">
             <input className="input" inputMode="numeric" value={delivery} onChange={(e) => setDelivery(e.target.value.replace(/\D/g, ""))} placeholder="0" />

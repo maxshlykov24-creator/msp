@@ -16,7 +16,7 @@ interface StoreState {
   activeConsultant: string;
   setActiveStore: (s: Store) => void;
   setActiveConsultant: (c: string) => void;
-  addDeal: (d: Deal, photos?: PhotoUploadItem[]) => Promise<Deal>;
+  addDeal: (d: Deal, photos?: PhotoUploadItem[], opts?: { strict?: boolean }) => Promise<Deal>;
   updateDealStage: (id: string, stage: string, reason?: string) => void;
   /** Полное обновление заявки (карточка как форма). */
   updateDeal: (id: string, patch: Partial<Deal> & { reason?: string }) => Promise<Deal | null>;
@@ -219,7 +219,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeConsultant,
       setActiveStore,
       setActiveConsultant,
-      addDeal: async (d, photos) => {
+      addDeal: async (d, photos, opts) => {
         setDeals((prev) => [d, ...prev]); // оптимистично
         // Сдача → очередь Эдвина только при «Получить от Mansband», не при «Выдано клиенту».
         if (USE_MOCK && d.changeStatus === "pending") {
@@ -288,7 +288,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             api.get<Certificate[]>("/certificates").then(setCertificates).catch(() => {});
           }
           return saved;
-        } catch {
+        } catch (err) {
+          if (opts?.strict) {
+            setDeals((prev) => prev.filter((x) => x.id !== d.id));
+            throw err;
+          }
           return d;
         }
       },

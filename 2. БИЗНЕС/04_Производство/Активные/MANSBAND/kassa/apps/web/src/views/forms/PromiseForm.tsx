@@ -119,7 +119,7 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
     if (persistedNumber != null) {
       return { dealNumber: persistedNumber, store: activeStore };
     }
-    const savedDeal = await addDeal(buildDeal("Ждет товар"));
+    const savedDeal = await addDeal(buildDeal("Ждет товар"), undefined, { strict: true });
     setPersistedNumber(savedDeal.number);
     setStage("Ждет товар");
     setSaved(true);
@@ -182,7 +182,18 @@ export function PromiseForm({ onDone }: { onDone: () => void }) {
 
       <Card>
         <SectionTitle>Интересующие товары</SectionTitle>
-        <ProductPicker items={items} onChange={setItems} />
+        <ProductPicker
+          items={items}
+          onChange={setItems}
+          dealNumber={persistedNumber ?? undefined}
+          dealKind="promise"
+          ensureDeal={persistedNumber == null ? () => ensureDealForMove() : undefined}
+          onMovementCreated={() => {
+            setStage("Ждет товар");
+            setSaved(true);
+            setTimeout(onDone, 600);
+          }}
+        />
         <div className="mt-4 max-w-[220px]">
           <Field label="Актуально до" required>
             <DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} />

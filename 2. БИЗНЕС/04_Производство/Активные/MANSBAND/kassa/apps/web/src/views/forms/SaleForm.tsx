@@ -1,6 +1,6 @@
 import { DatePicker } from "../../components/DatePicker";
 import { defaultHoldUntil } from "@kassa/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
 import { Card, Field, Modal, StageBadge } from "../../components/ui";
@@ -41,6 +41,9 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const [dealId] = useState(() => crypto.randomUUID());
+  const persistedRef = useRef<number | null>(null);
+  const [persistedNumber, setPersistedNumber] = useState<number | null>(null);
 
   // Консультанты (5–6)
   const [consultants, setConsultants] = useState<ConsultantData>({
@@ -125,10 +128,15 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
     if (deal.meetingDate) setMeetingDate((prev) => prev || deal.meetingDate!);
   }
 
-  function save(s: string) {
-    addDeal({
-      id: crypto.randomUUID(),
-      number: meta.number,
+  function rememberDeal(number: number) {
+    persistedRef.current = number;
+    setPersistedNumber(number);
+  }
+
+  function buildDeal(s: string): Deal {
+    return {
+      id: dealId,
+      number: persistedRef.current ?? meta.number,
       createdAt: meta.createdAt,
       funnel: "offline",
       kind: "sale",
@@ -156,9 +164,31 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       ...changeDealFields(Math.max(0, change - (tips.amount || 0)), changeInfo),
       total,
       paid,
-    });
+    };
+  }
+
+  function save(s: string) {
+    if (persistedRef.current != null) {
+      setSaved(true);
+      setTimeout(onDone, 1100);
+      return;
+    }
+    void addDeal(buildDeal(s)).then((savedDeal) => rememberDeal(savedDeal.number));
     setSaved(true);
     setTimeout(onDone, 1100);
+  }
+
+  async function ensureDealForMove() {
+    if (persistedRef.current != null) {
+      return { dealNumber: persistedRef.current, store: activeStore };
+    }
+    if (!baseFilled) {
+      throw new Error(`Сначала заполните: ${missingRequired.join(", ")}`);
+    }
+    const savedDeal = await addDeal(buildDeal(stage), undefined, { strict: true });
+    rememberDeal(savedDeal.number);
+    setSaved(true);
+    return { dealNumber: savedDeal.number, store: savedDeal.store || activeStore };
   }
 
   return (
@@ -242,7 +272,17 @@ export function SaleForm({ onDone }: { onDone: () => void }) {
       {/* Товары, стоимость и скидка */}
       <Card>
         <SectionTitle>{stage === "Дано обещание" ? "Интересующие товары" : "Товары, стоимость и скидка"}</SectionTitle>
-        <ProductPicker items={items} onChange={setItems} dealNumber={meta.number} dealKind="sale" />
+        <ProductPicker
+          items={items}
+          onChange={setItems}
+          dealNumber={persistedNumber ?? undefined}
+          dealKind="sale"
+          ensureDeal={ensureDealForMove}
+          onMovementCreated={() => {
+            setSaved(true);
+            setTimeout(onDone, 600);
+          }}
+        />
         <div className="mt-3 max-w-[220px]">
           <div className="field-label">Доставка</div>
           <input

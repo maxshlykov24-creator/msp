@@ -1,6 +1,6 @@
 import { DatePicker } from "../../components/DatePicker";
 import { defaultHoldUntil, isHoldStage } from "@kassa/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
 import { Card, Field, StageBadge } from "../../components/ui";
@@ -56,6 +56,9 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const [dealId] = useState(() => crypto.randomUUID());
+  const persistedRef = useRef<number | null>(null);
+  const [persistedNumber, setPersistedNumber] = useState<number | null>(null);
 
   // Консультант + клиент
   const [consultants, setConsultants] = useState<ConsultantData>({ consultant: activeConsultant, referredBy: "" });
@@ -135,14 +138,19 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
   ].filter(Boolean) as string[];
   const baseFilled = missingRequired.length === 0;
 
-  function save(s: string) {
+  function rememberDeal(number: number) {
+    persistedRef.current = number;
+    setPersistedNumber(number);
+  }
+
+  function buildDeal(s: string): Deal {
     const rentalStatus =
       s === "Успех" ? "closed" :
       returnDate || s === "В аренде" ? "issued" :
       totalPaid >= total ? "paid" : "reserved";
-    addDeal({
-      id: crypto.randomUUID(),
-      number: meta.number,
+    return {
+      id: dealId,
+      number: persistedRef.current ?? meta.number,
       createdAt: meta.createdAt,
       funnel: "offline",
       kind: "rental",
@@ -189,9 +197,31 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
       ),
       total,
       paid: totalPaid,
-    }, attachmentsToUpload(photos));
+    };
+  }
+
+  function save(s: string) {
+    if (persistedRef.current != null) {
+      setSaved(true);
+      setTimeout(onDone, 1100);
+      return;
+    }
+    void addDeal(buildDeal(s), attachmentsToUpload(photos)).then((savedDeal) => rememberDeal(savedDeal.number));
     setSaved(true);
     setTimeout(onDone, 1100);
+  }
+
+  async function ensureDealForMove() {
+    if (persistedRef.current != null) {
+      return { dealNumber: persistedRef.current, store: activeStore };
+    }
+    if (!baseFilled) {
+      throw new Error(`Сначала заполните: ${missingRequired.join(", ")}`);
+    }
+    const savedDeal = await addDeal(buildDeal(stage), attachmentsToUpload(photos), { strict: true });
+    rememberDeal(savedDeal.number);
+    setSaved(true);
+    return { dealNumber: savedDeal.number, store: savedDeal.store || activeStore };
   }
 
   return (
@@ -238,7 +268,18 @@ export function RentalForm({ onDone }: { onDone: () => void }) {
           <span className="text-gold-soft font-semibold">{money(RENTAL_SERVICE_PRICE)}</span>
         </div>
         <div className="field-label mb-2">Состав комплекта</div>
-        <ProductPicker items={items} onChange={setItems} noPrice />
+        <ProductPicker
+          items={items}
+          onChange={setItems}
+          noPrice
+          dealNumber={persistedNumber ?? undefined}
+          dealKind="rental"
+          ensureDeal={ensureDealForMove}
+          onMovementCreated={() => {
+            setSaved(true);
+            setTimeout(onDone, 600);
+          }}
+        />
         <div className="mt-4">
           <TotalsBlock subtotal={subtotal} state={disc} onChange={setDisc} />
         </div>

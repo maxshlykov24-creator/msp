@@ -1,6 +1,6 @@
 import { DatePicker } from "../../components/DatePicker";
 import { defaultHoldUntil, isHoldStage } from "@kassa/shared";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useStore } from "../../store";
 import { Card, Field, StageBadge } from "../../components/ui";
 import { AtelierAmountField } from "../../components/AtelierAmountField";
@@ -39,6 +39,9 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
   const { saved, setSaved, toast } = useSaved();
   const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const [dealId] = useState(() => crypto.randomUUID());
+  const persistedRef = useRef<number | null>(null);
+  const [persistedNumber, setPersistedNumber] = useState<number | null>(null);
 
   const [consultants, setConsultants] = useState<ConsultantData>({
     consultant: activeConsultant,
@@ -85,10 +88,15 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
   ].filter(Boolean) as string[];
   const baseFilled = missingRequired.length === 0;
 
-  function save(s: string) {
-    const deal = {
-      id: crypto.randomUUID(),
-      number: meta.number,
+  function rememberDeal(number: number) {
+    persistedRef.current = number;
+    setPersistedNumber(number);
+  }
+
+  function buildDeal(s: string): Deal {
+    return {
+      id: dealId,
+      number: persistedRef.current ?? meta.number,
       createdAt: meta.createdAt,
       funnel: "offline",
       kind: "company",
@@ -123,9 +131,30 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
       total,
       paid,
     } as Deal;
-    addDeal(deal);
+  }
+
+  function save(s: string) {
+    if (persistedRef.current != null) {
+      setSaved(true);
+      setTimeout(onDone, 1100);
+      return;
+    }
+    void addDeal(buildDeal(s)).then((savedDeal) => rememberDeal(savedDeal.number));
     setSaved(true);
     setTimeout(onDone, 1100);
+  }
+
+  async function ensureDealForMove() {
+    if (persistedRef.current != null) {
+      return { dealNumber: persistedRef.current, store: activeStore };
+    }
+    if (!baseFilled) {
+      throw new Error(`Сначала заполните: ${missingRequired.join(", ")}`);
+    }
+    const savedDeal = await addDeal(buildDeal(stage), undefined, { strict: true });
+    rememberDeal(savedDeal.number);
+    setSaved(true);
+    return { dealNumber: savedDeal.number, store: savedDeal.store || activeStore };
   }
 
   return (
@@ -186,7 +215,17 @@ export function CompanyForm({ onDone }: { onDone: () => void }) {
 
       <Card>
         <SectionTitle>{stage === "Дано обещание" ? "Интересующие товары" : "Товары, стоимость и скидка"}</SectionTitle>
-        <ProductPicker items={items} onChange={setItems} />
+        <ProductPicker
+          items={items}
+          onChange={setItems}
+          dealNumber={persistedNumber ?? undefined}
+          dealKind="company"
+          ensureDeal={ensureDealForMove}
+          onMovementCreated={() => {
+            setSaved(true);
+            setTimeout(onDone, 600);
+          }}
+        />
         <div className="mt-4 grid sm:grid-cols-2 gap-4">
           <AtelierAmountField value={atelier} onChange={setAtelier} />
           <Field label="Доставка, ₽">
