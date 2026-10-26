@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  PanelLeft,
   PlusCircle,
   LayoutList,
   Boxes,
