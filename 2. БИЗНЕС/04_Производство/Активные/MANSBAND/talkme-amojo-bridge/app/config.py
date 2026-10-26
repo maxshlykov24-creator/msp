@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     ct_allowed_origins: str = "https://mansband.ru,https://www.mansband.ru,https://zamer.mansband.ru"
     ct_utm_source_map: str = ""
     ct_tech_source_field: str = "Источник (техническое)"
+    # Allocate for an untagged visitor only when they intend to call.
+    ct_call_intent_enabled: bool = False
     telphin_webhook_secret: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

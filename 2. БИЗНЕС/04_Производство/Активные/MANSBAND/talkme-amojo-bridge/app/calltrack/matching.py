@@ -103,10 +103,19 @@ def _visit_tracking(visit: Visit) -> dict[str, str]:
 def attribute_call(db: Session, call: CallEvent) -> CallAttribution:
     snapshot = (call.result or {}).get("attribution_snapshot")
     if snapshot is not None:
+        # Enrich a known alias/channel without ever replacing the frozen visit or UTM.
+        source = snapshot.get("tech_source")
+        kind = snapshot["kind"]
+        if not source:
+            source = utm_source_map(get_settings()).get(str(snapshot["tracking"].get("utm_source") or "").lower())
+        if kind == "unknown":
+            number = db.scalar(select(PoolNumber).where(PoolNumber.number == call.called))
+            if number and number.kind == "channel":
+                kind, source = "channel", number.source
         return CallAttribution(
-            dict(snapshot["tracking"]), snapshot.get("tech_source"),
+            dict(snapshot["tracking"]), source,
             db.get(Visit, snapshot["visit_id"]) if snapshot.get("visit_id") else None,
-            bool(snapshot.get("disputed")), snapshot["kind"], snapshot.get("landing_url"),
+            bool(snapshot.get("disputed")), kind, snapshot.get("landing_url"),
         )
     number = db.execute(select(PoolNumber).where(PoolNumber.number == call.called)).scalar_one_or_none()
     kind = number.kind if number is not None else "unknown"
@@ -124,6 +133,8 @@ def attribute_call(db: Session, call: CallEvent) -> CallAttribution:
         source = "Яндекс Директ"
     elif visit.utm_source:
         source = utm_source_map(get_settings()).get(visit.utm_source.lower())
+    elif not visit.is_paid:
+        source = "Сайт (органика)"
     return CallAttribution(
         _visit_tracking(visit),
         source,
@@ -215,6 +226,10 @@ def call_note(call: CallEvent, attr: CallAttribution) -> str:
         lines.append("Основной и резервный номер: точный источник не определён")
     if attr.disputed:
         lines.append("спорный")
+    if attr.tech_source:
+        lines.append(f"Источник звонка: {attr.tech_source}")
+    lines.extend(f"{key}: {value}" for key, value in attr.tracking.items() if value)
+    lines.append(f"[ct-call:{call.id}]")
     return "\n".join(lines)
 
 
@@ -271,7 +286,7 @@ def apply_call(
     settings = get_settings()
     # Сохраняем намерение ДО внешнего запроса: перезапуск не потеряет повтор.
     meta_old = dict(call.result or {})
-    if call.status in {"matched", "unattributed"} and call.lead_id == lead_id:
+    if call.status == "matched" and call.lead_id == lead_id:
         return {"ok": True, "status": call.status}
     call.lead_id = lead_id
     call.status = "retry"
@@ -292,7 +307,9 @@ def apply_call(
                 access_token=access_token, settings=settings)
             response.raise_for_status()
         if not meta_old.get("note_sent"):
-            amo_v4.add_lead_note(lead_id=lead_id, text=call_note(call, attr),
+            if not amo_v4.lead_has_note_text(lead_id=lead_id, needle=f"[ct-call:{call.id}]",
+                                           access_token=access_token, settings=settings):
+                amo_v4.add_lead_note(lead_id=lead_id, text=call_note(call, attr),
                                 access_token=access_token, settings=settings, raise_on_error=True)
             meta_old["note_sent"] = True
         call.visit_id = attr.visit.id if attr.visit else None

@@ -254,7 +254,8 @@ def find_contact_by_phone(
         phones = get_contact_phones(contact_id=int(cid), access_token=access_token, settings=settings)
         if any(normalize_phone(p) == key for p in phones):
             return c
-    return contacts[0] if contacts else None
+    # Search can return a partial match. Never bind a call to another person.
+    return None
 
 
 def create_contact(
@@ -371,18 +372,24 @@ def lead_has_note_text(
     settings = settings or get_settings()
     url = f"{api_base(settings)}/api/v4/leads/{lead_id}/notes"
     with httpx.Client(timeout=20.0) as client:
-        r = client.get(url, params={"limit": 50}, headers=_headers(access_token))
-        if r.status_code == 204 or not r.content:
-            return False
-        r.raise_for_status()
-        notes = ((r.json() or {}).get("_embedded") or {}).get("notes") or []
-    return any(needle in str((n.get("params") or {}).get("text") or "") for n in notes)
+        for page in range(1, 101):
+            r = client.get(url, params={"limit": 250, "page": page}, headers=_headers(access_token))
+            r.raise_for_status()
+            if r.status_code == 204 or not r.content:
+                return False
+            doc = r.json() or {}
+            notes = (doc.get("_embedded") or {}).get("notes") or []
+            if any(needle in str((n.get("params") or {}).get("text") or "") for n in notes):
+                return True
+            if not notes or not (doc.get("_links") or {}).get("next"):
+                return False
+    raise RuntimeError("note_scan_limit")
 
 
-def open_leads_for_phone(
+def _phone_leads(
     *, phone: str, access_token: str, settings: Optional[Settings] = None
 ) -> list[dict[str, Any]]:
-    """Открытые сделки контакта. 142 и 143 в amoCRM — успех и провал."""
+    """Exact-phone candidates; API errors must be retried, not treated as absence."""
     settings = settings or get_settings()
     contact = find_contact_by_phone(phone=phone, access_token=access_token, settings=settings)
     if not contact or not contact.get("id"):
@@ -390,21 +397,34 @@ def open_leads_for_phone(
     url = f"{api_base(settings)}/api/v4/contacts/{int(contact['id'])}"
     with httpx.Client(timeout=30.0) as client:
         r = client.get(url, params={"with": "leads"}, headers=_headers(access_token))
-        if r.status_code >= 400:
+        r.raise_for_status()
+        if r.status_code == 204:
             return []
         leads = ((r.json() or {}).get("_embedded") or {}).get("leads") or []
     ids = sorted((int(l["id"]) for l in leads if l.get("id")), reverse=True)
-    opened: list[dict[str, Any]] = []
+    found: list[dict[str, Any]] = []
     for lead_id in ids[:15]:
-        try:
-            full = get_lead(lead_id=lead_id, access_token=access_token, settings=settings)
-        except Exception:
-            continue
-        if int(full.get("status_id") or 0) in (142, 143):
-            continue
-        opened.append(full)
-        break
-    return opened
+        found.append(get_lead(lead_id=lead_id, access_token=access_token, settings=settings))
+    return found
+
+
+def open_leads_for_phone(
+    *, phone: str, access_token: str, settings: Optional[Settings] = None
+) -> list[dict[str, Any]]:
+    return [lead for lead in _phone_leads(phone=phone, access_token=access_token, settings=settings)
+            if int(lead.get("status_id") or 0) not in (142, 143)]
+
+
+def recent_closed_leads_for_call(*, phone: str, started_at, access_token: str,
+                                settings: Optional[Settings] = None) -> list[dict[str, Any]]:
+    """A short-lived deal may already be closed before the five-minute worker."""
+    import datetime as dt
+    settings = settings or get_settings()
+    stamp = started_at.timestamp()
+    return [lead for lead in _phone_leads(phone=phone, access_token=access_token, settings=settings)
+            if int(lead.get("status_id") or 0) in (142, 143)
+            and stamp - settings.ct_call_window_minutes * 60 <= int(lead.get("created_at") or 0) <= stamp + 120
+            and int(lead.get("closed_at") or 0) >= stamp - 120]
 
 
 def subscribe_webhook(

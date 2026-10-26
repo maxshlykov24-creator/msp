@@ -32,6 +32,7 @@ class SessionIn(BaseModel):
     referrer: str = ""
     ym_uid: Optional[str] = None
     test: bool = False
+    call_intent: bool = False
 
 
 class PingIn(BaseModel):
@@ -191,8 +192,14 @@ def _new_visit(db: Session, fresh: dict[str, Optional[str]], url: str, referrer:
     return visit
 
 
-def _issue(db: Session, visit, now: datetime) -> dict:
-    if not visit.is_paid:
+def _issue(db: Session, visit, now: datetime, *, call_intent: bool = False) -> dict:
+    from sqlalchemy import select
+    from app.calltrack.models import PoolNumber
+    # Keep renewing a number obtained on a call click, even on untagged pages.
+    has_pool = bool(db.scalar(select(PoolNumber.id).where(
+        PoolNumber.held_by_visit_id == visit.id, PoolNumber.kind == "pool",
+        PoolNumber.active.is_(True)).limit(1)))
+    if not visit.is_paid and not has_pool and not (call_intent and get_settings().ct_call_intent_enabled):
         return _payload("organic", visit.id, _organic_number())
     number = allocate_pool(db, visit, now)
     if number is None:
@@ -262,7 +269,7 @@ def ct_session(
             visit = _new_visit(db, fresh, payload.url, payload.referrer, payload.ym_uid, ua, now)
         else:
             _fill_visit(visit, fresh, payload.url, payload.referrer, payload.ym_uid, ua, now)
-        body = _issue(db, visit, now)
+        body = _issue(db, visit, now, call_intent=payload.call_intent)
         record_load(db, now)
         db.commit()
     except Exception:

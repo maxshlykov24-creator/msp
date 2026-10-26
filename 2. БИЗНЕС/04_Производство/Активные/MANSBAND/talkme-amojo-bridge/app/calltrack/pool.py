@@ -44,7 +44,36 @@ def channel_map(settings: Settings) -> dict[str, str]:
 
 
 def utm_source_map(settings: Settings) -> dict[str, str]:
-    return {k.lower(): v for k, v in _pairs(settings.ct_utm_source_map, ";")}
+    mapping = {k.lower(): v for k, v in _pairs(settings.ct_utm_source_map, ";")}
+    mapping.setdefault("ya", "Яндекс Директ")
+    return mapping
+
+
+def record_fallback(db: Session, visit: Visit, now: dt.datetime, *, recovered: bool = False) -> None:
+    """One small row per affected visit/day, without URL, IP, ClientID or phone."""
+    import json
+    from app.models import KvState
+    key = f"ct_fallback:{now.astimezone(MSK).date()}:{visit.id}"
+    if recovered:
+        # A recovery can cross midnight, so update any unresolved row for this visit.
+        rows = db.scalars(select(KvState).where(KvState.key.like(f"ct_fallback:%:{visit.id}"))).all()
+        for row in rows:
+            data = json.loads(row.value)
+            if not data.get("recovered_at"):
+                data["recovered_at"] = now.isoformat()
+                row.value = json.dumps(data)
+                row.updated_at = now
+        return
+    db.execute(text("""
+        INSERT INTO kv_state (key, value, updated_at) VALUES (:key, :value, :now)
+        ON CONFLICT (key) DO UPDATE SET value =
+          (kv_state.value::jsonb || jsonb_build_object(
+            'last_at', :stamp, 'responses', (kv_state.value::jsonb->>'responses')::int + 1))::text,
+          updated_at = :now
+    """), {"key": key, "now": now, "stamp": now.isoformat(), "value": json.dumps({
+        "visit": visit.id, "first_at": now.isoformat(), "last_at": now.isoformat(),
+        "responses": 1, "source": (visit.utm_source or "")[:255], "paid": visit.is_paid,
+        "recovered_at": None})})
 
 
 def wanted_numbers(settings: Settings) -> dict[str, tuple[str, Optional[str]]]:
@@ -164,6 +193,7 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
     )
     if free is None:
         _bump_exhausted(db, now)
+        record_fallback(db, visit, now)
         return None
 
     free.held_by_visit_id = visit.id
@@ -179,6 +209,7 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
         )
     )
     db.flush()
+    record_fallback(db, visit, now, recovered=True)
     return free
 
 

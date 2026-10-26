@@ -114,7 +114,7 @@ def run_reconcile_once(db: Optional[Session] = None) -> dict[str, int]:
         now = dt.datetime.now(timezone.utc)
         settings = get_settings()
         calls = db.execute(select(CallEvent).where(
-            CallEvent.status.in_(["new", "retry"]),
+            CallEvent.status.in_(["new", "retry", "unattributed"]),
             CallEvent.started_at <= now - timedelta(minutes=5)
         ).order_by(CallEvent.started_at).limit(100)).scalars().all()
         token = None
@@ -127,20 +127,33 @@ def run_reconcile_once(db: Optional[Session] = None) -> dict[str, int]:
                     save_repeat_call(db, call, call.lead_id, token)
                     counts["repeat"] += 1
                     continue
-                if call.status == "retry" and call.lead_id:
+                if call.status in {"retry", "unattributed"} and call.lead_id:
                     lead = amo_v4.get_lead(lead_id=call.lead_id, access_token=token, settings=settings)
                     apply_call(db, call, call.lead_id, lead, token)
                     counts["retry"] += 1
                     continue
                 opens = amo_v4.open_leads_for_phone(
                     phone=call.caller, access_token=token, settings=settings)
+                if not opens:
+                    closed = amo_v4.recent_closed_leads_for_call(
+                        phone=call.caller, started_at=call.started_at,
+                        access_token=token, settings=settings)
+                    if len(closed) == 1:
+                        save_repeat_call(db, call, int(closed[0]["id"]), token)
+                        counts["repeat"] += 1
+                        continue
+                    if len(closed) > 1:
+                        call.status = "error"
+                        call.result = {**(call.result or {}), "error": "multiple_recent_closed_leads"}
+                        db.commit()
+                        continue
                 kind = classify_call(call, opens, now)
                 if kind == "repeat":
                     # Новая сделка рядом со звонком: возможно, add_lead был потерян.
                     # Не помечаем такой звонок повторным без попытки дописать метки.
                     if len(opens) != 1:
                         call.status = "error"
-                        call.result = {"error": "multiple_open_leads"}
+                        call.result = {**(call.result or {}), "error": "multiple_open_leads"}
                     else:
                         lead = amo_v4.get_lead(lead_id=int(opens[0]["id"]), access_token=token, settings=settings)
                         created = dt.datetime.fromtimestamp(int(lead.get("created_at") or 0), timezone.utc)
@@ -253,6 +266,10 @@ def summary_text(db: Session, now: Optional[dt.datetime] = None, *, previous_day
     key = f"ct_pool_exhausted:{report_date.isoformat()}"
     exhausted_row = db.execute(select(KvState).where(KvState.key == key)).scalar_one_or_none()
     exhausted = int(exhausted_row.value) if exhausted_row and str(exhausted_row.value).isdigit() else 0
+    fallback_rows = db.execute(select(KvState).where(
+        KvState.key.like(f"ct_fallback:{report_date}:%"))).scalars().all()
+    fallback = [json.loads(row.value) for row in fallback_rows]
+    recovered = sum(bool(item.get("recovered_at")) for item in fallback)
     visits = db.execute(select(Visit).where(Visit.created_at >= start, Visit.created_at < end)).scalars().all()
     sources: dict[str, int] = {}
     for visit in visits:
@@ -271,6 +288,7 @@ def summary_text(db: Session, now: Optional[dt.datetime] = None, *, previous_day
         f"Источники: {sources}\n"
         f"Пик занятых номеров: {peaks['busy']}; активных рекламных визитов: {peaks['demand']}\n"
         f"Ответов с резервным номером: {exhausted}\n"
+        f"Визитов с резервом (учёт после исправления): {len(fallback)}; позже получили подмену: {recovered}\n"
         f"Звонков: {total}; с источником: {matched}; повторных: {repeat}\n"
         f"Без сделки: {no_lead}; требуют разбора или не имеют точной атрибуции: {unresolved}"
     )
