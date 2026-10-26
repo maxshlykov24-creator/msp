@@ -1574,3 +1574,6 @@ def test_summary_separates_calls_coverage_and_errors_and_merges_aliases():
         assert "Яндекс Поиск: 1" in report
         assert "Число визитов с резервом за этот день не записывалось" in report
         assert "{'" not in report and "yclid:" not in report
+        visits[-1].landing_url = "https://[broken"
+        db.commit()
+        assert "Источник не определён: 1" in summary_text(db, now)

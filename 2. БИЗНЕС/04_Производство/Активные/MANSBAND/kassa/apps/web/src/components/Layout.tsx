@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   PanelLeft,
   PlusCircle,
@@ -419,6 +420,9 @@ function UserMenu({
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [box, setBox] = useState({ top: 0, right: 8 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
   const canSettings = user?.role === "rop" || user?.role === "admin";
 
@@ -426,12 +430,48 @@ function UserMenu({
     setOpen(false);
   }
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    function place() {
+      const rect = btnRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setBox({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    const onPointer = (event: PointerEvent) => {
+      const node = event.target as Node | null;
+      if (!node) return;
+      if (btnRef.current?.contains(node) || menuRef.current?.contains(node)) return;
+      setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer, true);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer, true);
+    };
+  }, [open]);
+
   const itemCls =
     "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[14px] text-mute-soft hover:bg-ink-800 hover:text-white transition text-left";
 
   return (
     <div className="relative shrink-0">
       <button
+        ref={btnRef}
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center rounded-lg border border-ink-700 bg-ink-900 hover:border-gold/40 transition ${
           compact ? "gap-1.5 pl-2 pr-2 py-2" : "gap-2 pl-2 pr-2.5 py-2"
@@ -454,14 +494,17 @@ function UserMenu({
         {compact && <ChevronDown size={13} className="text-mute shrink-0" />}
       </button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={close} />
-          <div
-            className={`absolute right-0 top-full mt-2 z-50 card p-1.5 kassa-pop ${
-              compact ? "w-[min(calc(100%-2rem),16rem)]" : "w-64"
-            }`}
-          >
+      {open &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[80]" />
+            <div
+              ref={menuRef}
+              className={`fixed z-[90] card p-1.5 kassa-pop ${
+                compact ? "w-[min(calc(100%-2rem),16rem)]" : "w-64"
+              }`}
+              style={{ top: box.top, right: box.right }}
+            >
             <div className="flex items-center gap-2.5 px-3 py-2.5">
               <span className="w-9 h-9 rounded-full bg-gold/20 text-gold-soft grid place-items-center text-sm font-bold">
                 {displayName[0]}
@@ -525,9 +568,10 @@ function UserMenu({
               <LogOut size={17} />
               <span className="flex-1">Выйти</span>
             </button>
-          </div>
-        </>
-      )}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }
