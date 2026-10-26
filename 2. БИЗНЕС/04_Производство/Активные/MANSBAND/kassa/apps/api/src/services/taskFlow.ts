@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { dealItemState, deals as dealsTable, tasks } from "../db/schema.js";
+import { dealItemState, deals as dealsTable, tasks, users } from "../db/schema.js";
 import type { Deal, Task, TaskAssigneeRole, TaskKind } from "@kassa/shared";
 import {
   CDEK_LOCATION,
@@ -88,17 +88,108 @@ async function hasTaskForDeal(dealNumber: number, kinds: TaskKind[]): Promise<bo
   return rows.length > 0;
 }
 
+function shortHash(value: string): string {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i++) hash = ((hash << 5) + hash + value.charCodeAt(i)) >>> 0;
+  return hash.toString(36);
+}
+
+function queueRoleOf(role: string): TaskAssigneeRole {
+  if (role === "crm" || role === "callmanager") return "crm";
+  if (role === "logist" || role === "supply") return "logist";
+  return "consultant";
+}
+
+/** Сотрудник кассы по имени из JWT. Нет в справочнике — null (например актор amoCRM). */
+async function findUserByName(name: string): Promise<{ name: string; role: string } | null> {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const rows = await db
+    .select({ name: users.name, role: users.role })
+    .from(users)
+    .where(sql`lower(${users.name}) = ${trimmed.toLowerCase()}`)
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * «Дано обещание»: задача тому, кто сохранил этап.
+ * Формулировка — комментарий, срок — «Актуально до». Этап заявки при закрытии не двигаем.
+ */
+async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
+  if (deal.stage !== "Дано обещание") return;
+  const comment = deal.comment?.trim() ?? "";
+  const due = (deal.actualUntil ?? "").slice(0, 10);
+  if (!comment || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return;
+
+  const actor = who.trim();
+  const creator = actor && actor !== "amoCRM" ? await findUserByName(actor) : null;
+  const consultantName = deal.consultant?.trim() ?? "";
+  const consultant = !creator && consultantName ? await findUserByName(consultantName) : null;
+  // Кто сохранил этап в кассе — тот и получает задачу, даже если имени нет в справочнике.
+  // Из amoCRM имени сотрудника нет: отдаём консультанту заявки.
+  const assigneeName = creator?.name || (actor && actor !== "amoCRM" ? actor : consultant?.name || consultantName);
+  if (!assigneeName) return;
+  const assigneeRole = queueRoleOf((creator ?? consultant)?.role ?? "consultant");
+  const title = comment.length > 500 ? `${comment.slice(0, 497)}…` : comment;
+  const metadata = {
+    dueDate: due,
+    comment,
+    assigneeName,
+    client: deal.clientName,
+    phone: deal.clientPhone,
+    consultant: deal.consultant,
+    dealKind: deal.kind,
+    dealStage: deal.stage,
+    route: deal.store,
+  };
+
+  const pending = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.dealNumber, deal.number),
+        eq(tasks.kind, "promise_follow"),
+        eq(tasks.status, "pending")
+      )
+    )
+    .limit(1);
+  if (pending[0]) {
+    await db
+      .update(tasks)
+      .set({ title, assigneeRole, store: deal.store ?? null, metadata })
+      .where(eq(tasks.id, pending[0].id));
+    return;
+  }
+
+  await insertTask(
+    {
+      kind: "promise_follow",
+      title,
+      assigneeRole,
+      store: deal.store,
+      dealNumber: deal.number,
+      idempotencyKey: `promise:${deal.id}:${due}:${shortHash(comment)}`,
+      metadata,
+    },
+    assigneeName
+  );
+}
+
 /**
  * Заявка встала на этап — ставим задачи по правилам. Вызывается при создании
  * заявки и при любой смене этапа, включая автоматическую.
  */
 export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<void> {
   if (depth > 3) return; // защита от циклов в правилах
+  await syncPromiseFollowUp(deal, who);
   if (deal.kind === "company" && deal.stage === "Товар отложен") {
     await enqueueCompanyChain(deal, { dealNumber: deal.number, client: deal.clientName, status: "pending" });
   }
   const rules = flowsForStage(deal.stage, deal.kind);
   for (const rule of rules) {
+    if (rule.kind === "promise_follow") continue;
     if (rule.kind === "movement") {
       // Перемещение уже оформляли по этой заявке — второй раз не напоминаем.
       if (await hasTaskForDeal(deal.number, ["movement", "movement_accept"])) continue;

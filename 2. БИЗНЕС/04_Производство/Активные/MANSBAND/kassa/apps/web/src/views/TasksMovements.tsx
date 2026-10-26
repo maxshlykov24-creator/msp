@@ -11,6 +11,7 @@ import {
   taskTitle,
 } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { useStore } from "../store";
 import { Button, Modal, StageBadge, Select, opts } from "../components/ui";
 import { inPeriod, periodStart, QueuePeriodBar, type QueuePeriod } from "../components/QueuePeriod";
@@ -148,7 +149,29 @@ function clientOf(task: OperationTask): string | null {
   return typeof client === "string" && client.trim() ? client.trim() : null;
 }
 
+function assignedPerson(task: OperationTask): string {
+  const name = task.metadata?.assigneeName;
+  return typeof name === "string" ? name.trim() : "";
+}
+
+/** Обещание видит сотрудник, на которого оно поставлено. Руководители видят все. */
+function promiseVisibleTo(
+  task: OperationTask,
+  user: { name: string; role: string } | null
+): boolean {
+  if (task.kind !== "promise_follow") return true;
+  if (!user || user.role === "admin" || user.role === "rop") return true;
+  const assigned = assignedPerson(task).toLowerCase();
+  if (!assigned) return true;
+  return assigned === user.name.trim().toLowerCase();
+}
+
 function productCell(task: OperationTask): string {
+  if (task.kind === "promise_follow") {
+    const comment = task.metadata?.comment;
+    if (typeof comment === "string" && comment.trim()) return comment.trim();
+    return task.title.trim() || "—";
+  }
   const list = positionsFromTaskMeta(task.metadata);
   const names = list.map((p) => p.name?.trim()).filter(Boolean);
   if (names.length === 1) return names[0]!;
@@ -182,6 +205,9 @@ function TaskRow({
     >
       <td className="px-3 py-3 align-top whitespace-nowrap">
         <div className="text-white font-medium text-[13px]">{taskKindLabel(task.kind)}</div>
+        {task.kind === "promise_follow" && assignedPerson(task) && (
+          <div className="text-[11px] text-mute mt-0.5">{assignedPerson(task)}</div>
+        )}
         {showQueue && queueShort && <div className="text-[11px] text-mute mt-0.5">{queueShort}</div>}
       </td>
       <td className="px-3 py-3 align-top min-w-0">
@@ -228,6 +254,7 @@ function TaskRow({
 
 export function TasksMovements() {
   const { activeStore, deals } = useStore();
+  const { user } = useAuth();
   const initialHash = hashParts();
   const [view, setView] = useState<QueueView>(parseView(initialHash[1]));
   const [tasks, setTasks] = useState<OperationTask[]>(USE_MOCK ? MOCK_TASKS : []);
@@ -307,8 +334,9 @@ export function TasksMovements() {
 
   const kindOptions = useMemo(() => {
     const notSary = (k: string) => k !== "sary_send";
+    const seen = tasks.filter((t) => promiseVisibleTo(t, user));
     if (view === "all") {
-      const present = new Set(tasks.map((t) => t.kind));
+      const present = new Set(seen.map((t) => t.kind));
       return KIND_ORDER.filter((k) => notSary(k) && present.has(k)).map((k) => ({
         value: k,
         label: taskKindLabel(k),
@@ -316,7 +344,7 @@ export function TasksMovements() {
     }
     const forRole = taskKindsForRole(view).filter(notSary);
     const present = new Set(
-      tasks.filter((t) => t.assigneeRole === view && !isSaryOps(t.kind)).map((t) => t.kind)
+      seen.filter((t) => t.assigneeRole === view && !isSaryOps(t.kind)).map((t) => t.kind)
     );
     // Показываем виды роли; сначала те, что реально есть в очереди.
     const ordered = [
@@ -324,7 +352,7 @@ export function TasksMovements() {
       ...KIND_ORDER.filter((k) => forRole.includes(k as (typeof forRole)[number]) && !present.has(k)),
     ];
     return ordered.map((k) => ({ value: k, label: taskKindLabel(k) }));
-  }, [view, tasks]);
+  }, [view, tasks, user]);
 
   const routeOptions = useMemo(() => {
     const names = new Set<string>(ITEM_LOCATIONS);
@@ -339,6 +367,7 @@ export function TasksMovements() {
   /** Задачи выбранной очереди, магазина и маршрута. Сары — только в блоке ниже. */
   const visibleTasks = useMemo(() => {
     return tasks.filter((task) => {
+      if (!promiseVisibleTo(task, user)) return false;
       if (isSaryOps(task.kind)) return false;
       if (view !== "all" && task.assigneeRole !== view) return false;
       if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) return false;
@@ -350,23 +379,25 @@ export function TasksMovements() {
       if (toFilter && warehouseKey(route?.to ?? "") !== warehouseKey(toFilter)) return false;
       return true;
     });
-  }, [tasks, status, view, kindFilter, queueFilter, storeScope, fromFilter, toFilter]);
+  }, [tasks, status, view, kindFilter, queueFilter, storeScope, fromFilter, toFilter, user]);
 
   const queueCounts = useMemo(() => {
     const counts = new Map<string, number>();
     let allPending = 0;
     for (const task of tasks) {
+      if (!promiseVisibleTo(task, user)) continue;
       if (task.status !== "pending" || isSaryOps(task.kind)) continue;
       allPending += 1;
       counts.set(task.assigneeRole, (counts.get(task.assigneeRole) ?? 0) + 1);
     }
     counts.set("all", allPending);
     return counts;
-  }, [tasks]);
+  }, [tasks, user]);
 
   const kindCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const task of tasks) {
+      if (!promiseVisibleTo(task, user)) continue;
       if (isSaryOps(task.kind)) continue;
       if (view !== "all" && task.assigneeRole !== view) continue;
       if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) continue;
@@ -375,19 +406,20 @@ export function TasksMovements() {
       counts.set(task.kind, (counts.get(task.kind) ?? 0) + 1);
     }
     return counts;
-  }, [tasks, view, status, queueFilter, storeScope]);
+  }, [tasks, view, status, queueFilter, storeScope, user]);
 
   const total = visibleTasks.length;
   const periodFromDay = periodStart(period);
   const statsTasks = useMemo(() => {
     return tasks.filter((task) => {
+      if (!promiseVisibleTo(task, user)) return false;
       if (isSaryOps(task.kind)) return false;
       if (view !== "all" && task.assigneeRole !== view) return false;
       if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) return false;
       if (storeScope && !taskTouchesStore(task, storeScope)) return false;
       return true;
     });
-  }, [tasks, view, queueFilter, storeScope]);
+  }, [tasks, view, queueFilter, storeScope, user]);
   const openTasks = statsTasks.filter((task) => task.status === "pending").length;
   const doneTasks = statsTasks.filter(
     (task) => task.status === "done" && inPeriod(task.completedAt ?? task.createdAt, periodFromDay)

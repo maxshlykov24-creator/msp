@@ -221,6 +221,12 @@ export default async function dealsRoutes(app: FastifyInstance) {
         await sale.noteSaryInAmo(updated, req.user.name).catch(() => {});
         await notifyDeal(updated, "success").catch(() => {});
       }
+    } else if (
+      updated.stage === "Дано обещание" &&
+      (updated.comment !== existing.comment || updated.actualUntil !== existing.actualUntil)
+    ) {
+      // Срок или текст обещания поменяли, не трогая этап — задачу обновляем.
+      await taskFlow.onDealStage(updated, req.user.name).catch(() => {});
     }
     // Сменили раскладку возврата → досоздаём задачу Эдвину «Сделать возврат».
     if (

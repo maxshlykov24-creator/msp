@@ -9,7 +9,7 @@ import { Button, Select, opts } from "./ui";
 // Виды задач и подписи — из реестра формулы (@kassa/shared/taskFlow).
 // Приёмку перемещения руками не создают: она рождается после отправки.
 export const TASK_KINDS: Array<readonly [string, string]> = TASK_FLOW.filter(
-  (rule) => rule.kind !== "movement_accept"
+  (rule) => rule.kind !== "movement_accept" && rule.kind !== "promise_follow"
 ).map((rule) => [rule.kind, rule.label] as const);
 
 export type TaskAssigneeRole = "consultant" | "logist" | "crm";

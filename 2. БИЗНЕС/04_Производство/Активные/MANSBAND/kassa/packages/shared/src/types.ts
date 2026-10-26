@@ -366,7 +366,9 @@ export type TaskKind =
   /** Сарафан: перевести 1000 ₽ тому, кто направил клиента (очередь колл-менеджера). */
   | "sary_send"
   | "barcode"
-  | "manual_check";
+  | "manual_check"
+  /** Обещание: напомнить сотруднику, который поставил этап, до даты «Актуально до». */
+  | "promise_follow";
 
 export type TaskAssigneeRole = "consultant" | "logist" | "crm";
 

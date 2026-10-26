@@ -521,7 +521,7 @@ export const balanceSchema = z.object({
 });
 
 export const taskSchema = z.object({
-  kind: z.enum(["movement", "movement_accept", "reserve", "reserve_call", "unreserve", "assemble_cdek", "call_courier", "take_to_cdek", "pickup_from_cdek", "sary_send", "barcode", "manual_check"]),
+  kind: z.enum(["movement", "movement_accept", "reserve", "reserve_call", "unreserve", "assemble_cdek", "call_courier", "take_to_cdek", "pickup_from_cdek", "sary_send", "barcode", "manual_check", "promise_follow"]),
   dealNumber: z.number().int().positive().optional(),
   dealItemId: z.string().optional(),
   store: z.string().optional(),

@@ -238,6 +238,9 @@ export function TaskDetail({
   const isTakeToCdek = task.kind === "take_to_cdek";
   const isPickupFromCdek = task.kind === "pickup_from_cdek";
   const isSary = task.kind === "sary_send";
+  const isPromise = task.kind === "promise_follow";
+  const promiseText =
+    (typeof meta?.comment === "string" && meta.comment.trim()) || task.title.trim();
   /** Позиции списком: сборка / отнести / забрать. Скан обязателен на сборке и на «Сделать отложку». */
   const showDeliveryPositions = isAssemble || isTakeToCdek || isPickupFromCdek;
   const showScanPositions = isMove || showDeliveryPositions || isReserve;
@@ -361,6 +364,12 @@ export function TaskDetail({
           {creator && !people.length && <span>поставил {creator}</span>}
         </div>
       </div>
+
+      {isPromise && promiseText && (
+        <div className="rounded-xl border border-ink-700 bg-ink-900/50 px-4 py-3 text-[15px] text-white leading-snug whitespace-pre-wrap">
+          {promiseText}
+        </div>
+      )}
 
       {isMove && route && (
         <div className="rounded-xl border border-ink-700 bg-ink-900/50 p-4">

@@ -40,9 +40,16 @@ export function isDealRelevantToUser(deal: Deal, user: User | null, tasks: Task[
   const sameName = (value?: string) => !!value?.trim() && value.trim().toLowerCase() === user.name.trim().toLowerCase();
   if (sameName(deal.consultant) || sameName(deal.callManager)) return true;
   const role = user.role === "seller" ? "consultant" : user.role;
-  return tasks.some((task) => task.dealNumber === deal.number && task.status === "pending"
-    && task.assigneeRole === role
-    && (role !== "consultant" || (!!user.store && task.store === user.store)));
+  return tasks.some((task) => {
+    if (task.dealNumber !== deal.number || task.status !== "pending") return false;
+    // Обещание видит тот, на кого оно поставлено, а не вся очередь магазина.
+    if (task.kind === "promise_follow") {
+      const assigned = typeof task.metadata?.assigneeName === "string" ? task.metadata.assigneeName : "";
+      return sameName(assigned);
+    }
+    return task.assigneeRole === role
+      && (role !== "consultant" || (!!user.store && task.store === user.store));
+  });
 }
 
 /**
@@ -179,6 +186,20 @@ export const TASK_FLOW: TaskFlowRule[] = [
     assignee: "consultant",
     inside: "Разобрать отложку и вернуть комплект в зал магазина заявки",
     note: "Консультанту магазина заявки. Этап автоматически не меняем — решение за колл-менеджером",
+  },
+  {
+    kind: "promise_follow",
+    label: "Обещание",
+    actionLabel: "Готово",
+    trigger: {
+      source: "stage",
+      stage: "Дано обещание",
+      dealKinds: HOLD_DEAL_KINDS,
+      description: "Заявку поставили на этап «Дано обещание»",
+    },
+    assignee: "consultant",
+    inside: "Связаться по обещанию. Текст задачи — комментарий заявки, срок — «Актуально до»",
+    note: "Задача падает сотруднику, который сохранил этап. Закрытие задачи этап заявки не меняет",
   },
   {
     kind: "assemble_cdek",
@@ -318,6 +339,7 @@ export const TASK_QUEUES: Array<{ role: TaskAssigneeRole; label: string; short: 
 /** Виды задач, которые попадают в очередь роли (для подгрупп внутри очереди). */
 export function taskKindsForRole(role: TaskAssigneeRole): TaskKind[] {
   const kinds = TASK_FLOW.filter((rule) => {
+    if (rule.kind === "promise_follow") return role === "consultant" || role === "crm";
     if (rule.assignee === role) return true;
     // Перемещение и приёмка ходят и к логисту, и к консультанту — по складу.
     return (

@@ -197,11 +197,12 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
       const table = (name, columns) => Object.assign({ table: name }, Object.fromEntries(columns.map((c) => [c, c])));
       const schema = {
         tasks: table("tasks", ["id", "kind", "dealNumber", "status", "idempotencyKey", "assigneeRole", "store", "createdAt"]),
+        users: table("users", ["name", "role"]),
         msRefs: table("refs", ["kind"]),
         dealItemState: table("items", ["dealNumber", "itemId"]),
         deals: table("deals", ["number", "stage", "data"]),
       };
-      const state = { tasks: [], items: [], deals: [], refs: [
+      const state = { tasks: [], users: [], items: [], deals: [], refs: [
         { kind: "store", msId: "source", name: sourceName, payload: { name: sourceName, meta: {} } },
         { kind: "store", msId: "target", name: "На Бауманской", payload: { name: "На Бауманской", meta: {} } },
       ] };
@@ -266,16 +267,20 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
         services[name] = module.exports;
       }
       await services.taskFlow.onDealStage(deal, "Тест");
-      assert.equal(state.tasks.length, 0, "promise does not dispatch logistics");
+      assert.equal(state.tasks.filter((t) => t.kind !== "promise_follow").length, 0, "promise does not dispatch logistics");
+      const promiseTask = state.tasks.find((t) => t.kind === "promise_follow");
+      assert.equal(promiseTask?.title, "Привезти размер");
+      assert.equal(promiseTask?.metadata?.dueDate, "2026-11-07");
+      assert.equal(promiseTask?.metadata?.assigneeName, "Тест");
       deal.stage = "Ждет товар";
       await services.taskFlow.onDealStage(deal, "Тест");
       await services.taskFlow.onDealStage(deal, "Тест");
-      assert.equal(state.tasks.length, 1, "one setup reminder");
+      assert.equal(state.tasks.filter((t) => t.kind === "movement").length, 1, "one setup reminder");
       assert.equal(state.tasks[0].assigneeRole, "consultant");
       const input = { idempotencyKey: `move-${kind}-${sourceName}`, dealNumber: deal.number, fromStoreMsId: "source", toStoreMsId: "target", positions: [{ productId: "product", quantity: 1 }], store: "Неверный магазин", assigneeRole: "crm", title: "Перемещение" };
       const task = await services.tasks.createMovement(input, "Тест");
       await services.tasks.createMovement(input, "Тест");
-      assert.equal(state.tasks.length, 1, "setup reused; retry doesn't duplicate");
+      assert.equal(state.tasks.filter((t) => t.kind === "movement").length, 1, "setup reused; retry doesn't duplicate");
       assert.equal(task.assigneeRole, sourceName === shared.CENTRAL_WAREHOUSE ? "logist" : "consultant");
       assert.equal(task.store, shared.storeForAcceptQueue(sourceName));
       const second = await services.tasks.createMovement({ ...input, idempotencyKey: `${input.idempotencyKey}-second`, positions: [{ productId: "product-2", quantity: 1 }] }, "Тест");
