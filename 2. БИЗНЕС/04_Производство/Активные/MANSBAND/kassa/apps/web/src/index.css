@@ -1096,6 +1096,12 @@ html.theme-light .kassa-select-menu {
   transform: translateY(-1px);
 }
 
+/* Подпись и стрелка используют палитру выбранного этапа в обеих темах. */
+.stage-select-trigger > span,
+.stage-select-trigger > svg {
+  color: inherit;
+}
+
 .stage-select-trigger:focus-visible {
   outline: 2px solid color-mix(in srgb, rgb(var(--fg)) 55%, transparent);
   outline-offset: 3px;
