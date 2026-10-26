@@ -29,6 +29,7 @@ import * as queueService from "../services/queue.js";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { dealItemState } from "../db/schema.js";
+import { ensureKassaLink } from "../services/amoMapping.js";
 
 // Виды заявок, по которым касса проводит складскую отгрузку/возврат при Успехе.
 const FULFILLABLE = new Set(["sale", "company", "deferred", "delivery", "exchange", "refund"]);
@@ -104,6 +105,19 @@ export default async function dealsRoutes(app: FastifyInstance) {
     const parsed = dealsSearchSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
     return deals.searchAmo(parsed.data);
+  });
+
+  app.post("/deals/kassa-link", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const amoLeadId = Number((req.body as { amoLeadId?: unknown } | null)?.amoLeadId);
+    if (!Number.isInteger(amoLeadId) || amoLeadId <= 0) {
+      return reply.code(400).send({ message: "Нужен номер сделки amo" });
+    }
+    try {
+      await ensureKassaLink(amoLeadId);
+    } catch (err) {
+      return reply.code(502).send({ message: (err as Error).message });
+    }
+    return { ok: true };
   });
 
   app.get("/deals/:ref", { preHandler: [app.authenticate] }, async (req, reply) => {

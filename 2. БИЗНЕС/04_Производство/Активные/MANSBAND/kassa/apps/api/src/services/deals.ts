@@ -19,7 +19,7 @@ import type { Deal, DealKind, FunnelType, Store } from "@kassa/shared";
 import { getFieldIdByName } from "./bootstrap.js";
 import { broadcast } from "../ws/hub.js";
 import * as financeQueue from "./queue.js";
-import { buildLeadCustomFields } from "./amoMapping.js";
+import { buildLeadCustomFields, scheduleKassaLinkBackfill } from "./amoMapping.js";
 
 // Системные закрытые статусы amo (общие id для воронок).
 const CLOSED_OR_JUNK_STATUS_IDS = new Set([
@@ -1056,7 +1056,9 @@ async function fetchAmoOpen(): Promise<Deal[]> {
     amo.listOpenLeadsInPipeline(AMO_PIPELINE_SALES, salesOpen).catch(() => [] as amo.AmoLead[]),
     amo.listOpenLeadsInPipeline(AMO_PIPELINE_COMPLAINTS, complaintsOpen).catch(() => [] as amo.AmoLead[]),
   ]);
-  return mapLeads([...salesLeads, ...complaintsLeads], statuses);
+  const leads = [...salesLeads, ...complaintsLeads];
+  scheduleKassaLinkBackfill(leads);
+  return mapLeads(leads, statuses);
 }
 
 async function fetchAmoClosed(): Promise<Deal[]> {

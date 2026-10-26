@@ -6,7 +6,10 @@ import {
   type AmoLeadFieldKey,
 } from "@kassa/shared";
 import type { Deal } from "@kassa/shared";
+import { eq } from "drizzle-orm";
 import * as amo from "../clients/amo.js";
+import { db } from "../db/index.js";
+import { deals as dealsTable } from "../db/schema.js";
 import { getEnv } from "../env.js";
 import { getCompanyFieldIdByName, getFieldIdByName, getFieldIdsByName, getLeadFieldMeta, syncAmoMeta } from "./bootstrap.js";
 
@@ -72,6 +75,74 @@ export async function writeKassaLink(leadId: number, dealNumber: number): Promis
   await amo.updateLead(leadId, {
     customFields: missing.map((fieldId) => ({ field_id: fieldId, values: [{ value: link }] })),
   });
+}
+
+/** Номер в ссылке: локальная заявка, если она уже есть, иначе id сделки amo. */
+export async function ensureKassaLink(amoLeadId: number): Promise<void> {
+  if (!Number.isInteger(amoLeadId) || amoLeadId <= 0) return;
+  const [local] = await db
+    .select({ number: dealsTable.number })
+    .from(dealsTable)
+    .where(eq(dealsTable.amoLeadId, amoLeadId))
+    .limit(1);
+  await writeKassaLink(amoLeadId, local?.number ?? amoLeadId);
+}
+
+const LINK_BACKFILL_BATCH = 40;
+let linkBackfillRunning = false;
+
+function linkFieldText(lead: amo.AmoLead, fieldId: number): string {
+  const value = lead.custom_fields_values?.find((field) => field.field_id === fieldId)?.values?.[0]?.value;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Дописать «Ссылку на кассу» открытым сделкам, у которых поле пустое.
+ * За один проход — пачка, остаток подхватит следующий снимок открытых.
+ * Уже верную ссылку не переписываем.
+ */
+export function scheduleKassaLinkBackfill(leads: amo.AmoLead[]): void {
+  if (linkBackfillRunning || leads.length === 0) return;
+  linkBackfillRunning = true;
+  void fillMissingKassaLinks(leads)
+    .catch((err: Error) => console.warn(`[amo] ссылки на кассу: ${err.message}`))
+    .finally(() => {
+      linkBackfillRunning = false;
+    });
+}
+
+async function fillMissingKassaLinks(leads: amo.AmoLead[]): Promise<void> {
+  const fieldIds = await kassaLinkFieldIds();
+  if (fieldIds.length === 0) return;
+  const rows = await db
+    .select({ number: dealsTable.number, amoLeadId: dealsTable.amoLeadId })
+    .from(dealsTable);
+  const localNumber = new Map<number, number>();
+  for (const row of rows) {
+    if (row.amoLeadId) localNumber.set(row.amoLeadId, row.number);
+  }
+  const base = getEnv().PUBLIC_BASE_URL;
+  const missing = leads.filter((lead) => {
+    const number = localNumber.get(lead.id) ?? lead.id;
+    const link = dealDeepLink(base, number);
+    return fieldIds.some((fieldId) => linkFieldText(lead, fieldId) !== link);
+  });
+  const batch = missing.slice(0, LINK_BACKFILL_BATCH);
+  let written = 0;
+  for (const lead of batch) {
+    try {
+      await writeKassaLink(lead.id, localNumber.get(lead.id) ?? lead.id);
+      written += 1;
+    } catch (err) {
+      console.warn(`[amo] ссылка на кассу, сделка #${lead.id}: ${(err as Error).message}`);
+    }
+  }
+  if (written > 0) {
+    const left = missing.length - batch.length;
+    console.log(
+      `[amo] ссылка на кассу: дописано ${written}${left > 0 ? `, ещё ${left} в следующем проходе` : ""}`
+    );
+  }
 }
 
 function cartSummary(deal: Deal): string {

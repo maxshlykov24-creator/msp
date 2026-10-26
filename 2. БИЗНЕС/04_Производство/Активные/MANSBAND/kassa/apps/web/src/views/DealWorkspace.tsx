@@ -173,6 +173,11 @@ export function DealWorkspace({
   const [approxMeetingDate, setApproxMeetingDate] = useState((live.approxMeetingDate || "").slice(0, 10));
   useEffect(() => { if (stage === "Дано обещание" && !actualUntil) setActualUntil(defaultHoldUntil(1)); }, [stage, actualUntil]);
   useEffect(() => {
+    const leadId = live.amoLeadId;
+    if (USE_MOCK || leadId == null || leadId <= 0) return;
+    void api.post("/deals/kassa-link", { amoLeadId: leadId }).catch(() => {});
+  }, [live.amoLeadId]);
+  useEffect(() => {
     if (hideBack) onDisplayStage?.(stage);
   }, [hideBack, onDisplayStage, stage]);
   const [stageReason, setStageReason] = useState("");
