@@ -1,6 +1,7 @@
 import {
   AMO_COMPANY_FIELDS,
   AMO_LEAD_FIELDS,
+  amoOtlozhka,
   dealDeepLink,
   type AmoLeadFieldKey,
 } from "@kassa/shared";
@@ -158,13 +159,12 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("rentalReturnedAt", deal.rentalReturnedAt);
   put("rentalDeposit", deal.rentalDeposit);
 
-  // «Отложка до» пишется при любой заявке, не только на этапе «Товар отложен».
-  if (deal.reservedUntil && /^\d{4}-\d{2}-\d{2}/.test(deal.reservedUntil)) {
-    put("reservedUntil", deal.reservedUntil.slice(0, 10));
-  }
-  if (deal.stage === "Товар отложен" && deal.reservedUntil) {
-    put("otlozhkaKind", deal.paid > 0 ? "Платная" : "Бесплатная");
-  }
+  // Частичная оплата (от 3 000 ₽ и любая другая, если заказ ею не закрыт)
+  // ставит платную отложку, даже когда этап ещё не «Товар отложен».
+  // «Отложка до» без этого этапа пишется, только если дата уже есть в заявке.
+  const hold = amoOtlozhka(deal);
+  if (hold.until) put("reservedUntil", hold.until);
+  if (hold.kind) put("otlozhkaKind", hold.kind);
   // Резерв компании (kind=company).
   if (deal.kind === "company" && deal.deferredUntil) {
     put("deferredUntil", deal.deferredUntil);

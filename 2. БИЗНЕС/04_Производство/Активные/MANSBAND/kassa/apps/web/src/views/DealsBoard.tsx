@@ -142,7 +142,6 @@ export function DealsBoard({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [active, setActive] = useState<Deal | null>(null);
-  const [, setHeaderStage] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(60);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -511,19 +510,13 @@ export function DealsBoard({
         )}
       </div>
 
-      <Modal
-        open={!!active}
-        onClose={closeDeal}
-        title={active ? `Заявка №${active.number}` : "Заявка"}
-        xl
-      >
+      <Modal open={!!active} onClose={closeDeal} closeOnly xl>
         {active && (
           <DealWorkspace
             deal={active}
             hideBack
             onClose={closeDeal}
             onReturnExchange={onReturnExchange}
-            onDisplayStage={setHeaderStage}
           />
         )}
       </Modal>

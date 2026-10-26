@@ -1329,11 +1329,11 @@ def validate_contact(contact: dict, row: dict, expect_name: bool = False) -> dic
 
 
 def confirm_lead(amo: lib.Amo, lead_id: str, order: dict, row: dict,
-                 contact_id: str, expected_payload: dict) -> dict:
+                 contact_id: str, expected_payload: dict, allow_comment_drift: bool = False) -> dict:
     status, lead = amo_read(amo, f"/api/v4/leads/{lead_id}?with=contacts")
     if status != 200 or str(lead.get("id")) != str(lead_id):
         raise Stop("Сделка не перечиталась после записи")
-    return validate_lead(lead, contact_id, expected_payload, order)
+    return validate_lead(lead, contact_id, expected_payload, order, allow_comment_drift=allow_comment_drift)
 
 
 def known_integration_text(field_id: int, actual: str, expected: str, order: dict) -> bool:
@@ -1981,13 +1981,13 @@ def verify_journal(ms: lib.MS, amo: lib.Amo, journal: dict, only_ids: set[str] |
                 continue
             try:
                 validate_lead(lead, cid, entry["lead_payload"], order,
-                              allow_comment_drift=oid not in journal.get("run_attempts", {}).get(journal.get("active_run"), []))
+                              allow_comment_drift=True)
             except Stop as exc:
                 result["issues"].append({"order_id": oid, "reason": str(exc)})
                 continue
         else:
             order = fresh_order(mss, oid, [0.0])
-            lead = confirm_lead(amo, lid, order, {}, cid, entry["lead_payload"])
+            lead = confirm_lead(amo, lid, order, {}, cid, entry["lead_payload"], allow_comment_drift=True)
             st, contact = amo_read(amo, f"/api/v4/contacts/{cid}")
             if st != 200:
                 raise Stop("VERIFIED_CONTACT_NOT_READABLE")
@@ -2551,6 +2551,24 @@ def self_test() -> None:
             changed = copy.deepcopy(pipeline);changed["id"] = PIPELINE + 1
             with self.assertRaises(Stop):
                 target_won_status(changed)
+
+        def test_verified_comment_readback_never_weakens_money_or_rewrites(self):
+            import copy
+            payload = {"pipeline_id": PIPELINE, "status_id": WON, "price": 14900, "name": "Заказ", "responsible_user_id": MAXIM,
+                       "created_at": 1, "closed_at": 2, "custom_fields_values": [
+                           {"field_id": FIELDS["comment"], "values": [{"value": "Исходный комментарий"}]},
+                           {"field_id": FIELDS["ms_id"], "values": [{"value": "uuid"}]}],
+                       "_embedded": {"contacts": [{"id": 5, "is_main": True}]}}
+            lead = copy.deepcopy(payload);lead["id"] = 1;lead["custom_fields_values"][0]["values"][0]["value"] = "Позднейшее изменение"
+            with patch.object(module, "amo_read", return_value=(200, lead)), patch.object(module, "api_write") as write:
+                with self.assertRaises(Stop):
+                    confirm_lead(object(), "1", {}, {}, "5", payload)
+                result = confirm_lead(object(), "1", {}, {}, "5", payload, allow_comment_drift=True)
+                self.assertEqual(len(result["_migration_comment_differences"]), 1)
+                lead["price"] = 14901
+                with self.assertRaises(Stop):
+                    confirm_lead(object(), "1", {}, {}, "5", payload, allow_comment_drift=True)
+                write.assert_not_called()
 
         def test_dashboard_import_is_not_messenger_inquiry(self):
             import collect_dashboard as dashboard

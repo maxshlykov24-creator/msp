@@ -299,7 +299,6 @@ export function TasksMovements() {
   const [createMode, setCreateMode] = useState<CreateMode>(null);
   const [openTask, setOpenTask] = useState<OperationTask | null>(null);
   const [openDeal, setOpenDeal] = useState<Deal | null>(null);
-  const [headerStage, setHeaderStage] = useState<string | null>(null);
   const [dealLoading, setDealLoading] = useState(false);
   const [dealError, setDealError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -828,15 +827,8 @@ export function TasksMovements() {
           setOpenDeal(null);
           setDealError(null);
         }}
-        title={openDeal ? `Заявка №${openDeal.number}` : dealLoading ? "Загрузка…" : "Заявка"}
-        aside={
-          (headerStage ?? openDeal?.stage) ? (
-            <StageBadge
-              stage={(headerStage ?? openDeal?.stage) as string}
-              className="text-[16px] px-3.5 py-2 font-semibold"
-            />
-          ) : null
-        }
+        title={openDeal ? undefined : dealLoading ? "Загрузка…" : "Заявка"}
+        closeOnly={!!openDeal}
         xl
       >
         {dealLoading && !openDeal && (
@@ -853,7 +845,6 @@ export function TasksMovements() {
               setOpenDeal(null);
               setDealError(null);
             }}
-            onDisplayStage={setHeaderStage}
           />
         )}
       </Modal>

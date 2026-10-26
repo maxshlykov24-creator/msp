@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Send, Check, ArrowLeftRight, Banknote, Coins, ReceiptText, Plus, Trash2, Undo2, Wallet } from "lucide-react";
 import { useStore } from "../store";
 import { money, timeOf, shortDate } from "../lib/format";
-import { Button, Modal, StageBadge, Select, opts } from "../components/ui";
+import { Button, Modal, Select, opts } from "../components/ui";
 import { api, USE_MOCK } from "../api/client";
 import { EDWIN_CASH_METHOD, EDWIN_EXPENSE_CATEGORIES, paymentMethodLabel } from "@kassa/shared";
 import { DEFAULT_PAYOUT_METHOD_ID, PaymentMethodSelect } from "../components/PaymentMethodSelect";
@@ -144,7 +144,6 @@ export function EdwinQueue() {
   const [salaryItem, setSalaryItem] = useState<ExtendedQueueItem | null>(null);
   const [salaryExpanded, setSalaryExpanded] = useState<string | null>(null);
   const [openDeal, setOpenDeal] = useState<Deal | null>(null);
-  const [headerStage, setHeaderStage] = useState<string | null>(null);
   const [dealLoading, setDealLoading] = useState(false);
   const [dealError, setDealError] = useState<string | null>(null);
 
@@ -863,15 +862,8 @@ export function EdwinQueue() {
           setOpenDeal(null);
           setDealError(null);
         }}
-        title={openDeal ? `Заявка №${openDeal.number}` : dealLoading ? "Загрузка…" : "Заявка"}
-        aside={
-          (headerStage ?? openDeal?.stage) ? (
-            <StageBadge
-              stage={(headerStage ?? openDeal?.stage) as string}
-              className="text-[16px] px-3.5 py-2 font-semibold"
-            />
-          ) : null
-        }
+        title={openDeal ? undefined : dealLoading ? "Загрузка…" : "Заявка"}
+        closeOnly={!!openDeal}
         xl
       >
         {dealLoading && !openDeal && (
@@ -888,7 +880,6 @@ export function EdwinQueue() {
               setOpenDeal(null);
               setDealError(null);
             }}
-            onDisplayStage={setHeaderStage}
           />
         )}
       </Modal>

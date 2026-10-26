@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .db import Balance, Document, Entity, Item, Movement, Outbox, User, engine_for
-from .planning import NORMS, NORM_SOURCE, demand, layout_preview
+from .planning import NORMS, NORM_SOURCE, demand, layout_preview, grouped_layout_preview
 from .service import DomainError, PERMISSIONS, execute
 
 
@@ -102,6 +102,22 @@ def create_app(engine=None):
                      'movements': [{'item_id': m.item_id, 'location': m.location, 'bucket': m.bucket, 'quantity': str(m.quantity)}
                                    for m in movements if m.document_id == d.id]} for d in docs]
 
+    @app.get('/api/export')
+    def export(user=Depends(auth)):
+        if 'export' not in PERMISSIONS[user.role]:
+            raise HTTPException(403, 'Нет права экспорта')
+        from fastapi.encoders import jsonable_encoder
+        from decimal import Decimal
+        from .db import now
+        with Session(engine) as s:
+            def records(model):
+                return [{c.name: getattr(row, c.name) for c in model.__table__.columns}
+                        for row in s.scalars(select(model))]
+            # Access tokens and user secrets are deliberately outside the business export.
+            return jsonable_encoder({'exported_at': now(), 'items': records(Item),
+                                     'balances': records(Balance), 'documents': records(Document),
+                                     'movements': records(Movement), 'entities': records(Entity)}, custom_encoder={Decimal: str})
+
     @app.get('/api/status')
     def status(user=Depends(auth)):
         with Session(engine) as s:
@@ -131,6 +147,13 @@ def create_app(engine=None):
             return layout_preview(**body)
         except (ValueError, TypeError) as exc:
             raise HTTPException(422, str(exc)) from exc
+
+    @app.post('/api/planning/grouped-layout')
+    def grouped_layout(body: dict, user=Depends(auth)):
+        try:
+            return grouped_layout_preview(**body)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise HTTPException(422, 'Проверь нормы, размеры, раскладки и доступную ткань') from exc
 
     @app.post('/api/planning/demand')
     def need(body: dict, user=Depends(auth)):

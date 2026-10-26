@@ -44,6 +44,32 @@ export function reserveUntilForSave(input: {
   }
   return undefined;
 }
+
+/**
+ * Что писать в amo в поля «Отложка» и «Отложка до».
+ * Частичная оплата — платная отложка, даже если этап ещё не «Товар отложен».
+ * Этап «Товар отложен» без оплаты — бесплатная. Полная оплата тип отложки не ставит.
+ */
+export function amoOtlozhka(deal: {
+  paid?: number;
+  total?: number;
+  stage?: string;
+  reservedUntil?: string;
+  today?: string;
+}): { kind: "Платная" | "Бесплатная" | null; until: string | null } {
+  const paid = deal.paid ?? 0;
+  const total = deal.total ?? 0;
+  const partial = isPartialPayment(paid, total);
+  const stageHold = deal.stage === "Товар отложен";
+  const stored = (deal.reservedUntil ?? "").slice(0, 10);
+  const hasStored = /^\d{4}-\d{2}-\d{2}$/.test(stored);
+  if (!partial && !stageHold) return { kind: null, until: hasStored ? stored : null };
+  return {
+    kind: partial || paid > 0 ? "Платная" : "Бесплатная",
+    until: hasStored ? stored : defaultHoldUntil(paid, deal.today),
+  };
+}
+
 export function holdStageError(deal: Pick<Deal, "kind" | "stage" | "comment" | "actualUntil" | "reservedUntil" | "deferredUntil" | "companyName" | "items">): string | null {
   if (!HOLD_DEAL_KINDS.includes(deal.kind) || !isHoldStage(deal.stage)) return null;
   if (deal.stage === "Дано обещание") {

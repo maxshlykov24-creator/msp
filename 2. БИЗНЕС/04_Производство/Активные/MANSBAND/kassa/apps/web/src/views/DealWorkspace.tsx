@@ -14,7 +14,7 @@ import { RefundForm } from "./forms/RefundForm";
 import { ExchangeForm } from "./forms/ExchangeForm";
 import { HIDDEN_STAGES, STAGES_BY_KIND } from "../data/mock";
 import { api, USE_MOCK } from "../api/client";
-import { formatPhone, money } from "../lib/format";
+import { dateRu, formatPhone, money } from "../lib/format";
 import { Hint } from "../lib/hints";
 import {
   ClientFields,
@@ -24,6 +24,7 @@ import {
   SectionTitle,
   SourceFields,
   SummaryBar,
+  movementRequiredGap,
   returnDealFields,
   returnPayoutMissing,
   sourceMissingForSuccess,
@@ -165,6 +166,7 @@ export function DealWorkspace({
   const [comment, setComment] = useState(live.comment || "");
   const [stage, setStage] = useState(live.stage);
   const [actualUntil, setActualUntil] = useState(live.actualUntil || "");
+  const [movementCreated, setMovementCreated] = useState(false);
   const [reservedUntil, setReservedUntil] = useState(live.reservedUntil || live.deferredUntil || "");
   const reserveTracked = useRef({ manual: false, wasPartial: false, seenPaid: null as number | null });
   const [meetingDate, setMeetingDate] = useState((live.meetingDate || "").slice(0, 10));
@@ -236,6 +238,7 @@ export function DealWorkspace({
     setRentalFrom(form.rentalFrom);
     setRentalTo(form.rentalTo);
     setActualUntil(form.actualUntil);
+    setMovementCreated(false);
     setReservedUntil(form.reservedUntil);
     reserveTracked.current = { manual: false, wasPartial: false, seenPaid: null };
     setMeetingDate(form.meetingDate);
@@ -304,21 +307,65 @@ export function DealWorkspace({
   const stageOptions = stages.includes(stage) || HIDDEN_STAGES.has(stage) ? stages : [stage, ...stages];
   const history = [...(live.history ?? [])].reverse();
   const closedNeedsReason = closed && stage !== live.stage;
+  const showSuccess = !holdKind && (live.kind === "sale" || live.kind === "company" || live.kind === "rental");
+  const stageChoices = showSuccess ? stageOptions.filter((item) => item !== "Успех") : stageOptions;
+  const tracksCart = live.kind === "sale" || live.kind === "company" || live.kind === "rental" || holdKind;
+  const movementSatisfied =
+    movementCreated || live.stage === "Ждет товар" || live.stage === "Товар в пути";
+  const phone = (client.phone ?? "").trim();
+  const clientName = (client.name ?? "").trim();
+  const fieldGaps = [
+    tracksCart && !phone && "Телефон клиента",
+    tracksCart && !clientName && "Имя клиента",
+    stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
+    stage === "Дано обещание" && !actualUntil && "Актуально до",
+    isApproxDateStage(stage) && !approxMeetingDate && "Примерная дата встречи или заказа",
+    stage === "Встреча назначена" && !meetingDate && "Дата встречи",
+    stage === "Товар отложен" && !reservedUntil && "Отложка до",
+    live.kind === "company" && !companyName.trim() && "Наименование компании",
+    live.kind === "company" && !isHoldStage(stage) && !managerPhone.trim() && "Телефон руководителя",
+    live.kind === "company" && !isHoldStage(stage) && !managerName.trim() && "Имя руководителя",
+    live.kind === "company" && items.length === 0 && "Товары",
+    live.kind === "rental" && stage !== "Дано обещание" && items.length === 0 && "Комплект",
+    (live.kind === "sale" || holdKind) && stage !== "Дано обещание" && items.length === 0 && "Товары",
+    closedNeedsReason && !stageReason.trim() && "Причина изменения",
+  ].filter(Boolean) as string[];
+  const missingRequired = [
+    ...fieldGaps,
+    tracksCart ? movementRequiredGap(stage, movementSatisfied) : false,
+  ].filter(Boolean) as string[];
+  const baseFilled = missingRequired.length === 0;
+  const due = live.total || total;
+  const successGaps = [
+    !phone && "Телефон клиента",
+    !clientName && "Имя клиента",
+    items.length === 0 && (live.kind === "rental" ? "Комплект" : "Товары"),
+    paid < due && "Оплата",
+    ...sourceMissingForSuccess(client),
+    live.kind === "company" && !companyName.trim() && "Наименование компании",
+    live.kind === "company" && !managerPhone.trim() && "Телефон руководителя",
+    live.kind === "company" && !managerName.trim() && "Имя руководителя",
+    live.kind === "company" && !issued && "Фактическая выдача",
+    live.kind === "rental" && !rentalFrom && "Дата начала аренды",
+    live.kind === "rental" && !rentalTo && "Дата конца аренды",
+  ].filter(Boolean) as string[];
+  const canSuccess = showSuccess && !closed && successGaps.length === 0;
 
-  async function saveAll() {
-    const holdError = holdStageError({ ...live, stage, comment, companyName, items, actualUntil, reservedUntil });
+  async function saveAll(targetStage?: string) {
+    const nextStage = targetStage ?? stage;
+    const holdError = holdStageError({ ...live, stage: nextStage, comment, companyName, items, actualUntil, reservedUntil });
     if (holdError) { setError(holdError); return; }
-    const dateError = stageDateError({ stage, meetingDate, approxMeetingDate });
+    const dateError = stageDateError({ stage: nextStage, meetingDate, approxMeetingDate });
     if (dateError) { setError(dateError); return; }
-    if (closedNeedsReason && !stageReason.trim()) {
+    if (closed && nextStage !== live.stage && !stageReason.trim()) {
       setError("Укажите причину изменения завершённой заявки");
       return;
     }
-    if (holdKind && stage === "Успех" && live.stage !== "Успех") {
+    if (holdKind && nextStage === "Успех" && live.stage !== "Успех") {
       setError("Отложку и обещание нельзя закрыть в Успех. Сначала смените тип заявки сверху.");
       return;
     }
-    if (stage === "Успех" && live.stage !== "Успех" && (live.kind === "sale" || live.kind === "company" || live.kind === "rental")) {
+    if (nextStage === "Успех" && live.stage !== "Успех" && (live.kind === "sale" || live.kind === "company" || live.kind === "rental")) {
       const due = live.total || total;
       const gaps = [
         paid < due && `оплата, остаток ${(due - paid).toLocaleString("ru-RU")} ₽`,
@@ -355,7 +402,7 @@ export function DealWorkspace({
         items,
         payments,
         comment: comment || undefined,
-        stage,
+        stage: nextStage,
         actualUntil,
         reservedUntil: (() => {
           if (!RESERVE_UNTIL_KINDS.includes(live.kind)) return reservedUntil || undefined;
@@ -363,7 +410,7 @@ export function DealWorkspace({
           return reserveUntilForSave({
             paid,
             total: orderTotal,
-            stage,
+            stage: nextStage,
             chosen: partialPay ? reservedUntil : paid <= 0 && track.wasPartial && !track.manual ? "" : reservedUntil,
           });
         })(),
@@ -401,7 +448,7 @@ export function DealWorkspace({
           items,
           payments,
           comment,
-          stage,
+          stage: nextStage,
           stageReason,
           companyName,
           managerName,
@@ -418,6 +465,7 @@ export function DealWorkspace({
           returnInfo,
         })
       );
+      setStage(nextStage);
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 1500);
     } finally {
@@ -475,29 +523,30 @@ export function DealWorkspace({
         </button>
       )}
 
-      <div className="mb-1 flex items-center justify-between gap-3">
+      <div className="mb-5 flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-white">{KIND_LABEL[live.kind] ?? live.kind}</h1>
-            {!hideBack && (
-              <span className="chip bg-white/10 text-white font-mono text-[15px] font-semibold tracking-wide">
-                Заявка №{live.number}
-              </span>
+            <span className="chip bg-white/10 text-white font-mono text-[15px] font-semibold tracking-wide">
+              Заявка №{live.number}
+            </span>
+            {live.createdAt && (
+              <span className="chip bg-white/10 text-white/90 font-mono">{dateRu(live.createdAt)}</span>
             )}
           </div>
-          <div className="mt-2 flex min-w-0 flex-wrap items-center justify-start gap-2">
-            <span className="chip border border-white/10 bg-white/[0.035] text-mute-soft">
+          <div className="mt-2 flex min-w-0 flex-wrap items-center">
+            <span className="chip rounded-full border border-white/10 bg-white/[0.035] text-mute-soft">
               {FUNNEL_LABEL[live.funnel] ?? live.funnel}
             </span>
             {live.store && (
-              <span className="chip shrink-0 border border-white/10 bg-white/[0.07] text-mute-soft">
+              <span className="chip ml-3 shrink-0 border border-white/10 bg-white/[0.07] text-mute-soft">
                 <Store size={13} aria-hidden="true" />
                 {live.store}
               </span>
             )}
           </div>
         </div>
-        <StageBadge stage={stage} options={stageOptions.filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))} onChange={setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
+        <StageBadge stage={stage} options={stageChoices.filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))} onChange={setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
       </div>
       <Hint>
         Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
@@ -538,6 +587,7 @@ export function DealWorkspace({
               );
             },
           }}
+          amoLeadId={live.amoLeadId}
           onConvert={canConvert ? () => setConvertOpen(true) : undefined}
           onHistory={() => setHistoryOpen(true)}
           historyCount={history.length}
@@ -652,6 +702,7 @@ export function DealWorkspace({
             dealKind={live.kind}
             movementStore={live.store || "На Бауманской"}
             onMovementCreated={(summary) => {
+              setMovementCreated(true);
               void (async () => {
                 addDealComment(live.id, `Перемещение ${summary}`, activeConsultant);
                 setStage("Ждет товар");
@@ -771,6 +822,16 @@ export function DealWorkspace({
           )}
         </Card>}
 
+        {missingRequired.length > 0 && (
+          <div className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-[13px] text-amber-100/95">
+            <div className="font-semibold text-amber-200 mb-1">Не заполнены обязательные поля</div>
+            <ul className="list-disc pl-4 space-y-0.5 text-amber-100/80">
+              {missingRequired.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {error && (
           <div className="rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
             {error}
@@ -781,13 +842,26 @@ export function DealWorkspace({
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-2.5 pb-2.5 space-y-2">
           <SummaryBar total={live.total || total} paid={paid} />
-          <div className="flex justify-end gap-2">
+          {showSuccess && successGaps.length > 0 && baseFilled && (
+            <div className="text-[12px] text-amber-300/90">Для Успех: {successGaps.join(", ")}</div>
+          )}
+          <div className="flex items-center justify-end gap-2 flex-wrap">
+            <StageBadge
+              stage={stage}
+              options={stageChoices}
+              onChange={setStage}
+              compact
+              className="text-[13px]"
+            />
+            <Button variant="subtle" disabled={!baseFilled || saving || !dirty} onClick={() => void saveAll()}>
+              {savedFlash ? "Сохранено" : saving ? "Сохраняем…" : "Сохранить"}
+            </Button>
             <Button variant="subtle" onClick={onClose}>
               Закрыть
             </Button>
-            {(dirty || saving || savedFlash) && (
-              <Button disabled={saving} onClick={() => void saveAll()}>
-                {savedFlash ? "Сохранено" : saving ? "Сохраняем…" : "Сохранить"}
+            {showSuccess && (
+              <Button disabled={!canSuccess || saving} onClick={() => void saveAll("Успех")}>
+                Успех
               </Button>
             )}
           </div>

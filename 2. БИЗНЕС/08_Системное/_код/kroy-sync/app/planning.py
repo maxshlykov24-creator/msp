@@ -69,3 +69,49 @@ def demand(sales, period_days, horizon_days, eligible_stock, expected_remaining)
     target = ceil(Decimal(str(sales)) * Decimal(str(horizon_days)) / Decimal(str(period_days)))
     return {'target': target, 'need': max(0, target - eligible_stock - expected_remaining),
             'included_stock': eligible_stock, 'included_future': expected_remaining}
+
+
+def grouped_layout_preview(model, needs_by_color, ratios, available_by_color):
+    """Shared pattern selection across colours with a bounded deterministic search.
+
+    Each colour has separate whole-roll availability. Patterns are shared only inside
+    a model; the caller must still confirm fabric/technology compatibility.
+    """
+    if not needs_by_color or set(needs_by_color) != set(available_by_color):
+        raise ValueError('Потребность и доступная ткань должны включать одинаковые цвета')
+    if len(needs_by_color) > 12 or not 1 <= len(ratios) <= 8:
+        raise ValueError('Предварительный поиск: до 12 цветов и 8 раскладок')
+    from itertools import combinations
+    colors = sorted(needs_by_color)
+    checked = 0
+    for pattern_count in range(1, len(ratios) + 1):
+        options = []
+        for indices in combinations(range(len(ratios)), pattern_count):
+            checked += 1
+            results = {}
+            for color in colors:
+                if not any(needs_by_color[color].values()):
+                    results[color] = {'rolls': 0, 'patterns': [], 'output': dict(needs_by_color[color]), 'deviation_percent': {s: None for s in needs_by_color[color]}}
+                    continue
+                if available_by_color[color] == 0:
+                    break
+                candidate = layout_preview(model, needs_by_color[color], [ratios[i] for i in indices], available_by_color[color])
+                if candidate['search_limited']:
+                    return {'preliminary': True, 'search_limited': True, 'result': None,
+                            'message': 'Лимит поиска. Нельзя утверждать, что решения нет'}
+                if not candidate['result']:
+                    break
+                row = candidate['result']
+                row['patterns'] = [indices[i] for i in row['patterns']]
+                results[color] = row
+            if len(results) == len(colors):
+                extra = sum(max(row['output'][s] - needs_by_color[color][s], 0)
+                            for color, row in results.items() for s in row['output'])
+                options.append((extra, sum(r['rolls'] for r in results.values()), indices, results))
+        if options:
+            best = min(options, key=lambda x: (x[0], x[1], x[2]))
+            return {'preliminary': True, 'search_limited': False, 'patterns_used': list(best[2]),
+                    'result': best[3], 'norm': NORMS[model], 'norm_source': NORM_SOURCE,
+                    'message': 'Совместимость ткани и раскладок должна быть подтверждена закройщиком'}
+    return {'preliminary': True, 'search_limited': False, 'result': None,
+            'message': 'Решение в заданных раскладках и допуске ±20% не найдено'}

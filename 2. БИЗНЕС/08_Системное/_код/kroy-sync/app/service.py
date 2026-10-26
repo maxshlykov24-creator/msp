@@ -97,8 +97,8 @@ def move(s, doc_id, item_id, location, deltas):
     return b
 
 
-def lines(s, raw, kind=None):
-    require(isinstance(raw, list) and 0 < len(raw) <= 1000, 'Нужны строки документа', 422)
+def lines(s, raw, kind=None, allow_empty=False):
+    require(isinstance(raw, list) and (allow_empty or len(raw) > 0) and len(raw) <= 1000, 'Нужны строки документа', 422)
     seen, out = set(), []
     for line in raw:
         item = get_item(s, line['item_id'])
@@ -225,7 +225,8 @@ def dispatch(s, doc, command, p):
         else:
             require(d['status'] in ('approved', 'partial'), 'Задание не утверждено или уже закрыто')
             products = lines(s, p.get('products', d['remaining_products']), 'garment')
-            materials = lines(s, p.get('materials', d['remaining_materials']), 'material')
+            materials = lines(s, p.get('materials', d['remaining_materials']), 'material', allow_empty=True)
+            require(materials or d['facts'], 'Для первого факта нужен подтверждённый расход ткани')
             require(p.get('confirm_actual') is True, 'Подтверди, что количества являются фактическими', 422)
             until = deadline(p.get('until'))
             for actual, key, bucket in ((materials, 'remaining_materials', 'reserved'), (products, 'remaining_products', 'frozen')):

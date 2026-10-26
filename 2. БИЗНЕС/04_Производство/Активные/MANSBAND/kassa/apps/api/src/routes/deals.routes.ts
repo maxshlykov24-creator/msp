@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import {
   addCommentSchema,
   holdStageError,
+  isPartialPayment,
   stageDateError,
   HOLD_DEAL_KINDS,
   AUTOMATIC_HOLD_STAGES,
@@ -227,7 +228,15 @@ export default async function dealsRoutes(app: FastifyInstance) {
         message: "Отложку и обещание нельзя закрыть в Успех. Сначала смените тип заявки.",
       });
     }
-    if (RESERVE_UNTIL_KINDS.includes(existing.kind) && parsed.data.reservedUntil === undefined && !existing.reservedUntil) {
+    if (RESERVE_UNTIL_KINDS.includes(existing.kind) && isPartialPayment(merged.paid, merged.total)) {
+      const until = reserveUntilForSave({
+        paid: merged.paid,
+        total: merged.total,
+        stage: merged.stage,
+        chosen: parsed.data.reservedUntil ?? existing.reservedUntil,
+      });
+      if (until) parsed.data.reservedUntil = until;
+    } else if (RESERVE_UNTIL_KINDS.includes(existing.kind) && parsed.data.reservedUntil === undefined && !existing.reservedUntil) {
       const until = reserveUntilForSave({
         paid: merged.paid,
         total: merged.total,

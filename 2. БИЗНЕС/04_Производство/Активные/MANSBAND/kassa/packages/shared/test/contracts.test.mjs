@@ -340,4 +340,21 @@ test("hold stages require promise details and reserve dates without premature re
   assert.equal(reserveUntilForSave({ paid: 0, total: 34900, stage: "Товар в магазине", today: "2026-10-26" }), "2026-10-27");
   assert.equal(reserveUntilForSave({ paid: 0, total: 34900, stage: "Успех", today: "2026-10-26" }), undefined);
   assert.equal(reserveUntilForSave({ paid: 3000, total: 34900, stage: "Товар в магазине", chosen: "2026-12-01", today: "2026-10-26" }), "2026-12-01");
+  const { amoOtlozhka } = await import("../dist/index.js");
+  assert.deepEqual(
+    amoOtlozhka({ paid: 3000, total: 34900, stage: "Товар в магазине", reservedUntil: "2026-11-09" }),
+    { kind: "Платная", until: "2026-11-09" }
+  );
+  assert.deepEqual(
+    amoOtlozhka({ paid: 3000, total: 34900, stage: "Встреча назначена", today: "2026-10-26" }),
+    { kind: "Платная", until: "2026-11-09" }
+  );
+  assert.deepEqual(
+    amoOtlozhka({ paid: 0, total: 34900, stage: "Товар отложен", today: "2026-10-26" }),
+    { kind: "Бесплатная", until: "2026-10-27" }
+  );
+  assert.deepEqual(
+    amoOtlozhka({ paid: 34900, total: 34900, stage: "Товар в магазине", reservedUntil: "2026-11-09" }),
+    { kind: null, until: "2026-11-09" }
+  );
 });

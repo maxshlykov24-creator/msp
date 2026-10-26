@@ -136,6 +136,8 @@ export function Modal({
   xl,
   /** Справа в шапке, перед крестиком. Статус заявки живёт здесь, рядом с номером. */
   aside,
+  /** Шапка только с крестиком: номер и вид заявки рисует сама карточка. */
+  closeOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -144,6 +146,7 @@ export function Modal({
   wide?: boolean;
   xl?: boolean;
   aside?: ReactNode;
+  closeOnly?: boolean;
 }) {
   const [mounted, setMounted] = useState(open);
   const [shown, setShown] = useState(open);
@@ -176,7 +179,7 @@ export function Modal({
     <div className={`kassa-ov ${shown ? "on" : ""}`}>
       <div className="kassa-ov-hit" onClick={onClose} />
       <div className={`kassa-modal ${width} ${xl ? "max-h-[94vh]" : "max-h-[90vh]"}`}>
-        {title && (
+        {(title || closeOnly) && (
           <div className="px-6 py-4 border-b border-ink-700 flex items-center justify-between shrink-0">
             <h3 className="text-lg font-bold text-white min-w-0">{title}</h3>
             <div className="flex items-center gap-2 shrink-0">

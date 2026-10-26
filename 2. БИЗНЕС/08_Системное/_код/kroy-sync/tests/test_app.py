@@ -280,3 +280,23 @@ def test_unknown_scan_resolution_auditable(setup):
     c = cmd('count.resolve', {'id': c['id'], 'version': c['version'], 'index': 0, 'item_id': 's'})
     cmd('count.post', {'id': c['id'], 'version': c['version'], 'confirm_zeroes': True})
     assert balance(engine)['free'] == 1
+
+
+def test_grouped_layout_respects_each_color_and_size():
+    from app.planning import grouped_layout_preview
+    result = grouped_layout_preview('Лонг скимс', {'black': {'S': 75, 'M': 75}, 'red': {'S': 38, 'M': 37}},
+                                    [{'S': 1, 'M': 0}, {'S': 0, 'M': 1}, {'S': 1, 'M': 1}], {'black': 2, 'red': 1})
+    assert result['patterns_used'] == [2]
+    assert sum(result['result']['black']['output'].values()) == 150
+    assert sum(result['result']['red']['output'].values()) == 75
+
+
+def test_second_partial_fact_after_cloth_consumed(setup):
+    engine, user, cmd = setup
+    t = task(cmd)
+    t = cmd('task.confirm', {'id': t['id'], 'version': t['version'], 'confirm_actual': True,
+                            'products': [{'item_id': 's', 'quantity': 30}]})
+    t = cmd('task.confirm', {'id': t['id'], 'version': t['version'], 'confirm_actual': True})
+    assert t['status'] == 'complete'
+    assert balance(engine)['frozen'] == 75
+    assert balance(engine, 'cloth')['free'] == 90

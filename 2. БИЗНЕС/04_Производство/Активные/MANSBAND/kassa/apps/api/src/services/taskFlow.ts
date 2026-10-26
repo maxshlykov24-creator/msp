@@ -113,7 +113,7 @@ async function findUserByName(name: string): Promise<{ name: string; role: strin
 }
 
 /**
- * «Дано обещание»: задача тому, кто сохранил этап.
+ * «Дано обещание»: задача консультанту, который стоит в заявке.
  * Формулировка — комментарий, срок — «Актуально до». Этап заявки при закрытии не двигаем.
  */
 async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
@@ -122,15 +122,13 @@ async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
   const due = (deal.actualUntil ?? "").slice(0, 10);
   if (!comment || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return;
 
-  const actor = who.trim();
-  const creator = actor && actor !== "amoCRM" ? await findUserByName(actor) : null;
   const consultantName = deal.consultant?.trim() ?? "";
-  const consultant = !creator && consultantName ? await findUserByName(consultantName) : null;
-  // Кто сохранил этап в кассе — тот и получает задачу, даже если имени нет в справочнике.
-  // Из amoCRM имени сотрудника нет: отдаём консультанту заявки.
-  const assigneeName = creator?.name || (actor && actor !== "amoCRM" ? actor : consultant?.name || consultantName);
+  const consultant = consultantName ? await findUserByName(consultantName) : null;
+  const actor = who.trim();
+  const creator = !consultantName && actor && actor !== "amoCRM" ? await findUserByName(actor) : null;
+  const assigneeName = consultant?.name || consultantName || creator?.name || (actor && actor !== "amoCRM" ? actor : "");
   if (!assigneeName) return;
-  const assigneeRole = queueRoleOf((creator ?? consultant)?.role ?? "consultant");
+  const assigneeRole = queueRoleOf((consultant ?? creator)?.role ?? "consultant");
   const title = comment.length > 500 ? `${comment.slice(0, 497)}…` : comment;
   const metadata = {
     dueDate: due,
