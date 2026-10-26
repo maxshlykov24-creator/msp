@@ -76,9 +76,9 @@ export function DealTasksButton({
     }
     try {
       const rows = await api.get<Task[]>(`/tasks?dealNumber=${dealNumber}`);
-      setTasks(Array.isArray(rows) ? rows : []);
+      if (Array.isArray(rows)) setTasks(rows);
     } catch {
-      setTasks([]);
+      // Старый список оставляем: пустой ответ здесь выглядел бы как «задачи пропали».
     } finally {
       setLoaded(true);
     }
@@ -173,11 +173,16 @@ export function DealTasksButton({
                 lockDealNumber={dealNumber != null}
                 simple
                 compact
-                onCreated={(task) => {
-                  onCreated?.(task);
-                  setCreating(false);
-                  void reload();
-                }}
+              onCreated={(task) => {
+                onCreated?.(task);
+                setCreating(false);
+                setTasks((prev) => {
+                  const row = task as unknown as Task;
+                  if (prev.some((item) => item.id === row.id)) return prev;
+                  return [row, ...prev];
+                });
+                void reload();
+              }}
               />
             </div>
           ) : (

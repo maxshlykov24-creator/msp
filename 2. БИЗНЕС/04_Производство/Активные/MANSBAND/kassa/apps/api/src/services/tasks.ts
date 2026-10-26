@@ -469,13 +469,17 @@ export async function createMovement(input: {
   metadata?: Record<string, unknown>;
 }, createdBy: string): Promise<Task> {
   // С заявкой — любой вид. Без заявки — свободное перемещение из очереди задач.
+  // На доске номер часто amo-id: локальной строки ещё нет, задачу логисту всё равно ставим.
   let dealKind: string | undefined;
   let dealKindLabel: string | undefined;
   if (input.dealNumber) {
-    const deal = await deals.getByNumber(input.dealNumber);
-    if (!deal) throw new Error(`Заявка #${input.dealNumber} не найдена`);
-    dealKind = deal.kind;
-    dealKindLabel = MOVEMENT_DEAL_KIND_LABEL[deal.kind] ?? deal.kind;
+    const byNumber = await deals.getByNumber(input.dealNumber);
+    const deal = byNumber ?? (await deals.getByAmoLeadId(input.dealNumber));
+    if (deal) {
+      input.dealNumber = deal.number;
+      dealKind = deal.kind;
+      dealKindLabel = MOVEMENT_DEAL_KIND_LABEL[deal.kind] ?? deal.kind;
+    }
   }
 
   const task = await db.transaction(async (tx) => {

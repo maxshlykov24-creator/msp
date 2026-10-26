@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, ScanLine } from "lucide-react";
 
 // Модалка сканера штрихкода через камеру устройства. @zxing/browser грузится
@@ -45,8 +46,8 @@ export function BarcodeScannerModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] bg-black/90 flex flex-col items-center justify-center p-4">
       <button
         onClick={onClose}
         className="absolute top-4 right-4 text-white/80 hover:text-white"
@@ -68,6 +69,7 @@ export function BarcodeScannerModal({
       >
         Отмена
       </button>
-    </div>
+    </div>,
+    document.body
   );
 }

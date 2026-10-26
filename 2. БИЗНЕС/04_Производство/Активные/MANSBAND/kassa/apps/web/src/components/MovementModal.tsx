@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowRightLeft, CheckCircle2, Loader2, Plus, ScanLine, Search, Trash2 } from "lucide-react";
 import {
   CENTRAL_WAREHOUSE,
   ITEM_LOCATIONS,
   MOVEMENT_TARGETS,
+  STORE_TO_WAREHOUSE,
   findWarehouseId,
   isCentralWarehouse,
   shortIdempotencyKey,
@@ -12,7 +13,9 @@ import {
 } from "@kassa/shared";
 import type { CartItem } from "../data/types";
 import { api, USE_MOCK } from "../api/client";
+import { money } from "../lib/format";
 import { Button, Modal, Select, opts } from "./ui";
+import { BarcodeScannerModal } from "./BarcodeScanner";
 import { groupLocations } from "../lib/selectGroups";
 
 interface WarehouseRef {
@@ -100,6 +103,12 @@ export function MovementModal({
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Product[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const warehouseName =
+    (STORE_TO_WAREHOUSE as Record<string, string | null>)[store] ?? store;
   const [stockFor, setStockFor] = useState<{
     productId: string;
     name: string;
@@ -121,8 +130,14 @@ export function MovementModal({
 
   useEffect(() => {
     if (!open) return;
+    // Только при открытии. Повтор по seedItems/store стирал бы запрос,
+    // который консультант уже набирает.
     setError(null);
     setSuccess(null);
+    setSearchError(null);
+    setNotice(null);
+    setScannerOpen(false);
+    setSearchOpen(false);
     const preset = defaultTarget || defaultMovementTarget(store);
     setTarget((MOVEMENT_TARGETS as string[]).includes(preset) ? preset : MOVEMENT_TARGETS[0]!);
     setQ("");
@@ -141,38 +156,44 @@ export function MovementModal({
       .get<{ warehouses: WarehouseRef[] }>("/catalog/references")
       .then((refs) => setWarehouses(refs.warehouses ?? []))
       .catch(() => {});
-  }, [open, seedItems, store, defaultTarget]);
+    // seedItems, store и defaultTarget читаем на момент открытия.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open || !allowCatalogPick) return;
     const query = q.trim();
-    if (query.length < 2) {
+    if (!query) {
+      setHits([]);
+      setSearching(false);
+      setSearchError(null);
+      return;
+    }
+    if (USE_MOCK) {
       setHits([]);
       setSearching(false);
       return;
     }
     let cancelled = false;
     setSearching(true);
+    setSearchError(null);
     const t = window.setTimeout(() => {
       void (async () => {
         try {
-          if (USE_MOCK) {
-            if (!cancelled) setHits([]);
-            return;
-          }
-          const rows = await api.getQuery<Product[]>("/catalog/search", {
-            q: query,
-            store,
-            limit: 20,
-          });
-          if (!cancelled) setHits(rows ?? []);
-        } catch {
-          if (!cancelled) setHits([]);
+          const rows = await api.get<Product[]>(
+            `/catalog/search?q=${encodeURIComponent(query)}&store=${encodeURIComponent(store)}&limit=30`
+          );
+          if (cancelled) return;
+          setHits(Array.isArray(rows) ? rows : []);
+        } catch (err) {
+          if (cancelled) return;
+          setHits([]);
+          setSearchError(err instanceof Error && err.message ? err.message : "Не удалось найти товар");
         } finally {
           if (!cancelled) setSearching(false);
         }
       })();
-    }, 280);
+    }, 300);
     return () => {
       cancelled = true;
       window.clearTimeout(t);
@@ -215,6 +236,38 @@ export function MovementModal({
     });
     setQ("");
     setHits([]);
+    setSearchOpen(false);
+    setSearchError(null);
+  }
+
+  function flash(msg: string) {
+    setNotice(msg);
+    window.setTimeout(() => setNotice((cur) => (cur === msg ? null : cur)), 4000);
+  }
+
+  async function handleScanned(code: string) {
+    setScannerOpen(false);
+    try {
+      const list = USE_MOCK
+        ? []
+        : await api.get<Product[]>(
+            `/catalog/search?q=${encodeURIComponent(code)}&store=${encodeURIComponent(store)}&limit=5`
+          );
+      const rows = Array.isArray(list) ? list : [];
+      if (rows.length === 1) {
+        addProduct(rows[0]!);
+        flash(`Добавлено: ${rows[0]!.name}`);
+      } else if (rows.length > 1) {
+        setQ(code);
+        setHits(rows);
+        setSearchOpen(true);
+        setNotice(null);
+      } else {
+        flash(`Товар со штрихкодом «${code}» не найден в каталоге`);
+      }
+    } catch {
+      flash("Не удалось выполнить поиск по штрихкоду");
+    }
   }
 
   function removeProduct(productId: string) {
@@ -345,6 +398,9 @@ export function MovementModal({
           </div>
         ) : (
         <div className="space-y-4">
+          {scannerOpen && (
+            <BarcodeScannerModal onDetected={(code) => void handleScanned(code)} onClose={() => setScannerOpen(false)} />
+          )}
           <div className="flex items-center gap-2 text-[13px] font-semibold text-white">
             <ArrowRightLeft size={15} className="text-gold" />
             {allowCatalogPick
@@ -352,41 +408,71 @@ export function MovementModal({
               : "Выберите позиции и откуда везти каждую"}
           </div>
 
+          {allowCatalogPick && notice && (
+            <div className="rounded-lg border border-gold/30 bg-gold/10 text-gold-soft text-[13px] px-3 py-2">
+              {notice}
+            </div>
+          )}
+
           {allowCatalogPick && (
             <div className="space-y-2">
-              <label className="block">
-                <div className="field-label">Поиск товара</div>
-                <input
-                  className="input"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Вариация, артикул, цвет, штрихкод…"
-                  autoFocus
-                />
-              </label>
-              {searching && (
-                <div className="flex items-center gap-2 text-mute text-sm px-1">
-                  <Loader2 size={14} className="animate-spin" /> Ищем…
+              <div className="field-label">Поиск товара</div>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
+                  <input
+                    className="input pl-9"
+                    value={q}
+                    autoFocus
+                    placeholder="Вариация, артикул, цвет или штрихкод…"
+                    onFocus={() => setSearchOpen(true)}
+                    onChange={(e) => {
+                      setQ(e.target.value);
+                      setSearchOpen(true);
+                    }}
+                  />
                 </div>
-              )}
-              {hits.length > 0 && (
-                <div className="rounded-lg border border-ink-700 divide-y divide-ink-800 max-h-48 overflow-y-auto">
-                  {hits.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-ink-800/80 flex items-center gap-2"
-                      onClick={() => addProduct(p)}
-                    >
-                      <Plus size={14} className="text-gold shrink-0" />
-                      <span className="text-[13px] text-white min-w-0">
-                        <span className="break-words">{p.name}</span>
-                        {p.sku && (
-                          <span className="block text-[11px] text-mute mt-0.5">{p.sku}</span>
-                        )}
-                      </span>
-                    </button>
-                  ))}
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 text-white font-semibold px-3"
+                  title="Сканировать штрихкод камерой"
+                  type="button"
+                  onClick={() => setScannerOpen(true)}
+                >
+                  <ScanLine size={18} />
+                </button>
+              </div>
+              {searchOpen && q.trim() && (
+                <div className="card p-1 max-h-64 overflow-y-auto">
+                  {searching && (
+                    <div className="px-3 py-3 text-mute text-sm flex items-center gap-2">
+                      <Loader2 size={14} className="animate-spin" /> Поиск…
+                    </div>
+                  )}
+                  {!searching && searchError && (
+                    <div className="px-3 py-3 text-amber-300/90 text-sm">{searchError}</div>
+                  )}
+                  {!searching && !searchError && hits.length === 0 && (
+                    <div className="px-3 py-3 text-mute text-sm">Ничего не найдено</div>
+                  )}
+                  {!searching &&
+                    !searchError &&
+                    hits.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => addProduct(p)}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-ink-800 flex items-center gap-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{p.name}</div>
+                          <div className="text-[12px] text-mute">
+                            {p.sku} · {p.category} · доступно {fmtQty(p.stock)}
+                          </div>
+                        </div>
+                        <div className="text-gold-soft font-semibold shrink-0">{money(p.price)}</div>
+                        <Plus size={16} className="text-gold shrink-0" />
+                      </button>
+                    ))}
                 </div>
               )}
             </div>
@@ -502,26 +588,39 @@ export function MovementModal({
         )}
         {stockFor?.error && <div className="text-amber-300/90 text-sm py-4 text-center">{stockFor.error}</div>}
         {stockFor?.warehouses && (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-mute border-b border-ink-700">
-                <th className="pb-2 font-medium">Склад</th>
-                <th className="pb-2 font-medium text-right">Доступно</th>
-                <th className="pb-2 font-medium text-right">Резерв</th>
-                <th className="pb-2 font-medium text-right">Остаток</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-800">
-              {stockFor.warehouses.map((w) => (
-                <tr key={w.warehouseMsId}>
-                  <td className="py-2 text-white">{w.name}</td>
-                  <td className="py-2 text-right text-emerald-300/90 font-semibold">{fmtQty(w.available)}</td>
-                  <td className="py-2 text-right text-mute">{fmtQty(w.reserve)}</td>
-                  <td className="py-2 text-right text-white">{fmtQty(w.stock)}</td>
+          <div className="overflow-x-hidden">
+            <table className="w-full text-sm table-fixed">
+              <thead>
+                <tr className="text-left text-mute border-b border-ink-700">
+                  <th className="pb-2 pr-2 font-medium">Склад</th>
+                  <th className="pb-2 px-1 font-medium text-right w-[22%]">Доступно</th>
+                  <th className="pb-2 px-1 font-medium text-right w-[18%]">Резерв</th>
+                  <th className="pb-2 pl-1 font-medium text-right w-[18%]">Остаток</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-ink-800">
+                {stockFor.warehouses.map((w) => {
+                  const isCurrent = w.name === warehouseName;
+                  return (
+                    <tr key={w.warehouseMsId} className={isCurrent ? "bg-gold/10" : undefined}>
+                      <td className="py-2.5 pr-2 text-white break-words whitespace-normal">
+                        {w.name}
+                        {isCurrent && (
+                          <span className="ml-1.5 text-[11px] text-gold-soft whitespace-nowrap">текущий</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-1 text-right font-semibold text-emerald-300/90">{fmtQty(w.available)}</td>
+                      <td className="py-2.5 px-1 text-right text-mute-soft">{fmtQty(w.reserve)}</td>
+                      <td className="py-2.5 pl-1 text-right text-white">{fmtQty(w.stock)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="hint-only mt-3 text-[12px] text-mute">
+              Доступно = остаток − резерв. Склады с МойСклад. СДЭК касса считает сама: товар в доставке клиенту, это не «В пути» между своими складами.
+            </p>
+          </div>
         )}
       </Modal>
     </>

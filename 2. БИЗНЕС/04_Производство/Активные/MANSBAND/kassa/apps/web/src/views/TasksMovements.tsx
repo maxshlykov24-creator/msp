@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRightLeft, Check, Gift, ListPlus, Plus } from "lucide-react";
 import {
+  isCentralWarehouse,
   ITEM_LOCATIONS,
   STORES,
   TASK_FLOW,
@@ -139,6 +140,14 @@ function taskTouchesStore(task: OperationTask, store: string): boolean {
   return [task.store, route?.from, route?.to].some((value) => Boolean(value) && warehouseKey(value!) === key);
 }
 
+/** Ручная задача и перемещение с центрального склада видны в очереди, даже если фильтр магазина другой. */
+function passesStore(task: OperationTask, store: string): boolean {
+  if (!store || taskTouchesStore(task, store)) return true;
+  if (task.kind === "manual_check") return true;
+  const route = routeFromTaskMeta(task.metadata);
+  return task.assigneeRole === "logist" && (isCentralWarehouse(route?.from) || isCentralWarehouse(task.store));
+}
+
 function dealStageOf(task: OperationTask): string | null {
   const stage = task.metadata?.dealStage;
   return typeof stage === "string" && stage.trim() ? stage.trim() : null;
@@ -172,6 +181,7 @@ function productCell(task: OperationTask): string {
     if (typeof comment === "string" && comment.trim()) return comment.trim();
     return task.title.trim() || "—";
   }
+  if (task.kind === "manual_check") return task.title.trim() || "—";
   const list = positionsFromTaskMeta(task.metadata);
   const names = list.map((p) => p.name?.trim()).filter(Boolean);
   if (names.length === 1) return names[0]!;
@@ -373,7 +383,7 @@ export function TasksMovements() {
       if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) return false;
       if (status !== "all" && task.status !== status) return false;
       if (kindFilter && task.kind !== kindFilter) return false;
-      if (storeScope && !taskTouchesStore(task, storeScope)) return false;
+      if (storeScope && !passesStore(task, storeScope)) return false;
       const route = routeFromTaskMeta(task.metadata);
       if (fromFilter && warehouseKey(route?.from ?? "") !== warehouseKey(fromFilter)) return false;
       if (toFilter && warehouseKey(route?.to ?? "") !== warehouseKey(toFilter)) return false;
@@ -402,7 +412,7 @@ export function TasksMovements() {
       if (view !== "all" && task.assigneeRole !== view) continue;
       if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) continue;
       if (status !== "all" && task.status !== status) continue;
-      if (storeScope && !taskTouchesStore(task, storeScope)) continue;
+      if (storeScope && !passesStore(task, storeScope)) continue;
       counts.set(task.kind, (counts.get(task.kind) ?? 0) + 1);
     }
     return counts;
@@ -416,7 +426,7 @@ export function TasksMovements() {
       if (isSaryOps(task.kind)) return false;
       if (view !== "all" && task.assigneeRole !== view) return false;
       if (view === "all" && queueFilter && task.assigneeRole !== queueFilter) return false;
-      if (storeScope && !taskTouchesStore(task, storeScope)) return false;
+      if (storeScope && !passesStore(task, storeScope)) return false;
       return true;
     });
   }, [tasks, view, queueFilter, storeScope, user]);

@@ -250,7 +250,7 @@ export function CreateTaskForm({
       </div>
       {error && <div className="text-[12px] text-amber-300/90">{error}</div>}
       <div className="flex justify-end">
-        <Button disabled={saving || saved} onClick={() => void submit()}>
+            <Button type="button" disabled={saving || saved} onClick={() => void submit()}>
           {saved ? "Задача создана" : saving ? "Сохранение…" : "Создать задачу"}
         </Button>
       </div>
