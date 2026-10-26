@@ -1753,11 +1753,11 @@ function kizCell(r) {
   return `<button type="button" class="kiz-link" data-kiz="${r.id}">${r.marketplace === "ozon" ? "Проверить КиЗ" : "Указать КиЗ"}</button>`;
 }
 
-// accepted приходит от API по Москве, без смещения часового пояса.
-function asmAge(raw, now = Date.now()) {
+// accepted: WB сохраняет UTC без суффикса, Ozon — московское время.
+function asmAge(raw, marketplace, now = Date.now()) {
   let stamp = String(raw || "").trim().replace(" ", "T");
   if (!stamp) return "";
-  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(stamp)) stamp += "+03:00";
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(stamp)) stamp += marketplace === "wb" ? "Z" : "+03:00";
   const time = Date.parse(stamp);
   if (!Number.isFinite(time) || time > now) return "";
   const minutes = Math.floor((now - time) / 60000);
@@ -1767,7 +1767,7 @@ function asmAge(raw, now = Date.now()) {
 
 function refreshAsmAges() {
   document.querySelectorAll("#aTbl [data-asm-age]").forEach((el) => {
-    el.textContent = asmAge(el.dataset.asmAge);
+    el.textContent = asmAge(el.dataset.asmAge, el.dataset.ageMp);
   });
 }
 setInterval(refreshAsmAges, 60000);
@@ -1781,7 +1781,7 @@ function asmRowHtml(r) {
   return items.map((item, index) => `<tr data-posting="${r.id}" class="${items.length > 1 ? "posting-item" : ""}">
     ${index ? "" : `<td ${span} class="pick"><input type="checkbox" data-asm="${r.id}"></td>
     <td ${span} class="client">${esc(r.client)}</td>
-    <td ${span} class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span><small data-asm-age="${esc(r.accepted || "")}">${asmAge(r.accepted)}</small>${items.length > 1 ? `<small>${items.length} артикула · ${num(r.qty, 0)} шт всего</small>` : ""}</td>
+    <td ${span} class="ext">${esc(r.ext_id)}<span class="badge mp">${esc(r.marketplace)}</span><span class="badge mp">${esc((r.kind || "").toUpperCase())}</span><small data-asm-age="${esc(r.accepted || "")}" data-age-mp="${esc(r.marketplace)}">${asmAge(r.accepted, r.marketplace)}</small>${items.length > 1 ? `<small>${items.length} артикула · ${num(r.qty, 0)} шт всего</small>` : ""}</td>
     <td ${span} class="when">${esc(r.accepted || "—")}</td>`}
     <td class="ph">${item.image ? `<img src="${esc(item.image)}" alt="" loading="lazy" title="увеличить">` : `<span class="noph"></span>`}</td>
     <td class="artq"><b>${num(item.qty, 0)} шт</b> · ${item.article ? `<button type="button" class="artlink" data-art="${esc(item.article)}" title="Найти этот артикул">${esc(item.article)}</button>` : "—"}</td>
