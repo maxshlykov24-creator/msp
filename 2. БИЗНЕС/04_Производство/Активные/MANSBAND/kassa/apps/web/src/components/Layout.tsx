@@ -260,7 +260,7 @@ export function Layout({
             ))}
           </div>
         </nav>
-        <div ref={tipRef} className="rail-tip" role="tooltip" hidden />
+        {createPortal(<div ref={tipRef} className="rail-tip" role="tooltip" hidden />, document.body)}
       </aside>
 
       {/* Main */}
