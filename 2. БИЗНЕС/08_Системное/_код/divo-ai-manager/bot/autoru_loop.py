@@ -482,6 +482,12 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             remember_allow(state, cid)
             save_state(state)
             log.info("авто.ру новый чат %s, беру (%s)", cid[:12], title)
+        # Время исходного сообщения для SLA взятия, а не время опроса.
+        doc = store.load_doc(chat_key)
+        doc.setdefault("crm", {})["incoming_at"] = datetime.fromtimestamp(
+            incoming[0][0], timezone.utc
+        ).isoformat(timespec="seconds")
+        store.save_doc(chat_key, doc)
         # Сохраняем очередь до сетевой эскалации и debounce: catchup
         # увидит входящее даже при рестарте до генерации ответа.
         history = store.load_history(chat_key)

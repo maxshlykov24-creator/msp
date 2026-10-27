@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from bot import avito_match, human, nudge, store
@@ -620,6 +621,12 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
             remember_allow(state, cid)
             save_state(state)
             log.info("авито новый чат %s, беру (%s)", cid[:12], title)
+        # Время исходного сообщения для SLA взятия, а не время опроса.
+        doc = store.load_doc(chat_key)
+        doc.setdefault("crm", {})["incoming_at"] = datetime.fromtimestamp(
+            incoming[0][0], timezone.utc
+        ).isoformat(timespec="seconds")
+        store.save_doc(chat_key, doc)
         # Новый чат тоже сохраняем до любых сетевых вызовов и debounce.
         # После рестарта штатный catchup восстановит ещё не отправленный ответ.
         if not store.load_history(chat_key):

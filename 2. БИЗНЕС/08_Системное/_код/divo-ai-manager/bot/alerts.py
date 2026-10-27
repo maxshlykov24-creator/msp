@@ -465,10 +465,30 @@ def take_keyboard(token: str, wait: str = WAIT_CALL) -> dict:
     return {"inline_keyboard": [[{"text": label, "callback_data": "take:%s" % token}]]}
 
 
-def format_done(snap: dict, line: str) -> str:
+def working_wait(start: str, end: str) -> str:
+    """Сумма пересечений с ежедневным рабочим окном, без ночных часов."""
+    from bot.nudge import parse_iso
+    first, last = parse_iso(start), parse_iso(end)
+    if not first or not last or last < first:
+        return ""
+    seconds = 0.0
+    day = first.replace(hour=0, minute=0, second=0, microsecond=0)
+    while day.date() <= last.date():
+        opening = day.replace(hour=settings.nudge_hour_from)
+        closing = day.replace(hour=settings.nudge_hour_to)
+        seconds += max(0, (min(last, closing) - max(first, opening)).total_seconds())
+        day += timedelta(days=1)
+    minutes = int(seconds // 60)
+    if minutes == 0:
+        return "меньше 1 мин" if seconds else "0 мин"
+    hours, minutes = divmod(minutes, 60)
+    return (("%s ч " % hours) if hours else "") + "%s мин" % minutes
+
+
+def format_done(snap: dict, line: str, elapsed: str = "") -> str:
     lines = format_alert(snap, 0).splitlines()
     if lines:
-        lines[0] = "✅ <b>Связались</b> | DIVO"
+        lines[0] = "✅ <b>Связались</b> | DIVO" + (" (%s)" % _esc(elapsed) if elapsed else "")
     if len(lines) >= 2 and lines[1] == "":
         lines.insert(2, line)
     else:
@@ -479,7 +499,7 @@ def format_done(snap: dict, line: str) -> str:
 def format_taken(snap: dict, who: str, when: str) -> str:
     return format_done(
         snap,
-        "Взял %s в %s." % (_esc(who), _esc(when)),
+        "Взял <b>%s</b> в %s." % (_esc(who), _esc(when)),
     )
 
 

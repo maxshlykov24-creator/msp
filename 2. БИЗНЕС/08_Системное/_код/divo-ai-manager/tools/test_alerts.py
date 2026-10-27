@@ -3270,7 +3270,18 @@ def test_oct26_autoru_health_alerts():
     asyncio.run(run())
 
 
+def test_oct27_taken_working_time():
+    from bot.alerts import working_wait, format_done
+    assert working_wait("2026-10-26T23:00:00+03:00", "2026-10-27T11:10:00+03:00") == "1 ч 10 мин"
+    assert working_wait("2026-10-26T19:50:00+03:00", "2026-10-27T10:20:00+03:00") == "30 мин"
+    assert working_wait("2026-10-26T23:00:00+03:00", "2026-10-27T09:00:00+03:00") == "0 мин"
+    assert working_wait("", "") == ""
+    assert "DIVO (1 ч 10 мин)" in format_done({}, "", "1 ч 10 мин")
+    assert "Взял <b>&lt;Никита&gt;</b>" in format_taken({}, "<Никита>", "11:10")
+
+
 if __name__ == "__main__":
+    test_oct27_taken_working_time()
     test_oct26_autoru_health_alerts()
     test_oct22_no_phone_no_sales()
     test_oct14_old_note_identity_recovery_preserves_pause()

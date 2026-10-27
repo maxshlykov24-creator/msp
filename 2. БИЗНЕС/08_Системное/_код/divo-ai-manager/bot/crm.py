@@ -22,6 +22,8 @@ from bot.alerts import (
     compact_thread,
     format_alert,
     format_done,
+    working_wait,
+    _esc,
     media_context,
     media_kind_of,
     next_ping,
@@ -133,6 +135,7 @@ def _adopt_open_card(new: dict, phone: str, skip: str) -> None:
         new["token"] = other.get("token") or new.get("token")
         new["nags"] = False
         new["started_at"] = other.get("started_at") or new.get("started_at")
+        new["request_at"] = other.get("request_at") or other.get("started_at") or new.get("request_at")
         new["pings"] = list(other.get("pings") or [])
         new["posts"] = _uniq_posts((new.get("posts") or []) + (other.get("posts") or []))
         return
@@ -769,6 +772,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
         "wait": snap.get("wait"),
         "nags": bool(nags),
         "started_at": now.isoformat(timespec="seconds"),
+        "request_at": crm.get("incoming_at") or now.isoformat(timespec="seconds"),
         "pings": [],
         "snap": {
             "name": snap.get("name"),
@@ -795,6 +799,7 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
     # появляется вторая карточка на одного человека.
     # После «Связались» tg не берём: иначе затрём закрытую карточку.
     if reuse_tg and alert.get("tg") and not alert.get("picked"):
+        new["request_at"] = alert.get("request_at") or alert.get("started_at") or new["request_at"]
         new["tg"] = alert["tg"]
         new["token"] = alert.get("token") or new["token"]
         new["posts"] = list(alert.get("posts") or [])
@@ -1204,11 +1209,12 @@ async def client_wrote_again(chat_id: str | int, text: str) -> None:
     doc["crm"] = crm
     store.save_doc(chat_id, doc)
     if bot:
-        head = "💬 <b>Клиент пишет, ответа нет</b> | DIVO"
+        head = "💬 <b>Новое сообщение от клиента</b> | DIVO"
         body = format_alert(snap, 0)
         rest = "\n".join(body.splitlines()[1:])
         # Дописываем в ту же карточку: вторая на одного клиента только путает.
-        await _publish(alert, head + rest, replace=False, chat_id=chat_id)
+        latest = "\n▪️ <b>Клиент написал:</b> %s" % _esc(" ".join(text.split())[:700])
+        await _publish(alert, head + rest + latest, replace=False, chat_id=chat_id)
         crm["alert"] = alert
         doc["crm"] = crm
         store.save_doc(chat_id, doc)
@@ -1466,7 +1472,11 @@ async def _edit_alert(
 ) -> None:
     if not bot:
         return
-    text = format_done(snap, line)
+    elapsed = working_wait(
+        alert.get("request_at") or alert.get("started_at") or "",
+        alert.get("picked_at") or "",
+    ) if alert.get("picked") == "button" else ""
+    text = format_done(snap, line, elapsed)
     extra = fallback or {}
     tg = alert.get("tg") or {}
     chat_id = tg.get("chat_id") or (extra.get("chat") or {}).get("id")
@@ -1492,7 +1502,7 @@ async def _finish_message(alert: dict, snap: dict, who: str, when: str, fallback
     await _edit_alert(
         alert,
         snap,
-        "Взял %s в %s." % (who, when),
+        "Взял <b>%s</b> в %s." % (_esc(who), _esc(when)),
         fallback,
     )
 
@@ -1516,7 +1526,7 @@ async def on_take(cb: dict) -> None:
             raw = message.get("text") or ""
             lines = raw.splitlines() or ["✅ В работе | DIVO"]
             lines[0] = "✅ <b>Связались</b> | DIVO"
-            lines.insert(1, "Взял %s в %s." % (who, when))
+            lines.insert(1, "Взял <b>%s</b> в %s." % (_esc(who), _esc(when)))
             if chat_id and mid:
                 await bot.edit(int(chat_id), int(mid), "\n".join(lines), None, clear_markup=True)
             await bot.answer_callback(cqid, "Тест. Сделку в amo не трогал")
