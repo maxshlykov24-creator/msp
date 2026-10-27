@@ -24,3 +24,5 @@ Light theme proposal 2026-10-27: warm ivory with dusty burgundy atmosphere, same
 2026-10-27 revision: dark logo uses saturated dusty wine gradient #b46c84 / #a55873 / #91415e, texture opacity .35, subtle radial highlight in S above center. Replaces global shadow lift. Light variants unchanged.
 
 Dark mark texture: same embedded background sample, local contrast enhanced and opacity .52; crisp vector clipping retained.
+
+Texture correction: remove broad illumination from background sample with frequency separation inside SVG; retain fine detail across lower M and S. Color gradient is a separate underlying layer.
