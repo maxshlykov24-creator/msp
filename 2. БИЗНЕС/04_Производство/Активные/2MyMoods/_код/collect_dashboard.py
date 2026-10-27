@@ -743,12 +743,21 @@ def build_amo_conversion(leads: list[dict], tasks: dict, history: dict) -> dict:
     by_lead = defaultdict(list)
     for e in history['events']:
         by_lead[e['entity_id']].append(e)
-    ids = [str(lib.ST[k]) for k in ('new', 'in_work', 'waitlist', 'visit', 'pay_wait', 'paid', 'prod', 'pack', 'sent', 'won')]
     names = {str(s['id']): s['name'] for s in tasks['stages']}
-    if any(x not in names for x in ids):
-        raise RuntimeError('amo conversion missing stage')
+    # The pipeline may gain or lose intermediate stages. Use its current order,
+    # while retaining historical stage IDs in each deal's observed path.
+    excluded = {str(lib.ST[k]) for k in ('unsorted', 'lost', 'won')}
+    ids = [str(s['id']) for s in tasks['stages'] if str(s['id']) not in excluded]
+    required = [str(lib.ST[k]) for k in ('new', 'pay_wait', 'won', 'lost')]
+    if any(x not in names for x in required) or not ids or ids[0] != str(lib.ST['new']):
+        raise RuntimeError('amo conversion missing required stage')
+    ids.append(str(lib.ST['won']))
     stages = [{'id': x, 'name': names[x]} for x in ids]
-    pairs = list(zip(ids, ids[1:])) + [(ids[a], ids[b]) for a, b in ((1, 3), (1, 4), (2, 4), (5, 7))]
+    extra = [(str(lib.ST[a]), str(lib.ST[b])) for a, b in
+             (('in_work', 'visit'), ('in_work', 'pay_wait'),
+              ('waitlist', 'pay_wait'), ('paid', 'pack'))]
+    pairs = list(dict.fromkeys(list(zip(ids, ids[1:])) +
+                              [(a, b) for a, b in extra if a in ids and b in ids]))
     pairs.sort(key=lambda x: (ids.index(x[0]), ids.index(x[1])))
     return {'status': 'ok', 'source': 'amoCRM: история сделок и источник создания',
             'to': datetime.fromtimestamp(history['to'], TZ).isoformat(timespec='seconds'),
