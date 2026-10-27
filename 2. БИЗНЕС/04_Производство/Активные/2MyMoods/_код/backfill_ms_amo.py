@@ -45,7 +45,7 @@ TERMINAL = {"VERIFIED", "DEFERRED", "EXISTS_BACKLINK", "EXISTS_AMO_ID", "QUARANT
 _PACE = {"ms": 0.0, "amo": 0.0}
 _REQUEST_INTERVAL = 1.0
 _SYSTEM_INTERVAL = {"ms": None, "amo": None}
-_SERVER_FLOOR = {"ms": 0.07, "amo": 0.17}
+_SERVER_FLOOR = {"ms": 0.07, "amo": 1.0}
 _RATE_BLOCK_UNTIL = {"ms": 0.0, "amo": 0.0}
 _HTTP_STATS = {"ms": 0, "amo": 0, "rate_limit_responses": 0, "headroom_pauses": 0}
 PIPELINE = 11318374
@@ -96,7 +96,7 @@ def configure_request_interval(value: float) -> None:
 
 
 def configure_system_intervals(ms: float | None = None, amo: float | None = None) -> None:
-    for system, value, floor in (("ms", ms, 0.07), ("amo", amo, 0.17)):
+    for system, value, floor in (("ms", ms, 0.07), ("amo", amo, 1.0)):
         if value is not None and not floor <= value <= 10.0:
             raise Stop(f"Интервал {system} должен быть от {floor} до 10 секунд")
         _SYSTEM_INTERVAL[system] = value
@@ -291,7 +291,9 @@ def amo_request(amo: lib.Amo, method: str, path: str) -> tuple[int, dict]:
         try:
             response = amo_session(amo).get(amo.base + path, timeout=(10, 60))
             status = response.status_code
-            body = response.json() if response.content else {}
+            # A 403 may be an HTML block page. Do not parse it as JSON and
+            # accidentally turn it into a retryable transport failure.
+            body = response.json() if status == 200 and response.content else {}
         except Exception as exc:
             last_error = type(exc).__name__
             if attempt == 5:
@@ -299,7 +301,9 @@ def amo_request(amo: lib.Amo, method: str, path: str) -> tuple[int, dict]:
             print(f"Повтор чтения amo после временной ошибки (попытка {attempt + 2}/6)…", flush=True)
             time.sleep(min(30.0, 2.0 ** attempt))
             continue
-        if status in (429, 500, 502, 503, 504):
+        if status in (401, 403, 429):
+            raise Stop(f"amoCRM HTTP {status}: перенос остановлен, разберите причину перед продолжением")
+        if status in (500, 502, 503, 504):
             if attempt == 5:
                 raise Temporary(f"Чтение amo не подтверждено: HTTP {status}")
             print(f"Повтор чтения amo после HTTP {status} (попытка {attempt + 2}/6)…", flush=True)
@@ -1671,6 +1675,10 @@ def create_entity(amo: lib.Amo, journal: dict, oid: str, row: dict, kind: str, p
         code, body, error = api_write(amo_session(amo), "POST", amo.base + "/api/v4/" + plural, [payload])
         _set_entry(journal, oid, last_write_http=code, last_write_error=error,
                    last_validation_errors=body.get("validation-errors") or body.get("validation_errors"))
+        if code in (401, 403, 429):
+            # Keep the write intent in the journal. Reconcile it before any
+            # later restart; do not search or retry while access is limited.
+            raise Stop(f"WRITE_STOP_HTTP_{code}")
         embedded = (body.get("_embedded") or {}).get(plural) or []
         if code in (200, 201) and len(embedded) == 1 and embedded[0].get("id"):
             result = str(embedded[0]["id"])
@@ -1684,14 +1692,9 @@ def create_entity(amo: lib.Amo, journal: dict, oid: str, row: dict, kind: str, p
             result = str(found[0]["id"])
             _set_entry(journal, oid, **{kind + "_id": result}, recovered_after_post=True)
             return result
-        if code == 429 and not found:
-            time.sleep(min(30, 2 ** (attempt + 1)))
-            continue
         if code is None or code >= 500 or code in (200, 201) or found:
             quarantine(journal, oid, row, "UNKNOWN_" + kind.upper() + "_WRITE")
             raise UnknownWrite("UNKNOWN_" + kind.upper() + "_WRITE")
-        if code in (401, 403):
-            raise Stop(f"WRITE_PERMISSION_HTTP_{code}")
         raise RowDeferred(f"{kind.upper()}_CREATE_HTTP_{code}")
     raise RowDeferred(kind.upper() + "_CREATE_RATE_LIMIT")
 
@@ -2429,6 +2432,25 @@ def self_test() -> None:
                 self.assertEqual(j["rows"]["o"]["status"], "QUARANTINED")
                 self.assertTrue(identity_blocked(j, {"counterparty_id": "other", "phone": row["phone"]}))
 
+        def test_api_restriction_stops_reads_and_preserves_write_intent(self):
+            from types import SimpleNamespace
+            for code in (401, 403, 429):
+                response = SimpleNamespace(status_code=code, content=b'<html>blocked</html>')
+                session = SimpleNamespace(get=lambda *a, **kw: response)
+                with patch.object(module, "amo_session", return_value=session), patch.object(module.time, "sleep") as sleep:
+                    with self.assertRaisesRegex(Stop, f"HTTP {code}"):
+                        amo_request(SimpleNamespace(base="https://example.test"), "GET", "/api/v4/account")
+                    sleep.assert_not_called()
+                journal = {"rows": {}, "active_run": "test"}
+                with patch.object(module, "save_journal"), patch.object(module, "amo_session", return_value=object()), \
+                     patch.object(module, "api_write", return_value=(code, {}, "")) as write, \
+                     patch.object(module, "exact_leads") as search:
+                    with self.assertRaisesRegex(Stop, f"WRITE_STOP_HTTP_{code}"):
+                        create_entity(SimpleNamespace(base="https://example.test"), journal, "o", {}, "lead", {})
+                    write.assert_called_once()
+                    search.assert_not_called()
+                    self.assertEqual(journal["rows"]["o"]["status"], "LEAD_WRITE_INTENT")
+
         def test_lead_cap_includes_uncertain_attempt(self):
             j = {"rows": {}, "counterparty_contacts": {}, "active_run": "test"}
             with patch.object(module, "save_journal"), patch.object(module, "amo_session", return_value=object()), \
@@ -2993,22 +3015,22 @@ def self_test() -> None:
                 for method in ("GET", "POST", "PUT"):
                     session.request(method, "https://example.test")
                 self.assertEqual(http.call_count, 3)
-                self.assertAlmostEqual(sleep.call_args_list[0].args[0], 0.1)
-                self.assertAlmostEqual(sleep.call_args_list[1].args[0], 0.2)
-                self.assertAlmostEqual(sleep.call_args_list[2].args[0], 0.2)
+                self.assertAlmostEqual(sleep.call_args_list[0].args[0], 0.9)
+                self.assertAlmostEqual(sleep.call_args_list[1].args[0], 1.0)
+                self.assertAlmostEqual(sleep.call_args_list[2].args[0], 1.0)
 
         def test_system_intervals_follow_reported_vendor_limits(self):
             from types import SimpleNamespace
             with patch.object(module, "_REQUEST_INTERVAL", 0.2), \
                  patch.object(module, "_SYSTEM_INTERVAL", {"ms": None, "amo": None}), \
-                 patch.object(module, "_SERVER_FLOOR", {"ms": 0.07, "amo": 0.17}), \
+                 patch.object(module, "_SERVER_FLOOR", {"ms": 0.07, "amo": 1.0}), \
                  patch.object(module, "_RATE_BLOCK_UNTIL", {"ms": 0.0, "amo": 0.0}):
                 with self.assertRaises(Stop):
-                    configure_system_intervals(0.06, 0.17)
+                    configure_system_intervals(0.06, 1.0)
                 with self.assertRaises(Stop):
-                    configure_system_intervals(0.07, 0.16)
-                configure_system_intervals(0.07, 0.17)
-                self.assertEqual(current_request_interval("amo"), 0.17)
+                    configure_system_intervals(0.07, 0.17)
+                configure_system_intervals(0.07, 1.0)
+                self.assertEqual(current_request_interval("amo"), 1.0)
                 rate_feedback("ms", SimpleNamespace(status_code=200, headers={
                     "X-RateLimit-Limit": "11", "X-RateLimit-Remaining": "10", "X-Lognex-Retry-TimeInterval": "3000"}))
                 self.assertAlmostEqual(current_request_interval("ms"), 0.3)

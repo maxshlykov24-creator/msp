@@ -23,6 +23,47 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(os.environ.get("DASHBOARD_SNAPSHOT", ROOT / "дашборд" / "snapshot.local.json"))
 GAPS = Path(os.environ.get("DASHBOARD_GAPS", ROOT / "дашборд" / "ПРОБЕЛЫ_ДАННЫХ.local.md"))
 TZ = ZoneInfo("Europe/Moscow")
+
+
+class AmoCircuitOpen(RuntimeError):
+    """Amo requests are suspended across scheduled collector runs."""
+
+
+class DashboardAmo(lib.Amo):
+    @staticmethod
+    def circuit_path() -> Path:
+        return GAPS.parent / 'amo-api-circuit.local.json'
+
+    @classmethod
+    def check_circuit(cls) -> None:
+        path = cls.circuit_path()
+        if path.exists():
+            try:
+                state = json.loads(path.read_text())
+                until = float(state['until'])
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                raise AmoCircuitOpen('amo circuit state unavailable') from exc
+            if until > time.time():
+                raise AmoCircuitOpen('amo circuit cooldown')
+
+    @classmethod
+    def suspend(cls, status: int) -> None:
+        path = cls.circuit_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_suffix('.tmp')
+        temp.write_text(json.dumps({'status': status, 'until': time.time() + (1800 if status == 429 else 21600)}))
+        os.chmod(temp, 0o600)
+        temp.replace(path)
+
+    def req(self, method: str, path: str, body=None):
+        self.check_circuit()
+        status, result = super().req(method, path, body)
+        if status in (403, 429):
+            self.suspend(status)
+            raise AmoCircuitOpen(f'amo HTTP {status}')
+        return status, result
+
+
 FIELD = {
     "paid": "ed14770a-dc0d-11ef-0a80-10cd00226b09",
     "confirm": "ed14761e-dc0d-11ef-0a80-10cd00226b08",
@@ -511,7 +552,7 @@ def cf_name(value: object) -> str:
 
 
 def get_amo() -> tuple[list[dict], dict]:
-    amo = lib.Amo()
+    amo = DashboardAmo()
     def pages(path, key):
         result = []
         for page in range(1, 501):
@@ -566,7 +607,7 @@ def get_amo() -> tuple[list[dict], dict]:
 
 def get_stage_history(leads: list[dict]) -> dict:
     """Observed status changes only; never infer skipped stages from current status."""
-    amo = lib.Amo()
+    amo = DashboardAmo()
     now = datetime.now(TZ)
     since = min((l["created"] for l in leads), default=now.date().isoformat())
     start = int(datetime.fromisoformat(since).replace(tzinfo=TZ).timestamp())
@@ -639,7 +680,7 @@ def verified_historical_ms_import(lead: dict) -> bool:
 def get_amo_conversion_events(leads: list[dict]) -> dict:
     """Cache all account status/create events so later pipeline entrants retain history."""
     leads = [lead for lead in leads if not verified_ms_order_origin(lead)]
-    amo = lib.Amo()
+    amo = DashboardAmo()
     until = int(time.time())
     since = min((l['created_at'] for l in leads), default=until) - 1
     path = Path(os.environ.get('DASHBOARD_AMO_HISTORY', str(GAPS.parent / 'amo-conversion-history.local.json')))
@@ -659,6 +700,8 @@ def get_amo_conversion_events(leads: list[dict]) -> dict:
         for attempt in range(6):
             try:
                 code, body = amo.req('GET', endpoint)
+            except AmoCircuitOpen:
+                raise
             except Exception:
                 code, body = 0, {}
             if code not in (0, 429, 500, 502, 503, 504):
@@ -965,7 +1008,7 @@ def messages_until_payment(amo: lib.Amo, orders: list[dict], msg_times: dict[int
 
 def get_responses(leads: list[dict], orders: list[dict] | None = None) -> dict:
     """Паузы входящее → первый исходящий в беседе, без текстов и контактов."""
-    amo = lib.Amo()
+    amo = DashboardAmo()
     now = datetime.now(TZ)
     since = (now - timedelta(days=90)).replace(hour=0, minute=0, second=0, microsecond=0)
     lead_ids = {l["id"] for l in leads}
