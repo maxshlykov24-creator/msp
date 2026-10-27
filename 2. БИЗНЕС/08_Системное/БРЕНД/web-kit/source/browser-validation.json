@@ -1,0 +1,17 @@
+[
+  {
+    "width": 1440,
+    "overflow": false,
+    "images": true
+  },
+  {
+    "width": 768,
+    "overflow": false,
+    "images": true
+  },
+  {
+    "width": 390,
+    "overflow": false,
+    "images": true
+  }
+]

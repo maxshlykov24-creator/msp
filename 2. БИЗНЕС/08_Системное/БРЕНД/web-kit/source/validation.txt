@@ -1,3 +1,4 @@
+png/cover-aura-approved.png: 1731x909, alpha=false
 png/cover-aura.png: 1200x630, alpha=true
 png/cover-dark.png: 1200x630, alpha=true
 png/cover-light.png: 1200x630, alpha=true
