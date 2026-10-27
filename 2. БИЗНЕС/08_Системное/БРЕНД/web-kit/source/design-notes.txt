@@ -20,3 +20,5 @@ All geometry reconstructed as SVG, not raster embedded in a vector container. Ba
 Light theme proposal 2026-10-27: warm ivory with dusty burgundy atmosphere, same asymmetric arc and matte microtexture. Dark wine wordmark #542337; approved mark geometry unchanged. Background via built-in ImageGen: reinterpret dark background as warm porcelain with subdued dusty rose, quiet center, fine matte grain, no folds or new symbols. Pending owner selection.
 
 2026-10-27: Dark-surface mark uses source/master-mark-dark.svg with lifted shadow tones. Geometry and original texture unchanged; light-surface master unchanged. Dark-background exports must use lifted master to avoid disappearing lower strokes. Light atmosphere approved by owner.
+
+2026-10-27 revision: dark logo uses saturated dusty wine gradient #b46c84 / #a55873 / #91415e, texture opacity .35, subtle radial highlight in S above center. Replaces global shadow lift. Light variants unchanged.
