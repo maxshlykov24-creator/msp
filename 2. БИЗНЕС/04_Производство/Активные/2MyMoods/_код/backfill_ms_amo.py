@@ -53,6 +53,8 @@ WON = 142
 MAXIM = 9490530
 MS_AMO_ATTR = lib.MS_ATTR_AMO_LINK
 MS_LEGACY_CHANNEL = "48be380c-dc17-11ef-0a80-03cd0022c50b"
+MS_TELEGRAM_HANDLE = "c3c4d5e7-0b14-11f1-0a80-19c0002f1a33"
+AMO_TELEGRAM_HANDLE = 1211905
 # Only this source customentity/manual-enum pair has a stable live repair proof.
 PRESERVED_LEGACY_CHANNELS = {"6aa0854e-dc17-11ef-0a80-040f0023133c": 1255183}
 STATUS_IDS = {
@@ -1839,6 +1841,19 @@ def preserved_legacy_channel(data: dict, order: dict, ms: lib.MS) -> dict | None
     return {"field_id": 928931, "values": [{"enum_id": enum_id}]}
 
 
+def preserved_telegram_handle(data: dict, order: dict) -> dict | None:
+    """Copy the exact existing reverse-sync field before any entity creation."""
+    value = attrs(order).get(MS_TELEGRAM_HANDLE)
+    if value in (None, ""):
+        return None
+    meta = data.get("amo_fields", {}).get(str(AMO_TELEGRAM_HANDLE), {})
+    if (not isinstance(value, str) or len(value) > 255
+            or value != value.strip() or "\n" in value or "\r" in value
+            or meta.get("type") != "text" or meta.get("name") != "Ник телеграм"):
+        raise RowDeferred("TELEGRAM_HANDLE_NOT_PRESERVED")
+    return {"field_id": AMO_TELEGRAM_HANDLE, "values": [{"value": value}]}
+
+
 def source_attributes_preserved(order: dict, expected: dict) -> bool:
     actual = {k: v for k, v in attrs(order).items() if k != MS_AMO_ATTR}
     baseline = {k: v for k, v in expected.items() if k != MS_AMO_ATTR}
@@ -1902,6 +1917,11 @@ def optional_fields(data: dict, order: dict, row: dict, ms: lib.MS) -> list[dict
             return
         result.append({"field_id": fid, "values": values})
 
+    telegram_handle = preserved_telegram_handle(data, order)
+    if telegram_handle:
+        result.append(telegram_handle)
+    else:
+        omissions.append({"field_id": AMO_TELEGRAM_HANDLE, "reason": "SOURCE_EMPTY"})
     av = attrs(order)
     for fid, attr in ((928623, "6d95a799-f849-11f0-0a80-009c000b6c8a"),
                       (928619, "6d95a996-f849-11f0-0a80-009c000b6c8b"),
@@ -2005,6 +2025,7 @@ def apply_one(data: dict, ms: lib.MS, amo: lib.Amo, journal: dict, planned: dict
         raise RowDeferred("ACTIVE_RESERVE_REQUIRES_REVIEW")
     # Resolve preservation before even creating a contact.
     preserved_legacy_channel(data, order, ms)
+    preserved_telegram_handle(data, order)
     matches = exact_leads(amo, oid)
     if matches:
         if len(matches) != 1:
@@ -2493,6 +2514,36 @@ def self_test() -> None:
                     optional_fields(broken, order, {}, object())
             with patch.object(module, "ms_session"):
                 self.assertEqual(optional_fields(data, {"id": "o"}, {}, object()), [])
+
+        def test_telegram_handle_is_exact_and_never_dropped_before_post(self):
+            import copy
+            value = "@example1"
+            order = {"id": "o", "attributes": [{"id": MS_TELEGRAM_HANDLE, "value": value}]}
+            data = {"invoiceout": [], "demand": [], "amo_fields": {str(AMO_TELEGRAM_HANDLE):
+                    {"name": "Ник телеграм", "type": "text"}}}
+            with patch.object(module, "ms_session"), patch.object(module, "api_get") as get, \
+                 patch.object(module, "api_write") as write:
+                expected = {"field_id": AMO_TELEGRAM_HANDLE, "values": [{"value": value}]}
+                self.assertEqual(preserved_telegram_handle(data, order), expected)
+                self.assertIn(expected, optional_fields(data, order, {}, object()))
+                for bad_value in (" " + value, value + " ", value + "\n", "x" * 256, {"name": value}):
+                    bad = copy.deepcopy(order);bad["attributes"][0]["value"] = bad_value
+                    with self.assertRaisesRegex(RowDeferred, "TELEGRAM_HANDLE_NOT_PRESERVED"):
+                        preserved_telegram_handle(data, bad)
+                for bad_meta in ({}, {"name": "Other", "type": "text"}, {"name": "Ник телеграм", "type": "textarea"}):
+                    with self.assertRaises(RowDeferred):
+                        preserved_telegram_handle({"amo_fields": {str(AMO_TELEGRAM_HANDLE): bad_meta}}, order)
+                self.assertIsNone(preserved_telegram_handle({}, {"id": "o"}))
+                get.assert_not_called();write.assert_not_called()
+
+        def test_unmapped_telegram_handle_defers_before_contact_and_lead(self):
+            order = {"moment": "2020-01-01 12:00:00", "state": {"meta": {"href": lib.MS_BASE + "/entity/customerorder/metadata/states/" + next(iter(STATUS_IDS.values()))}},
+                     "attributes": [{"id": MS_TELEGRAM_HANDLE, "value": "@example1"}]}
+            with patch.object(module, "current_row", return_value=(order, {"category": "CREATE"})), \
+                 patch.object(module, "exact_leads") as search, patch.object(module, "create_entity") as create:
+                with self.assertRaisesRegex(RowDeferred, "TELEGRAM_HANDLE_NOT_PRESERVED"):
+                    apply_one({}, object(), object(), {"rows": {}}, {"order_id": "o"}, {})
+                search.assert_not_called();create.assert_not_called()
 
         def test_low_disk_stops_before_creating_a_partial_backup(self):
             from types import SimpleNamespace
