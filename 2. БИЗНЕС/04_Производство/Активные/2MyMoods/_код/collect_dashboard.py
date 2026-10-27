@@ -888,10 +888,50 @@ def _lead_ids_for_phone(amo: lib.Amo, phone: str, cache: dict[str, list[int] | N
     return cache[key]
 
 
+def contact_leads_by_phone(amo: lib.Amo, phones: set[str]) -> dict[str, list[int] | None]:
+    """Read contacts once with linked leads instead of searching for every order."""
+    keys = {re.sub(r"\D", "", phone)[-10:] for phone in phones
+            if len(re.sub(r"\D", "", phone)) >= 10}
+    index: dict[str, list[int] | None] = {key: None for key in keys}
+    if not keys:
+        return index
+    seen = set()
+    for page in range(1, 2001):
+        status, body = _amo_get(amo, f"/api/v4/contacts?with=leads&limit=250&page={page}")
+        if status == 204:
+            return index
+        if status != 200:
+            raise RuntimeError(f"amo contact index page {page}: HTTP {status}")
+        contacts = (body.get("_embedded") or {}).get("contacts")
+        if not isinstance(contacts, list):
+            raise RuntimeError("Invalid amo contact index page")
+        for contact in contacts:
+            if contact["id"] in seen:
+                raise RuntimeError("Duplicate contact in API pages")
+            seen.add(contact["id"])
+            linked = [lead["id"] for lead in (contact.get("_embedded") or {}).get("leads", [])]
+            for field in contact.get("custom_fields_values") or []:
+                if field.get("field_code") != "PHONE":
+                    continue
+                for item in field.get("values") or []:
+                    number = re.sub(r"\D", "", str(item.get("value") or ""))
+                    if len(number) < 10 or number[-10:] not in keys:
+                        continue
+                    key = number[-10:]
+                    index[key] = sorted(set((index[key] or []) + linked))
+        if len(contacts) < 250:
+            return index
+    raise RuntimeError("amo contact index: pagination limit reached")
+
+
 def messages_until_payment(amo: lib.Amo, orders: list[dict], msg_times: dict[int, list[int]],
                            since_day: str, since_ts: int) -> list[dict]:
     """Сколько сообщений клиента в amo было до полной оплаты. Без текста и без телефона в ответе."""
-    cache: dict[str, list[int] | None] = {}
+    cache = contact_leads_by_phone(amo, {
+        str(order["phone"]) for order in orders
+        if order.get("buy") and str(order.get("paid_date") or "") >= since_day
+        and order.get("phone") and order.get("paid_at")
+    })
     until = []
     seen: set[str] = set()
     for order in orders:
