@@ -26,3 +26,5 @@ Light theme proposal 2026-10-27: warm ivory with dusty burgundy atmosphere, same
 Dark mark texture: same embedded background sample, local contrast enhanced and opacity .52; crisp vector clipping retained.
 
 Texture correction: remove broad illumination from background sample with frequency separation inside SVG; retain fine detail across lower M and S. Color gradient is a separate underlying layer.
+
+FINAL 2026-10-27: full material source/mark-material.png (1216x1293) reconstructed with built-in ImageGen from approved mark. Prompt: extend the exact burgundy interior material across whole canvas, retain fine matte organic micrograin and color arrangement, resolve fine detail, no letters or logo, no black/flat shadows. Full-frame texture mapped to unchanged approved vector mask; no tiny crop or high-pass recoloring. Covers exported at 3840 width; original atmospheric backgrounds retained. See ИНСТРУКЦИЯ.txt for native resolution limits.

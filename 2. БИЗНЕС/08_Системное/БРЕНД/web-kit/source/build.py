@@ -47,3 +47,10 @@ icon=svg(512,512,'<rect width="512" height="512" rx="112" fill="#29101d"/><g tra
 (root/'icons'/'favicon.svg').write_text(icon)
 (root/'icons'/'site.webmanifest').write_text(json.dumps({'name':'MS Product','short_name':'MS Product','icons':[{'src':'/assets/ms-product/icons/icon-192.png','sizes':'192x192','type':'image/png'},{'src':'/assets/ms-product/icons/icon-512.png','sizes':'512x512','type':'image/png','purpose':'any'}],'theme_color':'#130b10','background_color':'#130b10','display':'standalone'},indent=2))
 print('Master applied to all SVG exports')
+
+# Light companion: same geometry/material, burgundy text.
+lightdata=base64.b64encode((root/'backgrounds/aura-light-source.png').read_bytes()).decode()
+for name,cw,ch in [('cover-aura-light',1200,630),('hero-aura-light',1920,1080)]:
+ factor=cw*.64/w
+ body=f'<image href="data:image/png;base64,{lightdata}" width="{cw}" height="{ch}" preserveAspectRatio="xMidYMid slice"/><g transform="translate({cw*.18} {ch*.62-h*factor/2}) scale({factor})">'+lock('url(#brand)','#542337')+'</g>'
+ (root/'svg'/f'{name}.svg').write_text(svg(cw,ch,body))

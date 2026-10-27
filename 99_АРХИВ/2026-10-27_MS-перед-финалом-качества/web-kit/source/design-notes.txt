@@ -1,0 +1,28 @@
+MS Product web kit, 2026-10-26
+Source mark: ../logo-ms-transparent.png (canonical brand folder)
+Wordmark: Helvetica Neue Medium, converted to outlines. No runtime font dependency.
+Palette: mark reconstructed from original purple-blue mark; surfaces from site-ms/public/index.html.
+Background created with built-in image_gen. Prompt: restrained abstract near-black #07060b paper, soft violet #9d6bff and blue light, fine grain, match original reference spatially: asymmetric black mass lower-left, light centered at x51% y5%, dark upper-right, selectively blurred top-left edge and more defined lower-right edge; muted violet-indigo, no bright blue ring, no folds, no crossing planes, no X shapes, no text or symbols. Revised per owner feedback on 2026-10-26.
+All geometry reconstructed as SVG, not raster embedded in a vector container. Background covers contain an embedded raster background.
+
+УТВЕРЖДЁННЫЙ СТИЛЬ ДЛЯ БУДУЩЕГО САЙТА · 26 октября 2026
+Эталон композиции: web-kit/png/cover-aura-approved.png (точная копия logo-tests/cover-aura-material.png).
+Фон: почти чёрная основа с фиолетово-индиговым рассеянным светом. Большая асимметричная тёмная округлая масса выходит из нижнего левого края, напоминает область чёрной дыры. Самая светлая мягкая лавандовая область сверху около центра; верхний правый угол тёмный. Край тёмной массы неоднородно расфокусирован: мягче сверху и слева, собраннее по нижней правой дуге. Не равномерное кольцо.
+Поверхность: очень мелкое плотное матовое зерно, мягкая волокнистая неоднородность, едва различимые нерегулярные микроштрихи. Они визуально могут напоминать символы, но не должны становиться читаемым узором или сеткой. Это сгенерированная растровая текстура, не подтверждённый набор букв или отдельных слоёв.
+Не добавлять кресты, заломы, пересекающиеся плоскости, неон, яркий розовый или бирюзовый, отчётливые повторяющиеся MS/M/S/P. При разработке сайта брать сохранённый фон, а не заменять его обычным CSS-градиентом. На адаптивных экранах сохранять характер светового пятна, дуги и зерна.
+Знак: исходная геометрия MS, мягкая фактура того же материала внутри фиолетово-синей заливки. Название MS Product гладкое белое. Эстетика современная и сдержанная.
+Поздние варианты не утверждены как замена. Все форматы сейчас не пересобирать по прямому указанию владельца.
+
+АКТУАЛЬНОЕ РЕШЕНИЕ: после сравнения 26 октября 2026 владелец выбрал бургунди основной палитрой. Цветовой эталон: logo-tests/cover-aura-burgundy.png в папке бренда. Сохранять ранее утверждённую композицию и фактуру. Фиолетово-синий — предыдущий вариант. Отдельный фон и все экспорты бургунди ещё не подготовлены.
+
+2026-10-27 FINAL: source/master-mark.svg is canonical. Burgundy matte texture, equal M stems, symmetric S, 64-unit M/S gap, aligned right edge x=800. Texture is embedded raster; outlines vector. Background extracted with built-in ImageGen: remove old logo and text only, preserve burgundy atmosphere and calm texture.
+
+Light theme proposal 2026-10-27: warm ivory with dusty burgundy atmosphere, same asymmetric arc and matte microtexture. Dark wine wordmark #542337; approved mark geometry unchanged. Background via built-in ImageGen: reinterpret dark background as warm porcelain with subdued dusty rose, quiet center, fine matte grain, no folds or new symbols. Pending owner selection.
+
+2026-10-27: Dark-surface mark uses source/master-mark-dark.svg with lifted shadow tones. Geometry and original texture unchanged; light-surface master unchanged. Dark-background exports must use lifted master to avoid disappearing lower strokes. Light atmosphere approved by owner.
+
+2026-10-27 revision: dark logo uses saturated dusty wine gradient #b46c84 / #a55873 / #91415e, texture opacity .35, subtle radial highlight in S above center. Replaces global shadow lift. Light variants unchanged.
+
+Dark mark texture: same embedded background sample, local contrast enhanced and opacity .52; crisp vector clipping retained.
+
+Texture correction: remove broad illumination from background sample with frequency separation inside SVG; retain fine detail across lower M and S. Color gradient is a separate underlying layer.
