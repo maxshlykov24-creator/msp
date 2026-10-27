@@ -24,7 +24,11 @@ darkbody=darkmaster[darkmaster.index('>')+1:darkmaster.rindex('</svg>')]
 def mark(fill):
  if fill=='dark-texture':return darkbody
  if fill=='url(#brand)':return masterbody
- return '<g fill="'+fill+'">'+''.join('<path d="'+p+'"/>' for p in paths)+'</g>'
+ # All mark variants carry the same source texture; only their luminance range varies.
+ if fill=='#ffffff': matrix='0.07 0.07 0.07 0 .79  0.07 0.07 0.07 0 .78  0.07 0.07 0.07 0 .78  0 0 0 1 0'
+ elif fill=='#241219': matrix='.16 .16 .16 0 .07  .10 .10 .10 0 .025  .13 .13 .13 0 .045  0 0 0 1 0'
+ else: return masterbody
+ return '<defs><filter id="tone" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="'+matrix+'"/></filter></defs><g filter="url(#tone)">'+masterbody+'</g>' 
 def word(fill): return '<g fill="'+fill+'" transform="scale('+str(scale)+' '+str(-scale)+')">'+''.join(parts)+'</g>'
 def defs(): return '<defs><linearGradient id="brand" x1="0" y1="0" x2="1" y2=".6"><stop stop-color="#b56e87"/><stop offset=".55" stop-color="#99516c"/><stop offset="1" stop-color="#6b2b46"/></linearGradient></defs>'
 def svg(w,h,body):return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label="MS Product">'+defs()+body+'</svg>'

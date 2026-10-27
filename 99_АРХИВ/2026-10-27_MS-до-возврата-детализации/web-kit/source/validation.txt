@@ -1,0 +1,25 @@
+cover-aura-light: PNG 3840x2016
+cover-aura: PNG 3840x2016
+cover-dark: PNG 3840x2016
+cover-light: PNG 3840x2016
+cover-violet: PNG 3840x2016
+hero-aura-light: PNG 3840x2160
+hero-aura: PNG 3840x2160
+logo-horizontal-black: PNG 2400x536
+logo-horizontal-full-gradient: PNG 2400x536
+logo-horizontal-gradient-dark: PNG 2400x536
+logo-horizontal-gradient-light: PNG 2400x536
+logo-horizontal-violet: PNG 2400x536
+logo-horizontal-white: PNG 2400x536
+logo-vertical-dark: PNG 2440x1930
+logo-vertical-light: PNG 2440x1930
+logo-vertical-transparent: PNG 2440x1930
+mark-black: PNG 1216x1356
+mark-full-gradient: PNG 1216x1356
+mark-gradient-dark: PNG 1216x1356
+mark-gradient-light: PNG 1216x1356
+mark-violet: PNG 1216x1356
+mark-white: PNG 1216x1356
+social-square: PNG 2160x2160
+Transparent master alpha verified.
+Texture native:1216x1293. Background native:1730x909. 3840px covers combine vector logo/text with enlarged atmospheric raster background.

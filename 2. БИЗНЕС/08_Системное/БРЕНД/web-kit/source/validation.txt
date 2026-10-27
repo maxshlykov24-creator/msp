@@ -22,4 +22,4 @@ mark-violet: PNG 1216x1356
 mark-white: PNG 1216x1356
 social-square: PNG 2160x2160
 Transparent master alpha verified.
-Texture native:1216x1293. Background native:1730x909. 3840px covers combine vector logo/text with enlarged atmospheric raster background.
+Texture: original archived cover surface, native sample 600x300 with mirrored continuation. Background native:1730x909. SVG rendered at target density, not upscaled after rasterizing. 3840px covers combine vector logo/text with enlarged atmospheric raster background.

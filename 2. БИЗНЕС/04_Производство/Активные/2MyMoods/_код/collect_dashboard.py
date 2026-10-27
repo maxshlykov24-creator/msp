@@ -1358,14 +1358,14 @@ def enrich_order_sources(snap: dict) -> None:
     """Dashboard-only fallback. Preserve raw utm_source and UTM-quality metrics."""
     by_id = {}
     for order in snap.get("orders", []):
-        # Rebuild on every collection, including when a UTM or state has changed.
+        # Sales channel survives successful-state consolidation and later refunds.
         order.pop("source_fallback", None)
         order.pop("source_basis", None)
         raw = str(order.get("source") or "").strip()
         if not raw or raw.casefold() == "не указано":
-            if order.get("state_id") == MS_SHOWROOM_STATE:
+            if order.get("channel") == "Шоурум":
                 order["source_fallback"] = "ОП Шоу-рум"
-                order["source_basis"] = "Статус МойСклад: Покупка в шоуруме"
+                order["source_basis"] = "Канал продаж МойСклад: Шоурум"
             elif order.get("channel") in ORDER_MESSENGER_SOURCES:
                 order["source_fallback"] = ORDER_MESSENGER_SOURCES[order["channel"]]
                 order["source_basis"] = "Канал продаж МойСклад: " + order["channel"]

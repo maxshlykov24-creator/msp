@@ -1,17 +1,17 @@
 [
   {
     "width": 1440,
-    "overflow": false,
-    "images": true
+    "images": true,
+    "overflow": false
   },
   {
     "width": 768,
-    "overflow": false,
-    "images": true
+    "images": true,
+    "overflow": false
   },
   {
     "width": 390,
-    "overflow": false,
-    "images": true
+    "images": true,
+    "overflow": false
   }
 ]
