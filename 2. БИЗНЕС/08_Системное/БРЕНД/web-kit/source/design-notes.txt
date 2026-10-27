@@ -16,3 +16,5 @@ All geometry reconstructed as SVG, not raster embedded in a vector container. Ba
 АКТУАЛЬНОЕ РЕШЕНИЕ: после сравнения 26 октября 2026 владелец выбрал бургунди основной палитрой. Цветовой эталон: logo-tests/cover-aura-burgundy.png в папке бренда. Сохранять ранее утверждённую композицию и фактуру. Фиолетово-синий — предыдущий вариант. Отдельный фон и все экспорты бургунди ещё не подготовлены.
 
 2026-10-27 FINAL: source/master-mark.svg is canonical. Burgundy matte texture, equal M stems, symmetric S, 64-unit M/S gap, aligned right edge x=800. Texture is embedded raster; outlines vector. Background extracted with built-in ImageGen: remove old logo and text only, preserve burgundy atmosphere and calm texture.
+
+Light theme proposal 2026-10-27: warm ivory with dusty burgundy atmosphere, same asymmetric arc and matte microtexture. Dark wine wordmark #542337; approved mark geometry unchanged. Background via built-in ImageGen: reinterpret dark background as warm porcelain with subdued dusty rose, quiet center, fine matte grain, no folds or new symbols. Pending owner selection.
