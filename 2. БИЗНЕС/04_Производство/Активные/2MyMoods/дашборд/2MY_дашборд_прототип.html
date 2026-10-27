@@ -721,6 +721,8 @@
     </div>
   </header>
 
+  <div id="amo-sync-warning" class="hint" role="status" hidden style="padding:12px 0;color:var(--rose)"></div>
+
   <div class="filters">
     <div class="fgroup">
       <div class="flabel">Период</div>
@@ -1674,6 +1676,9 @@ function init(snap){
  data=snap;buildClients();
  const syncAt=snap.generated?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(snap.generated)):'';
  el('sync-at').textContent=syncAt?('Синхронизация '+syncAt):'Синхронизация —';
+ const crmWarning=el('amo-sync-warning'),crmStatus=snap.amo_status;
+ crmWarning.hidden=!crmStatus||crmStatus.status==='ok';
+ crmWarning.textContent=crmWarning.hidden?'':('МойСклад обновлён. Данные amoCRM не обновились'+(crmStatus.data_at?' и сохранены на '+new Date(crmStatus.data_at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}):'')+'. Показатели CRM могут быть устаревшими.');
   const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Moscow'});
   const [ty,tm]=today.split('-').map(Number);
   const iso=(y,m,d)=>`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;

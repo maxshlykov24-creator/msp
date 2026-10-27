@@ -517,7 +517,7 @@ def get_amo() -> tuple[list[dict], dict]:
         for page in range(1, 501):
             for attempt in range(6):
                 status, body = amo.req("GET", f"{path}{'&' if '?' in path else '?'}limit=250&page={page}")
-                if status not in (429, 500, 502, 503, 504):
+                if status not in (0, 429, 500, 502, 503, 504):
                     break
                 time.sleep(2 * (attempt + 1))
             if status == 204:
@@ -533,7 +533,7 @@ def get_amo() -> tuple[list[dict], dict]:
         raise RuntimeError(f"amo {key}: pagination limit reached")
 
     leads = pages(f"/api/v4/leads?filter[pipeline_id]={lib.PIPELINE_SALES_NEW}&with=source", "leads")
-    status, pipeline = amo.req("GET", f"/api/v4/leads/pipelines/{lib.PIPELINE_SALES_NEW}")
+    status, pipeline = _amo_get(amo, f"/api/v4/leads/pipelines/{lib.PIPELINE_SALES_NEW}")
     if status != 200:
         raise RuntimeError(f"amo pipeline: HTTP {status}")
     stages = sorted(pipeline.get("_embedded", {}).get("statuses", []), key=lambda s: s["sort"])
@@ -578,7 +578,7 @@ def get_stage_history(leads: list[dict]) -> dict:
                 f"&limit=100&page={page}")
         for attempt in range(6):
             status, body = amo.req("GET", path)
-            if status not in (429, 500, 502, 503, 504):
+            if status not in (0, 429, 500, 502, 503, 504):
                 break
             time.sleep(2 * (attempt + 1))
         if status == 204:
@@ -849,7 +849,7 @@ def _amo_get(amo: lib.Amo, path: str):
     status, body = 0, {}
     for attempt in range(5):
         status, body = amo.req("GET", path)
-        if status not in (429, 500, 502, 503, 504):
+        if status not in (0, 429, 500, 502, 503, 504):
             return status, body
         time.sleep(min(20, 2 * (attempt + 1)))
     return status, body
@@ -929,7 +929,7 @@ def get_responses(leads: list[dict], orders: list[dict] | None = None) -> dict:
                 f"&filter[created_at][to]={int(now.timestamp())}&limit=100&page={page}")
         for attempt in range(6):
             status, body = amo.req("GET", path)
-            if status not in (429, 500, 502, 503, 504):
+            if status not in (0, 429, 500, 502, 503, 504):
                 break
             time.sleep(2 * (attempt + 1))
         if status == 204:
@@ -1037,24 +1037,29 @@ def positions_for(order_id: str) -> tuple[str, list[dict]]:
 
 
 def positions_in_order(order_ids: list[str]):
-    """Держим в памяти не больше трёх ответов и не бьём лимит API."""
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        source = iter(order_ids)
-        pending = deque()
-        for _ in range(min(3, len(order_ids))):
-            order_id = next(source)
-            pending.append((order_id, pool.submit(positions_for, order_id)))
-        for expected_id in order_ids:
-            order_id, future = pending.popleft()
-            if order_id != expected_id:
-                raise RuntimeError("Нарушен порядок загрузки позиций")
-            loaded_id, rows = future.result()
-            if loaded_id != expected_id:
-                raise RuntimeError("Позиции не того заказа")
-            next_id = next(source, None)
-            if next_id:
-                pending.append((next_id, pool.submit(positions_for, next_id)))
-            yield rows
+    """Batch expanded positions; verify completeness and fall back per document."""
+    wanted = set(order_ids)
+    if len(wanted) != len(order_ids):
+        raise RuntimeError("Duplicate order in position request")
+    rows = required_rows(lib.MS(), "/entity/customerorder",
+                         {"expand": "positions", "limit": 100, "order": "id"},
+                         keep=("id", "positions"))
+    cached, seen = {}, set()
+    fields = ("assortment", "quantity", "price", "discount", "vat")
+    for order in rows:
+        oid = order["id"]
+        if oid not in wanted:
+            continue
+        if oid in seen:
+            raise RuntimeError("Duplicate order in expanded position pages")
+        seen.add(oid)
+        collection = order.get("positions") or {}
+        positions = collection.get("rows")
+        if isinstance(positions, list) and len(positions) == collection.get("meta", {}).get("size"):
+            cached[oid] = [{key: row[key] for key in fields if key in row} for row in positions]
+    print(f"Позиции пакетами: {len(cached)}/{len(order_ids)}", flush=True)
+    for oid in order_ids:
+        yield cached[oid] if oid in cached else positions_for(oid)[1]
 
 
 def atomic_json(path: Path, value: dict, mode=0o600) -> None:
@@ -1747,8 +1752,21 @@ def main() -> None:
             print(f"обработано {index}/{len(orders)}", flush=True)
     position_rows.close()
     print("amoCRM: новая воронка и задачи", flush=True)
-    leads, tasks = get_amo()
-    responses = get_responses(leads, result)
+    old_snap = json.loads(OUT.read_text()) if OUT.exists() else {}
+    amo_status = {"status": "ok", "checked_at": datetime.now(TZ).isoformat(timespec="seconds")}
+    try:
+        leads, tasks = get_amo()
+        responses = get_responses(leads, result)
+    except Exception as exc:
+        leads = old_snap.get("leads", [])
+        tasks = old_snap.get("tasks", {})
+        responses = old_snap.get("responses", {})
+        previous = old_snap.get("amo_status") or {}
+        amo_status = {"status": "stale" if old_snap else "unavailable",
+                      "checked_at": datetime.now(TZ).isoformat(timespec="seconds"),
+                      "data_at": previous.get("data_at") or old_snap.get("generated"),
+                      "reason": type(exc).__name__}
+        print("amoCRM unavailable; preserving previous CRM data: " + type(exc).__name__, flush=True)
     # Список заказов читается в начале сборки. Платёж, пришедший пока считались позиции,
     # в срез не попадал, хотя время среза ставится в конце. Добираем изменения.
     stamp = started.strftime("%Y-%m-%d %H:%M:%S")
@@ -1767,13 +1785,10 @@ def main() -> None:
         print(f"добор не удался: {type(exc).__name__}", flush=True)
     for payment in fresh_payments:
         absorb_payment(payment, order_payments, invoices, linked_ids, replace=True)
-    original_money = {row["id"]: (rub(row.get("sum")), rub(row.get("payedSum"))) for row in orders}
     by_id = {row["id"]: row for row in result}
     caught = []
     for o in fresh_orders:
         money = (rub(o.get("sum")), rub(o.get("payedSum")))
-        if o["id"] in original_money and original_money[o["id"]] == money:
-            continue
         is_buy = money[0] > 0 and money[1] + 0.009 >= money[0]
         positions = positions_for(o["id"])[1] if is_buy else []
         row = build_order(o, positions, ms, started, order_payments, agents, channels, return_orders,
@@ -1808,7 +1823,7 @@ def main() -> None:
         for row in result:
             row.pop("address", None)
     snap = {"generated": datetime.now(TZ).isoformat(timespec="seconds"), "timezone": "Europe/Moscow",
-            "orders": result, "leads": leads, "tasks": tasks,
+            "orders": result, "leads": leads, "tasks": tasks, "amo_status": amo_status,
             "roster": {"status": roster_status},
             "payment_daily": [{"date": day, "sum": round(amount, 2)} for day, amount in sorted(payment_daily.items())],
             "responses": responses,
@@ -1818,6 +1833,8 @@ def main() -> None:
     print("Скидки на отгруженные товары: сверка документов", flush=True)
     enrich_shipment_discounts(snap)
     try:
+        if amo_status['status'] != 'ok':
+            raise RuntimeError('amoCRM unavailable during this collection')
         snap['amo_conversion'] = get_amo_conversion(leads, tasks)
     except Exception as exc:
         snap['amo_conversion'] = {'status': 'unavailable', 'source': 'amoCRM',

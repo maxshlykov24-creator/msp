@@ -6,6 +6,7 @@ import gzip
 import json
 import os
 import time
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -87,6 +88,11 @@ def href_id(meta: dict | None) -> str:
 
 
 class Amo:
+    # Shared by all clients in one worker; leave headroom below amoCRM limits.
+    _request_gate = threading.Lock()
+    _next_request_at = 0.0
+    _api_forbidden = False
+
     def __init__(self, env: dict[str, str] | None = None):
         env = env or load_env()
         self.base = (env.get("AMOCRM_BASE_URL") or "").rstrip("/")
@@ -102,6 +108,13 @@ class Amo:
             self.opener = urllib.request.build_opener()
 
     def req(self, method: str, path: str, body=None):
+        with Amo._request_gate:
+            if Amo._api_forbidden:
+                return 403, {"error": "API forbidden; further calls stopped for this worker"}
+            wait = Amo._next_request_at - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            Amo._next_request_at = time.monotonic() + 0.6
         data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
         r = urllib.request.Request(
             self.base + path,
@@ -115,10 +128,22 @@ class Amo:
                 return resp.status, json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
             raw = e.read()
+            with Amo._request_gate:
+                if e.code == 403:
+                    Amo._api_forbidden = True
+                elif e.code == 429:
+                    try:
+                        pause = max(30.0, float(e.headers.get("Retry-After", "30")))
+                    except (TypeError, ValueError):
+                        pause = 30.0
+                    Amo._next_request_at = max(Amo._next_request_at, time.monotonic() + pause)
             try:
                 return e.code, json.loads(raw)
             except Exception:
                 return e.code, {"error": raw.decode(errors="replace")[:400]}
+
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            return 0, {"error": type(exc).__name__}
 
     def cf(self, entity: dict, field_id: int) -> str:
         for grp in entity.get("custom_fields_values") or []:
