@@ -6,7 +6,10 @@
 html .lockup img,html .hero-mark img,html .footer-lockup img{filter:brightness(1.25) saturate(.9)}
 html[data-theme="light"]{color-scheme:light;--bg:#faf9f6;--bg2:#f7f1f2;--ink:#321722;--dim:rgba(50,23,34,.78);--faint:rgba(50,23,34,.69);--line:rgba(82,35,54,.17);--line2:rgba(82,35,54,.27);--card:rgba(255,255,255,.68);--card2:rgba(255,255,255,.84);--mag:#71304a;--vio:#71304a;--ele:#71304a;--ok:#276345;--grad:linear-gradient(110deg,#542337,#71304a 48%,#99516c);--grad-soft:linear-gradient(110deg,rgba(153,81,108,.16),rgba(181,110,135,.11),rgba(107,43,70,.12))}
 html[data-theme="light"] body{background-color:#faf9f6;background-image:linear-gradient(rgba(250,249,246,.52),rgba(250,249,246,.83)),url('assets/aura-light.webp');background-position:center top;background-size:cover;background-attachment:fixed}
-html[data-theme="light"] .stage,html[data-theme="light"] .vignette{display:none}
+html[data-theme="light"] .stage{background:#faf9f6}
+html[data-theme="light"] .vignette{display:none}
+html[data-theme="light"] body.no-gl .mesh{opacity:.14}
+html[data-theme="light"] body.no-gl .stage::after{opacity:.35}
 html[data-theme="light"] body::after{opacity:.025}
 html[data-theme="light"] .nav:has(.wrap){background:rgba(250,249,246,.84)}
 html[data-theme="light"] .theme-pill{background:rgba(255,255,255,.68);border-color:rgba(82,35,54,.22)}
