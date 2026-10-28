@@ -4,12 +4,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal, Optional
 
 import httpx
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import DateTime, Integer, JSON, String, UniqueConstraint, select, text
+from sqlalchemy import Date, DateTime, Integer, JSON, String, UniqueConstraint, select, text
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.certificate_mail import MSK, transitions, MailSettings
@@ -184,7 +184,7 @@ def order_for(source):
     raise ValueError("unknown_conversation_origin")
 
 
-def resolve_plan(db, c, lead, contact, s, r):
+def resolve_plan(db, c, lead, contact, s, r, *, calendar=False):
     from app.reservation_reminders import first, recipient
     talks = c.get("/api/v4/talks", **{"filter[contact_id]": contact["id"], "limit": 250}).get("_embedded", {}).get("talks", [])
     if len(talks) >= 250:
@@ -202,12 +202,12 @@ def resolve_plan(db, c, lead, contact, s, r):
     if latest:
         stamp = max(x[0] for x in latest)
         origins = {x[1] for x in latest if x[0] == stamp}
-        mapped = {ORIGINS.get(origin, origin if origin in set(DIRECT) | SOCIAL else "unknown") for origin in origins}
+        mapped = {ORIGINS.get(origin, origin if origin in set(DIRECT) | SOCIAL else ("website" if calendar and origin == CalendarSettings().website_origin and bool(origin) else "unknown")) for origin in origins}
         if len(mapped) != 1 or "unknown" in mapped:
             raise ValueError("unknown_or_ambiguous_conversation_origin")
         source = mapped.pop()
     elif talks:
-        origins = {ORIGINS.get(t.get("origin"), "unknown") for t in talks.values()}
+        origins = {ORIGINS.get(t.get("origin"), "website" if calendar and t.get("origin") == CalendarSettings().website_origin and bool(t.get("origin")) else "unknown") for t in talks.values()}
         if len(origins) != 1 or "unknown" in origins:
             raise ValueError("no_unique_conversation_origin")
         source = origins.pop()
@@ -217,7 +217,9 @@ def resolve_plan(db, c, lead, contact, s, r):
     if not isinstance(channels, list):
         raise ValueError("invalid_channels_response")
     plan = []
-    for transport in order_for(source):
+    for transport in (order_for(None if source == "website" else source) if not calendar or source != "vk" else list(DIRECT)):
+        if calendar and transport == "vk":
+            continue
         channel = getattr(r, transport + "_channel") if transport in DIRECT else getattr(s, transport + "_channel")
         dest = recipient(contact, transport, r) if transport in DIRECT else ({"chatId": first(contact, SOCIAL_FIELDS[transport]).strip()} if first(contact, SOCIAL_FIELDS[transport]).strip() else None)
         # Incoming metadata pins the actual Wazzup account when it is known.
@@ -230,52 +232,60 @@ def resolve_plan(db, c, lead, contact, s, r):
         if cached:
             channel = cached.channel_id
         if not channel:
-            candidates = [x for x in channels if x.get("transport") == transport]
+            candidates = [x for x in channels if x.get("transport") == ("tgapi" if transport == "telegram" else transport)]
             if len(candidates) == 1:
                 channel = candidates[0]["channelId"]
         plan.append({"transport": transport, "channelId": channel, "recipient": dest})
     return plan
 
 
-def reconcile(db, now):
+def reconcile(db, now, *, job_type=StageJob, attempt_type=StageAttempt, dispatch=dispatch_time):
     from app.reservation_reminders import ReminderEvent, SUCCESS
-    for a in db.scalars(select(StageAttempt).where(StageAttempt.state.in_(["inflight", "pending", "error", "unknown"]))):
+    for a in db.scalars(select(attempt_type).where(attempt_type.state.in_(["inflight", "pending", "error", "unknown"]))):
         if not a.message_id:
             if a.state == "inflight":
                 a.state = "unknown"
-                job = db.get(StageJob, a.job_id)
+                job = db.get(job_type, a.job_id)
                 job.state, job.reason = "uncertain", "interrupted_send_claim"
             continue
         events = list(db.scalars(select(ReminderEvent).where(ReminderEvent.message_id == a.message_id)))
-        job = db.get(StageJob, a.job_id)
+        job = db.get(job_type, a.job_id)
         if any(e.status in SUCCESS for e in events):
             a.state, job.state, job.reason = "sent", "sent", ""
         elif a.state != "error" and job.state not in {"sent", "cancelled"} and any(e.status == "error" for e in events):
             a.state, a.reason = "error", "confirmed_delivery_error"
-            job.state, job.reason, job.check_at = "ready", a.reason, dispatch_time(now)
+            job.state, job.reason, job.check_at = "ready", a.reason, dispatch(now)
     db.commit()
 
 
-def send_job(db, job, c, s, r, now, *, clock=None):
+def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
+    calendar = calendar_settings is not None
+    attempt_type = CalendarAttempt if calendar else StageAttempt
+    job_type = CalendarJob if calendar else StageJob
+    dispatch = (lambda stamp: calendar_dispatch(job, stamp)) if calendar else dispatch_time
+    make_body = (lambda lead, _: render_calendar(lead, job, s)) if calendar else render
+    def valid(lead):
+        return calendar_valid(lead, job, calendar_settings) if calendar else (
+            lead.get("pipeline_id") == 9601214 and lead.get("status_id") == job.status_id and not lead.get("is_deleted"))
     from app.reservation_reminders import get_lead, primary_contact, REJECTED
-    if not s.live_ready() or job.state not in {"ready", "blocked"} or aware(job.check_at) > now:
+    if not s.live_ready() or (calendar and not calendar_settings.live_ready()) or job.state not in {"ready", "blocked"} or aware(job.check_at) > now:
         return
-    if dispatch_time(now) != now:
-        job.check_at = dispatch_time(now)
+    if dispatch(now) != now:
+        job.check_at = dispatch(now)
         db.commit()
         return
     lead = get_lead(c, job.lead_id)
-    if lead.get("pipeline_id") != 9601214 or lead.get("status_id") != job.status_id or lead.get("is_deleted"):
+    if not valid(lead):
         job.state, job.reason = "cancelled", "stage_changed"
         db.commit()
         return
     try:
-        body = render(lead, s)
+        body = make_body(lead, s)
         cid = primary_contact(lead)
         if not cid or (job.contact_id and job.contact_id != cid):
             raise ValueError("ambiguous_or_changed_contact")
         if job.plan is None:
-            job.plan = resolve_plan(db, c, lead, c.get(f"/api/v4/contacts/{cid}"), s, r)
+            job.plan = resolve_plan(db, c, lead, c.get(f"/api/v4/contacts/{cid}"), s, r, **({"calendar": True} if calendar else {}))
             job.contact_id = cid
             db.commit()
     except ValueError as exc:
@@ -285,7 +295,7 @@ def send_job(db, job, c, s, r, now, *, clock=None):
     resp = c.wz.get("/channels"); resp.raise_for_status()
     channels = {x["channelId"]: x for x in resp.json()}
     for pos, route in enumerate(job.plan):
-        prior = db.scalar(select(StageAttempt).where(StageAttempt.job_id == job.id, StageAttempt.position == pos))
+        prior = db.scalar(select(attempt_type).where(attempt_type.job_id == job.id, attempt_type.position == pos))
         if prior:
             if prior.state not in {"skipped", "error"}:
                 return
@@ -295,24 +305,23 @@ def send_job(db, job, c, s, r, now, *, clock=None):
         available = bool(route["recipient"]) and channel.get("state") == "active" and channel.get("transport") == expected
         if available:
             fresh = get_lead(c, job.lead_id)
-            if (fresh.get("pipeline_id") != 9601214 or fresh.get("status_id") != job.status_id
-                    or fresh.get("is_deleted") or primary_contact(fresh) != job.contact_id):
+            if (not valid(fresh) or primary_contact(fresh) != job.contact_id):
                 job.state, job.reason = "cancelled", "stage_or_contact_changed"
                 db.commit()
                 return
             try:
-                body = render(fresh, s)
+                body = make_body(fresh, s)
             except ValueError as exc:
                 job.state, job.reason, job.check_at = "blocked", str(exc)[:100], now + timedelta(hours=1)
                 db.commit()
                 return
             current = (clock or utcnow)()
-            if dispatch_time(current) != current:
-                job.check_at, job.state = dispatch_time(current), "ready"
+            if dispatch(current) != current:
+                job.check_at, job.state = dispatch(current), "ready"
                 db.commit()
                 return
-        a = StageAttempt(job_id=job.id, position=pos, transport=route["transport"],
-            crm_message_id=f"stage-{job.lead_id}-{job.status_id}-{pos}")
+        a = attempt_type(job_id=job.id, position=pos, transport=route["transport"],
+            crm_message_id=(f"calendar-{job.lead_id}-{job.kind}-{job.target_date}-{pos}" if calendar else f"stage-{job.lead_id}-{job.status_id}-{pos}"))
         db.add(a)
         if not available:
             a.state, a.reason = "skipped", "no_recipient_or_inactive_channel"
@@ -330,7 +339,7 @@ def send_job(db, job, c, s, r, now, *, clock=None):
             if response.status_code == 201 and result.get("messageId"):
                 a.message_id = str(result["messageId"])
                 a.state, job.state, job.reason = "pending", "pending", ""
-                db.commit(); reconcile(db, now)
+                db.commit(); reconcile(db, now, job_type=job_type, attempt_type=attempt_type, dispatch=dispatch)
                 return
             code = str(result.get("error") or "")[:80]
             # Observed Wazzup 400 rejection on the owner test: no account exists
@@ -386,3 +395,148 @@ def summary(db):
     return {"mode": s.mode, "ready": s.live_ready(), "jobs": [
         {"lead_id": j.lead_id, "status_id": j.status_id, "state": j.state, "reason": j.reason}
         for j in db.scalars(select(StageJob).order_by(StageJob.id.desc()).limit(30))]}
+
+# Calendar notifications share the proven transport state machine, but have
+# separate durable keys: lead + scenario + appointment/return date.
+class CalendarSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CALENDARNOTIFY_", extra="ignore")
+    mode: Literal["preview", "live"] = "preview"
+    meeting_field: int = 3382311
+    return_field: int = 3322895
+    meeting_status: int = 76654894
+    paid_status: int = 76674066
+    rented_status: int = 76660194
+    website_origin: str = ""
+
+    def live_ready(self):
+        return self.mode == "live"
+
+
+CALENDAR_RULES = {
+    "meeting_today": ("meeting_status", "meeting_field", 0, 10, 0),
+    "meeting_followup": ("meeting_status", "meeting_field", 1, 10, 30),
+    "rental_pickup": ("paid_status", "meeting_field", -1, 11, 0),
+    "rental_return": ("rented_status", "return_field", 0, 10, 0),
+}
+
+
+class CalendarJob(Base):
+    __tablename__ = "calendar_notification_job"
+    __table_args__ = (UniqueConstraint("lead_id", "kind", "target_date"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lead_id: Mapped[int] = mapped_column(Integer, index=True)
+    status_id: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(32))
+    target_date: Mapped[date] = mapped_column(Date)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    state: Mapped[str] = mapped_column(String(32), default="ready", index=True)
+    reason: Mapped[str] = mapped_column(String(100), default="")
+    contact_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    plan: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+
+class CalendarAttempt(Base):
+    __tablename__ = "calendar_notification_attempt"
+    __table_args__ = (UniqueConstraint("job_id", "position"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(Integer, index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    transport: Mapped[str] = mapped_column(String(20))
+    state: Mapped[str] = mapped_column(String(24), default="inflight")
+    message_id: Mapped[str] = mapped_column(String(80), default="", index=True)
+    crm_message_id: Mapped[str] = mapped_column(String(120), unique=True)
+    reason: Mapped[str] = mapped_column(String(100), default="")
+
+
+TABLES.extend([CalendarJob.__table__, CalendarAttempt.__table__])
+
+
+def calendar_date(lead, field):
+    from app.reservation_reminders import values
+    entries = values(lead, field)
+    if len(entries) != 1:
+        return None
+    try:
+        raw = entries[0]["value"]
+        if isinstance(raw, bool):
+            return None
+        return datetime.fromtimestamp(int(raw), MSK).date()
+    except (ValueError, TypeError, KeyError, OverflowError, OSError):
+        return None
+
+
+def calendar_valid(lead, job, settings):
+    status, field, _, _, _ = CALENDAR_RULES[job.kind]
+    return (lead.get("pipeline_id") == 9601214 and not lead.get("is_deleted")
+            and lead.get("status_id") == getattr(settings, status)
+            and calendar_date(lead, getattr(settings, field)) == job.target_date)
+
+
+def calendar_dispatch(job, now):
+    due = aware(job.due_at)
+    # Never roll a missed calendar reminder into another date.
+    if now < due:
+        return due
+    return now
+
+
+def sync_calendar(db, leads, settings, now):
+    existing = {(j.lead_id, j.kind, j.target_date): j for j in db.scalars(select(CalendarJob))}
+    found = set()
+    for lead in leads:
+        if lead.get("pipeline_id") != 9601214 or lead.get("is_deleted"):
+            continue
+        for kind, (status, field, offset, hour, minute) in CALENDAR_RULES.items():
+            if lead.get("status_id") != getattr(settings, status):
+                continue
+            target = calendar_date(lead, getattr(settings, field))
+            if target is None:
+                continue
+            due = datetime.combine(target + timedelta(days=offset), datetime.min.time(), MSK).replace(hour=hour, minute=minute).astimezone(timezone.utc)
+            if due.astimezone(MSK).date() < now.astimezone(MSK).date():
+                continue
+            key = (lead["id"], kind, target)
+            found.add(key)
+            if key not in existing:
+                j = CalendarJob(lead_id=lead["id"], status_id=lead["status_id"], kind=kind,
+                    target_date=target, due_at=due, check_at=due)
+                db.add(j)
+                existing[key] = j
+            elif existing[key].state == "cancelled":
+                j = existing[key]
+                if db.scalar(select(CalendarAttempt.id).where(CalendarAttempt.job_id == j.id).limit(1)) is None:
+                    j.state, j.reason, j.plan, j.contact_id = "ready", "", None, None
+                    j.check_at = due
+    for key, j in existing.items():
+        if j.state in {"ready", "blocked"} and key not in found:
+            j.state, j.reason = "cancelled", "conditions_changed"
+    db.commit()
+    return {"scanned": len(leads), "eligible": len(found)}
+
+
+def send_calendar(db, job, c, s, r, settings, now, *, clock=None):
+    # Initial sends have a five-minute scheduler tolerance. No afternoon catch-up
+    # at activation/restart. Confirmed failures may fall back during the same day.
+    due = aware(job.due_at)
+    attempts = list(db.scalars(select(CalendarAttempt).where(CalendarAttempt.job_id == job.id)))
+    attempted = any(a.state != "skipped" for a in attempts)
+    local = now.astimezone(MSK)
+    if job.state not in {"ready", "blocked"}:
+        return
+    if local.date() != due.astimezone(MSK).date() or local.hour >= 20 or (not attempted and now > due + timedelta(minutes=5)):
+        if now >= due:
+            job.state, job.reason = "expired", "scheduled_window_passed"
+            db.commit()
+        return
+    # Re-check actual clock before each POST as routing and CRM reads take time.
+    def guarded_clock():
+        stamp = (clock or utcnow)()
+        loc = stamp.astimezone(MSK)
+        if (loc.date() != due.astimezone(MSK).date() or loc.hour >= 20
+                or (not attempted and stamp > due + timedelta(minutes=5))):
+            raise ValueError("calendar_window_passed_before_post")
+        return stamp
+    send_job(db, job, c, s, r, now, clock=guarded_clock, calendar_settings=settings)
+
+
