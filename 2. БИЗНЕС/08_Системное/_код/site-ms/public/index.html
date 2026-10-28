@@ -4,36 +4,38 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MS Product — системная автоматизация бизнеса</title>
+<meta name="theme-color" content="#130b10">
 <meta name="description" content="Максим Шлыков, MS Product — архитектор системной автоматизации: amoCRM, МойСклад, боты, дашборды, интеграции под ключ. Фиксированный чек.">
-<link rel="icon" href="assets/favicon.ico" sizes="any">
-<link rel="icon" type="image/png" href="assets/favicon-32.png" sizes="32x32">
-<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" sizes="180x180">
+<link rel="icon" href="assets/favicon.ico?v=20261028" sizes="any">
+<link rel="icon" type="image/png" href="assets/favicon-32.png?v=20261028" sizes="32x32">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=20261028" sizes="180x180">
 <meta property="og:type" content="website">
 <meta property="og:title" content="MS Product — системная автоматизация бизнеса">
 <meta property="og:description" content="Архитектор системной автоматизации: amoCRM, МойСклад, боты, дашборды, интеграции под ключ. Фиксированный чек.">
 <meta property="og:url" content="https://ms-p.ru">
-<meta property="og:image" content="https://ms-p.ru/assets/logo-square.png">
+<meta property="og:image" content="https://ms-p.ru/assets/logo-square.png?v=20261028">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#07060b;
-  --bg2:#0b0913;
-  --ink:#f2eefc;
-  --dim:rgba(242,238,252,.62);
-  --faint:rgba(242,238,252,.4);
-  --line:rgba(242,238,252,.09);
-  --line2:rgba(242,238,252,.16);
+  --bg:#130b10;
+  --bg2:#1b1017;
+  --ink:#f5edf0;
+  --dim:rgba(245,237,240,.62);
+  --faint:rgba(245,237,240,.55);
+  --line:rgba(245,237,240,.09);
+  --line2:rgba(245,237,240,.16);
   --card:rgba(255,255,255,.028);
   --card2:rgba(255,255,255,.05);
-  --mag:#ff3db8;
-  --vio:#9d6bff;
-  --ele:#3fc0ff;
+  --mag:#d9a7b8;
+  --vio:#c68da2;
+  --ele:#b56e87;
   --ok:#4ade80;
   --grad:linear-gradient(110deg,var(--mag) 0%,var(--vio) 48%,var(--ele) 100%);
-  --grad-soft:linear-gradient(110deg,rgba(255,61,184,.16),rgba(157,107,255,.14),rgba(63,192,255,.14));
+  --cta-grad:linear-gradient(110deg,#71304a 0%,#6b2b46 48%,#542337 100%);
+  --grad-soft:linear-gradient(110deg,rgba(181,110,135,.16),rgba(153,81,108,.14),rgba(181,110,135,.14));
   --r:20px;
   --ease:cubic-bezier(.25,1,.5,1);
   --mono:'JetBrains Mono',ui-monospace,monospace;
@@ -51,8 +53,8 @@ body{
   overflow-x:hidden;
   position:relative;
   background-image:
-    radial-gradient(1200px 900px at 50% -10%,#17141f 0%,transparent 55%),
-    linear-gradient(180deg,#0a0810 0%,#070510 55%,#050409 100%);
+    radial-gradient(1200px 900px at 50% -10%,#321722 0%,transparent 55%),
+    linear-gradient(180deg,#130b10 0%,#160c12 55%,#10080d 100%);
   background-attachment:fixed;
 }
 /* ===== фон: текучий шёлк (WebGL) + CSS-фолбэк ===== */
@@ -69,14 +71,14 @@ body.no-gl .mesh{display:block}
 .m1{
   width:165vmax;height:165vmax;opacity:.32;
   background:conic-gradient(from 0deg,
-    rgba(184,49,255,.62) 0deg,rgba(255,61,184,.34) 62deg,transparent 128deg,
-    rgba(61,124,255,.48) 208deg,transparent 292deg,rgba(184,49,255,.62) 360deg);
+    rgba(153,81,108,.62) 0deg,rgba(181,110,135,.34) 62deg,transparent 128deg,
+    rgba(107,43,70,.48) 208deg,transparent 292deg,rgba(153,81,108,.62) 360deg);
   animation:spin 240s linear infinite;
 }
 .m2{
   width:112vmax;height:112vmax;top:58%;opacity:.26;
-  background:conic-gradient(from 140deg,transparent 0deg,rgba(63,192,255,.5) 74deg,
-    transparent 148deg,rgba(255,61,184,.4) 248deg,transparent 332deg);
+  background:conic-gradient(from 140deg,transparent 0deg,rgba(181,110,135,.5) 74deg,
+    transparent 148deg,rgba(181,110,135,.4) 248deg,transparent 332deg);
   animation:spinR 180s linear infinite;
 }
 body::after{
@@ -95,7 +97,7 @@ body::after{
 }
 .glass-edge::before{
   content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
-  background:linear-gradient(135deg,rgba(184,49,255,.4),rgba(255,255,255,.06) 40%,transparent 55%,rgba(61,124,255,.3));
+  background:linear-gradient(135deg,rgba(153,81,108,.4),rgba(255,255,255,.06) 40%,transparent 55%,rgba(107,43,70,.3));
   -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
   mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
   -webkit-mask-composite:xor;mask-composite:exclude;opacity:.6;
@@ -109,21 +111,21 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 .sec-sub{color:var(--dim);font-size:17px;max-width:560px;line-height:1.5}
 
 /* nav */
-.nav{position:sticky;top:0;z-index:60;backdrop-filter:blur(24px) saturate(160%);-webkit-backdrop-filter:blur(24px) saturate(160%);background:rgba(8,7,12,.72);border-bottom:1px solid var(--line)}
+.nav{position:sticky;top:0;z-index:60;backdrop-filter:blur(24px) saturate(160%);-webkit-backdrop-filter:blur(24px) saturate(160%);background:rgba(19,11,16,.72);border-bottom:1px solid var(--line)}
 .nav .wrap{display:flex;align-items:center;justify-content:space-between;height:68px}
 .lockup{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink)}
 .brand-orb{position:relative;width:34px;height:34px;display:grid;place-items:center;flex-shrink:0}
 .brand-orb img{
   height:30px;width:auto;max-width:100%;object-fit:contain;display:block;
-  position:relative;z-index:1;filter:drop-shadow(0 0 8px rgba(157,107,255,.25));
+  position:relative;z-index:1;filter:drop-shadow(0 0 8px rgba(153,81,108,.25));
 }
 .wordmark{font-weight:600;font-size:17px;letter-spacing:-.02em}
 .wordmark b{font-weight:700}
 .nav-links{display:flex;align-items:center;gap:30px}
 .nav-links a{color:var(--dim);text-decoration:none;font-size:14px;font-weight:500;transition:color .3s var(--ease)}
 .nav-links a:hover{color:var(--ink)}
-.nav-cta{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:99px;background:var(--grad);color:#0a0810;font-weight:600;font-size:14px;text-decoration:none;box-shadow:0 4px 18px -6px rgba(157,107,255,.5);transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
-.nav-cta:hover{transform:translateY(-1px);box-shadow:0 6px 24px -6px rgba(157,107,255,.7)}
+.nav-cta{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:99px;background:var(--cta-grad);color:#f5edf0;font-weight:600;font-size:14px;text-decoration:none;box-shadow:0 4px 18px -6px rgba(153,81,108,.5);transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
+.nav-cta:hover{transform:translateY(-1px);box-shadow:0 6px 24px -6px rgba(153,81,108,.7)}
 .burger{display:none;flex-direction:column;gap:5px;background:none;border:none;cursor:pointer;padding:6px}
 .burger span{width:22px;height:2px;background:var(--ink);border-radius:2px;transition:.3s}
 
@@ -138,11 +140,11 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 .hero-cta-bar b{color:var(--dim);font-weight:500}
 .hero-cta-bar i{width:3px;height:3px;border-radius:50%;background:var(--vio);opacity:.6;display:inline-block}
 .cta{position:relative;display:inline-flex;align-items:center;gap:10px;padding:15px 26px;border-radius:14px;font-weight:600;font-size:15px;text-decoration:none;transition:transform .3s var(--ease),box-shadow .3s var(--ease),border-color .3s var(--ease);overflow:hidden;will-change:transform}
-.cta-primary{background:var(--grad);color:#0a0810;box-shadow:0 8px 30px -8px rgba(157,107,255,.6)}
+.cta-primary{background:var(--cta-grad);color:#f5edf0;box-shadow:0 8px 30px -8px rgba(153,81,108,.6)}
 .cta-primary::before{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.4) 50%,transparent 70%);background-size:220% 100%;animation:shimmer 7s infinite;pointer-events:none}
 @keyframes shimmer{0%{background-position:220% 0}100%{background-position:-220% 0}}
 .cta-ghost{background:var(--card);color:var(--ink);border:1px solid var(--line2)}
-.cta-ghost:hover{border-color:rgba(157,107,255,.5);transform:translateY(-1px)}
+.cta-ghost:hover{border-color:rgba(153,81,108,.5);transform:translateY(-1px)}
 .live{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;font-weight:500;color:var(--ok);letter-spacing:.04em}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);animation:pulse 2.4s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
@@ -150,17 +152,17 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 /* глубина: виньетка поверх шёлка — держит читаемость текста */
 .vignette{position:fixed;inset:0;z-index:2;pointer-events:none;
   background:
-    radial-gradient(130% 95% at 50% 26%,transparent 38%,rgba(3,2,8,.66) 100%),
-    linear-gradient(180deg,rgba(4,3,9,.5) 0%,transparent 22%,transparent 72%,rgba(4,3,9,.62) 100%)}
+    radial-gradient(130% 95% at 50% 26%,transparent 38%,rgba(13,6,10,.66) 100%),
+    linear-gradient(180deg,rgba(16,8,13,.5) 0%,transparent 22%,transparent 72%,rgba(16,8,13,.62) 100%)}
 
 /* знак бренда */
 .hero-mark{position:relative;width:98px;height:98px;margin:0 auto 26px;display:grid;place-items:center}
 .hero-mark::before{content:'';position:absolute;inset:-20px;border-radius:50%;
-  background:radial-gradient(circle,rgba(157,107,255,.3),transparent 68%);
+  background:radial-gradient(circle,rgba(153,81,108,.3),transparent 68%);
   filter:blur(14px);animation:halo 8s ease-in-out infinite}
 .hero-mark img{
   position:relative;height:78px;width:auto;max-width:100%;object-fit:contain;display:block;
-  filter:drop-shadow(0 10px 34px rgba(157,107,255,.5));animation:floatY 10s ease-in-out infinite;
+  filter:drop-shadow(0 10px 34px rgba(153,81,108,.5));animation:floatY 10s ease-in-out infinite;
 }
 @keyframes halo{0%,100%{opacity:.55;transform:scale(.95)}50%{opacity:1;transform:scale(1.07)}}
 @keyframes floatY{0%,100%{transform:translateY(-5px)}50%{transform:translateY(5px)}}
@@ -175,16 +177,16 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
   transform-style:preserve-3d;will-change:transform;cursor:default;
 }
 .tilt:hover{
-  border-color:rgba(157,107,255,.32);
+  border-color:rgba(153,81,108,.32);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.16),
     inset 1px 0 0 rgba(255,255,255,.05),
-    0 0 50px -6px rgba(157,107,255,.22),
+    0 0 50px -6px rgba(153,81,108,.22),
     0 28px 70px -24px rgba(0,0,0,.92);
 }
 .tilt::after{
   content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:1;
-  background:radial-gradient(260px 180px at var(--mx) var(--my),rgba(157,107,255,.18),transparent 70%);
+  background:radial-gradient(260px 180px at var(--mx) var(--my),rgba(153,81,108,.18),transparent 70%);
   transition:opacity .55s var(--ease);
 }
 .tilt:hover::after{opacity:1}
@@ -204,7 +206,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 .case{padding:28px;border-radius:18px;background:var(--card);border:1px solid var(--line);position:relative;overflow:hidden;display:flex;flex-direction:column;gap:14px}
 .case-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .case-name{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
-.case-tag{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--ele);padding:5px 10px;border-radius:7px;background:rgba(63,192,255,.08);border:1px solid rgba(63,192,255,.18)}
+.case-tag{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--ele);padding:5px 10px;border-radius:7px;background:rgba(181,110,135,.08);border:1px solid rgba(181,110,135,.18)}
 .case p{color:var(--dim);font-size:14.5px;line-height:1.55;flex:1}
 .case-line{display:flex;gap:12px;font-size:14px;line-height:1.55;color:var(--dim)}
 .case-line .cl{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--vio);flex-shrink:0;padding-top:4px;width:74px}
@@ -228,9 +230,9 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 .contact{text-align:center}
 .contact h2{font-size:clamp(32px,5vw,56px);font-weight:700;letter-spacing:-.035em;line-height:1.05;margin-bottom:18px}
 .contact .sec-sub{margin:0 auto 36px}
-.contact-cta{display:inline-flex;align-items:center;gap:10px;padding:18px 34px;border-radius:16px;background:var(--grad);color:#0a0810;font-weight:600;font-size:17px;text-decoration:none;box-shadow:0 10px 40px -10px rgba(157,107,255,.6);position:relative;overflow:hidden;transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
+.contact-cta{display:inline-flex;align-items:center;gap:10px;padding:18px 34px;border-radius:16px;background:var(--cta-grad);color:#f5edf0;font-weight:600;font-size:17px;text-decoration:none;box-shadow:0 10px 40px -10px rgba(153,81,108,.6);position:relative;overflow:hidden;transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
 .contact-cta::before{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.4) 50%,transparent 70%);background-size:220% 100%;animation:shimmer 7s infinite;pointer-events:none}
-.contact-cta:hover{transform:translateY(-2px);box-shadow:0 14px 50px -10px rgba(157,107,255,.8)}
+.contact-cta:hover{transform:translateY(-2px);box-shadow:0 14px 50px -10px rgba(153,81,108,.8)}
 .contact-email{display:block;margin-top:22px;font-family:var(--mono);font-size:15px;color:var(--dim);text-decoration:none;transition:color .3s var(--ease)}
 .contact-email:hover{color:var(--ink)}
 
@@ -299,7 +301,8 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
   .mesh{filter:blur(72px) saturate(150%)}
   .hero-mark{width:80px;height:80px;margin-bottom:22px}
   .hero-mark img{height:64px;width:auto}
-  .nav-links{display:none}
+  .nav-links{display:none;position:absolute;top:68px;left:20px;right:20px;flex-direction:column;align-items:stretch;gap:0;padding:12px 18px;background:var(--bg2);border:1px solid var(--line2);border-radius:14px}
+  .nav-links a{padding:12px 0}
   .burger{display:flex}
   .g4,.g3,.g2,.num-grid.c6,.steps,.guarantees{grid-template-columns:1fr}
   .wrap{padding:0 20px}
@@ -323,7 +326,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
   "@type":"Organization",
   "name":"MS Product",
   "url":"https://ms-p.ru",
-  "logo":"https://ms-p.ru/assets/logo-square.png",
+  "logo":"https://ms-p.ru/assets/logo-square.png?v=20261028",
   "description":"Системная автоматизация B2B/B2C: amoCRM, МойСклад, боты, дашборды, интеграции под ключ.",
   "email":"info@msproduct.ru",
   "founder":{"@type":"Person","name":"Максим Шлыков","jobTitle":"Архитектор систем"},
@@ -341,16 +344,16 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 <div class="progress" id="progress"></div>
 <svg width="0" height="0" style="position:absolute"><defs>
   <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="#ff3db8"/>
-    <stop offset="50%" stop-color="#9d6bff"/>
-    <stop offset="100%" stop-color="#3fc0ff"/>
+    <stop offset="0%" stop-color="#d9a7b8"/>
+    <stop offset="50%" stop-color="#c68da2"/>
+    <stop offset="100%" stop-color="#b56e87"/>
   </linearGradient>
 </defs></svg>
 
 <header class="nav">
   <div class="wrap">
     <a class="lockup" href="#top">
-      <span class="brand-orb"><img src="assets/logo-ms-transparent.png" alt="MS Product"></span>
+      <span class="brand-orb"><img src="assets/logo-ms-transparent.png?v=20261028" alt="MS Product"></span>
       <span class="wordmark">MS&nbsp;<b>Product</b></span>
     </a>
     <nav class="nav-links">
@@ -368,13 +371,13 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 <section class="hero" id="top">
   <div class="wrap">
     <div class="hero-inner">
-      <div class="hero-mark"><img src="assets/logo-ms-transparent.png" alt="MS Product"></div>
+      <div class="hero-mark"><img src="assets/logo-ms-transparent.png?v=20261028" alt="MS Product"></div>
       <span class="hero-badge">Архитектор систем · MS Product</span>
       <h1>Строю системы,<br>которые <span class="grad-text">работают без вас</span></h1>
       <p class="hero-sub">Внедрение amoCRM, МойСклад, ботов и дашбордов под ключ — с фиксированным чеком за результат, а не почасовкой. Снимаю операционку с владельца через код и регламент.</p>
       <div class="cta-row">
         <a class="cta cta-primary magnetic" href="https://t.me/MSP_msproduct" target="_blank" rel="noopener">Написать в Telegram
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#0a0810" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
         <a class="cta cta-ghost" href="#contact">Рассчитать стоимость</a>
       </div>
@@ -561,7 +564,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
     <h2 class="stag">Есть задача?<br><span class="grad-text">Давайте разберём её.</span></h2>
     <p class="sec-sub stag">30 минут диагностики — покажу конкретные дыры в процессе. Бесплатно и по делу.</p>
     <a class="contact-cta magnetic stag" href="https://t.me/MSP_msproduct" target="_blank" rel="noopener">Написать в Telegram
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#0a0810" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
     <a class="contact-email stag" href="mailto:info@msproduct.ru">info@msproduct.ru</a>
   </div>
@@ -571,7 +574,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 <footer class="footer">
   <div class="wrap">
     <div class="footer-lockup">
-      <span class="brand-orb"><img src="assets/logo-ms-transparent.png" alt="MS Product"></span>
+      <span class="brand-orb"><img src="assets/logo-ms-transparent.png?v=20261028" alt="MS Product"></span>
       <div class="footer-brand">
         <b>MS Product</b>
         <span>системная автоматизация</span>
@@ -677,11 +680,11 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
       '              fbm(vec2(s.x*0.378+3.1,s.y*0.378+1.7-t*0.4)));',
       '  float f=fbm(vec2(s.x*0.42+1.45*q.x,s.y*0.42+1.45*q.y));',
       '  float band=f*0.85+0.5;',
-      /* палитра MS Product по X: magenta → violet → cyan, медленный дрейф */
-      '  vec3 base=vec3(0.031,0.027,0.050);',
-      '  vec3 vio=vec3(0.615,0.420,1.000);',
-      '  vec3 mag=vec3(1.000,0.240,0.720);',
-      '  vec3 cya=vec3(0.247,0.753,1.000);',
+      /* палитра MS Product по X: бургунди → пыльная роза → винный, медленный дрейф */
+      '  vec3 base=vec3(0.075,0.043,0.063);',
+      '  vec3 vio=vec3(0.600,0.318,0.424);',
+      '  vec3 mag=vec3(0.710,0.431,0.529);',
+      '  vec3 cya=vec3(0.420,0.169,0.275);',
       '  float hx=clamp(ux+0.07*sin(u_t*0.008),0.,1.);',
       '  vec3 tint=hx<0.5?mix(mag,vio,hx/0.5):mix(vio,cya,(hx-0.5)/0.5);',
       '  vec3 col=mix(base,tint*0.58,smoothstep(0.05,0.78,band));',
@@ -772,6 +775,6 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
   /* Номер счётчика Яндекс.Метрики — вписать сюда, когда подключишь. Пока пусто: баннер согласия есть, скрипт Метрики не грузится. */
   window.MSP_METRIKA_ID = "";
 </script>
-<script src="/js/cookie-consent.js" defer></script>
+<script src="/js/cookie-consent.js?v=20261028" defer></script>
 </body>
 </html>
