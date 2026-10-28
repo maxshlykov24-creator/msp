@@ -59,9 +59,12 @@ body{
   background-attachment:fixed;
 }
 /* ===== фон: текучий шёлк (WebGL) + CSS-фолбэк ===== */
-.stage{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.stage{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:#130b10}
 .silk{position:absolute;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity 1.2s var(--ease)}
 .silk.ready{opacity:1}
+/* Фактура из исходного материала знака: движется вместе с фоном. */
+.stage::after{content:'';position:absolute;inset:-25%;pointer-events:none;background:url('assets/brand-texture.webp?v=20261028-2') repeat;background-size:1200px 600px;mix-blend-mode:overlay;opacity:.8;animation:texture-drift 100s ease-in-out infinite alternate}
+@keyframes texture-drift{from{transform:translate3d(-3%,-2%,0)}to{transform:translate3d(3%,2%,0)}}
 
 /* фолбэк без WebGL: вращающиеся conic-градиенты */
 @keyframes spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
@@ -315,7 +318,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
   .tilt::after{display:none !important}
 }
 @media(prefers-reduced-motion:reduce){
-  .mesh,.hero-mark img,.hero-mark::before,
+  .mesh,.stage::after,.hero-mark img,.hero-mark::before,
   .cta-primary::before,.contact-cta::before,.dot{animation:none !important}
   .reveal .stag{opacity:1;translate:0;transition:none}
   html{scroll-behavior:auto}
