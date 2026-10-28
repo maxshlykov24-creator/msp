@@ -1482,7 +1482,7 @@ def wb_supply_qr_pdf(supply_id: int, ff_session: str = Cookie(default="")):
 
 @app.post("/api/shipments/sync")
 def shipments_sync(data: dict = Body(None), ff_session: str = Cookie(default="")):
-    """Кнопка «Обновить отправления»: контрагент из фильтра целиком.
+    """Кнопка «Обновить отправления»: складские FBS выбранного контрагента.
 
     Общего замка здесь нет: он держал кнопку, пока воркер шёл по чужому клиенту.
     Замок на контрагента берёт сам проход, поэтому два склада не топчутся, а
@@ -1494,16 +1494,28 @@ def shipments_sync(data: dict = Body(None), ff_session: str = Cookie(default="")
 
         days = min(14, max(1, int((data or {}).get("days") or 14)))
         client_id = int((data or {}).get("client_id") or 0) or None
-        res = run(days=days, blocking=False, client_id=client_id)
+        started = time.monotonic()
+        status_cache = {}
+        # FBO скрыты от склада; полная история по-прежнему идёт в фоне.
+        # Кэш живёт только в этом запросе и не отдаётся браузеру.
+        res = run(days=days, blocking=False, client_id=client_id, fbs_only=True, status_cache=status_cache)
+        pulled = time.monotonic()
         import night_check, supply_flow
         try:
-            checked = night_check.run_live(client_id=client_id)
+            checked = night_check.run_live(client_id=client_id, status_cache=status_cache)
             res["errors"].extend(checked["notes"])
         except BlockingIOError:
             res["notes"].append("Оперативная сверка уже выполняется")
+        checked_at = time.monotonic()
         supplies = supply_flow.sync_open(client_id=client_id)
         res["errors"].extend(supplies["notes"])
         res["partial"] = bool(res["errors"])
+        finished = time.monotonic()
+        res["timings"] = {"shipments": round(pulled-started, 2),
+                          "statuses": round(checked_at-pulled, 2),
+                          "supplies": round(finished-checked_at, 2),
+                          "total": round(finished-started, 2)}
+        print("Обновить отправления: клиент=%s время=%s" % (client_id or "все", res["timings"]), flush=True)
         return {"ok": True, **res}
     except BlockingIOError:
         return {"ok": False, "msg": "этот контрагент уже обновляется, подожди"}

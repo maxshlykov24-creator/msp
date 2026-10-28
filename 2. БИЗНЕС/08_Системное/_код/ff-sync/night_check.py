@@ -37,12 +37,17 @@ def _changed(row, status, group):
     return (row["status"] or "") != (status or "") or (row["status_group"] or "") != (group or "")
 
 
-def check_wb(cab, live=False):
+def check_wb(cab, live=False, status_cache=None):
     rows = list_open_shipments(cab["id"], kind="fbs", groups=WATCH)
     if not rows:
         return 0, 0
     ids = [str(r["ext_id"]) for r in rows]
-    found = wb_statuses(cab["token"], ids, strict=True)
+    # Ответы этого же ручного прохода используем повторно, но складские
+    # отметки всё равно сверяем. Старые рабочие заказы добираем у площадки.
+    found = {i: status_cache[i] for i in ids if i in (status_cache or {})}
+    missing = [i for i in ids if i not in found]
+    if missing:
+        found.update(wb_statuses(cab["token"], missing, strict=True))
     if not found:
         return len(rows), 0
     fixed = 0
@@ -61,7 +66,7 @@ def check_wb(cab, live=False):
     return len(rows), fixed
 
 
-def check_ozon_live(cab):
+def check_ozon_live(cab, status_cache=None):
     """Сверка заказов, которые склад ещё держит в работе. Список FBS не трогаем.
 
     Список раз в пять минут по всем кабинетам и закрыл метод: Ozon перестал
@@ -75,18 +80,20 @@ def check_ozon_live(cab):
     headers = ozon_headers(cab["client_id_ext"], cab["token"])
     fixed = 0
     for row in rows:
-        time.sleep(0.4)
-        r = req(
-            "POST",
-            OZON_BASE + "/v3/posting/fbs/get",
-            headers=headers,
-            json={"posting_number": row["ext_id"]},
-        )
-        if r.status_code == 429:
-            raise RuntimeError("Ozon: точечная проверка, HTTP 429")
-        if r.status_code != 200:
-            continue
-        result = (r.json() or {}).get("result") or {}
+        result = (status_cache or {}).get(str(row["ext_id"]))
+        if result is None:
+            time.sleep(0.4)
+            r = req(
+                "POST",
+                OZON_BASE + "/v3/posting/fbs/get",
+                headers=headers,
+                json={"posting_number": row["ext_id"]},
+            )
+            if r.status_code == 429:
+                raise RuntimeError("Ozon: точечная проверка, HTTP 429")
+            if r.status_code != 200:
+                continue
+            result = (r.json() or {}).get("result") or {}
         raw = result.get("status") or ""
         if result.get("posting_number") != row["ext_id"] or raw not in statuses_mod.OZON:
             continue
@@ -105,7 +112,7 @@ def check_ozon_live(cab):
     return len(rows), fixed
 
 
-def check_ozon(cab, live=False):
+def check_ozon(cab, live=False, status_cache=None):
     """Ночью статусы одним списком. Днём список не зовём: он уже отказывал.
 
     В работе и в пути у площадок больше четырёх тысяч отправлений. Ручка `get`
@@ -113,7 +120,7 @@ def check_ozon(cab, live=False):
     кто ещё на сборке.
     """
     if live:
-        return check_ozon_live(cab)
+        return check_ozon_live(cab, status_cache=status_cache)
     from db import get_client_by_id
     from shipments_pull import same_ozon, handle_ozon
     client = get_client_by_id(cab['client_id'])
@@ -188,7 +195,7 @@ def run(blocking=True):
         return _run()
 
 
-def _run(client_id=None, live=False):
+def _run(client_id=None, live=False, status_cache=None):
     seen, fixed, notes = 0, 0, []
     for cab in list_cabinets():
         if not cab["active"] or not cab["token"] or (client_id and cab["client_id"] != int(client_id)):
@@ -198,7 +205,8 @@ def _run(client_id=None, live=False):
         try:
             with run_lock(name=lock_name(cab["client_id"]), blocking=False):
                 check = check_wb if cab["marketplace"] == "wb" else check_ozon
-                n, k = check(cab, live=live)
+                cached = (status_cache or {}).get(cab["id"])
+                n, k = check(cab, live=live, status_cache=cached) if cached is not None else check(cab, live=live)
                 record_sync(cab["id"], "statuses", count=n)
         except BlockingIOError:
             continue
@@ -216,10 +224,10 @@ def _run(client_id=None, live=False):
     return {"seen": seen, "fixed": fixed, "notes": notes}
 
 
-def run_live(client_id=None):
+def run_live(client_id=None, status_cache=None):
     init_db()
     with run_lock(name="ff-live-statuses", blocking=False):
-        return _run(client_id=client_id, live=True)
+        return _run(client_id=client_id, live=True, status_cache=status_cache)
 
 
 if __name__ == "__main__":

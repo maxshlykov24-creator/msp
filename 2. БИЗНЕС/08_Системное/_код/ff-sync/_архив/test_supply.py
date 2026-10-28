@@ -117,6 +117,104 @@ if "--ozon-cursor" in sys.argv:
     sys.exit(0)
 
 
+def test_fast_refresh():
+    from unittest.mock import patch
+    import shipments_pull as ships
+    import night_check as checks
+    import supply_flow
+    import web
+    db.init_db()
+    wb = {'id': 101, 'client_id': 51, 'active': 1, 'token': 'test', 'marketplace': 'wb'}
+    oz = dict(wb, id=102, marketplace='ozon', client_id_ext='1')
+    client = {'id': 51, 'name': 'Test', 'ms_counterparty_id': 'test'}
+    # Ручной проход FBS не зовёт FBO. Обычный фоновый проход сохраняет оба источника.
+    for fast, expected in ((True, 0), (False, 2)):
+        cache = {}
+        with patch.object(ships, 'fill_wb_names'), patch.object(ships, 'fill_images'), \
+             patch.object(ships, 'list_cabinets', return_value=[wb, oz]), \
+             patch.object(ships, 'get_client_by_id', return_value=client), \
+             patch.object(ships, 'pull_wb_fbs', return_value=[]), \
+             patch.object(ships, 'pull_wb_fbo', return_value=[]) as fbo_wb, \
+             patch.object(ships, 'ozon_list', return_value=[]) as oz_list, \
+             patch.object(ships, 'handle_wb_fbs', return_value=0), \
+             patch.object(ships, 'handle_wb_fbo', return_value=0), \
+             patch.object(ships, 'handle_ozon', return_value=0), \
+             patch.object(ships, 'record_sync'), patch.object(ships, 'prune_old_shipments', return_value=0):
+            ships._run(14, 51, fbs_only=fast, status_cache=cache)
+            assert fbo_wb.call_count == expected // 2
+            assert len([c for c in oz_list.call_args_list if '/fbo/' in c.args[0]]) == expected // 2
+            assert 101 in cache and 102 in cache
+    row = {'id': 1, 'ext_id': '501', 'status': 'old', 'status_group': 'ready', 'work_state': 'ready', 'track': ''}
+    delivered = {'supplier': 'complete', 'wb': 'sold'}
+    # Повторно используем ответ, но снимаем складскую отметку после доставки.
+    with patch.object(checks, 'list_open_shipments', return_value=[row]), \
+         patch.object(checks, 'wb_statuses') as fetch, patch.object(checks, 'set_shipment_status') as save:
+        assert checks.check_wb(wb, status_cache={'501': delivered}) == (1, 1)
+        fetch.assert_not_called()
+        assert save.call_args.kwargs['clear_work'] is True
+    # Старые рабочие задания вне списка обязательно запрашиваются отдельно.
+    with patch.object(checks, 'list_open_shipments', return_value=[row]), \
+         patch.object(checks, 'wb_statuses', return_value={'501': delivered}) as fetch, \
+         patch.object(checks, 'set_shipment_status'):
+        checks.check_wb(wb, status_cache={'OTHER': delivered})
+        assert fetch.call_args.args[1] == ['501'] and fetch.call_args.kwargs['strict']
+    with patch.object(ships, 'map_shipments', return_value={}), \
+         patch.object(ships, 'wb_statuses', side_effect=RuntimeError('partial')):
+        cache = {}
+        try:
+            ships.handle_wb_fbs(client, wb, [{'id': 501}], status_cache=cache)
+            raise AssertionError('partial list accepted')
+        except RuntimeError:
+            assert not cache
+    post = {'posting_number': '501', 'status': 'delivering', 'tracking_number': 'TRACK'}
+    # В кэш попадает подтверждённый detail, а не более старый статус list.
+    item = {'product_id': 1, 'article': 'A', 'name': 'A', 'qty': 1, 'image': ''}
+    with patch.object(ships, 'map_shipments', return_value={}), \
+         patch.object(ships, 'pull_ozon_get', return_value=post), \
+         patch.object(ships, 'ozon_items', return_value=[item]), \
+         patch.object(ships, 'save_row', return_value=1):
+        cache = {}
+        ships.handle_ozon(client, oz, 'fbs', [dict(post, status='awaiting_packaging')], {}, status_cache=cache)
+        assert cache['501']['status'] == 'delivering'
+    with patch.object(checks, 'list_open_shipments', return_value=[row]), \
+         patch.object(checks, 'req') as fetch, patch.object(checks, 'set_shipment_status') as save:
+        assert checks.check_ozon_live(oz, status_cache={'501': post}) == (1, 1)
+        fetch.assert_not_called()
+        assert save.call_args.kwargs['clear_work'] is True and save.call_args.kwargs['track'] == 'TRACK'
+    with patch.object(checks, 'list_open_shipments', return_value=[row]), \
+         patch.object(checks, 'req', return_value=Fake(200, {'result': post})) as fetch, \
+         patch.object(checks, 'set_shipment_status'), patch('time.sleep'):
+        checks.check_ozon_live(oz, status_cache={})
+        assert fetch.call_count == 1
+    # Кэш разных кабинетов не смешивается даже при одинаковых номерах заданий.
+    with patch.object(checks, 'list_cabinets', return_value=[wb, oz]), \
+         patch.object(checks, 'check_wb', return_value=(0, 0)) as w, \
+         patch.object(checks, 'check_ozon', return_value=(0, 0)) as o, \
+         patch.object(checks, 'record_sync'), patch.object(checks, 'prune_old_shipments'):
+        checks._run(51, live=True, status_cache={101: {'501': delivered}, 102: {'501': post}})
+        assert w.call_args.kwargs['status_cache']['501'] == delivered
+        assert o.call_args.kwargs['status_cache']['501'] == post
+    # Endpoint не отдаёт внутренний кэш браузеру и сохраняет ошибки источников.
+    res = {'count': 0, 'errors': ['source failure'], 'notes': []}
+    def pull(**kw):
+        assert kw['fbs_only'] is True
+        kw['status_cache'][101] = {'501': delivered}
+        return dict(res)
+    with patch.object(ships, 'run', side_effect=pull), \
+         patch.object(checks, 'run_live', return_value={'notes': []}) as live, \
+         patch.object(supply_flow, 'sync_open', return_value={'notes': []}):
+        result = web.shipments_sync({'client_id': 51}, web.sign('test', 9999999999))
+        assert result['partial'] and result['errors'] == ['source failure']
+        assert 'status_cache' not in result and 'timings' in result
+        assert live.call_args.kwargs['status_cache'][101]['501'] == delivered
+    print('Fast refresh: FBS scope, background FBO, cached statuses, old orders, partial responses and cabinet isolation OK')
+
+
+if "--fast-refresh" in sys.argv:
+    test_fast_refresh()
+    sys.exit(0)
+
+
 PNG = base64.b64decode(
     # 1x1 прозрачный png: важен сам факт картинки, а не её содержимое
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
