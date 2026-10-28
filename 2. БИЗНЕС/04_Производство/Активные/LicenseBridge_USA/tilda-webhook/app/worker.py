@@ -169,6 +169,11 @@ def handle_kommo_status_lead(ctx: Ctx, lead_id: int, status_id: int | None) -> d
 # ── диспетчер одного события ──
 def process_event(ctx: Ctx, ev: InboxEvent) -> dict[str, Any]:
     src, typ, payload = ev.source, ev.event_type, ev.payload or {}
+    if src == "pleep_control" and typ == "binding":
+        from app.pleep_bridge import register_native_binding
+        return register_native_binding(ctx, payload)
+    if src == "pleep_control" and typ == "mode":
+        return {"action": "pleep.mode_observed"}  # actual state is read by the control sweep
     if src == "facebook_repeat":
         from app.tasks import create_repeat_inquiry_task
         task_id = create_repeat_inquiry_task(
@@ -273,6 +278,8 @@ def run_loop() -> None:
     next_rollout_check = 0.0
     next_ai_sweep = 0.0
     next_owner_sweep = 0.0
+    from app.pleep_bridge import start_background
+    pleep_background = start_background(client)
     # первую проверку не делаем сразу: сразу после старта очередь и активность
     # выглядят пусто, и алерт был бы ложным
     next_monitor = time.monotonic() + settings.monitor_interval_sec

@@ -22,6 +22,44 @@ log = logging.getLogger("webhooks")
 router = APIRouter()
 
 
+@router.post("/pleep/control/events")
+async def pleep_control_event(request: Request) -> Response:
+    from app.pleep_bridge import verify_signature
+    raw = await request.body()
+    if not settings.pleep_control_webhook_secret:
+        return JSONResponse({"ok": False}, 503)
+    if not verify_signature(raw, request.headers.get("X-Pleep-Timestamp"),
+                            request.headers.get("X-Pleep-Signature"),
+                            settings.pleep_control_webhook_secret):
+        return JSONResponse({"ok": False}, 401)
+    import json
+    try:
+        envelope = json.loads(raw)
+        data = envelope["data"]
+        if (envelope.get("application_id") != settings.pleep_application_id
+                or data.get("assistant_id") != settings.pleep_assistant_id):
+            return JSONResponse({"ok": False}, 403)
+        event_name = envelope.get("event")
+        if event_name not in ("crm.status_changed", "thread.mode_changed") or not data.get("thread_id"):
+            return JSONResponse({"ok": True, "ignored": True}, 202)
+        if event_name == "crm.status_changed" and (data.get("entity_type") != "lead"
+                or data.get("provider") not in ("kommo", "amocrm")):
+            return JSONResponse({"ok": False}, 400)
+        tid = str(data["thread_id"])
+        lid = int(data["entity_id"]) if event_name == "crm.status_changed" else 0
+        delivery = str(envelope["id"])
+        if (not re.fullmatch(r"thread_[0-9a-fA-F-]{36}", tid) or not delivery or len(delivery) > 128
+                or (event_name == "crm.status_changed" and lid <= 0)):
+            return JSONResponse({"ok": False}, 400)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return JSONResponse({"ok": False}, 400)
+    with session_scope() as s:
+        typ = "binding" if event_name == "crm.status_changed" else "mode"
+        payload = {"thread_id": tid, "lead_id": lid} if typ == "binding" else data
+        _, created = enqueue(s, "pleep_control", typ, "pleep-control:" + delivery, payload)
+    return JSONResponse({"ok": True, "created": created}, 202)
+
+
 # ── health ──
 @router.get("/")
 @router.get("/health")

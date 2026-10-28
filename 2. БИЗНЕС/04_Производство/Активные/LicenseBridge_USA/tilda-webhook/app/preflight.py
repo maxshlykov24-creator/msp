@@ -26,6 +26,11 @@ def run_preflight(client: KommoClient | None = None) -> list[str]:
 
     Предупреждения в список не попадают: они пишутся в лог и не мешают старту."""
     problems: list[str] = []
+    if settings.enable_pleep_control:
+        if not settings.pleep_public_api_key.startswith("pk_live_") or not settings.pleep_assistant_id:
+            problems.append("Pleep public API control credentials are missing")
+        if not settings.pleep_control_field or not settings.pleep_control_status_field:
+            problems.append("Pleep control fields are missing")
     if not settings.kommo_token:
         return ["KOMMO_TOKEN пуст"]
     overlap = settings.departed_owner_id_set.intersection(settings.user_to_ext)
@@ -37,6 +42,12 @@ def run_preflight(client: KommoClient | None = None) -> list[str]:
         close = True
     try:
         acc = client.account()
+        if settings.enable_pleep_control:
+            fields = {int(f["id"]): f for f in client.custom_fields("leads")}
+            for fid, typ in ((settings.pleep_control_field, "checkbox"),
+                             (settings.pleep_control_status_field, "text")):
+                if fields.get(fid, {}).get("type") != typ:
+                    problems.append(f"Pleep field {fid} must have type {typ}")
         if not acc:
             problems.append("не удалось получить /account")
         elif int(acc.get("id", 0)) != settings.kommo_account_id:

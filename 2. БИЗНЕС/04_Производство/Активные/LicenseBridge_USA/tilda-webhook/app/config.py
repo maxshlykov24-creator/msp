@@ -95,6 +95,13 @@ class Settings(BaseSettings):
     # Control is not wired into worker until thread mapping and acceptance pass.
     pleep_public_api_key: str = ""
     pleep_assistant_id: str = ""
+    enable_pleep_control: bool = False
+    pleep_control_field: int = 0
+    pleep_control_status_field: int = 0
+    pleep_control_interval_sec: int = 15
+    pleep_waba_bot_id: str = ""
+    pleep_control_webhook_secret: str = ""
+    pleep_application_id: str = "157a8400-abee-42bb-8c0f-d3d283afece8"
     make_repeat_api_key: str = ""
     # path-secret для нативных вебхуков Kommo: /kommo/webhook/{secret}
     kommo_webhook_secret: str = ""

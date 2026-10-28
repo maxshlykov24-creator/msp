@@ -265,3 +265,12 @@ class PleepThreadBinding(Base):
     thread_id: Mapped[str] = mapped_column(String(200), primary_key=True)
     lead_id: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class PleepControlState(Base):
+    """Durable command intent, confirmation and manual takeover cutoff per deal."""
+    __tablename__ = "pleep_control_state"
+    lead_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONType, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

@@ -434,6 +434,9 @@ def handle_call(ctx: Ctx, event_type: str, payload: dict[str, Any]) -> dict[str,
 
     row.contact_id = contact_id
     row.lead_id = lead_id
+    if answered and caller and not ai_bridge and not missed_event and lead_id:
+        from app.pleep_bridge import queue_call_pause
+        queue_call_pause(ctx, int(lead_id), uniqueid, contact_id=contact_id)
     entity_type = "deal" if lead_id else "contact"
     entity_id = int(lead_id or contact_id)
     if not owner:
