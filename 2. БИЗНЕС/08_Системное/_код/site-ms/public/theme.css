@@ -10,7 +10,7 @@
 html[data-theme="light"] .grad-text{--text-grad-start:#542337;--text-grad-mid:#71304a;--text-grad-end:#99516c}
 html .lockup img,html .hero-mark img,html .footer-lockup img{filter:brightness(1.25) contrast(.86) saturate(1.05)}
 /* Мягко поднимаем яркость левой части M, сохраняя исходную фактуру знака. */
-.brand-orb::after,.hero-mark::after{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;background:url('assets/logo-ms-transparent.png?v=20261028') center/auto 30px no-repeat;filter:brightness(1.7) contrast(.86);mask-image:linear-gradient(to right,#000 0%,#000 28%,transparent 58%);-webkit-mask-image:linear-gradient(to right,#000 0%,#000 28%,transparent 58%)}
+.brand-orb::after,.hero-mark::after{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;background:url('assets/logo-ms-transparent.png?v=20261028') center/auto 30px no-repeat;filter:url(#logo-lift);mask-image:linear-gradient(to right,#000 0%,#000 43%,transparent 65%);-webkit-mask-image:linear-gradient(to right,#000 0%,#000 43%,transparent 65%)}
 .hero-mark::after{background-size:auto 78px;animation:floatY 10s ease-in-out infinite}
 .footer-lockup .brand-orb::after{background-size:auto 34px}
 @media(max-width:640px){.hero-mark::after{background-size:auto 64px}}
