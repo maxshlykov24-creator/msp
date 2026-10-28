@@ -324,7 +324,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
   html{scroll-behavior:auto}
 }
 </style>
-<link rel="stylesheet" href="/theme.css?v=20261028-7">
+<link rel="stylesheet" href="/theme.css?v=20261028-8">
 <script type="application/ld+json">
 {
   "@context":"https://schema.org",
@@ -762,12 +762,17 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
 
     var still=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
     var acc=0, last=null, raf=null;
+    var themeMix=document.documentElement.dataset.theme==='light'?1:0;
     function frame(now){
-      if(last!==null) acc+=Math.min((now-last)/1000,0.05);
+      var dt=last===null?0:Math.min((now-last)/1000,0.05);
+      acc+=dt;
       last=now;
       resize();
       gl.uniform1f(uT,acc);
-      gl.uniform1f(uLight,document.documentElement.dataset.theme==='light'?1:0);
+      var target=document.documentElement.dataset.theme==='light'?1:0;
+      themeMix=still?target:themeMix+(target-themeMix)*(1-Math.exp(-dt/0.24));
+      if(Math.abs(target-themeMix)<0.001) themeMix=target;
+      gl.uniform1f(uLight,themeMix);
       gl.drawArrays(gl.TRIANGLES,0,3);
       cv.classList.add('ready');
       raf=still?null:requestAnimationFrame(frame);
