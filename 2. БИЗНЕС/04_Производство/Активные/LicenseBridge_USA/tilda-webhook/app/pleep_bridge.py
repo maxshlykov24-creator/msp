@@ -274,11 +274,16 @@ def sync_one(client, remote, lead_id, threads):
         if pending.get("confirmed"):
             if actual != enabled:
                 raise PleepControlError("Pleep changed after confirmation; manual review required")
-        elif pending.get("uncertain") and enabled:
+        elif (pending.get("uncertain") or pending.get("started")) and enabled:
             if not actual:
                 raise PleepControlError("Uncertain resume requires a new manual command")
             # Do not replay a resume that might already have answered a client.
         else:
+            if enabled:
+                # Survives a process crash after POST but before its response.
+                pending = {**pending, "started": True}
+                d["pending"] = pending
+                _save(lead_id, d)
             for t in threads:
                 remote.set_enabled(t, enabled, resume_pending_ack=enabled)
         d["pending"] = {**pending, "confirmed": True}

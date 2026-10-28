@@ -147,6 +147,50 @@ def test_unique_closed_deal_can_be_bound(fake, session):
     assert session.get(PleepThreadBinding,'test').lead_id == lid
 
 
+@pytest.mark.parametrize('event,direction,duration,ext,branch,expected',[
+    ('call_finished','in',30,'103','sales',True),
+    ('call_finished','in',0,'103','sales',False),
+    ('call_finished','in',30,'','sales',False),
+    ('call_finished','in',30,'103','ai',False),
+    ('call_finished','out',5,'103','sales',False),
+    ('call_missed','in',0,'103','sales',False),
+])
+def test_real_call_handler_only_pauses_after_human_conversation(
+        fake,session,monkeypatch,enable_all,enable_telephony,event,direction,duration,ext,branch,expected):
+    from app.actions import Ctx
+    from app.models import PleepThreadBinding
+    from app.telephony import handle_call
+    monkeypatch.setattr(settings,'enable_pleep_control',True)
+    phone='+18185550100'
+    cid=fake.add_contact('Test',phone)
+    lid=fake.add_lead(cid,settings.pipeline_id,settings.status_new,responsible=15648532)
+    session.add(PleepThreadBinding(thread_id='test',lead_id=lid))
+    bridge._save(lid,{'last_flag':True,'cutoff':0})
+    handle_call(Ctx(fake,session,None,phone,False),event,{
+        'uniqueid':'1780000000.99','phone':phone,'direction':direction,
+        'duration':duration,'disposition':'ANSWER','ext':ext,'branch':branch})
+    assert bool(session.get(PleepControlState,lid).data.get('pending')) is expected
+
+
+def test_assembly_call_pauses_chat_bound_to_same_contact_sales_deal(session,monkeypatch):
+    from types import SimpleNamespace
+    from app.models import PleepThreadBinding
+    monkeypatch.setattr(settings,'enable_pleep_control',True)
+    session.add(PleepThreadBinding(thread_id='test',lead_id=1))
+    bridge._save(1,{'last_flag':True,'cutoff':0,'contact_ids':[42]})
+    bridge.queue_call_pause(SimpleNamespace(s=session,shadow=False,inbox_id=None),2,'assembly-call',contact_id=42)
+    assert session.get(PleepControlState,1).data['pending']['enabled'] is False
+
+
+def test_crashed_resume_is_not_replayed_over_new_operator_takeover(session):
+    crm,remote=CRM(True),Remote('OPERATOR')
+    bridge._save(1,{'last_flag':True,'cutoff':100,'pending':{
+        'enabled':True,'source':'manual','at':100,'started':True,'attempts':0,'retry_at':0}})
+    bridge.sync_one(crm,remote,1,['test'])
+    assert not remote.calls
+    assert session.get(PleepControlState,1).data['pending']['blocked']
+
+
 def test_timeout_is_visible_and_intent_survives(session):
     crm, remote = CRM(), Remote()
     bridge.sync_one(crm, remote, 1, ["test"])
