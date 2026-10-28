@@ -1,4 +1,4 @@
-"""Explicit Pleep per-thread control. Not enabled in the worker until acceptance.
+"""Explicit Pleep per-thread control with ownership checks and live readback.
 
 The application ID in the dashboard URL is NOT the assistant ID in this API.
 Resuming can answer a pending client message; callers must account for that.

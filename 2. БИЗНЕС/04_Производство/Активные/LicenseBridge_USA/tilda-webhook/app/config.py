@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     # ── Секреты входящих каналов ──
     pleep_api_key: str = ""
     # Public Pleep API, distinct from the inbound /pleep/sync credential.
-    # Control is not wired into worker until thread mapping and acceptance pass.
+    # Enabled separately, only for verified thread-to-CRM bindings.
     pleep_public_api_key: str = ""
     pleep_assistant_id: str = ""
     enable_pleep_control: bool = False

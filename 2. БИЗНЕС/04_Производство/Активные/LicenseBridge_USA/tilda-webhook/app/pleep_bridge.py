@@ -241,9 +241,14 @@ def sync_one(client, remote, lead_id, threads):
     now = time.time()
     if "last_flag" not in d:
         # Bootstrap by observing; never turn on a robot because a new field is blank.
+        # An existing operator pause must become durable before showing OFF in CRM.
+        if not actual:
+            for t in threads:
+                remote.set_enabled(t, False)
         if _fields(client, lead_id, actual, "Включён" if actual else "Выключен",
                    expected=flag):
-            _save(lead_id, {**d, "last_flag": actual, "cutoff": now})
+            _save(lead_id, {**d, "last_flag": actual, "cutoff": now,
+                            "hard_off_confirmed": not actual})
         return
     flag = bool(flag)
     if flag != d["last_flag"]:
@@ -251,7 +256,7 @@ def sync_one(client, remote, lead_id, threads):
         d["last_flag"] = flag
         _save(lead_id, d)  # Persist intent BEFORE the network mutation.
     if not d.get("pending"):
-        if actual != d["last_flag"]:
+        if actual != d["last_flag"] or (not d["last_flag"] and not d.get("hard_off_confirmed")):
             # AI->operator is native human takeover; OFF also survives auto-return.
             d = intent(d, False, "pleep_takeover", now)
             _save(lead_id, d)
@@ -281,6 +286,7 @@ def sync_one(client, remote, lead_id, threads):
         if _fields(client, lead_id, enabled, "Включён" if enabled else "Выключен",
                    expected=flag):
             d["last_flag"] = enabled
+            d["hard_off_confirmed"] = not enabled
             d["completed_at"] = pending["at"]
             d.pop("pending", None)
             d.pop("error", None)

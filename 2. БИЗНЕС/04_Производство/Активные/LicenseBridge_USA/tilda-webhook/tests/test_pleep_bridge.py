@@ -52,7 +52,7 @@ def test_bootstrap_does_not_enable_operator_dialog():
     crm, remote = CRM(), Remote("OPERATOR")
     bridge.sync_one(crm, remote, 1, ["test"])
     assert crm.flag is False
-    assert not remote.calls
+    assert remote.calls == [("test", False)]  # hard pause, never a resume
 
 
 def test_manual_checkbox_controls_remote_and_confirms(session):
