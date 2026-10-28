@@ -8,13 +8,8 @@
 @property --text-grad-end{syntax:'<color>';inherits:false;initial-value:#b56e87}
 .grad-text{--text-grad-start:#d9a7b8;--text-grad-mid:#c68da2;--text-grad-end:#b56e87;background-image:linear-gradient(110deg,var(--text-grad-start),var(--text-grad-mid) 48%,var(--text-grad-end));transition:--text-grad-start .8s ease,--text-grad-mid .8s ease,--text-grad-end .8s ease}
 html[data-theme="light"] .grad-text{--text-grad-start:#542337;--text-grad-mid:#71304a;--text-grad-end:#99516c}
-html .lockup img,html .hero-mark img,html .footer-lockup img{filter:brightness(1.25) contrast(.86) saturate(1.05)}
-/* Мягко поднимаем яркость левой части M, сохраняя исходную фактуру знака. */
-.brand-orb::after,.hero-mark::after{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;background:url('assets/logo-ms-transparent.png?v=20261028') center/auto 30px no-repeat;filter:url(#logo-lift);mask-image:linear-gradient(to right,#000 0%,#000 43%,transparent 65%);-webkit-mask-image:linear-gradient(to right,#000 0%,#000 43%,transparent 65%)}
-.hero-mark::after{background-size:auto 78px;animation:floatY 10s ease-in-out infinite}
-.footer-lockup .brand-orb::after{background-size:auto 34px}
-@media(max-width:640px){.hero-mark::after{background-size:auto 64px}}
-@media(prefers-reduced-motion:reduce){.hero-mark::after{animation:none}}
+/* Один фактурный знак для всех страниц и обеих тем. */
+html .lockup img,html .hero-mark img,html .footer-lockup img{filter:brightness(1.25)}
 html[data-theme="light"]{color-scheme:light;--bg:#faf9f6;--bg2:#f7f1f2;--ink:#321722;--dim:rgba(50,23,34,.78);--faint:rgba(50,23,34,.69);--line:rgba(82,35,54,.17);--line2:rgba(82,35,54,.27);--card:rgba(255,255,255,.68);--card2:rgba(255,255,255,.84);--mag:#71304a;--vio:#71304a;--ele:#71304a;--ok:#276345;--grad:linear-gradient(110deg,#542337,#71304a 48%,#99516c);--grad-soft:linear-gradient(110deg,rgba(153,81,108,.16),rgba(181,110,135,.11),rgba(107,43,70,.12))}
 html[data-theme="light"] body{background-color:#faf9f6;background-image:linear-gradient(rgba(250,249,246,.52),rgba(250,249,246,.83)),url('assets/aura-light.webp');background-position:center top;background-size:cover;background-attachment:fixed}
 html[data-theme="light"] .stage{background:#faf9f6}
