@@ -3,6 +3,11 @@
 .theme-pill button[aria-pressed="true"]{color:#fff;background:#71304a}
 .theme-pill button:focus-visible{outline:2px solid #c68da2;outline-offset:2px}
 .theme-pill svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@property --text-grad-start{syntax:'<color>';inherits:false;initial-value:#d9a7b8}
+@property --text-grad-mid{syntax:'<color>';inherits:false;initial-value:#c68da2}
+@property --text-grad-end{syntax:'<color>';inherits:false;initial-value:#b56e87}
+.grad-text{--text-grad-start:#d9a7b8;--text-grad-mid:#c68da2;--text-grad-end:#b56e87;background-image:linear-gradient(110deg,var(--text-grad-start),var(--text-grad-mid) 48%,var(--text-grad-end));transition:--text-grad-start .8s ease,--text-grad-mid .8s ease,--text-grad-end .8s ease}
+html[data-theme="light"] .grad-text{--text-grad-start:#542337;--text-grad-mid:#71304a;--text-grad-end:#99516c}
 html .lockup img,html .hero-mark img,html .footer-lockup img{filter:brightness(1.25) contrast(.86) saturate(1.05)}
 /* Мягко поднимаем яркость левой части M, сохраняя исходную фактуру знака. */
 .brand-orb::after,.hero-mark::after{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;background:url('assets/logo-ms-transparent.png?v=20261028') center/auto 30px no-repeat;filter:brightness(1.7) contrast(.86);mask-image:linear-gradient(to right,#000 0%,#000 28%,transparent 58%);-webkit-mask-image:linear-gradient(to right,#000 0%,#000 28%,transparent 58%)}
@@ -33,8 +38,8 @@ html[data-theme="light"] #msp-cookie a{color:#71304a}
 html[data-theme="light"] #msp-cookie .msp-no{background:#fff;color:#321722;border-color:rgba(82,35,54,.25)}
 .vignette{opacity:1;transition:opacity .8s ease}
 body,.nav,.stage,.theme-pill{transition:background-color .8s ease,border-color .8s ease,color .8s ease}
-:is(h1,h2,h3,h4,p,.kicker,.wordmark,.case-tag,.case-result,.stat span,.nav-links a,.hero-sub,.hero-badge,.footer-meta,.nav-back,.doc,.meta,.lockup,.hero-cta-bar,.live){transition:color .18s ease,background-color .8s ease,border-color .8s ease}
-@media(prefers-reduced-motion:reduce){body,.nav,.stage,.theme-pill,.theme-pill button,.vignette,:is(h1,h2,h3,h4,p,.kicker,.wordmark,.case-tag,.case-result,.stat span,.nav-links a,.hero-sub,.hero-badge,.footer-meta,.nav-back,.doc,.meta,.lockup,.hero-cta-bar,.live){transition:none!important}}
+:is(h1,h2,h3,h4,p,.kicker,.wordmark,.case-tag,.case-result,.stat span,.nav-links a,.hero-sub,.hero-badge,.footer-meta,.nav-back,.doc,.meta,.lockup,.hero-cta-bar,.live){transition:color .8s ease,background-color .8s ease,border-color .8s ease}
+@media(prefers-reduced-motion:reduce){body,.nav,.stage,.theme-pill,.theme-pill button,.vignette,.grad-text,:is(h1,h2,h3,h4,p,.kicker,.wordmark,.case-tag,.case-result,.stat span,.nav-links a,.hero-sub,.hero-badge,.footer-meta,.nav-back,.doc,.meta,.lockup,.hero-cta-bar,.live){transition:none!important}}
 @media(max-width:640px){.nav .wrap{gap:10px}.nav .lockup{margin-right:auto}.nav-links{z-index:3}}
 @media(max-width:460px){.nav .wrap .nav-cta{display:none}.nav:not(:has(.wrap)){gap:8px}.nav:not(:has(.wrap)) .lockup{margin-right:auto}}
 @media print{.theme-pill{display:none}html[data-theme="light"] body{background:#fff;background-image:none}}
