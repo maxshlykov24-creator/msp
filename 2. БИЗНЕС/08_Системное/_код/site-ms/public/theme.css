@@ -3,7 +3,13 @@
 .theme-pill button[aria-pressed="true"]{color:#fff;background:#71304a}
 .theme-pill button:focus-visible{outline:2px solid #c68da2;outline-offset:2px}
 .theme-pill svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-html .lockup img,html .hero-mark img,html .footer-lockup img{filter:brightness(1.1) contrast(.4) saturate(2)}
+html .lockup img,html .hero-mark img,html .footer-lockup img{filter:brightness(1.25) contrast(.86) saturate(1.05)}
+/* Мягко поднимаем яркость левой части M, сохраняя исходную фактуру знака. */
+.brand-orb::after,.hero-mark::after{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;background:url('assets/logo-ms-transparent.png?v=20261028') center/auto 30px no-repeat;filter:brightness(1.7) contrast(.86);mask-image:linear-gradient(to right,#000 0%,#000 28%,transparent 58%);-webkit-mask-image:linear-gradient(to right,#000 0%,#000 28%,transparent 58%)}
+.hero-mark::after{background-size:auto 78px;animation:floatY 10s ease-in-out infinite}
+.footer-lockup .brand-orb::after{background-size:auto 34px}
+@media(max-width:640px){.hero-mark::after{background-size:auto 64px}}
+@media(prefers-reduced-motion:reduce){.hero-mark::after{animation:none}}
 html[data-theme="light"]{color-scheme:light;--bg:#faf9f6;--bg2:#f7f1f2;--ink:#321722;--dim:rgba(50,23,34,.78);--faint:rgba(50,23,34,.69);--line:rgba(82,35,54,.17);--line2:rgba(82,35,54,.27);--card:rgba(255,255,255,.68);--card2:rgba(255,255,255,.84);--mag:#71304a;--vio:#71304a;--ele:#71304a;--ok:#276345;--grad:linear-gradient(110deg,#542337,#71304a 48%,#99516c);--grad-soft:linear-gradient(110deg,rgba(153,81,108,.16),rgba(181,110,135,.11),rgba(107,43,70,.12))}
 html[data-theme="light"] body{background-color:#faf9f6;background-image:linear-gradient(rgba(250,249,246,.52),rgba(250,249,246,.83)),url('assets/aura-light.webp');background-position:center top;background-size:cover;background-attachment:fixed}
 html[data-theme="light"] .stage{background:#faf9f6}
