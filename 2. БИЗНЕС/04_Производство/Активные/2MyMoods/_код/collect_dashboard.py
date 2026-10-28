@@ -167,6 +167,29 @@ def stamp_full_paid(ms: lib.MS, order_id: str, moment: datetime) -> bool:
     return 200 <= status < 300
 
 
+def clear_stale_full_paid(ms: lib.MS, order_id: str) -> bool:
+    """Clear only an obsolete payment date, after rechecking the live order.
+
+    A payment may arrive during the long snapshot build. Never clear based
+    solely on the earlier snapshot, or trigger unrelated webhook integrations.
+    """
+    status, current = ms.req(f"/entity/customerorder/{order_id}")
+    if status != 200 or not all(k in current for k in ("sum", "payedSum", "attributes")):
+        return False
+    total = Decimal(str(current["sum"]))
+    paid = Decimal(str(current["payedSum"]))
+    if total > 0 and paid >= total:
+        return True
+    if not attrs(current).get(FIELD["full_paid"]):
+        return True
+    href = f"{lib.MS_BASE}/entity/customerorder/metadata/attributes/{FIELD['full_paid']}"
+    status, _body = ms.send("PUT", f"/entity/customerorder/{order_id}", {"attributes": [{
+        "meta": {"href": href, "type": "attributemetadata", "mediaType": "application/json"},
+        "value": None,
+    }]}, headers={"X-Lognex-WebHook-Disable": "true"})
+    return 200 <= status < 300
+
+
 def mid(ref: dict | None) -> str:
     return lib.href_id((ref or {}).get("meta"))
 
@@ -1524,7 +1547,10 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
     if bool(a.get(FIELD["paid"])) != is_buy:
         gaps["Галка Оплачен не совпадает с платежом"].append(number)
     closed = closing_payment(o["id"], total, order_payments)
-    if is_buy and not closed:
+    if not is_buy and a.get(FIELD["full_paid"]):
+        if not clear_stale_full_paid(ms, o["id"]):
+            gaps["Не очищена устаревшая дата полной оплаты"].append(number)
+    elif is_buy and not closed:
         gaps["Оплачено закрыто, дата платежа не найдена"].append(number)
     elif is_buy and closed and str(a.get(FIELD["full_paid"]) or "")[:10] != closed.date().isoformat():
         if not stamp_full_paid(ms, o["id"], closed):
