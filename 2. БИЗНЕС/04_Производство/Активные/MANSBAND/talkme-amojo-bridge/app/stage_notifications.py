@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import calendar as month_calendar
 import hashlib
 import logging
+import re
+from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal, Optional
 
@@ -278,6 +281,7 @@ def reconcile(db, now, *, job_type=StageJob, attempt_type=StageAttempt, dispatch
 
 def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
     calendar = calendar_settings is not None
+    certificate = calendar and job.kind in CERTIFICATE_KINDS
     attempt_type = CalendarAttempt if calendar else StageAttempt
     job_type = CalendarJob if calendar else StageJob
     dispatch = (lambda stamp: calendar_dispatch(job, stamp)) if calendar else dispatch_time
@@ -299,13 +303,21 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
         return
     try:
         body = make_body(lead, s)
-        cid = primary_contact(lead)
-        if not cid or (job.contact_id and job.contact_id != cid):
+        cid = 0 if certificate else primary_contact(lead)
+        if not certificate and (not cid or (job.contact_id and job.contact_id != cid)):
             raise ValueError("ambiguous_or_changed_contact")
         if job.plan is None:
-            job.plan = resolve_plan(db, c, lead, c.get(f"/api/v4/contacts/{cid}"), s, r, **({"calendar": True, "calendar_job": job} if calendar else {}))
+            if certificate:
+                job.plan = certificate_plan(db, c, lead, s, r, calendar_settings)
+            else:
+                job.plan = resolve_plan(db, c, lead, c.get(f"/api/v4/contacts/{cid}"), s, r, **({"calendar": True, "calendar_job": job} if calendar else {}))
             job.contact_id = cid
             db.commit()
+        if certificate:
+            phone = certificate_phone(lead, calendar_settings)
+            if any(route["recipient"] != phone_destination(phone, route["transport"])
+                   for route in job.plan if route["transport"] in DIRECT):
+                raise ValueError("certificate_recipient_changed")
     except ValueError as exc:
         job.state, job.reason, job.check_at = "blocked", str(exc)[:100], now + (timedelta(seconds=30) if calendar else timedelta(hours=1))
         db.commit()
@@ -323,15 +335,33 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
         available = bool(route["recipient"]) and channel.get("state") == "active" and channel.get("transport") == expected
         if available:
             fresh = get_lead(c, job.lead_id)
-            if (not valid(fresh) or primary_contact(fresh) != job.contact_id):
+            if (not valid(fresh) or (not certificate and primary_contact(fresh) != job.contact_id)):
                 job.state, job.reason = "cancelled", "stage_or_contact_changed"
                 db.commit()
                 return
             if calendar:
                 from app.reservation_reminders import recipient, first
-                contact = c.get(f"/api/v4/contacts/{job.contact_id}")
-                current_dest = (recipient(contact, route["transport"], r) if route["transport"] in DIRECT else
-                    ({"chatId": first(contact, SOCIAL_FIELDS[route["transport"]]).strip()} if first(contact, SOCIAL_FIELDS[route["transport"]]).strip() else None))
+                if certificate:
+                    # The lead recipient is authoritative; never read the buyer's
+                    # contact or reuse their messenger IDs as a destination.
+                    if certificate_phone(fresh, calendar_settings) != phone:
+                        job.state, job.reason = "cancelled", "certificate_recipient_changed"
+                        db.commit()
+                        return
+                    if route["transport"] in DIRECT:
+                        current_dest = phone_destination(phone, route["transport"])
+                    else:
+                        recipient_contact = c.get(f"/api/v4/contacts/{route['recipient_contact_id']}")
+                        if not contact_matches_phone(recipient_contact, phone):
+                            job.state, job.reason = "cancelled", "certificate_recipient_contact_changed"
+                            db.commit()
+                            return
+                        social_id = first(recipient_contact, SOCIAL_FIELDS[route["transport"]]).strip()
+                        current_dest = {"chatId": social_id} if social_id else None
+                else:
+                    contact = c.get(f"/api/v4/contacts/{job.contact_id}")
+                    current_dest = (recipient(contact, route["transport"], r) if route["transport"] in DIRECT else
+                        ({"chatId": first(contact, SOCIAL_FIELDS[route["transport"]]).strip()} if first(contact, SOCIAL_FIELDS[route["transport"]]).strip() else None))
                 if current_dest != route["recipient"]:
                     job.state, job.reason = "cancelled", "recipient_changed"
                     db.commit()
@@ -421,6 +451,7 @@ def summary(db):
     s = StageSettings()
     return {"mode": s.mode, "ready": s.live_ready(), "calendar": {
         "mode": CalendarSettings().mode, "ready": CalendarSettings().live_ready() and s.live_ready(),
+        "extra_enabled": CalendarSettings().extra_enabled,
         "last_scan": calendar_scan, "jobs": [
             {"lead_id": j.lead_id, "kind": j.kind, "date": j.target_date.isoformat(), "due_at": aware(j.due_at).isoformat(), "state": j.state, "reason": j.reason}
             for j in db.scalars(select(CalendarJob).order_by(CalendarJob.id.desc()).limit(50))]}, "jobs": [
@@ -438,6 +469,12 @@ class CalendarSettings(BaseSettings):
     paid_status: int = 76674066
     rented_status: int = 76660194
     website_origin: str = ""
+    extra_enabled: bool = False
+    certificate_status: int = 76675038
+    certificate_until_field: int = 3169911
+    recipient_phone_field: int = 3830052
+    wants_order_status: int = 78616338
+    approximate_date_field: int = 3185681
 
     def live_ready(self):
         return self.mode == "live"
@@ -448,7 +485,29 @@ CALENDAR_RULES = {
     "meeting_followup": ("meeting_status", "meeting_field", 1, 10, 30),
     "rental_pickup": ("paid_status", "meeting_field", -1, 11, 0),
     "rental_return": ("rented_status", "return_field", 0, 10, 0),
+    "certificate_month": ("certificate_status", "certificate_until_field", 0, 11, 0),
+    "certificate_fortnight": ("certificate_status", "certificate_until_field", -14, 11, 0),
+    "wants_order": ("wants_order_status", "approximate_date_field", 0, 10, 0),
 }
+CERTIFICATE_KINDS = {"certificate_month", "certificate_fortnight"}
+EXTRA_KINDS = CERTIFICATE_KINDS | {"wants_order"}
+
+
+def active_calendar_rules(settings):
+    return {kind: rule for kind, rule in CALENDAR_RULES.items()
+            if settings.extra_enabled or kind not in EXTRA_KINDS}
+
+
+def calendar_due(kind, target):
+    _, _, offset, hour, minute = CALENDAR_RULES[kind]
+    if kind == "certificate_month":
+        year, month = (target.year - 1, 12) if target.month == 1 else (target.year, target.month - 1)
+        day = min(target.day, month_calendar.monthrange(year, month)[1])
+        due_date = date(year, month, day)
+    else:
+        due_date = target + timedelta(days=offset)
+    return datetime.combine(due_date, datetime.min.time(), MSK).replace(
+        hour=hour, minute=minute).astimezone(timezone.utc)
 
 
 class CalendarJob(Base):
@@ -499,7 +558,8 @@ def calendar_date(lead, field):
 
 def calendar_valid(lead, job, settings):
     status, field, _, _, _ = CALENDAR_RULES[job.kind]
-    return (lead.get("pipeline_id") == 9601214 and not lead.get("is_deleted")
+    return (job.kind in active_calendar_rules(settings)
+            and lead.get("pipeline_id") == 9601214 and not lead.get("is_deleted")
             and lead.get("status_id") == getattr(settings, status)
             and calendar_date(lead, getattr(settings, field)) == job.target_date)
 
@@ -518,13 +578,13 @@ def sync_calendar(db, leads, settings, now):
     for lead in leads:
         if lead.get("pipeline_id") != 9601214 or lead.get("is_deleted"):
             continue
-        for kind, (status, field, offset, hour, minute) in CALENDAR_RULES.items():
+        for kind, (status, field, offset, hour, minute) in active_calendar_rules(settings).items():
             if lead.get("status_id") != getattr(settings, status):
                 continue
             target = calendar_date(lead, getattr(settings, field))
             if target is None:
                 continue
-            due = datetime.combine(target + timedelta(days=offset), datetime.min.time(), MSK).replace(hour=hour, minute=minute).astimezone(timezone.utc)
+            due = calendar_due(kind, target)
             if due.astimezone(MSK).date() < now.astimezone(MSK).date():
                 continue
             key = (lead["id"], kind, target)
@@ -678,6 +738,12 @@ RETURN_BAUM = """Здравствуйте! Напоминаем, что сего
 
 def render_calendar(lead, job, s):
     from app.reservation_reminders import values
+    if job.kind == "certificate_month":
+        return CERTIFICATE_MONTH
+    if job.kind == "certificate_fortnight":
+        return CERTIFICATE_FORTNIGHT
+    if job.kind == "wants_order":
+        return WANTS_ORDER
     if job.kind == "meeting_followup":
         return "Здравствуйте! Удалось ли посетить нас вчера, подобрали желаемый образ?🙌🏻"
     store = values(lead, s.store_field)
@@ -710,7 +776,7 @@ def tick_calendar(s, settings):
                 # Standard stage filters only: custom-field filtering is unavailable
                 # in this account. Finish every page before modifying the queue.
                 leads = []
-                statuses = (settings.meeting_status, settings.paid_status, settings.rented_status)
+                statuses = sorted({getattr(settings, rule[0]) for rule in active_calendar_rules(settings).values()})
                 params = {"limit": 250, "with": "contacts"}
                 for i, status in enumerate(statuses):
                     params[f"filter[statuses][{i}][pipeline_id]"] = 9601214
@@ -747,3 +813,155 @@ async def calendar_worker(s):
         except Exception as exc:
             log.error("Calendar worker failed: %s", type(exc).__name__)
         await asyncio.sleep(5)
+
+
+def normalize_recipient_phone(raw):
+    """Normalize one phone, including integral CRM numeric/float values.
+
+    Russian local ten-digit numbers use country code 7. Existing international
+    country codes are preserved. Multiple phones and arbitrary text are refused.
+    """
+    if raw is None or isinstance(raw, bool):
+        raise ValueError("missing_or_invalid_recipient_phone")
+    value = str(raw).strip()
+    if not value or len(value) > 80 or '\n' in value or '\r' in value:
+        raise ValueError("missing_or_invalid_recipient_phone")
+    numeric = (isinstance(raw, (int, float, Decimal)) or
+               re.fullmatch(r"\d+\.0+", value) or
+               re.fullmatch(r"\d+(?:\.\d+)?[eE][+-]?\d+", value))
+    if numeric:
+        try:
+            number = Decimal(value)
+            if not number.is_finite() or number != number.to_integral_value() or not 0 < number < 10**15:
+                raise ValueError("missing_or_invalid_recipient_phone")
+            value = str(int(number))
+        except InvalidOperation:
+            raise ValueError("missing_or_invalid_recipient_phone") from None
+    if not re.fullmatch(r"\+?[\d ()\-]+", value):
+        raise ValueError("missing_or_invalid_recipient_phone")
+    digits = re.sub(r"\D", "", value)
+    if len(digits) == 10:
+        digits = '7' + digits
+    elif len(digits) == 11 and digits.startswith('8'):
+        digits = '7' + digits[1:]
+    if not 11 <= len(digits) <= 15 or digits[0] == '0' or len(set(digits)) == 1:
+        raise ValueError("missing_or_invalid_recipient_phone")
+    return digits
+
+
+def certificate_phone(lead, settings):
+    from app.reservation_reminders import values
+    entries = values(lead, settings.recipient_phone_field)
+    if len(entries) != 1:
+        raise ValueError("missing_or_ambiguous_recipient_phone")
+    return normalize_recipient_phone(entries[0].get('value'))
+
+
+def phone_destination(phone, transport):
+    return {'chatId': phone} if transport == 'whatsapp' else {'phone': phone}
+
+
+def contact_matches_phone(contact, phone):
+    for field in contact.get('custom_fields_values') or []:
+        if field.get('field_code') != 'PHONE':
+            continue
+        for value in field.get('values') or []:
+            try:
+                if normalize_recipient_phone(value.get('value')) == phone:
+                    return True
+            except ValueError:
+                continue
+    return False
+
+
+def certificate_plan(db, c, lead, stage, reminders, settings):
+    phone = certificate_phone(lead, settings)
+    # Search by the recipient only. The deal's linked buyer is never used as a
+    # fallback or as the source of Telegram/MAX usernames, IDs, or social chats.
+    matches = {}
+    for page in range(1, reminders.max_pages + 1):
+        data = c.get('/api/v4/contacts', query=phone, limit=250, page=page)
+        batch = data.get('_embedded', {}).get('contacts', [])
+        for contact in batch:
+            if contact_matches_phone(contact, phone):
+                matches[contact['id']] = contact
+        if not data.get('_links', {}).get('next') and len(batch) < 250:
+            break
+    else:
+        raise ValueError('incomplete_recipient_contact_search')
+    if len(matches) > 1:
+        raise ValueError('ambiguous_recipient_history')
+    if matches:
+        contact = next(iter(matches.values()))
+        plan = resolve_plan(db, c, lead, contact, stage, reminders, calendar=True)
+        for route in plan:
+            if route['transport'] in DIRECT:
+                route['recipient'] = phone_destination(phone, route['transport'])
+            else:
+                route['recipient_contact_id'] = contact['id']
+        return plan
+    return [{'transport': transport, 'channelId': getattr(reminders, transport + '_channel'),
+             'recipient': phone_destination(phone, transport)} for transport in DIRECT]
+
+
+CERTIFICATE_MONTH = """Здравствуйте! Вас приветствует магазин мужских костюмов Mansband👋🏻
+
+До окончания срока действия вашего подарочного сертификата остался 1 месяц🎁
+Будем рады видеть вас в гостях в любом магазине нашей сети!
+
+Отправляем всю необходимую информацию👇🏻
+
+Адрес №1:
+г. Москва, ул. Пятницкая, д. 8
+
+Как добраться:
+От м. Новокузнецкая идите вдоль ул. Пятницкая по направлению движения машин (около 3 минут).
+Между «Core Mio» и «INCANTO» зайдите в арку, затем поверните налево — железная дверь, 3 этаж.
+
+Адрес №2:
+г. Москва, Спартаковская пл., д. 14, стр. 2
+
+Как добраться:
+От м. Бауманская пройдите вдоль ул. Бауманская (около 5 минут). Между 13 и 14 домами увидите чёрные ворота и шлагбаум — зайдите на территорию через крыльцо с надписью «Central Street».
+Идите прямо до магазина №3105 (в конце, по правую сторону).
+
+Режим работы:
+Будни: 12:00–22:00
+Выходные: 11:00–22:00
+(Примерка без записи)
+
+Парковка бесплатная, позвоните за 5 минуты до приезда.
+
+Подскажите, когда планируете нас посетить?🙌🏻
+"""
+CERTIFICATE_FORTNIGHT = """Здравствуйте! Вас приветствует магазин мужских костюмов Mansband👋🏻
+
+До окончания срока действия вашего подарочного сертификата осталось 2 НЕДЕЛИ 🎁
+Будем рады видеть вас в гостях в любом магазине нашей сети!
+
+Отправляем всю необходимую информацию 👇
+
+Адрес №1:
+г. Москва, ул. Пятницкая, д. 8
+
+Как добраться:
+От м. Новокузнецкая идите вдоль ул. Пятницкая по направлению движения машин (около 3 минут).
+Между «Core Mio» и «INCANTO» зайдите в арку, затем поверните налево — железная дверь, 3 этаж.
+
+Адрес №2:
+г. Москва, Спартаковская пл., д. 14, стр. 2
+
+Как добраться:
+От м. Бауманская пройдите вдоль ул. Бауманская (около 5 минут). Между 13 и 14 домами увидите чёрные ворота и шлагбаум — зайдите на территорию через крыльцо с надписью «Central Street».
+Идите прямо до магазина №3105 (в конце, по правую сторону).
+
+Режим работы:
+Будни: 12:00–22:00
+Выходные: 11:00–22:00
+
+Парковка бесплатная, позвоните за 5 минуты до приезда."""
+WANTS_ORDER = """Вас приветствует магазин мужских костюмов Mansband!
+
+Ранее вы интересовались нашим ассортиментом, подскажите, на какую дату готовы выбрать дату заказа?
+
+При необходимости, с радостью проконсультируем вас по позициям в наличие еще раз! Очень ждем вашей обратной связи🙌🏻"""

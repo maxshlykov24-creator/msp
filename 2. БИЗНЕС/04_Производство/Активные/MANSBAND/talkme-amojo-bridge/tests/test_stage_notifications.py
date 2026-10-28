@@ -249,7 +249,7 @@ def calrun(db, j, c, cfg, now=None):
     send_calendar(db,j,c,cfg,ReminderSettings(),CalendarSettings(mode="live"),now,clock=lambda:now)
 
 
-@pytest.mark.parametrize("kind",CALENDAR_RULES)
+@pytest.mark.parametrize("kind",["meeting_today","meeting_followup","rental_pickup","rental_return"])
 def test_calendar_schedule_and_template_selection(db,cfg,kind):
     c=Fake([(201,{"messageId":"cal-1"})]);c.document=calendar_lead(kind)
     j=calendar_job(db,c.document,kind)
@@ -266,7 +266,7 @@ def test_calendar_schedule_and_template_selection(db,cfg,kind):
     assert len(c.posts)==1
 
 
-@pytest.mark.parametrize("kind",CALENDAR_RULES)
+@pytest.mark.parametrize("kind",["meeting_today","meeting_followup","rental_pickup","rental_return"])
 def test_calendar_changed_date_or_stage_prevents_post(db,cfg,kind):
     c=Fake();c.document=calendar_lead(kind);j=calendar_job(db,c.document,kind)
     c.document=calendar_lead(kind,target=j.target_date+timedelta(days=1))
@@ -401,3 +401,182 @@ def test_calendar_late_failure_does_not_use_next_channel_after_scheduled_day(db,
     reconcile(db,later,job_type=CalendarJob,attempt_type=CalendarAttempt,dispatch=lambda stamp:stamp)
     calrun(db,j,c,cfg,later)
     assert len(c.posts)==1 and j.state=='expired'
+
+
+from datetime import date
+from app.stage_notifications import (calendar_due, normalize_recipient_phone,
+    certificate_phone, certificate_plan, CERTIFICATE_KINDS, EXTRA_KINDS,
+    CERTIFICATE_MONTH, CERTIFICATE_FORTNIGHT, WANTS_ORDER)
+
+
+@pytest.mark.parametrize('raw,expected',[
+    ('+7 (999) 000-00-02','79990000002'),('8 (999) 000-00-02','79990000002'),
+    ('9990000002','79990000002'),(79990000002,'79990000002'),
+    (79990000002.0,'79990000002'),('79990000002.0','79990000002'),
+    ('7.9990000002e10','79990000002'),('+375 29 123-45-67','375291234567')])
+def test_recipient_phone_normalization(raw,expected):
+    assert normalize_recipient_phone(raw)==expected
+
+
+@pytest.mark.parametrize('raw',[None,'',True,0,False,'79990000001,79990000002',
+    '79990000001/79990000002','79990000001\n79990000002','call 79990000002',
+    '79990000002 доб.123','12345',float('nan'),float('inf'),79990000002.5,'1e1000'])
+def test_recipient_phone_refuses_ambiguous_or_invalid_data(raw):
+    with pytest.raises(ValueError):normalize_recipient_phone(raw)
+
+
+@pytest.mark.parametrize('target,expected',[
+    (date(2026,11,29),date(2026,10,29)),(date(2026,3,31),date(2026,2,28)),
+    (date(2028,3,31),date(2028,2,29)),(date(2027,1,31),date(2026,12,31)),
+    (date(2026,5,31),date(2026,4,30))])
+def test_certificate_month_is_calendar_month_not_30_days(target,expected):
+    out=calendar_due('certificate_month',target).astimezone(MSK)
+    assert out.date()==expected and (out.hour,out.minute)==(11,0)
+
+
+def test_fortnight_is_14_days_and_order_is_10_moscow():
+    assert calendar_due('certificate_fortnight',date(2026,11,12)).astimezone(MSK)==datetime(2026,10,29,11,tzinfo=MSK)
+    assert calendar_due('wants_order',date(2026,10,29)).astimezone(MSK)==datetime(2026,10,29,10,tzinfo=MSK)
+
+
+def extra_lead(kind='certificate_month',phone='8 (999) 000-00-02'):
+    settings=CalendarSettings(extra_enabled=True)
+    status,field,_,_,_=CALENDAR_RULES[kind]
+    target={'certificate_month':date(2026,11,29),'certificate_fortnight':date(2026,11,12),'wants_order':date(2026,10,29)}[kind]
+    data=lead(getattr(settings,status))
+    data['custom_fields_values']=[{'field_id':getattr(settings,field),'values':[
+        {'value':int(datetime.combine(target,datetime.min.time(),MSK).timestamp())}]}]
+    if phone is not None:
+        data['custom_fields_values'].append({'field_id':settings.recipient_phone_field,'values':[{'value':phone}]})
+    return data
+
+
+class RecipientFake(Fake):
+    def __init__(self,responses=()):
+        super().__init__(responses)
+        self.recipient_contacts=[]
+        self.reads=[]
+    def get(self,path,**kwargs):
+        self.reads.append(path)
+        if path=='/api/v4/contacts':return {'_embedded':{'contacts':self.recipient_contacts}}
+        if path.startswith('/api/v4/contacts/'):
+            return next((x for x in self.recipient_contacts if str(x['id'])==path.rsplit('/',1)[1]),{'id':123})
+        return super().get(path,**kwargs)
+
+
+def extra_job(db,c,kind='certificate_month'):
+    sync_calendar(db,[c.document],CalendarSettings(extra_enabled=True),CAL_NOW-timedelta(days=1))
+    return db.scalar(select(CalendarJob).where(CalendarJob.kind==kind))
+
+
+def extra_run(db,j,c,cfg,now=None):
+    now=now or j.due_at.replace(tzinfo=timezone.utc)
+    send_calendar(db,j,c,cfg,ReminderSettings(telegram_channel='telegram',whatsapp_channel='whatsapp',max_channel='max'),
+        CalendarSettings(mode='live',extra_enabled=True),now,clock=lambda:now)
+
+
+@pytest.mark.parametrize('kind',sorted(CERTIFICATE_KINDS))
+def test_certificate_sends_only_to_lead_recipient_without_buyer_contact(db,cfg,kind):
+    c=RecipientFake([(201,{'messageId':'recipient-message'})]);c.document=extra_lead(kind)
+    j=extra_job(db,c,kind);extra_run(db,j,c,cfg)
+    assert j.state=='pending' and len(c.posts)==1
+    assert c.posts[0]['phone']=='79990000002' and c.posts[0]['chatType']=='telegram'
+    assert '/api/v4/contacts/123' not in c.reads
+    assert '79990000001' not in str(c.posts)
+    extra_run(db,j,c,cfg)
+    assert len(c.posts)==1
+
+
+@pytest.mark.parametrize('phone',[None,'not a phone','79990000001,79990000002'])
+def test_certificate_never_falls_back_to_buyer_when_phone_invalid(db,cfg,phone):
+    c=RecipientFake();c.document=extra_lead(phone=phone)
+    j=extra_job(db,c);extra_run(db,j,c,cfg)
+    assert j.state=='blocked' and not c.posts and '/api/v4/contacts/123' not in c.reads
+    assert not list(db.scalars(select(CalendarAttempt)))
+
+
+def test_certificate_uses_recipient_history_but_not_their_unrelated_telegram_id(db,cfg):
+    c=RecipientFake([(201,{'messageId':'recipient-message'})]);c.document=extra_lead()
+    c.recipient_contacts=[{'id':999,'custom_fields_values':[
+        {'field_code':'PHONE','values':[{'value':'+7 999 000-00-02'}]},
+        {'field_id':3346485,'values':[{'value':'unrelated-telegram-id'}]}]}]
+    c.talks=[{'talk_id':1,'contact_id':999,'origin':'com.wazzup24.wz'}]
+    j=extra_job(db,c);extra_run(db,j,c,cfg)
+    assert c.posts[0]['chatType']=='whatsapp' and c.posts[0]['chatId']=='79990000002'
+    assert 'unrelated-telegram-id' not in str(c.posts)
+    assert '/api/v4/contacts/123' not in c.reads
+
+
+def test_certificate_search_requires_exact_phone_match(db,cfg):
+    c=RecipientFake([(201,{'messageId':'recipient-message'})]);c.document=extra_lead()
+    c.recipient_contacts=[{'id':123,'custom_fields_values':[{'field_code':'PHONE','values':[{'value':'79990000001'}]}]}]
+    c.talks=[{'talk_id':1,'contact_id':123,'origin':'com.wazzup24.wz'}]
+    j=extra_job(db,c);extra_run(db,j,c,cfg)
+    assert c.posts[0]['chatType']=='telegram' and c.posts[0]['phone']=='79990000002'
+    assert '/api/v4/talks' not in c.reads
+
+
+def test_certificate_phone_change_during_preflight_stops_send(db,cfg):
+    c=RecipientFake();c.document=extra_lead();j=extra_job(db,c);original=c.get;reads=[]
+    def changing(path,**kwargs):
+        data=original(path,**kwargs)
+        if path.startswith('/api/v4/leads/'):
+            reads.append(path)
+            if len(reads)>1:return extra_lead(phone='79990000003')
+        return data
+    c.get=changing;extra_run(db,j,c,cfg)
+    assert j.state=='cancelled' and not c.posts
+
+
+def test_certificate_confirmed_failure_changes_only_transport(db,cfg):
+    c=RecipientFake([(400,{'error':'BAD_CONTACT'}),(201,{'messageId':'recipient-message'})]);c.document=extra_lead()
+    j=extra_job(db,c);extra_run(db,j,c,cfg)
+    assert [p['chatType'] for p in c.posts]==['telegram','whatsapp']
+    assert c.posts[0]['phone']==c.posts[1]['chatId']=='79990000002'
+
+
+def test_certificate_network_uncertainty_never_uses_next_channel(db,cfg):
+    c=RecipientFake([httpx.ReadTimeout('unknown')]);c.document=extra_lead()
+    j=extra_job(db,c);extra_run(db,j,c,cfg);extra_run(db,j,c,cfg)
+    assert j.state=='uncertain' and len(c.posts)==1
+
+
+def test_new_scenarios_use_separate_keys_and_preserve_templates(db,cfg):
+    c=RecipientFake();c.document=extra_lead();extra_job(db,c)
+    for _ in range(3):sync_calendar(db,[c.document],CalendarSettings(extra_enabled=True),CAL_NOW)
+    jobs=list(db.scalars(select(CalendarJob)))
+    assert len(jobs)==2 and {j.kind for j in jobs}==CERTIFICATE_KINDS
+    assert render_calendar(c.document,next(j for j in jobs if j.kind=='certificate_month'),cfg)==CERTIFICATE_MONTH
+    assert render_calendar(c.document,next(j for j in jobs if j.kind=='certificate_fortnight'),cfg)==CERTIFICATE_FORTNIGHT
+    assert 'остался 1 месяц' in CERTIFICATE_MONTH and 'осталось 2 НЕДЕЛИ' in CERTIFICATE_FORTNIGHT
+    assert '(Примерка без записи)' in CERTIFICATE_MONTH and '(Примерка без записи)' not in CERTIFICATE_FORTNIGHT
+
+
+def test_wants_order_uses_approximate_date_and_existing_client_routing(db,cfg):
+    c=Fake([(201,{'messageId':'order-message'})]);c.document=extra_lead('wants_order',phone=None)
+    c.contact={'id':123,'custom_fields_values':[{'field_id':3346485,'values':[{'value':'tg-client'}]}]}
+    j=extra_job(db,c,'wants_order');j.plan=[{'transport':'telegram','channelId':'telegram','recipient':{'chatId':'tg-client'}}];j.contact_id=123;db.commit()
+    extra_run(db,j,c,cfg)
+    assert j.state=='pending' and c.posts[0]['chatId']=='tg-client' and c.posts[0]['text']==WANTS_ORDER
+
+
+def test_new_rules_do_not_activate_before_explicit_enable(db):
+    sync_calendar(db,[extra_lead()],CalendarSettings(),CAL_NOW)
+    assert not list(db.scalars(select(CalendarJob)))
+
+
+def test_certificate_duplicate_recipient_cards_do_not_choose_buyer_history(db,cfg):
+    c=RecipientFake();c.document=extra_lead()
+    c.recipient_contacts=[{'id':i,'custom_fields_values':[{'field_code':'PHONE','values':[{'value':'79990000002'}]}]} for i in (123,999)]
+    j=extra_job(db,c);extra_run(db,j,c,cfg)
+    assert j.state=='blocked' and j.reason=='ambiguous_recipient_history' and not c.posts
+
+
+@pytest.mark.parametrize('kind',sorted(EXTRA_KINDS))
+@pytest.mark.parametrize('change',['stage','date'])
+def test_new_scenarios_recheck_stage_and_date(db,cfg,kind,change):
+    c=RecipientFake();c.document=extra_lead(kind);j=extra_job(db,c,kind)
+    if change=='stage':c.document['status_id']=142
+    else:c.document['custom_fields_values'][0]['values'][0]['value']+=86400
+    extra_run(db,j,c,cfg)
+    assert j.state=='cancelled' and not c.posts
