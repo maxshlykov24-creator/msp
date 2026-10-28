@@ -442,7 +442,7 @@ def test_fortnight_is_14_days_and_order_is_10_moscow():
 def extra_lead(kind='certificate_month',phone='8 (999) 000-00-02'):
     settings=CalendarSettings(extra_enabled=True)
     status,field,_,_,_=CALENDAR_RULES[kind]
-    target={'certificate_month':date(2026,11,29),'certificate_fortnight':date(2026,11,12),'wants_order':date(2026,10,29)}[kind]
+    target={'certificate_month':date(2026,11,29),'certificate_fortnight':date(2026,11,12),'wants_order':date(2026,10,29),'wants_visit':date(2026,10,29)}[kind]
     data=lead(getattr(settings,status))
     data['custom_fields_values']=[{'field_id':getattr(settings,field),'values':[
         {'value':int(datetime.combine(target,datetime.min.time(),MSK).timestamp())}]}]
@@ -580,3 +580,39 @@ def test_new_scenarios_recheck_stage_and_date(db,cfg,kind,change):
     else:c.document['custom_fields_values'][0]['values'][0]['value']+=86400
     extra_run(db,j,c,cfg)
     assert j.state=='cancelled' and not c.posts
+
+
+from app.stage_notifications import WANTS_VISIT
+
+
+def test_wants_visit_schedule_template_and_no_duplicate(db,cfg):
+    c=Fake([(201,{'messageId':'visit-message'})]);c.document=extra_lead('wants_visit',phone=None)
+    c.contact={'id':123,'custom_fields_values':[{'field_id':3346485,'values':[{'value':'tg-client'}]}]}
+    j=extra_job(db,c,'wants_visit')
+    j.plan=[{'transport':'telegram','channelId':'telegram','recipient':{'chatId':'tg-client'}}];j.contact_id=123;db.commit()
+    due=j.due_at.replace(tzinfo=timezone.utc)
+    assert due.astimezone(MSK)==datetime(2026,10,29,10,tzinfo=MSK)
+    extra_run(db,j,c,cfg,now=due-timedelta(seconds=1))
+    assert not c.posts
+    extra_run(db,j,c,cfg);extra_run(db,j,c,cfg)
+    assert j.state=='pending' and len(c.posts)==1
+    assert c.posts[0]['text']==WANTS_VISIT
+    assert 'удалось ли запланировать время визита к нам?' in c.posts[0]['text']
+    assert 'дату заказа' not in c.posts[0]['text']
+
+
+def test_wants_visit_missing_date_creates_no_job(db):
+    data=extra_lead('wants_visit',phone=None);data['custom_fields_values']=[]
+    sync_calendar(db,[data],CalendarSettings(extra_enabled=True),CAL_NOW)
+    assert not list(db.scalars(select(CalendarJob)))
+
+
+def test_wants_visit_and_order_on_same_date_have_independent_keys(db):
+    visit=extra_lead('wants_visit',phone=None)
+    sync_calendar(db,[visit],CalendarSettings(extra_enabled=True),CAL_NOW)
+    order=extra_lead('wants_order',phone=None)
+    sync_calendar(db,[order],CalendarSettings(extra_enabled=True),CAL_NOW)
+    jobs=list(db.scalars(select(CalendarJob)))
+    assert {j.kind for j in jobs}=={'wants_order','wants_visit'}
+    assert next(j for j in jobs if j.kind=='wants_visit').state=='cancelled'
+    assert next(j for j in jobs if j.kind=='wants_order').state=='ready'

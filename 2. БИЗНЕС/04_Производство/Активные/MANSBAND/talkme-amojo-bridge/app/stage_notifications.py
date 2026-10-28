@@ -474,6 +474,7 @@ class CalendarSettings(BaseSettings):
     certificate_until_field: int = 3169911
     recipient_phone_field: int = 3830052
     wants_order_status: int = 78616338
+    wants_visit_status: int = 77384722
     approximate_date_field: int = 3185681
 
     def live_ready(self):
@@ -488,9 +489,10 @@ CALENDAR_RULES = {
     "certificate_month": ("certificate_status", "certificate_until_field", 0, 11, 0),
     "certificate_fortnight": ("certificate_status", "certificate_until_field", -14, 11, 0),
     "wants_order": ("wants_order_status", "approximate_date_field", 0, 10, 0),
+    "wants_visit": ("wants_visit_status", "approximate_date_field", 0, 10, 0),
 }
 CERTIFICATE_KINDS = {"certificate_month", "certificate_fortnight"}
-EXTRA_KINDS = CERTIFICATE_KINDS | {"wants_order"}
+EXTRA_KINDS = CERTIFICATE_KINDS | {"wants_order", "wants_visit"}
 
 
 def active_calendar_rules(settings):
@@ -744,6 +746,8 @@ def render_calendar(lead, job, s):
         return CERTIFICATE_FORTNIGHT
     if job.kind == "wants_order":
         return WANTS_ORDER
+    if job.kind == "wants_visit":
+        return WANTS_VISIT
     if job.kind == "meeting_followup":
         return "Здравствуйте! Удалось ли посетить нас вчера, подобрали желаемый образ?🙌🏻"
     store = values(lead, s.store_field)
@@ -963,5 +967,11 @@ CERTIFICATE_FORTNIGHT = """Здравствуйте! Вас приветству
 WANTS_ORDER = """Вас приветствует магазин мужских костюмов Mansband!
 
 Ранее вы интересовались нашим ассортиментом, подскажите, на какую дату готовы выбрать дату заказа?
+
+При необходимости, с радостью проконсультируем вас по позициям в наличие еще раз! Очень ждем вашей обратной связи🙌🏻"""
+
+WANTS_VISIT = """Вас приветствует магазин мужских костюмов Mansband!
+
+Ранее вы интересовались нашим ассортиментом, подскажите, удалось ли запланировать время визита к нам?
 
 При необходимости, с радостью проконсультируем вас по позициям в наличие еще раз! Очень ждем вашей обратной связи🙌🏻"""
