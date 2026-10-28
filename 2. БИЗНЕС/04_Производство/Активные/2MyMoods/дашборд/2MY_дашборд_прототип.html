@@ -331,6 +331,13 @@
   .wrap{max-width:1200px;margin:0 auto;padding:0 32px}
 
   /* ── шапка ── */
+  .refresh-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--line);color:inherit;padding:6px 9px;font:inherit;font-size:11px;cursor:pointer}
+  .refresh-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.5}
+  .refresh-btn:disabled{cursor:wait;opacity:.65}
+  .refresh-btn[aria-busy="true"] svg{animation:refresh-spin 1s linear infinite}
+  .refresh-status{font-size:11px;color:var(--mute);margin-top:8px}
+  @keyframes refresh-spin{to{transform:rotate(360deg)}}
+  @media(prefers-reduced-motion:reduce){.refresh-btn[aria-busy="true"] svg{animation:none}}
   header{padding:36px 0 0}
   .head-row{display:flex;justify-content:space-between;align-items:center;gap:32px;flex-wrap:wrap;padding-bottom:28px;border-bottom:1px solid var(--line)}
   .logo-2my{height:78px;width:auto;display:block}
@@ -713,10 +720,12 @@
         <div class="kicker">Аналитика продаж и клиентской базы</div>
         <h1>Панель управления 2MY</h1>
         <div class="head-tools">
+          <button type="button" class="refresh-btn" id="refresh-data" title="Обновить данные из МойСклад и amoCRM" aria-busy="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 7a6.5 6.5 0 1 0 .4 5M16 2v5h-5"/></svg><span>Обновить</span></button>
           <button type="button" class="explain-btn" id="explain-toggle" aria-pressed="true">Пояснения</button>
           <button type="button" class="night-toggle" id="night-toggle" aria-pressed="false">Ночь<i aria-hidden="true"></i></button>
         </div>
         <div class="note" id="head-note"></div>
+        <div class="refresh-status" id="refresh-status" role="status" aria-live="polite"></div>
       </div>
     </div>
   </header>
@@ -2111,6 +2120,53 @@ function placeChartTip(clientX){
  plot.addEventListener('pointermove',e=>{lastChartX=e.clientX;placeChartTip(e.clientX)});
  plot.addEventListener('pointerleave',hide);
 }
+async function refreshRequest(method='GET'){
+ const response=await fetch('/api/refresh',{method,cache:'no-store',headers:{'X-Dashboard-Refresh':'1'},signal:AbortSignal.timeout(15000)});
+ if(!response.ok)throw Error(response.status===401?'Сессия истекла. Войди заново.':'Сервер обновления недоступен.');
+ return response.json();
+}
+function applyFreshSnapshot(snap){
+ // init resets the period and binds controls: retain the current view and selections.
+ const saved=JSON.parse(JSON.stringify(state));
+ const period=document.querySelector('#periods button.on')?.dataset.p;
+ data=snap;buildClients();
+ for(const [id,key,values,label] of [
+  ['f-cat','cat',data.orders.flatMap(o=>o.lines.map(l=>l.category)),'Все категории'],
+  ['s-cat','cat',data.orders.flatMap(o=>o.lines.map(l=>l.category)),'Все категории'],
+  ['f-ch','source',data.orders.map(orderSource),'Все источники'],
+  ['f-sale','channel',data.orders.map(o=>o.channel),'Все каналы сбыта'],
+  ['f-geo','city',data.orders.map(o=>o.city),'Все города']]){
+   select(id,[...new Set([...values,...(Array.isArray(saved[key])?saved[key]:[])])],label);
+ }
+ Object.assign(state,saved);
+ refresh();
+ const sync=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(snap.generated));
+ el('sync-at').textContent='Синхронизация '+sync;
+ const warning=el('amo-sync-warning');warning.hidden=!snap.amo_status||snap.amo_status.status==='ok';
+ warning.textContent=warning.hidden?'':'МойСклад обновлён. Данные amoCRM не обновились и могут быть устаревшими.';
+}
+el('refresh-data').onclick=async()=>{
+ const button=el('refresh-data'),label=button.querySelector('span'),status=el('refresh-status');
+ button.disabled=true;button.setAttribute('aria-busy','true');label.textContent='Обновление';
+ status.textContent='Собираем данные. Это может занять несколько минут.';
+ try{
+  const initial=await refreshRequest('POST');
+  const deadline=Date.now()+90*60*1000;
+  while(true){
+   await new Promise(resolve=>setTimeout(resolve,5000));
+   const progress=await refreshRequest();
+   if(!progress.running){
+    if(progress.result!=='success'||progress.version===initial.version)throw Error('Сборка не завершилась успешно. Предыдущие данные сохранены.');
+    const response=await fetch('snapshot.local.json',{cache:'no-store',signal:AbortSignal.timeout(30000)});
+    if(!response.ok)throw Error('Не удалось загрузить свежие данные. Повтори обновление.');
+    const snap=await response.json();if(!Array.isArray(snap.orders))throw Error('Некорректный срез данных.');
+    applyFreshSnapshot(snap);status.textContent='Данные обновлены';break;
+   }
+   if(Date.now()>deadline)throw Error('Сборка ещё не завершена. Нажми обновление позже, чтобы проверить результат.');
+  }
+ }catch(error){status.textContent=error.message||'Не удалось обновить данные. Повтори попытку.';}
+ finally{button.disabled=false;button.setAttribute('aria-busy','false');label.textContent='Обновить';}
+};
 fetch('snapshot.local.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('Срез недоступен');return r.json()}).then(init).catch(()=>{el('head-note').textContent='Срез не загрузился'});
 </script>
 </body>

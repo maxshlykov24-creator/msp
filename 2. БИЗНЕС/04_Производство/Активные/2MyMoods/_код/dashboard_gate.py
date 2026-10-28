@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import threading
+
 import hashlib
 import hmac
 import os
@@ -16,6 +20,8 @@ HOST = os.environ.get("DASHBOARD_BIND", "127.0.0.1")
 PORT = int(os.environ.get("DASHBOARD_PORT", "19121"))
 COOKIE = "2my_session"
 MAX_AGE = 14 * 24 * 3600
+COLLECT_UNIT = "2my-dashboard-collect.service"
+REFRESH_LOCK = threading.Lock()
 
 
 def env(name: str) -> str:
@@ -65,6 +71,20 @@ def check_password(login: str, password: str) -> bool:
     return hmac.compare_digest(login, user) and hmac.compare_digest(password, secret)
 
 
+def collection_status() -> dict:
+    result = subprocess.run(
+        ["systemctl", "show", COLLECT_UNIT, "--property=ActiveState,SubState,Result,Job"],
+        capture_output=True, text=True, check=True, timeout=8,
+    )
+    fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    if not fields.get("ActiveState"):
+        raise RuntimeError("Collector status unavailable")
+    path = ROOT / "snapshot.local.json"
+    version = str(path.stat().st_mtime_ns) if path.exists() else ""
+    return {"running": fields["ActiveState"] in ("activating", "active", "deactivating")
+            or bool(fields.get("Job")), "result": fields.get("Result", "unknown"), "version": version}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "2my-dashboard"
 
@@ -94,8 +114,32 @@ class Handler(BaseHTTPRequestHandler):
     def _authed(self) -> bool:
         return valid_cookie(cookie_header(self.headers.get("Cookie")))
 
+    def _json(self, code: int, body: dict) -> None:
+        self._send(code, json.dumps(body).encode(), "application/json; charset=utf-8")
+
+    def _refresh(self, start: bool = False) -> None:
+        if not self._authed():
+            self._json(401, {"error": "Требуется вход"})
+            return
+        if start and self.headers.get("X-Dashboard-Refresh") != "1":
+            self._json(403, {"error": "Недопустимый запрос"})
+            return
+        try:
+            with REFRESH_LOCK:
+                status = collection_status()
+                if start and not status["running"]:
+                    subprocess.run(["systemctl", "start", "--no-block", COLLECT_UNIT],
+                                   capture_output=True, check=True, timeout=8)
+                    status["running"] = True
+            self._json(200, status)
+        except (OSError, subprocess.SubprocessError, RuntimeError):
+            self._json(503, {"error": "Не удалось получить статус обновления"})
+
     def do_GET(self) -> None:
         path = self.path.split("?", 1)[0]
+        if path == "/api/refresh":
+            self._refresh()
+            return
         if path == "/login":
             if self._authed():
                 self._redirect("/")
@@ -124,6 +168,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, b"not found", "text/plain; charset=utf-8")
 
     def do_POST(self) -> None:
+        if self.path.split("?", 1)[0] == "/api/refresh":
+            self._refresh(start=True)
+            return
         if self.path.split("?", 1)[0] != "/login":
             self._send(404, b"not found", "text/plain; charset=utf-8")
             return
