@@ -14,6 +14,8 @@
 
 ## Содержимое (Python)
 
+- [`road-mode/README.md`](road-mode/README.md) — дорожный режим Mac: единая команда Ио для Cursor и Codex, автоматический возврат настроек при открытии крышки.
+
 - `apply_profile_nested_codes.py` — применение вложенных кодов к профилю.
 - `bulk_profile_nested_paths.py` — массовое обновление вложенных путей профиля.
 - `bulk_replace_paths.py` — замена путей в файлах.
