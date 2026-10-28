@@ -63,7 +63,7 @@ body{
 .silk{position:absolute;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity 1.2s var(--ease)}
 .silk.ready{opacity:1}
 /* Фактура отдельно только при недоступном WebGL. */
-body.no-gl .stage::after{content:'';position:absolute;inset:-25%;pointer-events:none;background:url('assets/brand-texture.webp?v=20261028-2') repeat;background-size:1200px 600px;mix-blend-mode:overlay;opacity:.5;animation:texture-drift 100s ease-in-out infinite alternate}
+body.no-gl .stage::after{content:'';position:absolute;inset:-25%;pointer-events:none;background-image:url('assets/brand-texture.webp?v=20261028-2'),conic-gradient(from 35deg at 50% 40%,#130b10,#71304a,#211018,#99516c,#130b10);background-size:1200px 600px,100% 100%;background-repeat:repeat,no-repeat;background-blend-mode:overlay;animation:texture-drift 100s ease-in-out infinite alternate}
 @keyframes texture-drift{from{transform:translate3d(-3%,-2%,0)}to{transform:translate3d(3%,2%,0)}}
 
 /* фолбэк без WebGL: вращающиеся conic-градиенты */
@@ -71,7 +71,7 @@ body.no-gl .stage::after{content:'';position:absolute;inset:-25%;pointer-events:
 @keyframes spinR{to{transform:translate(-50%,-50%) rotate(-360deg)}}
 .mesh{display:none;position:absolute;left:50%;top:38%;border-radius:50%;
   transform:translate(-50%,-50%);filter:blur(110px) saturate(150%);will-change:transform}
-body.no-gl .mesh{display:block}
+body.no-gl .mesh{display:none}
 .m1{
   width:165vmax;height:165vmax;opacity:.32;
   background:conic-gradient(from 0deg,
@@ -324,7 +324,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
   html{scroll-behavior:auto}
 }
 </style>
-<link rel="stylesheet" href="/theme.css?v=20261028-6">
+<link rel="stylesheet" href="/theme.css?v=20261028-7">
 <script type="application/ld+json">
 {
   "@context":"https://schema.org",

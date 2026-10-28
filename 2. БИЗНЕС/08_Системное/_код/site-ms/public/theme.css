@@ -9,7 +9,7 @@ html[data-theme="light"] body{background-color:#faf9f6;background-image:linear-g
 html[data-theme="light"] .stage{background:#faf9f6}
 html[data-theme="light"] .vignette{display:none}
 html[data-theme="light"] body.no-gl .mesh{opacity:.14}
-html[data-theme="light"] body.no-gl .stage::after{opacity:.35}
+html[data-theme="light"] body.no-gl .stage::after{background-image:url('assets/brand-texture.webp?v=20261028-2'),conic-gradient(from 35deg at 50% 40%,#faf9f6,#e6cbd1,#f5efeb,#d7bac3,#faf9f6);opacity:1}
 html[data-theme="light"] body::after{opacity:.025}
 html[data-theme="light"] .nav:has(.wrap){background:rgba(250,249,246,.84)}
 html[data-theme="light"] .theme-pill{background:rgba(255,255,255,.68);border-color:rgba(82,35,54,.22)}
