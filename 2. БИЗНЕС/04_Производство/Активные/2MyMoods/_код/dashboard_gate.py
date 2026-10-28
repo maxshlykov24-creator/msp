@@ -127,6 +127,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with REFRESH_LOCK:
                 status = collection_status()
+                if start:
+                    status["joined"] = status["running"]
                 if start and not status["running"]:
                     subprocess.run(["systemctl", "start", "--no-block", COLLECT_UNIT],
                                    capture_output=True, check=True, timeout=8)

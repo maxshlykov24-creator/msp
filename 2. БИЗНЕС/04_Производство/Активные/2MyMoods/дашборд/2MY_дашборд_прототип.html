@@ -2128,14 +2128,15 @@ async function refreshRequest(method='GET'){
 function applyFreshSnapshot(snap){
  // init resets the period and binds controls: retain the current view and selections.
  const saved=JSON.parse(JSON.stringify(state));
- const period=document.querySelector('#periods button.on')?.dataset.p;
  data=snap;buildClients();
  for(const [id,key,values,label] of [
   ['f-cat','cat',data.orders.flatMap(o=>o.lines.map(l=>l.category)),'Все категории'],
   ['s-cat','cat',data.orders.flatMap(o=>o.lines.map(l=>l.category)),'Все категории'],
   ['f-ch','source',data.orders.map(orderSource),'Все источники'],
   ['f-sale','channel',data.orders.map(o=>o.channel),'Все каналы сбыта'],
-  ['f-geo','city',data.orders.map(o=>o.city),'Все города']]){
+  ['f-geo','city',data.orders.map(o=>o.city),'Все города'],
+  ['s-size','size',data.orders.flatMap(o=>(o.lines||[]).map(sizeLabel)),'Все размеры'],
+  ['s-color','color',data.orders.flatMap(o=>(o.lines||[]).filter(l=>!l.delivery).map(colorLabel)).filter(v=>v!=='не указано'),'Все цвета']]){
    select(id,[...new Set([...values,...(Array.isArray(saved[key])?saved[key]:[])])],label);
  }
  Object.assign(state,saved);
@@ -2156,7 +2157,7 @@ el('refresh-data').onclick=async()=>{
    await new Promise(resolve=>setTimeout(resolve,5000));
    const progress=await refreshRequest();
    if(!progress.running){
-    if(progress.result!=='success'||progress.version===initial.version)throw Error('Сборка не завершилась успешно. Предыдущие данные сохранены.');
+    if(progress.result!=='success'||(!initial.joined&&progress.version===initial.version))throw Error('Сборка не завершилась успешно. Предыдущие данные сохранены.');
     const response=await fetch('snapshot.local.json',{cache:'no-store',signal:AbortSignal.timeout(30000)});
     if(!response.ok)throw Error('Не удалось загрузить свежие данные. Повтори обновление.');
     const snap=await response.json();if(!Array.isArray(snap.orders))throw Error('Некорректный срез данных.');
