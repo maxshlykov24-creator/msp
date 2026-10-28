@@ -1381,9 +1381,9 @@ ORDER_MESSENGER_SOURCES = {
 
 
 def enrich_shipment_discounts(snap: dict, ms=None) -> None:
-    """Recorded goods discounts, shipment/return documents; cohort = order full payment.
+    """Goods discounts against current catalogue or recorded gross, whichever is higher.
 
-    Read-only in MoySklad. Never infer a discount from today's catalogue price.
+    Read-only in MoySklad. Current catalogue comparison is explicitly requested.
     Returns stay in their original payment cohort, irrespective of return date.
     """
     ms = ms or lib.MS()
@@ -1409,7 +1409,8 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                 raise ValueError("Нет товарных данных для фильтров")
             catalog[aid] = {"id": aid, "name": name, "category": product.get("pathName") or "не указано",
                             "size": canon_size(str(chars.get("размер") or "")) or size_from_name(name),
-                            "color": str(chars.get("цвет") or "").strip() or color_from_name(name)}
+                            "color": str(chars.get("цвет") or "").strip() or color_from_name(name),
+                            "catalogue_sale_price": catalogue_sale_price(card, product)}
         return catalog[aid]
 
     def source_documents(entity):
@@ -1446,9 +1447,14 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
             if kind not in ("product", "variant", "bundle") or not aid:
                 raise ValueError("Не определён товар позиции")
             info = goods_info(aid, kind)
+            basis, basis_status = discount_basis(p, doc, info.get("catalogue_sale_price"))
+            basis_int = money_int(Decimal(str(basis)) * 100)
             lines.append({**{k: info.get(k, "") for k in ("id", "name", "category", "size", "color")},
                           "qty": float(qty), "price_kopecks": float(price), "discount_percent": float(discount),
-                          "discount_kopecks": gross - after})
+                          "discount_kopecks": basis_int - after, "recorded_discount_kopecks": gross - after,
+                          "basis_price_kopecks": float(Decimal(basis_int) / qty) if qty else 0,
+                          "effective_discount_percent": float(Decimal(basis_int - after) * 100 / basis_int) if basis_int else 0,
+                          "discount_basis": basis_status})
         if abs(net - money_int(Decimal(str(doc.get("sum") or 0)))) > 1:
             raise ValueError("Сумма позиций не совпадает с документом")
         return lines
@@ -1494,7 +1500,7 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                 documents.append({**item, "lines": lines})
             except ValueError as exc:
                 gaps.append({**item, "reason": str(exc)})
-    snap["shipment_discounts"] = {"status": "partial" if gaps else "ok", "documents": documents,
+    snap["shipment_discounts"] = {"policy": "current_catalogue", "status": "partial" if gaps else "ok", "documents": documents,
                                   "gaps": gaps, "unlinked": dict(unlinked),
                                   "checked_at": datetime.now(TZ).isoformat(timespec="seconds")}
 
@@ -1561,6 +1567,35 @@ def position_totals(position: dict, document: dict) -> tuple[float, float]:
                  for value in (gross, net))
 
 
+def catalogue_sale_price(*cards):
+    """Select only the named sale price; a variant overrides its parent."""
+    for card in cards:
+        prices = [p for p in card.get("salePrices", [])
+                  if (p.get("priceType") or {}).get("name") == "Цена продажи"]
+        if len(prices) > 1:
+            return None
+        if prices:
+            value = Decimal(str(prices[0].get("value") or 0))
+            if value.is_finite() and value > 0:
+                return {"value": float(value), "currency": mid(prices[0].get("currency"))}
+    return None
+
+
+def discount_basis(position, document, catalogue):
+    """Catalogue prices include VAT. Never change document revenue or raw prices."""
+    gross, net = position_totals(position, document)
+    basis = Decimal(str(gross)) * 100
+    status = "recorded_only"
+    rate = document.get("rate") or {}
+    currency = mid(rate.get("currency"))
+    if catalogue and currency and currency == catalogue.get("currency") and rate.get("value") in (None, 1, 1.0):
+        amount = Decimal(str(catalogue["value"])) * Decimal(str(position.get("quantity") or 0))
+        amount = amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        basis = max(basis, amount)
+        status = "current_catalogue"
+    return float(basis / 100), status
+
+
 def build_order(o, positions, ms, started, order_payments, agents, channels, return_orders, products, variants, services, gaps):
     number = o.get("name", "")
     a = attrs(o)
@@ -1625,12 +1660,15 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
                 color = color_from_name(name)
             qty = float(x.get("quantity") or 0)
             gross, rev = position_totals(x, o)
+            catalogue = catalogue_sale_price(variant, product) if kind != "service" else None
+            basis, basis_status = discount_basis(x, o, catalogue)
             cost = rub((product.get("buyPrice") or {}).get("value")) * qty
             if rev > 0 and cost == 0 and not delivery_line:
                 gaps["Позиция без закупочной цены"].append(number)
             lines.append({"id": aid, "name": name, "category": product.get("pathName") or "не указано",
                           "size": size, "color": color, "qty": qty, "rev": rev,
-                          "list": gross, "cost": round(cost, 2), "delivery": delivery_line})
+                          "list": basis, "document_list": gross, "catalogue_sale_price": catalogue,
+                          "discount_basis": basis_status, "cost": round(cost, 2), "delivery": delivery_line})
     return {
         "number": number, "id": o["id"], "created": (dt(o.get("moment")) or started).date().isoformat(),
         "paid_date": closed.date().isoformat() if closed else None,
@@ -1832,7 +1870,7 @@ def main() -> None:
     print("МойСклад: заказы, платежи, номенклатура, контрагенты", flush=True)
     orders = required_rows(ms, "/entity/customerorder", {"order": "moment,desc"},
                            keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent",
-                                 "state", "salesChannel", "shipmentAddress", "shipmentAddressFull"))
+                                 "state", "salesChannel", "shipmentAddress", "shipmentAddressFull", "rate", "vatEnabled", "vatIncluded"))
     order_count = len(orders)
     paymentins = required_rows(ms, "/entity/paymentin", keep=("id", "moment", "created", "sum", "operations", "applicable"))
     payments = paymentins + required_rows(ms, "/entity/cashin", keep=("id", "moment", "operations", "applicable"))
@@ -1854,10 +1892,10 @@ def main() -> None:
     # those by default; fetch both sets without reactivating existing cards.
     products = {p["id"]: p for archived in ("false", "true")
                 for p in required_rows(ms, "/entity/product", {"filter": f"archived={archived}"},
-                                       keep=("id", "name", "pathName", "buyPrice"))}
+                                       keep=("id", "name", "pathName", "buyPrice", "salePrices"))}
     variants = {v["id"]: v for archived in ("false", "true")
                 for v in required_rows(ms, "/entity/variant", {"filter": f"archived={archived}"},
-                                       keep=("id", "name", "product", "characteristics"))}
+                                       keep=("id", "name", "product", "characteristics", "salePrices"))}
     services = {s["id"]: s for s in required_rows(ms, "/entity/service", keep=("id", "name"))}
     agents = {a["id"]: a for a in required_rows(ms, "/entity/counterparty",
                                                  keep=("id", "name", "phone"))}
@@ -1918,7 +1956,7 @@ def main() -> None:
         fresh_orders = required_rows(ms, "/entity/customerorder",
                                      {"filter": f"updated>={stamp}", "order": "moment,desc"},
                                      keep=("id", "name", "moment", "sum", "payedSum", "attributes", "agent", "state",
-                                           "salesChannel", "shipmentAddress", "shipmentAddressFull"))
+                                           "salesChannel", "shipmentAddress", "shipmentAddressFull", "rate", "vatEnabled", "vatIncluded"))
         fresh_payments = required_rows(ms, "/entity/paymentin", {"filter": f"updated>={stamp}"},
                                        keep=("id", "moment", "created", "sum", "operations", "applicable"))
         fresh_payments += required_rows(ms, "/entity/cashin", {"filter": f"updated>={stamp}"},
