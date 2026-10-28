@@ -616,3 +616,141 @@ def test_wants_visit_and_order_on_same_date_have_independent_keys(db):
     assert {j.kind for j in jobs}=={'wants_order','wants_visit'}
     assert next(j for j in jobs if j.kind=='wants_visit').state=='cancelled'
     assert next(j for j in jobs if j.kind=='wants_order').state=='ready'
+
+
+from app.stage_notifications import aware, review_dispatch, stage_due, REVIEW_BAUM, REVIEW_PYAT
+
+
+def review_form(stamp,status=142,old=76654894):
+    return {f'leads[status][0][{k}]':[str(v)] for k,v in {
+        'id':17,'status_id':status,'old_status_id':old,'pipeline_id':9601214,
+        'account_id':32417154,'last_modified':int(stamp.timestamp())}.items()}
+
+
+def review_cfg(cfg,**options):
+    return cfg.model_copy(update={'review_activated_at':int(NOW.timestamp())-10,**options})
+
+
+def review_job(db,c,cfg,store=4765787,stamp=NOW):
+    ingest(db,review_form(stamp),stamp,cfg)
+    j=db.scalar(select(StageJob).where(StageJob.status_id==142))
+    c.document=lead(142)
+    c.document['custom_fields_values']=[{'field_id':3158921,'values':[{'enum_id':store}]}] if store else []
+    c.contact={'id':123,'custom_fields_values':[{'field_id':3346485,'values':[{'value':'review-client'}]}]}
+    j.contact_id=123;j.plan=[{'transport':'telegram','channelId':'telegram','recipient':{'chatId':'review-client'}}];db.commit()
+    return j
+
+
+def test_review_queues_only_new_transition_and_waits_full_hour(db,cfg):
+    cfg=review_cfg(cfg);c=Fake([(201,{'messageId':'review-1'})]);j=review_job(db,c,cfg)
+    assert aware(j.check_at)==NOW+timedelta(hours=1)
+    run(db,j,c,cfg,now=NOW+timedelta(minutes=59,seconds=59))
+    assert not c.posts
+    run(db,j,c,cfg,now=NOW+timedelta(hours=1))
+    assert len(c.posts)==1 and c.posts[0]['text']==REVIEW_PYAT
+    assert j.state=='pending'
+    run(db,j,c,cfg,now=NOW+timedelta(hours=2))
+    assert len(c.posts)==1
+
+
+@pytest.mark.parametrize('store,body',[(4765787,REVIEW_PYAT),(4765789,REVIEW_BAUM)])
+def test_review_exact_store_link(db,cfg,store,body):
+    cfg=review_cfg(cfg);c=Fake([(201,{'messageId':'review-1'})]);j=review_job(db,c,cfg,store)
+    run(db,j,c,cfg,now=NOW+timedelta(hours=1))
+    assert c.posts[0]['text']==body
+    assert ('117054627870' in body)==(store==4765789)
+    assert ('138838694193' in body)==(store==4765787)
+
+
+@pytest.mark.parametrize('store',[None,4893873,5171717,999])
+def test_review_unknown_store_blocks_without_send(db,cfg,store):
+    cfg=review_cfg(cfg);c=Fake();j=review_job(db,c,cfg,store)
+    run(db,j,c,cfg,now=NOW+timedelta(hours=1))
+    assert j.state=='blocked' and not c.posts
+
+
+def test_review_exit_before_hour_cancels(db,cfg):
+    cfg=review_cfg(cfg);c=Fake();j=review_job(db,c,cfg)
+    c.document['status_id']=76654894
+    run(db,j,c,cfg,now=NOW+timedelta(hours=1))
+    assert j.state=='cancelled' and not c.posts
+
+
+def test_review_reentry_resets_hour_before_first_attempt(db,cfg):
+    cfg=review_cfg(cfg);c=Fake();j=review_job(db,c,cfg)
+    later=NOW+timedelta(minutes=40)
+    assert ingest(db,review_form(later),later,cfg)==1
+    assert aware(j.event_at)==later and aware(j.check_at)==later+timedelta(hours=1)
+    assert j.plan is None and j.contact_id is None
+    run(db,j,c,cfg,now=NOW+timedelta(hours=1))
+    assert not c.posts
+
+
+def test_review_duplicates_do_not_reset_hour_or_resend_after_attempt(db,cfg):
+    cfg=review_cfg(cfg);c=Fake([(201,{'messageId':'review-1'})]);j=review_job(db,c,cfg)
+    assert ingest(db,review_form(NOW),NOW+timedelta(minutes=1),cfg)==0
+    run(db,j,c,cfg,now=NOW+timedelta(hours=1))
+    later=NOW+timedelta(hours=2)
+    assert ingest(db,review_form(later),later,cfg)==0
+    assert aware(j.event_at)==NOW and len(c.posts)==1
+
+
+def test_review_historical_and_disabled_events_do_not_create_jobs(db,cfg):
+    assert ingest(db,review_form(NOW),NOW,cfg)==0
+    activated=review_cfg(cfg,review_activated_at=int(NOW.timestamp())+1)
+    assert ingest(db,review_form(NOW),NOW,activated)==0
+    assert not list(db.scalars(select(StageJob)))
+
+
+@pytest.mark.parametrize('hour,expected_day,expected_hour',[(8,24,10),(12,24,13),(19,25,10),(23,25,10)])
+def test_review_hour_then_nearest_working_window(cfg,hour,expected_day,expected_hour):
+    cfg=review_cfg(cfg)
+    event=datetime(2026,10,24,hour,tzinfo=MSK)
+    due=stage_due(142,event,cfg).astimezone(MSK)
+    assert (due.day,due.hour)==(expected_day,expected_hour)
+
+
+def test_review_can_follow_exact_hour_outside_window_when_requested(db,cfg):
+    cfg=review_cfg(cfg,review_respect_window=False);c=Fake([(201,{'messageId':'review-1'})])
+    event=datetime(2026,10,24,23,tzinfo=MSK)
+    j=review_job(db,c,cfg,stamp=event)
+    assert aware(j.check_at)==event+timedelta(hours=1)
+    run(db,j,c,cfg,now=event+timedelta(hours=1))
+    assert len(c.posts)==1
+
+
+def test_review_uncertain_result_never_falls_back(db,cfg):
+    cfg=review_cfg(cfg);c=Fake([httpx.ReadTimeout('lost')]);j=review_job(db,c,cfg)
+    j.plan=[*j.plan,{'transport':'whatsapp','channelId':'whatsapp','recipient':{'chatId':'79990000001'}}];db.commit()
+    run(db,j,c,cfg,now=NOW+timedelta(hours=1));run(db,j,c,cfg,now=NOW+timedelta(hours=2))
+    assert j.state=='uncertain' and len(c.posts)==1
+
+
+def test_review_store_change_during_preflight_uses_fresh_link(db,cfg):
+    cfg=review_cfg(cfg);c=Fake([(201,{'messageId':'review-1'})]);j=review_job(db,c,cfg)
+    original=c.get;reads=[]
+    def changing(path,**kwargs):
+        data=original(path,**kwargs)
+        if path.startswith('/api/v4/leads/'):
+            reads.append(path)
+            if len(reads)>1:return {**data,'custom_fields_values':[{'field_id':3158921,'values':[{'enum_id':4765789}]}]}
+        return data
+    c.get=changing;run(db,j,c,cfg,now=NOW+timedelta(hours=1))
+    assert c.posts[0]['text']==REVIEW_BAUM
+
+
+def test_review_guard_rejects_early_claim_even_if_check_at_corrupted(db,cfg):
+    cfg=review_cfg(cfg);c=Fake();j=review_job(db,c,cfg)
+    j.check_at=NOW;db.commit()
+    run(db,j,c,cfg,now=NOW+timedelta(minutes=30))
+    assert not c.posts and aware(j.check_at)==NOW+timedelta(hours=1)
+
+
+def test_review_failure_outside_window_respects_exact_hour_setting(db,cfg):
+    cfg=review_cfg(cfg,review_respect_window=False);c=Fake([(201,{'messageId':'review-1'})])
+    event=datetime(2026,10,24,23,tzinfo=MSK);j=review_job(db,c,cfg,stamp=event)
+    run(db,j,c,cfg,now=event+timedelta(hours=1))
+    db.add(ReminderEvent(key='review-error',message_id='review-1',status='error'));db.commit()
+    after=event+timedelta(hours=1,minutes=1)
+    reconcile(db,after,settings=cfg)
+    assert j.state=='ready' and aware(j.check_at)==after

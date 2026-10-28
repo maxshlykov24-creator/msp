@@ -20,7 +20,7 @@ from app.database import get_engine, get_session_factory
 from app.models import Base
 
 log = logging.getLogger(__name__)
-STAGES = {76655114: "delivered", 76655110: "shipped", 76666306: "in_store"}
+STAGES = {76655114: "delivered", 76655110: "shipped", 76666306: "in_store", 142: "review"}
 SOCIAL = {"vk", "avito", "instagram"}
 DIRECT = ("telegram", "whatsapp", "max")
 # Legacy Wazzup origins must be verified before enabling live.
@@ -48,6 +48,8 @@ class StageSettings(BaseSettings):
     vk_channel: str = ""
     avito_channel: str = ""
     instagram_channel: str = ""
+    review_activated_at: int = 0
+    review_respect_window: bool = True
 
     def live_ready(self):
         return (self.mode == "live" and self.activated_at > 0 and self.legacy_checked
@@ -106,23 +108,45 @@ def dispatch_time(now):
     return (local + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 
+def review_dispatch(now, settings):
+    if not settings.review_respect_window:
+        return now.astimezone(timezone.utc)
+    local = now.astimezone(MSK)
+    if 10 <= local.hour < 20:
+        return now.astimezone(timezone.utc)
+    opening = local.replace(hour=10, minute=0, second=0, microsecond=0)
+    if local.hour >= 20:
+        opening += timedelta(days=1)
+    return opening.astimezone(timezone.utc)
+
+
+def stage_due(status_id, event_at, settings):
+    return (review_dispatch(event_at + timedelta(hours=1), settings)
+            if status_id == 142 else dispatch_time(event_at))
+
+
 def ingest(db, form, now, settings=None):
     s = settings or StageSettings()
     if s.activated_at <= 0:
         return 0
     count = 0
     for status_id in STAGES:
-        cfg = MailSettings(status_id=status_id, activated_at=s.activated_at)
+        activation = s.review_activated_at if status_id == 142 else s.activated_at
+        if activation <= 0:
+            continue
+        cfg = MailSettings(status_id=status_id, activated_at=activation)
         for row in transitions(form, cfg, now):
             job = db.scalar(select(StageJob).where(StageJob.lead_id == row["lead_id"], StageJob.status_id == status_id).with_for_update())
             if job is None:
                 db.add(StageJob(lead_id=row["lead_id"], status_id=status_id, event_key=row["key"],
-                    event_at=row["source_at"], check_at=dispatch_time(row["source_at"])))
+                    event_at=row["source_at"], check_at=stage_due(status_id, row["source_at"], s)))
                 count += 1
             elif row["source_at"] > aware(job.event_at) and job.state in {"ready", "blocked", "cancelled"}:
                 if db.scalar(select(StageAttempt.id).where(StageAttempt.job_id == job.id).limit(1)) is None:
                     job.event_key, job.event_at = row["key"], row["source_at"]
-                    job.check_at, job.state, job.reason, job.plan = dispatch_time(row["source_at"]), "ready", "", None
+                    job.check_at, job.state, job.reason, job.plan = stage_due(status_id, row["source_at"], s), "ready", "", None
+                    if status_id == 142:
+                        job.contact_id = None
                     count += 1
     db.commit()
     return count
@@ -158,6 +182,8 @@ def record_messages(db, body):
 def render(lead, s):
     from app.reservation_reminders import first, values
     kind = STAGES[lead["status_id"]]
+    if kind == "review":
+        return render_review(lead, s)
     if kind == "delivered":
         return "Здравствуйте! Вас приветствует магазин мужских костюмов Mansband.\n\nВаша посылка прибыла в пункт выдачи, ждём вашей примерки!"
     if kind == "shipped":
@@ -260,7 +286,7 @@ def resolve_plan(db, c, lead, contact, s, r, *, calendar=False, calendar_job=Non
     return plan
 
 
-def reconcile(db, now, *, job_type=StageJob, attempt_type=StageAttempt, dispatch=dispatch_time):
+def reconcile(db, now, *, job_type=StageJob, attempt_type=StageAttempt, dispatch=dispatch_time, settings=None):
     from app.reservation_reminders import ReminderEvent, SUCCESS
     for a in db.scalars(select(attempt_type).where(attempt_type.state.in_(["inflight", "pending", "error", "unknown"]))):
         if not a.message_id:
@@ -275,16 +301,20 @@ def reconcile(db, now, *, job_type=StageJob, attempt_type=StageAttempt, dispatch
             a.state, job.state, job.reason = "sent", "sent", ""
         elif a.state != "error" and job.state not in {"sent", "cancelled"} and any(e.status == "error" for e in events):
             a.state, a.reason = "error", "confirmed_delivery_error"
-            job.state, job.reason, job.check_at = "ready", a.reason, dispatch(now)
+            retry_at = (review_dispatch(now, settings or StageSettings())
+                        if job_type is StageJob and job.status_id == 142 else dispatch(now))
+            job.state, job.reason, job.check_at = "ready", a.reason, retry_at
     db.commit()
 
 
 def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
     calendar = calendar_settings is not None
+    review = not calendar and job.status_id == 142
     certificate = calendar and job.kind in CERTIFICATE_KINDS
     attempt_type = CalendarAttempt if calendar else StageAttempt
     job_type = CalendarJob if calendar else StageJob
-    dispatch = (lambda stamp: calendar_dispatch(job, stamp)) if calendar else dispatch_time
+    dispatch = ((lambda stamp: calendar_dispatch(job, stamp)) if calendar else
+                ((lambda stamp: review_dispatch(stamp, s)) if review else dispatch_time))
     make_body = (lambda lead, _: render_calendar(lead, job, s)) if calendar else render
     def valid(lead):
         return calendar_valid(lead, job, calendar_settings) if calendar else (
@@ -292,6 +322,13 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
     from app.reservation_reminders import get_lead, primary_contact, REJECTED
     if not s.live_ready() or (calendar and not calendar_settings.live_ready()) or job.state not in {"ready", "blocked"} or aware(job.check_at) > now:
         return
+    if review:
+        if s.review_activated_at <= 0 or aware(job.event_at).timestamp() < s.review_activated_at:
+            return
+        if now < aware(job.event_at) + timedelta(hours=1):
+            job.check_at = stage_due(142, aware(job.event_at), s)
+            db.commit()
+            return
     if dispatch(now) != now:
         job.check_at = dispatch(now)
         db.commit()
@@ -310,7 +347,9 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
             if certificate:
                 job.plan = certificate_plan(db, c, lead, s, r, calendar_settings)
             else:
-                job.plan = resolve_plan(db, c, lead, c.get(f"/api/v4/contacts/{cid}"), s, r, **({"calendar": True, "calendar_job": job} if calendar else {}))
+                route_options = ({"calendar": True, "calendar_job": job} if calendar else
+                                 ({"calendar": True} if review else {}))
+                job.plan = resolve_plan(db, c, lead, c.get(f"/api/v4/contacts/{cid}"), s, r, **route_options)
             job.contact_id = cid
             db.commit()
         if certificate:
@@ -339,7 +378,7 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
                 job.state, job.reason = "cancelled", "stage_or_contact_changed"
                 db.commit()
                 return
-            if calendar:
+            if calendar or review:
                 from app.reservation_reminders import recipient, first
                 if certificate:
                     # The lead recipient is authoritative; never read the buyer's
@@ -373,6 +412,12 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
                 db.commit()
                 return
             current = (clock or utcnow)()
+            if review:
+                db.refresh(job)
+                if current < aware(job.event_at) + timedelta(hours=1):
+                    job.check_at = stage_due(142, aware(job.event_at), s)
+                    db.commit()
+                    return
             if dispatch(current) != current:
                 job.check_at, job.state = dispatch(current), "ready"
                 db.commit()
@@ -396,7 +441,7 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
             if response.status_code == 201 and result.get("messageId"):
                 a.message_id = str(result["messageId"])
                 a.state, job.state, job.reason = "pending", "pending", ""
-                db.commit(); reconcile(db, now, job_type=job_type, attempt_type=attempt_type, dispatch=dispatch)
+                db.commit(); reconcile(db, now, job_type=job_type, attempt_type=attempt_type, dispatch=dispatch, settings=s)
                 return
             code = str(result.get("error") or "")[:80]
             # Observed Wazzup 400 rejection on the owner test: no account exists
@@ -423,7 +468,7 @@ def tick(s):
             return
         c = None
         try:
-            now = utcnow(); reconcile(db, now)
+            now = utcnow(); reconcile(db, now, settings=s)
             r = ReminderSettings(); c = Clients(db, r)
             jobs = list(db.scalars(select(StageJob).where(StageJob.state.in_(["ready", "blocked"]),
                 StageJob.check_at <= now).order_by(StageJob.check_at).limit(20)))
@@ -449,7 +494,9 @@ async def worker(s):
 
 def summary(db):
     s = StageSettings()
-    return {"mode": s.mode, "ready": s.live_ready(), "calendar": {
+    return {"mode": s.mode, "ready": s.live_ready(),
+        "reviews": {"enabled": s.review_activated_at > 0, "activated_at": s.review_activated_at,
+                    "delay_seconds": 3600, "respect_window": s.review_respect_window}, "calendar": {
         "mode": CalendarSettings().mode, "ready": CalendarSettings().live_ready() and s.live_ready(),
         "extra_enabled": CalendarSettings().extra_enabled,
         "last_scan": calendar_scan, "jobs": [
@@ -975,3 +1022,23 @@ WANTS_VISIT = """Вас приветствует магазин мужских �
 Ранее вы интересовались нашим ассортиментом, подскажите, удалось ли запланировать время визита к нам?
 
 При необходимости, с радостью проконсультируем вас по позициям в наличие еще раз! Очень ждем вашей обратной связи🙌🏻"""
+
+
+REVIEW_PREFIX = """Спасибо большое, что доверились Mansband!
+
+Нам особенно важно услышать ваше мнение. Если вам всё понравилось, оставьте пожалуйста отзыв — это лучший комплимент для нашей команды.
+Ссылки для удобства представлены ниже:
+
+"""
+REVIEW_BAUM = REVIEW_PREFIX + "Магазин на Бауманской: https://yandex.ru/maps/org/mans_band/117054627870/reviews/?add-review=true&ll=37.678172%2C55.776188&z=16"
+REVIEW_PYAT = REVIEW_PREFIX + "Магазин на Новокузнецкой: https://yandex.ru/maps/org/mans_band/138838694193/reviews/?add-review=true&ll=37.627553%2C55.744024&z=16"
+
+
+def render_review(lead, settings):
+    from app.reservation_reminders import values
+    enums = {v.get('enum_id') for v in values(lead, settings.store_field)}
+    if enums == {settings.baumanskaya_enum}:
+        return REVIEW_BAUM
+    if enums == {settings.pyatnitskaya_enum}:
+        return REVIEW_PYAT
+    raise ValueError('missing_or_ambiguous_review_store')
