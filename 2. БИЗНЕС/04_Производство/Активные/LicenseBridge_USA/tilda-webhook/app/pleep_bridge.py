@@ -63,12 +63,17 @@ def bind_unique_phone(client, remote, thread_id, phone):
     if len(contacts) != 1:
         return False
     contact = client.get_contact(int(contacts[0]["id"]), with_="leads")
-    candidates = []
+    candidates, open_candidates = [], []
     for ref in (contact.get("_embedded") or {}).get("leads", []):
         lead = client.get_lead(int(ref["id"]))
-        if (lead and lead.get("status_id") not in (settings.status_won, settings.status_lost)
-                and lead.get("pipeline_id") in (settings.pipeline_id, settings.assembly_pipeline_id)):
+        if lead and lead.get("pipeline_id") in (settings.pipeline_id, settings.assembly_pipeline_id):
             candidates.append(int(lead["id"]))
+            if lead.get("status_id") not in (settings.status_won, settings.status_lost):
+                open_candidates.append(int(lead["id"]))
+    # A unique closed deal still needs manual robot control on that stage.
+    # Never choose arbitrarily among several historical deals.
+    if open_candidates:
+        candidates = open_candidates
     if len(candidates) != 1:
         return False
     actual = remote.get_thread(thread_id)
@@ -84,9 +89,12 @@ def bind_unique_phone(client, remote, thread_id, phone):
 
 def discover_waba():
     """Bounded background backfill, separate from the telephony event worker."""
-    if not settings.enable_pleep_control or settings.shadow_mode or not settings.pleep_waba_bot_id:
+    if not settings.enable_pleep_control or not settings.pleep_waba_bot_id:
         return
     with session_scope() as s:
+        from app.rollout import current_flags
+        if current_flags(s).shadow:
+            return
         row = s.get(PleepControlState, 0)
         checkpoint = dict(row.data) if row else {"after": "2026-01-01T00:00:00Z"}
         known = set(s.scalars(select(PleepThreadBinding.thread_id)).all())
@@ -221,7 +229,12 @@ def sync_one(client, remote, lead_id, threads):
         row = s.get(PleepControlState, lead_id)
         d = dict(row.data) if row else {}
     lead = client.get_lead(lead_id)
-    d["contact_ids"] = [int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts", [])]
+    contact_ids = [int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts", [])]
+    if "last_flag" in d and d.get("contact_ids") != contact_ids:
+        d["contact_ids"] = contact_ids
+        _save(lead_id, d)
+    else:
+        d["contact_ids"] = contact_ids
     flag = checkbox(lead)
     modes = [remote.get_thread(t)["message_handler"] for t in threads]
     actual = all(m == "AI" for m in modes)
@@ -288,7 +301,7 @@ def sync_one(client, remote, lead_id, threads):
 
 
 def run_sync(client):
-    if (not settings.enable_pleep_control or settings.shadow_mode
+    if (not settings.enable_pleep_control
             or not settings.pleep_control_field or not settings.pleep_control_status_field):
         return
     with session_scope() as s:

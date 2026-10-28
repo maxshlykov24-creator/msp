@@ -33,6 +33,8 @@ class Remote:
     def set_enabled(self, t, enabled, **kw):
         self.calls.append((t, enabled))
         self.mode = "AI" if enabled else "OPERATOR"
+    def close(self):
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -118,6 +120,31 @@ def test_signed_event_cannot_be_modified_or_replayed_late():
     assert not bridge.verify_signature(raw+b' ', '1000', sig, 'secret', now=1001)
     assert not bridge.verify_signature(raw, '1000', sig, 'secret', now=1301)
     assert not bridge.verify_signature(raw, 'invalid', sig, 'secret', now=1001)
+
+
+def test_worker_uses_runtime_rollout_flags_not_initial_shadow_config(session, monkeypatch):
+    from types import SimpleNamespace
+    from app.models import PleepThreadBinding
+    from app import rollout
+    session.add(PleepThreadBinding(thread_id="test", lead_id=1));session.commit()
+    monkeypatch.setattr(settings, "enable_pleep_control", True)
+    monkeypatch.setattr(settings, "shadow_mode", True)
+    monkeypatch.setattr(rollout, "current_flags", lambda s: SimpleNamespace(shadow=False))
+    monkeypatch.setattr(bridge, "PleepControlClient", lambda *a: Remote())
+    crm=CRM();crm.paginate=lambda *a, **kw: []
+    bridge.run_sync(crm)
+    assert crm.flag is True
+
+
+def test_unique_closed_deal_can_be_bound(fake, session):
+    from types import SimpleNamespace
+    from app.models import PleepThreadBinding
+    phone='+18185550100'
+    cid=fake.add_contact('Test',phone)
+    lid=fake.add_lead(cid,settings.pipeline_id,settings.status_lost)
+    remote=SimpleNamespace(get_thread=lambda t: {'phone':phone})
+    assert bridge.bind_unique_phone(fake,remote,'test',phone)
+    assert session.get(PleepThreadBinding,'test').lead_id == lid
 
 
 def test_timeout_is_visible_and_intent_survives(session):
