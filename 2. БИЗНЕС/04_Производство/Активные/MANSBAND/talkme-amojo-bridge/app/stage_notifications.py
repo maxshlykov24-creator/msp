@@ -184,7 +184,7 @@ def order_for(source):
     raise ValueError("unknown_conversation_origin")
 
 
-def resolve_plan(db, c, lead, contact, s, r, *, calendar=False):
+def resolve_plan(db, c, lead, contact, s, r, *, calendar=False, calendar_job=None):
     from app.reservation_reminders import first, recipient
     talks = c.get("/api/v4/talks", **{"filter[contact_id]": contact["id"], "limit": 250}).get("_embedded", {}).get("talks", [])
     if len(talks) >= 250:
@@ -198,16 +198,22 @@ def resolve_plan(db, c, lead, contact, s, r, *, calendar=False):
             msg = value.get("message") or {}
             if msg.get("talk_id") in talks:
                 latest.append((int(event["created_at"]), msg.get("origin")))
+    def origin_transport(origin):
+        if calendar and origin == "instagram_business":
+            return "instagram"
+        if calendar and origin and origin == CalendarSettings().website_origin:
+            return "website"
+        return ORIGINS.get(origin, origin if origin in set(DIRECT) | SOCIAL else "unknown")
     source = None
     if latest:
         stamp = max(x[0] for x in latest)
         origins = {x[1] for x in latest if x[0] == stamp}
-        mapped = {ORIGINS.get(origin, origin if origin in set(DIRECT) | SOCIAL else ("website" if calendar and origin == CalendarSettings().website_origin and bool(origin) else "unknown")) for origin in origins}
+        mapped = {origin_transport(origin) for origin in origins}
         if len(mapped) != 1 or "unknown" in mapped:
             raise ValueError("unknown_or_ambiguous_conversation_origin")
         source = mapped.pop()
     elif talks:
-        origins = {ORIGINS.get(t.get("origin"), "website" if calendar and t.get("origin") == CalendarSettings().website_origin and bool(t.get("origin")) else "unknown") for t in talks.values()}
+        origins = {origin_transport(t.get("origin")) for t in talks.values()}
         if len(origins) != 1 or "unknown" in origins:
             raise ValueError("no_unique_conversation_origin")
         source = origins.pop()
@@ -217,6 +223,16 @@ def resolve_plan(db, c, lead, contact, s, r, *, calendar=False):
     if not isinstance(channels, list):
         raise ValueError("invalid_channels_response")
     plan = []
+    preferred = None
+    if calendar_job is not None and calendar_job.kind == "meeting_followup":
+        yesterday = db.scalar(select(CalendarJob).where(CalendarJob.lead_id == calendar_job.lead_id,
+            CalendarJob.kind == "meeting_today", CalendarJob.target_date == calendar_job.target_date,
+            CalendarJob.contact_id == contact["id"], CalendarJob.state == "sent"))
+        if yesterday is not None and (not latest or max(x[0] for x in latest) <= aware(yesterday.due_at).timestamp()):
+            sent = db.scalar(select(CalendarAttempt).where(CalendarAttempt.job_id == yesterday.id, CalendarAttempt.state == "sent"))
+            if sent is not None and sent.transport in DIRECT:
+                source = sent.transport
+                preferred = next((route for route in yesterday.plan or [] if route["transport"] == source), None)
     for transport in (order_for(None if source == "website" else source) if not calendar or source != "vk" else list(DIRECT)):
         if calendar and transport == "vk":
             continue
@@ -235,6 +251,8 @@ def resolve_plan(db, c, lead, contact, s, r, *, calendar=False):
             candidates = [x for x in channels if x.get("transport") == ("tgapi" if transport == "telegram" else transport)]
             if len(candidates) == 1:
                 channel = candidates[0]["channelId"]
+        if preferred and preferred["transport"] == transport and preferred["recipient"] == dest:
+            channel = preferred["channelId"]
         plan.append({"transport": transport, "channelId": channel, "recipient": dest})
     return plan
 
@@ -285,11 +303,11 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
         if not cid or (job.contact_id and job.contact_id != cid):
             raise ValueError("ambiguous_or_changed_contact")
         if job.plan is None:
-            job.plan = resolve_plan(db, c, lead, c.get(f"/api/v4/contacts/{cid}"), s, r, **({"calendar": True} if calendar else {}))
+            job.plan = resolve_plan(db, c, lead, c.get(f"/api/v4/contacts/{cid}"), s, r, **({"calendar": True, "calendar_job": job} if calendar else {}))
             job.contact_id = cid
             db.commit()
     except ValueError as exc:
-        job.state, job.reason, job.check_at = "blocked", str(exc)[:100], now + timedelta(hours=1)
+        job.state, job.reason, job.check_at = "blocked", str(exc)[:100], now + (timedelta(seconds=30) if calendar else timedelta(hours=1))
         db.commit()
         return
     resp = c.wz.get("/channels"); resp.raise_for_status()
@@ -309,10 +327,19 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
                 job.state, job.reason = "cancelled", "stage_or_contact_changed"
                 db.commit()
                 return
+            if calendar:
+                from app.reservation_reminders import recipient, first
+                contact = c.get(f"/api/v4/contacts/{job.contact_id}")
+                current_dest = (recipient(contact, route["transport"], r) if route["transport"] in DIRECT else
+                    ({"chatId": first(contact, SOCIAL_FIELDS[route["transport"]]).strip()} if first(contact, SOCIAL_FIELDS[route["transport"]]).strip() else None))
+                if current_dest != route["recipient"]:
+                    job.state, job.reason = "cancelled", "recipient_changed"
+                    db.commit()
+                    return
             try:
                 body = make_body(fresh, s)
             except ValueError as exc:
-                job.state, job.reason, job.check_at = "blocked", str(exc)[:100], now + timedelta(hours=1)
+                job.state, job.reason, job.check_at = "blocked", str(exc)[:100], now + (timedelta(seconds=30) if calendar else timedelta(hours=1))
                 db.commit()
                 return
             current = (clock or utcnow)()
@@ -392,7 +419,11 @@ async def worker(s):
 
 def summary(db):
     s = StageSettings()
-    return {"mode": s.mode, "ready": s.live_ready(), "jobs": [
+    return {"mode": s.mode, "ready": s.live_ready(), "calendar": {
+        "mode": CalendarSettings().mode, "ready": CalendarSettings().live_ready() and s.live_ready(),
+        "last_scan": calendar_scan, "jobs": [
+            {"lead_id": j.lead_id, "kind": j.kind, "date": j.target_date.isoformat(), "due_at": aware(j.due_at).isoformat(), "state": j.state, "reason": j.reason}
+            for j in db.scalars(select(CalendarJob).order_by(CalendarJob.id.desc()).limit(50))]}, "jobs": [
         {"lead_id": j.lead_id, "status_id": j.status_id, "state": j.state, "reason": j.reason}
         for j in db.scalars(select(StageJob).order_by(StageJob.id.desc()).limit(30))]}
 
@@ -540,3 +571,179 @@ def send_calendar(db, job, c, s, r, settings, now, *, clock=None):
     send_job(db, job, c, s, r, now, clock=guarded_clock, calendar_settings=settings)
 
 
+MEETING_PYAT = """Вас приветсвует Mansband👋🏻
+
+Напоминаем, что сегодня у вас назначена примерка в нашем магазине по адресу:
+
+г. Москва, ул. Пятницкая, д. 8
+
+Парковка бесплатная, позвоните за 5 минут до приезда
+
+Как добраться:
+От м. Новокузнецкая идите вдоль ул. Пятницкая по направлению движения машин (около 3 минут).
+Между «Core mio» и «INCANTO» зайдите в арку, затем поверните налево — железная дверь, 3 этаж.
+
+Режим работы:
+Будни: 12:00-22:00
+Выходные: 11:00-22:00
+
+Примерка проводится без записи в удобное для вас время🙌🏻
+
+Телефон: 8 931 009 02 51"""
+MEETING_BAUM = """Вас приветсвует Mansband👋🏻
+
+Напоминаем, что сегодня у вас назначена примерка в нашем магазине по адресу:
+
+г. Москва, Спартаковская пл., д. 14, стр. 2
+Парковка бесплатная, позвоните за 5 минут до приезда.
+
+Как добраться:
+От м. Бауманская пройдите вдоль ул. Бауманская (около 5 минут).
+Между 13 и 14 домами увидите чёрные ворота и шлагбаум, зайдите на территорию через крыльцо с надписью «Central Street».
+Идите прямо до магазина Nº3105 (в конце, по правую сторону).
+
+
+Режим работы:
+Будни: 12:00-22:00
+Выходные: 11:00-22:00
+
+Примерка проводится без записи в удобное для вас время🙌🏻
+
+Телефон: 8 931 009 02 51"""
+MEETING_BOTH = """Вас приветсвует Mansband👋🏻
+
+Напоминаем, что сегодня у вас назначена примерка! Ждем вас в любом магазине нашей сети, вся необходимая информация ниже👇🏻
+
+Адрес №1:
+
+г. Москва, ул. Пятницкая, д. 8
+
+Парковка бесплатная, позвоните за 5 минут до приезда
+
+Как добраться:
+От м. Новокузнецкая идите вдоль ул. Пятницкая по направлению движения машин (около 3 минут).
+Между «Core mio» и «INCANTO» зайдите в арку, затем поверните налево — железная дверь, 3 этаж.
+
+Адрес №2:
+
+г. Москва, Спартаковская пл., д. 14, стр. 2
+
+Парковка бесплатная, позвоните за 5 минут до приезда.
+
+Как добраться:
+От м. Бауманская пройдите вдоль ул. Бауманская (около 5 минут).
+Между 13 и 14 домами увидите чёрные ворота и шлагбаум, зайдите на территорию через крыльцо с надписью «Central Street».
+Идите прямо до магазина Nº3105 (в конце, по правую сторону).
+
+Режим работы магазинов:
+Будни: 12:00-22:00
+Выходные: 11:00-22:00
+
+Примерка проводится без записи на любом адресе в удобное для вас время🙌🏻
+
+Телефон: 8 931 009 02 51"""
+RENTAL_PYAT = """Вас приветсвует Mansband!
+Напоминаем, что забронированный для аренды костюм ждет вас завтра с 12:00 до 20:00, по адресу:
+
+г. Москва, ул. Пятницкая, д. 8
+
+Парковка бесплатная, позвоните за 2 минуты до приезда
+
+Как добраться:
+От м. Новокузнецкая идите вдоль ул. Пятницкая по направлению движения машин (около 3 минут).
+Между «Core mio» и «INCANTO» зайдите в арку, затем поверните налево — железная дверь, 3 этаж.
+
+Уточняем, что срок аренды 3 дня, включая день получения костюма🙌🏻 """
+RENTAL_BAUM = """Вас приветствует магазин Mansband!
+
+Напоминаем, что забронированный для аренды костюм ждет вас завтра с 12:00 до 20:00, по адресу:
+
+г. Москва, Спартаковская пл., д. 14, стр. 2
+Парковка бесплатная, позвоните за 2 минуты до приезда.
+
+Как добраться:
+От м. Бауманская пройдите вдоль ул. Бауманская (около 5 минут).
+Между 13 и 14 домами увидите чёрные ворота и шлагбаум, зайдите на территорию через крыльцо с надписью «Central Street».
+Идите прямо до магазина Nº3105 (в конце, по правую сторону).
+
+Уточняем, что срок аренды 3 дня, включая день получения костюма🙌🏻 """
+RETURN_PYAT = """Здравствуйте! Напоминаем, что сегодня - день возврата арендованного костюма, будем ждать вас в любое удобное время с 12 до 22:00.
+
+Адрес: г. Москва, ул. Пятницкая, д. 8"""
+RETURN_BAUM = """Здравствуйте! Напоминаем, что сегодня - день возврата арендованного костюма, будем ждать вас в любое удобное время с 12 до 22:00
+
+Адрес:
+г. Москва, Спартаковская пл., д. 14, стр.2"""
+
+
+def render_calendar(lead, job, s):
+    from app.reservation_reminders import values
+    if job.kind == "meeting_followup":
+        return "Здравствуйте! Удалось ли посетить нас вчера, подобрали желаемый образ?🙌🏻"
+    store = values(lead, s.store_field)
+    enums = {v.get("enum_id") for v in store}
+    if enums == {s.pyatnitskaya_enum}:
+        return {"meeting_today": MEETING_PYAT, "rental_pickup": RENTAL_PYAT, "rental_return": RETURN_PYAT}[job.kind]
+    if enums == {s.baumanskaya_enum}:
+        return {"meeting_today": MEETING_BAUM, "rental_pickup": RENTAL_BAUM, "rental_return": RETURN_BAUM}[job.kind]
+    if job.kind == "meeting_today" and (not store or enums == {4893873}):
+        return MEETING_BOTH
+    raise ValueError("missing_or_ambiguous_store")
+
+
+calendar_scan = {}
+
+
+def tick_calendar(s, settings):
+    from app.reservation_reminders import Clients, ReminderSettings
+    if not settings.live_ready() or not s.live_ready():
+        return
+    with get_engine().connect() as lock, get_session_factory()() as db:
+        if not lock.execute(text("SELECT pg_try_advisory_lock(674001926)")).scalar():
+            return
+        c = None
+        try:
+            now = utcnow()
+            reconcile(db, now, job_type=CalendarJob, attempt_type=CalendarAttempt, dispatch=lambda stamp: stamp)
+            r = ReminderSettings(); c = Clients(db, r)
+            if not calendar_scan.get("at") or now.timestamp() - calendar_scan["at"] >= 30:
+                # Standard stage filters only: custom-field filtering is unavailable
+                # in this account. Finish every page before modifying the queue.
+                leads = []
+                statuses = (settings.meeting_status, settings.paid_status, settings.rented_status)
+                params = {"limit": 250, "with": "contacts"}
+                for i, status in enumerate(statuses):
+                    params[f"filter[statuses][{i}][pipeline_id]"] = 9601214
+                    params[f"filter[statuses][{i}][status_id]"] = status
+                for page in range(1, r.max_pages + 1):
+                    data = c.get("/api/v4/leads", **params, page=page)
+                    batch = data.get("_embedded", {}).get("leads", [])
+                    leads.extend(batch)
+                    if not data.get("_links", {}).get("next") and len(batch) < 250:
+                        break
+                else:
+                    raise RuntimeError("incomplete_calendar_scan")
+                result = sync_calendar(db, leads, settings, utcnow())
+                calendar_scan.update(at=utcnow().timestamp(), **result)
+            jobs = list(db.scalars(select(CalendarJob).where(CalendarJob.state.in_(["ready", "blocked"]),
+                CalendarJob.check_at <= utcnow()).order_by(CalendarJob.check_at)))
+            for job in jobs:
+                try:
+                    send_calendar(db, job, c, s, r, settings, utcnow())
+                except Exception as exc:
+                    db.rollback()
+                    log.error("Calendar notification failed: %s", type(exc).__name__)
+        finally:
+            if c:
+                c.close()
+            lock.execute(text("SELECT pg_advisory_unlock(674001926)"))
+
+
+async def calendar_worker(s):
+    settings = CalendarSettings()
+    while True:
+        try:
+            await asyncio.to_thread(tick_calendar, s, settings)
+        except Exception as exc:
+            log.error("Calendar worker failed: %s", type(exc).__name__)
+        await asyncio.sleep(5)

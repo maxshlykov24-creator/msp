@@ -443,14 +443,20 @@ async def lifespan(_: FastAPI):
     task = asyncio.create_task(worker(s))
     mail_task = asyncio.create_task(certificate_mail.worker(mail_settings))
     stage_task = asyncio.create_task(stage_notifications.worker(stage_notifications.StageSettings()))
+    calendar_task = asyncio.create_task(stage_notifications.calendar_worker(stage_notifications.StageSettings()))
     try:
         yield
     finally:
         task.cancel()
         mail_task.cancel()
         stage_task.cancel()
+        calendar_task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await calendar_task
         except asyncio.CancelledError:
             pass
         try:
