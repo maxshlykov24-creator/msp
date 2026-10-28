@@ -601,8 +601,7 @@ def get_amo() -> tuple[list[dict], dict]:
     if status != 200:
         raise RuntimeError(f"amo pipeline: HTTP {status}")
     stages = sorted(pipeline.get("_embedded", {}).get("statuses", []), key=lambda s: s["sort"])
-    sales_leads = [lead for lead in leads if lead.get("pipeline_id") == lib.PIPELINE_SALES_NEW
-                   and lead.get("responsible_user_id") != lib.USER_POLINA]
+    sales_leads = [lead for lead in leads if lead.get("pipeline_id") == lib.PIPELINE_SALES_NEW]
     tasks = []
     lead_ids = {lead["id"] for lead in sales_leads}
     tasks = [t for t in pages("/api/v4/tasks", "tasks")
@@ -622,7 +621,7 @@ def get_amo() -> tuple[list[dict], dict]:
             "order": amo.cf(lead, lib.FIELD_MS_ORDER_NUM).strip(),
         })
     return result, {"open": sum(t.get("is_completed") is False for t in tasks), "sampled": len(tasks),
-                    "excluded_marketing_owner": len(leads) - len(sales_leads),
+                    "excluded_marketing_owner": 0, "scope": "all_pipeline_leads",
                     "pipeline_name": pipeline["name"], "pipeline_id": pipeline["id"],
                     "source_total": len(leads), "collected_at": datetime.now(TZ).isoformat(),
                     "stages": [{"id": s["id"], "name": s["name"]} for s in stages]}
@@ -702,7 +701,7 @@ def verified_historical_ms_import(lead: dict) -> bool:
 
 def get_amo_conversion_events(leads: list[dict]) -> dict:
     """Cache all account status/create events so later pipeline entrants retain history."""
-    leads = [lead for lead in leads if not verified_ms_order_origin(lead)]
+    leads = [lead for lead in leads if not verified_historical_ms_import(lead)]
     amo = DashboardAmo()
     until = int(time.time())
     since = min((l['created_at'] for l in leads), default=until) - 1
@@ -788,17 +787,43 @@ def amo_conversion_path(lead: dict, events: list[dict]) -> dict:
         changes.append({'at': e['created_at'], 'before': (before['pipeline_id'], before['id']),
                         'after': (after['pipeline_id'], after['id'])})
     current = (lib.PIPELINE_SALES_NEW, lead['status'])
-    path = [changes[0]['before']] if changes else [current]
-    stamp = created[0]['created_at']
+    # API timestamps have second precision. IDs are not transition order.
+    # Reconstruct only a unique chain of observed edges, backwards from current.
+    groups = defaultdict(list)
     for change in changes:
-        if change['at'] < stamp or change['before'] != path[-1]:
-            row['reason'] = 'Разрыв последовательности этапов'
+        if change['at'] < created[0]['created_at']:
+            row['reason'] = 'Переход раньше создания сделки'
             return row
-        path.append(change['after'])
-        stamp = change['at']
-    if path[-1] != current:
-        row['reason'] = 'Текущий этап не совпал с историей'
-        return row
+        groups[change['at']].append(change)
+    ordered = []
+    cursor = current
+    for stamp in sorted(groups, reverse=True):
+        edges = groups[stamp]
+        solutions = []
+        budget = [10000]
+        def walk(end, remaining, backwards):
+            budget[0] -= 1
+            if budget[0] <= 0 or len(solutions) > 1:
+                return
+            if not remaining:
+                solutions.append(list(reversed(backwards)))
+                return
+            for index in remaining:
+                edge = edges[index]
+                if edge['after'] == end:
+                    walk(edge['before'], remaining - {index}, backwards + [edge])
+        if len(edges) <= 20:
+            walk(cursor, set(range(len(edges))), [])
+        if len(solutions) != 1 or budget[0] <= 0:
+            row['reason'] = ('Неоднозначный порядок переходов в одну секунду'
+                             if len(solutions) > 1 or len(edges) > 20 or budget[0] <= 0
+                             else 'Разрыв последовательности этапов')
+            return row
+        chain = solutions[0]
+        ordered = chain + ordered
+        cursor = chain[0]['before']
+    changes = ordered
+    path = [changes[0]['before']] + [e['after'] for e in changes] if changes else [current]
     row.update(complete=True, path=[str(stage) for pipeline, stage in path if pipeline == lib.PIPELINE_SALES_NEW],
                events=[{'at': e['at'], 'before': str(e['before'][1]) if e['before'][0] == lib.PIPELINE_SALES_NEW else None,
                         'after': str(e['after'][1]) if e['after'][0] == lib.PIPELINE_SALES_NEW else None} for e in changes])

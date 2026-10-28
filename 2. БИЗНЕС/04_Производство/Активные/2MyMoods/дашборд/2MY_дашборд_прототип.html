@@ -510,6 +510,7 @@
   .card .hint{font-size:12px;font-weight:400;color:var(--mute);margin-bottom:20px;line-height:1.65}
   .conversion-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:22px 0 18px}
   .conversion-flow-label{grid-column:1 / -1}
+  .conversion-quality{font-size:12px;line-height:1.7;color:var(--mute);margin:12px 0}
   .conversion-controls label{display:flex;flex-direction:column;gap:7px;color:var(--mute);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .conversion-controls .pick{font-size:12.5px;font-weight:500;letter-spacing:0;text-transform:none}
   #conversion-summary{margin:10px 0 18px}
@@ -1045,7 +1046,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Текущие этапы amoCRM</h3>
-      <div class="hint">Все текущие сделки воронки «Продажи 2MY», независимо от даты создания. Полина исключена. Период и товарные фильтры не применяются. <span id="funnel-hint"></span></div>
+      <div class="hint">Все текущие сделки воронки «Продажи 2MY», независимо от даты создания. Все ответственные включены. Период и товарные фильтры не применяются. <span id="funnel-hint"></span></div>
       <div id="funnel"></div>
     </div>
     <div class="card">
@@ -1057,8 +1058,9 @@
 
   <div class="card" id="conversion-card">
     <h3>Конверсия между этапами amoCRM</h3>
-    <div class="hint">История этапов воронки «Продажи 2MY». Поток определяется источником сделки в amoCRM. Заявки и заказы из интеграции считаются отдельно. Период — дата создания сделки; переходы учитываются до последнего обновления. В расчёт заявок входят сделки, прошедшие «Новую заявку», в расчёт заказов — прошедшие «Ждёт оплаты». Все строки прослеживают только эту группу. Процент — доля сделок, достигших целевого этапа после исходного; повторные заходы не увеличивают количество, пропущенные этапы не додумываются. Остальные фильтры страницы здесь не действуют.</div>
+    <div class="hint">История сделок, которые сейчас находятся в воронке «Продажи 2MY». Поток определяется источником сделки в amoCRM. Заявки и заказы из интеграции считаются отдельно. Период — дата создания сделки; переходы учитываются до последнего обновления. В расчёт заявок входят сделки, прошедшие «Новую заявку», в расчёт заказов — прошедшие «Ждёт оплаты». Все строки прослеживают только эту группу. Процент — доля сделок, достигших целевого этапа после исходного; повторные заходы не увеличивают количество, пропущенные этапы не додумываются. Остальные фильтры страницы здесь не действуют. Расчёт по отдельным сделкам amoCRM: заказ, созданный другой сделкой, не считается переходом заявки. Это не сквозная конверсия клиента в покупку.</div>
     <div class="conversion-controls"><label class="conversion-flow-label">Поток<select id="conversion-flow"></select></label><label>От этапа<select id="conversion-from"></select></label><label>До этапа<select id="conversion-to"></select></label></div>
+    <div id="conversion-quality" class="conversion-quality" role="status"></div>
     <div id="conversion-summary"></div>
     <div class="scroll-x"><table><thead><tr><th>Переход</th><th>Были на этапе</th><th>Дошли до целевого</th><th>Конверсия</th></tr></thead><tbody id="conversion"></tbody></table></div>
   </div>
@@ -1413,7 +1415,14 @@ function stageConversion(orders,history,fromStage,toStage,anchor){
  const path=o=>o.path.slice(o.path.indexOf(anchor));
  const pair=(a,b)=>{const entered=cohort.filter(o=>path(o).includes(a));const reached=a===b?[]:entered.filter(o=>{const p=path(o);return p.slice(p.indexOf(a)+1).includes(b)});return {from:a,to:b,entered:entered.length,reached:reached.length,enteredOrders:entered,reachedOrders:reached,rate:entered.length&&a!==b?(100*reached.length/entered.length).toFixed(1).replace('.',',')+'%':'—'};};
  const anchorIndex=history.stages.findIndex(s=>s.id===anchor);
- return {rows:history.pairs.filter(([a])=>history.stages.findIndex(s=>s.id===a)>=anchorIndex).map(([a,b])=>({label:names.get(a)+' → '+names.get(b),...pair(a,b)})),overall:pair(fromStage,toStage),full:pair(anchor,history.finish),checked:cohort.length,cohort,noAnchor,excluded,total:orders.length};
+ const stageIndex=id=>history.stages.findIndex(s=>s.id===id);
+ const pairs=new Map(history.pairs.map(p=>[p.join('|'),p]));
+ for(const o of cohort)for(const event of o.events||[]){
+  const a=event.before,b=event.after;
+  if(stageIndex(a)>=anchorIndex&&stageIndex(b)>stageIndex(a))pairs.set(a+'|'+b,[a,b]);
+ }
+ const actualPairs=[...pairs.values()].sort((a,b)=>stageIndex(a[0])-stageIndex(b[0])||stageIndex(a[1])-stageIndex(b[1]));
+ return {rows:actualPairs.filter(([a])=>history.stages.findIndex(s=>s.id===a)>=anchorIndex).map(([a,b])=>({label:names.get(a)+' → '+names.get(b),...pair(a,b)})),overall:pair(fromStage,toStage),full:pair(anchor,history.finish),checked:cohort.length,cohort,noAnchor,excluded,total:orders.length};
 }
 function showConversionOrders(title,rows,transition){
  const names=new Map((data.amo_conversion.available_stages||[]).map(s=>[s.id,s.name]));
@@ -1635,7 +1644,7 @@ function refresh(){
  const leads=data.leads.filter(l=>l.created>=state.from&&l.created<=state.to);
  const fallbackStages=[[88727566,'Неразобранное'],[88727570,'Новая заявка'],[88727574,'Взята в работу'],[88727578,'Лист ожидания'],[88727582,'Запланирован визит'],[88727586,'Ждёт оплаты'],[88727590,'Оплачен'],[88727594,'В производстве'],[88727598,'На сборке'],[88727602,'Отправлен'],[142,'Успешно'],[143,'Закрыто без успеха']];
  const stages=data.tasks.stages?.map(s=>[Number(s.id),s.name])||fallbackStages;
- el('funnel-hint').textContent=`В срезе: ${num(data.leads.length)} сделок; исключено по Полине: ${num(data.tasks.excluded_marketing_owner||0)}. Обновлено: ${data.tasks.collected_at||data.generated}.`;
+ el('funnel-hint').textContent=`В срезе: ${num(data.leads.length)} сделок; ${data.tasks.scope==='all_pipeline_leads'?'все ответственные включены':'старый срез: исключено по ответственному '+num(data.tasks.excluded_marketing_owner||0)}. Обновлено: ${data.tasks.collected_at||data.generated}.`;
  el('funnel').innerHTML=stages.map(([id,label])=>`<div class="step"><div class="row"><span class="nm">${esc(label)}</span><span class="nums">${num(data.leads.filter(l=>l.status===id).length)}</span></div></div>`).join('');
  const amoHistory=data.amo_conversion;
  const amoStages=amoHistory?.available_stages||[];
@@ -1649,6 +1658,14 @@ function refresh(){
  for(const [id,fallback] of [['conversion-from',anchor],['conversion-to',amoHistory?.finish]]){const e=el(id),previous=e.value;e.innerHTML=amoStages.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');e.value=!flowChanged&&amoStages.some(s=>s.id===previous)?previous:(fallback||'');}
  const fromStage=el('conversion-from').value,toStage=el('conversion-to').value;
  const conversion=stageConversion(flowLeads,amoHistory,fromStage,toStage,anchor);
+
+ const quality=el('conversion-quality');
+ if(conversion){
+  const reasons=Object.entries(group(conversion.excluded,o=>o.reason||'История не подтверждена')).map(([reason,rows])=>esc(reason)+': '+num(rows.length)).join('; ');
+  quality.innerHTML=`В потоке за период: <b>${num(conversion.total)}</b>. В расчёте от «${esc(stageNameForQuality(anchor))}»: <b>${num(conversion.checked)}</b>. <button class="conversion-proof" data-quality="excluded">Неподтверждённая история: ${num(conversion.excluded.length)}</button>. <button class="conversion-proof" data-quality="noAnchor">Не проходили исходный этап: ${num(conversion.noAnchor.length)}</button>. История обновлена: ${esc(amoHistory.to||'—')}. Считаются отдельные сделки текущей воронки, не клиенты; заказ в другой сделке не является переходом заявки.${reasons?'<br>Причины исключения: '+reasons+'. Проценты рассчитаны только по подтверждённой части.':''}`;
+  quality.onclick=e=>{const key=e.target.closest('[data-quality]')?.dataset.quality;if(key)showConversionOrders(key==='excluded'?'Не вошли: история не подтверждена':'Не вошли: не проходили исходный этап',conversion[key]);};
+ }else{quality.textContent='';quality.onclick=null;}
+ function stageNameForQuality(id){return amoStages.find(s=>s.id===id)?.name||'—';}
  const conversionPct=x=>x.rate+' ('+num(x.reached)+' из '+num(x.entered)+')';
  const stageName=id=>amoStages.find(s=>s.id===id)?.name||'—';
  const fullLabel=stageName(anchor)+' → '+stageName(amoHistory?.finish);
