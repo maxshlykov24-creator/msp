@@ -252,9 +252,42 @@ class Engine:
     def config(self):
         with self.db() as db:
             row = db.execute("SELECT value FROM kv WHERE key='config'").fetchone()
-        return json.loads(row[0]) if row else {'enabled': False, 'delay': 5, 'factories': [], 'states': {}}
+            snapshots = {r['kind']: json.loads(r['body']) for r in db.execute(
+                "SELECT kind,body FROM catalogues WHERE kind IN ('counterparty','store')")}
+        cfg = json.loads(row[0]) if row else {'enabled': False, 'delay': 5, 'factories': [], 'states': {}}
+        agents = snapshots.get('counterparty')
+        if agents is None or any('tags' not in agent for agent in agents):
+            return cfg
+        stores = {s['id']: s for s in snapshots.get('store', []) if not s.get('archived')}
+        previous = cfg.get('factories', [])
+        factories = []
+        for agent in agents:
+            if agent.get('archived') or not any(str(t).strip().casefold() == 'производство' for t in agent.get('tags', [])):
+                continue
+            matches = [f for f in previous if f.get('agent') == agent['id']]
+            if not matches:
+                matches = [f for f in previous if not f.get('agent') and f.get('name','').strip().casefold() == agent.get('name','').strip().casefold()]
+            legacy = matches[0] if len(matches) == 1 else {}
+            store = agent.get('production_store') or ''
+            factories.append({'id': legacy.get('id', agent['id']), 'name': agent['name'], 'agent': agent['id'],
+                              'agent_name': agent['name'], 'store': store, 'store_name': stores.get(store, {}).get('name', ''),
+                              'store_ok': bool(store and store in stores)})
+        counts = defaultdict(int)
+        for factory in factories:
+            if factory['store']:
+                counts[factory['store']] += 1
+        for factory in factories:
+            if factory['store'] and counts[factory['store']] > 1:
+                factory['store_ok'] = False
+                factory['store_issue'] = 'Склад указан у нескольких фабрик'
+        cfg['factories'] = sorted(factories, key=lambda f: f['name'].casefold())
+        return cfg
 
     def set_config(self, config):
+        # Справочник фабрик редактируется в МоемСкладе, а локальные ключи норм сохраняются.
+        with self.db() as db:
+            previous = db.execute("SELECT value FROM kv WHERE key='config'").fetchone()
+        config['factories'] = json.loads(previous[0]).get('factories', []) if previous else config.get('factories', [])
         # Включение возможно только после настройки складов, статусов и даты старта.
         if config.get('enabled'):
             if os.environ.get('PRODUCTION_ALLOW_WRITES') != '1':
@@ -264,10 +297,12 @@ class Engine:
             if not config.get('reason_attribute') or not config.get('reason_production'):
                 raise Review('Не настроен справочник причин списания')
         config['delay'] = max(3, min(60, int(config.get('delay', 5))))
-        for item in config.get('factories', []) if config.get('enabled') else []:
+        for item in self.config().get('factories', []) if config.get('enabled') else []:
             for field in ('agent', 'store'):
                 if not ID.fullmatch(str(item.get(field, ''))):
                     raise Review('Выбери контрагента и склад каждой фабрики')
+            if item.get('store_ok') is False:
+                raise Review('Проверь склад фабрики в МоемСкладе')
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO kv VALUES(?,?)', ('config', json.dumps(config, ensure_ascii=False)))
 
@@ -508,6 +543,8 @@ class Engine:
                 'pathName': r.get('pathName') or r.get('product', {}).get('pathName', ''),
                 'model': r.get('product', {}).get('name', r['name']),
                 'companyType': r.get('companyType', ''),
+                'tags': r.get('tags', []), 'archived': r.get('archived', False),
+                'production_store': next((ident(a.get('value')) for a in r.get('attributes', []) if str(a.get('name','')).strip().casefold() == 'склад' and a.get('type') == 'store'), ''),
                 'characteristics': r.get('characteristics', []),
                 'parent_id': r.get('product', {}).get('id', ''),
                 'composition': composition(r)} for r in rows]
@@ -516,6 +553,18 @@ class Engine:
             for kind, rows in snapshots.items():
                 db.execute('INSERT OR REPLACE INTO catalogues VALUES(?,?,?)',
                            (kind, updated, json.dumps(rows, ensure_ascii=False)))
+            saved = db.execute("SELECT value FROM kv WHERE key='config'").fetchone()
+            if saved:
+                cfg = json.loads(saved['value'])
+                for factory in cfg.get('factories', []):
+                    if factory.get('agent'):
+                        continue
+                    matches = [a for a in snapshots['counterparty'] if not a.get('archived')
+                               and a.get('name','').strip().casefold() == factory.get('name','').strip().casefold()
+                               and any(str(t).strip().casefold() == 'производство' for t in a.get('tags', []))]
+                    if len(matches) == 1:
+                        factory['agent'] = matches[0]['id']
+                db.execute("UPDATE kv SET value=? WHERE key='config'", (json.dumps(cfg, ensure_ascii=False),))
         self.catalogue_error = ''
         self.catalogue_retry_at = 0
 
@@ -644,8 +693,9 @@ class Engine:
             if not first or first['agent'] != ident(doc.get('agent')):
                 raise Review('Изготовитель приёмки не совпал с маршрутом изделия')
             for stage in recipe['stages']:
-                if stage['factory'] not in factories:
-                    raise Review('Не настроен склад этапа производства')
+                factory = factories.get(stage['factory'])
+                if not factory or not ID.fullmatch(str(factory.get('store', ''))) or factory.get('store_ok') is False:
+                    raise Review('Проверь склад фабрики этапа производства в МоемСкладе')
             lines.append({'assortment': row['assortment'], 'quantity': row['quantity'],
                           'recipe': copy.deepcopy(recipe)})
         return {'source': doc, 'fingerprint': fingerprint(doc, positions), 'lines': lines,

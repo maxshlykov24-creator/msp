@@ -205,6 +205,22 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(rows['M']['history'][0]['actor'], 'Общий аккаунт')
         self.assertTrue(any('работа, ₽: 0 → 250' in c for c in rows['M']['history'][0]['changes']))
 
+    def test_factories_from_moysklad_group_and_store(self):
+        factory_id, store_id, other_id = uid(), uid(), uid()
+        self.e.set_config({'enabled': False, 'factories': [{'id': factory_id, 'name': 'Factory', 'agent': '', 'store': ''}]})
+        rows = [{'id': self.product, 'name': 'Factory', 'tags': ['производство'], 'companyType': 'individual', 'production_store': store_id},
+                {'id': other_id, 'name': 'Other', 'tags': [], 'companyType': 'legal', 'production_store': ''}]
+        with self.e.db() as db:
+            db.execute('INSERT INTO catalogues VALUES(?,?,?)', ('counterparty', 1, json.dumps(rows)))
+            db.execute('INSERT INTO catalogues VALUES(?,?,?)', ('store', 1, json.dumps([{'id': store_id, 'name': 'Склад'}])))
+        f = self.e.config()['factories']
+        self.assertEqual(len(f), 1)
+        self.assertEqual((f[0]['id'], f[0]['agent'], f[0]['store'], f[0]['store_ok']), (factory_id, self.product, store_id, True))
+        cfg = self.e.config()
+        cfg['factories'] = []
+        self.e.set_config(cfg)
+        self.assertEqual(self.e.config()['factories'][0]['id'], factory_id)
+
     def test_group_applies_two_sizes_atomically(self):
         a = self.e.save_recipe(self.group_recipe(self.product, 'S', 2))
         b = self.e.save_recipe(self.group_recipe(uid(), 'M', 4))
