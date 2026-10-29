@@ -76,6 +76,23 @@ class ProductionTests(unittest.TestCase):
                 'sourceStore': ref('store', self.factory), 'targetStore': ref('store', self.company),
                 'positions': [{'assortment': ref('product', self.material), 'quantity': 3}]}
 
+    def test_norm_display_units_convert_to_stock_units(self):
+        r = self.e.save_recipe({'name': 'Test', 'stages': [{'materials': [
+            {'unit': 'кг', 'input_unit': 'г', 'input_quantity': 250}]}]})
+        self.assertEqual(r['stages'][0]['materials'][0]['quantity'], .25)
+        r = self.e.save_recipe(r)
+        self.assertEqual(r['stages'][0]['materials'][0]['quantity'], .25)
+
+    def test_norm_rejects_incompatible_units(self):
+        with self.assertRaisesRegex(Review, 'Единица'):
+            self.e.save_recipe({'approved': True, 'stages': [{'materials': [
+                {'unit': 'м', 'input_unit': 'г', 'input_quantity': 250}]}]})
+
+    def test_norm_duplicate_product_is_rejected(self):
+        self.e.save_recipe({'name': 'First', 'assortment_id': self.product})
+        with self.assertRaisesRegex(Review, 'уже есть норма'):
+            self.e.save_recipe({'name': 'Second', 'assortment_id': self.product})
+
     def test_partial_return_remainder(self):
         self.assertEqual(remaining({'a': Decimal(10)}, {'a': Decimal(4)}), {'a': Decimal(6)})
 

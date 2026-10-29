@@ -167,6 +167,7 @@ class Engine:
             db.executescript('''
             CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY,value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS recipes(id TEXT PRIMARY KEY,version INTEGER,body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS recipe_history(id TEXT,version INTEGER,at TEXT,body TEXT,PRIMARY KEY(id,version));
             CREATE TABLE IF NOT EXISTS jobs(kind TEXT,id TEXT,due REAL,status TEXT,error TEXT,
               attempts INTEGER DEFAULT 0,PRIMARY KEY(kind,id));
             CREATE TABLE IF NOT EXISTS operations(key TEXT PRIMARY KEY,kind TEXT,doc_id TEXT,
@@ -219,10 +220,34 @@ class Engine:
 
     def recipes(self):
         with self.db() as db:
-            return sorted([json.loads(r[0]) for r in db.execute('SELECT body FROM recipes')], key=lambda r: r.get('name', ''))
+            result = sorted([json.loads(r[0]) for r in db.execute('SELECT body FROM recipes')], key=lambda r: r.get('name', ''))
+            for recipe in result:
+                recipe['history'] = [dict(h) for h in db.execute(
+                    'SELECT version,at FROM recipe_history WHERE id=? ORDER BY version DESC', (recipe['id'],))]
+            return result
 
     def save_recipe(self, recipe):
         key = str(recipe.get('id') or uuid.uuid4())
+        recipe.pop('history', None)
+        # Display units never become stock units without dimensional conversion.
+        units = {'г': ('mass', 1), 'грамм': ('mass', 1), 'гр': ('mass', 1),
+                 'кг': ('mass', 1000), 'м': ('length', 1), 'метр': ('length', 1),
+                 'см': ('length', .01), 'шт': ('piece', 1), 'шт.': ('piece', 1)}
+        for stage in recipe.get('stages', []):
+            for material in stage.get('materials', []):
+                if 'input_quantity' not in material:
+                    continue
+                source = str(material.get('input_unit', '')).lower().strip()
+                target = str(material.get('unit', '')).lower().strip()
+                if source == target and source:
+                    factor = 1
+                elif source in units and target in units and units[source][0] == units[target][0]:
+                    factor = units[source][1] / units[target][1]
+                elif recipe.get('approved'):
+                    raise Review('Единица нормы не соответствует единице карточки материала')
+                else:
+                    continue
+                material['quantity'] = float(dec(material['input_quantity']) * dec(factor))
         if recipe.get('approved'):
             if not ID.fullmatch(recipe.get('assortment_id', '')) or not recipe.get('stages'):
                 raise Review('Для утверждения выбери изделие и этапы')
@@ -236,10 +261,23 @@ class Engine:
                         raise Review('Материалом должен быть товар или модификация')
                 if dec(stage.get('work_cost', 0)) < 0:
                     raise Review('Стоимость работы не может быть отрицательной')
+            if recipe.get('editor_schema') == 2:
+                packs = [m for stage in recipe['stages'] for m in stage['materials'] if m.get('role') == 'packaging']
+                if len(packs) != 1 or not packs[0].get('id') or dec(packs[0].get('quantity', 0)) <= 0:
+                    raise Review('Выбери один зип-пакет и укажи его расход')
             if not recipe.get('zip_checked'):
-                raise Review('Подтверди норму зип-пакета в составе материалов')
+                raise Review('Добавь зип-пакет и его расход в блоке Производственная упаковка')
         with self.db() as db:
-            old = db.execute('SELECT version FROM recipes WHERE id=?', (key,)).fetchone()
+            if recipe.get('assortment_id'):
+                for candidate in db.execute('SELECT id,body FROM recipes WHERE id<>?', (key,)):
+                    if json.loads(candidate['body']).get('assortment_id') == recipe['assortment_id']:
+                        raise Review('Для этой карточки изделия уже есть норма. Открой существующую.')
+            old = db.execute('SELECT version,body FROM recipes WHERE id=?', (key,)).fetchone()
+            if old and recipe.get('version') is not None and recipe['version'] != old['version']:
+                raise Review('Норма уже изменена. Обнови страницу перед сохранением.')
+            if old:
+                db.execute('INSERT OR IGNORE INTO recipe_history VALUES(?,?,?,?)',
+                           (key, old['version'], now(), old['body']))
             recipe.update(id=key, version=(old[0] if old else 0) + 1)
             db.execute('INSERT OR REPLACE INTO recipes VALUES(?,?,?)',
                        (key, recipe['version'], json.dumps(recipe, ensure_ascii=False)))
@@ -286,10 +324,27 @@ class Engine:
             raise Review('Неизвестный справочник')
         if len(query) > 100:
             raise Review('Слишком длинный запрос')
-        params = {'search': query} if query else {}
-        rows = self.ms.get('/entity/' + kind, limit=100, **params).get('rows', [])
+        if kind == 'assortment':
+            cached = getattr(self, '_catalogue_cache', None)
+            if not cached or time.time() - cached[0] > 300:
+                rows = self.ms.rows('/entity/assortment', expand='uom,product,product.uom')
+                self._catalogue_cache = (time.time(), rows)
+            else:
+                rows = cached[1]
+            needle = query.casefold().strip()
+            if needle:
+                rows = [r for r in rows if needle in ' '.join(str(r.get(k, '')) for k in
+                        ('name', 'code', 'article')).casefold() or needle in
+                        str(r.get('product', {}).get('article', '')).casefold()]
+        else:
+            params = {'search': query} if query else {}
+            rows = self.ms.get('/entity/' + kind, limit=100, **params).get('rows', [])
         return [{'id': r['id'], 'name': r['name'], 'meta': r['meta'],
-                 'uom': r.get('uom'), 'code': r.get('code', '')} for r in rows]
+                 'uom': r.get('uom') or r.get('product', {}).get('uom'), 'code': r.get('code', ''),
+                 'article': r.get('article') or r.get('product', {}).get('article', ''),
+                 'pathName': r.get('pathName') or r.get('product', {}).get('pathName', ''),
+                 'model': r.get('product', {}).get('name', r['name']),
+                 'characteristics': r.get('characteristics', [])} for r in rows]
 
     def require_stock(self, store, positions):
         rows = self.ms.rows('/report/stock/all', filter='store=' + BASE + '/entity/store/' + store,
