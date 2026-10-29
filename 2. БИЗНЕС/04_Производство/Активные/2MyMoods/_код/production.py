@@ -359,13 +359,23 @@ class Engine:
                     raise Review('Каталог получен не полностью')
                 if offset >= expected:
                     break
+            # Only the named composition field is exposed; other custom fields stay private.
+            def composition(item):
+                for source in (item, item.get('product', {})):
+                    for attr in source.get('attributes', []):
+                        if str(attr.get('name', '')).strip().casefold() == 'состав':
+                            value = attr.get('value', '')
+                            return str(value.get('name', '')) if isinstance(value, dict) else str(value or '')
+                return ''
             # Keep only fields required by selectors, without contacts/payment details.
             snapshots[kind] = [{'id': r['id'], 'name': r['name'], 'meta': r['meta'],
                 'uom': r.get('uom') or r.get('product', {}).get('uom'), 'code': r.get('code', ''),
                 'article': r.get('article') or r.get('product', {}).get('article', ''),
                 'pathName': r.get('pathName') or r.get('product', {}).get('pathName', ''),
                 'model': r.get('product', {}).get('name', r['name']),
-                'characteristics': r.get('characteristics', [])} for r in rows]
+                'characteristics': r.get('characteristics', []),
+                'parent_id': r.get('product', {}).get('id', ''),
+                'composition': composition(r)} for r in rows]
         updated = time.time()
         with self.db() as db:
             for kind, rows in snapshots.items():

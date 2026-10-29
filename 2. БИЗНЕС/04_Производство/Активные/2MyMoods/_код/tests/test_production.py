@@ -163,6 +163,23 @@ class ProductionTests(unittest.TestCase):
             release.set()
             self.assertTrue(finished.wait(1))
 
+    def test_catalogue_keeps_composition_from_product_for_variant(self):
+        class AssortmentMS:
+            def get(inner, path, **kwargs):
+                product = {'id': self.product, 'name': 'Item', 'attributes': [
+                    {'name': 'Состав', 'value': '100% шерсть'},
+                    {'name': 'Служебное поле', 'value': 'не отображать'}]}
+                row = {'id': self.material, 'name': 'Item (S)',
+                    'meta': {'type': 'variant'}, 'product': product,
+                    'characteristics': [{'name': 'размер', 'value': 'S'}]}
+                return {'meta': {'size': 1}, 'rows': [row]}
+        self.e.client = AssortmentMS()
+        self.e.refresh_catalogues_now()
+        row = self.e.catalogue('assortment')[0]
+        self.assertEqual(row['composition'], '100% шерсть')
+        self.assertEqual(row['parent_id'], self.product)
+        self.assertNotIn('Служебное поле', str(row))
+
     def test_partial_return_remainder(self):
         self.assertEqual(remaining({'a': Decimal(10)}, {'a': Decimal(4)}), {'a': Decimal(6)})
 
