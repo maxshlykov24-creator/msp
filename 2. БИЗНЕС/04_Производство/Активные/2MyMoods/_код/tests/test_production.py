@@ -76,6 +76,33 @@ class ProductionTests(unittest.TestCase):
                 'sourceStore': ref('store', self.factory), 'targetStore': ref('store', self.company),
                 'positions': [{'assortment': ref('product', self.material), 'quantity': 3}]}
 
+    def test_analytics_cache_separates_stores_and_strips_query_from_id(self):
+        calls = []
+        def get(path, **params):
+            calls.append(params)
+            return {'meta': {'size': 1}, 'rows': [{'meta': {'href': 'https://example/entity/product/' + self.product + '?expand=supplier'},
+                    'stock': 2, 'reserve': 1, 'price': 12345, 'salePrice': 20000, 'supplier': {'secret': 'private'}}]}
+        self.ms.get = get
+        first = self.e.analytics(self.company)
+        self.assertEqual(first['rows'][0]['id'], self.product)
+        self.assertEqual(first['rows'][0]['cost'], 12345)
+        self.assertNotIn('supplier', first['rows'][0])
+        self.assertEqual(self.e.analytics(self.company), first)
+        self.assertEqual(len(calls), 1)
+        self.e.analytics(self.factory)
+        self.assertEqual(len(calls), 2)
+        self.assertIn(self.factory, calls[-1]['filter'])
+        with self.assertRaises(Review):
+            self.e.analytics('invalid-store')
+
+    def test_analytics_incomplete_refresh_does_not_replace_cache(self):
+        self.ms.get = lambda *a, **kw: {'meta': {'size': 0}, 'rows': []}
+        first = self.e.analytics()
+        self.ms.get = lambda *a, **kw: {'meta': {'size': 2}, 'rows': []}
+        with self.assertRaises(Review):
+            self.e.analytics(force=True)
+        self.assertEqual(self.e.analytics(), first)
+
     def test_norm_display_units_convert_to_stock_units(self):
         r = self.e.save_recipe({'name': 'Test', 'stages': [{'materials': [
             {'unit': 'кг', 'input_unit': 'г', 'input_quantity': 250}]}]})

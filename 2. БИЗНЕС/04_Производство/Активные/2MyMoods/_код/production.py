@@ -608,6 +608,36 @@ class Engine:
             if stock.get(key, Decimal(0)) < qty:
                 raise Review('Недостаточно материала/изделий на складе: ' + key)
 
+    def analytics(self, store='', force=False):
+        if store:
+            ref('store', store)
+        with self.db() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS analytics_cache(scope TEXT PRIMARY KEY, updated REAL, body TEXT NOT NULL)')
+            cached = db.execute('SELECT updated,body FROM analytics_cache WHERE scope=?', (store,)).fetchone()
+        if cached and not force and time.time() - cached['updated'] < self.CATALOGUE_TTL:
+            return {'updated': cached['updated'], 'rows': json.loads(cached['body'])}
+        params = {'stockMode': 'all'}
+        if store:
+            params['filter'] = 'store=' + BASE + '/entity/store/' + store
+        rows, offset = [], 0
+        while True:
+            page = self.ms.get('/report/stock/all', limit=1000, offset=offset, **params)
+            chunk = page.get('rows', [])
+            if not chunk and offset < page.get('meta', {}).get('size', offset):
+                raise Review('Отчёт остатков получен не полностью. Повтори обновление.')
+            rows.extend(chunk)
+            offset += len(chunk)
+            if offset >= page.get('meta', {}).get('size', offset):
+                break
+        safe = [{'id': r.get('id') or urllib.parse.urlparse(r.get('meta', {}).get('href', '')).path.rsplit('/', 1)[-1],
+                 'name': r.get('name', ''), 'stock': r.get('stock', 0), 'reserve': r.get('reserve', 0),
+                 'cost': r.get('price'), 'sale': r.get('salePrice')} for r in rows]
+        updated = time.time()
+        with self.db() as db:
+            db.execute('INSERT OR REPLACE INTO analytics_cache VALUES(?,?,?)',
+                       (store, updated, json.dumps(safe, ensure_ascii=False)))
+        return {'updated': updated, 'rows': safe}
+
     def stock(self, store):
         ref('store', store)
         rows = self.ms.rows('/report/stock/all', filter='store=' + BASE + '/entity/store/' + store)
@@ -1072,6 +1102,9 @@ def route(handler, method):
             if path == '/api/production/stock':
                 qs = urllib.parse.parse_qs(parsed.query)
                 result = {'rows': service.stock(qs.get('store', [''])[0])}
+            elif path == '/api/production/analytics':
+                qs = urllib.parse.parse_qs(parsed.query)
+                result = service.analytics(qs.get('store', [''])[0], qs.get('refresh', [''])[0] == '1')
             elif path == '/api/production/catalogues':
                 qs = urllib.parse.parse_qs(parsed.query)
                 result = service.catalogue_snapshot(not qs.get('status'))
