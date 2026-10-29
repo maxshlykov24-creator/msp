@@ -1,0 +1,103 @@
+from datetime import datetime, timedelta
+from decimal import Decimal
+from uuid import uuid4
+import pytest
+from sqlalchemy.orm import Session
+from app.cutting import calculate, MSK
+from app.db import Entity, User, transaction
+from app.service import DomainError, execute
+from test_app import setup, balance
+
+
+def payload(engine):
+    with Session(engine) as s:
+        calc = calculate(s, {'location':'own', 'item_ids':['s']})
+    today = datetime.now(MSK).date()
+    return dict(title='Проверка', location='own', products=[{'item_id':'s','quantity':'10'}], materials=[{'item_id':'cloth','quantity':'2'}],
+        cutting=dict(schema=1, due_on=str(today+timedelta(days=1)), available_on=str(today+timedelta(days=2)), assignee='owner', technology_confirmed=True,
+          calculation=calc, manual_reason='Подтверждённая ручная потребность', quantities={'s':'10'},
+          groups=[dict(model='Лонг скимс',ratio='100% S',material='cloth',quantity='2',products={'s':'10'})]))
+
+
+def test_issue_atomic_retry_and_coverage_after_partial(setup):
+    engine,u,cmd=setup
+    p=payload(engine); op=str(uuid4())
+    issued=cmd('task.issue',p,op)
+    assert cmd('task.issue',p,op)==issued
+    assert balance(engine,'cloth')['reserved']==2
+    fact=cmd('task.confirm',dict(id=issued['id'],version=issued['version'],confirm_actual=True,products=[dict(item_id='s',quantity=4)],materials=[dict(item_id='cloth',quantity=1)]))
+    with Session(engine) as s:
+        c=calculate(s,dict(location='own',item_ids=['s']))
+    assert c['rows'][0]['future']=='10'
+    assert len(c['rows'][0]['coverage'])==2
+    cmd('task.cancel',dict(id=issued['id'],version=fact['version']))
+    assert balance(engine)['frozen']==4
+    assert balance(engine,'cloth')['reserved']==0
+
+
+def test_stale_calculation_and_inconsistent_groups_rejected(setup):
+    engine,u,cmd=setup
+    p=payload(engine)
+    cmd('stock.adjust',dict(item_id='s',location='own',version=balance(engine)['version'],physical=11))
+    with pytest.raises(DomainError,match='изменились'):cmd('task.issue',p)
+    p=payload(engine);p['cutting']['groups'][0]['products']['s']='11'
+    with pytest.raises(DomainError,match='не совпадают'):cmd('task.issue',p)
+    assert balance(engine,'cloth')['reserved']==0
+
+
+def test_missing_sources_never_zero_and_negative_net(setup):
+    engine,u,cmd=setup
+    p=payload(engine); c=p['cutting']['calculation']
+    assert c['rows'][0]['net'] is None and c['rows'][0]['recommendation'] is None
+    with transaction(engine) as s:
+        for platform in ('wb','ozon'):
+            s.add(Entity(id=platform,kind='sales_window',version=1,data=dict(platform=platform,start=c['parameters']['start'],end=c['parameters']['end'],at='2026-10-29T00:00:00Z',complete=True,verified=True,covered_items=['s'],events=[dict(item_id='s',kind='return',quantity=2,date=c['parameters']['end'])])))
+    with Session(engine) as s:c=calculate(s,dict(location='own',item_ids=['s']))
+    assert c['rows'][0]['net']==-4 and c['rows'][0]['recommendation']==0
+
+
+def test_cutter_cannot_issue_and_empty_draft_reserves_nothing(setup):
+    engine,u,cmd=setup
+    with transaction(engine) as s:
+        cutter=User(id='cutter',name='Cutter',role='cutter',active=True,token_hash='x');s.add(cutter)
+    with pytest.raises(DomainError,match='Нет права'):
+        execute(engine,cutter,str(uuid4()),'task.issue',payload(engine),'Test')
+    p=payload(engine);p['products']=[];p['materials']=[];p['cutting']['groups']=[]
+    cmd('task.save',p)
+    assert balance(engine,'cloth')['reserved']==0
+
+
+def test_unknown_date_not_included_until_explicit_choice(setup):
+    engine,u,cmd=setup
+    p=payload(engine);p['cutting']['available_on']=''
+    issued=cmd('task.issue',p)
+    with Session(engine) as s:
+        c=calculate(s,dict(location='own',item_ids=['s']))
+        assert c['rows'][0]['future']=='0'
+        c=calculate(s,dict(location='own',item_ids=['s'],include_uncertain=[issued['id']]))
+        assert c['rows'][0]['future']=='10'
+
+
+def test_sales_import_deduplicates_and_preserves_returns_date(setup):
+    from app.sales import store_window, wb_events
+    engine,u,cmd=setup
+    p=payload(engine);dates=p['cutting']['calculation']['parameters']
+    events,missing=wb_events([dict(date=dates['end']+'T23:30:00',saleID='R1',barcode='001'),dict(date=dates['end']+'T23:30:00',saleID='R1',barcode='001')],dates['start'],dates['end'],{'001':['s']})
+    assert missing==0 and events[0]['kind']=='return'
+    data=dict(platform='wb',start=dates['start'],end=dates['end'],at='2026-10-29T00:00:00Z',complete=True,verified=True,covered_items=['s'],events=events)
+    store_window(engine,data);store_window(engine,data)
+    with Session(engine) as s:
+        row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0]
+        assert row['platforms']['wb']['returns']==1 and row['net'] is None
+    assert balance(engine)['free']==10
+
+
+def test_issue_tolerance_and_stable_document_identity(setup):
+    engine,u,cmd=setup
+    p=payload(engine);p['new_id']=str(uuid4())
+    p['cutting']['quantities']['s']='100'
+    with pytest.raises(DomainError,match='допуска'):cmd('task.issue',p)
+    p['cutting']['quantities']['s']='10'
+    cmd('task.issue',p)
+    with pytest.raises(DomainError,match='существует'):cmd('task.issue',p)
+    assert balance(engine,'cloth')['reserved']==2

@@ -294,6 +294,8 @@ class Engine:
                                 other['stages'][i]['work_cost'] = stage.get('work_cost', 0)
                                 changed = True
                     if changed:
+                        db.execute('INSERT OR IGNORE INTO recipe_history VALUES(?,?,?,?)',
+                                   (other['id'], row['version'], now(), row['body']))
                         other['version'] = row['version'] + 1
                         db.execute('UPDATE recipes SET version=?,body=? WHERE id=?',
                                    (other['version'], json.dumps(other, ensure_ascii=False), row['id']))

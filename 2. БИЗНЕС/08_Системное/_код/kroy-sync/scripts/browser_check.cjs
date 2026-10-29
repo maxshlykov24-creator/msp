@@ -80,6 +80,25 @@ const assert=require('node:assert/strict');
    if(width===390)await page.screenshot({path:'.runtime/catalog-mobile.png'});
    checked.push(width);
   }
+  await page.getByRole('navigation').getByRole('button',{name:'Крой',exact:true}).click();
+  assert.equal(await page.getByRole('navigation').getByRole('button',{name:'Планирование',exact:true}).count(),0);
+  await page.getByRole('heading',{name:'Задания на крой',exact:true}).waitFor();
+  await page.screenshot({path:'.runtime/cut-register-live.png'});
+  await page.getByRole('button',{name:'+ Задание',exact:true}).click();
+  await page.locator('.cut-picker summary').first().click();
+  await page.getByRole('button',{name:'Выбрать все варианты',exact:true}).first().click();
+  await page.getByRole('button',{name:'Рассчитать потребность',exact:true}).click();
+  await page.getByRole('button',{name:'Применить рекомендации',exact:true}).waitFor();
+  for(const theme of ['light','dark']){
+   await page.getByRole('button',{name:theme==='light'?'Светлая тема':'Тёмная тема',exact:true}).click();
+   for(const width of [390,768,1440]){
+    await page.setViewportSize({width,height:950});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'Cut overflow '+width);
+    await page.screenshot({path:'.runtime/cut-live-'+theme+'-'+width+'.png'});
+   }
+  }
+  await page.getByRole('button',{name:'Светлая тема',exact:true}).click();
+  page.once('dialog',dialog=>dialog.accept());
   await page.reload();
   await page.getByLabel('Личный ключ доступа').waitFor();
   assert.equal(await page.locator('html').getAttribute('data-theme'),'light');

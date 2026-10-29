@@ -9,14 +9,14 @@ from sqlalchemy import select
 from .db import Balance, Document, Entity, Item, Movement, Operation, Outbox, transaction
 
 PERMISSIONS = {
-    'owner': {'catalog', 'adjust', 'cut', 'freeze', 'count', 'orders', 'finance', 'settings', 'export'},
+    'owner': {'cut_plan', 'catalog', 'adjust', 'cut', 'freeze', 'count', 'orders', 'finance', 'settings', 'export'},
     'warehouse': {'adjust', 'freeze', 'count', 'orders'},
     'cutter': {'cut'}, 'viewer': set(),
 }
 COMMAND_RIGHT = {
-    'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
-    'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut',
-    'task.reverse_fact': 'adjust', 'order.reserve': 'orders', 'fbo.reserve': 'orders', 'fbo.resolve': 'adjust', 'task.approve': 'cut', 'task.revise': 'cut', 'task.confirm': 'cut', 'task.cancel': 'cut',
+    'task.save': 'cut_plan', 'task.issue': 'cut_plan', 'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
+    'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut_plan',
+    'task.reverse_fact': 'adjust', 'order.reserve': 'orders', 'fbo.reserve': 'orders', 'fbo.resolve': 'adjust', 'task.approve': 'cut_plan', 'task.revise': 'cut_plan', 'task.confirm': 'cut', 'task.cancel': 'cut_plan',
     'count.create': 'count', 'count.scan': 'count', 'count.set': 'count', 'count.resolve': 'count', 'count.post': 'adjust',
     'order.create': 'orders', 'order.ship': 'orders', 'order.cancel': 'orders',
     'return.receive': 'orders', 'fbo.create': 'orders', 'fbo.dispatch': 'orders',
@@ -131,6 +131,9 @@ def execute(engine, user, op_id, command, payload, reason):
         from .db import User
         actor = s.get(User, user.id)
         require(actor is not None and actor.active and COMMAND_RIGHT[command] in PERMISSIONS.get(actor.role, set()), 'Доступ отозван', 403)
+        if command == 'task.confirm' and actor.role == 'cutter':
+            task = entity(s, payload['id'], 'task')
+            require(not task.data.get('assignee') or task.data['assignee'] == actor.id, 'Задание назначено другому сотруднику', 403)
         old = s.get(Operation, op_id)
         if old:
             require(old.fingerprint == fingerprint, 'ID операции уже использован с другим содержанием')
@@ -206,6 +209,32 @@ def dispatch(s, doc, command, p):
             d['until'], d['reminded'] = deadline(p['until']), False
         save(e, d)
         return {'id': e.id, 'version': e.version}
+    if command in ('task.save', 'task.issue'):
+        from .cutting import metadata, validate_issue
+        from .db import now
+        meta = metadata(s, p)
+        products = lines(s, p['products'], 'garment', allow_empty=command == 'task.save')
+        materials = lines(s, p['materials'], 'material', allow_empty=True)
+        if p.get('id'):
+            e = entity(s, p['id'], 'task', p['version'])
+            require(e.data['status'] == 'draft', 'Редактировать здесь можно только черновик')
+            d = copy.deepcopy(e.data)
+        else:
+            UUID(p.get('new_id', doc))
+            e = create_entity(s, p.get('new_id', doc), 'task', {})
+            d = {'created_at': now().isoformat(), 'number': 'КР-' + doc[:8].upper(), 'facts': []}
+        if command == 'task.issue':
+            validate_issue(s, p, meta)
+            require(materials, 'Укажи расход ткани')
+            for line in materials:
+                q = Decimal(line['quantity'])
+                move(s, doc, line['item_id'], p['location'], {'free': -q, 'reserved': q})
+        d.update(title=p.get('title') or 'Задание на крой', location=p['location'], products=products, materials=materials,
+                 remaining_products=products, remaining_materials=materials, cutting=meta,
+                 assignee=meta.get('assignee', ''), due_on=meta.get('due_on', ''), available_on=meta.get('available_on', ''),
+                 status='approved' if command == 'task.issue' else 'draft')
+        save(e, d)
+        return {'id': e.id, 'version': e.version, 'status': d['status']}
     if command == 'task.create':
         products = lines(s, p['products'], 'garment')
         materials = lines(s, p['materials'], 'material', allow_empty=True)
@@ -218,6 +247,7 @@ def dispatch(s, doc, command, p):
         d = copy.deepcopy(e.data)
         if command == 'task.approve':
             require(d['status'] == 'draft', 'Утверждать можно только черновик')
+            require(not d.get('cutting'), 'Выдай новое задание через проверку расчёта')
             require(d['materials'], 'До утверждения укажи материал и расход в его единице')
             for line in d['materials']:
                 q = Decimal(line['quantity'])
@@ -245,6 +275,7 @@ def dispatch(s, doc, command, p):
                 d['remaining_' + key] = [{'item_id': i, 'quantity': str(q)} for i, q in remaining.items()]
             require(d['remaining_products'], 'Для закрытия используй подтверждение или отмену остатка')
             d['title'] = p.get('title', d['title'])
+            if d.get('cutting'): d['cutting']['layout_outdated'] = True
         elif command == 'task.cancel':
             require(d['status'] in ('draft', 'approved', 'partial'), 'Задание уже закрыто')
             if d['status'] != 'draft':
@@ -269,7 +300,7 @@ def dispatch(s, doc, command, p):
                     if bucket == 'frozen':
                         create_entity(s, doc + ':' + line['item_id'], 'freeze', {
                             'item_id': line['item_id'], 'location': d['location'], 'remaining': str(q),
-                            'until': until, 'mode': 'manual', 'task_id': e.id, 'reminded': False})
+                            'until': until, 'mode': 'manual', 'task_id': e.id, 'reminded': False, 'available_on': d.get('available_on', '')})
                 d[key] = [{'item_id': k, 'quantity': str(v)} for k, v in rest.items() if v]
             d['facts'].append(doc)
             if not d['remaining_products']:

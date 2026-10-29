@@ -93,6 +93,17 @@ class ProductionTests(unittest.TestCase):
         with self.assertRaisesRegex(Review, 'уже есть норма'):
             self.e.save_recipe({'name': 'Second', 'assortment_id': self.product})
 
+    def test_norm_stale_editor_cannot_overwrite_and_history_retained(self):
+        r = self.e.save_recipe({'name': 'First'})
+        stale = copy.deepcopy(r)
+        r['name'] = 'Changed'
+        self.e.save_recipe(r)
+        with self.assertRaisesRegex(Review, 'уже изменена'):
+            self.e.save_recipe(stale)
+        saved = self.e.recipes()[0]
+        self.assertEqual(saved['name'], 'Changed')
+        self.assertEqual(saved['history'][0]['version'], 1)
+
     def test_partial_return_remainder(self):
         self.assertEqual(remaining({'a': Decimal(10)}, {'a': Decimal(4)}), {'a': Decimal(6)})
 

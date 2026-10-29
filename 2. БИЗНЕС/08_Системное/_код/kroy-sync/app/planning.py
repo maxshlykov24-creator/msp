@@ -129,7 +129,7 @@ def grouped_layout_preview(model, needs_by_color, ratios, available_by_color):
         if options:
             best = min(options, key=lambda x: (x[0], x[1], x[2]))
             return {'preliminary': True, 'search_limited': False, 'patterns_used': list(best[2]),
-                    'result': best[3], 'norm': NORMS[model], 'norm_source': NORM_SOURCE,
+                    'result': best[3], 'pattern_outputs': [allocate(NORMS[model], r) for r in ratios], 'norm': NORMS[model], 'norm_source': NORM_SOURCE,
                     'message': 'Совместимость ткани и раскладок должна быть подтверждена закройщиком'}
     return {'preliminary': True, 'search_limited': False, 'result': None,
             'message': 'Решение в заданных раскладках и допуске ±20% не найдено'}

@@ -100,7 +100,16 @@ def create_app(engine=None):
         if kind == 'finance' and 'finance' not in PERMISSIONS[user.role]:
             raise HTTPException(403, 'Нет доступа к финансам')
         with Session(engine) as s:
-            return [{'id': e.id, 'version': e.version, **e.data} for e in s.scalars(select(Entity).where(Entity.kind == kind))]
+            result = []
+            for e in s.scalars(select(Entity).where(Entity.kind == kind)):
+                if kind == 'task' and user.role == 'cutter' and (e.data.get('status') == 'draft' or e.data.get('assignee') not in (None, '', user.id)):
+                    continue
+                data = dict(e.data)
+                if kind == 'task' and not data.get('created_at'):
+                    doc = s.get(Document, e.id)
+                    if doc: data['created_at'] = doc.created_at.isoformat()
+                result.append({'id': e.id, 'version': e.version, **data})
+            return result
 
     @app.get('/api/journal')
     def journal(item_id: str | None = None, user=Depends(auth)):
@@ -152,6 +161,26 @@ def create_app(engine=None):
             return execute(engine, user, body.operation_id, body.command, body.payload, body.reason)
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(422, 'Неполные или неверные поля команды') from exc
+
+    @app.get('/api/cutting/sales-status')
+    def sales_status(user=Depends(auth)):
+        with Session(engine) as s:
+            e = s.get(Entity, 'cutting-sales-status')
+            return e.data if e else {'platforms': {}}
+
+    @app.get('/api/cutting/assignees')
+    def assignees(user=Depends(auth)):
+        with Session(engine) as s:
+            return [{'id': u.id, 'name': u.name} for u in s.scalars(select(User).where(User.active.is_(True), User.role.in_(['owner', 'cutter'])))]
+
+    @app.post('/api/cutting/demand')
+    def cut_demand(body: dict, user=Depends(auth)):
+        from .cutting import calculate
+        try:
+            with Session(engine) as s:
+                return calculate(s, body)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(422, 'Проверь товары, даты и склад') from exc
 
     @app.get('/api/norms')
     def norms(user=Depends(auth)):
