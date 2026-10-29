@@ -931,6 +931,7 @@
     <div class="card">
       <h3>Состояние базы</h3>
       <div class="hint" id="client-quality" style="margin-bottom:12px"></div>
+      <button type="button" class="tclear" id="client-return-gaps" hidden>Проверить возвраты</button>
       <div class="hint">Покупки объединяются по телефону в одном формате. Если пригодного телефона нет, используется карточка контрагента МойСклад. Разные карточки без телефона не объединяются по имени.</div>
       <div id="base-kv"></div>
       <div style="margin-top:26px">
@@ -944,7 +945,7 @@
   <h2 class="sect">Кому писать про новую коллекцию</h2>
   <div class="card">
     <h3>Клиенты по истории покупок</h3>
-    <div class="hint">Клиенты периода: покупка или учтённый возврат в выбранных фильтрах. При включённой галке «С возвратами» — только покупки. Поиск и сортировка сохраняют этот состав. Покупки и LTV показаны за всю доступную историю. Итог относится ко всему найденному списку, а не только к открытой странице.</div>
+    <div class="hint">Клиенты периода: покупка или учтённый возврат в выбранных фильтрах. При включённой галке «Не вычитать возвраты» — только покупки. Поиск и сортировка сохраняют этот состав. Покупки и LTV показаны за всю доступную историю. Итог относится ко всему найденному списку, а не только к открытой странице.</div>
     <div class="toolbar">
       <input type="search" id="c-q" placeholder="Поиск по имени клиента" autocomplete="off">
       <select id="c-base">
@@ -1636,6 +1637,7 @@ function refresh(){
  const unresolved=(data.return_gaps||[]).filter(x=>x.impact!=='outside_revenue');
  const unknownDates=data.orders.filter(o=>o.buy&&!o.paid_date).length;
  el('client-quality').textContent=(unresolved.length?`LTV рассчитан по подтверждённой части. Не учтено возвратов: ${num(unresolved.length)} на ${money(sum(unresolved,x=>Number(x.sum)||0))}. Эта сумма не означает завышение LTV: связь с признанной продажей не подтверждена. `:'Возвраты из среза разобраны. ')+(unknownDates?`Без даты полной оплаты: ${num(unknownDates)} заказов; их суммы входят в LTV, но даты и частота соответствующих клиентов не определены.`:'');
+ el('client-return-gaps').hidden=!unresolved.length;
  const cohorts=group(clients.filter(c=>c.first),c=>c.first.slice(0,7));
  table('coh',Object.entries(cohorts).sort().slice(-8).map(([name,cs])=>({name,cs})),[x=>dmy(x.name),x=>num(x.cs.length),x=>num(x.cs.filter(c=>c.rep).length),x=>pct(x.cs.filter(c=>c.rep).length,x.cs.length),x=>{const ds=x.cs.filter(c=>c.orders.length>1).map(c=>(Date.parse(c.orders[1].paid_date)-Date.parse(c.first))/864e5).sort((a,b)=>a-b);return ds.length?((ds[Math.floor((ds.length-1)/2)]+ds[Math.floor(ds.length/2)])/2).toFixed(1)+' дн.':'нет данных'}]);
  el('base-kv').innerHTML=kv([['Всего клиентов',num(clients.length)],['Без телефона · по карточке',num(clients.filter(c=>!c.phone).length)],['Заказов без телефона',num(data.orders.filter(o=>o.buy&&!o.phone).length)],['Покупателей в периоде',num(people.size)]]);
@@ -1707,6 +1709,12 @@ function refresh(){
  const reasons=[['Сумма возвратов в фильтре',money(returnedRev)],['Обмены',num(exchangeN)],['Сумма обменов',money(exchangeRev)],['Не включено возвратов, требуют проверки',num(returnGaps.length)]];
  el('ship-kv').innerHTML=kv([['Покупок',num(n)],['С датой Отправлен',num(shipped)],['Без даты отправки',num(n-shipped)],['Возвраты',num(returnN)],...reasons]);
  [['f-cat','cat'],['s-cat','cat'],['f-ch','source'],['f-sale','channel'],['f-geo','city'],['s-size','size'],['s-color','color']].forEach(([id,key])=>setSelected(id,state[key]));
+}
+function showClientReturnGaps(){
+ const rows=(data.return_gaps||[]).filter(r=>r.impact!=='outside_revenue').slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+ const link=(kind,id,label)=>id?'<a class="ms-open" href="https://online.moysklad.ru/app/#'+kind+'/edit?id='+encodeURIComponent(id)+'" target="_blank" rel="noopener">'+esc(label)+'</a>':esc(label);
+ const body=rows.map(r=>'<tr><td>'+link('salesreturn',r.id,r.number||'Нет номера в срезе')+'</td><td>'+dmy(r.date)+'</td><td>'+money(r.sum)+'</td><td>'+esc(r.reason)+'</td><td>'+[r.original_order?link('customerorder',r.original_order,'Заказ'):'',r.demand_id?link('demand',r.demand_id,'Отгрузка'):''].filter(Boolean).join(' · ')+'</td></tr>').join('');
+ showSheet('Клиенты · качество LTV','Возвраты, требующие проверки','<div class="sheet-count">'+num(rows.length)+' документов · '+money(sum(rows,r=>Number(r.sum)||0))+'. Суммы пока не вычтены из LTV. Проверь связь с продажей, состав товаров и дату оплаты. Список по всей истории, независимо от фильтров.</div><table class="sheet-table"><thead><tr><th>Возврат</th><th>Дата</th><th>Сумма</th><th>Причина</th><th>Связанные документы</th></tr></thead><tbody>'+body+'</tbody></table>');
 }
 function renderClients(cs){
  const q=(el('c-q').value||'').toLowerCase(),tier=el('c-tier').value,buys=el('c-buys').value,sil=el('c-sil').value;
@@ -1827,8 +1835,9 @@ el('sheet').addEventListener('click',e=>{
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&el('sheet')&&!el('sheet').hidden)closeSheet();});
 const periodClients=()=>{const keys=new Set((includeReturns?filtered:financial).map(x=>clientKey(x.o)));return clients.filter(c=>keys.has(c.key)).map(showClient)};
-['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener('input',()=>{clientPage=0;renderClients(periodClients())}));
+['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener(id==='c-q'?'input':'change',()=>{clientPage=0;renderClients(periodClients())}));
 el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';el('c-sort').value='ltv';clientPage=0;renderClients(periodClients())};
+el('client-return-gaps').onclick=showClientReturnGaps;
 el('c-prev').onclick=()=>{clientPage--;renderClients(periodClients())};
 el('c-next').onclick=()=>{clientPage++;renderClients(periodClients())};
 const X={head:1,sub:2,mute:3,money:4,int:5,date:6,link:7,totalM:8,totalI:9,note:10,text:11,retM:12,retT:13,retL:14,retD:15,retI:16,coverM:17,coverT:18,qty:19,retQ:20,totalQ:21,banner:22};
