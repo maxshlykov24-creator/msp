@@ -11,6 +11,13 @@ from .service import require
 MSK = ZoneInfo('Europe/Moscow')
 
 
+class RateLimited(RuntimeError):
+    def __init__(self, seconds):
+        self.seconds = max(60, seconds)
+        super().__init__('Лимит запросов ВБ; повтор после паузы')
+
+
+
 def store_window(engine, data):
     require(data['platform'] in ('wb','ozon'), 'Неизвестная площадка',422)
     start,end=date.fromisoformat(data['start']),date.fromisoformat(data['end'])
@@ -41,6 +48,9 @@ def get_json(url,headers,body=None):
     try:
         with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)
     except urllib.error.HTTPError as e:
+        if e.code == 429:
+            raw = e.headers.get('Retry-After', e.headers.get('X-Ratelimit-Retry', '60'))
+            raise RateLimited(int(raw) if str(raw).isdigit() else 60) from None
         # Only status, never headers or response with private account data.
         raise RuntimeError('HTTP '+str(e.code)) from None
 
@@ -63,6 +73,11 @@ def sync(engine, env):
     today=datetime.now(MSK).date();start=str(today-timedelta(days=30));end=str(today-timedelta(days=1))
     results={}
     try:
+        with transaction(engine) as s:
+            previous=s.get(Entity,'cutting-sales-status')
+            retry=(previous.data.get('platforms',{}).get('wb',{}).get('next_retry_at') if previous else None)
+        if retry and datetime.fromisoformat(retry)>now():
+            raise RateLimited(int((datetime.fromisoformat(retry)-now()).total_seconds())+1)
         raw=get_json('https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom='+start,{'Authorization':env['WB_TOKEN']})
         with transaction(engine) as s:
             codes={}
@@ -73,6 +88,7 @@ def sync(engine, env):
         events=[e for e in events if e['item_id'] in covered]
         store_window(engine,dict(platform='wb',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=covered,events=events,source='WB supplier/sales',unmatched=unmatched))
         results['wb']=dict(state='ready',events=len(events),unmatched=unmatched)
+    except RateLimited as e:results['wb']=dict(state='unavailable',reason=str(e),next_retry_at=(now()+timedelta(seconds=e.seconds)).isoformat())
     except Exception as e:results['wb']=dict(state='unavailable',reason=str(e) if isinstance(e,RuntimeError) else 'Не удалось проверить выгрузку')
     # The official daily realization report excludes cancellations/non-redemptions.
     # Validate access before selecting this source; do not substitute deprecated analytics or orders.
