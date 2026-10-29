@@ -163,9 +163,13 @@ class Engine:
         self.path = self.folder / 'production.sqlite3'
         self.client = client
         self.work_lock = threading.Lock()
+        self.catalogue_lock = threading.Lock()
+        self.catalogue_retry_at = 0
+        self.catalogue_error = ""
         with self.db() as db:
             db.executescript('''
             CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS catalogues(kind TEXT PRIMARY KEY,updated REAL,body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS recipes(id TEXT PRIMARY KEY,version INTEGER,body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS recipe_history(id TEXT,version INTEGER,at TEXT,body TEXT,PRIMARY KEY(id,version));
             CREATE TABLE IF NOT EXISTS jobs(kind TEXT,id TEXT,due REAL,status TEXT,error TEXT,
@@ -321,32 +325,86 @@ class Engine:
                 'SELECT body,id,number FROM chains ORDER BY number DESC LIMIT 100')]
         return {'config': self.config(), 'recipes': self.recipes(), 'jobs': jobs, 'audit': audit, 'chains': chains}
 
+    CATALOGUE_KINDS = ('assortment', 'counterparty', 'store', 'organization')
+    CATALOGUE_TTL = 20 * 60
+
+    def catalogue_snapshot(self, include_rows=True):
+        with self.db() as db:
+            columns = 'kind,updated,body' if include_rows else 'kind,updated'
+            saved = db.execute('SELECT ' + columns + ' FROM catalogues').fetchall()
+        ready = set(r['kind'] for r in saved) == set(self.CATALOGUE_KINDS)
+        updated = min((r['updated'] for r in saved), default=0) if ready else 0
+        result = {'ready': ready, 'updated': updated, 'next_update': updated + self.CATALOGUE_TTL if updated else 0,
+                  'refreshing': self.catalogue_lock.locked(), 'error': self.catalogue_error}
+        if include_rows:
+            result['catalogues'] = {r['kind']: json.loads(r['body']) for r in saved}
+        return result
+
+    def refresh_catalogues_now(self):
+        # Collect privately; only publish a complete generation in one transaction.
+        snapshots = {}
+        for kind in self.CATALOGUE_KINDS:
+            rows, offset = [], 0
+            limit = 100 if kind == 'assortment' else 1000
+            while True:
+                params = {'limit': limit, 'offset': offset}
+                if kind == 'assortment':
+                    params['expand'] = 'uom,product,product.uom'
+                page = self.ms.get('/entity/' + kind, **params)
+                chunk = page.get('rows', [])
+                rows.extend(chunk)
+                offset += len(chunk)
+                expected = page.get('meta', {}).get('size', offset)
+                if not chunk and offset < expected:
+                    raise Review('Каталог получен не полностью')
+                if offset >= expected:
+                    break
+            # Keep only fields required by selectors, without contacts/payment details.
+            snapshots[kind] = [{'id': r['id'], 'name': r['name'], 'meta': r['meta'],
+                'uom': r.get('uom') or r.get('product', {}).get('uom'), 'code': r.get('code', ''),
+                'article': r.get('article') or r.get('product', {}).get('article', ''),
+                'pathName': r.get('pathName') or r.get('product', {}).get('pathName', ''),
+                'model': r.get('product', {}).get('name', r['name']),
+                'characteristics': r.get('characteristics', [])} for r in rows]
+        updated = time.time()
+        with self.db() as db:
+            for kind, rows in snapshots.items():
+                db.execute('INSERT OR REPLACE INTO catalogues VALUES(?,?,?)',
+                           (kind, updated, json.dumps(rows, ensure_ascii=False)))
+        self.catalogue_error = ''
+        self.catalogue_retry_at = 0
+
+    def start_catalogue_refresh(self, force=False):
+        snapshot = self.catalogue_snapshot(False)
+        if not force and (time.time() < self.catalogue_retry_at or
+                          snapshot['updated'] and time.time() - snapshot['updated'] < self.CATALOGUE_TTL):
+            return False
+        if not self.catalogue_lock.acquire(blocking=False):
+            return False
+        def refresh():
+            try:
+                self.refresh_catalogues_now()
+            except Exception:
+                self.catalogue_error = 'Не удалось обновить каталог. Доступна последняя сохранённая версия.'
+                self.catalogue_retry_at = time.time() + 60
+            finally:
+                self.catalogue_lock.release()
+        threading.Thread(target=refresh, daemon=True).start()
+        return True
+
     def catalogue(self, kind, query=''):
-        if kind not in ('assortment', 'counterparty', 'store', 'organization'):
+        if kind not in self.CATALOGUE_KINDS:
             raise Review('Неизвестный справочник')
         if len(query) > 100:
             raise Review('Слишком длинный запрос')
-        if kind == 'assortment':
-            cached = getattr(self, '_catalogue_cache', None)
-            if not cached or time.time() - cached[0] > 300:
-                rows = self.ms.rows('/entity/assortment', expand='uom,product,product.uom')
-                self._catalogue_cache = (time.time(), rows)
-            else:
-                rows = cached[1]
-            needle = query.casefold().strip()
-            if needle:
-                rows = [r for r in rows if needle in ' '.join(str(r.get(k, '')) for k in
-                        ('name', 'code', 'article')).casefold() or needle in
-                        str(r.get('product', {}).get('article', '')).casefold()]
-        else:
-            params = {'search': query} if query else {}
-            rows = self.ms.get('/entity/' + kind, limit=100, **params).get('rows', [])
-        return [{'id': r['id'], 'name': r['name'], 'meta': r['meta'],
-                 'uom': r.get('uom') or r.get('product', {}).get('uom'), 'code': r.get('code', ''),
-                 'article': r.get('article') or r.get('product', {}).get('article', ''),
-                 'pathName': r.get('pathName') or r.get('product', {}).get('pathName', ''),
-                 'model': r.get('product', {}).get('name', r['name']),
-                 'characteristics': r.get('characteristics', [])} for r in rows]
+        with self.db() as db:
+            saved = db.execute('SELECT body FROM catalogues WHERE kind=?', (kind,)).fetchone()
+        if not saved:
+            raise Review('Каталог подготавливается. Обновление идёт в фоне.')
+        rows = json.loads(saved['body'])
+        needle = query.casefold().strip()
+        return [r for r in rows if not needle or needle in ' '.join(str(r.get(k, '')) for k in
+                ('name', 'code', 'article')).casefold()]
 
     def require_stock(self, store, positions):
         rows = self.ms.rows('/report/stock/all', filter='store=' + BASE + '/entity/store/' + store,
@@ -768,6 +826,7 @@ def worker(engine):
     last = 0
     while True:
         try:
+            engine.start_catalogue_refresh()
             if time.time() - last > 120:
                 engine.reconcile()
                 last = time.time()
@@ -818,6 +877,9 @@ def route(handler, method):
             if path == '/api/production/stock':
                 qs = urllib.parse.parse_qs(parsed.query)
                 result = {'rows': service.stock(qs.get('store', [''])[0])}
+            elif path == '/api/production/catalogues':
+                qs = urllib.parse.parse_qs(parsed.query)
+                result = service.catalogue_snapshot(not qs.get('status'))
             elif path == '/api/production/catalogue':
                 qs = urllib.parse.parse_qs(parsed.query)
                 result = {'rows': service.catalogue(qs.get('kind', ['assortment'])[0], qs.get('q', [''])[0])}
@@ -849,6 +911,9 @@ def route(handler, method):
                 raise Review('Нет идентификатора документа')
             for value in ids: service.enqueue(kind, value)
             result = {'queued': len(ids)}
+        elif path == '/api/production/catalogues/refresh':
+            started = service.start_catalogue_refresh(force=True)
+            result = dict(service.catalogue_snapshot(False), started=started)
         elif path == '/api/production/recipe':
             result = service.save_recipe(body)
         elif path == '/api/production/config':

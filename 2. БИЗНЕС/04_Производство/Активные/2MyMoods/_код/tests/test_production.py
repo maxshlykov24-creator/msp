@@ -104,6 +104,65 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(saved['name'], 'Changed')
         self.assertEqual(saved['history'][0]['version'], 1)
 
+    def cache_client(self):
+        class CatalogueMS:
+            calls = 0
+            fail = False
+            def get(inner, path, **params):
+                inner.calls += 1
+                if inner.fail:
+                    raise Review('temporary failure')
+                kind = path.split('/')[-1]
+                return {'meta': {'size': 1}, 'rows': [{'id': self.product,
+                    'name': 'Cache item', 'meta': {'type': kind}, 'article': 'abc123',
+                    'email': 'must-not-be-cached@example.org'}]}
+        return CatalogueMS()
+
+    def test_catalogue_persists_and_search_never_calls_live_api(self):
+        m = self.cache_client()
+        self.e.client = m
+        self.e.refresh_catalogues_now()
+        self.assertEqual(m.calls, 4)
+        reloaded = Engine(self.tmp.name, m)
+        self.assertEqual(len(reloaded.catalogue('assortment', 'ABC123')), 1)
+        self.assertEqual(m.calls, 4)
+        self.assertNotIn('email', reloaded.catalogue('counterparty')[0])
+        self.assertTrue(reloaded.catalogue_snapshot()['ready'])
+
+    def test_failed_catalogue_refresh_keeps_previous_generation(self):
+        m = self.cache_client()
+        self.e.client = m
+        self.e.refresh_catalogues_now()
+        before = self.e.catalogue_snapshot()['updated']
+        m.fail = True
+        with self.assertRaises(Review):
+            self.e.refresh_catalogues_now()
+        self.assertEqual(self.e.catalogue_snapshot()['updated'], before)
+        self.assertEqual(len(self.e.catalogue('assortment')), 1)
+
+    def test_catalogue_refresh_twenty_minutes_and_single_flight(self):
+        import threading
+        from unittest.mock import patch
+        self.e.client = self.cache_client()
+        self.e.refresh_catalogues_now()
+        updated = self.e.catalogue_snapshot()['updated']
+        with patch('production.time.time', return_value=updated+1199):
+            self.assertFalse(self.e.start_catalogue_refresh())
+        entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+        def refresh():
+            entered.set()
+            release.wait(2)
+            finished.set()
+        with patch.object(self.e, 'refresh_catalogues_now', refresh):
+            with patch('production.time.time', return_value=updated+1201):
+                self.assertTrue(self.e.start_catalogue_refresh())
+                self.assertTrue(entered.wait(1))
+                self.assertFalse(self.e.start_catalogue_refresh(force=True))
+                # An in-progress refresh must never block selection.
+                self.assertEqual(len(self.e.catalogue('assortment')), 1)
+            release.set()
+            self.assertTrue(finished.wait(1))
+
     def test_partial_return_remainder(self):
         self.assertEqual(remaining({'a': Decimal(10)}, {'a': Decimal(4)}), {'a': Decimal(6)})
 
