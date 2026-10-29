@@ -902,7 +902,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Gold, Silver, Bronze</h3>
-      <div class="hint">Пороги черновые: Gold — от четырёх покупок, Silver — две или три, Bronze — одна покупка от 20 000 ₽. Сегменты считаются только в дашборде. LTV за всю историю, без доставки и за вычетом возвратов. Галки «С доставкой» и «С возвратами» его не меняют.</div>
+      <div class="hint">Пороги черновые: Gold — от четырёх покупок, Silver — две или три, Bronze — одна покупка от 20 000 ₽. Сегменты считаются только в дашборде. Покупка — полностью оплаченный заказ; полный возврат не уменьшает число покупок, но вычитается из LTV. Размер и категория — по заказанным изделиям, включая возвращённые. LTV за всю историю, без доставки и за вычетом возвратов. Галки «С доставкой» и «С возвратами» его не меняют.</div>
       <div class="scroll-x"><table>
         <thead><tr><th>Сегмент</th><th>Клиентов</th><th>Доля базы</th><th>Выручка</th><th>Доля выручки</th><th>Средний LTV</th><th>Покупок в год</th></tr></thead>
         <tbody id="tier"></tbody>
@@ -930,11 +930,12 @@
     </div>
     <div class="card">
       <h3>Состояние базы</h3>
-      <div class="hint">Телефон в одном формате: +7 и 8 это один человек. Без этого LTV и частота считаются неверно.</div>
+      <div class="hint" id="client-quality" style="margin-bottom:12px"></div>
+      <div class="hint">Покупки объединяются по телефону в одном формате. Если пригодного телефона нет, используется карточка контрагента МойСклад. Разные карточки без телефона не объединяются по имени.</div>
       <div id="base-kv"></div>
       <div style="margin-top:26px">
         <h3 style="font-size:15px">Риск оттока</h3>
-        <div class="hint" style="margin-bottom:12px">Ценные клиенты, которые давно молчат. Это готовый список на обзвон.</div>
+        <div class="hint" style="margin-bottom:12px">Клиенты по всей базе, независимо от фильтров, без покупки больше 90 дней. Перед обращением проверь контакт и историю возвратов.</div>
         <div id="churn-kv"></div>
       </div>
     </div>
@@ -943,7 +944,7 @@
   <h2 class="sect">Кому писать про новую коллекцию</h2>
   <div class="card">
     <h3>Клиенты по истории покупок</h3>
-    <div class="hint">Список наследует фильтры сверху: период, категория, товар, источник, город. Внутри блока — свой поиск по имени и свои условия: сегмент, число покупок, срок тишины, сортировка. Готовый список уходит девочкам в продажи или в e-mail рассылку.</div>
+    <div class="hint">Клиенты периода: покупка или учтённый возврат в выбранных фильтрах. При включённой галке «С возвратами» — только покупки. Поиск и сортировка сохраняют этот состав. Покупки и LTV показаны за всю доступную историю. Итог относится ко всему найденному списку, а не только к открытой странице.</div>
     <div class="toolbar">
       <input type="search" id="c-q" placeholder="Поиск по имени клиента" autocomplete="off">
       <select id="c-base">
@@ -985,6 +986,7 @@
       <tbody id="clients"></tbody>
         <tfoot id="clients-sum"></tfoot>
     </table></div>
+    <div class="toolbar" style="margin-top:16px"><button type="button" class="tclear" id="c-prev">Назад</button><span class="hint" id="c-page-note"></span><button type="button" class="tclear" id="c-next">Дальше</button></div>
   </div>
   </section>
 
@@ -1178,7 +1180,7 @@ function foldOrders(xs, amountOf){const by=new Map();for(const x of xs){if(!x.o|
 const pack=xs=>foldOrders(xs,x=>orderRev(x.o,x.ls));
 function ordersFromGoods(lines){return foldOrders(lines,x=>Number(x.l.rev)||0);}
 let sheetPeople=[], sheetPeopleTitle='', lastProducts=[];
-function openClientList(title,list){sheetPeople=list;sheetPeopleTitle=title;const rows=[...list].sort((a,b)=>b.ltv-a.ltv);showSheet('Клиенты',title,rows.length?`<div class="sheet-count">${num(rows.length)} в этом списке. Нажатие открывает карточку.</div>`+rows.map(c=>`<button type="button" class="sheet-person" data-phone="${esc(c.phone)}"><span>${esc(c.name)}</span><b>${num(c.buys)} · ${money(c.ltv)}</b></button>`).join(''):'Нет клиентов');}
+function openClientList(title,list){sheetPeople=list;sheetPeopleTitle=title;const rows=[...list].sort((a,b)=>b.ltv-a.ltv);showSheet('Клиенты',title,rows.length?`<div class="sheet-count">${num(rows.length)} в этом списке. Нажатие открывает карточку.</div>`+rows.map(c=>`<button type="button" class="sheet-person" data-client="${esc(c.key)}"><span>${esc(c.name)}</span><b>${num(c.buys)} · ${money(c.ltv)}</b></button>`).join(''):'Нет клиентов');}
 function openClientCard(c,back){const latest=[...c.orders].filter(o=>o.agent_id).sort((a,b)=>(b.paid_date||'').localeCompare(a.paid_date||''))[0];const link=latest?`<a class="sheet-go" href="${msAgent(latest.agent_id)}" target="_blank" rel="noopener">Контрагент в МойСклад</a>`:'<div class="hint">Ссылка на контрагента появится после следующей сборки среза.</div>';showSheet(c.tier||'Клиент',c.name,`<div class="sheet-facts">${kv([['Телефон',c.phone||'нет'],['Покупок',num(c.buys)],['LTV',money(c.ltv)],['Первая',c.first?dmy(c.first):'нет даты'],['Последняя',c.last?dmy(c.last):'нет даты'],['Размер',c.size||'нет данных'],['Чаще берёт',c.category||'нет данных']])}</div>${link}`,back);}
 const selected = id => [...el(id).selectedOptions].map(o=>o.value).filter(Boolean);
 const setSelected=(id,values)=>{const e=el(id);[...e.options].forEach(o=>o.selected=values.includes(o.value));e.dispatchEvent(new Event('pick-sync'))};
@@ -1392,18 +1394,28 @@ function lineRev(l){return l.delivery && !includeDelivery ? 0 : l.rev;}
 function linesFor(o){return (o.lines||[]).filter(l=>!l.delivery||includeDelivery).filter(l=>matches(state.cat,l.category)&&(!state.prod||l.name===state.prod));}
 function orderRev(o,lines){const lineSum=sum(lines,l=>l.rev);if(state.cat.length||state.prod||o.return_event||o.exchange)return lineSum;const over=Number(o.paid)-Number(o.sum);return (includeDelivery?Number(o.sum):lineSum)+(Number.isFinite(over)?over:0);}
 function favorite(orders,key){const totals=group(orders.flatMap(o=>o.lines).filter(l=>!l.delivery),l=>l[key]);return Object.entries(totals).sort((a,b)=>sum(b[1],l=>l.qty)-sum(a[1],l=>l.qty))[0]?.[0]||'нет данных'}
+// Stable identity: phone when known, otherwise the exact MoySklad card (never a name).
+let clientKeys=new Map(),clientPage=0;
+const CLIENT_PAGE_SIZE=20;
+function clientKey(o){
+ return clientKeys.get(o.original_order)||clientKeys.get(o.id)||(o.phone?'phone:'+o.phone:o.agent_id?'agent:'+o.agent_id:'order:'+o.id);
+}
 function clientLtv(c){
  const goods=o=>sum((o.lines||[]).filter(l=>!l.delivery),l=>l.rev);
- return sum(c.orders,goods)+sum((data.returns||[]).filter(o=>o.phone===c.phone),goods);
+ return sum(c.orders,goods)+sum((data.returns||[]).filter(o=>clientKey(o)===c.key),goods);
 }
 function showClient(c){const ltv=clientLtv(c);return {...c,ltv,tier:c.buys>=4?'Gold':c.buys>=2?'Silver':ltv>=20000?'Bronze':'Разовый'};}
 function buildClients(){
- const g=group(data.orders.filter(o=>o.buy&&o.phone),o=>o.phone);
- clients=Object.entries(g).map(([phone,orders])=>{
+ const agentPhones=new Map();
+ for(const o of data.orders){if(o.agent_id&&o.phone){if(!agentPhones.has(o.agent_id))agentPhones.set(o.agent_id,new Set());agentPhones.get(o.agent_id).add(o.phone)}}
+ clientKeys=new Map(data.orders.map(o=>{const phones=agentPhones.get(o.agent_id);const phone=o.phone||(phones?.size===1?[...phones][0]:'');return [o.id,phone?'phone:'+phone:o.agent_id?'agent:'+o.agent_id:'order:'+o.id]}));
+ const g=group(data.orders.filter(o=>o.buy),clientKey);
+ clients=Object.entries(g).map(([key,orders])=>{
+   const phone=key.startsWith('phone:')?key.slice(6):'';
    orders.sort((a,b)=>(a.paid_date||'').localeCompare(b.paid_date||''));
-   const buys=orders.length, ltv=sum(orders,o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev))+sum((data.returns||[]).filter(o=>o.phone===phone),o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev));
+   const buys=orders.length, ltv=sum(orders,o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev))+sum((data.returns||[]).filter(o=>clientKey(o)===key),o=>sum(o.lines.filter(l=>!l.delivery),l=>l.rev));
    const dated=orders.filter(o=>o.paid_date);const uncertain=dated.length!==orders.length;const first=uncertain?'':dated[0]?.paid_date||'',last=uncertain?'':dated[dated.length-1]?.paid_date||'';
-   return {phone,name:orders[buys-1].client||phone,buys,ltv,first,last,
+   return {key,phone,name:orders[buys-1].client||phone||'Клиент без имени',buys,ltv,first,last,
      silence:last?Math.max(0,Math.floor((Date.now()-Date.parse(last+'T00:00:00+03:00'))/864e5)):null,
      tier:buys>=4?'Gold':buys>=2?'Silver':ltv>=20000?'Bronze':'Разовый',
      freq:first?buys/Math.max(1,(Date.now()-Date.parse(first+'T00:00:00+03:00'))/864e5/365):null,
@@ -1504,12 +1516,12 @@ function refresh(){
  el('cost-hint').textContent='Маржа по зафиксированной закупочной цене, без работы и логистики. Исторические цены до начала наблюдений — оценка; новые версии фиксируются при синхронизации.'+(noCost.length?` Без закупочной цены ${num(noCost.length)} товарных строк на ${money(sum(noCost,x=>x.l.rev))} выручки; маржа по ним неполная.`:'');
  const orders=filtered.map(x=>x.o), rev=sum(basis,x=>orderRev(x.o,x.ls));
  const cost=sum(currentLines,x=>x.l.delivery?0:x.l.cost), qty=sum(currentLines,x=>x.l.delivery?0:x.l.qty);
- const n=orders.length, people=new Set(orders.map(o=>o.phone).filter(Boolean));
+ const n=orders.length, people=new Set(orders.map(clientKey));
  const returnN=returned.length, exchangeN=exchanged.length, exchangeRev=-sum(exchanged,x=>orderRev(x.o,x.ls));
  // История без телефона или даты не доказывает, что покупка первая.
- const repeatState=o=>{const c=clients.find(c=>c.phone===o.phone);if(!c?.first)return 'unknown';if(c.first<o.paid_date)return 'repeat';const same=c.orders.filter(x=>x.paid_date===c.first);return same.length===1?'first':'unknown'};
+ const repeatState=o=>{const c=clients.find(c=>c.key===clientKey(o));if(!c?.first)return 'unknown';if(c.first<o.paid_date)return 'repeat';const same=c.orders.filter(x=>x.paid_date===c.first);return same.length===1?'first':'unknown'};
  const repN=orders.filter(o=>repeatState(o)==='repeat').length, firstN=orders.filter(o=>repeatState(o)==='first').length, unknownN=n-repN-firstN;
- const avgLtv=people.size?sum(clients.filter(c=>people.has(c.phone)),clientLtv)/people.size:0;
+ const avgLtv=people.size?sum(clients.filter(c=>people.has(c.key)),clientLtv)/people.size:0;
  el('hero-period').innerHTML=`${dmy(state.from)} — ${dmy(state.to)}<span class="hint"> · по дате закрывающего платежа · часовой пояс МСК</span>`;
  const msOrdersUrl=()=>{const stamp=iso=>{const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[3]}.${m[2]}.${m[1]}`:''};return `https://online.moysklad.ru/app/#customerorder?015b915a-c21c-11f1-0a80-1e7500283344=${stamp(state.from)}%2000:00:00,${stamp(state.to)}%2023:59:59,inside_period&sort=o.moment%20d`};
  const msLink=(label,value)=>`<a class="ms-open" href="${msOrdersUrl()}" target="_blank" rel="noopener">${label}${value}</a>`;
@@ -1613,20 +1625,22 @@ function refresh(){
  const speedRows=speedNames.map(name=>{const s=responseNumbers(responseRows.filter(r=>r.manager===name));return {name,med:s?s.med.toFixed(1)+' мин':'нет данных',avg:s?s.avg.toFixed(1)+' мин':'—',n:s?num(s.n):'—',count:s?s.n:-1}});
  speedRows.sort((a,b)=>b.count-a.count);
  el('speed').innerHTML=speedRows.length?speedRows.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.med)}</td><td>${esc(x.avg)}</td><td>${x.n}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Нет данных</td></tr>';
- const basisPhones=new Set(basis.map(x=>x.o.phone).filter(Boolean));
- const scopedClients=clients.filter(c=>basisPhones.has(c.phone)).map(showClient);
+ const scopedClients=periodClients();
  const datedClients=scopedClients.filter(c=>c.freq!==null);
- const periodRevenue=c=>sum(basis.filter(x=>x.o.phone===c.phone),x=>orderRev(x.o,x.ls));
+ const periodRevenue=c=>sum(basis.filter(x=>clientKey(x.o)===c.key),x=>orderRev(x.o,x.ls));
  const tiers=['Gold','Silver','Bronze','Разовый'].map(t=>({name:t,cs:scopedClients.filter(c=>c.tier===t)}));
  table('tier',tiers,[x=>x.name,x=>num(x.cs.length),x=>pct(x.cs.length,scopedClients.length),x=>money(sum(x.cs,periodRevenue)),x=>pct(sum(x.cs,periodRevenue),sum(scopedClients,periodRevenue)),x=>money(x.cs.length?sum(x.cs,c=>c.ltv)/x.cs.length:0),x=>{const dated=x.cs.filter(c=>c.freq!==null);return dated.length?(sum(dated,c=>c.freq)/dated.length).toFixed(1):'нет данных'}],x=>openClientList(x.name,x.cs));
  el('rep-share').textContent=(unknownN?'≥ ':'')+pct(repN,n);el('rep-donut').style.background=`conic-gradient(var(--ink) 0 ${n?repN/n*100:0}%,var(--line-soft) 0)`;
  el('rep-legend').innerHTML=`<div>Повторные <b>${repN}</b></div><div>Первые <b>${firstN}</b></div><div>Порядок не определён <b>${unknownN}</b></div>`;
  el('rep-kv').innerHTML=kv([['Клиентов с двумя и более покупками',num(scopedClients.filter(c=>c.buys>=2).length)],['Средний LTV',money(avgLtv)],['Покупок в год на клиента',datedClients.length?(sum(datedClients,c=>c.freq)/datedClients.length).toFixed(1):'нет данных']]);
+ const unresolved=(data.return_gaps||[]).filter(x=>x.impact!=='outside_revenue');
+ const unknownDates=data.orders.filter(o=>o.buy&&!o.paid_date).length;
+ el('client-quality').textContent=(unresolved.length?`LTV рассчитан по подтверждённой части. Не учтено возвратов: ${num(unresolved.length)} на ${money(sum(unresolved,x=>Number(x.sum)||0))}. Эта сумма не означает завышение LTV: связь с признанной продажей не подтверждена. `:'Возвраты из среза разобраны. ')+(unknownDates?`Без даты полной оплаты: ${num(unknownDates)} заказов; их суммы входят в LTV, но даты и частота соответствующих клиентов не определены.`:'');
  const cohorts=group(clients.filter(c=>c.first),c=>c.first.slice(0,7));
  table('coh',Object.entries(cohorts).sort().slice(-8).map(([name,cs])=>({name,cs})),[x=>dmy(x.name),x=>num(x.cs.length),x=>num(x.cs.filter(c=>c.rep).length),x=>pct(x.cs.filter(c=>c.rep).length,x.cs.length),x=>{const ds=x.cs.filter(c=>c.orders.length>1).map(c=>(Date.parse(c.orders[1].paid_date)-Date.parse(c.first))/864e5).sort((a,b)=>a-b);return ds.length?((ds[Math.floor((ds.length-1)/2)]+ds[Math.floor(ds.length/2)])/2).toFixed(1)+' дн.':'нет данных'}]);
- el('base-kv').innerHTML=kv([['Клиентов по телефону',num(clients.length)],['Без телефона',num(data.orders.filter(o=>o.buy&&!o.phone).length)],['Активных в периоде',num(people.size)]]);
+ el('base-kv').innerHTML=kv([['Всего клиентов',num(clients.length)],['Без телефона · по карточке',num(clients.filter(c=>!c.phone).length)],['Заказов без телефона',num(data.orders.filter(o=>o.buy&&!o.phone).length)],['Покупателей в периоде',num(people.size)]]);
  el('churn-kv').innerHTML=kv([['Gold молчат больше 90 дней',num(clients.map(showClient).filter(c=>c.tier==='Gold'&&c.silence>90).length)],['Silver молчат больше 90 дней',num(clients.map(showClient).filter(c=>c.tier==='Silver'&&c.silence>90).length)]]);
- renderClients(scopedClients);
+ clientPage=0;renderClients(scopedClients);
  const goodsLines=currentLines.filter(x=>!x.l.delivery&&matches(state.size,sizeLabel(x.l))&&matches(state.color,colorLabel(x.l)));
  const products=Object.entries(group(goodsLines,x=>x.l.name)).map(([id,arr])=>({id,name:arr[0].l.name,qty:sum(arr,x=>x.l.qty),rev:sum(arr,x=>x.l.rev),cost:sum(arr,x=>x.l.cost),size:[...new Set(arr.map(x=>sizeLabel(x.l)).filter(Boolean))].join(', ')||'не указано',color:[...new Set(arr.map(x=>colorLabel(x.l)))].join(', '),lines:arr})).sort((a,b)=>b.qty-a.qty||b.rev-a.rev);
  lastProducts=products;
@@ -1699,8 +1713,12 @@ function renderClients(cs){
  let rows=(el('c-base').value==='all'?clients.map(showClient):cs).filter(c=>(!q||c.name.toLowerCase().includes(q)||c.phone.includes(q))&&(!tier||c.tier===tier)&&(!buys||(buys==='1'?c.buys===1:c.buys>=+buys))&&(!sil||(c.silence!==null&&(sil==='l30'?c.silence<30:c.silence>+sil.slice(1)))));
  const sort=el('c-sort').value;rows.sort((a,b)=>sort==='last'?b.last.localeCompare(a.last):sort==='silence'?(b.silence??-1)-(a.silence??-1):sort==='buys'?b.buys-a.buys:sort==='freq'?(b.freq??-1)-(a.freq??-1):b.ltv-a.ltv);
  el('c-count').textContent=num(rows.length)+' клиентов';
- table('clients',rows.slice(0,20),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>dmy(c.first),c=>dmy(c.last),c=>c.silence===null?'—':c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel],c=>openClientCard(c));
- el('clients-sum').innerHTML=`<tr><td>Итого</td><td></td><td>${num(sum(rows,c=>c.buys))}</td><td>${money(sum(rows,c=>c.ltv))}</td><td colspan="6"></td></tr>`;
+ const pages=Math.max(1,Math.ceil(rows.length/CLIENT_PAGE_SIZE));clientPage=Math.max(0,Math.min(clientPage,pages-1));
+ const offset=clientPage*CLIENT_PAGE_SIZE;
+ el('c-page-note').textContent=rows.length?`${offset+1}–${Math.min(offset+CLIENT_PAGE_SIZE,rows.length)} из ${num(rows.length)} · страница ${clientPage+1} из ${pages}`:'Нет клиентов';
+ el('c-prev').disabled=clientPage===0;el('c-next').disabled=clientPage>=pages-1;
+ table('clients',rows.slice(offset,offset+CLIENT_PAGE_SIZE),[c=>c.name,c=>c.tier,c=>num(c.buys),c=>money(c.ltv),c=>dmy(c.first),c=>dmy(c.last),c=>c.silence===null?'—':c.silence+' дн.',c=>c.size,c=>c.category,c=>c.channel],c=>openClientCard(c));
+ el('clients-sum').innerHTML=`<tr><td>Итого по списку</td><td></td><td>${num(sum(rows,c=>c.buys))}</td><td>${money(sum(rows,c=>c.ltv))}</td><td colspan="6"></td></tr>`;
 }
 function init(snap){
  if(!snap||!Array.isArray(snap.orders)) throw Error('Неверный формат среза');
@@ -1800,17 +1818,19 @@ el('sheet').addEventListener('click',e=>{
  if(e.target.closest('a[href]'))return;
  const order=e.target.closest('[data-order]');
  if(order&&order.dataset.order){window.open(msOrder(order.dataset.order),'_blank','noopener');return;}
- const person=e.target.closest('[data-phone]');
+ const person=e.target.closest('[data-client]');
  if(!person)return;
- const c=sheetPeople.find(x=>x.phone===person.dataset.phone);
+ const c=sheetPeople.find(x=>x.key===person.dataset.client);
  if(!c)return;
  const list=sheetPeople.slice(), title=sheetPeopleTitle;
  openClientCard(c,()=>openClientList(title,list));
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&el('sheet')&&!el('sheet').hidden)closeSheet();});
-const periodClients=()=>{const phones=new Set(filtered.map(x=>x.o.phone));return clients.filter(c=>phones.has(c.phone))};
-['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener('input',()=>renderClients(periodClients())));
-el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';renderClients(periodClients())};
+const periodClients=()=>{const keys=new Set((includeReturns?filtered:financial).map(x=>clientKey(x.o)));return clients.filter(c=>keys.has(c.key)).map(showClient)};
+['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener('input',()=>{clientPage=0;renderClients(periodClients())}));
+el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';el('c-sort').value='ltv';clientPage=0;renderClients(periodClients())};
+el('c-prev').onclick=()=>{clientPage--;renderClients(periodClients())};
+el('c-next').onclick=()=>{clientPage++;renderClients(periodClients())};
 const X={head:1,sub:2,mute:3,money:4,int:5,date:6,link:7,totalM:8,totalI:9,note:10,text:11,retM:12,retT:13,retL:14,retD:15,retI:16,coverM:17,coverT:18,qty:19,retQ:20,totalQ:21,banner:22};
 function xml(v){return String(v??'').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function rub2(n){const x=Number(n);return Number.isFinite(x)?Math.round(x*100)/100:0;}
@@ -1988,7 +2008,7 @@ function downloadExcel(){
  const cost=sum(lines,x=>x.l.delivery?0:x.l.cost);
  const qty=sum(lines,x=>x.l.delivery?0:x.l.qty);
  const n=purchases.length;
- const people=new Set(purchases.map(x=>x.o.phone).filter(Boolean));
+ const people=new Set(purchases.map(x=>clientKey(x.o)));
  const exchanged=(data.exchanges||[]).filter(o=>o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,orderSource(o))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>({o,ls:cutLines(linesFor(o))})).filter(x=>x.ls.length||(!narrow&&!state.cat.length&&!state.prod));
  const extraFilter=narrow||state.cat.length||!!state.prod||state.source.length||state.channel.length||state.city.length;
  const gaps=extraFilter?[]:(data.return_gaps||[]).filter(x=>!x.date||(x.date>=state.from&&x.date<=state.to));

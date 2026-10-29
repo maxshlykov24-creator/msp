@@ -1317,18 +1317,22 @@ def enrich_accounting(snap: dict, ms=None) -> None:
 
     returns, exchanges, unresolved = [], [], []
     built = defaultdict(list)
-    for ret in required_rows(ms, "/entity/salesreturn", keep=("id", "name", "moment", "sum", "applicable", "demand")):
+    for ret in required_rows(ms, "/entity/salesreturn", keep=("id", "name", "moment", "sum", "applicable", "demand", "agent")):
         if ret.get("applicable") is not True:
             continue
         date = (dt(ret.get("moment")) or None)
         original = by_id.get(demands.get(mid(ret.get("demand"))))
+        proof = {"id": ret["id"], "number": ret.get("name") or "",
+                 "demand_id": mid(ret.get("demand")),
+                 "original_order": original["id"] if original else "",
+                 "agent_id": original.get("agent_id") if original else mid(ret.get("agent"))}
         reason = None
         if not date: reason = "Нет даты возврата"
         elif not original: reason = "Нет связи с заказом"
         elif not original.get("buy") or not original.get("paid_date"): reason = "Не подтверждена признанная продажа"
         elif date.date().isoformat() < original["paid_date"]: reason = "Возврат раньше признания продажи"
         if reason:
-            unresolved.append({"date": date.date().isoformat() if date else None, "sum": rub(ret.get("sum")), "reason": reason,
+            unresolved.append({**proof, "date": date.date().isoformat() if date else None, "sum": rub(ret.get("sum")), "reason": reason,
                                "impact": "outside_revenue" if original and not original.get("buy") else "unresolved"})
             continue
         originals = defaultdict(list)
@@ -1351,9 +1355,9 @@ def enrich_accounting(snap: dict, ms=None) -> None:
                         list=-gross, cost=-round(next(iter(costs)) * quantity, 2))
             lines.append(line)
         if reason or abs(sum(l["rev"] for l in lines) + rub(ret.get("sum"))) > 0.02:
-            unresolved.append({"date": date.date().isoformat(), "sum": rub(ret.get("sum")), "reason": reason or "Сумма позиций не совпадает с документом"})
+            unresolved.append({**proof, "date": date.date().isoformat(), "sum": rub(ret.get("sum")), "reason": reason or "Сумма позиций не совпадает с документом"})
             continue
-        event = {k: original.get(k) for k in ("channel", "source", "city", "phone", "client", "manager")}
+        event = {k: original.get(k) for k in ("channel", "source", "city", "phone", "client", "manager", "agent_id")}
         event.update(id=ret["id"], number=ret.get("name"), original_order=original["id"], return_event=True,
                      paid_date=date.date().isoformat(), sum=-rub(ret.get("sum")), lines=lines)
         built[original["id"]].append(event)
