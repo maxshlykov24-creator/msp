@@ -156,6 +156,50 @@ class MSClient:
         return self.rows(f'/entity/{kind}/{value}/positions')
 
 
+def recipe_changes(before, after):
+    """Читаемые изменения только по данным, сохранённым в версии нормы."""
+    changes = []
+    def text(value):
+        return str(value if value not in (None, '') else 'не указано')
+    def change(label, old, new):
+        if old != new:
+            changes.append(f'{label}: {text(old)} → {text(new)}')
+    if not before:
+        changes.append('Создана норма')
+        if after.get('assortment_id'):
+            changes.append('Выбрана карточка МоегоСклада: ' + text(after.get('assortment_name')))
+    elif before.get('assortment_id') != after.get('assortment_id'):
+        change('Карточка МоегоСклада', before.get('assortment_name'), after.get('assortment_name'))
+    old_stages, new_stages = before.get('stages', []), after.get('stages', [])
+    for i in range(max(len(old_stages), len(new_stages))):
+        old = old_stages[i] if i < len(old_stages) else None
+        new = new_stages[i] if i < len(new_stages) else None
+        label = (new or old or {}).get('name') or f'Этап {i+1}'
+        if old is None:
+            changes.append(f'Добавлен этап: {label}')
+            old = {}
+        elif new is None:
+            changes.append(f'Удалён этап: {label}')
+            continue
+        change(f'Этап {i+1}', old.get('name'), new.get('name'))
+        change(f'{label} · фабрика', old.get('factory'), new.get('factory'))
+        change(f'{label} · работа, ₽', old.get('work_cost', 0), new.get('work_cost', 0))
+        def materials(stage):
+            return {m.get('id') or m.get('name') or str(j): m for j, m in enumerate(stage.get('materials', []))}
+        om, nm = materials(old), materials(new)
+        def amount(m):
+            return text(m.get('input_quantity', m.get('quantity'))) + ' ' + text(m.get('input_unit') or m.get('unit'))
+        for key in om.keys() - nm.keys():
+            changes.append(f'{label} · убран материал: {text(om[key].get("name"))} ({amount(om[key])})')
+        for key in nm.keys() - om.keys():
+            changes.append(f'{label} · добавлен материал: {text(nm[key].get("name"))} ({amount(nm[key])})')
+        for key in om.keys() & nm.keys():
+            change(f'{label} · {text(nm[key].get("name"))}', amount(om[key]), amount(nm[key]))
+    if before and before.get('approved') != after.get('approved'):
+        changes.append('Норма применена' if after.get('approved') else 'Норма снята с применения')
+    return changes
+
+
 class Engine:
     def __init__(self, folder=None, client=None):
         self.folder = Path(folder or os.environ.get('PRODUCTION_DATA', '/var/lib/2my-production'))
@@ -172,6 +216,7 @@ class Engine:
             CREATE TABLE IF NOT EXISTS catalogues(kind TEXT PRIMARY KEY,updated REAL,body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS recipes(id TEXT PRIMARY KEY,version INTEGER,body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS recipe_history(id TEXT,version INTEGER,at TEXT,body TEXT,PRIMARY KEY(id,version));
+            CREATE TABLE IF NOT EXISTS recipe_events(id TEXT,version INTEGER,at TEXT,actor TEXT,changes TEXT,PRIMARY KEY(id,version));
             CREATE TABLE IF NOT EXISTS jobs(kind TEXT,id TEXT,due REAL,status TEXT,error TEXT,
               attempts INTEGER DEFAULT 0,PRIMARY KEY(kind,id));
             CREATE TABLE IF NOT EXISTS operations(key TEXT PRIMARY KEY,kind TEXT,doc_id TEXT,
@@ -226,11 +271,26 @@ class Engine:
         with self.db() as db:
             result = sorted([json.loads(r[0]) for r in db.execute('SELECT body FROM recipes')], key=lambda r: r.get('name', ''))
             for recipe in result:
-                recipe['history'] = [dict(h) for h in db.execute(
-                    'SELECT version,at FROM recipe_history WHERE id=? ORDER BY version DESC', (recipe['id'],))]
+                events = [dict(h) for h in db.execute('SELECT version,at,actor,changes FROM recipe_events WHERE id=?', (recipe['id'],))]
+                for event in events:
+                    event['changes'] = json.loads(event['changes'])
+                recorded = {e['version'] for e in events}
+                snapshots = list(db.execute('SELECT version,at,body FROM recipe_history WHERE id=? ORDER BY version', (recipe['id'],)))
+                for index, snapshot in enumerate(snapshots):
+                    next_version = snapshots[index + 1]['version'] if index + 1 < len(snapshots) else recipe['version']
+                    if next_version in recorded:
+                        continue
+                    following = json.loads(snapshots[index + 1]['body']) if index + 1 < len(snapshots) else recipe
+                    changes = recipe_changes(json.loads(snapshot['body']), following)
+                    if changes:
+                        events.append({'version': next_version, 'at': snapshot['at'], 'actor': 'Автор не сохранён', 'changes': changes})
+                recipe['history'] = sorted(events, key=lambda event: (event['at'], event['version']), reverse=True)
             return result
 
-    def save_recipe(self, recipe):
+    def save_recipe(self, recipe, db=None, propagate=True):
+        if db is None:
+            with self.db() as connection:
+                return self.save_recipe(recipe, connection, propagate)
         key = str(recipe.get('id') or uuid.uuid4())
         recipe.pop('history', None)
         # Display units never become stock units without dimensional conversion.
@@ -271,39 +331,104 @@ class Engine:
                     raise Review('Выбери один зип-пакет и укажи его расход')
             if not recipe.get('zip_checked'):
                 raise Review('Добавь зип-пакет и его расход в блоке Производственная упаковка')
-        with self.db() as db:
-            if recipe.get('assortment_id'):
-                for candidate in db.execute('SELECT id,body FROM recipes WHERE id<>?', (key,)):
-                    if json.loads(candidate['body']).get('assortment_id') == recipe['assortment_id']:
-                        raise Review('Для этой карточки изделия уже есть норма. Открой существующую.')
-            old = db.execute('SELECT version,body FROM recipes WHERE id=?', (key,)).fetchone()
-            if old and recipe.get('version') is not None and recipe['version'] != old['version']:
-                raise Review('Норма уже изменена. Обнови страницу перед сохранением.')
-            if old:
-                db.execute('INSERT OR IGNORE INTO recipe_history VALUES(?,?,?,?)',
-                           (key, old['version'], now(), old['body']))
-            recipe.update(id=key, version=(old[0] if old else 0) + 1)
-            db.execute('INSERT OR REPLACE INTO recipes VALUES(?,?,?)',
-                       (key, recipe['version'], json.dumps(recipe, ensure_ascii=False)))
-            # Стоимость работы общая для модели и цвета; нормы остаются размерными.
-            if recipe.get('model') and recipe.get('color'):
-                for row in db.execute('SELECT id,version,body FROM recipes WHERE id<>?', (key,)).fetchall():
-                    other = json.loads(row['body'])
-                    if (other.get('model'), other.get('color')) != (recipe['model'], recipe['color']):
-                        continue
-                    changed = False
-                    for i, stage in enumerate(recipe.get('stages', [])):
-                        if i < len(other.get('stages', [])) and other['stages'][i].get('factory') == stage.get('factory'):
-                            if other['stages'][i].get('work_cost') != stage.get('work_cost'):
-                                other['stages'][i]['work_cost'] = stage.get('work_cost', 0)
-                                changed = True
-                    if changed:
-                        db.execute('INSERT OR IGNORE INTO recipe_history VALUES(?,?,?,?)',
-                                   (other['id'], row['version'], now(), row['body']))
-                        other['version'] = row['version'] + 1
-                        db.execute('UPDATE recipes SET version=?,body=? WHERE id=?',
-                                   (other['version'], json.dumps(other, ensure_ascii=False), row['id']))
+        if recipe.get('assortment_id'):
+            for candidate in db.execute('SELECT id,body FROM recipes WHERE id<>?', (key,)):
+                if json.loads(candidate['body']).get('assortment_id') == recipe['assortment_id']:
+                    raise Review('Для этой карточки изделия уже есть норма. Открой существующую.')
+        old = db.execute('SELECT version,body FROM recipes WHERE id=?', (key,)).fetchone()
+        if old and recipe.get('version') is not None and recipe['version'] != old['version']:
+            raise Review('Норма уже изменена. Обнови страницу перед сохранением.')
+        if old:
+            db.execute('INSERT OR IGNORE INTO recipe_history VALUES(?,?,?,?)',
+                       (key, old['version'], now(), old['body']))
+        recipe.update(id=key, version=(old[0] if old else 0) + 1)
+        db.execute('INSERT OR REPLACE INTO recipes VALUES(?,?,?)',
+                   (key, recipe['version'], json.dumps(recipe, ensure_ascii=False)))
+        self.record_recipe_event(db, key, json.loads(old['body']) if old else {}, recipe)
+        # Стоимость работы общая для модели и цвета; нормы остаются размерными.
+        if propagate and recipe.get('model') and recipe.get('color'):
+            for row in db.execute('SELECT id,version,body FROM recipes WHERE id<>?', (key,)).fetchall():
+                other = json.loads(row['body'])
+                before_other = copy.deepcopy(other)
+                if (other.get('model'), other.get('color')) != (recipe['model'], recipe['color']):
+                    continue
+                changed = False
+                for i, stage in enumerate(recipe.get('stages', [])):
+                    if i < len(other.get('stages', [])) and other['stages'][i].get('factory') == stage.get('factory'):
+                        if other['stages'][i].get('work_cost') != stage.get('work_cost'):
+                            other['stages'][i]['work_cost'] = stage.get('work_cost', 0)
+                            changed = True
+                if changed:
+                    db.execute('INSERT OR IGNORE INTO recipe_history VALUES(?,?,?,?)',
+                               (other['id'], row['version'], now(), row['body']))
+                    other['version'] = row['version'] + 1
+                    db.execute('UPDATE recipes SET version=?,body=? WHERE id=?',
+                               (other['version'], json.dumps(other, ensure_ascii=False), row['id']))
+                    self.record_recipe_event(db, other['id'], before_other, other)
         return recipe
+
+    def record_recipe_event(self, db, key, before, after):
+        changes = recipe_changes(before, after)
+        if changes:
+            db.execute('INSERT INTO recipe_events VALUES(?,?,?,?,?)',
+                       (key, after['version'], now(), 'Общий аккаунт', json.dumps(changes, ensure_ascii=False)))
+
+    def save_recipe_group(self, recipes):
+        if not isinstance(recipes, list) or not 1 <= len(recipes) <= 100:
+            raise Review('Выбери размеры, в которых внесены изменения')
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            seen = set()
+            cached = db.execute("SELECT body FROM catalogues WHERE kind='assortment'").fetchone()
+            products = {r['id']: r for r in json.loads(cached['body'])} if cached else {}
+            def work_group(recipe):
+                product = products.get(recipe.get('assortment_id'), {})
+                model = product.get('model') or recipe.get('catalogue_model') or recipe.get('display_name') or recipe.get('model') or ''
+                return (str(model).strip().casefold(), str(recipe.get('color') or '').strip().casefold())
+            work_changes = {}
+            for recipe in recipes:
+                key = recipe.get('id')
+                if key and key in seen:
+                    raise Review('Размер добавлен повторно')
+                if key:
+                    seen.add(key)
+                    old = db.execute('SELECT version,body FROM recipes WHERE id=?', (key,)).fetchone()
+                    if old and recipe.get('version') != old['version']:
+                        raise Review('Норма уже изменена. Обнови страницу перед сохранением.')
+                else:
+                    old = None
+                previous = json.loads(old['body']) if old else {}
+                for i, stage in enumerate(recipe.get('stages', [])):
+                    old_stages = previous.get('stages', [])
+                    old_work = old_stages[i].get('work_cost', 0) if i < len(old_stages) else 0
+                    if stage.get('work_cost', 0) != old_work:
+                        work_changes[(*work_group(recipe), i, stage.get('factory'))] = stage.get('work_cost', 0)
+            saved = []
+            for recipe in recipes:
+                try:
+                    recipe['approved'] = True
+                    recipe['editor_schema'] = 2
+                    saved.append(self.save_recipe(recipe, db, propagate=False))
+                except Review as exc:
+                    raise Review('Размер ' + str(recipe.get('size') or 'без размера') + ': ' + str(exc)) from None
+            # Shared work updates affect matching sizes without approving unrelated drafts.
+            for row in db.execute('SELECT id,version,body FROM recipes').fetchall():
+                other = json.loads(row['body'])
+                before_other = copy.deepcopy(other)
+                changed = False
+                for i, stage in enumerate(other.get('stages', [])):
+                    key = (*work_group(other), i, stage.get('factory'))
+                    if key in work_changes and stage.get('work_cost', 0) != work_changes[key]:
+                        stage['work_cost'] = work_changes[key]
+                        changed = True
+                if changed:
+                    db.execute('INSERT OR IGNORE INTO recipe_history VALUES(?,?,?,?)',
+                               (other['id'], row['version'], now(), row['body']))
+                    other['version'] = row['version'] + 1
+                    db.execute('UPDATE recipes SET version=?,body=? WHERE id=?',
+                               (other['version'], json.dumps(other, ensure_ascii=False), row['id']))
+                    self.record_recipe_event(db, other['id'], before_other, other)
+            return saved
 
     def enqueue(self, kind, value):
         if kind not in TYPES or not ID.fullmatch(str(value)):
@@ -373,6 +498,7 @@ class Engine:
                 'article': r.get('article') or r.get('product', {}).get('article', ''),
                 'pathName': r.get('pathName') or r.get('product', {}).get('pathName', ''),
                 'model': r.get('product', {}).get('name', r['name']),
+                'companyType': r.get('companyType', ''),
                 'characteristics': r.get('characteristics', []),
                 'parent_id': r.get('product', {}).get('id', ''),
                 'composition': composition(r)} for r in rows]
@@ -924,6 +1050,8 @@ def route(handler, method):
         elif path == '/api/production/catalogues/refresh':
             started = service.start_catalogue_refresh(force=True)
             result = dict(service.catalogue_snapshot(False), started=started)
+        elif path == '/api/production/recipes/apply':
+            result = {'recipes': service.save_recipe_group(body.get('recipes'))}
         elif path == '/api/production/recipe':
             result = service.save_recipe(body)
         elif path == '/api/production/config':

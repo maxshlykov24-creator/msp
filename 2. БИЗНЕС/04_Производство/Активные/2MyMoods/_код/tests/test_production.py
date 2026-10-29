@@ -180,6 +180,62 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(row['parent_id'], self.product)
         self.assertNotIn('Служебное поле', str(row))
 
+    def group_recipe(self, product, size, quantity):
+        return {'name': 'Test '+size, 'model': 'Test', 'color': 'blue', 'size': size,
+            'assortment_id': product, 'approved': False, 'zip_checked': True, 'editor_schema': 2,
+            'stages': [{'factory': self.factory, 'work_cost': 0, 'materials': [
+                {'id': self.material, 'name': 'Fabric', 'type': 'product', 'quantity': quantity},
+                {'id': uid(), 'name': 'Zip', 'type': 'product', 'quantity': 1, 'role': 'packaging'}]}]}
+
+    def test_group_applies_two_sizes_atomically(self):
+        a = self.e.save_recipe(self.group_recipe(self.product, 'S', 2))
+        b = self.e.save_recipe(self.group_recipe(uid(), 'M', 4))
+        a['stages'][0]['materials'][0]['quantity'] = 3
+        b['stages'][0]['materials'][0]['quantity'] = 6
+        self.e.save_recipe_group([a, b])
+        rows = {r['size']: r for r in self.e.recipes()}
+        self.assertEqual(rows['S']['stages'][0]['materials'][0]['quantity'], 3)
+        self.assertEqual(rows['M']['stages'][0]['materials'][0]['quantity'], 6)
+        self.assertTrue(rows['S']['approved'] and rows['M']['approved'])
+
+    def test_invalid_second_size_rolls_back_first(self):
+        a = self.e.save_recipe(self.group_recipe(self.product, 'S', 2))
+        b = self.e.save_recipe(self.group_recipe(uid(), 'M', 4))
+        a['stages'][0]['materials'][0]['quantity'] = 3
+        b['stages'][0]['materials'][0]['quantity'] = 0
+        with self.assertRaisesRegex(Review, 'Размер M'):
+            self.e.save_recipe_group([a, b])
+        rows = {r['size']: r for r in self.e.recipes()}
+        self.assertEqual(rows['S']['version'], 1)
+        self.assertEqual(rows['S']['stages'][0]['materials'][0]['quantity'], 2)
+        self.assertFalse(rows['S']['approved'])
+
+    def test_stale_size_cannot_partially_apply_group(self):
+        a = self.e.save_recipe(self.group_recipe(self.product, 'S', 2))
+        b = self.e.save_recipe(self.group_recipe(uid(), 'M', 4))
+        stale = copy.deepcopy(b)
+        b['name'] = 'Updated elsewhere'
+        self.e.save_recipe(b)
+        with self.assertRaisesRegex(Review, 'уже изменена'):
+            self.e.save_recipe_group([a, stale])
+        rows = {r['size']: r for r in self.e.recipes()}
+        self.assertFalse(rows['S']['approved'])
+        self.assertEqual(rows['S']['version'], 1)
+
+    def test_group_work_cost_propagates_without_approving_untouched_size(self):
+        a = self.e.save_recipe(self.group_recipe(self.product, 'S', 2))
+        b = self.e.save_recipe(self.group_recipe(uid(), 'M', 4))
+        untouched = self.e.save_recipe(self.group_recipe(uid(), 'L', 5))
+        a['stages'][0]['work_cost'] = 250
+        b['stages'][0]['materials'][0]['quantity'] = 7
+        self.e.save_recipe_group([b, a])
+        rows = {r['size']: r for r in self.e.recipes()}
+        self.assertTrue(rows['S']['approved'] and rows['M']['approved'])
+        self.assertFalse(rows['L']['approved'])
+        self.assertTrue(all(r['stages'][0]['work_cost'] == 250 for r in rows.values()))
+        self.assertEqual(rows['M']['stages'][0]['materials'][0]['quantity'], 7)
+        self.assertEqual(rows['L']['id'], untouched['id'])
+
     def test_partial_return_remainder(self):
         self.assertEqual(remaining({'a': Decimal(10)}, {'a': Decimal(4)}), {'a': Decimal(6)})
 
