@@ -85,7 +85,7 @@ class ProductionTests(unittest.TestCase):
         self.ms.get = get
         first = self.e.analytics(self.company)
         self.assertEqual(first['rows'][0]['id'], self.product)
-        self.assertEqual(first['rows'][0]['cost'], 12345)
+        self.assertNotIn('cost', first['rows'][0])
         self.assertNotIn('supplier', first['rows'][0])
         self.assertEqual(self.e.analytics(self.company), first)
         self.assertEqual(len(calls), 1)
@@ -102,6 +102,70 @@ class ProductionTests(unittest.TestCase):
         with self.assertRaises(Review):
             self.e.analytics(force=True)
         self.assertEqual(self.e.analytics(), first)
+
+    def fifo_layer(self, stock, price, moment='2026-11-01 00:00:00', kind='supply'):
+        return {'stock': stock, 'costPerUnit': price, 'moment': moment,
+                'operation': ref(kind, uid()), 'store': ref('store', self.company)}
+
+    def cost_recipe(self):
+        return {'id': uid(), 'assortment_id': self.product, 'approved': True, 'zip_checked': True,
+                'version': 1, 'stages': [
+                    {'work_cost': 100, 'materials': [{'id': self.material, 'quantity': .3},
+                     {'id': self.factory, 'quantity': 1, 'role': 'packaging'}]},
+                    {'work_cost': 50, 'materials': [{'id': self.material, 'quantity': .2}]}]}
+
+    def test_fifo_splits_old_and_new_layers_and_reprices_after_depletion(self):
+        old = self.fifo_layer(.2, 10000)
+        new = self.fifo_layer(1, 20000, '2026-11-02 00:00:00')
+        total, trace = self.e.fifo_cost([new, old], '.5')
+        self.assertEqual(total, Decimal('80'))
+        self.assertEqual([r['quantity'] for r in trace], [.2, .3])
+        self.assertEqual(self.e.fifo_cost([new], '.5')[0], Decimal('100'))
+
+    def test_fifo_unknown_price_origin_shortage_negative_are_not_zero(self):
+        for rows in [[self.fifo_layer(1, None)], [self.fifo_layer(1, 100, kind='enter')],
+                     [self.fifo_layer(.1, 100)], [self.fifo_layer(-1, 100)]]:
+            with self.assertRaises(Review):
+                self.e.fifo_cost(rows, 1)
+
+    def test_production_cost_adds_all_work_and_packaging_once(self):
+        recipe = self.cost_recipe()
+        self.e.recipes = lambda: [recipe]
+        calls = []
+        def layers(key, kind, force):
+            calls.append(key)
+            return [self.fifo_layer(10, 10000 if key == self.material else 1000)]
+        self.e.material_fifo_layers = layers
+        result = self.e.production_costs()[self.product]
+        self.assertEqual(result['cost'], 210)  # .5*100 + 100+50 + 1*10
+        self.assertEqual(calls.count(self.material), 1)
+        self.assertEqual(recipe['stages'][0]['materials'][0]['quantity'], .3)
+        recipe['approved'] = False
+        self.assertIsNone(self.e.production_costs()[self.product]['cost'])
+
+    def test_production_unknown_material_makes_whole_cost_unknown(self):
+        recipe = self.cost_recipe()
+        self.e.recipes = lambda: [recipe]
+        self.e.material_fifo_layers = lambda *a: []
+        result = self.e.production_costs()[self.product]
+        self.assertIsNone(result['cost'])
+        self.assertIn('FIFO', result['issue'])
+
+    def test_fifo_cache_force_refresh_and_incomplete_preserves_previous(self):
+        calls = []
+        def get(*a, **kw):
+            calls.append(kw)
+            return {'meta': {'size': 1}, 'rows': [self.fifo_layer(1, 100)]}
+        self.ms.get = get
+        first = self.e.material_fifo_layers(self.material)
+        self.assertEqual(self.e.material_fifo_layers(self.material), first)
+        self.assertEqual(len(calls), 1)
+        first = self.e.material_fifo_layers(self.material, force=True)
+        self.assertEqual(len(calls), 2)
+        self.ms.get = lambda *a, **kw: {'meta': {'size': 1}, 'rows': []}
+        with self.assertRaises(Review):
+            self.e.material_fifo_layers(self.material, force=True)
+        self.assertEqual(self.e.material_fifo_layers(self.material), first)
 
     def test_norm_display_units_convert_to_stock_units(self):
         r = self.e.save_recipe({'name': 'Test', 'stages': [{'materials': [

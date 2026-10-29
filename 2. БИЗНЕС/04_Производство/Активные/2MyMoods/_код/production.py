@@ -608,6 +608,102 @@ class Engine:
             if stock.get(key, Decimal(0)) < qty:
                 raise Review('Недостаточно материала/изделий на складе: ' + key)
 
+    @staticmethod
+    def fifo_cost(layers, quantity):
+        need, total, used = dec(quantity), Decimal(0), []
+        if need <= 0:
+            raise Review('Не указана положительная норма материала')
+        if any(dec(row.get('stock', 0)) < 0 for row in layers):
+            raise Review('Отрицательный остаток материала: FIFO не подтверждён')
+        ordered = sorted(layers, key=lambda r: (r.get('moment', ''),
+                         r.get('operation', {}).get('meta', {}).get('href', ''),
+                         r.get('store', {}).get('meta', {}).get('href', '')))
+        for row in ordered:
+            stock = dec(row.get('stock', 0))
+            if stock <= 0:
+                continue
+            if not row.get('moment') or row.get('costPerUnit') is None or dec(row['costPerUnit']) <= 0:
+                raise Review('Стоимость партии материала не подтверждена')
+            # Native remnants retain receipt provenance. Other origins are not guessed.
+            if row.get('operation', {}).get('meta', {}).get('type') != 'supply':
+                raise Review('Нет подтверждённой стоимости из приёмки материала')
+            amount = min(stock, need)
+            total += amount * dec(row['costPerUnit']) / 100
+            used.append({'quantity': float(amount), 'unit_cost': float(dec(row['costPerUnit']) / 100),
+                         'moment': row['moment'], 'operation': ident(row.get('operation')),
+                         'store': ident(row.get('store'))})
+            need -= amount
+            if need == 0:
+                return total, used
+        raise Review('Недостаточно остатков материала для расчёта FIFO')
+
+    def material_fifo_layers(self, key, kind='product', force=False):
+        ref(kind, key)
+        with self.db() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS material_fifo_cache(id TEXT PRIMARY KEY, updated REAL, body TEXT NOT NULL)')
+            cached = db.execute('SELECT updated,body FROM material_fifo_cache WHERE id=?', (key,)).fetchone()
+        if cached and not force and time.time() - cached['updated'] < self.CATALOGUE_TTL:
+            return json.loads(cached['body'])
+        rows, offset = [], 0
+        while True:
+            page = self.ms.get('/report/byoperations/stock', limit=1000, offset=offset,
+                               filter='assortment=' + BASE + '/entity/' + kind + '/' + key)
+            chunk = page.get('rows', [])
+            if not chunk and offset < page.get('meta', {}).get('size', offset):
+                raise Review('Данные партий материала получены не полностью')
+            rows.extend(chunk)
+            offset += len(chunk)
+            if offset >= page.get('meta', {}).get('size', offset):
+                break
+        with self.db() as db:
+            db.execute('INSERT OR REPLACE INTO material_fifo_cache VALUES(?,?,?)',
+                       (key, time.time(), json.dumps(rows, ensure_ascii=False)))
+        return rows
+
+    def production_costs(self, force=False):
+        result, layers = {}, {}
+        for recipe in self.recipes():
+            key = recipe.get('assortment_id')
+            if not key:
+                continue
+            try:
+                if not recipe.get('approved'):
+                    raise Review('Норма изделия не заполнена и не применена')
+                stages = recipe.get('stages', [])
+                packs = [m for st in stages for m in st.get('materials', []) if m.get('role') == 'packaging']
+                if not stages or len(packs) != 1 or not recipe.get('zip_checked'):
+                    raise Review('Не заполнена производственная упаковка')
+                requirements, kinds = defaultdict(Decimal), {}
+                total, breakdown = Decimal(0), []
+                for stage in stages:
+                    if 'work_cost' not in stage or dec(stage['work_cost']) < 0 or not stage.get('materials'):
+                        raise Review('Не заполнены материалы или стоимость работы этапа')
+                    total += dec(stage['work_cost'])
+                    for mat in stage['materials']:
+                        mid, kind = mat.get('id', ''), mat.get('type', 'product')
+                        ref(kind, mid)
+                        if dec(mat.get('quantity', 0)) <= 0:
+                            raise Review('Не заполнен расход материала')
+                        requirements[mid] += dec(mat['quantity'])
+                        kinds[mid] = kind
+                for mid, qty in requirements.items():
+                    if mid not in layers:
+                        try:
+                            layers[mid] = self.material_fifo_layers(mid, kinds[mid], force)
+                        except Review as error:
+                            layers[mid] = error
+                    if isinstance(layers[mid], Review):
+                        raise layers[mid]
+                    value, sources = self.fifo_cost(layers[mid], qty)
+                    total += value
+                    breakdown.append({'material': mid, 'quantity': float(qty),
+                                      'cost': float(value), 'layers': sources})
+                result[key] = {'cost': float(total.quantize(Decimal('.01'))), 'materials': breakdown,
+                               'recipe_version': recipe.get('version'), 'basis': 'next_unit_fifo'}
+            except Review as error:
+                result[key] = {'cost': None, 'issue': str(error), 'basis': 'next_unit_fifo'}
+        return result
+
     def analytics(self, store='', force=False):
         if store:
             ref('store', store)
@@ -615,7 +711,8 @@ class Engine:
             db.execute('CREATE TABLE IF NOT EXISTS analytics_cache(scope TEXT PRIMARY KEY, updated REAL, body TEXT NOT NULL)')
             cached = db.execute('SELECT updated,body FROM analytics_cache WHERE scope=?', (store,)).fetchone()
         if cached and not force and time.time() - cached['updated'] < self.CATALOGUE_TTL:
-            return {'updated': cached['updated'], 'rows': json.loads(cached['body'])}
+            return {'updated': cached['updated'], 'rows': [{k: v for k, v in r.items() if k != 'cost'} for r in json.loads(cached['body'])],
+                    'production_costs': self.production_costs(force)}
         params = {'stockMode': 'all'}
         if store:
             params['filter'] = 'store=' + BASE + '/entity/store/' + store
@@ -631,12 +728,12 @@ class Engine:
                 break
         safe = [{'id': r.get('id') or urllib.parse.urlparse(r.get('meta', {}).get('href', '')).path.rsplit('/', 1)[-1],
                  'name': r.get('name', ''), 'stock': r.get('stock', 0), 'reserve': r.get('reserve', 0),
-                 'cost': r.get('price'), 'sale': r.get('salePrice')} for r in rows]
+                 'sale': r.get('salePrice')} for r in rows]
         updated = time.time()
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO analytics_cache VALUES(?,?,?)',
                        (store, updated, json.dumps(safe, ensure_ascii=False)))
-        return {'updated': updated, 'rows': safe}
+        return {'updated': updated, 'rows': safe, 'production_costs': self.production_costs(force)}
 
     def stock(self, store):
         ref('store', store)
