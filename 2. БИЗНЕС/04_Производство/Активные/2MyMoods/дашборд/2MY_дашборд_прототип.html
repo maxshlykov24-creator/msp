@@ -495,6 +495,7 @@
   .toolbar .tcount{margin-left:auto;font-size:11px;color:var(--mute);white-space:nowrap}
   .toolbar .tclear{font-family:var(--sans);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);background:none;border:none;border-bottom:1px solid var(--line);cursor:pointer;padding:0 0 3px;transition:color .3s,border-color .3s}
   .toolbar .tclear:hover{color:var(--ink);border-color:var(--ink)}
+  .toolbar .tclear:disabled{opacity:.35;cursor:default}
   .scope-bar{background:var(--butter);border-color:var(--hair);margin-bottom:0}
 
   /* ── секции ── */
@@ -931,7 +932,7 @@
     <div class="card">
       <h3>Состояние базы</h3>
       <div id="client-quality" style="margin-bottom:12px;font-size:12px;line-height:1.5"></div>
-      <button type="button" class="tclear" id="client-return-gaps" hidden>Проверить возвраты</button>
+      <button type="button" class="conversion-proof" style="font-size:12px;margin-bottom:12px" id="client-return-gaps" hidden>Проверить возвраты</button>
       <div class="hint">Покупки объединяются по телефону в одном формате. Если пригодного телефона нет, используется карточка контрагента МойСклад. Разные карточки без телефона не объединяются по имени.</div>
       <div id="base-kv"></div>
       <div style="margin-top:26px">
