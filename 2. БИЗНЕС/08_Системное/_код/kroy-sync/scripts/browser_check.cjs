@@ -1,3 +1,82 @@
+// Read-only acceptance check against the real catalog; never creates documents.
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const fs=require('fs');
-(async()=>{const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.KROY_UI_URL || 'http://127.0.0.1:18763');await page.getByLabel('Личный ключ доступа').fill(fs.readFileSync(process.env.KROY_UI_KEY_FILE || '.runtime/owner.key','utf8').trim());await page.getByRole('button',{name:'Войти',exact:true}).click();await page.getByRole('heading',{name:'Каталог',exact:true}).waitFor();await Promise.race([page.locator('.cards img').evaluateAll(imgs=>Promise.all(imgs.map(i=>i.decode().catch(()=>{})))),new Promise(r=>setTimeout(r,10000))]);await page.screenshot({path:'.runtime/catalog-desktop.png',fullPage:false});await page.getByRole('button',{name:'Размеры',exact:true}).click();await page.locator('tbody tr').first().waitFor();const count=await page.locator('tbody tr').count();await page.screenshot({path:'.runtime/catalog-list.png',fullPage:false});await page.getByRole('button',{name:'Внимание',exact:true}).click();await page.getByRole('heading',{name:'Срез МоегоСклада'}).waitFor();await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Каталог',exact:true}).click();await page.getByRole('button',{name:'Модели',exact:true}).click();await page.screenshot({path:'.runtime/catalog-mobile.png',fullPage:false});const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);await page.getByRole('button',{name:'Выйти',exact:true}).click();await page.getByLabel('Личный ключ доступа').waitFor();console.log(JSON.stringify({catalog_rows:count,mobile_overflow:overflow,js_errors:errors,logout:true}));await browser.close();if(errors.length||overflow)process.exitCode=1})().catch(e=>{console.error(e.message);process.exitCode=1});
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(process.env.KROY_UI_URL || 'http://127.0.0.1:18763');
+  assert.equal(await page.title(),'YUJI.CLO · Бренд одежды');
+  await page.getByLabel('Личный ключ доступа').fill(fs.readFileSync(process.env.KROY_UI_KEY_FILE || '.runtime/owner.key','utf8').trim());
+  await page.getByRole('button',{name:'Войти',exact:true}).click();
+  await page.getByRole('heading',{name:'Поиск товара',exact:true}).waitFor();
+  const navigation=page.getByRole('navigation',{name:'Основные разделы'});
+  for(const name of ['Поставки ФБО','История движений','Состояние системы','Сотрудники','Соответствия'])assert.equal(await navigation.getByRole('button',{name,exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Сверить',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Модели',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Размеры',exact:true}).count(),0);
+  const allModels=await page.locator('.model-trigger').count();
+  await page.locator('.model-thumb img').first().evaluate(i=>i.decode());
+  await page.screenshot({path:'.runtime/catalog-desktop.png'});
+  await page.getByRole('button',{name:'Тёмная тема',exact:true}).click();
+  assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
+  await page.screenshot({path:'.runtime/catalog-dark.png'});
+  await page.getByRole('button',{name:'Футболки',exact:false}).click();
+  const categoryModels=await page.locator('.model-trigger').count();
+  assert(categoryModels>0&&categoryModels<allModels);
+  await page.locator('.model-trigger').first().click();
+  const rows=await page.locator('tbody tr').count();assert(rows>0);
+  await page.getByRole('button',{name:'Фильтры',exact:false}).click();
+  await page.getByRole('button',{name:'Цвет',exact:true}).click();
+  await page.getByRole('combobox',{name:'Найти: Цвет'}).fill('чёр');
+  const options=await page.getByRole('option').count();assert(options>0);
+  await page.getByRole('combobox',{name:'Найти: Цвет'}).press('Enter');
+  assert.equal(await page.getByRole('listbox').count(),0);
+  assert.equal(await page.locator('tbody tr').filter({hasText:'Чёрный'}).count(),await page.locator('tbody tr').count());
+  await page.getByRole('button',{name:'Наличие',exact:true}).click();
+  await page.screenshot({path:'.runtime/catalog-filters.png'});
+  await page.getByRole('combobox',{name:'Найти: Наличие'}).press('Escape');
+  await page.getByRole('button',{name:'Сбросить',exact:true}).click();
+  await page.getByRole('button',{name:'Все категории',exact:false}).click();
+  await page.getByRole('button',{name:'Фильтры',exact:false}).click();
+  await page.getByLabel('Поиск товара',{exact:true}).fill('скимс');
+  assert((await page.locator('.model-trigger').count())>0);
+  await page.getByRole('button',{name:'Очистить поиск',exact:true}).click();
+  await page.getByRole('button',{name:'Свернуть меню',exact:true}).click();
+  assert(await page.locator('.shell.rail-compact').count());
+  await page.getByRole('button',{name:'Развернуть меню',exact:true}).click();
+  await page.getByRole('button',{name:'Профиль: Максим',exact:true}).click();
+  await page.getByRole('button',{name:'Сотрудники',exact:true}).click();
+  await page.getByRole('heading',{name:'Сотрудники',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Поиск товара',exact:true}).click();
+  const widths=[320,390,768,1100,1440],checked=[];
+  for(const width of widths){
+   await page.setViewportSize({width,height:900});
+   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
+   assert.equal(overflow,false,'Overflow at '+width);
+   await page.getByRole('button',{name:'Профиль: Максим',exact:true}).click();
+   const profile=page.getByRole('dialog',{name:'Меню профиля'});
+   await profile.waitFor();
+   const box=await profile.boundingBox();assert(box.x>=0&&box.x+box.width<=width+1&&box.y>=0,'Profile bounds at '+width);
+   await profile.getByRole('button',{name:'Светлая тема',exact:true}).click();
+   assert.equal(await page.locator('html').getAttribute('data-theme'),'light');
+   await page.keyboard.press('Escape');
+   if(width===390)await page.screenshot({path:'.runtime/catalog-mobile.png'});
+   checked.push(width);
+  }
+  await page.reload();
+  await page.getByLabel('Личный ключ доступа').waitFor();
+  assert.equal(await page.locator('html').getAttribute('data-theme'),'light');
+  // Login again solely to check logout and preserved settings.
+  await page.getByLabel('Личный ключ доступа').fill(fs.readFileSync(process.env.KROY_UI_KEY_FILE || '.runtime/owner.key','utf8').trim());
+  await page.getByRole('button',{name:'Войти',exact:true}).click();
+  await page.getByRole('heading',{name:'Поиск товара',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Профиль: Максим',exact:true}).click();
+  await page.getByRole('button',{name:'Выйти',exact:true}).click();
+  await page.getByLabel('Личный ключ доступа').waitFor();
+  assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({models:allModels,category_models:categoryModels,expanded_rows:rows,theme_persisted:true,filters_keyboard:true,profile_menu:true,widths:checked,js_errors:errors,logout:true}));
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e.message);process.exitCode=1});

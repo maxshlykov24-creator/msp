@@ -20,7 +20,7 @@ print('marketplaces', json.dumps(import_observation(engine, json.loads(Path('mar
 print('photos', import_photos(engine, json.loads(Path('wb-catalog.json').read_text())))
 import_probe(engine, json.loads(Path('marketplace-probe-final.json').read_text()))
 worker = '''[Unit]
-Description=YUJI stage expiry reminders
+Description=YUJI.CLO stage expiry reminders
 After=kroy-app-stage.service
 [Service]
 User=kroy-stage

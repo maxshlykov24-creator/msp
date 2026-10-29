@@ -23,7 +23,7 @@ if subprocess.run(['id', '-u', 'kroy-stage'], capture_output=True).returncode:
     subprocess.run(['useradd', '--system', '--home-dir', str(root), '--shell', '/usr/sbin/nologin', 'kroy-stage'], check=True)
 subprocess.run(['chown', '-R', 'kroy-stage:kroy-stage', str(root)], check=True)
 unit = '''[Unit]
-Description=YUJI evaluation application (no external publication)
+Description=YUJI.CLO evaluation application (no external publication)
 After=network.target docker.service
 [Service]
 User=kroy-stage

@@ -5,7 +5,7 @@ for name, schedule in [('backup', 'OnCalendar=*-*-* 03:20:00 UTC\nPersistent=tru
                        ('health', 'OnBootSec=2min\nOnUnitActiveSec=5min')]:
     unit = 'kroy-app-stage-' + name
     Path('/etc/systemd/system/' + unit + '.service').write_text('''[Unit]
-Description=YUJI ''' + name + '''
+Description=YUJI.CLO ''' + name + '''
 After=docker.service kroy-app-stage.service
 [Service]
 Type=oneshot
@@ -18,7 +18,7 @@ MemoryMax=128M
 TimeoutStartSec=120
 ''')
     Path('/etc/systemd/system/' + unit + '.timer').write_text('''[Unit]
-Description=YUJI scheduled ''' + name + '''
+Description=YUJI.CLO scheduled ''' + name + '''
 [Timer]
 ''' + schedule + '''
 [Install]

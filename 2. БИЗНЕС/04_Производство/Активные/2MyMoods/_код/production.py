@@ -196,6 +196,8 @@ class Engine:
     def set_config(self, config):
         # Включение возможно только после настройки складов, статусов и даты старта.
         if config.get('enabled'):
+            if os.environ.get('PRODUCTION_ALLOW_WRITES') != '1':
+                raise Review('Запуск заблокирован до проверки штатных связей документов и контрольной партии')
             if not config.get('start_at') or not config.get('company_store') or not config.get('states'):
                 raise Review('Перед включением нужны дата старта, склад компании и статусы')
             if not config.get('reason_attribute') or not config.get('reason_production'):
@@ -210,7 +212,7 @@ class Engine:
 
     def recipes(self):
         with self.db() as db:
-            return [json.loads(r[0]) for r in db.execute('SELECT body FROM recipes ORDER BY id')]
+            return sorted([json.loads(r[0]) for r in db.execute('SELECT body FROM recipes')], key=lambda r: r.get('name', ''))
 
     def save_recipe(self, recipe):
         key = str(recipe.get('id') or uuid.uuid4())
@@ -234,6 +236,22 @@ class Engine:
             recipe.update(id=key, version=(old[0] if old else 0) + 1)
             db.execute('INSERT OR REPLACE INTO recipes VALUES(?,?,?)',
                        (key, recipe['version'], json.dumps(recipe, ensure_ascii=False)))
+            # Стоимость работы общая для модели и цвета; нормы остаются размерными.
+            if recipe.get('model') and recipe.get('color'):
+                for row in db.execute('SELECT id,version,body FROM recipes WHERE id<>?', (key,)).fetchall():
+                    other = json.loads(row['body'])
+                    if (other.get('model'), other.get('color')) != (recipe['model'], recipe['color']):
+                        continue
+                    changed = False
+                    for i, stage in enumerate(recipe.get('stages', [])):
+                        if i < len(other.get('stages', [])) and other['stages'][i].get('factory') == stage.get('factory'):
+                            if other['stages'][i].get('work_cost') != stage.get('work_cost'):
+                                other['stages'][i]['work_cost'] = stage.get('work_cost', 0)
+                                changed = True
+                    if changed:
+                        other['version'] = row['version'] + 1
+                        db.execute('UPDATE recipes SET version=?,body=? WHERE id=?',
+                                   (other['version'], json.dumps(other, ensure_ascii=False), row['id']))
         return recipe
 
     def enqueue(self, kind, value):
@@ -581,7 +599,7 @@ class Engine:
             self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'], {'name': str(row['number'])})
             return
         existing = self.ms.rows('/entity/' + kind)
-        maximum = max([int(x['name']) for x in existing if re.fullmatch(r'\d+', x.get('name', ''))] or [0])
+        maximum = max([int(x['name']) for x in existing if x['id'] != doc['id'] and re.fullmatch(r'\d+', x.get('name', ''))] or [0])
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             maximum = max(maximum, db.execute('SELECT COALESCE(MAX(number),0) FROM names WHERE kind=?', (kind,)).fetchone()[0])

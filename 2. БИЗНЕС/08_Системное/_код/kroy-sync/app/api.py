@@ -25,7 +25,7 @@ class Command(BaseModel):
 
 def create_app(engine=None):
     engine = engine or engine_for()
-    app = FastAPI(title='YUJI · Учёт производства', docs_url=None, redoc_url=None)
+    app = FastAPI(title='YUJI.CLO · Бренд одежды', docs_url=None, redoc_url=None)
     bearer = HTTPBearer(auto_error=False)
 
     @app.middleware('http')

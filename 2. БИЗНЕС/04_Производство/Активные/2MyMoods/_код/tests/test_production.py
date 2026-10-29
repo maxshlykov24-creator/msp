@@ -122,8 +122,10 @@ class ProductionTests(unittest.TestCase):
 
     def test_ordinary_number_series_independent(self):
         for kind in ('move', 'loss'):
+            old_id = uid()
+            self.ms.docs[kind][old_id] = {'id': old_id, 'name': '15'}
             value = uid()
-            self.ms.docs[kind][value] = {'id': value, 'name': '15'}
+            self.ms.docs[kind][value] = {'id': value, 'name': '999'}
             self.e.number_other(kind, self.ms.docs[kind][value])
             self.assertEqual(self.ms.docs[kind][value]['name'], '16')
             self.e.number_other(kind, self.ms.docs[kind][value])
@@ -159,6 +161,72 @@ class ProductionTests(unittest.TestCase):
 
     def test_nonfinite_quantity_rejected(self):
         with self.assertRaises(Review): quantities([{'assortment': ref('product', self.product), 'quantity': float('nan')}])
+
+    def setup_chain(self):
+        from production import STATES
+        fid1, fid2, agent, s2 = [uid() for _ in range(4)]
+        cfg = {'enabled': False, 'company_store': self.company, 'states': {
+            k: {label: uid() for label in labels} for k, labels in STATES.items()},
+            'reason_attribute': uid(), 'reason_dictionary': uid(), 'reason_production': uid(),
+            'factories': [{'id': fid1, 'agent': agent, 'store': self.factory},
+                          {'id': fid2, 'agent': uid(), 'store': s2}]}
+        self.e.set_config(cfg)
+        self.e.save_recipe({'name': 'Изделие', 'assortment_id': self.product, 'approved': True,
+            'zip_checked': True, 'stages': [
+                {'factory': fid1, 'materials': [{'id': self.material, 'quantity': 2}]},
+                {'factory': fid2, 'materials': [{'id': self.material, 'quantity': '.1'}]}]})
+        supply_id, order_id = uid(), uid()
+        self.ms.docs['supply'][supply_id] = {
+            'id': supply_id, 'name': 'Поставка', 'moment': '2026-10-29 10:00:00', 'applicable': True,
+            'organization': ref('organization', self.org), 'store': ref('store', self.company),
+            'agent': ref('counterparty', agent), 'purchaseOrder': ref('purchaseorder', order_id),
+            'positions': [{'assortment': ref('product', self.product), 'quantity': 10, 'price': 10000}]}
+        return supply_id, cfg
+
+    def test_full_two_stage_chain_with_partial_manual_return(self):
+        supply_id, cfg = self.setup_chain()
+        self.e.process_supply(supply_id)
+        chain, number = self.e.chain(supply_id)
+        oid, group = next(iter(chain['outbound'].items()))
+        out = self.ms.docs['move'][oid]
+        # Ручной возврат четырёх изделий. Материалы пошива списаны на все десять.
+        rid = uid()
+        self.ms.docs['move'][rid] = {'id': rid, 'name': out['name'] + '/01', 'applicable': True,
+            'moment': '2026-10-29 11:00:00', 'sourceStore': out['targetStore'], 'targetStore': out['sourceStore'],
+            'organization': out['organization'],
+            'positions': [{'assortment': ref('product', self.product), 'quantity': 4}]}
+        self.e.process_move(rid)
+        chain, _ = self.e.chain(supply_id)
+        self.assertFalse(chain['complete'])
+        out['state'] = ref('move/metadata/states', cfg['states']['move']['Доработка принята'])
+        self.e.process_move(oid)
+        chain, _ = self.e.chain(supply_id)
+        self.assertTrue(chain['complete'])
+        returns = [d for kind, d in self.ms.created if kind == 'move' and d['name'].startswith(out['name'] + '/')]
+        self.assertEqual(len(returns), 1)
+        self.assertEqual(returns[0]['positions'][0]['quantity'], 6)
+        loss = [d for kind, d in self.ms.created if kind == 'loss']
+        self.assertEqual(len(loss), 3)
+        self.assertEqual(sum(dec['positions'][0]['quantity'] for dec in loss), 21)
+        count = len(self.ms.created)
+        self.e.process_move(oid)
+        self.assertEqual(len(self.ms.created), count)
+
+    def test_supply_change_after_consumption_blocks(self):
+        value, _ = self.setup_chain()
+        self.e.process_supply(value)
+        self.ms.docs['supply'][value]['positions'][0]['quantity'] = 9
+        with self.assertRaises(Review): self.e.process_supply(value)
+
+    def test_unconfirmed_native_link_prevents_post(self):
+        self.ms.request_original = self.ms.request
+        def unlinked(method, path, body):
+            if path.endswith('/new'):
+                return {'positions': []}
+            return self.ms.request_original(method, path, body)
+        self.ms.request = unlinked
+        with self.assertRaises(Review): self.e.execute('blocked', 'move', self.payload(), basis=uid())
+        self.assertFalse(self.ms.created)
 
 
 if __name__ == '__main__':

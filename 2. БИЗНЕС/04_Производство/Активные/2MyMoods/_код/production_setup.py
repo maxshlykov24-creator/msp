@@ -21,7 +21,7 @@ def setup_ms(engine):
                 existing[label] = ms.request('POST', '/entity/' + kind + '/metadata/states',
                                             {'name': label, 'color': 10066329, 'stateType': 'Regular'})
             config['states'][kind][label] = existing[label]['id']
-    dictionaries = ms.get('/entity/companysettings/metadata').get('customEntities', [])
+    dictionaries = ms.get('/context/companysettings/metadata').get('customEntities', [])
     target = [d for d in dictionaries if d.get('name') == 'Причины списания 2MY']
     if len(target) > 1:
         raise Review('Несколько справочников причин списания')
