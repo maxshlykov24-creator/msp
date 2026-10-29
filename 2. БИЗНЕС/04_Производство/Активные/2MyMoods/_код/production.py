@@ -299,6 +299,13 @@ class Engine:
             if stock.get(key, Decimal(0)) < qty:
                 raise Review('Недостаточно материала/изделий на складе: ' + key)
 
+    def stock(self, store):
+        ref('store', store)
+        rows = self.ms.rows('/report/stock/all', filter='store=' + BASE + '/entity/store/' + store)
+        return [{'id': ident({'meta': r['meta']}), 'name': r.get('name', ''),
+                 'stock': r.get('stock', 0), 'reserve': r.get('reserve', 0),
+                 'price_kopecks': r.get('price'), 'unit': r.get('uom', {}).get('name', '')} for r in rows]
+
     def execute(self, key, kind, payload, basis=None):
         """syncId + сохранённый payload обеспечивают восстановление после неопределённого ответа."""
         with self.db() as db:
@@ -307,6 +314,14 @@ class Engine:
                 payload = json.loads(row['body'])
             else:
                 payload = copy.deepcopy(payload)
+                cfg = self.config()
+                if cfg.get('operation_attributes', {}).get(kind):
+                    label = ('Изделия на доработку' if '/out/' in key else
+                             'Возврат с доработки' if '/return/' in key else 'Расход материалов')
+                    payload.setdefault('attributes', []).append({
+                        'meta': {'href': BASE + '/entity/' + kind + '/metadata/attributes/' + cfg['operation_attributes'][kind],
+                                 'type': 'attributemetadata', 'mediaType': 'application/json'},
+                        'value': ref('customentity/' + cfg['operation_dictionary'], cfg['operation_values'][label])})
                 payload['syncId'] = str(uuid.uuid5(uuid.NAMESPACE_URL, '2my-production:' + key))
                 payload['externalCode'] = '2my-prod-' + hashlib.sha256(key.encode()).hexdigest()[:32]
                 db.execute('INSERT INTO operations(key,kind,body,status) VALUES(?,?,?,?)',
@@ -426,10 +441,12 @@ class Engine:
 
     def outbound(self, chain_id, number, chain, lines, stage):
         fid = lines[0]['recipe']['stages'][stage]['factory']
-        # Один документ на этап+фабрику. Номер включает этап и короткий стабильный ID группы.
-        label = f'ВШ-{number}-Э{stage+1}'
-        if sum(1 for f in chain['factories']) > 1:
-            label += '-' + fid[:6]
+        # Простая цепочка сохраняет согласованный номер ВШ-125.
+        stage_factories = sorted({x['recipe']['stages'][stage]['factory'] for x in chain['lines']
+                                  if len(x['recipe']['stages']) > stage})
+        label = f'ВШ-{number}' + (f'-Э{stage+1}' if stage > 1 else '')
+        if len(stage_factories) > 1:
+            label += '-Г' + str(stage_factories.index(fid) + 1)
         doc = self.execute(f'{chain_id}/out/{stage}/{fid}', 'move', {
             'name': label, 'organization': chain['source']['organization'], 'applicable': True,
             'moment': max(now(), chain['source']['moment']),
@@ -530,7 +547,7 @@ class Engine:
                 key = ident(line['assortment'])
                 if key in qty:
                     matched.append(dict(line, quantity=float(qty[key])))
-            suffix = '-Э' + str(group['stage'] + 1) + '-' + oid[:8] + doc['name'][len(group['name']):]
+            suffix = group['name'][len('ВШ-' + str(num)):] + doc['name'][len(group['name']):]
             self.consume(cid, num, chain, matched, group['stage'], suffix)
             group['returns'][doc['id']] = fp
             next_groups = defaultdict(list)
@@ -724,7 +741,10 @@ def route(handler, method):
     if not hook and path != '/production' and not path.startswith('/api/production'):
         return False
     if not hook and not handler._authed():
-        handler._json(401, {'error': 'Требуется вход'})
+        if path == '/production':
+            handler._redirect('/login')
+        else:
+            handler._json(401, {'error': 'Требуется вход'})
         return True
     try:
         if hook:
@@ -738,7 +758,10 @@ def route(handler, method):
             return True
         service = engine()
         if method == 'GET':
-            if path == '/api/production/catalogue':
+            if path == '/api/production/stock':
+                qs = urllib.parse.parse_qs(parsed.query)
+                result = {'rows': service.stock(qs.get('store', [''])[0])}
+            elif path == '/api/production/catalogue':
                 qs = urllib.parse.parse_qs(parsed.query)
                 result = {'rows': service.catalogue(qs.get('kind', ['assortment'])[0], qs.get('q', [''])[0])}
             elif path == '/api/production/setup':

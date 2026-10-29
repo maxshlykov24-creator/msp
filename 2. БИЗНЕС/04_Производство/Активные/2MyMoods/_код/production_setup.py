@@ -37,7 +37,10 @@ def setup_ms(engine):
         raise Review('Несколько полей причины списания')
     if attrs:
         attr = attrs[0]
-        if attr.get('type') != 'customentity' or attr.get('customEntityMeta', {}).get('href', '').split('/')[-2:-1] != [did]:
+        href = attr.get('customEntityMeta', {}).get('href', '').rstrip('/')
+        if href.endswith('/metadata'):
+            href = href[:-len('/metadata')]
+        if attr.get('type') != 'customentity' or href.rsplit('/', 1)[-1] != did:
             raise Review('Существующее поле причины использует другой тип/справочник')
     else:
         attr = ms.request('POST', '/entity/loss/metadata/attributes', {
@@ -46,6 +49,26 @@ def setup_ms(engine):
                                  'type': 'customentitymetadata', 'mediaType': 'application/json'}})
     config.update(reason_dictionary=did, reason_attribute=attr['id'],
                   reason_production=values[REASONS[0]]['id'])
+    operation_labels = ['Материалы на производство', 'Расход материалов',
+                        'Изделия на доработку', 'Возврат с доработки']
+    target = [d for d in dictionaries if d.get('name') == 'Операции производства 2MY']
+    operation_dict = target[0] if target else ms.request('POST', '/entity/customentity', {'name': 'Операции производства 2MY'})
+    oid = operation_dict.get('id') or ident(operation_dict)
+    operations = {x['name']: x for x in ms.rows('/entity/customentity/' + oid)}
+    for label in operation_labels:
+        if label not in operations:
+            operations[label] = ms.request('POST', '/entity/customentity/' + oid, {'name': label})
+    config.update(operation_dictionary=oid, operation_values={k: v['id'] for k, v in operations.items()})
+    config['operation_attributes'] = {}
+    for kind in ('move', 'loss'):
+        attrs = [a for a in ms.rows('/entity/' + kind + '/metadata/attributes') if a['name'] == 'Операция производства']
+        if len(attrs) > 1:
+            raise Review('Несколько полей операции производства')
+        attr = attrs[0] if attrs else ms.request('POST', '/entity/' + kind + '/metadata/attributes', {
+            'name': 'Операция производства', 'type': 'customentity',
+            'customEntityMeta': {'href': f'{ms_base()}/entity/customentity/{oid}/metadata',
+                                 'type': 'customentitymetadata', 'mediaType': 'application/json'}})
+        config['operation_attributes'][kind] = attr['id']
     # Не включать автоматически: нормы и сценарии ещё требуют проверки владельцем.
     config['enabled'] = False
     engine.set_config(config)
