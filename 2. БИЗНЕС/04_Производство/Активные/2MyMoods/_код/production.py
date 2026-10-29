@@ -42,12 +42,17 @@ class Review(Exception):
     """Остановить цепочку без угадывания и без потери уже выполненных шагов."""
 
 
+class Transient(Review):
+    """Сеть/лимит API: повторить из журнала с задержкой."""
+
+
 def now():
     return datetime.now(TZ).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def ident(value):
-    return (value or {}).get('meta', {}).get('href', '').rstrip('/').rsplit('/', 1)[-1]
+    href = (value or {}).get('meta', {}).get('href', '')
+    return urllib.parse.urlparse(href).path.rstrip('/').rsplit('/', 1)[-1]
 
 
 def ref(kind, value):
@@ -126,9 +131,11 @@ class MSClient:
                     return json.loads(raw) if raw else {}
             except urllib.error.HTTPError as exc:
                 # Не выводить тело ответа с данными контрагентов.
+                if exc.code in (429, 500, 502, 503, 504):
+                    raise Transient(f'МойСклад: HTTP {exc.code}; ожидается повтор') from None
                 raise Review(f'МойСклад: HTTP {exc.code}; действие не подтверждено') from None
             except (OSError, TimeoutError):
-                raise Review('Нет подтверждения ответа МоегоСклада; повтор через журнал') from None
+                raise Transient('Нет подтверждения ответа МоегоСклада; повтор через журнал') from None
             finally:
                 self.last = time.monotonic()
 
@@ -287,7 +294,7 @@ class Engine:
     def require_stock(self, store, positions):
         rows = self.ms.rows('/report/stock/all', filter='store=' + BASE + '/entity/store/' + store,
                             stockMode='all')
-        stock = {r['id']: dec(r.get('stock', 0)) for r in rows}
+        stock = {r.get('id') or ident({'meta': r.get('meta', {})}): dec(r.get('stock', 0)) for r in rows}
         for key, qty in quantities(positions).items():
             if stock.get(key, Decimal(0)) < qty:
                 raise Review('Недостаточно материала/изделий на складе: ' + key)
@@ -657,9 +664,11 @@ class Engine:
                 self.log(kind, value, result)
             except Exception as exc:
                 message = str(exc) if isinstance(exc, Review) else 'Внутренняя ошибка; требуется проверка сервера'
+                retry = isinstance(exc, Transient) and row['attempts'] < 8
                 with self.db() as db:
-                    db.execute("UPDATE jobs SET status='review',error=?,attempts=attempts+1 WHERE kind=? AND id=?",
-                               (message, kind, value))
+                    db.execute('UPDATE jobs SET status=?,error=?,due=?,attempts=attempts+1 WHERE kind=? AND id=?',
+                               ('pending' if retry else 'review', message,
+                                time.time() + min(600, 15 * 2 ** row['attempts']), kind, value))
                 self.log(kind, value, message)
             return True
         finally:
