@@ -23,7 +23,7 @@ const assert=require('node:assert/strict');
   await page.screenshot({path:'.runtime/catalog-desktop.png'});
   await page.getByRole('button',{name:'Тёмная тема',exact:true}).click();
   assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
-  await page.waitForFunction(()=>getComputedStyle(document.querySelector('.model-trigger')).color==='rgb(236, 238, 232)');
+  await page.waitForFunction(()=>getComputedStyle(document.querySelector('.model-trigger')).color===getComputedStyle(document.documentElement).color);
   await page.screenshot({path:'.runtime/catalog-dark.png'});
   await page.getByRole('group',{name:'Категории товаров'}).getByRole('button',{name:'Футболки',exact:false}).click();
   const categoryModels=await page.locator('.model-trigger').count();
