@@ -169,7 +169,11 @@ def recipe_changes(before, after):
         if after.get('assortment_id'):
             changes.append('Выбрана карточка МоегоСклада: ' + text(after.get('assortment_name')))
     elif before.get('assortment_id') != after.get('assortment_id'):
-        change('Карточка МоегоСклада', before.get('assortment_name'), after.get('assortment_name'))
+        changes.append('Карточка МоегоСклада: ' + text(before.get('assortment_name')) + ' → ' + text(after.get('assortment_name')))
+    if before:
+        change('Модель', before.get('model'), after.get('model'))
+        change('Цвет', before.get('color'), after.get('color'))
+        change('Размер', before.get('size'), after.get('size'))
     old_stages, new_stages = before.get('stages', []), after.get('stages', [])
     for i in range(max(len(old_stages), len(new_stages))):
         old = old_stages[i] if i < len(old_stages) else None
@@ -287,10 +291,10 @@ class Engine:
                 recipe['history'] = sorted(events, key=lambda event: (event['at'], event['version']), reverse=True)
             return result
 
-    def save_recipe(self, recipe, db=None, propagate=True):
+    def save_recipe(self, recipe, db=None, propagate=True, actor=None):
         if db is None:
             with self.db() as connection:
-                return self.save_recipe(recipe, connection, propagate)
+                return self.save_recipe(recipe, connection, propagate, actor)
         key = str(recipe.get('id') or uuid.uuid4())
         recipe.pop('history', None)
         # Display units never become stock units without dimensional conversion.
@@ -344,7 +348,7 @@ class Engine:
         recipe.update(id=key, version=(old[0] if old else 0) + 1)
         db.execute('INSERT OR REPLACE INTO recipes VALUES(?,?,?)',
                    (key, recipe['version'], json.dumps(recipe, ensure_ascii=False)))
-        self.record_recipe_event(db, key, json.loads(old['body']) if old else {}, recipe)
+        self.record_recipe_event(db, key, json.loads(old['body']) if old else {}, recipe, actor)
         # Стоимость работы общая для модели и цвета; нормы остаются размерными.
         if propagate and recipe.get('model') and recipe.get('color'):
             for row in db.execute('SELECT id,version,body FROM recipes WHERE id<>?', (key,)).fetchall():
@@ -364,16 +368,21 @@ class Engine:
                     other['version'] = row['version'] + 1
                     db.execute('UPDATE recipes SET version=?,body=? WHERE id=?',
                                (other['version'], json.dumps(other, ensure_ascii=False), row['id']))
-                    self.record_recipe_event(db, other['id'], before_other, other)
+                    self.record_recipe_event(db, other['id'], before_other, other, actor)
         return recipe
 
-    def record_recipe_event(self, db, key, before, after):
+    def record_recipe_event(self, db, key, before, after, actor=None):
         changes = recipe_changes(before, after)
         if changes:
+            config = db.execute("SELECT value FROM kv WHERE key='config'").fetchone()
+            factories = json.loads(config['value']).get('factories', []) if config else []
+            for factory in factories:
+                if factory.get('id'):
+                    changes = [entry.replace(factory['id'], factory.get('name') or 'Фабрика') for entry in changes]
             db.execute('INSERT INTO recipe_events VALUES(?,?,?,?,?)',
-                       (key, after['version'], now(), 'Общий аккаунт', json.dumps(changes, ensure_ascii=False)))
+                       (key, after['version'], now(), actor or 'Автор не сохранён', json.dumps(changes, ensure_ascii=False)))
 
-    def save_recipe_group(self, recipes):
+    def save_recipe_group(self, recipes, actor=None):
         if not isinstance(recipes, list) or not 1 <= len(recipes) <= 100:
             raise Review('Выбери размеры, в которых внесены изменения')
         with self.db() as db:
@@ -408,7 +417,7 @@ class Engine:
                 try:
                     recipe['approved'] = True
                     recipe['editor_schema'] = 2
-                    saved.append(self.save_recipe(recipe, db, propagate=False))
+                    saved.append(self.save_recipe(recipe, db, propagate=False, actor=actor))
                 except Review as exc:
                     raise Review('Размер ' + str(recipe.get('size') or 'без размера') + ': ' + str(exc)) from None
             # Shared work updates affect matching sizes without approving unrelated drafts.
@@ -427,7 +436,7 @@ class Engine:
                     other['version'] = row['version'] + 1
                     db.execute('UPDATE recipes SET version=?,body=? WHERE id=?',
                                (other['version'], json.dumps(other, ensure_ascii=False), row['id']))
-                    self.record_recipe_event(db, other['id'], before_other, other)
+                    self.record_recipe_event(db, other['id'], before_other, other, actor)
             return saved
 
     def enqueue(self, kind, value):
@@ -1051,9 +1060,9 @@ def route(handler, method):
             started = service.start_catalogue_refresh(force=True)
             result = dict(service.catalogue_snapshot(False), started=started)
         elif path == '/api/production/recipes/apply':
-            result = {'recipes': service.save_recipe_group(body.get('recipes'))}
+            result = {'recipes': service.save_recipe_group(body.get('recipes'), actor='Общий аккаунт')}
         elif path == '/api/production/recipe':
-            result = service.save_recipe(body)
+            result = service.save_recipe(body, actor='Общий аккаунт')
         elif path == '/api/production/config':
             service.set_config(body)
             result = {'saved': True}

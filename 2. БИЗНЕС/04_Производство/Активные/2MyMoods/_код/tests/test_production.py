@@ -187,6 +187,24 @@ class ProductionTests(unittest.TestCase):
                 {'id': self.material, 'name': 'Fabric', 'type': 'product', 'quantity': quantity},
                 {'id': uid(), 'name': 'Zip', 'type': 'product', 'quantity': 1, 'role': 'packaging'}]}]}
 
+    def test_history_records_changes_and_account_with_shared_work(self):
+        a = self.group_recipe(self.product, 'S', 2)
+        a['assortment_name'] = 'Карточка S'
+        a = self.e.save_recipe(a, actor='Общий аккаунт')
+        b = self.e.save_recipe(self.group_recipe(uid(), 'M', 4))
+        a['stages'][0]['work_cost'] = 250
+        a['stages'][0]['materials'][0]['quantity'] = 3
+        self.e.save_recipe_group([a], actor='Общий аккаунт')
+        rows = {r['size']: r for r in self.e.recipes()}
+        events = rows['S']['history']
+        self.assertEqual(events[0]['actor'], 'Общий аккаунт')
+        self.assertTrue(any('работа, ₽: 0 → 250' in c for c in events[0]['changes']))
+        self.assertTrue(any('Fabric: 2 шт → 3 шт' in c for c in events[0]['changes']) or
+                        any('Fabric: 2 не указано → 3 не указано' in c for c in events[0]['changes']))
+        self.assertTrue(any('Карточка S' in c for c in events[-1]['changes']))
+        self.assertEqual(rows['M']['history'][0]['actor'], 'Общий аккаунт')
+        self.assertTrue(any('работа, ₽: 0 → 250' in c for c in rows['M']['history'][0]['changes']))
+
     def test_group_applies_two_sizes_atomically(self):
         a = self.e.save_recipe(self.group_recipe(self.product, 'S', 2))
         b = self.e.save_recipe(self.group_recipe(uid(), 'M', 4))
