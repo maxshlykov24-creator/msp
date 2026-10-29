@@ -138,6 +138,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(503, {"error": "Не удалось получить статус обновления"})
 
     def do_GET(self) -> None:
+        import production
+        if production.route(self, 'GET'):
+            return
         path = self.path.split("?", 1)[0]
         if path == "/api/refresh":
             self._refresh()
@@ -170,6 +173,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, b"not found", "text/plain; charset=utf-8")
 
     def do_POST(self) -> None:
+        import production
+        if production.route(self, 'POST'):
+            return
         if self.path.split("?", 1)[0] == "/api/refresh":
             self._refresh(start=True)
             return
