@@ -122,3 +122,21 @@ VPS `194.87.226.234`, каталог `/opt/ms-p-site`, compose-проект `ms-
 Переключение тем дополнено плавным изменением полотна, виньетки и элементов интерфейса; при уменьшенном движении переход отключается. Проверены обе темы, быстрые повторные нажатия и мобильный экран. Версия до перехода сохранена в `99_АРХИВ/2026-10-28_site-ms-до-плавной-темы/` и на сервере в `/var/backups/ms-p-site-20261028-before-smooth-theme/`.
 
 Для уменьшения ряби убрано дополнительное зерно и добавлена фильтрация фактуры фона при масштабировании. Логотипу возвращён контраст фактуры, левая часть M осветлена отдельным мягким слоем. Проверены обе темы, движение и мобильный экран. Откат: `99_АРХИВ/2026-10-28_site-ms-до-устранения-ряби/` и `/var/backups/ms-p-site-20261028-before-antialias/` на сервере.
+
+## Прототип страницы брендов одежды · 30.10.2026
+
+Собран `public/brands/index.html` с `brands.css`, `brands.js` и отдельной копией существующего шейдера `silk.js`. Запуск существующим HTTP-сервером; путь `/brands/`. Текущий предпросмотр: http://127.0.0.1:8765/brands/. Основной public/index.html, общие стили, юридические страницы и серверная конфигурация не изменены. Деплоя не было.
+
+Контент и оставшийся план: `2. БИЗНЕС/07_Продукт/site/content.md`. Реализованы оффер, переключаемый путь заказа, реальный экран 2MY, экономика с примером MANSBAND, портрет и два рабочих часа после знакомства. Аналитика и новые формы не подключены. `noindex,nofollow` установлен.
+
+Проверены HTTP 200 всех используемых локальных файлов, якоря, отсутствие повторных id, синтаксис обоих JS. Браузер: 320, 390, 1440 пикселей без горизонтального переполнения; обе темы, сохранение выбора при reload, переключение Резерва, открытие экрана, закрытие Escape. Ошибок JS в журнале предпросмотра не найдено. Reduced motion обработан CSS и matchMedia, системная настройка компьютера при проверке не менялась.
+
+Экран `assets/2my-filters.png` снят 30.10.2026 с https://d-2my.ru/ через браузер, crop x60 y20 w1160 h390: шапка и фильтры, без финансовых итогов и персональных данных. Презентационные изображения с неподтверждённым происхождением не использованы.
+
+Фото: `public/brands/assets/maxim-portrait.png`; исходник `/Users/max/Downloads/photo_2026-10-30 12.38.55.jpeg` сохранён. Обработка встроенным image_gen, не CLI. Сходство визуально сопоставлено с оригиналом; окончательная оценка владельцем в прототипе. Промпт:
+
+```text
+Use case: identity-preserve. Edit this exact portrait for Maxim's MS Product business website. Preserve his exact facial identity, age, smile, hair, beard, skin texture, body proportions, white shirt, hands and accessories. Replace ONLY the distracting window and blinds with a tasteful soft deep burgundy studio backdrop (#321722 to #71304a) with gentle natural light falloff. Subtly correct backlit face exposure and shirt white balance, natural believable photography, no beauty retouch or plastic skin, no altered face or invented office. Square composition, same waist-up pose, enough breathing room above head. No text, no logo.
+```
+
+Копии прежних README и content.md: `99_АРХИВ/2026-10-30_site-ms-до-прототипа-brands/`. Для отката прототипа достаточно снять `/brands/` с маршрута и архивировать новую папку; действующая главная не заменялась. Следующий шаг - оценка визуального прототипа и перенос принятой системы на остальные страницы.
