@@ -1,5 +1,4 @@
-  (function silk(){
-    var cv=document.getElementById('silk');
+  document.querySelectorAll('canvas.silk').forEach(function silk(cv){
     if(!cv) return;
     var gl=cv.getContext('webgl',{antialias:false,alpha:false,powerPreference:'low-power'})
          ||cv.getContext('experimental-webgl');
@@ -113,5 +112,5 @@
         last=null;raf=requestAnimationFrame(frame);
       }
     });
-  })();
+  });
 

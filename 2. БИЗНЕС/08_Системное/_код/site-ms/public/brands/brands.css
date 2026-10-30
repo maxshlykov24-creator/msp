@@ -78,3 +78,12 @@ html[data-theme="light"] .economy::before{background:radial-gradient(ellipse at 
 html[data-theme="light"] .demo-window{border-color:#98647966;box-shadow:0 0 0 1px #71304a08,0 0 44px #b5759226,0 0 100px #d3a6b724,0 24px 64px #5423371f}
 
 html[data-theme="light"] .flow-main{background:radial-gradient(ellipse at 50% 40%,#71304a32,transparent 65%)}
+
+/* Мягкий перелив за блоком личной ответственности. */
+.about{position:relative;isolation:isolate}
+.about-wash{position:absolute;inset:55px -38px -30px;z-index:-1;pointer-events:none;overflow:hidden;border-radius:24px;background:#71304a0a;mask-image:linear-gradient(transparent,#000 22%,#000 75%,transparent);-webkit-mask-image:linear-gradient(transparent,#000 22%,#000 75%,transparent)}
+.about-wash .silk{display:block;width:100%;height:100%}
+.about-wash .silk.ready{opacity:.28}
+html[data-theme="light"] .about-wash{background:#ead9e214}
+html[data-theme="light"] .about-wash .silk.ready{opacity:.65}
+@media(max-width:767px){.about-wash{inset:55px -18px -25px}}
