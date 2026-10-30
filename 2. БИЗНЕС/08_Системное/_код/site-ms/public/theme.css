@@ -9,7 +9,7 @@
 .grad-text{--text-grad-start:#d9a7b8;--text-grad-mid:#c68da2;--text-grad-end:#b56e87;background-image:linear-gradient(110deg,var(--text-grad-start),var(--text-grad-mid) 48%,var(--text-grad-end));transition:--text-grad-start .8s ease,--text-grad-mid .8s ease,--text-grad-end .8s ease}
 html[data-theme="light"] .grad-text{--text-grad-start:#542337;--text-grad-mid:#71304a;--text-grad-end:#99516c}
 /* Один фактурный знак для всех страниц и обеих тем. */
-html .lockup img,html .hero-mark img,html .footer-lockup img{filter:brightness(1.25)}
+html .lockup img,html .hero-mark img,html .footer-lockup img{filter:none}
 html[data-theme="light"]{color-scheme:light;--bg:#faf9f6;--bg2:#f7f1f2;--ink:#321722;--dim:rgba(50,23,34,.78);--faint:rgba(50,23,34,.69);--line:rgba(82,35,54,.17);--line2:rgba(82,35,54,.27);--card:rgba(255,255,255,.68);--card2:rgba(255,255,255,.84);--mag:#71304a;--vio:#71304a;--ele:#71304a;--ok:#276345;--grad:linear-gradient(110deg,#542337,#71304a 48%,#99516c);--grad-soft:linear-gradient(110deg,rgba(153,81,108,.16),rgba(181,110,135,.11),rgba(107,43,70,.12))}
 html[data-theme="light"] body{background-color:#faf9f6;background-image:linear-gradient(rgba(250,249,246,.52),rgba(250,249,246,.83)),url('assets/aura-light.webp');background-position:center top;background-size:cover;background-attachment:fixed}
 html[data-theme="light"] .stage{background:#faf9f6}
@@ -38,3 +38,5 @@ body,.nav,.stage,.theme-pill{transition:background-color .8s ease,border-color .
 @media(max-width:640px){.nav .wrap{gap:10px}.nav .lockup{margin-right:auto}.nav-links{z-index:3}}
 @media(max-width:460px){.nav .wrap .nav-cta{display:none}.nav:not(:has(.wrap)){gap:8px}.nav:not(:has(.wrap)) .lockup{margin-right:auto}}
 @media print{.theme-pill{display:none}html[data-theme="light"] body{background:#fff;background-image:none}}
+
+html:not([data-theme="light"]) img[src*="logo-mark-textured.svg"]{content:url("/assets/logo-mark-satin-dark.svg?v=wine-satin-1");filter:none}
