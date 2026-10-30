@@ -1,9 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { certificateImportSchema, redeemCertificateSchema } from "@kassa/shared";
 import * as certs from "../services/certificates.js";
+import { reservedNumbers } from "../services/certificateRegistry.js";
 import { appendAudit } from "../services/audit.js";
 
 export default async function certificatesRoutes(app: FastifyInstance) {
+  app.get("/certificates/reserved", { preHandler: [app.authenticate] }, async () => reservedNumbers());
   app.get("/certificates", { preHandler: [app.authenticate] }, async () => certs.list());
 
   app.get("/certificates/:number/usages", { preHandler: [app.authenticate] }, async (req, reply) => {
@@ -17,7 +19,7 @@ export default async function certificatesRoutes(app: FastifyInstance) {
   // видит номер до сохранения заявки и может продиктовать его клиенту.
   app.post("/certificates/next-number", { preHandler: [app.authenticate] }, async (_req, reply) => {
     try {
-      return { number: await certs.generateDigitalNumber() };
+      return reply.code(409).send({ message: "Номер закрепляется сервером после оплаты" });
     } catch (e) {
       return reply
         .code(503)

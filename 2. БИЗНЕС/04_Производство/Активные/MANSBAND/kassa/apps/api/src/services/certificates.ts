@@ -1,14 +1,16 @@
-import { and, eq, gte, sql } from "drizzle-orm";
-import { randomInt } from "node:crypto";
+import { and, eq, gte, lte, or, isNull, sql } from "drizzle-orm";
+import { canonicalNumber, newNumber } from "./certificateRegistry.js";
+import { moscowTodayYmd } from "@kassa/shared";
 import { db } from "../db/index.js";
 import { certificates } from "../db/schema.js";
 import type { Certificate } from "@kassa/shared";
 import { broadcast } from "../ws/hub.js";
 
 function toCert(r: typeof certificates.$inferSelect): Certificate {
-  const expired = r.validUntil < new Date().toISOString().slice(0, 10) && r.balance > 0;
+  const expired = r.validUntil < moscowTodayYmd() && r.balance > 0;
   return {
     number: r.number,
+    validFrom: r.validFrom ?? undefined,
     nominal: r.nominal / 100,
     balance: r.balance / 100,
     status: expired ? "expired" : r.status as Certificate["status"],
@@ -91,10 +93,11 @@ export async function redeem(number: string, amountRub: number): Promise<Certifi
       status: sql`case when ${certificates.balance} - ${amount} = 0 then 'used' else ${certificates.status} end`,
     })
     .where(and(
-      eq(certificates.number, number),
+      eq(certificates.number, canonicalNumber(number)),
       eq(certificates.status, "active"),
       gte(certificates.balance, amount),
-      gte(certificates.validUntil, new Date().toISOString().slice(0, 10))
+      gte(certificates.validUntil, moscowTodayYmd()),
+      or(isNull(certificates.validFrom), lte(certificates.validFrom, moscowTodayYmd()))
     ))
     .returning();
   if (!updated) return null;
@@ -117,10 +120,11 @@ export async function redeemMany(
           status: sql`case when ${certificates.balance} - ${amount} = 0 then 'used' else ${certificates.status} end`,
         })
         .where(and(
-          eq(certificates.number, redemption.number),
+          eq(certificates.number, canonicalNumber(redemption.number)),
           eq(certificates.status, "active"),
           gte(certificates.balance, amount),
-          gte(certificates.validUntil, new Date().toISOString().slice(0, 10))
+          gte(certificates.validUntil, moscowTodayYmd()),
+      or(isNull(certificates.validFrom), lte(certificates.validFrom, moscowTodayYmd()))
         ))
         .returning();
       if (!updated) {
@@ -133,75 +137,28 @@ export async function redeemMany(
 }
 
 export async function upsert(cert: Certificate): Promise<void> {
-  await db
-    .insert(certificates)
-    .values({
-      number: cert.number,
-      nominal: Math.round(cert.nominal * 100),
-      balance: Math.round(cert.balance * 100),
-      status: cert.status,
-      type: cert.type,
-      guestName: cert.guestName ?? null,
-      buyerDealNumber: cert.buyerDealNumber ?? null,
-      issuedAt: cert.issuedAt,
-      validUntil: cert.validUntil,
-    })
-    .onConflictDoUpdate({
-      target: certificates.number,
-      set: {
-        // Не трогаем balance/status — иначе повторный sync продажи обнулит списания.
-        nominal: Math.round(cert.nominal * 100),
-        type: cert.type,
-        guestName: cert.guestName ?? null,
-        buyerDealNumber: cert.buyerDealNumber ?? null,
-        issuedAt: cert.issuedAt,
-        validUntil: cert.validUntil,
-      },
-    });
+  const number=canonicalNumber(cert.number);
+  const [existing]=await db.select().from(certificates).where(eq(certificates.number,number));
+  if(existing){if(existing.buyerDealNumber!==cert.buyerDealNumber)throw new Error("Конфликт владельца сертификата");return;}
+  if(!await issue(cert))throw new Error("Номер занят или требует сверки");
 }
 
 /** Выпуск: если номера ещё нет — создать с полным балансом; если есть — не трогать баланс. */
-export async function issue(cert: Certificate): Promise<boolean> {
-  const [inserted] = await db
-    .insert(certificates)
-    .values({
-      number: cert.number,
-      nominal: Math.round(cert.nominal * 100),
-      balance: Math.round(cert.balance * 100),
-      status: cert.status,
-      type: cert.type,
-      guestName: cert.guestName ?? null,
-      buyerDealNumber: cert.buyerDealNumber ?? null,
-      issuedAt: cert.issuedAt,
-      validUntil: cert.validUntil,
-    })
-    .onConflictDoNothing()
-    .returning({ number: certificates.number });
-  return Boolean(inserted);
+export async function issue(cert: Certificate, reviewedLegacy=false): Promise<boolean> {
+  const number=canonicalNumber(cert.number);
+  return db.transaction(async tx=>{
+    const held=await tx.execute(sql`SELECT * FROM certificate_numbers WHERE number=${number} FOR UPDATE`);
+    if(held.length && !(reviewedLegacy && held[0].state==='reserved'))return false;
+    if(!held.length){const reserved=await tx.execute(sql`INSERT INTO certificate_numbers(number,state) VALUES (${number},'issued') ON CONFLICT DO NOTHING RETURNING number`);if(!reserved.length)return false;}
+    const inserted=await tx.insert(certificates).values({number,nominal:Math.round(cert.nominal*100),balance:Math.round(cert.balance*100),status:cert.status,type:cert.type,guestName:cert.guestName,buyerDealNumber:cert.buyerDealNumber,issuedAt:cert.issuedAt,validUntil:cert.validUntil,validFrom:cert.validFrom??null}).onConflictDoNothing().returning({number:certificates.number});
+    if(inserted.length)await tx.execute(sql`UPDATE certificate_numbers SET state='issued' WHERE number=${number}`);
+    return Boolean(inserted.length);
+  });
 }
 
 export async function generateDigitalNumber(): Promise<string> {
-  for (let attempt = 0; attempt < 80; attempt++) {
-    const number = String(randomInt(100000, 1_000_000));
-    const existing = await db
-      .select({ number: certificates.number })
-      .from(certificates)
-      .where(eq(certificates.number, number))
-      .limit(1);
-    if (!existing[0]) return number;
-  }
-  // Крайний случай: последовательный перебор от случайной точки.
-  const start = randomInt(100000, 1_000_000);
-  for (let i = 0; i < 1000; i++) {
-    const number = String(100000 + ((start - 100000 + i) % 900000));
-    const existing = await db
-      .select({ number: certificates.number })
-      .from(certificates)
-      .where(eq(certificates.number, number))
-      .limit(1);
-    if (!existing[0]) return number;
-  }
-  throw new Error("Не удалось подобрать свободный номер сертификата");
+  for(let i=0;i<80;i++){const number=newNumber();const rows=await db.execute(sql`SELECT number FROM certificate_numbers WHERE number=${number}`);if(!rows.length)return number;}
+  throw new Error("Не удалось подобрать свободный номер");
 }
 
 export interface CertificateImportPreview {
@@ -279,7 +236,7 @@ export async function importCsv(csv: string, dryRun: boolean): Promise<Certifica
       const before = await db.select({ number: certificates.number }).from(certificates)
         .where(eq(certificates.number, row.number)).limit(1);
       if (before[0]) continue;
-      if (await issue(row)) imported++;
+      if (await issue(row, true)) imported++;
     }
   }
   return { valid: rows.length, conflicts, errors, imported, dryRun };

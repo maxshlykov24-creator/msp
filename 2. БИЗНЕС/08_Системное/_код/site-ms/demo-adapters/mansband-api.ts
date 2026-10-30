@@ -1,4 +1,5 @@
 import { PRODUCTS } from '../data/mock';
+import { classifyHall } from '@kassa/shared';
 export const USE_MOCK=true;
 export class ApiError extends Error {constructor(public status:number,message:string){super(message)}}
 export const getToken=()=>null;
@@ -14,7 +15,7 @@ let docs:any[]=[
 async function request<T>(path:string,body?:any):Promise<T>{
  const u=new URL(path,'https://demo.invalid'),p=u.pathname;
  let result:any;
- if(p==='/message-templates')result={rules:docs,executor:'preview'};
+ if(p==='/message-templates')result={rules:docs,executor:'live'};
  else if(p.endsWith('/catalog'))result={fields:[{id:101,name:'Дата встречи',type:'date_time'},{id:3158921,name:'Магазин',type:'select',enums:[{id:1,value:'На Бауманской'},{id:2,value:'На Пятницкой'}]}],pipelines:[{id:9601214,name:'Продажи',_embedded:{statuses:[{id:100,name:'Встреча назначена'},{id:101,name:'Товар в магазине'},{id:102,name:'Доставлен'}]}}]};
  else if(p.endsWith('/manual'))result={items:[]};
  else if(p.endsWith('/journal'))result={items:[]};
@@ -25,8 +26,13 @@ async function request<T>(path:string,body?:any):Promise<T>{
  else if(p.includes('/history/'))result={items:[]};
  else if(p==='/catalog/references')result={warehouses:[{id:'demo-a',name:'На Бауманской'},{id:'demo-b',name:'На Пятницкой'}]};
  else if(p==='/catalog/browse'){
- let items=PRODUCTS.filter(x=>(!u.searchParams.get('q')||x.name.toLowerCase().includes(u.searchParams.get('q')!.toLowerCase()))&&(!u.searchParams.get('store')||x.store===u.searchParams.get('store')));
- result={items,itemsTotal:items.length,suits:[],groupCounts:{},sectionCounts:{},page:1,pageSize:60};
+ const q=u.searchParams.get('q')?.toLowerCase()||'',section=u.searchParams.get('section'),sub=u.searchParams.get('subCategory');
+ const catalogue=PRODUCTS.map((x,i)=>({...x,name:x.name+' ('+(i%2?'Чёрный':'Белый')+', '+(48+i%3*2)+')',warehouseStocks:[{name:'На Бауманской',stock:x.stock,reserve:0},{name:'На Пятницкой',stock:3,reserve:0}]}));
+ let items=catalogue.filter(x=>{const hall=classifyHall(x);return x.name.toLowerCase().includes(q)&&(!section||hall?.section===section)&&(!sub||hall?.group===sub)&&(!u.searchParams.get('priceMin')||x.price>=Number(u.searchParams.get('priceMin')))&&(!u.searchParams.get('priceMax')||x.price<=Number(u.searchParams.get('priceMax')))});
+ const suits=PRODUCTS.slice(0,4).filter(x=>x.name.toLowerCase().includes(q)).map((x,i)=>({modelId:'demo-suit-'+i,title:x.name,variation:'DEMO-'+(i+1),color:i%2?'Графит':'Синий',pattern:null,fit:'Slim',height:'176',line:'regular',composition:['jacket','trousers'],mixed:false,whole:12,tolerant:0,orphans:0,onHalfSetWarehouse:0,priceRub:x.price,sizes:['48','50','52'].map(size=>({size,parts:{jacket:4,trousers:4,vest:0},whole:4,tolerant:0,orphans:[],warehouses:[{name:'На Бауманской',whole:2},{name:'На Пятницкой',whole:2}]}))}));
+ const sectionCounts:Record<string,number>={},groupCounts:Record<string,number>={};
+ catalogue.forEach(x=>{const h=classifyHall(x);if(h){sectionCounts[h.section]=(sectionCounts[h.section]||0)+1;groupCounts[h.group]=(groupCounts[h.group]||0)+1}});
+ result={items,itemsTotal:items.length,suits:!section||section==='suits'?suits:[],groupCounts,sectionCounts,page:1,pageSize:60};
  }else if(p.includes('/settings'))result={};
  else if(p.includes('/users'))result={items:[]};
  else result={items:[],rows:[],ok:true};

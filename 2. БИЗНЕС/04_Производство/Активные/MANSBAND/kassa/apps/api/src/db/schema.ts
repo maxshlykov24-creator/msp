@@ -174,6 +174,7 @@ export const ledger = pgTable(
 
 // ── Сертификаты ─────────────────────────────────────────────────────
 export const certificates = pgTable("certificates", {
+  validFrom: text("valid_from"),
   number: text("number").primaryKey(),
   nominal: integer("nominal").notNull(),
   balance: integer("balance").notNull(),

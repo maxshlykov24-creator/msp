@@ -10,7 +10,7 @@ const demoProduction=(()=>{
  const store=[{id:'demo-store',name:'Основной склад'},{id:'demo-workshop',name:'Производство'}];
  const state={config:{company_store:'demo-store',start_at:'2026-10-01',factories:[{id:'demo-factory',name:'Швейное производство',agent:'demo-agent',store:'demo-workshop',store_ok:true,store_name:'Производство'}]},recipes,jobs:[],chains:[]};
  return async function(path='',body){
-  if(path.startsWith('/catalogues'))return {ready:true,updated:'demo-v1',refreshing:false,catalogues:{assortment,store,counterparty:[{id:'demo-agent',name:'Швейное производство',tags:['Производство']}]}};
+  if(path.startsWith('/catalogues'))return {ready:true,updated:1793354400,refreshing:false,catalogues:{assortment,store,counterparty:[{id:'demo-agent',name:'Швейное производство',tags:['Производство']}]}};
   if(path==='/setup')return {ready:true,hook_paths:[]};
   if(path==='/recipes/apply'){for(const r of body.recipes){const index=state.recipes.findIndex(x=>x.id===r.id);r.version=(r.version||0)+1;if(index<0)state.recipes.push(r);else state.recipes[index]=r}return {ok:true,recipes:body.recipes};}
   if(path==='/config'){state.config=body;return {ok:true};}

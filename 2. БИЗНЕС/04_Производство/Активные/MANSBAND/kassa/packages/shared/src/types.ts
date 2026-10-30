@@ -230,6 +230,7 @@ export interface Deal {
 export type CertStatus = "active" | "used" | "expired";
 
 export interface Certificate {
+  validFrom?: string;
   number: string;
   nominal: number;
   balance: number;

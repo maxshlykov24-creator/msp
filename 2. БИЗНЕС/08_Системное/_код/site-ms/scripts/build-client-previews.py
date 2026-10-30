@@ -12,6 +12,8 @@ guard=(adapters/'guard.js').read_text()
 csp="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'"
 def prepare(html,extra=''):
     # All executable code remains original, except the data API and origin isolation.
+    if '<head>' not in html:
+        html=re.sub(r'(<html[^>]*>)',r'\1<head>',html,count=1)
     return html.replace('<head>','<head><meta http-equiv="Content-Security-Policy" content="'+csp+'"><script>'+guard+extra+'</script>',1)
 
 web=clients/'MANSBAND/kassa/apps/web'
@@ -27,7 +29,12 @@ p=stage/'src/views/ProductCheck.tsx';s=p.read_text();s=s.replace('if (USE_MOCK)'
 # Replace fixture identities too; no customer information is copied to the public bundle.
 p=stage/'src/data/mock.ts';s=p.read_text();s=re.sub(r'\+7[\d ()-]{9,}', '+7 000 000-00-00',s)
 for key in ['clientName','client','guestName','recipientName','consultant','callManager','email','address']:
-    s=re.sub(r'('+key+r':\s*)"[^"]*"',lambda m:m[1]+json.dumps('demo@example.invalid' if key=='email' else 'Демо '+key,ensure_ascii=False),s)
+    counter=[0]
+    def identity(m):
+        counter[0]+=1
+        label='Консультант' if key in ['consultant','callManager'] else 'Покупатель'
+        return m[1]+json.dumps('demo@example.invalid' if key=='email' else label+' '+str(counter[0]).zfill(2),ensure_ascii=False)
+    s=re.sub(r'('+key+r':\s*)"[^"]*"',identity,s)
 s=re.sub(r'2026-0[3-9]-\d\d','2026-10-20',s)
 p.write_text(s)
 shared=clients/'MANSBAND/kassa/packages/shared/src/index.ts'
@@ -37,6 +44,7 @@ p=out/'mansband/index.html';s=p.read_text();s=re.sub(r'type="module"\s+crossorig
 for name,source in [('analytics',clients/'2MyMoods/дашборд/2MY_дашборд_прототип.html'),('production',clients/'2MyMoods/_код/production.html')]:
     target=out/name;target.mkdir(exist_ok=True)
     html=source.read_text();extra=(adapters/(name+'.js')).read_text()
+    html=html.replace('href="/production"','href="../production/index.html"').replace('href="/"','href="../analytics/index.html"')
     if name=='production':
         html,n=re.subn(r"async function api\(path='',body\)\{[^\n]+\}","async function api(path='',body){return demoProduction(path,body)}",html,count=1)
         assert n==1,'Production API boundary changed; inspect source before rebuilding'

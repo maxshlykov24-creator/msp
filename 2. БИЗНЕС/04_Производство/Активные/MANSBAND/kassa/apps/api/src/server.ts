@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { initializeCertificateRegistry } from "./services/certificateRegistry.js";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { getEnv } from "./env.js";
@@ -26,6 +27,7 @@ import { appendAudit } from "./services/audit.js";
 
 export async function buildServer() {
   const env = getEnv();
+  await initializeCertificateRegistry();
   const app = Fastify({
     logger:
       env.NODE_ENV === "production"
