@@ -103,6 +103,23 @@ def test_pdf_has_cyrillic_and_links():
  assert not any("DejaVu" in f for f in fonts)
 
 
+@pytest.mark.parametrize("greeting", [None, "", "   ", "\n\t\u00a0"])
+def test_empty_greeting_omits_entire_section_and_moves_content_up(greeting):
+ data={"guest":"Александр","number":"TEST","nominal":15000,"until":"01.11.2027","greeting":greeting}
+ empty=PdfReader(BytesIO(render_pdf(data))).pages[0]
+ filled=PdfReader(BytesIO(render_pdf({**data,"greeting":"Поздравляем!"}))).pages[0]
+ assert "Поздравление отправителя:" not in empty.extract_text()
+ assert "Поздравление отправителя:" in filled.extract_text()
+ label="Как воспользоваться подарочным сертификатом?"
+ positions=[]
+ for page in (empty,filled):
+  found=[]
+  page.extract_text(visitor_text=lambda text,cm,tm,font,size: found.append(cm[5]+tm[5]) if label in text else None)
+  positions.append(found[0])
+ assert positions[0]>positions[1]
+ assert len(empty["/Annots"])==len(filled["/Annots"])==11
+
+
 def test_long_greeting_not_truncated():
  greeting="Поздравление "*3000
  reader=PdfReader(BytesIO(render_pdf({"guest":"","number":"TEST","nominal":1,"start":"01.11.2026","until":"01.11.2027","greeting":greeting})))

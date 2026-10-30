@@ -147,11 +147,12 @@ def render_pdf(data, config=None):
     paragraph(f"{data['nominal']:,.0f} ₽".replace(",", " "), size=18, leading=24, weight=600)
     gap(24)
     divider()
-    if data.get("greeting"):
+    greeting = str(data.get("greeting") or "").strip()
+    if greeting:
         gap(27)
         paragraph("Поздравление отправителя:", size=14.35, leading=21, weight=600)
         gap(13)
-        paragraph(data["greeting"])
+        paragraph(greeting)
         gap(24)
         divider()
     gap(26)
