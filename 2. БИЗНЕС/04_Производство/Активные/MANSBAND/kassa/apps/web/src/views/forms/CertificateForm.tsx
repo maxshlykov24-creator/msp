@@ -126,7 +126,7 @@ export function CertificateForm({
     }
     m.push(...changeTipsMissing(paid, total, changeInfo, tips));
     return m;
-  }, [client.phone, client.name, client.channel, guest, certNumber, certNominal, digital, recipientPhone, photos.length, certificates, receivedAt, validUntil, stage, paid, total, changeInfo, tips]);
+  }, [client, guest, certNumber, certNominal, digital, recipientPhone, photos.length, certificates, receivedAt, validUntil, stage, paid, total, changeInfo, tips]);
 
   const canSave = missingRequired.length === 0;
 

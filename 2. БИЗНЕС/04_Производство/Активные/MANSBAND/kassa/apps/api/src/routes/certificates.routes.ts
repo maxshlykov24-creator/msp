@@ -27,6 +27,15 @@ export default async function certificatesRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post("/certificates/:number/cancel",{preHandler:[app.requireAdmin]},async(req,reply)=>{
+    const reason=(req.body as {reason?:unknown})?.reason;
+    if(typeof reason!=="string"||reason.trim().length<3||reason.length>500)return reply.code(400).send({message:"Укажи причину аннулирования"});
+    const number=(req.params as {number:string}).number;
+    const updated=await certs.cancel(number);
+    if(!updated)return reply.code(409).send({message:"Сертификат уже использован или недоступен. Требуется сверка."});
+    await appendAudit({actor:{id:req.user.sub,name:req.user.name,role:req.user.role},action:"certificate.cancelled",entityType:"certificate",entityId:updated.number,after:updated,metadata:{reason:reason.trim()}});
+    return updated;
+  });
   app.post("/certificates/redeem", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = redeemCertificateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });

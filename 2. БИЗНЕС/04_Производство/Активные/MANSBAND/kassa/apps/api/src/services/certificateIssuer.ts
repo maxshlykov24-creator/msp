@@ -29,6 +29,8 @@ export async function issueFromAmo(id:number) {
  const stamp=Math.floor(Date.parse(`${until}T00:00:00+03:00`)/1000);
  if(prior!==certificate.number||Number(field(3169911)[0])!==stamp) await amo.updateLead(id,{customFields:[{field_id:3135463,values:[{value:certificate.number}]},{field_id:3169911,values:[{value:stamp}]}]});
  const fresh=await amo.getLead(id);const number=fresh?.custom_fields_values?.find(f=>f.field_id===3135463)?.values?.[0]?.value;
+ const expiry=Number(fresh?.custom_fields_values?.find(f=>f.field_id===3169911)?.values?.[0]?.value);
+ if(expiry!==stamp)throw new Error("Срок действия в CRM не подтверждён");
  if(number!==certificate.number)throw new Error("Запись номера в CRM не подтверждена; повтор сохранит тот же номер");
  return certificate;
 }

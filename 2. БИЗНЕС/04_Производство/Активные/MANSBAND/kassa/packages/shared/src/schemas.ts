@@ -43,7 +43,7 @@ export const paymentSchema = z.object({
   id: z.string(),
   methodId: z.string(),
   amount: z.number(),
-  certificateNumber: z.string().optional(),
+  certificateNumber: z.string().transform(value=>{const n=value.trim().toUpperCase().replace(/[\s-]/g,"");return /^MB\d{8}$/.test(n)?`MB-${n.slice(2,6)}-${n.slice(6)}`:value.trim();}).optional(),
   paidAt: z.string().optional(), // YYYY-MM-DD
 });
 
@@ -89,7 +89,7 @@ export const createSaleSchema = z.object({
   guestName: z.string().optional(),
   recipientPhone: z.string().max(40).optional(),
   certificateGreeting: z.string().max(20000).optional(),
-  certificateNumber: z.string().optional(),
+  certificateNumber: z.string().transform(value=>{const n=value.trim().toUpperCase().replace(/[\s-]/g,"");return /^MB\d{8}$/.test(n)?`MB-${n.slice(2,6)}-${n.slice(6)}`:value.trim();}).optional(),
   rentalFrom: z.string().optional(),
   rentalTo: z.string().optional(),
   reservedUntil: z.string().optional(),
@@ -558,6 +558,8 @@ export const movementTaskSchema = taskSchema.extend({
     .min(1),
 });
 
+const certificateDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>{const date=new Date(value+"T00:00:00Z");return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value;},{message:"Некорректная календарная дата"});
+
 export const certificateImportRowSchema = z.object({
   number: z.string().trim().regex(/^(?:\d{5,6}|MB-\d{4}-\d{4})$/, "Нужен старый номер или MB-XXXX-XXXX"),
   nominal: z.coerce.number().positive(),
@@ -566,9 +568,10 @@ export const certificateImportRowSchema = z.object({
   guestName: z.string().optional(),
   recipientPhone: z.string().max(40).optional(),
   certificateGreeting: z.string().max(20000).optional(),
-  issuedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-}).refine(row=>row.balance<=row.nominal,{message:"Остаток не может превышать номинал"}).refine(row=>row.validUntil>=row.issuedAt,{message:"Срок действия раньше даты выдачи"});
+  issuedAt: certificateDateSchema,
+  validFrom: certificateDateSchema,
+  validUntil: certificateDateSchema,
+}).refine(row=>row.balance<=row.nominal,{message:"Остаток не может превышать номинал"}).refine(row=>row.validUntil>=row.validFrom,{message:"Окончание срока раньше даты начала"});
 
 export const certificateImportSchema = z.object({
   csv: z.string().min(1),

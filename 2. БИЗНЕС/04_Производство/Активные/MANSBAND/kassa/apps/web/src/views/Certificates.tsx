@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { Ticket, Wallet, Search, Filter, RefreshCw, Loader2 } from "lucide-react";
+import { useAuth } from "../auth/AuthContext";
 import { useStore } from "../store";
 import { money, dateRu } from "../lib/format";
 import { Badge, Button, Modal, Field, StageBadge, StatTile, Select, opts } from "../components/ui";
@@ -16,8 +17,8 @@ interface ImportPreview {
   dryRun: boolean;
 }
 
-const statusTone = { active: "green", used: "gray", expired: "red" } as const;
-const statusLabel = { active: "Активен", used: "Использован", expired: "Просрочен" } as const;
+const statusTone = { active: "green", used: "gray", expired: "red", cancelled:"gray" } as const;
+const statusLabel = { active: "Активен", used: "Использован", expired: "Просрочен", cancelled:"Аннулирован" } as const;
 
 interface CertificateUsage {
   dealNumber: number;
@@ -35,6 +36,11 @@ function wasSpent(c: Certificate): boolean {
 }
 
 export function Certificates() {
+  const {user}=useAuth();
+  const [cancelCert,setCancelCert]=useState<Certificate|null>(null);
+  const [cancelReason,setCancelReason]=useState("");
+  const [cancelError,setCancelError]=useState("");
+  const [cancelling,setCancelling]=useState(false);
   const { certificates, redeemCertificate } = useStore();
   const [redeem, setRedeem] = useState<Certificate | null>(null);
   const [usageCert, setUsageCert] = useState<Certificate | null>(null);
@@ -178,7 +184,8 @@ export function Certificates() {
               ["all", "Все статусы"],
               ["active", "Активные"],
               ["used", "Использованные"],
-              ["expired", "Просроченные"]
+              ["expired", "Просроченные"],
+              ["cancelled", "Аннулированные"]
             )}
           />
         </div>
@@ -267,6 +274,7 @@ export function Certificates() {
                     <Badge tone={statusTone[c.status]}>{c.status==="active" && c.validFrom && c.validFrom>moscowTodayYmd() ? `Действует с ${dateRu(c.validFrom)}` : statusLabel[c.status]}</Badge>
                   </td>
                   <td className="px-4 py-3">
+                    {user?.role==="admin" && c.status==="active" && c.balance===c.nominal && <Button variant="ghost" className="mb-1 text-xs" onClick={e=>{e.stopPropagation();setCancelCert(c);setCancelReason("");setCancelError("");}}>Аннулировать</Button>}
                     {c.status === "active" && (!c.validFrom || c.validFrom<=moscowTodayYmd()) && (
                       <Button
                         variant="subtle"
@@ -296,6 +304,12 @@ export function Certificates() {
         </div>
       </div>
 
+      <Modal open={Boolean(cancelCert)} onClose={()=>{if(!cancelling)setCancelCert(null);}} title={`Аннулировать сертификат ${cancelCert?.number??""}`}>
+        <p className="mb-3 text-sm text-mute">Только после подтверждённого возврата или ошибочного выпуска. Списания будут запрещены, номер и история сохранятся. Возврат денег оформляется отдельно.</p>
+        <textarea className="input min-h-24" maxLength={500} value={cancelReason} placeholder="Причина аннулирования" onChange={e=>setCancelReason(e.target.value)} />
+        {cancelError && <p role="alert" className="mt-3 text-sm text-red-300">{cancelError}</p>}
+        <div className="mt-4 flex justify-end gap-2"><Button variant="outline" disabled={cancelling} onClick={()=>setCancelCert(null)}>Отмена</Button><Button disabled={cancelling||cancelReason.trim().length<3} onClick={async()=>{if(!cancelCert)return;setCancelling(true);try{await api.post(`/certificates/${encodeURIComponent(cancelCert.number)}/cancel`,{reason:cancelReason});setCancelCert(null);await refresh();}catch(e){setCancelError(e instanceof Error?e.message:"Не удалось аннулировать");}finally{setCancelling(false);}}}>Подтвердить аннулирование</Button></div>
+      </Modal>
       <Modal
         open={!!usageCert}
         onClose={() => setUsageCert(null)}

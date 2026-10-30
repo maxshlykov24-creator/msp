@@ -137,3 +137,15 @@ def test_unknown_pdf_cannot_be_retried(monkeypatch,db):
  c=CRM([(201,{"messageId":"text"}),httpx.ReadTimeout("lost")]);j=prepare(monkeypatch,db,c);g.process(db,c,j,STAMP,issuer)
  with pytest.raises(HTTPException):g.retry_pdf(1,{"confirmed":True},db)
  assert len(c.posts)==2
+
+
+def test_legacy_migration_does_not_backfill_past_gifts():
+ old=SimpleNamespace(event_at=STAMP-timedelta(days=3));data=lead()
+ assert g.eligible_legacy(old,data,STAMP.timestamp())
+ for f in data["custom_fields_values"]:
+  if f["field_id"]==3829442:f["values"][0]["value"]=int((STAMP-timedelta(days=1)).timestamp())
+ assert not g.eligible_legacy(old,data,STAMP.timestamp())
+ assert g.eligible_legacy(SimpleNamespace(event_at=STAMP+timedelta(seconds=1)),data,STAMP.timestamp())
+ for f in data["custom_fields_values"]:
+  if f["field_id"]==3828225:f["values"][0]["value"]=False
+ assert not g.eligible_legacy(old,data,STAMP.timestamp())

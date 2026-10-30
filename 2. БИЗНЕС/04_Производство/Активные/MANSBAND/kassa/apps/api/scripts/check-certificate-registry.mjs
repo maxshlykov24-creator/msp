@@ -21,5 +21,6 @@ await assert.rejects(()=>c.redeemMany([{number:future.number,amountRub:1}]));
 const a=await r.ensureCertificate('test:'+crypto.randomUUID(),base);const b=await r.ensureCertificate('test:'+crypto.randomUUID(),base);
 await assert.rejects(()=>c.redeemMany([{number:a.number,amountRub:10},{number:b.number,amountRub:101}]));
 const after=(await c.list()).find(x=>x.number===a.number);assert.equal(after.balance,100);
+const voided=await r.ensureCertificate('test:'+crypto.randomUUID(),base);assert(await c.cancel(voided.number));assert.equal(await c.redeem(voided.number,1),null);assert.equal((await r.ensureCertificate('test:'+crypto.randomUUID(),base)).status,'active');await assert.rejects(()=>r.ensureCertificate('test:'+crypto.randomUUID(),base,voided.number));
 console.log(JSON.stringify({checks:['legacy reservations and zeros','canonical format','concurrent issuance','reserved conflict','atomic spending','repeat issuance keeps balance','future date blocks both spending paths','batch rollback'],result:'passed'}));
 }finally{await pg.end();}

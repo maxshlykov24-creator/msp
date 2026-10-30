@@ -7,7 +7,7 @@ import type { Certificate } from "@kassa/shared";
 import { broadcast } from "../ws/hub.js";
 
 function toCert(r: typeof certificates.$inferSelect): Certificate {
-  const expired = r.validUntil < moscowTodayYmd() && r.balance > 0;
+  const expired = r.status === "active" && r.validUntil < moscowTodayYmd() && r.balance > 0;
   return {
     number: r.number,
     validFrom: r.validFrom ?? undefined,
@@ -202,6 +202,8 @@ export async function importCsv(csv: string, dryRun: boolean): Promise<Certifica
     получатель: "guestName",
     "имя получателя": "guestName",
     "дата выдачи": "issuedAt",
+    "действителен с": "validFrom",
+    "дата начала": "validFrom",
     "действителен до": "validUntil",
     "срок действия": "validUntil",
   };
@@ -242,4 +244,10 @@ export async function importCsv(csv: string, dryRun: boolean): Promise<Certifica
     }
   }
   return { valid: rows.length, conflicts, errors, imported, dryRun };
+}
+
+/** Invalidates an unspent certificate only; never performs a financial refund. */
+export async function cancel(number:string):Promise<Certificate|null>{
+ const [row]=await db.update(certificates).set({status:"cancelled"}).where(and(eq(certificates.number,canonicalNumber(number)),eq(certificates.status,"active"),eq(certificates.balance,certificates.nominal))).returning();
+ if(!row)return null;broadcast("certificate.updated",{number:row.number});return toCert(row);
 }

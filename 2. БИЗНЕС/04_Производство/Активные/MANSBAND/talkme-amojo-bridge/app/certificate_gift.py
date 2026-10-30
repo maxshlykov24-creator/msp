@@ -199,6 +199,13 @@ def process(db,c,job,stamp,issuer=issue):
  except ValueError as exc:
   job.state="partial" if allowed_parts(job) else "blocked";job.reason=str(exc)[:160];job.check_at=stamp+timedelta(seconds=60);db.commit()
 
+def eligible_legacy(old,lead,activated_at):
+ if lead.get("is_deleted") or lead.get("pipeline_id")!=9601214 or lead.get("status_id") not in (76675038,142) or field_value(lead,3828225).lower() not in ("true","1"):return False
+ if m.aware(old.event_at).timestamp()>=activated_at:return True
+ try:start=datetime.fromtimestamp(int(field_value(lead,3829442)),MSK).date()
+ except (ValueError,OverflowError,OSError):return False
+ return start>=datetime.fromtimestamp(activated_at,MSK).date()
+
 def tick():
  from app.reservation_reminders import Clients,ReminderSettings
  if not Settings().ready():return
@@ -207,11 +214,8 @@ def tick():
   c=Clients(db,ReminderSettings())
   try:
    for old in db.scalars(select(CertificateMailJob).where(CertificateMailJob.state.in_(["queued","blocked"]),CertificateMailJob.attempted_at.is_(None))):
-    if m.aware(old.event_at).timestamp()<Settings().activated_at:
-     old_lead=c.get(f"/api/v4/leads/{old.lead_id}")
-     try:old_start=datetime.fromtimestamp(int(field_value(old_lead,3829442)),MSK).date()
-     except (ValueError,OverflowError,OSError):continue
-     if old_start<datetime.fromtimestamp(Settings().activated_at,MSK).date():continue
+    old_lead=c.get(f"/api/v4/leads/{old.lead_id}")
+    if not eligible_legacy(old,old_lead,Settings().activated_at):continue
     if not db.get(GiftJob,old.lead_id):db.add(GiftJob(lead_id=old.lead_id))
    # Kassa-created sales may enter Success directly; poll only issuances after activation.
    s=Settings()

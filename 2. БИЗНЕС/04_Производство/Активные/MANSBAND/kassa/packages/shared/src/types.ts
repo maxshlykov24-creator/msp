@@ -228,7 +228,7 @@ export interface Deal {
   rentalDeposit?: number;
 }
 
-export type CertStatus = "active" | "used" | "expired";
+export type CertStatus = "active" | "used" | "expired" | "cancelled";
 
 export interface Certificate {
   amoLeadId?: number;
