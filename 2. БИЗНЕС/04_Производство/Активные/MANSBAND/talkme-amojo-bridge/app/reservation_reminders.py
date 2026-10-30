@@ -454,6 +454,10 @@ async def lifespan(_: FastAPI):
         managed.seed(db, pipelines)
         if managed_settings.executor == "live":
             managed.migrate_jobs(db)
+    from app import certificate_gift
+    Base.metadata.create_all(get_engine(),tables=certificate_gift.TABLES)
+    with get_session_factory()() as db:certificate_gift.seed(db)
+    gift_task=asyncio.create_task(certificate_gift.worker())
     managed_task = asyncio.create_task(managed.worker())
     with get_session_factory()() as db:
         already_migrated = db.get(managed.Operation, "cutover-v1") is not None
@@ -467,6 +471,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        gift_task.cancel()
         managed_task.cancel()
         task.cancel()
         mail_task.cancel()
@@ -582,3 +587,6 @@ async def webhook(secret: str, request: Request):
         return Response(content=forwarded.content, status_code=forwarded.status_code,
                         headers={"Content-Type": forwarded.headers.get("content-type", "application/json")})
     return {"ok": True}
+
+from app.certificate_gift import router as certificate_gift_router
+app.include_router(certificate_gift_router)

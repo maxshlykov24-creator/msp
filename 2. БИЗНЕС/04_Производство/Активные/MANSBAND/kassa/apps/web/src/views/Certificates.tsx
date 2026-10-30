@@ -47,6 +47,7 @@ export function Certificates() {
   const [status, setStatus] = useState("all");
   const [type, setType] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
+  const [reserved, setReserved] = useState<Array<{number:string;note:string}>>([]);
   const [list, setList] = useState<Certificate[]>(certificates);
   const [importOpen, setImportOpen] = useState(false);
   const [csv, setCsv] = useState("");
@@ -81,6 +82,7 @@ export function Certificates() {
     try {
       const rows = await api.get<Certificate[]>("/certificates");
       setList(rows);
+      setReserved(await api.get("/certificates/reserved"));
     } catch {
       // оставляем текущий список
     } finally {
@@ -149,6 +151,7 @@ export function Certificates() {
         «Не погашено» — сумма остатков на балансах.
       </Hint>
 
+      {reserved.length>0 && <details className="card my-4 p-4"><summary className="cursor-pointer font-semibold">Требуют сверки · {reserved.length}</summary><p className="my-3 text-sm text-mute">Номера заняты. Номиналы, остатки и сроки не подтверждены; списание недоступно. Для подтверждения используй импорт с проверенными данными.</p><div className="flex flex-wrap gap-2">{reserved.filter(r=>!q||r.number.includes(q.trim())).map(r=><span key={r.number} className="rounded-lg border border-ink-600 px-3 py-2 font-mono">{r.number}</span>)}</div></details>}
       <div className="grid sm:grid-cols-3 gap-3 mb-4 mt-4">
         <StatTile label="Активных" value={String(active.length)} tone="green" />
         <StatTile label="Продано на сумму" value={money(issuedSum)} tone="gold" />

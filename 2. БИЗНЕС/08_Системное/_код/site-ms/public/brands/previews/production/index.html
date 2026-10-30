@@ -29,7 +29,7 @@ const demoProduction=(()=>{
   if(path==='/setup')return {ready:true,hook_paths:[]};
   if(path==='/recipes/apply'){for(const r of body.recipes){const index=state.recipes.findIndex(x=>x.id===r.id);r.version=(r.version||0)+1;if(index<0)state.recipes.push(r);else state.recipes[index]=r}return {ok:true,recipes:body.recipes};}
   if(path==='/config'){state.config=body;return {ok:true};}
-  if(path.startsWith('/analytics'))return {updated:new Date().toISOString(),rows:assortment.map((x,i)=>({id:x.id,stock:4+i%13,reserve:i%3,sale:(8900+i%6*900)*100})),production_costs:Object.fromEntries(assortment.map((x,i)=>[x.id,{cost:2500+i*90,issue:''}]))};
+  if(path.startsWith('/analytics'))return {updated:Math.floor(Date.now()/1000),rows:assortment.map((x,i)=>({id:x.id,stock:4+i%13,reserve:i%3,sale:(8900+i%6*900)*100})),production_costs:Object.fromEntries(assortment.map(x=>{const r=state.recipes.find(r=>r.assortment_id===x.id);return [x.id,{cost:r?r.stages.reduce((sum,s)=>sum+Number(s.work_cost||0)+s.materials.reduce((sum,m)=>sum+Number(m.input_quantity||m.quantity)*(m.role==='packaging'?25:550),0),0):null,issue:r?'':'Норма изделия не заполнена'}]}))};
   if(path.startsWith('/stock'))return {rows:assortment.map(x=>({...x,stock:25,reserve:2,unit:x.uom?.name,price_kopecks:55000}))};
   if(path==='/preview')return {stages:[],materials:[],total:0};
   if(!path)return structuredClone(state);

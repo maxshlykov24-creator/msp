@@ -28,7 +28,11 @@ p=stage/'src/main.tsx';p.write_text(p.read_text().replace('await clearStaleClien
 p=stage/'src/views/ProductCheck.tsx';s=p.read_text();s=s.replace('if (USE_MOCK)', 'if (false)');p.write_text(s)
 # Replace fixture identities too; no customer information is copied to the public bundle.
 p=stage/'src/data/mock.ts';s=p.read_text();s=re.sub(r'\+7[\d ()-]{9,}', '+7 000 000-00-00',s)
-for key in ['clientName','client','guestName','recipientName','consultant','callManager','email','address']:
+consultant_names=re.findall(r'name:\s*"([^"]+)"',s[s.index('export const CONSULTANTS'):s.index('// Способы приёма')])
+for i,name in enumerate(consultant_names):
+    s=s.replace(json.dumps(name,ensure_ascii=False),json.dumps('Консультант '+str(i+1).zfill(2),ensure_ascii=False))
+s=re.sub(r'((?:consultant|callManager):\s*)"(?!Консультант )[^"]*"',r'\1"Консультант 01"',s)
+for key in ['clientName','client','guestName','recipientName','email','address']:
     counter=[0]
     def identity(m):
         counter[0]+=1

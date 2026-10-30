@@ -195,6 +195,11 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("channel", deal.channel);
   put("comment", deal.comment);
   put("storeAddress", deal.storeAddress);
+  if(deal.kind==="cert_digital"){
+    if(deal.recipientPhone)out.push({field_id:3830052,values:[{value:deal.recipientPhone}]});
+    if(deal.certificateGreeting)out.push({field_id:3830305,values:[{value:deal.certificateGreeting}]});
+    out.push({field_id:3828225,values:[{value:true}]});
+  }
   put("guestName", deal.guestName);
   put("certificateNumber", deal.certificateNumber);
   if (deal.kind === "cert_digital" || deal.kind === "cert_plastic") {

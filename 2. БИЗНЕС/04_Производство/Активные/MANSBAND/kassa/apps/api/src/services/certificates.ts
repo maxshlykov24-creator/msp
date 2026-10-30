@@ -148,7 +148,7 @@ export async function issue(cert: Certificate, reviewedLegacy=false): Promise<bo
   const number=canonicalNumber(cert.number);
   return db.transaction(async tx=>{
     const held=await tx.execute(sql`SELECT * FROM certificate_numbers WHERE number=${number} FOR UPDATE`);
-    if(held.length && !(reviewedLegacy && held[0].state==='reserved'))return false;
+    if(held.length && !(reviewedLegacy && held[0]!.state==='reserved'))return false;
     if(!held.length){const reserved=await tx.execute(sql`INSERT INTO certificate_numbers(number,state) VALUES (${number},'issued') ON CONFLICT DO NOTHING RETURNING number`);if(!reserved.length)return false;}
     const inserted=await tx.insert(certificates).values({number,nominal:Math.round(cert.nominal*100),balance:Math.round(cert.balance*100),status:cert.status,type:cert.type,guestName:cert.guestName,buyerDealNumber:cert.buyerDealNumber,issuedAt:cert.issuedAt,validUntil:cert.validUntil,validFrom:cert.validFrom??null}).onConflictDoNothing().returning({number:certificates.number});
     if(inserted.length)await tx.execute(sql`UPDATE certificate_numbers SET state='issued' WHERE number=${number}`);

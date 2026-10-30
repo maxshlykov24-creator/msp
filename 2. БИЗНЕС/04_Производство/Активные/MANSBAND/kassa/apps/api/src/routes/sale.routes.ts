@@ -40,6 +40,8 @@ export default async function saleRoutes(app: FastifyInstance) {
       payments: input.payments,
       stage: input.fulfill ? "Успех" : "Новая заявка",
       guestName: input.guestName,
+      recipientPhone: input.recipientPhone,
+      certificateGreeting: input.certificateGreeting,
       certificateNumber: input.certificateNumber,
       rentalFrom: input.rentalFrom,
       rentalTo: input.rentalTo,

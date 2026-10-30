@@ -38,3 +38,21 @@ html[data-theme="light"]{--bg:#faf9f6;--ink:#321722;--muted:#705962;--line:rgba(
 @media(max-width:370px){.hero h1{font-size:34px}.project-strip{gap:14px}.project-strip>a>strong{font-size:13px}.project-strip>a>small{font-size:9px}}
 
 #case{padding-top:70px;scroll-margin-top:-30px}#case>.section-top{margin-bottom:24px}#case>.section-heading{margin-bottom:28px}#case>.section-heading h2{font-size:clamp(36px,4vw,56px)}
+
+/* Спокойные участки палитры: путь заказа, кейс лояльности и контакт. */
+.demo-device-switch{display:flex;gap:2px;padding:3px;border:1px solid #5a4653;border-radius:6px}
+.demo-device-switch button{border:0;border-radius:3px;padding:6px 10px;color:#c8b7c1;white-space:nowrap}
+.demo-device-switch button[aria-pressed="true"]{background:#e9d7df;color:#321722}
+.demo-viewport.is-phone{padding:14px 0;background:#251a22}
+.demo-viewport.is-phone .demo-canvas{border-radius:18px;overflow:hidden;box-shadow:0 0 0 5px #4b3944,0 8px 24px #0005}
+@media(max-width:760px){.demo-toolbar .demo-tools{width:100%;justify-content:space-between}.demo-device-switch button{font-size:10px;padding:7px 9px}}
+.process,.contact{position:relative;isolation:isolate}
+.process::before,.contact::before{content:"";position:absolute;z-index:-1;pointer-events:none;animation:none;transition:none;border-radius:32px}
+.process::before{inset:66px -38px -24px;background:radial-gradient(ellipse at 8% 30%,#71304a35,transparent 68%),linear-gradient(145deg,#32172238,transparent 65%)}
+.loyalty-case{background:linear-gradient(120deg,#38202cc7,#21131bd9 75%);border-color:#b37c9552}
+.contact::before{inset:55px -38px 25px;background:radial-gradient(ellipse at 85% 65%,#71304a52,transparent 72%),linear-gradient(135deg,#29151f80,#21121a55);border:1px solid #c38fa01c}
+.contact .section-top{border-top-color:transparent}
+html[data-theme="light"] .process::before{background:radial-gradient(ellipse at 8% 30%,#e3c9d48c,transparent 70%),linear-gradient(145deg,#f0e4e970,transparent 65%)}
+html[data-theme="light"] .loyalty-case{background:linear-gradient(120deg,#eddee5,#f5ecef 75%);border-color:#71304a30}
+html[data-theme="light"] .contact::before{background:radial-gradient(ellipse at 85% 65%,#dec0cd80,transparent 72%),linear-gradient(135deg,#f2e7ec,#eee0e7);border-color:#71304a18}
+@media(max-width:760px){.process::before{inset:40px -12px -18px;border-radius:20px}.contact::before{inset:42px -12px 20px;border-radius:20px}}

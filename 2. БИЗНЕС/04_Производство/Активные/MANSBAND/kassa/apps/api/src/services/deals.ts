@@ -313,6 +313,9 @@ export async function updateDealFields(
       },
     ],
   };
+  if(updated.stage === "Сертификат оплачен" && deal.stage !== updated.stage && (updated.kind === "cert_digital" || updated.kind === "cert_plastic")) {
+    const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
+  }
   await persist(updated);
   if (deal.amoLeadId && nextStage !== deal.stage) {
     const statusId = await resolveStatusId(deal.amoLeadId, nextStage);
@@ -363,12 +366,15 @@ export async function updateStage(
       },
     ],
   };
+  if(updated.stage === "Сертификат оплачен" && deal.stage !== updated.stage && (updated.kind === "cert_digital" || updated.kind === "cert_plastic")) {
+    const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
+  }
   await persist(updated);
   if (deal.amoLeadId && !patch?.skipAmoWriteback) {
     const statusId = await resolveStatusId(deal.amoLeadId, stage);
     if (statusId) await amo.updateLead(deal.amoLeadId, { statusId }).catch(() => {});
   }
-  if (deal.amoLeadId && !patch?.skipAmoWriteback && (stage === "Товар отложен" || patch?.meetingDate)) {
+  if (deal.amoLeadId && !patch?.skipAmoWriteback && (stage === "Товар отложен" || stage === "Сертификат оплачен" || patch?.meetingDate)) {
     const customFields = await buildLeadCustomFields(updated).catch(() => []);
     if (customFields.length) await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
   }
@@ -505,6 +511,9 @@ export async function convertDealKind(
     // paid оставляем — аванс отложки идёт в оплату аренды.
   }
 
+  if(updated.stage === "Сертификат оплачен" && deal.stage !== updated.stage && (updated.kind === "cert_digital" || updated.kind === "cert_plastic")) {
+    const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
+  }
   await persist(updated);
   if (deal.amoLeadId && updated.stage !== deal.stage) {
     const statusId = await resolveStatusId(deal.amoLeadId, updated.stage);
@@ -582,6 +591,9 @@ export async function updateCompanyStatus(
       { at: new Date().toISOString(), who, action: `Продажа компании — ${actions.join(", ")}` },
     ],
   };
+  if(updated.stage === "Сертификат оплачен" && deal.stage !== updated.stage && (updated.kind === "cert_digital" || updated.kind === "cert_plastic")) {
+    const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
+  }
   await persist(updated);
   if (deal.amoLeadId && updated.stage !== deal.stage) {
     const statusId = await resolveStatusId(deal.amoLeadId, updated.stage);
@@ -700,6 +712,9 @@ export async function revertCompanyStep(
       { at: new Date().toISOString(), who, action: `Вернули задачу «${kind}» в работу` },
     ],
   };
+  if(updated.stage === "Сертификат оплачен" && deal.stage !== updated.stage && (updated.kind === "cert_digital" || updated.kind === "cert_plastic")) {
+    const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
+  }
   await persist(updated);
   if (deal.amoLeadId && updated.stage !== deal.stage) {
     const statusId = await resolveStatusId(deal.amoLeadId, updated.stage);
@@ -746,6 +761,9 @@ export async function addComment(ref: string, text: string, who: string): Promis
     ...deal,
     history: [...(deal.history ?? []), { at: new Date().toISOString(), who, action: `Комментарий: ${text}` }],
   };
+  if(updated.stage === "Сертификат оплачен" && deal.stage !== updated.stage && (updated.kind === "cert_digital" || updated.kind === "cert_plastic")) {
+    const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
+  }
   await persist(updated);
   if (deal.amoLeadId) await amo.addLeadNote(deal.amoLeadId, text).catch(() => {});
   broadcast("deal.updated", { number: deal.number });

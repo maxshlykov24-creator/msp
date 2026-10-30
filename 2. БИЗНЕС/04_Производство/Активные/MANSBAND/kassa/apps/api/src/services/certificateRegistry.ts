@@ -39,7 +39,7 @@ export async function ensureCertificate(sourceKey:string, cert:Certificate, pref
       const held=await tx.execute(sql`SELECT * FROM certificate_numbers WHERE number=${requested} FOR UPDATE`);
       if (held.length) {
         const [financial]=await tx.select().from(certificates).where(sql`${certificates.number}=${requested}`);
-        if (!financial || !cert.buyerDealNumber || financial.buyerDealNumber!==cert.buyerDealNumber || held[0].source_key) {
+        if (!financial || !cert.buyerDealNumber || financial.buyerDealNumber!==cert.buyerDealNumber || held[0]!.source_key) {
           throw new Error("Номер сертификата занят или требует сверки; новый автоматически не выдаётся");
         }
         await tx.execute(sql`UPDATE certificate_numbers SET source_key=${sourceKey} WHERE number=${requested}`);

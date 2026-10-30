@@ -13,6 +13,7 @@ const schema = z.object({
   JWT_SECRET: z.string().min(16, "JWT_SECRET слишком короткий"),
   JWT_EXPIRES_IN: z.string().default("12h"),
 
+  CERTIFICATE_SERVICE_KEY: z.string().min(32).optional(),
   MESSAGE_TEMPLATES_URL: z.string().url().optional(),
   MESSAGE_TEMPLATES_KEY: z.string().min(24).optional(),
 

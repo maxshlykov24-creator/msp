@@ -70,6 +70,8 @@ class Trigger(BaseModel):
 
 class Rule(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    action: Literal["text", "certificate"] = "text"
+    certificate_pdf: dict = Field(default_factory=dict)
     name: str = Field(min_length=1, max_length=150)
     enabled: bool = False
     pipelines: list[int] = Field(default_factory=lambda: [9601214], min_length=1)
@@ -89,6 +91,9 @@ class Rule(BaseModel):
     legacy_next_day: bool = False
     @model_validator(mode="after")
     def complete(self):
+        if self.action=="certificate":
+            if self.pipelines!=[9601214] or self.statuses!=[76675038] or self.phone_field!=3830052 or self.trigger.field!=3829442 or self.trigger.type!="date" or self.trigger.offset!=0:
+                raise ValueError("Выдача сертификата использует фиксированные поля оплаты и получателя")
         if self.window_start >= self.window_end:
             raise ValueError("Начало окна должно быть раньше окончания")
         if self.recipient == "field" and not self.phone_field:
@@ -474,7 +479,7 @@ def ingest(db, form, stamp):
     for doc in db.scalars(select(Document).where(Document.kind=="rule")):
         if not doc.active: continue
         r=Rule(**doc.active)
-        if not r.enabled or r.trigger.type != "stage": continue
+        if r.action == "certificate" or not r.enabled or r.trigger.type != "stage": continue
         for pipeline in r.pipelines:
             for status in r.statuses:
                 cfg=MailSettings(pipeline_id=pipeline,status_id=status,activated_at=int(aware(doc.published_at or stamp).timestamp()))
@@ -501,7 +506,7 @@ def synchronize(db,c,stamp):
     for doc in db.scalars(select(Document).where(Document.kind=="rule")):
         if not doc.active: continue
         r=Rule(**doc.active)
-        if not r.enabled: continue
+        if r.action == "certificate" or not r.enabled: continue
         if r.trigger.type != "date": continue
         found=set()
         for lead in scan_leads(c,r):
@@ -731,7 +736,8 @@ def journal(db=Depends(session)):
         "explicit_test":"Тестовая отправка", "confirmed_delivery_error":"Провайдер подтвердил отказ",
         "test_result_requires_review":"Проверь результат теста", "no_recipient":"Нет адресата для канала", "inactive_channel":"Канал недоступен"}
     def reason(code):return reasons.get(code,code)
-    return {"items":[{"id":j.id,"rule_id":j.rule_id,"lead_id":j.lead_id,"due_at":aware(j.due_at).isoformat(),
+    from app.certificate_gift import journal as gift_journal
+    return {"items":gift_journal(db)+[{"id":j.id,"rule_id":j.rule_id,"lead_id":j.lead_id,"due_at":aware(j.due_at).isoformat(),
         "state":j.state,"label":labels.get(j.state,j.state),"reason":reason(j.reason),
         "attempts":[{"channel":a.transport,"state":labels.get(a.state,a.state),"reason":reason(a.reason)} for a in db.scalars(select(Attempt).where(Attempt.job_id==j.id))]}
         for j in db.scalars(select(Job).order_by(Job.id.desc()).limit(200))]}
@@ -749,7 +755,9 @@ def draft(body:Change,db=Depends(session),c=Depends(client)):
     d=db.get(Document,body.id)
     if (d.version if d else 0)!=body.version:raise HTTPException(409,"Версия изменилась. Обнови страницу")
     try:
-        if body.kind=="rule":value=Rule(**body.payload).model_dump()
+        if body.kind=="rule":
+            value=Rule(**body.payload).model_dump()
+            if value["action"]=="certificate" and body.id!="gift-certificate":raise ValueError("Допускается один сценарий выдачи сертификата")
         elif body.kind=="routing":value=Routing(**body.payload).model_dump()
         else:
             value=body.payload
@@ -778,7 +786,7 @@ def check_rule(db,c,d,lead_id=None):
     for other in db.scalars(select(Document).where(Document.kind=="rule",Document.id!=d.id)):
         if not other.active or not other.active.get("enabled"):continue
         o=Rule(**other.active)
-        if set(r.pipelines)&set(o.pipelines) and (not r.statuses or not o.statuses or set(r.statuses)&set(o.statuses)) and r.trigger.type==o.trigger.type:
+        if r.action==o.action and set(r.pipelines)&set(o.pipelines) and (not r.statuses or not o.statuses or set(r.statuses)&set(o.statuses)) and r.trigger.type==o.trigger.type:
             overlaps.append({"id":other.id,"name":o.name})
     targets=list(scan_leads(c,r))
     if lead_id:
@@ -805,7 +813,13 @@ def check(id:str,body:dict,db=Depends(session),c=Depends(client)):
     d=document(db,id)
     if body.get("version")!=d.version:raise HTTPException(409,"Версия изменилась")
     try:
-        if d.kind=="rule":result=check_rule(db,c,d,body.get("lead_id"))
+        if d.kind=="rule":
+            if d.draft.get("action")=="certificate":
+                from app.certificate_gift import preview
+                result=preview(db,c,d,body.get("lead_id"))
+                from app.certificate_pdf import render_pdf
+                render_pdf({"guest":"Проверка","number":"ПРЕДПРОСМОТР","until":"01.01.2030","start":"01.01.2029","nominal":1,"greeting":""},d.draft.get("certificate_pdf",{}))
+            else:result=check_rule(db,c,d,body.get("lead_id"))
         elif d.kind=="routing":Routing(**d.draft);result={"routing":d.draft}
         else:
             if d.draft.get("remote_id"):
@@ -868,7 +882,7 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
             if r.enabled:validate_catalog(r,catalog(c))
             # Reject any enabled overlapping rule unless explicitly reviewed.
             overlapping=[x for x in db.scalars(select(Document).where(Document.kind=="rule",Document.id!=d.id))
-                         if x.active and x.active.get("enabled") and set(x.active["pipelines"])&set(r.pipelines)
+                         if x.active and x.active.get("enabled") and x.active.get("action","text")==r.action and set(x.active["pipelines"])&set(r.pipelines)
                          and (not r.statuses or not x.active["statuses"] or set(x.active["statuses"])&set(r.statuses))
                          and x.active["trigger"]["type"]==r.trigger.type]
             if r.enabled and sorted([[x.id,digest(x.active)] for x in overlapping]) != (d.reviewed_overlaps or []):
@@ -929,6 +943,7 @@ class TestSend(BaseModel):
 def test_send(id:str,body:TestSend,db=Depends(session),c=Depends(client)):
     from app.reservation_reminders import ReminderSettings
     d=document(db,id)
+    if d.draft.get("action")=="certificate":raise HTTPException(409,"Используй отдельный тест PDF сертификата")
     if d.kind!="rule" or d.version!=body.version or d.checked!=digest([d.version,d.draft]):raise HTTPException(409,"Сначала проверь актуальный черновик")
     if not body.confirmed:raise HTTPException(409,"Подтверди тестового получателя")
     opid="test-"+body.operation_id

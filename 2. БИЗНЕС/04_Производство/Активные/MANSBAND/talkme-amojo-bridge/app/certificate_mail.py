@@ -349,6 +349,8 @@ def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fe
 
 
 def tick(s: MailSettings):
+    from app.certificate_gift import Settings as GiftSettings
+    if GiftSettings().mode=="live":return
     if not s.live_ready():
         return
     lock = get_engine().connect()

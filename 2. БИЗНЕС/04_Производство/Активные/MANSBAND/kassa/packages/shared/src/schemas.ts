@@ -87,6 +87,8 @@ export const createSaleSchema = z.object({
     .optional(),
   // доп. поля под конкретные виды заявок
   guestName: z.string().optional(),
+  recipientPhone: z.string().max(40).optional(),
+  certificateGreeting: z.string().max(20000).optional(),
   certificateNumber: z.string().optional(),
   rentalFrom: z.string().optional(),
   rentalTo: z.string().optional(),
@@ -557,11 +559,13 @@ export const movementTaskSchema = taskSchema.extend({
 });
 
 export const certificateImportRowSchema = z.object({
-  number: z.string().regex(/^\d{6}$/, "Номер должен содержать 6 цифр"),
+  number: z.string().trim().regex(/^(?:\d{5,6}|MB-\d{4}-\d{4})$/, "Нужен старый номер или MB-XXXX-XXXX"),
   nominal: z.coerce.number().positive(),
   balance: z.coerce.number().nonnegative(),
   type: z.enum(["plastic", "digital"]).default("plastic"),
   guestName: z.string().optional(),
+  recipientPhone: z.string().max(40).optional(),
+  certificateGreeting: z.string().max(20000).optional(),
   issuedAt: z.string().min(10),
   validUntil: z.string().min(10),
 });

@@ -3,8 +3,8 @@ import { getEnv } from "../env.js";
 
 /** Server-only gateway: credentials and the bridge address never reach the browser. */
 export default async function messageTemplatesRoutes(app: FastifyInstance) {
-  const reads = ["", "/catalog", "/manual", "/journal", "/history/:id"];
-  const writes = ["/draft", "/check/:id", "/publish/:id", "/test/:id"];
+  const reads = ["", "/catalog", "/manual", "/journal", "/history/:id", "/gift/preview/:id"];
+  const writes = ["/draft", "/check/:id", "/publish/:id", "/test/:id", "/gift/test", "/gift/retry-pdf/:id"];
   for (const suffix of [...reads, ...writes]) {
     const write = writes.includes(suffix);
     app.route({
@@ -28,6 +28,10 @@ export default async function messageTemplatesRoutes(app: FastifyInstance) {
             headers: { "X-Reminder-Key": env.MESSAGE_TEMPLATES_KEY, "Content-Type": "application/json" },
             body: body ? JSON.stringify(body) : undefined,
           });
+          if(suffix.startsWith("/gift/preview") && res.ok){
+            reply.header("Content-Type","application/pdf");reply.header("Cache-Control","no-store");reply.header("Content-Disposition",'attachment; filename="Mansband-preview.pdf"');
+            return reply.send(Buffer.from(await res.arrayBuffer()));
+          }
           const data = await res.json() as Record<string, unknown>;
           if (!res.ok) return reply.code(res.status).send({ message: typeof data.detail === "string" ? data.detail : "Сервис шаблонов отклонил запрос" });
           return data;

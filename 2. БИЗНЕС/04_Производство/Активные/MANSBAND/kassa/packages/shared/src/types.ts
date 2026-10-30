@@ -154,6 +154,8 @@ export interface Deal {
   stage: string;
   certificateNumber?: string;
   guestName?: string;
+  recipientPhone?: string;
+  certificateGreeting?: string;
   rentalFrom?: string;
   rentalTo?: string;
   issueDate?: string;
@@ -183,7 +185,6 @@ export interface Deal {
   photoAttached?: boolean;
   deliveryCity?: string;
   recipientName?: string;
-  recipientPhone?: string;
   linkedDealNumber?: number;
   returnStatus?: "issued" | "pending";
   returnDestination?: string;
@@ -237,6 +238,8 @@ export interface Certificate {
   status: CertStatus;
   type: "plastic" | "digital";
   guestName?: string;
+  recipientPhone?: string;
+  certificateGreeting?: string;
   buyerDealNumber?: number;
   issuedAt: string;
   validUntil: string;

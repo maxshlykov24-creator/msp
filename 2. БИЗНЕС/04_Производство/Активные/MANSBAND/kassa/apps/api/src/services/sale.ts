@@ -102,6 +102,8 @@ export async function processSale(
       await attachPhotosToLead(amoLeadId, opts.photos);
     }
 
+    await issueCertificateIfNeeded(enriched);
+
     // 3. writeback статуса оплаты + ссылок в amo
     if (amoLeadId) await writeback(amoLeadId, enriched);
 
@@ -114,8 +116,7 @@ export async function processSale(
       await markOriginalReturnFlags(enriched.linkedDealNumber, enriched.kind).catch(() => {});
     }
 
-    // 4b. Продажа сертификата → реестр (иначе в оплате не находится как действующий)
-    await issueCertificateIfNeeded(enriched);
+    // Certificate issuance is completed before the CRM writeback.
 
     // 4c. Оплата сертификатом → списание баланса
     await redeemCertificatesFromPayments(enriched);
@@ -430,7 +431,7 @@ async function enqueueOperationalTasks(deal: Deal, who: string): Promise<void> {
 
 const CERT_ISSUE_STAGES = new Set(["Сертификат оплачен", "Сертификат продан", "Успех"]);
 
-async function issueCertificateIfNeeded(deal: Deal): Promise<void> {
+export async function issueCertificateIfNeeded(deal: Deal): Promise<void> {
   if (deal.kind !== "cert_plastic" && deal.kind !== "cert_digital") return;
   if (!CERT_ISSUE_STAGES.has(deal.stage)) return;
   let number = deal.certificateNumber?.trim();
@@ -451,20 +452,16 @@ async function issueCertificateIfNeeded(deal: Deal): Promise<void> {
     validUntil: (deal.validUntil || "").slice(0, 10) || addYearFromToday(),
   });
   if (deal.kind === "cert_digital") {
-    // Номер, сгенерированный кассой заранее (кнопка в форме), сохраняем как есть —
-    // консультант мог уже продиктовать его клиенту. При коллизии подбираем новый.
-    let issued = number ? await certs.issue(buildCertificate(number)) : false;
-    for (let attempt = 0; attempt < 30 && !issued; attempt++) {
-      number = await certs.generateDigitalNumber();
-      issued = await certs.issue(buildCertificate(number));
-    }
-    if (!issued || !number) throw new Error("Не удалось выпустить уникальный электронный сертификат");
-    deal.certificateNumber = number;
+    if(deal.paid < deal.total || deal.total <= 0)throw new Error("Сертификат не оплачен полностью");
+    if(!deal.amoLeadId)throw new Error("Для выпуска требуется сохранённая сделка amoCRM");
+    const { ensureCertificate }=await import("./certificateRegistry.js");
+    const cert=await ensureCertificate(`amo:32417154:${deal.amoLeadId}`,{...buildCertificate(number??""),validFrom:deal.receivedAt?.slice(0,10)},number);
+    number=cert.number;deal.certificateNumber=number;
   } else {
     if (!number) throw new Error("Не указан номер пластикового сертификата");
-    if (!(await certs.issue(buildCertificate(number)))) {
-      throw new Error(`Сертификат №${number} уже существует`);
-    }
+    const { ensureCertificate }=await import("./certificateRegistry.js");
+    const cert=await ensureCertificate(deal.amoLeadId?`amo:32417154:${deal.amoLeadId}`:`local:${deal.id}`,buildCertificate(number),number);
+    number=cert.number;
   }
   broadcast("certificate.updated", { number });
 }
