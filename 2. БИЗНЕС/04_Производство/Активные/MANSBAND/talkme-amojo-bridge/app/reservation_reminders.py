@@ -455,7 +455,9 @@ async def lifespan(_: FastAPI):
         if managed_settings.executor == "live":
             managed.migrate_jobs(db)
     managed_task = asyncio.create_task(managed.worker())
-    legacy = managed_settings.executor != "live"
+    with get_session_factory()() as db:
+        already_migrated = db.get(managed.Operation, "cutover-v1") is not None
+    legacy = managed_settings.executor != "live" and not already_migrated
     async def inactive():
         await asyncio.Event().wait()
     task = asyncio.create_task(worker(s) if legacy else inactive())

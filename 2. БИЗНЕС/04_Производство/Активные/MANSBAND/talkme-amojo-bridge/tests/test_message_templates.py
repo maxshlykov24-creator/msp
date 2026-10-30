@@ -166,6 +166,7 @@ class CRM:
         if path=='/api/v4/leads/pipelines':return {'_embedded':{'pipelines':[{'id':9601214,'_embedded':{'statuses':[{'id':77086494}]}}]}}
         if path=='/api/v4/leads/custom_fields':return {'_embedded':{'custom_fields':self.fields}}
         if path=='/api/v4/leads':return {'_embedded':{'leads':[lead()]}}
+        if path.startswith('/api/v4/leads/'):return lead()
         if path=='/api/v4/chats/templates':return {'_embedded':{'chat_templates':[self.remote] if self.remote else []}}
         if path.startswith('/api/v4/chats/templates/'):return self.remote
         raise AssertionError(path)
@@ -242,7 +243,8 @@ def test_schema_deletion_and_enum_mismatch_blocks():
     with pytest.raises(ValueError):m.validate_catalog(rule(content='{{lead.date.3810737}}'),cat)
 
 
-def test_preview_never_posts_and_reports_overlap(db,transport):
+def test_preview_never_posts_and_reports_overlap(db,monkeypatch):
+    monkeypatch.setattr(m,"make_plan",lambda *args:([{"transport":"telegram","recipient":{"phone":"79990000001"}}],"key"))
     c=CRM();d=doc(db)
     second=rule(name='Другой').model_dump();db.add(m.Document(id='other',kind='rule',draft=second,active=second));db.commit()
     result=m.check(d.id,{'version':1},db,c)
@@ -266,9 +268,12 @@ def test_migration_preserves_sent_and_uncertain_ledger(db):
     m.seed(db)
     old=st.CalendarJob(lead_id=99,status_id=76654894,kind='meeting_today',target_date=date(2026,10,30),due_at=STAMP,check_at=STAMP,state='pending')
     db.add(old);db.flush();db.add(st.CalendarAttempt(job_id=old.id,position=0,transport='telegram',state='pending',message_id='accepted',crm_message_id='legacy-original'));db.commit()
+    with pytest.raises(RuntimeError):m.migrate_jobs(db)
+    assert not list(db.scalars(select(m.Job)))
+    old.state='sent';db.commit()
     m.migrate_jobs(db);m.migrate_jobs(db)
     j=db.scalar(select(m.Job));a=db.scalar(select(m.Attempt))
-    assert j.state=='uncertain' and a.message_id=='accepted' and a.crm_id=='legacy-original'
+    assert j.state=='sent' and a.message_id=='accepted' and a.crm_id=='legacy-original'
     db.add(ReminderEvent(key='late',message_id='accepted',status='sent'));db.commit();m.reconcile(db)
     assert j.state=='sent' and len(list(db.scalars(select(m.Job))))==1
 
@@ -281,3 +286,86 @@ def test_internal_read_requires_key(monkeypatch):
     with TestClient(app) as client:
         response=client.get('/internal/templates')
         assert response.status_code==403
+
+
+def test_recipient_phone_routing_order_without_prior_history(db,monkeypatch):
+    from app.stage_notifications import certificate_plan,StageSettings,CalendarSettings
+    from app.reservation_reminders import ReminderSettings
+    class NoHistory:
+        def get(self,path,**params):
+            assert path=='/api/v4/contacts'
+            return {}
+    data={'custom_fields_values':[{'field_id':3830052,'values':[{'value':'79990000001'}]}]}
+    plan=certificate_plan(db,NoHistory(),data,StageSettings(),ReminderSettings(),CalendarSettings(),routing={'order':['max','whatsapp','telegram'],'previous_first':True,'social_fallback':True})
+    assert [p['transport'] for p in plan]==['max','whatsapp','telegram']
+
+
+def test_newer_event_does_not_resurrect_old_entry(db,monkeypatch):
+    monkeypatch.setenv('TEMPLATES_EXECUTOR','live');d=doc(db,rule(trigger={'type':'stage','delay_minutes':60}))
+    m.ingest(db,form(STAMP+timedelta(minutes=2)),STAMP+timedelta(minutes=2))
+    m.ingest(db,form(STAMP),STAMP+timedelta(minutes=2))
+    assert len(list(db.scalars(select(m.Job))))==1
+
+
+def test_unknown_create_cannot_be_bypassed_by_new_draft_version(db):
+    from fastapi import HTTPException
+    c=CRM();c.uncertain=True
+    payload={'name':'Новый','content':'Текст'}
+    m.draft(m.Change(id='same-doc',kind='manual',version=0,payload=payload,actor='admin'),db,c)
+    d=db.get(m.Document,'same-doc');m.check(d.id,{'version':1},db,c)
+    with pytest.raises(HTTPException):m.publish(d.id,m.Publish(version=1,actor='admin'),db,c)
+    m.draft(m.Change(id=d.id,kind='manual',version=1,payload={**payload,'content':'Изменённый'},actor='admin'),db,c)
+    m.check(d.id,{'version':2},db,c)
+    with pytest.raises(HTTPException):m.publish(d.id,m.Publish(version=2,actor='admin'),db,c)
+    assert len(c.posts)==1
+
+
+def test_publish_reschedules_unstarted_job_immediately(db):
+    c=CRM();d=doc(db);j=job(db,d)
+    d.draft={**d.draft,'trigger':{**d.draft['trigger'],'offset':2}}
+    d.checked=m.digest([d.version,d.draft]);db.commit()
+    m.publish(d.id,m.Publish(version=d.version,actor='admin'),db,c)
+    assert m.aware(j.due_at)==STAMP+timedelta(days=1) and j.snapshot is None
+
+
+def test_once_unattempted_reentry_restarts_delay(db,monkeypatch):
+    monkeypatch.setenv('TEMPLATES_EXECUTOR','live');doc(db,rule(trigger={'type':'stage','delay_minutes':60,'repeat':'once'}))
+    m.ingest(db,form(STAMP),STAMP)
+    later=STAMP+timedelta(minutes=2);m.ingest(db,form(later),later)
+    j=db.scalar(select(m.Job));assert m.aware(j.due_at)==later+timedelta(minutes=60)
+
+
+def test_disable_broken_rule_does_not_require_deleted_fields(db):
+    c=CRM();d=doc(db);j=job(db,d);c.fields=[]
+    d.draft={**d.draft,'enabled':False};db.commit()
+    result=m.check(d.id,{'version':d.version},db,c)
+    assert result['disabled'] is True
+    m.publish(d.id,m.Publish(version=d.version,actor='admin'),db,c)
+    assert j.state=='cancelled' and not d.active['enabled']
+
+
+def test_late_delivered_callback_updates_sent_journal(db,transport):
+    j=job(db,doc(db));m.send(db,j,transport,STAMP)
+    db.add(ReminderEvent(key='sent-only',message_id='m1',status='sent'));db.commit();m.reconcile(db)
+    assert j.state=='sent'
+    db.add(ReminderEvent(key='later-delivered',message_id='m1',status='delivered'));db.commit();m.reconcile(db)
+    assert j.state=='delivered'
+
+
+def test_snapshot_uses_published_not_draft_version(db):
+    d=doc(db);d.published_version=1;d.version=2;db.commit()
+    assert m.snapshot(db,d)['version']==1
+
+
+def test_legacy_paid_allows_same_day_late_initial_send(db,transport,monkeypatch):
+    later=STAMP+timedelta(hours=2);monkeypatch.setattr(m,'now',lambda:later)
+    j=job(db,doc(db,rule(late_policy='same_day')))
+    m.send(db,j,transport,later)
+    assert j.state=='pending' and len(transport.posts)==1
+
+
+def test_legacy_stage_missing_fields_does_not_expire_after_five_minutes(db,transport,monkeypatch):
+    later=STAMP+timedelta(days=1,hours=2);monkeypatch.setattr(m,'now',lambda:later)
+    j=job(db,doc(db,rule(late_policy='legacy_stage',trigger={'type':'stage','repeat':'once'})))
+    m.send(db,j,transport,later)
+    assert j.state=='pending' and len(transport.posts)==1

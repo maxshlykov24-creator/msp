@@ -85,6 +85,7 @@ class Rule(BaseModel):
     window_start: int = Field(default=10, ge=0, le=23)
     window_end: int = Field(default=20, ge=1, le=24)
     # Existing stage rules preserve their historical outside-window behavior.
+    late_policy: Literal["skip", "same_day", "legacy_stage"] = "skip"
     legacy_next_day: bool = False
     @model_validator(mode="after")
     def complete(self):
@@ -114,6 +115,7 @@ class Document(Base):
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     kind: Mapped[str] = mapped_column(String(16))
     version: Mapped[int] = mapped_column(Integer, default=1)
+    published_version: Mapped[int] = mapped_column(Integer, default=0)
     draft: Mapped[dict] = mapped_column(JSON)
     active: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     checked: Mapped[str] = mapped_column(String(64), default="")
@@ -269,8 +271,10 @@ def all_pages(c, path, key, **params):
 
 
 def catalog(c):
-    return {"pipelines": all_pages(c, "/api/v4/leads/pipelines", "pipelines"),
+    if not hasattr(c,"_templates_catalog"):
+        c._templates_catalog={"pipelines": all_pages(c, "/api/v4/leads/pipelines", "pipelines"),
             "fields": all_pages(c, "/api/v4/leads/custom_fields", "custom_fields")}
+    return c._templates_catalog
 
 
 def validate_catalog(r, cat):
@@ -291,7 +295,15 @@ def validate_catalog(r, cat):
     if r.trigger.type == "date" and fields.get(r.trigger.field, {}).get("type") not in ("date", "date_time"):
         raise ValueError("Выбранное поле не является датой")
     if r.recipient == "field" and r.phone_field not in fields: raise ValueError("Поле телефона удалено")
+    if r.variants:
+        store=fields.get(r.store_field)
+        if not store:raise ValueError("Поле магазина удалено")
+        keys={str(x["id"]) for x in store.get("enums") or []}|{"default"}
+        if not set(r.variants)<=keys:raise ValueError("Вариант ссылается на удалённый магазин")
     for body in [r.content, *r.variants.values()]:
+        if not body.strip():raise ValueError("Текст варианта пустой")
+        static=re.sub(r"{{[^{}]+}}","",body)
+        if "{{" in static or "}}" in static:raise ValueError("Незакрытая переменная в тексте")
         for key in re.findall(r"{{\s*([^{}]+?)\s*}}", body):
             if key in ("lead.id", "lead.price"): continue
             m = re.fullmatch(r"lead\.(field|date)\.(\d+)", key)
@@ -301,37 +313,45 @@ def validate_catalog(r, cat):
 
 
 def scan_leads(c, r):
+    if not hasattr(c,"_templates_scans"):c._templates_scans={}
+    cache_key=(tuple(sorted(r.pipelines)),tuple(sorted(r.statuses)))
+    if cache_key in c._templates_scans:return c._templates_scans[cache_key]
     leads = []
+    pipelines={p["id"]:p for p in catalog(c)["pipelines"]}
     for pipeline in r.pipelines:
-        params = {"filter[pipeline_id]": pipeline, "with": "contacts"}
-        # Only documented status filters; account doesn't support custom filters.
-        if r.statuses:
-            for i, status in enumerate(r.statuses):
-                params[f"filter[statuses][{i}][pipeline_id]"] = pipeline
-                params[f"filter[statuses][{i}][status_id]"] = status
+        available={x["id"] for x in pipelines.get(pipeline,{}).get("_embedded",{}).get("statuses",[])}
+        statuses=sorted(set(r.statuses)&available if r.statuses else available-{142,143})
+        if not statuses:continue
+        params = {"with": "contacts"}
+        for i, status in enumerate(statuses):
+            params[f"filter[statuses][{i}][pipeline_id]"] = pipeline
+            params[f"filter[statuses][{i}][status_id]"] = status
         leads.extend(all_pages(c, "/api/v4/leads", "leads", **params))
-    return {x["id"]: x for x in leads}.values()
+    result=list({x["id"]: x for x in leads}.values())
+    c._templates_scans[cache_key]=result
+    return result
 
 
 def make_plan(db, c, lead, r, routing):
     from app.stage_notifications import resolve_plan, StageSettings, CalendarSettings, certificate_plan, certificate_phone
-    from app.reservation_reminders import primary_contact, ReminderSettings
+    from app.reservation_reminders import primary_contact, ReminderSettings, recipient, first
     s, rs = StageSettings(), ReminderSettings()
     if r.recipient == "field":
         cs = CalendarSettings(recipient_phone_field=r.phone_field)
         phone = certificate_phone(lead, cs)
         plan = certificate_plan(db, c, lead, s, rs, cs, routing=routing)
-        return plan, digest(["phone", phone])
+        return plan, digest(["phone", phone, [(p["transport"],p["recipient"],p.get("recipient_contact_id")) for p in plan if p["transport"] in {"instagram","avito"}]])
     cid = primary_contact(lead)
     if not cid: raise ValueError("Не определён основной контакт")
     contact = c.get(f"/api/v4/contacts/{cid}")
     plan = resolve_plan(db, c, lead, contact, s, rs, calendar=True, routing=routing)
-    return plan, digest(["contact", cid, [(p["transport"], p["recipient"]) for p in plan]])
+    return plan, digest(["contact", cid, [(t,recipient(contact,t,rs)) for t in ("telegram","whatsapp","max")],
+        [(t,first(contact,f)) for t,f in (("instagram",3816137),("avito",3642125))]])
 
 
 def snapshot(db, doc):
     route = db.get(Document, "routing")
-    return {"rule": doc.active, "version": doc.version,
+    return {"rule": doc.active, "version": doc.published_version,
             "routing": route.active or Routing().model_dump()}
 
 
@@ -345,7 +365,7 @@ def seed(db, pipelines=None):
     from app.reservation_reminders import ReminderSettings, TEMPLATE
     if db.get(Document, "routing") is None:
         data = Routing().model_dump()
-        db.add(Document(id="routing", kind="routing", draft=data, active=data))
+        db.add(Document(id="routing", kind="routing", draft=data, active=data, published_version=1))
     cs, ss, rs = st.CalendarSettings(), st.StageSettings(), ReminderSettings()
     names = {"meeting_today": "Напоминание о примерке", "meeting_followup": "После примерки",
         "rental_pickup": "Получение аренды", "rental_return": "Возврат аренды",
@@ -370,7 +390,7 @@ def seed(db, pipelines=None):
             recipient="field" if kind in st.CERTIFICATE_KINDS else "contact",
             phone_field=cs.recipient_phone_field if kind in st.CERTIFICATE_KINDS else None,
             conditions=[Condition(field=cs.hold_field, op="eq", value=cs.free_hold_enum)] if kind == "free_hold_expired" else [])
-        d = r.model_dump(); db.add(Document(id=id, kind="rule", draft=d, active=d))
+        d = r.model_dump(); db.add(Document(id=id, kind="rule", draft=d, active=d, published_version=1))
     for status, kind in st.STAGES.items():
         id = "legacy-" + kind
         if db.get(Document, id): continue
@@ -386,14 +406,14 @@ def seed(db, pipelines=None):
             enabled=ss.live_ready() and (kind != "review" or ss.review_activated_at > 0), statuses=[status],
             trigger=Trigger(type="stage", delay_minutes=60 if kind == "review" else 0, repeat="once"),
             content=content, variants=variants, window_start=0 if kind == "review" and not ss.review_respect_window else 10,
-            window_end=24 if kind == "review" and not ss.review_respect_window else 20, legacy_next_day=kind != "review")
-        d=r.model_dump(); db.add(Document(id=id, kind="rule", draft=d, active=d, published_at=datetime.fromtimestamp(ss.review_activated_at if kind == "review" else ss.activated_at, timezone.utc)))
+            window_end=24 if kind == "review" and not ss.review_respect_window else 20, late_policy="legacy_stage", legacy_next_day=kind != "review")
+        d=r.model_dump(); db.add(Document(id=id, kind="rule", draft=d, active=d, published_version=1, published_at=datetime.fromtimestamp(ss.review_activated_at if kind == "review" else ss.activated_at, timezone.utc)))
     if db.get(Document, "legacy-paid_hold") is None:
         r=Rule(name="Платная отложка", enabled=rs.live_ready(), pipelines=pipelines or [9601214], statuses=[],
             trigger=Trigger(field=rs.until_field, offset=-rs.days_before, time=f"{rs.hour:02}:00"),
-            conditions=[Condition(field=rs.hold_field, op="eq", value=rs.paid_enum)],
+            conditions=[Condition(field=rs.hold_field, op="eq", value=rs.paid_enum)],late_policy="same_day",
             content=TEMPLATE.replace("(Отложка до)", "{{lead.date.%s}}" % rs.until_field))
-        d=r.model_dump();db.add(Document(id="legacy-paid_hold",kind="rule",draft=d,active=d))
+        d=r.model_dump();db.add(Document(id="legacy-paid_hold",kind="rule",draft=d,active=d,published_version=1))
     db.commit()
     paid=db.get(Document,"legacy-paid_hold")
     if pipelines and paid and paid.version==1:
@@ -410,6 +430,14 @@ def migrate_jobs(db):
     groups = [(list(db.scalars(select(st.CalendarJob))), st.CalendarAttempt, "calendar"),
               (list(db.scalars(select(st.StageJob))), st.StageAttempt, "stage"),
               (list(db.scalars(select(ReminderJob))), ReminderAttempt, "paid")]
+    # The old schema did not persist the exact sent body. Never invent a frozen
+    # snapshot for a partially sent chain: drain it before cutover instead.
+    for rows, cls, group in groups:
+        for old in rows:
+            if old.state in ("sent","delivered","failed","cancelled","expired"):continue
+            attempts=list(db.scalars(select(cls).where(cls.job_id==old.id)))
+            if any(a.state!="skipped" for a in attempts):
+                raise RuntimeError("Cutover blocked: resolve/drain unfinished legacy delivery chains first")
     for rows, cls, group in groups:
         for old in rows:
             if group == "calendar": rid, occurrence, due = "legacy-"+old.kind, str(old.target_date), old.due_at
@@ -422,7 +450,7 @@ def migrate_jobs(db):
             doc=db.get(Document,rid)
             if doc is None: continue
             j=Job(rule_id=rid,lead_id=old.lead_id,occurrence=occurrence,due_at=due,
-                  state=old.state,reason=old.reason or "",snapshot=None,plan=None)
+                  state=old.state,reason=old.reason or "",snapshot=None,plan=None,source_at=old.event_at if group=="stage" else None)
             db.add(j);db.flush()
             attempts=list(db.scalars(select(cls).where(cls.job_id == old.id)))
             for pos,a in enumerate(attempts):
@@ -454,6 +482,10 @@ def ingest(db, form, stamp):
                     j=db.scalar(select(Job).where(Job.rule_id==doc.id,Job.lead_id==event["lead_id"],Job.occurrence==occurrence))
                     previous=list(db.scalars(select(Job).where(Job.rule_id==doc.id,Job.lead_id==event["lead_id"])))
                     if any(x.source_at and aware(x.source_at)>event["source_at"] for x in previous):continue
+                    if j and r.trigger.repeat=="once" and (j.source_at is None or event["source_at"]>aware(j.source_at)):
+                        if j.state in ("ready","blocked","cancelled") and db.scalar(select(Attempt.id).where(Attempt.job_id==j.id).limit(1)) is None:
+                            j.source_at,j.due_at,j.state,j.reason=event["source_at"],stage_due(event["source_at"],r),"ready",""
+                            j.snapshot,j.plan,j.recipient_key,j.rendered=None,None,"",""
                     if not j:
                         for old in previous:
                             if old.state in ("ready","blocked"):
@@ -488,7 +520,7 @@ def synchronize(db,c,stamp):
 
 def reconcile(db):
     from app.reservation_reminders import ReminderEvent, SUCCESS
-    for a in db.scalars(select(Attempt).where(Attempt.state.in_(["inflight","pending","unknown"]))):
+    for a in db.scalars(select(Attempt).join(Job,Job.id==Attempt.job_id).where(Attempt.state.in_(["inflight","pending","unknown","sent"]),Job.state!="delivered")):
         j=db.get(Job,a.job_id)
         if not a.message_id:
             if a.state=="inflight":a.state,j.state,j.reason="unknown","uncertain","interrupted_send"
@@ -515,7 +547,10 @@ def send(db,j,c,stamp):
     local=stamp.astimezone(MSK);due=aware(j.due_at)
     started=db.scalar(select(Attempt.id).where(Attempt.job_id==j.id,Attempt.state!="skipped").limit(1)) is not None
     if stamp < due:return
-    if local.date()!=due.astimezone(MSK).date() or local.hour>=r.window_end or (not started and stamp>due+timedelta(minutes=5)):
+    if r.late_policy=="legacy_stage" and not r.window_start<=local.hour<r.window_end:
+        without_delay=r.model_copy(update={"trigger":r.trigger.model_copy(update={"delay_minutes":0})})
+        j.due_at=stage_due(stamp,without_delay);db.commit();return
+    if (r.late_policy!="legacy_stage" and (local.date()!=due.astimezone(MSK).date() or local.hour>=r.window_end)) or (r.late_policy=="skip" and not started and stamp>due+timedelta(minutes=5)):
         j.state,j.reason="expired","scheduled_window_passed";db.commit();return
     if local.hour<r.window_start:return
     lead=c.get(f"/api/v4/leads/{j.lead_id}", **{"with":"contacts"})
@@ -551,11 +586,12 @@ def send(db,j,c,stamp):
                 if freshkey!=key: raise ValueError("Получатель изменился перед отправкой")
                 if r.trigger.type=="date" and date_due(fresh,r)!=due: raise ValueError("Дата изменилась")
                 current=now()
-                if current>due+timedelta(minutes=5) and not started:raise ValueError("Окно первой отправки прошло")
+                if r.late_policy=="skip" and current>due+timedelta(minutes=5) and not started:raise ValueError("Окно первой отправки прошло")
                 if current.astimezone(MSK).date()!=local.date() or not r.window_start<=current.astimezone(MSK).hour<r.window_end:raise ValueError("Окно отправки закрыто")
                 limit={"telegram":4096,"max":4096,"whatsapp":10000,"instagram":1000,"avito":1000}[route["transport"]]
                 if len(j.rendered)>limit:raise ValueError("Текст превышает лимит канала "+route["transport"])
-            a=Attempt(job_id=j.id,position=pos,transport=route["transport"],state="inflight" if available else "skipped",crm_id=f"rule-{j.id}-{pos}")
+            a=Attempt(job_id=j.id,position=pos,transport=route["transport"],state="inflight" if available else "skipped",crm_id=f"rule-{j.id}-{pos}-{uuid.uuid4().hex}")
+            if not available:a.reason="no_recipient" if not route["recipient"] else "inactive_channel"
             db.add(a);j.state="inflight" if available else "ready";db.commit()
             if not available:continue
             try:
@@ -655,7 +691,7 @@ def document(db,id):
 
 
 def dto(d):
-    return {"id":d.id,"kind":d.kind,"version":d.version,"draft":d.draft,"active":d.active,
+    return {"id":d.id,"kind":d.kind,"version":d.version,"published_version":d.published_version,"draft":d.draft,"active":d.active,
         "checked":bool(d.checked),"published_at":aware(d.published_at).isoformat() if d.published_at else None}
 
 
@@ -683,10 +719,19 @@ def remote_digest(value):
 def journal(db=Depends(session)):
     labels={"ready":"Запланировано","blocked":"Заблокировано","pending":"Принято провайдером",
         "inflight":"Передаётся провайдеру","sent":"Отправлено","delivered":"Доставлено",
-        "cancelled":"Отменено","expired":"Пропущено","failed":"Ошибка","uncertain":"Результат неизвестен"}
+        "cancelled":"Отменено","expired":"Пропущено","failed":"Ошибка","uncertain":"Результат неизвестен",
+        "skipped":"Пропущен","error":"Подтверждённый отказ","unknown":"Результат неизвестен"}
+    reasons={"conditions_changed":"Изменились условия", "conditions_changed_before_post":"Условия изменились перед отправкой",
+        "date_changed":"Дата изменена", "disabled":"Сценарий выключен", "scheduled_window_passed":"Плановое время пропущено",
+        "all_channels_exhausted":"Нет доступного канала после подтверждённых отказов или пропусков",
+        "provider_result_unknown":"Ответ провайдера требует проверки", "network_result_unknown":"Связь прервалась; результат требует проверки",
+        "interrupted_send":"Работа прервалась после начала отправки", "new_stage_entry":"Новый вход на этап заменил ожидание",
+        "explicit_test":"Тестовая отправка", "confirmed_delivery_error":"Провайдер подтвердил отказ",
+        "test_result_requires_review":"Проверь результат теста", "no_recipient":"Нет адресата для канала", "inactive_channel":"Канал недоступен"}
+    def reason(code):return reasons.get(code,code)
     return {"items":[{"id":j.id,"rule_id":j.rule_id,"lead_id":j.lead_id,"due_at":aware(j.due_at).isoformat(),
-        "state":j.state,"label":labels.get(j.state,j.state),"reason":j.reason,
-        "attempts":[{"channel":a.transport,"state":a.state,"reason":a.reason} for a in db.scalars(select(Attempt).where(Attempt.job_id==j.id))]}
+        "state":j.state,"label":labels.get(j.state,j.state),"reason":reason(j.reason),
+        "attempts":[{"channel":a.transport,"state":labels.get(a.state,a.state),"reason":reason(a.reason)} for a in db.scalars(select(Attempt).where(Attempt.job_id==j.id))]}
         for j in db.scalars(select(Job).order_by(Job.id.desc()).limit(200))]}
 
 
@@ -698,6 +743,7 @@ def history(id:str,db=Depends(session)):
 
 @router.post("/draft",dependencies=[Depends(mutation_lock)])
 def draft(body:Change,db=Depends(session),c=Depends(client)):
+    if (body.kind=="routing") != (body.id=="routing"):raise HTTPException(422,"Некорректный ID общих настроек")
     d=db.get(Document,body.id)
     if (d.version if d else 0)!=body.version:raise HTTPException(409,"Версия изменилась. Обнови страницу")
     try:
@@ -723,7 +769,9 @@ def draft(body:Change,db=Depends(session),c=Depends(client)):
 
 
 def check_rule(db,c,d,lead_id=None):
-    r=Rule(**d.draft);validate_catalog(r,catalog(c))
+    r=Rule(**d.draft)
+    if not r.enabled and d.active and d.active.get("enabled"):return {"total":0,"samples":[],"overlaps":[],"disabled":True}
+    validate_catalog(r,catalog(c))
     overlaps=[]
     for other in db.scalars(select(Document).where(Document.kind=="rule",Document.id!=d.id)):
         if not other.active or not other.active.get("enabled"):continue
@@ -766,7 +814,7 @@ def check(id:str,body:dict,db=Depends(session),c=Depends(client)):
 def publish_manual(db,c,d,body):
     p=d.draft;remote_id=p.get("remote_id")
     op_id=f"manual-{d.id}-{d.version}";op=db.get(Operation,op_id)
-    external_id=f"mansband-{d.id}"
+    external_id="msp-"+hashlib.sha256(d.id.encode()).hexdigest()[:32]
     if op:
         if op.state=="done":return op.result
         # A lost response never grants permission to repeat a create/delete/update.
@@ -775,6 +823,11 @@ def publish_manual(db,c,d,body):
         if (p.get("delete") and not found) or (len(found)==1 and found[0].get("name")==p["name"] and found[0].get("content")==p["content"]):
             op.state="done";op.result={"remote_id":found[0]["id"] if found else remote_id,"deleted":bool(p.get("delete"))};db.commit();return op.result
         raise HTTPException(409,"Результат прошлой записи неизвестен. Повтор запрещён до сверки")
+    if not remote_id:
+        previous=list(db.scalars(select(Operation).where(Operation.id.like(f"manual-{d.id}-%"),Operation.state.in_(["uncertain","inflight"]))))
+        if previous:raise HTTPException(409,"Есть незавершённая запись этого шаблона. Сначала сверка с amoCRM")
+        existing=[x for x in all_pages(c,"/api/v4/chats/templates","chat_templates") if x.get("external_id")==external_id]
+        if existing:raise HTTPException(409,"Шаблон уже создан в amoCRM. Обнови список и открой его для редактирования")
     if remote_id:
         remote=c.get(f"/api/v4/chats/templates/{remote_id}")
         if remote_digest(remote)!=p["source_hash"]:raise HTTPException(409,"Шаблон изменился в amoCRM")
@@ -786,6 +839,9 @@ def publish_manual(db,c,d,body):
         if p.get("delete"):resp=c.amo.delete(f"/api/v4/chats/templates/{remote_id}")
         elif remote_id:resp=c.amo.patch(f"/api/v4/chats/templates/{remote_id}",json=payload)
         else:resp=c.amo.post("/api/v4/chats/templates",json=[{**payload,"external_id":external_id,"type":"amocrm","is_editable":True}])
+        if resp.status_code in (400,401,403,404,422):
+            op.state="rejected";op.result={"http_status":resp.status_code};db.commit()
+            raise HTTPException(422,"amoCRM отклонила запись. Исправь черновик и проверь права интеграции")
         resp.raise_for_status()
         if not remote_id:remote_id=resp.json()["_embedded"]["chat_templates"][0]["id"]
         op.result={"remote_id":remote_id,"deleted":bool(p.get("delete"))};op.state="done";db.commit();return op.result
@@ -800,29 +856,45 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
     result={}
     try:
         if d.kind=="rule":
-            r=Rule(**d.draft);validate_catalog(r,catalog(c))
+            r=Rule(**d.draft)
+            if r.enabled:validate_catalog(r,catalog(c))
             # Reject any enabled overlapping rule unless explicitly reviewed.
             overlapping=[x for x in db.scalars(select(Document).where(Document.kind=="rule",Document.id!=d.id))
                          if x.active and x.active.get("enabled") and set(x.active["pipelines"])&set(r.pipelines)
                          and (not r.statuses or not x.active["statuses"] or set(x.active["statuses"])&set(r.statuses))
                          and x.active["trigger"]["type"]==r.trigger.type]
-            if overlapping and not body.overlaps_confirmed:raise HTTPException(409,"Подтверди пересечение сценариев")
+            if r.enabled and overlapping and not body.overlaps_confirmed:raise HTTPException(409,"Подтверди пересечение сценариев")
         elif d.kind=="manual":
             result=publish_manual(db,c,d,body)
             if not result.get("deleted"):
                 remote=c.get(f"/api/v4/chats/templates/{result['remote_id']}")
                 d.draft={**d.draft,"remote_id":result["remote_id"],"source_hash":remote_digest(remote),"original":remote}
         else:Routing(**d.draft)
-        d.active=dict(d.draft);d.published_at=now();d.checked=""
+        d.active=dict(d.draft);d.published_at=now();d.published_version=d.version;d.checked=""
         audit(db,d,body.actor,"published",{"document":d.active,**result})
         if d.kind in ("rule","routing"):
             for j in db.scalars(select(Job).where(Job.state.in_(["ready","blocked"]))):
                 if d.kind=="rule" and j.rule_id!=d.id:continue
                 if db.scalar(select(Attempt.id).where(Attempt.job_id==j.id,Attempt.state!="skipped").limit(1)) is None:
                     # Skipped channels made no outbound requests; safe to re-plan.
-                    from sqlalchemy import delete
-                    db.execute(delete(Attempt).where(Attempt.job_id==j.id,Attempt.state=="skipped"))
+                    for skipped in db.scalars(select(Attempt).where(Attempt.job_id==j.id,Attempt.state=="skipped",Attempt.position>=0)):
+                        skipped.position=-skipped.id-1
                     j.snapshot,j.plan,j.recipient_key,j.rendered=None,None,"",""
+                    if d.kind=="rule" and not d.active["enabled"]:
+                        j.state,j.reason="cancelled","disabled"
+                        continue
+                    if d.kind=="rule":
+                        lead=c.get(f"/api/v4/leads/{j.lead_id}",**{"with":"contacts"})
+                        published=Rule(**d.active)
+                        try:
+                            if not matches(lead,published):raise ValueError("conditions_changed")
+                            if published.trigger.type=="date":
+                                from app.stage_notifications import calendar_date
+                                if str(calendar_date(lead,published.trigger.field))!=j.occurrence:raise ValueError("date_changed")
+                                j.due_at=date_due(lead,published)
+                            elif j.source_at:j.due_at=stage_due(aware(j.source_at),published)
+                            else:raise ValueError("trigger_changed")
+                        except ValueError as exc:j.state,j.reason="cancelled",str(exc)
                 if d.kind=="rule" and not d.active["enabled"]:j.state,j.reason="cancelled","disabled"
         db.commit();return {**dto(d),**result}
     except ValueError as exc:raise HTTPException(422,str(exc))
