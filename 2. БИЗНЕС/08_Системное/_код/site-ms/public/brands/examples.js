@@ -10,22 +10,49 @@ const frame=document.querySelector('#demo-frame'),viewport=document.querySelecto
 const sources={'mans-orders':'mansband/index.html#board/all/all','mans-messages':'mansband/index.html#message-templates','2my-analytics':'analytics/index.html','2my-production':'production/index.html'};
 let selected='mans-orders',device='desktop';
 const BASE_WIDTH=1440,BASE_HEIGHT=900;
-function resize(){
- const maxHeight=Math.min(460,innerHeight*.5);
- const phone=device==='phone';
- const width=phone?390:BASE_WIDTH;
- const scale=phone?Math.min((panel.clientWidth-30)/width,maxHeight/780):Math.min(viewport.clientWidth/width,maxHeight/BASE_HEIGHT);
- const height=phone?780:BASE_HEIGHT;
- frame.width=width;frame.height=height;
- frame.style.width=width+'px';frame.style.height=height+'px';
- canvas.style.width=width*scale+'px';canvas.style.height=height*scale+'px';
- frame.style.transform='scale('+scale+')';
- viewport.style.height=(height*scale+(phone?28:0))+'px';
- viewport.classList.toggle('is-phone',phone);
- windowEl.style.setProperty('--phone-width',width*scale+30+'px');
- windowEl.classList.toggle('is-phone',phone);
- deviceButtons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.device===device)));
+let layout=null,motionFrame=0;
+const reducedMotion=matchMedia('(prefers-reduced-motion:reduce)');
+function targetLayout(){
+ const maxHeight=Math.min(460,innerHeight*.5),phone=device==='phone';
+ const tracks=getComputedStyle(panel).gridTemplateColumns.split(' ').map(parseFloat).filter(Number.isFinite);
+ const available=tracks[tracks.length-1]||panel.clientWidth;
+ const width=phone?390:BASE_WIDTH,height=phone?780:BASE_HEIGHT;
+ const scale=phone?Math.min((available-30)/width,maxHeight/780):Math.min((available-2)/width,maxHeight/BASE_HEIGHT);
+ return {width,height,screen:width*scale,outer:phone?width*scale+30:available,padding:phone?14:0,round:phone?1:0};
 }
+function paintLayout(value){
+ layout=value;
+ const scale=value.screen/value.width;
+ windowEl.style.width=value.outer+'px';
+ windowEl.style.borderRadius=(7+19*value.round)+'px';
+ frame.style.width=value.width+'px';frame.style.height=value.height+'px';
+ frame.style.transform='scale('+scale+')';
+ canvas.style.width=value.screen+'px';canvas.style.height=value.height*scale+'px';
+ canvas.style.borderRadius=18*value.round+'px';
+ viewport.style.paddingTop=value.padding+'px';viewport.style.paddingBottom=value.padding+'px';
+ viewport.style.height=(value.height*scale+value.padding*2)+'px';
+ windowEl.style.setProperty('--device-round',value.round);
+}
+function resize(animate=false){
+ cancelAnimationFrame(motionFrame);
+ const target=targetLayout();
+ deviceButtons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.device===device)));
+ viewport.classList.toggle('is-phone',device==='phone');
+ windowEl.classList.toggle('is-phone',device==='phone');
+ if(!animate||!layout||reducedMotion.matches){paintLayout(target);windowEl.classList.remove('is-morphing');return;}
+ const from={...layout},started=performance.now();
+ windowEl.classList.add('is-morphing');
+ function tick(now){
+   const progress=Math.min(1,(now-started)/680);
+   const ease=progress<.5?4*progress*progress*progress:1-Math.pow(-2*progress+2,3)/2;
+   const value={};Object.keys(target).forEach(key=>value[key]=from[key]+(target[key]-from[key])*ease);
+   paintLayout(value);
+   if(progress<1)motionFrame=requestAnimationFrame(tick);
+   else{windowEl.classList.remove('is-morphing');frame.width=target.width;frame.height=target.height;}
+ }
+ motionFrame=requestAnimationFrame(tick);
+}
+
 function select(id,send=true,focus=false){
  const entry=entries[id];if(!entry)return;
  selected=id;
@@ -46,6 +73,8 @@ tabs.forEach((tab,index)=>{
  tab.addEventListener('keydown',event=>{let i;if(event.key==='ArrowRight')i=(index+1)%tabs.length;else if(event.key==='ArrowLeft')i=(index+tabs.length-1)%tabs.length;else if(event.key==='Home')i=0;else if(event.key==='End')i=tabs.length-1;else return;event.preventDefault();select(tabs[i].dataset.example,true,true);});
 });
 document.querySelectorAll('[data-example-link]').forEach(link=>link.addEventListener('click',()=>select(link.dataset.exampleLink)));
-deviceButtons.forEach(button=>button.addEventListener('click',()=>{device=button.dataset.device;viewport.scrollTop=0;viewport.scrollLeft=0;resize();}));
-new ResizeObserver(resize).observe(viewport);select(selected,false);
+deviceButtons.forEach(button=>button.addEventListener('click',()=>{if(device===button.dataset.device)return;device=button.dataset.device;resize(true);}));
+let measuredWidth=0;new ResizeObserver(()=>{if(Math.abs(panel.clientWidth-measuredWidth)>.5){measuredWidth=panel.clientWidth;resize();}}).observe(panel);
+window.addEventListener('resize',()=>resize());
+reducedMotion.addEventListener('change',()=>resize());select(selected,false);
 })();

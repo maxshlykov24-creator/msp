@@ -92,3 +92,20 @@ html[data-theme="light"] .about-wash .silk.ready{opacity:.65}
 html[data-theme="light"] .about-wash .silk.ready{opacity:.45}
 
 .button{transition:background-color .5s ease,color .5s ease,border-color .5s ease,box-shadow .5s ease,transform .25s ease}
+
+/* One shared animation controls the real iframe viewport and its outer frame. */
+.demo-window,.demo-canvas,.demo-canvas iframe,.demo-viewport{transition:none}
+.demo-window.is-phone{width:auto}
+.demo-toolbar,.demo-window.is-phone .demo-toolbar{flex-wrap:wrap;gap:8px;padding:12px}
+.demo-window-title,.demo-window.is-phone .demo-window-title{width:100%;min-width:0;font-size:10px;white-space:nowrap}
+#demo-window-title{overflow:hidden;text-overflow:ellipsis}
+.demo-tools,.demo-window.is-phone .demo-tools{width:100%;justify-content:flex-end;gap:6px}
+.demo-device-switch{display:flex;white-space:nowrap}
+.demo-device-switch button,.demo-window.is-phone .demo-device-switch button{font-size:10px;padding:6px 8px}
+.demo-foot,.demo-window.is-phone .demo-foot{height:58px;font-size:9px;line-height:1.35;gap:10px;padding:10px 12px;overflow:hidden}
+.demo-foot>span:first-child{min-width:0}
+.demo-foot>span:last-child{max-width:110px;flex-shrink:0}
+.demo-viewport,.demo-viewport.is-phone{overflow:hidden;padding-inline:0}
+.demo-canvas{overflow:hidden;box-shadow:0 0 0 calc(5px * var(--device-round,0)) #4b3944}
+.demo-viewport.is-phone .demo-canvas{box-shadow:0 0 0 calc(5px * var(--device-round,0)) #4b3944}
+.demo-window.is-morphing .demo-canvas iframe{pointer-events:none}
