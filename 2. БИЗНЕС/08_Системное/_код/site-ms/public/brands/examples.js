@@ -11,8 +11,8 @@ const frame=document.querySelector('#demo-frame'),viewport=document.querySelecto
 let selected='mans-orders',zoom='fit',ready=false;
 const BASE_WIDTH=1280,BASE_HEIGHT=820;
 function resize(){
- const fit=Math.min(1,viewport.clientWidth/BASE_WIDTH);
- const scale=zoom==='fit'?fit:Math.max(fit,Number(zoom));
+ const fit=Math.min(0.86,viewport.clientWidth/BASE_WIDTH);
+ const scale=zoom==='fit'?fit:Number(zoom);
  canvas.style.width=BASE_WIDTH*scale+'px';canvas.style.height=BASE_HEIGHT*scale+'px';
  frame.style.transform='scale('+scale+')';
  viewport.style.height=(zoom==='fit'?BASE_HEIGHT*scale:Math.min(BASE_HEIGHT*scale,innerWidth<760?540:820))+'px';
@@ -23,6 +23,8 @@ function resize(){
 function select(id,send=true,focus=false){
  const entry=entries[id];if(!entry)return;
  selected=id;
+ viewport.classList.toggle('is-kassa',id.startsWith('mans'));
+ viewport.classList.toggle('is-loyalty',id==='marta-loyalty');
  tabs.forEach((tab,i)=>{const on=tab.dataset.example===id;tab.classList.toggle('active',on);tab.setAttribute('aria-selected',String(on));tab.tabIndex=on?0:-1;if(on){document.querySelector('#example-panel').setAttribute('aria-labelledby',tab.id);if(focus){tab.focus();tab.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});}}});
  document.querySelector('#demo-window-title').textContent=entry.client+' · '+entry.name;
  document.querySelector('#example-client').textContent=entry.client+' · '+entry.name;
@@ -38,7 +40,7 @@ tabs.forEach((tab,index)=>{
  tab.addEventListener('keydown',event=>{let i;if(event.key==='ArrowRight')i=(index+1)%tabs.length;else if(event.key==='ArrowLeft')i=(index+tabs.length-1)%tabs.length;else if(event.key==='Home')i=0;else if(event.key==='End')i=tabs.length-1;else return;event.preventDefault();select(tabs[i].dataset.example,true,true);});
 });
 scaleSelect.addEventListener('change',()=>{zoom=scaleSelect.value;resize();});
-enlarge.addEventListener('click',()=>{zoom=zoom==='fit'?'0.75':'fit';scaleSelect.value=zoom;viewport.scrollLeft=0;resize();});
+enlarge.addEventListener('click',()=>{zoom=zoom==='fit'?(innerWidth<760?'0.75':'1'):'fit';scaleSelect.value=zoom;viewport.scrollLeft=0;resize();});
 document.querySelector('#demo-reset').addEventListener('click',()=>{if(ready)frame.contentWindow.postMessage({type:'msp-demo-init',id:selected},'*');viewport.scrollTop=0;viewport.scrollLeft=0;});
 addEventListener('message',event=>{
  if(event.source!==frame.contentWindow||event.origin!=='null')return;
