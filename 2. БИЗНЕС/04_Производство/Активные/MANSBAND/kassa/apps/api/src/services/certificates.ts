@@ -24,7 +24,9 @@ function toCert(r: typeof certificates.$inferSelect): Certificate {
 
 export async function list(): Promise<Certificate[]> {
   const rows = await db.select().from(certificates);
-  return rows.map(toCert);
+  const links=await db.execute(sql`SELECT number,source_key FROM certificate_numbers WHERE source_key LIKE 'amo:32417154:%'`);
+  const byNumber=new Map(links.map(x=>[String(x.number),Number(String(x.source_key).split(":").at(-1))]));
+  return rows.map(row=>({...toCert(row),amoLeadId:byNumber.get(row.number)}));
 }
 
 export interface CertificateUsage {

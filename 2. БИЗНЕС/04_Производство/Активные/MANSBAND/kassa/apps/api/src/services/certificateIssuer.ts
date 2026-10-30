@@ -32,4 +32,4 @@ export async function issueFromAmo(id:number) {
  if(number!==certificate.number)throw new Error("Запись номера в CRM не подтверждена; повтор сохранит тот же номер");
  return certificate;
 }
-export async function pendingSources(){return Array.from(await db.execute(sql`SELECT n.source_key,n.created_at FROM certificate_numbers n LEFT JOIN certificates c ON c.number=n.number WHERE n.source_key LIKE 'amo:32417154:%' AND (c.type='digital' OR c.number IS NULL) ORDER BY n.created_at DESC LIMIT 1000`));}
+export async function pendingSources(since:number){return Array.from(await db.execute(sql`SELECT n.source_key,n.created_at FROM certificate_numbers n LEFT JOIN certificates c ON c.number=n.number WHERE n.source_key LIKE 'amo:32417154:%' AND n.created_at>=${new Date(since*1000).toISOString()}::timestamptz AND (c.type='digital' OR c.number IS NULL) ORDER BY n.created_at DESC`));}

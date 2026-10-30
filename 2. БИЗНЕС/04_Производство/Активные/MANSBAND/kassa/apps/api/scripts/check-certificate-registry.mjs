@@ -10,6 +10,7 @@ await db.execute(sql`CREATE TABLE IF NOT EXISTS certificates (number text PRIMAR
 await r.initializeCertificateRegistry();await r.initializeCertificateRegistry();
 const reserved=await r.reservedNumbers();assert(reserved.some(x=>x.number==='00873'));assert.equal(r.canonicalNumber(' mb48379261 '),'MB-4837-9261');assert.equal(r.canonicalNumber('00881'),'00881');
 const base={number:'',nominal:100,balance:100,status:'active',type:'digital',issuedAt:moscowTodayYmd(),validFrom:moscowTodayYmd(),validUntil:'2099-01-01'};
+const heldSource='test:'+crypto.randomUUID();const heldNumber=await r.reserveNumber(heldSource);assert(!(await c.list()).some(x=>x.number===heldNumber));const completed=await r.ensureCertificate(heldSource,base);assert.equal(completed.number,heldNumber);
 const source='test:'+crypto.randomUUID();const issued=await Promise.all(Array.from({length:8},()=>r.ensureCertificate(source,base)));
 assert.equal(new Set(issued.map(x=>x.number)).size,1);assert.match(issued[0].number,/^MB-\d{4}-\d{4}$/);
 await assert.rejects(()=>r.ensureCertificate('test:'+crypto.randomUUID(),base,'00873'));

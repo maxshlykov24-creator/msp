@@ -13,7 +13,7 @@ let checks=1;
 for(const role of ['rop','crm','consultant','finance','seller','logist']){
  const token=app.jwt.sign({sub:'test',name:'Тест',role});const headers={authorization:'Bearer '+token};
  assert((await app.inject({method:'GET',url:'/message-templates',headers})).statusCode===200,role+' read');checks++;
- for(const suffix of ['/draft','/check/test','/publish/test','/test/test']){
+ for(const suffix of ['/draft','/check/test','/publish/test','/test/test','/gift/test','/gift/retry-pdf/1']){
   assert((await app.inject({method:'POST',url:'/message-templates'+suffix,headers,payload:{}})).statusCode===403,role+' mutation');checks++;
  }
 }

@@ -231,6 +231,7 @@ export interface Deal {
 export type CertStatus = "active" | "used" | "expired";
 
 export interface Certificate {
+  amoLeadId?: number;
   validFrom?: string;
   number: string;
   nominal: number;

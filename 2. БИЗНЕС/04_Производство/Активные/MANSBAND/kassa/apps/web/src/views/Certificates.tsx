@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { money, dateRu } from "../lib/format";
 import { Badge, Button, Modal, Field, StageBadge, StatTile, Select, opts } from "../components/ui";
 import type { Certificate } from "../data/types";
+import { moscowTodayYmd } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
 import { Hint } from "../lib/hints";
 
@@ -246,7 +247,7 @@ export function Certificates() {
                     if (wasSpent(c)) void openUsages(c);
                   }}
                 >
-                  <td className="px-4 py-3 font-mono text-gold-soft">№{c.number}</td>
+                  <td className="px-4 py-3 font-mono text-gold-soft">№{c.number}<div className="mt-1 font-sans text-xs text-mute">{c.buyerDealNumber && <span>Заявка №{c.buyerDealNumber} </span>}{c.amoLeadId && <a className="underline" href={`https://mansband.amocrm.ru/leads/detail/${c.amoLeadId}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Сделка CRM</a>}</div></td>
                   <td className="px-4 py-3 text-white">{c.guestName || "—"}</td>
                   <td className="px-4 py-3 hidden md:table-cell text-mute text-sm">
                     {c.type === "plastic" ? "Пластик" : "Электронный"}
@@ -263,10 +264,10 @@ export function Certificates() {
                   </td>
                   <td className="px-4 py-3 text-mute text-[13px] whitespace-nowrap">{dateRu(c.validUntil)}</td>
                   <td className="px-4 py-3">
-                    <Badge tone={statusTone[c.status]}>{statusLabel[c.status]}</Badge>
+                    <Badge tone={statusTone[c.status]}>{c.status==="active" && c.validFrom && c.validFrom>moscowTodayYmd() ? `Действует с ${dateRu(c.validFrom)}` : statusLabel[c.status]}</Badge>
                   </td>
                   <td className="px-4 py-3">
-                    {c.status === "active" && (
+                    {c.status === "active" && (!c.validFrom || c.validFrom<=moscowTodayYmd()) && (
                       <Button
                         variant="subtle"
                         className="py-1.5 px-3 text-[13px]"

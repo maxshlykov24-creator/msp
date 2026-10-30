@@ -84,6 +84,7 @@ export async function processSale(
     // 1. amoCRM: контакт + сделка
     const amoLeadId = await ensureAmoLead(enriched);
     enriched.amoLeadId = amoLeadId ?? undefined;
+    await issueCertificateIfNeeded(enriched);
     await enqueueManualChecks(enriched, opts.who);
     await enqueueOperationalTasks(enriched, opts.who);
     // Очередь Эдвина (сдача / чаевые / возврат / счёт компании) — до МойСклад:
@@ -101,8 +102,6 @@ export async function processSale(
     } else if (amoLeadId && opts.photos?.length) {
       await attachPhotosToLead(amoLeadId, opts.photos);
     }
-
-    await issueCertificateIfNeeded(enriched);
 
     // 3. writeback статуса оплаты + ссылок в amo
     if (amoLeadId) await writeback(amoLeadId, enriched);
@@ -456,12 +455,19 @@ export async function issueCertificateIfNeeded(deal: Deal): Promise<void> {
     if(!deal.amoLeadId)throw new Error("Для выпуска требуется сохранённая сделка amoCRM");
     const { ensureCertificate }=await import("./certificateRegistry.js");
     const cert=await ensureCertificate(`amo:32417154:${deal.amoLeadId}`,{...buildCertificate(number??""),validFrom:deal.receivedAt?.slice(0,10)},number);
+    if(cert.buyerDealNumber && cert.buyerDealNumber!==deal.number)throw new Error("Сертификат уже связан с другой заявкой кассы");
     number=cert.number;deal.certificateNumber=number;
+    deal.items=deal.items.map(item=>item===certLine?{...item,name:`Сертификат №${number}`}:item);
   } else {
     if (!number) throw new Error("Не указан номер пластикового сертификата");
     const { ensureCertificate }=await import("./certificateRegistry.js");
     const cert=await ensureCertificate(deal.amoLeadId?`amo:32417154:${deal.amoLeadId}`:`local:${deal.id}`,buildCertificate(number),number);
     number=cert.number;
+  }
+  if(deal.amoLeadId && number){
+    await amo.updateLead(deal.amoLeadId,{customFields:[{field_id:3135463,values:[{value:number}]}]});
+    const fresh=await amo.getLead(deal.amoLeadId);
+    if(fresh?.custom_fields_values?.find(f=>f.field_id===3135463)?.values?.[0]?.value!==number)throw new Error("Запись номера в CRM не подтверждена");
   }
   broadcast("certificate.updated", { number });
 }

@@ -121,7 +121,10 @@ def issue(lead_id):
  s=Settings()
  with httpx.Client(base_url=s.kassa_url,timeout=45,headers={"X-Certificate-Key":s.service_key.get_secret_value()}) as h:
   r=h.post("/api/internal/certificates/issue",json={"amoLeadId":lead_id})
-  if r.status_code!=200:raise ValueError("Выпуск требует сверки с кассой")
+  if r.status_code!=200:
+   try:reason=str(r.json().get("message","Выпуск требует сверки"))
+   except ValueError:reason="Выпуск требует сверки"
+   raise ValueError("Касса: "+reason[:140])
   return r.json()
 
 def process(db,c,job,stamp,issuer=issue):
@@ -194,7 +197,7 @@ def process(db,c,job,stamp,issuer=issue):
     job.state="pending";job.reason="";db.commit();return
   job.state="failed";job.reason="Нет доступного канала";db.commit()
  except ValueError as exc:
-  job.state="partial" if allowed_parts(job) else "blocked";job.reason=str(exc)[:160];db.commit()
+  job.state="partial" if allowed_parts(job) else "blocked";job.reason=str(exc)[:160];job.check_at=stamp+timedelta(seconds=60);db.commit()
 
 def tick():
  from app.reservation_reminders import Clients,ReminderSettings
@@ -213,7 +216,7 @@ def tick():
    # Kassa-created sales may enter Success directly; poll only issuances after activation.
    s=Settings()
    with httpx.Client(base_url=s.kassa_url,headers={"X-Certificate-Key":s.service_key.get_secret_value()},timeout=30) as h:
-    response=h.get("/api/internal/certificates/pending");response.raise_for_status()
+    response=h.get("/api/internal/certificates/pending",params={"since":s.activated_at});response.raise_for_status()
     for row in response.json()["items"]:
      if datetime.fromisoformat(row["created_at"].replace("Z","+00:00")).timestamp()<s.activated_at:continue
      lid=int(row["source_key"].rsplit(":",1)[1]);old=db.get(CertificateMailJob,lid)

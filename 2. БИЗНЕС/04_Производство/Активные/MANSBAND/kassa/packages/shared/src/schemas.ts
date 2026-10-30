@@ -566,9 +566,9 @@ export const certificateImportRowSchema = z.object({
   guestName: z.string().optional(),
   recipientPhone: z.string().max(40).optional(),
   certificateGreeting: z.string().max(20000).optional(),
-  issuedAt: z.string().min(10),
-  validUntil: z.string().min(10),
-});
+  issuedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+}).refine(row=>row.balance<=row.nominal,{message:"Остаток не может превышать номинал"}).refine(row=>row.validUntil>=row.issuedAt,{message:"Срок действия раньше даты выдачи"});
 
 export const certificateImportSchema = z.object({
   csv: z.string().min(1),
