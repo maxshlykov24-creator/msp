@@ -754,3 +754,97 @@ def test_review_failure_outside_window_respects_exact_hour_setting(db,cfg):
     after=event+timedelta(hours=1,minutes=1)
     reconcile(db,after,settings=cfg)
     assert j.state=='ready' and aware(j.check_at)==after
+
+
+from app.stage_notifications import FREE_HOLD_EXPIRED
+
+
+def free_hold_lead(option=5452539, target=None):
+    data = calendar_lead("free_hold_expired", store=None, target=target)
+    data["custom_fields_values"].append({"field_id": 3810737,
+        "values": [{"enum_id": option}]})
+    return data
+
+
+def free_hold_job(db, data):
+    settings = CalendarSettings(mode="live", free_hold_enabled=True)
+    sync_calendar(db, [data], settings, CAL_NOW - timedelta(days=1))
+    j = db.scalar(select(CalendarJob).where(CalendarJob.kind == "free_hold_expired"))
+    if j:
+        j.plan = [{"transport": "telegram", "channelId": "telegram",
+                   "recipient": {"chatId": "79990000001"}}]
+        j.contact_id = 123
+        db.commit()
+    return j, settings
+
+
+def free_hold_run(db, j, c, cfg, settings, now=CAL_NOW):
+    c.contact = {"id": 123, "custom_fields_values": [
+        {"field_code": "PHONE", "values": [{"value": "79990000001"}]}]}
+    send_calendar(db, j, c, cfg, ReminderSettings(), settings, now, clock=lambda: now)
+
+
+def test_free_hold_yesterday_at_ten_and_no_duplicate(db, cfg):
+    c = Fake([(201, {"messageId": "hold-expired"})])
+    c.document = free_hold_lead()
+    j, settings = free_hold_job(db, c.document)
+    assert j.target_date == CAL_NOW.date() - timedelta(days=1)
+    assert j.due_at.replace(tzinfo=timezone.utc) == CAL_NOW.astimezone(timezone.utc)
+    free_hold_run(db, j, c, cfg, settings, CAL_NOW - timedelta(seconds=1))
+    assert not c.posts
+    free_hold_run(db, j, c, cfg, settings)
+    sync_calendar(db, [c.document], settings, CAL_NOW)
+    free_hold_run(db, j, c, cfg, settings)
+    assert len(c.posts) == 1 and j.state == "pending"
+    assert c.posts[0]["text"] == FREE_HOLD_EXPIRED
+
+
+@pytest.mark.parametrize("condition", ["paid", "missing", "ambiguous", "wrong_stage", "missing_date"])
+def test_free_hold_nonqualifying_never_queued(db, condition):
+    data = free_hold_lead()
+    if condition == "paid": data = free_hold_lead(5452541)
+    elif condition == "missing": data["custom_fields_values"].pop()
+    elif condition == "ambiguous": data["custom_fields_values"][-1]["values"].append({"enum_id": 5452541})
+    elif condition == "wrong_stage": data["status_id"] = 76666306
+    elif condition == "missing_date": data["custom_fields_values"].pop(0)
+    j, _ = free_hold_job(db, data)
+    assert j is None
+
+
+@pytest.mark.parametrize("change", ["paid", "date", "stage", "disabled"])
+def test_free_hold_change_before_post_cancels(db, cfg, change):
+    c = Fake(); c.document = free_hold_lead()
+    j, settings = free_hold_job(db, c.document)
+    if change == "paid": c.document = free_hold_lead(5452541)
+    elif change == "date": c.document = free_hold_lead(target=CAL_NOW.date())
+    elif change == "stage": c.document["status_id"] = 142
+    else: settings.free_hold_enabled = False
+    free_hold_run(db, j, c, cfg, settings)
+    assert not c.posts and j.state == "cancelled"
+
+
+def test_free_hold_paid_during_preflight_prevents_post(db, cfg):
+    c = Fake(); c.document = free_hold_lead()
+    j, settings = free_hold_job(db, c.document)
+    original = c.get
+    reads = []
+    def changed(path, **kwargs):
+        if path.startswith("/api/v4/leads/"):
+            reads.append(path)
+            if len(reads) > 1: return free_hold_lead(5452541)
+        return original(path, **kwargs)
+    c.get = changed
+    free_hold_run(db, j, c, cfg, settings)
+    assert not c.posts and j.state == "cancelled"
+
+
+def test_free_hold_late_activation_does_not_catch_up(db, cfg):
+    c = Fake(); c.document = free_hold_lead()
+    j, settings = free_hold_job(db, c.document)
+    free_hold_run(db, j, c, cfg, settings, CAL_NOW + timedelta(minutes=6))
+    assert not c.posts and j.state == "expired"
+
+
+def test_free_hold_disabled_by_default(db):
+    sync_calendar(db, [free_hold_lead()], CalendarSettings(), CAL_NOW)
+    assert not list(db.scalars(select(CalendarJob)))

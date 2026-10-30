@@ -1744,19 +1744,45 @@ class DiscountPriceHistory:
             card = self.card(kind, aid)
             if kind == 'variant':
                 events = self.history(kind, card)
-                # API returns inherited parent prices without marking inheritance.
-                # Overrides/parent switches cannot safely be inferred from equal values.
-                if any(e['diff'] for e in events):
-                    raise ValueError('История отдельной цены модификации требует проверки')
+                creates = [dt(e['moment']) for e in events if e['type'] == 'create']
+                if len(creates) != 1 or creates[0] > moment:
+                    raise ValueError('Нет истории каталога на дату документа')
+                if any('product' in e['diff'] for e in events):
+                    raise ValueError('История смены основного товара требует проверки')
                 parent = self.card('product', mid(card.get('product')))
-                if catalogue_sale_price(card) != catalogue_sale_price(parent):
-                    raise ValueError('Отдельная цена модификации без подтверждённой истории')
-                parent_events = self.history('product', parent)
-                if any(dt(e['moment']) > moment and e['diff'] for e in parent_events):
-                    raise ValueError('Наследование старой цены модификации не подтверждено')
-                # Both histories must cover the document date.
-                self.reconstruct(kind, card, moment)
-                price = self.reconstruct('product', parent, moment)
+                changes = []
+                for e in sorted(events, key=lambda e: e['moment'], reverse=True):
+                    fields = [e['diff'][k] for k in ('salePrices', 'Цена продажи') if k in e['diff']]
+                    if len(fields) > 1:
+                        raise ValueError('Неоднозначный тип цены модификации')
+                    if fields:
+                        changes.append((dt(e['moment']), fields[0]))
+                if changes:
+                    def price_state(value):
+                        return 'inherited' if value == 'Цена основного товара' else self.price_value(value)
+                    state = price_state(changes[0][1].get('newValue'))
+                    current = catalogue_sale_price(parent) if state == 'inherited' else state
+                    if current != catalogue_sale_price(card):
+                        raise ValueError('Цепочка отдельной цены модификации не сходится')
+                    for changed_at, change in changes:
+                        if changed_at <= moment:
+                            break
+                        if price_state(change.get('newValue')) != state:
+                            raise ValueError('История отдельной цены модификации разорвана')
+                        state = price_state(change.get('oldValue'))
+                    price = self.reconstruct('product', parent, moment) if state == 'inherited' else state
+                    if price['value'] <= 0:
+                        raise ValueError('На дату документа прайс не был задан')
+                else:
+                    # Creation audit can omit an explicit initial price. Equal current
+                    # values alone cannot prove inheritance across a parent price edit.
+                    if catalogue_sale_price(card) != catalogue_sale_price(parent):
+                        raise ValueError('Отдельная цена модификации без подтверждённой истории')
+                    parent_events = self.history('product', parent)
+                    if any(dt(e['moment']) > moment and e['diff'] for e in parent_events):
+                        raise ValueError('Наследование старой цены модификации не подтверждено')
+                    self.reconstruct(kind, card, moment)
+                    price = self.reconstruct('product', parent, moment)
             else:
                 price = self.reconstruct(kind, card, moment)
             result = (price, 'historical_catalogue', '')
@@ -1855,7 +1881,9 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
             if not color:
                 color = color_from_name(name)
             qty = float(x.get("quantity") or 0)
-            gross, rev = position_totals(x, o)
+            # Preserve the existing revenue series; VAT-aware discount amounts are separate.
+            gross, rev = position_totals(x, {})
+            discount_gross, discount_net = position_totals(x, o)
             catalogue, history_status, price_gap = (discount_history(ms).resolve(kind, aid, full_paid_stamp(closed) if closed else o.get("moment"))
                                                      if kind != "service" else (None, "service", ""))
             basis, basis_status = discount_basis(x, o, catalogue)
@@ -1868,8 +1896,9 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
                 gaps["Позиция без закупочной цены"].append(number)
             lines.append({"id": aid, "name": name, "category": product.get("pathName") or "не указано",
                           "size": size, "color": color, "qty": qty, "rev": rev,
-                          "list": basis, "document_list": gross, "catalogue_sale_price": catalogue,
-                          "discount_basis": basis_status, "discount_gap": price_gap, "price_at": full_paid_stamp(closed) if closed else o.get("moment"), "cost": round(cost, 2), "delivery": delivery_line})
+                          "list": basis, "document_list": discount_gross, "catalogue_sale_price": catalogue,
+                          "discount_net": discount_net, "discount_kopecks": int(round((basis - discount_net) * 100)),
+                          "discount_basis": "service" if kind == "service" else basis_status, "discount_gap": price_gap, "price_at": full_paid_stamp(closed) if closed else o.get("moment"), "cost": round(cost, 2), "delivery": delivery_line})
     return {
         "number": number, "id": o["id"], "created": (dt(o.get("moment")) or started).date().isoformat(),
         "paid_date": closed.date().isoformat() if closed else None,

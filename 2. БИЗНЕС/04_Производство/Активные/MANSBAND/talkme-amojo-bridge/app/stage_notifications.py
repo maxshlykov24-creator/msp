@@ -499,6 +499,7 @@ def summary(db):
                     "delay_seconds": 3600, "respect_window": s.review_respect_window}, "calendar": {
         "mode": CalendarSettings().mode, "ready": CalendarSettings().live_ready() and s.live_ready(),
         "extra_enabled": CalendarSettings().extra_enabled,
+        "free_hold_enabled": CalendarSettings().free_hold_enabled,
         "last_scan": calendar_scan, "jobs": [
             {"lead_id": j.lead_id, "kind": j.kind, "date": j.target_date.isoformat(), "due_at": aware(j.due_at).isoformat(), "state": j.state, "reason": j.reason}
             for j in db.scalars(select(CalendarJob).order_by(CalendarJob.id.desc()).limit(50))]}, "jobs": [
@@ -523,12 +524,18 @@ class CalendarSettings(BaseSettings):
     wants_order_status: int = 78616338
     wants_visit_status: int = 77384722
     approximate_date_field: int = 3185681
+    free_hold_enabled: bool = False
+    hold_status: int = 77086494
+    hold_field: int = 3810737
+    free_hold_enum: int = 5452539
+    hold_until_field: int = 3810739
 
     def live_ready(self):
         return self.mode == "live"
 
 
 CALENDAR_RULES = {
+    "free_hold_expired": ("hold_status", "hold_until_field", 1, 10, 0),
     "meeting_today": ("meeting_status", "meeting_field", 0, 10, 0),
     "meeting_followup": ("meeting_status", "meeting_field", 1, 10, 30),
     "rental_pickup": ("paid_status", "meeting_field", -1, 11, 0),
@@ -544,7 +551,8 @@ EXTRA_KINDS = CERTIFICATE_KINDS | {"wants_order", "wants_visit"}
 
 def active_calendar_rules(settings):
     return {kind: rule for kind, rule in CALENDAR_RULES.items()
-            if settings.extra_enabled or kind not in EXTRA_KINDS}
+            if (settings.extra_enabled or kind not in EXTRA_KINDS)
+            and (kind != "free_hold_expired" or settings.free_hold_enabled)}
 
 
 def calendar_due(kind, target):
@@ -605,12 +613,20 @@ def calendar_date(lead, field):
         return None
 
 
+def free_hold_valid(lead, settings):
+    from app.reservation_reminders import values
+    entries = values(lead, settings.hold_field)
+    # Exact, single CRM option; missing, paid or ambiguous values never qualify.
+    return len(entries) == 1 and entries[0].get("enum_id") == settings.free_hold_enum
+
+
 def calendar_valid(lead, job, settings):
     status, field, _, _, _ = CALENDAR_RULES[job.kind]
     return (job.kind in active_calendar_rules(settings)
             and lead.get("pipeline_id") == 9601214 and not lead.get("is_deleted")
             and lead.get("status_id") == getattr(settings, status)
-            and calendar_date(lead, getattr(settings, field)) == job.target_date)
+            and calendar_date(lead, getattr(settings, field)) == job.target_date
+            and (job.kind != "free_hold_expired" or free_hold_valid(lead, settings)))
 
 
 def calendar_dispatch(job, now):
@@ -629,6 +645,8 @@ def sync_calendar(db, leads, settings, now):
             continue
         for kind, (status, field, offset, hour, minute) in active_calendar_rules(settings).items():
             if lead.get("status_id") != getattr(settings, status):
+                continue
+            if kind == "free_hold_expired" and not free_hold_valid(lead, settings):
                 continue
             target = calendar_date(lead, getattr(settings, field))
             if target is None:
@@ -785,8 +803,17 @@ RETURN_BAUM = """Здравствуйте! Напоминаем, что сего
 г. Москва, Спартаковская пл., д. 14, стр.2"""
 
 
+FREE_HOLD_EXPIRED = """Вас приветствует магазин Mansband!
+Хотим предупредить, что бесплатный срок брони истёк.
+
+Вы можете продлить бронь костюма на 2 недели, внеся аванс в размере 3000 ₽.
+*залог учитывается при выкупе костюма."""
+
+
 def render_calendar(lead, job, s):
     from app.reservation_reminders import values
+    if job.kind == "free_hold_expired":
+        return FREE_HOLD_EXPIRED
     if job.kind == "certificate_month":
         return CERTIFICATE_MONTH
     if job.kind == "certificate_fortnight":
