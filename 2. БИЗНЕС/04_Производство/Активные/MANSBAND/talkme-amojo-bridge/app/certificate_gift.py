@@ -6,14 +6,15 @@ from typing import Optional,Literal
 import httpx
 from fastapi import APIRouter,HTTPException,Depends
 from fastapi.responses import Response
-from pydantic import SecretStr
+from pydantic import SecretStr,Field
 from pydantic_settings import BaseSettings,SettingsConfigDict
 from sqlalchemy import Integer,String,DateTime,JSON,LargeBinary,select,text
 from sqlalchemy.orm import Mapped,mapped_column
 from app.models import Base
 from app.database import get_engine,get_session_factory
 from app.certificate_mail import CertificateMailJob,MailSettings,field_value,anniversary
-from app.reservation_reminders import Clients,ReminderSettings,ReminderEvent,MSK,SUCCESS,REJECTED
+from zoneinfo import ZoneInfo
+MSK=ZoneInfo("Europe/Moscow")
 from app import message_templates as m
 from app.certificate_pdf import render_pdf,DEFAULT_INTRO,DEFAULT_INSTRUCTIONS,CONTACTS
 
@@ -24,6 +25,11 @@ BODY="""Вас приветствует магазин мужских костю
 Отправляем вам подарочный сертификат от {{buyer.name}}! Вся необходимая информация ждет внутри🎁
 
 Поздравляем и с нетерпением будем ждать вас в магазинах нашей сети☺️"""
+def demo_data():
+ start=m.now().astimezone(MSK).date();until=anniversary(start)
+ return {"guest":"Александр","buyer":"покупателя","number":"ТЕСТ, НЕ ДЛЯ СПИСАНИЯ","nominal":15000,"start":start.strftime("%d.%m.%Y"),"until":until.strftime("%d.%m.%Y"),"start_iso":start.isoformat(),"greeting":"С днём рождения! Пусть этот сертификат добавит ещё один повод для улыбки в твою копилку счастливых моментов.","phone":""}
+class GiftTest(m.TestSend):
+ lead_id:int=Field(ge=0)
 class Settings(BaseSettings):
  model_config=SettingsConfigDict(env_prefix="CERTGIFT_",extra="ignore")
  mode:Literal["preview","live"]="preview"
@@ -94,6 +100,7 @@ def save_attempt(db,job,index,**patch):
  rows=[dict(x) for x in job.attempts];rows[index].update(patch);job.attempts=rows;db.commit()
 
 def reconcile(db,job):
+ from app.reservation_reminders import ReminderEvent,SUCCESS
  rows=[dict(x) for x in job.attempts]
  for a in rows:
   if a.get("archived"):continue
@@ -118,15 +125,17 @@ def issue(lead_id):
   return r.json()
 
 def process(db,c,job,stamp,issuer=issue):
+ from app.reservation_reminders import ReminderSettings,REJECTED
  doc=db.get(m.Document,RULE_ID)
  if not doc or not doc.active or not doc.active["enabled"]:return
  rule=m.Rule(**doc.active)
  if job.state in ("unknown","partial","failed","sent","delivered","cancelled","pending"):return
  lead=c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"})
  try:
+  if lead.get("is_deleted") or lead.get("pipeline_id")!=9601214 or lead.get("status_id") not in (76675038,142) or field_value(lead,3828225).lower() not in ("true","1"):raise ValueError("Нет подтверждённого оплаченного электронного сертификата")
+  cert=issuer(job.lead_id)
   data=data_for(c,lead)
   if job.snapshot and data["phone"]!=job.snapshot["data"]["phone"]:raise ValueError("Получатель изменился после начала отправки")
-  cert=issuer(job.lead_id)
   if cert["status"]!="active" or cert["balance"]<=0:raise ValueError("Сертификат недействителен или использован")
   data.update(number=cert["number"],nominal=cert["nominal"])
   job.number=cert["number"];job.check_at=stamp+timedelta(seconds=60)
@@ -188,12 +197,18 @@ def process(db,c,job,stamp,issuer=issue):
   job.state="partial" if allowed_parts(job) else "blocked";job.reason=str(exc)[:160];db.commit()
 
 def tick():
+ from app.reservation_reminders import Clients,ReminderSettings
  if not Settings().ready():return
  with get_engine().connect() as lock,get_session_factory()() as db:
   if not lock.execute(text("SELECT pg_try_advisory_lock(674002025)")).scalar():return
   c=Clients(db,ReminderSettings())
   try:
    for old in db.scalars(select(CertificateMailJob).where(CertificateMailJob.state.in_(["queued","blocked"]),CertificateMailJob.attempted_at.is_(None))):
+    if m.aware(old.event_at).timestamp()<Settings().activated_at:
+     old_lead=c.get(f"/api/v4/leads/{old.lead_id}")
+     try:old_start=datetime.fromtimestamp(int(field_value(old_lead,3829442)),MSK).date()
+     except (ValueError,OverflowError,OSError):continue
+     if old_start<datetime.fromtimestamp(Settings().activated_at,MSK).date():continue
     if not db.get(GiftJob,old.lead_id):db.add(GiftJob(lead_id=old.lead_id))
    # Kassa-created sales may enter Success directly; poll only issuances after activation.
    s=Settings()
@@ -205,10 +220,13 @@ def tick():
      if old and old.attempted_at:continue
      if not db.get(GiftJob,lid):db.add(GiftJob(lead_id=lid))
    db.commit()
-   for job in db.scalars(select(GiftJob).where(GiftJob.lead_id>0).order_by(GiftJob.check_at).limit(200)):
+   for job in db.scalars(select(GiftJob).where(GiftJob.state.notin_(["delivered","cancelled","failed"])).order_by(GiftJob.check_at).limit(200)):
     try:
+     due=m.aware(job.check_at)<=m.now()
      reconcile(db,job)
-     if job.state in ("queued","blocked","sending") and m.aware(job.check_at)<=m.now():process(db,c,job,m.now())
+     if job.state not in ("queued","blocked","sending"):
+      job.check_at=m.now()+timedelta(seconds=30);db.commit()
+     if job.lead_id>0 and job.state in ("queued","blocked","sending") and due:process(db,c,job,m.now())
     except Exception as exc:db.rollback();log.error("Certificate gift %s: %s",job.lead_id,type(exc).__name__)
   finally:c.close();lock.execute(text("SELECT pg_advisory_unlock(674002025)"))
 async def worker():
@@ -234,7 +252,7 @@ def download(token:str):
 
 @router.get("/internal/templates/gift/preview/{lead_id}",dependencies=[Depends(m.authorized)])
 def preview_pdf(lead_id:int,db=Depends(m.session),c=Depends(m.client)):
- d=db.get(m.Document,RULE_ID);data=data_for(c,c.get(f"/api/v4/leads/{lead_id}",**{"with":"contacts"}))
+ d=db.get(m.Document,RULE_ID);data=data_for(c,c.get(f"/api/v4/leads/{lead_id}",**{"with":"contacts"})) if lead_id else demo_data()
  data["number"]=data["number"] or "ПРЕДПРОСМОТР"
  return Response(render_pdf(data,d.draft.get("certificate_pdf",{})),media_type="application/pdf",headers={"Cache-Control":"no-store"})
 
@@ -249,7 +267,8 @@ def retry_pdf(lead_id:int,body:dict,db=Depends(m.session)):
  return {"state":job.state}
 
 @router.post("/internal/templates/gift/test",dependencies=[Depends(m.authorized),Depends(m.mutation_lock)])
-def test_package(body:m.TestSend,db=Depends(m.session),c=Depends(m.client)):
+def test_package(body:GiftTest,db=Depends(m.session),c=Depends(m.client)):
+ from app.reservation_reminders import ReminderSettings
  import re
  doc=db.get(m.Document,RULE_ID)
  if not body.confirmed or body.version!=doc.version or doc.checked!=m.digest([doc.version,doc.draft]):raise HTTPException(409,"Проверь текущую версию и подтверди тест")
@@ -261,7 +280,7 @@ def test_package(body:m.TestSend,db=Depends(m.session),c=Depends(m.client)):
   from app.stage_notifications import normalize_recipient_phone,phone_destination
   try:recipient=phone_destination(normalize_recipient_phone(destination),body.transport)
   except ValueError:raise HTTPException(422,"Некорректный тестовый получатель")
- data=data_for(c,c.get(f"/api/v4/leads/{body.lead_id}",**{"with":"contacts"}));data["number"]="ТЕСТ, НЕ ДЛЯ СПИСАНИЯ"
+ data=data_for(c,c.get(f"/api/v4/leads/{body.lead_id}",**{"with":"contacts"})) if body.lead_id else demo_data();data["number"]="ТЕСТ, НЕ ДЛЯ СПИСАНИЯ"
  rule=m.Rule(**doc.draft);rendered_text="ТЕСТ MANSBAND.\n\n"+rendered(rule,data)
  job=GiftJob(lead_id=-int(uuid.uuid4().hex[:7],16),state="queued",number="TEST",pdf=render_pdf(data,rule.certificate_pdf),snapshot={"data":data,"text":rendered_text,"source_lead":body.lead_id})
  db.add(job);db.add(m.Operation(id=opid,digest=m.digest(body.model_dump()),state="inflight",result={"job_id":job.lead_id}));db.commit()
