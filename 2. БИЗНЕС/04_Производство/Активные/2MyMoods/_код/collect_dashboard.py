@@ -1458,7 +1458,7 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
             basis_int = money_int(Decimal(str(basis)) * 100)
             lines.append({**{k: info.get(k, "") for k in ("id", "name", "category", "size", "color")},
                           "qty": float(qty), "price_kopecks": float(price), "discount_percent": float(discount),
-                          "discount_kopecks": basis_int - after, "recorded_discount_kopecks": gross - after,
+                          "discount_kopecks": basis_int - after, "recorded_discount_kopecks": gross - after, "net_kopecks": after,
                           "basis_price_kopecks": float(Decimal(basis_int) / qty) if qty else 0,
                           "effective_discount_percent": float(Decimal(basis_int - after) * 100 / basis_int) if basis_int else 0,
                           "discount_basis": basis_status, "discount_gap": price_gap, "price_at": price_at})
@@ -1513,6 +1513,9 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                         if available[key]:
                             line["discount_kopecks"] = (money_int(original_discount[key] * after_qty / available[key])
                                                         - money_int(original_discount[key] * before_qty / available[key]))
+                        allocated_basis = line["net_kopecks"] + line["discount_kopecks"]
+                        line["basis_price_kopecks"] = float(Decimal(allocated_basis) / Decimal(str(line["qty"]))) if line["qty"] else 0
+                        line["effective_discount_percent"] = line["discount_kopecks"] * 100 / allocated_basis if allocated_basis else 0
                         returned_qty[(shipment_id, key)] = after_qty
                 else:
                     shipments[doc["id"]]["lines"] = lines
@@ -1688,7 +1691,7 @@ class DiscountPriceHistory:
     @staticmethod
     def price_value(value):
         # Audit money is in rubles; entity salePrices is in kopecks.
-        if not isinstance(value, list) or len(value) != 2:
+        if not isinstance(value, list) or len(value) != 2 or not isinstance(value[1], dict):
             raise ValueError('Неизвестный формат истории цены')
         amount = Decimal(str(value[0])) * 100
         currency = mid(value[1])
@@ -1730,6 +1733,12 @@ class DiscountPriceHistory:
             return self.results[key]
         try:
             moment = dt(moment_text)
+            frozen_key = 'resolved/v1/' + str(kind) + '/' + str(aid) + '/' + (moment.isoformat() if moment else '')
+            frozen = self.cache.get(frozen_key)
+            if frozen:
+                result = (frozen['price'], 'historical_catalogue', '')
+                self.results[key] = result
+                return result
             if not moment or kind not in ('product', 'variant', 'bundle'):
                 raise ValueError('Не определена дата или тип товара')
             card = self.card(kind, aid)
@@ -1751,6 +1760,11 @@ class DiscountPriceHistory:
             else:
                 price = self.reconstruct(kind, card, moment)
             result = (price, 'historical_catalogue', '')
+            # Persist only verified historical values, not estimates or failures.
+            # Later catalogue edits cannot rewrite a previously verified sale basis.
+            self.cache[frozen_key] = {'price': price, 'verified_at': datetime.now(TZ).isoformat(timespec='seconds'),
+                                      'card_updated': card.get('updated'), 'method': 'complete_audit_v1'}
+            self.dirty += 1
         except (ValueError, RuntimeError) as exc:
             result = (None, 'recorded_only', str(exc))
         self.results[key] = result
