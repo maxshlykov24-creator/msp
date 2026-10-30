@@ -1649,7 +1649,7 @@ class DiscountPriceHistory:
             return self.histories[key]
         signature = json.dumps([card.get('updated'), card.get('salePrices'), card.get('product')], sort_keys=True)
         cached = self.cache.get(key, {})
-        if cached.get('signature') == signature and time.time() - cached.get('checked', 0) < 86400:
+        if cached.get('signature') == signature:
             events = cached['events']
         else:
             events, offset, size, seen = [], 0, None, set()
@@ -1703,7 +1703,7 @@ class DiscountPriceHistory:
         events = self.history(kind, card)
         creates = [dt(e['moment']) for e in events if e['type'] == 'create']
         if len(creates) != 1 or creates[0] > moment:
-            raise ValueError('Нет истории каталога на дату документа')
+            raise ValueError('Нет истории каталога на дату документа' + (': карточка создана ' + creates[0].strftime('%d.%m.%Y') if len(creates) == 1 else ''))
         price = catalogue_sale_price(card)
         if price is None:
             raise ValueError('Цена продажи не задана однозначно')
@@ -1746,7 +1746,7 @@ class DiscountPriceHistory:
                 events = self.history(kind, card)
                 creates = [dt(e['moment']) for e in events if e['type'] == 'create']
                 if len(creates) != 1 or creates[0] > moment:
-                    raise ValueError('Нет истории каталога на дату документа')
+                    raise ValueError('Нет истории каталога на дату документа' + (': карточка создана ' + creates[0].strftime('%d.%m.%Y') if len(creates) == 1 else ''))
                 if any('product' in e['diff'] for e in events):
                     raise ValueError('История смены основного товара требует проверки')
                 parent = self.card('product', mid(card.get('product')))
