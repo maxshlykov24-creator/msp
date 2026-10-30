@@ -149,3 +149,29 @@ def test_legacy_migration_does_not_backfill_past_gifts():
  for f in data["custom_fields_values"]:
   if f["field_id"]==3828225:f["values"][0]["value"]=False
  assert not g.eligible_legacy(old,data,STAMP.timestamp())
+
+
+def test_smtp_cannot_resume_after_cutover(monkeypatch,db):
+ from app import certificate_mail as mail
+ monkeypatch.setenv("CERTGIFT_MODE","preview")
+ assert not mail.smtp_replaced(db)
+ g.mark_cutover(db);g.mark_cutover(db)
+ assert mail.smtp_replaced(db)
+ calls=[]
+ mail.process_job(db,1,mail.MailSettings(),STAMP,fetch=lambda *a:calls.append(a))
+ assert not calls
+ assert mail.summary(db)["replaced_by_gift"]
+ assert not mail.summary(db)["ready"]
+
+
+def test_publication_replans_only_unattempted_gifts(db):
+ pending=g.GiftJob(lead_id=1,state="failed",snapshot={"old":True},pdf=b"old")
+ started=g.GiftJob(lead_id=2,state="partial",snapshot={"frozen":True},pdf=b"frozen",attempts=[{"part":"text","transport":"telegram","state":"sent","message_id":"accepted"}])
+ db.add_all([pending,started]);db.commit()
+ routing=db.get(m.Document,"routing");routing.checked=m.digest([routing.version,routing.draft]);db.commit()
+ m.publish("routing",m.Publish(version=routing.version,actor="test"),db=db,c=CRM([]))
+ assert pending.state=="queued" and pending.snapshot is None and pending.pdf is None
+ assert started.state=="partial" and started.snapshot=={"frozen":True} and started.pdf==b"frozen"
+ gift=db.get(m.Document,g.RULE_ID);gift.draft={**gift.draft,"enabled":False};gift.checked=m.digest([gift.version,gift.draft]);db.commit()
+ m.publish(g.RULE_ID,m.Publish(version=gift.version,actor="test"),db=db,c=CRM([]))
+ assert pending.state=="cancelled" and started.snapshot=={"frozen":True}

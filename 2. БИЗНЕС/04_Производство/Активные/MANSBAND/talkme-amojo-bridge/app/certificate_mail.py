@@ -287,9 +287,20 @@ def write_expiry(db: Session, lead_id: int, stamp: int, s: MailSettings):
         raise RuntimeError("expiry_update_failed")
 
 
+def smtp_replaced(db: Session) -> bool:
+    from sqlalchemy import inspect
+    from app.certificate_gift import Settings as GiftSettings, CUTOVER_ID
+    from app.message_templates import Operation
+    if GiftSettings().mode == "live":
+        return True
+    # Old installations and focused tests may not have the template schema yet.
+    # Database failures propagate, so SMTP fails closed rather than risking a duplicate.
+    return (inspect(db.get_bind()).has_table(Operation.__tablename__)
+            and db.get(Operation, CUTOVER_ID) is not None)
+
+
 def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fetch=None, deliver=None, persist_expiry=None):
-    from app.certificate_gift import Settings as GiftSettings
-    if GiftSettings().mode=="live":return
+    if smtp_replaced(db):return
     if not s.live_ready():
         return
     job = db.get(CertificateMailJob, lead_id)
@@ -358,6 +369,7 @@ def tick(s: MailSettings):
     lock = get_engine().connect()
     db = get_session_factory()()
     try:
+        if smtp_replaced(db):return
         if not lock.execute(text("SELECT pg_try_advisory_lock(674001924)")).scalar():
             return
         now = utcnow()
@@ -397,8 +409,8 @@ async def worker(s: MailSettings):
 def summary(db: Session) -> dict:
     s = MailSettings()
     jobs = list(db.scalars(select(CertificateMailJob).order_by(CertificateMailJob.created_at.desc()).limit(50)))
-    from app.certificate_gift import Settings as GiftSettings
-    return {"mode": s.mode, "ready": s.live_ready() and GiftSettings().mode!="live", "replaced_by_gift":GiftSettings().mode=="live", "status_id": s.status_id,
+    replaced = smtp_replaced(db)
+    return {"mode": s.mode, "ready": s.live_ready() and not replaced, "replaced_by_gift":replaced, "status_id": s.status_id,
         "jobs": [{"lead_id": j.lead_id, "state": j.state, "reason": j.reason,
                   "due_at": j.due_at.isoformat() if j.due_at else None,
                   "attempted": j.attempted_at is not None} for j in jobs]}

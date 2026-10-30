@@ -20,6 +20,13 @@ from app.certificate_pdf import render_pdf,DEFAULT_INTRO,DEFAULT_INSTRUCTIONS,CO
 
 log=logging.getLogger(__name__)
 RULE_ID="gift-certificate"
+CUTOVER_ID="certificate-gift-cutover-v1"
+
+def mark_cutover(db):
+ if not db.get(m.Operation,CUTOVER_ID):
+  db.add(m.Operation(id=CUTOVER_ID,digest=m.digest({"smtp_replaced":True}),state="done",result={"smtp_replaced":True}))
+  db.commit()
+
 BODY="""Вас приветствует магазин мужских костюмов Mansband👋🏻
 
 Отправляем вам подарочный сертификат от {{buyer.name}}! Вся необходимая информация ждет внутри🎁
@@ -210,7 +217,8 @@ def tick():
  from app.reservation_reminders import Clients,ReminderSettings
  if not Settings().ready():return
  with get_engine().connect() as lock,get_session_factory()() as db:
-  if not lock.execute(text("SELECT pg_try_advisory_lock(674002025)")).scalar():return
+  if not lock.execute(text("SELECT pg_try_advisory_lock(:key)"),{"key":m.LOCK}).scalar():return
+  mark_cutover(db)  # Durable: changing preview/live must never revive legacy SMTP.
   c=Clients(db,ReminderSettings())
   try:
    for old in db.scalars(select(CertificateMailJob).where(CertificateMailJob.state.in_(["queued","blocked"]),CertificateMailJob.attempted_at.is_(None))):
@@ -235,7 +243,7 @@ def tick():
       job.check_at=m.now()+timedelta(seconds=30);db.commit()
      if job.lead_id>0 and job.state in ("queued","blocked","sending") and due:process(db,c,job,m.now())
     except Exception as exc:db.rollback();log.error("Certificate gift %s: %s",job.lead_id,type(exc).__name__)
-  finally:c.close();lock.execute(text("SELECT pg_advisory_unlock(674002025)"))
+  finally:c.close();lock.execute(text("SELECT pg_advisory_unlock(:key)"),{"key":m.LOCK})
 async def worker():
  while True:
   try:await asyncio.to_thread(tick)

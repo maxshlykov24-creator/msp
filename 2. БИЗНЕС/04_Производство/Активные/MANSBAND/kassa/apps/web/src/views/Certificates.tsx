@@ -432,6 +432,7 @@ export function Certificates() {
       </Modal>
       <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Импорт сертификатов и номиналов">
         <div className="space-y-4">
+          <p className="text-sm text-mute">Колонки: номер, номинал, остаток, тип, получатель, дата выдачи, действителен с, действителен до. Даты — ГГГГ-ММ-ДД. Неизвестные суммы и сроки не подставляй.</p>
           <Field label="CSV-файл" hint="Поддерживаются запятая или точка с запятой; сначала обязателен dry-run">
             <input
               type="file"

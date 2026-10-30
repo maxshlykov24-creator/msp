@@ -924,6 +924,16 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
                             else:raise ValueError("trigger_changed")
                         except ValueError as exc:j.state,j.reason="cancelled",str(exc)
                 if d.kind=="rule" and not d.active["enabled"]:j.state,j.reason="cancelled","disabled"
+        if d.kind in ("rule","routing"):
+            from app.certificate_gift import GiftJob, RULE_ID
+            if d.kind=="routing" or d.id==RULE_ID:
+                gift=db.get(Document,RULE_ID)
+                for gift_job in (db.scalars(select(GiftJob).where(GiftJob.lead_id>0)) if gift else []):
+                    if gift_job.attempts:continue
+                    gift_job.snapshot,gift_job.pdf=None,None
+                    gift_job.state="queued" if gift.active and gift.active.get("enabled") else "cancelled"
+                    gift_job.reason="" if gift_job.state=="queued" else "Сценарий выключен"
+                    gift_job.check_at=now()
         db.commit();return {**dto(d),**result}
     except ValueError as exc:raise HTTPException(422,str(exc))
 
