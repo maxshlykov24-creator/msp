@@ -56,3 +56,6 @@ for name,source in [('analytics',clients/'2MyMoods/дашборд/2MY_дашбо
         assert n==1,'Production API boundary changed; inspect source before rebuilding'
     (target/'index.html').write_text(prepare(html,extra))
 print('Built original client previews with synthetic data:',out)
+
+# Keep the fourth brand preview reproducible with the other original UIs.
+subprocess.run([__import__('sys').executable,str(site/'scripts/build-cutting-preview.py')],check=True)

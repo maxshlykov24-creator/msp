@@ -1,13 +1,14 @@
 (function(){
 'use strict';
 const entries={
+ 'cutting-stock':{client:'Решение 4',name:'Каталог и крой',heading:'От остатков по размерам до задания на крой',description:'Собственное приложение для бренда с производством. Каталог объединяет модели, цвета, размеры и остатки; задания на крой показывают план, раскладки и фактический выпуск.',instruction:'Найдите модель, раскройте размеры и откройте карточку. Перейдите в Крой и откройте задание: внутри план партии, раскладка и остаток к выполнению.'},
  'mans-orders':{client:'Решение 1',name:'Заявки и касса',heading:'Заказ, товар и оплата в одном месте',description:'Рабочее место консультанта связывает заявки amoCRM с товарами и документами МоегоСклада. Продажи, отложки и аренда собраны в одном интерфейсе.',instruction:'Выберите Отложка, отфильтруйте магазин и откройте заявку. Внутри можно посмотреть состав и учесть оплату.'},
  '2my-analytics':{client:'Решение 2',name:'Аналитика продаж',heading:'Разобраться в продажах без сборки отчётов вручную',description:'Панель на данных МоегоСклада и amoCRM. Продажи, каналы, товары и клиентская база доступны через общие фильтры.',instruction:'Выберите категорию и канал сбыта: суммы и график пересчитаются. Переключитесь на Товары или Клиенты и откройте строку.'},
  'mans-messages':{client:'Решение 1',name:'Автоматические сообщения',heading:'Правила общения управляются из кассы',description:'Редактор автоматических сценариев, ручные шаблоны и порядок каналов. Условия, текст и проверка сообщения собраны в одном рабочем разделе.',instruction:'Откройте сценарий, измените текст и нажмите Проверить. Во вкладке Порядок каналов можно поменять очерёдность мессенджеров.'},
  '2my-production':{client:'Решение 2',name:'Производство',heading:'Нормы, материалы и экономика изделия',description:'Интерфейс производства: каталог норм, расход материалов, этапы работы и аналитика себестоимости. Можно разобрать изделие до размера и состава нормы.',instruction:'Найдите модель, откройте норму, выберите размер и измените расход. Во вкладке Аналитика раскройте остатки по размерам.'}
 };
 const frame=document.querySelector('#demo-frame'),viewport=document.querySelector('#demo-viewport'),canvas=document.querySelector('#demo-canvas'),windowEl=document.querySelector('.demo-window'),panel=document.querySelector('#example-panel'),tabs=[...document.querySelectorAll('[data-example]')],deviceButtons=[...document.querySelectorAll('[data-device]')];
-const sources={'mans-orders':'mansband/index.html#board/all/all','mans-messages':'mansband/index.html#message-templates','2my-analytics':'analytics/index.html','2my-production':'production/index.html'};
+const sources={'cutting-stock':'cutting/index.html','mans-orders':'mansband/index.html#board/all/all','mans-messages':'mansband/index.html#message-templates','2my-analytics':'analytics/index.html','2my-production':'production/index.html'};
 let selected='mans-orders',device='desktop';
 const BASE_WIDTH=1440,BASE_HEIGHT=900;
 let layout=null,motionFrame=0;
@@ -65,7 +66,7 @@ function select(id,send=true,focus=false){
  document.querySelector('#example-description').textContent=entry.description;
  document.querySelector('#example-instruction').textContent=entry.instruction;
  frame.title=entry.client+' - интерактивный пример: '+entry.name;
- if(send)frame.src='./previews/'+sources[id].replace('index.html','index.html?v=anonymous-1');
+ if(send)frame.src='/brands/previews/'+sources[id].replace('index.html','index.html?v=anonymous-1');
  viewport.scrollTop=0;viewport.scrollLeft=0;resize();
 }
 tabs.forEach((tab,index)=>{

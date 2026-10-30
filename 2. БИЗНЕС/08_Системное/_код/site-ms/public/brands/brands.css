@@ -109,3 +109,5 @@ html[data-theme="light"] .about-wash .silk.ready{opacity:.45}
 .demo-canvas{overflow:hidden;box-shadow:0 0 0 calc(5px * var(--device-round,0)) #4b3944}
 .demo-viewport.is-phone .demo-canvas{box-shadow:0 0 0 calc(5px * var(--device-round,0)) #4b3944}
 .demo-window.is-morphing .demo-canvas iframe{pointer-events:none}
+
+@media(min-width:761px){.example-tabs{grid-template-columns:repeat(5,minmax(0,1fr))}}
