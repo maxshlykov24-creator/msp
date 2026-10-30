@@ -12,6 +12,7 @@ import { ShiftClose } from "./views/ShiftClose";
 import { ProductCheck } from "./views/ProductCheck";
 import { TasksMovements } from "./views/TasksMovements";
 import { HistoryScreen, RolesScreen } from "./views/AuditRoles";
+import { MessageTemplates } from "./views/MessageTemplates";
 import { SettingsScreen } from "./views/SettingsScreen";
 
 function Screens({
@@ -86,6 +87,8 @@ function Screens({
       return <HistoryScreen />;
     case "roles":
       return <RolesScreen />;
+    case "message-templates":
+      return <MessageTemplates />;
     case "settings":
       return <SettingsScreen />;
   }
@@ -105,6 +108,7 @@ const ROUTES: Route[] = [
   "history",
   "roles",
   "settings",
+  "message-templates",
   "audit",
 ];
 

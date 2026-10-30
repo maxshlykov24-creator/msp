@@ -416,7 +416,9 @@ async def webhook(secret: str, request: Request):
     try:
         queued = ingest(db, rows)
         from app.stage_notifications import ingest as ingest_stage
-        stage_queued = ingest_stage(db, form, utcnow())
+        from app.message_templates import ingest as ingest_managed, Settings as ManagedSettings
+        stage_queued = (ingest_managed(db, form, utcnow()) if ManagedSettings().executor == "live"
+                        else ingest_stage(db, form, utcnow()))
         return {"ok": True, "queued": queued, "stage_queued": stage_queued}
     finally:
         db.close()

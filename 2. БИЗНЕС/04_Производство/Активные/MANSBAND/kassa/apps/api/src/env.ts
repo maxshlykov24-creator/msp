@@ -13,6 +13,9 @@ const schema = z.object({
   JWT_SECRET: z.string().min(16, "JWT_SECRET слишком короткий"),
   JWT_EXPIRES_IN: z.string().default("12h"),
 
+  MESSAGE_TEMPLATES_URL: z.string().url().optional(),
+  MESSAGE_TEMPLATES_KEY: z.string().min(24).optional(),
+
   // amoCRM
   AMOCRM_API_BASE: z.string().url(),
   AMOCRM_LONG_LIVED_TOKEN: z.string().min(20),

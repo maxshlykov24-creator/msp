@@ -45,6 +45,7 @@ export type Route =
   | "tasks"
   | "history"
   | "roles"
+  | "message-templates"
   | "settings"
   | "audit"; // старый hash → история
 
@@ -569,6 +570,9 @@ function UserMenu({
                 <span className="flex-1">Настройки мотивации</span>
               </button>
             )}
+            <button className={`${itemCls} ${activeRoute === "message-templates" ? "bg-ink-800 text-white" : ""}`} onClick={() => { onNavigate("message-templates"); close(); }}>
+              <Send size={17} /><span className="flex-1">Шаблоны сообщений</span>
+            </button>
             <div className="h-px bg-ink-700 my-1.5" />
             <button
               className={itemCls}

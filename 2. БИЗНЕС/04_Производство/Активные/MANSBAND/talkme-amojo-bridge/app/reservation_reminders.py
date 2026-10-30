@@ -440,17 +440,40 @@ async def lifespan(_: FastAPI):
         log.error("Certificate email live prerequisites are incomplete; sending disabled")
     Base.metadata.create_all(get_engine(), tables=certificate_mail.TABLES)
     Base.metadata.create_all(get_engine(), tables=stage_notifications.TABLES)
-    task = asyncio.create_task(worker(s))
+    from app import message_templates as managed
+    Base.metadata.create_all(get_engine(), tables=managed.TABLES)
+    managed_settings = managed.Settings()
+    if managed_settings.executor == "live" and not managed_settings.allow_cutover:
+        raise RuntimeError("Managed executor requires TEMPLATES_ALLOW_CUTOVER=true")
+    with get_session_factory()() as db:
+        pipelines = None
+        if managed_settings.executor == "live":
+            c = Clients(db, s)
+            try: pipelines = [x["id"] for x in managed.all_pages(c, "/api/v4/leads/pipelines", "pipelines")]
+            finally: c.close()
+        managed.seed(db, pipelines)
+        if managed_settings.executor == "live":
+            managed.migrate_jobs(db)
+    managed_task = asyncio.create_task(managed.worker())
+    legacy = managed_settings.executor != "live"
+    async def inactive():
+        await asyncio.Event().wait()
+    task = asyncio.create_task(worker(s) if legacy else inactive())
     mail_task = asyncio.create_task(certificate_mail.worker(mail_settings))
-    stage_task = asyncio.create_task(stage_notifications.worker(stage_notifications.StageSettings()))
-    calendar_task = asyncio.create_task(stage_notifications.calendar_worker(stage_notifications.StageSettings()))
+    stage_task = asyncio.create_task(stage_notifications.worker(stage_notifications.StageSettings()) if legacy else inactive())
+    calendar_task = asyncio.create_task(stage_notifications.calendar_worker(stage_notifications.StageSettings()) if legacy else inactive())
     try:
         yield
     finally:
+        managed_task.cancel()
         task.cancel()
         mail_task.cancel()
         stage_task.cancel()
         calendar_task.cancel()
+        try:
+            await managed_task
+        except asyncio.CancelledError:
+            pass
         try:
             await task
         except asyncio.CancelledError:
@@ -474,6 +497,8 @@ app = FastAPI(title="Mansband reservation reminders", lifespan=lifespan)
 from app.certificate_mail import router as certificate_router
 
 app.include_router(certificate_router)
+from app.message_templates import router as template_router
+app.include_router(template_router)
 
 
 @app.get("/health")

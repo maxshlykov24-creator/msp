@@ -205,7 +205,15 @@ def render(lead, s):
             "В случае, если в эти дни не удается посетить магазин, предлагаем возможность продлить бронь на 2 недели с помощью залога 3000₽.\n*залог учитывается при выкупе костюма.")
 
 
-def order_for(source):
+def order_for(source, routing=None):
+    if routing is not None:
+        order = list(routing["order"])
+        if source in DIRECT and routing["previous_first"]:
+            order = [source, *(t for t in order if t != source)]
+        if source in {"instagram", "avito"} and routing["social_fallback"]:
+            order.append(source)
+        return order
+
     if source is None or source in SOCIAL:
         return [*DIRECT, *([source] if source else [])]
     if source in DIRECT:
@@ -213,7 +221,7 @@ def order_for(source):
     raise ValueError("unknown_conversation_origin")
 
 
-def resolve_plan(db, c, lead, contact, s, r, *, calendar=False, calendar_job=None):
+def resolve_plan(db, c, lead, contact, s, r, *, calendar=False, calendar_job=None, routing=None):
     from app.reservation_reminders import first, recipient
     talks = c.get("/api/v4/talks", **{"filter[contact_id]": contact["id"], "limit": 250}).get("_embedded", {}).get("talks", [])
     if len(talks) >= 250:
@@ -262,7 +270,7 @@ def resolve_plan(db, c, lead, contact, s, r, *, calendar=False, calendar_job=Non
             if sent is not None and sent.transport in DIRECT:
                 source = sent.transport
                 preferred = next((route for route in yesterday.plan or [] if route["transport"] == source), None)
-    for transport in (order_for(None if source == "website" else source) if not calendar or source != "vk" else list(DIRECT)):
+    for transport in (order_for(None if source == "website" else source, routing) if not calendar or source != "vk" else list(routing["order"]) if routing else list(DIRECT)):
         if calendar and transport == "vk":
             continue
         channel = getattr(r, transport + "_channel") if transport in DIRECT else getattr(s, transport + "_channel")
@@ -952,7 +960,7 @@ def contact_matches_phone(contact, phone):
     return False
 
 
-def certificate_plan(db, c, lead, stage, reminders, settings):
+def certificate_plan(db, c, lead, stage, reminders, settings, routing=None):
     phone = certificate_phone(lead, settings)
     # Search by the recipient only. The deal's linked buyer is never used as a
     # fallback or as the source of Telegram/MAX usernames, IDs, or social chats.
@@ -971,7 +979,7 @@ def certificate_plan(db, c, lead, stage, reminders, settings):
         raise ValueError('ambiguous_recipient_history')
     if matches:
         contact = next(iter(matches.values()))
-        plan = resolve_plan(db, c, lead, contact, stage, reminders, calendar=True)
+        plan = resolve_plan(db, c, lead, contact, stage, reminders, calendar=True, routing=routing)
         for route in plan:
             if route['transport'] in DIRECT:
                 route['recipient'] = phone_destination(phone, route['transport'])
@@ -979,7 +987,7 @@ def certificate_plan(db, c, lead, stage, reminders, settings):
                 route['recipient_contact_id'] = contact['id']
         return plan
     return [{'transport': transport, 'channelId': getattr(reminders, transport + '_channel'),
-             'recipient': phone_destination(phone, transport)} for transport in DIRECT]
+             'recipient': phone_destination(phone, transport)} for transport in (routing['order'] if routing else DIRECT)]
 
 
 CERTIFICATE_MONTH = """Здравствуйте! Вас приветствует магазин мужских костюмов Mansband👋🏻

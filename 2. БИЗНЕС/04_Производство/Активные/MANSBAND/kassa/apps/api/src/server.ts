@@ -5,6 +5,7 @@ import { getEnv } from "./env.js";
 import authPlugin from "./plugins/auth.js";
 import { addClient } from "./ws/hub.js";
 
+import messageTemplatesRoutes from "./routes/messageTemplates.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import dealsRoutes from "./routes/deals.routes.js";
@@ -58,6 +59,7 @@ export async function buildServer() {
   await app.register(
     async (api) => {
       await api.register(healthRoutes);
+      await api.register(messageTemplatesRoutes);
       await api.register(authRoutes);
       await api.register(dealsRoutes);
       await api.register(catalogRoutes);
