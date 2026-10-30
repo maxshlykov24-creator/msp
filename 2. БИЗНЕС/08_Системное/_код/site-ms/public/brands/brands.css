@@ -41,6 +41,15 @@ html[data-theme="light"]{--bg:#faf9f6;--ink:#321722;--muted:#705962;--line:rgba(
 
 /* Спокойные участки палитры: путь заказа, кейс лояльности и контакт. */
 .demo-device-switch{display:flex;gap:2px;padding:3px;border:1px solid #5a4653;border-radius:6px}
+.demo-window{width:100%;justify-self:center;transition:width .55s cubic-bezier(.22,.68,0,1),border-radius .55s ease}
+.demo-window.is-phone{width:var(--phone-width);max-width:100%;border-radius:26px}
+.demo-window.is-phone .demo-toolbar{flex-wrap:wrap;gap:10px;padding:12px 10px}
+.demo-window.is-phone .demo-window-title{width:100%;font-size:9px}
+.demo-window.is-phone .demo-tools{width:100%;justify-content:space-between;gap:5px}
+.demo-window.is-phone .demo-device-switch button{font-size:9px;padding:6px 5px}
+.demo-window.is-phone .demo-foot{font-size:8px;gap:8px;line-height:1.4}
+.demo-canvas,.demo-canvas iframe{transition:width .55s cubic-bezier(.22,.68,0,1),height .55s cubic-bezier(.22,.68,0,1),transform .55s cubic-bezier(.22,.68,0,1),border-radius .55s ease}
+.demo-viewport{transition:height .55s cubic-bezier(.22,.68,0,1),background-color .55s ease}
 .demo-device-switch button{border:0;border-radius:3px;padding:6px 10px;color:#c8b7c1;white-space:nowrap}
 .demo-device-switch button[aria-pressed="true"]{background:#e9d7df;color:#321722}
 .demo-viewport.is-phone{padding:14px 0;background:#251a22}

@@ -44,7 +44,7 @@ p.write_text(s)
 shared=clients/'MANSBAND/kassa/packages/shared/src/index.ts'
 (stage/'vite.config.ts').write_text('import {defineConfig} from "vite";import react from "@vitejs/plugin-react";export default defineConfig({plugins:[react()],base:"./",resolve:{alias:{"@kassa/shared":'+json.dumps(str(shared))+'}},build:{outDir:'+json.dumps(str(out/'mansband'))+',emptyOutDir:false,cssCodeSplit:false,modulePreload:false,rollupOptions:{output:{format:"iife",inlineDynamicImports:true}}}})')
 subprocess.run([str(vault.parent/'.local/bin/node'),str(web/'node_modules/vite/bin/vite.js'),'build'],cwd=stage,check=True,env={**__import__('os').environ,'VITE_USE_MOCK':'1'})
-p=out/'mansband/index.html';s=p.read_text();s=re.sub(r'type="module"\s+crossorigin','defer',s);s=s.replace('crossorigin','');p.write_text(prepare(s))
+p=out/'mansband/index.html';s=p.read_text();s=re.sub(r'type="module"\s+crossorigin','defer',s);s=s.replace('crossorigin','');p.write_text(prepare(s).replace('</head>','<style id="preview-mobile-nav">@media(max-width:767px){nav.kassa-chrome{position:fixed!important;bottom:0;left:0;right:0;z-index:40}main{padding-bottom:96px!important}}</style> </head>'))
 for name,source in [('analytics',clients/'2MyMoods/дашборд/2MY_дашборд_прототип.html'),('production',clients/'2MyMoods/_код/production.html')]:
     target=out/name;target.mkdir(exist_ok=True)
     html=source.read_text();extra=(adapters/(name+'.js')).read_text()

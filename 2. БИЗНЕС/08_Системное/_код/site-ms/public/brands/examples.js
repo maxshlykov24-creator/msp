@@ -6,7 +6,7 @@ const entries={
  'mans-messages':{client:'MANSBAND',name:'Автоматические сообщения',heading:'Правила общения управляются из кассы',description:'Редактор автоматических сценариев, ручные шаблоны и порядок каналов. Условия, текст и проверка сообщения собраны в одном рабочем разделе.',instruction:'Откройте сценарий, измените текст и нажмите Проверить. Во вкладке Порядок каналов можно поменять очерёдность мессенджеров.'},
  '2my-production':{client:'2MY',name:'Производство',heading:'Нормы, материалы и экономика изделия',description:'Интерфейс производства: каталог норм, расход материалов, этапы работы и аналитика себестоимости. Можно разобрать изделие до размера и состава нормы.',instruction:'Найдите модель, откройте норму, выберите размер и измените расход. Во вкладке Аналитика раскройте остатки по размерам.'}
 };
-const frame=document.querySelector('#demo-frame'),viewport=document.querySelector('#demo-viewport'),canvas=document.querySelector('#demo-canvas'),tabs=[...document.querySelectorAll('[data-example]')],deviceButtons=[...document.querySelectorAll('[data-device]')];
+const frame=document.querySelector('#demo-frame'),viewport=document.querySelector('#demo-viewport'),canvas=document.querySelector('#demo-canvas'),windowEl=document.querySelector('.demo-window'),panel=document.querySelector('#example-panel'),tabs=[...document.querySelectorAll('[data-example]')],deviceButtons=[...document.querySelectorAll('[data-device]')];
 const sources={'mans-orders':'mansband/index.html#board/all/all','mans-messages':'mansband/index.html#message-templates','2my-analytics':'analytics/index.html','2my-production':'production/index.html'};
 let selected='mans-orders',device='desktop';
 const BASE_WIDTH=1440,BASE_HEIGHT=900;
@@ -14,14 +14,16 @@ function resize(){
  const maxHeight=Math.min(460,innerHeight*.5);
  const phone=device==='phone';
  const width=phone?390:BASE_WIDTH;
- const scale=phone?Math.min(1,(viewport.clientWidth-28)/width):Math.min(viewport.clientWidth/width,maxHeight/BASE_HEIGHT);
- const height=phone?Math.round(maxHeight/scale):BASE_HEIGHT;
+ const scale=phone?Math.min((panel.clientWidth-30)/width,maxHeight/780):Math.min(viewport.clientWidth/width,maxHeight/BASE_HEIGHT);
+ const height=phone?780:BASE_HEIGHT;
  frame.width=width;frame.height=height;
  frame.style.width=width+'px';frame.style.height=height+'px';
  canvas.style.width=width*scale+'px';canvas.style.height=height*scale+'px';
  frame.style.transform='scale('+scale+')';
  viewport.style.height=(height*scale+(phone?28:0))+'px';
  viewport.classList.toggle('is-phone',phone);
+ windowEl.style.setProperty('--phone-width',width*scale+30+'px');
+ windowEl.classList.toggle('is-phone',phone);
  deviceButtons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.device===device)));
 }
 function select(id,send=true,focus=false){
@@ -36,7 +38,7 @@ function select(id,send=true,focus=false){
  document.querySelector('#example-description').textContent=entry.description;
  document.querySelector('#example-instruction').textContent=entry.instruction;
  frame.title=entry.client+' - интерактивный пример: '+entry.name;
- if(send)frame.src='./previews/'+sources[id];
+ if(send)frame.src='./previews/'+sources[id].replace('index.html','index.html?v=phone-frame-2');
  viewport.scrollTop=0;viewport.scrollLeft=0;resize();
 }
 tabs.forEach((tab,index)=>{
