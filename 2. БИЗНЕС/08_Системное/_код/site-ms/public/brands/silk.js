@@ -96,13 +96,17 @@
       resize();
       gl.uniform1f(uT,acc);
       var target=document.documentElement.dataset.theme==='light'?1:0;
-      themeMix=still?target:themeMix+(target-themeMix)*(1-Math.exp(-dt/0.24));
+      themeMix=(still||document.documentElement.classList.contains('theme-changing'))?target:themeMix+(target-themeMix)*(1-Math.exp(-dt/0.24));
       if(Math.abs(target-themeMix)<0.001) themeMix=target;
       gl.uniform1f(uLight,themeMix);
       gl.drawArrays(gl.TRIANGLES,0,3);
       cv.classList.add('ready');
       raf=still?null:requestAnimationFrame(frame);
     }
+    document.addEventListener('msp-theme-snapshot',function(){
+      themeMix=document.documentElement.dataset.theme==='light'?1:0;
+      gl.uniform1f(uLight,themeMix);gl.drawArrays(gl.TRIANGLES,0,3);
+    });
     raf=requestAnimationFrame(frame);
     new MutationObserver(function(){if(still && raf===null) raf=requestAnimationFrame(frame);}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
     document.addEventListener('visibilitychange',function(){

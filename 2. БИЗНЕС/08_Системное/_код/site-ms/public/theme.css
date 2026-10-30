@@ -40,3 +40,16 @@ body,.nav,.stage,.theme-pill{transition:background-color .8s ease,border-color .
 @media print{.theme-pill{display:none}html[data-theme="light"] body{background:#fff;background-image:none}}
 
 html:not([data-theme="light"]) img[src*="logo-mark-textured.svg"]{content:url("/assets/logo-mark-satin-dark.svg?v=wine-satin-1");filter:none}
+
+/* Theme changes blend complete frames, keeping text and button fills in sync. */
+html.theme-changing *,html.theme-changing *::before,html.theme-changing *::after{transition:none!important}
+::view-transition-old(root){animation:none;mix-blend-mode:normal}
+::view-transition-new(root){animation:theme-reveal .5s cubic-bezier(.22,.61,.36,1) both;mix-blend-mode:normal}
+@keyframes theme-reveal{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){::view-transition-group(root),::view-transition-old(root),::view-transition-new(root){animation:none!important}}
+
+html.theme-fading *,html.theme-fading *::before,html.theme-fading *::after{
+ transition-property:color,background-color,border-color,box-shadow,fill,stroke!important;
+ transition-duration:.5s!important;transition-timing-function:ease!important;
+}
+@media(prefers-reduced-motion:reduce){html.theme-fading *,html.theme-fading *::before,html.theme-fading *::after{transition:none!important}}

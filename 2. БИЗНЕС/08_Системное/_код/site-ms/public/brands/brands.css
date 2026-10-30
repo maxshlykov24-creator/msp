@@ -90,3 +90,5 @@ html[data-theme="light"] .about-wash .silk.ready{opacity:.65}
 
 .about-wash{mask-image:linear-gradient(transparent,#000 22%,#000 75%,transparent),linear-gradient(90deg,#000 25%,#0006 58%,#0003);mask-composite:intersect;-webkit-mask-image:linear-gradient(transparent,#000 22%,#000 75%,transparent),linear-gradient(90deg,#000 25%,#0006 58%,#0003);-webkit-mask-composite:source-in}
 html[data-theme="light"] .about-wash .silk.ready{opacity:.45}
+
+.button{transition:background-color .5s ease,color .5s ease,border-color .5s ease,box-shadow .5s ease,transform .25s ease}

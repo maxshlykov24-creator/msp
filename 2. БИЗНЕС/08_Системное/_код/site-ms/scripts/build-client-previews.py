@@ -11,7 +11,9 @@ adapters=site/'demo-adapters'
 guard=(adapters/'guard.js').read_text()
 csp="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'"
 def prepare(html,extra=''):
-    # All executable code remains original, except the data API and origin isolation.
+    # Presentation stays anonymous; client source files are never changed.
+    html=re.sub(r'<link[^>]+rel="(?:icon|apple-touch-icon)"[^>]*>', '', html)
+    html=re.sub(r'<title>.*?</title>', '<title>Демонстрационный интерфейс бренда</title>', html, count=1)
     if '<head>' not in html:
         html=re.sub(r'(<html[^>]*>)',r'\1<head>',html,count=1)
     return html.replace('<head>','<head><meta http-equiv="Content-Security-Policy" content="'+csp+'"><script>'+guard+extra+'</script>',1)

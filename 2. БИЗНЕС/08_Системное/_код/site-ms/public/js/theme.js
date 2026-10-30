@@ -6,13 +6,42 @@
   try { if (localStorage.getItem(key) === 'light') theme = 'light'; } catch (_) {}
   root.dataset.theme = theme;
 
-  function apply(next) {
+  var activeTransition = null;
+  var fadeTimer = null;
+  function setTheme(next) {
     root.dataset.theme = next;
     try { localStorage.setItem(key, next); } catch (_) {}
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.content = next === 'light' ? '#faf9f6' : '#130b10';
     document.querySelectorAll('.theme-pill button').forEach(function (button) {
       button.setAttribute('aria-pressed', String(button.dataset.themeChoice === next));
+    });
+  }
+
+  function apply(next, animate) {
+    if (!animate || root.dataset.theme === next) { setTheme(next); return; }
+    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { setTheme(next); return; }
+    if (!document.startViewTransition) {
+      clearTimeout(fadeTimer);
+      root.classList.add('theme-fading');
+      setTheme(next);
+      fadeTimer = setTimeout(function () { root.classList.remove('theme-fading'); }, 600);
+      return;
+    }
+    if (activeTransition) activeTransition.skipTransition();
+    root.classList.add('theme-changing');
+    var transition = document.startViewTransition(function () {
+      setTheme(next);
+      // Render the matching canvas palette synchronously before capture.
+      document.dispatchEvent(new Event('msp-theme-snapshot'));
+    });
+    activeTransition = transition;
+    transition.finished.catch(function () {}).finally(function () {
+      if (activeTransition === transition) {
+        activeTransition = null;
+        root.classList.remove('theme-changing');
+      }
     });
   }
 
@@ -27,7 +56,7 @@
       '<button type="button" data-theme-choice="dark" aria-label="Тёмная тема"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/></svg></button>';
     pill.addEventListener('click', function (event) {
       var button = event.target.closest('button[data-theme-choice]');
-      if (button) apply(button.dataset.themeChoice);
+      if (button) apply(button.dataset.themeChoice, true);
     });
     var anchor = nav.querySelector('.nav-cta, .nav-back');
     if (anchor) anchor.parentNode.insertBefore(pill, anchor);
