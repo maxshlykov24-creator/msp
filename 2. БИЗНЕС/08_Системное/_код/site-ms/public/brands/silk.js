@@ -8,7 +8,7 @@
     var VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
     var FS=[
       'precision highp float;',
-      'uniform vec2 u_res;uniform float u_t;uniform float u_light;uniform sampler2D u_texture;',
+      'uniform vec2 u_res;uniform float u_t;uniform float u_light;',
       'vec2 h2(vec2 p){p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3)));',
       '  return -1.+2.*fract(sin(p)*43758.5453123);}',
       'float nz(vec2 p){const float K1=0.366025404;const float K2=0.211324865;',
@@ -44,18 +44,15 @@
       /* узкая световая жилка по гребню — не плоское пятно */
       '  float ridge=smoothstep(0.78,0.90,band)*(1.-smoothstep(0.90,1.02,band));',
       '  col+=vec3(1.0)*ridge*0.22;',
-      /* Те же деформации, что формируют складки, двигают и фактуру материала. */
-      '  float detail=texture2D(u_texture,cloth*vec2(2.4,1.2)).r-0.5;',
       '  vec3 lightBase=vec3(0.976,0.964,0.956);',
       '  vec3 lightFold=vec3(0.69,0.48,0.55);',
       '  float shade=smoothstep(0.12,0.88,band);',
-      '  vec3 lightCol=mix(lightBase,lightFold,0.12+0.26*shade);',
+      '  vec3 lightCol=mix(lightBase,lightFold,0.14+0.34*shade);',
       '  lightCol+=vec3(0.09,0.08,0.08)*ridge;',
-      /* виньетка и фактура */
+      /* Мягкая виньетка без мелкой движущейся фактуры. */
       '  float rad=length(vec2(p.x*0.8,p.y));',
       '  col*=mix(0.40,1.0,1.-smoothstep(0.2,1.35,rad));',
       '  col=mix(col,lightCol,u_light);',
-      '  col+=detail*mix(0.18,0.12,u_light);',
       '  gl_FragColor=vec4(col,1.0);}'
     ].join('\n');
 
@@ -78,27 +75,6 @@
     gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     var uRes=gl.getUniformLocation(pr,'u_res'), uT=gl.getUniformLocation(pr,'u_t');
     var uLight=gl.getUniformLocation(pr,'u_light');
-    var texture=gl.createTexture();
-    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([128,128,128,255]));
-    gl.uniform1i(gl.getUniformLocation(pr,'u_texture'),0);
-    var material=new Image();
-    material.onload=function(){
-      gl.bindTexture(gl.TEXTURE_2D,texture);
-      var tile=document.createElement('canvas');tile.width=1024;tile.height=512;
-      var ctx=tile.getContext('2d');
-      if(!ctx) return;
-      ctx.drawImage(material,0,0,tile.width,tile.height);
-      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,tile);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      if(still && raf===null) raf=requestAnimationFrame(frame);
-    };
-    material.src='/assets/brand-texture.webp?v=20261028-2';
-
     /* рендерим в пониженном разрешении — шёлк гладкий, апскейл незаметен */
     var SCALE=Math.min(window.devicePixelRatio||1,1.5)*0.9;
     function resize(){

@@ -47,6 +47,5 @@ tabs.forEach((tab,index)=>{
 });
 document.querySelectorAll('[data-example-link]').forEach(link=>link.addEventListener('click',()=>select(link.dataset.exampleLink)));
 deviceButtons.forEach(button=>button.addEventListener('click',()=>{device=button.dataset.device;viewport.scrollTop=0;viewport.scrollLeft=0;resize();}));
-document.querySelector('#demo-reset').addEventListener('click',()=>{frame.src='./previews/'+sources[selected].split('#')[0]+'?reset='+Date.now()+(sources[selected].includes('#')?'#'+sources[selected].split('#')[1]:'');viewport.scrollTop=0;viewport.scrollLeft=0;});
 new ResizeObserver(resize).observe(viewport);select(selected,false);
 })();
