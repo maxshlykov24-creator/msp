@@ -30,10 +30,4 @@ function update(){
 }
 addEventListener('scroll',()=>{if(!queued){queued=true;requestAnimationFrame(update);}},{passive:true});
 motion.addEventListener('change',update);
-const dialog=document.querySelector('#screen-dialog');
-let opener;
-document.querySelectorAll('.zoom-button,.screen-image').forEach(button=>button.addEventListener('click',()=>{opener=button;dialog.showModal();}));
-document.querySelector('.close-dialog').addEventListener('click',()=>dialog.close());
-dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
-dialog.addEventListener('close',()=>opener?.focus());
 })();
