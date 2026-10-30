@@ -1480,7 +1480,7 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
             if not order.get("buy") or not order.get("paid_date"):
                 continue
             item = {"id": doc["id"], "number": doc.get("name") or "", "kind": entity,
-                    "order_id": oid, "date": str(doc.get("moment") or "")[:10]}
+                    "order_id": oid, "date": str(doc.get("moment") or "")[:10], "demand_id": shipment_id}
             try:
                 # Currency conversion is not implicit in the dashboard's ruble totals.
                 rate = doc.get("rate") or {}
@@ -1779,7 +1779,11 @@ class DiscountPriceHistory:
                     if catalogue_sale_price(card) != catalogue_sale_price(parent):
                         raise ValueError('Отдельная цена модификации без подтверждённой истории')
                     parent_events = self.history('product', parent)
-                    if any(dt(e['moment']) > moment and e['diff'] for e in parent_events):
+                    proof = self.cache.get('inheritance/ui/' + aid, {})
+                    inherited_verified = (proof.get('variant_updated') == card.get('updated')
+                                          and proof.get('parent_id') == parent['id']
+                                          and proof.get('method') == 'blank_override_ui')
+                    if any(dt(e['moment']) > moment and e['diff'] for e in parent_events) and not inherited_verified:
                         raise ValueError('Наследование старой цены модификации не подтверждено')
                     self.reconstruct(kind, card, moment)
                     price = self.reconstruct('product', parent, moment)
