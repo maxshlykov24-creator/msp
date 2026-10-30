@@ -1385,9 +1385,9 @@ ORDER_MESSENGER_SOURCES = {
 
 
 def enrich_shipment_discounts(snap: dict, ms=None) -> None:
-    """Goods discounts against current catalogue or recorded gross, whichever is higher.
+    """Goods discounts against verified historical catalogue or recorded gross.
 
-    Read-only in MoySklad. Current catalogue comparison is explicitly requested.
+    Read-only in MoySklad; unverified catalogue prices are explicit gaps.
     Returns stay in their original payment cohort, irrespective of return date.
     """
     ms = ms or lib.MS()
@@ -1431,7 +1431,7 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                 positions = required_rows(ms, f"/entity/{entity}/{doc['id']}/positions")
             yield doc, positions
 
-    def parse_lines(doc, positions):
+    def parse_lines(doc, positions, price_at):
         lines, net = [], 0
         for p in positions:
             if any(p.get(k) is None for k in ("price", "quantity", "discount")):
@@ -1451,14 +1451,17 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
             if kind not in ("product", "variant", "bundle") or not aid:
                 raise ValueError("Не определён товар позиции")
             info = goods_info(aid, kind)
-            basis, basis_status = discount_basis(p, doc, info.get("catalogue_sale_price"))
+            catalogue, _, price_gap = discount_history(ms).resolve(kind, aid, price_at)
+            basis, basis_status = discount_basis(p, doc, catalogue)
+            if basis_status == "recorded_only" and not price_gap:
+                price_gap = "Валюта прайса не совпадает с документом"
             basis_int = money_int(Decimal(str(basis)) * 100)
             lines.append({**{k: info.get(k, "") for k in ("id", "name", "category", "size", "color")},
                           "qty": float(qty), "price_kopecks": float(price), "discount_percent": float(discount),
                           "discount_kopecks": basis_int - after, "recorded_discount_kopecks": gross - after,
                           "basis_price_kopecks": float(Decimal(basis_int) / qty) if qty else 0,
                           "effective_discount_percent": float(Decimal(basis_int - after) * 100 / basis_int) if basis_int else 0,
-                          "discount_basis": basis_status})
+                          "discount_basis": basis_status, "discount_gap": price_gap, "price_at": price_at})
         if abs(net - money_int(Decimal(str(doc.get("sum") or 0)))) > 1:
             raise ValueError("Сумма позиций не совпадает с документом")
         return lines
@@ -1470,7 +1473,7 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
             oid = original["order_id"] if original else mid(doc.get("customerOrder"))
             order = orders.get(oid)
             if entity == "demand":
-                shipments[doc["id"]] = {"order_id": oid, "lines": None}
+                shipments[doc["id"]] = {"order_id": oid, "lines": None, "moment": doc.get("moment")}
             if not order:
                 unlinked[entity] += 1
                 continue
@@ -1483,7 +1486,7 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                 rate = doc.get("rate") or {}
                 if rate.get("value") not in (None, 1, 1.0):
                     raise ValueError("Валютный документ требует проверки")
-                lines = parse_lines(doc, positions)
+                lines = parse_lines(doc, positions, original["moment"] if original else doc.get("moment"))
                 if entity == "salesreturn":
                     if not original or original["lines"] is None:
                         raise ValueError("Исходная отгрузка не прошла проверку")
@@ -1497,14 +1500,26 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                     for key, qty in requested.items():
                         if qty + returned_qty[(shipment_id, key)] > available[key]:
                             raise ValueError("Позиции возврата не совпадают с отгрузкой или превышают её")
-                    for key, qty in requested.items():
-                        returned_qty[(shipment_id, key)] += qty
+                    # Allocate original discount cumulatively: partial returns must never
+                    # create an extra kopeck or use a later catalogue price.
+                    original_discount = defaultdict(Decimal)
+                    for source_line in original["lines"]:
+                        key = (source_line["id"], source_line["price_kopecks"], source_line["discount_percent"])
+                        original_discount[key] += Decimal(str(source_line["discount_kopecks"]))
+                    for line in lines:
+                        key = (line["id"], line["price_kopecks"], line["discount_percent"])
+                        before_qty = returned_qty[(shipment_id, key)]
+                        after_qty = before_qty + Decimal(str(line["qty"]))
+                        if available[key]:
+                            line["discount_kopecks"] = (money_int(original_discount[key] * after_qty / available[key])
+                                                        - money_int(original_discount[key] * before_qty / available[key]))
+                        returned_qty[(shipment_id, key)] = after_qty
                 else:
                     shipments[doc["id"]]["lines"] = lines
                 documents.append({**item, "lines": lines})
             except ValueError as exc:
                 gaps.append({**item, "reason": str(exc)})
-    snap["shipment_discounts"] = {"policy": "current_catalogue", "status": "partial" if gaps else "ok", "documents": documents,
+    snap["shipment_discounts"] = {"policy": "historical_catalogue", "status": "partial" if gaps else "ok", "documents": documents,
                                   "gaps": gaps, "unlinked": dict(unlinked),
                                   "checked_at": datetime.now(TZ).isoformat(timespec="seconds")}
 
@@ -1585,6 +1600,169 @@ def catalogue_sale_price(*cards):
     return None
 
 
+class DiscountPriceHistory:
+    """Read-only, conservative catalogue reconstruction; never replace gaps with today's price."""
+    def __init__(self, ms):
+        self.ms = ms
+        self.path = Path(os.environ.get('DASHBOARD_PRICE_HISTORY_CACHE',
+                         Path(__file__).parent / 'price-history.local.json'))
+        try:
+            self.cache = json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            self.cache = {}
+        self.cards, self.histories, self.results = {}, {}, {}
+        self.history_failures = {}
+        self.dirty = 0
+
+    def save(self):
+        if not self.dirty:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix('.tmp')
+        tmp.write_text(json.dumps(self.cache, ensure_ascii=False, separators=(',', ':')))
+        os.chmod(tmp, 0o600)
+        tmp.replace(self.path)
+        self.dirty = 0
+
+    def card(self, kind, aid):
+        key = (kind, aid)
+        if key not in self.cards:
+            self.cards[key] = required_get(self.ms, f'/entity/{kind}/{aid}')
+        return self.cards[key]
+
+    def history(self, kind, card):
+        key = kind + '/' + card['id']
+        if key in self.history_failures:
+            raise ValueError(self.history_failures[key])
+        try:
+            return self._load_history(kind, card)
+        except (ValueError, RuntimeError) as exc:
+            self.history_failures[key] = str(exc)
+            raise
+
+    def _load_history(self, kind, card):
+        key = kind + '/' + card['id']
+        if key in self.histories:
+            return self.histories[key]
+        signature = json.dumps([card.get('updated'), card.get('salePrices'), card.get('product')], sort_keys=True)
+        cached = self.cache.get(key, {})
+        if cached.get('signature') == signature and time.time() - cached.get('checked', 0) < 86400:
+            events = cached['events']
+        else:
+            events, offset, size, seen = [], 0, None, set()
+            for _ in range(100):
+                code, body = self.ms.req(f'/entity/{key}/audit', {'limit': 1000, 'offset': offset})
+                if code != 200 or not isinstance(body.get('rows'), list):
+                    raise ValueError('История цены недоступна')
+                total = body.get('meta', {}).get('size')
+                if not isinstance(total, int) or (size is not None and total != size):
+                    raise ValueError('История изменилась во время чтения')
+                size = total
+                for e in body['rows']:
+                    ek = (mid(e.get('audit')), e.get('moment'), e.get('eventType'))
+                    if ek in seen or not dt(e.get('moment')):
+                        raise ValueError('Неполная или повторяющаяся история цены')
+                    seen.add(ek)
+                    diff = e.get('diff') or {}
+                    events.append({'moment': e['moment'], 'type': e.get('eventType'),
+                                   'diff': {k: v for k, v in diff.items()
+                                            if k in ('salePrices', 'Цена продажи', 'product')}})
+                offset += len(body['rows'])
+                if offset >= size:
+                    break
+                if not body['rows']:
+                    raise ValueError('История цены обрезана')
+            else:
+                raise ValueError('История цены слишком велика')
+            # Do not pair history with a card changed while it was being fetched.
+            fresh = required_get(self.ms, f'/entity/{key}')
+            if json.dumps([fresh.get('updated'), fresh.get('salePrices'), fresh.get('product')], sort_keys=True) != signature:
+                raise ValueError('Карточка изменилась во время проверки цены')
+            self.cache[key] = {'signature': signature, 'checked': time.time(), 'events': events}
+            self.dirty += 1
+            if self.dirty >= 20:
+                self.save()
+        self.histories[key] = events
+        return events
+
+    @staticmethod
+    def price_value(value):
+        # Audit money is in rubles; entity salePrices is in kopecks.
+        if not isinstance(value, list) or len(value) != 2:
+            raise ValueError('Неизвестный формат истории цены')
+        amount = Decimal(str(value[0])) * 100
+        currency = mid(value[1])
+        if not amount.is_finite() or amount < 0 or not currency:
+            raise ValueError('Не подтверждена валюта исторической цены')
+        return {'value': float(amount), 'currency': currency}
+
+    def reconstruct(self, kind, card, moment):
+        events = self.history(kind, card)
+        creates = [dt(e['moment']) for e in events if e['type'] == 'create']
+        if len(creates) != 1 or creates[0] > moment:
+            raise ValueError('Нет истории каталога на дату документа')
+        price = catalogue_sale_price(card)
+        if price is None:
+            raise ValueError('Цена продажи не задана однозначно')
+        for e in sorted(events, key=lambda e: e['moment'], reverse=True):
+            if dt(e['moment']) <= moment:
+                break
+            diff = e['diff']
+            changes = [diff[k] for k in ('salePrices', 'Цена продажи') if k in diff]
+            if len(changes) > 1:
+                raise ValueError('Неоднозначный тип цены в истории')
+            if changes:
+                change = changes[0]
+                if not isinstance(change, dict):
+                    raise ValueError('Неизвестный формат изменения цены')
+                new = self.price_value(change.get('newValue'))
+                old = self.price_value(change.get('oldValue'))
+                if new != price:
+                    raise ValueError('Цепочка изменений цены не сходится')
+                price = old
+        if price['value'] <= 0:
+            raise ValueError('На дату документа прайс не был задан')
+        return price
+
+    def resolve(self, kind, aid, moment_text):
+        key = (kind, aid, moment_text)
+        if key in self.results:
+            return self.results[key]
+        try:
+            moment = dt(moment_text)
+            if not moment or kind not in ('product', 'variant', 'bundle'):
+                raise ValueError('Не определена дата или тип товара')
+            card = self.card(kind, aid)
+            if kind == 'variant':
+                events = self.history(kind, card)
+                # API returns inherited parent prices without marking inheritance.
+                # Overrides/parent switches cannot safely be inferred from equal values.
+                if any(e['diff'] for e in events):
+                    raise ValueError('История отдельной цены модификации требует проверки')
+                parent = self.card('product', mid(card.get('product')))
+                if catalogue_sale_price(card) != catalogue_sale_price(parent):
+                    raise ValueError('Отдельная цена модификации без подтверждённой истории')
+                parent_events = self.history('product', parent)
+                if any(dt(e['moment']) > moment and e['diff'] for e in parent_events):
+                    raise ValueError('Наследование старой цены модификации не подтверждено')
+                # Both histories must cover the document date.
+                self.reconstruct(kind, card, moment)
+                price = self.reconstruct('product', parent, moment)
+            else:
+                price = self.reconstruct(kind, card, moment)
+            result = (price, 'historical_catalogue', '')
+        except (ValueError, RuntimeError) as exc:
+            result = (None, 'recorded_only', str(exc))
+        self.results[key] = result
+        return result
+
+
+def discount_history(ms):
+    if not hasattr(ms, '_discount_history'):
+        ms._discount_history = DiscountPriceHistory(ms)
+    return ms._discount_history
+
+
 def discount_basis(position, document, catalogue):
     """Catalogue prices include VAT. Never change document revenue or raw prices."""
     gross, net = position_totals(position, document)
@@ -1596,7 +1774,7 @@ def discount_basis(position, document, catalogue):
         amount = Decimal(str(catalogue["value"])) * Decimal(str(position.get("quantity") or 0))
         amount = amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         basis = max(basis, amount)
-        status = "current_catalogue"
+        status = "historical_catalogue"
     return float(basis / 100), status
 
 
@@ -1664,15 +1842,20 @@ def build_order(o, positions, ms, started, order_payments, agents, channels, ret
                 color = color_from_name(name)
             qty = float(x.get("quantity") or 0)
             gross, rev = position_totals(x, o)
-            catalogue = catalogue_sale_price(variant, product) if kind != "service" else None
+            catalogue, history_status, price_gap = (discount_history(ms).resolve(kind, aid, full_paid_stamp(closed) if closed else o.get("moment"))
+                                                     if kind != "service" else (None, "service", ""))
             basis, basis_status = discount_basis(x, o, catalogue)
+            if kind != "service" and basis_status == "recorded_only" and not price_gap:
+                price_gap = "Валюта прайса не совпадает с документом"
+            if price_gap:
+                gaps["Не подтверждена историческая цена продажи"].append(number)
             cost = rub((product.get("buyPrice") or {}).get("value")) * qty
             if rev > 0 and cost == 0 and not delivery_line:
                 gaps["Позиция без закупочной цены"].append(number)
             lines.append({"id": aid, "name": name, "category": product.get("pathName") or "не указано",
                           "size": size, "color": color, "qty": qty, "rev": rev,
                           "list": basis, "document_list": gross, "catalogue_sale_price": catalogue,
-                          "discount_basis": basis_status, "cost": round(cost, 2), "delivery": delivery_line})
+                          "discount_basis": basis_status, "discount_gap": price_gap, "price_at": full_paid_stamp(closed) if closed else o.get("moment"), "cost": round(cost, 2), "delivery": delivery_line})
     return {
         "number": number, "id": o["id"], "created": (dt(o.get("moment")) or started).date().isoformat(),
         "paid_date": closed.date().isoformat() if closed else None,
@@ -1896,10 +2079,13 @@ def main() -> None:
     # those by default; fetch both sets without reactivating existing cards.
     products = {p["id"]: p for archived in ("false", "true")
                 for p in required_rows(ms, "/entity/product", {"filter": f"archived={archived}"},
-                                       keep=("id", "name", "pathName", "buyPrice", "salePrices"))}
+                                       keep=("id", "updated", "name", "pathName", "buyPrice", "salePrices"))}
     variants = {v["id"]: v for archived in ("false", "true")
                 for v in required_rows(ms, "/entity/variant", {"filter": f"archived={archived}"},
-                                       keep=("id", "name", "product", "characteristics", "salePrices"))}
+                                       keep=("id", "updated", "name", "product", "characteristics", "salePrices"))}
+    history = discount_history(ms)
+    history.cards.update({("product", k): v for k, v in products.items()})
+    history.cards.update({("variant", k): v for k, v in variants.items()})
     services = {s["id"]: s for s in required_rows(ms, "/entity/service", keep=("id", "name"))}
     agents = {a["id"]: a for a in required_rows(ms, "/entity/counterparty",
                                                  keep=("id", "name", "phone"))}
@@ -2016,7 +2202,8 @@ def main() -> None:
     enrich_accounting(snap)
     enrich_order_sources(snap)
     print("Скидки на отгруженные товары: сверка документов", flush=True)
-    enrich_shipment_discounts(snap)
+    enrich_shipment_discounts(snap, ms)
+    discount_history(ms).save()
     try:
         if amo_status['status'] != 'ok':
             raise RuntimeError('amoCRM unavailable during this collection')
