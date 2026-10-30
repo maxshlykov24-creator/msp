@@ -96,6 +96,12 @@ def test_pdf_has_cyrillic_and_links():
  text="".join(p.extract_text() for p in reader.pages);assert "MB-4837-9261" in text and "Александр" in text
  urls=[a.get_object().get("/A",{}).get("/URI") for p in reader.pages for a in p.get("/Annots",[])]
  assert "https://t.me/Mansband_manager" in urls and "https://wa.me/79310090251" in urls
+ assert "₽" in text
+ assert tuple(map(float,reader.pages[0].mediabox[2:]))==(403.5,831.0)
+ fonts=[str(f.get_object()["/BaseFont"]) for f in reader.pages[0]["/Resources"]["/Font"].values()]
+ assert any("Montserrat-SemiBold" in f for f in fonts) and any("Montserrat-Regular" in f for f in fonts)
+ assert not any("DejaVu" in f for f in fonts)
+
 
 def test_long_greeting_not_truncated():
  greeting="Поздравление "*3000
