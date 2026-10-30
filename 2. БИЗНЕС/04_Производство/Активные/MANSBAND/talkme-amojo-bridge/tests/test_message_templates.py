@@ -369,3 +369,19 @@ def test_legacy_stage_missing_fields_does_not_expire_after_five_minutes(db,trans
     j=job(db,doc(db,rule(late_policy='legacy_stage',trigger={'type':'stage','repeat':'once'})))
     m.send(db,j,transport,later)
     assert j.state=='pending' and len(transport.posts)==1
+
+
+def test_new_overlap_after_check_requires_new_review(db):
+    from fastapi import HTTPException
+    c=CRM();d=doc(db);m.check(d.id,{'version':d.version},db,c)
+    other=rule(name='Добавленный после проверки').model_dump()
+    db.add(m.Document(id='new-overlap',kind='rule',draft=other,active=other));db.commit()
+    with pytest.raises(HTTPException) as exc:m.publish(d.id,m.Publish(version=d.version,actor='admin',overlaps_confirmed=True),db,c)
+    assert exc.value.status_code==409
+
+
+def test_expired_unattempted_date_can_be_rescheduled_by_publication(db):
+    c=CRM();d=doc(db);j=job(db,d);j.state='expired';db.commit()
+    d.draft={**d.draft,'trigger':{**d.draft['trigger'],'offset':2}};d.checked=m.digest([d.version,d.draft]);db.commit()
+    m.publish(d.id,m.Publish(version=d.version,actor='admin'),db,c)
+    assert j.state=='ready' and m.aware(j.due_at)==STAMP+timedelta(days=1)

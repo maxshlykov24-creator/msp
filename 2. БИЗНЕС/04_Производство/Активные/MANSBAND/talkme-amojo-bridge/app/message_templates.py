@@ -119,6 +119,8 @@ class Document(Base):
     draft: Mapped[dict] = mapped_column(JSON)
     active: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     checked: Mapped[str] = mapped_column(String(64), default="")
+    reviewed_overlaps: Mapped[list] = mapped_column(JSON, default=list)
+    reviewed_routing: Mapped[str] = mapped_column(String(64), default="")
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -778,12 +780,15 @@ def check_rule(db,c,d,lead_id=None):
         o=Rule(**other.active)
         if set(r.pipelines)&set(o.pipelines) and (not r.statuses or not o.statuses or set(r.statuses)&set(o.statuses)) and r.trigger.type==o.trigger.type:
             overlaps.append({"id":other.id,"name":o.name})
-    targets=[c.get(f"/api/v4/leads/{lead_id}",**{"with":"contacts"})] if lead_id else scan_leads(c,r)
+    targets=list(scan_leads(c,r))
+    if lead_id:
+        selected=c.get(f"/api/v4/leads/{int(lead_id)}",**{"with":"contacts"})
+        targets=[selected,*[x for x in targets if x["id"]!=selected["id"]]]
     rows=[];total=0
     for lead in targets:
         if not matches(lead,r):continue
         total+=1
-        if len(rows)>=100:continue
+        if len(rows)>=10:continue
         try:
             body=render(lead,r)
             plan,_=make_plan(db,c,lead,r,(db.get(Document,"routing").active or Routing().model_dump()))
@@ -792,7 +797,7 @@ def check_rule(db,c,d,lead_id=None):
                 "channels":[p["transport"] for p in plan if p["recipient"]],
                 "reason":"Время уже прошло" if due and due<now() else "Только новый переход" if not due else ""})
         except ValueError as exc:rows.append({"lead_id":lead["id"],"reason":str(exc)})
-    return {"total":total,"samples":rows,"overlaps":overlaps,"sample_limit":100}
+    return {"total":total,"samples":rows,"overlaps":overlaps,"sample_limit":10}
 
 
 @router.post("/check/{id}")
@@ -807,7 +812,10 @@ def check(id:str,body:dict,db=Depends(session),c=Depends(client)):
                 remote=c.get(f"/api/v4/chats/templates/{d.draft['remote_id']}")
                 if remote_digest(remote)!=d.draft["source_hash"]:raise HTTPException(409,"Шаблон изменился в amoCRM")
             result={"name":d.draft["name"],"text":d.draft["content"],"delete":bool(d.draft.get("delete"))}
-        d.checked=digest([d.version,d.draft]);db.commit();return result
+        d.checked=digest([d.version,d.draft])
+        d.reviewed_overlaps=sorted([[x["id"],digest(document(db,x["id"]).active)] for x in result.get("overlaps",[])])
+        d.reviewed_routing=digest(document(db,"routing").active) if d.kind=="rule" else ""
+        db.commit();return result
     except ValueError as exc:raise HTTPException(422,str(exc))
 
 
@@ -863,6 +871,10 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
                          if x.active and x.active.get("enabled") and set(x.active["pipelines"])&set(r.pipelines)
                          and (not r.statuses or not x.active["statuses"] or set(x.active["statuses"])&set(r.statuses))
                          and x.active["trigger"]["type"]==r.trigger.type]
+            if r.enabled and sorted([[x.id,digest(x.active)] for x in overlapping]) != (d.reviewed_overlaps or []):
+                raise HTTPException(409,"Другие сценарии изменились. Повтори проверку пересечений")
+            if r.enabled and d.reviewed_routing and d.reviewed_routing!=digest(document(db,"routing").active):
+                raise HTTPException(409,"Порядок каналов изменился. Повтори проверку")
             if r.enabled and overlapping and not body.overlaps_confirmed:raise HTTPException(409,"Подтверди пересечение сценариев")
         elif d.kind=="manual":
             result=publish_manual(db,c,d,body)
@@ -873,7 +885,7 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
         d.active=dict(d.draft);d.published_at=now();d.published_version=d.version;d.checked=""
         audit(db,d,body.actor,"published",{"document":d.active,**result})
         if d.kind in ("rule","routing"):
-            for j in db.scalars(select(Job).where(Job.state.in_(["ready","blocked"]))):
+            for j in db.scalars(select(Job).where(Job.state.in_(["ready","blocked","cancelled","expired","failed"] if d.kind=="rule" else ["ready","blocked"]))):
                 if d.kind=="rule" and j.rule_id!=d.id:continue
                 if db.scalar(select(Attempt.id).where(Attempt.job_id==j.id,Attempt.state!="skipped").limit(1)) is None:
                     # Skipped channels made no outbound requests; safe to re-plan.
@@ -884,10 +896,12 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
                         j.state,j.reason="cancelled","disabled"
                         continue
                     if d.kind=="rule":
+                        if d.active["trigger"]["type"]=="stage" and j.state not in ("ready","blocked"):continue
                         lead=c.get(f"/api/v4/leads/{j.lead_id}",**{"with":"contacts"})
                         published=Rule(**d.active)
                         try:
                             if not matches(lead,published):raise ValueError("conditions_changed")
+                            j.state,j.reason="ready",""
                             if published.trigger.type=="date":
                                 from app.stage_notifications import calendar_date
                                 if str(calendar_date(lead,published.trigger.field))!=j.occurrence:raise ValueError("date_changed")

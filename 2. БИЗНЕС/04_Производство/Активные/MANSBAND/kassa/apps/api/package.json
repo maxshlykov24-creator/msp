@@ -12,7 +12,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/seed.ts",
     "seed:team": "tsx src/seedTeam.ts",
-    "lint": "echo 'no lint for api'"
+    "lint": "echo 'no lint for api'",
+    "test": "node --import tsx scripts/check-message-template-access.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
