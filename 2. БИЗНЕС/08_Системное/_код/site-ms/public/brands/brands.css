@@ -87,3 +87,6 @@ html[data-theme="light"] .flow-main{background:radial-gradient(ellipse at 50% 40
 html[data-theme="light"] .about-wash{background:#ead9e214}
 html[data-theme="light"] .about-wash .silk.ready{opacity:.65}
 @media(max-width:767px){.about-wash{inset:55px -18px -25px}}
+
+.about-wash{mask-image:linear-gradient(transparent,#000 22%,#000 75%,transparent),linear-gradient(90deg,#000 25%,#0006 58%,#0003);mask-composite:intersect;-webkit-mask-image:linear-gradient(transparent,#000 22%,#000 75%,transparent),linear-gradient(90deg,#000 25%,#0006 58%,#0003);-webkit-mask-composite:source-in}
+html[data-theme="light"] .about-wash .silk.ready{opacity:.45}

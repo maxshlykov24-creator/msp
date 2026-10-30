@@ -80,8 +80,11 @@ def data_for(c,lead):
  except (ValueError,OverflowError,OSError):raise ValueError("Не заполнена дата начала")
  until=anniversary(start)
  if until<m.now().astimezone(MSK).date():raise ValueError("Сертификат просрочен")
- amount=lead.get("price")
- if not isinstance(amount,(int,float)) or isinstance(amount,bool) or amount<=0:raise ValueError("Нет номинала")
+ import math
+ raw_amount=field_value(lead,3830333)
+ try:amount=float(raw_amount)
+ except (TypeError,ValueError):raise ValueError("Заполните поле «Номинал» положительной суммой")
+ if not math.isfinite(amount) or amount<=0:raise ValueError("Заполните поле «Номинал» положительной суммой")
  return {"phone":phone,"buyer":name,"guest":field_value(lead,3185675),"greeting":field_value(lead,3830305),"number":field_value(lead,3135463),"nominal":amount,"start":start.strftime("%d.%m.%Y"),"until":until.strftime("%d.%m.%Y"),"start_iso":start.isoformat()}
 
 def rendered(rule,data):
@@ -178,6 +181,7 @@ def process(db,c,job,stamp,issuer=issue):
     if not doc.active["enabled"]:return
     fresh=data_for(c,c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"}))
     if fresh["phone"]!=snap["data"]["phone"]:raise ValueError("Получатель изменился перед отправкой")
+    if fresh["nominal"]!=snap["data"]["nominal"]:raise ValueError("Номинал изменился перед отправкой; нужна сверка")
     if part=="text" and fresh!=snap["data"]:
      # Number/amount come from authoritative registry, compare the mutable source fields.
      if any(fresh[k]!=snap["data"][k] for k in ("buyer","guest","greeting","start","until")):raise ValueError("Данные изменились перед отправкой; нужна повторная проверка")

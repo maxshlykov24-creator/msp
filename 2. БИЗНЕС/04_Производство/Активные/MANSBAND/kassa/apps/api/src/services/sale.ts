@@ -13,6 +13,7 @@ import { withIdempotency } from "../lib/idempotency.js";
 import { toKopecks } from "../lib/money.js";
 import {
   AMO_LEAD_FIELDS,
+  AMO_CERTIFICATE_NOMINAL_FIELD_ID,
   AMO_PIPELINE_COMPLAINTS,
   AMO_PIPELINE_SALES,
   countSuitsInLines,
@@ -434,10 +435,10 @@ export async function issueCertificateIfNeeded(deal: Deal): Promise<void> {
   if (deal.kind !== "cert_plastic" && deal.kind !== "cert_digital") return;
   if (!CERT_ISSUE_STAGES.has(deal.stage)) return;
   let number = deal.certificateNumber?.trim();
-  // Номинал: явная строка «Сертификат №…» или total заявки.
+  // Номинал берём из строки сертификата, отдельно от бюджета заказа.
   const certLine = deal.items.find((i) => i.productId === "cert" || /^Сертификат\s*№/i.test(i.name));
-  const nominal = Math.max(0, certLine?.price ?? deal.total ?? 0);
-  if (nominal <= 0) return;
+  const nominal = certLine?.price ?? 0;
+  if (!Number.isFinite(nominal) || nominal <= 0) throw new Error("Не указан номинал сертификата");
 
   const buildCertificate = (certificateNumber: string) => ({
     number: certificateNumber,
@@ -455,6 +456,7 @@ export async function issueCertificateIfNeeded(deal: Deal): Promise<void> {
     if(!deal.amoLeadId)throw new Error("Для выпуска требуется сохранённая сделка amoCRM");
     const { ensureCertificate }=await import("./certificateRegistry.js");
     const cert=await ensureCertificate(`amo:32417154:${deal.amoLeadId}`,{...buildCertificate(number??""),validFrom:deal.receivedAt?.slice(0,10)},number);
+    if(cert.nominal!==nominal)throw new Error("Номинал отличается от выпущенного сертификата; нужна сверка");
     if(cert.buyerDealNumber && cert.buyerDealNumber!==deal.number)throw new Error("Сертификат уже связан с другой заявкой кассы");
     number=cert.number;deal.certificateNumber=number;
     deal.items=deal.items.map(item=>item===certLine?{...item,name:`Сертификат №${number}`}:item);
@@ -462,12 +464,14 @@ export async function issueCertificateIfNeeded(deal: Deal): Promise<void> {
     if (!number) throw new Error("Не указан номер пластикового сертификата");
     const { ensureCertificate }=await import("./certificateRegistry.js");
     const cert=await ensureCertificate(deal.amoLeadId?`amo:32417154:${deal.amoLeadId}`:`local:${deal.id}`,buildCertificate(number),number);
+    if(cert.nominal!==nominal)throw new Error("Номинал отличается от выпущенного сертификата; нужна сверка");
     number=cert.number;
   }
   if(deal.amoLeadId && number){
-    await amo.updateLead(deal.amoLeadId,{customFields:[{field_id:3135463,values:[{value:number}]}]});
+    await amo.updateLead(deal.amoLeadId,{customFields:[{field_id:3135463,values:[{value:number}]},{field_id:AMO_CERTIFICATE_NOMINAL_FIELD_ID,values:[{value:nominal}]}]});
     const fresh=await amo.getLead(deal.amoLeadId);
     if(fresh?.custom_fields_values?.find(f=>f.field_id===3135463)?.values?.[0]?.value!==number)throw new Error("Запись номера в CRM не подтверждена");
+    if(Number(fresh?.custom_fields_values?.find(f=>f.field_id===AMO_CERTIFICATE_NOMINAL_FIELD_ID)?.values?.[0]?.value)!==nominal)throw new Error("Запись номинала в CRM не подтверждена");
   }
   broadcast("certificate.updated", { number });
 }

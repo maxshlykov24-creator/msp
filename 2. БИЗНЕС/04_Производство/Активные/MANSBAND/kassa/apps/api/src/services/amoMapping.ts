@@ -1,5 +1,6 @@
 import {
   AMO_COMPANY_FIELDS,
+  AMO_CERTIFICATE_NOMINAL_FIELD_ID,
   AMO_LEAD_FIELDS,
   amoOtlozhka,
   dealDeepLink,
@@ -203,6 +204,12 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("guestName", deal.guestName);
   put("certificateNumber", deal.certificateNumber);
   if (deal.kind === "cert_digital" || deal.kind === "cert_plastic") {
+    const certLine = deal.items.find((item) => item.productId === "cert" || /^Сертификат\s*№/i.test(item.name));
+    // Номинал не равен бюджету заказа: в нём могут быть доставка, товары и скидка.
+    const nominal = certLine?.price;
+    if (typeof nominal === "number" && Number.isFinite(nominal) && nominal > 0) {
+      out.push({field_id: AMO_CERTIFICATE_NOMINAL_FIELD_ID, values: [{value: nominal}]});
+    }
     // Почтовый сервис читает поля сделки, а не email контакта.
     // Пустые значения не стирают данные, заполненные менеджером в amoCRM.
     if (deal.kind === "cert_digital") put("certificateEmail", deal.email?.trim());

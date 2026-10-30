@@ -23,7 +23,7 @@ def db(monkeypatch):
   yield db
 
 def lead():
- return {"id":1,"pipeline_id":9601214,"status_id":76675038,"price":15000,"_embedded":{"contacts":[{"id":10,"is_main":True}]},"custom_fields_values":[{"field_id":key,"values":[{"value":value}]} for key,value in [(3828225,True),(3829442,int(STAMP.timestamp())),(3830052,"79000000001"),(3135463,"MB-4837-9261"),(3185675,"Получатель"),(3830305,"С праздником!")]]}
+ return {"id":1,"pipeline_id":9601214,"status_id":76675038,"price":15000,"_embedded":{"contacts":[{"id":10,"is_main":True}]},"custom_fields_values":[{"field_id":key,"values":[{"value":value}]} for key,value in [(3830333,"15000"),(3828225,True),(3829442,int(STAMP.timestamp())),(3830052,"79000000001"),(3135463,"MB-4837-9261"),(3185675,"Получатель"),(3830305,"С праздником!")]]}
 class CRM:
  def __init__(self,replies):
   self.lead=lead();self.replies=list(replies);self.posts=[];self.wz=self
@@ -90,6 +90,18 @@ def test_preview_does_not_issue_or_send(db):
  c=CRM([]);doc=db.get(m.Document,g.RULE_ID);result=g.preview(db,c,doc,1)
  assert "Покупатель" in result["samples"][0]["text"] and not c.posts
 
+def test_nominal_comes_from_field_not_deal_budget():
+ c=CRM([]);c.lead["price"]=42000
+ assert g.data_for(c,c.lead)["nominal"]==15000
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "abc", "nan", "inf"])
+def test_invalid_nominal_blocks_sending_even_with_budget(value):
+ c=CRM([])
+ for field in c.lead["custom_fields_values"]:
+  if field["field_id"]==3830333:field["values"][0]["value"]=value
+ with pytest.raises(ValueError,match="Номинал"):g.data_for(c,c.lead)
+
+
 def test_pdf_has_cyrillic_and_links():
  data={"guest":"Александр","number":"MB-4837-9261","nominal":15000,"start":"01.11.2026","until":"01.11.2027","greeting":"Поздравляем!"}
  reader=PdfReader(BytesIO(render_pdf(data)));assert len(reader.pages)==1
@@ -135,6 +147,16 @@ def test_disabling_after_text_stops_pdf(monkeypatch,db):
  def post(path,json):
   response=original(path,json);doc=db.get(m.Document,g.RULE_ID);doc.active={**doc.active,"enabled":False};db.commit();return response
  c.post=post;g.process(db,c,j,STAMP,issuer);assert len(c.posts)==1
+
+
+def test_nominal_change_after_text_stops_pdf(monkeypatch,db):
+ c=CRM([(201,{"messageId":"text"})]);j=prepare(monkeypatch,db,c);original=c.post
+ def post(path,json):
+  response=original(path,json)
+  for field in c.lead["custom_fields_values"]:
+   if field["field_id"]==3830333:field["values"][0]["value"]="20000"
+  return response
+ c.post=post;g.process(db,c,j,STAMP,issuer);assert len(c.posts)==1 and j.state=="partial"
 
 
 def test_recipient_change_after_text_stops_pdf(monkeypatch,db):

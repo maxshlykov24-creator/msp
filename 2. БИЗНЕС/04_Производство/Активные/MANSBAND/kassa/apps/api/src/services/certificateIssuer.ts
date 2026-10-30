@@ -1,7 +1,7 @@
 import * as amo from "../clients/amo.js";
 import {getByAmoLeadId} from "./deals.js";
 import {ensureCertificate,reserveNumber} from "./certificateRegistry.js";
-import {moscowTodayYmd} from "@kassa/shared";
+import {moscowTodayYmd,AMO_CERTIFICATE_NOMINAL_FIELD_ID} from "@kassa/shared";
 import {db} from "../db/index.js";
 import {sql} from "drizzle-orm";
 
@@ -21,7 +21,11 @@ export async function issueFromAmo(id:number) {
  const raw=Number(field(3829442)[0]);if(!Number.isFinite(raw)||raw<=0)throw new Error("Нет даты начала сертификата");
  const start=new Date(raw*1000+3*3600000).toISOString().slice(0,10);const until=anniversary(start);
  const certLine=local?.items.find(x=>x.productId==="cert"||/^Сертификат\s*№/i.test(x.name));
- const nominal=certLine?.price??lead.price;if(!Number.isFinite(nominal)||nominal<=0)throw new Error("Не определён номинал");
+ const values=field(AMO_CERTIFICATE_NOMINAL_FIELD_ID);
+ const rawNominal=values.length===1?values[0]:undefined;
+ const nominal=(typeof rawNominal==="string" && /^\d+(?:\.\d+)?$/.test(rawNominal.trim())) || typeof rawNominal==="number" ? Number(rawNominal) : NaN;
+ if(!Number.isFinite(nominal)||nominal<=0)throw new Error("Заполните поле «Номинал» положительной суммой");
+ if(certLine && certLine.price!==nominal)throw new Error("Номинал в amoCRM отличается от сертификата в кассе; нужна сверка");
  if(local && local.paid<local.total)throw new Error("Нет полной оплаты в кассе");
  const prior=reserved;
  const certificate=await ensureCertificate(`amo:32417154:${id}`,{number:prior,nominal,balance:nominal,status:"active",type:"digital",guestName:String(field(3185675)[0]??""),buyerDealNumber:local?.number,issuedAt:moscowTodayYmd(),validFrom:start,validUntil:until},prior);

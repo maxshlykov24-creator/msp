@@ -877,3 +877,6 @@ export const AMO_WRITEBACK_FIELDS = {
   msDemand: AMO_LEAD_FIELDS.msDemand,
   paymentStatus: AMO_LEAD_FIELDS.paymentStatus,
 } as const;
+
+// Поле сделки amoCRM «Номинал», numeric; проверено в живом справочнике.
+export const AMO_CERTIFICATE_NOMINAL_FIELD_ID = 3830333;
