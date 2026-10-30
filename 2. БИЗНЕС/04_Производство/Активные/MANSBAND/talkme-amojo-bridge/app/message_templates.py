@@ -312,6 +312,9 @@ def validate_catalog(r, cat):
         static=re.sub(r"{{[^{}]+}}","",body)
         if "{{" in static or "}}" in static:raise ValueError("Незакрытая переменная в тексте")
         for key in re.findall(r"{{\s*([^{}]+?)\s*}}", body):
+            if r.action=="certificate":
+                if key!="buyer.name":raise ValueError("Неизвестная переменная сертификата: "+key)
+                continue
             if key in ("lead.id", "lead.price"): continue
             m = re.fullmatch(r"lead\.(field|date)\.(\d+)", key)
             if not m or int(m[2]) not in fields: raise ValueError("Неизвестная переменная: " + key)

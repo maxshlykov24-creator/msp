@@ -175,3 +175,15 @@ def test_publication_replans_only_unattempted_gifts(db):
  gift=db.get(m.Document,g.RULE_ID);gift.draft={**gift.draft,"enabled":False};gift.checked=m.digest([gift.version,gift.draft]);db.commit()
  m.publish(g.RULE_ID,m.Publish(version=gift.version,actor="test"),db=db,c=CRM([]))
  assert pending.state=="cancelled" and started.snapshot=={"frozen":True}
+
+
+def test_gift_can_be_published_with_buyer_variable(db,monkeypatch):
+ cat={"fields":[{"id":3829442,"type":"date"},{"id":3830052,"type":"text"}],"pipelines":[{"id":9601214,"_embedded":{"statuses":[{"id":76675038}]}}]}
+ monkeypatch.setattr(m,"catalog",lambda c:cat)
+ d=db.get(m.Document,g.RULE_ID);d.draft={**d.draft,"enabled":True};d.checked=m.digest([d.version,d.draft]);db.commit()
+ result=m.publish(g.RULE_ID,m.Publish(version=d.version,actor="test"),db=db,c=CRM([]))
+ assert result["active"]["enabled"] and "{{buyer.name}}" in result["active"]["content"]
+ bad=m.Rule(**{**d.draft,"content":"{{lead.id}}"})
+ with pytest.raises(ValueError,match="переменная сертификата"):m.validate_catalog(bad,cat)
+ ordinary=m.Rule(**{**d.draft,"action":"text"})
+ with pytest.raises(ValueError,match="Неизвестная переменная"):m.validate_catalog(ordinary,cat)
