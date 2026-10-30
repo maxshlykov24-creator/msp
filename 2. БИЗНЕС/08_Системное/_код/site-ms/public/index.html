@@ -659,7 +659,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
     var VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
     var FS=[
       'precision highp float;',
-      'uniform vec2 u_res;uniform float u_t;uniform float u_light;uniform sampler2D u_texture;',
+      'uniform vec2 u_res;uniform float u_t;uniform float u_light;uniform float u_scale;uniform sampler2D u_texture;',
       'vec2 h2(vec2 p){p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3)));',
       '  return -1.+2.*fract(sin(p)*43758.5453123);}',
       'float nz(vec2 p){const float K1=0.366025404;const float K2=0.211324865;',
@@ -695,8 +695,9 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
       /* узкая световая жилка по гребню — не плоское пятно */
       '  float ridge=smoothstep(0.78,0.90,band)*(1.-smoothstep(0.90,1.02,band));',
       '  col+=vec3(1.0)*ridge*0.22;',
-      /* Те же деформации, что формируют складки, двигают и фактуру материала. */
-      '  float detail=texture2D(u_texture,cloth*vec2(2.4,1.2)).r-0.5;',
+      /* Фактура медленно смещается отдельно от крупных складок. */
+      '  vec2 texturePos=(gl_FragCoord.xy/u_scale+q*55.0+vec2(t*18.0,t*-12.0))/vec2(1200.0,600.0);',
+      '  float detail=texture2D(u_texture,texturePos).r-0.5;',
       '  vec3 lightBase=vec3(0.976,0.964,0.956);',
       '  vec3 lightFold=vec3(0.69,0.48,0.55);',
       '  float shade=smoothstep(0.12,0.88,band);',
@@ -728,7 +729,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     var uRes=gl.getUniformLocation(pr,'u_res'), uT=gl.getUniformLocation(pr,'u_t');
-    var uLight=gl.getUniformLocation(pr,'u_light');
+    var uLight=gl.getUniformLocation(pr,'u_light'), uScale=gl.getUniformLocation(pr,'u_scale');
     var texture=gl.createTexture();
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
@@ -757,6 +758,7 @@ h2.sec{font-size:clamp(28px,4vw,44px);font-weight:700;letter-spacing:-.03em;line
       var h=Math.max(1,Math.round(cv.clientHeight*SCALE));
       if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;gl.viewport(0,0,w,h);}
       gl.uniform2f(uRes,cv.width,cv.height);
+      gl.uniform1f(uScale,SCALE);
     }
     window.addEventListener('resize',resize);
 

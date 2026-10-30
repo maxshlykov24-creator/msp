@@ -39,6 +39,7 @@ tabs.forEach((tab,index)=>{
  tab.addEventListener('click',()=>select(tab.dataset.example));
  tab.addEventListener('keydown',event=>{let i;if(event.key==='ArrowRight')i=(index+1)%tabs.length;else if(event.key==='ArrowLeft')i=(index+tabs.length-1)%tabs.length;else if(event.key==='Home')i=0;else if(event.key==='End')i=tabs.length-1;else return;event.preventDefault();select(tabs[i].dataset.example,true,true);});
 });
+document.querySelectorAll('[data-example-link]').forEach(link=>link.addEventListener('click',()=>select(link.dataset.exampleLink)));
 scaleSelect.addEventListener('change',()=>{zoom=scaleSelect.value;resize();});
 enlarge.addEventListener('click',()=>{zoom=zoom==='fit'?(innerWidth<760?'0.75':'1'):'fit';scaleSelect.value=zoom;viewport.scrollLeft=0;resize();});
 document.querySelector('#demo-reset').addEventListener('click',()=>{if(ready)frame.contentWindow.postMessage({type:'msp-demo-init',id:selected},'*');viewport.scrollTop=0;viewport.scrollLeft=0;});
