@@ -38,7 +38,7 @@ function select(id,send=true,focus=false){
  document.querySelector('#example-description').textContent=entry.description;
  document.querySelector('#example-instruction').textContent=entry.instruction;
  frame.title=entry.client+' - интерактивный пример: '+entry.name;
- if(send)frame.src='./previews/'+sources[id].replace('index.html','index.html?v=phone-frame-2');
+ if(send)frame.src='./previews/'+sources[id].replace('index.html','index.html?v=mobile-shell-3');
  viewport.scrollTop=0;viewport.scrollLeft=0;resize();
 }
 tabs.forEach((tab,index)=>{

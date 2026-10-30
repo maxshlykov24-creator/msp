@@ -65,3 +65,9 @@ html[data-theme="light"]{--bg:#faf9f6;--ink:#321722;--muted:#705962;--line:rgba(
 html[data-theme="light"] .loyalty-case{background:var(--surface);border-color:var(--line)}
 html[data-theme="light"] .contact::before{background:radial-gradient(ellipse at 85% 65%,#dec0cd80,transparent 72%),linear-gradient(135deg,#f2e7ec,#eee0e7);border-color:#71304a18}
 @media(max-width:760px){.process::before{inset:40px -12px -18px;border-radius:20px}.contact::before{inset:42px -12px 20px;border-radius:20px}}
+
+/* Локальный тихий акцент экономики решения. */
+.economy{position:relative;isolation:isolate}
+.economy::before{content:"";position:absolute;inset:70px -28px 12px;z-index:-1;pointer-events:none;border-radius:24px;background:radial-gradient(ellipse at 80% 48%,#71304a26,transparent 73%);animation:none;transition:none}
+html[data-theme="light"] .economy::before{background:radial-gradient(ellipse at 80% 48%,#c99bae2e,transparent 73%)}
+@media(max-width:760px){.economy::before{inset:42px -12px 0;border-radius:18px}}

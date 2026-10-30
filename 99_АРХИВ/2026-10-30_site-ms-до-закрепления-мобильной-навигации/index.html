@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+  <head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'"><script>(function(){
+  for(const key of ['localStorage','sessionStorage']){
+    const values=new Map([['kassa.rail','1']]);
+    Object.defineProperty(window,key,{value:{getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,String(v)),removeItem:k=>values.delete(k),clear:()=>values.clear()},configurable:true});
+  }
+  function external(){
+    let el=document.getElementById('preview-notice');
+    if(!el){el=document.createElement('div');el.id='preview-notice';el.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#171717;color:white;padding:18px 28px;border-radius:14px;z-index:999999;font:16px sans-serif;box-shadow:0 6px 30px #0004';document.body.append(el);}
+    el.textContent='Внешний документ скрыт в демо. Все изменения остаются в этом окне.';
+    setTimeout(()=>el.remove(),4000);
+  }
+  window.open=()=>{external();return null};
+  document.addEventListener('click',e=>{const a=e.target.closest('a');if(a&&/^(https?:|mailto:|tel:)/.test(a.getAttribute('href')||'')){e.preventDefault();e.stopImmediatePropagation();external()}},true);
+})();
+</script>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./logo-mansband.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>MANSBAND · Касса</title>
+    <script defer src="./assets/index-CoKdYeqT.js"></script>
+    <link rel="stylesheet"  href="./assets/style-Dhyrb0zx.css">
+  <style id="preview-mobile-nav">@media(max-width:767px){nav.kassa-chrome{position:fixed!important;bottom:0;left:0;right:0;z-index:40}main{padding-bottom:96px!important}}</style></head>
+  <body>
+    <script>
+      try {
+        if (localStorage.getItem("kassa.theme") === "light") {
+          document.documentElement.classList.add("theme-light");
+          document.body.classList.add("theme-light");
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", "#ededed");
+        }
+      } catch (e) {}
+    </script>
+    <div id="root"></div>
+  </body>
+</html>
