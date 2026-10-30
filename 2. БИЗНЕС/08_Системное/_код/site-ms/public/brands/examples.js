@@ -3,19 +3,20 @@
 const entries={
  'mans-orders':{client:'MANSBAND',name:'Заявки и касса',heading:'Заказ, товар и оплата в одном месте',description:'Рабочее место консультанта связывает заявки amoCRM с товарами и документами МоегоСклада. Продажи, отложки и аренда собраны в одном интерфейсе.',instruction:'Выберите Отложка, отфильтруйте магазин и откройте заявку. Внутри можно посмотреть состав и учесть оплату.'},
  '2my-analytics':{client:'2MY',name:'Аналитика продаж',heading:'Разобраться в продажах без сборки отчётов вручную',description:'Панель на данных МоегоСклада и amoCRM. Продажи, каналы, товары и клиентская база доступны через общие фильтры.',instruction:'Выберите категорию и канал сбыта: суммы и график пересчитаются. Переключитесь на Товары или Клиенты и откройте строку.'},
- 'marta-loyalty':{client:'МАРТАче',name:'Программа лояльности',heading:'Бонусная программа внутри МоегоСклада',description:'Бонусные поля заказа связаны с балансом покупателя. Сервис учитывает списания, ожидающие активации начисления и возвраты.',instruction:'Используйте доступные бонусы и нажмите Применить. Затем выберите Доставлен или Возврат и посмотрите баланс и историю операций.'},
  'mans-messages':{client:'MANSBAND',name:'Автоматические сообщения',heading:'Правила общения управляются из кассы',description:'Редактор автоматических сценариев, ручные шаблоны и порядок каналов. Условия, текст и проверка сообщения собраны в одном рабочем разделе.',instruction:'Откройте сценарий, измените текст и нажмите Проверить. Во вкладке Порядок каналов можно поменять очерёдность мессенджеров.'},
  '2my-production':{client:'2MY',name:'Производство',heading:'Нормы, материалы и экономика изделия',description:'Интерфейс производства: каталог норм, расход материалов, этапы работы и аналитика себестоимости. Можно разобрать изделие до размера и состава нормы.',instruction:'Найдите модель, откройте норму, выберите размер и измените расход. Во вкладке Аналитика раскройте остатки по размерам.'}
 };
 const frame=document.querySelector('#demo-frame'),viewport=document.querySelector('#demo-viewport'),canvas=document.querySelector('#demo-canvas'),tabs=[...document.querySelectorAll('[data-example]')],scaleSelect=document.querySelector('#demo-scale'),enlarge=document.querySelector('#demo-enlarge');
-let selected='mans-orders',zoom='fit',ready=false;
-const BASE_WIDTH=1280,BASE_HEIGHT=820;
+const sources={'mans-orders':'mansband/index.html#board/all/all','mans-messages':'mansband/index.html#message-templates','2my-analytics':'analytics/index.html','2my-production':'production/index.html'};
+let selected='mans-orders',zoom='fit';
+const BASE_WIDTH=1440,BASE_HEIGHT=900;
 function resize(){
- const fit=Math.min(0.86,viewport.clientWidth/BASE_WIDTH);
+ const maxHeight=Math.min(460,innerHeight*.5);
+ const fit=Math.min(viewport.clientWidth/BASE_WIDTH,maxHeight/BASE_HEIGHT);
  const scale=zoom==='fit'?fit:Number(zoom);
  canvas.style.width=BASE_WIDTH*scale+'px';canvas.style.height=BASE_HEIGHT*scale+'px';
  frame.style.transform='scale('+scale+')';
- viewport.style.height=(zoom==='fit'?BASE_HEIGHT*scale:Math.min(BASE_HEIGHT*scale,innerWidth<760?540:820))+'px';
+ viewport.style.height=(zoom==='fit'?BASE_HEIGHT*scale:maxHeight)+'px';
  viewport.classList.toggle('is-zoomed',zoom!=='fit');
  enlarge.setAttribute('aria-pressed',String(zoom!=='fit'));
  enlarge.innerHTML=zoom==='fit'?'Крупнее <span aria-hidden="true">↗</span>':'Общий вид <span aria-hidden="true">↙</span>';
@@ -32,7 +33,7 @@ function select(id,send=true,focus=false){
  document.querySelector('#example-description').textContent=entry.description;
  document.querySelector('#example-instruction').textContent=entry.instruction;
  frame.title=entry.client+' - интерактивный пример: '+entry.name;
- if(send&&ready)frame.contentWindow.postMessage({type:'msp-demo-init',id},'*');
+ if(send)frame.src='./previews/'+sources[id];
  viewport.scrollTop=0;viewport.scrollLeft=0;resize();
 }
 tabs.forEach((tab,index)=>{
@@ -42,11 +43,6 @@ tabs.forEach((tab,index)=>{
 document.querySelectorAll('[data-example-link]').forEach(link=>link.addEventListener('click',()=>select(link.dataset.exampleLink)));
 scaleSelect.addEventListener('change',()=>{zoom=scaleSelect.value;resize();});
 enlarge.addEventListener('click',()=>{zoom=zoom==='fit'?(innerWidth<760?'0.75':'1'):'fit';scaleSelect.value=zoom;viewport.scrollLeft=0;resize();});
-document.querySelector('#demo-reset').addEventListener('click',()=>{if(ready)frame.contentWindow.postMessage({type:'msp-demo-init',id:selected},'*');viewport.scrollTop=0;viewport.scrollLeft=0;});
-addEventListener('message',event=>{
- if(event.source!==frame.contentWindow||event.origin!=='null')return;
- if(event.data?.type==='msp-demo-ready'){ready=true;frame.contentWindow.postMessage({type:'msp-demo-init',id:selected},'*');}
- if(event.data?.type==='msp-demo-selected'&&entries[event.data.id])select(event.data.id,false);
-});
+document.querySelector('#demo-reset').addEventListener('click',()=>{frame.src='./previews/'+sources[selected].split('#')[0]+'?reset='+Date.now()+(sources[selected].includes('#')?'#'+sources[selected].split('#')[1]:'');viewport.scrollTop=0;viewport.scrollLeft=0;});
 new ResizeObserver(resize).observe(viewport);select(selected,false);
 })();
