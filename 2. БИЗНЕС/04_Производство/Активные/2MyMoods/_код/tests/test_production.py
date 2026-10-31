@@ -566,6 +566,71 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(len(self.ms.created), 2)
         self.e.process_order(chain['source']['purchaseOrder']['meta']['href'].split('/')[-1])
 
+    def test_chain_numbers_skip_existing_moysklad_production_losses(self):
+        loss = uid()
+        self.ms.docs['loss'][loss] = {'id': loss, 'name': 'СП-27-1'}
+        self.assertEqual(self.e.save_chain(uid(), {}), 28)
+
+    def test_completed_receipt_allows_shortage_without_faking_cost(self):
+        value, cfg = self.setup_direct()
+        self.ms.stock = {}
+        self.e.material_fifo_layers = lambda *args: []
+        self.ms.docs['supply'][value]['state'] = ref('supply/metadata/states', cfg['states']['supply']['Завершена'])
+        self.e.process_supply(value)
+        chain, _ = self.e.chain(value)
+        self.assertTrue(chain['complete'])
+        self.assertTrue(chain['allow_negative'])
+        self.assertIsNone(chain['cost_snapshot']['total'])
+        self.assertEqual(len(self.ms.created), 2)
+        comment = self.ms.docs['supply'][value]['description']
+        self.assertIn('минусовой остаток разрешён', comment)
+        self.assertIn('FIFO не рассчитана', comment)
+        self.e.process_supply(value)
+        self.assertEqual(len(self.ms.created), 2)
+        self.assertEqual(self.ms.docs['supply'][value]['description'], comment)
+
+    def test_force_does_not_bypass_changed_or_unposted_loss(self):
+        value, cfg = self.setup_direct()
+        self.ms.docs['supply'][value]['state'] = ref('supply/metadata/states', cfg['states']['supply']['Завершена'])
+        self.e.process_supply(value)
+        loss = self.ms.created[0][1]
+        self.ms.docs['loss'][loss['id']]['applicable'] = False
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.assertEqual(len(self.ms.created), 2)
+
+    def test_force_does_not_bypass_missing_material_price(self):
+        value, cfg = self.setup_direct()
+        self.ms.docs['supply'][value]['state'] = ref('supply/metadata/states', cfg['states']['supply']['Завершена'])
+        self.e.material_fifo_layers = lambda *args: [dict(self.fifo_layer(100, None), store=ref('store', f['store']))
+                                                     for f in cfg['factories']]
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.assertEqual(self.ms.created, [])
+
+    def test_stock_message_names_material_store_unit_and_shortage(self):
+        with self.e.db() as db:
+            db.execute('INSERT INTO catalogues VALUES(?,?,?)', ('assortment', 1, json.dumps([
+                {'id': self.material, 'name': 'Нить голубая', 'uom': {'name': 'г'}}])))
+            db.execute('INSERT INTO catalogues VALUES(?,?,?)', ('store', 1, json.dumps([
+                {'id': self.factory, 'name': 'Производство | Фабрика'}])))
+        self.ms.stock[self.material] = 2
+        problems = self.e.stock_shortages(self.factory, [{'assortment': ref('product', self.material), 'quantity': 5}])
+        self.assertEqual(problems, ['Нить голубая (Производство | Фабрика): нужно 5 г, есть 2 г, не хватает 3 г'])
+
+    def test_receipt_problem_comment_preserves_employee_text_no_duplicates(self):
+        value, _ = self.setup_direct()
+        self.ms.docs['supply'][value]['description'] = 'Комментарий сотрудника'
+        self.e.mark_chain_review('supply', value, 'Нить голубая: не хватает 3 г')
+        first = self.ms.docs['supply'][value]['description']
+        self.e.mark_chain_review('supply', value, 'Нить голубая: не хватает 3 г')
+        self.assertEqual(self.ms.docs['supply'][value]['description'], first)
+        self.assertIn('Комментарий сотрудника', first)
+        self.e.receipt_note(value, 'Нить голубая: не хватает 1 г')
+        self.assertNotIn('не хватает 3 г', self.ms.docs['supply'][value]['description'])
+        self.e.receipt_note(value)
+        self.assertEqual(self.ms.docs['supply'][value]['description'], 'Комментарий сотрудника')
+
     def test_direct_analytics_uses_each_factory_fifo(self):
         value, cfg = self.setup_direct()
         recipe = self.e.recipes()[0]

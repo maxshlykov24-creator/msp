@@ -42,6 +42,10 @@ class Review(Exception):
     """Остановить цепочку без угадывания и без потери уже выполненных шагов."""
 
 
+class StockShortage(Review):
+    """Недостаток остатков; только явная команда сотрудника разрешает списать в минус."""
+
+
 class Transient(Review):
     """Сеть/лимит API: повторить из журнала с задержкой."""
 
@@ -599,13 +603,29 @@ class Engine:
         return [r for r in rows if not needle or needle in ' '.join(str(r.get(k, '')) for k in
                 ('name', 'code', 'article')).casefold()]
 
-    def require_stock(self, store, positions):
+    def stock_shortages(self, store, positions):
         rows = self.ms.rows('/report/stock/all', filter='store=' + BASE + '/entity/store/' + store,
                             stockMode='all')
         stock = {r.get('id') or ident({'meta': r.get('meta', {})}): dec(r.get('stock', 0)) for r in rows}
+        catalogues = self.catalogue_snapshot().get('catalogues', {})
+        items = {x['id']: x for x in catalogues.get('assortment', [])}
+        stores = {x['id']: x for x in catalogues.get('store', [])}
+        label = stores.get(store, {}).get('name') or store
+        fmt = lambda q: format(q.normalize(), 'f').replace('.', ',')
+        problems = []
         for key, qty in quantities(positions).items():
-            if stock.get(key, Decimal(0)) < qty:
-                raise Review('Недостаточно материала/изделий на складе: ' + key)
+            available = stock.get(key, Decimal(0))
+            if available < qty:
+                item = items.get(key, {})
+                unit = item.get('uom', {}).get('name', '') if item.get('uom') else ''
+                problems.append(f'{item.get("name") or key} ({label}): нужно {fmt(qty)} {unit}, '
+                                f'есть {fmt(available)} {unit}, не хватает {fmt(qty - available)} {unit}')
+        return problems
+
+    def require_stock(self, store, positions):
+        problems = self.stock_shortages(store, positions)
+        if problems:
+            raise StockShortage('Не хватает материалов: ' + '; '.join(problems))
 
     @staticmethod
     def fifo_cost(layers, quantity, opening_balances=()):
@@ -613,7 +633,7 @@ class Engine:
         if need <= 0:
             raise Review('Не указана положительная норма материала')
         if any(dec(row.get('stock', 0)) < 0 for row in layers):
-            raise Review('Отрицательный остаток материала: FIFO не подтверждён')
+            raise StockShortage('Отрицательный остаток материала: FIFO не подтверждён')
         ordered = sorted(layers, key=lambda r: (r.get('moment', ''),
                          r.get('operation', {}).get('meta', {}).get('href', ''),
                          r.get('store', {}).get('meta', {}).get('href', '')))
@@ -634,7 +654,7 @@ class Engine:
             need -= amount
             if need == 0:
                 return total, used
-        raise Review('Недостаточно остатков материала для расчёта FIFO')
+        raise StockShortage('Недостаточно остатков материала для расчёта FIFO')
 
     def verified_opening_balances(self, layers, checked):
         # Only an explicitly registered and unchanged opening inventory can act
@@ -773,7 +793,7 @@ class Engine:
                  'stock': r.get('stock', 0), 'reserve': r.get('reserve', 0),
                  'price_kopecks': r.get('price'), 'unit': r.get('uom', {}).get('name', '')} for r in rows]
 
-    def execute(self, key, kind, payload, basis=None):
+    def execute(self, key, kind, payload, basis=None, allow_negative=False):
         """syncId + сохранённый payload обеспечивают восстановление после неопределённого ответа."""
         with self.db() as db:
             row = db.execute('SELECT * FROM operations WHERE key=?', (key,)).fetchone()
@@ -801,7 +821,10 @@ class Engine:
         if found:
             doc = found[0]
         else:
-            self.require_stock(ident(payload.get('sourceStore') or payload.get('store')), payload['positions'])
+            if allow_negative and (kind != 'loss' or '/direct/' not in key):
+                raise Review('Списание в минус разрешено только для материалов готовой приёмки')
+            if not allow_negative:
+                self.require_stock(ident(payload.get('sourceStore') or payload.get('store')), payload['positions'])
             if basis and kind == 'move':
                 template = self.ms.request('PUT', '/entity/move/new', {'supply': ref('supply', basis)})
                 if ident(template.get('supply')) != basis:
@@ -872,7 +895,7 @@ class Engine:
             key = ident(row.get('assortment'))
             recipe = index.get(key)
             if not recipe:
-                raise Review('Нет утверждённой нормы для изделия ' + key)
+                raise Review('Нет применённой нормы: ' + next((x['name'] for x in self.catalogue_snapshot().get('catalogues', {}).get('assortment', []) if x['id'] == key), key))
             first = factories.get(recipe['stages'][0]['factory'])
             if not first or first['agent'] != ident(doc.get('agent')):
                 raise Review('Изготовитель приёмки не совпал с маршрутом изделия')
@@ -891,10 +914,16 @@ class Engine:
         return (json.loads(row['body']), row['number']) if row else (None, None)
 
     def save_chain(self, value, body, number=None):
+        external_max = 0
+        if number is None:
+            for doc in self.ms.rows('/entity/loss', filter='name~=СП-'):
+                match = re.fullmatch(r'СП-(\d+)-\d+', doc.get('name', ''))
+                if match:
+                    external_max = max(external_max, int(match[1]))
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if number is None:
-                number = db.execute('SELECT COALESCE(MAX(number),0)+1 FROM chains').fetchone()[0]
+                number = max(external_max, db.execute('SELECT COALESCE(MAX(number),0) FROM chains').fetchone()[0]) + 1
             db.execute('INSERT OR REPLACE INTO chains VALUES(?,?,?)', (value, number, json.dumps(body)))
         return number
 
@@ -986,37 +1015,88 @@ class Engine:
                     entry['quantity'] = float(dec(entry['quantity']) + dec(mat['quantity']) * dec(line['quantity']))
         return [dict(group, positions=list(group['materials'].values())) for _, group in sorted(groups.items())]
 
-    def snapshot_direct_cost(self, chain, groups):
+    def snapshot_direct_cost(self, chain, groups, allow_negative=False):
         total, traces, checked, cached = Decimal(0), [], {}, {}
+        issues = []
+        problems = [problem for group in groups for problem in self.stock_shortages(group['store'], group['positions'])]
+        if problems and not allow_negative:
+            raise StockShortage('Не хватает материалов: ' + '; '.join(problems))
         for line in chain['lines']:
             for stage in line['recipe']['stages']:
                 total += dec(stage.get('work_cost', 0)) * dec(line['quantity'])
         for group in groups:
-            self.require_stock(group['store'], group['positions'])
             for material in group['positions']:
                 mid = ident(material['assortment'])
                 if mid not in cached:
                     cached[mid] = self.material_fifo_layers(mid, material['assortment']['meta']['type'], True)
                 layers = [r for r in cached[mid] if ident(r.get('store')) == group['store']]
                 allowed = self.verified_opening_balances(layers, checked)
-                cost, trace = self.fifo_cost(layers, material['quantity'], allowed)
+                try:
+                    cost, trace = self.fifo_cost(layers, material['quantity'], allowed)
+                except Review as exc:
+                    catalogues = self.catalogue_snapshot().get('catalogues', {})
+                    name = next((x['name'] for x in catalogues.get('assortment', []) if x['id'] == mid), mid)
+                    label = next((x['name'] for x in catalogues.get('store', []) if x['id'] == group['store']), group['store'])
+                    message = f'{name} ({label}): {exc}'
+                    if not allow_negative or not isinstance(exc, StockShortage):
+                        raise type(exc)(message) from exc
+                    issues.append(message)
+                    continue
                 total += cost
                 traces.append({'material': mid, 'store': group['store'], 'cost': float(cost), 'layers': trace})
-        return {'total': float(total), 'materials': traces, 'at': now()}
+        return {'total': None if issues else float(total), 'materials': traces, 'at': now(),
+                'issues': issues, 'stock_problems': problems}
+
+    def receipt_note(self, value, message=''):
+        # Replace only the exact text previously written by this integration.
+        key = 'receipt_note:' + value
+        with self.db() as db:
+            old = db.execute('SELECT value FROM kv WHERE key=?', (key,)).fetchone()
+        old = json.loads(old[0]) if old else ''
+        doc = self.ms.get('/entity/supply/' + value)
+        original = doc.get('description') or ''
+        text = original
+        if old and text == old:
+            text = ''
+        elif old and text.endswith('\n\n' + old):
+            text = text[:-len(old)-2]
+        elif old and old in text.split('\n'):
+            text = '\n'.join(line for line in text.split('\n') if line != old)
+        note = ('Производство: ' + str(message).replace('\n', ' ').strip()) if message else ''
+        if note:
+            room = 4096 - len(text) - (2 if text else 0)
+            if room < 40:
+                raise Review('В комментарии приёмки нет места для сообщения производства')
+            note = note[:min(room, 1800)]
+            text += ('\n\n' if text else '') + note
+        if text != original:
+            self.ms.request('PUT', '/entity/supply/' + value, {'description': text})
+        with self.db() as db:
+            db.execute('INSERT OR REPLACE INTO kv VALUES(?,?)', (key, json.dumps(note, ensure_ascii=False)))
 
     def process_direct_supply(self, value):
         chain, number = self.chain(value)
         current = self.ms.get('/entity/supply/' + value)
         positions = self.ms.positions('supply', value)
+        force = ident(current.get('state')) == self.config()['states']['supply']['Завершена']
         if chain:
             if chain.get('workflow') != 'finished_receipt':
                 raise Review('Приёмка уже обрабатывалась по прежней схеме; нужна отдельная сверка')
             if fingerprint(current, positions) != chain['fingerprint']:
                 raise Review('Приёмка изменена или распроведена после списания материалов')
             self.check_production_order(ident(current['purchaseOrder']), current)
+            if force and not chain.get('complete'):
+                chain['allow_negative'] = True
+                self.save_chain(value, chain, number)
         else:
             expected = self.config()['states']['supply']['Ожидает обработки']
-            if not current.get('applicable') or ident(current.get('state')) != expected:
+            if not current.get('applicable'):
+                return
+            if not (force or ident(current.get('state')) == expected):
+                if ident(current.get('state')) == self.config()['states']['supply']['Требует проверки']:
+                    plan = self.plan_supply(value)
+                    self.snapshot_direct_cost(plan, self.direct_material_groups(plan))
+                    self.receipt_note(value, 'Материалы проверены. Для обработки выбери «Ожидает обработки».')
                 return
             chain = self.plan_supply(value)
             groups = self.direct_material_groups(chain)
@@ -1027,8 +1107,8 @@ class Engine:
             if any(attrs.get(f['id']) for f in fields):
                 raise Review('В приёмке уже указаны списания; проверь перед автоматической обработкой')
             # All stores and FIFO prices must be confirmed before the first write.
-            cost = self.snapshot_direct_cost(chain, groups)
-            chain.update(workflow='finished_receipt', material_groups=groups,
+            cost = self.snapshot_direct_cost(chain, groups, allow_negative=force)
+            chain.update(allow_negative=force, workflow='finished_receipt', material_groups=groups,
                          link_fields=fields[:len(groups)], cost_snapshot=cost, losses={}, complete=False)
             number = self.save_chain(value, chain)
         cfg = self.config()
@@ -1049,7 +1129,8 @@ class Engine:
                                '; https://online.moysklad.ru/app/#supply/edit?id=' + value,
                 'attributes': [{'meta': {'href': BASE + '/entity/loss/metadata/attributes/' + cfg['reason_attribute'],
                                          'type': 'attributemetadata', 'mediaType': 'application/json'},
-                                'value': ref('customentity/' + cfg['reason_dictionary'], cfg['reason_production'])}]})
+                                'value': ref('customentity/' + cfg['reason_dictionary'], cfg['reason_production'])}]},
+                allow_negative=chain.get('allow_negative', False))
             chain['losses'][group['store']] = loss['id']
             self.save_chain(value, chain, number)
             expected_links.append({'meta': field['meta'],
@@ -1070,6 +1151,15 @@ class Engine:
             raise Review('Не удалось сохранить ссылки на списания в приёмке')
         for loss_id in chain['losses'].values():
             self.audit_generated('loss', loss_id, self.ms.get('/entity/loss/' + loss_id))
+        if chain.get('allow_negative'):
+            note = 'Списания выполнены по команде «Завершена», минусовой остаток разрешён.'
+            if chain['cost_snapshot'].get('stock_problems'):
+                note += ' ' + '; '.join(chain['cost_snapshot']['stock_problems']) + '.'
+            if chain['cost_snapshot'].get('total') is None:
+                note += ' Себестоимость по FIFO не рассчитана: нет подтверждённых остатков.'
+            self.receipt_note(value, note)
+        else:
+            self.receipt_note(value)
         self.set_state('supply', value, 'Завершена')
         chain['complete'] = True
         self.save_chain(value, chain, number)
@@ -1353,7 +1443,7 @@ class Engine:
         elif not left and complete:
             self.set_state('purchaseorder', value, 'Завершён')
 
-    def mark_chain_review(self, kind, value):
+    def mark_chain_review(self, kind, value, message=None):
         affected = {value} if kind == 'supply' and self.config().get('workflow') == 'finished_receipt' else set()
         for cid, _, chain in self.all_chains():
             if kind == 'loss' and value in chain.get('losses', {}).values():
@@ -1366,6 +1456,8 @@ class Engine:
         for cid in affected:
             try:
                 self.set_state('supply', cid, 'Требует проверки')
+                if message:
+                    self.receipt_note(cid, 'Требует проверки. ' + message)
             except Exception:
                 self.log('supply', cid, 'Не удалось установить статус Требует проверки; нужна сверка')
 
@@ -1410,7 +1502,7 @@ class Engine:
                                 time.time() + min(600, 15 * 2 ** row['attempts']), kind, value))
                 self.log(kind, value, message)
                 if not retry:
-                    self.mark_chain_review(kind, value)
+                    self.mark_chain_review(kind, value, message)
             return True
         finally:
             self.work_lock.release()
