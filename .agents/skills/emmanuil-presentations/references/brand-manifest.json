@@ -1,0 +1,53 @@
+{
+  "approved_by": "Максим, 01.11.2026, текущий чат",
+  "file_key": "8EH2K6A3EVAt1aND3D44E2",
+  "figma_url": "https://www.figma.com/design/8EH2K6A3EVAt1aND3D44E2/",
+  "source_nodes": {
+    "background": "8791:8898",
+    "background_frame_16_9": "8791:8897",
+    "reference_wide_frame": "8791:8901",
+    "logo_group": "8800:1614",
+    "word": "8800:1616",
+    "outer_mark": "8800:1627",
+    "inner_mark": "8800:1632",
+    "heading": "8800:2327",
+    "body": "8800:2325"
+  },
+  "background_pixels": [
+    1920,
+    1080
+  ],
+  "colors": {
+    "base": "#F4DFA4",
+    "text": "#3E4D23"
+  },
+  "font_families": [
+    "Playfair Display SemiBold",
+    "Playfair Display SemiBold Italic",
+    "Manrope Bold"
+  ],
+  "font_provenance": "Playfair и Manrope 400/600 извлечены из встроенных шрифтов прежнего конспекта; настоящий Manrope 700 получен из Google Fonts. Семейства, начертания и цвет сверены с Figma. Шрифтовые бинарники не выдавались Figma напрямую.",
+  "image_method": "Built-in ImageGen, exact scene prompts in illustrations.md",
+  "source_pdf": "/Users/max/CURSOR/_ВХОДЯЩЕЕ/новое/2026-10-31_Оксана_Пуршага_Конфликт_и_примирение/Конфликт_и_примирение.pdf",
+  "sha256": {
+    "assets/brand/background.png": "44186a1fdcf7cb503cdc9b5dbe585e59224f144bb39ebfe30185f2dfb7bd1b6d",
+    "assets/brand/mark-in.svg": "6ce28391b16b014fa53226d88af1fdda1526e9382a05fe301a86a60775a94589",
+    "assets/brand/mark.svg": "cef2a1cde09abf5a923c640a1aa2083372daf704474bc642cf86e4b9a99e3db0",
+    "assets/brand/word.svg": "ed8404b44bad9bf0ce531124db0eece2e2d0301c0bcbd60aebf2b722177a809b",
+    "assets/example.json": "1df1f6acc79e7eeca079b66165efa63aa3ada4a59c37f80ba64142d50e3120e6",
+    "assets/fonts/font-1.woff2": "95a493061fe0a8d0d027c2892747134ba747141112d3be4d5022e70ab7d3a1a6",
+    "assets/fonts/font-2.woff2": "e310b55a7fd9677f5e3555e6c6c4d064fa1f1d24393f0ddbe217cea12a8c432f",
+    "assets/fonts/font-3.woff2": "584696e36d8d4d54a2a10a420664b344daa5c99980b7eae925efc547a6c3d800",
+    "assets/fonts/font-4.woff2": "3308a003869d086a903e23666a6080399dab9e34964d073bfce8c85cc076c815",
+    "assets/fonts/font-5.woff2": "9b3dcefba3a108108ca229990e479181e8d30c2d85b18597c9bcfc5f205afd8b",
+    "assets/fonts/font-6.woff2": "9b70843ad2079a0738ec89773c6abb48f92d66554f0df6e8bc4474b6d1d5e4c4",
+    "assets/fonts/font-7.ttf": "ea1f264039fed13fd36e6d6f49fcae4fe7007def02cf2972b5c7f6d6f1349d06",
+    "assets/fonts.css": "dbed0821d8f2aca47046f4d0c6a1f75c72a5e37855a6f959dbec42ad155ac9d3",
+    "assets/illustrations/abigail.png": "dfb9cce4fa4f002db81a4199db8a9fd3aaf23680ffd6147c36b2bf606892b810",
+    "assets/illustrations/father.png": "70b73ed0c1207cb1c399bcb1568d406df565d2589c325f6151b100199b860cf5",
+    "assets/illustrations/preparations.png": "e1f16ffc329937c0c215e873570213e3c8e48926fcff9916a59b2cd00d40bd91",
+    "assets/illustrations/shepherds.png": "f811f59d496c0143f50619d4eeb3c4a1d06571a92025732ea386cc205e2a0719",
+    "assets/illustrations/wells.png": "2e566909ece45b110af643241f655e2c4c2a3c8790f692dc07933830f56df574",
+    "assets/theme.css": "edba5016ebd3f86324365b18399064626db9c4b2df52f120e34bcff154c32428"
+  }
+}

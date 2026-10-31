@@ -1,0 +1,4 @@
+interface:
+  display_name: "Презентации Эммануил"
+  short_description: "Слайды из исходников Figma с проверенным экспортом PDF"
+  default_prompt: "Используй $emmanuil-presentations, чтобы собрать презентацию из моих материалов в утверждённом стиле Эммануил."

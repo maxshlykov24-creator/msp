@@ -1,0 +1,19 @@
+{
+  "pages": 15,
+  "ratio": "16:9",
+  "complete_quotes": true,
+  "embedded_fonts": {
+    "/AAAAAA+Manrope-Bold": true,
+    "/BAAAAA+PlayfairDisplay-SemiBold": true,
+    "/CAAAAA+PlayfairDisplay-SemiBoldItalic": true,
+    "/DAAAAA+PlayfairDisplay-SemiBoldItalic": true,
+    "/EAAAAA+PlayfairDisplay-SemiBold": true
+  },
+  "rendered_pdf_pages": 15,
+  "visual_review": "passed: all 15 rendered PDF pages inspected; closing line break corrected",
+  "dynamic_three_slides": "passed",
+  "overflow": "rejected, no new PDF",
+  "missing_reference": "rejected",
+  "asset_hashes": "passed",
+  "weak_model_forward_test": "not performed; single-agent instruction"
+}
