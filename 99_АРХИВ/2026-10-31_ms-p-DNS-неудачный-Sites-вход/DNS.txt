@@ -1,0 +1,5 @@
+Причина снятия: Sites custom domain active/SSL active, но прямой HTTPS на оба edge IP возвращает Cloudflare 403 до Worker. Проверено с Mac и прежнего VPS.
+Timeweb record 89380351: A ms-p.ru 162.159.143.30 TTL300
+Timeweb record 95489459: A ms-p.ru 172.66.3.26 TTL300
+Timeweb record 95489481: CNAME www.ms-p.ru custom-domains.chatgpt.site TTL300
+Замена: существующий сервер 5.42.104.112 с изолированным nginx vhost. До DNS GET / и /yuji/ HTTP200, TLS verification0. Почта и TXT не меняются.
