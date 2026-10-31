@@ -994,13 +994,59 @@ class Engine:
             raise Review('Производственный номер без найденной цепочки')
         self.number_other('move', doc)
 
+    def redirected_manual_return(self, doc, outgoing):
+        """Recognize only the documented legacy scenario, never guess a destination."""
+        cfg = self.config()
+        operation_attr = cfg.get('operation_attributes', {}).get('move')
+        if not operation_attr or any(ident(a) == operation_attr and a.get('value')
+                                     for a in doc.get('attributes', [])):
+            return False
+        expected = ident(outgoing['sourceStore'])
+        recipient = [a for a in doc.get('attributes', []) if a.get('name') == 'Склад получатель']
+        if len(recipient) != 1 or ident(recipient[0].get('value')) != expected:
+            return False
+        history = self.ms.rows('/entity/move/' + doc['id'] + '/audit')
+        # Inspect the latest routing change. A later employee edit must never be undone.
+        for event in sorted(history, key=lambda x: x.get('moment', ''), reverse=True):
+            diff = event.get('diff', {})
+            if not any(k in diff for k in ('sourceStore', 'targetStore', 'organization')):
+                continue
+            change = diff.get('targetStore', {})
+            target = change.get('newValue', {})
+            return (event.get('source') == 'scriptor' and
+                    not any(k in diff for k in ('sourceStore', 'organization')) and
+                    ident(change.get('oldValue')) == expected and
+                    ident(target) == ident(doc.get('targetStore')) and target.get('name') == 'В пути' and
+                    ident(diff.get('Склад получатель', {}).get('newValue')) == expected)
+        return False
+
+    def restore_manual_return(self, doc, positions, outgoing):
+        current = self.ms.get('/entity/move/' + doc['id'])
+        if fingerprint(current, self.ms.positions('move', doc['id'])) != fingerprint(doc, positions):
+            raise Review('Возврат изменился во время проверки')
+        if not self.redirected_manual_return(current, outgoing):
+            raise Review('Не подтверждён сценарий изменения склада возврата')
+        cfg = self.config()
+        attr = {'meta': {'href': BASE + '/entity/move/metadata/attributes/' + cfg['operation_attributes']['move'],
+                         'type': 'attributemetadata', 'mediaType': 'application/json'},
+                'value': ref('customentity/' + cfg['operation_dictionary'], cfg['operation_values']['Возврат с доработки'])}
+        self.ms.request('PUT', '/entity/move/' + doc['id'],
+                        {'targetStore': outgoing['sourceStore'], 'attributes': [attr]})
+        time.sleep(2)
+        result = self.ms.get('/entity/move/' + doc['id'])
+        expected = dict(doc, targetStore=outgoing['sourceStore'])
+        if fingerprint(result, self.ms.positions('move', doc['id'])) != fingerprint(expected, positions):
+            raise Review('Возврат не прошёл проверку после восстановления склада')
+        self.log('move', doc['id'], 'Возврат с доработки: восстановлен склад после штатного сценария В пути')
+        return result
+
     def returns(self, cid, num, chain, oid, group, accepted):
         outgoing = self.ms.get('/entity/move/' + oid)
         self.audit_generated('move', oid, outgoing)
         if not outgoing.get('applicable') or quantities(self.ms.positions('move', oid)) != quantities(group['lines']):
             raise Review('Исходящее перемещение изменено или распроведено')
         candidates = self.ms.rows('/entity/move', filter='name~=' + group['name'] + '/')
-        returned, documents = defaultdict(Decimal), []
+        returned, documents, redirects = defaultdict(Decimal), [], set()
         names = set()
         for doc in candidates:
             if not re.fullmatch(re.escape(group['name']) + r'/\d{2,}', doc['name']):
@@ -1012,9 +1058,12 @@ class Engine:
                 if doc['id'] in group['returns']:
                     raise Review('Обработанный возврат распроведён')
                 continue
-            if (ident(doc.get('sourceStore')) != ident(outgoing['targetStore']) or
-                    ident(doc.get('targetStore')) != ident(outgoing['sourceStore'])):
+            if ident(doc.get('sourceStore')) != ident(outgoing['targetStore']):
                 raise Review('Неверное направление возврата')
+            if ident(doc.get('targetStore')) != ident(outgoing['sourceStore']):
+                if doc['id'] in group['returns'] or not self.redirected_manual_return(doc, outgoing):
+                    raise Review('Неверное направление возврата')
+                redirects.add(doc['id'])
             if ident(doc.get('organization')) != ident(outgoing.get('organization')):
                 raise Review('Другая организация в возврате с доработки')
             positions = self.ms.positions('move', doc['id'])
@@ -1022,6 +1071,9 @@ class Engine:
                 returned[k] += q
             documents.append((doc, positions))
         left = remaining(quantities(group['lines']), returned)
+        # Validate the whole batch before restoring any legacy-redirection document.
+        documents = [(self.restore_manual_return(d, ps, outgoing) if d['id'] in redirects else d, ps)
+                     for d, ps in documents]
         if accepted and left:
             suffix = '/' + str(max([int(x.rsplit('/', 1)[1]) for x in names] or [0]) + 1).zfill(2)
             payload = {'name': group['name'] + suffix, 'organization': outgoing['organization'],
@@ -1030,7 +1082,8 @@ class Engine:
                        'positions': [{'assortment': x['assortment'], 'quantity': float(left[ident(x['assortment'])]), 'price': 0}
                                      for x in self.unique_lines(group['lines']) if ident(x['assortment']) in left]}
             doc = self.execute(f'{cid}/return/{oid}/' + suffix, 'move', payload)
-            documents.append((doc, payload['positions']))
+            # Store the API representation (prices/quantities may become floats).
+            documents.append((doc, self.ms.positions('move', doc['id'])))
         for doc, positions in documents:
             fp = fingerprint(doc, positions)
             old = group['returns'].get(doc['id'])
@@ -1139,7 +1192,16 @@ class Engine:
         ordered = quantities(self.ms.positions('purchaseorder', value))
         if not ordered:
             raise Review('Заказ поставщику не содержит изделий')
-        supplied = self.ms.rows('/entity/supply', filter='purchaseOrder=' + BASE + '/entity/purchaseorder/' + value)
+        # purchaseOrder is not a supported list filter (HTTP 412). Read native order links.
+        links = doc.get('supplies', [])
+        if not isinstance(links, list):
+            raise Review('Не удалось прочитать связанные приёмки заказа')
+        ids = {ident(link) for link in links}
+        if any(not ID.fullmatch(key) for key in ids):
+            raise Review('Некорректная связь приёмки в заказе')
+        supplied = [self.ms.get('/entity/supply/' + key) for key in ids]
+        if any(ident(d.get('purchaseOrder')) != value for d in supplied):
+            raise Review('Связанная приёмка относится к другому заказу')
         accepted, complete = defaultdict(Decimal), True
         for supply in supplied:
             if not supply.get('applicable'):
@@ -1159,6 +1221,20 @@ class Engine:
             self.log('purchaseorder', value, 'Недопоставка: ' + json.dumps({k: str(v) for k, v in left.items()}))
         elif not left and complete:
             self.set_state('purchaseorder', value, 'Завершён')
+
+    def mark_chain_review(self, kind, value):
+        affected = set()
+        for cid, _, chain in self.all_chains():
+            if kind == 'supply' and value == cid:
+                affected.add(cid)
+            if kind == 'move' and any(value == oid or value in group.get('returns', {})
+                                      for oid, group in chain.get('outbound', {}).items()):
+                affected.add(cid)
+        for cid in affected:
+            try:
+                self.set_state('supply', cid, 'Требует проверки')
+            except Exception:
+                self.log('supply', cid, 'Не удалось установить статус Требует проверки; нужна сверка')
 
     def run_one(self):
         if not self.config().get('enabled') or not self.work_lock.acquire(blocking=False):
@@ -1195,6 +1271,8 @@ class Engine:
                                ('pending' if retry else 'review', message,
                                 time.time() + min(600, 15 * 2 ** row['attempts']), kind, value))
                 self.log(kind, value, message)
+                if not retry:
+                    self.mark_chain_review(kind, value)
             return True
         finally:
             self.work_lock.release()

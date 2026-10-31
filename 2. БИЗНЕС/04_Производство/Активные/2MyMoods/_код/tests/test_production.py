@@ -511,6 +511,7 @@ class ProductionTests(unittest.TestCase):
             'positions': [{'assortment': ref('product', self.product), 'quantity': 10, 'price': 10000}]}
         self.ms.docs['purchaseorder'][order_id] = {
             'id': order_id, 'applicable': True, 'agent': ref('counterparty', agent),
+            'supplies': [ref('supply', supply_id)],
             'organization': ref('organization', self.org),
             'state': ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['В работе']),
             'positions': copy.deepcopy(self.ms.docs['supply'][supply_id]['positions'])}
@@ -607,6 +608,106 @@ class ProductionTests(unittest.TestCase):
         self.ms.docs['move'][rid]['applicable'] = False
         with self.assertRaisesRegex(Review, 'возврат'):
             self.e.process_supply(sid)
+
+    def test_manual_return_legacy_redirect_requires_audit_proof(self):
+        sid, cfg = self.setup_chain()
+        cfg.update(operation_dictionary=uid(), operation_attributes={'move': uid()},
+                   operation_values={name: uid() for name in ['Материалы на производство', 'Изделия на доработку',
+                                                              'Возврат с доработки', 'Расход материалов']})
+        self.e.set_config(cfg)
+        self.e.process_supply(sid)
+        chain, _ = self.e.chain(sid)
+        oid = next(iter(chain['outbound']))
+        out = self.ms.docs['move'][oid]
+        rid, transit = uid(), uid()
+        manual = {'id': rid, 'name': out['name']+'/01', 'applicable': True,
+                  'moment': '2026-10-29 11:00:00', 'organization': out['organization'],
+                  'sourceStore': out['targetStore'], 'targetStore': ref('store', transit),
+                  'attributes': [{'name': 'Склад получатель', 'meta': {'href': '/attr/'+uid()},
+                                  'value': out['sourceStore']}],
+                  'positions': [{'assortment': ref('product', self.product), 'quantity': 4}]}
+        self.ms.docs['move'][rid] = manual
+        history = [{'moment': '2026-10-29 11:00:01', 'source': 'scriptor', 'diff': {
+            'targetStore': {'oldValue': out['sourceStore'], 'newValue': dict(ref('store', transit), name='В пути')},
+            'Склад получатель': {'newValue': out['sourceStore']}}}]
+        original = self.ms.rows
+        self.ms.rows = lambda path, **kw: copy.deepcopy(history) if path.endswith('/audit') else original(path, **kw)
+        history[0]['source'] = 'web'
+        with self.assertRaisesRegex(Review, 'направление'):
+            self.e.process_move(rid)
+        self.assertEqual(manual['targetStore'], ref('store', transit))
+        history[0]['source'] = 'scriptor'
+        self.e.process_move(rid)
+        self.assertEqual(manual['targetStore'], out['sourceStore'])
+        self.assertIn(rid, self.e.chain(sid)[0]['outbound'][oid]['returns'])
+
+    def test_order_closes_from_native_supplies_without_unsupported_filter(self):
+        sid, cfg = self.setup_chain()
+        self.e.process_supply(sid)
+        chain, _ = self.e.chain(sid)
+        oid = next(iter(chain['outbound']))
+        self.ms.docs['move'][oid]['state'] = ref('move/metadata/states', cfg['states']['move']['Доработка принята'])
+        self.e.process_move(oid)
+        order_id = self.ms.docs['supply'][sid]['purchaseOrder']['meta']['href'].rsplit('/', 1)[-1]
+        original = self.ms.rows
+        def rows(path, **params):
+            self.assertFalse(params.get('filter', '').startswith('purchaseOrder='))
+            return original(path, **params)
+        self.ms.rows = rows
+        self.e.process_order(order_id)
+        self.assertEqual(self.ms.docs['purchaseorder'][order_id]['state'],
+                         ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['Завершён']))
+
+    def test_worker_ignores_prelaunch_documents(self):
+        sid, cfg = self.setup_chain()
+        cfg.update(enabled=True, start_at='2026-11-01 00:00:00')
+        with patch.dict('os.environ', {'PRODUCTION_ALLOW_WRITES': '1'}):
+            self.e.set_config(cfg)
+        self.ms.docs['supply'][sid]['created'] = '2026-10-31 23:59:59'
+        self.e.enqueue('supply', sid)
+        with self.e.db() as db:
+            db.execute('UPDATE jobs SET due=0')
+        self.e.run_one()
+        with self.e.db() as db:
+            self.assertEqual(db.execute('SELECT status FROM jobs').fetchone()[0], 'ignored')
+        self.assertFalse(self.ms.created)
+
+    def test_automatic_return_fingerprint_uses_api_positions(self):
+        sid, cfg = self.setup_chain()
+        original = self.ms.request
+        def api_numbers(method, path, body):
+            result = original(method, path, body)
+            if method == 'POST':
+                kind = path.split('/')[2]
+                for line in self.ms.docs[kind][result['id']]['positions']:
+                    line['price'] = float(line.get('price', 0))
+                result = copy.deepcopy(self.ms.docs[kind][result['id']])
+            return result
+        self.ms.request = api_numbers
+        self.e.process_supply(sid)
+        chain, _ = self.e.chain(sid)
+        oid = next(iter(chain['outbound']))
+        self.ms.docs['move'][oid]['state'] = ref('move/metadata/states', cfg['states']['move']['Доработка принята'])
+        self.e.process_move(oid)
+        self.e.process_move(oid)
+        self.e.process_supply(sid)
+        self.assertTrue(self.e.chain(sid)[0]['complete'])
+
+    def test_worker_marks_receipt_for_review_after_outbound_edit(self):
+        sid, cfg = self.setup_chain()
+        self.e.process_supply(sid)
+        chain, _ = self.e.chain(sid)
+        oid = next(iter(chain['outbound']))
+        self.ms.docs['move'][oid].update(created='2026-11-01 12:00:00', targetStore=ref('store', uid()))
+        cfg.update(enabled=True, start_at='2026-11-01 00:00:00')
+        with patch.dict('os.environ', {'PRODUCTION_ALLOW_WRITES': '1'}):
+            self.e.set_config(cfg)
+        self.e.enqueue('move', oid)
+        with self.e.db() as db:
+            db.execute("UPDATE jobs SET due=0 WHERE kind='move'")
+        self.e.run_one()
+        self.assertEqual(self.ms.docs['supply'][sid]['state'],
+                         ref('supply/metadata/states', cfg['states']['supply']['Требует проверки']))
 
     def test_csv_materials_share_card_across_stores_and_keep_unknowns(self):
         from production_setup import read_material_csv
