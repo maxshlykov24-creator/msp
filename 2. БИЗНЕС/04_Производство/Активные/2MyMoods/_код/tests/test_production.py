@@ -466,7 +466,37 @@ class ProductionTests(unittest.TestCase):
             'organization': ref('organization', self.org), 'store': ref('store', self.company),
             'agent': ref('counterparty', agent), 'purchaseOrder': ref('purchaseorder', order_id),
             'positions': [{'assortment': ref('product', self.product), 'quantity': 10, 'price': 10000}]}
+        self.ms.docs['purchaseorder'][order_id] = {
+            'id': order_id, 'applicable': True, 'agent': ref('counterparty', agent),
+            'organization': ref('organization', self.org),
+            'state': ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['В работе']),
+            'positions': copy.deepcopy(self.ms.docs['supply'][supply_id]['positions'])}
         return supply_id, cfg
+
+    def test_cancelled_or_unconducted_order_never_reopens(self):
+        value, cfg = self.setup_chain()
+        for cancelled in (True, False):
+            oid = self.ms.docs['supply'][value]['purchaseOrder']['meta']['href'].rsplit('/', 1)[-1]
+            order = self.ms.docs['purchaseorder'][oid]
+            order['state'] = ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['В работе'])
+            order['applicable'] = True
+            if cancelled:
+                order['state'] = ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['Отменён'])
+            else:
+                order['applicable'] = False
+            before = copy.deepcopy(order)
+            with self.assertRaises(Review): self.e.process_supply(value)
+            with self.assertRaises(Review): self.e.process_order(order['id'])
+            self.assertEqual(order, before)
+            self.assertFalse(self.ms.created)
+
+    def test_changed_order_factory_blocks_receipt(self):
+        value, _ = self.setup_chain()
+        oid = self.ms.docs['supply'][value]['purchaseOrder']['meta']['href'].rsplit('/', 1)[-1]
+        self.ms.docs['purchaseorder'][oid]['agent'] = ref('counterparty', uid())
+        with self.assertRaisesRegex(Review, 'разные организацию/фабрику'):
+            self.e.process_supply(value)
+        self.assertFalse(self.ms.created)
 
     def test_full_two_stage_chain_with_partial_manual_return(self):
         supply_id, cfg = self.setup_chain()
@@ -496,6 +526,58 @@ class ProductionTests(unittest.TestCase):
         count = len(self.ms.created)
         self.e.process_move(oid)
         self.assertEqual(len(self.ms.created), count)
+        previous_returns = copy.deepcopy(chain['outbound'])
+        self.e.process_supply(supply_id)
+        recovered, _ = self.e.chain(supply_id)
+        self.assertTrue(recovered['complete'])
+        self.assertEqual(recovered['outbound'], previous_returns)
+        self.assertEqual(len(self.ms.created), count)
+
+    def test_csv_materials_share_card_across_stores_and_keep_unknowns(self):
+        from production_setup import read_material_csv
+        source = Path(self.tmp.name) / 'materials.csv'
+        source.write_text('артикул производителя,цвет,состав,единица измерения,Контрагент,категория,склад,"цена,руб",остаток на 31.10.2026\n'
+                          'Пряжа HA5001,Молочный,шерсть,грамм,Поставщик,пряжа,Фабрика,"5,6",10\n'
+                          'Пряжа HA5001,молочный,шерсть,грамм,Поставщик,пряжа,Компания,,\n')
+        items = read_material_csv(source)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['rows'], [2, 3])
+        self.assertEqual(items[0]['unit'], 'г')
+        self.assertEqual(items[0]['locations'][0]['price'], '5.6')
+        self.assertIsNone(items[0]['locations'][1]['quantity'])
+        self.assertIsNone(items[0]['locations'][1]['price'])
+
+    def test_material_matching_requires_sku_and_color(self):
+        from production_setup import material_candidates
+        existing = [{'name': 'Пряжа Альпака HA5001 молочный', 'meta': {'type': 'product'}},
+                    {'name': 'Пряжа Альпака HA5002 молочный', 'meta': {'type': 'product'}}]
+        item = {'source_name': 'Альпака HA5001 1/5 5NM молочный', 'color': 'Молочный'}
+        self.assertEqual(material_candidates(item, existing), existing[:1])
+        item['color'] = 'Черный'
+        self.assertEqual(material_candidates(item, existing), [])
+
+    def test_wrong_receipt_store_blocks_before_any_document(self):
+        value, _ = self.setup_chain()
+        self.ms.docs['supply'][value]['store'] = ref('store', uid())
+        with self.assertRaisesRegex(Review, 'Склад Москва'):
+            self.e.process_supply(value)
+        self.assertFalse(self.ms.created)
+        self.assertEqual(self.e.chain(value), (None, None))
+
+    def test_material_move_and_loss_have_distinct_operations(self):
+        cfg = self.e.config()
+        labels = ['Материалы на производство', 'Расход материалов']
+        cfg.update(operation_dictionary=uid(), operation_values={s: uid() for s in labels},
+                   operation_attributes={'move': uid(), 'loss': uid()})
+        self.e.set_config(cfg)
+        for kind, key, label in [('move', 'batch/materials', labels[0]), ('loss', 'batch/loss', labels[1])]:
+            payload = self.payload()
+            if kind == 'loss':
+                payload['store'] = payload.pop('sourceStore')
+                payload.pop('targetStore')
+            doc = self.e.execute(key, kind, payload)
+            self.assertEqual(doc['attributes'][0]['value'],
+                ref('customentity/' + cfg['operation_dictionary'], cfg['operation_values'][label]))
 
     def test_supply_change_after_consumption_blocks(self):
         value, _ = self.setup_chain()

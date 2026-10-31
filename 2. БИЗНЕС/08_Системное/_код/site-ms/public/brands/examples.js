@@ -16,7 +16,7 @@ const reducedMotion=matchMedia('(prefers-reduced-motion:reduce)');
 function targetLayout(){
  const maxHeight=Math.min(460,innerHeight*.5),phone=device==='phone';
  const tracks=getComputedStyle(panel).gridTemplateColumns.split(' ').map(parseFloat).filter(Number.isFinite);
- const available=tracks[tracks.length-1]||panel.clientWidth;
+ const available=Math.max(1,Math.min(panel.clientWidth,tracks[tracks.length-1]||panel.clientWidth));
  const width=phone?390:BASE_WIDTH,height=phone?780:BASE_HEIGHT;
  const scale=phone?Math.min((available-30)/width,maxHeight/780):Math.min((available-2)/width,maxHeight/BASE_HEIGHT);
  return {width,height,screen:width*scale,outer:phone?width*scale+30:available,padding:phone?14:0,round:phone?1:0};

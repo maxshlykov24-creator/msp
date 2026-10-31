@@ -541,6 +541,7 @@ class Engine:
                 'uom': r.get('uom') or r.get('product', {}).get('uom'), 'code': r.get('code', ''),
                 'article': r.get('article') or r.get('product', {}).get('article', ''),
                 'pathName': r.get('pathName') or r.get('product', {}).get('pathName', ''),
+                'product_folder': ident(r.get('productFolder') or r.get('product', {}).get('productFolder')),
                 'model': r.get('product', {}).get('name', r['name']),
                 'companyType': r.get('companyType', ''),
                 'tags': r.get('tags', []), 'archived': r.get('archived', False),
@@ -753,7 +754,9 @@ class Engine:
                 cfg = self.config()
                 if cfg.get('operation_attributes', {}).get(kind):
                     label = ('Изделия на доработку' if '/out/' in key else
-                             'Возврат с доработки' if '/return/' in key else 'Расход материалов')
+                             'Возврат с доработки' if '/return/' in key else
+                             'Материалы на производство' if kind == 'move' and key.endswith('/materials') else
+                             'Расход материалов')
                     payload.setdefault('attributes', []).append({
                         'meta': {'href': BASE + '/entity/' + kind + '/metadata/attributes/' + cfg['operation_attributes'][kind],
                                  'type': 'attributemetadata', 'mediaType': 'application/json'},
@@ -800,14 +803,28 @@ class Engine:
                 out[key] = r
         return out
 
+    def check_production_order(self, value, supply=None):
+        doc = self.ms.get('/entity/purchaseorder/' + value)
+        cancelled = self.config().get('states', {}).get('purchaseorder', {}).get('Отменён')
+        if not doc.get('applicable') or cancelled and ident(doc.get('state')) == cancelled:
+            raise Review('Заказ поставщику отменён или не проведён; проверь производственную цепочку')
+        if supply:
+            for field in ('agent', 'organization'):
+                if ident(doc.get(field)) != ident(supply.get(field)):
+                    raise Review('Приёмка и заказ поставщику имеют разные организацию/фабрику')
+        return doc
+
     def plan_supply(self, value):
         doc = self.ms.get('/entity/supply/' + value)
         positions = self.ms.positions('supply', value)
         cfg = self.config()
         if not doc.get('applicable'):
             raise Review('Приёмка не проведена')
+        if not cfg.get('company_store') or ident(doc.get('store')) != cfg['company_store']:
+            raise Review('Приёмка должна быть на склад компании: Склад Москва')
         if not ident(doc.get('purchaseOrder')):
             raise Review('Производственная приёмка должна иметь заказ поставщику')
+        self.check_production_order(ident(doc['purchaseOrder']), doc)
         factories = {f['id']: f for f in cfg.get('factories', [])}
         index = self.recipe_index()
         lines = []
@@ -892,7 +909,10 @@ class Engine:
             'positions': [{'assortment': x['assortment'], 'quantity': x['quantity'], 'price': 0} for x in lines],
             'state': ref('move/metadata/states', self.config()['states']['move']['Ожидает отправки']),
             'description': 'Изделия на доработку; исходная приёмка ' + chain['source']['name']}, basis=chain_id)
-        chain.setdefault('outbound', {})[doc['id']] = {'stage': stage, 'lines': lines, 'name': label, 'returns': {}}
+        # A duplicate receipt event recovers the same outgoing document. Keep its
+        # processed returns and later stages instead of reopening a completed batch.
+        chain.setdefault('outbound', {}).setdefault(doc['id'],
+            {'stage': stage, 'lines': lines, 'name': label, 'returns': {}})
         self.save_chain(chain_id, chain, number)
 
     def process_supply(self, value):
@@ -901,6 +921,7 @@ class Engine:
             current = self.ms.get('/entity/supply/' + value)
             if fingerprint(current, self.ms.positions('supply', value)) != chain['fingerprint']:
                 raise Review('Приёмка изменена после начала обработки; нужна корректировка цепочки')
+            self.check_production_order(ident(current['purchaseOrder']), current)
         else:
             chain = self.plan_supply(value)
             number = self.save_chain(value, chain)
@@ -1069,7 +1090,10 @@ class Engine:
         self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'], {'name': str(n)})
 
     def process_order(self, value):
-        doc = self.ms.get('/entity/purchaseorder/' + value)
+        doc = self.check_production_order(value)
+        ordered = quantities(self.ms.positions('purchaseorder', value))
+        if not ordered:
+            raise Review('Заказ поставщику не содержит изделий')
         supplied = self.ms.rows('/entity/supply', filter='purchaseOrder=' + BASE + '/entity/purchaseorder/' + value)
         accepted, complete = defaultdict(Decimal), True
         for supply in supplied:
@@ -1080,7 +1104,7 @@ class Engine:
                 complete = False
             for key, qty in quantities(self.ms.positions('supply', supply['id'])).items():
                 accepted[key] += qty
-        left = remaining(quantities(self.ms.positions('purchaseorder', value)), accepted)
+        left = remaining(ordered, accepted)
         short_sid = self.config()['states']['purchaseorder']['Завершён с недопоставкой']
         if ident(doc.get('state')) == short_sid:
             if not complete or not left:

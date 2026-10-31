@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Подготовка справочников и импорт исходных норм. Складские документы не создаёт."""
 import argparse
+import csv
+import re
+from decimal import Decimal
 import hashlib
 import json
 import uuid
@@ -73,6 +76,77 @@ def setup_ms(engine):
     config['enabled'] = False
     engine.set_config(config)
     return {'states': sum(len(x) for x in config['states'].values()), 'reasons': len(values), 'enabled': False}
+
+
+
+MATERIAL_GROUP = 'Материалы производства'
+MATERIAL_CATEGORIES = {'ткань': 'Ткани', 'пряжа': 'Пряжа', 'пуговица': 'Пуговицы',
+    'пуговицы': 'Пуговицы', 'плечевые накладки': 'Плечевые накладки',
+    'клеевые материалы': 'Клеевые материалы', 'тесьма': 'Тесьма', 'молнии': 'Молнии',
+    'фурнитура': 'Фурнитура', 'резинка': 'Резинки', 'кружево': 'Кружево', 'кнопки': 'Кнопки'}
+MATERIAL_UNITS = {'метр': 'м', 'грамм': 'г', 'штука': 'шт', 'шт': 'шт', 'пара': 'пара', 'рулон': 'рулон'}
+
+
+def material_text(value):
+    return re.sub(r'\s+', ' ', str(value or '').strip())
+
+
+def material_key(value):
+    return material_text(value).casefold().replace('ё', 'е')
+
+
+def read_material_csv(source):
+    """Keep empty quantities/prices unknown and join locations of one material."""
+    out = {}
+    with Path(source).open(encoding='utf-8-sig', newline='') as stream:
+        reader = csv.DictReader(stream)
+        required = {'артикул производителя', 'цвет', 'состав', 'единица измерения',
+                    'Контрагент', 'категория', 'склад', 'цена,руб', 'остаток на 31.10.2026'}
+        if not required.issubset(reader.fieldnames or []):
+            raise Review('В CSV отсутствуют обязательные столбцы материалов')
+        for line, row in enumerate(reader, 2):
+            name, color = material_text(row['артикул производителя']), material_text(row['цвет'])
+            if not name or len(name) > 255:
+                raise Review('Проверь название материала в строке ' + str(line))
+            unit = MATERIAL_UNITS.get(material_key(row['единица измерения']))
+            category = MATERIAL_CATEGORIES.get(material_key(row['категория']))
+            if not unit or not category:
+                raise Review('Неизвестная единица/категория в строке ' + str(line))
+            def number(value):
+                value = material_text(value).replace(' ', '').replace(',', '.')
+                if not value:
+                    return None
+                result = Decimal(value)
+                if not result.is_finite() or result < 0:
+                    raise Review('Некорректное число в строке ' + str(line))
+                return str(result)
+            key = '|'.join(map(material_key, (name, color, unit)))
+            entry = out.setdefault(key, {'source_name': name, 'color': color[:1].upper() + color[1:].lower(),
+                'composition': material_text(row['состав']), 'unit': unit, 'category': category,
+                'supplier': material_text(row['Контрагент']), 'locations': [], 'rows': [],
+                'externalCode': '2my-material-' + hashlib.sha256(key.encode()).hexdigest()[:32]})
+            for field, current in [('composition', material_text(row['состав'])),
+                                   ('supplier', material_text(row['Контрагент']))]:
+                if entry[field] != current:
+                    raise Review('Разные сведения одного материала: строки ' + str(entry['rows'] + [line]))
+            entry['rows'].append(line)
+            entry['locations'].append({'source_row': line, 'store': material_text(row['склад']),
+                'quantity': number(row['остаток на 31.10.2026']), 'price': number(row['цена,руб'])})
+    return list(out.values())
+
+
+def material_candidates(item, existing):
+    """Exact name or manufacturer SKU plus matching color; no fuzzy auto-merges."""
+    name, color = material_key(item['source_name']), material_key(item['color'])
+    codes = set(re.findall(r'\b[a-z]{1,5}\d{3,}\b', name))
+    matches = []
+    for product in existing:
+        current = material_key(product['name'])
+        same = current == name or (codes and codes.intersection(re.findall(r'\b[a-z]{1,5}\d{3,}\b', current))
+                                  and color and color in current)
+        if same and product.get('meta', {}).get('type') == 'product':
+            matches.append(product)
+    return matches
 
 
 def ms_base():
