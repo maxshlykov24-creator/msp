@@ -996,6 +996,7 @@ class Engine:
 
     def returns(self, cid, num, chain, oid, group, accepted):
         outgoing = self.ms.get('/entity/move/' + oid)
+        self.audit_generated('move', oid, outgoing)
         if not outgoing.get('applicable') or quantities(self.ms.positions('move', oid)) != quantities(group['lines']):
             raise Review('Исходящее перемещение изменено или распроведено')
         candidates = self.ms.rows('/entity/move', filter='name~=' + group['name'] + '/')
@@ -1014,6 +1015,8 @@ class Engine:
             if (ident(doc.get('sourceStore')) != ident(outgoing['targetStore']) or
                     ident(doc.get('targetStore')) != ident(outgoing['sourceStore'])):
                 raise Review('Неверное направление возврата')
+            if ident(doc.get('organization')) != ident(outgoing.get('organization')):
+                raise Review('Другая организация в возврате с доработки')
             positions = self.ms.positions('move', doc['id'])
             for k, q in quantities(positions).items():
                 returned[k] += q
@@ -1076,9 +1079,14 @@ class Engine:
     def finish(self, cid, chain, num):
         done = True
         for oid, group in chain.get('outbound', {}).items():
+            self.audit_generated('move', oid, self.ms.get('/entity/move/' + oid))
             qty = defaultdict(Decimal)
-            for rid in group['returns']:
-                for key, val in quantities(self.ms.positions('move', rid)).items():
+            for rid, recorded in group['returns'].items():
+                returned = self.ms.get('/entity/move/' + rid)
+                positions = self.ms.positions('move', rid)
+                if not returned.get('applicable') or fingerprint(returned, positions) != recorded:
+                    raise Review('Обработанный возврат изменён или распроведён')
+                for key, val in quantities(positions).items():
                     qty[key] += val
             if remaining(quantities(group['lines']), qty):
                 done = False
@@ -1093,6 +1101,9 @@ class Engine:
         if not row:
             raise Review('Неизвестный автоматический документ')
         body = json.loads(row['body'])
+        for field in ('sourceStore', 'targetStore', 'store', 'organization'):
+            if field in body and ident(body[field]) != ident(doc.get(field)):
+                raise Review('Изменён склад/организация автоматического документа')
         if not doc.get('applicable') or quantities(self.ms.positions(kind, value)) != quantities(body['positions']):
             raise Review('Автоматический документ изменён/распроведён')
 
@@ -1134,6 +1145,8 @@ class Engine:
             if not supply.get('applicable'):
                 continue
             chain, _ = self.chain(supply['id'])
+            if chain and fingerprint(supply, self.ms.positions('supply', supply['id'])) != chain['fingerprint']:
+                raise Review('Приёмка изменена после обработки; заказ не может быть завершён')
             if not chain or not chain.get('complete'):
                 complete = False
             for key, qty in quantities(self.ms.positions('supply', supply['id'])).items():

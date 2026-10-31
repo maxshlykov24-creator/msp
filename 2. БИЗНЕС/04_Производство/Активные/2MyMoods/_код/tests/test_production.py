@@ -576,6 +576,38 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(recovered['outbound'], previous_returns)
         self.assertEqual(len(self.ms.created), count)
 
+    def test_outbound_warehouse_edit_blocks_return(self):
+        sid, cfg = self.setup_chain()
+        self.e.process_supply(sid)
+        chain, _ = self.e.chain(sid)
+        oid = next(iter(chain['outbound']))
+        self.ms.docs['move'][oid]['targetStore'] = ref('store', uid())
+        before = len(self.ms.created)
+        with self.assertRaisesRegex(Review, 'склад'):
+            self.e.process_move(oid)
+        self.assertEqual(before, len(self.ms.created))
+
+    def test_order_does_not_close_after_receipt_quantity_edit(self):
+        sid, cfg = self.setup_chain()
+        self.e.process_supply(sid)
+        self.ms.docs['supply'][sid]['positions'][0]['quantity'] = 1
+        oid = self.ms.docs['supply'][sid]['purchaseOrder']['meta']['href'].rsplit('/', 1)[-1]
+        with self.assertRaisesRegex(Review, 'Приёмка изменена'):
+            self.e.process_order(oid)
+
+    def test_duplicate_receipt_detects_unposted_finished_return(self):
+        sid, cfg = self.setup_chain()
+        self.e.process_supply(sid)
+        chain, _ = self.e.chain(sid)
+        oid = next(iter(chain['outbound']))
+        self.ms.docs['move'][oid]['state'] = ref('move/metadata/states', cfg['states']['move']['Доработка принята'])
+        self.e.process_move(oid)
+        chain, _ = self.e.chain(sid)
+        rid = next(iter(chain['outbound'][oid]['returns']))
+        self.ms.docs['move'][rid]['applicable'] = False
+        with self.assertRaisesRegex(Review, 'возврат'):
+            self.e.process_supply(sid)
+
     def test_csv_materials_share_card_across_stores_and_keep_unknowns(self):
         from production_setup import read_material_csv
         source = Path(self.tmp.name) / 'materials.csv'
