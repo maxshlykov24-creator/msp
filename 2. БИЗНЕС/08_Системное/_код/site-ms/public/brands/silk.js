@@ -1,7 +1,10 @@
   document.querySelectorAll('canvas.silk').forEach(function silk(cv){
     if(!cv) return;
-    var gl=cv.getContext('webgl',{antialias:false,alpha:false,powerPreference:'low-power'})
+    var gl;
+    try {
+      gl=cv.getContext('webgl',{antialias:false,alpha:false,powerPreference:'low-power'})
          ||cv.getContext('experimental-webgl');
+    } catch(e) { cv.classList.add('unavailable');return; }
     if(!gl){document.body.classList.add('no-gl');return;}
 
     var VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
@@ -86,10 +89,17 @@
 
     var motion=window.matchMedia('(prefers-reduced-motion:reduce)');
     var still=motion.matches;
-    motion.addEventListener('change',function(e){still=e.matches;if(raf){cancelAnimationFrame(raf);raf=null;}last=null;raf=requestAnimationFrame(frame);});
-    var acc=0, last=null, raf=null;
+    motion.addEventListener('change',function(e){still=e.matches;wake();});
+    var acc=0, last=null, raf=null, inView=true, lost=false;
+    function wake(){
+      if(raf!==null){cancelAnimationFrame(raf);raf=null;}
+      last=null;
+      if(inView&&!document.hidden&&!lost)raf=requestAnimationFrame(frame);
+    }
     var themeMix=document.documentElement.dataset.theme==='light'?1:0;
     function frame(now){
+      raf=null;
+      if(!inView||document.hidden||lost)return;
       var dt=last===null?0:Math.min((now-last)/1000,0.05);
       acc+=dt;
       last=now;
@@ -104,17 +114,21 @@
       raf=still?null:requestAnimationFrame(frame);
     }
     document.addEventListener('msp-theme-snapshot',function(){
+      if(!inView||lost)return;
       themeMix=document.documentElement.dataset.theme==='light'?1:0;
       gl.uniform1f(uLight,themeMix);gl.drawArrays(gl.TRIANGLES,0,3);
     });
     raf=requestAnimationFrame(frame);
-    new MutationObserver(function(){if(still && raf===null) raf=requestAnimationFrame(frame);}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-    document.addEventListener('visibilitychange',function(){
-      if(document.hidden){
-        if(raf){cancelAnimationFrame(raf);raf=null;}
-      }else if(!still&&raf===null){
-        last=null;raf=requestAnimationFrame(frame);
-      }
+    new MutationObserver(function(){if(still)wake();}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+    document.addEventListener('visibilitychange',wake);
+    if('IntersectionObserver' in window){
+      new IntersectionObserver(function(entries){
+        var next=entries[0].isIntersecting;
+        if(next!==inView){inView=next;wake();}
+      }).observe(cv);
+    }
+    cv.addEventListener('webglcontextlost',function(){
+      lost=true;cv.classList.remove('ready');wake();
     });
   });
 
