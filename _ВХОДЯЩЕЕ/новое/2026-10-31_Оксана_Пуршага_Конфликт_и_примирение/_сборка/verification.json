@@ -1,7 +1,26 @@
 {
   "pages": 15,
-  "ratio": "16:9",
-  "all_references": true,
-  "rendered_pages_reviewed": 15,
-  "size_mb": 20.98
+  "fonts": {
+    "/AAAAAA+Manrope-Bold": true,
+    "/BAAAAA+PlayfairDisplay-SemiBold": true,
+    "/CAAAAA+PlayfairDisplay-SemiBoldItalic": true,
+    "/DAAAAA+PlayfairDisplay-SemiBoldItalic": true,
+    "/EAAAAA+PlayfairDisplay-SemiBold": true
+  },
+  "figma_file": "8EH2K6A3EVAt1aND3D44E2",
+  "reference_node": "8791:8901",
+  "background_node": "8791:8898",
+  "background_pixels": [
+    1920,
+    1080
+  ],
+  "logo_node": "8800:1614",
+  "text_color": "#3e4d23",
+  "source_fonts": [
+    "Playfair Display SemiBold",
+    "Playfair Display SemiBold Italic",
+    "Manrope Bold"
+  ],
+  "all_scripture_references": true,
+  "screenshots_used_as_assets": false
 }
