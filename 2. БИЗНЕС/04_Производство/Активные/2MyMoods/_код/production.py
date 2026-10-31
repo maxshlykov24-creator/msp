@@ -366,10 +366,8 @@ class Engine:
                     raise Review('Стоимость работы не может быть отрицательной')
             if recipe.get('editor_schema') == 2:
                 packs = [m for stage in recipe['stages'] for m in stage['materials'] if m.get('role') == 'packaging']
-                if len(packs) != 1 or not packs[0].get('id') or dec(packs[0].get('quantity', 0)) <= 0:
-                    raise Review('Выбери один зип-пакет и укажи его расход')
-            if not recipe.get('zip_checked'):
-                raise Review('Добавь зип-пакет и его расход в блоке Производственная упаковка')
+                if len(packs) > 1:
+                    raise Review('Зип-пакет можно добавить только на одном этапе')
         if recipe.get('assortment_id'):
             for candidate in db.execute('SELECT id,body FROM recipes WHERE id<>?', (key,)):
                 if json.loads(candidate['body']).get('assortment_id') == recipe['assortment_id']:
@@ -695,8 +693,10 @@ class Engine:
                     raise Review('Норма изделия не заполнена и не применена')
                 stages = recipe.get('stages', [])
                 packs = [m for st in stages for m in st.get('materials', []) if m.get('role') == 'packaging']
-                if not stages or len(packs) != 1 or not recipe.get('zip_checked'):
-                    raise Review('Не заполнена производственная упаковка')
+                if not stages:
+                    raise Review('Не заполнены этапы производства')
+                if len(packs) > 1:
+                    raise Review('Зип-пакет можно добавить только на одном этапе')
                 requirements, kinds = defaultdict(Decimal), {}
                 total, breakdown = Decimal(0), []
                 for stage in stages:

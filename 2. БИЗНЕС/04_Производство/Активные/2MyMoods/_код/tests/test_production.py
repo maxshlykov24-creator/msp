@@ -300,6 +300,26 @@ class ProductionTests(unittest.TestCase):
                 {'id': self.material, 'name': 'Fabric', 'type': 'product', 'quantity': quantity},
                 {'id': uid(), 'name': 'Zip', 'type': 'product', 'quantity': 1, 'role': 'packaging'}]}]}
 
+    def test_apply_without_optional_packaging(self):
+        recipe = self.group_recipe(self.product, 'S', 2)
+        recipe.update(approved=True, zip_checked=False)
+        recipe['stages'][0]['materials'] = recipe['stages'][0]['materials'][:1]
+        self.e.save_recipe(recipe)
+        self.assertTrue(self.e.recipes()[0]['approved'])
+        self.e.material_fifo_layers = lambda *args: [self.fifo_layer(10, 10000)]
+        self.assertEqual(self.e.production_costs()[self.product]['cost'], 200)
+
+    def test_optional_packaging_still_rejects_duplicate_and_zero(self):
+        recipe = self.group_recipe(self.product, 'S', 2)
+        recipe['approved'] = True
+        recipe['stages'][0]['materials'].append(dict(recipe['stages'][0]['materials'][-1]))
+        with self.assertRaises(Review):
+            self.e.save_recipe(recipe)
+        recipe['stages'][0]['materials'].pop()
+        recipe['stages'][0]['materials'][-1]['quantity'] = 0
+        with self.assertRaises(Review):
+            self.e.save_recipe(recipe)
+
     def test_history_records_changes_and_account_with_shared_work(self):
         a = self.group_recipe(self.product, 'S', 2)
         a['assortment_name'] = 'Карточка S'
