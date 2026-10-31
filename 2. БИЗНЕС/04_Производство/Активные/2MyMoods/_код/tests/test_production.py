@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -62,6 +63,9 @@ class FakeMS:
 
 class ProductionTests(unittest.TestCase):
     def setUp(self):
+        self.pause = patch("production.time.sleep")
+        self.pause.start()
+        self.addCleanup(self.pause.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.ms = FakeMS()
         self.e = Engine(self.tmp.name, self.ms)
@@ -417,6 +421,27 @@ class ProductionTests(unittest.TestCase):
         doc = self.e.execute('same', 'move', self.payload())
         self.ms.docs['move'][doc['id']]['sourceStore'] = ref('store', uid())
         with self.assertRaises(Review): self.e.execute('same', 'move', self.payload())
+
+    def test_async_scenario_redirect_blocks_before_dependent_document(self):
+        def redirect(_):
+            doc = next(iter(self.ms.docs['move'].values()))
+            doc['targetStore'] = ref('store', uid())
+        with patch('production.time.sleep', side_effect=redirect):
+            with self.assertRaisesRegex(Review, 'склад'):
+                self.e.execute('scenario-race', 'move', self.payload())
+        with self.e.db() as db:
+            operation = db.execute("SELECT * FROM operations WHERE key='scenario-race'").fetchone()
+        self.assertIsNotNone(operation['doc_id'])
+        self.assertNotEqual(operation['status'], 'done')
+        self.assertEqual(len(self.ms.created), 1)
+
+    def test_recovery_checks_native_link(self):
+        basis = uid()
+        doc = self.e.execute('linked', 'move', self.payload(), basis=basis)
+        self.ms.docs['move'][doc['id']].pop('supply')
+        with self.assertRaisesRegex(Review, 'связь'):
+            self.e.execute('linked', 'move', self.payload(), basis=basis)
+        self.assertEqual(len(self.ms.created), 1)
 
     def test_disabled_worker_does_not_write(self):
         self.e.enqueue('move', uid())

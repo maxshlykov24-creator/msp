@@ -793,13 +793,7 @@ class Engine:
         if len(found) > 1:
             raise Review('Неоднозначная операция; требуется сверка')
         if found:
-            doc = self.ms.get('/entity/' + kind + '/' + found[0]['id'])
-            positions = self.ms.positions(kind, doc['id'])
-            for field in ('sourceStore', 'targetStore', 'store', 'organization'):
-                if field in payload and ident(payload[field]) != ident(doc.get(field)):
-                    raise Review('Изменён склад/организация автоматического документа')
-            if not doc.get('applicable') or quantities(positions) != quantities(payload['positions']):
-                raise Review('Автоматический документ изменён или распроведён')
+            doc = found[0]
         else:
             self.require_stock(ident(payload.get('sourceStore') or payload.get('store')), payload['positions'])
             if basis and kind == 'move':
@@ -808,14 +802,30 @@ class Engine:
                     raise Review('API не подтвердил основание приёмки для перемещения')
                 payload = dict(template, **payload)
             doc = self.ms.request('POST', '/entity/' + kind, payload)
-            check = self.ms.get('/entity/' + kind + '/' + doc['id'])
-            if quantities(self.ms.positions(kind, doc['id'])) != quantities(payload['positions']) or not check.get('applicable'):
-                raise Review('Созданный документ не прошёл проверку состава/проведения')
-            if basis and kind == 'move' and ident(check.get('supply')) != basis:
-                raise Review('Созданный документ не подтвердил связь с приёмкой')
+        # Сохраняем ID даже при последующем отказе проверки: документ уже существует.
         with self.db() as db:
-            db.execute("UPDATE operations SET doc_id=?,status='done' WHERE key=?", (doc['id'], key))
-        return doc
+            db.execute("UPDATE operations SET doc_id=? WHERE key=?", (doc['id'], key))
+        def verify():
+            current = self.ms.get('/entity/' + kind + '/' + doc['id'])
+            for field in ('sourceStore', 'targetStore', 'store', 'organization'):
+                if field in payload and ident(payload[field]) != ident(current.get(field)):
+                    raise Review('Изменён склад/организация автоматического документа')
+            positions = self.ms.positions(kind, doc['id'])
+            if not current.get('applicable') or quantities(positions) != quantities(payload['positions']):
+                raise Review('Автоматический документ изменён или распроведён')
+            if basis and kind == 'move' and ident(current.get('supply')) != basis:
+                raise Review('Автоматический документ не подтвердил связь с приёмкой')
+            return current, positions
+        check, positions = verify()
+        if not row or row['status'] != 'done':
+            # Сценарии МоегоСклада исполняются после ответа API. До зависимого
+            # списания повторно проверяем склад, проведение, состав и основание.
+            time.sleep(2)
+            check, positions = verify()
+        with self.db() as db:
+            db.execute("UPDATE operations SET status='done',fingerprint=? WHERE key=?",
+                       (fingerprint(check, positions), key))
+        return check
 
     def recipe_index(self):
         out = {}
