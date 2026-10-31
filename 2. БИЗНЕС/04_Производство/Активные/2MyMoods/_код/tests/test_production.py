@@ -143,6 +143,24 @@ class ProductionTests(unittest.TestCase):
         recipe['approved'] = False
         self.assertIsNone(self.e.production_costs()[self.product]['cost'])
 
+    def test_opening_inventory_is_allowed_only_when_registered_and_unchanged(self):
+        oid = uid()
+        doc = {'id': oid, 'applicable': True, 'moment': '2026-10-31 23:59:00',
+               'store': ref('store', self.factory), 'organization': ref('organization', self.org),
+               'positions': [{'assortment': ref('product', self.material), 'quantity': 10, 'price': 560}]}
+        self.ms.docs['enter'] = {oid: doc}
+        layer = self.fifo_layer(10, 560, doc['moment'], 'enter')
+        layer['operation'] = ref('enter', oid)
+        self.assertEqual(self.e.verified_opening_balances([layer], {}), set())
+        cfg = self.e.config()
+        cfg['opening_balance_documents'] = {oid: fingerprint(doc, doc['positions'])}
+        self.e.set_config(cfg)
+        allowed = self.e.verified_opening_balances([layer], {})
+        self.assertEqual(self.e.fifo_cost([layer], 2, allowed)[0], Decimal('11.2'))
+        doc['positions'][0]['price'] = 600
+        with self.assertRaisesRegex(Review, 'Начальные остатки'):
+            self.e.verified_opening_balances([layer], {})
+
     def test_production_unknown_material_makes_whole_cost_unknown(self):
         recipe = self.cost_recipe()
         self.e.recipes = lambda: [recipe]
@@ -546,6 +564,19 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(items[0]['locations'][0]['price'], '5.6')
         self.assertIsNone(items[0]['locations'][1]['quantity'])
         self.assertIsNone(items[0]['locations'][1]['price'])
+
+    def test_inventory_alignment_moves_existing_stock_before_opening(self):
+        from production_setup import plan_balance_alignment
+        plan = plan_balance_alignment({'old': 9575}, [{'store': 'moscow', 'quantity': 4980, 'price': '5.6'}])
+        self.assertEqual(plan['moves'], [{'source': 'old', 'target': 'moscow', 'quantity': '4980'}])
+        self.assertEqual(plan['losses'], [{'store': 'old', 'quantity': '4595'}])
+        self.assertEqual(plan['enters'], [])
+        plan = plan_balance_alignment({'old': 2087}, [{'store': 'factory', 'quantity': 12000, 'price': '7.6'}])
+        self.assertEqual(plan['enters'], [{'store': 'factory', 'quantity': '9913', 'price': '7.6'}])
+        with self.assertRaises(Review):
+            plan_balance_alignment({}, [{'store': 'moscow', 'quantity': None, 'price': 1}])
+        with self.assertRaises(Review):
+            plan_balance_alignment({'old': -1}, [])
 
     def test_material_matching_requires_sku_and_color(self):
         from production_setup import material_candidates

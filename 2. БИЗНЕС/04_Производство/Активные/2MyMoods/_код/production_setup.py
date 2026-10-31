@@ -149,6 +149,48 @@ def material_candidates(item, existing):
     return matches
 
 
+
+def plan_balance_alignment(current, targets):
+    """Keep existing FIFO stock; move it first, adjust only counted differences."""
+    current = {k: Decimal(str(v)) for k, v in current.items()}
+    if any(not q.is_finite() or q < 0 for q in current.values()):
+        raise Review('Отрицательный/неизвестный исходный остаток; требуется сверка')
+    wanted, prices = {}, {}
+    for row in targets:
+        if row['quantity'] is None:
+            raise Review('Не заполнен фактический остаток материала')
+        qty = Decimal(str(row['quantity']))
+        if not qty.is_finite() or qty < 0:
+            raise Review('Некорректный фактический остаток материала')
+        store = row['store']
+        wanted[store] = wanted.get(store, Decimal(0)) + qty
+        if qty:
+            price = Decimal(str(row['price'])) if row['price'] is not None else None
+            if price is None or not price.is_finite() or price <= 0:
+                raise Review('Для положительного остатка нужна подтверждённая цена')
+            if store in prices and prices[store] != price:
+                raise Review('Разные цены начального остатка одного материала/склада')
+            prices[store] = price
+    available = dict(current)
+    deficits = {}
+    for store, qty in wanted.items():
+        kept = min(qty, available.get(store, Decimal(0)))
+        available[store] = available.get(store, Decimal(0)) - kept
+        deficits[store] = qty - kept
+    moves = []
+    for target in sorted(deficits):
+        for source in sorted(available):
+            qty = min(deficits[target], available[source])
+            if qty > 0:
+                moves.append({'source': source, 'target': target, 'quantity': str(qty)})
+                deficits[target] -= qty
+                available[source] -= qty
+    return {'moves': moves,
+            'losses': [{'store': s, 'quantity': str(q)} for s, q in sorted(available.items()) if q > 0],
+            'enters': [{'store': s, 'quantity': str(q), 'price': str(prices[s])}
+                       for s, q in sorted(deficits.items()) if q > 0]}
+
+
 def ms_base():
     from production import BASE
     return BASE

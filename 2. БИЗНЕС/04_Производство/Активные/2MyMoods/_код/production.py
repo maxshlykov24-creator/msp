@@ -97,7 +97,7 @@ def remaining(sent, returned):
 def fingerprint(doc, positions):
     # Статус и номер могут изменяться штатно. Цена приёмки сохраняется как введена.
     body = {k: doc.get(k) for k in ('applicable', 'moment', 'organization', 'store',
-                                    'sourceStore', 'targetStore', 'agent', 'purchaseOrder')}
+                                    'sourceStore', 'targetStore', 'agent', 'purchaseOrder', 'overhead', 'rate')}
     body['positions'] = sorted((ident(p['assortment']), str(dec(p['quantity'])),
                                 str(p.get('price', 0))) for p in positions)
     return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
@@ -610,7 +610,7 @@ class Engine:
                 raise Review('Недостаточно материала/изделий на складе: ' + key)
 
     @staticmethod
-    def fifo_cost(layers, quantity):
+    def fifo_cost(layers, quantity, opening_balances=()):
         need, total, used = dec(quantity), Decimal(0), []
         if need <= 0:
             raise Review('Не указана положительная норма материала')
@@ -625,8 +625,8 @@ class Engine:
                 continue
             if not row.get('moment') or row.get('costPerUnit') is None or dec(row['costPerUnit']) <= 0:
                 raise Review('Стоимость партии материала не подтверждена')
-            # Native remnants retain receipt provenance. Other origins are not guessed.
-            if row.get('operation', {}).get('meta', {}).get('type') != 'supply':
+            origin = row.get('operation', {}).get('meta', {}).get('type')
+            if origin != 'supply' and not (origin == 'enter' and ident(row.get('operation')) in opening_balances):
                 raise Review('Нет подтверждённой стоимости из приёмки материала')
             amount = min(stock, need)
             total += amount * dec(row['costPerUnit']) / 100
@@ -637,6 +637,29 @@ class Engine:
             if need == 0:
                 return total, used
         raise Review('Недостаточно остатков материала для расчёта FIFO')
+
+    def verified_opening_balances(self, layers, checked):
+        # Only an explicitly registered and unchanged opening inventory can act
+        # as the first FIFO layer. Arbitrary inventory receipts stay unsupported.
+        registered = self.config().get('opening_balance_documents', {})
+        allowed = set()
+        for row in layers:
+            operation = row.get('operation', {})
+            key = ident(operation)
+            if operation.get('meta', {}).get('type') != 'enter' or key not in registered:
+                continue
+            if key not in checked:
+                try:
+                    doc = self.ms.get('/entity/enter/' + key)
+                    if not doc.get('applicable') or fingerprint(doc, self.ms.positions('enter', key)) != registered[key]:
+                        raise Review('Начальные остатки материалов изменены; требуется сверка')
+                    checked[key] = True
+                except Review as error:
+                    checked[key] = error
+            if isinstance(checked[key], Review):
+                raise checked[key]
+            allowed.add(key)
+        return allowed
 
     def material_fifo_layers(self, key, kind='product', force=False):
         ref(kind, key)
@@ -662,7 +685,7 @@ class Engine:
         return rows
 
     def production_costs(self, force=False):
-        result, layers = {}, {}
+        result, layers, opening_checked = {}, {}, {}
         for recipe in self.recipes():
             key = recipe.get('assortment_id')
             if not key:
@@ -695,7 +718,8 @@ class Engine:
                             layers[mid] = error
                     if isinstance(layers[mid], Review):
                         raise layers[mid]
-                    value, sources = self.fifo_cost(layers[mid], qty)
+                    value, sources = self.fifo_cost(layers[mid], qty,
+                        self.verified_opening_balances(layers[mid], opening_checked))
                     total += value
                     breakdown.append({'material': mid, 'quantity': float(qty),
                                       'cost': float(value), 'layers': sources})

@@ -2,8 +2,11 @@
   'use strict';
   var root = document.documentElement;
   var key = 'ms-product.theme';
-  var theme = 'dark';
-  try { if (localStorage.getItem(key) === 'light') theme = 'light'; } catch (_) {}
+  var theme = 'light';
+  try {
+    var savedTheme = localStorage.getItem(key);
+    if (savedTheme === 'light' || savedTheme === 'dark') theme = savedTheme;
+  } catch (_) {}
   root.dataset.theme = theme;
 
   var activeTransition = null;
