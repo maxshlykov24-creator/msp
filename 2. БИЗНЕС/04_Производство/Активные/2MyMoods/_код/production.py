@@ -291,7 +291,7 @@ class Engine:
         # Включение возможно только после настройки складов, статусов и даты старта.
         if config.get('enabled'):
             if os.environ.get('PRODUCTION_ALLOW_WRITES') != '1':
-                raise Review('Запуск заблокирован до проверки штатных связей документов и контрольной партии')
+                raise Review('Запуск заблокирован до проверки рабочего процесса и контрольной партии')
             if not config.get('start_at') or not config.get('company_store') or not config.get('states'):
                 raise Review('Перед включением нужны дата старта, склад компании и статусы')
             if not config.get('reason_attribute') or not config.get('reason_production'):
@@ -698,6 +698,8 @@ class Engine:
                 if len(packs) > 1:
                     raise Review('Зип-пакет можно добавить только на одном этапе')
                 requirements, kinds = defaultdict(Decimal), {}
+                cfg = self.config()
+                factories = {f['id']: f for f in cfg.get('factories', [])}
                 total, breakdown = Decimal(0), []
                 for stage in stages:
                     if 'work_cost' not in stage or dec(stage['work_cost']) < 0 or not stage.get('materials'):
@@ -708,9 +710,12 @@ class Engine:
                         ref(kind, mid)
                         if dec(mat.get('quantity', 0)) <= 0:
                             raise Review('Не заполнен расход материала')
-                        requirements[mid] += dec(mat['quantity'])
+                        store = factories.get(stage.get('factory'), {}).get('store', '') if cfg.get('workflow') == 'finished_receipt' else ''
+                        if cfg.get('workflow') == 'finished_receipt' and not store:
+                            raise Review('Не указан склад фабрики этапа')
+                        requirements[(mid, store)] += dec(mat['quantity'])
                         kinds[mid] = kind
-                for mid, qty in requirements.items():
+                for (mid, store), qty in requirements.items():
                     if mid not in layers:
                         try:
                             layers[mid] = self.material_fifo_layers(mid, kinds[mid], force)
@@ -718,8 +723,9 @@ class Engine:
                             layers[mid] = error
                     if isinstance(layers[mid], Review):
                         raise layers[mid]
-                    value, sources = self.fifo_cost(layers[mid], qty,
-                        self.verified_opening_balances(layers[mid], opening_checked))
+                    available = [r for r in layers[mid] if not store or ident(r.get('store')) == store]
+                    value, sources = self.fifo_cost(available, qty,
+                        self.verified_opening_balances(available, opening_checked))
                     total += value
                     breakdown.append({'material': mid, 'quantity': float(qty),
                                       'cost': float(value), 'layers': sources})
@@ -949,7 +955,129 @@ class Engine:
             {'stage': stage, 'lines': lines, 'name': label, 'returns': {}})
         self.save_chain(chain_id, chain, number)
 
+    def receipt_link_fields(self, count=2):
+        fields = []
+        existing = self.ms.rows('/entity/supply/metadata/attributes')
+        for index in range(count):
+            name = 'Списание материалов ' + str(index + 1)
+            matches = [a for a in existing if a.get('name') == name]
+            if len(matches) > 1 or matches and matches[0].get('type') != 'link':
+                raise Review('Проверь поле приёмки: ' + name)
+            field = matches[0] if matches else self.ms.request('POST', '/entity/supply/metadata/attributes',
+                                                               {'name': name, 'type': 'link', 'required': False})
+            fields.append(field)
+        return fields
+
+    def direct_material_groups(self, chain):
+        groups = {}
+        for line in chain['lines']:
+            for index, stage in enumerate(line['recipe']['stages']):
+                factory = chain['factories'][stage['factory']]
+                store = factory['store']
+                group = groups.setdefault(store, {'store': store, 'factories': [], 'stages': [], 'materials': {}})
+                if stage['factory'] not in group['factories']:
+                    group['factories'].append(stage['factory'])
+                if index + 1 not in group['stages']:
+                    group['stages'].append(index + 1)
+                for mat in stage['materials']:
+                    key = mat['id']
+                    entry = group['materials'].setdefault(key, {'assortment': ref(mat.get('type', 'product'), key),
+                                                               'quantity': 0, 'price': 0})
+                    entry['quantity'] = float(dec(entry['quantity']) + dec(mat['quantity']) * dec(line['quantity']))
+        return [dict(group, positions=list(group['materials'].values())) for _, group in sorted(groups.items())]
+
+    def snapshot_direct_cost(self, chain, groups):
+        total, traces, checked, cached = Decimal(0), [], {}, {}
+        for line in chain['lines']:
+            for stage in line['recipe']['stages']:
+                total += dec(stage.get('work_cost', 0)) * dec(line['quantity'])
+        for group in groups:
+            self.require_stock(group['store'], group['positions'])
+            for material in group['positions']:
+                mid = ident(material['assortment'])
+                if mid not in cached:
+                    cached[mid] = self.material_fifo_layers(mid, material['assortment']['meta']['type'], True)
+                layers = [r for r in cached[mid] if ident(r.get('store')) == group['store']]
+                allowed = self.verified_opening_balances(layers, checked)
+                cost, trace = self.fifo_cost(layers, material['quantity'], allowed)
+                total += cost
+                traces.append({'material': mid, 'store': group['store'], 'cost': float(cost), 'layers': trace})
+        return {'total': float(total), 'materials': traces, 'at': now()}
+
+    def process_direct_supply(self, value):
+        chain, number = self.chain(value)
+        current = self.ms.get('/entity/supply/' + value)
+        positions = self.ms.positions('supply', value)
+        if chain:
+            if chain.get('workflow') != 'finished_receipt':
+                raise Review('Приёмка уже обрабатывалась по прежней схеме; нужна отдельная сверка')
+            if fingerprint(current, positions) != chain['fingerprint']:
+                raise Review('Приёмка изменена или распроведена после списания материалов')
+            self.check_production_order(ident(current['purchaseOrder']), current)
+        else:
+            expected = self.config()['states']['supply']['Ожидает обработки']
+            if not current.get('applicable') or ident(current.get('state')) != expected:
+                return
+            chain = self.plan_supply(value)
+            groups = self.direct_material_groups(chain)
+            if not groups:
+                raise Review('Не заполнены материалы производства')
+            fields = self.receipt_link_fields(max(2, len(groups)))
+            attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
+            if any(attrs.get(f['id']) for f in fields):
+                raise Review('В приёмке уже указаны списания; проверь перед автоматической обработкой')
+            # All stores and FIFO prices must be confirmed before the first write.
+            cost = self.snapshot_direct_cost(chain, groups)
+            chain.update(workflow='finished_receipt', material_groups=groups,
+                         link_fields=fields[:len(groups)], cost_snapshot=cost, losses={}, complete=False)
+            number = self.save_chain(value, chain)
+        cfg = self.config()
+        attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
+        expected_links = []
+        for index, group in enumerate(chain['material_groups']):
+            field = chain['link_fields'][index]
+            recorded = chain['losses'].get(group['store'])
+            url = 'https://online.moysklad.ru/app/#loss/edit?id=' + recorded if recorded else None
+            if attrs.get(field['id']) and attrs[field['id']] != url:
+                raise Review('Ссылка на списание в приёмке изменена вручную; требуется сверка')
+            loss = self.execute(f'{value}/direct/{group["store"]}/loss', 'loss', {
+                'name': f'СП-{number}-' + str(index + 1), 'organization': chain['source']['organization'],
+                'applicable': True, 'moment': max(now(), chain['source']['moment']),
+                'store': ref('store', group['store']), 'positions': group['positions'],
+                'description': 'Готовая продукция; приёмка ' + chain['source']['name'] +
+                               '; этапы ' + ', '.join(map(str, sorted(group['stages']))) +
+                               '; https://online.moysklad.ru/app/#supply/edit?id=' + value,
+                'attributes': [{'meta': {'href': BASE + '/entity/loss/metadata/attributes/' + cfg['reason_attribute'],
+                                         'type': 'attributemetadata', 'mediaType': 'application/json'},
+                                'value': ref('customentity/' + cfg['reason_dictionary'], cfg['reason_production'])}]})
+            chain['losses'][group['store']] = loss['id']
+            self.save_chain(value, chain, number)
+            expected_links.append({'meta': field['meta'],
+                'value': 'https://online.moysklad.ru/app/#loss/edit?id=' + loss['id']})
+        # Never complete a receipt if it changed while documents were being created.
+        current = self.ms.get('/entity/supply/' + value)
+        if fingerprint(current, self.ms.positions('supply', value)) != chain['fingerprint']:
+            raise Review('Приёмка изменилась во время списания материалов')
+        current_attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
+        for link in expected_links:
+            if current_attrs.get(ident(link)) not in (None, '', link['value']):
+                raise Review('Ссылка на списание изменена во время обработки')
+        if any(current_attrs.get(ident(a)) != a['value'] for a in expected_links):
+            self.ms.request('PUT', '/entity/supply/' + value, {'attributes': expected_links})
+        saved = self.ms.get('/entity/supply/' + value)
+        saved_attrs = {ident(a): a.get('value') for a in saved.get('attributes', [])}
+        if any(saved_attrs.get(ident(a)) != a['value'] for a in expected_links):
+            raise Review('Не удалось сохранить ссылки на списания в приёмке')
+        for loss_id in chain['losses'].values():
+            self.audit_generated('loss', loss_id, self.ms.get('/entity/loss/' + loss_id))
+        self.set_state('supply', value, 'Завершена')
+        chain['complete'] = True
+        self.save_chain(value, chain, number)
+        self.enqueue('purchaseorder', ident(chain['source']['purchaseOrder']))
+
     def process_supply(self, value):
+        if self.config().get('workflow') == 'finished_receipt':
+            return self.process_direct_supply(value)
         chain, number = self.chain(value)
         if chain:
             current = self.ms.get('/entity/supply/' + value)
@@ -1209,6 +1337,9 @@ class Engine:
             chain, _ = self.chain(supply['id'])
             if chain and fingerprint(supply, self.ms.positions('supply', supply['id'])) != chain['fingerprint']:
                 raise Review('Приёмка изменена после обработки; заказ не может быть завершён')
+            if chain and chain.get('workflow') == 'finished_receipt':
+                for loss_id in chain.get('losses', {}).values():
+                    self.audit_generated('loss', loss_id, self.ms.get('/entity/loss/' + loss_id))
             if not chain or not chain.get('complete'):
                 complete = False
             for key, qty in quantities(self.ms.positions('supply', supply['id'])).items():
@@ -1223,8 +1354,10 @@ class Engine:
             self.set_state('purchaseorder', value, 'Завершён')
 
     def mark_chain_review(self, kind, value):
-        affected = set()
+        affected = {value} if kind == 'supply' and self.config().get('workflow') == 'finished_receipt' else set()
         for cid, _, chain in self.all_chains():
+            if kind == 'loss' and value in chain.get('losses', {}).values():
+                affected.add(cid)
             if kind == 'supply' and value == cid:
                 affected.add(cid)
             if kind == 'move' and any(value == oid or value in group.get('returns', {})
@@ -1248,7 +1381,10 @@ class Engine:
             kind, value = row['kind'], row['id']
             try:
                 doc = self.ms.get('/entity/' + kind + '/' + value)
-                if doc.get('created', '') < self.config().get('start_at', '9999'):
+                cfg = self.config()
+                with self.db() as db:
+                    tracked = db.execute('SELECT 1 FROM operations WHERE kind=? AND doc_id=?', (kind, value)).fetchone()
+                if doc.get('created', '') < cfg.get('start_at', '9999') and value not in cfg.get('test_document_ids', []) and not tracked:
                     result = 'ignored'
                 else:
                     factories = self.config().get('factories', [])
@@ -1256,7 +1392,9 @@ class Engine:
                         result = 'ignored'
                     else:
                         if kind == 'supply': self.process_supply(value)
-                        elif kind == 'move': self.process_move(value)
+                        elif kind == 'move':
+                            if self.config().get('workflow') != 'finished_receipt':
+                                self.process_move(value)
                         elif kind == 'loss': self.number_other(kind, doc)
                         else: self.process_order(value)
                         result = 'done'

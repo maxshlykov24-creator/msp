@@ -537,6 +537,88 @@ class ProductionTests(unittest.TestCase):
             'positions': copy.deepcopy(self.ms.docs['supply'][supply_id]['positions'])}
         return supply_id, cfg
 
+    def setup_direct(self):
+        value, cfg = self.setup_chain()
+        cfg['workflow'] = 'finished_receipt'
+        self.e.set_config(cfg)
+        self.ms.docs['supply'][value]['state'] = ref('supply/metadata/states', cfg['states']['supply']['Ожидает обработки'])
+        fields = [{'id': uid(), 'meta': {'href': 'https://example/entity/supply/metadata/attributes/' + uid(),
+                                       'type': 'attributemetadata'}} for _ in range(2)]
+        for f in fields:
+            f['id'] = f['meta']['href'].split('/')[-1]
+        self.e.receipt_link_fields = lambda count=2: fields[:count]
+        self.e.material_fifo_layers = lambda *args: [dict(self.fifo_layer(100, 560), store=ref('store', f['store']))
+                                                    for f in cfg['factories']]
+        return value, cfg
+
+    def test_direct_receipt_two_losses_links_no_moves_idempotent(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        chain, _ = self.e.chain(value)
+        self.assertTrue(chain['complete'])
+        self.assertEqual(len(self.ms.created), 2)
+        self.assertTrue(all(kind == 'loss' for kind, _ in self.ms.created))
+        self.assertEqual({ident_doc['store']['meta']['href'] for _, ident_doc in self.ms.created},
+                         {ref('store', f['store'])['meta']['href'] for f in cfg['factories']})
+        self.assertEqual(len(self.ms.docs['supply'][value]['attributes']), 2)
+        self.assertAlmostEqual(chain['cost_snapshot']['total'], 21 * 5.6)
+        self.e.process_supply(value)
+        self.assertEqual(len(self.ms.created), 2)
+        self.e.process_order(chain['source']['purchaseOrder']['meta']['href'].split('/')[-1])
+
+    def test_direct_analytics_uses_each_factory_fifo(self):
+        value, cfg = self.setup_direct()
+        recipe = self.e.recipes()[0]
+        for stage in recipe['stages']:
+            stage['work_cost'] = 0
+        self.e.recipes = lambda: [recipe]
+        self.e.material_fifo_layers = lambda *args: [
+            dict(self.fifo_layer(100, 100), store=ref('store', cfg['factories'][0]['store'])),
+            dict(self.fifo_layer(100, 1000), store=ref('store', cfg['factories'][1]['store']))]
+        self.assertEqual(self.e.production_costs()[self.product]['cost'], 3)
+
+    def test_direct_all_materials_preflight_before_writes(self):
+        value, _ = self.setup_direct()
+        self.e.material_fifo_layers = lambda *args: []
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.assertEqual(self.ms.created, [])
+        self.assertIsNone(self.e.chain(value)[0])
+
+    def test_direct_recovers_after_unknown_create_response(self):
+        value, _ = self.setup_direct()
+        self.ms.timeout_after_create = True
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.e.process_supply(value)
+        self.assertEqual(len(self.ms.created), 2)
+        self.assertTrue(self.e.chain(value)[0]['complete'])
+
+    def test_direct_unposted_loss_and_changed_receipt_block_completion(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        loss = self.ms.created[0][1]
+        self.ms.docs['loss'][loss['id']]['applicable'] = False
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.e.mark_chain_review('loss', loss['id'])
+        self.assertEqual(self.ms.docs['supply'][value]['state'],
+                         ref('supply/metadata/states', cfg['states']['supply']['Требует проверки']))
+        self.ms.docs['supply'][value]['positions'][0]['quantity'] = 9
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.assertEqual(len(self.ms.created), 2)
+
+    def test_direct_groups_stages_on_same_warehouse(self):
+        value, cfg = self.setup_direct()
+        cfg['factories'][1]['store'] = cfg['factories'][0]['store']
+        # set_config deliberately preserves persisted factory mappings.
+        with self.e.db() as db:
+            db.execute("UPDATE kv SET value=? WHERE key='config'", (json.dumps(cfg),))
+        self.e.process_supply(value)
+        self.assertEqual(len(self.ms.created), 1)
+        self.assertEqual(self.ms.created[0][1]['positions'][0]['quantity'], 21)
+
     def test_cancelled_or_unconducted_order_never_reopens(self):
         value, cfg = self.setup_chain()
         for cancelled in (True, False):
