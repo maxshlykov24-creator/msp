@@ -57,7 +57,12 @@ class FakeMS:
                 raise Review('Неопределённый ответ')
             return copy.deepcopy(doc)
         value = path.split('/')[-1]
-        self.docs[kind][value].update(copy.deepcopy(body))
+        update = copy.deepcopy(body)
+        if 'attributes' in update:
+            attrs = {a['meta']['href']: a for a in self.docs[kind][value].get('attributes', [])}
+            attrs.update({a['meta']['href']: a for a in update['attributes']})
+            update['attributes'] = list(attrs.values())
+        self.docs[kind][value].update(update)
         return copy.deepcopy(self.docs[kind][value])
 
 
@@ -630,6 +635,44 @@ class ProductionTests(unittest.TestCase):
         self.assertNotIn('не хватает 3 г', self.ms.docs['supply'][value]['description'])
         self.e.receipt_note(value)
         self.assertEqual(self.ms.docs['supply'][value]['description'], 'Комментарий сотрудника')
+
+    def test_partial_direct_processing_publishes_first_link_and_recovers(self):
+        value, _ = self.setup_direct()
+        original = self.ms.request
+        count = 0
+        def fail_second(method, path, body):
+            nonlocal count
+            if method == 'POST' and path == '/entity/loss':
+                count += 1
+                if count == 2:
+                    raise Review('Не удалось создать второе списание')
+            return original(method, path, body)
+        self.ms.request = fail_second
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.assertEqual(len(self.ms.docs['supply'][value]['attributes']), 1)
+        self.e.process_supply(value)
+        self.assertEqual(len(self.ms.created), 2)
+        self.assertEqual(len(self.ms.docs['supply'][value]['attributes']), 2)
+
+    def test_review_reopens_completed_order_and_preserves_no_duplicate_losses(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        order_id = self.ms.docs['supply'][value]['purchaseOrder']['meta']['href'].split('/')[-1]
+        self.e.process_order(order_id)
+        self.assertEqual(self.ms.docs['purchaseorder'][order_id]['state'],
+                         ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['Завершён']))
+        loss_id = self.ms.created[0][1]['id']
+        self.ms.docs['loss'][loss_id]['applicable'] = False
+        self.e.mark_chain_review('loss', loss_id, 'Списание распроведено')
+        self.assertFalse(self.e.chain(value)[0]['complete'])
+        self.assertEqual(self.ms.docs['purchaseorder'][order_id]['state'],
+                         ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['В работе']))
+        self.ms.docs['loss'][loss_id]['applicable'] = True
+        self.e.process_supply(value)
+        self.e.process_order(order_id)
+        self.assertTrue(self.e.chain(value)[0]['complete'])
+        self.assertEqual(len(self.ms.created), 2)
 
     def test_direct_analytics_uses_each_factory_fifo(self):
         value, cfg = self.setup_direct()

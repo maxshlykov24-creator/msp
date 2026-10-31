@@ -838,10 +838,10 @@ class Engine:
             current = self.ms.get('/entity/' + kind + '/' + doc['id'])
             for field in ('sourceStore', 'targetStore', 'store', 'organization'):
                 if field in payload and ident(payload[field]) != ident(current.get(field)):
-                    raise Review('Изменён склад/организация автоматического документа')
+                    raise Review('Документ ' + str(doc.get('name', doc['id'])) + ': изменён склад или организация')
             positions = self.ms.positions(kind, doc['id'])
             if not current.get('applicable') or quantities(positions) != quantities(payload['positions']):
-                raise Review('Автоматический документ изменён или распроведён')
+                raise Review('Документ ' + str(current.get('name', doc['id'])) + ': изменён состав или снято проведение')
             if basis and kind == 'move' and ident(current.get('supply')) != basis:
                 raise Review('Автоматический документ не подтвердил связь с приёмкой')
             return current, positions
@@ -1013,7 +1013,8 @@ class Engine:
                     entry = group['materials'].setdefault(key, {'assortment': ref(mat.get('type', 'product'), key),
                                                                'quantity': 0, 'price': 0})
                     entry['quantity'] = float(dec(entry['quantity']) + dec(mat['quantity']) * dec(line['quantity']))
-        return [dict(group, positions=list(group['materials'].values())) for _, group in sorted(groups.items())]
+        return [dict(group, positions=list(group['materials'].values()))
+                for group in sorted(groups.values(), key=lambda g: (min(g['stages']), g['store']))]
 
     def snapshot_direct_cost(self, chain, groups, allow_negative=False):
         total, traces, checked, cached = Decimal(0), [], {}, {}
@@ -1135,6 +1136,19 @@ class Engine:
             self.save_chain(value, chain, number)
             expected_links.append({'meta': field['meta'],
                 'value': 'https://online.moysklad.ru/app/#loss/edit?id=' + loss['id']})
+            # Publish every successful write-off immediately, even if the next one fails.
+            linked = self.ms.get('/entity/supply/' + value)
+            if fingerprint(linked, self.ms.positions('supply', value)) != chain['fingerprint']:
+                raise Review('Приёмка изменилась во время списания материалов')
+            linked_attrs = {ident(a): a.get('value') for a in linked.get('attributes', [])}
+            link = expected_links[-1]
+            if linked_attrs.get(field['id']) not in (None, '', link['value']):
+                raise Review('Ссылка на списание изменена во время обработки')
+            if linked_attrs.get(field['id']) != link['value']:
+                self.ms.request('PUT', '/entity/supply/' + value, {'attributes': [link]})
+            linked = self.ms.get('/entity/supply/' + value)
+            if next((a.get('value') for a in linked.get('attributes', []) if ident(a) == field['id']), None) != link['value']:
+                raise Review('Не удалось сохранить ссылку на списание в приёмке')
         # Never complete a receipt if it changed while documents were being created.
         current = self.ms.get('/entity/supply/' + value)
         if fingerprint(current, self.ms.positions('supply', value)) != chain['fingerprint']:
@@ -1374,9 +1388,11 @@ class Engine:
         body = json.loads(row['body'])
         for field in ('sourceStore', 'targetStore', 'store', 'organization'):
             if field in body and ident(body[field]) != ident(doc.get(field)):
-                raise Review('Изменён склад/организация автоматического документа')
-        if not doc.get('applicable') or quantities(self.ms.positions(kind, value)) != quantities(body['positions']):
-            raise Review('Автоматический документ изменён/распроведён')
+                raise Review('Документ ' + str(doc.get('name', doc['id'])) + ': изменён склад или организация')
+        if not doc.get('applicable'):
+            raise Review('Документ ' + str(doc.get('name', value)) + ' распроведён')
+        if quantities(self.ms.positions(kind, value)) != quantities(body['positions']):
+            raise Review('Документ ' + str(doc.get('name', value)) + ': изменён состав или количество')
 
     def number_other(self, kind, doc):
         if kind not in ('move', 'loss'):
@@ -1455,6 +1471,16 @@ class Engine:
                 affected.add(cid)
         for cid in affected:
             try:
+                chain, number = self.chain(cid)
+                if chain and chain.get('workflow') == 'finished_receipt':
+                    chain['complete'] = False
+                    self.save_chain(cid, chain, number)
+                    order_id = ident(chain['source'].get('purchaseOrder'))
+                    if order_id:
+                        order = self.ms.get('/entity/purchaseorder/' + order_id)
+                        states = self.config()['states']['purchaseorder']
+                        if order.get('applicable') and ident(order.get('state')) == states['Завершён']:
+                            self.set_state('purchaseorder', order_id, 'В работе')
                 self.set_state('supply', cid, 'Требует проверки')
                 if message:
                     self.receipt_note(cid, 'Требует проверки. ' + message)
@@ -1485,7 +1511,9 @@ class Engine:
                     else:
                         if kind == 'supply': self.process_supply(value)
                         elif kind == 'move':
-                            if self.config().get('workflow') != 'finished_receipt':
+                            if self.config().get('workflow') == 'finished_receipt':
+                                self.number_other('move', doc)
+                            else:
                                 self.process_move(value)
                         elif kind == 'loss': self.number_other(kind, doc)
                         else: self.process_order(value)
