@@ -588,8 +588,8 @@ class ProductionTests(unittest.TestCase):
         self.assertIsNone(chain['cost_snapshot']['total'])
         self.assertEqual(len(self.ms.created), 2)
         comment = self.ms.docs['supply'][value]['description']
-        self.assertIn('минусовой остаток разрешён', comment)
-        self.assertIn('FIFO не рассчитана', comment)
+        self.assertIn('Материалы списаны в минус.', comment)
+        self.assertIn('Себестоимость пока не рассчитана.', comment)
         self.e.process_supply(value)
         self.assertEqual(len(self.ms.created), 2)
         self.assertEqual(self.ms.docs['supply'][value]['description'], comment)
@@ -621,7 +621,7 @@ class ProductionTests(unittest.TestCase):
                 {'id': self.factory, 'name': 'Производство | Фабрика'}])))
         self.ms.stock[self.material] = 2
         problems = self.e.stock_shortages(self.factory, [{'assortment': ref('product', self.material), 'quantity': 5}])
-        self.assertEqual(problems, ['Нить голубая (Производство | Фабрика): нужно 5 г, есть 2 г, не хватает 3 г'])
+        self.assertEqual(problems, ['Нить голубая — 3 г (Фабрика)'])
 
     def test_receipt_problem_comment_preserves_employee_text_no_duplicates(self):
         value, _ = self.setup_direct()

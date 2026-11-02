@@ -610,7 +610,7 @@ class Engine:
         catalogues = self.catalogue_snapshot().get('catalogues', {})
         items = {x['id']: x for x in catalogues.get('assortment', [])}
         stores = {x['id']: x for x in catalogues.get('store', [])}
-        label = stores.get(store, {}).get('name') or store
+        label = re.sub(r'^Производство\s*\|\s*', '', stores.get(store, {}).get('name') or store, flags=re.I)
         fmt = lambda q: format(q.normalize(), 'f').replace('.', ',')
         problems = []
         for key, qty in quantities(positions).items():
@@ -618,14 +618,13 @@ class Engine:
             if available < qty:
                 item = items.get(key, {})
                 unit = item.get('uom', {}).get('name', '') if item.get('uom') else ''
-                problems.append(f'{item.get("name") or key} ({label}): нужно {fmt(qty)} {unit}, '
-                                f'есть {fmt(available)} {unit}, не хватает {fmt(qty - available)} {unit}')
+                problems.append(f'{item.get("name") or key} — {fmt(qty - available)} {unit} ({label})'.strip())
         return problems
 
     def require_stock(self, store, positions):
         problems = self.stock_shortages(store, positions)
         if problems:
-            raise StockShortage('Не хватает материалов: ' + '; '.join(problems))
+            raise StockShortage('Не хватает: ' + '; '.join(problems))
 
     @staticmethod
     def fifo_cost(layers, quantity, opening_balances=()):
@@ -1021,7 +1020,7 @@ class Engine:
         issues = []
         problems = [problem for group in groups for problem in self.stock_shortages(group['store'], group['positions'])]
         if problems and not allow_negative:
-            raise StockShortage('Не хватает материалов: ' + '; '.join(problems))
+            raise StockShortage('Не хватает: ' + '; '.join(problems))
         for line in chain['lines']:
             for stage in line['recipe']['stages']:
                 total += dec(stage.get('work_cost', 0)) * dec(line['quantity'])
@@ -1047,6 +1046,14 @@ class Engine:
                 traces.append({'material': mid, 'store': group['store'], 'cost': float(cost), 'layers': trace})
         return {'total': None if issues else float(total), 'materials': traces, 'at': now(),
                 'issues': issues, 'stock_problems': problems}
+
+    @staticmethod
+    def completion_note(chain):
+        snapshot = chain.get('cost_snapshot', {})
+        note = 'Материалы списаны в минус.' if snapshot.get('stock_problems') else 'Материалы списаны.'
+        if snapshot.get('total') is None:
+            note += ' Себестоимость пока не рассчитана.'
+        return note
 
     def receipt_note(self, value, message=''):
         # Replace only the exact text previously written by this integration.
@@ -1097,7 +1104,7 @@ class Engine:
                 if ident(current.get('state')) == self.config()['states']['supply']['Требует проверки']:
                     plan = self.plan_supply(value)
                     self.snapshot_direct_cost(plan, self.direct_material_groups(plan))
-                    self.receipt_note(value, 'Материалы проверены. Для обработки выбери «Ожидает обработки».')
+                    self.receipt_note(value, 'Для обработки выбери «Ожидает обработки».')
                 return
             chain = self.plan_supply(value)
             groups = self.direct_material_groups(chain)
@@ -1166,11 +1173,7 @@ class Engine:
         for loss_id in chain['losses'].values():
             self.audit_generated('loss', loss_id, self.ms.get('/entity/loss/' + loss_id))
         if chain.get('allow_negative'):
-            note = 'Списания выполнены по команде «Завершена», минусовой остаток разрешён.'
-            if chain['cost_snapshot'].get('stock_problems'):
-                note += ' ' + '; '.join(chain['cost_snapshot']['stock_problems']) + '.'
-            if chain['cost_snapshot'].get('total') is None:
-                note += ' Себестоимость по FIFO не рассчитана: нет подтверждённых остатков.'
+            note = self.completion_note(chain)
             self.receipt_note(value, note)
         else:
             self.receipt_note(value)
@@ -1483,7 +1486,7 @@ class Engine:
                             self.set_state('purchaseorder', order_id, 'В работе')
                 self.set_state('supply', cid, 'Требует проверки')
                 if message:
-                    self.receipt_note(cid, 'Требует проверки. ' + message)
+                    self.receipt_note(cid, message)
             except Exception:
                 self.log('supply', cid, 'Не удалось установить статус Требует проверки; нужна сверка')
 
