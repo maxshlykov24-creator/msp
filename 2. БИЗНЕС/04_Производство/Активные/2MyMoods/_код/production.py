@@ -1757,8 +1757,8 @@ class Engine:
             # Tracked receipts stay protected if somebody removes their order.
             return tracked or bool(ident(doc.get('purchaseOrder')) and (
                 ident(doc.get('agent')) in agents or re.match(r'^ПР-', doc.get('name', ''))))
-        return (tracked or bool(RESERVED.match(doc.get('name', '')))
-                or bool(re.match(r'^(?:ПР|СП|МТ|ВШ)-', doc.get('name', ''))))
+        # A manually copied number is not proof of a production operation.
+        return tracked or self.needs_production_project(kind, doc)
 
     def project_receipt_basis(self, receipt_id):
         """Resolve an actual receipt/order relation; names and stock locations are not links."""

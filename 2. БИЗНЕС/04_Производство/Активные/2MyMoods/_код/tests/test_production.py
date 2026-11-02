@@ -695,6 +695,36 @@ class ProductionTests(unittest.TestCase):
         self.e.number_other('loss', self.ms.docs['loss'][new])
         self.assertEqual(self.ms.docs['loss'][new]['name'], '16')
 
+    def test_copied_loss_worker_assigns_next_number_and_preserves_stock(self):
+        _, cfg = self.setup_direct()
+        cfg.update(enabled=True, start_at='2026-11-01 00:00:00', production_project=uid())
+        with patch.dict('os.environ', {'PRODUCTION_ALLOW_WRITES': '1'}): self.e.set_config(cfg)
+        old, value = uid(), uid()
+        self.ms.docs['loss'][old] = {'id': old, 'name': '134'}
+        before = {'id': value, 'name': 'СП-0013-01-03', 'created': '2026-11-02 17:59:32',
+                  'applicable': True, 'description': 'Комментарий сотрудника',
+                  'store': ref('store', self.company),
+                  'positions': [{'id': uid(), 'assortment': ref('product', self.product), 'quantity': 1, 'price': 2890000}]}
+        self.ms.docs['loss'][value] = copy.deepcopy(before)
+        self.e.enqueue('loss', value)
+        with self.e.db() as db: db.execute('UPDATE jobs SET due=0')
+        self.e.run_one()
+        self.assertEqual(self.ms.docs['loss'][value], dict(before, name='135'))
+        with self.e.db() as db:
+            job=db.execute("SELECT status,error FROM jobs WHERE kind='loss' AND id=?", (value,)).fetchone()
+            self.assertEqual((job['status'],job['error']), ('done',''))
+        self.e.number_other('loss', self.ms.docs['loss'][value])
+        self.assertEqual(self.ms.docs['loss'][value]['name'], '135')
+        self.assertFalse(self.ms.created)
+
+    def test_linked_manual_loss_keeps_production_number(self):
+        value, cfg = self.setup_direct()
+        loss={'id': uid(), 'name': 'СП-0009-01-01', 'attributes': [
+            {'meta': {'href': 'https://example/attributes/' + cfg['loss_receipt_attribute']},
+             'value': 'https://online.moysklad.ru/app/#supply/edit?id=' + value}]}
+        self.assertTrue(self.e.is_production_document('loss',loss))
+        with self.assertRaises(Review): self.e.number_other('loss',loss)
+
     def test_ordinary_supply_worker_changes_only_name_and_preserves_state(self):
         _, cfg = self.setup_direct()
         cfg.update(enabled=True, start_at='2026-11-01 00:00:00')
@@ -754,8 +784,14 @@ class ProductionTests(unittest.TestCase):
             self.assertEqual(self.ms.docs[kind][a]['name'], '16')
             self.assertEqual(self.ms.docs[kind][b]['name'], '17')
 
-    def test_non_numeric_production_prefix_not_renumbered(self):
-        with self.assertRaises(Review): self.e.number_other('move', {'id': uid(), 'name': 'ВШ-100/01'})
+    def test_copied_production_prefix_without_basis_gets_ordinary_number(self):
+        for kind, name in [('move', 'ВШ-100/01'), ('loss', 'СП-0013-01-03')]:
+            doc = {'id': uid(), 'name': name}
+            self.ms.docs[kind][doc['id']] = doc
+            self.e.number_other(kind, copy.deepcopy(doc))
+            self.assertEqual(doc['name'], '1')
+            self.e.number_other(kind, copy.deepcopy(doc))
+            self.assertEqual(doc['name'], '1')
 
     def test_approval_requires_material_mapping_and_zip(self):
         with self.assertRaises(Review): self.e.save_recipe({'approved': True})
