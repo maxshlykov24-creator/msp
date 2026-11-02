@@ -636,16 +636,53 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(ident(result['project']), cfg['production_project'])
         self.assertEqual(fingerprint(result, self.ms.positions('supply', value)), before)
 
-    def test_project_scope_includes_factory_transfers_but_excludes_unlinked_receipt(self):
+    def test_project_scope_requires_document_links_not_factory_stores(self):
         value, cfg = self.setup_direct()
         receipt = self.ms.docs['supply'][value]
         self.assertTrue(self.e.needs_production_project('supply', receipt))
         ordinary = dict(receipt, id=uid(), name='ПР-0001-02')
         ordinary.pop('purchaseOrder')
         self.assertFalse(self.e.needs_production_project('supply', ordinary))
-        self.assertTrue(self.e.needs_production_project('move', {'id': uid(),
+        self.assertFalse(self.e.needs_production_project('move', {'id': uid(),
             'sourceStore': ref('store', cfg['factories'][0]['store'])}))
         self.assertFalse(self.e.needs_production_project('loss', {'id': uid(), 'store': ref('store', uid())}))
+
+    def test_production_project_removed_from_unlinked_prefixed_loss(self):
+        value, cfg = self.setup_direct()
+        cfg['production_project'] = uid()
+        self.e.set_config(cfg)
+        loss = {'id': uid(), 'name': 'СП-0013-01-03', 'project': ref('project', cfg['production_project']),
+                'store': ref('store', cfg['factories'][0]['store']), 'positions': [], 'description': 'Комментарий сотрудника',
+                'applicable': True}
+        self.ms.docs['loss'][loss['id']] = copy.deepcopy(loss)
+        self.assertFalse(self.e.needs_production_project('loss', loss))
+        saved = self.e.stamp_production_project('loss', loss)
+        self.assertIsNone(saved['project'])
+        self.assertEqual(saved['description'], loss['description'])
+        self.assertEqual(fingerprint(loss, []), fingerprint(saved, []))
+        self.e.stamp_production_project('loss', saved)
+        self.assertFalse(self.ms.created)
+
+    def test_linked_loss_gets_project_but_lookalike_name_does_not(self):
+        value, cfg = self.setup_direct()
+        cfg['production_project'] = uid()
+        self.e.set_config(cfg)
+        doc = {'id': uid(), 'name': '123', 'store': ref('store', self.company), 'attributes': [
+            {'meta': {'href': 'https://example/attributes/' + cfg['loss_receipt_attribute']},
+             'value': 'https://online.moysklad.ru/app/#supply/edit?id=' + value}]}
+        self.assertTrue(self.e.needs_production_project('loss', doc))
+        self.assertFalse(self.e.needs_production_project('loss', dict(doc, name='СП-0009-01-01', attributes=[])))
+        self.assertFalse(self.e.needs_production_project('loss', dict(doc, attributes=[], externalCode='2my-prod-copy')))
+        self.ms.docs['supply'][value].pop('purchaseOrder')
+        self.assertFalse(self.e.needs_production_project('loss', doc))
+
+    def test_unrelated_project_is_preserved_on_ordinary_loss(self):
+        value, cfg = self.setup_direct()
+        cfg['production_project'] = uid()
+        self.e.set_config(cfg)
+        project = uid()
+        doc = {'id': uid(), 'name': '1', 'project': ref('project', project)}
+        self.assertEqual(self.e.stamp_production_project('loss', doc), doc)
 
     def test_ordinary_loss_ignores_numeric_production_and_prefixes(self):
         old, prod, tracked, labeled, new = [uid() for _ in range(5)]

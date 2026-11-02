@@ -927,7 +927,9 @@ class Engine:
             else:
                 payload = copy.deepcopy(payload)
                 cfg = self.config()
-                if ID.fullmatch(cfg.get('production_project', '')):
+                receipt_id = key.split('/')[0]
+                if (ID.fullmatch(cfg.get('production_project', '')) and ID.fullmatch(receipt_id)
+                        and self.chain(receipt_id)[0] and self.project_receipt_basis(receipt_id)):
                     payload['project'] = ref('project', cfg['production_project'])
                 if cfg.get('operation_attributes', {}).get(kind):
                     label = ('Изделия на доработку' if '/out/' in key else
@@ -958,10 +960,10 @@ class Engine:
                     raise Review('API не подтвердил основание приёмки для перемещения')
                 payload = dict(template, **payload)
             doc = self.ms.request('POST', '/entity/' + kind, payload)
-        doc = self.stamp_production_project(kind, doc)
         # Сохраняем ID даже при последующем отказе проверки: документ уже существует.
         with self.db() as db:
             db.execute("UPDATE operations SET doc_id=? WHERE key=?", (doc['id'], key))
+        doc = self.stamp_production_project(kind, doc)
         def verify():
             current = self.ms.get('/entity/' + kind + '/' + doc['id'])
             for field in ('sourceStore', 'targetStore', 'store', 'organization'):
@@ -1758,24 +1760,65 @@ class Engine:
         return (tracked or bool(RESERVED.match(doc.get('name', '')))
                 or bool(re.match(r'^(?:ПР|СП|МТ|ВШ)-', doc.get('name', ''))))
 
+    def project_receipt_basis(self, receipt_id):
+        """Resolve an actual receipt/order relation; names and stock locations are not links."""
+        if not ID.fullmatch(receipt_id):
+            return False
+        receipt = self.ms.get('/entity/supply/' + receipt_id)
+        if receipt.get('deleted'):
+            return False
+        return self.needs_production_project('supply', receipt)
+
     def needs_production_project(self, kind, doc):
-        if kind == 'supply':
-            return self.is_production_document(kind, doc)
-        factories = self.config().get('factories', [])
+        if doc.get('deleted'):
+            return False
         if kind == 'purchaseorder':
-            return ident(doc.get('agent')) in {f.get('agent') for f in factories}
-        stores = {f.get('store') for f in factories} - {None, ''}
-        return self.is_production_document(kind, doc) or any(
-            ident(doc.get(field)) in stores for field in ('store', 'sourceStore', 'targetStore'))
+            return ident(doc.get('agent')) in {f.get('agent') for f in self.config().get('factories', [])}
+        order_id = ident(doc.get('purchaseOrder'))
+        if order_id:
+            order = self.ms.get('/entity/purchaseorder/' + order_id)
+            return not order.get('deleted') and self.needs_production_project('purchaseorder', order)
+        if kind == 'supply':
+            return False
+        if kind not in ('move', 'loss'):
+            return False
+        receipt_id = ident(doc.get('supply'))
+        if receipt_id:
+            return self.project_receipt_basis(receipt_id)
+        field = self.config().get('loss_receipt_attribute') if kind == 'loss' else None
+        if field:
+            value = next((a.get('value') for a in doc.get('attributes', []) if ident(a) == field), '')
+            match = re.fullmatch(r'https://online\.moysklad\.ru/app/#supply/edit\?id=([0-9a-f-]{36})', str(value or ''))
+            if match:
+                return self.project_receipt_basis(match[1])
+        with self.db() as db:
+            operations = db.execute('SELECT key FROM operations WHERE kind=? AND doc_id=?',
+                                    (kind, doc['id'])).fetchall()
+        for operation in operations:
+            receipt_id = operation['key'].split('/')[0]
+            if ID.fullmatch(receipt_id) and self.chain(receipt_id)[0] and self.project_receipt_basis(receipt_id):
+                return True
+        # Legacy manual returns are recorded against a particular outgoing batch.
+        if kind == 'move':
+            for cid, _, chain in self.all_chains():
+                if any(doc['id'] == mid or doc['id'] in group.get('returns', {})
+                       for mid, group in chain.get('outbound', {}).items()):
+                    return self.project_receipt_basis(cid)
+        return False
 
     def stamp_production_project(self, kind, doc):
         project = self.config().get('production_project', '')
-        if not ID.fullmatch(project) or ident(doc.get('project')) == project or doc.get('deleted'):
+        if not ID.fullmatch(project) or doc.get('deleted'):
             return doc
-        updated = self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'],
-                                  {'project': ref('project', project)})
-        if ident(updated.get('project')) != project:
-            raise Review('Не удалось указать проект ПРОИЗВОДСТВО в документе ' + doc.get('name', doc['id']))
+        eligible = self.needs_production_project(kind, doc)
+        current = ident(doc.get('project'))
+        if eligible and current == project or not eligible and current != project:
+            return doc
+        # Remove only our production project; preserve unrelated projects.
+        desired = ref('project', project) if eligible else None
+        updated = self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'], {'project': desired})
+        if ident(updated.get('project')) != (project if eligible else ''):
+            raise Review('Не удалось обновить проект документа ' + doc.get('name', doc['id']))
         return updated
 
     def number_other(self, kind, doc):
@@ -1906,8 +1949,7 @@ class Engine:
                     if kind == 'purchaseorder' and ident(doc.get('agent')) not in {x['agent'] for x in factories}:
                         result = 'ignored'
                     else:
-                        if self.needs_production_project(kind, doc):
-                            doc = self.stamp_production_project(kind, doc)
+                        doc = self.stamp_production_project(kind, doc)
                         if kind == 'supply':
                             if production:
                                 self.process_supply(value)
