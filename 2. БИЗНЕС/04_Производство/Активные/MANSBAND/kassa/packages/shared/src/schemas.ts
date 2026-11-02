@@ -195,7 +195,8 @@ export const companyHandoverSchema = z
 /** Смена типа отложки/обещания без смены номера заявки (п.1.1 правок 10.08). */
 export const convertKindSchema = z
   .object({
-    kind: z.enum(["sale", "company", "rental", "deferred", "promise"]),
+    kind: z.enum(["sale", "company", "rental", "delivery", "deferred", "promise"]),
+    deliveryCity: z.string().max(500).optional(),
     companyName: z.string().optional(),
     managerName: z.string().optional(),
     managerPhone: z.string().optional(),
@@ -220,6 +221,9 @@ export const convertKindSchema = z
       .optional(),
   })
   .superRefine((v, ctx) => {
+    if (v.kind === "delivery" && !v.deliveryCity?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["deliveryCity"], message: "Укажите город получателя" });
+    }
     if (v.kind === "company") {
       if (!v.companyName?.trim()) {
         ctx.addIssue({

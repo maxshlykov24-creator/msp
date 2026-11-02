@@ -318,9 +318,15 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
       assert.equal(deal.stage, "Товар в магазине");
       const reserve = state.tasks.find((t) => t.kind === "reserve");
       assert.ok(reserve, "acceptance creates reserve task");
+      deal.paid = 2999;
+      await assert.rejects(() => services.tasks.completeTask(reserve.id, "Тест"), /3 000/);
+      assert.equal(reserve.status, "pending", "insufficient payment must not close the reserve task");
+      deal.paid = 0;
       await services.tasks.completeTask(reserve.id, "Тест");
       assert.equal(deal.stage, "Товар отложен");
       assert.equal(deal.reservedUntil, shared.defaultHoldUntil(0));
+      await services.taskFlow.cancelOnKindConvert(deal.number);
+      assert.equal(promiseTask.status, "cancelled", "conversion to a non-hold stage retires the promise task");
       assert.equal(deal.kind, kind);
       await services.tasks.completeTask(acceptance.id, "Тест");
       assert.equal(moves, 2, "repeated acceptance doesn't create another movement");
@@ -340,7 +346,7 @@ test("hold stages require promise details and reserve dates without premature re
     assert.equal(isDealOverdue({ ...promise, stage: "Ждет товар", actualUntil: "2026-10-01" }, "2026-10-24"), false);
   }
   assert.equal(defaultHoldUntil(0, "2026-10-24"), "2026-10-25");
-  assert.equal(defaultHoldUntil(100, "2026-10-24"), "2026-11-07");
+  assert.equal(defaultHoldUntil(3000, "2026-10-24"), "2026-11-07");
   const { isPartialPayment, reserveUntilForSave } = await import("../dist/index.js");
   assert.equal(isPartialPayment(3000, 34900), true);
   assert.equal(isPartialPayment(34900, 34900), false);
@@ -365,4 +371,87 @@ test("hold stages require promise details and reserve dates without premature re
     amoOtlozhka({ paid: 34900, total: 34900, stage: "Товар в магазине", reservedUntil: "2026-11-09" }),
     { kind: null, until: "2026-11-09" }
   );
+});
+
+
+test("hold payment threshold is shared by dates, CRM and validation", async () => {
+  const { amoOtlozhka, defaultHoldUntil, defaultPromiseUntil, holdStageError, holdPaymentError, reserveUntilForSave, HOLD_DEAL_KINDS } = await import("../dist/index.js");
+  const today = "2026-11-03";
+  assert.equal(defaultPromiseUntil(today), "2026-11-17", "promise default remains two weeks");
+  for (const paid of [1, 100, 2999]) {
+    assert.match(holdPaymentError(paid), /3 000/);
+    assert.deepEqual(amoOtlozhka({ paid, total: 34900, stage: "Товар отложен", today }), { kind: null, until: null });
+    assert.equal(reserveUntilForSave({ paid, total: 34900, stage: "Товар отложен", today }), undefined);
+    for (const kind of HOLD_DEAL_KINDS) {
+      assert.match(holdStageError({ ...baseDeal, kind, paid, companyName: "Тест", items: [{ productId: "p" }], stage: "Товар отложен", reservedUntil: "2026-11-17" }), /3 000/);
+    }
+  }
+  for (const paid of [0, 3000, 34900]) {
+    const expected = paid === 0 ? "2026-11-04" : "2026-11-17";
+    assert.equal(defaultHoldUntil(paid, today), expected);
+    assert.equal(reserveUntilForSave({ paid, total: 34900, stage: "Товар отложен", today }), expected);
+    assert.deepEqual(amoOtlozhka({ paid, total: 34900, stage: "Товар отложен", today }), { kind: paid === 0 ? "Бесплатная" : "Платная", until: expected });
+    assert.equal(holdPaymentError(paid), null);
+  }
+});
+
+
+test("online conversion preserves the order and queues assembly after CRM stage sync", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { createRequire } = await import("node:module");
+  const { runInNewContext } = await import("node:vm");
+  const ts = createRequire(new URL("../../../apps/api/package.json", import.meta.url))("typescript");
+  const shared = await import("../dist/index.js");
+  assert.equal(shared.convertKindSchema.safeParse({ kind: "delivery" }).success, false);
+  assert.equal(shared.convertKindSchema.safeParse({ kind: "delivery", deliveryCity: "Москва" }).success, true);
+  for (const kind of ["sale", "deferred", "promise"]) {
+    const original = { ...baseDeal, id: `convert-${kind}`, number: 9100, kind, stage: "Дано обещание", amoLeadId: 123, consultant: "Консультант", clientPhone: "+70000000000", items: [{ productId: "product", name: "Товар", price: 5000, qty: 1 }], payments: [{ id: "p", methodId: "cash_stores", amount: 3000 }], total: 5000, paid: 3000 };
+    const table = (table, columns) => Object.assign({ table }, Object.fromEntries(columns.map((c) => [c, c])));
+    const schema = { deals: table("deals", ["number"]), amoMeta: table("meta", ["kind"]), tasks: table("tasks", ["id", "dealNumber", "kind", "status"]), users: table("users", ["name", "role"]), dealItemState: table("items", []) };
+    const state = { deals: [{ number: original.number, data: original }], meta: [{ kind: "status", parentId: 99, amoId: 1234, name: "Передан на сборку" }], tasks: [], users: [] };
+    const query = (operation, fields) => {
+      let target, predicate = () => true, values, cached;
+      const q = {
+        from(t) { target = t.table; return q; }, where(p) { predicate = p; return q; }, limit() { return q; },
+        values(v) { values = v; return q; }, onConflictDoUpdate() { return q; }, onConflictDoNothing() { return q; }, returning(f) { fields = f; return q; },
+        then(resolve, reject) {
+          cached ??= Promise.resolve().then(() => {
+            if (operation === "select") return state[target].filter(predicate);
+            if (target === "deals") { state.deals[0] = values; return []; }
+            const row = { id: "task-1", status: "pending", ...values }; state.tasks.push(row);
+            return fields ? [row] : [];
+          });
+          return cached.then(resolve, reject);
+        },
+      }; return q;
+    };
+    const db = { select: (f) => query("select", f), insert: (t) => query("insert").from(t) };
+    const writes = [];
+    const dependencies = {
+      "@kassa/shared": shared,
+      "drizzle-orm": { eq: (c, v) => (r) => r[c] === v, inArray: (c, vs) => (r) => vs.includes(r[c]), and: (...ps) => (r) => ps.every((p) => p(r)), desc: (x) => x, sql: () => {} },
+      "../db/index.js": { db }, "../db/schema.js": schema,
+      "../clients/amo.js": { getLead: async () => ({ pipeline_id: 99 }), updateLead: async (...args) => writes.push(args), addLeadNote: async () => {} },
+      "./bootstrap.js": {}, "../ws/hub.js": { broadcast: () => {} }, "./queue.js": {}, "./amoMapping.js": {},
+      "./sale.js": {}, "./audit.js": { appendSystemAudit: async () => {} },
+    };
+    function load(name) {
+      const code = ts.transpileModule(readFileSync(new URL(`../../../apps/api/src/services/${name}.ts`, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+      const module = { exports: {} };
+      runInNewContext(code, { module, exports: module.exports, require: (id) => { if (!(id in dependencies)) throw new Error(`Unmocked ${id}`); return dependencies[id]; }, Date, console });
+      return module.exports;
+    }
+    const deals = load("deals"); dependencies["./deals.js"] = deals;
+    const flow = load("taskFlow");
+    const converted = await deals.convertDealKind("9100", { kind: "delivery", deliveryCity: "Москва" }, "Автор");
+    assert.equal(converted.kind, "delivery"); assert.equal(converted.funnel, "online"); assert.equal(converted.stage, "Передан на сборку");
+    for (const key of ["number", "amoLeadId", "consultant", "store", "paid", "total"]) assert.equal(converted[key], original[key]);
+    assert.equal(JSON.stringify(converted.items), JSON.stringify(original.items));
+    assert.equal(JSON.stringify(converted.payments), JSON.stringify(original.payments));
+    assert.equal(converted.recipientPhone, original.clientPhone);
+    assert.equal(writes[0][1].statusId, 1234);
+    await flow.onDealStage(converted, "Автор");
+    assert.equal(state.tasks.length, 1); assert.equal(state.tasks[0].kind, "assemble_cdek");
+    assert.equal(state.tasks[0].assigneeRole, "consultant"); assert.equal(state.tasks[0].store, original.store);
+  }
 });

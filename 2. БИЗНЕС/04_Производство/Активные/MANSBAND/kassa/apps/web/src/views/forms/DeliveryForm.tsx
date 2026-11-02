@@ -220,6 +220,7 @@ export function DeliveryForm({ onDone, onBack = onDone }: { onDone: () => void; 
       store,
       storeAddress: STORE_ADDRESS[store],
       deliveryCity: city.trim(),
+      deliveryAmount: deliveryAmount || undefined,
       recipientName,
       recipientPhone,
       channel: client.channel,
@@ -242,8 +243,8 @@ export function DeliveryForm({ onDone, onBack = onDone }: { onDone: () => void; 
   return (
     <FormShell
       onBack={onBack}
-      title="Доставка (СДЭК)"
-      subtitle="Онлайн"
+      title="Онлайн-продажа"
+      subtitle="Онлайн · доставка СДЭК"
       meta={meta}
       storeAddress={STORE_ADDRESS[store]}
       summary={<SummaryBar total={total} paid={paid} />}

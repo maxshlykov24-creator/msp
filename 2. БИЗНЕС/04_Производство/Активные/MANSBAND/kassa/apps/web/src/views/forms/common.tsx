@@ -20,6 +20,8 @@ import type { CartItem, Deal, Payment, Payout } from "../../data/types";
 import {
   SARY_BONUS,
   defaultHoldUntil,
+  holdPaymentError,
+  isPaidHold,
   isPartialPayment,
   reserveUntilForSave,
   isSuitCategory,
@@ -1346,7 +1348,7 @@ export function movementRequiredGap(stage: string, movementCreated: boolean): st
   return stage === "Ждет товар" && !movementCreated && "Задача на перемещение";
 }
 
-/** Срок «Отложка до»: при частичной оплате поле видно и стоит на две недели. */
+/** Срок «Отложка до»: при частичной оплате поле видно; две недели доступны от 3 000 ₽. */
 export function useAutoReserveUntil(paid: number, total: number) {
   const partial = isPartialPayment(paid, total);
   const [until, setUntil] = useState("");
@@ -1376,6 +1378,7 @@ export function useAutoReserveUntil(paid: number, total: number) {
 
   return {
     partial,
+    hint: holdPaymentError(paid) || (isPaidHold(paid) ? "Платная отложка — 14 дней, дату можно изменить" : "Бесплатная отложка — 1 день, дату можно изменить"),
     until,
     onChange: (value: string) => {
       setManual(true);

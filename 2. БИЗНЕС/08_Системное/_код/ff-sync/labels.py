@@ -6,10 +6,9 @@
 
 Что отдают площадки:
 
-- **Ozon** `/v2/posting/fbs/package-label` — готовый PDF на все отправления, до 20 за
-  запрос, и только для статуса `awaiting_deliver`. Формат ответа в документации
-  описан противоречиво (то `application/pdf`, то JSON с `file_content`), поэтому
-  тело разбираем по сигнатуре. Размер страницы зависит от настройки кабинета
+- **Ozon** `/v3/posting/fbs/package-label/create` и `/v2/posting/fbs/package-label/get`
+  — задание на PDF, затем ссылка на файл. Старый синхронный метод отключён 02.11.2026.
+  Размер страницы зависит от настройки кабинета
   «Печатать этикетку 58 × 40», параметра в API нет — поэтому страницы вписываем
   в наш формат сами.
 - **Wildberries** `/api/v3/orders/stickers` — по стикеру на заказ, base64 PNG,
@@ -20,9 +19,14 @@
 """
 
 import base64
+import hashlib
 import io
+import json
+import os
 import re
 import time
+from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
 
@@ -55,6 +59,155 @@ def _chunks(items, size):
 
 
 # --- Ozon ---------------------------------------------------------------
+
+
+def _ozon_pages(blob, expected):
+    """Не выдаём частичный PDF или нераспознанные дополнительные страницы."""
+    from pypdf import PdfReader, PdfWriter
+    try:
+        reader = PdfReader(io.BytesIO(blob))
+        count = len(reader.pages)
+        if count == 2 * expected:
+            paired = all(
+                re.search(r"(?:^|\s)OZN\d+(?:\s|$)", reader.pages[i + 1].extract_text() or "")
+                and not re.search(r"(?:^|\s)OZN\d+(?:\s|$)", reader.pages[i].extract_text() or "")
+                for i in range(0, count, 2)
+            )
+            if paired:
+                writer = PdfWriter()
+                for i in range(0, count, 2):
+                    writer.add_page(reader.pages[i])
+                out = io.BytesIO()
+                writer.write(out)
+                blob, count = out.getvalue(), len(writer.pages)
+    except Exception as exc:
+        raise LabelError("Ozon вернул повреждённый PDF. Повтори печать.") from exc
+    if count != expected:
+        raise LabelError("Ozon вернул %s страниц для %s отправлений. Состав PDF не удалось подтвердить; печать остановлена, чтобы не выдать неверные этикетки." % (count, expected))
+    return blob
+
+
+def _ozon_label_response(cab, postings):
+    """Актуальный async API. Сохраняем задание, чтобы повтор печати не создавал новое."""
+    import fcntl
+    from db import db_path
+
+    scope = hashlib.sha256((str(cab["client_id_ext"]) + "\0" + cab["token"]).encode()).hexdigest()
+    key = hashlib.sha256(json.dumps(list(postings), ensure_ascii=True).encode()).hexdigest()
+    folder = os.path.join(os.path.dirname(os.path.abspath(db_path())), "ozon-labels-v3", scope)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    pdf_path, state_path = os.path.join(folder, key + ".pdf"), os.path.join(folder, key + ".json")
+    heads = ozon_headers(cab["client_id_ext"], cab["token"])
+
+    def save(path, data):
+        temporary = path + ".tmp"
+        fd = os.open(temporary, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(temporary, path)
+
+    def call(path, body):
+        # 429 не означает, что задание создано. Остальные сетевые отказы создания
+        # автоматически не повторяем: ответ мог потеряться после успешной операции.
+        for attempt in range(3):
+            try:
+                response = req("POST", OZON_BASE + path, headers=heads, json=body,
+                               retry_safe=False, timeout=(5, 15))
+            except Exception as exc:
+                raise LabelError("Не удалось получить ответ Ozon по этикеткам. Повтори печать: сохранённое задание будет использовано снова.") from exc
+            if response.status_code != 429 or attempt == 2:
+                return response
+            try:
+                delay = max(1.0, float(response.headers.get("Retry-After", "0")))
+            except (ValueError, TypeError):
+                delay = 1.0
+            if delay > 5:
+                return response
+            time.sleep(max(delay, 2 ** attempt))
+
+    # Один процесс или несколько одновременных нажатий не создают одинаковые задания.
+    with open(os.path.join(folder, "labels.lock"), "a+b") as lock:
+        os.chmod(lock.name, 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if os.path.exists(pdf_path) and time.time() - os.path.getmtime(pdf_path) < 300:
+            with open(pdf_path, "rb") as f:
+                cached = f.read()
+            try:
+                cached = _ozon_pages(cached, len(postings))
+                return SimpleNamespace(status_code=200, content=cached, text="")
+            except LabelError:
+                pass  # Повреждённый локальный кэш не выдаём; заберём файл задания заново.
+        state = {}
+        try:
+            with open(state_path) as f:
+                state = json.load(f)
+        except (OSError, ValueError):
+            pass
+        if not state.get("tasks") or time.time() - state.get("created_at", 0) >= 300:
+            response = call("/v3/posting/fbs/package-label/create", {"posting_numbers": list(postings)})
+            if response.status_code != 200:
+                return response
+            try:
+                tasks = response.json()["tasks"]
+                selected = [t for t in tasks if t.get("task_type") == "small_label"]
+                if not selected or any(not t.get("task_id") for t in selected):
+                    raise ValueError("No small label task")
+                state = {"created_at": time.time(), "tasks": selected}
+            except (ValueError, KeyError, TypeError) as exc:
+                raise LabelError("Ozon не подтвердил задание на этикетки нужного формата. Повтори печать.") from exc
+            save(state_path, json.dumps(state).encode())
+
+        deadline = time.monotonic() + 25
+        completed = {}
+        while True:
+            for task in state["tasks"]:
+                task_id = task["task_id"]
+                if task_id in completed:
+                    continue
+                response = call("/v2/posting/fbs/package-label/get", {"task_id": task_id})
+                if response.status_code != 200:
+                    return response
+                try:
+                    data = response.json()
+                    status = data.get("status") or {}
+                    code = status.get("code")
+                except (ValueError, AttributeError) as exc:
+                    raise LabelError("Ozon вернул нераспознанный результат формирования этикеток.") from exc
+                if data.get("error") or code in ("error", "failed"):
+                    save(state_path, b"{}")
+                    raise LabelError("Ozon не смог сформировать этикетки. Обнови заказы и повтори печать.")
+                if code != "completed":
+                    continue
+                if (status.get("unprinted_postings") or not status.get("postings_count")
+                        or status.get("printed_postings_count") != status.get("postings_count")):
+                    save(state_path, b"{}")
+                    raise LabelError("Ozon сформировал неполный комплект этикеток. Обнови заказы и повтори печать.")
+                url = data.get("file_url") or ""
+                parsed = urlsplit(url)
+                host = parsed.hostname or ""
+                if parsed.scheme != "https" or not (host.endswith(".ozone.ru") or host.endswith(".ozon.ru")):
+                    raise LabelError("Ozon не вернул допустимую ссылку на PDF этикеток.")
+                # Ключ кабинета никогда не отправляем на сервер скачивания PDF.
+                try:
+                    download = req("GET", url, retry_safe=False, timeout=(5, 20), allow_redirects=False)
+                    if download.status_code != 200:
+                        raise ValueError("Download failed")
+                    blob = _ozon_pdf_bytes(download)
+                except Exception as exc:
+                    raise LabelError("Не удалось скачать PDF Ozon. Повтори печать: задание уже сохранено.") from exc
+                completed[task_id] = (blob, status["postings_count"])
+            if len(completed) == len(state["tasks"]):
+                break
+            if time.monotonic() >= deadline:
+                raise LabelError("Ozon ещё формирует этикетки. Повтори печать через несколько секунд: новое задание создаваться не будет.")
+            time.sleep(1)
+        if sum(count for _, count in completed.values()) != len(postings):
+            raise LabelError("Ozon подтвердил этикетки не для всей выборки. Комплект не скачан.")
+        blobs = [completed[t["task_id"]][0] for t in state["tasks"]]
+        blob = blobs[0] if len(blobs) == 1 else merge_pdfs(blobs)[0]
+        blob = _ozon_pages(blob, len(postings))
+        save(pdf_path, blob)
+        return SimpleNamespace(status_code=200, content=blob, text="")
 
 
 def _ozon_pdf_bytes(resp):
@@ -94,41 +247,10 @@ def ozon_labels(cab, postings):
     pdfs = []
     notes = []
     for chunk in _chunks(list(postings), OZON_CHUNK):
-        r = req(
-            "POST",
-            OZON_BASE + "/v2/posting/fbs/package-label",
-            headers=heads,
-            json={"posting_number": list(chunk)},
-        )
+        r = _ozon_label_response(cab, chunk)
         if r.status_code == 200:
             blob = _ozon_pdf_bytes(r)
-            from pypdf import PdfReader
-            try:
-                count = len(PdfReader(io.BytesIO(blob)).pages)
-            except Exception as exc:
-                raise LabelError("Ozon вернул повреждённый PDF. Повтори печать.") from exc
-            if count == 2 * len(chunk):
-                # В кабинете может быть включена товарная этикетка после каждой
-                # этикетки отправления. Не считаем её вторым заказом и не дублируем
-                # нашу товарную этикетку в MODE_BOTH. Неизвестный формат не режем.
-                from pypdf import PdfWriter
-                reader = PdfReader(io.BytesIO(blob))
-                paired = all(
-                    re.search(r"(?:^|\s)OZN\d+(?:\s|$)", reader.pages[i + 1].extract_text() or "")
-                    and not re.search(r"(?:^|\s)OZN\d+(?:\s|$)", reader.pages[i].extract_text() or "")
-                    for i in range(0, count, 2)
-                )
-                if paired:
-                    writer = PdfWriter()
-                    for i in range(0, count, 2):
-                        writer.add_page(reader.pages[i])
-                    clean = io.BytesIO()
-                    writer.write(clean)
-                    blob = clean.getvalue()
-                    count = len(writer.pages)
-            if count != len(chunk):
-                raise LabelError("Ozon вернул %s страниц для %s отправлений. Состав PDF не удалось подтвердить; печать остановлена, чтобы не выдать неверные этикетки." % (count, len(chunk)))
-            pdfs.append(blob)
+            pdfs.append(_ozon_pages(blob, len(chunk)))
             continue
         detail = (r.text or "")[:300]
         # «этикетки ещё не готовы» — Ozon просит подождать 45-60 секунд после сборки

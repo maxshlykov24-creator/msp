@@ -1,5 +1,5 @@
 import { DatePicker } from "../../components/DatePicker";
-import { defaultHoldUntil, isHoldStage } from "@kassa/shared";
+import { defaultPromiseUntil, isHoldStage } from "@kassa/shared";
 import { useRef, useState } from "react";
 import { useStore } from "../../store";
 import { Card, Field, StageBadge } from "../../components/ui";
@@ -77,7 +77,7 @@ export function CompanyForm({ onDone, onBack = onDone }: { onDone: () => void; o
   const [comment, setComment] = useState("");
   const [stage, setStage] = useState("Товар в магазине");
 
-  const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
+  const [actualUntil, setActualUntil] = useState(() => defaultPromiseUntil());
   const [movementCreated, setMovementCreated] = useState(false);
   const fieldGaps = [
     stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
@@ -289,7 +289,7 @@ export function CompanyForm({ onDone, onBack = onDone }: { onDone: () => void; o
       {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
       {reserve.partial && stage !== "Успех" && (
         <Card>
-          <Field label="Отложка до" hint="Частичная оплата — две недели вперёд, дату можно изменить">
+          <Field label="Отложка до" hint={reserve.hint}>
             <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
           </Field>
         </Card>

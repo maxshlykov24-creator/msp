@@ -568,7 +568,7 @@ export async function cancelOnKindConvert(dealNumber: number): Promise<void> {
       and(
         eq(tasks.dealNumber, dealNumber),
         eq(tasks.status, "pending"),
-        inArray(tasks.kind, ["reserve", "reserve_call", "unreserve"])
+        inArray(tasks.kind, ["reserve", "reserve_call", "unreserve", "promise_follow"])
       )
     );
 }

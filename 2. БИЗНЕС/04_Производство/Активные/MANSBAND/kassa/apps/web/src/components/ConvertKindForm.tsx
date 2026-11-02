@@ -7,10 +7,11 @@ import { formatPhone } from "../lib/format";
 import { attachmentsToUpload, type PhotoAttachment } from "../lib/photo";
 import type { Deal } from "../data/types";
 
-export type ConvertKind = "sale" | "company" | "rental";
+export type ConvertKind = "sale" | "company" | "rental" | "delivery";
 
 export type ConvertKindPayload = {
   kind: ConvertKind;
+  deliveryCity?: string;
   companyName?: string;
   managerName?: string;
   managerPhone?: string;
@@ -26,6 +27,11 @@ export type ConvertKindPayload = {
 };
 
 const TARGETS: Array<{ kind: ConvertKind; label: string; hint: string }> = [
+  {
+    kind: "delivery",
+    label: "Онлайн-продажу",
+    hint: "Доставка СДЭК: «Передан на сборку» → «Собран» → вызов курьера. Товары и оплаты сохранятся.",
+  },
   {
     kind: "sale",
     label: "Продажу",
@@ -65,6 +71,7 @@ export function ConvertKindForm({
   onSubmit: (payload: ConvertKindPayload) => Promise<void>;
 }) {
   const [kind, setKind] = useState<ConvertKind | null>(null);
+  const [deliveryCity, setDeliveryCity] = useState(deal.deliveryCity || "");
   const [companyName, setCompanyName] = useState(deal.companyName || "");
   const [managerName, setManagerName] = useState(deal.managerName || "");
   const [managerPhone, setManagerPhone] = useState(deal.managerPhone || "");
@@ -78,8 +85,9 @@ export function ConvertKindForm({
 
   const missing = useMemo(() => {
     if (!kind) return [] as string[];
-    if (kind === "sale") {
+    if (kind === "sale" || kind === "delivery") {
       return [
+        kind === "delivery" && !deliveryCity.trim() && "Город получателя",
         !deal.clientName?.trim() && "Имя клиента",
         !deal.clientPhone?.trim() && "Телефон клиента",
         deal.items.length === 0 && "Товары",
@@ -103,7 +111,7 @@ export function ConvertKindForm({
       !rentalTo && "Дата конца аренды",
       photos.length === 0 && "Фото паспорта",
     ].filter(Boolean) as string[];
-  }, [kind, deal, companyName, managerName, managerPhone, rentalFrom, rentalTo, photos.length]);
+  }, [kind, deal, deliveryCity, companyName, managerName, managerPhone, rentalFrom, rentalTo, photos.length]);
 
   async function submit() {
     if (!kind) return;
@@ -113,6 +121,7 @@ export function ConvertKindForm({
     }
     setError(null);
     const payload: ConvertKindPayload = { kind };
+    if (kind === "delivery") payload.deliveryCity = deliveryCity.trim();
     if (kind === "company") {
       payload.companyName = companyName.trim();
       payload.managerName = managerName.trim();
@@ -186,6 +195,15 @@ export function ConvertKindForm({
             <span className="text-white">{deal.paid.toLocaleString("ru-RU")} ₽</span>
           </div>
           <div>После смены появятся поля продажи. В Успех можно закрыть только когда оплата и источник заполнены.</div>
+        </div>
+      )}
+
+      {kind === "delivery" && (
+        <div className="space-y-3">
+          <div className="text-[13px] text-mute">Получатель: {deal.clientName} · {deal.clientPhone}. После смены заявка перейдёт на «Передан на сборку».</div>
+          <Field label="Город получателя" required>
+            <input className="input" value={deliveryCity} onChange={(event) => setDeliveryCity(event.target.value)} placeholder="Город доставки" />
+          </Field>
         </div>
       )}
 

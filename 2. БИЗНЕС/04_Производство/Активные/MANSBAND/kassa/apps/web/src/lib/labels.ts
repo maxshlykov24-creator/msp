@@ -17,7 +17,7 @@ export const KIND_LABEL: Record<DealKind, string> = {
   no_sliv: "Не слив",
   sliv: "Слив",
   cert_digital: "Сертификат (электр.)",
-  delivery: "Доставка (СДЭК)",
+  delivery: "Онлайн-продажа",
   defect: "Дефекты",
   drycleaning: "Химчистка",
   resew: "Перешив",

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ShoppingBag, Building2, Ticket, Shirt, XCircle, Send,
-  Mail, Truck, AlertTriangle, Droplets, Scissors, Replace, Undo2, RefreshCw, Tag,
+  Mail, AlertTriangle, Droplets, Scissors, Replace, Undo2, RefreshCw, Tag,
 } from "lucide-react";
 import type { Deal, DealKind, FunnelType } from "../data/types";
 import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
@@ -30,7 +30,7 @@ const KINDS: Record<FunnelType, { kind: DealKind; icon: typeof ShoppingBag }[]> 
   ],
   online: [
     { kind: "cert_digital", icon: Mail },
-    { kind: "delivery", icon: Truck },
+    { kind: "delivery", icon: ShoppingBag },
   ],
   defects: [
     { kind: "defect", icon: AlertTriangle },
@@ -133,7 +133,7 @@ export function NewDeal({
       <h1 className="text-2xl font-extrabold text-white mb-1">Новая заявка</h1>
       <Hint>
         Выберите воронку и вид заявки. Оффлайн — продажа, компания, сертификат, аренда, не слив и слив.
-        Обещание и отложка выбираются этапом заявки. Онлайн — электронный сертификат и доставка СДЭК. Дефекты и
+        Обещание и отложка выбираются этапом заявки. Онлайн — онлайн-продажа с доставкой СДЭК и электронный сертификат. Дефекты и
         возврат — отдельные воронки.
       </Hint>
 
@@ -162,7 +162,7 @@ export function NewDeal({
               <Icon size={22} className="text-gold" />
             </div>
             <div className="text-white font-bold">{KIND_LABEL[k]}</div>
-            <div className="text-[12px] text-mute mt-0.5">{FUNNEL_LABEL[funnel]}</div>
+            <div className="text-[12px] text-mute mt-0.5">{k === "delivery" ? "Сборка и доставка СДЭК" : FUNNEL_LABEL[funnel]}</div>
           </button>
         ))}
       </div>

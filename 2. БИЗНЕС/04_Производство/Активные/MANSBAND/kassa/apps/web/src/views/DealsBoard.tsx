@@ -40,7 +40,7 @@ const KIND_GROUPS: {
   { id: "rental", label: "Аренда", kinds: ["rental"] },
   { id: "cert", label: "Сертификаты", kinds: ["cert_plastic", "cert_digital"] },
   { id: "company", label: "Продажи компании", kinds: ["company"] },
-  { id: "delivery", label: "Доставки", kinds: ["delivery"] },
+  { id: "delivery", label: "Онлайн-продажи", kinds: ["delivery"] },
   { id: "defect_all", label: "Все дефекты", kinds: ["defect", "drycleaning", "resew", "wrong_size", "wrong_label"] },
   { id: "defect", label: "Браки", kinds: ["defect"] },
   { id: "drycleaning", label: "Химчистка", kinds: ["drycleaning"] },

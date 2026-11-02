@@ -242,7 +242,7 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
   put("rentalReturnedAt", deal.rentalReturnedAt);
   put("rentalDeposit", deal.rentalDeposit);
 
-  // Частичная оплата (от 3 000 ₽ и любая другая, если заказ ею не закрыт)
+  // Частичная оплата от 3 000 ₽ (если заказ ею не закрыт)
   // ставит платную отложку, даже когда этап ещё не «Товар отложен».
   // «Отложка до» без этого этапа пишется, только если дата уже есть в заявке.
   const hold = amoOtlozhka(deal);

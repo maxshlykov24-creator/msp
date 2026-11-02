@@ -5,9 +5,15 @@ export const HOLD_DEAL_KINDS: DealKind[] = ["sale", "company", "rental", "deferr
 export const HOLD_STAGES = ["Дано обещание", "Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"];
 export const AUTOMATIC_HOLD_STAGES = ["Товар в пути", "Товар отложен"];
 export function isHoldStage(stage: string): boolean { return HOLD_STAGES.includes(stage); }
+export const PAID_HOLD_MINIMUM = 3000;
+export function isPaidHold(paid: number): boolean { return paid >= PAID_HOLD_MINIMUM; }
+export function holdPaymentError(paid: number): string | null {
+  return paid > 0 && !isPaidHold(paid) ? "Для платной отложки внесите не менее 3 000 ₽" : null;
+}
+export function defaultPromiseUntil(today?: string): string { return defaultHoldUntil(PAID_HOLD_MINIMUM, today); }
 export function defaultHoldUntil(paid: number, today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date())): string {
   const date = new Date(`${today}T12:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + (paid > 0 ? 14 : 1));
+  date.setUTCDate(date.getUTCDate() + (isPaidHold(paid) ? 14 : 1));
   return date.toISOString().slice(0, 10);
 }
 
@@ -21,7 +27,7 @@ export function isPartialPayment(paid: number, total: number): boolean {
 
 /**
  * Срок «Отложка до» при сохранении.
- * Частичная оплата — выбранная дата или две недели.
+ * Оплата от 3 000 ₽ — выбранная дата или две недели.
  * Без оплаты и не «Успех» — уже сохранённая дата или следующий день.
  * Полная оплата и пустой заказ срок не назначают.
  */
@@ -35,7 +41,8 @@ export function reserveUntilForSave(input: {
   if ((input.stage ?? "") === "Успех") return undefined;
   const chosen = (input.chosen ?? "").slice(0, 10);
   const hasChosen = /^\d{4}-\d{2}-\d{2}$/.test(chosen);
-  if (isPartialPayment(input.paid, input.total)) {
+  if (holdPaymentError(input.paid)) return undefined;
+  if (isPaidHold(input.paid) && (isPartialPayment(input.paid, input.total) || input.stage === "Товар отложен")) {
     return hasChosen ? chosen : defaultHoldUntil(input.paid, input.today);
   }
   if (input.paid <= 0) {
@@ -47,7 +54,7 @@ export function reserveUntilForSave(input: {
 
 /**
  * Что писать в amo в поля «Отложка» и «Отложка до».
- * Частичная оплата — платная отложка, даже если этап ещё не «Товар отложен».
+ * Частичная оплата от 3 000 ₽ — платная отложка, даже до этапа «Товар отложен».
  * Этап «Товар отложен» без оплаты — бесплатная. Полная оплата тип отложки не ставит.
  */
 export function amoOtlozhka(deal: {
@@ -59,18 +66,19 @@ export function amoOtlozhka(deal: {
 }): { kind: "Платная" | "Бесплатная" | null; until: string | null } {
   const paid = deal.paid ?? 0;
   const total = deal.total ?? 0;
-  const partial = isPartialPayment(paid, total);
+  const partial = isPartialPayment(paid, total) && isPaidHold(paid);
   const stageHold = deal.stage === "Товар отложен";
   const stored = (deal.reservedUntil ?? "").slice(0, 10);
   const hasStored = /^\d{4}-\d{2}-\d{2}$/.test(stored);
+  if (holdPaymentError(paid)) return { kind: null, until: null };
   if (!partial && !stageHold) return { kind: null, until: hasStored ? stored : null };
   return {
-    kind: partial || paid > 0 ? "Платная" : "Бесплатная",
+    kind: isPaidHold(paid) ? "Платная" : "Бесплатная",
     until: hasStored ? stored : defaultHoldUntil(paid, deal.today),
   };
 }
 
-export function holdStageError(deal: Pick<Deal, "kind" | "stage" | "comment" | "actualUntil" | "reservedUntil" | "deferredUntil" | "companyName" | "items">): string | null {
+export function holdStageError(deal: Pick<Deal, "kind" | "stage" | "comment" | "actualUntil" | "reservedUntil" | "deferredUntil" | "companyName" | "items"> & { paid?: number }): string | null {
   if (!HOLD_DEAL_KINDS.includes(deal.kind) || !isHoldStage(deal.stage)) return null;
   if (deal.stage === "Дано обещание") {
     if (!deal.comment?.trim()) return "Для обещания нужен комментарий";
@@ -78,6 +86,7 @@ export function holdStageError(deal: Pick<Deal, "kind" | "stage" | "comment" | "
   }
   if (deal.kind === "company" && !deal.companyName?.trim()) return "Укажите наименование компании";
   if (deal.kind === "company" && !deal.items.length) return "Укажите товары компании";
+  if (deal.stage === "Товар отложен" && holdPaymentError(deal.paid ?? 0)) return holdPaymentError(deal.paid ?? 0);
   if (deal.stage === "Товар отложен" && !/^\d{4}-\d{2}-\d{2}$/.test(deal.reservedUntil || deal.deferredUntil || "")) return "Укажите срок отложки";
   return null;
 }

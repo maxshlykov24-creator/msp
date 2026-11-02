@@ -1,5 +1,5 @@
 import { DatePicker } from "../../components/DatePicker";
-import { defaultHoldUntil, isHoldStage } from "@kassa/shared";
+import { defaultPromiseUntil, isHoldStage } from "@kassa/shared";
 import { useEffect, useRef, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
@@ -125,7 +125,7 @@ export function RentalForm({ onDone, onBack = onDone }: { onDone: () => void; on
   const totalPaid = paid + topUpPaid;
   const reserve = useAutoReserveUntil(totalPaid, total);
   const topUpChange = Math.max(0, topUpPaid - Math.max(0, remainder));
-  const [actualUntil, setActualUntil] = useState(() => defaultHoldUntil(1));
+  const [actualUntil, setActualUntil] = useState(() => defaultPromiseUntil());
   const [movementCreated, setMovementCreated] = useState(false);
   const fieldGaps = [
     stage === "Дано обещание" && !comment.trim() && "Комментарий к обещанию",
@@ -357,7 +357,7 @@ export function RentalForm({ onDone, onBack = onDone }: { onDone: () => void; on
       {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
       {reserve.partial && stage !== "Успех" && (
         <Card>
-          <Field label="Отложка до" hint="Частичная оплата — две недели вперёд, дату можно изменить">
+          <Field label="Отложка до" hint={reserve.hint}>
             <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
           </Field>
         </Card>

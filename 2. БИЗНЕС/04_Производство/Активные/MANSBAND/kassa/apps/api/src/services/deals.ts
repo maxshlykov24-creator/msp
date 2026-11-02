@@ -4,6 +4,7 @@ import { deals as dealsTable, amoMeta } from "../db/schema.js";
 import * as amo from "../clients/amo.js";
 import {
   AMO_LEAD_FIELDS,
+  holdPaymentError,
   defaultHoldUntil,
   AMO_PIPELINE_COMPLAINTS,
   AMO_PIPELINE_SALES,
@@ -350,6 +351,10 @@ export async function updateStage(
 ): Promise<Deal | null> {
   const deal = await resolve(ref);
   if (!deal) return null;
+  if (stage === "Товар отложен") {
+    const error = holdPaymentError(deal.paid);
+    if (error) throw new Error(error);
+  }
   const updated: Deal = {
     ...deal,
     stage,
@@ -383,7 +388,8 @@ export async function updateStage(
 }
 
 export type ConvertKindPatch = {
-  kind: "sale" | "company" | "rental" | "deferred" | "promise";
+  kind: "sale" | "company" | "rental" | "delivery" | "deferred" | "promise";
+  deliveryCity?: string;
   companyName?: string;
   managerName?: string;
   managerPhone?: string;
@@ -436,7 +442,11 @@ export async function convertDealKind(
     return updated;
   }
 
-  if (nextKind === "sale" || nextKind === "company") {
+  if (nextKind === "delivery") {
+    if (!patch.deliveryCity?.trim()) throw new Error("Укажите город получателя");
+    if (!deal.clientName?.trim() || !deal.clientPhone?.trim()) throw new Error("Укажите имя и телефон получателя в заявке");
+  }
+  if (nextKind === "sale" || nextKind === "company" || nextKind === "delivery") {
     if (!deal.items?.length) throw new Error("В заявке нет товаров — добавьте позиции перед сменой типа");
   }
   if (nextKind === "rental" && !deal.items?.length && !patch.rentalFrom) {
@@ -456,6 +466,8 @@ export async function convertDealKind(
   const updated: Deal = {
     ...deal,
     kind: nextKind,
+    funnel: nextKind === "delivery" ? "online" : deal.funnel,
+    ...(nextKind === "delivery" ? { deliveryCity: patch.deliveryCity!.trim(), recipientName: deal.clientName, recipientPhone: deal.clientPhone } : {}),
     stage,
     items,
     // Авторство (созвон 20.08): отложка консультанта остаётся его продажей —
@@ -530,7 +542,8 @@ export async function convertDealKind(
  * Товарные этапы есть во всех целевых воронках — сохраняем.
  * Компания без товарного этапа → «Товар отложен» (как при создании + счёт Эдвину).
  */
-function convertedStage(stage: string, nextKind: "sale" | "company" | "rental"): string {
+function convertedStage(stage: string, nextKind: "sale" | "company" | "rental" | "delivery"): string {
+  if (nextKind === "delivery") return "Передан на сборку";
   const shared = ["Дано обещание", "Ждет товар", "Товар в пути", "Товар в магазине", "Товар отложен"];
   if (shared.includes(stage)) return stage;
   return {
@@ -544,6 +557,7 @@ const DEAL_KIND_TITLE: Record<string, string> = {
   deferred: "Отложка",
   promise: "Обещание",
   sale: "Продажа",
+  delivery: "Онлайн-продажа",
   company: "Продажа компании",
   rental: "Аренда",
 };

@@ -3,6 +3,7 @@ import {
   addCommentSchema,
   holdStageError,
   isPartialPayment,
+  isPaidHold,
   stageDateError,
   HOLD_DEAL_KINDS,
   AUTOMATIC_HOLD_STAGES,
@@ -242,12 +243,12 @@ export default async function dealsRoutes(app: FastifyInstance) {
         message: "Отложку и обещание нельзя закрыть в Успех. Сначала смените тип заявки.",
       });
     }
-    if (RESERVE_UNTIL_KINDS.includes(existing.kind) && isPartialPayment(merged.paid, merged.total)) {
+    if (RESERVE_UNTIL_KINDS.includes(existing.kind) && (isPartialPayment(merged.paid, merged.total) || merged.stage === "Товар отложен")) {
       const until = reserveUntilForSave({
         paid: merged.paid,
         total: merged.total,
         stage: merged.stage,
-        chosen: parsed.data.reservedUntil ?? existing.reservedUntil,
+        chosen: parsed.data.reservedUntil ?? (isPaidHold(merged.paid) !== isPaidHold(existing.paid) ? undefined : existing.reservedUntil),
       });
       if (until) parsed.data.reservedUntil = until;
     } else if (RESERVE_UNTIL_KINDS.includes(existing.kind) && parsed.data.reservedUntil === undefined && !existing.reservedUntil) {

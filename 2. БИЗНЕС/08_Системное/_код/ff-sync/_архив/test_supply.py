@@ -1385,7 +1385,7 @@ def ozon_pdf(pages):
     return buf.getvalue()
 
 label_rows = supply_flow._label_payload([db.get_shipments_by_ids([mid])[0]])
-with patch.object(labels, 'req', return_value=Fake(400, {'message':'INVALID_ARGUMENT'})), \
+with patch.object(labels, '_ozon_label_response', return_value=Fake(400, {'message':'INVALID_ARGUMENT'})), \
      patch.object(shipments_pull, 'pull_ozon_get', return_value={'status':'awaiting_packaging'}):
     for mode in (labels.MODE_BOTH, labels.MODE_POSTING):
         try:
@@ -1395,12 +1395,12 @@ with patch.object(labels, 'req', return_value=Fake(400, {'message':'INVALID_ARGU
             assert 'Собрано' in str(exc)
     _, _, pages = labels.build(label_rows, labels.MODE_PRODUCT)
     assert pages == 4
-with patch.object(labels, 'req', return_value=Fake(200, raw=ozon_pdf(1))) as call:
+with patch.object(labels, '_ozon_label_response', return_value=Fake(200, raw=ozon_pdf(1))) as call:
     _, _, pages = labels.build(label_rows, labels.MODE_BOTH)
     assert pages == 5  # Один заказ и 2+2 товарных этикетки, без дубля заказа.
-    assert len(call.call_args.kwargs['json']['posting_number']) == 1
+    assert len(call.call_args.args[1]) == 1
 for response in (Fake(429), Fake(200, raw=ozon_pdf(0)), Fake(200, raw=b'%PDF-broken')):
-    with patch.object(labels, 'req', return_value=response):
+    with patch.object(labels, '_ozon_label_response', return_value=response):
         try:
             labels.build(label_rows, labels.MODE_BOTH)
             raise AssertionError('missing/corrupt label accepted')
@@ -1541,7 +1541,7 @@ for number in range(2):
     pc.drawString(10, 50, 'ii5003562 %s' % number); pc.showPage()
     pc.drawString(10, 50, 'OZN5613373790'); pc.showPage()
 pc.save()
-with patch.object(labels, 'req', return_value=Fake(200, raw=paired_buf.getvalue())):
+with patch.object(labels, '_ozon_label_response', return_value=Fake(200, raw=paired_buf.getvalue())):
     blobs, notes = labels.ozon_labels({'client_id_ext':'test','token':'test'}, ['ONE','TWO'])
     pages = LabelReader(io.BytesIO(blobs[0])).pages
     assert len(pages)==2 and all('OZN' not in p.extract_text() for p in pages)

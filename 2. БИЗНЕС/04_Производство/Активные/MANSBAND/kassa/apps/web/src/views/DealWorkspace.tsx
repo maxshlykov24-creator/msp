@@ -1,5 +1,5 @@
 import { DatePicker } from "../components/DatePicker";
-import { AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, RESERVE_UNTIL_KINDS, isApproxDateStage, isHoldStage, isPartialPayment, defaultHoldUntil, holdStageError, reserveUntilForSave, stageDateError } from "@kassa/shared";
+import { holdPaymentError, isPaidHold, amoOtlozhka, AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, RESERVE_UNTIL_KINDS, isApproxDateStage, isHoldStage, isPartialPayment, defaultPromiseUntil, defaultHoldUntil, holdStageError, reserveUntilForSave, stageDateError } from "@kassa/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Store } from "lucide-react";
 import type { CartItem, Deal, Payment } from "../data/types";
@@ -171,7 +171,7 @@ export function DealWorkspace({
   const reserveTracked = useRef({ manual: false, wasPartial: false, seenPaid: null as number | null });
   const [meetingDate, setMeetingDate] = useState((live.meetingDate || "").slice(0, 10));
   const [approxMeetingDate, setApproxMeetingDate] = useState((live.approxMeetingDate || "").slice(0, 10));
-  useEffect(() => { if (stage === "Дано обещание" && !actualUntil) setActualUntil(defaultHoldUntil(1)); }, [stage, actualUntil]);
+  useEffect(() => { if (stage === "Дано обещание" && !actualUntil) setActualUntil(defaultPromiseUntil()); }, [stage, actualUntil]);
   useEffect(() => {
     const leadId = live.amoLeadId;
     if (USE_MOCK || leadId == null || leadId <= 0) return;
@@ -286,7 +286,7 @@ export function DealWorkspace({
   useEffect(() => {
     if (!RESERVE_UNTIL_KINDS.includes(live.kind) || stage === "Успех") return;
     const track = reserveTracked.current;
-    if (partialPay) {
+    if (partialPay || stage === "Товар отложен") {
       track.wasPartial = true;
       const paidChanged = track.seenPaid !== null && track.seenPaid !== paid;
       track.seenPaid = paid;
@@ -358,7 +358,7 @@ export function DealWorkspace({
 
   async function saveAll(targetStage?: string) {
     const nextStage = targetStage ?? stage;
-    const holdError = holdStageError({ ...live, stage: nextStage, comment, companyName, items, actualUntil, reservedUntil });
+    const holdError = holdStageError({ ...live, stage: nextStage, comment, companyName, items, actualUntil, reservedUntil, paid });
     if (holdError) { setError(holdError); return; }
     const dateError = stageDateError({ stage: nextStage, meetingDate, approxMeetingDate });
     if (dateError) { setError(dateError); return; }
@@ -494,7 +494,7 @@ export function DealWorkspace({
     setError(null);
     try {
       if (USE_MOCK) {
-        const saved = await updateDeal(live.id, { kind: payload.kind, ...payload } as Partial<Deal>);
+        const saved = await updateDeal(live.id, { ...payload, ...(payload.kind === "delivery" ? { funnel: "online", stage: "Передан на сборку", recipientName: live.clientName, recipientPhone: live.clientPhone } : {}) } as Partial<Deal>);
         if (saved) replaceDeal(saved);
       } else {
         const updated = await api.patch<Deal>(`/deals/${live.number}/kind`, payload);
@@ -564,10 +564,15 @@ export function DealWorkspace({
         {stage === "Встреча назначена" && <Card><Field label="Дата встречи" required><DatePicker className="input" value={meetingDate} onChange={(value) => setMeetingDate(value)} /></Field></Card>}
         {(stage === "Товар отложен" || (partialPay && RESERVE_UNTIL_KINDS.includes(live.kind) && stage !== "Успех")) && (
           <Card>
+            {stage === "Товар отложен" && (
+              <Field label="Тип отложки" hint="Определяется автоматически по внесённой оплате">
+                <input className="input mb-4" readOnly value={amoOtlozhka({ paid, total: orderTotal, stage }).kind || "Недостаточно оплаты"} />
+              </Field>
+            )}
             <Field
               label="Отложка до"
               required={stage === "Товар отложен"}
-              hint={partialPay ? "Частичная оплата — две недели вперёд, дату можно изменить" : undefined}
+              hint={holdPaymentError(paid) || (isPaidHold(paid) ? "Платная отложка — 14 дней" : "Бесплатная отложка — 1 день")}
             >
               <DatePicker
                 className="input"
@@ -790,7 +795,7 @@ export function DealWorkspace({
 
         {(holdKind || closedNeedsReason || canReturnExchange || linkedReturns.length > 0) && <Card>
           <SectionTitle>Дополнительные действия</SectionTitle>
-          {holdKind && <p className="text-[12px] text-mute">Это заявка старого вида. Перед завершением выберите продажу, компанию или аренду через «Сменить тип».</p>}
+          {holdKind && <p className="text-[12px] text-mute">Это заявка старого вида. Перед завершением выберите продажу, онлайн-продажу, компанию или аренду через «Сменить тип».</p>}
           {closedNeedsReason && (
             <label className="block mt-3">
               <span className="field-label">Причина изменения</span>

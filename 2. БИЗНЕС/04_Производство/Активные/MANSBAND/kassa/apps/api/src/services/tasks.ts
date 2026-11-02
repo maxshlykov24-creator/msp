@@ -3,6 +3,7 @@ import { db } from "../db/index.js";
 import { dealItemState, deals as dealsTable, msRefs, tasks } from "../db/schema.js";
 import type { Task } from "@kassa/shared";
 import {
+  holdPaymentError,
   CDEK_LOCATION,
   findWarehouseId,
   isCentralWarehouse,
@@ -258,6 +259,12 @@ export async function completeTask(id: string, by: string): Promise<Task | null>
   const [current] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
   if (!current) return null;
   if (current.status === "done") return toTask(current);
+
+  if (current.kind === "reserve" && current.dealNumber != null) {
+    const deal = await deals.getByNumber(current.dealNumber);
+    const error = deal ? holdPaymentError(deal.paid) : "Заявка не найдена";
+    if (error) throw new Error(error);
+  }
 
   if (current.kind === "sary_send") {
     throw new Error("Сары закрываются в разделе «Сары» — с реальным скрином перевода");

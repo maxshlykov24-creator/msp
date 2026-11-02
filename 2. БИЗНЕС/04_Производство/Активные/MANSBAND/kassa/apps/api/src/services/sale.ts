@@ -234,6 +234,10 @@ export async function afterKindConverted(
       await writeKassaLink(deal.amoLeadId, deal.number).catch(() => {});
     }
   }
+  if (deal.kind === "delivery" && deal.amoLeadId) {
+    const customFields = await buildLeadCustomFields(deal);
+    if (customFields.length) await amo.updateLead(deal.amoLeadId, { customFields });
+  }
   if (photos?.length && deal.amoLeadId) {
     await attachPhotosToLead(deal.amoLeadId, photos).catch(() => {});
   }

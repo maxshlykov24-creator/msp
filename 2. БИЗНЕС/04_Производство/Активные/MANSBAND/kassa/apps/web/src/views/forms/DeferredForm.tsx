@@ -1,5 +1,5 @@
 import { DatePicker } from "../../components/DatePicker";
-import { defaultHoldUntil } from "@kassa/shared";
+import { defaultHoldUntil, holdPaymentError, isPaidHold } from "@kassa/shared";
 import { useEffect, useState } from "react";
 import { UserCheck } from "lucide-react";
 import { useStore } from "../../store";
@@ -119,7 +119,7 @@ export function DeferredForm({ onDone, onBack = onDone }: { onDone: () => void; 
   useEffect(() => {
     if (reservedManual) return;
     if (totalPaid <= 0) setReservedUntil(defaultHoldUntil(0));
-    else if (totalPaid < total) setReservedUntil(defaultHoldUntil(totalPaid));
+    else setReservedUntil(defaultHoldUntil(totalPaid));
   }, [totalPaid, total, reservedManual]);
   const topUpChange = Math.max(0, topUpPaid - Math.max(0, remainder));
   const [movementCreated, setMovementCreated] = useState(false);
@@ -253,7 +253,7 @@ export function DeferredForm({ onDone, onBack = onDone }: { onDone: () => void; 
           <Field label="Дата отложки">
             <DatePicker className="input opacity-70" readOnly value={reservedAt} />
           </Field>
-          <Field label="Отложка до" required hint={totalPaid <= 0 ? "Без оплаты — следующий день, можно изменить" : totalPaid < total ? "Частичная оплата — две недели, можно изменить" : "Можно изменить"}>
+          <Field label="Отложка до" required hint={holdPaymentError(totalPaid) || (isPaidHold(totalPaid) ? "Платная отложка — 14 дней" : "Бесплатная отложка — 1 день")}>
             <DatePicker
               className="input"
               value={reservedUntil}
