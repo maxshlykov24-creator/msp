@@ -233,8 +233,11 @@ class Engine:
             CREATE TABLE IF NOT EXISTS names(kind TEXT,id TEXT,number INTEGER,original TEXT,
               PRIMARY KEY(kind,id),UNIQUE(kind,number));
             CREATE TABLE IF NOT EXISTS audit(at REAL,kind TEXT,id TEXT,message TEXT);
+            CREATE TABLE IF NOT EXISTS supplier_jobs(id TEXT PRIMARY KEY,status TEXT,due REAL,revision INTEGER DEFAULT 1,error TEXT DEFAULT '',attempts INTEGER DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS supplier_history(at REAL,id TEXT,before TEXT,after TEXT);
             ''')
             db.execute("UPDATE jobs SET status='pending' WHERE status='running'")
+            db.execute("UPDATE supplier_jobs SET status='pending' WHERE status='running'")
         os.chmod(self.path, 0o600)
 
     @contextmanager
@@ -478,7 +481,100 @@ class Engine:
                     db.execute('UPDATE recipes SET version=?,body=? WHERE id=?',
                                (other['version'], json.dumps(other, ensure_ascii=False), row['id']))
                     self.record_recipe_event(db, other['id'], before_other, other, actor)
+            for recipe in saved:
+                item = products.get(recipe.get('assortment_id'), {})
+                if item:
+                    kind = item.get('meta', {}).get('type')
+                    parent = item.get('parent_id') if kind == 'variant' else item.get('id') if kind == 'product' else ''
+                    if not ID.fullmatch(str(parent or '')):
+                        raise Review('Не найдена карточка товара для записи поставщика')
+                    self.enqueue_supplier(db, parent)
             return saved
+
+    @staticmethod
+    def enqueue_supplier(db, product_id):
+        db.execute('''INSERT INTO supplier_jobs(id,status,due,revision,error,attempts)
+                   VALUES(?,'pending',?,1,'',0)
+                   ON CONFLICT(id) DO UPDATE SET status='pending',due=excluded.due,
+                     revision=supplier_jobs.revision+1,error='',attempts=0''', (product_id, time.time()))
+
+    def queue_existing_suppliers(self):
+        with self.db() as db:
+            row = db.execute("SELECT body FROM catalogues WHERE kind='assortment'").fetchone()
+            if not row:
+                raise Review('Каталог изделий ещё не загружен')
+            items = {x['id']: x for x in json.loads(row['body'])}
+            queued = set()
+            for rec in db.execute('SELECT body FROM recipes'):
+                recipe = json.loads(rec['body'])
+                if not recipe.get('approved'):
+                    continue
+                item = items.get(recipe.get('assortment_id'), {})
+                kind = item.get('meta', {}).get('type')
+                parent = item.get('parent_id') if kind == 'variant' else item.get('id') if kind == 'product' else ''
+                if not ID.fullmatch(str(parent or '')):
+                    raise Review('Не найдена карточка товара для записи поставщика')
+                queued.add(parent)
+            for parent in queued:
+                self.enqueue_supplier(db, parent)
+            return len(queued)
+
+    def run_supplier_one(self):
+        with self.db() as db:
+            row = db.execute("SELECT * FROM supplier_jobs WHERE status='pending' AND due<=? ORDER BY due LIMIT 1", (time.time(),)).fetchone()
+            if not row:
+                return False
+            db.execute("UPDATE supplier_jobs SET status='running' WHERE id=? AND revision=?", (row['id'],row['revision']))
+        product_id, revision = row['id'], row['revision']
+        try:
+            cfg = self.config()
+            factories = {f['id']: f.get('agent') for f in cfg.get('factories', [])}
+            with self.db() as db:
+                cached = db.execute("SELECT body FROM catalogues WHERE kind='assortment'").fetchone()
+                if not cached:
+                    raise Review('Каталог изделий ещё не загружен')
+                items = {x['id']: x for x in json.loads(cached['body'])}
+                recipes = [json.loads(r['body']) for r in db.execute('SELECT body FROM recipes')]
+            agents = set()
+            for recipe in recipes:
+                if not recipe.get('approved'):
+                    continue
+                item = items.get(recipe.get('assortment_id'), {})
+                kind = item.get('meta', {}).get('type')
+                parent = item.get('parent_id') if kind == 'variant' else item.get('id') if kind == 'product' else ''
+                if parent != product_id:
+                    continue
+                stages = recipe.get('stages') or []
+                agent = factories.get(stages[0].get('factory')) if stages else None
+                if not ID.fullmatch(str(agent or '')):
+                    raise Review('Не найден контрагент фабрики первого этапа')
+                agents.add(agent)
+            if not agents:
+                raise Review('Не найдена применённая норма товара')
+            if len(agents) != 1:
+                raise Review('У размеров одного товара указаны разные фабрики первого этапа')
+            target = next(iter(agents))
+            current = self.ms.get('/entity/product/' + product_id)
+            old = ident(current.get('supplier'))
+            if old != target:
+                with self.db() as db:
+                    fresh = db.execute('SELECT revision FROM supplier_jobs WHERE id=?', (product_id,)).fetchone()
+                    if not fresh or fresh['revision'] != revision:
+                        return True
+                    db.execute('INSERT INTO supplier_history VALUES(?,?,?,?)', (time.time(),product_id,old,target))
+                self.ms.request('PUT', '/entity/product/' + product_id, {'supplier': ref('counterparty', target)})
+            actual = self.ms.get('/entity/product/' + product_id)
+            if ident(actual.get('supplier')) != target:
+                raise Review('МойСклад не подтвердил поставщика в карточке товара')
+            with self.db() as db:
+                db.execute("UPDATE supplier_jobs SET status='done',error='' WHERE id=? AND revision=?", (product_id,revision))
+        except Exception as exc:
+            message = str(exc) if isinstance(exc, Review) else 'Не удалось обновить поставщика; нужна проверка'
+            retry = isinstance(exc, Transient) and row['attempts'] < 8
+            with self.db() as db:
+                db.execute("UPDATE supplier_jobs SET status=?,error=?,due=?,attempts=attempts+1 WHERE id=? AND revision=?",
+                           ('pending' if retry else 'review',message,time.time()+min(600,15*2**row['attempts']),product_id,revision))
+        return True
 
     def enqueue(self, kind, value):
         if kind not in TYPES or not ID.fullmatch(str(value)):
@@ -497,9 +593,10 @@ class Engine:
         with self.db() as db:
             jobs = [dict(r) for r in db.execute('SELECT * FROM jobs ORDER BY due DESC LIMIT 100')]
             audit = [dict(r) for r in db.execute('SELECT * FROM audit ORDER BY at DESC LIMIT 100')]
+            supplier_issues = [dict(r) for r in db.execute("SELECT id,error FROM supplier_jobs WHERE status='review'")]
             chains = [dict(json.loads(r[0]), id=r[1], number=r[2]) for r in db.execute(
                 'SELECT body,id,number FROM chains ORDER BY number DESC LIMIT 100')]
-        return {'config': self.config(), 'recipes': self.recipes(), 'jobs': jobs, 'audit': audit, 'chains': chains}
+        return {'config': self.config(), 'recipes': self.recipes(), 'jobs': jobs, 'audit': audit, 'chains': chains, 'supplier_issues': supplier_issues}
 
     CATALOGUE_KINDS = ('assortment', 'counterparty', 'store', 'organization')
     CATALOGUE_TTL = 20 * 60
@@ -1606,6 +1703,8 @@ def worker(engine):
             # A received webhook has priority over the background reconciliation scan.
             if engine.run_one():
                 continue
+            if engine.run_supplier_one():
+                continue
             with engine.db() as db:
                 imminent = db.execute("SELECT 1 FROM jobs WHERE status='pending' AND due<=? LIMIT 1",
                                       (time.time() + 1.5,)).fetchone()
@@ -1655,7 +1754,10 @@ def route(handler, method):
             return True
         service = engine()
         if method == 'GET':
-            if path == '/api/production/stock':
+            if path == '/api/production/supplier/status':
+                with service.db() as db:
+                    result = {'issues': [dict(r) for r in db.execute("SELECT id,error FROM supplier_jobs WHERE status='review'")]}
+            elif path == '/api/production/stock':
                 qs = urllib.parse.parse_qs(parsed.query)
                 result = {'rows': service.stock(qs.get('store', [''])[0])}
             elif path == '/api/production/analytics':
@@ -1700,6 +1802,15 @@ def route(handler, method):
             result = dict(service.catalogue_snapshot(False), started=started)
         elif path == '/api/production/recipes/apply':
             result = {'recipes': service.save_recipe_group(body.get('recipes'), actor='Общий аккаунт')}
+        elif path == '/api/production/supplier/retry':
+            value = str(body.get('id') or '')
+            if not ID.fullmatch(value):
+                raise Review('Не найдена карточка товара')
+            with service.db() as db:
+                if not db.execute('SELECT 1 FROM supplier_jobs WHERE id=?', (value,)).fetchone():
+                    raise Review('Нет задания для этого товара')
+                service.enqueue_supplier(db, value)
+            result = {'queued': True}
         elif path == '/api/production/recipe':
             result = service.save_recipe(body, actor='Общий аккаунт')
         elif path == '/api/production/config':

@@ -611,6 +611,47 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(self.ms.created[0][1]['store'], ref('store', cfg['factories'][1]['store']))
         self.assertAlmostEqual(chain['cost_snapshot']['total'], 1505.6)
 
+    def test_supplier_sync_uses_parent_card_and_first_factory(self):
+        agent, variant = uid(), uid()
+        self.e.set_config({'factories': [{'id': self.factory, 'agent': agent}]})
+        catalogue = [{'id': variant, 'parent_id': self.product, 'meta': {'type': 'variant'}}]
+        with self.e.db() as db:
+            db.execute('INSERT INTO catalogues VALUES(?,?,?)', ('assortment', 1, json.dumps(catalogue)))
+        recipe = {'assortment_id': variant, 'name': 'Размер', 'stages': [
+            {'factory': self.factory, 'work_cost': 100, 'materials': []}]}
+        self.e.save_recipe_group([recipe])
+        doc = {'supplier': None, 'name': 'Карточка', 'code': 'не менять'}
+        calls = []
+        self.ms.get = lambda path, **kw: copy.deepcopy(doc)
+        def put(method, path, body):
+            calls.append((method,path,copy.deepcopy(body)))
+            doc.update(body)
+        self.ms.request = put
+        self.assertTrue(self.e.run_supplier_one())
+        self.assertEqual(calls, [('PUT', '/entity/product/' + self.product, {'supplier': ref('counterparty', agent)})])
+        self.assertEqual(doc['code'], 'не менять')
+        with self.e.db() as db:
+            self.assertEqual(db.execute('SELECT status FROM supplier_jobs').fetchone()[0], 'done')
+        with self.e.db() as db:
+            self.e.enqueue_supplier(db, self.product)
+        self.e.run_supplier_one()
+        self.assertEqual(len(calls), 1)
+
+    def test_supplier_conflict_does_not_overwrite_card(self):
+        agent1, agent2, factory2, v1, v2 = [uid() for _ in range(5)]
+        self.e.set_config({'factories': [{'id': self.factory, 'agent': agent1}, {'id': factory2, 'agent': agent2}]})
+        catalogue = [{'id': v, 'parent_id': self.product, 'meta': {'type': 'variant'}} for v in (v1,v2)]
+        with self.e.db() as db:
+            db.execute('INSERT INTO catalogues VALUES(?,?,?)', ('assortment', 1, json.dumps(catalogue)))
+        recipes = [{'assortment_id': v, 'name': str(v), 'stages': [{'factory': f, 'materials': []}]} for v,f in [(v1,self.factory),(v2,factory2)]]
+        self.e.save_recipe_group(recipes)
+        self.ms.request = lambda *args: self.fail('Конфликт не должен менять поставщика')
+        self.e.run_supplier_one()
+        with self.e.db() as db:
+            row = db.execute('SELECT status,error FROM supplier_jobs').fetchone()
+        self.assertEqual(row['status'], 'review')
+        self.assertIn('разные фабрики', row['error'])
+
     def test_direct_receipt_two_losses_links_no_moves_idempotent(self):
         value, cfg = self.setup_direct()
         self.e.process_supply(value)
