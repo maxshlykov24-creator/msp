@@ -8,6 +8,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+class DialogState(Base):
+    __tablename__ = "dialog_states"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    state: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    data: Mapped[str] = mapped_column(Text, default="{}")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -78,6 +86,7 @@ class Revelation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     text: Mapped[str] = mapped_column(Text)
+    report_week_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship(back_populates="revelations")

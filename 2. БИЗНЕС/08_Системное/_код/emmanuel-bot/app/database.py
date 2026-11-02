@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+
+from aiogram.fsm.storage.base import BaseStorage, StorageKey
+
 from sqlalchemy.ext.asyncio import AsyncAttrs, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -87,3 +91,56 @@ async def init_db() -> None:
             await conn.run_sync(_migrate_sqlite_reports_add_bible_days)
             await conn.run_sync(_migrate_sqlite_users_add_ai_dossier)
             await conn.run_sync(_migrate_sqlite_members_assigned_hashtag)
+            await conn.run_sync(_migrate_sqlite_revelation_week)
+
+
+def _migrate_sqlite_revelation_week(sync_conn) -> None:
+    from sqlalchemy import inspect, text
+
+    cols = {c["name"] for c in inspect(sync_conn).get_columns("revelations")}
+    if "report_week_start" not in cols:
+        sync_conn.execute(text("ALTER TABLE revelations ADD COLUMN report_week_start DATE"))
+
+
+class SQLiteFSMStorage(BaseStorage):
+    """Сохраняет шаг и черновик в том же volume, что отчёты."""
+
+    @staticmethod
+    def _key(key: StorageKey) -> str:
+        return json.dumps([key.bot_id, key.chat_id, key.user_id, key.thread_id,
+                           key.business_connection_id, key.destiny])
+
+    async def _read(self, key):
+        from app.models import DialogState
+        async with get_session_factory()() as session:
+            row = await session.get(DialogState, self._key(key))
+            return (row.state, json.loads(row.data)) if row else (None, {})
+
+    async def set_state(self, key, state=None):
+        from app.models import DialogState
+        async with get_session_factory()() as session:
+            row = await session.get(DialogState, self._key(key))
+            if row is None:
+                row = DialogState(key=self._key(key), data="{}")
+                session.add(row)
+            row.state = state.state if hasattr(state, "state") else state
+            await session.commit()
+
+    async def get_state(self, key):
+        return (await self._read(key))[0]
+
+    async def set_data(self, key, data):
+        from app.models import DialogState
+        async with get_session_factory()() as session:
+            row = await session.get(DialogState, self._key(key))
+            if row is None:
+                row = DialogState(key=self._key(key))
+                session.add(row)
+            row.data = json.dumps(data, ensure_ascii=False)
+            await session.commit()
+
+    async def get_data(self, key):
+        return (await self._read(key))[1]
+
+    async def close(self):
+        pass

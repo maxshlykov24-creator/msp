@@ -7,6 +7,10 @@ services:
     restart: unless-stopped
     mem_limit: 300m
     env_file: .env
+    # DNS currently resolves to an unreachable Telegram address on this VPS.
+    # Keep TLS hostname verification; apply the working address only to this bot.
+    extra_hosts:
+      - "api.telegram.org:${TELEGRAM_API_IPV4:-149.154.167.220}"
     volumes:
       - emmanuel_report_bot_data:/data
 

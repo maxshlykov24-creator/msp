@@ -9,12 +9,13 @@ import asyncio
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ChatMemberStatus, ParseMode
-from aiogram.filters import Command, CommandStart, StateFilter
+from aiogram.filters import Command, CommandStart, StateFilter, ExceptionTypeFilter
+from aiogram.exceptions import TelegramNetworkError, TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.memory import SimpleEventIsolation
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import and_, or_, delete, desc, func, select
 from sqlalchemy.orm import selectinload
 
 from app import groq_client
@@ -38,7 +39,7 @@ from app.coverage import (
     upsert_member,
     upsert_submission,
 )
-from app.database import get_session_factory
+from app.database import get_session_factory, SQLiteFSMStorage
 from app import keyboards as kb
 from app.models import Revelation, RevelationArchive, Report, User, WeekSubmission
 from app.mute import AdminOnlyPrivateMiddleware, coverage_recipient_ids, is_admin_user, send_message_live
@@ -51,6 +52,7 @@ from app.time_utils import (
     submitted_on_time,
     to_msk,
     week_start_from_date,
+    week_range_label,
     group_digest_follows_reports,
 )
 
@@ -137,22 +139,10 @@ def _parse_bible_days_stat(s: str) -> float | None:
 
 
 def parse_free_hours_to_q1(raw: str) -> str | None:
-    t = raw.strip().lower().replace("часа", "").replace("часы", "").replace("ч.", "").strip()
-    t = t.replace(",", ".").strip()
-    if not t:
-        return None
-    if t.endswith("+"):
-        try:
-            float(t[:-1])
-            return t.replace(" ", "")
-        except ValueError:
-            return None
-    if re.fullmatch(r"\d+(\.\d+)?", t):
+    t = raw.strip().lower().replace(",", ".")
+    t = re.sub(r"\s*(?:час(?:а|ов|ы)?|ч\.?)$", "", t).strip()
+    if re.fullmatch(r"\d+(?:\.\d+)?\+?", t) and float(t.rstrip("+")) <= 168:
         return t
-    try:
-        return str(float(t))
-    except ValueError:
-        pass
     return None
 
 
@@ -302,62 +292,114 @@ async def get_or_create_user(session, from_user) -> User:
     return u
 
 
-async def replace_user_revelations_from_text(session, user_id: int, blob: str) -> None:
-    await session.execute(delete(Revelation).where(Revelation.user_id == user_id))
-    for line in blob.replace("\r", "").split("\n"):
-        t = line.strip().lstrip("-•●").strip()
-        if not t:
-            continue
-        session.add(Revelation(user_id=user_id, text=t, created_at=now_msk()))
-    await session.flush()
+def report_week(data: dict) -> date:
+    value = data.get("report_week_start")
+    return date.fromisoformat(value) if value else week_start_from_date(now_msk().date())
 
 
-async def replace_revelations_from_saved_q5(session, user_id: int, q5_blob: str) -> None:
-    """Разобрать сохранённое поле отчёта (п.5) обратно в черновые строки откровений."""
-    await session.execute(delete(Revelation).where(Revelation.user_id == user_id))
-    blob = (q5_blob or "").strip()
-    if not blob or blob == "—":
-        await session.flush()
-        return
-    for line in blob.replace("\r", "").split("\n"):
-        t = line.strip().lstrip("-•●").strip()
-        if not t or t == "—":
-            continue
-        session.add(Revelation(user_id=user_id, text=t, created_at=now_msk()))
-    await session.flush()
+def week_revelations(user_id: int, ws: date):
+    return select(Revelation).where(
+        Revelation.user_id == user_id,
+        or_(Revelation.report_week_start == ws, and_(
+            Revelation.report_week_start.is_(None),
+            Revelation.created_at >= datetime.combine(ws, datetime.min.time()),
+            Revelation.created_at < datetime.combine(ws + timedelta(days=7), datetime.min.time()),
+        )),
+    ).order_by(Revelation.created_at, Revelation.id)
+
+
+async def load_report_revelations(from_user, state: FSMContext) -> str:
+    data = await state.get_data()
+    if "q5" in data:
+        return data["q5"]
+    async with get_session_factory()() as session:
+        u = await get_or_create_user(session, from_user)
+        rows = (await session.scalars(week_revelations(u.id, report_week(data)))).all()
+        await session.commit()
+    text = "\n".join(f"- {r.text.strip()}" for r in rows) if rows else "—"
+    await state.update_data(q5=text, revelation_ids=[r.id for r in rows])
+    return text
+
+
+async def send_report_body(bot: Bot, chat_id: int, body: str):
+    if len(body) <= 4000:
+        return await bot.send_message(chat_id, body, parse_mode=ParseMode.HTML)
+    plain = html.unescape(re.sub(r"</?b>", "", body))
+    sent = None
+    for offset in range(0, len(plain), 3500):
+        sent = await bot.send_message(chat_id, plain[offset:offset + 3500], parse_mode=None)
+    return sent
 
 
 async def send_report_preview(bot: Bot, chat_id: int, from_user, state: FSMContext) -> None:
+    q5_text = await load_report_revelations(from_user, state)
     data = await state.get_data()
     async with get_session_factory()() as session:
         u = await get_or_create_user(session, from_user)
-        rows = (
-            await session.scalars(
-                select(Revelation).where(Revelation.user_id == u.id).order_by(Revelation.created_at)
-            )
-        ).all()
         await session.commit()
-    q5_text = "\n".join(f"- {r.text.strip()}" for r in rows) if rows else "—"
     merged = {**data, "q5": q5_text}
     await state.set_data(merged)
     await state.set_state(WeeklyReportStates.confirm)
 
     html_body = build_report_message_html(u, merged)
-    await bot.send_message(chat_id, html_body, parse_mode=ParseMode.HTML)
+    await send_report_body(bot, chat_id, html_body)
     sd = await state.get_data()
     show_reset = sd.get("resubmit_report_id") is None
     await bot.send_message(
         chat_id,
-        "Текст ниже уже как увидят братья. Нужно что-то поменять — жми ✏️ с номером. "
+        "Текст выше уже как увидят братья. Нужно что-то поменять — жми ✏️ с номером. "
         'Всё устраивает — «Отправить».',
         reply_markup=kb.confirm_kb(show_reset=show_reset),
     )
+
+
+async def resume_dialog(message: Message, state: FSMContext, bot: Bot) -> None:
+    current = await state.get_state()
+    prompts = {
+        WeeklyReportStates.q1_prayer.state: ("Молитва - сколько часов за неделю?" + HELP_NUMERIC, kb.prayer_hours_kb()),
+        WeeklyReportStates.q1b_bible.state: ("Сколько дней изучал Библию?" + HELP_NUMERIC, kb.bible_days_kb()),
+        WeeklyReportStates.q2_sermons.state: ("Сколько проповедей посмотрел?" + HELP_NUMERIC, kb.sermons_kb()),
+        WeeklyReportStates.q6_meetings.state: ("Сколько людей обхватил?" + HELP_NUMERIC, kb.meetings_kb()),
+        WeeklyReportStates.q3_fast.state: ("Постился ли на неделе?" + HELP_YESNO, kb.fast_kb()),
+        WeeklyReportStates.q4_help.state: ("В чём братьям помолиться или помочь? Напиши одним сообщением.", None),
+    }
+    if current == WeeklyReportStates.q5_revelations.state:
+        await prompt_revelations(message, state)
+    elif current == WeeklyReportStates.confirm.state:
+        await send_report_preview(bot, message.chat.id, message.from_user, state)
+    elif current == WeeklyReportStates.editing.state:
+        await message.answer("Продолжи правку выбранного пункта одним сообщением. "
+                             "Можно отменить отчёт.", reply_markup=kb.cancel_report_kb())
+    elif current in prompts:
+        text, markup = prompts[current]
+        await message.answer("Продолжим сохранённый отчёт.\n\n" + text,
+                             reply_markup=kb.with_cancel_kb(markup) if markup else kb.cancel_report_kb())
+    else:
+        await message.answer("Выбери действие в меню.", reply_markup=kb.main_menu_kb())
+
+
+@router.message(F.chat.type == "private", StateFilter(WeeklyReportStates),
+                F.text.in_(kb.MAIN_MENU_BUTTONS))
+@router.message(F.chat.type == "private", Command("resume"))
+async def msg_resume_report(message: Message, state: FSMContext, bot: Bot):
+    await resume_dialog(message, state, bot)
+
+
+@router.message(F.chat.type == "private", Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Текущий ввод отменён. Сохранённые отчёты и заметки остались.",
+                         reply_markup=kb.main_menu_kb())
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     if message.chat.type != "private":
         return
+    if await state.get_state() in {x.state for x in WeeklyReportStates.__all_states__}:
+        await resume_dialog(message, state, bot)
+        return
+
     if not await is_allowed_member(bot, message.from_user.id):
         await message.answer(
             "Доступ только для участников группы. Попросите администратора добавить бота в чат и напишите из личной переписки."
@@ -369,7 +411,7 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     async with get_session_factory()() as session:
         u = await get_or_create_user(session, message.from_user)
         has_admin = await session.scalar(select(func.count()).select_from(User).where(User.is_bot_admin.is_(True)))
-        if has_admin == 0:
+        if has_admin == 0 and is_admin_user(message.from_user.id):
             u.is_bot_admin = True
             appointed_admin = True
         has_tag = await adopt_hashtag_from_group(session, u)
@@ -590,15 +632,15 @@ async def cmd_circle(message: Message, bot: Bot):
 
     body_rest = "\n".join(blocks).strip()
 
-    chunk_size = 3800
-    for i in range(0, len(body_rest), chunk_size):
-        await message.answer(body_rest[i : i + chunk_size], parse_mode=ParseMode.HTML)
+    await send_report_body(bot, message.chat.id, body_rest)
 
 
 async def push_report_step_1(chat_id: int, state: FSMContext, bot: Bot) -> None:
+    await state.update_data(report_week_start=week_start_from_date(now_msk().date()).isoformat())
     await state.set_state(WeeklyReportStates.q1_prayer)
     await bot.send_message(
         chat_id,
+        "Отчёт за " + week_range_label(week_start_from_date(now_msk().date())) + "\n\n"
         "Молитва — сколько часов было уделено за неделю?" + HELP_NUMERIC,
         reply_markup=kb.with_cancel_kb(kb.prayer_hours_kb()),
     )
@@ -639,6 +681,9 @@ async def btn_report_menu(message: Message, bot: Bot):
 
 @router.callback_query(F.data == "rep_menu:write")
 async def cb_rep_menu_write(query: CallbackQuery, state: FSMContext, bot: Bot):
+    if await state.get_state() in {x.state for x in WeeklyReportStates.__all_states__}:
+        await query.answer("Сначала закончи или отмени текущий отчёт.", show_alert=True)
+        return
     await query.message.delete()
     if not await db_user_hashtag_filled(query.from_user):
         await ask_for_hashtag(query.message, state, after="write", from_user=query.from_user)
@@ -656,6 +701,12 @@ async def cb_rep_menu_write(query: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data == "rep_menu:edit")
 async def cb_rep_menu_edit(query: CallbackQuery, state: FSMContext, bot: Bot):
+    if await state.get_state() in {x.state for x in WeeklyReportStates.__all_states__}:
+        await query.answer("Сначала закончи или отмени текущий отчёт.", show_alert=True)
+        return
+    if not await is_allowed_member(bot, query.from_user.id):
+        await query.answer("Нет доступа.", show_alert=True)
+        return
     await query.message.delete()
     if not await db_user_hashtag_filled(query.from_user):
         await ask_for_hashtag(query.message, state, after="edit_week", from_user=query.from_user)
@@ -667,8 +718,6 @@ async def cb_rep_menu_edit(query: CallbackQuery, state: FSMContext, bot: Bot):
         rep = await session.scalar(
             select(Report).where(Report.user_id == u.id, Report.week_start == ws)
         )
-        if rep:
-            await replace_revelations_from_saved_q5(session, u.id, rep.q5_revelations)
         await session.commit()
     if not rep:
         await query.message.answer(
@@ -678,6 +727,9 @@ async def cb_rep_menu_edit(query: CallbackQuery, state: FSMContext, bot: Bot):
         return
     await state.clear()
     await state.update_data(
+        report_week_start=rep.week_start.isoformat(),
+        q5=rep.q5_revelations,
+        revelation_ids=[],
         q1=rep.q1_prayer_hours,
         q1b=rep.q1b_bible_days or "—",
         q2=rep.q2_sermons,
@@ -711,6 +763,9 @@ async def btn_revelations_menu(message: Message, bot: Bot):
 @router.callback_query(F.data == "rev:add")
 @router.callback_query(F.data == "rev:add_more")
 async def cb_rev_add(query: CallbackQuery, state: FSMContext, bot: Bot):
+    if await state.get_state() in {x.state for x in WeeklyReportStates.__all_states__}:
+        await query.answer("Сначала закончи или отмени текущий отчёт.", show_alert=True)
+        return
     if not await is_allowed_member(bot, query.from_user.id):
         await query.answer("Нет доступа.")
         return
@@ -733,7 +788,7 @@ async def cb_rev_week(query: CallbackQuery, bot: Bot):
         u = await get_or_create_user(session, query.from_user)
         rows = (
             await session.scalars(
-                select(Revelation).where(Revelation.user_id == u.id).order_by(Revelation.created_at)
+                week_revelations(u.id, now_msk().date() - timedelta(days=now_msk().weekday()))
             )
         ).all()
         await session.commit()
@@ -761,14 +816,24 @@ async def cb_rev_archive(query: CallbackQuery, bot: Bot):
                 .limit(30)
             )
         ).all()
+        pending = (await session.scalars(
+            select(Revelation).where(Revelation.user_id == u.id,
+                Revelation.created_at < datetime.combine(
+                    now_msk().date() - timedelta(days=now_msk().weekday()), datetime.min.time()))
+            .order_by(Revelation.created_at.desc()).limit(30)
+        )).all()
         await session.commit()
+    if pending:
+        text = "Старые неотправленные заметки (в новый отчёт автоматически не входят):\n\n"
+        text += "\n\n".join(f"{r.created_at.date()}: {r.text}" for r in pending)
+        await query.message.answer(text[:3900], parse_mode=None)
     if not rows:
         await query.message.answer("Архив пуст.")
     else:
         lines = []
         for r in rows:
             lines.append(f"<b>{r.report_week_start}</b>\n{html.escape(r.text.strip())}")
-        await query.message.answer("\n\n".join(lines)[:3900], parse_mode=ParseMode.HTML)
+        await send_report_body(bot, query.message.chat.id, "\n\n".join(lines))
     await query.answer()
 
 
@@ -815,8 +880,6 @@ async def btn_edit_week(message: Message, state: FSMContext, bot: Bot):
         rep = await session.scalar(
             select(Report).where(Report.user_id == u.id, Report.week_start == ws)
         )
-        if rep:
-            await replace_revelations_from_saved_q5(session, u.id, rep.q5_revelations)
         await session.commit()
     if not rep:
         await message.answer(
@@ -825,6 +888,9 @@ async def btn_edit_week(message: Message, state: FSMContext, bot: Bot):
         return
     await state.clear()
     await state.update_data(
+        report_week_start=rep.week_start.isoformat(),
+        q5=rep.q5_revelations,
+        revelation_ids=[],
         q1=rep.q1_prayer_hours,
         q1b=rep.q1b_bible_days or "—",
         q2=rep.q2_sermons,
@@ -1087,21 +1153,20 @@ async def msg_q4(message: Message, state: FSMContext, bot: Bot):
         return
     await state.update_data(q4=(message.text or "").strip())
     await state.set_state(WeeklyReportStates.q5_revelations)
-    async with get_session_factory()() as session:
-        u = await get_or_create_user(session, message.from_user)
-        rows = (
-            await session.scalars(
-                select(Revelation).where(Revelation.user_id == u.id).order_by(Revelation.created_at)
-            )
-        ).all()
-        await session.commit()
+    await prompt_revelations(message, state)
 
-    bullets = "\n".join(f"- {r.text.strip()}" for r in rows) if rows else "(пока пусто)"
+
+async def prompt_revelations(message: Message, state: FSMContext) -> None:
+    text = await load_report_revelations(message.from_user, state)
+    bullets = text if text != "—" else "(пока пусто)"
+    # Plain text: заметки могут содержать <, > и &.
     await message.answer(
-        "Откровения за неделю.\n\nСейчас в заметках:\n"
-        + bullets
-        + "\n\nПришли текстом пока нужно (несколько сообщений можно) или нажми «Готово».",
+        "Молитвенную нужду сохранил. Теперь откровения за отчётную неделю.\n\n"
+        "Сейчас в отчёте:\n" + bullets[:2200]
+        + "\n\nНапиши новое откровение. Можно несколько сообщений. "
+        "Когда закончишь, нажми «Готово» для просмотра отчёта.",
         reply_markup=kb.with_cancel_kb(kb.q5_done_kb()),
+        parse_mode=None,
     )
 
 
@@ -1113,10 +1178,20 @@ async def msg_q5_add(message: Message, state: FSMContext, bot: Bot):
     t = (message.text or "").strip()
     if not t:
         return
-    async with get_session_factory()() as session:
-        u = await get_or_create_user(session, message.from_user)
-        session.add(Revelation(user_id=u.id, text=t, created_at=now_msk()))
-        await session.commit()
+    previous = await load_report_revelations(message.from_user, state)
+    data = await state.get_data()
+    ids = data.get("revelation_ids", [])
+    if not data.get("resubmit_report_id"):
+        async with get_session_factory()() as session:
+            u = await get_or_create_user(session, message.from_user)
+            row = Revelation(user_id=u.id, text=t, created_at=now_msk(),
+                             report_week_start=report_week(data))
+            session.add(row)
+            await session.flush()
+            ids = [*ids, row.id]
+            await session.commit()
+    updated = ((previous + "\n") if previous != "—" else "") + "- " + t
+    await state.update_data(q5=updated, revelation_ids=ids)
     await message.answer("Записал. Ещё текстом или «Готово».", reply_markup=kb.with_cancel_kb(kb.q5_done_kb()))
 
 
@@ -1193,10 +1268,7 @@ async def msg_editing_free(message: Message, state: FSMContext, bot: Bot):
         await send_report_preview(bot, chat_id, fu, state)
         return
     if n == 7:
-        async with get_session_factory()() as session:
-            u = await get_or_create_user(session, fu)
-            await replace_user_revelations_from_text(session, u.id, text)
-            await session.commit()
+        await state.update_data(q5=text or "—")
         await state.update_data(editing_field=None)
         await state.set_state(WeeklyReportStates.confirm)
         await send_report_preview(bot, chat_id, fu, state)
@@ -1243,15 +1315,7 @@ async def cb_confirm_edit(query: CallbackQuery, state: FSMContext, bot: Bot):
             reply_markup=kb.cancel_report_kb(),
         )
     elif n == 7:
-        async with get_session_factory()() as session:
-            u = await get_or_create_user(session, query.from_user)
-            rows = (
-                await session.scalars(
-                    select(Revelation).where(Revelation.user_id == u.id).order_by(Revelation.created_at)
-                )
-            ).all()
-            await session.commit()
-        cur = "\n".join(r.text.strip() for r in rows)
+        cur = await load_report_revelations(query.from_user, state)
         snippet = ("Сейчас:\n" + cur[:800] + ("\n…" if len(cur) > 800 else "")) if cur else "Пока строк нет."
         await query.message.answer(
             "✏️ Откровения за неделю. Пришли одним сообщением: каждая новая строка — отдельная заметка.\n\n" + snippet,
@@ -1299,7 +1363,7 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
         return
 
     submitted_at = now_msk()
-    week_start = week_start_from_date(now_msk().date())
+    week_start = report_week(data)
     on_time = submitted_on_time(submitted_at, week_start)
     resubmit_rid = data.get("resubmit_report_id")
 
@@ -1331,33 +1395,20 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
             await state.clear()
             return
 
-        rev_rows = (
-            await session.scalars(
-                select(Revelation).where(Revelation.user_id == u.id).order_by(Revelation.created_at)
-            )
-        ).all()
-        q5_final = "\n".join(f"- {r.text.strip()}" for r in rev_rows) if rev_rows else "—"
-
+        await query.answer("Сохраняю отчёт…")
+        q5_final = (data.get("q5") or "—").strip()
         if is_update:
-            await session.execute(
-                delete(RevelationArchive).where(
-                    RevelationArchive.user_id == u.id,
-                    RevelationArchive.report_week_start == week_start,
-                )
-            )
-
-        for r in rev_rows:
-            session.add(
-                RevelationArchive(
-                    user_id=u.id,
-                    text=r.text,
-                    report_week_start=week_start,
-                    created_at=r.created_at,
-                )
-            )
-
-        if rev_rows:
-            await session.execute(delete(Revelation).where(Revelation.user_id == u.id))
+            await session.execute(delete(RevelationArchive).where(
+                RevelationArchive.user_id == u.id,
+                RevelationArchive.report_week_start == week_start,
+            ))
+        if q5_final != "—":
+            session.add(RevelationArchive(user_id=u.id, text=q5_final,
+                        report_week_start=week_start, created_at=submitted_at))
+        ids = data.get("revelation_ids", [])
+        if ids:
+            await session.execute(delete(Revelation).where(
+                Revelation.user_id == u.id, Revelation.id.in_(ids)))
 
         if is_update:
             existing.q1_prayer_hours = data["q1"]
@@ -1369,8 +1420,6 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
             existing.q6_meetings = data["q6"]
             existing.q7_plan_pct = REPORT_SENTINEL_Q7_Q8
             existing.q8_next_plan = REPORT_SENTINEL_Q7_Q8
-            existing.submitted_at = submitted_at
-            existing.on_time = on_time
             new_streak = u.streak
         else:
             session.add(
@@ -1401,11 +1450,14 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
     tg_user_id_sent = query.from_user.id
     txt_html = build_report_message_html(u, out_data)
 
-    await query.message.edit_reply_markup(reply_markup=None)
     await state.clear()
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+    except (TelegramNetworkError, TelegramBadRequest):
+        log.warning("Could not remove submitted report keyboard")
 
     if settings.group_chat_id == 0:
-        await bot.send_message(tg_user_id_sent, txt_html, parse_mode=ParseMode.HTML)
+        await send_report_body(bot, tg_user_id_sent, txt_html)
         sent_note = (
             "Отчёт недели обновлён (режим без общего чата — копия только тебе). В покрытие группы не входит."
             if is_update
@@ -1418,7 +1470,15 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
             else "Отчёт обновлён у бота. В группу не отправлял, покрытие считаю только по чату."
         )
     else:
-        sent = await bot.send_message(settings.group_chat_id, txt_html, parse_mode=ParseMode.HTML)
+        try:
+            sent = await send_report_body(bot, settings.group_chat_id, txt_html)
+        except Exception:
+            log.exception("report delivery not confirmed")
+            await query.message.answer(
+                "Отчёт сохранён. Telegram не подтвердил отправку в группу. "
+                "Проверь общий чат перед повторной отправкой. Копия есть выше.",
+                reply_markup=kb.main_menu_kb())
+            return
         if sent is None:
             sent_note = "Не отправил в общий чат, в покрытие недели не засчитал."
         else:
@@ -1460,8 +1520,6 @@ async def cb_confirm_send(query: CallbackQuery, state: FSMContext, bot: Bot):
         reply_markup=kb.main_menu_kb(),
         parse_mode=ParseMode.HTML,
     )
-    await query.answer()
-
     try:
         ref = await groq_client.get_reflection(data["q4"], q5_final)
         if ref:
@@ -1503,16 +1561,6 @@ async def cb_addrev_cancel(query: CallbackQuery, state: FSMContext):
     await query.answer()
 
 
-@router.message(Command("cancel"))
-async def cmd_cancel(message: Message, state: FSMContext):
-    if message.chat.type != "private":
-        return
-    await message.answer(
-        "Отмена только кнопкой: при отчёте — «❌ Отменить отчёт», "
-        "при добавлении откровения — «❌ Отменить»."
-    )
-
-
 @router.message(StateFilter(AddRevelationStates.waiting_text), F.text)
 async def add_rev_text(message: Message, state: FSMContext, bot: Bot):
     if not await is_allowed_member(bot, message.from_user.id):
@@ -1524,7 +1572,8 @@ async def add_rev_text(message: Message, state: FSMContext, bot: Bot):
         return
     async with get_session_factory()() as session:
         u = await get_or_create_user(session, message.from_user)
-        session.add(Revelation(user_id=u.id, text=t, created_at=now_msk()))
+        session.add(Revelation(user_id=u.id, text=t, created_at=now_msk(),
+                               report_week_start=now_msk().date() - timedelta(days=now_msk().weekday())))
         await session.commit()
     await state.clear()
     await message.answer(
@@ -1544,7 +1593,7 @@ async def btn_my_rev(message: Message, bot: Bot):
         u = await get_or_create_user(session, message.from_user)
         rows = (
             await session.scalars(
-                select(Revelation).where(Revelation.user_id == u.id).order_by(Revelation.created_at)
+                week_revelations(u.id, now_msk().date() - timedelta(days=now_msk().weekday()))
             )
         ).all()
         await session.commit()
@@ -1573,8 +1622,18 @@ async def btn_archive(message: Message, bot: Bot):
                 .limit(30)
             )
         ).all()
+        pending = (await session.scalars(
+            select(Revelation).where(Revelation.user_id == u.id,
+                Revelation.created_at < datetime.combine(
+                    now_msk().date() - timedelta(days=now_msk().weekday()), datetime.min.time()))
+            .order_by(Revelation.created_at.desc()).limit(30)
+        )).all()
         await session.commit()
 
+    if pending:
+        text = "Старые неотправленные заметки (в новый отчёт автоматически не входят):\n\n"
+        text += "\n\n".join(f"{r.created_at.date()}: {r.text}" for r in pending)
+        await message.answer(text[:3900], parse_mode=None)
     if not rows:
         await message.answer("Архив откровений будет после первых отправленных отчётов.")
         return
@@ -1871,7 +1930,7 @@ async def warn_if_cannot_see_group(bot: Bot) -> None:
 
 
 def build_dispatcher() -> Dispatcher:
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=SQLiteFSMStorage(), events_isolation=SimpleEventIsolation())
     dp.message.middleware(AdminOnlyPrivateMiddleware())
     dp.edited_message.middleware(AdminOnlyPrivateMiddleware())
     dp.callback_query.middleware(AdminOnlyPrivateMiddleware())
@@ -2225,3 +2284,31 @@ async def job_evening_reminder(bot: Bot) -> None:
 
 async def job_twenty_reminder(bot: Bot) -> None:
     await job_evening_reminder(bot)
+
+
+@router.callback_query()
+async def cb_stale(query: CallbackQuery):
+    await query.answer("Эта кнопка устарела. Открой /start для продолжения.", show_alert=True)
+
+
+@router.message(F.chat.type == "private")
+async def msg_fallback(message: Message, state: FSMContext, bot: Bot):
+    if await state.get_state():
+        await message.answer("На этом шаге нужен текст или кнопка. Продолжить: /resume")
+    else:
+        await message.answer("Открой /start, чтобы составить отчёт или добавить откровение.",
+                             reply_markup=kb.main_menu_kb())
+
+
+@router.error(ExceptionTypeFilter(TelegramNetworkError))
+async def on_telegram_timeout(event, bot: Bot):
+    update = event.update
+    message = update.message or (update.callback_query.message if update.callback_query else None)
+    log.warning("Telegram timeout; persisted dialog can be resumed")
+    if message and message.chat.type == "private":
+        try:
+            await bot.send_message(message.chat.id,
+                "Telegram задержал ответ. Чтобы продолжить с сохранённого шага, нажми /resume.")
+        except TelegramNetworkError:
+            log.warning("Telegram recovery notice also timed out")
+    return True
