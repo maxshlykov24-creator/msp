@@ -246,9 +246,10 @@ function LayoutBuilder({ api, selected, qty, materials, norms, location, add }: 
             groups.push({ id: crypto.randomUUID(), model, color, material: bindings[color], quantity: String(rolls), ratio: Object.entries(result!.ratios[pattern]).filter(([, v]) => Number(v) > 0).map(([s, v]) => s + ': ' + v).join(' · '), norm, preliminary: true, products: Object.fromEntries(variants.filter(i => i.color === color).map(i => [i.id, String((output[i.size] || 0) * rolls)])) });
         }
     } add(groups); setResult(null); }
-    return <details className="cut-auto-layout"><summary><span className="cut-auto-icon"><Icon name="planning" size={19}/></span><span><strong>Подобрать раскладки</strong><small>По потребности, доступной ткани и нормам</small></span><Icon name="down" size={17}/></summary><div className="cut-auto-body">
+    const rollMaterials = materials.filter(m => m.unit === 'roll');
+    return <details className="cut-auto-layout"><summary><span className="cut-auto-icon"><Icon name="planning" size={19}/></span><span><strong>Подобрать раскладки</strong><small>{rollMaterials.length ? 'По потребности, доступной ткани и нормам' : 'Нужна ткань с учётом в рулонах'}</small></span><Icon name="down" size={17}/></summary><div className="cut-auto-body">{!rollMaterials.length ? <CutNotice>Для автоподбора нужна ткань с учётом в целых рулонах. Сейчас таких материалов нет. Добавь ручной крой ниже.</CutNotice> : <>
   <div className="cut-form-grid"><label>Модель<Choice label="Модель для подбора" value={model} onChange={e => { setModel(e.target.value); setBindings({}); setResult(null); setRatios(''); }}>{models.map(m => <option key={m}>{m}</option>)}</Choice></label><label>Норма выхода с рулона<Choice label="Норма Жени" value={norm} onChange={e => { setNorm(e.target.value); setResult(null); }}><option value="">Сопоставь модель с нормой</option>{Object.entries(norms).map(([m, q]) => <option key={m} value={m}>{m} · {q} шт.</option>)}</Choice></label></div>
-  <div className="cut-subsection"><h4>Ткань по цветам</h4><div className="cut-form-grid">{colors.map(c => <label key={c}>{c || 'Цвет не указан'}<Choice label={'Ткань · ' + (c || 'Цвет не указан')} value={bindings[c] || ''} onChange={e => { setBindings({ ...bindings, [c]: e.target.value }); setResult(null); }}><option value="">Выбери рулоны</option>{materials.filter(m => m.unit === 'roll').map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</Choice></label>)}</div></div>
+  <div className="cut-subsection"><h4>Ткань по цветам</h4><div className="cut-form-grid">{colors.map(c => <label key={c}>{c || 'Цвет не указан'}<Choice label={'Ткань · ' + (c || 'Цвет не указан')} value={bindings[c] || ''} onChange={e => { setBindings({ ...bindings, [c]: e.target.value }); setResult(null); }}><option value="">Выбери рулоны</option>{rollMaterials.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</Choice></label>)}</div></div>
   <label>Допустимые соотношения: {sizes.join(' : ')}<textarea value={ratios} onChange={e => { setRatios(e.target.value); setResult(null); }} placeholder="Каждая раскладка с новой строки, например 1:1:0"/><span className="cut-hint">Укажи только допустимые для ткани соотношения. Норма даёт предварительный выход.</span></label>
   {error && <CutNotice error>{error}</CutNotice>}
   <div className="cut-button-row"><button className="secondary" disabled={busy || !norm || !ratios} onClick={run}>{busy ? 'Подбираю…' : 'Подобрать'}</button></div>
@@ -256,7 +257,7 @@ function LayoutBuilder({ api, selected, qty, materials, norms, location, add }: 
         string,
         any
     ]) => <div key={color}><span className="cut-eyebrow">{color}</span><strong>{row.rolls} <small>рул.</small></strong><p>{Object.entries(row.output).map(([size, q]) => size + ' — ' + q + ' шт.').join(' · ')}</p></div>)}</div><div className="cut-button-row"><button onClick={accept}>Добавить в задание</button></div></>}</div>}
- </div></details>;
+ </>}</div></details>;
 }
 function CutDocument({ api, task, items, users, canPlan, canCut, canAdjust, refresh, close, edit }: {
     api: Api;

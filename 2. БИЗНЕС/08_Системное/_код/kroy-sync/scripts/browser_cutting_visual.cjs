@@ -3,6 +3,7 @@
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH||'playwright');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
+const requested=process.env.KROY_VISUAL_STATES?.split(',');
 const output='.runtime/cutting-visual';fs.mkdirSync(output,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({headless:true});
@@ -12,13 +13,13 @@ const output='.runtime/cutting-visual';fs.mkdirSync(output,{recursive:true});
   p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());
   async function login(port){await p.goto(`http://127.0.0.1:${port}/yuji/`);await p.getByLabel('Личный ключ доступа').fill('cut-local-test');await p.getByRole('button',{name:'Войти',exact:true}).click();await p.getByRole('heading',{name:'Поиск товара',exact:true}).waitFor();await p.getByRole('navigation').getByRole('button',{name:'Крой',exact:true}).click();await p.getByRole('heading',{name:'Задания на крой',exact:true}).waitFor()}
   async function choose(label,name){await p.getByRole('button',{name:label,exact:true}).click();await p.getByRole('option',{name,exact:true}).click()}
-  async function screenshots(name){for(const theme of ['light','dark']){
+  async function screenshots(name){if(requested&&!requested.includes(name))return;for(const theme of ['light','dark']){
    await p.setViewportSize({width:1440,height:1000});await p.getByRole('button',{name:theme==='light'?'Светлая тема':'Тёмная тема',exact:true}).click();
    for(const width of [320,390,768,1440]){
     await p.setViewportSize({width,height:1000});await p.evaluate(()=>window.scrollTo(0,0));
     assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name}: overflow ${theme}/${width}`);
     assert(await p.locator('.cutting input:not([type=checkbox]):not(.select-validation)').evaluateAll(inputs=>inputs.every(i=>{const r=i.getBoundingClientRect();return r.width===0||r.width>=65})),`${name}: compressed input ${width}`);
-    await p.screenshot({path:`${output}/${name}-${theme}-${width}.png`,fullPage:true});checks.push(`${name}/${theme}/${width}`);
+    await p.screenshot({path:`${output}/${name}-${theme}-${width}.png`,fullPage:true,animations:'disabled'});checks.push(`${name}/${theme}/${width}`);
    }
   }await p.setViewportSize({width:1440,height:1000});console.log('Checked '+name)}
   // Real catalog snapshot with synthetic, read-only documents in the preview DB.
@@ -35,7 +36,7 @@ const output='.runtime/cutting-visual';fs.mkdirSync(output,{recursive:true});
     await p.getByRole('button',{name:'Закрыть операцию',exact:true}).click();
     await p.getByRole('button',{name:'Действия',exact:true}).click();await p.getByRole('menuitem',{name:'Изменить план',exact:true}).click();await screenshots('revise');await p.getByRole('button',{name:'Закрыть операцию',exact:true}).click();
     await p.getByRole('button',{name:'Действия',exact:true}).click();await p.getByRole('menuitem',{name:'Отменить остаток',exact:true}).click();await screenshots('cancel');await p.getByRole('button',{name:'Закрыть операцию',exact:true}).click();
-    await p.emulateMedia({media:'print'});await p.screenshot({path:`${output}/print.png`,fullPage:true});await p.emulateMedia({media:'screen'});
+    await p.emulateMedia({media:'print'});await p.screenshot({path:`${output}/print.png`,fullPage:true,animations:'disabled'});await p.emulateMedia({media:'screen'});
    }
    await p.getByRole('button',{name:'← Задания',exact:true}).click();
   }
@@ -59,7 +60,7 @@ const output='.runtime/cutting-visual';fs.mkdirSync(output,{recursive:true});
   await p.getByRole('button',{name:'Далее →'}).click();await choose('Исполнитель','Тестовый закройщик');await p.getByLabel('Срок кроя',{exact:true}).fill('2026-11-06');await p.getByLabel('Ожидается к продаже',{exact:true}).fill('2026-11-09');await screenshots('review');
   assert(await p.getByRole('button',{name:'Выдать задание',exact:true}).isDisabled(),'Issue requires explicit confirmation');
   await p.getByRole('button',{name:'Назад',exact:true}).click();assert.equal(await p.getByLabel('Бордо · S',{exact:true}).inputValue(),'38','Back must retain layout quantities');
-  await p.getByRole('button',{name:'← Задания',exact:true}).click();await p.getByRole('navigation').getByRole('button',{name:'Заказы',exact:true}).click();await p.getByRole('button',{name:'+ Зарегистрировать',exact:true}).waitFor();
+  await p.route('**/api/catalog',async route=>{const r=await route.fetch(),data=await r.json();data.items=data.items.map(i=>i.kind==='material'?{...i,unit:'meter'}:i);await route.fulfill({response:r,json:data})});await p.getByRole('button',{name:'Обновить данные',exact:true}).click();await p.locator('.cut-auto-layout').evaluate(el=>el.open=true);await p.getByText('Для автоподбора нужна ткань с учётом в целых рулонах.',{exact:false}).waitFor();assert.equal(await p.getByRole('button',{name:'Подобрать',exact:true}).count(),0);await screenshots('no-roll-materials');await p.getByRole('button',{name:'← Задания',exact:true}).click();await p.getByRole('navigation').getByRole('button',{name:'Заказы',exact:true}).click();await p.getByRole('button',{name:'+ Зарегистрировать',exact:true}).waitFor();
   assert.deepEqual(errors,[]);console.log(JSON.stringify({screens:checks.length,states:checks.filter(v=>v.endsWith('/light/1440')),widths:[320,390,768,1440],themes:['light','dark'],navigation:true,errors}));
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
