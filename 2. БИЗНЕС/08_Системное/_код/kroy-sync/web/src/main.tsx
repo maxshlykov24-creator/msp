@@ -1,8 +1,9 @@
+import './style.css';
 import React,{useState} from 'react';
 import {Cutting} from './Cutting';
 import {Catalog} from './Catalog';
 import {Choice,Icon,ProfileMenu,ThemeToggle,useTheme} from './UI';
-import{createRoot}from'react-dom/client';import './style.css';import {Staff,Counter,roles} from './Operations';
+import{createRoot}from'react-dom/client';import {Staff,Counter,roles} from './Operations';
 type Row={id:string;version:number;[k:string]:any};
 type Field={optional?:boolean;key:string;label:string;type?:string;value?:string|number;options?:{value:string;label:string}[]};
 type Dialog={readOnly?:boolean;title:string;fields:Field[];warning?:string;submit:(v:Record<string,string>,op:string)=>Promise<void>};
