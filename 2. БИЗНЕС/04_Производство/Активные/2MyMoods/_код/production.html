@@ -225,6 +225,10 @@ const unitName=u=>({'грамм':'г','гр':'г','килограмм':'кг','�
 function unitOptions(m){const u=unitName(m.unit||m.source_unit);return ['г','кг'].includes(u)?['г','кг']:['м','см'].includes(u)?['м','см']:[u||'шт']}
 function dirty(){return [...groupItems].some(([key,value])=>JSON.stringify(value)!==groupBaselines.get(key))}
 let saving=false;function updateButtons(){const changed=dirty()&&!saving;document.querySelectorAll('#recipe-form button[type=submit]').forEach(b=>b.disabled=!changed)}
+// При вводе в нулевое числовое поле заменяется исходный ноль.
+function selectZeroNumber(event){const input=event.target;if(input instanceof HTMLInputElement&&input.type==='number'&&!input.disabled&&!input.readOnly&&input.value==='0')input.select()}
+document.addEventListener('focusin',selectZeroNumber);
+document.addEventListener('pointerup',selectZeroNumber);
 $('recipe-form').addEventListener('input',()=>queueMicrotask(updateButtons));$('recipe-form').addEventListener('change',()=>queueMicrotask(updateButtons));$('recipe-form').addEventListener('click',()=>queueMicrotask(updateButtons));
 async function closeEditor(){if(dirty()&&!await ask('Закрыть без сохранения изменений?'))return;$('editor').close()}
 function selectProduct(x){editing.assortment_id=x.id;editing.assortment_name=x.name;editing.assortment_url=x.meta?.uuidHref;editing.model=x.model||x.name;editing.display_name=x.model||x.name;delete editing.size_review;editing.color=productInfo(x).color;editing.size=productInfo(x).size;for(const c of x.characteristics||[]){if(/цвет/i.test(c.name))editing.color=normalizeColor(c.value);if(/размер/i.test(c.name))editing.size=c.value}editing.name=[editing.model,editing.color,editing.size].filter(Boolean).join(' · ');renderIdentity();updateButtons()}
