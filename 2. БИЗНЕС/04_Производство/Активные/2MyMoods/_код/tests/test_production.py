@@ -812,6 +812,34 @@ class ProductionTests(unittest.TestCase):
         with self.assertRaisesRegex(Review, 'Приёмка изменена'):
             self.e.process_supply(value)
 
+    def test_historical_chain_is_not_repriced(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        chain, number = self.e.chain(value)
+        chain.pop('price_write_once')
+        self.ms.docs['supply'][value]['positions'][0]['price'] = 45678
+        chain['fingerprint'] = fingerprint(self.ms.docs['supply'][value], self.ms.positions('supply', value))
+        self.e.save_chain(value, chain, number)
+        self.e.process_supply(value)
+        self.assertEqual(self.ms.docs['supply'][value]['positions'][0]['price'], 45678)
+
+    def test_manual_restore_original_after_timeout_is_not_overwritten(self):
+        value, cfg = self.setup_direct()
+        original = self.ms.request
+        before = self.ms.docs['supply'][value]['positions'][0]['price']
+        def timeout(method, path, body):
+            result = original(method, path, body)
+            if '/positions/' in path:
+                raise Review('Неопределённый ответ')
+            return result
+        self.ms.request = timeout
+        with self.assertRaises(Review): self.e.process_supply(value)
+        self.ms.request = original
+        self.ms.docs['supply'][value]['positions'][0]['price'] = before
+        with self.assertRaisesRegex(Review, 'Запись цены не подтверждена'):
+            self.e.process_supply(value)
+        self.assertEqual(self.ms.docs['supply'][value]['positions'][0]['price'], before)
+
     def test_discount_blocks_before_writeoffs(self):
         value, cfg = self.setup_direct()
         self.ms.docs['supply'][value]['positions'][0]['discount'] = 5

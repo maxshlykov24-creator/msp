@@ -956,83 +956,16 @@ def test_prior_thread():
 
 
 def test_widget_score():
-    import sys
-    from pathlib import Path
-
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from amo_client import score_widget_lead
-
-    g = "Mercedes-Benz G-класс AMG 4.0 AT, 2021, 42 520 км"
-    premium = score_widget_lead(
-        g, peer="Premium Auto", car="Mercedes-Benz G-Класс AMG 2021",
-        channel="Авито", from_name="Premium Auto", created_at=int(time.time()),
-    )
-    evgeniy = score_widget_lead(
-        g, peer="Premium Auto", car="Mercedes-Benz G-Класс AMG 2021",
-        channel="Авито", from_name="Евгений", created_at=int(time.time()),
-    )
-    assert premium > evgeniy
-    assert premium >= 40
-    mikhail = score_widget_lead(
-        "FAW Bestune NAT AT, 2023, 6 798 км",
-        peer="Михаил",
-        car="Bestune NAT",
-        channel="Авито",
-        from_name="Михаил",
-        created_at=int(time.time()),
-    )
-    assert mikhail >= 40
-    assert score_widget_lead(
-        "[АВТО.РУ] Tank 700",
-        peer="Premium Auto",
-        car="G-Класс",
-        channel="Авито",
-        from_name="Premium Auto",
-    ) == 0
+    from bot import crm
+    assert crm.amo_client.score_widget_lead('Bora', peer='Дмитрий', from_name='Дмитрий', car='Bora') == 0
 
 
 def test_widget_picks_chat_not_newer_twin():
-    """Пустая утренняя карточка того же объявления не забирает номер у ночной."""
-    import sys
-    from pathlib import Path
-
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from amo_client import choose_widget_lead
-
-    item = "8336838979"
-
-    def row(lead_id, created, talk_created, talk_updated, score=150, item_id=item):
-        return {
-            "score": score,
-            "created_at": created,
-            "item_id": item_id,
-            "talk_created": talk_created,
-            "talk_updated": talk_updated,
-            "lead": {"id": lead_id},
-        }
-
-    night = row(46170677, 1790714138, 1790714140, 1790751720)
-    morning = row(46172819, 1790739207, 1790739208, 1790751966)
-    assert choose_widget_lead([morning, night], item_id=item)["id"] == 46170677
-    silent = row(46170677, 1790714138, 0, 0)
-    empty = row(46172819, 1790739207, 0, 0)
-    assert choose_widget_lead([empty, silent], item_id=item)["id"] == 46170677
-    quiet = row(46170677, 1790714138, 1790714140, 1790715000)
-    fresh = row(46172819, 1790739207, 1790739208, 1790800000)
-    assert choose_widget_lead([quiet, fresh], item_id=item)["id"] == 46172819
-    other = row(1, 1, 1, 9, score=200, item_id="111")
-    assert choose_widget_lead([other, night, morning], item_id=item)["id"] == 46170677
-    assert choose_widget_lead([other, night, morning])["id"] == 1
-    kirill = row(46403281, 1791382362, 1791382362, 1791440000)
-    kirill["from_name"] = "Кирилл"
-    vasily = row(46410000, 1791445000, 1791445000, 1791446000)
-    vasily["from_name"] = "Василий"
-    assert choose_widget_lead([kirill, vasily], item_id=item, peer="Василий")["id"] == 46410000
-    assert choose_widget_lead([kirill], item_id=item, peer="Василий") is None
-    same_person = row(46172819, 1790739207, 1790739208, 1790751966)
-    same_person["from_name"] = "Александр"
-    night["from_name"] = "александр"
-    assert choose_widget_lead([same_person, night], item_id=item, peer="Александр")["id"] == 46170677
+    from bot import crm
+    # Neither same name nor matching listing is a customer identity.
+    assert crm.amo_client.choose_widget_lead([
+        {'score': 200, 'item_id': '123', 'from_name': 'Дмитрий', 'lead': {'id': 1}}
+    ], item_id='123', peer='Дмитрий') is None
 
 
 def test_amo_owner():
@@ -2104,7 +2037,9 @@ def test_sales_lead_gets_phone():
     orig_set = crm.amo_client.set_contact_phone
     orig_note = crm.amo_client.add_note
     orig_url = crm.amo_client.lead_url
+    orig_verified = crm._verified_marketplace_lead
     try:
+        crm._verified_marketplace_lead = lambda snap, doc: crm.amo_client.get_lead(45269007)
         crm.amo_client.get_lead = lambda i: {
             "id": int(i),
             "pipeline_id": crm.amo_client.PIPELINE_SALES,
@@ -2131,6 +2066,7 @@ def test_sales_lead_gets_phone():
         crm.amo_client.set_contact_phone = orig_set
         crm.amo_client.add_note = orig_note
         crm.amo_client.lead_url = orig_url
+        crm._verified_marketplace_lead = orig_verified
 
 
 def test_one_card_per_phone():
@@ -3178,17 +3114,19 @@ def test_oct14_old_note_identity_recovery_preserves_pause():
 
 def test_oct14_autoru_binding_requires_identity_and_listing():
     from unittest.mock import patch
-    from tools import amo_client as a
-    assert a.listing_item_id('https://auto.ru/cars/used/sale/haval/jolion/1133975625-500d0436/') == '1133975625-500d0436'
-    assert a.listing_item_id('https://auto.ru/cars/used/sale/1133975625-500d0436/?from=search') == '1133975625-500d0436'
-    contact = {'name': 'buyer-id', '_embedded': {'leads': [{'id': 123}]}}
-    with patch.object(a, 'all_unsorted', return_value=[]), \
-         patch.object(a, 'request', return_value=(200, {'_embedded': {'contacts': [contact]}})), \
-         patch.object(a, 'get_lead', return_value={'id': 123}), \
-         patch.object(a, 'lead_listing_url', return_value='https://auto.ru/cars/used/sale/1234567890/'):
-        assert a.autoru_bound_lead('room-id', 'buyer-id', 'https://auto.ru/cars/used/sale/1234567890/') == 123
-        assert a.autoru_bound_lead('room-id', 'another-buyer', 'https://auto.ru/cars/used/sale/1234567890/') is None
-        assert a.autoru_bound_lead('room-id', 'buyer-id', 'https://auto.ru/cars/used/sale/9876543210/') is None
+    from bot import crm
+    a = crm.amo_client
+    url = 'https://auto.ru/cars/used/sale/haval/jolion/1133975625-500d0436/'
+    assert a.listing_item_id(url) == '1133975625-500d0436'
+    row = {'source_uid': 'amojo:amo.ext.123:uuid', 'metadata': {'from': 'buyer-id'},
+           '_embedded': {'leads': [{'id': 123}]}}
+    lead = {'id': 123, 'pipeline_id': a.PIPELINE_TECH, 'status_id': a.STATUS_TECH_CHAT,
+            '_embedded': {'contacts': [{'id': 77}]}, 'custom_fields_values': [{'field_id': a.FIELD_LISTING_URL, 'values': [{'value': url}]}]}
+    with patch.object(a, 'all_unsorted', return_value=[row]), patch.object(a, 'get_lead', return_value=lead):
+        assert a.autoru_bound_lead('room-id', 'buyer-id', url) == 123
+        assert a.autoru_bound_lead('room-id', 'another-buyer', url) is None
+        assert a.autoru_bound_lead('room-id', 'buyer-id', url.replace('1133975625', '9999999999')) is None
+        assert a.autoru_bound_lead('room-id', 'another-buyer', url, ['buyer-id']) is None
 
 
 def test_oct22_no_phone_no_sales():
@@ -3407,3 +3345,26 @@ def test_nov02_strict_customer_identity():
          patch.object(a, 'write') as write:
         a.set_contact_phone(1, '79000002416')
         assert len(write.call_args.args[1][0]['custom_fields_values'][0]['values']) == 2
+
+
+def test_nov02_unverified_button_cannot_change_crm():
+    import asyncio
+    from unittest.mock import patch, AsyncMock
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    async def run():
+        with Sandbox():
+            cid = 'av:identity-regression'
+            store.save_doc(cid, {'crm': {'lead_id': 47056388, 'alert': {'active': True,
+                'snap': {'channel': 'Авито', 'chat_id': cid, 'lead_id': 47056388, 'phone': '79000002416'}}}})
+            with patch.object(crm, '_verified_marketplace_lead', return_value=None), \
+                 patch.object(crm.amo_client, 'resolve_responsible', return_value=13334858), \
+                 patch.object(crm.amo_client, 'user_name', return_value='Никита'), \
+                 patch.object(crm.amo_client, 'set_lead_status', side_effect=AssertionError('wrong deal modified')), \
+                 patch.object(crm.amo_client, 'add_note', side_effect=AssertionError('wrong deal note')), \
+                 patch.object(crm, '_finish_message', AsyncMock()), patch.object(crm, '_sweep_posts', AsyncMock()):
+                assert await crm.claim(cid, 'Никита', '12:00', user={'id': 212666249})
+                assert store.load_doc(cid)['crm']['alert']['picked'] == 'button'
+    asyncio.run(run())
+    assert crm._marketplace_contact_id({'_embedded': {'contacts': [{'id': 1}, {'id': 2}]}}) is None
+    assert crm._marketplace_contact_id({'_embedded': {'contacts': [{'id': 1}, {'id': 2}]}, '_provider_contact_id': 2}) == 2

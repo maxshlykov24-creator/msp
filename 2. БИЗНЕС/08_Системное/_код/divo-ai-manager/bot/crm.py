@@ -500,6 +500,14 @@ def _forget_foreign_lead(snap: dict, doc: dict, crm: dict, lead_id: int) -> None
     snap["lead_url"] = None
 
 
+def _marketplace_contact_id(lead: dict) -> int | None:
+    ids = {int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts") or []}
+    proven = lead.get("_provider_contact_id")
+    if proven and int(proven) in ids:
+        return int(proven)
+    return next(iter(ids)) if len(ids) == 1 else None
+
+
 def _verified_marketplace_lead(snap: dict, doc: dict) -> dict | None:
     channel = snap.get("channel") or ""
     if channel not in {"Авито", "Авто.ру"}:
@@ -516,6 +524,7 @@ def _verified_marketplace_lead(snap: dict, doc: dict) -> dict | None:
         if (not lead.get("is_deleted") and lead.get("status_id") not in amo_client.CLOSED
                 and int(binding["contact_id"]) in contacts
                 and amo_client.listing_item_id(amo_client.lead_listing_url(lead)) == item):
+            lead["_provider_contact_id"] = int(binding["contact_id"])
             return lead
     return amo_client.find_widget_lead(
         channel=channel, chat_id=str(snap.get("chat_id") or doc.get("chat_id") or ""),
@@ -548,7 +557,9 @@ def _apply_phone_to_doc(snap: dict, doc: dict) -> None:
                 log.warning("сделка %s: запись номера заблокирована, нет точной привязки чата", lead_id)
                 return
             contacts = (verified.get("_embedded") or {}).get("contacts") or []
-            contact_id = contacts[0].get("id") if contacts else None
+            contact_id = _marketplace_contact_id(verified)
+            if not contact_id:
+                return
         if not contact_id:
             lead = amo_client.get_lead(int(lead_id))
             contacts = (lead.get("_embedded") or {}).get("contacts") or []
@@ -573,17 +584,22 @@ def _bind_lead(snap: dict, doc: dict, lead: dict, *, created: bool) -> dict:
     crm = dict(doc.get("crm") or {})
     lead_id = int(lead["id"])
     contacts = (lead.get("_embedded") or {}).get("contacts") or []
-    if snap.get("channel") in {"Авито", "Авто.ру"} and contacts:
+    if snap.get("channel") in {"Авито", "Авто.ру"}:
         verified = _verified_marketplace_lead(snap, doc)
         if not verified or int(verified["id"]) != lead_id:
             raise RuntimeError("CRM binding has no verified provider identity")
+        proven_contact = _marketplace_contact_id(verified)
+        if not proven_contact:
+            raise RuntimeError("CRM contact identity is ambiguous")
         crm["verified_binding"] = {
             "version": 1, "chat_id": str(snap.get("chat_id") or doc.get("chat_id") or ""),
             "channel": snap["channel"], "item_id": amo_client.listing_item_id(snap.get("url") or ""),
-            "lead_id": lead_id, "contact_id": int(contacts[0]["id"]),
+            "lead_id": lead_id, "contact_id": proven_contact,
         }
     contact_id = crm.get("contact_id")
-    if contacts:
+    if snap.get("channel") in {"Авито", "Авто.ру"}:
+        contact_id = proven_contact
+    elif contacts:
         contact_id = contacts[0].get("id") or contact_id
     crm.update(
         {
@@ -609,12 +625,13 @@ def _adopt_widget(snap: dict, doc: dict, widget: dict) -> dict:
     if not verified or int(verified["id"]) != lead_id:
         raise RuntimeError("Cannot adopt CRM lead without exact provider identity")
     refs = (widget.get("_embedded") or {}).get("contacts") or []
-    if not refs:
-        raise RuntimeError("Cannot adopt marketplace lead without its contact")
+    proven_contact = _marketplace_contact_id(verified)
+    if not proven_contact:
+        raise RuntimeError("Cannot adopt marketplace lead without an unambiguous contact")
     doc.setdefault("crm", {})["verified_binding"] = {
         "version": 1, "chat_id": str(snap.get("chat_id") or doc.get("chat_id") or ""),
         "channel": snap["channel"], "item_id": amo_client.listing_item_id(snap.get("url") or ""),
-        "lead_id": lead_id, "contact_id": int(refs[0]["id"]),
+        "lead_id": lead_id, "contact_id": proven_contact,
     }
     uid = widget.get("_unsorted_uid") or amo_client.find_unsorted_uid(lead_id)
     if uid:

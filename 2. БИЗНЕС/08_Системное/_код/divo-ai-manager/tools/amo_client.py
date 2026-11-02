@@ -621,6 +621,12 @@ def provider_bound_lead(channel: str, chat_id: str, customer_id: str = "", url: 
             continue
         if wanted_item and listing_item_id(lead_listing_url(lead)) != wanted_item:
             continue
+        source_contacts = {int(c["id"]) for c in (row.get("_embedded") or {}).get("contacts") or []}
+        lead_contacts = {int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts") or []}
+        if len(source_contacts) == 1 and source_contacts <= lead_contacts:
+            lead["_provider_contact_id"] = next(iter(source_contacts))
+        elif len(lead_contacts) != 1:
+            continue
         lead["_unsorted_uid"] = meta.get("uid") or ""
         found[int(lid)] = lead
     return next(iter(found.values())) if len(found) == 1 else None
@@ -672,8 +678,8 @@ def autoru_unsorted_lead(rows: list[dict], room_id: str) -> int | None:
             found.append((int(meta.get("created_at") or 0), int(lid)))
     if not found:
         return None
-    found.sort()
-    return found[0][1]
+    ids = {lid for _, lid in found}
+    return next(iter(ids)) if len(ids) == 1 else None
 
 
 def listing_item_id(url: str) -> str:
