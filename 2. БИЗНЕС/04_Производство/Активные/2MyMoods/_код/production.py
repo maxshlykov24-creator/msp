@@ -236,10 +236,14 @@ class Engine:
             CREATE TABLE IF NOT EXISTS receipt_numbers(
               id TEXT PRIMARY KEY,order_id TEXT NOT NULL,sequence INTEGER NOT NULL,label TEXT NOT NULL UNIQUE,
               UNIQUE(order_id,sequence));
+            CREATE TABLE IF NOT EXISTS material_fifo_cache(id TEXT PRIMARY KEY, updated REAL, body TEXT NOT NULL,generation INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS audit(at REAL,kind TEXT,id TEXT,message TEXT);
             CREATE TABLE IF NOT EXISTS supplier_jobs(id TEXT PRIMARY KEY,status TEXT,due REAL,revision INTEGER DEFAULT 1,error TEXT DEFAULT '',attempts INTEGER DEFAULT 0);
             CREATE TABLE IF NOT EXISTS supplier_history(at REAL,id TEXT,before TEXT,after TEXT);
             ''')
+            if 'generation' not in {r['name'] for r in db.execute('PRAGMA table_info(material_fifo_cache)')}:
+                db.execute('ALTER TABLE material_fifo_cache ADD COLUMN generation INTEGER NOT NULL DEFAULT 0')
+                self.invalidate_fifo(db)
             db.execute("UPDATE jobs SET status='pending' WHERE status='running'")
             db.execute("UPDATE supplier_jobs SET status='pending' WHERE status='running'")
         os.chmod(self.path, 0o600)
@@ -580,6 +584,10 @@ class Engine:
                            ('pending' if retry else 'review',message,time.time()+min(600,15*2**row['attempts']),product_id,revision))
         return True
 
+    @staticmethod
+    def invalidate_fifo(db):
+        db.execute("INSERT INTO kv(key,value) VALUES('fifo_generation','1') ON CONFLICT(key) DO UPDATE SET value=CAST(kv.value AS INTEGER)+1")
+
     def enqueue(self, kind, value):
         if kind not in TYPES or not ID.fullmatch(str(value)):
             raise Review('Нужны тип документа и UUID')
@@ -588,6 +596,8 @@ class Engine:
               ON CONFLICT(kind,id) DO UPDATE SET due=CASE WHEN jobs.status='pending'
               THEN MIN(jobs.due,excluded.due) ELSE excluded.due END,status='pending',error='' ''',
                        (kind, value, time.time() + self.config().get('delay', 1)))
+            if kind in ('supply', 'move', 'loss'):
+                self.invalidate_fifo(db)
 
     def log(self, kind, value, message):
         with self.db() as db:
@@ -749,13 +759,16 @@ class Engine:
             if not row.get('moment') or row.get('costPerUnit') is None or dec(row['costPerUnit']) <= 0:
                 raise Review('Стоимость партии материала не подтверждена')
             origin = row.get('operation', {}).get('meta', {}).get('type')
-            if origin != 'supply' and not (origin == 'enter' and ident(row.get('operation')) in opening_balances):
+            # costPerUnit is MoySklad's stock valuation, not the price in a move.
+            # Transferred stock is reported under the incoming move, which keeps
+            # its calculated acquisition cost even when its position price is zero.
+            if origin not in ('supply', 'move') and not (origin == 'enter' and ident(row.get('operation')) in opening_balances):
                 raise Review('Нет подтверждённой стоимости из приёмки материала')
             amount = min(stock, need)
             total += amount * dec(row['costPerUnit']) / 100
             used.append({'quantity': float(amount), 'unit_cost': float(dec(row['costPerUnit']) / 100),
                          'moment': row['moment'], 'operation': ident(row.get('operation')),
-                         'store': ident(row.get('store'))})
+                         'operation_type': origin, 'store': ident(row.get('store'))})
             need -= amount
             if need == 0:
                 return total, used
@@ -787,9 +800,10 @@ class Engine:
     def material_fifo_layers(self, key, kind='product', force=False):
         ref(kind, key)
         with self.db() as db:
-            db.execute('CREATE TABLE IF NOT EXISTS material_fifo_cache(id TEXT PRIMARY KEY, updated REAL, body TEXT NOT NULL)')
-            cached = db.execute('SELECT updated,body FROM material_fifo_cache WHERE id=?', (key,)).fetchone()
-        if cached and not force and time.time() - cached['updated'] < self.CATALOGUE_TTL:
+            generation = db.execute("SELECT value FROM kv WHERE key='fifo_generation'").fetchone()
+            generation = int(generation[0]) if generation else 0
+            cached = db.execute('SELECT updated,body,generation FROM material_fifo_cache WHERE id=?', (key,)).fetchone()
+        if cached and cached['generation'] == generation and not force and time.time() - cached['updated'] < self.CATALOGUE_TTL:
             return json.loads(cached['body'])
         rows, offset = [], 0
         while True:
@@ -803,8 +817,8 @@ class Engine:
             if offset >= page.get('meta', {}).get('size', offset):
                 break
         with self.db() as db:
-            db.execute('INSERT OR REPLACE INTO material_fifo_cache VALUES(?,?,?)',
-                       (key, time.time(), json.dumps(rows, ensure_ascii=False)))
+            db.execute('INSERT OR REPLACE INTO material_fifo_cache(id,updated,body,generation) VALUES(?,?,?,?)',
+                       (key, time.time(), json.dumps(rows, ensure_ascii=False), generation))
         return rows
 
     def production_costs(self, force=False):
@@ -957,6 +971,8 @@ class Engine:
         with self.db() as db:
             db.execute("UPDATE operations SET status='done',fingerprint=? WHERE key=?",
                        (fingerprint(check, positions), key))
+            if kind in ('supply', 'move', 'loss') and (not row or row['status'] != 'done'):
+                self.invalidate_fifo(db)
         return check
 
     def recipe_index(self):

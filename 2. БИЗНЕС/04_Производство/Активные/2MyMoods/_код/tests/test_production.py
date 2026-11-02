@@ -147,6 +147,17 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual([r['quantity'] for r in trace], [.2, .3])
         self.assertEqual(self.e.fifo_cost([new], '.5')[0], Decimal('100'))
 
+    def test_transferred_fifo_uses_report_cost_not_move_price(self):
+        layer=self.fifo_layer(10,560,kind='move')
+        for move_price in (0,99999900):
+            layer['price']=move_price
+            total,trace=self.e.fifo_cost([layer],2)
+            self.assertEqual(total,Decimal('11.2'))
+            self.assertEqual(trace[0]['operation_type'],'move')
+        for cost in (None,0):
+            layer['costPerUnit']=cost
+            with self.assertRaises(Review):self.e.fifo_cost([layer],1)
+
     def test_fifo_unknown_price_origin_shortage_negative_are_not_zero(self):
         for rows in [[self.fifo_layer(1, None)], [self.fifo_layer(1, 100, kind='enter')],
                      [self.fifo_layer(.1, 100)], [self.fifo_layer(-1, 100)]]:
@@ -209,6 +220,74 @@ class ProductionTests(unittest.TestCase):
         with self.assertRaises(Review):
             self.e.material_fifo_layers(self.material, force=True)
         self.assertEqual(self.e.material_fifo_layers(self.material), first)
+
+    def test_stock_events_invalidate_fifo_cache_without_waiting_20_minutes(self):
+        calls = []
+        def report(*a, **kw):
+            calls.append(kw)
+            return {'meta': {'size': 1}, 'rows': [self.fifo_layer(100, len(calls)*100)]}
+        self.ms.get = report
+        self.assertEqual(self.e.material_fifo_layers(self.material)[0]['costPerUnit'], 100)
+        for index, kind in enumerate(('supply','move','loss'), 2):
+            self.e.enqueue(kind, uid())
+            self.assertEqual(self.e.material_fifo_layers(self.material)[0]['costPerUnit'], index*100)
+            self.assertEqual(self.e.material_fifo_layers(self.material)[0]['costPerUnit'], index*100)
+        self.assertEqual(len(calls), 4)
+
+    def test_event_during_fifo_fetch_cannot_cache_old_layers_as_fresh(self):
+        calls=[]
+        def report(*a, **kw):
+            calls.append(kw)
+            if len(calls)==1: self.e.enqueue('move', uid())
+            return {'meta': {'size': 1}, 'rows': [self.fifo_layer(100, len(calls)*100)]}
+        self.ms.get = report
+        self.assertEqual(self.e.material_fifo_layers(self.material)[0]['costPerUnit'], 100)
+        self.assertEqual(self.e.material_fifo_layers(self.material)[0]['costPerUnit'], 200)
+        self.assertEqual(self.e.material_fifo_layers(self.material)[0]['costPerUnit'], 200)
+        self.assertEqual(len(calls), 2)
+
+    def test_own_writeoff_invalidates_cached_pre_consumption_layers(self):
+        with self.e.db() as db:
+            before=db.execute("SELECT value FROM kv WHERE key='fifo_generation'").fetchone()
+        self.e.execute('own/loss', 'loss', {'organization':ref('organization',self.org),
+            'store':ref('store',self.factory),'applicable':True,
+            'positions':[{'assortment':ref('product',self.material),'quantity':1}]})
+        with self.e.db() as db:
+            generation=int(db.execute("SELECT value FROM kv WHERE key='fifo_generation'").fetchone()[0])
+        self.assertEqual(generation, (int(before[0]) if before else 0)+1)
+        self.e.execute('own/loss', 'loss', {})
+        with self.e.db() as db:
+            self.assertEqual(int(db.execute("SELECT value FROM kv WHERE key='fifo_generation'").fetchone()[0]),generation)
+
+    def test_positive_fifo_batch_adds_work_once_and_ignores_finished_receipt_price(self):
+        value,cfg=self.setup_direct()
+        recipe=self.e.recipes()[0]
+        recipe['stages'][0]['work_cost']=100
+        recipe['stages'][1]['work_cost']=50
+        self.e.save_recipe(recipe)
+        self.ms.docs['supply'][value]['positions'][0]['price']=99999900
+        a,b=cfg['factories'][0]['store'],cfg['factories'][1]['store']
+        old=dict(self.fifo_layer(5,200,'2026-11-01 00:00:00'),store=ref('store',a))
+        new=dict(self.fifo_layer(100,300,'2026-11-02 00:00:00'),store=ref('store',a))
+        second=dict(self.fifo_layer(100,400),store=ref('store',b))
+        self.e.material_fifo_layers=lambda *args: [old,new,second]
+        plan=self.e.plan_supply(value);groups=self.e.direct_material_groups(plan)
+        snapshot=self.e.snapshot_direct_cost(plan,groups)
+        self.assertEqual(snapshot['total'],1559) # 10*150 work + (5*2+15*3) + 1*4
+        self.assertEqual([r['quantity'] for r in snapshot['materials'][0]['layers']],[5,15])
+        old['stock']=0
+        self.assertEqual(self.e.snapshot_direct_cost(plan,groups)['total'],1564)
+
+    def test_legacy_fifo_cache_migration_does_not_reuse_pre_event_layers(self):
+        import sqlite3,time
+        with tempfile.TemporaryDirectory() as folder:
+            with sqlite3.connect(Path(folder)/'production.sqlite3') as db:
+                db.execute('CREATE TABLE material_fifo_cache(id TEXT PRIMARY KEY,updated REAL,body TEXT NOT NULL)')
+                db.execute('INSERT INTO material_fifo_cache VALUES(?,?,?)',(self.material,time.time(),json.dumps([self.fifo_layer(10,100)])))
+            client=FakeMS()
+            client.get=lambda *a,**kw: {'meta':{'size':1},'rows':[self.fifo_layer(10,200)]}
+            migrated=Engine(folder,client)
+            self.assertEqual(migrated.material_fifo_layers(self.material)[0]['costPerUnit'],200)
 
     def test_norm_display_units_convert_to_stock_units(self):
         r = self.e.save_recipe({'name': 'Test', 'stages': [{'materials': [
