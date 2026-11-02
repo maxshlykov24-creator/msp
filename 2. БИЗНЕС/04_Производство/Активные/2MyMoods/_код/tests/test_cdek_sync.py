@@ -183,10 +183,10 @@ class SyncTests(unittest.TestCase):
         self.s.observe(doc)
         entered, release = threading.Event(), threading.Event()
         original = engine.process
-        def slow(oid):
+        def slow(oid, event_only=False):
             entered.set()
             release.wait(3)
-            original(oid)
+            original(oid, event_only=event_only)
         engine.process = slow
         t = threading.Thread(target=engine.one)
         t.start()
@@ -227,7 +227,7 @@ class SyncTests(unittest.TestCase):
         with self.s.db() as db:
             queued = db.execute('SELECT priority FROM jobs WHERE id=?', (doc['id'],)).fetchone()
         self.assertIsNotNone(queued)
-        self.assertEqual(queued['priority'], 0)
+        self.assertEqual(queued['priority'], -1)
 
     def test_duplicate_does_not_remove_unowned_cost(self):
         docs = [order('00123', cost=500), order('00123')]
@@ -287,6 +287,29 @@ class SyncTests(unittest.TestCase):
         with self.assertRaises(c.SyncError):
             engine.process(doc['id'])
         self.assertEqual(api.order(doc['id']), before)
+
+    def test_own_update_event_does_not_resynchronize_unchanged_track(self):
+        doc = order('00123')
+        engine, api = self.engine([doc])
+        engine.process(doc['id'])
+        calls, writes = len(api.calls), len(api.writes)
+        success = self.s.row(doc['id'])['last_success']
+        self.s.enqueue(doc['id'], 0)
+        engine.one()
+        self.assertEqual(len(api.calls), calls)
+        self.assertEqual(len(api.writes), writes)
+        self.assertEqual(self.s.row(doc['id'])['last_success'], success)
+        self.assertIsNotNone(self.s.setting('event_observed:' + doc['id']))
+
+    def test_changed_track_resets_previous_success_and_is_not_ignored(self):
+        doc = order('00123')
+        engine, api = self.engine([doc])
+        engine.process(doc['id'])
+        api.write(doc['id'], {c.TRACK: '00999'})
+        self.s.observe(api.order(doc['id']), 0)
+        self.assertIsNone(self.s.row(doc['id'])['last_success'])
+        engine.one()
+        self.assertIn('00999', api.calls)
 
     def test_timeout_after_success_is_read_back(self):
         doc = order('00123')

@@ -324,7 +324,10 @@ class Store:
         with self.db() as db:
             db.execute('''INSERT INTO orders(id,track,observed) VALUES(?,?,?)
                 ON CONFLICT(id) DO UPDATE SET track=excluded.track,
-                revision=revision+(track!=excluded.track),observed=excluded.observed''',
+                revision=revision+(track!=excluded.track),
+                last_success=CASE WHEN track!=excluded.track THEN NULL ELSE last_success END,
+                error=CASE WHEN track!=excluded.track THEN NULL ELSE error END,
+                observed=excluded.observed''',
                        (oid, track, time.time()))
         if changed or force:
             self.enqueue(oid, priority)
@@ -437,14 +440,20 @@ class Engine:
                         db.execute(f'UPDATE orders SET {col}=?,owner_track=? WHERE id=?',
                                    (matching[key], row['track'], order['id']))
 
-    def process(self, oid):
+    def process(self, oid, event_only=False):
         order = self.api.order(oid)
+        prior = self.store.row(oid)
         self.store.observe(order)
         if not self.store.row(oid):
             return
         self.recover_pending(order)
         row = self.store.row(oid)
         track = tracking(order)
+        if event_only:
+            self.store.setting('event_observed:' + oid, time.time())
+        if (event_only and prior and prior['track'] == track
+                and prior['last_success'] is not None and not prior['error']):
+            return
         if track and values(order).get(TRACK) != track:
             order = self.write_verified(order, {TRACK: track}, track)
         own = values(order)
@@ -474,7 +483,7 @@ class Engine:
             for peer in peers:
                 prior = self.store.row(peer['id'])
                 if peer['id'] != oid and prior and prior['own_cost'] is not None:
-                    self.store.enqueue(peer['id'], 0, force=False)
+                    self.store.enqueue(peer['id'], -1)
             current = values(order)
             row = self.store.row(oid)
             if row['own_cost'] is not None and current.get(COST) == row['own_cost']:
@@ -534,7 +543,7 @@ class Engine:
         if not job:
             return False
         try:
-            self.process(job['id'])
+            self.process(job['id'], event_only=job['priority'] == 0)
         except SyncError as e:
             attempts = job['attempts'] + 1
             delay = min(INTERVAL, 5 * 2 ** min(attempts, 8)) if e.retry else INTERVAL
