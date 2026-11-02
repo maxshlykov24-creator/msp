@@ -486,7 +486,7 @@ def _forget_foreign_lead(snap: dict, doc: dict, crm: dict, lead_id: int) -> None
         snap.get("chat_id"),
         lead_id,
     )
-    for key in ("lead_id", "note_lead_id", "contact_id", "lead_url"):
+    for key in ("lead_id", "note_lead_id", "contact_id", "lead_url", "verified_binding"):
         crm.pop(key, None)
     alert = dict(crm.get("alert") or {})
     inner = dict(alert.get("snap") or {})
@@ -500,15 +500,34 @@ def _forget_foreign_lead(snap: dict, doc: dict, crm: dict, lead_id: int) -> None
     snap["lead_url"] = None
 
 
-def _lead_is_other_buyer(snap: dict, lead: dict) -> bool:
-    contacts = (lead.get("_embedded") or {}).get("contacts") or []
-    if not contacts or not contacts[0].get("id"):
+def _verified_marketplace_lead(snap: dict, doc: dict) -> dict | None:
+    channel = snap.get("channel") or ""
+    if channel not in {"Авито", "Авто.ру"}:
+        return None
+    ar = doc.get("autoru") or {}
+    binding = (doc.get("crm") or {}).get("verified_binding") or {}
+    room = str(snap.get("chat_id") or doc.get("chat_id") or "")
+    item = amo_client.listing_item_id(snap.get("url") or "")
+    if (binding.get("version") == 1 and binding.get("chat_id") == room
+            and binding.get("channel") == channel and binding.get("item_id") == item
+            and binding.get("lead_id") and binding.get("contact_id")):
+        lead = amo_client.get_lead(int(binding["lead_id"]))
+        contacts = {int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts") or []}
+        if (not lead.get("is_deleted") and lead.get("status_id") not in amo_client.CLOSED
+                and int(binding["contact_id"]) in contacts
+                and amo_client.listing_item_id(amo_client.lead_listing_url(lead)) == item):
+            return lead
+    return amo_client.find_widget_lead(
+        channel=channel, chat_id=str(snap.get("chat_id") or doc.get("chat_id") or ""),
+        url=snap.get("url") or "", customer_id=ar.get("customer_id", ""),
+    )
+
+
+def _lead_is_other_buyer(snap: dict, lead: dict, doc: dict | None = None) -> bool:
+    if snap.get("channel") not in {"Авито", "Авто.ру"}:
         return False
-    try:
-        current = amo_client.get_contact(int(contacts[0]["id"]))
-    except amo_client.AmoError:
-        return False
-    return amo_client.different_buyer(_buyer_of(snap), str(current.get("name") or ""))
+    verified = _verified_marketplace_lead(snap, doc or {})
+    return not verified or int(verified["id"]) != int(lead["id"])
 
 
 def _apply_phone_to_doc(snap: dict, doc: dict) -> None:
@@ -523,6 +542,13 @@ def _apply_phone_to_doc(snap: dict, doc: dict) -> None:
     if not lead_id:
         return
     try:
+        if snap.get("channel") in {"Авито", "Авто.ру"}:
+            verified = _verified_marketplace_lead(snap, doc)
+            if not verified or int(verified["id"]) != int(lead_id):
+                log.warning("сделка %s: запись номера заблокирована, нет точной привязки чата", lead_id)
+                return
+            contacts = (verified.get("_embedded") or {}).get("contacts") or []
+            contact_id = contacts[0].get("id") if contacts else None
         if not contact_id:
             lead = amo_client.get_lead(int(lead_id))
             contacts = (lead.get("_embedded") or {}).get("contacts") or []
@@ -533,26 +559,12 @@ def _apply_phone_to_doc(snap: dict, doc: dict) -> None:
             amo_client.link_contact(int(lead_id), int(contact_id))
             log.info("сделка %s: создал контакт %s под номер", lead_id, contact_id)
         else:
-            buyer = _buyer_of(snap)
-            try:
-                current = amo_client.get_contact(int(contact_id))
-            except amo_client.AmoError:
-                current = {}
-            if amo_client.different_buyer(buyer, str(current.get("name") or "")):
-                log.warning(
-                    "сделка %s: номер не пишу, контакт %s это %s, а чат %s",
-                    lead_id,
-                    contact_id,
-                    current.get("name") or "",
-                    buyer,
-                )
-                return
             amo_client.set_contact_phone(int(contact_id), phone)
         crmd["contact_id"] = int(contact_id)
         crmd["phone"] = formatted
         doc["crm"] = crmd
         snap["phone"] = phone
-        log.info("сделка %s: телефон %s на контакт %s", lead_id, formatted, contact_id)
+        log.info("сделка %s: телефон сохранён на контакт %s", lead_id, contact_id)
     except amo_client.AmoError as exc:
         log.warning("сделка %s: телефон в amo не записался: %s", lead_id, exc)
 
@@ -561,6 +573,15 @@ def _bind_lead(snap: dict, doc: dict, lead: dict, *, created: bool) -> dict:
     crm = dict(doc.get("crm") or {})
     lead_id = int(lead["id"])
     contacts = (lead.get("_embedded") or {}).get("contacts") or []
+    if snap.get("channel") in {"Авито", "Авто.ру"} and contacts:
+        verified = _verified_marketplace_lead(snap, doc)
+        if not verified or int(verified["id"]) != lead_id:
+            raise RuntimeError("CRM binding has no verified provider identity")
+        crm["verified_binding"] = {
+            "version": 1, "chat_id": str(snap.get("chat_id") or doc.get("chat_id") or ""),
+            "channel": snap["channel"], "item_id": amo_client.listing_item_id(snap.get("url") or ""),
+            "lead_id": lead_id, "contact_id": int(contacts[0]["id"]),
+        }
     contact_id = crm.get("contact_id")
     if contacts:
         contact_id = contacts[0].get("id") or contact_id
@@ -584,6 +605,17 @@ def _bind_lead(snap: dict, doc: dict, lead: dict, *, created: bool) -> dict:
 
 def _adopt_widget(snap: dict, doc: dict, widget: dict) -> dict:
     lead_id = int(widget["id"])
+    verified = _verified_marketplace_lead(snap, doc)
+    if not verified or int(verified["id"]) != lead_id:
+        raise RuntimeError("Cannot adopt CRM lead without exact provider identity")
+    refs = (widget.get("_embedded") or {}).get("contacts") or []
+    if not refs:
+        raise RuntimeError("Cannot adopt marketplace lead without its contact")
+    doc.setdefault("crm", {})["verified_binding"] = {
+        "version": 1, "chat_id": str(snap.get("chat_id") or doc.get("chat_id") or ""),
+        "channel": snap["channel"], "item_id": amo_client.listing_item_id(snap.get("url") or ""),
+        "lead_id": lead_id, "contact_id": int(refs[0]["id"]),
+    }
     uid = widget.get("_unsorted_uid") or amo_client.find_unsorted_uid(lead_id)
     if uid:
         widget["_unsorted_uid"] = uid
@@ -640,7 +672,7 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
         except amo_client.AmoError as exc:
             log.warning("сделка %s не читается: %s", old_id, exc)
             lead = None
-        if lead and _lead_is_other_buyer(snap, lead):
+        if lead and _lead_is_other_buyer(snap, lead, doc):
             _forget_foreign_lead(snap, doc, crm, int(old_id))
             old_id = None
             lead = None
@@ -680,6 +712,10 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
             except amo_client.AmoError as exc:
                 log.warning("дубль %s не закрылся: %s", old_id, exc)
         return adopted
+
+    if channel in {"Авито", "Авто.ру"}:
+        log.warning("чат %s: нет подтверждённой привязки CRM, передача остаётся в очереди", snap.get("chat_id"))
+        return snap
 
     contact_id = crm.get("contact_id")
     if snap.get("phone"):
@@ -1226,32 +1262,10 @@ def autoru_note_text(who: str, text: str) -> str:
 
 
 def _note_lead(chat_id: str, doc: dict) -> int | None:
-    existing = (doc.get("crm") or {}).get("lead_id") or (doc.get("crm") or {}).get("note_lead_id")
-    if existing:
-        code, lead = amo_client.request("/api/v4/leads/%s" % int(existing))
-        if code == 200 and lead and not lead.get("is_deleted"):
-            return int(existing)
-        if code not in {200, 204, 404, 410}:
-            raise RuntimeError("CRM lead read failed")
-    if chat_id.startswith("ar:"):
-        src = doc.get("autoru") or {}
-        return amo_client.autoru_bound_lead(chat_id[3:], src.get("customer_id", ""), src.get("url", ""), src.get("customer_names", []))
-    listing = doc.get("avito") or {}
-    peer = listing.get("peer") or ""
-    if not peer or amo_client._norm_txt(peer) in amo_client.GENERIC_PEERS:
-        return None
-    lead = amo_client.find_widget_lead(
-        peer=peer, car=listing.get("title", ""), channel="Авито",
-        url=listing.get("url", ""), chat_id=chat_id,
-    )
-    if not lead:
-        return None
-    # Для примечания не достаточно похожего названия или свежей сделки.
-    wanted = amo_client.listing_item_id(listing.get("url", ""))
-    if (not wanted or wanted != amo_client.listing_item_id(amo_client.lead_listing_url(lead))
-            or amo_client._norm_txt(peer) != amo_client._norm_txt(lead.get("_widget_from", ""))):
-        return None
-    return int(lead["id"])
+    channel = "Авто.ру" if chat_id.startswith("ar:") else "Авито"
+    src = doc.get("autoru" if channel == "Авто.ру" else "avito") or {}
+    lead = _verified_marketplace_lead({"channel": channel, "chat_id": chat_id, "url": src.get("url", "")}, doc)
+    return int(lead["id"]) if lead else None
 
 
 def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = "") -> None:
@@ -1435,6 +1449,9 @@ def lead_moved(chat_id: str | int) -> bool:
     if not lead_id or not alert.get("active"):
         return False
     try:
+        snap = snapshot(chat_id, doc.get("messages") or [], "handoff")
+        if _lead_is_other_buyer(snap, {"id": lead_id}, doc):
+            return False
         lead = amo_client.get_lead(int(lead_id))
     except amo_client.AmoError as exc:
         log.warning("проверка сделки %s: %s", lead_id, exc)
@@ -1623,6 +1640,14 @@ async def _claim_locked(
     store.save_doc(chat_id, doc)
     if amo_user is None:
         log.warning("кнопка: не нашёл amo-пользователя для %s tg=%s", who, person.get("id"))
+    if lead_id and snap.get("channel") in {"Авито", "Авто.ру"}:
+        try:
+            verified = _verified_marketplace_lead(snap, doc)
+        except Exception:
+            verified = None
+        if not verified or int(verified["id"]) != int(lead_id):
+            log.warning("кнопка: сделку %s не меняю, привязка чата не подтверждена", lead_id)
+            lead_id = None
     if lead_id and phone_key(str(snap.get("phone") or "")):
         try:
             lead = amo_client.set_lead_status(
@@ -1668,6 +1693,9 @@ async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
     if not lead_id or not since:
         return False
     try:
+        snap = snapshot(chat_id, doc.get("messages") or [], "handoff")
+        if _lead_is_other_buyer(snap, {"id": lead_id}, doc):
+            return False
         calls = amo_client.lead_calls_since(int(lead_id), since)
     except Exception:
         log.exception("звонки сделки %s", lead_id)

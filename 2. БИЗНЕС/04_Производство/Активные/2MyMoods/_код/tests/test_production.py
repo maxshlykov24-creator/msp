@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from production import Engine, Review, quantities, ref, remaining, fingerprint
+from production import Engine, Review, ident, quantities, ref, remaining, fingerprint
 
 
 def uid():
@@ -42,6 +42,8 @@ class FakeMS:
         return copy.deepcopy(docs)
 
     def positions(self, kind, value):
+        for row in self.docs[kind][value]['positions']:
+            row.setdefault('id', uid())
         return copy.deepcopy(self.docs[kind][value]['positions'])
 
     def request(self, method, path, body):
@@ -56,6 +58,11 @@ class FakeMS:
                 self.timeout_after_create = False
                 raise Review('Неопределённый ответ')
             return copy.deepcopy(doc)
+        if '/positions/' in path:
+            value, pid = path.split('/')[3], path.split('/')[-1]
+            row = next(p for p in self.docs[kind][value]['positions'] if p['id'] == pid)
+            row.update(copy.deepcopy(body))
+            return copy.deepcopy(row)
         value = path.split('/')[-1]
         update = copy.deepcopy(body)
         if 'attributes' in update:
@@ -735,6 +742,82 @@ class ProductionTests(unittest.TestCase):
         self.e.material_fifo_layers = lambda *args: [dict(self.fifo_layer(100, 560), store=ref('store', f['store']))
                                                     for f in cfg['factories']]
         return value, cfg
+
+    def test_receipt_prices_written_once_manual_override_survives_order_check(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        row = self.ms.docs['supply'][value]['positions'][0]
+        self.assertEqual(row['price'], 1176)
+        row['price'] = 54321
+        self.e.process_supply(value)
+        self.e.process_order(ident(self.ms.docs['supply'][value]['purchaseOrder']))
+        self.assertEqual(row['price'], 54321)
+        self.assertEqual(len(self.ms.created), 2)
+
+    def test_receipt_price_timeout_reconciles_without_second_write(self):
+        value, cfg = self.setup_direct()
+        original = self.ms.request
+        calls = []
+        def timeout(method, path, body):
+            result = original(method, path, body)
+            if '/positions/' in path:
+                calls.append(path)
+                raise Review('Неопределённый ответ')
+            return result
+        self.ms.request = timeout
+        with self.assertRaisesRegex(Review, 'Неопределённый ответ'):
+            self.e.process_supply(value)
+        self.ms.request = original
+        self.e.process_supply(value)
+        chain, _ = self.e.chain(value)
+        self.assertEqual(chain['cost_snapshot']['prices'][0]['status'], 'done')
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(self.ms.created), 2)
+
+    def test_two_receipt_rows_share_fifo_without_reusing_first_layer(self):
+        value, cfg = self.setup_direct()
+        recipe = self.e.recipes()[0]
+        recipe['stages'] = [recipe['stages'][0]]
+        recipe['stages'][0]['materials'][0]['quantity'] = 1
+        recipe['stages'][0]['work_cost'] = 10
+        self.e.save_recipe(recipe)
+        self.ms.docs['supply'][value]['positions'] = [
+            {'id': uid(), 'assortment': ref('product', self.product), 'quantity': 2, 'price': 0},
+            {'id': uid(), 'assortment': ref('product', self.product), 'quantity': 3, 'price': 0}]
+        store = cfg['factories'][0]['store']
+        self.e.material_fifo_layers = lambda *args: [
+            dict(self.fifo_layer(3, 200, '2026-01-01'), store=ref('store', store)),
+            dict(self.fifo_layer(10, 500, '2026-02-01'), store=ref('store', store))]
+        self.e.process_supply(value)
+        rows = self.ms.docs['supply'][value]['positions']
+        self.assertEqual([r['price'] for r in rows], [1200, 1400])
+        chain, _ = self.e.chain(value)
+        self.assertEqual(chain['cost_snapshot']['total'], 66)
+
+    def test_unknown_fifo_does_not_write_zero_price(self):
+        value, cfg = self.setup_direct()
+        self.ms.docs['supply'][value]['state'] = ref('supply/metadata/states', cfg['states']['supply']['Завершена'])
+        self.e.material_fifo_layers = lambda *args: []
+        before = self.ms.docs['supply'][value]['positions'][0]['price']
+        self.e.process_supply(value)
+        self.assertEqual(self.ms.docs['supply'][value]['positions'][0]['price'], before)
+        chain, _ = self.e.chain(value)
+        self.assertIsNone(chain['cost_snapshot']['total'])
+        self.assertIn('Себестоимость пока не рассчитана', self.ms.docs['supply'][value]['description'])
+
+    def test_quantity_change_still_blocks_after_price_write(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        self.ms.docs['supply'][value]['positions'][0]['quantity'] += 1
+        with self.assertRaisesRegex(Review, 'Приёмка изменена'):
+            self.e.process_supply(value)
+
+    def test_discount_blocks_before_writeoffs(self):
+        value, cfg = self.setup_direct()
+        self.ms.docs['supply'][value]['positions'][0]['discount'] = 5
+        with self.assertRaisesRegex(Review, 'Убери скидку'):
+            self.e.process_supply(value)
+        self.assertFalse(self.ms.created)
 
     def test_empty_material_row_identifies_stage(self):
         recipe = {'assortment_id': self.product, 'approved': True, 'stages': [

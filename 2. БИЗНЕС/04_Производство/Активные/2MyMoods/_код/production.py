@@ -98,12 +98,18 @@ def remaining(sent, returned):
     return {k: v for k, v in result.items() if v > 0}
 
 
-def fingerprint(doc, positions):
-    # Статус и номер могут изменяться штатно. Цена приёмки сохраняется как введена.
+def fingerprint(doc, positions, ignore_price=False):
+    # Статус и номер меняются штатно; новые цепочки разрешают ручную цену после расчёта.
     body = {k: doc.get(k) for k in ('applicable', 'moment', 'organization', 'store',
                                     'sourceStore', 'targetStore', 'agent', 'purchaseOrder', 'overhead', 'rate')}
     body['positions'] = sorted((ident(p['assortment']), str(dec(p['quantity'])),
-                                str(p.get('price', 0))) for p in positions)
+                                str(0 if ignore_price else p.get('price', 0))) for p in positions)
+    if ignore_price:
+        body['position_structure'] = sorted((p.get('id', ''), ident(p['assortment']),
+            str(dec(p['quantity'])), str(p.get('discount', 0)), str(p.get('vat', 0)),
+            bool(p.get('vatEnabled', False))) for p in positions)
+        body['vatEnabled'] = doc.get('vatEnabled')
+        body['vatIncluded'] = doc.get('vatIncluded')
     return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
 
 
@@ -1023,7 +1029,8 @@ class Engine:
                 if not factory or (stage.get('materials') and (not ID.fullmatch(str(factory.get('store', ''))) or factory.get('store_ok') is False)):
                     raise Review('Проверь фабрику и склад этапа производства в МоемСкладе')
             lines.append({'assortment': row['assortment'], 'quantity': row['quantity'],
-                          'recipe': copy.deepcopy(recipe)})
+                          'recipe': copy.deepcopy(recipe), 'position_id': row.get('id'),
+                          'original_price': row.get('price', 0)})
         return {'source': doc, 'fingerprint': fingerprint(doc, positions), 'lines': lines,
                 'factories': factories, 'company_store': cfg.get('company_store')}
 
@@ -1166,7 +1173,32 @@ class Engine:
                     continue
                 total += cost
                 traces.append({'material': mid, 'store': group['store'], 'cost': float(cost), 'layers': trace})
-        return {'total': None if issues else float(total), 'materials': traces, 'at': now(),
+        prices = []
+        if not issues:
+            pools = {(t['store'], t['material']): copy.deepcopy(t['layers']) for t in traces}
+            for line in chain['lines']:
+                quantity = dec(line['quantity'])
+                if quantity <= 0:
+                    raise Review('Количество изделия должно быть больше нуля')
+                amount = Decimal(0)
+                for stage in line['recipe']['stages']:
+                    amount += dec(stage.get('work_cost', 0)) * quantity
+                    for material in stage.get('materials', []):
+                        key = (chain['factories'][stage['factory']]['store'], material['id'])
+                        need = dec(material['quantity']) * quantity
+                        for layer in pools[key]:
+                            take = min(need, dec(layer['quantity']))
+                            amount += take * dec(layer['unit_cost'])
+                            layer['quantity'] = str(dec(layer['quantity']) - take)
+                            need -= take
+                            if not need:
+                                break
+                        if need:
+                            raise Review('Не удалось распределить стоимость материала по изделиям')
+                prices.append({'id': line.get('position_id'), 'before': line.get('original_price', 0),
+                               'price': float((amount / quantity * 100).quantize(Decimal('0.01'))),
+                               'cost': float(amount), 'status': 'pending'})
+        return {'prices': prices, 'total': None if issues else float(total), 'materials': traces, 'at': now(),
                 'issues': issues, 'stock_problems': problems}
 
     @staticmethod
@@ -1317,6 +1349,55 @@ class Engine:
                 with self.db() as db:
                     db.execute('UPDATE operations SET body=? WHERE key=?', (json.dumps(body), key))
 
+    @staticmethod
+    def check_receipt_price_format(doc, positions):
+        if any(dec(p.get('discount', 0)) != 0 for p in positions):
+            raise Review('Убери скидку в приёмке: цена рассчитывается как полная себестоимость')
+        if doc.get('vatEnabled') and not doc.get('vatIncluded') and any(p.get('vat', 0) for p in positions):
+            raise Review('Для расчёта себестоимости НДС должен быть включён в цену приёмки')
+        if dec((doc.get('overhead') or {}).get('sum', 0)) != 0:
+            raise Review('Убери накладные расходы приёмки: они не входят в расчёт нормы')
+        if dec((doc.get('rate') or {}).get('value', 1)) != 1:
+            raise Review('Для расчёта себестоимости приёмка должна быть в рублях')
+
+    def write_receipt_cost_once(self, value, chain, number):
+        # Historical chains are intentionally not repriced. Unknown FIFO is not zero.
+        if not chain.get('price_write_once') or chain['cost_snapshot']['total'] is None:
+            return
+        for item in chain['cost_snapshot']['prices']:
+            if item['status'] in ('done', 'manual'):
+                continue
+            doc = self.ms.get('/entity/supply/' + value)
+            positions = self.ms.positions('supply', value)
+            if fingerprint(doc, positions, True) != chain['fingerprint']:
+                raise Review('Приёмка изменилась во время расчёта себестоимости')
+            self.check_receipt_price_format(doc, positions)
+            row = next((p for p in positions if p.get('id') == item['id']), None)
+            if not item['id'] or row is None:
+                raise Review('Не найдена позиция приёмки для записи себестоимости')
+            actual = dec(row.get('price', 0))
+            if actual == dec(item['price']):
+                item['status'] = 'done'
+            elif actual != dec(item['before']):
+                # A user changed the price while processing/recovering: keep their value.
+                item['status'] = 'manual'
+            else:
+                if item['status'] == 'writing':
+                    raise Review('Запись цены не подтверждена. Проверь цену приёмки: повторная запись остановлена')
+                item['status'] = 'writing'
+                self.save_chain(value, chain, number)
+                self.ms.request('PUT', '/entity/supply/' + value + '/positions/' + item['id'],
+                                {'price': item['price']})
+                saved = next((p for p in self.ms.positions('supply', value) if p.get('id') == item['id']), None)
+                if not saved or dec(saved.get('price', 0)) != dec(item['price']):
+                    raise Review('Не удалось проверить запись себестоимости в приёмку')
+                item['status'] = 'done'
+            item['at'] = now()
+            self.save_chain(value, chain, number)
+        current = self.ms.get('/entity/supply/' + value)
+        if fingerprint(current, self.ms.positions('supply', value), True) != chain['fingerprint']:
+            raise Review('Приёмка изменилась во время записи себестоимости')
+
     def process_direct_supply(self, value):
         chain, number = self.chain(value)
         current = self.ms.get('/entity/supply/' + value)
@@ -1328,7 +1409,7 @@ class Engine:
         if chain:
             if chain.get('workflow') != 'finished_receipt':
                 raise Review('Приёмка уже обрабатывалась по прежней схеме; нужна отдельная сверка')
-            if fingerprint(current, positions) != chain['fingerprint']:
+            if fingerprint(current, positions, bool(chain.get('price_write_once'))) != chain['fingerprint']:
                 raise Review('Приёмка изменена или распроведена после списания материалов')
             self.check_production_order(ident(current['purchaseOrder']), current)
             if force and not chain.get('complete'):
@@ -1345,6 +1426,9 @@ class Engine:
                     self.receipt_note(value, 'Для обработки выбери «Ожидает обработки».')
                 return
             chain = self.plan_supply(value)
+            self.check_receipt_price_format(current, positions)
+            chain['price_write_once'] = True
+            chain['fingerprint'] = fingerprint(current, positions, True)
             groups = self.direct_material_groups(chain)
             fields = self.receipt_link_fields(max(2, len(groups))) if groups else []
             attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
@@ -1394,7 +1478,7 @@ class Engine:
                 'value': 'https://online.moysklad.ru/app/#loss/edit?id=' + loss['id']})
             # Publish every successful write-off immediately, even if the next one fails.
             linked = self.ms.get('/entity/supply/' + value)
-            if fingerprint(linked, self.ms.positions('supply', value)) != chain['fingerprint']:
+            if fingerprint(linked, self.ms.positions('supply', value), bool(chain.get('price_write_once'))) != chain['fingerprint']:
                 raise Review('Приёмка изменилась во время списания материалов')
             linked_attrs = {ident(a): a.get('value') for a in linked.get('attributes', [])}
             link = expected_links[-1]
@@ -1407,7 +1491,7 @@ class Engine:
                 raise Review('Не удалось сохранить ссылку на списание в приёмке')
         # Never complete a receipt if it changed while documents were being created.
         current = self.ms.get('/entity/supply/' + value)
-        if fingerprint(current, self.ms.positions('supply', value)) != chain['fingerprint']:
+        if fingerprint(current, self.ms.positions('supply', value), bool(chain.get('price_write_once'))) != chain['fingerprint']:
             raise Review('Приёмка изменилась во время списания материалов')
         current_attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
         for link in expected_links:
@@ -1421,6 +1505,7 @@ class Engine:
             raise Review('Не удалось сохранить ссылки на списания в приёмке')
         for loss_id in chain['losses'].values():
             self.audit_generated('loss', loss_id, self.ms.get('/entity/loss/' + loss_id))
+        self.write_receipt_cost_once(value, chain, number)
         if chain.get('allow_negative'):
             note = self.completion_note(chain)
             self.receipt_note(value, note)
@@ -1723,7 +1808,7 @@ class Engine:
             if not supply.get('applicable'):
                 continue
             chain, _ = self.chain(supply['id'])
-            if chain and fingerprint(supply, self.ms.positions('supply', supply['id'])) != chain['fingerprint']:
+            if chain and fingerprint(supply, self.ms.positions('supply', supply['id']), bool(chain.get('price_write_once'))) != chain['fingerprint']:
                 raise Review('Приёмка изменена после обработки; заказ не может быть завершён')
             if chain and chain.get('workflow') == 'finished_receipt':
                 for loss_id in chain.get('losses', {}).values():

@@ -252,8 +252,11 @@ def find_contact(phone: str) -> dict | None:
     code, data = request("/api/v4/contacts", {"query": query, "limit": "10", "with": "leads"})
     if code >= 400 or not data:
         return None
-    rows = items(data, "contacts")
-    return rows[0] if rows else None
+    # CRM query is fuzzy: never trust the first search result.
+    if (data.get("_links") or {}).get("next"):
+        return None
+    matches = [c for c in items(data, "contacts") if contact_has_phone(c, phone)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def open_leads_of(contact: dict) -> list[dict]:
@@ -508,31 +511,8 @@ def score_widget_lead(
     now: float | None = None,
 ) -> int:
     """Насколько сделка виджета похожа на наш чат. 0 = мимо."""
-    raw = lead_name or ""
-    is_autoru = raw.lower().startswith("[авто.ру]")
-    if channel == "Авито" and is_autoru:
-        return 0
-    score = 0
-    if channel == "Авто.ру" and raw and not is_autoru:
-        score -= 25
-    peer_n = _norm_txt(peer)
-    from_n = _norm_txt(from_name)
-    if peer_n and from_n and peer_n not in GENERIC_PEERS and from_n not in GENERIC_PEERS:
-        if peer_n == from_n:
-            score += 80
-        elif peer_n in from_n or from_n in peer_n:
-            score += 50
-    car_bits = _tokens(car)
-    name_bits = _tokens(lead_name)
-    if car_bits and name_bits:
-        overlap = car_bits & name_bits
-        if overlap:
-            score += 12 * min(len(overlap), 6)
-    stamp = int(created_at or 0)
-    if stamp:
-        age_h = max(0.0, ((now or time.time()) - stamp) / 3600)
-        score += max(0, int(20 - age_h / 24))
-    return score
+    # Similarity and names cannot establish buyer identity.
+    return 0
 
 
 def _lead_id_of_unsorted(row: dict) -> int | None:
@@ -600,51 +580,56 @@ def all_unsorted() -> list[dict]:
     raise AmoError(0, "unsorted pagination incomplete")
 
 
-def autoru_bound_lead(room_id: str, customer_id: str = "", url: str = "", customer_names: list[str] | None = None) -> int | None:
-    identities = {x for x in (room_id, customer_id) if x}
-    # Виджет использует alias/full_name профиля вместо зашифрованного ID.
-    # Только точное совпадение, конкретное объявление и единственная сделка.
-    identities.update(str(x).strip() for x in (customer_names or [])
-                      if str(x).strip() and _norm_txt(str(x)) not in GENERIC_PEERS)
-    rows = all_unsorted()
-    item_id = listing_item_id(url)
-    found = set()
-    for row in rows:
+def provider_bound_lead(channel: str, chat_id: str, customer_id: str = "", url: str = "") -> dict | None:
+    """Resolve only immutable provider identity. Names/listing similarity are never identity.
+
+    CRM origin.chat_id is usually an amojo UUID, not a marketplace chat ID.
+    If the widget exposes no provider identity, keep the handoff pending.
+    """
+    room = str(chat_id or "").removeprefix("av:").removeprefix("ar:")
+    if not room:
+        return None
+    wanted_item = listing_item_id(url)
+    found = {}
+    for row in all_unsorted():
         meta = unsorted_meta(row)
-        if meta.get("channel") != "Авто.ру" or str(meta.get("from") or "") not in identities:
+        if meta.get("channel") != channel:
+            continue
+        md = row.get("metadata") or {}
+        origin = md.get("origin") or {}
+        exact_room = room in {
+            str(origin.get("chat_id") or ""),
+            str(origin.get("conversation_id") or ""),
+            str(md.get("provider_chat_id") or ""),
+        }
+        # Auto.ru's widget can put the opaque room/customer ID in `from`.
+        # Human aliases and full names are deliberately not accepted.
+        if channel == "Авто.ру" and str(md.get("from") or "") == room:
+            exact_room = True
+        exact_customer = bool(customer_id and str(md.get("provider_customer_id") or "") == str(customer_id))
+        if channel == "Авто.ру" and customer_id and str(md.get("from") or "") == str(customer_id):
+            exact_customer = True
+        if not exact_room and not (exact_customer and wanted_item):
             continue
         lid = meta.get("lead_id")
         if not lid:
             continue
         lead = get_lead(int(lid))
-        # A customer can ask about several cars; their identity alone is
-        # insufficient. Room identity is acceptable without a listing URL.
-        if (item_id and listing_item_id(lead_listing_url(lead)) == item_id
-                or not item_id and str(meta.get("from") or "") == room_id):
-            found.add(int(lid))
-    if len(found) == 1:
-        return next(iter(found))
-    if len(found) > 1:
-        return None
-    # Accepted/merged deals no longer appear in Unsorted. Resolve only an
-    # exact provider identity AND exact listing, never a similar car/name.
-    if not item_id:
-        return None
-    candidates = set()
-    for identity in identities:
-        code, data = request("/api/v4/contacts", {"query": identity, "with": "leads", "limit": "250"})
-        if code >= 400:
-            raise AmoError(code, "contact identity lookup failed")
-        if (data or {}).get("_links", {}).get("next"):
+        if lead.get("is_deleted") or lead.get("status_id") in CLOSED:
             continue
-        for contact in items(data or {}, "contacts"):
-            if str(contact.get("name") or "").strip() != identity:
-                continue
-            for ref in (contact.get("_embedded") or {}).get("leads") or []:
-                lead = get_lead(int(ref["id"]))
-                if lead and listing_item_id(lead_listing_url(lead)) == item_id:
-                    candidates.add(int(lead["id"]))
-    return next(iter(candidates)) if len(candidates) == 1 else None
+        if lead.get("pipeline_id") not in {PIPELINE_TECH, PIPELINE_SALES}:
+            continue
+        if wanted_item and listing_item_id(lead_listing_url(lead)) != wanted_item:
+            continue
+        lead["_unsorted_uid"] = meta.get("uid") or ""
+        found[int(lid)] = lead
+    return next(iter(found.values())) if len(found) == 1 else None
+
+
+def autoru_bound_lead(room_id: str, customer_id: str = "", url: str = "", customer_names: list[str] | None = None) -> int | None:
+    # customer_names kept only for call compatibility; never used for matching.
+    lead = provider_bound_lead("Авто.ру", room_id, customer_id, url)
+    return int(lead["id"]) if lead else None
 
 
 def unsorted_meta(row: dict) -> dict:
@@ -738,37 +723,8 @@ def _buyer_name(cand: dict) -> str:
 def choose_widget_lead(
     candidates: list[dict], *, item_id: str = "", peer: str = ""
 ) -> dict | None:
-    """Какую карточку виджета забирать, если на одно объявление их несколько.
-
-    У кандидата есть score, created_at, item_id, talk_created, talk_updated, lead.
-    Сначала объявление этого чата и тот же человек. Среди его карточек берём ту,
-    чей разговор начался раньше, если он ещё жив. Свежая пустая карточка того же
-    объявления не перебивает. Если старый разговор затих до появления новой
-    карточки, берём новую. Карточка другого имени по тому же объявлению не
-    берётся: это новый покупатель, а не дубль виджета.
-    """
-    pool = [c for c in candidates if int(c.get("score") or 0) >= 40 and c.get("lead")]
-    pool = [c for c in pool if not different_buyer(peer, _buyer_name(c))]
-    if not pool:
-        return None
-    want = (item_id or "").strip()
-    same = [c for c in pool if want and str(c.get("item_id") or "") == want]
-    strangers = [
-        c for c in candidates
-        if int(c.get("score") or 0) >= 40 and c.get("lead")
-        and want and str(c.get("item_id") or "") == want
-        and different_buyer(peer, _buyer_name(c))
-    ]
-    if same:
-        cluster = same
-    elif strangers:
-        return None
-    else:
-        best = max(int(c.get("score") or 0) for c in pool)
-        cluster = [c for c in pool if int(c.get("score") or 0) == best]
-    if len(cluster) == 1:
-        return cluster[0]["lead"]
-    return _original_talk(cluster)["lead"]
+    """Legacy fuzzy selector disabled. Use provider_bound_lead instead."""
+    return None
 
 
 def _original_talk(cluster: list[dict]) -> dict:
@@ -900,18 +856,18 @@ def set_contact_phone(contact_id: int, phone: str) -> None:
     formatted = amo_phone(phone)
     if int(contact_id or 0) <= 0 or not formatted:
         return
-    body = [
-        {
-            "id": int(contact_id),
-            "custom_fields_values": [
-                {
-                    "field_code": "PHONE",
-                    "values": [{"value": formatted, "enum_code": "WORK"}],
-                }
-            ],
-        }
-    ]
-    write("/api/v4/contacts", body, method="PATCH")
+    contact = get_contact(contact_id)
+    if contact_has_phone(contact, phone):
+        return
+    values = []
+    for field in contact.get("custom_fields_values") or []:
+        if field.get("field_code") == "PHONE":
+            values.extend({k: v for k, v in row.items() if k in {"value", "enum_id", "enum_code"}}
+                          for row in field.get("values") or [])
+    values.append({"value": formatted, "enum_code": "WORK"})
+    write("/api/v4/contacts", [{"id": int(contact_id), "custom_fields_values": [
+        {"field_code": "PHONE", "values": values}
+    ]}], method="PATCH")
 
 
 def move_lead_to_sales(
@@ -978,109 +934,10 @@ def _lead_as_widget(lead_id: int, rows: list[dict]) -> dict | None:
 
 
 def find_widget_lead(
-    *,
-    peer: str = "",
-    car: str = "",
-    channel: str = "",
-    url: str = "",
-    chat_id: str = "",
-    customer_id: str = "",
-    customer_names: list[str] | None = None,
+    *, peer: str = "", car: str = "", channel: str = "", url: str = "",
+    chat_id: str = "", customer_id: str = "", customer_names: list[str] | None = None,
 ) -> dict | None:
-    """Сделка виджета Авито / Авто.ру в воронке «Техническое».
-
-    На Авто.ру комната чата однозначна. На Авито пустой дубль того же чата
-    совпадает по объявлению, поэтому среди карточек одного человека берём ту,
-    где разговор уже идёт, а не ту, что новее. Другое имя на том же объявлении
-    не берём.
-    """
+    # Names and car titles are display data, not identity evidence.
     if channel not in {"Авито", "Авто.ру"}:
         return None
-    rows = all_unsorted()
-    if channel == "Авто.ру":
-        room = str(chat_id or "")
-        if room.startswith("ar:"):
-            room = room[3:]
-        lid = autoru_bound_lead(room, customer_id, url, customer_names)
-        return _lead_as_widget(lid, rows) if lid else None
-    want_item = listing_item_id(url)
-    now = time.time()
-    shortlist: list[tuple[int, int, int, dict]] = []
-    peers: list[tuple[int, int, int, dict]] = []
-    for row in rows:
-        meta = unsorted_meta(row)
-        lid = meta.get("lead_id")
-        if not lid:
-            continue
-        if meta.get("channel") and meta["channel"] != channel:
-            continue
-        created = int(meta.get("created_at") or 0)
-        pts = score_widget_lead(
-            "",
-            peer=peer,
-            car=car,
-            channel=channel,
-            from_name=str(meta.get("from") or ""),
-            created_at=created,
-        )
-        item = (pts, created, int(lid), meta)
-        shortlist.append(item)
-        if pts >= 40 and created and now - created <= 72 * 3600:
-            peers.append(item)
-    peers.sort(key=lambda row: row[1], reverse=True)
-    chosen: list[tuple[int, int, int, dict]] = []
-    seen: set[int] = set()
-    for item in peers[:30]:
-        seen.add(item[2])
-        chosen.append(item)
-    # Имя в неразобранном бывает пустым: ещё десять свежих карточек канала,
-    # их добирает совпадение названия машины.
-    shortlist.sort(key=lambda row: row[1], reverse=True)
-    extra = 0
-    for item in shortlist:
-        if item[2] in seen:
-            continue
-        if extra >= 10:
-            break
-        seen.add(item[2])
-        chosen.append(item)
-        extra += 1
-    candidates: list[dict] = []
-    for _, created, lid, meta in chosen:
-        try:
-            lead = get_lead(lid)
-        except AmoError:
-            continue
-        if lead.get("pipeline_id") not in {PIPELINE_TECH, PIPELINE_SALES}:
-            continue
-        if lead.get("status_id") in CLOSED:
-            continue
-        pts = score_widget_lead(
-            str(lead.get("name") or ""),
-            peer=peer,
-            car=car,
-            channel=channel,
-            from_name=str(meta.get("from") or ""),
-            created_at=int(lead.get("created_at") or created),
-        )
-        lead["_widget_from"] = meta.get("from")
-        lead["_unsorted_uid"] = meta.get("uid")
-        candidates.append(
-            {
-                "score": pts,
-                "created_at": int(lead.get("created_at") or created),
-                "item_id": listing_item_id(lead_listing_url(lead)),
-                "from_name": str(meta.get("from") or ""),
-                "talk_created": 0,
-                "talk_updated": 0,
-                "lead": lead,
-                "lead_id": lid,
-            }
-        )
-    cluster = _widget_cluster(candidates, want_item, peer)
-    if len(cluster) > 1:
-        for cand in cluster:
-            created_at, updated_at = lead_talk_span(int(cand["lead_id"]))
-            cand["talk_created"] = created_at
-            cand["talk_updated"] = updated_at
-    return choose_widget_lead(candidates, item_id=want_item, peer=peer)
+    return provider_bound_lead(channel, chat_id, customer_id, url)

@@ -3353,3 +3353,57 @@ if __name__ == "__main__":
     test_listing_price_not_neighbor()
     test_autoteka_link_hides_damage()
     print("ok")
+
+
+def test_nov02_strict_customer_identity():
+    """Names, same car, cached lead and fuzzy phone result never authorize writes."""
+    from unittest.mock import patch
+    from bot import crm
+    a = crm.amo_client
+    url = 'https://avito.ru/moskva/avtomobili/bora_8435665780'
+    lead = {'id': 47056388, 'pipeline_id': a.PIPELINE_TECH, 'status_id': a.STATUS_TECH_CHAT,
+            '_embedded': {'contacts': [{'id': 56702970}]},
+            'custom_fields_values': [{'field_id': a.FIELD_LISTING_URL, 'values': [{'value': url}]}]}
+    def row(lid, md, channel='avito'):
+        return {'source_uid': 'amojo:'+channel+':uuid', 'metadata': md,
+                '_embedded': {'leads': [{'id': lid}]}}
+    with patch.object(a, 'all_unsorted', return_value=[row(47056388, {'from': 'Дмитрий'})]), \
+         patch.object(a, 'get_lead', return_value=lead):
+        assert a.find_widget_lead(peer='Дмитрий', car='Bora', channel='Авито', url=url, chat_id='av:actual') is None
+    exact = row(47056388, {'provider_chat_id': 'actual'})
+    with patch.object(a, 'all_unsorted', return_value=[exact]), patch.object(a, 'get_lead', return_value=lead):
+        assert a.find_widget_lead(peer='Другое имя', channel='Авито', url=url, chat_id='av:actual')['id'] == 47056388
+        assert a.find_widget_lead(channel='Авито', url=url, chat_id='av:other') is None
+        assert a.find_widget_lead(channel='Авито', url=url+'9', chat_id='av:actual') is None
+    duplicate = row(47078650, {'provider_chat_id': 'actual'})
+    with patch.object(a, 'all_unsorted', return_value=[exact, duplicate]), \
+         patch.object(a, 'get_lead', side_effect=lambda lid: dict(lead, id=lid)):
+        assert a.find_widget_lead(channel='Авито', url=url, chat_id='av:actual') is None
+    with patch.object(a, 'all_unsorted', return_value=[row(47056388, {'from': 'Дмитрий'}, 'amo.ext.123')]), \
+         patch.object(a, 'get_lead', return_value=lead):
+        assert a.autoru_bound_lead('room', 'opaque-id', url, ['Дмитрий']) is None
+    snap = {'channel': 'Авито', 'chat_id': 'av:actual', 'phone': '79000002416', 'url': url}
+    doc = {'chat_id': 'av:actual', 'crm': {'lead_id': 47056388, 'contact_id': 56702970}}
+    with patch.object(a, 'all_unsorted', return_value=[]), patch.object(a, 'get_lead', return_value=lead), \
+         patch.object(a, 'write', side_effect=AssertionError('unverified CRM write')):
+        crm.ensure_lead(dict(snap), doc)
+        assert not doc['crm'].get('lead_id')
+        crm._apply_phone_to_doc(snap, {'crm': {'lead_id': 47056388, 'contact_id': 56702970}})
+    with patch.object(a, 'request', return_value=(200, {'_embedded': {'contacts': [
+        {'id': 1, 'name': 'Дмитрий'},
+        {'id': 2, 'custom_fields_values': [{'field_code': 'PHONE', 'values': [{'value': '+7 900 000 24 16'}]}]}
+    ]}})):
+        assert a.find_contact('89000002416')['id'] == 2
+    with patch.object(a, 'request', return_value=(200, {'_embedded': {'contacts': [{'id': 1}]}})):
+        assert a.find_contact('89000002416') is None
+    binding = {'version': 1, 'chat_id': 'av:actual', 'channel': 'Авито', 'item_id': '8435665780',
+               'lead_id': 47056388, 'contact_id': 56702970}
+    with patch.object(a, 'all_unsorted', return_value=[]), patch.object(a, 'get_lead', return_value=lead):
+        assert crm._verified_marketplace_lead(snap, {'crm': {'verified_binding': binding}})['id'] == 47056388
+        assert crm._verified_marketplace_lead(dict(snap, chat_id='av:other'), {'crm': {'verified_binding': binding}}) is None
+    # Append a new phone; do not overwrite an existing confirmed one.
+    with patch.object(a, 'get_contact', return_value={'custom_fields_values': [
+            {'field_code': 'PHONE', 'values': [{'value': '+79000009999', 'enum_code': 'WORK'}]}]}), \
+         patch.object(a, 'write') as write:
+        a.set_contact_phone(1, '79000002416')
+        assert len(write.call_args.args[1][0]['custom_fields_values'][0]['values']) == 2
