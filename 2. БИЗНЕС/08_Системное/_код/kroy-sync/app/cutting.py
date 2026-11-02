@@ -45,6 +45,9 @@ def calculate(s, raw):
             coverage[line['item_id']].append(dict(id=e.id, kind=e.kind, title=d.get('title', 'Замороженный выпуск'), quantity=line['quantity'], date=due, included=eligible or selected, uncertain=uncertain, manual=selected))
         if touched: versions.append([e.id, e.version])
     windows = list(s.scalars(select(Entity).where(Entity.kind == 'sales_window')))
+    mappings = {(e.data.get('platform'), e.data.get('item_id')): e.data for e in s.scalars(select(Entity).where(Entity.kind == 'mapping'))}
+    status = s.get(Entity, 'cutting-sales-status')
+    source_status = status.data.get('platforms', {}) if status else {}
     rows = []
     for iid in ids:
         item = s.get(Item, iid)
@@ -61,14 +64,24 @@ def calculate(s, raw):
                         if event['kind'] == 'sale': sales += event['quantity']
                         else: returns += event['quantity']
                 versions.append([w.id, w.version])
-            platforms[platform] = dict(known=bool(w), sales=sales if w else None, returns=returns if w else None, at=w.data['at'] if w else None)
+            reason = None
+            if not w:
+                related = [e for e in windows if e.data.get('platform') == platform and e.data['start'] <= p['start'] and e.data['end'] >= p['end']]
+                latest = max(related, key=lambda e:e.data['at'], default=None)
+                mapping = mappings.get((platform, iid))
+                if latest and iid in latest.data.get('blocked_items', {}): reason = latest.data['blocked_items'][iid]
+                elif platform == 'wb' and not item.barcodes: reason = 'В карточке товара нет штрихкода для сверки с ВБ'
+                elif mapping and mapping.get('state') != 'unique': reason = 'Нужно сопоставить товар с площадкой'
+                else: reason = source_status.get(platform, {}).get('reason') or 'Нет полной сверенной выгрузки за выбранный период'
+            platforms[platform] = dict(known=bool(w), sales=sales if w else None, returns=returns if w else None, at=w.data['at'] if w else None, net=sales-returns if w else None, reason=reason, source=w.data.get('source') if w else None, listed=iid not in w.data.get('not_listed_items',[]) if w else None)
         net = sum(v['sales']-v['returns'] for v in platforms.values()) if all(v['known'] for v in platforms.values()) else None
         future = sum((Decimal(c['quantity']) for c in coverage[iid] if c['included']), Decimal(0))
         free = b.free if b and b.known else None
         target = int((Decimal(max(0, net))*p['horizon']/((date.fromisoformat(p['end'])-date.fromisoformat(p['start'])).days+1)).to_integral_value(rounding=ROUND_CEILING)) if net is not None else None
         rows.append(dict(item_id=iid, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=max(0, int(Decimal(target)-free-future)) if target is not None and free is not None else None, balance_version=b.version if b else None))
     body = dict(parameters=p, rows=rows, versions=sorted(versions))
-    body['fingerprint'] = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    fingerprint_body = {**body, 'rows': [{**r, 'platforms': {k:{x:v for x,v in values.items() if x not in ('at','reason','source')} for k,values in r['platforms'].items()}} for r in rows]}
+    body['fingerprint'] = hashlib.sha256(json.dumps(fingerprint_body, sort_keys=True).encode()).hexdigest()
     body['calculated_at'] = now().isoformat()
     return body
 

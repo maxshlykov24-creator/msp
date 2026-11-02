@@ -45,7 +45,7 @@ def store_window(engine, data):
         require(start<=date.fromisoformat(event['date'])<=end,'Событие вне периода',422)
         key=event['id'];require(key not in events or events[key]==event,'Конфликт повторного события',422);events[key]=event
     data={**data,'events':sorted(events.values(),key=lambda e:e['id']),'covered_items':sorted(set(data['covered_items']))}
-    semantic={k:data.get(k) for k in ('platform','start','end','events','covered_items','blocked_items','complete','verified','source')}
+    semantic={k:data.get(k) for k in ('platform','start','end','events','covered_items','blocked_items','not_listed_items','complete','verified','source')}
     digest=hashlib.sha256(json.dumps(semantic,sort_keys=True).encode()).hexdigest()
     with transaction(engine) as s:
         for iid in data['covered_items']:
@@ -74,20 +74,25 @@ def wb_events(raw,start,end,barcodes):
 
 def ozon_entries(raw):
     """Commission holds sale quantities; delivery-only rows are fees, not units sold."""
-    unique={};entries=[]
+    unique={};entries_by_id={}
     for row in raw:
         key=str(row['accrual_id'])
         require(key not in unique or unique[key]==row,'Конфликт начисления Ozon',422)
         if key in unique:continue
         unique[key]=row
-        for index,p in enumerate((row.get('posting') or {}).get('products',[])):
+        for p in (row.get('posting') or {}).get('products',[]):
             c=p.get('commission')
             if not c:continue
             q=p['quantity'];seller=Decimal(c['seller_price']['amount']);amount=Decimal(c['sale_amount']['amount'])
             require(type(q) is int and q>0 and seller.is_finite() and amount.is_finite() and seller!=0,'Неоднозначное количество или знак реализации Ozon',422)
             require(not amount or (seller>0)==(amount>0),'Противоречивые знаки реализации Ozon',422)
             day=str(row['date']);date.fromisoformat(day)
-            entries.append(dict(id='ozon:'+key+':'+str(index),sku=str(p['sku']),unit=str(row['unit_number']),date=day,quantity=q,price=seller,correction=seller<0 and p.get('delivery') is not None))
+            correction=seller<0 and p.get('delivery') is not None
+            identity=hashlib.sha256(json.dumps([str(p['sku']),str(seller.normalize()),correction]).encode()).hexdigest()[:24]
+            eid='ozon:'+key+':'+identity
+            if eid in entries_by_id:entries_by_id[eid]['quantity']+=q
+            else:entries_by_id[eid]=dict(id=eid,sku=str(p['sku']),unit=str(row['unit_number']),date=day,quantity=q,price=seller,correction=correction)
+    entries=list(entries_by_id.values())
     # A reversed delivery is not a customer return. Remove it AND its original sale.
     # Genuine customer returns (no delivery reversal block) remain, including same-day returns.
     remaining={r['id']:r['quantity'] for r in entries};blocked=set();corrections=0
@@ -147,6 +152,7 @@ def mappings(engine):
         for e in s.scalars(select(Entity).where(Entity.kind=='mapping')):
             d=e.data
             if d.get('state')!='unique':continue
+            if d['platform']=='ozon' and not any(c.get('skus') for c in d['candidates']):continue
             covered[d['platform']].add(d['item_id'])
             if d['platform']=='ozon':
                 for candidate in d['candidates']:
@@ -187,14 +193,21 @@ def sync(engine, env, start=None, end=None):
                 headers={'Api-Key':env['OZON_API_KEY'],'Client-Id':env['OZON_CLIENT_ID']};raw=[];hashes=[]
                 for offset in range((date.fromisoformat(end)-date.fromisoformat(start)).days+1):
                     day=str(date.fromisoformat(start)+timedelta(days=offset));chunk=collect_ozon_day(day,headers,env.get('KROY_SALES_CACHE','.runtime/sales-cache'));raw.extend(chunk['accruals']);hashes.extend(chunk['source_hashes'])
+                catalog=collect_ozon_catalog(headers,env.get('KROY_SALES_CACHE','.runtime/sales-cache'))
+                skus,ozon_covered,not_listed,catalog_proof=catalog_links(engine,catalog)
                 normalized,blocked,reversed_units=ozon_entries(raw);unmatched=0;events=[]
                 blocked_items={iid:'Не найдена исходная продажа для отмены начисления Ozon' for sku in blocked for iid in skus.get(sku,[])}
-                allowed=covered['ozon']-set(blocked_items)
+                allowed=ozon_covered-set(blocked_items)
+                unknown_skus={r['sku'] for r in normalized if len(skus.get(r['sku'],[]))!=1}|{sku for sku in blocked if len(skus.get(sku,[]))!=1}
+                # Known zero is justified only when the entire account catalog AND every
+                # financial sale/return SKU are identified. Missing mapping alone is never zero.
+                proven_not_listed=not_listed if catalog_proof['all_products_matched'] and not unknown_skus else set()
+                allowed|=proven_not_listed
                 for event in normalized:
                     matches=skus.get(event['sku'],[])
                     if len(matches)!=1 or matches[0] not in allowed:unmatched+=event['quantity'];continue
                     events.append({k:v for k,v in event.items() if k!='sku'}|{'item_id':matches[0]})
-                data=dict(platform='ozon',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(allowed),blocked_items=blocked_items,events=events,source=OZON_SOURCE,unmatched=unmatched,reconciliation=certificate,reversed_deliveries=reversed_units,source_hashes=hashes)
+                data=dict(platform='ozon',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(allowed),blocked_items=blocked_items,not_listed_items=sorted(proven_not_listed),catalog_proof={**catalog_proof,'unmatched_financial_skus':len(unknown_skus)},events=events,source=OZON_SOURCE,unmatched=unmatched,reconciliation=certificate,reversed_deliveries=reversed_units,source_hashes=hashes)
             store_window(engine,data)
             results[platform]=dict(state='ready',at=data['at'],start=start,end=end,events=len(data['events']),covered=len(data['covered_items']),unmatched=data['unmatched'])
         except RateLimited as e:
@@ -208,3 +221,46 @@ def sync(engine, env, start=None, end=None):
         if e:e.data=data;e.version+=1
         else:s.add(Entity(id=key,kind='sales_status',version=1,data=data))
     return results
+
+
+def collect_ozon_catalog(headers, cache_dir, get=get_json):
+    """Only identity metadata: no marketplace stock quantities are requested."""
+    path=Path(cache_dir)/'ozon-catalog.json';path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+    if path.exists():
+        cached=json.loads(path.read_text())
+        if cached.get('complete') and (now()-datetime.fromisoformat(cached['at'])).total_seconds()<21600:return cached
+    listed=[];seen=set();cursor=''
+    for _ in range(1000):
+        result=get('https://api-seller.ozon.ru/v3/product/list',headers,dict(filter={'visibility':'ALL'},limit=1000,last_id=cursor)).get('result',{})
+        require(isinstance(result.get('items'),list) and type(result.get('total')) is int,'Неполный каталог Ozon',422)
+        for row in result['items']:
+            pid=str(row['product_id']);require(pid not in seen,'Повтор страницы каталога Ozon',422);seen.add(pid);listed.append(pid)
+        require(len(listed)<=result['total'],'Неверный итог каталога Ozon',422)
+        if len(listed)==result['total']:break
+        nxt=result.get('last_id','');require(nxt and nxt!=cursor and result['items'],'Курсор каталога Ozon не продвинулся',422);cursor=nxt
+    else:raise RuntimeError('Лимит страниц каталога Ozon')
+    items=[]
+    for offset in range(0,len(listed),1000):
+        batch=listed[offset:offset+1000]
+        result=get('https://api-seller.ozon.ru/v3/product/info/list',headers,{'product_id':batch})
+        require(isinstance(result.get('items'),list) and {str(r['id']) for r in result['items']}==set(batch) and len(result['items'])==len(batch),'Неполные карточки Ozon',422)
+        items.extend({k:r.get(k) for k in ('id','barcodes','sources')} for r in result['items'])
+    data=dict(at=now().isoformat(),complete=True,items=items)
+    tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(data));tmp.chmod(0o600);tmp.replace(path);return data
+
+
+def catalog_links(engine, catalog):
+    with transaction(engine) as s:
+        items=list(s.scalars(select(Item).where(Item.kind=='garment')))
+        codes=defaultdict(set)
+        for item in items:
+            for code in item.barcodes:codes[str(code)].add(item.id)
+        skus=defaultdict(set);covered=set();matched_products=0
+        for product in catalog['items']:
+            matches=set().union(*(codes.get(str(c),set()) for c in product.get('barcodes')or[]))
+            product_skus={str(v['sku']) for v in product.get('sources')or[] if v.get('sku')}
+            if len(matches)!=1 or not product_skus:continue
+            iid=next(iter(matches));matched_products+=1;covered.add(iid)
+            for sku in product_skus:skus[sku].add(iid)
+        ambiguous={iid for ids in skus.values() if len(ids)!=1 for iid in ids};covered-=ambiguous
+        return {k:list(v) for k,v in skus.items()},covered,{i.id for i in items}-covered,dict(at=catalog['at'],all_products_matched=catalog.get('complete') and matched_products==len(catalog['items']) and not ambiguous,catalog_products=len(catalog['items']),matched_products=matched_products)

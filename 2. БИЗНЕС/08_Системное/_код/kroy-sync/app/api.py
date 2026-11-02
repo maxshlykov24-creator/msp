@@ -162,6 +162,27 @@ def create_app(engine=None):
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(422, 'Неполные или неверные поля команды') from exc
 
+    @app.post('/api/cutting/sales-refresh')
+    def refresh_sales(body: dict, user=Depends(auth)):
+        if 'cut_plan' not in PERMISSIONS[user.role]:
+            raise HTTPException(403, 'Нет права подготовки задания')
+        from .sales_jobs import enqueue
+        try:
+            return enqueue(engine, user.id, body)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(422, 'Проверь период сверки') from exc
+
+    @app.get('/api/cutting/sales-refresh/{job_id}')
+    def refresh_progress(job_id: str, user=Depends(auth)):
+        from .sales_jobs import public_job
+        if 'cut_plan' not in PERMISSIONS[user.role]:
+            raise HTTPException(403, 'Нет права подготовки задания')
+        with Session(engine) as s:
+            job = s.get(Entity, job_id)
+            if not job or job.kind != 'sales_refresh':
+                raise HTTPException(404, 'Сверка не найдена')
+            return public_job(job)
+
     @app.get('/api/cutting/sales-status')
     def sales_status(user=Depends(auth)):
         with Session(engine) as s:
