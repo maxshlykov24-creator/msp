@@ -490,7 +490,7 @@ class ProductionTests(unittest.TestCase):
         self.assertFalse(self.ms.created)
 
     def test_ordinary_number_series_independent(self):
-        for kind in ('move', 'loss'):
+        for kind in ('supply', 'move', 'loss'):
             old_id = uid()
             self.ms.docs[kind][old_id] = {'id': old_id, 'name': '15'}
             value = uid()
@@ -500,6 +500,90 @@ class ProductionTests(unittest.TestCase):
             self.e.number_other(kind, self.ms.docs[kind][value])
             with self.e.db() as db:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM names WHERE kind=?', (kind,)).fetchone()[0], 1)
+
+    def test_ordinary_receipt_ignores_old_production_numeric_names(self):
+        production, cfg = self.setup_direct()
+        self.ms.docs['supply'][production]['name'] = '9999'
+        old, new, tracked = uid(), uid(), uid()
+        self.ms.docs['supply'][old] = {'id': old, 'name': '15'}
+        self.ms.docs['supply'][tracked] = {'id': tracked, 'name': '8888'}
+        with self.e.db() as db:
+            db.execute('INSERT INTO receipt_numbers VALUES(?,?,?,?)', (tracked, uid(), 1, 'ПР-0042-01'))
+        self.ms.docs['supply'][new] = {'id': new, 'name': '10000'}
+        self.e.number_other('supply', self.ms.docs['supply'][new])
+        self.assertEqual(self.ms.docs['supply'][new]['name'], '16')
+        self.assertEqual(self.ms.docs['supply'][production]['name'], '9999')
+        self.assertEqual(self.ms.docs['supply'][tracked]['name'], '8888')
+
+    def test_ordinary_loss_ignores_numeric_production_and_prefixes(self):
+        old, prod, tracked, labeled, new = [uid() for _ in range(5)]
+        self.ms.docs['loss'] = {old: {'id': old, 'name': '15'},
+            prod: {'id': prod, 'name': '9000', 'externalCode': '2my-prod-old'},
+            tracked: {'id': tracked, 'name': '8000'},
+            labeled: {'id': labeled, 'name': 'СП-9999-01'}, new: {'id': new, 'name': '99999'}}
+        with self.e.db() as db:
+            db.execute("INSERT INTO operations(key,kind,doc_id,body,status) VALUES('old','loss',?,'{}','done')", (tracked,))
+        self.e.number_other('loss', self.ms.docs['loss'][new])
+        self.assertEqual(self.ms.docs['loss'][new]['name'], '16')
+
+    def test_ordinary_supply_worker_changes_only_name_and_preserves_state(self):
+        _, cfg = self.setup_direct()
+        cfg.update(enabled=True, start_at='2026-11-01 00:00:00')
+        with patch.dict('os.environ', {'PRODUCTION_ALLOW_WRITES': '1'}): self.e.set_config(cfg)
+        old, value = uid(), uid()
+        self.ms.docs['supply'][old] = {'id': old, 'name': '20'}
+        before = {'id': value, 'name': '500', 'created': '2026-11-02 10:00:00',
+                  'applicable': False, 'agent': ref('counterparty', uid()),
+                  'description': 'Комментарий сотрудника', 'state': ref('supply/metadata/states', uid())}
+        self.ms.docs['supply'][value] = copy.deepcopy(before)
+        self.e.enqueue('supply', value)
+        with self.e.db() as db: db.execute('UPDATE jobs SET due=0')
+        self.e.run_one()
+        self.assertEqual(self.ms.docs['supply'][value], dict(before, name='21'))
+        self.assertFalse(self.ms.created)
+        with self.e.db() as db:
+            self.assertEqual(db.execute('SELECT status FROM jobs WHERE id=?', (value,)).fetchone()[0], 'done')
+
+    def test_ordinary_number_survives_timeout_and_manual_renaming(self):
+        old, value = uid(), uid()
+        self.ms.docs['supply'][old] = {'id': old, 'name': '15'}
+        self.ms.docs['supply'][value] = {'id': value, 'name': '999'}
+        original = self.ms.request
+        def timeout(method, path, body):
+            original(method, path, body)
+            raise Review('Нет подтверждения ответа')
+        self.ms.request = timeout
+        with self.assertRaises(Review): self.e.number_other('supply', copy.deepcopy(self.ms.docs['supply'][value]))
+        self.ms.request = original
+        self.e.number_other('supply', copy.deepcopy(self.ms.docs['supply'][value]))
+        self.ms.docs['supply'][value]['name'] = '2000'
+        self.e.number_other('supply', copy.deepcopy(self.ms.docs['supply'][value]))
+        self.assertEqual(self.ms.docs['supply'][value]['name'], '16')
+        with self.e.db() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM names WHERE kind='supply'").fetchone()[0], 1)
+
+    def test_concurrent_ordinary_allocations_are_unique_and_idempotent(self):
+        from concurrent.futures import ThreadPoolExecutor
+        old, a, b = uid(), uid(), uid()
+        self.ms.docs['loss'][old] = {'id': old, 'name': '15'}
+        self.ms.docs['loss'][a] = {'id': a, 'name': 'auto', 'created': '2026-11-02 10:00:00'}
+        self.ms.docs['loss'][b] = {'id': b, 'name': 'auto', 'created': '2026-11-02 10:00:01'}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda key: self.e.number_other('loss', copy.deepcopy(self.ms.docs['loss'][key])), [a, a, b, b]))
+        self.assertEqual({self.ms.docs['loss'][x]['name'] for x in (a,b)}, {'16','17'})
+        with self.e.db() as db: self.assertEqual(db.execute("SELECT count(*) FROM names WHERE kind='loss'").fetchone()[0], 2)
+
+    def test_ordinary_counter_does_not_follow_moysklad_temporary_numbers(self):
+        for kind in ('supply', 'loss'):
+            old, a, b, future = [uid() for _ in range(4)]
+            self.ms.docs[kind][old] = {'id': old, 'name': '15'}
+            self.ms.docs[kind][a] = {'id': a, 'name': '9999'}
+            self.e.number_other(kind, self.ms.docs[kind][a])
+            self.ms.docs[kind][future] = {'id': future, 'name': '10000'}
+            self.ms.docs[kind][b] = {'id': b, 'name': '10001'}
+            self.e.number_other(kind, self.ms.docs[kind][b])
+            self.assertEqual(self.ms.docs[kind][a]['name'], '16')
+            self.assertEqual(self.ms.docs[kind][b]['name'], '17')
 
     def test_non_numeric_production_prefix_not_renumbered(self):
         with self.assertRaises(Review): self.e.number_other('move', {'id': uid(), 'name': 'ВШ-100/01'})

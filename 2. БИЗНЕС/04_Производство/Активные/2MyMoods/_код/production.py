@@ -230,6 +230,7 @@ class Engine:
             CREATE TABLE IF NOT EXISTS operations(key TEXT PRIMARY KEY,kind TEXT,doc_id TEXT,
               body TEXT NOT NULL,status TEXT NOT NULL,fingerprint TEXT);
             CREATE TABLE IF NOT EXISTS chains(id TEXT PRIMARY KEY,number INTEGER UNIQUE,body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS number_counters(kind TEXT PRIMARY KEY,number INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS names(kind TEXT,id TEXT,number INTEGER,original TEXT,
               PRIMARY KEY(kind,id),UNIQUE(kind,number));
             CREATE TABLE IF NOT EXISTS receipt_numbers(
@@ -1629,32 +1630,62 @@ class Engine:
         if quantities(self.ms.positions(kind, value)) != quantities(body['positions']):
             raise Review('Документ ' + str(doc.get('name', value)) + ': изменён состав или количество')
 
+    def production_number_scope(self, kind):
+        with self.db() as db:
+            ids = {r['doc_id'] for r in db.execute('SELECT doc_id FROM operations WHERE kind=? AND doc_id IS NOT NULL', (kind,))}
+            agents = set()
+            if kind == 'supply':
+                ids.update(r['id'] for r in db.execute('SELECT id FROM receipt_numbers'))
+                for row in db.execute('SELECT id,body FROM chains'):
+                    ids.add(row['id'])
+                    agents.add(ident(json.loads(row['body']).get('source', {}).get('agent')))
+        if kind == 'supply':
+            agents.update(f.get('agent') for f in self.config().get('factories', []))
+        return ids, agents - {None, ''}
+
+    def is_production_document(self, kind, doc, scope=None):
+        ids, agents = scope if scope is not None else self.production_number_scope(kind)
+        return (doc['id'] in ids or doc.get('externalCode', '').startswith('2my-prod-')
+                or bool(RESERVED.match(doc.get('name', '')))
+                or bool(re.match(r'^(?:ПР|СП|МТ|ВШ)-', doc.get('name', '')))
+                or kind == 'supply' and ident(doc.get('agent')) in agents)
+
     def number_other(self, kind, doc):
-        if kind not in ('move', 'loss'):
+        if kind not in ('supply', 'move', 'loss') or doc.get('deleted'):
             return
-        if doc.get('externalCode', '').startswith('2my-prod-'):
+        scope = self.production_number_scope(kind)
+        if doc['id'] in scope[0] or doc.get('externalCode', '').startswith('2my-prod-'):
+            if kind == 'supply':
+                raise Review('Производственная приёмка не относится к обычной нумерации')
             return self.audit_generated(kind, doc['id'], doc)
-        if RESERVED.match(doc.get('name', '')):
-            raise Review('Производственный номер без найденной цепочки')
+        if self.is_production_document(kind, doc, scope):
+            raise Review('Производственный документ не относится к обычной нумерации')
         with self.db() as db:
-            row = db.execute('SELECT number FROM names WHERE kind=? AND id=?', (kind, doc['id'])).fetchone()
-        if row:
-            if doc.get('name') == str(row['number']):
-                return
+            row = db.execute('SELECT number,original FROM names WHERE kind=? AND id=?', (kind, doc['id'])).fetchone()
+            counter = db.execute('SELECT number FROM number_counters WHERE kind=?', (kind,)).fetchone()
+        if not row:
+            existing = [] if counter else self.ms.rows('/entity/' + kind)
+            ordinary = [x for x in existing if x['id'] != doc['id'] and not x.get('deleted')
+                        and not self.is_production_document(kind, x, scope)
+                        and re.fullmatch(r'\d+', x.get('name', ''))
+                        and (not doc.get('created') or not x.get('created')
+                             or (x['created'], x['id']) < (doc['created'], doc['id']))]
+            maximum = max([int(x['name']) for x in ordinary] or [0])
             with self.db() as db:
-                original = db.execute('SELECT original FROM names WHERE kind=? AND id=?', (kind, doc['id'])).fetchone()[0]
-            if doc.get('name') != original:
-                return  # Сотрудник мог вписать номер возврата после CREATE.
-            self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'], {'name': str(row['number'])})
+                db.execute('BEGIN IMMEDIATE')
+                row = db.execute('SELECT number,original FROM names WHERE kind=? AND id=?', (kind, doc['id'])).fetchone()
+                if not row:
+                    counter = db.execute('SELECT number FROM number_counters WHERE kind=?', (kind,)).fetchone()
+                    maximum = max(counter['number'] if counter else maximum,
+                                  db.execute('SELECT COALESCE(MAX(number),0) FROM names WHERE kind=?', (kind,)).fetchone()[0])
+                    n = maximum + 1
+                    db.execute('INSERT OR REPLACE INTO number_counters VALUES(?,?)', (kind, n))
+                    db.execute('INSERT INTO names VALUES(?,?,?,?)', (kind, doc['id'], n, doc.get('name', '')))
+                    row = {'number': n, 'original': doc.get('name', '')}
+        # Legacy manual returns keep their user-entered move number.
+        if kind == 'move' and doc.get('name') not in (str(row['number']), row['original']):
             return
-        existing = self.ms.rows('/entity/' + kind)
-        maximum = max([int(x['name']) for x in existing if x['id'] != doc['id'] and re.fullmatch(r'\d+', x.get('name', ''))] or [0])
-        with self.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            maximum = max(maximum, db.execute('SELECT COALESCE(MAX(number),0) FROM names WHERE kind=?', (kind,)).fetchone()[0])
-            n = maximum + 1
-            db.execute('INSERT INTO names VALUES(?,?,?,?)', (kind, doc['id'], n, doc.get('name', '')))
-        self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'], {'name': str(n)})
+        self.rename_document(kind, doc, str(row['number']))
 
     def process_order(self, value):
         doc = self.check_production_order(value)
@@ -1732,19 +1763,26 @@ class Engine:
                     return False
                 db.execute("UPDATE jobs SET status='running' WHERE kind=? AND id=?", (row['kind'], row['id']))
             kind, value = row['kind'], row['id']
+            production = kind != 'supply'
             try:
                 doc = self.ms.get('/entity/' + kind + '/' + value)
                 cfg = self.config()
+                if kind == 'supply':
+                    production = self.is_production_document(kind, doc)
                 with self.db() as db:
                     tracked = db.execute('SELECT 1 FROM operations WHERE kind=? AND doc_id=?', (kind, value)).fetchone()
                 if doc.get('deleted') or (doc.get('created', '') < cfg.get('start_at', '9999') and value not in cfg.get('test_document_ids', []) and not tracked):
                     result = 'ignored'
                 else:
                     factories = self.config().get('factories', [])
-                    if kind in ('supply', 'purchaseorder') and ident(doc.get('agent')) not in {x['agent'] for x in factories}:
+                    if kind == 'purchaseorder' and ident(doc.get('agent')) not in {x['agent'] for x in factories}:
                         result = 'ignored'
                     else:
-                        if kind == 'supply': self.process_supply(value)
+                        if kind == 'supply':
+                            if production:
+                                self.process_supply(value)
+                            else:
+                                self.number_other(kind, doc)
                         elif kind == 'move':
                             if self.config().get('workflow') == 'finished_receipt':
                                 self.number_other('move', doc)
@@ -1764,7 +1802,7 @@ class Engine:
                                ('pending' if retry else 'review', message,
                                 time.time() + min(600, 15 * 2 ** row['attempts']), kind, value)).rowcount
                 self.log(kind, value, message)
-                if not retry and changed:
+                if not retry and changed and production:
                     self.mark_chain_review(kind, value, message)
             return True
         finally:
