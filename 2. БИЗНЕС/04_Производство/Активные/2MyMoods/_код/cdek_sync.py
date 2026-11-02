@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """2MY CDEK: durable order queue, legacy migration and read-only carrier API.
 
-Only customerorder tracking/status/cost attributes may be written. Costs are
-disabled until an operator records financial verification in the service env.
+Only customerorder tracking/status/cost attributes may be written. Cost writes
+require an explicit policy and a selected order year in the service env.
 No shipment creation, CRM calls or primary document status changes.
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import datetime as dt
 import decimal
@@ -53,6 +54,28 @@ def tracking(order):
 
 def valid_track(track):
     return bool(re.fullmatch(r'[0-9]+', track))
+
+
+def cost_policy_enabled():
+    return (os.environ.get('CDEK_COST_WRITE_ENABLED') == '1'
+            and os.environ.get('CDEK_COST_CURRENCY') == 'RUB'
+            and bool(os.environ.get('CDEK_COST_POLICY')))
+
+
+def cost_year_matches(order, year):
+    if year is None:
+        year = current_year()
+    try:
+        stamp = dt.datetime.fromisoformat(str(order.get('moment') or '').replace('Z', '+00:00'))
+        if stamp.tzinfo:
+            stamp = stamp.astimezone(dt.timezone(dt.timedelta(hours=3)))
+        return stamp.year == year
+    except ValueError:
+        return False
+
+
+def current_year():
+    return dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).year
 
 
 def payload(changes):
@@ -331,21 +354,23 @@ class Store:
         return {'tracked_orders': total, 'queued': jobs[0],
                 'oldest_due': jobs[1], 'errors': errors,
                 'oldest_job_age_seconds': round(time.time() - oldest, 1) if oldest else 0,
+                'overdue': bool(oldest and time.time() - oldest > INTERVAL),
                 'migration_conflicts': migration_conflicts,
                 'last_scan': self.setting('last_scan'), 'scan_error': self.setting('scan_error'),
                 'last_cycle_seconds': self.setting('last_cycle_seconds'),
                 'last_idle': self.setting('last_idle'),
                 'worker_error': self.setting('worker_error'),
                 'migration_complete': self.setting('migration_complete') == '1',
-                'cost_enabled': (os.environ.get('CDEK_COST_VERIFIED') == '1'
-                                 and os.environ.get('CDEK_COST_CURRENCY') == 'RUB'
-                                 and bool(os.environ.get('CDEK_FINANCIAL_VERIFICATION'))),
-                'financial_verification': os.environ.get('CDEK_FINANCIAL_VERIFICATION', '')}
+                'cost_enabled': cost_policy_enabled(),
+                'cost_order_year': current_year() if os.environ.get('CDEK_COST_YEAR', 'current') == 'current'
+                                   else int(os.environ['CDEK_COST_YEAR']),
+                'cost_policy': os.environ.get('CDEK_COST_POLICY', '')}
 
 
 class Engine:
-    def __init__(self, store, api, cost_enabled=False):
+    def __init__(self, store, api, cost_enabled=False, cost_year=None):
         self.store, self.api, self.cost_enabled = store, api, cost_enabled
+        self.cost_year = cost_year
         self.write_lock = threading.Lock()
         self.track_locks = {}
         self.track_locks_gate = threading.Lock()
@@ -356,6 +381,8 @@ class Engine:
         if tracking(latest) != expected_track:
             self.store.observe(latest, 0)
             raise SyncError('track_changed')
+        if COST in changes and changes[COST] is not None and not cost_year_matches(latest, self.cost_year):
+            raise SyncError('order_year_changed')
         current = values(latest)
         changes = {k: v for k, v in changes.items() if current.get(k) != v}
         if not changes:
@@ -444,6 +471,10 @@ class Engine:
             self.store.observe(peer)
         duplicate = len(peers) > 1
         if duplicate:
+            for peer in peers:
+                prior = self.store.row(peer['id'])
+                if peer['id'] != oid and prior and prior['own_cost'] is not None:
+                    self.store.enqueue(peer['id'], 0, force=False)
             current = values(order)
             row = self.store.row(oid)
             if row['own_cost'] is not None and current.get(COST) == row['own_cost']:
@@ -469,7 +500,7 @@ class Engine:
             errors.append(result['status_error'])
         if duplicate:
             errors.append('duplicate_track_cost_blocked')
-        elif self.cost_enabled:
+        elif self.cost_enabled and cost_year_matches(order, self.cost_year):
             if result['cost_error']:
                 errors.append(result['cost_error'])
             else:
@@ -479,6 +510,11 @@ class Engine:
             changes.pop(COST)
             errors.append('duplicate_track_cost_blocked')
         self.write_verified(order, changes, track)
+        if COST in changes and len(self.api.peers(track)) > 1:
+            latest = self.api.order(oid)
+            if tracking(latest) == track and values(latest).get(COST) == changes[COST]:
+                self.write_verified(latest, {COST: None}, track)
+            errors.append('duplicate_track_cost_blocked')
         with self.store.db() as db:
             db.execute('INSERT OR REPLACE INTO settings VALUES(?,?)',
                        ('status:' + oid, json.dumps(result['status'])))
@@ -510,6 +546,11 @@ class Engine:
                 else:
                     db.execute('DELETE FROM jobs WHERE id=? AND generation=?',
                                (job['id'], job['generation']))
+        except Exception:
+            with self.store.db() as db:
+                db.execute('UPDATE orders SET error="unexpected_job_error" WHERE id=?', (job['id'],))
+                db.execute('UPDATE jobs SET due=?,attempts=attempts+1 WHERE id=? AND generation=?',
+                           (time.time() + 60, job['id'], job['generation']))
         else:
             with self.store.db() as db:
                 db.execute('DELETE FROM jobs WHERE id=? AND generation=?',
@@ -597,19 +638,58 @@ class Engine:
 
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=4 if apply else 1) as pool:
-            tasks = [pool.submit(migrate_one, oid) for oid in candidates]
+            tasks = {pool.submit(migrate_one, oid): oid for oid in candidates}
             for task in as_completed(tasks):
                 counts['candidates'] += 1
                 try:
                     result = task.result()
+                    if apply:
+                        self.store.setting('migration_error:' + tasks[task], '')
                     counts['copied'] += result == 'copied'
                     counts['conflicts'] += result == 'legacy_conflict'
-                except SyncError:
+                except SyncError as e:
                     counts['failures'] += 1
+                    if apply:
+                        self.store.setting('migration_error:' + tasks[task], e.code)
                 if apply and counts['candidates'] % 25 == 0:
                     print(json.dumps(counts), flush=True)
         if apply and not counts['failures'] and len(candidates) == total_candidates:
             self.store.setting('migration_complete', '1')
+        return counts
+
+    def rollback(self, apply=False):
+        """Stop/disable worker first. Never restore over a differing current value."""
+        counts = {'writes': 0, 'skipped_fields': 0, 'failures': 0}
+        with self.store.db() as db:
+            rows = db.execute('SELECT * FROM journal WHERE state IN ("verified","recovered") '
+                              'ORDER BY id DESC').fetchall()
+        simulated = {}
+        for row in rows:
+            try:
+                oid = row['order_id']
+                order = self.api.order(oid) if apply or oid not in simulated else simulated[oid]
+                current = values(order)
+                before, changes = json.loads(row['before_json']), json.loads(row['changes_json'])
+                restore = {k: before.get(k) for k, v in changes.items()
+                           if k in (TRACK, STATUS, COST) and current.get(k) == v}
+                counts['skipped_fields'] += len(changes) - len(restore)
+                if restore:
+                    if apply:
+                        self.api.write(oid, restore)
+                        readback = self.api.order(oid)
+                        if not all(values(readback).get(k) == v for k, v in restore.items()):
+                            raise SyncError('rollback_readback_mismatch')
+                    else:
+                        current.update(restore)
+                        order['attributes'] = [{'id': k, 'value': v} for k, v in current.items() if v is not None]
+                        simulated[oid] = order
+                    counts['writes'] += 1
+                if apply:
+                    with self.store.db() as db:
+                        db.execute('UPDATE journal SET state=? WHERE id=?',
+                                   ('rolled_back' if len(restore) == len(changes) else 'rollback_partial', row['id']))
+            except SyncError:
+                counts['failures'] += 1
         return counts
 
 
@@ -648,6 +728,14 @@ def route(handler, method):
         handler._json(405, {'error': 'method'})
         return True
     given = handler.headers.get('X-Cdek-Webhook-Token') or ''
+    authorization = handler.headers.get('Authorization', '')
+    if not given and authorization.startswith('Basic '):
+        try:
+            user, password = base64.b64decode(authorization[6:], validate=True).decode().split(':', 1)
+            if user == 'cdek':
+                given = password
+        except (ValueError, UnicodeError):
+            pass
     secret = os.environ.get('CDEK_WEBHOOK_TOKEN', '')
     if not secret:
         handler._json(403, {'error': 'forbidden'})
@@ -687,33 +775,49 @@ def run_worker(engine):
                     engine.scan()
                 except SyncError as e:
                     engine.store.setting('scan_error', e.code)
+                    print(json.dumps({'event': 'scan_error', 'code': e.code}), flush=True)
                 except Exception:
                     engine.store.setting('scan_error', 'unexpected_scan_error')
                 time.sleep(max(1, INTERVAL - (time.monotonic() - start)))
         threading.Thread(target=scanner, daemon=True).start()
+        with engine.store.db() as db:
+            db.execute('UPDATE jobs SET lease_until=0')
+        def worker():
+            while True:
+                try:
+                    if not engine.one():
+                        time.sleep(.25)
+                except Exception:
+                    engine.store.setting('worker_error', 'unexpected_worker_error')
+                    time.sleep(5)
+        for _ in range(4):
+            threading.Thread(target=worker, daemon=True).start()
         cycle_start = None
+        overdue_reported = False
         while True:
-            if cycle_start is None:
+            with engine.store.db() as db:
+                busy = db.execute('SELECT COUNT(*) FROM jobs WHERE due<=? OR lease_until>?',
+                                  (time.time(), time.time())).fetchone()[0]
+            if busy and cycle_start is None:
                 cycle_start = time.monotonic()
-            try:
-                worked = engine.one()
-            except Exception:
-                engine.store.setting('worker_error', 'unexpected_worker_error')
-                time.sleep(5)
-                continue
-            if not worked:
-                duration = round(time.monotonic() - cycle_start, 2)
-                if duration > .1:
-                    engine.store.setting('last_cycle_seconds', duration)
+                overdue_reported = False
+            if cycle_start is not None and time.monotonic() - cycle_start > INTERVAL and not overdue_reported:
+                print(json.dumps({'event': 'cycle_overdue', 'pending': busy}), flush=True)
+                overdue_reported = True
+            if not busy:
+                if cycle_start is not None:
+                    elapsed = round(time.monotonic() - cycle_start, 2)
+                    engine.store.setting('last_cycle_seconds', elapsed)
+                    print(json.dumps({'event': 'cycle_drained', 'seconds': elapsed}), flush=True)
+                    cycle_start = None
                 engine.store.setting('last_idle', time.time())
-                time.sleep(1)
-                cycle_start = None
+            time.sleep(1)
 
 
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['worker', 'scan', 'migrate', 'status', 'once'])
+    parser.add_argument('command', choices=['worker', 'scan', 'migrate', 'status', 'once', 'rollback'])
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--limit', type=int, default=0, help='Control subset of legacy migration')
     args = parser.parse_args()
@@ -721,17 +825,18 @@ def main():
     if args.command == 'status':
         print(json.dumps(store.summary(), ensure_ascii=False))
         return
-    costs = (os.environ.get('CDEK_COST_VERIFIED') == '1'
-             and os.environ.get('CDEK_COST_CURRENCY') == 'RUB'
-             and bool(os.environ.get('CDEK_FINANCIAL_VERIFICATION')))
-    engine = Engine(store, API(), costs)
+    year = os.environ.get('CDEK_COST_YEAR', 'current')
+    engine = Engine(store, API(), cost_policy_enabled(), None if year == 'current' else int(year))
     engine.api.validate_metadata()
     if args.command == 'worker':
         run_worker(engine)
     elif args.command == 'migrate':
         with (store.root / 'worker.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            print(json.dumps(engine.migrate(args.apply, args.limit)))
+            result = engine.migrate(args.apply, args.limit)
+            print(json.dumps(result))
+            if args.apply and result.get('failures'):
+                raise SystemExit(1)
     elif args.command == 'scan':
         engine.scan()
         print(json.dumps(store.summary(), ensure_ascii=False))
@@ -739,6 +844,10 @@ def main():
         with (store.root / 'worker.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             print(json.dumps({'worked': engine.one()}))
+    elif args.command == 'rollback':
+        with (store.root / 'worker.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            print(json.dumps(engine.rollback(args.apply)))
 
 
 if __name__ == '__main__':

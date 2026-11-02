@@ -1228,6 +1228,8 @@ class Engine:
     def rename_document(self, kind, doc, name):
         if doc.get('name') == name:
             return doc
+        if doc.get('deleted'):
+            raise Review('Документ ' + str(doc.get('name', doc['id'])) + ' находится в корзине')
         self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'], {'name': name})
         saved = self.ms.get('/entity/' + kind + '/' + doc['id'])
         if saved.get('name') != name:
@@ -1277,10 +1279,33 @@ class Engine:
             label = db.execute('SELECT label FROM receipt_numbers WHERE id=?', (doc['id'],)).fetchone()[0]
         return self.rename_document('supply', doc, label), label[3:]
 
+    def number_direct_losses(self, value, receipt_number, chain):
+        """Number our existing/prepared documents even when stock processing is blocked."""
+        for index, group in enumerate(chain.get('material_groups', [])):
+            name = 'СП-' + receipt_number + (f'-{index + 1:02d}' if len(chain['material_groups']) > 1 else '')
+            key = f'{value}/direct/{group["store"]}/loss'
+            with self.db() as db:
+                operation = db.execute('SELECT body,doc_id FROM operations WHERE key=?', (key,)).fetchone()
+            if not operation:
+                continue
+            body = json.loads(operation['body'])
+            loss_id = operation['doc_id'] or chain.get('losses', {}).get(group['store'])
+            if loss_id and body.get('name') != name:
+                doc = self.ms.get('/entity/loss/' + loss_id)
+                if not body.get('externalCode') or doc.get('externalCode') != body['externalCode']:
+                    raise Review('Не удалось подтвердить принадлежность списания приёмке')
+                self.rename_document('loss', doc, name)
+            if body.get('name') != name:
+                body['name'] = name
+                with self.db() as db:
+                    db.execute('UPDATE operations SET body=? WHERE key=?', (json.dumps(body), key))
+
     def process_direct_supply(self, value):
         chain, number = self.chain(value)
         current = self.ms.get('/entity/supply/' + value)
         current, receipt_number = self.number_receipt(current)
+        if chain and chain.get('workflow') == 'finished_receipt':
+            self.number_direct_losses(value, receipt_number, chain)
         positions = self.ms.positions('supply', value)
         force = ident(current.get('state')) == self.config()['states']['supply']['Завершена']
         if chain:
@@ -1712,7 +1737,7 @@ class Engine:
                 cfg = self.config()
                 with self.db() as db:
                     tracked = db.execute('SELECT 1 FROM operations WHERE kind=? AND doc_id=?', (kind, value)).fetchone()
-                if doc.get('created', '') < cfg.get('start_at', '9999') and value not in cfg.get('test_document_ids', []) and not tracked:
+                if doc.get('deleted') or (doc.get('created', '') < cfg.get('start_at', '9999') and value not in cfg.get('test_document_ids', []) and not tracked):
                     result = 'ignored'
                 else:
                     factories = self.config().get('factories', [])

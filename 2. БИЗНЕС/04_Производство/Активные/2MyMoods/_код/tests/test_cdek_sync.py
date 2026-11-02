@@ -20,6 +20,7 @@ def order(track='', legacy='', cost=None, status=None):
         if val is not None and val != '':
             attrs.append({'id': key, 'value': val})
     return {'id': str(uuid.uuid4()), 'name': 'CONTROL', 'attributes': attrs,
+            'moment': '2026-06-01 12:00:00.000',
             'sum': 12345, 'applicable': True, 'state': {'meta': {'href': 'unchanged'}},
             'positions': {'meta': {'size': 2}}}
 
@@ -82,7 +83,7 @@ class SyncTests(unittest.TestCase):
 
     def engine(self, docs, costs=True):
         api = FakeAPI(docs)
-        return c.Engine(self.s, api, costs), api
+        return c.Engine(self.s, api, costs, 2026), api
 
     def test_total_is_not_tariff_plus_services_twice(self):
         r = c.carrier_result(body())
@@ -163,6 +164,38 @@ class SyncTests(unittest.TestCase):
         self.assertNotIn(c.COST, c.values(api.order(doc['id'])))
         self.assertEqual(c.values(api.order(doc['id']))[c.STATUS], 'Вручен')
 
+    def test_cost_current_year_only_status_all_years(self):
+        doc = order('00123')
+        doc['moment'] = '2025-12-31 23:59:59.000'
+        engine, api = self.engine([doc])
+        engine.process(doc['id'])
+        self.assertNotIn(c.COST, c.values(api.order(doc['id'])))
+        self.assertEqual(c.values(api.order(doc['id']))[c.STATUS], 'Вручен')
+        self.assertTrue(c.cost_year_matches({'moment': '2025-12-31T22:00:00+00:00'}, 2026))
+        with patch.object(c, 'current_year', return_value=2027):
+            self.assertTrue(c.cost_year_matches({'moment': '2027-01-01 00:00:00.000'}, None))
+            self.assertFalse(c.cost_year_matches({'moment': '2026-12-31 23:59:59.000'}, None))
+
+    def test_concurrent_queue_claim_prevents_double_processing(self):
+        import threading
+        doc = order('00123')
+        engine, api = self.engine([doc])
+        self.s.observe(doc)
+        entered, release = threading.Event(), threading.Event()
+        original = engine.process
+        def slow(oid):
+            entered.set()
+            release.wait(3)
+            original(oid)
+        engine.process = slow
+        t = threading.Thread(target=engine.one)
+        t.start()
+        self.assertTrue(entered.wait(3))
+        self.assertFalse(engine.one())
+        release.set()
+        t.join(3)
+        self.assertEqual(len(api.calls), 1)
+
     def test_duplicate_status_both_no_cost_and_one_carrier_call(self):
         docs = [order('00123'), order('00123')]
         engine, api = self.engine(docs)
@@ -181,6 +214,20 @@ class SyncTests(unittest.TestCase):
         api.docs[duplicate['id']] = duplicate
         engine.process(doc['id'])
         self.assertNotIn(c.COST, c.values(api.order(doc['id'])))
+
+    def test_new_duplicate_prioritizes_cleanup_of_previous_order(self):
+        doc = order('00123')
+        engine, api = self.engine([doc])
+        engine.process(doc['id'])
+        with self.s.db() as db:
+            db.execute('DELETE FROM jobs')
+        duplicate = order('00123')
+        api.docs[duplicate['id']] = duplicate
+        engine.process(duplicate['id'])
+        with self.s.db() as db:
+            queued = db.execute('SELECT priority FROM jobs WHERE id=?', (doc['id'],)).fetchone()
+        self.assertIsNotNone(queued)
+        self.assertEqual(queued['priority'], 0)
 
     def test_duplicate_does_not_remove_unowned_cost(self):
         docs = [order('00123', cost=500), order('00123')]
@@ -361,6 +408,80 @@ class SyncTests(unittest.TestCase):
             h = Handler()
             c.route(h, 'POST')
             self.assertEqual(h.code, 503)
+
+    def test_scenario_basic_auth_with_document_body(self):
+        raw = json.dumps({'id': str(uuid.uuid4())}).encode()
+        class Handler:
+            path = c.WEBHOOK_PATH
+            headers = {'Authorization': 'Basic ' + c.base64.b64encode(b'cdek:test').decode(),
+                       'Content-Length': str(len(raw))}
+            rfile = io.BytesIO(raw)
+            def _json(inner, code, body):
+                inner.code = code
+        with patch.dict(c.os.environ, {'CDEK_WEBHOOK_TOKEN': 'test'}), patch.object(c, 'Store', return_value=self.s):
+            h = Handler()
+            c.route(h, 'POST')
+            self.assertEqual(h.code, 202)
+
+    def test_parallel_duplicate_uses_one_carrier_request(self):
+        from concurrent.futures import ThreadPoolExecutor
+        docs = [order('00123'), order('00123')]
+        engine, api = self.engine(docs)
+        original = api.carrier
+        def slow(track):
+            time.sleep(.03)
+            return original(track)
+        api.carrier = slow
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(lambda doc: engine.process(doc['id']), docs))
+        self.assertEqual(api.calls, ['00123'])
+
+    def test_carrier_401_refreshes_token_once(self):
+        with patch.dict(c.os.environ, {'MOYSKLAD_TOKEN': 'fake', 'CDEK_CLIENT_ID': 'fake',
+                                       'CDEK_CLIENT_SECRET': 'fake'}):
+            api = c.API()
+        with patch.object(api, 'request', side_effect=[
+                {'access_token': 'first', 'expires_in': 3600},
+                c.SyncError('cdek_http_401'),
+                {'access_token': 'second', 'expires_in': 3600}, body()]) as request:
+            self.assertEqual(api.carrier('00123')['cost'], 690.75)
+            self.assertEqual(request.call_count, 4)
+            self.assertEqual(api.token, 'second')
+
+    def test_migration_resumes_and_does_not_duplicate_remote_write(self):
+        docs = [order(legacy='00123'), order(legacy='00234')]
+        engine, api = self.engine(docs)
+        original = api.write
+        failed = []
+        def fail_once(oid, changes):
+            if oid == docs[1]['id'] and not failed:
+                failed.append(True)
+                raise c.SyncError('network')
+            original(oid, changes)
+        api.write = fail_once
+        self.assertEqual(engine.migrate(True)['failures'], 1)
+        self.assertIsNone(self.s.setting('migration_complete'))
+        self.assertEqual(engine.migrate(True)['failures'], 0)
+        self.assertEqual(len(api.writes), 2)
+        self.assertEqual(self.s.setting('migration_complete'), '1')
+
+    def test_rollback_restores_own_fields_and_preserves_employee_change(self):
+        doc = order(legacy='00123')
+        engine, api = self.engine([doc])
+        engine.migrate(True)
+        engine.process(doc['id'])
+        api.write(doc['id'], {c.COST: 777})
+        before = api.order(doc['id'])
+        preview = engine.rollback(False)
+        self.assertEqual(api.order(doc['id']), before)
+        self.assertEqual(preview['skipped_fields'], 1)
+        result = engine.rollback(True)
+        actual = c.values(api.order(doc['id']))
+        self.assertEqual(result['failures'], 0)
+        self.assertNotIn(c.TRACK, actual)
+        self.assertNotIn(c.STATUS, actual)
+        self.assertEqual(actual[c.COST], 777)
+        self.assertEqual(actual[c.LEGACY], '00123')
 
     def test_pagination_visits_every_page_and_rejects_truncation(self):
         api = c.API.__new__(c.API)

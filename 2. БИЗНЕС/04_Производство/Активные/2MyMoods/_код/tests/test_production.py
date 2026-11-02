@@ -734,6 +734,71 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual([self.ms.docs['supply'][key]['name'] for key in ids],
                          ['ПР-0009-01', 'ПР-0009-02', 'ПР-0009-03', 'ПР-0009-04'])
 
+    def test_number_timeout_recovers_the_same_reservation(self):
+        value, _ = self.setup_direct()
+        original = self.ms.request
+        first = [True]
+        def timeout_after_put(method, path, body):
+            result = original(method, path, body)
+            if first[0] and method == 'PUT' and path == '/entity/supply/' + value:
+                first[0] = False
+                raise Review('Нет подтверждения ответа')
+            return result
+        self.ms.request = timeout_after_put
+        with self.assertRaises(Review):
+            self.e.number_receipt(copy.deepcopy(self.ms.docs['supply'][value]))
+        self.e.number_receipt(copy.deepcopy(self.ms.docs['supply'][value]))
+        self.assertEqual(self.ms.docs['supply'][value]['name'], 'ПР-0009-01')
+        with self.e.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM receipt_numbers').fetchone()[0], 1)
+
+    def test_number_does_not_follow_changed_order_silently(self):
+        value, _ = self.setup_direct()
+        self.e.number_receipt(copy.deepcopy(self.ms.docs['supply'][value]))
+        doc = self.ms.docs['supply'][value]
+        doc['purchaseOrder'] = ref('purchaseorder', uid())
+        with self.assertRaisesRegex(Review, 'Заказ приёмки изменён'):
+            self.e.number_receipt(copy.deepcopy(doc))
+        self.assertEqual(doc['name'], 'ПР-0009-01')
+
+    def test_numbering_unposted_old_documents_does_not_repost_them(self):
+        value, _ = self.setup_direct()
+        self.e.process_supply(value)
+        self.ms.docs['supply'][value]['applicable'] = False
+        for doc in self.ms.docs['loss'].values():
+            doc.update(name='СП-3-1', applicable=False)
+        with self.e.db() as db:
+            for row in db.execute('SELECT key,body FROM operations').fetchall():
+                body = json.loads(row['body']); body['name'] = 'СП-3-1'
+                db.execute('UPDATE operations SET body=? WHERE key=?', (json.dumps(body), row['key']))
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.assertEqual(sorted(d['name'] for d in self.ms.docs['loss'].values()), ['СП-0009-01-01', 'СП-0009-01-02'])
+        self.assertTrue(all(not d['applicable'] for d in self.ms.docs['loss'].values()))
+        self.assertEqual(len(self.ms.created), 2)
+
+    def test_deleted_document_is_not_renamed(self):
+        value, _ = self.setup_direct()
+        doc = copy.deepcopy(self.ms.docs['supply'][value])
+        doc['deleted'] = '2026-11-02 10:00:00'
+        with self.assertRaisesRegex(Review, 'находится в корзине'):
+            self.e.rename_document('supply', doc, 'ПР-0009-01')
+        self.assertEqual(self.ms.docs['supply'][value]['name'], 'Поставка')
+
+    def test_worker_ignores_deleted_production_receipt(self):
+        value, cfg = self.setup_direct()
+        cfg.update(enabled=True, start_at='2026-11-01 00:00:00')
+        with patch.dict('os.environ', {'PRODUCTION_ALLOW_WRITES': '1'}):
+            self.e.set_config(cfg)
+        self.ms.docs['supply'][value].update(deleted='2026-11-02 10:00:00',created='2026-11-02 09:00:00')
+        self.e.enqueue('supply', value)
+        with self.e.db() as db: db.execute('UPDATE jobs SET due=0')
+        self.e.run_one()
+        with self.e.db() as db:
+            self.assertEqual(db.execute('SELECT status FROM jobs WHERE id=?', (value,)).fetchone()[0], 'ignored')
+        self.assertFalse(self.ms.created)
+        self.assertEqual(self.ms.docs['supply'][value]['name'], 'Поставка')
+
     def test_chain_numbers_skip_existing_moysklad_production_losses(self):
         loss = uid()
         self.ms.docs['loss'][loss] = {'id': loss, 'name': 'СП-27-1'}
