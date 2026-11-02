@@ -258,7 +258,7 @@ class Engine:
             row = db.execute("SELECT value FROM kv WHERE key='config'").fetchone()
             snapshots = {r['kind']: json.loads(r['body']) for r in db.execute(
                 "SELECT kind,body FROM catalogues WHERE kind IN ('counterparty','store')")}
-        cfg = json.loads(row[0]) if row else {'enabled': False, 'delay': 5, 'factories': [], 'states': {}}
+        cfg = json.loads(row[0]) if row else {'enabled': False, 'delay': 1, 'factories': [], 'states': {}}
         agents = snapshots.get('counterparty')
         if agents is None or any('tags' not in agent for agent in agents):
             return cfg
@@ -300,7 +300,7 @@ class Engine:
                 raise Review('Перед включением нужны дата старта, склад компании и статусы')
             if not config.get('reason_attribute') or not config.get('reason_production'):
                 raise Review('Не настроен справочник причин списания')
-        config['delay'] = max(3, min(60, int(config.get('delay', 5))))
+        config['delay'] = max(1, min(60, int(config.get('delay', 1))))
         for item in self.config().get('factories', []) if config.get('enabled') else []:
             for field in ('agent', 'store'):
                 if not ID.fullmatch(str(item.get(field, ''))):
@@ -481,8 +481,9 @@ class Engine:
             raise Review('Нужны тип документа и UUID')
         with self.db() as db:
             db.execute('''INSERT INTO jobs(kind,id,due,status,error) VALUES(?,?,?,'pending','')
-              ON CONFLICT(kind,id) DO UPDATE SET due=excluded.due,status='pending',error='' ''',
-                       (kind, value, time.time() + self.config().get('delay', 5)))
+              ON CONFLICT(kind,id) DO UPDATE SET due=CASE WHEN jobs.status='pending'
+              THEN MIN(jobs.due,excluded.due) ELSE excluded.due END,status='pending',error='' ''',
+                       (kind, value, time.time() + self.config().get('delay', 1)))
 
     def log(self, kind, value, message):
         with self.db() as db:
@@ -844,12 +845,10 @@ class Engine:
             if basis and kind == 'move' and ident(current.get('supply')) != basis:
                 raise Review('Автоматический документ не подтвердил связь с приёмкой')
             return current, positions
-        check, positions = verify()
         if not row or row['status'] != 'done':
-            # Сценарии МоегоСклада исполняются после ответа API. До зависимого
-            # списания повторно проверяем склад, проведение, состав и основание.
+            # Verify after asynchronous scenarios have run, before dependent actions.
             time.sleep(2)
-            check, positions = verify()
+        check, positions = verify()
         with self.db() as db:
             db.execute("UPDATE operations SET status='done',fingerprint=? WHERE key=?",
                        (fingerprint(check, positions), key))
@@ -1522,17 +1521,17 @@ class Engine:
                         else: self.process_order(value)
                         result = 'done'
                 with self.db() as db:
-                    db.execute('UPDATE jobs SET status=?,error=? WHERE kind=? AND id=?', (result, '', kind, value))
+                    db.execute("UPDATE jobs SET status=?,error=? WHERE kind=? AND id=? AND status='running'", (result, '', kind, value))
                 self.log(kind, value, result)
             except Exception as exc:
                 message = str(exc) if isinstance(exc, Review) else 'Внутренняя ошибка; требуется проверка сервера'
                 retry = isinstance(exc, Transient) and row['attempts'] < 8
                 with self.db() as db:
-                    db.execute('UPDATE jobs SET status=?,error=?,due=?,attempts=attempts+1 WHERE kind=? AND id=?',
+                    changed = db.execute("UPDATE jobs SET status=?,error=?,due=?,attempts=attempts+1 WHERE kind=? AND id=? AND status='running'",
                                ('pending' if retry else 'review', message,
-                                time.time() + min(600, 15 * 2 ** row['attempts']), kind, value))
+                                time.time() + min(600, 15 * 2 ** row['attempts']), kind, value)).rowcount
                 self.log(kind, value, message)
-                if not retry:
+                if not retry and changed:
                     self.mark_chain_review(kind, value, message)
             return True
         finally:
@@ -1559,11 +1558,16 @@ def worker(engine):
     while True:
         try:
             engine.start_catalogue_refresh()
-            if time.time() - last > 120:
+            # A received webhook has priority over the background reconciliation scan.
+            if engine.run_one():
+                continue
+            with engine.db() as db:
+                imminent = db.execute("SELECT 1 FROM jobs WHERE status='pending' AND due<=? LIMIT 1",
+                                      (time.time() + 1.5,)).fetchone()
+            if not imminent and time.time() - last > 120:
                 engine.reconcile()
                 last = time.time()
-            if not engine.run_one():
-                time.sleep(1)
+            time.sleep(.25)
         except Exception:
             time.sleep(5)
 

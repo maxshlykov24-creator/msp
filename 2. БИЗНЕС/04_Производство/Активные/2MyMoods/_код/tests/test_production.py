@@ -85,6 +85,22 @@ class ProductionTests(unittest.TestCase):
                 'sourceStore': ref('store', self.factory), 'targetStore': ref('store', self.company),
                 'positions': [{'assortment': ref('product', self.material), 'quantity': 3}]}
 
+    def test_duplicate_webhook_does_not_postpone_pending_job(self):
+        self.e.set_config({'enabled': False, 'delay': 1})
+        with patch('production.time.time', return_value=100):
+            self.e.enqueue('supply', self.product)
+        with patch('production.time.time', return_value=100.8):
+            self.e.enqueue('supply', self.product)
+        with self.e.db() as db:
+            row = db.execute('SELECT due,status FROM jobs').fetchone()
+            self.assertEqual(row['due'], 101)
+            self.assertEqual(row['status'], 'pending')
+            db.execute("UPDATE jobs SET status='done'")
+        with patch('production.time.time', return_value=200):
+            self.e.enqueue('supply', self.product)
+        with self.e.db() as db:
+            self.assertEqual(db.execute('SELECT due FROM jobs').fetchone()[0], 201)
+
     def test_analytics_cache_separates_stores_and_strips_query_from_id(self):
         calls = []
         def get(path, **params):
@@ -867,6 +883,37 @@ class ProductionTests(unittest.TestCase):
         self.e.process_order(order_id)
         self.assertEqual(self.ms.docs['purchaseorder'][order_id]['state'],
                          ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['Завершён']))
+
+    def test_event_during_processing_remains_pending(self):
+        sid, cfg = self.setup_chain()
+        cfg.update(enabled=True, start_at='2026-10-01 00:00:00', delay=1)
+        with patch.dict('os.environ', {'PRODUCTION_ALLOW_WRITES': '1'}):
+            self.e.set_config(cfg)
+        self.ms.docs['supply'][sid]['created'] = '2026-11-02 10:00:00'
+        self.e.enqueue('supply', sid)
+        with self.e.db() as db:
+            db.execute('UPDATE jobs SET due=0')
+        self.e.process_supply = lambda value: self.e.enqueue('supply', value)
+        self.assertTrue(self.e.run_one())
+        with self.e.db() as db:
+            self.assertEqual(db.execute('SELECT status FROM jobs WHERE id=?', (sid,)).fetchone()[0], 'pending')
+
+    def test_new_event_during_failed_processing_is_not_lost(self):
+        sid, cfg = self.setup_chain()
+        cfg.update(enabled=True, start_at='2026-10-01 00:00:00', delay=1)
+        with patch.dict('os.environ', {'PRODUCTION_ALLOW_WRITES': '1'}):
+            self.e.set_config(cfg)
+        self.ms.docs['supply'][sid]['created'] = '2026-11-02 10:00:00'
+        self.e.enqueue('supply', sid)
+        with self.e.db() as db:
+            db.execute('UPDATE jobs SET due=0')
+        def changed_during_failure(value):
+            self.e.enqueue('supply', value)
+            raise Review('Ошибка предыдущего события')
+        self.e.process_supply = changed_during_failure
+        self.assertTrue(self.e.run_one())
+        with self.e.db() as db:
+            self.assertEqual(db.execute('SELECT status FROM jobs WHERE id=?', (sid,)).fetchone()[0], 'pending')
 
     def test_worker_ignores_prelaunch_documents(self):
         sid, cfg = self.setup_chain()
