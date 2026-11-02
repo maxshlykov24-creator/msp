@@ -551,7 +551,7 @@ class ProductionTests(unittest.TestCase):
             'agent': ref('counterparty', agent), 'purchaseOrder': ref('purchaseorder', order_id),
             'positions': [{'assortment': ref('product', self.product), 'quantity': 10, 'price': 10000}]}
         self.ms.docs['purchaseorder'][order_id] = {
-            'id': order_id, 'applicable': True, 'agent': ref('counterparty', agent),
+            'id': order_id, 'name': '0009', 'applicable': True, 'agent': ref('counterparty', agent),
             'supplies': [ref('supply', supply_id)],
             'organization': ref('organization', self.org),
             'state': ref('purchaseorder/metadata/states', cfg['states']['purchaseorder']['В работе']),
@@ -666,6 +666,73 @@ class ProductionTests(unittest.TestCase):
         self.e.process_supply(value)
         self.assertEqual(len(self.ms.created), 2)
         self.e.process_order(chain['source']['purchaseOrder']['meta']['href'].split('/')[-1])
+
+    def test_order_receipt_and_two_loss_numbers(self):
+        value, _ = self.setup_direct()
+        self.e.process_supply(value)
+        self.assertEqual(self.ms.docs['supply'][value]['name'], 'ПР-0009-01')
+        self.assertEqual([d['name'] for _, d in self.ms.created], ['СП-0009-01-01', 'СП-0009-01-02'])
+        self.e.process_supply(value)
+        self.assertEqual(len(self.ms.created), 2)
+
+    def test_single_loss_has_no_stage_suffix(self):
+        value, _ = self.setup_direct()
+        recipe = self.e.recipes()[0]
+        recipe['stages'] = recipe['stages'][:1]
+        self.e.save_recipe(recipe)
+        self.e.process_supply(value)
+        self.assertEqual([d['name'] for _, d in self.ms.created], ['СП-0009-01'])
+
+    def test_receipt_order_not_webhook_order_and_restart(self):
+        value, _ = self.setup_direct()
+        second = uid()
+        first = self.ms.docs['supply'][value]
+        first['created'] = '2026-11-02 10:00:00'
+        self.ms.docs['supply'][second] = dict(copy.deepcopy(first), id=second, created='2026-11-02 10:01:00')
+        order = self.ms.docs['purchaseorder'][first['purchaseOrder']['meta']['href'].split('/')[-1]]
+        order['supplies'].append(ref('supply', second))
+        self.e.number_receipt(self.ms.docs['supply'][second])
+        self.assertEqual(self.ms.docs['supply'][second]['name'], 'ПР-0009-02')
+        restarted = Engine(self.tmp.name, self.ms)
+        restarted.number_receipt(first)
+        self.assertEqual(self.ms.docs['supply'][value]['name'], 'ПР-0009-01')
+        third = uid()
+        self.ms.docs['supply'][third] = dict(copy.deepcopy(first), id=third)
+        order['supplies'].append(ref('supply', third))
+        restarted.number_receipt(self.ms.docs['supply'][third])
+        self.assertEqual(self.ms.docs['supply'][third]['name'], 'ПР-0009-03')
+
+    def test_number_assigned_even_if_materials_missing(self):
+        value, _ = self.setup_direct()
+        self.ms.stock = {}
+        with self.assertRaises(Review):
+            self.e.process_supply(value)
+        self.assertEqual(self.ms.docs['supply'][value]['name'], 'ПР-0009-01')
+        self.assertFalse(self.ms.created)
+
+    def test_old_losses_are_renamed_without_reposting_or_changing_stock(self):
+        value, _ = self.setup_direct()
+        self.e.process_supply(value)
+        previous = copy.deepcopy(self.ms.docs['loss'])
+        for doc in self.ms.docs['loss'].values():
+            doc['name'] = 'СП-3-1'
+        self.e.process_supply(value)
+        self.assertEqual(self.ms.docs['loss'], previous)
+        self.assertEqual(len(self.ms.created), 2)
+
+    def test_concurrent_receipt_numbers_are_unique(self):
+        from concurrent.futures import ThreadPoolExecutor
+        value, _ = self.setup_direct()
+        first = self.ms.docs['supply'][value]
+        ids = [value] + [uid() for _ in range(3)]
+        order_id = first['purchaseOrder']['meta']['href'].split('/')[-1]
+        for i, key in enumerate(ids):
+            self.ms.docs['supply'][key] = dict(copy.deepcopy(first), id=key, created=f'2026-11-02 10:00:0{i}')
+        self.ms.docs['purchaseorder'][order_id]['supplies'] = [ref('supply', key) for key in ids]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda key: self.e.number_receipt(copy.deepcopy(self.ms.docs['supply'][key])), reversed(ids)))
+        self.assertEqual([self.ms.docs['supply'][key]['name'] for key in ids],
+                         ['ПР-0009-01', 'ПР-0009-02', 'ПР-0009-03', 'ПР-0009-04'])
 
     def test_chain_numbers_skip_existing_moysklad_production_losses(self):
         loss = uid()

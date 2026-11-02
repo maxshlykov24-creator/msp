@@ -232,6 +232,9 @@ class Engine:
             CREATE TABLE IF NOT EXISTS chains(id TEXT PRIMARY KEY,number INTEGER UNIQUE,body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS names(kind TEXT,id TEXT,number INTEGER,original TEXT,
               PRIMARY KEY(kind,id),UNIQUE(kind,number));
+            CREATE TABLE IF NOT EXISTS receipt_numbers(
+              id TEXT PRIMARY KEY,order_id TEXT NOT NULL,sequence INTEGER NOT NULL,label TEXT NOT NULL UNIQUE,
+              UNIQUE(order_id,sequence));
             CREATE TABLE IF NOT EXISTS audit(at REAL,kind TEXT,id TEXT,message TEXT);
             CREATE TABLE IF NOT EXISTS supplier_jobs(id TEXT PRIMARY KEY,status TEXT,due REAL,revision INTEGER DEFAULT 1,error TEXT DEFAULT '',attempts INTEGER DEFAULT 0);
             CREATE TABLE IF NOT EXISTS supplier_history(at REAL,id TEXT,before TEXT,after TEXT);
@@ -1222,9 +1225,62 @@ class Engine:
             raise Review('Изменились другие поля списания ' + current.get('name', value))
         return updated
 
+    def rename_document(self, kind, doc, name):
+        if doc.get('name') == name:
+            return doc
+        self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'], {'name': name})
+        saved = self.ms.get('/entity/' + kind + '/' + doc['id'])
+        if saved.get('name') != name:
+            raise Review('Не удалось сохранить номер ' + name)
+        if fingerprint(saved, []) != fingerprint(doc, []):
+            raise Review('Документ изменился во время присвоения номера ' + name)
+        return saved
+
+    def number_receipt(self, doc):
+        """Reserve once per order, including receipts whose webhook has not arrived yet."""
+        order_id = ident(doc.get('purchaseOrder'))
+        if not order_id:
+            raise Review('Для номера приёмки укажи заказ поставщику')
+        with self.db() as db:
+            row = db.execute('SELECT * FROM receipt_numbers WHERE id=?', (doc['id'],)).fetchone()
+        if row:
+            if row['order_id'] != order_id:
+                raise Review('Заказ приёмки изменён после присвоения номера; требуется проверка')
+            return self.rename_document('supply', doc, row['label']), row['label'][3:]
+        order = self.check_production_order(order_id, doc)
+        order_name = str(order.get('name') or '').strip()
+        if not order_name:
+            raise Review('У заказа поставщику не указан номер')
+        links = order.get('supplies', [])
+        if not isinstance(links, list):
+            raise Review('Не удалось прочитать приёмки заказа для нумерации')
+        ids = {ident(link) for link in links} | {doc['id']}
+        if any(not ID.fullmatch(key) for key in ids):
+            raise Review('Некорректная связь приёмки в заказе')
+        with self.db() as db:
+            known = {r['id'] for r in db.execute('SELECT id FROM receipt_numbers WHERE order_id=?', (order_id,))}
+        candidates = [doc if key == doc['id'] else self.ms.get('/entity/supply/' + key) for key in ids - known]
+        if any(ident(d.get('purchaseOrder')) != order_id for d in candidates):
+            raise Review('Приёмка относится к другому заказу; номер не присвоен')
+        candidates.sort(key=lambda d: (d.get('created') or d.get('moment') or '', d['id']))
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            sequence = db.execute('SELECT COALESCE(MAX(sequence),0) FROM receipt_numbers WHERE order_id=?', (order_id,)).fetchone()[0]
+            for candidate in candidates:
+                if db.execute('SELECT 1 FROM receipt_numbers WHERE id=?', (candidate['id'],)).fetchone():
+                    continue
+                sequence += 1
+                label = f'ПР-{order_name}-{sequence:02d}'
+                if db.execute('SELECT 1 FROM receipt_numbers WHERE label=?', (label,)).fetchone():
+                    raise Review('Номер заказа поставщику повторяется; проверь номер ' + order_name)
+                db.execute('INSERT INTO receipt_numbers VALUES(?,?,?,?)', (candidate['id'], order_id, sequence, label))
+            label = db.execute('SELECT label FROM receipt_numbers WHERE id=?', (doc['id'],)).fetchone()[0]
+        return self.rename_document('supply', doc, label), label[3:]
+
     def process_direct_supply(self, value):
         chain, number = self.chain(value)
         current = self.ms.get('/entity/supply/' + value)
+        current, receipt_number = self.number_receipt(current)
         positions = self.ms.positions('supply', value)
         force = ident(current.get('state')) == self.config()['states']['supply']['Завершена']
         if chain:
@@ -1269,7 +1325,7 @@ class Engine:
             if attrs.get(field['id']) and attrs[field['id']] != url:
                 raise Review('Ссылка на списание в приёмке изменена вручную; требуется сверка')
             loss = self.execute(f'{value}/direct/{group["store"]}/loss', 'loss', {
-                'name': f'СП-{number}-' + str(index + 1), 'organization': chain['source']['organization'],
+                'name': 'СП-' + receipt_number + (f'-{index + 1:02d}' if len(chain['material_groups']) > 1 else ''), 'organization': chain['source']['organization'],
                 'applicable': True, 'moment': max(now(), chain['source']['moment']),
                 'store': ref('store', group['store']), 'positions': group['positions'],
                 'attributes': [{'meta': {'href': BASE + '/entity/loss/metadata/attributes/' + cfg['reason_attribute'],
@@ -1279,6 +1335,16 @@ class Engine:
                                          'type': 'attributemetadata', 'mediaType': 'application/json'},
                                 'value': 'https://online.moysklad.ru/app/#supply/edit?id=' + value}]},
                 allow_negative=chain.get('allow_negative', False))
+            loss_name = 'СП-' + receipt_number + (f'-{index + 1:02d}' if len(chain['material_groups']) > 1 else '')
+            loss = self.rename_document('loss', loss, loss_name)
+            # Old/prepared operations also recover with the new name, without another POST.
+            with self.db() as db:
+                key = f'{value}/direct/{group["store"]}/loss'
+                operation = db.execute('SELECT body FROM operations WHERE key=?', (key,)).fetchone()
+                body = json.loads(operation['body'])
+                if body.get('name') != loss_name:
+                    body['name'] = loss_name
+                    db.execute('UPDATE operations SET body=? WHERE key=?', (json.dumps(body), key))
             chain['losses'][group['store']] = loss['id']
             self.save_chain(value, chain, number)
             self.loss_receipt_link(loss['id'], value, current=loss)

@@ -138,6 +138,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(503, {"error": "Не удалось получить статус обновления"})
 
     def do_GET(self) -> None:
+        import cdek_sync
+        if cdek_sync.route(self, 'GET'):
+            return
         import production
         if production.route(self, 'GET'):
             return
@@ -173,6 +176,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, b"not found", "text/plain; charset=utf-8")
 
     def do_POST(self) -> None:
+        import cdek_sync
+        if cdek_sync.route(self, 'POST'):
+            return
         import production
         if production.route(self, 'POST'):
             return

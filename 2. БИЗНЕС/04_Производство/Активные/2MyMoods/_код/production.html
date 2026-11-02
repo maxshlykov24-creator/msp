@@ -166,6 +166,8 @@ html.night #editor .editor-footer #validation:not(:empty){background:#392423;col
 #recipes .size-chip.not-configured{background:transparent;border:1px dashed #979b98;color:var(--muted);font-weight:400}
 html.night #recipes .size-chip{background:#494740;border-color:#716e65}
 html.night #recipes .size-chip.not-configured{background:transparent;border-color:#8b877d;color:var(--muted)}
+#size-tooltip{position:fixed;z-index:1000;width:max-content;max-width:min(330px,calc(100vw - 24px));padding:12px 14px;background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:0 8px 24px #0002;pointer-events:none;font-size:12px;line-height:1.4}
+#size-tooltip[hidden]{display:none}#size-tooltip .tip-heading{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:7px}#size-tooltip .tip-stage{color:var(--muted);font-size:11px;margin:7px 0 3px}#size-tooltip .tip-line{display:flex;gap:18px;justify-content:space-between;padding:3px 0}#size-tooltip .tip-name{min-width:0;overflow-wrap:anywhere}#size-tooltip .tip-quantity{white-space:nowrap;font-weight:600}#size-tooltip .tip-empty{color:var(--muted)}
 
 #supplier-issues:not([hidden]){margin:20px 0;padding:14px 16px;border:1px solid #ca8c87;background:#fff1ef;color:#842d29;font-size:13px}#supplier-issues p{margin:4px 0}#supplier-issues button{font-size:12px;padding:5px 9px;margin-left:8px}html.night #supplier-issues:not([hidden]){background:#392423;color:#ffc6c0;border-color:#85504b}
 </style>
@@ -324,4 +326,28 @@ $('confirm-ok').onclick=()=>answer(true);$('confirm-cancel').onclick=()=>answer(
 $('history-open').onclick=()=>{const factories=data.config.factories||[];const formatChange=change=>{let value=change;for(const f of factories)if(f.id)value=value.replaceAll(f.id,f.name||'Фабрика');return value};const events=siblings.flatMap(r=>(r.history||[]).map(h=>({...h,size:r.size||'Без размера'}))).sort((a,b)=>b.at.localeCompare(a.at)||b.version-a.version);$('history').innerHTML=events.length?events.map(h=>`<article class="history-event"><div class="history-meta"><span class="history-size">${esc(h.size)}</span><time>${esc(h.at)}</time><span>${esc(h.actor||'Автор не сохранён')}</span></div><ul class="history-list">${(h.changes||[]).map(c=>`<li>${esc(formatChange(c))}</li>`).join('')}</ul></article>`).join(''):'<p class="muted">Изменений пока нет</p>';$('history-dialog').showModal()};$('history-close').onclick=()=>$('history-dialog').close();
 $('norm-status').onchange=renderRecipes;$('norm-category').onchange=renderRecipes;$('norm-color').onchange=renderRecipes;
 document.querySelectorAll('dialog').forEach(d=>d.addEventListener('click',e=>{const r=d.getBoundingClientRect();if(e.target!==d||e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom)return;if(d.id==='editor')closeEditor();else if(d.id==='confirm-dialog')answer(false);else d.close()}));
+</script>
+<div id="size-tooltip" role="tooltip" hidden></div>
+<script>
+function hideSizeTooltip(){const tip=$('size-tooltip');tip.hidden=true;tip.textContent=''}
+function showSizeTooltip(chip){
+  const recipe=normRows().find(r=>r.id===chip.dataset.sizeId);if(!recipe)return;
+  const tip=$('size-tooltip'),stages=(recipe.stages||[]).filter(st=>(st.materials||[]).length);let contents='';
+  for(const [i,stage] of stages.entries()){
+    if(stages.length>1)contents+='<div class="tip-stage">'+esc(stage.name||'Этап '+(i+1))+'</div>';
+    for(const m of stage.materials){
+      const quantity=Number(m.input_quantity??m.quantity??0),unit=unitName(m.input_unit||m.unit||m.source_unit||'');
+      const label=m.id?(m.name||'Материал'):'Материал не выбран';
+      const amount=Number.isFinite(quantity)&&quantity>0?Number(quantity.toFixed(6)).toLocaleString('ru-RU')+(unit?' '+unit:''):'Расход не указан';
+      contents+='<div class="tip-line"><span class="tip-name">'+esc(label)+'</span><span class="tip-quantity">'+esc(amount)+'</span></div>';
+    }
+  }
+  tip.innerHTML='<div class="tip-heading">Расход на изделие</div>'+(contents||'<div class="tip-empty">'+(recipe.unconfigured?'Норма ещё не заполнена':'Материалы не указаны')+'</div>');
+  tip.hidden=false;const r=chip.getBoundingClientRect(),t=tip.getBoundingClientRect();
+  tip.style.left=Math.max(12,Math.min(r.left,window.innerWidth-t.width-12))+'px';
+  tip.style.top=(r.top-t.height-6>=12?r.top-t.height-6:Math.min(window.innerHeight-t.height-12,r.bottom+6))+'px';
+}
+$('recipes').addEventListener('pointerover',e=>{if(e.pointerType==='touch')return;const chip=e.target.closest('[data-size-id]');if(chip&&!chip.contains(e.relatedTarget))showSizeTooltip(chip)});
+$('recipes').addEventListener('pointerout',e=>{const chip=e.target.closest('[data-size-id]');if(chip&&!chip.contains(e.relatedTarget))hideSizeTooltip()});
+document.addEventListener('scroll',hideSizeTooltip,true);window.addEventListener('resize',hideSizeTooltip);$('recipes').addEventListener('click',hideSizeTooltip);
 </script></html>
