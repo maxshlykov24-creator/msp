@@ -340,8 +340,10 @@ class Engine:
         units = {'г': ('mass', 1), 'грамм': ('mass', 1), 'гр': ('mass', 1),
                  'кг': ('mass', 1000), 'м': ('length', 1), 'метр': ('length', 1),
                  'см': ('length', .01), 'шт': ('piece', 1), 'шт.': ('piece', 1)}
-        for stage in recipe.get('stages', []):
+        for stage_index, stage in enumerate(recipe.get('stages', []), 1):
             for material in stage.get('materials', []):
+                if recipe.get('approved') and not ID.fullmatch(str(material.get('id') or '')):
+                    raise Review(f'Этап {stage_index}: выбери материал или убери пустую строку')
                 if 'input_quantity' not in material:
                     continue
                 source = str(material.get('input_unit', '')).lower().strip()
@@ -351,23 +353,25 @@ class Engine:
                 elif source in units and target in units and units[source][0] == units[target][0]:
                     factor = units[source][1] / units[target][1]
                 elif recipe.get('approved'):
-                    raise Review('Единица нормы не соответствует единице карточки материала')
+                    raise Review(f'Этап {stage_index}: единица материала {material.get("name") or "без названия"} не соответствует единице его карточки')
                 else:
                     continue
                 material['quantity'] = float(dec(material['input_quantity']) * dec(factor))
         if recipe.get('approved'):
             if not ID.fullmatch(recipe.get('assortment_id', '')) or not recipe.get('stages'):
                 raise Review('Для утверждения выбери изделие и этапы')
-            for stage in recipe['stages']:
-                if not stage.get('factory') or not stage.get('materials'):
-                    raise Review('У каждого этапа нужны фабрика и материалы')
-                for m in stage['materials']:
-                    if not ID.fullmatch(m.get('id', '')) or dec(m.get('quantity', 0)) <= 0:
-                        raise Review('Выбери материал и положительную норму в единицах его карточки')
+            for stage_index, stage in enumerate(recipe['stages'], 1):
+                if not stage.get('factory'):
+                    raise Review(f'Этап {stage_index}: выбери фабрику')
+                for m in stage.get('materials', []):
+                    if not ID.fullmatch(str(m.get('id') or '')):
+                        raise Review(f'Этап {stage_index}: выбери материал или убери пустую строку')
+                    if dec(m.get('quantity', 0)) <= 0:
+                        raise Review(f'Этап {stage_index}: укажи расход материала {m.get("name") or "без названия"} больше нуля')
                     if m.get('type', 'product') not in ('product', 'variant'):
-                        raise Review('Материалом должен быть товар или модификация')
+                        raise Review(f'Этап {stage_index}: выбери товар или модификацию материала')
                 if dec(stage.get('work_cost', 0)) < 0:
-                    raise Review('Стоимость работы не может быть отрицательной')
+                    raise Review(f'Этап {stage_index}: стоимость работы не может быть отрицательной')
             if recipe.get('editor_schema') == 2:
                 packs = [m for stage in recipe['stages'] for m in stage['materials'] if m.get('role') == 'packaging']
                 if len(packs) > 1:
@@ -722,10 +726,10 @@ class Engine:
                 factories = {f['id']: f for f in cfg.get('factories', [])}
                 total, breakdown = Decimal(0), []
                 for stage in stages:
-                    if 'work_cost' not in stage or dec(stage['work_cost']) < 0 or not stage.get('materials'):
-                        raise Review('Не заполнены материалы или стоимость работы этапа')
+                    if 'work_cost' not in stage or dec(stage['work_cost']) < 0:
+                        raise Review('Не заполнена стоимость работы этапа')
                     total += dec(stage['work_cost'])
-                    for mat in stage['materials']:
+                    for mat in stage.get('materials', []):
                         mid, kind = mat.get('id', ''), mat.get('type', 'product')
                         ref(kind, mid)
                         if dec(mat.get('quantity', 0)) <= 0:
@@ -899,8 +903,8 @@ class Engine:
                 raise Review('Изготовитель приёмки не совпал с маршрутом изделия')
             for stage in recipe['stages']:
                 factory = factories.get(stage['factory'])
-                if not factory or not ID.fullmatch(str(factory.get('store', ''))) or factory.get('store_ok') is False:
-                    raise Review('Проверь склад фабрики этапа производства в МоемСкладе')
+                if not factory or (stage.get('materials') and (not ID.fullmatch(str(factory.get('store', ''))) or factory.get('store_ok') is False)):
+                    raise Review('Проверь фабрику и склад этапа производства в МоемСкладе')
             lines.append({'assortment': row['assortment'], 'quantity': row['quantity'],
                           'recipe': copy.deepcopy(recipe)})
         return {'source': doc, 'fingerprint': fingerprint(doc, positions), 'lines': lines,
@@ -999,6 +1003,8 @@ class Engine:
         groups = {}
         for line in chain['lines']:
             for index, stage in enumerate(line['recipe']['stages']):
+                if not stage.get('materials'):
+                    continue
                 factory = chain['factories'][stage['factory']]
                 store = factory['store']
                 group = groups.setdefault(store, {'store': store, 'factories': [], 'stages': [], 'materials': {}})
@@ -1049,7 +1055,8 @@ class Engine:
     @staticmethod
     def completion_note(chain):
         snapshot = chain.get('cost_snapshot', {})
-        note = 'Материалы списаны в минус.' if snapshot.get('stock_problems') else 'Материалы списаны.'
+        note = ('Материалы не указаны.' if not chain.get('material_groups') else
+                'Материалы списаны в минус.' if snapshot.get('stock_problems') else 'Материалы списаны.')
         if snapshot.get('total') is None:
             note += ' Себестоимость пока не рассчитана.'
         return note
@@ -1144,9 +1151,7 @@ class Engine:
                 return
             chain = self.plan_supply(value)
             groups = self.direct_material_groups(chain)
-            if not groups:
-                raise Review('Не заполнены материалы производства')
-            fields = self.receipt_link_fields(max(2, len(groups)))
+            fields = self.receipt_link_fields(max(2, len(groups))) if groups else []
             attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
             if any(attrs.get(f['id']) for f in fields):
                 raise Review('В приёмке уже указаны списания; проверь перед автоматической обработкой')
@@ -1156,7 +1161,7 @@ class Engine:
                          link_fields=fields[:len(groups)], cost_snapshot=cost, losses={}, complete=False)
             number = self.save_chain(value, chain)
         cfg = self.config()
-        if not ID.fullmatch(cfg.get('loss_receipt_attribute', '')):
+        if chain['material_groups'] and not ID.fullmatch(cfg.get('loss_receipt_attribute', '')):
             raise Review('Не настроено поле приёмки в списании')
         attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
         expected_links = []

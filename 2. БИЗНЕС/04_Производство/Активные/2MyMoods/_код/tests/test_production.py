@@ -218,9 +218,9 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(r['stages'][0]['materials'][0]['quantity'], .25)
 
     def test_norm_rejects_incompatible_units(self):
-        with self.assertRaisesRegex(Review, 'Единица'):
+        with self.assertRaisesRegex(Review, 'Этап 1: единица материала'):
             self.e.save_recipe({'approved': True, 'stages': [{'materials': [
-                {'unit': 'м', 'input_unit': 'г', 'input_quantity': 250}]}]})
+                {'id': self.material, 'name': 'Ткань', 'unit': 'м', 'input_unit': 'г', 'input_quantity': 250}]}]})
 
     def test_norm_duplicate_product_is_rejected(self):
         self.e.save_recipe({'name': 'First', 'assortment_id': self.product})
@@ -572,6 +572,44 @@ class ProductionTests(unittest.TestCase):
         self.e.material_fifo_layers = lambda *args: [dict(self.fifo_layer(100, 560), store=ref('store', f['store']))
                                                     for f in cfg['factories']]
         return value, cfg
+
+    def test_empty_material_row_identifies_stage(self):
+        recipe = {'assortment_id': self.product, 'approved': True, 'stages': [
+            {'factory': self.factory, 'materials': []},
+            {'factory': self.factory, 'materials': [{'input_quantity': 0}]}]}
+        with self.assertRaisesRegex(Review, 'Этап 2: выбери материал'):
+            self.e.save_recipe(recipe)
+
+    def test_work_only_receipt_completes_without_loss_and_costs_work(self):
+        value, cfg = self.setup_direct()
+        recipe = self.e.recipes()[0]
+        for stage, cost in zip(recipe['stages'], [100, 50]):
+            stage['materials'] = []
+            stage['work_cost'] = cost
+        self.e.save_recipe(recipe)
+        self.assertEqual(self.e.production_costs()[self.product]['cost'], 150)
+        self.e.process_supply(value)
+        chain, _ = self.e.chain(value)
+        self.assertTrue(chain['complete'])
+        self.assertEqual(chain['cost_snapshot']['total'], 1500)
+        self.assertEqual(chain['material_groups'], [])
+        self.assertEqual(self.ms.created, [])
+        self.assertEqual(self.ms.docs['supply'][value]['state'], ref('supply/metadata/states', cfg['states']['supply']['Завершена']))
+        self.e.process_supply(value)
+        self.assertEqual(self.ms.created, [])
+
+    def test_material_free_stage_does_not_create_empty_loss(self):
+        value, cfg = self.setup_direct()
+        recipe = self.e.recipes()[0]
+        recipe['stages'][0]['materials'] = []
+        recipe['stages'][0]['work_cost'] = 100
+        recipe['stages'][1]['work_cost'] = 50
+        self.e.save_recipe(recipe)
+        self.e.process_supply(value)
+        chain, _ = self.e.chain(value)
+        self.assertEqual(len(self.ms.created), 1)
+        self.assertEqual(self.ms.created[0][1]['store'], ref('store', cfg['factories'][1]['store']))
+        self.assertAlmostEqual(chain['cost_snapshot']['total'], 1505.6)
 
     def test_direct_receipt_two_losses_links_no_moves_idempotent(self):
         value, cfg = self.setup_direct()
