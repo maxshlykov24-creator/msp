@@ -601,6 +601,52 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(self.ms.docs['supply'][production]['name'], '9999')
         self.assertEqual(self.ms.docs['supply'][tracked]['name'], '8888')
 
+    def test_unlinked_receipt_with_production_name_and_factory_uses_plain_number(self):
+        _, cfg = self.setup_direct()
+        value = uid()
+        doc = {'id': value, 'name': 'ПР-0001-02', 'agent': ref('counterparty', cfg['factories'][0]['agent']),
+               'applicable': False, 'positions': []}
+        self.ms.docs['supply'][value] = doc
+        self.assertFalse(self.e.is_production_document('supply', doc))
+        self.e.number_other('supply', doc)
+        self.assertEqual(doc['name'], '1')
+        self.assertNotIn('state', doc)
+        self.assertFalse(self.e.chain(value)[0])
+
+    def test_tracked_receipt_remains_production_when_order_removed(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        doc = self.ms.docs['supply'][value]
+        doc.pop('purchaseOrder')
+        self.assertTrue(self.e.is_production_document('supply', doc))
+        with self.assertRaisesRegex(Review, 'Производственная приёмка'):
+            self.e.number_other('supply', doc)
+
+    def test_project_is_added_to_generated_losses_and_existing_document(self):
+        value, cfg = self.setup_direct()
+        cfg['production_project'] = uid()
+        self.e.set_config(cfg)
+        self.e.process_supply(value)
+        self.assertTrue(self.ms.created)
+        for kind, doc in self.ms.created:
+            self.assertEqual(ident(doc['project']), cfg['production_project'])
+        doc = self.ms.docs['supply'][value]
+        before = fingerprint(doc, self.ms.positions('supply', value))
+        result = self.e.stamp_production_project('supply', doc)
+        self.assertEqual(ident(result['project']), cfg['production_project'])
+        self.assertEqual(fingerprint(result, self.ms.positions('supply', value)), before)
+
+    def test_project_scope_includes_factory_transfers_but_excludes_unlinked_receipt(self):
+        value, cfg = self.setup_direct()
+        receipt = self.ms.docs['supply'][value]
+        self.assertTrue(self.e.needs_production_project('supply', receipt))
+        ordinary = dict(receipt, id=uid(), name='ПР-0001-02')
+        ordinary.pop('purchaseOrder')
+        self.assertFalse(self.e.needs_production_project('supply', ordinary))
+        self.assertTrue(self.e.needs_production_project('move', {'id': uid(),
+            'sourceStore': ref('store', cfg['factories'][0]['store'])}))
+        self.assertFalse(self.e.needs_production_project('loss', {'id': uid(), 'store': ref('store', uid())}))
+
     def test_ordinary_loss_ignores_numeric_production_and_prefixes(self):
         old, prod, tracked, labeled, new = [uid() for _ in range(5)]
         self.ms.docs['loss'] = {old: {'id': old, 'name': '15'},

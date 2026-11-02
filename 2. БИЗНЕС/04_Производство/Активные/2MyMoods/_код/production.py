@@ -927,6 +927,8 @@ class Engine:
             else:
                 payload = copy.deepcopy(payload)
                 cfg = self.config()
+                if ID.fullmatch(cfg.get('production_project', '')):
+                    payload['project'] = ref('project', cfg['production_project'])
                 if cfg.get('operation_attributes', {}).get(kind):
                     label = ('Изделия на доработку' if '/out/' in key else
                              'Возврат с доработки' if '/return/' in key else
@@ -956,6 +958,7 @@ class Engine:
                     raise Review('API не подтвердил основание приёмки для перемещения')
                 payload = dict(template, **payload)
             doc = self.ms.request('POST', '/entity/' + kind, payload)
+        doc = self.stamp_production_project(kind, doc)
         # Сохраняем ID даже при последующем отказе проверки: документ уже существует.
         with self.db() as db:
             db.execute("UPDATE operations SET doc_id=? WHERE key=?", (doc['id'], key))
@@ -1746,10 +1749,34 @@ class Engine:
 
     def is_production_document(self, kind, doc, scope=None):
         ids, agents = scope if scope is not None else self.production_number_scope(kind)
-        return (doc['id'] in ids or doc.get('externalCode', '').startswith('2my-prod-')
-                or bool(RESERVED.match(doc.get('name', '')))
-                or bool(re.match(r'^(?:ПР|СП|МТ|ВШ)-', doc.get('name', '')))
-                or kind == 'supply' and ident(doc.get('agent')) in agents)
+        tracked = doc['id'] in ids or doc.get('externalCode', '').startswith('2my-prod-')
+        if kind == 'supply':
+            # A copied production number or a factory alone is not an order link.
+            # Tracked receipts stay protected if somebody removes their order.
+            return tracked or bool(ident(doc.get('purchaseOrder')) and (
+                ident(doc.get('agent')) in agents or re.match(r'^ПР-', doc.get('name', ''))))
+        return (tracked or bool(RESERVED.match(doc.get('name', '')))
+                or bool(re.match(r'^(?:ПР|СП|МТ|ВШ)-', doc.get('name', ''))))
+
+    def needs_production_project(self, kind, doc):
+        if kind == 'supply':
+            return self.is_production_document(kind, doc)
+        factories = self.config().get('factories', [])
+        if kind == 'purchaseorder':
+            return ident(doc.get('agent')) in {f.get('agent') for f in factories}
+        stores = {f.get('store') for f in factories} - {None, ''}
+        return self.is_production_document(kind, doc) or any(
+            ident(doc.get(field)) in stores for field in ('store', 'sourceStore', 'targetStore'))
+
+    def stamp_production_project(self, kind, doc):
+        project = self.config().get('production_project', '')
+        if not ID.fullmatch(project) or ident(doc.get('project')) == project or doc.get('deleted'):
+            return doc
+        updated = self.ms.request('PUT', '/entity/' + kind + '/' + doc['id'],
+                                  {'project': ref('project', project)})
+        if ident(updated.get('project')) != project:
+            raise Review('Не удалось указать проект ПРОИЗВОДСТВО в документе ' + doc.get('name', doc['id']))
+        return updated
 
     def number_other(self, kind, doc):
         if kind not in ('supply', 'move', 'loss') or doc.get('deleted'):
@@ -1879,6 +1906,8 @@ class Engine:
                     if kind == 'purchaseorder' and ident(doc.get('agent')) not in {x['agent'] for x in factories}:
                         result = 'ignored'
                     else:
+                        if self.needs_production_project(kind, doc):
+                            doc = self.stamp_production_project(kind, doc)
                         if kind == 'supply':
                             if production:
                                 self.process_supply(value)
