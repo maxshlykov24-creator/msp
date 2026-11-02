@@ -52,6 +52,13 @@ def setup_ms(engine):
                                  'type': 'customentitymetadata', 'mediaType': 'application/json'}})
     config.update(reason_dictionary=did, reason_attribute=attr['id'],
                   reason_production=values[REASONS[0]]['id'])
+    receipt_fields = [a for a in ms.rows('/entity/loss/metadata/attributes')
+                      if a['name'].strip().casefold().replace('ё', 'е') == 'приемка']
+    if len(receipt_fields) > 1 or receipt_fields and receipt_fields[0].get('type') != 'link':
+        raise Review('Проверь поле Приёмка в списании: нужен единственный тип Ссылка')
+    receipt_field = receipt_fields[0] if receipt_fields else ms.request(
+        'POST', '/entity/loss/metadata/attributes', {'name': 'Приёмка', 'type': 'link', 'required': False})
+    config['loss_receipt_attribute'] = receipt_field['id']
     operation_labels = ['Материалы на производство', 'Расход материалов',
                         'Изделия на доработку', 'Возврат с доработки']
     target = [d for d in dictionaries if d.get('name') == 'Операции производства 2MY']

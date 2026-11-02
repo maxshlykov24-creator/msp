@@ -1081,6 +1081,43 @@ class Engine:
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO kv VALUES(?,?)', (key, json.dumps(note, ensure_ascii=False)))
 
+    def loss_receipt_link(self, value, receipt_id, current=None):
+        """Attach a native clickable field without touching employee comments or stock."""
+        field_id = self.config().get('loss_receipt_attribute', '')
+        if not ID.fullmatch(field_id):
+            raise Review('Не настроено поле приёмки в списании')
+        url = 'https://online.moysklad.ru/app/#supply/edit?id=' + receipt_id
+        current = current or self.ms.get('/entity/loss/' + value)
+        attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
+        if attrs.get(field_id) not in (None, '', url):
+            raise Review('В списании ' + current.get('name', value) + ' указана другая приёмка')
+        description = current.get('description') or ''
+        # Strip only our old exact first line; retain any independent employee text.
+        generated = re.compile(r'^Готовая продукция; приёмка [^\n]*?; этапы [0-9, ]+; '
+                               + re.escape(url) + r'(?:\r?\n|$)')
+        cleaned = generated.sub('', description, count=1)
+        payload = {}
+        if attrs.get(field_id) != url:
+            payload['attributes'] = [{'meta': {'href': BASE + '/entity/loss/metadata/attributes/' + field_id,
+                                                'type': 'attributemetadata', 'mediaType': 'application/json'},
+                                      'value': url}]
+        if cleaned != description:
+            payload['description'] = cleaned
+        if not payload:
+            return current
+        fresh = self.ms.get('/entity/loss/' + value)
+        fresh_attrs = {ident(a): a.get('value') for a in fresh.get('attributes', [])}
+        if (fresh.get('description') or '') != description or fresh_attrs != attrs:
+            raise Review('Списание ' + current.get('name', value) + ' изменилось во время обработки')
+        self.ms.request('PUT', '/entity/loss/' + value, payload)
+        updated = self.ms.get('/entity/loss/' + value)
+        result = {ident(a): a.get('value') for a in updated.get('attributes', [])}
+        if result.get(field_id) != url or updated.get('description', '') != cleaned:
+            raise Review('Не удалось сохранить приёмку в списании ' + current.get('name', value))
+        if any(result.get(key) != val for key, val in attrs.items() if key != field_id):
+            raise Review('Изменились другие поля списания ' + current.get('name', value))
+        return updated
+
     def process_direct_supply(self, value):
         chain, number = self.chain(value)
         current = self.ms.get('/entity/supply/' + value)
@@ -1119,6 +1156,8 @@ class Engine:
                          link_fields=fields[:len(groups)], cost_snapshot=cost, losses={}, complete=False)
             number = self.save_chain(value, chain)
         cfg = self.config()
+        if not ID.fullmatch(cfg.get('loss_receipt_attribute', '')):
+            raise Review('Не настроено поле приёмки в списании')
         attrs = {ident(a): a.get('value') for a in current.get('attributes', [])}
         expected_links = []
         for index, group in enumerate(chain['material_groups']):
@@ -1131,15 +1170,16 @@ class Engine:
                 'name': f'СП-{number}-' + str(index + 1), 'organization': chain['source']['organization'],
                 'applicable': True, 'moment': max(now(), chain['source']['moment']),
                 'store': ref('store', group['store']), 'positions': group['positions'],
-                'description': 'Готовая продукция; приёмка ' + chain['source']['name'] +
-                               '; этапы ' + ', '.join(map(str, sorted(group['stages']))) +
-                               '; https://online.moysklad.ru/app/#supply/edit?id=' + value,
                 'attributes': [{'meta': {'href': BASE + '/entity/loss/metadata/attributes/' + cfg['reason_attribute'],
                                          'type': 'attributemetadata', 'mediaType': 'application/json'},
-                                'value': ref('customentity/' + cfg['reason_dictionary'], cfg['reason_production'])}]},
+                                'value': ref('customentity/' + cfg['reason_dictionary'], cfg['reason_production'])},
+                               {'meta': {'href': BASE + '/entity/loss/metadata/attributes/' + cfg['loss_receipt_attribute'],
+                                         'type': 'attributemetadata', 'mediaType': 'application/json'},
+                                'value': 'https://online.moysklad.ru/app/#supply/edit?id=' + value}]},
                 allow_negative=chain.get('allow_negative', False))
             chain['losses'][group['store']] = loss['id']
             self.save_chain(value, chain, number)
+            self.loss_receipt_link(loss['id'], value, current=loss)
             expected_links.append({'meta': field['meta'],
                 'value': 'https://online.moysklad.ru/app/#loss/edit?id=' + loss['id']})
             # Publish every successful write-off immediately, even if the next one fails.

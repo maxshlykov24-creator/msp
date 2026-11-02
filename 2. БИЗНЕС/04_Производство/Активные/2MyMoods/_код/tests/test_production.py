@@ -561,6 +561,7 @@ class ProductionTests(unittest.TestCase):
     def setup_direct(self):
         value, cfg = self.setup_chain()
         cfg['workflow'] = 'finished_receipt'
+        cfg['loss_receipt_attribute'] = uid()
         self.e.set_config(cfg)
         self.ms.docs['supply'][value]['state'] = ref('supply/metadata/states', cfg['states']['supply']['Ожидает обработки'])
         fields = [{'id': uid(), 'meta': {'href': 'https://example/entity/supply/metadata/attributes/' + uid(),
@@ -689,6 +690,40 @@ class ProductionTests(unittest.TestCase):
         self.e.process_order(order_id)
         self.assertTrue(self.e.chain(value)[0]['complete'])
         self.assertEqual(len(self.ms.created), 2)
+
+    def test_loss_receipt_field_is_clickable_without_generated_comment(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        for _, loss in self.ms.created:
+            saved = self.ms.docs['loss'][loss['id']]
+            fields = {a['meta']['href'].rsplit('/', 1)[-1]: a['value'] for a in saved['attributes']}
+            self.assertEqual(fields[cfg['loss_receipt_attribute']], 'https://online.moysklad.ru/app/#supply/edit?id=' + value)
+            self.assertFalse(saved.get('description'))
+            self.assertIn(cfg['reason_attribute'], fields)
+
+    def test_existing_generated_loss_comment_preserves_employee_note(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        loss = self.ms.created[0][1]
+        saved = self.ms.docs['loss'][loss['id']]
+        saved['attributes'] = [a for a in saved['attributes'] if a['meta']['href'].rsplit('/', 1)[-1] != cfg['loss_receipt_attribute']]
+        saved['description'] = ('Готовая продукция; приёмка №1; этапы 1; '
+            'https://online.moysklad.ru/app/#supply/edit?id=' + value + '\nТекст сотрудника')
+        self.e.loss_receipt_link(loss['id'], value)
+        self.assertEqual(self.ms.docs['loss'][loss['id']]['description'], 'Текст сотрудника')
+        self.e.loss_receipt_link(loss['id'], value)
+        self.assertEqual(self.ms.docs['loss'][loss['id']]['description'], 'Текст сотрудника')
+
+    def test_different_existing_receipt_link_is_not_overwritten(self):
+        value, cfg = self.setup_direct()
+        self.e.process_supply(value)
+        loss = self.ms.created[0][1]
+        fields = self.ms.docs['loss'][loss['id']]['attributes']
+        target = next(a for a in fields if a['meta']['href'].endswith(cfg['loss_receipt_attribute']))
+        target['value'] = 'https://online.moysklad.ru/app/#supply/edit?id=' + uid()
+        with self.assertRaises(Review):
+            self.e.loss_receipt_link(loss['id'], value)
+        self.assertNotEqual(target['value'], 'https://online.moysklad.ru/app/#supply/edit?id=' + value)
 
     def test_direct_analytics_uses_each_factory_fifo(self):
         value, cfg = self.setup_direct()
