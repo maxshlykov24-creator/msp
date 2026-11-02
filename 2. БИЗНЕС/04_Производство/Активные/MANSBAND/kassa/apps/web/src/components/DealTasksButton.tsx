@@ -28,12 +28,12 @@ function assigneeOf(task: Task): string {
   return ROLE_LABEL.get(task.assigneeRole) ?? task.assigneeRole;
 }
 
-function TaskLine({ task, today }: { task: Task; today: string }) {
+function TaskLine({ task, today, onOpen }: { task: Task; today: string; onOpen: () => void }) {
   const due = dueOf(task);
   const overdue = isOverdue(task, today);
   const kind = KIND_LABEL.get(task.kind) ?? task.kind;
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2">
+    <button type="button" onClick={onOpen} className="w-full text-left rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2 hover:border-gold/60 focus-visible:outline focus-visible:outline-gold">
       <div className={`text-[14px] leading-snug ${overdue ? "text-red-300" : "text-white"}`}>{task.title}</div>
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-mute">
         <span>{kind}</span>
@@ -44,7 +44,7 @@ function TaskLine({ task, today }: { task: Task; today: string }) {
           <span>готово {task.completedAt.slice(0, 10).split("-").reverse().join(".")}</span>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -87,6 +87,14 @@ export function DealTasksButton({
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  function openInQueue(task: Task) {
+    setOpen(false);
+    const status = task.status === "cancelled" ? "all" : task.status;
+    const next = `#tasks/${task.assigneeRole}/${status}/${encodeURIComponent(task.id)}`;
+    if (window.location.hash === next) window.dispatchEvent(new HashChangeEvent("hashchange"));
+    else window.location.hash = next;
+  }
 
   const openTasks = tasks.filter((task) => task.status === "pending");
   const doneTasks = tasks.filter((task) => task.status !== "pending");
@@ -137,7 +145,7 @@ export function DealTasksButton({
             ) : (
               <div className="space-y-1.5">
                 {openTasks.map((task) => (
-                  <TaskLine key={task.id} task={task} today={today} />
+                  <TaskLine key={task.id} task={task} today={today} onOpen={() => openInQueue(task)} />
                 ))}
               </div>
             )}
@@ -158,7 +166,7 @@ export function DealTasksButton({
               ) : (
                 <div className="space-y-1.5">
                   {doneTasks.map((task) => (
-                    <TaskLine key={task.id} task={task} today={today} />
+                    <TaskLine key={task.id} task={task} today={today} onOpen={() => openInQueue(task)} />
                   ))}
                 </div>
               )}

@@ -202,17 +202,17 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
   const apiRequire = createRequire(new URL("../../../apps/api/package.json", import.meta.url));
   const ts = apiRequire("typescript");
   const shared = await import("../dist/index.js");
-  for (const kind of ["sale", "company", "rental"]) {
+  for (const kind of shared.HOLD_DEAL_KINDS) {
     for (const sourceName of [shared.CENTRAL_WAREHOUSE, "На Новокузнецкой"]) {
       const table = (name, columns) => Object.assign({ table: name }, Object.fromEntries(columns.map((c) => [c, c])));
       const schema = {
-        tasks: table("tasks", ["id", "kind", "dealNumber", "status", "idempotencyKey", "assigneeRole", "store", "createdAt"]),
+        tasks: table("tasks", ["id", "kind", "dealNumber", "status", "idempotencyKey", "assigneeRole", "store", "createdAt", "metadata"]),
         users: table("users", ["name", "role"]),
         msRefs: table("refs", ["kind"]),
         dealItemState: table("items", ["dealNumber", "itemId"]),
         deals: table("deals", ["number", "stage", "data"]),
       };
-      const state = { tasks: [], users: [], items: [], deals: [], refs: [
+      const state = { tasks: [], users: [{ name: "Тест", role: "crm" }], items: [], deals: [], refs: [
         { kind: "store", msId: "source", name: sourceName, payload: { name: sourceName, meta: {} } },
         { kind: "store", msId: "target", name: "На Бауманской", payload: { name: "На Бауманской", meta: {} } },
       ] };
@@ -248,7 +248,7 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
         select: (fields) => query("select", fields), insert: (t) => query("insert").from(t), update: (t) => query("update").from(t),
         transaction: (fn) => fn(db), execute: async () => {},
       };
-      const orm = { eq: (c, v) => (r) => r[c] === v, ne: (c, v) => (r) => r[c] !== v, inArray: (c, vs) => (r) => vs.includes(r[c]), and: (...ps) => (r) => ps.every((p) => p(r)), desc: (v) => v, sql: () => () => true };
+      const orm = { eq: (c, v) => (r) => r[c] === v, ne: (c, v) => (r) => r[c] !== v, inArray: (c, vs) => (r) => vs.includes(r[c]), and: (...ps) => (r) => ps.every((p) => p(r)), desc: (v) => v, sql: (_strings, column, value) => (r) => String(r[column] ?? "").toLowerCase() === value };
       const services = {};
       const dealService = {
         getByNumber: async () => deal,
@@ -282,11 +282,19 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
       assert.equal(promiseTask?.title, "Привезти размер");
       assert.equal(promiseTask?.metadata?.dueDate, "2026-11-07");
       assert.equal(promiseTask?.metadata?.assigneeName, "Тест");
+      assert.equal(promiseTask?.createdBy, "Тест", "author is the logged-in actor, not the deal consultant");
+      assert.equal(promiseTask?.assigneeRole, "crm", "queue follows the promise creator's role");
+      await services.taskFlow.onDealStage(deal, "amoCRM");
+      await services.taskFlow.onDealStage(deal, "Другой сотрудник");
+      assert.equal(state.tasks.filter((t) => t.kind === "promise_follow").length, 1);
+      assert.equal(promiseTask.metadata.assigneeName, "Тест", "CRM echo and edits preserve responsibility");
+      assert.equal(promiseTask.createdBy, "Тест");
+      assert.equal(promiseTask.assigneeRole, "crm");
       deal.stage = "Ждет товар";
       await services.taskFlow.onDealStage(deal, "Тест");
       await services.taskFlow.onDealStage(deal, "Тест");
       assert.equal(state.tasks.filter((t) => t.kind === "movement").length, 1, "one setup reminder");
-      assert.equal(state.tasks[0].assigneeRole, "consultant");
+      assert.equal(state.tasks.find((t) => t.kind === "movement").assigneeRole, "consultant");
       const input = { idempotencyKey: `move-${kind}-${sourceName}`, dealNumber: deal.number, fromStoreMsId: "source", toStoreMsId: "target", positions: [{ productId: "product", quantity: 1 }], store: "Неверный магазин", assigneeRole: "crm", title: "Перемещение" };
       const task = await services.tasks.createMovement(input, "Тест");
       await services.tasks.createMovement(input, "Тест");

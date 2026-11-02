@@ -113,7 +113,7 @@ async function findUserByName(name: string): Promise<{ name: string; role: strin
 }
 
 /**
- * «Дано обещание»: задача консультанту, который стоит в заявке.
+ * «Дано обещание»: автор и ответственный — сотрудник, создавший обещание.
  * Формулировка — комментарий, срок — «Актуально до». Этап заявки при закрытии не двигаем.
  */
 async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
@@ -122,13 +122,24 @@ async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
   const due = (deal.actualUntil ?? "").slice(0, 10);
   if (!comment || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return;
 
-  const consultantName = deal.consultant?.trim() ?? "";
-  const consultant = consultantName ? await findUserByName(consultantName) : null;
+  const pending = await db
+    .select({ id: tasks.id, metadata: tasks.metadata, assigneeRole: tasks.assigneeRole })
+    .from(tasks)
+    .where(and(eq(tasks.dealNumber, deal.number), eq(tasks.kind, "promise_follow"), eq(tasks.status, "pending")))
+    .limit(1);
+  const existing = pending[0];
+  const savedMetadata = existing?.metadata as Record<string, unknown> | null | undefined;
+  const savedName = typeof savedMetadata?.assigneeName === "string"
+    ? savedMetadata.assigneeName.trim() : "";
   const actor = who.trim();
-  const creator = !consultantName && actor && actor !== "amoCRM" ? await findUserByName(actor) : null;
-  const assigneeName = consultant?.name || consultantName || creator?.name || (actor && actor !== "amoCRM" ? actor : "");
+  const humanActor = actor && actor !== "amoCRM" && actor !== SYSTEM_ACTOR ? actor : "";
+  // Эхо CRM и последующие изменения заявки не переназначают открытое обещание.
+  const assigneeName = savedName || humanActor || deal.consultant?.trim() || "";
   if (!assigneeName) return;
-  const assigneeRole = queueRoleOf((consultant ?? creator)?.role ?? "consultant");
+  const assignee = savedName ? null : await findUserByName(assigneeName);
+  const assigneeRole = savedName
+    ? existing!.assigneeRole as TaskAssigneeRole
+    : queueRoleOf(assignee?.role ?? "consultant");
   const title = comment.length > 500 ? `${comment.slice(0, 497)}…` : comment;
   const metadata = {
     dueDate: due,
@@ -142,17 +153,6 @@ async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
     route: deal.store,
   };
 
-  const pending = await db
-    .select({ id: tasks.id })
-    .from(tasks)
-    .where(
-      and(
-        eq(tasks.dealNumber, deal.number),
-        eq(tasks.kind, "promise_follow"),
-        eq(tasks.status, "pending")
-      )
-    )
-    .limit(1);
   if (pending[0]) {
     await db
       .update(tasks)
@@ -171,7 +171,7 @@ async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
       idempotencyKey: `promise:${deal.id}:${due}:${shortHash(comment)}`,
       metadata,
     },
-    assigneeName
+    humanActor || actor || SYSTEM_ACTOR
   );
 }
 

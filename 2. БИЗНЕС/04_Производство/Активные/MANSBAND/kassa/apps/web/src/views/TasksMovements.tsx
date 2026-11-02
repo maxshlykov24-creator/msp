@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightLeft, Check, Gift, ListPlus, Plus } from "lucide-react";
 import {
   isCentralWarehouse,
@@ -212,12 +212,18 @@ function TaskRow({
   onComplete,
   onOpenTask,
   showQueue,
+  highlighted,
 }: {
   task: OperationTask;
   onComplete: () => void;
   onOpenTask: () => void;
   showQueue?: boolean;
+  highlighted?: boolean;
 }) {
+  const rowRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlighted]);
   const needsSetup = task.kind === "movement" && task.metadata?.needsSetup === true;
   const isMove = task.kind === "movement" || task.kind === "movement_accept";
   const needsCardScan = isMove || task.kind === "assemble_cdek" || task.kind === "reserve";
@@ -227,7 +233,9 @@ function TaskRow({
 
   return (
     <tr
-      className="hover:bg-ink-800/40 cursor-pointer transition"
+      ref={rowRef}
+      aria-selected={highlighted || undefined}
+      className={`cursor-pointer transition ${highlighted ? "bg-gold/15 ring-1 ring-inset ring-gold/60" : "hover:bg-ink-800/40"}`}
       onClick={onOpenTask}
     >
       <td className="px-3 py-3 align-top whitespace-nowrap">
@@ -283,6 +291,9 @@ export function TasksMovements() {
   const { activeStore, deals } = useStore();
   const { user } = useAuth();
   const initialHash = hashParts();
+  const [focusTaskId, setFocusTaskId] = useState(initialHash[3] || "");
+  const openedFocus = useRef("");
+  const [focusRequest, setFocusRequest] = useState(0);
   const [view, setView] = useState<QueueView>(parseView(initialHash[1]));
   const [tasks, setTasks] = useState<OperationTask[]>(USE_MOCK ? MOCK_TASKS : []);
   const [period, setPeriod] = useState<QueuePeriod>("all");
@@ -292,7 +303,7 @@ export function TasksMovements() {
   const [kindFilter, setKindFilter] = useState("");
   const [queueFilter, setQueueFilter] = useState<"" | TaskAssigneeRole>("");
   const [storeScope, setStoreScope] = useState(() =>
-    STORE_OPTIONS.includes(activeStore as (typeof STORE_OPTIONS)[number]) ? activeStore : ""
+    initialHash[3] ? "" : STORE_OPTIONS.includes(activeStore as (typeof STORE_OPTIONS)[number]) ? activeStore : ""
   );
   const [fromFilter, setFromFilter] = useState("");
   const [toFilter, setToFilter] = useState("");
@@ -346,11 +357,41 @@ export function TasksMovements() {
     void load();
   }, [load]);
 
+  // Переход из заявки работает и когда список задач уже открыт под модальным окном.
+  useEffect(() => {
+    const onHash = () => {
+      const parts = hashParts();
+      if (parts[0] !== "tasks") return;
+      setView(parseView(parts[1]));
+      setStatus(parts[2] === "done" || parts[2] === "all" ? parts[2] : "pending");
+      setFocusTaskId(parts[3] || "");
+      setFocusRequest((value) => value + 1);
+      if (parts[3]) {
+        setStoreScope(""); setKindFilter(""); setQueueFilter("");
+        setFromFilter(""); setToFilter(""); setPeriod("all");
+        setOpenDeal(null); setDealError(null);
+      }
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  useEffect(() => {
+    const request = `${focusTaskId}:${focusRequest}`;
+    if (!focusTaskId || openedFocus.current === request) return;
+    const target = tasks.find((task) => encodeURIComponent(task.id) === focusTaskId);
+    if (!target || !promiseVisibleTo(target, user)) return;
+    openedFocus.current = request;
+    setView(target.assigneeRole);
+    setStatus(target.status === "cancelled" ? "all" : target.status);
+    setOpenTask(target);
+  }, [focusTaskId, focusRequest, tasks, user]);
+
   // Табы очередей живут в хэше: #tasks/consultant/pending — ссылку можно послать.
   useEffect(() => {
-    const next = `tasks/${view}/${status}`;
-    if (window.location.hash.replace(/^#/, "") !== next) window.location.hash = next;
-  }, [view, status]);
+    const next = `tasks/${view}/${status}${focusTaskId ? `/${focusTaskId}` : ""}`;
+    if (window.location.hash.replace(/^#/, "") !== next) window.history.replaceState(null, "", `#${next}`);
+  }, [view, status, focusTaskId]);
 
   // Смена очереди сбрасывает фильтр вида и доп. фильтр очереди.
   useEffect(() => {
@@ -591,7 +632,7 @@ export function TasksMovements() {
         <div className="inline-flex border border-ink-700 rounded-lg overflow-hidden flex-wrap">
           <button
             className={`px-4 py-2 text-sm ${view === "all" ? "bg-gold text-ink-950 font-semibold" : "text-mute hover:text-white"}`}
-            onClick={() => setView("all")}
+            onClick={() => { setFocusTaskId(""); setView("all"); }}
           >
             Все
             {(queueCounts.get("all") ?? 0) > 0 && (
@@ -604,7 +645,7 @@ export function TasksMovements() {
               <button
                 key={queue.role}
                 className={`px-4 py-2 text-sm ${view === queue.role ? "bg-gold text-ink-950 font-semibold" : "text-mute hover:text-white"}`}
-                onClick={() => setView(queue.role)}
+                onClick={() => { setFocusTaskId(""); setView(queue.role); }}
               >
                 {queue.short}
                 {count > 0 && <span className="ml-2 opacity-80">{count}</span>}
@@ -629,7 +670,7 @@ export function TasksMovements() {
           size="sm"
           className="w-[180px]"
           value={status}
-          onChange={setStatus}
+          onChange={(next) => { setFocusTaskId(""); setStatus(next); }}
           options={opts(["pending", "К выполнению"], ["done", "Выполненные"], ["all", "Все статусы"])}
         />
         {view === "all" && (
@@ -731,6 +772,7 @@ export function TasksMovements() {
                   key={task.id}
                   task={task}
                   showQueue={view === "all"}
+                  highlighted={encodeURIComponent(task.id) === focusTaskId}
                   onOpenTask={() => setOpenTask(task)}
                   onComplete={() => void complete(task.id)}
                 />
