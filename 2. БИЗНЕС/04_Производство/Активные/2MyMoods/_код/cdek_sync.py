@@ -162,12 +162,13 @@ class API:
         self.token, self.expires = '', 0
         self.token_gate = threading.Lock()
         self.gate = threading.Lock()
+        self.network_gate = threading.BoundedSemaphore(2)
         self.next_request = 0
 
     def request(self, method, url, token='', body=None, form=False):
         with self.gate:
             time.sleep(max(0, self.next_request - time.monotonic()))
-            self.next_request = time.monotonic() + .25
+            self.next_request = time.monotonic() + .5
         data = None
         headers = {'Accept-Encoding': 'gzip', 'Accept': 'application/json;charset=utf-8'}
         if token:
@@ -176,8 +177,8 @@ class API:
             data = urllib.parse.urlencode(body).encode() if form else json.dumps(body).encode()
             headers['Content-Type'] = 'application/x-www-form-urlencoded' if form else 'application/json'
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers,
-                                                               method=method), timeout=30) as r:
+            with self.network_gate, urllib.request.urlopen(urllib.request.Request(
+                    url, data=data, headers=headers, method=method), timeout=30) as r:
                 raw = r.read()
                 if r.headers.get('Content-Encoding') == 'gzip':
                     raw = gzip.decompress(raw)
@@ -185,6 +186,13 @@ class API:
         except urllib.error.HTTPError as e:
             # Neither error bodies nor request URLs (which include tracks) enter logs.
             code = 'ms' if url.startswith(MS_BASE) else 'cdek'
+            if e.code == 429:
+                try:
+                    pause = max(1, min(300, float(e.headers.get('Retry-After', '10'))))
+                except (ValueError, TypeError):
+                    pause = 10
+                with self.gate:
+                    self.next_request = max(self.next_request, time.monotonic() + pause)
             raise SyncError(f'{code}_http_{e.code}', e.code in (401, 408, 429) or e.code >= 500)
         except (OSError, ValueError):
             raise SyncError('network_or_json_error')
@@ -380,6 +388,8 @@ class Engine:
 
     def write_verified(self, order, changes, expected_track, owner_track=None):
         oid = order['id']
+        if all(values(order).get(k) == v for k, v in changes.items()):
+            return order
         latest = self.api.order(oid)
         if tracking(latest) != expected_track:
             self.store.observe(latest, 0)
@@ -472,12 +482,19 @@ class Engine:
             return
         if not valid_track(track):
             raise SyncError('invalid_track_format', False)
-        # Complete live lookup is mandatory before any cost write/duplicate cleanup.
-        peers = self.api.peers(track)
+        # A live complete lookup is mandatory before financial writes/cleanup.
+        # Status-only historical orders use the registry built by the full sweep.
+        live_peers = ((self.cost_enabled and cost_year_matches(order, self.cost_year))
+                      or row['own_cost'] is not None)
+        if live_peers:
+            peers = self.api.peers(track)
+            for peer in peers:
+                self.store.observe(peer)
+        else:
+            with self.store.db() as db:
+                peers = [dict(r) for r in db.execute('SELECT id FROM orders WHERE track=?', (track,))]
         if not any(p['id'] == oid for p in peers):
             raise SyncError('track_changed_during_peer_lookup')
-        for peer in peers:
-            self.store.observe(peer)
         duplicate = len(peers) > 1
         if duplicate:
             for peer in peers:
@@ -571,13 +588,17 @@ class Engine:
     def scan(self):
         started = time.monotonic()
         self.store.setting('cycle_started', time.time())
+        financial_priority = set()
         for order in self.api.orders():
             self.store.observe(order, 10)
+            if (self.cost_enabled and cost_year_matches(order, self.cost_year)
+                    and tracking(order) and values(order).get(COST) is None):
+                financial_priority.add(order['id'])
         # Queue existing rows once per completed sweep, not while partially scanning.
         with self.store.db() as db:
             rows = [r['id'] for r in db.execute('SELECT id FROM orders')]
         for oid in rows:
-            self.store.enqueue(oid, 10, force=False)
+            self.store.enqueue(oid, 5 if oid in financial_priority else 10, force=False)
         self.store.setting('last_scan', time.time())
         self.store.setting('scan_error', '')
         self.store.setting('last_scan_seconds', round(time.monotonic() - started, 2))
