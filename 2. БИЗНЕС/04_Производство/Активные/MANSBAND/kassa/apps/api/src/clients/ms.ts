@@ -218,10 +218,11 @@ export async function getStockForProduct(
   productMsId: string,
   assortmentType: "product" | "variant" | "bundle" | "service" = "product"
 ): Promise<MsStockRow[]> {
-  const type = assortmentType === "variant" ? "variant" : "product";
+  const type = assortmentType;
+  const filterKey = type === "variant" ? "variant" : "product";
   const href = `${env.MOYSKLAD_API_BASE}/entity/${type}/${productMsId}`;
   const res = await http.get<MsList<MsStockRow>>(
-    `/report/stock/bystore?filter=${encodeURIComponent(`product=${href}`)}`
+    `/report/stock/bystore?filter=${encodeURIComponent(`${filterKey}=${href}`)}`
   );
   return res.rows;
 }

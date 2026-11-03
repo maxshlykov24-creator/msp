@@ -124,6 +124,18 @@ for(const role of ['consultant','finance','seller','crm','rop','admin']){
 }
 assert((await cancelApi.inject({method:'POST',url:'/deals/1/money-cancellation',payload:{}})).statusCode===401,'anonymous cancellation denied');checks++;
 await cancelApi.close();console.log(JSON.stringify({checks,result:'passed',scope:'including cancellation roles'}));
+// Контракт МС: product=entity/variant возвращает 400 (живой ответ 03.11.2026).
+const msClient=await import('../src/clients/ms.ts');
+globalThis.fetch=async(url)=>{
+ const u=new URL(String(url));const [key,href]=u.searchParams.get('filter').split('=');const type=new URL(href).pathname.split('/').at(-2);
+ const valid=type==='variant'?key==='variant':key==='product';
+ return new Response(JSON.stringify(valid?{rows:[{meta:{href,type},stockByStore:[{stock:3,reserve:1}]}]}:{errors:[{code:2024}]}),{status:valid?200:400,headers:{'content-type':'application/json'}});
+};
+for(const type of ['product','variant','bundle','service']){
+ const rows=await msClient.getStockForProduct('00000000-0000-4000-8000-000000000001',type);
+ assert(rows.length===1 && rows[0].meta.type===type && rows[0].stockByStore[0].stock===3,'MS stock filter for '+type);checks++;
+}
+console.log(JSON.stringify({checks,result:'passed',scope:'including MS stock filters'}));
 const {sql: testPool} = await import("../src/db/index.ts");
 await (await import("../src/lib/idempotency.ts")).closeOperationLocks();
 await testPool.end();
