@@ -283,7 +283,7 @@ def get_lead(lead_id: int) -> dict:
     return get(f"/api/v4/leads/{int(lead_id)}", {"with": "contacts"})
 
 
-def create_contact(name: str, phone: str) -> int:
+def create_contact(name: str, phone: str, *, marker: str = "") -> int:
     item: dict = {
         "name": (name or "Клиент DIVO").strip() or "Клиент DIVO",
         "responsible_user_id": BOT_RESPONSIBLE,
@@ -296,7 +296,9 @@ def create_contact(name: str, phone: str) -> int:
                 "values": [{"value": formatted, "enum_code": "WORK"}],
             }
         ]
-    data = write("/api/v4/contacts", [item])
+    if marker:
+        item["_embedded"] = {"tags": [{"name": marker}]}
+    data = write("/api/v4/contacts", [item], attempts=1 if marker else 3)
     rows = items(data, "contacts")
     if not rows or not rows[0].get("id"):
         raise AmoError(0, "контакт не создался")
@@ -310,6 +312,7 @@ def create_lead(
     price: int = 0,
     source_enum: int | None,
     fields: dict[int, str] | None = None,
+    marker: str = "",
 ) -> dict:
     custom = []
     if source_enum:
@@ -329,7 +332,9 @@ def create_lead(
         item["custom_fields_values"] = custom
     if contact_id:
         item["_embedded"] = {"contacts": [{"id": int(contact_id), "is_main": True}]}
-    data = write("/api/v4/leads", [item])
+    if marker:
+        item.setdefault("_embedded", {})["tags"] = [{"name": marker}]
+    data = write("/api/v4/leads", [item], attempts=1 if marker else 3)
     rows = items(data, "leads")
     if not rows or not rows[0].get("id"):
         raise AmoError(0, "сделка не создалась")
@@ -947,3 +952,16 @@ def find_widget_lead(
     if channel not in {"Авито", "Авто.ру"}:
         return None
     return provider_bound_lead(channel, chat_id, customer_id, url)
+
+
+def owned_entity(kind: str, marker: str, since: int) -> dict | None:
+    """Reconcile a write intent by its exact tag; names/phones never identify a chat."""
+    matches = []
+    for row in paged("/api/v4/" + kind,
+                     {"filter[created_at][from]": max(0, since - 300), "limit": 250,
+                      "with": "contacts"}, kind):
+        if any(t.get("name") == marker for t in (row.get("_embedded") or {}).get("tags", [])):
+            matches.append(row)
+    if len(matches) > 1:
+        raise AmoError(0, "Ambiguous chat marker; automatic binding blocked")
+    return matches[0] if matches else None

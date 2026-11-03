@@ -493,10 +493,15 @@ async def remember_listing(chat_key: str, chat: dict, api: Avito) -> None:
     peer = chat_peer(chat)
     if (doc.get("avito") or {}).get("chat_id"):
         av = dict(doc.get("avito") or {})
-        if peer and av.get("peer") != peer:
+        fresh = listing_of(chat)
+        if peer:
             av["peer"] = peer
-            doc["avito"] = av
-            store.save_doc(chat_key, doc)
+        if str(fresh.get("item_id") or "") == str(av.get("item_id") or ""):
+            for key in ("title", "price", "url"):
+                if fresh.get(key):
+                    av[key] = fresh[key]
+        doc["avito"] = av
+        store.save_doc(chat_key, doc)
         return
     listing = listing_of(chat)
     ctx_type = str((chat.get("context") or {}).get("type") or "")
@@ -534,11 +539,19 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
     state = load_state()
     cursor: dict = dict(state.get("cursor") or {})
     try:
-        chats = await api.chats(unread_only=False, limit=40)
+        chats = await api.chats(unread_only=False, limit=100)
+        offset = max(100, int(state.get("scan_offset") or 100))
+        if len(chats) == 100:
+            extra = await api.chats(unread_only=False, limit=100, offset=offset)
+            chats.extend(extra)
+            state["scan_offset"] = offset + 100 if len(extra) == 100 else 100
+        else:
+            state["scan_offset"] = 100
     except AvitoError as exc:
         log.warning("авито чаты: %s", exc)
         return
-    changed = False
+    changed = True
+    boundary = state.setdefault("cursor_ids", {})
     for chat in chats:
         cid = str(chat.get("id") or "")
         if not cid:
@@ -554,7 +567,7 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
         last = chat.get("last_message") or {}
         last_at = created_of(last)
         seen = int(cursor.get(cid) or 0)
-        if last_at <= seen:
+        if last_at < seen or (last_at == seen and str(last.get("id") or "") in boundary.get(cid, [])):
             continue
         if (last.get("direction") or "") != "in" and not allowed(cid, state):
             cursor[cid] = max(seen, last_at)
@@ -570,17 +583,19 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
             log.info("авито чат %s уже был, молчу", cid[:12])
             continue
         try:
-            need = 50 if not allowed(cid, state) else 10
+            need = 100
             msgs = await api.messages(cid, limit=need)
         except AvitoError as exc:
             log.warning("авито сообщения %s: %s", cid, exc)
             continue
         incoming = []
+        # Bootstrap the ID cursor without replaying the pre-upgrade boundary.
+        seen_ids = set(boundary.get(cid, [str(m.get("id") or "") for m in msgs if created_of(m) == seen]))
         max_at = seen
         for msg in sorted(msgs, key=created_of):
             at = created_of(msg)
             max_at = max(max_at, at)
-            if at <= seen:
+            if at < seen or (at == seen and str(msg.get("id") or "") in seen_ids):
                 continue
             if allowed(cid, state) and (msg.get("direction") or "") == "out":
                 from bot import crm
@@ -599,6 +614,7 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
                     store.save_history(store_id(cid), history)
         incoming.sort()
         cursor[cid] = max_at
+        boundary[cid] = list({str(m.get("id") or "") for m in msgs if created_of(m) == max_at})
         changed = True
         if not incoming:
             continue

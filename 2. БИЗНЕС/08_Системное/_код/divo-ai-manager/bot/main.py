@@ -513,13 +513,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         if trimmed != [b for b in bubbles if b.strip()]:
             log.info("чат %s: просили отчёт, убрал пересказ ДТП", chat_id)
             bubbles = trimmed
-    if nudge.asked_leasing(history) and not nudge.cited_lease_report(user_text):
-        shortened = [
-            human.soften_lease_status(b, cited_report=False) for b in bubbles
-        ]
-        if shortened != bubbles:
-            log.info("чат %s: убрал лекцию про лизинг в отчёте", chat_id)
-            bubbles = [b for b in shortened if b.strip()] or [human.SHORT_LEASE]
+
     if nudge.asked_torg(history):
         softened = [human.soften_hard_torg(b, allow_torg=True) for b in bubbles]
         if softened != bubbles:
@@ -1170,8 +1164,6 @@ def waiting_for_bot(chat_id: str) -> bool:
     last = str(hist[-1].get("content") or "")
     if not nudge.needs_reply(last):
         return False
-    if "спасибо" in last.lower() and "?" not in last:
-        return False
     # Уже отказался, а потом ругается на догон — модель молчит, очередь
     # не должна крутить этот чат каждые пять минут.
     if any(
@@ -1400,6 +1392,8 @@ async def send_nudge(chat_id: int | str) -> None:
         log.info("догон чат %s: чат недоступен (%s), больше не пишу", chat_id, exc)
         return
     store.log_line(chat_id, "никита", text)
+    doc = store.load_doc(chat_id)
+    meta = doc.get("nudge") or {}
     history = list(doc.get("messages") or [])
     history.append({"role": "assistant", "content": text})
     meta["count"] = step

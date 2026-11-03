@@ -343,7 +343,7 @@ def damage_of(report: dict[str, Any]) -> str:
         # «ремонта и выплат нет» весит не меньше самого факта столкновения.
         joined = " ".join(hits)
         if "ремонт" not in joined and "выплат" not in joined and empty_events_of(card):
-            hits.append("ремонта и страховых выплат нет")
+            hits.append("записи о ремонте и страховых выплатах в отчёте не найдены")
         return ", ".join(hits)
     if card.get("status") != "ok":
         # Заголовок «1 происшествие» без расшифровки: деталей в отчёте нет, но
@@ -355,7 +355,7 @@ def damage_of(report: dict[str, Any]) -> str:
     if not checked:
         return ""
     # Не «ДТП, выплат и ремонта нет»: запятая после «ДТП» читается как «есть».
-    return "ДТП не было, кузов не чинили"
+    return "По отчёту записи о ДТП и кузовном ремонте не найдены; это не подтверждает отсутствие окрасов или ремонта"
 
 
 def owners_of(report: dict[str, Any]) -> str:

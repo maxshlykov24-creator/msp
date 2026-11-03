@@ -5,6 +5,8 @@ import asyncio
 import logging
 import re
 import secrets
+import hashlib
+import time
 import sys
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
@@ -241,11 +243,21 @@ def digits_price(raw: str) -> int:
     return int(n) if n else 0
 
 
+def proven_phone(doc: dict) -> str:
+    phone = nudge.extract_phone_from_history(doc.get("messages") or [])
+    evidence = (doc.get("crm") or {}).get("phone_evidence") or {}
+    if phone:
+        return phone
+    if evidence.get("source") == "client_message" and evidence.get("chat_id") == str(doc.get("chat_id")):
+        return str(evidence.get("phone") or "")
+    return ""
+
+
 def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
     doc = store.load_doc(chat_id)
     listing = doc.get("avito") or doc.get("autoru") or {}
     name = nudge.extract_name(history) or listing.get("peer") or ""
-    phone = nudge.extract_phone_from_history(history)
+    phone = nudge.extract_phone_from_history(history) or proven_phone(doc)
     card = None
     title = (listing.get("title") or "").strip()
     attached = bool(title) and "не привязано" not in title.lower() and title.lower() not in {
@@ -446,6 +458,8 @@ def note_text(snap: dict) -> str:
 
 def _fields(snap: dict) -> dict[int, str]:
     out = {}
+    if snap.get("url"):
+        out[amo_client.FIELD_LISTING_URL] = snap["url"]
     if snap.get("vin"):
         out[amo_client.FIELD_VIN] = snap["vin"]
     if snap.get("brand"):
@@ -664,6 +678,158 @@ def _adopt_widget(snap: dict, doc: dict, widget: dict) -> dict:
     return _bind_lead(snap, doc, widget, created=False)
 
 
+def _owned_lead(snap: dict, doc: dict) -> dict:
+    """Create an isolated lead/contact for one provider chat, with durable write intents."""
+    cid = str(snap.get("chat_id") or "")
+    phone = proven_phone(doc)
+    if not phone_key(phone) or phone_key(phone) != phone_key(str(snap.get("phone") or "")):
+        raise RuntimeError("No client phone evidence in this chat")
+    marker = "DIVO_CHAT_" + hashlib.sha256(cid.encode()).hexdigest()[:32]
+    state = doc.setdefault("crm", {})
+    creation = state.setdefault("creation", {"marker": marker, "since": int(time.time())})
+    if creation.get("marker") != marker:
+        raise RuntimeError("Chat creation identity mismatch")
+
+    def checkpoint():
+        # This function also runs in a worker thread: never overwrite fresh messages.
+        current = store.load_doc(cid)
+        current.setdefault("crm", {})["creation"] = dict(creation)
+        store.save_doc(cid, current)
+
+    def entity(kind):
+        key = "contact_id" if kind == "contacts" else "lead_id"
+        if creation.get(key):
+            return {"id": creation[key]}
+        intent = kind + "_intent"
+        if creation.get(intent):
+            found = amo_client.owned_entity(kind, marker, creation["since"])
+            if not found:
+                raise RuntimeError("CRM write outcome unknown; reconcile before retry: " + kind)
+        else:
+            creation[intent] = True
+            checkpoint()  # before POST; a lost response must never cause a second POST
+            try:
+                if kind == "contacts":
+                    found = {"id": amo_client.create_contact(snap.get("name") or "", phone, marker=marker)}
+                else:
+                    found = amo_client.create_lead(name=_lead_name(snap), contact_id=creation["contact_id"],
+                        price=int(snap.get("price") or 0), source_enum=_source_enum(snap),
+                        fields=_fields(snap), marker=marker)
+            except amo_client.AmoError as exc:
+                # A rejected request cannot have created an entity. Network/5xx remain uncertain.
+                if 400 <= exc.code < 500 and exc.code != 408:
+                    creation.pop(intent, None)
+                    checkpoint()
+                raise
+        creation[key] = int(found["id"])
+        checkpoint()
+        return found
+
+    entity("contacts")
+    entity("leads")
+    lead = amo_client.get_lead(creation["lead_id"])
+    contacts = {int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts") or []}
+    if creation["contact_id"] not in contacts:
+        raise RuntimeError("Created lead/contact link not confirmed")
+    state["verified_binding"] = {
+        "version": 1, "chat_id": cid, "channel": snap["channel"],
+        "item_id": amo_client.listing_item_id(snap.get("url") or ""),
+        "lead_id": lead["id"], "contact_id": creation["contact_id"], "source": "own_creation",
+    }
+    current = store.load_doc(cid)
+    current.setdefault("crm", {}).update(creation=dict(creation), verified_binding=state["verified_binding"])
+    store.save_doc(cid, current)
+    result = _bind_lead(snap, doc, lead, created=True)
+    # Delivery is handled by the persistent notes queue, including after restart.
+    queue_note(doc, "handoff", note_text(snap) + "\n\nЧат площадки: " + cid)
+    queue_transcript(doc)
+    return result
+
+
+def queue_note(doc: dict, key: str, text: str) -> None:
+    state = doc.setdefault("crm", {})
+    if key in state.get("autoru_noted", []):
+        return
+    pending = state.setdefault("note_pending", [])
+    if not any(r["id"] == key for r in pending):
+        pending.append({"id": key, "text": text})
+
+
+def queue_transcript(doc: dict) -> None:
+    for row in doc.get("transcript") or []:
+        queue_note(doc, "transcript:" + str(row["id"]),
+                   "%s | %s\n%s" % (row.get("at", ""), row["who"], row["text"]))
+
+
+async def refresh_transcript(chat_id: str, doc: dict) -> None:
+    """Read actual provider history, including staff replies; never send messages."""
+    from bot.avito import Avito
+    from bot.autoru import Autoru
+    from bot.avito_loop import content_text, created_of as av_at
+    from bot.autoru_loop import created_of as ar_at, is_out
+    av = chat_id.startswith("av:")
+    api = Avito() if av else Autoru()
+    rows = []
+    try:
+        if av:
+            offset = 0
+            while True:
+                page = await api.messages(chat_id[3:], limit=100, offset=offset)
+                rows.extend(page)
+                if len(page) < 100:
+                    break
+                offset += len(page)
+        else:
+            rows = await api.messages(chat_id[3:], count=1000)
+    finally:
+        await api.close()
+    records = []
+    for m in rows:
+        mid = str(m.get("id") or "")
+        if not mid:
+            continue
+        if av:
+            text = content_text(m)
+            outbound = m.get("direction") == "out"
+            at = av_at(m)
+        else:
+            payload = m.get("payload") or {}
+            text = str(payload.get("value") or payload.get("text") or m.get("text") or "")
+            outbound = is_out(m)
+            at = ar_at(m)
+        if not text:
+            text = "[Вложение или служебное сообщение]"
+        records.append({"id": mid, "at": datetime.fromtimestamp(at).astimezone().isoformat(),
+                        "who": "Салон" if outbound else "Клиент", "text": text})
+    doc["transcript"] = sorted(records, key=lambda r: r["at"])
+    doc.setdefault("crm", {})["transcript_synced_at"] = time.time()
+
+
+async def ensure_lead_async(snap: dict, doc: dict) -> dict:
+    cid = str(snap.get("chat_id") or "")
+    if phone_key(str(snap.get("phone") or "")) and cid.startswith(("av:", "ar:")):
+        try:
+            await refresh_transcript(cid, doc)
+        except Exception:
+            log.warning("чат %s: история площадки ожидает повторного чтения", cid)
+    result = await asyncio.to_thread(ensure_lead, snap, doc)
+    current = store.load_doc(cid)
+    target = current.setdefault("crm", {})
+    changed = doc.get("crm") or {}
+    for key in ("creation", "verified_binding", "lead_id", "contact_id", "status_id",
+                "lead_url", "created", "phone", "transcript_synced_at"):
+        if key in changed:
+            target[key] = changed[key]
+    for row in changed.get("note_pending") or []:
+        queue_note(current, row["id"], row["text"])
+    if "transcript" in doc:
+        current["transcript"] = doc["transcript"]
+    doc.clear()
+    doc.update(current)
+    store.save_doc(cid, doc)
+    return result
+
+
 def ensure_lead(snap: dict, doc: dict) -> dict:
     # Без номера чат остаётся в текущем этапе. Нельзя ни создавать сделку,
     # ни принимать Неразобранное, включая медиа и отложенные передачи.
@@ -697,7 +863,7 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
             if lead.get("pipeline_id") == amo_client.PIPELINE_TECH:
                 return _adopt_widget(snap, doc, lead)
             if lead.get("pipeline_id") == amo_client.PIPELINE_SALES:
-                amo_client.add_note(int(old_id), note_text(snap))
+                queue_note(doc, "handoff", note_text(snap))
                 return _bind_lead(snap, doc, lead, created=False)
 
     widget = None
@@ -731,8 +897,7 @@ def ensure_lead(snap: dict, doc: dict) -> dict:
         return adopted
 
     if channel in {"Авито", "Авто.ру"}:
-        log.warning("чат %s: нет подтверждённой привязки CRM, передача остаётся в очереди", snap.get("chat_id"))
-        return snap
+        return _owned_lead(snap, doc)
 
     contact_id = crm.get("contact_id")
     if snap.get("phone"):
@@ -1063,7 +1228,7 @@ async def capture(chat_id: str | int, history: list[dict], reason: str) -> dict:
         nags = True
         lead_ready = False
         try:
-            snap = ensure_lead(snap, doc)
+            snap = await ensure_lead_async(snap, doc)
             lead_ready = bool((doc.get("crm") or {}).get("lead_id") and snap.get("lead_id"))
             nags = bool(snap.get("nags", True))
             if reason in {"call", "complaint", "handoff", "aftersale"}:
@@ -1142,7 +1307,7 @@ async def _notify_media_locked(
     if not snap.get("url"):
         snap["url"] = listing.get("url") or ""
     try:
-        snap = ensure_lead(snap, doc)
+        snap = await ensure_lead_async(snap, doc)
     except Exception:
         log.exception("amo по чату %s для медиа не записалась", chat_id)
     crmd = dict(doc.get("crm") or {})
@@ -1297,6 +1462,10 @@ def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = ""
         return
     doc = store.load_doc(key)
     state = doc.setdefault("crm", {})
+    if state.get("creation"):
+        state["transcript_synced_at"] = 0
+        store.save_doc(key, doc)
+        return
     dedupe = str(msg_id or "") or secrets.token_hex(16)
     if dedupe in state.get("autoru_noted", []):
         return
@@ -1308,14 +1477,6 @@ def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = ""
 
 async def flush_notes(chat_id: str) -> None:
     import time
-    if str(chat_id).startswith("av:"):
-        doc = store.load_doc(chat_id)
-        state = doc.get("crm") or {}
-        if state.get("note_pending"):
-            state["note_pending"] = []
-            doc["crm"] = state
-            store.save_doc(chat_id, doc)
-        return
     doc = store.load_doc(chat_id)
     state = doc.get("crm") or {}
     pending = state.get("note_pending") or []
@@ -1378,7 +1539,7 @@ async def flush_notes(chat_id: str) -> None:
             state = doc.setdefault("crm", {})
             state["note_pending"] = [r for r in state.get("note_pending", []) if r["id"] != row["id"]]
             state.setdefault("autoru_noted", []).append(row["id"])
-            state["autoru_noted"] = state["autoru_noted"][-500:]
+            state["autoru_noted"] = list(dict.fromkeys(state["autoru_noted"]))
             state["note_lead_id"] = lead_id
             # После await перечитали документ: новые входящие и очередь сохраняются.
             store.save_doc(chat_id, doc)
@@ -1510,7 +1671,7 @@ async def _edit_alert(
         alert.get("request_at") or alert.get("started_at") or "",
         alert.get("picked_at") or "",
     ) if alert.get("picked") == "button" else ""
-    text = format_done(snap, line, elapsed)
+    text = format_done(snap, line, elapsed, taken=alert.get("picked") == "button")
     extra = fallback or {}
     tg = alert.get("tg") or {}
     chat_id = tg.get("chat_id") or (extra.get("chat") or {}).get("id")
@@ -1665,27 +1826,13 @@ async def _claim_locked(
         if not verified or int(verified["id"]) != int(lead_id):
             log.warning("кнопка: сделку %s не меняю, привязка чата не подтверждена", lead_id)
             lead_id = None
-    if lead_id and phone_key(str(snap.get("phone") or "")):
-        try:
-            lead = amo_client.set_lead_status(
-                int(lead_id),
-                amo_client.STATUS_IN_WORK,
-                responsible_user_id=amo_user,
-            )
-            crmd["status_id"] = lead.get("status_id") or amo_client.STATUS_IN_WORK
-            if amo_user:
-                crmd["responsible_user_id"] = int(amo_user)
-            owner = amo_name or who
-            amo_client.add_note(
-                int(lead_id),
-                "Менеджер нажал кнопку в Telegram (%s). "
-                "Ответственный: %s. Сделку перевёл в Контакт установлен."
-                % (who, owner),
-            )
-        except Exception:
-            log.exception("этап сделки %s не сменился", lead_id)
+    if phone_key(str(snap.get("phone") or "")):
+        crmd["claim_pending"] = {"responsible": amo_user, "who": who, "at": alert["picked_at"]}
     doc["crm"] = crmd
     store.save_doc(chat_id, doc)
+    await flush_claim(str(chat_id))
+    doc = store.load_doc(chat_id)
+    crmd = doc.get("crm") or {}
     await _finish_message(alert, snap, who, when, fallback or {})
     await _sweep_posts(alert, keep=alert.get("tg"))
     _persist_alert(chat_id, alert)
@@ -1697,6 +1844,44 @@ async def _claim_locked(
             _silence_sibling(cid, who, str(alert.get("picked_at") or ""), amo_user)
     log.info("чат %s: взял %s amo=%s", chat_id, who, amo_user)
     return True
+
+
+async def flush_claim(chat_id: str) -> None:
+    doc = store.load_doc(chat_id)
+    state = doc.get("crm") or {}
+    pending = state.get("claim_pending")
+    if not pending or not state.get("lead_id"):
+        return
+    snap = dict((state.get("alert") or {}).get("snap") or {})
+    snap.update(chat_id=chat_id, lead_id=state["lead_id"])
+    try:
+        lead = await asyncio.to_thread(_verified_marketplace_lead, snap, doc)
+        if not lead or int(lead["id"]) != int(state["lead_id"]):
+            return
+        if lead.get("status_id") == amo_client.STATUS_NEW:
+            await asyncio.to_thread(amo_client.set_lead_status, int(lead["id"]),
+                amo_client.STATUS_IN_WORK, responsible_user_id=pending.get("responsible"))
+        elif pending.get("responsible") and lead.get("responsible_user_id") != pending["responsible"]:
+            # Do not rewind an advanced deal; assignment still must be recorded.
+            await asyncio.to_thread(amo_client.write, "/api/v4/leads/%s" % lead["id"],
+                {"responsible_user_id": pending["responsible"]}, method="PATCH")
+        checked = await asyncio.to_thread(amo_client.get_lead, int(lead["id"]))
+        if checked.get("status_id") == amo_client.STATUS_NEW:
+            return
+        if pending.get("responsible") and checked.get("responsible_user_id") != pending["responsible"]:
+            return
+        current = store.load_doc(chat_id)
+        crm = current.setdefault("crm", {})
+        if crm.get("claim_pending") != pending:
+            return
+        queue_note(current, "claim:" + pending["at"],
+                   "Взял в работу: %s. Нажатие кнопки не подтверждает связь с клиентом." % pending["who"])
+        crm.pop("claim_pending", None)
+        crm["status_id"] = checked.get("status_id")
+        crm["responsible_user_id"] = checked.get("responsible_user_id")
+        store.save_doc(chat_id, current)
+    except Exception:
+        log.warning("чат %s: изменение CRM после кнопки ожидает повтора", chat_id)
 
 
 async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
@@ -1738,11 +1923,24 @@ async def close_if_contacted(chat_id: str | int, doc: dict) -> bool:
 
 
 async def _tick_one(chat_id: str) -> None:
+    await flush_claim(chat_id)
     doc = store.load_doc(chat_id)
+    crm_state = doc.get("crm") or {}
+    if crm_state.get("creation", {}).get("lead_id") and time.time() - crm_state.get("transcript_synced_at", 0) >= 120:
+        try:
+            await refresh_transcript(chat_id, doc)
+            current = store.load_doc(chat_id)
+            current["transcript"] = doc["transcript"]
+            current.setdefault("crm", {})["transcript_synced_at"] = time.time()
+            queue_transcript(current)
+            store.save_doc(chat_id, current)
+            doc = current
+        except Exception:
+            log.warning("чат %s: переписка ожидает синхронизации", chat_id)
     state = doc.get("crm") or {}
     queued = state.get("handoff_pending") or {}
     alert = state.get("alert") or {}
-    if queued and not phone_key(nudge.extract_phone_from_history(doc.get("messages") or [])):
+    if queued and not phone_key(proven_phone(doc)):
         state.pop("handoff_pending", None)
         doc["crm"] = state
         store.save_doc(chat_id, doc)
@@ -1755,7 +1953,7 @@ async def _tick_one(chat_id: str) -> None:
         if alert.get("picked"):
             snap = snapshot(chat_id, list(doc.get("messages") or []), queued["reason"])
             try:
-                snap = await asyncio.to_thread(ensure_lead, snap, doc)
+                snap = await ensure_lead_async(snap, doc)
                 if (doc.get("crm") or {}).get("lead_id") and snap.get("lead_id"):
                     # Re-read after network calls, preserving newly arrived history.
                     current = store.load_doc(chat_id)

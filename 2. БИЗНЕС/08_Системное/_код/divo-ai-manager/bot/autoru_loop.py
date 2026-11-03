@@ -133,8 +133,6 @@ def _usable(msg: dict) -> bool:
     kind = str(props.get("type") or "").upper()
     if kind.startswith("ADV") or kind in {"NOTIFICATION", "TECH"}:
         return False
-    if ctype in {"TEXT_HTML"}:
-        return False
     return True
 
 
@@ -164,9 +162,10 @@ def message_text(msg: dict, me: str = "") -> str:
         return "Клиент прислал голосовое"
     if "VIDEO" in ctype:
         return "Клиент прислал видео"
-    if ctype and ctype not in {"TEXT_PLAIN", "TEXT"}:
+    if ctype and ctype not in {"TEXT_PLAIN", "TEXT", "TEXT_HTML"}:
         return ""
-    return str(payload.get("value") or "").strip()
+    import html
+    return html.unescape(re.sub(r"<[^>]+>", " ", str(payload.get("value") or ""))).strip()
 
 
 def we_sell(room: dict, own: dict[str, dict], state: dict) -> bool:

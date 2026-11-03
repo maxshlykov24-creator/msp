@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
+import tempfile
+import shutil
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,8 +34,13 @@ def load_doc(chat_id: int | str) -> dict:
         return empty
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return empty
+    except (json.JSONDecodeError, OSError) as exc:
+        backup = path.with_suffix('.json.bak')
+        try:
+            data = json.loads(backup.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            raise RuntimeError("Corrupt chat state: %s" % path.name) from exc
+        logging.getLogger("store").error("Recovered chat state from backup: %s", path.name)
     if not isinstance(data, dict):
         return empty
     data.setdefault("chat_id", str(chat_id))
@@ -41,21 +50,42 @@ def load_doc(chat_id: int | str) -> dict:
 
 
 def save_doc(chat_id: int | str, doc: dict) -> None:
-    messages = list(doc.get("messages") or [])[-settings.history_turns:]
+    messages = list(doc.get("messages") or [])
+    from bot.nudge import extract_phone_from_history
+    phone = extract_phone_from_history(messages)
+    if phone:
+        doc.setdefault("crm", {})["phone_evidence"] = {
+            "phone": phone, "chat_id": str(chat_id), "source": "client_message",
+        }
     payload = {
         "chat_id": str(chat_id),
         "updated_at": _now(),
         "messages": messages,
         "nudge": doc.get("nudge") or {},
     }
-    for key in ("avito", "autoru", "crm", "processing"):
+    for key in ("avito", "autoru", "crm", "processing", "transcript"):
         extra = doc.get(key)
         if extra:
             payload[key] = extra
-    _history_path(chat_id).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    path = _history_path(chat_id)
+    atomic_json(path, payload)
+
+
+def atomic_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            pass  # Preserve the last valid backup when recovering damaged state.
+        else:
+            shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
+    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
 
 
 def load_history(chat_id: int | str) -> list[dict]:

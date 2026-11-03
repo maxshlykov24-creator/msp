@@ -98,11 +98,11 @@ class Avito:
             return data["chat"]
         return data if isinstance(data, dict) else {}
 
-    async def messages(self, chat_id: str, limit: int = 20) -> list[dict]:
+    async def messages(self, chat_id: str, limit: int = 20, offset: int = 0) -> list[dict]:
         data = await self._call(
             "GET",
             "/messenger/v3/accounts/%s/chats/%s/messages/" % (self.user_id, chat_id),
-            params={"limit": limit},
+            params={"limit": limit, "offset": offset},
         )
         return list(data.get("messages") or [])
 

@@ -439,7 +439,7 @@ def format_alert(snap: dict, ping: int = 0) -> str:
     if snap.get("chat_url") and snap.get("chat_url") != snap.get("lead_url"):
         lines.append("▪️ <b>Переписка в amoCRM:</b> %s" % _esc(snap["chat_url"]))
     elif not snap.get("lead_url"):
-        lines.append("▪️ <b>Чат:</b> %s (ссылка на переписку не найдена)" % _esc(snap.get("chat_id") or "не определён"))
+        lines.append("▪️ <b>Чат:</b> %s (чат площадки; связь с CRM ещё не установлена)" % _esc(snap.get("chat_id") or "не определён"))
     if snap.get("url"):
         lines.append("▪️ <b>Объявление:</b> %s" % _esc(snap["url"]))
     for interest in snap.get("interests") or []:
@@ -485,10 +485,10 @@ def working_wait(start: str, end: str) -> str:
     return (("%s ч " % hours) if hours else "") + "%s мин" % minutes
 
 
-def format_done(snap: dict, line: str, elapsed: str = "") -> str:
+def format_done(snap: dict, line: str, elapsed: str = "", *, taken: bool = False) -> str:
     lines = format_alert(snap, 0).splitlines()
     if lines:
-        lines[0] = "✅ <b>Связались</b> | DIVO" + (" (%s)" % _esc(elapsed) if elapsed else "")
+        lines[0] = ("✅ <b>Взял в работу</b> | DIVO" if taken else "✅ <b>Связались</b> | DIVO") + (" (%s)" % _esc(elapsed) if elapsed else "")
     if len(lines) >= 2 and lines[1] == "":
         lines.insert(2, line)
     else:
