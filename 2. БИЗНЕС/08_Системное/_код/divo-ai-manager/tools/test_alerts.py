@@ -3519,3 +3519,28 @@ def test_nov03_claim_retry():
             d = store.load_doc(cid)
             assert 'claim_pending' not in d['crm'] and d['crm']['note_pending']
     asyncio.run(run())
+
+
+def test_nov03_avito_same_second_cursor():
+    import asyncio,copy
+    from unittest.mock import patch, AsyncMock
+    from tools.rehearse import Sandbox
+    from bot import avito_loop as loop, crm, store
+    state = {'allow': ['same-second'], 'cursor': {'same-second': 100}, 'cursor_ids': {'same-second': ['one']}}
+    rows = [{'id': 'one', 'created': 100, 'direction': 'in', 'content': {'text': 'Первый вопрос'}},
+            {'id': 'two', 'created': 100, 'direction': 'in', 'content': {'text': 'Второй вопрос'}}]
+    class API:
+        async def chats(self, **kwargs): return [{'id': 'same-second', 'last_message': rows[-1]}]
+        async def messages(self, *args, **kwargs): return list(rows)
+    scheduled=[];pending={}
+    async def run():
+        with Sandbox():
+            store.save_doc('av:same-second', {'messages': [{'role': 'user', 'content': 'Первый вопрос'}]})
+            with patch.object(loop, 'load_state', side_effect=lambda: copy.deepcopy(state)), \
+                 patch.object(loop, 'save_state', side_effect=lambda value: state.update(value)), \
+                 patch.object(loop, 'remember_listing', AsyncMock()), \
+                 patch.object(crm, 'capture_if_urgent', AsyncMock(return_value='')):
+                await loop.poll_once(API(), None, lambda *a: scheduled.append(a), pending)
+                await loop.poll_once(API(), None, lambda *a: scheduled.append(a), pending)
+            assert pending['av:same-second'] == ['Второй вопрос'] and len(scheduled) == 1
+    asyncio.run(run())

@@ -279,6 +279,47 @@ def fetch_snapshot():
     return {'products': products, 'parties': parties, 'documents': docs, 'stock': stock}
 
 
+def transfer_documents(snapshot):
+    """Reconstruct confirmed receipt reallocations without rewriting source documents.
+
+    The original receipt remains historical truth for closed bills. The destination
+    document is a transfer of the remaining stock, never a second physical intake.
+    An exact source contract makes subsequent edits fail closed for a new review.
+    """
+    from copy import deepcopy
+    from collections import Counter
+    docs = deepcopy(snapshot['documents'])
+    by_id = {d['id']: d for d in docs}
+    used = set()
+    def contract(d):
+        return {k: d[k] for k in ('id', 'kind', 'moment', 'store', 'party', 'posted')} | {
+            'positions': sorted(d['positions'], key=lambda p: p['id'])}
+    def quantities(d):
+        result = Counter()
+        for p in d['positions']:
+            result[p['product']] += number(p['qty'], 'transfer quantity')
+        return result
+    for rule in snapshot.get('receipt_transfers', []):
+        old, current, target = (rule[k] for k in ('source_before', 'source_after', 'destination'))
+        for expected in (current, target):
+            if expected['id'] in used or expected['id'] not in by_id or contract(by_id[expected['id']]) != contract(expected):
+                raise ValueError('Изменены документы согласованного переноса остатка. Нужна повторная сверка: ' + expected['name'])
+            used.add(expected['id'])
+        if (any(d['kind'] != 'supply' or not d['posted'] for d in (old, current, target))
+                or {k: contract(old)[k] for k in contract(old) if k != 'positions'} !=
+                   {k: contract(current)[k] for k in contract(current) if k != 'positions'}
+                or old['party'] == target['party'] or old['moment'] >= target['moment']):
+            raise ValueError('Некорректное основание переноса остатка')
+        removed = quantities(old)
+        removed.subtract(quantities(current))
+        if any(q < 0 for q in removed.values()) or not +removed or +removed != quantities(target):
+            raise ValueError('Количество переноса не совпадает с изменением исходной приёмки')
+        by_id[current['id']]['positions'] = deepcopy(old['positions'])
+        by_id[target['id']]['transfer_from'] = {'party': old['party'], 'store': old['store'],
+                                               'received_at': old['moment'], 'name': old['name']}
+    return docs
+
+
 def build_plan(snapshot, groups):
     products = snapshot['products']
     membership = {}
@@ -288,7 +329,7 @@ def build_plan(snapshot, groups):
                 raise ValueError('Контрагент указан в нескольких группах')
             membership[party] = 'group:%s' % n
     buckets, lots, moves, balance = defaultdict(list), {}, {}, defaultdict(float)
-    for doc in sorted(snapshot['documents'], key=lambda d: (d['moment'], d['kind'] != 'supply', d['id'])):
+    for doc in sorted(transfer_documents(snapshot), key=lambda d: (d['moment'], d['kind'] != 'supply', d['id'])):
         for pos in doc['positions']:
             qty, pid = pos['qty'], pos['product']
             if not qty:
@@ -301,6 +342,30 @@ def build_plan(snapshot, groups):
                         received_at=doc['moment'], accepted_at=doc['moment'], ms_supply_id=doc['id'],
                         source_key=key, source_document=('Приёмка' if doc['kind']=='supply' else 'Отгрузка')+' №'+doc['name'])
             bucket = (membership.get(doc['party'], doc['party']), doc['store'], pid)
+            transfer = doc.get('transfer_from')
+            if transfer:
+                source_bucket = (membership.get(transfer['party'], transfer['party']), transfer['store'], pid)
+                if source_bucket == bucket:
+                    raise ValueError('Для переноса нужны раздельные остатки контрагентов, убери общую группу')
+                left = qty
+                for receipt_key in buckets[source_bucket]:
+                    receipt = lots[receipt_key]
+                    take = min(left, receipt['qty_left'])
+                    if take <= 0:
+                        continue
+                    receipt['qty_left'] -= take
+                    moves[key+':transfer:'+receipt_key] = {'lot_key': receipt_key, 'qty': take,
+                        'kind': 'out', 'ref': doc['id'], 'created_at': doc['moment']}
+                    left -= take
+                    if left < 1e-7:
+                        break
+                if left > 1e-7:
+                    raise ValueError('Для переноса №%s не хватает остатка %s (%g)' % (doc['name'], p['article'], left))
+                # Day of transfer is charged once, to the source owner. Destination
+                # storage begins next morning; physical intake date is retained.
+                base['received_at'] = transfer['received_at']
+                base['source_document'] = 'Перенос №%s из Приёмки №%s' % (doc['name'], transfer['name'])
+                balance[pid] -= qty
             balance[pid] += qty if doc['kind']=='supply' else -qty
             if doc['kind'] == 'supply':
                 lots[key] = dict(base, ledger_kind='receipt', qty_in=qty, qty_left=qty)
@@ -410,6 +475,7 @@ def run(blocking=True):
             if not groups:
                 raise ValueError('Не настроены подтверждённые группы контрагентов для учёта')
             snapshot = fetch_snapshot()
+            snapshot['receipt_transfers'] = json.loads(get_setting('ledger:receipt_transfers') or '[]')
             plan = build_plan(snapshot, groups)
             with run_lock('billing'):
                 return apply_plan(snapshot, plan, groups)

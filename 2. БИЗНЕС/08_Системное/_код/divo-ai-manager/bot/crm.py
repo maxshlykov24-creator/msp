@@ -746,6 +746,10 @@ def _owned_lead(snap: dict, doc: dict) -> dict:
     current.setdefault("crm", {}).update(creation=dict(creation), verified_binding=state["verified_binding"])
     store.save_doc(cid, current)
     result = _bind_lead(snap, doc, lead, created=True)
+    alert = (doc.get("crm") or {}).get("alert") or {}
+    if alert.get("picked") == "button":
+        doc["crm"]["claim_pending"] = {"responsible": alert.get("picked_amo"),
+            "who": alert.get("picked_by") or "Менеджер", "at": alert.get("picked_at") or now_msk().isoformat()}
     # Delivery is handled by the persistent notes queue, including after restart.
     queue_note(doc, "handoff", note_text(snap) + "\n\nЧат площадки: " + cid)
     queue_transcript(doc)
@@ -779,8 +783,13 @@ async def refresh_transcript(chat_id: str, doc: dict) -> None:
     try:
         if av:
             offset = 0
+            seen = set()
             while True:
                 page = await api.messages(chat_id[3:], limit=100, offset=offset)
+                ids = {str(m.get("id")) for m in page}
+                if page and not ids - seen:
+                    raise RuntimeError("Provider history pagination did not advance")
+                seen.update(ids)
                 rows.extend(page)
                 if len(page) < 100:
                     break
@@ -825,7 +834,7 @@ async def ensure_lead_async(snap: dict, doc: dict) -> dict:
         target = current.setdefault("crm", {})
         changed = doc.get("crm") or {}
         for key in ("creation", "verified_binding", "lead_id", "contact_id", "status_id",
-                    "lead_url", "created", "phone", "transcript_synced_at"):
+                    "lead_url", "created", "phone", "transcript_synced_at", "claim_pending"):
             if key in changed:
                 target[key] = changed[key]
         for row in changed.get("note_pending") or []:

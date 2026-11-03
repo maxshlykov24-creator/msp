@@ -43,8 +43,12 @@ def load_state() -> dict:
         return empty
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return empty
+    except (json.JSONDecodeError, OSError) as exc:
+        try:
+            data = json.loads(path.with_suffix(path.suffix + ".bak").read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            raise RuntimeError("Corrupt provider cursor: " + path.name) from exc
+        log.error("Восстановлен курсор из резервной копии: %s", path.name)
     if not isinstance(data, dict):
         return empty
     for key, default in empty.items():
@@ -53,9 +57,7 @@ def load_state() -> dict:
 
 
 def save_state(data: dict) -> None:
-    _state_path().write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    store.atomic_json(_state_path(), data)
 
 
 def store_id(chat_id: str) -> str:

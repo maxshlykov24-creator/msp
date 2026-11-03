@@ -94,6 +94,7 @@ class Autoru:
         self._own_at = 0.0
         self._csrf = ""
         self._jar_ready = False
+        self._room_scan_page = DEALER_PAGES + 1
 
     async def close(self) -> None:
         await self.client.aclose()
@@ -196,7 +197,8 @@ class Autoru:
     async def _dealer_rooms(self) -> list[dict]:
         out: list[dict] = []
         seen: set[str] = set()
-        for page in range(1, DEALER_PAGES + 1):
+        pages = list(range(1, DEALER_PAGES + 1)) + [self._room_scan_page]
+        for page in pages:
             data = await self._cabinet(
                 "cabinet/postDealerChats",
                 {
@@ -217,6 +219,8 @@ class Autoru:
                 out.append(item)
             pag = data.get("pagination") or {}
             total_pages = int(pag.get("total_page_count") or page)
+            if page == self._room_scan_page:
+                self._room_scan_page = page + 1 if page < total_pages else DEALER_PAGES + 1
             if page >= total_pages or len(rows) < DEALER_PAGE_SIZE:
                 break
         log.info("авто.ру кабинет: %d чатов на хвосте", len(out))

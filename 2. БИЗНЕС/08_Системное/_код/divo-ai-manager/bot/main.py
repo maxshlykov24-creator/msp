@@ -1149,6 +1149,9 @@ def waiting_for_bot(chat_id: str) -> bool:
     if store.is_paused(chat_id) and not is_llm_pause_reason(info.get("reason") or ""):
         return False
     doc = store.load_doc(chat_id)
+    review = (doc.get("crm") or {}).get("recovery_review") or {}
+    if review.get("history_key") == store.history_key(doc.get("messages") or []):
+        return False  # Historical recovery: await review or a genuinely new client message.
     alert = ((doc.get("crm") or {}).get("alert") or {})
     if alert.get("picked") in {"button", "chat", "call", "stage"}:
         return False

@@ -957,9 +957,10 @@ def find_widget_lead(
 def owned_entity(kind: str, marker: str, since: int) -> dict | None:
     """Reconcile a write intent by its exact tag; names/phones never identify a chat."""
     matches = []
-    for row in paged("/api/v4/" + kind,
-                     {"filter[created_at][from]": max(0, since - 300), "limit": 250,
-                      "with": "contacts"}, kind):
+    params = {"filter[created_at][from]": max(0, since - 300), "limit": 250}
+    if kind == "leads":
+        params["with"] = "contacts"
+    for row in paged("/api/v4/" + kind, params, kind):
         if any(t.get("name") == marker for t in (row.get("_embedded") or {}).get("tags", [])):
             matches.append(row)
     if len(matches) > 1:

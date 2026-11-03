@@ -56,8 +56,12 @@ def load_state() -> dict:
         return empty
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return empty
+    except (json.JSONDecodeError, OSError) as exc:
+        try:
+            data = json.loads(path.with_suffix(path.suffix + ".bak").read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            raise RuntimeError("Corrupt provider cursor: " + path.name) from exc
+        log.error("Восстановлен курсор из резервной копии: %s", path.name)
     if not isinstance(data, dict):
         return empty
     data.setdefault("cursor", {})
@@ -586,6 +590,14 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
         try:
             need = 100
             msgs = await api.messages(cid, limit=need)
+            page = msgs
+            while len(page) == need and min(created_of(m) for m in page) > seen:
+                older = await api.messages(cid, limit=need, offset=len(msgs))
+                known = {str(m.get("id")) for m in msgs}
+                if older and not any(str(m.get("id")) not in known for m in older):
+                    raise AvitoError("History pagination did not advance")
+                msgs.extend(older)
+                page = older
         except AvitoError as exc:
             log.warning("авито сообщения %s: %s", cid, exc)
             continue
