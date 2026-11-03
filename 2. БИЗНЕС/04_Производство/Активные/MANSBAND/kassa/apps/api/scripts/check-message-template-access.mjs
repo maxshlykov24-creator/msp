@@ -116,4 +116,5 @@ assert((await financeApi.inject({method:'PUT',url:'/payroll/workdays',headers:ma
 assert((await financeApi.inject({method:'POST',url:'/shifts/close',headers:managerHeaders,payload:{store:'На Бауманской',cutoff:'2099-01-01T00:00:00Z',previousId:null,openingCash:0,countedCash:0,adjustment:0,reason:'Проверка'}})).statusCode===409,'future cash cutoff rejected');checks++;
 await financeApi.close();console.log(JSON.stringify({checks,result:'passed',scope:'including workday roles and shift boundaries'}));
 const {sql: testPool} = await import("../src/db/index.ts");
+await (await import("../src/lib/idempotency.ts")).closeOperationLocks();
 await testPool.end();
