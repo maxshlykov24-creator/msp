@@ -507,3 +507,9 @@ export async function findServiceByName(name: string): Promise<MsRow | null> {
   if (matching.length > 1) throw new Error(`В МойСклад несколько услуг «${name}». Требуется сверка справочника.`);
   return matching[0] ?? null;
 }
+
+
+/** Расход при денежной отмене услуги; складского возврата не создаёт. */
+export async function createPaymentOut(input:{organization:MsMeta;agent:MsMeta;sum:number;description:string;organizationAccount?:MsMeta}):Promise<MsRow>{
+  return http.post<MsRow>("/entity/paymentout",{organization:metaRef(input.organization),agent:metaRef(input.agent),sum:input.sum,description:input.description,...(input.organizationAccount?{organizationAccount:metaRef(input.organizationAccount)}:{})});
+}

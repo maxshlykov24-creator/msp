@@ -1,3 +1,4 @@
+import { withOperationLock } from "../lib/idempotency.js";
 import type { FastifyInstance } from "fastify";
 import {
   balanceSchema,
@@ -19,6 +20,10 @@ export default async function queueRoutes(app: FastifyInstance) {
   app.post("/queue", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = queueItemSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
+    if(!["change","tips"].includes(parsed.data.kind) && !["admin","rop","finance"].includes(req.user.role))return reply.code(403).send({message:"Денежное обязательство создаёт финансовый сотрудник"});
+    if (parsed.data.metadata?.source === "money_cancellation") return reply.code(403).send({message:"Отмену подтверждает руководитель в карточке заявки"});
+    const source=await deals.getByNumber(parsed.data.dealNumber);
+    if(source && (source.moneyCancellation || (parsed.data.kind === "refund" && ["rental","deferred","cert_plastic","cert_digital"].includes(source.kind))))return reply.code(409).send({message:"Используйте подтверждение денежной отмены в карточке заявки"});
     return q.addQueue(parsed.data);
   });
 
@@ -37,6 +42,9 @@ export default async function queueRoutes(app: FastifyInstance) {
     if (!isFinance && !CONSULTANT_ISSUABLE.has(item.kind)) {
       return reply.code(403).send({ message: "Эту выплату закрывает Эдвин" });
     }
+    if(parsed.data.metadata?.source === "money_cancellation")return reply.code(403).send({message:"Нельзя подменить источник выплаты"});
+    return withOperationLock(`queue:${id}`,async()=>{
+    if(item.metadata?.source === "money_cancellation")await q.syncMoneyCancellationQueue(id);
     // Зарплата (П5): каждая выданная часть — расход категории «Зарплата».
     const updated =
       item.kind === "salary"
@@ -64,7 +72,14 @@ export default async function queueRoutes(app: FastifyInstance) {
       after: updated,
       metadata: { methodId: parsed.data.methodId, amount: parsed.data.amount },
     });
+    if(item.metadata?.source === "money_cancellation")return q.syncMoneyCancellationQueue(id);
     return updated;
+    });
+  });
+
+  app.post("/queue/:id/sync",{preHandler:[app.requireFinanceQueues]},async(req)=>{
+    const {id}=req.params as {id:string};
+    return withOperationLock(`queue:${id}`,()=>q.syncMoneyCancellationQueue(id));
   });
 
   // Документы по продаже компании денег не двигают — закрываем без выплаты.

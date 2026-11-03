@@ -263,6 +263,7 @@ export async function completeTask(id: string, by: string): Promise<Task | null>
   if (current.status !== "pending") throw new Error("Задача отменена и не может быть выполнена");
   if (current.dealNumber != null) {
     const deal = await deals.getByNumber(current.dealNumber);
+    if(deal?.moneyCancellation && !["movement_accept","unreserve"].includes(current.kind))throw Object.assign(new Error("Заявка отменена. Денежный возврат и приём вещей выполняются отдельно"),{statusCode:409});
     if (deal && isObsoleteStageTask(deal, toTask(current))) {
       throw new Error("Задача устарела: этап заявки изменился. Обновите список задач");
     }

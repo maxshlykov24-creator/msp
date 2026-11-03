@@ -148,7 +148,19 @@ export function DealWorkspace({
 
   const closed = isClosed(live);
   const { user } = useAuth();
-  const canEdit = !closed || ["rop", "admin"].includes(user?.role ?? "");
+  const canEdit = !live.moneyCancellation && (!closed || ["rop", "admin"].includes(user?.role ?? ""));
+  const [cancelAmount,setCancelAmount]=useState("");
+  const [cancelReason,setCancelReason]=useState("");
+  const [cancelDestination,setCancelDestination]=useState("");
+  const [cancelError,setCancelError]=useState("");
+  const [cancelBusy,setCancelBusy]=useState(false);
+  const cancelEligible=["rental","deferred","cert_plastic","cert_digital"].includes(live.kind)&&live.paid>0;
+  async function submitCancellation(receive=false){
+    setCancelBusy(true);setCancelError("");
+    try{if(USE_MOCK)throw new Error("Подтверждение доступно в рабочей кассе");
+      const updated=await api.post<Deal>(`/deals/${live.number}/${receive?"cancelled-rental-received":"money-cancellation"}`,receive?{}:{amount:Number(cancelAmount),reason:cancelReason,destination:cancelDestination});replaceDeal(updated);
+    }catch(e){setCancelError(e instanceof Error?e.message:"Не удалось сохранить");}finally{setCancelBusy(false);}
+  }
 
   const [consultants, setConsultants] = useState<ConsultantData>({
     consultant: live.consultant,
@@ -316,7 +328,7 @@ export function DealWorkspace({
   const stageOptions = stages.includes(stage) || HIDDEN_STAGES.has(stage) ? stages : [stage, ...stages];
   const history = [...(live.history ?? [])].reverse();
   const closedNeedsReason = closed && canEdit;
-  const showSuccess = !holdKind && (live.kind === "sale" || live.kind === "company" || live.kind === "rental");
+  const showSuccess = !live.moneyCancellation && !holdKind && (live.kind === "sale" || live.kind === "company" || live.kind === "rental");
   const stageChoices = showSuccess ? stageOptions.filter((item) => item !== "Успех") : stageOptions;
   const tracksCart = live.kind === "sale" || live.kind === "company" || live.kind === "rental" || holdKind;
   const movementSatisfied =
@@ -491,7 +503,7 @@ export function DealWorkspace({
   // Отложку/обещание проводят как продажу, компанию или аренду: тот же номер
   // заявки и все данные (правки владельца 10.08.2026, п.1.1).
   const canConvert =
-    !closed &&
+    !closed && !live.moneyCancellation &&
     (live.kind === "deferred" || live.kind === "promise" || live.kind === "sale");
 
   async function convertKind(payload: ConvertKindPayload) {
@@ -556,13 +568,31 @@ export function DealWorkspace({
             )}
           </div>
         </div>
-        <StageBadge stage={stage} options={stageChoices.filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))} onChange={setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
+        <StageBadge stage={stage} options={stageChoices.filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))} onChange={live.moneyCancellation ? undefined : setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
       </div>
       <Hint>
         Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
         сверху. Этап меняется в цветной плашке. Перемещение сохраняет вид заявки.
       </Hint>
 
+      {cancelEligible && <Card className="my-5">
+        <h2 className="font-bold mb-2">Отмена и возврат денег</h2>
+        {live.moneyCancellation ? <>
+          <p>Подтверждено: {money(live.moneyCancellation.amount)} · {live.moneyCancellation.approvedBy}</p>
+          <p>{live.moneyCancellation.reason}</p><p>Получатель: {live.moneyCancellation.destination}</p>
+          <p className="text-mute text-sm mt-2">Выдача денег и её статус — в финансовой очереди, раздел «Возвраты». Подтверждение отмены ещё не означает выплату.</p>
+          {live.kind==="rental" && <div className="mt-3">{live.rentalReturnedAt ? <p>Вещи приняты: {dateRu(live.rentalReturnedAt)}</p> : (live.rentalIssuedAt||live.rentalStatus==="issued") ? <Button disabled={cancelBusy} onClick={()=>void submitCancellation(true)}>Подтвердить, что вещи приняты</Button> : <p>Выдача вещей не подтверждена.</p>}</div>}
+        </> : ["rop","admin"].includes(user?.role??"") ? <>
+          <p className="text-mute text-sm mb-3">Руководитель подтверждает сумму и причину. Выплата попадёт в финансовую очередь. При отмене сертификат блокируется; возврат арендованных вещей отмечается отдельно.</p>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Сумма возврата, ₽"><input className="input" type="number" min="0.01" step="0.01" value={cancelAmount} onChange={e=>setCancelAmount(e.target.value)}/></Field>
+            <Field label="Причина отмены"><input className="input" value={cancelReason} onChange={e=>setCancelReason(e.target.value)}/></Field>
+            <Field label="Получатель и реквизиты"><input className="input" value={cancelDestination} onChange={e=>setCancelDestination(e.target.value)}/></Field>
+          </div>
+          <Button className="mt-3" disabled={cancelBusy||Number(cancelAmount)<=0||!cancelAmount||cancelReason.trim().length<3||cancelDestination.trim().length<2} onClick={()=>void submitCancellation()}>Подтвердить отмену и поставить возврат в очередь</Button>
+        </> : <p className="text-mute">Сумму и причину возврата подтверждает руководитель в этой карточке.</p>}
+        {cancelError&&<p className="text-red-400 mt-2">{cancelError}</p>}
+      </Card>}
       <div className="space-y-5">
         {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
         {isApproxDateStage(stage) && <Card><Field label="Примерная дата встречи или заказа" required><DatePicker className="input" value={approxMeetingDate} onChange={(value) => setApproxMeetingDate(value)} /></Field></Card>}
@@ -800,7 +830,7 @@ export function DealWorkspace({
 
         {(holdKind || closed || canReturnExchange || linkedReturns.length > 0) && <Card>
           <SectionTitle>Дополнительные действия</SectionTitle>
-          {closed && !canEdit && <p className="text-[12px] text-mute">Завершённую заявку может изменить только РОП или администратор.</p>}
+          {closed && !canEdit && <p className="text-[12px] text-mute">{live.moneyCancellation ? "Заявка заблокирована после подтверждения отмены." : "Завершённую заявку может изменить только РОП или администратор."}</p>}
           {holdKind && <p className="text-[12px] text-mute">Это заявка старого вида. Перед завершением выберите продажу, онлайн-продажу, компанию или аренду через «Сменить тип».</p>}
           {closedNeedsReason && (
             <label className="block mt-3">
@@ -865,7 +895,7 @@ export function DealWorkspace({
             <StageBadge
               stage={stage}
               options={stageChoices}
-              onChange={setStage}
+              onChange={live.moneyCancellation ? undefined : setStage}
               compact
               className="text-[13px]"
             />

@@ -44,7 +44,7 @@ const CLOSED_SINCE_UNIX = Math.floor(new Date("2026-06-01T00:00:00+03:00").getTi
 /** В кассе у не слива нет этапа «Провал». Старые записи с этим этапом показываем как «Не слив». */
 function presentDeal(deal: Deal): Deal {
   if (deal.kind === "no_sliv" && deal.stage === "Провал") return { ...deal, stage: "Не слив" };
-  if (deal.kind !== "rental") return deal;
+  if (deal.moneyCancellation || deal.kind !== "rental") return deal;
   const today = moscowTodayYmd();
   if (deal.stage === "Аренда оплачена" && rentalEndPassed(deal.rentalTo, today)) {
     return { ...deal, stage: RENTAL_OVERDUE_STAGE };
@@ -213,7 +213,7 @@ function dealForDb(deal: Deal): Deal {
 
 /** «Аренда оплачена» с вышедшим сроком → «Аренда просрочена». В amoCRM этап не пишем: такого статуса там нет. */
 export async function markRentalOverdue(deal: Deal): Promise<Deal> {
-  if (deal.kind !== "rental" || deal.stage !== "Аренда оплачена" || !rentalEndPassed(deal.rentalTo)) return deal;
+  if (deal.moneyCancellation || deal.kind !== "rental" || deal.stage !== "Аренда оплачена" || !rentalEndPassed(deal.rentalTo)) return deal;
   const updated: Deal = {
     ...deal,
     stage: RENTAL_OVERDUE_STAGE,
@@ -233,7 +233,7 @@ export async function markRentalOverdue(deal: Deal): Promise<Deal> {
 
 export async function persist(deal: Deal): Promise<Deal> {
   const data = dealForDb(deal);
-  await db
+  const saved = await db
     .insert(dealsTable)
     .values({
       number: data.number,
@@ -261,7 +261,9 @@ export async function persist(deal: Deal): Promise<Deal> {
         syncError: data.syncError ?? null,
         updatedAt: new Date(),
       },
-    });
+      setWhere: sql`not (${dealsTable.data} ? 'moneyCancellation')`,
+    }).returning({number:dealsTable.number});
+  if (!saved.length) throw Object.assign(new Error("По заявке подтверждена денежная отмена. Дальнейшая продажа или изменение оплаты запрещены"),{statusCode:409});
   return data;
 }
 
@@ -320,6 +322,7 @@ export async function updateDealFields(
 ): Promise<Deal | null> {
   const deal = await resolve(ref);
   if (!deal) return null;
+  if(deal.moneyCancellation)throw Object.assign(new Error("По заявке подтверждена денежная отмена"),{statusCode:409});
   const { reason, ...fields } = patch;
   const nextStage = fields.stage ?? deal.stage;
   const updated: Deal = {
@@ -365,6 +368,7 @@ export async function updateStage(
 ): Promise<Deal | null> {
   const deal = await resolve(ref);
   if (!deal) return null;
+  if(deal.moneyCancellation)throw Object.assign(new Error("По заявке подтверждена денежная отмена"),{statusCode:409});
   if (stage === "Товар отложен") {
     const error = holdPaymentError(deal.paid);
     if (error) throw new Error(error);
@@ -443,6 +447,7 @@ export async function convertDealKind(
 ): Promise<Deal | null> {
   const deal = await resolve(ref);
   if (!deal) return null;
+  if(deal.moneyCancellation)throw Object.assign(new Error("По заявке подтверждена денежная отмена"),{statusCode:409});
   const nextKind = patch.kind;
   if (deal.kind === nextKind) return deal;
 

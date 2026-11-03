@@ -199,6 +199,7 @@ export async function cancelObsoleteStageTasks(deal: Deal, who: string): Promise
  * заявки и при любой смене этапа, включая автоматическую.
  */
 export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<void> {
+  if(deal.moneyCancellation)return;
   if (depth > 3) return; // защита от циклов в правилах
   await cancelObsoleteStageTasks(deal, who);
   await syncPromiseFollowUp(deal, who);

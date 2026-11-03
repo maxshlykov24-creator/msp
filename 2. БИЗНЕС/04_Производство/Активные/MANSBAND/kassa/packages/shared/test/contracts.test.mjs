@@ -424,7 +424,7 @@ test("online conversion preserves the order and queues assembly after CRM stage 
         then(resolve, reject) {
           cached ??= Promise.resolve().then(() => {
             if (operation === "select") return state[target].filter(predicate);
-            if (target === "deals") { state.deals[0] = values; return []; }
+            if (target === "deals") { state.deals[0] = values; return fields ? [{ number: values.number }] : []; }
             const row = { id: "task-1", status: "pending", ...values }; state.tasks.push(row);
             return fields ? [row] : [];
           });

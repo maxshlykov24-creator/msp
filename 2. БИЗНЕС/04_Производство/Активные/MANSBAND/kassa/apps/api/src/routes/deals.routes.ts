@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { withOperationLock } from "../lib/idempotency.js";
 import { completedDealEditError } from "../plugins/auth.js";
 import type { FastifyInstance } from "fastify";
@@ -84,6 +85,18 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
   resolveDeal?: typeof deals.resolve;
 } = {}) {
   const resolveDeal = dependencies.resolveDeal ?? deals.resolve;
+  app.post("/deals/:ref/money-cancellation",{preHandler:[app.requireRoles(["admin","rop"])]},async(req,reply)=>{
+    const parsed=z.object({amount:z.number().positive().finite(),reason:z.string().trim().min(3).max(500),destination:z.string().trim().min(2).max(300)}).strict().safeParse(req.body);
+    if(!parsed.success)return reply.code(400).send({message:"Укажите сумму, причину отмены и получателя возврата"});
+    const deal=await resolveDeal((req.params as {ref:string}).ref);
+    if(!deal)return reply.code(404).send({message:"Заявка не найдена"});
+    return queueService.approveMoneyCancellation(deal.number,parsed.data,{id:req.user.sub,name:req.user.name,role:req.user.role});
+  });
+  app.post("/deals/:ref/cancelled-rental-received",{preHandler:[app.authenticate]},async(req,reply)=>{
+    const deal=await resolveDeal((req.params as {ref:string}).ref);
+    if(!deal)return reply.code(404).send({message:"Заявка не найдена"});
+    return queueService.receiveCancelledRental(deal.number,req.user.name);
+  });
   // Список заявок: локальное зеркало + amo (короткий потолок — иначе мобильный логин/первый экран стопорятся).
   app.get("/deals", { preHandler: [app.authenticate] }, async () => {
     const local = await deals.listLocal();

@@ -114,7 +114,7 @@ globalThis.fetch=async(url,options={})=>{
   throw Error('Unexpected CRM test request '+method+' '+path);
  }
  if(path==='/entity/counterparty'&&method==='GET'){const id='00000000-0000-4000-8000-000000000055';return json({rows:[{id,name:'Проверка',phone:'+79990000000',meta:meta('counterparty',id)}]});}
- const match=path.match(/^\/entity\/(customerorder|demand|cashin|salesreturn|paymentin)(?:\/([0-9a-f-]+))?$/);
+ const match=path.match(/^\/entity\/(customerorder|demand|cashin|cashout|paymentout|salesreturn|paymentin)(?:\/([0-9a-f-]+))?$/);
  if(match){const [,type,id]=match;
   if(method==='GET'&&id)return json(externalDocs.get(id));
   if(method==='PUT'&&id){const updated={...externalDocs.get(id),...body};externalDocs.set(id,updated);return json(updated);}
@@ -142,6 +142,56 @@ assert.equal(newLeadCalls,0,'existing CRM binding retained');
 const refundDeal={...saleDeal,id:crypto.randomUUID(),number:fixture+31,kind:'refund',funnel:'return',amoLeadId:fixture+43,msOrderId:undefined,msDemandId:undefined,paid:0,payments:[],total:-9000,linkedDealNumber:saleDeal.number,items:[{...saleDeal.items[0],price:-9000,settledUnitPrice:9000,isReturn:true}]};
 await dealService.persist(refundDeal);const returned=await saleService.processSale(refundDeal,{fulfill:true,who:'Проверка'});await saleService.processSale(returned,{fulfill:true,who:'Проверка'});
 assert.equal(createdDocs.filter(d=>d.type==='salesreturn').length,1);assert.equal(newLeadCalls,0,'return retry does not create a new CRM lead');
+
+// Отмена услуг: полномочия, лимиты, повторы, отдельные вещи, внешние документы.
+const cancellationActor={name:'Руководитель проверки',role:'admin'};
+const cancelledNumber=fixture+60;
+const cancellationDeal={...sample,id:crypto.randomUUID(),number:cancelledNumber,kind:'rental',stage:'Аренда оплачена',total:100,paid:100,items:[{productId,name:'Комплект',qty:1,price:0},{productId:'rent',name:'Аренда',price:100,qty:1}],payments:[{id:'receipt',amount:100,methodId:'cash'}],rentalIssuedAt:new Date().toISOString(),rentalStatus:'issued'};
+await dealService.persist(cancellationDeal);
+await db.insert(ledgerTable).values({dealNumber:cancelledNumber,methodId:'cash',kind:'cash',amount:10000,msPaymentId:crypto.randomUUID(),idempotencyKey:'approved-paid:'+fixture,createdBy:'Проверка'});
+const approveInput={amount:80,reason:'Проверочная отмена',destination:'Проверочный получатель'};
+await assert.rejects(()=>q.approveMoneyCancellation(cancelledNumber,approveInput,{name:'Консультант',role:'consultant'}));
+await assert.rejects(()=>q.approveMoneyCancellation(cancelledNumber,{...approveInput,amount:100.01},cancellationActor));
+const approveResults=await Promise.allSettled(Array.from({length:8},()=>q.approveMoneyCancellation(cancelledNumber,approveInput,cancellationActor)));
+assert(approveResults.some(r=>r.status==='fulfilled'));
+const approved=await q.approveMoneyCancellation(cancelledNumber,approveInput,cancellationActor);
+assert.equal((await q.listQueue()).filter(x=>x.dealNumber===cancelledNumber).length,1,'approval replay has one obligation');
+await assert.rejects(()=>q.approveMoneyCancellation(cancelledNumber,{...approveInput,amount:81},cancellationActor));
+await assert.rejects(()=>q.addQueue({...payload,dealNumber:cancelledNumber,amount:80}));
+await assert.rejects(()=>dealService.persist({...cancellationDeal,paid:200}),'stale write cannot erase approval');
+await assert.rejects(()=>saleService.processSale(cancellationDeal,{fulfill:false,who:'Проверка'}),'cancelled sale cannot resume');
+assert.equal(approved.rentalReturnedAt,undefined,'money approval does not receive clothes');
+const received=await q.receiveCancelledRental(cancelledNumber,'Проверка');assert.equal(received.rentalStatus,'returned');
+assert.equal((await q.listQueue()).find(x=>x.id===approved.moneyCancellation.queueId).issuedAmount,0,'receiving clothes does not pay money');
+const cancellationId=approved.moneyCancellation.queueId;
+await q.issueQueue(cancellationId,{by:'Проверка',methodId:'cash',amountRub:30,expectedIssuedAmount:0});
+await q.syncMoneyCancellationQueue(cancellationId);await q.syncMoneyCancellationQueue(cancellationId);
+assert.equal(createdDocs.filter(x=>x.type==='cashout').length,1,'cash cancellation document replay is idempotent');
+await assert.rejects(()=>q.issueQueue(cancellationId,{by:'Проверка',methodId:'cash',amountRub:30,expectedIssuedAmount:0}));
+await q.issueQueue(cancellationId,{by:'Проверка',methodId:'sber_misha',amountRub:50,expectedIssuedAmount:30});
+await q.syncMoneyCancellationQueue(cancellationId);await q.syncMoneyCancellationQueue(cancellationId);
+assert.equal(createdDocs.filter(x=>x.type==='paymentout').length,1);
+const cancelledQueue=(await q.listQueue()).find(x=>x.id===cancellationId);assert.equal(cancelledQueue.issuedAmount,80);assert.equal(cancelledQueue.payouts.length,2);
+const cancellationLedger=await pg`select amount,ms_payment_id from ledger where deal_number=${cancelledNumber} and amount<0`;assert.equal(cancellationLedger.reduce((s,x)=>s+x.amount,0),-8000);assert(cancellationLedger.every(x=>x.ms_payment_id));
+const certNumber=fixture+61;
+const refundableCert=await r.ensureCertificate('refund:'+crypto.randomUUID(),{...base,buyerDealNumber:certNumber});
+await c.redeem(refundableCert.number,30);
+const certDeal={...cancellationDeal,id:crypto.randomUUID(),number:certNumber,kind:'cert_digital',certificateNumber:refundableCert.number};
+await dealService.persist(certDeal);await db.insert(ledgerTable).values({dealNumber:certNumber,methodId:'cash',kind:'cash',amount:10000,msPaymentId:crypto.randomUUID(),idempotencyKey:'cert-paid:'+fixture,createdBy:'Проверка'});
+await assert.rejects(()=>q.approveMoneyCancellation(certNumber,{...approveInput,amount:71},cancellationActor));
+assert.equal((await c.list()).find(x=>x.number===refundableCert.number).status,'active','failed approval rolls back certificate');
+await q.approveMoneyCancellation(certNumber,{...approveInput,amount:60},cancellationActor);
+const certAfter=(await c.list()).find(x=>x.number===refundableCert.number);assert.equal(certAfter.balance,10);assert.equal(certAfter.status,'cancelled');assert.equal(await c.redeem(refundableCert.number,1),null,'approved refund cannot also spend certificate');
+await assert.rejects(()=>q.addQueue({...payload,dealNumber:certNumber,metadata:{source:'money_cancellation'}}),'generic queue cannot forge approval');
+const testSale={...sample,id:crypto.randomUUID(),number:fixture+62,isTest:true};await dealService.persist(testSale);
+await assert.rejects(()=>saleService.processSale(testSale,{fulfill:false,who:'Проверка'}),'confirmed test cannot recreate finance documents');
+const unknownCash={...cancellationDeal,id:crypto.randomUUID(),number:fixture+63,paid:undefined};await dealService.persist(unknownCash);
+await assert.rejects(()=>q.approveMoneyCancellation(unknownCash.number,approveInput,cancellationActor),'missing historical payment cannot authorize refund');
+const beforeEdwin=await cash.cashShift(sample.store);
+const certRefundQueue=(await q.listQueue()).find(x=>x.dealNumber===certNumber);
+await q.issueQueue(certRefundQueue.id,{by:'Проверка',methodId:'cash_edwin',expectedIssuedAmount:0});await q.syncMoneyCancellationQueue(certRefundQueue.id);
+assert.equal((await cash.cashShift(sample.store)).movement,beforeEdwin.movement,'Edwin cash must not reduce store cashbox');
+console.log(JSON.stringify({cancellation:['manager-only','payment cap','certificate cap and atomic block','concurrent approval and replay','immutable approved amount','stale edit rejected','clothes separate','partial payouts','MS cashout and paymentout once'],result:'passed'}));
 console.log(JSON.stringify({saleProcess:['deposit before fulfillment','net discounted positions','payment rejection visible','checkpoint resume','documents and payments not duplicated','deposit linked','return CRM binding retained'],result:'passed'}));
 console.log(JSON.stringify({workdaysAndShifts:['zero-sales day','unconfirmed payroll blocked','cash movement from ledger','mismatch blocked','closure persists','repeat blocked','balance carried forward'],result:'passed'}));
 console.log(JSON.stringify({statistics:['refund attributed to original consultant','refund and defect not new clients','test deal excluded','net revenue'],result:'passed'}));

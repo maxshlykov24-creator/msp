@@ -159,7 +159,7 @@ export function EdwinQueue() {
   const [expenseError, setExpenseError] = useState<string | null>(null);
 
   const edwinRows = rows.filter((q) => !MISHA_KINDS.has(q.kind));
-  const pending = edwinRows.filter((q) => q.status === "pending");
+  const pending = edwinRows.filter((q) => q.status === "pending" || q.metadata?.financialSyncError);
   const issued = edwinRows.filter((q) => q.status === "issued");
   const pendingSum = pending.reduce((s, q) => s + (q.amount - (q.issuedAmount ?? 0)), 0);
   const periodFromDay = periodStart(period);
@@ -175,7 +175,7 @@ export function EdwinQueue() {
         if (MISHA_KINDS.has(q.kind)) return false;
         return (
           (kind === "all" || q.kind === kind) &&
-          (status === "all" || q.status === status) &&
+          (status === "all" || q.status === status || (status === "pending" && q.metadata?.financialSyncError)) &&
           (!dateFrom || day >= dateFrom) &&
           (!dateTo || day <= dateTo)
         );
@@ -192,7 +192,7 @@ export function EdwinQueue() {
     const counts: Record<string, number> = {};
     for (const q of edwinRows) {
       const day = q.createdAt.slice(0, 10);
-      if (status !== "all" && q.status !== status) continue;
+      if (status !== "all" && q.status !== status && !(status === "pending" && q.metadata?.financialSyncError)) continue;
       if (dateFrom && day < dateFrom) continue;
       if (dateTo && day > dateTo) continue;
       counts[q.kind] = (counts[q.kind] ?? 0) + 1;
@@ -570,6 +570,11 @@ export function EdwinQueue() {
                           выдано {money(already)} · осталось {money(remainder)}
                         </div>
                       )}
+                      {q.metadata?.source === "money_cancellation" && <div className="text-[11px] text-mute mt-1">Отмена · {String(q.metadata.approvedBy??"")} · {String(q.metadata.reason??"")}</div>}
+                      {Boolean(q.metadata?.financialSyncError) && <div className="text-[11px] text-amber-300 mt-1">
+                        Выдача записана. Документ МойСклад не подтверждён. Повторно деньги не выдавайте.
+                        <button className="underline ml-2" onClick={async(e)=>{e.stopPropagation();try{await api.post(`/queue/${q.id}/sync`,{});window.location.reload();}catch(error){window.alert(error instanceof Error?error.message:"Не удалось сверить");}}}>Сверить документ</button>
+                      </div>}
                       {(q.payouts ?? []).length > 0 && (
                         <div className="text-[11px] text-mute mt-0.5">
                           {(q.payouts ?? [])
@@ -614,7 +619,7 @@ export function EdwinQueue() {
                           <Check size={14} /> Выдать
                         </Button>
                       )}
-                      {q.status === "issued" && (
+                      {q.status === "issued" && q.metadata?.source !== "money_cancellation" && (
                         <Button
                           variant="subtle"
                           className="py-1.5 px-2.5 text-[12px]"

@@ -134,6 +134,9 @@ export interface Deal {
   completedAt?: string;
   financialSyncRequired?: boolean;
   isTest?: boolean;
+  /** Подтверждённая отмена денег, отдельно от физического возврата вещей. */
+  moneyCancellation?: { queueId: string; amount: number; reason: string; approvedBy: string; approvedAt: string; destination: string };
+
   funnel: FunnelType;
   kind: DealKind;
   consultant: string;

@@ -3,8 +3,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { accountBalances, expenses, queue, queuePayouts, sary, tasks } from "../db/schema.js";
+import { accountBalances, expenses, queue, queuePayouts, sary, tasks, deals as dealsTable, certificates, ledger, auditLog, dealItemState } from "../db/schema.js";
 import type { AccountBalance, Deal, Expense, ExpenseSplit, QueueItem, SaryPayout } from "@kassa/shared";
+import { paymentKindOf, findPaymentMethod } from "@kassa/shared";
+import { withOperationLock } from "../lib/idempotency.js";
+import type { AuditActor } from "./audit.js";
 import { broadcast } from "../ws/hub.js";
 
 // ── Очередь Эдвина (сдача / возврат «не выдано») ────────────────────
@@ -54,9 +57,13 @@ export async function addQueue(
     status?: string;
   }
 ) {
+  if (item.metadata?.source === "money_cancellation") throw Object.assign(new Error("Отмену подтверждает руководитель в карточке заявки"), {statusCode:403});
   const amount = Math.round(item.amount * 100);
   if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("Некорректная сумма задачи");
   const row = await db.transaction(async tx => {
+    const [sourceRow]=await tx.select().from(dealsTable).where(eq(dealsTable.number,item.dealNumber)).for("update");
+    const source=sourceRow?.data as Deal | undefined;
+    if(source?.moneyCancellation || (source && item.kind==="refund" && ["rental","deferred","cert_plastic","cert_digital"].includes(source.kind)))throw Object.assign(new Error("Денежную отмену подтверждает руководитель в карточке заявки"),{statusCode:409});
     const key = JSON.stringify([item.kind, item.dealNumber, item.dealNumber > 0 ? "" : item.destination]);
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 713))`);
     // Выполненная обязанность тоже является дублем. Повтор события не создаёт выплату заново.
@@ -65,6 +72,7 @@ export async function addQueue(
       item.dealNumber > 0 ? undefined : eq(queue.destination, item.destination)
     )).limit(1);
     if (existing) {
+      if ((existing.metadata as Record<string,unknown>)?.source === "money_cancellation") throw Object.assign(new Error("Подтверждённую сумму отмены нельзя изменить через очередь"), {statusCode:409});
       if (existing.amount === amount && existing.destination === item.destination) return existing;
       if (existing.issuedAmount > 0 || existing.status === "issued") throw Object.assign(new Error("Обязательство уже оплачено. Нельзя создавать повторную выплату при изменении суммы или реквизитов."), {statusCode:409});
       const [updated] = await tx.update(queue).set({amount,destination:item.destination,metadata:item.metadata,client:item.client}).where(eq(queue.id,existing.id)).returning();
@@ -111,6 +119,8 @@ export async function issueQueue(
     if (input.expectedIssuedAmount != null && Math.round(input.expectedIssuedAmount * 100) !== current.issuedAmount) {
       throw Object.assign(new Error("Остаток выплаты изменился. Обновите очередь перед новой выплатой."), { statusCode: 409 });
     }
+    const [source]=await tx.select().from(dealsTable).where(eq(dealsTable.number,current.dealNumber));
+    if((source?.data as Deal|undefined)?.isTest)throw Object.assign(new Error("Тестовая выплата исключена из финансового проведения"),{statusCode:409});
     const requested = input.amountRub == null ? remaining : Math.round(input.amountRub * 100);
     if (!Number.isSafeInteger(requested) || requested <= 0 || requested > remaining) {
       throw new Error("Сумма выплаты должна быть положительной и не превышать остаток");
@@ -119,13 +129,19 @@ export async function issueQueue(
     const issuedTotal = current.issuedAmount + amount;
     const closed = issuedTotal >= current.amount;
 
-    await tx.insert(queuePayouts).values({
+    const [payout] = await tx.insert(queuePayouts).values({
       queueId: id,
       amount,
       methodId: input.methodId,
       issuedBy: input.by,
       note: input.note ?? null,
-    });
+    }).returning();
+    if ((current.metadata as Record<string,unknown>)?.source === "money_cancellation") {
+      if (!findPaymentMethod(input.methodId) || paymentKindOf(input.methodId) === "certificate") throw Object.assign(new Error("Выберите денежный способ возврата"), {statusCode:400});
+      await tx.insert(ledger).values({dealNumber:current.dealNumber,methodId:input.methodId,
+        kind:paymentKindOf(input.methodId)==="cash" && input.methodId!=="cash_edwin" ? "cash_out" : "refund_out",amount:-amount,
+        idempotencyKey:`cancellation:${payout!.id}`,createdBy:input.by});
+    }
 
     const [updated] = await tx
       .update(queue)
@@ -136,7 +152,7 @@ export async function issueQueue(
         issuedBy: input.by,
         issueMethod: input.methodId,
         issueAccount: input.methodId,
-        metadata: input.metadata ?? (current.metadata as Record<string, unknown> | null) ?? undefined,
+        metadata: (current.metadata as Record<string, unknown>)?.source === "money_cancellation" ? {...(current.metadata as Record<string,unknown>),financialSyncError:"Документ МойСклад ещё не подтверждён"} : input.metadata ?? current.metadata ?? undefined,
       })
       .where(eq(queue.id, id))
       .returning();
@@ -625,4 +641,93 @@ export async function setBalance(account: string, balanceRub: number, by: string
     .returning();
   if (!row) throw new Error("Не удалось обновить баланс");
   return { account: row.account, balance: row.balance / 100, updatedAt: row.updatedAt.toISOString() };
+}
+
+
+/** Подтверждение руководителя и резерв денег выполняются атомарно.
+ * Сертификат блокируется в той же транзакции, что создаёт обязательство возврата.
+ * Денег здесь ещё не выдаём; факт выдачи хранит финансовая очередь.
+ */
+export async function approveMoneyCancellation(number: number, input: {amount:number; reason:string; destination:string}, actor:AuditActor): Promise<Deal> {
+  if (!["admin","rop"].includes(actor.role)) throw Object.assign(new Error("Отмену подтверждает руководитель"),{statusCode:403});
+  const {getByNumber}=await import("./deals.js");
+  const initial=await getByNumber(number);
+  if(!initial)throw Object.assign(new Error("Заявка не найдена"),{statusCode:404});
+  return withOperationLock(`sale:${initial.id}`,async()=>{
+    const result=await db.transaction(async tx=>{
+      const [row]=await tx.select().from(dealsTable).where(eq(dealsTable.number,number)).for("update");
+      const deal=row?.data as Deal;
+      if(!deal || !["rental","deferred","cert_plastic","cert_digital"].includes(deal.kind))throw Object.assign(new Error("Денежная отмена доступна для аренды, отложки и сертификата"),{statusCode:400});
+      if(deal.isTest)throw Object.assign(new Error("По тестовой заявке нельзя возвращать реальные деньги"),{statusCode:409});
+      const amount=Math.round(input.amount*100);
+      if(!Number.isSafeInteger(amount)||amount<=0||Math.abs(input.amount*100-amount)>0.00001||input.reason.trim().length<3||!input.destination.trim())throw Object.assign(new Error("Укажите положительную сумму до копеек, причину и получателя"),{statusCode:400});
+      if(deal.moneyCancellation){
+        const old=deal.moneyCancellation;
+        if(old.amount===input.amount&&old.reason===input.reason.trim()&&old.destination===input.destination.trim())return deal;
+        throw Object.assign(new Error("Отмена уже подтверждена. Повторную выплату создавать нельзя"),{statusCode:409});
+      }
+      if(deal.financialSyncRequired || deal.syncStatus === "failed")throw Object.assign(new Error("Сначала завершите сверку и синхронизацию оплаты"),{statusCode:409});
+      const obligations=await tx.select().from(queue).where(eq(queue.dealNumber,number));
+      if(obligations.some(q=>q.kind==="refund"))throw Object.assign(new Error("По заявке уже есть возврат. Нужна сверка"),{statusCode:409});
+      const outgoing=await tx.select().from(ledger).where(and(eq(ledger.dealNumber,number),sql`${ledger.amount}<0`));
+      const cashPaid=deal.payments.filter(p=>paymentKindOf(p.methodId)!=="certificate").reduce((s,p)=>s+Math.round(p.amount*100),0);
+      const incoming=await tx.select().from(ledger).where(and(eq(ledger.dealNumber,number),sql`${ledger.amount}>0 and ${ledger.kind} in ('cash','card','account')`));
+      if(incoming.reduce((s,p)=>s+p.amount,0)!==cashPaid || incoming.some(p=>!p.msPaymentId))throw Object.assign(new Error("Поступления не полностью сверены с МойСклад. Сначала нужна сверка оплаты"),{statusCode:409});
+      const paid=Math.min(Math.round(deal.paid*100),cashPaid);
+      // Сдача/чаевые остаются отдельными обязательствами, их нельзя выдать дважды.
+      const reservedChange=Math.max(0,Math.round((deal.paid-Math.max(0,deal.total))*100));
+      const outgoingTotal=outgoing.reduce((s,p)=>s-p.amount,0);
+      const queueTotal=obligations.filter(q=>["change","tips"].includes(q.kind)).reduce((s,q)=>s+q.amount,0);
+      let limit=paid-Math.max(reservedChange,outgoingTotal,queueTotal);
+      if(![paid,reservedChange,outgoingTotal,queueTotal,limit].every(Number.isSafeInteger))throw Object.assign(new Error("Некорректные суммы исходной оплаты. Нужна сверка"),{statusCode:409});
+      if(deal.kind.startsWith("cert_")){
+        const [cert]=await tx.select().from(certificates).where(eq(certificates.number,deal.certificateNumber??"")).for("update");
+        if(!cert||cert.buyerDealNumber!==number||!["active","expired"].includes(cert.status))throw Object.assign(new Error("Не найден доступный сертификат этой заявки. Нужна сверка"),{statusCode:409});
+        limit=Math.min(limit,cert.balance);
+        if(amount>limit)throw Object.assign(new Error(`Доступно к возврату не больше ${Math.max(0,limit)/100} ₽`),{statusCode:409});
+        await tx.update(certificates).set({balance:cert.balance-amount,status:"cancelled"}).where(eq(certificates.number,cert.number));
+      }
+      if(amount>limit)throw Object.assign(new Error(`Доступно к возврату не больше ${Math.max(0,limit)/100} ₽`),{statusCode:409});
+      const approvedAt=new Date().toISOString();
+      const [obligation]=await tx.insert(queue).values({kind:"refund",dealNumber:number,client:deal.clientName,amount,destination:input.destination.trim(),metadata:{source:"money_cancellation",reason:input.reason.trim(),approvedBy:actor.name,approvedById:actor.id,approvedAt}}).returning();
+      const updated:Deal={...deal,moneyCancellation:{queueId:obligation!.id,amount:amount/100,reason:input.reason.trim(),approvedBy:actor.name,approvedAt,destination:input.destination.trim()},history:[...(deal.history??[]),{at:approvedAt,who:actor.name,action:`Подтверждён возврат денег при отмене: ${amount/100} ₽. ${input.reason.trim()}`} ]};
+      await tx.update(dealsTable).set({data:updated,updatedAt:new Date()}).where(eq(dealsTable.number,number));
+      await tx.update(tasks).set({status:"cancelled",completedBy:actor.name,completedAt:new Date()}).where(and(eq(tasks.dealNumber,number),eq(tasks.status,"pending"),sql`${tasks.kind} not in ('movement','movement_accept','unreserve')`));
+      await tx.insert(auditLog).values({actorId:actor.id,actorName:actor.name,actorRole:actor.role,action:"deal.money_cancellation_approved",entityType:"deal",entityId:String(number),after:updated.moneyCancellation});
+      return updated;
+    });
+    broadcast("deal.updated",{number});broadcast("queue.updated",{});broadcast("certificate.updated",{});return result;
+  });
+}
+
+/** Возврат арендованных вещей не выдаёт денег и не меняет сумму отмены. */
+export async function receiveCancelledRental(number:number,by:string):Promise<Deal>{
+  const result=await db.transaction(async tx=>{
+    const [row]=await tx.select().from(dealsTable).where(eq(dealsTable.number,number)).for("update");const deal=row?.data as Deal;
+    if(!deal?.moneyCancellation||deal.kind!=="rental")throw Object.assign(new Error("Нет отменённой аренды"),{statusCode:409});
+    if(deal.rentalReturnedAt)return deal;
+    if(!deal.rentalIssuedAt&&deal.rentalStatus!=="issued")throw Object.assign(new Error("Выдача вещей не подтверждена"),{statusCode:409});
+    const at=new Date().toISOString();const updated:Deal={...deal,rentalReturnedAt:at,rentalStatus:"returned",history:[...(deal.history??[]),{at,who:by,action:"Вещи после отмены аренды приняты. Денежная выплата отдельно в очереди."}]};
+    for(const item of deal.items.filter(i=>i.productId!=="rent"))await tx.insert(dealItemState).values({dealNumber:number,itemId:item.productId,state:"in_store",location:deal.store,metadata:{by}}).onConflictDoUpdate({target:[dealItemState.dealNumber,dealItemState.itemId],set:{state:"in_store",location:deal.store,updatedAt:new Date()}});
+    await tx.update(dealsTable).set({data:updated,updatedAt:new Date()}).where(eq(dealsTable.number,number));
+    await tx.insert(auditLog).values({actorName:by,actorRole:"operator",action:"rental.received_after_cancellation",entityType:"deal",entityId:String(number),metadata:{at}});return updated;
+  });broadcast("deal.updated",{number});return result;
+}
+
+
+export async function syncMoneyCancellationQueue(id:string):Promise<QueueItem>{
+  const item=(await listQueue()).find(q=>q.id===id);
+  if(!item)throw Object.assign(new Error("Выплата не найдена"),{statusCode:404});
+  if(item.metadata?.source!=="money_cancellation")return item;
+  const {synchronizeCancellationPayouts}=await import("./sale.js");
+  try{
+    await synchronizeCancellationPayouts(item);
+    item.metadata={...item.metadata,financialSyncError:null};
+    await db.update(queue).set({metadata:item.metadata}).where(eq(queue.id,id));
+    return item;
+  }catch(e){
+    const message=e instanceof Error?e.message:"Ошибка МойСклад";
+    await db.update(queue).set({metadata:{...item.metadata,financialSyncError:message}}).where(eq(queue.id,id));
+    throw Object.assign(new Error("Выдача уже записана в кассе; повторно деньги не выдавайте. Документ МойСклад требует сверки: "+message),{statusCode:409});
+  }finally{broadcast("queue.updated",{});}
 }

@@ -83,6 +83,9 @@ export async function processSale(
   opts: { fulfill: boolean; photos?: PhotoInput[]; who: string }
 ): Promise<Deal> {
   return withOperationLock(`sale:${deal.id}`, async () => {
+    const current = await deals.getByNumber(deal.number);
+    if(deal.isTest || current?.isTest)throw Object.assign(new Error("Подтверждённая тестовая заявка исключена из финансового проведения"),{statusCode:409});
+    if(deal.moneyCancellation || current?.moneyCancellation)throw Object.assign(new Error("По заявке подтверждена денежная отмена"),{statusCode:409});
     const enriched = { ...deal };
     const validation = financialDealError(enriched, opts.photos?.length ?? 0);
     if (validation) throw new Error(validation);
@@ -1135,5 +1138,24 @@ export async function synchronizeFinancialDeal(deal: Deal, who: string, photos?:
   } catch (error) {
     await deals.markSync((await deals.getByNumber(deal.number)) ?? deal, "failed", (error as Error).message);
     throw error;
+  }
+}
+
+
+/** Каждая подтверждённая часть возврата имеет собственный документ МС и ключ повтора. */
+export async function synchronizeCancellationPayouts(item: import("@kassa/shared").QueueItem):Promise<void>{
+  if(item.metadata?.source!=="money_cancellation" || !item.payouts?.length)return;
+  const deal=await deals.getByNumber(item.dealNumber);
+  if(!deal?.moneyCancellation || deal.moneyCancellation.queueId!==item.id)throw new Error("Не найдена подтверждённая отмена");
+  const {org,agent}=await resolveMsParty(deal);
+  const account=await getMsRef("account","default");
+  for(const payout of item.payouts){
+    const key=`cancellation:${payout.id}`;
+    const [entry]=await db.select().from(ledger).where(eq(ledger.idempotencyKey,key));
+    if(!entry)throw new Error("Не найдена запись возврата в журнале");
+    if(entry.msPaymentId)continue;
+    const input={organization:org.meta,agent:agent.meta,sum:toKopecks(payout.amount),description:`Касса #${deal.number}: возврат при отмене, часть ${payout.id}. ${paymentMethodLabel(payout.methodId)}. ${deal.moneyCancellation.reason}`};
+    const doc=(await withIdempotency(`ms:${key}`,"ms",()=>paymentKind(payout.methodId)==="cash"?ms.createCashOut(input):ms.createPaymentOut({...input,organizationAccount:paymentKind(payout.methodId)==="account"?account?.meta:undefined}))).result;
+    await db.update(ledger).set({msPaymentId:doc.id}).where(eq(ledger.id,entry.id));
   }
 }
