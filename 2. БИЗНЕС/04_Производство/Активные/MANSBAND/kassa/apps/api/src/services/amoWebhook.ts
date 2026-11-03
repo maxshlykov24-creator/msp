@@ -113,16 +113,11 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
   tasks: boolean;
   skipped?: string;
 }> {
-  let statusId = event.statusId;
-  let pipelineId = event.pipelineId;
-  let lead: amo.AmoLead | null = null;
-
-  if (!statusId || !pipelineId) {
-    lead = await amo.getLead(event.id);
-    if (!lead) return { skipped: "lead_not_found", tasks: false };
-    statusId = statusId ?? lead.status_id;
-    pipelineId = pipelineId ?? lead.pipeline_id;
-  }
+  // События могут прийти повторно и не по порядку: читаем актуальное состояние CRM.
+  let lead = await amo.getLead(event.id);
+  if (!lead) return { skipped: "lead_not_found", tasks: false };
+  const statusId = lead.status_id;
+  const pipelineId = lead.pipeline_id;
 
   const stage = await deals.stageNameByStatusId(statusId!, pipelineId);
   if (!stage || stage === "—") return { skipped: "unknown_status", tasks: false };
@@ -192,7 +187,7 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
   return { dealNumber: updated.number, stage: updated.stage, tasks: true };
 }
 
-export async function handleAmoWebhook(rawBody: unknown): Promise<{
+export async function handleAmoWebhook(rawBody: unknown, applyEvent = applyAmoLeadStatusEvent): Promise<{
   ok: true;
   processed: number;
   results: Awaited<ReturnType<typeof applyAmoLeadStatusEvent>>[];
@@ -200,16 +195,15 @@ export async function handleAmoWebhook(rawBody: unknown): Promise<{
   const body = parseAmoWebhookBody(rawBody);
   const events = extractLeadStatusEvents(body);
   const results: Awaited<ReturnType<typeof applyAmoLeadStatusEvent>>[] = [];
+  const failures: number[] = [];
   for (const event of events) {
     try {
-      results.push(await applyAmoLeadStatusEvent(event));
-    } catch (err) {
-      results.push({
-        tasks: false,
-        skipped: err instanceof Error ? err.message : "error",
-      });
+      results.push(await applyEvent(event));
+    } catch {
+      failures.push(event.id);
     }
   }
+  if (failures.length) throw new Error(`Не обработаны события amoCRM: ${failures.join(", ")}`);
   return { ok: true, processed: events.length, results };
 }
 

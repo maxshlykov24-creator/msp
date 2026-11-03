@@ -57,6 +57,21 @@ class Sync(unittest.TestCase):
   events=[]
   with patch.object(ships,'run',side_effect=lambda **kw:events.append('warehouse') or {}),patch.object(orders,'run',side_effect=lambda **kw:events.append('ms') or {}):sync_rota.sync_client(1)
   self.assertEqual(events,['warehouse','ms'])
+ def test_quick_poll_imports_new_for_connected_cabinet(self):
+  import night_check
+  db.record_sync(1,'fbs',count=0)
+  with patch.object(orders,'pull_wb_new',return_value=[self.order()]) as fetch,patch.object(night_check,'wb_statuses',return_value={'123':{'supplier':'new','wb':'waiting'}}):
+   night_check.check_wb(self.cab,live=True)
+  fetch.assert_called_once();self.assertEqual(len(db.get_shipments_by_ext(1,'fbs',['123'])),1)
+ def test_never_connected_cabinet_not_probed(self):
+  import night_check
+  with patch.object(orders,'pull_wb_new') as fetch:night_check.check_wb(self.cab,live=True)
+  fetch.assert_not_called()
+ def test_manual_refresh_cache_skips_extra_new_request(self):
+  import night_check
+  db.record_sync(1,'fbs',count=0)
+  with patch.object(orders,'pull_wb_new') as fetch:night_check.check_wb(self.cab,live=True,status_cache={})
+  fetch.assert_not_called()
  def test_missing_supply_not_retried_each_cycle(self):
   sid=db.insert_wb_supply(1,1,'MISSING','Missing','2026-11-03T10:00:00','test');ships.stage_wb_new(self.client,self.cab,[self.order()]);r=db.get_shipments_by_ext(1,'fbs',['123'])[0];db.set_shipment_supply([r['id']],'MISSING')
   with patch.object(wb_supply,'list_supplies',return_value=[]),patch.object(wb_supply,'info',side_effect=wb_supply.SupplyNotFound('missing')) as fetch,patch.object(supply_flow.time,'sleep'):

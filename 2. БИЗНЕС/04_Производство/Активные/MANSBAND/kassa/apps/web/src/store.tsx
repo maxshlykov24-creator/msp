@@ -344,8 +344,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const saved = await api.patch<Deal>(`/deals/${current.number}`, { ...rest, reason });
           setDeals((prev) => prev.map((d) => (d.id === id ? saved : d)));
           return saved;
-        } catch {
-          return null;
+        } catch (error) {
+          // Отказ сервера не должен оставлять в доске несохранённую оптимистичную правку.
+          setDeals(prev => prev.map(d => d.id === id ? current : d));
+          await api.get<Deal[]>("/deals").then(rows => setDeals(rows)).catch(() => {});
+          throw error;
         }
       },
       replaceDeal: (deal) => {

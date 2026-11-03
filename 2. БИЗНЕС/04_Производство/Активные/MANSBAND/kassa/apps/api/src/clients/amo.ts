@@ -338,7 +338,7 @@ export async function getLeadsByIds(ids: number[]): Promise<AmoLead[]> {
 export function pickOpenSalesLead(
   leads: AmoLead[],
   pipelineId: number,
-  opts?: { excludeStatusIds?: number[]; closedOrJunkIds?: Set<number> }
+  opts?: { excludeStatusIds?: number[]; closedOrJunkIds?: Set<number>; claimedLeadIds?: Set<number> }
 ): AmoLead | null {
   const closed = opts?.closedOrJunkIds ?? new Set([142, 143]);
   const exclude = new Set(opts?.excludeStatusIds ?? []);
@@ -346,7 +346,8 @@ export function pickOpenSalesLead(
     (l) =>
       l.pipeline_id === pipelineId &&
       !closed.has(l.status_id) &&
-      !exclude.has(l.status_id)
+      !exclude.has(l.status_id) &&
+      !opts?.claimedLeadIds?.has(l.id)
   );
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0]!;

@@ -1278,7 +1278,7 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
     if existing:
         conn.execute(
             "UPDATE shipments SET client_id=?, marketplace=?, status=?, shipped_at=?, article=?, "
-            "barcode=?, name=?, qty=?, ms_order_id=?, marks_count=?, pulled_at=?, "
+            "barcode=?, name=?, qty=?, ms_order_id=?, marks_count=coalesce(?,marks_count), pulled_at=?, "
             + ", ".join("%s=?" % col for col in SHIP_EXTRA)
             + " WHERE id=?",
             [
@@ -1295,7 +1295,7 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
             + ") VALUES (%s)" % ", ".join("?" * (14 + len(SHIP_EXTRA))),
             [
                 client_id, cabinet_id, marketplace, kind, ext_id, status, shipped_at,
-                article, barcode, name, qty, ms_order_id, marks_count, pulled_at,
+                article, barcode, name, qty, ms_order_id, int(marks_count or 0), pulled_at,
             ] + more,
         )
         sid = cur.lastrowid

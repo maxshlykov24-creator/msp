@@ -197,7 +197,9 @@ def save_row(client, cab, kind, ext_id, status, shipped_at, article, barcode, na
     if not ext_id:
         return 0
     log = get_order_log(cab["id"], ext_id)
-    count = len(marks) if marks is not None else int((known["marks_count"] if known is not None else 0) or 0)
+    # None must reach the SQL update: a scanner can add a mark after the
+    # sync's known-row snapshot. Reusing that old count would erase its badge.
+    count = len(marks) if marks is not None else None
     sid = upsert_shipment(
         client["id"],
         cab["id"],

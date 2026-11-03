@@ -581,43 +581,27 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
       return lead.id;
     }
 
-    // Продажи: при наличии телефона + контакта — обновить единственную открытую сделку,
-    // кроме оплаченных сертификатов, иначе создать новую.
+    return await deals.bindAmoLead(deal, contactId, async claimed => {
+    // Сохранённая привязка своей заявки имеет приоритет; чужую не присваиваем.
+    if (deal.amoLeadId && !claimed.has(deal.amoLeadId)) {
+      await updateLeadResilient(deal.amoLeadId, { statusId, price: deal.total, customFields });
+      return deal.amoLeadId;
+    }
     if (contactId && deal.clientPhone) {
-      const certStatusIds = (
-        await Promise.all([
-          getStatusId(AMO_PIPELINE_SALES, "Сертификат оплачен"),
-          getStatusId(AMO_PIPELINE_SALES, "Сертификат продан"),
-        ])
-      ).filter((id): id is number => Boolean(id));
-      const leadIds = await amo.listLeadIdsByContact(contactId);
-      const linked = await amo.getLeadsByIds(leadIds);
+      const certStatusIds = (await Promise.all([
+        getStatusId(AMO_PIPELINE_SALES, "Сертификат оплачен"),
+        getStatusId(AMO_PIPELINE_SALES, "Сертификат продан"),
+      ])).filter((id): id is number => Boolean(id));
+      const linked = await amo.getLeadsByIds(await amo.listLeadIdsByContact(contactId));
       const open = amo.pickOpenSalesLead(linked, AMO_PIPELINE_SALES, {
-        excludeStatusIds: certStatusIds,
-        closedOrJunkIds: CLOSED_OR_JUNK_STATUS_IDS,
+        excludeStatusIds: certStatusIds, closedOrJunkIds: CLOSED_OR_JUNK_STATUS_IDS,
+        claimedLeadIds: claimed,
       });
       if (open) {
-        const matching = linked.filter(
-          (l) =>
-            l.pipeline_id === AMO_PIPELINE_SALES &&
-            !CLOSED_OR_JUNK_STATUS_IDS.has(l.status_id) &&
-            !certStatusIds.includes(l.status_id)
-        );
-        if (matching.length > 1) {
-          console.warn(
-            `[ensureAmoLead] контакт ${contactId}: ${matching.length} открытых в Продажах, берём #${open.id} (updated_at)`
-          );
-        }
         await updateLeadResilient(open.id, { statusId, price: deal.total, customFields });
-        if (companyId) {
-          await amo.linkCompanyToLead(open.id, companyId).catch(() => {});
-        }
-        await amo
-          .addLeadNote(open.id, `Касса #${deal.number} · ${deal.kind} · ${deal.stage}`)
-          .catch(() => {});
-        await writeKassaLink(open.id, deal.number).catch((err: Error) => {
-          console.warn(`[amo] ссылка на кассу, сделка #${open.id}: ${err.message}`);
-        });
+        if (companyId) await amo.linkCompanyToLead(open.id, companyId);
+        await amo.addLeadNote(open.id, `Касса #${deal.number} · ${deal.kind} · ${deal.stage}`);
+        await writeKassaLink(open.id, deal.number);
         return open.id;
       }
     }
@@ -635,6 +619,7 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
       console.warn(`[amo] ссылка на кассу, сделка #${lead.id}: ${err.message}`);
     });
     return lead.id;
+    });
   } catch (err) {
     // amo недоступен — не блокируем продажу (локально сохраним, синхронизируем позже),
     // но причину пишем в лог: молчаливый null раньше маскировал отказы синка.

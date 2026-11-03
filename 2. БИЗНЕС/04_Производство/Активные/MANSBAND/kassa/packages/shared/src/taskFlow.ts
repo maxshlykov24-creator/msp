@@ -460,3 +460,21 @@ export function returnableItems(source: Deal, returns: Deal[]): Deal["items"] {
     return used < item.qty ? [{ ...item, qty: item.qty - used }] : [];
   });
 }
+
+
+/** Автозадача этапа больше не нужна. Ручные задачи и физические перемещения сохраняем. */
+export function isObsoleteStageTask(deal: Deal, task: Pick<Task, "kind" | "idempotencyKey" | "metadata">): boolean {
+  const key = task.idempotencyKey ?? "";
+  const automatic = key === `${task.kind}:${deal.id}` ||
+    (task.kind === "promise_follow" && key.startsWith(`promise:${deal.id}:`)) ||
+    (task.kind === "reserve_call" && key.startsWith(`reserve-call:${deal.id}:`)) ||
+    (task.kind === "movement" && key === `movement-setup:${deal.id}`);
+  if (!automatic) return false;
+  if (task.kind === "movement" && !task.metadata?.needsSetup) return false;
+  if (["movement_accept", "sary_send", "barcode", "manual_check"].includes(task.kind)) return false;
+  if (["Успех", "Провал", "Не слив"].includes(deal.stage)) return true;
+  if (task.kind === "promise_follow") return deal.stage !== "Дано обещание";
+  if (task.kind === "reserve_call" || task.kind === "unreserve") return deal.stage !== "Товар отложен";
+  const flow = taskFlowOf(task.kind);
+  return flow?.trigger.source === "stage" && !flowsForStage(deal.stage, deal.kind).some(rule => rule.kind === task.kind);
+}

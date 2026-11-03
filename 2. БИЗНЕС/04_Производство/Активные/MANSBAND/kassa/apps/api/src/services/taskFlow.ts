@@ -10,6 +10,7 @@ import {
   rentalEndPassed,
   taskFlowOf,
   taskTitle,
+  isObsoleteStageTask,
 } from "@kassa/shared";
 import * as deals from "./deals.js";
 import * as financeQueue from "./queue.js";
@@ -59,7 +60,11 @@ async function insertTask(input: NewTask, createdBy: string): Promise<void> {
       metadata,
       createdBy,
     })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: tasks.idempotencyKey,
+      set: { status: "pending", title: input.title, metadata, completedBy: null, completedAt: null },
+      setWhere: eq(tasks.status, "cancelled"),
+    })
     .returning({ id: tasks.id });
   // П9: автоматически рождённая задача — событие в истории изменений.
   if (inserted[0]) {
@@ -175,12 +180,27 @@ async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
   );
 }
 
+/** Снимаем устаревшие автозадачи сразу при смене этапа, сохраняя историю. */
+async function cancelObsoleteStageTasks(deal: Deal, who: string): Promise<void> {
+  const pending = await db.select().from(tasks)
+    .where(and(eq(tasks.dealNumber, deal.number), eq(tasks.status, "pending")));
+  for (const task of pending) {
+    if (!isObsoleteStageTask(deal, { kind: task.kind as TaskKind, idempotencyKey: task.idempotencyKey ?? undefined,
+      metadata: task.metadata as Record<string, unknown> | undefined })) continue;
+    const cancelled = await db.update(tasks).set({ status: "cancelled", completedBy: who, completedAt: new Date() })
+      .where(and(eq(tasks.id, task.id), eq(tasks.status, "pending"))).returning({ id: tasks.id });
+    if (cancelled.length) await appendSystemAudit({ action: "Снята устаревшая автозадача",
+      entityType: "task", entityId: task.id, metadata: { dealNumber: deal.number, stage: deal.stage, trigger: who } });
+  }
+}
+
 /**
  * Заявка встала на этап — ставим задачи по правилам. Вызывается при создании
  * заявки и при любой смене этапа, включая автоматическую.
  */
 export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<void> {
   if (depth > 3) return; // защита от циклов в правилах
+  await cancelObsoleteStageTasks(deal, who);
   await syncPromiseFollowUp(deal, who);
   if (deal.kind === "company" && deal.stage === "Товар отложен") {
     await enqueueCompanyChain(deal, { dealNumber: deal.number, client: deal.clientName, status: "pending" });
@@ -280,6 +300,9 @@ export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<v
 export async function onTaskCompleted(task: Task, who: string, depth = 0): Promise<void> {
   const rule = taskFlowOf(task.kind);
   if (!rule || !task.dealNumber) return;
+  const currentDeal = await deals.getByNumber(task.dealNumber);
+  if (currentDeal && ["Успех", "Провал", "Не слив"].includes(currentDeal.stage) &&
+      !["sary_send", "movement", "movement_accept"].includes(task.kind)) return;
 
   if (task.kind === "reserve_call") {
     await onReserveCallDone(task, who);

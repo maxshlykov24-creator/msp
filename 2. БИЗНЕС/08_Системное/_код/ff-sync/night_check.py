@@ -39,6 +39,19 @@ def _changed(row, status, group):
 
 
 def check_wb(cab, live=False, status_cache=None):
+    fresh_saved = 0
+    if live and status_cache is None:
+        import json
+        from db import get_setting, get_client_by_id
+        health = json.loads(get_setting('sync:%s:fbs' % cab['id']) or '{}')
+        # Only connected, previously verified FBS cabinets enter the quick poll.
+        # Inaccessible/never-connected cabinets are not probed by this new path.
+        if health.get('success'):
+            from orders_pull import pull_wb_new
+            from shipments_pull import stage_wb_new
+            fresh = pull_wb_new(cab['token'], strict=True)
+            fresh_saved = stage_wb_new(get_client_by_id(cab['client_id']), cab, fresh)
+            record_sync(cab['id'], 'fbs_new', count=len(fresh))
     rows = list_open_shipments(cab["id"], kind="fbs", groups=WATCH)
     if not rows:
         return 0, 0
@@ -64,7 +77,7 @@ def check_wb(cab, live=False, status_cache=None):
         set_shipment_status(row["id"], status, group, clear_work=group in DONE and not (
             row["work_state"] == "ready" and info.get("wb") == "waiting" and info.get("supplier") == "complete"))
         fixed += 1
-    return len(rows), fixed
+    return len(rows), fixed + fresh_saved
 
 
 def check_ozon_live(cab, status_cache=None):

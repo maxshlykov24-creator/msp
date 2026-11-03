@@ -72,9 +72,33 @@ export async function getByAmoLeadId(amoLeadId: number): Promise<Deal | null> {
     .select()
     .from(dealsTable)
     .where(eq(dealsTable.amoLeadId, amoLeadId))
+    // Реальная кассовая заявка важнее импортированного зеркала amo.
+    .orderBy(sql`case when ${dealsTable.data}->>'id' like 'amo-%' then 1 else 0 end`, desc(dealsTable.number))
     .limit(1);
   const deal = rows[0]?.data as Deal | undefined;
   return deal ? presentDeal(deal) : null;
+}
+
+/** Сериализуем выбор CRM-сделки одного контакта и сразу закрепляем владельца. */
+export async function bindAmoLead(
+  deal: Deal,
+  contactId: number | undefined,
+  choose: (claimed: Set<number>) => Promise<number | null>
+): Promise<number | null> {
+  return db.transaction(async tx => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`kassa-amo:${contactId ?? deal.id}`}, 0))`);
+    const rows = await tx.select({ number: dealsTable.number, leadId: dealsTable.amoLeadId, data: dealsTable.data })
+      .from(dealsTable).where(sql`${dealsTable.amoLeadId} is not null`);
+    const claimed = new Set(rows.filter(row => row.number !== deal.number &&
+      (row.data as Deal).id !== `amo-${row.leadId}`).map(row => row.leadId!));
+    const leadId = await choose(claimed);
+    if (leadId) await tx.update(dealsTable).set({
+      amoLeadId: leadId,
+      data: sql`jsonb_set(${dealsTable.data}, '{amoLeadId}', to_jsonb(${leadId}::bigint), true)`,
+      updatedAt: new Date(),
+    }).where(eq(dealsTable.number, deal.number));
+    return leadId;
+  });
 }
 
 /** Имя этапа по id статуса amo (для вебхука). */
@@ -318,20 +342,7 @@ export async function updateDealFields(
     const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
   }
   await persist(updated);
-  if (deal.amoLeadId && nextStage !== deal.stage) {
-    const statusId = await resolveStatusId(deal.amoLeadId, nextStage);
-    if (statusId) await amo.updateLead(deal.amoLeadId, { statusId }).catch(() => {});
-  }
-  if (
-    deal.amoLeadId &&
-    (fields.actualUntil !== undefined ||
-      fields.reservedUntil !== undefined ||
-      fields.meetingDate !== undefined ||
-      fields.approxMeetingDate !== undefined)
-  ) {
-    const customFields = await buildLeadCustomFields(updated).catch(() => []);
-    if (customFields.length) await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
-  }
+  await syncEditedDealToAmo(updated, nextStage !== deal.stage);
   broadcast("deal.updated", { number: deal.number });
   return updated;
 }
@@ -375,16 +386,23 @@ export async function updateStage(
     const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
   }
   await persist(updated);
-  if (deal.amoLeadId && !patch?.skipAmoWriteback) {
-    const statusId = await resolveStatusId(deal.amoLeadId, stage);
-    if (statusId) await amo.updateLead(deal.amoLeadId, { statusId }).catch(() => {});
-  }
-  if (deal.amoLeadId && !patch?.skipAmoWriteback && (stage === "Товар отложен" || stage === "Сертификат оплачен" || patch?.meetingDate)) {
-    const customFields = await buildLeadCustomFields(updated).catch(() => []);
-    if (customFields.length) await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
-  }
+  if (!patch?.skipAmoWriteback) await syncEditedDealToAmo(updated, true);
   broadcast("deal.stage_changed", { number: deal.number, stage });
   return updated;
+}
+
+/** Локальная правка обязана обновить бюджет и поля CRM либо явно сообщить о сбое. */
+async function syncEditedDealToAmo(deal: Deal, stageChanged: boolean): Promise<void> {
+  if (!deal.amoLeadId) return;
+  try {
+    const statusId = stageChanged ? await resolveStatusId(deal.amoLeadId, deal.stage) : undefined;
+    if (stageChanged && !statusId) throw new Error("Этап не найден в amoCRM");
+    const customFields = await buildLeadCustomFields(deal);
+    await amo.updateLead(deal.amoLeadId, { statusId: statusId ?? undefined, price: Math.abs(deal.total), customFields });
+  } catch (error) {
+    await markSync(deal, "failed", (error as Error).message);
+    throw new Error(`Заявка №${deal.number} сохранена в кассе, но не синхронизирована с amoCRM. Повторите сохранение.`);
+  }
 }
 
 export type ConvertKindPatch = {

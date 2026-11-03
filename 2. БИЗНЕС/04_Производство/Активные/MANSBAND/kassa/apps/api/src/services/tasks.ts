@@ -10,6 +10,7 @@ import {
   itemLocationFromMsName,
   storeForAcceptQueue,
   taskTitle,
+  isObsoleteStageTask,
 } from "@kassa/shared";
 import * as ms from "../clients/ms.js";
 import { getMsRef } from "./bootstrap.js";
@@ -259,6 +260,13 @@ export async function completeTask(id: string, by: string): Promise<Task | null>
   const [current] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
   if (!current) return null;
   if (current.status === "done") return toTask(current);
+  if (current.status !== "pending") throw new Error("Задача отменена и не может быть выполнена");
+  if (current.dealNumber != null) {
+    const deal = await deals.getByNumber(current.dealNumber);
+    if (deal && isObsoleteStageTask(deal, toTask(current))) {
+      throw new Error("Задача устарела: этап заявки изменился. Обновите список задач");
+    }
+  }
 
   if (current.kind === "reserve" && current.dealNumber != null) {
     const deal = await deals.getByNumber(current.dealNumber);
@@ -309,6 +317,11 @@ export async function reopenTask(id: string, by: string): Promise<Task | null> {
   if (!current) return null;
   if (current.status !== "done") {
     throw new Error("Отменить можно только выполненную задачу");
+  }
+
+  if (current.dealNumber != null) {
+    const deal = await deals.getByNumber(current.dealNumber);
+    if (deal && isObsoleteStageTask(deal, toTask(current))) throw new Error("Этап заявки изменился — эта задача больше не актуальна");
   }
 
   const meta = (current.metadata as MovementMeta | null) ?? {};

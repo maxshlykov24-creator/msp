@@ -20,6 +20,11 @@ class Scanit(unittest.TestCase):
   sid=self.row();db.replace_shipment_marks(sid,[dict(code='mark-code',article='ART',gtin='1')]);c=db.connect();before=dict(c.execute('select * from shipments where id=?',(sid,)).fetchone());marks=[tuple(r) for r in c.execute('select * from shipment_marks')];c.close()
   self.assertEqual(db.set_shipment_scanit(sid,'ii123'),1)
   c=db.connect();after=dict(c.execute('select * from shipments where id=?',(sid,)).fetchone());self.assertEqual(marks,[tuple(r) for r in c.execute('select * from shipment_marks')]);c.close();after['scanit']=before['scanit'];self.assertEqual(before,after)
+ def test_sync_stale_mark_count_does_not_hide_new_scan(self):
+  sid=self.row(scanit='ii123');stale=db.get_shipments_by_ext(1,'fbs',['POST-1'])[0]
+  db.replace_shipment_marks(sid,[dict(code='scanned-after-snapshot',article='ART',gtin='1')])
+  pull.save_row(db.get_client_by_id(1),db.get_cabinet(1),'fbs','POST-1',stale['status'],stale['shipped_at'],'ART','PRODUCT','Name',1,None,known=stale,extra={'status_group':'assembling'})
+  self.assertEqual(db.get_shipments_by_ext(1,'fbs',['POST-1'])[0]['marks_count'],1)
  def test_empty_qr_cannot_erase(self):
   sid=self.row(scanit='ii123');self.assertEqual(db.set_shipment_scanit(sid,''),0);self.assertEqual(db.get_shipments_by_ext(1,'fbs',['POST-1'])[0]['scanit'],'ii123')
  def test_bad_qr_rejected(self):
