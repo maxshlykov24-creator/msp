@@ -123,6 +123,13 @@ class AsyncLabels(unittest.TestCase):
         with patch.object(labels,'req',side_effect=[created(),ready(),Reply(blob=pdf())]) as call:
             self.run_pdf();self.assertEqual(call.call_count,3)
 
+    def test_expired_pdf_keeps_task_for_reprint_after_handoff(self):
+        with patch.object(labels,'req',side_effect=[created(),ready(),Reply(blob=pdf())]):self.run_pdf()
+        for p in Path(self.tmp.name).rglob('*.pdf'):os.utime(p,(0,0))
+        with patch.object(labels,'req',side_effect=[ready(),Reply(blob=pdf())]) as call:
+            self.run_pdf();self.assertEqual(call.call_count,2)
+            self.assertTrue(call.call_args_list[0].args[1].endswith('/get'))
+
     def test_product_and_posting_stay_paired_with_quantities(self):
         from reportlab.pdfgen import canvas
         rows=[dict(cabinet_id=1,cabinet=dict(self.cab,marketplace='ozon'),marketplace='ozon',

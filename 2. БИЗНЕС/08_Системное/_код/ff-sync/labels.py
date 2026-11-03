@@ -37,6 +37,8 @@ MM = 72.0 / 25.4  # мм в типографские пункты
 
 OZON_CHUNK = 20   # жёсткий предел метода
 WB_CHUNK = 100    # жёсткий предел метода
+OZON_PDF_CACHE_SECONDS = 300
+OZON_LABEL_TASK_SECONDS = 7 * 86400  # Повторная печать после передачи в доставку.
 
 # Режимы печати. Сергей просил выбор: у него штрихкод товара бывает заранее
 # проклеен, а бывает нужен рядом с этикеткой отправления.
@@ -129,7 +131,7 @@ def _ozon_label_response(cab, postings):
     with open(os.path.join(folder, "labels.lock"), "a+b") as lock:
         os.chmod(lock.name, 0o600)
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if os.path.exists(pdf_path) and time.time() - os.path.getmtime(pdf_path) < 300:
+        if os.path.exists(pdf_path) and time.time() - os.path.getmtime(pdf_path) < OZON_PDF_CACHE_SECONDS:
             with open(pdf_path, "rb") as f:
                 cached = f.read()
             try:
@@ -143,7 +145,9 @@ def _ozon_label_response(cab, postings):
                 state = json.load(f)
         except (OSError, ValueError):
             pass
-        if not state.get("tasks") or time.time() - state.get("created_at", 0) >= 300:
+        if not isinstance(state, dict) or not isinstance(state.get("created_at"), (int, float)):
+            state = {}
+        if not state.get("tasks") or time.time() - state.get("created_at", 0) >= OZON_LABEL_TASK_SECONDS:
             response = call("/v3/posting/fbs/package-label/create", {"posting_numbers": list(postings)})
             if response.status_code != 200:
                 return response
