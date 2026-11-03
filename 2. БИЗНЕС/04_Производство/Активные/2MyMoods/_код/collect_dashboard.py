@@ -80,28 +80,27 @@ FIELD = {
 
 
 def required_rows(ms: lib.MS, path: str, params: dict | None = None,
-                  keep: tuple[str, ...] | None = None) -> list[dict]:
-    params = dict(params or {})
-    params.setdefault("limit", 1000)
-    out = []
-    offset = 0
-    while True:
-        params["offset"] = offset
-        for attempt in range(8):
-            status, body = ms.req(path, params)
-            if status not in (429, 500, 502, 503, 504):
-                break
-            time.sleep(min(30, 2 * (attempt + 1)))
-        if status != 200:
-            raise RuntimeError(f"GET {path}: HTTP {status}")
-        chunk = body.get("rows", [])
-        if keep is None:
-            out.extend(chunk)
-        else:
-            out.extend({key: row[key] for key in keep if key in row} for row in chunk)
-        offset += len(chunk)
-        if not chunk or offset >= body.get("meta", {}).get("size", offset):
-            return out
+                  keep: tuple[str, ...] | None = None, *, stream: bool = False):
+    def rows():
+        page = dict(params or {})
+        page.setdefault("limit", 1000)
+        offset = 0
+        while True:
+            page["offset"] = offset
+            for attempt in range(8):
+                status, body = ms.req(path, page)
+                if status not in (429, 500, 502, 503, 504):
+                    break
+                time.sleep(min(30, 2 * (attempt + 1)))
+            if status != 200:
+                raise RuntimeError(f"GET {path}: HTTP {status}")
+            chunk = body.get("rows", [])
+            for row in chunk:
+                yield row if keep is None else {key: row[key] for key in keep if key in row}
+            offset += len(chunk)
+            if not chunk or offset >= body.get("meta", {}).get("size", offset):
+                return
+    return rows() if stream else list(rows())
 
 
 def required_get(ms: lib.MS, path: str) -> dict:
@@ -1388,7 +1387,8 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
     """Goods discounts against verified historical catalogue or recorded gross.
 
     Read-only in MoySklad; unverified catalogue prices are explicit gaps.
-    Returns stay in their original payment cohort, irrespective of return date.
+    Collect all conducted shipments, including unpaid and zero-value orders.
+    Returns stay with the original shipment, irrespective of return date.
     """
     ms = ms or lib.MS()
     orders = {o["id"]: o for o in snap["orders"]}
@@ -1421,7 +1421,7 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
         # Expanded positions are limited by the API; fetch the full collection if needed.
         seen = set()
         for doc in required_rows(ms, f"/entity/{entity}",
-                                 {"filter": "applicable=true", "expand": "positions", "limit": 100}):
+                                 {"filter": "applicable=true", "expand": "positions", "limit": 100}, stream=True):
             if doc["id"] in seen:
                 raise RuntimeError("Duplicate shipment-discount document")
             seen.add(doc["id"])
@@ -1474,13 +1474,14 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
             order = orders.get(oid)
             if entity == "demand":
                 shipments[doc["id"]] = {"order_id": oid, "lines": None, "moment": doc.get("moment")}
+            item = {"id": doc["id"], "number": doc.get("name") or "", "kind": entity,
+                    "order_id": oid, "date": str(doc.get("moment") or "")[:10], "demand_id": shipment_id,
+                    "shipment_date": str((original or {}).get("moment") or
+                                         (doc.get("moment") if entity == "demand" else "") or "")[:10]}
             if not order:
                 unlinked[entity] += 1
+                gaps.append({**item, "reason": "Нет подтверждённой связи с заказом и исходной отгрузкой"})
                 continue
-            if not order.get("buy") or not order.get("paid_date"):
-                continue
-            item = {"id": doc["id"], "number": doc.get("name") or "", "kind": entity,
-                    "order_id": oid, "date": str(doc.get("moment") or "")[:10], "demand_id": shipment_id}
             try:
                 # Currency conversion is not implicit in the dashboard's ruble totals.
                 rate = doc.get("rate") or {}
@@ -1522,7 +1523,9 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                 documents.append({**item, "lines": lines})
             except ValueError as exc:
                 gaps.append({**item, "reason": str(exc)})
-    snap["shipment_discounts"] = {"policy": "historical_catalogue", "status": "partial" if gaps else "ok", "documents": documents,
+    snap["shipment_discounts"] = {"policy": "historical_catalogue", "schema_version": 2,
+                                  "date_bases": ["payment", "shipment"],
+                                  "status": "partial" if gaps else "ok", "documents": documents,
                                   "gaps": gaps, "unlinked": dict(unlinked),
                                   "checked_at": datetime.now(TZ).isoformat(timespec="seconds")}
 

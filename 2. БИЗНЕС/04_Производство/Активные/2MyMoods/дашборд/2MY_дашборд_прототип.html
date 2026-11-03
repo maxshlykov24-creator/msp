@@ -330,6 +330,15 @@
   body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-weight:400;-webkit-font-smoothing:antialiased}
   .wrap{max-width:1200px;margin:0 auto;padding:0 32px}
 
+  .shipment-basis{display:flex;align-items:center;gap:10px;margin:18px 0 12px;font-size:13px;line-height:1.4;color:var(--mute)}
+  .shipment-basis[data-basis="payment"] .basis-payment,.shipment-basis[data-basis="shipment"] .basis-shipment{color:var(--ink);font-weight:600}
+  #shipment-date-toggle{flex:0 0 42px;width:42px;height:26px;padding:3px;border:1px solid var(--line);border-radius:20px;background:var(--cream-2);cursor:pointer;display:flex;align-items:center;transition:background .18s}
+  #shipment-date-toggle span{display:block;width:18px;height:18px;border-radius:50%;background:var(--ink);transition:transform .18s}
+  #shipment-date-toggle[aria-checked="true"]{background:var(--ink);border-color:var(--ink)}
+  #shipment-date-toggle[aria-checked="true"] span{background:var(--paper);transform:translateX(16px)}
+  #shipment-date-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+  @media(max-width:420px){.shipment-basis{font-size:11px;gap:7px}}
+  @media(prefers-reduced-motion:reduce){#shipment-date-toggle,#shipment-date-toggle span{transition:none}}
   /* ── шапка ── */
   .refresh-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--line);color:inherit;padding:6px 9px;font:inherit;font-size:11px;cursor:pointer}
   .refresh-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.5}
@@ -848,7 +857,12 @@
     </div>
     <div class="card">
       <h3>Скидки на отгруженные товары</h3>
-      <div class="hint">Только фактически отгруженные товары, без услуг и доставки. Период — по дате полной оплаты заказа. Нажми на сумму, чтобы увидеть её состав.</div>
+      <div class="shipment-basis" id="shipment-basis" data-basis="payment" role="group" aria-label="Дата отбора скидок на отгруженные товары">
+        <span class="basis-payment">По дате полной оплаты</span>
+        <button type="button" id="shipment-date-toggle" role="switch" aria-checked="false" aria-label="Считать скидки по дате отгрузки"><span></span></button>
+        <span class="basis-shipment">По дате отгрузки</span>
+      </div>
+      <div class="discount-policy" id="shipment-basis-note"></div>
       <div id="shipment-discounts"></div>
       <div class="discount-policy" id="shipment-discounts-hint"></div>
       <h4 style="margin:28px 0 12px">Скидки в оплаченных заказах</h4>
@@ -1465,17 +1479,29 @@ function shippingStats(orders){
 }
 const discountKv=rows=>rows.map(([label,value,key])=>`<div class="kv"><span>${esc(label)}</span><button type="button" class="conversion-proof" data-discount-metric="${esc(key)}" aria-label="${esc(label+': '+value+'. Открыть расшифровку')}">${esc(value)}</button></div>`).join('');
 const preciseMoney=n=>Number(n||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽';
+let shipmentDateBasis=localStorage.getItem('2my-shipment-date-basis')==='shipment'?'shipment':'payment';
+const shipmentBasisText=()=>shipmentDateBasis==='shipment'?'по дате отгрузки':'по дате полной оплаты заказа';
 function shipmentDiscountSelection(){
  const source=data.shipment_discounts;
- const eligible=new Map(data.orders.filter(o=>o.buy&&o.paid_date&&o.paid_date>=state.from&&o.paid_date<=state.to&&matches(state.source,orderSource(o))&&matches(state.channel,o.channel)&&matches(state.city,o.city)).map(o=>[o.id,o]));
- const docs=(source?.documents||[]).filter(d=>eligible.has(d.order_id)).map(d=>({...d,o:eligible.get(d.order_id),lines:d.lines.filter(l=>matches(state.cat,l.category)&&(!state.prod||l.name===state.prod)&&matches(state.size,sizeLabel(l))&&matches(state.color,colorLabel(l)))})).filter(d=>d.lines.length);
+ const byOrder=new Map(data.orders.map(o=>[o.id,o]));
+ const byShipment=shipmentDateBasis==='shipment';
+ const ready=!byShipment||!!source?.date_bases?.includes('shipment');
+ const contextual=d=>byOrder.get(d.order_id)||{id:'',number:'Без связи с заказом',source:'не указано',channel:'не указано',city:'не указано'};
+ const accepts=d=>{
+  if(!ready)return false;
+  const o=contextual(d);
+  if(!matches(state.source,orderSource(o))||!matches(state.channel,o.channel)||!matches(state.city,o.city))return false;
+  const date=byShipment?d.shipment_date:o.paid_date;
+  return !!date&&date>=state.from&&date<=state.to&&(byShipment||o.buy);
+ };
+ const docs=(source?.documents||[]).filter(accepts).map(d=>({...d,o:contextual(d),lines:d.lines.filter(l=>matches(state.cat,l.category)&&(!state.prod||l.name===state.prod)&&matches(state.size,sizeLabel(l))&&matches(state.color,colorLabel(l)))})).filter(d=>d.lines.length);
  const amount=d=>sum(d.lines,l=>l.discount_kopecks);
  const gross=sum(docs.filter(d=>d.kind==='demand'),amount),returned=sum(docs.filter(d=>d.kind==='salesreturn'),amount);
- const allGaps=(source?.gaps||[]).filter(d=>eligible.has(d.order_id));
- const priceGaps=docs.flatMap(d=>d.lines.filter(l=>l.discount_gap).map(l=>({...d,lines:undefined,reason:l.name+': '+l.discount_gap})));
+ const allGaps=(source?.gaps||[]).filter(accepts);
+ const priceGaps=docs.flatMap(d=>d.lines.filter(l=>l.discount_gap).map(l=>({...d,lines:undefined,price_gap:true,reason:l.name+': '+l.discount_gap})));
  allGaps.push(...priceGaps);
  const gaps=allGaps.filter(d=>!includeReturns||d.kind==='demand');
- return {source,docs,gaps,allGaps,gross,returned,total:gross-(includeReturns?0:returned)};
+ return {source,ready,docs,gaps,allGaps,gross,returned,total:gross-(includeReturns?0:returned)};
 }
 function showShipmentDiscounts(mode='total'){
  const v=shipmentDiscountSelection();
@@ -1485,10 +1511,10 @@ function showShipmentDiscounts(mode='total'){
  const total=sum(docs,d=>sign(d)*sum(d.lines,l=>l.discount_kopecks));
  const title=mode==='gross'?'Скидки на отгруженные товары до возвратов':mode==='returned'?'Скидки на возвращённые товары':includeReturns?'Скидки на отгруженные товары до возвратов':'Скидки на отгруженные товары после возвратов';
  const link=d=>`https://online.moysklad.ru/app/#${d.kind==='demand'?'demand':'salesreturn'}/edit?id=${encodeURIComponent(d.id)}`;
- const rows=docs.flatMap(d=>d.lines.map(l=>`<tr><td><a class="ms-open" href="${link(d)}" target="_blank" rel="noopener">${d.kind==='demand'?'Отгрузка':'Возврат'} ${esc(d.number)}</a><div class="hint">${dmy(d.date)}</div></td><td><a class="ms-open" href="${msOrder(d.o.id)}" target="_blank" rel="noopener">${esc(d.o.number)}</a><div class="hint">${dmy(d.o.paid_date)}</div></td><td>${esc(l.name)}<div class="hint">${esc(l.size)} ${esc(l.color)}</div></td><td>${num(l.qty)}</td><td>${preciseMoney((l.basis_price_kopecks??l.price_kopecks)/100)}</td><td>${num(l.effective_discount_percent??l.discount_percent)}%</td><td>${preciseMoney(sign(d)*l.discount_kopecks/100)}</td></tr>`)).join('');
+ const rows=docs.flatMap(d=>d.lines.map(l=>`<tr><td><a class="ms-open" href="${link(d)}" target="_blank" rel="noopener">${d.kind==='demand'?'Отгрузка':'Возврат'} ${esc(d.number)}</a><div class="hint">${dmy(d.date)}</div></td><td>${d.o.id?`<a class="ms-open" href="${msOrder(d.o.id)}" target="_blank" rel="noopener">${esc(d.o.number)}</a><div class="hint">${dmy(d.o.paid_date)}</div>`:esc(d.o.number)}</td><td>${esc(l.name)}<div class="hint">${esc(l.size)} ${esc(l.color)}</div></td><td>${num(l.qty)}</td><td>${preciseMoney((l.basis_price_kopecks??l.price_kopecks)/100)}</td><td>${num(l.effective_discount_percent??l.discount_percent)}%</td><td>${preciseMoney(sign(d)*l.discount_kopecks/100)}</td></tr>`)).join('');
  const gaps=excluded.length?'<p>Документы и цены, требующие проверки:</p>'+excluded.map(g=>`<p><a class="ms-open" href="${link(g)}" target="_blank" rel="noopener">${g.kind==='demand'?'Отгрузка':'Возврат'} ${esc(g.number)}</a>: ${esc(g.reason)}</p>`).join(''):'';
- const note=mode==='gross'?'Только отгрузки, до вычета возвратов.':mode==='returned'?'Только возвраты. Здесь скидки показаны положительными суммами; в общем итоге они вычитаются.':includeReturns?'Возвраты не вычитаются.':'Возвраты вычитаются из когорты исходного заказа, независимо от даты возврата.';
- showSheet('МойСклад · скидки на отгруженные товары',title,`<div class="sheet-count">${excluded.length?'Подтверждённая часть':'Итого'}: ${preciseMoney(total/100)} · ${docsWord(docs.length)}. Период ${dmy(state.from)}–${dmy(state.to)} по дате полной оплаты заказа. Документы учтены по состоянию на ${dmy(v.source?.checked_at)}. ${note} Сумма строки = подтверждённая база минус фактическая стоимость, с округлением до копеек. Строки с пробелом цены содержат только записанную скидку.</div><table class="sheet-table"><thead><tr><th>Документ / дата</th><th>Заказ / полная оплата</th><th>Товар</th><th>Количество</th><th>База сравнения</th><th>Расчётная скидка</th><th>Сумма скидки</th></tr></thead><tbody>${rows||'<tr><td colspan="7">Нет позиций</td></tr>'}</tbody></table>${gaps}`);
+ const note=mode==='gross'?'Только отгрузки, до вычета возвратов.':mode==='returned'?'Только возвраты. Здесь скидки показаны положительными суммами; в общем итоге они вычитаются.':includeReturns?'Возвраты не вычитаются.':'Возвраты вычитаются из выбранных исходных отгрузок, независимо от даты возврата.';
+ showSheet('МойСклад · скидки на отгруженные товары',title,`<div class="sheet-count">${excluded.length?'Подтверждённая часть':'Итого'}: ${preciseMoney(total/100)} · ${docsWord(docs.length)}. Период ${dmy(state.from)}–${dmy(state.to)} ${shipmentBasisText()}. Документы учтены по состоянию на ${dmy(v.source?.checked_at)}. ${note} Сумма строки = подтверждённая база минус фактическая стоимость, с округлением до копеек. Строки с пробелом цены содержат только записанную скидку.</div><table class="sheet-table"><thead><tr><th>Документ / дата</th><th>Заказ / полная оплата</th><th>Товар</th><th>Количество</th><th>База сравнения</th><th>Расчётная скидка</th><th>Сумма скидки</th></tr></thead><tbody>${rows||'<tr><td colspan="7">Нет позиций</td></tr>'}</tbody></table>${gaps}`);
 }
 const goodsDiscount=l=>l.delivery?0:Math.max(0,l.discount_kopecks??Math.round(((l.list||0)-(l.rev||0))*100))/100;
 function showOrderDiscountLines(selected){
@@ -1501,10 +1527,14 @@ function showDiscountOrderList(title,rows,amountLabel,note){
 }
 function renderShipmentDiscounts(){
  const v=shipmentDiscountSelection();
+ el('shipment-date-toggle').setAttribute('aria-checked',shipmentDateBasis==='shipment'?'true':'false');
+ el('shipment-basis').dataset.basis=shipmentDateBasis;
+ el('shipment-basis-note').textContent=shipmentDateBasis==='shipment'?'Проведённые отгрузки за выбранные даты, включая неоплаченные и нулевые заказы.':'Отгрузки заказов, полностью оплаченных за выбранные даты. Дата самой отгрузки может быть вне периода.';
+ if(!v.ready){el('shipment-discounts').innerHTML=kv([['Сумма скидок','—']]);el('shipment-discounts-hint').textContent='Данные по дате отгрузки ещё не загружены. Дождитесь следующего обновления.';el('shipment-discounts').onclick=null;return;}
  if(!v.source){el('shipment-discounts').innerHTML=kv([['Сумма скидок','—']]);el('shipment-discounts-hint').textContent='Данные отгрузок ещё не загружены.';el('shipment-discounts').onclick=null;return;}
  el('shipment-discounts').innerHTML=discountKv([['На отгруженные товары · до возвратов',preciseMoney(v.gross/100),'gross'],['На возвращённые товары',preciseMoney(v.returned/100),'returned'],[(v.gaps.length?'Подтверждённая часть':'Итого')+(includeReturns?' · без вычета возвратов':' · после возвратов'),preciseMoney(v.total/100),'total']]);
  const missing=sum(Object.values(v.source.unlinked||{}),Number);
- el('shipment-discounts-hint').textContent='Возвраты относятся к полной оплате исходного заказа. Учитываются документы на дату обновления, размер, цвет и остальные товарные фильтры. '+(v.gaps.length?`Расчёт неполный: ${docsWord(v.gaps.length)} требуют проверки. Нажми на сумму для подробностей. `:'')+(missing?`Во всей базе ${docsWord(missing)} без подтверждённой связи с проведённой отгрузкой и заказом исключены: дата полной оплаты неизвестна. `:'')+'Скидка рассчитывается от подтверждённой цены каталога на дату отгрузки или большей цены документа. Возврат использует ту же базу, что исходная отгрузка. Доставка исключена. При пробеле истории показана только записанная скидка; причина доступна в расшифровке.';
+ el('shipment-discounts-hint').textContent=(shipmentDateBasis==='shipment'?'Период по дате исходной отгрузки. Возвраты вычитаются из выбранных отгрузок независимо от даты возврата. ':'Период по дате полной оплаты исходного заказа. Возвраты относятся к этой же выборке. ')+'Учитываются проведённые документы на дату обновления, размер, цвет и остальные товарные фильтры. '+(v.gaps.length?`Расчёт неполный: ${docsWord(v.gaps.length)} требуют проверки. Нажми на сумму для подробностей. `:'')+(missing?`Во всей базе ${docsWord(missing)} без подтверждённой связи с заказом или исходной отгрузкой. В выбранном периоде такие документы показаны как требующие проверки, если дата отбора известна. `:'')+'Скидка рассчитывается от подтверждённой цены каталога на дату отгрузки или большей цены документа. Возврат использует ту же базу, что исходная отгрузка. Доставка исключена. При пробеле истории показана только записанная скидка; причина доступна в расшифровке.';
  el('shipment-discounts').onclick=e=>{const b=e.target.closest('[data-discount-metric]');if(b)showShipmentDiscounts(b.dataset.discountMetric)};
 }
 function refresh(){
@@ -2126,17 +2156,23 @@ function downloadExcel(){
  const shipmentRows=shipment.docs.filter(d=>!includeReturns||d.kind==='demand').flatMap(d=>d.lines.map(l=>[
   {t:d.kind==='demand'?'Отгрузка':'Возврат',s:X.text},
   {...linkFormula(`https://online.moysklad.ru/app/#${d.kind==='demand'?'demand':'salesreturn'}/edit?id=${encodeURIComponent(d.id)}`,d.number),s:X.link},
-  dateCell(d.date,X.date),{...linkFormula(msOrder(d.o.id),d.o.number),s:X.link},dateCell(d.o.paid_date,X.date),
+  dateCell(d.date,X.date),d.o.id?{...linkFormula(msOrder(d.o.id),d.o.number),s:X.link}:{t:d.o.number,s:X.text},dateCell(d.o.paid_date,X.date),
   {t:l.name,s:X.text},{t:l.size,s:X.text},{t:l.color,s:X.text},{n:l.qty,s:X.qty},
-  moneyCell((l.basis_price_kopecks??l.price_kopecks)/100,X.money),{n:l.effective_discount_percent??l.discount_percent,s:X.qty},moneyCell((d.kind==='salesreturn'?-1:1)*l.discount_kopecks/100,X.money),{t:l.discount_gap||'Историческая цена подтверждена',s:X.text}
+  moneyCell((l.basis_price_kopecks??l.price_kopecks)/100,X.money),{n:l.effective_discount_percent??l.discount_percent,s:X.qty},moneyCell((d.kind==='salesreturn'?-1:1)*l.discount_kopecks/100,X.money),{t:l.discount_gap||'Историческая цена подтверждена',s:X.text},{t:shipmentBasisText(),s:X.text}
  ]));
- cover.push([{t:'Скидки на отгруженные товары',s:X.text},{n:shipment.total/100,s:X.coverM},{t:shipment.source?(shipment.gaps.length?'Неполный расчёт: есть документы на проверке':'По дате полной оплаты заказа'):'Данные не загружены',s:X.coverT}]);
+ shipmentRows.push(...shipment.allGaps.filter(g=>!g.price_gap&&(!includeReturns||g.kind==='demand')).map(g=>[
+  {t:g.kind==='demand'?'Отгрузка':'Возврат',s:X.text},
+  {...linkFormula(`https://online.moysklad.ru/app/#${g.kind==='demand'?'demand':'salesreturn'}/edit?id=${encodeURIComponent(g.id)}`,g.number),s:X.link},
+  dateCell(g.date,X.date),{t:byId.get(g.order_id)?.number||'Без связи с заказом',s:X.text},dateCell(byId.get(g.order_id)?.paid_date,X.date),
+  null,null,null,null,null,null,null,{t:g.reason,s:X.text},{t:shipmentBasisText(),s:X.text}
+ ]));
+ cover.push([{t:'Скидки на отгруженные товары',s:X.text},moneyCell(shipment.ready&&shipment.source?shipment.total/100:null,X.coverM),{t:shipment.source&&shipment.ready?shipmentBasisText()+(shipment.gaps.length?' · Неполный расчёт: есть документы на проверке':''):'Данные выбранного режима не загружены',s:X.coverT}]);
  const sheets=[
   {name:'Сводка',xml:worksheetXml(cover,[38,24,62],{first:true,tab:'FF141413',header:'Сводка'})},
   {name:'Заказы',xml:worksheetXml([headRow(orderHead),...orderBody,orderTotal],[16,12,16,28,18,16,18,18,16,18,16,16,12,12,18,14],{freeze:true,filter:true,total:true,tab:'FF2A2926',header:'Заказы'})},
   {name:'Позиции',xml:worksheetXml([headRow(posHead),...posBody,posTotal],[16,12,16,24,18,14,16,16,36,22,14,16,12,16,16,16,12,14],{freeze:true,filter:true,total:true,tab:'FF3A3834',header:'Позиции'})},
   {name:'Обмены',xml:worksheetXml([headRow(exHead),...exBody,exTotal],[16,16,24,16,16,16,36,14,16,12,18,14],{freeze:true,filter:true,total:true,tab:'FF5C5346',header:'Обмены'})},
-  {name:'Скидки отгрузок',xml:worksheetXml([headRow(['Тип','Документ','Дата документа','Заказ','Полная оплата','Товар','Размер','Цвет','Количество','База сравнения','Расчётная скидка, %','Сумма скидки','Проверка цены']),...shipmentRows],[16,16,18,16,18,48,14,16,14,18,14,20,48],{freeze:true,filter:true,header:'Скидки отгрузок'})},
+  {name:'Скидки отгрузок',xml:worksheetXml([headRow(['Тип','Документ','Дата документа','Заказ','Полная оплата','Товар','Размер','Цвет','Количество','База сравнения','Расчётная скидка, %','Сумма скидки','Проверка цены','Отбор периода']),...shipmentRows],[16,16,18,16,18,48,14,16,14,18,14,20,48,30],{freeze:true,filter:true,header:'Скидки отгрузок'})},
   {name:'На проверке',xml:worksheetXml([headRow(gapHead),...gapBody,gapTotal],[16,16,54,28],{freeze:true,filter:true,total:true,tab:'FF8C9092',header:'На проверке'})}
  ];
  const a=document.createElement('a');
@@ -2149,6 +2185,7 @@ document.querySelector('.xls').onclick=downloadExcel;
 
 el('delivery-toggle').onchange=e=>{includeDelivery=e.target.checked;refresh()};
 el('returns-toggle').onchange=e=>{includeReturns=e.target.checked;refresh()};
+el('shipment-date-toggle').onclick=()=>{shipmentDateBasis=shipmentDateBasis==='shipment'?'payment':'shipment';localStorage.setItem('2my-shipment-date-basis',shipmentDateBasis);renderShipmentDiscounts()};
 ['conversion-flow','conversion-from','conversion-to'].forEach(id=>el(id).onchange=()=>refresh());
 let lastChartX=0;
 function ordersWord(n){const a=n%10,b=n%100;if(a===1&&b!==11)return n+' заказ';if(a>=2&&a<=4&&(b<12||b>14))return n+' заказа';return n+' заказов'}
