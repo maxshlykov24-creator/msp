@@ -356,6 +356,7 @@ def build_plan(snapshot, groups):
                         pick_rate=p.get('pick_rate'), dims='', party=doc['party'], ms_store_id=doc['store'],
                         received_at=doc['moment'], accepted_at=doc['moment'], ms_supply_id=doc['id'],
                         source_key=key, source_document=('Приёмка' if doc['kind']=='supply' else 'Отгрузка')+' №'+doc['name'])
+            base['storage_from'] = None
             bucket = (membership.get(doc['party'], doc['party']), doc['store'], pid)
             transfer = doc.get('transfer_from')
             if transfer:
@@ -405,7 +406,21 @@ def build_plan(snapshot, groups):
     mismatches = [p for p in set(balance) | set(snapshot['stock']) if abs(balance[p]-snapshot['stock'].get(p,0)) > 1e-6]
     if mismatches:
         raise ValueError('Документы расходятся с остатками МойСклад по %s товарам. Учёт не изменён.' % len(mismatches))
-    return {'lots': lots, 'moves': moves, 'qty': round(sum(x['qty_left'] for x in lots.values()), 3)}
+    approved = {}
+    for rule in snapshot.get('late_receipts', []):
+        key = rule['source_key']
+        lot = lots.get(key)
+        fields = ('party', 'ms_store_id', 'accepted_at', 'ms_product_id', 'qty_in')
+        if key in approved or not lot or lot['ledger_kind'] != 'receipt' or any(lot[k] != rule[k] for k in fields):
+            raise ValueError('Изменена согласованная дополнительная позиция приёмки: ' + key)
+        start = datetime.strptime(rule['storage_from'], '%Y-%m-%d').date()
+        closed = datetime.strptime(rule['closed_through'], '%Y-%m-%d').date()
+        if not datetime.fromisoformat(lot['accepted_at']).date() < start <= closed:
+            raise ValueError('Некорректный период согласованного доначисления')
+        lot['storage_from'] = start.isoformat()
+        approved[key] = rule['closed_through']
+    return {'lots': lots, 'moves': moves, 'qty': round(sum(x['qty_left'] for x in lots.values()), 3),
+            'late_receipt_keys': approved}
 
 
 def apply_plan(snapshot, plan, groups, scope_parties=None):
@@ -442,7 +457,7 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                 if not closed:
                     continue
                 new = plan['lots'].get(key)
-                if not new or clients.get(new['party']) != old['client_id'] or any(new[k] != old[k] for k in ('ms_product_id','qty_in','accepted_at','ledger_kind')):
+                if not new or clients.get(new['party']) != old['client_id'] or any(new.get(k) != old.get(k) for k in ('ms_product_id','qty_in','accepted_at','ledger_kind','storage_from')):
                     raise ValueError('Изменена уже выставленная партия %s. Нужна корректировка закрытого периода.' % old['id'])
                 before = sorted((m['created_at'],m['kind'],m['qty']) for m in old_moves[key] if m['created_at'][:10] <= closed)
                 after = sorted((m['created_at'],m['kind'],m['qty']) for m in plan['moves'].values() if m['lot_key']==key and m['created_at'][:10] <= closed)
@@ -450,7 +465,8 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                     raise ValueError('Изменены движения закрытого периода партии %s. Нужна корректировка.' % old['id'])
             for key, new in plan['lots'].items():
                 if key not in old_lots and new['party'] in clients and new['accepted_at'][:10] <= cutoffs.get(clients[new['party']], ''):
-                    raise ValueError('Новый документ попал в уже выставленный период. Нужна сверка корректировки.')
+                    if plan.get('late_receipt_keys', {}).get(key) != cutoffs.get(clients[new['party']]):
+                        raise ValueError('Новый документ попал в уже выставленный период. Нужна сверка корректировки.')
             for pid, party in snapshot['parties'].items():
                 if scope_parties is not None and pid not in scope_parties:
                     continue
@@ -503,14 +519,15 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
         conn.close()
 
 
-def sync_transfer_scope(snapshot, groups):
+def sync_transfer_scope(snapshot, groups, parties=None, billing_locked=False):
     """A verified transfer pair can be billed despite unrelated clients' errors.
 
     Full-document totals must still agree with the live stock report. No debt,
     shortage or closed-period guard is relaxed for either member of this scope.
     """
-    parties = {r[k]['party'] for r in snapshot.get('receipt_transfers', [])
-               for k in ('source_before', 'destination')}
+    if parties is None:
+        parties = {r[k]['party'] for r in snapshot.get('receipt_transfers', [])
+                   for k in ('source_before', 'destination')}
     if not parties:
         return
     if any(set(g) & parties and not set(g) <= parties for g in groups):
@@ -526,9 +543,13 @@ def sync_transfer_scope(snapshot, groups):
     for d in docs:
         for p in d['positions']:
             stock[p['product']] += p['qty'] * (1 if d['kind']=='supply' else -1)
-    scoped = dict(snapshot, documents=docs, stock=dict(stock), scope_parties=sorted(parties))
+    scoped = dict(snapshot, documents=docs, stock=dict(stock), scope_parties=sorted(parties),
+                  receipt_transfers=[r for r in snapshot.get('receipt_transfers', [])
+                                    if {r[k]['party'] for k in ('source_before','destination')} <= parties],
+                  late_receipts=[r for r in snapshot.get('late_receipts', []) if r['party'] in parties])
     plan = build_plan(scoped, groups)
-    with run_lock('billing'):
+    from contextlib import nullcontext
+    with (nullcontext() if billing_locked else run_lock('billing')):
         return apply_plan(scoped, plan, groups, scope_parties=parties)
 
 
@@ -543,20 +564,25 @@ def run(blocking=True):
                 raise ValueError('Не настроены подтверждённые группы контрагентов для учёта')
             snapshot = fetch_snapshot()
             snapshot['receipt_transfers'] = json.loads(get_setting('ledger:receipt_transfers') or '[]')
+            snapshot['late_receipts'] = json.loads(get_setting('ledger:late_receipts') or '[]')
             plan = build_plan(snapshot, groups)
             with run_lock('billing'):
                 return apply_plan(snapshot, plan, groups)
         except Exception as exc:
             set_setting('ledger:last_error', str(exc)[:500])
             if snapshot is not None:
-                try:
-                    result = sync_transfer_scope(snapshot, groups)
-                    if result:
-                        print('Отдельная сверка переноса завершена: %s партий' % result['lots'])
-                except Exception as scoped_exc:
-                    # No proof is written on failure; the current attempt invalidates
-                    # the previous one, so bills stay blocked rather than use old data.
-                    print('Отдельная сверка переноса: ' + str(scoped_exc))
+                scopes = {tuple(sorted({r[k]['party'] for k in ('source_before','destination')}))
+                          for r in snapshot['receipt_transfers']}
+                scopes.update((r['party'],) for r in snapshot['late_receipts'])
+                for parties in scopes:
+                    try:
+                        result = sync_transfer_scope(snapshot, groups, set(parties))
+                        if result:
+                            print('Отдельная сверка завершена: %s партий' % result['lots'])
+                    except Exception as scoped_exc:
+                        # No proof is written on failure; the current attempt invalidates
+                        # the previous one, so bills stay blocked rather than use old data.
+                        print('Отдельная сверка: ' + str(scoped_exc))
             raise
 
 

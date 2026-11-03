@@ -60,4 +60,24 @@ class ReadRetry(unittest.TestCase):
   limited=Mock(status_code=429,headers={})
   with patch.object(a,'req',return_value=limited) as req,patch.object(a,'ms_headers',return_value={}),patch('time.sleep'):
    self.assertIs(a.ledger_get('/x'),limited);self.assertEqual(req.call_count,5)
+class LateReceipt(unittest.TestCase):
+ def setUp(self):
+  d=doc('late','andreeva','2026-09-23',10)
+  self.rule=dict(source_key='ms:supply:late:latep',party='andreeva',ms_store_id='s',accepted_at=d['moment'],ms_product_id='p',qty_in=10,storage_from='2026-10-15',closed_through='2026-10-25')
+  self.s=dict(products={'p':dict(article='p',name='p',liters=1,pick_rate=10)},documents=[d],stock={'p':10},late_receipts=[self.rule])
+ def test_separate_physical_date_and_charged_date(self):
+  lot=dict(next(iter(a.build_plan(self.s,[])['lots'].values())),id=1,billed_until=None)
+  self.assertEqual(lot['accepted_at'][:10],'2026-09-23')
+  v=account.storage_of(lot,{},date_to=date(2026,10,25),ship_days={})
+  self.assertEqual(v['from'],'2026-10-15');self.assertEqual(v['days'],11);self.assertEqual(v['storage'],16.5)
+  self.assertEqual(account.storage_of(dict(lot,billed_until='2026-11-01'),{},date_to=date(2026,11,1),ship_days={})['storage'],0)
+ def test_changed_quantity_rejected(self):
+  self.rule['qty_in']=11
+  with self.assertRaises(ValueError):a.build_plan(self.s,[])
+ def test_date_before_actual_receipt_rejected(self):
+  self.rule['storage_from']='2026-09-20'
+  with self.assertRaises(ValueError):a.build_plan(self.s,[])
+ def test_duplicate_rule_rejected(self):
+  self.s['late_receipts'].append(self.rule)
+  with self.assertRaises(ValueError):a.build_plan(self.s,[])
 unittest.main()

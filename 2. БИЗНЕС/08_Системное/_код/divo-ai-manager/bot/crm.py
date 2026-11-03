@@ -771,6 +771,24 @@ def queue_transcript(doc: dict) -> None:
                    "%s | %s\n%s" % (row.get("at", ""), row["who"], row["text"]))
 
 
+def transcript_actor(msg: dict, *, avito: bool, source: dict, own_ids: set) -> str:
+    if avito:
+        from bot.avito_loop import is_noise
+        if is_noise(msg):
+            return "Служебное сообщение"
+        if msg.get("direction") == "in":
+            return "Клиент"
+        if msg.get("direction") == "out":
+            return "Салон"
+    else:
+        from bot.autoru_loop import is_out
+        if is_out(msg, str(source.get("me") or "")) or str(msg.get("id")) in own_ids:
+            return "Салон"
+        if source.get("customer_id") and str(msg.get("author") or "") == str(source["customer_id"]):
+            return "Клиент"
+    return "Автор не подтверждён"
+
+
 async def refresh_transcript(chat_id: str, doc: dict) -> None:
     """Read actual provider history, including staff replies; never send messages."""
     from bot.avito import Avito
@@ -799,6 +817,8 @@ async def refresh_transcript(chat_id: str, doc: dict) -> None:
     finally:
         await api.close()
     records = []
+    source = doc.get("avito" if av else "autoru") or {}
+    own_ids = {str(x) for x in (doc.get("crm") or {}).get("out_ids", [])}
     for m in rows:
         mid = str(m.get("id") or "")
         if not mid:
@@ -815,7 +835,7 @@ async def refresh_transcript(chat_id: str, doc: dict) -> None:
         if not text:
             text = "[Вложение или служебное сообщение]"
         records.append({"id": mid, "at": datetime.fromtimestamp(at).astimezone().isoformat(),
-                        "who": "Салон" if outbound else "Клиент", "text": text})
+                        "who": transcript_actor(m, avito=av, source=source, own_ids=own_ids), "text": text})
     doc["transcript"] = sorted(records, key=lambda r: r["at"])
     doc.setdefault("crm", {})["transcript_synced_at"] = time.time()
 

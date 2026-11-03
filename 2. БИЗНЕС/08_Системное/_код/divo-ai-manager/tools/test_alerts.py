@@ -227,8 +227,8 @@ def test_urgent_reason():
         "3 сентября покупал автомобиль с номером 100. Залог пока не снят.",
         [],
     ) == "aftersale"
-    assert urgent_reason("это развод", []) == ""
-    assert urgent_reason("дайте живого человека", []) == ""
+    assert urgent_reason("это развод", []) == "complaint"
+    assert urgent_reason("дайте живого человека", []) == "handoff"
     hist = [{"role": "user", "content": "мой 8 900 111-22-33"}]
     assert urgent_reason("это развод", hist) == "complaint"
     assert urgent_reason("дайте живого человека", hist) == "handoff"
@@ -237,7 +237,7 @@ def test_urgent_reason():
     assert urgent_reason("Вы звонили", hist) == "call"
     assert urgent_reason("Это вы мне звонили", []) == ""
     assert urgent_reason("ок", hist) == ""
-    assert urgent_reason("89001112233", hist) == ""
+    assert urgent_reason("89001112233", hist) == "phone"  # Повторы передачи отсекает CRM.
     call_hist = hist + [{"role": "user", "content": "Вы звонили"}]
     assert urgent_reason("+79275282888", call_hist) == "call"
     assert (
@@ -538,7 +538,7 @@ def test_after_contact_no_push():
     assert "10:00" in keep
     assert "complaint" in store.HARD_PAUSE
     assert "call" not in store.HARD_PAUSE
-    assert "handoff" not in store.HARD_PAUSE
+    assert "handoff" in store.HARD_PAUSE  # Передача останавливает ответы до сотрудника.
 
 
 def test_alert_always_has_button():
@@ -1147,8 +1147,8 @@ def test_autoru_note_finds_room():
     newer["created_at"] = 200
     newer["uid"] = "u3"
     newer["_embedded"] = {"leads": [{"id": 20}]}
-    assert autoru_unsorted_lead([newer, older], room) == 10
-    assert autoru_note_text("client", "  битая\nили нет ") == "Клиент: битая или нет"
+    assert autoru_unsorted_lead([newer, older], room) is None  # Не выбирать из двух связей по возрасту.
+    assert autoru_note_text("client", "  битая\nили нет ") == "Клиент:   битая\nили нет "  # Переписка сохраняется без перефразирования.
     assert autoru_note_text("bot", "ссылка") == "Бот: ссылка"
 
 
@@ -1291,14 +1291,15 @@ def test_listing_context_cleanup():
     assert "пошлин" not in bubbles[0].lower()
     keep = drop_dead_closer("Машина в наличии, можно приехать посмотреть")
     assert "наличии" in keep.lower()
-    built = prompt.build()
-    assert "Чат по объявлению держит эту машину" in built
-    assert "Не выдумывай соседнюю тему" in built
-    assert "Это вы звонили" in built
-    quiet = prompt.build(with_stock=False)
-    assert "Чат по объявлению держит эту машину" in quiet
-    assert "1C4RDJDG4LC342711" in built
-    assert "1C4RDJDG4LC342711" not in quiet
+    from unittest.mock import patch
+    # Проверка не зависит от проданной машины в постоянно обновляемом стоке.
+    with patch.object(prompt, '_read', side_effect=lambda rel: 'TEST_STOCK_SENTINEL' if rel.startswith('KB/сток') else ''):
+        built = prompt.build()
+        quiet = prompt.build(with_stock=False)
+    assert 'Машину задаёт привязанное объявление' in built
+    assert 'Машину задаёт привязанное объявление' in quiet
+    assert 'TEST_STOCK_SENTINEL' in built
+    assert 'TEST_STOCK_SENTINEL' not in quiet
 
 
 def test_avito_history_and_shot():
@@ -1575,8 +1576,8 @@ def test_tradein_vin_phone():
     assert reask == ""
     assert wants_remote_eval("Дистанционно")
     built = prompt.build()
-    assert "Дистанционная оценка обмена" in built
-    assert "Объявление своей машины уже прислал" in built or "уже прислал" in built
+    assert 'По обмену уточни автомобиль клиента' in built
+    assert 'Нет карточки' in built
 
 
 def test_in_stock_dedupe():
@@ -1636,10 +1637,12 @@ def test_tiggo_match_and_messenger():
         "960 000 ₽",
         stock=stock,
     )
+    assert hit is None  # Отличающийся пробег не доказывает тот же экземпляр.
+    hit = match_card("Chery Tiggo 4 1.5 CVT, 2022, 122 507 км", "960 000 ₽", stock=stock)
     assert hit is not None
     assert "LVVDB21B0ND229078" in (hit.get("VIN") or "")
     focus = focus_block(
-        "Chery Tiggo 4 1.5 CVT, 2022, 126 219 км",
+        "Chery Tiggo 4 1.5 CVT, 2022, 122 507 км",
         "960 000 ₽",
         stock=stock,
     )
@@ -1685,6 +1688,8 @@ def test_tiggo_match_and_messenger():
     )
     m8_stock = m8_stock.replace("16 584 км", "70 200 км")
     m8 = match_card("GAC M8 2.0 AT, 2024, 72 887 км", "3 900 000 ₽", stock=m8_stock)
+    assert m8 is None
+    m8 = match_card("GAC M8 2.0 AT, 2024, 70 200 км", "3 900 000 ₽", stock=m8_stock)
     assert m8 is not None
     assert "LMGMU1G82R1236593" in (m8.get("VIN") or "")
     assert "Автотека" in (m8.get("raw") or "")
@@ -1742,6 +1747,8 @@ def test_mercedes_class_not_confused():
         "7 700 000 ₽",
         stock=stock,
     )
+    assert same is None
+    same = match_card("Mercedes-Benz S-класс 2.9 AT, 2019, 91 817 км", "7 700 000 ₽", stock=stock)
     assert same is not None
     assert "WDD2221861A505798" in (same.get("VIN") or "")
     coolray = (
@@ -1763,7 +1770,9 @@ def test_mercedes_class_not_confused():
         "1 200 000 ₽",
         stock=coolray,
     )
-    assert near is not None
+    assert near is None
+    exact = match_card("Geely Coolray 1.5 AMT, 2022, 147 330 км", "1 200 000 ₽", stock=coolray)
+    assert exact is not None
 
 
 def test_owner_legal():
@@ -2865,7 +2874,9 @@ def test_restart_preserves_marketplace_incoming():
                 await ar.poll_once(api, Mock(), Mock(), {})
             assert main.waiting_for_bot('ar:test')
             assert len(store.load_history('ar:test')) == 1
-    asyncio.run(run())
+    # Replay at the actual incident time; this is a restart test, not archive adoption.
+    with patch("time.time", return_value=1791543105):
+        asyncio.run(run())
 
 
 def test_payment_refusal_keeps_dialog_open():
@@ -2934,9 +2945,9 @@ def test_oct14_picked_keeps_crm_retry():
     async def run():
         with Sandbox():
             cid = "ar:oct14-crm"
-            store.save_doc(cid, {"messages": [], "crm": {"handoff_pending": {"reason": "phone", "retry_at": 0},
+            store.save_doc(cid, {"messages": [{"role": "user", "content": "+79990000001"}], "crm": {"handoff_pending": {"reason": "phone", "retry_at": 0},
                                  "alert": {"picked": "button", "active": True, "reason": "phone"}}})
-            with patch.object(crm, "ensure_lead", side_effect=lambda snap, doc: snap), \
+            with patch.object(crm, "ensure_lead_async", AsyncMock(side_effect=lambda snap, doc: snap)), \
                  patch.object(crm, "ping_allowed", return_value=False), \
                  patch.object(crm, "_sweep_posts", AsyncMock()):
                 await crm._tick_one(cid)
@@ -3084,8 +3095,10 @@ def test_oct14_picked_does_not_rewind_sales():
     doc = {"crm": {"alert": {"picked": "button", "picked_amo": 111}}}
     with patch.object(a, "find_unsorted_uid", return_value=""), \
          patch.object(a, "move_lead_to_sales") as move, \
-         patch.object(a, "add_note"), patch.object(crm, "_bind_lead", return_value={}):
-        crm._adopt_widget({}, doc, widget)
+         patch.object(a, "add_note"), patch.object(crm, "_bind_lead", return_value={}), \
+         patch.object(crm, "_verified_marketplace_lead", return_value=widget), \
+         patch.object(crm, "_marketplace_contact_id", return_value=123):
+        crm._adopt_widget({"chat_id":"av:stage-test", "channel":"Авито", "url":""}, doc, widget)
         move.assert_not_called()
 
 
@@ -3571,3 +3584,39 @@ def test_nov03_deep_scan_does_not_contact_archive():
         assert not store.defer_historical_discovery(state, 'new', 1_999_999)
         state['allow'] = ['old']
         assert not store.defer_historical_discovery(state, 'old', 1)
+
+
+def test_nov03_transcript_never_uses_seller_phone_as_client():
+    from bot.crm import transcript_actor
+    source={'me':'dealer-id','customer_id':'buyer-id'}
+    assert transcript_actor({'author':'dealer-id'}, avito=False, source=source, own_ids=set()) == 'Салон'
+    assert transcript_actor({'author':'buyer-id'}, avito=False, source=source, own_ids=set()) == 'Клиент'
+    assert transcript_actor({'author':'unknown'}, avito=False, source=source, own_ids=set()) == 'Автор не подтверждён'
+    assert transcript_actor({'author':'dealer-id'}, avito=False, source={}, own_ids=set()) != 'Клиент'
+    assert transcript_actor({'type':'system','direction':'in'}, avito=True, source={}, own_ids=set()) != 'Клиент'
+
+
+def test_nov03_autoru_same_second_cursor():
+    import asyncio,copy
+    from unittest.mock import patch,AsyncMock,Mock
+    from tools.rehearse import Sandbox
+    from bot import autoru_loop as loop,crm,store
+    state={'allow':['same-second'],'cursor':{'same-second':100},'cursor_ids':{'same-second':['one']}}
+    rows=[{'id':'one','created':100,'author':'buyer','payload':{'content_type':'TEXT_PLAIN','value':'Первый вопрос'}},
+          {'id':'two','created':100,'author':'buyer','payload':{'content_type':'TEXT_PLAIN','value':'Второй вопрос'}}]
+    api=Mock(own_offers=AsyncMock(return_value={}),
+             rooms=AsyncMock(return_value=[{'id':'same-second','me':'seller','last_message':rows[-1]}]),
+             messages=AsyncMock(return_value=rows))
+    async def run():
+        with Sandbox(), patch.object(loop,'is_offer_room',return_value=True), \
+             patch.object(loop,'we_sell',return_value=True), patch.object(loop,'source_id',return_value=''), \
+             patch.object(loop,'recover_customer_identity',AsyncMock()), \
+             patch.object(loop,'listing_from_room',return_value={}), patch.object(loop,'remember_listing',AsyncMock()), \
+             patch.object(loop,'load_state',side_effect=lambda:copy.deepcopy(state)), \
+             patch.object(loop,'save_state',side_effect=lambda value:state.update(value)), \
+             patch.object(crm,'capture_if_urgent',AsyncMock(return_value='')):
+            pending={};schedule=Mock()
+            await loop.poll_once(api,Mock(),schedule,pending)
+            await loop.poll_once(api,Mock(),schedule,pending)
+            assert pending['ar:same-second']==['Второй вопрос'] and schedule.call_count==1
+    asyncio.run(run())

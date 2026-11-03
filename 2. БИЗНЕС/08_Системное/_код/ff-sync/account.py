@@ -122,6 +122,11 @@ def window(lot, date_from=None, date_to=None, storage=True):
         return None, None
     if storage:
         start += timedelta(days=1)
+        if 'storage_from' in lot.keys() and lot['storage_from']:
+            override = as_day(lot['storage_from'])
+            if override is None:
+                raise ValueError('Некорректная согласованная дата начала хранения')
+            start = max(start, override)
     closed = billed_until(lot)
     if closed and closed >= start:
         start = closed + timedelta(days=1)
@@ -625,17 +630,40 @@ def save_lot_product(lot_id, data, actor):
             if any(current[key] != value for key, value in changed.items()):
                 raise ValueError('МойСклад не сохранил введённые значения. Открой товар заново и проверь карточку.')
             print('Учёт: допполя товара %s, пользователь %s, %s' % (pid, actor, canonical(changed)))
+        snapshot = None
+        snapshot_verified = False
         try:
             groups = json.loads(get_setting('ledger:groups') or '[]')
             if not groups:
                 raise ValueError('Не настроены подтверждённые группы контрагентов для учёта.')
             set_setting('ledger:last_attempt', stamp())
             snapshot = fetch_snapshot()
+            snapshot['receipt_transfers'] = json.loads(get_setting('ledger:receipt_transfers') or '[]')
+            snapshot['late_receipts'] = json.loads(get_setting('ledger:late_receipts') or '[]')
             if any(snapshot['products'][pid][key] != value for key, value in desired.items()):
                 raise ValueError('Карточка изменилась во время сверки. Проверь её значения.')
+            snapshot_verified = True
             result = apply_plan(snapshot, build_plan(snapshot, groups), groups)
         except Exception as exc:
             set_setting('ledger:last_error', str(exc)[:500])
+            if snapshot_verified:
+                from accept import sync_transfer_scope
+                from db import get_lot
+                party = get_client_by_id(get_lot(lot_id)['client_id'])['ms_counterparty_id']
+                scopes = [{r[k]['party'] for k in ('source_before', 'destination')}
+                          for r in snapshot.get('receipt_transfers', [])]
+                scopes += [{r['party']} for r in snapshot.get('late_receipts', [])]
+                current_result = None
+                for scope in {tuple(sorted(s)) for s in scopes}:
+                    try:
+                        result = sync_transfer_scope(snapshot, groups, set(scope), billing_locked=True)
+                        if party in scope:
+                            current_result = result
+                    except Exception:
+                        pass  # Keep the save result, but do not claim a verified ledger.
+                if current_result:
+                    return {'ok': True, 'saved': True, 'synced': True, 'product': current,
+                            'last_sync': current_result['last_sync']}
             return {'ok': True, 'saved': True, 'synced': False, 'product': current,
                     'msg': 'Данные карточки сохранены в МойСклад. Учёт требует обновления: ' + str(exc)}
         return {'ok': True, 'saved': True, 'synced': True, 'product': current, 'last_sync': result['last_sync']}

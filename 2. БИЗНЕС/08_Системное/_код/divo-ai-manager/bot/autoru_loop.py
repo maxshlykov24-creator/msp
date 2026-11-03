@@ -258,6 +258,7 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
     last = room.get("last_message") or {}
     customer_id = str(last.get("author") or "") if not is_out(last, str(room.get("me") or "")) else ""
     if (doc.get("autoru") or {}).get("title"):
+        doc["autoru"]["me"] = str(room.get("me") or "")
         doc["autoru"]["customer_names"] = customer_names(room)
         if customer_id and customer_id != str(room.get("me") or ""):
             doc["autoru"]["customer_id"] = customer_id
@@ -269,6 +270,7 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
     url = listing.get("url") or ""
     doc["autoru"] = {
         "chat_id": raw_id(chat_key),
+        "me": str(room.get("me") or ""),
         "customer_id": customer_id,
         "customer_names": customer_names(room),
         "title": title,
@@ -305,6 +307,10 @@ async def recover_customer_identity(api: Autoru, room: dict) -> None:
     src = doc.get("autoru") or {}
     crm = doc.get("crm") or {}
     names = customer_names(room)
+    if src and room.get("me") and src.get("me") != str(room["me"]):
+        src["me"] = str(room["me"])
+        doc["autoru"] = src
+        store.save_doc(key, doc)
     if src and names and names != src.get("customer_names"):
         src["customer_names"] = names
         doc["autoru"] = src
@@ -391,6 +397,7 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             state["health"] = health
         save_state(state)
     changed = False
+    boundary = state.setdefault("cursor_ids", {})
     for room in rooms:
         cid = str(room.get("id") or "")
         if not cid or not is_offer_room(room):
@@ -410,7 +417,7 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
         last = room.get("last_message") or {}
         last_at = created_of(last)
         seen = int(cursor.get(cid) or 0)
-        if last_at <= seen:
+        if last_at < seen or (last_at == seen and str(last.get("id") or "") in boundary.get(cid, [])):
             continue
         me = str(room.get("me") or "")
         if is_out(last, me):
@@ -422,6 +429,7 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
                 "content": {"text": str((last.get("payload") or {}).get("value") or "")},
             })
             cursor[cid] = max(seen, last_at)
+            boundary[cid] = list(set(boundary.get(cid, []) if last_at == seen else []) | {str(last.get("id") or "")})
             changed = True
             continue
         if (
@@ -440,11 +448,12 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
             log.warning("авто.ру сообщения %s: %s", cid, exc)
             continue
         incoming = []
+        seen_ids = set(boundary.get(cid, [str(m.get("id") or "") for m in msgs if created_of(m) == seen]))
         max_at = seen
         for msg in msgs:
             at = created_of(msg)
             max_at = max(max_at, at)
-            if at <= seen:
+            if at < seen or (at == seen and str(msg.get("id") or "") in seen_ids):
                 continue
             if is_out(msg, me):
                 from bot import crm
@@ -460,6 +469,7 @@ async def poll_once(api: Autoru, channel: AutoruChannel, schedule, pending: dict
                 incoming.append((at, text))
         incoming.sort()
         cursor[cid] = max_at
+        boundary[cid] = list({str(m.get("id") or "") for m in msgs if created_of(m) == max_at})
         changed = True
         if not incoming:
             continue

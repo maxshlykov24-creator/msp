@@ -94,7 +94,7 @@ def migrate(conn):
     lots = _cols(conn, "lots")
     for col, decl in (("source_key", "TEXT"), ("source_active", "INTEGER NOT NULL DEFAULT 1"),
                       ("ledger_kind", "TEXT NOT NULL DEFAULT 'legacy'"), ("ms_store_id", "TEXT"),
-                      ("source_document", "TEXT")):
+                      ("source_document", "TEXT"), ("storage_from", "TEXT")):
         if col not in lots:
             conn.execute("ALTER TABLE lots ADD COLUMN %s %s" % (col, decl))
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS lots_source ON lots(source_key)")
