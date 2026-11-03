@@ -332,10 +332,9 @@
 
   .shipment-basis{display:flex;align-items:center;gap:10px;margin:18px 0 12px;font-size:13px;line-height:1.4;color:var(--mute)}
   .shipment-basis[data-basis="payment"] .basis-payment,.shipment-basis[data-basis="shipment"] .basis-shipment{color:var(--ink);font-weight:600}
-  #shipment-date-toggle{flex:0 0 42px;width:42px;height:26px;padding:3px;border:1px solid var(--line);border-radius:20px;background:var(--cream-2);cursor:pointer;display:flex;align-items:center;transition:background .18s}
-  #shipment-date-toggle span{display:block;width:18px;height:18px;border-radius:50%;background:var(--ink);transition:transform .18s}
-  #shipment-date-toggle[aria-checked="true"]{background:var(--ink);border-color:var(--ink)}
-  #shipment-date-toggle[aria-checked="true"] span{background:var(--paper);transform:translateX(16px)}
+  #shipment-date-toggle{flex:0 0 36px;width:36px;height:18px;padding:2px;border:1px solid var(--ink);border-radius:0;background:transparent;cursor:pointer;display:flex;align-items:center}
+  #shipment-date-toggle span{display:block;width:12px;height:12px;border-radius:0;background:var(--ink);transition:transform .28s cubic-bezier(.25,1,.5,1)}
+  #shipment-date-toggle[aria-checked="true"] span{transform:translateX(18px)}
   #shipment-date-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
   @media(max-width:420px){.shipment-basis{font-size:11px;gap:7px}}
   @media(prefers-reduced-motion:reduce){#shipment-date-toggle,#shipment-date-toggle span{transition:none}}
@@ -369,7 +368,7 @@
   html.night .night-toggle i::after{transform:translateX(18px)}
   html.night .logo-2my{filter:invert(1)}
   html.night .footer{background:var(--paper);box-shadow:none}
-  body.quiet .hint,body.quiet .notes,body.quiet .hero .sub{display:none!important}
+  body.quiet .hint,body.quiet .notes,body.quiet .hero .sub,body.quiet .discount-policy{display:none!important}
   body.quiet .card h3{margin-bottom:16px}
   .delivery-row{display:flex;flex-wrap:wrap;gap:8px 22px;margin:0 0 18px;font-size:12px;font-weight:500;color:var(--body)}
   .delivery-row label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
@@ -723,6 +722,7 @@
 #items tr{cursor:pointer}#items tr.selected{background:var(--butter)}#items tr.selected .product-pick{color:var(--ink);border-bottom-color:var(--ink)}.product-pick:focus-visible{outline:2px solid var(--ink)}
 .pick-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .discount-policy{font-size:13px;line-height:1.5;color:var(--mute);margin:10px 0 16px}
+#order-discounts-warning:not(:empty){margin:0 0 12px}
 </style>
 </head>
 <body>
@@ -867,6 +867,7 @@
       <div class="discount-policy" id="shipment-discounts-hint"></div>
       <h4 style="margin:28px 0 12px">Скидки в оплаченных заказах</h4>
       <div class="discount-policy" id="order-discounts-hint">Все позиции оплаченных заказов, включая ещё не отгруженные. Цены и скидки в заказах могут отличаться от отгрузок. Нажми на число, чтобы открыть заказы.</div>
+      <div id="order-discounts-warning"></div>
       <div id="disc-kv2"></div>
     </div>
   </div>
@@ -1530,8 +1531,8 @@ function renderShipmentDiscounts(){
  el('shipment-date-toggle').setAttribute('aria-checked',shipmentDateBasis==='shipment'?'true':'false');
  el('shipment-basis').dataset.basis=shipmentDateBasis;
  el('shipment-basis-note').textContent=shipmentDateBasis==='shipment'?'Проведённые отгрузки за выбранные даты, включая неоплаченные и нулевые заказы.':'Отгрузки заказов, полностью оплаченных за выбранные даты. Дата самой отгрузки может быть вне периода.';
- if(!v.ready){el('shipment-discounts').innerHTML=kv([['Сумма скидок','—']]);el('shipment-discounts-hint').textContent='Данные по дате отгрузки ещё не загружены. Дождитесь следующего обновления.';el('shipment-discounts').onclick=null;return;}
- if(!v.source){el('shipment-discounts').innerHTML=kv([['Сумма скидок','—']]);el('shipment-discounts-hint').textContent='Данные отгрузок ещё не загружены.';el('shipment-discounts').onclick=null;return;}
+ if(!v.ready){el('shipment-discounts').innerHTML=kv([['Сумма скидок','Данные не загружены']]);el('shipment-discounts-hint').textContent='Данные по дате отгрузки ещё не загружены. Дождитесь следующего обновления.';el('shipment-discounts').onclick=null;return;}
+ if(!v.source){el('shipment-discounts').innerHTML=kv([['Сумма скидок','Данные не загружены']]);el('shipment-discounts-hint').textContent='Данные отгрузок ещё не загружены.';el('shipment-discounts').onclick=null;return;}
  el('shipment-discounts').innerHTML=discountKv([['На отгруженные товары · до возвратов',preciseMoney(v.gross/100),'gross'],['На возвращённые товары',preciseMoney(v.returned/100),'returned'],[(v.gaps.length?'Подтверждённая часть':'Итого')+(includeReturns?' · без вычета возвратов':' · после возвратов'),preciseMoney(v.total/100),'total']]);
  const missing=sum(Object.values(v.source.unlinked||{}),Number);
  el('shipment-discounts-hint').textContent=(shipmentDateBasis==='shipment'?'Период по дате исходной отгрузки. Возвраты вычитаются из выбранных отгрузок независимо от даты возврата. ':'Период по дате полной оплаты исходного заказа. Возвраты относятся к этой же выборке. ')+'Учитываются проведённые документы на дату обновления, размер, цвет и остальные товарные фильтры. '+(v.gaps.length?`Расчёт неполный: ${docsWord(v.gaps.length)} ${v.gaps.length%10===1&&v.gaps.length%100!==11?'требует':'требуют'} проверки. Нажми на сумму для подробностей. `:'')+(missing?`Во всей базе ${docsWord(missing)} без подтверждённой связи с заказом или исходной отгрузкой. В выбранном периоде такие документы показаны как требующие проверки, если дата отбора известна. `:'')+'Скидка рассчитывается от подтверждённой цены каталога на дату отгрузки или большей цены документа. Возврат использует ту же базу, что исходная отгрузка. Доставка исключена. При пробеле истории показана только записанная скидка; причина доступна в расшифровке.';
@@ -1603,7 +1604,8 @@ function refresh(){
  const discountRev=sum(discounts,x=>orderRev(x.o,x.ls))+(!includeReturns?sum(returned.filter(x=>discountIds.has(x.o.original_order)),x=>orderRev(x.o,x.ls)):0);
  el('disc-kv2').innerHTML=discountKv([['Заказов со скидкой или промокодом',num(discounts.length),'count'],['Выручка этих заказов',preciseMoney(discountRev),'revenue'],[(priceGaps.length?'Подтверждённые скидки':'Скидки в заказах')+' · до возвратов',preciseMoney(sum(filtered,lineDiscount)),'discount']]);
  el('order-discounts-hint').textContent='Отбор по дате полной оплаты заказа. Скидка на товары: большее из цены документа до скидки и подтверждённой цены продажи каталога на момент полной оплаты минус фактическая стоимость. Доставка в скидки не входит. Возвраты из этой суммы не вычитаются. '+(priceGaps.length?`У ${num(priceGaps.length)} позиций историческая цена не подтверждена: учтена только записанная скидка. Нажми «Проверить цены». `:'Исторические цены всех выбранных товаров подтверждены. ')+'Текущий состав заказов может отличаться от старой выгрузки.';
- if(priceGaps.length){const b=document.createElement('button');b.type='button';b.className='conversion-proof';b.textContent='Проверить цены';b.onclick=()=>showSheet('Проверка исторических цен','Позиции с неполным расчётом',`<table class="sheet-table"><thead><tr><th>Заказ</th><th>Товар</th><th>Причина</th></tr></thead><tbody>${priceGaps.map(({o,l})=>`<tr><td><a href="${msOrder(o.id)}" target="_blank" rel="noopener">${esc(o.number)}</a></td><td>${esc(l.name)}</td><td>${esc(l.discount_gap)}</td></tr>`).join('')}</tbody></table>`);el('order-discounts-hint').append(' ',b);}
+ el('order-discounts-warning').replaceChildren();
+ if(priceGaps.length){const b=document.createElement('button');b.type='button';b.className='conversion-proof';b.textContent='Проверить цены';b.onclick=()=>showSheet('Проверка исторических цен','Позиции с неполным расчётом',`<table class="sheet-table"><thead><tr><th>Заказ</th><th>Товар</th><th>Причина</th></tr></thead><tbody>${priceGaps.map(({o,l})=>`<tr><td><a href="${msOrder(o.id)}" target="_blank" rel="noopener">${esc(o.number)}</a></td><td>${esc(l.name)}</td><td>${esc(l.discount_gap)}</td></tr>`).join('')}</tbody></table>`);el('order-discounts-warning').append(b);}
  el('disc-kv2').onclick=e=>{
   const b=e.target.closest('[data-discount-metric]');if(!b)return;
   const mode=b.dataset.discountMetric;
